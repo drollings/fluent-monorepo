@@ -5,7 +5,7 @@
 //! [`protopyne_types::Bar`] timestamps — no venue dependency, no `egui`.
 
 use chrono::{DateTime, Datelike as _, Utc, Weekday};
-use protopyne_types::Bar;
+use protopyne_types::{Bar, TradingSession};
 
 /// One detected session boundary.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -176,6 +176,52 @@ impl SessionProvider for MonthlySessionProvider {
 
     fn name(&self) -> &str {
         "Monthly Sessions"
+    }
+}
+
+/// Exchange-session day boundaries on the ET wall clock.
+///
+/// Detection keys on the ET calendar date
+/// ([`TradingSession::session_date`]): two bars whose ET dates differ
+/// straddle a session break. The date math (including the daylight rules)
+/// belongs to the shared clock — this provider holds an already-parsed
+/// session and adds no time math of its own. Overnight ranges refuse at
+/// parse, preserved here by construction.
+#[derive(Debug, Clone, Copy)]
+pub struct EtSessionProvider {
+    session: TradingSession,
+}
+
+impl EtSessionProvider {
+    /// Detect day breaks for `session` (e.g.
+    /// `TradingSession::parse("0930-1600")`).
+    #[must_use]
+    pub fn new(session: TradingSession) -> Self {
+        Self { session }
+    }
+}
+
+impl SessionProvider for EtSessionProvider {
+    fn session_break_between(
+        &self,
+        from: &DateTime<Utc>,
+        to: &DateTime<Utc>,
+    ) -> Option<SessionBreak> {
+        let from_date = self.session.session_date(from.timestamp_millis());
+        let to_date = self.session.session_date(to.timestamp_millis());
+        if from_date == to_date {
+            None
+        } else {
+            Some(SessionBreak {
+                ts: *to,
+                break_type: SessionBreakType::Daily,
+                label: Some(format!("{:04}-{:02}-{:02} ET", to_date.0, to_date.1, to_date.2)),
+            })
+        }
+    }
+
+    fn name(&self) -> &str {
+        "ET Sessions"
     }
 }
 

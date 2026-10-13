@@ -253,7 +253,7 @@ fn natr_flat_price_is_confident_zero_after_warmup() {
 fn natr_matches_expr_once_seeded_and_agrees_on_spy() {
     // The kernel smooths with Wilder seeding while the reference smooths
     // with EWM seeding: the two coincide exactly once their seed states
-    // match, so the parity frame opens with a flat prefix (both seeds read
+    // match, so the Expr-parity frame opens with a flat prefix (both seeds read
     // zero) before trending. Seeding, not smoothing, is the documented
     // difference between the two ratio definitions.
     let mut bars: Vec<Bar> = (0..14).map(|i| natr_bar(100.0, 100.0, 100.0, 100.0, i)).collect();

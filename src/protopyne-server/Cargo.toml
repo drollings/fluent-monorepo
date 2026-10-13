@@ -5,9 +5,17 @@ edition.workspace = true
 autotests = false
 autobenches = false
 
+[features]
+default = []
+# `pine` passes through the kernels Pine runtime for the headless
+# integration proofs and the native-vs-Pine bench. Default-off: the shipped
+# server serves kernels + research only, so the release closure carries no
+# language runtime.
+pine = ["protopyne-kernels/pine"]
+
 [dependencies]
 protopyne-types = { path = "../protopyne-types" }
-protopyne-kernels = { path = "../protopyne-kernels" }
+protopyne-kernels = { path = "../protopyne-kernels", default-features = false, features = ["research"] }
 protopyne-strategy = { path = "../protopyne-strategy" }
 protopyne-venue = { path = "../protopyne-venue" }
 protopyne-chart-model = { path = "../protopyne-chart-model" }

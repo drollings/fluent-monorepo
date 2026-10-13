@@ -27,8 +27,10 @@ use std::collections::{BTreeSet, HashMap};
 use std::fmt;
 
 use crate::error::KernelError;
+use crate::market_context::{MarketContext, MarketContextKey};
+use crate::mtf::{Lookahead, MtfStore};
 use crate::pine::{ModuleGraph, ModuleId, VersionWarn};
-use crate::value::PineValue;
+use crate::value::{EnumHandle, FieldTable, NativeCall, PineValue, UserInstance};
 
 /// Identity of one natively servable Pine library: publisher and name only.
 ///
@@ -253,9 +255,9 @@ pub trait NativeProvider: Send + Sync {
     }
 
     /// Attempt one native instance-method call by mutating `fields` in
-    /// place and yielding the call value. `Ok(None)` means not handled:
+    /// place and yielding the call outcome. `Declined` means not handled:
     /// fields are untouched and the engine runs the Pine body, so every
-    /// unlisted method keeps its proven behavior. `Ok(Some(value))`
+    /// unlisted method keeps its proven behavior. `Served(value)`
     /// reports the table already updated. `Err` refuses fail-closed — a
     /// provider that starts a call finishes it or names why, never a
     /// silent mid-call fallback. Default handles nothing.
@@ -271,8 +273,137 @@ pub trait NativeProvider: Send + Sync {
         _fields: &mut FieldTable,
         _args: &[Option<PineValue>],
         _ctx: &MethodCtx,
-    ) -> Result<Option<Option<PineValue>>, KernelError> {
-        Ok(None)
+    ) -> Result<NativeCall, KernelError> {
+        Ok(NativeCall::Declined)
+    }
+
+    /// Whether this provider serves closed-bar context reads (the
+    /// `MarketContext.fetch` shape) through a caller-owned store. Default
+    /// false; context providers (today `libApex`) return true so the engine
+    /// routes those calls with the run's bar tape instead of any tick frame.
+    fn serves_bar_context(&self) -> bool {
+        false
+    }
+
+    /// Serve one closed-bar context read over the engine's resident store
+    /// (already fed with chart bars through the cursor). Default declines;
+    /// context providers resolve the bundle, run the shared context fold,
+    /// and write the Pine field table. Guards decline before touching
+    /// fields, so a decline always runs the Pine body from the taken state.
+    fn serve_bar_context(
+        &self,
+        _serve: BarContextServe<'_>,
+    ) -> Result<NativeCall, KernelError> {
+        Ok(NativeCall::Declined)
+    }
+}
+
+/// Assemble one native `fetch` tick from a call-site frame: the bar-so-far
+/// legs plus the confirm legs the Pine body would observe (built from the
+/// same legs when flagged). The hydrate-every-tick bridge and the
+/// resident-ring lease share this assembler, so the frame Pine observes
+/// cannot fork between the two hydration modes.
+pub fn fetch_tick_from_frame(ctx: &MethodCtx) -> crate::bars::NativeFetchTick {
+    crate::bars::NativeFetchTick {
+        legs: crate::indicator::BarTick {
+            open: ctx.legs.open,
+            high: ctx.legs.high,
+            low: ctx.legs.low,
+            close: ctx.legs.close,
+            volume: ctx.legs.volume,
+        },
+        tick_ms: ctx.tick_ms,
+        bar_open_ms: ctx.bar_open_ms,
+        is_new: ctx.is_new,
+        is_confirmed: ctx.is_confirmed,
+        confirm: ctx.is_confirmed.then_some(crate::bars::ConfirmedBar {
+            bar_open_ms: ctx.bar_open_ms,
+            o: ctx.legs.open,
+            h: ctx.legs.high,
+            l: ctx.legs.low,
+            c: ctx.legs.close,
+            volume: ctx.legs.volume,
+        }),
+    }
+}
+
+/// Key of one leased object slot: the plain-variable homes a resident ring
+/// may serve. Nested, map-entry, and lexical-receiver takes never lease —
+/// they run the hydrate-every-tick bridge as today (correct, just
+/// uncached). Frame and store homes with the same name stay distinct keys,
+/// matching the take order that prefers the frame.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum LeaseKey {
+    /// Plain frame binding (`self.variables`).
+    Variables(String),
+    /// Persistent store binding (`var`/`varip` with the flag).
+    VarStore(String, bool),
+}
+
+impl LeaseKey {
+    /// Build the frame-store key for a plain variable home.
+    #[must_use]
+    pub fn variables(name: &str) -> Self {
+        Self::Variables(name.to_owned())
+    }
+
+    /// Build the persistent-store key for a `var`/`varip` home.
+    #[must_use]
+    pub fn var_store(name: &str, is_varip: bool) -> Self {
+        Self::VarStore(name.to_owned(), is_varip)
+    }
+}
+
+/// One cached resident ring: the ring itself, its cursor, and the table
+/// version it was synced at. A hit serves with zero hydrate; any version
+/// skew re-hydrates instead of guessing.
+#[derive(Debug)]
+pub struct LeasedRing {
+    /// Resident ring, current through the last served tick.
+    pub ring: crate::bars::BarRing,
+    /// Cursor the next serve advances from (non-new ticks).
+    pub cursor: crate::bars::RingCursor,
+    /// Table version at the last sync.
+    pub version: u64,
+}
+
+/// Commit-vs-fallback telemetry for the leased `fetch` seam: `commits`
+/// counts resident-ring serves with zero hydrate (the `Commit` signal
+/// carried through to a served call value); `fallbacks` counts every fetch
+/// through the seam that did not commit — lease misses (provider bridge
+/// plus re-hydrate), lease-hit declines (Pine body takes over, entry
+/// dropped), and errors (entry dropped, next tick re-hydrates).
+/// Slot-based takes run the uncached bridge outside the lease and are not
+/// counted. Values are observed (acceptance record, benches), never
+/// asserted: pinning them would turn a telemetry change into a build
+/// break.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct FetchCounters {
+    commits: u64,
+    fallbacks: u64,
+}
+
+impl FetchCounters {
+    /// Zero-hydrate resident-ring serves.
+    #[must_use]
+    pub fn commits(self) -> u64 {
+        self.commits
+    }
+
+    /// Seam fetches that re-hydrated, declined, or errored instead.
+    #[must_use]
+    pub fn fallbacks(self) -> u64 {
+        self.fallbacks
+    }
+
+    /// Record one zero-hydrate serve.
+    pub(crate) fn record_commit(&mut self) {
+        self.commits += 1;
+    }
+
+    /// Record one miss, decline, or error at the seam.
+    pub(crate) fn record_fallback(&mut self) {
+        self.fallbacks += 1;
     }
 }
 
@@ -295,7 +426,7 @@ impl NativeProvider for LibBarsProvider {
 
     /// Serve the per-tick `Bars.fetch` hot path natively (v1 scope: zero
     /// arguments only). Any other method, any argument shape, or any
-    /// capacity-exhaustion/pull signal returns `Ok(None)` so the engine
+    /// capacity-exhaustion/pull signal declines so the engine
     /// runs the Pine body — including its identical lower-tf refusal.
     /// State flows through the Pine field table both ways: the table stays
     /// the single source of truth, native execution a pure transition.
@@ -306,62 +437,14 @@ impl NativeProvider for LibBarsProvider {
         fields: &mut FieldTable,
         args: &[Option<PineValue>],
         ctx: &MethodCtx,
-    ) -> Result<Option<Option<PineValue>>, KernelError> {
+    ) -> Result<NativeCall, KernelError> {
         if type_name != "Bars" || method != "fetch" || !args.is_empty() {
-            return Ok(None);
+            return Ok(NativeCall::Declined);
         }
-        let (mut ring, cursor) =
-            crate::bars::BarRing::from_pine_fields(fields)?;
-        let (head, count) = if ctx.is_new {
-            (0, 0)
-        } else {
-            (cursor.head, cursor.count)
-        };
-        let tick = crate::bars::NativeFetchTick {
-            legs: crate::indicator::BarTick {
-                open: ctx.legs.open,
-                high: ctx.legs.high,
-                low: ctx.legs.low,
-                close: ctx.legs.close,
-                volume: ctx.legs.volume,
-            },
-            tick_ms: ctx.tick_ms,
-            bar_open_ms: ctx.bar_open_ms,
-            is_new: ctx.is_new,
-            is_confirmed: ctx.is_confirmed,
-            confirm: ctx.is_confirmed.then_some(crate::bars::ConfirmedBar {
-                bar_open_ms: ctx.bar_open_ms,
-                o: ctx.legs.open,
-                h: ctx.legs.high,
-                l: ctx.legs.low,
-                c: ctx.legs.close,
-                volume: ctx.legs.volume,
-            }),
-        };
-        let out = ring.fetch_tick_native(&tick)?;
-        if out.signal != crate::bars::FetchSignal::Commit {
-            return Ok(None);
-        }
-        if count + out.appended > ring.config().max_candles() {
-            return Ok(None);
-        }
-        ring.write_pine_fields(fields, head, count, out.appended)?;
-        fields.insert(
-            "ready_ltf_boundary".to_owned(),
-            Some(PineValue::Bool(out.ready_boundary)),
-        );
-        fields.insert(
-            "ready_distribution".to_owned(),
-            Some(PineValue::Bool(out.ready_distribution)),
-        );
-        if ctx.is_new {
-            fields.insert("last_ltf_check_time".to_owned(), None);
-        }
-        let value = PineValue::Object(crate::value::UserInstance::new(
-            type_name,
-            fields.clone(),
-        ));
-        Ok(Some(Some(value)))
+        let (mut ring, cursor) = crate::bars::BarRing::from_pine_fields(fields)?;
+        let tick = fetch_tick_from_frame(ctx);
+        let (outcome, _) = ring.serve_fetch_tick(fields, cursor, type_name, &tick)?;
+        Ok(outcome)
     }
 }
 
@@ -388,8 +471,8 @@ impl NativeProvider for LibBuffersProvider {
     }
 
     /// Serve the hot methods natively (positional args only). Named args,
-    /// bad arity, misshaped state, and unserved methods return `Ok(None)`
-    /// so the engine runs the Pine body — including its identical refusals.
+    /// bad arity, misshaped state, and unserved methods decline so the
+    /// engine runs the Pine body — including its identical refusals.
     /// State flows through the Pine field table both ways, exactly like
     /// the `libBars` bridge: unmapped fields (notably `_linear`, which the
     /// oracle only invalidates on ring writes) pass through byte-identical.
@@ -400,17 +483,139 @@ impl NativeProvider for LibBuffersProvider {
         fields: &mut FieldTable,
         args: &[Option<PineValue>],
         _ctx: &MethodCtx,
-    ) -> Result<Option<Option<PineValue>>, KernelError> {
-        crate::buffers::serve_buffer_method(type_name, method, fields, args, false)
+    ) -> Result<NativeCall, KernelError> {
+        Ok(crate::buffers::serve_buffer_method(
+            type_name, method, fields, args, false,
+        ))
     }
 }
 
 /// The single registered `libBuffers` provider.
 static LIB_BUFFERS_PROVIDER: LibBuffersProvider = LibBuffersProvider;
 
+/// Chart-timeframe member of `UTIL.Timeframes`: the only `tf` handle a
+/// natively served `fetch()` observes. Pine sets `tf := target_tf` with the
+/// default chart member, a no-op on the default init — a foreign member
+/// means an earlier explicit fetch moved it, so Pine re-normalizes instead
+/// of native pretending.
+const CHART_TF_MEMBER: &str = "C";
+
+/// Whole-library native implementation of `showmethegrail/libApex`: the
+/// `MarketContext.fetch` chart branch through the shared-store context fold
+/// (v1 scope: bare `fetch()` only). Any explicit `target_tf`, any other
+/// method, or any misshaped receiver declines so the engine runs the Pine
+/// body — including its identical `request.security` branch and refusals.
+pub struct LibApexProvider;
+
+/// The single registered `libApex` provider.
+static LIB_APEX_PROVIDER: LibApexProvider = LibApexProvider;
+
+impl NativeProvider for LibApexProvider {
+    fn provides(&self) -> &[&str] {
+        &["MarketContext"]
+    }
+
+    fn needs_tick_frame(&self) -> bool {
+        false
+    }
+
+    fn serves_bar_context(&self) -> bool {
+        true
+    }
+
+    /// Serve the bare `fetch()` shape: resolve the span bundle, run the
+    /// shared context fold over the resident store, and write the seventeen
+    /// Pine fields (`tf` untouched — the chart member is already home).
+    /// Every guard declines before touching fields; the served value is the
+    /// updated object, mirroring Pine's `this` return.
+    fn serve_bar_context(
+        &self,
+        serve: BarContextServe<'_>,
+    ) -> Result<NativeCall, KernelError> {
+        let BarContextServe {
+            type_name,
+            method,
+            fields,
+            args,
+            store,
+            key,
+            now_ms,
+        } = serve;
+        if type_name != "MarketContext" || method != "fetch" || !args.is_empty() {
+            return Ok(NativeCall::Declined);
+        }
+        match fields.get("tf") {
+            Some(Some(PineValue::EnumHandle(handle))) if handle.member == CHART_TF_MEMBER => {}
+            _ => return Ok(NativeCall::Declined),
+        }
+        let regime_enum = match fields.get("regime") {
+            Some(Some(PineValue::EnumHandle(handle))) => handle.enum_name.clone(),
+            _ => return Ok(NativeCall::Declined),
+        };
+        let Ok(registry) = crate::indicator::builtin_registry() else {
+            return Ok(NativeCall::Declined);
+        };
+        // Carry reads the taken table (the previous bar's writes): `vol`
+        // and `vol_ratio` persist past guard-failing bars exactly like the
+        // Pine `nz` shape, defaulting fresh otherwise.
+        let mut prev = MarketContext::fresh(key.tf);
+        prev.vol = fields
+            .get("vol")
+            .and_then(|slot| slot.as_ref())
+            .and_then(PineValue::as_float);
+        prev.vol_ratio = fields
+            .get("vol_ratio")
+            .and_then(|slot| slot.as_ref())
+            .and_then(PineValue::as_float);
+        let prevs = std::collections::HashMap::from([(key.tf_ms(), prev)]);
+        let Ok(contexts) = crate::market_context::fetch_all(
+            store,
+            &registry,
+            std::slice::from_ref(key),
+            &prevs,
+            now_ms,
+            Lookahead::Off,
+        ) else {
+            return Ok(NativeCall::Declined);
+        };
+        let Some(context) = contexts.into_iter().next() else {
+            return Ok(NativeCall::Declined);
+        };
+        for (name, value) in [
+            ("ma_primary", context.ma_primary),
+            ("ma_signal", context.ma_signal),
+            ("ma_mean", context.ma_mean),
+            ("atr", context.atr),
+            ("atr_long", context.atr_long),
+            ("cci", context.cci),
+            ("rsi", context.rsi),
+            ("stdev", context.stdev),
+            ("vol", context.vol),
+            ("vol_sma", context.vol_sma),
+            ("atr_distance", context.atr_distance),
+            ("ma_health", context.ma_health),
+            ("volatility_ratio", context.volatility_ratio),
+            ("vol_ratio", context.vol_ratio),
+            ("trend_strength", context.trend_strength),
+            ("trend_direction", context.trend_direction),
+        ] {
+            fields.insert(name.to_owned(), value.map(PineValue::Float));
+        }
+        fields.insert(
+            "regime".to_owned(),
+            Some(PineValue::EnumHandle(EnumHandle::new(
+                &regime_enum,
+                &context.regime.to_string(),
+            ))),
+        );
+        let value = PineValue::Object(UserInstance::new(type_name, fields.clone()));
+        Ok(NativeCall::Served(Some(value)))
+    }
+}
+
 /// Registration: the provider behind a table row, if a native
 /// implementation exists yet. Membership comes from the one native table;
-/// rows without an implementation (today `libApex`) stay Pine-served and
+/// rows without an implementation stay Pine-served and
 /// never refuse — refusal would break callers that never opted in.
 pub(crate) fn provider_for(
     publisher: &str,
@@ -425,16 +630,21 @@ pub(crate) fn provider_for(
     match (publisher, name) {
         ("showmethegrail", "libBars") => Some(&LIB_BARS_PROVIDER),
         ("showmethegrail", "libBuffers") => Some(&LIB_BUFFERS_PROVIDER),
+        ("showmethegrail", "libApex") => Some(&LIB_APEX_PROVIDER),
         _ => None,
     }
 }
 
-/// Link-time switch for native serving. Default is on since the cutover:
-/// linked libraries with a native provider serve natively (Pine stays
-/// linked underneath for audit and parity, and unserved symbols still fall
-/// through to Pine). Construct explicitly with `enabled: false` for
-/// Pine-oracle runs. The cutover flipped this call-site default — never
-/// the table rows, which keep documenting intent.
+/// Link-time switch for native serving. The single default rule: links
+/// route native where a provider exists (`enabled: true` stays the link
+/// default — Pine stays linked underneath for audit and parity, and
+/// unserved symbols still fall through to Pine); execution stays Pine
+/// unless the engine opts in via `set_native_options` (the engine default
+/// `enabled: false` is preserved, so existing drivers keep proving exactly
+/// what they proved before). Construct explicitly with `enabled: false` for
+/// Pine-oracle runs. The row `enabled` flags are lookup intent for
+/// `find_native` only (pinned all-disabled — serving follows provider
+/// existence under this switch, never a per-library call-site flag).
 #[derive(Debug, Clone)]
 pub struct NativeOptions {
     /// Whether linked libraries with a native provider serve natively.
@@ -450,12 +660,6 @@ impl Default for NativeOptions {
         Self { enabled: true, only_symbols: None }
     }
 }
-
-/// Pine object field table shared with the engine bridge: field name to
-/// Pine value (`None` is Pine `na`). The engine owns the table; native
-/// calls receive it borrowed and return a replaced one, so unmapped fields
-/// pass through byte-identical without native code ever seeing them.
-pub type FieldTable = HashMap<String, Option<PineValue>>;
 
 /// Per-tick legs for a natively served method call, converted once at the
 /// call cursor (same decimal-to-float reading as the kernel batch path).
@@ -516,6 +720,29 @@ impl MethodCtx {
             tick_ms: 0,
         }
     }
+}
+
+/// Call-site frame for a closed-bar context read: the engine's resident
+/// store already fed with chart bars through the cursor, the span key, and
+/// the confirming `now`. Providers read the previous bar's carry from the
+/// field table themselves and run the shared context fold — the engine
+/// never interprets library fields, and legs-independent routing stays what
+/// `needs_tick_frame() == false` promises.
+pub struct BarContextServe<'a> {
+    /// Receiving Pine type (`MarketContext`).
+    pub type_name: &'a str,
+    /// Called method (`fetch`).
+    pub method: &'a str,
+    /// Taken receiver fields (previous bar's writes carry through here).
+    pub fields: &'a mut FieldTable,
+    /// Evaluated call-site values (empty for the served bare shape).
+    pub args: &'a [Option<PineValue>],
+    /// Resident per-engine store, fed through the cursor.
+    pub store: &'a mut MtfStore,
+    /// Span bundle for this chart.
+    pub key: &'a MarketContextKey,
+    /// Bar-close `now` confirming the last bucket.
+    pub now_ms: i64,
 }
 
 /// Where one `ALIAS.item` reference resolves: the native table or Pine.
@@ -748,3 +975,23 @@ mod native_freeze_tests;
 #[cfg(test)]
 #[path = "../tests/native_bridge.rs"]
 mod native_bridge_tests;
+
+#[cfg(test)]
+#[path = "../tests/native_call_contract.rs"]
+mod native_call_contract_tests;
+
+#[cfg(test)]
+#[path = "../tests/resident_ring.rs"]
+mod resident_ring_tests;
+
+#[cfg(test)]
+#[path = "../tests/native_ring_lease.rs"]
+mod native_ring_lease_tests;
+
+#[cfg(test)]
+#[path = "../tests/native_apex.rs"]
+mod native_apex_tests;
+
+
+
+

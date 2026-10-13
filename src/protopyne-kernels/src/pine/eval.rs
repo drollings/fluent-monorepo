@@ -33,6 +33,7 @@
 use std::collections::{HashMap, HashSet};
 
 use protopyne_types::Bar;
+use protopyne_types::Timeframe;
 
 use super::syntax::{
     AssignOp, BinaryOp, BuiltinVar, CallArg, FieldDecl, Param, PineExpr, PineProgram, PineStmt,
@@ -41,9 +42,14 @@ use super::syntax::{
 use crate::context::RunCtx;
 use crate::error::KernelError;
 use crate::inputs::InputSet;
-use crate::native_libs::{FieldTable, MethodCtx, NativeOptions, TickLegs};
+use crate::market_context::MarketContextKey;
+use crate::mtf::MtfStore;
+use crate::native_libs::{
+    BarContextServe, FetchCounters, LeaseKey, LeasedRing, MethodCtx, NativeOptions,
+    TickLegs,
+};
 use crate::runtime::{PineRuntime, PineRuntimeConfig};
-use crate::value::{ColorHandle, DrawingHandle, DrawingKind, EnumHandle, PineValue, UserInstance, nz};
+use crate::value::{ColorHandle, DrawingHandle, DrawingKind, EnumHandle, FieldTable, NativeCall, PineValue, UserInstance, nz};
 
 /// Fail-closed bound for `for` total iterations and `while` iterations.
 /// Breaching loops refuse instead of hanging the run.
@@ -398,6 +404,29 @@ struct EngineState {
     /// Pine): consulted once per instance-method call, never mutated
     /// mid-run.
     native: NativeOptions,
+    /// Ring-lease versions per leased object slot: bumped on every
+    /// Pine-side write to the slot (the single bump rule — see
+    /// [`EngineState::bump_lease`]), so a cached resident ring whose
+    /// version skews re-hydrates instead of serving stale state.
+    lease_versions: HashMap<LeaseKey, u64>,
+    /// Cached resident rings per leased slot with the table version they
+    /// were synced at. A version match serves with zero hydrate; any other
+    /// outcome drops the entry.
+    leased_rings: HashMap<LeaseKey, LeasedRing>,
+    /// Commit-vs-fallback telemetry for the leased `fetch` seam, reset per
+    /// run with the rest of the state. Read through
+    /// [`PineEngine::fetch_counters`]; observed, never asserted.
+    fetch_counters: FetchCounters,
+    /// Chart bars of the current run, cloned only when the run links the
+    /// context library (the provider's resident tape — per-run state reset
+    /// by [`EngineState::fresh`], never shared across runs).
+    run_bars: Vec<Bar>,
+    /// Resident shared store behind natively served context reads: fed
+    /// incrementally with chart bars through the cursor, so steady-state
+    /// reads extend the tail instead of rebuilding history.
+    apex_store: MtfStore,
+    /// Chart bars loaded into `apex_store`.
+    apex_loaded: usize,
     /// Unconditional top-level declaration sites pre-registered before the
     /// first bar, as `(module index, statement index)`: the bar loop skips
     /// them, since re-execution would only re-collapse identical shapes.
@@ -472,6 +501,12 @@ impl EngineState {
                 enabled: false,
                 only_symbols: None,
             },
+            lease_versions: HashMap::new(),
+            leased_rings: HashMap::new(),
+            fetch_counters: FetchCounters::default(),
+            run_bars: Vec::new(),
+            apex_store: MtfStore::new(),
+            apex_loaded: 0,
             decl_skip: HashSet::new(),
             journal: Vec::new(),
             journal_base: None,
@@ -790,6 +825,11 @@ impl PineEngine {
             .security_injections
             .clone_from(&self.security_injections);
         self.state.native.clone_from(&self.native);
+        // The context provider's resident tape: clone the chart bars only
+        // when the run links the library, so non-context runs pay nothing.
+        if modules.iter().any(|module| module.key == "showmethegrail/libApex") {
+            self.state.run_bars = bars.to_vec();
+        }
         // The input registry seeds from the run's inputs so caller overrides
         // are visible to `input.*` declarations from the first bar.
         self.state.core_inputs = inputs.clone();
@@ -839,6 +879,14 @@ impl PineEngine {
     #[must_use]
     pub fn exported_names(&self) -> Vec<String> {
         self.state.exported.iter().cloned().collect()
+    }
+
+    /// Commit-vs-fallback telemetry for the leased `fetch` seam over the
+    /// last run (resets with each run). For the acceptance record and
+    /// benches: observed, never asserted.
+    #[must_use]
+    pub fn fetch_counters(&self) -> FetchCounters {
+        self.state.fetch_counters
     }
 }
 
@@ -1070,6 +1118,13 @@ impl EngineState {
                     let init = self.eval_expr(value, ctx, legs)?;
                     self.var_kind.insert(name.clone(), *is_varip);
                     if let Some(present) = init {
+                        // A fresh object at this home invalidates any lease
+                        // the slot may hold (defensive: tables start empty
+                        // per run, but declarations also evaluate in the
+                        // predeclare pass).
+                        if matches!(present, PineValue::Object(_)) {
+                            self.bump_lease_key(LeaseKey::var_store(name, *is_varip));
+                        }
                         if *is_varip {
                             ctx.vars_mut().set_varip(name, present);
                         } else {
@@ -1149,13 +1204,13 @@ impl EngineState {
                         let assigned = self.eval_expr(value, ctx, legs)?;
                         if let Some((mut instance, home)) = self.take_object(ctx, head)? {
                             if !instance.fields.contains_key(field) {
-                                self.put_object(ctx, home, instance)?;
+                                self.put_object(ctx, home, instance, false)?;
                                 return Err(refused(format!(
                                     "unknown field '{head}.{field}'"
                                 )));
                             }
                             instance.fields.insert(field.to_owned(), assigned);
-                            self.put_object(ctx, home, instance)?;
+                            self.put_object(ctx, home, instance, true)?;
                             return Ok(());
                         }
                     }
@@ -1415,6 +1470,15 @@ impl EngineState {
     /// teardown reverts exactly what the body touched instead of cloning
     /// the whole frame up front.
     fn assign(&mut self, ctx: &mut RunCtx<'_>, name: &str, value: Option<PineValue>) {
+        // Any object write (or any write to a leased name, including
+        // clearing it) invalidates the slot's ring lease — see bump_lease.
+        let key = match self.var_kind.get(name) {
+            Some(&is_varip) => LeaseKey::var_store(name, is_varip),
+            None => LeaseKey::variables(name),
+        };
+        if matches!(value, Some(PineValue::Object(_))) || self.lease_versions.contains_key(&key) {
+            self.bump_lease_key(key);
+        }
         if let Some(&is_varip) = self.var_kind.get(name) {
             if let Some(present) = value {
                 if is_varip {
@@ -1532,6 +1596,48 @@ impl EngineState {
         }
     }
 
+    /// Lease key for a take home, or `None` where leasing never applies
+    /// (lexical receivers, nested paths, and map entries run the
+    /// hydrate-every-tick bridge as today — correct, just uncached).
+    fn lease_key_for(home: &ObjectHome) -> Option<LeaseKey> {
+        match home {
+            ObjectHome::Variables(name) => Some(LeaseKey::variables(name)),
+            ObjectHome::VarStore(name, is_varip) => Some(LeaseKey::var_store(name, *is_varip)),
+            ObjectHome::ThisField(_)
+            | ObjectHome::NestedField { .. }
+            | ObjectHome::MapEntry { .. } => None,
+        }
+    }
+
+    /// Bump one slot's lease version. The single Pine-side invalidation
+    /// rule: every write through [`EngineState::put_object`] (with its bump
+    /// flag), [`EngineState::assign`], and `var` declarations funnels here,
+    /// so no second bump logic can forget a writer. Native serves never
+    /// bump — they sync the lease entry instead. Over-bumping only costs
+    /// one re-hydrate; under-bumping would serve stale state, so every
+    /// uncertain path bumps.
+    fn bump_lease_key(&mut self, key: LeaseKey) {
+        let version = self.lease_versions.entry(key).or_insert(0);
+        *version = version.wrapping_add(1);
+    }
+
+    /// Bump the lease version for a take home: plain homes bump, nested
+    /// and map-entry homes bump their root, lexical-receiver takes need no
+    /// bump (the enclosing take brackets them and bumps on write-back).
+    fn bump_lease(&mut self, home: &ObjectHome) {
+        match home {
+            ObjectHome::Variables(name) => {
+                self.bump_lease_key(LeaseKey::variables(name));
+            }
+            ObjectHome::VarStore(name, is_varip) => {
+                self.bump_lease_key(LeaseKey::var_store(name, *is_varip));
+            }
+            ObjectHome::NestedField { home, .. } => self.bump_lease(home),
+            ObjectHome::MapEntry { inner, .. } => self.bump_lease(inner),
+            ObjectHome::ThisField(_) => {}
+        }
+    }
+
     /// Take an instance out of its home for a method call, remembering where
     /// to write it back. `None` means the name holds no instance (the caller
     /// falls through to the unknown-method refusal).
@@ -1641,16 +1747,23 @@ impl EngineState {
             parent.fields.insert(field, Some(PineValue::Object(current)));
             current = parent;
         }
-        self.put_object(ctx, home, current)
+        self.put_object(ctx, home, current, false)
     }
 
     /// Write a (possibly mutated) instance back to the home it came from.
+    /// `bump` invalidates the slot's ring lease for Pine-side writes; native
+    /// serves pass `false` (they sync the lease entry instead), as do
+    /// identical restores that wrote nothing.
     fn put_object(
         &mut self,
         ctx: &mut RunCtx<'_>,
         home: ObjectHome,
         instance: UserInstance,
+        bump: bool,
     ) -> Result<(), KernelError> {
+        if bump {
+            self.bump_lease(&home);
+        }
         let value = PineValue::Object(instance);
         match home {
             ObjectHome::Variables(name) => {
@@ -1679,7 +1792,7 @@ impl EngineState {
                 let PineValue::Object(root) = current else {
                     return Err(refused("nested field home holds an object"));
                 };
-                self.put_object(ctx, *home, root)?;
+                self.put_object(ctx, *home, root, false)?;
             }
             ObjectHome::MapEntry {
                 inner,
@@ -1690,7 +1803,7 @@ impl EngineState {
                 let PineValue::Object(inst) = value else {
                     return Err(refused("map entry holds an object"));
                 };
-                self.put_object(ctx, *inner, inst.clone())?;
+                self.put_object(ctx, *inner, inst.clone(), false)?;
                 self.write_map_entry(ctx, &map_var, &key, &key_value, PineValue::Object(inst));
             }
         }
@@ -1821,8 +1934,9 @@ impl EngineState {
                 // only the returned value flows on.
                 match self.eval_expr(receiver, ctx, legs)? {
                     Some(PineValue::Object(instance)) => {
-                        let (_, value) = self.run_method(instance, method, args, ctx, legs)?;
-                        value
+                        let outcome =
+                            self.run_method(instance, method, args, ctx, legs, None)?;
+                        outcome.value
                     }
                     Some(other) => Err(refused(format!(
                         "method '{method}' needs an object receiver, got {other}"
@@ -3733,11 +3847,11 @@ impl EngineState {
                 .last()
                 .map(|slot| slot.instance.clone())
                 .ok_or_else(|| refused("'this' is only bound inside a method"))?;
-            let (back, value) = self.run_method(receiver, method, args, ctx, legs)?;
+            let outcome = self.run_method(receiver, method, args, ctx, legs, None)?;
             match self.receiver.get_mut(depth - 1) {
                 Some(slot) => {
-                    slot.instance = back;
-                    return value;
+                    slot.instance = outcome.receiver;
+                    return outcome.value;
                 }
                 None => {
                     return Err(refused(
@@ -3763,11 +3877,11 @@ impl EngineState {
         // receiver their arguments still spell.
         if let Some(depth) = self.receiver_slot(namespace) {
             let receiver = self.receiver[depth].instance.clone();
-            let (back, value) = self.run_method(receiver, method, args, ctx, legs)?;
+            let outcome = self.run_method(receiver, method, args, ctx, legs, None)?;
             match self.receiver.get_mut(depth) {
                 Some(slot) => {
-                    slot.instance = back;
-                    return value;
+                    slot.instance = outcome.receiver;
+                    return outcome.value;
                 }
                 None => {
                     return Err(refused(
@@ -3778,15 +3892,20 @@ impl EngineState {
         }
         match self.take_object(ctx, namespace)? {
             Some((instance, home)) => {
-                let (back, value) = self.run_method(instance, method, args, ctx, legs)?;
-                self.put_object(ctx, home, back)?;
-                value
+                let lease = Self::lease_key_for(&home);
+                let outcome =
+                    self.run_method(instance, method, args, ctx, legs, lease)?;
+                // Native serves synced the lease; Pine bodies invalidate it.
+                self.put_object(ctx, home, outcome.receiver, !outcome.served_native)?;
+                outcome.value
             }
             None => match self.take_nested_object(ctx, namespace)? {
                 Some((instance, home)) => {
-                    let (back, value) = self.run_method(instance, method, args, ctx, legs)?;
-                    self.put_object(ctx, home, back)?;
-                    value
+                    let lease = Self::lease_key_for(&home);
+                    let outcome =
+                        self.run_method(instance, method, args, ctx, legs, lease)?;
+                    self.put_object(ctx, home, outcome.receiver, !outcome.served_native)?;
+                    outcome.value
                 }
                 None => Err(refused(format!(
                     "unknown method '{namespace}.{method}'"
@@ -3814,19 +3933,22 @@ impl EngineState {
         Ok(UserInstance::new(type_name, bound))
     }
 
-    /// Attempt one natively served instance-method call. `None` (any guard
-    /// closed, any lookup missed, any provider decline) runs the Pine body
-    /// unchanged; `Some` reports the taken receiver already updated in
-    /// place, alongside the call value. Guards, narrowest first: explicit opt-in only (drivers keep proving
+    /// Attempt one natively served instance-method call. `Declined` (any
+    /// guard closed, any lookup missed, any provider decline) runs the Pine
+    /// body unchanged; `Served` reports the taken receiver already updated
+    /// in place, alongside the call value. Guards, narrowest first: explicit opt-in only (drivers keep proving
     /// Pine by default); named args decline (positional binding would
     /// misbind them); tick-frame providers additionally need tick runs
     /// with no lower-tf injection (closed-bar `time` stays in the seconds
     /// domain the shim suite pins; pull rows would need dataset plumbing —
     /// Pine raises the identical refusal there instead). Legs-independent
     /// providers (today `libBuffers`) serve on closed-bar runs too, through
-    /// the detached frame their methods never read.
+    /// the detached frame their methods never read. `Bars.fetch` on a leased
+    /// slot additionally consults the resident-ring lease (see
+    /// [`EngineState::serve_leased`]); every other shape runs the provider
+    /// bridge exactly as before.
     fn try_native_call(
-        &self,
+        &mut self,
         type_name: &str,
         method: &str,
         owner: &str,
@@ -3835,18 +3957,35 @@ impl EngineState {
         receiver_fields: &mut FieldTable,
         ctx: &mut RunCtx<'_>,
         legs: &Legs,
-    ) -> Result<Option<Option<PineValue>>, KernelError> {
+        lease: Option<LeaseKey>,
+    ) -> Result<NativeCall, KernelError> {
         if !self.native.enabled || args.iter().any(|arg| arg.name.is_some()) {
-            return Ok(None);
+            return Ok(NativeCall::Declined);
         }
         let Some((publisher, name)) = owner.split_once('/') else {
-            return Ok(None);
+            return Ok(NativeCall::Declined);
         };
         let Some(provider) = crate::native_libs::provider_for(publisher, name) else {
-            return Ok(None);
+            return Ok(NativeCall::Declined);
         };
         if !provider.provides().contains(&type_name) {
-            return Ok(None);
+            return Ok(NativeCall::Declined);
+        }
+        // Closed-bar context reads route with the run's bar tape, never any
+        // tick frame: tick runs decline outright (intrabar legs are not
+        // confirmed bars), closed-bar runs feed the resident store below.
+        if provider.serves_bar_context() {
+            if self.tick_mode() {
+                return Ok(NativeCall::Declined);
+            }
+            return self.serve_bar_context(
+                provider,
+                type_name,
+                method,
+                receiver_fields,
+                values,
+                ctx,
+            );
         }
         if !provider.needs_tick_frame() {
             return provider.call(
@@ -3858,7 +3997,7 @@ impl EngineState {
             );
         }
         if !self.tick_mode() || !self.ltf_injections.is_empty() {
-            return Ok(None);
+            return Ok(NativeCall::Declined);
         }
             let cursor = ctx.cursor();
             let leg = |leg_name: &str| {
@@ -3872,16 +4011,16 @@ impl EngineState {
                 leg("close"),
                 leg("volume"),
             ) else {
-                return Ok(None);
+                return Ok(NativeCall::Declined);
             };
             let (Some(is_new), Some(is_confirmed)) = (
                 barstate_flag("isnew", ctx, legs, true),
                 barstate_flag("isconfirmed", ctx, legs, true),
             ) else {
-                return Ok(None);
+                return Ok(NativeCall::Declined);
             };
             let Some(tick_ms) = self.tick_times.get(cursor).copied() else {
-                return Ok(None);
+                return Ok(NativeCall::Declined);
             };
             let frame = MethodCtx {
                 is_new,
@@ -3896,16 +4035,215 @@ impl EngineState {
                 bar_open_ms: chart_ms(legs, cursor, true),
                 tick_ms,
             };
-            match provider.call(type_name, method, receiver_fields, values, &frame)? {
-                None => Ok(None),
-                Some(value) => Ok(Some(value)),
+            // The resident-ring fast path: `Bars.fetch` on a leased slot
+            // with no positional-argument shape to misbind (named args
+            // already declined above). Anything else keeps the provider
+            // bridge, whose guard stays the single shape rule.
+            if type_name == "Bars"
+                && method == "fetch"
+                && args.is_empty()
+                && publisher == "showmethegrail"
+                && name == "libBars"
+            {
+                if let Some(key) = lease {
+                    return self.serve_leased(
+                        type_name,
+                        method,
+                        receiver_fields,
+                        values,
+                        &frame,
+                        key,
+                        provider,
+                    );
+                }
             }
+            provider.call(type_name, method, receiver_fields, values, &frame)
+    }
+
+    /// Serve one closed-bar context read (`MarketContext.fetch` shape) over
+    /// the resident store: map the chart period to its span, feed chart bars
+    /// through the cursor, and hand the current store to the provider. Any
+    /// unservable shape (unmapped period, uneven spacing, unordered tape)
+    /// declines before touching fields, so Pine runs the body instead.
+    fn serve_bar_context(
+        &mut self,
+        provider: &'static dyn crate::native_libs::NativeProvider,
+        type_name: &str,
+        method: &str,
+        receiver_fields: &mut FieldTable,
+        values: &[Option<PineValue>],
+        ctx: &mut RunCtx<'_>,
+    ) -> Result<NativeCall, KernelError> {
+        let Ok(span) = Timeframe::from_pine_abbrev(&self.chart_period) else {
+            return Ok(NativeCall::Declined);
+        };
+        let Some(now_ms) = self.apex_feed(span.duration_ms(), ctx.cursor()) else {
+            return Ok(NativeCall::Declined);
+        };
+        let key = MarketContextKey::new(span);
+        provider.serve_bar_context(BarContextServe {
+            type_name,
+            method,
+            fields: receiver_fields,
+            args: values,
+            store: &mut self.apex_store,
+            key: &key,
+            now_ms,
+        })
+    }
+
+    /// Feed the resident context store with chart bars through bar `through`
+    /// (inclusive), returning the `now` that confirms the last bucket. The
+    /// first feed validates and loads the whole prefix; later feeds append
+    /// only the new tail, so steady-state reads extend incrementally. Bars
+    /// must arrive evenly at `span_ms`: any gap, overlap, or unordered stamp
+    /// declines — no resample guessing, Pine runs the body. The store is
+    /// untouched on decline.
+    fn apex_feed(&mut self, span_ms: i64, through: usize) -> Option<i64> {
+        let want = through + 1;
+        if want > self.run_bars.len() {
+            return None;
+        }
+        // A second `fetch` on the same bar reuses the fed store.
+        if self.apex_loaded >= want {
+            return Some(self.run_bars[want - 1].ts.timestamp_millis() + span_ms);
+        }
+        let from = self.apex_loaded;
+        // Validate spacing over the newly covered bars before mutating: each
+        // bar must advance exactly one span past its predecessor.
+        let mut prev_ts = if from == 0 {
+            None
+        } else {
+            Some(self.run_bars[from - 1].ts.timestamp_millis())
+        };
+        for bar in &self.run_bars[from..want] {
+            let ts = bar.ts.timestamp_millis();
+            if prev_ts.is_some_and(|prev| ts - prev != span_ms) {
+                return None;
+            }
+            prev_ts = Some(ts);
+        }
+        if from == 0 {
+            if self.apex_store.set_base(&self.run_bars[..want]).is_err() {
+                return None;
+            }
+        } else {
+            for index in from..want {
+                if self.apex_store.append_bar(&self.run_bars[index]).is_err() {
+                    return None;
+                }
+            }
+        }
+        self.apex_loaded = want;
+        Some(self.run_bars[want - 1].ts.timestamp_millis() + span_ms)
+    }
+
+    /// Serve one `Bars.fetch` through the resident-ring lease: a version
+    /// match runs the shared fold with zero hydrate; a mismatch hydrates
+    /// once through the provider bridge and caches the fresh ring. Any
+    /// non-serve outcome (decline or refusal) drops the entry — the Pine
+    /// body re-runs from the taken fields, and the version bump on its
+    /// write-back keeps the dropped entry from ever serving stale state.
+    fn serve_leased(
+        &mut self,
+        type_name: &str,
+        method: &str,
+        receiver_fields: &mut FieldTable,
+        values: &[Option<PineValue>],
+        frame: &MethodCtx,
+        key: LeaseKey,
+        provider: &'static dyn crate::native_libs::NativeProvider,
+    ) -> Result<NativeCall, KernelError> {
+        let current = self.lease_versions.get(&key).copied().unwrap_or(0);
+        let hit = matches!(self.leased_rings.get(&key), Some(entry) if entry.version == current);
+        if !hit {
+            return self.serve_miss(type_name, method, receiver_fields, values, frame, key, current, provider);
+        }
+        let tick = crate::native_libs::fetch_tick_from_frame(frame);
+        let result = {
+            let Some(entry) = self.leased_rings.get_mut(&key) else {
+                return self.serve_miss(
+                    type_name, method, receiver_fields, values, frame, key, current, provider,
+                );
+            };
+            if entry.version != current {
+                return self.serve_miss(
+                    type_name, method, receiver_fields, values, frame, key, current, provider,
+                );
+            }
+            entry
+                .ring
+                .serve_fetch_tick(receiver_fields, entry.cursor, type_name, &tick)
+        };
+        match result {
+            Ok((outcome, next)) => {
+                if outcome.is_declined() {
+                    self.leased_rings.remove(&key);
+                    self.fetch_counters.record_fallback();
+                } else {
+                    if let Some(entry) = self.leased_rings.get_mut(&key) {
+                        entry.cursor = next;
+                    }
+                    self.fetch_counters.record_commit();
+                }
+                Ok(outcome)
+            }
+            Err(err) => {
+                self.leased_rings.remove(&key);
+                self.fetch_counters.record_fallback();
+                Err(err)
+            }
+        }
+    }
+
+    /// Lease miss: run the provider bridge (the single shape guard from
+    /// `LibBarsProvider::call` still governs), then cache the fresh ring by
+    /// re-hydrating the just-written table. The extra validation runs only
+    /// on miss ticks (after Pine-side writes); a fill failure keeps today's
+    /// behavior by leaving the lease empty. Every miss records one
+    /// fallback: the bridge re-hydrates (or Pine runs on), never commits.
+    fn serve_miss(
+        &mut self,
+        type_name: &str,
+        method: &str,
+        receiver_fields: &mut FieldTable,
+        values: &[Option<PineValue>],
+        frame: &MethodCtx,
+        key: LeaseKey,
+        current: u64,
+        provider: &'static dyn crate::native_libs::NativeProvider,
+    ) -> Result<NativeCall, KernelError> {
+        self.fetch_counters.record_fallback();
+        let outcome = provider.call(type_name, method, receiver_fields, values, frame)?;
+        if outcome.is_declined() {
+            return Ok(outcome);
+        }
+        match crate::bars::BarRing::from_pine_fields(receiver_fields) {
+            Ok((ring, cursor)) => {
+                self.leased_rings.insert(
+                    key,
+                    LeasedRing {
+                        ring,
+                        cursor,
+                        version: current,
+                    },
+                );
+            }
+            Err(_) => {
+                self.leased_rings.remove(&key);
+            }
+        }
+        Ok(outcome)
     }
 
     /// Run one registered method body against a receiver: the receiver binds
     /// as `this`, remaining parameters bind positionally/named (defaults
     /// fill gaps), and the body's trailing value returns. The receiver —
-    /// mutated or not — returns alongside for the caller to store back.
+    /// mutated or not — returns alongside for the caller to store back,
+    /// with whether the native lease served (so the caller writes back
+    /// without invalidating a synced lease, or bumps for Pine writes).
+    /// `lease` carries the take home's lease key (`None` for slot-based
+    /// takes, which never lease).
     fn run_method(
         &mut self,
         mut receiver: UserInstance,
@@ -3913,7 +4251,8 @@ impl EngineState {
         args: &[CallArg],
         ctx: &mut RunCtx<'_>,
         legs: &Legs,
-    ) -> Result<(UserInstance, Result<Option<PineValue>, KernelError>), KernelError> {
+        lease: Option<LeaseKey>,
+    ) -> Result<MethodOutcome, KernelError> {
         let key = (receiver.type_name.clone(), method.to_owned());
         let Some((owner, params, body)) = self.methods.get(&key).cloned() else {
             return Err(refused(format!(
@@ -3936,10 +4275,22 @@ impl EngineState {
         for arg in args {
             values.push(self.eval_expr(&arg.value, ctx, legs)?);
         }
-        if let Some(value) =
-            self.try_native_call(&receiver.type_name, method, &owner, &values, args, &mut receiver.fields, ctx, legs)?
-        {
-            return Ok((receiver, Ok(value)));
+        if let NativeCall::Served(value) = self.try_native_call(
+            &receiver.type_name,
+            method,
+            &owner,
+            &values,
+            args,
+            &mut receiver.fields,
+            ctx,
+            legs,
+            lease,
+        )? {
+            return Ok(MethodOutcome {
+                receiver,
+                value: Ok(value),
+                served_native: true,
+            });
         }
         let site = format!("{}.{method}@{args:?}", receiver.type_name);
         // The receiver's declared alias (`level` in `updateLevelTouch(
@@ -3955,7 +4306,11 @@ impl EngineState {
             .receiver
             .pop()
             .expect("receiver pushed above");
-        Ok((back.instance, value))
+        Ok(MethodOutcome {
+            receiver: back.instance,
+            value,
+            served_native: false,
+        })
     }
 
     /// Run one user body with bound parameters: parameters bind into a fresh
@@ -4624,11 +4979,23 @@ fn bare_input_method(
     }
 }
 
+/// Outcome of one method-call dispatch: the receiver to store back, the
+/// call value, and whether the native lease served. The flag routes the
+/// write-back: native serves keep the synced lease (`put_object` without a
+/// bump), Pine bodies invalidate it.
+struct MethodOutcome {
+    /// Receiver to store back to its home.
+    receiver: UserInstance,
+    /// Call value (`None` is Pine `na`).
+    value: Result<Option<PineValue>, KernelError>,
+    /// Whether the native lease served this call.
+    served_native: bool,
+}
+
 /// Where a method-call receiver lives while the call runs, so the
 /// (possibly mutated) instance returns to the same home afterwards.
 #[derive(Debug)]
-enum ObjectHome {
-    /// Series variable in engine state.
+enum ObjectHome {    /// Series variable in engine state.
     Variables(String),
     /// Persistent `var` (`false`) or `varip` (`true`) binding.
     VarStore(String, bool),

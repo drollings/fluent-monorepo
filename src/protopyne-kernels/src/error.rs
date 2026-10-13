@@ -1,5 +1,6 @@
 //! Kernel-side typed errors: invalid inputs, over-cap runs, bad configuration.
 
+use fluent_dag::dep_graph::GraphError;
 use thiserror::Error;
 
 /// Errors from run-context handling, input validation, and runtime checks.
@@ -39,4 +40,14 @@ pub enum KernelError {
     /// type mismatch, loop bound, unsupported node) instead of miscomputing.
     #[error("pine evaluation refused: {0}")]
     Eval(String),
+}
+
+impl From<GraphError> for KernelError {
+    /// Dependency-graph registration failures (duplicate nodes on paths
+    /// guarded by membership checks — defensive, never the reachable
+    /// refusal). Message stays caller-neutral: both the module import graph
+    /// and the kernel dep graph convert here.
+    fn from(err: GraphError) -> Self {
+        KernelError::InvalidInput(format!("dependency graph failed: {err}"))
+    }
 }

@@ -16,8 +16,8 @@
 //! `NaN` in any leg propagates to `None`, matching Pine `na` semantics.
 
 use crate::indicator::{
-    fin_or_none, BarTick, Indicator, IndicatorResult, IndicatorSpec, IndicatorState, Ohlcv,
-    ParamSet,
+    fin_or_none, BarTick, Indicator, IndicatorId, IndicatorResult, IndicatorSpec, IndicatorState,
+    Ohlcv, ParamSet,
 };
 use crate::ema::EmaIndicator;
 use crate::error::KernelError;
@@ -513,6 +513,7 @@ impl DemaIndicator {
                 .id(Self::ID.to_owned())
                 .display_name("Double Exponential Moving Average".to_owned())
                 .warmup_bars(1_usize)
+                .depends(vec![EmaIndicator::ID.to_owned()])
                 .build(),
         }
     }
@@ -583,6 +584,15 @@ impl Indicator for DemaIndicator {
         state.set_last(raw);
         Ok(fin_or_none(raw))
     }
+
+    fn deps_with_params(&self, params: &ParamSet) -> Vec<(IndicatorId, ParamSet)> {
+        // The first pass reads frame legs when co-requested; the second pass
+        // reads intermediate output and stays inline.
+        match Self::period(params) {
+            Ok(period) => vec![(EmaIndicator::ID.to_owned(), Self::ema_params(period))],
+            Err(_) => Vec::new(),
+        }
+    }
 }
 
 /// Triple exponential moving average (`tema`), parameterized by `length`.
@@ -606,6 +616,7 @@ impl TemaIndicator {
                 .id(Self::ID.to_owned())
                 .display_name("Triple Exponential Moving Average".to_owned())
                 .warmup_bars(1_usize)
+                .depends(vec![EmaIndicator::ID.to_owned()])
                 .build(),
         }
     }
@@ -684,6 +695,15 @@ impl Indicator for TemaIndicator {
         };
         state.set_last(raw);
         Ok(fin_or_none(raw))
+    }
+
+    fn deps_with_params(&self, params: &ParamSet) -> Vec<(IndicatorId, ParamSet)> {
+        // The first pass reads frame legs when co-requested; the second and
+        // third passes read intermediate output and stay inline.
+        match Self::period(params) {
+            Ok(period) => vec![(EmaIndicator::ID.to_owned(), Self::ema_params(period))],
+            Err(_) => Vec::new(),
+        }
     }
 }
 

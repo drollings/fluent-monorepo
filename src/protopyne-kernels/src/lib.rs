@@ -12,6 +12,7 @@
 pub mod averages;
 pub mod bars;
 pub mod buffers;
+#[cfg(feature = "research")]
 pub mod calibration;
 pub mod candles;
 pub mod compat;
@@ -27,17 +28,22 @@ pub mod math;
 pub mod market_context;
 pub mod mtf;
 pub use market_context::{
-    MarketContext, MarketContextKey, MarketRegime, detect_regime, fetch_all, health_mas, update,
-    CCI_SCALE, DIRECTION_BAND, HEALTH_AMPLITUDE, HEALTH_DEADBAND, HEALTH_K, HEALTH_LOWER_BASE,
-    HEALTH_MID_WEIGHT, HEALTH_MIXED_BASE, HEALTH_MIXED_SPAN, HEALTH_UPPER_BASE, RSI_CENTER,
-    RSI_SCALE, TREND_NORM, TREND_SCORE_FLOOR, VOLATILITY_SCALE, VOLATILITY_SCORE_FLOOR,
-    VOLUME_SCALE, VOLUME_SCORE_FLOOR,
+    MarketContext, MarketContextKey, MarketRegime, detect_regime, detect_regime_stable, fetch_all,
+    health_mas, update, CCI_SCALE, DIRECTION_BAND, HEALTH_AMPLITUDE, HEALTH_DEADBAND, HEALTH_K,
+    HEALTH_LOWER_BASE, HEALTH_MID_WEIGHT, HEALTH_MIXED_BASE, HEALTH_MIXED_SPAN, HEALTH_UPPER_BASE,
+    REGIME_HYSTERESIS, RSI_CENTER, RSI_SCALE, TREND_NORM, TREND_SCORE_FLOOR, VOLATILITY_SCALE,
+    VOLATILITY_SCORE_FLOOR, VOLUME_SCALE, VOLUME_SCORE_FLOOR,
 };
+#[cfg(feature = "pine")]
 pub mod native_libs;
 pub mod oscillators;
+#[cfg(feature = "research")]
 pub mod parity;
+#[cfg(feature = "pine")]
 pub mod pine;
+#[cfg(feature = "research")]
 pub mod research;
+#[cfg(feature = "pine")]
 pub mod runtime;
 pub mod timed;
 pub mod series;
@@ -59,20 +65,23 @@ pub use averages::{AlmaIndicator, DemaIndicator, HmaIndicator, RmaIndicator, Tem
 pub use bars::{
     BUFFER_PADDING, DRIFT_TOLERANCE_PCT, MAX_EXACT_VOLUME, NEUTRAL_BUY_RATIO, VOLUME_EPSILON,
     BarParts, BarRing, BarStateFlags, BarsConfig, BarsHistory, ClosedBar, ConfirmOutcome,
-    ConfirmedBar, DriftDecision, DriftReport, FetchCheck, FetchNativeOut, FetchSignal, LtfOutcome,
-    LtfRow, NativeFetchTick, RawTick, ReconcileOutcome, ResampleSource, RingCursor, TickIngest,
+    ConfirmedBar, DeltaConfidence, DeltaEstimate, DeltaMethod, DriftDecision, DriftReport, FetchCheck, FetchNativeOut, FetchSignal, LtfOutcome,
+    LtfRow, NativeFetchTick, RawTick, ReconcileOutcome, ResampleSource, RingCursor, TickClock, TickIngest,
     TradingSession, choose_source, drift_pct,
     estimate_buy_volume, estimate_delta_volume, et_offset_ms, fast_tanh, is_confirmed_bar,
     is_dst_et, is_valid_volume, project_bars, tick_bar_state, tick_resample, validate_ohlcv,
     volume_deltas,
 };
+#[cfg(feature = "research")]
 pub use calibration::{Control, ControlViolation, ParityDashboard, ParityRow, canonical_params, null_alignment_diffs, run_control};
 pub use candles::{
     candle_color, doji, dragonfly, efficiency_ratio, four_price_doji, gap_down, gap_up,
     gravestone, high_low_range, lower_body, lower_shadow, real_body, real_body_gap_down,
     real_body_gap_up, shadows, upper_body, upper_shadow, TA_EPSILON,
 };
-pub use compat::{assert_matrix_covers, assert_native_matrix_covers, compat_for, is_native_row, native_row_id, CompatStatus, KernelCompat, COMPATIBILITY, NATIVE_MATRIX_ROWS};
+pub use compat::{assert_matrix_covers, compat_for, is_native_row, native_row_id, CompatStatus, KernelCompat, COMPATIBILITY, NATIVE_MATRIX_ROWS};
+#[cfg(feature = "pine")]
+pub use compat::assert_native_matrix_covers;
 pub use component::{dynamic_indicator, indicator_double, ComponentRegistry, IndicatorComponent};
 pub use context::RunCtx;
 pub use drawing::{Drawing, DrawingKind};
@@ -85,7 +94,9 @@ pub use indicator::{
     IndicatorState, ParamSet,
 };
 pub use oscillators::{CciIndicator, CmoIndicator, MacdIndicator, RsiIndicator, StochIndicator};
+#[cfg(feature = "research")]
 pub use parity::{assert_expr_parity, expr_fixture};
+#[cfg(feature = "pine")]
 pub use pine::{
     AssignItem, AssignOp, BarSnapshot, BinaryOp, BuiltinVar, CallArg, ClosureEntry, EguiParityRow,
     EnumMember, FieldDecl, FieldPersistence, ImportDecl, LibraryId, LinkedModule, LtfDataset,
@@ -96,7 +107,10 @@ pub use pine::{
     TASK_INDICATORS, closure_data_root, display_program, indicator_library_id, lex,
     load_closure_sources, load_listed_closure,
     load_pine_source, parity_for, parse_pine_source, parse_program, resolve_imports,
-};pub use pine::builtins_ta::TaBridge;
+};
+#[cfg(feature = "pine")]
+pub use pine::builtins_ta::TaBridge;
+#[cfg(feature = "research")]
 pub use research::{fractal_dimension, frame_of_bars, frame_of_values, price_density, rsrs};
 pub use timed::{instrumented_kernel, KernelUnit};
 pub use util::{add_expr, argmax_window, argmin_window, change, cross_warmup, crossover, crossunder, div_expr, highest, lowest, max_window, min_window, mom, mul_expr, sub_expr, sum_window};
@@ -121,11 +135,15 @@ pub use mtf::{
     interleave_sorted, interleave_sorted_by, merge_sorted, merge_sorted_by, order_for,
     pairs_from_sorted, validate_split, FRAME_KERNEL,
 };
+#[cfg(feature = "pine")]
 pub use native_libs::{
-    FieldTable, LibBarsProvider, LibBuffersProvider, MethodCtx, NativeAudit, NativeLibraryEntry,
-    NativeLibraryId, NativeOptions, NativeOverlay, NativeProvider, NativeResolution, NativeServed,
-    TickLegs, NATIVE_LIBRARIES, apply_overrides, find_native, pine_sha_of, version_is_ignored,
+    BarContextServe, FetchCounters, LeasedRing, LeaseKey, LibApexProvider, LibBarsProvider,
+    LibBuffersProvider, MethodCtx, NativeAudit, NativeLibraryEntry, NativeLibraryId,
+    NativeOptions, NativeOverlay, NativeProvider, NativeResolution, NativeServed, TickLegs,
+    NATIVE_LIBRARIES, apply_overrides, fetch_tick_from_frame, find_native, pine_sha_of,
+    version_is_ignored,
 };
+#[cfg(feature = "pine")]
 pub use runtime::{PineRuntime, PineRuntimeConfig};
 pub use series::SliceSeries;
 pub use sma::SmaIndicator;
@@ -134,7 +152,7 @@ pub use ta_price::{AvgPriceIndicator, MedPriceIndicator, TypPriceIndicator, WclP
 pub use ta_momentum::{ApoIndicator, AroonIndicator, MomIndicator, PpoIndicator, RocIndicator, RocpIndicator, Rocr100Indicator, RocrIndicator, RsvIndicator, StochfIndicator, TrixIndicator, WillrIndicator};
 pub use ta_stat::{CorrelIndicator, StddevIndicator, VarIndicator};
 pub use ta_volume::{AdIndicator, AdoscIndicator, MfiIndicator, ObvIndicator, VwapIndicator};
-pub use value::{ColorHandle, EnumHandle, PineValue, UserInstance, fixnan, map_key_of, nz};
+pub use value::{ColorHandle, EnumHandle, FieldTable, NativeCall, PineValue, UserInstance, fixnan, map_key_of, nz};
 pub use vars::{Var, VarIp, VarStore};
 
 #[cfg(test)]

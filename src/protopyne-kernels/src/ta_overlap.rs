@@ -11,8 +11,8 @@
 
 use crate::error::KernelError;
 use crate::indicator::{
-    fin_or_none, BarTick, FullTick, Indicator, IndicatorResult, IndicatorSpec, IndicatorState,
-    NamedSeries, NamedValue, Ohlcv, ParamSet,
+    fin_or_none, BarTick, FullTick, Indicator, IndicatorId, IndicatorResult, IndicatorSpec,
+    IndicatorState, NamedSeries, NamedValue, Ohlcv, ParamSet,
 };
 use crate::sma::SmaIndicator;
 
@@ -362,6 +362,7 @@ impl TrimaIndicator {
                 .id(Self::ID.to_owned())
                 .display_name("Triangular Moving Average".to_owned())
                 .warmup_bars(1_usize)
+                .depends(vec![SmaIndicator::ID.to_owned()])
                 .build(),
         }
     }
@@ -374,6 +375,12 @@ impl TrimaIndicator {
     /// Cascaded sub-periods: `ceil(n / 2)` then `floor(n / 2) + 1`.
     fn sub_periods(period: usize) -> (usize, usize) {
         (period.div_ceil(2), period / 2 + 1)
+    }
+
+    /// Sub-pass parameters shared by batch, update, and the declared
+    /// dependency edges: one construction site for the composed keys.
+    fn sma_params(length: usize) -> ParamSet {
+        ParamSet::new().with_int("length", length as i64)
     }
 }
 
@@ -396,16 +403,10 @@ impl Indicator for TrimaIndicator {
         let period = Self::period(params)?;
         let (first_len, second_len) = Self::sub_periods(period);
         let sma = SmaIndicator::new();
-        let first = sma.batch(
-            &Ohlcv::close_only(data.close),
-            &ParamSet::new().with_int("length", first_len as i64),
-        )?;
+        let first = sma.batch(&Ohlcv::close_only(data.close), &Self::sma_params(first_len))?;
         let first_raw: Vec<f64> =
             first.values.iter().map(|v| v.unwrap_or(f64::NAN)).collect();
-        let second = sma.batch(
-            &Ohlcv::close_only(&first_raw),
-            &ParamSet::new().with_int("length", second_len as i64),
-        )?;
+        let second = sma.batch(&Ohlcv::close_only(&first_raw), &Self::sma_params(second_len))?;
         Ok(IndicatorResult::new(Self::ID.to_owned(), second.values))
     }
 
@@ -418,23 +419,35 @@ impl Indicator for TrimaIndicator {
         let period = Self::period(params)?;
         let (first_len, second_len) = Self::sub_periods(period);
         let sma = SmaIndicator::new();
-        let first = sma.update(
-            state.child(0),
-            bar,
-            &ParamSet::new().with_int("length", first_len as i64),
-        )?;
+        let first = sma.update(state.child(0), bar, &Self::sma_params(first_len))?;
         let second = sma.update(
             state.child(1),
             BarTick::close_only(first.unwrap_or(f64::NAN)),
-            &ParamSet::new().with_int("length", second_len as i64),
+            &Self::sma_params(second_len),
         )?;
         if let Some(value) = second {
             state.set_last(value);
         }
         Ok(second)
     }
+
+    fn deps_with_params(&self, params: &ParamSet) -> Vec<(IndicatorId, ParamSet)> {
+        // Both sub-periods read frame legs when co-requested, so both are
+        // declared; the kernel still runs its own inline cascade (the second
+        // pass reads intermediate output, never the shared frame).
+        match Self::period(params) {
+            Ok(period) => {
+                let (first_len, second_len) = Self::sub_periods(period);
+                vec![
+                    (SmaIndicator::ID.to_owned(), Self::sma_params(first_len)),
+                    (SmaIndicator::ID.to_owned(), Self::sma_params(second_len)),
+                ]
+            }
+            Err(_) => Vec::new(),
+        }
+    }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "research"))]
 #[path = "../tests/ta_overlap.rs"]
 mod tests;

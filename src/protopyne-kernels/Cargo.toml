@@ -5,6 +5,19 @@ edition.workspace = true
 autotests = false
 autobenches = false
 
+[features]
+default = []
+# `research` pulls in the polars-backed offline surface: research frames,
+# the Expr-parity harness, and the calibration gate. Default-off so the
+# shipping library carries no dataframe weight unless a consumer asks for
+# it; test targets proving Expr parity enable it explicitly.
+research = ["dep:polars"]
+# `pine` pulls in the Pine language runtime (lexer/parser/evaluator,
+# built-ins, native-call providers). Default-off; the engine's own suites,
+# the server's headless proofs, and benches comparing against Pine enable
+# it explicitly.
+pine = []
+
 [dependencies]
 protopyne-types = { path = "../protopyne-types" }
 common-core = { path = "../common-core" }
@@ -15,11 +28,20 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 rust_decimal = { workspace = true }
-polars = { version = "0.50", default-features = false, features = ["lazy", "rolling_window", "ewma", "abs", "cum_agg", "log", "moment", "trigonometry", "sign", "round_series"] }
+polars = { version = "0.50", optional = true, default-features = false, features = ["lazy", "rolling_window", "ewma", "abs", "cum_agg", "log", "moment", "trigonometry", "sign", "round_series"] }
 
 [dev-dependencies]
 chrono = { workspace = true }
+criterion = { workspace = true }
 csv = { workspace = true }
+
+[[bench]]
+name = "mtf_streaming"
+harness = false
+
+[[bench]]
+name = "fetch_tick"
+harness = false
 
 [lints]
 workspace = true

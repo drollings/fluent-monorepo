@@ -78,3 +78,56 @@ fn constructor_clamps_clock_fields() {
     assert_eq!(provider.break_minute, 59);
     assert_eq!(DailySessionProvider::nyse().break_hour, 21);
 }
+
+fn rth() -> EtSessionProvider {
+    EtSessionProvider::new(
+        protopyne_types::TradingSession::parse("0930-1600").expect("rth parses"),
+    )
+}
+
+#[test]
+fn et_breaks_follow_et_dates_not_utc_days() {
+    let provider = rth();
+    // 23:30 UTC Jan 1 == 18:30 ET Jan 1; 00:30 UTC Jan 2 == 19:30 ET Jan 1:
+    // the UTC day changes but the ET date does not.
+    let bars = vec![bar_at(2026, 1, 1, 23), bar_at(2026, 1, 2, 0)];
+    assert!(find_session_breaks(&bars, &provider).is_empty());
+    assert_eq!(
+        find_session_breaks(&bars, &DailySessionProvider::continuous()).len(),
+        1,
+        "utc provider splits where the ET date holds"
+    );
+}
+
+#[test]
+fn et_break_fires_where_utc_holds() {
+    let provider = rth();
+    // 04:30 UTC Jan 2 == 23:30 ET Jan 1; 05:30 UTC Jan 2 == 00:30 ET Jan 2.
+    let bars = vec![bar_at(2026, 1, 2, 4), bar_at(2026, 1, 2, 5)];
+    let breaks = find_session_breaks(&bars, &provider);
+    assert_eq!(breaks.len(), 1);
+    assert_eq!(breaks[0].0, 1);
+    assert_eq!(breaks[0].1.break_type, SessionBreakType::Daily);
+    assert_eq!(breaks[0].1.label.as_deref(), Some("2026-01-02 ET"));
+    assert!(
+        find_session_breaks(&bars, &DailySessionProvider::continuous()).is_empty(),
+        "utc provider holds where the ET date changes"
+    );
+}
+
+#[test]
+fn et_breaks_respect_daylight_offset() {
+    let provider = rth();
+    // July: EDT (UTC-4). 03:30 UTC Jul 9 == 23:30 ET Jul 8;
+    // 04:30 UTC Jul 9 == 00:30 ET Jul 9.
+    let bars = vec![bar_at(2026, 7, 9, 3), bar_at(2026, 7, 9, 4)];
+    let breaks = find_session_breaks(&bars, &provider);
+    assert_eq!(breaks.len(), 1, "daylight offset moves the break off utc midnight");
+    assert_eq!(breaks[0].1.label.as_deref(), Some("2026-07-09 ET"));
+}
+
+#[test]
+fn overnight_sessions_refuse_at_parse() {
+    assert!(protopyne_types::TradingSession::parse("1600-0930").is_err());
+    assert!(protopyne_types::TradingSession::parse("0930-0930").is_err());
+}

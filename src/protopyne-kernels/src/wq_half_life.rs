@@ -6,7 +6,7 @@
 //! alpha machinery: no registry, no compat rows.
 
 use crate::indicator::fin_or_none;
-use crate::research::strict_window;
+use crate::math::strict_window;
 
 /// Geometric weight ladder: the newest print carries weight one and older
 /// prints decay by `0.5^(1 / half_life)` per bar, formula for formula with
@@ -82,6 +82,6 @@ fn weighted_moment(values: &[f64], d: usize, half_life: u32, moment: Moment) -> 
         .collect()
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "research"))]
 #[path = "../tests/wq_half_life.rs"]
 mod tests;

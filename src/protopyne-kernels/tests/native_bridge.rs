@@ -16,8 +16,8 @@ const EPS: f64 = 1e-9;
 use chrono::TimeZone as _;
 use crate::pine::test_fixture as fixture;
 use crate::{
-    BarRing, InputSet, LibBarsProvider, LinkedModule, MethodCtx, NativeOptions, NativeProvider,
-    PineEngine, PineRuntimeConfig, PineValue, RunOutcome, TickLegs, UserInstance,
+    BarRing, InputSet, LibBarsProvider, LinkedModule, MethodCtx, NativeCall, NativeOptions,
+    NativeProvider, PineEngine, PineRuntimeConfig, PineValue, RunOutcome, TickLegs, UserInstance,
 };
 use protopyne_types::Bar;
 
@@ -389,10 +389,9 @@ fn provider_call_reports_handled_with_matching_fields() {
     let mut next = fields;
     let value = provider
         .call("Bars", "fetch", &mut next, &[], &ctx)
-        .expect("provider call runs")
-        .expect("provider reports handled");
+        .expect("provider call runs");
     assert!(
-        matches!(value, Some(PineValue::Object(_))),
+        matches!(value, NativeCall::Served(Some(PineValue::Object(_)))),
         "fetch yields the receiver object"
     );
     assert_instances_eq(&bars_at(&pine, 3), &UserInstance::new("Bars", next));

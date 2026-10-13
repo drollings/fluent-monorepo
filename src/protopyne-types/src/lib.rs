@@ -11,6 +11,7 @@ pub mod chain;
 pub mod error;
 pub mod money;
 pub mod series;
+pub mod session;
 pub mod symbol;
 pub mod timeframe;
 pub mod validate;
@@ -25,6 +26,7 @@ pub use chain::{
 pub use error::TypesError;
 pub use money::{Money, Qty};
 pub use series::{GapPolicy, LtfView, PriceSource, SeriesContext};
+pub use session::{TradingSession, et_offset_ms, is_dst_et};
 pub use symbol::{DEFAULT_MAX_SYMBOLS, SymKey, SymbolIndex};
 pub use timeframe::Timeframe;
 pub use validate::{Validate, check_for_execute, valid_output};

@@ -15,8 +15,8 @@
 use crate::ema::EmaIndicator;
 use crate::error::KernelError;
 use crate::indicator::{
-    fin_or_none, BarTick, Indicator, IndicatorResult, IndicatorSpec, IndicatorState, Ohlcv,
-    ParamSet,
+    fin_or_none, BarTick, Indicator, IndicatorId, IndicatorResult, IndicatorSpec, IndicatorState,
+    Ohlcv, ParamSet,
 };
 
 /// Accumulation/distribution (`ad`): cumulative money-flow-volume. Defined
@@ -151,6 +151,7 @@ impl AdoscIndicator {
                 .id(Self::ID.to_owned())
                 .display_name("Accumulation Distribution Oscillator".to_owned())
                 .warmup_bars(1_usize)
+                .depends(vec![AdIndicator::ID.to_owned()])
                 .build(),
         }
     }
@@ -161,6 +162,12 @@ impl AdoscIndicator {
             crate::math::period_len(Self::ID, params, "fast_length")?,
             crate::math::period_len(Self::ID, params, "slow_length")?,
         ))
+    }
+
+    /// Smoother parameters shared by batch, update, and the declared
+    /// dependency edges: one construction site for the composed keys.
+    fn ema_params(length: usize) -> ParamSet {
+        ParamSet::new().with_int("length", length as i64)
     }
 }
 
@@ -189,16 +196,10 @@ impl Indicator for AdoscIndicator {
         let line_raw: Vec<f64> = line.values.iter().map(|v| v.unwrap_or(f64::NAN)).collect();
         let ema = EmaIndicator::new();
         let fast = ema
-            .batch(
-                &Ohlcv::close_only(&line_raw),
-                &ParamSet::new().with_int("length", fast_len as i64),
-            )?
+            .batch(&Ohlcv::close_only(&line_raw), &Self::ema_params(fast_len))?
             .values;
         let slow = ema
-            .batch(
-                &Ohlcv::close_only(&line_raw),
-                &ParamSet::new().with_int("length", slow_len as i64),
-            )?
+            .batch(&Ohlcv::close_only(&line_raw), &Self::ema_params(slow_len))?
             .values;
         let values = fast
             .iter()
@@ -224,12 +225,12 @@ impl Indicator for AdoscIndicator {
         let fast = ema.update(
             state.child(1),
             BarTick::close_only(line.unwrap_or(f64::NAN)),
-            &ParamSet::new().with_int("length", fast_len as i64),
+            &Self::ema_params(fast_len),
         )?;
         let slow = ema.update(
             state.child(2),
             BarTick::close_only(line.unwrap_or(f64::NAN)),
-            &ParamSet::new().with_int("length", slow_len as i64),
+            &Self::ema_params(slow_len),
         )?;
         let raw = match (fast, slow) {
             (Some(f), Some(s)) => f - s,
@@ -237,6 +238,15 @@ impl Indicator for AdoscIndicator {
         };
         state.set_last(raw);
         Ok(fin_or_none(raw))
+    }
+
+    fn deps_with_params(&self, params: &ParamSet) -> Vec<(IndicatorId, ParamSet)> {
+        // The AD line reads frame legs when co-requested; the fast/slow
+        // smoothers read intermediate output and stay inline.
+        match Self::lengths(params) {
+            Ok(_) => vec![(AdIndicator::ID.to_owned(), ParamSet::new())],
+            Err(_) => Vec::new(),
+        }
     }
 }
 
@@ -526,6 +536,6 @@ impl Indicator for VwapIndicator {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "research"))]
 #[path = "../tests/ta_volume.rs"]
 mod tests;

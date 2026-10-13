@@ -130,6 +130,6 @@ pub fn real_body_gap_down(prev: BarTick, bar: BarTick) -> bool {
     legs_finite(prev) && legs_finite(bar) && upper_body(bar) < lower_body(prev)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "research"))]
 #[path = "../tests/candles.rs"]
 mod tests;

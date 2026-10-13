@@ -49,6 +49,24 @@ pub fn window_mean(window: &[f64]) -> f64 {
     window_sum(window) / window.len() as f64
 }
 
+/// Strict trailing window ending at `end` (inclusive): `None` while warming
+/// or when any leg in the window is non-finite. Output length always equals
+/// the input length; callers map the window to a value or `None`.
+///
+/// Shared with the series combinators, which impose the same
+/// min-periods-as-warmup convention over bare slices.
+pub(crate) fn strict_window(values: &[f64], end: usize, period: usize) -> Option<&[f64]> {
+    if period == 0 || end + 1 < period || values.len() <= end {
+        return None;
+    }
+    let window = &values[end + 1 - period..=end];
+    if window.iter().all(|v| v.is_finite()) {
+        Some(window)
+    } else {
+        None
+    }
+}
+
 /// EMA smoothing factor for a period (`2 / (n + 1)`).
 #[must_use]
 pub fn ema_factor(period: usize) -> f64 {
@@ -301,7 +319,7 @@ pub fn rolling_min_periods_mask(len: usize, min_periods: usize) -> Vec<bool> {
 ///
 /// This deliberately keeps the reference's rounding instead of the
 /// overflow-proof `f64::midpoint`: prices never approach overflow, and
-/// matching the reference operation-for-operation is what the parity suites
+/// matching the reference operation-for-operation is what the Expr-parity suites
 /// check.
 #[must_use]
 #[allow(clippy::manual_midpoint)]

@@ -20,7 +20,7 @@ pub use convert::{rows_of, row_of, to_display_float, ChartRow, ChartRows};
 pub use error::ChartModelError;
 pub use range::DateRange;
 pub use session::{
-    CompositeSessionProvider, DailySessionProvider, MonthlySessionProvider, SessionBreak,
-    SessionBreakType, SessionProvider, WeeklySessionProvider, find_session_breaks,
+    CompositeSessionProvider, DailySessionProvider, EtSessionProvider, MonthlySessionProvider,
+    SessionBreak, SessionBreakType, SessionProvider, WeeklySessionProvider, find_session_breaks,
 };
 pub use transform::{heikin_ashi, renko_bricks};

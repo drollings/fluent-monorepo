@@ -34,9 +34,27 @@
 //! `#[allow(clippy::float_cmp)]` covers exact count comparisons (integer
 //! quantities must match exactly, never within tolerance); measured floats
 //! always compare through EPS-bounded diffs.
+//!
+//! Overshoot regeneration note: the `pull_remainder` window overshoots its
+//! reference, so it pins the documented signed-remainder split (Pine
+//! appends the abs top-up, native trims to the reference) instead of
+//! agreement — reason recorded in `tests/remainder_signed.rs`. Every other
+//! window agrees fully.
 #![allow(clippy::float_cmp)]
 
 const EPS: f64 = 1e-9;
+
+/// What the remainder legs may do on a window. `Agree` is the standing
+/// rule (both legs top up identically); `SignedDivergence` is the
+/// documented signed-remainder split: the shipped Pine oracle still
+/// appends `abs()` on overshoot while the native ring trims newest-first
+/// to the reference (see `tests/remainder_signed.rs` for the reason).
+/// Only the overshoot window takes the divergent arm.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RemainderExpect {
+    Agree,
+    SignedDivergence,
+}
 
 use chrono::TimeZone as _;
 use crate::pine::test_fixture as fixture;
@@ -379,12 +397,24 @@ fn replay_native(
 
 /// Pine-vs-native agreement for one window: counts and flags exact, floats
 /// within [`EPS`], returned as the maximum absolute float difference.
+/// Diverged remainder legs never feed the returned maximum.
 fn assert_window_agrees(
     window: &str,
     rows: &[(i64, f64, f64)],
     open_of: &dyn Fn(i64) -> i64,
     pull_rows: Option<&[LtfRow]>,
     inject: bool,
+) -> f64 {
+    assert_window_agrees_inner(window, rows, open_of, pull_rows, inject, RemainderExpect::Agree)
+}
+
+fn assert_window_agrees_inner(
+    window: &str,
+    rows: &[(i64, f64, f64)],
+    open_of: &dyn Fn(i64) -> i64,
+    pull_rows: Option<&[LtfRow]>,
+    inject: bool,
+    remainder: RemainderExpect,
 ) -> f64 {
     let (bars, stamps): (Vec<Bar>, Vec<i64>) = window_legs(rows, open_of).into_iter().unzip();
     let modules = linked_bars(&fetch_driver());
@@ -422,8 +452,30 @@ fn assert_window_agrees(
             "{window} {what}: pine {pine} vs native {got}"
         );
     };
-    assert_eq!(instance_num(&state, "count"), native.count as f64, "{window} count");
-    float_eq(instance_num(&state, "total_vol"), native.total_vol, "total_vol");
+    let pine_count = instance_num(&state, "count");
+    let pine_total = instance_num(&state, "total_vol");
+    match remainder {
+        RemainderExpect::Agree => {
+            assert_eq!(pine_count, native.count as f64, "{window} count");
+            float_eq(pine_total, native.total_vol, "total_vol");
+        }
+        // Documented split: Pine appended the abs top-up (one extra candle
+        // past the reference) while native trimmed to the reference, so
+        // Pine exceeds it by twice the overshoot and native meets it.
+        RemainderExpect::SignedDivergence => {
+            assert_eq!(
+                pine_count,
+                native.count as f64 + 1.0,
+                "{window} pine appends the abs top-up"
+            );
+            let reference: f64 = rows.iter().map(|row| row.2).sum::<f64>().round();
+            float_eq(native.total_vol, reference, "{window} native trims to the reference");
+            assert!(
+                pine_total > reference,
+                "{window} pine fabricates past the reference: {pine_total} vs {reference}"
+            );
+        }
+    }
     assert_eq!(instance_num(&state, "pull_count"), native.pull_count as f64, "{window} pull_count");
     assert_eq!(
         instance_num(&state, "fetch_check_count"),
@@ -475,13 +527,24 @@ fn freeze_tick_window_pull() {
 
 #[test]
 fn freeze_tick_window_pull_remainder() {
+    // REGENERATED with the signed-remainder rule: this window overshoots,
+    // so Pine appends the abs top-up while native trims to the reference
+    // (deliberate divergence, reason in `tests/remainder_signed.rs`). Every
+    // non-remainder leg still agrees under frozen eps; the remainder legs
+    // pin the split shape instead of agreement.
     let rows = load_tick_window("window_pull_remainder.csv");
     assert_eq!(rows.len(), 14, "remainder window row count pinned");
     let open_ms = rows[0].0.div_euclid(60_000) * 60_000;
     let row = minute_row(open_ms);
     let per_minute = |stamp: i64| stamp.div_euclid(60_000) * 60_000;
-    let max_diff =
-        assert_window_agrees("pull_remainder", &rows, &per_minute, Some(std::slice::from_ref(&row)), true);
+    let max_diff = assert_window_agrees_inner(
+        "pull_remainder",
+        &rows,
+        &per_minute,
+        Some(std::slice::from_ref(&row)),
+        true,
+        RemainderExpect::SignedDivergence,
+    );
     assert!(max_diff < EPS, "remainder max-abs-diff {max_diff} under frozen eps");
 }
 
@@ -565,7 +628,7 @@ fn native_context(bars: &[Bar]) -> MarketContext {
     store.set_base(bars).expect("base loads");
     let key = MarketContextKey::new(Timeframe::M5);
     let now = bars.last().expect("nonempty").ts.timestamp_millis() + 300_000;
-    fetch_all(&mut store, &registry, &[(key.clone(), None)], now, crate::Lookahead::Off)
+    fetch_all(&mut store, &registry, std::slice::from_ref(&key), &std::collections::HashMap::new(), now, crate::Lookahead::Off)
         .expect("fetch fills");
     let frame_len = store.frame_stamps(key.tf_ms()).expect("frame").len();
     update(&store, &key, frame_len - 1, None).expect("context reads")
@@ -758,7 +821,7 @@ fn spy_agreement(display: &str, tf: Timeframe, csv: &str) -> SpyGolden {
         store.set_base(&bars).expect("base loads");
         let key = MarketContextKey::new(tf);
         let now = bars.last().expect("nonempty").ts.timestamp_millis() + tf_ms;
-        fetch_all(&mut store, &registry, &[(key.clone(), None)], now, crate::Lookahead::Off)
+        fetch_all(&mut store, &registry, std::slice::from_ref(&key), &std::collections::HashMap::new(), now, crate::Lookahead::Off)
             .expect("fetch fills");
         let frame_len = store.frame_stamps(key.tf_ms()).expect("frame").len();
         update(&store, &key, frame_len - 1, None).expect("context reads")
@@ -899,12 +962,12 @@ fn freeze_native_matrix_covers_table() {
 }
 
 #[test]
-fn freeze_default_options_serve_libbars_with_pine_fallback() {
-    // The cutover default: linked `libBars` serves natively with an audit
-    // row reading rust; libraries without a provider stay Pine-served;
-    // unprovided symbols fall through to Pine and unknown references still
-    // refuse — never canned values. Driver aliases mirror the override
-    // suite so routing assertions share one shape.
+fn freeze_default_options_serve_libraries_with_pine_fallback() {
+    // The cutover default: linked libraries with providers serve natively
+    // with audit rows reading rust; libraries without a provider stay
+    // Pine-served; unprovided symbols fall through to Pine and unknown
+    // references still refuse — never canned values. Driver aliases mirror
+    // the override suite so routing assertions share one shape.
     let options = NativeOptions::default();
     assert!(options.enabled, "native serves by default after cutover");
     let inputs = vec![
@@ -929,21 +992,28 @@ fn freeze_default_options_serve_libbars_with_pine_fallback() {
             .contains(&"Bars"),
         "Bars in the served surface"
     );
+    assert!(overlay.is_served("showmethegrail", "libApex"), "apex serves natively");
+    assert!(
+        overlay
+            .provides("showmethegrail", "libApex")
+            .expect("native symbol table")
+            .contains(&"MarketContext"),
+        "MarketContext in the served surface"
+    );
     let audits = overlay.audits();
     let libbars = audits
         .iter()
         .find(|audit| audit.requested_name == "libBars")
         .expect("libBars audit recorded");
     assert_eq!(libbars.served, NativeServed::Rust, "audit reads rust under the default");
-    assert!(
-        !overlay.is_served("showmethegrail", "libApex"),
-        "libApex stays Pine-served (no provider yet)"
-    );
+    let apex = audits
+        .iter()
+        .find(|audit| audit.requested_name == "libApex")
+        .expect("libApex audit recorded");
+    assert_eq!(apex.served, NativeServed::Rust, "apex audit reads rust under the default");
     match overlay.resolve_reference(&driver, "APEX", "MarketContext") {
-        Ok(NativeResolution::Pine(target)) => {
-            assert_eq!(target, ModuleId::new("showmethegrail", "libApex"));
-        }
-        other => panic!("unprovided symbol falls through to Pine, got {other:?}"),
+        Ok(NativeResolution::Native { .. }) => {}
+        other => panic!("served symbol routes native, got {other:?}"),
     }
     let unknown = overlay.resolve_reference(&driver, "APEX", "noSuchSymbol");
     assert!(unknown.is_err(), "unknown symbol refuses, never canned");

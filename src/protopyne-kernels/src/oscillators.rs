@@ -11,8 +11,8 @@ use crate::averages::RmaIndicator;
 use crate::ema::EmaIndicator;
 use crate::error::KernelError;
 use crate::indicator::{
-    fin_or_none, BarTick, FullTick, Indicator, IndicatorResult, IndicatorSpec, IndicatorState,
-    NamedSeries, NamedValue, Ohlcv, ParamSet,
+    fin_or_none, BarTick, FullTick, Indicator, IndicatorId, IndicatorResult, IndicatorSpec,
+    IndicatorState, NamedSeries, NamedValue, Ohlcv, ParamSet,
 };
 use crate::sma::SmaIndicator;
 
@@ -141,6 +141,7 @@ impl MacdIndicator {
                 .id(Self::ID.to_owned())
                 .display_name("MACD".to_owned())
                 .warmup_bars(1_usize)
+                .depends(vec![EmaIndicator::ID.to_owned()])
                 .build(),
         }
     }
@@ -149,6 +150,12 @@ impl MacdIndicator {
     pub fn lengths(params: &ParamSet) -> Result<(usize, usize, usize), KernelError> {
         let each = |name: &str| crate::math::period_len(Self::ID, params, name);
         Ok((each("fast_length")?, each("slow_length")?, each("signal_length")?))
+    }
+
+    /// Sub-pass parameters shared by batch, update, and the declared
+    /// dependency edges: one construction site for the composed keys.
+    fn ema_params(length: usize) -> ParamSet {
+        ParamSet::new().with_int("length", length as i64)
     }
 }
 
@@ -171,9 +178,8 @@ impl Indicator for MacdIndicator {
     fn batch(&self, data: &Ohlcv<'_>, params: &ParamSet) -> Result<IndicatorResult, KernelError> {
         let (fast_len, slow_len, signal_len) = Self::lengths(params)?;
         let ema = EmaIndicator::new();
-        let ema_ps = |len: usize| ParamSet::new().with_int("length", len as i64);
-        let fast = ema.batch(data, &ema_ps(fast_len))?;
-        let slow = ema.batch(data, &ema_ps(slow_len))?;
+        let fast = ema.batch(data, &Self::ema_params(fast_len))?;
+        let slow = ema.batch(data, &Self::ema_params(slow_len))?;
         let line: Vec<f64> = fast
             .values
             .iter()
@@ -184,7 +190,7 @@ impl Indicator for MacdIndicator {
             })
             .collect();
         let line_data = Ohlcv::close_only(&line);
-        let signal = ema.batch(&line_data, &ema_ps(signal_len))?;
+        let signal = ema.batch(&line_data, &Self::ema_params(signal_len))?;
         let hist: Vec<Option<f64>> = line
             .iter()
             .zip(signal.values.iter())
@@ -218,9 +224,8 @@ impl Indicator for MacdIndicator {
     ) -> Result<FullTick, KernelError> {
         let (fast_len, slow_len, signal_len) = Self::lengths(params)?;
         let ema = EmaIndicator::new();
-        let ema_ps = |len: usize| ParamSet::new().with_int("length", len as i64);
-        let fast = ema.update(state.child(0), bar, &ema_ps(fast_len))?;
-        let slow = ema.update(state.child(1), bar, &ema_ps(slow_len))?;
+        let fast = ema.update(state.child(0), bar, &Self::ema_params(fast_len))?;
+        let slow = ema.update(state.child(1), bar, &Self::ema_params(slow_len))?;
         let line_raw = match (fast, slow) {
             (Some(f), Some(s)) => f - s,
             _ => f64::NAN,
@@ -228,7 +233,7 @@ impl Indicator for MacdIndicator {
         let signal = ema.update(
             state.child(2),
             BarTick::close_only(line_raw),
-            &ema_ps(signal_len),
+            &Self::ema_params(signal_len),
         )?;
         let signal_raw = signal.unwrap_or(f64::NAN);
         let hist_raw = if line_raw.is_nan() || signal_raw.is_nan() {
@@ -250,6 +255,18 @@ impl Indicator for MacdIndicator {
                 },
             ],
         })
+    }
+
+    fn deps_with_params(&self, params: &ParamSet) -> Vec<(IndicatorId, ParamSet)> {
+        // Fast/slow legs read frame legs when co-requested; the signal line
+        // smooths the intermediate MACD line and stays inline.
+        match Self::lengths(params) {
+            Ok((fast_len, slow_len, _)) => vec![
+                (EmaIndicator::ID.to_owned(), Self::ema_params(fast_len)),
+                (EmaIndicator::ID.to_owned(), Self::ema_params(slow_len)),
+            ],
+            Err(_) => Vec::new(),
+        }
     }
 }
 
@@ -282,6 +299,9 @@ impl StochIndicator {
     pub fn period(params: &ParamSet) -> Result<usize, KernelError> {
         crate::math::period_len(Self::ID, params, "length")
     }
+
+    // No declared sub-series: `%D` smooths the intermediate `%K` series, not
+    // a frame leg, so there is no frame-computable key to share.
 
     fn k_of(close: f64, lowest: f64, highest: f64) -> f64 {
         // Exact zero-range detection: a flat window is 0/0 (na), while any

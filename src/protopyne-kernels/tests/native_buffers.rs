@@ -18,9 +18,14 @@
 
 use std::collections::HashMap;
 
-use crate::native_libs::{FieldTable, NativeOptions};
-use crate::{InputSet, LinkedModule, PineEngine, PineRuntimeConfig, PineValue};
+use crate::value::FieldTable;
+#[cfg(feature = "pine")]
+use crate::native_libs::NativeOptions;
+use crate::PineValue;
+#[cfg(feature = "pine")]
+use crate::{InputSet, LinkedModule, PineEngine, PineRuntimeConfig};
 
+#[cfg(feature = "pine")]
 fn native_on() -> NativeOptions {
     NativeOptions {
         enabled: true,
@@ -28,14 +33,20 @@ fn native_on() -> NativeOptions {
     }
 }
 
+// Optional-arg constructors: every call site needs `Option<PineValue>`
+// (absence vs value is the domain type for method args), so the `Some`
+// wrap lives here rather than at ~50 call sites.
+#[allow(clippy::unnecessary_wraps)]
 fn float(value: f64) -> Option<PineValue> {
     Some(PineValue::Float(value))
 }
 
+#[allow(clippy::unnecessary_wraps)]
 fn int(value: i64) -> Option<PineValue> {
     Some(PineValue::Int(value))
 }
 
+#[allow(clippy::unnecessary_wraps)]
 fn bool_value(value: bool) -> Option<PineValue> {
     Some(PineValue::Bool(value))
 }
@@ -105,7 +116,7 @@ fn flag(table: &FieldTable, name: &str) -> bool {
 }
 
 /// Serve one hot-method call through the native provider under test.
-/// `Ok(None)` is the decline-to-Pine path (behavior today, unchanged).
+/// `Declined` is the decline-to-Pine path (behavior today, unchanged).
 /// The table clone lives here in test code only — the engine passes the
 /// taken table by mutable borrow, so the hot path copies nothing.
 fn serve(
@@ -113,20 +124,21 @@ fn serve(
     fields: &FieldTable,
     args: &[Option<PineValue>],
 ) -> Option<(FieldTable, Option<PineValue>)> {
+    use crate::value::NativeCall;
     let mut next = fields.clone();
-    let value = crate::buffers::serve_buffer_method("BufferFloat", method, &mut next, args, false)
-        .expect("bridge never refuses the fast-path probe")?;
-    Some((next, value))
+    match crate::buffers::serve_buffer_method("BufferFloat", method, &mut next, args, false) {
+        NativeCall::Declined => None,
+        NativeCall::Served(value) => Some((next, value)),
+    }
 }
 
 /// Decline probe: the call must refuse service and leave the table
 /// byte-identical (the engine would run the Pine body on it next).
 fn declines(method: &str, fields: &FieldTable, args: &[Option<PineValue>], named: bool) -> bool {
     let mut next = fields.clone();
-    let outcome = crate::buffers::serve_buffer_method("BufferFloat", method, &mut next, args, named)
-        .expect("bridge runs");
+    let outcome = crate::buffers::serve_buffer_method("BufferFloat", method, &mut next, args, named);
     assert_eq!(next, *fields, "{method} decline leaves the table untouched");
-    outcome.is_none()
+    outcome.is_declined()
 }
 
 // ---------------------------------------------------------------------------
@@ -340,9 +352,8 @@ fn unserved_methods_and_types_decline() {
         // BufferInt stays interpreted in v1: same table, foreign type.
         let mut next = sized.clone();
         let outcome =
-            crate::buffers::serve_buffer_method("BufferInt", "push", &mut next, &[int(1)], false)
-                .expect("bridge runs");
-        assert!(outcome.is_none(), "BufferInt stays interpreted in v1");
+            crate::buffers::serve_buffer_method("BufferInt", "push", &mut next, &[int(1)], false);
+        assert!(outcome.is_declined(), "BufferInt stays interpreted in v1");
         assert_eq!(next, sized, "decline leaves the table untouched");
     }
     // Push before init (absent data): Pine owns the refusal.
@@ -361,6 +372,7 @@ fn unserved_methods_and_types_decline() {
 // Engine agreement: Pine default vs native opt-in over one linked driver
 // ---------------------------------------------------------------------------
 
+#[cfg(feature = "pine")]
 fn linked_buffers(driver: &str) -> Vec<LinkedModule> {
     use crate::pine::test_fixture as fixture;
     fixture::linked_modules(vec![
@@ -375,6 +387,7 @@ fn linked_buffers(driver: &str) -> Vec<LinkedModule> {
     ])
 }
 
+#[cfg(feature = "pine")]
 fn script_engine() -> PineEngine {
     PineEngine::new(
         PineRuntimeConfig::new()
@@ -384,11 +397,13 @@ fn script_engine() -> PineEngine {
     )
 }
 
+#[cfg(feature = "pine")]
 fn script_bars() -> Vec<protopyne_types::Bar> {
     use crate::pine::test_fixture as fixture;
     fixture::history_bars("historical/SPY_1M.csv")[..8].to_vec()
 }
 
+#[cfg(feature = "pine")]
 #[test]
 fn engine_agrees_on_buffer_sequences() {
     const DRIVER: &str = "import showmethegrail/libBuffers/6 as BUF\n\

@@ -17,8 +17,7 @@
 //! no meaning over `f64` slices, so only `NaN` counting is provided.
 
 use crate::indicator::fin_or_none;
-use crate::math::div_or_none;
-use crate::research::strict_window;
+use crate::math::{div_or_none, strict_window};
 
 /// Shift forward (`d > 0`) or backward (`d < 0`) with an optional fill for
 /// the exposed edge; `None` fill leaves the edge missing. `d == 0` is the
@@ -968,6 +967,6 @@ pub fn ts_fill_null(values: &[f64], limit: Option<usize>) -> Vec<Option<f64>> {
         .collect()
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "research"))]
 #[path = "../tests/wq_series.rs"]
 mod tests;

@@ -9,8 +9,8 @@
 
 use super::*;
 use crate::{
-    BarTick, Indicator, IndicatorRegistry, IndicatorResult, IndicatorSpec, IndicatorState, Ohlcv,
-    ParamSet,
+    BarTick, Indicator, IndicatorId, IndicatorRegistry, IndicatorResult, IndicatorSpec,
+    IndicatorState, Ohlcv, ParamSet,
 };
 use protopyne_types::{Bar, Timeframe};
 use rust_decimal::Decimal;
@@ -94,6 +94,13 @@ impl Indicator for CountMean {
     ) -> Result<Option<f64>, KernelError> {
         Ok(None)
     }
+
+    fn deps_with_params(&self, _params: &ParamSet) -> Vec<(IndicatorId, ParamSet)> {
+        // The double ignores parameters everywhere (batch included), so its
+        // static ordering ids resolve with default parameters — the same
+        // keys the pre-parametric lift produced, which the tests below pin.
+        self.spec.depends.iter().map(|id| (id.clone(), ParamSet::new())).collect()
+    }
 }
 
 fn registry_with(doubles: Vec<Arc<CountMean>>) -> IndicatorRegistry {
@@ -106,6 +113,13 @@ fn registry_with(doubles: Vec<Arc<CountMean>>) -> IndicatorRegistry {
 
 fn key(tf_ms: i64, kernel: &str) -> SeriesKey {
     SeriesKey::new(tf_ms, kernel, &ParamSet::new()).expect("valid key")
+}
+
+/// Pair default-params keys with their parameters for graph builds: every
+/// key helper above carries default params, so this preserves the exact
+/// pre-parametric call shape.
+fn with_defaults(keys: &[SeriesKey]) -> Vec<(SeriesKey, ParamSet)> {
+    keys.iter().map(|key| (key.clone(), ParamSet::new())).collect()
 }
 
 fn stored() -> MtfStore {
@@ -192,7 +206,7 @@ fn topo_order_respects_depends_diamond_and_chain() {
     let registry = registry_with(vec![leaf, left, right, top, chain1, chain2, chain3]);
     let wanted =
         ["top", "c3"].iter().map(|kernel| key(MIN, kernel)).collect::<Vec<_>>();
-    let graph = build_graph(&registry, &wanted).expect("diamond graphs");
+    let (graph, _) = build_graph(&registry, &with_defaults(&wanted)).expect("diamond graphs");
     let order = order_for(&graph, &wanted).expect("diamond orders");
     let pos = |kernel: &str| order.iter().position(|k| k == &key(MIN, kernel)).expect("present");
     assert!(pos("leaf") < pos("left") && pos("leaf") < pos("right"), "diamond base first");
@@ -200,7 +214,7 @@ fn topo_order_respects_depends_diamond_and_chain() {
     assert!(pos("c1") < pos("c2") && pos("c2") < pos("c3"), "chain ordered");
     // Lifted default-param deps share keys with explicit requests.
     let both = [key(MIN, "leaf"), key(MIN, "top")];
-    let graph = build_graph(&registry, &both).expect("shared dep graphs");
+    let (graph, _) = build_graph(&registry, &with_defaults(&both)).expect("shared dep graphs");
     let order = order_for(&graph, &both).expect("shared dep orders");
     assert_eq!(order.iter().filter(|k| *k == &key(MIN, "leaf")).count(), 1, "one leaf node");
     // The ordered keys actually evaluate through the store untouched.
@@ -267,7 +281,7 @@ fn ready_and_dependents_delegation_sanity() {
         CountMean::named("top", &["leaf"], &calls),
     ]);
     let wanted = vec![key(MIN, "top")];
-    let graph = build_graph(&registry, &wanted).expect("graphs");
+    let (graph, _) = build_graph(&registry, &with_defaults(&wanted)).expect("graphs");
     let frame = SeriesKey::new(MIN, FRAME_KERNEL, &ParamSet::new()).expect("frame key");
     let leaf = key(MIN, "leaf");
     let top = key(MIN, "top");
@@ -322,7 +336,7 @@ fn random_request_sets_evaluate_in_valid_topo_order() {
         if wanted.is_empty() {
             wanted.push(key(MIN, "a"));
         }
-        let graph = build_graph(&registry, &wanted).expect("random graphs");
+        let (graph, _) = build_graph(&registry, &with_defaults(&wanted)).expect("random graphs");
         let order = order_for(&graph, &wanted).expect("random orders");
         // Every edge resolves backwards: each node's deps are provided by
         // nodes positioned earlier in the returned order.
@@ -377,6 +391,6 @@ fn fail_closed_guards() {
     );
     // Declared-but-unregistered deps refuse at graph build (fail-closed,
     // never an empty order downstream).
-    assert!(build_graph(&registry, &[key(MIN, "cnt")]).is_err(), "ghost dep refuses");
+    assert!(build_graph(&registry, &with_defaults(&[key(MIN, "cnt")])).is_err(), "ghost dep refuses");
     assert!(store.cache(&key(MIN, "cnt")).is_none(), "refused work caches nothing");
 }

@@ -213,8 +213,9 @@ fn alias_last_wins_preserved() {
 
 #[test]
 fn non_native_libraries_unaffected() {
-    // libUtil has no native row at all; libApex has a row but no provider
-    // yet (M7) — both stay Pine-served with zero routing change.
+    // libUtil has no native row at all and stays Pine-served with zero
+    // routing change; libApex serves natively since its provider landed
+    // (the serving flip — audit rust, `MarketContext` routed native).
     let modules = vec![
         shipped("libraries/_libUtil.pine", "libUtil", 12),
         shipped("libraries/_libBuffers.pine", "libBuffers", 6),
@@ -230,7 +231,11 @@ fn non_native_libraries_unaffected() {
     let overlay = apply_overrides(&graph, &enabled()).expect("override applies");
     assert!(!overlay.is_served("showmethegrail", "libUtil"));
     assert_eq!(overlay.provides("showmethegrail", "libUtil"), None);
-    assert!(!overlay.is_served("showmethegrail", "libApex"), "no provider yet, stays Pine");
+    assert!(overlay.is_served("showmethegrail", "libApex"), "provider serves");
+    match overlay.resolve_reference(&driver_id(), "APEX", "MarketContext") {
+        Ok(NativeResolution::Native { .. }) => {}
+        other => panic!("served symbol routes native, got {other:?}"),
+    }
     match overlay.resolve_reference(&driver_id(), "UTIL", "getTimeframeMS") {
         Ok(NativeResolution::Pine(target)) => {
             assert_eq!(target, ModuleId::new("showmethegrail", "libUtil"));
@@ -238,8 +243,8 @@ fn non_native_libraries_unaffected() {
         other => panic!("non-native routes Pine, got {other:?}"),
     }
     // Audit rows exist only for native-table libraries: libBars (rust),
-    // libBuffers (rust), and libApex (pine, provider pending). No other
-    // module is observed.
+    // libBuffers (rust), and libApex (rust, served since its provider
+    // landed). No other module is observed.
     let mut rows: Vec<(&str, NativeServed)> = overlay
         .audits()
         .iter()
@@ -249,7 +254,7 @@ fn non_native_libraries_unaffected() {
     assert_eq!(
         rows,
         vec![
-            ("libApex", NativeServed::Pine),
+            ("libApex", NativeServed::Rust),
             ("libBars", NativeServed::Rust),
             ("libBuffers", NativeServed::Rust)
         ],

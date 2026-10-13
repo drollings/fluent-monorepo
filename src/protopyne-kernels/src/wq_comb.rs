@@ -804,6 +804,6 @@ pub fn comb_float(values: &[f64]) -> Vec<Option<f64>> {
         .collect()
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "research"))]
 #[path = "../tests/wq_comb.rs"]
 mod tests;

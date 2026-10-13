@@ -1,6 +1,6 @@
 //! Research-frame helpers: trimmed windows to Polars frames for analysis.
 //!
-//! These exist for offline research (parity checks, calibration sweeps,
+//! These exist for offline research (Expr-parity checks, calibration sweeps,
 //! distribution studies) and never run in the per-bar hot loop: they
 //! allocate columnar frames, which is exactly what the streaming executor
 //! must not do per tick. [`frame_of_bars`] carries the OHLCV legs plus epoch
@@ -16,6 +16,7 @@ use polars::prelude::*;
 
 use crate::error::KernelError;
 use crate::indicator::fin_or_none;
+use crate::math::strict_window;
 use protopyne_types::Bar;
 
 /// Convert closed bars to a columnar research frame.
@@ -49,24 +50,6 @@ pub fn frame_of_values(name: &str, values: &[Option<f64>]) -> Result<DataFrame, 
         .map_err(|e| KernelError::Research(format!("frame_of_values: {e}")))
 }
 
-/// Strict trailing window ending at `end` (inclusive): `None` while warming
-/// or when any leg in the window is non-finite. Output length always equals
-/// the input length; callers map the window to a value or `None`.
-///
-/// Shared with the series combinators, which impose the same
-/// min-periods-as-warmup convention over bare slices.
-pub(crate) fn strict_window(values: &[f64], end: usize, period: usize) -> Option<&[f64]> {
-    if period == 0 || end + 1 < period || values.len() <= end {
-        return None;
-    }
-    let window = &values[end + 1 - period..=end];
-    if window.iter().all(|v| v.is_finite()) {
-        Some(window)
-    } else {
-        None
-    }
-}
-
 /// Kaufman-style efficiency ratio over closes: net displacement over total
 /// path length, `|c[i] - c[i-p]| / sum |diff|`. Reads `None` while warming
 /// and on degenerate (flat) windows, matching the reference's null there.
@@ -91,7 +74,7 @@ pub fn efficiency_ratio(closes: &[f64], period: usize) -> Vec<Option<f64>> {
 
 /// Price density: summed bar ranges over the window's total extent,
 /// `sum(h - l) / (max(h) - min(l))`. Flat windows read `None` on both sides
-/// of the parity (the reference divides zero by zero there).
+/// of the Expr-parity comparison (the reference divides zero by zero there).
 #[must_use]
 pub fn price_density(highs: &[f64], lows: &[f64], period: usize) -> Vec<Option<f64>> {
     let len = highs.len().min(lows.len());
@@ -143,7 +126,7 @@ pub fn fractal_dimension(
 /// `m`-bar z-score (population denominator): the RSRS timing score.
 /// Constant windows (zero slope variance) and short histories read `None` —
 /// there is nothing to rank. Window means are demeaned per window for
-/// numerical stability; the reference moment form agrees to parity eps.
+/// numerical stability; the reference moment form agrees to Expr-parity eps.
 #[must_use]
 pub fn rsrs(highs: &[f64], lows: &[f64], n: usize, m: usize) -> Vec<Option<f64>> {
     let len = highs.len().min(lows.len());

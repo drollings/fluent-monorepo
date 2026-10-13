@@ -23,13 +23,13 @@
 //! breaks stay in the chart-model providers; [`TradingSession`] is the
 //! daylight-aware regular-hours clock those providers do not cover.
 
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{BTreeMap, VecDeque};
 
 use fluent_wvr::prelude::*;
 
 use crate::error::KernelError;
 use crate::indicator::BarTick;
-use crate::value::PineValue;
+use crate::value::{FieldTable, PineValue};
 use crate::mtf::{Lookahead, floor_to_grid, fully_formed};
 use protopyne_types::{Bar, BarGap, BarWindow, Timeframe, validate_new_bar};
 
@@ -47,7 +47,9 @@ pub const VOLUME_EPSILON: f64 = 0.0001;
 pub const DRIFT_TOLERANCE_PCT: f64 = 0.1;
 
 /// Buy/sell split for directionless (flat) volume. Neither axis: a split
-/// convention, not a trigger — it never fires, gates, or pulls.
+/// convention, not a trigger — it never fires, gates, or pulls. Stays the
+/// declared prior wherever input carries no direction (flat/NaN prints,
+/// degenerate candles); documented here, never tuned.
 pub const NEUTRAL_BUY_RATIO: f64 = 0.5;
 
 /// Extra ring slots beyond one chart bar's worth of lower-timeframe candles.
@@ -72,15 +74,80 @@ pub fn drift_pct(actual: f64, expected: f64) -> Option<f64> {
 /// down takes none, flat (or directionless input) splits neutral.
 #[must_use]
 pub fn estimate_buy_volume(total_volume: f64, price_delta: f64) -> f64 {
+    estimate_buy_volume_estimated(total_volume, price_delta).buy_volume
+}
+
+/// How a buy-volume split was produced: the input-provenance axis. Ticks
+/// sign direction print by print; anything else (candle shape, the declared
+/// neutral prior) is a fallback estimate, never a measurement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeltaMethod {
+    /// Split from print direction (up-tick all, down-tick none).
+    TickSigned,
+    /// Split from candle shape or the neutral prior.
+    ShapeFallback,
+}
+
+/// What a buy-volume split is worth: the coverage/validity axis, derived
+/// from coverage depth only (documented mapping, no tuning). Shape output is
+/// always `Low` — a heuristic, however well-formed. Measured accuracy is a
+/// separate table, owned by calibration, never inferred here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeltaConfidence {
+    /// Tick-signed with observed direction over two or more prints.
+    High,
+    /// Tick-signed but thin: one lone print borrowing its delta from a
+    /// neighbor bucket.
+    Reduced,
+    /// No directional information: flat/NaN prints, shape estimates,
+    /// inferred top-ups, invented gaps.
+    Low,
+}
+
+/// One buy-volume split with its provenance: the volume plus the method that
+/// produced it and the confidence its coverage earns. Every split the ring
+/// stores carries one of these; nothing reaches storage unlabeled.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DeltaEstimate {
+    /// Buy volume in shares.
+    pub buy_volume: f64,
+    /// Input provenance of the split.
+    pub method: DeltaMethod,
+    /// Coverage-derived confidence.
+    pub confidence: DeltaConfidence,
+}
+
+/// Labeled print-level split: nonzero direction signs at high confidence;
+/// directionless prints (flat or NaN delta) fall back to the declared
+/// neutral prior at low confidence. Same numbers as
+/// [`estimate_buy_volume`], which delegates here.
+#[must_use]
+pub fn estimate_buy_volume_estimated(total_volume: f64, price_delta: f64) -> DeltaEstimate {
     if price_delta.is_nan() {
-        return total_volume * NEUTRAL_BUY_RATIO;
+        return DeltaEstimate {
+            buy_volume: total_volume * NEUTRAL_BUY_RATIO,
+            method: DeltaMethod::TickSigned,
+            confidence: DeltaConfidence::Low,
+        };
     }
     if price_delta > 0.0 {
-        total_volume
-    } else if price_delta < 0.0 {
-        0.0
-    } else {
-        total_volume * NEUTRAL_BUY_RATIO
+        return DeltaEstimate {
+            buy_volume: total_volume,
+            method: DeltaMethod::TickSigned,
+            confidence: DeltaConfidence::High,
+        };
+    }
+    if price_delta < 0.0 {
+        return DeltaEstimate {
+            buy_volume: 0.0,
+            method: DeltaMethod::TickSigned,
+            confidence: DeltaConfidence::High,
+        };
+    }
+    DeltaEstimate {
+        buy_volume: total_volume * NEUTRAL_BUY_RATIO,
+        method: DeltaMethod::TickSigned,
+        confidence: DeltaConfidence::Low,
     }
 }
 
@@ -92,7 +159,9 @@ pub fn is_valid_volume(vol: f64) -> bool {
 
 /// Structural OHLCV guard behind delta estimation: every leg finite,
 /// positive volume, and a non-degenerate range (relative floor keeps dust
-/// wicks from inventing direction).
+/// wicks from inventing direction). The dust floor (1e-6 of low) is
+/// provisional per asset class, pending measured calibration — it guards
+/// direction invention, never asserts it.
 #[must_use]
 pub fn validate_ohlcv(open: f64, high: f64, low: f64, close: f64, vol: f64) -> bool {
     open.is_finite()
@@ -110,8 +179,27 @@ pub fn validate_ohlcv(open: f64, high: f64, low: f64, close: f64, vol: f64) -> b
 /// the neutral split. Same op order as the Pine original.
 #[must_use]
 pub fn estimate_delta_volume(open: f64, high: f64, low: f64, close: f64, vol: f64) -> f64 {
+    estimate_delta_volume_estimated(open, high, low, close, vol).buy_volume
+}
+
+/// Labeled shape split: well-formed candles estimate at low confidence (a
+/// heuristic, never a measurement); degenerate candles fall back to the
+/// neutral split, also low. Same numbers as [`estimate_delta_volume`],
+/// which delegates here.
+#[must_use]
+pub fn estimate_delta_volume_estimated(
+    open: f64,
+    high: f64,
+    low: f64,
+    close: f64,
+    vol: f64,
+) -> DeltaEstimate {
     if !validate_ohlcv(open, high, low, close, vol) {
-        return vol * 0.5;
+        return DeltaEstimate {
+            buy_volume: vol * NEUTRAL_BUY_RATIO,
+            method: DeltaMethod::ShapeFallback,
+            confidence: DeltaConfidence::Low,
+        };
     }
     let range = high - low;
     let body = (close - open).abs();
@@ -127,7 +215,11 @@ pub fn estimate_delta_volume(open: f64, high: f64, low: f64, close: f64, vol: f6
     let directional = direction * body_ratio * 0.5;
     let close_adjustment = (close_pos - 0.5) * 0.3;
     let buy_ratio = (0.5 + directional + close_adjustment).clamp(0.02, 0.98);
-    vol * buy_ratio
+    DeltaEstimate {
+        buy_volume: vol * buy_ratio,
+        method: DeltaMethod::ShapeFallback,
+        confidence: DeltaConfidence::Low,
+    }
 }
 
 /// Fast hyperbolic-tangent approximation (`x / (1 + |x|)`).
@@ -191,7 +283,8 @@ pub struct RawTick {
 pub struct BarParts {
     /// Bucket-open timestamp in milliseconds.
     pub ts_ms: i64,
-    /// Open (chained from the prior close at read time in the ring).
+    /// Open (persisted at write time, chained from the bar open or the
+    /// prior close).
     pub o: f64,
     /// High.
     pub h: f64,
@@ -258,6 +351,18 @@ pub struct FetchCheck<'a> {
     pub rows: Option<&'a [LtfRow]>,
 }
 
+/// Which clock stamps one tick fold's tracking writes (`last_time`,
+/// `last_time_diff`). The choice stays at the call site where the oracle
+/// branch it mirrors is named: rehearsal/paper accumulation reads the
+/// side-channel tick stamp, native `fetch` reads bar-open time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TickClock {
+    /// Side-channel tick stamp (`timenow`).
+    TickMs,
+    /// Bar-open time (the oracle `time` leg, matching `fetch`).
+    BarOpenMs,
+}
+
 /// How one tick ingested: seeding absorbs the first updates into tracking
 /// (their volume never enters a delta), flat updates only move price
 /// tracking, rollbacks reset the accumulator.
@@ -306,7 +411,8 @@ pub struct ConfirmOutcome {
     pub volume_drift_pct: f64,
     /// Reconstructed drift under the threshold.
     pub healthy: bool,
-    /// Remainder top-up candle, if the reference overshot the ring.
+    /// Remainder adjustment, if the reference missed the ring: the appended
+    /// top-up candle on shortfall, the trimmed newest candle on overshoot.
     pub remainder: Option<BarParts>,
     /// Drift tripped: the caller should reconcile against closed rows.
     pub pull_needed: bool,
@@ -317,7 +423,8 @@ pub struct ConfirmOutcome {
 pub struct ReconcileOutcome {
     /// Candles in the ring after the rebuild.
     pub rebuilt: usize,
-    /// Remainder top-up candle, if the reference overshot the rows.
+    /// Remainder adjustment, if the reference missed the rows: the appended
+    /// top-up candle on shortfall, the trimmed newest candle on overshoot.
     pub remainder: Option<BarParts>,
 }
 
@@ -408,8 +515,9 @@ pub fn tick_bar_state(first_in_bar: bool, last_in_bar: bool) -> BarStateFlags {
     }
 }
 
-/// Which input a resample should fold: cheap tick prints, or full bars when
-/// reusing them costs less. Ties reuse bars (no print stream to maintain).
+/// Which input a resample should fold: tick prints where they cover the
+/// buckets, or full bars anywhere uncovered. Per-bucket mixing lives in
+/// tick-covered reconciliation; this answers the wholesale question.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResampleSource {
     /// Fold the tick prints.
@@ -418,10 +526,12 @@ pub enum ResampleSource {
     Bars,
 }
 
-/// Pick the cheaper resample input by count.
+/// Pick the resample input by coverage: ticks win only where they cover
+/// every bucket, otherwise the full bars fill (shape-labeled). Zero buckets
+/// reuses bars (nothing to cover).
 #[must_use]
-pub fn choose_source(tick_count: usize, bar_count: usize) -> ResampleSource {
-    if tick_count < bar_count {
+pub fn choose_source(covered_buckets: usize, total_buckets: usize) -> ResampleSource {
+    if total_buckets > 0 && covered_buckets >= total_buckets {
         ResampleSource::Ticks
     } else {
         ResampleSource::Bars
@@ -597,16 +707,23 @@ impl WorkUnit for BarsConfig {
 
 impl_component!(BarsConfig);
 
-/// One retained reconstructed candle (open chains from the bar open or the
-/// prior close at read time, like the library's `get`).
+/// One retained reconstructed candle. The open persists at write time
+/// (chained from the bar open or the prior close, like the library's
+/// `get`), so reads never re-derive it — eviction-safe, unlike the old
+/// read-time chain that kept serving a stale `candle_open` past eviction.
+/// The buy split always carries its provenance label — nothing reaches
+/// storage unlabeled.
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct StoredCandle {
     ts_ms: i64,
+    o: f64,
     h: f64,
     l: f64,
     c: f64,
     volume: f64,
     buy_volume: f64,
+    buy_method: DeltaMethod,
+    buy_confidence: DeltaConfidence,
 }
 
 /// Tick-to-bar ring: bounded reconstructed-candle buffer plus the forming
@@ -637,6 +754,12 @@ pub struct BarRing {
     acc_c: f64,
     acc_v: f64,
     acc_b: f64,
+    /// Confidence of the forming accumulator's buy split. The fold only ever
+    /// processes tick prints, so the method is tick-signed by construction;
+    /// any directionless print drops confidence to `Low` (sticky) until the
+    /// next reset. Hydration from the Pine table (labels do not serialize)
+    /// conservatively resets to `Low`.
+    acc_b_confidence: DeltaConfidence,
     acc_start: Option<i64>,
     last_fetch_time: Option<i64>,
     last_confirmed: Option<i64>,
@@ -677,6 +800,7 @@ impl BarRing {
             acc_c: 0.0,
             acc_v: 0.0,
             acc_b: 0.0,
+            acc_b_confidence: DeltaConfidence::High,
             acc_start: None,
             last_fetch_time: None,
             last_confirmed: None,
@@ -778,19 +902,14 @@ impl BarRing {
         self.last_bar_drift
     }
 
-    /// Read candle `index` (0 = oldest) with the open chained from the bar
-    /// open or the prior close; out-of-range reads absent.
+    /// Read candle `index` (0 = oldest); out-of-range reads absent. Opens
+    /// come from storage, persisted at write time.
     #[must_use]
     pub fn get(&self, index: usize) -> Option<BarParts> {
         let slot = self.candles.get(index)?;
-        let open = if index == 0 {
-            self.candle_open?
-        } else {
-            self.candles.get(index - 1).map(|prev| prev.c)?
-        };
         Some(BarParts {
             ts_ms: slot.ts_ms,
-            o: open,
+            o: slot.o,
             h: slot.h,
             l: slot.l,
             c: slot.c,
@@ -931,6 +1050,7 @@ impl BarRing {
         self.acc_c = close;
         self.acc_v = 0.0;
         self.acc_b = 0.0;
+        self.acc_b_confidence = DeltaConfidence::High;
         self.acc_start = Some(bar_open_ms);
         self.reset_ring();
         self.gap_count = 0;
@@ -941,27 +1061,49 @@ impl BarRing {
     /// Fold one tick update: cumulative volume and bar-so-far legs arrive on
     /// the shared [`BarTick`] shape (`volume` is cumulative, `close` the
     /// tick price, `high`/`low` the bar-so-far extremes for rollback
-    /// recovery); the tick stamp rides alongside.
+    /// recovery); the tick stamp rides alongside and sources tracking
+    /// (`TickClock::TickMs` — the rehearsal/paper path carries one stamp,
+    /// so it serves both roles here).
     pub fn ingest_tick(&mut self, bar: BarTick, tick_ms: i64) -> TickIngest {
+        self.fold_tick(bar, tick_ms, tick_ms, TickClock::TickMs)
+    }
+
+    /// The single tick fold: seed/rollback/accumulate over cumulative
+    /// volume and bar-so-far legs, stamping tracking from the clock source.
+    /// Both public entries compose this — `ingest_tick` with the
+    /// side-channel stamp, `fetch_tick_native` with bar-open time — so the
+    /// seed/rollback/accumulate rules exist exactly once.
+    fn fold_tick(
+        &mut self,
+        bar: BarTick,
+        tick_ms: i64,
+        bar_open_ms: i64,
+        clock: TickClock,
+    ) -> TickIngest {
+        let stamp = match clock {
+            TickClock::TickMs => tick_ms,
+            TickClock::BarOpenMs => bar_open_ms,
+        };
         let price = bar.close;
         let cum_volume = bar.volume;
         match self.last_volume {
             None => {
                 self.last_volume = Some(cum_volume);
                 self.last_price = Some(price);
-                self.last_time = Some(tick_ms);
+                self.last_time = Some(stamp);
                 TickIngest::Seeded
             }
             Some(last) if cum_volume < last => {
                 self.rollback_count += 1;
                 self.acc_v = 0.0;
                 self.acc_b = 0.0;
+                self.acc_b_confidence = DeltaConfidence::High;
                 self.acc_h = bar.high;
                 self.acc_l = bar.low;
                 self.acc_c = price;
                 self.last_price = Some(price);
                 self.last_volume = Some(cum_volume);
-                self.last_time = Some(tick_ms);
+                self.last_time = Some(stamp);
                 TickIngest::RolledBack
             }
             Some(last) => {
@@ -971,15 +1113,21 @@ impl BarRing {
                 if volume_delta > 0.0 {
                     self.tick_count += 1;
                     self.tick_volume_total += volume_delta;
-                    let buy = estimate_buy_volume(volume_delta, price_delta);
+                    let split = estimate_buy_volume_estimated(volume_delta, price_delta);
+                    let buy = split.buy_volume;
                     self.tick_buy_volume += buy;
                     self.acc_v += volume_delta;
                     self.acc_b += buy;
+                    // Any directionless print drops the bar to low (sticky):
+                    // the accumulated split provably contains an unsigned share.
+                    if split.confidence == DeltaConfidence::Low {
+                        self.acc_b_confidence = DeltaConfidence::Low;
+                    }
                     self.acc_h = self.acc_h.max(price);
                     self.acc_l = if self.acc_l == 0.0 { price } else { self.acc_l.min(price) };
                     self.acc_c = price;
-                    self.last_time_diff = Some(tick_ms - self.last_time.unwrap_or(tick_ms));
-                    self.last_time = Some(tick_ms);
+                    self.last_time_diff = Some(stamp - self.last_time.unwrap_or(stamp));
+                    self.last_time = Some(stamp);
                     self.last_volume = Some(cum_volume);
                     TickIngest::Accumulated { volume_delta, buy_volume: buy }
                 } else {
@@ -1112,8 +1260,16 @@ impl BarRing {
             outcome.pull_needed = true;
         } else {
             let remainder_vol = ctf.volume - self.total_vol;
-            outcome.remainder =
-                self.add_remainder(remainder_vol, ctf.o, ctf.h, ctf.l, ctf.c, ctf.bar_open_ms);
+            let prevailing = self.prevailing_buy_method();
+            outcome.remainder = self.add_remainder(
+                remainder_vol,
+                ctf.o,
+                ctf.h,
+                ctf.l,
+                ctf.c,
+                ctf.bar_open_ms,
+                prevailing,
+            );
         }
         self.reset_accumulator(ctf.bar_open_ms, ctf.c);
         outcome
@@ -1125,18 +1281,58 @@ impl BarRing {
     /// remainder. Counts one pull. Rows past capacity evict the oldest
     /// (bounded memory keeps the newest; the Pine loop instead stops at
     /// capacity, but its sizing never overflows, so fitting input agrees).
+    /// Without a print tape every split is shape-estimated; pass ticks
+    /// through [`reconcile_with_ticks`](Self::reconcile_with_ticks) to prefer
+    /// tick-signed splits where the tape covers the bucket.
     pub fn reconcile(
         &mut self,
         rows: &[LtfRow],
         reference_vol: f64,
         fallback_open: f64,
     ) -> ReconcileOutcome {
+        self.reconcile_with_ticks(rows, &[], reference_vol, fallback_open)
+    }
+
+    /// Rebuild the ring from closed rows with an optional print tape: every
+    /// bucket the tape covers splits by tick direction (labeled `TickSigned`
+    /// with coverage confidence); uncovered buckets fall back to shape
+    /// estimation (labeled `Low`). Candle volumes stay the rows'
+    /// authoritative totals — tick splits clamp to `[0, row volume]` so a
+    /// print/candle disagreement can never invent or erase shares. The
+    /// remainder top-up carries the volume-prevailing method label at low
+    /// confidence. An empty tape rebuilds exactly like
+    /// [`reconcile`](Self::reconcile).
+    pub fn reconcile_with_ticks(
+        &mut self,
+        rows: &[LtfRow],
+        ticks: &[RawTick],
+        reference_vol: f64,
+        fallback_open: f64,
+    ) -> ReconcileOutcome {
         if !rows.is_empty() {
             self.reset_ring();
+            let buckets = fold_tick_buckets(ticks, self.config.ltf_ms);
             for row in rows {
                 if is_valid_volume(row.volume) {
-                    let buy = estimate_delta_volume(row.o, row.h, row.l, row.c, row.volume);
-                    self.write_candle(row.h, row.l, row.c, row.volume, buy, row.ts_ms);
+                    let split = match buckets.get(&row.ts_ms.div_euclid(self.config.ltf_ms)) {
+                        Some(bucket) => DeltaEstimate {
+                            buy_volume: bucket.b.clamp(0.0, row.volume),
+                            method: DeltaMethod::TickSigned,
+                            confidence: bucket_confidence(bucket.prints, bucket.directed),
+                        },
+                        None => estimate_delta_volume_estimated(
+                            row.o, row.h, row.l, row.c, row.volume,
+                        ),
+                    };
+                    self.write_candle(
+                        self.candles.back().map_or(rows[0].o, |candle| candle.c),
+                        row.h,
+                        row.l,
+                        row.c,
+                        row.volume,
+                        split,
+                        row.ts_ms,
+                    );
                 }
             }
             if !self.candles.is_empty() {
@@ -1150,12 +1346,50 @@ impl BarRing {
         if !rows.is_empty() {
             let remainder_vol = reference_vol - self.total_vol;
             if let Some(last) = rows.last() {
-                outcome.remainder =
-                    self.add_remainder(remainder_vol, last.o, last.h, last.l, last.c, last.ts_ms);
+                let prevailing = self.prevailing_buy_method();
+                outcome.remainder = self.add_remainder(
+                    remainder_vol,
+                    last.o,
+                    last.h,
+                    last.l,
+                    last.c,
+                    last.ts_ms,
+                    prevailing,
+                );
             }
         }
         self.pull_count += 1;
         outcome
+    }
+
+    /// Volume-prevailing buy method over the stored candles: the label an
+    /// unattributed top-up belongs to. Ties and empty rings read shape (the
+    /// conservative claim — tick provenance needs a strict majority).
+    fn prevailing_buy_method(&self) -> DeltaMethod {
+        let mut signed_vol = 0.0;
+        let mut shape_vol = 0.0;
+        for candle in &self.candles {
+            match candle.buy_method {
+                DeltaMethod::TickSigned => signed_vol += candle.volume,
+                DeltaMethod::ShapeFallback => shape_vol += candle.volume,
+            }
+        }
+        if signed_vol > shape_vol {
+            DeltaMethod::TickSigned
+        } else {
+            DeltaMethod::ShapeFallback
+        }
+    }
+
+    /// Provenance label of candle `index`'s buy split (0 = oldest): the
+    /// method that produced it and the confidence its coverage earns.
+    /// Calibration reads these alongside the volumes; out-of-range reads
+    /// absent.
+    #[must_use]
+    pub fn buy_provenance(&self, index: usize) -> Option<(DeltaMethod, DeltaConfidence)> {
+        self.candles
+            .get(index)
+            .map(|candle| (candle.buy_method, candle.buy_confidence))
     }
 
     fn reset_ring(&mut self) {
@@ -1167,7 +1401,23 @@ impl BarRing {
         self.sum_c = 0.0;
     }
 
-    fn write_candle(&mut self, high: f64, low: f64, close: f64, vol: f64, buy: f64, ts_ms: i64) {
+    /// The open a new candle chains: the prior close while the ring is
+    /// non-empty, else the bar open. One rule for every write site, so
+    /// stored opens equal what the old read-time chain returned.
+    fn chained_open(&self) -> Option<f64> {
+        self.candles.back().map(|candle| candle.c).or(self.candle_open)
+    }
+
+    fn write_candle(
+        &mut self,
+        open: f64,
+        high: f64,
+        low: f64,
+        close: f64,
+        vol: f64,
+        split: DeltaEstimate,
+        ts_ms: i64,
+    ) {
         if self.candles.len() >= self.config.max_candles() {
             if let Some(old) = self.candles.pop_front() {
                 self.total_vol -= old.volume;
@@ -1179,14 +1429,17 @@ impl BarRing {
         }
         self.candles.push_back(StoredCandle {
             ts_ms,
+            o: open,
             h: high,
             l: low,
             c: close,
             volume: vol,
-            buy_volume: buy,
+            buy_volume: split.buy_volume,
+            buy_method: split.method,
+            buy_confidence: split.confidence,
         });
         self.total_vol += vol;
-        self.total_buy += buy;
+        self.total_buy += split.buy_volume;
         self.sum_h += high;
         self.sum_l += low;
         self.sum_c += close;
@@ -1206,9 +1459,21 @@ impl BarRing {
             volume: self.acc_v,
             buy_volume: self.acc_b,
         };
-        self.write_candle(self.acc_h, self.acc_l, self.acc_c, self.acc_v, self.acc_b, start);
+        // The fold only processes tick prints: tick-signed by construction,
+        // at whatever confidence the bar's prints earned.
+        let split = DeltaEstimate {
+            buy_volume: self.acc_b,
+            method: DeltaMethod::TickSigned,
+            confidence: self.acc_b_confidence,
+        };
+        // The stored open chains exactly like the old read-time rule; the
+        // returned candle keeps the accumulator close as its open (callers
+        // read stored opens through `get`).
+        let open = self.chained_open().unwrap_or(self.acc_c);
+        self.write_candle(open, self.acc_h, self.acc_l, self.acc_c, self.acc_v, split, start);
         self.acc_v = 0.0;
         self.acc_b = 0.0;
+        self.acc_b_confidence = DeltaConfidence::High;
         self.acc_h = 0.0;
         self.acc_l = 0.0;
         self.acc_c = 0.0;
@@ -1228,7 +1493,13 @@ impl BarRing {
                 break;
             }
             let gap_time = start + self.config.ltf_ms + i as i64 * self.config.ltf_ms;
-            self.write_candle(last_close, last_close, last_close, 0.0, 0.0, gap_time);
+            // Invented continuity carries no directional information.
+            let placeholder = DeltaEstimate {
+                buy_volume: 0.0,
+                method: DeltaMethod::ShapeFallback,
+                confidence: DeltaConfidence::Low,
+            };
+            self.write_candle(last_close, last_close, last_close, last_close, 0.0, placeholder, gap_time);
             out.push(BarParts {
                 ts_ms: gap_time,
                 o: last_close,
@@ -1248,9 +1519,26 @@ impl BarRing {
         self.acc_c = price;
         self.acc_v = 0.0;
         self.acc_b = 0.0;
+        self.acc_b_confidence = DeltaConfidence::High;
         self.acc_start = Some(now_ms);
     }
 
+    /// Signed remainder adjustment: shortfall (reference above the ring)
+    /// appends a top-up candle (the long-standing rule, unchanged); overshoot
+    /// (reference below the ring) trims the newest candle(s) down toward the
+    /// reference instead. Trimming is newest-first, floors candles at zero
+    /// (kept as zero-volume placeholders, like gap fills), cascades older
+    /// while overshoot remains, and preserves each candle's buy share and
+    /// provenance labels — it never fabricates volume.
+    ///
+    /// Deliberate Pine divergence: the shipped `_addRemainderCandle` takes
+    /// `abs()` and appends on overshoot, pushing the total further from the
+    /// reference; the native ring scales down instead. Freeze windows
+    /// covering overshoot regenerate with this reason recorded (see
+    /// `tests/remainder_signed.rs`); tick-accuracy and drift math unchanged.
+    /// Returns the appended or trimmed candle; `None` on dust, on an empty
+    /// ring, or on a full ring for the append arm (trimming needs no
+    /// capacity).
     fn add_remainder(
         &mut self,
         remainder_vol: f64,
@@ -1259,17 +1547,66 @@ impl BarRing {
         low: f64,
         close: f64,
         ts_ms: i64,
+        method: DeltaMethod,
     ) -> Option<BarParts> {
-        if !remainder_vol.abs().is_finite()
-            || remainder_vol.abs() <= VOLUME_EPSILON
-            || self.candles.len() >= self.config.max_candles()
-        {
+        if !remainder_vol.is_finite() || remainder_vol.abs() <= VOLUME_EPSILON {
             return None;
         }
-        let vol = remainder_vol.abs();
-        let buy = estimate_delta_volume(open, high, low, close, vol);
-        self.write_candle(high, low, close, vol, buy, ts_ms);
-        Some(BarParts { ts_ms, o: open, h: high, l: low, c: close, volume: vol, buy_volume: buy })
+        if remainder_vol < 0.0 {
+            return self.trim_overshoot(-remainder_vol);
+        }
+        if self.candles.len() >= self.config.max_candles() {
+            return None;
+        }
+        let vol = remainder_vol;
+        // The split still shapes from the tail candle (numbers unchanged);
+        // the label records the prevailing provenance at low confidence —
+        // a top-up is inferred volume either way.
+        let split = DeltaEstimate {
+            buy_volume: estimate_delta_volume(open, high, low, close, vol),
+            method,
+            confidence: DeltaConfidence::Low,
+        };
+        // Stored opens chain like every other write; the reported candle
+        // keeps the reference legs. Fallback is the candle's own close: a
+        // remainder on an empty ring with no bar open has no chain to follow
+        // (its old read was absent).
+        let stored = self.chained_open().unwrap_or(close);
+        self.write_candle(stored, high, low, close, vol, split, ts_ms);
+        Some(BarParts { ts_ms, o: open, h: high, l: low, c: close, volume: vol, buy_volume: split.buy_volume })
+    }
+
+    /// Trim `overshoot` volume newest-first toward the reference. Each
+    /// candle keeps its buy share (`buy_volume` scales with the surviving
+    /// fraction); totals track the trims. Overshoot past the whole ring
+    /// floors every candle at zero — the ring never goes negative, and the
+    /// leftover stays as acknowledged drift. Reports the newest candle.
+    fn trim_overshoot(&mut self, mut overshoot: f64) -> Option<BarParts> {
+        if self.candles.is_empty() {
+            return None;
+        }
+        let mut index = self.candles.len();
+        while overshoot > VOLUME_EPSILON && index > 0 {
+            index -= 1;
+            let (old_vol, old_buy) = {
+                let candle = &self.candles[index];
+                (candle.volume, candle.buy_volume)
+            };
+            if old_vol <= 0.0 {
+                continue;
+            }
+            let take = overshoot.min(old_vol);
+            let survive = (old_vol - take) / old_vol;
+            {
+                let candle = &mut self.candles[index];
+                candle.volume = old_vol - take;
+                candle.buy_volume = old_buy * survive;
+            }
+            self.total_vol -= take;
+            self.total_buy -= old_buy * (take / old_vol);
+            overshoot -= take;
+        }
+        self.get(self.candles.len() - 1)
     }
 }
 
@@ -1327,10 +1664,6 @@ fn nonzero_or(value: f64, default: f64) -> f64 {
 // owns the table. Anything untranslatable refuses with a named reason —
 // never a silent approximation.
 // ---------------------------------------------------------------------------
-
-/// Pine object field table shared with the engine bridge: field name to
-/// Pine value (`None` is Pine `na`).
-pub type FieldTable = HashMap<String, Option<PineValue>>;
 
 /// Physical cursor of a hydrated ring: the caller advances it with Pine's
 /// exact rules per appended candle (see [`BarRing::write_pine_fields`).
@@ -1572,22 +1905,40 @@ impl BarRing {
         let mut ring = Self::new(&config).map_err(|err| {
             bridge_invalid("config", &format!("ring refuses spans ({err})"))
         })?;
+        // Opens do not serialize to the Pine table (the oracle keeps no
+        // open array): hydration re-chains from the candle_open field
+        // exactly like the old read-time rule, so hydrated reads stay
+        // byte-identical. Labels follow the same shape/low downgrade.
+        let candle_open = field_opt_f64(fields, "candle_open")?;
         for logical in 0..count {
             let physical = if count < max {
                 logical
             } else {
                 (head + logical) % max
             };
+            let close = slot_f64(cc[physical], "cc", physical)?;
+            let chained = ring
+                .candles
+                .back()
+                .map(|candle| candle.c)
+                .or(candle_open)
+                .unwrap_or(close);
             ring.candles.push_back(StoredCandle {
                 ts_ms: slot_i64(ct[physical], "ct", physical)?,
+                o: chained,
                 h: slot_f64(ch[physical], "ch", physical)?,
                 l: slot_f64(cl[physical], "cl", physical)?,
-                c: slot_f64(cc[physical], "cc", physical)?,
+                c: close,
                 volume: slot_f64(cv[physical], "cv", physical)?,
                 buy_volume: slot_f64(cb[physical], "cb", physical)?,
+                // Provenance labels do not serialize to the Pine table: a
+                // hydrated candle may have been touched by the interpreted
+                // body, so it reads shape/low until native paths re-earn it.
+                buy_method: DeltaMethod::ShapeFallback,
+                buy_confidence: DeltaConfidence::Low,
             });
         }
-        ring.candle_open = field_opt_f64(fields, "candle_open")?;
+        ring.candle_open = candle_open;
         ring.total_vol = field_req_f64(fields, "total_vol")?;
         ring.total_buy = field_req_f64(fields, "total_buy")?;
         ring.sum_h = field_req_f64(fields, "sum_h_running")?;
@@ -1609,6 +1960,10 @@ impl BarRing {
         ring.acc_c = field_req_f64(fields, "c")?;
         ring.acc_v = field_req_f64(fields, "v")?;
         ring.acc_b = field_req_f64(fields, "b")?;
+        // Provenance labels do not serialize to the Pine table: a hydrated
+        // accumulator may have been touched by the interpreted body, so it
+        // reads low until the fold re-earns it.
+        ring.acc_b_confidence = DeltaConfidence::Low;
         ring.acc_start = field_opt_int(fields, "accum_start_time")?;
         ring.last_fetch_time = field_opt_int(fields, "last_fetch_time")?;
         ring.last_confirmed = field_opt_int(fields, "last_confirmed_ctf_time")?;
@@ -1713,15 +2068,68 @@ impl BarRing {
         Ok(())
     }
 
+    /// Serve one native `fetch` tick against the Pine field table: the
+    /// per-bar cursor rule, the oracle transition, and the dehydrate land
+    /// here, so the hydrate-every-tick bridge and the resident-ring lease
+    /// share one transition instead of forking it. Non-commit signals
+    /// (pull, capacity) decline with fields untouched — the caller re-runs
+    /// the Pine body, which raises the identical refusal or reruns the
+    /// proven path. On commit the returned cursor is read back from the
+    /// written `head`/`count` (never recomputed) so it cannot drift from
+    /// the table the next hydrate would observe.
+    pub fn serve_fetch_tick(
+        &mut self,
+        fields: &mut FieldTable,
+        cursor: RingCursor,
+        type_name: &str,
+        tick: &NativeFetchTick,
+    ) -> Result<(crate::value::NativeCall, RingCursor), KernelError> {
+        use crate::value::NativeCall;
+        let (head, count) = if tick.is_new {
+            (0, 0)
+        } else {
+            (cursor.head, cursor.count)
+        };
+        let out = self.fetch_tick_native(tick)?;
+        if out.signal != FetchSignal::Commit {
+            return Ok((NativeCall::Declined, cursor));
+        }
+        if count + out.appended > self.config().max_candles() {
+            return Ok((NativeCall::Declined, cursor));
+        }
+        self.write_pine_fields(fields, head, count, out.appended)?;
+        fields.insert(
+            "ready_ltf_boundary".to_owned(),
+            Some(PineValue::Bool(out.ready_boundary)),
+        );
+        fields.insert(
+            "ready_distribution".to_owned(),
+            Some(PineValue::Bool(out.ready_distribution)),
+        );
+        if tick.is_new {
+            fields.insert("last_ltf_check_time".to_owned(), None);
+        }
+        let value = PineValue::Object(crate::value::UserInstance::new(
+            type_name,
+            fields.clone(),
+        ));
+        let next = RingCursor {
+            head: field_req_usize(fields, "head")?,
+            count: field_req_usize(fields, "count")?,
+        };
+        Ok((NativeCall::Served(Some(value)), next))
+    }
+
     /// The oracle `fetch` body as native transitions: per-bar clear, then
-    /// tick accumulation with the oracle's bar-open time source, the LTF
-    /// boundary pass, and chart-bar confirmation. Rollback, seeding, and
-    /// the volume gate mirror the Pine branches arm for arm (including the
-    /// always-zero `last_time_diff` the bar-open clock implies); only the
-    /// pull rebuild stays out — it reports through [`FetchNativeOut`] so
-    /// the caller re-runs Pine, which raises the identical lower-tf
-    /// refusal. Appends are counted exactly; any capacity ambiguity sets
-    /// `fallback_capacity` instead of a miscounted cursor.
+    /// tick accumulation through the shared fold with the oracle's bar-open
+    /// time source (`TickClock::BarOpenMs`), the LTF boundary pass, and
+    /// chart-bar confirmation. Rollback, seeding, and the volume gate mirror
+    /// the Pine branches arm for arm (including the always-zero
+    /// `last_time_diff` the bar-open clock implies); only the pull rebuild
+    /// stays out — it reports through [`FetchNativeOut`] so the caller
+    /// re-runs Pine, which raises the identical lower-tf refusal. Appends
+    /// are counted exactly; any capacity ambiguity sets `fallback_capacity`
+    /// instead of a miscounted cursor.
     pub fn fetch_tick_native(&mut self, tick: &NativeFetchTick) -> Result<FetchNativeOut, KernelError> {
         let bar = &tick.legs;
         let mut appended = 0usize;
@@ -1744,46 +2152,10 @@ impl BarRing {
             self.last_bar_drift = saved.5;
             self.last_bar_healthy = saved.6;
         } else {
-            let price = bar.close;
-            let cum_volume = bar.volume;
-            match self.last_volume {
-                None => {
-                    self.last_volume = Some(cum_volume);
-                    self.last_price = Some(price);
-                    self.last_time = Some(tick.bar_open_ms);
-                }
-                Some(last) if cum_volume < last => {
-                    self.rollback_count += 1;
-                    self.acc_v = 0.0;
-                    self.acc_b = 0.0;
-                    self.acc_h = bar.high;
-                    self.acc_l = bar.low;
-                    self.acc_c = price;
-                    self.last_price = Some(price);
-                    self.last_volume = Some(cum_volume);
-                    self.last_time = Some(tick.bar_open_ms);
-                }
-                Some(last) => {
-                    let price_delta = price - self.last_price.unwrap_or(price);
-                    let volume_delta = cum_volume - last;
-                    self.last_price = Some(price);
-                    if volume_delta > 0.0 {
-                        self.tick_count += 1;
-                        self.tick_volume_total += volume_delta;
-                        let buy = estimate_buy_volume(volume_delta, price_delta);
-                        self.tick_buy_volume += buy;
-                        self.acc_v += volume_delta;
-                        self.acc_b += buy;
-                        self.acc_h = self.acc_h.max(price);
-                        self.acc_l = if self.acc_l == 0.0 { price } else { self.acc_l.min(price) };
-                        self.acc_c = price;
-                        self.last_time_diff =
-                            Some(tick.bar_open_ms - self.last_time.unwrap_or(tick.bar_open_ms));
-                        self.last_time = Some(tick.bar_open_ms);
-                        self.last_volume = Some(cum_volume);
-                    }
-                }
-            }
+            // Accumulation shares the one fold with `ingest_tick`, stamped
+            // from bar-open time to match the oracle (the outcome kind is
+            // the fold's own; this path only needs its state effects).
+            self.fold_tick(*bar, tick.tick_ms, tick.bar_open_ms, TickClock::BarOpenMs);
         }
         let ltf = self.confirm_ltf(tick.tick_ms, bar.close, None);
         appended += ltf.finalized.len();
@@ -1830,29 +2202,28 @@ impl BarRing {
 /// trailing (still-forming) bucket stays unconfirmed, and a tape that never
 /// closes a bucket refuses instead of inventing one. Sparse tapes skip
 /// empty buckets; `fill_gaps` chains zero placeholders off the last close.
-pub fn tick_resample(
-    ticks: &[RawTick],
-    ltf_ms: i64,
-    fill_gaps: bool,
-    lookahead: Lookahead,
-) -> Result<Vec<BarParts>, KernelError> {
-    lookahead.require_off()?;
-    if ltf_ms <= 0 {
-        return Err(KernelError::InvalidInput(format!(
-            "resample span must be positive, got {ltf_ms}"
-        )));
-    }
-    #[derive(Default)]
-    struct Fold {
-        o: f64,
-        h: f64,
-        l: f64,
-        c: f64,
-        v: f64,
-        b: f64,
-        seen: bool,
-    }
-    let mut buckets: BTreeMap<i64, Fold> = BTreeMap::new();
+/// One folded tick bucket: OHLCV legs plus the coverage behind its buy
+/// split — print count and whether any print carried a nonzero direction
+/// (exactly the prints the labeled split signs, never an estimate).
+#[derive(Debug, Clone, Copy, Default)]
+struct TickBucket {
+    o: f64,
+    h: f64,
+    l: f64,
+    c: f64,
+    v: f64,
+    b: f64,
+    seen: bool,
+    prints: usize,
+    directed: bool,
+}
+
+/// Fold raw prints into per-bucket accumulations: the single bucketing rule
+/// shared by resampling and tick-covered reconciliation. Non-finite prints
+/// skip without advancing the direction tracker, so a corrupt print never
+/// donates its price to a neighbor's delta.
+fn fold_tick_buckets(ticks: &[RawTick], ltf_ms: i64) -> BTreeMap<i64, TickBucket> {
+    let mut buckets: BTreeMap<i64, TickBucket> = BTreeMap::new();
     let mut prev_price: Option<f64> = None;
     for tick in ticks {
         if !tick.price.is_finite() || !tick.volume.is_finite() {
@@ -1874,7 +2245,41 @@ pub fn tick_resample(
         fold.c = tick.price;
         fold.v += tick.volume;
         fold.b += estimate_buy_volume(tick.volume, delta);
+        fold.prints += 1;
+        // Exact-zero check (flat prints read 0/0 as directionless, like the
+        // dust guard): set exactly when the labeled split signs the print.
+        fold.directed = fold.directed || delta != 0.0;
     }
+    buckets
+}
+
+/// Confidence a covered bucket earns, from coverage depth only (no tuning):
+/// directed prints over two or more prints observe direction repeatedly
+/// (`High`); one thin print borrows its delta from a neighbor (`Reduced`);
+/// directionless prints carry no information (`Low`).
+fn bucket_confidence(prints: usize, directed: bool) -> DeltaConfidence {
+    if directed && prints >= 2 {
+        DeltaConfidence::High
+    } else if directed {
+        DeltaConfidence::Reduced
+    } else {
+        DeltaConfidence::Low
+    }
+}
+
+pub fn tick_resample(
+    ticks: &[RawTick],
+    ltf_ms: i64,
+    fill_gaps: bool,
+    lookahead: Lookahead,
+) -> Result<Vec<BarParts>, KernelError> {
+    lookahead.require_off()?;
+    if ltf_ms <= 0 {
+        return Err(KernelError::InvalidInput(format!(
+            "resample span must be positive, got {ltf_ms}"
+        )));
+    }
+    let buckets = fold_tick_buckets(ticks, ltf_ms);
     if buckets.len() < 2 {
         return Err(KernelError::InvalidInput(
             "resample refused before the first closed bar: the tape never closes a bucket".to_owned(),
@@ -1919,6 +2324,53 @@ pub fn tick_resample(
     Ok(out)
 }
 
+/// Bucket index ranges over a closed-bar tape at one span: the single fold
+/// both projection paths compose (full rebuild and incremental append share
+/// it — no second bucketing rule). Returns `(bucket index, first bar, last
+/// bar)` in ascending bucket order with indices relative to the passed
+/// slice; callers projecting a tail slice offset back to base indices
+/// themselves. Span validation lives here, so every projection path
+/// refuses non-positive spans with one message.
+pub(crate) fn bucket_bar_ranges(
+    bars: &[ClosedBar],
+    target_ms: i64,
+) -> Result<Vec<(i64, usize, usize)>, KernelError> {
+    if target_ms <= 0 {
+        return Err(KernelError::InvalidInput(format!(
+            "projection span must be positive, got {target_ms}"
+        )));
+    }
+    let grid = std::num::NonZeroI64::new(target_ms).expect("positive span checked");
+    let mut buckets: BTreeMap<i64, (usize, usize)> = BTreeMap::new();
+    for (at, bar) in bars.iter().enumerate() {
+        let idx = floor_to_grid(bar.ts_ms, grid).div_euclid(target_ms);
+        buckets.entry(idx).or_insert((at, at)).1 = at;
+    }
+    Ok(buckets.into_iter().map(|(idx, (first, last))| (idx, first, last)).collect())
+}
+
+/// Finalize one bucket range into its closed bar: first open, high/low
+/// extremes, last close, conserved summed volume. The one emit fold behind
+/// every projection path.
+pub(crate) fn fold_bucket_range(
+    bars: &[ClosedBar],
+    first: usize,
+    last: usize,
+    bucket_open_ms: i64,
+) -> ClosedBar {
+    let head = &bars[first];
+    let tail = &bars[last];
+    let mut h = head.h;
+    let mut l = head.l;
+    let mut v = 0.0;
+    for bar in &bars[first..=last] {
+        h = h.max(bar.h);
+        l = l.min(bar.l);
+        v += bar.volume;
+    }
+    ClosedBar { ts_ms: bucket_open_ms, o: head.o, h, l, c: tail.c, volume: v }
+}
+
 /// Project closed bars onto a coarser grid (the native
 /// `request.security` equivalent): floor-aligned buckets with first open,
 /// high/low extremes, last close, and conserved summed volume. Only
@@ -1931,36 +2383,17 @@ pub fn project_bars(
     now_ms: Option<i64>,
 ) -> Result<Vec<ClosedBar>, KernelError> {
     lookahead.require_off()?;
-    if target_ms <= 0 {
-        return Err(KernelError::InvalidInput(format!(
-            "projection span must be positive, got {target_ms}"
-        )));
-    }
+    let ranges = bucket_bar_ranges(bars, target_ms)?;
     let grid = std::num::NonZeroI64::new(target_ms).expect("positive span checked");
-    let mut buckets: BTreeMap<i64, (usize, usize)> = BTreeMap::new();
-    for (at, bar) in bars.iter().enumerate() {
-        let idx = floor_to_grid(bar.ts_ms, grid).div_euclid(target_ms);
-        buckets.entry(idx).or_insert((at, at)).1 = at;
-    }
-    let mut out = Vec::with_capacity(buckets.len());
-    for (idx, (first, last)) in &buckets {
+    let mut out = Vec::with_capacity(ranges.len());
+    for (idx, first, last) in ranges {
         let ts = idx * target_ms;
         if let Some(now) = now_ms {
             if !fully_formed(ts, grid, now) {
                 continue;
             }
         }
-        let head = &bars[*first];
-        let tail = &bars[*last];
-        let mut h = head.h;
-        let mut l = head.l;
-        let mut v = 0.0;
-        for bar in &bars[*first..=*last] {
-            h = h.max(bar.h);
-            l = l.min(bar.l);
-            v += bar.volume;
-        }
-        out.push(ClosedBar { ts_ms: ts, o: head.o, h, l, c: tail.c, volume: v });
+        out.push(fold_bucket_range(bars, first, last, ts));
     }
     Ok(out)
 }
@@ -2177,148 +2610,10 @@ impl protopyne_types::Validate for BarsHistory {
 }
 
 // --- Sessions ---------------------------------------------------------------
-
-/// Daylight-aware regular-hours clock over millisecond stamps.
-///
-/// Pine session strings (`input.session("0930-1600")`) name exchange wall
-/// clock; this clock evaluates them for the New York session with the US
-/// daylight rules encoded directly (no timezone database): EST (UTC-5) from
-/// the first Sunday of November 02:00 local to the second Sunday of March
-/// 02:00 local, EDT (UTC-4) between. Membership is start-inclusive,
-/// end-exclusive on wall-clock minutes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TradingSession {
-    open_min: u32,
-    close_min: u32,
-}
-
-impl TradingSession {
-    /// Parse a `HHMM-HHMM` session string. Overnight ranges (open past
-    /// close) refuse: regular sessions never wrap midnight.
-    pub fn parse(session: &str) -> Result<Self, KernelError> {
-        let bytes = session.as_bytes();
-        let bad = || {
-            KernelError::InvalidInput(format!("session must read HHMM-HHMM, got {session:?}"))
-        };
-        if bytes.len() != 9 || bytes[4] != b'-' {
-            return Err(bad());
-        }
-        let num = |lo: usize| {
-            if !bytes[lo].is_ascii_digit() || !bytes[lo + 1].is_ascii_digit() {
-                return Err(bad());
-            }
-            Ok(u32::from(bytes[lo] - b'0') * 10 + u32::from(bytes[lo + 1] - b'0'))
-        };
-        let (oh, om, ch, cm) = (num(0)?, num(2)?, num(5)?, num(7)?);
-        if oh > 23 || ch > 23 || om > 59 || cm > 59 {
-            return Err(bad());
-        }
-        let (open_min, close_min) = (oh * 60 + om, ch * 60 + cm);
-        if open_min >= close_min {
-            return Err(KernelError::InvalidInput(format!(
-                "session must open before it closes, got {session:?}"
-            )));
-        }
-        Ok(Self { open_min, close_min })
-    }
-
-    /// Whether the stamp falls inside the session on its ET wall clock.
-    #[must_use]
-    pub fn contains(self, ts_ms: i64) -> bool {
-        let mins = et_wall_minutes(ts_ms);
-        mins >= self.open_min && mins < self.close_min
-    }
-
-    /// ET calendar date `(year, month, day)` of the stamp.
-    #[must_use]
-    pub fn session_date(self, ts_ms: i64) -> (i32, u32, u32) {
-        let _ = self;
-        et_civil_date(ts_ms)
-    }
-}
-
-impl protopyne_types::Validate for TradingSession {
-    type Err = KernelError;
-
-    fn validate(&self) -> Result<(), Self::Err> {
-        if self.open_min >= self.close_min || self.close_min > 24 * 60 {
-            return Err(KernelError::InvalidInput(format!(
-                "session opens {} and closes {}: must open strictly before close inside one day",
-                self.open_min, self.close_min
-            )));
-        }
-        Ok(())
-    }
-}
-
-/// Whether America/New_York observes daylight saving at the stamp: from the
-/// second Sunday of March 07:00 UTC up to the first Sunday of November
-/// 06:00 UTC (02:00 local both ends).
-#[must_use]
-pub fn is_dst_et(ts_ms: i64) -> bool {
-    let (year, _, _) = civil_from_days(ts_ms.div_euclid(86_400_000));
-    ts_ms >= dst_spring_utc_ms(year) && ts_ms < dst_fall_utc_ms(year)
-}
-
-/// UTC offset of America/New_York at the stamp, in milliseconds.
-#[must_use]
-pub fn et_offset_ms(ts_ms: i64) -> i64 {
-    if is_dst_et(ts_ms) { -4 * 3_600_000 } else { -5 * 3_600_000 }
-}
-
-/// Spring-forward instant: second Sunday of March, 07:00 UTC.
-fn dst_spring_utc_ms(year: i32) -> i64 {
-    let first = days_from_civil(year, 3, 1);
-    let to_sunday = (7 - weekday_of(first)) % 7;
-    (first + to_sunday + 7) * 86_400_000 + 7 * 3_600_000
-}
-
-/// Fall-back instant: first Sunday of November, 06:00 UTC.
-fn dst_fall_utc_ms(year: i32) -> i64 {
-    let first = days_from_civil(year, 11, 1);
-    let to_sunday = (7 - weekday_of(first)) % 7;
-    (first + to_sunday) * 86_400_000 + 6 * 3_600_000
-}
-
-/// Monday = 1 through Sunday = 7 for a day count (day zero was a Thursday).
-fn weekday_of(day_count: i64) -> i64 {
-    (day_count.rem_euclid(7) + 3) % 7 + 1
-}
-
-fn et_wall_minutes(ts_ms: i64) -> u32 {
-    let local = ts_ms + et_offset_ms(ts_ms);
-    local.rem_euclid(86_400_000).div_euclid(60_000) as u32
-}
-
-fn et_civil_date(ts_ms: i64) -> (i32, u32, u32) {
-    civil_from_days((ts_ms + et_offset_ms(ts_ms)).div_euclid(86_400_000))
-}
-
-/// Days since the Unix epoch for a proleptic Gregorian date.
-fn days_from_civil(year: i32, month: u32, day: u32) -> i64 {
-    let adj_year = i64::from(if month <= 2 { year - 1 } else { year });
-    let era = adj_year.div_euclid(400);
-    let yoe = adj_year - era * 400;
-    let mp = (i64::from(month) + 9) % 12;
-    let doy = (153 * mp + 2) / 5 + i64::from(day) - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    era * 146_097 + doe - 719_468
-}
-
-/// Proleptic Gregorian date for days since the Unix epoch.
-fn civil_from_days(day_count: i64) -> (i32, u32, u32) {
-    let shifted = day_count + 719_468;
-    let era = shifted.div_euclid(146_097);
-    let doe = shifted - era * 146_097;
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
-    let full_year = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let day = (doy - (153 * mp + 2) / 5 + 1) as u32;
-    let month = (if mp < 10 { mp + 3 } else { mp - 9 }) as u32;
-    let year = (if month <= 2 { full_year + 1 } else { full_year }) as i32;
-    (year, month, day)
-}
+// The wall-clock predicate lives in the foundation crate so chart-model
+// session providers delegate to the same clock instead of copying its
+// daylight math; this re-export keeps every existing `bars::` path working.
+pub use protopyne_types::{TradingSession, et_offset_ms, is_dst_et};
 
 #[cfg(test)]
 #[path = "../tests/bars.rs"]
@@ -2331,3 +2626,27 @@ mod bars_calibration_tests;
 #[cfg(test)]
 #[path = "../tests/bars_history.rs"]
 mod bars_history_tests;
+
+#[cfg(test)]
+#[path = "../tests/ingest_unified.rs"]
+mod ingest_unified_tests;
+
+#[cfg(test)]
+#[path = "../tests/delta_honesty.rs"]
+mod delta_honesty_tests;
+
+#[cfg(test)]
+#[path = "../tests/delta_calibration.rs"]
+mod delta_calibration_tests;
+
+#[cfg(test)]
+#[path = "../tests/remainder_signed.rs"]
+mod remainder_signed_tests;
+
+#[cfg(test)]
+#[path = "../tests/capacity_overflow.rs"]
+mod capacity_overflow_tests;
+
+#[cfg(test)]
+#[path = "../tests/stored_opens.rs"]
+mod stored_opens_tests;

@@ -21,16 +21,32 @@ pub struct KernelUnit {
     indicator: Arc<dyn Indicator>,
     params: ParamSet,
     input: Arc<OwnedOhlcv>,
+    depends: Vec<ArcIntern<str>>,
+    provides: Vec<ArcIntern<str>>,
 }
 
 impl KernelUnit {
     /// Bind a kernel, its parameters, and the window it evaluates.
+    /// `depends`/`provides` are interned from the spec once, here — the same
+    /// derivation as [`IndicatorComponent`](crate::component::IndicatorComponent),
+    /// so per-`execute` dispatch pays no allocation and both supervision
+    /// adapters order through one rule.
     #[must_use]
     pub fn new(indicator: Arc<dyn Indicator>, params: ParamSet, input: Arc<OwnedOhlcv>) -> Self {
+        let depends: Vec<ArcIntern<str>> = indicator
+            .spec()
+            .depends
+            .iter()
+            .map(|d| ArcIntern::from(d.as_str()))
+            .collect();
+        let provides: Vec<ArcIntern<str>> =
+            vec![ArcIntern::from(indicator.spec().id.as_str())];
         Self {
             indicator,
             params,
             input,
+            depends,
+            provides,
         }
     }
 
@@ -46,11 +62,11 @@ impl WorkUnit for KernelUnit {
     }
 
     fn depends(&self) -> &[ArcIntern<str>] {
-        &[]
+        &self.depends
     }
 
     fn provides(&self) -> &[ArcIntern<str>] {
-        &[]
+        &self.provides
     }
 
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {

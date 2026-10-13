@@ -1,7 +1,11 @@
 use super::*;
+#[cfg(feature = "pine")]
 use fluent_wvr::prelude::*;
-use protopyne_types::{Validate, check_for_execute};
+use protopyne_types::Validate;
+#[cfg(feature = "pine")]
+use protopyne_types::check_for_execute;
 
+#[cfg(feature = "pine")]
 #[test]
 fn runtime_config_trait_parity() {
     let good = PineRuntimeConfig::default();
@@ -21,6 +25,7 @@ fn runtime_config_trait_parity() {
     assert!(Validate::validate(&inverted).is_err());
 }
 
+#[cfg(feature = "pine")]
 #[test]
 fn invalid_runtime_config_fails_execute_bridge() {
     let bad = PineRuntimeConfig::new()

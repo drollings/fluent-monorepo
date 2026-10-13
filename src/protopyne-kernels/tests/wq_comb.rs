@@ -12,7 +12,7 @@ fn series(n: usize) -> Vec<f64> {
     (0..n).map(|i| 100.0 + i as f64 * 0.7 + ((i * 13) % 5) as f64 * 0.9).collect()
 }
 
-/// Small-magnitude probe for transcendental parity: absolute epsilons are
+/// Small-magnitude probe for transcendental Expr-parity: absolute epsilons are
 /// meaningless on `exp(100)`-scale outputs, so growth functions meet the
 /// reference where both sides are small and exact.
 fn small() -> Vec<f64> {

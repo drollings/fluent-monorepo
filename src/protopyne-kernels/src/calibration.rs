@@ -1,4 +1,4 @@
-//! Global calibration gate: universal controls plus the parity dashboard.
+//! Global calibration gate: universal controls plus the Expr-parity dashboard.
 //!
 //! Two axes, matching the roadmap's confidence/correctness split:
 //!
@@ -241,7 +241,7 @@ pub fn run_control(control: Control) -> Vec<ControlViolation> {
         // silence through `warmup - 1`. (A warmup of 1 means the opening
         // print is defined, as with the cumulative kernels.) Faster legs may
         // legitimately lead — a composite's primary ahead of its signal —
-        // and those early values are pinned exactly by dashboard parity
+        // and those early values are pinned exactly by dashboard Expr-parity
         // instead of here.
         match kernel.warmup(&params) {
             Ok(warmup) => {
@@ -306,7 +306,7 @@ pub fn null_alignment_diffs() -> Vec<ControlViolation> {
 }
 
 // ---------------------------------------------------------------------------
-// Parity dashboard
+// Expr-parity dashboard
 // ---------------------------------------------------------------------------
 
 /// One dashboard row: task-value accept plus control false-fire count.
@@ -316,7 +316,7 @@ pub struct ParityRow {
     pub id: &'static str,
     /// Frozen matrix eps the accept was measured at.
     pub eps: f64,
-    /// Parity held against the `Expr` reference at frozen eps.
+    /// Expr-parity held against the `Expr` reference at frozen eps.
     pub accepted: bool,
     /// Why not, when refused.
     pub note: Option<String>,
@@ -324,7 +324,7 @@ pub struct ParityRow {
     pub false_fires: usize,
 }
 
-/// Global parity dashboard: per-id accept rate plus control false-fire rate.
+/// Global Expr-parity dashboard: per-id accept rate plus control false-fire rate.
 /// Green is 1.0 accept with 0.0 false-fire.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ParityDashboard {
@@ -351,7 +351,7 @@ impl ParityDashboard {
         self.rows.iter().filter(|row| row.false_fires > 0).count() as f64 / self.rows.len() as f64
     }
 
-    /// Whether parity output may be trusted: every must-fire accepted and no
+    /// Whether Expr-parity output may be trusted: every must-fire accepted and no
     /// must-NOT-fire control tripped.
     #[must_use]
     pub fn is_green(&self) -> bool {
@@ -437,7 +437,7 @@ fn matrix_id(id: &str) -> &'static str {
 }
 
 // ---------------------------------------------------------------------------
-// Reference expressions (transcribed from the per-kernel parity suites)
+// Reference expressions (transcribed from the per-kernel Expr-parity suites)
 // ---------------------------------------------------------------------------
 
 fn strict(n: usize) -> RollingOptionsFixedWindow {
@@ -487,7 +487,7 @@ fn fin_or_none(value: f64) -> Option<f64> {
     crate::indicator::fin_or_none(value)
 }
 
-/// Run staged selects and read every named column back with the parity
+/// Run staged selects and read every named column back with the Expr-parity
 /// funnel mapping (`NaN` to `None`, infinities pass through as values).
 fn select_legs(frame: &DataFrame, exprs: Vec<Expr>) -> Result<Vec<Vec<Option<f64>>>, KernelError> {
     let selected = frame

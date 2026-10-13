@@ -397,6 +397,42 @@ impl fmt::Display for PineValue {
     }
 }
 
+/// One native method-call outcome: decline to Pine or serve with the call
+/// value. `Declined` means the engine runs the Pine body with fields
+/// untouched; `Served(value)` means the table is already updated and
+/// `value` is the call value (`None` is Pine `na`). The two axes —
+/// handled-vs-declined and value-vs-absence — never share one option.
+#[derive(Debug, Clone, PartialEq)]
+pub enum NativeCall {
+    /// Not handled: fields untouched, the engine runs the Pine body.
+    Declined,
+    /// Handled: table already updated, carrying the call value.
+    Served(Option<PineValue>),
+}
+
+impl NativeCall {
+    /// Whether this outcome declines to the Pine body.
+    #[must_use]
+    pub fn is_declined(&self) -> bool {
+        matches!(self, Self::Declined)
+    }
+
+    /// The served call value, or `None` for declines and served absence.
+    #[must_use]
+    pub fn into_value(self) -> Option<PineValue> {
+        match self {
+            Self::Declined => None,
+            Self::Served(value) => value,
+        }
+    }
+}
+
+/// Pine object field table shared with the engine bridge: field name to
+/// Pine value (`None` is Pine `na`). The engine owns the table; native
+/// calls receive it borrowed and return a replaced one, so unmapped fields
+/// pass through byte-identical without native code ever seeing them.
+pub type FieldTable = std::collections::HashMap<String, Option<PineValue>>;
+
 #[cfg(test)]
 #[path = "../tests/value.rs"]
 mod tests;

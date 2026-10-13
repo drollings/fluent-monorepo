@@ -7,7 +7,7 @@ autobenches = false
 
 [dependencies]
 protopyne-types = { path = "../protopyne-types" }
-protopyne-kernels = { path = "../protopyne-kernels" }
+protopyne-kernels = { path = "../protopyne-kernels", default-features = false, features = ["research"] }
 common-core = { path = "../common-core" }
 fluent-wvr = { path = "../fluent-wvr" }
 bon = { workspace = true }

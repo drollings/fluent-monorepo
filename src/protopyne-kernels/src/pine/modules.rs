@@ -273,12 +273,6 @@ fn exported_names(program: &PineProgram) -> Vec<String> {
     names
 }
 
-impl From<GraphError> for KernelError {
-    fn from(err: GraphError) -> Self {
-        KernelError::InvalidInput(format!("pine import graph failed: {err}"))
-    }
-}
-
 #[cfg(test)]
 #[path = "../../tests/pine_modules.rs"]
 mod tests;

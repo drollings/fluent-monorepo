@@ -239,7 +239,9 @@ impl InputSet {
     }
 
     /// Whether `name` declares a live source input whose default rides the
-    /// current bar until overridden.
+    /// current bar until overridden. Read only by the engine's
+    /// `input.source` builtin, so it ships with the `pine` feature.
+    #[cfg(feature = "pine")]
     #[must_use]
     pub(crate) fn is_source(&self, name: &str) -> bool {
         matches!(self.defs.get(name), Some(InputDef::Source))

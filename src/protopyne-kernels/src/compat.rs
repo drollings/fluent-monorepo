@@ -1,11 +1,14 @@
-//! Kernel compatibility matrix: per-kernel parity epsilon and status.
+//! Kernel compatibility matrix: per-kernel Expr-parity epsilon and status.
 //!
 //! `eps` is a **correctness** threshold: the maximum absolute error allowed
 //! between a kernel's output and its `polars.Expr` reference on the
 //! calibration sets. Numeric authority is the `Expr` output (the global
 //! calibration gate measures every row against staged reference expressions
-//! at its frozen eps); the direct TradingView-export cross-check remains
-//! unavailable to the prototype and is not what this status means. A kernel
+//! at its frozen eps) — that staged-`Expr` authority is what the
+//! `ParityVerified` standing claims, here and everywhere the docs say
+//! Expr-parity; the direct TradingView-export cross-check remains
+//! unavailable to the prototype and is not what this status means (the
+//! assumed-vs-verified ledger lives in `doc/protopyne-rs/DIVERGENCE_LOG.md`). A kernel
 //! that cannot meet its eps stays [`CompatStatus::FormulaVerified`], never
 //! gets a silently widened eps, and never guards money until it verifies.
 //! Frozen eps values never widen afterwards: the global gate snapshots the
@@ -305,8 +308,11 @@ pub const COMPATIBILITY: &[KernelCompat] = &[
     },
 ];
 
-/// Native-library parity rows: `(matrix id, publisher, name)` naming the
-/// native-table library whose parity each `native-*` row claims. Row ids are
+/// Native-library agreement rows: `(matrix id, publisher, name)` naming the
+/// native-table library whose freeze agreement each `native-*` row claims.
+/// These rows are NOT Expr-checked: their authority is native-vs-engine
+/// agreement at the same frozen eps (see the freeze suite), while kernel
+/// rows carry Expr-parity. Row ids are
 /// frozen literals (the milestone's `native-libBars` for the ring/tick/
 /// resample surface, `native-market-context` for the `MarketContext` view
 /// over `libApex`, `native-libBuffers` for the `BufferFloat` hot methods);
@@ -318,7 +324,7 @@ pub const NATIVE_MATRIX_ROWS: &[(&str, &str, &str)] = &[
     ("native-libBuffers", "showmethegrail", "libBuffers"),
 ];
 
-/// Matrix id of the parity row claiming `publisher/name`, if any.
+/// Matrix id of the row claiming `publisher/name`, if any.
 #[must_use]
 pub fn native_row_id(publisher: &str, name: &str) -> Option<&'static str> {
     NATIVE_MATRIX_ROWS
@@ -327,7 +333,7 @@ pub fn native_row_id(publisher: &str, name: &str) -> Option<&'static str> {
         .map(|(id, _, _)| *id)
 }
 
-/// Whether a matrix id is a native-library row (served-view parity, not a
+/// Whether a matrix id is a native-library row (served-view agreement, not a
 /// kernel in the builtin registry).
 #[must_use]
 pub fn is_native_row(id: &str) -> bool {
@@ -338,8 +344,12 @@ pub fn is_native_row(id: &str) -> bool {
 /// the native table, and every native-table library has its row — no
 /// orphans either way. Provider existence is orthogonal (the overlay owns
 /// serving): rows also cover served views like the `MarketContext`, which
-/// has parity without a link-time provider. Eps rules match the kernel
-/// side: finite and positive, never widened.
+/// holds freeze agreement without a link-time provider. Eps rules match the
+/// kernel side: finite and positive, never widened.
+///
+/// Needs the `pine` feature: it reads the native link table, which ships
+/// with the language runtime.
+#[cfg(feature = "pine")]
 pub fn assert_native_matrix_covers() -> Result<(), String> {
     for (id, publisher, name) in NATIVE_MATRIX_ROWS {
         if !crate::native_libs::NATIVE_LIBRARIES
@@ -372,6 +382,9 @@ pub fn compat_for(id: &str) -> Option<&'static KernelCompat> {
 /// Ids the matrix must cover: every builtin kernel, no more, no less —
 /// plus the native-library rows, which are checked against the native
 /// table (not the kernel registry) by [`assert_native_matrix_covers`].
+/// Without the `pine` feature the link table is absent, so only the kernel
+/// rows are checked here; the native half stays covered by
+/// `assert_native_matrix_covers` wherever the runtime ships.
 pub fn assert_matrix_covers(registry: &IndicatorRegistry) -> Result<(), String> {
     for id in registry.ids() {
         let row = compat_for(&id).ok_or_else(|| format!("no compatibility row for {id:?}"))?;
@@ -387,17 +400,19 @@ pub fn assert_matrix_covers(registry: &IndicatorRegistry) -> Result<(), String> 
             return Err(format!("stale compatibility row {:?}", row.id));
         }
     }
-    assert_native_matrix_covers()
+    #[cfg(feature = "pine")]
+    assert_native_matrix_covers()?;
+    Ok(())
 }
 
 #[cfg(test)]
 #[path = "../tests/compat.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "research"))]
 #[path = "../tests/cal.rs"]
 mod cal_tests;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "research"))]
 #[path = "../tests/cal_global.rs"]
 mod cal_global_tests;

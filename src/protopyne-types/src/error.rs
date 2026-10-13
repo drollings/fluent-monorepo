@@ -34,6 +34,10 @@ pub enum TypesError {
     /// A scoped symbol table refused a new entry at capacity.
     #[error("symbol table full: {0}")]
     TooManySymbols(String),
+    /// A session string failed to parse (expected `HHMM-HHMM` with the open
+    /// strictly before the close inside one day).
+    #[error("invalid session: {0}")]
+    InvalidSession(String),
     /// Underlying I/O failure.
     #[error("I/O error: {0}")]
     Io(#[from] IoError),

@@ -267,6 +267,6 @@ impl Indicator for CorrelIndicator {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "research"))]
 #[path = "../tests/ta_stat.rs"]
 mod tests;

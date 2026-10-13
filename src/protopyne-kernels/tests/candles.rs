@@ -359,7 +359,7 @@ fn calibration_controls_never_fire_and_planted_always_fire() {
     let missed = planted.iter().filter(|(t, pred)| !pred(*t)).count();
     assert_eq!(missed, 0, "planted patterns must all fire");
     assert_eq!(planted.len(), 20);
-    // Precision/recall against the reference on real data: the SPY parity
+    // Precision/recall against the reference on real data: the SPY Expr-parity
     // suites above already assert exact agreement, so the frozen threshold
     // set (TA_EPSILON = 1e-8) holds 1.0 accept with 0.0 false-fire here.
     let spy = ticks_of(&spy_bars(60));

@@ -21,7 +21,7 @@ use std::num::NonZeroI64;
 use fluent_dag::dep_graph::{DependencyGraph, GraphError};
 use fluent_wvr::prelude::*;
 
-use crate::bars::{ClosedBar, project_bars};
+use crate::bars::{ClosedBar, bucket_bar_ranges, fold_bucket_range, project_bars};
 use crate::error::KernelError;
 use crate::indicator::{IndicatorId, IndicatorRegistry, Ohlcv, OwnedOhlcv, ParamSet};
 
@@ -442,6 +442,12 @@ pub struct SeriesCache {
     pub values: Vec<Option<f64>>,
     /// Store revision at the last compute whose values differed.
     pub revision: u64,
+    /// Content hash of [`values`](Self::values) at the last compute: the
+    /// backdate record — equal hashes keep the revision, differing hashes
+    /// bump it. Replaces the whole-window `values !=` memcmp (identical
+    /// bitwise content backdates, including identical NaN payloads the
+    /// memcmp's `NaN != NaN` always re-bumped on).
+    pub values_hash: u64,
     /// Kernel warmup floor for the parameters at compute time.
     pub warmup: usize,
     /// Inputs this compute ran against: the frame edge plus every kernel
@@ -450,14 +456,43 @@ pub struct SeriesCache {
     pub inputs: Vec<(SeriesKey, u64)>,
 }
 
-/// One resampled OHLCV frame: confirmed buckets only, rematerialized when
-/// the base tape or `now` moves, revision-bumped only when the buckets
-/// actually change (frame-level backdating).
+/// Hash stamped float content: fixed-width little-endian words (stamps,
+/// then every leg as bits in a fixed order) hashed once through the shared
+/// FNV-1a helper — the one content-compare behind frame and series
+/// backdating, following the parameter-fingerprint byte idiom. `None`
+/// values map to a fixed sentinel word; every distinct bit pattern hashes
+/// distinctly, like every distinct float.
+fn content_hash(stamps: &[i64], words: &[u64]) -> u64 {
+    let mut bytes = Vec::with_capacity(8 * (stamps.len() + words.len()));
+    for stamp in stamps {
+        bytes.extend_from_slice(&stamp.to_le_bytes());
+    }
+    for word in words {
+        bytes.extend_from_slice(&word.to_le_bytes());
+    }
+    common_core::hash::fnv1a64(&bytes)
+}
+
+/// `None`-valued output as a hash word: all-bits-set (a NaN payload no real
+/// output leg carries — outputs resolve through the `fin_or_none` na-policy,
+/// so `Some` never holds a non-finite payload by the time it is hashed).
+const NONE_WORD: u64 = u64::MAX;
+
+/// One resampled OHLCV frame: confirmed buckets only, extended
+/// incrementally while the base grows by append, rematerialized when the
+/// base is replaced or `now` regresses. Revision bumps only when the
+/// buckets actually change (frame-level backdating).
 struct Frame {
     stamps: Vec<i64>,
     ohlcv: OwnedOhlcv,
     revision: u64,
-    base_rev: u64,
+    /// Base generation this frame was built from: equal generations mean
+    /// append-only growth, so the stored buckets are a prefix of any newer
+    /// projection and only the tail needs folding.
+    generation: u64,
+    /// Base length this frame covers: equal lengths within one generation
+    /// mean identical content, so the skip path costs one comparison.
+    base_len: usize,
     now_ms: i64,
 }
 
@@ -473,6 +508,11 @@ pub struct MtfStore {
     caches: HashMap<SeriesKey, SeriesCache>,
     revision: u64,
     base_rev: u64,
+    /// Base generation: bumped only by [`set_base`](Self::set_base), never
+    /// by [`append_bar`](Self::append_bar). Equal generations across an
+    /// `ensure` mean the base only grew, so frames extend incrementally;
+    /// a changed generation means replacement, so frames rebuild.
+    generation: u64,
 }
 
 impl MtfStore {
@@ -487,6 +527,7 @@ impl MtfStore {
             caches: HashMap::new(),
             revision: 0,
             base_rev: 0,
+            generation: 0,
         }
     }
 
@@ -507,12 +548,14 @@ impl MtfStore {
         }
         self.base = bars.to_vec();
         self.base_rev = self.base_rev.wrapping_add(1);
+        self.generation = self.generation.wrapping_add(1);
         Ok(())
     }
 
     /// Append one confirmed bar: must advance past the tape tail, else the
     /// tape refuses (gaps stay representable — only non-advancing stamps
-    /// refuse, exactly like the loader).
+    /// refuse, exactly like the loader). Same generation: the next `ensure`
+    /// extends frames from their stored tail instead of reprojecting.
     pub fn append_bar(&mut self, bar: &protopyne_types::Bar) -> Result<(), KernelError> {
         protopyne_types::validate_new_bar(self.base.last(), bar)
             .map_err(|err| KernelError::InvalidInput(err.to_string()))?;
@@ -579,11 +622,11 @@ impl MtfStore {
     /// the store revision. Duplicate request keys dedupe (first params
     /// win); requested frame keys are accepted no-ops.
     ///
-    /// Lifted dependency keys run default parameters (`ParamSet :: new`):
-    /// the kernel spec names ordering deps, not their parameters, so a dep
-    /// shares its cache entry with an explicit default-params request and
-    /// computes separately from any custom-params request for the same
-    /// kernel. Unknown kernels, unknown deps, and cycles refuse with a
+    /// Dependency parameters resolve through
+    /// [`build_graph`](crate::mtf::build_graph): a dep key shared with a
+    /// direct request reuses the request's parameters (first request wins),
+    /// so any `SeriesKey` in the transitive closure computes at most once per
+    /// revision. Unknown kernels, unknown deps, and cycles refuse with a
     /// reason — never a partial fill.
     pub fn ensure(
         &mut self,
@@ -599,8 +642,9 @@ impl MtfStore {
             ));
         }
         let default_params = ParamSet::new();
-        let mut keys = Vec::with_capacity(requests.len());
-        let mut params_of: HashMap<&SeriesKey, &ParamSet> = HashMap::new();
+        // First-wins owned pairs: duplicate requests keep the first
+        // parameters, frames stay accepted no-ops.
+        let mut pairs: Vec<(SeriesKey, ParamSet)> = Vec::with_capacity(requests.len());
         for (key, params) in requests {
             if key.tf_ms <= 0 {
                 return Err(KernelError::InvalidInput(format!(
@@ -611,13 +655,13 @@ impl MtfStore {
             if key.is_frame() {
                 continue;
             }
-            params_of.entry(key).or_insert(params);
-            if !keys.contains(key) {
-                keys.push(key.clone());
+            if !pairs.iter().any(|(seen, _)| seen == key) {
+                pairs.push((key.clone(), params.clone()));
             }
         }
+        let keys: Vec<SeriesKey> = pairs.iter().map(|(key, _)| key.clone()).collect();
 
-        let graph = build_graph(registry, &keys)?;
+        let (graph, resolved) = build_graph(registry, &pairs)?;
         // The shared `From<GraphError>` reads pine-flavored; the store names
         // its own mapping so a cycle here never reports as an import failure.
         let order = order_for(&graph, &keys)
@@ -631,62 +675,7 @@ impl MtfStore {
         spans.sort_unstable();
         spans.dedup();
         for tf_ms in spans {
-            let projected = project_bars(&self.closed, tf_ms, Lookahead::Off, Some(now_ms))?;
-            let mut stamps = Vec::with_capacity(projected.len());
-            let mut ohlcv = OwnedOhlcv {
-                open: Vec::with_capacity(projected.len()),
-                high: Vec::with_capacity(projected.len()),
-                low: Vec::with_capacity(projected.len()),
-                close: Vec::with_capacity(projected.len()),
-                volume: Vec::with_capacity(projected.len()),
-            };
-            for bar in &projected {
-                stamps.push(bar.ts_ms);
-                ohlcv.open.push(bar.o);
-                ohlcv.high.push(bar.h);
-                ohlcv.low.push(bar.l);
-                ohlcv.close.push(bar.c);
-                ohlcv.volume.push(bar.volume);
-            }
-            match self.frames.entry(tf_ms) {
-                std::collections::hash_map::Entry::Vacant(slot) => {
-                    self.revision = self.revision.wrapping_add(1);
-                    let revision = self.revision;
-                    slot.insert(Frame {
-                        stamps,
-                        ohlcv,
-                        revision,
-                        base_rev: self.base_rev,
-                        now_ms,
-                    });
-                }
-                std::collections::hash_map::Entry::Occupied(slot)
-                    if slot.get().base_rev == self.base_rev
-                        && slot.get().now_ms == now_ms => {}
-                std::collections::hash_map::Entry::Occupied(mut slot)
-                    if slot.get().stamps == stamps
-                        && slot.get().ohlcv.open == ohlcv.open
-                        && slot.get().ohlcv.high == ohlcv.high
-                        && slot.get().ohlcv.low == ohlcv.low
-                        && slot.get().ohlcv.close == ohlcv.close
-                        && slot.get().ohlcv.volume == ohlcv.volume =>
-                {
-                    let frame = slot.get_mut();
-                    frame.base_rev = self.base_rev;
-                    frame.now_ms = now_ms;
-                }
-                std::collections::hash_map::Entry::Occupied(mut slot) => {
-                    self.revision = self.revision.wrapping_add(1);
-                    let revision = self.revision;
-                    slot.insert(Frame {
-                        stamps,
-                        ohlcv,
-                        revision,
-                        base_rev: self.base_rev,
-                        now_ms,
-                    });
-                }
-            }
+            self.materialize_frame(tf_ms, now_ms)?;
         }
 
         let mut ordered = Vec::new();
@@ -707,7 +696,10 @@ impl MtfStore {
                 let kernel = registry.get(&node.kernel).ok_or_else(|| {
                     KernelError::UnknownIndicator(format!("unknown kernel '{}'", node.kernel))
                 })?;
-                let params = params_of.get(node).copied().unwrap_or(&default_params);
+                // Every ordered node carries resolved params (requests
+                // first-wins, then dep-discovered); the default below is an
+                // unreachable fail-safe, never a silently resolved default.
+                let params = resolved.get(node).unwrap_or(&default_params);
                 let frame = self.frames.get(&node.tf_ms).ok_or_else(|| {
                     KernelError::InvalidInput(format!("no frame materialized for {node}"))
                 })?;
@@ -727,8 +719,17 @@ impl MtfStore {
                 let result = kernel.batch(data, params)?;
                 let warmup = kernel.warmup(params)?;
                 let previous = self.caches.get(node).map(|cache| cache.revision);
+                let words: Vec<u64> = result
+                    .values
+                    .iter()
+                    .map(|slot| match slot {
+                        Some(value) => value.to_bits(),
+                        None => NONE_WORD,
+                    })
+                    .collect();
+                let values_hash = content_hash(&[], &words);
                 let changed = match self.caches.get(node) {
-                    Some(cache) => cache.values != result.values,
+                    Some(cache) => cache.values_hash != values_hash,
                     None => true,
                 };
                 let revision = if changed {
@@ -749,6 +750,7 @@ impl MtfStore {
                     SeriesCache {
                         values: result.values,
                         revision,
+                        values_hash,
                         warmup,
                         inputs,
                     },
@@ -757,6 +759,176 @@ impl MtfStore {
             ordered.push(node.clone());
         }
         Ok(ordered)
+    }
+
+    /// Bring one span's frame current at `now_ms`: skip untouched when the
+    /// generation, covered base length, and `now` all match (one comparison,
+    /// zero folds); extend the stored tail while the base only grew by
+    /// append; rebuild from scratch on replacement, first build, or
+    /// regressed `now` (the fence never regresses in production — a
+    /// regressed `now` takes the slow path, never a wrong one). Converted
+    /// [`ClosedBar`] legs ride the existing per-`base_rev` cache, built once
+    /// per base change and reused across spans.
+    fn materialize_frame(&mut self, tf_ms: i64, now_ms: i64) -> Result<(), KernelError> {
+        let grid = NonZeroI64::new(tf_ms).ok_or_else(|| {
+            KernelError::InvalidInput(format!("series span must be positive, got {tf_ms}"))
+        })?;
+        if self.closed_rev != self.base_rev {
+            self.closed = self.base.iter().map(ClosedBar::from_proto_bar).collect();
+            self.closed_rev = self.base_rev;
+        }
+        if let Some(frame) = self.frames.get(&tf_ms) {
+            if frame.generation == self.generation
+                && frame.base_len <= self.closed.len()
+                && frame.now_ms <= now_ms
+            {
+                if frame.base_len == self.closed.len() && frame.now_ms == now_ms {
+                    return Ok(());
+                }
+                if self.extend_frame(tf_ms, now_ms, grid)? {
+                    return Ok(());
+                }
+            }
+        }
+        self.rebuild_frame(tf_ms, now_ms)
+    }
+
+    /// Extend one frame's stored tail: fold only base bars at or after the
+    /// last stored bucket-open (a bar inside the last bucket recomputes it;
+    /// later bars open new ones), keep the confirmed ones, and splice them
+    /// over the stored tail. Returns whether the extend applied: a stored
+    /// tail with nothing confirmed now is unreachable while `now` advances
+    /// (confirmed buckets stay confirmed), so that case declines and the
+    /// caller rebuilds. One bucket `==` decides backdate-vs-bump — bounded
+    /// by the tail width, never a full-window compare; new buckets past the
+    /// old tail are new by construction. Unchanged extends keep the
+    /// revision, so downstream series stay fresh and skip their recompute.
+    fn extend_frame(
+        &mut self,
+        tf_ms: i64,
+        now_ms: i64,
+        grid: NonZeroI64,
+    ) -> Result<bool, KernelError> {
+        let last_stamp = self.frames.get(&tf_ms).and_then(|frame| frame.stamps.last().copied());
+        let rebase_from = match last_stamp {
+            Some(stamp) => self.closed.partition_point(|bar| bar.ts_ms < stamp),
+            None => 0,
+        };
+        let tail_slice = &self.closed[rebase_from..];
+        let mut tail = Vec::new();
+        for (idx, first, last) in bucket_bar_ranges(tail_slice, tf_ms)? {
+            let ts = idx * tf_ms;
+            if last_stamp.is_some_and(|open| ts < open) {
+                continue;
+            }
+            if !fully_formed(ts, grid, now_ms) {
+                continue;
+            }
+            tail.push(fold_bucket_range(tail_slice, first, last, ts));
+        }
+        let frame = self.frames.get_mut(&tf_ms).expect("extended frame present");
+        let old_last = frame.stamps.last().map(|ts| {
+            let at = frame.stamps.len() - 1;
+            ClosedBar {
+                ts_ms: *ts,
+                o: frame.ohlcv.open[at],
+                h: frame.ohlcv.high[at],
+                l: frame.ohlcv.low[at],
+                c: frame.ohlcv.close[at],
+                volume: frame.ohlcv.volume[at],
+            }
+        });
+        let changed = match (&old_last, tail.first()) {
+            // No confirmed tail before or after: markers advance, content stands.
+            (None, None) => false,
+            // Newly confirmed buckets where none stood: wholesale replace.
+            (None, Some(_)) => true,
+            // Stored tail with nothing confirmed now: declined above by
+            // contract — report unhandled so the caller rebuilds.
+            (Some(_), None) => return Ok(false),
+            // Recomputed last bucket plus zero or more new buckets: any new
+            // bucket is a change; otherwise the one `==` decides.
+            (Some(old), Some(new)) => tail.len() != 1 || *new != *old,
+        };
+        if changed {
+            if old_last.is_some() {
+                frame.stamps.pop();
+                frame.ohlcv.open.pop();
+                frame.ohlcv.high.pop();
+                frame.ohlcv.low.pop();
+                frame.ohlcv.close.pop();
+                frame.ohlcv.volume.pop();
+            }
+            for bar in &tail {
+                frame.stamps.push(bar.ts_ms);
+                frame.ohlcv.open.push(bar.o);
+                frame.ohlcv.high.push(bar.h);
+                frame.ohlcv.low.push(bar.l);
+                frame.ohlcv.close.push(bar.c);
+                frame.ohlcv.volume.push(bar.volume);
+            }
+            self.revision = self.revision.wrapping_add(1);
+            frame.revision = self.revision;
+        }
+        frame.base_len = self.closed.len();
+        frame.now_ms = now_ms;
+        Ok(true)
+    }
+
+    /// Rebuild one frame from the full base tape: project every bucket, hash
+    /// the retained legs against the new legs, backdate on equal hashes and
+    /// bump-and-replace on differ. This path already pays O(history) for
+    /// projection, so the two streaming hash passes (one transient words
+    /// buffer each, freed on return) replace the five-leg early-exit memcmp
+    /// with bounded uniform work and a fixed-size backdate record.
+    fn rebuild_frame(&mut self, tf_ms: i64, now_ms: i64) -> Result<(), KernelError> {
+        let projected = project_bars(&self.closed, tf_ms, Lookahead::Off, Some(now_ms))?;
+        let mut stamps = Vec::with_capacity(projected.len());
+        let mut ohlcv = OwnedOhlcv {
+            open: Vec::with_capacity(projected.len()),
+            high: Vec::with_capacity(projected.len()),
+            low: Vec::with_capacity(projected.len()),
+            close: Vec::with_capacity(projected.len()),
+            volume: Vec::with_capacity(projected.len()),
+        };
+        for bar in &projected {
+            stamps.push(bar.ts_ms);
+            ohlcv.open.push(bar.o);
+            ohlcv.high.push(bar.h);
+            ohlcv.low.push(bar.l);
+            ohlcv.close.push(bar.c);
+            ohlcv.volume.push(bar.volume);
+        }
+        fn frame_words(legs: &OwnedOhlcv) -> Vec<u64> {
+            let mut words = Vec::with_capacity(legs.open.len() * 5);
+            for leg in [&legs.open, &legs.high, &legs.low, &legs.close, &legs.volume] {
+                words.extend(leg.iter().map(|value| value.to_bits()));
+            }
+            words
+        }
+        let new_hash = content_hash(&stamps, &frame_words(&ohlcv));
+        let changed = match self.frames.get(&tf_ms) {
+            Some(frame) => content_hash(&frame.stamps, &frame_words(&frame.ohlcv)) != new_hash,
+            None => true,
+        };
+        let revision = if changed {
+            self.revision = self.revision.wrapping_add(1);
+            self.revision
+        } else {
+            self.frames.get(&tf_ms).map_or(self.revision, |frame| frame.revision)
+        };
+        self.frames.insert(
+            tf_ms,
+            Frame {
+                stamps,
+                ohlcv,
+                revision,
+                generation: self.generation,
+                base_len: self.closed.len(),
+                now_ms,
+            },
+        );
+        Ok(())
     }
 }
 
@@ -780,18 +952,28 @@ impl protopyne_types::Validate for MtfStore {
     }
 }
 
-/// Register every requested key plus its transitive deps: each series key
-/// depends on its frame edge plus the kernel `depends` lifted to
-/// `(same span, dep id, default params)`; frame keys provide themselves
-/// with no deps. Unknown kernels and unknown deps refuse with a reason.
-/// Ordering itself stays the canonical graph's job — this function only
-/// declares nodes and edges, never sorts.
+/// Register every requested key plus its transitive parametric deps: each
+/// series key depends on its frame edge plus the kernel's
+/// [`deps_with_params`](crate::indicator::Indicator::deps_with_params)
+/// resolved to `(same span, dep id, real params, the request's leg
+/// selection)`; frame keys provide themselves with no deps. Unknown kernels
+/// and unknown deps refuse with a reason. Ordering itself stays the canonical
+/// graph's job — this function only declares nodes and edges, never sorts.
+///
+/// The returned map carries every node's parameters (requests first-wins,
+/// then dep-discovered in traversal order) so the compute step reads each
+/// dep's real params — there is exactly one dep-resolution rule, and no
+/// default-params fallback anywhere on this path.
 pub fn build_graph(
     registry: &IndicatorRegistry,
-    requests: &[SeriesKey],
-) -> Result<DependencyGraph<SeriesKey>, KernelError> {
+    requests: &[(SeriesKey, ParamSet)],
+) -> Result<(DependencyGraph<SeriesKey>, HashMap<SeriesKey, ParamSet>), KernelError> {
     let mut graph = DependencyGraph::new();
-    let mut stack: Vec<SeriesKey> = requests.to_vec();
+    let mut params_of: HashMap<SeriesKey, ParamSet> = HashMap::new();
+    for (key, params) in requests {
+        params_of.entry(key.clone()).or_insert_with(|| params.clone());
+    }
+    let mut stack: Vec<SeriesKey> = requests.iter().map(|(key, _)| key.clone()).collect();
     while let Some(key) = stack.pop() {
         if key.tf_ms <= 0 {
             return Err(KernelError::InvalidInput(format!(
@@ -809,26 +991,30 @@ pub fn build_graph(
         let kernel = registry.get(&key.kernel).ok_or_else(|| {
             KernelError::UnknownIndicator(format!("unknown kernel '{}'", key.kernel))
         })?;
+        // Every node enters the stack with its params seeded above (requests)
+        // or inserted at discovery below (deps); the empty fallback is an
+        // unreachable fail-safe, never a silently resolved default.
+        let node_params = params_of.get(&key).cloned().unwrap_or_else(ParamSet::new);
         let frame = SeriesKey::frame_key(key.tf_ms)?;
         let mut deps = vec![frame.clone()];
-        for dep_id in kernel.spec().depends.clone() {
+        for (dep_id, dep_params) in kernel.deps_with_params(&node_params) {
             if registry.get(&dep_id).is_none() {
                 return Err(KernelError::UnknownIndicator(format!(
                     "unknown kernel dep '{dep_id}' of '{}'",
                     key.kernel
                 )));
             }
-            deps.push(SeriesKey {
-                tf_ms: key.tf_ms,
-                kernel: dep_id,
-                params_hash: ParamSet::new().fingerprint(),
-                volume_source: false,
-            });
+            let mut dep_key = SeriesKey::new(key.tf_ms, &dep_id, &dep_params)?;
+            if key.volume_source {
+                dep_key = dep_key.with_volume_source();
+            }
+            params_of.entry(dep_key.clone()).or_insert(dep_params);
+            deps.push(dep_key);
         }
         graph.register(&key, &deps, std::slice::from_ref(&key))?;
         stack.extend(deps);
     }
-    Ok(graph)
+    Ok((graph, params_of))
 }
 
 /// Order requested keys (plus their transitive deps) dependency-first: the
@@ -849,3 +1035,11 @@ mod tests;
 #[cfg(test)]
 #[path = "../tests/mtf_store.rs"]
 mod mtf_store_tests;
+
+#[cfg(test)]
+#[path = "../tests/mtf_dedup.rs"]
+mod mtf_dedup_tests;
+
+#[cfg(test)]
+#[path = "../tests/mtf_incremental.rs"]
+mod mtf_incremental_tests;

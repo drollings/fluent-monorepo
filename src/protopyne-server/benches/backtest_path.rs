@@ -239,6 +239,10 @@ fn multi_fanout(criterion: &mut Criterion) {
     });
 }
 
+/// Native-vs-Pine comparison over one shared workload. Needs the server
+/// `pine` feature (the Pine leg drives the language runtime); the
+/// throughput benches above run on lean kernels.
+#[cfg(feature = "pine")]
 fn native_vs_pine(criterion: &mut Criterion) {
     use protopyne_kernels::{
         InputSet, LibraryId, LinkedModule, Lookahead, MarketContextKey, ModuleInput, MtfStore,
@@ -342,11 +346,21 @@ fn native_vs_pine(criterion: &mut Criterion) {
             let mut store = MtfStore::new();
             store.set_base(&bars).expect("base loads");
             let key = MarketContextKey::new(Timeframe::M1);
-            fetch_all(&mut store, &registry, &[(key, None)], now_ms, Lookahead::Off)
-                .expect("bench native fetch fills")
+            fetch_all(
+                &mut store,
+                &registry,
+                &[key],
+                &std::collections::HashMap::new(),
+                now_ms,
+                Lookahead::Off,
+            )
+            .expect("bench native fetch fills")
         });
     });
 }
 
+#[cfg(feature = "pine")]
 criterion_group!(benches, decide_path, sweep_fanout, multi_fanout, native_vs_pine);
+#[cfg(not(feature = "pine"))]
+criterion_group!(benches, decide_path, sweep_fanout, multi_fanout);
 criterion_main!(benches);

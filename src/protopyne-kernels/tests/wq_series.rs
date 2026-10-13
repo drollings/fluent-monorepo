@@ -34,7 +34,7 @@ fn check(name: &str, got: &[Option<f64>], want: &[Option<f64>], eps: f64) {
     assert_expr_parity(got, want, eps, name).expect("parity");
 }
 
-/// Parity over the warmed tail plus an explicit leading-`None` count: some
+/// Expr-parity over the warmed tail plus an explicit leading-`None` count: some
 /// references carry staging artifacts in the warmup zone (a nested rolling
 /// pass costs an extra window; `otherwise` fires on null conditions), while
 /// kernels hold the module-wide min-periods convention. Both sides are
@@ -220,7 +220,7 @@ fn moments_match_rolling_forms() {
         &series_fixture(&opt, col("x").rolling_mean(strict(d)) / col("x").rolling_std(var_opts(d, 0))),
         1e-9,
     );
-    // Degenerate denominators refuse on both sides of the parity.
+    // Degenerate denominators refuse on both sides of the Expr-parity comparison.
     let flat = vec![5.0; 10];
     let flat_opt = some_of(&flat);
     check("std-flat", &ts_std_dev(&flat, d, 0), &series_fixture(&flat_opt, col("x").rolling_std(var_opts(d, 0))), 0.0);

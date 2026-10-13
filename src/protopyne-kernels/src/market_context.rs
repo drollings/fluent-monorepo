@@ -16,7 +16,9 @@
 //! union of series for several spans through one store revision and reads
 //! each span at its latest confirmed bar.
 
+use std::collections::{HashMap, HashSet};
 use std::fmt;
+use std::hash::BuildHasher;
 
 use crate::averages::{AlmaIndicator, VwmaIndicator};
 use crate::bars::fast_tanh;
@@ -68,6 +70,14 @@ pub const HEALTH_DEADBAND: f64 = 0.01;
 pub const HEALTH_MIXED_SPAN: f64 = 20.0;
 /// `getHealthMAs` mixed base (task-value).
 pub const HEALTH_MIXED_BASE: f64 = -10.0;
+/// Stability band for cross-surface regime switches (task-value: label
+/// stability for consumers that display or gate on the label; frozen). A
+/// quarter of the smallest win floor: genuine rotations (surfaces separate
+/// by tens on real tapes) switch promptly, chop inside the band holds. The
+/// parity probe keeps exact-`==` semantics on [`detect_regime`]; this
+/// constant serves the stability wrapper only, and the two are never
+/// confused.
+pub const REGIME_HYSTERESIS: f64 = 5.0;
 
 /// Market regime labels, mirroring `UTIL.MarketRegimes` member for member.
 /// `Display` renders the Pine member name so audits compare directly.
@@ -341,6 +351,24 @@ pub fn health_mas(
     fin_or_none(score)
 }
 
+/// The three normalized regime surfaces behind [`detect_regime`] (trend
+/// magnitude, `8×` volatility ratio, `10×` volume ratio): one helper so the
+/// frozen detector and the stability wrapper share the exact transforms —
+/// the `8×`/`10×`/abs shapes exist once, and the detector recomposes over
+/// them byte-identically.
+fn regime_surfaces(
+    ma_health: Option<f64>,
+    volatility_ratio: Option<f64>,
+    vol_ratio: Option<f64>,
+) -> (Option<f64>, Option<f64>, Option<f64>) {
+    let trend = ma_health.and_then(fin_or_none).map(f64::abs);
+    let volatility = volatility_ratio
+        .and_then(fin_or_none)
+        .map(|ratio| VOLATILITY_SCALE * ratio);
+    let volume = vol_ratio.and_then(fin_or_none).map(|ratio| VOLUME_SCALE * ratio);
+    (trend, volatility, volume)
+}
+
 /// Ratio-based regime label, ported 1:1 from `detectRegime`: the highest
 /// polynomial surface wins, ties yield to trend first. The oracle teaches
 /// two na-semantics the hard way (warming-bar probe): `math.max`
@@ -362,11 +390,7 @@ pub fn detect_regime(
     volatility_ratio: Option<f64>,
     vol_ratio: Option<f64>,
 ) -> MarketRegime {
-    let trend = ma_health.and_then(fin_or_none).map(f64::abs);
-    let volatility = volatility_ratio
-        .and_then(fin_or_none)
-        .map(|ratio| VOLATILITY_SCALE * ratio);
-    let volume = vol_ratio.and_then(fin_or_none).map(|ratio| VOLUME_SCALE * ratio);
+    let (trend, volatility, volume) = regime_surfaces(ma_health, volatility_ratio, vol_ratio);
     // Propagating max: one absent surface voids every tie.
     let max = match (trend, volatility, volume) {
         (Some(trend), Some(volatility), Some(volume)) => {
@@ -395,21 +419,150 @@ pub fn detect_regime(
     }
 }
 
+/// Label-stable regime read for consumers that need a quiet label (charts,
+/// gates): the frozen detector decides the fresh label, and this wrapper
+/// decides whether the switch earns the flicker. Switching across surfaces
+/// needs the fresh surface to beat the held surface by more than
+/// [`REGIME_HYSTERESIS`]; going quiet needs the held surface decayed below
+/// its win floor minus the band. Same-surface sign flips (bull↔bear) switch
+/// immediately — the sign is the signal, not noise. Quiet never vetoes a
+/// fresh signal, and vanished evidence never holds a stale label. Pure;
+/// transition table pinned in tests. Never a substitute for
+/// [`detect_regime`] in parity probes.
+#[must_use]
+pub fn detect_regime_stable(
+    prev: MarketRegime,
+    ma_health: Option<f64>,
+    volatility_ratio: Option<f64>,
+    vol_ratio: Option<f64>,
+) -> MarketRegime {
+    let fresh = detect_regime(ma_health, volatility_ratio, vol_ratio);
+    if fresh == prev || prev == MarketRegime::LowVolume {
+        return fresh;
+    }
+    // Same surface (bull↔bear): the sign flip is decisive, never held.
+    if matches!(prev, MarketRegime::TrendingBull | MarketRegime::TrendingBear)
+        && matches!(fresh, MarketRegime::TrendingBull | MarketRegime::TrendingBear)
+    {
+        return fresh;
+    }
+    let (trend, volatility, volume) = regime_surfaces(ma_health, volatility_ratio, vol_ratio);
+    // Held surface plus the floor that won it; quiet holds neither.
+    let (held, floor) = match prev {
+        MarketRegime::TrendingBull | MarketRegime::TrendingBear => (trend, Some(TREND_SCORE_FLOOR)),
+        MarketRegime::Volatile => (volatility, Some(VOLATILITY_SCORE_FLOOR)),
+        MarketRegime::Ranging => (volume, Some(VOLUME_SCORE_FLOOR)),
+        MarketRegime::LowVolume => (None, None),
+    };
+    // A won fresh label always carries its surface (every non-quiet win
+    // needs its surface present); quiet carries none.
+    let won = match fresh {
+        MarketRegime::TrendingBull | MarketRegime::TrendingBear => trend,
+        MarketRegime::Volatile => volatility,
+        MarketRegime::Ranging => volume,
+        MarketRegime::LowVolume => None,
+    };
+    // Held evidence gone: never hold a stale label.
+    let Some(held) = held else {
+        return fresh;
+    };
+    match (floor, won) {
+        // Going quiet: switch once decayed below floor minus band.
+        (Some(floor), None) => {
+            if held < floor - REGIME_HYSTERESIS {
+                fresh
+            } else {
+                prev
+            }
+        }
+        // Cross-surface: fresh must beat held by more than the band.
+        (_, Some(won)) => {
+            if won > held + REGIME_HYSTERESIS {
+                fresh
+            } else {
+                prev
+            }
+        }
+        // Floorless hold (unreachable — every held surface carries its win
+        // floor): fail toward the fresh signal, never toward a stale hold.
+        (None, None) => fresh,
+    }
+}
+
+/// Read one bundle leg at frame bar `at`: resolve the request, then the
+/// ensured cache, then the bar value (absent stays na through the fold).
+/// Where the bundle carries several legs under one kernel id (the two ATR
+/// spans), `params` selects by parameter fingerprint — never by position,
+/// so request order cannot move the reading. Where `(kernel,
+/// volume_source)` is unique, `params` stays `None` and the single match is
+/// asserted (the frozen bundle holds one leg per remaining pair).
+fn read_leg(
+    store: &MtfStore,
+    requests: &[(SeriesKey, ParamSet)],
+    at: usize,
+    kernel: &str,
+    volume_source: bool,
+    params: Option<&ParamSet>,
+) -> Result<Option<f64>, KernelError> {
+    let mut candidates = requests
+        .iter()
+        .filter(|(candidate, _)| candidate.kernel == kernel && candidate.volume_source == volume_source);
+    let (series, _) = if let Some(params) = params {
+        candidates
+            .find(|(_, have)| have.fingerprint() == params.fingerprint())
+            .ok_or_else(|| {
+                KernelError::InvalidInput(format!(
+                    "context bundle has no {kernel} series with these parameters"
+                ))
+            })?
+    } else {
+        let found: Vec<_> = candidates.collect();
+        debug_assert_eq!(
+            found.len(),
+            1,
+            "context bundle holds one {kernel} leg for volume_source={volume_source}"
+        );
+        found.into_iter().next().ok_or_else(|| {
+            KernelError::InvalidInput(format!("context bundle has no {kernel} series"))
+        })?
+    };
+    let cache = store.cache(series).ok_or_else(|| {
+        KernelError::InvalidInput(format!("series {series} not ensured (call fetch_all first)"))
+    })?;
+    Ok(cache.values.get(at).copied().flatten())
+}
+
 /// Read one context at frame bar `at`: resolve the nine series plus the
 /// close/volume legs, normalize (CCI × 3, RSI recentered × 2), fold the
 /// derived metrics in Pine op order, and label. Every step propagates
 /// absence; `prev` carries `vol`/`vol_ratio` past guard-failing bars (the
 /// `nz` shape), defaulting to absent/zero fresh.
 ///
+/// `requests` are the ensured series this read resolves against (one
+/// span's legs — [`fetch_all`] threads its union per span instead of
+/// re-deriving `series_keys()` here, so the read can never drift from what
+/// was ensured). A `prev` read for another span is a caller bug and refuses
+/// with a reason — carry never crosses spans.
+///
 /// Missing caches refuse (call `fetch_all` first — a missing series is a
 /// caller bug, never market na); an out-of-range `at` refuses with a
 /// reason. Within-range absent values stay na through the fold.
-pub fn update(
+fn update_with_requests(
     store: &MtfStore,
     key: &MarketContextKey,
+    requests: &[(SeriesKey, ParamSet)],
     at: usize,
     prev: Option<&MarketContext>,
 ) -> Result<MarketContext, KernelError> {
+    if let Some(prior) = prev {
+        if prior.tf != key.tf {
+            return Err(KernelError::InvalidInput(format!(
+                "context prev for {} read on {} (carry never crosses spans)",
+                prior.tf.duration_ms(),
+                key.tf_ms()
+            )));
+        }
+    }
     let frame = store.frame(key.tf_ms()).ok_or_else(|| {
         KernelError::InvalidInput(format!(
             "no frame for {}ms (ensure a context series on this span first)",
@@ -422,40 +575,19 @@ pub fn update(
             frame.len()
         )));
     }
-    let requests = key.series_keys();
-    let slot = |kernel: &str, volume_source: bool| -> Result<Option<f64>, KernelError> {
-        let (series, _) = requests
-            .iter()
-            .find(|(candidate, _)| candidate.kernel == kernel && candidate.volume_source == volume_source)
-            .ok_or_else(|| {
-                KernelError::InvalidInput(format!("context bundle has no {kernel} series"))
-            })?;
-        let cache = store.cache(series).ok_or_else(|| {
-            KernelError::InvalidInput(format!("series {series} not ensured (call fetch_all first)"))
-        })?;
-        Ok(cache.values.get(at).copied().flatten())
-    };
-    let ma_primary = slot(AlmaIndicator::ID, false)?;
-    let ma_signal = slot(VwmaIndicator::ID, false)?;
-    let ma_mean = slot(EmaIndicator::ID, false)?;
-    let atr = slot(AtrIndicator::ID, false)?;
-    // The two ATR spans share one kernel id: disambiguate by parameters.
-    let atr_long = {
-        let (series, _) = requests
-            .iter()
-            .find(|(candidate, params)| {
-                candidate.kernel == AtrIndicator::ID && params.fingerprint() == key.atr50.fingerprint()
-            })
-            .ok_or_else(|| KernelError::InvalidInput("context bundle has no atr50 series".to_owned()))?;
-        let cache = store.cache(series).ok_or_else(|| {
-            KernelError::InvalidInput(format!("series {series} not ensured (call fetch_all first)"))
-        })?;
-        cache.values.get(at).copied().flatten()
-    };
-    let cci = slot(CciIndicator::ID, false)?.map(|value| value * CCI_SCALE);
-    let rsi = slot(RsiIndicator::ID, false)?.map(|value| (value - RSI_CENTER) * RSI_SCALE);
-    let stdev = slot(StddevIndicator::ID, false)?;
-    let vol_sma = slot(SmaIndicator::ID, true)?;
+    let ma_primary = read_leg(store, requests, at, AlmaIndicator::ID, false, None)?;
+    let ma_signal = read_leg(store, requests, at, VwmaIndicator::ID, false, None)?;
+    let ma_mean = read_leg(store, requests, at, EmaIndicator::ID, false, None)?;
+    // The two ATR spans share one kernel id: resolved by parameters, so a
+    // reordered bundle reads identically.
+    let atr = read_leg(store, requests, at, AtrIndicator::ID, false, Some(&key.atr14))?;
+    let atr_long = read_leg(store, requests, at, AtrIndicator::ID, false, Some(&key.atr50))?;
+    let cci = read_leg(store, requests, at, CciIndicator::ID, false, None)?
+        .map(|value| value * CCI_SCALE);
+    let rsi = read_leg(store, requests, at, RsiIndicator::ID, false, None)?
+        .map(|value| (value - RSI_CENTER) * RSI_SCALE);
+    let stdev = read_leg(store, requests, at, StddevIndicator::ID, false, None)?;
+    let vol_sma = read_leg(store, requests, at, SmaIndicator::ID, true, None)?;
     let close = frame.close.get(at).copied();
     let vol = frame.volume.get(at).copied().or_else(|| prev.and_then(|prior| prior.vol));
 
@@ -505,30 +637,50 @@ pub fn update(
     })
 }
 
+/// Read one context at frame bar `at` over this span's own bundle: the
+/// single-span entry point over `update_with_requests`. Kept so direct
+/// readers (probes, calibration) resolve exactly what [`fetch_all`]
+/// ensures for the span — one bundle derivation, composed by both callers.
+pub fn update(
+    store: &MtfStore,
+    key: &MarketContextKey,
+    at: usize,
+    prev: Option<&MarketContext>,
+) -> Result<MarketContext, KernelError> {
+    let requests = key.series_keys();
+    update_with_requests(store, key, &requests, at, prev)
+}
+
 /// Multi-span fan-out over one shared store: ensure the union of series
 /// once (one revision counter, shared subexpressions across spans), then
-/// read each span at its latest confirmed bar. Returns one context per
-/// request, in request order. An empty confirmed frame refuses — the
-/// forming tail never yields a context.
-pub fn fetch_all(
+/// read each span at its latest confirmed bar. Returns one context per key,
+/// in key order. Prev carry arrives as a map keyed by span (`tf_ms`): each
+/// span reads only its own prior, so a stale span's carry can never leak
+/// into another span through ordering; spans missing from the map read
+/// fresh. An empty confirmed frame refuses — the forming tail never yields
+/// a context.
+pub fn fetch_all<S: BuildHasher>(
     store: &mut MtfStore,
     registry: &IndicatorRegistry,
-    requests: &[(MarketContextKey, Option<&MarketContext>)],
+    keys: &[MarketContextKey],
+    prevs: &HashMap<i64, MarketContext, S>,
     now_ms: i64,
     lookahead: Lookahead,
 ) -> Result<Vec<MarketContext>, KernelError> {
+    // First-wins union dedupe over a set (same outcome as the scan, stated
+    // O(1) expected per insert instead of O(n²)).
     let mut union: Vec<(SeriesKey, ParamSet)> = Vec::new();
-    for (key, _) in requests {
+    let mut seen: HashSet<SeriesKey> = HashSet::new();
+    for key in keys {
         for request in key.series_keys() {
-            if !union.iter().any(|(known, _)| known == &request.0) {
+            if seen.insert(request.0.clone()) {
                 union.push(request);
             }
         }
     }
     store.ensure(registry, &union, now_ms, lookahead)?;
-    requests
-        .iter()
-        .map(|(key, prev)| {
+    keys.iter()
+        .map(|key| {
             let len = store
                 .frame(key.tf_ms())
                 .ok_or_else(|| {
@@ -544,7 +696,15 @@ pub fn fetch_all(
                     key.tf_ms()
                 ))
             })?;
-            update(store, key, at, *prev)
+            // This span's ensured legs only (the union filtered to the
+            // span), plus this span's prev: the read resolves exactly what
+            // was ensured, and carry stays inside the span.
+            let span_requests: Vec<(SeriesKey, ParamSet)> = union
+                .iter()
+                .filter(|(series, _)| series.tf_ms == key.tf_ms())
+                .cloned()
+                .collect();
+            update_with_requests(store, key, &span_requests, at, prevs.get(&key.tf_ms()))
         })
         .collect()
 }

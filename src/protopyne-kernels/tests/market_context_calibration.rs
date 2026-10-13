@@ -81,8 +81,15 @@ fn native_regime(bars: &[Bar], at: usize) -> MarketContext {
     store.set_base(bars).expect("base loads");
     let key = MarketContextKey::new(Timeframe::M5);
     let now = bars.last().expect("nonempty").ts.timestamp_millis() + 300_000;
-    fetch_all(&mut store, &registry, &[ (key.clone(), None)], now, Lookahead::Off)
-        .expect("fetch fills");
+    fetch_all(
+        &mut store,
+        &registry,
+        std::slice::from_ref(&key),
+        &std::collections::HashMap::new(),
+        now,
+        Lookahead::Off,
+    )
+    .expect("fetch fills");
     let frame_len = store.frame_stamps(key.tf_ms()).expect("frame").len();
     assert!(at < frame_len, "probe bar {at} inside {frame_len} confirmed buckets");
     update(&store, &key, at, None).expect("context reads")
@@ -96,8 +103,15 @@ fn last_regime(bars: &[Bar]) -> MarketRegime {
     store.set_base(bars).expect("base loads");
     let key = MarketContextKey::new(Timeframe::M5);
     let now = bars.last().expect("nonempty").ts.timestamp_millis() + 300_000;
-    let contexts = fetch_all(&mut store, &registry, &[ (key, None)], now, Lookahead::Off)
-        .expect("fetch fills");
+    let contexts = fetch_all(
+        &mut store,
+        &registry,
+        &[key],
+        &std::collections::HashMap::new(),
+        now,
+        Lookahead::Off,
+    )
+    .expect("fetch fills");
     contexts.into_iter().next().expect("one context").regime
 }
 

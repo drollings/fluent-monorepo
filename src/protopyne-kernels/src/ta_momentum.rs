@@ -10,7 +10,7 @@
 //!   (`warmup` 1) with a `Some(0.0)` floor, unlike the `na`-on-flat `stoch`.
 //! * Zero denominators elsewhere refuse via
 //!   [`div_or_none`](crate::math::div_or_none): the reference yields `inf`
-//!   there, so parity suites run on nonzero data and a dedicated degenerate
+//!   there, so Expr-parity suites run on nonzero data and a dedicated degenerate
 //!   test pins the `None` refusal.
 //!
 //! Multi-pass kernels compose the shared [`SmaIndicator`](crate::sma::SmaIndicator)
@@ -1179,6 +1179,6 @@ impl Indicator for AroonIndicator {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "research"))]
 #[path = "../tests/ta_momentum.rs"]
 mod tests;

@@ -18,6 +18,7 @@
 //! not this test's job. The `tf` field is excluded from comparison (the
 //! engine reports chart-relative `C`, native names the span — locked).
 
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use chrono::DateTime;
@@ -192,7 +193,8 @@ async fn pooled_contexts(
                 let contexts = fetch_all(
                     &mut guard,
                     &registry,
-                    &[(job.key, None)],
+                    std::slice::from_ref(&job.key),
+                    &HashMap::new(),
                     job.now_ms,
                     Lookahead::Off,
                 )
@@ -249,7 +251,8 @@ async fn shared_store_fans_out_per_span_with_pine_agreement() {
         let contexts = fetch_all(
             &mut guard,
             &registry,
-            &[(job.key, None)],
+            std::slice::from_ref(&job.key),
+            &HashMap::new(),
             job.now_ms,
             Lookahead::Off,
         )

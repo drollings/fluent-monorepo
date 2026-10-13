@@ -2,11 +2,10 @@
 //!
 //! [`IndicatorComponent`] binds one [`Indicator`] with its [`ParamSet`] and
 //! window ([`OwnedOhlcv`]) behind the `Component` contract: `name` is the
-//! spec id, and — the point of this adapter over the batch-only
-//! [`KernelUnit`](crate::timed::KernelUnit) — `depends`/`provides` are wired
-//! from the spec's dependency list (interned at construction), so a
-//! `SupervisedBatch` orders indicators through the same channel as every
-//! other supervised stage. Timing still composes
+//! spec id, and `depends`/`provides` are wired from the spec's dependency
+//! list (interned at construction) — the same derivation as the batch-only
+//! [`KernelUnit`](crate::timed::KernelUnit) — so a `SupervisedBatch` orders
+//! indicators through the same channel as every other supervised stage. Timing still composes
 //! `Instrumented::with_metrics` at the registration site (see
 //! [`instrumented_kernel`](crate::timed::instrumented_kernel)).
 //!
@@ -206,7 +205,7 @@ impl_component!(IndicatorComponent);
 ///
 /// Values are shared as `Arc`, so `get` is one atomic bump — the same cost
 /// as the map it replaces. `ConcurrentRegistry` stores `Arc<V>` itself, so
-/// the value type is a thin [`SharedIndicator`] newtype rather than a
+/// the value type is a thin `SharedIndicator` newtype rather than a
 /// doubly-wrapped `Arc<Arc<…>>`.
 pub struct ComponentRegistry {
     inner: ConcurrentRegistry<IndicatorId, SharedIndicator>,

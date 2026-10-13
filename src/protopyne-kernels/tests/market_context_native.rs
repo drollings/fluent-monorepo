@@ -11,20 +11,26 @@
 #![allow(clippy::float_cmp)]
 
 use super::*;
+#[cfg(feature = "pine")]
 use crate::pine::test_fixture as fixture;
+#[cfg(feature = "pine")]
 use crate::{InputSet, LinkedModule, PineEngine, PineRuntimeConfig};
 use protopyne_types::Timeframe;
 use protopyne_types::Bar;
+use std::collections::HashMap;
 
 /// Frozen agreement tolerance shared with the kernel-vs-Pine matrix.
+#[cfg(feature = "pine")]
 const EPS: f64 = 1e-9;
 
+#[cfg(feature = "pine")]
 const IMPORTS: &str = "import showmethegrail/libUtil/12 as UTIL\n\
      import showmethegrail/libBuffers/6 as libBuffers\n\
      import showmethegrail/libBars/12 as BARS\n\
      import showmethegrail/libDrawing/61 as libDrawing\n\
      import showmethegrail/libApex/88 as libApex\n";
 
+#[cfg(feature = "pine")]
 const CTX_DRIVER: &str =
     "var ctx = libApex.MarketContext.new()\nif barstate.isfirst\n    ctx.init()\nctx.fetch()\n";
 
@@ -45,6 +51,7 @@ fn bar(open: &str, high: &str, low: &str, close: &str, volume: u64, ts_secs: i64
         .build()
 }
 
+#[cfg(feature = "pine")]
 fn linked(driver: &str) -> Vec<LinkedModule> {
     fixture::linked_modules(vec![
         fixture::shipped_module("libraries/_libUtil.pine", "showmethegrail", "libUtil", 12),
@@ -56,6 +63,7 @@ fn linked(driver: &str) -> Vec<LinkedModule> {
     ])
 }
 
+#[cfg(feature = "pine")]
 fn test_engine() -> PineEngine {
     PineEngine::new(
         PineRuntimeConfig::new()
@@ -65,6 +73,7 @@ fn test_engine() -> PineEngine {
     )
 }
 
+#[cfg(feature = "pine")]
 fn oracle_ctx(driver: &str, bars: &[Bar], at_bar: usize) -> crate::UserInstance {
     let modules = linked(driver);
     let mut engine = test_engine();
@@ -78,6 +87,7 @@ fn oracle_ctx(driver: &str, bars: &[Bar], at_bar: usize) -> crate::UserInstance 
 }
 
 /// na-aware oracle field read: Pine `na` becomes `None`, numbers convert.
+#[cfg(feature = "pine")]
 fn ofield(instance: &crate::UserInstance, name: &str) -> Option<f64> {
     match instance.fields.get(name) {
         Some(Some(crate::PineValue::Float(value))) => Some(*value),
@@ -87,6 +97,7 @@ fn ofield(instance: &crate::UserInstance, name: &str) -> Option<f64> {
     }
 }
 
+#[cfg(feature = "pine")]
 fn oregime(instance: &crate::UserInstance) -> String {
     match instance.fields.get("regime") {
         Some(Some(crate::PineValue::EnumHandle(handle))) => handle.member.clone(),
@@ -94,6 +105,7 @@ fn oregime(instance: &crate::UserInstance) -> String {
     }
 }
 
+#[cfg(feature = "pine")]
 fn otf(instance: &crate::UserInstance) -> String {
     match instance.fields.get("tf") {
         Some(Some(crate::PineValue::EnumHandle(handle))) => handle.member.clone(),
@@ -102,6 +114,7 @@ fn otf(instance: &crate::UserInstance) -> String {
 }
 
 /// Every float the native view computes, in Pine declaration order.
+#[cfg(feature = "pine")]
 fn native_fields(ctx: &MarketContext) -> [(&'static str, Option<f64>); 15] {
     [
         ("ma_primary", ctx.ma_primary),
@@ -122,6 +135,7 @@ fn native_fields(ctx: &MarketContext) -> [(&'static str, Option<f64>); 15] {
     ]
 }
 
+#[cfg(feature = "pine")]
 fn assert_ctx_parity(oracle: &crate::UserInstance, native: &MarketContext, what: &str) {
     for (name, got) in native_fields(native) {
         let want = ofield(oracle, name);
@@ -162,6 +176,7 @@ fn close_now(bars: &[Bar], spacing_secs: i64) -> i64 {
     bars.last().expect("nonempty").ts.timestamp_millis() + spacing_secs * 1000
 }
 
+#[cfg(feature = "pine")]
 fn native_last(
     bars: &[Bar],
     tf: Timeframe,
@@ -171,11 +186,12 @@ fn native_last(
     let mut store = MtfStore::new();
     store.set_base(bars).expect("base loads");
     let key = MarketContextKey::new(tf);
-    let contexts = fetch_all(&mut store, &registry, &[(key, None)], now_ms, Lookahead::Off)
+    let contexts = fetch_all(&mut store, &registry, &[key], &HashMap::new(), now_ms, Lookahead::Off)
         .expect("native fetch fills");
     (store, contexts.into_iter().next().expect("one context"))
 }
 
+#[cfg(feature = "pine")]
 #[test]
 fn chart_branch_parity_at_eps() {
     let bars = ramp_bars();
@@ -187,6 +203,7 @@ fn chart_branch_parity_at_eps() {
     assert_eq!(native.tf, Timeframe::M5, "native resolves the fixed-ms span");
 }
 
+#[cfg(feature = "pine")]
 #[test]
 fn injected_legs_parity_at_eps() {
     // The auditable MTF path (Pine `fetch_numbers_reach_mtf_through_injected_legs`
@@ -211,6 +228,7 @@ fn injected_legs_parity_at_eps() {
     assert_eq!(native.regime, MarketRegime::Volatile, "dispersion wins on injected legs too");
 }
 
+#[cfg(feature = "pine")]
 #[test]
 fn warming_bars_propagate_na() {
     // Five bars: no kernel is warm, so the oracle's na-semantics (regime,
@@ -237,6 +255,7 @@ fn warming_bars_propagate_na() {
     assert_ctx_parity(&oracle, &native, "warming bar");
 }
 
+#[cfg(feature = "pine")]
 #[test]
 fn flat_tape_oracle_probe() {
     // Thirty exactly-flat bars: ATR reads zero, so every atr-guarded
@@ -301,8 +320,7 @@ fn fetch_all_shares_one_store_across_spans() {
     store.set_base(&bars).expect("base loads");
     let now = close_now(&bars, 60);
     let keys = [MarketContextKey::new(Timeframe::M1), MarketContextKey::new(Timeframe::M5)];
-    let requests = [(keys[0].clone(), None), (keys[1].clone(), None)];
-    let contexts = fetch_all(&mut store, &registry, &requests, now, Lookahead::Off)
+    let contexts = fetch_all(&mut store, &registry, &keys, &HashMap::new(), now, Lookahead::Off)
         .expect("multi-span fetch fills");
     assert_eq!(contexts.len(), 2, "one context per requested span");
     assert_eq!(contexts[0].tf, Timeframe::M1);
@@ -330,7 +348,7 @@ fn update_carry_and_fail_closed_probes() {
     let now = close_now(&bars, 300);
     // Unensured series refuse (caller must ensure first — never silent na).
     assert!(update(&store, &key, 59, None).is_err(), "unensured update refuses");
-    fetch_all(&mut store, &registry, &[ (key.clone(), None)], now, Lookahead::Off)
+    fetch_all(&mut store, &registry, std::slice::from_ref(&key), &HashMap::new(), now, Lookahead::Off)
         .expect("fetch fills");
     let at = store.frame_stamps(key.tf_ms()).expect("frame").len() - 1;
     assert!(update(&store, &key, at + 100, None).is_err(), "out-of-range bar refuses");
@@ -354,7 +372,7 @@ fn update_carry_and_fail_closed_probes() {
     let mut zero_store = MtfStore::new();
     zero_store.set_base(&zeros).expect("zero tape loads");
     let zero_now = close_now(&zeros, 300);
-    fetch_all(&mut zero_store, &registry, &[ (key.clone(), None)], zero_now, Lookahead::Off)
+    fetch_all(&mut zero_store, &registry, std::slice::from_ref(&key), &HashMap::new(), zero_now, Lookahead::Off)
         .expect("zero fetch fills");
     let zero_at = zero_store.frame_stamps(key.tf_ms()).expect("frame").len() - 1;
     let carried = update(&zero_store, &key, zero_at, Some(&prior)).expect("carry reads");
@@ -367,9 +385,180 @@ fn update_carry_and_fail_closed_probes() {
     let first_ts = bars[0].ts.timestamp_millis();
     let first_open = first_ts.div_euclid(300_000) * 300_000;
     assert!(
-        fetch_all(&mut early, &registry, &[(key.clone(), None)], first_open + 300_000 - 1, Lookahead::Off)
+        fetch_all(&mut early, &registry, std::slice::from_ref(&key), &HashMap::new(), first_open + 300_000 - 1, Lookahead::Off)
             .is_err(),
         "no confirmed bucket refuses"
     );
+}
+
+/// Sixty bars whose true range widens mid-tape (0.5 then 5.0): the 14-bar
+/// ATR reads the wide regime while the 50-bar ATR still carries the narrow
+/// past, so the two legs disagree and any leg swap is observable.
+fn widening_range_bars() -> Vec<Bar> {
+    (0u32..60)
+        .map(|i| {
+            let close = 100.0 + f64::from(i);
+            let range = if i < 30 { 0.5 } else { 5.0 };
+            bar(
+                &format!("{:.2}", close - range / 2.0),
+                &format!("{:.2}", close + range / 2.0),
+                &format!("{:.2}", close - range / 2.0),
+                &format!("{close:.2}"),
+                1_000,
+                1_700_000_000 + i64::from(i) * 300,
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn atr_leg_resolution_ignores_request_order() {
+    // The two ATR legs share one kernel id, so resolution must key on the
+    // parameter fingerprint, never on position: swapping the two ATR
+    // requests reads the identical context. Red while `update` resolves ATR
+    // first-match (the swapped read would serve atr50 values as atr).
+    let bars = widening_range_bars();
+    let registry = crate::indicator::builtin_registry().expect("builtins");
+    let mut store = MtfStore::new();
+    store.set_base(&bars).expect("base loads");
+    let key = MarketContextKey::new(Timeframe::M5);
+    let now = close_now(&bars, 300);
+    fetch_all(&mut store, &registry, std::slice::from_ref(&key), &HashMap::new(), now, Lookahead::Off)
+        .expect("fetch fills");
+    let at = store.frame_stamps(key.tf_ms()).expect("frame").len() - 1;
+    let plain = update(&store, &key, at, None).expect("plain update reads");
+    assert_ne!(plain.atr, plain.atr_long, "tape discriminates the two legs");
+    let mut swapped = key.series_keys();
+    // Kernel-qualified: several legs share the length-14 params shape
+    // (cci/rsi), so the fingerprint match alone is not the leg identity —
+    // exactly the ambiguity the params-keyed resolution must survive.
+    let mut atr_positions: Vec<usize> = swapped
+        .iter()
+        .enumerate()
+        .filter(|(_, (series, params))| {
+            series.kernel == AtrIndicator::ID
+                && (params.fingerprint() == key.atr14.fingerprint()
+                    || params.fingerprint() == key.atr50.fingerprint())
+        })
+        .map(|(index, _)| index)
+        .collect();
+    assert_eq!(atr_positions.len(), 2, "bundle holds exactly two ATR legs");
+    let second = atr_positions.pop().expect("two legs");
+    let first = atr_positions.pop().expect("two legs");
+    swapped.swap(first, second);
+    let reordered = update_with_requests(&store, &key, &swapped, at, None)
+        .expect("reordered update reads");
+    assert_eq!(reordered, plain, "ATR order never moves the reading");
+}
+
+#[test]
+fn prev_carry_never_crosses_spans() {
+    // Thirty zero-volume 1M bars: the volume guard fails on both spans, so
+    // the M5 prev (ratio 7.0) must carry on M5 only while M1 falls back to
+    // the fresh zero default — a stale span's carry can never leak into
+    // another span through the span-keyed prev map.
+    let zeros: Vec<Bar> = (0u32..30)
+        .map(|i| {
+            let close = 100.0 + f64::from(i % 2) * 0.4;
+            bar(
+                &format!("{:.2}", close - 0.2),
+                &format!("{:.2}", close + 0.4),
+                &format!("{:.2}", close - 0.3),
+                &format!("{close:.2}"),
+                0,
+                1_700_000_000 + i64::from(i) * 60,
+            )
+        })
+        .collect();
+    let registry = crate::indicator::builtin_registry().expect("builtins");
+    let mut store = MtfStore::new();
+    store.set_base(&zeros).expect("zero tape loads");
+    let now = close_now(&zeros, 60);
+    let m1 = MarketContextKey::new(Timeframe::M1);
+    let m5 = MarketContextKey::new(Timeframe::M5);
+    let mut m5_prev = MarketContext::fresh(Timeframe::M5);
+    m5_prev.vol = Some(0.0);
+    m5_prev.vol_ratio = Some(7.0);
+    // A decoy prev for an unrequested span must stay unread.
+    let mut decoy = MarketContext::fresh(Timeframe::M15);
+    decoy.vol_ratio = Some(9.9);
+    let prevs = HashMap::from([(m5.tf_ms(), m5_prev), (Timeframe::M15.duration_ms(), decoy)]);
+    let contexts =
+        fetch_all(&mut store, &registry, &[m1.clone(), m5.clone()], &prevs, now, Lookahead::Off)
+            .expect("multi-span fetch fills");
+    assert_eq!(contexts.len(), 2, "one context per requested span");
+    assert_eq!(contexts[0].vol_ratio, Some(0.0), "M1 reads fresh, never the M5 carry");
+    assert_eq!(contexts[1].vol_ratio, Some(7.0), "M5 carries its own prev");
+    assert_eq!(contexts[0].vol, Some(0.0), "zero volume still reports (nz shape)");
+}
+
+#[test]
+fn mismatched_prev_tf_refuses() {
+    // A prev read for another span is a caller bug, never market na: the
+    // read refuses with a reason instead of carrying across spans.
+    let bars = widening_range_bars();
+    let registry = crate::indicator::builtin_registry().expect("builtins");
+    let mut store = MtfStore::new();
+    store.set_base(&bars).expect("base loads");
+    let m1 = MarketContextKey::new(Timeframe::M1);
+    let m5 = MarketContextKey::new(Timeframe::M5);
+    let now = close_now(&bars, 300);
+    fetch_all(&mut store, &registry, &[m1.clone(), m5.clone()], &HashMap::new(), now, Lookahead::Off)
+        .expect("fetch fills");
+    let at = store.frame_stamps(m1.tf_ms()).expect("frame").len() - 1;
+    let foreign = MarketContext::fresh(Timeframe::M5);
+    assert!(
+        update(&store, &m1, at, Some(&foreign)).is_err(),
+        "cross-span prev refuses"
+    );
+    let native = MarketContext::fresh(Timeframe::M1);
+    assert!(
+        update(&store, &m1, at, Some(&native)).is_ok(),
+        "same-span prev still carries"
+    );
+}
+
+#[test]
+fn regime_stability_transition_table() {
+    // The hysteresis wrapper owns the stability claim; the frozen detector
+    // keeps exact-`==` semantics (pinned by the parity suites). Each row
+    // names the rule it exercises; hand-computed from the frozen floors
+    // (trend/volatility 20, volume 25) and the 5.0 switch band.
+    use MarketRegime::{LowVolume, Ranging, TrendingBear, TrendingBull, Volatile};
+    type Probe = (MarketRegime, Option<f64>, Option<f64>, Option<f64>, MarketRegime);
+    let table: &[Probe] = &[
+        // Fresh agrees: stability never overrides the detector.
+        (TrendingBull, Some(30.0), Some(0.5), Some(0.5), TrendingBull),
+        (Volatile, Some(5.0), Some(4.375), Some(2.6), Volatile),
+        (Ranging, Some(5.0), Some(1.0), Some(3.0), Ranging),
+        // Quiet never vetoes a fresh signal.
+        (LowVolume, Some(5.0), Some(4.375), Some(2.6), Volatile),
+        // Same-surface sign flip is decisive, never held.
+        (TrendingBull, Some(-30.0), Some(0.5), Some(0.5), TrendingBear),
+        // Held surface decayed below floor minus band: release to quiet
+        // (fresh LowVolume: trend 10 present, volume max 20 below its 25
+        // floor, so no win fires).
+        (TrendingBull, Some(10.0), Some(1.5), Some(2.0), LowVolume),
+        // Held surface inside the band: hold through the chop (fresh
+        // LowVolume: volatility max 17.6 below its 20 floor; trend 16 held
+        // above 20 − 5).
+        (TrendingBull, Some(16.0), Some(2.2), Some(0.5), TrendingBull),
+        // Cross-surface rotation by margin: fresh 35 beats held 26 + 5.
+        (Ranging, Some(5.0), Some(4.375), Some(2.6), Volatile),
+        // Cross-surface challenge inside the band: hold (30 beats neither
+        // 26 + 5).
+        (Ranging, Some(5.0), Some(3.75), Some(2.6), Ranging),
+        // Cross-surface rotation the other way: trend 30 beats held 20 + 5.
+        (Ranging, Some(30.0), Some(0.5), Some(2.0), TrendingBull),
+        // Held evidence gone (all absent): never hold a stale label.
+        (TrendingBear, None, None, None, LowVolume),
+    ];
+    for (prev, health, volatility, volume, want) in table {
+        assert_eq!(
+            detect_regime_stable(*prev, *health, *volatility, *volume),
+            *want,
+            "stable transition from {prev}"
+        );
+    }
 }
 

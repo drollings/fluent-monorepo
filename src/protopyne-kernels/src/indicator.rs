@@ -289,20 +289,141 @@ impl ParamSet {
     }
 
     /// Canonical process-local fingerprint of the parameter map: entries
-    /// sorted by name, each `name=Debug(value)` frame hashed in order
-    /// through the shared FNV-1a helper. Two sets fingerprint equal iff
-    /// they carry the same names with equal values (insertion order never
-    /// matters). Identity for in-memory caches only — never persisted, so
-    /// no stability promise beyond the process.
+    /// sorted by name, each a length-prefixed `(name, tag, payload)` frame
+    /// hashed once through the shared FNV-1a helper. Tags name the variant
+    /// (`i`nt, `f`loat, `b`ool, `s`tr, `c`olor, `e`num, `a`rray, int`m`ap,
+    /// ma`p`, `o`bject, `d`rawing, matri`x`); ints encode by value, floats
+    /// by bits (so `0.0` and `-0.0` key distinctly, like every distinct bit
+    /// pattern), and composite values recurse in sorted order. Two sets
+    /// fingerprint equal iff they carry the same names with equal values
+    /// (insertion order never matters). `Int` vs `Float` stay distinct —
+    /// they already behave distinctly in `period()`. Identity for
+    /// in-memory caches only — never persisted, so no stability promise
+    /// beyond the process; the golden suite pins the current values so any
+    /// change is a deliberate cache-invalidation event.
     #[must_use]
     pub fn fingerprint(&self) -> u64 {
-        let mut entries: Vec<String> = self
-            .values
-            .iter()
-            .map(|(name, value)| format!("{name}={value:?};"))
-            .collect();
-        entries.sort();
-        common_core::hash::fnv1a64(entries.concat().as_bytes())
+        let mut names: Vec<&String> = self.values.keys().collect();
+        names.sort();
+        let mut bytes = Vec::new();
+        for name in names {
+            let Some(value) = self.values.get(name) else {
+                continue;
+            };
+            bytes.extend_from_slice(&(name.len() as u64).to_le_bytes());
+            bytes.extend_from_slice(name.as_bytes());
+            encode_param_value(&mut bytes, value);
+        }
+        common_core::hash::fnv1a64(&bytes)
+    }
+}
+
+/// Append one canonical `(tag, payload)` frame for a parameter value.
+/// Length-prefixes keep frames unambiguous; sorting at every map level
+/// keeps the encoding independent of hash-map iteration order.
+fn encode_param_value(bytes: &mut Vec<u8>, value: &PineValue) {
+    fn push_str(bytes: &mut Vec<u8>, text: &str) {
+        bytes.extend_from_slice(&(text.len() as u64).to_le_bytes());
+        bytes.extend_from_slice(text.as_bytes());
+    }
+    fn push_opt(bytes: &mut Vec<u8>, slot: Option<&PineValue>) {
+        match slot {
+            None => bytes.push(0),
+            Some(present) => {
+                bytes.push(1);
+                encode_param_value(bytes, present);
+            }
+        }
+    }
+    match value {
+        PineValue::Int(v) => {
+            bytes.push(b'i');
+            bytes.extend_from_slice(&v.to_le_bytes());
+        }
+        PineValue::Float(v) => {
+            bytes.push(b'f');
+            bytes.extend_from_slice(&v.to_bits().to_le_bytes());
+        }
+        PineValue::Bool(v) => {
+            bytes.push(b'b');
+            bytes.push(u8::from(*v));
+        }
+        PineValue::Str(v) => {
+            bytes.push(b's');
+            push_str(bytes, v);
+        }
+        PineValue::ColorHandle(v) => {
+            bytes.push(b'c');
+            bytes.extend_from_slice(&v.raw().to_le_bytes());
+        }
+        PineValue::EnumHandle(v) => {
+            bytes.push(b'e');
+            push_str(bytes, &v.enum_name);
+            push_str(bytes, &v.member);
+        }
+        PineValue::Array(items) => {
+            bytes.push(b'a');
+            bytes.extend_from_slice(&(items.len() as u64).to_le_bytes());
+            for item in items {
+                push_opt(bytes, item.as_ref());
+            }
+        }
+        PineValue::IntMap(entries) => {
+            bytes.push(b'm');
+            let mut keys: Vec<i64> = entries.keys().copied().collect();
+            keys.sort_unstable();
+            bytes.extend_from_slice(&(keys.len() as u64).to_le_bytes());
+            for key in keys {
+                let Some(mapped) = entries.get(&key) else {
+                    continue;
+                };
+                bytes.extend_from_slice(&key.to_le_bytes());
+                bytes.extend_from_slice(&mapped.to_le_bytes());
+            }
+        }
+        PineValue::Map(entries) => {
+            bytes.push(b'p');
+            bytes.extend_from_slice(&(entries.len() as u64).to_le_bytes());
+            for (key, (mapped_key, mapped_value)) in entries {
+                push_str(bytes, key);
+                encode_param_value(bytes, mapped_key);
+                push_opt(bytes, mapped_value.as_ref());
+            }
+        }
+        PineValue::Object(instance) => {
+            bytes.push(b'o');
+            push_str(bytes, &instance.type_name);
+            let mut fields: Vec<&String> = instance.fields.keys().collect();
+            fields.sort();
+            bytes.extend_from_slice(&(fields.len() as u64).to_le_bytes());
+            for field in fields {
+                let Some(slot) = instance.fields.get(field) else {
+                    continue;
+                };
+                push_str(bytes, field);
+                push_opt(bytes, slot.as_ref());
+            }
+        }
+        PineValue::Drawing(handle) => {
+            bytes.push(b'd');
+            let kind = match handle.kind {
+                crate::value::DrawingKind::Label => 0,
+                crate::value::DrawingKind::Table => 1,
+                crate::value::DrawingKind::Box => 2,
+                crate::value::DrawingKind::Line => 3,
+            };
+            bytes.push(kind);
+            bytes.extend_from_slice(&handle.id.to_le_bytes());
+        }
+        PineValue::Matrix(grid) => {
+            bytes.push(b'x');
+            bytes.extend_from_slice(&(grid.rows as u64).to_le_bytes());
+            bytes.extend_from_slice(&(grid.cols as u64).to_le_bytes());
+            bytes.extend_from_slice(&(grid.cells.len() as u64).to_le_bytes());
+            for cell in &grid.cells {
+                push_opt(bytes, cell.as_ref());
+            }
+        }
     }
 }
 
@@ -526,6 +647,22 @@ pub trait Indicator: Send + Sync {
             secondary: Vec::new(),
         })
     }
+
+    /// Frame-computable sub-series this kernel composes, with real
+    /// parameters derived from `params`: each `(id, sub-params)` pair names a
+    /// series the shared store can compute once and share. The default is
+    /// empty (leaf kernels compose nothing); composers override for the
+    /// passes that read frame legs directly (first TRIMA pass, DEMA/TEMA
+    /// first pass, MACD fast/slow legs, the AD line under ADOSC). Passes over
+    /// *intermediate* series (second TRIMA pass, MACD signal line) stay
+    /// inline and are never declared here — they read no shared frame, so
+    /// sharing them would need a second data flow, not an edge. Every
+    /// returned id must also appear in the static [`spec`](Self::spec)
+    /// `depends` list (the id-level ordering channel); invalid `params`
+    /// declare nothing and surface at compute time instead.
+    fn deps_with_params(&self, _params: &ParamSet) -> Vec<(IndicatorId, ParamSet)> {
+        Vec::new()
+    }
 }
 
 /// Instance registry of indicators keyed by spec id. Deliberately an owned
@@ -672,5 +809,13 @@ pub fn execution_order(
 mod tests;
 
 #[cfg(test)]
+#[path = "../tests/param_fingerprint.rs"]
+mod param_fingerprint_tests;
+
+#[cfg(test)]
 #[path = "../tests/golden.rs"]
 mod golden_tests;
+
+#[cfg(test)]
+#[path = "../tests/tv_spot.rs"]
+mod tv_spot_tests;

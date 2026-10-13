@@ -529,6 +529,6 @@ impl Indicator for NatrIndicator {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "research"))]
 #[path = "../tests/volatility.rs"]
 mod tests;

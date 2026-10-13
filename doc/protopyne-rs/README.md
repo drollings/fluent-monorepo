@@ -14,10 +14,11 @@ and re-expressed in this codebase's idioms, never taken as a dependency.
 
 ## What it can do
 
-- **Indicators with Pine parity.** `protopyne-kernels` evaluates SMA, EMA,
+- **Indicators with Expr-parity.** `protopyne-kernels` evaluates SMA, EMA,
   WMA, HMA, RMA, VWMA, ALMA, RSI, MACD, Stochastic, ATR, Bollinger/Keltner
   bands, and True Range bar-by-bar or in batch, with warmup metadata and a
-  compatibility matrix against Pine behavior.
+  compatibility matrix against the staged reference expressions (direct
+  TradingView cross-check pending; see the divergence log).
 - **Proposals with a journaled lifecycle.** Strategies emit `Proposal`
   intents (direction, structure, limit, max loss, notional, DTE, conviction)
   that move through an explicit state machine; every transition is a journal

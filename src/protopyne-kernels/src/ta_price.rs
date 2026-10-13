@@ -4,7 +4,7 @@
 //! the first bar, no registry of hidden state. The arithmetic runs directly
 //! on the `f64` legs in the reference's association order rather than
 //! round-tripping through `Decimal` per bar: a per-bar `f64` → `Decimal` →
-//! `f64` detour would fork rounding away from the `f64` reference the parity
+//! `f64` detour would fork rounding away from the `f64` reference the Expr-parity
 //! suites check against, for no gain (the leg combinations are standard and
 //! stated on each kernel). Missing legs refuse via [`Ohlcv::require`];
 //! `na` legs poison only their own row.
@@ -261,6 +261,6 @@ impl Indicator for WclPriceIndicator {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "research"))]
 #[path = "../tests/ta_price.rs"]
 mod tests;

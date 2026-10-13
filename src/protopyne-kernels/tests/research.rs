@@ -233,7 +233,7 @@ fn rsrs_matches_moment_reference() {
 }
 
 /// Calibration: RSRS lookbacks earn trust from no-fire controls (constant or
-/// too-short inputs are all `None`) plus parity on real data — never from
+/// too-short inputs are all `None`) plus Expr-parity on real data — never from
 /// widening a tolerance. The upstream defaults (`n=18`, `m=600`) mean any
 /// history under 600 bars honestly reports `None` everywhere.
 #[test]

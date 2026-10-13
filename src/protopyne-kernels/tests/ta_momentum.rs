@@ -50,7 +50,7 @@ fn trend_bars(n: usize) -> Vec<Bar> {
 
 /// Flat prefix plus trend: forces Wilder/EMA seed coincidence between the
 /// hand-rolled recurrences and the `ewm_mean` reference, the same device the
-/// volatility parity suite uses.
+/// volatility Expr-parity suite uses.
 fn seeded_bars(flat: usize, n: usize) -> Vec<Bar> {
     let mut bars: Vec<Bar> = (0..flat)
         .map(|i| bar_at(100.0, 100.0, 100.0, 100.0, 1_000, i))

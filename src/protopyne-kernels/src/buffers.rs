@@ -11,7 +11,7 @@
 //!
 //! Anything outside the fast path (analytics, `getLinearized`, `compact`,
 //! iteration helpers, all of `BufferInt`, misshaped state, named args, bad
-//! arity) declines (`Ok(None)`): the engine runs the Pine body exactly as
+//! arity) declines (`Declined`): the engine runs the Pine body exactly as
 //! today, so serving can never miscompute — only go faster.
 //!
 //! Performance discipline: the bridge mutates the taken field table in
@@ -22,7 +22,7 @@
 //! reintroducing them here would reproduce the bottleneck natively.
 
 use crate::error::KernelError;
-use crate::native_libs::FieldTable;
+use crate::value::{FieldTable, NativeCall};
 use crate::value::PineValue;
 
 /// Methods served natively on `BufferFloat` (v1 scope). Every other method
@@ -30,8 +30,8 @@ use crate::value::PineValue;
 const SERVED: &[&str] = &["init", "push", "get", "size", "clear"];
 
 /// Serve one `BufferFloat` method call by mutating `fields` in place and
-/// yielding the call value. `Ok(None)` declines (fields untouched — the
-/// engine runs the Pine body exactly as today); `Ok(Some(value))` reports
+/// yielding the call outcome. `Declined` leaves fields untouched — the
+/// engine runs the Pine body exactly as today; `Served(value)` reports
 /// the table already updated. `named_args` declines too: positional binding
 /// would misbind named calls.
 ///
@@ -43,9 +43,9 @@ pub fn serve_buffer_method(
     fields: &mut FieldTable,
     args: &[Option<PineValue>],
     named_args: bool,
-) -> Result<Option<Option<PineValue>>, KernelError> {
+) -> NativeCall {
     if type_name != "BufferFloat" || !SERVED.contains(&method) || named_args {
-        return Ok(None);
+        return NativeCall::Declined;
     }
     match method {
         "init" => serve_init(fields, args),
@@ -53,7 +53,7 @@ pub fn serve_buffer_method(
         "get" => serve_get(fields, args),
         "size" => serve_size(fields, args),
         "clear" => serve_clear(fields, args),
-        _ => Ok(None),
+        _ => NativeCall::Declined,
     }
 }
 
@@ -107,11 +107,9 @@ fn view(fields: &mut FieldTable) -> Result<BufferView<'_>, KernelError> {
         Some(value) => value as u64,
         None => return Err(bridge_invalid("count", "is na")),
     };
-    let data = match fields.get_mut("data") {
-        Some(Some(PineValue::Array(slots))) => slots,
-        _ => return Err(bridge_invalid("data", "is not an array")),
-    };
-    if head.is_some() && data.len() != max_size {
+    let Some(Some(PineValue::Array(data))) = fields.get_mut("data") else {
+        return Err(bridge_invalid("data", "is not an array"));
+    };    if head.is_some() && data.len() != max_size {
         return Err(bridge_invalid("data", "ring length differs from max_size"));
     }
     Ok(BufferView {
@@ -124,8 +122,7 @@ fn view(fields: &mut FieldTable) -> Result<BufferView<'_>, KernelError> {
 
 fn arg_usize(args: &[Option<PineValue>], index: usize) -> Result<Option<usize>, KernelError> {
     match args.get(index) {
-        None => Ok(None),
-        Some(None) => Ok(None),
+        None | Some(None) => Ok(None),
         Some(Some(PineValue::Int(value))) => {
             if *value >= 0 {
                 Ok(Some(*value as usize))
@@ -146,8 +143,7 @@ fn arg_usize(args: &[Option<PineValue>], index: usize) -> Result<Option<usize>, 
 
 fn arg_bool(args: &[Option<PineValue>], index: usize) -> Result<Option<bool>, KernelError> {
     match args.get(index) {
-        None => Ok(None),
-        Some(None) => Ok(None),
+        None | Some(None) => Ok(None),
         Some(Some(PineValue::Bool(value))) => Ok(Some(*value)),
         Some(Some(other)) => Err(bridge_invalid("arg", &format!("is not a bool ({other:?})"))),
     }
@@ -165,21 +161,17 @@ fn set_scalar(fields: &mut FieldTable, name: &str, value: PineValue) {
 /// test): the bookkeeping writes land as `Float` even for int literals, so
 /// native writes `Float` too, never `Int`. (`size()` is the one exception:
 /// array mode returns the `array.size` builtin, an `Int`.)
-fn serve_init(
-    fields: &mut FieldTable,
-    args: &[Option<PineValue>],
-) -> Result<Option<Option<PineValue>>, KernelError> {
+fn serve_init(fields: &mut FieldTable, args: &[Option<PineValue>]) -> NativeCall {
     if args.len() > 2 {
-        return Ok(None);
+        return NativeCall::Declined;
     }
-    let size = match arg_usize(args, 0) {
-        Ok(Some(value)) => value,
-        _ => return Ok(None),
+    let Ok(Some(size)) = arg_usize(args, 0) else {
+        return NativeCall::Declined;
     };
     let ring = match arg_bool(args, 1) {
         Ok(Some(value)) => value,
         Ok(None) if args.len() < 2 => false,
-        _ => return Ok(None),
+        _ => return NativeCall::Declined,
     };
     fields.insert(
         "data".to_owned(),
@@ -204,19 +196,16 @@ fn serve_init(
         "BufferFloat",
         fields.clone(),
     ));
-    Ok(Some(Some(value)))
+    NativeCall::Served(Some(value))
 }
 
 /// `push(value)`: array mode appends (flagging past-max growth), ring mode
 /// overwrites at head and invalidates `_linear`. One slot written, nothing
 /// copied. Absence stores as absence; ints unify to float exactly like the
 /// oracle's method-call args.
-fn serve_push(
-    fields: &mut FieldTable,
-    args: &[Option<PineValue>],
-) -> Result<Option<Option<PineValue>>, KernelError> {
+fn serve_push(fields: &mut FieldTable, args: &[Option<PineValue>]) -> NativeCall {
     if args.len() != 1 {
-        return Ok(None);
+        return NativeCall::Declined;
     }
     let slot = match &args[0] {
         None => None,
@@ -228,7 +217,7 @@ fn serve_push(
             }
         }
         Some(PineValue::Int(value)) => Some(PineValue::Float(*value as f64)),
-        Some(_) => return Ok(None),
+        Some(_) => return NativeCall::Declined,
     };
     // Phase 1: validate shape and perform the one slot write while the
     // table is borrowed. Scalars come out owned for phase 2.
@@ -237,9 +226,8 @@ fn serve_push(
         Ring { count: u64, head: usize },
     }
     let pushed = {
-        let buffer = match view(fields) {
-            Ok(buffer) => buffer,
-            Err(_) => return Ok(None),
+        let Ok(buffer) = view(fields) else {
+            return NativeCall::Declined;
         };
         match buffer.head {
             None => {
@@ -254,7 +242,7 @@ fn serve_push(
                 if buffer.max_size == 0 || head >= buffer.data.len() {
                     // Zero-capacity ring (or a desynced table): Pine refuses
                     // the out-of-range write, so decline and let it.
-                    return Ok(None);
+                    return NativeCall::Declined;
                 }
                 buffer.data[head] = slot;
                 Pushed::Ring {
@@ -282,33 +270,28 @@ fn serve_push(
         "BufferFloat",
         fields.clone(),
     ));
-    Ok(Some(Some(value)))
+    NativeCall::Served(Some(value))
 }
 
 /// `get(index)`: newest-first read in both modes; out-of-bounds reads
 /// absence. Pure read — the table is never written.
-fn serve_get(
-    fields: &mut FieldTable,
-    args: &[Option<PineValue>],
-) -> Result<Option<Option<PineValue>>, KernelError> {
+fn serve_get(fields: &mut FieldTable, args: &[Option<PineValue>]) -> NativeCall {
     if args.len() != 1 {
-        return Ok(None);
+        return NativeCall::Declined;
     }
     // Signed: negative indices read absence per the oracle (`index < 0`
     // short-circuits first), so they serve `na` rather than declining.
     let index = match &args[0] {
-        None => return Ok(None),
         Some(PineValue::Int(value)) => *value,
         Some(PineValue::Float(value))
             if value.is_finite() && value.fract() == 0.0 =>
         {
             *value as i64
         }
-        Some(_) => return Ok(None),
+        None | Some(_) => return NativeCall::Declined,
     };
-    let buffer = match view(fields) {
-        Ok(buffer) => buffer,
-        Err(_) => return Ok(None),
+    let Ok(buffer) = view(fields) else {
+        return NativeCall::Declined;
     };
     let value = match buffer.head {
         None => {
@@ -328,43 +311,36 @@ fn serve_get(
             }
         }
     };
-    Ok(Some(value))
+    NativeCall::Served(value)
 }
 
 /// `size()`: grown length in array mode (the `array.size` builtin, an
 /// `Int`), `min(count, max)` in ring mode (a `math.min` over floats).
 /// Pure read — the table is never written.
-fn serve_size(
-    fields: &mut FieldTable,
-    args: &[Option<PineValue>],
-) -> Result<Option<Option<PineValue>>, KernelError> {
+fn serve_size(fields: &mut FieldTable, args: &[Option<PineValue>]) -> NativeCall {
     if !args.is_empty() {
-        return Ok(None);
+        return NativeCall::Declined;
     }
-    let buffer = match view(fields) {
-        Ok(buffer) => buffer,
-        Err(_) => return Ok(None),
+    let Ok(buffer) = view(fields) else {
+        return NativeCall::Declined;
     };
     let size = match buffer.head {
         None => PineValue::Int(buffer.data.len() as i64),
         Some(_) => PineValue::Float(buffer.count.min(buffer.max_size as u64) as f64),
     };
-    Ok(Some(Some(size)))
+    NativeCall::Served(Some(size))
 }
 
 /// `clear()`: array mode empties (head stays absent), ring mode fills
 /// absent and resets head (invalidating `_linear`); counters reset.
-fn serve_clear(
-    fields: &mut FieldTable,
-    args: &[Option<PineValue>],
-) -> Result<Option<Option<PineValue>>, KernelError> {
+fn serve_clear(fields: &mut FieldTable, args: &[Option<PineValue>]) -> NativeCall {
     if !args.is_empty() {
-        return Ok(None);
+        return NativeCall::Declined;
     }
-    let (ring, max_size) = match view(fields) {
-        Ok(buffer) => (buffer.head.is_some(), buffer.max_size),
-        Err(_) => return Ok(None),
+    let Ok(buffer) = view(fields) else {
+        return NativeCall::Declined;
     };
+    let (ring, max_size) = (buffer.head.is_some(), buffer.max_size);
     if ring {
         fields.insert(
             "data".to_owned(),
@@ -381,7 +357,7 @@ fn serve_clear(
         "BufferFloat",
         fields.clone(),
     ));
-    Ok(Some(Some(value)))
+    NativeCall::Served(Some(value))
 }
 
 #[cfg(test)]

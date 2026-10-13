@@ -222,6 +222,7 @@ impl OllamaEmbedding {
 
     /// Use `client` for embedding POSTs instead of the shared default
     /// (test seam; production constructors keep the bounded client).
+    #[must_use]
     pub fn with_client(mut self, client: reqwest::Client) -> Self {
         self.client = client;
         self
@@ -563,6 +564,7 @@ impl OpenAiEmbedding {
 
     /// Use `client` for embedding POSTs instead of the shared default
     /// (test seam; production constructors keep the bounded client).
+    #[must_use]
     pub fn with_client(mut self, client: reqwest::Client) -> Self {
         self.client = client;
         self

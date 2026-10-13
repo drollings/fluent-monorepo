@@ -343,9 +343,13 @@ protopyne-start: $(PROTOPYNE_SERVER_BIN) ## Build (if needed), (re)start protopy
 protopyne-test: $(PROTOPYNE_SERVER_BIN) ## Run the five trading-crate protopyne-rs suites + a --help dry-run of the built binary (stops a running server first; chart crates ride the workspace gate)
 	$(stop-protopyne)
 	$(Q)echo "Running protopyne-rs unit + integration suites"
-	$(Q)cargo test -p protopyne-types -p protopyne-kernels -p protopyne-strategy -p protopyne-venue -p protopyne-server
+	$(Q)cargo test -p protopyne-types -p protopyne-kernels -p protopyne-strategy -p protopyne-venue -p protopyne-server --all-features
 	$(Q)echo "Validating protopyne-server --help"
 	$(Q)$(PROTOPYNE_SERVER_BIN) --help > /dev/null && echo "All protopyne tests passed." || (echo "ERROR: protopyne-server did NOT successfully run."; exit 1)
+
+.PHONY: protopyne-matrix
+protopyne-matrix: ## Lean-build matrix: no-default kernels build+tests, polars-free ship closure, full --all-features suites
+	$(Q)bin/protopyne-build-matrix.sh
 
 .PHONY: protopyne-smoke
 protopyne-smoke: ## Build the Python-free container image and run the full smoke (no-Python proof, /health, paper preview, chart contract)

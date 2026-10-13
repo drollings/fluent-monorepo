@@ -1,4 +1,4 @@
-//! Research-only expression fixtures plus tolerance gating for parity work.
+//! Research-only expression fixtures plus tolerance gating for Expr-parity work.
 //!
 //! [`expr_fixture`] evaluates one caller-supplied `polars::Expr` over the
 //! research frame of a bar slice ([`frame_of_bars`](crate::research::frame_of_bars))
@@ -10,7 +10,8 @@
 //! This module never runs in the per-bar hot loop: it allocates columnar
 //! frames, exactly like the research helpers it composes. Hand-rolled `f64`
 //! recurrences stay the numeric path for `batch`/`update`; expressions here
-//! are the independent reference they are checked against.
+//! are the independent `Expr` reference the kernels are Expr-parity-checked
+//! against.
 
 use polars::prelude::*;
 
