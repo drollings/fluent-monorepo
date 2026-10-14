@@ -9,6 +9,7 @@ use super::*;
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 
+use protopyne_chart_model::ChartRow;
 use protopyne_view::{
     ArmResponse, ChartBar, GatewayError, HealthView, JournalRowView, MockGateway, OverlaySeries,
     PortfolioView, ProposalView, ReplayView, WorstCase,
@@ -211,4 +212,47 @@ fn workspace_hot_slot_eye_and_bolt_controls_and_2d_pan_zoom_work_headlessly() {
     egui::__run_test_ui(|ui| {
         paint_workspace(ui, &mut workspace, Some(&gateway)).expect("the workspace paints");
     });
+}
+
+/// A ramp of `count` distinct bars; distinct counts make a switch observable.
+fn ramp_rows(count: usize) -> Vec<ChartRow> {
+    (0..count)
+        .map(|i| {
+            let close = 100.0 + i as f64;
+            ChartRow {
+                time: i as i64,
+                open: close - 0.5,
+                high: close + 0.5,
+                low: close - 1.0,
+                close,
+                volume: 10,
+            }
+        })
+        .collect()
+}
+
+#[test]
+fn seeded_timeframes_switch_the_loaded_candles_and_resample_coarser_keys() {
+    let mut workspace = ChartWorkspace::new().expect("the workspace boots");
+    workspace.seed_history(TimeframeKey::M1, ramp_rows(20)).expect("1M seeds");
+    workspace.seed_history(TimeframeKey::M5, ramp_rows(12)).expect("5M seeds");
+    workspace.seed_history(TimeframeKey::M15, ramp_rows(8)).expect("15M selects on seed");
+
+    assert_eq!(workspace.timeframe(), TimeframeKey::M15, "the default timeframe is selected");
+    assert_eq!(workspace.rows().len(), 8, "the seeded 15M history is active");
+
+    workspace.select_timeframe(TimeframeKey::M1).expect("1M selects");
+    assert_eq!(workspace.rows().len(), 20, "1M loads its own candles, not the 15M set");
+    workspace.select_timeframe(TimeframeKey::M5).expect("5M selects");
+    assert_eq!(workspace.rows().len(), 12, "5M loads its own candles");
+
+    workspace.select_timeframe(TimeframeKey::H1).expect("1H resamples the 15M slot");
+    assert_eq!(workspace.timeframe(), TimeframeKey::H1);
+    assert_eq!(workspace.rows().len(), 2, "8 fifteen-minute rows fold into 2 hourly bars");
+
+    let mut bare = ChartWorkspace::new().expect("the workspace boots");
+    assert!(
+        bare.select_timeframe(TimeframeKey::M1).is_err(),
+        "an unseeded slot refuses rather than serving another timeframe"
+    );
 }

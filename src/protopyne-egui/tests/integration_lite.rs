@@ -519,6 +519,9 @@ fn sub_pane_builds_four_bounded_oscillators_and_centered_delta_volume_histogram(
         "shape-estimated splits read low confidence"
     );
     assert_eq!(pane.pivots.len(), 0, "a steady ramp fires no pivots: {:?}", pane.pivots);
+    assert_eq!(pane.ribbon.upper.len(), rows.len(), "the ribbon leg aligns with the rows");
+    assert_eq!(pane.ribbon.bullish.len(), rows.len(), "trend keys align with the rows");
+    assert!(pane.show_ribbon, "the trend ribbon is enabled by config");
 }
 
 #[test]

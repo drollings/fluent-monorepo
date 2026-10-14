@@ -718,6 +718,52 @@ pub fn paint_delta_bars(
     Ok(())
 }
 
+/// One delta bar paired with the display color the caller resolved for it
+/// (theme key, momentum tint, or fallback): the emitter draws exactly what it
+/// is given, like every painter here.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TintedDeltaBar {
+    /// Bar geometry in UI space (caller shifts pane-local geometry).
+    pub geom: DeltaBarGeom,
+    /// Body color applied to both legs.
+    pub color: egui::Color32,
+}
+
+/// Paint zero-based delta bars in individual colors.
+///
+/// Both legs carry the same per-bar color, so a trend/conviction tint reads
+/// across the histogram; call [`paint_delta_bars`] for the fixed bull/bear
+/// split. Same leg rule as that emitter: buys rise from zero, sells extend
+/// downward, holes lift the pen.
+pub fn paint_delta_bars_tinted(
+    painter: &egui::Painter,
+    bars: &[TintedDeltaBar],
+    half_width: f32,
+) {
+    for bar in bars {
+        if let Some(buy_y) = bar.geom.buy_y {
+            painter.rect_filled(
+                egui::Rect::from_min_max(
+                    egui::Pos2::new(bar.geom.x - half_width, buy_y),
+                    egui::Pos2::new(bar.geom.x + half_width, bar.geom.zero_y),
+                ),
+                0.0,
+                bar.color,
+            );
+        }
+        if let Some(sell_y) = bar.geom.sell_y {
+            painter.rect_filled(
+                egui::Rect::from_min_max(
+                    egui::Pos2::new(bar.geom.x - half_width, bar.geom.zero_y),
+                    egui::Pos2::new(bar.geom.x + half_width, sell_y),
+                ),
+                0.0,
+                bar.color,
+            );
+        }
+    }
+}
+
 /// Map a Pine-style transparency percent to a byte opacity.
 ///
 /// `color.new(c, t)` semantics: `0` is fully opaque, `100` fully invisible.

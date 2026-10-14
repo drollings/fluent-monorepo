@@ -11,10 +11,10 @@
 //! [HISTORY.csv]`, or pass `--check` to run the headless data path without
 //! opening a window and print a summary.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use protopyne_chart_model::rows_of;
-use protopyne_egui::{ChartWorkspace, paint_workspace};
+use protopyne_chart_model::{ChartRow, rows_of};
+use protopyne_egui::{ChartWorkspace, TimeframeKey, paint_workspace};
 use protopyne_types::Bar;
 
 fn history_dir() -> PathBuf {
@@ -25,7 +25,7 @@ fn default_m15() -> PathBuf {
     history_dir().join("SPY_15M.csv")
 }
 
-fn load_bars(path: &PathBuf) -> Result<Vec<Bar>, String> {
+fn load_bars(path: &Path) -> Result<Vec<Bar>, String> {
     let text =
         std::fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
     let bars = protopyne_server::parse_bars_csv(&text)
@@ -36,17 +36,37 @@ fn load_bars(path: &PathBuf) -> Result<Vec<Bar>, String> {
     Ok(bars)
 }
 
+/// Load one CSV as display rows (the workspace's native currency).
+fn load_rows(path: &Path) -> Result<Vec<ChartRow>, String> {
+    Ok(rows_of(&load_bars(path)?).rows)
+}
+
+/// Native slot files the demo seeds, so `1M`/`5M`/`15M` switch the actual
+/// loaded candles (`1H`/`4H` resample the `15M` slot inside the workspace).
+fn native_slots(path: &Path) -> [(TimeframeKey, PathBuf); 3] {
+    let dir = history_dir();
+    [
+        (TimeframeKey::M1, dir.join("SPY_1M.csv")),
+        (TimeframeKey::M5, dir.join("SPY_5M.csv")),
+        (TimeframeKey::M15, path.to_path_buf()),
+    ]
+}
+
 /// The window shell: owns the workspace and paints one frame per pass.
 struct DemoApp {
     workspace: ChartWorkspace,
 }
 
 impl DemoApp {
-    fn new(path: &PathBuf) -> Result<Self, String> {
-        let bars = load_bars(path)?;
-        let converted = rows_of(&bars);
-        let workspace = ChartWorkspace::with_rows(converted.rows)
-            .map_err(|e| format!("workspace refused: {e}"))?;
+    fn new(path: &Path) -> Result<Self, String> {
+        let mut workspace =
+            ChartWorkspace::new().map_err(|e| format!("workspace refused: {e}"))?;
+        for (timeframe, file) in native_slots(path) {
+            let rows = load_rows(&file)?;
+            workspace
+                .seed_history(timeframe, rows)
+                .map_err(|e| format!("seed {}: {e}", timeframe.label()))?;
+        }
         Ok(Self { workspace })
     }
 }

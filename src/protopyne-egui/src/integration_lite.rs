@@ -695,6 +695,11 @@ pub struct IntegrationLiteSubPane {
     pub delta_confidence: DeltaConfidence,
     /// Threshold crossings on the bounded fast leg.
     pub pivots: Vec<PivotMark>,
+    /// Price-space trend ribbon between the adaptive/signal legs; painted on
+    /// the main price pane when [`show_ribbon`](Self::show_ribbon) is set.
+    pub ribbon: RibbonView,
+    /// Whether the trend ribbon paints over the main pane.
+    pub show_ribbon: bool,
 }
 
 /// Build the four-readout bounded sub-pane plus the centered delta histogram.
@@ -720,6 +725,7 @@ pub fn integration_lite_sub_pane(
     let (buy, sell, delta_confidence) = delta_splits(rows);
     let delta_volume = delta_candle_view(rows, &buy, &sell, config.delta_unit)?;
     let pivots = pivot_marks(&fast_bounded, CALIBRATED_BOUNDED_PIVOT_THRESHOLD)?;
+    let ribbon = ribbon_view(&native.adaptive, &native.signal, config.fill_alpha)?;
     Ok(IntegrationLiteSubPane {
         fast_bounded,
         slow_bounded,
@@ -728,6 +734,8 @@ pub fn integration_lite_sub_pane(
         delta_volume,
         delta_confidence,
         pivots,
+        ribbon,
+        show_ribbon: config.show_ribbon,
     })
 }
 

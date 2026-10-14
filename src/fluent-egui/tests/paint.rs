@@ -740,6 +740,14 @@ fn every_other_emitter_paints_or_refuses() {
     let bars = delta_bar_geoms(&delta, &zero).expect("spanning pane builds");
     paint_delta_bars(&painter, &bars, 3.0, &theme).expect("delta bars paint");
     assert!(!end_frame(&ctx).shapes.is_empty(), "delta bars emit shapes");
+    // `paint_delta_bars_tinted`: both legs paint a caller-resolved tint.
+    let (ctx, painter) = test_painter();
+    let tinted: Vec<TintedDeltaBar> = bars
+        .iter()
+        .map(|geom| TintedDeltaBar { geom: *geom, color: egui::Color32::from_rgb(0, 188, 212) })
+        .collect();
+    paint_delta_bars_tinted(&painter, &tinted, 3.0);
+    assert!(!end_frame(&ctx).shapes.is_empty(), "tinted delta bars emit shapes");
     // `paint_ribbon`: strips paint under both trend keys.
     let (ctx, painter) = test_painter();
     paint_ribbon(

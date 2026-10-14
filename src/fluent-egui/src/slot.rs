@@ -174,8 +174,8 @@ impl HotSlot {
 
 /// Card width in pixels; cards stack vertically from the stack origin.
 const STACK_CARD_WIDTH: f32 = 220.0;
-/// Card height in pixels.
-const STACK_CARD_HEIGHT: f32 = 30.0;
+/// Card height in pixels: two compact text rows (title + readouts).
+const STACK_CARD_HEIGHT: f32 = 40.0;
 /// Vertical gap between stacked cards.
 const STACK_CARD_GAP: f32 = 6.0;
 /// Eye/bolt control square size.
@@ -574,7 +574,13 @@ pub fn paint_hot_slot_stack(
             egui::Pos2::new(rect.card.min.x + STACK_CONTROL_PAD, rect.card.min.y + 2.0),
             egui::Pos2::new(rect.eye.min.x - STACK_CONTROL_PAD, rect.card.max.y - 2.0),
         );
-        ui.put(text_rect, egui::Label::new(card_text));
+        // Bounded single-line rows: a card never reflows its readouts onto
+        // extra lines (which would overflow the fixed card height); long
+        // values truncate instead of wrapping.
+        ui.put(
+            text_rect,
+            egui::Label::new(card_text).wrap_mode(egui::TextWrapMode::Truncate),
+        );
         let eye_response = ui.allocate_rect(rect.eye, egui::Sense::click());
         if eye_response.clicked() {
             slot.visible = !slot.visible;

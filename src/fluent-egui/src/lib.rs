@@ -58,15 +58,16 @@ pub use interaction::{
 };
 pub use paint::{
     CandleGeom, CrosshairLines, DeltaBarGeom, EyeIconGeom, HexBoltIconGeom, MarkerDot, PivotDot,
-    RibbonBand, RibbonPolygon, SearchIconGeom, TintedCandle, area_polygons, area_vertex_color,
-    candle_geoms, crosshair_lines, delta_bar_geoms, eye_icon_geom, hex_bolt_icon_geom, marker_dots,
-    opacity_from_transparency, oscillator_points, paint_area_fill, paint_candles, paint_candles_as,
-    paint_candles_tinted, paint_crosshair, paint_delta_bars, paint_error_chip, paint_eye_icon,
-    paint_hex_bolt_icon, paint_markers, paint_oscillator, paint_ribbon, paint_ribbon_fill,
-    paint_search_icon, paint_session_breaks, paint_thresholds, pivot_dots, pivot_price_dots,
-    resolve_color, ribbon_bands, ribbon_polygons, search_icon_geom, threshold_line,
-    translate_breaks, translate_candles, translate_delta_bars, translate_dots, translate_markers,
-    translate_points, translate_polygons,
+    RibbonBand, RibbonPolygon, SearchIconGeom, TintedCandle, TintedDeltaBar, area_polygons,
+    area_vertex_color, candle_geoms, crosshair_lines, delta_bar_geoms, eye_icon_geom,
+    hex_bolt_icon_geom, marker_dots, opacity_from_transparency, oscillator_points,
+    paint_area_fill, paint_candles, paint_candles_as, paint_candles_tinted, paint_crosshair,
+    paint_delta_bars, paint_delta_bars_tinted, paint_error_chip, paint_eye_icon, paint_hex_bolt_icon,
+    paint_markers, paint_oscillator, paint_ribbon, paint_ribbon_fill, paint_search_icon,
+    paint_session_breaks, paint_thresholds, pivot_dots, pivot_price_dots, resolve_color,
+    ribbon_bands, ribbon_polygons, search_icon_geom, threshold_line, translate_breaks,
+    translate_candles, translate_delta_bars, translate_dots, translate_markers, translate_points,
+    translate_polygons,
 };
 pub use modal::{CatalogAction, CatalogEntry, CatalogModal, paint_catalog_modal};
 pub use plan::{CachedSeries, PaneCache, PanePlan, cache_key};

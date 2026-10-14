@@ -264,6 +264,14 @@ pub fn paint_catalog_modal<C: Ord + Clone>(
     ui.horizontal(|bar| {
         bar.label("Search");
         bar.add(egui::TextEdit::singleline(&mut modal.query).hint_text("filter"));
+        // One-click reset for every filter (query, category tab, favorites):
+        // a catalog never strands the operator in a narrowed view with no
+        // obvious way back to the full list.
+        if bar.button("Clear").clicked() {
+            modal.query.clear();
+            modal.category = None;
+            modal.favorites_only = false;
+        }
         bar.checkbox(&mut modal.favorites_only, "Favorites");
     });
     if !categories.is_empty() {

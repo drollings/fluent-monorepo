@@ -16,11 +16,12 @@
 use std::collections::HashMap;
 
 use fluent_egui::{
-    CatalogAction, CatalogModal, EguiError, HotSlotAction, HotSlotStack, InteractionState,
-    PaneCache, PanePlan, PointerInput, SettingsTab, SlotAttachment, ThemeConfig, TintedCandle,
-    Viewport, candle_geoms, delta_bar_geoms, paint_candles_tinted, paint_catalog_modal,
-    paint_delta_bars, paint_hot_slot_stack, paint_oscillator, paint_slot_settings_modal,
-    resolve_color, translate_candles, translate_delta_bars, translate_points,
+    CatalogAction, CatalogModal, DeltaView, EguiError, HotSlotAction, HotSlotStack, InteractionState,
+    PaneCache, PanePlan, PointerInput, RibbonView, SettingsTab, SlotAttachment, ThemeConfig,
+    TintedCandle, TintedDeltaBar, Viewport, candle_geoms, delta_bar_geoms, opacity_from_transparency,
+    paint_candles_tinted, paint_catalog_modal, paint_delta_bars_tinted, paint_hot_slot_stack,
+    paint_oscillator, paint_ribbon_fill, paint_slot_settings_modal, resolve_color, ribbon_polygons,
+    translate_candles, translate_delta_bars, translate_points, translate_polygons,
 };
 use fluent_wvr::{FieldAccess, component_downcast_ref};
 use protopyne_chart_model::{ChartRow, ChartType, DateRange};
@@ -30,10 +31,14 @@ use protopyne_view::{ChartBars, TerminalGateway};
 
 use crate::chart::{ChartConfig, DEFAULT_SYMBOL, TimeframeKey, window_for_range};
 use crate::indicators::{
-    ChartIndicator, IndicatorCategory, IndicatorEvaluation, build_indicator_catalog,
+    ChartIndicator, IndicatorCategory, IndicatorEvaluation, IndicatorSeries, build_indicator_catalog,
     instantiate_indicator,
 };
-use crate::integration_lite::{IntegrationLiteConfig, IntegrationLiteSubPane, integration_lite_sub_pane};
+use crate::integration_lite::{
+    IntegrationLiteConfig, IntegrationLiteSubPane, MomentumPalette, MomentumTint,
+    candle_momentum_keys, candle_momentum_series, integration_lite_sub_pane, momentum_tints,
+    ribbon_fill_transparency,
+};
 use crate::widgets::{TopBarAction, paint_top_bar};
 
 /// Stable id of the IntegrationLite slot whose richer sub-pane geometry
@@ -54,6 +59,9 @@ const SUB_MIN: f64 = -110.0;
 const SUB_MAX: f64 = 110.0;
 /// Horizontal pane width the interaction envelope is bound to.
 const PANE_WIDTH_PX: f32 = 640.0;
+/// EIT adaptive smoothing used for the candle tint when no IntegrationLite
+/// slot supplies one.
+const DEFAULT_EIT_ALPHA: f64 = 0.14;
 
 /// One asset class tab in the Symbol Selection Modal.
 ///
@@ -174,6 +182,93 @@ fn price_extent(rows: &[ChartRow]) -> (f64, f64) {
     (lo - pad, hi + pad)
 }
 
+/// Aggregate display rows upward by `group` (trailing-aligned, like exchange
+/// resampling): open from the first row, close/time from the last, high/low as
+/// extremes, volume summed. A leading partial chunk is dropped so every output
+/// row covers exactly `group` inputs; `group <= 1` returns the rows unchanged.
+fn aggregate_rows(rows: &[ChartRow], group: usize) -> Vec<ChartRow> {
+    if group <= 1 {
+        return rows.to_vec();
+    }
+    let skip = rows.len() % group;
+    rows[skip..]
+        .chunks(group)
+        .filter(|chunk| chunk.len() == group)
+        .map(|chunk| {
+            let first = &chunk[0];
+            let last = &chunk[group - 1];
+            let mut high = first.high;
+            let mut low = first.low;
+            let mut volume = 0_u64;
+            for row in chunk {
+                high = high.max(row.high);
+                low = low.min(row.low);
+                volume = volume.saturating_add(row.volume);
+            }
+            ChartRow { time: last.time, open: first.open, high, low, close: last.close, volume }
+        })
+        .collect()
+}
+
+/// Window a trend ribbon to `[start, start + len)` for pane-local painting.
+///
+/// Ribbon legs line up with the full history; the price pane paints the
+/// trailing range window, so its ribbon must be sliced to the same bars
+/// (candle geometry and ribbon polygons then share one index origin). An
+/// out-of-range slice yields an empty band rather than a misaligned one.
+fn windowed_ribbon(ribbon: &RibbonView, start: usize, len: usize) -> RibbonView {
+    let slice = |values: &[Option<f64>]| {
+        values.get(start..start + len).map_or_else(Vec::new, <[_]>::to_vec)
+    };
+    RibbonView {
+        upper: slice(&ribbon.upper),
+        lower: slice(&ribbon.lower),
+        bullish: ribbon.bullish.get(start..start + len).map_or_else(Vec::new, <[_]>::to_vec),
+        alpha: ribbon.alpha,
+    }
+}
+
+/// Window an indicator evaluation to `[start, start + len)` for pane-local
+/// painting: the plugins evaluate over the full history, but the canvas paints
+/// the trailing range window, so every series is sliced to the same bars the
+/// candles map (one index origin across the price pane and the sub-pane).
+fn windowed_evaluation(
+    evaluation: &IndicatorEvaluation,
+    start: usize,
+    len: usize,
+) -> IndicatorEvaluation {
+    IndicatorEvaluation {
+        series: evaluation
+            .series
+            .iter()
+            .map(|series| IndicatorSeries {
+                values: series.values.get(start..start + len).map_or_else(Vec::new, <[_]>::to_vec),
+                ..series.clone()
+            })
+            .collect(),
+    }
+}
+
+/// Window a delta histogram to `[start, start + len)` (see
+/// [`windowed_evaluation`]).
+fn windowed_delta(delta: &DeltaView, start: usize, len: usize) -> DeltaView {
+    let slice = |values: &[Option<f64>]| {
+        values.get(start..start + len).map_or_else(Vec::new, <[_]>::to_vec)
+    };
+    DeltaView { buy_top: slice(&delta.buy_top), sell_bottom: slice(&delta.sell_bottom) }
+}
+
+/// Resolve a ported momentum gradient tint to its paint color at the tint's
+/// own Pine transparency.
+fn tint_color(tint: MomentumTint) -> egui::Color32 {
+    egui::Color32::from_rgba_unmultiplied(
+        tint.red,
+        tint.green,
+        tint.blue,
+        opacity_from_transparency(tint.transparency),
+    )
+}
+
 /// The terminal's central state store: active symbol, selectors, hot-slot
 /// stack, pane plan, pane cache, and the 2D interaction machine.
 pub struct ChartWorkspace {
@@ -190,7 +285,10 @@ pub struct ChartWorkspace {
     plugins: Vec<Box<dyn ChartIndicator>>,
     evaluations: HashMap<String, IndicatorEvaluation>,
     sub_pane: Option<IntegrationLiteSubPane>,
+    momentum_keys: Vec<&'static str>,
+    tints: Vec<Option<MomentumTint>>,
     rows: Vec<ChartRow>,
+    histories: HashMap<TimeframeKey, Vec<ChartRow>>,
     interaction: Option<InteractionState>,
     main: Option<Viewport>,
     sub: Option<Viewport>,
@@ -222,7 +320,10 @@ impl ChartWorkspace {
             plugins: Vec::new(),
             evaluations: HashMap::new(),
             sub_pane: None,
+            momentum_keys: Vec::new(),
+            tints: Vec::new(),
             rows: Vec::new(),
+            histories: HashMap::new(),
             interaction: None,
             main: None,
             sub: None,
@@ -241,11 +342,28 @@ impl ChartWorkspace {
         Ok(workspace)
     }
 
-    /// Boot and seed a history directly (the demo's CSV path).
+    /// Boot and seed a history directly (the demo's CSV path), keyed to the
+    /// default timeframe.
     pub fn with_rows(rows: Vec<ChartRow>) -> Result<Self, EguiError> {
         let mut workspace = Self::new()?;
         workspace.set_rows(rows)?;
         Ok(workspace)
+    }
+
+    /// Seed one timeframe's history into the workspace store and, when it is
+    /// the active timeframe, select it. Coarser timeframes (`1H`/`4H`) are
+    /// resampled from the seeded `15M` slot by [`history_for`](Self::history_for),
+    /// so a caller only needs to seed the native slots it has.
+    pub fn seed_history(
+        &mut self,
+        timeframe: TimeframeKey,
+        rows: Vec<ChartRow>,
+    ) -> Result<(), EguiError> {
+        self.histories.insert(timeframe, rows);
+        if self.timeframe == timeframe {
+            self.select_timeframe(timeframe)?;
+        }
+        Ok(())
     }
 
     /// The active ticker's spelling.
@@ -335,16 +453,22 @@ impl ChartWorkspace {
         self.recompute()
     }
 
-    /// Remove an indicator: close its pane handle, unslot it, and drop its
-    /// evaluation.
+    /// Remove an indicator: close its pane handle, unslot it, drop its
+    /// evaluation, and refresh the derived pane/tint state.
     pub fn remove_indicator(&mut self, id: &str) -> Result<(), EguiError> {
         self.stack.remove(id)?;
         self.plugins.retain(|plugin| plugin.id() != id);
         self.evaluations.remove(id);
         if id == INTEGRATION_LITE_ID {
             self.sub_pane = None;
+            self.momentum_keys.clear();
+            self.tints.clear();
         }
-        Ok(())
+        if self.rows.is_empty() {
+            return Ok(());
+        }
+        self.sub_pane = self.compute_sub_pane()?;
+        self.recompute_tint()
     }
 
     /// Pull fresh bars for the active symbol and timeframe through `gateway`,
@@ -354,15 +478,16 @@ impl ChartWorkspace {
             .chart_bars_for(self.active_symbol(), self.timeframe.label())
             .map_err(|error| EguiError::Dependency { reason: error.to_string() })?;
         self.rows = chart_rows_of(&bars);
+        self.histories.insert(self.timeframe, self.rows.clone());
         self.rebind_viewports()?;
         self.recompute()
     }
 
-    /// Seed a history directly and recompute (no gateway).
+    /// Seed a history for the active timeframe directly and recompute (no
+    /// gateway). Distinct timeframes keep their own histories; the switch
+    /// path re-reads the store.
     pub fn set_rows(&mut self, rows: Vec<ChartRow>) -> Result<(), EguiError> {
-        self.rows = rows;
-        self.rebind_viewports()?;
-        self.recompute()
+        self.seed_history(self.timeframe, rows)
     }
 
     /// Switch the active ticker and pull its history through `gateway`.
@@ -383,6 +508,35 @@ impl ChartWorkspace {
     ) -> Result<(), EguiError> {
         self.timeframe = timeframe;
         self.refresh(gateway)
+    }
+
+    /// Select a timeframe from the seeded history store without a gateway,
+    /// resampling coarser keys from the `15M` slot; the active candles and
+    /// every indicator recompute from the switched history.
+    pub fn select_timeframe(&mut self, timeframe: TimeframeKey) -> Result<(), EguiError> {
+        let rows = self.history_for(timeframe)?;
+        self.rows = rows;
+        self.timeframe = timeframe;
+        self.rebind_viewports()?;
+        self.recompute()
+    }
+
+    /// The seeded history for `timeframe`, resampling coarser keys from the
+    /// `15M` slot by whole groups. `1M`/`5M`/`15M` read their own slots; a
+    /// missing slot refuses by name rather than serving another timeframe.
+    fn history_for(&self, timeframe: TimeframeKey) -> Result<Vec<ChartRow>, EguiError> {
+        if let Some(rows) = self.histories.get(&timeframe) {
+            return Ok(rows.clone());
+        }
+        if timeframe.m15_group() > 1 {
+            if let Some(base) = self.histories.get(&TimeframeKey::M15) {
+                return Ok(aggregate_rows(base, timeframe.m15_group()));
+            }
+        }
+        Err(EguiError::InvalidParam {
+            what: "timeframe".to_owned(),
+            reason: format!("no loaded history for {}", timeframe.label()),
+        })
     }
 
     /// Step the 2D interaction machine and lock the sub-pane time axis to the
@@ -483,11 +637,14 @@ impl ChartWorkspace {
     }
 
     /// Evaluate every active indicator into the pane cache and readouts, then
-    /// rebuild the IntegrationLite delta histogram for the canvas.
+    /// rebuild the IntegrationLite delta histogram and the candle/delta tint
+    /// for the canvas.
     fn recompute(&mut self) -> Result<(), EguiError> {
         if self.rows.is_empty() {
             self.evaluations.clear();
             self.sub_pane = None;
+            self.momentum_keys.clear();
+            self.tints.clear();
             return Ok(());
         }
         for index in 0..self.plugins.len() {
@@ -507,7 +664,44 @@ impl ChartWorkspace {
             self.evaluations.insert(id, evaluation);
         }
         self.sub_pane = self.compute_sub_pane()?;
+        self.recompute_tint()?;
         Ok(())
+    }
+
+    /// Rebuild the momentum keys and per-bar candle/delta tint from the pane's
+    /// EIT legs and volume conviction. The keys always resolve (falling back
+    /// to candle direction), while the gradient tints are absent when the
+    /// theme's four momentum hues cannot resolve — the canvas then paints the
+    /// discrete keys instead of a substituted color.
+    fn recompute_tint(&mut self) -> Result<(), EguiError> {
+        let Some(pane) = &self.sub_pane else {
+            self.momentum_keys.clear();
+            self.tints.clear();
+            return Ok(());
+        };
+        self.momentum_keys = candle_momentum_keys(&self.rows, &pane.ribbon.bullish)?;
+        let eit_alpha = self
+            .stack
+            .config(INTEGRATION_LITE_ID)
+            .and_then(|config| component_downcast_ref::<IntegrationLiteConfig>(config))
+            .map_or(DEFAULT_EIT_ALPHA, |config| config.eit_alpha);
+        self.tints = match MomentumPalette::from_theme(&self.theme) {
+            Ok(palette) => {
+                let momentum = candle_momentum_series(&self.rows, eit_alpha)?;
+                momentum_tints(&self.rows, &momentum, eit_alpha, &palette)?
+            }
+            Err(_) => Vec::new(),
+        };
+        Ok(())
+    }
+
+    /// The resolved paint color for one bar: the momentum gradient tint when
+    /// available, else the discrete trend key resolved against the theme.
+    fn bar_color(&self, index: usize, key: &str, theme: &ThemeConfig) -> Result<egui::Color32, EguiError> {
+        match self.tints.get(index).copied().flatten() {
+            Some(tint) => Ok(tint_color(tint)),
+            None => resolve_color(theme, key),
+        }
     }
 
     /// Rebuild the IntegrationLite sub-pane (delta histogram) when that slot
@@ -544,7 +738,7 @@ impl ChartWorkspace {
             TopBarAction::PickedSymbol(symbol) => self.apply_symbol_pick(&symbol, gateway)?,
             TopBarAction::PickedTimeframe(timeframe) => match gateway {
                 Some(gateway) => self.switch_timeframe(timeframe, gateway)?,
-                None => self.timeframe = timeframe,
+                None => self.select_timeframe(timeframe)?,
             },
             TopBarAction::PickedRange(range) => {
                 self.range = range;
@@ -594,26 +788,49 @@ impl ChartWorkspace {
         let theme = self.theme.clone();
         let background = resolve_color(&theme, "background")?;
         let body_width = (self.config.bar_spacing as f32 * 0.7).max(1.0);
+        // One trailing range window for every layer (candles, overlays, and
+        // the sub-pane), so the price pane and the oscillator share a time
+        // axis instead of one showing the newest and the other the oldest bars.
+        let window = window_for_range(&self.rows, self.range, self.timeframe.seconds());
+        let window_start = self.rows.len().saturating_sub(window.len());
 
         let painter = ui.painter_at(main_rect);
         painter.rect_filled(main_rect, 0.0, background);
         if let Some(main) = self.main {
-            let window = window_for_range(&self.rows, self.range, self.timeframe.seconds());
+            // The trend ribbon (IntegrationLite's main-pane leg) and the
+            // candle tint both read the same windowed trend keys.
+            let ribbon = self
+                .sub_pane
+                .as_ref()
+                .map(|pane| windowed_ribbon(&pane.ribbon, window_start, window.len()));
+            let trend: Vec<bool> = ribbon
+                .as_ref()
+                .map_or_else(|| vec![false; window.len()], |band| band.bullish.clone());
+            if let Some(band) = &ribbon {
+                if self.sub_pane.as_ref().is_some_and(|pane| pane.show_ribbon)
+                    && self.stack.visible(INTEGRATION_LITE_ID) == Some(true)
+                {
+                    let placed = translate_polygons(
+                        ribbon_polygons(band, &main),
+                        (main_rect.left(), main_rect.top()),
+                    );
+                    let alpha = f32::from(opacity_from_transparency(ribbon_fill_transparency(
+                        band.alpha,
+                    ))) / 255.0;
+                    paint_ribbon_fill(&painter, &placed, &theme, alpha)?;
+                }
+            }
             if self.chart_type == ChartType::Candles {
-                let bullish: Vec<bool> =
-                    window.iter().map(|row| row.close >= row.open).collect();
-                let geoms = candle_geoms(window, &bullish, &main)?;
+                let geoms = candle_geoms(window, &trend, &main)?;
                 let placed = translate_candles(geoms, (main_rect.left(), main_rect.top()));
-                let bull = resolve_color(&theme, "bull")?;
-                let bear = resolve_color(&theme, "bear")?;
-                let tinted: Vec<TintedCandle> = placed
-                    .iter()
-                    .map(|geom| TintedCandle {
-                        geom: *geom,
-                        color: if geom.trend_bullish { bull } else { bear },
-                    })
-                    .collect();
-                paint_candles_tinted(&painter, &tinted, body_width);
+                let keys = candle_momentum_keys(window, &trend)?;
+                let mut candles = Vec::with_capacity(placed.len());
+                for geom in &placed {
+                    let key = keys.get(geom.index).copied().unwrap_or("bull");
+                    let color = self.bar_color(window_start + geom.index, key, &theme)?;
+                    candles.push(TintedCandle { geom: *geom, color });
+                }
+                paint_candles_tinted(&painter, &candles, body_width);
             } else {
                 // Line/Area (and any other display-row picture) render the
                 // close series; Heikin smoothing needs the core bar pipeline.
@@ -634,9 +851,10 @@ impl ChartWorkspace {
                     continue;
                 }
                 if let Some(evaluation) = self.evaluations.get(plugin.id()) {
+                    let windowed = windowed_evaluation(evaluation, window_start, window.len());
                     plugin.paint_main_overlay(
                         &painter,
-                        evaluation,
+                        &windowed,
                         &main,
                         main_rect.left_top(),
                         &theme,
@@ -657,18 +875,26 @@ impl ChartWorkspace {
                     continue;
                 }
                 if let Some(evaluation) = self.evaluations.get(plugin.id()) {
-                    plugin.paint_sub_pane(&sub_painter, evaluation, &sub, sub_rect.left_top(), &theme)?;
+                    let windowed = windowed_evaluation(evaluation, window_start, window.len());
+                    plugin.paint_sub_pane(&sub_painter, &windowed, &sub, sub_rect.left_top(), &theme)?;
                 }
             }
             if let Some(pane) = &self.sub_pane {
-                let bars = delta_bar_geoms(&pane.delta_volume, &sub)?;
+                let delta = windowed_delta(&pane.delta_volume, window_start, window.len());
+                let bars = delta_bar_geoms(&delta, &sub)?;
                 let placed = translate_delta_bars(bars, (sub_rect.left(), sub_rect.top()));
-                paint_delta_bars(
+                let mut tinted = Vec::with_capacity(placed.len());
+                for geom in &placed {
+                    let global = window_start + geom.index;
+                    let key = self.momentum_keys.get(global).copied().unwrap_or("bull");
+                    let color = self.bar_color(global, key, &theme)?;
+                    tinted.push(TintedDeltaBar { geom: *geom, color });
+                }
+                paint_delta_bars_tinted(
                     &sub_painter,
-                    &placed,
+                    &tinted,
                     (self.config.bar_spacing as f32 * 0.35).max(0.5),
-                    &theme,
-                )?;
+                );
             }
             // The zero line makes the centered histogram legible.
             if let Some(zero_y) = sub.windowed_y(0.0) {
@@ -719,22 +945,37 @@ impl ChartWorkspace {
         gateway: Option<&dyn TerminalGateway>,
     ) -> Result<(), EguiError> {
         let theme = self.theme.clone();
+        // A dismissable modal: Escape clears whichever catalog is open, and
+        // the window close button clears it through `open` (an untouched
+        // frame keeps both as they are).
+        if ui.input(|input| input.key_pressed(egui::Key::Escape)) {
+            self.symbol_modal = None;
+            self.indicator_modal = None;
+        }
         let mut picked_symbol = None;
         if let Some(modal) = self.symbol_modal.as_mut() {
-            egui::Window::new("Symbols").collapsible(false).resizable(false).show(ui.ctx(), |ui| {
-                match paint_catalog_modal(ui, modal, &symbol_categories(), &theme) {
-                    Ok(actions) => {
-                        for action in actions {
-                            if let CatalogAction::Picked(id) = action {
-                                picked_symbol = Some(id);
+            let mut open = true;
+            egui::Window::new("Symbols")
+                .open(&mut open)
+                .collapsible(false)
+                .resizable(false)
+                .show(ui.ctx(), |ui| {
+                    match paint_catalog_modal(ui, modal, &symbol_categories(), &theme) {
+                        Ok(actions) => {
+                            for action in actions {
+                                if let CatalogAction::Picked(id) = action {
+                                    picked_symbol = Some(id);
+                                }
                             }
                         }
+                        Err(error) => {
+                            ui.colored_label(egui::Color32::RED, error.to_string());
+                        }
                     }
-                    Err(error) => {
-                        ui.colored_label(egui::Color32::RED, error.to_string());
-                    }
-                }
-            });
+                });
+            if !open {
+                self.symbol_modal = None;
+            }
         }
         if let Some(symbol) = picked_symbol {
             self.symbol_modal = None;
@@ -743,7 +984,9 @@ impl ChartWorkspace {
 
         let mut picked_indicator = None;
         if let Some(modal) = self.indicator_modal.as_mut() {
+            let mut open = true;
             egui::Window::new("Indicators")
+                .open(&mut open)
                 .collapsible(false)
                 .resizable(false)
                 .show(ui.ctx(), |ui| {
@@ -760,6 +1003,9 @@ impl ChartWorkspace {
                         }
                     }
                 });
+            if !open {
+                self.indicator_modal = None;
+            }
         }
         if let Some(id) = picked_indicator {
             self.indicator_modal = None;
