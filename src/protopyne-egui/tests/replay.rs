@@ -214,6 +214,37 @@ fn a_moved_cursor_makes_the_whole_topology_due_in_plan_order() {
 }
 
 #[test]
+fn a_second_scrub_without_settle_still_rewinds_the_whole_topology() {
+    let mut scrub = scrubbed();
+    drain(&mut scrub);
+    let first = scrub.scrub_to(1).expect("first scrub moves");
+    assert!(
+        matches!(first, ScrubOutcome::Rewound { .. }),
+        "the first move rewinds"
+    );
+    // No settle between the two scrubs: the consume-and-remark loop over
+    // the plan's single rewind marker must still drive every pane due.
+    let second = scrub.scrub_to(0).expect("second scrub without settle moves");
+    assert_eq!(
+        second,
+        ScrubOutcome::Rewound { cursor: 0, panes: plan_order(&scrub) },
+        "a repeat scrub re-arms every anchor, so the whole topology is due again"
+    );
+    assert!(!scrub.settled(), "nothing settled between the scrubs");
+}
+
+#[test]
+fn a_draft_with_a_moved_cursor_and_an_invalid_mark_applies_neither() {
+    use fluent_egui::ReplayState;
+    let mut scrub = scrubbed();
+    drain(&mut scrub);
+    let before = position(&scrub);
+    let draft = ReplayState { cursor: 1, total_bars: before.1, mark: String::new() };
+    assert!(scrub.apply_draft(&draft).is_err(), "a blank mark refuses");
+    assert_eq!(position(&scrub), before, "the refused draft moved neither axis");
+}
+
+#[test]
 fn a_scrub_to_either_end_settles_with_every_revision_present() {
     let mut scrub = scrubbed();
     drain(&mut scrub);

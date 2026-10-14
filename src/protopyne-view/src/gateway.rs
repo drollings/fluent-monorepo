@@ -203,8 +203,10 @@ impl TerminalGateway for MockGateway {
     }
 
     fn replay(&self) -> Result<ReplayView, GatewayError> {
-        // Three bars, all reached, checkpoints on the even bars — the shape
-        // a core replay over a short history actually publishes.
+        // Happy-path-only mock over a three-bar window at the head: one
+        // checkpoint on bar 0, matching what the core publishes for a short
+        // history at the default cadence. Refusal and cadence shapes are not
+        // mocked — tests needing them drive the server gateway instead.
         let steps: Vec<ReplayStepView> =
             ["2023-11-14T22:13:20+00:00", "2023-11-14T22:28:20+00:00", "2023-11-14T22:43:20+00:00"]
                 .into_iter()
@@ -213,7 +215,7 @@ impl TerminalGateway for MockGateway {
                     bar_index: bar_index as u64,
                     ts: ts.to_owned(),
                     done: true,
-                    checkpoint: bar_index % 2 == 0,
+                    checkpoint: bar_index == 0,
                 })
                 .collect();
         let total_bars = steps.len() as u64;
@@ -221,9 +223,11 @@ impl TerminalGateway for MockGateway {
     }
 
     fn preview_arm(&self, _patch: serde_json::Value) -> Result<WorstCase, GatewayError> {
-        // No core behind the mock, so no live grant to tighten: the canned
-        // worst case matches the canned arm, and a form driven against the
-        // mock previews exactly what its submit would confirm.
+        // Happy-path-only mock: no core behind the mock, so no live grant
+        // to tighten and no refusal to surface. The canned worst case
+        // matches the canned arm, and a form driven against the mock
+        // previews exactly what its submit would confirm. Loosening and
+        // no-grant refusals are covered against the server gateway, not here.
         Ok(WorstCase {
             max_trades: 1,
             max_contracts: 1,

@@ -15,7 +15,7 @@
 //! opaquely and only ever reads display floats — exact prices never enter
 //! this crate, keeping the one-way display boundary.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use protopyne_chart_model::{Annotation, AnnotationKey, AnnotationStyle, ChartRow};
 
@@ -92,15 +92,30 @@ impl<'a> IntoIterator for &'a AnnotationSet {
 /// the bar index in the passed window, the key's price maps through the
 /// viewport. `None` when the bar sits outside the window, when its timestamp
 /// repeats in the window (duplicates bind nothing, never the first match),
-/// or when the price is unmappable — markers decorate published bars only,
-/// never neighbors.
+/// or when the price is unmappable or off-window — markers decorate published
+/// bars only, never neighbors.
+///
+/// Linear scan, no map allocation: the single-resolve path stays cheaper
+/// than building a [`TimeIndex`] for one marker. The batch path
+/// ([`crate::paint::marker_dots`]) builds one index per frame instead.
 #[must_use]
 pub fn resolve_annotation(
     annotation: &Annotation,
     rows: &[ChartRow],
     viewport: &Viewport,
 ) -> Option<(f32, f32)> {
-    TimeIndex::of(rows).resolve(annotation, viewport)
+    let mut found: Option<usize> = None;
+    for (index, row) in rows.iter().enumerate() {
+        if row.time == annotation.key.bar_timestamp {
+            if found.is_some() {
+                return None;
+            }
+            found = Some(index);
+        }
+    }
+    let index = found?;
+    let y = viewport.windowed_y(annotation.key.price_float()?)?;
+    Some((viewport.index_to_x(index), y))
 }
 
 /// One frame's timestamp-to-bar map, built once.
@@ -116,6 +131,10 @@ pub fn resolve_annotation(
 pub struct TimeIndex {
     /// Timestamps with exactly one row, plus their bar index.
     unique: HashMap<i64, usize>,
+    /// Distinct timestamps claimed by more than one row. They bind nothing,
+    /// and the count is the observable for a faulting feed that would
+    /// otherwise go invisible.
+    duplicates: usize,
 }
 
 impl TimeIndex {
@@ -123,18 +142,19 @@ impl TimeIndex {
     #[must_use]
     pub fn of(rows: &[ChartRow]) -> Self {
         let mut unique: HashMap<i64, usize> = HashMap::with_capacity(rows.len());
-        let mut duplicated: HashMap<i64, ()> = HashMap::new();
+        let mut duplicated: HashSet<i64> = HashSet::new();
         for (index, row) in rows.iter().enumerate() {
-            if duplicated.contains_key(&row.time) {
+            if duplicated.contains(&row.time) {
                 continue;
             }
             if unique.remove(&row.time).is_some() {
-                duplicated.insert(row.time, ());
+                duplicated.insert(row.time);
             } else {
                 unique.insert(row.time, index);
             }
         }
-        Self { unique }
+        let duplicates = duplicated.len();
+        Self { unique, duplicates }
     }
 
     /// Bar index of one timestamp: `None` when the bar sits outside the
@@ -144,13 +164,20 @@ impl TimeIndex {
         self.unique.get(&timestamp).copied()
     }
 
+    /// Distinct duplicate timestamps in the built window: bars a faulting
+    /// feed hid by claiming one close time twice. Zero in the healthy case.
+    #[must_use]
+    pub fn duplicate_count(&self) -> usize {
+        self.duplicates
+    }
+
     /// Resolve one annotation through this map: the key's timestamp names
     /// the bar, the key's price maps through the viewport. `None` under the
     /// same conditions as [`resolve_annotation`].
     #[must_use]
     pub fn resolve(&self, annotation: &Annotation, viewport: &Viewport) -> Option<(f32, f32)> {
         let index = self.lookup(annotation.key.bar_timestamp)?;
-        let y = viewport.price_to_y(annotation.key.price_float()?)?;
+        let y = viewport.windowed_y(annotation.key.price_float()?)?;
         Some((viewport.index_to_x(index), y))
     }
 }

@@ -34,7 +34,7 @@ pub mod topology;
 pub mod views;
 pub mod widgets;
 
-pub use annotations::{annotations_of, append_new};
+pub use annotations::{annotations_of, annotations_of_counted, append_new};
 pub use chart::{
     AreaView, ChartConfig, PictureSource, TimeframeKey, area_view, chart_price_bars, line_values,
     picture_rows, picture_source, refuse_chart_type, timed_plan_build, window_for_range,

@@ -245,11 +245,19 @@ impl ReplayScrub {
     /// Taking the whole draft is what keeps the control honest: it is the
     /// only path that reads the control's edits, so a field the scrub
     /// cannot act on is refused here rather than dropped where the painter
-    /// cannot see it.
+    /// cannot see it. The mark validates before the cursor moves, so a
+    /// draft with both a new cursor and an invalid mark applies neither.
     pub fn apply_draft(&mut self, draft: &ReplayState) -> Result<Option<ScrubOutcome>, ScrubRefusal> {
         self.last_refusal = None;
         if draft.total_bars != self.cursor.total_bars {
             return self.refuse(ScrubRefusal::WindowNotResizable);
+        }
+        if draft.mark != self.cursor.mark {
+            let mut next = self.cursor.clone();
+            draft.mark.clone_into(&mut next.mark);
+            if let Err(error) = next.validate() {
+                return self.refuse(ScrubRefusal::Cursor(error.to_string()));
+            }
         }
         let mut outcome = None;
         if draft.cursor != self.cursor.cursor {

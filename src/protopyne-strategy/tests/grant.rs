@@ -704,8 +704,7 @@ fn every_tier_marks_its_money_leaves_decimal() {
 }
 
 #[test]
-fn every_tier_display_fromstr_round_trips() {
-    // Both codecs carry every tier: Display renders the document the form
+fn every_tier_display_fromstr_round_trips() {    // Both codecs carry every tier: Display renders the document the form
     // previews, FromStr parses it back. One parser per tier, no second one.
     let signal = SignalThresholds::new().min_conviction(0.5).min_activity_score(0.25).build();
     let trade = TradeThresholds::new()
@@ -724,4 +723,19 @@ fn every_tier_display_fromstr_round_trips() {
         portfolio
     );
     assert_eq!(BreakerLimits::from_str(&breakers.to_string()).expect("breakers parse"), breakers);
+}
+
+#[test]
+fn excess_decimal_scale_refuses_on_both_money_paths() {
+    // Scale parity with the operator-text fence
+    // (`protopyne-chart-model/tests/display_only.rs :: operator_decimal_controls_all_refuse`,
+    // which refuses the same 29-place text): the tier codec refuses it here
+    // too, so neither path rounds excess precision into a decision.
+    let deep = "0.00000000000000000000000000001";
+    let mut patch = GrantPatch::default();
+    let tier = format!(r#"{{"max_trades":1,"max_contracts":1,"max_loss":"{deep}","max_notional":"1000"}}"#);
+    assert!(
+        patch.set_field("budgets", &tier).is_err(),
+        "the tier codec refuses 29-place decimal text"
+    );
 }

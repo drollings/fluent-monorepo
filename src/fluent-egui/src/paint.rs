@@ -215,7 +215,9 @@ pub struct PivotDot {
 /// Place pivot dots from crossing marks onto fast-oscillator values.
 ///
 /// Marks whose value is missing, non-finite, out of range, or out of bounds
-/// are skipped — dots decorate crossings only.
+/// are skipped — dots decorate crossings only. Off-window values refuse
+/// through the shared window predicate, so the dots lift the pen exactly
+/// where [`oscillator_points`] does.
 #[must_use]
 pub fn pivot_dots(
     marks: &[PivotMark],
@@ -229,7 +231,7 @@ pub fn pivot_dots(
             if !value.is_finite() {
                 return None;
             }
-            let y = viewport.price_to_y(value)?;
+            let y = viewport.windowed_y(value)?;
             Some(PivotDot { index: mark.index, x: viewport.index_to_x(mark.index), y, side: mark.side })
         })
         .collect()
@@ -493,7 +495,10 @@ pub fn area_polygons(
 
 /// One run-closing core behind ribbon and area fills: maximal runs of
 /// contiguous mappable `(upper, lower, trend)` legs. Holes, non-finite
-/// legs, and unmappable edges break runs; a trend flip starts a new run.
+/// legs, and unmappable or off-window edges break runs; a trend flip starts
+/// a new run. Off-window legs refuse through the shared window predicate
+/// rather than extrapolating off-pane, so fills lift the pen at the window
+/// edge exactly where oscillator and threshold emitters do.
 fn close_runs(
     legs: impl IntoIterator<Item = (Option<f64>, Option<f64>, bool)>,
     viewport: &Viewport,
@@ -532,7 +537,7 @@ fn close_runs(
     for (index, (upper, lower, trend)) in legs.into_iter().enumerate() {
         let mappable = match (upper, lower) {
             (Some(up), Some(lo)) if up.is_finite() && lo.is_finite() => {
-                match (viewport.price_to_y(up), viewport.price_to_y(lo)) {
+                match (viewport.windowed_y(up), viewport.windowed_y(lo)) {
                     (Some(top_y), Some(bottom_y)) => {
                         Some((viewport.index_to_x(index), top_y, bottom_y))
                     }
@@ -876,8 +881,9 @@ impl MarkerDot {
 /// arrive through the terminal bridge, and both paint here alike. One
 /// [`crate::annotations::TimeIndex`] serves the whole batch, so the window
 /// is walked once per frame no matter how many markers resolve; bars
-/// outside the window, duplicate timestamps, or unmappable prices are
-/// skipped — markers decorate published annotations only.
+/// outside the window, duplicate timestamps, or off-window/unmappable prices
+/// are skipped — markers decorate published annotations only, never
+/// extrapolated points off the pane.
 #[must_use]
 pub fn marker_dots(
     markers: &[Annotation],
@@ -889,7 +895,7 @@ pub fn marker_dots(
         .iter()
         .filter_map(|marker| {
             let bar = index.lookup(marker.key.bar_timestamp)?;
-            let y = viewport.price_to_y(marker.key.price_float()?)?;
+            let y = viewport.windowed_y(marker.key.price_float()?)?;
             Some(MarkerDot {
                 index: bar,
                 x: viewport.index_to_x(bar),

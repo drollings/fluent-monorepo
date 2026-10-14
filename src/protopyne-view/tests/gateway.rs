@@ -32,8 +32,8 @@ fn mock_gateway_serves_every_read_method() {
     );
     assert_eq!(
         replay.steps.iter().filter(|step| step.checkpoint).count(),
-        2,
-        "the mock publishes named anchors on the even bars"
+        1,
+        "the mock publishes one named anchor on bar 0, matching the core's short-history cadence"
     );
 }
 

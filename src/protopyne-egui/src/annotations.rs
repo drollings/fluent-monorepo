@@ -3,7 +3,7 @@
 //! [`annotations_of`] converts one successful projection's `Label` and `Area`
 //! primitives to [`Annotation`] values: the bar index resolves to the bar's
 //! close time through the same bar window the engine ran over, and the price
-//! lowers to its exact decimal. [`append_projection`] appends that conversion
+//! lowers to its exact decimal. [`append_new`] appends that conversion
 //! to the terminal's [`AnnotationSet`]. This is the VISION §8
 //! Pine-portable/native boundary made concrete: Pine output enters the
 //! operator's store and is thereafter undoable like any other annotation.
@@ -44,32 +44,52 @@ use protopyne_types::Bar;
 
 /// Convert one successful projection's drawings to annotations: labels keep
 /// their text, areas become corner pairs, everything else is skipped.
-/// Primitives anchored outside the bar window, or carrying a price no
-/// decimal can hold, drop — the projection this bridge consumes already
-/// guarantees finite prices over evaluated bars, so a drop here names a
-/// hand-built or misaligned input, never a quiet substitution.
+/// Returns the converted annotations plus the count of drawing points
+/// dropped as unplaceable (bar outside the window, or a price no decimal
+/// can hold). A drop is counted, never substituted: the projection this
+/// bridge consumes already guarantees finite prices over evaluated bars,
+/// so a nonzero drop names a hand-built or misaligned input the operator
+/// should know about.
 #[must_use]
 pub fn annotations_of(primitives: &[PlotPrimitive], bars: &[Bar]) -> Vec<Annotation> {
+    annotations_of_counted(primitives, bars).0
+}
+
+/// Counted conversion behind [`annotations_of`]: the annotations plus the
+/// dropped-point count. Prefer this when the caller can surface the count;
+/// [`annotations_of`] keeps the plain shape for borrow-split call sites.
+#[must_use]
+pub fn annotations_of_counted(
+    primitives: &[PlotPrimitive],
+    bars: &[Bar],
+) -> (Vec<Annotation>, usize) {
     let mut annotations = Vec::new();
+    let mut dropped = 0;
     for primitive in primitives {
         match primitive {
             PlotPrimitive::Label { bar, price, text } => {
                 if let Some(annotation) = note_at(*bar, *price, text.clone(), bars) {
                     annotations.push(annotation);
+                } else {
+                    dropped += 1;
                 }
             }
             PlotPrimitive::Area { left, top, right, bottom } => {
                 if let Some(corner) = note_at(*left, *top, String::new(), bars) {
                     annotations.push(corner);
+                } else {
+                    dropped += 1;
                 }
                 if let Some(corner) = note_at(*right, *bottom, String::new(), bars) {
                     annotations.push(corner);
+                } else {
+                    dropped += 1;
                 }
             }
             PlotPrimitive::Series { .. } | PlotPrimitive::Level { .. } | PlotPrimitive::Marker { .. } => {}
         }
     }
-    annotations
+    (annotations, dropped)
 }
 
 /// Append converted drawings to the terminal's set, skipping annotations

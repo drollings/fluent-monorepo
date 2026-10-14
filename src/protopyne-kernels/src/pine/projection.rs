@@ -16,8 +16,12 @@
 //! no setter table, so painting the stale creation geometry would
 //! miscompute. A repaint-only update (colors, styles, widths, tooltips)
 //! leaves the creation geometry paintable and refuses nothing. Drawings with
-//! unplaceable geometry (`na`, non-integral, or warmup-hole bar coordinates)
-//! are skipped, matching the reference behavior of drawing nothing for them.
+//! unplaceable geometry (`na` or non-integral bar coordinates) are skipped,
+//! matching the reference behavior of drawing nothing for them. A drawing
+//! anchored on a warmup hole the run skipped is also skipped — a deliberate
+//! divergence from the reference, which could draw it: the hole has no
+//! evaluated bar to sit on, and painting it at a neighbouring bar would
+//! miscompute by misplacement.
 
 use thiserror::Error;
 
@@ -358,9 +362,12 @@ fn replay_drawings(events: &[DrawingEvent]) -> Vec<DrawingState> {
                 if let Some(state) = states.iter_mut().find(|state| state.created.key == event.key)
                 {
                     // A repaint leaves the creation geometry paintable; a
-                    // move, a resize, new content, or an unknown write keeps
-                    // the flag.
-                    if event.props.iter().any(|prop| !is_cosmetic(prop)) {
+                    // move, a resize, new content, an empty property list, or
+                    // an unknown write keeps the flag. Empty means no producer
+                    // named what changed, so it fails closed as a move.
+                    if event.props.is_empty()
+                        || event.props.iter().any(|prop| !is_cosmetic(prop))
+                    {
                         state.mutated = true;
                     }
                 }

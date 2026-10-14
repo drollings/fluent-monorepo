@@ -68,7 +68,10 @@ pub struct SchemaField {
 }
 
 /// Every field in `schema`, in schema order. Properties are read from the
-/// document itself, so this is the only place that walks them.
+/// document itself, so this is the only place that walks them. Order is the
+/// document's order (`serde_json` preserves map insertion order with its
+/// default `preserve_order` feature, which this workspace relies on for
+/// schema rendering).
 #[must_use]
 pub fn schema_fields(schema: &serde_json::Value) -> Vec<SchemaField> {
     schema
@@ -144,11 +147,43 @@ pub fn paint_schema_fields(
     let mut edits = FieldEdits::default();
     for field in fields {
         ui.horizontal(|row| {
-            row.label(&field.name).on_hover_text(&field.description);
+            row.label(&field.name).on_hover_text(bounds_hint(field));
             paint_one(row, field, target, &mut edits);
         });
     }
     edits
+}
+
+/// Hover text for one field: the schema description plus the declared
+/// bounds the field's own contract enforces. Bounds are display only — the
+/// refusal still comes from `set_field`, never from clamping or from
+/// binding the widget to the bound (which would make out-of-range input
+/// unreachable instead of visibly refused).
+fn bounds_hint(field: &SchemaField) -> String {
+    let mut hint = field.description.clone();
+    let mut bounds = Vec::new();
+    if let Some(minimum) = field.minimum {
+        bounds.push(format!("min {minimum}"));
+    }
+    if let Some(maximum) = field.maximum {
+        bounds.push(format!("max {maximum}"));
+    }
+    if let Some(max_len) = field.max_len {
+        bounds.push(format!("max length {max_len}"));
+    }
+    if let Some(format) = field.format.as_deref() {
+        bounds.push(format!("format {format}"));
+    }
+    if !bounds.is_empty() {
+        if hint.is_empty() {
+            hint.push('(');
+        } else {
+            hint.push_str(" (");
+        }
+        hint.push_str(&bounds.join(", "));
+        hint.push(')');
+    }
+    hint
 }
 
 /// One field's editor: read, edit, write back only what changed.
@@ -169,7 +204,20 @@ fn paint_one(
         FieldKind::Integer => edit_integer(row, field, &current, edits),
         FieldKind::Number => edit_number(row, field, &current, edits),
         FieldKind::Boolean => {
-            let mut value = matches!(current.as_str(), "true");
+            let trimmed = current.trim().to_ascii_lowercase();
+            let canonical = match trimmed.as_str() {
+                "true" => Some(true),
+                "false" => Some(false),
+                _ => None,
+            };
+            let Some(value) = canonical else {
+                edits.refusals.push(refusal(
+                    field,
+                    format!("{current:?} is not an editable boolean"),
+                ));
+                return;
+            };
+            let mut value = value;
             let changed = row.checkbox(&mut value, "").changed();
             changed.then(|| value.to_string())
         }

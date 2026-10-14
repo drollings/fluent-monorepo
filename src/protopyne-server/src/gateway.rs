@@ -75,7 +75,9 @@ impl TerminalGateway for ServerGateway {
     fn replay(&self) -> Result<ReplayView, GatewayError> {
         // The route's own default cadence, stated explicitly so the
         // gateway read and a bare `/replay` read cannot disagree: both call
-        // `replay_view_of`, so neither can drift from the other.
+        // `replay_view_of`, so neither can drift from the other. Only
+        // 400/500 surface today; the 503 arm stays for a future
+        // unavailable-shaped refusal without re-editing the mapping.
         replay_view_of(&self.state.history, DEFAULT_REPLAY_CHECKPOINT_EVERY).map_err(
             |(status, reason)| {
                 if status == axum::http::StatusCode::SERVICE_UNAVAILABLE {
@@ -101,7 +103,10 @@ impl TerminalGateway for ServerGateway {
     }
 
     fn grant_tiers(&self) -> Result<BTreeMap<String, String>, GatewayError> {
-        grant_tiers_of(&self.state).map_err(|(_, reason)| GatewayError::Unavailable(reason))
+        // Only serialization failures surface here (both arms are 500s), so
+        // they map as malformed contract output — never as a transport
+        // outage, and never as an empty grant.
+        grant_tiers_of(&self.state).map_err(|(_, reason)| GatewayError::Malformed(reason))
     }
 
     fn arm(&self, grant: serde_json::Value) -> Result<ArmResponse, GatewayError> {

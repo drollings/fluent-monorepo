@@ -217,8 +217,23 @@ impl GrantFormState {
 
     /// Descriptor tier names, in schema order.
     #[must_use]
-    pub fn field_paths(&self) -> Vec<String> {
+    pub fn tier_names(&self) -> Vec<String> {
         self.tiers.iter().map(|tier| tier.name.clone()).collect()
+    }
+
+    /// Descriptor tier names, in schema order. Kept for callers written
+    /// against the pre-leaf form, when one editor per tier meant tier names
+    /// were the field paths; new code prefers [`tier_names`](Self::tier_names)
+    /// for tiers and [`leaf_paths`](Self::leaf_paths) for leaves.
+    #[must_use]
+    pub fn field_paths(&self) -> Vec<String> {
+        self.tier_names()
+    }
+
+    /// Descriptor leaf paths (`tier` or `tier.leaf`), in schema order.
+    #[must_use]
+    pub fn leaf_paths(&self) -> Vec<String> {
+        self.fields.iter().map(GrantFormField::path).collect()
     }
 
     /// The descriptor-derived leaf fields, for the painter.
@@ -380,9 +395,17 @@ impl GrantFormState {
     /// through the gateway. An unchanged patch keeps its preview (a repeat
     /// read re-renders, never re-asks); an empty patch clears it; a patch
     /// the leaves refuse records the local reason, so the painter shows why
-    /// there is nothing to confirm.
+    /// there is nothing to confirm. Called once per frame from the painter:
+    /// the preview re-ask is change-gated, but the tier-text read is not —
+    /// callers on a slow gateway throttle the painter (e.g. through a
+    /// `RefreshGate`) rather than paying a round-trip per frame.
     pub fn refresh_preview(&mut self, gateway: &dyn TerminalGateway) {
-        self.tier_texts = gateway.grant_tiers().unwrap_or_default();
+        // A failed tier read keeps the previous texts: a transport failure
+        // is display-stale, never an empty grant, and an empty grant still
+        // reads as empty only when the gateway says so.
+        if let Ok(tiers) = gateway.grant_tiers() {
+            self.tier_texts = tiers;
+        }
         let tiers = match self.assemble_tiers() {
             Ok(tiers) => tiers,
             Err(local) => {
