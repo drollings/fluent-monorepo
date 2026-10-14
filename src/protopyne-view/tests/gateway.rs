@@ -85,3 +85,80 @@ fn mock_gateway_serves_current_tier_texts() {
         "the window end is bare RFC 3339, not a quoted JSON string"
     );
 }
+
+#[test]
+fn symbol_info_view_round_trips_through_serde() {
+    let entry = SymbolInfoView {
+        symbol: "GLD".to_owned(),
+        name: "SPDR Gold Shares".to_owned(),
+        asset_class: "Funds".to_owned(),
+    };
+    let text = serde_json::to_string(&entry).expect("symbol info serializes");
+    let back: SymbolInfoView = serde_json::from_str(&text).expect("symbol info deserializes");
+    assert_eq!(back, entry, "the catalog row round-trips byte-for-byte");
+}
+
+#[test]
+fn mock_gateway_lists_gld_first_across_every_asset_class() {
+    let gateway = MockGateway::new();
+    let symbols = gateway.symbols().expect("mock symbols read");
+    assert_eq!(symbols[0].symbol, "GLD", "the terminal's default ticker heads the catalog");
+    let classes: std::collections::BTreeSet<&str> =
+        symbols.iter().map(|entry| entry.asset_class.as_str()).collect();
+    assert_eq!(
+        classes,
+        std::collections::BTreeSet::from(["Crypto", "Funds", "Futures", "Stocks"]),
+        "every asset class the Symbol Selection Modal tab-strips on is represented"
+    );
+    assert!(
+        symbols.iter().all(|entry| !entry.symbol.is_empty() && !entry.name.is_empty()),
+        "no catalog row ships a blank ticker or name"
+    );
+}
+
+#[test]
+fn mock_gateway_serves_bars_and_overlays_for_symbol_and_timeframe() {
+    let gateway = MockGateway::new();
+    let bars = gateway.chart_bars_for("GLD", "15M").expect("symbol-scoped bars read");
+    assert_eq!(
+        bars,
+        gateway.chart_bars().expect("canned bars read"),
+        "the mock's default symbol/timeframe slot is the canned slot"
+    );
+    let overlay = gateway
+        .chart_overlays_for("GLD", "15M", "ema", 10)
+        .expect("symbol-scoped overlay reads");
+    assert_eq!(
+        overlay,
+        gateway.chart_overlays("ema", 10).expect("canned overlay reads"),
+        "the mock's default symbol/timeframe slot is the canned slot"
+    );
+    assert_eq!(overlay.values.len(), bars.rows.len(), "overlay agrees with bars positionally");
+}
+
+#[test]
+fn symbol_scoped_reads_refuse_blank_identifiers() {
+    let gateway = MockGateway::new();
+    assert!(
+        matches!(
+            gateway.chart_bars_for("", "15M"),
+            Err(GatewayError::Malformed(_))
+        ),
+        "a blank symbol refuses as Malformed"
+    );
+    assert!(
+        matches!(
+            gateway.chart_bars_for("GLD", "   "),
+            Err(GatewayError::Malformed(_))
+        ),
+        "a whitespace-only timeframe refuses as Malformed"
+    );
+    assert!(
+        matches!(
+            gateway.chart_overlays_for("GLD", "", "ema", 10),
+            Err(GatewayError::Malformed(_))
+        ),
+        "a blank timeframe refuses on the overlay read too"
+    );
+}
+

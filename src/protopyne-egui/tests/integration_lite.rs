@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use chrono::TimeZone as _;
 use fluent_egui::PivotSide;
 use protopyne_chart_model::ChartRow;
+use protopyne_kernels::bars::NEUTRAL_BUY_RATIO;
 use protopyne_kernels::{
     FetchCounters, InputSet, LibraryId, LinkedModule, ModuleGraph, ModuleInput, PineEngine,
     PineRuntimeConfig, PineValue, RunOutcome, parse_pine_source, parse_program, resolve_imports,
@@ -471,3 +472,256 @@ fn momentum_palette_resolves_the_pine_input_hues() {
         .expect("default theme resolves");
     assert_eq!(palette, test_palette(), "theme defaults carry the barcolor inputs");
 }
+
+#[test]
+fn sub_pane_builds_four_bounded_oscillators_and_centered_delta_volume_histogram() {
+    let rows = ramp_rows();
+    let config = IntegrationLiteConfig::new()
+        .eit_alpha(0.14)
+        .fill_alpha(0.5)
+        .ribbon_health_k(RIBBON_HEALTH_K)
+        .ma_health_k(MA_HEALTH_K)
+        .delta_unit(BOUNDED_DELTA_UNIT)
+        .show_ribbon(true)
+        .build();
+    let pane: IntegrationLiteSubPane =
+        integration_lite_sub_pane(&rows, &config).expect("sub pane builds");
+    assert_eq!(pane.fast_bounded.len(), rows.len());
+    assert_eq!(pane.slow_bounded.len(), rows.len());
+    assert_eq!(pane.ribbon_health_bounded.len(), rows.len());
+    assert_eq!(pane.ma_health_bounded.len(), rows.len());
+    let band = crate::oscillators::BOUNDED_OSC_SCALE;
+    for series in [
+        &pane.fast_bounded,
+        &pane.slow_bounded,
+        &pane.ribbon_health_bounded,
+        &pane.ma_health_bounded,
+    ] {
+        for value in series.iter().flatten() {
+            assert!(value.abs() < band, "every readout stays bounded: {value}");
+        }
+    }
+    assert_eq!(pane.delta_volume.buy_top.len(), rows.len());
+    assert_eq!(pane.delta_volume.sell_bottom.len(), rows.len());
+    for (top, bottom) in
+        pane.delta_volume.buy_top.iter().zip(pane.delta_volume.sell_bottom.iter())
+    {
+        if let Some(value) = top {
+            assert!(*value >= 0.0 && *value <= BOUNDED_DELTA_UNIT, "buy top {value} in [0, unit]");
+        }
+        if let Some(value) = bottom {
+            assert!(*value >= 0.0 && *value <= BOUNDED_DELTA_UNIT, "sell bottom {value} in [0, unit]");
+        }
+    }
+    assert_eq!(
+        pane.delta_confidence,
+        DeltaConfidence::Low,
+        "shape-estimated splits read low confidence"
+    );
+    assert_eq!(pane.pivots.len(), 0, "a steady ramp fires no pivots: {:?}", pane.pivots);
+}
+
+#[test]
+fn integration_lite_config_derives_component_schema_and_validates_fail_closed() {
+    let config = IntegrationLiteConfig::new().build();
+    let names = config.field_names();
+    for expected in
+        ["eit_alpha", "fill_alpha", "ribbon_health_k", "ma_health_k", "delta_unit", "show_ribbon"]
+    {
+        assert!(names.contains(&expected), "{expected} is in the schema: {names:?}");
+    }
+    let fields = fluent_egui::schema_fields(&config.describe());
+    assert_eq!(fields.len(), names.len(), "the schema describes every field");
+    let (mut inputs, mut style, mut visibility) = (0_u32, 0_u32, 0_u32);
+    for field in &fields {
+        match fluent_egui::classify_schema_field(field) {
+            fluent_egui::SettingsTab::Inputs => inputs += 1,
+            fluent_egui::SettingsTab::Style => style += 1,
+            fluent_egui::SettingsTab::Visibility => visibility += 1,
+        }
+    }
+    assert!(
+        inputs > 0 && style > 0 && visibility > 0,
+        "fields partition across Inputs/Style/Visibility: {inputs}/{style}/{visibility}"
+    );
+    assert!(
+        IntegrationLiteConfig::new().eit_alpha(0.0).build().validate().is_err(),
+        "zero adaptive smoothing refuses"
+    );
+    assert!(
+        IntegrationLiteConfig::new().eit_alpha(1.5).build().validate().is_err(),
+        "divergent adaptive smoothing refuses"
+    );
+    assert!(
+        IntegrationLiteConfig::new().fill_alpha(2.0).build().validate().is_err(),
+        "fill strength above one refuses"
+    );
+    assert!(
+        IntegrationLiteConfig::new().ribbon_health_k(0.0).build().validate().is_err(),
+        "zero ribbon health gain refuses"
+    );
+    assert!(
+        IntegrationLiteConfig::new().ma_health_k(0.0).build().validate().is_err(),
+        "zero MA health gain refuses"
+    );
+    assert!(
+        IntegrationLiteConfig::new().delta_unit(0.0).build().validate().is_err(),
+        "zero delta unit refuses"
+    );
+    let rows = ramp_rows();
+    assert!(
+        integration_lite_sub_pane(&rows, &IntegrationLiteConfig::new().delta_unit(0.0).build())
+            .is_err(),
+        "the pane refuses a config its own validation refuses"
+    );
+}
+
+/// Inverse of [`crate::oscillators::squash_to_100`]: the unbounded reading
+/// whose squash equals `bounded`. Used to prove the bounded pivot threshold
+/// is bijective with the frozen Pine-scale threshold.
+fn unsquash_100(bounded: f64) -> f64 {
+    bounded / (1.0 - (bounded / crate::oscillators::BOUNDED_OSC_SCALE).abs())
+}
+
+/// Calibration (task value: alert fitness on the `[-100, +100]` band): the
+/// bounded pivot threshold must not fire on the flat/chop controls, must score
+/// full precision/recall on the known-reversal windows, and must be
+/// algebraically bijective with the frozen `±CALIBRATED_PIVOT_THRESHOLD` under
+/// the strictly monotonic `squash_to_100`.
+#[test]
+fn bounded_tanh_pivot_threshold_calibration_matches_unbounded_bijection() {
+    // Control group (must NOT fire): squashed flat and chop fast legs stay
+    // clear of the bounded threshold.
+    for (name, fast) in [("flat_40", flat_fast(40, 5.0)), ("chop_40", chop_fast(40))] {
+        let bounded = squash_series_to_100(&fast);
+        let marks = pivot_marks(&bounded, CALIBRATED_BOUNDED_PIVOT_THRESHOLD).expect("valid");
+        assert!(marks.is_empty(), "{name} control must not fire on the bounded band: {marks:?}");
+    }
+    for (name, (fast, expected)) in
+        [("rise_reversal", rise_reversal()), ("fall_recovery", fall_recovery())]
+    {
+        let bounded = squash_series_to_100(&fast);
+        // Target window: the bounded band scores full precision and recall.
+        let (precision, recall) =
+            precision_recall(&bounded, &expected, CALIBRATED_BOUNDED_PIVOT_THRESHOLD)
+                .expect("valid threshold");
+        assert!(
+            (precision - 1.0).abs() < 1e-12 && (recall - 1.0).abs() < 1e-12,
+            "{name} must score fully on the bounded band: {precision}/{recall}"
+        );
+        // Frozen threshold: crossing `±CALIBRATED_BOUNDED_PIVOT_THRESHOLD` on
+        // the bounded band is identical to crossing `±CALIBRATED_PIVOT_THRESHOLD`
+        // on the Pine band.
+        assert_eq!(
+            pivot_marks(&bounded, CALIBRATED_BOUNDED_PIVOT_THRESHOLD).expect("valid"),
+            pivot_marks(&fast, CALIBRATED_PIVOT_THRESHOLD).expect("valid"),
+            "{name}: the bounded threshold is bijective with the frozen Pine threshold"
+        );
+        // Candidate sweep: every bounded threshold marks exactly what its
+        // unbounded preimage marks, so the bijection holds across the band.
+        for candidate in [25.0, 50.0, 60.0, 66.666_666_666_666_67] {
+            let unbounded = unsquash_100(candidate);
+            assert_eq!(
+                pivot_marks(&bounded, candidate).expect("valid"),
+                pivot_marks(&fast, unbounded).expect("valid"),
+                "{name}: bounded {candidate} is bijective with unbounded {unbounded}"
+            );
+        }
+    }
+}
+
+/// A fully flat bar: no body and no range, so its shape carries no direction
+/// and the delta split reads the declared neutral prior.
+fn flat_row(time: i64, price: f64, volume: u64) -> ChartRow {
+    ChartRow { time, open: price, high: price, low: price, close: price, volume }
+}
+
+/// Calibration (task value: histogram scaling; producer-confidence vs.
+/// task-value separation): zero-volume bars split to exactly zero (never
+/// `NaN`), fully flat bars split neutrally at [`NEUTRAL_BUY_RATIO`], the
+/// histogram never exceeds [`BOUNDED_DELTA_UNIT`], and the price-derived
+/// pivot marks stay invariant to the volume-split confidence.
+#[test]
+fn delta_volume_histogram_controls_and_confidence_axis_separation() {
+    let unit = BOUNDED_DELTA_UNIT;
+    // Control: zero-volume bars. The split is exactly zero (no division by the
+    // absent volume), and the histogram reads zero height without NaN.
+    let zero_rows: Vec<ChartRow> = (0..8)
+        .map(|i| ChartRow { time: i, open: 100.0, high: 101.0, low: 99.0, close: 100.5, volume: 0 })
+        .collect();
+    let (buy, sell, confidence) = delta_splits(&zero_rows);
+    assert_eq!(confidence, DeltaConfidence::Low, "shape splits read producer-low");
+    assert!(buy.iter().all(|slot| *slot == Some(0.0)), "zero-volume buy split is zero: {buy:?}");
+    assert!(sell.iter().all(|slot| *slot == Some(0.0)), "zero-volume sell split is zero: {sell:?}");
+    let zero_view = delta_candle_view(&zero_rows, &buy, &sell, unit).expect("histogram builds");
+    for (top, bottom) in zero_view.buy_top.iter().zip(zero_view.sell_bottom.iter()) {
+        assert_eq!(*top, Some(0.0), "zero-volume buy top is exactly zero, never NaN");
+        assert_eq!(*bottom, Some(0.0), "zero-volume sell bottom is exactly zero, never NaN");
+    }
+    // Control: fully flat doji bars split 50/50 at the neutral prior, and the
+    // two legs are exact complements. (A doji with `open == close` but a
+    // non-degenerate range still carries a close-position bias, so the neutral
+    // control uses fully flat bars.)
+    let flat_rows: Vec<ChartRow> = (0..8).map(|i| flat_row(i, 100.0, 1_000)).collect();
+    let (flat_buy, flat_sell, _) = delta_splits(&flat_rows);
+    for slot in &flat_buy {
+        let ratio = slot.expect("finite split") / 1_000.0;
+        assert!(
+            (ratio - NEUTRAL_BUY_RATIO).abs() < 1e-12,
+            "flat bars read the neutral prior: {ratio}"
+        );
+    }
+    for (b, s) in flat_buy.iter().zip(flat_sell.iter()) {
+        assert_eq!(*b, *s, "a neutral split is its own complement");
+    }
+    // Boundedness: an arbitrary volume spike never pushes a bar past the unit,
+    // so the histogram stays strictly inside the oscillator viewport.
+    let spiked: Vec<ChartRow> = (0..40)
+        .map(|i| {
+            let volume = if i == 20 { 5_000_000 } else { 100 + i as u64 };
+            ChartRow { time: i, open: 100.0, high: 101.0, low: 99.0, close: 100.5, volume }
+        })
+        .collect();
+    let (spike_buy, spike_sell, _) = delta_splits(&spiked);
+    let spike_view =
+        delta_candle_view(&spiked, &spike_buy, &spike_sell, unit).expect("histogram builds");
+    for (top, bottom) in spike_view.buy_top.iter().zip(spike_view.sell_bottom.iter()) {
+        for value in [top, bottom].into_iter().flatten() {
+            assert!(*value >= 0.0 && *value <= unit, "histogram stays inside the unit: {value}");
+        }
+    }
+    // Axis separation: the pivots are price-derived task-value marks, so
+    // scaling every volume (a producer-confidence input) leaves them identical
+    // while the split confidence stays producer-low.
+    let closes: Vec<f64> = (0..40)
+        .map(|i| {
+            if i < 20 { 100.0 + 2.0 * f64::from(i) } else { 138.0 - 2.0 * f64::from(i - 20) }
+        })
+        .collect();
+    let make_rows = |scale: u64| -> Vec<ChartRow> {
+        closes
+            .iter()
+            .enumerate()
+            .map(|(i, close)| ChartRow {
+                time: i as i64,
+                open: close - 0.5,
+                high: close + 0.5,
+                low: close - 0.5,
+                close: *close,
+                volume: 1_000 * scale + i as u64,
+            })
+            .collect()
+    };
+    let config = IntegrationLiteConfig::new().delta_unit(unit).build();
+    let pane_a = integration_lite_sub_pane(&make_rows(1), &config).expect("pane a builds");
+    let pane_b = integration_lite_sub_pane(&make_rows(7), &config).expect("pane b builds");
+    assert!(
+        !pane_a.pivots.is_empty(),
+        "the reversal window fires bounded pivots: {:?}",
+        pane_a.pivots
+    );
+    assert_eq!(pane_a.pivots, pane_b.pivots, "pivots are invariant to the volume split");
+    assert_eq!(pane_a.delta_confidence, DeltaConfidence::Low);
+    assert_eq!(pane_b.delta_confidence, DeltaConfidence::Low);
+}
+

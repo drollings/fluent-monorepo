@@ -38,6 +38,77 @@ fn index_round_trip_inverts_tightly() {
 }
 
 #[test]
+fn x_offset_shifts_and_inverts_bar_slots_exactly() {
+    let base = viewport(PriceScaleMode::Normal, 90.0, 110.0); // 8 px spacing
+    for bad in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+        assert!(base.with_x_offset(bad).is_err(), "offset {bad} refuses");
+    }
+    assert_eq!(base.x_offset_px().to_bits(), 0.0f32.to_bits(), "default offset is zero");
+    assert_eq!(
+        base.index_to_x(5).to_bits(),
+        (5.0f32 * 8.0).to_bits(),
+        "zero offset is byte-identical to the raw scale"
+    );
+    let shifted = base.with_x_offset(12.0).expect("finite offset");
+    assert_eq!(shifted.x_offset_px().to_bits(), 12.0f32.to_bits());
+    for index in [0_usize, 1, 7, 100] {
+        assert_eq!(
+            shifted.index_to_x(index).to_bits(),
+            (base.index_to_x(index) + 12.0).to_bits(),
+            "offset shifts every slot by exactly x_offset_px"
+        );
+    }
+    for index in [0_usize, 3, 42] {
+        let back = shifted.x_to_index(shifted.index_to_x(index)).expect("finite x inverts");
+        assert!((back - index as f64).abs() <= 1e-6, "index {index} round-trips under offset");
+    }
+    // The continuous slot mapping agrees with the integer mapping at integers.
+    for index in [0_usize, 4, 9] {
+        assert_eq!(shifted.slot_to_x(index as f64).to_bits(), shifted.index_to_x(index).to_bits());
+    }
+}
+
+#[test]
+fn sync_time_axis_copies_bar_spacing_and_x_offset_only() {
+    let main = Viewport::new(PriceScaleMode::Normal, 90.0, 110.0, 400.0, 16.0, 90.0, false)
+        .expect("main builds")
+        .with_x_offset(24.0)
+        .expect("offset");
+    let sub = Viewport::new(PriceScaleMode::Logarithmic, 1.0, 1000.0, 120.0, 8.0, 1.0, false)
+        .expect("sub builds");
+    let synced = sub.sync_time_axis(&main).expect("sync succeeds");
+    assert_eq!(synced.scale().bar_spacing().to_bits(), 16.0f32.to_bits(), "spacing follows the source");
+    assert_eq!(synced.x_offset_px().to_bits(), 24.0f32.to_bits(), "offset follows the source");
+    // The sub-pane keeps its own price axis: range, mode, and height.
+    assert_eq!((synced.visible_range().min, synced.visible_range().max), (1.0, 1000.0));
+    assert!(matches!(synced.scale().mode(), PriceScaleMode::Logarithmic));
+    assert_eq!(synced.scale().height().to_bits(), 120.0f32.to_bits());
+    // The time axes now map identically.
+    for x in [0.0f32, 40.0, 160.0] {
+        assert_eq!(synced.x_to_index(x), main.x_to_index(x), "time axis matches at {x}");
+    }
+    for index in [0_usize, 3, 11] {
+        assert_eq!(synced.index_to_x(index).to_bits(), main.index_to_x(index).to_bits());
+    }
+}
+
+#[test]
+fn visible_bar_range_clamps_to_data_bounds() {
+    let base = viewport(PriceScaleMode::Normal, 90.0, 110.0); // 8 px spacing
+    assert_eq!(base.visible_bar_range(320.0, 40), (0, 40), "resting pane shows every bar");
+    let right = base.with_x_offset(16.0).expect("offset");
+    assert_eq!(right.visible_bar_range(320.0, 40), (0, 39), "positive offset drops the trailing bar");
+    let left = base.with_x_offset(-16.0).expect("offset");
+    assert_eq!(left.visible_bar_range(320.0, 40), (2, 40), "negative offset drops leading bars");
+    // Fully off-window clamps to an empty range at the edge.
+    let past_left = base.with_x_offset(400.0).expect("offset");
+    assert_eq!(past_left.visible_bar_range(320.0, 40), (0, 0), "past the left edge is empty");
+    let past_right = base.with_x_offset(-400.0).expect("offset");
+    assert_eq!(past_right.visible_bar_range(320.0, 40), (40, 40), "past the right edge is empty");
+    assert_eq!(base.visible_bar_range(320.0, 0), (0, 0), "no bars is empty");
+}
+
+#[test]
 fn non_finite_inputs_do_not_map() {
     let pane = viewport(PriceScaleMode::Normal, 90.0, 110.0);
     assert_eq!(pane.price_to_y(f64::NAN), None);

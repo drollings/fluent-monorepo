@@ -148,6 +148,17 @@ pub fn ribbon_style_key(bullish: bool) -> &'static str {
     if bullish { "bull" } else { "bear" }
 }
 
+/// Theme style key for one ribbon *fill* run.
+///
+/// The shaded band resolves to the dedicated `ribbon_bull`/`ribbon_bear`
+/// slots (teal/purple), never the candle `bull`/`bear` slots — a filled band
+/// and a candle body are different chart shapes with their own theme colors.
+/// [`ribbon_style_key`] keeps candle trend polarity.
+#[must_use]
+pub fn ribbon_fill_style_key(bullish: bool) -> &'static str {
+    if bullish { "ribbon_bull" } else { "ribbon_bear" }
+}
+
 /// Zero-based delta volume bars.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DeltaView {

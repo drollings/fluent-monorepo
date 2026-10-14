@@ -1,0 +1,331 @@
+//! Hot-slot control stack: registration into the pane plan, per-slot
+//! isolation, instant eye toggles, isolated bolt settings, abort on removal,
+//! and control hit-testing that never leaks to the canvas.
+
+use super::*;
+use fluent_wvr::{Describable, FieldAccess, WorkError, WorkOutput, WorkUnit};
+
+use crate::annotations::annotate_at;
+use crate::viewport::Viewport;
+use protopyne_chart_model::ChartRow;
+use protopyne_chart_scale::PriceScaleMode;
+
+// NOTE: `Arc`, `ArcIntern`, `Component`, `FieldError`, `WorkContext`,
+// `PanePlan`, `PaneHandle`, `SettingsTab`, and every `slot` item arrive via
+// `super::*` (the `slot` module's own imports).
+
+/// Domain-blind stand-in for one indicator's configuration: a calculation
+/// input, a paint knob, and a visibility toggle behind one schema.
+#[derive(Debug, Clone, FieldAccess, Describable)]
+struct ProbeConfig {
+    #[field(desc = "Lookback length", min = 1)]
+    length: i64,
+    #[field(desc = "Line color (#RRGGBB)")]
+    line_color: String,
+    #[field(desc = "Show the line")]
+    show_line: bool,
+}
+
+impl WorkUnit for ProbeConfig {
+    fn name(&self) -> &str {
+        "probe_config"
+    }
+
+    fn depends(&self) -> &[ArcIntern<str>] {
+        &[]
+    }
+
+    fn provides(&self) -> &[ArcIntern<str>] {
+        &[]
+    }
+
+    fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
+        Ok(WorkOutput::ok("probe ready"))
+    }
+}
+
+fluent_wvr::impl_component!(ProbeConfig);
+
+fn probe(length: i64) -> ProbeConfig {
+    ProbeConfig { length, line_color: "#20C8F0".to_owned(), show_line: true }
+}
+
+fn stacked() -> (HotSlotStack, PanePlan) {
+    let mut plan = PanePlan::new();
+    let mut stack = HotSlotStack::new();
+    stack
+        .insert(
+            "integration_lite",
+            "Integration Lite",
+            SlotAttachment::SubPane,
+            Box::new(probe(14)),
+            &["osc_fast", "osc_slow"],
+            &[],
+            0xA1,
+            &mut plan,
+        )
+        .expect("first slot inserts");
+    stack
+        .insert(
+            "fast_mas",
+            "Fast MAs",
+            SlotAttachment::MainOverlay,
+            Box::new(probe(8)),
+            &["fast_ma"],
+            &[],
+            0xB2,
+            &mut plan,
+        )
+        .expect("second slot inserts");
+    (stack, plan)
+}
+
+#[test]
+fn slot_config_exposes_the_settings_authority() {
+    let (mut stack, _) = stacked();
+    let config = stack.config("integration_lite").expect("a slotted config reads");
+    assert_eq!(config.get_field("length").expect("reads"), "14");
+    stack.set_slot_field("integration_lite", "length", "21").expect("the field edits");
+    assert_eq!(
+        stack.config("integration_lite").expect("reads").get_field("length").expect("reads"),
+        "21",
+        "the borrow sees the same config the settings modal edits"
+    );
+    assert!(stack.config("missing").is_none(), "unknown slots answer None");
+}
+
+#[test]
+fn hot_slot_stack_registers_and_isolates_independent_components() {
+    let (mut stack, plan) = stacked();
+    assert!(stack.contains("integration_lite"), "first slot registers");
+    assert!(stack.contains("fast_mas"), "second slot registers");
+    assert_eq!(stack.len(), 2);
+    for node in ["osc_fast", "osc_slow", "fast_ma"] {
+        assert!(plan.contains(node), "slot node {node} registers into the pane plan");
+    }
+    // One slot's field write never touches the other slot's component or
+    // fingerprint.
+    stack.set_slot_field("integration_lite", "length", "21").expect("field writes");
+    assert_eq!(stack.get_slot_field("integration_lite", "length").expect("reads"), "21");
+    assert_eq!(
+        stack.get_slot_field("fast_mas", "length").expect("reads"),
+        "8",
+        "the other slot keeps its own value"
+    );
+    assert_eq!(stack.slot_fingerprint("fast_mas"), Some(0xB2), "the other fingerprint holds");
+    // Unknown slots and fields refuse with the slot or field named.
+    assert!(stack.set_slot_field("missing", "length", "1").is_err(), "unknown slot refuses");
+    assert!(
+        stack.set_slot_field("integration_lite", "length", "0").is_err(),
+        "the field contract refuses below its minimum"
+    );
+    assert!(stack.get_slot_field("missing", "length").is_err(), "unknown slot reads refuse");
+    // Duplicates and blanks refuse instead of aliasing a live slot.
+    let mut plan = plan;
+    let refused = stack
+        .insert(
+            "integration_lite",
+            "Dupe",
+            SlotAttachment::MainOverlay,
+            Box::new(probe(1)),
+            &["dupe_node"],
+            &[],
+            0xC3,
+            &mut plan,
+        )
+        .expect_err("duplicate id refuses");
+    assert!(refused.to_string().contains("integration_lite"), "refusal names the id: {refused}");
+    assert!(
+        stack
+            .insert(
+                "",
+                "Blank",
+                SlotAttachment::MainOverlay,
+                Box::new(probe(1)),
+                &["blank_node"],
+                &[],
+                0xC3,
+                &mut plan,
+            )
+            .is_err(),
+        "blank ids refuse"
+    );
+}
+
+#[test]
+fn eye_toggle_flips_visibility_instantly_and_preserves_settings() {
+    let (mut stack, _) = stacked();
+    stack.set_slot_field("integration_lite", "length", "21").expect("configure");
+    stack.set_slot_field("integration_lite", "line_color", "#B42020").expect("configure");
+    stack.set_readouts(
+        "integration_lite",
+        vec![ReadoutValue { label: "fast".to_owned(), value: Some(42.0) }],
+    )
+    .expect("readouts set");
+    assert!(stack.visible("integration_lite").expect("reads"), "slots start shown");
+    stack.toggle_visibility("integration_lite").expect("eye toggles");
+    assert!(!stack.visible("integration_lite").expect("reads"), "the eye hides instantly");
+    stack.toggle_visibility("integration_lite").expect("eye toggles back");
+    assert!(stack.visible("integration_lite").expect("reads"), "the eye shows again");
+    // Every configured field and readout survives both flips.
+    assert_eq!(stack.get_slot_field("integration_lite", "length").expect("reads"), "21");
+    assert_eq!(
+        stack.get_slot_field("integration_lite", "line_color").expect("reads"),
+        "#B42020"
+    );
+    assert_eq!(
+        stack.readouts("integration_lite").expect("reads"),
+        &[ReadoutValue { label: "fast".to_owned(), value: Some(42.0) }],
+        "readouts survive the toggle"
+    );
+    assert!(stack.toggle_visibility("missing").is_err(), "unknown slots refuse the eye");
+}
+
+#[test]
+fn bolt_action_opens_isolated_tabbed_settings_modal() {
+    let (mut stack, _) = stacked();
+    assert!(!stack.settings_open("fast_mas"), "settings start closed");
+    stack.open_settings("fast_mas").expect("bolt opens");
+    assert!(stack.settings_open("fast_mas"), "the bolt opens fast_mas settings");
+    assert!(!stack.settings_open("integration_lite"), "the other slot stays closed");
+    // The modal cycles all three tabs on the open slot only.
+    for tab in SettingsTab::all() {
+        stack.set_settings_tab("fast_mas", tab).expect("tab selects");
+        assert_eq!(stack.settings_tab("fast_mas"), Some(tab), "the tab holds");
+    }
+    assert_eq!(stack.settings_tab("integration_lite"), Some(SettingsTab::Inputs), "untouched");
+    // Editing through the open slot never reaches the closed one.
+    stack.set_slot_field("fast_mas", "length", "34").expect("edits");
+    assert_eq!(stack.get_slot_field("fast_mas", "length").expect("reads"), "34");
+    assert_eq!(stack.get_slot_field("integration_lite", "length").expect("reads"), "14");
+    stack.close_settings("fast_mas").expect("bolt closes");
+    assert!(!stack.settings_open("fast_mas"), "the bolt closes");
+    assert!(stack.open_settings("missing").is_err(), "unknown slots refuse the bolt");
+}
+
+#[test]
+fn removing_slot_fires_stream_abort_on_pane_handle() {
+    let (mut stack, _) = stacked();
+    let handle = stack.handle("fast_mas").expect("handle reads");
+    assert!(!handle.is_closed(), "handles start live");
+    stack.remove("fast_mas").expect("removal unslots");
+    assert!(handle.is_closed(), "removal closes the pane handle");
+    assert!(!stack.contains("fast_mas"), "the slot is gone");
+    assert!(stack.contains("integration_lite"), "the other slot survives");
+    assert!(stack.remove("fast_mas").is_err(), "double removal refuses");
+}
+
+#[test]
+fn control_hit_test_distinguishes_eye_bolt_and_card_from_canvas() {
+    let (stack, _) = stacked();
+    let rects: Vec<SlotControlRect> = stack.control_rects();
+    assert_eq!(rects.len(), 2, "every slot owns one control rect triple");
+    let first: &HotSlot = stack.get(&rects[0].slot_id).expect("slotted");
+    for rect in &rects {
+        let eye = (rect.eye.center().x, rect.eye.center().y);
+        assert_eq!(
+            stack.hit_test_controls(eye),
+            Some(SlotControlHit::Eye(rect.slot_id.clone())),
+            "the eye zone names its slot"
+        );
+        let bolt = (rect.bolt.center().x, rect.bolt.center().y);
+        assert_eq!(
+            stack.hit_test_controls(bolt),
+            Some(SlotControlHit::Bolt(rect.slot_id.clone())),
+            "the bolt zone names its slot"
+        );
+        // Inside the card but clear of both controls: the card hit.
+        let card = (rect.card.min.x + 5.0, rect.card.center().y);
+        assert!(!rect.eye.contains(egui::Pos2::new(card.0, card.1)), "probe point is clear");
+        assert_eq!(
+            stack.hit_test_controls(card),
+            Some(SlotControlHit::Card(rect.slot_id.clone())),
+            "the card body names its slot"
+        );
+    }
+    // The chart canvas answers no control: pointer events there reach the
+    // candle annotation path untouched.
+    assert_eq!(stack.hit_test_controls((1000.0, 800.0)), None, "canvas clicks pass through");
+    assert_eq!(stack.hit_test_controls((-50.0, -50.0)), None, "off-stack clicks pass through");
+    assert_eq!(first.title(), "Integration Lite", "the slot reads back");
+}
+
+/// The stack and its settings modal render headlessly: an untouched frame
+/// raises no actions and refuses nothing, on every tab.
+#[test]
+fn paint_stack_and_settings_modal_render_headlessly() {
+    let (mut stack, _) = stacked();
+    let theme = ThemeConfig::default();
+    egui::__run_test_ui(|ui| {
+        let actions: Vec<HotSlotAction> =
+            paint_hot_slot_stack(ui, &mut stack, &theme).expect("the stack paints");
+        assert!(actions.is_empty(), "an untouched frame raises no actions: {actions:?}");
+    });
+    stack.open_settings("fast_mas").expect("bolt opens");
+    for tab in SettingsTab::all() {
+        stack.set_settings_tab("fast_mas", tab).expect("tab selects");
+        egui::__run_test_ui(|ui| {
+            let edits = paint_slot_settings_modal(ui, &mut stack, "fast_mas", &theme)
+                .expect("the modal paints");
+            assert_eq!(edits, FieldEdits::default(), "an untouched modal writes nothing");
+        });
+    }
+    egui::__run_test_ui(|ui| {
+        assert!(
+            paint_slot_settings_modal(ui, &mut stack, "integration_lite", &theme).is_err(),
+            "a closed modal refuses instead of painting another slot's schema"
+        );
+    });
+}
+
+/// A candle whose wick spans `[low, high]` with a finite close at every bar.
+fn wick_row(time: i64, high: f64, low: f64, close: f64) -> ChartRow {
+    ChartRow { time, open: close, high, low, close, volume: 1_000 }
+}
+
+/// Calibration (task value: operator click disambiguation): a candle wick
+/// lying directly under an eye or six-sided-bolt control is genuinely
+/// annotatable there, yet the overlay gate intercepts every control click
+/// before the canvas path, so no click behind the legend creates an
+/// annotation.
+#[test]
+fn overlay_control_clicks_never_leak_to_canvas_annotation() {
+    // A price pane whose wick band spans the whole control stack band, so a
+    // pointer under any control names a real candle the canvas would
+    // otherwise annotate.
+    let pane = Viewport::new(PriceScaleMode::Normal, 90.0, 110.0, 400.0, 8.0, 90.0, false)
+        .expect("valid pane");
+    let rows: Vec<ChartRow> =
+        (0..40).map(|i| wick_row(i64::from(i), 108.5, 104.0, 107.0)).collect();
+    let (stack, _) = stacked();
+    let mut false_annotations = 0_u32;
+    for rect in stack.control_rects() {
+        for point in [
+            (rect.eye.center().x, rect.eye.center().y),
+            (rect.bolt.center().x, rect.bolt.center().y),
+            (rect.card.min.x + 5.0, rect.card.center().y),
+        ] {
+            // The control zone intercepts the pointer...
+            assert!(
+                stack.hit_test_controls(point).is_some(),
+                "control zone at {point:?} intercepts the pointer"
+            );
+            // ...and a candle wick really is annotatable there, so the gate is
+            // load-bearing rather than vacuous.
+            assert!(
+                annotate_at(point, &pane, &rows).is_some(),
+                "a candle wick sits under the control at {point:?}"
+            );
+            // The shell routes a control hit away from the canvas: the canvas
+            // path never runs, so no annotation is created behind the overlay.
+            let routed = match stack.hit_test_controls(point) {
+                Some(_) => None,
+                None => annotate_at(point, &pane, &rows),
+            };
+            if routed.is_some() {
+                false_annotations += 1;
+            }
+        }
+    }
+    assert_eq!(false_annotations, 0, "no control click leaks to a canvas annotation");
+}

@@ -25,6 +25,15 @@ fn default_timeframe() -> String {
     "M15".to_owned()
 }
 
+/// The terminal's default ticker symbol.
+#[must_use]
+pub fn default_symbol() -> String {
+    DEFAULT_SYMBOL.to_owned()
+}
+
+/// Ticker symbol shown by default in the top-bar symbol dropdown.
+pub const DEFAULT_SYMBOL: &str = "GLD";
+
 /// Intraday bar timeframe key behind the terminal toolbar.
 ///
 /// Display-only selector: each key maps to bar spacing (for range-window
@@ -117,6 +126,11 @@ fn default_theme() -> String {
 )]
 #[builder(start_fn = new)]
 pub struct ChartConfig {
+    /// Ticker symbol selected in the top bar.
+    #[field(desc = "Ticker symbol selected in the top bar", max_len = 16)]
+    #[builder(default = default_symbol())]
+    #[serde(default = "default_symbol")]
+    pub symbol: String,
     /// Bar timeframe key selected in the toolbar.
     #[field(desc = "Bar timeframe key selected in the toolbar", max_len = 16)]
     #[builder(default = default_timeframe())]
@@ -181,6 +195,12 @@ impl ChartConfig {
     /// Fail-closed self-consistency check shared by schema writes
     /// (`execute`) and direct callers.
     pub fn validate(&self) -> Result<(), EguiError> {
+        if self.symbol.trim().is_empty() {
+            return Err(EguiError::InvalidParam {
+                what: "symbol".to_owned(),
+                reason: "symbol must not be empty".to_owned(),
+            });
+        }
         if self.timeframe.trim().is_empty() {
             return Err(EguiError::InvalidParam {
                 what: "timeframe".to_owned(),

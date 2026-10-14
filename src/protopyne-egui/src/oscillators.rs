@@ -8,6 +8,8 @@
 //! element-wise; colors never appear (series carry theme style keys resolved
 //! against the generic theme config at paint time).
 
+use protopyne_kernels::bars::fast_tanh;
+
 /// Oscillator identity for the normalization table.
 ///
 /// Mirrors the reference oscillator enum; the `Raw` variant covers
@@ -111,12 +113,14 @@ pub fn osc_params(kind: OscillatorKind) -> OscParams {
 ///
 /// Pure and total over finite inputs. Non-finite inputs propagate through the
 /// float arithmetic (for example `NaN` stays `NaN`); series-level callers
-/// turn non-finite results into holes.
+/// turn non-finite results into holes. The squash is the shared
+/// [`fast_tanh`] algebraic sigmoid (`x / (1 + |x|)`), so no second formula
+/// is written here.
 #[must_use]
 pub fn normalize_oscillator(raw: f64, kind: OscillatorKind) -> f64 {
     let params = osc_params(kind);
     let x = (raw + params.offset) * params.k;
-    x / (1.0 + x.abs()) * params.multiplier
+    fast_tanh(x) * params.multiplier
 }
 
 /// Map a raw oscillator series into the shared display band.
@@ -131,6 +135,56 @@ pub fn normalize_series(raw: &[Option<f64>], kind: OscillatorKind) -> Vec<Option
             slot.map(|value| normalize_oscillator(value, kind)).filter(|mapped| mapped.is_finite())
         })
         .collect()
+}
+
+/// Half-width of the bounded oscillator band: the zero-centered scale every
+/// sub-pane readout shares (`-100 .. +100`).
+pub const BOUNDED_OSC_SCALE: f64 = 100.0;
+/// Divisor of the bounded compressor: an unbounded reading of `±100` lands on
+/// `±CALIBRATED_BOUNDED_PIVOT_THRESHOLD` after squashing.
+pub const SQUASH_100_DIVISOR: f64 = 100.0;
+/// Pivot threshold on the bounded `[-100, +100]` band (task value: alert
+/// fitness). Bijective with [`crate::integration_lite::CALIBRATED_PIVOT_THRESHOLD`]
+/// (`100.0`) under [`squash_to_100`], so the same swing reversals fire.
+pub const CALIBRATED_BOUNDED_PIVOT_THRESHOLD: f64 = 50.0;
+
+/// Compress an unbounded reading onto the zero-centered `(-100, +100)` band.
+///
+/// Strictly monotonic and bijective from `(-∞, +∞)` onto
+/// `(-BOUNDED_OSC_SCALE, +BOUNDED_OSC_SCALE)` through the shared
+/// [`fast_tanh`]; maps `0.0 → 0.0` and `±SQUASH_100_DIVISOR →
+/// ±CALIBRATED_BOUNDED_PIVOT_THRESHOLD`. Non-finite inputs yield `NaN` (the
+/// series-level callers turn that into a hole).
+#[must_use]
+pub fn squash_to_100(value: f64) -> f64 {
+    fast_tanh(value / SQUASH_100_DIVISOR) * BOUNDED_OSC_SCALE
+}
+
+/// Compress a series onto the bounded band, preserving warmup holes.
+///
+/// Length-preserving: `None` stays `None`, and a non-finite squash result
+/// becomes a hole rather than a substituted value.
+#[must_use]
+pub fn squash_series_to_100(series: &[Option<f64>]) -> Vec<Option<f64>> {
+    series
+        .iter()
+        .map(|slot| slot.map(squash_to_100).filter(|mapped| mapped.is_finite()))
+        .collect()
+}
+
+/// Map one raw oscillator reading onto the bounded `[-100, +100]` band.
+///
+/// Composes the frozen per-kind squash with the bounded compressor, so the
+/// bounded reading is `squash_to_100(normalize_oscillator(raw, kind))`.
+#[must_use]
+pub fn normalize_oscillator_bounded(raw: f64, kind: OscillatorKind) -> f64 {
+    squash_to_100(normalize_oscillator(raw, kind))
+}
+
+/// Map a raw oscillator series onto the bounded band, preserving warmup holes.
+#[must_use]
+pub fn normalize_series_bounded(raw: &[Option<f64>], kind: OscillatorKind) -> Vec<Option<f64>> {
+    squash_series_to_100(&normalize_series(raw, kind))
 }
 
 #[cfg(test)]

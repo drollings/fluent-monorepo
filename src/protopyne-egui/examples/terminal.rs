@@ -23,7 +23,10 @@ use std::path::PathBuf;
 
 use fluent_wvr::Describable;
 use protopyne_egui::views::{HealthModel, PortfolioModel, ViewsBundle, load_bundle};
-use protopyne_egui::{GrantFormState, ReplayScrub, ScrubOutcome, paint_grant_form, paint_replay_scrub};
+use protopyne_egui::{
+    ChartWorkspace, GrantFormState, ReplayScrub, ScrubOutcome, paint_grant_form,
+    paint_replay_scrub, paint_workspace,
+};
 use protopyne_server::{ServerConfig, ServerHandle, serve};
 use protopyne_view::{
     ChartBars, GatewayError, MockGateway, OverlaySeries, TerminalGateway,
@@ -127,6 +130,9 @@ async fn boot(path: PathBuf) -> Result<ServerHandle, String> {
 
 struct TerminalApp {
     gateway: Box<dyn TerminalGateway>,
+    /// The shared chart workspace, booted over the same gateway: the chart
+    /// canvas and the gateway dashboard render side by side.
+    workspace: Result<ChartWorkspace, String>,
     bundle: Result<ViewsBundle, String>,
     charts: Result<ChartReads, String>,
     /// Journal rows pre-rendered in provenance order at refresh time: the
@@ -143,6 +149,7 @@ struct TerminalApp {
 
 impl TerminalApp {
     fn new(gateway: Box<dyn TerminalGateway>) -> Self {
+        let workspace = ChartWorkspace::with_gateway(&*gateway).map_err(|e| e.to_string());
         let (replay, replay_error) = match ReplayScrub::standard() {
             Ok(scrub) => (Some(scrub), None),
             // A topology that cannot be built is a refused scrub, reported in
@@ -151,6 +158,7 @@ impl TerminalApp {
         };
         let mut app = Self {
             gateway,
+            workspace,
             bundle: Err("no pull yet".to_owned()),
             charts: Err("no pull yet".to_owned()),
             journal_lines: Vec::new(),
@@ -203,6 +211,19 @@ impl eframe::App for TerminalApp {
             });
         });
         egui::CentralPanel::default().show(ui, |ui| {
+            // The shared workspace canvas over the same gateway: top bar,
+            // candles, hot-slot legend, and the oscillator sub-pane.
+            match &mut self.workspace {
+                Ok(workspace) => {
+                    if let Err(error) = paint_workspace(ui, workspace, Some(&*self.gateway)) {
+                        ui.colored_label(egui::Color32::RED, format!("workspace refused: {error}"));
+                    }
+                }
+                Err(reason) => {
+                    ui.colored_label(egui::Color32::RED, format!("workspace refused: {reason}"));
+                }
+            }
+            ui.separator();
             let bundle = match &self.bundle {
                 Ok(bundle) => bundle,
                 Err(reason) => {
@@ -360,6 +381,20 @@ async fn main() {
             .and_then(|mut scrub| {
                 scrub.ingest(&*gateway).map(|()| scrub).map_err(|e| e.to_string())
             });
+        match ChartWorkspace::with_gateway(&*gateway) {
+            Ok(workspace) => println!(
+                "protopyne-terminal check: workspace symbol={} timeframe={} bars={} slots=[{}] cached={}",
+                workspace.active_symbol(),
+                workspace.timeframe().label(),
+                workspace.rows().len(),
+                workspace.slot_ids().join(","),
+                workspace.cached_series(),
+            ),
+            Err(e) => {
+                eprintln!("protopyne-terminal: workspace refused: {e}");
+                std::process::exit(1);
+            }
+        }
         match (load_bundle(&*gateway), pull_charts(&*gateway), scrub) {
             (Ok(bundle), Ok(charts), Ok(replay)) => {
                 for line in check_lines(&bundle, &charts, &replay) {

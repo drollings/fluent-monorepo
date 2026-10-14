@@ -38,6 +38,16 @@ fn ribbon_edges_order_and_keys() {
 }
 
 #[test]
+fn ribbon_fill_style_keys_map_to_teal_and_purple_slots() {
+    // The shaded band resolves to its own theme slots, teal on bull runs and
+    // purple on bear, while candle polarity keeps the bull/bear slots.
+    assert_eq!(ribbon_fill_style_key(true), "ribbon_bull");
+    assert_eq!(ribbon_fill_style_key(false), "ribbon_bear");
+    assert_eq!(ribbon_style_key(true), "bull");
+    assert_eq!(ribbon_style_key(false), "bear");
+}
+
+#[test]
 fn ribbon_refuses_mismatched_lengths_and_bad_alpha() {
     assert!(ribbon_view(&[Some(1.0)], &[Some(1.0), Some(2.0)], 0.5).is_err());
     for bad in [f64::NAN, -0.1, 1.1] {

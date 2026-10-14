@@ -14,9 +14,9 @@
 pub mod gateway;
 pub mod views;
 
-pub use gateway::{GatewayError, MockGateway, TerminalGateway};
+pub use gateway::{GatewayError, MockGateway, TerminalGateway, validate_symbol_timeframe};
 pub use views::{
     ArmResponse, ChartBar, ChartBars, CommandStatus, DenyCount, HealthView, JournalRowView,
     OverlaySeries, PortfolioView, PositionView, PreviewResponse, ProposalView, ReplayStepView,
-    ReplayView, WorstCase,
+    ReplayView, SymbolInfoView, WorstCase,
 };

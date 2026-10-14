@@ -25,7 +25,9 @@ use protopyne_chart_model::{Annotation, AnnotationStyle, ChartRow};
 use crate::config::ThemeConfig;
 use crate::error::EguiError;
 use crate::hittest::{Crosshair, crosshair_pixel};
-use crate::view::{DeltaView, PivotMark, PivotSide, RibbonView, ribbon_style_key};
+use crate::view::{
+    DeltaView, PivotMark, PivotSide, RibbonView, ribbon_fill_style_key, ribbon_style_key,
+};
 use crate::viewport::{BreakLine, Viewport};
 
 /// One candle's screen geometry plus its tint keys.
@@ -411,8 +413,8 @@ pub fn paint_ribbon(
     alpha: f32,
 ) -> Result<(), EguiError> {
     let clamped = alpha.clamp(0.0, 1.0);
-    let bull = resolve_color(theme, ribbon_style_key(true))?;
-    let bear = resolve_color(theme, ribbon_style_key(false))?;
+    let bull = resolve_color(theme, ribbon_fill_style_key(true))?;
+    let bear = resolve_color(theme, ribbon_fill_style_key(false))?;
     for (band, trend) in bands.iter().zip(bullish.iter()) {
         let Some(strip) = band else {
             continue;
@@ -586,8 +588,8 @@ pub fn paint_ribbon_fill(
 ) -> Result<(), EguiError> {
     let clamped = alpha.clamp(0.0, 1.0);
     let opacity = (clamped * 255.0).round().clamp(0.0, 255.0) as u8;
-    let bull = resolve_color(theme, ribbon_style_key(true))?;
-    let bear = resolve_color(theme, ribbon_style_key(false))?;
+    let bull = resolve_color(theme, ribbon_fill_style_key(true))?;
+    let bear = resolve_color(theme, ribbon_fill_style_key(false))?;
     for polygon in polygons {
         let Some(points) = paintable_points(polygon) else {
             continue;
@@ -958,6 +960,343 @@ pub fn paint_session_breaks(
             stroke,
         );
     }
+    Ok(())
+}
+
+/// Shift pane-local candle geometry into UI space by a pane origin.
+///
+/// Geometry here is pane-local (origin at the pane's top-left); every emitter
+/// draws exactly the coordinates it is given, so a frame that lays panes side
+/// by side shifts each layer by its own origin first. `origin.0` moves x,
+/// `origin.1` moves every y leg.
+#[must_use]
+pub fn translate_candles(geoms: Vec<CandleGeom>, origin: (f32, f32)) -> Vec<CandleGeom> {
+    geoms
+        .into_iter()
+        .map(|mut geom| {
+            geom.x += origin.0;
+            geom.open_y += origin.1;
+            geom.high_y += origin.1;
+            geom.low_y += origin.1;
+            geom.close_y += origin.1;
+            geom
+        })
+        .collect()
+}
+
+/// Shift pane-local fill runs into UI space (see [`translate_candles`]).
+#[must_use]
+pub fn translate_polygons(polygons: Vec<RibbonPolygon>, origin: (f32, f32)) -> Vec<RibbonPolygon> {
+    polygons
+        .into_iter()
+        .map(|mut polygon| {
+            for point in &mut polygon.points {
+                point.0 += origin.0;
+                point.1 += origin.1;
+            }
+            polygon
+        })
+        .collect()
+}
+
+/// Shift pane-local session gridlines into UI space: a gridline has one x
+/// coordinate and spans the pane height at paint time, so only `dx` moves it.
+#[must_use]
+pub fn translate_breaks(lines: Vec<BreakLine>, dx: f32) -> Vec<BreakLine> {
+    lines
+        .into_iter()
+        .map(|mut line| {
+            line.x += dx;
+            line
+        })
+        .collect()
+}
+
+/// Shift pane-local series points into UI space (see [`translate_candles`]).
+/// Holes stay holes.
+#[must_use]
+pub fn translate_points(
+    points: Vec<Option<(f32, f32)>>,
+    origin: (f32, f32),
+) -> Vec<Option<(f32, f32)>> {
+    points
+        .into_iter()
+        .map(|point| point.map(|(x, y)| (x + origin.0, y + origin.1)))
+        .collect()
+}
+
+/// Shift pane-local pivot dots into UI space (see [`translate_candles`]).
+#[must_use]
+pub fn translate_dots(dots: Vec<PivotDot>, origin: (f32, f32)) -> Vec<PivotDot> {
+    dots
+        .into_iter()
+        .map(|mut dot| {
+            dot.x += origin.0;
+            dot.y += origin.1;
+            dot
+        })
+        .collect()
+}
+
+/// Shift pane-local markers into UI space (see [`translate_candles`]).
+#[must_use]
+pub fn translate_markers(dots: Vec<MarkerDot>, origin: (f32, f32)) -> Vec<MarkerDot> {
+    dots
+        .into_iter()
+        .map(|mut dot| {
+            dot.x += origin.0;
+            dot.y += origin.1;
+            dot
+        })
+        .collect()
+}
+
+/// Shift pane-local delta bars into UI space (see [`translate_candles`]).
+/// Both legs and the zero line share the vertical shift; holed legs stay
+/// holed.
+#[must_use]
+pub fn translate_delta_bars(bars: Vec<DeltaBarGeom>, origin: (f32, f32)) -> Vec<DeltaBarGeom> {
+    bars
+        .into_iter()
+        .map(|mut bar| {
+            bar.x += origin.0;
+            bar.buy_y = bar.buy_y.map(|y| y + origin.1);
+            bar.sell_y = bar.sell_y.map(|y| y + origin.1);
+            bar.zero_y += origin.1;
+            bar
+        })
+        .collect()
+}
+
+/// Samples per eye-lid arc. Fixed so identical inputs build identical
+/// geometry on every frame.
+const LID_ARC_SAMPLES: usize = 9;
+
+/// One eye control icon: lid arcs above and below center, a pupil on
+/// center, and a slash exactly when the slot it toggles is hidden.
+#[derive(Debug, Clone, PartialEq)]
+pub struct EyeIconGeom {
+    /// Icon center in UI space.
+    pub center: (f32, f32),
+    /// Half-width of the lids; the lids' vertical semi-axis is `0.6` of this.
+    pub radius: f32,
+    /// Upper lid polyline, left corner to right corner, never below center.
+    pub upper_arc: Vec<(f32, f32)>,
+    /// Lower lid polyline, left corner to right corner, never above center.
+    pub lower_arc: Vec<(f32, f32)>,
+    /// Pupil center (always the icon center).
+    pub pupil_center: (f32, f32),
+    /// Pupil radius (`0.35` of the lid radius).
+    pub pupil_radius: f32,
+    /// Slash across the lids; present exactly when `visible` is `false`.
+    pub slash: Option<((f32, f32), (f32, f32))>,
+}
+
+/// Build eye geometry around `center` at `radius`.
+///
+/// The lids are ellipse arcs (`0.6` vertical squash) pinned exactly to the
+/// horizontal through center at both corners, so the upper lid never dips
+/// below center and the lower lid never rises above it. Refuses non-finite
+/// centers, non-finite radii, and radii at or below zero.
+#[must_use]
+pub fn eye_icon_geom(center: (f32, f32), radius: f32, visible: bool) -> Option<EyeIconGeom> {
+    if !center.0.is_finite() || !center.1.is_finite() || !radius.is_finite() || radius <= 0.0 {
+        return None;
+    }
+    let lid = |start: f64, end: f64| {
+        let mut arc: Vec<(f32, f32)> = (0..LID_ARC_SAMPLES)
+            .map(|step| {
+                let angle =
+                    start + (end - start) * step as f64 / (LID_ARC_SAMPLES - 1) as f64;
+                (
+                    center.0 + radius * angle.cos() as f32,
+                    center.1 + 0.6 * radius * angle.sin() as f32,
+                )
+            })
+            .collect();
+        // Pin both corners exactly onto the horizontal: the trigonometric
+        // endpoints land within a rounding quantum of center, never on it.
+        let last = arc.len() - 1;
+        arc[0] = (center.0 - radius, center.1);
+        arc[last] = (center.0 + radius, center.1);
+        arc
+    };
+    let slant = 0.7 * radius;
+    Some(EyeIconGeom {
+        center,
+        radius,
+        upper_arc: lid(std::f64::consts::PI, 2.0 * std::f64::consts::PI),
+        lower_arc: lid(std::f64::consts::PI, 0.0),
+        pupil_center: center,
+        pupil_radius: 0.35 * radius,
+        slash: (!visible).then_some((
+            (center.0 - slant, center.1 + slant),
+            (center.0 + slant, center.1 - slant),
+        )),
+    })
+}
+
+/// One six-sided bolt control icon: six rim vertices plus an inner bore.
+#[derive(Debug, Clone, PartialEq)]
+pub struct HexBoltIconGeom {
+    /// Icon center in UI space.
+    pub center: (f32, f32),
+    /// Rim distance each vertex sits at.
+    pub radius: f32,
+    /// Six hexagon vertices at `radius` from center, every 60 degrees.
+    pub vertices: [(f32, f32); 6],
+    /// Bore center (always the icon center).
+    pub bore_center: (f32, f32),
+    /// Bore radius (`0.45` of the rim radius).
+    pub bore_radius: f32,
+}
+
+/// Build six-sided bolt geometry around `center` at `radius`.
+///
+/// Refuses non-finite centers, non-finite radii, and radii at or below zero.
+#[must_use]
+pub fn hex_bolt_icon_geom(center: (f32, f32), radius: f32) -> Option<HexBoltIconGeom> {
+    if !center.0.is_finite() || !center.1.is_finite() || !radius.is_finite() || radius <= 0.0 {
+        return None;
+    }
+    let mut vertices = [(0.0f32, 0.0f32); 6];
+    for (step, vertex) in vertices.iter_mut().enumerate() {
+        let angle = step as f64 * std::f64::consts::PI / 3.0;
+        *vertex = (
+            center.0 + radius * angle.cos() as f32,
+            center.1 + radius * angle.sin() as f32,
+        );
+    }
+    Some(HexBoltIconGeom {
+        center,
+        radius,
+        vertices,
+        bore_center: center,
+        bore_radius: 0.45 * radius,
+    })
+}
+
+/// One search control icon: a lens circle plus a handle leaving its rim.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SearchIconGeom {
+    /// Icon center in UI space (also the lens center).
+    pub center: (f32, f32),
+    /// Outer icon bound; the lens and handle stay inside it.
+    pub radius: f32,
+    /// Lens center (always the icon center).
+    pub lens_center: (f32, f32),
+    /// Lens radius (`0.55` of the icon radius).
+    pub lens_radius: f32,
+    /// Handle segment: heel on the lens rim, tip toward the icon bound.
+    pub handle: ((f32, f32), (f32, f32)),
+}
+
+/// Build search geometry around `center` at `radius`.
+///
+/// The handle leaves the lens rim at 45 degrees down-right. Refuses
+/// non-finite centers, non-finite radii, and radii at or below zero.
+#[must_use]
+pub fn search_icon_geom(center: (f32, f32), radius: f32) -> Option<SearchIconGeom> {
+    if !center.0.is_finite() || !center.1.is_finite() || !radius.is_finite() || radius <= 0.0 {
+        return None;
+    }
+    let lens_radius = 0.55 * radius;
+    let unit = std::f64::consts::FRAC_1_SQRT_2 as f32;
+    let heel = (center.0 + unit * lens_radius, center.1 + unit * lens_radius);
+    let reach = lens_radius + 0.6 * radius;
+    Some(SearchIconGeom {
+        center,
+        radius,
+        lens_center: center,
+        lens_radius,
+        handle: (heel, (center.0 + unit * reach, center.1 + unit * reach)),
+    })
+}
+
+/// Stroke one polyline through `points`; an empty run draws nothing.
+fn stroke_polyline(painter: &egui::Painter, points: &[(f32, f32)], stroke: egui::Stroke) {
+    for pair in points.windows(2) {
+        painter.line_segment(
+            [egui::Pos2::new(pair[0].0, pair[0].1), egui::Pos2::new(pair[1].0, pair[1].1)],
+            stroke,
+        );
+    }
+}
+
+/// Paint an eye icon through one theme key: lid outlines, a filled pupil,
+/// and the slash when the geometry carries one.
+///
+/// A theme that cannot resolve `style_key` refuses with the key named —
+/// icons never paint a silent default color.
+pub fn paint_eye_icon(
+    painter: &egui::Painter,
+    geom: &EyeIconGeom,
+    style_key: &str,
+    theme: &ThemeConfig,
+) -> Result<(), EguiError> {
+    let color = resolve_color(theme, style_key)?;
+    let stroke = egui::Stroke::new(1.5, color);
+    stroke_polyline(painter, &geom.upper_arc, stroke);
+    stroke_polyline(painter, &geom.lower_arc, stroke);
+    painter.circle_filled(
+        egui::Pos2::new(geom.pupil_center.0, geom.pupil_center.1),
+        geom.pupil_radius,
+        color,
+    );
+    if let Some((from, to)) = geom.slash {
+        painter.line_segment(
+            [egui::Pos2::new(from.0, from.1), egui::Pos2::new(to.0, to.1)],
+            stroke,
+        );
+    }
+    Ok(())
+}
+
+/// Paint a six-sided bolt icon through one theme key: a hex outline plus a
+/// bore ring. Refuses exactly like [`paint_eye_icon`].
+pub fn paint_hex_bolt_icon(
+    painter: &egui::Painter,
+    geom: &HexBoltIconGeom,
+    style_key: &str,
+    theme: &ThemeConfig,
+) -> Result<(), EguiError> {
+    let color = resolve_color(theme, style_key)?;
+    let stroke = egui::Stroke::new(1.5, color);
+    let mut rim: Vec<(f32, f32)> = geom.vertices.to_vec();
+    if let Some(first) = geom.vertices.first() {
+        rim.push(*first);
+    }
+    stroke_polyline(painter, &rim, stroke);
+    painter.circle_stroke(
+        egui::Pos2::new(geom.bore_center.0, geom.bore_center.1),
+        geom.bore_radius,
+        stroke,
+    );
+    Ok(())
+}
+
+/// Paint a search icon through one theme key: a lens ring plus its handle.
+/// Refuses exactly like [`paint_eye_icon`].
+pub fn paint_search_icon(
+    painter: &egui::Painter,
+    geom: &SearchIconGeom,
+    style_key: &str,
+    theme: &ThemeConfig,
+) -> Result<(), EguiError> {
+    let color = resolve_color(theme, style_key)?;
+    let stroke = egui::Stroke::new(1.5, color);
+    painter.circle_stroke(
+        egui::Pos2::new(geom.lens_center.0, geom.lens_center.1),
+        geom.lens_radius,
+        stroke,
+    );
+    painter.line_segment(
+        [
+            egui::Pos2::new(geom.handle.0.0, geom.handle.0.1),
+            egui::Pos2::new(geom.handle.1.0, geom.handle.1.1),
+        ],
+        stroke,
+    );
     Ok(())
 }
 

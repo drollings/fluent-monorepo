@@ -156,6 +156,72 @@ fn normalize_series_turns_non_finite_into_holes() {
 }
 
 #[test]
+fn squash_to_100_bounds_all_finite_inputs_within_signed_100_and_centers_zero() {
+    assert!((BOUNDED_OSC_SCALE - 100.0).abs() < 1e-12, "the bounded band half-width is 100");
+    assert!((SQUASH_100_DIVISOR - 100.0).abs() < 1e-12, "the compressor divisor is 100");
+    assert!(
+        (CALIBRATED_BOUNDED_PIVOT_THRESHOLD - 50.0).abs() < 1e-12,
+        "the bounded pivot threshold"
+    );
+    assert!(squash_to_100(0.0).abs() < 1e-12, "zero stays centered");
+    assert!(
+        (squash_to_100(SQUASH_100_DIVISOR) - CALIBRATED_BOUNDED_PIVOT_THRESHOLD).abs() < 1e-12,
+        "the Pine threshold maps exactly onto the bounded pivot rail"
+    );
+    assert!(
+        (squash_to_100(-SQUASH_100_DIVISOR) + CALIBRATED_BOUNDED_PIVOT_THRESHOLD).abs() < 1e-12,
+        "the negative rail mirrors"
+    );
+    for kind in ALL_KINDS {
+        for raw in RAW_PROBE {
+            let bounded = normalize_oscillator_bounded(raw, kind);
+            assert!(
+                bounded.abs() < BOUNDED_OSC_SCALE,
+                "{kind:?} at {raw} must stay inside the band, got {bounded}"
+            );
+        }
+    }
+    for value in [-1.0e9, -1.0, -0.5, 0.0, 0.5, 1.0, 1.0e9] {
+        assert!(
+            squash_to_100(value).abs() < BOUNDED_OSC_SCALE,
+            "finite {value} stays strictly inside the band"
+        );
+    }
+}
+
+#[test]
+fn normalize_series_bounded_preserves_holes_and_stays_within_signed_100() {
+    assert_eq!(
+        squash_series_to_100(&[Some(100.0), None, Some(-100.0)]),
+        vec![Some(50.0), None, Some(-50.0)],
+        "holes stay holes and the rails map exactly"
+    );
+    let raw = vec![None, None, Some(50.0), Some(100.0), None, Some(0.0)];
+    let out = normalize_series_bounded(&raw, OscillatorKind::Rsi);
+    assert_eq!(out.len(), raw.len(), "length is preserved element-wise");
+    assert_eq!(&out[..2], &[None, None], "leading warmup survives");
+    assert_eq!(out[4], None, "interior holes survive");
+    for (index, slot) in raw.iter().enumerate() {
+        match slot {
+            None => assert_eq!(out[index], None),
+            Some(value) => assert_eq!(
+                out[index],
+                Some(normalize_oscillator_bounded(*value, OscillatorKind::Rsi)),
+                "each finite reading squashes element-wise"
+            ),
+        }
+    }
+    for value in out.iter().flatten() {
+        assert!(value.abs() < BOUNDED_OSC_SCALE, "bounded readout: {value}");
+    }
+    assert_eq!(
+        normalize_series_bounded(&[Some(f64::NAN)], OscillatorKind::Rsi),
+        vec![None],
+        "a non-finite reading becomes a hole, never a substitute"
+    );
+}
+
+#[test]
 fn oscillator_kind_names_round_trip() {
     for kind in ALL_KINDS {
         let name = oscillator_kind_name(kind);

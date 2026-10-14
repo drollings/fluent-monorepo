@@ -14,17 +14,26 @@
 //! measured evidence lives in the checked-in calibration report beside the
 //! fixtures — this module carries only the frozen wiring.
 
+use fluent_wvr::prelude::*;
+use fluent_wvr::{Describable, FieldAccess};
 use protopyne_chart_model::{ChartRow, DisplayOnly};
-use protopyne_kernels::bars::fast_tanh;
-use protopyne_kernels::indicator::{OwnedOhlcv, ParamSet, builtin_registry};
-use protopyne_kernels::market_context::health_mas;
+use protopyne_kernels::bars::{DeltaConfidence, estimate_delta_volume_estimated, fast_tanh};
+use protopyne_kernels::indicator::{OwnedOhlcv, ParamSet};
+
+use crate::topology::{kernel_preview_frame, kernel_series};
+use protopyne_kernels::market_context::{HEALTH_K, health_mas};
+use protopyne_types::{Validate, check_for_execute, valid_output};
 
 use fluent_egui::EguiError;
 use fluent_egui::{
-    PivotMark, RibbonView, ThemeConfig, pivot_marks, resolve_color, ribbon_view,
+    DeltaView, PivotMark, RibbonView, ThemeConfig, delta_candle_view, pivot_marks, resolve_color,
+    ribbon_view,
 };
 
-use crate::oscillators::{OscillatorKind, normalize_series};
+use crate::oscillators::{
+    CALIBRATED_BOUNDED_PIVOT_THRESHOLD, OscillatorKind, normalize_series,
+    normalize_series_bounded, squash_series_to_100,
+};
 
 /// Kernel length for the fast/slow raw oscillators (freeze-pinned: the Pine
 /// freeze drivers evaluate `normalizeOsc` at length 14 on both arms).
@@ -52,42 +61,22 @@ pub struct LiteNative {
     pub signal: Vec<Option<f64>>,
 }
 
-/// Carry a kernel refusal across the crate boundary without a second error type.
-fn describe_kernel(error: &protopyne_kernels::KernelError) -> EguiError {
-    EguiError::Dependency { reason: error.to_string() }
-}
-
-/// Run one kernel batch over a frame, or refuse a missing kernel.
-fn kernel_series(
-    kernel_id: &str,
-    params: &ParamSet,
-    frame: &OwnedOhlcv,
-) -> Result<Vec<Option<f64>>, EguiError> {
-    let registry = builtin_registry().map_err(|e| describe_kernel(&e))?;
-    let kernel = registry.get(kernel_id).ok_or_else(|| EguiError::Dependency {
-        reason: format!("kernel not registered: {kernel_id}"),
-    })?;
-    kernel.batch(&frame.views(), params).map(|result| result.values).map_err(|e| describe_kernel(&e))
-}
-
-/// Frame of display legs for kernel batch evaluation.
+/// One synthetic close-only frame from a display series.
 ///
-/// Display provenance is fenced: every leg enters as [`DisplayOnly`] and is
-/// revealed only to feed the kernel preview — the `reveal` call is the
-/// auditable escape, and nothing here converts toward a decision type.
-fn frame_of_rows(rows: &[ChartRow]) -> OwnedOhlcv {
-    let open: Vec<DisplayOnly<f64>> = rows.iter().map(|row| DisplayOnly::new(row.open)).collect();
-    let high: Vec<DisplayOnly<f64>> = rows.iter().map(|row| DisplayOnly::new(row.high)).collect();
-    let low: Vec<DisplayOnly<f64>> = rows.iter().map(|row| DisplayOnly::new(row.low)).collect();
-    let close: Vec<DisplayOnly<f64>> = rows.iter().map(|row| DisplayOnly::new(row.close)).collect();
-    let volume: Vec<DisplayOnly<f64>> =
-        rows.iter().map(|row| DisplayOnly::new(row.volume as f64)).collect();
+/// Every OHLC leg carries the value (holes as `NaN`) and volume is the
+/// synthetic zero the smoothing kernels ignore. The values enter through the
+/// [`DisplayOnly`] fence and are revealed exactly here — the auditable escape
+/// for a display-descended preview frame. This is the single construction the
+/// pane and the momentum inputs share, so the fence is named once.
+fn synth_close_frame(values: &[Option<f64>]) -> OwnedOhlcv {
+    let revealed: Vec<f64> =
+        values.iter().map(|slot| DisplayOnly::new(slot.unwrap_or(f64::NAN)).reveal()).collect();
     OwnedOhlcv {
-        open: open.into_iter().map(DisplayOnly::reveal).collect(),
-        high: high.into_iter().map(DisplayOnly::reveal).collect(),
-        low: low.into_iter().map(DisplayOnly::reveal).collect(),
-        close: close.into_iter().map(DisplayOnly::reveal).collect(),
-        volume: volume.into_iter().map(DisplayOnly::reveal).collect(),
+        open: revealed.clone(),
+        high: revealed.clone(),
+        low: revealed.clone(),
+        close: revealed,
+        volume: vec![0.0; values.len()],
     }
 }
 
@@ -99,7 +88,7 @@ pub fn native_lite_series(rows: &[ChartRow], eit_alpha: f64) -> Result<LiteNativ
             reason: "adaptive smoothing must sit within (0, 1]".to_owned(),
         });
     }
-    let frame = frame_of_rows(rows);
+    let frame = kernel_preview_frame(rows);
     let length = ParamSet::new().with_int("length", RAW_OSCILLATOR_LENGTH);
     let fast_raw = kernel_series("rsi", &length, &frame)?;
     let slow_raw = kernel_series("cci", &length, &frame)?;
@@ -108,15 +97,7 @@ pub fn native_lite_series(rows: &[ChartRow], eit_alpha: f64) -> Result<LiteNativ
     // Relayed adaptive legs descend from the fenced frame above, so they
     // stay fenced until the same reveal; the synthetic zero volume is a
     // literal, not display-descended, and needs no fence.
-    let relayed: Vec<DisplayOnly<f64>> =
-        adaptive.iter().map(|slot| DisplayOnly::new(slot.unwrap_or(f64::NAN))).collect();
-    let synth = OwnedOhlcv {
-        open: relayed.iter().map(|leg| leg.reveal()).collect(),
-        high: relayed.iter().map(|leg| leg.reveal()).collect(),
-        low: relayed.iter().map(|leg| leg.reveal()).collect(),
-        close: relayed.iter().map(|leg| leg.reveal()).collect(),
-        volume: vec![0.0; rows.len()],
-    };
+    let synth = synth_close_frame(&adaptive);
     let signal =
         kernel_series("eit", &ParamSet::new().with_float("alpha", SIGNAL_EIT_ALPHA), &synth)?;
     Ok(LiteNative { fast_raw, slow_raw, adaptive, signal })
@@ -347,16 +328,34 @@ pub struct CandleMomentum {
 /// Build the momentum inputs from native kernels over converted rows.
 ///
 /// `health` reuses the kernel truth — ATR-14, the pane's adaptive/signal
-/// pair, an EMA-21 mean relayed through the same synth-frame trick as the
+/// pair, an EMA-21 mean relayed through the shared synth-frame trick as the
 /// signal leg, and [`health_mas`] with a per-bar gain of
-/// `vol_ratio * (alpha + 1.8)`, all × 1.8 — while `vol_ratio` mirrors the
-/// context fetch (`ta.sma(volume, 20)`, ratio guarded by `sma > 0`, else
-/// `0`). Warmup holes stay holes; every output lines up with `rows`.
-/// Refuses non-positive or non-finite `eit_alpha`, like the pane build.
+/// `vol_ratio * (alpha + RIBBON_HEALTH_K)`, all × `RIBBON_HEALTH_K` — while
+/// `vol_ratio` mirrors the context fetch (`ta.sma(volume, 20)`, ratio guarded
+/// by `sma > 0`, else `0`). Warmup holes stay holes; every output lines up
+/// with `rows`. Refuses non-positive or non-finite `eit_alpha`, like the pane
+/// build.
 pub fn candle_momentum_series(
     rows: &[ChartRow],
     eit_alpha: f64,
 ) -> Result<CandleMomentum, EguiError> {
+    let (health, vol_ratio) = ribbon_health_inputs(rows, eit_alpha, RIBBON_HEALTH_K)?;
+    Ok(CandleMomentum { health, vol_ratio })
+}
+
+/// Ribbon health and the volume conviction behind it, at an explicit gain.
+///
+/// The one kernel fold both [`candle_momentum_series`] and the sub-pane share:
+/// ATR-14, the pane's adaptive/signal pair, an EMA-21 mean, and [`health_mas`]
+/// with a per-bar gain of `vol_ratio * (eit_alpha + health_k)`, all ×
+/// `health_k`. `vol_ratio` is the guarded volume conviction. Warmup holes stay
+/// holes; every output lines up with `rows`. Refuses non-positive or
+/// non-finite `eit_alpha`.
+fn ribbon_health_inputs(
+    rows: &[ChartRow],
+    eit_alpha: f64,
+    health_k: f64,
+) -> Result<(Vec<Option<f64>>, Vec<f64>), EguiError> {
     if !eit_alpha.is_finite() || eit_alpha <= 0.0 || eit_alpha > 1.0 {
         return Err(EguiError::InvalidParam {
             what: "eit_alpha".to_owned(),
@@ -364,34 +363,18 @@ pub fn candle_momentum_series(
         });
     }
     let native = native_lite_series(rows, eit_alpha)?;
-    let relayed: Vec<f64> =
-        native.adaptive.iter().map(|slot| slot.unwrap_or(f64::NAN)).collect();
-    let synth = OwnedOhlcv {
-        open: relayed.clone(),
-        high: relayed.clone(),
-        low: relayed.clone(),
-        close: relayed,
-        volume: vec![0.0; rows.len()],
-    };
     let mean = kernel_series(
         "ema",
         &ParamSet::new().with_int("length", RIBBON_MEAN_LENGTH),
-        &synth,
+        &synth_close_frame(&native.adaptive),
     )?;
-    let frame = frame_of_rows(rows);
+    let frame = kernel_preview_frame(rows);
     let atr = kernel_series("atr", &ParamSet::new().with_int("length", ATR_LENGTH), &frame)?;
-    let volumes: Vec<f64> = rows.iter().map(|row| row.volume as f64).collect();
-    let volume_synth = OwnedOhlcv {
-        open: volumes.clone(),
-        high: volumes.clone(),
-        low: volumes.clone(),
-        close: volumes,
-        volume: vec![0.0; rows.len()],
-    };
+    let volumes: Vec<Option<f64>> = rows.iter().map(|row| Some(row.volume as f64)).collect();
     let vol_sma = kernel_series(
         "sma",
         &ParamSet::new().with_int("length", VOL_SMA_LENGTH),
-        &volume_synth,
+        &synth_close_frame(&volumes),
     )?;
     let vol_ratio: Vec<f64> = rows
         .iter()
@@ -406,13 +389,13 @@ pub fn candle_momentum_series(
         .collect();
     let health: Vec<Option<f64>> = (0..rows.len())
         .map(|index| {
-            let gain = vol_ratio[index] * (eit_alpha + RIBBON_HEALTH_K);
+            let gain = vol_ratio[index] * (eit_alpha + health_k);
             let leg = |series: &[Option<f64>]| series.get(index).and_then(|slot| *slot);
             health_mas(leg(&atr), leg(&native.adaptive), leg(&native.signal), leg(&mean), gain)
-                .map(|score| score * RIBBON_HEALTH_K)
+                .map(|score| score * health_k)
         })
         .collect();
-    Ok(CandleMomentum { health, vol_ratio })
+    Ok((health, vol_ratio))
 }
 
 /// Tint every bar through the ported gradient, preserving holes.
@@ -542,6 +525,279 @@ pub fn precision_recall(
     let recall =
         if expected.is_empty() { 1.0 } else { hits as f64 / expected.len() as f64 };
     Ok((precision, recall))
+}
+
+/// Height of the centered delta-volume histogram at average volume
+/// (task-value: visual scaling on the sub-pane zero axis; strictly inside the
+/// `[-100, +100]` oscillator viewport).
+pub const BOUNDED_DELTA_UNIT: f64 = 80.0;
+/// MA-health oscillator gain (reference `i_ma_health_k`).
+pub const MA_HEALTH_K: f64 = 1.2;
+/// ALMA length behind the MA-health primary leg (reference context ALMA-8).
+const MA_PRIMARY_LENGTH: i64 = 8;
+/// ALMA offset behind the MA-health primary leg.
+const MA_PRIMARY_OFFSET: f64 = 0.85;
+/// ALMA sigma behind the MA-health primary leg.
+const MA_PRIMARY_SIGMA: f64 = 6.0;
+/// VWMA length behind the MA-health signal leg (reference context VWMA-12).
+const MA_SIGNAL_LENGTH: i64 = 12;
+
+fn default_eit_alpha() -> f64 {
+    0.14
+}
+
+fn default_fill_alpha() -> f64 {
+    0.5
+}
+
+fn default_ribbon_health_k() -> f64 {
+    RIBBON_HEALTH_K
+}
+
+fn default_ma_health_k() -> f64 {
+    MA_HEALTH_K
+}
+
+fn default_delta_unit() -> f64 {
+    BOUNDED_DELTA_UNIT
+}
+
+fn default_show_ribbon() -> bool {
+    true
+}
+
+/// One IntegrationLite indicator's configuration: the single schema-driven
+/// control truth behind its settings pane.
+///
+/// Every field is a `Component` field, so the settings modal renders from the
+/// `describe()` schema and a new knob appears without a UI edit. `eit_alpha`
+/// and `fill_alpha` route to the Style tab (name carries `alpha`),
+/// `ribbon_health_k` / `ma_health_k` / `delta_unit` to Inputs, and
+/// `show_ribbon` to Visibility.
+#[derive(
+    Debug, Clone, bon::Builder, serde::Serialize, serde::Deserialize, FieldAccess, Describable
+)]
+#[builder(start_fn = new)]
+pub struct IntegrationLiteConfig {
+    /// EIT adaptive smoothing of the ribbon source.
+    #[field(desc = "EIT adaptive smoothing", min = 0.03, max = 1.0)]
+    #[builder(default = default_eit_alpha())]
+    pub eit_alpha: f64,
+    /// Ribbon fill strength.
+    #[field(desc = "Ribbon fill strength", min = 0.0, max = 1.0)]
+    #[builder(default = default_fill_alpha())]
+    pub fill_alpha: f64,
+    /// Ribbon-health oscillator gain.
+    #[field(desc = "Ribbon health gain", min = 0.2)]
+    #[builder(default = default_ribbon_health_k())]
+    pub ribbon_health_k: f64,
+    /// MA-health oscillator gain.
+    #[field(desc = "MA health gain", min = 0.2)]
+    #[builder(default = default_ma_health_k())]
+    pub ma_health_k: f64,
+    /// Delta-volume histogram height at average volume.
+    #[field(desc = "Delta volume height at average volume", min = 0.0)]
+    #[builder(default = default_delta_unit())]
+    pub delta_unit: f64,
+    /// Whether the trend ribbon paints.
+    #[field(desc = "Show the trend ribbon")]
+    #[builder(default = default_show_ribbon())]
+    pub show_ribbon: bool,
+}
+
+impl IntegrationLiteConfig {
+    /// Fail-closed self-consistency check.
+    pub fn validate(&self) -> Result<(), EguiError> {
+        if !self.eit_alpha.is_finite() || self.eit_alpha <= 0.0 || self.eit_alpha > 1.0 {
+            return Err(EguiError::InvalidParam {
+                what: "eit_alpha".to_owned(),
+                reason: "adaptive smoothing must sit within (0, 1]".to_owned(),
+            });
+        }
+        if !self.fill_alpha.is_finite() || self.fill_alpha < 0.0 || self.fill_alpha > 1.0 {
+            return Err(EguiError::InvalidParam {
+                what: "fill_alpha".to_owned(),
+                reason: "ribbon fill strength must sit within [0, 1]".to_owned(),
+            });
+        }
+        if !self.ribbon_health_k.is_finite() || self.ribbon_health_k <= 0.0 {
+            return Err(EguiError::InvalidParam {
+                what: "ribbon_health_k".to_owned(),
+                reason: "ribbon health gain must be positive and finite".to_owned(),
+            });
+        }
+        if !self.ma_health_k.is_finite() || self.ma_health_k <= 0.0 {
+            return Err(EguiError::InvalidParam {
+                what: "ma_health_k".to_owned(),
+                reason: "MA health gain must be positive and finite".to_owned(),
+            });
+        }
+        if !self.delta_unit.is_finite() || self.delta_unit <= 0.0 {
+            return Err(EguiError::InvalidParam {
+                what: "delta_unit".to_owned(),
+                reason: "delta volume unit must be positive and finite".to_owned(),
+            });
+        }
+        Ok(())
+    }
+}
+
+impl Default for IntegrationLiteConfig {
+    fn default() -> Self {
+        Self::new().build()
+    }
+}
+
+impl Validate for IntegrationLiteConfig {
+    type Err = EguiError;
+    fn validate(&self) -> Result<(), Self::Err> {
+        IntegrationLiteConfig::validate(self)
+    }
+}
+
+impl WorkUnit for IntegrationLiteConfig {
+    fn name(&self) -> &str {
+        "integration_lite_config"
+    }
+
+    fn depends(&self) -> &[ArcIntern<str>] {
+        &[]
+    }
+
+    fn provides(&self) -> &[ArcIntern<str>] {
+        &[]
+    }
+
+    fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
+        check_for_execute(self, "integration lite config invalid")?;
+        Ok(valid_output(format!("integration lite ready (alpha {})", self.eit_alpha)))
+    }
+}
+
+impl_component!(IntegrationLiteConfig);
+
+/// Headless IntegrationLite sub-pane: four bounded oscillators, the centered
+/// delta-volume histogram, its split confidence, and the swing pivots.
+#[derive(Debug, Clone)]
+pub struct IntegrationLiteSubPane {
+    /// Bounded fast oscillator (RSI arm) on `[-100, +100]`.
+    pub fast_bounded: Vec<Option<f64>>,
+    /// Bounded slow oscillator (CCI arm) on `[-100, +100]`.
+    pub slow_bounded: Vec<Option<f64>>,
+    /// Bounded ribbon-health oscillator on `[-100, +100]`.
+    pub ribbon_health_bounded: Vec<Option<f64>>,
+    /// Bounded MA-health oscillator on `[-100, +100]`.
+    pub ma_health_bounded: Vec<Option<f64>>,
+    /// Centered delta-volume histogram around the zero axis.
+    pub delta_volume: DeltaView,
+    /// Lowest confidence any volume split earned (producer confidence, never
+    /// a tradeable measurement).
+    pub delta_confidence: DeltaConfidence,
+    /// Threshold crossings on the bounded fast leg.
+    pub pivots: Vec<PivotMark>,
+}
+
+/// Build the four-readout bounded sub-pane plus the centered delta histogram.
+///
+/// Reuses the frozen kernel truth: the fast/slow oscillators squashed onto the
+/// `[-100, +100]` band, ribbon health from the shared health fold, MA health
+/// from [`ma_health_series`], and the shape-estimated delta volume through
+/// [`delta_candle_view`]. Pivots fire on the bounded fast leg at
+/// [`CALIBRATED_BOUNDED_PIVOT_THRESHOLD`], bijective with the frozen
+/// `±CALIBRATED_PIVOT_THRESHOLD`. Refuses a config its own validation refuses.
+pub fn integration_lite_sub_pane(
+    rows: &[ChartRow],
+    config: &IntegrationLiteConfig,
+) -> Result<IntegrationLiteSubPane, EguiError> {
+    config.validate()?;
+    let native = native_lite_series(rows, config.eit_alpha)?;
+    let fast_bounded = normalize_series_bounded(&native.fast_raw, OscillatorKind::Rsi);
+    let slow_bounded = normalize_series_bounded(&native.slow_raw, OscillatorKind::Cci);
+    let (ribbon_health, _vol_ratio) =
+        ribbon_health_inputs(rows, config.eit_alpha, config.ribbon_health_k)?;
+    let ribbon_health_bounded = squash_series_to_100(&ribbon_health);
+    let ma_health_bounded = squash_series_to_100(&ma_health_series(rows, config.ma_health_k)?);
+    let (buy, sell, delta_confidence) = delta_splits(rows);
+    let delta_volume = delta_candle_view(rows, &buy, &sell, config.delta_unit)?;
+    let pivots = pivot_marks(&fast_bounded, CALIBRATED_BOUNDED_PIVOT_THRESHOLD)?;
+    Ok(IntegrationLiteSubPane {
+        fast_bounded,
+        slow_bounded,
+        ribbon_health_bounded,
+        ma_health_bounded,
+        delta_volume,
+        delta_confidence,
+        pivots,
+    })
+}
+
+/// MA-health oscillator off the price pane, at gain `k`.
+///
+/// Folds the context's MA bundle — ALMA-8 / VWMA-12 / EMA-21 against ATR-14 —
+/// through the shared [`health_mas`] scorer at the frozen [`HEALTH_K`], then
+/// scales by `k` (the Pine `context.ma_health * i_ma_health_k` plot). Warmup
+/// holes stay holes; output lines up with `rows`.
+fn ma_health_series(rows: &[ChartRow], k: f64) -> Result<Vec<Option<f64>>, EguiError> {
+    let frame = kernel_preview_frame(rows);
+    let alma = kernel_series(
+        "alma",
+        &ParamSet::new()
+            .with_int("length", MA_PRIMARY_LENGTH)
+            .with_float("offset", MA_PRIMARY_OFFSET)
+            .with_float("sigma", MA_PRIMARY_SIGMA),
+        &frame,
+    )?;
+    let vwma =
+        kernel_series("vwma", &ParamSet::new().with_int("length", MA_SIGNAL_LENGTH), &frame)?;
+    let ema =
+        kernel_series("ema", &ParamSet::new().with_int("length", RIBBON_MEAN_LENGTH), &frame)?;
+    let atr = kernel_series("atr", &ParamSet::new().with_int("length", ATR_LENGTH), &frame)?;
+    Ok((0..rows.len())
+        .map(|index| {
+            let leg = |series: &[Option<f64>]| series.get(index).and_then(|slot| *slot);
+            health_mas(leg(&atr), leg(&alma), leg(&vwma), leg(&ema), HEALTH_K)
+                .map(|score| score * k)
+        })
+        .collect())
+}
+
+/// Per-bar delta-volume splits from candle shape: buy share, complementary
+/// sell share, and the lowest confidence any split earned.
+///
+/// Historical OHLCV carries no tick tape, so every shape split reads
+/// [`DeltaConfidence::Low`] — producer confidence for the histogram, never a
+/// measurement.
+fn delta_splits(rows: &[ChartRow]) -> (Vec<Option<f64>>, Vec<Option<f64>>, DeltaConfidence) {
+    let mut buy = Vec::with_capacity(rows.len());
+    let mut sell = Vec::with_capacity(rows.len());
+    let mut confidence = DeltaConfidence::High;
+    for row in rows {
+        let estimate = estimate_delta_volume_estimated(
+            row.open,
+            row.high,
+            row.low,
+            row.close,
+            row.volume as f64,
+        );
+        confidence = lower_confidence(confidence, estimate.confidence);
+        buy.push(Some(estimate.buy_volume));
+        sell.push(Some(row.volume as f64 - estimate.buy_volume));
+    }
+    (buy, sell, confidence)
+}
+
+/// The lower of two split confidences (`High > Reduced > Low`).
+fn lower_confidence(left: DeltaConfidence, right: DeltaConfidence) -> DeltaConfidence {
+    if confidence_rank(left) <= confidence_rank(right) { left } else { right }
+}
+
+/// Ordering rank of a split confidence, `Low` lowest.
+fn confidence_rank(confidence: DeltaConfidence) -> u8 {
+    match confidence {
+        DeltaConfidence::Low => 0,
+        DeltaConfidence::Reduced => 1,
+        DeltaConfidence::High => 2,
+    }
 }
 
 #[cfg(test)]

@@ -12,7 +12,7 @@ use protopyne_types::Money;
 
 use crate::views::{
     ArmResponse, ChartBar, ChartBars, HealthView, JournalRowView, OverlaySeries, PortfolioView,
-    PositionView, ProposalView, ReplayStepView, ReplayView, WorstCase,
+    PositionView, ProposalView, ReplayStepView, ReplayView, SymbolInfoView, WorstCase,
 };
 
 /// Terminal-gateway failure: transport, shape, or refused submit.
@@ -37,6 +37,21 @@ impl Display for GatewayError {
 }
 
 impl std::error::Error for GatewayError {}
+
+/// Refuse a blank symbol or timeframe before any read.
+///
+/// Shared by the default symbol-scoped trait methods and by any gateway that
+/// overrides them, so every gateway refuses the same malformed identifiers the
+/// same way. Whitespace-only values count as blank.
+pub fn validate_symbol_timeframe(symbol: &str, timeframe: &str) -> Result<(), GatewayError> {
+    if symbol.trim().is_empty() {
+        return Err(GatewayError::Malformed("symbol must not be empty".to_owned()));
+    }
+    if timeframe.trim().is_empty() {
+        return Err(GatewayError::Malformed("timeframe must not be empty".to_owned()));
+    }
+    Ok(())
+}
 
 /// Neutral read contract: every view the terminal renders, plus the one
 /// core-forwarded submit.
@@ -84,6 +99,41 @@ pub trait TerminalGateway: Send + Sync {
     fn grant_tiers(&self) -> Result<BTreeMap<String, String>, GatewayError>;
     /// Forward a grant document to the core for arming.
     fn arm(&self, grant: serde_json::Value) -> Result<ArmResponse, GatewayError>;
+
+    /// Selectable instruments, in deterministic order.
+    ///
+    /// The default is an empty catalog: a gateway that serves a single dataset
+    /// curates none, and the terminal's Symbol Selection Modal is driven by a
+    /// gateway that does (the mock, or a future instrument-master read).
+    fn symbols(&self) -> Result<Vec<SymbolInfoView>, GatewayError> {
+        Ok(Vec::new())
+    }
+
+    /// Chartable bars for one symbol and timeframe.
+    ///
+    /// The default refuses blank identifiers, then delegates to the
+    /// slot-agnostic `chart_bars`, so a gateway serving one dataset stays
+    /// correct without a second read path. A gateway that can resample or
+    /// serve several symbols overrides this.
+    fn chart_bars_for(&self, symbol: &str, timeframe: &str) -> Result<ChartBars, GatewayError> {
+        validate_symbol_timeframe(symbol, timeframe)?;
+        self.chart_bars()
+    }
+
+    /// One indicator overlay for one symbol and timeframe.
+    ///
+    /// The default refuses blank identifiers, then delegates to
+    /// `chart_overlays` (same `kind`/`period` contract).
+    fn chart_overlays_for(
+        &self,
+        symbol: &str,
+        timeframe: &str,
+        kind: &str,
+        period: i64,
+    ) -> Result<OverlaySeries, GatewayError> {
+        validate_symbol_timeframe(symbol, timeframe)?;
+        self.chart_overlays(kind, period)
+    }
 }
 
 /// Headless stand-in: deterministic canned views for terminal tests.
@@ -200,6 +250,39 @@ impl TerminalGateway for MockGateway {
             values: vec![None, Some(100.75), Some(101.75)],
             dropped: 0,
         })
+    }
+
+    fn symbols(&self) -> Result<Vec<SymbolInfoView>, GatewayError> {
+        // A small deterministic catalog spanning every asset class, with the
+        // terminal's default ticker first, so the Symbol Selection Modal's
+        // category tabs are never empty in headless tests.
+        Ok(vec![
+            SymbolInfoView {
+                symbol: "GLD".to_owned(),
+                name: "SPDR Gold Shares".to_owned(),
+                asset_class: "Funds".to_owned(),
+            },
+            SymbolInfoView {
+                symbol: "SPY".to_owned(),
+                name: "SPDR S&P 500 ETF Trust".to_owned(),
+                asset_class: "Stocks".to_owned(),
+            },
+            SymbolInfoView {
+                symbol: "QQQ".to_owned(),
+                name: "Invesco QQQ Trust".to_owned(),
+                asset_class: "Stocks".to_owned(),
+            },
+            SymbolInfoView {
+                symbol: "BTC-USD".to_owned(),
+                name: "Bitcoin".to_owned(),
+                asset_class: "Crypto".to_owned(),
+            },
+            SymbolInfoView {
+                symbol: "ES".to_owned(),
+                name: "E-mini S&P 500".to_owned(),
+                asset_class: "Futures".to_owned(),
+            },
+        ])
     }
 
     fn replay(&self) -> Result<ReplayView, GatewayError> {

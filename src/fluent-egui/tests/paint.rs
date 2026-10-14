@@ -546,18 +546,86 @@ fn fill_emitters_share_one_polygon_path() {
     let (ctx, painter) = test_painter();
     let theme = ThemeConfig::default();
     let run = ribbon_run();
+    let mut bear = run.clone();
+    bear.bullish = false;
+    bear.points = vec![(0.0, 60.0), (8.0, 62.0), (8.0, 90.0), (0.0, 92.0)];
     let degenerate = RibbonPolygon { indices: vec![0], points: vec![(0.0, 1.0)], bullish: true };
-    paint_ribbon_fill(&painter, &[run.clone(), degenerate], &theme, 0.5)
+    // Fully opaque so the tessellated vertex colors carry the resolved slot
+    // exactly; the shaded band resolves its own teal/purple slots.
+    paint_ribbon_fill(&painter, &[run.clone(), bear, degenerate], &theme, 1.0)
         .expect("flat fill paints");
     paint_area_fill(&painter, &[run], master_top(), theme_grid());
     let output = end_frame(&ctx);
     assert!(!output.shapes.is_empty(), "fills emit shapes");
-    let broken = ThemeConfig::new().bull("red".to_owned()).build();
-    // `ribbon_bull` resolves through the trend key: a malformed bull slot
-    // refuses the flat fill with the key named.
+    let colors = frame_colors(&ctx, output);
+    assert!(
+        colors.contains(&egui::Color32::from_rgb(0x00, 0xBC, 0xD4)),
+        "ribbon_bull paints teal"
+    );
+    assert!(
+        colors.contains(&egui::Color32::from_rgb(0x7B, 0x1F, 0xA2)),
+        "ribbon_bear paints purple"
+    );
+    let broken = ThemeConfig::new().ribbon_bull("red".to_owned()).build();
+    // `ribbon_fill` resolves through the dedicated slot: a malformed
+    // `ribbon_bull` slot refuses the flat fill with the key named.
     let refused =
         paint_ribbon_fill(&painter, &[ribbon_run()], &broken, 0.5).expect_err("refuses");
-    assert!(refused.to_string().contains("bull"), "refusal names the key: {refused}");
+    assert!(refused.to_string().contains("ribbon_bull"), "refusal names the key: {refused}");
+}
+
+/// Every pane-local translator shifts exactly the axes its shape owns: both
+/// axes for closed/filled/placed geometry, x only for gridlines, and y only
+/// implied for legs; holes stay holes.
+#[test]
+fn translate_helpers_shift_pane_local_geometry_by_origin() {
+    let origin = (10.0_f32, 20.0_f32);
+    let shift_x = |x: f32| (x + origin.0).to_bits();
+    let shift_y = |y: f32| (y + origin.1).to_bits();
+    let candle = translate_candles(vec![candle_geom(1)], origin);
+    assert_eq!(candle[0].x.to_bits(), shift_x(8.0));
+    assert_eq!(candle[0].open_y.to_bits(), shift_y(200.0));
+    assert_eq!(candle[0].high_y.to_bits(), shift_y(180.0));
+    assert_eq!(candle[0].low_y.to_bits(), shift_y(220.0));
+    assert_eq!(candle[0].close_y.to_bits(), shift_y(210.0));
+    assert_eq!(candle[0].index, 1, "translation never reindexes");
+
+    let polygon = translate_polygons(vec![ribbon_run()], origin);
+    assert_eq!(polygon[0].points[0].0.to_bits(), shift_x(0.0));
+    assert_eq!(polygon[0].points[0].1.to_bits(), shift_y(10.0));
+    assert_eq!(polygon[0].points[2].0.to_bits(), shift_x(8.0));
+    assert_eq!(polygon[0].points[2].1.to_bits(), shift_y(40.0));
+
+    let breaks = translate_breaks(vec![BreakLine { index: 2, x: 16.0 }], origin.0);
+    assert_eq!(breaks[0].x.to_bits(), shift_x(16.0));
+    assert_eq!(breaks[0].index, 2);
+
+    let points = translate_points(vec![Some((0.0, 100.0)), None], origin);
+    let present = points[0].expect("present");
+    assert_eq!(present.0.to_bits(), shift_x(0.0));
+    assert_eq!(present.1.to_bits(), shift_y(100.0));
+    assert_eq!(points[1], None, "holes stay holed");
+
+    let dots =
+        translate_dots(vec![PivotDot { index: 0, x: 8.0, y: 100.0, side: PivotSide::High }], origin);
+    assert_eq!(dots[0].x.to_bits(), shift_x(8.0));
+    assert_eq!(dots[0].y.to_bits(), shift_y(100.0));
+
+    let markers = translate_markers(
+        vec![MarkerDot { index: 0, x: 8.0, y: 100.0, style: AnnotationStyle::Bull }],
+        origin,
+    );
+    assert_eq!(markers[0].x.to_bits(), shift_x(8.0));
+    assert_eq!(markers[0].y.to_bits(), shift_y(100.0));
+
+    let bars = translate_delta_bars(
+        vec![DeltaBarGeom { index: 0, x: 8.0, buy_y: Some(10.0), sell_y: None, zero_y: 20.0 }],
+        origin,
+    );
+    assert_eq!(bars[0].x.to_bits(), shift_x(8.0));
+    assert_eq!(bars[0].buy_y.expect("buy present").to_bits(), shift_y(10.0));
+    assert_eq!(bars[0].sell_y, None, "holed legs stay holed");
+    assert_eq!(bars[0].zero_y.to_bits(), shift_y(20.0));
 }
 
 /// Threshold rules mirror through the shared predicate: in-window legs
@@ -708,4 +776,111 @@ fn every_other_emitter_paints_or_refuses() {
         let refused = refused.expect_err("malformed grid slot refuses");
         assert!(refused.to_string().contains("grid"), "refusal names the key: {refused}");
     }
+}
+
+/// Procedural control icons are deterministic headless geometry: an eye with
+/// lid arcs and a pupil (plus a slash exactly when hidden), a six-sided bolt
+/// with a bore, and a search lens with a handle. Bad radii refuse.
+#[test]
+fn procedural_icons_build_deterministic_geometry_and_refuse_bad_radii() {
+    let center = (100.0f32, 200.0f32);
+    // The shown eye: lids above and below center, pupil on center, no slash.
+    let shown = eye_icon_geom(center, 12.0, true).expect("a valid eye builds");
+    assert_eq!(shown.center.0.to_bits(), center.0.to_bits());
+    assert_eq!(shown.center.1.to_bits(), center.1.to_bits());
+    assert_eq!(shown.radius.to_bits(), 12.0f32.to_bits());
+    assert!(!shown.upper_arc.is_empty() && !shown.lower_arc.is_empty(), "lids arc");
+    for point in &shown.upper_arc {
+        assert!(point.1 <= center.1, "the upper lid stays above center: {point:?}");
+    }
+    for point in &shown.lower_arc {
+        assert!(point.1 >= center.1, "the lower lid stays below center: {point:?}");
+    }
+    assert_eq!(shown.pupil_center.0.to_bits(), center.0.to_bits());
+    assert_eq!(shown.pupil_center.1.to_bits(), center.1.to_bits());
+    assert!(
+        shown.pupil_radius > 0.0 && shown.pupil_radius < shown.radius,
+        "the pupil sits inside the lids: {}",
+        shown.pupil_radius
+    );
+    assert_eq!(shown.slash, None, "a shown eye carries no slash");
+    // The hidden eye adds exactly one slash across the lids.
+    let hidden = eye_icon_geom(center, 12.0, false).expect("a hidden eye builds");
+    let (from, to) = hidden.slash.expect("a hidden eye carries a slash");
+    assert_ne!(from, to, "the slash has two distinct ends");
+    // Same inputs build byte-identical geometry twice.
+    assert_eq!(shown, eye_icon_geom(center, 12.0, true).expect("rebuilds"));
+    // The six-sided bolt: exactly six vertices on the rim plus a bore.
+    let bolt = hex_bolt_icon_geom(center, 12.0).expect("a valid bolt builds");
+    assert_eq!(bolt.vertices.len(), 6, "a hex bolt has six rim vertices");
+    for vertex in &bolt.vertices {
+        let dx = f64::from(vertex.0 - center.0);
+        let dy = f64::from(vertex.1 - center.1);
+        let distance = (dx * dx + dy * dy).sqrt();
+        assert!(
+            (distance - 12.0).abs() <= 1e-4,
+            "rim vertex sits at radius distance: {vertex:?}"
+        );
+    }
+    assert_eq!(bolt.bore_center.0.to_bits(), center.0.to_bits());
+    assert!(
+        bolt.bore_radius > 0.0 && bolt.bore_radius < bolt.radius,
+        "the bore sits inside the rim: {}",
+        bolt.bore_radius
+    );
+    // The search lens: a lens circle plus a handle leaving the rim.
+    let lens = search_icon_geom(center, 12.0).expect("a valid lens builds");
+    assert!(
+        lens.lens_radius > 0.0 && lens.lens_radius < lens.radius,
+        "the lens sits inside the icon bounds: {}",
+        lens.lens_radius
+    );
+    let (heel, tip) = lens.handle;
+    assert_ne!(heel, tip, "the handle has two distinct ends");
+    let rim_dx = f64::from(heel.0 - center.0);
+    let rim_dy = f64::from(heel.1 - center.1);
+    let rim_distance = (rim_dx * rim_dx + rim_dy * rim_dy).sqrt();
+    assert!(
+        (rim_distance - f64::from(lens.lens_radius)).abs() <= 1e-4,
+        "the handle starts at the lens rim: {heel:?}"
+    );
+    // Bad radii refuse on every builder, as do non-finite centers.
+    for bad in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY, 0.0, -4.0] {
+        assert_eq!(eye_icon_geom(center, bad, true), None, "the eye refuses radius {bad}");
+        assert_eq!(eye_icon_geom(center, bad, false), None, "the slashed eye refuses {bad}");
+        assert_eq!(hex_bolt_icon_geom(center, bad), None, "the bolt refuses radius {bad}");
+        assert_eq!(search_icon_geom(center, bad), None, "the lens refuses radius {bad}");
+    }
+    assert_eq!(eye_icon_geom((f32::NAN, 0.0), 12.0, true), None, "the eye refuses a bad center");
+    assert_eq!(hex_bolt_icon_geom((0.0, f32::INFINITY), 12.0), None, "the bolt refuses a bad center");
+}
+
+/// The icon emitters blit their geometry through one theme key each: healthy
+/// inputs paint, and a broken theme refuses with the key named.
+#[test]
+fn procedural_icon_emitters_paint_and_refuse_broken_themes() {
+    let (ctx, painter) = test_painter();
+    let theme = ThemeConfig::default();
+    let eye = eye_icon_geom((100.0, 100.0), 12.0, true).expect("eye builds");
+    let hidden = eye_icon_geom((140.0, 100.0), 12.0, false).expect("slashed eye builds");
+    let bolt = hex_bolt_icon_geom((180.0, 100.0), 12.0).expect("bolt builds");
+    let lens = search_icon_geom((220.0, 100.0), 12.0).expect("lens builds");
+    paint_eye_icon(&painter, &eye, "bull", &theme).expect("the shown eye paints");
+    paint_eye_icon(&painter, &hidden, "bear", &theme).expect("the slashed eye paints");
+    paint_hex_bolt_icon(&painter, &bolt, "grid", &theme).expect("the bolt paints");
+    paint_search_icon(&painter, &lens, "fast", &theme).expect("the lens paints");
+    let output = end_frame(&ctx);
+    assert!(!output.shapes.is_empty(), "icons emit shapes");
+    // A theme that cannot resolve the icon key refuses instead of painting a
+    // default color.
+    let broken = ThemeConfig::new().bull("red".to_owned()).build();
+    let refused =
+        paint_eye_icon(&painter, &eye, "bull", &broken).expect_err("malformed slot refuses");
+    assert!(refused.to_string().contains("bull"), "refusal names the key: {refused}");
+    let unknown =
+        paint_hex_bolt_icon(&painter, &bolt, "nope", &theme).expect_err("unknown key refuses");
+    assert!(unknown.to_string().contains("nope"), "refusal names the key: {unknown}");
+    let unknown =
+        paint_search_icon(&painter, &lens, "nope", &theme).expect_err("unknown key refuses");
+    assert!(unknown.to_string().contains("nope"), "refusal names the key: {unknown}");
 }

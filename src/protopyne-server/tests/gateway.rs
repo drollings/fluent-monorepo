@@ -454,6 +454,70 @@ async fn grant_tiers_read_the_live_grant_as_display_text() {
 }
 
 #[tokio::test]
+async fn gateway_serves_symbol_scoped_bars_and_overlays_across_timeframes() {
+    let handle = boot().await;
+    let gateway = handle.gateway();
+
+    assert!(
+        gateway.symbols().expect("gateway symbols read").is_empty(),
+        "the server curates no instrument master, so the catalog reads empty"
+    );
+
+    let base = gateway.chart_bars().expect("gateway bars read");
+    assert!(!base.rows.is_empty(), "the fixture history serves bars on the default slot");
+    assert_eq!(
+        gateway.chart_bars_for("SPY", "15M").expect("default-slot bars read"),
+        base,
+        "the 15M slot is the base: the symbol-scoped read equals the slot-agnostic read"
+    );
+    assert_eq!(
+        gateway.chart_overlays_for("SPY", "15M", "ema", 10).expect("default-slot overlay read"),
+        gateway.chart_overlays("ema", 10).expect("gateway overlay read"),
+        "the 15M overlay equals the slot-agnostic read"
+    );
+
+    for symbol in ["GLD", "SPY"] {
+        for timeframe in ["1M", "5M", "15M", "1H", "4H"] {
+            let bars = gateway
+                .chart_bars_for(symbol, timeframe)
+                .unwrap_or_else(|e| panic!("{symbol} {timeframe} bars: {e:?}"));
+            assert!(!bars.rows.is_empty(), "{symbol} {timeframe} serves rows");
+            let overlay = gateway
+                .chart_overlays_for(symbol, timeframe, "ema", 10)
+                .unwrap_or_else(|e| panic!("{symbol} {timeframe} overlay: {e:?}"));
+            assert_eq!(
+                overlay.values.len(),
+                bars.rows.len(),
+                "{symbol} {timeframe} overlay agrees with bars positionally"
+            );
+        }
+    }
+
+    // A coarser timeframe the base can fill folds upward: 1H is a whole 4x
+    // fold of the 15M base, so it serves strictly fewer bars.
+    let hour = gateway.chart_bars_for("SPY", "1H").expect("1H bars read");
+    assert!(hour.rows.len() < base.rows.len(), "1H folds the 15M base upward into fewer bars");
+
+    // Blank identifiers refuse before any read.
+    assert!(
+        matches!(
+            gateway.chart_bars_for("", "15M"),
+            Err(protopyne_view::GatewayError::Malformed(_))
+        ),
+        "a blank symbol refuses as Malformed"
+    );
+    assert!(
+        matches!(
+            gateway.chart_overlays_for("SPY", "  ", "ema", 10),
+            Err(protopyne_view::GatewayError::Malformed(_))
+        ),
+        "a blank timeframe refuses as Malformed"
+    );
+
+    handle.shutdown().await;
+}
+
+#[tokio::test]
 async fn preview_worst_case_matches_the_checked_in_golden() {
     // Byte-exact preview surface over the fixture grant: the confirmation
     // screen's numbers are pinned, not just shaped.

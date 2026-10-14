@@ -93,6 +93,51 @@ pub fn renko_bricks(
     Ok(out)
 }
 
+/// Aggregate closed bars upward by `group` (trailing-aligned, like exchange
+/// resampling): open from the first bar, close and timestamp from the last,
+/// high/low as extremes, volumes summed. A leading partial chunk is dropped so
+/// every output bar covers exactly `group` inputs. `group <= 1` returns the
+/// bars unchanged, and an empty input stays empty.
+///
+/// The single upward-resampling implementation: the terminal shell and the
+/// server gateway both call this rather than each keeping a private copy.
+#[must_use]
+pub fn aggregate_bars(bars: &[Bar], group: usize) -> Vec<Bar> {
+    if group <= 1 {
+        return bars.to_vec();
+    }
+    let skip = bars.len() % group;
+    bars[skip..]
+        .chunks(group)
+        .filter(|chunk| chunk.len() == group)
+        .map(|chunk| {
+            let first = &chunk[0];
+            let last = &chunk[group - 1];
+            let mut high = first.h;
+            let mut low = first.l;
+            let mut volume = 0_u64;
+            for bar in chunk {
+                if bar.h > high {
+                    high = bar.h;
+                }
+                if bar.l < low {
+                    low = bar.l;
+                }
+                volume = volume.saturating_add(bar.volume);
+            }
+            Bar::new()
+                .ts(last.ts)
+                .o(first.o)
+                .h(high)
+                .l(low)
+                .c(last.c)
+                .volume(volume)
+                .maybe_adj(None)
+                .build()
+        })
+        .collect()
+}
+
 #[cfg(test)]
 #[path = "../tests/transform.rs"]
 mod tests;

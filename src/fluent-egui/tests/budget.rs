@@ -117,9 +117,11 @@ fn bloat_ledger_pins_source_files() {
             "hittest.rs",
             "interaction.rs",
             "lib.rs",
+            "modal.rs",
             "paint.rs",
             "plan.rs",
             "replay.rs",
+            "slot.rs",
             "view.rs",
             "viewport.rs",
         ],
@@ -746,13 +748,15 @@ fn downstream_consumer_surface_is_actually_scanned() {
         consumers.keys().any(|key| key.starts_with("src/protopyne-egui/")),
         "the terminal crate must be in the consumer surface"
     );
-    let example = consumers
-        .keys()
-        .find(|key| key.starts_with("src/protopyne-egui/examples/"))
-        .expect("the terminal example is a consumer surface");
+    // The terminal's candle blit lives in the library workspace module, so
+    // the pin scans the whole downstream crate surface (src and examples)
+    // rather than a single example shell.
     assert!(
-        consumers[example].iter().any(|line| mentions(line, "paint_candles_tinted")),
-        "{example} is scanned: the terminal's only candle blit is read here"
+        consumers.iter().any(|(key, lines)| {
+            key.starts_with("src/protopyne-egui/")
+                && lines.iter().any(|line| mentions(line, "paint_candles_tinted"))
+        }),
+        "the terminal's candle blit is read somewhere in the downstream surface"
     );
     assert!(
         !consumers.contains_key("tests/budget.rs"),

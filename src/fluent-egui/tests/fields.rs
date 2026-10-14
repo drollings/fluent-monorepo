@@ -190,3 +190,138 @@ fn a_declared_format_rides_the_lifted_field() {
     assert_eq!(field("when").format.as_deref(), Some("date-time"));
     assert_eq!(field("plain").format, None);
 }
+
+/// A control spanning all three settings tabs, so the classifier has one of
+/// everything to route.
+#[derive(Debug, Clone, PartialEq, FieldAccess, Describable)]
+struct TabProbe {
+    #[field(desc = "Lookback length")]
+    length: i64,
+    #[field(desc = "Smoothing span")]
+    smoothing: f64,
+    #[field(desc = "Line color (#RRGGBB)")]
+    line_color: String,
+    #[field(desc = "Fill transparency")]
+    fill_alpha: f64,
+    #[field(desc = "Show the line")]
+    show_line: bool,
+    #[field(desc = "Overlay visibility")]
+    visible: bool,
+}
+
+fn tab_probe() -> TabProbe {
+    TabProbe {
+        length: 14,
+        smoothing: 0.5,
+        line_color: "#20C8F0".to_owned(),
+        fill_alpha: 0.8,
+        show_line: true,
+        visible: true,
+    }
+}
+
+fn tab_field(name: &str, kind: FieldKind) -> SchemaField {
+    SchemaField {
+        name: name.to_owned(),
+        kind,
+        format: None,
+        description: String::new(),
+        minimum: None,
+        maximum: None,
+        max_len: None,
+    }
+}
+
+#[test]
+fn schema_fields_classify_into_inputs_style_and_visibility_tabs() {
+    // Boolean `show_*`/`visible` fields route to Visibility; color, alpha,
+    // transparency, brightness, threshold, style, and theme names route to
+    // Style; calculation fields (length, period, smoothing, source,
+    // timeframe, oscillator) route to Inputs.
+    for (name, kind, expected) in [
+        ("show_first_ma", FieldKind::Boolean, SettingsTab::Visibility),
+        ("show_line", FieldKind::Boolean, SettingsTab::Visibility),
+        ("visible", FieldKind::Boolean, SettingsTab::Visibility),
+        ("line_color", FieldKind::Text, SettingsTab::Style),
+        ("fill_alpha", FieldKind::Number, SettingsTab::Style),
+        ("transparency", FieldKind::Number, SettingsTab::Style),
+        ("brightness", FieldKind::Number, SettingsTab::Style),
+        ("threshold", FieldKind::Number, SettingsTab::Style),
+        ("line_style", FieldKind::Text, SettingsTab::Style),
+        ("theme", FieldKind::Text, SettingsTab::Style),
+        ("length", FieldKind::Integer, SettingsTab::Inputs),
+        ("period", FieldKind::Integer, SettingsTab::Inputs),
+        ("smoothing", FieldKind::Number, SettingsTab::Inputs),
+        ("source", FieldKind::Text, SettingsTab::Inputs),
+        ("timeframe", FieldKind::Text, SettingsTab::Inputs),
+        ("oscillator_gain", FieldKind::Number, SettingsTab::Inputs),
+        ("line_width", FieldKind::Number, SettingsTab::Inputs),
+    ] {
+        let field = tab_field(name, kind);
+        assert_eq!(
+            classify_schema_field(&field),
+            expected,
+            "{name} routes to {expected:?}"
+        );
+    }
+    // The tabs partition the schema losslessly: every field lands in exactly
+    // one tab, and the union is the whole schema.
+    let fields = schema_fields(&tab_probe().describe());
+    let mut union: Vec<String> = Vec::new();
+    for tab in SettingsTab::all() {
+        let tabbed = fields_for_tab(&fields, tab);
+        assert!(!tabbed.is_empty(), "{tab:?} renders at least one editor");
+        for field in &tabbed {
+            assert_eq!(
+                classify_schema_field(field),
+                tab,
+                "a field rendered under {tab:?} classifies back to it"
+            );
+        }
+        union.extend(tabbed.into_iter().map(|field| field.name));
+    }
+    let mut lifted: Vec<String> = fields.into_iter().map(|field| field.name).collect();
+    union.sort();
+    lifted.sort();
+    assert_eq!(union, lifted, "the three tabs partition the schema without loss or overlap");
+    assert_eq!(
+        SettingsTab::all().map(SettingsTab::label),
+        ["Inputs", "Style", "Visibility"],
+        "tab labels stay fixed"
+    );
+}
+
+#[test]
+fn paint_tabbed_schema_fields_switches_tabs_and_writes_through_field_access() {
+    let mut control = tab_probe();
+    let fields = schema_fields(&control.describe());
+    // Every tab renders headlessly with no refusals and no phantom writes,
+    // and rendering never moves the tab out from under the caller.
+    for tab in SettingsTab::all() {
+        let mut active = tab;
+        egui::__run_test_ui(|ui| {
+            let edits =
+                paint_tabbed_schema_fields(ui, &mut active, &fields, &mut control);
+            assert_eq!(edits, FieldEdits::default(), "an untouched frame changes nothing");
+            assert_eq!(active, tab, "rendering never moves the active tab");
+        });
+    }
+    // Switching tabs changes which fields render: the Visibility tab holds
+    // exactly the two toggles, the Style tab the two paint knobs.
+    let names = |tab: SettingsTab| {
+        let mut names: Vec<String> =
+            fields_for_tab(&fields, tab).into_iter().map(|field| field.name).collect();
+        names.sort();
+        names
+    };
+    assert_eq!(names(SettingsTab::Visibility), vec!["show_line", "visible"]);
+    assert_eq!(names(SettingsTab::Style), vec!["fill_alpha", "line_color"]);
+    // Writes flow through the same `FieldAccess` contract the single-tab
+    // editor uses, on every tab.
+    control.set_field("length", "21").expect("inputs write through");
+    control.set_field("line_color", "#B42020").expect("style writes through");
+    control.set_field("show_line", "false").expect("visibility writes through");
+    assert_eq!(control.length, 21);
+    assert_eq!(control.line_color, "#B42020");
+    assert!(!control.show_line);
+}

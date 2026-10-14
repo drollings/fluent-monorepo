@@ -2407,32 +2407,6 @@ is the index; the full semantics live in
 
 The trait framework in `fluent-wvr` is paired with a structured-concurrency
 runtime in `fluent-concurrency`. The full surface is documented in
-`doc/skills/fluent-concurrency/SKILL.md`. The high-level primitives are:
-
-| Primitive | File | Purpose |
-|-----------|------|---------|
-| `Runtime` (trait) | `fluent-concurrency/src/runtime/` | Pluggable backend: `TokioRuntime` (production), `TestRuntime` (deterministic, paused-time), `NoopRuntime` (in `fluent-wvr/src/runtime.rs`, init-only) |
-| `Capability` + `CapabilitySet` | `fluent-wvr/src/capability.rs` | Type-map of capability tokens; `with`/`get`/`remove`/`remove_as`/`contains`/`iter`/`len`/`is_empty` |
-| `Scope` | `fluent-concurrency/src/scope.rs` | Structured concurrency; `spawn` + `close().await` or `defer()`; drop-without-close panics |
-| `SupervisedBatch` | `fluent-concurrency/src/batch.rs` | `Scope` + dependency graph + panic/fail/cancel distinct tracking; `SupervisedBatchSummary { completed, panicked, failed, cancelled }`; `SupervisedBatch::register` returns `Result<_, SupervisedBatchError>`; `SupervisedBatchError::DuplicateName`; configurable retry backoff (`backoff_base_ms` / `backoff_jitter_ms`) |
-| `WorkerPool<T>` | `fluent-concurrency/src/pool.rs` | Bounded FIFO worker pool; capacity + backpressure |
-| `ResultPool<T, R, E>` | `fluent-concurrency/src/pool.rs` | Worker pool that returns a typed `Result<R, ResultPoolError<E>>`; `ResultPoolError` is `Inner(E) \| Canceled \| Pool(PoolError)` |
-| `PriorityResultPool<T, R, E>` | `fluent-concurrency/src/pool.rs` | Priority-ordered variant, bounded (`BoundedPriorityQueue`, `std::sync::Mutex` backing, backpressured `submit`); `new` sizes the queue to `cap*4`, `with_queue_capacity` overrides; workers drain fully before blocking |
-| `Limiter` | `fluent-concurrency/src/pool.rs` | Concurrency cap (N-at-a-time), no queue |
-| `Queue<T>` | `fluent-concurrency/src/pool.rs` | Bounded async FIFO; `PoolError::Full` on overflow; `std::sync::Mutex` backing (never held across an await) |
-| `PriorityQueue<T>` | `fluent-concurrency/src/queue.rs` | O(log P) for distinct priorities, O(1) for all-zero fast path; `BoundedPriorityQueue` adds the `Queue`-style close-wakes-waiters wrapper |
-| `first_accept_in_order` | `fluent-concurrency/src/ladder.rs` | Monomorphized first-Ok-wins fallback combinator ("try rungs in order, take the first success"); the canonical ladder primitive composed by `BackendChain`, `dispatch_real`, and the router's escalation ladder |
-| `CreditFlow` | `fluent-concurrency/src/flow.rs` | Sender/receiver backpressure with `CreditSpec { initial, more_after }`; **production** — gates the router's ledger tier feed (`LedgerTierWorker::enqueue_with_credit` / `recv()` per processed node) |
-
-A `SupervisedBatch` is a `Scope` plus the `WorkUnit` integration: tasks implement
-`Component` and are registered with `batch.register(arc).unwrap()`.
-The `SupervisedBatch` runs each unit through `execute_with_timeout_and_retry`
-using the per-unit `default_timeout_ms()` and the SupervisedBatch-wide
-`max_retries`/`timeout_ms` set on the `WorkContext`. The four-way
-summary discriminates: `Ok(_)` → `completed`, `Err(WorkError::*)` →
-`failed`, `JoinError::is_panic()` → `panicked`, `JoinError::is_cancelled()`
-or `Timeout` → `cancelled` (with `CancelReason::{Timeout, DependencyFailed, Aborted}`).
+`doc/skills/fluent-concurrency/SKILL.md`.
 
 ---
-
-*This document is the authoritative reference for Fluent WVR patterns in the Rust codebase. The deprecated `FLUENT_WVR_RUST.md` (raw-pointer variant) must not be followed.*

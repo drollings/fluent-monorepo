@@ -17,17 +17,23 @@ use crate::error::EguiError;
 ///
 /// Construct once per visible window; recompute only on scroll, zoom, or
 /// range change — never per frame per bar. All mapping delegates to the
-/// owned canonical scale, so there is exactly one price↔pixel truth.
+/// owned canonical scale, so there is exactly one price↔pixel truth. The
+/// horizontal `x_offset_px` is an additive pixel shift on top of the scale's
+/// bar spacing (default `0.0`, so every existing caller is unchanged): it
+/// carries time-axis pan and cursor-anchored zoom without touching the
+/// integer bar window the data slice is taken from.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Viewport {
     scale: PriceScale,
+    x_offset_px: f32,
 }
 
 impl Viewport {
     /// Build a viewport over `[min, max]`; refuses zero/negative geometry,
     /// non-finite inputs, inverted ranges, non-positive log bounds, and
     /// zero-base percentage modes — the same refusals as the canonical
-    /// scale, surfaced as paint-edge errors.
+    /// scale, surfaced as paint-edge errors. The horizontal offset starts at
+    /// `0.0`.
     pub fn new(
         mode: PriceScaleMode,
         min: f64,
@@ -41,13 +47,72 @@ impl Viewport {
         let scale =
             PriceScale::new(mode, range, height, bar_spacing, base_value, inverted)
                 .map_err(describe_scale)?;
-        Ok(Self { scale })
+        Ok(Self { scale, x_offset_px: 0.0 })
     }
 
     /// The owned canonical scale.
     #[must_use]
     pub fn scale(self) -> PriceScale {
         self.scale
+    }
+
+    /// The horizontal pixel offset added to every bar slot; `0.0` unless the
+    /// time axis has been panned or zoomed.
+    #[must_use]
+    pub fn x_offset_px(self) -> f32 {
+        self.x_offset_px
+    }
+
+    /// Set the horizontal pixel offset; refuses non-finite offsets with the
+    /// parameter named.
+    pub fn with_x_offset(self, x_offset_px: f32) -> Result<Self, EguiError> {
+        if !x_offset_px.is_finite() {
+            return Err(EguiError::InvalidParam {
+                what: "x_offset_px".to_owned(),
+                reason: "horizontal offset must be finite".to_owned(),
+            });
+        }
+        Ok(Self { x_offset_px, ..self })
+    }
+
+    /// Adopt another viewport's time axis: copy its `bar_spacing` and
+    /// `x_offset_px`, keeping this viewport's own price range, mode, height,
+    /// base value, and inversion. A sub-pane calls this each frame to lock
+    /// its time axis to the main chart's while keeping its own price scale.
+    pub fn sync_time_axis(self, source: &Viewport) -> Result<Self, EguiError> {
+        let scale = PriceScale::new(
+            self.scale.mode(),
+            self.scale.range(),
+            self.scale.height(),
+            source.scale.bar_spacing(),
+            self.scale.base_value(),
+            self.scale.inverted(),
+        )
+        .map_err(describe_scale)?;
+        Ok(Self { scale, x_offset_px: source.x_offset_px })
+    }
+
+    /// The `[start, end)` bar indices whose centers fall inside the pane
+    /// width `[0.0, width_px]`, clamped to `[0, total_bars]`. Under a
+    /// positive or negative `x_offset_px`, the returned slice is exactly the
+    /// bars visible in the pane; a fully off-window axis returns an empty
+    /// `(n, n)` range.
+    #[must_use]
+    pub fn visible_bar_range(self, width_px: f32, total_bars: usize) -> (usize, usize) {
+        if !width_px.is_finite() || width_px < 0.0 || total_bars == 0 {
+            return (0, 0);
+        }
+        let spacing = f64::from(self.scale.bar_spacing());
+        if !spacing.is_finite() || spacing <= 0.0 {
+            return (0, 0);
+        }
+        let offset = f64::from(self.x_offset_px);
+        let total = total_bars as f64;
+        let first = ((-offset) / spacing).ceil();
+        let last = ((f64::from(width_px) - offset) / spacing).floor();
+        let start = first.clamp(0.0, total) as usize;
+        let end = (last + 1.0).clamp(0.0, total) as usize;
+        (start.min(end), end)
     }
 
     /// The price window on screen right now: the single answer to "what is
@@ -89,16 +154,25 @@ impl Viewport {
         self.scale.y_to_price(y)
     }
 
+    /// Map a (possibly fractional) bar slot to an x pixel: the continuous
+    /// form of [`index_to_x`](Self::index_to_x), used by the cursor-anchored
+    /// zoom math to keep a fractional slot stationary.
+    #[must_use]
+    pub fn slot_to_x(self, slot: f64) -> f32 {
+        (slot * f64::from(self.scale.bar_spacing()) + f64::from(self.x_offset_px)) as f32
+    }
+
     /// Map a bar index to an x pixel.
     #[must_use]
     pub fn index_to_x(self, index: usize) -> f32 {
-        self.scale.index_to_x(index)
+        self.slot_to_x(index as f64)
     }
 
     /// Invert [`index_to_x`](Self::index_to_x); `None` on non-finite input.
     #[must_use]
     pub fn x_to_index(self, x: f32) -> Option<f64> {
-        self.scale.x_to_index(x)
+        let x = f64::from(x) - f64::from(self.x_offset_px);
+        self.scale.x_to_index(x as f32)
     }
 }
 

@@ -13,6 +13,7 @@
 
 use fluent_egui::{
     EguiError, ThemeConfig, Viewport, oscillator_points, paint_oscillator, resolve_color,
+    translate_points,
 };
 use protopyne_kernels::{PlotPrimitive, ProjectionRefusal};
 
@@ -168,6 +169,38 @@ pub fn paint_overlay(
 /// reason — the overlay paints nothing partial.
 pub fn paint_unsupported_chip(ui: &mut egui::Ui, refusal: &ProjectionRefusal) {
     ui.colored_label(egui::Color32::RED, format!("pine overlay unsupported: {refusal}"));
+}
+
+/// Shift pane-local overlay geometry into UI space by a pane origin.
+///
+/// Every primitive kind is pane-local ([`overlay_geoms`] maps against the
+/// pane's own viewport); the overlay emitter draws exactly these pixels, so
+/// the caller shifts the whole batch by its pane rect's origin first. Series
+/// points ride the shared [`translate_points`], so the overlay never keeps a
+/// second coordinate translation.
+#[must_use]
+pub fn translate_overlay(mut geoms: OverlayGeoms, origin: (f32, f32)) -> OverlayGeoms {
+    for run in &mut geoms.series {
+        run.points = translate_points(std::mem::take(&mut run.points), origin);
+    }
+    for y in &mut geoms.levels {
+        *y += origin.1;
+    }
+    for (x, y) in &mut geoms.markers {
+        *x += origin.0;
+        *y += origin.1;
+    }
+    for label in &mut geoms.labels {
+        label.x += origin.0;
+        label.y += origin.1;
+    }
+    for (x0, y0, x1, y1) in &mut geoms.areas {
+        *x0 += origin.0;
+        *y0 += origin.1;
+        *x1 += origin.0;
+        *y1 += origin.1;
+    }
+    geoms
 }
 
 #[cfg(test)]

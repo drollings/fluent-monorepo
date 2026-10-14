@@ -326,3 +326,240 @@ fn elastic_bounds_never_exceeded() {
     // Wall contact absorbs the coast: release into the wall settles.
     assert!(state.is_settled(), "the wall absorbs velocity");
 }
+
+/// A generous horizontal envelope so coasting is never clamped mid-test.
+fn horizontal_state() -> InteractionState {
+    free_state().with_horizontal_bounds(1000, 320.0).expect("valid horizontal bounds")
+}
+
+#[test]
+fn pan_2d_shifts_price_and_time_axes_and_coasts_in_closed_form() {
+    let mut state = horizontal_state();
+    let start = pane(); // spacing 8, offset 0
+    let moved = state.step(
+        1.0 / 60.0,
+        &start,
+        &[PointerInput::Pan2D { dx_px: 40.0, dy_px: 40.0 }],
+    );
+    // The vertical leg matches a plain drag; the horizontal leg shifts the
+    // time-axis offset by exactly dx.
+    assert_eq!(range_of(&moved), (92.0, 112.0), "vertical pan matches drag semantics");
+    assert_eq!(moved.x_offset_px().to_bits(), 40.0f32.to_bits(), "horizontal pan shifts x by dx");
+    assert!(state.kinetic_velocity() > 0.0, "vertical coast seeded");
+    assert!(state.kinetic_velocity_x() > 0.0, "horizontal coast seeded");
+    assert!(!state.is_settled(), "a 2D pan leaves both axes coasting");
+
+    // Closed-form split: same seed, same total coast, different splits agree
+    // on both axes.
+    let seed = |s: &mut InteractionState| {
+        s.step(1.0 / 60.0, &start, &[PointerInput::Pan2D { dx_px: 40.0, dy_px: 40.0 }])
+    };
+    let mut whole = horizontal_state();
+    let mut current = seed(&mut whole);
+    current = whole.step(0.2, &current, &[]);
+    let (wmin, wmax) = range_of(&current);
+    let wx = f64::from(current.x_offset_px());
+    let wvx = whole.kinetic_velocity_x();
+
+    let mut split = horizontal_state();
+    current = seed(&mut split);
+    for _ in 0..4 {
+        current = split.step(0.05, &current, &[]);
+    }
+    let (smin, smax) = range_of(&current);
+    assert!(close(wmin, smin) && close(wmax, smax), "vertical split coast matches");
+    assert!(
+        (wx - f64::from(current.x_offset_px())).abs() <= 1e-6,
+        "horizontal split coast matches: {wx} vs {}",
+        current.x_offset_px()
+    );
+    assert!(close(wvx, split.kinetic_velocity_x()), "horizontal decay matches");
+}
+
+#[test]
+fn wheel_time_zooms_bar_spacing_anchored_at_cursor_x() {
+    let mut state = horizontal_state();
+    let start = pane(); // spacing 8, offset 0
+    let anchor_x = 160.0f32;
+    let slot_before = start.x_to_index(anchor_x).expect("finite"); // 20.0
+    let zoomed = state.step(
+        1.0 / 60.0,
+        &start,
+        &[PointerInput::WheelTime { delta_px: 50.0, anchor_x }],
+    );
+    let spacing = zoomed.scale().bar_spacing();
+    assert!(spacing > 8.0, "scroll up widens the bars: {spacing}");
+    assert!(
+        (f64::from(spacing) - 8.0 * 1.15).abs() <= 1e-4,
+        "one step scales spacing by 1.15: {spacing}"
+    );
+    // The bar slot under the cursor is invariant, so the bar stays put.
+    let slot_after = zoomed.x_to_index(anchor_x).expect("finite");
+    assert!(
+        (slot_after - slot_before).abs() <= 1e-6,
+        "slot under the cursor is invariant: {slot_before} vs {slot_after}"
+    );
+    assert!(
+        (f64::from(zoomed.slot_to_x(slot_before)) - f64::from(anchor_x)).abs()
+            <= f64::from(ANCHOR_DRIFT_EPS_PX),
+        "the bar stays under the cursor pixel"
+    );
+    // Scroll down zooms back out around the same anchor.
+    let out = state.step(
+        1.0 / 60.0,
+        &zoomed,
+        &[PointerInput::WheelTime { delta_px: -50.0, anchor_x }],
+    );
+    assert!(out.scale().bar_spacing() < spacing, "scroll down narrows the bars");
+    let out_slot = out.x_to_index(anchor_x).expect("finite");
+    assert!((out_slot - slot_before).abs() <= 1e-6, "anchor holds across zoom-out");
+}
+
+#[test]
+fn horizontal_elastic_and_spacing_rails_hold() {
+    let start = pane(); // spacing 8
+    // Slam the time axis right: hi_lim = margin_slots * spacing = 6 * 8 = 48.
+    let mut state = free_state().with_horizontal_bounds(40, 320.0).expect("bounds");
+    let slammed = state.step(
+        1.0 / 60.0,
+        &start,
+        &[PointerInput::Pan2D { dx_px: 4000.0, dy_px: 0.0 }],
+    );
+    assert!(
+        (f64::from(slammed.x_offset_px()) - 48.0).abs() <= 1e-3,
+        "horizontal wall holds at hi_lim: {}",
+        slammed.x_offset_px()
+    );
+    assert!(state.is_settled(), "wall contact absorbs the horizontal coast");
+    // Slam the time axis left: lo_lim = 320 - (40 + 6) * 8 = -48.
+    let mut state = free_state().with_horizontal_bounds(40, 320.0).expect("bounds");
+    let slammed = state.step(
+        1.0 / 60.0,
+        &start,
+        &[PointerInput::Pan2D { dx_px: -4000.0, dy_px: 0.0 }],
+    );
+    assert!(
+        (f64::from(slammed.x_offset_px()) + 48.0).abs() <= 1e-3,
+        "horizontal wall holds at lo_lim: {}",
+        slammed.x_offset_px()
+    );
+    // Spacing rails: sustained zoom-in clamps at MAX_BAR_SPACING.
+    let mut state = free_state().with_horizontal_bounds(40, 320.0).expect("bounds");
+    let mut current = start;
+    for _ in 0..40 {
+        current = state.step(
+            1.0 / 60.0,
+            &current,
+            &[PointerInput::WheelTime { delta_px: 50.0, anchor_x: 160.0 }],
+        );
+    }
+    assert!(
+        (current.scale().bar_spacing() - MAX_BAR_SPACING).abs() <= 1e-3,
+        "spacing clamps at MAX_BAR_SPACING: {}",
+        current.scale().bar_spacing()
+    );
+    // Sustained zoom-out clamps at MIN_BAR_SPACING.
+    let mut state = free_state().with_horizontal_bounds(40, 320.0).expect("bounds");
+    let mut current = start;
+    for _ in 0..80 {
+        current = state.step(
+            1.0 / 60.0,
+            &current,
+            &[PointerInput::WheelTime { delta_px: -50.0, anchor_x: 160.0 }],
+        );
+    }
+    assert!(
+        (current.scale().bar_spacing() - MIN_BAR_SPACING).abs() <= 1e-3,
+        "spacing clamps at MIN_BAR_SPACING: {}",
+        current.scale().bar_spacing()
+    );
+    // Bad horizontal bounds refuse with the parameter named.
+    assert!(free_state().with_horizontal_bounds(0, 320.0).is_err(), "zero bars refuses");
+    assert!(free_state().with_horizontal_bounds(40, 0.0).is_err(), "zero width refuses");
+}
+
+/// Calibration controls for the 2D pan and cursor-anchored wheel-zoom
+/// heuristics: at rest nothing drifts, and across a full zoom sweep the bar
+/// slot under the cursor stays pinned to its anchor pixel while the spacing
+/// rails hold.
+#[test]
+fn cursor_anchored_wheel_zoom_and_2d_pan_calibration_controls() {
+    // Control group (at rest / zero delta): 120 idle frames move neither the
+    // horizontal offset nor the bar spacing.
+    let mut state = free_state().with_horizontal_bounds(5_000, 320.0).expect("valid bounds");
+    let start = pane(); // spacing 8, offset 0
+    let mut current = start;
+    for frame in 0..120 {
+        let events = if frame % 2 == 0 {
+            vec![PointerInput::Pan2D { dx_px: 0.0, dy_px: 0.0 }]
+        } else {
+            vec![PointerInput::WheelTime { delta_px: 0.0, anchor_x: 160.0 }]
+        };
+        current = state.step(1.0 / 60.0, &current, &events);
+    }
+    assert_eq!(
+        current.x_offset_px().to_bits(),
+        start.x_offset_px().to_bits(),
+        "idle frames hold the time offset bit-for-bit"
+    );
+    assert_eq!(
+        current.scale().bar_spacing().to_bits(),
+        start.scale().bar_spacing().to_bits(),
+        "idle frames hold the bar spacing bit-for-bit"
+    );
+    assert!(state.is_settled(), "zero-delta gestures seed no coast");
+
+    // Precision: across 20 zoom-in and 20 zoom-out steps around three in-pane
+    // anchors, the bar slot under the cursor never drifts past the tolerance.
+    // The data is far wider than the pane, so the horizontal envelope never
+    // clamps the offset the anchor math sets.
+    for anchor_x in [40.0_f32, 160.0, 310.0] {
+        let slot = start.x_to_index(anchor_x).expect("finite anchor slot");
+        for delta in [50.0_f32, -50.0] {
+            let mut state = free_state().with_horizontal_bounds(5_000, 320.0).expect("valid bounds");
+            let mut current = start;
+            for step in 0..20 {
+                current = state.step(
+                    1.0 / 60.0,
+                    &current,
+                    &[PointerInput::WheelTime { delta_px: delta, anchor_x }],
+                );
+                let drift = (f64::from(current.slot_to_x(slot)) - f64::from(anchor_x)).abs();
+                assert!(
+                    drift <= f64::from(ANCHOR_DRIFT_EPS_PX),
+                    "anchor {anchor_x} delta {delta} step {step}: bar drifted {drift} px"
+                );
+            }
+        }
+    }
+
+    // The spacing rails hold across a sustained zoom sweep.
+    let mut state = free_state().with_horizontal_bounds(5_000, 320.0).expect("valid bounds");
+    let mut zoomed_in = start;
+    for _ in 0..40 {
+        zoomed_in = state.step(
+            1.0 / 60.0,
+            &zoomed_in,
+            &[PointerInput::WheelTime { delta_px: 50.0, anchor_x: 160.0 }],
+        );
+    }
+    assert!(
+        (zoomed_in.scale().bar_spacing() - MAX_BAR_SPACING).abs() <= 1e-3,
+        "zoom-in clamps at the max rail: {}",
+        zoomed_in.scale().bar_spacing()
+    );
+    let mut state = free_state().with_horizontal_bounds(5_000, 320.0).expect("valid bounds");
+    let mut zoomed_out = start;
+    for _ in 0..40 {
+        zoomed_out = state.step(
+            1.0 / 60.0,
+            &zoomed_out,
+            &[PointerInput::WheelTime { delta_px: -50.0, anchor_x: 160.0 }],
+        );
+    }
+    assert!(
+        (zoomed_out.scale().bar_spacing() - MIN_BAR_SPACING).abs() <= 1e-3,
+        "zoom-out clamps at the min rail: {}",
+        zoomed_out.scale().bar_spacing()
+    );
+}

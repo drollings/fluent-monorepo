@@ -192,6 +192,21 @@ pub struct ChartBars {
     pub dropped: u64,
 }
 
+/// One selectable instrument in a symbol catalog.
+///
+/// `asset_class` is a stable display tag (`Stocks`, `Funds`, `Futures`,
+/// `Crypto`): the terminal groups and filters the Symbol Selection Modal by
+/// it, and the view crate never links a market-data taxonomy to do so.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct SymbolInfoView {
+    /// Ticker symbol (e.g. `GLD`).
+    pub symbol: String,
+    /// Human-readable instrument name.
+    pub name: String,
+    /// Asset class tag (`Stocks`, `Funds`, `Futures`, `Crypto`).
+    pub asset_class: String,
+}
+
 /// One overlay series (indicator values aligned with chart bars).
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct OverlaySeries {

@@ -169,3 +169,47 @@ fn unused_theme_keys_never_refuse_the_overlay() {
     paint_overlay(&painter, &with_levels, &full, 320.0).expect("levels paint");
     assert!(!end_frame(&ctx).shapes.is_empty(), "levels emit shapes");
 }
+
+#[test]
+fn translate_overlay_shifts_all_five_primitive_vecs() {
+    // Every pane-local primitive kind moves by the pane origin: series points
+    // and markers and labels on both axes, level lines and area corners with
+    // their respective verticals, and holes never resurrect.
+    let origin = (10.0_f32, 20.0_f32);
+    let geoms = OverlayGeoms {
+        series: vec![SeriesGeom {
+            points: vec![Some((0.0, 100.0)), None, Some((8.0, 90.0))],
+        }],
+        levels: vec![50.0],
+        markers: vec![(8.0, 100.0)],
+        labels: vec![PlacedLabel { x: 16.0, y: 150.0, text: "hi".to_owned() }],
+        areas: vec![(0.0, 20.0, 24.0, 180.0)],
+    };
+    let shifted = translate_overlay(geoms, origin);
+    assert_eq!(shifted.series[0].points[0], Some((0.0 + origin.0, 100.0 + origin.1)));
+    assert_eq!(shifted.series[0].points[1], None, "holes stay holed");
+    assert_eq!(shifted.series[0].points[2], Some((8.0 + origin.0, 90.0 + origin.1)));
+    assert_eq!(shifted.levels, vec![50.0 + origin.1]);
+    assert_eq!(shifted.markers, vec![(8.0 + origin.0, 100.0 + origin.1)]);
+    assert_eq!(
+        (shifted.labels[0].x, shifted.labels[0].y),
+        (16.0 + origin.0, 150.0 + origin.1)
+    );
+    assert_eq!(
+        shifted.areas[0],
+        (0.0 + origin.0, 20.0 + origin.1, 24.0 + origin.0, 180.0 + origin.1)
+    );
+}
+
+#[test]
+fn unsupported_projection_renders_a_chip() {
+    // A refused projection never paints a partial overlay: the chip names the
+    // construct and reason instead.
+    let refusal = ProjectionRefusal::Unsupported {
+        construct: "table.new".to_owned(),
+        reason: "no table primitive",
+    };
+    egui::__run_test_ui(|ui| {
+        paint_unsupported_chip(ui, &refusal);
+    });
+}

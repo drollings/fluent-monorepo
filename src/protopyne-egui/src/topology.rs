@@ -9,7 +9,9 @@
 //! through [`cache_key_for`].
 
 use fluent_egui::{EguiError, PanePlan, ReplayController, cache_key};
+use protopyne_chart_model::{ChartRow, DisplayOnly};
 use protopyne_kernels::indicator::{IndicatorId, IndicatorRegistry, ParamSet, execution_order};
+use protopyne_kernels::{OwnedOhlcv, builtin_registry};
 
 /// Price pane: converted rows, no upstream pane.
 pub const PRICE_NODE: &str = "price";
@@ -71,6 +73,47 @@ pub fn kernel_order(
 #[must_use]
 pub fn cache_key_for(node: &str, params: &ParamSet) -> u64 {
     cache_key(node, params.fingerprint())
+}
+
+/// Carry a kernel refusal across the crate boundary without a second error type.
+pub(crate) fn describe_kernel(error: &protopyne_kernels::KernelError) -> EguiError {
+    EguiError::Dependency { reason: error.to_string() }
+}
+
+/// Fenced full-OHLC preview frame for kernel batch evaluation.
+///
+/// Display provenance is fenced: every leg enters as [`DisplayOnly`] and is
+/// revealed exactly here — the auditable escape for a display-descended
+/// preview frame. This is the single construction every kernel-reading
+/// terminal module shares, so the fence is named once and no module forks a
+/// second display-to-kernel bridge.
+pub(crate) fn kernel_preview_frame(rows: &[ChartRow]) -> OwnedOhlcv {
+    let open: Vec<DisplayOnly<f64>> = rows.iter().map(|row| DisplayOnly::new(row.open)).collect();
+    let high: Vec<DisplayOnly<f64>> = rows.iter().map(|row| DisplayOnly::new(row.high)).collect();
+    let low: Vec<DisplayOnly<f64>> = rows.iter().map(|row| DisplayOnly::new(row.low)).collect();
+    let close: Vec<DisplayOnly<f64>> = rows.iter().map(|row| DisplayOnly::new(row.close)).collect();
+    let volume: Vec<DisplayOnly<f64>> =
+        rows.iter().map(|row| DisplayOnly::new(row.volume as f64)).collect();
+    OwnedOhlcv {
+        open: open.into_iter().map(DisplayOnly::reveal).collect(),
+        high: high.into_iter().map(DisplayOnly::reveal).collect(),
+        low: low.into_iter().map(DisplayOnly::reveal).collect(),
+        close: close.into_iter().map(DisplayOnly::reveal).collect(),
+        volume: volume.into_iter().map(DisplayOnly::reveal).collect(),
+    }
+}
+
+/// Run one kernel batch over a frame, or refuse a missing kernel.
+pub(crate) fn kernel_series(
+    kernel_id: &str,
+    params: &ParamSet,
+    frame: &OwnedOhlcv,
+) -> Result<Vec<Option<f64>>, EguiError> {
+    let registry = builtin_registry().map_err(|e| describe_kernel(&e))?;
+    let kernel = registry.get(kernel_id).ok_or_else(|| EguiError::Dependency {
+        reason: format!("kernel not registered: {kernel_id}"),
+    })?;
+    kernel.batch(&frame.views(), params).map(|result| result.values).map_err(|e| describe_kernel(&e))
 }
 
 #[cfg(test)]

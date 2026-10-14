@@ -156,8 +156,10 @@ fn bloat_ledger_pins_source_files() {
             "annotations.rs",
             "chart.rs",
             "export.rs",
+            "fast_mas.rs",
             "feed.rs",
             "grant_form.rs",
+            "indicators.rs",
             "integration_lite.rs",
             "lib.rs",
             "oscillators.rs",
@@ -171,6 +173,7 @@ fn bloat_ledger_pins_source_files() {
             "views/mod.rs",
             "views/portfolio.rs",
             "widgets.rs",
+            "workspace.rs",
         ],
         "a new source file must justify itself by editing this ledger"
     );
@@ -466,13 +469,17 @@ fn display_floats_never_parse_back_into_money() {
 
 #[test]
 fn display_fence_marks_kernel_preview_frames() {
-    // Positive pin: the preview boundary fences display legs — the fence
-    // type must be named exactly where display floats enter kernel frames,
-    // so a future refactor cannot silently drop the mark.
-    assert!(
-        code_lines(&read_src("integration_lite.rs")).iter().any(|line| line.contains("DisplayOnly")),
-        "integration_lite.rs must route preview frames through the DisplayOnly fence"
-    );
+    // Positive pin: every module that builds a kernel preview frame fences
+    // display legs — the fence type must be named exactly where display floats
+    // enter kernel frames, so a future refactor cannot silently drop the mark.
+    // `topology.rs` owns the shared full-OHLC preview frame; `integration_lite`
+    // and `fast_mas` own their close-only synth/MA frames.
+    for module in ["topology.rs", "integration_lite.rs", "fast_mas.rs"] {
+        assert!(
+            code_lines(&read_src(module)).iter().any(|line| line.contains("DisplayOnly")),
+            "{module} must route preview frames through the DisplayOnly fence"
+        );
+    }
 }
 
 /// Code lines of the function whose signature line contains `marker`,

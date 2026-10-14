@@ -13,9 +13,14 @@ fn default_chart() -> ChartConfig {
 #[test]
 fn chart_schema_lists_every_field() {
     let config = default_chart();
+    assert_eq!(config.symbol, "GLD", "the top bar defaults to the GLD ticker");
+    assert_eq!(DEFAULT_SYMBOL, "GLD", "the default ticker is the GLD constant");
+    assert_eq!(default_symbol(), "GLD", "the builder default reads the same constant");
+    assert_eq!(config.get_field("symbol").expect("symbol reads"), "GLD");
     let schema = config.describe();
     assert_eq!(schema["type"], "object");
     for name in [
+        "symbol",
         "timeframe",
         "show_price",
         "show_volume",
@@ -35,6 +40,9 @@ fn chart_schema_lists_every_field() {
         );
         assert!(config.get_field(name).is_ok(), "field {name} reads");
     }
+    let empty_symbol = ChartConfig::new().symbol(String::new()).build();
+    let err = empty_symbol.validate().expect_err("an empty symbol refuses");
+    assert!(err.to_string().contains("symbol"), "names the field: {err}");
 }
 
 #[test]

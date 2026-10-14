@@ -8,19 +8,23 @@
 //! golden tests never flake. The windowing shell translates pointer events
 //! into [`PointerInput`]; this module never names `egui`.
 //!
-//! What the machine owns: the vertical price window only. A drag pans it
-//! with grab semantics (content follows the pointer); wheel and pinch zoom
-//! around the pointer's price anchor; a box select sets the spanned range.
-//! Horizontal scroll offset is caller-owned (`visible_rows` takes the start
-//! bar), so drag carries no horizontal component. Released motion coasts
-//! with exponential decay integrated in closed form, so splitting one time
-//! interval into smaller steps keeps the trajectory.
+//! What the machine owns: the vertical price window and the horizontal time
+//! axis. A drag pans the price window with grab semantics (content follows
+//! the pointer); a 2D pan moves both axes; wheel and pinch zoom the price
+//! window around the pointer's price anchor; a box select sets the spanned
+//! range; and a time-axis wheel scales `bar_spacing` around the bar slot
+//! under the cursor, keeping that bar stationary. Released motion on either
+//! axis coasts with exponential decay integrated in closed form, so
+//! splitting one time interval into smaller steps keeps the trajectory.
 //!
 //! The window may stretch past the data extent into an elastic margin, but
 //! the hard envelope is never exceeded: contact translates the window back
-//! inside (span preserved) and absorbs the coast velocity. Zoom and box
-//! events re-anchor and stop any coast; off-pane anchors name no price, so
-//! those events hold the window.
+//! inside (span preserved) and absorbs the coast velocity. The horizontal
+//! envelope is configured with
+//! [`with_horizontal_bounds`](InteractionState::with_horizontal_bounds) and
+//! clamps the time-axis offset the same way. Zoom and box events re-anchor
+//! and stop any coast; off-pane anchors name no price, so those events hold
+//! the window.
 //!
 //! Motion constants below are feel heuristics (task value, not producer
 //! confidence): they ship so the frame path has something to wire, and the
@@ -57,6 +61,19 @@ pub const ELASTIC_FRACTION: f64 = 0.15;
 /// fraction of its displacement rate into the running velocity.
 pub const VELOCITY_BLEND: f64 = 0.5;
 
+/// Minimum horizontal bar spacing in pixels (task value: candle legibility):
+/// the time-axis zoom rail, below which candles would collapse into a smear.
+pub const MIN_BAR_SPACING: f32 = 1.0;
+
+/// Maximum horizontal bar spacing in pixels (task value: candle legibility):
+/// the time-axis zoom rail, above which too few candles fit to read.
+pub const MAX_BAR_SPACING: f32 = 64.0;
+
+/// Cursor-anchor drift tolerance in pixels (task value: anchor stability):
+/// across a cursor-anchored time-axis zoom the bar under the cursor must stay
+/// within this distance of its anchor pixel.
+pub const ANCHOR_DRIFT_EPS_PX: f32 = 1e-3;
+
 /// One translated pointer gesture. The windowing shell builds these from raw
 /// input; every field is headless (pixels, scale factors, no `egui` types).
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -90,21 +107,49 @@ pub enum PointerInput {
         /// Other box end in pane-local y pixels.
         bottom_y: f32,
     },
+    /// Two-axis drag in pixels (positive pulls content down and right): pans
+    /// the price window and the time axis together, seeding both coast
+    /// velocities. Grab semantics: the content under the pointer follows it.
+    Pan2D {
+        /// Horizontal pointer travel in pixels; positive moves content right.
+        dx_px: f32,
+        /// Vertical pointer travel in pixels; positive moves content down.
+        dy_px: f32,
+    },
+    /// Time-axis wheel: scales the horizontal `bar_spacing` around the bar
+    /// slot under `anchor_x`, keeping that bar stationary. Positive
+    /// `delta_px` (scroll up) zooms in.
+    WheelTime {
+        /// Scroll travel in pixels.
+        delta_px: f32,
+        /// Pane-local x pixel the zoom keeps fixed.
+        anchor_x: f32,
+    },
 }
 
 /// Pure interaction state: elastic data bounds plus kinetic velocity.
 ///
 /// Construct with the data extent the window may roam (plus its elastic
 /// margin); advance a viewport with [`step`](Self::step). The window itself
-/// stays caller-held, so replay only needs the event script.
+/// stays caller-held, so replay only needs the event script. The machine
+/// tracks two independent coasts: the vertical price window and the
+/// horizontal time axis (`x_offset_px`). Horizontal elastic bounds are
+/// optional; configure them with
+/// [`with_horizontal_bounds`](Self::with_horizontal_bounds) so panning and
+/// time-axis coasting stay inside the data envelope.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct InteractionState {
     /// Soft lower data bound (window may stretch below, into the margin).
     soft_min: f64,
     /// Soft upper data bound.
     soft_max: f64,
-    /// Coast velocity in price per second; exactly zero at rest.
+    /// Vertical coast velocity in price per second; exactly zero at rest.
     velocity: f64,
+    /// Horizontal coast velocity in pixels per second; zero at rest.
+    velocity_x: f64,
+    /// Optional horizontal envelope `(total_bars, pane_width_px)`; `None`
+    /// leaves the time axis unclamped.
+    horizontal: Option<(f64, f64)>,
 }
 
 impl InteractionState {
@@ -123,7 +168,38 @@ impl InteractionState {
                 reason: "lower interaction bound must sit below the upper".to_owned(),
             });
         }
-        Ok(Self { soft_min: lo, soft_max: hi, velocity: 0.0 })
+        Ok(Self {
+            soft_min: lo,
+            soft_max: hi,
+            velocity: 0.0,
+            velocity_x: 0.0,
+            horizontal: None,
+        })
+    }
+
+    /// Bind the horizontal elastic envelope to `total_bars` over a pane
+    /// `pane_width_px` wide; refuses a zero bar count or non-positive,
+    /// non-finite pane width. Without this the time axis pans and coasts
+    /// unclamped.
+    pub fn with_horizontal_bounds(
+        mut self,
+        total_bars: usize,
+        pane_width_px: f32,
+    ) -> Result<Self, EguiError> {
+        if total_bars == 0 {
+            return Err(EguiError::InvalidParam {
+                what: "total_bars".to_owned(),
+                reason: "horizontal bounds need at least one bar".to_owned(),
+            });
+        }
+        if !pane_width_px.is_finite() || pane_width_px <= 0.0 {
+            return Err(EguiError::InvalidParam {
+                what: "pane_width_px".to_owned(),
+                reason: "pane width must be positive and finite".to_owned(),
+            });
+        }
+        self.horizontal = Some((total_bars as f64, f64::from(pane_width_px)));
+        Ok(self)
     }
 
     /// Current coast velocity in price per second; zero at rest.
@@ -132,15 +208,28 @@ impl InteractionState {
         self.velocity
     }
 
-    /// Whether no coast is in flight.
+    /// Current horizontal coast velocity in pixels per second; zero at rest.
+    #[must_use]
+    pub fn kinetic_velocity_x(self) -> f64 {
+        self.velocity_x
+    }
+
+    /// Whether no coast is in flight on either axis.
     #[must_use]
     pub fn is_settled(self) -> bool {
-        self.velocity == 0.0
+        self.velocity == 0.0 && self.velocity_x == 0.0
+    }
+
+    /// Reference span for the horizontal rest snap: the pane width when the
+    /// envelope is configured, else a unit span (horizontal coast is only
+    /// meaningful with bounds, but the snap must never divide by zero).
+    fn horizontal_reference(&self) -> f64 {
+        self.horizontal.map_or(1.0, |(_, width)| width)
     }
 
     /// Advance `viewport` by `dt` seconds under `events`, returning the next
     /// window. Discrete gestures apply as displacements (dt-independent);
-    /// empty steps coast the seeded velocity with closed-form exponential
+    /// empty steps coast the seeded velocities with closed-form exponential
     /// decay. Events that name no price (off-pane anchors, degenerate boxes)
     /// hold the window; a rebuild the scale refuses also holds the last good
     /// window and stops the coast.
@@ -154,25 +243,41 @@ impl InteractionState {
             (viewport.y_to_price(0.0), viewport.y_to_price(scale.height()))
         else {
             self.velocity = 0.0;
+            self.velocity_x = 0.0;
             return *viewport;
         };
         let height = f64::from(scale.height());
         let dt_valid = dt.is_finite() && dt > 0.0;
         let (mut min, mut max) = (scale.range().min, scale.range().max);
+        // Horizontal state carried on the caller's viewport, advanced here.
+        let mut spacing = f64::from(scale.bar_spacing());
+        let mut x_offset = f64::from(viewport.x_offset_px());
 
         if events.is_empty() {
-            if dt_valid && self.velocity != 0.0 {
+            if dt_valid {
                 // Closed form: displacement = v0 * (1 - k) / lambda with
                 // lambda = -ln(base) * 60, so splitting one interval into
                 // smaller steps keeps the trajectory.
                 let decay = KINETIC_DAMPING_BASE.powf(dt * 60.0);
                 let lambda = -KINETIC_DAMPING_BASE.ln() * 60.0;
-                let displacement = self.velocity * (1.0 - decay) / lambda;
-                min += displacement;
-                max += displacement;
-                self.velocity *= decay;
-                if self.velocity.abs() <= REST_FRACTION_OF_SPAN * (max - min) {
-                    self.velocity = 0.0;
+                if self.velocity != 0.0 {
+                    let displacement = self.velocity * (1.0 - decay) / lambda;
+                    min += displacement;
+                    max += displacement;
+                    self.velocity *= decay;
+                    if self.velocity.abs() <= REST_FRACTION_OF_SPAN * (max - min) {
+                        self.velocity = 0.0;
+                    }
+                }
+                if self.velocity_x != 0.0 {
+                    let displacement = self.velocity_x * (1.0 - decay) / lambda;
+                    x_offset += displacement;
+                    self.velocity_x *= decay;
+                    if self.velocity_x.abs()
+                        <= REST_FRACTION_OF_SPAN * self.horizontal_reference()
+                    {
+                        self.velocity_x = 0.0;
+                    }
                 }
             }
         } else {
@@ -198,6 +303,30 @@ impl InteractionState {
                             }
                         }
                     }
+                    PointerInput::Pan2D { dx_px, dy_px } => {
+                        if dy_px.is_finite() {
+                            let shift = f64::from(dy_px) * (top - bottom) / height;
+                            min += shift;
+                            max += shift;
+                            if dt_valid {
+                                let rate = shift / dt;
+                                if rate.is_finite() {
+                                    self.velocity = (1.0 - VELOCITY_BLEND) * self.velocity
+                                        + VELOCITY_BLEND * rate;
+                                }
+                            }
+                        }
+                        if dx_px.is_finite() {
+                            x_offset += f64::from(dx_px);
+                            if dt_valid {
+                                let rate = f64::from(dx_px) / dt;
+                                if rate.is_finite() {
+                                    self.velocity_x = (1.0 - VELOCITY_BLEND) * self.velocity_x
+                                        + VELOCITY_BLEND * rate;
+                                }
+                            }
+                        }
+                    }
                     PointerInput::Wheel { delta_px, anchor_y } => {
                         if !delta_px.is_finite() {
                             continue;
@@ -207,6 +336,25 @@ impl InteractionState {
                             WHEEL_ZOOM_BASE.powf(-f64::from(delta_px) / WHEEL_STEP_PX);
                         (min, max) = zoom_around(min, max, anchor, factor);
                         self.velocity = 0.0;
+                    }
+                    PointerInput::WheelTime { delta_px, anchor_x } => {
+                        if !delta_px.is_finite() || !anchor_x.is_finite() {
+                            continue;
+                        }
+                        // Scroll up (positive) widens the bars — zoom in on
+                        // the time axis, mirroring the price-axis wheel.
+                        let factor =
+                            WHEEL_ZOOM_BASE.powf(f64::from(delta_px) / WHEEL_STEP_PX);
+                        let new_spacing = (spacing * factor)
+                            .clamp(f64::from(MIN_BAR_SPACING), f64::from(MAX_BAR_SPACING));
+                        // Cursor anchor: solve new_offset = anchor_x - slot *
+                        // new_spacing with slot the bar slot under the
+                        // cursor, so that slot maps back to exactly
+                        // anchor_x after the spacing changes.
+                        let slot = (f64::from(anchor_x) - x_offset) / spacing;
+                        x_offset = f64::from(anchor_x) - slot * new_spacing;
+                        spacing = new_spacing;
+                        self.velocity_x = 0.0;
                     }
                     PointerInput::Pinch { scale: pinch, anchor_y } => {
                         if !pinch.is_finite() || pinch <= 0.0 {
@@ -256,19 +404,37 @@ impl InteractionState {
         }
         if fitted.0 >= fitted.1 {
             self.velocity = 0.0;
+            self.velocity_x = 0.0;
             return *viewport;
         }
+
+        // Horizontal elastic envelope: the visible slot window `[s0, s1]`
+        // stays within `[-margin_slots, total_bars + margin_slots]`, so the
+        // pane may overhang the data by the same fraction as the price axis.
+        if let Some((total_bars, pane_width)) = self.horizontal {
+            let margin_slots = ELASTIC_FRACTION * total_bars;
+            let lo_lim = pane_width - (total_bars + margin_slots) * spacing;
+            let hi_lim = margin_slots * spacing;
+            let (lo, hi) = (lo_lim.min(hi_lim), lo_lim.max(hi_lim));
+            if x_offset < lo || x_offset > hi {
+                x_offset = x_offset.clamp(lo, hi);
+                self.velocity_x = 0.0;
+            }
+        }
+
         Viewport::new(
             scale.mode(),
             fitted.0,
             fitted.1,
             scale.height(),
-            scale.bar_spacing(),
+            spacing as f32,
             scale.base_value(),
             scale.inverted(),
         )
+        .and_then(|next| next.with_x_offset(x_offset as f32))
         .unwrap_or_else(|_| {
             self.velocity = 0.0;
+            self.velocity_x = 0.0;
             *viewport
         })
     }

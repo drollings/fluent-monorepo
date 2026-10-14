@@ -302,22 +302,22 @@ async fn ladder_exhaustion_is_clean() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn credit_intake_blocks_and_releases() {
-    let intake = Arc::new(CreditIntake::new(1, 1).expect("valid intake"));
+    let intake = CreditIntake::new(1, 1).expect("valid intake");
     assert!(!intake.is_blocked());
     intake.send(|| async { 1_u32 }).await;
-    let parked = {
-        let intake = Arc::clone(&intake);
-        tokio::spawn(async move { intake.send(|| async { 2_u32 }).await })
-    };
-    for _ in 0..1000 {
-        if intake.is_blocked() {
-            break;
-        }
-        tokio::task::yield_now().await;
-    }
+    // Polling the second send once parks it on the exhausted credit
+    // deterministically — a single poll observes zero credit and records the
+    // producer as blocked before returning `Pending` — so the assertion below
+    // never depends on the scheduler running a spawned task in time.
+    let mut parked = Box::pin(intake.send(|| async { 2_u32 }));
+    let woken = std::future::Future::poll(
+        parked.as_mut(),
+        &mut std::task::Context::from_waker(std::task::Waker::noop()),
+    );
+    assert!(woken.is_pending(), "exhausted credit parks the producer");
     assert!(intake.is_blocked(), "exhausted credit parks producers");
     intake.release();
-    assert_eq!(parked.await.expect("join succeeds"), 2, "released credit runs the waiter");
+    assert_eq!(parked.await, 2, "released credit runs the waiter");
     assert!(CreditIntake::new(0, 1).is_err() && CreditIntake::new(1, 0).is_err());
 }
 

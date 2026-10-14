@@ -132,6 +132,93 @@ pub struct FieldEdits {
     pub refusals: Vec<String>,
 }
 
+/// One tab of an indicator settings pane: calculation inputs, paint styling,
+/// or the visibility toggles.
+///
+/// The split is a routing over field names, not a second schema: every
+/// lifted field lands in exactly one tab (see [`classify_schema_field`]),
+/// so the three tabs partition the schema without loss or overlap.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsTab {
+    /// Calculation parameters: lengths, periods, smoothing, sources.
+    Inputs,
+    /// Paint knobs: colors, alpha, line style, thresholds.
+    Style,
+    /// On/off toggles: `show_*` and `visible` booleans.
+    Visibility,
+}
+
+impl SettingsTab {
+    /// Every tab, in render order.
+    #[must_use]
+    pub fn all() -> [Self; 3] {
+        [Self::Inputs, Self::Style, Self::Visibility]
+    }
+
+    /// The fixed tab label the settings pane renders.
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Inputs => "Inputs",
+            Self::Style => "Style",
+            Self::Visibility => "Visibility",
+        }
+    }
+}
+
+/// Route one lifted field to its settings tab.
+///
+/// Precedence is fixed so the partition is total: a boolean visibility name
+/// (`show_*`, `visible`) wins over everything, then a paint-style name
+/// (color, alpha, transparency, brightness, threshold, style, theme), and
+/// everything else — calculation fields and the unclassified remainder —
+/// renders under Inputs. Name matching is case-insensitive, because schemas
+/// arrive in both `snake_case` and display casing.
+#[must_use]
+pub fn classify_schema_field(field: &SchemaField) -> SettingsTab {
+    let name = field.name.to_ascii_lowercase();
+    let is_toggle = name == "visible"
+        || name.starts_with("visible_")
+        || name.starts_with("show_")
+        || name == "show";
+    if field.kind == FieldKind::Boolean && is_toggle {
+        return SettingsTab::Visibility;
+    }
+    if ["color", "alpha", "transparency", "brightness", "threshold", "style", "theme"]
+        .iter()
+        .any(|token| name.contains(token))
+    {
+        return SettingsTab::Style;
+    }
+    SettingsTab::Inputs
+}
+
+/// The schema fields that render under `tab`, in schema order.
+#[must_use]
+pub fn fields_for_tab(fields: &[SchemaField], tab: SettingsTab) -> Vec<SchemaField> {
+    fields.iter().filter(|field| classify_schema_field(field) == tab).cloned().collect()
+}
+
+/// Paint the tab bar plus the active tab's editors, writing accepted edits
+/// straight through `target`'s own `FieldAccess` contract.
+///
+/// The caller owns `active_tab`; rendering never moves it. Only the active
+/// tab's fields render, so an untouched frame writes nothing — exactly the
+/// [`paint_schema_fields`] contract, scoped to one tab.
+pub fn paint_tabbed_schema_fields(
+    ui: &mut egui::Ui,
+    active_tab: &mut SettingsTab,
+    fields: &[SchemaField],
+    target: &mut dyn FieldAccess,
+) -> FieldEdits {
+    ui.horizontal(|bar| {
+        for tab in SettingsTab::all() {
+            bar.selectable_value(active_tab, tab, tab.label());
+        }
+    });
+    paint_schema_fields(ui, &fields_for_tab(fields, *active_tab), target)
+}
+
 /// Paint one editor per field into `ui`, writing accepted edits straight
 /// through `target`'s own `FieldAccess` contract.
 ///

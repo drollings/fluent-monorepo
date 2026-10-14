@@ -8,10 +8,13 @@
 //! core-side: `arm` runs the identical tighten-only logic through
 //! `apply_arm`, including its refusal messages.
 
+use protopyne_chart_model::aggregate_bars;
 use protopyne_strategy::Grant;
+use protopyne_types::{Bar, Timeframe};
 use protopyne_view::{
     ArmResponse, ChartBars, GatewayError, HealthView, JournalRowView, OverlaySeries, PortfolioView,
-    ProposalView, ReplayView, TerminalGateway, WorstCase,
+    ProposalView, ReplayView, SymbolInfoView, TerminalGateway, WorstCase,
+    validate_symbol_timeframe,
 };
 use std::collections::BTreeMap;
 
@@ -20,6 +23,43 @@ use crate::service::{
     DEFAULT_REPLAY_CHECKPOINT_EVERY, apply_arm, chart_bars_of, grant_tiers_of, health_view,
     live_grant, overlay_series_of, parse_patch, preview_arm_of, replay_view_of,
 };
+
+/// Map the overlay builder's `(status, reason)` refusal onto the gateway's
+/// error vocabulary: an unavailable dataset is transport-shaped, everything
+/// else is a malformed request. Shared by the slot-agnostic and symbol-scoped
+/// overlay reads so both refuse identically.
+fn overlay_error((status, reason): (axum::http::StatusCode, String)) -> GatewayError {
+    if status == axum::http::StatusCode::SERVICE_UNAVAILABLE {
+        GatewayError::Unavailable(reason)
+    } else {
+        GatewayError::Malformed(reason)
+    }
+}
+
+/// Upward-resample factor for a requested timeframe.
+///
+/// The server's boot history is served as the 15-minute base slot; a coarser
+/// requested timeframe is folded by a whole multiple of that base through the
+/// shared [`aggregate_bars`]. Timeframes the base grid cannot express finer
+/// (`1M`, `5M`) or that are unknown serve the base unchanged.
+fn resample_group(timeframe: &str) -> usize {
+    let base = Timeframe::M15.duration_ms();
+    Timeframe::from_resolution(timeframe)
+        .map_or(1, |requested| (requested.duration_ms() / base).max(1) as usize)
+}
+
+/// Fold the boot history to the requested timeframe when it holds at least one
+/// full group. A short history that cannot fill a coarser bar serves the base
+/// unchanged rather than fabricating a partial bar, so a coarse read never
+/// returns an empty window the overlay builders would refuse.
+fn resampled_history(history: &[Bar], timeframe: &str) -> Vec<Bar> {
+    let group = resample_group(timeframe);
+    if group > 1 && history.len() >= group {
+        aggregate_bars(history, group)
+    } else {
+        history.to_vec()
+    }
+}
 
 /// Read gateway over live server state (`AppState` is not `Debug`, so the
 /// gateway isn't either — it prints as its views, never its locks).
@@ -63,13 +103,31 @@ impl TerminalGateway for ServerGateway {
     fn chart_overlays(&self, kind: &str, period: i64) -> Result<OverlaySeries, GatewayError> {
         // The route defaults the `bb` multiplier; the gateway takes its
         // builders' default explicitly so callers state nothing implicit.
-        overlay_series_of(&self.state.history, kind, period, 2.0).map_err(|(status, reason)| {
-            if status == axum::http::StatusCode::SERVICE_UNAVAILABLE {
-                GatewayError::Unavailable(reason)
-            } else {
-                GatewayError::Malformed(reason)
-            }
-        })
+        overlay_series_of(&self.state.history, kind, period, 2.0).map_err(overlay_error)
+    }
+
+    fn symbols(&self) -> Result<Vec<SymbolInfoView>, GatewayError> {
+        // The server serves its boot history for any requested symbol and
+        // curates no instrument master, so the catalog reads empty; the
+        // terminal drives its Symbol Selection Modal from its own catalog.
+        Ok(Vec::new())
+    }
+
+    fn chart_bars_for(&self, symbol: &str, timeframe: &str) -> Result<ChartBars, GatewayError> {
+        validate_symbol_timeframe(symbol, timeframe)?;
+        Ok(chart_bars_of(&resampled_history(&self.state.history, timeframe)))
+    }
+
+    fn chart_overlays_for(
+        &self,
+        symbol: &str,
+        timeframe: &str,
+        kind: &str,
+        period: i64,
+    ) -> Result<OverlaySeries, GatewayError> {
+        validate_symbol_timeframe(symbol, timeframe)?;
+        overlay_series_of(&resampled_history(&self.state.history, timeframe), kind, period, 2.0)
+            .map_err(overlay_error)
     }
 
     fn replay(&self) -> Result<ReplayView, GatewayError> {
