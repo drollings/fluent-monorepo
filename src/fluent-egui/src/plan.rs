@@ -17,8 +17,9 @@
 //! bookkeeping only — they never make a signal tradeable.
 
 use std::collections::HashSet;
+use std::sync::Arc;
 
-use common_core::cache::LoadCache;
+use common_core::cache::ArcLoadCache;
 use fluent_dag::checkpointed::CheckpointedStepGraph;
 use fluent_dag::dep_graph::GraphError;
 
@@ -163,11 +164,14 @@ impl Default for PanePlan {
 
 /// Cache key for one pane: length-prefixed node name plus the caller's
 /// parameter fingerprint, hashed once through the shared FNV-1a helper (the
-/// same byte idiom parameter fingerprints use). Correctness (key identity):
-/// the encoding distinguishes every distinct input, so a key always names
-/// the pane and parameters it was built from.
+/// same byte idiom parameter fingerprints use). The length prefix removes
+/// framing ambiguity — name/fingerprint splits that concatenate identically
+/// would otherwise key identically — but, like [`series_hash`] below, this
+/// does not claim hash injectivity: FNV-1a-64 can collide, so a key names
+/// the pane and parameters it was built from short of a collision.
 #[must_use]
-pub fn cache_key(node: &str, fingerprint: u64) -> u64 {    let mut bytes = Vec::with_capacity(8 + node.len() + 8);
+pub fn cache_key(node: &str, fingerprint: u64) -> u64 {
+    let mut bytes = Vec::with_capacity(8 + node.len() + 8);
     bytes.extend_from_slice(&(node.len() as u64).to_le_bytes());
     bytes.extend_from_slice(node.as_bytes());
     bytes.extend_from_slice(&fingerprint.to_le_bytes());
@@ -223,15 +227,19 @@ pub const DEFAULT_PANE_CACHE_CAPACITY: usize = 64;
 /// Fingerprint-keyed series store with content-hash backdating, bounded by
 /// the shared LRU.
 ///
-/// The frame path reads revisions; recompute publishes only dirty panes, and
-/// republishing identical content keeps the revision so downstream waves
-/// skip cleanly. Eviction drops the least-recently-used entry, which reads
-/// back as a miss (recompute) — never as a stale revision. The frame calls
-/// [`pin`](Self::pin) once per frame so a working set not larger than
-/// capacity never misses. Write-through only: entries arrive via
-/// [`publish`](Self::publish); the load closure never runs.
+/// Entries ride the shared [`ArcLoadCache`](common_core::cache::ArcLoadCache)
+/// — one cache shape, not a second cloning one — so reads return an
+/// `Arc`-shared entry (a refcount bump, never a series clone) whether the
+/// frame pins, publishes, or replays. The frame path reads revisions;
+/// recompute publishes only dirty panes, and republishing identical content
+/// keeps the revision so downstream waves skip cleanly. Eviction drops the
+/// least-recently-used entry, which reads back as a miss (recompute) —
+/// never as a stale revision. The frame calls [`pin`](Self::pin) once per
+/// frame so a working set not larger than capacity never misses.
+/// Write-through only: entries arrive via [`publish`](Self::publish); the
+/// load closure never runs.
 pub struct PaneCache {
-    entries: LoadCache<u64, CachedSeries, String>,
+    entries: ArcLoadCache<u64, CachedSeries, String>,
     revision: u64,
 }
 
@@ -245,20 +253,21 @@ impl PaneCache {
 
     /// Create an empty store holding up to `capacity` entries; refuses zero.
     pub fn with_capacity(capacity: usize) -> Result<Self, EguiError> {
-        let entries = LoadCache::new(capacity, never_load).map_err(|reason| EguiError::InvalidParam {
-            what: "capacity".to_owned(),
-            reason,
-        })?;
+        let entries =
+            ArcLoadCache::new(capacity, never_load).map_err(|reason| EguiError::InvalidParam {
+                what: "capacity".to_owned(),
+                reason,
+            })?;
         Ok(Self { entries, revision: 0 })
     }
 
     /// Refresh LRU order for the current working set: every present key
     /// becomes most-recently-used, so transient publishes between frames
     /// evict scratch entries first. Absent keys are ignored — pinning never
-    /// inserts. Call once per frame before publishing.
+    /// inserts. The read promotes the key and its shared handle drops
+    /// without touching the series. Call once per frame before publishing.
     pub fn pin(&self, keys: &[u64]) {
         for key in keys {
-            // The read promotes the key; the clone is discarded.
             let _touched = self.entries.get(key);
         }
     }
@@ -271,7 +280,9 @@ impl PaneCache {
 
     /// Publish one pane's series, returning its revision. Bit-identical
     /// content backdates (revision unchanged); changed content bumps the
-    /// store revision and records it on the entry.
+    /// store revision and records it on the entry. The existence probe
+    /// reads through the shared `Arc`, so an unchanged republish clones no
+    /// series either.
     pub fn publish(&mut self, key: u64, values: Vec<Option<f64>>) -> u64 {
         let hash = series_hash(&values);
         if let Some(entry) = self.entries.get(&key) {
@@ -281,14 +292,15 @@ impl PaneCache {
         }
         self.revision += 1;
         let revision = self.revision;
-        self.entries.insert(key, CachedSeries { values, revision, values_hash: hash });
+        self.entries.insert_owned(key, CachedSeries { values, revision, values_hash: hash });
         revision
     }
 
-    /// Read one cached series, if present. Owned, so an entry evicted after
-    /// the read can never surface as a stale borrow.
+    /// Read one cached series, if present. `Arc`-shared, so an entry
+    /// evicted after the read can never surface as a stale borrow — and the
+    /// read itself clones no series.
     #[must_use]
-    pub fn get(&self, key: u64) -> Option<CachedSeries> {
+    pub fn get(&self, key: u64) -> Option<Arc<CachedSeries>> {
         self.entries.get(&key)
     }
 
@@ -307,9 +319,9 @@ impl PaneCache {
 
 /// Write-through load: the frame path only inserts computed series, so a
 /// mistaken `get_or_load` fails closed instead of synthesizing a value.
-/// Takes the key by reference because `LoadCache::new` dictates the shape.
+/// Takes the key by reference because `ArcLoadCache::new` dictates the shape.
 #[allow(clippy::trivially_copy_pass_by_ref)]
-fn never_load(_key: &u64) -> Result<CachedSeries, String> {
+fn never_load(_key: &u64) -> Result<Arc<CachedSeries>, String> {
     Err("pane cache is write-through; load is never called".to_owned())
 }
 

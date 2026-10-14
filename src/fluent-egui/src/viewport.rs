@@ -9,7 +9,7 @@
 //! viewport in the terminal crate. No paint types enter here.
 
 use protopyne_chart_model::ChartRow;
-use protopyne_chart_scale::{PriceScale, PriceScaleMode, PriceRange, Tick, nice_ticks};
+use protopyne_chart_scale::{PriceRange, PriceScale, PriceScaleMode, Tick, nice_ticks};
 
 use crate::error::EguiError;
 
@@ -48,6 +48,32 @@ impl Viewport {
     #[must_use]
     pub fn scale(self) -> PriceScale {
         self.scale
+    }
+
+    /// The price window on screen right now: the single answer to "what is
+    /// on screen", read from the owned scale, never re-derived at a call
+    /// site. Grid ticks, axis labels, and area baselines all read this; the
+    /// data extent behind the window is a separate question (what the
+    /// viewport was seeded from) and must never stand in for it. Ticks
+    /// drawn from this window are part of the displayed price truth — their
+    /// count and spacing are an output, not a confidence measure.
+    #[must_use]
+    pub fn visible_range(self) -> PriceRange {
+        self.scale.range()
+    }
+
+    /// Map a price to a y pixel only when it sits inside the visible window;
+    /// `None` for unmappable or off-window prices. The plain [`price_to_y`]
+    /// extrapolates by design (the paint edge relies on it to clip lines and
+    /// candles running off the pane), so emitters that must not draw
+    /// off-pane read through here instead of re-deciding containment at
+    /// every call site: one predicate, inherited everywhere.
+    #[must_use]
+    pub fn windowed_y(self, price: f64) -> Option<f32> {
+        if !self.scale.range().contains(price) {
+            return None;
+        }
+        self.price_to_y(price)
     }
 
     /// Map a price to a y pixel (`0` at the top); `None` on non-finite or

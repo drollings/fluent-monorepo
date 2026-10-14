@@ -27,6 +27,7 @@ pub mod annotations;
 pub mod config;
 pub mod error;
 pub mod feed;
+pub mod fields;
 pub mod hittest;
 pub mod interaction;
 pub mod paint;
@@ -35,13 +36,14 @@ pub mod replay;
 pub mod view;
 pub mod viewport;
 
-pub use annotations::{AnnotationSet, MAX_UNDO_DEPTH, resolve_annotation};
+pub use annotations::{AnnotationSet, MAX_UNDO_DEPTH, TimeIndex, annotate_at, resolve_annotation};
 pub use config::{PaneConfig, ThemeConfig};
 pub use error::EguiError;
 pub use feed::{
     ChartFeed, CreditIntake, HistoryError, HistoryRung, PaneHandle, PaneWaveUnit,
     RefreshGate, TransportRetry, load_history, run_wave,
 };
+pub use fields::{FieldEdits, FieldKind, SchemaField, paint_schema_fields, schema_fields};
 pub use hittest::{
     Crosshair, HIT_EPSILON_PX, Hit, crosshair_data, crosshair_pixel, hit_test,
     point_to_segment_distance,
@@ -49,10 +51,10 @@ pub use hittest::{
 pub use interaction::{InteractionState, PointerInput};
 pub use paint::{
     CandleGeom, CrosshairLines, DeltaBarGeom, MarkerDot, PivotDot, RibbonBand, RibbonPolygon,
-    TintedCandle, area_vertex_color, candle_geoms, crosshair_lines, delta_bar_geoms, marker_dots,
-    opacity_from_transparency, oscillator_points, paint_area_fill, paint_candles, paint_candles_as,
-    paint_candles_tinted, paint_crosshair, paint_delta_bars, paint_error_chip, paint_markers,
-    paint_oscillator, paint_pivot_dots, paint_ribbon, paint_ribbon_fill, paint_session_breaks,
+    TintedCandle, area_polygons, area_vertex_color, candle_geoms, crosshair_lines, delta_bar_geoms,
+    marker_dots, opacity_from_transparency, oscillator_points, paint_area_fill, paint_candles,
+    paint_candles_as, paint_candles_tinted, paint_crosshair, paint_delta_bars, paint_error_chip,
+    paint_markers, paint_oscillator, paint_ribbon, paint_ribbon_fill, paint_session_breaks,
     paint_thresholds, pivot_dots, pivot_price_dots, resolve_color, ribbon_bands, ribbon_polygons,
     threshold_line,
 };

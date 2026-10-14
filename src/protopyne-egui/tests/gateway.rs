@@ -10,9 +10,11 @@
 //! only as an optional dependency for the composition-root example outside
 //! `src/`.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use protopyne_view::{MockGateway, TerminalGateway};
+
+use crate::{ReplayScrub, ScrubOutcome};
 
 fn manifest_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -68,6 +70,18 @@ fn mock_gateway_covers_every_trait_method() {
         gateway.arm(serde_json::json!({})).is_err(),
         "mock arm refuses a grant with no id before any core could see it"
     );
+
+    let replay = gateway.replay().expect("mock replay reads");
+    assert_eq!(
+        replay.total_bars,
+        replay.steps.len() as u64,
+        "the mock replay window spans its own steps"
+    );
+    assert_eq!(replay.cursor, replay.total_bars, "a fresh read stands at the head");
+    assert!(
+        replay.steps.iter().any(|step| step.checkpoint),
+        "the mock window carries anchors to scrub to"
+    );
 }
 
 #[tokio::test]
@@ -100,10 +114,21 @@ async fn server_gateway_matches_http_routes() {
         route(&client, format!("{base}/portfolio")).await;
     assert_eq!(gateway.portfolio().expect("gateway portfolio reads"), portfolio);
 
-    // No journal route exists yet: both sides read empty until it lands.
+    // No journal route exists yet, so there is no parity to assert — but
+    // the placeholder is a contract with two halves, and both are pinned so
+    // a half-landed journal fails loudly instead of reading as agreement.
+    // The day the route lands, the 404 half fails and this block becomes
+    // the same gateway-equals-route assertion every other view has above.
     assert!(
         gateway.journal().expect("gateway journal reads").is_empty(),
-        "gateway and (missing) route agree on the empty journal"
+        "until the route lands, the gateway serves the same empty read the missing route would"
+    );
+    let journal_status =
+        client.get(format!("{base}/journal")).send().await.expect("server answers").status();
+    assert_eq!(
+        journal_status,
+        reqwest::StatusCode::NOT_FOUND,
+        "no journal route is registered yet"
     );
 
     let bars: protopyne_view::ChartBars = route(&client, format!("{base}/chart/bars")).await;
@@ -113,59 +138,99 @@ async fn server_gateway_matches_http_routes() {
         route(&client, format!("{base}/chart/overlays?kind=ema&period=10")).await;
     assert_eq!(gateway.chart_overlays("ema", 10).expect("gateway overlay reads"), overlay);
 
+    // Replay parity: the gateway reads the route's default cadence, so the
+    // terminal's scrub sees the same window through either side.
+    let replay: protopyne_view::ReplayView = route(&client, format!("{base}/replay")).await;
+    assert_eq!(gateway.replay().expect("gateway replay reads"), replay);
+    assert!(
+        replay.steps.iter().any(|step| step.checkpoint),
+        "the published window carries the core's own anchors to scrub to"
+    );
+
     handle.shutdown().await;
 }
 
-/// Non-comment lines: `//`, `//!`, and `///` lines document but never
-/// depend, so the direction scan skips them (same rule as the budget ledger).
-fn code_lines(text: &str) -> Vec<&str> {
-    text.lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty() && !line.starts_with('/'))
-        .collect()
+/// The terminal's scrub consumes the gateway's replay read end to end: the
+/// window supplies the bars, the cursor lands on one of them, and the panes
+/// the move makes due come from the terminal's own topology. The gateway
+/// stays a read — a scrub never writes back.
+#[tokio::test]
+async fn a_scrub_over_the_server_window_moves_panes_and_writes_nothing() {
+    let history =
+        protopyne_server::load_bars_csv(&history_path()).expect("vendored history loads");
+    let config =
+        protopyne_server::ServerConfig::new().bind("127.0.0.1:0".to_owned()).build();
+    let handle = protopyne_server::serve(config, history).await.expect("test server boots");
+    let gateway = handle.gateway();
+    let gateway: &dyn TerminalGateway = &gateway;
+
+    let mut scrub = ReplayScrub::standard().expect("standard scrub builds");
+    scrub.ingest(gateway).expect("the server supplies a replay window");
+    let window = gateway.replay().expect("gateway replay reads");
+    assert_eq!(
+        scrub.state().total_bars,
+        window.total_bars,
+        "the scrub's window is the core's window"
+    );
+
+    let bar = window.total_bars / 2;
+    let outcome = scrub.scrub_to(bar).expect("a bar inside the window scrubs");
+    assert!(
+        matches!(outcome, ScrubOutcome::Rewound { cursor, .. } if cursor == bar),
+        "the scrub moved to bar {bar}, got: {outcome:?}"
+    );
+    assert_eq!(scrub.state().cursor, bar);
+    assert!(!scrub.settled(), "the move made the topology due");
+
+    // Read-only on both sides: the same window comes back, cursor at head,
+    // because a terminal scrub is the terminal's own state.
+    let after = gateway.replay().expect("gateway replay reads");
+    assert_eq!(after, window, "a scrub never writes through the gateway");
+
+    handle.shutdown().await;
 }
 
-fn collect_rs(dir: &Path, prefix: &Path, out: &mut Vec<String>) {
-    let entries =
-        std::fs::read_dir(dir).unwrap_or_else(|e| panic!("list {}: {e}", dir.display()));
-    for entry in entries.filter_map(Result::ok) {
-        let path = entry.path();
-        let rel = prefix.join(entry.file_name());
-        if path.is_dir() {
-            collect_rs(&path, &rel, out);
-        } else if path.extension().and_then(|ext| ext.to_str()) == Some("rs") {
-            out.push(rel.to_string_lossy().replace('\\', "/"));
-        }
+/// The two ledgers enforce one rule, so they hold one copy of it: this file
+/// must not re-declare the trading token list or the source walk. A second
+/// copy is a rule that agrees only until someone edits one of them, so the
+/// duplication is itself gated rather than merely discouraged.
+#[test]
+fn composition_root_ledger_delegates_to_the_shared_scan() {
+    let text = std::fs::read_to_string(manifest_dir().join("tests").join("gateway.rs"))
+        .expect("the composition-root ledger is readable");
+    let code: Vec<&str> = text
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('/'))
+        .collect();
+    for token in super::budget_tests::TRADING_TOKENS {
+        assert!(
+            !code.iter().any(|line| line.contains(&format!("\"{token}\""))),
+            "the trading token list lives in the terminal ledger only; {token:?} \
+             must not be restated here"
+        );
     }
+    for helper in ["fn code_lines", "fn collect_rs", "fn src_file_names"] {
+        assert!(
+            !code.iter().any(|line| line.starts_with(helper)),
+            "{helper} is implemented once, in the terminal ledger"
+        );
+    }
+    assert!(
+        code.iter().any(|line| line.contains("forbid_trading_tokens_in_src")),
+        "this file must call the shared scan"
+    );
 }
 
 #[test]
 fn render_modules_name_no_trading_token() {
     // Composition-root direction pin: the server becomes an optional
-    // dependency in this milestone, but only the example outside `src/` may
-    // name it. Render modules keep reading through `protopyne_view` (the
-    // abstraction); the trading concretion never enters `src/`.
-    let src = manifest_dir().join("src");
-    let mut names = Vec::new();
-    collect_rs(&src, Path::new(""), &mut names);
-    assert!(!names.is_empty(), "src/ scan must find the render modules");
-    for name in &names {
-        let text = std::fs::read_to_string(src.join(name))
-            .unwrap_or_else(|e| panic!("read src/{name}: {e}"));
-        for line in code_lines(&text) {
-            for token in [
-                "protopyne_server",
-                "protopyne_strategy",
-                "protopyne_venue",
-                "protopyne-server",
-                "protopyne-strategy",
-                "protopyne-venue",
-            ] {
-                assert!(
-                    !line.contains(token),
-                    "src/{name} must not name {token:?} (line: {line})"
-                );
-            }
-        }
-    }
+    // dependency, but only the example outside `src/` may name it. Render
+    // modules keep reading through `protopyne_view` (the abstraction); the
+    // trading concretion never enters `src/`.
+    //
+    // The scan itself lives in the terminal ledger: the token list and the
+    // walk shape are the same rule, so keeping a second copy here would mean
+    // two rules that agree only until someone edits one of them.
+    super::budget_tests::forbid_trading_tokens_in_src();
 }

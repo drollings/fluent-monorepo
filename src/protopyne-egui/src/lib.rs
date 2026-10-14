@@ -19,6 +19,7 @@
 //! be depended on only by `fluent-egui` and this crate. No trading or
 //! headless chart crate may gain a paint dependency.
 
+pub mod annotations;
 pub mod chart;
 pub mod export;
 pub mod feed;
@@ -27,14 +28,16 @@ pub mod integration_lite;
 pub mod oscillators;
 pub mod pine_overlay;
 pub mod regime_labels;
+pub mod replay;
 pub mod session;
 pub mod topology;
 pub mod views;
 pub mod widgets;
 
+pub use annotations::{annotations_of, append_new};
 pub use chart::{
-    ChartConfig, TimeframeKey, area_view, chart_price_bars, line_values, picture_rows,
-    timed_plan_build, window_for_range,
+    AreaView, ChartConfig, PictureSource, TimeframeKey, area_view, chart_price_bars, line_values,
+    picture_rows, picture_source, refuse_chart_type, timed_plan_build, window_for_range,
 };
 pub use export::{
     EXPORT_CSV_HEADER, OverlayExport, export_overlay_json, export_rows_csv, export_rows_json,
@@ -57,6 +60,7 @@ pub use oscillators::{
 pub use pine_overlay::{
     OverlayGeoms, PlacedLabel, SeriesGeom, overlay_geoms, paint_overlay, paint_unsupported_chip,
 };
+pub use replay::{ReplayScrub, ScrubOutcome, ScrubRefusal, paint_replay_scrub};
 pub use regime_labels::{
     STABILITY_BAND, QuietLabel, display_label, label_series, parity_label, regime_style_key,
     stability_band,

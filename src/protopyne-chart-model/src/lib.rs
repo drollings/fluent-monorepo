@@ -28,3 +28,7 @@ pub use session::{
     SessionBreak, SessionBreakType, SessionProvider, WeeklySessionProvider, find_session_breaks,
 };
 pub use transform::{heikin_ashi, renko_bricks};
+
+#[cfg(test)]
+#[path = "../tests/budget.rs"]
+mod budget_tests;

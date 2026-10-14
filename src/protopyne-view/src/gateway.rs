@@ -5,13 +5,14 @@
 //! write (`arm`) forwards an opaque grant document to the core, which alone
 //! validates (tighten-only stays core-side).
 
+use std::collections::BTreeMap;
 use std::fmt::{Display, Formatter};
 
 use protopyne_types::Money;
 
 use crate::views::{
     ArmResponse, ChartBar, ChartBars, HealthView, JournalRowView, OverlaySeries, PortfolioView,
-    PositionView, ProposalView, WorstCase,
+    PositionView, ProposalView, ReplayStepView, ReplayView, WorstCase,
 };
 
 /// Terminal-gateway failure: transport, shape, or refused submit.
@@ -41,9 +42,15 @@ impl std::error::Error for GatewayError {}
 /// core-forwarded submit.
 ///
 /// Read methods mirror the server routes (`health`, `proposals`,
-/// `portfolio`, `journal`, `chart_bars`, `chart_overlays`); `arm` forwards
-/// an opaque grant JSON document — the terminal never mints grants, and the
-/// core alone validates (tighten-only, conflict on loosening).
+/// `portfolio`, `journal`, `chart_bars`, `chart_overlays`, `replay`);
+/// `arm` forwards an opaque grant JSON document — the terminal never mints
+/// grants, and the core alone validates (tighten-only, conflict on
+/// loosening). The envelope gains a documented `patch` branch
+/// (`{"patch": {tier: "<tier document text>"}}`): the schema-driven form
+/// tightens the live grant tier by tier through the core's own
+/// `Grant::tighten`, with whole-grant arming byte-identical beside it.
+/// `preview_arm` previews that same patch without storing anything, and
+/// `grant_tiers` reads the live grant's current tier texts for display.
 pub trait TerminalGateway: Send + Sync {
     /// Liveness plus command-plane status.
     fn health(&self) -> Result<HealthView, GatewayError>;
@@ -58,6 +65,23 @@ pub trait TerminalGateway: Send + Sync {
     /// One indicator overlay over the chart bars (`sma`, `ema`, `bb`,
     /// `trima`; `period` within `[1, 500]` like the route).
     fn chart_overlays(&self, kind: &str, period: i64) -> Result<OverlaySeries, GatewayError>;
+    /// The replayable window: where the scrub stands plus the ordered steps.
+    ///
+    /// A read, never a write: the cursor it carries is the core's recorded
+    /// position, and a terminal that scrubs holds the moved cursor itself.
+    fn replay(&self) -> Result<ReplayView, GatewayError>;
+    /// Preview a patch envelope's worst case without storing anything: the
+    /// core reads the live grant, tightens it in memory, and returns the
+    /// worst case the patched grant would authorize. The confirmation
+    /// surface renders this before submit is actionable; a preview is never
+    /// an arm, and a patch with no live grant behind it refuses.
+    fn preview_arm(&self, patch: serde_json::Value) -> Result<WorstCase, GatewayError>;
+    /// Current tier texts of the live grant (tier name to boundary-string
+    /// document), for display beside the form's editors. Encoding matches
+    /// what a patch carries back: composite tiers as JSON document text,
+    /// the window end as bare RFC 3339. Display text only — never a
+    /// decision — and empty when no grant is live.
+    fn grant_tiers(&self) -> Result<BTreeMap<String, String>, GatewayError>;
     /// Forward a grant document to the core for arming.
     fn arm(&self, grant: serde_json::Value) -> Result<ArmResponse, GatewayError>;
 }
@@ -176,6 +200,66 @@ impl TerminalGateway for MockGateway {
             values: vec![None, Some(100.75), Some(101.75)],
             dropped: 0,
         })
+    }
+
+    fn replay(&self) -> Result<ReplayView, GatewayError> {
+        // Three bars, all reached, checkpoints on the even bars — the shape
+        // a core replay over a short history actually publishes.
+        let steps: Vec<ReplayStepView> =
+            ["2023-11-14T22:13:20+00:00", "2023-11-14T22:28:20+00:00", "2023-11-14T22:43:20+00:00"]
+                .into_iter()
+                .enumerate()
+                .map(|(bar_index, ts)| ReplayStepView {
+                    bar_index: bar_index as u64,
+                    ts: ts.to_owned(),
+                    done: true,
+                    checkpoint: bar_index % 2 == 0,
+                })
+                .collect();
+        let total_bars = steps.len() as u64;
+        Ok(ReplayView { cursor: total_bars, total_bars, steps })
+    }
+
+    fn preview_arm(&self, _patch: serde_json::Value) -> Result<WorstCase, GatewayError> {
+        // No core behind the mock, so no live grant to tighten: the canned
+        // worst case matches the canned arm, and a form driven against the
+        // mock previews exactly what its submit would confirm.
+        Ok(WorstCase {
+            max_trades: 1,
+            max_contracts: 1,
+            max_loss: Money::from(100),
+            max_notional: Money::from(1_000),
+        })
+    }
+
+    fn grant_tiers(&self) -> Result<BTreeMap<String, String>, GatewayError> {
+        // Tier texts consistent with the canned worst case above: the form's
+        // placeholders show what a submit would tighten.
+        Ok(BTreeMap::from([
+            (
+                "breakers".to_owned(),
+                r#"{"max_consecutive_errors":3}"#.to_owned(),
+            ),
+            (
+                "budgets".to_owned(),
+                r#"{"max_trades":1,"max_contracts":1,"max_loss":"100","max_notional":"1000"}"#
+                    .to_owned(),
+            ),
+            (
+                "portfolio".to_owned(),
+                r#"{"max_open_risk":"10000","quote_max_age_secs":60}"#.to_owned(),
+            ),
+            (
+                "signal".to_owned(),
+                r#"{"min_conviction":0.0,"min_activity_score":0.0}"#.to_owned(),
+            ),
+            (
+                "trade".to_owned(),
+                r#"{"max_loss_per_trade":"10","max_spread_width":"5","min_dte_days":1,"max_dte_days":30}"#
+                    .to_owned(),
+            ),
+            ("valid_until".to_owned(), "2027-01-01T00:00:00Z".to_owned()),
+        ]))
     }
 
     fn arm(&self, grant: serde_json::Value) -> Result<ArmResponse, GatewayError> {

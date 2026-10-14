@@ -48,7 +48,10 @@ fn break_lines_align_with_the_canonical_scan() {
     assert_eq!(lines.len(), 1, "one midnight boundary in this fixture");
     for (line, (index, _)) in lines.iter().zip(scanned.iter()) {
         assert_eq!(line.index, *index);
-        assert_eq!(line.x.to_bits(), pane.index_to_x(*index).to_bits());
+        // The gridline sits on the scanned break's slot: the slot comes
+        // from the independent scan, the spacing from the documented bar-zero
+        // contract — never a second mapping call.
+        assert_eq!(line.x.to_bits(), (*index as f32 * 8.0).to_bits());
     }
     assert!(break_lines(&pane, &[], &provider).is_empty());
 }

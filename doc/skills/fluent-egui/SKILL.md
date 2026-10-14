@@ -34,9 +34,12 @@ before `Arc`-sharing, override at runtime via `ComponentAdapter`.
 |---|---|---|
 | `src/view.rs` | Headless pane view-models over `ChartRow` slices | `PaneKind`, `PaneSeries`, `ribbon_view`, `delta_candle_view`, `pivot_marks` |
 | `src/viewport.rs` | Pixel geometry on the canonical scale (headless) | `Viewport`, `visible_rows`, `thin_ticks`, `axis_ticks`, `BreakLine` |
-| `src/plan.rs` | DAG-ordered pane plan + fingerprint-keyed cache | `PanePlan`, `PaneCache`, `CachedSeries`, `cache_key` |
+| `src/plan.rs` | DAG-ordered pane plan + fingerprint-keyed cache | `PanePlan`, `PaneCache`, `CachedSeries`, `cache_key` (`PaneCache :: with_capacity` refuses a zero capacity; `pin` keeps keys resident across waves) |
 | `src/config.rs` | Layout/theme control plane | `PaneConfig`, `ThemeConfig` |
-| `src/paint.rs` | Headless geometry builders + thin `egui` emitters | `candle_geoms`, `ribbon_bands`, `delta_bar_geoms`, `oscillator_points`, `pivot_dots`, `paint_*` |
+| `src/paint.rs` | Headless geometry builders + thin `egui` emitters | `candle_geoms`, `ribbon_bands`, `delta_bar_geoms`, `oscillator_points`, `pivot_dots`, `pivot_price_dots`, `threshold_line`, `resolve_color`, `area_polygons`, `area_vertex_color`, `ribbon_polygons`, `marker_dots`, `crosshair_lines`, `paint_*` |
+| `src/annotations.rs` | Headless annotation set + timestamp-to-bar resolution | `AnnotationSet`, `TimeIndex`, `resolve_annotation` |
+| `src/hittest.rs` | Pointer-to-data readout + candle hit-testing (headless) | `Crosshair`, `crosshair_data`, `crosshair_pixel`, `Hit`, `hit_test`, `HIT_EPSILON_PX` |
+| `src/interaction.rs` | Deterministic pointer-interaction state machine (headless, clock-free) | `InteractionState`, `PointerInput` |
 | `src/feed.rs` | Feeds, waves, caps, aborts, backpressure | `ChartFeed`, `PaneWaveUnit`, `run_wave`, `RefreshGate`, `PaneHandle`, `CreditIntake`, `load_history`, `TransportRetry` |
 | `src/replay.rs` | Scrub-back controller + toolbar cursor | `ReplayController`, `ReplayState` |
 | `src/error.rs` | Fail-closed refusals | `EguiError :: InvalidParam/Dependency` |
@@ -58,9 +61,11 @@ use fluent_egui::{ribbon_view, candle_geoms, ribbon_bands, paint_candles, paint_
 let ribbon = ribbon_view(&fast, &slow, 0.5)?;          // upper/lower/bullish, holes preserved
 let geoms = candle_geoms(&rows, &ribbon.bullish, &viewport)?;
 let bands = ribbon_bands(&ribbon, &viewport);
-// Thin emitters inside the frame (blits cached geometry only):
-paint_candles(&painter, &geoms, body_width, &theme);
-paint_ribbon(&painter, &bands, half_width, &theme, &ribbon.bullish, 0.5);
+// Thin emitters inside the frame (blits cached geometry only). Every
+// `paint_*` returns `Result<(), EguiError>` — a theme key that cannot
+// resolve refuses instead of painting a default color:
+paint_candles(&painter, &geoms, body_width, &theme)?;
+paint_ribbon(&painter, &bands, half_width, &theme, &ribbon.bullish, 0.5)?;
 ```
 
 Heads-up: geometry is **pane-local** (origin at the pane's top-left).
@@ -68,7 +73,14 @@ Emitters draw exactly the coordinates given, so shift each layer by its
 pane rect's origin before painting. Zero-based panes (delta, oscillators)
 need a viewport whose range spans zero; `delta_bar_geoms` refuses
 otherwise. Colors resolve from `ThemeConfig` style keys at paint time —
-series carry keys (`"bull"`, `"fast"`), never literals.
+series carry keys (`"bull"`, `"fast"`), never literals; `resolve_color`
+is the single lookup, and every keyed emitter fails closed through it.
+Area fills go through `paint_area_fill` (same convexity contract as the
+ribbon fill, premultiplied-space vertex colors via `area_vertex_color`
+over `area_polygons`). Annotation dots lower through `marker_dots`, and
+readout spans build through `crosshair_lines` (the snapped pixel comes
+from the pure `hittest :: crosshair_pixel`, so the edge draws exactly
+what the headless mapping resolves).
 
 ### 2. Order pane compute through the plan, read revisions in the frame
 
@@ -86,7 +98,9 @@ let revision = cache.publish(key, values);  // bit-identical republish keeps the
 
 `PaneCache :: publish` backdates on content hash (holes carry a `None` tag
 distinct from every resolved leg, so identical `NaN` payloads keep the
-revision). Revisions are
+revision). Size it with `PaneCache :: with_capacity` (zero refuses — an
+unbounded paint cache is a leak, not a default), and hold hot keys
+resident across waves with `pin`. Revisions are
 confidence bookkeeping for blitting — never evidence a signal is
 tradeable. Caller owns topology: register domain pane names and edges,
 never fork `PanePlan`/`PaneCache`.

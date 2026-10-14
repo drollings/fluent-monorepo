@@ -154,10 +154,89 @@ fn axis_ticks_keep_budget_and_spacing_on_narrow_and_wide_windows() {
     }
 }
 
+/// Degenerate windows label nothing instead of refusing: the axis stays
+/// empty rather than aborting the frame. (The grid-then-thin composition is
+/// pinned property-by-property in `axis_ticks_keep_budget_and_spacing`
+/// above; restating its one-line definition here could never fail.)
 #[test]
-fn axis_ticks_match_grid_then_cap() {
-    use protopyne_chart_scale::nice_ticks;
-    let (min, max, budget, cap) = (0.0, 1000.0, 64, 8);
-    assert_eq!(axis_ticks(min, max, budget, cap), thin_ticks(nice_ticks(min, max, budget), cap));
+fn axis_ticks_stay_empty_on_degenerate_windows() {
     assert!(axis_ticks(f64::NAN, 10.0, 6, 8).is_empty(), "degenerate windows stay empty");
+}
+
+/// Demo-equivalent price geometry: data spanning 99–101, the 2% pad the
+/// terminal seeds its viewport with, and the 420 px price pane height.
+fn demo_window() -> Viewport {
+    Viewport::new(PriceScaleMode::Normal, 98.96, 101.04, 420.0, 8.0, 99.0, false)
+        .expect("demo-equivalent window builds")
+}
+
+fn ticks_of(window: &Viewport) -> Vec<protopyne_chart_scale::Tick> {
+    let extent = window.visible_range();
+    axis_ticks(extent.min, extent.max, 8, 8)
+}
+
+fn inside_fraction(window: &Viewport, ticks: &[protopyne_chart_scale::Tick], height: f32) -> (usize, usize) {
+    let inside = ticks
+        .iter()
+        .filter(|tick| {
+            window.price_to_y(tick.value).is_some_and(|y| (0.0..=height).contains(&y))
+        })
+        .count();
+    (inside, ticks.len())
+}
+
+#[test]
+fn unzoomed_window_pins_its_tick_golden() {
+    // The windowed grid for the resting window, pinned value-for-value: a
+    // tick-density drift fails here instead of moving the axis silently.
+    let ticks = ticks_of(&demo_window());
+    let values: Vec<f64> = ticks.iter().map(|tick| tick.value).collect();
+    assert_eq!(values, vec![99.0, 99.5, 100.0, 100.5, 101.0], "resting grid is pinned");
+}
+
+#[test]
+fn windowed_ticks_stay_inside_the_pane() {
+    // Ticks are drawn from the window on screen, so every one maps inside
+    // it — unzoomed, 2x zoomed about the center, and panned a full span
+    // right (partly past the data edge, as a real pan goes).
+    let height = 420.0;
+    let cases: [(&str, Viewport); 3] = [
+        ("unzoomed", demo_window()),
+        (
+            "zoomed",
+            Viewport::new(PriceScaleMode::Normal, 99.48, 100.52, height, 8.0, 99.0, false)
+                .expect("2x window builds"),
+        ),
+        (
+            "panned",
+            Viewport::new(PriceScaleMode::Normal, 100.0, 102.08, height, 8.0, 99.0, false)
+                .expect("panned window builds"),
+        ),
+    ];
+    for (name, window) in cases {
+        let ticks = ticks_of(&window);
+        assert!(!ticks.is_empty(), "{name}: a usable window labels something");
+        let (inside, total) = inside_fraction(&window, &ticks, height);
+        assert_eq!(
+            inside, total,
+            "{name}: every windowed tick lands inside the pane, {inside}/{total} do"
+        );
+    }
+}
+
+#[test]
+fn zoomed_window_keeps_four_fifths_of_ticks_inside() {
+    // Totality, not discrimination: after a 2x zoom at least four fifths of
+    // the drawn ticks map inside the pane rect. Ticks drawn from the data
+    // extent instead manage 3/5 here — that shortfall is the desync this
+    // windowed grid replaces.
+    let height = 420.0;
+    let zoomed = Viewport::new(PriceScaleMode::Normal, 99.48, 100.52, height, 8.0, 99.0, false)
+        .expect("2x window builds");
+    let ticks = ticks_of(&zoomed);
+    let (inside, total) = inside_fraction(&zoomed, &ticks, height);
+    assert!(
+        inside * 5 >= total * 4,
+        "at least four fifths of ticks land inside after zoom: {inside}/{total}"
+    );
 }

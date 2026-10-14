@@ -22,7 +22,6 @@
 
 use protopyne_chart_model::{Annotation, AnnotationStyle, ChartRow};
 
-use crate::annotations::resolve_annotation;
 use crate::config::ThemeConfig;
 use crate::error::EguiError;
 use crate::hittest::{Crosshair, crosshair_pixel};
@@ -155,23 +154,15 @@ pub fn delta_bar_geoms(
             reason: "buy and sell split lengths differ".to_owned(),
         });
     }
-    let Some(zero_y) = viewport.price_to_y(0.0) else {
+    // `windowed_y` refuses off-window prices, so a zero outside the visible
+    // range refuses here instead of extrapolating a zero line off-pane.
+    // The inverse, `y_to_price`, refuses off-pane pixels outright.
+    let Some(zero_y) = viewport.windowed_y(0.0) else {
         return Err(EguiError::InvalidParam {
             what: "range".to_owned(),
             reason: "delta pane range must span zero".to_owned(),
         });
     };
-    // `price_to_y` extrapolates (the paint edge relies on it to clip lines
-    // and candles running off the pane), so an off-window zero still maps:
-    // refuse unless zero sits inside the visible range. The inverse,
-    // `y_to_price`, refuses off-pane pixels outright.
-    let window = viewport.scale().range();
-    if window.min > 0.0 || window.max < 0.0 {
-        return Err(EguiError::InvalidParam {
-            what: "range".to_owned(),
-            reason: "delta pane range must span zero".to_owned(),
-        });
-    }
     let mut bars = Vec::with_capacity(delta.buy_top.len());
     for (index, (buy, sell)) in delta.buy_top.iter().zip(delta.sell_bottom.iter()).enumerate() {
         let buy_y = (*buy)
@@ -185,8 +176,10 @@ pub fn delta_bar_geoms(
     Ok(bars)
 }
 
-/// Map a zero-centered oscillator series to screen points; holes and
-/// non-finite readings yield `None` so the emitter lifts the pen.
+/// Map a zero-centered oscillator series to screen points; holes,
+/// non-finite readings, and off-window values yield `None` so the emitter
+/// lifts the pen. Off-window legs refuse through the shared window
+/// predicate rather than extrapolating off-pane.
 #[must_use]
 pub fn oscillator_points(
     values: &[Option<f64>],
@@ -200,7 +193,7 @@ pub fn oscillator_points(
             if !value.is_finite() {
                 return None;
             }
-            let y = viewport.price_to_y(value)?;
+            let y = viewport.windowed_y(value)?;
             Some((viewport.index_to_x(index), y))
         })
         .collect()
@@ -253,9 +246,8 @@ pub fn pivot_price_dots(
     rows: &[ChartRow],
     viewport: &Viewport,
 ) -> Vec<PivotDot> {
-    // `price_to_y` extrapolates off-window prices, so an extreme outside the
-    // visible window would place a dot off-pane; skip those, as promised.
-    let window = viewport.scale().range();
+    // `windowed_y` refuses off-window prices, so an extreme outside the
+    // visible window places no dot; skip those, as promised.
     marks
         .iter()
         .filter_map(|mark| {
@@ -264,28 +256,25 @@ pub fn pivot_price_dots(
                 PivotSide::High => row.high,
                 PivotSide::Low => row.low,
             };
-            if !extreme.is_finite() || !window.contains(extreme) {
+            if !extreme.is_finite() {
                 return None;
             }
-            let y = viewport.price_to_y(extreme)?;
+            let y = viewport.windowed_y(extreme)?;
             Some(PivotDot { index: mark.index, x: viewport.index_to_x(mark.index), y, side: mark.side })
         })
         .collect()
 }
 
 /// Y pixel of a `±threshold` rule; `None` when the threshold is not a
-/// positive finite value or sits outside the pane range.
+/// positive finite value or sits outside the pane range. The off-window
+/// refusal rides the shared window predicate, so every rule emitter
+/// inherits it rather than re-deciding containment.
 #[must_use]
 pub fn threshold_line(threshold: f64, viewport: &Viewport) -> Option<f32> {
     if !threshold.is_finite() || threshold <= 0.0 {
         return None;
     }
-    // `price_to_y` extrapolates, so an off-window threshold would map off-pane
-    // silently; refuse it explicitly, as the doc promises.
-    if !viewport.scale().range().contains(threshold) {
-        return None;
-    }
-    viewport.price_to_y(threshold)
+    viewport.windowed_y(threshold)
 }
 
 /// Resolve a theme style key to an `egui` color, parsing the `#RRGGBB`
@@ -321,6 +310,32 @@ fn parse_hex(key: &str, slot: &str) -> Result<egui::Color32, EguiError> {
     )?))
 }
 
+/// One wick-plus-body candle in a resolved color: the single body behind
+/// the trend-keyed, single-key, and per-candle-tint emitters (minimum one
+/// pixel tall, per the reference min-visibility rule). Color resolution
+/// stays at the call site — this draws exactly what it is given.
+fn paint_one_candle(
+    painter: &egui::Painter,
+    geom: &CandleGeom,
+    body_width: f32,
+    color: egui::Color32,
+) {
+    painter.line_segment(
+        [egui::Pos2::new(geom.x, geom.high_y), egui::Pos2::new(geom.x, geom.low_y)],
+        egui::Stroke::new(1.0, color),
+    );
+    let top = geom.open_y.min(geom.close_y);
+    let bottom = (geom.open_y.max(geom.close_y)).max(top + 1.0);
+    painter.rect_filled(
+        egui::Rect::from_min_max(
+            egui::Pos2::new(geom.x - body_width / 2.0, top),
+            egui::Pos2::new(geom.x + body_width / 2.0, bottom),
+        ),
+        0.0,
+        color,
+    );
+}
+
 /// Paint candles: wick line plus filled body (minimum one pixel tall, per
 /// the reference min-visibility rule), tinted by the ribbon trend key.
 pub fn paint_candles(
@@ -332,21 +347,7 @@ pub fn paint_candles(
     let bull = resolve_color(theme, ribbon_style_key(true))?;
     let bear = resolve_color(theme, ribbon_style_key(false))?;
     for geom in geoms {
-        let color = if geom.trend_bullish { bull } else { bear };
-        painter.line_segment(
-            [egui::Pos2::new(geom.x, geom.high_y), egui::Pos2::new(geom.x, geom.low_y)],
-            egui::Stroke::new(1.0, color),
-        );
-        let top = geom.open_y.min(geom.close_y);
-        let bottom = (geom.open_y.max(geom.close_y)).max(top + 1.0);
-        painter.rect_filled(
-            egui::Rect::from_min_max(
-                egui::Pos2::new(geom.x - body_width / 2.0, top),
-                egui::Pos2::new(geom.x + body_width / 2.0, bottom),
-            ),
-            0.0,
-            color,
-        );
+        paint_one_candle(painter, geom, body_width, if geom.trend_bullish { bull } else { bear });
     }
     Ok(())
 }
@@ -375,24 +376,7 @@ pub fn paint_candles_tinted(
     body_width: f32,
 ) {
     for candle in candles {
-        let stroke = egui::Stroke::new(1.0, candle.color);
-        painter.line_segment(
-            [
-                egui::Pos2::new(candle.geom.x, candle.geom.high_y),
-                egui::Pos2::new(candle.geom.x, candle.geom.low_y),
-            ],
-            stroke,
-        );
-        let top = candle.geom.open_y.min(candle.geom.close_y);
-        let bottom = (candle.geom.open_y.max(candle.geom.close_y)).max(top + 1.0);
-        painter.rect_filled(
-            egui::Rect::from_min_max(
-                egui::Pos2::new(candle.geom.x - body_width / 2.0, top),
-                egui::Pos2::new(candle.geom.x + body_width / 2.0, bottom),
-            ),
-            0.0,
-            candle.color,
-        );
+        paint_one_candle(painter, &candle.geom, body_width, candle.color);
     }
 }
 
@@ -409,22 +393,8 @@ pub fn paint_candles_as(
     theme: &ThemeConfig,
 ) -> Result<(), EguiError> {
     let color = resolve_color(theme, style_key)?;
-    let stroke = egui::Stroke::new(1.0, color);
     for geom in geoms {
-        painter.line_segment(
-            [egui::Pos2::new(geom.x, geom.high_y), egui::Pos2::new(geom.x, geom.low_y)],
-            stroke,
-        );
-        let top = geom.open_y.min(geom.close_y);
-        let bottom = (geom.open_y.max(geom.close_y)).max(top + 1.0);
-        painter.rect_filled(
-            egui::Rect::from_min_max(
-                egui::Pos2::new(geom.x - body_width / 2.0, top),
-                egui::Pos2::new(geom.x + body_width / 2.0, bottom),
-            ),
-            0.0,
-            color,
-        );
+        paint_one_candle(painter, geom, body_width, color);
     }
     Ok(())
 }
@@ -490,6 +460,44 @@ pub struct RibbonPolygon {
 /// holed inputs yield no polygons.
 #[must_use]
 pub fn ribbon_polygons(ribbon: &RibbonView, viewport: &Viewport) -> Vec<RibbonPolygon> {
+    close_runs(
+        ribbon
+            .upper
+            .iter()
+            .zip(ribbon.lower.iter())
+            .zip(ribbon.bullish.iter())
+            .map(|((upper, lower), trend)| (*upper, *lower, *trend)),
+        viewport,
+    )
+}
+
+/// Build area fill polygons: maximal runs of contiguous bars whose values
+/// map, closed against one constant baseline.
+///
+/// Same run-closing core as [`ribbon_polygons`] — no second polygon code —
+/// with the lower edge fixed at `baseline` and the trend key fixed at
+/// `false`, so no per-bar lower/trend vectors are materialized. Holes,
+/// non-finite values, and unmappable edges break runs (never bridged). A
+/// non-finite baseline maps nowhere, so every run breaks and nothing
+/// emits; callers wanting a named refusal validate through their own
+/// boundary (the terminal's `area_view` refuses it as `baseline`).
+#[must_use]
+pub fn area_polygons(
+    values: &[Option<f64>],
+    baseline: f64,
+    viewport: &Viewport,
+) -> Vec<RibbonPolygon> {
+    let lower = baseline.is_finite().then_some(baseline);
+    close_runs(values.iter().map(|upper| (*upper, lower, false)), viewport)
+}
+
+/// One run-closing core behind ribbon and area fills: maximal runs of
+/// contiguous mappable `(upper, lower, trend)` legs. Holes, non-finite
+/// legs, and unmappable edges break runs; a trend flip starts a new run.
+fn close_runs(
+    legs: impl IntoIterator<Item = (Option<f64>, Option<f64>, bool)>,
+    viewport: &Viewport,
+) -> Vec<RibbonPolygon> {
     let mut polygons = Vec::new();
     let mut upper_run: Vec<(f32, f32)> = Vec::new();
     let mut lower_run: Vec<(f32, f32)> = Vec::new();
@@ -521,12 +529,10 @@ pub fn ribbon_polygons(ribbon: &RibbonView, viewport: &Viewport) -> Vec<RibbonPo
         *open = false;
     };
 
-    for (index, ((upper, lower), trend)) in
-        ribbon.upper.iter().zip(ribbon.lower.iter()).zip(ribbon.bullish.iter()).enumerate()
-    {
+    for (index, (upper, lower, trend)) in legs.into_iter().enumerate() {
         let mappable = match (upper, lower) {
             (Some(up), Some(lo)) if up.is_finite() && lo.is_finite() => {
-                match (viewport.price_to_y(*up), viewport.price_to_y(*lo)) {
+                match (viewport.price_to_y(up), viewport.price_to_y(lo)) {
                     (Some(top_y), Some(bottom_y)) => {
                         Some((viewport.index_to_x(index), top_y, bottom_y))
                     }
@@ -539,9 +545,9 @@ pub fn ribbon_polygons(ribbon: &RibbonView, viewport: &Viewport) -> Vec<RibbonPo
             flush(&mut polygons, &mut upper_run, &mut lower_run, &mut run_indices, run_trend, &mut open);
             continue;
         };
-        if !open || run_trend != *trend {
+        if !open || run_trend != trend {
             flush(&mut polygons, &mut upper_run, &mut lower_run, &mut run_indices, run_trend, &mut open);
-            run_trend = *trend;
+            run_trend = trend;
             open = true;
         }
         upper_run.push((x, top_y));
@@ -550,6 +556,16 @@ pub fn ribbon_polygons(ribbon: &RibbonView, viewport: &Viewport) -> Vec<RibbonPo
     }
     flush(&mut polygons, &mut upper_run, &mut lower_run, &mut run_indices, run_trend, &mut open);
     polygons
+}
+
+/// Paintable points of one fill run: `None` for degenerate polygons, which
+/// paint nothing. The one `< 3 points` guard every polygon emitter reads,
+/// so a second hand-rolled guard cannot drift from it.
+fn paintable_points(polygon: &RibbonPolygon) -> Option<Vec<egui::Pos2>> {
+    if polygon.points.len() < 3 {
+        return None;
+    }
+    Some(polygon.points.iter().map(|(x, y)| egui::Pos2::new(*x, *y)).collect())
 }
 
 /// Paint ribbon fill runs as translucent areas between the band edges.
@@ -568,13 +584,11 @@ pub fn paint_ribbon_fill(
     let bull = resolve_color(theme, ribbon_style_key(true))?;
     let bear = resolve_color(theme, ribbon_style_key(false))?;
     for polygon in polygons {
-        if polygon.points.len() < 3 {
+        let Some(points) = paintable_points(polygon) else {
             continue;
-        }
+        };
         let base = if polygon.bullish { bull } else { bear };
         let fill = egui::Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), opacity);
-        let points: Vec<egui::Pos2> =
-            polygon.points.iter().map(|(x, y)| egui::Pos2::new(*x, *y)).collect();
         painter.add(egui::Shape::convex_polygon(points, fill, egui::Stroke::NONE));
     }
     Ok(())
@@ -584,9 +598,12 @@ pub fn paint_ribbon_fill(
 /// its y pixel: `top_y` reads exactly `top`, `bottom_y` exactly `bottom`,
 /// between lerps per channel (alpha included), outside clamps to the nearer
 /// end. A degenerate range reads `top` for every vertex instead of dividing
-/// by zero. Blending runs in premultiplied space (`Color32` storage), which
-/// is the correct composite for translucent gradient stops. Pure color math
-/// over reused polygon points — no new polygon code.
+/// by zero. Non-finite `y`, `top_y`, or `bottom_y` refuse (`None`) exactly
+/// as every sibling emitter skips non-finite input — a `NaN` must never
+/// saturate into a black vertex. Blending runs in premultiplied space
+/// (`Color32` storage), which is the correct composite for translucent
+/// gradient stops. Pure color math over reused polygon points — no new
+/// polygon code.
 #[must_use]
 pub fn area_vertex_color(
     top: egui::Color32,
@@ -594,27 +611,31 @@ pub fn area_vertex_color(
     y: f32,
     top_y: f32,
     bottom_y: f32,
-) -> egui::Color32 {
+) -> Option<egui::Color32> {
+    if !y.is_finite() || !top_y.is_finite() || !bottom_y.is_finite() {
+        return None;
+    }
     let span = bottom_y - top_y;
     let ratio = if span.abs() < f32::EPSILON { 0.0 } else { ((y - top_y) / span).clamp(0.0, 1.0) };
     let blend = |high: u8, low: u8| {
         (f32::from(high) + (f32::from(low) - f32::from(high)) * ratio).round().clamp(0.0, 255.0)
             as u8
     };
-    egui::Color32::from_rgba_premultiplied(
+    Some(egui::Color32::from_rgba_premultiplied(
         blend(top.r(), bottom.r()),
         blend(top.g(), bottom.g()),
         blend(top.b(), bottom.b()),
         blend(top.a(), bottom.a()),
-    )
+    ))
 }
 
 /// Paint filled areas with a vertical color gradient: one mesh per polygon
-/// (fan around the first vertex, under the same convexity contract
-/// [`paint_ribbon_fill`] already assumes), vertex colors from
+/// over the shared polygon path (the per-vertex gradient needs a `Mesh`,
+/// which the flat fill's `convex_polygon` cannot carry), vertex colors from
 /// [`area_vertex_color`] over the polygon's own y span. Degenerate polygons
-/// (< 3 points) paint nothing, like the flat fill. Colors arrive resolved —
-/// the caller composes [`resolve_color`] and
+/// (< 3 points) paint nothing, like the flat fill, and a polygon with an
+/// unblendable vertex paints nothing rather than a substituted color.
+/// Colors arrive resolved — the caller composes [`resolve_color`] and
 /// [`opacity_from_transparency`], so this emitter cannot fail.
 pub fn paint_area_fill(
     painter: &egui::Painter,
@@ -623,20 +644,25 @@ pub fn paint_area_fill(
     bottom: egui::Color32,
 ) {
     for polygon in polygons {
-        if polygon.points.len() < 3 {
+        let Some(vertices) = paintable_points(polygon) else {
             continue;
-        }
+        };
         let top_y = polygon.points.iter().map(|(_, y)| *y).fold(f32::INFINITY, f32::min);
         let bottom_y =
             polygon.points.iter().map(|(_, y)| *y).fold(f32::NEG_INFINITY, f32::max);
-        let vertices: Vec<egui::Pos2> =
-            polygon.points.iter().map(|(x, y)| egui::Pos2::new(*x, *y)).collect();
-        let colors: Vec<egui::Color32> = polygon
+        // Any unblendable vertex skips the polygon: a gradient mesh needs a
+        // color per vertex, and no substituted color may stand in.
+        let Some(colors): Option<Vec<egui::Color32>> = polygon
             .points
             .iter()
             .map(|(_, y)| area_vertex_color(top, bottom, *y, top_y, bottom_y))
-            .collect();
+            .collect()
+        else {
+            continue;
+        };
         let mut mesh = egui::Mesh::default();
+        mesh.vertices.reserve(vertices.len());
+        mesh.indices.reserve(vertices.len().saturating_sub(2) * 3);
         for (point, color) in vertices.iter().zip(colors.iter()) {
             mesh.vertices.push(egui::epaint::Vertex {
                 pos: *point,
@@ -726,6 +752,12 @@ pub fn paint_oscillator(
 }
 
 /// Paint the `±threshold` rules across `[x0, x1]`.
+///
+/// Each signed leg reads through the same window predicate
+/// [`threshold_line`] enforces, so an off-window rule draws nothing instead
+/// of mapping off-pane: the legs are signed (`-threshold` is negative) and
+/// [`threshold_line`] is positive-only, so the shared predicate — not a
+/// second copy of it — is what both legs inherit.
 pub fn paint_thresholds(
     painter: &egui::Painter,
     x0: f32,
@@ -737,10 +769,10 @@ pub fn paint_thresholds(
     let color = resolve_color(theme, "grid")?;
     let stroke = egui::Stroke::new(1.0, color);
     for signed in [threshold, -threshold] {
-        if let Some(y) = viewport.price_to_y(signed) {
-            if y.is_finite() {
-                painter.line_segment([egui::Pos2::new(x0, y), egui::Pos2::new(x1, y)], stroke);
-            }
+        // `windowed_y` yields finite in-pane pixels only: an off-window leg
+        // draws nothing, never an extrapolated line.
+        if let Some(y) = viewport.windowed_y(signed) {
+            painter.line_segment([egui::Pos2::new(x0, y), egui::Pos2::new(x1, y)], stroke);
         }
     }
     Ok(())
@@ -769,8 +801,8 @@ pub struct CrosshairLines {
 /// The snapped pixel comes from the pure [`crosshair_pixel`], so the edge
 /// draws exactly what the headless mapping resolves — `egui` translates
 /// pointer events into readouts and paints these spans, never its own
-/// coordinate math. `None` when the readout price is unmappable or the
-/// extents are degenerate.
+/// coordinate math. `None` when the readout price is unmappable, sits
+/// outside the window, or the extents are degenerate.
 #[must_use]
 pub fn crosshair_lines(
     crosshair: &Crosshair,
@@ -817,10 +849,34 @@ pub struct MarkerDot {
     pub style: AnnotationStyle,
 }
 
+impl MarkerDot {
+    /// One pivot crossing as an annotation marker: geometry carried over,
+    /// side lowered to the shared display polarity (highs are bearish —
+    /// a top is resistance — lows bullish), so pivots and annotations can
+    /// never disagree about what "up" paints. This is the only pivot path
+    /// to pixels; the retired pivot emitter read the same mapping.
+    #[must_use]
+    pub fn from_pivot(dot: &PivotDot) -> Self {
+        Self {
+            index: dot.index,
+            x: dot.x,
+            y: dot.y,
+            style: match dot.side {
+                PivotSide::High => AnnotationStyle::Bear,
+                PivotSide::Low => AnnotationStyle::Bull,
+            },
+        }
+    }
+}
+
 /// Resolve markers to pixels over the caller's window.
 ///
-/// Markers come from an append-only set (the render-side journal), never a
-/// UI-authored list. Bars outside the window or with unmappable prices are
+/// Markers ride the append-only set (the render-side journal): operator
+/// clicks append through [`crate::annotations::annotate_at`], Pine drawings
+/// arrive through the terminal bridge, and both paint here alike. One
+/// [`crate::annotations::TimeIndex`] serves the whole batch, so the window
+/// is walked once per frame no matter how many markers resolve; bars
+/// outside the window, duplicate timestamps, or unmappable prices are
 /// skipped — markers decorate published annotations only.
 #[must_use]
 pub fn marker_dots(
@@ -828,18 +884,34 @@ pub fn marker_dots(
     rows: &[ChartRow],
     viewport: &Viewport,
 ) -> Vec<MarkerDot> {
+    let index = crate::annotations::TimeIndex::of(rows);
     markers
         .iter()
         .filter_map(|marker| {
-            let index =
-                rows.iter().position(|row| row.time == marker.key.bar_timestamp)?;
-            let (x, y) = resolve_annotation(marker, rows, viewport)?;
-            Some(MarkerDot { index, x, y, style: marker.style })
+            let bar = index.lookup(marker.key.bar_timestamp)?;
+            let y = viewport.price_to_y(marker.key.price_float()?)?;
+            Some(MarkerDot {
+                index: bar,
+                x: viewport.index_to_x(bar),
+                y,
+                style: marker.style,
+            })
         })
         .collect()
 }
 
+/// Display polarity for one trend bit: bullish reads the bull key, bearish
+/// the bear key. Pivot highs are bearish (a top is resistance) and lows
+/// bullish (a bottom is support), while a named bull/bear annotation keeps
+/// its literal key — both dot emitters read this one mapping, so the two
+/// can never disagree about what "up" paints again.
+fn polarity_color(bullish: bool, bull: egui::Color32, bear: egui::Color32) -> egui::Color32 {
+    if bullish { bull } else { bear }
+}
+
 /// Paint annotation markers: filled dots in the style's theme color.
+/// Pivots paint here too, lowered through [`MarkerDot::from_pivot`] — one
+/// emitter, one shape, one radius, one polarity mapping.
 pub fn paint_markers(
     painter: &egui::Painter,
     dots: &[MarkerDot],
@@ -851,26 +923,8 @@ pub fn paint_markers(
     for dot in dots {
         let color = match dot.style {
             AnnotationStyle::Note => grid,
-            AnnotationStyle::Bull => bull,
-            AnnotationStyle::Bear => bear,
-        };
-        painter.circle_filled(egui::Pos2::new(dot.x, dot.y), 4.0, color);
-    }
-    Ok(())
-}
-
-/// Paint pivot dots: bear color above, bull color below.
-pub fn paint_pivot_dots(
-    painter: &egui::Painter,
-    dots: &[PivotDot],
-    theme: &ThemeConfig,
-) -> Result<(), EguiError> {
-    let bull = resolve_color(theme, "bull")?;
-    let bear = resolve_color(theme, "bear")?;
-    for dot in dots {
-        let color = match dot.side {
-            PivotSide::High => bear,
-            PivotSide::Low => bull,
+            AnnotationStyle::Bull => polarity_color(true, bull, bear),
+            AnnotationStyle::Bear => polarity_color(false, bull, bear),
         };
         painter.circle_filled(egui::Pos2::new(dot.x, dot.y), 4.0, color);
     }

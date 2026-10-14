@@ -114,6 +114,87 @@ fn epsilon_boundary_decides_hits() {
 }
 
 #[test]
+fn calibration_controls_that_must_not_hit() {
+    let pane = pane();
+    let rows = rows();
+    // 1. Empty pane: no bar exists, so no pointer can be on a candle. The
+    // crosshair readout is silent too — there is no window to index into.
+    let center = (pane.index_to_x(0), pane.price_to_y(100.0).expect("close maps"));
+    assert!(hit_test(center, &pane, &[]).is_none(), "empty pane never hits");
+    assert!(
+        crosshair_data(center, &pane, 0).is_none(),
+        "empty window names no crosshair either"
+    );
+    // 2. Horizontal gutter between two candles: a wide spacing puts the
+    // midpoint 10 px from each wick — past the radius — while the readout
+    // still answers (the crosshair takes no epsilon).
+    let wide = Viewport::new(PriceScaleMode::Normal, 90.0, 110.0, 400.0, 20.0, 90.0, false)
+        .expect("valid wide pane");
+    let mid_y = wide.price_to_y(100.0).expect("close maps");
+    let gutter = (wide.index_to_x(5) + 10.0, mid_y);
+    assert!(hit_test(gutter, &wide, &rows).is_none(), "gutter between wicks misses");
+    assert!(
+        crosshair_data(gutter, &wide, rows.len()).is_some(),
+        "the readout still names the slot the hit refuses"
+    );
+    // 3. Twenty pixels above the highest wick: the x column matches while
+    // the segment distance does not.
+    let x = pane.index_to_x(5);
+    let top_y = pane.price_to_y(101.0).expect("high maps");
+    assert!(
+        hit_test((x, top_y - 20.0), &pane, &rows).is_none(),
+        "a pointer 20 px above the wick misses"
+    );
+    // 4. Degenerate segment: a flat bar (high == low) collapses the wick to
+    // a point, so the hit reads the point distance. On the point hits;
+    // 20 px above it misses.
+    let flat: Vec<ChartRow> = (0..10_i64)
+        .map(|index| ChartRow { time: index, open: 100.0, high: 100.0, low: 100.0, close: 100.0, volume: 10 })
+        .collect();
+    let dot_y = pane.price_to_y(100.0).expect("flat price maps");
+    assert!(
+        hit_test((x, dot_y), &pane, &flat).is_some(),
+        "the degenerate point still hits on contact"
+    );
+    assert!(
+        hit_test((x, dot_y - 20.0), &pane, &flat).is_none(),
+        "the degenerate point misses 20 px away"
+    );
+}
+
+#[test]
+fn hit_rate_falls_monotonically_with_no_gap_wider_than_one_pixel() {
+    // Sweep straight up from the wick tip: the candidate bar never changes
+    // (same x slot) and the segment projection clamps to the tip, so the
+    // distance is exactly the pixel offset. The hit set must be a prefix
+    // `0..=k` with `k` within one pixel of the radius — one monotone step,
+    // no gaps, no second chances.
+    let pane = pane();
+    let rows = rows();
+    let x = pane.index_to_x(5);
+    let top_y = pane.price_to_y(101.0).expect("high maps");
+    let hits: Vec<bool> = (0..=20).map(|offset| hit_test((x, top_y - offset as f32), &pane, &rows).is_some()).collect();
+    let first_miss = hits.iter().position(|hit| !hit).expect("the sweep must miss by 20 px");
+    assert!(
+        hits[..first_miss].iter().all(|hit| *hit),
+        "every offset below the first miss hits: {hits:?}"
+    );
+    assert!(
+        hits[first_miss..].iter().all(|hit| !hit),
+        "no offset above the first miss hits again: {hits:?}"
+    );
+    let last_hit = first_miss.checked_sub(1).expect("offset zero always hits");
+    assert!(
+        (last_hit as f32 - HIT_EPSILON_PX).abs() <= 1.0,
+        "the transition sits within one pixel of the radius: last hit {last_hit}, radius {HIT_EPSILON_PX}"
+    );
+    assert!(
+        (first_miss as f32 - HIT_EPSILON_PX).abs() <= 1.0,
+        "the transition sits within one pixel of the radius: first miss {first_miss}, radius {HIT_EPSILON_PX}"
+    );
+}
+
+#[test]
 fn degenerate_inputs_refuse() {
     let pane = pane();
     let rows = rows();
@@ -166,7 +247,11 @@ fn crosshair_reads_any_in_pane_pointer() {
     assert!(hit_test(pointer, &pane, &rows).is_none(), "between-wick gap misses");
     let data = crosshair_data(pointer, &pane, rows.len()).expect("crosshair still reads");
     assert!((data.price - 103.0).abs() < 1e-6, "crosshair price reads: {}", data.price);
+    // Slot 27/8 = 3.375 rounds up to bar 3, whose slot sits at x = 24 on
+    // the 8 px spacing: literals on the documented rounding and spacing,
+    // never a second mapping call.
+    assert_eq!(data.index, 3, "the between-bar pointer still names a bar");
     let pixel = crosshair_pixel(&data, &pane).expect("crosshair maps back");
-    assert!(close_enough(pixel.0, pane.index_to_x(data.index)), "crosshair x snaps to the bar");
+    assert_eq!(pixel.0.to_bits(), 24.0f32.to_bits(), "crosshair x snaps to the bar");
     assert!(close_enough(pixel.1, pointer.1), "crosshair y keeps the pointer");
 }

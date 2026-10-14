@@ -15,9 +15,15 @@ use protopyne_chart_model::ChartRow;
 
 use crate::viewport::Viewport;
 
-/// Hit radius in pixels (task value: feel, calibrated class): a pointer
-/// within this distance of a candle's wick segment counts as a hit. Farther
-/// pointers miss — at-rest and far-from-target pointers must never fire.
+/// Hit radius in pixels: how close is close enough to count the operator as
+/// pointing at the candle.
+///
+/// This is doubt about the operator's intent, never about which bar is
+/// right. The candidate bar comes from the pointer's slot alone; the radius
+/// only decides whether that candidate counts as a hit. Once a hit returns,
+/// the bar's data fixes every value read from it and the radius has no
+/// further say. The radius must never select the bar and must never gate
+/// whether a bar is readable — the crosshair readout answers without it.
 pub const HIT_EPSILON_PX: f32 = 8.0;
 
 /// One pointer hit: the bar under the pointer plus the price under it.
@@ -99,10 +105,13 @@ pub fn crosshair_data(
     Some(Crosshair { index, price })
 }
 
-/// Map a crosshair back to pixels; `None` when the price is unmappable.
+/// Map a crosshair back to pixels; `None` when the price is unmappable or
+/// sits outside the visible window. The readout pixel is always in-pane, so
+/// the edge draws exactly what the mapping resolves — never an
+/// extrapolated point off the pane.
 #[must_use]
 pub fn crosshair_pixel(crosshair: &Crosshair, viewport: &Viewport) -> Option<(f32, f32)> {
-    let y = viewport.price_to_y(crosshair.price)?;
+    let y = viewport.windowed_y(crosshair.price)?;
     Some((viewport.index_to_x(crosshair.index), y))
 }
 

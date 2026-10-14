@@ -32,3 +32,95 @@ fn money_crossing_refuses_unconditionally() {
         );
     }
 }
+
+#[test]
+fn operator_decimal_controls_all_refuse() {
+    // One-sided gate: every control below must refuse — any single false
+    // accept fails. Each refusal names its reason.
+    let controls = [
+        "",
+        "   ",
+        "١٢٣",
+        "1,000",
+        "0.000000000000000000000000000001",
+        "NaN",
+        "inf",
+        "-inf",
+        "Infinity",
+        "1 000",
+        "5 0",
+        "+-5",
+        "--5",
+        "5.5.5",
+        ".",
+        "+",
+        "-",
+        "abc",
+        "12a34",
+        "1e3",
+        "0x10",
+    ];
+    for text in controls {
+        let error = DisplayOnly::new(text.to_owned())
+            .try_into_money()
+            .expect_err("control refuses: {text}");
+        assert!(
+            matches!(error, DisplayOnlyError::InvalidDecimal(_)),
+            "control refusal is a validation reason, not the blanket ban, got: {error}"
+        );
+    }
+}
+
+#[test]
+fn operator_decimals_become_exact_money() {
+    // The validated crossing: exact text in, exact money out — including
+    // scale-carrying and signed text. Negativity is accepted here: whether
+    // a field requires positive is the field's context, not money's.
+    for (text, amount) in [
+        ("0", rust_decimal::Decimal::ZERO),
+        ("100", rust_decimal::Decimal::new(100, 0)),
+        ("100.05", rust_decimal::Decimal::new(10005, 2)),
+        ("100.0500", rust_decimal::Decimal::new(1_000_500, 4)),
+        ("+100.05", rust_decimal::Decimal::new(10005, 2)),
+        ("-5", rust_decimal::Decimal::new(-5, 0)),
+        (".5", rust_decimal::Decimal::new(5, 1)),
+        ("5.", rust_decimal::Decimal::new(5, 0)),
+        ("  100.05  ", rust_decimal::Decimal::new(10005, 2)),
+    ] {
+        let money =
+            DisplayOnly::new(text.to_owned()).try_into_money().expect("exact text mints: {text}");
+        assert_eq!(money, Money::new(amount), "text {text:?} denotes exactly {amount}");
+    }
+}
+
+#[test]
+fn money_display_fromstr_try_into_money_round_trips_exactly() {
+    // Property: Display then the crossing's own FromStr then money — zero
+    // false refuses on the round-trip set. Each amount formats by Display,
+    // re-enters as operator text, and must come back identical.
+    let mut amounts = vec![
+        rust_decimal::Decimal::ZERO,
+        rust_decimal::Decimal::ONE,
+        rust_decimal::Decimal::new(-5, 0),
+        rust_decimal::Decimal::new(10005, 2),
+        rust_decimal::Decimal::new(1_000_500, 4),
+        rust_decimal::Decimal::new(1, 28),
+        rust_decimal::Decimal::MAX,
+    ];
+    for mantissa in [0_i64, 1, 7, 99, 500, 123_456_789, 9_223_372_036_854_775_807] {
+        for scale in [0_u32, 1, 2, 8, 18, 28] {
+            amounts.push(rust_decimal::Decimal::new(mantissa, scale));
+            if mantissa != 0 {
+                amounts.push(rust_decimal::Decimal::new(-mantissa, scale));
+            }
+        }
+    }
+    for amount in amounts {
+        let money = Money::new(amount);
+        let text = money.to_string();
+        let fenced: DisplayOnly<String> =
+            text.parse().expect("operator text enters the fence: {text}");
+        let back = fenced.try_into_money().expect("round trip holds: {text}");
+        assert_eq!(back, money, "Display → FromStr → crossing is exact for {text}");
+    }
+}

@@ -32,6 +32,19 @@ impl AnnotationKey {
     pub fn price_float(self) -> Option<f64> {
         to_display_float(self.price)
     }
+
+    /// One key from display-grade parts: a bar close time plus a chart
+    /// float. This is the single sanctioned display→key crossing — the
+    /// paint edge and the terminal bridge both key annotations off floats
+    /// they read (a clicked close, a projected price), and the key type
+    /// owns the conversion rule rather than each caller re-deciding it.
+    /// `None` when the price is unrepresentable (non-finite): the caller
+    /// creates nothing instead of pinning a substituted value. Keys from
+    /// exact decimals use the struct literal directly.
+    #[must_use]
+    pub fn from_display(bar_timestamp: i64, price: f64) -> Option<Self> {
+        Some(Self { bar_timestamp, price: Decimal::from_f64_retain(price)? })
+    }
 }
 
 /// Display role of an annotation marker: which theme key paints it.

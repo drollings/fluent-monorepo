@@ -648,3 +648,80 @@ fn patch_valid_until_parses_rfc3339() {
     );
     assert!(patch.set_field("valid_until", "tomorrow").is_err(), "vague dates refuse");
 }
+
+#[test]
+fn patch_descriptor_nests_each_tier_leaf_schema() {
+    // The hand-written nesting agrees with the derived field lists: a new
+    // tier or leaf fails here instead of vanishing from the form.
+    use fluent_wvr::{Describable as _, FieldAccess as _};
+    let schema = GrantPatch::default().describe();
+    let properties = schema["properties"].as_object().expect("properties");
+    let mut top: Vec<&str> =
+        properties.keys().map(String::as_str).collect();
+    top.sort_unstable();
+    let mut fields: Vec<&str> = GrantPatch::default().field_names().to_vec();
+    fields.sort_unstable();
+    assert_eq!(top, fields, "descriptor tiers are exactly the settable fields");
+    for (tier, leaves) in [
+        ("budgets", GrantBudgets::new().max_trades(0).max_contracts(0).max_loss(Money::zero()).max_notional(Money::zero()).build().field_names()),
+        ("signal", SignalThresholds::new().min_conviction(0.0).min_activity_score(0.0).build().field_names()),
+        ("trade", TradeThresholds::new().max_loss_per_trade(Money::zero()).max_spread_width(Money::zero()).min_dte_days(0).max_dte_days(0).build().field_names()),
+        ("portfolio", PortfolioThresholds::new().max_open_risk(Money::zero()).quote_max_age_secs(0).build().field_names()),
+        ("breakers", BreakerLimits::new().max_consecutive_errors(0).build().field_names()),
+    ] {
+        let nested = properties[tier]["properties"].as_object().expect("tier nests leaves");
+        let mut nested_names: Vec<&str> = nested.keys().map(String::as_str).collect();
+        nested_names.sort_unstable();
+        let mut leaf_names: Vec<&str> = leaves.to_vec();
+        leaf_names.sort_unstable();
+        assert_eq!(nested_names, leaf_names, "tier {tier} nests exactly its leaves");
+    }
+    let until = &properties["valid_until"];
+    assert_eq!(until["type"], serde_json::json!("string"), "window end stays a string leaf");
+    assert_eq!(until["format"], serde_json::json!("date-time"), "window end keeps its date-time format");
+}
+
+#[test]
+fn every_tier_marks_its_money_leaves_decimal() {
+    // Money leaves ride decimal text, never JSON numbers: the leaf format
+    // is what the form's decimal editor reads.
+    use fluent_wvr::Describable as _;
+    let schema = GrantPatch::default().describe();
+    let properties = schema["properties"].as_object().expect("properties");
+    for (tier, leaf) in [
+        ("budgets", "max_loss"),
+        ("budgets", "max_notional"),
+        ("trade", "max_loss_per_trade"),
+        ("trade", "max_spread_width"),
+        ("portfolio", "max_open_risk"),
+    ] {
+        assert_eq!(
+            properties[tier]["properties"][leaf]["format"],
+            serde_json::json!("decimal"),
+            "tier {tier} leaf {leaf} is decimal text"
+        );
+    }
+}
+
+#[test]
+fn every_tier_display_fromstr_round_trips() {
+    // Both codecs carry every tier: Display renders the document the form
+    // previews, FromStr parses it back. One parser per tier, no second one.
+    let signal = SignalThresholds::new().min_conviction(0.5).min_activity_score(0.25).build();
+    let trade = TradeThresholds::new()
+        .max_loss_per_trade(Money::from(10))
+        .max_spread_width(Money::from(5))
+        .min_dte_days(1)
+        .max_dte_days(30)
+        .build();
+    let portfolio =
+        PortfolioThresholds::new().max_open_risk(Money::from(10_000)).quote_max_age_secs(60).build();
+    let breakers = BreakerLimits::new().max_consecutive_errors(3).build();
+    assert_eq!(SignalThresholds::from_str(&signal.to_string()).expect("signal parses"), signal);
+    assert_eq!(TradeThresholds::from_str(&trade.to_string()).expect("trade parses"), trade);
+    assert_eq!(
+        PortfolioThresholds::from_str(&portfolio.to_string()).expect("portfolio parses"),
+        portfolio
+    );
+    assert_eq!(BreakerLimits::from_str(&breakers.to_string()).expect("breakers parse"), breakers);
+}

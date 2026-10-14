@@ -1,23 +1,26 @@
 //! Schema-driven grant arming form, tested from the terminal side.
 //!
-//! The form renders from the `GrantPatch` descriptor (`field_names` plus
-//! `describe`) with no hand-written field list: tier names, hints, and the
-//! submitted envelope all flow from the schema the strategy crate derives.
-//! The form submits a `{"patch": ...}` envelope through
-//! `TerminalGateway::arm` and never mints a grant locally — the core alone
-//! validates, tightens, and refuses (409-on-loosening family).
+//! The form renders one typed editor per patch leaf from the nested
+//! descriptor, assembles drafted leaves into per-tier boundary strings, and
+//! submits a `{"patch": ...}` envelope of tier texts through
+//! `TerminalGateway::arm` — it never mints a grant locally, and the core
+//! alone validates, tightens, and refuses. Submit stays unactionable until
+//! a successful preview covers exactly the drafts, so the worst case on
+//! screen is the core's own number before confirmation.
 
 use super::*;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use chrono::{TimeZone, Utc};
+use fluent_egui::FieldKind;
 use fluent_wvr::Describable;
 use protopyne_strategy::{
     BreakerLimits, Direction, Grant, GrantBudgets, GrantPatch, GrantPermission, GrantScope,
     PortfolioThresholds, SignalThresholds, StructureKind, TradeThresholds,
 };
 use protopyne_types::Money;
-use protopyne_view::{ArmResponse, GatewayError, MockGateway, TerminalGateway};
+use protopyne_view::{ArmResponse, GatewayError, MockGateway, TerminalGateway, WorstCase};
 
 fn manifest_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -37,17 +40,45 @@ fn descriptor_tier_names() -> Vec<String> {
     names
 }
 
-/// A recording test double: every read delegates to the mock, while `arm`
+/// Leaf paths of one tier, in schema order (`tier.leaf`, or the bare tier
+/// when the tier itself is the leaf).
+fn tier_leaves(tier: &str) -> Vec<String> {
+    let hint = descriptor()["properties"][tier].clone();
+    match hint.get("properties").and_then(serde_json::Value::as_object) {
+        Some(leaves) => leaves.keys().map(|leaf| format!("{tier}.{leaf}")).collect(),
+        None => vec![tier.to_owned()],
+    }
+}
+
+/// A recording test double: every read delegates to the mock, `preview_arm`
+/// records the patch and answers the canned worst case, while `arm`
 /// records the submitted document and answers canned. It proves what the
 /// form sends (and whether it sends at all) without involving the core.
 struct RecordGateway {
     mock: MockGateway,
+    previewed: std::sync::Mutex<Option<serde_json::Value>>,
+    preview_refusal: std::sync::Mutex<Option<String>>,
     sent: std::sync::Mutex<Option<serde_json::Value>>,
 }
 
 impl RecordGateway {
     fn new() -> Self {
-        Self { mock: MockGateway::new(), sent: std::sync::Mutex::new(None) }
+        Self {
+            mock: MockGateway::new(),
+            previewed: std::sync::Mutex::new(None),
+            preview_refusal: std::sync::Mutex::new(None),
+            sent: std::sync::Mutex::new(None),
+        }
+    }
+
+    /// Make the next previews refuse with the core-shaped reason, so the
+    /// form's refused-preview gate is testable without a live server.
+    fn refuse_previews(&self, reason: &str) {
+        *self.preview_refusal.lock().expect("record lock") = Some(reason.to_owned());
+    }
+
+    fn previewed(&self) -> Option<serde_json::Value> {
+        self.previewed.lock().expect("record lock").clone()
     }
 
     fn sent(&self) -> Option<serde_json::Value> {
@@ -84,6 +115,22 @@ impl TerminalGateway for RecordGateway {
         self.mock.chart_overlays(kind, period)
     }
 
+    fn replay(&self) -> Result<protopyne_view::ReplayView, GatewayError> {
+        self.mock.replay()
+    }
+
+    fn preview_arm(&self, patch: serde_json::Value) -> Result<WorstCase, GatewayError> {
+        *self.previewed.lock().expect("record lock") = Some(patch);
+        if let Some(reason) = self.preview_refusal.lock().expect("record lock").clone() {
+            return Err(GatewayError::InvalidGrant(reason));
+        }
+        self.mock.preview_arm(serde_json::Value::Null)
+    }
+
+    fn grant_tiers(&self) -> Result<BTreeMap<String, String>, GatewayError> {
+        self.mock.grant_tiers()
+    }
+
     fn arm(&self, grant: serde_json::Value) -> Result<ArmResponse, GatewayError> {
         *self.sent.lock().expect("record lock") = Some(grant);
         Ok(ArmResponse {
@@ -100,7 +147,10 @@ impl TerminalGateway for RecordGateway {
 }
 
 #[test]
-fn form_field_set_equals_the_descriptor() {
+fn form_field_set_fans_out_to_typed_leaves() {
+    // One typed editor per leaf, grouped under its tier: the tiers match
+    // the descriptor, every leaf carries its kind and format, and money
+    // leaves read decimal (never a freeform box).
     let form = GrantFormState::from_schema(&descriptor());
     assert_eq!(
         form.field_paths(),
@@ -108,13 +158,26 @@ fn form_field_set_equals_the_descriptor() {
         "the form exposes exactly the descriptor's tiers"
     );
     assert!(!form.field_paths().is_empty(), "the descriptor is not empty");
+    let mut decimal_leaves = 0;
     for field in form.fields() {
+        let path = field.path();
         assert!(
-            !field.description.is_empty(),
-            "tier {} carries its schema hint",
-            field.path
+            path == field.tier || path.starts_with(&format!("{}.", field.tier)),
+            "leaf {path} belongs to its tier"
         );
+        assert!(!field.description.is_empty(), "leaf {path} carries its schema hint");
+        if field.format.as_deref() == Some("decimal") {
+            decimal_leaves += 1;
+            assert_eq!(field.kind, FieldKind::Text, "decimal is text on the wire");
+        }
+        if field.format.as_deref() == Some("date-time") {
+            assert_eq!(field.kind, FieldKind::Text, "date-time is text on the wire");
+        }
     }
+    assert!(
+        decimal_leaves >= 5,
+        "every money leaf edits as decimal text, found {decimal_leaves}"
+    );
 }
 
 /// Non-comment lines of the form module: the no-hand-written-field-list
@@ -142,26 +205,64 @@ fn form_module_lists_no_tier_by_name() {
 }
 
 #[test]
-fn submit_sends_a_patch_envelope_and_mints_no_grant() {
+fn submit_sends_string_tiers_and_mints_no_grant() {
+    // A fully drafted tier assembles to boundary-string text: the envelope
+    // carries strings, money rides decimal text, and no grant identity
+    // rides anywhere.
     let gateway = RecordGateway::new();
     let mut form = GrantFormState::from_schema(&descriptor());
-    form.set_draft(
-        &descriptor_tier_names()[0],
-        serde_json::json!({"max_consecutive_errors": 1}).to_string(),
-    );
+    for leaf in tier_leaves(&descriptor_tier_names()[0]) {
+        form.set_draft(&leaf, "1".to_owned());
+    }
+    form.refresh_preview(&gateway);
+    assert!(form.is_preview_fresh(), "a drafted tier previews");
     let response = form.submit(&gateway).expect("tightening tier submits");
     assert!(response.armed);
 
+    for document in [gateway.previewed(), gateway.sent()].into_iter().flatten() {
+        let patch = document.get("patch").expect("the document is a patch envelope");
+        assert!(
+            document.get("id").is_none(),
+            "the form mints no grant identity, sent: {document}"
+        );
+        let tiers = patch.as_object().expect("patch is an object");
+        assert_eq!(tiers.len(), 1, "only drafted tiers ride the patch, sent: {document}");
+        for (tier, text) in tiers {
+            assert!(
+                text.is_string(),
+                "tier {tier} rides boundary-string text, sent: {document}"
+            );
+        }
+    }
+}
+
+#[test]
+fn money_leaves_ride_decimal_text_never_json_numbers() {
+    // Exactness by construction: a money leaf assembles to a JSON string,
+    // so the core's codec parses decimal text and no float ever intervenes.
+    let gateway = RecordGateway::new();
+    let mut form = GrantFormState::from_schema(&descriptor());
+    let money_leaf = form
+        .fields()
+        .iter()
+        .find(|field| field.format.as_deref() == Some("decimal"))
+        .expect("a decimal leaf exists")
+        .path();
+    let tier = money_leaf.split('.').next().expect("leaf has a tier").to_owned();
+    for leaf in tier_leaves(&tier) {
+        let draft = if leaf == money_leaf { "100.05" } else { "1" };
+        form.set_draft(&leaf, draft.to_owned());
+    }
+    form.refresh_preview(&gateway);
+    form.submit(&gateway).expect("decimal tier submits");
     let sent = gateway.sent().expect("the form sent exactly one document");
-    let patch = sent.get("patch").expect("the document is a patch envelope");
-    assert!(
-        sent.get("id").is_none(),
-        "the form mints no grant identity, sent: {sent}"
-    );
+    let text = sent["patch"][&tier].as_str().expect("tier rides text");
+    let document: serde_json::Value = serde_json::from_str(text).expect("tier text is a document");
+    let leaf = money_leaf.split('.').nth(1).expect("leaf has a name");
     assert_eq!(
-        patch.as_object().expect("patch is an object").len(),
-        1,
-        "only drafted tiers ride the patch, sent: {sent}"
+        document[leaf],
+        serde_json::json!("100.05"),
+        "money rides decimal text in the tier document"
     );
 }
 
@@ -181,20 +282,114 @@ fn empty_form_refuses_without_calling_the_gateway() {
 }
 
 #[test]
-fn malformed_tier_refuses_by_name_before_send() {
+fn malformed_leaf_refuses_by_path_before_send() {
     let gateway = RecordGateway::new();
     let mut form = GrantFormState::from_schema(&descriptor());
     let tier = descriptor_tier_names()[0].clone();
-    form.set_draft(&tier, "{not json".to_owned());
-    let refused = form.submit(&gateway).expect_err("malformed tier refuses");
+    let leaf = tier_leaves(&tier)[0].clone();
+    form.set_draft(&leaf, "{not json".to_owned());
+    form.refresh_preview(&gateway);
     assert!(
-        matches!(&refused, GrantFormError::FieldParse { field, .. } if field == &tier),
-        "the refusal names the tier, got: {refused:?}"
+        gateway.previewed().is_none(),
+        "a leaf parse failure previews nothing, let alone arms"
+    );
+    let refused = form.submit(&gateway).expect_err("malformed leaf refuses");
+    assert!(
+        matches!(&refused, GrantFormError::FieldParse { field, .. } if field == &leaf),
+        "the refusal names the leaf, got: {refused:?}"
     );
     assert!(
         gateway.sent().is_none(),
-        "a tier parse failure sends nothing"
+        "a leaf parse failure sends nothing"
     );
+}
+
+#[test]
+fn partial_tier_refuses_naming_the_missing_leaves() {
+    // A tier submits whole or not at all: drafting one leaf of a
+    // multi-leaf tier refuses naming the rest, before any gateway call.
+    let gateway = RecordGateway::new();
+    let mut form = GrantFormState::from_schema(&descriptor());
+    // A tier with several leaves, found through the descriptor: drafting
+    // one leaf of it must name the rest.
+    let tier = descriptor_tier_names()
+        .into_iter()
+        .find(|tier| tier_leaves(tier).len() > 1)
+        .expect("a multi-leaf tier exists");
+    let leaves = tier_leaves(&tier);
+    assert!(leaves.len() > 1, "the tier under test has several leaves");
+    form.set_draft(&leaves[0], "1".to_owned());
+    form.refresh_preview(&gateway);
+    let refused = form.submit(&gateway).expect_err("a partial tier refuses");
+    match &refused {
+        GrantFormError::PartialTier { tier: refused_tier, missing } => {
+            assert_eq!(refused_tier, &tier);
+            assert_eq!(missing.len(), leaves.len() - 1, "every undrafted leaf is named");
+        }
+        other => panic!("a partial tier names its missing leaves, got: {other:?}"),
+    }
+    assert!(gateway.sent().is_none(), "a partial tier sends nothing");
+    assert!(gateway.previewed().is_none(), "a partial tier previews nothing");
+}
+
+#[test]
+fn submit_without_preview_refuses_stale() {
+    // The freshness gate lives in submit, not just the painter: drafts
+    // with no preview behind them refuse without a gateway call.
+    let gateway = RecordGateway::new();
+    let mut form = GrantFormState::from_schema(&descriptor());
+    for leaf in tier_leaves(&descriptor_tier_names()[0]) {
+        form.set_draft(&leaf, "1".to_owned());
+    }
+    let refused = form.submit(&gateway).expect_err("unpreviewed drafts refuse");
+    assert!(
+        matches!(refused, GrantFormError::PreviewStale),
+        "got: {refused:?}"
+    );
+    assert!(gateway.sent().is_none(), "an unpreviewed submit sends nothing");
+}
+
+#[test]
+fn edited_drafts_invalidate_the_preview() {
+    // A preview covers exactly the drafts it ran on: editing afterwards
+    // makes submit refuse until a fresh preview runs.
+    let gateway = RecordGateway::new();
+    let mut form = GrantFormState::from_schema(&descriptor());
+    let leaves = tier_leaves(&descriptor_tier_names()[0]);
+    for leaf in &leaves {
+        form.set_draft(leaf, "1".to_owned());
+    }
+    form.refresh_preview(&gateway);
+    assert!(form.is_preview_fresh());
+    form.set_draft(&leaves[0], "2".to_owned());
+    assert!(!form.is_preview_fresh(), "an edit invalidates the preview");
+    let refused = form.submit(&gateway).expect_err("edited drafts refuse");
+    assert!(matches!(refused, GrantFormError::PreviewStale), "got: {refused:?}");
+    form.refresh_preview(&gateway);
+    assert!(form.is_preview_fresh(), "re-previewing covers the edit");
+    assert_eq!(gateway.previewed().expect("two previews ran")["patch"].as_object().expect("patch").len(), 1);
+}
+
+#[test]
+fn failed_preview_blocks_submit() {
+    // A refused preview is still a preview — but submit needs a
+    // *successful* one, so a loosening refuses at the gate with the core's
+    // reason on record.
+    let gateway = RecordGateway::new();
+    gateway.refuse_previews("tightening must not raise any budget");
+    let mut form = GrantFormState::from_schema(&descriptor());
+    for leaf in tier_leaves(&descriptor_tier_names()[0]) {
+        form.set_draft(&leaf, "1".to_owned());
+    }
+    form.refresh_preview(&gateway);
+    assert!(!form.is_preview_fresh(), "a refused preview is never fresh");
+    assert!(
+        form.preview_outcome().is_some_and(|outcome| outcome.is_err()),
+        "the core's refusal is on record for the painter"
+    );
+    let refused = form.submit(&gateway).expect_err("a refused preview blocks submit");
+    assert!(matches!(refused, GrantFormError::PreviewStale), "got: {refused:?}");
+    assert!(gateway.sent().is_none(), "a refused preview sends nothing");
 }
 
 fn arming_grant() -> Grant {
@@ -240,9 +435,9 @@ fn arming_grant() -> Grant {
 
 #[tokio::test]
 async fn loosening_submission_surfaces_the_core_refusal() {
-    // End to end through a live server: arm a grant, then submit a
-    // loosening patch through the form. The core's tighten refusal must
-    // surface (not a local form refusal), and the live grant must be
+    // End to end through a live server: arm a grant, preview a loosening
+    // patch through the form, then submit it. The core's tighten refusal
+    // must surface (not a local form refusal), and the live grant must be
     // untouched — the UI minted nothing.
     let history = protopyne_server::load_bars_csv(
         &manifest_dir().join("../protopyne-server/tests/data/SPY_15M.csv"),
@@ -257,31 +452,31 @@ async fn loosening_submission_surfaces_the_core_refusal() {
         .arm(serde_json::to_value(arming_grant()).expect("grant serializes"))
         .expect("whole-grant arm succeeds");
 
-    // The budgets tier name comes from the descriptor, never a literal:
-    // find the tier whose schema hint names budgets.
-    let schema = descriptor();
-    let properties = schema["properties"].as_object().expect("properties");
-    let budgets_tier = properties
-        .iter()
-        .find(|(_, hint)| {
-            hint["description"].as_str().is_some_and(|d| d.contains("budgets"))
-        })
-        .map(|(name, _)| name.clone())
-        .expect("a budgets tier exists");
-    let mut form = GrantFormState::from_schema(&schema);
-    form.set_draft(
-        &budgets_tier,
-        serde_json::json!({
-            "max_trades": 99,
-            "max_contracts": 8,
-            "max_loss": "500",
-            "max_notional": "5000",
-        })
-        .to_string(),
-    );
+    let mut form = GrantFormState::from_schema(&descriptor());
+    form.set_draft("budgets.max_trades", "99".to_owned());
+    form.set_draft("budgets.max_contracts", "8".to_owned());
+    form.set_draft("budgets.max_loss", "500".to_owned());
+    form.set_draft("budgets.max_notional", "5000".to_owned());
+    form.refresh_preview(&gateway);
+    assert!(!form.is_preview_fresh(), "the loosening previews refused");
+    // The painter would leave submit unactionable here; driving submit
+    // directly must meet the same gate.
     let refused = form.submit(&gateway).expect_err("loosening refuses");
-    match &refused {
-        GrantFormError::Gateway(GatewayError::InvalidGrant(reason)) => assert!(
+    assert!(
+        matches!(refused, GrantFormError::PreviewStale),
+        "an unconfirmed loosening stops at the freshness gate, got: {refused:?}"
+    );
+
+    // A tightening preview succeeds and its submit carries the core's
+    // answer; a loosening submitted past the gate (as here, bypassed by
+    // refreshing over identical drafts is impossible — so prove the core
+    // refusal through the gateway directly).
+    let loosening = serde_json::json!({"patch": {
+        "budgets": r#"{"max_trades":99,"max_contracts":8,"max_loss":"500","max_notional":"5000"}"#,
+    }});
+    let core_refused = gateway.arm(loosening).expect_err("the core refuses loosening");
+    match &core_refused {
+        GatewayError::InvalidGrant(reason) => assert!(
             reason.contains("tightening must not raise any budget"),
             "the core's tighten refusal surfaces, got: {reason}"
         ),
@@ -301,6 +496,57 @@ async fn loosening_submission_surfaces_the_core_refusal() {
         Some(&serde_json::json!(4)),
         "the refused loosening minted nothing: the live grant is unchanged"
     );
+
+    handle.shutdown().await;
+}
+
+#[tokio::test]
+async fn submit_past_preview_meets_the_core_when_the_grant_moves() {
+    // The Gateway variant's live case: a preview succeeds, the live grant
+    // narrows underneath, and the submit then carries the core's refusal —
+    // still distinguishable from local validation.
+    let history = protopyne_server::load_bars_csv(
+        &manifest_dir().join("../protopyne-server/tests/data/SPY_15M.csv"),
+    )
+    .expect("vendored history loads");
+    let config = protopyne_server::ServerConfig::new().bind("127.0.0.1:0".to_owned()).build();
+    let handle = protopyne_server::serve(config, history).await.expect("test server boots");
+    let gateway = handle.gateway();
+    gateway
+        .arm(serde_json::to_value(arming_grant()).expect("grant serializes"))
+        .expect("whole-grant arm succeeds");
+
+    let mut form = GrantFormState::from_schema(&descriptor());
+    form.set_draft("budgets.max_trades", "2".to_owned());
+    form.set_draft("budgets.max_contracts", "8".to_owned());
+    form.set_draft("budgets.max_loss", "500".to_owned());
+    form.set_draft("budgets.max_notional", "5000".to_owned());
+    form.refresh_preview(&gateway);
+    assert!(form.is_preview_fresh(), "the tightening previews against the live grant");
+
+    // The world moves: a narrower whole grant arms (tightening, allowed),
+    // and the previewed patch is now a loosening against it.
+    let mut narrower = arming_grant();
+    narrower.budgets = GrantBudgets::new()
+        .max_trades(1)
+        .max_contracts(8)
+        .max_loss(Money::from(500))
+        .max_notional(Money::from(5_000))
+        .build();
+    gateway
+        .arm(serde_json::to_value(narrower).expect("grant serializes"))
+        .expect("narrowing whole-grant arm succeeds");
+
+    // The painter would re-preview on the next frame and show the refusal;
+    // driving submit directly must surface the core's answer, not a local one.
+    let refused = form.submit(&gateway).expect_err("moved grant refuses the submit");
+    match &refused {
+        GrantFormError::Gateway(GatewayError::InvalidGrant(reason)) => assert!(
+            reason.contains("tightening must not raise any budget"),
+            "the core's refusal surfaces through submit, got: {reason}"
+        ),
+        other => panic!("a moved grant surfaces the core refusal, got: {other:?}"),
+    }
 
     handle.shutdown().await;
 }

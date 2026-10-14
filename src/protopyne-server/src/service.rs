@@ -13,6 +13,7 @@
 //! supervision; configuration loads through
 //! [`load_json_or_default`](common_core::config::load_json_or_default).
 
+use std::collections::BTreeMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
@@ -34,8 +35,8 @@ use protopyne_kernels::{
     BbIndicator, EmaIndicator, Indicator as _, Ohlcv, ParamSet, SmaIndicator, TrimaIndicator,
 };
 use protopyne_strategy::{
-    BreakerLimits, Direction, FixedSignal, Grant, GrantBudgets, GrantPermission, GrantScope,
-    PortfolioThresholds, ProposalState, RiskEngine, RiskLimits, SignalThresholds,
+    BreakerLimits, Direction, FixedSignal, Grant, GrantBudgets, GrantPatch, GrantPermission,
+    GrantScope, PortfolioThresholds, ProposalState, RiskEngine, RiskLimits, SignalThresholds,
     Strategy, StructureKind, TradeThresholds,
 };
 use protopyne_chart_model::{ChartRow, row_of};
@@ -43,11 +44,11 @@ use protopyne_types::{Bar, Money};
 use protopyne_venue::{Position, StateHandle, TradingState};
 use protopyne_view::{
     ArmResponse, ChartBar, ChartBars, CommandStatus, DenyCount, HealthView, OverlaySeries,
-    PortfolioView, PositionView, ProposalView, WorstCase,
+    PortfolioView, PositionView, ProposalView, ReplayStepView, ReplayView, WorstCase,
 };
 
 use crate::error::ServerError;
-use crate::runner::{BacktestRun, RunnerConfig, run_backtest};
+use crate::runner::{BacktestRun, RunnerConfig, build_replay, complete_replay, run_backtest};
 use crate::backtest::BacktestConfig;
 
 /// Server tunables, loadable from JSON with defaults for every field.
@@ -560,6 +561,83 @@ async fn arm(
         .map_err(|(status, reason)| api_error(status, reason))
 }
 
+/// Parse a patch envelope's tier texts into a [`GrantPatch`]: each tier
+/// rides as a boundary string and parses through its own `FromStr` codec
+/// (via `FieldAccess::set_field`), so the whole-patch `from_value` re-parse
+/// is gone and there is exactly one parser per tier. Anything else —
+/// a non-object patch, a non-string tier, an unknown tier, an unparsable
+/// document — refuses naming the tier, before the core's tighten rule.
+pub(crate) fn parse_patch(document: &serde_json::Value) -> Result<GrantPatch, (StatusCode, String)> {
+    let patch = document.get("patch").ok_or_else(|| {
+        (StatusCode::BAD_REQUEST, "grant patch envelope names no patch".to_owned())
+    })?;
+    let tiers = patch.as_object().ok_or_else(|| {
+        (StatusCode::BAD_REQUEST, "grant patch must be an object of tier texts".to_owned())
+    })?;
+    let mut assembled = GrantPatch::default();
+    for (tier, text) in tiers {
+        let text = text.as_str().ok_or_else(|| {
+            (
+                StatusCode::BAD_REQUEST,
+                format!("grant patch tier {tier} must be document text, not JSON"),
+            )
+        })?;
+        assembled.set_field(tier, text).map_err(|error| {
+            (StatusCode::BAD_REQUEST, format!("grant patch tier {tier} refuses: {error}"))
+        })?;
+    }
+    Ok(assembled)
+}
+
+/// Preview a patch envelope's worst case without storing anything: parse
+/// the tiers, read the live grant, tighten in memory, and return the worst
+/// case the patched grant would authorize. The confirmation surface renders
+/// this before submit is actionable; a preview never arms, and the live
+/// grant is untouched whether the patch tightens or refuses.
+pub(crate) fn preview_arm_of(
+    state: &Shared,
+    document: &serde_json::Value,
+) -> Result<WorstCase, (StatusCode, String)> {
+    let patch = parse_patch(document)?;
+    let current = live_grant(state).ok_or_else(|| {
+        (StatusCode::CONFLICT, "no live grant to tighten".to_owned())
+    })?;
+    let next = current.tighten(patch).map_err(|error| {
+        (StatusCode::CONFLICT, error.to_string())
+    })?;
+    Ok(worst_case_of(&next))
+}
+
+/// Current tier texts of the live grant, for display beside the form's
+/// editors: tier name to boundary-string document, composite tiers as JSON
+/// document text and the window end as bare RFC 3339 — the same encoding a
+/// patch carries back. Read from the grant's own serialized shape through
+/// the patch's field list, so no tier is named twice and a new tier appears
+/// with no edit here. Empty when no grant is live: placeholders stay blank
+/// and the preview refuses, rather than a missing grant looking armed.
+pub(crate) fn grant_tiers_of(
+    state: &Shared,
+) -> Result<BTreeMap<String, String>, (StatusCode, String)> {
+    let Some(grant) = live_grant(state) else {
+        return Ok(BTreeMap::new());
+    };
+    let document = serde_json::to_value(&grant)
+        .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
+    let mut tiers = BTreeMap::new();
+    for tier in GrantPatch::default().field_names() {
+        let Some(value) = document.get(*tier) else {
+            continue;
+        };
+        let text = match value.as_str() {
+            Some(bare) => bare.to_owned(),
+            None => serde_json::to_string(value)
+                .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?,
+        };
+        tiers.insert((*tier).to_owned(), text);
+    }
+    Ok(tiers)
+}
+
 async fn current_grant(State(state): State<Shared>) -> ApiResult<Option<Grant>> {
     Ok(Json(common_core::sync::lock(&state.armed).clone()))
 }
@@ -678,6 +756,68 @@ async fn chart_overlay(
     overlay_series_of(&state.history, &query.kind, query.period, query.mult.unwrap_or(2.0))
         .map(Json)
         .map_err(|(status, reason)| api_error(status, reason))
+}
+
+/// Bars between replay checkpoints when the route is asked for no cadence.
+/// One anchor per pane-window of a session's history keeps the published step
+/// list short enough to scrub while every bar stays individually reachable.
+pub const DEFAULT_REPLAY_CHECKPOINT_EVERY: usize = 50;
+
+/// Replay query: `checkpoint_every` is the bar cadence the core records
+/// anchors at. Absent means [`DEFAULT_REPLAY_CHECKPOINT_EVERY`].
+#[derive(Debug, serde::Deserialize)]
+struct ReplayQuery {
+    checkpoint_every: Option<usize>,
+}
+
+/// Replay read over history, shared by the route and the gateway.
+///
+/// Composes the same research replay graph the runner builds
+/// ([`build_replay`]) instead of a second step walk, so the published order,
+/// the anchors, and the "reached" flags are the graph's own answers lifted
+/// field-for-field. The read stands at the head: a fresh window has nothing
+/// rewound, and a terminal that scrubs holds the moved cursor itself.
+///
+/// The `Err` status rides along so both callers map the same refusal the
+/// same way.
+pub(crate) fn replay_view_of(
+    history: &[Bar],
+    checkpoint_every: usize,
+) -> Result<ReplayView, (StatusCode, String)> {
+    let mut graph = build_replay(history, checkpoint_every)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    complete_replay(&mut graph);
+    // Own the key list so each step's state and anchor flag are read from
+    // the graph rather than re-derived from the bar index.
+    let keys: Vec<String> = graph.step_ids().to_vec();
+    let mut steps = Vec::with_capacity(keys.len());
+    for key in &keys {
+        let step = graph.status(key).ok_or_else(|| {
+            (StatusCode::INTERNAL_SERVER_ERROR, format!("replay step missing: {key:?}"))
+        })?;
+        steps.push(ReplayStepView {
+            bar_index: step.bar_index as u64,
+            ts: step.ts.clone(),
+            done: step.done,
+            checkpoint: graph.is_checkpoint(key),
+        });
+    }
+    // The head is one past the last bar index, so an untouched window reads
+    // `cursor == total_bars` — the same shape the terminal cursor validates.
+    let total_bars = steps.len() as u64;
+    Ok(ReplayView { cursor: total_bars, total_bars, steps })
+}
+
+async fn replay(
+    State(state): State<Shared>,
+    Query(query): Query<ReplayQuery>,
+) -> Result<Json<ReplayView>, (StatusCode, Json<ErrorBody>)> {
+    replay_view_of(
+        &state.history,
+        query.checkpoint_every.unwrap_or(DEFAULT_REPLAY_CHECKPOINT_EVERY),
+    )
+    .map(Json)
+    .map_err(|(status, reason)| api_error(status, reason))
 }
 
 async fn feed(State(state): State<Shared>, upgrade: WebSocketUpgrade) -> impl IntoResponse {
@@ -833,6 +973,7 @@ pub async fn serve(config: ServerConfig, history: Vec<Bar>) -> Result<ServerHand
         .route("/portfolio", get(portfolio))
         .route("/chart/bars", get(chart_bars))
         .route("/chart/overlays", get(chart_overlay))
+        .route("/replay", get(replay))
         .route("/feed", get(feed))
         .with_state(Arc::clone(&state));
     let listener = tokio::net::TcpListener::bind(&config.bind)

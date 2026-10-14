@@ -54,3 +54,19 @@ fn price_converts_to_display_float_without_panicking() {
     };
     assert!(huge.price_float().is_some(), "large-but-finite prices still map");
 }
+
+#[test]
+fn display_floats_become_keys_exactly_or_not_at_all() {
+    // The sanctioned display→key crossing: ordinary floats key exactly and
+    // round-trip through `price_float`, while non-finite floats refuse
+    // instead of pinning a substituted decimal.
+    let keyed = AnnotationKey::from_display(1_700_000_000, 100.5).expect("100.5 keys");
+    assert_eq!(keyed.bar_timestamp, 1_700_000_000);
+    assert_eq!(keyed.price_float(), Some(100.5), "the key maps back to its float");
+    for vapor in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        assert!(
+            AnnotationKey::from_display(1_700_000_000, vapor).is_none(),
+            "{vapor} keys nothing"
+        );
+    }
+}

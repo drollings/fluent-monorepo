@@ -185,10 +185,17 @@ impl InteractionState {
                         let shift = f64::from(dy_px) * (top - bottom) / height;
                         min += shift;
                         max += shift;
+                        // The displacement always applies; the rate seeds a
+                        // coast only when it is finite. A subnormal-but-
+                        // positive `dt` would overflow `shift / dt` into an
+                        // infinite coast velocity, so finiteness of the
+                        // quotient — not just positivity of `dt` — gates it.
                         if dt_valid {
                             let rate = shift / dt;
-                            self.velocity =
-                                (1.0 - VELOCITY_BLEND) * self.velocity + VELOCITY_BLEND * rate;
+                            if rate.is_finite() {
+                                self.velocity =
+                                    (1.0 - VELOCITY_BLEND) * self.velocity + VELOCITY_BLEND * rate;
+                            }
                         }
                     }
                     PointerInput::Wheel { delta_px, anchor_y } => {

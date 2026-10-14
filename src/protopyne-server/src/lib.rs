@@ -24,7 +24,7 @@ pub use portfolio::{Aggregation, BookedFill, BucketKey, BucketSummary, PAPER_POR
 pub use report::{BacktestReport, RunManifest, build_report, capital_efficiency, count_unquotable_bars, cum_return, log_to_simple_return, max_drawdown, render_tearsheet, simple_to_log_return, worst_step_loss};
 pub use runner::{BacktestRun, BarDecision, BarHealth, CheckedOrder, MultiBacktestRun, MultiRunManifest, MultiSymbolInput, RunnerConfig, SweepOutcome, ReplayStep, build_replay, checked_order_for, complete_replay, decide_and_submit, equity_curve_for, expire_position, report_rsrs, run_backtest, run_multi_backtest, run_paper_decisions, run_sweep, side_for_direction, snapshot_positions, triple_barrier, walk_forward_split};
 pub use gateway::ServerGateway;
-pub use service::{AppState, ErrorBody, PreviewParams, PreviewResponse, ServerConfig, ServerHandle, serve};
+pub use service::{AppState, DEFAULT_REPLAY_CHECKPOINT_EVERY, ErrorBody, PreviewParams, PreviewResponse, ServerConfig, ServerHandle, serve};
 pub use transpile::{Binding, CalibrationTally, Hair, Length, Lowered, Refusal, SpikeOutcome, calibrate, compile_spike, evaluate_lowered};
 
 #[cfg(test)]

@@ -6,8 +6,8 @@
 //! One [`context::RunCtx`] per run replaces every process-global singleton:
 //! bar cursor, `var`/`varip` stores, validated inputs, and drawings travel
 //! together and die with the run, so parallel backtests stay isolated.
-//! Indicator kernels arrive in the next milestone; the series, variable, and
-//! runtime contracts they build on live here.
+//! The indicator kernels build on the series, variable, and runtime
+//! contracts here.
 
 pub mod averages;
 pub mod bars;

@@ -1,9 +1,9 @@
 use super::*;
 
 /// Test-local naive mean used only to demonstrate what the warmup gate
-/// measures. Real indicator kernels arrive in a later milestone; this helper
-/// exists solely so the CAL control below runs against something shaped
-/// like a kernel output (leading `None` until warmed).
+/// measures. This helper exists solely so the CAL control below runs
+/// against something shaped like a kernel output (leading `None` until
+/// warmed).
 fn naive_mean_for_control(values: &[f64], period: usize) -> Vec<Option<f64>> {
     values
         .iter()

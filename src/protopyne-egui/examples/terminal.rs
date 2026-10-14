@@ -10,9 +10,10 @@
 //!
 //! The window is a text dashboard over the gateway views (health and
 //! command-plane status, portfolio, proposals, chart-bar range, one
-//! overlay); chart painting stays in the `demo` shell, which this file does
-//! not duplicate. No decision logic lives here: every number on screen is a
-//! gateway read, and the single write (`arm`) is a later milestone's form.
+//! overlay) plus the replay scrub; chart painting stays in the `demo` shell,
+//! which this file does not duplicate. No decision logic lives here: every
+//! number on screen is a gateway read, and the only write (`arm`) is the
+//! form's submit.
 //!
 //! Usage: `cargo run -p protopyne-egui --features server-gateway,demo
 //! --example terminal -- [--mock] [HISTORY.csv]`, or pass `--check` to pull
@@ -20,7 +21,9 @@
 
 use std::path::PathBuf;
 
-use protopyne_egui::views::{ViewCache, ViewsBundle};
+use fluent_wvr::Describable;
+use protopyne_egui::views::{HealthModel, PortfolioModel, ViewsBundle, load_bundle};
+use protopyne_egui::{GrantFormState, ReplayScrub, ScrubOutcome, paint_grant_form, paint_replay_scrub};
 use protopyne_server::{ServerConfig, ServerHandle, serve};
 use protopyne_view::{
     ChartBars, GatewayError, MockGateway, OverlaySeries, TerminalGateway,
@@ -39,9 +42,10 @@ fn default_m15() -> PathBuf {
     history_dir().join("SPY_15M.csv")
 }
 
-/// Chart reads have no view-model yet (chart views arrive in a later
-/// milestone); the terminal pulls them alongside the bundle, never by
-/// reaching past the trait object.
+/// Chart reads are gateway DTOs with no display view-model: the dashboard
+/// renders their own range and overlay counts, so they ride alongside the
+/// bundle rather than earning a model of their own. The terminal pulls them
+/// through the trait object, never by reaching past it.
 struct ChartReads {
     bars: ChartBars,
     overlay: OverlaySeries,
@@ -54,28 +58,41 @@ fn pull_charts(gateway: &dyn TerminalGateway) -> Result<ChartReads, GatewayError
     })
 }
 
-fn check_lines(bundle: &ViewsBundle, charts: &ChartReads) -> Vec<String> {
-    let health = &bundle.health;
+/// One-line health rendering shared by the headless check and the window:
+/// the same gateway read renders the same line in both, so the two cannot
+/// drift into disagreeing dashboards.
+fn health_summary_line(health: &HealthModel) -> String {
+    format!(
+        "status={} version={} trading={} entries={} exits={}",
+        health.status,
+        health.version,
+        health.trading_state,
+        health.allows_entries,
+        health.allows_exits,
+    )
+}
+
+/// One-line fill accounting shared by the headless check and the window,
+/// same single-source rule as [`health_summary_line`].
+fn portfolio_summary_line(portfolio: &PortfolioModel) -> String {
+    format!(
+        "filled={} fees={} open={}",
+        portfolio.filled_orders, portfolio.total_fees, portfolio.open_contracts,
+    )
+}
+
+fn check_lines(bundle: &ViewsBundle, charts: &ChartReads, replay: &ReplayScrub) -> Vec<String> {
     let portfolio = &bundle.portfolio;
     let bars = &charts.bars;
     let last_close = bars.rows.last().map_or(f64::NAN, |bar| bar.close);
     let overlay_last = charts.overlay.values.iter().rev().find_map(|slot| *slot);
     vec![
+        health_summary_line(&bundle.health),
         format!(
-            "status={} version={} trading={} entries={} exits={}",
-            health.status,
-            health.version,
-            health.trading_state,
-            health.allows_entries,
-            health.allows_exits,
-        ),
-        format!(
-            "proposals={} positions={} filled={} fees={} open={} journal={}",
+            "proposals={} positions={} {} journal={}",
             bundle.proposals.len(),
             portfolio.positions.len(),
-            portfolio.filled_orders,
-            portfolio.total_fees,
-            portfolio.open_contracts,
+            portfolio_summary_line(portfolio),
             bundle.journal.len(),
         ),
         format!(
@@ -84,6 +101,14 @@ fn check_lines(bundle: &ViewsBundle, charts: &ChartReads) -> Vec<String> {
             bars.dropped,
             OVERLAY_KIND,
             OVERLAY_PERIOD,
+        ),
+        format!(
+            "replay bars={} cursor={} anchors={}",
+            replay.state().total_bars,
+            replay.state().cursor,
+            replay
+                .window()
+                .map_or(0, |window| window.steps.iter().filter(|step| step.checkpoint).count()),
         ),
     ]
 }
@@ -102,26 +127,68 @@ async fn boot(path: PathBuf) -> Result<ServerHandle, String> {
 
 struct TerminalApp {
     gateway: Box<dyn TerminalGateway>,
-    cache: ViewCache,
     bundle: Result<ViewsBundle, String>,
     charts: Result<ChartReads, String>,
+    /// Journal rows pre-rendered in provenance order at refresh time: the
+    /// frame reads lines, it never scans the journal per row per frame.
+    journal_lines: Vec<String>,
+    /// The replay scrub over the standard topology: the gateway supplies the
+    /// window, this app owns where the cursor stands.
+    replay: Option<ReplayScrub>,
+    replay_error: Option<String>,
+    /// The arming form over the patch descriptor: drafts, preview, and
+    /// submit all run through the gateway, never around it.
+    grant_form: GrantFormState,
 }
 
 impl TerminalApp {
     fn new(gateway: Box<dyn TerminalGateway>) -> Self {
+        let (replay, replay_error) = match ReplayScrub::standard() {
+            Ok(scrub) => (Some(scrub), None),
+            // A topology that cannot be built is a refused scrub, reported in
+            // the panel that would have hosted it rather than a dead frame.
+            Err(e) => (None, Some(e.to_string())),
+        };
         let mut app = Self {
             gateway,
-            cache: ViewCache::new(),
             bundle: Err("no pull yet".to_owned()),
             charts: Err("no pull yet".to_owned()),
+            journal_lines: Vec::new(),
+            replay,
+            replay_error,
+            grant_form: GrantFormState::from_schema(
+                &protopyne_strategy::GrantPatch::default().describe(),
+            ),
         };
         app.refresh();
         app
     }
 
     fn refresh(&mut self) {
-        self.bundle = self.cache.load(&*self.gateway).map_err(|e| e.to_string());
+        // Uncached by design: every refresh reads fresh gateway state, so a
+        // halted venue can never render as live from a stale bundle.
+        self.bundle = load_bundle(&*self.gateway).map_err(|e| e.to_string());
+        // One seq-to-row index per refresh, then one line per ordered row:
+        // the per-frame journal walk is a line read, not a find per row.
+        self.journal_lines = self.bundle.as_ref().map_or_else(
+            |_| Vec::new(),
+            |bundle| {
+                let by_seq: std::collections::HashMap<i64, &protopyne_view::JournalRowView> =
+                    bundle.journal.iter().map(|row| (row.seq, row)).collect();
+                bundle
+                    .provenance_order
+                    .iter()
+                    .filter_map(|seq| by_seq.get(seq))
+                    .map(|row| format!("#{} {} {} {}", row.seq, row.client_id, row.kind, row.at_ms))
+                    .collect()
+            },
+        );
         self.charts = pull_charts(&*self.gateway).map_err(|e| e.to_string());
+        // A repeated read widens the window; it never moves the operator's
+        // cursor, so a refresh cannot yank a scrub back to the head.
+        if let Some(scrub) = self.replay.as_mut() {
+            self.replay_error = scrub.ingest(&*self.gateway).err().map(|e| e.to_string());
+        }
     }
 }
 
@@ -145,14 +212,7 @@ impl eframe::App for TerminalApp {
             };
             ui.collapsing("health", |ui| {
                 let health = &bundle.health;
-                ui.label(format!(
-                    "status={} version={} trading={} entries={} exits={}",
-                    health.status,
-                    health.version,
-                    health.trading_state,
-                    health.allows_entries,
-                    health.allows_exits,
-                ));
+                ui.label(health_summary_line(health));
                 if health.halted() {
                     ui.colored_label(egui::Color32::RED, "HALTED: no entry affordance");
                 }
@@ -185,12 +245,7 @@ impl eframe::App for TerminalApp {
                             position.underlying, position.quantity, position.avg_price,
                         ));
                     }
-                    ui.label(format!(
-                        "filled={} fees={} open={}",
-                        bundle.portfolio.filled_orders,
-                        bundle.portfolio.total_fees,
-                        bundle.portfolio.open_contracts,
-                    ));
+                    ui.label(portfolio_summary_line(&bundle.portfolio));
                 },
             );
             ui.collapsing(format!("proposals ({})", bundle.proposals.len()), |ui| {
@@ -236,19 +291,35 @@ impl eframe::App for TerminalApp {
                     ui.colored_label(egui::Color32::RED, format!("chart reads refused: {reason}"));
                 }
             }
-            ui.collapsing(format!("journal ({})", bundle.journal.len()), |ui| {
-                // Provenance order, not arrival order: the timeline is the
-                // journal's own causal chains.
-                for seq in &bundle.provenance_order {
-                    if let Some(row) =
-                        bundle.journal.iter().find(|row| row.seq == *seq)
+            egui::Panel::right("replay-scrub").show(ui, |ui| {
+                if let Some(reason) = self.replay_error.clone() {
+                    ui.colored_label(egui::Color32::RED, format!("replay refused: {reason}"));
+                }
+                if let Some(scrub) = self.replay.as_mut() {
+                    if let Some(ScrubOutcome::Rewound { panes, .. }) =
+                        paint_replay_scrub(ui, scrub)
                     {
-                        ui.label(format!(
-                            "#{} {} {} {}",
-                            row.seq, row.client_id, row.kind, row.at_ms
-                        ));
+                    // The panes a move made due are this terminal's own
+                    // recompute work list. The dashboard lists them: pane
+                    // series belong to the chart shell, which owns the
+                    // kernels this file deliberately does not duplicate.
+                        ui.separator();
+                        ui.label(format!("{} panes to recompute:", panes.len()));
+                        for pane in &panes {
+                            ui.label(format!("  {pane}"));
+                        }
                     }
                 }
+            });
+            ui.collapsing(format!("journal ({})", bundle.journal.len()), |ui| {
+                // Provenance order, not arrival order: the rows were ordered
+                // and rendered at refresh time, so the frame only reads.
+                for line in &self.journal_lines {
+                    ui.label(line);
+                }
+            });
+            egui::Panel::left("grant-arm").show(ui, |ui| {
+                paint_grant_form(ui, &mut self.grant_form, &*self.gateway);
             });
         });
     }
@@ -282,15 +353,25 @@ async fn main() {
         None => Box::new(MockGateway::new()),
     };
     if check {
-        let cache = ViewCache::new();
-        match (cache.load(&*gateway), pull_charts(&*gateway)) {
-            (Ok(bundle), Ok(charts)) => {
-                for line in check_lines(&bundle, &charts) {
+        // The scrub reads its window from the same trait object, so `--check`
+        // proves the replay seam without opening a window.
+        let scrub: Result<ReplayScrub, String> = ReplayScrub::standard()
+            .map_err(|e| e.to_string())
+            .and_then(|mut scrub| {
+                scrub.ingest(&*gateway).map(|()| scrub).map_err(|e| e.to_string())
+            });
+        match (load_bundle(&*gateway), pull_charts(&*gateway), scrub) {
+            (Ok(bundle), Ok(charts), Ok(replay)) => {
+                for line in check_lines(&bundle, &charts, &replay) {
                     println!("protopyne-terminal check: {line}");
                 }
             }
-            (Err(e), _) | (_, Err(e)) => {
+            (Err(e), _, _) | (_, Err(e), _) => {
                 eprintln!("protopyne-terminal: gateway refused: {e}");
+                std::process::exit(1);
+            }
+            (_, _, Err(e)) => {
+                eprintln!("protopyne-terminal: replay refused: {e}");
                 std::process::exit(1);
             }
         }

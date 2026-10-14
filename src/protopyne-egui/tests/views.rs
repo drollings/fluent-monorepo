@@ -1,13 +1,13 @@
 //! Read-only views over `&dyn TerminalGateway`.
 //!
 //! The terminal renders view-models, never raw gateway DTOs and never the
-//! trading path: provenance order follows the journal's sequence order
-//! through the shared dependency graph (no hand-rolled walk), a halted
-//! trading state renders halted with no entry affordance, and derived view
-//! state rides the shared bounded cache (a repeat pull is a hit, a changed
-//! journal rebuilds).
+//! trading path: provenance order follows the journal's sequence order —
+//! sorted at build, never arrival order, with no graph in between —, a
+//! halted trading state renders halted with no entry affordance, and pulls
+//! are uncached reads of fresh gateway state (a repeat pull rebuilds an
+//! equal bundle; a changed journal rebuilds a changed one).
 
-use crate::views::{HealthModel, PortfolioModel, Provenance, ViewCache, ViewsBundle, load_bundle};
+use crate::views::{HealthModel, PortfolioModel, Provenance, ViewsBundle, load_bundle};
 use protopyne_view::{HealthView, MockGateway, PortfolioView, TerminalGateway};
 
 fn mock_gateway() -> MockGateway {
@@ -18,15 +18,24 @@ fn mock_health() -> HealthView {
     mock_gateway().health().expect("mock health reads")
 }
 
+fn journal_row(seq: i64, client: &str, kind: &str) -> protopyne_view::JournalRowView {
+    protopyne_view::JournalRowView {
+        seq,
+        client_id: client.to_owned(),
+        kind: kind.to_owned(),
+        detail: "{}".to_owned(),
+        at_ms: 1_700_000_000_000 + seq * 1_000,
+    }
+}
+
 #[test]
 fn provenance_ordering_matches_journal_order() {
     let gateway = mock_gateway();
     let rows = gateway.journal().expect("mock journal reads");
     assert_eq!(rows.len(), 2, "mock journal carries intent then fill");
 
-    let provenance = Provenance::of(&rows).expect("acyclic journal builds");
-    let order = provenance.timeline().expect("timeline orders");
-    assert_eq!(order, vec![1, 2], "provenance follows journal sequence order");
+    let provenance = Provenance::of(rows).expect("acyclic journal builds");
+    assert_eq!(provenance.timeline(), vec![1, 2], "provenance follows journal sequence order");
     assert_eq!(provenance.followed_by(1), vec![2], "the fill follows the intent");
     assert!(provenance.followed_by(2).is_empty(), "nothing follows the fill");
     assert!(provenance.followed_by(99).is_empty(), "unknown rows have no followers");
@@ -34,6 +43,56 @@ fn provenance_ordering_matches_journal_order() {
         provenance.row(1).expect("row 1 exists").kind,
         "intent",
         "rows stay addressable by sequence number"
+    );
+}
+
+#[test]
+fn out_of_order_arrival_still_renders_causal_order() {
+    // The only input that distinguishes causal order from arrival order:
+    // rows arrive fill-first across two interleaved clients, and the
+    // timeline must still follow sequence numbers — with follow-ups
+    // skipping the other client's rows.
+    let arrival =
+        vec![journal_row(3, "a", "fill"), journal_row(1, "a", "intent"), journal_row(2, "b", "intent")];
+    let provenance = Provenance::of(arrival).expect("shuffled journal builds");
+    assert_eq!(provenance.timeline(), vec![1, 2, 3], "causal order, never arrival order");
+    assert_eq!(
+        provenance.followed_by(1),
+        vec![3],
+        "a's fill follows a's intent across b's interleaved row"
+    );
+    assert!(provenance.followed_by(2).is_empty(), "b's chain ends at its intent");
+
+    let bundle = ViewsBundle::of(
+        &mock_health(),
+        &mock_gateway().portfolio().expect("mock portfolio reads"),
+        Vec::new(),
+        vec![journal_row(3, "a", "fill"), journal_row(1, "a", "intent"), journal_row(2, "b", "intent")],
+    )
+    .expect("shuffled journal shapes");
+    assert_eq!(
+        bundle.journal.iter().map(|row| row.seq).collect::<Vec<_>>(),
+        vec![1, 2, 3],
+        "the bundle stores sequence order, not arrival order"
+    );
+    assert_eq!(bundle.provenance_order, vec![1, 2, 3], "order and journal agree");
+}
+
+#[test]
+fn duplicate_sequence_numbers_refuse_without_a_substituted_order() {
+    let gateway = mock_gateway();
+    let mut rows = gateway.journal().expect("mock journal reads");
+    rows.push(rows[0].clone());
+    let refused = ViewsBundle::of(
+        &mock_health(),
+        &gateway.portfolio().expect("mock portfolio reads"),
+        Vec::new(),
+        rows,
+    )
+    .expect_err("duplicated sequence numbers refuse");
+    assert!(
+        refused.to_string().contains("causal order"),
+        "the refusal names the violated order: {refused}"
     );
 }
 
@@ -81,7 +140,7 @@ fn portfolio_model_mirrors_the_dto() {
 }
 
 /// A gateway whose journal grows by one row: the second distinct state must
-/// rebuild, not serve the first state's bundle.
+/// rebuild a changed bundle, never serve the first state's.
 struct ExtraJournal {
     extra: protopyne_view::JournalRowView,
 }
@@ -117,6 +176,23 @@ impl TerminalGateway for ExtraJournal {
         mock_gateway().chart_overlays(kind, period)
     }
 
+    fn replay(&self) -> Result<protopyne_view::ReplayView, protopyne_view::GatewayError> {
+        mock_gateway().replay()
+    }
+
+    fn preview_arm(
+        &self,
+        patch: serde_json::Value,
+    ) -> Result<protopyne_view::WorstCase, protopyne_view::GatewayError> {
+        mock_gateway().preview_arm(patch)
+    }
+
+    fn grant_tiers(
+        &self,
+    ) -> Result<std::collections::BTreeMap<String, String>, protopyne_view::GatewayError> {
+        mock_gateway().grant_tiers()
+    }
+
     fn arm(
         &self,
         grant: serde_json::Value,
@@ -126,19 +202,23 @@ impl TerminalGateway for ExtraJournal {
 }
 
 #[test]
-fn view_cache_hits_identical_state_rebuilds_changed() {
+fn identical_state_pulls_identical_bundles() {
+    // The no-cache control: with nothing stored between pulls, equal
+    // gateway state still shapes equal bundles — determinism lives in the
+    // shaping, not in a stored copy.
     let gateway = mock_gateway();
-    let cache = ViewCache::new();
-    assert!(cache.is_empty(), "a fresh cache holds no view state");
+    let first: ViewsBundle = load_bundle(&gateway).expect("first pull builds");
+    let second: ViewsBundle = load_bundle(&gateway).expect("second pull builds");
+    assert_eq!(first, second, "identical state pulls identical bundles");
+}
 
-    let first: ViewsBundle =
-        cache.load(&gateway).expect("first pull builds the bundle");
-    assert_eq!(cache.len(), 1, "one distinct state cached");
-    let second: ViewsBundle =
-        cache.load(&gateway).expect("second pull hits the same state");
-    assert_eq!(cache.len(), 1, "a repeat pull is a hit, not a second entry");
-    assert_eq!(first.provenance_order, second.provenance_order);
-    assert_eq!(first.health, second.health);
+#[test]
+fn grown_journal_rebuilds_a_changed_bundle() {
+    // The invalidation control: any journal append changes what the next
+    // pull shapes — a new row can never read back as the old bundle.
+    let gateway = mock_gateway();
+    let first: ViewsBundle = load_bundle(&gateway).expect("first pull builds");
+    assert_eq!(first.provenance_order, vec![1, 2], "mock journal carries intent then fill");
 
     let grown = ExtraJournal {
         extra: protopyne_view::JournalRowView {
@@ -149,16 +229,12 @@ fn view_cache_hits_identical_state_rebuilds_changed() {
             at_ms: 1_700_000_120_000,
         },
     };
-    let third: ViewsBundle = cache.load(&grown).expect("changed journal rebuilds");
-    assert_eq!(cache.len(), 2, "a new state is a second entry");
+    let third: ViewsBundle = load_bundle(&grown).expect("changed journal rebuilds");
     assert_eq!(
         third.provenance_order,
         vec![1, 2, 3],
         "the rebuilt timeline extends the journal order"
     );
-    assert_eq!(
-        load_bundle(&gateway).expect("direct load builds").provenance_order,
-        vec![1, 2],
-        "the uncached loader agrees with the cache on the same state"
-    );
+    assert_eq!(third.journal.len(), 3, "the rebuilt bundle carries the new row");
+    assert_ne!(first, third, "an append never reads back as the old bundle");
 }

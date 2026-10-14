@@ -26,7 +26,9 @@ const AREA_KEY: &str = "slow";
 /// One projected series as pane-local points, holes preserved.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SeriesGeom {
-    /// One point per evaluated bar (`None` holes stay holes).
+    /// One point per cursor-space bar (`None` holes stay holes — including
+    /// the warmup holes the projection pads, so the series aligns
+    /// slot-for-slot with the bar window the run covered).
     pub points: Vec<Option<(f32, f32)>>,
 }
 
@@ -103,7 +105,11 @@ pub fn overlay_geoms(primitives: &[PlotPrimitive], viewport: &Viewport) -> Overl
 /// Blit precomputed overlay geometry. `x1` is the pane-local right edge the
 /// levels rule across; every other coordinate arrives pane-local, so the
 /// caller shifts by the pane origin first (like every other paint layer).
-/// A broken theme refuses here instead of painting silent gray.
+/// Each theme key resolves inside the branch that needs it, in series /
+/// level / marker / label / area order: a theme missing an unused key
+/// paints the branches it can, and the first missing key that is actually
+/// needed names itself in the refusal. A broken theme refuses here instead
+/// of painting silent gray.
 pub fn paint_overlay(
     painter: &egui::Painter,
     geoms: &OverlayGeoms,
@@ -113,39 +119,47 @@ pub fn paint_overlay(
     for run in &geoms.series {
         paint_oscillator(painter, &run.points, SERIES_KEY, theme, 1.0)?;
     }
-    let level_stroke = egui::Stroke::new(1.0, resolve_color(theme, LEVEL_KEY)?);
-    for y in &geoms.levels {
-        painter.line_segment(
-            [egui::Pos2::new(0.0, *y), egui::Pos2::new(x1, *y)],
-            level_stroke,
-        );
+    if !geoms.levels.is_empty() {
+        let level_stroke = egui::Stroke::new(1.0, resolve_color(theme, LEVEL_KEY)?);
+        for y in &geoms.levels {
+            painter.line_segment(
+                [egui::Pos2::new(0.0, *y), egui::Pos2::new(x1, *y)],
+                level_stroke,
+            );
+        }
     }
-    let marker_color = resolve_color(theme, MARKER_KEY)?;
-    for (x, y) in &geoms.markers {
-        painter.circle_filled(egui::Pos2::new(*x, *y), 3.0, marker_color);
+    if !geoms.markers.is_empty() {
+        let marker_color = resolve_color(theme, MARKER_KEY)?;
+        for (x, y) in &geoms.markers {
+            painter.circle_filled(egui::Pos2::new(*x, *y), 3.0, marker_color);
+        }
     }
-    let label_color = resolve_color(theme, LABEL_KEY)?;
-    let font = egui::FontId::proportional(11.0);
-    for label in &geoms.labels {
-        painter.text(
-            egui::Pos2::new(label.x, label.y),
-            egui::Align2::CENTER_BOTTOM,
-            &label.text,
-            font.clone(),
-            label_color,
-        );
+    if !geoms.labels.is_empty() {
+        let label_color = resolve_color(theme, LABEL_KEY)?;
+        let font = egui::FontId::proportional(11.0);
+        for label in &geoms.labels {
+            painter.text(
+                egui::Pos2::new(label.x, label.y),
+                egui::Align2::CENTER_BOTTOM,
+                &label.text,
+                font.clone(),
+                label_color,
+            );
+        }
     }
-    let area_stroke = egui::Stroke::new(1.0, resolve_color(theme, AREA_KEY)?);
-    for (x0, y0, x1, y1) in &geoms.areas {
-        painter.rect_stroke(
-            egui::Rect::from_min_max(
-                egui::Pos2::new(*x0, *y0),
-                egui::Pos2::new(*x1, *y1),
-            ),
-            0.0,
-            area_stroke,
-            egui::StrokeKind::Middle,
-        );
+    if !geoms.areas.is_empty() {
+        let area_stroke = egui::Stroke::new(1.0, resolve_color(theme, AREA_KEY)?);
+        for (x0, y0, x1, y1) in &geoms.areas {
+            painter.rect_stroke(
+                egui::Rect::from_min_max(
+                    egui::Pos2::new(*x0, *y0),
+                    egui::Pos2::new(*x1, *y1),
+                ),
+                0.0,
+                area_stroke,
+                egui::StrokeKind::Middle,
+            );
+        }
     }
     Ok(())
 }

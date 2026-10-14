@@ -233,6 +233,12 @@ pub struct DrawingEvent {
     pub object: String,
     /// Stable object key (`label#3`).
     pub key: String,
+    /// Property names this row wrote. Creation and deletion rows write none
+    /// here — creation geometry rides `args`, deletion removes the object —
+    /// while an update row names the setter's properties (`set_x` writes
+    /// `x`, `set_xy1` writes `x1` and `y1`), so a consumer can tell a
+    /// repaint from a move without a setter table of its own.
+    pub props: Vec<String>,
     /// Call arguments in order (positional first, then named).
     pub args: Vec<DrawingArg>,
 }
@@ -3216,6 +3222,7 @@ impl EngineState {
             kind: DrawingEventKind::Created,
             object: kind.namespace().to_owned(),
             key: handle.key(),
+            props: Vec::new(),
             args: draw_args(args, values),
         });
         Ok(Some(PineValue::Drawing(handle)))
@@ -3237,6 +3244,7 @@ impl EngineState {
             kind: DrawingEventKind::Deleted,
             object: kind.namespace().to_owned(),
             key: handle.key(),
+            props: Vec::new(),
             args: draw_args(args, values),
         });
         Ok(None)
@@ -3259,6 +3267,7 @@ impl EngineState {
             kind: DrawingEventKind::Updated,
             object: kind.namespace().to_owned(),
             key: handle.key(),
+            props: vec!["cell".to_owned()],
             args: draw_args(args, values),
         });
         Ok(None)
@@ -3285,6 +3294,7 @@ impl EngineState {
             kind: DrawingEventKind::Updated,
             object: kind.namespace().to_owned(),
             key: handle.key(),
+            props: vec!["cells".to_owned()],
             args: draw_args(args, values),
         });
         Ok(None)
@@ -3361,6 +3371,7 @@ impl EngineState {
                 kind: DrawingEventKind::Updated,
                 object: kind.namespace().to_owned(),
                 key: handle.key(),
+                props: updates.iter().map(|(prop, _)| (*prop).to_owned()).collect(),
                 args: draw_args(args, values),
             });
             return Ok(None);

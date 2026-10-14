@@ -29,18 +29,19 @@ use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};
 use fluent_egui::{
-    BreakLine, CandleGeom, EguiError, InteractionState, PivotDot, PointerInput, RibbonPolygon,
-    RibbonView, ThemeConfig, TintedCandle, Viewport, axis_ticks, candle_geoms,
+    AnnotationSet, BreakLine, CandleGeom, EguiError, InteractionState, MarkerDot, PivotDot,
+    PointerInput, RibbonPolygon, RibbonView, ThemeConfig, TintedCandle, Viewport, annotate_at,
+    area_polygons, axis_ticks, candle_geoms, crosshair_data, crosshair_pixel, hit_test, marker_dots,
     opacity_from_transparency, oscillator_points, paint_area_fill, paint_candles_tinted,
-    paint_error_chip, paint_oscillator, paint_pivot_dots, paint_ribbon_fill, paint_session_breaks,
+    paint_error_chip, paint_markers, paint_oscillator, paint_ribbon_fill, paint_session_breaks,
     pivot_dots, pivot_price_dots, resolve_color, ribbon_polygons,
 };
-use protopyne_chart_model::{ChartRow, ChartType, DailySessionProvider, DateRange, rows_of};
+use protopyne_chart_model::{Annotation, ChartRow, ChartType, DailySessionProvider, DateRange, rows_of};
 use protopyne_chart_scale::{PriceScaleMode, Tick};
 use protopyne_egui::{
     IntegrationLiteView, MomentumPalette, MomentumTint, MtfRow, OSCILLATOR_BRIGHTNESS, OverlayGeoms,
-    TimeframeKey, VOLUME_TRANSPARENCY, area_view, break_lines, candle_momentum_keys,
-    candle_momentum_series, integration_lite_view_calibrated, line_values,
+    TimeframeKey, VOLUME_TRANSPARENCY, annotations_of, append_new, area_view, break_lines,
+    candle_momentum_keys, candle_momentum_series, integration_lite_view_calibrated, line_values,
     momentum_tints, oscillator_transparency, overlay_geoms, paint_mtf_table, paint_overlay,
     paint_timeframe_toolbar, paint_toolbar, paint_unsupported_chip, ribbon_fill_transparency,
     window_for_range,
@@ -237,6 +238,11 @@ struct TerminalApp {
     /// Pine overlay projection over the aligned window bars: `None` while
     /// rows and bars misalign (dropped rows), so drawings never misplace.
     overlay: Option<Result<OverlayProjection, ProjectionRefusal>>,
+    /// Operator annotation journal: Pine drawings enter here on every data
+    /// refresh (new drawings only, never duplicates), clicks append through
+    /// the radius-confirmed path, and undo retracts. Painted as markers over
+    /// the price pane every frame.
+    annotations: AnnotationSet,
     /// Rows painted on the price pane for the active chart type: the window
     /// rows for candles/line/area, Heikin-Ashi rows converted over the full
     /// history (the smoothing is recursive, so windowing first would
@@ -271,6 +277,7 @@ impl TerminalApp {
             interaction: None,
             price_window: None,
             overlay: None,
+            annotations: AnnotationSet::new(),
             price_rows: Vec::new(),
         };
         app.refresh()?;
@@ -333,7 +340,7 @@ impl TerminalApp {
         // Rebind the machine to the fresh data extent and drop the held
         // window: a timeframe/range switch pans nothing stale. Degenerate
         // rows leave no machine, and painting falls back to the data window.
-        let (min, max) = self.price_extent();
+        let (min, max) = self.price_data_extent();
         let pad = (max - min) * 0.02;
         self.interaction = InteractionState::new(min - pad, max + pad).ok();
         self.price_window = None;
@@ -348,6 +355,16 @@ impl TerminalApp {
         // dropped row anywhere misaligns drawings, so those windows paint no
         // overlay at all.
         let overlay = self.aligned_bars().map(run_overlay);
+        // Pine drawings enter the annotation journal here, once per refresh:
+        // conversion is idempotent per content, so a re-run appends nothing
+        // and operator entries are never touched. The bar borrow ends before
+        // the append begins, so conversion and append stay sequential.
+        if let Some(Ok(projection)) = &overlay {
+            if let Some(bars) = self.aligned_bars() {
+                let fresh = annotations_of(&projection.primitives, bars);
+                append_new(&mut self.annotations, &fresh);
+            }
+        }
         self.overlay = overlay;
         self.mtf = Vec::new();
         for timeframe in TimeframeKey::all() {
@@ -545,6 +562,18 @@ fn place_dots(dots: Vec<PivotDot>, origin: egui::Pos2) -> Vec<PivotDot> {
         .collect()
 }
 
+/// Shift annotation markers into UI space (see [`place_candles`]).
+fn place_markers(dots: Vec<MarkerDot>, origin: egui::Pos2) -> Vec<MarkerDot> {
+    dots
+        .into_iter()
+        .map(|mut dot| {
+            dot.x += origin.x;
+            dot.y += origin.y;
+            dot
+        })
+        .collect()
+}
+
 /// Format an epoch timestamp for the time axis: intraday hours when the
 /// window spans days, month-day otherwise.
 fn fmt_time(epoch: i64, intraday: bool) -> String {
@@ -575,9 +604,11 @@ fn dashed_line(painter: &egui::Painter, a: egui::Pos2, b: egui::Pos2, stroke: eg
 }
 
 impl TerminalApp {
-    /// Data extent behind the price pane (unpadded); the interaction machine
-    /// binds to the padded form, and the held window carries the padding.
-    fn price_extent(&self) -> (f64, f64) {
+    /// Data extent behind the price pane (unpadded): the seed the viewport
+    /// is built from, never the window on screen. The interaction machine
+    /// binds to the padded form, and the held window carries the padding;
+    /// grid, axis, and area reads come from the stepped viewport instead.
+    fn price_data_extent(&self) -> (f64, f64) {
         let rows = &self.price_rows;
         let mut min = f64::INFINITY;
         let mut max = f64::NEG_INFINITY;
@@ -589,7 +620,7 @@ impl TerminalApp {
     }
 
     fn price_viewport(&self, height: f32) -> Option<Viewport> {
-        let (min, max) = self.price_extent();
+        let (min, max) = self.price_data_extent();
         if !min.is_finite() || !max.is_finite() || min >= max {
             return None;
         }
@@ -598,7 +629,9 @@ impl TerminalApp {
             .ok()
     }
 
-    /// Paint the right price axis: tick labels plus the last-price tag.
+    /// Paint the right price axis: tick labels plus the last-price tag. Ticks
+    /// come from the window on screen, so a zoomed axis labels the zoomed
+    /// prices instead of mapping the data extent off the pane.
     #[allow(clippy::too_many_arguments)]
     fn paint_axis(
         &self,
@@ -606,12 +639,11 @@ impl TerminalApp {
         axis: egui::Rect,
         viewport: Viewport,
         origin_y: f32,
-        min: f64,
-        max: f64,
         last_price: Option<(f64, bool)>,
     ) -> Result<(), EguiError> {
         let grid = resolve_color(&self.theme, "grid")?;
-        let ticks: Vec<Tick> = axis_ticks(min, max, 8, 8);
+        let window = viewport.visible_range();
+        let ticks: Vec<Tick> = axis_ticks(window.min, window.max, 8, 8);
         for tick in &ticks {
             if let Some(y) = viewport.price_to_y(tick.value) {
                 painter.text(
@@ -710,18 +742,19 @@ impl TerminalApp {
         Ok(())
     }
 
-    /// Paint horizontal gridlines for the price ticks across the plot.
+    /// Paint horizontal gridlines for the price ticks across the plot. The
+    /// grid reads the same window the candles map through, so zooming keeps
+    /// every line inside the plot instead of clipping the data extent away.
     fn paint_hgrid(
         &self,
         painter: &egui::Painter,
         plot: egui::Rect,
         viewport: Viewport,
-        min: f64,
-        max: f64,
     ) -> Result<(), EguiError> {
         let grid = resolve_color(&self.theme, "grid")?;
         let stroke = egui::Stroke::new(1.0, grid);
-        for tick in axis_ticks(min, max, 8, 8) {
+        let window = viewport.visible_range();
+        for tick in axis_ticks(window.min, window.max, 8, 8) {
             if let Some(y) = viewport.price_to_y(tick.value) {
                 let y = y + plot.top();
                 painter.line_segment(
@@ -814,8 +847,7 @@ impl TerminalApp {
         // Pane-local geometry must shift by the plot origin, not the pane's:
         // the time strip and axis are chrome, not pane space.
         let origin = plot.left_top();
-        let (min, max) = self.price_extent();
-        self.paint_hgrid(&painter, plot, viewport, min, max)?;
+        self.paint_hgrid(&painter, plot, viewport)?;
 
         // Shared borrows only from here: the mutable step ran above, so the
         // row borrow never spans it.
@@ -850,16 +882,13 @@ impl TerminalApp {
                 paint_oscillator(&painter, &points, "fast", &self.theme, 1.0)?;
             }
             ChartType::Area => {
-                self.paint_area(&painter, viewport, origin, rows, min)?;
+                self.paint_area(&painter, viewport, origin, rows)?;
             }
             // Unreachable through the toolbar picker (four wired kinds
-            // only): refusals stay visible rather than painting a guess if
-            // the state ever carries an unwired variant.
+            // only): refusals delegate to the single chart_type decision
+            // rather than keeping a local wording in sync by hand.
             other => {
-                return Err(EguiError::InvalidParam {
-                    what: "chart_type".to_owned(),
-                    reason: format!("{other:?} has no terminal picture"),
-                });
+                return Err(protopyne_egui::refuse_chart_type(other));
             }
         }
         if let Some(bars) = self.aligned_bars() {
@@ -868,7 +897,13 @@ impl TerminalApp {
             paint_session_breaks(&painter, &lines, plot.top(), plot.bottom(), &self.theme)?;
         }
         let dots = place_dots(pivot_price_dots(&self.view.pivots, rows, &viewport), origin);
-        paint_pivot_dots(&painter, &dots, &self.theme)?;
+        // Pivots lower to markers and paint through the one marker emitter;
+        // the journal paints beside them, resolved against the same window.
+        let mut markers: Vec<MarkerDot> =
+            dots.iter().map(MarkerDot::from_pivot).collect();
+        let live: Vec<Annotation> = self.annotations.iter().cloned().collect();
+        markers.extend(place_markers(marker_dots(&live, rows, &viewport), origin));
+        paint_markers(&painter, &markers, &self.theme)?;
         // The overlay paints over the price pane from the same viewport, so
         // its drawings sit on their bars; refusals paint nothing here — the
         // chip renders in the panel above instead.
@@ -884,8 +919,6 @@ impl TerminalApp {
             axis,
             viewport,
             origin.y,
-            min,
-            max,
             last.map(|bar| (bar.close, bar.close >= bar.open)),
         )?;
         self.paint_time_axis(&painter, time_strip, rows)?;
@@ -896,30 +929,47 @@ impl TerminalApp {
                 self.paint_crosshair(&painter, plot, axis, viewport, rows, hover)?;
             }
         }
+        // Plain click annotates the candle under the pointer: the radius
+        // confirms intent, the bar fixes the key, and misses append nothing.
+        // Drags pan (handled above) and never reach here — `clicked` fires
+        // only without drag — so annotating and panning coexist.
+        if response.clicked() && ui.input(|i| i.modifiers == egui::Modifiers::NONE) {
+            if let Some(pressed) = response.hover_pos() {
+                if plot.contains(pressed) {
+                    let local =
+                        egui::Pos2::new(pressed.x - origin.x, pressed.y - origin.y);
+                    if let Some(annotation) = annotate_at((local.x, local.y), &viewport, rows)
+                    {
+                        self.annotations.append(annotation);
+                    }
+                }
+            }
+        }
         Ok(())
     }
 
     /// Paint the area picture: gradient fill under the close line (one mesh
     /// per reused ribbon polygon, top color fading to transparent) plus the
     /// line itself on top. Fill colors resolve here — the polygons carry
-    /// shape only.
+    /// shape only. The fill foot sits at the window floor, not the data
+    /// floor, so a zoomed area fades to the zoomed baseline.
     fn paint_area(
         &self,
         painter: &egui::Painter,
         viewport: Viewport,
         origin: egui::Pos2,
         rows: &[ChartRow],
-        baseline: f64,
     ) -> Result<(), EguiError> {
-        let values = line_values(rows);
-        let view = area_view(&values, baseline, AREA_ALPHA)?;
-        let polygons = place_polygons(ribbon_polygons(&view, &viewport), origin);
+        // The fill foot sits at the window floor, not the data floor, so a
+        // zoomed area fades to the zoomed baseline.
+        let view = area_view(line_values(rows), viewport.visible_range().min, AREA_ALPHA)?;
+        let polygons = place_polygons(area_polygons(&view.values, view.baseline, &viewport), origin);
         let base = resolve_color(&self.theme, "fast")?;
         let opacity = (AREA_ALPHA.clamp(0.0, 1.0) * 255.0).round().clamp(0.0, 255.0) as u8;
         let top = egui::Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), opacity);
         let bottom = egui::Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), 0);
         paint_area_fill(painter, &polygons, top, bottom);
-        let points = place_points(oscillator_points(&values, &viewport), origin);
+        let points = place_points(oscillator_points(&view.values, &viewport), origin);
         paint_oscillator(painter, &points, "fast", &self.theme, 1.0)?;
         Ok(())
     }
@@ -957,6 +1007,16 @@ impl TerminalApp {
     }
 
     /// Paint the dashed hover crosshair with axis labels, TradingView-style.
+    ///
+    /// Bar selection and the readout both run through the shared headless
+    /// mapping: the pointer names a bar through `crosshair_data` (a pointer
+    /// exactly between two bars reads the higher index, deterministically),
+    /// and the readout maps back through `crosshair_pixel`, so the labels
+    /// sit where the mapping says the bar and price are — never where a
+    /// second local rounding puts them. The OHLC block is a separate layer:
+    /// it appears only when `hit_test` names the candle under the pointer
+    /// (within the hit radius of the wick). Otherwise the crosshair still
+    /// draws and the OHLC block is omitted.
     #[allow(clippy::too_many_arguments)]
     fn paint_crosshair(
         &self,
@@ -981,40 +1041,57 @@ impl TerminalApp {
             egui::Pos2::new(hover.x, plot.bottom()),
             stroke,
         );
-        let local_y = hover.y - plot.top();
-        if let Some(price) = viewport.y_to_price(local_y) {
-            let rect = egui::Rect::from_min_max(
-                egui::Pos2::new(axis.left() + 2.0, hover.y - 9.0),
-                egui::Pos2::new(axis.right() - 2.0, hover.y + 9.0),
-            );
-            painter.rect_filled(rect, 3.0, grid);
+        let local = (hover.x - plot.left(), hover.y - plot.top());
+        let Some(data) = crosshair_data(local, &viewport, rows.len()) else {
+            return Ok(());
+        };
+        let Some((snap_x, snap_y)) = crosshair_pixel(&data, &viewport) else {
+            return Ok(());
+        };
+        let price_rect = egui::Rect::from_min_max(
+            egui::Pos2::new(axis.left() + 2.0, snap_y + plot.top() - 9.0),
+            egui::Pos2::new(axis.right() - 2.0, snap_y + plot.top() + 9.0),
+        );
+        painter.rect_filled(price_rect, 3.0, grid);
+        painter.text(
+            price_rect.center(),
+            egui::Align2::CENTER_CENTER,
+            format!("{:.2}", data.price),
+            egui::FontId::proportional(11.0),
+            egui::Color32::WHITE,
+        );
+        if let Some(row) = rows.get(data.index) {
+            let span =
+                rows.last().map_or(0, |bar| bar.time) - rows.first().map_or(0, |bar| bar.time);
             painter.text(
-                rect.center(),
+                egui::Pos2::new(snap_x + plot.left(), plot.bottom() + TIME_STRIP / 2.0),
                 egui::Align2::CENTER_CENTER,
-                format!("{price:.2}"),
+                fmt_time(row.time, span < 3 * 86_400),
                 egui::FontId::proportional(11.0),
                 egui::Color32::WHITE,
             );
-        }
-        let local_x = hover.x - plot.left();
-        if let Some(index) = viewport.x_to_index(local_x) {
-            let rounded = index.round() as usize;
-            if let Some(row) = rows.get(rounded) {
-                let span = rows.last().map_or(0, |bar| bar.time)
-                    - rows.first().map_or(0, |bar| bar.time);
-                painter.text(
-                    egui::Pos2::new(hover.x, plot.bottom() + TIME_STRIP / 2.0),
-                    egui::Align2::CENTER_CENTER,
-                    fmt_time(row.time, span < 3 * 86_400),
-                    egui::FontId::proportional(11.0),
-                    egui::Color32::WHITE,
-                );
+            if let Some(hit) = hit_test(local, &viewport, rows) {
+                if let Some(tipped) = rows.get(hit.index) {
+                    painter.text(
+                        egui::Pos2::new(snap_x + plot.left() + 8.0, hover.y - 28.0),
+                        egui::Align2::LEFT_TOP,
+                        format!(
+                            "O{:.2} H{:.2} L{:.2} C{:.2}",
+                            tipped.open, tipped.high, tipped.low, tipped.close,
+                        ),
+                        egui::FontId::proportional(11.0),
+                        egui::Color32::WHITE,
+                    );
+                }
             }
         }
         Ok(())
     }
 
-    fn oscillator_viewport(&self, height: f32) -> Option<Viewport> {
+    /// Data extent behind the oscillator pane (unpadded): the seed the
+    /// viewport is built from, never the window on screen. Grid and axis
+    /// read the viewport instead.
+    fn oscillator_data_extent(&self) -> (f64, f64) {
         let mut min = f64::INFINITY;
         let mut max = f64::NEG_INFINITY;
         for value in self.view.fast.iter().chain(self.view.slow.iter()).flatten() {
@@ -1023,6 +1100,11 @@ impl TerminalApp {
                 max = max.max(*value);
             }
         }
+        (min, max)
+    }
+
+    fn oscillator_viewport(&self, height: f32) -> Option<Viewport> {
+        let (min, max) = self.oscillator_data_extent();
         if !min.is_finite() || !max.is_finite() || min >= max {
             return None;
         }
@@ -1059,18 +1141,7 @@ impl TerminalApp {
             return Ok(());
         };
         let origin = plot.left_top();
-        let (min, max) = {
-            let mut lo = f64::INFINITY;
-            let mut hi = f64::NEG_INFINITY;
-            for value in self.view.fast.iter().chain(self.view.slow.iter()).flatten() {
-                if value.is_finite() {
-                    lo = lo.min(*value);
-                    hi = hi.max(*value);
-                }
-            }
-            (lo, hi)
-        };
-        self.paint_hgrid(&painter, plot, viewport, min, max)?;
+        self.paint_hgrid(&painter, plot, viewport)?;
         painter.text(
             plot.left_top() + egui::vec2(6.0, 4.0),
             egui::Align2::LEFT_TOP,
@@ -1100,8 +1171,9 @@ impl TerminalApp {
             );
         }
         let dots = place_dots(pivot_dots(&self.view.pivots, &self.view.fast, &viewport), origin);
-        paint_pivot_dots(&painter, &dots, &self.theme)?;
-        self.paint_axis(&painter, axis, viewport, origin.y, min, max, None)?;
+        let markers: Vec<MarkerDot> = dots.iter().map(MarkerDot::from_pivot).collect();
+        paint_markers(&painter, &markers, &self.theme)?;
+        self.paint_axis(&painter, axis, viewport, origin.y, None)?;
         if let Some(x) = hover_x {
             if x >= plot.left() && x <= plot.right() {
                 dashed_line(

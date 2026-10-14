@@ -156,10 +156,10 @@ json_boundary!(SignalThresholds, "signal thresholds");
 #[builder(start_fn = new)]
 pub struct TradeThresholds {
     /// Maximum loss any single trade may commit **(task-value)**.
-    #[field(desc = "Maximum loss one trade may commit, decimal major units (tightening lowers it)")]
+    #[field(desc = "Maximum loss one trade may commit, decimal major units (tightening lowers it)", format = "decimal")]
     pub max_loss_per_trade: Money,
     /// Maximum bid/ask spread width the fill model tolerates **(task-value)**.
-    #[field(desc = "Maximum bid/ask spread width, decimal major units (tightening lowers it)")]
+    #[field(desc = "Maximum bid/ask spread width, decimal major units (tightening lowers it)", format = "decimal")]
     pub max_spread_width: Money,
     /// Minimum days to expiry **(task-value)**.
     #[field(desc = "Minimum days to expiry (tightening raises it)")]
@@ -181,7 +181,7 @@ json_boundary!(TradeThresholds, "trade thresholds");
 pub struct PortfolioThresholds {
     /// Maximum aggregate committed max loss across open risk
     /// **(task-value)**.
-    #[field(desc = "Maximum aggregate committed max loss, decimal major units (tightening lowers it)")]
+    #[field(desc = "Maximum aggregate committed max loss, decimal major units (tightening lowers it)", format = "decimal")]
     pub max_open_risk: Money,
     /// Maximum quote age in seconds before data counts as stale
     /// **(correctness)**.
@@ -206,10 +206,10 @@ pub struct GrantBudgets {
     #[field(desc = "Maximum contracts under this grant (tightening lowers it)")]
     pub max_contracts: u32,
     /// Maximum committed max loss under this grant **(task-value)**.
-    #[field(desc = "Maximum committed max loss, decimal major units (tightening lowers it)")]
+    #[field(desc = "Maximum committed max loss, decimal major units (tightening lowers it)", format = "decimal")]
     pub max_loss: Money,
     /// Maximum committed notional under this grant **(task-value)**.
-    #[field(desc = "Maximum committed notional, decimal major units (tightening lowers it)")]
+    #[field(desc = "Maximum committed notional, decimal major units (tightening lowers it)", format = "decimal")]
     pub max_notional: Money,
 }
 
@@ -479,36 +479,36 @@ impl Grant {
 /// Optional per-tier replacements for [`Grant::tighten`]. `None` keeps the
 /// current value; `Some` must move toward more restrictive.
 ///
-/// The field descriptor drives the arming form: every settable tier edits as
-/// one JSON document (see `json_boundary!`), so the form renders from
-/// [`FieldAccess::field_names`] plus [`Describable::describe`] with no
-/// hand-written field list. `scope` stays out of the descriptor: the
-/// generated `get_field` moves an `Option` out of the borrow, which only
-/// compiles for `Copy` tiers, and the scope lists are skipped anyway (see
-/// [`GrantScope`]) — scope narrowing stays enforced core-side by
-/// [`Grant::tighten`], never through the form.
-#[derive(
-    Debug, Clone, Default, Builder, PartialEq, Serialize, Deserialize, FieldAccess,
-    Describable,
-)]
+/// The field descriptor drives the arming form: every settable tier edits
+/// leaf by leaf (see [`Describable`] below), so the form renders from the
+/// schema with no hand-written field list. `scope` stays out of the
+/// descriptor: the generated `get_field` moves an `Option` out of the
+/// borrow, which only compiles for `Copy` tiers, and the scope lists are
+/// skipped anyway (see [`GrantScope`]) — scope narrowing stays enforced
+/// core-side by [`Grant::tighten`], never through the form.
+///
+/// Whole-tier boundary strings stay the server path: [`FieldAccess`]
+/// `set_field` parses one tier document through its `FromStr` codec, so a
+/// patch arriving as tier texts needs no second parser.
+#[derive(Debug, Clone, Default, Builder, PartialEq, Serialize, Deserialize, FieldAccess)]
 #[builder(start_fn = new)]
 pub struct GrantPatch {
     /// Replacement budgets (all caps must not rise).
-    #[field(desc = "Replacement budgets as a JSON document (caps must not rise)")]
+    #[field(desc = "Replacement budgets, one value per leaf (caps must not rise)")]
     pub budgets: Option<GrantBudgets>,
     /// Replacement signal thresholds (minimums must not fall).
-    #[field(desc = "Replacement signal thresholds as a JSON document (minimums must not fall)")]
+    #[field(desc = "Replacement signal thresholds, one value per leaf (minimums must not fall)")]
     pub signal: Option<SignalThresholds>,
     /// Replacement trade thresholds (caps must not widen).
-    #[field(desc = "Replacement trade thresholds as a JSON document (caps must not widen)")]
+    #[field(desc = "Replacement trade thresholds, one value per leaf (caps must not widen)")]
     pub trade: Option<TradeThresholds>,
     /// Replacement portfolio thresholds (caps must not widen).
     #[field(
-        desc = "Replacement portfolio thresholds as a JSON document (caps must not widen)"
+        desc = "Replacement portfolio thresholds, one value per leaf (caps must not widen)"
     )]
     pub portfolio: Option<PortfolioThresholds>,
     /// Replacement breaker limits (caps must not rise).
-    #[field(desc = "Replacement breaker limits as a JSON document (caps must not rise)")]
+    #[field(desc = "Replacement breaker limits, one value per leaf (caps must not rise)")]
     pub breakers: Option<BreakerLimits>,
     /// Replacement scope (must be a subset).
     #[field(skip)]
@@ -516,6 +516,88 @@ pub struct GrantPatch {
     /// Replacement window end (must not move later).
     #[field(desc = "Replacement window end, RFC 3339 (must not move later)", format = "date-time")]
     pub valid_until: Option<DateTime<Utc>>,
+}
+
+/// Nested descriptor for the arming form: every settable tier carries its
+/// own leaf schema, so each leaf edits through a typed editor (integer,
+/// decimal text, date-time text) instead of one freeform document box per
+/// tier. Hand-written by tier rather than derived flat, because the derive
+/// spells every tier `type: string` (whole-document boundary strings) and
+/// the form needs the leaf types; the agreement test pins the top-level
+/// keys and every nested leaf set against the derived `field_names`, so a
+/// new tier or leaf fails loudly here instead of vanishing from the form.
+/// Leaf schemas come from each tier type's own `describe` (value-free —
+/// the zero instances below only satisfy the `&self` receiver), so a leaf
+/// description or format stays owned by its tier struct. `scope` stays out,
+/// like in `field_names`.
+impl Describable for GrantPatch {
+    fn describe(&self) -> serde_json::Value {
+        let zero = Money::zero();
+        let leaf_schemas = [
+            (
+                "budgets",
+                "Replacement budgets, one value per leaf (caps must not rise)",
+                GrantBudgets::new()
+                    .max_trades(0)
+                    .max_contracts(0)
+                    .max_loss(zero)
+                    .max_notional(zero)
+                    .build()
+                    .describe(),
+            ),
+            (
+                "signal",
+                "Replacement signal thresholds, one value per leaf (minimums must not fall)",
+                SignalThresholds::new().min_conviction(0.0).min_activity_score(0.0).build().describe(),
+            ),
+            (
+                "trade",
+                "Replacement trade thresholds, one value per leaf (caps must not widen)",
+                TradeThresholds::new()
+                    .max_loss_per_trade(zero)
+                    .max_spread_width(zero)
+                    .min_dte_days(0)
+                    .max_dte_days(0)
+                    .build()
+                    .describe(),
+            ),
+            (
+                "portfolio",
+                "Replacement portfolio thresholds, one value per leaf (caps must not widen)",
+                PortfolioThresholds::new()
+                    .max_open_risk(zero)
+                    .quote_max_age_secs(0)
+                    .build()
+                    .describe(),
+            ),
+            (
+                "breakers",
+                "Replacement breaker limits, one value per leaf (caps must not rise)",
+                BreakerLimits::new().max_consecutive_errors(0).build().describe(),
+            ),
+        ];
+        let mut properties = serde_json::Map::new();
+        for (tier, description, schema) in leaf_schemas {
+            let leaves = schema.get("properties").cloned().unwrap_or(serde_json::Value::Null);
+            properties.insert(
+                tier.to_owned(),
+                serde_json::json!({
+                    "type": "object",
+                    "description": description,
+                    "properties": leaves,
+                }),
+            );
+        }
+        properties.insert(
+            "valid_until".to_owned(),
+            serde_json::json!({
+                "type": "string",
+                "format": "date-time",
+                "description": "Replacement window end, RFC 3339 (must not move later)",
+            }),
+        );
+        serde_json::json!({ "type": "object", "properties": properties, "required": [] })
+    }
 }
 
 /// Outcome of [`evaluate_grant`]: unconditional allow, or deny with every

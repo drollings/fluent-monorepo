@@ -8,14 +8,18 @@
 //! core-side: `arm` runs the identical tighten-only logic through
 //! `apply_arm`, including its refusal messages.
 
-use protopyne_strategy::{Grant, GrantPatch};
+use protopyne_strategy::Grant;
 use protopyne_view::{
     ArmResponse, ChartBars, GatewayError, HealthView, JournalRowView, OverlaySeries, PortfolioView,
-    ProposalView, TerminalGateway,
+    ProposalView, ReplayView, TerminalGateway, WorstCase,
 };
+use std::collections::BTreeMap;
 
 use crate::service::Shared;
-use crate::service::{apply_arm, chart_bars_of, health_view, live_grant, overlay_series_of};
+use crate::service::{
+    DEFAULT_REPLAY_CHECKPOINT_EVERY, apply_arm, chart_bars_of, grant_tiers_of, health_view,
+    live_grant, overlay_series_of, parse_patch, preview_arm_of, replay_view_of,
+};
 
 /// Read gateway over live server state (`AppState` is not `Debug`, so the
 /// gateway isn't either — it prints as its views, never its locks).
@@ -68,15 +72,48 @@ impl TerminalGateway for ServerGateway {
         })
     }
 
+    fn replay(&self) -> Result<ReplayView, GatewayError> {
+        // The route's own default cadence, stated explicitly so the
+        // gateway read and a bare `/replay` read cannot disagree: both call
+        // `replay_view_of`, so neither can drift from the other.
+        replay_view_of(&self.state.history, DEFAULT_REPLAY_CHECKPOINT_EVERY).map_err(
+            |(status, reason)| {
+                if status == axum::http::StatusCode::SERVICE_UNAVAILABLE {
+                    GatewayError::Unavailable(reason)
+                } else {
+                    GatewayError::Malformed(reason)
+                }
+            },
+        )
+    }
+
+    fn preview_arm(&self, patch: serde_json::Value) -> Result<WorstCase, GatewayError> {
+        // The confirmation surface's read: same parse and tighten as an
+        // arm, but nothing is stored — the live grant the next read sees
+        // is bit-identical to the one this call saw.
+        preview_arm_of(&self.state, &patch).map_err(|(status, reason)| {
+            if status == axum::http::StatusCode::BAD_REQUEST {
+                GatewayError::Malformed(reason)
+            } else {
+                GatewayError::InvalidGrant(reason)
+            }
+        })
+    }
+
+    fn grant_tiers(&self) -> Result<BTreeMap<String, String>, GatewayError> {
+        grant_tiers_of(&self.state).map_err(|(_, reason)| GatewayError::Unavailable(reason))
+    }
+
     fn arm(&self, grant: serde_json::Value) -> Result<ArmResponse, GatewayError> {
-        // Patch envelope `{"patch": GrantPatch}`: the schema-driven form
-        // never mints a grant locally — it tightens the live grant through
-        // the core's own `Grant::tighten`, then stores through the same
-        // tighten-only gate as a whole-grant arm. Loosening surfaces the
-        // core's refusal; a patch with no live grant behind it refuses.
-        if let Some(patch_value) = grant.get("patch") {
-            let patch: GrantPatch = serde_json::from_value(patch_value.clone())
-                .map_err(|e| GatewayError::Malformed(format!("grant patch malformed: {e}")))?;
+        // Patch envelope `{"patch": {tier: "<tier document text>"}}`: the
+        // schema-driven form never mints a grant locally — it tightens the
+        // live grant through the core's own `Grant::tighten`, then stores
+        // through the same tighten-only gate as a whole-grant arm.
+        // Loosening surfaces the core's refusal; a patch with no live grant
+        // behind it refuses.
+        if grant.get("patch").is_some() {
+            let patch = parse_patch(&grant)
+                .map_err(|(_, reason)| GatewayError::Malformed(reason))?;
             let current = live_grant(&self.state).ok_or_else(|| {
                 GatewayError::InvalidGrant("no live grant to tighten".to_owned())
             })?;

@@ -12,7 +12,7 @@
 use std::sync::Arc;
 
 use common_core::metrics::LatencyHistogram;
-use fluent_egui::{EguiError, PaneConfig, RibbonView};
+use fluent_egui::{EguiError, PaneConfig};
 use fluent_wvr::prelude::*;
 use fluent_wvr::{Describable, FieldAccess};
 use protopyne_chart_model::{ChartRow, ChartType, DateRange, heikin_ashi, rows_of};
@@ -317,37 +317,140 @@ pub fn window_for_range(
     &rows[rows.len() - keep..]
 }
 
+/// Where one chart type's terminal picture comes from.
+///
+/// The single classification every dispatcher consumes: bar-backed pictures
+/// render candle geometry from bars, rows-backed pictures render a series
+/// from converted display rows. Anything outside the four wired kinds is
+/// not a third source — it refuses through [`refuse_chart_type`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PictureSource {
+    /// Candle geometry pictures from bars (`Candles`, `Heikin`).
+    Bars,
+    /// Series pictures from display rows (`Line`, `Area`).
+    Rows,
+}
+
+/// The one `chart_type` refusal: names the parameter, never renders a
+/// guess. Every dispatcher — the bars path, the rows path, and the demo's
+/// paint match — shares this construction instead of keeping its own
+/// wording in sync by hand.
+#[must_use]
+pub fn refuse_chart_type(kind: ChartType) -> EguiError {
+    EguiError::InvalidParam {
+        what: "chart_type".to_owned(),
+        reason: format!("{kind:?} has no terminal picture"),
+    }
+}
+
+/// Decide whether a `ChartType` has a terminal picture, and from what
+/// source. Consumed by [`chart_price_bars`], [`picture_rows`], and the
+/// demo's paint dispatch — no caller re-decides it.
+pub fn picture_source(kind: ChartType) -> Result<PictureSource, EguiError> {
+    match kind {
+        ChartType::Candles | ChartType::Heikin => Ok(PictureSource::Bars),
+        ChartType::Line | ChartType::Area => Ok(PictureSource::Rows),
+        unsupported => Err(refuse_chart_type(unsupported)),
+    }
+}
+
 /// Price bars behind the terminal's picture for one chart type: classic
 /// candles pass bars through, Heikin-Ashi delegates to the headless
-/// transform (no second smoothing math lives here). Only these two render
-/// from bars — line and area render from display rows — so every other
-/// taxonomy variant refuses with the parameter named instead of rendering
-/// a guess.
+/// transform (no second smoothing math lives here). Rows-backed kinds
+/// refuse with the rows reason — they picture, just not from bars — while
+/// unwired kinds refuse through the shared decision above.
 pub fn chart_price_bars(bars: &[Bar], kind: ChartType) -> Result<Vec<Bar>, EguiError> {
-    match kind {
-        ChartType::Candles => Ok(bars.to_vec()),
-        ChartType::Heikin => Ok(heikin_ashi(bars)),
-        unsupported => Err(EguiError::InvalidParam {
+    match picture_source(kind)? {
+        PictureSource::Bars => Ok(match kind {
+            ChartType::Candles => bars.to_vec(),
+            ChartType::Heikin => heikin_ashi(bars),
+            // `Bars` resolves exactly for these two; anything else already
+            // refused inside the decision. The arm stays so a future
+            // bar-backed kind fails closed here instead of panicking.
+            other => return Err(refuse_chart_type(other)),
+        }),
+        PictureSource::Rows => Err(EguiError::InvalidParam {
             what: "chart_type".to_owned(),
-            reason: format!(
-                "{unsupported:?} has no terminal picture from bars; line and area render from rows"
-            ),
+            reason: format!("{kind:?} renders from display rows, not bars"),
         }),
     }
 }
 
 /// Line series behind the terminal's line picture: the row closes, shaped
 /// for the polyline emitter.
+///
+/// The `Option` is the paint edge's hole currency, kept so the result feeds
+/// [`area_view`] and `oscillator_points` without re-wrapping: closes have
+/// no holes, so every element is unconditionally `Some` here. Dropping the
+/// marker would force both call sites to re-wrap per frame — the same two
+/// allocations with more code — so the contract records the marker instead.
 #[must_use]
 pub fn line_values(rows: &[ChartRow]) -> Vec<Option<f64>> {
     rows.iter().map(|row| Some(row.close)).collect()
+}
+
+/// Validated area-fill input: the owned upper-edge series, the baseline it
+/// closes against, and the fill strength.
+///
+/// Built once by [`area_view`] (which validates every leg) and closed into
+/// polygons by the scaffolding's `area_polygons` — the lower edge is never
+/// materialized as a per-bar vector because it repeats one baseline, and
+/// the trend key is never materialized because an area fill carries none.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AreaView {
+    /// Per-bar upper edge with holes preserved; every present leg is finite.
+    pub values: Vec<Option<f64>>,
+    /// Fill foot; finite by construction.
+    pub baseline: f64,
+    /// Fill strength within `[0, 1]`.
+    pub alpha: f64,
+}
+
+/// Area-fill view over one value series above a baseline: takes ownership
+/// of the caller's series (no copy — the caller already owns and drops it)
+/// and validates every leg, not just the fill strength. Holes stay `None`
+/// and break polygon runs downstream; non-finite values, a non-finite
+/// baseline, and an empty series refuse with the parameter named instead
+/// of painting a guess.
+pub fn area_view(
+    values: Vec<Option<f64>>,
+    baseline: f64,
+    alpha: f64,
+) -> Result<AreaView, EguiError> {
+    if !alpha.is_finite() || alpha < 0.0 || alpha > 1.0 {
+        return Err(EguiError::InvalidParam {
+            what: "alpha".to_owned(),
+            reason: "area fill alpha must sit in [0, 1]".to_owned(),
+        });
+    }
+    if !baseline.is_finite() {
+        return Err(EguiError::InvalidParam {
+            what: "baseline".to_owned(),
+            reason: "area fill baseline must be finite".to_owned(),
+        });
+    }
+    if values.is_empty() {
+        return Err(EguiError::InvalidParam {
+            what: "values".to_owned(),
+            reason: "area values must not be empty".to_owned(),
+        });
+    }
+    if values.iter().any(|slot| matches!(slot, Some(value) if !value.is_finite())) {
+        return Err(EguiError::InvalidParam {
+            what: "values".to_owned(),
+            reason: "area values must be finite where present; holes stay None".to_owned(),
+        });
+    }
+    Ok(AreaView { values, baseline, alpha })
 }
 
 /// Rows painted for one chart type over a bar history: candles, line, and
 /// area share the converted window rows; Heikin-Ashi converts over the full
 /// history first (its opens recurse — windowing first would miscompute
 /// every open), then windows. Refuses dropped conversions (downstream keys
-/// would misalign) and unwired types with the parameter named.
+/// would misalign) and unwired types with the parameter named. Which kinds
+/// picture from bars is not re-decided here: every bar-backed kind converts
+/// through [`chart_price_bars`], candles passing through untouched.
 pub fn picture_rows(
     bars: &[Bar],
     range: DateRange,
@@ -364,39 +467,15 @@ pub fn picture_rows(
         }
         Ok(window_for_range(&converted.rows, range, bar_seconds).to_vec())
     };
-    match kind {
-        ChartType::Candles | ChartType::Line | ChartType::Area => convert(bars),
-        ChartType::Heikin => convert(&chart_price_bars(bars, ChartType::Heikin)?),
-        unsupported => Err(EguiError::InvalidParam {
-            what: "chart_type".to_owned(),
-            reason: format!("{unsupported:?} has no terminal picture"),
-        }),
+    match picture_source(kind)? {
+        PictureSource::Rows => convert(bars),
+        PictureSource::Bars => match kind {
+            ChartType::Candles => convert(bars),
+            // Heikin-Ashi and any future bar-backed kind convert over the
+            // bars the single bars dispatcher produces.
+            other => convert(&chart_price_bars(bars, other)?),
+        },
     }
-}
-
-/// Area-fill view over one value series above a baseline: the upper edge is
-/// the series, the lower edge repeats the baseline, so `ribbon_polygons`
-/// closes one run per unbroken stretch with no new polygon code. Fill
-/// colors come from caller-resolved colors at paint time, never the trend
-/// key, so every run carries `false`. Mirrors `ribbon_view`'s alpha
-/// discipline: alpha outside `[0, 1]` refuses.
-pub fn area_view(
-    values: &[Option<f64>],
-    baseline: f64,
-    alpha: f64,
-) -> Result<RibbonView, EguiError> {
-    if !alpha.is_finite() || alpha < 0.0 || alpha > 1.0 {
-        return Err(EguiError::InvalidParam {
-            what: "alpha".to_owned(),
-            reason: "area fill alpha must sit in [0, 1]".to_owned(),
-        });
-    }
-    Ok(RibbonView {
-        upper: values.to_vec(),
-        lower: vec![Some(baseline); values.len()],
-        bullish: vec![false; values.len()],
-        alpha,
-    })
 }
 
 #[cfg(test)]

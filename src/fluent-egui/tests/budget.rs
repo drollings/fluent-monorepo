@@ -13,8 +13,15 @@
 //! (`protopyne-chart-scale`), and the shared validation bridge
 //! (`protopyne-types`), but it names no compute truth (`protopyne-kernels`),
 //! no trading path (`server`/`strategy`/`venue`), and no trading-domain
-//! vocabulary (oscillators, regimes, Pine). Domain display truth lives in
-//! the terminal crate, which carries its own ledger.
+//! vocabulary. Domain display truth lives in the terminal crate, which
+//! carries its own ledger.
+//!
+//! "Domain-blind" is not "vocabulary-free": the crate legitimately speaks in
+//! chart *shapes* — ribbons, pivots, oscillators, delta bars, bull/bear style
+//! keys. Both halves of that boundary are asserted: a deny-list of the
+//! trading types this crate must never name, and an allow-list of the chart
+//! words it owns, each with its reason. A one-sided gate would be a claim the
+//! crate does not make.
 
 use std::path::{Path, PathBuf};
 
@@ -66,6 +73,26 @@ fn collect_rs(dir: &Path, prefix: &Path, out: &mut Vec<String>) {
     }
 }
 
+/// Whether `text` names `token` as a whole word rather than as part of a
+/// longer identifier. Every occurrence is checked, not just the first.
+fn mentions(text: &str, token: &str) -> bool {
+    let chars: Vec<char> = text.chars().collect();
+    let needle: Vec<char> = token.chars().collect();
+    let is_word = |ch: char| ch.is_alphanumeric() || ch == '_';
+    if needle.is_empty() || needle.len() > chars.len() {
+        return false;
+    }
+    chars.windows(needle.len()).enumerate().any(|(start, window)| {
+        if window != needle.as_slice() {
+            return false;
+        }
+        let before_ok = start == 0 || !is_word(chars[start - 1]);
+        let after = start + needle.len();
+        let after_ok = after >= chars.len() || !is_word(chars[after]);
+        before_ok && after_ok
+    })
+}
+
 fn forbid_in_src(token: &str, why: &str) {
     for name in src_file_names() {
         for line in code_lines(&read_src(&name)) {
@@ -86,6 +113,7 @@ fn bloat_ledger_pins_source_files() {
             "config.rs",
             "error.rs",
             "feed.rs",
+            "fields.rs",
             "hittest.rs",
             "interaction.rs",
             "lib.rs",
@@ -236,18 +264,154 @@ fn scaffolding_names_no_compute_truth_or_trading_path() {
     }
 }
 
+/// Trading-domain types and modules the scaffolding must never name, with the
+/// crate each one lives in.
+///
+/// This is a boundary, not a sample. The earlier list held six kernel
+/// identifiers that already appeared nowhere in the crate, so it could not
+/// fail; these are the type and module names that *would* let a trading
+/// concept into domain-blind scaffolding — a grant, a proposal, an order, a
+/// position, a Pine value or plot. Each entry names the crate that owns the
+/// concept, so the failure message says where the name belongs.
+const TRADING_VOCABULARY_DENIED: &[(&str, &str)] = &[
+    // `protopyne-strategy`
+    ("Grant", "strategy"),
+    ("GrantPatch", "strategy"),
+    ("GrantBudgets", "strategy"),
+    ("SignalThresholds", "strategy"),
+    ("TradeThresholds", "strategy"),
+    ("PortfolioThresholds", "strategy"),
+    ("evaluate_grant", "strategy"),
+    ("Proposal", "strategy"),
+    ("ProposalState", "strategy"),
+    ("RiskEngine", "strategy"),
+    ("RiskLimits", "strategy"),
+    ("Direction", "strategy"),
+    ("StructureKind", "strategy"),
+    // `protopyne-venue`
+    ("TradingState", "venue"),
+    ("Venue", "venue"),
+    ("VenueRegistry", "venue"),
+    ("OrderIntent", "venue"),
+    ("OrderRecord", "venue"),
+    ("SpreadPosition", "venue"),
+    ("ReconcileGate", "venue"),
+    ("safe_submit", "venue"),
+    ("Journal", "venue"),
+    // `protopyne-kernels` — Pine and the indicator registry
+    ("PineEngine", "kernels"),
+    ("PineRuntime", "kernels"),
+    ("PineValue", "kernels"),
+    ("RunOutcome", "kernels"),
+    ("PlotPrimitive", "kernels"),
+    ("parse_program", "kernels"),
+    ("IndicatorRegistry", "kernels"),
+    ("IndicatorResult", "kernels"),
+    ("ParamSet", "kernels"),
+    // `protopyne-types` — the exact money and quantity denominations
+    ("Money", "types"),
+    ("Qty", "types"),
+];
+
+/// Generic chart vocabulary this crate legitimately owns, with why.
+///
+/// A deny-list alone is a lie of omission: the crate really does speak in
+/// ribbons, pivots, oscillators, delta bars, and bull/bear styling, because
+/// those are properties of a *chart*, not of a *trade*. Naming them here
+/// keeps the boundary honest — the gate says what is owned and why, instead
+/// of implying the crate has no vocabulary at all. Each entry must also be
+/// used, so a stale allow-list entry fails.
+/// Each entry is the concrete symbol the crate ships, so the match is
+/// whole-word and cannot be satisfied by an unrelated word in a comment.
+const SCAFFOLDING_VOCABULARY_OWNED: &[(&str, &str)] = &[
+    ("ribbon", "a bounded band between two smoothed series — a shape, not a signal"),
+    ("pivot_marks", "detected local extremes — geometry, not a trade decision"),
+    ("oscillator_points", "a normalized bounded series mapped to pixels — a scale, not a strategy"),
+    ("delta_bar_geoms", "change-over-window bars — arithmetic, not a position"),
+    ("\"bull\"", "a style key naming an up close, resolved to a color at paint time"),
+    ("\"bear\"", "a style key naming a down close, resolved to a color at paint time"),
+];
+
+/// Code lines in every `src/` module, with the file they came from.
+fn src_code() -> Vec<(String, String)> {
+    src_file_names()
+        .into_iter()
+        .flat_map(|name| {
+            code_lines(&read_src(&name))
+                .into_iter()
+                .map(str::to_owned)
+                .map(move |line| (name.clone(), line))
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+fn trading_vocabulary_hits(lines: &[(String, String)]) -> Vec<String> {
+    let mut hits = Vec::new();
+    for (file, line) in lines {
+        for (token, owner) in TRADING_VOCABULARY_DENIED {
+            if mentions(line, token) {
+                hits.push(format!("{file} names {token} (belongs to {owner}): {line}"));
+            }
+        }
+    }
+    hits
+}
+
 #[test]
 fn scaffolding_names_no_trading_domain_vocabulary() {
-    for token in [
-        "OscillatorKind",
-        "normalize_oscillator",
-        "normalize_series",
-        "MarketRegime",
-        "PineEngine",
-        "detect_regime",
-    ] {
-        forbid_in_src(token, "trading-domain vocabulary lives in the terminal crate");
+    let lines = src_code();
+    let hits = trading_vocabulary_hits(&lines);
+    assert!(
+        hits.is_empty(),
+        "trading-domain vocabulary lives in the crate that owns the concept; \
+         the scaffolding is domain-blind and speaks only in chart shapes. \
+         Offenders: {hits:?}"
+    );
+}
+
+#[test]
+fn owned_chart_vocabulary_is_actually_used() {
+    // The allow-list is not a permission slip: each owned word must appear in
+    // the crate's own code, so the list cannot quietly grow to cover
+    // something that was never there.
+    let lines = src_code();
+    let mut unused = Vec::new();
+    for (token, why) in SCAFFOLDING_VOCABULARY_OWNED {
+        let used = lines.iter().any(|(_, line)| mentions(line, token));
+        if !used {
+            unused.push(*token);
+        }
+        assert!(!why.trim().is_empty(), "owned vocabulary {token} needs a justification");
     }
+    assert!(unused.is_empty(), "owned chart vocabulary no longer appears in the crate: {unused:?}");
+}
+
+#[test]
+fn trading_vocabulary_gate_fires_on_a_synthetic_module() {
+    // Negative control: the deny-list reaches code that really does import a
+    // trading concept, and leaves code that only speaks chart shapes alone.
+    // Fed through `code_lines` exactly as the live gate does, so the comment
+    // is stripped before the vocabulary check rather than by luck.
+    let lines: Vec<(String, String)> = [
+        ("paint.rs", "use protopyne_strategy::grant::Grant;"),
+        ("plan.rs", "let grant: GrantPatch = load();"),
+        ("view.rs", "let band = ribbon_bands(&view, &viewport);"),
+        ("paint.rs", "// Grant is discussed here, and this line documents it"),
+        ("paint.rs", "let GrantFree = 1;"),
+    ]
+    .into_iter()
+    .flat_map(|(file, text)| {
+        code_lines(text).into_iter().map(str::to_owned).map(move |line| (file.to_owned(), line))
+    })
+    .collect();
+    let hits = trading_vocabulary_hits(&lines);
+    assert_eq!(hits.len(), 2, "both grant references are caught, the comment is not: {hits:?}");
+    assert!(hits.iter().all(|hit| hit.contains("strategy")), "each names the owning crate");
+    assert!(
+        !hits.iter().any(|hit| hit.contains("ribbon")),
+        "chart vocabulary the crate owns is not a violation"
+    );
 }
 
 #[test]
@@ -339,4 +503,311 @@ fn walk_files(root: &Path) -> Vec<PathBuf> {
         }
     }
     out
+}
+
+// ---------------------------------------------------------------------------
+// Reachability
+// ---------------------------------------------------------------------------
+
+/// Workspace crates whose sources count as consumers of this crate's
+/// re-exported items, beyond its own tree.
+///
+/// The terminal is the scaffolding's only production consumer and it lives in
+/// a different crate: the emitters it calls every frame — candles, ribbon
+/// fill, area fill, oscillators, pivots — would all read as unwired here while
+/// being called there. "Every crate that depends on this one" is not derivable
+/// from inside this crate, so the surface is named, and a second consumer has
+/// to be added here deliberately.
+const DOWNSTREAM_CONSUMERS: &[&str] = &["src/protopyne-egui"];
+
+/// Re-exported `pub` items that nothing names, with the reason each still
+/// ships unwired.
+///
+/// **Axis: producer-confidence.** This measures doubt that a module is
+/// wired. It says nothing about whether a pane draws correctly or anything
+/// about a trading decision, and it never deletes: it fails the build and a
+/// human or an agent decides. An unwired capability means the wiring step is
+/// missing, not that the capability is unwanted — these are complete,
+/// exported emitters whose paint call site has not been built.
+///
+/// An entry is a claim about the tree, not a permanent pardon: it is asserted
+/// against the live scan, so an entry whose item gains a consumer fails until
+/// the entry is deleted.
+///
+/// The table is currently empty: every emitter is named by at least one
+/// test, and the terminal crate (a downstream consumer) calls the frame
+/// path every run. Test coverage pins behavior, not production use — an
+/// emitter called only by tests still has its production-wiring question
+/// open, and that decision lives with the pane work, not with this ledger.
+const REACHABILITY_EXEMPTIONS: &[(&str, &str, &str)] = &[];
+
+/// One top-level `pub` declaration in a `src/` module.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Decl {
+    /// `src`-relative module path that declares it.
+    module: String,
+    /// Crate-relative file that declares it.
+    file: String,
+    /// Declaration keyword (`fn`, `struct`, `const`, …).
+    kind: &'static str,
+    /// Declared name.
+    name: String,
+    /// The declaration line itself, excluded from the consumer search so an
+    /// item is never wired by the act of declaring it.
+    line: String,
+}
+
+/// Top-level `pub` declarations in one module's code lines.
+///
+/// Scope is deliberately one level: an `impl`-block method is reached through
+/// its type, so the type's own reachability is what this gate measures.
+/// Reporting every accessor as unwired would make the signal useless.
+fn pub_declarations(module: &str, text: &str) -> Vec<Decl> {
+    text.lines()
+        .filter_map(|raw| {
+            let line = raw.trim_end();
+            let rest = line.strip_prefix("pub ")?;
+            let (kind, tail) = ["fn", "struct", "enum", "const", "static", "type", "trait", "mod"]
+                .into_iter()
+                .find_map(|kind| {
+                    rest.strip_prefix(kind)
+                        .and_then(|tail| tail.strip_prefix(' '))
+                        .map(|tail| (kind, tail))
+                })?;
+            let name = tail.split(|ch: char| !(ch.is_alphanumeric() || ch == '_')).next()?;
+            (!name.is_empty()).then(|| Decl {
+                module: module.to_owned(),
+                file: format!("src/{module}"),
+                kind,
+                name: name.to_owned(),
+                line: line.to_owned(),
+            })
+        })
+        .collect()
+}
+
+/// Every identifier the crate root re-exports through a `pub use`.
+fn crate_reexports() -> std::collections::BTreeSet<String> {
+    let mut names = std::collections::BTreeSet::new();
+    let mut pending = false;
+    for line in code_lines(&read_src("lib.rs")) {
+        if line.starts_with("pub use") {
+            pending = true;
+        }
+        if pending {
+            for ident in line.split(|ch: char| !(ch.is_alphanumeric() || ch == '_')) {
+                if ident.starts_with(char::is_alphabetic) {
+                    names.insert(ident.to_owned());
+                }
+            }
+        }
+        if pending && line.trim_end().ends_with(';') {
+            pending = false;
+        }
+    }
+    names
+}
+
+/// Every consumer surface, as code lines per file key: this crate's `src/`
+/// modules, `tests/`, `benches/`, and `examples/`, plus the sources of every
+/// [`DOWNSTREAM_CONSUMERS`] crate.
+///
+/// Two files are excluded, each for a stated reason:
+///
+/// - `src/lib.rs`, because a re-export is a declaration of intent, not a use
+///   (the predicate skips it too, so the exclusion holds for any caller);
+/// - `tests/budget.rs`, because this ledger spells out every item name it
+///   asks about, so counting it would make every gate vacuous.
+fn consumer_lines() -> std::collections::BTreeMap<String, Vec<String>> {
+    let mut files: std::collections::BTreeMap<String, Vec<String>> = Default::default();
+    let absorb = |files: &mut std::collections::BTreeMap<String, Vec<String>>, key: String, text: String| {
+        let lines: Vec<String> = code_lines(&text).into_iter().map(str::to_owned).collect();
+        files.insert(key, lines);
+    };
+    for name in src_file_names() {
+        if name != "lib.rs" {
+            absorb(&mut files, format!("src/{name}"), read_src(&name));
+        }
+    }
+    for dir in ["tests", "benches", "examples"] {
+        let base = manifest_dir().join(dir);
+        if !base.is_dir() {
+            continue;
+        }
+        for path in walk_files(&base) {
+            if path.extension().and_then(|ext| ext.to_str()) == Some("rs") {
+                let relative = path
+                    .strip_prefix(&base)
+                    .unwrap_or(&path)
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                absorb(&mut files, format!("{dir}/{relative}"), read_text(&path));
+            }
+        }
+    }
+    let root = manifest_dir().join("..").join("..");
+    for downstream in DOWNSTREAM_CONSUMERS {
+        for path in walk_files(&root.join(downstream)) {
+            if path.extension().and_then(|ext| ext.to_str()) == Some("rs") {
+                let relative = path
+                    .strip_prefix(root.join(downstream))
+                    .unwrap_or(&path)
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                absorb(&mut files, format!("{downstream}/{relative}"), read_text(&path));
+            }
+        }
+    }
+    files.remove("tests/budget.rs");
+    files
+}
+
+/// Re-exported declarations that no consumer line names.
+///
+/// Two exclusions are intrinsic to the rule rather than left to the caller, so
+/// a synthetic control exercises the same predicate the live gate uses:
+/// `src/lib.rs` (a re-export is not a use) and the item's own declaration line
+/// (declaring an item does not wire it). A reference anywhere else in the
+/// declaring module does count, so a type reachable through an exported
+/// function's signature is wired.
+fn unwired_exports(
+    decls: &[Decl],
+    reexports: &std::collections::BTreeSet<String>,
+    consumers: &std::collections::BTreeMap<String, Vec<String>>,
+) -> Vec<Decl> {
+    decls
+        .iter()
+        .filter(|decl| reexports.contains(&decl.name))
+        .filter(|decl| {
+            !consumers.iter().any(|(file, lines)| {
+                if *file == "src/lib.rs" {
+                    return false;
+                }
+                lines.iter().any(|line| {
+                    mentions(line, &decl.name) && !(*file == decl.file && *line == decl.line)
+                })
+            })
+        })
+        .cloned()
+        .collect()
+}
+
+fn live_unwired_exports() -> Vec<Decl> {
+    let modules =
+        src_file_names().into_iter().filter(|name| name != "lib.rs").collect::<Vec<_>>();
+    let decls: Vec<Decl> = modules
+        .iter()
+        .flat_map(|module| pub_declarations(module, &read_src(module)))
+        .collect();
+    unwired_exports(&decls, &crate_reexports(), &consumer_lines())
+}
+
+#[test]
+fn src_module_must_have_a_declared_consumer() {
+    let unwired = live_unwired_exports();
+    let undeclared: Vec<&Decl> = unwired
+        .iter()
+        .filter(|decl| {
+            !REACHABILITY_EXEMPTIONS
+                .iter()
+                .any(|(module, name, _)| *module == decl.module && *name == decl.name)
+        })
+        .collect();
+    assert!(
+        undeclared.is_empty(),
+        "every `pub` item the crate root re-exports must be named by a \
+         consumer, or carry an exemption entry saying why it ships unwired. \
+         Undeclared: {undeclared:?}"
+    );
+}
+
+#[test]
+fn every_reachability_exemption_names_a_live_item_and_a_reason() {
+    let unwired = live_unwired_exports();
+    let mut seen: Vec<(&str, &str)> = Vec::new();
+    for (module, name, reason) in REACHABILITY_EXEMPTIONS {
+        assert!(!reason.trim().is_empty(), "{module}::{name} exemption needs a reason");
+        assert!(!seen.contains(&(*module, *name)), "{module}::{name} is exempted twice");
+        seen.push((module, name));
+        assert!(
+            unwired.iter().any(|decl| decl.module == *module && decl.name == *name),
+            "{module}::{name} is exempted but is wired — delete the exemption"
+        );
+    }
+}
+
+#[test]
+fn downstream_consumer_surface_is_actually_scanned() {
+    // The cross-crate surface is a claim; this is the proof it is read. If
+    // the path is wrong the emitters the terminal calls would read as unwired
+    // and the reachability gate would fail loudly — so assert it directly.
+    let consumers = consumer_lines();
+    assert!(
+        consumers.keys().any(|key| key.starts_with("src/protopyne-egui/")),
+        "the terminal crate must be in the consumer surface"
+    );
+    let example = consumers
+        .keys()
+        .find(|key| key.starts_with("src/protopyne-egui/examples/"))
+        .expect("the terminal example is a consumer surface");
+    assert!(
+        consumers[example].iter().any(|line| mentions(line, "paint_candles_tinted")),
+        "{example} is scanned: the terminal's only candle blit is read here"
+    );
+    assert!(
+        !consumers.contains_key("tests/budget.rs"),
+        "the ledger's own text never counts as a consumer"
+    );
+}
+
+#[test]
+fn reachability_gate_fires_on_a_synthetic_unwired_item() {
+    // Negative control, one case per rule the gate rests on:
+    // - a consumer in another crate's file counts;
+    // - a reference inside the declaring module counts, so a type reachable
+    //   through an exported function's signature is wired;
+    // - the declaration line itself does not count;
+    // - a crate-root re-export does not count;
+    // - an item the root never re-exports is out of scope entirely.
+    let reexports: std::collections::BTreeSet<String> =
+        ["DownstreamWired", "SignatureWired", "ReexportedOnly"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+    let decl = |module: &str, kind: &'static str, name: &str| Decl {
+        module: module.to_owned(),
+        file: format!("src/{module}"),
+        kind,
+        name: name.to_owned(),
+        line: format!("pub {kind} {name};"),
+    };
+    let decls = vec![
+        decl("a.rs", "fn", "DownstreamWired"),
+        decl("b.rs", "struct", "SignatureWired"),
+        decl("c.rs", "fn", "ReexportedOnly"),
+        decl("d.rs", "fn", "Private"),
+    ];
+    let consumers = std::collections::BTreeMap::from([
+        ("src/a.rs".to_owned(), vec!["fn helper() {}".to_owned()]),
+        (
+            "src/b.rs".to_owned(),
+            vec!["pub fn builder() -> SignatureWired { SignatureWired }".to_owned()],
+        ),
+        ("src/c.rs".to_owned(), vec!["fn helper() {}".to_owned()]),
+        ("src/d.rs".to_owned(), vec!["fn helper() {}".to_owned()]),
+        ("src/lib.rs".to_owned(), vec!["pub use c::ReexportedOnly;".to_owned()]),
+        (
+            "src/protopyne-egui/examples/demo.rs".to_owned(),
+            vec!["paint(DownstreamWired());".to_owned()],
+        ),
+    ]);
+    assert_eq!(
+        unwired_exports(&decls, &reexports, &consumers)
+            .iter()
+            .map(|decl| decl.name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["ReexportedOnly"],
+        "only an item nothing but its own declaration and the crate root names \
+         is unwired"
+    );
 }

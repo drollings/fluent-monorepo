@@ -207,6 +207,44 @@ pub struct OverlaySeries {
     pub dropped: u64,
 }
 
+/// One replayable step: a bar the core can re-run to, and how far the
+/// recorded run got.
+///
+/// Neutral vocabulary only: a step names a bar and a timestamp, never a
+/// pane, a graph key, or a run type. Which panes a step touches is the
+/// terminal's own plan, so no core replay type crosses this boundary.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ReplayStepView {
+    /// Absolute bar index into the replayed history.
+    pub bar_index: u64,
+    /// Bar close time as RFC 3339, exactly as the core recorded it.
+    pub ts: String,
+    /// Whether the recorded run reached this step.
+    pub done: bool,
+    /// Whether the core recorded a checkpoint here. Checkpoints are the
+    /// positions an operator scrubs *to*; a step without one is still
+    /// scrubbable, it just has no named anchor behind it.
+    pub checkpoint: bool,
+}
+
+/// Replay read model: where the scrub stands, and the ordered steps it may
+/// stand at.
+///
+/// `cursor` is the task-value answer to "what did the strategy see at this
+/// bar" — an exact index the core supplies. `total_bars` is the window the
+/// steps span; `cursor == total_bars` is the head (nothing rewound). The
+/// revision bookkeeping a terminal uses to decide which panes to recompute
+/// never crosses this boundary: it is the terminal's own bookkeeping.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ReplayView {
+    /// Bar index on screen (0-based, at most `total_bars`).
+    pub cursor: u64,
+    /// Bars in the replay window.
+    pub total_bars: u64,
+    /// Steps in bar order, one per bar in the window.
+    pub steps: Vec<ReplayStepView>,
+}
+
 #[cfg(test)]
 #[path = "../tests/views.rs"]
 mod tests;

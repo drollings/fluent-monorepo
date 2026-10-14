@@ -284,6 +284,27 @@ fn invalid_dt_holds_kinetic_state() {
     }
 }
 
+/// A subnormal-but-positive `dt` overflows `shift / dt` into an infinite
+/// rate: the displacement still applies, but no coast velocity may seed.
+/// Without the finiteness guard this step leaves an infinite velocity that
+/// coasts forever.
+#[test]
+fn subnormal_dt_seeds_no_velocity() {
+    let dt = f64::MIN_POSITIVE / 2.0;
+    assert!(dt > 0.0 && dt.is_finite(), "the probe dt is subnormal-but-positive");
+    let mut state = free_state();
+    let moved = state.step(dt, &pane(), &[PointerInput::Drag { dy_px: 40.0 }]);
+    assert_eq!(range_of(&moved), (92.0, 112.0), "displacement still applies");
+    assert!(state.is_settled(), "an infinite rate seeds no velocity");
+    assert!(
+        state.kinetic_velocity().is_finite(),
+        "velocity stays finite: {}",
+        state.kinetic_velocity()
+    );
+    let held = state.step(1.0 / 60.0, &moved, &[]);
+    assert_eq!(range_of(&held), (92.0, 112.0), "no phantom coast follows");
+}
+
 #[test]
 fn elastic_bounds_never_exceeded() {
     // Data extent [90, 110]: margin 15% of 20 = 3 per side; the hard envelope

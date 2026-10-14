@@ -125,6 +125,7 @@ async fn route_payloads_match_checked_in_goldens() {
         "overlay_sma_14.json",
         &get(&client, &base, "/chart/overlays?kind=sma&period=14").await,
     );
+    check_golden("replay.json", &get(&client, &base, "/replay").await);
 
     let arm = client
         .post(format!("{base}/grants/arm"))
