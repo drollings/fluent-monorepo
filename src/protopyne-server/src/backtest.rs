@@ -15,6 +15,7 @@ use std::pin::Pin;
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 
+use protopyne_store::{CandleStore, ReadRequest as TapeReadRequest, SpanPlan, TapeKey};
 use protopyne_types::{Bar, Money};
 use protopyne_venue::{AccountEvent, AccountSnapshot, BalanceEntry, CorporateEvent, DryRunOutcome, Fill, LegExecution, OrderIntent, OrderRecord, PaperConfig, PaperVenue, Position, Quote, Venue, VenueError};
 
@@ -127,33 +128,96 @@ pub fn load_bars_single(path: &Path) -> Result<Vec<Bar>, ServerError> {
     load_bars_csv(path)
 }
 
-/// Where a run's bars come from: a CSV file set or a caller-supplied tape.
+/// Where a run's bars come from: a CSV file set, a caller-supplied tape, or
+/// a durable store.
 ///
 /// The CSV arm keeps the exact `load_bars_with_fallback` semantics
 /// (first-usable-wins, `BadHeader` stops, `BadRow`/`Io` skips); the dynamic
 /// arm carries an in-memory tape (synthetic fixtures, a live-captured
 /// session, a second symbol with no CSV) with the same fail-closed shape —
-/// an empty tape refuses just like an empty candidate set. The harness loads
-/// either arm interchangeably, so file and dynamic histories replay through
-/// the identical decide path.
+/// an empty tape refuses just like an empty candidate set. The tape arm
+/// plans and reads a span through a [`CandleStore`], the same read path a
+/// chart or a replay uses; it is a **substrate arm**, not a third parsing
+/// path, and the store stays outside [`BacktestVenue`]. Every arm loads
+/// through the one [`load_history`] entry point, so file, dynamic, and stored
+/// histories replay through the identical decide path.
 #[derive(Debug, Clone)]
 pub enum HistorySource {
     /// CSV candidates in fallback order.
     Csv(Vec<PathBuf>),
     /// Caller-supplied bars, replayed as given.
     Dynamic(Vec<Bar>),
+    /// A planned read of a durable tape through a [`CandleStore`]. The `key`
+    /// names the tape the caller believes it is reading; the read refuses if
+    /// the store serves a different tape, so a stale key cannot silently
+    /// replay the wrong series.
+    Tape {
+        /// The tape the caller intends to read.
+        key: TapeKey,
+        /// The span, spacing, and fold policy to read it with.
+        request: TapeReadRequest,
+    },
 }
 
-/// Load bars from either source arm. Pure dispatch over the two established
-/// loaders — no third parsing path may hide here.
-pub fn load_history(source: &HistorySource) -> Result<Vec<Bar>, ServerError> {
+/// Bars loaded from a history source, with the planner provenance the tape
+/// arm carries. The file and dynamic arms have no planner to name, so their
+/// `provenance` is empty; a run over them pins exactly as it did before tape
+/// data existed.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LoadedHistory {
+    /// Committed bars, ascending by `ts`.
+    pub bars: Vec<Bar>,
+    /// How every served span was produced, ascending. Empty for the file and
+    /// dynamic arms.
+    pub provenance: Vec<SpanPlan>,
+}
+
+impl LoadedHistory {
+    /// A load with no planner provenance (the file and dynamic arms).
+    #[must_use]
+    pub fn untaped(bars: Vec<Bar>) -> Self {
+        Self { bars, provenance: Vec::new() }
+    }
+}
+
+/// Load bars from any source arm. Pure dispatch over the established loaders
+/// and the store's own read — no third parsing path may hide here.
+///
+/// The file and dynamic arms ignore `store`; the tape arm requires it and
+/// refuses when it is absent, naming the missing collaborator rather than
+/// falling back to another source. An empty tape — of any arm — refuses just
+/// like an empty candidate set.
+pub fn load_history(
+    source: &HistorySource,
+    store: Option<&dyn CandleStore>,
+) -> Result<LoadedHistory, ServerError> {
     match source {
-        HistorySource::Csv(candidates) => load_bars_with_fallback(candidates),
+        HistorySource::Csv(candidates) => {
+            Ok(LoadedHistory::untaped(load_bars_with_fallback(candidates)?))
+        }
         HistorySource::Dynamic(bars) => {
             if bars.is_empty() {
                 return Err(ServerError::Backtest("history must not be empty".to_owned()));
             }
-            Ok(bars.clone())
+            Ok(LoadedHistory::untaped(bars.clone()))
+        }
+        HistorySource::Tape { key, request } => {
+            let store = store.ok_or_else(|| {
+                ServerError::Backtest("tape history needs a store to read from".to_owned())
+            })?;
+            let series = store.read(request).map_err(|error| {
+                ServerError::Backtest(format!("tape read refused: {error}"))
+            })?;
+            if series.key != *key {
+                return Err(ServerError::Backtest(format!(
+                    "tape read served {:?} for the requested {key:?}",
+                    series.key
+                )));
+            }
+            if series.bars.is_empty() {
+                return Err(ServerError::Backtest("history must not be empty".to_owned()));
+            }
+            Ok(LoadedHistory { bars: series.bars, provenance: series.provenance })
         }
     }
 }
@@ -291,6 +355,14 @@ impl Venue for BacktestVenue {
 #[cfg(test)]
 #[path = "../tests/backtest.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/history_source_tape.rs"]
+mod history_source_tape_tests;
+
+#[cfg(test)]
+#[path = "../tests/history_source_backward_compatible.rs"]
+mod history_source_backward_compatible_tests;
 
 #[cfg(all(test, feature = "pine"))]
 #[path = "../tests/common/mtf.rs"]

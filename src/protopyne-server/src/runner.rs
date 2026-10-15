@@ -24,13 +24,16 @@ use protopyne_strategy::{
     BreakerState, Direction, Grant, GrantDecision, GrantMarket, GrantUsage, ProposalSide,
     ProposeInput, RiskEngine, RiskState, Strategy, StructureKind, evaluate_grant,
 };
+use protopyne_store::{CandleStore, SpanPlan};
 use protopyne_types::{Bar, Money};
 use protopyne_venue::{
     CorporateEvent, OrderIntent, OrderSide, PaperConfig, PaperVenue, Position, Quote,
     Venue,
 };
 
-use crate::backtest::{BacktestConfig, BacktestVenue, HistorySource, quote_for_bar};
+use crate::backtest::{
+    BacktestConfig, BacktestVenue, HistorySource, load_history, quote_for_bar,
+};
 use crate::error::ServerError;
 use crate::portfolio::{BookedFill, PAPER_PORTFOLIO, aggregate};
 use crate::report::{RunManifest, BacktestReport, build_report, count_unquotable_bars};
@@ -558,6 +561,37 @@ pub fn equity_curve_for(bars: &[Bar], decisions: &[BarDecision]) -> Vec<Money> {
     curve
 }
 
+/// Pin a run manifest, attaching planner provenance when the source had a
+/// planner to name. A source with no provenance (CSV, dynamic) pins the
+/// pre-tape manifest exactly as before; a store-backed source pins the
+/// digest and spans the read produced. One pinning site, so a run's bytes
+/// and its inputs cannot diverge between the single- and multi-symbol paths.
+fn pinned_manifest(
+    data_version: &str,
+    config_json: String,
+    bars: &[Bar],
+    seed: u64,
+    provenance: &[SpanPlan],
+) -> RunManifest {
+    let manifest = RunManifest::new(data_version, config_json, bars, seed);
+    if provenance.is_empty() {
+        manifest
+    } else {
+        manifest.with_tape_data(bars, provenance)
+    }
+}
+
+/// The canonical JSON of the runner + venue + risk + grant configuration.
+fn config_json_of(
+    runner_config: &RunnerConfig,
+    venue_config: &BacktestConfig,
+    risk: &RiskEngine,
+    grant: &Grant,
+) -> Result<String, ServerError> {
+    serde_json::to_string(&(runner_config, venue_config, risk.limits(), grant))
+        .map_err(|e| ServerError::Backtest(format!("config not serializable: {e}")))
+}
+
 /// Run the full decision stack over `bars` through a versioned venue.
 ///
 /// Determinism is a **(correctness)** invariant, not a tunable: same inputs
@@ -580,9 +614,9 @@ pub async fn run_backtest(
     let paper = PaperConfig::new().build();
     let venue = BacktestVenue::new(venue_config.clone(), bars.to_vec(), paper)
         .map_err(|e| ServerError::Backtest(e.to_string()))?;
-    let config_json = serde_json::to_string(&(runner_config, venue_config, risk.limits(), grant))
-        .map_err(|e| ServerError::Backtest(format!("config not serializable: {e}")))?;
-    let manifest = RunManifest::new(&venue_config.data_version, config_json, bars, seed);
+    let config_json = config_json_of(runner_config, venue_config, risk, grant)?;
+    let manifest =
+        pinned_manifest(&venue_config.data_version, config_json, bars, seed, &[]);
     run_backtest_on_venue(
         strategy,
         risk,
@@ -591,6 +625,54 @@ pub async fn run_backtest(
         venue_config,
         runner_config,
         bars,
+        seed,
+        manifest,
+    )
+    .await
+}
+
+/// Run the full decision stack over a [`HistorySource`].
+///
+/// The one difference from [`run_backtest`] is the input: the bars — and the
+/// planner provenance the tape arm carries — come from [`load_history`],
+/// then enter the identical [`run_backtest_on_venue`] decide path. A CSV or
+/// dynamic source pins no tape data and serializes exactly as a values run;
+/// a store-backed source pins the read's digest and spans. The `store` is
+/// only consulted by the tape arm.
+#[allow(clippy::too_many_arguments)]
+pub async fn run_backtest_from_source(
+    strategy: &Strategy,
+    risk: &RiskEngine,
+    grant: &Grant,
+    venue_config: &BacktestConfig,
+    runner_config: &RunnerConfig,
+    source: &HistorySource,
+    store: Option<&dyn CandleStore>,
+    seed: u64,
+) -> Result<BacktestRun, ServerError> {
+    runner_config.validate()?;
+    venue_config.validate()?;
+    let loaded = load_history(source, store)?;
+    let bars = loaded.bars;
+    let paper = PaperConfig::new().build();
+    let venue = BacktestVenue::new(venue_config.clone(), bars.clone(), paper)
+        .map_err(|e| ServerError::Backtest(e.to_string()))?;
+    let config_json = config_json_of(runner_config, venue_config, risk, grant)?;
+    let manifest = pinned_manifest(
+        &venue_config.data_version,
+        config_json,
+        &bars,
+        seed,
+        &loaded.provenance,
+    );
+    run_backtest_on_venue(
+        strategy,
+        risk,
+        grant,
+        &venue,
+        venue_config,
+        runner_config,
+        &bars,
         seed,
         manifest,
     )
@@ -755,6 +837,11 @@ pub struct MultiSymbolInput {
     pub runner_config: RunnerConfig,
     /// Bar source for this symbol.
     pub history: HistorySource,
+    /// The durable store a [`HistorySource::Tape`] leg reads through.
+    /// `None` for the file and dynamic arms, which name no store; a tape leg
+    /// with no store refuses through [`load_history`], never silently
+    /// substituting another source.
+    pub store: Option<Arc<dyn CandleStore>>,
 }
 
 /// Combined reproducibility pin for a multi-symbol run: one per-symbol pin
@@ -864,15 +951,17 @@ pub async fn run_multi_backtest(
     for (index, input) in inputs.into_iter().enumerate() {
         input.runner_config.validate()?;
         input.venue_config.validate()?;
-        let bars = crate::backtest::load_history(&input.history)?;
-        let config_json = serde_json::to_string(&(
-            &input.runner_config,
-            &input.venue_config,
-            risk.limits(),
-            grant,
-        ))
-        .map_err(|e| ServerError::Backtest(format!("config not serializable: {e}")))?;
-        let manifest = RunManifest::new(&input.venue_config.data_version, config_json, &bars, seed);
+        let loaded = load_history(&input.history, input.store.as_deref())?;
+        let bars = loaded.bars;
+        let config_json =
+            config_json_of(&input.runner_config, &input.venue_config, risk, grant)?;
+        let manifest = pinned_manifest(
+            &input.venue_config.data_version,
+            config_json,
+            &bars,
+            seed,
+            &loaded.provenance,
+        );
         legs.push(MultiJob {
             index,
             strategy: strategy.clone(),
@@ -1274,3 +1363,7 @@ pub fn expire_position<V: Venue>(
 #[cfg(test)]
 #[path = "../tests/runner.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/multi_symbol_tape.rs"]
+mod multi_symbol_tape_tests;

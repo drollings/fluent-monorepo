@@ -62,6 +62,9 @@ fn sample_health() -> HealthView {
         allows_exits: true,
         last_command: Some(sample_command()),
         status: "ok".to_owned(),
+        store_open_gaps: None,
+        store_reachable: None,
+        store_watermark_age_secs: None,
         trading_state: "ExitOnly".to_owned(),
         version: "0.2.0".to_owned(),
     }
@@ -249,6 +252,9 @@ fn health_view_round_trips_with_command_echo() {
         trading_state: "ExitOnly".to_owned(),
         allows_entries: false,
         allows_exits: true,
+        store_open_gaps: None,
+        store_reachable: None,
+        store_watermark_age_secs: None,
         last_command: Some(CommandStatus {
             kind: "halt".to_owned(),
             detail: "operator halt".to_owned(),
@@ -273,9 +279,18 @@ fn health_view_wire_order_is_alphabetical() {
         trading_state: "Enabled".to_owned(),
         allows_entries: true,
         allows_exits: true,
+        store_open_gaps: None,
+        store_reachable: None,
+        store_watermark_age_secs: None,
         last_command: None,
     };
     let json = serde_json::to_string(&view).expect("health serializes");
+    // No store reading on record: the payload is byte-identical to the
+    // form without the store fields (the server golden pins these bytes).
+    assert_eq!(
+        json,
+        r#"{"allows_entries":true,"allows_exits":true,"last_command":null,"status":"ok","trading_state":"Enabled","version":"0.2.0"}"#
+    );
     let positions = [
         "\"allows_entries\"",
         "\"allows_exits\"",
@@ -288,6 +303,31 @@ fn health_view_wire_order_is_alphabetical() {
     assert!(
         positions.windows(2).all(|pair| pair[0] < pair[1]),
         "health keys serialize alphabetically: {json}"
+    );
+
+    // A recorded reading surfaces all three facts, still alphabetical.
+    let observed = HealthView {
+        store_open_gaps: Some(2),
+        store_reachable: Some(true),
+        store_watermark_age_secs: Some(90),
+        ..view
+    };
+    let observed_json = serde_json::to_string(&observed).expect("health serializes");
+    let observed_positions = [
+        "\"allows_entries\"",
+        "\"allows_exits\"",
+        "\"last_command\"",
+        "\"status\"",
+        "\"store_open_gaps\"",
+        "\"store_reachable\"",
+        "\"store_watermark_age_secs\"",
+        "\"trading_state\"",
+        "\"version\"",
+    ]
+    .map(|key| observed_json.find(key).expect("health carries every key"));
+    assert!(
+        observed_positions.windows(2).all(|pair| pair[0] < pair[1]),
+        "health keys serialize alphabetically: {observed_json}"
     );
 }
 

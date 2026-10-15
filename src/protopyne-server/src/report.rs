@@ -12,6 +12,10 @@ use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive as _;
 
+use protopyne_kernels::indicator::encode_param_value;
+use protopyne_kernels::value::PineValue;
+use protopyne_store::identity::VerifiedId;
+use protopyne_store::plan::{SpanOrigin, SpanPlan};
 use protopyne_types::{Bar, Money};
 
 use crate::metrics::{self, TRADING_DAYS_PER_YEAR};
@@ -35,6 +39,56 @@ pub struct RunManifest {
     pub last_ts: String,
     /// Caller-supplied seed for any randomized sweep choice (0 = none).
     pub seed: u64,
+    /// Content digest of the replayed tape (16 hex chars), when the run was
+    /// pinned to tape data. `None` keeps the pre-tape JSON byte-identical.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data_digest: Option<String>,
+    /// First tape stamp (RFC 3339), parallel to [`RunManifest::first_ts`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data_first_ts: Option<String>,
+    /// Last tape stamp (RFC 3339), parallel to [`RunManifest::last_ts`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data_last_ts: Option<String>,
+    /// Tape bars covered.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data_bar_count: Option<u64>,
+    /// How every served span was produced, in ascending order.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data_provenance: Option<Vec<SpanOriginSummary>>,
+}
+
+/// How one served span was produced: the planner's [`SpanPlan`] reduced to
+/// JSON-stable facts. The origin rides as a string (not the store enum) so
+/// the manifest never couples its serialized form to the store's type.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct SpanOriginSummary {
+    /// Where the span was served from (`"stored"` today; the string is the
+    /// seam a second tier would extend without breaking old manifests).
+    pub origin: String,
+    /// Whether the span's buckets are whole. A `false` here is the planner
+    /// reporting a span it served but could not certify — the manifest's
+    /// honest remainder, surfaced in `data_limits`.
+    pub complete: bool,
+    /// Served span, lower bound inclusive. `None` means no lower bound.
+    pub start_ms: Option<i64>,
+    /// Served span, upper bound exclusive. `None` means no upper bound.
+    pub end_ms: Option<i64>,
+}
+
+impl SpanOriginSummary {
+    /// Reduce a planner span to its manifest facts.
+    #[must_use]
+    pub fn of(span: &SpanPlan) -> Self {
+        let origin = match span.origin() {
+            SpanOrigin::Stored => "stored",
+        };
+        Self {
+            origin: origin.to_owned(),
+            complete: span.complete(),
+            start_ms: span.span().start_ms,
+            end_ms: span.span().end_ms,
+        }
+    }
 }
 
 impl RunManifest {
@@ -60,7 +114,32 @@ impl RunManifest {
             first_ts,
             last_ts,
             seed,
+            data_digest: None,
+            data_first_ts: None,
+            data_last_ts: None,
+            data_bar_count: None,
+            data_provenance: None,
         }
+    }
+
+    /// Pin this manifest to tape data: the replayed bars plus the planner
+    /// spans that served them. The digest identifies the exact bytes (a
+    /// different coverage digests differently); the summaries name how
+    /// every span was produced. A manifest with no tape keeps every new
+    /// field `None` and serializes byte-identically to the pre-tape form.
+    #[must_use]
+    pub fn with_tape_data(mut self, bars: &[Bar], provenance: &[SpanPlan]) -> Self {
+        let identity = VerifiedId::of(&tape_canonical_bytes(bars, provenance));
+        let (data_first_ts, data_last_ts) = match (bars.first(), bars.last()) {
+            (Some(first), Some(last)) => (Some(first.ts.to_rfc3339()), Some(last.ts.to_rfc3339())),
+            (None, _) | (_, None) => (None, None),
+        };
+        self.data_digest = Some(format!("{:016x}", identity.hash()));
+        self.data_first_ts = data_first_ts;
+        self.data_last_ts = data_last_ts;
+        self.data_bar_count = Some(bars.len() as u64);
+        self.data_provenance = Some(provenance.iter().map(SpanOriginSummary::of).collect());
+        self
     }
 
     /// Deterministic JSON encoding of this manifest. Serialization of plain
@@ -83,6 +162,81 @@ pub fn count_unquotable_bars(bars: &[Bar]) -> u64 {
     bars.iter()
         .filter(|bar| bar.c <= Decimal::ZERO)
         .count() as u64
+}
+
+/// Canonical bytes for tape data: the exact replayed bars plus the planner
+/// spans that served them, framed with the parameter encoding's
+/// length-prefixed idiom — one framing implementation, reused, never
+/// re-derived. Prices ride as normalized decimal strings (exact, never
+/// float); volumes saturate instead of wrapping; order is the slice order,
+/// so callers pass bars ascending and identical inputs byte-identify.
+/// A different coverage frames different bytes and digests differently.
+#[must_use]
+pub fn tape_canonical_bytes(bars: &[Bar], provenance: &[SpanPlan]) -> Vec<u8> {
+    fn push(bytes: &mut Vec<u8>, value: &PineValue) {
+        encode_param_value(bytes, value);
+    }
+    fn text(value: Decimal) -> PineValue {
+        PineValue::Str(value.normalize().to_string())
+    }
+    fn maybe_int(value: Option<i64>) -> PineValue {
+        PineValue::Array(vec![
+            Some(PineValue::Bool(value.is_some())),
+            Some(PineValue::Int(value.unwrap_or(0))),
+        ])
+    }
+    let mut bytes = Vec::new();
+    push(&mut bytes, &PineValue::Str("tape-data-v1".to_owned()));
+    push(
+        &mut bytes,
+        &PineValue::Int(i64::try_from(bars.len()).unwrap_or(i64::MAX)),
+    );
+    for bar in bars {
+        push(&mut bytes, &PineValue::Int(bar.ts.timestamp_millis()));
+        push(&mut bytes, &text(bar.o));
+        push(&mut bytes, &text(bar.h));
+        push(&mut bytes, &text(bar.l));
+        push(&mut bytes, &text(bar.c));
+        push(
+            &mut bytes,
+            &PineValue::Int(i64::try_from(bar.volume).unwrap_or(i64::MAX)),
+        );
+        let (split, dividend) = match &bar.adj {
+            None => (None, None),
+            Some(adj) => (adj.split_factor, adj.dividend.map(Money::as_decimal)),
+        };
+        push(
+            &mut bytes,
+            &PineValue::Array(vec![
+                Some(PineValue::Array(vec![
+                    Some(PineValue::Bool(split.is_some())),
+                    Some(PineValue::Str(
+                        split.map_or_else(String::new, |v| v.normalize().to_string()),
+                    )),
+                ])),
+                Some(PineValue::Array(vec![
+                    Some(PineValue::Bool(dividend.is_some())),
+                    Some(PineValue::Str(
+                        dividend.map_or_else(String::new, |v| v.normalize().to_string()),
+                    )),
+                ])),
+            ]),
+        );
+    }
+    push(
+        &mut bytes,
+        &PineValue::Int(i64::try_from(provenance.len()).unwrap_or(i64::MAX)),
+    );
+    for span in provenance {
+        let origin = match span.origin() {
+            SpanOrigin::Stored => "stored",
+        };
+        push(&mut bytes, &maybe_int(span.span().start_ms));
+        push(&mut bytes, &maybe_int(span.span().end_ms));
+        push(&mut bytes, &PineValue::Str(origin.to_owned()));
+        push(&mut bytes, &PineValue::Bool(span.complete()));
+    }
+    bytes
 }
 
 /// Peak-to-trough drawdown of an equity curve in account-currency units.
@@ -283,6 +437,39 @@ impl BacktestReport {
     }
 }
 
+/// The tape-data line for `data_limits`: the tape's coverage (bar count
+/// plus range) and any span the planner served but could not certify whole.
+/// A partial span is the manifest's honest remainder — the buckets whose
+/// edges the planner flagged — reported here so the tearsheet and the JSON
+/// name the same unresolved gaps. `None` when the manifest carries no tape
+/// data, in which case reports read exactly as before.
+#[must_use]
+pub fn tape_data_limit_line(manifest: &RunManifest) -> Option<String> {
+    let (digest, first, last, count, provenance) = (
+        manifest.data_digest.as_ref()?,
+        manifest.data_first_ts.as_ref()?,
+        manifest.data_last_ts.as_ref()?,
+        manifest.data_bar_count?,
+        manifest.data_provenance.as_ref()?,
+    );
+    let whole = provenance.iter().filter(|span| span.complete).count();
+    let partial = provenance.len() - whole;
+    let spans = if provenance.len() == 1 {
+        "1 stored span".to_owned()
+    } else {
+        format!("{} stored spans", provenance.len())
+    };
+    let certified = if partial == 0 {
+        format!("{whole} whole")
+    } else {
+        format!("{whole} whole, {partial} partial")
+    };
+    Some(format!(
+        "tape data: {count} bars {first}..{last} digest {} | {spans} ({certified})",
+        digest.chars().take(8).collect::<String>(),
+    ))
+}
+
 /// Assemble a report from run facts. Pure function: same inputs, same
 /// report.
 #[must_use]
@@ -318,6 +505,10 @@ pub fn build_report(
         // past 2^32 into a wrong rate.
         Some(fills as f64 / proposals as f64)
     };
+    let mut data_limits = data_limits;
+    if let Some(tape_line) = tape_data_limit_line(&manifest) {
+        data_limits.push(tape_line);
+    }
     BacktestReport {
         manifest,
         fill_assumptions,
@@ -467,3 +658,15 @@ pub fn rfc3339(ts: &DateTime<Utc>) -> String {
 #[cfg(test)]
 #[path = "../tests/report.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/manifest_backward_compatible.rs"]
+mod tests_manifest_backward_compatible;
+
+#[cfg(test)]
+#[path = "../tests/manifest_rerun_equality.rs"]
+mod tests_manifest_rerun_equality;
+
+#[cfg(test)]
+#[path = "../tests/report_data_limits.rs"]
+mod tests_report_data_limits;

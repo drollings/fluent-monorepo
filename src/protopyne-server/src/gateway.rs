@@ -21,7 +21,7 @@ use std::collections::BTreeMap;
 use crate::service::Shared;
 use crate::service::{
     DEFAULT_REPLAY_CHECKPOINT_EVERY, apply_arm, chart_bars_of, grant_tiers_of, health_view,
-    live_grant, overlay_series_of, parse_patch, preview_arm_of, replay_view_of,
+    live_grant, overlay_series_of, parse_patch, preview_arm_of, replay_view_of, tape_bars_for,
 };
 
 /// Map the overlay builder's `(status, reason)` refusal onto the gateway's
@@ -114,7 +114,24 @@ impl TerminalGateway for ServerGateway {
     }
 
     fn chart_bars_for(&self, symbol: &str, timeframe: &str) -> Result<ChartBars, GatewayError> {
+        self.chart_bars_for_limit(symbol, timeframe, None)
+    }
+
+    fn chart_bars_for_limit(
+        &self,
+        symbol: &str,
+        timeframe: &str,
+        limit: Option<usize>,
+    ) -> Result<ChartBars, GatewayError> {
         validate_symbol_timeframe(symbol, timeframe)?;
+        // A booted tape plans and serves the read; a store-less server (or a
+        // symbol/timeframe the tape cannot serve) falls back to the boot
+        // history, so the store is additive and never strands a read.
+        if let Some(reader) = &self.state.tape {
+            if let Some(bars) = tape_bars_for(reader, symbol, timeframe, limit) {
+                return Ok(chart_bars_of(&bars));
+            }
+        }
         Ok(chart_bars_of(&resampled_history(&self.state.history, timeframe)))
     }
 
@@ -195,3 +212,7 @@ impl TerminalGateway for ServerGateway {
 #[cfg(test)]
 #[path = "../tests/gateway.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/gateway_tape_parity.rs"]
+mod gateway_tape_parity_tests;

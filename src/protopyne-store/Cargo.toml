@@ -1,0 +1,42 @@
+[package]
+name = "protopyne-store"
+version.workspace = true
+edition.workspace = true
+autotests = false
+autobenches = false
+
+[features]
+default = ["parquet"]
+# `parquet` pulls in the sealed-snapshot surface: the Arrow/Parquet writer
+# and reader behind the content-addressed artifact. Default-on for the
+# shipping binary; with it off the crate still builds and the whole SQLite
+# surface stays fully testable, and sealing reports a disabled feature
+# rather than failing to compile. `polars` stays out of the data path: the
+# research frame boundary is a separate consumer.
+parquet = ["dep:arrow", "dep:parquet"]
+
+[dependencies]
+common-core = { path = "../common-core", features = ["sqlite"] }
+fluent-wvr = { path = "../fluent-wvr" }
+fluent-concurrency = { path = "../fluent-concurrency" }
+fluent-db = { path = "../db" }
+protopyne-types = { path = "../protopyne-types" }
+bon = { workspace = true }
+chrono = { workspace = true }
+rusqlite = { workspace = true }
+rust_decimal = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+arrow = { version = "59", optional = true, default-features = false }
+parquet = { version = "59", optional = true, default-features = false, features = ["arrow", "snap"] }
+
+[dev-dependencies]
+protopyne-kernels = { path = "../protopyne-kernels" }
+protopyne-server = { path = "../protopyne-server" }
+tempfile = { workspace = true }
+tokio = { workspace = true }
+
+[lints]
+workspace = true

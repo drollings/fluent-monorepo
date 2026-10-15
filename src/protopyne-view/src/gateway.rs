@@ -120,6 +120,27 @@ pub trait TerminalGateway: Send + Sync {
         self.chart_bars()
     }
 
+    /// Chartable bars for one symbol and timeframe, bounded to at most
+    /// `limit` trailing bars when a durable tape serves the read.
+    ///
+    /// This is an **additive, default-implemented** read: the default refuses
+    /// blank identifiers and delegates to
+    /// [`chart_bars_for`](Self::chart_bars_for) — a gateway with no durable
+    /// tape serves exactly what it always did, and every existing implementor
+    /// keeps compiling without an edit. A gateway that can plan a bounded
+    /// store read overrides this; `limit` is a trailing-bar cap, never a
+    /// range, so it can only narrow the read, never widen it.
+    fn chart_bars_for_limit(
+        &self,
+        symbol: &str,
+        timeframe: &str,
+        limit: Option<usize>,
+    ) -> Result<ChartBars, GatewayError> {
+        let _ = limit;
+        validate_symbol_timeframe(symbol, timeframe)?;
+        self.chart_bars_for(symbol, timeframe)
+    }
+
     /// One indicator overlay for one symbol and timeframe.
     ///
     /// The default refuses blank identifiers, then delegates to
@@ -161,6 +182,10 @@ impl TerminalGateway for MockGateway {
             trading_state: "Enabled".to_owned(),
             allows_entries: true,
             allows_exits: true,
+            // The mock observes no store: no reading on record.
+            store_open_gaps: None,
+            store_reachable: None,
+            store_watermark_age_secs: None,
             last_command: None,
         })
     }

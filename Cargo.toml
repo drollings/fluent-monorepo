@@ -30,6 +30,7 @@ members = [
     "src/fluent-onnx",
     "src/protopyne-types",
     "src/protopyne-kernels",
+    "src/protopyne-store",
     "src/protopyne-strategy",
     "src/protopyne-venue",
     "src/protopyne-server",

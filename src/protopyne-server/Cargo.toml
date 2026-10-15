@@ -17,6 +17,13 @@ pine = ["protopyne-kernels/pine"]
 protopyne-types = { path = "../protopyne-types" }
 protopyne-kernels = { path = "../protopyne-kernels", default-features = false, features = ["research"] }
 protopyne-strategy = { path = "../protopyne-strategy" }
+# The store's optional `parquet` surface (sealed snapshots) is not on the
+# server's data path yet, so the server consumes the store with its default
+# features off. This keeps the store's lean feature-off closure honest: a
+# dependent that enabled the default would make `--no-default-features` a
+# lie. A future milestone that puts snapshots on the server path enables the
+# feature here explicitly.
+protopyne-store = { path = "../protopyne-store", default-features = false }
 protopyne-venue = { path = "../protopyne-venue" }
 protopyne-chart-model = { path = "../protopyne-chart-model" }
 protopyne-view = { path = "../protopyne-view" }

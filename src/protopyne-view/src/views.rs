@@ -87,7 +87,10 @@ pub struct CommandStatus {
 ///
 /// Field order is alphabetical on purpose: the route historically
 /// serialized a `serde_json::Map` (sorted keys), and the DTO keeps that
-/// byte order so the server-side swap is invisible on the wire.
+/// byte order so the server-side swap is invisible on the wire. The store
+/// fields stay in the same order, and each is `None`-skipped so a view with
+/// no store reading on record serialises byte-identically to the form
+/// without them.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct HealthView {
     /// Whether new entries currently route.
@@ -98,6 +101,15 @@ pub struct HealthView {
     pub last_command: Option<CommandStatus>,
     /// Liveness marker (`ok`).
     pub status: String,
+    /// Unresolved store holes the last classification reported, if observed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub store_open_gaps: Option<u64>,
+    /// Whether the price store answered its last coverage probe, if observed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub store_reachable: Option<bool>,
+    /// Age of the newest committed bar in seconds, if known.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub store_watermark_age_secs: Option<u64>,
     /// Trading state, as a stable string tag.
     pub trading_state: String,
     /// Serving crate version.

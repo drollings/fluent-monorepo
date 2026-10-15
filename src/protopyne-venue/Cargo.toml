@@ -7,6 +7,11 @@ autobenches = false
 
 [dependencies]
 protopyne-types = { path = "../protopyne-types" }
+# Venue uses only the store's health reading, never the optional sealed
+# snapshot surface, so it consumes the store with default features off. This
+# keeps the store's lean feature-off closure honest through the venue→store
+# and server→store dependency chains.
+protopyne-store = { path = "../protopyne-store", default-features = false }
 protopyne-strategy = { path = "../protopyne-strategy" }
 common-core = { path = "../common-core" }
 fluent-wvr = { path = "../fluent-wvr" }

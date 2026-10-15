@@ -321,7 +321,10 @@ impl ParamSet {
 /// Append one canonical `(tag, payload)` frame for a parameter value.
 /// Length-prefixes keep frames unambiguous; sorting at every map level
 /// keeps the encoding independent of hash-map iteration order.
-fn encode_param_value(bytes: &mut Vec<u8>, value: &PineValue) {
+///
+/// Public so tape-data identity (server `report`) frames with the same
+/// idiom parameter identity uses: one framing implementation, not two.
+pub fn encode_param_value(bytes: &mut Vec<u8>, value: &PineValue) {
     fn push_str(bytes: &mut Vec<u8>, text: &str) {
         bytes.extend_from_slice(&(text.len() as u64).to_le_bytes());
         bytes.extend_from_slice(text.as_bytes());

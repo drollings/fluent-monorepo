@@ -16,6 +16,11 @@ fn manifest(bar_count: u64) -> RunManifest {
         first_ts: "2026-01-02T09:00:00+00:00".to_owned(),
         last_ts: "2026-01-10T00:45:00+00:00".to_owned(),
         seed: 7,
+        data_digest: None,
+        data_first_ts: None,
+        data_last_ts: None,
+        data_bar_count: None,
+        data_provenance: None,
     }
 }
 

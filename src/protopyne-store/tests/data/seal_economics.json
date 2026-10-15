@@ -1,0 +1,11 @@
+{
+  "frozen_min_part_rows": 16,
+  "chunk_rows": 32,
+  "corpus_rows": 200,
+  "measurements": {
+    "1": { "bytes": 16373, "groups": 7 },
+    "8": { "bytes": 16373, "groups": 7 },
+    "16": { "bytes": 14957, "groups": 6 },
+    "32": { "bytes": 14957, "groups": 6 }
+  }
+}

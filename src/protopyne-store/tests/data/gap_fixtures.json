@@ -1,0 +1,129 @@
+{
+  "frozen_max_lag_bars": 1,
+  "measured": {
+    "0": {"recall": 1.0, "control_false_fire": 0.2},
+    "1": {"recall": 1.0, "control_false_fire": 0.0},
+    "2": {"recall": 0.8333333333333334, "control_false_fire": 0.0},
+    "3": {"recall": 0.6666666666666666, "control_false_fire": 0.0},
+    "4": {"recall": 0.6666666666666666, "control_false_fire": 0.0},
+    "5": {"recall": 0.6666666666666666, "control_false_fire": 0.0},
+    "6": {"recall": 0.6666666666666666, "control_false_fire": 0.0}
+  },
+  "positive": [
+    {
+      "name": "empty tape",
+      "note": "No rows: the store answered, and the answer is nothing to repair from. Still a must-fire for the backfill decision, distinctly from an unreachable store, which never reaches the classifier.",
+      "symbol": "SPY",
+      "timeframe": "M1",
+      "t0_ms": 1767225900000,
+      "grid": {"count": 0},
+      "now": {"at_ms": 1767225900000},
+      "expect": "Empty"
+    },
+    {
+      "name": "tail lag of three bars at M1",
+      "note": "Three one-minute bars behind at the frozen bound of one: stale. The must-fire that the default bound of two also caught; it stays caught.",
+      "symbol": "SPY",
+      "timeframe": "M1",
+      "t0_ms": 1767225900000,
+      "grid": {"count": 10},
+      "now": {"after_last_bars": 3},
+      "expect": "Stale"
+    },
+    {
+      "name": "tail lag of two bars at H4",
+      "note": "Two H4 bars is eight wall-clock hours behind. The bar-count bound fires here while staying quiet two minutes behind at M1, which is the whole reason the bound is one and not two: at two, this case sits exactly on the inclusive boundary and stays silent.",
+      "symbol": "SPY",
+      "timeframe": "H4",
+      "t0_ms": 1767225900000,
+      "grid": {"count": 10},
+      "now": {"after_last_bars": 2},
+      "expect": "Stale"
+    },
+    {
+      "name": "one interior hole with current ends",
+      "note": "The tail is current but the middle is torn: the repair fills the hole, not the tail.",
+      "symbol": "SPY",
+      "timeframe": "M1",
+      "t0_ms": 1767225900000,
+      "grid": {"count": 10, "omit": [5]},
+      "now": {"after_last_bars": 0},
+      "expect": "Torn",
+      "expect_holes": 1
+    },
+    {
+      "name": "two interior holes",
+      "note": "Two holes are two spans: the repair fills both, and the verdict names both.",
+      "symbol": "SPY",
+      "timeframe": "M1",
+      "t0_ms": 1767225900000,
+      "grid": {"count": 10, "omit": [3, 7]},
+      "now": {"after_last_bars": 0},
+      "expect": "Torn",
+      "expect_holes": 2
+    },
+    {
+      "name": "last bar predates a session boundary by more than the session",
+      "note": "Last bar Friday close, verdict taken Monday after the open: days behind at any candidate bound, so this fires for every k in the sweep and anchors the recall side.",
+      "symbol": "SPY",
+      "timeframe": "M1",
+      "t0_ms": 1767225900000,
+      "grid": {"count": 10},
+      "now": {"at_ms": 1767976440000},
+      "expect": "Stale"
+    }
+  ],
+  "control": [
+    {
+      "name": "exactly at the candidate boundary",
+      "note": "The boundary is inclusive at every candidate: exactly k bars behind is calm. Stated relative to the candidate so the case means 'the boundary case' for each k under test, not just for the frozen one.",
+      "symbol": "SPY",
+      "timeframe": "M1",
+      "t0_ms": 1767225900000,
+      "grid": {"count": 10},
+      "now": {"after_last_bars": "k"},
+      "expect": "Fresh"
+    },
+    {
+      "name": "one bar behind",
+      "note": "A single late print never schedules a repair. This is the case that rejects a bound of zero.",
+      "symbol": "SPY",
+      "timeframe": "M1",
+      "t0_ms": 1767225900000,
+      "grid": {"count": 10},
+      "now": {"after_last_bars": 1},
+      "expect": "Fresh"
+    },
+    {
+      "name": "current with a sub-threshold interior hole",
+      "note": "One missing bar with a two-bar tolerance and a current tail: calm. Evaluated with its own hole tolerance; the sweep varies the lag bound, not this.",
+      "symbol": "SPY",
+      "timeframe": "M1",
+      "t0_ms": 1767225900000,
+      "grid": {"count": 10, "omit": [5]},
+      "max_gap_bars": 2,
+      "now": {"after_last_bars": 0},
+      "expect": "Fresh"
+    },
+    {
+      "name": "session closed for the weekend",
+      "note": "Evaluated Saturday: the tape holds Friday's bars and now is the last instant bars were due. A closed session produces no lag because no bars were due; this case is why verdict instants are UTC stamps chosen by the caller, never wall-clock reads.",
+      "symbol": "SPY",
+      "timeframe": "M1",
+      "t0_ms": 1767225900000,
+      "grid": {"count": 10},
+      "now": {"at_ms": 1767226440000},
+      "expect": "Fresh"
+    },
+    {
+      "name": "tape already completed by a later run",
+      "note": "Newest bar current over a complete tape: the classifier reads Fresh, and the repair loop must report AlreadyComplete here rather than Repaired. The second half is the repair loop's contract; this case pins the classifier's half.",
+      "symbol": "SPY",
+      "timeframe": "M1",
+      "t0_ms": 1767225900000,
+      "grid": {"count": 10},
+      "now": {"after_last_bars": 0},
+      "expect": "Fresh"
+    }
+  ]
+}

@@ -26,6 +26,7 @@ use chrono::{DateTime, TimeZone, Utc};
 use rust_decimal::Decimal;
 
 use crate::venue::{LegQuoteSource, Venue};
+use protopyne_store::StoreHealth;
 use protopyne_types::{LegSide, Money, OptionContract, OptionKind, SpreadLeg, SpreadLegs};
 
 fn money(value: &str) -> Money {
@@ -324,7 +325,7 @@ async fn stale_leg_refusal_agrees_with_the_health_gate() {
     assert!(venue.query("cal-stale").await.is_none(), "stale spread records nothing");
     // The same 120s age trips the platform health gate: the fill policy and
     // `may_trade` refuse the same stale world, neither covering for the other.
-    let state = HealthState { quote_age_secs: 120, clock_skew_secs: 0, stream_connected: true };
+    let state = HealthState { quote_age_secs: 120, clock_skew_secs: 0, stream_connected: true, store: StoreHealth::default() };
     assert!(
         !may_trade(&state, &HealthLimits::new().build()).may_trade(),
         "health gate halts on the same staleness the leg filter refused"

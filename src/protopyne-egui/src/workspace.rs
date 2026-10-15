@@ -51,6 +51,11 @@ const INTEGRATION_LITE_ID: &str = "integration_lite";
 
 /// Pixels per bar used when no configured spacing applies.
 const DEFAULT_BAR_SPACING: f32 = 8.0;
+/// Trailing-bar cap for one chart read. A **cost bound** — the pane paints a
+/// trailing window, so a five-thousand-bar ceiling fills every range preset
+/// without asking the read to scan a whole tape. A gateway with no durable
+/// tape ignores it; one that plans a store read narrows to it.
+const CHART_WINDOW_BARS: usize = 5_000;
 /// Main chart area height.
 const PRICE_PANE_HEIGHT: f32 = 320.0;
 /// Sub-pane area height.
@@ -812,8 +817,16 @@ impl ChartWorkspace {
     /// Pull fresh bars for the active symbol and timeframe through `gateway`,
     /// rebind the viewports, and recompute every active indicator.
     pub fn refresh(&mut self, gateway: &dyn TerminalGateway) -> Result<(), EguiError> {
+        // A bounded read: a store-backed gateway plans a trailing window
+        // through the durable tape, a store-less one serves its own history
+        // and ignores the cap. The call is the same on both, so switching a
+        // symbol or a timeframe replays through the identical read.
         let bars = gateway
-            .chart_bars_for(self.active_symbol(), self.timeframe.label())
+            .chart_bars_for_limit(
+                self.active_symbol(),
+                self.timeframe.label(),
+                Some(CHART_WINDOW_BARS),
+            )
             .map_err(|error| EguiError::Dependency { reason: error.to_string() })?;
         self.rows = chart_rows_of(&bars);
         self.histories.insert(self.timeframe, self.rows.clone());
@@ -1583,3 +1596,7 @@ pub fn paint_workspace(
 #[cfg(test)]
 #[path = "../tests/workspace.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/workspace_tape.rs"]
+mod workspace_tape_tests;

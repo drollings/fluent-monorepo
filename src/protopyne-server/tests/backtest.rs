@@ -203,13 +203,18 @@ fn dynamic_history_loads_beside_csv() {
 
     // Same tape, two sources: the dynamic variant must reproduce the CSV
     // path bar for bar — the harness treats them interchangeably.
-    let from_csv = load_history(&HistorySource::Csv(vec![test_data()])).expect("csv loads");
+    let from_csv =
+        load_history(&HistorySource::Csv(vec![test_data()]), None).expect("csv loads").bars;
     assert!(!from_csv.is_empty());
-    let replayed = load_history(&HistorySource::Dynamic(from_csv.clone())).expect("dynamic loads");
+    let replayed = load_history(&HistorySource::Dynamic(from_csv.clone()), None)
+        .expect("dynamic loads")
+        .bars;
     assert_eq!(replayed, from_csv);
     // Fail-closed mirrors the CSV path: no candidates and no bars both
     // refuse instead of running on an empty tape.
-    assert!(load_history(&HistorySource::Csv(Vec::new())).is_err());
-    assert!(load_history(&HistorySource::Dynamic(Vec::new())).is_err());
-    assert!(load_history(&HistorySource::Csv(vec![PathBuf::from("/nonexistent/x.csv")])).is_err());
+    assert!(load_history(&HistorySource::Csv(Vec::new()), None).is_err());
+    assert!(load_history(&HistorySource::Dynamic(Vec::new()), None).is_err());
+    assert!(
+        load_history(&HistorySource::Csv(vec![PathBuf::from("/nonexistent/x.csv")]), None).is_err()
+    );
 }

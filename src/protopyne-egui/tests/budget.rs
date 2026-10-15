@@ -429,6 +429,37 @@ fn trading_path_enters_only_as_a_dev_dependency() {
 }
 
 #[test]
+fn store_enters_only_as_a_dev_dependency() {
+    // The terminal reads chart data through the gateway abstraction, never
+    // by linking the store into its default library build. The store is a
+    // dev-dependency so the workspace tape suite can seed one behind a
+    // store-backed gateway; a default build links neither.
+    let text = read_text(&manifest_dir().join("Cargo.toml"));
+    let deps = manifest_section(&text, "[dependencies]");
+    let dev_deps = manifest_section(&text, "[dev-dependencies]");
+    assert!(
+        dependency_line(&deps, "protopyne-store").is_none(),
+        "protopyne-store must stay out of [dependencies] so a default library \
+         build links no store"
+    );
+    assert!(
+        dependency_line(&dev_deps, "protopyne-store").is_some(),
+        "the workspace tape suite seeds a store: the store is a dev-dependency"
+    );
+}
+
+#[test]
+fn the_workspace_plans_through_the_bounded_gateway_read() {
+    // Positive pin: the workspace plans its chart window through the
+    // bounded, store-aware read, so a symbol or timeframe switch replans
+    // through the store when one backs the gateway — never a second memo.
+    assert!(
+        read_src("workspace.rs").contains("chart_bars_for_limit"),
+        "the workspace must plan its window through the bounded gateway read"
+    );
+}
+
+#[test]
 fn terminal_never_mutates_the_trading_path() {
     for token in TRADING_TOKENS {
         forbid_in_src(token, "trading crates are read at dev time only, never a main dependency");

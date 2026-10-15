@@ -40,8 +40,11 @@ use protopyne_strategy::{
     Strategy, StructureKind, TradeThresholds,
 };
 use protopyne_chart_model::{ChartRow, row_of};
-use protopyne_types::{Bar, Money};
-use protopyne_venue::{Position, StateHandle, TradingState};
+use protopyne_store::{CandleStore, FoldPolicy, ReadRequest as TapeReadRequest, StoreHealth, TimeRange};
+use protopyne_types::{Bar, Money, Timeframe};
+use protopyne_venue::{
+    HealthLimits, HealthState, HealthVerdict, Position, StateHandle, TradingState, may_trade,
+};
 use protopyne_view::{
     ArmResponse, ChartBar, ChartBars, CommandStatus, DenyCount, HealthView, OverlaySeries,
     PortfolioView, PositionView, ProposalView, ReplayStepView, ReplayView, WorstCase,
@@ -78,6 +81,16 @@ pub struct ServerConfig {
     #[field(desc = "Feed frame interval in milliseconds", min = 1, max = 60_000)]
     #[builder(default = 50)]
     pub feed_interval_ms: u64,
+    /// Latest observed store liveness, seeded into serving state at boot.
+    /// The repair worker publishes live readings over this once it exists;
+    /// until then the boot-supplied reading (healthy by default) is what
+    /// `/health` reports. Stays out of the field descriptor (`#[field(skip)]`):
+    /// a `StoreHealth` has no boundary-string reading. `#[serde(default)]`
+    /// keeps older config files (which name no store reading) loading.
+    #[field(skip)]
+    #[builder(default)]
+    #[serde(default)]
+    pub store_health: StoreHealth,
 }
 
 impl protopyne_types::Validate for ServerConfig {
@@ -253,6 +266,14 @@ pub struct AppState {
     trading_state: StateHandle,
     /// Read-only echo of the last operator command, if any.
     last_command: Mutex<Option<CommandStatus>>,
+    /// Latest observed store liveness, seeded from [`ServerConfig`] at boot.
+    /// Serving-path reads only; the repair worker publishes live readings
+    /// here once it exists.
+    store_health: Mutex<StoreHealth>,
+    /// The durable tape the gateway plans its symbol-scoped chart reads
+    /// through, when the server was booted with one. `None` serves the boot
+    /// history unchanged, so a store-less server behaves exactly as before.
+    pub(crate) tape: Option<TapeReader>,
 }
 
 pub(crate) type Shared = Arc<AppState>;
@@ -341,17 +362,137 @@ fn validate_grant(grant: &Grant) -> Result<(), String> {
     protopyne_types::Validate::validate(grant)
 }
 
+/// Map the serving state's store reading onto the view's optional fields.
+/// No reading on record ([`StoreHealth::default()`]) reports nothing, so a
+/// server that never observed the store serves the pre-store payload
+/// byte-identically; any actual reading reports all three facts together —
+/// a half-reported reading would be worse than none.
+fn store_fields(reading: StoreHealth) -> (Option<bool>, Option<u64>, Option<u64>) {
+    if reading == StoreHealth::default() {
+        (None, None, None)
+    } else {
+        (
+            Some(reading.reachable),
+            Some(reading.open_gaps),
+            reading.watermark_age_secs,
+        )
+    }
+}
+
+/// The store a serving gateway plans its chart reads through, threadbare by
+/// design: a synchronous [`CandleStore`] plus the capability permit its
+/// effects require and the tape's registered venue spelling. Holding the
+/// permit here is what lets the synchronous gateway install it around a read
+/// without inventing a second capability mechanism.
+pub struct TapeReader {
+    /// The durable tape this reader plans and reads.
+    pub store: std::sync::Arc<dyn CandleStore>,
+    /// The capability set the store's effects are gated on.
+    pub caps: fluent_wvr::CapabilitySet,
+    /// The venue spelling the tape prints under.
+    pub venue: String,
+    /// Trailing-bar cap for an unbounded chart read.
+    pub limit: usize,
+}
+
+/// Default trailing-bar cap for a store-backed chart read: enough to fill a
+/// chart window without an unbounded scan. A **cost bound**, never a
+/// correctness threshold.
+pub const DEFAULT_TAPE_LIMIT: usize = 5_000;
+
+/// Map the terminal toolbar's resolution label onto a [`Timeframe`].
+///
+/// The toolbar spells frames `1M`/`5M`/`15M`/`1H`/`4H`; the store's grid
+/// spells minutes `M1`/`M5`/`M15`. The `1M`-style codes are deliberately
+/// refused by [`Timeframe::from_resolution`] (they read as months on a
+/// data chart), so the bridge is stated once here, at the serving boundary
+/// that receives the toolbar's spelling, rather than in every read.
+#[must_use]
+pub fn timeframe_of_label(label: &str) -> Option<Timeframe> {
+    match label {
+        "1M" => Some(Timeframe::M1),
+        "5M" => Some(Timeframe::M5),
+        "15M" => Some(Timeframe::M15),
+        other => Timeframe::from_resolution(other),
+    }
+}
+
+/// Plan and read a chart window from the durable tape, or `None` when the
+/// read cannot be answered (an unknown symbol, a spacing the tape cannot
+/// serve, a store that could not be reached). The store's own gate runs
+/// inside the permit's scope, so a task that was never granted the store is
+/// denied here exactly as everywhere else; the read never falls back to
+/// another source at this layer — the caller decides that.
+#[must_use]
+pub fn tape_bars_for(
+    reader: &TapeReader,
+    symbol: &str,
+    timeframe: &str,
+    limit: Option<usize>,
+) -> Option<Vec<Bar>> {
+    let tf = timeframe_of_label(timeframe)?;
+    let request = TapeReadRequest {
+        symbol: symbol.to_owned(),
+        venue: reader.venue.clone(),
+        timeframe: tf,
+        range: TimeRange { start_ms: None, end_ms: None },
+        limit: Some(limit.unwrap_or(reader.limit)),
+        policy: FoldPolicy::ExtendToFullBuckets,
+    };
+    // The store gates on a task-local permit; no task-local context means no
+    // store read is possible here, so report "not served" rather than
+    // panicking a synchronous caller (the terminal's render loop).
+    if fluent_wvr::CURRENT_CAPS.try_with(|_| ()).is_err() {
+        return None;
+    }
+    fluent_wvr::CURRENT_CAPS
+        .sync_scope(reader.caps.clone(), || reader.store.read(&request).ok().map(|series| series.bars))
+}
+
+/// Whether entries are allowed right now: the command plane's verdict AND
+/// the health gate's. The serving path observes only the store reading, so
+/// quote age, clock skew, and stream state are supplied as the no-objection
+/// values this pruning means — the live feed owns those facts. A default
+/// store reading is inert, so a server that never observed the store
+/// evaluates exactly as it did before the gate existed; a store outage
+/// halts entries while `allows_exits` stays the command plane's answer,
+/// which routes exits through and never strands a position.
+fn allows_entries(trading: TradingState, reading: StoreHealth) -> bool {
+    trading.allows(false) && store_health_verdict(reading).may_trade()
+}
+
+/// The health gate evaluated over the one fact this serving path observes —
+/// the store reading — with quote age, clock skew, and stream state supplied
+/// as the no-objection values the pruning means. The shutdown and preview
+/// paths share this one verdict, so a store outage refuses both identically.
+fn store_health_verdict(reading: StoreHealth) -> HealthVerdict {
+    let health = HealthState {
+        quote_age_secs: 0,
+        clock_skew_secs: 0,
+        stream_connected: true,
+        store: reading,
+    };
+    may_trade(&health, &HealthLimits::new().build())
+}
+
 /// Liveness plus command-plane status: the trading state (halt/resume) and
 /// the last operator command ride the existing health route — additive
 /// fields, no new route, no new auth. The DTO's alphabetical field order
-/// reproduces the historical sorted-key bytes exactly (golden-pinned).
+/// reproduces the historical sorted-key bytes exactly (golden-pinned). The
+/// store facts ride the same builder the gateway reads, so the route and
+/// the terminal cannot drift.
 pub(crate) fn health_view(state: &Shared) -> HealthView {
     let trading = state.trading_state.get();
+    let reading: StoreHealth = *common_core::sync::lock(&state.store_health);
+    let (store_reachable, store_open_gaps, store_watermark_age_secs) = store_fields(reading);
     HealthView {
-        allows_entries: trading.allows(false),
+        allows_entries: allows_entries(trading, reading),
         allows_exits: trading.allows(true),
         last_command: common_core::sync::lock(&state.last_command).clone(),
         status: "ok".to_owned(),
+        store_open_gaps,
+        store_reachable,
+        store_watermark_age_secs,
         trading_state: trading_state_tag(trading).to_owned(),
         version: env!("CARGO_PKG_VERSION").to_owned(),
     }
@@ -369,6 +510,18 @@ async fn preview(
     State(state): State<Shared>,
     Json(params): Json<PreviewParams>,
 ) -> ApiResult<PreviewResponse> {
+    // A store outage halts entries here, naming every failing gate, before
+    // any run executes. It is the same pure verdict `/health` reports, so
+    // the route a preview reads and the route an operator reads cannot
+    // disagree. Exits are unaffected at this layer because a preview never
+    // exits a position.
+    let reading: StoreHealth = *common_core::sync::lock(&state.store_health);
+    if let HealthVerdict::Halt { reasons } = store_health_verdict(reading) {
+        return Err(api_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            format!("halted: {}", reasons.join("; ")),
+        ));
+    }
     let run = state
         .limiter
         .run(|| async {
@@ -893,12 +1046,25 @@ impl ServerHandle {
     }
 }
 
-/// Boot the HTTP surface over `history`.
+/// Boot the HTTP surface over `history`, with no durable tape behind it.
+pub async fn serve(config: ServerConfig, history: Vec<Bar>) -> Result<ServerHandle, ServerError> {
+    serve_with_tape(config, history, None).await
+}
+
+/// Boot the HTTP surface over `history`, optionally with a durable tape the
+/// symbol-scoped chart reads plan and read through.
 ///
 /// Boot gates (config validity, non-empty history) run under
 /// containment-only supervision; any failure refuses to bind. The rehearsal
 /// feed pump runs as a server-owned task under the returned handle's scope.
-pub async fn serve(config: ServerConfig, history: Vec<Bar>) -> Result<ServerHandle, ServerError> {
+/// When `tape` is supplied, the gateway's `chart_bars_for` plans through it
+/// and falls back to the boot history when the tape cannot serve a read; a
+/// `None` tape serves the boot history exactly as before.
+pub async fn serve_with_tape(
+    config: ServerConfig,
+    history: Vec<Bar>,
+    tape: Option<TapeReader>,
+) -> Result<ServerHandle, ServerError> {
     config
         .validate()
         .map_err(ServerError::Service)?;
@@ -946,6 +1112,8 @@ pub async fn serve(config: ServerConfig, history: Vec<Bar>) -> Result<ServerHand
         feed: feed_tx.clone(),
         trading_state: StateHandle::new(TradingState::Enabled),
         last_command: Mutex::new(None),
+        store_health: Mutex::new(config.store_health),
+        tape,
     });
     let mut scope = Scope::new();
     {
@@ -998,3 +1166,11 @@ mod tests;
 #[cfg(test)]
 #[path = "../tests/views_golden.rs"]
 mod views_golden_tests;
+
+#[cfg(test)]
+#[path = "../tests/health_view_store.rs"]
+mod health_view_store_tests;
+
+#[cfg(test)]
+#[path = "../tests/store_halt_end_to_end.rs"]
+mod store_halt_end_to_end_tests;

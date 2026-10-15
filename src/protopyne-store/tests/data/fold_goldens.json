@@ -1,0 +1,267 @@
+{
+  "note": "Frozen fold goldens: absolute UTC bucket boundaries, the complete minute run the gap oracle folds, and the measured minute-to-fifteen-minute agreement. Boundary expectations are integers with no tolerance. Figures here are recorded measurements: a later change that shifts any of them fails the gate instead of silently re-freezing.",
+  "boundaries": [
+    {
+      "timeframe": "M1",
+      "ts_ms": 0,
+      "bucket_ms": 0,
+      "note": "the epoch itself"
+    },
+    {
+      "timeframe": "M1",
+      "ts_ms": -1,
+      "bucket_ms": -60000,
+      "note": "one millisecond before the epoch floors to the previous minute"
+    },
+    {
+      "timeframe": "M1",
+      "ts_ms": 1706745599999,
+      "bucket_ms": 1706745540000,
+      "note": "the last millisecond of January"
+    },
+    {
+      "timeframe": "M1",
+      "ts_ms": 1706745600000,
+      "bucket_ms": 1706745600000,
+      "note": "the month line itself"
+    },
+    {
+      "timeframe": "M1",
+      "ts_ms": 1704067199999,
+      "bucket_ms": 1704067140000,
+      "note": "the last millisecond of 2023"
+    },
+    {
+      "timeframe": "M1",
+      "ts_ms": 1704067200000,
+      "bucket_ms": 1704067200000,
+      "note": "the year line itself"
+    },
+    {
+      "timeframe": "M1",
+      "ts_ms": 1710053940000,
+      "bucket_ms": 1710053940000,
+      "note": "one minute before the spring-forward instant"
+    },
+    {
+      "timeframe": "M1",
+      "ts_ms": 1710054060000,
+      "bucket_ms": 1710054060000,
+      "note": "one minute after the spring-forward instant"
+    },
+    {
+      "timeframe": "M1",
+      "ts_ms": 1730613540000,
+      "bucket_ms": 1730613540000,
+      "note": "one minute before the fall-back instant"
+    },
+    {
+      "timeframe": "M1",
+      "ts_ms": 1730613660000,
+      "bucket_ms": 1730613660000,
+      "note": "one minute after the fall-back instant"
+    },
+    {
+      "timeframe": "S15",
+      "ts_ms": 0,
+      "bucket_ms": 0,
+      "note": "epoch at fifteen-second spacing"
+    },
+    {
+      "timeframe": "S15",
+      "ts_ms": 14999,
+      "bucket_ms": 0,
+      "note": "just inside the first fifteen-second bucket"
+    },
+    {
+      "timeframe": "S15",
+      "ts_ms": -1,
+      "bucket_ms": -15000,
+      "note": "pre-epoch floors to the previous bucket, never toward zero"
+    },
+    {
+      "timeframe": "M3",
+      "ts_ms": 1706745600000,
+      "bucket_ms": 1706745600000,
+      "note": "month line at three-minute spacing"
+    },
+    {
+      "timeframe": "M5",
+      "ts_ms": 0,
+      "bucket_ms": 0,
+      "note": "epoch at five-minute spacing"
+    },
+    {
+      "timeframe": "M5",
+      "ts_ms": -1,
+      "bucket_ms": -300000,
+      "note": "pre-epoch at five-minute spacing"
+    },
+    {
+      "timeframe": "M5",
+      "ts_ms": 1710054030000,
+      "bucket_ms": 1710054000000,
+      "note": "thirty seconds into the spring-forward hour"
+    },
+    {
+      "timeframe": "M15",
+      "ts_ms": 1706745600000,
+      "bucket_ms": 1706745600000,
+      "note": "month line at fifteen-minute spacing"
+    },
+    {
+      "timeframe": "M15",
+      "ts_ms": 1704067200000,
+      "bucket_ms": 1704067200000,
+      "note": "year line at fifteen-minute spacing"
+    },
+    {
+      "timeframe": "M30",
+      "ts_ms": 1704067200000,
+      "bucket_ms": 1704067200000,
+      "note": "year line at thirty-minute spacing"
+    },
+    {
+      "timeframe": "H1",
+      "ts_ms": 1704067200000,
+      "bucket_ms": 1704067200000,
+      "note": "midnight year line opens the hourly bucket"
+    },
+    {
+      "timeframe": "H1",
+      "ts_ms": 1710055800000,
+      "bucket_ms": 1710054000000,
+      "note": "half past the spring-forward hour stays in that hour"
+    },
+    {
+      "timeframe": "H1",
+      "ts_ms": 1710053940000,
+      "bucket_ms": 1710050400000,
+      "note": "the hour before the spring transition"
+    },
+    {
+      "timeframe": "H1",
+      "ts_ms": 1730615400000,
+      "bucket_ms": 1730613600000,
+      "note": "half past the fall-back hour stays in that hour"
+    },
+    {
+      "timeframe": "H2",
+      "ts_ms": 1704067200000,
+      "bucket_ms": 1704067200000,
+      "note": "year line at two-hour spacing"
+    },
+    {
+      "timeframe": "H4",
+      "ts_ms": 0,
+      "bucket_ms": 0,
+      "note": "epoch at four-hour spacing"
+    },
+    {
+      "timeframe": "H4",
+      "ts_ms": 1704067200000,
+      "bucket_ms": 1704067200000,
+      "note": "midnight year line at four-hour spacing"
+    },
+    {
+      "timeframe": "D1",
+      "ts_ms": 1706745599999,
+      "bucket_ms": 1706659200000,
+      "note": "the last millisecond of January belongs to January 31"
+    },
+    {
+      "timeframe": "D1",
+      "ts_ms": 1706745600000,
+      "bucket_ms": 1706745600000,
+      "note": "the month line opens the daily bucket"
+    },
+    {
+      "timeframe": "D1",
+      "ts_ms": 1704067199999,
+      "bucket_ms": 1703980800000,
+      "note": "the last millisecond of 2023 belongs to December 31"
+    },
+    {
+      "timeframe": "D1",
+      "ts_ms": 1710072000000,
+      "bucket_ms": 1710028800000,
+      "note": "midday of the twenty-three-hour eastern day is still that UTC date"
+    },
+    {
+      "timeframe": "D1",
+      "ts_ms": 1730635200000,
+      "bucket_ms": 1730592000000,
+      "note": "midday of the twenty-five-hour eastern day is still that UTC date"
+    },
+    {
+      "timeframe": "D1",
+      "ts_ms": -1,
+      "bucket_ms": -86400000,
+      "note": "pre-epoch belongs to December 31 1969"
+    },
+    {
+      "timeframe": "W1",
+      "ts_ms": 0,
+      "bucket_ms": -259200000,
+      "note": "the epoch Thursday belongs to the week of December 29 1969"
+    },
+    {
+      "timeframe": "W1",
+      "ts_ms": -1,
+      "bucket_ms": -259200000,
+      "note": "pre-epoch belongs to the same Monday-opened week"
+    },
+    {
+      "timeframe": "W1",
+      "ts_ms": 1704067200000,
+      "bucket_ms": 1704067200000,
+      "note": "the year line is a Monday and opens its own week"
+    },
+    {
+      "timeframe": "W1",
+      "ts_ms": 1704067199999,
+      "bucket_ms": 1703462400000,
+      "note": "the Sunday before the year line belongs to the Christmas week"
+    },
+    {
+      "timeframe": "W1",
+      "ts_ms": 1704672000000,
+      "bucket_ms": 1704672000000,
+      "note": "the following Monday opens the next week"
+    },
+    {
+      "timeframe": "W1",
+      "ts_ms": 1704671999999,
+      "bucket_ms": 1704067200000,
+      "note": "the last millisecond before that Monday belongs to New Year week"
+    }
+  ],
+  "complete_run": {
+    "fixture": "SPY_1M.csv",
+    "bars": 346,
+    "first_ms": 1767974400000,
+    "last_ms": 1767995100000,
+    "fold_to": "M5",
+    "buckets": 70,
+    "note": "The fixture's head run, 2026-01-09 16:00 through 21:45 UTC, is bar-complete: 346 consecutive minute bars folding to 69 full five-minute buckets plus the one-bar 21:45 stub. Past 21:45 the fixture is a torn after-hours tape, so the oracle folds the head run, not the file.",
+    "genuine_hole_bucket_ms": 1768002600000,
+    "hole_note": "Folding the whole file yields exactly one five-minute gap, at the bucket above; the shipped five-minute fixture is missing the same bucket, so two independent grids agree the hole is genuine and the fold reproduces it instead of hiding it.",
+    "total_bars": 436,
+    "tail_note": "The file holds 436 bars: the 346-bar head run plus a 90-bar torn tail. The total is frozen so the head-run slice cannot shift silently under a fixture edit."
+  },
+  "agreement": {
+    "from": "SPY_1M.csv",
+    "to": "SPY_15M.csv",
+    "fields": [
+      "open",
+      "high",
+      "low",
+      "close",
+      "volume"
+    ],
+    "vendor_buckets": 116,
+    "comparable": 23,
+    "matched": 23,
+    "reason": "Only the 23 fifteen-minute buckets fully covered by minute bars (2026-01-09 16:00 through 21:30) are comparable: the minute fixture starts a day later than the fifteen-minute fixture and its tail past 21:45 is torn. All 23 agree exactly, prices and volume."
+  }
+}

@@ -124,6 +124,11 @@ fn manifest() -> crate::report::RunManifest {
         first_ts: String::new(),
         last_ts: String::new(),
         seed: 0,
+        data_digest: None,
+        data_first_ts: None,
+        data_last_ts: None,
+        data_bar_count: None,
+        data_provenance: None,
     }
 }
 

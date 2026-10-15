@@ -35,6 +35,7 @@ criterion = { workspace = true }
 rust_decimal = { workspace = true }
 reqwest = { workspace = true }
 protopyne-server = { path = "../protopyne-server" }
+protopyne-store = { path = "../protopyne-store", default-features = false }
 protopyne-strategy = { path = "../protopyne-strategy" }
 protopyne-view = { path = "../protopyne-view" }
 
