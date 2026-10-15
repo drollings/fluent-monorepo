@@ -32,6 +32,13 @@ fn assert_mapped_price(pane: &Viewport, y: f32, price: f64, quantum: f64) {
 
 /// Pixel quantum for the zero-spanning test pane (-300..300 over 200 px),
 /// in the same range-over-height form as the viewport round-trip.
+/// Pixel comparisons in the width rules are exact by construction (the
+/// constants are exactly representable), but a tolerance keeps a failing
+/// assertion about the rule rather than about float representation.
+fn close_to(actual: f32, expected: f32) -> bool {
+    (actual - expected).abs() <= 1e-4 * expected.abs().max(1.0)
+}
+
 fn zero_quantum() -> f64 {
     (300.0 - -300.0) / 200.0 * 8.0
 }
@@ -891,4 +898,89 @@ fn procedural_icon_emitters_paint_and_refuse_broken_themes() {
     let unknown =
         paint_search_icon(&painter, &lens, "nope", &theme).expect_err("unknown key refuses");
     assert!(unknown.to_string().contains("nope"), "refusal names the key: {unknown}");
+}
+
+#[test]
+fn the_candle_body_follows_the_time_bar_it_draws() {
+    // The default: the body *is* the unit of time as displayed, so the bars
+    // read as one tape at ordinary zoom.
+    for spacing in [1.0_f32, 4.0, 8.0, CANDLE_GAP_THRESHOLD_PX] {
+        assert!(
+            close_to(candle_body_width(spacing), spacing),
+            "a bar at or under the gap threshold fills its own slot: {spacing}"
+        );
+    }
+    // Past the threshold neighbours run together, so the body takes its share
+    // and the gap separates them.
+    assert!(
+        close_to(candle_body_width(CANDLE_GAP_THRESHOLD_PX + 1.0), (CANDLE_GAP_THRESHOLD_PX + 1.0) * CANDLE_BODY_FRACTION),
+        "a wider bar keeps the same share"
+    );
+    assert!(close_to(candle_body_width(100.0), 80.0), "at 100 px that share is 80%");
+}
+
+#[test]
+fn a_zoomed_out_candle_stays_visible_rather_than_vanishing() {
+    // Below one pixel the body would stop painting, which hides data by
+    // zooming; the floor is the contract.
+    for spacing in [0.0_f32, 0.2, 0.9, -5.0] {
+        assert!(
+            close_to(candle_body_width(spacing), CANDLE_MIN_BODY_PX),
+            "spacing {spacing} still paints a visible mark"
+        );
+    }
+    // A non-finite spacing is not a measurement; it reads as the minimum
+    // rather than propagating a NaN into a rect.
+    for spacing in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+        assert!(close_to(candle_body_width(spacing), CANDLE_MIN_BODY_PX));
+    }
+}
+
+#[test]
+fn candle_body_width_grows_within_each_zoom_band_and_never_exceeds_its_slot() {
+    // Each band is monotone in the bar width, and neither can paint a body
+    // wider than the slot it lives in. The one step between them is the rule
+    // itself: a bar has to get past the threshold before its body gives up
+    // the gap, and that switch is a single notch of zoom.
+    for (range, fraction) in [
+        (0.0_f32..CANDLE_GAP_THRESHOLD_PX, 1.0_f32),
+        (CANDLE_GAP_THRESHOLD_PX + 0.5..64.0, CANDLE_BODY_FRACTION),
+    ] {
+        let mut previous = 0.0_f32;
+        let mut spacing = range.start;
+        while spacing <= range.end {
+            let width = candle_body_width(spacing);
+            assert!(width >= previous, "{fraction} band shrinks: {spacing} -> {width}");
+            assert!(
+                width <= spacing.max(CANDLE_MIN_BODY_PX),
+                "{fraction} band is wider than its slot: {spacing} -> {width}"
+            );
+            previous = width;
+            spacing += 0.5;
+        }
+    }
+    assert!(
+        close_to(
+            candle_body_width(CANDLE_GAP_THRESHOLD_PX + 0.5),
+            (CANDLE_GAP_THRESHOLD_PX + 0.5) * CANDLE_BODY_FRACTION
+        ),
+        "and the switch happens exactly at the threshold, not before it"
+    );
+}
+
+#[test]
+fn a_hex_slot_is_read_by_one_reader_for_both_themes_and_overrides() {
+    // The theme slot and the per-indicator override are the same bytes, so
+    // they go through the same reader and refuse the same way.
+    assert_eq!(
+        parse_hex_color("fast", "#20C8F0").expect("a theme slot parses"),
+        egui::Color32::from_rgb(0x20, 0xC8, 0xF0)
+    );
+    assert_eq!(
+        parse_hex_color("fast", "#20c8f0").expect("hex is case-insensitive"),
+        egui::Color32::from_rgb(0x20, 0xC8, 0xF0)
+    );
+    for bad in ["", "#", "#12345", "#1234567", "20C8F0", "#GGGGGG", "#20C8FG"] {
+        assert!(parse_hex_color("fast", bad).is_err(), "{bad:?} is not a color");
+    }
 }

@@ -24,8 +24,8 @@ use protopyne_kernels::{ParamSet, builtin_registry};
 use protopyne_types::{Validate, check_for_execute, valid_output};
 
 use fluent_egui::{
-    CatalogModal, EguiError, ReadoutValue, SlotAttachment, ThemeConfig, Viewport, cache_key,
-    oscillator_points, paint_oscillator, translate_points,
+    CatalogModal, EguiError, IndicatorStyle, ReadoutValue, SlotAttachment, ThemeConfig, Viewport,
+    cache_key, oscillator_points, paint_oscillator_styled, translate_points,
 };
 
 use crate::fast_mas::{
@@ -186,8 +186,9 @@ pub trait ChartIndicator: Send + Sync {
         origin: egui::Pos2,
         theme: &ThemeConfig,
         _config: &dyn Component,
+        style: &IndicatorStyle,
     ) -> Result<(), EguiError> {
-        paint_series(painter, evaluation, viewport, origin, theme)
+        paint_series(painter, evaluation, viewport, origin, theme, style)
     }
 
     /// Paint a sub-pane attachment (default: one polyline per series).
@@ -199,24 +200,30 @@ pub trait ChartIndicator: Send + Sync {
         origin: egui::Pos2,
         theme: &ThemeConfig,
         _config: &dyn Component,
+        style: &IndicatorStyle,
     ) -> Result<(), EguiError> {
-        paint_series(painter, evaluation, viewport, origin, theme)
+        paint_series(painter, evaluation, viewport, origin, theme, style)
     }
 }
 
 /// One polyline per series, shifted by the pane origin, under each series'
-/// own theme style key.
+/// own style key at the slot's stroke width.
+///
+/// `style` is the owning slot's [`IndicatorStyle`], so a plugin never
+/// restyles itself: the Style tab in its settings pane is the only thing that
+/// decides a color override or a line width here.
 fn paint_series(
     painter: &egui::Painter,
     evaluation: &IndicatorEvaluation,
     viewport: &Viewport,
     origin: egui::Pos2,
     theme: &ThemeConfig,
+    style: &IndicatorStyle,
 ) -> Result<(), EguiError> {
     for series in &evaluation.series {
         let points = oscillator_points(&series.values, viewport);
         let placed = translate_points(points, (origin.x, origin.y));
-        paint_oscillator(painter, &placed, &series.style, theme, 1.0)?;
+        paint_oscillator_styled(painter, &placed, &series.style, theme, style, 1.0)?;
     }
     Ok(())
 }
@@ -401,6 +408,7 @@ impl ChartIndicator for FastMasIndicator {
         origin: egui::Pos2,
         theme: &ThemeConfig,
         _config: &dyn Component,
+        style: &IndicatorStyle,
     ) -> Result<(), EguiError> {
         // Reuse the module's own painter rather than a second polyline pass.
         let view = FastMasView {
@@ -414,7 +422,7 @@ impl ChartIndicator for FastMasIndicator {
                 })
                 .collect(),
         };
-        paint_fast_mas(painter, &view, viewport, origin, theme)
+        paint_fast_mas(painter, &view, viewport, origin, theme, style)
     }
 }
 

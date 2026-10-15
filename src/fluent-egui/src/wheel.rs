@@ -22,11 +22,15 @@
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum WheelTarget {
     /// Zoom the shared time (x) axis, keeping the bar under the anchor pixel
-    /// fixed. `anchor_x` is pane-local.
-    Time { anchor_x: f32 },
+    /// fixed. `pane` identifies the zone's pane (see [`WheelZones::route`])
+    /// and `anchor_x` is that pane's local x — the caller needs the pane as
+    /// well as the anchor, because a gesture that overrides the axis (say
+    /// <kbd>Ctrl</kbd>-wheel for price) must take its y anchor from the *same*
+    /// pane the x anchor came from.
+    Time { pane: usize, anchor_x: f32 },
     /// Zoom a pane's price (y) axis, keeping the price under the anchor pixel
-    /// fixed. `pane` identifies the zone's pane (see [`WheelZones::route`]),
-    /// and `anchor_y` is that pane's local y.
+    /// fixed. `pane` identifies the zone's pane, and `anchor_y` is that
+    /// pane's local y.
     Price { pane: usize, anchor_y: f32 },
     /// Scroll a floating list under the pointer; the chart does not move.
     List,
@@ -95,7 +99,10 @@ impl WheelZones {
     /// priority: the list first (so an overlay wins), then each pane's axis
     /// strip, then its plot. Returns `None` when the point is outside every
     /// zone (the caller leaves the chart alone). Each returned target carries
-    /// a pane-local anchor derived from the matched zone's plot origin.
+    /// the matched pane's index and a pane-local anchor derived from that
+    /// pane's plot origin, so a caller can forward the anchor straight into
+    /// the existing [`crate::interaction`] wheel inputs and resolve a
+    /// pane-local anchor on any pane without re-deriving geometry.
     #[must_use]
     pub fn route(&self, point: Pos2) -> Option<WheelTarget> {
         if self.list.is_some_and(|rect| rect.contains(point)) {
@@ -109,7 +116,10 @@ impl WheelZones {
                 });
             }
             if zones.plot.contains(point) {
-                return Some(WheelTarget::Time { anchor_x: point.x - zones.plot.left() });
+                return Some(WheelTarget::Time {
+                    pane,
+                    anchor_x: point.x - zones.plot.left(),
+                });
             }
         }
         None

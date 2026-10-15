@@ -29,6 +29,7 @@ use crate::view::{
     DeltaView, PivotMark, PivotSide, RibbonView, ribbon_fill_style_key, ribbon_style_key,
 };
 use crate::viewport::{BreakLine, Viewport};
+use crate::style::IndicatorStyle;
 
 /// One candle's screen geometry plus its tint keys.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -293,10 +294,14 @@ pub fn resolve_color(theme: &ThemeConfig, key: &str) -> Result<egui::Color32, Eg
             reason: "unknown theme style key".to_owned(),
         });
     };
-    parse_hex(key, slot)
+    parse_hex_color(key, slot)
 }
 
-fn parse_hex(key: &str, slot: &str) -> Result<egui::Color32, EguiError> {
+/// Parse one `#RRGGBB` slot, naming `key` in the refusal. The one hex reader
+/// in the crate: the theme resolver and a per-indicator style override both
+/// go through it, so a color that paints from a theme and one that paints
+/// from an override are read by the same rules.
+pub fn parse_hex_color(key: &str, slot: &str) -> Result<egui::Color32, EguiError> {
     let invalid = || EguiError::InvalidParam {
         what: key.to_owned(),
         reason: format!("{slot:?} is not a #RRGGBB color"),
@@ -312,6 +317,40 @@ fn parse_hex(key: &str, slot: &str) -> Result<egui::Color32, EguiError> {
     Ok(egui::Color32::from_rgb(channel(&bytes[1..3])?, channel(&bytes[3..5])?, channel(
         &bytes[5..7],
     )?))
+}
+
+/// Narrowest a candle body may paint, so a fully zoomed-out bar is still a
+/// visible mark rather than nothing at all.
+pub const CANDLE_MIN_BODY_PX: f32 = 1.0;
+/// Time-bar width above which neighbouring candles stop reading as one solid
+/// block and start reading as discrete bars, so the body takes a share of
+/// the slot instead of the whole of it.
+pub const CANDLE_GAP_THRESHOLD_PX: f32 = 20.0;
+/// Share of the time bar a candle body takes once the bar is wide enough for
+/// the gap between neighbours to read.
+pub const CANDLE_BODY_FRACTION: f32 = 0.8;
+
+/// The candle body width for a displayed time-bar width.
+///
+/// A candle is the width of the unit of time it draws, so the body *is* the
+/// slot at ordinary zoom and the bars read as a solid tape. Past
+/// [`CANDLE_GAP_THRESHOLD_PX`] the slot is wide enough that neighbours run
+/// together, so the body drops to [`CANDLE_BODY_FRACTION`] of it and the gap
+/// separates them. The width never falls below [`CANDLE_MIN_BODY_PX`]: a
+/// fully zoomed-out bar stays a visible mark rather than disappearing, which
+/// would hide data by zooming.
+///
+/// `bar_spacing` is the *live* spacing from the pane's own viewport, so the
+/// body follows the horizontal zoom the chart currently shows rather than the
+/// configured default. Non-finite spacing reads the minimum.
+#[must_use]
+pub fn candle_body_width(bar_spacing: f32) -> f32 {
+    if !bar_spacing.is_finite() {
+        return CANDLE_MIN_BODY_PX;
+    }
+    let spaced =
+        if bar_spacing > CANDLE_GAP_THRESHOLD_PX { bar_spacing * CANDLE_BODY_FRACTION } else { bar_spacing };
+    spaced.max(CANDLE_MIN_BODY_PX)
 }
 
 /// One wick-plus-body candle in a resolved color: the single body behind
@@ -784,6 +823,9 @@ pub fn opacity_from_transparency(transparency: f64) -> u8 {
 /// `alpha` is the line opacity (`1` opaque): series whose specification
 /// carries transparency (for example dimmed oscillator legs) resolve it
 /// caller-side through [`opacity_from_transparency`] and pass the fraction.
+/// The stroke is the default hairline; use
+/// [`paint_oscillator_styled`] when the series belongs to an indicator whose
+/// Style tab sets a width or overrides the key's color.
 pub fn paint_oscillator(
     painter: &egui::Painter,
     points: &[Option<(f32, f32)>],
@@ -791,11 +833,45 @@ pub fn paint_oscillator(
     theme: &ThemeConfig,
     alpha: f32,
 ) -> Result<(), EguiError> {
-    let base = resolve_color(theme, style_key)?;
+    paint_stroked_oscillator(painter, points, style_key, theme, &IndicatorStyle::default(), alpha)
+}
+
+/// Paint a zero-centered oscillator polyline under one indicator's style: the
+/// style key's color (override first, theme second) at the style's stroke
+/// width.
+///
+/// This is [`paint_oscillator`] plus the two things the Style tab edits, and
+/// it resolves nothing itself: the color comes from
+/// [`IndicatorStyle::color`] and the width from [`IndicatorStyle::stroke`], so
+/// a styled line and an unstyled one differ only in those two values and
+/// never in how they are drawn. Holes still lift the pen.
+pub fn paint_oscillator_styled(
+    painter: &egui::Painter,
+    points: &[Option<(f32, f32)>],
+    style_key: &str,
+    theme: &ThemeConfig,
+    style: &IndicatorStyle,
+    alpha: f32,
+) -> Result<(), EguiError> {
+    paint_stroked_oscillator(painter, points, style_key, theme, style, alpha)
+}
+
+/// The one polyline emitter behind both the plain and the styled entry
+/// points: resolve the color through the style, stroke it at the style's
+/// width, and lift the pen across holes.
+fn paint_stroked_oscillator(
+    painter: &egui::Painter,
+    points: &[Option<(f32, f32)>],
+    style_key: &str,
+    theme: &ThemeConfig,
+    style: &IndicatorStyle,
+    alpha: f32,
+) -> Result<(), EguiError> {
+    let base = style.color(theme, style_key)?;
     let opacity = (alpha.clamp(0.0, 1.0) * 255.0).round().clamp(0.0, 255.0) as u8;
     let color =
         egui::Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), opacity);
-    let stroke = egui::Stroke::new(1.0, color);
+    let stroke = style.stroke(color);
     for window in points.windows(2) {
         if let (Some((x0, y0)), Some((x1, y1))) = (window[0], window[1]) {
             painter.line_segment([egui::Pos2::new(x0, y0), egui::Pos2::new(x1, y1)], stroke);

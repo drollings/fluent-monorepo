@@ -1,10 +1,13 @@
 //! Hot-slotted indicator control stack: isolated configs, eye/bolt
 //! controls, and an isolated tabbed settings pane.
 //!
-//! Each [`HotSlot`] owns one indicator's configuration behind an isolated
-//! `Box<dyn Component>`: editing one slot's fields through [`FieldAccess`]
-//! never reaches another slot, and every slot carries its own parameter
-//! fingerprint for cache keys plus its own [`PaneHandle`] abort line. The
+//! Each [`HotSlot`] owns one indicator's configuration *and* one
+//! [`IndicatorStyle`] behind isolated `Box<dyn Component>`s: editing one
+//! slot's fields through [`FieldAccess`] never reaches another slot, and
+//! every slot carries its own parameter fingerprint for cache keys plus its
+//! own [`PaneHandle`] abort line. The two staged buffers are committed
+//! together, so the Style tab's colors and stroke width land on the same
+//! Apply as the inputs that change the series. The
 //! stack renders the upper-left/upper-right overlay cards (title, live
 //! readouts, eye and six-sided-bolt controls) and routes pointer clicks on
 //! those cards through [`HotSlotStack::hit_test_controls`] before the canvas
@@ -15,9 +18,11 @@
 //! registers its node names there, so DAG order, readiness, and cancellation
 //! stay in the one graph instead of a second scheduler.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 use fluent_wvr::prelude::*;
+use fluent_wvr::component_downcast_ref;
 
 use crate::config::ThemeConfig;
 use crate::error::EguiError;
@@ -29,6 +34,7 @@ use crate::paint::{
     eye_icon_geom, hex_bolt_icon_geom, paint_eye_icon, paint_hex_bolt_icon, resolve_color,
 };
 use crate::plan::PanePlan;
+use crate::style::IndicatorStyle;
 
 /// Where a slot's series paints: over the price pane or in its own sub-pane.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -103,14 +109,15 @@ pub struct HotSlot {
     title: String,
     attachment: SlotAttachment,
     config: Box<dyn Component>,
+    style: Box<dyn Component>,
     visible: bool,
     settings_open: bool,
     settings_tab: SettingsTab,
-    /// Staged settings edits, seeded from the live config when the pane
-    /// opens. Edits land here until Apply/OK commits them through the live
-    /// `FieldAccess` contract, so Cancel discards them without ever touching
-    /// the chart. `None` while the pane is closed.
-    pending: Option<HashMap<String, String>>,
+    /// Staged settings edits, seeded from the live config and style when the
+    /// pane opens. Edits land here until Apply/OK commits them through the
+    /// live `FieldAccess` contracts, so Cancel discards them without ever
+    /// touching the chart. `None` while the pane is closed.
+    pending: Option<PendingSettings>,
     handle: PaneHandle,
     readouts: Vec<ReadoutValue>,
     fingerprint: u64,
@@ -134,6 +141,25 @@ impl HotSlot {
     #[must_use]
     pub fn attachment(&self) -> SlotAttachment {
         self.attachment
+    }
+
+    /// The slot's paint overrides — the Style tab's live target.
+    #[must_use]
+    pub fn style(&self) -> &dyn Component {
+        &*self.style
+    }
+
+    /// The slot's paint overrides as the concrete style every keyed emitter
+    /// reads through [`IndicatorStyle::color`].
+    ///
+    /// Borrowed when the slot's style component really is an
+    /// [`IndicatorStyle`] (the allocation-free frame path) and the no-op
+    /// default otherwise, so a slot carrying some other style shape paints
+    /// the theme rather than failing the frame.
+    #[must_use]
+    pub fn indicator_style(&self) -> Cow<'_, IndicatorStyle> {
+        component_downcast_ref::<IndicatorStyle>(&*self.style)
+            .map_or(Cow::Owned(IndicatorStyle::default()), Cow::Borrowed)
     }
 
     /// Whether the slot currently paints (the eye state).
@@ -269,17 +295,54 @@ impl HotSlotStack {
         ))
     }
 
-    /// Insert a slot and register its pane-plan nodes under `fingerprint`.
+    /// Insert a slot with the default (no-op) style component and register
+    /// its pane-plan nodes under `fingerprint`.
     ///
-    /// Refuses blank ids/titles, duplicate ids, empty node lists, and nodes
-    /// the plan already holds — a refusal leaves both stack and plan
-    /// untouched.
+    /// The plain form of [`insert_with_style`](Self::insert_with_style): a
+    /// slot added without a style still renders the Style tab, and every
+    /// field in it inherits the theme.
     pub fn insert(
         &mut self,
         id: &str,
         title: &str,
         attachment: SlotAttachment,
         config: Box<dyn Component>,
+        plan_nodes: &[&str],
+        plan_deps: &[&str],
+        fingerprint: u64,
+        plan: &mut PanePlan,
+    ) -> Result<(), EguiError> {
+        self.insert_with_style(
+            id,
+            title,
+            attachment,
+            config,
+            Box::new(IndicatorStyle::default()),
+            plan_nodes,
+            plan_deps,
+            fingerprint,
+            plan,
+        )
+    }
+
+    /// Insert a slot with its own paint-override component and register its
+    /// pane-plan nodes under `fingerprint`.
+    ///
+    /// The config is the settings authority for *what* the indicator
+    /// computes; the style component is the authority for *how* it paints
+    /// (colors, stroke width). They are separate components because they
+    /// have different lifetimes in a frame: a config edit moves cache keys
+    /// and forces a recompute, a style edit only redraws. Refuses blank
+    /// ids/titles, duplicate ids, empty node lists, and nodes the plan
+    /// already holds — a refusal leaves both stack and plan untouched.
+    #[allow(clippy::too_many_arguments)]
+    pub fn insert_with_style(
+        &mut self,
+        id: &str,
+        title: &str,
+        attachment: SlotAttachment,
+        config: Box<dyn Component>,
+        style: Box<dyn Component>,
         plan_nodes: &[&str],
         plan_deps: &[&str],
         fingerprint: u64,
@@ -329,6 +392,7 @@ impl HotSlotStack {
                 title: title.to_owned(),
                 attachment,
                 config,
+                style,
                 visible: true,
                 settings_open: false,
                 settings_tab: SettingsTab::Inputs,
@@ -411,7 +475,7 @@ impl HotSlotStack {
         for (known, slot) in &mut self.slots {
             if known == id {
                 slot.settings_open = true;
-                slot.pending = Some(seed_fields(&*slot.config));
+                slot.pending = Some(seed_pending(&*slot.config, &*slot.style));
             } else {
                 slot.settings_open = false;
                 slot.pending = None;
@@ -429,19 +493,25 @@ impl HotSlotStack {
         Ok(())
     }
 
-    /// Commit the slot's staged edits through its live `FieldAccess`
-    /// contract, then drop the staged buffer. Returns the per-field refusal
-    /// reasons (each naming its field); a field the live contract refuses is
-    /// left at its committed value while every accepted field applies.
-    /// Unknown ids refuse.
+    /// Commit the slot's staged edits through the live `FieldAccess` contracts
+    /// of its configuration *and* its style component, then drop the staged
+    /// buffers. Returns the per-field refusal reasons (each naming its
+    /// field); a field the live contract refuses is left at its committed
+    /// value while every accepted field applies, and one component refusing
+    /// never stops the other from committing. Unknown ids refuse.
     pub fn commit_settings(&mut self, id: &str) -> Result<Vec<String>, EguiError> {
         let slot = self.slots.get_mut(id).ok_or_else(|| unknown_slot(id))?;
-        let Some(pending) = slot.pending.take() else {
+        let Some(PendingSettings { config, style }) = slot.pending.take() else {
             return Ok(Vec::new());
         };
         let mut refusals = Vec::new();
-        for (name, value) in pending {
+        for (name, value) in config {
             if let Err(error) = slot.config.set_field(&name, &value) {
+                refusals.push(format!("{name}: {error}"));
+            }
+        }
+        for (name, value) in style {
+            if let Err(error) = slot.style.set_field(&name, &value) {
                 refusals.push(format!("{name}: {error}"));
             }
         }
@@ -498,6 +568,25 @@ impl HotSlotStack {
         self.slots.get(id).map(|slot| &*slot.config)
     }
 
+    /// Borrow one slot's paint-override component — the Style tab's settings
+    /// authority, isolated exactly like the config beside it. Unknown ids
+    /// answer `None`.
+    #[must_use]
+    pub fn style(&self, id: &str) -> Option<&dyn Component> {
+        self.slots.get(id).map(|slot| &*slot.style)
+    }
+
+    /// One slot's paint overrides as the concrete style every keyed emitter
+    /// reads through. Unknown ids read as the no-op default, so a paint path
+    /// never has to branch on whether the slot exists before it can draw.
+    #[must_use]
+    pub fn indicator_style(&self, id: &str) -> Cow<'_, IndicatorStyle> {
+        self.slots.get(id).map_or_else(
+            || Cow::Owned(IndicatorStyle::default()),
+            HotSlot::indicator_style,
+        )
+    }
+
     /// Write one field through the slot's own `FieldAccess` contract; the
     /// field's own validation refuses, never the stack. Unknown ids refuse.
     pub fn set_slot_field(
@@ -508,6 +597,38 @@ impl HotSlotStack {
     ) -> Result<(), EguiError> {
         let slot = self.slots.get_mut(id).ok_or_else(|| unknown_slot(id))?;
         slot.config.set_field(name, value).map_err(|error| EguiError::InvalidParam {
+            what: name.to_owned(),
+            reason: error.to_string(),
+        })
+    }
+
+    /// Write one Style field straight through the slot's style component's own
+    /// `FieldAccess` contract; the field's own validation refuses, never the
+    /// stack. This is the live path a caller uses outside the settings pane —
+    /// inside the pane the same write arrives through
+    /// [`commit_settings`](Self::commit_settings) on Apply. Unknown ids refuse.
+    ///
+    /// A style write needs no recompute: it changes how a series paints, never
+    /// what a series is, so it deliberately does not touch the pane cache the
+    /// way a config write does.
+    pub fn set_style_field(
+        &mut self,
+        id: &str,
+        name: &str,
+        value: &str,
+    ) -> Result<(), EguiError> {
+        let slot = self.slots.get_mut(id).ok_or_else(|| unknown_slot(id))?;
+        slot.style.set_field(name, value).map_err(|error| EguiError::InvalidParam {
+            what: name.to_owned(),
+            reason: error.to_string(),
+        })
+    }
+
+    /// Read one Style field through the slot's style component's own
+    /// `FieldAccess` contract. Unknown ids refuse.
+    pub fn get_style_field(&self, id: &str, name: &str) -> Result<String, EguiError> {
+        let slot = self.slots.get(id).ok_or_else(|| unknown_slot(id))?;
+        slot.style.get_field(name).map_err(|error| EguiError::InvalidParam {
             what: name.to_owned(),
             reason: error.to_string(),
         })
@@ -641,21 +762,54 @@ fn seed_fields(config: &dyn Component) -> HashMap<String, String> {
         .collect()
 }
 
-/// The staged settings buffer's `FieldAccess` face: edits land in an owned
-/// map until the pane commits them, so the live config and the chart are
-/// untouched by a draft.
-struct MapFields<'a> {
-    values: &'a mut HashMap<String, String>,
+/// A settings pane's staged edits: one buffer per component the slot owns,
+/// kept side by side so Cancel drops both and one commit writes both.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct PendingSettings {
+    /// Fields staged for the slot's configuration.
+    config: HashMap<String, String>,
+    /// Fields staged for the slot's style component.
+    style: HashMap<String, String>,
 }
 
-impl FieldAccess for MapFields<'_> {
+/// Seed a staged buffer pair from a live config and style: one string per
+/// declared field, each read through that component's own `FieldAccess`
+/// contract. A field whose value cannot be read is skipped rather than staged
+/// as a substitute.
+fn seed_pending(config: &dyn Component, style: &dyn Component) -> PendingSettings {
+    PendingSettings {
+        config: seed_fields(config),
+        style: seed_fields(style),
+    }
+}
+
+/// The staged settings buffers' `FieldAccess` face: edits land in an owned
+/// map until the pane commits them, so the live components and the chart are
+/// untouched by a draft.
+///
+/// A field name decides which buffer owns it — a name the style component
+/// declares stages into the style buffer, everything else into the
+/// configuration's. The two key sets are disjoint (the style component owns
+/// `color_*` and `line_width` and no configuration declares those), so the
+/// route is unambiguous and one field is never staged into both.
+struct StagedFields<'a> {
+    config: &'a mut HashMap<String, String>,
+    style: &'a mut HashMap<String, String>,
+    style_names: &'static [&'static str],
+}
+
+impl FieldAccess for StagedFields<'_> {
     fn set_field(&mut self, name: &str, value: &str) -> Result<(), FieldError> {
-        self.values.insert(name.to_owned(), value.to_owned());
+        let buffer =
+            if self.style_names.contains(&name) { &mut *self.style } else { &mut *self.config };
+        buffer.insert(name.to_owned(), value.to_owned());
         Ok(())
     }
 
     fn get_field(&self, name: &str) -> Result<String, FieldError> {
-        self.values.get(name).cloned().ok_or_else(|| FieldError::NotFound(name.to_owned()))
+        let buffer =
+            if self.style_names.contains(&name) { &*self.style } else { &*self.config };
+        buffer.get(name).cloned().ok_or_else(|| FieldError::NotFound(name.to_owned()))
     }
 
     fn field_names(&self) -> &'static [&'static str] {
@@ -745,8 +899,7 @@ pub fn paint_hot_slot_stack(
                 let open = other.id == opened;
                 other.settings_open = open;
                 if open {
-                    let seeded = seed_fields(&*other.config);
-                    other.pending = Some(seeded);
+                    other.pending = Some(seed_pending(&*other.config, &*other.style));
                 } else {
                     other.pending = None;
                 }
@@ -803,17 +956,28 @@ pub fn paint_slot_settings_modal(
         });
     }
     let title = slot.title.clone();
-    let fields = schema_fields(&slot.config.describe());
+    let config_fields = schema_fields(&slot.config.describe());
+    let style_fields = schema_fields(&slot.style.describe());
     if slot.pending.is_none() {
-        slot.pending = Some(seed_fields(&*slot.config));
+        slot.pending = Some(seed_pending(&*slot.config, &*slot.style));
     }
-    let HotSlot { pending, settings_tab, .. } = slot;
-    let pending = pending.as_mut().expect("staged buffer is seeded above");
-    let mut target = MapFields { values: pending };
+    let HotSlot { pending, settings_tab, style, .. } = slot;
+    let pending = pending.as_mut().expect("staged buffers are seeded above");
+    let mut target = StagedFields {
+        config: &mut pending.config,
+        style: &mut pending.style,
+        style_names: style.field_names(),
+    };
     let mut commit = SettingsCommit::None;
     let outcome = ui.vertical(|pane| {
         pane.colored_label(accent, format!("{title} settings"));
-        let edits = paint_tabbed_schema_fields_compact(pane, settings_tab, &fields, &mut target);
+        let edits = paint_tabbed_schema_fields_compact(
+            pane,
+            settings_tab,
+            &config_fields,
+            &style_fields,
+            &mut target,
+        );
         pane.horizontal(|row| {
             if row.button("Cancel").clicked() {
                 commit = SettingsCommit::Cancel;

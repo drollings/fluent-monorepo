@@ -6,6 +6,8 @@ use super::*;
 use fluent_wvr::{Describable, FieldAccess, WorkError, WorkOutput, WorkUnit};
 
 use crate::annotations::annotate_at;
+use crate::fields::{fields_for_tab, tab_fields};
+use crate::style::IndicatorStyle;
 use crate::viewport::Viewport;
 use protopyne_chart_model::ChartRow;
 use protopyne_chart_scale::PriceScaleMode;
@@ -288,15 +290,30 @@ fn paint_stack_and_settings_modal_render_headlessly() {
 #[test]
 fn staged_settings_buffer_isolates_edits_from_the_live_config() {
     let mut config: Box<dyn Component> = Box::new(probe(14));
-    let mut pending = seed_fields(&*config);
-    assert_eq!(pending.get("length").map(String::as_str), Some("14"));
+    let style: Box<dyn Component> = Box::new(IndicatorStyle::default());
+    let mut pending = seed_pending(&*config, &*style);
+    assert_eq!(pending.config.get("length").map(String::as_str), Some("14"));
+    assert_eq!(
+        pending.style.len(),
+        IndicatorStyle::default().field_names().len(),
+        "every style field is staged, so the editor can read each one"
+    );
+    assert!(
+        pending.style.values().all(|value| value.is_empty() || value == "1"),
+        "and a no-op style stages nothing to change: {:?}",
+        pending.style
+    );
     {
-        let mut target = MapFields { values: &mut pending };
+        let mut target = StagedFields {
+            config: &mut pending.config,
+            style: &mut pending.style,
+            style_names: style.field_names(),
+        };
         target.set_field("length", "99").expect("a staged write accepts");
         assert_eq!(target.get_field("length").expect("reads"), "99");
     }
     assert_eq!(config.get_field("length").expect("reads"), "14", "the live config is untouched");
-    for (name, value) in &pending {
+    for (name, value) in &pending.config {
         config.set_field(name, value).expect("valid staged values commit");
     }
     assert_eq!(config.get_field("length").expect("reads"), "99", "commit applies the draft");
@@ -323,6 +340,7 @@ fn settings_commit_discard_and_close_manage_the_staged_buffer() {
         .pending
         .as_mut()
         .expect("seeded")
+        .config
         .insert("length".to_owned(), "42".to_owned());
     let refused = stack.commit_settings("integration_lite").expect("commit");
     assert!(refused.is_empty(), "a valid staged value commits cleanly: {refused:?}");
@@ -533,4 +551,146 @@ fn removing_a_slot_reclamps_a_now_overshooting_scroll() {
 
 fn close_px(actual: f32, expected: f32) -> bool {
     (actual - expected).abs() <= 1e-3 * expected.abs().max(1.0)
+}
+
+/// A slot owns its paint overrides beside its config, isolated exactly like
+/// it: one slot's style edits never reach another's, and neither touches the
+/// calculation inputs.
+#[test]
+fn a_slot_owns_an_isolated_style_component_beside_its_config() {
+    let (mut stack, _) = stacked();
+    assert!(
+        stack.style("integration_lite").is_some_and(|style| !style.field_names().is_empty()),
+        "a slot carries a style component with its own schema"
+    );
+    assert!(
+        stack.indicator_style("integration_lite").override_color("fast").is_none(),
+        "which starts inheriting the theme"
+    );
+
+    let slot_style = &mut stack.slots.get_mut("integration_lite").expect("slotted").style;
+    let style = fluent_wvr::component_downcast_mut::<IndicatorStyle>(&mut **slot_style)
+        .expect("the slot\'s style component is an IndicatorStyle");
+    style.set_field("color_fast", "#0A0B0C").expect("a well-formed override writes");
+    assert_eq!(
+        stack.indicator_style("integration_lite").override_color("fast"),
+        Some("#0A0B0C"),
+        "one slot's override is its own"
+    );
+    assert_eq!(
+        stack.indicator_style("fast_mas").override_color("fast"),
+        None,
+        "and never leaks to its neighbour"
+    );
+    assert_eq!(
+        stack.get_slot_field("integration_lite", "length").expect("reads"),
+        "14",
+        "nor to the config"
+    );
+    assert!(stack.style("nope").is_none(), "an unknown slot has no style component");
+}
+
+/// The plain `insert` form gives a slot the no-op style, and
+/// `insert_with_style` gives it the caller's own.
+#[test]
+fn insert_with_style_registers_the_callers_overrides() {
+    let mut plan = PanePlan::new();
+    let mut stack = HotSlotStack::new();
+    let mut style = IndicatorStyle::default();
+    style.set_field("color_fast", "#0A0B0C").expect("a well-formed override writes");
+    stack
+        .insert_with_style(
+            "styled",
+            "Styled",
+            SlotAttachment::MainOverlay,
+            Box::new(probe(9)),
+            Box::new(style.clone()),
+            &["styled_node"],
+            &[],
+            0xC3,
+            &mut plan,
+        )
+        .expect("the slot inserts with its own style");
+    assert_eq!(
+        stack.indicator_style("styled").override_color("fast"),
+        Some("#0A0B0C"),
+        "the caller's overrides are the slot's overrides"
+    );
+    assert_eq!(
+        stack.indicator_style("fast_mas").override_color("fast"),
+        None,
+        "and the plain insert beside it still inherits"
+    );
+    assert!(
+        stack.indicator_style("nope").override_color("fast").is_none(),
+        "an unknown slot reads as the no-op style rather than failing the frame"
+    );
+}
+
+/// The Style tab is every paint knob wherever it was declared: the config's
+/// own paint knobs *and* the style component's whole schema, with the two key
+/// sets disjoint so no field renders twice and each routes to one buffer.
+#[test]
+fn the_style_tab_renders_config_paint_knobs_and_the_whole_style_schema() {
+    let (mut stack, _) = stacked();
+    stack.open_settings("integration_lite").expect("opens");
+    let config_fields = schema_fields(&stack.config("integration_lite").expect("reads").describe());
+    let style_fields = schema_fields(&stack.style("integration_lite").expect("reads").describe());
+
+    let style_tab = tab_fields(SettingsTab::Style, &config_fields, &style_fields);
+    let names: Vec<&str> = style_tab.iter().map(|field| field.name.as_str()).collect();
+    assert!(names.contains(&"line_color"), "the config's own paint knob is here: {names:?}");
+    assert!(
+        names.contains(&"line_width") && names.contains(&"color_fast"),
+        "and so is the whole style schema: {names:?}"
+    );
+    assert_eq!(
+        names.len(),
+        style_tab.iter().map(|field| &field.name).collect::<std::collections::BTreeSet<_>>().len(),
+        "no field renders twice"
+    );
+
+    // The other two tabs read the config alone.
+    for tab in [SettingsTab::Inputs, SettingsTab::Visibility] {
+        assert_eq!(
+            tab_fields(tab, &config_fields, &style_fields),
+            fields_for_tab(&config_fields, tab),
+            "{tab:?} is unaffected by the style component"
+        );
+    }
+    assert!(
+        fields_for_tab(&config_fields, SettingsTab::Style).len() < style_tab.len(),
+        "the Style tab is strictly larger than the config's paint knobs alone"
+    );
+}
+
+/// Committing one slot's draft writes its style overrides as well as its
+/// inputs, and one component refusing a field never stops the other.
+#[test]
+fn commit_writes_the_style_overrides_and_the_config_together() {
+    let (mut stack, _) = stacked();
+    stack.open_settings("integration_lite").expect("opens");
+    let slot = stack.slots.get_mut("integration_lite").expect("slotted");
+    let pending = slot.pending.as_mut().expect("seeded");
+    pending.config.insert("length".to_owned(), "42".to_owned());
+    pending.style.insert("line_width".to_owned(), "3".to_owned());
+    pending.style.insert("color_fast".to_owned(), "#0A0B0C".to_owned());
+    // A value the style's own contract refuses, beside two it accepts.
+    pending.style.insert("color_slow".to_owned(), "not-a-color".to_owned());
+
+    let refused = stack.commit_settings("integration_lite").expect("commit");
+    assert_eq!(refused.len(), 1, "only the malformed color refuses: {refused:?}");
+    assert!(refused[0].starts_with("color_slow:"), "the refusal names its field");
+    assert_eq!(
+        stack.get_slot_field("integration_lite", "length").expect("reads"),
+        "42",
+        "the input landed"
+    );
+    let style = stack.indicator_style("integration_lite");
+    assert!(
+        (style.line_width() - 3.0).abs() < f32::EPSILON,
+        "the stroke width landed"
+    );
+    assert_eq!(style.override_color("fast"), Some("#0A0B0C"), "the color landed");
+    assert_eq!(style.override_color("slow"), None, "the refused color did not");
 }

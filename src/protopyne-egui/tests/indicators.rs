@@ -9,7 +9,7 @@
 
 use super::*;
 
-use fluent_egui::{HotSlotStack, PaneCache, PanePlan, SlotAttachment};
+use fluent_egui::{HotSlotStack, IndicatorStyle, PaneCache, PanePlan, SlotAttachment};
 use protopyne_chart_scale::PriceScaleMode;
 
 use crate::fast_mas::FastMasConfig;
@@ -201,14 +201,30 @@ fn chart_indicator_plugins_paint_their_attachments_headlessly() {
     let lite = IntegrationLiteIndicator::new();
     let lite_config = lite.default_config();
     let lite_view = lite.evaluate(&rows, &*lite_config).expect("lite evaluates");
-    lite.paint_sub_pane(&painter, &lite_view, &sub_pane, egui::Pos2::ZERO, &theme, &*lite_config)
-        .expect("the sub-pane paints");
+    lite.paint_sub_pane(
+        &painter,
+        &lite_view,
+        &sub_pane,
+        egui::Pos2::ZERO,
+        &theme,
+        &*lite_config,
+        &IndicatorStyle::default(),
+    )
+    .expect("the sub-pane paints");
 
     let fast = FastMasIndicator::new();
     let fast_config = fast.default_config();
     let fast_view = fast.evaluate(&rows, &*fast_config).expect("fast mas evaluates");
-    fast.paint_main_overlay(&painter, &fast_view, &overlay, egui::Pos2::ZERO, &theme, &*fast_config)
-        .expect("the overlay paints");
+    fast.paint_main_overlay(
+        &painter,
+        &fast_view,
+        &overlay,
+        egui::Pos2::ZERO,
+        &theme,
+        &*fast_config,
+        &IndicatorStyle::default(),
+    )
+    .expect("the overlay paints");
 
     assert!(!end_frame(&ctx).shapes.is_empty(), "the plugins emit geometry");
 }

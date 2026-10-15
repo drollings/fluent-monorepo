@@ -28,6 +28,8 @@ pub enum FieldKind {
     Boolean,
     /// Free text, edited as a single-line text edit.
     Text,
+    /// `#RRGGBB` color, edited as a swatch beside its hex text.
+    Color,
 }
 
 impl FieldKind {
@@ -43,7 +45,21 @@ impl FieldKind {
             _ => Self::Text,
         }
     }
+
+    /// The editor a schema *property* earns. A `color` format refines the
+    /// string type rather than replacing it — the value is still text on the
+    /// wire — so the format is read first and the type second.
+    #[must_use]
+    pub fn of_hint(hint: &serde_json::Value) -> Self {
+        if hint.get("format").and_then(serde_json::Value::as_str) == Some(COLOR_FORMAT) {
+            return Self::Color;
+        }
+        Self::of_schema(hint.get("type").and_then(serde_json::Value::as_str))
+    }
 }
+
+/// The schema `format` a field declares when it holds a `#RRGGBB` color.
+pub const COLOR_FORMAT: &str = "color";
 
 /// One field lifted from a `Describable` schema.
 #[derive(Debug, Clone, PartialEq)]
@@ -82,7 +98,7 @@ pub fn schema_fields(schema: &serde_json::Value) -> Vec<SchemaField> {
                 .iter()
                 .map(|(name, hint)| SchemaField {
                     name: name.clone(),
-                    kind: FieldKind::of_schema(hint.get("type").and_then(serde_json::Value::as_str)),
+                    kind: FieldKind::of_hint(hint),
                     format: hint
                         .get("format")
                         .and_then(serde_json::Value::as_str)
@@ -170,8 +186,8 @@ impl SettingsTab {
 ///
 /// Precedence is fixed so the partition is total: a boolean visibility name
 /// (`show_*`, `visible`) wins over everything, then a paint-style name
-/// (color, alpha, transparency, brightness, threshold, style, theme), and
-/// everything else — calculation fields and the unclassified remainder —
+/// (color, alpha, transparency, brightness, width, threshold, style, theme),
+/// and everything else — calculation fields and the unclassified remainder —
 /// renders under Inputs. Name matching is case-insensitive, because schemas
 /// arrive in both `snake_case` and display casing.
 #[must_use]
@@ -184,7 +200,7 @@ pub fn classify_schema_field(field: &SchemaField) -> SettingsTab {
     if field.kind == FieldKind::Boolean && is_toggle {
         return SettingsTab::Visibility;
     }
-    if ["color", "alpha", "transparency", "brightness", "threshold", "style", "theme"]
+    if ["color", "alpha", "transparency", "brightness", "width", "threshold", "style", "theme"]
         .iter()
         .any(|token| name.contains(token))
     {
@@ -199,16 +215,46 @@ pub fn fields_for_tab(fields: &[SchemaField], tab: SettingsTab) -> Vec<SchemaFie
     fields.iter().filter(|field| classify_schema_field(field) == tab).cloned().collect()
 }
 
+/// The fields one settings tab renders for a slot that owns both a
+/// configuration and a style component.
+///
+/// Inputs and Visibility read the configuration alone. Style reads the
+/// configuration's own paint knobs *and* the style component's whole schema,
+/// in that order: a paint knob lives in the style component when it is a
+/// per-indicator override (colors, stroke width) and in the configuration
+/// when it steers computation (alpha, thresholds, style keys), so the tab is
+/// every paint knob wherever it was declared rather than a choice of one
+/// schema. The two key sets are disjoint — the style component owns
+/// `color_*` and `line_width` and nothing else declares those — so the
+/// concatenation never shows one field twice and every field routes to
+/// exactly one staged buffer.
+#[must_use]
+pub fn tab_fields(
+    tab: SettingsTab,
+    config_fields: &[SchemaField],
+    style_fields: &[SchemaField],
+) -> Vec<SchemaField> {
+    let own = fields_for_tab(config_fields, tab);
+    if tab == SettingsTab::Style {
+        own.into_iter().chain(style_fields.iter().cloned()).collect()
+    } else {
+        own
+    }
+}
+
 /// Paint the tab bar plus the active tab's editors, writing accepted edits
 /// straight through `target`'s own `FieldAccess` contract.
 ///
-/// The caller owns `active_tab`; rendering never moves it. Only the active
-/// tab's fields render, so an untouched frame writes nothing — exactly the
-/// [`paint_schema_fields`] contract, scoped to one tab.
+/// `config_fields` is the caller's configuration schema and `style_fields`
+/// the schema of the style component it paints under; the tab partition is
+/// [`tab_fields`]. The caller owns `active_tab`; rendering never moves it.
+/// Only the active tab's fields render, so an untouched frame writes nothing
+/// — exactly the [`paint_schema_fields`] contract, scoped to one tab.
 pub fn paint_tabbed_schema_fields(
     ui: &mut egui::Ui,
     active_tab: &mut SettingsTab,
-    fields: &[SchemaField],
+    config_fields: &[SchemaField],
+    style_fields: &[SchemaField],
     target: &mut dyn FieldAccess,
 ) -> FieldEdits {
     ui.horizontal(|bar| {
@@ -216,7 +262,7 @@ pub fn paint_tabbed_schema_fields(
             bar.selectable_value(active_tab, tab, tab.label());
         }
     });
-    paint_schema_fields(ui, &fields_for_tab(fields, *active_tab), target)
+    paint_schema_fields(ui, &tab_fields(*active_tab, config_fields, style_fields), target)
 }
 
 /// The compact editor's fixed label-column width, so the editors line up.
@@ -236,7 +282,8 @@ const COMPACT_ROW_GAP: f32 = 2.0;
 pub fn paint_tabbed_schema_fields_compact(
     ui: &mut egui::Ui,
     active_tab: &mut SettingsTab,
-    fields: &[SchemaField],
+    config_fields: &[SchemaField],
+    style_fields: &[SchemaField],
     target: &mut dyn FieldAccess,
 ) -> FieldEdits {
     ui.horizontal(|bar| {
@@ -245,7 +292,12 @@ pub fn paint_tabbed_schema_fields_compact(
         }
     });
     ui.spacing_mut().item_spacing.y = COMPACT_ROW_GAP;
-    paint_schema_fields_sized(ui, &fields_for_tab(fields, *active_tab), target, Some(COMPACT_LABEL_WIDTH))
+    paint_schema_fields_sized(
+        ui,
+        &tab_fields(*active_tab, config_fields, style_fields),
+        target,
+        Some(COMPACT_LABEL_WIDTH),
+    )
 }
 
 /// Paint one editor per field into `ui`, writing accepted edits straight
@@ -366,6 +418,7 @@ fn paint_one(
             );
             (response.changed() && value != current).then_some(value)
         }
+        FieldKind::Color => edit_color(row, field, &current, edits),
     };
     let Some(edited) = edited else {
         return;
@@ -420,6 +473,65 @@ fn edit_number(
 /// One refusal, naming the field it belongs to.
 fn refusal(field: &SchemaField, reason: impl std::fmt::Display) -> String {
     format!("{}: {reason}", field.name)
+}
+
+/// Edge length of the swatch drawn beside a color field's hex text.
+const COLOR_SWATCH_PX: f32 = 16.0;
+
+/// A color editor: the parsed swatch beside the field's own hex text.
+///
+/// The swatch is a *readout*, never a picker: it shows exactly what the text
+/// spells, and text this crate cannot read paints no swatch rather than a
+/// stand-in color. An empty value (a field whose contract treats empty as
+/// "inherit") paints the swatch hollow, so "unset" is visibly different from
+/// "set to black". The write path is the field's own — a malformed value the
+/// field refuses is reported, not repaired.
+fn edit_color(
+    row: &mut egui::Ui,
+    field: &SchemaField,
+    current: &str,
+    edits: &mut FieldEdits,
+) -> Option<String> {
+    let trimmed = current.trim();
+    let swatch = if trimmed.is_empty() {
+        None
+    } else {
+        match crate::paint::parse_hex_color(&field.name, trimmed) {
+            Ok(color) => Some(color),
+            Err(error) => {
+                edits.refusals.push(refusal(field, error.to_string()));
+                None
+            }
+        }
+    };
+    let outline = row.visuals().widgets.noninteractive.bg_stroke.color;
+    let (rect, _) = row.allocate_exact_size(
+        egui::vec2(COLOR_SWATCH_PX, COLOR_SWATCH_PX),
+        egui::Sense::hover(),
+    );
+    let swatch_rect = egui::Rect::from_center_size(
+        rect.center(),
+        egui::vec2(COLOR_SWATCH_PX - 2.0, COLOR_SWATCH_PX - 2.0),
+    );
+    match swatch {
+        Some(color) => {
+            row.painter().rect_filled(swatch_rect, 2.0, color);
+        }
+        // Hollow for unset, and no swatch at all for an unreadable value: an
+        // unreadable color shows no color rather than a wrong one.
+        None if trimmed.is_empty() => {
+            row.painter().rect_stroke(
+                swatch_rect,
+                2.0,
+                egui::Stroke::new(1.0, outline),
+                egui::StrokeKind::Inside,
+            );
+        }
+        None => {}
+    }
+    let mut value = current.to_owned();
+    let response = row.add(egui::TextEdit::singleline(&mut value));
+    (response.changed() && value != current).then_some(value)
 }
 
 #[cfg(test)]

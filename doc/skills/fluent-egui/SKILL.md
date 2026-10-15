@@ -36,13 +36,14 @@ before `Arc`-sharing, override at runtime via `ComponentAdapter`.
 | `src/viewport.rs` | Pixel geometry on the canonical scale (headless) | `Viewport` (`with_x_offset`, `x_offset_px`, `sync_time_axis`, `visible_bar_range`), `visible_rows`, `thin_ticks`, `axis_ticks`, `BreakLine` |
 | `src/plan.rs` | DAG-ordered pane plan + fingerprint-keyed cache | `PanePlan`, `PaneCache`, `CachedSeries`, `cache_key` (`PaneCache :: with_capacity` refuses a zero capacity; `pin` keeps keys resident across waves) |
 | `src/config.rs` | Layout/theme control plane | `PaneConfig`, `ThemeConfig` |
-| `src/paint.rs` | Headless geometry builders + thin `egui` emitters | `candle_geoms`, `ribbon_bands`, `delta_bar_geoms`, `oscillator_points`, `pivot_dots`, `pivot_price_dots`, `threshold_line`, `resolve_color`, `area_polygons`, `area_vertex_color`, `ribbon_polygons`, `marker_dots`, `crosshair_lines`, `translate_candles`/`translate_polygons`/`translate_breaks`/`translate_points`/`translate_dots`/`translate_markers`/`translate_delta_bars`, `eye_icon_geom`, `hex_bolt_icon_geom`, `search_icon_geom`, `paint_eye_icon`, `paint_hex_bolt_icon`, `paint_search_icon`, `paint_*` |
+| `src/paint.rs` | Headless geometry builders + thin `egui` emitters | `candle_geoms`, `candle_body_width` (`CANDLE_MIN_BODY_PX`, `CANDLE_GAP_THRESHOLD_PX`, `CANDLE_BODY_FRACTION`), `ribbon_bands`, `delta_bar_geoms`, `oscillator_points`, `pivot_dots`, `pivot_price_dots`, `threshold_line`, `resolve_color`, `parse_hex_color`, `area_polygons`, `area_vertex_color`, `ribbon_polygons`, `marker_dots`, `crosshair_lines`, `translate_candles`/`translate_polygons`/`translate_breaks`/`translate_points`/`translate_dots`/`translate_markers`/`translate_delta_bars`, `eye_icon_geom`, `hex_bolt_icon_geom`, `search_icon_geom`, `paint_eye_icon`, `paint_hex_bolt_icon`, `paint_search_icon`, `paint_oscillator_styled`, `paint_*` |
 | `src/annotations.rs` | Headless annotation set + timestamp-to-bar resolution | `AnnotationSet`, `TimeIndex`, `resolve_annotation` |
 | `src/hittest.rs` | Pointer-to-data readout + candle hit-testing (headless) | `Crosshair`, `crosshair_data`, `crosshair_pixel`, `Hit`, `hit_test`, `HIT_EPSILON_PX` |
 | `src/interaction.rs` | Deterministic pointer-interaction state machine (headless, clock-free) | `InteractionState` (`with_horizontal_bounds`, `kinetic_velocity_x`), `PointerInput` (`Pan2D`/`WheelTime`), `MIN_BAR_SPACING`, `MAX_BAR_SPACING`, `ANCHOR_DRIFT_EPS_PX`, `wheel_zoom_factor`, `zoom_range_around` |
-| `src/wheel.rs` | Region-aware wheel routing: what a wheel acts on | `WheelZones` (`route`), `PaneZones`, `WheelTarget` (`Time`/`Price`/`List`) |
-| `src/fields.rs` | Schema-driven settings editor + `Inputs`/`Style`/`Visibility` tabs | `FieldKind`, `SchemaField`, `FieldEdits`, `schema_fields`, `paint_schema_fields`, `SettingsTab`, `classify_schema_field`, `fields_for_tab`, `paint_tabbed_schema_fields` |
-| `src/slot.rs` | Hot-slotted indicator control stack + isolated settings modal | `HotSlot`, `HotSlotStack` (`scroll_by`, `content_height`, `list_rect`, `card_width`), `SlotAttachment`, `HotSlotAction`, `SlotControlRect`, `SlotControlHit`, `ReadoutValue`, `paint_hot_slot_stack`, `paint_slot_settings_modal`, `SettingsCommit`, `SettingsOutcome` |
+| `src/wheel.rs` | Region-aware wheel routing: what a wheel acts on | `WheelZones` (`route`), `PaneZones`, `WheelTarget` (`Time { pane, anchor_x }`/`Price { pane, anchor_y }`/`List`) |
+| `src/fields.rs` | Schema-driven settings editor + `Inputs`/`Style`/`Visibility` tabs | `FieldKind` (incl. `Color`), `SchemaField`, `FieldEdits`, `schema_fields`, `paint_schema_fields`, `SettingsTab`, `classify_schema_field`, `fields_for_tab`, `tab_fields`, `paint_tabbed_schema_fields` |
+| `src/slot.rs` | Hot-slotted indicator control stack + isolated settings modal | `HotSlot`, `HotSlotStack` (`insert`/`insert_with_style`, `config`/`style`/`indicator_style`, `set_style_field`, `get_style_field`, `scroll_by`, `content_height`, `list_rect`, `card_width`), `SlotAttachment`, `HotSlotAction`, `SlotControlRect`, `SlotControlHit`, `ReadoutValue`, `paint_hot_slot_stack`, `paint_slot_settings_modal`, `SettingsCommit`, `SettingsOutcome` |
+| `src/style.rs` | Per-indicator paint overrides (the Style tab's component) | `IndicatorStyle` (`color`, `stroke`, `line_width`, `override_color`), `STYLE_FIELDS`, `style_key`, `LINE_WIDTH_FIELD`, `MIN_LINE_WIDTH`, `MAX_LINE_WIDTH` |
 | `src/modal.rs` | Generic searchable, categorized catalog modal | `CatalogEntry`, `CatalogModal`, `paint_catalog_modal` |
 | `src/feed.rs` | Feeds, waves, caps, aborts, backpressure | `ChartFeed`, `PaneWaveUnit`, `run_wave`, `RefreshGate`, `PaneHandle`, `CreditIntake`, `load_history`, `TransportRetry` |
 | `src/replay.rs` | Scrub-back controller + toolbar cursor | `ReplayController`, `ReplayState` |
@@ -54,7 +55,7 @@ Conventions: `#![forbid(unsafe_code)]`; `autotests = false` with
 in the domain terminal crate — no headless or trading crate may depend on
 them in either direction (pinned by `tests/budget.rs` + `tests/lib.rs`).
 
-### 5. Route the wheel by region, never by call site
+### Cross-cutting: route the wheel by region, never by call site
 
 ```rust
 use fluent_egui::{PaneZones, WheelZones};
@@ -65,7 +66,9 @@ let zones = WheelZones::new(
     stack.list_rect(main.plot.height()).map(Into::into),
 );
 match zones.route(hover) {                          // headless, no egui types
-    Some(WheelTarget::Time { anchor_x }) => events.push(PointerInput::WheelTime { delta_px, anchor_x }),
+    // `pane` rides along so a gesture that also wants a y anchor takes it
+    // from the same pane the x anchor came from.
+    Some(WheelTarget::Time { anchor_x, .. }) => events.push(PointerInput::WheelTime { delta_px, anchor_x }),
     Some(WheelTarget::Price { pane: 0, anchor_y }) => events.push(PointerInput::Wheel { delta_px, anchor_y }),
     Some(WheelTarget::Price { pane, anchor_y }) => zoom_pane_price(pane, delta_px, anchor_y),
     Some(WheelTarget::List) => stack.scroll_by(delta_px, main.plot.height()),
@@ -76,14 +79,22 @@ match zones.route(hover) {                          // headless, no egui types
 A chart is not one surface, so the wheel is routed **once** by
 `WheelZones :: route` rather than re-decided at each call site: the list
 first (a floating overlay wins), then each pane's axis strip, then its plot —
-so a seam belongs to exactly one target. `Time` and `Price` carry a
-*pane-local* anchor you forward straight into `PointerInput`; `Price` also
-names its pane (`pane: 0` is the price pane). Both Y paths share
+so a seam belongs to exactly one target. `Time` and `Price` both name their
+*pane* and carry a *pane-local* anchor you forward straight into
+`PointerInput`; the pane index is what lets a second axis be addressed on the
+pane the gesture actually landed on (`pane: 0` is the price pane). Both Y
+paths share
 `wheel_zoom_factor` + `zoom_range_around`, so a pane that zooms outside the
 machine (an oscillator pane, which has no price envelope) feels identical to
 one that steps it — clamp *that* pane's span to its own design band instead
 of routing it through the price envelope. A legend whose column fits its
 pane has nothing to scroll, and `scroll_by` clamps at both ends.
+
+The router answers *what* a gesture acts on; the caller answers *whether it
+reaches the router at all*. Allocate the whole chart area as **one** rect so a
+single pointer response senses every pane and every axis strip — one
+allocation per pane senses only its own rect, which leaves every pane below
+the first looking dead to the wheel.
 
 ## Key operations
 
@@ -96,6 +107,11 @@ use fluent_egui::{ribbon_view, candle_geoms, ribbon_bands, paint_candles, paint_
 let ribbon = ribbon_view(&fast, &slow, 0.5)?;          // upper/lower/bullish, holes preserved
 let geoms = candle_geoms(&rows, &ribbon.bullish, &viewport)?;
 let bands = ribbon_bands(&ribbon, &viewport);
+// The body width reads the LIVE bar spacing, never a configured default: the
+// slot is the unit of time as displayed, drops to 80% once a bar is wide
+// enough for the gap to read, and never falls below one pixel — a body that
+// vanishes hides data by zooming.
+let body_width = candle_body_width(viewport.scale().bar_spacing());
 // Thin emitters inside the frame (blits cached geometry only). Every
 // `paint_*` returns `Result<(), EguiError>` — a theme key that cannot
 // resolve refuses instead of painting a default color:
@@ -110,6 +126,13 @@ need a viewport whose range spans zero; `delta_bar_geoms` refuses
 otherwise. Colors resolve from `ThemeConfig` style keys at paint time —
 series carry keys (`"bull"`, `"fast"`), never literals; `resolve_color`
 is the single lookup, and every keyed emitter fails closed through it.
+A series that belongs to an indicator paints through
+`paint_oscillator_styled(..., style, alpha)`, which resolves the key through
+`IndicatorStyle :: color` (override first, theme second) and strokes at the
+style's width — `paint_oscillator` is the same emitter with the no-op
+style. `parse_hex_color` is the one hex reader behind both a theme slot and
+a style override, so a themed chart and a restyled indicator cannot disagree
+about what a slot means.
 Area fills go through `paint_area_fill` (same convexity contract as the
 ribbon fill, premultiplied-space vertex colors via `area_vertex_color`
 over `area_polygons`). Annotation dots lower through `marker_dots`, and
@@ -161,7 +184,29 @@ paint code. History sources ladder through `load_history` (first-Ok wins,
 terminal misses abort, exhaustion is clean `Ok(None)`); transport retries
 compose `TransportRetry` over `retry_async`.
 
-### 4. Replay by rewinding the plan, export in server shapes
+### 4. Style is one shared component, not a field per indicator
+
+```rust
+use fluent_egui::{HotSlotStack, IndicatorStyle};
+
+stack.insert_with_style(id, title, attachment, config, Box::new(IndicatorStyle::default()),
+                        &nodes, &[], fingerprint, &mut plan)?;
+stack.set_style_field(id, "color_fast", "#0A0B0C")?;   // live path, no recompute
+let borrowed = stack.indicator_style(id);               // Cow: borrowed, no clone
+painter_of_series(painter, points, &borrowed.color(&theme, "fast")?, borrowed.stroke(color));
+```
+
+`IndicatorStyle` holds a stroke width plus one optional `#RRGGBB` override per
+data-bearing theme key, and the Style tab renders its whole schema beside the
+config's own paint knobs (`tab_fields`). Two rules keep it honest: the
+override is **additive** (an empty color clears back to the theme, so the
+theme stays the chart's default truth), and it is **refused, never repaired**
+(an out-of-band width or a malformed color is not written and not clamped).
+A slot's style is a separate `Component` from its config because they have
+different lifetimes in a frame: a config edit moves cache keys and forces a
+recompute, a style edit only repaints.
+
+### 5. Replay by rewinding the plan, export in server shapes
 
 ```rust
 use fluent_egui::{ReplayController, ReplayState};

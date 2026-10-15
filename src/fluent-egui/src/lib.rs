@@ -35,6 +35,7 @@ pub mod paint;
 pub mod plan;
 pub mod replay;
 pub mod slot;
+pub mod style;
 pub mod view;
 pub mod viewport;
 pub mod wheel;
@@ -47,9 +48,9 @@ pub use feed::{
     RefreshGate, TransportRetry, load_history, run_wave,
 };
 pub use fields::{
-    FieldEdits, FieldKind, SchemaField, SettingsTab, classify_schema_field, fields_for_tab,
-    paint_schema_fields, paint_tabbed_schema_fields, paint_tabbed_schema_fields_compact,
-    schema_fields,
+    COLOR_FORMAT, FieldEdits, FieldKind, SchemaField, SettingsTab, classify_schema_field,
+    fields_for_tab, paint_schema_fields, paint_tabbed_schema_fields,
+    paint_tabbed_schema_fields_compact, schema_fields, tab_fields,
 };
 pub use hittest::{
     Crosshair, HIT_EPSILON_PX, Hit, crosshair_data, crosshair_pixel, hit_test,
@@ -60,17 +61,18 @@ pub use interaction::{
     wheel_zoom_factor, zoom_range_around,
 };
 pub use paint::{
-    CandleGeom, CrosshairLines, DeltaBarGeom, EyeIconGeom, HexBoltIconGeom, MarkerDot, PivotDot,
-    RibbonBand, RibbonPolygon, SearchIconGeom, TintedCandle, TintedDeltaBar, area_polygons,
-    area_vertex_color, candle_geoms, crosshair_lines, delta_bar_geoms, eye_icon_geom,
-    hex_bolt_icon_geom, marker_dots, opacity_from_transparency, oscillator_points,
+    CANDLE_BODY_FRACTION, CANDLE_GAP_THRESHOLD_PX, CANDLE_MIN_BODY_PX, CandleGeom,
+    CrosshairLines, DeltaBarGeom, EyeIconGeom, HexBoltIconGeom, MarkerDot, PivotDot, RibbonBand,
+    RibbonPolygon, SearchIconGeom, TintedCandle, TintedDeltaBar, area_polygons, area_vertex_color,
+    candle_body_width, candle_geoms, crosshair_lines, delta_bar_geoms, eye_icon_geom,
+    hex_bolt_icon_geom, marker_dots, opacity_from_transparency, oscillator_points, parse_hex_color,
     paint_area_fill, paint_candles, paint_candles_as, paint_candles_tinted, paint_crosshair,
     paint_delta_bars, paint_delta_bars_tinted, paint_error_chip, paint_eye_icon, paint_hex_bolt_icon,
-    paint_markers, paint_oscillator, paint_ribbon, paint_ribbon_fill, paint_search_icon,
-    paint_session_breaks, paint_thresholds, pivot_dots, pivot_price_dots, resolve_color,
-    ribbon_bands, ribbon_polygons, search_icon_geom, threshold_line, translate_breaks,
-    translate_candles, translate_delta_bars, translate_dots, translate_markers, translate_points,
-    translate_polygons,
+    paint_markers, paint_oscillator, paint_oscillator_styled, paint_ribbon, paint_ribbon_fill,
+    paint_search_icon, paint_session_breaks, paint_thresholds, pivot_dots, pivot_price_dots,
+    resolve_color, ribbon_bands, ribbon_polygons, search_icon_geom, threshold_line,
+    translate_breaks, translate_candles, translate_delta_bars, translate_dots, translate_markers,
+    translate_points, translate_polygons,
 };
 pub use modal::{CatalogAction, CatalogEntry, CatalogModal, paint_catalog_modal};
 pub use plan::{CachedSeries, PaneCache, PanePlan, cache_key};
@@ -80,10 +82,12 @@ pub use slot::{
     SlotAttachment, SlotControlHit, SlotControlRect, paint_hot_slot_stack,
     paint_slot_settings_modal,
 };
+pub use style::IndicatorStyle;
 pub use view::{
     DeltaView, PaneKind, PaneSeries, PivotMark, PivotSide, RibbonView, delta_candle_view,
     pivot_marks, ribbon_fill_style_key, ribbon_style_key, ribbon_view,
 };
+pub use style::{LINE_WIDTH_FIELD, MAX_LINE_WIDTH, MIN_LINE_WIDTH, STYLE_FIELDS, style_key};
 pub use viewport::{
     BreakLine, Viewport, axis_ticks, thin_ticks, visible_rows,
 };

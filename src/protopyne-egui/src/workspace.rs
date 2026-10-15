@@ -17,14 +17,14 @@ use std::collections::HashMap;
 
 use fluent_egui::{
     CatalogAction, CatalogModal, CrosshairLines, DeltaView, EguiError, HotSlotAction, HotSlotStack,
-    InteractionState, PaneCache, PanePlan, PaneZones, PointerInput, RibbonView, SettingsCommit,
-    SettingsTab, SlotAttachment, ThemeConfig, TintedCandle, TintedDeltaBar, Viewport, WheelTarget,
-    WheelZones, axis_ticks, candle_geoms, crosshair_data, crosshair_lines, delta_bar_geoms,
-    opacity_from_transparency, paint_candles_tinted, paint_catalog_modal, paint_crosshair,
-    paint_delta_bars_tinted, paint_hot_slot_stack, paint_oscillator, paint_ribbon_fill,
-    paint_slot_settings_modal, resolve_color, ribbon_polygons, translate_breaks, translate_candles,
-    translate_delta_bars, translate_points, translate_polygons, wheel_zoom_factor,
-    zoom_range_around,
+    InteractionState, PaneCache, PanePlan, PaneZones, PointerInput, RibbonView,
+    SettingsCommit, SettingsTab, SlotAttachment, ThemeConfig, TintedCandle, TintedDeltaBar, Viewport,
+    WheelTarget, WheelZones, axis_ticks, candle_body_width, candle_geoms, crosshair_data,
+    crosshair_lines, delta_bar_geoms, opacity_from_transparency, paint_candles_tinted,
+    paint_catalog_modal, paint_crosshair, paint_delta_bars_tinted, paint_hot_slot_stack,
+    paint_oscillator, paint_ribbon_fill, paint_slot_settings_modal, resolve_color, ribbon_polygons,
+    translate_breaks, translate_candles, translate_delta_bars, translate_points, translate_polygons,
+    wheel_zoom_factor, zoom_range_around,
 };
 use fluent_wvr::{FieldAccess, component_downcast_ref};
 use protopyne_chart_model::{ChartRow, ChartType, DateRange};
@@ -61,9 +61,15 @@ const PRICE_BASE: f64 = 100.0;
 const SUB_MIN: f64 = -110.0;
 /// Sub-pane upper bound.
 const SUB_MAX: f64 = 110.0;
+/// Index of the price pane in the wheel-zone list.
+const PRICE_PANE_ZONE: usize = 0;
 /// Index of the oscillator pane in the wheel-zone list (after the price
 /// pane), naming which pane a price-axis zoom belongs to.
 const SUB_PANE_ZONE: usize = 1;
+/// Share of a candle body a delta histogram bar occupies: the histogram is an
+/// overlay inside the oscillator pane, so it stays visibly slimmer than the
+/// candles it sits beside while keeping enough pixels to read as bars.
+const DELTA_BAR_BODY_SHARE: f32 = 0.7;
 /// Narrowest oscillator span a wheel zoom may leave, as a fraction of the
 /// pane's base band: below this the series collapse into a smear.
 const SUB_MIN_SPAN_FRACTION: f64 = 0.02;
@@ -331,6 +337,25 @@ impl PaneLayout {
                 .then(|| egui::Rect::from_min_max(egui::pos2(rect.left(), plot_bottom), rect.max)),
         }
     }
+}
+
+/// Split the chart canvas rect into the price pane and the sub-pane beneath
+/// it, in the zone order [`WheelZones`] indexes.
+///
+/// The canvas is allocated as **one** rect covering both panes, so a single
+/// pointer response senses the whole chart area. That is the whole point: a
+/// second allocation would only sense its own rect, and a gesture over the
+/// oscillator pane or its price labels would then never reach the router —
+/// the pane would look dead to the wheel. One sensing surface plus region
+/// routing keeps "where is the pointer" and "what does the gesture act on"
+/// separate questions, and the two rects still tile the canvas exactly, so no
+/// pixel is sensed twice or left unsensed.
+fn split_canvas(canvas: egui::Rect) -> [egui::Rect; 2] {
+    let split_y = (canvas.top() + PRICE_PANE_HEIGHT).min(canvas.bottom());
+    [
+        egui::Rect::from_min_max(canvas.min, egui::pos2(canvas.right(), split_y)),
+        egui::Rect::from_min_max(egui::pos2(canvas.left(), split_y), canvas.max),
+    ]
 }
 
 /// Where the floating indicator legend sits over a chart pane: the upper
@@ -735,6 +760,28 @@ impl ChartWorkspace {
         self.recompute()
     }
 
+    /// Write one Style field (a color override or the line width) on a slot
+    /// through its own style component, without recomputing anything.
+    ///
+    /// A style write changes how a series paints, never what a series is, so
+    /// it deliberately skips the recompute that
+    /// [`set_slot_field`](Self::set_slot_field) triggers — republishing every
+    /// series to the pane cache would be pure cost for a pure repaint. The
+    /// field's own contract refuses, naming itself.
+    pub fn set_slot_style_field(
+        &mut self,
+        id: &str,
+        name: &str,
+        value: &str,
+    ) -> Result<(), EguiError> {
+        self.stack.set_style_field(id, name, value)
+    }
+
+    /// Read one Style field back off a slot's style component.
+    pub fn slot_style_field(&self, id: &str, name: &str) -> Result<String, EguiError> {
+        self.stack.get_style_field(id, name)
+    }
+
     /// Commit one slot's staged settings edits through its live config and
     /// recompute so the chart reflects them. Per-field refusals are returned
     /// (never silently swallowed) while every accepted field applies.
@@ -1072,26 +1119,26 @@ impl ChartWorkspace {
     /// machine from this frame's pointer gestures first.
     fn paint_canvas(&mut self, ui: &mut egui::Ui) -> Result<(), EguiError> {
         let width = ui.available_width().max(PANE_WIDTH_PX);
-        // Both pane rects are allocated up front so region routing knows every
-        // wheel zone (each pane's plot and its price axis, plus the legend)
-        // before any gesture is stepped; the layout split is pure, so this
-        // only fixes the order, not the result.
-        let (main_rect, response) =
-            ui.allocate_exact_size(egui::vec2(width, PRICE_PANE_HEIGHT), egui::Sense::drag());
-        let (sub_rect, _) =
-            ui.allocate_exact_size(egui::vec2(width, SUB_PANE_HEIGHT), egui::Sense::hover());
+        // One allocation spans both panes: the pointer response then senses the
+        // price pane, the oscillator pane, and both price strips, so a wheel
+        // anywhere over the chart reaches `step_from_response` and region
+        // routing decides what it acts on.
+        let (canvas, response) = ui.allocate_exact_size(
+            egui::vec2(width, PRICE_PANE_HEIGHT + SUB_PANE_HEIGHT),
+            egui::Sense::drag(),
+        );
+        let [main_rect, sub_rect] = split_canvas(canvas);
         let layout = PaneLayout::split(main_rect, true);
         let sub_layout = PaneLayout::split(sub_rect, false);
         // Float the legend over the chart's upper-right before routing, so a
         // wheel already sitting over it scrolls the list this frame.
         let legend = legend_origin(main_rect, self.stack.card_width());
         self.stack.set_origin(legend);
-        self.step_from_response(ui, &response, &layout, &sub_layout);
+        self.step_from_response(ui, &response, &[layout, sub_layout]);
         let bar_seconds = self.timeframe.seconds();
 
         let theme = self.theme.clone();
         let background = resolve_color(&theme, "background")?;
-        let body_width = (self.config.bar_spacing as f32 * 0.7).max(1.0);
         // One trailing range window for every layer (candles, overlays, and
         // the sub-pane), so the price pane and the oscillator share a time
         // axis instead of one showing the newest and the other the oldest bars.
@@ -1137,7 +1184,14 @@ impl ChartWorkspace {
                     let color = self.bar_color(window_start + geom.index, key, &theme)?;
                     candles.push(TintedCandle { geom: *geom, color });
                 }
-                paint_candles_tinted(&plot, &candles, body_width);
+                // The body follows the live time-axis zoom, not the configured
+                // default spacing: a wheel-zoomed pane draws its candles at
+                // the width of the unit of time it is actually showing.
+                paint_candles_tinted(
+                    &plot,
+                    &candles,
+                    candle_body_width(main.scale().bar_spacing()),
+                );
             } else {
                 // Line/Area (and any other display-row picture) render the
                 // close series; Heikin smoothing needs the core bar pipeline.
@@ -1169,6 +1223,7 @@ impl ChartWorkspace {
                         layout.plot.left_top(),
                         &theme,
                         config,
+                        &self.stack.indicator_style(plugin.id()),
                     )?;
                 }
             }
@@ -1214,6 +1269,7 @@ impl ChartWorkspace {
                         sub_layout.plot.left_top(),
                         &theme,
                         config,
+                        &self.stack.indicator_style(plugin.id()),
                     )?;
                 }
             }
@@ -1229,10 +1285,12 @@ impl ChartWorkspace {
                     let color = self.bar_color(global, key, &theme)?;
                     tinted.push(TintedDeltaBar { geom: *geom, color });
                 }
+                // The histogram is a slimmer overlay inside the oscillator
+                // pane, but it tracks the same live zoom as the candles.
                 paint_delta_bars_tinted(
                     &sub_plot,
                     &tinted,
-                    (self.config.bar_spacing as f32 * 0.35).max(0.5),
+                    candle_body_width(sub.scale().bar_spacing()) * DELTA_BAR_BODY_SHARE / 2.0,
                 );
             }
             // The zero line makes the centered histogram legible.
@@ -1261,12 +1319,17 @@ impl ChartWorkspace {
     /// scrolls instead of moving the chart. Holding <kbd>Ctrl</kbd> overrides
     /// the plot's time zoom with the price zoom, the one gesture a chart pane
     /// has always answered.
+    ///
+    /// `response` spans both panes (see [`split_canvas`]), so a gesture over
+    /// the oscillator pane or its price labels reaches here exactly like one
+    /// over the candles. `layouts` is indexed by the router's own pane index,
+    /// so the routing decision and the geometry lookup can never disagree
+    /// about which pane a gesture landed on.
     fn step_from_response(
         &mut self,
         ui: &egui::Ui,
         response: &egui::Response,
-        layout: &PaneLayout,
-        sub_layout: &PaneLayout,
+        layouts: &[PaneLayout; 2],
     ) {
         let dt = f64::from(ui.input(|input| input.stable_dt));
         let mut events = Vec::new();
@@ -1280,41 +1343,52 @@ impl ChartWorkspace {
             if scroll.y != 0.0 {
                 if let Some(hover) = response.hover_pos() {
                     let zones = WheelZones::new(
-                        vec![
-                            PaneZones { plot: layout.plot.into(), axis: layout.axis.into() },
-                            PaneZones {
-                                plot: sub_layout.plot.into(),
-                                axis: sub_layout.axis.into(),
-                            },
-                        ],
-                        self.stack.list_rect(layout.plot.height()).map(Into::into),
+                        layouts
+                            .iter()
+                            .map(|layout| PaneZones {
+                                plot: layout.plot.into(),
+                                axis: layout.axis.into(),
+                            })
+                            .collect(),
+                        self.stack
+                            .list_rect(layouts[PRICE_PANE_ZONE].plot.height())
+                            .map(Into::into),
                     );
                     match zones.route(hover.into()) {
                         // The legend scrolls under the pointer; the chart and
                         // the machine stay untouched.
                         Some(WheelTarget::List) => {
-                            self.stack.scroll_by(scroll.y, layout.plot.height());
+                            self.stack
+                                .scroll_by(scroll.y, layouts[PRICE_PANE_ZONE].plot.height());
                         }
-                        Some(WheelTarget::Time { anchor_x }) if !modifiers.ctrl => {
+                        Some(WheelTarget::Time { anchor_x, .. }) if !modifiers.ctrl => {
                             events.push(PointerInput::WheelTime {
                                 delta_px: scroll.y,
                                 anchor_x,
                             });
                         }
-                        Some(WheelTarget::Price { pane: 0, anchor_y }) => {
+                        // The price pane shares the interaction machine's data
+                        // envelope, so its price zoom is a machine input.
+                        Some(WheelTarget::Price { pane: PRICE_PANE_ZONE, anchor_y }) => {
                             events.push(PointerInput::Wheel { delta_px: scroll.y, anchor_y });
                         }
+                        // Any other pane scales its own window: the shared time
+                        // axis and the price pane's window stay put.
                         Some(WheelTarget::Price { pane, anchor_y }) => {
                             self.zoom_pane_price(pane, scroll.y, anchor_y);
                         }
-                        Some(WheelTarget::Time { anchor_x }) => {
+                        Some(WheelTarget::Time { pane, anchor_x }) => {
                             events.push(PointerInput::WheelTime {
                                 delta_px: scroll.y,
                                 anchor_x,
                             });
                             events.push(PointerInput::Wheel {
                                 delta_px: scroll.y,
-                                anchor_y: hover.y - layout.plot.top(),
+                                // Pane-local to the pane the x anchor came
+                                // from, so the Ctrl override over the
+                                // oscillator pane zooms the oscillator and not
+                                // the price pane it shares x with.
+                                anchor_y: hover.y - layouts[pane].plot.top(),
                             });
                         }
                         None => {}

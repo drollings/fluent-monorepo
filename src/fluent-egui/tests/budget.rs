@@ -106,6 +106,13 @@ fn forbid_in_src(token: &str, why: &str) {
 
 #[test]
 fn bloat_ledger_pins_source_files() {
+    // `style.rs` earns its line by being the one per-indicator paint-override
+    // component (colors, stroke width). Folding it into `config.rs` would put
+    // chart-wide theme truth and per-indicator overrides in one struct, and
+    // folding it into `fields.rs` would make the schema reader own the schema.
+    // Its own file keeps "what the chart looks like" (theme) and "what this
+    // indicator looks like" (style) separable, and the settings pane composes
+    // them.
     // `wheel.rs` earns its line by isolating the region→target decision (a
     // wheel acts on the plot's time axis, a price strip's own axis, or a
     // floating list) from the interaction machine that applies it. Folding it
@@ -128,6 +135,7 @@ fn bloat_ledger_pins_source_files() {
             "plan.rs",
             "replay.rs",
             "slot.rs",
+            "style.rs",
             "view.rs",
             "viewport.rs",
             "wheel.rs",

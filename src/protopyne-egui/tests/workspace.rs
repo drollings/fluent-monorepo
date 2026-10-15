@@ -9,6 +9,9 @@ use super::*;
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 
+use fluent_egui::{
+    CANDLE_BODY_FRACTION, CANDLE_GAP_THRESHOLD_PX, IndicatorStyle, candle_body_width,
+};
 use protopyne_chart_model::ChartRow;
 use protopyne_view::{
     ArmResponse, ChartBar, GatewayError, HealthView, JournalRowView, MockGateway, OverlaySeries,
@@ -215,6 +218,119 @@ fn workspace_hot_slot_eye_and_bolt_controls_and_2d_pan_zoom_work_headlessly() {
 }
 
 #[test]
+fn a_slots_style_tab_commits_colors_and_line_width_through_its_own_component() {
+    // End to end through the workspace: the bolt opens the pane, the Style tab
+    // writes the slot's style component, and the write is a pure repaint that
+    // never reaches the pane cache the way a config edit does.
+    let mut workspace = ChartWorkspace::new().expect("the workspace boots");
+    workspace.open_settings("fast_mas").expect("the bolt opens");
+    workspace
+        .set_settings_tab("fast_mas", SettingsTab::Style)
+        .expect("the Style tab selects");
+    assert_eq!(
+        workspace.slot_style_field("fast_mas", "line_width").expect("the width reads"),
+        IndicatorStyle::default().line_width().to_string(),
+        "the slot starts on the theme at the default width"
+    );
+    assert_eq!(
+        workspace.slot_style_field("fast_mas", "color_fast").expect("the color reads"),
+        "",
+        "and with no color override"
+    );
+
+    workspace.seed_history(TimeframeKey::M1, ramp_rows(40)).expect("history seeds");
+    workspace.select_timeframe(TimeframeKey::M1).expect("M1 binds the viewports");
+    let cached_before = workspace.cached_series();
+    let first_length_before =
+        workspace.stack.get_slot_field("fast_mas", "first_ma_length").unwrap_or_default();
+
+    workspace
+        .set_slot_style_field("fast_mas", "line_width", "3")
+        .expect("a well-formed width writes");
+    workspace
+        .set_slot_style_field("fast_mas", "color_fast", "#0A0B0C")
+        .expect("a well-formed override writes");
+    assert!(
+        workspace.set_slot_style_field("fast_mas", "color_slow", "not-a-color").is_err(),
+        "a malformed color refuses instead of being repaired"
+    );
+
+    let style = workspace.stack.indicator_style("fast_mas");
+    assert!(
+        (style.line_width() - 3.0).abs() < f32::EPSILON,
+        "the stroke width the Style tab set is live"
+    );
+    assert_eq!(style.override_color("fast"), Some("#0A0B0C"), "and so is the color override");
+    assert_eq!(style.override_color("slow"), None, "the refused value never landed");
+    assert_eq!(
+        workspace.cached_series(),
+        cached_before,
+        "a style write repaints without republishing the pane cache"
+    );
+    assert_eq!(
+        workspace.stack.get_slot_field("fast_mas", "first_ma_length").unwrap_or_default(),
+        first_length_before,
+        "and never touches the calculation inputs"
+    );
+    assert_eq!(
+        workspace.stack.indicator_style("integration_lite").override_color("fast"),
+        None,
+        "one slot's style never leaks to another"
+    );
+    assert!(
+        workspace.set_slot_style_field("nope", "line_width", "2").is_err(),
+        "an unknown slot refuses"
+    );
+}
+
+#[test]
+fn the_delta_histogram_tracks_the_same_zoom_the_candles_do() {
+    // The histogram is a slimmer overlay, not a differently-sized series: it
+    // reads the same live bar spacing and takes a fixed share of the candle
+    // body, so the two never drift apart as the pane zooms.
+    for spacing in [1.0_f32, 8.0, 20.0, 64.0] {
+        let half_width = candle_body_width(spacing) * DELTA_BAR_BODY_SHARE / 2.0;
+        assert!(
+            close_to(half_width * 2.0, candle_body_width(spacing) * DELTA_BAR_BODY_SHARE),
+            "the histogram is a fixed share of the candle body at spacing {spacing}"
+        );
+        assert!(
+            half_width * 2.0 <= candle_body_width(spacing) + f32::EPSILON,
+            "and never wider than the candle it sits beside at spacing {spacing}"
+        );
+    }
+}
+
+#[test]
+fn the_style_tab_shows_every_paint_knob_for_a_slot() {
+    let workspace = ChartWorkspace::new().expect("the workspace boots");
+    for id in workspace.slot_ids() {
+        let Some(config) = workspace.stack.config(&id) else { continue };
+        let Some(style) = workspace.stack.style(&id) else { continue };
+        let config_fields = fluent_egui::schema_fields(&config.describe());
+        let style_fields = fluent_egui::schema_fields(&style.describe());
+        let tab = fluent_egui::tab_fields(SettingsTab::Style, &config_fields, &style_fields);
+        let names: Vec<&str> = tab.iter().map(|field| field.name.as_str()).collect();
+        assert!(
+            names.contains(&"line_width") && names.contains(&"color_bull"),
+            "{id}: the Style tab exposes colors and a line width: {names:?}"
+        );
+        assert!(
+            names.contains(&"color_fast"),
+            "{id}: one override per style key its series carry"
+        );
+        // Every other tab stays the config's own business.
+        for other in [SettingsTab::Inputs, SettingsTab::Visibility] {
+            assert_eq!(
+                fluent_egui::tab_fields(other, &config_fields, &style_fields),
+                fluent_egui::fields_for_tab(&config_fields, other),
+                "{id}: {other:?} is unaffected by the style component"
+            );
+        }
+    }
+}
+
+#[test]
 fn pane_layout_reserves_the_price_axis_and_time_strip() {
     let rect = egui::Rect::from_min_size(egui::pos2(10.0, 20.0), egui::vec2(640.0, 320.0));
     let same = |a: f32, b: f32| a.to_bits() == b.to_bits();
@@ -334,6 +450,16 @@ fn ui_width() -> f32 {
 }
 
 /// The zones the canvas builds, mirroring `step_from_response`.
+/// Pixel comparisons in the width rules are exact by construction; a
+/// tolerance keeps a failure about the rule rather than float representation.
+fn close_to(actual: f32, expected: f32) -> bool {
+    (actual - expected).abs() <= 1e-4 * expected.abs().max(1.0)
+}
+
+fn same_edge(a: f32, b: f32) -> bool {
+    a.to_bits() == b.to_bits()
+}
+
 fn chart_zones(
     layout: &PaneLayout,
     sub: &PaneLayout,
@@ -346,6 +472,145 @@ fn chart_zones(
         ],
         list,
     )
+}
+
+#[test]
+fn the_canvas_is_one_sensing_surface_split_into_two_panes() {
+    // The regression this pins: the canvas is allocated as ONE rect, so a
+    // single pointer response senses the price pane, the oscillator pane, and
+    // both price strips. Two allocations would each sense only their own
+    // rect, leaving every gesture over the oscillator pane and its Y-axis
+    // labels unrouted — the pane would look dead to the wheel.
+    let canvas = egui::Rect::from_min_size(
+        egui::pos2(0.0, 0.0),
+        egui::vec2(640.0, PRICE_PANE_HEIGHT + SUB_PANE_HEIGHT),
+    );
+    let [main, sub] = split_canvas(canvas);
+
+    assert_eq!(
+        (main.height(), sub.height()),
+        (PRICE_PANE_HEIGHT, SUB_PANE_HEIGHT),
+        "the panes keep their design heights"
+    );
+    assert_eq!(main.min, canvas.min, "the price pane starts at the canvas origin");
+    assert_eq!(sub.max, canvas.max, "and the sub-pane ends at its far corner");
+    assert!(
+        same_edge(main.bottom(), sub.top()),
+        "the panes share the seam exactly, so no pixel is sensed twice or lost"
+    );
+    assert!(
+        main.union(sub) == canvas,
+        "and together they are the whole sensing surface"
+    );
+}
+
+#[test]
+fn a_hover_anywhere_on_the_oscillator_pane_reaches_the_oscillators_axis() {
+    // Both halves of the reported gap: the oscillator *plot* and the label
+    // strip beside it must both route, and both must name pane 1 so the price
+    // zoom lands on the oscillator.
+    let (layout, sub_layout) = wheel_layouts();
+    let zones = chart_zones(&layout, &sub_layout, None);
+
+    let over_plot = egui::pos2(sub_layout.plot.center().x, sub_layout.plot.center().y);
+    assert_eq!(
+        zones.route(over_plot.into()),
+        Some(WheelTarget::Time { pane: SUB_PANE_ZONE, anchor_x: over_plot.x - sub_layout.plot.left() }),
+        "a wheel over the oscillator plot zooms the shared time axis"
+    );
+
+    let over_labels = egui::pos2(sub_layout.axis.center().x, sub_layout.axis.center().y);
+    let routed = zones.route(over_labels.into());
+    assert_eq!(
+        routed,
+        Some(WheelTarget::Price { pane: SUB_PANE_ZONE, anchor_y: over_labels.y - sub_layout.plot.top() }),
+        "and a wheel over the oscillator's own Y labels zooms the oscillator"
+    );
+    if let Some(WheelTarget::Price { pane, anchor_y }) = routed {
+        let mut workspace = ChartWorkspace::new().expect("the workspace boots");
+        workspace.seed_history(TimeframeKey::M1, ramp_rows(40)).expect("history seeds");
+        workspace.select_timeframe(TimeframeKey::M1).expect("M1 binds the viewports");
+        let before = workspace.sub_viewport().expect("sub viewport").visible_range();
+        workspace.zoom_pane_price(pane, 50.0, anchor_y);
+        let after = workspace.sub_viewport().expect("sub viewport").visible_range();
+        assert!(
+            after.max - after.min < before.max - before.min,
+            "the routed gesture narrowed the oscillator: {} -> {}",
+            before.max - before.min,
+            after.max - after.min
+        );
+    }
+}
+
+#[test]
+fn a_wheel_over_the_oscillator_plot_keeps_the_two_panes_on_one_time_axis() {
+    // The sub-pane shares the price pane's x axis, so a gesture routed to
+    // pane 1 must zoom x for both and must not disturb the price window.
+    let (layout, sub_layout) = wheel_layouts();
+    let mut workspace = ChartWorkspace::new().expect("the workspace boots");
+    workspace.seed_history(TimeframeKey::M1, ramp_rows(40)).expect("history seeds");
+    workspace.select_timeframe(TimeframeKey::M1).expect("M1 binds the viewports");
+
+    let hover = egui::pos2(sub_layout.plot.center().x, sub_layout.plot.center().y);
+    let zones = chart_zones(&layout, &sub_layout, None);
+    let Some(WheelTarget::Time { pane, anchor_x }) = zones.route(hover.into()) else {
+        panic!("the oscillator plot routes to the time axis");
+    };
+    let before_price = workspace.main_viewport().expect("main").visible_range();
+
+    // The frame turns a routed target into exactly these machine inputs.
+    workspace.step_interaction(
+        1.0 / 60.0,
+        &[PointerInput::WheelTime { delta_px: 40.0, anchor_x }],
+    );
+
+    assert_eq!(pane, SUB_PANE_ZONE, "the gesture came from the oscillator pane");
+    let main = workspace.main_viewport().expect("main");
+    let sub = workspace.sub_viewport().expect("sub");
+    assert!(
+        (sub.scale().bar_spacing() - main.scale().bar_spacing()).abs() <= f32::EPSILON,
+        "the time axis stayed shared"
+    );
+    assert_eq!(
+        workspace.main_viewport().expect("main").visible_range(),
+        before_price,
+        "and the price window never moved"
+    );
+}
+
+#[test]
+fn candles_are_as_wide_as_the_unit_of_time_the_chart_is_showing() {
+    // The width rule is shared scaffolding; what the terminal owes is reading
+    // it from the LIVE viewport spacing rather than the configured default.
+    let mut workspace = ChartWorkspace::new().expect("the workspace boots");
+    workspace.seed_history(TimeframeKey::M1, ramp_rows(40)).expect("history seeds");
+    workspace.select_timeframe(TimeframeKey::M1).expect("M1 binds the viewports");
+
+    let default_spacing = workspace.main_viewport().expect("main").scale().bar_spacing();
+    assert!(
+        close_to(candle_body_width(default_spacing), default_spacing),
+        "at the configured zoom a candle fills its own time bar"
+    );
+
+    // Zoom x well past the gap threshold and the body takes its share of the
+    // wider bar, which it can only do if it read the live spacing. A positive
+    // wheel delta widens the bars (zoom out along time).
+    for _ in 0..8 {
+        workspace.step_interaction(
+            1.0 / 60.0,
+            &[PointerInput::WheelTime { delta_px: 400.0, anchor_x: 320.0 }],
+        );
+    }
+    let zoomed = workspace.main_viewport().expect("main").scale().bar_spacing();
+    assert!(zoomed > CANDLE_GAP_THRESHOLD_PX, "the pane really did zoom out: {zoomed}");
+    assert!(
+        close_to(candle_body_width(zoomed), zoomed * CANDLE_BODY_FRACTION),
+        "and a wide candle keeps 80% of its bar so neighbours separate"
+    );
+    assert!(
+        zoomed > default_spacing,
+        "the zoom was real, not a relabelled default: {default_spacing} -> {zoomed}"
+    );
 }
 
 #[test]

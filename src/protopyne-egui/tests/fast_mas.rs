@@ -8,7 +8,7 @@
 
 use super::*;
 
-use fluent_egui::{PaneCache, Viewport};
+use fluent_egui::{IndicatorStyle, PaneCache, Viewport};
 use protopyne_chart_model::ChartRow;
 use protopyne_chart_scale::PriceScaleMode;
 use protopyne_kernels::indicator::ParamSet;
@@ -250,15 +250,28 @@ fn paint_fast_mas_blits_every_line_and_refuses_a_broken_theme() {
     let view = evaluate_fast_mas(&rows, &FastMasConfig::new().build()).expect("view builds");
     let theme = ThemeConfig::default();
     let (ctx, painter) = test_painter();
-    paint_fast_mas(&painter, &view, &price_viewport(), egui::Pos2::new(0.0, 0.0), &theme)
-        .expect("healthy theme paints");
+    paint_fast_mas(
+        &painter,
+        &view,
+        &price_viewport(),
+        egui::Pos2::new(0.0, 0.0),
+        &theme,
+        &IndicatorStyle::default(),
+    )
+    .expect("healthy theme paints");
     assert!(!end_frame(&ctx).shapes.is_empty(), "the lines emit shapes");
     // The first line's default style key is "slow"; breaking it refuses by
     // name instead of painting silent gray.
     let broken = ThemeConfig::new().slow("not-a-color".to_owned()).build();
     let (_, painter) = test_painter();
-    let refused =
-        paint_fast_mas(&painter, &view, &price_viewport(), egui::Pos2::new(0.0, 0.0), &broken)
-            .expect_err("a broken needed key refuses");
+    let refused = paint_fast_mas(
+        &painter,
+        &view,
+        &price_viewport(),
+        egui::Pos2::new(0.0, 0.0),
+        &broken,
+        &IndicatorStyle::default(),
+    )
+    .expect_err("a broken needed key refuses");
     assert!(refused.to_string().contains("slow"), "refusal names the key: {refused}");
 }

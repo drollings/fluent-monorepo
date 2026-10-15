@@ -300,7 +300,8 @@ impl GrantFormState {
     /// path, so money rides decimal text and stays exact; date-time text
     /// rides verbatim because the core's `FromStr` is the single date
     /// parser and a second one here would be the duplication the envelope
-    /// exists to avoid.
+    /// exists to avoid. A color field is text on the wire exactly like any
+    /// other string, so it rides verbatim beside it.
     fn leaf_value(field: &GrantFormField, draft: &str) -> Result<serde_json::Value, GrantFormError> {
         let refuse = |reason: String| {
             GrantFormError::FieldParse { field: field.path(), reason }
@@ -328,7 +329,9 @@ impl GrantFormState {
                     serde_json::Value::String(money.to_string())
                 }).map_err(|error| refuse(error.to_string()))
             }
-            FieldKind::Text => Ok(serde_json::Value::String(draft.to_owned())),
+            FieldKind::Text | FieldKind::Color => {
+                Ok(serde_json::Value::String(draft.to_owned()))
+            }
         }
     }
 

@@ -255,7 +255,8 @@ fn schema_fields_classify_into_inputs_style_and_visibility_tabs() {
         ("source", FieldKind::Text, SettingsTab::Inputs),
         ("timeframe", FieldKind::Text, SettingsTab::Inputs),
         ("oscillator_gain", FieldKind::Number, SettingsTab::Inputs),
-        ("line_width", FieldKind::Number, SettingsTab::Inputs),
+        ("line_width", FieldKind::Number, SettingsTab::Style),
+        ("line_span", FieldKind::Number, SettingsTab::Inputs),
     ] {
         let field = tab_field(name, kind);
         assert_eq!(
@@ -301,7 +302,7 @@ fn paint_tabbed_schema_fields_switches_tabs_and_writes_through_field_access() {
         let mut active = tab;
         egui::__run_test_ui(|ui| {
             let edits =
-                paint_tabbed_schema_fields(ui, &mut active, &fields, &mut control);
+                paint_tabbed_schema_fields(ui, &mut active, &fields, &[], &mut control);
             assert_eq!(edits, FieldEdits::default(), "an untouched frame changes nothing");
             assert_eq!(active, tab, "rendering never moves the active tab");
         });

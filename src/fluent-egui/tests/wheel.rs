@@ -39,7 +39,7 @@ fn plot_wheel_zooms_the_time_axis() {
     let at = Pos2::new(120.0, 200.0);
     assert_eq!(
         chart_zones().route(at),
-        Some(WheelTarget::Time { anchor_x: 120.0 }),
+        Some(WheelTarget::Time { pane: 0, anchor_x: 120.0 }),
         "a wheel over the candles zooms x, anchored pane-local"
     );
 }
@@ -49,8 +49,10 @@ fn oscillator_plot_zooms_the_same_time_axis() {
     let at = Pos2::new(120.0, 480.0);
     assert_eq!(
         chart_zones().route(at),
-        Some(WheelTarget::Time { anchor_x: 120.0 }),
-        "the sub-pane shares the time axis, so it routes to x too"
+        Some(WheelTarget::Time { pane: 1, anchor_x: 120.0 }),
+        "the sub-pane shares the time axis, so it routes to x too — and it \
+         names pane 1, so a gesture that also wants a y anchor takes it from \
+         the oscillator rather than from the pane above"
     );
 }
 
@@ -87,7 +89,7 @@ fn list_wins_over_the_plot_beneath_it() {
     assert_eq!(zones.route(Pos2::new(200.0, 20.0)), Some(WheelTarget::List));
     assert_eq!(
         zones.route(Pos2::new(40.0, 20.0)),
-        Some(WheelTarget::Time { anchor_x: 40.0 }),
+        Some(WheelTarget::Time { pane: 0, anchor_x: 40.0 }),
         "beside the legend the plot still zooms x"
     );
 }
@@ -104,7 +106,7 @@ fn outside_every_zone_routes_nowhere() {
 fn a_single_pane_chart_still_routes() {
     let zones = WheelZones::new(vec![main_pane()], None);
     assert_eq!(zones.route(Pos2::new(320.0, 200.0)), Some(WheelTarget::Price { pane: 0, anchor_y: 200.0 }));
-    assert_eq!(zones.route(Pos2::new(10.0, 10.0)), Some(WheelTarget::Time { anchor_x: 10.0 }));
+    assert_eq!(zones.route(Pos2::new(10.0, 10.0)), Some(WheelTarget::Time { pane: 0, anchor_x: 10.0 }));
 }
 
 #[test]
@@ -115,7 +117,7 @@ fn zero_panes_and_no_list_route_nowhere() {
 
 #[test]
 fn only_zoom_targets_report_as_zoom() {
-    assert!(WheelTarget::Time { anchor_x: 1.0 }.is_zoom());
+    assert!(WheelTarget::Time { pane: 0, anchor_x: 1.0 }.is_zoom());
     assert!(WheelTarget::Price { pane: 0, anchor_y: 1.0 }.is_zoom());
     assert!(!WheelTarget::List.is_zoom(), "scrolling a list is not a chart zoom");
 }

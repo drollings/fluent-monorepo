@@ -22,7 +22,8 @@ use protopyne_kernels::bars::estimate_delta_volume_estimated;
 use protopyne_types::{Validate, check_for_execute, valid_output};
 
 use fluent_egui::{
-    EguiError, ReadoutValue, SlotAttachment, ThemeConfig, Viewport, paint_oscillator, resolve_color,
+    EguiError, IndicatorStyle, ReadoutValue, SlotAttachment, ThemeConfig, Viewport,
+    opacity_from_transparency, paint_oscillator_styled,
 };
 
 /// Plan-node namespace for the profile's per-bar primitive series.
@@ -31,6 +32,35 @@ pub const PROFILE_NODES: [&str; 6] =
 
 /// Stable plugin id (also the hot-slot id).
 pub const DELTA_VOLUME_PROFILE_ID: &str = "delta_volume_profile";
+
+/// Below this the reference treats a bin as empty (`VOLUME_EPSILON` in
+/// `_DeltaVolumeProfileProtopyne.pine`): it paints nothing, its imbalance
+/// reads as neutral, and its volume ratio falls back to `1.0`.
+pub const VOLUME_EPSILON: f64 = 0.0001;
+/// Imbalance exponent behind the ported gradient (`math.pow(|ratio|, 0.7)`).
+/// Below one, so a mildly lopsided bin already shifts visibly off neutral
+/// while a saturated one saturates before the top of the band.
+const AMPLIFY_EXPONENT: f64 = 0.7;
+/// Imbalance gain around the neutral midpoint (`... * 1.5`).
+const AMPLIFY_GAIN: f64 = 1.5;
+/// Divisor turning a volume ratio into a shading strength (`vol_ratio / 4.0`).
+const VOLUME_STRENGTH_DIVISOR: f64 = 4.0;
+/// Transparency a zero-volume bin would carry (`75 - ...`).
+const TRANSPARENCY_BASE: f64 = 75.0;
+/// How much a thick bin gains opacity, up to the base.
+const TRANSPARENCY_SPAN: f64 = 70.0;
+/// Transparency floor: even the thickest bin never paints fully opaque, so
+/// the profile always reads as a wash behind the candles.
+const MIN_TRANSPARENCY: f64 = 5.0;
+/// Transparency ceiling: a bin never vanishes entirely.
+const MAX_TRANSPARENCY: f64 = 95.0;
+/// Lower bound of the ported gradient band (`lo` in `from_gradient`).
+const GRADIENT_LOW: f64 = 0.2;
+/// Upper bound of the ported gradient band (`hi` in `from_gradient`).
+const GRADIENT_HIGH: f64 = 0.8;
+/// Transparency of the point-of-control outline, matching the reference
+/// `color.new(color_support, 20)` border.
+const POC_BORDER_TRANSPARENCY: f64 = 20.0;
 
 /// One bin of a volume profile: a price slice and the volume/imbalance that
 /// traded inside it.
@@ -77,6 +107,11 @@ pub struct DeltaVolumeProfile {
     pub vwap: Option<f64>,
     /// Volume in the largest bin (normalizer for bar widths).
     pub max_volume: f64,
+    /// Mean volume per bin across every bin, empty ones included
+    /// (`avg_bin_volume`). The ported bin shading compares each bin against
+    /// this rather than against the peak, so an evenly-traded profile and one
+    /// with a single spike both read as evenly shaded.
+    pub avg_volume: f64,
 }
 
 impl DeltaVolumeProfile {
@@ -107,6 +142,7 @@ pub fn build_profile(bars: &[ProfileBar], bins: usize, value_area_pct: f64) -> D
         val: None,
         vwap: None,
         max_volume: 0.0,
+        avg_volume: 0.0,
     };
     if bars.is_empty() || bins == 0 || !value_area_pct.is_finite() {
         return empty;
@@ -174,7 +210,11 @@ pub fn build_profile(bars: &[ProfileBar], bins: usize, value_area_pct: f64) -> D
     };
     let (vah, val) = poc.map_or((None, None), |index| value_area(&bins_out, index, value_area_pct));
     let vwap = (vwap_den > 0.0).then_some(vwap_num / vwap_den);
-    DeltaVolumeProfile { bins: bins_out, poc, vah, val, vwap, max_volume }
+    // The mean is over every requested bin, empty ones included, exactly as
+    // the reference divides its total by the array size.
+    let total: f64 = bins_out.iter().map(|bin| bin.volume).sum();
+    let avg_volume = total / bins_out.len() as f64;
+    DeltaVolumeProfile { bins: bins_out, poc, vah, val, vwap, max_volume, avg_volume }
 }
 
 /// The bin index a price falls in, clamped to the valid range.
@@ -218,15 +258,158 @@ fn value_area(bins: &[VolumeBin], poc: usize, pct: f64) -> (Option<f64>, Option<
     (Some(bins[high].price_high), Some(bins[low].price_low))
 }
 
-/// One painted profile bar: a rectangle at the chart's right edge.
+/// The two endpoints a profile bin's gradient interpolates between: the
+/// support end a buy-dominant bin reads as, and the resistance end a
+/// sell-dominant bin reads as.
+///
+/// The reference defaults these to Pine's `color_support` / `color_resistance`
+///; a terminal that paints through a theme resolves them from its bull and
+/// bear slots instead (see [`bin_palette`]), and the Style tab's `color_bull`
+/// / `color_bear` overrides reach the profile through the same two slots.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BinPalette {
+    /// Buy-side color; the gradient's upper end.
+    pub support: [u8; 3],
+    /// Sell-side color; the gradient's lower end.
+    pub resistance: [u8; 3],
+}
+
+/// One bin's ported fill: gradient RGB plus the Pine transparency percent that
+/// the painter turns into byte opacity.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BinFill {
+    /// Gradient red channel.
+    pub red: u8,
+    /// Gradient green channel.
+    pub green: u8,
+    /// Gradient blue channel.
+    pub blue: u8,
+    /// `color.new` transparency percent within `[0, 100]`.
+    pub transparency: f64,
+}
+
+impl BinFill {
+    /// The fill as an `egui` color, resolving its Pine transparency through
+    /// the shared opacity mapping so profile shading and candle tints use one
+    /// transparency rule.
+    #[must_use]
+    pub fn color(&self) -> egui::Color32 {
+        egui::Color32::from_rgba_unmultiplied(
+            self.red,
+            self.green,
+            self.blue,
+            opacity_from_transparency(self.transparency),
+        )
+    }
+}
+
+/// Resolve the profile's two gradient endpoints for one indicator: the bull
+/// and bear slots, through that slot's [`IndicatorStyle`] so the Style tab can
+/// restyle the profile exactly as it restyles the indicator's lines.
+pub fn bin_palette(
+    style: &IndicatorStyle,
+    theme: &ThemeConfig,
+) -> Result<BinPalette, EguiError> {
+    let channel = |color: egui::Color32| [color.r(), color.g(), color.b()];
+    Ok(BinPalette {
+        support: channel(style.color(theme, "bull")?),
+        resistance: channel(style.color(theme, "bear")?),
+    })
+}
+
+/// The position a gradient value maps to between `low` and `high` bounds,
+/// clamped to `[0, 1]` — the continuous form of Pine's
+/// `color.from_gradient(value, low, high, …)`.
+#[must_use]
+fn gradient_position(value: f64, low: f64, high: f64) -> f64 {
+    if !value.is_finite() || (high - low).abs() < f64::EPSILON {
+        return 0.0;
+    }
+    ((value - low) / (high - low)).clamp(0.0, 1.0)
+}
+
+/// One bin's buy/sell imbalance as a share of the most it could hold, clamped
+/// to `[-1, +1]` — a port of the reference `getImbalanceRatio`.
+///
+/// A bin below [`VOLUME_EPSILON`] and a bin whose maximum possible imbalance
+/// is itself negligible both read as exactly neutral (`0.0`), mirroring the
+/// reference guards, and a non-finite bin reads neutral rather than painting a
+/// color nobody measured.
+#[must_use]
+pub fn imbalance_ratio(bin: &VolumeBin) -> f64 {
+    if !bin.volume.is_finite() || !bin.imbalance.is_finite() || bin.volume < VOLUME_EPSILON {
+        return 0.0;
+    }
+    let max_imbalance = bin.volume / 2.0;
+    if max_imbalance <= VOLUME_EPSILON {
+        return 0.0;
+    }
+    (bin.imbalance / max_imbalance).clamp(-1.0, 1.0)
+}
+
+/// The ported `_DeltaVolumeProfileProtopyne.pine :: getBinColors`: one bin's
+/// gradient color and its Pine transparency.
+///
+/// The reference reads a bin as two coupled signals instead of one up/down
+/// flip, and so does this:
+///
+/// - **Color** follows the *imbalance*, amplified non-linearly around a
+///   neutral midpoint — `0.5 + |ratio|^0.7 * sign(ratio) * 1.5`, clamped —
+///   and mapped across the `0.2..0.8` gradient band from the resistance end to
+///   the support end. Because the exponent is below one, a mildly lopsided bin
+///   already reads off-neutral, and adjacent bins move continuously instead of
+///   alternating between two flat colors.
+/// - **Transparency** follows the *volume* relative to the mean bin
+///   (`75 - (ratio / 4)^2 * 70`, clamped to `5..95`), so thickness reads as
+///   density and a thin bin stays faint rather than recolored.
+///
+/// `None` for an index past the last bin or a bin under [`VOLUME_EPSILON`],
+/// exactly as the reference returns `COLOR_NONE`; the caller then paints
+/// nothing for that bin rather than substituting neutral gray.
+#[must_use]
+pub fn bin_fill(profile: &DeltaVolumeProfile, index: usize, palette: &BinPalette) -> Option<BinFill> {
+    let bin = profile.bins.get(index)?;
+    if !bin.volume.is_finite() || bin.volume < VOLUME_EPSILON {
+        return None;
+    }
+    let imbalance = imbalance_ratio(bin);
+    let avg_volume = profile.avg_volume;
+    let volume_ratio =
+        if avg_volume.is_finite() && avg_volume > VOLUME_EPSILON { bin.volume / avg_volume } else { 1.0 };
+    let amplified = (0.5 + imbalance.abs().powf(AMPLIFY_EXPONENT) * imbalance.signum() * AMPLIFY_GAIN)
+        .clamp(0.0, 1.0);
+    let volume_strength = (volume_ratio / VOLUME_STRENGTH_DIVISOR).powi(2);
+    // Pine `int()` truncates toward zero before the clamp.
+    let transparency = (TRANSPARENCY_BASE - volume_strength * TRANSPARENCY_SPAN)
+        .trunc()
+        .clamp(MIN_TRANSPARENCY, MAX_TRANSPARENCY);
+    let position = gradient_position(amplified, GRADIENT_LOW, GRADIENT_HIGH);
+    // Resistance sits at position 0, support at 1, so the gradient runs from
+    // the sell end into the buy end exactly as `from_gradient` is called.
+    let channel = |low: u8, high: u8| {
+        (f64::from(low) + (f64::from(high) - f64::from(low)) * position)
+            .round()
+            .clamp(0.0, 255.0) as u8
+    };
+    Some(BinFill {
+        red: channel(palette.resistance[0], palette.support[0]),
+        green: channel(palette.resistance[1], palette.support[1]),
+        blue: channel(palette.resistance[2], palette.support[2]),
+        transparency,
+    })
+}
+
+/// One painted profile bar: a rectangle at the chart's right edge plus the
+/// ported fill it carries.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ProfileBox {
     /// Rectangle in pane-local pixels.
     pub rect: egui::Rect,
-    /// Theme style key (`bull` for buy-dominant, `bear` for sell-dominant).
-    pub style: &'static str,
-    /// Paint opacity within `[0, 1]`; thicker volume reads brighter.
-    pub alpha: f32,
+    /// Index of the bin this box draws, so the painter can read that bin's
+    /// imbalance back off the profile without re-walking it.
+    pub bin: usize,
+    /// Gradient color and Pine transparency for this bin.
+    pub fill: BinFill,
     /// Whether this is the point-of-control bin.
     pub poc: bool,
 }
@@ -235,8 +418,9 @@ pub struct ProfileBox {
 /// extending leftward by up to `width_slots` bars.
 ///
 /// `origin` is the pane's top-left. Off-window bins are skipped so the profile
-/// never paints past the visible price range. A degenerate profile (no bins or
-/// no volume) yields no boxes.
+/// never paints past the visible price range, as are bins under
+/// [`VOLUME_EPSILON`], which the ported shading refuses. A degenerate profile
+/// (no bins or no volume) yields no boxes.
 #[must_use]
 pub fn profile_boxes(
     profile: &DeltaVolumeProfile,
@@ -244,6 +428,7 @@ pub fn profile_boxes(
     origin: egui::Pos2,
     anchor_index: usize,
     width_slots: i64,
+    palette: &BinPalette,
 ) -> Vec<ProfileBox> {
     if profile.bins.is_empty() || profile.max_volume <= 0.0 || width_slots <= 0 {
         return Vec::new();
@@ -252,9 +437,9 @@ pub fn profile_boxes(
     let max_width = width_slots as f32 * viewport.scale().bar_spacing();
     let mut boxes = Vec::with_capacity(profile.bins.len());
     for (index, bin) in profile.bins.iter().enumerate() {
-        if bin.volume <= 0.0 {
+        let Some(fill) = bin_fill(profile, index, palette) else {
             continue;
-        }
+        };
         let (Some(y_high), Some(y_low)) =
             (viewport.windowed_y(bin.price_high), viewport.windowed_y(bin.price_low))
         else {
@@ -266,13 +451,7 @@ pub fn profile_boxes(
             egui::pos2(anchor_x - width, origin.y + top),
             egui::pos2(anchor_x, origin.y + bottom),
         );
-        let alpha = (0.2 + 0.6 * (bin.volume / profile.max_volume) as f32).clamp(0.0, 1.0);
-        boxes.push(ProfileBox {
-            rect,
-            style: if bin.imbalance >= 0.0 { "bull" } else { "bear" },
-            alpha,
-            poc: profile.poc == Some(index),
-        });
+        boxes.push(ProfileBox { rect, bin: index, fill, poc: profile.poc == Some(index) });
     }
     boxes
 }
@@ -585,6 +764,7 @@ impl crate::indicators::ChartIndicator for DeltaVolumeProfileIndicator {
         origin: egui::Pos2,
         theme: &ThemeConfig,
         config: &dyn Component,
+        style: &IndicatorStyle,
     ) -> Result<(), EguiError> {
         let config = fluent_wvr::component_downcast_ref::<DeltaVolumeProfileConfig>(config)
             .ok_or_else(|| EguiError::InvalidParam {
@@ -596,18 +776,37 @@ impl crate::indicators::ChartIndicator for DeltaVolumeProfileIndicator {
         if profile.bins.is_empty() {
             return Ok(());
         }
+        let palette = bin_palette(style, theme)?;
         let count = evaluation.series.first().map_or(0, |series| series.values.len());
         let anchor = count.saturating_sub(1) + config.offset as usize;
         if config.show_profile {
-            for profile_box in profile_boxes(&profile, viewport, origin, anchor, config.width) {
-                let base = resolve_color(theme, profile_box.style)?;
-                let color = base.gamma_multiply(profile_box.alpha);
-                painter.rect_filled(profile_box.rect, 0.0, color);
+            for profile_box in
+                profile_boxes(&profile, viewport, origin, anchor, config.width, &palette)
+            {
+                painter.rect_filled(profile_box.rect, 0.0, profile_box.fill.color());
                 if profile_box.poc {
+                    // The reference outlines the point of control on the side
+                    // that formed it, so the ring says *which* imbalance made
+                    // the POC rather than just marking it.
+                    let edge = if profile
+                        .bins
+                        .get(profile_box.bin)
+                        .is_none_or(|bin| imbalance_ratio(bin) >= 0.0)
+                    {
+                        palette.support
+                    } else {
+                        palette.resistance
+                    };
+                    let border = egui::Color32::from_rgba_unmultiplied(
+                        edge[0],
+                        edge[1],
+                        edge[2],
+                        opacity_from_transparency(POC_BORDER_TRANSPARENCY),
+                    );
                     painter.rect_stroke(
                         profile_box.rect,
                         0.0,
-                        egui::Stroke::new(1.0, base),
+                        egui::Stroke::new(1.0, border),
                         egui::StrokeKind::Inside,
                     );
                 }
@@ -616,11 +815,12 @@ impl crate::indicators::ChartIndicator for DeltaVolumeProfileIndicator {
         let left = origin.x + viewport.index_to_x(anchor.saturating_sub(config.width as usize));
         let right = origin.x + viewport.index_to_x(anchor);
         if config.show_value_area {
+            let stroke = egui::Stroke::new(style.line_width(), style.color(theme, "slow")?);
             for level in [profile.vah, profile.val].into_iter().flatten() {
                 if let Some(y) = viewport.windowed_y(level) {
                     painter.line_segment(
                         [egui::pos2(left, origin.y + y), egui::pos2(right, origin.y + y)],
-                        egui::Stroke::new(1.0, resolve_color(theme, "slow")?),
+                        stroke,
                     );
                 }
             }
@@ -630,7 +830,7 @@ impl crate::indicators::ChartIndicator for DeltaVolumeProfileIndicator {
                 if let Some(y) = viewport.windowed_y(price) {
                     painter.line_segment(
                         [egui::pos2(left, origin.y + y), egui::pos2(right, origin.y + y)],
-                        egui::Stroke::new(1.0, resolve_color(theme, "fast")?),
+                        egui::Stroke::new(style.line_width(), style.color(theme, "fast")?),
                     );
                 }
             }
@@ -647,7 +847,7 @@ impl crate::indicators::ChartIndicator for DeltaVolumeProfileIndicator {
                         Some((origin.x + viewport.index_to_x(index), origin.y + y))
                     })
                     .collect();
-                paint_oscillator(painter, &points, "fast", theme, 1.0)?;
+                paint_oscillator_styled(painter, &points, "fast", theme, style, 1.0)?;
             }
         }
         Ok(())

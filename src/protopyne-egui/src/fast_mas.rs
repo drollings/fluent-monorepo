@@ -20,7 +20,8 @@ use protopyne_types::{Validate, check_for_execute, valid_output};
 use crate::topology::kernel_series;
 
 use fluent_egui::{
-    EguiError, ThemeConfig, Viewport, oscillator_points, paint_oscillator, translate_points,
+    EguiError, IndicatorStyle, ThemeConfig, Viewport, oscillator_points, paint_oscillator_styled,
+    translate_points,
 };
 
 /// Moving-average kernels the module accepts as a line's smoothing.
@@ -421,17 +422,22 @@ pub fn evaluate_fast_mas(
 /// Geometry is pane-local ([`oscillator_points`] maps against the pane's own
 /// viewport), so the caller shifts the whole batch by its pane rect's origin.
 /// Holes stay holes; an unknown or malformed style key refuses by name.
+///
+/// `style` is the owning slot's [`IndicatorStyle`]: each line paints under its
+/// own key, so one Style tab can restyle a single arm and leave the rest
+/// themed.
 pub fn paint_fast_mas(
     painter: &egui::Painter,
     view: &FastMasView,
     viewport: &Viewport,
     origin: egui::Pos2,
     theme: &ThemeConfig,
+    style: &IndicatorStyle,
 ) -> Result<(), EguiError> {
     for line in &view.lines {
         let points = oscillator_points(&line.values, viewport);
         let placed = translate_points(points, (origin.x, origin.y));
-        paint_oscillator(painter, &placed, &line.style, theme, 1.0)?;
+        paint_oscillator_styled(painter, &placed, &line.style, theme, style, 1.0)?;
     }
     Ok(())
 }
