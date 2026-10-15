@@ -194,20 +194,23 @@ const STACK_ORIGIN: (f32, f32) = (8.0, 36.0);
 
 /// The overlay stack: insertion-ordered slots with one shared origin.
 ///
-/// Hit-test rects derive from the origin plus slot order, so the painter and
-/// [`HotSlotStack::hit_test_controls`] always agree on where the controls
-/// are — there is exactly one layout truth.
+/// Hit-test rects derive from the origin plus slot order plus the scroll
+/// offset, so the painter and [`HotSlotStack::hit_test_controls`] always
+/// agree on where the controls are — there is exactly one layout truth.
+/// Scrolling (a wheel over the legend) moves every card together and clamps
+/// to the content, so the list can never be dragged off its own cards.
 pub struct HotSlotStack {
     order: Vec<String>,
     slots: HashMap<String, HotSlot>,
     origin: (f32, f32),
+    scroll_px: f32,
 }
 
 impl HotSlotStack {
     /// Create an empty stack at the default origin.
     #[must_use]
     pub fn new() -> Self {
-        Self { order: Vec::new(), slots: HashMap::new(), origin: STACK_ORIGIN }
+        Self { order: Vec::new(), slots: HashMap::new(), origin: STACK_ORIGIN, scroll_px: 0.0 }
     }
 
     /// Stack origin (top-left of the first card).
@@ -219,6 +222,51 @@ impl HotSlotStack {
     /// Move the stack origin; hit-test rects follow on the next query.
     pub fn set_origin(&mut self, origin: (f32, f32)) {
         self.origin = origin;
+    }
+
+    /// Current scroll offset in pixels; `0.0` means the first card sits at
+    /// the stack origin.
+    #[must_use]
+    pub fn scroll_offset(&self) -> f32 {
+        self.scroll_px
+    }
+
+    /// Total height of the card column in pixels, gaps included.
+    #[must_use]
+    pub fn content_height(&self) -> f32 {
+        if self.order.is_empty() {
+            return 0.0;
+        }
+        // Slot counts are single digits, so the `usize`-to-`f32` cast is
+        // exact for every realistic stack.
+        (self.order.len() as f32 - 1.0) * (STACK_CARD_HEIGHT + STACK_CARD_GAP) + STACK_CARD_HEIGHT
+    }
+
+    /// Scroll the card column by a wheel gesture, clamped so the list stops
+    /// at both ends: a positive `delta_px` scrolls up (toward the first card,
+    /// matching the platform wheel convention), and the offset never exceeds
+    /// `content_height - viewport_height`.
+    pub fn scroll_by(&mut self, delta_px: f32, viewport_height: f32) {
+        if !delta_px.is_finite() {
+            return;
+        }
+        let slack = (self.content_height() - viewport_height.max(0.0)).max(0.0);
+        self.scroll_px = (self.scroll_px - delta_px).clamp(0.0, slack);
+    }
+
+    /// The region a wheel scrolls instead of the chart: the card column
+    /// clipped to `viewport_height` from the stack origin. `None` for an
+    /// empty stack (there is no list to scroll).
+    #[must_use]
+    pub fn list_rect(&self, viewport_height: f32) -> Option<egui::Rect> {
+        let height = self.content_height();
+        if height <= 0.0 || !viewport_height.is_finite() || viewport_height <= 0.0 {
+            return None;
+        }
+        Some(egui::Rect::from_min_size(
+            egui::Pos2::new(self.origin.0, self.origin.1),
+            egui::Vec2::new(STACK_CARD_WIDTH, height.min(viewport_height)),
+        ))
     }
 
     /// Insert a slot and register its pane-plan nodes under `fingerprint`.
@@ -301,6 +349,9 @@ impl HotSlotStack {
         slot.handle.close();
         self.slots.remove(id);
         self.order.retain(|known| known != id);
+        // The column just shortened, so a scrolled offset may now overshoot
+        // the content; re-clamp against the last known viewport extent.
+        self.scroll_px = self.scroll_px.min(self.content_height());
         Ok(())
     }
 
@@ -563,7 +614,7 @@ impl HotSlotStack {
         self.order.iter().position(|known| known == id).map(|index| {
             // Slot counts are single digits, so the `usize`-to-`f32` cast is
             // exact for every realistic stack.
-            index as f32 * (STACK_CARD_HEIGHT + STACK_CARD_GAP)
+            index as f32 * (STACK_CARD_HEIGHT + STACK_CARD_GAP) - self.scroll_px
         })
     }
 }

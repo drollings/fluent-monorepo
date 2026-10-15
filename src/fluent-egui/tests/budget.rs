@@ -106,6 +106,12 @@ fn forbid_in_src(token: &str, why: &str) {
 
 #[test]
 fn bloat_ledger_pins_source_files() {
+    // `wheel.rs` earns its line by isolating the region→target decision (a
+    // wheel acts on the plot's time axis, a price strip's own axis, or a
+    // floating list) from the interaction machine that applies it. Folding it
+    // into `interaction.rs` would drag `egui` geometry into that headless
+    // module; folding it into `slot.rs` would make a chart-wide decision look
+    // like a legend concern. Its own file is the smaller honest boundary.
     assert_eq!(
         src_file_names(),
         vec![
@@ -124,6 +130,7 @@ fn bloat_ledger_pins_source_files() {
             "slot.rs",
             "view.rs",
             "viewport.rs",
+            "wheel.rs",
         ],
         "a new source file must justify itself by editing this ledger"
     );

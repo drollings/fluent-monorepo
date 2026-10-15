@@ -39,9 +39,10 @@ before `Arc`-sharing, override at runtime via `ComponentAdapter`.
 | `src/paint.rs` | Headless geometry builders + thin `egui` emitters | `candle_geoms`, `ribbon_bands`, `delta_bar_geoms`, `oscillator_points`, `pivot_dots`, `pivot_price_dots`, `threshold_line`, `resolve_color`, `area_polygons`, `area_vertex_color`, `ribbon_polygons`, `marker_dots`, `crosshair_lines`, `translate_candles`/`translate_polygons`/`translate_breaks`/`translate_points`/`translate_dots`/`translate_markers`/`translate_delta_bars`, `eye_icon_geom`, `hex_bolt_icon_geom`, `search_icon_geom`, `paint_eye_icon`, `paint_hex_bolt_icon`, `paint_search_icon`, `paint_*` |
 | `src/annotations.rs` | Headless annotation set + timestamp-to-bar resolution | `AnnotationSet`, `TimeIndex`, `resolve_annotation` |
 | `src/hittest.rs` | Pointer-to-data readout + candle hit-testing (headless) | `Crosshair`, `crosshair_data`, `crosshair_pixel`, `Hit`, `hit_test`, `HIT_EPSILON_PX` |
-| `src/interaction.rs` | Deterministic pointer-interaction state machine (headless, clock-free) | `InteractionState` (`with_horizontal_bounds`, `kinetic_velocity_x`), `PointerInput` (`Pan2D`/`WheelTime`), `MIN_BAR_SPACING`, `MAX_BAR_SPACING`, `ANCHOR_DRIFT_EPS_PX` |
+| `src/interaction.rs` | Deterministic pointer-interaction state machine (headless, clock-free) | `InteractionState` (`with_horizontal_bounds`, `kinetic_velocity_x`), `PointerInput` (`Pan2D`/`WheelTime`), `MIN_BAR_SPACING`, `MAX_BAR_SPACING`, `ANCHOR_DRIFT_EPS_PX`, `wheel_zoom_factor`, `zoom_range_around` |
+| `src/wheel.rs` | Region-aware wheel routing: what a wheel acts on | `WheelZones` (`route`), `PaneZones`, `WheelTarget` (`Time`/`Price`/`List`) |
 | `src/fields.rs` | Schema-driven settings editor + `Inputs`/`Style`/`Visibility` tabs | `FieldKind`, `SchemaField`, `FieldEdits`, `schema_fields`, `paint_schema_fields`, `SettingsTab`, `classify_schema_field`, `fields_for_tab`, `paint_tabbed_schema_fields` |
-| `src/slot.rs` | Hot-slotted indicator control stack + isolated settings modal | `HotSlot`, `HotSlotStack`, `SlotAttachment`, `HotSlotAction`, `SlotControlRect`, `SlotControlHit`, `ReadoutValue`, `paint_hot_slot_stack`, `paint_slot_settings_modal` |
+| `src/slot.rs` | Hot-slotted indicator control stack + isolated settings modal | `HotSlot`, `HotSlotStack` (`scroll_by`, `content_height`, `list_rect`, `card_width`), `SlotAttachment`, `HotSlotAction`, `SlotControlRect`, `SlotControlHit`, `ReadoutValue`, `paint_hot_slot_stack`, `paint_slot_settings_modal`, `SettingsCommit`, `SettingsOutcome` |
 | `src/modal.rs` | Generic searchable, categorized catalog modal | `CatalogEntry`, `CatalogModal`, `paint_catalog_modal` |
 | `src/feed.rs` | Feeds, waves, caps, aborts, backpressure | `ChartFeed`, `PaneWaveUnit`, `run_wave`, `RefreshGate`, `PaneHandle`, `CreditIntake`, `load_history`, `TransportRetry` |
 | `src/replay.rs` | Scrub-back controller + toolbar cursor | `ReplayController`, `ReplayState` |
@@ -52,6 +53,37 @@ Conventions: `#![forbid(unsafe_code)]`; `autotests = false` with
 `egui` (required) / `eframe` (optional `demo` feature) live only here and
 in the domain terminal crate — no headless or trading crate may depend on
 them in either direction (pinned by `tests/budget.rs` + `tests/lib.rs`).
+
+### 5. Route the wheel by region, never by call site
+
+```rust
+use fluent_egui::{PaneZones, WheelZones};
+
+let zones = WheelZones::new(
+    vec![PaneZones { plot: main.plot.into(), axis: main.axis.into() },
+         PaneZones { plot: sub.plot.into(), axis: sub.axis.into() }],
+    stack.list_rect(main.plot.height()).map(Into::into),
+);
+match zones.route(hover) {                          // headless, no egui types
+    Some(WheelTarget::Time { anchor_x }) => events.push(PointerInput::WheelTime { delta_px, anchor_x }),
+    Some(WheelTarget::Price { pane: 0, anchor_y }) => events.push(PointerInput::Wheel { delta_px, anchor_y }),
+    Some(WheelTarget::Price { pane, anchor_y }) => zoom_pane_price(pane, delta_px, anchor_y),
+    Some(WheelTarget::List) => stack.scroll_by(delta_px, main.plot.height()),
+    None => {}
+}
+```
+
+A chart is not one surface, so the wheel is routed **once** by
+`WheelZones :: route` rather than re-decided at each call site: the list
+first (a floating overlay wins), then each pane's axis strip, then its plot —
+so a seam belongs to exactly one target. `Time` and `Price` carry a
+*pane-local* anchor you forward straight into `PointerInput`; `Price` also
+names its pane (`pane: 0` is the price pane). Both Y paths share
+`wheel_zoom_factor` + `zoom_range_around`, so a pane that zooms outside the
+machine (an oscillator pane, which has no price envelope) feels identical to
+one that steps it — clamp *that* pane's span to its own design band instead
+of routing it through the price envelope. A legend whose column fits its
+pane has nothing to scroll, and `scroll_by` clamps at both ends.
 
 ## Key operations
 

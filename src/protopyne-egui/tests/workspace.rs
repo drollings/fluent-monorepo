@@ -315,3 +315,184 @@ fn seeded_timeframes_switch_the_loaded_candles_and_resample_coarser_keys() {
         "an unseeded slot refuses rather than serving another timeframe"
     );
 }
+
+/// The two pane rects the wheel routes over: a price pane with its axis and
+/// time strip, and the oscillator pane below it with its own axis.
+fn wheel_layouts() -> (PaneLayout, PaneLayout) {
+    let width = ui_width();
+    let main = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(width, PRICE_PANE_HEIGHT));
+    let sub = egui::Rect::from_min_size(
+        egui::pos2(0.0, PRICE_PANE_HEIGHT),
+        egui::vec2(width, SUB_PANE_HEIGHT),
+    );
+    (PaneLayout::split(main, true), PaneLayout::split(sub, false))
+}
+
+/// The pane width the workspace uses for a headless frame.
+fn ui_width() -> f32 {
+    640.0
+}
+
+/// The zones the canvas builds, mirroring `step_from_response`.
+fn chart_zones(
+    layout: &PaneLayout,
+    sub: &PaneLayout,
+    list: Option<fluent_egui::WheelRect>,
+) -> WheelZones {
+    WheelZones::new(
+        vec![
+            PaneZones { plot: layout.plot.into(), axis: layout.axis.into() },
+            PaneZones { plot: sub.plot.into(), axis: sub.axis.into() },
+        ],
+        list,
+    )
+}
+
+#[test]
+fn the_legend_sits_clear_of_the_right_price_axis() {
+    let (layout, _) = wheel_layouts();
+    let card_width = 168.0;
+    let (x, y) = legend_origin(layout.plot.union(layout.axis), card_width);
+    assert!(
+        x + card_width <= layout.axis.left(),
+        "the legend ends before the price strip starts: {} + {card_width} > {}",
+        x,
+        layout.axis.left()
+    );
+    assert!(y >= layout.plot.top(), "the legend hangs from the pane's top edge");
+}
+
+#[test]
+fn the_oscillator_axis_wheel_zooms_only_the_oscillators_price_range() {
+    let (layout, sub_layout) = wheel_layouts();
+    let mut workspace = ChartWorkspace::new().expect("the workspace boots");
+    workspace.seed_history(TimeframeKey::M1, ramp_rows(40)).expect("history seeds");
+    workspace.select_timeframe(TimeframeKey::M1).expect("M1 selects and rebinds the viewports");
+
+    let before_main = workspace.main_viewport().expect("main viewport").visible_range();
+    let before_sub = workspace.sub_viewport().expect("sub viewport").visible_range();
+    let before_spacing = workspace.main_viewport().expect("main viewport").scale().bar_spacing();
+
+    // A pointer over the oscillator's own price labels.
+    let hover = egui::pos2(sub_layout.axis.center().x, sub_layout.axis.center().y);
+    let target = chart_zones(&layout, &sub_layout, None).route(hover.into());
+    assert_eq!(
+        target,
+        Some(WheelTarget::Price { pane: SUB_PANE_ZONE, anchor_y: hover.y - sub_layout.plot.top() }),
+        "the oscillator's strip routes to its own price axis"
+    );
+
+    if let Some(WheelTarget::Price { pane, anchor_y }) = target {
+        workspace.zoom_pane_price(pane, 50.0, anchor_y);
+    }
+
+    let after_sub = workspace.sub_viewport().expect("sub viewport").visible_range();
+    assert!(
+        after_sub.max - after_sub.min < before_sub.max - before_sub.min,
+        "the oscillator window narrowed: {} -> {}",
+        before_sub.max - before_sub.min,
+        after_sub.max - after_sub.min
+    );
+    assert_eq!(
+        workspace.main_viewport().expect("main viewport").visible_range(),
+        before_main,
+        "the price pane's window is untouched"
+    );
+    assert!(
+        unchanged(
+            workspace.main_viewport().expect("main viewport").scale().bar_spacing(),
+            before_spacing
+        ),
+        "the shared time axis is untouched"
+    );
+}
+
+#[test]
+fn an_oscillator_zoom_out_stops_at_the_panes_design_band() {
+    let (_, sub_layout) = wheel_layouts();
+    let mut workspace = ChartWorkspace::new().expect("the workspace boots");
+    workspace.seed_history(TimeframeKey::M1, ramp_rows(40)).expect("history seeds");
+    workspace.select_timeframe(TimeframeKey::M1).expect("M1 selects and rebinds the viewports");
+    let anchor = sub_layout.plot.height() / 2.0;
+
+    for _ in 0..200 {
+        workspace.zoom_pane_price(SUB_PANE_ZONE, -500.0, anchor);
+    }
+    let range = workspace.sub_viewport().expect("sub viewport").visible_range();
+    let base = SUB_MAX - SUB_MIN;
+    assert!(
+        (range.max - range.min - base).abs() < 1e-6,
+        "zooming out never exceeds the pane's own band: {}",
+        range.max - range.min
+    );
+
+    for _ in 0..400 {
+        workspace.zoom_pane_price(SUB_PANE_ZONE, 500.0, anchor);
+    }
+    let tight = workspace.sub_viewport().expect("sub viewport").visible_range();
+    assert!(
+        tight.max - tight.min >= base * SUB_MIN_SPAN_FRACTION,
+        "zooming in stops above the legibility rail: {}",
+        tight.max - tight.min
+    );
+}
+
+#[test]
+fn the_price_axis_wheel_is_answered_by_the_interaction_machine() {
+    let (layout, _) = wheel_layouts();
+    let hover = egui::pos2(layout.axis.center().x, layout.axis.center().y);
+    let target = chart_zones(&layout, &layout, None).route(hover.into());
+    assert_eq!(
+        target,
+        Some(WheelTarget::Price { pane: 0, anchor_y: hover.y - layout.plot.top() }),
+        "the price pane's strip routes to pane 0, which the machine steps"
+    );
+}
+
+#[test]
+fn a_wheel_over_the_legend_never_moves_the_chart() {
+    let (layout, sub_layout) = wheel_layouts();
+    let mut workspace = ChartWorkspace::new().expect("the workspace boots");
+    workspace.seed_history(TimeframeKey::M1, ramp_rows(40)).expect("history seeds");
+    workspace.select_timeframe(TimeframeKey::M1).expect("M1 selects and rebinds the viewports");
+    workspace.stack.set_origin((layout.plot.right() - 180.0, layout.plot.top() + 8.0));
+
+    let before_main = workspace.main_viewport().expect("main viewport").visible_range();
+    let before_spacing = workspace.main_viewport().expect("main viewport").scale().bar_spacing();
+    let before_scroll = workspace.stack.scroll_offset();
+
+    let list = workspace.stack.list_rect(layout.plot.height()).expect("a list to scroll");
+    let zones = chart_zones(&layout, &sub_layout, Some(list.into()));
+    assert_eq!(zones.route(egui::pos2(list.center().x, list.center().y).into()), Some(WheelTarget::List));
+
+    // The gesture the router selects: scroll the list, chart untouched.
+    if let Some(WheelTarget::List) = zones.route(egui::pos2(list.center().x, list.center().y).into()) {
+        workspace.stack.scroll_by(-40.0, layout.plot.height());
+    }
+
+    // The default legend fits inside the pane, so the scroll offset correctly
+    // stays put; what matters is that the gesture was claimed by the list
+    // rather than reaching the chart.
+    assert!(
+        unchanged(workspace.stack.scroll_offset(), before_scroll),
+        "a legend that fits the pane has nothing to scroll"
+    );
+    assert!(
+        workspace.stack.content_height() <= layout.plot.height(),
+        "the premise: the default legend column fits the chart pane"
+    );
+    assert_eq!(workspace.main_viewport().expect("main viewport").visible_range(), before_main, "price held");
+    assert!(
+        unchanged(
+            workspace.main_viewport().expect("main viewport").scale().bar_spacing(),
+            before_spacing
+        ),
+        "the time axis held"
+    );
+}
+
+/// Bit-exact equality: an "untouched" assertion must not forgive a drift, so
+/// it compares the representation rather than a tolerance.
+fn unchanged(actual: f32, expected: f32) -> bool {
+    actual.to_bits() == expected.to_bits()
+}

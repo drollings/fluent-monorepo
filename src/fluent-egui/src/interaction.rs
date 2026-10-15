@@ -33,6 +33,8 @@
 //! [`Viewport`]: crate::viewport::Viewport
 //! [`visible_rows`]: crate::viewport::visible_rows
 
+use protopyne_chart_scale::PriceRange;
+
 use crate::error::EguiError;
 use crate::viewport::Viewport;
 
@@ -332,9 +334,17 @@ impl InteractionState {
                             continue;
                         }
                         let Some(anchor) = viewport.y_to_price(anchor_y) else { continue };
-                        let factor =
-                            WHEEL_ZOOM_BASE.powf(-f64::from(delta_px) / WHEEL_STEP_PX);
-                        (min, max) = zoom_around(min, max, anchor, factor);
+                        // Same factor and the same rescale a caller gets from
+                        // `wheel_zoom_factor` / `zoom_range_around`, so a
+                        // pane that zooms outside the machine still feels and
+                        // behaves identically to one that steps it.
+                        let factor = wheel_zoom_factor(delta_px);
+                        let Some(next) =
+                            zoom_range_around(scale.range(), anchor, factor)
+                        else {
+                            continue;
+                        };
+                        (min, max) = (next.min, next.max);
                         self.velocity = 0.0;
                     }
                     PointerInput::WheelTime { delta_px, anchor_x } => {
@@ -443,6 +453,29 @@ impl InteractionState {
 /// Rescale the window span by `factor`, keeping `anchor` fixed.
 fn zoom_around(min: f64, max: f64, anchor: f64, factor: f64) -> (f64, f64) {
     (anchor - (anchor - min) * factor, anchor + (max - anchor) * factor)
+}
+
+/// The multiplicative factor a wheel gesture of `delta_px` applies to a price
+/// window: scroll up (positive) zooms in, matching the time-axis wheel. The
+/// one definition of "how far a notch zooms" — a pane that zooms outside
+/// [`InteractionState`] (an oscillator pane, say) uses this so both paths feel
+/// identical.
+#[must_use]
+pub fn wheel_zoom_factor(delta_px: f32) -> f64 {
+    WHEEL_ZOOM_BASE.powf(-f64::from(delta_px) / WHEEL_STEP_PX)
+}
+
+/// Rescale `range` by `factor` around `anchor`, keeping the price at `anchor`
+/// fixed. Refuses (`None`) on a non-finite factor or an anchor outside the
+/// range, so a caller never receives an inverted window.
+#[must_use]
+pub fn zoom_range_around(range: PriceRange, anchor: f64, factor: f64) -> Option<PriceRange> {
+    if !factor.is_finite() || factor <= 0.0 || !anchor.is_finite() {
+        return None;
+    }
+    let (min, max) = (range.min, range.max);
+    let (next_min, next_max) = zoom_around(min, max, anchor, factor);
+    PriceRange::new(next_min, next_max).ok()
 }
 
 #[cfg(test)]

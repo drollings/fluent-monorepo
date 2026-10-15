@@ -37,6 +37,7 @@ pub mod replay;
 pub mod slot;
 pub mod view;
 pub mod viewport;
+pub mod wheel;
 
 pub use annotations::{AnnotationSet, MAX_UNDO_DEPTH, TimeIndex, annotate_at, resolve_annotation};
 pub use config::{PaneConfig, ThemeConfig};
@@ -56,6 +57,7 @@ pub use hittest::{
 };
 pub use interaction::{
     ANCHOR_DRIFT_EPS_PX, InteractionState, MAX_BAR_SPACING, MIN_BAR_SPACING, PointerInput,
+    wheel_zoom_factor, zoom_range_around,
 };
 pub use paint::{
     CandleGeom, CrosshairLines, DeltaBarGeom, EyeIconGeom, HexBoltIconGeom, MarkerDot, PivotDot,
@@ -85,6 +87,7 @@ pub use view::{
 pub use viewport::{
     BreakLine, Viewport, axis_ticks, thin_ticks, visible_rows,
 };
+pub use wheel::{PaneZones, Pos2 as WheelPos2, Rect as WheelRect, WheelTarget, WheelZones};
 
 /// Paint-edge marker; touches the linked paint dependency so wiring breaks
 /// loudly if the dependency stops resolving.

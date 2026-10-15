@@ -387,3 +387,150 @@ fn overlay_control_clicks_never_leak_to_canvas_annotation() {
     }
     assert_eq!(false_annotations, 0, "no control click leaks to a canvas annotation");
 }
+
+/// A stack of `count` slots, each with its own plan node.
+fn many(count: usize) -> HotSlotStack {
+    let mut plan = PanePlan::new();
+    let mut stack = HotSlotStack::new();
+    for index in 0..count {
+        stack
+            .insert(
+                &format!("slot_{index}"),
+                &format!("Slot {index}"),
+                SlotAttachment::MainOverlay,
+                Box::new(probe(8)),
+                &[&format!("node_{index}")],
+                &[],
+                0xC0 + index as u64,
+                &mut plan,
+            )
+            .expect("slot inserts");
+    }
+    stack
+}
+
+#[test]
+fn content_height_counts_cards_and_gaps() {
+    assert!(close_px(HotSlotStack::new().content_height(), 0.0), "an empty stack has no column");
+    assert!(close_px(many(1).content_height(), STACK_CARD_HEIGHT), "one card is one card tall");
+    let three = many(3).content_height();
+    assert!(
+        close_px(three, 2.0 * (STACK_CARD_HEIGHT + STACK_CARD_GAP) + STACK_CARD_HEIGHT),
+        "three cards carry two gaps between them: {three}"
+    );
+}
+
+#[test]
+fn scrolling_stops_at_both_ends_of_the_column() {
+    let mut stack = many(6);
+    let viewport = 60.0;
+    let slack = stack.content_height() - viewport;
+
+    stack.scroll_by(1_000.0, viewport);
+    assert!(close_px(stack.scroll_offset(), 0.0), "scrolling up past the first card clamps at the top");
+
+    stack.scroll_by(-1_000.0, viewport);
+    assert!(close_px(stack.scroll_offset(), slack), "scrolling down stops at the content end");
+
+    // A viewport taller than the column leaves nothing to scroll.
+    let mut tall = many(3);
+    tall.scroll_by(-50.0, 10_000.0);
+    assert!(close_px(tall.scroll_offset(), 0.0), "a column that fits never scrolls");
+}
+
+#[test]
+fn scrolling_moves_cards_and_hit_tests_together() {
+    let mut stack = many(6);
+    stack.set_origin((100.0, 50.0));
+    let viewport = 60.0;
+    let second_before = stack
+        .hit_test_controls((110.0, 50.0 + STACK_CARD_HEIGHT + STACK_CARD_GAP))
+        .and_then(|hit| match hit {
+            SlotControlHit::Card(id) => Some(id),
+            _ => None,
+        });
+    assert_eq!(second_before.as_deref(), Some("slot_1"), "the second card starts below the first");
+
+    stack.scroll_by(-(STACK_CARD_HEIGHT + STACK_CARD_GAP), viewport);
+    assert!(
+        close_px(stack.scroll_offset(), STACK_CARD_HEIGHT + STACK_CARD_GAP),
+        "the wheel moved the column by exactly one card"
+    );
+    // The same point now names the card that scrolled up into it: painter and
+    // hit-test share one layout truth.
+    let second_after = stack
+        .hit_test_controls((110.0, 50.0 + STACK_CARD_HEIGHT + STACK_CARD_GAP))
+        .and_then(|hit| match hit {
+            SlotControlHit::Card(id) => Some(id),
+            _ => None,
+        });
+    assert_eq!(second_after.as_deref(), Some("slot_2"), "hit-testing follows the scroll");
+    let rects = stack.control_rects();
+    assert_eq!(rects.len(), 6, "scrolling never drops a card");
+    assert!(
+        close_px(rects[1].card.min.y, 50.0),
+        "the second card scrolled up to the origin: {}",
+        rects[1].card.min.y
+    );
+    assert!(
+        close_px(rects[0].card.min.y, 50.0 - (STACK_CARD_HEIGHT + STACK_CARD_GAP)),
+        "the first card moved up by exactly one slot: {}",
+        rects[0].card.min.y
+    );
+}
+
+#[test]
+fn scrolling_refuses_a_non_finite_wheel() {
+    let mut stack = many(6);
+    stack.scroll_by(f32::NAN, 60.0);
+    assert!(close_px(stack.scroll_offset(), 0.0), "a degenerate wheel holds the list");
+}
+
+#[test]
+fn the_list_region_is_the_scrolling_column() {
+    let mut stack = many(6);
+    assert_eq!(
+        HotSlotStack::new().list_rect(60.0),
+        None,
+        "an empty stack has no region to scroll"
+    );
+    stack.set_origin((100.0, 50.0));
+    let rect = stack.list_rect(60.0).expect("a populated stack has a region");
+    assert_eq!(rect.min, egui::pos2(100.0, 50.0), "the region starts at the stack origin");
+    assert!(
+        close_px(rect.height(), 60.0),
+        "the region is the viewport, not the whole column: {}",
+        rect.height()
+    );
+    // A viewport taller than the column clips the region to the column.
+    let tall = stack.list_rect(10_000.0).expect("still a region");
+    assert!(
+        close_px(tall.height(), stack.content_height()),
+        "the region never exceeds the cards it holds"
+    );
+    assert_eq!(stack.list_rect(0.0), None, "a zero-height viewport has nothing to scroll");
+    assert_eq!(stack.list_rect(f32::NAN), None, "a degenerate viewport has nothing to scroll");
+}
+
+#[test]
+fn removing_a_slot_reclamps_a_now_overshooting_scroll() {
+    let mut stack = many(6);
+    stack.set_origin((100.0, 50.0));
+    stack.scroll_by(-1_000.0, 60.0);
+    assert!(stack.scroll_offset() > 0.0, "the column scrolled to its end");
+    let end = stack.scroll_offset();
+
+    stack.remove("slot_5").expect("removes the last card");
+    assert!(
+        stack.scroll_offset() <= end,
+        "removing a card pulls the scroll back inside the shorter column"
+    );
+    assert!(
+        close_px(stack.scroll_offset(), stack.content_height().min(stack.scroll_offset())),
+        "the offset stays a real scroll position"
+    );
+}
+
+fn close_px(actual: f32, expected: f32) -> bool {
+    (actual - expected).abs() <= 1e-3 * expected.abs().max(1.0)
+}
