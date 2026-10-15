@@ -145,6 +145,9 @@ pub fn load_bars_single(path: &Path) -> Result<Vec<Bar>, ServerError> {
 pub enum HistorySource {
     /// CSV candidates in fallback order.
     Csv(Vec<PathBuf>),
+    /// Parquet candidates in fallback order: a missing candidate skips to
+    /// the next, anything else stops the walk naming that candidate.
+    Parquet(Vec<PathBuf>),
     /// Caller-supplied bars, replayed as given.
     Dynamic(Vec<Bar>),
     /// A planned read of a durable tape through a [`CandleStore`]. The `key`
@@ -194,6 +197,11 @@ pub fn load_history(
     match source {
         HistorySource::Csv(candidates) => {
             Ok(LoadedHistory::untaped(load_bars_with_fallback(candidates)?))
+        }
+        HistorySource::Parquet(candidates) => {
+            Ok(LoadedHistory::untaped(crate::parquet::load_bars_parquet_with_fallback(
+                candidates,
+            )?))
         }
         HistorySource::Dynamic(bars) => {
             if bars.is_empty() {

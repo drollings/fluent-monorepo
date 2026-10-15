@@ -49,6 +49,7 @@ pub mod history;
 pub mod identity;
 pub mod key;
 pub mod manifest;
+pub mod market_parquet;
 pub mod migrate;
 pub mod plan;
 pub mod range;
@@ -77,6 +78,7 @@ pub use history::{
 pub use identity::VerifiedId;
 pub use key::{SymbolId, TapeKey};
 pub use manifest::SnapshotRecord;
+pub use market_parquet::{OhlcvRead, read_ohlcv_parquet};
 pub use migrate::{SCHEMA_VERSION, ensure_schema};
 pub use plan::{ReadPlan, SpanOrigin, SpanPlan};
 pub use range::TimeRange;

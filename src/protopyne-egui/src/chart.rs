@@ -34,12 +34,13 @@ pub fn default_symbol() -> String {
 /// Ticker symbol shown by default in the top-bar symbol dropdown.
 pub const DEFAULT_SYMBOL: &str = "GLD";
 
-/// Intraday bar timeframe key behind the terminal toolbar.
+/// Intraday-to-daily bar timeframe key behind the terminal toolbar.
 ///
 /// Display-only selector: each key maps to bar spacing (for range-window
-/// math) and to a history slot in the shell. Higher keys (`H1`, `H4`)
-/// resample the `M15` slot upward in the shell — the kernels always see
-/// plain closed bars, never a timeframe concept.
+/// math), to the store's [`Timeframe`](protopyne_types::Timeframe) grid, and
+/// to a history slot in the shell. Higher keys (`H1`, `H4`, `D1`) resample
+/// the `M15` slot upward in the shell when no native slot was seeded — the
+/// kernels always see plain closed bars, never a timeframe concept.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum TimeframeKey {
     /// One-minute bars.
@@ -53,16 +54,18 @@ pub enum TimeframeKey {
     H1,
     /// Four-hour bars (resampled ×16 from `M15`).
     H4,
+    /// Daily bars (resampled ×96 from `M15`).
+    D1,
 }
 
 impl TimeframeKey {
     /// Every key in toolbar order.
     #[must_use]
     pub fn all() -> Vec<Self> {
-        vec![Self::M1, Self::M5, Self::M15, Self::H1, Self::H4]
+        vec![Self::M1, Self::M5, Self::M15, Self::H1, Self::H4, Self::D1]
     }
 
-    /// Short button label (`1M`, `5M`, `15M`, `1H`, `4H`).
+    /// Short button label (`1M`, `5M`, `15M`, `1H`, `4H`, `1D`).
     #[must_use]
     pub fn label(self) -> &'static str {
         match self {
@@ -71,6 +74,7 @@ impl TimeframeKey {
             Self::M15 => "15M",
             Self::H1 => "1H",
             Self::H4 => "4H",
+            Self::D1 => "1D",
         }
     }
 
@@ -83,6 +87,22 @@ impl TimeframeKey {
             Self::M15 => 900,
             Self::H1 => 3_600,
             Self::H4 => 14_400,
+            Self::D1 => 86_400,
+        }
+    }
+
+    /// The store/kernel grid spacing behind this key: the one mapping from
+    /// the toolbar's spelling onto [`Timeframe`](protopyne_types::Timeframe),
+    /// so load-time folding and read planning cannot disagree about it.
+    #[must_use]
+    pub fn timeframe(self) -> protopyne_types::Timeframe {
+        match self {
+            Self::M1 => protopyne_types::Timeframe::M1,
+            Self::M5 => protopyne_types::Timeframe::M5,
+            Self::M15 => protopyne_types::Timeframe::M15,
+            Self::H1 => protopyne_types::Timeframe::H1,
+            Self::H4 => protopyne_types::Timeframe::H4,
+            Self::D1 => protopyne_types::Timeframe::D1,
         }
     }
 
@@ -93,6 +113,7 @@ impl TimeframeKey {
             Self::M1 | Self::M5 | Self::M15 => 1,
             Self::H1 => 4,
             Self::H4 => 16,
+            Self::D1 => 96,
         }
     }
 }

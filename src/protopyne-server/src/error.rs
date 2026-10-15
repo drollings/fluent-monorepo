@@ -19,6 +19,17 @@ pub enum ServerError {
     /// The CSV header lacks a required column.
     #[error("bad CSV header: {0}")]
     BadHeader(String),
+    /// A market-data Parquet artifact could not be read: a schema mismatch,
+    /// an undecodable or null value, a fractional volume, or a mixed-ticker
+    /// file read without a ticker name. Carries the file and the reason;
+    /// never skipped silently.
+    #[error("bad parquet history {path}: {reason}")]
+    Parquet {
+        /// The candidate file that failed.
+        path: String,
+        /// What failed and why.
+        reason: String,
+    },
     /// Underlying I/O failure.
     #[error("I/O error: {0}")]
     Io(#[from] IoError),

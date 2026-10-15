@@ -81,6 +81,16 @@ pub struct ServerConfig {
     #[field(desc = "Feed frame interval in milliseconds", min = 1, max = 60_000)]
     #[builder(default = 50)]
     pub feed_interval_ms: u64,
+    /// Bar spacing of the boot history, spelled as a toolbar label (`1M`,
+    /// `5M`, `15M`, `1H`, `4H`, `1D`). Symbol- and timeframe-scoped reads
+    /// fold the boot history by whole multiples of this base; the `15M`
+    /// default is the vendored CLI history, so a deployment that names no
+    /// base keeps the exact pre-existing resampling. `#[serde(default)]`
+    /// keeps older config files (which name no base) loading.
+    #[field(desc = "Boot history bar spacing (1M, 5M, 15M, 1H, 4H, 1D)")]
+    #[builder(default = default_history_timeframe())]
+    #[serde(default = "default_history_timeframe")]
+    pub history_timeframe: String,
     /// Latest observed store liveness, seeded into serving state at boot.
     /// The repair worker publishes live readings over this once it exists;
     /// until then the boot-supplied reading (healthy by default) is what
@@ -118,6 +128,12 @@ impl ServerConfig {
         }
         if self.feed_capacity < 16 {
             return Err("feed_capacity must be at least 16".to_owned());
+        }
+        if timeframe_of_label(&self.history_timeframe).is_none() {
+            return Err(format!(
+                "history_timeframe '{}' is not a known bar spacing",
+                self.history_timeframe
+            ));
         }
         Ok(())
     }
@@ -256,6 +272,9 @@ pub struct ErrorBody {
 pub struct AppState {
     limiter: Limiter,
     pub(crate) history: Vec<Bar>,
+    /// Bar spacing of [`Self::history`], so the gateway folds from the base
+    /// the history actually holds — never an assumed one.
+    pub(crate) history_timeframe: Timeframe,
     pub(crate) inbox: Mutex<Vec<ProposalView>>,
     armed: Mutex<Option<Grant>>,
     pub(crate) portfolio: Mutex<PortfolioView>,
@@ -399,6 +418,12 @@ pub struct TapeReader {
 /// chart window without an unbounded scan. A **cost bound**, never a
 /// correctness threshold.
 pub const DEFAULT_TAPE_LIMIT: usize = 5_000;
+
+/// Default bar spacing of the boot history: the vendored CLI history's
+/// spacing, so a server that names no base resamples exactly as before.
+fn default_history_timeframe() -> String {
+    "15M".to_owned()
+}
 
 /// Map the terminal toolbar's resolution label onto a [`Timeframe`].
 ///
@@ -1071,6 +1096,14 @@ pub async fn serve_with_tape(
     if history.is_empty() {
         return Err(ServerError::Service("history must not be empty".to_owned()));
     }
+    // Validated above; parsed once here so the gateway folds from a real
+    // base and never re-parses a string per read.
+    let history_timeframe = timeframe_of_label(&config.history_timeframe).ok_or_else(|| {
+        ServerError::Service(format!(
+            "history_timeframe '{}' is not a known bar spacing",
+            config.history_timeframe
+        ))
+    })?;
     let history_len = history.len();
     let boot_message = format!("boot gates: {history_len} bars");
     let mut batch = SupervisedBatch::new(
@@ -1106,6 +1139,7 @@ pub async fn serve_with_tape(
         // spawns.
         limiter: Limiter::new(config.max_concurrent_requests as usize),
         history,
+        history_timeframe,
         inbox: Mutex::new(Vec::new()),
         armed: Mutex::new(None),
         portfolio: Mutex::new(PortfolioView::default()),

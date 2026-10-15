@@ -7,12 +7,13 @@ autobenches = false
 
 [features]
 default = ["parquet"]
-# `parquet` pulls in the sealed-snapshot surface: the Arrow/Parquet writer
-# and reader behind the content-addressed artifact. Default-on for the
-# shipping binary; with it off the crate still builds and the whole SQLite
-# surface stays fully testable, and sealing reports a disabled feature
-# rather than failing to compile. `polars` stays out of the data path: the
-# research frame boundary is a separate consumer.
+# `parquet` pulls in the Arrow/Parquet surface: the sealed-snapshot writer
+# and reader behind the content-addressed artifact, plus the market-data
+# ingest reader for vendor OHLCV files. Default-on for the shipping binary;
+# with it off the crate still builds and the whole SQLite surface stays
+# fully testable, and both parquet surfaces report a disabled feature rather
+# than failing to compile. `polars` stays out of the data path: the research
+# frame boundary is a separate consumer.
 parquet = ["dep:arrow", "dep:parquet"]
 
 [dependencies]
@@ -30,7 +31,10 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 arrow = { version = "59", optional = true, default-features = false }
-parquet = { version = "59", optional = true, default-features = false, features = ["arrow", "snap"] }
+# `snap` writes the sealed artifacts; `zstd` reads market files (the
+# announced vendor format is zstd-compressed). A file in any other codec
+# refuses with the parquet error naming it, never a silent empty read.
+parquet = { version = "59", optional = true, default-features = false, features = ["arrow", "snap", "zstd"] }
 
 [dev-dependencies]
 protopyne-kernels = { path = "../protopyne-kernels" }

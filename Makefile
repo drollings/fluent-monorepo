@@ -44,7 +44,8 @@ PROTOPYNE_LOG := /tmp/protopyne-server.out
 # Native terminal demo shell over the headless chart stack (needs a display).
 # PROTOPYNE_GUI_HISTORY and PROTOPYNE_GUI_ARGS override the history file and
 # extra demo args: `make protopyne-demo PROTOPYNE_GUI_ARGS=--check`.
-PROTOPYNE_GUI_HISTORY ?= data/protopyne-rs/historical/SPY_15M.csv
+PROTOPYNE_GUI_HISTORY ?= data/protopyne-rs/historical/SPY-2026-03-1M.parquet
+# data/protopyne-rs/historical/SPY_15M.csv
 PROTOPYNE_GUI_ARGS ?=
 CONFIG      := .guidance/guidance-config.json
 INSTALLDIR  := $(HOME)/.local/bin
@@ -364,9 +365,9 @@ protopyne-smoke: ## Build the Python-free container image and run the full smoke
 	$(Q)bash src/protopyne-server/smoke-container.sh
 
 # Needs a display: opens the native terminal demo shell (eframe/glow) over
-# the headless chart stack. PROTOPYNE_GUI_HISTORY=<csv> overrides the data.
+# the headless chart stack. PROTOPYNE_GUI_HISTORY=<csv|parquet> overrides the data.
 .PHONY: protopyne-demo
-protopyne-demo: ## Run the protopyne-rs native terminal UI (PROTOPYNE_GUI_HISTORY=<csv> overrides the history file; --check runs the headless data path only)
+protopyne-demo: ## Run the protopyne-rs native terminal UI (PROTOPYNE_GUI_HISTORY=<csv|parquet> overrides the history file; a parquet file is tallied into 5M/15M/1H/4H/1D on load; --check runs the headless data path only)
 	$(Q)cargo run -p protopyne-egui --features demo --example demo -- $(PROTOPYNE_GUI_HISTORY) $(PROTOPYNE_GUI_ARGS)
 
 # ── YaGO Taxonomy + Async Parse-Review ───────────────────────────────────────

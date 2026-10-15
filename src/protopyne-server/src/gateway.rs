@@ -22,6 +22,7 @@ use crate::service::Shared;
 use crate::service::{
     DEFAULT_REPLAY_CHECKPOINT_EVERY, apply_arm, chart_bars_of, grant_tiers_of, health_view,
     live_grant, overlay_series_of, parse_patch, preview_arm_of, replay_view_of, tape_bars_for,
+    timeframe_of_label,
 };
 
 /// Map the overlay builder's `(status, reason)` refusal onto the gateway's
@@ -36,24 +37,32 @@ fn overlay_error((status, reason): (axum::http::StatusCode, String)) -> GatewayE
     }
 }
 
-/// Upward-resample factor for a requested timeframe.
+/// Upward-resample factor for a requested timeframe, over the boot
+/// history's actual base.
 ///
-/// The server's boot history is served as the 15-minute base slot; a coarser
-/// requested timeframe is folded by a whole multiple of that base through the
-/// shared [`aggregate_bars`]. Timeframes the base grid cannot express finer
-/// (`1M`, `5M`) or that are unknown serve the base unchanged.
-fn resample_group(timeframe: &str) -> usize {
-    let base = Timeframe::M15.duration_ms();
-    Timeframe::from_resolution(timeframe)
-        .map_or(1, |requested| (requested.duration_ms() / base).max(1) as usize)
+/// A coarser requested timeframe that is a whole multiple of the base folds
+/// through the shared [`aggregate_bars`]; a finer request, a non-multiple,
+/// or an unknown spelling serves the base unchanged — a chart cannot
+/// synthesize a finer grid, and folding across a non-multiple would split
+/// base bars between buckets.
+fn resample_group(base: Timeframe, timeframe: &str) -> usize {
+    let Some(requested) = timeframe_of_label(timeframe) else {
+        return 1;
+    };
+    let base_ms = base.duration_ms().max(1);
+    let requested_ms = requested.duration_ms();
+    if requested_ms <= base_ms || requested_ms % base_ms != 0 {
+        return 1;
+    }
+    (requested_ms / base_ms) as usize
 }
 
 /// Fold the boot history to the requested timeframe when it holds at least one
 /// full group. A short history that cannot fill a coarser bar serves the base
 /// unchanged rather than fabricating a partial bar, so a coarse read never
 /// returns an empty window the overlay builders would refuse.
-fn resampled_history(history: &[Bar], timeframe: &str) -> Vec<Bar> {
-    let group = resample_group(timeframe);
+fn resampled_history(history: &[Bar], base: Timeframe, timeframe: &str) -> Vec<Bar> {
+    let group = resample_group(base, timeframe);
     if group > 1 && history.len() >= group {
         aggregate_bars(history, group)
     } else {
@@ -132,7 +141,11 @@ impl TerminalGateway for ServerGateway {
                 return Ok(chart_bars_of(&bars));
             }
         }
-        Ok(chart_bars_of(&resampled_history(&self.state.history, timeframe)))
+        Ok(chart_bars_of(&resampled_history(
+            &self.state.history,
+            self.state.history_timeframe,
+            timeframe,
+        )))
     }
 
     fn chart_overlays_for(
@@ -143,8 +156,13 @@ impl TerminalGateway for ServerGateway {
         period: i64,
     ) -> Result<OverlaySeries, GatewayError> {
         validate_symbol_timeframe(symbol, timeframe)?;
-        overlay_series_of(&resampled_history(&self.state.history, timeframe), kind, period, 2.0)
-            .map_err(overlay_error)
+        overlay_series_of(
+            &resampled_history(&self.state.history, self.state.history_timeframe, timeframe),
+            kind,
+            period,
+            2.0,
+        )
+        .map_err(overlay_error)
     }
 
     fn replay(&self) -> Result<ReplayView, GatewayError> {

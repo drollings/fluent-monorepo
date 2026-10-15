@@ -87,6 +87,7 @@ fn health_view_reports_no_reading_as_no_fields() {
     let state: Shared = std::sync::Arc::new(AppState {
         limiter: Limiter::new(32),
         history: history(),
+        history_timeframe: Timeframe::M15,
         inbox: Mutex::new(Vec::new()),
         armed: Mutex::new(None),
         portfolio: Mutex::new(PortfolioView::default()),

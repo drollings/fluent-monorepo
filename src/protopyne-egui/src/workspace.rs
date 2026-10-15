@@ -708,6 +708,18 @@ impl ChartWorkspace {
         &self.rows
     }
 
+    /// The timeframes holding a seeded or pulled history, in toolbar order.
+    /// A frame the shell can resample on demand (coarser than a seeded base)
+    /// is not listed until it is selected; this names what is loaded, not
+    /// what is reachable.
+    #[must_use]
+    pub fn loaded_timeframes(&self) -> Vec<TimeframeKey> {
+        TimeframeKey::all()
+            .into_iter()
+            .filter(|key| self.histories.contains_key(key))
+            .collect()
+    }
+
     /// The main chart area viewport, if bound.
     #[must_use]
     pub fn main_viewport(&self) -> Option<Viewport> {

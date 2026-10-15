@@ -76,6 +76,15 @@ pub enum StoreError {
     /// taxonomy lives on the repair verdicts, not here.
     #[error("history failure: {0}")]
     History(String),
+    /// A market-data Parquet file could not be ingested: a schema mismatch,
+    /// an undecodable or null value, a fractional volume, or a mixed-ticker
+    /// file read without a ticker name. Permanent: the same bytes reproduce
+    /// it exactly, so retrying changes nothing.
+    #[error("market parquet ingest failed: {reason}")]
+    Ingest {
+        /// The refusal, with the row or column that produced it.
+        reason: String,
+    },
     /// Two readings of one instant could not be reconciled, or a snapshot
     /// artifact is inconsistent with its manifest row.
     #[error("snapshot failure: {0}")]

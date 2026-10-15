@@ -18,7 +18,7 @@ fn mtf_shape_and_toolbar_labels_come_from_canonical_lists() {
 
 #[test]
 fn timeframe_labels_follow_key_order() {
-    assert_eq!(timeframe_labels(), vec!["1M", "5M", "15M", "1H", "4H"]);
+    assert_eq!(timeframe_labels(), vec!["1M", "5M", "15M", "1H", "4H", "1D"]);
 }
 
 #[test]
@@ -46,6 +46,6 @@ fn top_bar_renders_default_gld_ticker_timeframes_and_search_triggers() {
     }
     assert_eq!(chart_type_label(ChartType::Candles), "Candles");
     // The selectors render straight from the canonical lists.
-    assert_eq!(timeframe_labels(), vec!["1M", "5M", "15M", "1H", "4H"]);
+    assert_eq!(timeframe_labels(), vec!["1M", "5M", "15M", "1H", "4H", "1D"]);
     assert!(!toolbar_labels().is_empty(), "range presets render");
 }

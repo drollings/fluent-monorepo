@@ -17,13 +17,11 @@ pine = ["protopyne-kernels/pine"]
 protopyne-types = { path = "../protopyne-types" }
 protopyne-kernels = { path = "../protopyne-kernels", default-features = false, features = ["research"] }
 protopyne-strategy = { path = "../protopyne-strategy" }
-# The store's optional `parquet` surface (sealed snapshots) is not on the
-# server's data path yet, so the server consumes the store with its default
-# features off. This keeps the store's lean feature-off closure honest: a
-# dependent that enabled the default would make `--no-default-features` a
-# lie. A future milestone that puts snapshots on the server path enables the
-# feature here explicitly.
-protopyne-store = { path = "../protopyne-store", default-features = false }
+# The store's `parquet` surface is on the server's data path: the Parquet
+# history arm ingests market OHLCV files through the store's reader, so the
+# feature is enabled explicitly here. The server still names no Arrow/Parquet
+# types of its own — the schema vocabulary stays behind the store boundary.
+protopyne-store = { path = "../protopyne-store", default-features = false, features = ["parquet"] }
 protopyne-venue = { path = "../protopyne-venue" }
 protopyne-chart-model = { path = "../protopyne-chart-model" }
 protopyne-view = { path = "../protopyne-view" }
@@ -51,6 +49,10 @@ tempfile = { workspace = true }
 
 [[bench]]
 name = "backtest_path"
+harness = false
+
+[[bench]]
+name = "history_load"
 harness = false
 
 [lints]
