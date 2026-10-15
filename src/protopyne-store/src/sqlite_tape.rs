@@ -29,7 +29,7 @@ use std::path::Path;
 use std::sync::Mutex;
 
 use chrono::DateTime;
-use protopyne_types::{Bar, validate_new_bar};
+use protopyne_types::{Bar, Timeframe, validate_new_bar};
 use rusqlite::{Connection, params};
 use rust_decimal::Decimal;
 
@@ -40,6 +40,7 @@ use crate::error::{PlanError, StoreError};
 use crate::fold::{fold_bars, narrow_to_window};
 use crate::key::{SymbolId, TapeKey};
 use crate::plan::{ReadPlan, wanted_window};
+use crate::range::TimeRange;
 use crate::store::{AppendOutcome, CandleSeries, CandleStore, ReadRequest, WritePolicy};
 
 /// The full candle row select. Column order is the contract
@@ -210,6 +211,193 @@ pub(crate) fn fetch_bars(
     }
 }
 
+/// Fetch one symbol's stamps, optionally bounded to a half-open
+/// `[start, end)` window. Stamps only — no decimal decode, no `Bar`
+/// materialization — for coverage planning over the window a read will
+/// actually serve. Sorted ascending in Rust, like the bar fetch: the
+/// ascending guarantee lives in code, never in a SQL string.
+pub(crate) fn fetch_stamps(
+    conn: &Connection,
+    symbol_id: SymbolId,
+    start_ms: Option<i64>,
+    end_ms: Option<i64>,
+) -> Result<Vec<i64>, fluent_db::error::DbError> {
+    const SELECT_STAMPS_SQL: &str = "SELECT ts_ms FROM candle";
+    let id = i64::from(symbol_id.0);
+    let mut stamps = match (start_ms, end_ms) {
+        (Some(start), Some(end)) => fluent_db::query::query_rows(
+            conn,
+            &format!("{SELECT_STAMPS_SQL} WHERE symbol_id = ?1 AND ts_ms >= ?2 AND ts_ms < ?3"),
+            params![id, start, end],
+            |row| row.get(0),
+        ),
+        (Some(start), None) => fluent_db::query::query_rows(
+            conn,
+            &format!("{SELECT_STAMPS_SQL} WHERE symbol_id = ?1 AND ts_ms >= ?2"),
+            params![id, start],
+            |row| row.get(0),
+        ),
+        (None, Some(end)) => fluent_db::query::query_rows(
+            conn,
+            &format!("{SELECT_STAMPS_SQL} WHERE symbol_id = ?1 AND ts_ms < ?2"),
+            params![id, end],
+            |row| row.get(0),
+        ),
+        (None, None) => fluent_db::query::query_rows(
+            conn,
+            &format!("{SELECT_STAMPS_SQL} WHERE symbol_id = ?1"),
+            params![id],
+            |row| row.get(0),
+        ),
+    }?;
+    stamps.sort_unstable();
+    Ok(stamps)
+}
+
+/// One tape's bounds from the index alone: first stamp, last stamp.
+/// `None` is an empty table — answered, not failed.
+///
+/// Deliberately no row count: `COUNT(*)` walks every row of the symbol,
+/// which would put the read path back at O(tape) per read — measured
+/// linear before it was cut. The watermark anchor and hole clipping need
+/// bounds, never a count; the audit path counts the bars it validates.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct TapeExtent {
+    /// First stored stamp.
+    pub(crate) first_ms: i64,
+    /// Last stored stamp.
+    pub(crate) last_ms: i64,
+}
+
+/// Read the tape's bounds without touching a single bar row: one `MIN`
+/// query and one `MAX` query over the stamp index. Two queries, not one:
+/// each alone resolves as a boundary seek through the primary key, while
+/// the combined `MIN`/`MAX` row walks the symbol's whole range — measured
+/// linear before the split. Interior holes are invisible here by design —
+/// that is the stamp fetch's question, not this query's.
+pub(crate) fn tape_extent(
+    conn: &Connection,
+    symbol_id: SymbolId,
+) -> Result<Option<TapeExtent>, fluent_db::error::DbError> {
+    let id = i64::from(symbol_id.0);
+    // Aggregates always return exactly one row — `None` on an empty table
+    // arrives as a `NULL` value, not as no rows — so the mapper reads a
+    // nullable stamp and the outer absence flattens through it.
+    let first: Option<i64> = fluent_db::query::query_row(
+        conn,
+        "SELECT MIN(ts_ms) FROM candle WHERE symbol_id = ?1",
+        params![id],
+        |row| row.get::<_, Option<i64>>(0),
+    )?
+    .flatten();
+    let last: Option<i64> = fluent_db::query::query_row(
+        conn,
+        "SELECT MAX(ts_ms) FROM candle WHERE symbol_id = ?1",
+        params![id],
+        |row| row.get::<_, Option<i64>>(0),
+    )?
+    .flatten();
+    Ok(match (first, last) {
+        (Some(first_ms), Some(last_ms)) => Some(TapeExtent { first_ms, last_ms }),
+        _ => None,
+    })
+}
+
+/// The stamp-fetch window for a request against a known extent: pure over
+/// the request, so both read layers derive the same bounds before touching
+/// the database. Returns the fetch window the plan resolves against plus
+/// the margined stamp window — one stored step each side, so a run
+/// crossing the fetch edge has its straddling pair inside the stamp fetch
+/// and the walk sees the same continuity the whole-tape walk sees.
+pub(crate) fn coverage_windows(
+    stored: Timeframe,
+    extent: &TapeExtent,
+    req: &ReadRequest,
+) -> Result<(TimeRange, TimeRange), StoreError> {
+    // The row count is unused below: `wanted_window` reads only the last
+    // stamp, so the bounds carry a zero count rather than a tape-wide
+    // `COUNT(*)` that would cost O(tape) per read.
+    let bounds = Coverage::from_extent_and_runs(extent.first_ms, extent.last_ms, 0, Vec::new());
+    let wanted = wanted_window(req, Some(&bounds))?;
+    let fetch = crate::plan::fetch_span(req, stored, &wanted)?;
+    let step = stored.duration_ms();
+    let stamp_window = TimeRange {
+        start_ms: fetch.start_ms.map(|start| start.saturating_sub(step)),
+        end_ms: fetch.end_ms.map(|end| end.saturating_add(step)),
+    };
+    Ok((fetch, stamp_window))
+}
+
+/// Runs from window stamps clipped to the fetch window, over the tape-wide
+/// extent bounds: the planning input both read layers resolve against.
+/// Clipped runs equal whole-tape runs intersected with the fetch — run
+/// adjacency is local, and the stamp margin keeps both straddling pairs
+/// visible — so holes, spans, and bucket-wholeness resolve identically.
+/// The bar count is the stamps observed inside the fetch window, matching
+/// the runs' scope; nothing on the read path reads a tape-wide count.
+pub(crate) fn coverage_from_stamps(
+    extent: &TapeExtent,
+    fetch: &TimeRange,
+    stamps: &[i64],
+    stored: Timeframe,
+) -> Coverage {
+    let bars = stamps.iter().filter(|stamp| fetch.contains(**stamp)).count();
+    let runs = Coverage::from_stamps(stamps, stored)
+        .map(|coverage| coverage.runs().to_vec())
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|run| run.intersect(fetch))
+        .collect::<Vec<_>>();
+    Coverage::from_extent_and_runs(
+        extent.first_ms,
+        extent.last_ms,
+        bars as u64,
+        runs,
+    )
+}
+
+/// Plan-grade coverage from stamps in the served window: the extent query
+/// bounds the tape (an empty tape answers `None`, preserving the empty-tape
+/// refusal) and the runs walk the stamps of the fetch window. The margin
+/// keeps the cost bounded by the window: at most two extra stamps, still
+/// O(window), never O(tape).
+///
+/// A row that cannot materialize outside the served window can no longer
+/// refuse the read: the extent and stamp queries never touch its columns,
+/// and the bar fetch never visits its span. Served bars stay
+/// double-validated — [`order_and_validate`] before and after the fold —
+/// and the audit path ([`CandleStore::coverage`]) keeps whole-tape
+/// validation.
+pub(crate) fn windowed_coverage(
+    conn: &Connection,
+    symbol_id: SymbolId,
+    stored: Timeframe,
+    req: &ReadRequest,
+) -> Result<Option<Coverage>, StoreError> {
+    let extent = tape_extent(conn, symbol_id)?;
+    let Some(extent) = extent else {
+        return Ok(None);
+    };
+    let (fetch, stamp_window) = coverage_windows(stored, &extent, req)?;
+    let stamps = fetch_stamps(
+        conn,
+        symbol_id,
+        stamp_window.start_ms,
+        stamp_window.end_ms,
+    )?;
+    Ok(Some(coverage_from_stamps(&extent, &fetch, &stamps, stored)))
+}
+
+/// Fetch one symbol's every row: the whole-tape read behind validated
+/// coverage. Audits, repair, and health may call this; the served read
+/// paths must not — the budget suite pins that rule by name.
+pub(crate) fn fetch_all_bars(
+    conn: &Connection,
+    symbol_id: SymbolId,
+) -> Result<Vec<Bar>, fluent_db::error::DbError> {
+    fetch_bars(conn, symbol_id, None, None)
+}
+
 /// Sort ascending and prove it: every adjacent pair passes the shared
 /// monotonicity check. This is the boundary the runner inherits — a tape
 /// that was written shuffled still reads back as a valid series.
@@ -307,7 +495,7 @@ impl CandleStore for SqliteTape {
         self.market_for(key)?;
         let bars = self.conn(|conn| {
             let conn = common_core::sync::lock(conn);
-            fetch_bars(&conn, key.symbol_id, None, None)
+            fetch_all_bars(&conn, key.symbol_id)
         })?;
         Ok(Coverage::from_bars(
             &order_and_validate(bars)?,
@@ -402,12 +590,12 @@ impl CandleStore for SqliteTape {
             .catalog
             .tape_of(&req.symbol, &req.venue)
             .ok_or_else(|| StoreError::Plan(PlanError::UnknownSymbol(req.symbol.clone())))?;
-        // Coverage reads the whole tape: the watermark anchor, the
-        // empty-tape refusal, and hole detection all need tape-wide facts,
-        // so a windowed fetch cannot substitute.
-        let coverage = self.coverage(TapeKey {
-            symbol_id,
-            timeframe: stored,
+        // Stamp-planned coverage over the served window — extent plus
+        // windowed runs — never a whole-tape bar fetch. The plan, the
+        // per-span fetches, and the double validation below are unchanged.
+        let coverage = self.conn(|conn| {
+            let conn = common_core::sync::lock(conn);
+            windowed_coverage(&conn, symbol_id, stored, req)
         })?;
         let plan = ReadPlan::resolve(&self.catalog, coverage, req)?;
         let served = wanted_window(req, Some(plan.covered()))?;
@@ -545,6 +733,10 @@ pub(crate) fn row_params(row: &EncodedRow) -> [&dyn rusqlite::ToSql; 8] {
 pub(crate) mod test_setup;
 
 #[cfg(test)]
+#[path = "../tests/common/oracle.rs"]
+pub(crate) mod test_oracle;
+
+#[cfg(test)]
 #[path = "../tests/common/scale.rs"]
 pub(crate) mod test_scale;
 
@@ -575,3 +767,11 @@ mod tests_rejected;
 #[cfg(test)]
 #[path = "../tests/plan_read_end_to_end.rs"]
 mod tests_plan_read;
+
+#[cfg(test)]
+#[path = "../tests/read_windowed_oracle.rs"]
+mod tests_read_oracle;
+
+#[cfg(test)]
+#[path = "../tests/read_budget.rs"]
+mod tests_read_budget;

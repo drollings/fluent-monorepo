@@ -16,6 +16,14 @@ use std::str::FromStr;
 
 use crate::error::TypesError;
 
+/// Fold anchor for every sub-weekly spacing: the Unix epoch itself.
+pub const FOLD_ORIGIN_MS: i64 = 0;
+
+/// Fold anchor for weekly bars: 1969-12-29 00:00:00 UTC, the Monday of the
+/// epoch's week. The epoch itself is a Thursday, and a Thursday-anchored
+/// weekly bar is confusing to hand an operator.
+pub const WEEK_FOLD_ORIGIN_MS: i64 = -259_200_000;
+
 /// Closed-bar timeframe. Covers the fixed-ms intraday-to-weekly grid the
 /// prototype ingests and evaluates, seconds included.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -104,6 +112,38 @@ impl Timeframe {
     #[must_use]
     pub fn duration(self) -> chrono::Duration {
         chrono::Duration::milliseconds(self.duration_ms())
+    }
+
+    /// The fold anchor for a spacing. Only `W1` is special; any future
+    /// fixed-ms spacing anchors at the epoch with no code change. This is
+    /// the one home for the anchor rule: bucket math everywhere (the store
+    /// fold, the gateway, the workspace) composes this, never a second
+    /// table — except the kernels streaming projection, which stays
+    /// epoch-anchored by construction and pins that divergence in its own
+    /// tests.
+    #[must_use]
+    pub fn fold_origin_ms(self) -> i64 {
+        match self {
+            Self::W1 => WEEK_FOLD_ORIGIN_MS,
+            _ => FOLD_ORIGIN_MS,
+        }
+    }
+
+    /// The bucket a stamp belongs to: the greatest anchor-aligned grid line
+    /// at or before the stamp.
+    ///
+    /// Pure Euclidean floor division on UTC milliseconds — negative stamps
+    /// floor toward the earlier bucket, never toward zero — saturating
+    /// instead of overflowing past the representable range. Idempotent:
+    /// feeding a bucket start back in returns it unchanged, which is what
+    /// makes incremental folding over a live tape converge instead of drift.
+    #[must_use]
+    pub fn bucket_start_ms(self, ts_ms: i64) -> i64 {
+        let origin = self.fold_origin_ms();
+        let step = self.duration_ms();
+        origin.saturating_add(
+            ts_ms.saturating_sub(origin).div_euclid(step).saturating_mul(step),
+        )
     }
 
     /// Bar span in whole seconds. Every span is a whole number of seconds,

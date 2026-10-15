@@ -168,34 +168,43 @@ async fn a_one_minute_boot_history_resamples_from_its_actual_base() {
         "the base serves unchanged at its own spacing"
     );
 
-    let expect = |group: usize| (bars.len() - bars.len() % group) / group;
+    // Complete-only edges over the committed month: whole buckets emit,
+    // short and torn buckets are omitted. The month opens on a grid line
+    // (Monday 09:00 UTC), so the first bucket is whole on every grid.
     let five = gateway.chart_bars_for("SPY", "5M").expect("5M read");
     assert_eq!(
         five.rows.len(),
-        expect(5),
-        "5M folds by five over the 1M base"
+        3_754,
+        "5M serves the whole five-minute buckets, not the trailing count"
     );
     let fifteen = gateway.chart_bars_for("SPY", "15M").expect("15M read");
-    assert_eq!(fifteen.rows.len(), expect(15));
+    assert_eq!(fifteen.rows.len(), 1_129, "15M serves the whole quarter-hours");
     let hour = gateway.chart_bars_for("SPY", "1H").expect("1H read");
     assert_eq!(
         hour.rows.len(),
-        expect(60),
-        "the M15 base bug would serve 4-minute hours"
+        242,
+        "1H serves the whole hours: the M15-base bug would serve 4-minute hours"
     );
     let day = gateway.chart_bars_for("SPY", "1D").expect("1D read");
-    assert_eq!(day.rows.len(), expect(1_440));
+    assert!(
+        day.rows.is_empty(),
+        "no UTC date holds 1,440 minute children, so the daily read is empty rather than partial"
+    );
 
-    let skip = bars.len() % 5;
-    let expected_open = to_f64(bars[skip].o);
+    let expected_open = to_f64(bars[0].o);
     assert!(
         (five.rows[0].open - expected_open).abs() < 1e-9,
-        "the first folded bar opens at the first child's open"
+        "the first folded bar opens at the first whole bucket's open"
     );
     assert_eq!(
         five.rows[0].time,
-        bars[skip + 4].ts.timestamp(),
-        "the 5M row stamps the last child's instant, trailing-aligned"
+        bars[0].ts.timestamp(),
+        "a folded row stamps its bucket start, never the last child"
+    );
+    assert_eq!(
+        hour.rows[0].time,
+        bars[0].ts.timestamp(),
+        "every grid stamps the bucket start"
     );
 
     let overlay = gateway
@@ -222,4 +231,51 @@ fn bucket_count(bars: &[Bar], tf: Timeframe) -> usize {
 fn to_f64(value: Decimal) -> f64 {
     use rust_decimal::prelude::ToPrimitive as _;
     value.to_f64().expect("display conversion")
+}
+
+fn write_csv(path: &std::path::Path) {
+    std::fs::write(
+        path,
+        "time,open,high,low,close,Volume\n\
+         1772442000,677.66,677.66,676.54,677.00,8485\n\
+         1772442060,676.91,677.45,676.74,677.45,24153\n",
+    )
+    .expect("csv fixture writes");
+}
+
+#[test]
+fn load_bars_any_dispatches_csv_by_extension() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("two.csv");
+    write_csv(&path);
+
+    let bars = load_bars_any(&path).expect("csv dispatches");
+    assert_eq!(bars.len(), 2);
+    assert_eq!(bars[0].volume, 8485);
+}
+
+#[test]
+fn load_bars_any_dispatches_parquet_by_extension() {
+    let bars = load_bars_any(&month_path()).expect("parquet dispatches");
+    assert_eq!(bars, load_month(), "dispatch reads what the parquet loader reads");
+}
+
+#[test]
+fn load_bars_any_refuses_unknown_and_missing_extensions() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let json = dir.path().join("history.json");
+    std::fs::write(&json, "{}").expect("json fixture writes");
+    let err = load_bars_any(&json).expect_err("unknown extension refuses");
+    assert!(
+        err.to_string().contains("json"),
+        "the refusal names the extension: {err}"
+    );
+
+    let bare = dir.path().join("history");
+    std::fs::write(&bare, "{}").expect("bare fixture writes");
+    let err = load_bars_any(&bare).expect_err("missing extension refuses");
+    assert!(
+        err.to_string().contains("csv") && err.to_string().contains("parquet"),
+        "the refusal names what it accepts: {err}"
+    );
 }

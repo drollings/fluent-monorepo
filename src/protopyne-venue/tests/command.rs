@@ -440,3 +440,60 @@ fn journal_script(
     }
     journal.replay(permit).expect("replay").events
 }
+
+fn mock_event(seq: i64, client_id: &str, kind: &str) -> crate::journal::JournalEvent {
+    crate::journal::JournalEvent {
+        seq,
+        client_id: client_id.to_owned(),
+        kind: kind.to_owned(),
+        detail: "{}".to_owned(),
+        at_ms: 1_767_225_600_000,
+    }
+}
+
+#[test]
+fn replica_ignores_unknown_command_rows_without_phantom_orders() {
+    // Mock feed, no journal: operator rows advance the tip and never read
+    // as orders, so an unknown command kind is absence, not a position.
+    let events = vec![
+        mock_event(1, "operator", "command.disarm"),
+        mock_event(2, "operator", "command.resume"),
+        mock_event(3, "operator", "command.close_all"),
+        mock_event(4, "operator", "command.cancel_all"),
+        mock_event(5, "operator", "command.something_new"),
+    ];
+    let view = StateReplica::apply(&events);
+    assert!(view.orders.is_empty(), "no phantom orders, got: {:?}", view.orders);
+    assert_eq!(view.last_seq, 5, "the tip still advances past command rows");
+}
+
+#[test]
+fn replica_fold_is_order_insensitive_at_the_tip() {
+    // Out-of-order delivery folds the same tip: the max sequence wins no
+    // matter the arrival order.
+    let ordered = vec![
+        mock_event(1, "a", "intent"),
+        mock_event(2, "a", "filled"),
+        mock_event(3, "b", "intent"),
+    ];
+    let mut shuffled = ordered.clone();
+    shuffled.reverse();
+    let from_ordered = StateReplica::apply(&ordered);
+    let from_shuffled = StateReplica::apply(&shuffled);
+    assert_eq!(from_shuffled.last_seq, 3);
+    assert_eq!(from_shuffled.last_seq, from_ordered.last_seq);
+    assert_eq!(from_shuffled.orders.len(), from_ordered.orders.len());
+}
+
+#[test]
+fn replica_tracks_latest_status_per_client() {
+    let events = vec![
+        mock_event(1, "a", "intent"),
+        mock_event(2, "a", "submitted"),
+        mock_event(3, "a", "filled"),
+    ];
+    let view = StateReplica::apply(&events);
+    assert_eq!(view.orders.len(), 1);
+    assert_eq!(view.orders[0].status, "filled");
+    assert_eq!(view.last_seq, 3);
+}

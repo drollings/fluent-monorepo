@@ -67,6 +67,7 @@ async fn recorded_reading_surfaces_on_the_route_and_the_gateway() {
         reachable: false,
         watermark_age_secs: Some(120),
         open_gaps: 2,
+        observed: true,
     };
     let handle = boot_with(reading).await;
     let base = format!("http://{}", handle.addr);
@@ -82,9 +83,8 @@ async fn recorded_reading_surfaces_on_the_route_and_the_gateway() {
     handle.shutdown().await;
 }
 
-#[test]
-fn health_view_reports_no_reading_as_no_fields() {
-    let state: Shared = std::sync::Arc::new(AppState {
+fn shared_with(store_health: StoreHealth) -> Shared {
+    std::sync::Arc::new(AppState {
         limiter: Limiter::new(32),
         history: history(),
         history_timeframe: Timeframe::M15,
@@ -94,11 +94,32 @@ fn health_view_reports_no_reading_as_no_fields() {
         feed: tokio::sync::broadcast::channel(16).0,
         trading_state: StateHandle::new(TradingState::Enabled),
         last_command: Mutex::new(None),
-        store_health: Mutex::new(StoreHealth::default()),
+        store_health: Mutex::new(store_health),
         tape: None,
-    });
-    let view = health_view(&state);
+        tape_serve_stats: Arc::new(TapeServeStats::default()),
+        fallback_latch: Mutex::new(FallbackLatch::default()),
+    })
+}
+
+#[test]
+fn health_view_reports_no_reading_as_no_fields() {
+    let view = health_view(&shared_with(StoreHealth::default()));
     assert_eq!(view.store_reachable, None);
     assert_eq!(view.store_watermark_age_secs, None);
     assert_eq!(view.store_open_gaps, None);
+}
+
+#[test]
+fn health_view_reports_an_observed_reading_even_at_default_values() {
+    // A genuine reading that happens to equal the old default is
+    // distinguishable from never having observed the store: the view
+    // reports every field instead of none.
+    let observed = StoreHealth {
+        observed: true,
+        ..StoreHealth::default()
+    };
+    let view = health_view(&shared_with(observed));
+    assert_eq!(view.store_reachable, Some(true));
+    assert_eq!(view.store_open_gaps, Some(0));
+    assert_eq!(view.store_watermark_age_secs, None);
 }

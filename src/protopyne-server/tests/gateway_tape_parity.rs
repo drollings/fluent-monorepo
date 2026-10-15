@@ -10,6 +10,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use chrono::DateTime;
 use super::*;
 use crate::common_tape as tape;
 use crate::service::{ServerConfig, TapeReader, serve_with_tape};
@@ -22,6 +23,27 @@ fn boot_history() -> Vec<Bar> {
         .join("data")
         .join("SPY_15M.csv");
     crate::load_bars_csv(&path).expect("vendored history loads")
+}
+
+/// `count` flat 15-minute bars at `price` on a fixed stamp grid: a series
+/// distinct from the vendored boot history, so a read's provenance is
+/// observable in the served closes.
+fn flat_tape(count: i64, price: &str) -> Vec<Bar> {
+    let base = 1_767_974_400_000i64;
+    (0..count)
+        .map(|step| {
+            let price = price.parse().expect("decimal");
+            Bar::new()
+                .ts(DateTime::from_timestamp_millis(base + step * 900_000).expect("in range"))
+                .o(price)
+                .h(price)
+                .l(price)
+                .c(price)
+                .volume(10)
+                .maybe_adj(None)
+                .build()
+        })
+        .collect()
 }
 
 #[tokio::test]
@@ -67,7 +89,8 @@ async fn store_backed_read_matches_the_route_over_the_same_bars() {
 #[tokio::test]
 async fn a_store_less_gateway_serves_the_boot_history() {
     // Control: with no tape booted, the symbol-scoped read falls back to the
-    // boot history exactly as it did before the store existed.
+    // boot history exactly as it did before the store existed, and the miss
+    // is counted as `NoTape` (which never warns).
     let bars = boot_history();
     let config = ServerConfig::new().bind("127.0.0.1:0".to_owned()).build();
     let handle = serve_with_tape(config, bars.clone(), None)
@@ -82,5 +105,83 @@ async fn a_store_less_gateway_serves_the_boot_history() {
         bars.len(),
         "the fallback serves the boot history"
     );
+    let stats = handle.tape_serve_stats();
+    assert_eq!(stats.served, 0, "no tape served the read");
+    assert_eq!(stats.no_tape, 1, "the miss is counted as NoTape");
+    assert_eq!(stats.last_miss, Some(TapeMissKind::NoTape));
+    handle.shutdown().await;
+}
+
+/// Provenance: when the tape holds a series unlike the boot history, the
+/// symbol-scoped read serves the tape's series, never a silent fallback.
+#[tokio::test]
+async fn a_divergent_tape_serves_the_tape_series() {
+    let boot = boot_history();
+    let tape_bars = flat_tape(5, "777");
+    let caps = tape::caps();
+    let (store, _key, _request) = tape::seed(&tape_bars, "SPY", Timeframe::M15, &caps);
+    let reader = TapeReader {
+        store: Arc::new(store),
+        caps,
+        venue: tape::VENUE.to_owned(),
+        limit: crate::DEFAULT_TAPE_LIMIT,
+    };
+    let config = ServerConfig::new().bind("127.0.0.1:0".to_owned()).build();
+    let handle = serve_with_tape(config, boot.clone(), Some(reader))
+        .await
+        .expect("server boots with a tape");
+
+    let served = handle
+        .gateway()
+        .chart_bars_for("SPY", "15M")
+        .expect("store-backed gateway read");
+    assert_eq!(
+        served.rows.len(),
+        tape_bars.len(),
+        "the tape's series served, not the boot history"
+    );
+    assert!(
+        served.rows.iter().all(|row| (row.close - 777.0).abs() < 1e-6),
+        "the tape's closes served"
+    );
+    let stats = handle.tape_serve_stats();
+    assert_eq!(stats.served, 1);
+    assert_eq!(stats.last_miss, None);
+    handle.shutdown().await;
+}
+
+/// A capability set without the store permit denies the read; the gateway
+/// falls back to boot history and counts the denial, so a mis-wired permit
+/// is observable rather than silent.
+#[tokio::test]
+async fn a_denied_permit_falls_back_and_counts_denied() {
+    let boot = boot_history();
+    let caps = tape::caps();
+    let (store, _key, _request) = tape::seed(&boot, "SPY", Timeframe::M15, &caps);
+    let reader = TapeReader {
+        store: Arc::new(store),
+        // Deliberately no store permit: the read must be denied.
+        caps: fluent_wvr::CapabilitySet::new(),
+        venue: tape::VENUE.to_owned(),
+        limit: crate::DEFAULT_TAPE_LIMIT,
+    };
+    let config = ServerConfig::new().bind("127.0.0.1:0".to_owned()).build();
+    let handle = serve_with_tape(config, boot.clone(), Some(reader))
+        .await
+        .expect("server boots with a tape");
+
+    let served = handle
+        .gateway()
+        .chart_bars_for("SPY", "15M")
+        .expect("fallback read");
+    assert_eq!(
+        served.rows.len(),
+        boot.len(),
+        "the denied read falls back to the boot history"
+    );
+    let stats = handle.tape_serve_stats();
+    assert_eq!(stats.served, 0, "the tape did not serve");
+    assert_eq!(stats.denied, 1, "the denial is counted");
+    assert_eq!(stats.last_miss, Some(TapeMissKind::Denied));
     handle.shutdown().await;
 }

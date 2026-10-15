@@ -92,34 +92,5 @@ fn renko_empty_is_empty() {
     assert!(bricks.is_empty());
 }
 
-#[test]
-fn aggregate_bars_leaves_single_group_and_empty_untouched() {
-    let bars = vec![bar_at(2, "100", "101", "99", "100.5"), bar_at(3, "100.5", "102", "100", "101")];
-    assert_eq!(aggregate_bars(&bars, 1), bars, "a group of one returns the bars unchanged");
-    assert_eq!(aggregate_bars(&bars, 0), bars, "a non-positive group is a no-op, never a panic");
-    assert!(aggregate_bars(&[], 4).is_empty(), "empty input stays empty");
-}
 
-#[test]
-fn aggregate_bars_folds_ohlc_and_sums_volume_trailing_aligned() {
-    let bars = vec![
-        bar_at(2, "100", "102", "99", "101"),
-        bar_at(3, "101", "103", "100", "102"),
-        bar_at(4, "102", "105", "101", "104"),
-        bar_at(5, "104", "106", "103", "105"),
-        bar_at(6, "105", "107", "104", "106"),
-    ];
-    let out = aggregate_bars(&bars, 2);
-    assert_eq!(out.len(), 2, "a leading partial chunk is dropped so every bar covers two inputs");
-    assert_eq!(out[0].o, bars[1].o, "open comes from the first bar of the chunk");
-    assert_eq!(out[0].h, dec("105"), "high is the chunk extreme");
-    assert_eq!(out[0].l, dec("100"), "low is the chunk extreme");
-    assert_eq!(out[0].c, bars[2].c, "close comes from the last bar of the chunk");
-    assert_eq!(out[0].ts, bars[2].ts, "timestamp comes from the last bar of the chunk");
-    assert_eq!(out[0].volume, 200, "volumes sum across the chunk");
-    assert_eq!(out[1].o, bars[3].o);
-    assert_eq!(out[1].c, bars[4].c);
-    assert_eq!(out[1].ts, bars[4].ts);
-    assert_eq!(out[1].volume, 200);
-}
 

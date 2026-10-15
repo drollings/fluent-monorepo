@@ -38,7 +38,10 @@ use crate::migrate::ensure_schema;
 use crate::plan::{ReadPlan, wanted_window};
 use crate::range::TimeRange;
 use crate::repair::{RepairConfig, fill_headroom, repair_spans, spans_for_want};
-use crate::sqlite_tape::{append_rows, fetch_bars, order_and_validate, plan_rows};
+use crate::sqlite_tape::{
+    TapeExtent, append_rows, coverage_from_stamps, coverage_windows, fetch_all_bars, fetch_bars,
+    fetch_stamps, order_and_validate, plan_rows,
+};
 use crate::store::{AppendOutcome, CandleSeries, ReadRequest, WritePolicy};
 
 /// How the handle is opened and bounded. Schema-configurable through the
@@ -323,7 +326,7 @@ impl StoreHandle {
         let bars: Vec<Bar> = self
             .read_gate
             .run(|| async move {
-                pool.with_conn(move |conn| fetch_bars(conn, key.symbol_id, None, None))
+                pool.with_conn(move |conn| fetch_all_bars(conn, key.symbol_id))
                     .await
             })
             .await
@@ -399,15 +402,46 @@ impl StoreHandle {
             market.ok_or_else(|| StoreError::Plan(PlanError::UnknownSymbol(req.symbol.clone())))?;
         let stored = market.timeframe;
         let symbol_id = market.symbol_id;
-        let coverage = self
-            .coverage(
-                permit,
-                TapeKey {
-                    symbol_id,
-                    timeframe: stored,
-                },
-            )
-            .await?;
+        // Stamp-planned coverage over the served window, like the
+        // synchronous core: one pooled checkout for the extent, one for the
+        // windowed stamps, never a whole-tape bar fetch. The pure window
+        // derivation is shared, so both layers plan against the same runs.
+        // The plan, the per-span fetches, and the double validation below
+        // are unchanged.
+        let pool = Arc::clone(&self.pool);
+        let extent: Option<TapeExtent> = self
+            .read_gate
+            .run(|| async move {
+                pool.with_conn(move |conn| {
+                    crate::sqlite_tape::tape_extent(conn, symbol_id)
+                })
+                .await
+            })
+            .await
+            .map_err(StoreError::from)?;
+        let coverage: Option<Coverage> = match extent {
+            None => None,
+            Some(extent) => {
+                let (fetch, stamp_window) = coverage_windows(stored, &extent, req)?;
+                let pool = Arc::clone(&self.pool);
+                let stamps: Vec<i64> = self
+                    .read_gate
+                    .run(|| async move {
+                        pool.with_conn(move |conn| {
+                            fetch_stamps(
+                                conn,
+                                symbol_id,
+                                stamp_window.start_ms,
+                                stamp_window.end_ms,
+                            )
+                        })
+                        .await
+                    })
+                    .await
+                    .map_err(StoreError::from)?;
+                Some(coverage_from_stamps(&extent, &fetch, &stamps, stored))
+            }
+        };
         let plan = ReadPlan::resolve_for(Some((symbol_id, stored)), coverage, req)?;
         let served = wanted_window(req, Some(plan.covered()))?;
         let mut bars: Vec<Bar> = Vec::new();

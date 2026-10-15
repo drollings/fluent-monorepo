@@ -36,7 +36,10 @@ pub use command::{
 };
 pub use depth::{DEFAULT_MAX_LEVELS, BookManager, DarkFinding, DepthBook, DepthDelta, PriceLevel};
 pub use error::VenueError;
-pub use health::{check_trade, may_trade, HealthLimits, HealthState, HealthVerdict};
+pub use health::{
+    check_route, check_trade, may_trade, serving_allows_entries, serving_verdict, GateClass,
+    GateFailure, GateReport, HealthGate, HealthLimits, HealthState, HealthVerdict, RouteIntent,
+};
 pub use journal::{Journal, JournalEvent, ReplayedState, VenueStorage, LEG_FILL_KIND};
 pub use market::{MarketEvent, MarketEventKind};
 pub use order::{

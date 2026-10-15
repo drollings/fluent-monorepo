@@ -36,6 +36,8 @@
 //! is either committed or it is not. Uncertainty at write time is resolved by
 //! not writing.
 
+#[cfg(feature = "parquet")]
+pub(crate) mod arrow_decode;
 pub mod capability;
 pub mod catalog;
 pub mod commit;
@@ -66,7 +68,8 @@ pub use coverage::{
 };
 pub use error::{PlanError, SnapshotError, StoreError};
 pub use fold::{
-    FOLD_ORIGIN_MS, FoldPolicy, WEEK_FOLD_ORIGIN_MS, bucket_start, fold_bars, fold_origin_ms,
+    FOLD_ORIGIN_MS, FoldEdges, FoldPolicy, WEEK_FOLD_ORIGIN_MS, bucket_start, fold_bars,
+    fold_bars_edges, fold_origin_ms,
 };
 pub use handle::{StoreConfig, StoreHandle};
 pub use health::StoreHealth;

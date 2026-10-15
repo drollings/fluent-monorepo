@@ -81,6 +81,66 @@ fn default_is_no_reading_and_therefore_no_objection() {
             reachable: true,
             watermark_age_secs: None,
             open_gaps: 0,
+            observed: false,
         }
+    );
+}
+
+#[test]
+fn every_probe_outcome_reads_observed() {
+    let bars = tape(2);
+    let coverage = Coverage::from_bars(&bars, protopyne_types::Timeframe::M1)
+        .expect("two contiguous bars cover");
+    let outcomes: Vec<Result<Option<Coverage>, StoreError>> = vec![
+        Err(StoreError::Busy("locked".to_owned())),
+        Ok(None),
+        Ok(Some(coverage)),
+    ];
+    for probe in &outcomes {
+        assert!(
+            StoreHealth::of(probe, 0, T0 + 600_000).observed,
+            "a probe answer is an observation, even a failed one"
+        );
+    }
+    assert!(
+        !StoreHealth::default().observed,
+        "no probe means no observation"
+    );
+}
+
+#[test]
+fn older_config_shape_without_the_flag_reads_observed() {
+    // A config written before the flag existed carries the struct's fields
+    // but no `observed` key: the struct's presence is the observation.
+    let older = serde_json::json!({
+        "reachable": true,
+        "watermark_age_secs": null,
+        "open_gaps": 0,
+    });
+    let reading: StoreHealth = serde_json::from_value(older).expect("older shape loads");
+    assert_eq!(
+        reading,
+        StoreHealth {
+            observed: true,
+            ..StoreHealth::default()
+        }
+    );
+}
+
+#[test]
+fn serialization_keeps_the_flag_for_newer_readers() {
+    let observed = StoreHealth {
+        observed: true,
+        ..StoreHealth::default()
+    };
+    let round_tripped: StoreHealth =
+        serde_json::from_value(serde_json::to_value(observed).expect("serializes"))
+            .expect("round trip loads");
+    assert_eq!(round_tripped, observed);
+    let unobserved = serde_json::to_value(StoreHealth::default()).expect("serializes");
+    assert_eq!(
+        unobserved.get("observed"),
+        Some(&serde_json::Value::Bool(false)),
+        "an absent struct must stay unobserved through a round trip"
     );
 }

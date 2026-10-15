@@ -20,7 +20,6 @@ use std::sync::Arc;
 
 use internment::ArcIntern;
 
-use fluent_wvr::capability::CURRENT_CAPS;
 use fluent_wvr::{impl_component, impl_fieldless, Describable};
 use fluent_wvr::{WorkContext, WorkError, WorkOutput, WorkUnit};
 
@@ -124,36 +123,21 @@ where
     }
 
     fn execute(&self, ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
-        // Offload to a blocking thread when on a multi-threaded runtime worker
-        // (the canonical SupervisedBatch/ResultPool context) so the executor isn't
-        // starved. On a current-thread runtime (or with no runtime active), run
-        // the op on a dedicated scoped OS thread instead of inline, so a
+        // Offload to the shared capability-scoped blocking executor: on a
+        // multi-threaded runtime worker (the canonical SupervisedBatch/ResultPool
+        // context) the op runs under `block_in_place` so the executor isn't
+        // starved; on a current-thread runtime (or with no runtime active) it
+        // runs on a dedicated scoped OS thread instead of inline, so a
         // genuinely slow op still cannot block the caller's single thread.
         //
-        // On **both** paths `ctx.caps` is re-scoped into the worker via
-        // `CURRENT_CAPS.sync_scope`, so a pool-backed op (whose
-        // `with_conn_blocking` → gated `acquire` reads the task-local) is
-        // capability-correct on multi-thread and current-thread runtimes alike.
+        // On **both** paths `ctx.caps` is re-scoped into the worker, so a
+        // pool-backed op (whose `with_conn_blocking` → gated `acquire` reads the
+        // task-local) is capability-correct on multi-thread and current-thread
+        // runtimes alike. A worker panic is the only failure the combinator
+        // reports; the op's own `WorkError` travels inside the result.
         let caps = ctx.caps.clone();
-        match tokio::runtime::Handle::try_current() {
-            Ok(handle) if handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread => {
-                CURRENT_CAPS.sync_scope(caps, || tokio::task::block_in_place(|| (self.op)(ctx)))
-            }
-            _ => {
-                // Run the op on a dedicated scoped OS thread. `thread::scope`
-                // joins it before returning; a thread panic surfaces as the
-                // join's `Err` (the op's own `WorkError` propagates as-is).
-                match std::thread::scope(|scope| {
-                    scope
-                        .spawn(|| CURRENT_CAPS.sync_scope(caps, || (self.op)(ctx)))
-                        .join()
-                }) {
-                    Ok(Ok(out)) => Ok(out),
-                    Ok(Err(we)) => Err(we),
-                    Err(_) => Err(WorkError::Execution("db work unit thread panicked".into())),
-                }
-            }
-        }
+        fluent_wvr::run_gated_blocking(caps, || (self.op)(ctx))
+            .map_err(|_| WorkError::Execution("db work unit thread panicked".into()))?
     }
 }
 

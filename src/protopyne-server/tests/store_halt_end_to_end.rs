@@ -30,7 +30,12 @@ async fn boot(reading: StoreHealth) -> ServerHandle {
 
 #[tokio::test]
 async fn a_store_outage_halts_entries_and_refuses_previews() {
-    let handle = boot(StoreHealth { reachable: false, ..StoreHealth::default() }).await;
+    let handle = boot(StoreHealth {
+        reachable: false,
+        observed: true,
+        ..StoreHealth::default()
+    })
+    .await;
     let base = format!("http://{}", handle.addr);
     let client = reqwest::Client::new();
 

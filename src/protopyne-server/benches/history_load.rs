@@ -260,8 +260,7 @@ fn report_bytes(fixtures: &Fixtures) {
     let db = fixtures.workdir.path().join("tape.sqlite");
     let sqlite = std::fs::metadata(&db).expect("metadata").len() as f64
         + std::fs::metadata(db.with_extension("sqlite-wal"))
-            .map(|m| m.len())
-            .unwrap_or(0) as f64;
+            .map_or(0, |m| m.len()) as f64;
     println!(
         "history-load fixtures: {bars} vendor bars | parquet {parquet:.0} B ({:.1} B/bar) | \
          csv {csv:.0} B ({:.1} B/bar) | sqlite {sqlite:.0} B ({:.1} B/tape-bar over \

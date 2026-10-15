@@ -16,8 +16,10 @@
 //! form's submit.
 //!
 //! Usage: `cargo run -p protopyne-egui --features server-gateway,demo
-//! --example terminal -- [--mock] [HISTORY.csv]`, or pass `--check` to pull
-//! every view through the trait object without opening a window.
+//! --example terminal -- [--mock] [--base <label>] [HISTORY.csv|HISTORY.parquet]`,
+//! or pass `--check` to pull every view through the trait object without
+//! opening a window. `--base` declares the history's bar spacing for the
+//! gateway fold (default `15M`); it is never inferred from the filename.
 
 use std::path::PathBuf;
 
@@ -116,15 +118,16 @@ fn check_lines(bundle: &ViewsBundle, charts: &ChartReads, replay: &ReplayScrub) 
     ]
 }
 
-async fn boot(path: PathBuf) -> Result<ServerHandle, String> {
-    let text =
-        std::fs::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
-    let bars = protopyne_server::parse_bars_csv(&text)
+async fn boot(path: PathBuf, base: String) -> Result<ServerHandle, String> {
+    let bars = protopyne_server::load_bars_any(&path)
         .map_err(|e| format!("parse {}: {e}", path.display()))?;
     if bars.is_empty() {
         return Err(format!("no bars in {}", path.display()));
     }
-    let config = ServerConfig::new().bind("127.0.0.1:0".to_owned()).build();
+    let config = ServerConfig::new()
+        .bind("127.0.0.1:0".to_owned())
+        .history_timeframe(base)
+        .build();
     serve(config, bars).await.map_err(|e| format!("server refused to boot: {e}"))
 }
 
@@ -351,17 +354,25 @@ async fn main() {
     let mut path: Option<PathBuf> = None;
     let mut check = false;
     let mut mock = false;
-    for arg in std::env::args().skip(1) {
+    let mut base = "15M".to_owned();
+    let mut args = std::env::args().skip(1);
+    while let Some(arg) = args.next() {
         match arg.as_str() {
             "--check" => check = true,
             "--mock" => mock = true,
+            "--base" => {
+                base = args.next().unwrap_or_else(|| {
+                    eprintln!("protopyne-terminal: --base needs a label");
+                    std::process::exit(1);
+                });
+            }
             _ => path = Some(PathBuf::from(arg)),
         }
     }
     let handle: Option<ServerHandle> = if mock {
         None
     } else {
-        match boot(path.unwrap_or_else(default_m15)).await {
+        match boot(path.unwrap_or_else(default_m15), base).await {
             Ok(handle) => Some(handle),
             Err(e) => {
                 eprintln!("protopyne-terminal: {e}");

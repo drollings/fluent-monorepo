@@ -4,6 +4,7 @@
 
 use super::*;
 use crate::bars::BarParts;
+use protopyne_types::Timeframe;
 use std::num::NonZeroI64;
 
 fn grid(ms: i64) -> NonZeroI64 {
@@ -20,6 +21,43 @@ fn floor_grids_and_refuses() {
         let err = floor_to_grid_checked(61_000, bad).expect_err("bad grid refuses");
         assert!(err.to_string().contains("grid"), "refusal names the reason: {err}");
     }
+}
+
+/// Sub-weekly spans share one anchor: the streaming grid floor and the
+/// relocated bucket rule agree stamp for stamp, so either may be used.
+#[test]
+fn sub_weekly_grid_matches_the_relocated_bucket_rule() {
+    for variant in [Timeframe::M15, Timeframe::H1, Timeframe::H4, Timeframe::D1] {
+        let step = variant.duration_ms();
+        for stamp in [0_i64, 1, -1, step - 1, step, 1_699_999_980_001, -1_699_999_980_001] {
+            assert_eq!(
+                floor_to_grid(stamp, grid(step)),
+                variant.bucket_start_ms(stamp),
+                "{variant:?} anchors identically at {stamp}"
+            );
+        }
+    }
+}
+
+/// The weekly anchor diverges, intentionally: the streaming projection grid
+/// stays epoch-anchored (the epoch Thursday opens its bucket) while the
+/// relocated bucket rule opens weeks on the epoch Monday. Both behaviors are
+/// pinned here so neither can drift; never "fix" one to match the other —
+/// kernels streaming semantics are out of scope for unification.
+#[test]
+fn weekly_grid_divergence_from_the_relocated_bucket_rule_is_pinned() {
+    let week_ms = Timeframe::W1.duration_ms();
+    assert_eq!(floor_to_grid(0, grid(week_ms)), 0, "streaming grid stays epoch-anchored");
+    assert_eq!(
+        Timeframe::W1.bucket_start_ms(0),
+        -259_200_000,
+        "relocated rule opens on the epoch Monday"
+    );
+    assert_ne!(
+        floor_to_grid(0, grid(week_ms)),
+        Timeframe::W1.bucket_start_ms(0),
+        "the W1 divergence is real and stays stated, never silently unified"
+    );
 }
 
 #[test]

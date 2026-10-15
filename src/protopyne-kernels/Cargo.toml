@@ -28,6 +28,11 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 rust_decimal = { workspace = true }
+# `polars-parquet` is compiled non-optionally by polars 0.50 but carries no
+# codec or reader/writer surface unless the `parquet` feature is enabled,
+# and the feature is deliberately not enabled: columnar ingest and sealed
+# artifacts decode through upstream `arrow`/`parquet` in the store crate,
+# never through polars.
 polars = { version = "0.50", optional = true, default-features = false, features = ["lazy", "rolling_window", "ewma", "abs", "cum_agg", "log", "moment", "trigonometry", "sign", "round_series"] }
 
 [dev-dependencies]

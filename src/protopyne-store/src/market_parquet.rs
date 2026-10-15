@@ -74,131 +74,19 @@ pub fn read_ohlcv_parquet(path: &Path, ticker: Option<&str>) -> Result<OhlcvRead
 mod parquet_read {
     use std::fs::File;
 
-    use arrow::array::{
-        Array, Decimal128Array, Float32Array, Float64Array, Int32Array, Int64Array,
-        LargeStringArray, StringArray, TimestampMicrosecondArray, TimestampMillisecondArray,
-        TimestampNanosecondArray, TimestampSecondArray,
-    };
-    use arrow::datatypes::{DataType, Schema, TimeUnit};
+    use arrow::datatypes::Schema;
     use arrow::record_batch::RecordBatch;
     use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
     use protopyne_types::{validate_new_bar, Bar};
-    use rust_decimal::prelude::{FromPrimitive as _, ToPrimitive as _};
     use rust_decimal::Decimal;
 
     use super::OhlcvRead;
+    use crate::arrow_decode::{
+        DecodeError, PriceColumn, StringColumn, TimeColumn, VolumeColumn, find,
+        price_column_of, string_column_of, time_column_of, volume_column_of,
+    };
     use crate::commit::KeyedSnapshot as _;
     use crate::error::StoreError;
-
-    /// The row's timestamp column, resolved once per file into its concrete
-    /// array type. Every variant reads to epoch milliseconds.
-    enum TimeColumn<'a> {
-        Nanos(&'a TimestampNanosecondArray),
-        Micros(&'a TimestampMicrosecondArray),
-        Millis(&'a TimestampMillisecondArray),
-        Seconds(&'a TimestampSecondArray),
-        EpochMillis(&'a Int64Array),
-    }
-
-    impl TimeColumn<'_> {
-        fn is_null(&self, row: usize) -> bool {
-            match self {
-                Self::Nanos(v) => v.is_null(row),
-                Self::Micros(v) => v.is_null(row),
-                Self::Millis(v) => v.is_null(row),
-                Self::Seconds(v) => v.is_null(row),
-                Self::EpochMillis(v) => v.is_null(row),
-            }
-        }
-
-        /// The row's stamp in epoch milliseconds. A sub-millisecond stamp
-        /// floors toward the earlier millisecond; a second stamp that would
-        /// overflow refuses.
-        fn millis(&self, row: usize) -> Result<i64, String> {
-            match self {
-                Self::Nanos(v) => Ok(v.value(row).div_euclid(1_000_000)),
-                Self::Micros(v) => Ok(v.value(row).div_euclid(1_000)),
-                Self::Millis(v) => Ok(v.value(row)),
-                Self::Seconds(v) => v
-                    .value(row)
-                    .checked_mul(1_000)
-                    .ok_or_else(|| format!("timestamp {}s overflows milliseconds", v.value(row))),
-                Self::EpochMillis(v) => Ok(v.value(row)),
-            }
-        }
-    }
-
-    /// The row's price column: float or decimal, resolved once.
-    enum PriceColumn<'a> {
-        F64(&'a Float64Array),
-        F32(&'a Float32Array),
-        Decimal(&'a Decimal128Array, u32),
-    }
-
-    impl PriceColumn<'_> {
-        fn is_null(&self, row: usize) -> bool {
-            match self {
-                Self::F64(v) => v.is_null(row),
-                Self::F32(v) => v.is_null(row),
-                Self::Decimal(v, _) => v.is_null(row),
-            }
-        }
-
-        /// The row's price as an exact `Decimal`. A NaN or an infinity has no
-        /// decimal form and refuses rather than silently becoming zero.
-        fn decimal(&self, row: usize) -> Result<Decimal, String> {
-            match self {
-                Self::F64(v) => Decimal::from_f64(v.value(row))
-                    .ok_or_else(|| format!("price is not finite: {}", v.value(row))),
-                Self::F32(v) => Decimal::from_f32(v.value(row))
-                    .ok_or_else(|| format!("price is not finite: {}", v.value(row))),
-                Self::Decimal(v, scale) => Ok(Decimal::from_i128_with_scale(v.value(row), *scale)),
-            }
-        }
-    }
-
-    /// The row's volume column: any numeric encoding, resolved once.
-    enum VolumeColumn<'a> {
-        F64(&'a Float64Array),
-        F32(&'a Float32Array),
-        I64(&'a Int64Array),
-        I32(&'a Int32Array),
-        Decimal(&'a Decimal128Array, u32),
-    }
-
-    impl VolumeColumn<'_> {
-        fn is_null(&self, row: usize) -> bool {
-            match self {
-                Self::F64(v) => v.is_null(row),
-                Self::F32(v) => v.is_null(row),
-                Self::I64(v) => v.is_null(row),
-                Self::I32(v) => v.is_null(row),
-                Self::Decimal(v, _) => v.is_null(row),
-            }
-        }
-
-        /// The row's volume as whole shares. A fractional or negative value
-        /// refuses: a fraction means the file is not OHLCV share counts, and
-        /// a negative count is not representable, so neither may be rounded
-        /// into a plausible number.
-        fn whole(&self, row: usize) -> Result<u64, String> {
-            let value = match self {
-                Self::F64(v) => Decimal::from_f64(v.value(row))
-                    .ok_or_else(|| format!("volume is not finite: {}", v.value(row)))?,
-                Self::F32(v) => Decimal::from_f32(v.value(row))
-                    .ok_or_else(|| format!("volume is not finite: {}", v.value(row)))?,
-                Self::I64(v) => Decimal::from(v.value(row)),
-                Self::I32(v) => Decimal::from(v.value(row)),
-                Self::Decimal(v, scale) => Decimal::from_i128_with_scale(v.value(row), *scale),
-            };
-            if value.fract() != Decimal::ZERO {
-                return Err(format!("volume {value} is not a whole share count"));
-            }
-            value
-                .to_u64()
-                .ok_or_else(|| format!("volume {value} is negative or out of range"))
-        }
-    }
 
     /// The column indices this reader requires, with the optional ticker.
     struct Columns {
@@ -223,12 +111,20 @@ mod parquet_read {
         }
     }
 
-    /// Find one column by any of its accepted spellings, case-insensitively.
-    fn find(schema: &Schema, names: &[&str]) -> Option<usize> {
-        schema.fields().iter().position(|field| {
-            let lowered = field.name().to_lowercase();
-            names.iter().any(|name| lowered == *name)
-        })
+    /// Map a decode failure into the ingest taxonomy with this reader's
+    /// words. The `BadScale` arm is unreachable from the timestamp and
+    /// string resolvers — only the price and volume arms check scales — and
+    /// stays total so a shared-layer contract break is loud, never silent.
+    fn decode(label: &str, expected: &str, err: DecodeError) -> StoreError {
+        let reason = match err {
+            DecodeError::UnexpectedType { actual } => {
+                format!("{label} has type {actual}; expected {expected}")
+            }
+            DecodeError::BadScale { column, scale } => {
+                format!("column {column} carries negative decimal scale {scale}")
+            }
+        };
+        StoreError::Ingest { reason }
     }
 
     fn required(schema: &Schema, names: &[&str], what: &str) -> Result<usize, StoreError> {
@@ -246,49 +142,14 @@ mod parquet_read {
         })
     }
 
-    /// A decimal scale that cannot be named as a `Decimal` scale refuses.
-    fn checked_scale(scale: i8, column: &str) -> Result<u32, StoreError> {
-        u32::try_from(scale).map_err(|_| StoreError::Ingest {
-            reason: format!("column {column} carries negative decimal scale {scale}"),
-        })
-    }
-
     fn time_column(batch: &RecordBatch, index: usize) -> Result<TimeColumn<'_>, StoreError> {
-        let column = batch.column(index);
-        let data_type = column.data_type();
-        let refuse = || StoreError::Ingest {
-            reason: format!(
-                "timestamp column has type {data_type}; expected a timestamp unit or ts_ms integer"
-            ),
-        };
-        match data_type {
-            DataType::Timestamp(TimeUnit::Nanosecond, _) => column
-                .as_any()
-                .downcast_ref::<TimestampNanosecondArray>()
-                .map(TimeColumn::Nanos)
-                .ok_or_else(refuse),
-            DataType::Timestamp(TimeUnit::Microsecond, _) => column
-                .as_any()
-                .downcast_ref::<TimestampMicrosecondArray>()
-                .map(TimeColumn::Micros)
-                .ok_or_else(refuse),
-            DataType::Timestamp(TimeUnit::Millisecond, _) => column
-                .as_any()
-                .downcast_ref::<TimestampMillisecondArray>()
-                .map(TimeColumn::Millis)
-                .ok_or_else(refuse),
-            DataType::Timestamp(TimeUnit::Second, _) => column
-                .as_any()
-                .downcast_ref::<TimestampSecondArray>()
-                .map(TimeColumn::Seconds)
-                .ok_or_else(refuse),
-            DataType::Int64 => column
-                .as_any()
-                .downcast_ref::<Int64Array>()
-                .map(TimeColumn::EpochMillis)
-                .ok_or_else(refuse),
-            _ => Err(refuse()),
-        }
+        time_column_of(batch, index).map_err(|err| {
+            decode(
+                "timestamp column",
+                "a timestamp unit or ts_ms integer",
+                err,
+            )
+        })
     }
 
     fn price_column<'a>(
@@ -296,95 +157,13 @@ mod parquet_read {
         index: usize,
         name: &str,
     ) -> Result<PriceColumn<'a>, StoreError> {
-        let column = batch.column(index);
-        let data_type = column.data_type();
-        let refuse = || StoreError::Ingest {
-            reason: format!("price column {name} has type {data_type}; expected float or decimal"),
-        };
-        match data_type {
-            DataType::Float64 => column
-                .as_any()
-                .downcast_ref::<Float64Array>()
-                .map(PriceColumn::F64)
-                .ok_or_else(refuse),
-            DataType::Float32 => column
-                .as_any()
-                .downcast_ref::<Float32Array>()
-                .map(PriceColumn::F32)
-                .ok_or_else(refuse),
-            DataType::Decimal128(_, scale) => {
-                let scale = checked_scale(*scale, name)?;
-                column
-                    .as_any()
-                    .downcast_ref::<Decimal128Array>()
-                    .map(|array| PriceColumn::Decimal(array, scale))
-                    .ok_or_else(refuse)
-            }
-            _ => Err(refuse()),
-        }
+        price_column_of(batch, index, name)
+            .map_err(|err| decode(&format!("price column {name}"), "float or decimal", err))
     }
 
     fn volume_column(batch: &RecordBatch, index: usize) -> Result<VolumeColumn<'_>, StoreError> {
-        let column = batch.column(index);
-        let data_type = column.data_type();
-        let refuse = || StoreError::Ingest {
-            reason: format!("volume column has type {data_type}; expected numeric"),
-        };
-        match data_type {
-            DataType::Float64 => column
-                .as_any()
-                .downcast_ref::<Float64Array>()
-                .map(VolumeColumn::F64)
-                .ok_or_else(refuse),
-            DataType::Float32 => column
-                .as_any()
-                .downcast_ref::<Float32Array>()
-                .map(VolumeColumn::F32)
-                .ok_or_else(refuse),
-            DataType::Int64 => column
-                .as_any()
-                .downcast_ref::<Int64Array>()
-                .map(VolumeColumn::I64)
-                .ok_or_else(refuse),
-            DataType::Int32 => column
-                .as_any()
-                .downcast_ref::<Int32Array>()
-                .map(VolumeColumn::I32)
-                .ok_or_else(refuse),
-            DataType::Decimal128(_, scale) => {
-                let scale = checked_scale(*scale, "volume")?;
-                column
-                    .as_any()
-                    .downcast_ref::<Decimal128Array>()
-                    .map(|array| VolumeColumn::Decimal(array, scale))
-                    .ok_or_else(refuse)
-            }
-            _ => Err(refuse()),
-        }
-    }
-
-    /// The row's string column: 32- or 64-bit offsets (polars emits
-    /// `LargeUtf8`), resolved once.
-    #[derive(Clone, Copy)]
-    enum StringColumn<'a> {
-        Utf8(&'a StringArray),
-        Large(&'a LargeStringArray),
-    }
-
-    impl StringColumn<'_> {
-        fn is_null(&self, row: usize) -> bool {
-            match self {
-                Self::Utf8(v) => v.is_null(row),
-                Self::Large(v) => v.is_null(row),
-            }
-        }
-
-        fn value(&self, row: usize) -> &str {
-            match self {
-                Self::Utf8(v) => v.value(row),
-                Self::Large(v) => v.value(row),
-            }
-        }
+        volume_column_of(batch, index, "volume")
+            .map_err(|err| decode("volume column", "numeric", err))
     }
 
     fn string_column<'a>(
@@ -392,24 +171,8 @@ mod parquet_read {
         index: usize,
         name: &str,
     ) -> Result<StringColumn<'a>, StoreError> {
-        let column = batch.column(index);
-        let data_type = column.data_type();
-        let refuse = || StoreError::Ingest {
-            reason: format!("column {name} has type {data_type}; expected a string"),
-        };
-        match data_type {
-            DataType::Utf8 => column
-                .as_any()
-                .downcast_ref::<StringArray>()
-                .map(StringColumn::Utf8)
-                .ok_or_else(refuse),
-            DataType::LargeUtf8 => column
-                .as_any()
-                .downcast_ref::<LargeStringArray>()
-                .map(StringColumn::Large)
-                .ok_or_else(refuse),
-            _ => Err(refuse()),
-        }
+        string_column_of(batch, index)
+            .map_err(|err| decode(&format!("column {name}"), "a string", err))
     }
 
     /// Read one market Parquet file into committed bars. Structural faults

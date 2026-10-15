@@ -27,7 +27,7 @@ pub use session::{
     CompositeSessionProvider, DailySessionProvider, EtSessionProvider, MonthlySessionProvider,
     SessionBreak, SessionBreakType, SessionProvider, WeeklySessionProvider, find_session_breaks,
 };
-pub use transform::{aggregate_bars, heikin_ashi, renko_bricks};
+pub use transform::{heikin_ashi, renko_bricks};
 
 #[cfg(test)]
 #[path = "../tests/budget.rs"]

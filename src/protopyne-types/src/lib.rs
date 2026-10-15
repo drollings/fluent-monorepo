@@ -28,7 +28,7 @@ pub use money::{Money, Qty};
 pub use series::{GapPolicy, LtfView, PriceSource, SeriesContext};
 pub use session::{TradingSession, et_offset_ms, is_dst_et};
 pub use symbol::{DEFAULT_MAX_SYMBOLS, SymKey, SymbolIndex};
-pub use timeframe::Timeframe;
+pub use timeframe::{FOLD_ORIGIN_MS, WEEK_FOLD_ORIGIN_MS, Timeframe};
 pub use validate::{Validate, check_for_execute, valid_output};
 pub use warmup::{adjust_fetch_bounds, trim_indicator_output, warmup_headroom, AdjustedBounds};
 pub use window::{BarGap, BarWindow};

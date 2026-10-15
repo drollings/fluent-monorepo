@@ -29,17 +29,13 @@ fn is_parquet(path: &Path) -> bool {
     path.extension().and_then(|ext| ext.to_str()) == Some("parquet")
 }
 
-/// Load a history file: Parquet as-is, CSV through the legacy ingest.
+/// Load a history file through the server's one entry point (`.parquet` or
+/// `.csv` by extension, anything else refused). An empty file is still the
+/// demo's own refusal: the loader answers empty, the shell decides that
+/// means nothing to draw.
 fn load_bars(path: &Path) -> Result<Vec<Bar>, String> {
-    let bars = if is_parquet(path) {
-        protopyne_server::load_bars_parquet(path)
-            .map_err(|e| format!("parse {}: {e}", path.display()))?
-    } else {
-        let text =
-            std::fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
-        protopyne_server::parse_bars_csv(&text)
-            .map_err(|e| format!("parse {}: {e}", path.display()))?
-    };
+    let bars = protopyne_server::load_bars_any(path)
+        .map_err(|e| format!("parse {}: {e}", path.display()))?;
     if bars.is_empty() {
         return Err(format!("no bars in {}", path.display()));
     }

@@ -234,6 +234,73 @@ fn every_variant_is_fixed_ms() {
     }
 }
 
+/// Every sub-weekly spacing anchors its buckets at the Unix epoch: the
+/// bucket holding a stamp is the greatest grid line at or before it, with
+/// pre-epoch stamps flooring toward the earlier bucket, never toward zero.
+#[test]
+fn sub_weekly_buckets_anchor_at_the_epoch() {
+    for (variant, _) in all_variants() {
+        if variant == Timeframe::W1 {
+            continue;
+        }
+        let step = variant.duration_ms();
+        let cases = [
+            (0_i64, 0_i64),
+            (1, 0),
+            (step - 1, 0),
+            (step, step),
+            (-1, -step),
+            (-step - 1, -2 * step),
+        ];
+        for (stamp, expected) in cases {
+            assert_eq!(
+                variant.bucket_start_ms(stamp),
+                expected,
+                "{variant:?} buckets {stamp} at {expected}"
+            );
+        }
+    }
+}
+
+/// Weekly buckets anchor at the Monday of the epoch's week
+/// (1969-12-29T00:00:00Z): the epoch itself is a Thursday, and a
+/// Thursday-anchored weekly bar is confusing to hand an operator.
+#[test]
+fn weekly_buckets_anchor_on_the_epoch_monday() {
+    let monday = -259_200_000_i64;
+    assert_eq!(Timeframe::W1.bucket_start_ms(0), monday, "the epoch Thursday sits in the Monday week");
+    assert_eq!(Timeframe::W1.bucket_start_ms(-1), monday);
+    assert_eq!(Timeframe::W1.bucket_start_ms(monday), monday, "the anchor is idempotent");
+    assert_eq!(
+        Timeframe::W1.bucket_start_ms(monday - 1),
+        monday - 604_800_000,
+        "the stamp before the anchor falls in the prior week"
+    );
+    // Sunday 1970-01-04 23:59:59.999 closes the Monday week; Monday
+    // 1970-01-05 opens the next one.
+    assert_eq!(Timeframe::W1.bucket_start_ms(345_599_999), monday);
+    assert_eq!(Timeframe::W1.bucket_start_ms(345_600_000), 345_600_000);
+    assert_eq!(Timeframe::W1.bucket_start_ms(950_399_999), 345_600_000);
+    assert_eq!(Timeframe::W1.bucket_start_ms(950_400_000), 950_400_000);
+}
+
+/// Bucket starts are fixed points: feeding one back in returns it unchanged,
+/// which is what makes incremental folding over a live tape converge.
+#[test]
+fn bucket_starts_are_idempotent() {
+    for (variant, _) in all_variants() {
+        for stamp in [0_i64, 1, -1, 345_599_999, 345_600_000, 1_699_999_980_000, -1_699_999_980_001]
+        {
+            let start = variant.bucket_start_ms(stamp);
+            assert_eq!(
+                variant.bucket_start_ms(start),
+                start,
+                "{variant:?} bucket start {start} is a fixed point"
+            );
+        }
+    }
+}
+
 /// Bucket math over whole-second spans is idempotent:
 /// `floor(ts/ms)*ms` floors once and stays put.
 #[test]

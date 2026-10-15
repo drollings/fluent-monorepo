@@ -36,7 +36,8 @@ pub use boundary::{
     BoundaryOptions, BoundaryRepair, BoundarySchema,
 };
 pub use capability::{
-    check_capability, Capability, CapabilityError, CapabilitySet, FsCapability, CURRENT_CAPS,
+    check_capability, run_gated_blocking, BlockingJoinError, Capability, CapabilityError,
+    CapabilitySet, FsCapability, CURRENT_CAPS,
 };
 pub use coerce::{
     coerce, escape_control_chars, escaped_char, literal_kind, parse_bool, parse_int, parse_number,

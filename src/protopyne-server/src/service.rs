@@ -15,6 +15,7 @@
 
 use std::collections::BTreeMap;
 use std::net::SocketAddr;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use axum::{
@@ -40,10 +41,13 @@ use protopyne_strategy::{
     Strategy, StructureKind, TradeThresholds,
 };
 use protopyne_chart_model::{ChartRow, row_of};
-use protopyne_store::{CandleStore, FoldPolicy, ReadRequest as TapeReadRequest, StoreHealth, TimeRange};
+use protopyne_store::{
+    CandleStore, FoldPolicy, PlanError, ReadRequest as TapeReadRequest, StoreError, StoreHealth,
+    TimeRange,
+};
 use protopyne_types::{Bar, Money, Timeframe};
 use protopyne_venue::{
-    HealthLimits, HealthState, HealthVerdict, Position, StateHandle, TradingState, may_trade,
+    HealthVerdict, Position, StateHandle, TradingState, serving_allows_entries, serving_verdict,
 };
 use protopyne_view::{
     ArmResponse, ChartBar, ChartBars, CommandStatus, DenyCount, HealthView, OverlaySeries,
@@ -51,6 +55,7 @@ use protopyne_view::{
 };
 
 use crate::error::ServerError;
+use crate::gateway::FallbackLatch;
 use crate::runner::{BacktestRun, RunnerConfig, build_replay, complete_replay, run_backtest};
 use crate::backtest::BacktestConfig;
 
@@ -293,6 +298,13 @@ pub struct AppState {
     /// through, when the server was booted with one. `None` serves the boot
     /// history unchanged, so a store-less server behaves exactly as before.
     pub(crate) tape: Option<TapeReader>,
+    /// Counters over tape-serve outcomes. Observation only: recording an
+    /// outcome never changes what the read serves.
+    pub(crate) tape_serve_stats: Arc<TapeServeStats>,
+    /// Edge-triggered fallback latch, so a sustained fallback warns once and
+    /// a recovery logs once rather than one line per read. Observation only:
+    /// the read decides fallback before consulting it.
+    pub(crate) fallback_latch: Mutex<FallbackLatch>,
 }
 
 pub(crate) type Shared = Arc<AppState>;
@@ -382,19 +394,20 @@ fn validate_grant(grant: &Grant) -> Result<(), String> {
 }
 
 /// Map the serving state's store reading onto the view's optional fields.
-/// No reading on record ([`StoreHealth::default()`]) reports nothing, so a
-/// server that never observed the store serves the pre-store payload
-/// byte-identically; any actual reading reports all three facts together —
-/// a half-reported reading would be worse than none.
+/// An unobserved reading reports nothing, so a server that never observed
+/// the store serves the pre-store payload byte-identically; any observed
+/// reading reports all three facts together — even one that happens to
+/// equal the defaults — because a half-reported reading would be worse
+/// than none, and a genuine reading must never read as no reading.
 fn store_fields(reading: StoreHealth) -> (Option<bool>, Option<u64>, Option<u64>) {
-    if reading == StoreHealth::default() {
-        (None, None, None)
-    } else {
+    if reading.observed {
         (
             Some(reading.reachable),
             Some(reading.open_gaps),
             reading.watermark_age_secs,
         )
+    } else {
+        (None, None, None)
     }
 }
 
@@ -442,20 +455,156 @@ pub fn timeframe_of_label(label: &str) -> Option<Timeframe> {
     }
 }
 
-/// Plan and read a chart window from the durable tape, or `None` when the
-/// read cannot be answered (an unknown symbol, a spacing the tape cannot
-/// serve, a store that could not be reached). The store's own gate runs
-/// inside the permit's scope, so a task that was never granted the store is
-/// denied here exactly as everywhere else; the read never falls back to
-/// another source at this layer — the caller decides that.
+/// Why a store-backed chart read could not produce bars. A copyable kind
+/// ([`TapeMissKind`]) rides alongside so counters and the fallback latch hold
+/// the classification without the non-`Copy` store error.
+#[derive(Debug)]
+pub enum TapeMiss {
+    /// No durable tape is wired into this server.
+    NoTape,
+    /// The requested label names no bar spacing this server knows.
+    UnsupportedTimeframe,
+    /// The tape holds no market under the requested symbol.
+    UnknownSymbol,
+    /// The calling task was never granted the store.
+    Denied,
+    /// The store failed for another reason, carried for diagnosis.
+    Store(StoreError),
+}
+
+/// The copyable classification of a [`TapeMiss`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub enum TapeMissKind {
+    /// See [`TapeMiss::NoTape`].
+    NoTape,
+    /// See [`TapeMiss::UnsupportedTimeframe`].
+    UnsupportedTimeframe,
+    /// See [`TapeMiss::UnknownSymbol`].
+    UnknownSymbol,
+    /// See [`TapeMiss::Denied`].
+    Denied,
+    /// See [`TapeMiss::Store`].
+    Store,
+}
+
+impl TapeMiss {
+    /// The copyable classification of this miss.
+    #[must_use]
+    pub fn kind(&self) -> TapeMissKind {
+        match self {
+            Self::NoTape => TapeMissKind::NoTape,
+            Self::UnsupportedTimeframe => TapeMissKind::UnsupportedTimeframe,
+            Self::UnknownSymbol => TapeMissKind::UnknownSymbol,
+            Self::Denied => TapeMissKind::Denied,
+            Self::Store(_) => TapeMissKind::Store,
+        }
+    }
+}
+
+/// The outcome of planning and reading one chart window from the durable
+/// tape: either the served bars, or why the tape could not serve them.
+/// Collapsing the miss into a bare `None` erases the difference between "no
+/// tape" and "the tape refused", which is why provenance is observable.
+#[derive(Debug)]
+pub enum TapeServe {
+    /// The tape served these bars.
+    Served(Vec<Bar>),
+    /// The tape could not serve the read, with the reason.
+    Missing(TapeMiss),
+}
+
+/// Counters over tape-serve outcomes: how many reads the tape served, and a
+/// per-kind tally of misses with the most recent kind. Pure observation —
+/// nothing gates a read on these; the read path records its outcome after
+/// deciding it.
+#[derive(Debug, Default)]
+pub struct TapeServeStats {
+    served: AtomicU64,
+    no_tape: AtomicU64,
+    unsupported_timeframe: AtomicU64,
+    unknown_symbol: AtomicU64,
+    denied: AtomicU64,
+    store_error: AtomicU64,
+    last_miss: Mutex<Option<TapeMissKind>>,
+}
+
+/// A point-in-time snapshot of [`TapeServeStats`].
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize,
+)]
+pub struct TapeServeSnapshot {
+    /// Reads the tape served.
+    pub served: u64,
+    /// Reads with no tape configured.
+    pub no_tape: u64,
+    /// Reads whose label named an unknown bar spacing.
+    pub unsupported_timeframe: u64,
+    /// Reads whose symbol the tape does not hold.
+    pub unknown_symbol: u64,
+    /// Reads the store permit denied.
+    pub denied: u64,
+    /// Reads that failed for another store reason.
+    pub store_error: u64,
+    /// The most recent miss kind, if any.
+    pub last_miss: Option<TapeMissKind>,
+}
+
+impl TapeServeStats {
+    /// Record one serve outcome.
+    pub(crate) fn record(&self, serve: &TapeServe) {
+        match serve {
+            TapeServe::Served(_) => {
+                self.served.fetch_add(1, Ordering::Relaxed);
+            }
+            TapeServe::Missing(miss) => {
+                match miss.kind() {
+                    TapeMissKind::NoTape => &self.no_tape,
+                    TapeMissKind::UnsupportedTimeframe => &self.unsupported_timeframe,
+                    TapeMissKind::UnknownSymbol => &self.unknown_symbol,
+                    TapeMissKind::Denied => &self.denied,
+                    TapeMissKind::Store => &self.store_error,
+                }
+                .fetch_add(1, Ordering::Relaxed);
+                *common_core::sync::lock(&self.last_miss) = Some(miss.kind());
+            }
+        }
+    }
+
+    /// A snapshot for diagnostics: the counters are read independently (each
+    /// `Relaxed`), which is right for observability — nothing gates behavior
+    /// on their exact sums.
+    #[must_use]
+    pub fn snapshot(&self) -> TapeServeSnapshot {
+        TapeServeSnapshot {
+            served: self.served.load(Ordering::Relaxed),
+            no_tape: self.no_tape.load(Ordering::Relaxed),
+            unsupported_timeframe: self.unsupported_timeframe.load(Ordering::Relaxed),
+            unknown_symbol: self.unknown_symbol.load(Ordering::Relaxed),
+            denied: self.denied.load(Ordering::Relaxed),
+            store_error: self.store_error.load(Ordering::Relaxed),
+            last_miss: *common_core::sync::lock(&self.last_miss),
+        }
+    }
+}
+
+/// Plan and read a chart window from the durable tape, reporting either the
+/// served bars or why the read could not be answered. The store's own gate
+/// runs inside the permit's scope on the shared capability-scoped blocking
+/// worker (multi-thread runtime → `block_in_place`; current-thread runtime or
+/// no runtime → a dedicated scoped OS thread), so a synchronous render loop
+/// can plan a read without stalling the executor and a task that was never
+/// granted the store is denied exactly as everywhere else. The caller decides
+/// the fallback; this layer never silently substitutes another source.
 #[must_use]
-pub fn tape_bars_for(
+pub fn tape_serve(
     reader: &TapeReader,
     symbol: &str,
     timeframe: &str,
     limit: Option<usize>,
-) -> Option<Vec<Bar>> {
-    let tf = timeframe_of_label(timeframe)?;
+) -> TapeServe {
+    let Some(tf) = timeframe_of_label(timeframe) else {
+        return TapeServe::Missing(TapeMiss::UnsupportedTimeframe);
+    };
     let request = TapeReadRequest {
         symbol: symbol.to_owned(),
         venue: reader.venue.clone(),
@@ -464,40 +613,26 @@ pub fn tape_bars_for(
         limit: Some(limit.unwrap_or(reader.limit)),
         policy: FoldPolicy::ExtendToFullBuckets,
     };
-    // The store gates on a task-local permit; no task-local context means no
-    // store read is possible here, so report "not served" rather than
-    // panicking a synchronous caller (the terminal's render loop).
-    if fluent_wvr::CURRENT_CAPS.try_with(|_| ()).is_err() {
-        return None;
+    let store = Arc::clone(&reader.store);
+    let caps = reader.caps.clone();
+    match fluent_wvr::run_gated_blocking(caps, move || store.read(&request)) {
+        Ok(Ok(series)) => TapeServe::Served(series.bars),
+        Ok(Err(error)) => TapeServe::Missing(tape_miss_of(error)),
+        Err(join) => TapeServe::Missing(TapeMiss::Store(StoreError::InvalidBar(format!(
+            "tape read worker panicked: {join}"
+        )))),
     }
-    fluent_wvr::CURRENT_CAPS
-        .sync_scope(reader.caps.clone(), || reader.store.read(&request).ok().map(|series| series.bars))
 }
 
-/// Whether entries are allowed right now: the command plane's verdict AND
-/// the health gate's. The serving path observes only the store reading, so
-/// quote age, clock skew, and stream state are supplied as the no-objection
-/// values this pruning means — the live feed owns those facts. A default
-/// store reading is inert, so a server that never observed the store
-/// evaluates exactly as it did before the gate existed; a store outage
-/// halts entries while `allows_exits` stays the command plane's answer,
-/// which routes exits through and never strands a position.
-fn allows_entries(trading: TradingState, reading: StoreHealth) -> bool {
-    trading.allows(false) && store_health_verdict(reading).may_trade()
-}
-
-/// The health gate evaluated over the one fact this serving path observes —
-/// the store reading — with quote age, clock skew, and stream state supplied
-/// as the no-objection values the pruning means. The shutdown and preview
-/// paths share this one verdict, so a store outage refuses both identically.
-fn store_health_verdict(reading: StoreHealth) -> HealthVerdict {
-    let health = HealthState {
-        quote_age_secs: 0,
-        clock_skew_secs: 0,
-        stream_connected: true,
-        store: reading,
-    };
-    may_trade(&health, &HealthLimits::new().build())
+/// Classify a store failure into the tape-serve miss taxonomy. An unknown
+/// symbol and a denied permit are the two refusals the caller can act on;
+/// everything else is an unclassified store failure, carried verbatim.
+fn tape_miss_of(error: StoreError) -> TapeMiss {
+    match error {
+        StoreError::Plan(PlanError::UnknownSymbol(_)) => TapeMiss::UnknownSymbol,
+        StoreError::Denied(_) => TapeMiss::Denied,
+        other => TapeMiss::Store(other),
+    }
 }
 
 /// Liveness plus command-plane status: the trading state (halt/resume) and
@@ -505,13 +640,15 @@ fn store_health_verdict(reading: StoreHealth) -> HealthVerdict {
 /// fields, no new route, no new auth. The DTO's alphabetical field order
 /// reproduces the historical sorted-key bytes exactly (golden-pinned). The
 /// store facts ride the same builder the gateway reads, so the route and
-/// the terminal cannot drift.
+/// the terminal cannot drift. Entry gating composes the venue's
+/// serving-path functions, so the route and the preview refusal read one
+/// verdict.
 pub(crate) fn health_view(state: &Shared) -> HealthView {
     let trading = state.trading_state.get();
     let reading: StoreHealth = *common_core::sync::lock(&state.store_health);
     let (store_reachable, store_open_gaps, store_watermark_age_secs) = store_fields(reading);
     HealthView {
-        allows_entries: allows_entries(trading, reading),
+        allows_entries: serving_allows_entries(trading, reading),
         allows_exits: trading.allows(true),
         last_command: common_core::sync::lock(&state.last_command).clone(),
         status: "ok".to_owned(),
@@ -541,7 +678,7 @@ async fn preview(
     // disagree. Exits are unaffected at this layer because a preview never
     // exits a position.
     let reading: StoreHealth = *common_core::sync::lock(&state.store_health);
-    if let HealthVerdict::Halt { reasons } = store_health_verdict(reading) {
+    if let HealthVerdict::Halt { reasons } = serving_verdict(reading) {
         return Err(api_error(
             StatusCode::SERVICE_UNAVAILABLE,
             format!("halted: {}", reasons.join("; ")),
@@ -1063,6 +1200,13 @@ impl ServerHandle {
         crate::gateway::ServerGateway::new(Arc::clone(&self.state))
     }
 
+    /// A snapshot of the tape-serve outcome counters the gateway records as
+    /// it serves chart reads. Observation only: the counts never gate a read.
+    #[must_use]
+    pub fn tape_serve_stats(&self) -> TapeServeSnapshot {
+        self.state.tape_serve_stats.snapshot()
+    }
+
     /// Stop serving: close the feed scope, then stop the listener task.
     pub async fn shutdown(self) {
         let mut scope = self.scope;
@@ -1148,6 +1292,8 @@ pub async fn serve_with_tape(
         last_command: Mutex::new(None),
         store_health: Mutex::new(config.store_health),
         tape,
+        tape_serve_stats: Arc::new(TapeServeStats::default()),
+        fallback_latch: Mutex::new(FallbackLatch::default()),
     });
     let mut scope = Scope::new();
     {
@@ -1208,3 +1354,7 @@ mod health_view_store_tests;
 #[cfg(test)]
 #[path = "../tests/store_halt_end_to_end.rs"]
 mod store_halt_end_to_end_tests;
+
+#[cfg(test)]
+#[path = "../tests/trading_status.rs"]
+mod trading_status_tests;

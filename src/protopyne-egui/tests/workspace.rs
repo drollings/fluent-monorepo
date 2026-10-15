@@ -406,12 +406,33 @@ fn ramp_rows(count: usize) -> Vec<ChartRow> {
         .collect()
 }
 
+/// Rows on the quarter-hour grid from an hour boundary, so resampling pins
+/// the bucket anchor instead of the fixture's layout.
+fn grid_rows(start_sec: i64, count: usize) -> Vec<ChartRow> {
+    (0..count)
+        .map(|i| {
+            let close = 100.0 + i as f64;
+            ChartRow {
+                time: start_sec + i as i64 * 900,
+                open: close - 0.5,
+                high: close + 0.5,
+                low: close - 1.0,
+                close,
+                volume: 10,
+            }
+        })
+        .collect()
+}
+
 #[test]
 fn seeded_timeframes_switch_the_loaded_candles_and_resample_coarser_keys() {
     let mut workspace = ChartWorkspace::new().expect("the workspace boots");
     workspace.seed_history(TimeframeKey::M1, ramp_rows(20)).expect("1M seeds");
     workspace.seed_history(TimeframeKey::M5, ramp_rows(12)).expect("5M seeds");
-    workspace.seed_history(TimeframeKey::M15, ramp_rows(8)).expect("15M selects on seed");
+    let hour_sec = protopyne_types::Timeframe::H1.bucket_start_ms(1_700_000_000_000) / 1_000;
+    workspace
+        .seed_history(TimeframeKey::M15, grid_rows(hour_sec, 8))
+        .expect("15M selects on seed");
 
     assert_eq!(workspace.timeframe(), TimeframeKey::M15, "the default timeframe is selected");
     assert_eq!(workspace.rows().len(), 8, "the seeded 15M history is active");
@@ -423,7 +444,31 @@ fn seeded_timeframes_switch_the_loaded_candles_and_resample_coarser_keys() {
 
     workspace.select_timeframe(TimeframeKey::H1).expect("1H resamples the 15M slot");
     assert_eq!(workspace.timeframe(), TimeframeKey::H1);
-    assert_eq!(workspace.rows().len(), 2, "8 fifteen-minute rows fold into 2 hourly bars");
+    let hourly = workspace.rows();
+    assert_eq!(hourly.len(), 2, "8 fifteen-minute rows fold into 2 hourly bars");
+    assert_eq!(hourly[0].time, hour_sec, "a folded row stamps its bucket start");
+    assert!(
+        (hourly[0].open - 99.5).abs() < 1e-12,
+        "open comes from the bucket's first row"
+    );
+    assert!(
+        (hourly[0].close - 103.0).abs() < 1e-12,
+        "close comes from the bucket's last row"
+    );
+    assert_eq!(hourly[0].volume, 40, "volume sums the bucket's rows");
+    assert_eq!(hourly[1].time, hour_sec + 3_600, "the second bucket stamps its own start");
+
+    // A short edge never fabricates a bar: three rows inside one hour fold
+    // to nothing.
+    let mut short = ChartWorkspace::new().expect("the workspace boots");
+    short
+        .seed_history(TimeframeKey::M15, grid_rows(hour_sec, 3))
+        .expect("15M selects on seed");
+    short.select_timeframe(TimeframeKey::H1).expect("1H selects");
+    assert!(
+        short.rows().is_empty(),
+        "three quarter-hours cannot evidence a whole hour"
+    );
 
     let mut bare = ChartWorkspace::new().expect("the workspace boots");
     assert!(

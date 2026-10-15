@@ -76,32 +76,47 @@ impl Coverage {
     /// hold a session calendar build the runs themselves and use
     /// [`Coverage::from_runs`] instead. `None` when there is nothing to
     /// describe — the caller maps that to an absent `Coverage`, which
-    /// [`classify`] reads as [`GapClass::Empty`].
+    /// [`classify`] reads as [`GapClass::Empty`]. The stamps are mapped out
+    /// of the bars and the run walk below runs over them, so the two
+    /// constructors cannot drift apart.
     #[must_use]
     pub fn from_bars(bars: &[Bar], tf: Timeframe) -> Option<Self> {
+        Self::from_stamps(
+            &bars
+                .iter()
+                .map(|bar| bar.ts.timestamp_millis())
+                .collect::<Vec<_>>(),
+            tf,
+        )
+    }
+
+    /// Build from stamps alone, walking exactly the run rule
+    /// [`from_bars`](Self::from_bars) walks — no decimal decode, no `Bar`
+    /// materialization. The read path feeds this the stamps of the window it
+    /// will actually serve, so coverage planning stops fetching the whole
+    /// tape per read. `None` exactly when `from_bars` answers `None`: no
+    /// stamps, no coverage.
+    #[must_use]
+    pub fn from_stamps(stamps: &[i64], tf: Timeframe) -> Option<Self> {
         let step = tf.duration_ms();
-        let first = bars.first()?;
-        let (mut run_first, mut run_last) = (first.ts, first.ts);
+        let first = stamps.first()?;
+        let (mut run_first, mut run_last) = (*first, *first);
         let mut runs = Vec::new();
-        for bar in &bars[1..] {
-            if bar.ts.timestamp_millis() == run_last.timestamp_millis() + step {
-                run_last = bar.ts;
+        for stamp in &stamps[1..] {
+            if *stamp == run_last + step {
+                run_last = *stamp;
             } else {
                 runs.push(run_span(run_first, run_last, step));
-                run_first = bar.ts;
-                run_last = bar.ts;
+                run_first = *stamp;
+                run_last = *stamp;
             }
         }
         runs.push(run_span(run_first, run_last, step));
-        let last = bars.last().expect("a nonempty slice has a last bar");
+        let last = stamps.last().expect("a nonempty slice has a last stamp");
         Some(Self {
-            first: Watermark {
-                ts_ms: first.ts.timestamp_millis(),
-            },
-            last: Watermark {
-                ts_ms: last.ts.timestamp_millis(),
-            },
-            bars: bars.len() as u64,
+            first: Watermark { ts_ms: *first },
+            last: Watermark { ts_ms: *last },
+            bars: stamps.len() as u64,
             runs,
         })
     }
@@ -123,6 +138,33 @@ impl Coverage {
             bars: bar_count,
             runs: runs.to_vec(),
         })
+    }
+
+    /// Tape-wide bounds with window-scoped runs and count: `first_ms` and
+    /// `last_ms` describe the whole tape (read from the bounds query);
+    /// `bars` counts the stamps observed inside the fetch window and `runs`
+    /// are maximal within it. This is the read path's planning input —
+    /// never an audit answer: [`holes`] stays exact for wants inside the
+    /// fetch window (the only wants the plan resolves), while a want
+    /// reaching past the window would read its uncovered margin as a hole,
+    /// so callers must only plan wants the window covers. The tape-wide row
+    /// count is deliberately absent — `COUNT(*)` walks the symbol, which is
+    /// O(tape) per read — and nothing on the read path reads one.
+    ///
+    /// [`holes`]: Coverage::holes
+    #[must_use]
+    pub fn from_extent_and_runs(
+        first_ms: i64,
+        last_ms: i64,
+        bars: u64,
+        runs: Vec<TimeRange>,
+    ) -> Self {
+        Self {
+            first: Watermark { ts_ms: first_ms },
+            last: Watermark { ts_ms: last_ms },
+            bars,
+            runs,
+        }
     }
 
     /// The maximal covered bar spans, ascending.
@@ -199,14 +241,10 @@ impl Coverage {
 }
 
 /// One bar-span run: `[first_stamp, last_stamp + step)`.
-fn run_span(
-    first: chrono::DateTime<chrono::Utc>,
-    last: chrono::DateTime<chrono::Utc>,
-    step: i64,
-) -> TimeRange {
+fn run_span(first_ms: i64, last_ms: i64, step: i64) -> TimeRange {
     TimeRange {
-        start_ms: Some(first.timestamp_millis()),
-        end_ms: Some(last.timestamp_millis().saturating_add(step)),
+        start_ms: Some(first_ms),
+        end_ms: Some(last_ms.saturating_add(step)),
     }
 }
 
@@ -375,6 +413,10 @@ pub fn classify(
         GapClass::Torn { holes }
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/coverage_stamps.rs"]
+mod tests_stamps;
 
 #[cfg(test)]
 #[path = "../tests/gap_classify.rs"]

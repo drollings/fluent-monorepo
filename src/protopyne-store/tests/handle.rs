@@ -17,6 +17,7 @@ use crate::commit::test_tapes::at_ms;
 use crate::fold::FoldPolicy;
 use crate::key::TapeKey;
 use crate::range::TimeRange;
+use crate::sqlite_tape::test_oracle::{assert_same_outcome, oracle_from_pieces};
 
 fn db_token() -> fluent_db::capability::DbCapability {
     fluent_db::capability::DbCapability::open_with_config(
@@ -170,4 +171,78 @@ async fn invalid_config_refuses_at_open() {
         matches!(err, StoreError::Config(_)),
         "an incoherent configuration refuses before any database touch: {err:?}"
     );
+}
+
+#[tokio::test]
+async fn handle_read_matches_the_oracle() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let (handle, permit, key) = opened(&dir, "SPY").await;
+    fluent_wvr::CURRENT_CAPS
+        .scope(both_caps(&permit), async {
+            let base = 1_767_225_900_000_i64;
+            let bars: Vec<Bar> = (0..12_i64).map(|step| at_ms(base + step * 60_000)).collect();
+            handle
+                .append(&permit, key, &bars, WritePolicy::InsertIfAbsent)
+                .await
+                .expect("append");
+            let path = handle.path().to_owned();
+            let reads = [
+                (
+                    "bounded on-grid",
+                    ReadRequest {
+                        symbol: "SPY".to_owned(),
+                        venue: "test-venue".to_owned(),
+                        timeframe: Timeframe::M1,
+                        range: TimeRange {
+                            start_ms: Some(base + 2 * 60_000),
+                            end_ms: Some(base + 8 * 60_000),
+                        },
+                        limit: None,
+                        policy: FoldPolicy::ExtendToFullBuckets,
+                    },
+                ),
+                (
+                    "folded M5",
+                    ReadRequest {
+                        symbol: "SPY".to_owned(),
+                        venue: "test-venue".to_owned(),
+                        timeframe: Timeframe::M5,
+                        range: TimeRange {
+                            start_ms: Some(base),
+                            end_ms: Some(base + 12 * 60_000),
+                        },
+                        limit: None,
+                        policy: FoldPolicy::ExtendToFullBuckets,
+                    },
+                ),
+                (
+                    "latest-N",
+                    ReadRequest {
+                        symbol: "SPY".to_owned(),
+                        venue: "test-venue".to_owned(),
+                        timeframe: Timeframe::M1,
+                        range: TimeRange::unbounded(),
+                        limit: Some(6),
+                        policy: FoldPolicy::ExtendToFullBuckets,
+                    },
+                ),
+            ];
+            for (name, req) in reads {
+                let coverage = handle.coverage(&permit, key).await.expect("oracle coverage");
+                let expected = oracle_from_pieces(
+                    Some((key.symbol_id, key.timeframe)),
+                    coverage,
+                    &|start, end| {
+                        let conn =
+                            rusqlite::Connection::open(&path).expect("oracle connection");
+                        crate::sqlite_tape::fetch_bars(&conn, key.symbol_id, start, end)
+                            .map_err(StoreError::from)
+                    },
+                    &req,
+                );
+                let actual = handle.read(&permit, &req).await;
+                assert_same_outcome(&actual, &expected, name);
+            }
+        })
+        .await;
 }

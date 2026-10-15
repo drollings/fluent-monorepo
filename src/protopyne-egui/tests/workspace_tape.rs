@@ -21,12 +21,13 @@ use protopyne_types::{Bar, Timeframe};
 const VENUE: &str = "test-venue";
 const BASE_MS: i64 = 1_767_974_400_000;
 
-/// Twelve flat 15-minute bars on a fixed stamp grid: contiguous, whole, and
-/// two-decimal, so the tape stores every row.
-fn boot_bars() -> Vec<Bar> {
-    (0..12i64)
+/// A flat 15-minute bar series on the fixed stamp grid: contiguous, whole,
+/// and two-decimal, so the tape stores every row. `count` bars at `price`,
+/// so boot history and tape can hold visibly different series.
+fn flat_bars(count: i64, price: &str) -> Vec<Bar> {
+    (0..count)
         .map(|step| {
-            let price = "100".parse().expect("decimal");
+            let price = price.parse().expect("decimal");
             Bar::new()
                 .ts(DateTime::from_timestamp_millis(BASE_MS + step * 900_000).expect("in range"))
                 .o(price)
@@ -38,6 +39,17 @@ fn boot_bars() -> Vec<Bar> {
                 .build()
         })
         .collect()
+}
+
+/// The boot history the server is handed: twelve flat bars at 100.
+fn boot_bars() -> Vec<Bar> {
+    flat_bars(12, "100")
+}
+
+/// The tape series: twenty-four flat bars at 200. Deliberately unlike the
+/// boot history, so a read's provenance (tape vs. fallback) is observable.
+fn tape_bars() -> Vec<Bar> {
+    flat_bars(24, "200")
 }
 
 /// The capability set an ephemeral tape is gated on. One spelling, shared by
@@ -83,15 +95,16 @@ fn sample_rows() -> Vec<ChartRow> {
 
 #[tokio::test]
 async fn a_store_backed_switch_replans_and_paints_headlessly() {
-    let bars = boot_bars();
+    let boot = boot_bars();
+    let tape = tape_bars();
     let reader = TapeReader {
-        store: Arc::new(seed_tape(&bars)),
+        store: Arc::new(seed_tape(&tape)),
         caps: caps(),
         venue: VENUE.to_owned(),
         limit: DEFAULT_TAPE_LIMIT,
     };
     let config = ServerConfig::new().bind("127.0.0.1:0".to_owned()).build();
-    let handle = serve_with_tape(config, bars.clone(), Some(reader))
+    let handle = serve_with_tape(config, boot, Some(reader))
         .await
         .expect("server boots with a tape");
     let gateway = handle.gateway();
@@ -101,7 +114,13 @@ async fn a_store_backed_switch_replans_and_paints_headlessly() {
         .switch_symbol("SPY", &gateway)
         .expect("a store-backed symbol switch pulls history");
     assert_eq!(workspace.active_symbol(), "SPY", "the symbol switched");
-    assert!(!workspace.rows().is_empty(), "the store served the switch");
+    // Provenance: the rows are the tape's 24 bars at 200, not the boot
+    // history's 12 at 100. A silent fallback would serve the wrong series.
+    assert_eq!(workspace.rows().len(), tape.len(), "the tape's series served the switch");
+    assert!(
+        workspace.rows().iter().all(|row| (row.close - 200.0).abs() < 1e-6),
+        "the store served the switch, not the boot history"
+    );
     assert!(workspace.cached_series() > 0, "the pane cache recomputed");
 
     // A full frame renders headlessly over the store-backed rows.

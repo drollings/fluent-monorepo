@@ -8,7 +8,7 @@
 //! core-side: `arm` runs the identical tighten-only logic through
 //! `apply_arm`, including its refusal messages.
 
-use protopyne_chart_model::aggregate_bars;
+use protopyne_store::{FoldEdges, fold_bars_edges};
 use protopyne_strategy::Grant;
 use protopyne_types::{Bar, Timeframe};
 use protopyne_view::{
@@ -20,10 +20,58 @@ use std::collections::BTreeMap;
 
 use crate::service::Shared;
 use crate::service::{
-    DEFAULT_REPLAY_CHECKPOINT_EVERY, apply_arm, chart_bars_of, grant_tiers_of, health_view,
-    live_grant, overlay_series_of, parse_patch, preview_arm_of, replay_view_of, tape_bars_for,
-    timeframe_of_label,
+    DEFAULT_REPLAY_CHECKPOINT_EVERY, TapeMiss, TapeMissKind, TapeServe, apply_arm, chart_bars_of,
+    grant_tiers_of, health_view, live_grant, overlay_series_of, parse_patch, preview_arm_of,
+    replay_view_of, tape_serve, timeframe_of_label,
 };
+
+/// The fallback latch: edge-triggered, so a sustained fallback warns once and
+/// a recovery logs once instead of one line per read. Observation-axis only —
+/// the read path decides its outcome before consulting it, and nothing about
+/// serving depends on the latch's state.
+#[derive(Debug, Default)]
+pub struct FallbackLatch {
+    in_fallback: bool,
+}
+
+/// What a latch observation crossed, if anything.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LatchEvent {
+    /// This observation entered fallback (a served read followed by a miss).
+    EnteredFallback,
+    /// This observation recovered (a miss followed by a served read).
+    Recovered,
+    /// The state did not change, or the miss is not a fault.
+    None,
+}
+
+impl FallbackLatch {
+    /// Observe one read outcome: `None` for a served read, `Some(kind)` for a
+    /// miss, and return the crossed edge. `NoTape` is not a fault — a server
+    /// with no tape configured falls back by design — so it neither warns nor
+    /// toggles the latch.
+    pub fn observe(&mut self, miss: Option<TapeMissKind>) -> LatchEvent {
+        match miss {
+            None => {
+                if self.in_fallback {
+                    self.in_fallback = false;
+                    LatchEvent::Recovered
+                } else {
+                    LatchEvent::None
+                }
+            }
+            Some(TapeMissKind::NoTape) => LatchEvent::None,
+            Some(_) => {
+                if self.in_fallback {
+                    LatchEvent::None
+                } else {
+                    self.in_fallback = true;
+                    LatchEvent::EnteredFallback
+                }
+            }
+        }
+    }
+}
 
 /// Map the overlay builder's `(status, reason)` refusal onto the gateway's
 /// error vocabulary: an unavailable dataset is transport-shaped, everything
@@ -41,10 +89,10 @@ fn overlay_error((status, reason): (axum::http::StatusCode, String)) -> GatewayE
 /// history's actual base.
 ///
 /// A coarser requested timeframe that is a whole multiple of the base folds
-/// through the shared [`aggregate_bars`]; a finer request, a non-multiple,
-/// or an unknown spelling serves the base unchanged — a chart cannot
-/// synthesize a finer grid, and folding across a non-multiple would split
-/// base bars between buckets.
+/// through the bucket-anchored fold; a finer request, a non-multiple, or an
+/// unknown spelling serves the base unchanged — a chart cannot synthesize a
+/// finer grid, and folding across a non-multiple would split base bars
+/// between buckets.
 fn resample_group(base: Timeframe, timeframe: &str) -> usize {
     let Some(requested) = timeframe_of_label(timeframe) else {
         return 1;
@@ -57,14 +105,23 @@ fn resample_group(base: Timeframe, timeframe: &str) -> usize {
     (requested_ms / base_ms) as usize
 }
 
-/// Fold the boot history to the requested timeframe when it holds at least one
-/// full group. A short history that cannot fill a coarser bar serves the base
-/// unchanged rather than fabricating a partial bar, so a coarse read never
-/// returns an empty window the overlay builders would refuse.
+/// Fold the boot history to the requested timeframe when it holds at least
+/// one full group, through the bucket-anchored fold under complete-only
+/// edges: whole buckets emit stamped at the bucket start, short or torn
+/// buckets are omitted rather than fabricated into partial bars. A short
+/// history that cannot fill a coarser bar serves the base unchanged; a long
+/// history with no whole bucket serves an empty window, and the overlay
+/// builders refuse that window the same way they refuse any empty history.
+/// Boot history is validated at load; an unvalidated row serves the base
+/// unchanged instead of stranding the read.
 fn resampled_history(history: &[Bar], base: Timeframe, timeframe: &str) -> Vec<Bar> {
+    let Some(requested) = timeframe_of_label(timeframe) else {
+        return history.to_vec();
+    };
     let group = resample_group(base, timeframe);
     if group > 1 && history.len() >= group {
-        aggregate_bars(history, group)
+        fold_bars_edges(history, requested, FoldEdges::CompleteOnly)
+            .unwrap_or_else(|_| history.to_vec())
     } else {
         history.to_vec()
     }
@@ -82,6 +139,23 @@ impl ServerGateway {
     #[must_use]
     pub fn new(state: Shared) -> Self {
         Self { state }
+    }
+
+    /// Feed one read outcome to the fallback latch and emit at most one log
+    /// line for the crossed edge: a `warn!` naming the miss on entry into
+    /// fallback, an `info!` on recovery, and nothing while the state is
+    /// unchanged. `NoTape` never warns.
+    fn observe_fallback(&self, miss: Option<TapeMissKind>) {
+        let event = common_core::sync::lock(&self.state.fallback_latch).observe(miss);
+        match event {
+            LatchEvent::EnteredFallback => {
+                tracing::warn!(miss = ?miss, "chart read fell back to the boot history");
+            }
+            LatchEvent::Recovered => {
+                tracing::info!("chart read recovered; the tape is serving again");
+            }
+            LatchEvent::None => {}
+        }
     }
 }
 
@@ -133,19 +207,30 @@ impl TerminalGateway for ServerGateway {
         limit: Option<usize>,
     ) -> Result<ChartBars, GatewayError> {
         validate_symbol_timeframe(symbol, timeframe)?;
-        // A booted tape plans and serves the read; a store-less server (or a
-        // symbol/timeframe the tape cannot serve) falls back to the boot
-        // history, so the store is additive and never strands a read.
-        if let Some(reader) = &self.state.tape {
-            if let Some(bars) = tape_bars_for(reader, symbol, timeframe, limit) {
-                return Ok(chart_bars_of(&bars));
+        // Decide the outcome first, then record it and consult the latch: the
+        // store is additive and never strands a read, but a miss is observable
+        // (counted) and a sustained fallback is legible (one warn per entry)
+        // rather than a silent substitution. A store-less server's `NoTape`
+        // counts and never warns — a CSV-only boot is not a fault.
+        let serve = match &self.state.tape {
+            Some(reader) => tape_serve(reader, symbol, timeframe, limit),
+            None => TapeServe::Missing(TapeMiss::NoTape),
+        };
+        self.state.tape_serve_stats.record(&serve);
+        match &serve {
+            TapeServe::Served(bars) => {
+                self.observe_fallback(None);
+                Ok(chart_bars_of(bars))
+            }
+            TapeServe::Missing(miss) => {
+                self.observe_fallback(Some(miss.kind()));
+                Ok(chart_bars_of(&resampled_history(
+                    &self.state.history,
+                    self.state.history_timeframe,
+                    timeframe,
+                )))
             }
         }
-        Ok(chart_bars_of(&resampled_history(
-            &self.state.history,
-            self.state.history_timeframe,
-            timeframe,
-        )))
     }
 
     fn chart_overlays_for(
@@ -234,3 +319,7 @@ mod tests;
 #[cfg(test)]
 #[path = "../tests/gateway_tape_parity.rs"]
 mod gateway_tape_parity_tests;
+
+#[cfg(test)]
+#[path = "../tests/fallback_latch.rs"]
+mod fallback_latch_tests;

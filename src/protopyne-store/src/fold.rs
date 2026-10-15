@@ -33,42 +33,23 @@ use protopyne_types::{Bar, Timeframe};
 use crate::error::StoreError;
 use crate::range::TimeRange;
 
-/// Fold anchor for every sub-weekly spacing: the Unix epoch itself.
-pub const FOLD_ORIGIN_MS: i64 = 0;
+// The anchor vocabulary lives with the timeframe it anchors
+// ([`Timeframe::bucket_start_ms`]); these re-exports keep every existing
+// path compiling unchanged while the rule has one home.
+pub use protopyne_types::{FOLD_ORIGIN_MS, WEEK_FOLD_ORIGIN_MS};
 
-/// Fold anchor for weekly bars: 1969-12-29 00:00:00 UTC, the Monday of the
-/// epoch's week. The epoch itself is a Thursday, and a Thursday-anchored
-/// weekly bar is confusing to hand an operator.
-pub const WEEK_FOLD_ORIGIN_MS: i64 = -259_200_000;
-
-/// The fold anchor for a spacing. Only `W1` is special; any future fixed-ms
-/// spacing anchors at the epoch with no code change.
+/// The fold anchor for a spacing. Thin delegation to
+/// [`Timeframe::fold_origin_ms`], kept so no caller changes.
 #[must_use]
 pub fn fold_origin_ms(tf: Timeframe) -> i64 {
-    match tf {
-        Timeframe::W1 => WEEK_FOLD_ORIGIN_MS,
-        _ => FOLD_ORIGIN_MS,
-    }
+    tf.fold_origin_ms()
 }
 
-/// The bucket a stamp belongs to: the greatest anchor-aligned grid line at
-/// or before the stamp.
-///
-/// Pure Euclidean floor division on UTC milliseconds — negative stamps
-/// floor toward the earlier bucket, never toward zero — saturating instead
-/// of overflowing past the representable range. Idempotent: feeding a
-/// bucket start back in returns it unchanged, which is what makes
-/// incremental folding over a live tape converge instead of drift.
+/// The bucket a stamp belongs to. Thin delegation to
+/// [`Timeframe::bucket_start_ms`], kept so no caller changes.
 #[must_use]
 pub fn bucket_start(tf: Timeframe, ts_ms: i64) -> i64 {
-    let origin = fold_origin_ms(tf);
-    let step = tf.duration_ms();
-    origin.saturating_add(
-        ts_ms
-            .saturating_sub(origin)
-            .div_euclid(step)
-            .saturating_mul(step),
-    )
+    tf.bucket_start_ms(ts_ms)
 }
 
 /// How a read treats bucket edges. The policy rides the read request and is
@@ -89,6 +70,64 @@ pub enum FoldPolicy {
     TruncateEdges,
 }
 
+/// How a fold treats bucket edges. The policy rides the fold call itself:
+/// [`fold_bars`] folds range-free, so edge treatment is the caller's stated
+/// choice, not an ambient default.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FoldEdges {
+    /// Every bucket holding at least one child emits, partial edges
+    /// included. The legacy behavior; the default, so existing callers keep
+    /// their exact output.
+    #[default]
+    KeepPartial,
+    /// A bucket emits only when its children tile the whole bucket grid
+    /// contiguously: the first child opens the bucket, every child gap is
+    /// the same span, and the children count out the full bucket span.
+    /// Anything else — a short leading or trailing edge, a torn interior
+    /// bucket, a lone child that cannot evidence a full bucket — is
+    /// omitted, never emitted torn or partial.
+    CompleteOnly,
+}
+
+impl FoldEdges {
+    /// Whether the bucket opening at `start_ms` with these ascending child
+    /// stamps may emit under this policy.
+    fn emit_bucket(self, stamps: &[i64], start_ms: i64, step_ms: i64) -> bool {
+        match self {
+            Self::KeepPartial => true,
+            Self::CompleteOnly => bucket_is_complete(stamps, start_ms, step_ms),
+        }
+    }
+}
+
+/// Whether ascending child stamps tile their bucket contiguously (see
+/// [`FoldEdges::CompleteOnly`]). The gap is read off the children, never
+/// assumed from a spacing the fold does not take: any uniform tiling of the
+/// bucket counts as complete, whatever the source spacing was.
+fn bucket_is_complete(stamps: &[i64], start_ms: i64, step_ms: i64) -> bool {
+    let [first, rest @ ..] = stamps else {
+        return false;
+    };
+    if *first != start_ms || rest.is_empty() {
+        return false;
+    }
+    // Strictly ascending input (validated by the fold) makes the gap
+    // positive; the guard stays so a future caller cannot inherit a
+    // division-by-sign surprise.
+    let gap = rest[0] - first;
+    if gap <= 0 {
+        return false;
+    }
+    let mut prev = rest[0];
+    for stamp in &rest[1..] {
+        if stamp - prev != gap {
+            return false;
+        }
+        prev = *stamp;
+    }
+    (stamps.len() as i64).checked_mul(gap) == Some(step_ms)
+}
+
 /// Fold stored bars into `tf` buckets: `open` is the first bar's open,
 /// `close` the last bar's close, `high`/`low` the extremes, `volume` the
 /// saturating sum, stamped at the bucket start.
@@ -100,7 +139,21 @@ pub enum FoldPolicy {
 /// rules as stored bars. Folded bars carry no adjustment; adjustment-aware
 /// reads are out of scope, and folds never invent what the tape did not
 /// hold.
+///
+/// This is [`fold_bars_edges`] under [`FoldEdges::KeepPartial`]:
+/// byte-identical output for every existing caller.
 pub fn fold_bars(bars: &[Bar], tf: Timeframe) -> Result<Vec<Bar>, StoreError> {
+    fold_bars_edges(bars, tf, FoldEdges::KeepPartial)
+}
+
+/// Fold stored bars into `tf` buckets under an explicit edge policy (see
+/// [`FoldEdges`]). Validation, bucketing, and per-bucket arithmetic match
+/// [`fold_bars`] exactly; only edge emission differs.
+pub fn fold_bars_edges(
+    bars: &[Bar],
+    tf: Timeframe,
+    edges: FoldEdges,
+) -> Result<Vec<Bar>, StoreError> {
     let mut last_ts: Option<i64> = None;
     for bar in bars {
         bar.validate()
@@ -114,22 +167,33 @@ pub fn fold_bars(bars: &[Bar], tf: Timeframe) -> Result<Vec<Bar>, StoreError> {
         }
         last_ts = Some(ts);
     }
+    let step_ms = tf.duration_ms();
     let mut folded: Vec<Bar> = Vec::new();
-    let mut open_bucket: Option<Bucket> = None;
+    let mut open_bucket: Option<(Bucket, Vec<i64>)> = None;
+    let emit = |bucket: Bucket, stamps: Vec<i64>, folded: &mut Vec<Bar>| {
+        if edges.emit_bucket(&stamps, bucket.start_ms, step_ms) {
+            folded.push(bucket.finish()?);
+        }
+        Ok::<_, StoreError>(())
+    };
     for bar in bars {
-        let start = bucket_start(tf, bar.ts.timestamp_millis());
+        let ts = bar.ts.timestamp_millis();
+        let start = tf.bucket_start_ms(ts);
         match open_bucket.as_mut() {
-            Some(bucket) if bucket.start_ms == start => bucket.absorb(bar),
+            Some((bucket, stamps)) if bucket.start_ms == start => {
+                bucket.absorb(bar);
+                stamps.push(ts);
+            }
             _ => {
-                if let Some(bucket) = open_bucket.take() {
-                    folded.push(bucket.finish()?);
+                if let Some((bucket, stamps)) = open_bucket.take() {
+                    emit(bucket, stamps, &mut folded)?;
                 }
-                open_bucket = Some(Bucket::first(start, bar));
+                open_bucket = Some((Bucket::first(start, bar), vec![ts]));
             }
         }
     }
-    if let Some(bucket) = open_bucket.take() {
-        folded.push(bucket.finish()?);
+    if let Some((bucket, stamps)) = open_bucket.take() {
+        emit(bucket, stamps, &mut folded)?;
     }
     Ok(folded)
 }
@@ -207,6 +271,10 @@ impl Bucket {
 #[cfg(test)]
 #[path = "../tests/fold_basic.rs"]
 mod tests_fold_basic;
+
+#[cfg(test)]
+#[path = "../tests/fold_edges.rs"]
+mod tests_fold_edges;
 
 #[cfg(test)]
 #[path = "../tests/common/fold.rs"]

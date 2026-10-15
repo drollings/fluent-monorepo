@@ -20,13 +20,15 @@ pub mod transpile;
 pub use backtest::{BacktestConfig, BacktestVenue, HistorySource, LoadedHistory, load_bars_single, load_bars_with_fallback, load_history, quote_for_bar};
 pub use csv::{load_bars_csv, parse_bars_csv};
 pub use error::ServerError;
-pub use parquet::{fold_frames, load_bars_parquet, load_bars_parquet_with_fallback};
+pub use parquet::{
+    fold_frames, load_bars_any, load_bars_parquet, load_bars_parquet_with_fallback,
+};
 pub use metrics::{TRADING_DAYS_PER_YEAR, calmar, drawdown_fraction, mean, population_std, profit_factor, sharpe, sortino, step_returns, win_rate};
 pub use portfolio::{Aggregation, BookedFill, BucketKey, BucketSummary, PAPER_PORTFOLIO, PortfolioReport, PortfolioTotals, aggregate};
 pub use report::{BacktestReport, RunManifest, build_report, capital_efficiency, count_unquotable_bars, cum_return, log_to_simple_return, max_drawdown, render_tearsheet, simple_to_log_return, worst_step_loss};
 pub use runner::{BacktestRun, BarDecision, BarHealth, CheckedOrder, MultiBacktestRun, MultiRunManifest, MultiSymbolInput, RunnerConfig, SweepOutcome, ReplayStep, build_replay, checked_order_for, complete_replay, decide_and_submit, equity_curve_for, expire_position, report_rsrs, run_backtest, run_backtest_from_source, run_multi_backtest, run_paper_decisions, run_sweep, side_for_direction, snapshot_positions, triple_barrier, walk_forward_split};
 pub use gateway::ServerGateway;
-pub use service::{AppState, DEFAULT_REPLAY_CHECKPOINT_EVERY, DEFAULT_TAPE_LIMIT, ErrorBody, PreviewParams, PreviewResponse, ServerConfig, ServerHandle, TapeReader, serve, serve_with_tape, tape_bars_for, timeframe_of_label};
+pub use service::{AppState, DEFAULT_REPLAY_CHECKPOINT_EVERY, DEFAULT_TAPE_LIMIT, ErrorBody, PreviewParams, PreviewResponse, ServerConfig, ServerHandle, TapeMiss, TapeMissKind, TapeReader, TapeServe, TapeServeSnapshot, serve, serve_with_tape, tape_serve, timeframe_of_label};
 pub use transpile::{Binding, CalibrationTally, Hair, Length, Lowered, Refusal, SpikeOutcome, calibrate, compile_spike, evaluate_lowered};
 
 #[cfg(test)]

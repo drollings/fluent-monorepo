@@ -31,6 +31,20 @@ pub struct StoreHealth {
     pub watermark_age_secs: Option<u64>,
     /// Number of unresolved holes the last classification reported.
     pub open_gaps: u64,
+    /// Whether a probe produced this reading. Only the flag separates "no
+    /// reading" from "a reading that happens to read healthy": a genuine
+    /// reading with default values is still an observation, and an
+    /// unobserved struct must never be mistaken for one.
+    #[serde(default = "observed_when_present")]
+    pub observed: bool,
+}
+
+/// A `StoreHealth` carried inside a config document is an observed reading:
+/// the struct's presence is the observation. Only an absent struct (via the
+/// outer `#[serde(default)]`) reads unobserved, so older configs that name
+/// the struct's fields keep deserializing as the observations they are.
+fn observed_when_present() -> bool {
+    true
 }
 
 impl Default for StoreHealth {
@@ -43,6 +57,7 @@ impl Default for StoreHealth {
             reachable: true,
             watermark_age_secs: None,
             open_gaps: 0,
+            observed: false,
         }
     }
 }
@@ -61,6 +76,9 @@ impl StoreHealth {
     /// - `Ok(Some(coverage))` — reachable with the watermark's age in whole
     ///   seconds, saturating at zero for a watermark ahead of `now_ms`
     ///   (clock skew must not wrap into an enormous age).
+    ///
+    /// Every arm reads observed: answering the probe is the observation,
+    /// even when the answer is failure.
     #[must_use]
     pub fn of(probe: &Result<Option<Coverage>, StoreError>, open_gaps: u64, now_ms: i64) -> Self {
         match probe {
@@ -68,11 +86,13 @@ impl StoreHealth {
                 reachable: false,
                 watermark_age_secs: None,
                 open_gaps: 0,
+                observed: true,
             },
             Ok(None) => Self {
                 reachable: true,
                 watermark_age_secs: None,
                 open_gaps,
+                observed: true,
             },
             Ok(Some(coverage)) => Self {
                 reachable: true,
@@ -80,6 +100,7 @@ impl StoreHealth {
                     now_ms.saturating_sub(coverage.last.ts_ms).max(0) as u64 / 1_000,
                 ),
                 open_gaps,
+                observed: true,
             },
         }
     }

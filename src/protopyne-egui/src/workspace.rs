@@ -29,7 +29,7 @@ use fluent_egui::{
 use fluent_wvr::{FieldAccess, component_downcast_ref};
 use protopyne_chart_model::{ChartRow, ChartType, DateRange};
 use protopyne_chart_scale::PriceScaleMode;
-use protopyne_types::{SymbolIndex, SymKey};
+use protopyne_types::{SymbolIndex, SymKey, Timeframe};
 use protopyne_view::{ChartBars, TerminalGateway};
 
 use crate::chart::{ChartConfig, DEFAULT_SYMBOL, TimeframeKey, window_for_range};
@@ -225,32 +225,81 @@ fn price_extent(rows: &[ChartRow]) -> (f64, f64) {
     (lo - pad, hi + pad)
 }
 
-/// Aggregate display rows upward by `group` (trailing-aligned, like exchange
-/// resampling): open from the first row, close/time from the last, high/low as
-/// extremes, volume summed. A leading partial chunk is dropped so every output
-/// row covers exactly `group` inputs; `group <= 1` returns the rows unchanged.
-fn aggregate_rows(rows: &[ChartRow], group: usize) -> Vec<ChartRow> {
-    if group <= 1 {
-        return rows.to_vec();
+/// Fold one bucket's rows when they tile the bucket whole: the first row
+/// opens the bucket, every row gap is the same span, and the rows count out
+/// the full bucket span. Anything else — a short edge, a torn bucket, a lone
+/// row — folds to `None`, never to a fabricated partial bar.
+fn finish_row_bucket(start_sec: i64, children: &[&ChartRow], step_secs: i64) -> Option<ChartRow> {
+    let [first, rest @ ..] = children else {
+        return None;
+    };
+    if first.time != start_sec || rest.is_empty() {
+        return None;
     }
-    let skip = rows.len() % group;
-    rows[skip..]
-        .chunks(group)
-        .filter(|chunk| chunk.len() == group)
-        .map(|chunk| {
-            let first = &chunk[0];
-            let last = &chunk[group - 1];
-            let mut high = first.high;
-            let mut low = first.low;
-            let mut volume = 0_u64;
-            for row in chunk {
-                high = high.max(row.high);
-                low = low.min(row.low);
-                volume = volume.saturating_add(row.volume);
+    let gap = rest[0].time - first.time;
+    if gap <= 0 {
+        return None;
+    }
+    let mut prev = rest[0].time;
+    for row in &rest[1..] {
+        if row.time - prev != gap {
+            return None;
+        }
+        prev = row.time;
+    }
+    if (children.len() as i64).checked_mul(gap) != Some(step_secs) {
+        return None;
+    }
+    let mut high = first.high;
+    let mut low = first.low;
+    let mut volume = 0_u64;
+    for row in children {
+        high = high.max(row.high);
+        low = low.min(row.low);
+        volume = volume.saturating_add(row.volume);
+    }
+    let last = children[children.len() - 1];
+    Some(ChartRow {
+        time: start_sec,
+        open: first.open,
+        high,
+        low,
+        close: last.close,
+        volume,
+    })
+}
+
+/// Fold display rows upward to `timeframe` over the epoch-anchored bucket
+/// grid (see [`Timeframe::bucket_start_ms`]): open from the first row, close
+/// from the last, high/low as extremes, volume summed, stamped at the bucket
+/// start — the same anchor and the same complete-only rule as the store fold,
+/// so the seeded demo's resampled slots render identically to the Parquet
+/// demo's seeded frames. An empty input stays empty.
+fn aggregate_rows(rows: &[ChartRow], timeframe: Timeframe) -> Vec<ChartRow> {
+    let step_secs = timeframe.total_seconds() as i64;
+    let mut folded = Vec::new();
+    let mut open: Option<(i64, Vec<&ChartRow>)> = None;
+    let emit = |start: i64, children: Vec<&ChartRow>, folded: &mut Vec<ChartRow>| {
+        if let Some(row) = finish_row_bucket(start, &children, step_secs) {
+            folded.push(row);
+        }
+    };
+    for row in rows {
+        let start = timeframe.bucket_start_ms(row.time.saturating_mul(1_000)) / 1_000;
+        match open.as_mut() {
+            Some((held, children)) if *held == start => children.push(row),
+            _ => {
+                if let Some((held, children)) = open.take() {
+                    emit(held, children, &mut folded);
+                }
+                open = Some((start, vec![row]));
             }
-            ChartRow { time: last.time, open: first.open, high, low, close: last.close, volume }
-        })
-        .collect()
+        }
+    }
+    if let Some((held, children)) = open.take() {
+        emit(held, children, &mut folded);
+    }
+    folded
 }
 
 /// Window a trend ribbon to `[start, start + len)` for pane-local painting.
@@ -885,15 +934,18 @@ impl ChartWorkspace {
     }
 
     /// The seeded history for `timeframe`, resampling coarser keys from the
-    /// `15M` slot by whole groups. `1M`/`5M`/`15M` read their own slots; a
+    /// `15M` slot over whole buckets. `1M`/`5M`/`15M` read their own slots; a
     /// missing slot refuses by name rather than serving another timeframe.
+    /// A finer key never resamples downward: folding fifteen-minute rows
+    /// into one-minute buckets would only omit every bucket.
     fn history_for(&self, timeframe: TimeframeKey) -> Result<Vec<ChartRow>, EguiError> {
         if let Some(rows) = self.histories.get(&timeframe) {
             return Ok(rows.clone());
         }
-        if timeframe.m15_group() > 1 {
+        let target = timeframe.timeframe();
+        if target.duration_ms() > Timeframe::M15.duration_ms() {
             if let Some(base) = self.histories.get(&TimeframeKey::M15) {
-                return Ok(aggregate_rows(base, timeframe.m15_group()));
+                return Ok(aggregate_rows(base, target));
             }
         }
         Err(EguiError::InvalidParam {

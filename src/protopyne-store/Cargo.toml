@@ -12,8 +12,10 @@ default = ["parquet"]
 # ingest reader for vendor OHLCV files. Default-on for the shipping binary;
 # with it off the crate still builds and the whole SQLite surface stays
 # fully testable, and both parquet surfaces report a disabled feature rather
-# than failing to compile. `polars` stays out of the data path: the research
-# frame boundary is a separate consumer.
+# than failing to compile. Upstream `arrow`/`parquet` is the sole data-path
+# codec: both readers decode through the one shared `arrow_decode` layer,
+# and `polars` stays out of the data path — the research frame boundary is
+# a separate consumer.
 parquet = ["dep:arrow", "dep:parquet"]
 
 [dependencies]
@@ -39,8 +41,13 @@ parquet = { version = "59", optional = true, default-features = false, features 
 [dev-dependencies]
 protopyne-kernels = { path = "../protopyne-kernels" }
 protopyne-server = { path = "../protopyne-server" }
+criterion = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true }
+
+[[bench]]
+name = "coverage_scale"
+harness = false
 
 [lints]
 workspace = true

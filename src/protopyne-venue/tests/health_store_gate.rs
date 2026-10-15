@@ -89,6 +89,46 @@ fn open_gaps_halt_until_repair_closes_them() {
 }
 
 #[test]
+fn unobserved_reading_passes_entries() {
+    // No observation is no objection: unchanged behavior.
+    let state = healthy();
+    assert!(!state.store.observed, "the default carries no observation");
+    assert_eq!(may_trade(&state, &limits()), HealthVerdict::Trade);
+    assert!(check_trade(&state, &limits(), false).is_ok());
+    assert!(check_trade(&state, &limits(), true).is_ok());
+}
+
+#[test]
+fn observed_default_values_pass_and_stay_distinguishable() {
+    let observed = StoreHealth {
+        observed: true,
+        ..StoreHealth::default()
+    };
+    let state = with_store(observed);
+    assert_eq!(may_trade(&state, &limits()), HealthVerdict::Trade);
+    assert!(check_trade(&state, &limits(), false).is_ok());
+    // Same verdict as the unobserved world, but the observation flag tells
+    // the two readings apart downstream.
+    assert!(observed.observed);
+    assert!(!StoreHealth::default().observed);
+}
+
+#[test]
+fn observed_unreachable_halts_entries_through_the_authority_gate() {
+    let state = with_store(StoreHealth {
+        reachable: false,
+        observed: true,
+        ..StoreHealth::default()
+    });
+    let err = check_trade(&state, &limits(), false).expect_err("observed outage halts entries");
+    assert!(matches!(err, VenueError::Health(_)));
+    let report = GateReport::evaluate(&state, &limits());
+    assert_eq!(report.failures.len(), 1);
+    assert_eq!(report.failures[0].gate, HealthGate::StoreReachable);
+    assert_eq!(report.failures[0].gate.class(), GateClass::Authority);
+}
+
+#[test]
 fn every_failed_gate_is_named_together() {
     let state = HealthState {
         quote_age_secs: 5_000,

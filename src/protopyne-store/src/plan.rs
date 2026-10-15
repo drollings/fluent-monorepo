@@ -190,6 +190,31 @@ impl ReadPlan {
     }
 }
 
+/// The span a read must fetch over: the wanted window widened to enclosing
+/// bucket boundaries for a folded extend-policy read. This is exactly the
+/// span [`resolve`](ReadPlan::resolve) intersects coverage against,
+/// factored out so the stamp fetch covers what the planner will see — the
+/// planner re-derives the same bounds internally, idempotently, over the
+/// same inputs.
+pub(crate) fn fetch_span(
+    request: &ReadRequest,
+    stored: Timeframe,
+    wanted: &TimeRange,
+) -> Result<TimeRange, PlanError> {
+    // `wanted_window` bounds every window it returns; the refusal below is
+    // unreachable, kept total rather than panicking.
+    let (Some(start), Some(end)) = (wanted.start_ms, wanted.end_ms) else {
+        return Err(PlanError::UnboundedUnlimited);
+    };
+    Ok(widen(
+        start,
+        end,
+        request.timeframe,
+        stored,
+        request.policy,
+    ))
+}
+
 /// A bar limit as a millisecond span at `step_ms`, saturating instead of
 /// overflowing: an absurd limit degrades to an unbounded span, not a wrap.
 fn limit_span_ms(limit: usize, step_ms: i64) -> u64 {

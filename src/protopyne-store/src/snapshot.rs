@@ -604,27 +604,37 @@ fn read_parquet(path: &Path) -> Result<Vec<Bar>, StoreError> {
     Ok(bars)
 }
 
+/// Downcast the positional column to the sealed schema's pinned array
+/// type. Positions are the contract — `ts_ms` first, `adj` last — and the
+/// shared decode layer performs the downcast.
 #[cfg(feature = "parquet")]
 fn column<'a, T: 'static>(batch: &'a RecordBatch, index: usize, name: &str) -> Result<&'a T, StoreError> {
-    batch
-        .column(index)
-        .as_any()
-        .downcast_ref::<T>()
-        .ok_or_else(|| {
-            StoreError::Snapshot(SnapshotError::Artifact {
-                reason: format!("sealed column {name} has an unexpected type"),
-            })
+    crate::arrow_decode::column_at(batch, index).map_err(|_| {
+        StoreError::Snapshot(SnapshotError::Artifact {
+            reason: format!("sealed column {name} has an unexpected type"),
         })
+    })
 }
 
+/// Read the sealed price scale: the `open` field must carry `Decimal128`,
+/// and its scale must check through the shared scale rule. A negative
+/// scale now refuses where the private reader silently read zero — no
+/// sealed artifact the writer produces carries one, so no valid artifact
+/// changes meaning.
 #[cfg(feature = "parquet")]
 fn decimal_scale(schema: &SchemaRef) -> Result<u32, StoreError> {
-    match schema.field_with_name("open").map(arrow::datatypes::Field::data_type) {
-        Ok(DataType::Decimal128(_, scale)) => Ok(u32::try_from(*scale).unwrap_or(0)),
-        _ => Err(StoreError::Snapshot(SnapshotError::Artifact {
-            reason: "sealed schema carries no decimal price scale".to_owned(),
-        })),
-    }
+    crate::arrow_decode::decimal_scale_of(schema, "open").map_err(|err| {
+        StoreError::Snapshot(SnapshotError::Artifact {
+            reason: match err {
+                crate::arrow_decode::DecodeError::BadScale { scale, .. } => {
+                    format!("sealed column open carries negative decimal scale {scale}")
+                }
+                crate::arrow_decode::DecodeError::UnexpectedType { .. } => {
+                    "sealed schema carries no decimal price scale".to_owned()
+                }
+            },
+        })
+    })
 }
 
 #[cfg(feature = "parquet")]
@@ -641,6 +651,10 @@ pub(crate) mod test_snapshot;
 #[cfg(all(test, feature = "parquet"))]
 #[path = "../tests/snapshot_roundtrip.rs"]
 mod tests_roundtrip;
+
+#[cfg(all(test, feature = "parquet"))]
+#[path = "../tests/snapshot_market_parity.rs"]
+mod tests_market_parity;
 
 #[cfg(all(test, feature = "parquet"))]
 #[path = "../tests/snapshot_manifest_crash.rs"]

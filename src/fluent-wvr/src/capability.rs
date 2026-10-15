@@ -90,6 +90,71 @@ impl From<CapabilityError> for std::io::Error {
     }
 }
 
+/// Why a capability-scoped blocking operation failed to produce a value.
+///
+/// A panic on the dedicated worker thread is the only failure: the closure's
+/// own result (including any error it carries) travels inside `R`, so each
+/// caller keeps its own error taxonomy instead of funnelling it through this
+/// type. Nothing here substitutes a value for a failed join.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BlockingJoinError {
+    /// The panic message, when the worker carried one, or a generic
+    /// description if it did not.
+    pub detail: String,
+}
+
+impl BlockingJoinError {
+    fn panicked(payload: &(dyn Any + Send)) -> Self {
+        let detail = if let Some(text) = payload.downcast_ref::<&str>() {
+            (*text).to_owned()
+        } else if let Some(text) = payload.downcast_ref::<String>() {
+            text.clone()
+        } else {
+            "capability-scoped blocking worker panicked".to_owned()
+        };
+        Self { detail }
+    }
+}
+
+impl std::fmt::Display for BlockingJoinError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "capability-scoped blocking worker failed: {}", self.detail)
+    }
+}
+
+impl std::error::Error for BlockingJoinError {}
+
+/// Run a synchronous, potentially-blocking operation with `caps` installed as
+/// the current `CURRENT_CAPS`, off the async executor.
+///
+/// This is the single capability-scoped blocking executor: on a multi-threaded
+/// runtime worker the op runs inside `tokio::task::block_in_place` (the
+/// executor is never starved); on a current-thread runtime, or with no runtime
+/// active, it runs on a dedicated scoped OS thread joined before returning.
+/// Either path re-scopes `caps` via `CURRENT_CAPS.sync_scope`, so a
+/// capability-gated effect inside `op` sees the caller's set on every runtime
+/// flavor. The caller's own result travels inside `R`; only a worker panic
+/// surfaces as [`BlockingJoinError`], and it is never swallowed.
+pub fn run_gated_blocking<R, F>(caps: CapabilitySet, op: F) -> Result<R, BlockingJoinError>
+where
+    R: Send,
+    F: FnOnce() -> R + Send,
+{
+    match tokio::runtime::Handle::try_current() {
+        Ok(handle) if handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread => Ok(
+            CURRENT_CAPS.sync_scope(caps, || tokio::task::block_in_place(op)),
+        ),
+        _ => match std::thread::scope(|scope| {
+            scope
+                .spawn(|| CURRENT_CAPS.sync_scope(caps, op))
+                .join()
+        }) {
+            Ok(value) => Ok(value),
+            Err(payload) => Err(BlockingJoinError::panicked(payload.as_ref())),
+        },
+    }
+}
+
 /// Validates that the current task-local `CapabilitySet` contains the requested
 /// capability. Returns `Err(PermissionDenied)` if the capability is absent.
 pub fn check_capability<C: Capability>(cap: &C) -> Result<(), std::io::Error> {

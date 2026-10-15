@@ -16,7 +16,24 @@ use std::path::{Path, PathBuf};
 use protopyne_store::{fold_bars, read_ohlcv_parquet, StoreError};
 use protopyne_types::{Bar, Timeframe};
 
+use crate::csv::load_bars_csv;
 use crate::error::ServerError;
+
+/// Load closed bars from a history file at `path`, dispatching on the file
+/// extension: `.parquet` reads through the market ingest reader, `.csv`
+/// through the CSV ingest. Any other extension refuses — no inference, no
+/// guessing: a history file must declare its encoding.
+pub fn load_bars_any(path: &Path) -> Result<Vec<Bar>, ServerError> {
+    match path.extension().and_then(|ext| ext.to_str()) {
+        Some("parquet") => load_bars_parquet(path),
+        Some("csv") => load_bars_csv(path),
+        other => Err(ServerError::Backtest(format!(
+            "unknown history extension {} for {}: expected .csv or .parquet",
+            other.map_or_else(|| "(none)".to_owned(), |ext| format!(".{ext}")),
+            path.display()
+        ))),
+    }
+}
 
 /// Load closed bars from a market Parquet file at `path`.
 ///
