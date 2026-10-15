@@ -23,6 +23,7 @@ protopyne-server = { path = "../protopyne-server", optional = true }
 protopyne-types = { path = "../protopyne-types" }
 protopyne-view = { path = "../protopyne-view" }
 bon = { workspace = true }
+chrono = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
@@ -30,7 +31,6 @@ egui = { version = "0.36" }
 eframe = { version = "0.36", optional = true, default-features = false }
 
 [dev-dependencies]
-chrono = { workspace = true }
 criterion = { workspace = true }
 rust_decimal = { workspace = true }
 reqwest = { workspace = true }

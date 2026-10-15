@@ -265,9 +265,13 @@ fn paint_stack_and_settings_modal_render_headlessly() {
     for tab in SettingsTab::all() {
         stack.set_settings_tab("fast_mas", tab).expect("tab selects");
         egui::__run_test_ui(|ui| {
-            let edits = paint_slot_settings_modal(ui, &mut stack, "fast_mas", &theme)
+            let outcome = paint_slot_settings_modal(ui, &mut stack, "fast_mas", &theme)
                 .expect("the modal paints");
-            assert_eq!(edits, FieldEdits::default(), "an untouched modal writes nothing");
+            assert_eq!(
+                outcome,
+                SettingsOutcome::default(),
+                "an untouched modal writes nothing and commits nothing"
+            );
         });
     }
     egui::__run_test_ui(|ui| {
@@ -276,6 +280,60 @@ fn paint_stack_and_settings_modal_render_headlessly() {
             "a closed modal refuses instead of painting another slot's schema"
         );
     });
+}
+
+/// The staged settings buffer isolates a draft from the live config: edits
+/// land in the map, the live config is untouched until commit, and a value
+/// the field contract refuses never reaches the live config.
+#[test]
+fn staged_settings_buffer_isolates_edits_from_the_live_config() {
+    let mut config: Box<dyn Component> = Box::new(probe(14));
+    let mut pending = seed_fields(&*config);
+    assert_eq!(pending.get("length").map(String::as_str), Some("14"));
+    {
+        let mut target = MapFields { values: &mut pending };
+        target.set_field("length", "99").expect("a staged write accepts");
+        assert_eq!(target.get_field("length").expect("reads"), "99");
+    }
+    assert_eq!(config.get_field("length").expect("reads"), "14", "the live config is untouched");
+    for (name, value) in &pending {
+        config.set_field(name, value).expect("valid staged values commit");
+    }
+    assert_eq!(config.get_field("length").expect("reads"), "99", "commit applies the draft");
+    // An out-of-range staged value is refused at the field's own contract.
+    let mut staged = seed_fields(&*config);
+    staged.insert("length".to_owned(), "0".to_owned());
+    let refused = staged.iter().any(|(name, value)| config.set_field(name, value).is_err());
+    assert!(refused, "the field contract refuses a below-minimum staged value");
+}
+
+/// Open seeds the staged buffer and clears any other slot's; commit replays it
+/// through the live contract and drops it; discard and close drop it untouched.
+#[test]
+fn settings_commit_discard_and_close_manage_the_staged_buffer() {
+    let (mut stack, _) = stacked();
+    assert!(!stack.has_pending_settings("integration_lite"));
+    stack.open_settings("integration_lite").expect("opens");
+    assert!(stack.has_pending_settings("integration_lite"), "open seeds the buffer");
+    assert!(!stack.has_pending_settings("fast_mas"), "opening one clears the other");
+    stack
+        .slots
+        .get_mut("integration_lite")
+        .expect("slotted")
+        .pending
+        .as_mut()
+        .expect("seeded")
+        .insert("length".to_owned(), "42".to_owned());
+    let refused = stack.commit_settings("integration_lite").expect("commit");
+    assert!(refused.is_empty(), "a valid staged value commits cleanly: {refused:?}");
+    assert_eq!(stack.get_slot_field("integration_lite", "length").expect("reads"), "42");
+    assert!(!stack.has_pending_settings("integration_lite"), "commit drops the buffer");
+    stack.open_settings("integration_lite").expect("reopens");
+    stack.discard_settings("integration_lite").expect("discard drops the draft");
+    assert!(!stack.has_pending_settings("integration_lite"));
+    stack.open_settings("integration_lite").expect("reopens again");
+    stack.close_settings("integration_lite").expect("close drops the draft");
+    assert!(!stack.has_pending_settings("integration_lite"));
 }
 
 /// A candle whose wick spans `[low, high]` with a finite close at every bar.

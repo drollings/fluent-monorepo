@@ -32,6 +32,7 @@ use crate::fast_mas::{
     ALMA_OFFSET, ALMA_SIGMA, FastMasConfig, FastMasLine, FastMasView, evaluate_fast_mas,
     paint_fast_mas,
 };
+use crate::delta_volume_profile::{DELTA_VOLUME_PROFILE_ID, DeltaVolumeProfileIndicator};
 use crate::integration_lite::{IntegrationLiteConfig, integration_lite_sub_pane};
 use crate::topology::{kernel_preview_frame, kernel_series};
 
@@ -184,6 +185,7 @@ pub trait ChartIndicator: Send + Sync {
         viewport: &Viewport,
         origin: egui::Pos2,
         theme: &ThemeConfig,
+        _config: &dyn Component,
     ) -> Result<(), EguiError> {
         paint_series(painter, evaluation, viewport, origin, theme)
     }
@@ -196,6 +198,7 @@ pub trait ChartIndicator: Send + Sync {
         viewport: &Viewport,
         origin: egui::Pos2,
         theme: &ThemeConfig,
+        _config: &dyn Component,
     ) -> Result<(), EguiError> {
         paint_series(painter, evaluation, viewport, origin, theme)
     }
@@ -397,6 +400,7 @@ impl ChartIndicator for FastMasIndicator {
         viewport: &Viewport,
         origin: egui::Pos2,
         theme: &ThemeConfig,
+        _config: &dyn Component,
     ) -> Result<(), EguiError> {
         // Reuse the module's own painter rather than a second polyline pass.
         let view = FastMasView {
@@ -612,6 +616,11 @@ pub fn build_indicator_catalog() -> Result<CatalogModal<IndicatorCategory>, Egui
     let mut catalog = CatalogModal::new("Indicators");
     catalog.register(INTEGRATION_LITE_ID, "Integration Lite", IndicatorCategory::MyScripts)?;
     catalog.register(FAST_MAS_ID, "Fast MAs", IndicatorCategory::MyScripts)?;
+    catalog.register(
+        DELTA_VOLUME_PROFILE_ID,
+        "Delta Volume Profile",
+        IndicatorCategory::MyScripts,
+    )?;
     let registry =
         builtin_registry().map_err(|error| EguiError::Dependency { reason: error.to_string() })?;
     for id in registry.ids() {
@@ -628,6 +637,7 @@ pub fn instantiate_indicator(id: &str) -> Result<Box<dyn ChartIndicator>, EguiEr
     match id {
         INTEGRATION_LITE_ID => Ok(Box::new(IntegrationLiteIndicator::new())),
         FAST_MAS_ID => Ok(Box::new(FastMasIndicator::new())),
+        DELTA_VOLUME_PROFILE_ID => Ok(Box::new(DeltaVolumeProfileIndicator::new())),
         REGIME_ID => {
             Ok(Box::new(KernelIndicator::monitor(REGIME_ID, "Market Regime Monitor", "eit")?))
         }

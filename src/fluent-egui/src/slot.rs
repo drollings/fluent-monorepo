@@ -22,7 +22,9 @@ use fluent_wvr::prelude::*;
 use crate::config::ThemeConfig;
 use crate::error::EguiError;
 use crate::feed::PaneHandle;
-use crate::fields::{FieldEdits, SettingsTab, paint_tabbed_schema_fields, schema_fields};
+use crate::fields::{
+    FieldEdits, SettingsTab, paint_tabbed_schema_fields_compact, schema_fields,
+};
 use crate::paint::{
     eye_icon_geom, hex_bolt_icon_geom, paint_eye_icon, paint_hex_bolt_icon, resolve_color,
 };
@@ -104,6 +106,11 @@ pub struct HotSlot {
     visible: bool,
     settings_open: bool,
     settings_tab: SettingsTab,
+    /// Staged settings edits, seeded from the live config when the pane
+    /// opens. Edits land here until Apply/OK commits them through the live
+    /// `FieldAccess` contract, so Cancel discards them without ever touching
+    /// the chart. `None` while the pane is closed.
+    pending: Option<HashMap<String, String>>,
     handle: PaneHandle,
     readouts: Vec<ReadoutValue>,
     fingerprint: u64,
@@ -173,15 +180,15 @@ impl HotSlot {
 }
 
 /// Card width in pixels; cards stack vertically from the stack origin.
-const STACK_CARD_WIDTH: f32 = 220.0;
+const STACK_CARD_WIDTH: f32 = 168.0;
 /// Card height in pixels: two compact text rows (title + readouts).
-const STACK_CARD_HEIGHT: f32 = 40.0;
+const STACK_CARD_HEIGHT: f32 = 32.0;
 /// Vertical gap between stacked cards.
-const STACK_CARD_GAP: f32 = 6.0;
+const STACK_CARD_GAP: f32 = 3.0;
 /// Eye/bolt control square size.
-const STACK_CONTROL_SIZE: f32 = 20.0;
+const STACK_CONTROL_SIZE: f32 = 16.0;
 /// Inset of the controls from the card edges.
-const STACK_CONTROL_PAD: f32 = 5.0;
+const STACK_CONTROL_PAD: f32 = 3.0;
 /// Default stack origin (below the top bar, clear of the canvas edge).
 const STACK_ORIGIN: (f32, f32) = (8.0, 36.0);
 
@@ -277,6 +284,7 @@ impl HotSlotStack {
                 visible: true,
                 settings_open: false,
                 settings_tab: SettingsTab::Inputs,
+                pending: None,
                 handle: PaneHandle::new(),
                 readouts: Vec::new(),
                 fingerprint,
@@ -341,22 +349,74 @@ impl HotSlotStack {
     }
 
     /// Open one slot's settings pane and close every other, so the tabbed
-    /// editor always shows exactly one slot's schema. Unknown ids refuse.
+    /// editor always shows exactly one slot's schema. Opening seeds that
+    /// slot's staged buffer from its live config and drops any other slot's
+    /// staged edits, so an abandoned draft never leaks into a new pane.
+    /// Unknown ids refuse.
     pub fn open_settings(&mut self, id: &str) -> Result<(), EguiError> {
         if !self.slots.contains_key(id) {
             return Err(unknown_slot(id));
         }
         for (known, slot) in &mut self.slots {
-            slot.settings_open = known == id;
+            if known == id {
+                slot.settings_open = true;
+                slot.pending = Some(seed_fields(&*slot.config));
+            } else {
+                slot.settings_open = false;
+                slot.pending = None;
+            }
         }
         Ok(())
     }
 
-    /// Close one slot's settings pane. Unknown ids refuse.
+    /// Close one slot's settings pane, dropping any staged edits. Unknown ids
+    /// refuse.
     pub fn close_settings(&mut self, id: &str) -> Result<(), EguiError> {
         let slot = self.slots.get_mut(id).ok_or_else(|| unknown_slot(id))?;
         slot.settings_open = false;
+        slot.pending = None;
         Ok(())
+    }
+
+    /// Commit the slot's staged edits through its live `FieldAccess`
+    /// contract, then drop the staged buffer. Returns the per-field refusal
+    /// reasons (each naming its field); a field the live contract refuses is
+    /// left at its committed value while every accepted field applies.
+    /// Unknown ids refuse.
+    pub fn commit_settings(&mut self, id: &str) -> Result<Vec<String>, EguiError> {
+        let slot = self.slots.get_mut(id).ok_or_else(|| unknown_slot(id))?;
+        let Some(pending) = slot.pending.take() else {
+            return Ok(Vec::new());
+        };
+        let mut refusals = Vec::new();
+        for (name, value) in pending {
+            if let Err(error) = slot.config.set_field(&name, &value) {
+                refusals.push(format!("{name}: {error}"));
+            }
+        }
+        Ok(refusals)
+    }
+
+    /// Drop the slot's staged edits without applying them. Unknown ids
+    /// refuse.
+    pub fn discard_settings(&mut self, id: &str) -> Result<(), EguiError> {
+        let slot = self.slots.get_mut(id).ok_or_else(|| unknown_slot(id))?;
+        slot.pending = None;
+        Ok(())
+    }
+
+    /// Whether a staged settings buffer is live for `id` (`false` for
+    /// unknown ids).
+    #[must_use]
+    pub fn has_pending_settings(&self, id: &str) -> bool {
+        self.slots.get(id).is_some_and(|slot| slot.pending.is_some())
+    }
+
+    /// The overlayed card width in pixels, so a caller can place the stack
+    /// against the chart's right edge.
+    #[must_use]
+    pub fn card_width(&self) -> f32 {
+        STACK_CARD_WIDTH
     }
 
     /// Whether the slot's settings pane is open (`false` for unknown ids).
@@ -519,45 +579,83 @@ fn unknown_slot(id: &str) -> EguiError {
     EguiError::InvalidParam { what: id.to_owned(), reason: "unknown slot id".to_owned() }
 }
 
-/// One slot's `FieldAccess` face for the tabbed editor: forwards to the
-/// slot's own config contract without moving it out of the stack.
-struct SlotFields<'a> {
-    config: &'a mut Box<dyn Component>,
+/// Seed a staged settings buffer from a live config: one string per declared
+/// field, read through the config's own `FieldAccess` contract. A field whose
+/// value cannot be read is skipped rather than staged as a substitute.
+fn seed_fields(config: &dyn Component) -> HashMap<String, String> {
+    config
+        .field_names()
+        .iter()
+        .filter_map(|name| config.get_field(name).ok().map(|value| ((*name).to_owned(), value)))
+        .collect()
 }
 
-impl FieldAccess for SlotFields<'_> {
+/// The staged settings buffer's `FieldAccess` face: edits land in an owned
+/// map until the pane commits them, so the live config and the chart are
+/// untouched by a draft.
+struct MapFields<'a> {
+    values: &'a mut HashMap<String, String>,
+}
+
+impl FieldAccess for MapFields<'_> {
     fn set_field(&mut self, name: &str, value: &str) -> Result<(), FieldError> {
-        self.config.set_field(name, value)
+        self.values.insert(name.to_owned(), value.to_owned());
+        Ok(())
     }
 
     fn get_field(&self, name: &str) -> Result<String, FieldError> {
-        self.config.get_field(name)
+        self.values.get(name).cloned().ok_or_else(|| FieldError::NotFound(name.to_owned()))
     }
 
     fn field_names(&self) -> &'static [&'static str] {
-        self.config.field_names()
+        // The editor iterates the schema's fields, never this list.
+        &[]
     }
 }
 
-/// Paint the overlay stack: one framed card per slot (title plus live
-/// readouts), an eye toggle, and a bolt opener, each at the rect
+/// What the settings pane's action row raised this frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SettingsCommit {
+    /// No action button was pressed.
+    #[default]
+    None,
+    /// Apply the staged edits to the chart but keep the pane open.
+    Apply,
+    /// Discard the staged edits and close the pane.
+    Cancel,
+    /// Apply the staged edits and close the pane.
+    Ok,
+}
+
+/// One settings-pane frame: the edits the pass staged plus the action button
+/// the operator pressed, if any.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SettingsOutcome {
+    /// Field writes the editor accepted into the staged buffer.
+    pub edits: FieldEdits,
+    /// Action button pressed this frame, if any.
+    pub commit: SettingsCommit,
+}
+
+/// Paint the overlay stack: one borderless compact card per slot (title plus
+/// live readouts), an eye toggle, and a bolt opener, each at the rect
 /// [`HotSlotStack::control_rects`] reports.
 ///
-/// Clicks raise [`HotSlotAction`]s (eye toggles flip instantly, bolt opens
-/// isolate to one slot); an untouched frame raises nothing. A theme that
-/// cannot resolve the frame, eye, or bolt keys refuses with the key named.
+/// The cards carry no frame, so the legend floats over the candles without a
+/// boundary box; only the controls are painted. Clicks raise [`HotSlotAction`]s
+/// (eye toggles flip instantly, bolt opens isolate to one slot); an untouched
+/// frame raises nothing. A theme that cannot resolve the eye or bolt key
+/// refuses with the key named.
 pub fn paint_hot_slot_stack(
     ui: &mut egui::Ui,
     stack: &mut HotSlotStack,
     theme: &ThemeConfig,
 ) -> Result<Vec<HotSlotAction>, EguiError> {
-    let grid = resolve_color(theme, "grid")?;
     let mut actions = Vec::new();
     for rect in stack.control_rects() {
         let Some(slot) = stack.slots.get_mut(&rect.slot_id) else {
             continue;
         };
-        ui.painter().rect_stroke(rect.card, 4.0, egui::Stroke::new(1.0, grid), egui::StrokeKind::Middle);
         let mut card_text = slot.title.clone();
         let live: Vec<String> = slot
             .readouts
@@ -593,7 +691,14 @@ pub fn paint_hot_slot_stack(
         if bolt_response.clicked() {
             let opened = slot.id.clone();
             for other in stack.slots.values_mut() {
-                other.settings_open = other.id == opened;
+                let open = other.id == opened;
+                other.settings_open = open;
+                if open {
+                    let seeded = seed_fields(&*other.config);
+                    other.pending = Some(seeded);
+                } else {
+                    other.pending = None;
+                }
             }
             actions.push(HotSlotAction::OpenedSettings(opened));
         }
@@ -624,15 +729,20 @@ fn bolt_radius() -> f32 {
     STACK_CONTROL_SIZE / 2.0 - 2.0
 }
 
-/// Paint one slot's settings pane: title plus the tabbed schema editor over
-/// that slot's own config. Nothing renders for a closed pane — that refuses
+/// Paint one slot's settings pane: title, the compact tabbed schema editor
+/// over that slot's *staged* buffer, and the Cancel / Apply / OK action row.
+///
+/// Edits never touch the live config here — they land in the staged buffer
+/// the pane owns, so Cancel discards them without moving the chart. The
+/// caller commits through [`HotSlotStack::commit_settings`] on Apply/OK (and
+/// closes on OK/Cancel). Nothing renders for a closed pane — that refuses
 /// instead of painting another slot's schema.
 pub fn paint_slot_settings_modal(
     ui: &mut egui::Ui,
     stack: &mut HotSlotStack,
     slot_id: &str,
     theme: &ThemeConfig,
-) -> Result<FieldEdits, EguiError> {
+) -> Result<SettingsOutcome, EguiError> {
     let accent = resolve_color(theme, "fast")?;
     let slot = stack.slots.get_mut(slot_id).ok_or_else(|| unknown_slot(slot_id))?;
     if !slot.settings_open {
@@ -642,12 +752,31 @@ pub fn paint_slot_settings_modal(
         });
     }
     let title = slot.title.clone();
-    ui.vertical(|pane| {
-        pane.colored_label(accent, format!("{title} settings"));
-    });
     let fields = schema_fields(&slot.config.describe());
-    let mut target = SlotFields { config: &mut slot.config };
-    Ok(paint_tabbed_schema_fields(ui, &mut slot.settings_tab, &fields, &mut target))
+    if slot.pending.is_none() {
+        slot.pending = Some(seed_fields(&*slot.config));
+    }
+    let HotSlot { pending, settings_tab, .. } = slot;
+    let pending = pending.as_mut().expect("staged buffer is seeded above");
+    let mut target = MapFields { values: pending };
+    let mut commit = SettingsCommit::None;
+    let outcome = ui.vertical(|pane| {
+        pane.colored_label(accent, format!("{title} settings"));
+        let edits = paint_tabbed_schema_fields_compact(pane, settings_tab, &fields, &mut target);
+        pane.horizontal(|row| {
+            if row.button("Cancel").clicked() {
+                commit = SettingsCommit::Cancel;
+            }
+            if row.button("Apply").clicked() {
+                commit = SettingsCommit::Apply;
+            }
+            if row.button("OK").clicked() {
+                commit = SettingsCommit::Ok;
+            }
+        });
+        edits
+    });
+    Ok(SettingsOutcome { edits: outcome.inner, commit })
 }
 
 #[cfg(test)]

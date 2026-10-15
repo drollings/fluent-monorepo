@@ -47,7 +47,8 @@ pub use feed::{
 };
 pub use fields::{
     FieldEdits, FieldKind, SchemaField, SettingsTab, classify_schema_field, fields_for_tab,
-    paint_schema_fields, paint_tabbed_schema_fields, schema_fields,
+    paint_schema_fields, paint_tabbed_schema_fields, paint_tabbed_schema_fields_compact,
+    schema_fields,
 };
 pub use hittest::{
     Crosshair, HIT_EPSILON_PX, Hit, crosshair_data, crosshair_pixel, hit_test,
@@ -73,8 +74,9 @@ pub use modal::{CatalogAction, CatalogEntry, CatalogModal, paint_catalog_modal};
 pub use plan::{CachedSeries, PaneCache, PanePlan, cache_key};
 pub use replay::{ReplayController, ReplayState};
 pub use slot::{
-    HotSlot, HotSlotAction, HotSlotStack, ReadoutValue, SlotAttachment, SlotControlHit,
-    SlotControlRect, paint_hot_slot_stack, paint_slot_settings_modal,
+    HotSlot, HotSlotAction, HotSlotStack, ReadoutValue, SettingsCommit, SettingsOutcome,
+    SlotAttachment, SlotControlHit, SlotControlRect, paint_hot_slot_stack,
+    paint_slot_settings_modal,
 };
 pub use view::{
     DeltaView, PaneKind, PaneSeries, PivotMark, PivotSide, RibbonView, delta_candle_view,

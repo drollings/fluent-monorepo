@@ -21,6 +21,7 @@
 
 pub mod annotations;
 pub mod chart;
+pub mod delta_volume_profile;
 pub mod export;
 pub mod fast_mas;
 pub mod feed;
@@ -81,7 +82,7 @@ pub use regime_labels::{
     STABILITY_BAND, QuietLabel, display_label, label_series, parity_label, regime_style_key,
     stability_band,
 };
-pub use session::break_lines;
+pub use session::{break_lines, time_grid_lines};
 pub use topology::{
     ADAPTIVE_NODE, HEALTH_MA_NODE, HEALTH_RIBBON_NODE, OSC_FAST_NODE, OSC_SLOW_NODE,
     PRICE_NODE, RIBBON_NODE, SIGNAL_NODE, VOLUME_NODE, cache_key_for, kernel_order,

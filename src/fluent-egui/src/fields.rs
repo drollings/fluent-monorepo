@@ -219,6 +219,35 @@ pub fn paint_tabbed_schema_fields(
     paint_schema_fields(ui, &fields_for_tab(fields, *active_tab), target)
 }
 
+/// The compact editor's fixed label-column width, so the editors line up.
+const COMPACT_LABEL_WIDTH: f32 = 92.0;
+/// Height of one compact field row.
+const COMPACT_ROW_HEIGHT: f32 = 18.0;
+/// Vertical gap between compact field rows.
+const COMPACT_ROW_GAP: f32 = 2.0;
+
+/// Paint the tab bar plus the active tab's editors with a compact two-column
+/// layout (fixed label column, tight row spacing), writing accepted edits
+/// through `target`'s own `FieldAccess` contract.
+///
+/// The compact sibling of [`paint_tabbed_schema_fields`]: same partition and
+/// same write contract, but an indicator's many inputs fit a small pane
+/// without a long scroll. The caller owns `active_tab`.
+pub fn paint_tabbed_schema_fields_compact(
+    ui: &mut egui::Ui,
+    active_tab: &mut SettingsTab,
+    fields: &[SchemaField],
+    target: &mut dyn FieldAccess,
+) -> FieldEdits {
+    ui.horizontal(|bar| {
+        for tab in SettingsTab::all() {
+            bar.selectable_value(active_tab, tab, tab.label());
+        }
+    });
+    ui.spacing_mut().item_spacing.y = COMPACT_ROW_GAP;
+    paint_schema_fields_sized(ui, &fields_for_tab(fields, *active_tab), target, Some(COMPACT_LABEL_WIDTH))
+}
+
 /// Paint one editor per field into `ui`, writing accepted edits straight
 /// through `target`'s own `FieldAccess` contract.
 ///
@@ -231,10 +260,32 @@ pub fn paint_schema_fields(
     fields: &[SchemaField],
     target: &mut dyn FieldAccess,
 ) -> FieldEdits {
+    paint_schema_fields_sized(ui, fields, target, None)
+}
+
+/// The one field-row layout. A set `label_width` fixes the label column (the
+/// compact editor); `None` lets the label size to its text (the default).
+fn paint_schema_fields_sized(
+    ui: &mut egui::Ui,
+    fields: &[SchemaField],
+    target: &mut dyn FieldAccess,
+    label_width: Option<f32>,
+) -> FieldEdits {
     let mut edits = FieldEdits::default();
     for field in fields {
         ui.horizontal(|row| {
-            row.label(&field.name).on_hover_text(bounds_hint(field));
+            match label_width {
+                Some(width) => {
+                    row.add_sized(
+                        [width, COMPACT_ROW_HEIGHT],
+                        egui::Label::new(&field.name),
+                    )
+                    .on_hover_text(bounds_hint(field));
+                }
+                None => {
+                    row.label(&field.name).on_hover_text(bounds_hint(field));
+                }
+            }
             paint_one(row, field, target, &mut edits);
         });
     }

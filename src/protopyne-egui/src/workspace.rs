@@ -16,12 +16,13 @@
 use std::collections::HashMap;
 
 use fluent_egui::{
-    CatalogAction, CatalogModal, DeltaView, EguiError, HotSlotAction, HotSlotStack, InteractionState,
-    PaneCache, PanePlan, PointerInput, RibbonView, SettingsTab, SlotAttachment, ThemeConfig,
-    TintedCandle, TintedDeltaBar, Viewport, candle_geoms, delta_bar_geoms, opacity_from_transparency,
-    paint_candles_tinted, paint_catalog_modal, paint_delta_bars_tinted, paint_hot_slot_stack,
+    CatalogAction, CatalogModal, CrosshairLines, DeltaView, EguiError, HotSlotAction, HotSlotStack,
+    InteractionState, PaneCache, PanePlan, PointerInput, RibbonView, SettingsCommit, SettingsTab,
+    SlotAttachment, ThemeConfig, TintedCandle, TintedDeltaBar, Viewport, axis_ticks, candle_geoms,
+    crosshair_data, crosshair_lines, delta_bar_geoms, opacity_from_transparency, paint_candles_tinted,
+    paint_catalog_modal, paint_crosshair, paint_delta_bars_tinted, paint_hot_slot_stack,
     paint_oscillator, paint_ribbon_fill, paint_slot_settings_modal, resolve_color, ribbon_polygons,
-    translate_candles, translate_delta_bars, translate_points, translate_polygons,
+    translate_breaks, translate_candles, translate_delta_bars, translate_points, translate_polygons,
 };
 use fluent_wvr::{FieldAccess, component_downcast_ref};
 use protopyne_chart_model::{ChartRow, ChartType, DateRange};
@@ -39,6 +40,7 @@ use crate::integration_lite::{
     candle_momentum_keys, candle_momentum_series, integration_lite_sub_pane, momentum_tints,
     ribbon_fill_transparency,
 };
+use crate::session::{INTRADAY_SPAN_SECONDS, time_grid_lines};
 use crate::widgets::{TopBarAction, paint_top_bar};
 
 /// Stable id of the IntegrationLite slot whose richer sub-pane geometry
@@ -57,8 +59,26 @@ const PRICE_BASE: f64 = 100.0;
 const SUB_MIN: f64 = -110.0;
 /// Sub-pane upper bound.
 const SUB_MAX: f64 = 110.0;
+/// Right price-axis strip width, TradingView-style.
+const AXIS_WIDTH: f32 = 68.0;
+/// Bottom time-axis strip height on the price pane.
+const TIME_STRIP: f32 = 18.0;
+/// Main price plot height: the price pane minus its time strip. The price
+/// scale binds to this so the visible window and the painted grid agree.
+const PRICE_PLOT_HEIGHT: f32 = PRICE_PANE_HEIGHT - TIME_STRIP;
 /// Horizontal pane width the interaction envelope is bound to.
 const PANE_WIDTH_PX: f32 = 640.0;
+/// Minimum pixels between adjacent time-axis labels.
+const MIN_TIME_LABEL_GAP: f32 = 64.0;
+/// Width of the crosshair time tag on the time strip.
+const TIME_TAG_WIDTH: f32 = 56.0;
+/// Axis-label font size.
+const AXIS_FONT: f32 = 11.0;
+/// Background gridline stroke width: thinner than a candle wick so the grid
+/// reads as a reference, never as data.
+const GRID_STROKE_WIDTH: f32 = 0.5;
+/// Background gridline dimming; the rules sit below the candles' brightness.
+const GRID_DIM: f32 = 0.55;
 /// EIT adaptive smoothing used for the candle tint when no IntegrationLite
 /// slot supplies one.
 const DEFAULT_EIT_ALPHA: f64 = 0.14;
@@ -269,6 +289,246 @@ fn tint_color(tint: MomentumTint) -> egui::Color32 {
     )
 }
 
+/// One pane's layout: the data plot, the right price-axis strip, and the
+/// optional bottom time strip.
+#[derive(Debug, Clone, Copy)]
+struct PaneLayout {
+    /// Data area: grid, candles, overlays, and the crosshair draw here.
+    plot: egui::Rect,
+    /// Right strip that carries price tick labels and the last-price tag.
+    axis: egui::Rect,
+    /// Bottom strip that carries time labels; only the price pane reserves one.
+    time: Option<egui::Rect>,
+}
+
+impl PaneLayout {
+    /// Split a pane rect into a plot, a right price axis, and (when
+    /// `time_strip`) a bottom time strip. Both panes share a left-aligned time
+    /// origin, so their bars and vertical gridlines stay in lockstep.
+    fn split(rect: egui::Rect, time_strip: bool) -> Self {
+        let plot_right = (rect.right() - AXIS_WIDTH).max(rect.left());
+        let plot_bottom =
+            if time_strip { (rect.bottom() - TIME_STRIP).max(rect.top()) } else { rect.bottom() };
+        Self {
+            plot: egui::Rect::from_min_max(rect.min, egui::pos2(plot_right, plot_bottom)),
+            axis: egui::Rect::from_min_max(
+                egui::pos2(plot_right, rect.top()),
+                egui::pos2(rect.right(), plot_bottom),
+            ),
+            time: time_strip
+                .then(|| egui::Rect::from_min_max(egui::pos2(rect.left(), plot_bottom), rect.max)),
+        }
+    }
+}
+
+/// Format an epoch timestamp for the time axis: clock time on an intraday
+/// window, month-day otherwise.
+fn fmt_axis_time(epoch: i64, intraday: bool) -> String {
+    match chrono::DateTime::from_timestamp(epoch, 0) {
+        Some(moment) if intraday => moment.format("%H:%M").to_string(),
+        Some(moment) => moment.format("%m-%d").to_string(),
+        None => String::new(),
+    }
+}
+
+/// Whether a row window reads as intraday (time labels show clock time).
+fn is_intraday(rows: &[ChartRow]) -> bool {
+    match (rows.first(), rows.last()) {
+        (Some(first), Some(last)) => {
+            last.time.saturating_sub(first.time) <= INTRADAY_SPAN_SECONDS
+        }
+        _ => false,
+    }
+}
+
+/// The dimmed, thin stroke every background gridline draws with, so the
+/// horizontal and vertical rules stay visually subordinate to the candles.
+fn grid_stroke(theme: &ThemeConfig) -> Result<egui::Stroke, EguiError> {
+    Ok(egui::Stroke::new(GRID_STROKE_WIDTH, resolve_color(theme, "grid")?.gamma_multiply(GRID_DIM)))
+}
+
+/// Paint horizontal gridlines at the window's round price ticks.
+fn paint_price_grid(
+    painter: &egui::Painter,
+    viewport: Viewport,
+    layout: PaneLayout,
+    theme: &ThemeConfig,
+) -> Result<(), EguiError> {
+    let stroke = grid_stroke(theme)?;
+    let window = viewport.visible_range();
+    for tick in axis_ticks(window.min, window.max, 8, 8) {
+        if let Some(y) = viewport.price_to_y(tick.value) {
+            let y = layout.plot.top() + y;
+            painter.line_segment(
+                [egui::pos2(layout.plot.left(), y), egui::pos2(layout.plot.right(), y)],
+                stroke,
+            );
+        }
+    }
+    Ok(())
+}
+
+/// Paint vertical gridlines at the window's major time boundaries.
+fn paint_time_grid(
+    painter: &egui::Painter,
+    viewport: Viewport,
+    rows: &[ChartRow],
+    bar_seconds: u64,
+    layout: PaneLayout,
+    theme: &ThemeConfig,
+) -> Result<(), EguiError> {
+    let stroke = grid_stroke(theme)?;
+    for line in translate_breaks(time_grid_lines(&viewport, rows, bar_seconds), layout.plot.left()) {
+        painter.line_segment(
+            [egui::pos2(line.x, layout.plot.top()), egui::pos2(line.x, layout.plot.bottom())],
+            stroke,
+        );
+    }
+    Ok(())
+}
+
+/// Paint the right price axis: round tick labels plus the last-price tag.
+fn paint_price_axis(
+    painter: &egui::Painter,
+    viewport: Viewport,
+    layout: PaneLayout,
+    last_price: Option<(f64, bool)>,
+    theme: &ThemeConfig,
+) -> Result<(), EguiError> {
+    let ink = resolve_color(theme, "grid")?;
+    let window = viewport.visible_range();
+    for tick in axis_ticks(window.min, window.max, 8, 8) {
+        if let Some(y) = viewport.price_to_y(tick.value) {
+            painter.text(
+                egui::pos2(layout.axis.right() - 4.0, layout.axis.top() + y),
+                egui::Align2::RIGHT_CENTER,
+                &tick.label,
+                egui::FontId::proportional(AXIS_FONT),
+                ink,
+            );
+        }
+    }
+    if let Some((price, up)) = last_price {
+        if let Some(y) = viewport.price_to_y(price) {
+            let y = layout.axis.top() + y;
+            let tag = resolve_color(theme, if up { "bull" } else { "bear" })?;
+            let rect = egui::Rect::from_min_max(
+                egui::pos2(layout.axis.left() + 2.0, y - 9.0),
+                egui::pos2(layout.axis.right() - 2.0, y + 9.0),
+            );
+            painter.rect_filled(rect, 3.0, tag);
+            painter.text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                format!("{price:.2}"),
+                egui::FontId::proportional(AXIS_FONT),
+                egui::Color32::WHITE,
+            );
+        }
+    }
+    Ok(())
+}
+
+/// Paint thinned time labels along the bottom strip, one per major boundary,
+/// centered on the boundary's vertical gridline.
+fn paint_time_axis(
+    painter: &egui::Painter,
+    viewport: Viewport,
+    rows: &[ChartRow],
+    bar_seconds: u64,
+    layout: PaneLayout,
+    theme: &ThemeConfig,
+) -> Result<(), EguiError> {
+    let Some(strip) = layout.time else {
+        return Ok(());
+    };
+    let ink = resolve_color(theme, "grid")?;
+    let intraday = is_intraday(rows);
+    let mut last_x = f32::NEG_INFINITY;
+    for line in translate_breaks(time_grid_lines(&viewport, rows, bar_seconds), layout.plot.left()) {
+        let x = line.x;
+        if x < strip.left() + TIME_TAG_WIDTH / 2.0
+            || x > strip.right() - TIME_TAG_WIDTH / 2.0
+            || x - last_x < MIN_TIME_LABEL_GAP
+        {
+            continue;
+        }
+        last_x = x;
+        if let Some(row) = rows.get(line.index) {
+            painter.text(
+                egui::pos2(x, strip.center().y),
+                egui::Align2::CENTER_CENTER,
+                fmt_axis_time(row.time, intraday),
+                egui::FontId::proportional(AXIS_FONT),
+                ink,
+            );
+        }
+    }
+    Ok(())
+}
+
+/// Paint the hover crosshair: snapped vertical/horizontal lines plus the
+/// price tag on the axis and the time tag on the strip.
+fn paint_crosshair_overlay(
+    plot_painter: &egui::Painter,
+    chrome_painter: &egui::Painter,
+    viewport: Viewport,
+    rows: &[ChartRow],
+    layout: PaneLayout,
+    hover: egui::Pos2,
+    theme: &ThemeConfig,
+) -> Result<(), EguiError> {
+    let local = (hover.x - layout.plot.left(), hover.y - layout.plot.top());
+    let Some(data) = crosshair_data(local, &viewport, rows.len()) else {
+        return Ok(());
+    };
+    let Some(span) = crosshair_lines(&data, &viewport, layout.plot.width(), layout.plot.height())
+    else {
+        return Ok(());
+    };
+    let span = CrosshairLines {
+        x: span.x + layout.plot.left(),
+        y: span.y + layout.plot.top(),
+        left: layout.plot.left(),
+        right: layout.plot.right(),
+        top: layout.plot.top(),
+        bottom: layout.plot.bottom(),
+    };
+    paint_crosshair(plot_painter, &span, theme)?;
+    let tag = resolve_color(theme, "grid")?;
+    let price_rect = egui::Rect::from_min_max(
+        egui::pos2(layout.axis.left() + 2.0, span.y - 9.0),
+        egui::pos2(layout.axis.right() - 2.0, span.y + 9.0),
+    );
+    chrome_painter.rect_filled(price_rect, 3.0, tag);
+    chrome_painter.text(
+        price_rect.center(),
+        egui::Align2::CENTER_CENTER,
+        format!("{:.2}", data.price),
+        egui::FontId::proportional(AXIS_FONT),
+        egui::Color32::WHITE,
+    );
+    if let (Some(strip), Some(row)) = (layout.time, rows.get(data.index)) {
+        let half = TIME_TAG_WIDTH / 2.0;
+        let tag_x = span
+            .x
+            .clamp(layout.plot.left() + half, layout.plot.right() - half);
+        let time_rect = egui::Rect::from_center_size(
+            egui::pos2(tag_x, strip.center().y),
+            egui::vec2(TIME_TAG_WIDTH, strip.height() - 4.0),
+        );
+        chrome_painter.rect_filled(time_rect, 3.0, tag);
+        chrome_painter.text(
+            time_rect.center(),
+            egui::Align2::CENTER_CENTER,
+            fmt_axis_time(row.time, is_intraday(rows)),
+            egui::FontId::proportional(AXIS_FONT),
+            egui::Color32::WHITE,
+        );
+    }
+    Ok(())
+}
+
 /// The terminal's central state store: active symbol, selectors, hot-slot
 /// stack, pane plan, pane cache, and the 2D interaction machine.
 pub struct ChartWorkspace {
@@ -332,6 +592,7 @@ impl ChartWorkspace {
         };
         workspace.slot_indicator(INTEGRATION_LITE_ID)?;
         workspace.slot_indicator("fast_mas")?;
+        workspace.slot_indicator(crate::delta_volume_profile::DELTA_VOLUME_PROFILE_ID)?;
         Ok(workspace)
     }
 
@@ -451,6 +712,15 @@ impl ChartWorkspace {
     pub fn set_slot_field(&mut self, id: &str, name: &str, value: &str) -> Result<(), EguiError> {
         self.stack.set_slot_field(id, name, value)?;
         self.recompute()
+    }
+
+    /// Commit one slot's staged settings edits through its live config and
+    /// recompute so the chart reflects them. Per-field refusals are returned
+    /// (never silently swallowed) while every accepted field applies.
+    pub fn commit_slot_settings(&mut self, id: &str) -> Result<Vec<String>, EguiError> {
+        let refused = self.stack.commit_settings(id)?;
+        self.recompute()?;
+        Ok(refused)
     }
 
     /// Remove an indicator: close its pane handle, unslot it, drop its
@@ -609,7 +879,7 @@ impl ChartWorkspace {
             PriceScaleMode::Normal,
             lo,
             hi,
-            PRICE_PANE_HEIGHT,
+            PRICE_PLOT_HEIGHT,
             spacing,
             PRICE_BASE,
             false,
@@ -779,11 +1049,12 @@ impl ChartWorkspace {
 
     /// Paint the main chart area and the sub-pane, stepping the interaction
     /// machine from this frame's pointer gestures first.
-    fn paint_canvas(&mut self, ui: &mut egui::Ui) -> Result<(), EguiError> {
+    fn paint_canvas(&mut self, ui: &mut egui::Ui) -> Result<egui::Rect, EguiError> {
         let width = ui.available_width().max(PANE_WIDTH_PX);
         let (main_rect, response) =
             ui.allocate_exact_size(egui::vec2(width, PRICE_PANE_HEIGHT), egui::Sense::drag());
         self.step_from_response(ui, &response, main_rect);
+        let bar_seconds = self.timeframe.seconds();
 
         let theme = self.theme.clone();
         let background = resolve_color(&theme, "background")?;
@@ -794,9 +1065,13 @@ impl ChartWorkspace {
         let window = window_for_range(&self.rows, self.range, self.timeframe.seconds());
         let window_start = self.rows.len().saturating_sub(window.len());
 
-        let painter = ui.painter_at(main_rect);
-        painter.rect_filled(main_rect, 0.0, background);
+        let layout = PaneLayout::split(main_rect, true);
+        let chrome = ui.painter_at(main_rect);
+        chrome.rect_filled(main_rect, 0.0, background);
+        let plot = ui.painter_at(layout.plot);
         if let Some(main) = self.main {
+            paint_price_grid(&plot, main, layout, &theme)?;
+            paint_time_grid(&plot, main, window, bar_seconds, layout, &theme)?;
             // The trend ribbon (IntegrationLite's main-pane leg) and the
             // candle tint both read the same windowed trend keys.
             let ribbon = self
@@ -812,17 +1087,17 @@ impl ChartWorkspace {
                 {
                     let placed = translate_polygons(
                         ribbon_polygons(band, &main),
-                        (main_rect.left(), main_rect.top()),
+                        (layout.plot.left(), layout.plot.top()),
                     );
                     let alpha = f32::from(opacity_from_transparency(ribbon_fill_transparency(
                         band.alpha,
                     ))) / 255.0;
-                    paint_ribbon_fill(&painter, &placed, &theme, alpha)?;
+                    paint_ribbon_fill(&plot, &placed, &theme, alpha)?;
                 }
             }
             if self.chart_type == ChartType::Candles {
                 let geoms = candle_geoms(window, &trend, &main)?;
-                let placed = translate_candles(geoms, (main_rect.left(), main_rect.top()));
+                let placed = translate_candles(geoms, (layout.plot.left(), layout.plot.top()));
                 let keys = candle_momentum_keys(window, &trend)?;
                 let mut candles = Vec::with_capacity(placed.len());
                 for geom in &placed {
@@ -830,7 +1105,7 @@ impl ChartWorkspace {
                     let color = self.bar_color(window_start + geom.index, key, &theme)?;
                     candles.push(TintedCandle { geom: *geom, color });
                 }
-                paint_candles_tinted(&painter, &candles, body_width);
+                paint_candles_tinted(&plot, &candles, body_width);
             } else {
                 // Line/Area (and any other display-row picture) render the
                 // close series; Heikin smoothing needs the core bar pipeline.
@@ -841,8 +1116,8 @@ impl ChartWorkspace {
                         main.price_to_y(row.close).map(|y| (main.index_to_x(index), y))
                     })
                     .collect();
-                let placed = translate_points(points, (main_rect.left(), main_rect.top()));
-                paint_oscillator(&painter, &placed, "fast", &theme, 1.0)?;
+                let placed = translate_points(points, (layout.plot.left(), layout.plot.top()));
+                paint_oscillator(&plot, &placed, "fast", &theme, 1.0)?;
             }
             for plugin in &self.plugins {
                 if plugin.attachment() != SlotAttachment::MainOverlay
@@ -850,24 +1125,46 @@ impl ChartWorkspace {
                 {
                     continue;
                 }
+                let Some(config) = self.stack.config(plugin.id()) else {
+                    continue;
+                };
                 if let Some(evaluation) = self.evaluations.get(plugin.id()) {
                     let windowed = windowed_evaluation(evaluation, window_start, window.len());
                     plugin.paint_main_overlay(
-                        &painter,
+                        &plot,
                         &windowed,
                         &main,
-                        main_rect.left_top(),
+                        layout.plot.left_top(),
                         &theme,
+                        config,
                     )?;
+                }
+            }
+            let last = window.last();
+            paint_price_axis(
+                &chrome,
+                main,
+                layout,
+                last.map(|bar| (bar.close, bar.close >= bar.open)),
+                &theme,
+            )?;
+            paint_time_axis(&chrome, main, window, bar_seconds, layout, &theme)?;
+            if let Some(hover) = response.hover_pos() {
+                if layout.plot.contains(hover) {
+                    paint_crosshair_overlay(&plot, &chrome, main, window, layout, hover, &theme)?;
                 }
             }
         }
 
         let (sub_rect, _) =
             ui.allocate_exact_size(egui::vec2(width, SUB_PANE_HEIGHT), egui::Sense::hover());
-        let sub_painter = ui.painter_at(sub_rect);
-        sub_painter.rect_filled(sub_rect, 0.0, background);
+        let sub_layout = PaneLayout::split(sub_rect, false);
+        let sub_chrome = ui.painter_at(sub_rect);
+        sub_chrome.rect_filled(sub_rect, 0.0, background);
+        let sub_plot = ui.painter_at(sub_layout.plot);
         if let Some(sub) = self.sub {
+            paint_price_grid(&sub_plot, sub, sub_layout, &theme)?;
+            paint_time_grid(&sub_plot, sub, window, bar_seconds, sub_layout, &theme)?;
             for plugin in &self.plugins {
                 if plugin.attachment() != SlotAttachment::SubPane
                     || self.stack.visible(plugin.id()) != Some(true)
@@ -875,14 +1172,25 @@ impl ChartWorkspace {
                     continue;
                 }
                 if let Some(evaluation) = self.evaluations.get(plugin.id()) {
+                    let Some(config) = self.stack.config(plugin.id()) else {
+                        continue;
+                    };
                     let windowed = windowed_evaluation(evaluation, window_start, window.len());
-                    plugin.paint_sub_pane(&sub_painter, &windowed, &sub, sub_rect.left_top(), &theme)?;
+                    plugin.paint_sub_pane(
+                        &sub_plot,
+                        &windowed,
+                        &sub,
+                        sub_layout.plot.left_top(),
+                        &theme,
+                        config,
+                    )?;
                 }
             }
             if let Some(pane) = &self.sub_pane {
                 let delta = windowed_delta(&pane.delta_volume, window_start, window.len());
                 let bars = delta_bar_geoms(&delta, &sub)?;
-                let placed = translate_delta_bars(bars, (sub_rect.left(), sub_rect.top()));
+                let placed =
+                    translate_delta_bars(bars, (sub_layout.plot.left(), sub_layout.plot.top()));
                 let mut tinted = Vec::with_capacity(placed.len());
                 for geom in &placed {
                     let global = window_start + geom.index;
@@ -891,22 +1199,26 @@ impl ChartWorkspace {
                     tinted.push(TintedDeltaBar { geom: *geom, color });
                 }
                 paint_delta_bars_tinted(
-                    &sub_painter,
+                    &sub_plot,
                     &tinted,
                     (self.config.bar_spacing as f32 * 0.35).max(0.5),
                 );
             }
             // The zero line makes the centered histogram legible.
             if let Some(zero_y) = sub.windowed_y(0.0) {
-                let y = sub_rect.top() + zero_y;
+                let y = sub_layout.plot.top() + zero_y;
                 let stroke = egui::Stroke::new(1.0, resolve_color(&theme, "grid")?);
-                sub_painter.line_segment(
-                    [egui::Pos2::new(sub_rect.left(), y), egui::Pos2::new(sub_rect.right(), y)],
+                sub_plot.line_segment(
+                    [
+                        egui::Pos2::new(sub_layout.plot.left(), y),
+                        egui::Pos2::new(sub_layout.plot.right(), y),
+                    ],
                     stroke,
                 );
             }
+            paint_price_axis(&sub_chrome, sub, sub_layout, None, &theme)?;
         }
-        Ok(())
+        Ok(main_rect)
     }
 
     /// Translate this frame's pointer gestures into typed interaction inputs.
@@ -1043,7 +1355,13 @@ pub fn paint_workspace(
         workspace.apply_top_bar_action(action, gateway)?;
     }
     ui.separator();
-    workspace.paint_canvas(ui)?;
+    let chart_rect = workspace.paint_canvas(ui)?;
+
+    // Float the hot-slot legend over the chart's upper-right, clear of the
+    // right price axis (no frame; `paint_hot_slot_stack` draws no boundary).
+    let stack_x = (chart_rect.right() - AXIS_WIDTH - workspace.stack.card_width() - 8.0)
+        .max(chart_rect.left() + 8.0);
+    workspace.stack.set_origin((stack_x, chart_rect.top() + 8.0));
 
     let slot_actions = paint_hot_slot_stack(ui, &mut workspace.stack, &workspace.theme)?;
     for action in slot_actions {
@@ -1052,7 +1370,21 @@ pub fn paint_workspace(
 
     if let Some(id) = workspace.open_settings_id() {
         let theme = workspace.theme.clone();
-        let _ = paint_slot_settings_modal(ui, &mut workspace.stack, &id, &theme);
+        let outcome = paint_slot_settings_modal(ui, &mut workspace.stack, &id, &theme)?;
+        match outcome.commit {
+            SettingsCommit::Apply => {
+                workspace.commit_slot_settings(&id)?;
+            }
+            SettingsCommit::Ok => {
+                workspace.commit_slot_settings(&id)?;
+                let _ = workspace.stack.close_settings(&id);
+            }
+            SettingsCommit::Cancel => {
+                let _ = workspace.stack.discard_settings(&id);
+                let _ = workspace.stack.close_settings(&id);
+            }
+            SettingsCommit::None => {}
+        }
     }
 
     workspace.paint_modals(ui, gateway)?;

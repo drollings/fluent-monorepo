@@ -155,6 +155,7 @@ fn bloat_ledger_pins_source_files() {
         vec![
             "annotations.rs",
             "chart.rs",
+            "delta_volume_profile.rs",
             "export.rs",
             "fast_mas.rs",
             "feed.rs",
@@ -249,6 +250,7 @@ fn bloat_ledger_pins_default_feature_deps() {
         main_dep_keys(),
         vec![
             "bon",
+            "chrono",
             "common-core",
             "eframe",
             "egui",

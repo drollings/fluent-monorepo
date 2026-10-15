@@ -214,6 +214,65 @@ fn workspace_hot_slot_eye_and_bolt_controls_and_2d_pan_zoom_work_headlessly() {
     });
 }
 
+#[test]
+fn pane_layout_reserves_the_price_axis_and_time_strip() {
+    let rect = egui::Rect::from_min_size(egui::pos2(10.0, 20.0), egui::vec2(640.0, 320.0));
+    let same = |a: f32, b: f32| a.to_bits() == b.to_bits();
+
+    let main = PaneLayout::split(rect, true);
+    assert!(same(main.plot.right(), rect.right() - AXIS_WIDTH), "the plot leaves room for the axis");
+    assert!(
+        same(main.plot.bottom(), rect.bottom() - TIME_STRIP),
+        "the plot leaves room for time labels"
+    );
+    assert!(same(main.axis.left(), main.plot.right()), "the axis starts where the plot ends");
+    let time = main.time.expect("the price pane reserves a time strip");
+    assert!(same(time.top(), rect.bottom() - TIME_STRIP));
+    assert!(same(time.left(), rect.left()));
+    assert!(same(time.right(), rect.right()), "the time strip spans the full pane width");
+
+    let sub = PaneLayout::split(rect, false);
+    assert!(same(sub.plot.bottom(), rect.bottom()), "the sub-pane has no time strip");
+    assert!(sub.time.is_none());
+}
+
+#[test]
+fn crosshair_overlay_paints_when_the_pointer_is_in_the_plot() {
+    egui::__run_test_ui(|ui| {
+        let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(640.0, 320.0));
+        let layout = PaneLayout::split(rect, true);
+        let viewport = Viewport::new(
+            PriceScaleMode::Normal,
+            90.0,
+            110.0,
+            PRICE_PLOT_HEIGHT,
+            8.0,
+            100.0,
+            false,
+        )
+        .expect("valid viewport");
+        let rows = ramp_rows(20);
+        let hover = egui::pos2(layout.plot.left() + 32.0, layout.plot.top() + 40.0);
+        let local = (hover.x - layout.plot.left(), hover.y - layout.plot.top());
+        assert!(
+            crosshair_data(local, &viewport, rows.len()).is_some(),
+            "the pointer reads a bar and a price"
+        );
+
+        let painter = ui.painter_at(rect);
+        paint_crosshair_overlay(
+            &painter,
+            &painter,
+            viewport,
+            &rows,
+            layout,
+            hover,
+            &ThemeConfig::default(),
+        )
+        .expect("the crosshair paints");
+    });
+}
+
 /// A ramp of `count` distinct bars; distinct counts make a switch observable.
 fn ramp_rows(count: usize) -> Vec<ChartRow> {
     (0..count)
