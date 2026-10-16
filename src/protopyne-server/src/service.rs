@@ -42,8 +42,8 @@ use protopyne_strategy::{
 };
 use protopyne_chart_model::{ChartRow, row_of};
 use protopyne_store::{
-    CandleStore, FoldPolicy, PlanError, ReadRequest as TapeReadRequest, StoreError, StoreHealth,
-    TimeRange,
+    FoldPolicy, MarketTape, PlanError, ReadRequest as TapeReadRequest, StoreError,
+    StoreHealth, StoreStorage, TimeRange,
 };
 use protopyne_types::{Bar, Money, Timeframe};
 use protopyne_venue::{
@@ -70,8 +70,17 @@ pub struct ServerConfig {
     #[builder(default = "127.0.0.1:9060".to_owned())]
     pub bind: String,
     /// Bar history path. Required at boot when set nowhere else.
-    #[field(desc = "Bar history CSV path")]
+    #[field(desc = "Bar history file path (CSV or Parquet)")]
     pub history_path: Option<String>,
+    /// Durable tape store root. When set, boot opens the file-backed tape at
+    /// this root, asserts the store-permit binding against it, and serves
+    /// symbol-scoped chart reads through it (falling back to the boot
+    /// history per read). Absent serves the boot history exactly as before.
+    /// `#[serde(default)]` keeps older config files (which name no tape)
+    /// loading.
+    #[field(desc = "Durable tape store root")]
+    #[serde(default)]
+    pub tape_path: Option<String>,
     /// Maximum concurrent preview executions **(correctness-as-boundedness)**.
     #[field(desc = "Max concurrent previews", min = 1, max = 1024)]
     #[builder(default = 32)]
@@ -139,6 +148,11 @@ impl ServerConfig {
                 "history_timeframe '{}' is not a known bar spacing",
                 self.history_timeframe
             ));
+        }
+        if let Some(path) = &self.tape_path {
+            if path.trim().is_empty() {
+                return Err("tape_path must not be blank".to_owned());
+            }
         }
         Ok(())
     }
@@ -412,15 +426,20 @@ fn store_fields(reading: StoreHealth) -> (Option<bool>, Option<u64>, Option<u64>
 }
 
 /// The store a serving gateway plans its chart reads through, threadbare by
-/// design: a synchronous [`CandleStore`] plus the capability permit its
-/// effects require and the tape's registered venue spelling. Holding the
-/// permit here is what lets the synchronous gateway install it around a read
-/// without inventing a second capability mechanism.
+/// design: the durable tape plus the capability set and permit its effects
+/// require and the tape's registered venue spelling. Holding the permit
+/// here is what lets the synchronous gateway assert the root binding on
+/// every read — through the tape's own scoped read, against the store's own
+/// root — without inventing a second capability mechanism. A reader whose
+/// permit names another root is denied per read, never served.
 pub struct TapeReader {
     /// The durable tape this reader plans and reads.
-    pub store: std::sync::Arc<dyn CandleStore>,
+    pub store: std::sync::Arc<MarketTape>,
     /// The capability set the store's effects are gated on.
     pub caps: fluent_wvr::CapabilitySet,
+    /// The permit the per-read binding check runs: bound to this tape's
+    /// root at boot, refused on its face when it names another root.
+    pub permit: StoreStorage,
     /// The venue spelling the tape prints under.
     pub venue: String,
     /// Trailing-bar cap for an unbounded chart read.
@@ -440,19 +459,12 @@ fn default_history_timeframe() -> String {
 
 /// Map the terminal toolbar's resolution label onto a [`Timeframe`].
 ///
-/// The toolbar spells frames `1M`/`5M`/`15M`/`1H`/`4H`; the store's grid
-/// spells minutes `M1`/`M5`/`M15`. The `1M`-style codes are deliberately
-/// refused by [`Timeframe::from_resolution`] (they read as months on a
-/// data chart), so the bridge is stated once here, at the serving boundary
-/// that receives the toolbar's spelling, rather than in every read.
+/// The one toolbar-label bridge lives on [`Timeframe::from_chart_label`];
+/// this delegates to it so serving and display cannot disagree about what a
+/// label means.
 #[must_use]
 pub fn timeframe_of_label(label: &str) -> Option<Timeframe> {
-    match label {
-        "1M" => Some(Timeframe::M1),
-        "5M" => Some(Timeframe::M5),
-        "15M" => Some(Timeframe::M15),
-        other => Timeframe::from_resolution(other),
-    }
+    Timeframe::from_chart_label(label)
 }
 
 /// Why a store-backed chart read could not produce bars. A copyable kind
@@ -615,7 +627,10 @@ pub fn tape_serve(
     };
     let store = Arc::clone(&reader.store);
     let caps = reader.caps.clone();
-    match fluent_wvr::run_gated_blocking(caps, move || store.read(&request)) {
+    let permit = reader.permit.clone();
+    // The scoped read asserts the root binding first — a permit minted for
+    // another store refuses on its face — then presence, then the read.
+    match fluent_wvr::run_gated_blocking(caps, move || store.read_scoped(&permit, &request)) {
         Ok(Ok(series)) => TapeServe::Served(series.bars),
         Ok(Err(error)) => TapeServe::Missing(tape_miss_of(error)),
         Err(join) => TapeServe::Missing(TapeMiss::Store(StoreError::InvalidBar(format!(
@@ -635,6 +650,111 @@ fn tape_miss_of(error: StoreError) -> TapeMiss {
     }
 }
 
+/// Map one tape-miss kind onto its stable wire tag. See [`direction_tag`]:
+/// the cast is one-way, and a new kind breaks the build until its tag is
+/// decided — tags can never silently drift.
+fn tape_miss_tag(kind: TapeMissKind) -> &'static str {
+    match kind {
+        TapeMissKind::NoTape => "NoTape",
+        TapeMissKind::UnsupportedTimeframe => "UnsupportedTimeframe",
+        TapeMissKind::UnknownSymbol => "UnknownSymbol",
+        TapeMissKind::Denied => "Denied",
+        TapeMissKind::Store => "Store",
+    }
+}
+
+/// Map the tape-serve counters onto the view's optional fields. An
+/// unobserved snapshot reports nothing, so a server that never read through
+/// its tape serves the pre-tape payload byte-identically; any observed
+/// snapshot reports every counter together — even ones that happen to be
+/// zero — because a half-reported tally would be worse than none. The last
+/// miss rides only when a miss was observed: a serve-only window names no
+/// fault. Field order follows the view's alphabetical field order.
+struct TapeFieldSet {
+    denied: Option<u64>,
+    last_miss: Option<String>,
+    no_tape: Option<u64>,
+    served: Option<u64>,
+    store_error: Option<u64>,
+    unknown_symbol: Option<u64>,
+    unsupported_timeframe: Option<u64>,
+}
+
+fn tape_fields(snapshot: TapeServeSnapshot) -> TapeFieldSet {
+    if snapshot == TapeServeSnapshot::default() {
+        TapeFieldSet {
+            denied: None,
+            last_miss: None,
+            no_tape: None,
+            served: None,
+            store_error: None,
+            unknown_symbol: None,
+            unsupported_timeframe: None,
+        }
+    } else {
+        TapeFieldSet {
+            denied: Some(snapshot.denied),
+            last_miss: snapshot.last_miss.map(|kind| tape_miss_tag(kind).to_owned()),
+            no_tape: Some(snapshot.no_tape),
+            served: Some(snapshot.served),
+            store_error: Some(snapshot.store_error),
+            unknown_symbol: Some(snapshot.unknown_symbol),
+            unsupported_timeframe: Some(snapshot.unsupported_timeframe),
+        }
+    }
+}
+
+/// Open the durable tape at `root` and build the reader the serving gateway
+/// plans its symbol-scoped chart reads through.
+///
+/// The permit binding is asserted once here, never per read: the permit is
+/// minted from the opened tape's own root and must equal the requested root,
+/// and a probe read for an unregistered symbol must refuse as
+/// `UnknownSymbol` — binding and presence both passed — rather than
+/// `Denied`. An empty catalog refuses loudly: a boot with no market to
+/// serve would otherwise answer every chart as a silent fallback. The reader
+/// prints under the tape's first market venue, in id order, so a
+/// single-venue deployment names nothing twice.
+pub fn open_tape_reader(root: &std::path::Path) -> Result<TapeReader, ServerError> {
+    let tape = MarketTape::open(root)
+        .map_err(|e| ServerError::Service(format!("tape at {} failed to open: {e}", root.display())))?;
+    let permit = StoreStorage::new(tape.root().to_path_buf());
+    if permit.store_path() != root {
+        return Err(ServerError::Service(format!(
+            "tape permit is bound to {}, not {}",
+            permit.store_path().display(),
+            root.display()
+        )));
+    }
+    let caps = fluent_wvr::CapabilitySet::new().with(permit.clone());
+    let venue = fluent_wvr::CURRENT_CAPS.sync_scope(caps.clone(), || {
+        let markets = tape
+            .registry()
+            .markets()
+            .map_err(|e| ServerError::Service(format!("tape registry refused: {e}")))?;
+        let venue = markets.first().map(|market| market.venue.clone()).ok_or_else(|| {
+            ServerError::Service(format!(
+                "tape at {} holds no markets: register a market before serving",
+                root.display()
+            ))
+        })?;
+        let probe = TapeReadRequest {
+            symbol: "__tape_boot_probe__".to_owned(),
+            venue: venue.clone(),
+            timeframe: Timeframe::M15,
+            range: TimeRange { start_ms: None, end_ms: None },
+            limit: Some(1),
+            policy: FoldPolicy::ExtendToFullBuckets,
+        };
+        match tape.read_scoped(&permit, &probe) {
+            Err(StoreError::Plan(PlanError::UnknownSymbol(_))) => Ok(venue),
+            Err(other) => Err(ServerError::Service(format!("tape binding probe refused: {other}"))),
+            Ok(_) => Err(ServerError::Service("tape binding probe unexpectedly served".to_owned())),
+        }
+    })?;
+    Ok(TapeReader { store: Arc::new(tape), caps, permit, venue, limit: DEFAULT_TAPE_LIMIT })
+}
+
 /// Liveness plus command-plane status: the trading state (halt/resume) and
 /// the last operator command ride the existing health route — additive
 /// fields, no new route, no new auth. The DTO's alphabetical field order
@@ -647,6 +767,7 @@ pub(crate) fn health_view(state: &Shared) -> HealthView {
     let trading = state.trading_state.get();
     let reading: StoreHealth = *common_core::sync::lock(&state.store_health);
     let (store_reachable, store_open_gaps, store_watermark_age_secs) = store_fields(reading);
+    let tape = tape_fields(state.tape_serve_stats.snapshot());
     HealthView {
         allows_entries: serving_allows_entries(trading, reading),
         allows_exits: trading.allows(true),
@@ -655,6 +776,13 @@ pub(crate) fn health_view(state: &Shared) -> HealthView {
         store_open_gaps,
         store_reachable,
         store_watermark_age_secs,
+        tape_denied: tape.denied,
+        tape_last_miss: tape.last_miss,
+        tape_no_tape: tape.no_tape,
+        tape_served: tape.served,
+        tape_store_error: tape.store_error,
+        tape_unknown_symbol: tape.unknown_symbol,
+        tape_unsupported_timeframe: tape.unsupported_timeframe,
         trading_state: trading_state_tag(trading).to_owned(),
         version: env!("CARGO_PKG_VERSION").to_owned(),
     }
@@ -1358,3 +1486,11 @@ mod store_halt_end_to_end_tests;
 #[cfg(test)]
 #[path = "../tests/trading_status.rs"]
 mod trading_status_tests;
+
+#[cfg(test)]
+#[path = "../tests/labels.rs"]
+mod labels_tests;
+
+#[cfg(test)]
+#[path = "../tests/tape_boot.rs"]
+mod tape_boot_tests;

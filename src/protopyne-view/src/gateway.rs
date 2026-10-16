@@ -186,6 +186,14 @@ impl TerminalGateway for MockGateway {
             store_open_gaps: None,
             store_reachable: None,
             store_watermark_age_secs: None,
+            // The mock serves no tape: no read on record.
+            tape_denied: None,
+            tape_last_miss: None,
+            tape_no_tape: None,
+            tape_served: None,
+            tape_store_error: None,
+            tape_unknown_symbol: None,
+            tape_unsupported_timeframe: None,
             last_command: None,
         })
     }

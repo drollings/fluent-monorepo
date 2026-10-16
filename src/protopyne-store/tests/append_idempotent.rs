@@ -14,7 +14,7 @@ use protopyne_types::Timeframe;
 use crate::commit::test_tapes::{at_ms, bar};
 use crate::fold::FoldPolicy;
 use crate::range::TimeRange;
-use crate::sqlite_tape::test_setup::{VENUE, seeded, with_memory_caps};
+use crate::tape::test_setup::{VENUE, seeded, with_registry_caps};
 
 /// Ten flat minute bars starting at `first_ms`, one per 60_000 ms.
 fn grid(first_ms: i64, count: i64) -> Vec<Bar> {
@@ -25,7 +25,7 @@ fn grid(first_ms: i64, count: i64) -> Vec<Bar> {
 
 #[tokio::test]
 async fn double_append_counts_conflicts_and_stores_once() {
-    with_memory_caps(async {
+    with_registry_caps(async {
         let (tape, key) = seeded("SPY", &grid(1_767_225_900_000, 10)).await;
         let batch = grid(1_767_225_900_000, 10);
         let outcome = tape
@@ -61,7 +61,7 @@ async fn double_append_counts_conflicts_and_stores_once() {
 
 #[tokio::test]
 async fn interior_duplicate_in_one_batch_stores_one_row() {
-    with_memory_caps(async {
+    with_registry_caps(async {
         let (tape, key) = seeded("SPY", &[]).await;
         let one = bar(0, "100");
         let outcome = tape
@@ -77,7 +77,7 @@ async fn interior_duplicate_in_one_batch_stores_one_row() {
 
 #[tokio::test]
 async fn upsert_overwrites_and_counts_the_collision() {
-    with_memory_caps(async {
+    with_registry_caps(async {
         let (tape, key) = seeded("SPY", &[bar(0, "100")]).await;
         let restated = bar(0, "101");
         let outcome = tape
@@ -111,7 +111,7 @@ async fn upsert_overwrites_and_counts_the_collision() {
 
 #[tokio::test]
 async fn batch_preceding_the_watermark_conflicts_instead_of_inserting() {
-    with_memory_caps(async {
+    with_registry_caps(async {
         let (tape, key) = seeded("SPY", &grid(1_767_225_900_000, 10)).await;
         // Every bar precedes the watermark: nothing new to store.
         let stale = grid(1_767_225_900_000, 5);
@@ -134,7 +134,7 @@ async fn batch_preceding_the_watermark_conflicts_instead_of_inserting() {
 
 #[tokio::test]
 async fn malformed_batch_refuses_without_storing_its_prefix() {
-    with_memory_caps(async {
+    with_registry_caps(async {
         let (tape, key) = seeded("SPY", &[]).await;
         let good = bar(0, "100");
         let mut malformed = bar(1, "100");

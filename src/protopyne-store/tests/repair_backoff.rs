@@ -60,10 +60,10 @@ fn backoff_saturates_at_the_configured_ceiling() {
 async fn connectivity_is_rechecked_before_every_fetch() {
     let dir = tempfile::tempdir().expect("tempdir");
     let file_bars = th::ascending_bars(0, 4);
-    let (handle, permit, caps) = th::open_file_handle(&dir, "store.db").await;
+    let (handle, permit, caps) = th::open_file_handle(&dir, "store");
     let key = fluent_wvr::CURRENT_CAPS
         .scope(caps.clone(), async {
-            th::register_m1(&handle, &permit, "SPY").await
+            th::register_m1(&handle, &permit, "SPY")
         })
         .await;
     // Fail twice, then serve: three attempts, three checks, one repair.
@@ -134,7 +134,7 @@ async fn connectivity_is_rechecked_before_every_fetch() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn pre_fired_abort_starts_no_attempt() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let (handle, permit, caps) = th::open_file_handle(&dir, "store.db").await;
+    let (handle, permit, caps) = th::open_file_handle(&dir, "store");
     let key = crate::key::TapeKey {
         symbol_id: crate::key::SymbolId(7),
         timeframe: protopyne_types::Timeframe::M1,

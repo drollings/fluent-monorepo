@@ -20,7 +20,7 @@ fn csv_bars(name: &str) -> Vec<Bar> {
         .join("tests")
         .join("data")
         .join(name);
-    crate::load_bars_csv(&path).expect("vendored history loads")
+    crate::csv::load_bars_csv(&path).expect("vendored history loads")
 }
 
 async fn run_once() -> crate::runner::MultiBacktestRun {

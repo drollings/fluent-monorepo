@@ -562,7 +562,7 @@ pub fn equity_curve_for(bars: &[Bar], decisions: &[BarDecision]) -> Vec<Money> {
 }
 
 /// Pin a run manifest, attaching planner provenance when the source had a
-/// planner to name. A source with no provenance (CSV, dynamic) pins the
+/// planner to name. A source with no provenance (files, dynamic) pins the
 /// pre-tape manifest exactly as before; a store-backed source pins the
 /// digest and spans the read produced. One pinning site, so a run's bytes
 /// and its inputs cannot diverge between the single- and multi-symbol paths.
@@ -635,7 +635,7 @@ pub async fn run_backtest(
 ///
 /// The one difference from [`run_backtest`] is the input: the bars — and the
 /// planner provenance the tape arm carries — come from [`load_history`],
-/// then enter the identical [`run_backtest_on_venue`] decide path. A CSV or
+/// then enter the identical [`run_backtest_on_venue`] decide path. A files or
 /// dynamic source pins no tape data and serializes exactly as a values run;
 /// a store-backed source pins the read's digest and spans. The `store` is
 /// only consulted by the tape arm.
@@ -825,9 +825,9 @@ async fn run_backtest_on_venue<V: Venue>(
 
 /// One symbol's leg of a multi-symbol run: its configs plus its bar source.
 ///
-/// Histories arrive from CSV or dynamically — the harness loads either arm
+/// Histories arrive from files or dynamically — the harness loads either arm
 /// through `load_history`, so a symbol with no file replays beside one with
-/// a pinned CSV through the identical decide path.
+/// a pinned file through the identical decide path.
 #[derive(Debug, Clone, bon::Builder)]
 #[builder(start_fn = new)]
 pub struct MultiSymbolInput {

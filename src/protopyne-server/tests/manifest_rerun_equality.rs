@@ -12,8 +12,8 @@
 use super::*;
 use chrono::DateTime;
 use protopyne_store::{
-    AssetClass, CandleStore as _, FoldPolicy, PriceScale, ReadPlan, ReadRequest, SpanPlan,
-    SqliteTape, StoreStorage, TapeKey, TimeRange,
+    AssetClass, CandleStore as _, FoldPolicy, MarketTape, PriceScale, ReadPlan, ReadRequest,
+    SpanPlan, StoreStorage, TapeKey, TimeRange,
 };
 use protopyne_types::{Bar, Timeframe};
 
@@ -45,7 +45,7 @@ async fn plan_spans(bars: &[Bar], request: &ReadRequest) -> (Vec<Bar>, Vec<SpanP
     let caps = fluent_wvr::CapabilitySet::new().with(StoreStorage::new(":memory:".into()));
     fluent_wvr::CURRENT_CAPS
         .scope(caps, async {
-            let tape = SqliteTape::open_in_memory().expect("ephemeral tape opens");
+            let tape = MarketTape::open_in_memory().expect("ephemeral tape opens");
             let symbol_id = tape
                 .register(
                     "SPY",
@@ -63,7 +63,9 @@ async fn plan_spans(bars: &[Bar], request: &ReadRequest) -> (Vec<Bar>, Vec<SpanP
             tape.append(key, bars, protopyne_store::WritePolicy::InsertIfAbsent)
                 .expect("seed append succeeds");
             let coverage = tape.coverage(key).expect("coverage reads");
-            let plan = ReadPlan::resolve(tape.catalog(), coverage, request).expect("plan resolves");
+            let plan =
+                ReadPlan::resolve_for(Some((key.symbol_id, key.timeframe)), coverage, request)
+                    .expect("plan resolves");
             (bars.to_vec(), plan.spans().to_vec())
         })
         .await

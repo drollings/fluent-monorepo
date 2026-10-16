@@ -1,9 +1,9 @@
-//! The pre-change read algorithm, rebuilt from public pieces.
+//! The whole-tape read algorithm, rebuilt from public pieces.
 //!
-//! Included once from `sqlite_tape.rs`; consumer suites `use` it, never
+//! Included once from `tape.rs`; consumer suites `use` it, never
 //! include it again. The oracle is whole-tape coverage plus plan plus
-//! per-span fetches — exactly what the read paths did before windowed
-//! stamp planning — so the equivalence suites prove the new paths serve
+//! per-span fetches — what the read paths did before windowed stamp
+//! planning — so the equivalence suites prove the windowed path serves
 //! identical bars, spans, and refusals rather than merely plausible ones.
 
 #![allow(dead_code)]
@@ -15,7 +15,7 @@ use crate::error::StoreError;
 use crate::fold::{fold_bars, narrow_to_window};
 use crate::key::SymbolId;
 use crate::plan::{ReadPlan, wanted_window};
-use crate::sqlite_tape::order_and_validate;
+use crate::store::order_and_validate;
 use crate::store::{CandleSeries, ReadRequest};
 
 /// Serve `req` the old way: whole-tape `coverage`, resolved plan, one bar

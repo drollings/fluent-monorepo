@@ -3,13 +3,13 @@
 //! The sealed artifact pins the market's `price_scale` into the Arrow decimal
 //! schema. A value needing more digits than that scale **refuses** the seal —
 //! it is never rounded and never truncated — and this suite reuses the same
-//! `(scale, value)` corpus the SQLite append path is calibrated against, so
+//! `(scale, value)` corpus the tape append path is calibrated against, so
 //! the working tape and its sealed artifact cannot disagree about what fits.
 
 use super::*;
 use crate::catalog::{AssetClass, Market, PriceScale};
 use crate::key::SymbolId;
-use crate::sqlite_tape::test_scale::{FIT, REFUSE};
+use crate::catalog::test_scale::{FIT, REFUSE};
 use protopyne_types::Timeframe;
 
 /// A market row at `scale`, for a direct writer call that bypasses `append`

@@ -14,11 +14,11 @@ use crate::catalog::PriceScale;
 use crate::commit::test_tapes::bar;
 use crate::fold::FoldPolicy;
 use crate::range::TimeRange;
-use crate::sqlite_tape::test_setup::{VENUE, m1_key, memory_tape, with_memory_caps};
+use crate::tape::test_setup::{VENUE, m1_key, memory_tape, with_registry_caps};
 use crate::store::CandleStore;
 
 fn read_window(
-    tape: &SqliteTape,
+    tape: &MarketTape,
     symbol: &str,
     start_ms: i64,
     end_ms: i64,
@@ -36,7 +36,7 @@ fn read_window(
 
 #[tokio::test]
 async fn one_bad_row_counts_and_leaves_a_visible_gap() {
-    with_memory_caps(async {
+    with_registry_caps(async {
         let tape = memory_tape();
         let symbol_id = tape
             .register(
@@ -130,7 +130,7 @@ async fn one_bad_row_counts_and_leaves_a_visible_gap() {
 
 #[tokio::test]
 async fn fully_representable_batch_counts_no_rejections() {
-    with_memory_caps(async {
+    with_registry_caps(async {
         let tape = memory_tape();
         let symbol_id = tape
             .register(

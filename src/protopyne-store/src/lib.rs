@@ -38,13 +38,13 @@
 
 #[cfg(feature = "parquet")]
 pub(crate) mod arrow_decode;
+pub mod append_log;
 pub mod capability;
 pub mod catalog;
 pub mod commit;
 pub mod coverage;
 pub mod error;
 pub mod fold;
-pub mod handle;
 pub mod health;
 pub mod health_edge;
 pub mod history;
@@ -52,16 +52,17 @@ pub mod identity;
 pub mod key;
 pub mod manifest;
 pub mod market_parquet;
-pub mod migrate;
 pub mod plan;
 pub mod range;
 pub mod repair;
+pub mod registry;
 pub mod snapshot;
-pub mod sqlite_tape;
 pub mod store;
+pub mod tape;
 
+pub use append_log::{AppendLog, AppendRecord};
 pub use capability::StoreStorage;
-pub use catalog::{AssetClass, DEFAULT_MAX_MARKETS, Market, MarketCatalog, PriceScale};
+pub use catalog::{AssetClass, DEFAULT_MAX_MARKETS, Market, PriceScale};
 pub use commit::{Arrival, ClosedCounts, ClosedEmitter, KeyedSnapshot, SealReason};
 pub use coverage::{
     Coverage, DEFAULT_MAX_LAG_BARS, FreshnessPolicy, GapClass, Watermark, classify,
@@ -71,7 +72,6 @@ pub use fold::{
     FOLD_ORIGIN_MS, FoldEdges, FoldPolicy, WEEK_FOLD_ORIGIN_MS, bucket_start, fold_bars,
     fold_bars_edges, fold_origin_ms,
 };
-pub use handle::{StoreConfig, StoreHandle};
 pub use health::StoreHealth;
 pub use health_edge::{HealthEdge, health_edge, next_health};
 pub use history::{
@@ -80,20 +80,20 @@ pub use history::{
 };
 pub use identity::VerifiedId;
 pub use key::{SymbolId, TapeKey};
-pub use manifest::SnapshotRecord;
+pub use manifest::{SealManifest, SnapshotRecord};
 pub use market_parquet::{OhlcvRead, read_ohlcv_parquet};
-pub use migrate::{SCHEMA_VERSION, ensure_schema};
 pub use plan::{ReadPlan, SpanOrigin, SpanPlan};
 pub use range::TimeRange;
 pub use repair::{
     RecoveryCoordinator, RecoveryPlan, RepairConfig, RepairReason, RepairStatus, RepairWorker,
     SymbolRepair, classify_history_error, classify_store_error, retry_delay_ms, spans_for_want,
 };
+pub use registry::{CATALOG_FILE, MarketRegistry};
 pub use snapshot::{
     DEFAULT_MIN_PART_ROWS, ReconcileReport, SealOptions, SealedSnapshot, SnapshotWriter,
     read_snapshot, reconcile_orphans, seal,
 };
-pub use sqlite_tape::SqliteTape;
 pub use store::{
     AppendOutcome, CandleSeries, CandleStore, DEFAULT_APPEND_CHUNK, ReadRequest, WritePolicy,
 };
+pub use tape::{DEFAULT_MAX_BARS, SEALS_DIR, TAPES_DIR, MarketTape, TapeOptions};

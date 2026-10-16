@@ -29,7 +29,7 @@ use fluent_egui::{
 use fluent_wvr::{FieldAccess, component_downcast_ref};
 use protopyne_chart_model::{ChartRow, ChartType, DateRange};
 use protopyne_chart_scale::PriceScaleMode;
-use protopyne_types::{SymbolIndex, SymKey, Timeframe};
+use protopyne_types::{BucketAccum, SymbolIndex, SymKey, Timeframe};
 use protopyne_view::{ChartBars, TerminalGateway};
 
 use crate::chart::{ChartConfig, DEFAULT_SYMBOL, TimeframeKey, window_for_range};
@@ -225,81 +225,93 @@ fn price_extent(rows: &[ChartRow]) -> (f64, f64) {
     (lo - pad, hi + pad)
 }
 
-/// Fold one bucket's rows when they tile the bucket whole: the first row
-/// opens the bucket, every row gap is the same span, and the rows count out
-/// the full bucket span. Anything else — a short edge, a torn bucket, a lone
-/// row — folds to `None`, never to a fabricated partial bar.
-fn finish_row_bucket(start_sec: i64, children: &[&ChartRow], step_secs: i64) -> Option<ChartRow> {
-    let [first, rest @ ..] = children else {
-        return None;
-    };
-    if first.time != start_sec || rest.is_empty() {
-        return None;
-    }
-    let gap = rest[0].time - first.time;
-    if gap <= 0 {
-        return None;
-    }
-    let mut prev = rest[0].time;
-    for row in &rest[1..] {
-        if row.time - prev != gap {
-            return None;
-        }
-        prev = row.time;
-    }
-    if (children.len() as i64).checked_mul(gap) != Some(step_secs) {
-        return None;
-    }
-    let mut high = first.high;
-    let mut low = first.low;
-    let mut volume = 0_u64;
-    for row in children {
-        high = high.max(row.high);
-        low = low.min(row.low);
-        volume = volume.saturating_add(row.volume);
-    }
-    let last = children[children.len() - 1];
-    Some(ChartRow {
-        time: start_sec,
-        open: first.open,
-        high,
-        low,
-        close: last.close,
-        volume,
-    })
-}
-
 /// Fold display rows upward to `timeframe` over the epoch-anchored bucket
 /// grid (see [`Timeframe::bucket_start_ms`]): open from the first row, close
 /// from the last, high/low as extremes, volume summed, stamped at the bucket
-/// start — the same anchor and the same complete-only rule as the store fold,
-/// so the seeded demo's resampled slots render identically to the Parquet
-/// demo's seeded frames. An empty input stays empty.
+/// start — the same anchor and the same complete-only rule as the store fold
+/// (see [`BucketAccum`]), so the seeded demo's resampled slots render
+/// identically to the Parquet demo's seeded frames. Only whole buckets emit:
+/// a short edge, a torn bucket, or a lone row is omitted, never fabricated
+/// into a partial bar. Display floats stay display floats throughout: this
+/// never converts back into decision values. An empty input stays empty.
 fn aggregate_rows(rows: &[ChartRow], timeframe: Timeframe) -> Vec<ChartRow> {
-    let step_secs = timeframe.total_seconds() as i64;
+    let step_ms = timeframe.duration_ms();
     let mut folded = Vec::new();
-    let mut open: Option<(i64, Vec<&ChartRow>)> = None;
-    let emit = |start: i64, children: Vec<&ChartRow>, folded: &mut Vec<ChartRow>| {
-        if let Some(row) = finish_row_bucket(start, &children, step_secs) {
-            folded.push(row);
-        }
-    };
+    let mut open: Option<(i64, ChartAccum)> = None;
     for row in rows {
-        let start = timeframe.bucket_start_ms(row.time.saturating_mul(1_000)) / 1_000;
+        let start_ms = timeframe.bucket_start_ms(row.time.saturating_mul(1_000));
+        let start = start_ms / 1_000;
         match open.as_mut() {
-            Some((held, children)) if *held == start => children.push(row),
+            Some((held, accum)) if *held == start => accum.absorb_row(row),
             _ => {
-                if let Some((held, children)) = open.take() {
-                    emit(held, children, &mut folded);
+                if let Some((held, accum)) = open.take() {
+                    if let Some(folded_row) = accum.finish(held, step_ms) {
+                        folded.push(folded_row);
+                    }
                 }
-                open = Some((start, vec![row]));
+                open = Some((start, ChartAccum::first(start_ms, row)));
             }
         }
     }
-    if let Some((held, children)) = open.take() {
-        emit(held, children, &mut folded);
+    if let Some((held, accum)) = open.take() {
+        if let Some(folded_row) = accum.finish(held, step_ms) {
+            folded.push(folded_row);
+        }
     }
     folded
+}
+
+/// One display bucket under construction: the running first/last/extremes/
+/// sum in display floats plus the [`BucketAccum`] completeness state over
+/// the same stamps. Completeness is O(1) per row with no per-bucket
+/// allocation; the arithmetic keeps f64 throughout and never converts back
+/// into decision values.
+struct ChartAccum {
+    complete: BucketAccum,
+    open: f64,
+    high: f64,
+    low: f64,
+    close: f64,
+    volume: u64,
+}
+
+impl ChartAccum {
+    fn first(start_ms: i64, row: &ChartRow) -> Self {
+        let mut complete = BucketAccum::new(start_ms);
+        complete.absorb(row.time.saturating_mul(1_000));
+        Self {
+            complete,
+            open: row.open,
+            high: row.high,
+            low: row.low,
+            close: row.close,
+            volume: row.volume,
+        }
+    }
+
+    fn absorb_row(&mut self, row: &ChartRow) {
+        self.complete.absorb(row.time.saturating_mul(1_000));
+        self.high = self.high.max(row.high);
+        self.low = self.low.min(row.low);
+        self.close = row.close;
+        self.volume = self.volume.saturating_add(row.volume);
+    }
+
+    /// Emit the folded row stamped at `start_sec` when the absorbed rows
+    /// tile the `step_ms` bucket whole, else `None`.
+    fn finish(self, start_sec: i64, step_ms: i64) -> Option<ChartRow> {
+        if !self.complete.is_complete(step_ms) {
+            return None;
+        }
+        Some(ChartRow {
+            time: start_sec,
+            open: self.open,
+            high: self.high,
+            low: self.low,
+            close: self.close,
+            volume: self.volume,
+        })
+    }
 }
 
 /// Window a trend ribbon to `[start, start + len)` for pane-local painting.

@@ -87,7 +87,7 @@ fn mock_gateway_covers_every_trait_method() {
 #[tokio::test]
 async fn server_gateway_matches_http_routes() {
     let history =
-        protopyne_server::load_bars_csv(&history_path()).expect("vendored history loads");
+        protopyne_server::load_bars_file(&history_path()).expect("vendored history loads");
     let config =
         protopyne_server::ServerConfig::new().bind("127.0.0.1:0".to_owned()).build();
     let handle = protopyne_server::serve(config, history).await.expect("test server boots");
@@ -157,7 +157,7 @@ async fn server_gateway_matches_http_routes() {
 #[tokio::test]
 async fn a_scrub_over_the_server_window_moves_panes_and_writes_nothing() {
     let history =
-        protopyne_server::load_bars_csv(&history_path()).expect("vendored history loads");
+        protopyne_server::load_bars_file(&history_path()).expect("vendored history loads");
     let config =
         protopyne_server::ServerConfig::new().bind("127.0.0.1:0".to_owned()).build();
     let handle = protopyne_server::serve(config, history).await.expect("test server boots");

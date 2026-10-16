@@ -23,7 +23,7 @@ fn history() -> Vec<Bar> {
         .join("tests")
         .join("data")
         .join("SPY_15M.csv");
-    crate::load_bars_csv(&path).expect("vendored history loads")
+    crate::csv::load_bars_csv(&path).expect("vendored history loads")
 }
 
 fn strategy() -> Arc<Strategy> {
@@ -1159,7 +1159,7 @@ async fn multi_symbol_run_matches_single_symbol_runs() {
     // must add no perturbation — per-symbol decisions equal standalone
     // `run_backtest` runs on the same inputs, and the combined manifest pins
     // each symbol's data version beside the shared code version.
-    let spy_bars = crate::load_bars_csv(
+    let spy_bars = crate::csv::load_bars_csv(
         &PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("tests")
             .join("data")

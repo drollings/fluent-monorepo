@@ -23,7 +23,7 @@ use crate::catalog::PriceScale;
 use crate::commit::test_tapes::bar;
 use crate::fold::FoldPolicy;
 use crate::range::TimeRange;
-use crate::sqlite_tape::test_setup::{VENUE, m1_key, memory_tape, with_memory_caps};
+use crate::tape::test_setup::{VENUE, m1_key, memory_tape, with_registry_caps};
 
 /// Scales under test: whole-dollar, cents, crypto, and the Decimal maximum.
 const SCALES: &[u32] = &[0, 2, 8, 28];
@@ -66,7 +66,7 @@ fn canonical(text: &str) -> String {
 
 #[tokio::test]
 async fn store_matches_decimal_wherever_f64_differs() {
-    with_memory_caps(async {
+    with_registry_caps(async {
         let tape = memory_tape();
         let mut report = ExactnessReport {
             compared: 0,

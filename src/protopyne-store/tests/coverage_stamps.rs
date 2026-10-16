@@ -5,16 +5,15 @@
 //! walks, over stamps without materializing bars. This suite proves it
 //! differentially: contiguous, torn, and empty tapes crossed with bounded,
 //! open-start, and beyond-the-edges windows must agree exactly — first,
-//! last, bars, and runs. The database half proves the stamp fetch and the
-//! extent query return exactly what the bar fetch returns, and that the
-//! extent of an empty tape is `None`, never a zeroed triple.
+//! last, bars, and runs. (The stamp-fetch/extent half died with the SQL
+//! fetch layer; windowed-stamp equivalence on the surviving engine is
+//! proven by `read_windowed_oracle.rs`.)
 
 use super::*;
 use protopyne_types::Timeframe;
 
 use crate::commit::test_tapes::at_ms;
 use crate::coverage::Coverage;
-use crate::sqlite_tape::test_setup::{seeded, with_memory_caps};
 
 /// Deterministic xorshift: randomized corpus without a dev-dependency.
 fn next_rand(state: &mut u64) -> u64 {
@@ -116,95 +115,4 @@ fn stamps_walk_pre_epoch_and_coarse_grids() {
         Coverage::from_stamps(&daily, Timeframe::D1),
         Coverage::from_bars(&bars, Timeframe::D1),
     );
-}
-
-#[tokio::test]
-async fn stamp_fetch_matches_the_bar_fetch() {
-    with_memory_caps(async {
-        let mut rng = 0x123456789ABCDEF_u64;
-        let mut stamps: Vec<i64> = Vec::new();
-        for step in 0..120 {
-            if next_rand(&mut rng) % 5 == 0 {
-                continue;
-            }
-            stamps.push(BASE_MS + step * STEP_MS);
-        }
-        let (tape, key) = seeded("SPY", &bars_of(&stamps)).await;
-        let conn = common_core::sync::lock(tape.catalog().connection());
-        let windows = [
-            (None, None),
-            (
-                Some(BASE_MS + 10 * STEP_MS),
-                Some(BASE_MS + 100 * STEP_MS),
-            ),
-            (None, Some(BASE_MS + 40 * STEP_MS)),
-            (Some(BASE_MS + 500 * STEP_MS), Some(BASE_MS + 600 * STEP_MS)),
-        ];
-        for (start, end) in windows {
-            let fetched = crate::sqlite_tape::fetch_stamps(&conn, key.symbol_id, start, end)
-                .expect("stamp fetch");
-            assert_eq!(
-                fetched,
-                in_window(&stamps, start, end),
-                "the stamp fetch returns exactly the window's stamps, ascending"
-            );
-            let fetched_bars =
-                crate::sqlite_tape::fetch_bars(&conn, key.symbol_id, start, end)
-                    .expect("bar fetch");
-            let ordered = crate::sqlite_tape::order_and_validate(fetched_bars)
-                .expect("stored rows validate");
-            assert_eq!(
-                Coverage::from_stamps(&fetched, Timeframe::M1),
-                Coverage::from_bars(&ordered, Timeframe::M1),
-                "stamp-derived and bar-derived coverage agree over {start:?}..{end:?}"
-            );
-        }
-    })
-    .await;
-}
-
-#[tokio::test]
-async fn stamp_fetch_sorts_what_the_table_did_not() {
-    with_memory_caps(async {
-        let stamps: Vec<i64> = (0..24).map(|step| BASE_MS + step * STEP_MS).collect();
-        let mut shuffled = bars_of(&stamps);
-        // Reverse pairs: written out of order, still the same set.
-        for pair in shuffled.chunks_exact_mut(2) {
-            pair.swap(0, 1);
-        }
-        let (tape, key) = seeded("SPY", &shuffled).await;
-        let conn = common_core::sync::lock(tape.catalog().connection());
-        let fetched = crate::sqlite_tape::fetch_stamps(&conn, key.symbol_id, None, None)
-            .expect("stamp fetch");
-        assert_eq!(fetched, stamps, "stamps ascend regardless of write order");
-    })
-    .await;
-}
-
-#[tokio::test]
-async fn extent_names_bounds_without_counting_rows() {
-    with_memory_caps(async {
-        let (tape, key) = seeded(
-            "SPY",
-            &bars_of(&(0..64).map(|step| BASE_MS + step * STEP_MS).collect::<Vec<_>>()),
-        )
-        .await;
-        let conn = common_core::sync::lock(tape.catalog().connection());
-        let extent = crate::sqlite_tape::tape_extent(&conn, key.symbol_id).expect("extent");
-        let extent = extent.expect("a seeded tape has an extent");
-        assert_eq!(extent.first_ms, BASE_MS);
-        assert_eq!(extent.last_ms, BASE_MS + 63 * STEP_MS);
-    })
-    .await;
-}
-
-#[tokio::test]
-async fn extent_of_an_empty_tape_is_none() {
-    with_memory_caps(async {
-        let (tape, key) = seeded("SPY", &[]).await;
-        let conn = common_core::sync::lock(tape.catalog().connection());
-        let extent = crate::sqlite_tape::tape_extent(&conn, key.symbol_id).expect("extent");
-        assert_eq!(extent, None, "no rows is no extent, never a zeroed triple");
-    })
-    .await;
 }

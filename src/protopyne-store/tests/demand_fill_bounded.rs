@@ -11,6 +11,7 @@ use super::test_history as th;
 
 use crate::coverage::FreshnessPolicy;
 use crate::error::StoreError;
+use crate::store::CandleStore;
 
 fn tight_config() -> crate::repair::RepairConfig {
     crate::repair::RepairConfig::new()
@@ -25,10 +26,10 @@ fn tight_config() -> crate::repair::RepairConfig {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn span_past_max_repair_width_is_refused_untouched() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let (handle, permit, caps) = th::open_file_handle(&dir, "store.db").await;
+    let (handle, permit, caps) = th::open_file_handle(&dir, "store");
     fluent_wvr::CURRENT_CAPS
         .scope(caps.clone(), async {
-            th::register_m1(&handle, &permit, "SPY").await;
+            th::register_m1(&handle, &permit, "SPY");
         })
         .await;
     // A provider that counts its fetches: the refusal must land before any.
@@ -69,10 +70,10 @@ async fn span_outside_every_horizon_is_refused() {
     let dir = tempfile::tempdir().expect("tempdir");
     let file_bars = th::ascending_bars(0, 6);
     let csv = th::write_tape_csv(&dir, "spy.csv", &file_bars);
-    let (handle, permit, caps) = th::open_file_handle(&dir, "store.db").await;
+    let (handle, permit, caps) = th::open_file_handle(&dir, "store");
     let key = fluent_wvr::CURRENT_CAPS
         .scope(caps.clone(), async {
-            th::register_m1(&handle, &permit, "SPY").await
+            th::register_m1(&handle, &permit, "SPY")
         })
         .await;
     let provider: std::sync::Arc<dyn crate::history::HistoryProvider> = std::sync::Arc::new(
@@ -112,10 +113,10 @@ async fn partial_horizon_serves_its_subset_and_names_the_shortfall() {
     let dir = tempfile::tempdir().expect("tempdir");
     let file_bars = th::ascending_bars(0, 6);
     let csv = th::write_tape_csv(&dir, "spy.csv", &file_bars);
-    let (handle, permit, caps) = th::open_file_handle(&dir, "store.db").await;
+    let (handle, permit, caps) = th::open_file_handle(&dir, "store");
     let key = fluent_wvr::CURRENT_CAPS
         .scope(caps.clone(), async {
-            th::register_m1(&handle, &permit, "SPY").await
+            th::register_m1(&handle, &permit, "SPY")
         })
         .await;
     let provider: std::sync::Arc<dyn crate::history::HistoryProvider> = std::sync::Arc::new(
@@ -155,8 +156,7 @@ async fn partial_horizon_serves_its_subset_and_names_the_shortfall() {
     let coverage = fluent_wvr::CURRENT_CAPS
         .scope(caps, async {
             handle
-                .coverage(&permit, key)
-                .await
+                .coverage(key)
                 .expect("coverage reads")
                 .expect("the subset landed")
         })

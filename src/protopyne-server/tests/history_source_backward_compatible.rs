@@ -1,11 +1,11 @@
-//! The control group for the tape arm: the CSV and dynamic arms are
+//! The control group for the tape arm: the files and dynamic arms are
 //! unchanged, and the ingest goldens still hold.
 //!
-//! Adding a third arm must not move the two that already existed. The CSV
-//! arm keeps the exact `load_bars_with_fallback` ladder and the trimmed
-//! ingest goldens (11-row 15M, 32-row 5M); the dynamic arm replays verbatim;
-//! both carry no planner provenance; and the new tape arm refuses loudly
-//! when it is asked to read without a store rather than falling back.
+//! Adding a third arm must not move the two that already existed. The files
+//! arm walks the one candidate ladder through the trimmed ingest goldens
+//! (11-row 15M, 32-row 5M); the dynamic arm replays verbatim; both carry no
+//! planner provenance; and the new tape arm refuses loudly when it is asked
+//! to read without a store rather than falling back.
 
 use std::path::PathBuf;
 
@@ -16,12 +16,13 @@ fn data(name: &str) -> PathBuf {
 }
 
 #[test]
-fn csv_arm_matches_the_fallback_loader_and_carries_no_provenance() {
+fn files_arm_matches_the_candidate_loader_and_carries_no_provenance() {
     let candidates = vec![data("SPY_15M.csv")];
     let via_source =
-        crate::load_history(&HistorySource::Csv(candidates.clone()), None).expect("csv loads");
-    let via_loader = crate::load_bars_with_fallback(&candidates).expect("fallback loads");
-    assert_eq!(via_source.bars, via_loader, "the csv arm is the fallback loader");
+        crate::load_history(&HistorySource::Files(candidates.clone()), None).expect("files load");
+    let via_loader =
+        crate::history::load_bars_candidates(&candidates).expect("candidates load");
+    assert_eq!(via_source.bars, via_loader, "the files arm is the candidate loader");
     assert!(via_source.provenance.is_empty(), "a file arm names no planner span");
 }
 
@@ -29,10 +30,10 @@ fn csv_arm_matches_the_fallback_loader_and_carries_no_provenance() {
 fn the_ingest_goldens_still_hold() {
     // The 15M fixture is 11 bars; the 5M fixture is 32, the trimmed ingest
     // goldens pinned by `csv.rs`.
-    let m15 = crate::load_history(&HistorySource::Csv(vec![data("SPY_15M.csv")]), None)
+    let m15 = crate::load_history(&HistorySource::Files(vec![data("SPY_15M.csv")]), None)
         .expect("15m loads")
         .bars;
-    let m5 = crate::load_history(&HistorySource::Csv(vec![data("SPY_5M.csv")]), None)
+    let m5 = crate::load_history(&HistorySource::Files(vec![data("SPY_5M.csv")]), None)
         .expect("5m loads")
         .bars;
     assert_eq!(m15.len(), 11, "the 11-row 15M golden is unchanged");
@@ -41,7 +42,7 @@ fn the_ingest_goldens_still_hold() {
 
 #[test]
 fn dynamic_arm_replays_verbatim_and_refuses_empty() {
-    let bars = crate::load_bars_csv(&data("SPY_15M.csv")).expect("loads");
+    let bars = crate::csv::load_bars_csv(&data("SPY_15M.csv")).expect("loads");
     let replayed =
         crate::load_history(&HistorySource::Dynamic(bars.clone()), None).expect("dynamic loads");
     assert_eq!(replayed.bars, bars, "the dynamic arm replays verbatim");

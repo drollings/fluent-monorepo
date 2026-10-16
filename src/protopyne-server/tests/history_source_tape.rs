@@ -1,6 +1,6 @@
 //! The tape arm is a substrate, not a second decision path.
 //!
-//! A store-backed run and a CSV-backed run over the **same bars** must reach
+//! A store-backed run and a file-backed run over the **same bars** must reach
 //! the same verdict on every bar: the store supplies the series, nothing
 //! more. The decision trace is compared byte for byte, and the manifests are
 //! compared with the additive tape fields cleared — a CSV run pins no tape
@@ -23,7 +23,7 @@ fn csv_path() -> PathBuf {
 }
 
 fn csv_bars() -> Vec<Bar> {
-    crate::load_bars_csv(&csv_path()).expect("vendored history loads")
+    crate::csv::load_bars_csv(&csv_path()).expect("vendored history loads")
 }
 
 /// The manifest's pre-tape projection: every additive field cleared, so the
@@ -49,12 +49,12 @@ async fn tape_and_csv_runs_over_the_same_bars_decide_identically() {
     let venue = tape::venue_config("SPY", "spy-15m-v1");
     let runner = tape::runner_config("SPY");
 
-    let csv_source = HistorySource::Csv(vec![csv_path()]);
+    let csv_source = HistorySource::Files(vec![csv_path()]);
     let csv_run = run_backtest_from_source(
         &strategy, &risk, &grant, &venue, &runner, &csv_source, None, 7,
     )
     .await
-    .expect("csv run");
+    .expect("files run");
 
     let tape_source = HistorySource::Tape { key, request };
     let tape_run = fluent_wvr::CURRENT_CAPS
@@ -87,7 +87,7 @@ async fn tape_and_csv_runs_over_the_same_bars_decide_identically() {
     );
     // Each arm pins exactly what it can: no digest for CSV, a digest and
     // provenance for the store.
-    assert!(csv_run.manifest.data_digest.is_none(), "csv pins no tape digest");
+    assert!(csv_run.manifest.data_digest.is_none(), "files pin no tape digest");
     assert!(tape_run.manifest.data_digest.is_some(), "store pins a digest");
     assert_eq!(tape_run.manifest.data_bar_count, Some(bars.len() as u64));
 }

@@ -1,11 +1,11 @@
-//! History-load economics: Parquet, CSV, and the SQLite tape over the
+//! History-load economics: Parquet, CSV, and the tape log over the
 //! committed SPY month, plus the load-time tally into coarser frames.
 //!
 //! Numbers only, never optimization: the three arms are the real ingest
-//! paths (`load_bars_parquet`, `load_bars_csv`, `SqliteTape::read`), all
+//! paths (`load_bars_file`, `MarketTape::read`), all
 //! over the committed one-month fixture. Parquet and CSV serve the vendor
 //! series verbatim (the bench asserts equal bar counts before timing). The
-//! SQLite tape is seeded with the standard gap-fill convention — a missing
+//! tape log is seeded with the standard gap-fill convention — a missing
 //! minute is a flat bar at the previous close with zero volume — because
 //! the store's read refuses torn windows by design, and a month of
 //! committed bars is what a tape holds in practice. The CSV and tape
@@ -18,10 +18,10 @@ use std::sync::OnceLock;
 
 use criterion::{criterion_group, Criterion};
 
-use protopyne_server::{fold_frames, load_bars_csv, load_bars_parquet};
+use protopyne_server::{fold_frames, load_bars_file};
 use protopyne_store::{
-    AssetClass, CandleStore as _, FoldPolicy, PriceScale, ReadRequest as TapeReadRequest,
-    SqliteTape, StoreStorage, TapeKey, TimeRange, WritePolicy,
+    AssetClass, CandleStore as _, FoldPolicy, MarketTape, PriceScale, ReadRequest as TapeReadRequest,
+    StoreStorage, TapeKey, TimeRange, WritePolicy,
 };
 use protopyne_types::{Bar, Timeframe};
 
@@ -63,11 +63,11 @@ fn gap_filled(bars: &[Bar]) -> Vec<Bar> {
 }
 
 /// Everything the timed closures need, built once: the committed bars, a
-/// CSV rendering of them, and a seeded SQLite tape.
+/// CSV rendering of them, and a seeded tape log.
 struct Fixtures {
     parquet: PathBuf,
     csv: PathBuf,
-    tape: SqliteTape,
+    tape: MarketTape,
     caps: fluent_wvr::CapabilitySet,
     bars: Vec<Bar>,
     tape_bars: usize,
@@ -102,16 +102,16 @@ fn fixtures() -> &'static Fixtures {
     static FIXTURES: OnceLock<Fixtures> = OnceLock::new();
     FIXTURES.get_or_init(|| {
         let parquet = month_path();
-        let bars = load_bars_parquet(&parquet).expect("committed month loads");
+        let bars = load_bars_file(&parquet).expect("committed month loads");
         assert!(!bars.is_empty(), "the fixture has bars");
 
         let dir = tempfile::tempdir().expect("bench tempdir");
         let csv = dir.path().join("SPY-2026-03-1M.csv");
         std::fs::write(&csv, render_csv(&bars)).expect("csv fixture writes");
 
-        let tape_path = dir.path().join("tape.sqlite");
-        let tape = SqliteTape::open(&tape_path).expect("bench tape opens");
-        let caps = caps_for(&tape_path);
+        let tape_root = dir.path().join("tape-store");
+        let tape = MarketTape::open(&tape_root).expect("bench tape opens");
+        let caps = caps_for(&tape_root);
         let filled = gap_filled(&bars);
         let tape_bars = filled.len();
         fluent_wvr::CURRENT_CAPS.sync_scope(caps.clone(), || {
@@ -171,7 +171,7 @@ fn load_parquet(c: &mut Criterion) {
     group.sample_size(20);
     group.bench_function("parquet", |b| {
         b.iter(|| {
-            let bars = load_bars_parquet(&fixtures.parquet).expect("loads");
+            let bars = load_bars_file(&fixtures.parquet).expect("loads");
             assert_eq!(bars.len(), fixtures.bars.len(), "same series, every arm");
         });
     });
@@ -184,19 +184,19 @@ fn load_csv(c: &mut Criterion) {
     group.sample_size(20);
     group.bench_function("csv", |b| {
         b.iter(|| {
-            let bars = load_bars_csv(&fixtures.csv).expect("loads");
+            let bars = load_bars_file(&fixtures.csv).expect("loads");
             assert_eq!(bars.len(), fixtures.bars.len(), "same series, every arm");
         });
     });
     group.finish();
 }
 
-fn load_sqlite(c: &mut Criterion) {
+fn load_tape_log(c: &mut Criterion) {
     let fixtures = fixtures();
     let request = read_request(fixtures);
     let mut group = c.benchmark_group("load");
     group.sample_size(20);
-    group.bench_function("sqlite_tape", |b| {
+    group.bench_function("tape_log", |b| {
         b.iter(|| {
             let series = fluent_wvr::CURRENT_CAPS.sync_scope(fixtures.caps.clone(), || {
                 fixtures.tape.read(&request).expect("tape reads")
@@ -225,8 +225,8 @@ fn tally_parquet(c: &mut Criterion) {
     group.sample_size(20);
     group.bench_function("parquet_frames", |b| {
         b.iter(|| {
-            let bars = load_bars_parquet(&fixtures.parquet).expect("loads");
-            let frames = fold_frames(&bars, Timeframe::M1, &TARGETS).expect("folds");
+            let bars = load_bars_file(&fixtures.parquet).expect("loads");
+            let frames = fold_frames(&bars, Timeframe::M1, &TARGETS, protopyne_types::FoldEdges::CompleteOnly).expect("folds");
             assert_eq!(frames.len(), TARGETS.len());
         });
     });
@@ -239,8 +239,8 @@ fn tally_csv(c: &mut Criterion) {
     group.sample_size(20);
     group.bench_function("csv_frames", |b| {
         b.iter(|| {
-            let bars = load_bars_csv(&fixtures.csv).expect("loads");
-            let frames = fold_frames(&bars, Timeframe::M1, &TARGETS).expect("folds");
+            let bars = load_bars_file(&fixtures.csv).expect("loads");
+            let frames = fold_frames(&bars, Timeframe::M1, &TARGETS, protopyne_types::FoldEdges::CompleteOnly).expect("folds");
             assert_eq!(frames.len(), TARGETS.len());
         });
     });
@@ -257,17 +257,27 @@ fn report_bytes(fixtures: &Fixtures) {
     let csv = std::fs::metadata(&fixtures.csv).expect("metadata").len() as f64;
     // WAL mode keeps fresh writes in the `-wal` sibling until a checkpoint:
     // the committed bytes are the pair.
-    let db = fixtures.workdir.path().join("tape.sqlite");
-    let sqlite = std::fs::metadata(&db).expect("metadata").len() as f64
-        + std::fs::metadata(db.with_extension("sqlite-wal"))
-            .map_or(0, |m| m.len()) as f64;
+    // The tape log is a directory: catalog plus one CSV log per tape.
+    let mut tape_bytes = 0_f64;
+    let mut stack = vec![fixtures.workdir.path().join("tape-store")];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).expect("tape dir reads") {
+            let entry = entry.expect("tape entry reads");
+            let kind = entry.file_type().expect("tape entry type reads");
+            if kind.is_dir() {
+                stack.push(entry.path());
+            } else {
+                tape_bytes += std::fs::metadata(entry.path()).expect("metadata").len() as f64;
+            }
+        }
+    }
     println!(
         "history-load fixtures: {bars} vendor bars | parquet {parquet:.0} B ({:.1} B/bar) | \
-         csv {csv:.0} B ({:.1} B/bar) | sqlite {sqlite:.0} B ({:.1} B/tape-bar over \
+         csv {csv:.0} B ({:.1} B/bar) | tape-log {tape_bytes:.0} B ({:.1} B/tape-bar over \
          {} gap-filled bars)",
         parquet / bars,
         csv / bars,
-        sqlite / fixtures.tape_bars as f64,
+        tape_bytes / fixtures.tape_bars as f64,
         fixtures.tape_bars,
     );
 }
@@ -276,7 +286,7 @@ criterion_group!(
     benches,
     load_parquet,
     load_csv,
-    load_sqlite,
+    load_tape_log,
     tally_parquet,
     tally_csv
 );

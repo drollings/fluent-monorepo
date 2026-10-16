@@ -1,17 +1,20 @@
-//! Read-path scale: one-day reads and torn-month pagination across tape sizes.
+//! Read-path scale: one-day reads, torn-month pagination, and boot replay
+//! across tape sizes.
 //!
 //! Numbers only, never optimization: the enforced gate is the structural
-//! budget suite (`tests/read_budget.rs`), since absolute timings are
+//! budget suite (`tests/tape_budget.rs`), since absolute timings are
 //! machine-dependent. The control group that must not regress is the
 //! contiguous-tape read; the treatment is torn-tape pagination, which must
 //! stay bounded by the window — flat per-page cost as the tape grows —
 //! because planning now walks windowed stamps instead of the whole tape.
+//! Boot replay is O(tape) by allowance; the replay group records what that
+//! allowance costs at each size so a regression in the log tail is visible.
 
 use chrono::DateTime;
 use criterion::{Criterion, criterion_group, criterion_main};
 use protopyne_types::{Bar, Timeframe};
 use protopyne_store::{
-    AssetClass, CandleStore, FoldPolicy, PriceScale, ReadRequest, SqliteTape, StoreStorage,
+    AssetClass, CandleStore, FoldPolicy, MarketTape, PriceScale, ReadRequest, StoreStorage,
     TapeKey, TimeRange, WritePolicy,
 };
 
@@ -32,20 +35,21 @@ fn flat_bar(ts_ms: i64) -> Bar {
         .build()
 }
 
-/// Seed `months` of minute bars, dropping every sixth bar over days 15..19
-/// when `torn` — a holey zone the measured pages never touch, proving
-/// interior holes elsewhere do not move a distant page's cost. Seeding runs
-/// outside the measured loop; each day appends as one chunk.
-fn seed_tape(months: i64, torn: bool) -> (SqliteTape, tempfile::TempDir, std::path::PathBuf) {
+fn caps_for(root: &std::path::Path) -> fluent_wvr::CapabilitySet {
+    fluent_wvr::CapabilitySet::new().with(StoreStorage::new(root.to_path_buf()))
+}
+
+/// Seed `months` of minute bars on a file-backed tape, dropping every sixth
+/// bar over days 15..19 when `torn` — a holey zone the measured pages never
+/// touch, proving interior holes elsewhere do not move a distant page's
+/// cost. Seeding runs outside the measured loop; each day appends as one
+/// chunk.
+fn seed_tape(months: i64, torn: bool) -> (MarketTape, tempfile::TempDir, fluent_wvr::CapabilitySet) {
     let dir = tempfile::tempdir().expect("tempdir");
-    let db = dir.path().join("bench.db");
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .expect("bench runtime");
-    let caps = fluent_wvr::CapabilitySet::new().with(StoreStorage::new(db.clone()));
-    let tape = rt.block_on(fluent_wvr::CURRENT_CAPS.scope(caps, async {
-        let tape = SqliteTape::open(&db).expect("bench tape opens");
+    let root = dir.path().join("bench-store");
+    let caps = caps_for(&root);
+    fluent_wvr::CURRENT_CAPS.sync_scope(caps.clone(), || {
+        let tape = MarketTape::open(&root).expect("bench tape opens");
         tape.register(
             "BENCH",
             "bench-venue",
@@ -74,9 +78,8 @@ fn seed_tape(months: i64, torn: bool) -> (SqliteTape, tempfile::TempDir, std::pa
             tape.append(key, &chunk, WritePolicy::InsertIfAbsent)
                 .expect("append");
         }
-        tape
-    }));
-    (tape, dir, db)
+        (tape, dir, caps)
+    })
 }
 
 fn day_request(day: i64) -> ReadRequest {
@@ -95,15 +98,13 @@ fn day_request(day: i64) -> ReadRequest {
 }
 
 fn scoped_read(
-    rt: &tokio::runtime::Runtime,
-    db: &std::path::Path,
-    tape: &SqliteTape,
+    caps: &fluent_wvr::CapabilitySet,
+    tape: &MarketTape,
     req: &ReadRequest,
 ) -> usize {
-    let caps = fluent_wvr::CapabilitySet::new().with(StoreStorage::new(db.to_owned()));
-    rt.block_on(fluent_wvr::CURRENT_CAPS.scope(caps, async {
+    fluent_wvr::CURRENT_CAPS.sync_scope(caps.clone(), || {
         tape.read(req).expect("bench read serves").bars.len()
-    }))
+    })
 }
 
 fn read_one_day(c: &mut Criterion) {
@@ -111,14 +112,10 @@ fn read_one_day(c: &mut Criterion) {
     for months in [1, 3, 12] {
         for torn in [false, true] {
             let name = format!("{months}mo_{}", if torn { "torn" } else { "contiguous" });
-            let (tape, _dir, db) = seed_tape(months, torn);
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .expect("bench runtime");
+            let (tape, _dir, caps) = seed_tape(months, torn);
             let req = day_request(10);
             group.bench_function(name, |b| {
-                b.iter(|| scoped_read(&rt, &db, &tape, &req));
+                b.iter(|| scoped_read(&caps, &tape, &req));
             });
         }
     }
@@ -128,11 +125,7 @@ fn read_one_day(c: &mut Criterion) {
 fn paginate_torn_month(c: &mut Criterion) {
     let mut group = c.benchmark_group("paginate_torn_month");
     for months in [1, 3, 12] {
-        let (tape, _dir, db) = seed_tape(months, true);
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .expect("bench runtime");
+        let (tape, _dir, caps) = seed_tape(months, true);
         // Fourteen serving day reads over the contiguous prefix: per-page
         // cost must not grow with the tape — holey or whole — behind it.
         let reqs: Vec<ReadRequest> = (0..14).map(day_request).collect();
@@ -140,7 +133,7 @@ fn paginate_torn_month(c: &mut Criterion) {
             b.iter(|| {
                 let mut bars = 0_usize;
                 for req in &reqs {
-                    bars += scoped_read(&rt, &db, &tape, req);
+                    bars += scoped_read(&caps, &tape, req);
                 }
                 bars
             });
@@ -149,5 +142,22 @@ fn paginate_torn_month(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, read_one_day, paginate_torn_month);
+fn boot_replay(c: &mut Criterion) {
+    let mut group = c.benchmark_group("boot_replay");
+    for months in [1, 3, 12] {
+        let (_tape, dir, _caps) = seed_tape(months, false);
+        let root = dir.path().join("bench-store");
+        group.bench_function(format!("{months}mo"), |b| {
+            b.iter(|| {
+                let caps = caps_for(&root);
+                fluent_wvr::CURRENT_CAPS.sync_scope(caps, || {
+                    MarketTape::open(&root).expect("replay opens")
+                })
+            });
+        });
+    }
+    group.finish();
+}
+
+criterion_group!(benches, read_one_day, paginate_torn_month, boot_replay);
 criterion_main!(benches);

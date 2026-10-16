@@ -9,8 +9,8 @@
 use super::*;
 use crate::snapshot::test_snapshot::{SEAL_NOW_MS, varied_bars, with_seeded_tape};
 
-/// The canonical stored spelling of every leg, in order — what the SQLite
-/// tape keeps and what a sealed artifact must keep identically.
+/// The canonical stored spelling of every leg, in order — what the tape
+/// keeps and what a sealed artifact must keep identically.
 fn spellings(bars: &[protopyne_types::Bar]) -> Vec<String> {
     bars.iter()
         .flat_map(|bar| {
@@ -32,10 +32,11 @@ async fn sealed_then_read_changes_not_one_value() {
     let bars = varied_bars(64);
     let path = dir.path().to_path_buf();
     let source = bars.clone();
-    with_seeded_tape("ROUND", 2, &bars, |tape, key| {
+    with_seeded_tape("ROUND", 2, &bars, |registry, key| {
         let sealed = seal(
-            tape.catalog(),
+            registry,
             key,
+            &bars,
             &path,
             SealOptions::new().build(),
             SEAL_NOW_MS,
@@ -44,7 +45,7 @@ async fn sealed_then_read_changes_not_one_value() {
         assert_eq!(sealed.row_count, source.len() as u64);
         assert_eq!(sealed.first_ts_ms, source.first().unwrap().ts.timestamp_millis());
         assert_eq!(sealed.last_ts_ms, source.last().unwrap().ts.timestamp_millis());
-        let read = read_snapshot(tape.catalog(), key, &sealed.path).expect("read back");
+        let read = read_snapshot(registry, key, &sealed.path).expect("read back");
         assert_eq!(read, source, "the round-trip is the identity");
         assert_eq!(
             spellings(&read),
@@ -66,16 +67,17 @@ async fn corporate_action_adjustment_survives_the_round_trip() {
     );
     let path = dir.path().to_path_buf();
     let source = bars.clone();
-    with_seeded_tape("ADJ", 2, &bars, |tape, key| {
+    with_seeded_tape("ADJ", 2, &bars, |registry, key| {
         let sealed = seal(
-            tape.catalog(),
+            registry,
             key,
+            &bars,
             &path,
             SealOptions::new().build(),
             SEAL_NOW_MS,
         )
         .expect("seal succeeds");
-        let read = read_snapshot(tape.catalog(), key, &sealed.path).expect("read back");
+        let read = read_snapshot(registry, key, &sealed.path).expect("read back");
         assert_eq!(read, source, "the adjustment is carried, not dropped");
     })
     .await;

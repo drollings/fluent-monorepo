@@ -12,12 +12,12 @@ use crate::fold::FoldPolicy;
 use crate::fold::test_fold::{load_goldens, load_spy, seed_spy_slice};
 use crate::plan::SpanOrigin;
 use crate::range::TimeRange;
-use crate::sqlite_tape::test_setup::{VENUE, with_memory_caps};
+use crate::tape::test_setup::{VENUE, with_registry_caps};
 use crate::store::{CandleStore, ReadRequest};
 
 #[tokio::test]
 async fn truncate_edges_reports_partial_and_differs() {
-    with_memory_caps(async {
+    with_registry_caps(async {
         let goldens = load_goldens();
         let minute = load_spy(&goldens.complete_run.fixture);
         let slice = &minute[..10];

@@ -90,7 +90,12 @@ pub struct CommandStatus {
 /// byte order so the server-side swap is invisible on the wire. The store
 /// fields stay in the same order, and each is `None`-skipped so a view with
 /// no store reading on record serialises byte-identically to the form
-/// without them.
+/// without them. The tape fields follow the same rule: each is
+/// `None`-skipped and reports only once a tape read has been observed, so a
+/// server that never served through its tape keeps the pre-tape bytes. The
+/// last-miss tag rides the same stable-tag convention as the other
+/// display-enum fields (`"NoTape"`, `"UnsupportedTimeframe"`,
+/// `"UnknownSymbol"`, `"Denied"`, `"Store"`).
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct HealthView {
     /// Whether new entries currently route.
@@ -110,6 +115,27 @@ pub struct HealthView {
     /// Age of the newest committed bar in seconds, if known.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub store_watermark_age_secs: Option<u64>,
+    /// Tape reads the store permit denied, if any tape read was observed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tape_denied: Option<u64>,
+    /// The most recent tape-miss kind, if any miss was observed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tape_last_miss: Option<String>,
+    /// Tape reads with no tape configured, if any tape read was observed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tape_no_tape: Option<u64>,
+    /// Tape reads the durable tape served, if any tape read was observed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tape_served: Option<u64>,
+    /// Tape reads that failed for another store reason, if observed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tape_store_error: Option<u64>,
+    /// Tape reads whose symbol the tape does not hold, if observed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tape_unknown_symbol: Option<u64>,
+    /// Tape reads whose label named an unknown bar spacing, if observed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tape_unsupported_timeframe: Option<u64>,
     /// Trading state, as a stable string tag.
     pub trading_state: String,
     /// Serving crate version.

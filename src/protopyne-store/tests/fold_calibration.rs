@@ -14,7 +14,7 @@ use crate::fold::FoldPolicy;
 use crate::fold::test_fold::{FoldTally, load_goldens, load_spy, seed_spy_slice};
 use crate::plan::SpanPlan;
 use crate::range::TimeRange;
-use crate::sqlite_tape::test_setup::{VENUE, with_memory_caps};
+use crate::tape::test_setup::{VENUE, with_registry_caps};
 use crate::store::{CandleStore, ReadRequest};
 
 /// Render the measured tally for assertion messages: one line per check, so
@@ -92,7 +92,7 @@ fn spy_request(
 
 #[tokio::test]
 async fn mid_bucket_start_folds_like_the_complete_bucket() {
-    with_memory_caps(async {
+    with_registry_caps(async {
         let goldens = load_goldens();
         let minute = load_spy(&goldens.complete_run.fixture);
         let slice = &minute[..10];

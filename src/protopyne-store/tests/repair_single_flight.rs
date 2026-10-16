@@ -12,8 +12,8 @@ use crate::coverage::FreshnessPolicy;
 use crate::range::TimeRange;
 use crate::repair::{RecoveryCoordinator, RepairStatus};
 
-async fn full_series(
-    handle: &crate::handle::StoreHandle,
+fn full_series(
+    handle: &crate::tape::MarketTape,
     permit: &crate::capability::StoreStorage,
     first_ms: i64,
     end_ms: i64,
@@ -27,8 +27,7 @@ async fn full_series(
         policy: crate::fold::FoldPolicy::ExtendToFullBuckets,
     };
     handle
-        .read(permit, &request)
-        .await
+        .read_scoped(permit, &request)
         .expect("full read resolves")
         .bars
 }
@@ -38,14 +37,14 @@ async fn two_concurrent_passes_yield_one_repair_and_one_complete() {
     let dir = tempfile::tempdir().expect("tempdir");
     let file_bars = th::ascending_bars(0, 12);
     let csv = th::write_tape_csv(&dir, "spy.csv", &file_bars);
-    let (handle, permit, caps) = th::open_file_handle(&dir, "store.db").await;
+    let (handle, permit, caps) = th::open_file_handle(&dir, "store");
     // A torn tape: steps 5, 6, 7 missing, ends current.
     let mut held: Vec<protopyne_types::Bar> = file_bars[..5].to_vec();
     held.extend_from_slice(&file_bars[8..]);
     let (key, first_ms, end_ms) = fluent_wvr::CURRENT_CAPS
         .scope(caps.clone(), async {
-            let key = th::register_m1(&handle, &permit, "SPY").await;
-            th::seed_append(&handle, &permit, key, &held).await;
+            let key = th::register_m1(&handle, &permit, "SPY");
+            th::seed_append(&handle, &permit, key, &held);
             let first = file_bars.first().expect("nonempty").ts.timestamp_millis();
             let end = file_bars
                 .last()
@@ -75,7 +74,6 @@ async fn two_concurrent_passes_yield_one_repair_and_one_complete() {
         .scope(caps.clone(), async {
             coordinator
                 .plan(&permit, &[(key, want)], now, FreshnessPolicy::new().build())
-                .await
                 .expect("plan builds")
         })
         .await;
@@ -104,18 +102,18 @@ async fn two_concurrent_passes_yield_one_repair_and_one_complete() {
 
     let series = fluent_wvr::CURRENT_CAPS
         .scope(caps.clone(), async {
-            full_series(&handle, &permit, first_ms, end_ms).await
+            full_series(&handle, &permit, first_ms, end_ms)
         })
         .await;
     assert_eq!(series, file_bars, "the tape holds the whole file");
 
     // The single-pass reference: a second store, one pass, same plan shape.
     // The concurrent run must commit byte-identically to it.
-    let (solo_handle, solo_permit, solo_caps) = th::open_file_handle(&dir, "solo.db").await;
+    let (solo_handle, solo_permit, solo_caps) = th::open_file_handle(&dir, "solo");
     let solo_series = fluent_wvr::CURRENT_CAPS
         .scope(solo_caps.clone(), async {
-            let solo_key = th::register_m1(&solo_handle, &solo_permit, "SPY").await;
-            th::seed_append(&solo_handle, &solo_permit, solo_key, &held).await;
+            let solo_key = th::register_m1(&solo_handle, &solo_permit, "SPY");
+            th::seed_append(&solo_handle, &solo_permit, solo_key, &held);
             let solo_provider: std::sync::Arc<dyn crate::history::HistoryProvider> =
                 std::sync::Arc::new(
                     crate::history::FileHistory::new(csv, solo_key, th::server_parse)
@@ -135,12 +133,11 @@ async fn two_concurrent_passes_yield_one_repair_and_one_complete() {
                     now,
                     FreshnessPolicy::new().build(),
                 )
-                .await
                 .expect("plan builds");
             let reports = solo.run_once(&solo_permit, &solo_plan).await;
             assert_eq!(reports.len(), 1);
             assert_eq!(reports[0].status, RepairStatus::Repaired);
-            full_series(&solo_handle, &solo_permit, first_ms, end_ms).await
+            full_series(&solo_handle, &solo_permit, first_ms, end_ms)
         })
         .await;
     assert_eq!(

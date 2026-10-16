@@ -6,13 +6,13 @@
 //! "what the reader served" fails loudly instead of reaching a runner.
 
 use super::*;
-use protopyne_types::{Timeframe, validate_new_bar};
+use protopyne_types::{Bar, Timeframe, validate_new_bar};
 
 use crate::commit::test_tapes::{bar, stamp};
 use crate::fold::FoldPolicy;
 use crate::plan::SpanPlan;
 use crate::range::TimeRange;
-use crate::sqlite_tape::test_setup::{VENUE, seeded, with_memory_caps};
+use crate::tape::test_setup::{VENUE, seeded, with_registry_caps};
 use crate::store::CandleStore;
 
 fn ms(step: i64) -> i64 {
@@ -49,12 +49,12 @@ fn assert_ascending_and_valid(bars: &[Bar], context: &str) {
 
 #[tokio::test]
 async fn seed_resolve_read_agrees_on_a_direct_read() {
-    with_memory_caps(async {
+    with_registry_caps(async {
         let bars: Vec<Bar> = (0..10).map(|step| bar(step, "100")).collect();
         let (tape, key) = seeded("SPY", &bars).await;
         let request = read_request(Timeframe::M1, 0, 10);
         let coverage = tape.coverage(key).expect("coverage reads");
-        let plan = ReadPlan::resolve(tape.catalog(), coverage, &request).expect("plan resolves");
+        let plan = ReadPlan::resolve_for(Some((key.symbol_id, key.timeframe)), coverage, &request).expect("plan resolves");
         let series = tape.read(&request).expect("read serves");
         assert_eq!(series.bars.len(), 10);
         assert_ascending_and_valid(&series.bars, "direct read");
@@ -79,12 +79,12 @@ async fn seed_resolve_read_agrees_on_a_direct_read() {
 
 #[tokio::test]
 async fn seed_resolve_read_agrees_on_a_folded_read() {
-    with_memory_caps(async {
+    with_registry_caps(async {
         let bars: Vec<Bar> = (0..10).map(|step| bar(step, "100")).collect();
         let (tape, key) = seeded("SPY", &bars).await;
         let request = read_request(Timeframe::M5, 0, 10);
         let coverage = tape.coverage(key).expect("coverage reads");
-        let plan = ReadPlan::resolve(tape.catalog(), coverage, &request).expect("plan resolves");
+        let plan = ReadPlan::resolve_for(Some((key.symbol_id, key.timeframe)), coverage, &request).expect("plan resolves");
         let series = tape.read(&request).expect("folded read serves");
         assert_eq!(
             series.bars.len(),

@@ -9,7 +9,6 @@
 //! closes with an explicit, reported spread assumption.
 
 use std::future::Future;
-use std::path::{Path, PathBuf};
 use std::pin::Pin;
 
 use chrono::{DateTime, Utc};
@@ -19,7 +18,6 @@ use protopyne_store::{CandleStore, ReadRequest as TapeReadRequest, SpanPlan, Tap
 use protopyne_types::{Bar, Money};
 use protopyne_venue::{AccountEvent, AccountSnapshot, BalanceEntry, CorporateEvent, DryRunOutcome, Fill, LegExecution, OrderIntent, OrderRecord, PaperConfig, PaperVenue, Position, Quote, Venue, VenueError};
 
-use crate::csv::load_bars_csv;
 use crate::error::ServerError;
 
 /// How quotes are derived from closed-bar closes in the prototype.
@@ -99,43 +97,16 @@ pub fn quote_for_bar(bar: &Bar, config: &BacktestConfig) -> Option<Quote> {
     )
 }
 
-/// Load the first history file that parses, trying `candidates` in order.
-///
-/// A missing/unreadable file is skipped; a file with a bad header stops the
-/// walk (reconfiguration is required, not another guess); a bad row is
-/// skipped to the next candidate. Exhaustion without a usable file is an
-/// error. Composes the shared first-accept combinator rather than
-/// hand-rolling the fallback loop.
-pub fn load_bars_with_fallback(candidates: &[PathBuf]) -> Result<Vec<Bar>, ServerError> {
-    let outcome = fluent_concurrency::ladder::first_accept_in_order_sync(
-        candidates.iter().cloned(),
-        |path: PathBuf| match load_bars_csv(path.as_path()) {
-            Ok(bars) => Ok(Some(bars)),
-            Err(ServerError::BadRow { .. } | ServerError::Io(_)) => Ok(None),
-            Err(other) => Err(other),
-        },
-        |e: &ServerError| matches!(e, ServerError::BadHeader(_)),
-    );
-    match outcome {
-        Ok(Some(bars)) => Ok(bars),
-        Ok(None) => Err(ServerError::Backtest("no candidate history file parsed".to_owned())),
-        Err(e) => Err(e),
-    }
-}
-
-/// Load history from exactly one path (no fallback).
-pub fn load_bars_single(path: &Path) -> Result<Vec<Bar>, ServerError> {
-    load_bars_csv(path)
-}
-
-/// Where a run's bars come from: a CSV file set, a caller-supplied tape, or
+/// Where a run's bars come from: a file set, a caller-supplied tape, or
 /// a durable store.
 ///
-/// The CSV arm keeps the exact `load_bars_with_fallback` semantics
-/// (first-usable-wins, `BadHeader` stops, `BadRow`/`Io` skips); the dynamic
-/// arm carries an in-memory tape (synthetic fixtures, a live-captured
-/// session, a second symbol with no CSV) with the same fail-closed shape —
-/// an empty tape refuses just like an empty candidate set. The tape arm
+/// The files arm carries CSV or Parquet candidates in fallback order and
+/// walks them through the one candidate ladder (a missing or unreadable file
+/// skips to the next; any parse or structural refusal stops the walk).
+/// The dynamic arm carries an in-memory tape (synthetic fixtures, a
+/// live-captured session, a second symbol with no file) with the same
+/// fail-closed shape — an empty tape refuses just like an empty candidate
+/// set. The tape arm
 /// plans and reads a span through a [`CandleStore`], the same read path a
 /// chart or a replay uses; it is a **substrate arm**, not a third parsing
 /// path, and the store stays outside [`BacktestVenue`]. Every arm loads
@@ -143,11 +114,8 @@ pub fn load_bars_single(path: &Path) -> Result<Vec<Bar>, ServerError> {
 /// histories replay through the identical decide path.
 #[derive(Debug, Clone)]
 pub enum HistorySource {
-    /// CSV candidates in fallback order.
-    Csv(Vec<PathBuf>),
-    /// Parquet candidates in fallback order: a missing candidate skips to
-    /// the next, anything else stops the walk naming that candidate.
-    Parquet(Vec<PathBuf>),
+    /// File candidates in fallback order (`.csv` or `.parquet` by extension).
+    Files(Vec<std::path::PathBuf>),
     /// Caller-supplied bars, replayed as given.
     Dynamic(Vec<Bar>),
     /// A planned read of a durable tape through a [`CandleStore`]. The `key`
@@ -195,13 +163,8 @@ pub fn load_history(
     store: Option<&dyn CandleStore>,
 ) -> Result<LoadedHistory, ServerError> {
     match source {
-        HistorySource::Csv(candidates) => {
-            Ok(LoadedHistory::untaped(load_bars_with_fallback(candidates)?))
-        }
-        HistorySource::Parquet(candidates) => {
-            Ok(LoadedHistory::untaped(crate::parquet::load_bars_parquet_with_fallback(
-                candidates,
-            )?))
+        HistorySource::Files(candidates) => {
+            Ok(LoadedHistory::untaped(crate::history::load_bars_candidates(candidates)?))
         }
         HistorySource::Dynamic(bars) => {
             if bars.is_empty() {

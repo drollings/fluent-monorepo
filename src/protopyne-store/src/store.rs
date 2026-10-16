@@ -1,12 +1,9 @@
 //! The synchronous candle interface: what the store promises every caller.
 //!
-//! [`CandleStore`] is deliberately synchronous and object-safe. Both
-//! prospective backends (`rusqlite` today, the Parquet reader later) are
-//! synchronous, so `async fn` on the trait would box a future per read for
-//! no benefit — and the concurrency skill forbids the `async_trait` macro
-//! that would hide that cost. Async callers go through
-//! [`StoreHandle`](crate::handle::StoreHandle), which owns the pool and the
-//! concurrency limiters; this trait is the data contract underneath it.
+//! [`CandleStore`] is deliberately synchronous and object-safe. The
+//! file-backed engine is synchronous, so `async fn` on the trait would box
+//! a future per read for no benefit — and the concurrency skill forbids the
+//! `async_trait` macro that would hide that cost.
 //!
 //! One timeframe per symbol per store file: rows are keyed `(symbol_id,
 //! ts_ms)` with no timeframe column, so two spacings for one symbol would
@@ -17,9 +14,11 @@
 //! read`] returns bars ascending by `ts` with every adjacent pair passing
 //! `validate_new_bar`, no matter what order the rows were written in. A
 //! runner that trusts its input order inherits safety from this boundary
-//! instead of from a file's line order.
+//! instead of from a file's line order. [`order_and_validate`] is the one
+//! spelling of that boundary: every served read proves its output through
+//! it, before and after the fold.
 
-use protopyne_types::{Bar, Timeframe, Validate};
+use protopyne_types::{Bar, Timeframe, Validate, validate_new_bar};
 
 use crate::catalog::Market;
 
@@ -141,6 +140,28 @@ pub struct AppendOutcome {
     pub rejected: usize,
 }
 
+/// Sort ascending and prove it: every adjacent pair passes the shared
+/// monotonicity check. This is the boundary every reader inherits — a tape
+/// that was written shuffled still reads back as a valid series.
+pub(crate) fn order_and_validate(mut bars: Vec<Bar>) -> Result<Vec<Bar>, StoreError> {
+    bars.sort_by_key(|bar| bar.ts);
+    let mut last: Option<&Bar> = None;
+    for bar in &bars {
+        validate_new_bar(last, bar)
+            .map_err(|e| StoreError::InvalidBar(format!("stored series out of order: {e}")))?;
+        last = Some(bar);
+    }
+    Ok(bars)
+}
+
+#[cfg(test)]
+#[path = "../tests/store_ordering.rs"]
+mod tests_ordering;
+
+#[cfg(test)]
+#[path = "../tests/store_coverage.rs"]
+mod tests_coverage;
+
 /// The synchronous, object-safe candle interface.
 pub trait CandleStore: Send + Sync + std::fmt::Debug {
     /// Every registered market, in id order.
@@ -153,9 +174,9 @@ pub trait CandleStore: Send + Sync + std::fmt::Debug {
     /// `Ok(None)`.
     fn coverage(&self, key: TapeKey) -> Result<Option<Coverage>, StoreError>;
     /// Store a batch of committed bars under `policy`. Every representable
-    /// row lands atomically — the transaction covers the storable set, so a
-    /// database failure stores none of it. Rows the market's price scale
-    /// cannot represent are refused per-row before the transaction opens and
+    /// row lands atomically — the log batch commits or refuses as one, so a
+    /// write failure stores none of it. Rows the market's price scale
+    /// cannot represent are refused per-row before anything is logged and
     /// counted in [`AppendOutcome::rejected`]; the representable remainder
     /// still lands. Bars are validated before the write, so a malformed
     /// batch refuses without storing its good prefix.

@@ -1,27 +1,23 @@
 //! Store error taxonomy: the three-way distinction callers act on must not
 //! collapse into one string.
 
-use common_core::error::SqliteError;
 use fluent_wvr::WorkError;
 
 use super::*;
 
 #[test]
 fn only_contention_is_retryable() {
-    let busy = StoreError::Busy("database is locked".to_owned());
-    assert!(
-        busy.is_retryable(),
-        "a locked database is worth trying again"
-    );
+    let busy = StoreError::Busy("store is busy".to_owned());
+    assert!(busy.is_retryable(), "contention is worth trying again");
 
     for permanent in [
         StoreError::InvalidBar("high below open".to_owned()),
+        StoreError::Capacity("tape SPY M1 holds 4 bars: projected 5 exceeds max 4".to_owned()),
         StoreError::Plan(PlanError::BlankSymbol),
         StoreError::Snapshot(SnapshotError::Inconsistent {
             reason: "high below open".to_owned(),
         }),
         StoreError::Io(std::io::Error::new(std::io::ErrorKind::NotFound, "no such tape").into()),
-        StoreError::Sqlite(SqliteError(rusqlite::Error::InvalidQuery)),
     ] {
         assert!(
             !permanent.is_retryable(),

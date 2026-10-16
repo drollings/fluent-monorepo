@@ -196,6 +196,34 @@ impl Timeframe {
         }
     }
 
+    /// Whether `self` spans a whole number of `base` bars with no remainder:
+    /// the one whole-multiple check behind load-time folding, read planning,
+    /// and toolbar group math. Equal spacings are whole multiples of each
+    /// other; anything finer or non-multiple is not.
+    #[must_use]
+    pub fn is_whole_multiple_of(self, base: Self) -> bool {
+        self.duration_ms() % base.duration_ms() == 0
+    }
+
+    /// Parse a toolbar label (`1M`/`5M`/`15M`/`1H`/`4H`/`1D`): the one
+    /// toolbar-label bridge. Other chart spellings ride
+    /// [`from_resolution`](Self::from_resolution); anything else is an
+    /// unknown label, not a guess. The `1M`-style codes read as months on a
+    /// data chart, so they are toolbar labels first and never resolve as
+    /// months here.
+    #[must_use]
+    pub fn from_chart_label(label: &str) -> Option<Self> {
+        match label {
+            "1M" => Some(Self::M1),
+            "5M" => Some(Self::M5),
+            "15M" => Some(Self::M15),
+            "1H" => Some(Self::H1),
+            "4H" => Some(Self::H4),
+            "1D" => Some(Self::D1),
+            other => Self::from_resolution(other),
+        }
+    }
+
     /// Parse a Pine abbreviation from `getTimeframeAbbrev`
     /// (`5S`/`10S`/`15S`/`30S`/`1`/`3`/`5`/`10`/`15`/`30`/`60`/`120`/`240`/
     /// `D`/`W`). The single Pine↔Rust map: no second abbrev table may be

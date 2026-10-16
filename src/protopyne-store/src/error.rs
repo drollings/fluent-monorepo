@@ -10,7 +10,7 @@
 //! Nothing here panics or substitutes a value. A refusal always carries the
 //! reason it refused.
 
-use common_core::error::{IoError, SqliteError};
+use common_core::error::IoError;
 use fluent_wvr::WorkError;
 use protopyne_types::Timeframe;
 use thiserror::Error;
@@ -23,12 +23,8 @@ pub enum StoreError {
     /// The underlying file system refused the operation.
     #[error("store I/O failure: {0}")]
     Io(#[from] IoError),
-    /// The database refused the statement or lost its connection. A closed
-    /// connection lands here and **never** reads as "no rows".
-    #[error("store database failure: {0}")]
-    Sqlite(#[from] SqliteError),
-    /// The database was locked past its busy timeout. The only variant worth
-    /// retrying: the data is there, the writer simply had its turn first.
+    /// The store was locked past its busy timeout. The only variant worth
+    /// retrying: contention elsewhere, never a fact about the data.
     #[error("store is busy: {0}")]
     Busy(String),
     /// A bar failed the shared structural validation, or a stored row could
@@ -67,6 +63,13 @@ pub enum StoreError {
     /// a durable identity must never be recycled under a live tape.
     #[error("market catalog full: {0}")]
     CatalogFull(String),
+    /// The tape reached its bar-capacity bound. Refusing rather than
+    /// growing: the bound measures producer memory capacity (the whole
+    /// store replays into memory at boot), never the trustworthiness of
+    /// the data. Permanent: the configuration must change, and no retry
+    /// of the same configuration can succeed.
+    #[error("tape capacity exceeded: {0}")]
+    Capacity(String),
     /// A read could not be resolved into a plan.
     #[error("read plan refused: {0}")]
     Plan(#[from] PlanError),
@@ -91,7 +94,7 @@ pub enum StoreError {
     Snapshot(#[from] SnapshotError),
     /// A requested operation needs a build feature this binary was not
     /// compiled with. Permanent: the feature must be enabled and the binary
-    /// rebuilt. Reported rather than failing to compile, so the SQLite
+    /// rebuilt. Reported rather than failing to compile, so the tape
     /// surface stays fully usable in a lean build.
     #[error("store feature disabled: {0}")]
     FeatureDisabled(String),
@@ -112,38 +115,6 @@ impl StoreError {
 impl From<StoreError> for WorkError {
     fn from(err: StoreError) -> Self {
         Self::Execution(err.to_string())
-    }
-}
-
-/// A raw `rusqlite` failure is a store database failure.
-impl From<rusqlite::Error> for StoreError {
-    fn from(err: rusqlite::Error) -> Self {
-        Self::Sqlite(err.into())
-    }
-}
-
-/// The workspace database taxonomy folds into the store taxonomy: the
-/// actionable variants keep their meaning, and the remainder — surfaces
-/// the store never calls — report as an unclassified database failure
-/// carrying the original text. Permanent, never retryable, never dropped.
-impl From<fluent_db::error::DbError> for StoreError {
-    fn from(err: fluent_db::error::DbError) -> Self {
-        use fluent_db::error::DbError;
-        match err {
-            DbError::Sqlite(inner) => Self::Sqlite(inner),
-            DbError::Busy(detail) => Self::Busy(detail),
-            DbError::PermissionDenied(detail) => Self::Denied(detail),
-            DbError::DuplicateEntry(detail) => Self::Duplicate(detail),
-            other => Self::Sqlite(common_core::error::SqliteError(
-                rusqlite::Error::SqliteFailure(
-                    rusqlite::ffi::Error {
-                        code: rusqlite::ErrorCode::Unknown,
-                        extended_code: 1,
-                    },
-                    Some(other.to_string()),
-                ),
-            )),
-        }
     }
 }
 

@@ -16,15 +16,15 @@ async fn second_repair_over_the_same_span_stores_nothing() {
     let dir = tempfile::tempdir().expect("tempdir");
     let file_bars = th::ascending_bars(0, 10);
     let csv = th::write_tape_csv(&dir, "spy.csv", &file_bars);
-    let (handle, permit, caps) = th::open_file_handle(&dir, "store.db").await;
+    let (handle, permit, caps) = th::open_file_handle(&dir, "store");
     // Steps 4 and 5 missing from an otherwise current tape.
     let mut held: Vec<protopyne_types::Bar> = file_bars[..4].to_vec();
     held.extend_from_slice(&file_bars[6..]);
     let handle = std::sync::Arc::new(handle);
     let key = fluent_wvr::CURRENT_CAPS
         .scope(caps.clone(), async {
-            let key = th::register_m1(&handle, &permit, "SPY").await;
-            th::seed_append(&handle, &permit, key, &held).await;
+            let key = th::register_m1(&handle, &permit, "SPY");
+            th::seed_append(&handle, &permit, key, &held);
             key
         })
         .await;
@@ -60,8 +60,7 @@ async fn second_repair_over_the_same_span_stores_nothing() {
         let permit = permit.clone();
         async move {
             handle
-                .read(&permit, &request)
-                .await
+                .read_scoped(&permit, &request)
                 .expect("read resolves")
                 .bars
         }
@@ -71,7 +70,6 @@ async fn second_repair_over_the_same_span_stores_nothing() {
         .scope(caps.clone(), async {
             coordinator
                 .plan(&permit, &[(key, want)], now, FreshnessPolicy::new().build())
-                .await
                 .expect("plan builds")
         })
         .await;

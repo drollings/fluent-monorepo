@@ -20,8 +20,8 @@ use crate::catalog::PriceScale;
 use crate::commit::test_tapes::{bar, ohlc};
 use crate::fold::FoldPolicy;
 use crate::range::TimeRange;
-use crate::sqlite_tape::test_scale::{FIT, REFUSE, canonical};
-use crate::sqlite_tape::test_setup::{VENUE, m1_key, memory_tape, with_memory_caps};
+use crate::catalog::test_scale::{FIT, REFUSE, canonical};
+use crate::tape::test_setup::{VENUE, m1_key, memory_tape, with_registry_caps};
 
 /// Tally of the round-trip sweep: counts plus every mismatch named.
 struct ScaleReport {
@@ -46,7 +46,7 @@ fn assert_scale_parity(report: &ScaleReport, context: &str) {
 
 #[tokio::test]
 async fn fitting_values_round_trip_byte_identically() {
-    with_memory_caps(async {
+    with_registry_caps(async {
         let tape = memory_tape();
         let mut report = ScaleReport {
             compared: 0,
@@ -117,7 +117,7 @@ async fn fitting_values_round_trip_byte_identically() {
 
 #[tokio::test]
 async fn unrepresentable_values_refuse_and_leave_no_row() {
-    with_memory_caps(async {
+    with_registry_caps(async {
         let tape = memory_tape();
         for (i, case) in REFUSE.iter().enumerate() {
             let symbol = format!("REFUSE{}_{}", case.scale, i);
@@ -215,7 +215,7 @@ async fn unrepresentable_values_refuse_and_leave_no_row() {
 
 #[tokio::test]
 async fn refusal_names_the_first_offending_leg() {
-    with_memory_caps(async {
+    with_registry_caps(async {
         let tape = memory_tape();
         let symbol_id = tape
             .register(
@@ -261,7 +261,7 @@ async fn scale_construction_is_validated_at_both_entries() {
     // enforced step: an unvalidated builder value cannot register.
     let unvalidated = PriceScale::new().digits(29).build();
     assert!(protopyne_types::Validate::validate(&unvalidated).is_err());
-    with_memory_caps(async {
+    with_registry_caps(async {
         let tape = memory_tape();
         match tape.register(
             "WIDE",

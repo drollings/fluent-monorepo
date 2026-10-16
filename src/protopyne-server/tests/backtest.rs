@@ -103,7 +103,7 @@ fn empty_history_is_rejected() {
 
 #[tokio::test]
 async fn backtest_venue_shares_paper_fill_behavior() {
-    let bars = crate::load_bars_csv(&test_data()).expect("vendored history loads");
+    let bars = crate::csv::load_bars_csv(&test_data()).expect("vendored history loads");
     let bar = &bars[0];
     let venue = BacktestVenue::new(
         config(),
@@ -143,7 +143,7 @@ async fn backtest_venue_shares_paper_fill_behavior() {
 #[tokio::test]
 async fn backtest_venue_honors_explicit_paper_tuning() {
     use protopyne_venue::FeeSchedule;
-    let bars = crate::load_bars_csv(&test_data()).expect("vendored history loads");
+    let bars = crate::csv::load_bars_csv(&test_data()).expect("vendored history loads");
     let bar = &bars[0];
     let tuned = PaperConfig::new()
         .fees(FeeSchedule::new().per_contract(money("1.30")).build())
@@ -172,7 +172,7 @@ async fn backtest_venue_honors_explicit_paper_tuning() {
 #[test]
 fn backtest_snapshot_delegates_to_inner_venue() {
     use protopyne_venue::PaperVenue;
-    let bars = crate::load_bars_csv(&test_data()).expect("vendored history loads");
+    let bars = crate::csv::load_bars_csv(&test_data()).expect("vendored history loads");
     let paper_cfg = PaperConfig::new().build();
     let paper = PaperVenue::new(paper_cfg.clone());
     let venue = BacktestVenue::new(config(), bars[..8].to_vec(), paper_cfg)
@@ -188,33 +188,34 @@ fn backtest_snapshot_delegates_to_inner_venue() {
 
 #[test]
 fn fallback_loader_prefers_first_usable_source() {
+    use crate::history::{load_bars_candidates, load_bars_file};
     let missing = PathBuf::from("/nonexistent/history-a.csv");
-    let bars = load_bars_with_fallback(&[missing.clone(), test_data()]).expect("falls through");
+    let bars = load_bars_candidates(&[missing.clone(), test_data()]).expect("falls through");
     assert!(!bars.is_empty());
     let none: Vec<PathBuf> = vec![missing];
-    assert!(load_bars_with_fallback(&none).is_err());
-    assert!(load_bars_with_fallback(&[]).is_err());
-    assert!(load_bars_single(&test_data()).is_ok());
+    assert!(load_bars_candidates(&none).is_err());
+    assert!(load_bars_candidates(&[]).is_err());
+    assert!(load_bars_file(&test_data()).is_ok());
 }
 
 #[test]
-fn dynamic_history_loads_beside_csv() {
+fn dynamic_history_loads_beside_files() {
     use crate::backtest::{HistorySource, load_history};
 
-    // Same tape, two sources: the dynamic variant must reproduce the CSV
+    // Same tape, two sources: the dynamic variant must reproduce the files
     // path bar for bar — the harness treats them interchangeably.
-    let from_csv =
-        load_history(&HistorySource::Csv(vec![test_data()]), None).expect("csv loads").bars;
-    assert!(!from_csv.is_empty());
-    let replayed = load_history(&HistorySource::Dynamic(from_csv.clone()), None)
+    let from_files =
+        load_history(&HistorySource::Files(vec![test_data()]), None).expect("files load").bars;
+    assert!(!from_files.is_empty());
+    let replayed = load_history(&HistorySource::Dynamic(from_files.clone()), None)
         .expect("dynamic loads")
         .bars;
-    assert_eq!(replayed, from_csv);
-    // Fail-closed mirrors the CSV path: no candidates and no bars both
+    assert_eq!(replayed, from_files);
+    // Fail-closed mirrors the files path: no candidates and no bars both
     // refuse instead of running on an empty tape.
-    assert!(load_history(&HistorySource::Csv(Vec::new()), None).is_err());
+    assert!(load_history(&HistorySource::Files(Vec::new()), None).is_err());
     assert!(load_history(&HistorySource::Dynamic(Vec::new()), None).is_err());
     assert!(
-        load_history(&HistorySource::Csv(vec![PathBuf::from("/nonexistent/x.csv")]), None).is_err()
+        load_history(&HistorySource::Files(vec![PathBuf::from("/nonexistent/x.csv")]), None).is_err()
     );
 }

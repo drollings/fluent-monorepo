@@ -1,12 +1,12 @@
 //! Shared price-scale representability corpus.
 //!
-//! One home for the `(scale, value)` pairs that both the SQLite append path
+//! One home for the `(scale, value)` pairs that both the tape append path
 //! and the sealed-snapshot writer must agree about, so the two representability
 //! checks cannot drift: a value the store accepts but a snapshot refuses (or
 //! vice versa) would be a silent inconsistency between the working tape and
 //! its sealed artifact.
 //!
-//! Included once from `sqlite_tape.rs`; consumer suites `use` it, never
+//! Included once from `catalog.rs`; consumer suites `use` it, never
 //! include it again. `dead_code` is allowed here so the single home stays
 //! single without per-consumer shims.
 

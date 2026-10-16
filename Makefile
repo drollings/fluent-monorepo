@@ -36,6 +36,10 @@ ROUTER_LOG := /tmp/coral-router.out
 # file: `make protopyne-start PROTOPYNE_PORT=9061`.
 PROTOPYNE_SERVER_BIN := target/debug/protopyne-server
 PROTOPYNE_HISTORY := src/protopyne-server/tests/data/SPY_15M.csv
+# Durable tape store root (empty by default: the server serves the boot
+# history; set to a store root to serve symbol-scoped chart reads through
+# the tape): `make protopyne-start PROTOPYNE_TAPE=/data/tape`.
+PROTOPYNE_TAPE ?=
 PROTOPYNE_PORT ?= 9060
 PROTOPYNE_BIND_ADDR := 127.0.0.1:$(PROTOPYNE_PORT)
 PROTOPYNE_HEALTH_URL := http://$(PROTOPYNE_BIND_ADDR)/health
@@ -342,17 +346,17 @@ protopyne-stop: ## Stop protopyne-server
 	$(stop-protopyne)
 
 .PHONY: protopyne-start
-protopyne-start: $(PROTOPYNE_SERVER_BIN) ## Build (if needed), (re)start protopyne-server on :9060, and wait for /health (PROTOPYNE_PORT=<p> and PROTOPYNE_HISTORY=<csv> override; stops the old server first)
+protopyne-start: $(PROTOPYNE_SERVER_BIN) ## Build (if needed), (re)start protopyne-server on :9060, and wait for /health (PROTOPYNE_PORT=<p>, PROTOPYNE_HISTORY=<csv>, and PROTOPYNE_TAPE=<root> override; stops the old server first)
 	$(stop-protopyne)
 	$(Q)echo "Starting protopyne-server on $(PROTOPYNE_BIND_ADDR)"
-	$(Q)nohup $(PROTOPYNE_SERVER_BIN) --bind $(PROTOPYNE_BIND_ADDR) --history $(PROTOPYNE_HISTORY) > $(PROTOPYNE_LOG) 2>&1 &
+	$(Q)nohup $(PROTOPYNE_SERVER_BIN) --bind $(PROTOPYNE_BIND_ADDR) --history $(PROTOPYNE_HISTORY) $(if $(PROTOPYNE_TAPE),--tape $(PROTOPYNE_TAPE)) > $(PROTOPYNE_LOG) 2>&1 &
 	$(Q)bash $(ROUTER_WAIT_SCRIPT) $(PROTOPYNE_HEALTH_URL) $(PROTOPYNE_START_TIMEOUT_S) $(PROTOPYNE_LOG) protopyne-server
 
 .PHONY: protopyne-test
-protopyne-test: $(PROTOPYNE_SERVER_BIN) ## Run the five trading-crate protopyne-rs suites + a --help dry-run of the built binary (stops a running server first; chart crates ride the workspace gate)
+protopyne-test: $(PROTOPYNE_SERVER_BIN) ## Run the six trading-crate protopyne-rs suites + a --help dry-run of the built binary (stops a running server first; chart crates ride the workspace gate)
 	$(stop-protopyne)
 	$(Q)echo "Running protopyne-rs unit + integration suites"
-	$(Q)cargo test -p protopyne-types -p protopyne-kernels -p protopyne-strategy -p protopyne-venue -p protopyne-server --all-features
+	$(Q)cargo test -p protopyne-types -p protopyne-kernels -p protopyne-strategy -p protopyne-venue -p protopyne-server -p protopyne-store --all-features
 	$(Q)echo "Validating protopyne-server --help"
 	$(Q)$(PROTOPYNE_SERVER_BIN) --help > /dev/null && echo "All protopyne tests passed." || (echo "ERROR: protopyne-server did NOT successfully run."; exit 1)
 

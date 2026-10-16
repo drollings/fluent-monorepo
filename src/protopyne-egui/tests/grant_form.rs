@@ -439,7 +439,7 @@ async fn loosening_submission_surfaces_the_core_refusal() {
     // patch through the form, then submit it. The core's tighten refusal
     // must surface (not a local form refusal), and the live grant must be
     // untouched — the UI minted nothing.
-    let history = protopyne_server::load_bars_csv(
+    let history = protopyne_server::load_bars_file(
         &manifest_dir().join("../protopyne-server/tests/data/SPY_15M.csv"),
     )
     .expect("vendored history loads");
@@ -505,7 +505,7 @@ async fn submit_past_preview_meets_the_core_when_the_grant_moves() {
     // The Gateway variant's live case: a preview succeeds, the live grant
     // narrows underneath, and the submit then carries the core's refusal —
     // still distinguishable from local validation.
-    let history = protopyne_server::load_bars_csv(
+    let history = protopyne_server::load_bars_file(
         &manifest_dir().join("../protopyne-server/tests/data/SPY_15M.csv"),
     )
     .expect("vendored history loads");

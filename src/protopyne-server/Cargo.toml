@@ -47,6 +47,8 @@ reqwest = { workspace = true }
 tokio-tungstenite = "0.26"
 syn = { workspace = true }
 tempfile = { workspace = true }
+arrow = { version = "59", default-features = false }
+parquet = { version = "59", default-features = false, features = ["arrow", "snap", "zstd"] }
 
 [[bench]]
 name = "backtest_path"

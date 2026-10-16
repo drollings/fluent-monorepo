@@ -1,19 +1,19 @@
-//! One capability token per store file: who may touch this tape.
+//! One capability token per store root: who may touch this tape.
 //!
 //! [`StoreStorage`] mirrors `venue :: journal :: VenueStorage`. The session
-//! mints exactly one per store file and installs it in the batch/scope
+//! mints exactly one per store root and installs it in the batch/scope
 //! capability set; every store effect checks it before touching the
-//! database, so a task that was never granted the store is denied, not
+//! tape, so a task that was never granted the store is denied, not
 //! defaulted.
 //!
 //! Two layers share the work, because the two store surfaces take different
 //! shapes. The synchronous [`CandleStore`](crate::store::CandleStore)
 //! interface carries no permit parameter, so its implementation holds the
 //! permit it was opened with and checks its *presence* in the task-local
-//! set: that proves the task was granted store access at all. Methods that
-//! do take a permit ([`StoreHandle`](crate::handle::StoreHandle)'s async
-//! surface, shaped like the journal's) additionally verify the permit is
-//! *bound to this file*, which closes the multi-file case. Either layer
+//! set: that proves the task was granted store access at all. Callers that
+//! do carry a permit ([`MarketTape::read_scoped`](crate::tape::MarketTape::read_scoped),
+//! shaped like the journal's) additionally verify the permit is *bound to
+//! this store root*, which closes the multi-store case. Either layer
 //! refuses with [`StoreError::Denied`](crate::error::StoreError::Denied).
 
 use std::path::{Path, PathBuf};
@@ -22,9 +22,9 @@ use fluent_wvr::capability::check_capability;
 
 use crate::error::StoreError;
 
-/// Capability token binding store access to one supervised session's file.
+/// Capability token binding store access to one supervised session's root.
 ///
-/// The session mints exactly one per store file and installs it in the
+/// The session mints exactly one per store root and installs it in the
 /// batch/scope capability set; handlers carry it the way journal callers
 /// carry `VenueStorage`. For an ephemeral in-memory store the binding is
 /// the literal path `":memory:"`.

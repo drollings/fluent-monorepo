@@ -20,7 +20,8 @@ use fluent_concurrency::stream::StreamAbort;
 use protopyne_types::{Bar, Timeframe};
 
 use crate::catalog::AssetClass;
-use crate::handle::{StoreConfig, StoreHandle};
+use crate::store::CandleStore;
+use crate::tape::MarketTape;
 use crate::history::{BoxFuture, FetchPage, FetchRequest, HistoryError, HistoryProvider};
 use crate::key::TapeKey;
 use crate::range::TimeRange;
@@ -216,59 +217,34 @@ impl HistoryProvider for ScriptedProvider {
     }
 }
 
-/// The database token the pool's own calls require, alongside the store
-/// permit.
-pub fn db_token() -> fluent_db::capability::DbCapability {
-    fluent_db::capability::DbCapability::open_with_config(
-        ":memory:",
-        fluent_db::pool::PoolConfig::new(1),
-    )
-    .expect("token-only in-memory pool opens")
-}
-
-/// Both tokens a session installs: the file-bound store permit and the
-/// database token.
-pub fn both_caps(permit: &crate::capability::StoreStorage) -> fluent_wvr::CapabilitySet {
-    fluent_wvr::CapabilitySet::new()
-        .with(permit.clone())
-        .with(db_token())
-}
-
-/// Open a file-backed handle with both tokens installed. The caller keeps
-/// the permit and installs the returned capability set around each gated
-/// effect.
-pub async fn open_file_handle(
+/// Open a file-backed tape with the root-bound token installed. The caller
+/// keeps the permit and installs the returned capability set around each
+/// gated effect. Opening itself gates nothing; registration and appends
+/// inside the scope succeed, outside they are denied.
+pub fn open_file_handle(
     dir: &tempfile::TempDir,
     name: &str,
 ) -> (
-    StoreHandle,
+    MarketTape,
     crate::capability::StoreStorage,
     fluent_wvr::CapabilitySet,
 ) {
-    let path = dir.path().join(name);
-    let config = StoreConfig::new()
-        .path(path.to_string_lossy().into_owned())
-        .build();
-    let permit = crate::capability::StoreStorage::new(path);
-    let caps = both_caps(&permit);
-    let handle = fluent_wvr::CURRENT_CAPS
-        .scope(caps.clone(), async {
-            StoreHandle::open(&config).await.expect("handle opens")
-        })
-        .await;
-    (handle, permit, caps)
+    let root = dir.path().join(name);
+    let permit = crate::capability::StoreStorage::new(root.clone());
+    let caps = fluent_wvr::CapabilitySet::new().with(permit.clone());
+    let tape = MarketTape::open(&root).expect("tape opens");
+    (tape, permit, caps)
 }
 
 /// Register `symbol` at a two-digit scale on the M1 tape. Returns the tape
 /// key; the caller holds the capability scope.
-pub async fn register_m1(
-    handle: &StoreHandle,
-    permit: &crate::capability::StoreStorage,
+pub fn register_m1(
+    store: &MarketTape,
+    _permit: &crate::capability::StoreStorage,
     symbol: &str,
 ) -> TapeKey {
-    let symbol_id = handle
+    let symbol_id = store
         .register(
-            permit,
             symbol,
             VENUE,
             AssetClass::Stock,
@@ -276,7 +252,6 @@ pub async fn register_m1(
             "UTC",
             Timeframe::M1,
         )
-        .await
         .expect("registration succeeds");
     TapeKey {
         symbol_id,
@@ -286,15 +261,14 @@ pub async fn register_m1(
 
 /// Append `bars` under `InsertIfAbsent`, asserting the full batch lands.
 /// The caller holds the capability scope.
-pub async fn seed_append(
-    handle: &crate::handle::StoreHandle,
-    permit: &crate::capability::StoreStorage,
+pub fn seed_append(
+    store: &MarketTape,
+    _permit: &crate::capability::StoreStorage,
     key: TapeKey,
     bars: &[Bar],
 ) {
-    let outcome = handle
-        .append(permit, key, bars, crate::store::WritePolicy::InsertIfAbsent)
-        .await
+    let outcome = store
+        .append(key, bars, crate::store::WritePolicy::InsertIfAbsent)
         .expect("seed appends");
     assert_eq!(outcome.inserted, bars.len());
     assert_eq!(outcome.conflicts, 0);

@@ -22,7 +22,7 @@ use crate::service::Shared;
 use crate::service::{
     DEFAULT_REPLAY_CHECKPOINT_EVERY, TapeMiss, TapeMissKind, TapeServe, apply_arm, chart_bars_of,
     grant_tiers_of, health_view, live_grant, overlay_series_of, parse_patch, preview_arm_of,
-    replay_view_of, tape_serve, timeframe_of_label,
+    replay_view_of, tape_serve,
 };
 
 /// The fallback latch: edge-triggered, so a sustained fallback warns once and
@@ -88,43 +88,42 @@ fn overlay_error((status, reason): (axum::http::StatusCode, String)) -> GatewayE
 /// Upward-resample factor for a requested timeframe, over the boot
 /// history's actual base.
 ///
-/// A coarser requested timeframe that is a whole multiple of the base folds
-/// through the bucket-anchored fold; a finer request, a non-multiple, or an
-/// unknown spelling serves the base unchanged — a chart cannot synthesize a
-/// finer grid, and folding across a non-multiple would split base bars
-/// between buckets.
-fn resample_group(base: Timeframe, timeframe: &str) -> usize {
-    let Some(requested) = timeframe_of_label(timeframe) else {
-        return 1;
-    };
-    let base_ms = base.duration_ms().max(1);
-    let requested_ms = requested.duration_ms();
-    if requested_ms <= base_ms || requested_ms % base_ms != 0 {
-        return 1;
-    }
-    (requested_ms / base_ms) as usize
-}
-
 /// Fold the boot history to the requested timeframe when it holds at least
 /// one full group, through the bucket-anchored fold under complete-only
 /// edges: whole buckets emit stamped at the bucket start, short or torn
-/// buckets are omitted rather than fabricated into partial bars. A short
-/// history that cannot fill a coarser bar serves the base unchanged; a long
-/// history with no whole bucket serves an empty window, and the overlay
-/// builders refuse that window the same way they refuse any empty history.
-/// Boot history is validated at load; an unvalidated row serves the base
-/// unchanged instead of stranding the read.
-fn resampled_history(history: &[Bar], base: Timeframe, timeframe: &str) -> Vec<Bar> {
-    let Some(requested) = timeframe_of_label(timeframe) else {
-        return history.to_vec();
+/// buckets are omitted rather than fabricated into partial bars. A request
+/// the base history cannot express — an unknown label, a finer spacing, or
+/// a non-multiple — refuses naming the base spacing instead of silently
+/// serving base-spacing bars. A short history that cannot fill a coarser bar
+/// serves the base unchanged; a long history with no whole bucket serves an
+/// empty window, and the overlay builders refuse that window the same way
+/// they refuse any empty history. Boot history is validated at load; an
+/// unvalidated row serves the base unchanged instead of stranding the read.
+fn resampled_history(
+    history: &[Bar],
+    base: Timeframe,
+    timeframe: &str,
+) -> Result<Vec<Bar>, GatewayError> {
+    let Some(requested) = Timeframe::from_chart_label(timeframe) else {
+        return Err(GatewayError::Malformed(format!(
+            "cannot serve {timeframe:?} bars from {base} history: unknown timeframe"
+        )));
     };
-    let group = resample_group(base, timeframe);
-    if group > 1 && history.len() >= group {
-        fold_bars_edges(history, requested, FoldEdges::CompleteOnly)
-            .unwrap_or_else(|_| history.to_vec())
-    } else {
-        history.to_vec()
+    if requested == base {
+        return Ok(history.to_vec());
     }
+    if !requested.is_whole_multiple_of(base) {
+        return Err(GatewayError::Malformed(format!(
+            "cannot serve {requested} bars from {base} history: {requested} is not a whole multiple of one {base} bar"
+        )));
+    }
+    let group = (requested.duration_ms() / base.duration_ms()) as usize;
+    if history.len() < group {
+        return Ok(history.to_vec());
+    }
+    fold_bars_edges(history, requested, FoldEdges::CompleteOnly).map_err(|error| {
+        GatewayError::Malformed(format!("cannot fold {base} history into {requested}: {error}"))
+    })
 }
 
 /// Read gateway over live server state (`AppState` is not `Debug`, so the
@@ -228,7 +227,7 @@ impl TerminalGateway for ServerGateway {
                     &self.state.history,
                     self.state.history_timeframe,
                     timeframe,
-                )))
+                )?))
             }
         }
     }
@@ -242,7 +241,7 @@ impl TerminalGateway for ServerGateway {
     ) -> Result<OverlaySeries, GatewayError> {
         validate_symbol_timeframe(symbol, timeframe)?;
         overlay_series_of(
-            &resampled_history(&self.state.history, self.state.history_timeframe, timeframe),
+            &resampled_history(&self.state.history, self.state.history_timeframe, timeframe)?,
             kind,
             period,
             2.0,

@@ -454,12 +454,12 @@ fn agreement_against(minute: &[Bar], vendor: &[Bar]) -> (usize, usize) {
 pub async fn seed_spy_slice(
     symbol: &str,
     bars: &[Bar],
-) -> (crate::sqlite_tape::SqliteTape, crate::key::TapeKey) {
+) -> (crate::tape::MarketTape, crate::key::TapeKey) {
     use crate::catalog::{AssetClass, PriceScale};
-    use crate::sqlite_tape::test_setup::{VENUE, m1_key, memory_tape, with_memory_caps};
+    use crate::tape::test_setup::{VENUE, m1_key, memory_tape, with_registry_caps};
     use crate::store::{CandleStore as _, WritePolicy};
 
-    with_memory_caps(async {
+    with_registry_caps(async {
         let tape = memory_tape();
         let symbol_id = tape
             .register(

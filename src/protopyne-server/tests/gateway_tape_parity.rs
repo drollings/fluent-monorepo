@@ -14,6 +14,7 @@ use chrono::DateTime;
 use super::*;
 use crate::common_tape as tape;
 use crate::service::{ServerConfig, TapeReader, serve_with_tape};
+use protopyne_store::StoreStorage;
 use protopyne_types::Timeframe;
 use protopyne_view::{ChartBars, TerminalGateway};
 
@@ -22,7 +23,7 @@ fn boot_history() -> Vec<Bar> {
         .join("tests")
         .join("data")
         .join("SPY_15M.csv");
-    crate::load_bars_csv(&path).expect("vendored history loads")
+    crate::csv::load_bars_csv(&path).expect("vendored history loads")
 }
 
 /// `count` flat 15-minute bars at `price` on a fixed stamp grid: a series
@@ -54,6 +55,7 @@ async fn store_backed_read_matches_the_route_over_the_same_bars() {
     let reader = TapeReader {
         store: Arc::new(store),
         caps,
+        permit: StoreStorage::new(":memory:".into()),
         venue: tape::VENUE.to_owned(),
         limit: crate::DEFAULT_TAPE_LIMIT,
     };
@@ -123,6 +125,7 @@ async fn a_divergent_tape_serves_the_tape_series() {
     let reader = TapeReader {
         store: Arc::new(store),
         caps,
+        permit: StoreStorage::new(":memory:".into()),
         venue: tape::VENUE.to_owned(),
         limit: crate::DEFAULT_TAPE_LIMIT,
     };
@@ -162,6 +165,7 @@ async fn a_denied_permit_falls_back_and_counts_denied() {
         store: Arc::new(store),
         // Deliberately no store permit: the read must be denied.
         caps: fluent_wvr::CapabilitySet::new(),
+        permit: StoreStorage::new(":memory:".into()),
         venue: tape::VENUE.to_owned(),
         limit: crate::DEFAULT_TAPE_LIMIT,
     };
@@ -183,5 +187,52 @@ async fn a_denied_permit_falls_back_and_counts_denied() {
     assert_eq!(stats.served, 0, "the tape did not serve");
     assert_eq!(stats.denied, 1, "the denial is counted");
     assert_eq!(stats.last_miss, Some(TapeMissKind::Denied));
+    handle.shutdown().await;
+}
+
+/// A miss/serve/miss sequence tallies each counter exactly: the latch edges
+/// (warn once per entry, one log per recovery) are pinned by the latch unit
+/// tests, and this pins the counts the same reads record — including that a
+/// served read leaves the last miss standing, so the most recent fault stays
+/// visible until the next one.
+#[tokio::test]
+async fn miss_serve_miss_tallies_each_counter() {
+    let bars = boot_history();
+    let caps = tape::caps();
+    let (store, _key, _request) = tape::seed(&bars, "SPY", Timeframe::M15, &caps);
+    let reader = TapeReader {
+        store: Arc::new(store),
+        caps,
+        permit: StoreStorage::new(":memory:".into()),
+        venue: tape::VENUE.to_owned(),
+        limit: crate::DEFAULT_TAPE_LIMIT,
+    };
+    let config = ServerConfig::new().bind("127.0.0.1:0".to_owned()).build();
+    let handle = serve_with_tape(config, bars.clone(), Some(reader))
+        .await
+        .expect("server boots with a tape");
+    let gateway = handle.gateway();
+
+    // Unknown symbol: the tape cannot serve it, so the boot history serves
+    // the read and the miss is counted.
+    let fallback = gateway.chart_bars_for("NOPE", "15M").expect("fallback read");
+    assert_eq!(fallback.rows.len(), bars.len(), "the fallback serves the boot history");
+    // Unknown label: the tape records the miss, then the fallback itself
+    // refuses — the counter still tallies the attempt.
+    assert!(gateway.chart_bars_for("SPY", "9M").is_err(), "no ladder serves 9M");
+    // Served: the tape's series, counted once.
+    let served = gateway.chart_bars_for("SPY", "15M").expect("store-backed read");
+    assert_eq!(served.rows.len(), bars.len());
+    // A second miss after the serve: the counters keep every outcome.
+    gateway.chart_bars_for("NOPE", "15M").expect("fallback read");
+
+    let stats = handle.tape_serve_stats();
+    assert_eq!(stats.served, 1, "one tape serve");
+    assert_eq!(stats.unknown_symbol, 2, "two unknown-symbol misses");
+    assert_eq!(stats.unsupported_timeframe, 1, "one unsupported-label miss");
+    assert_eq!(stats.no_tape, 0);
+    assert_eq!(stats.denied, 0);
+    assert_eq!(stats.store_error, 0);
+    assert_eq!(stats.last_miss, Some(TapeMissKind::UnknownSymbol));
     handle.shutdown().await;
 }

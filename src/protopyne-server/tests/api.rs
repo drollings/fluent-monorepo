@@ -9,7 +9,7 @@ fn history() -> Vec<Bar> {
         .join("tests")
         .join("data")
         .join("SPY_15M.csv");
-    crate::load_bars_csv(&path).expect("vendored history loads")
+    crate::csv::load_bars_csv(&path).expect("vendored history loads")
 }
 
 fn test_grant(id: &str, max_trades: u32) -> Grant {

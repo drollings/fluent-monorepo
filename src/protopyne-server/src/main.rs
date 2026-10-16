@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use protopyne_server::{ServerConfig, load_bars_with_fallback, serve};
+use protopyne_server::{ServerConfig, load_bars_candidates, open_tape_reader, serve_with_tape};
 
 /// Startup arguments. Parsing lives here (never in library code): malformed
 /// flags exit loudly instead of binding half-configured.
@@ -11,10 +11,11 @@ struct Args {
     config: Option<PathBuf>,
     bind: Option<String>,
     history: Option<PathBuf>,
+    tape: Option<PathBuf>,
 }
 
 fn parse_args(raw: &[String]) -> Result<Args, String> {
-    let mut args = Args { config: None, bind: None, history: None };
+    let mut args = Args { config: None, bind: None, history: None, tape: None };
     let mut rest = raw.iter().skip(1);
     while let Some(flag) = rest.next() {
         match flag.as_str() {
@@ -29,6 +30,11 @@ fn parse_args(raw: &[String]) -> Result<Args, String> {
             "--history" => {
                 args.history = Some(PathBuf::from(
                     rest.next().ok_or("--history needs a path")?,
+                ));
+            }
+            "--tape" => {
+                args.tape = Some(PathBuf::from(
+                    rest.next().ok_or("--tape needs a store root")?,
                 ));
             }
             unknown => return Err(format!("unknown flag {unknown}")),
@@ -59,12 +65,15 @@ const USAGE: &str = "\
 protopyne-server: paper-trading HTTP surface over versioned bar history.
 
 Usage:
-  protopyne-server [--config PATH] [--bind ADDR] --history PATH
+  protopyne-server [--config PATH] [--bind ADDR] --history PATH [--tape ROOT]
 
 Flags:
   --config PATH    JSON server config (defaults for every field when absent)
   --bind ADDR      override the bind address (default 127.0.0.1:9060)
-  --history PATH   bar-history CSV (also accepted as history_path in --config)
+  --history PATH   bar-history CSV or Parquet (also accepted as history_path in --config)
+  --tape ROOT      durable tape store root (also accepted as tape_path in --config);
+                   symbol-scoped chart reads plan through the tape, falling back
+                   to the boot history per read
   --help, -h       print this message
   --version, -V    print the version
 
@@ -92,13 +101,22 @@ async fn run(raw: &[String]) -> Result<(), String> {
     if let Some(bind) = args.bind {
         config.bind = bind;
     }
+    if let Some(tape) = args.tape {
+        config.tape_path = Some(tape.to_string_lossy().into_owned());
+    }
     let history_path = args
         .history
         .or_else(|| config.history_path.clone().map(PathBuf::from))
         .ok_or("no history: pass --history or set history_path in the config")?;
-    let history = load_bars_with_fallback(std::slice::from_ref(&history_path))
+    let history = load_bars_candidates(std::slice::from_ref(&history_path))
         .map_err(|e| format!("history failed to load: {e}"))?;
-    let handle = serve(config, history).await.map_err(|e| e.to_string())?;
+    let reader = config
+        .tape_path
+        .as_deref()
+        .map(|root| open_tape_reader(std::path::Path::new(root)))
+        .transpose()
+        .map_err(|e| e.to_string())?;
+    let handle = serve_with_tape(config, history, reader).await.map_err(|e| e.to_string())?;
     println!("protopyne-server listening on {}", handle.addr);
     let _ = tokio::signal::ctrl_c().await;
     handle.shutdown().await;

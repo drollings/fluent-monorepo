@@ -21,10 +21,11 @@ async fn sealed_artifact_reads_identically_through_both_readers() {
             .build(),
     );
     let source = bars.clone();
-    with_seeded_tape("PARITY", 2, &bars, |tape, key| {
+    with_seeded_tape("PARITY", 2, &bars, |registry, key| {
         let sealed = seal(
-            tape.catalog(),
+            registry,
             key,
+            &bars,
             dir.path(),
             SealOptions::new().build(),
             SEAL_NOW_MS,

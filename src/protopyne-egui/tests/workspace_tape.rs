@@ -14,7 +14,7 @@ use chrono::DateTime;
 use protopyne_chart_model::ChartRow;
 use protopyne_server::{DEFAULT_TAPE_LIMIT, ServerConfig, TapeReader, serve_with_tape};
 use protopyne_store::{
-    AssetClass, CandleStore as _, PriceScale, SqliteTape, StoreStorage, TapeKey, WritePolicy,
+    AssetClass, CandleStore as _, MarketTape, PriceScale, StoreStorage, TapeKey, WritePolicy,
 };
 use protopyne_types::{Bar, Timeframe};
 
@@ -58,8 +58,8 @@ fn caps() -> fluent_wvr::CapabilitySet {
     fluent_wvr::CapabilitySet::new().with(StoreStorage::new(":memory:".into()))
 }
 
-fn seed_tape(bars: &[Bar]) -> SqliteTape {
-    let tape = SqliteTape::open_in_memory().expect("ephemeral tape opens");
+fn seed_tape(bars: &[Bar]) -> MarketTape {
+    let tape = MarketTape::open_in_memory().expect("ephemeral tape opens");
     fluent_wvr::CURRENT_CAPS.sync_scope(caps(), || {
         let symbol_id = tape
             .register(
@@ -100,6 +100,7 @@ async fn a_store_backed_switch_replans_and_paints_headlessly() {
     let reader = TapeReader {
         store: Arc::new(seed_tape(&tape)),
         caps: caps(),
+        permit: StoreStorage::new(":memory:".into()),
         venue: VENUE.to_owned(),
         limit: DEFAULT_TAPE_LIMIT,
     };

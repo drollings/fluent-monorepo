@@ -18,8 +18,8 @@
 //!
 //! Per-symbol exclusion uses idempotence rather than a lock: a second
 //! concurrent repair of the same span re-appends the same bars, observes
-//! `inserted == 0`, and reports [`RepairStatus::AlreadyComplete`]. No lock is
-//! held across any `.await`.
+//! `inserted == 0`, and reports [`RepairStatus::AlreadyComplete`]. The
+//! store itself is synchronous, so no lock is held across any `.await`.
 
 use std::collections::HashMap;
 use std::convert::Infallible;
@@ -39,11 +39,11 @@ use protopyne_types::Validate as _;
 use crate::capability::{StoreStorage, check_binding, check_present};
 use crate::coverage::{Coverage, FreshnessPolicy, GapClass};
 use crate::error::StoreError;
-use crate::handle::StoreHandle;
+use crate::tape::MarketTape;
 use crate::history::{FetchRequest, HistoryError, HistoryProvider};
 use crate::key::{SymbolId, TapeKey};
 use crate::range::TimeRange;
-use crate::store::WritePolicy;
+use crate::store::{CandleStore, WritePolicy};
 
 /// Why a repair pass fills. Mirrors the classifier's repair verdicts: the
 /// worker consumes the verdict and never re-derives which spans to fill.
@@ -367,9 +367,8 @@ enum FillError {
 /// empty outcome rather than an error, so the caller can tell "no data" from
 /// "failed".
 async fn fetch_and_append(
-    handle: &StoreHandle,
+    store: &MarketTape,
     provider: &dyn HistoryProvider,
-    permit: &StoreStorage,
     key: TapeKey,
     span: TimeRange,
 ) -> Result<FillOutcome, FillError> {
@@ -391,9 +390,8 @@ async fn fetch_and_append(
             rejected: 0,
         });
     }
-    let outcome = handle
-        .append(permit, key, &fetched, WritePolicy::InsertIfAbsent)
-        .await
+    let outcome = store
+        .append(key, &fetched, WritePolicy::InsertIfAbsent)
         .map_err(FillError::Store)?;
     Ok(FillOutcome {
         fetched: fetched.len(),
@@ -409,9 +407,8 @@ async fn fetch_and_append(
 /// provider or store failure reports as [`StoreError`], since a single-shot
 /// fill never retries. Returns `(inserted, conflicts)`.
 pub(crate) async fn fill_headroom(
-    handle: &StoreHandle,
+    store: &MarketTape,
     provider: &dyn HistoryProvider,
-    permit: &StoreStorage,
     key: TapeKey,
     spans: &[TimeRange],
     max_span_ms: u64,
@@ -421,7 +418,7 @@ pub(crate) async fn fill_headroom(
     for span in spans {
         let bounded =
             bound_span(*span, max_span_ms, provider.horizon()).map_err(StoreError::History)?;
-        let outcome = fetch_and_append(handle, provider, permit, key, bounded)
+        let outcome = fetch_and_append(store, provider, key, bounded)
             .await
             .map_err(|err| match err {
                 FillError::History(HistoryError::Io(io)) => StoreError::Io(io),
@@ -447,9 +444,8 @@ pub(crate) async fn fill_headroom(
 /// stored rows read `Repaired` and pure collisions read `AlreadyComplete`,
 /// which is how a concurrent duplicate resolves without a lock.
 pub(crate) async fn repair_spans(
-    handle: &StoreHandle,
+    store: &MarketTape,
     provider: &dyn HistoryProvider,
-    permit: &StoreStorage,
     key: TapeKey,
     wanted: TimeRange,
     spans: &[TimeRange],
@@ -484,7 +480,7 @@ pub(crate) async fn repair_spans(
             Ok(bounded) => bounded,
             Err(detail) => return report(RepairStatus::Unavailable, detail, 0, 0),
         };
-        match fetch_and_append(handle, provider, permit, key, bounded).await {
+        match fetch_and_append(store, provider, key, bounded).await {
             Err(FillError::History(err)) => {
                 return report(
                     classify_history_error(&err),
@@ -544,25 +540,19 @@ pub(crate) async fn repair_spans(
     }
 }
 
-/// One symbol's repair as a supervised unit: synchronous `execute`, blocking
-/// work offloaded, never inline.
+/// One symbol's repair as a supervised unit: synchronous `execute`, one
+/// attempt, never inline sleeps.
 ///
 /// `execute` validates the repair bounds through `check_for_execute`,
-/// gates on the file-bound permit before consulting the task-local set, and
-/// hands the fetch-and-append to the store handle's bounded pool through the
-/// workspace's canonical sync-to-async bridge — the same offload shape as
-/// every database work unit, so supervision (timeout, retry, cancellation)
-/// applies unchanged. It performs one attempt and never sleeps; the retry
-/// loop lives in the coordinator, where sleeping belongs.
-///
-/// The bridge drives pool-backed work, which offloads blocking database
-/// calls onto the runtime: call from a multi-thread runtime worker (the
-/// supervised-batch context). On a current-thread runtime the pool cannot
-/// spawn its blocking offload, and the attempt reports instead of running —
-/// loudly, never hanging.
+/// gates on the root-bound permit before consulting the task-local set,
+/// and then blocks on one fetch-and-append: the store is synchronous and
+/// in-memory, so there is no blocking I/O to offload and no pool between
+/// the worker and the tape. Supervision (timeout, retry, cancellation)
+/// applies through the `WorkUnit` boundary unchanged. The retry loop lives
+/// in the coordinator, where sleeping belongs.
 #[derive(Debug, Clone)]
 pub struct RepairWorker {
-    handle: Arc<StoreHandle>,
+    store: Arc<MarketTape>,
     provider: Arc<dyn HistoryProvider>,
     permit: StoreStorage,
     key: TapeKey,
@@ -579,7 +569,7 @@ impl RepairWorker {
     /// would read as work.
     #[must_use]
     pub fn new(
-        handle: Arc<StoreHandle>,
+        store: Arc<MarketTape>,
         provider: Arc<dyn HistoryProvider>,
         permit: StoreStorage,
         key: TapeKey,
@@ -602,7 +592,7 @@ impl RepairWorker {
             spans.len()
         );
         Self {
-            handle,
+            store,
             provider,
             permit,
             key,
@@ -625,9 +615,8 @@ impl RepairWorker {
     /// two cannot disagree about what an attempt does.
     pub async fn repair_attempt(&self) -> SymbolRepair {
         repair_spans(
-            &self.handle,
+            &self.store,
             self.provider.as_ref(),
-            &self.permit,
             self.key,
             self.wanted,
             &self.spans,
@@ -651,37 +640,12 @@ impl WorkUnit for RepairWorker {
         &[]
     }
 
-    fn execute(&self, ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
+    fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         protopyne_types::check_for_execute(&self.config, "repair config invalid")?;
-        check_binding(&self.permit, self.handle.path()).map_err(WorkError::from)?;
-        check_present(&self.permit).map_err(WorkError::from)?;
-        let handle = Arc::clone(&self.handle);
-        let provider = Arc::clone(&self.provider);
-        let permit = self.permit.clone();
-        let (key, wanted, spans, reason, max_span_ms) = (
-            self.key,
-            self.wanted,
-            self.spans.clone(),
-            self.reason,
-            self.config.max_repair_span_ms,
-        );
-        let unit = fluent_db::wvr::DbWorkUnit::builder()
-            .name(self.name.clone())
-            .op(move |_ctx: &WorkContext| {
-                let repair = common_core::runtime::block_on(repair_spans(
-                    &handle,
-                    provider.as_ref(),
-                    &permit,
-                    key,
-                    wanted,
-                    &spans,
-                    reason,
-                    max_span_ms,
-                ));
-                WorkOutput::typed("repair attempt complete", &repair)
-            })
-            .build();
-        unit.execute(ctx)
+        check_binding(&self.permit, self.store.root()).map_err(WorkError::from)?;
+        check_present(self.store.permit()).map_err(WorkError::from)?;
+        let repair = common_core::runtime::block_on(self.repair_attempt());
+        WorkOutput::typed("repair attempt complete", &repair)
     }
 }
 
@@ -697,7 +661,7 @@ impl_component!(RepairWorker);
 
 /// Owns repair passes: planning, bounded fan-out, retry, and cancellation.
 ///
-/// The coordinator holds the store handle, one provider per symbol, and the
+/// The coordinator holds the store, one provider per symbol, and the
 /// repair bounds. A pass plans coverage into spans, repairs symbols through
 /// a bounded pool, retries `Deferred` outcomes under capped backoff with a
 /// connectivity re-check at the top of every iteration, and re-sorts results
@@ -705,7 +669,7 @@ impl_component!(RepairWorker);
 /// without backing off; [`cancel`](Self::cancel) releases the whole pass.
 #[derive(Clone)]
 pub struct RecoveryCoordinator {
-    handle: Arc<StoreHandle>,
+    store: Arc<MarketTape>,
     providers: HashMap<SymbolId, Arc<dyn HistoryProvider>>,
     config: RepairConfig,
     runtime: Arc<dyn fluent_wvr::Runtime>,
@@ -724,17 +688,17 @@ impl std::fmt::Debug for RecoveryCoordinator {
 }
 
 impl RecoveryCoordinator {
-    /// Coordinate repairs over `handle` with one provider per symbol id. The
+    /// Coordinate repairs over `store` with one provider per symbol id. The
     /// configuration is validated fail-closed: an incoherent bound refuses
     /// here, not mid-pass.
     pub fn new(
-        handle: Arc<StoreHandle>,
+        store: Arc<MarketTape>,
         providers: Vec<(SymbolId, Arc<dyn HistoryProvider>)>,
         config: RepairConfig,
     ) -> Result<Self, StoreError> {
         config.validate().map_err(StoreError::Config)?;
         Ok(Self {
-            handle,
+            store,
             providers: providers.into_iter().collect(),
             config,
             runtime: fluent_concurrency::tokio_runtime(),
@@ -761,7 +725,7 @@ impl RecoveryCoordinator {
     /// Release the current pass, if any. In-flight attempts observe it at
     /// the top of their next iteration and at the pool submit boundary, so
     /// cancellation never strands an attempt mid-append: appends are atomic
-    /// transactions either way.
+    /// batches either way.
     pub fn cancel(&self) {
         self.abort.cancel();
     }
@@ -778,16 +742,17 @@ impl RecoveryCoordinator {
     /// terminal entry rather than failing the whole plan: one unplannable
     /// symbol must not pin the pass. A store that cannot be reached fails the
     /// plan loudly instead of planning against imagined coverage.
-    pub async fn plan(
+    pub fn plan(
         &self,
         permit: &StoreStorage,
         items: &[(TapeKey, TimeRange)],
         now_ms: i64,
         freshness: FreshnessPolicy,
     ) -> Result<RecoveryPlan, StoreError> {
+        check_binding(permit, self.store.root())?;
         let mut repairs = Vec::with_capacity(items.len());
         for (key, want) in items {
-            let coverage = self.handle.coverage(permit, *key).await?;
+            let coverage = self.store.coverage(*key)?;
             let class =
                 crate::coverage::classify(coverage.clone(), now_ms, key.timeframe, freshness);
             let (reason, spans) = spans_for_want(&class, coverage.as_ref(), want);
@@ -836,6 +801,21 @@ impl RecoveryCoordinator {
     pub async fn run_once(&self, permit: &StoreStorage, plan: &RecoveryPlan) -> Vec<SymbolRepair> {
         if plan.is_empty() {
             return Vec::new();
+        }
+        if let Err(err) = check_binding(permit, self.store.root()) {
+            let detail = err.to_string();
+            return plan
+                .repairs
+                .iter()
+                .map(|repair| SymbolRepair {
+                    status: RepairStatus::Unavailable,
+                    attempts: 0,
+                    inserted: 0,
+                    conflicts: 0,
+                    detail: detail.clone(),
+                    ..repair.clone()
+                })
+                .collect();
         }
         if self.in_flight.swap(true, Ordering::AcqRel) {
             return plan
@@ -935,7 +915,7 @@ impl RecoveryCoordinator {
             ));
         };
         let worker = RepairWorker::new(
-            Arc::clone(&self.handle),
+            Arc::clone(&self.store),
             Arc::clone(provider),
             permit.clone(),
             planned.key,

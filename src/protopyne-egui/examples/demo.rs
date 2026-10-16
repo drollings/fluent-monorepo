@@ -34,7 +34,7 @@ fn is_parquet(path: &Path) -> bool {
 /// demo's own refusal: the loader answers empty, the shell decides that
 /// means nothing to draw.
 fn load_bars(path: &Path) -> Result<Vec<Bar>, String> {
-    let bars = protopyne_server::load_bars_any(path)
+    let bars = protopyne_server::load_bars_file(path)
         .map_err(|e| format!("parse {}: {e}", path.display()))?;
     if bars.is_empty() {
         return Err(format!("no bars in {}", path.display()));
@@ -80,11 +80,9 @@ fn seed_base_frames(
     let targets: Vec<Timeframe> = TimeframeKey::all()
         .into_iter()
         .map(TimeframeKey::timeframe)
-        .filter(|target| {
-            *target == base_grid || target.duration_ms() % base_grid.duration_ms() == 0
-        })
+        .filter(|target| target.is_whole_multiple_of(base_grid))
         .collect();
-    let frames = protopyne_server::fold_frames(&bars, base_grid, &targets)
+    let frames = protopyne_server::fold_frames(&bars, base_grid, &targets, protopyne_types::FoldEdges::CompleteOnly)
         .map_err(|e| format!("tally {}: {e}", path.display()))?;
     for (timeframe, frame) in frames {
         let key =

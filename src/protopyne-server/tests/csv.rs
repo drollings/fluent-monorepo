@@ -1,5 +1,5 @@
 use super::*;
-use crate::load_bars_with_fallback;
+use crate::history::load_bars_candidates;
 use std::path::PathBuf;
 
 fn test_data_path() -> PathBuf {
@@ -147,20 +147,22 @@ fn rejects_out_of_order_row_with_line_and_rule() {
 }
 
 #[test]
-fn fallback_advances_past_structurally_invalid_file() {
-    use std::io::Write as _;
-    let mut bad = tempfile::NamedTempFile::new().expect("temp file");
-    writeln!(
-        bad,
-        "time,open,high,low,close,Volume\n1767344400,686.03,683.82,686.62,686.56,19063"
+fn fallback_stops_on_a_structurally_invalid_file() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let bad_path = dir.path().join("bad.csv");
+    std::fs::write(
+        &bad_path,
+        "time,open,high,low,close,Volume\n1767344400,686.03,683.82,686.62,686.56,19063",
     )
     .expect("write bad csv");
-    let bad_path = bad.path().to_path_buf();
     assert!(matches!(
         load_bars_csv(&bad_path),
         Err(ServerError::BadRow { .. })
     ));
-    let bars = load_bars_with_fallback(&[bad_path, test_data_path()]).expect("falls through to good file");
-    // Same trimmed fixture as `spy_15m_ingest_golden` above: 11 data rows.
-    assert_eq!(bars.len(), 11);
+    let err = load_bars_candidates(&[bad_path, test_data_path()])
+        .expect_err("a corrupt artifact stops the walk instead of serving the next file");
+    assert!(
+        matches!(err, ServerError::BadRow { .. }),
+        "the ladder stops in the row shape, got: {err:?}"
+    );
 }

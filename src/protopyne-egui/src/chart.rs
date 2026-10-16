@@ -91,30 +91,14 @@ impl TimeframeKey {
         }
     }
 
-    /// The store/kernel grid spacing behind this key: the one mapping from
-    /// the toolbar's spelling onto [`Timeframe`](protopyne_types::Timeframe),
+    /// The store/kernel grid spacing behind this key: resolved through the
+    /// one toolbar-label bridge
+    /// ([`Timeframe::from_chart_label`](protopyne_types::Timeframe::from_chart_label)),
     /// so load-time folding and read planning cannot disagree about it.
     #[must_use]
     pub fn timeframe(self) -> protopyne_types::Timeframe {
-        match self {
-            Self::M1 => protopyne_types::Timeframe::M1,
-            Self::M5 => protopyne_types::Timeframe::M5,
-            Self::M15 => protopyne_types::Timeframe::M15,
-            Self::H1 => protopyne_types::Timeframe::H1,
-            Self::H4 => protopyne_types::Timeframe::H4,
-            Self::D1 => protopyne_types::Timeframe::D1,
-        }
-    }
-
-    /// Resample factor over the `M15` slot (`1` where a native file exists).
-    #[must_use]
-    pub fn m15_group(self) -> usize {
-        match self {
-            Self::M1 | Self::M5 | Self::M15 => 1,
-            Self::H1 => 4,
-            Self::H4 => 16,
-            Self::D1 => 96,
-        }
+        protopyne_types::Timeframe::from_chart_label(self.label())
+            .expect("every toolbar label resolves on the store grid")
     }
 }
 

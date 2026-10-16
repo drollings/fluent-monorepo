@@ -65,6 +65,13 @@ fn sample_health() -> HealthView {
         store_open_gaps: None,
         store_reachable: None,
         store_watermark_age_secs: None,
+        tape_denied: None,
+        tape_last_miss: None,
+        tape_no_tape: None,
+        tape_served: None,
+        tape_store_error: None,
+        tape_unknown_symbol: None,
+        tape_unsupported_timeframe: None,
         trading_state: "ExitOnly".to_owned(),
         version: "0.2.0".to_owned(),
     }
@@ -255,6 +262,13 @@ fn health_view_round_trips_with_command_echo() {
         store_open_gaps: None,
         store_reachable: None,
         store_watermark_age_secs: None,
+        tape_denied: None,
+        tape_last_miss: None,
+        tape_no_tape: None,
+        tape_served: None,
+        tape_store_error: None,
+        tape_unknown_symbol: None,
+        tape_unsupported_timeframe: None,
         last_command: Some(CommandStatus {
             kind: "halt".to_owned(),
             detail: "operator halt".to_owned(),
@@ -282,6 +296,13 @@ fn health_view_wire_order_is_alphabetical() {
         store_open_gaps: None,
         store_reachable: None,
         store_watermark_age_secs: None,
+        tape_denied: None,
+        tape_last_miss: None,
+        tape_no_tape: None,
+        tape_served: None,
+        tape_store_error: None,
+        tape_unknown_symbol: None,
+        tape_unsupported_timeframe: None,
         last_command: None,
     };
     let json = serde_json::to_string(&view).expect("health serializes");
@@ -329,6 +350,37 @@ fn health_view_wire_order_is_alphabetical() {
         observed_positions.windows(2).all(|pair| pair[0] < pair[1]),
         "health keys serialize alphabetically: {observed_json}"
     );
+
+    // Observed tape reads surface all seven facts, still alphabetical.
+    let taped = HealthView {
+        tape_denied: Some(0),
+        tape_last_miss: Some("Denied".to_owned()),
+        tape_no_tape: Some(0),
+        tape_served: Some(3),
+        tape_store_error: Some(0),
+        tape_unknown_symbol: Some(1),
+        tape_unsupported_timeframe: Some(0),
+        ..observed
+    };
+    let taped_json = serde_json::to_string(&taped).expect("health serializes");
+    let taped_positions = [
+        "\"store_watermark_age_secs\"",
+        "\"tape_denied\"",
+        "\"tape_last_miss\"",
+        "\"tape_no_tape\"",
+        "\"tape_served\"",
+        "\"tape_store_error\"",
+        "\"tape_unknown_symbol\"",
+        "\"tape_unsupported_timeframe\"",
+        "\"trading_state\"",
+    ]
+    .map(|key| taped_json.find(key).expect("health carries every key"));
+    assert!(
+        taped_positions.windows(2).all(|pair| pair[0] < pair[1]),
+        "health keys serialize alphabetically: {taped_json}"
+    );
+    let back: HealthView = serde_json::from_str(&taped_json).expect("health deserializes");
+    assert_eq!(back, taped);
 }
 
 #[test]

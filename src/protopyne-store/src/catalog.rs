@@ -1,34 +1,24 @@
-//! Durable instrument identity: the market catalog.
+//! Durable instrument identity: markets, scales, and the registration rule.
 //!
-//! [`MarketCatalog`] is the store's counterpart to `types :: symbol ::
-//! SymbolIndex`: a bound-checked interner that refuses instead of evicting.
-//! The differences are what durability requires. A `SymKey` is a run-scoped
-//! row handle; a [`SymbolId`](crate::key::SymbolId) names an instrument
-//! across restarts, exports, and reruns, so it is allocated by the database
-//! (`INTEGER PRIMARY KEY`) and remembered in a private in-memory index that
-//! is loaded once at open. `resolve` reads that index and never creates;
-//! `register` is the only creator.
+//! [`Market`] is the store's counterpart to `types :: symbol :: SymbolIndex`
+//! entries: a bound-checked identity that refuses instead of evicting. A
+//! [`SymbolId`](crate::key::SymbolId) names an instrument across restarts,
+//! exports, and reruns — allocated by the registry (`next_symbol_id`) and
+//! remembered in its in-memory index. `resolve` reads that index and never
+//! creates; `register` is the only creator.
 //!
-//! Every mutating or I/O method gates on the catalog's own permit, minted
-//! at open and bound to the catalog's path — the same shape as the
-//! journal's `VenueStorage` gate, so a task never granted the store is
-//! denied, not defaulted. [`MarketCatalog::resolve`] is the deliberate
-//! exception: it reads the in-memory index without touching the database,
-//! so there is no effect to gate and it takes no capability.
-
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+//! This module holds the shared vocabulary — [`Market`], [`AssetClass`],
+//! [`PriceScale`], the [`check_register`] rule every registration path
+//! applies, and the [`check_scale`] representability check every append
+//! path applies — while [`MarketRegistry`](crate::registry::MarketRegistry)
+//! holds the persisted table. Nothing here touches a database.
 
 use fluent_wvr::prelude::*;
-use protopyne_types::{Timeframe, Validate};
-use rusqlite::{Connection, params};
+use protopyne_types::{Bar, Timeframe, Validate};
 use rust_decimal::Decimal;
 
-use crate::capability::{StoreStorage, check_present};
 use crate::error::{PlanError, StoreError};
 use crate::key::SymbolId;
-use crate::migrate::ensure_schema;
 
 /// Capacity bound of a fresh catalog: far above the single-operator
 /// universe while keeping a misbehaving producer from growing the table
@@ -38,7 +28,8 @@ pub const DEFAULT_MAX_MARKETS: usize = 4_096;
 /// What kind of instrument a market row names. Stored as lowercase text;
 /// anything else in the column is a corrupt row, refused at
 /// materialization rather than defaulted.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum AssetClass {
     /// Equities and equity ETFs.
     Stock,
@@ -143,7 +134,7 @@ impl Validate for PriceScale {
 }
 
 /// One registered instrument: the durable row behind a [`SymbolId`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Market {
     /// The durable identity allocated at registration.
     pub symbol_id: SymbolId,
@@ -180,49 +171,26 @@ impl protopyne_types::Validate for Market {
     }
 }
 
-/// Materialize one `market` row. Corrupt spellings and out-of-range
-/// integers refuse here, at the boundary, so no caller ever sees a
-/// defaulted or wrapped market.
-pub(crate) fn market_of(row: &rusqlite::Row<'_>) -> rusqlite::Result<Market> {
-    fn bad(col: usize, what: String) -> rusqlite::Error {
-        rusqlite::Error::FromSqlConversionFailure(
-            col,
-            rusqlite::types::Type::Text,
-            std::io::Error::new(std::io::ErrorKind::InvalidData, what).into(),
-        )
+/// Refuse a bar the market cannot represent: every price must fit the
+/// market's scale. The first offender names the refusal, with the symbol,
+/// the price as carried, and the scale it failed — never rounded, never
+/// truncated, and the reason rides the error, not a log line the caller
+/// never sees.
+pub(crate) fn check_scale(market: &Market, bar: &Bar) -> Result<(), StoreError> {
+    for price in [bar.o, bar.h, bar.l, bar.c] {
+        if !market.price_scale.fits(price) {
+            return Err(StoreError::PriceScale {
+                symbol: market.symbol.clone(),
+                value: price,
+                scale: market.price_scale.digits,
+            });
+        }
     }
-    let asset_text: String = row.get(3)?;
-    let asset_class = AssetClass::parse(&asset_text)
-        .ok_or_else(|| bad(3, format!("unknown asset_class {asset_text:?}")))?;
-    let symbol_id = u32::try_from(row.get::<_, i64>(0)?)
-        .map_err(|_| bad(0, "symbol_id out of u32 range".to_owned()))?;
-    let scale_digits = u32::try_from(row.get::<_, i64>(4)?)
-        .map_err(|_| bad(4, "price_scale out of u32 range".to_owned()))?;
-    let price_scale = PriceScale::of(scale_digits)
-        .map_err(|e| bad(4, format!("stored price_scale invalid: {e}")))?;
-    let timeframe_text: String = row.get(6)?;
-    let timeframe: Timeframe = timeframe_text
-        .parse()
-        .map_err(|_| bad(6, format!("unknown timeframe {timeframe_text:?}")))?;
-    Ok(Market {
-        symbol_id: SymbolId(symbol_id),
-        symbol: row.get(1)?,
-        venue: row.get(2)?,
-        asset_class,
-        price_scale,
-        timeframe,
-        time_zone: row.get(5)?,
-    })
+    Ok(())
 }
 
-/// The full `market` row select, shared by every reader so the column order
-/// cannot drift between them.
-pub(crate) const SELECT_MARKET_SQL: &str =
-    "SELECT symbol_id, symbol, venue, asset_class, price_scale, time_zone, timeframe FROM market";
-
-/// Decide a registration before touching the database, so the
-/// synchronous core and the async handle refuse identically without two
-/// implementations of the rule.
+/// Decide a registration before touching any state, so every registration
+/// path refuses identically without two implementations of the rule.
 pub(crate) fn check_register(
     symbol: &str,
     venue: &str,
@@ -248,204 +216,6 @@ pub(crate) fn check_register(
     Ok(())
 }
 
-/// The durable catalog: one connection, one in-memory index, one bound.
-///
-/// The index is loaded once at open and updated on every successful
-/// `register`. It is a cache over the table, not a second truth: the
-/// `UNIQUE (symbol, venue)` constraint backstops concurrent registrations,
-/// and a single-writer discipline keeps the cache coherent.
-pub struct MarketCatalog {
-    conn: Mutex<Connection>,
-    entries: Mutex<HashMap<(String, String), (SymbolId, Timeframe)>>,
-    max_markets: usize,
-    permit: StoreStorage,
-}
-
-impl MarketCatalog {
-    /// Open (or create) the catalog at `path`, bringing the schema to
-    /// current. Capacity is [`DEFAULT_MAX_MARKETS`].
-    pub fn open(path: &Path) -> Result<Self, StoreError> {
-        Self::open_with(path, DEFAULT_MAX_MARKETS, false)
-    }
-
-    /// Open an ephemeral catalog backed by a private in-memory database.
-    /// For tests and scratch work; nothing persists past the handle.
-    pub fn open_in_memory() -> Result<Self, StoreError> {
-        Self::open_with(Path::new(":memory:"), DEFAULT_MAX_MARKETS, true)
-    }
-
-    /// Open with an explicit market bound, for the full-table refusal pin.
-    /// A bound of zero refuses every registration, including the first.
-    pub fn open_in_memory_with_max(max_markets: usize) -> Result<Self, StoreError> {
-        Self::open_with(Path::new(":memory:"), max_markets, true)
-    }
-
-    fn open_with(path: &Path, max_markets: usize, memory: bool) -> Result<Self, StoreError> {
-        let conn = if memory {
-            fluent_db::sqlite::open_in_memory()?
-        } else {
-            fluent_db::sqlite::open_wal(path)?
-        };
-        ensure_schema(&conn)?;
-        let stored: Vec<((String, String), (SymbolId, Timeframe))> =
-            fluent_db::query::query_rows(&conn, SELECT_MARKET_SQL, [], |row| {
-                let market = market_of(row)?;
-                Ok((
-                    (market.symbol, market.venue),
-                    (market.symbol_id, market.timeframe),
-                ))
-            })?;
-        let entries: HashMap<(String, String), (SymbolId, Timeframe)> =
-            stored.into_iter().collect();
-        let market_count = entries.len();
-        let permit = StoreStorage::new(if memory {
-            PathBuf::from(":memory:")
-        } else {
-            path.to_path_buf()
-        });
-        tracing::info!(
-            path = %permit.store_path().display(),
-            markets = market_count,
-            "market catalog opened"
-        );
-        Ok(Self {
-            conn: Mutex::new(conn),
-            entries: Mutex::new(entries),
-            max_markets,
-            permit,
-        })
-    }
-
-    /// The permit this catalog gates on. Held by the tape so its own gate
-    /// checks the same binding without minting a second token.
-    pub(crate) fn permit(&self) -> &StoreStorage {
-        &self.permit
-    }
-
-    /// The catalog's connection, for the tape's candle statements. The tape
-    /// owns the catalog, so this never escapes the crate.
-    pub(crate) fn connection(&self) -> &Mutex<Connection> {
-        &self.conn
-    }
-
-    /// The capacity bound of this catalog.
-    #[must_use]
-    pub fn max_markets(&self) -> usize {
-        self.max_markets
-    }
-
-    /// Look up `(symbol, venue)` in the in-memory index. Reads, never
-    /// creates: unknown is `Ok(None)`, not an error. No database touch, so
-    /// no capability check — there is no effect to gate.
-    pub fn resolve(&self, symbol: &str, venue: &str) -> Result<Option<SymbolId>, StoreError> {
-        Ok(self.tape_of(symbol, venue).map(|(symbol_id, _)| symbol_id))
-    }
-
-    /// Look up `(symbol, venue)` with the tape's stored spacing attached.
-    /// The planner reads this, never the rows: support for a requested
-    /// spacing is decided from the catalog's durable fact, not inferred
-    /// from whatever spacing the stored rows happen to show. Like
-    /// [`resolve`](Self::resolve), this touches no database and gates
-    /// nothing.
-    pub fn tape_of(&self, symbol: &str, venue: &str) -> Option<(SymbolId, Timeframe)> {
-        common_core::sync::lock(&self.entries)
-            .get(&(symbol.to_owned(), venue.to_owned()))
-            .copied()
-    }
-
-    /// Register a new market, allocating its durable id. Refuses a blank
-    /// symbol, an unrepresentable scale, a duplicate `(symbol, venue)`, and
-    /// a full catalog — fail-closed in that order, never by evicting. The
-    /// spacing is fixed at registration: one spacing per symbol, so a later
-    /// append at any other spacing refuses rather than mixing two grids on
-    /// one primary key.
-    pub fn register(
-        &self,
-        symbol: &str,
-        venue: &str,
-        asset_class: AssetClass,
-        price_scale: PriceScale,
-        time_zone: &str,
-        timeframe: Timeframe,
-    ) -> Result<SymbolId, StoreError> {
-        check_present(&self.permit)?;
-        let mut index = common_core::sync::lock(&self.entries);
-        check_register(
-            symbol,
-            venue,
-            price_scale,
-            index.contains_key(&(symbol.to_owned(), venue.to_owned())),
-            index.len(),
-            self.max_markets,
-        )?;
-        let conn = common_core::sync::lock(&self.conn);
-        // The constraint backstops a concurrent registration that slipped
-        // past the index check: a unique violation is the same refusal, not
-        // a new error.
-        let id = match conn.execute(
-            "INSERT INTO market(symbol, venue, asset_class, price_scale, time_zone, timeframe)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![
-                symbol,
-                venue,
-                asset_class.as_str(),
-                i64::from(price_scale.digits),
-                time_zone,
-                timeframe.code()
-            ],
-        ) {
-            Ok(_) => conn.last_insert_rowid(),
-            Err(e) if fluent_db::sqlite::is_unique_violation(&e) => {
-                return Err(StoreError::Duplicate(format!(
-                    "market already registered for ({symbol:?}, {venue:?})"
-                )));
-            }
-            Err(e) => return Err(StoreError::from(e)),
-        };
-        let id = u32::try_from(id)
-            .map_err(|_| StoreError::InvalidBar(format!("allocated symbol_id {id} exceeds u32")))?;
-        let symbol_id = SymbolId(id);
-        index.insert(
-            (symbol.to_owned(), venue.to_owned()),
-            (symbol_id, timeframe),
-        );
-        Ok(symbol_id)
-    }
-
-    /// Every registered market, in id order. Gated: it reads the database.
-    pub fn markets(&self) -> Result<Vec<Market>, StoreError> {
-        check_present(&self.permit)?;
-        let conn = common_core::sync::lock(&self.conn);
-        let mut markets = fluent_db::query::query_rows(&conn, SELECT_MARKET_SQL, [], market_of)?;
-        markets.sort_by_key(|market| market.symbol_id);
-        Ok(markets)
-    }
-
-    /// Look up one market row by id. `None` when no market carries `id` —
-    /// the code-level referential check the append path runs, because pooled
-    /// connections do not all carry the `foreign_keys` pragma. The caller
-    /// gates; this performs the read.
-    pub(crate) fn market_by_id(&self, id: SymbolId) -> Result<Option<Market>, StoreError> {
-        let conn = common_core::sync::lock(&self.conn);
-        let market = fluent_db::query::query_row(
-            &conn,
-            &format!("{SELECT_MARKET_SQL} WHERE symbol_id = ?1"),
-            params![i64::from(id.0)],
-            market_of,
-        )?;
-        Ok(market)
-    }
-}
-
-impl std::fmt::Debug for MarketCatalog {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("MarketCatalog")
-            .field("permit", &self.permit)
-            .field("max_markets", &self.max_markets)
-            .finish_non_exhaustive()
-    }
-}
-
 #[cfg(test)]
-#[path = "../tests/catalog.rs"]
-mod tests;
+#[path = "../tests/common/scale.rs"]
+pub(crate) mod test_scale;

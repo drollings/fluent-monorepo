@@ -477,6 +477,54 @@ fn seeded_timeframes_switch_the_loaded_candles_and_resample_coarser_keys() {
     );
 }
 
+#[test]
+fn a_full_day_grid_folds_whole_hours_and_a_whole_day_while_a_session_day_folds_no_day() {
+    use protopyne_types::Timeframe;
+    // A synthetic 24-hour quarter-hour grid from a UTC midnight: every hour
+    // holds its four children and the day holds all 96, so whole H1 and D1
+    // buckets emit.
+    let midnight_sec =
+        Timeframe::D1.bucket_start_ms(1_700_000_000_000) / 1_000;
+    let day: Vec<ChartRow> = (0..96)
+        .map(|i| {
+            let close = 100.0 + i as f64;
+            ChartRow {
+                time: midnight_sec + i * 900,
+                open: close - 0.5,
+                high: close + 0.5,
+                low: close - 1.0,
+                close,
+                volume: 10,
+            }
+        })
+        .collect();
+    let mut workspace = ChartWorkspace::new().expect("the workspace boots");
+    workspace.seed_history(TimeframeKey::M15, day).expect("the day seeds");
+    workspace.select_timeframe(TimeframeKey::H1).expect("1H selects");
+    assert_eq!(workspace.rows().len(), 24, "24 whole hours emit from a full grid");
+    assert_eq!(workspace.rows()[0].time, midnight_sec, "hours stamp their bucket start");
+    workspace.select_timeframe(TimeframeKey::D1).expect("1D selects");
+    assert_eq!(workspace.rows().len(), 1, "a whole day emits one daily bar");
+    assert_eq!(workspace.rows()[0].time, midnight_sec, "the day stamps its bucket start");
+    assert_eq!(workspace.rows()[0].volume, 960, "the daily volume sums its 96 rows");
+
+    // A session-shaped day — 26 quarter-hours, 6.5 hours of prints — fills
+    // six whole hours but no daily bucket: calendar-day folding of session
+    // data legitimately emits no daily bars, and loading a native daily file
+    // is the supported answer.
+    let mut session = ChartWorkspace::new().expect("the workspace boots");
+    session
+        .seed_history(TimeframeKey::M15, grid_rows(midnight_sec, 26))
+        .expect("the session seeds");
+    session.select_timeframe(TimeframeKey::H1).expect("1H selects");
+    assert_eq!(session.rows().len(), 6, "six whole hours emit from a session day");
+    session.select_timeframe(TimeframeKey::D1).expect("1D selects");
+    assert!(
+        session.rows().is_empty(),
+        "26 quarter-hours cannot evidence a whole day"
+    );
+}
+
 /// The two pane rects the wheel routes over: a price pane with its axis and
 /// time strip, and the oscillator pane below it with its own axis.
 fn wheel_layouts() -> (PaneLayout, PaneLayout) {

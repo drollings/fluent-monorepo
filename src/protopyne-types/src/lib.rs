@@ -9,6 +9,7 @@
 pub mod bar;
 pub mod chain;
 pub mod error;
+pub mod fold;
 pub mod money;
 pub mod series;
 pub mod session;
@@ -24,6 +25,7 @@ pub use chain::{
     SpreadLeg, SpreadLegs, MAX_SPREAD_LEGS,
 };
 pub use error::TypesError;
+pub use fold::{BucketAccum, FoldEdges};
 pub use money::{Money, Qty};
 pub use series::{GapPolicy, LtfView, PriceSource, SeriesContext};
 pub use session::{TradingSession, et_offset_ms, is_dst_et};

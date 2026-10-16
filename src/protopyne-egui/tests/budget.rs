@@ -608,11 +608,16 @@ fn display_escape_offenders(members: &[String], root: &Path) -> (usize, Vec<Stri
     let files: Vec<(String, String)> = members
         .iter()
         .flat_map(|dir| {
-            walk_files(&root.join(dir)).into_iter().map(move |path| {
-                (path.display().to_string(), read_text(&path))
-            })
+            walk_files(&root.join(dir))
+                .into_iter()
+                // Read Rust sources only: member trees also carry binary
+                // fixtures (e.g. trimmed Parquet histories) that are not
+                // valid UTF-8 and never enter this scan.
+                .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("rs"))
+                .map(move |path| {
+                    (path.display().to_string(), read_text(&path))
+                })
         })
-        .filter(|(path, _)| path.ends_with(".rs"))
         .collect();
     display_escape_offenders_in(members, &files)
 }

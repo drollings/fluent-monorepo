@@ -18,7 +18,7 @@ fn history() -> Vec<Bar> {
         .join("tests")
         .join("data")
         .join("SPY_15M.csv");
-    crate::load_bars_csv(&path).expect("vendored history loads")
+    crate::csv::load_bars_csv(&path).expect("vendored history loads")
 }
 
 fn golden_path(name: &str) -> PathBuf {
@@ -122,4 +122,76 @@ fn health_view_reports_an_observed_reading_even_at_default_values() {
     assert_eq!(view.store_reachable, Some(true));
     assert_eq!(view.store_open_gaps, Some(0));
     assert_eq!(view.store_watermark_age_secs, None);
+}
+
+#[tokio::test]
+async fn tape_counters_surface_on_the_route_and_the_gateway() {
+    use crate::common_tape as tape;
+    use protopyne_types::Timeframe;
+    use protopyne_view::HealthView;
+
+    // A file-backed tape holding one bar the gateway can serve: after one
+    // symbol-scoped read, /health carries the serve count and the gateway
+    // reports the identical view — one truth for the terminal.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path().join("store");
+    let bars = crate::csv::load_bars_csv(
+        &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("data")
+            .join("SPY_15M.csv"),
+    )
+    .expect("vendored history loads");
+    tape::seed_file(&root, &bars, "SPY", Timeframe::M15, tape::VENUE);
+    let reader = crate::service::open_tape_reader(&root).expect("boot opens the store");
+    let config = ServerConfig::new().bind("127.0.0.1:0".to_owned()).build();
+    let handle = serve_with_tape(config, bars, Some(reader))
+        .await
+        .expect("server boots with a tape");
+    handle
+        .gateway()
+        .chart_bars_for("SPY", "15M")
+        .expect("store-backed gateway read");
+
+    let base = format!("http://{}", handle.addr);
+    let client = reqwest::Client::new();
+    let body = get_body(&client, &base).await;
+    let routed: HealthView = serde_json::from_str(&body).expect("health is JSON");
+    assert_eq!(routed.tape_served, Some(1), "the serve is counted on /health");
+    assert_eq!(routed.tape_no_tape, Some(0));
+    assert_eq!(routed.tape_unknown_symbol, Some(0));
+    assert_eq!(routed.tape_unsupported_timeframe, Some(0));
+    assert_eq!(routed.tape_denied, Some(0));
+    assert_eq!(routed.tape_store_error, Some(0));
+    assert_eq!(routed.tape_last_miss, None, "no miss on record");
+    // Gateway-route parity: the terminal sees one truth.
+    let via_gateway = handle.gateway().health().expect("gateway health reads");
+    assert_eq!(via_gateway, routed);
+    handle.shutdown().await;
+}
+
+#[tokio::test]
+async fn unobserved_tape_stats_report_no_fields() {
+    // A tape-backed server that served nothing yet keeps the pre-tape
+    // payload byte-identical: observation, not configuration, decides.
+    use crate::common_tape as tape;
+    use protopyne_types::Timeframe;
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path().join("store");
+    let bars = history();
+    tape::seed_file(&root, &bars, "SPY", Timeframe::M15, tape::VENUE);
+    let reader = crate::service::open_tape_reader(&root).expect("boot opens the store");
+    let config = ServerConfig::new().bind("127.0.0.1:0".to_owned()).build();
+    let handle = serve_with_tape(config, bars, Some(reader))
+        .await
+        .expect("server boots with a tape");
+    let base = format!("http://{}", handle.addr);
+    let client = reqwest::Client::new();
+    let body = get_body(&client, &base).await;
+    assert!(!body.contains("tape_"), "no tape key before any tape read");
+    let expected =
+        std::fs::read_to_string(golden_path("health.json")).expect("golden checked in");
+    assert_eq!(body, expected, "unobserved tape stats must not move the payload");
+    handle.shutdown().await;
 }

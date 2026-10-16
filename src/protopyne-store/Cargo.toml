@@ -10,8 +10,8 @@ default = ["parquet"]
 # `parquet` pulls in the Arrow/Parquet surface: the sealed-snapshot writer
 # and reader behind the content-addressed artifact, plus the market-data
 # ingest reader for vendor OHLCV files. Default-on for the shipping binary;
-# with it off the crate still builds and the whole SQLite surface stays
-# fully testable, and both parquet surfaces report a disabled feature rather
+# with it off the crate still builds and the file-backed tape stays fully
+# testable, and both parquet surfaces report a disabled feature rather
 # than failing to compile. Upstream `arrow`/`parquet` is the sole data-path
 # codec: both readers decode through the one shared `arrow_decode` layer,
 # and `polars` stays out of the data path — the research frame boundary is
@@ -19,14 +19,13 @@ default = ["parquet"]
 parquet = ["dep:arrow", "dep:parquet"]
 
 [dependencies]
-common-core = { path = "../common-core", features = ["sqlite"] }
+common-core = { path = "../common-core" }
 fluent-wvr = { path = "../fluent-wvr" }
 fluent-concurrency = { path = "../fluent-concurrency" }
-fluent-db = { path = "../db" }
 protopyne-types = { path = "../protopyne-types" }
 bon = { workspace = true }
 chrono = { workspace = true }
-rusqlite = { workspace = true }
+csv = { workspace = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

@@ -1,19 +1,24 @@
 //! Read planning: resolve what was asked against what is stored, purely.
 //!
-//! [`ReadPlan::resolve`] is a pure function over the catalog index, a
+//! [`ReadPlan::resolve_for`] is a pure function over a tape lookup, a
 //! fetched coverage, and the request — no I/O, no clock, no gating. The
 //! impure read path fetches the coverage first, plans against it, then
 //! fetches exactly the planned spans: a plan that resolves is a promise the
 //! subsequent fetch keeps, because both read the same coverage.
 //!
 //! The fields stay private behind accessors so a plan cannot exist
-//! unresolved: there is no literal that builds one, only `resolve`.
+//! unresolved: there is no literal that builds one, only `resolve_for`.
+//!
+//! The stamp-window helpers below are the one coverage path the served read
+//! walks: [`coverage_windows`] derives the fetch window plus the margined
+//! stamp window from the tape's extent, and [`coverage_from_stamps`]
+//! rebuilds coverage from the stamps inside that window — O(window), never
+//! O(tape).
 
 use protopyne_types::{Timeframe, Validate};
 
-use crate::catalog::MarketCatalog;
 use crate::coverage::Coverage;
-use crate::error::PlanError;
+use crate::error::{PlanError, StoreError};
 use crate::fold::{FoldPolicy, bucket_start};
 use crate::key::{SymbolId, TapeKey};
 use crate::range::TimeRange;
@@ -24,7 +29,7 @@ use crate::store::ReadRequest;
 /// would fill without an API break.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SpanOrigin {
-    /// Served from the committed SQLite tape.
+    /// Served from the committed tape.
     Stored,
 }
 
@@ -97,6 +102,10 @@ impl ReadPlan {
 
     /// Resolve a request against fetched coverage: pure, no I/O.
     ///
+    /// The tape lookup is what the engine read from its market index: the
+    /// durable id plus the tape's stored spacing. Callers that hold the
+    /// market row pass both; there is no second spelling of this decision.
+    ///
     /// Refusals, in order: the request's own shape (`BlankSymbol`,
     /// `InvertedRange`), an unregistered symbol, a spacing the tape cannot
     /// serve (finer than stored, or a non-multiple — a source bar must nest
@@ -106,21 +115,22 @@ impl ReadPlan {
     /// an interior hole. A tail past the tape's end is staleness, not a
     /// hole: it resolves, and the spans report the shortfall by ending
     /// where the coverage ends.
-    pub fn resolve(
-        catalog: &MarketCatalog,
-        coverage: Option<Coverage>,
-        request: &ReadRequest,
-    ) -> Result<Self, PlanError> {
-        let tape = catalog.tape_of(&request.symbol, &request.venue);
-        Self::resolve_for(tape, coverage, request)
-    }
-
-    /// Resolve against a pre-fetched tape lookup: the same decision as
-    /// [`resolve`](Self::resolve) for callers that read the market row
-    /// through another connection. The synchronous core passes its catalog
-    /// index; the pooled handle passes the row it selected. Same facts in,
-    /// same plan out.
-    pub(crate) fn resolve_for(
+    /// Resolve a request against fetched coverage: pure, no I/O.
+    ///
+    /// The tape lookup is what the engine read from its market index: the
+    /// durable id plus the tape's stored spacing. Callers that hold the
+    /// market row pass both; there is no second spelling of this decision.
+    ///
+    /// Refusals, in order: the request's own shape (`BlankSymbol`,
+    /// `InvertedRange`), an unregistered symbol, a spacing the tape cannot
+    /// serve (finer than stored, or a non-multiple — a source bar must nest
+    /// inside exactly one target bucket), an open-ended read with no limit,
+    /// an empty tape (there is no coverage to plan against; the repair
+    /// verdict for it is `Empty`, not a read), and a wanted window torn by
+    /// an interior hole. A tail past the tape's end is staleness, not a
+    /// hole: it resolves, and the spans report the shortfall by ending
+    /// where the coverage ends.
+    pub fn resolve_for(
         tape: Option<(SymbolId, Timeframe)>,
         coverage: Option<Coverage>,
         request: &ReadRequest,
@@ -128,7 +138,7 @@ impl ReadPlan {
         request.validate()?;
         let (symbol_id, stored) =
             tape.ok_or_else(|| PlanError::UnknownSymbol(request.symbol.clone()))?;
-        if request.timeframe.duration_ms() % stored.duration_ms() != 0 {
+        if !request.timeframe.is_whole_multiple_of(stored) {
             return Err(PlanError::UnsupportedTimeframe {
                 symbol: request.symbol.clone(),
                 timeframe: request.timeframe,
@@ -325,6 +335,74 @@ fn buckets_whole(covered: &Coverage, span: &TimeRange, want: Timeframe) -> bool 
     true
 }
 
+/// One tape's bounds from its stamps alone: first stamp, last stamp.
+/// `None` is an empty tape — answered, not failed.
+///
+/// Deliberately no row count: counting would walk every stamp, which would
+/// put the read path back at O(tape) per read. The watermark anchor and
+/// hole clipping need bounds, never a count; the audit path counts the
+/// bars it validates.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct TapeExtent {
+    /// First stored stamp.
+    pub(crate) first_ms: i64,
+    /// Last stored stamp.
+    pub(crate) last_ms: i64,
+}
+
+/// The stamp-fetch window for a request against a known extent: pure over
+/// the request, so every read layer derives the same bounds before touching
+/// the tape. Returns the fetch window the plan resolves against plus the
+/// margined stamp window — one stored step each side, so a run crossing
+/// the fetch edge has its straddling pair inside the stamp fetch and the
+/// walk sees the same continuity the whole-tape walk sees.
+pub(crate) fn coverage_windows(
+    stored: Timeframe,
+    extent: &TapeExtent,
+    req: &ReadRequest,
+) -> Result<(TimeRange, TimeRange), StoreError> {
+    // The row count is unused below: `wanted_window` reads only the last
+    // stamp, so the bounds carry a zero count rather than a tape-wide
+    // count that would cost O(tape) per read.
+    let bounds = Coverage::from_extent_and_runs(extent.first_ms, extent.last_ms, 0, Vec::new());
+    let wanted = wanted_window(req, Some(&bounds))?;
+    let fetch = fetch_span(req, stored, &wanted)?;
+    let step = stored.duration_ms();
+    let stamp_window = TimeRange {
+        start_ms: fetch.start_ms.map(|start| start.saturating_sub(step)),
+        end_ms: fetch.end_ms.map(|end| end.saturating_add(step)),
+    };
+    Ok((fetch, stamp_window))
+}
+
+/// Runs from window stamps clipped to the fetch window, over the tape-wide
+/// extent bounds: the planning input every read resolves against. Clipped
+/// runs equal whole-tape runs intersected with the fetch — run adjacency
+/// is local, and the stamp margin keeps both straddling pairs visible — so
+/// holes, spans, and bucket-wholeness resolve identically. The bar count
+/// is the stamps observed inside the fetch window, matching the runs'
+/// scope; nothing on the read path reads a tape-wide count.
+pub(crate) fn coverage_from_stamps(
+    extent: &TapeExtent,
+    fetch: &TimeRange,
+    stamps: &[i64],
+    stored: Timeframe,
+) -> Coverage {
+    let bars = stamps.iter().filter(|stamp| fetch.contains(**stamp)).count();
+    let runs = Coverage::from_stamps(stamps, stored)
+        .map(|coverage| coverage.runs().to_vec())
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|run| run.intersect(fetch))
+        .collect::<Vec<_>>();
+    Coverage::from_extent_and_runs(
+        extent.first_ms,
+        extent.last_ms,
+        bars as u64,
+        runs,
+    )
+}
+
 #[cfg(test)]
 #[path = "../tests/plan_resolve.rs"]
 mod tests_plan_resolve;
@@ -336,3 +414,7 @@ mod tests_plan_unbounded;
 #[cfg(test)]
 #[path = "../tests/warmup_roundtrip.rs"]
 mod tests_warmup_roundtrip;
+
+#[cfg(test)]
+#[path = "../tests/plan_read_end_to_end.rs"]
+mod tests_plan_read;

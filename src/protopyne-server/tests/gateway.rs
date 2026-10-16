@@ -23,7 +23,7 @@ fn history() -> Vec<Bar> {
         .join("tests")
         .join("data")
         .join("SPY_15M.csv");
-    crate::load_bars_csv(&path).expect("vendored history loads")
+    crate::csv::load_bars_csv(&path).expect("vendored history loads")
 }
 
 async fn boot() -> ServerHandle {
@@ -477,7 +477,7 @@ async fn gateway_serves_symbol_scoped_bars_and_overlays_across_timeframes() {
     );
 
     for symbol in ["GLD", "SPY"] {
-        for timeframe in ["1M", "5M", "15M", "1H", "4H"] {
+        for timeframe in ["15M", "1H", "4H"] {
             let bars = gateway
                 .chart_bars_for(symbol, timeframe)
                 .unwrap_or_else(|e| panic!("{symbol} {timeframe} bars: {e:?}"));
@@ -492,6 +492,23 @@ async fn gateway_serves_symbol_scoped_bars_and_overlays_across_timeframes() {
             );
         }
     }
+
+    // A timeframe the 15M base cannot express refuses instead of silently
+    // serving base-spacing bars: finer grids, non-multiples, and unknown
+    // labels alike, each naming the base spacing.
+    for timeframe in ["1M", "5M", "10", "10M"] {
+        let err = gateway
+            .chart_bars_for("SPY", timeframe)
+            .expect_err(&format!("{timeframe} refuses over a 15M base"));
+        assert!(
+            err.to_string().contains("M15"),
+            "{timeframe} names the base spacing: {err}"
+        );
+    }
+    assert!(
+        gateway.chart_overlays_for("SPY", "5M", "ema", 10).is_err(),
+        "overlays refuse an inexpressible timeframe like bars do"
+    );
 
     // A coarser timeframe the base can fill folds upward: 1H is a whole 4x
     // fold of the 15M base, so it serves strictly fewer bars.

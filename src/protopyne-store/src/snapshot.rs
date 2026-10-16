@@ -9,8 +9,8 @@
 //!
 //! The write is a durability sequence, not a file dump: the artifact is
 //! written to a `*.tmp` sibling, fsynced, then atomically renamed into place,
-//! and only then is its manifest row committed — in one transaction. A crash
-//! can therefore produce an orphan file (no row), which
+//! and only then is its manifest row upserted into the JSON manifest beside
+//! it. A crash can therefore produce an orphan file (no row), which
 //! [`reconcile_orphans`] removes loudly, but never a manifest row pointing at
 //! a missing or partial file.
 //!
@@ -29,11 +29,12 @@ use std::path::{Path, PathBuf};
 use protopyne_types::{Bar, validate_new_bar};
 
 use crate::capability::check_present;
-use crate::catalog::{Market, MarketCatalog};
+use crate::catalog::Market;
 use crate::error::{PlanError, SnapshotError, StoreError};
 use crate::key::TapeKey;
-use crate::manifest::{self, SnapshotRecord};
-use crate::sqlite_tape::{fetch_bars, order_and_validate};
+use crate::manifest::{SealManifest, SnapshotRecord};
+use crate::registry::MarketRegistry;
+use crate::store::order_and_validate;
 use crate::store::DEFAULT_APPEND_CHUNK;
 
 #[cfg(feature = "parquet")]
@@ -181,37 +182,34 @@ impl<'a> SnapshotWriter<'a> {
     }
 }
 
-/// Seal `key`'s tape into `out_dir`: read the committed bars, write the
-/// artifact, then commit the manifest row in one transaction. Returns the
-/// sealed artifact; the row and the artifact commit together.
+/// Seal `key`'s committed `bars` into `out_dir`: write the artifact, then
+/// upsert and persist the manifest row. Returns the sealed artifact; the
+/// row and the artifact commit together — the artifact is renamed into
+/// place before the manifest is written, so a crash leaves an orphan file
+/// (removed loudly by [`reconcile_orphans`]) but never a row pointing at a
+/// missing or partial file.
 pub fn seal(
-    catalog: &MarketCatalog,
+    registry: &MarketRegistry,
     key: TapeKey,
+    bars: &[Bar],
     out_dir: &Path,
     options: SealOptions,
     now_ms: i64,
 ) -> Result<SealedSnapshot, StoreError> {
     feature_gate()?;
-    check_present(catalog.permit())?;
-    let market = catalog.market_by_id(key.symbol_id)?.ok_or_else(|| {
+    check_present(registry.permit())?;
+    let market = registry.market_by_id(key.symbol_id).ok_or_else(|| {
         StoreError::Plan(PlanError::UnknownSymbol(format!(
             "symbol_id {}",
             key.symbol_id.0
         )))
     })?;
-    let bars = {
-        let conn = common_core::sync::lock(catalog.connection());
-        let raw = fetch_bars(&conn, key.symbol_id, None, None)?;
-        order_and_validate(raw)?
-    };
-    let sealed = SnapshotWriter::new(out_dir, options).write(key, &market, &bars)?;
+    let ordered = order_and_validate(bars.to_vec())?;
+    let sealed = SnapshotWriter::new(out_dir, options).write(key, &market, &ordered)?;
     let record = sealed.record(now_ms);
-    {
-        let mut conn = common_core::sync::lock(catalog.connection());
-        let tx = conn.transaction()?;
-        manifest::upsert_record(&tx, &record)?;
-        tx.commit()?;
-    }
+    let mut manifest = SealManifest::load(out_dir)?;
+    manifest.upsert(record);
+    manifest.save(out_dir)?;
     tracing::info!(
         symbol_id = key.symbol_id.0,
         timeframe = key.timeframe.code(),
@@ -229,17 +227,24 @@ pub fn seal(
 /// A file with no manifest row and a manifest row with no file are **both**
 /// loud [`StoreError`]s: a snapshot is never silently absent.
 pub fn read_snapshot(
-    catalog: &MarketCatalog,
+    registry: &MarketRegistry,
     key: TapeKey,
     path: &Path,
 ) -> Result<Vec<Bar>, StoreError> {
     feature_gate()?;
-    check_present(catalog.permit())?;
+    check_present(registry.permit())?;
+    read_snapshot_ungated(key, path)
+}
+
+/// Read a sealed artifact back into committed bars without gating: the
+/// verification half of [`read_snapshot`] for setup-time callers (store
+/// open replays compacted seals before any capability is installed).
+/// Every serving path goes through the gated [`read_snapshot`] instead.
+pub(crate) fn read_snapshot_ungated(key: TapeKey, path: &Path) -> Result<Vec<Bar>, StoreError> {
+    feature_gate()?;
     let path_text = path.to_string_lossy().into_owned();
-    let record = {
-        let conn = common_core::sync::lock(catalog.connection());
-        manifest::record_for(&conn, key.symbol_id, key.timeframe, &path_text)?
-    };
+    let manifest = SealManifest::load(path.parent().unwrap_or(Path::new(".")))?;
+    let record = manifest.record_for(key.symbol_id, key.timeframe, &path_text);
     let Some(record) = record else {
         return Err(StoreError::Snapshot(SnapshotError::Unmanifested {
             path: path_text,
@@ -291,23 +296,21 @@ pub struct ReconcileReport {
 
 /// Remove artifacts that no manifest row names. A file with no row is an
 /// orphan from an interrupted seal (the file was renamed into place but the
-/// manifest transaction never committed). Removal is logged, never silent.
+/// manifest write never committed). Removal is logged, never silent.
 ///
 /// The reverse — a manifest row whose file is missing — is **not** removed
 /// here: it is a loud read error from [`read_snapshot`], because deleting the
 /// row would hide a durability fault.
 pub fn reconcile_orphans(
-    catalog: &MarketCatalog,
+    registry: &MarketRegistry,
     out_dir: &Path,
 ) -> Result<ReconcileReport, StoreError> {
-    check_present(catalog.permit())?;
-    let known: std::collections::HashSet<String> = {
-        let conn = common_core::sync::lock(catalog.connection());
-        manifest::all_records(&conn)?
-            .into_iter()
-            .map(|record| record.path)
-            .collect()
-    };
+    check_present(registry.permit())?;
+    let known: std::collections::HashSet<String> = SealManifest::load(out_dir)?
+        .records()
+        .iter()
+        .map(|record| record.path.clone())
+        .collect();
     let mut orphans_removed = Vec::new();
     match std::fs::read_dir(out_dir) {
         Ok(entries) => {

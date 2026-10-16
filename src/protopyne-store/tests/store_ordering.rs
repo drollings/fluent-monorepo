@@ -15,7 +15,7 @@ use protopyne_types::{Timeframe, validate_new_bar};
 use crate::commit::test_tapes::at_ms;
 use crate::fold::FoldPolicy;
 use crate::range::TimeRange;
-use crate::sqlite_tape::test_setup::{VENUE, seeded, with_memory_caps};
+use crate::tape::test_setup::{VENUE, seeded, with_registry_caps};
 
 /// Ten minute bars, deliberately shuffled: reversed with two neighbours
 /// swapped back, so the input is neither sorted nor reversed.
@@ -30,7 +30,7 @@ fn shuffled() -> Vec<Bar> {
 
 #[tokio::test]
 async fn shuffled_insert_reads_back_ascending_and_valid() {
-    with_memory_caps(async {
+    with_registry_caps(async {
         let (tape, key) = seeded("SPY", &[]).await;
         let outcome = tape
             .append(key, &shuffled(), WritePolicy::InsertIfAbsent)
@@ -76,7 +76,7 @@ async fn shuffled_insert_reads_back_ascending_and_valid() {
 
 #[tokio::test]
 async fn ranged_read_returns_only_its_window_still_ascending() {
-    with_memory_caps(async {
+    with_registry_caps(async {
         let (tape, _key) = seeded("SPY", &shuffled()).await;
         let start = 1_767_225_900_000 + 3 * 60_000;
         let end = 1_767_225_900_000 + 7 * 60_000;

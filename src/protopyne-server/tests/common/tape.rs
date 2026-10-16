@@ -10,7 +10,7 @@
 use std::sync::Arc;
 
 use protopyne_store::{
-    AssetClass, CandleStore as _, FoldPolicy, PriceScale, ReadRequest, SqliteTape, StoreStorage,
+    AssetClass, CandleStore as _, FoldPolicy, MarketTape, PriceScale, ReadRequest, StoreStorage,
     TapeKey, TimeRange, WritePolicy,
 };
 use protopyne_strategy::{
@@ -42,8 +42,7 @@ pub fn seed(
     symbol: &str,
     timeframe: Timeframe,
     caps: &fluent_wvr::CapabilitySet,
-) -> (SqliteTape, TapeKey, ReadRequest) {
-    let tape = SqliteTape::open_in_memory().expect("ephemeral tape opens");
+) -> (MarketTape, TapeKey, ReadRequest) {    let tape = MarketTape::open_in_memory().expect("ephemeral tape opens");
     let key = fluent_wvr::CURRENT_CAPS.sync_scope(caps.clone(), || {
         let symbol_id = tape
             .register(
@@ -72,6 +71,42 @@ pub fn seed(
         policy: FoldPolicy::ExtendToFullBuckets,
     };
     (tape, key, request)
+}
+
+/// Seed a file-backed store at `root` with `bars` under `symbol`/`timeframe`
+/// and return the open tape. Registration and appends run inside a
+/// root-bound permit scope the caller supplies; the returned tape carries
+/// the same binding a boot-time open would mint. Callers that reopen from
+/// disk (like the boot path) ignore the return.
+pub fn seed_file(
+    root: &std::path::Path,
+    bars: &[Bar],
+    symbol: &str,
+    timeframe: Timeframe,
+    venue: &str,
+) -> MarketTape {
+    let tape = MarketTape::open(root).expect("file store opens");
+    let caps =
+        fluent_wvr::CapabilitySet::new().with(StoreStorage::new(root.to_path_buf()));
+    fluent_wvr::CURRENT_CAPS.sync_scope(caps, || {
+        let symbol_id = tape
+            .register(
+                symbol,
+                venue,
+                AssetClass::Stock,
+                PriceScale::of(2).expect("valid scale"),
+                "UTC",
+                timeframe,
+            )
+            .expect("registration succeeds");
+        tape.append(
+            TapeKey { symbol_id, timeframe },
+            bars,
+            WritePolicy::InsertIfAbsent,
+        )
+        .expect("seed append succeeds");
+    });
+    tape
 }
 
 /// A flat rehearsal strategy: fixed long exposure into an explicit vertical,

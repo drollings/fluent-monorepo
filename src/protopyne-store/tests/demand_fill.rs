@@ -26,14 +26,14 @@ async fn fill(
     let dir = tempfile::tempdir().expect("tempdir");
     let file_bars = th::ascending_bars(file_first, file_len);
     let csv = th::write_tape_csv(&dir, "spy.csv", &file_bars);
-    let (handle, permit, caps) = th::open_file_handle(&dir, "store.db").await;
+    let (handle, permit, caps) = th::open_file_handle(&dir, "store");
     let offset = (store_from - file_first).max(0) as usize;
     let store_bars: Vec<protopyne_types::Bar> =
         file_bars[offset..(offset + store_len).min(file_bars.len())].to_vec();
     let key = fluent_wvr::CURRENT_CAPS
         .scope(caps.clone(), async {
-            let key = th::register_m1(&handle, &permit, "SPY").await;
-            th::seed_append(&handle, &permit, key, &store_bars).await;
+            let key = th::register_m1(&handle, &permit, "SPY");
+            th::seed_append(&handle, &permit, key, &store_bars);
             key
         })
         .await;

@@ -119,7 +119,7 @@ fn check_lines(bundle: &ViewsBundle, charts: &ChartReads, replay: &ReplayScrub) 
 }
 
 async fn boot(path: PathBuf, base: String) -> Result<ServerHandle, String> {
-    let bars = protopyne_server::load_bars_any(&path)
+    let bars = protopyne_server::load_bars_file(&path)
         .map_err(|e| format!("parse {}: {e}", path.display()))?;
     if bars.is_empty() {
         return Err(format!("no bars in {}", path.display()));

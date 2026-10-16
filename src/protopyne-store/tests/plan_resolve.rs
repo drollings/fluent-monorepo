@@ -1,7 +1,7 @@
 //! Read-plan resolution: what was asked against what is stored.
 //!
-//! One table over `(catalog, coverage, request)` proving every direction
-//! `resolve` can answer. The control group comes first: a request fully
+//! One table over `(lookup, coverage, request)` proving every direction
+//! `resolve_for` can answer. The control group comes first: a request fully
 //! inside coverage resolves to exactly the wanted span with no repair
 //! implied. Then every refusal — each `PlanError` variant with its case —
 //! and the two honest non-errors: a tail past the tape's end resolves with
@@ -13,7 +13,7 @@ use protopyne_types::{Bar, Timeframe};
 
 use crate::commit::test_tapes::{bar, stamp};
 use crate::fold::FoldPolicy;
-use crate::sqlite_tape::test_setup::{VENUE, memory_tape, seeded, with_memory_caps};
+use crate::tape::test_setup::{VENUE, memory_tape, seeded, with_registry_caps};
 use crate::store::CandleStore;
 
 /// Which tape a case plans against.
@@ -201,7 +201,7 @@ fn cases() -> Vec<Case> {
 
 #[tokio::test]
 async fn resolve_answers_every_case() {
-    with_memory_caps(async {
+    with_registry_caps(async {
         let full_bars: Vec<Bar> = (0..10).map(|step| bar(step, "100")).collect();
         let (full_tape, full_key) = seeded("SPY", &full_bars).await;
         let full_coverage = full_tape.coverage(full_key).expect("coverage reads");
@@ -228,11 +228,11 @@ async fn resolve_answers_every_case() {
             .expect("three-minute market registers");
 
         for case in cases() {
-            let (catalog, coverage) = match case.tape {
-                Tape::Full => (full_tape.catalog(), full_coverage.clone()),
-                Tape::Holed => (holed_tape.catalog(), holed_coverage.clone()),
-                Tape::Empty => (empty_tape.catalog(), empty_coverage.clone()),
-                Tape::ThreeMinute => (m3_tape.catalog(), None),
+            let (tape, stored, coverage) = match case.tape {
+                Tape::Full => (&full_tape, Timeframe::M1, full_coverage.clone()),
+                Tape::Holed => (&holed_tape, Timeframe::M1, holed_coverage.clone()),
+                Tape::Empty => (&empty_tape, Timeframe::M1, empty_coverage.clone()),
+                Tape::ThreeMinute => (&m3_tape, Timeframe::M3, None),
             };
             let request = ReadRequest {
                 symbol: case.symbol.to_owned(),
@@ -242,15 +242,21 @@ async fn resolve_answers_every_case() {
                 limit: case.limit,
                 policy: case.policy,
             };
+            // The lookup mirrors the engine: resolve through the tape's
+            // market index, so an unknown symbol plans as `None`.
+            let lookup = tape
+                .resolve(case.symbol, VENUE)
+                .expect("resolve reads")
+                .map(|id| (id, stored));
             match case.expect {
                 Expect::Err(expected) => assert_eq!(
-                    ReadPlan::resolve(catalog, coverage, &request),
+                    ReadPlan::resolve_for(lookup, coverage, &request),
                     Err(expected),
                     "{}",
                     case.name
                 ),
                 Expect::Spans(expected) => {
-                    let plan = ReadPlan::resolve(catalog, coverage, &request).unwrap_or_else(|e| {
+                    let plan = ReadPlan::resolve_for(lookup, coverage, &request).unwrap_or_else(|e| {
                         panic!("{}: expected spans, refused: {e:?}", case.name)
                     });
                     let got: Vec<(TimeRange, SpanOrigin, bool)> = plan

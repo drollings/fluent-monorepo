@@ -181,10 +181,22 @@ fn timeframe_keys_cover_intraday_to_daily_in_toolbar_order() {
     assert_eq!(labels, vec!["1M", "5M", "15M", "1H", "4H", "1D"]);
     let seconds: Vec<u64> = keys.iter().map(|key| key.seconds()).collect();
     assert_eq!(seconds, vec![60, 300, 900, 3_600, 14_400, 86_400]);
-    assert_eq!(TimeframeKey::H1.m15_group(), 4, "one hour resamples four quarter-hours");
-    assert_eq!(TimeframeKey::H4.m15_group(), 16);
-    assert_eq!(TimeframeKey::D1.m15_group(), 96, "one day resamples 96 quarter-hours");
-    assert_eq!(TimeframeKey::M15.m15_group(), 1, "native slots need no grouping");
+    assert_eq!(TimeframeKey::H1.timeframe().duration_ms(), 3_600_000, "one hour holds four quarter-hours");
+    assert_eq!(TimeframeKey::H4.timeframe().duration_ms(), 14_400_000);
+    assert_eq!(TimeframeKey::D1.timeframe().duration_ms(), 86_400_000, "one day holds 96 quarter-hours");
+    assert!(TimeframeKey::H1.timeframe().is_whole_multiple_of(TimeframeKey::M15.timeframe()));
+    assert!(TimeframeKey::H4.timeframe().is_whole_multiple_of(TimeframeKey::M15.timeframe()));
+    assert!(TimeframeKey::D1.timeframe().is_whole_multiple_of(TimeframeKey::M15.timeframe()));
+    // The one toolbar-label bridge: every toolbar label resolves through
+    // `Timeframe::from_chart_label` to the key's own spacing, so the serving
+    // boundary (`timeframe_of_label`) and the terminal cannot disagree.
+    for key in TimeframeKey::all() {
+        assert_eq!(
+            protopyne_types::Timeframe::from_chart_label(key.label()),
+            Some(key.timeframe()),
+            "{key:?} label resolves to the key's spacing"
+        );
+    }
     // The key grid and the store/kernel grid are one mapping.
     assert_eq!(TimeframeKey::D1.timeframe(), protopyne_types::Timeframe::D1);
     assert_eq!(TimeframeKey::M1.timeframe(), protopyne_types::Timeframe::M1);

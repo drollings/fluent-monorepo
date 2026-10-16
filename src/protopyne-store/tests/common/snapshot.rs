@@ -1,4 +1,4 @@
-//! Shared snapshot-test setup: an in-memory tape with one seeded market,
+//! Shared snapshot-test setup: an in-memory registry with one seeded market,
 //! plus the capability scope every gated effect needs.
 //!
 //! Included once from `snapshot.rs`; consumer suites `use` it, never include
@@ -9,44 +9,41 @@
 
 use protopyne_types::{Bar, Timeframe};
 
-use crate::catalog::AssetClass;
 use crate::key::TapeKey;
-use crate::sqlite_tape::SqliteTape;
-use crate::sqlite_tape::test_setup::{
-    VENUE, m1_key, memory_tape, with_memory_caps,
-};
-use crate::store::{CandleStore, WritePolicy};
+use crate::registry::MarketRegistry;
+use crate::registry::test_setup::{VENUE, with_registry_caps};
 
 /// The stamp every snapshot test seals at, so a written record is
 /// deterministic across runs. A real seal passes the wall clock.
 pub const SEAL_NOW_MS: i64 = 1_767_225_600_000;
 
-/// Run `f` inside an ephemeral-store capability scope, against `symbol`
-/// registered at `scale` and seeded with `bars`. `f` receives the tape and
-/// its key and may do synchronous work (seal, reconcile, read) while the
-/// capability is still installed.
+/// Run `f` inside an ephemeral-registry capability scope, against `symbol`
+/// registered at `scale`. `f` receives the registry and its key and may do
+/// synchronous work (seal, reconcile, read) while the capability is still
+/// installed. Bars ride the closure's own capture: the seal reads them from
+/// its caller, never from a tape.
 pub async fn with_seeded_tape<F, T>(symbol: &str, scale: u32, bars: &[Bar], f: F) -> T
 where
-    F: FnOnce(&SqliteTape, TapeKey) -> T,
+    F: FnOnce(&MarketRegistry, TapeKey) -> T,
 {
-    with_memory_caps(async {
-        let tape = memory_tape();
-        let symbol_id = tape
+    let _ = bars;
+    with_registry_caps(async {
+        let registry = MarketRegistry::open_in_memory().expect("registry opens");
+        let symbol_id = registry
             .register(
                 symbol,
                 VENUE,
-                AssetClass::Stock,
+                crate::catalog::AssetClass::Stock,
                 crate::catalog::PriceScale::of(scale).expect("valid scale"),
                 "UTC",
                 Timeframe::M1,
             )
             .expect("registration succeeds");
-        let key = m1_key(symbol_id);
-        if !bars.is_empty() {
-            tape.append(key, bars, WritePolicy::InsertIfAbsent)
-                .expect("seed append succeeds");
-        }
-        f(&tape, key)
+        let key = TapeKey {
+            symbol_id,
+            timeframe: Timeframe::M1,
+        };
+        f(&registry, key)
     })
     .await
 }

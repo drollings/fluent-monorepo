@@ -104,10 +104,10 @@ fn non_contention_store_failures_classify_unavailable() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn unavailable_repair_terminates_without_backing_off() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let (handle, permit, caps) = th::open_file_handle(&dir, "store.db").await;
+    let (handle, permit, caps) = th::open_file_handle(&dir, "store");
     let key = fluent_wvr::CURRENT_CAPS
         .scope(caps.clone(), async {
-            th::register_m1(&handle, &permit, "SPY").await
+            th::register_m1(&handle, &permit, "SPY")
         })
         .await;
     let provider: std::sync::Arc<dyn crate::history::HistoryProvider> =
@@ -131,7 +131,6 @@ async fn unavailable_repair_terminates_without_backing_off() {
                     3_000,
                     FreshnessPolicy::new().build(),
                 )
-                .await
                 .expect("plan builds")
         })
         .await;
@@ -168,7 +167,7 @@ fn incoherent_repair_config_refuses() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn worker_without_capability_is_denied() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let (handle, permit, _caps) = th::open_file_handle(&dir, "store.db").await;
+    let (handle, permit, _caps) = th::open_file_handle(&dir, "store");
     let key = crate::key::TapeKey {
         symbol_id: crate::key::SymbolId(1),
         timeframe: protopyne_types::Timeframe::M1,
@@ -197,7 +196,7 @@ async fn worker_without_capability_is_denied() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn worker_with_foreign_permit_is_refused() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let (handle, _permit, _caps) = th::open_file_handle(&dir, "store.db").await;
+    let (handle, _permit, _caps) = th::open_file_handle(&dir, "store");
     let foreign = crate::capability::StoreStorage::new("elsewhere.db".into());
     let worker = RepairWorker::new(
         std::sync::Arc::new(handle),
@@ -226,10 +225,10 @@ async fn worker_execute_repairs_one_attempt() {
     let dir = tempfile::tempdir().expect("tempdir");
     let bars = th::ascending_bars(0, 8);
     let csv = th::write_tape_csv(&dir, "spy.csv", &bars);
-    let (handle, permit, caps) = th::open_file_handle(&dir, "store.db").await;
+    let (handle, permit, caps) = th::open_file_handle(&dir, "store");
     let key = fluent_wvr::CURRENT_CAPS
         .scope(caps.clone(), async {
-            th::register_m1(&handle, &permit, "SPY").await
+            th::register_m1(&handle, &permit, "SPY")
         })
         .await;
     let provider: std::sync::Arc<dyn crate::history::HistoryProvider> = std::sync::Arc::new(
@@ -266,10 +265,10 @@ async fn worker_runs_under_batch_supervision() {
     let dir = tempfile::tempdir().expect("tempdir");
     let bars = th::ascending_bars(0, 4);
     let csv = th::write_tape_csv(&dir, "spy.csv", &bars);
-    let (handle, permit, caps) = th::open_file_handle(&dir, "store.db").await;
+    let (handle, permit, caps) = th::open_file_handle(&dir, "store");
     let key = fluent_wvr::CURRENT_CAPS
         .scope(caps.clone(), async {
-            th::register_m1(&handle, &permit, "SPY").await
+            th::register_m1(&handle, &permit, "SPY")
         })
         .await;
     let provider: std::sync::Arc<dyn crate::history::HistoryProvider> = std::sync::Arc::new(
