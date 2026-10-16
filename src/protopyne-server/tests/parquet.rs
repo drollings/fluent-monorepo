@@ -1,6 +1,6 @@
 //! Parquet history ingest over the March 2026 SPY minute file.
 //!
-//! The month file (`data/protopyne-rs/historical/SPY-2026-03-1M.parquet`)
+//! The month file (`data/protopyne-rs/historical/SPY/2026/03/SPY-2026-03-1M.parquet`)
 //! holds the full month's one-minute bars, so the goldens below pin its bar
 //! count and its first and last bars. Three same-stamp restatements merge
 //! through the shared restatement rule. The fixture folds into
@@ -20,7 +20,7 @@ use rust_decimal::Decimal;
 
 fn month_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../data/protopyne-rs/historical/SPY-2026-03-1M.parquet")
+        .join("../../data/protopyne-rs/historical/SPY/2026/03/SPY-2026-03-1M.parquet")
 }
 
 fn dec(text: &str) -> Decimal {

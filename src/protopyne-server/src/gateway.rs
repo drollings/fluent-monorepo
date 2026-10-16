@@ -8,21 +8,21 @@
 //! core-side: `arm` runs the identical tighten-only logic through
 //! `apply_arm`, including its refusal messages.
 
-use protopyne_store::{FoldEdges, fold_bars_edges};
+use protopyne_store::{fold_bars_edges, FoldEdges};
 use protopyne_strategy::Grant;
 use protopyne_types::{Bar, Timeframe};
 use protopyne_view::{
-    ArmResponse, ChartBars, GatewayError, HealthView, JournalRowView, OverlaySeries, PortfolioView,
-    ProposalView, ReplayView, SymbolInfoView, TerminalGateway, WorstCase,
-    validate_symbol_timeframe,
+    validate_symbol_timeframe, ArmResponse, ChartBars, GatewayError, HealthView, JournalRowView,
+    OverlaySeries, PortfolioView, ProposalView, ReplayView, SymbolInfoView, TerminalGateway,
+    WorstCase,
 };
 use std::collections::BTreeMap;
 
 use crate::service::Shared;
 use crate::service::{
-    DEFAULT_REPLAY_CHECKPOINT_EVERY, TapeMiss, TapeMissKind, TapeServe, apply_arm, chart_bars_of,
-    grant_tiers_of, health_view, live_grant, overlay_series_of, parse_patch, preview_arm_of,
-    replay_view_of, tape_serve,
+    apply_arm, chart_bars_of, grant_tiers_of, health_view, live_grant, overlay_series_of,
+    parse_patch, preview_arm_of, replay_view_of, tape_serve, TapeMiss, TapeMissKind, TapeServe,
+    DEFAULT_REPLAY_CHECKPOINT_EVERY,
 };
 
 /// The fallback latch: edge-triggered, so a sustained fallback warns once and
@@ -122,7 +122,9 @@ fn resampled_history(
         return Ok(history.to_vec());
     }
     fold_bars_edges(history, requested, FoldEdges::CompleteOnly).map_err(|error| {
-        GatewayError::Malformed(format!("cannot fold {base} history into {requested}: {error}"))
+        GatewayError::Malformed(format!(
+            "cannot fold {base} history into {requested}: {error}"
+        ))
     })
 }
 
@@ -294,20 +296,19 @@ impl TerminalGateway for ServerGateway {
         // Loosening surfaces the core's refusal; a patch with no live grant
         // behind it refuses.
         if grant.get("patch").is_some() {
-            let patch = parse_patch(&grant)
-                .map_err(|(_, reason)| GatewayError::Malformed(reason))?;
-            let current = live_grant(&self.state).ok_or_else(|| {
-                GatewayError::InvalidGrant("no live grant to tighten".to_owned())
-            })?;
-            let next =
-                current.tighten(patch).map_err(|e| GatewayError::InvalidGrant(e.to_string()))?;
+            let patch =
+                parse_patch(&grant).map_err(|(_, reason)| GatewayError::Malformed(reason))?;
+            let current = live_grant(&self.state)
+                .ok_or_else(|| GatewayError::InvalidGrant("no live grant to tighten".to_owned()))?;
+            let next = current
+                .tighten(patch)
+                .map_err(|e| GatewayError::InvalidGrant(e.to_string()))?;
             return apply_arm(&self.state, next)
                 .map_err(|(_, reason)| GatewayError::InvalidGrant(reason));
         }
         let grant: Grant = serde_json::from_value(grant)
             .map_err(|e| GatewayError::Malformed(format!("grant document malformed: {e}")))?;
-        apply_arm(&self.state, grant)
-            .map_err(|(_, reason)| GatewayError::InvalidGrant(reason))
+        apply_arm(&self.state, grant).map_err(|(_, reason)| GatewayError::InvalidGrant(reason))
     }
 }
 

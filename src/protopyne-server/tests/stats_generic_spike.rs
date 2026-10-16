@@ -106,7 +106,10 @@ fn decs(values: &[&str]) -> Vec<Decimal> {
 }
 
 fn f64s(values: &[&str]) -> Vec<f64> {
-    values.iter().map(|v| v.parse().expect("valid test float")).collect()
+    values
+        .iter()
+        .map(|v| v.parse().expect("valid test float"))
+        .collect()
 }
 
 // ── Agreement: the skeleton shares on non-degenerate finite inputs ──
@@ -121,7 +124,11 @@ fn spike_decimal_mean_matches_exactly_including_thirds() {
         vec!["1.0", "1.0", "1.0", "1.0"],
     ] {
         let values = decs(&fixture);
-        assert_eq!(spike_mean(&values), mean(&values), "mean drift on {fixture:?}");
+        assert_eq!(
+            spike_mean(&values),
+            mean(&values),
+            "mean drift on {fixture:?}"
+        );
     }
     let third = dec("1").checked_div(dec("3")).expect("divides");
     assert_eq!(
@@ -233,7 +240,10 @@ fn spike_nan_leg_has_no_decimal_vocabulary() {
         window_mean(&legged).is_nan(),
         "current f64 behavior: NaN contaminates the window"
     );
-    assert!(Decimal::from_f64_retain(f64::NAN).is_none(), "Decimal has no NaN leg");
+    assert!(
+        Decimal::from_f64_retain(f64::NAN).is_none(),
+        "Decimal has no NaN leg"
+    );
 }
 
 #[test]
@@ -247,7 +257,11 @@ fn spike_overflow_contracts_differ_per_type_by_design() {
     let inf_pair = [1e308f64, 1e308];
     let spike = spike_mean(&inf_pair).expect("IEEE never refuses");
     assert_eq!(spike.to_bits(), window_mean(&inf_pair).to_bits());
-    assert_eq!(spike.to_bits(), f64::INFINITY.to_bits(), "f64 overflow is inf data, not absence");
+    assert_eq!(
+        spike.to_bits(),
+        f64::INFINITY.to_bits(),
+        "f64 overflow is inf data, not absence"
+    );
 }
 
 #[test]
@@ -257,9 +271,24 @@ fn spike_ratio_and_curve_helpers_have_no_second_family() {
     // as a single-consumer wrapper — below the two-consumer promotion bar,
     // and each wrapper would still need its own scalar's edge contract.
     let moves = decs(&["10", "-5", "15"]);
-    assert!(sharpe(&decs(&["0.01", "0.02", "-0.01", "0.03"]), Decimal::ZERO, dec("252")).is_some());
-    assert!(sortino(&decs(&["0.01", "0.02", "-0.01", "0.03"]), Decimal::ZERO, dec("252")).is_some());
-    assert!(calmar(&decs(&["100", "110", "105", "120"]), Decimal::ZERO, dec("252")).is_some());
+    assert!(sharpe(
+        &decs(&["0.01", "0.02", "-0.01", "0.03"]),
+        Decimal::ZERO,
+        dec("252")
+    )
+    .is_some());
+    assert!(sortino(
+        &decs(&["0.01", "0.02", "-0.01", "0.03"]),
+        Decimal::ZERO,
+        dec("252")
+    )
+    .is_some());
+    assert!(calmar(
+        &decs(&["100", "110", "105", "120"]),
+        Decimal::ZERO,
+        dec("252")
+    )
+    .is_some());
     assert!(win_rate(&moves).is_some());
     assert!(profit_factor(&moves).is_some());
     assert!(!step_returns(&decs(&["0", "0", "100", "110"])).is_empty());

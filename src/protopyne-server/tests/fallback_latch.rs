@@ -41,7 +41,10 @@ fn consecutive_misses_warn_exactly_once() {
 fn alternating_serve_and_miss_warn_once_per_entry() {
     walk(
         &[
-            (Some(TapeMissKind::UnknownSymbol), LatchEvent::EnteredFallback),
+            (
+                Some(TapeMissKind::UnknownSymbol),
+                LatchEvent::EnteredFallback,
+            ),
             (None, LatchEvent::Recovered),
             (Some(TapeMissKind::Denied), LatchEvent::EnteredFallback),
             (None, LatchEvent::Recovered),
@@ -53,9 +56,16 @@ fn alternating_serve_and_miss_warn_once_per_entry() {
 #[test]
 fn recovery_logs_exactly_once() {
     let mut latch = FallbackLatch::default();
-    assert_eq!(latch.observe(Some(TapeMissKind::Store)), LatchEvent::EnteredFallback);
+    assert_eq!(
+        latch.observe(Some(TapeMissKind::Store)),
+        LatchEvent::EnteredFallback
+    );
     assert_eq!(latch.observe(None), LatchEvent::Recovered);
-    assert_eq!(latch.observe(None), LatchEvent::None, "a steady serve does not re-log");
+    assert_eq!(
+        latch.observe(None),
+        LatchEvent::None,
+        "a steady serve does not re-log"
+    );
 }
 
 #[test]
@@ -79,7 +89,9 @@ fn counters_tally_each_outcome_exactly() {
     stats.record(&TapeServe::Missing(TapeMiss::Denied));
     stats.record(&TapeServe::Missing(TapeMiss::UnknownSymbol));
     stats.record(&TapeServe::Missing(TapeMiss::UnsupportedTimeframe));
-    stats.record(&TapeServe::Missing(TapeMiss::Store(StoreError::Config("x".to_owned()))));
+    stats.record(&TapeServe::Missing(TapeMiss::Store(StoreError::Config(
+        "x".to_owned(),
+    ))));
     stats.record(&TapeServe::Missing(TapeMiss::Denied));
     let snapshot = stats.snapshot();
     assert_eq!(snapshot.served, 1);

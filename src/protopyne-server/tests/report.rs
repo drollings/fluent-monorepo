@@ -88,13 +88,28 @@ fn report_states_limits_and_unavailable_greeks() {
     assert_eq!(report.drawdown, money("6"));
     assert_eq!(report.tail_loss, money("6"));
     assert_eq!(report.capital_efficiency, Some(0.5));
-    assert!(report.greeks_note.contains("unavailable"), "greeks must be marked unavailable, got: {}", report.greeks_note);
+    assert!(
+        report.greeks_note.contains("unavailable"),
+        "greeks must be marked unavailable, got: {}",
+        report.greeks_note
+    );
     assert_eq!(report.data_limits, vec!["no chain data".to_owned()]);
 }
 
 #[test]
 fn report_with_no_proposals_has_no_fill_rate() {
-    let report = build_report(manifest(0), Vec::new(), Vec::new(), 0, 0, money("0"), money("0"), money("0"), Vec::new(), None);
+    let report = build_report(
+        manifest(0),
+        Vec::new(),
+        Vec::new(),
+        0,
+        0,
+        money("0"),
+        money("0"),
+        money("0"),
+        Vec::new(),
+        None,
+    );
     assert_eq!(report.fill_rate, None);
     assert_eq!(report.drawdown, money("0"));
 }
@@ -105,7 +120,10 @@ fn manifest_canonical_json_reports_loudly() {
     // a serialization failure reports inside the payload instead.
     let json = manifest(384).to_canonical_json();
     assert!(json.contains("spy-15m-v1"), "pin data present, got: {json}");
-    assert!(!json.contains("serialization_error"), "clean pins serialize cleanly");
+    assert!(
+        !json.contains("serialization_error"),
+        "clean pins serialize cleanly"
+    );
 }
 
 #[test]
@@ -166,7 +184,10 @@ fn return_conversions_round_trip() {
         let log = simple_to_log_return(simple).expect("defined");
         let back = log_to_simple_return(log).expect("defined");
         let drift = (back - simple).abs();
-        assert!(drift < decimal("0.000000000001"), "round-trip drifts {drift} on {rate}");
+        assert!(
+            drift < decimal("0.000000000001"),
+            "round-trip drifts {drift} on {rate}"
+        );
     }
     // log(1 + rate) is undefined at and below -100%.
     assert!(simple_to_log_return(decimal("-1")).is_none());
@@ -178,8 +199,14 @@ fn return_conversions_round_trip() {
 #[test]
 fn cum_return_on_known_curve() {
     use crate::report::cum_return;
-    assert_eq!(cum_return(&[decimal("100"), decimal("120"), decimal("90")]), Some(decimal("-0.1")));
-    assert_eq!(cum_return(&[decimal("100"), decimal("100")]), Some(Decimal::ZERO));
+    assert_eq!(
+        cum_return(&[decimal("100"), decimal("120"), decimal("90")]),
+        Some(decimal("-0.1"))
+    );
+    assert_eq!(
+        cum_return(&[decimal("100"), decimal("100")]),
+        Some(Decimal::ZERO)
+    );
     // Leading idle zeros are skipped like the reference skips nulls: the
     // base is the first deployed capital.
     assert_eq!(
@@ -210,10 +237,27 @@ fn report_carries_cum_return_and_rsrs_as_json_keys() {
     assert!((report.cum_return.expect("cum_return") - -0.1).abs() < 1e-12);
     assert_eq!(report.rsrs, Some(2.5));
     let json = serde_json::to_string(&report).expect("serializable");
-    assert!(json.contains("\"cum_return\""), "sole serialization change carries cum_return, got: {json}");
-    assert!(json.contains("\"rsrs\""), "sole serialization change carries rsrs, got: {json}");
+    assert!(
+        json.contains("\"cum_return\""),
+        "sole serialization change carries cum_return, got: {json}"
+    );
+    assert!(
+        json.contains("\"rsrs\""),
+        "sole serialization change carries rsrs, got: {json}"
+    );
     // Honest None survives the round-trip as explicit null.
-    let empty = build_report(manifest(0), Vec::new(), Vec::new(), 0, 0, money("0"), money("0"), money("0"), Vec::new(), None);
+    let empty = build_report(
+        manifest(0),
+        Vec::new(),
+        Vec::new(),
+        0,
+        0,
+        money("0"),
+        money("0"),
+        money("0"),
+        Vec::new(),
+        None,
+    );
     assert_eq!(empty.cum_return, None);
     assert_eq!(empty.rsrs, None);
 }

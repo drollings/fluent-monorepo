@@ -29,7 +29,7 @@ const VENUE: &str = "bench-venue";
 
 fn month_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../data/protopyne-rs/historical/SPY-2026-03-1M.parquet")
+        .join("../../data/protopyne-rs/historical/SPY/2026/03/SPY-2026-03-1M.parquet")
 }
 
 /// The committed series with every missing minute filled flat (previous

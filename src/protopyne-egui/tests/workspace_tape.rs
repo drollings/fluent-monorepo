@@ -12,7 +12,7 @@ use std::sync::Arc;
 use super::*;
 use chrono::DateTime;
 use protopyne_chart_model::ChartRow;
-use protopyne_server::{DEFAULT_TAPE_LIMIT, ServerConfig, TapeReader, serve_with_tape};
+use protopyne_server::{serve_with_tape, ServerConfig, TapeReader, DEFAULT_TAPE_LIMIT};
 use protopyne_store::{
     AssetClass, CandleStore as _, MarketTape, PriceScale, StoreStorage, TapeKey, WritePolicy,
 };
@@ -71,8 +71,12 @@ fn seed_tape(bars: &[Bar]) -> MarketTape {
                 Timeframe::M15,
             )
             .expect("registration succeeds");
-        let key = TapeKey { symbol_id, timeframe: Timeframe::M15 };
-        tape.append(key, bars, WritePolicy::InsertIfAbsent).expect("seed append succeeds");
+        let key = TapeKey {
+            symbol_id,
+            timeframe: Timeframe::M15,
+        };
+        tape.append(key, bars, WritePolicy::InsertIfAbsent)
+            .expect("seed append succeeds");
     });
     tape
 }
@@ -117,9 +121,16 @@ async fn a_store_backed_switch_replans_and_paints_headlessly() {
     assert_eq!(workspace.active_symbol(), "SPY", "the symbol switched");
     // Provenance: the rows are the tape's 24 bars at 200, not the boot
     // history's 12 at 100. A silent fallback would serve the wrong series.
-    assert_eq!(workspace.rows().len(), tape.len(), "the tape's series served the switch");
+    assert_eq!(
+        workspace.rows().len(),
+        tape.len(),
+        "the tape's series served the switch"
+    );
     assert!(
-        workspace.rows().iter().all(|row| (row.close - 200.0).abs() < 1e-6),
+        workspace
+            .rows()
+            .iter()
+            .all(|row| (row.close - 200.0).abs() < 1e-6),
         "the store served the switch, not the boot history"
     );
     assert!(workspace.cached_series() > 0, "the pane cache recomputed");
@@ -135,7 +146,11 @@ async fn a_store_backed_switch_replans_and_paints_headlessly() {
 fn a_gateway_less_workspace_seeds_and_paints_unchanged() {
     let rows = sample_rows();
     let mut workspace = ChartWorkspace::with_rows(rows.clone()).expect("the workspace seeds");
-    assert_eq!(workspace.rows().len(), rows.len(), "the seeded rows are the workspace's");
+    assert_eq!(
+        workspace.rows().len(),
+        rows.len(),
+        "the seeded rows are the workspace's"
+    );
     egui::__run_test_ui(|ui| {
         paint_workspace(ui, &mut workspace, None).expect("the workspace paints without a gateway");
     });

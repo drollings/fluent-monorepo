@@ -9,8 +9,8 @@
 //! unavailable rather than inventing them.
 
 use chrono::{DateTime, Utc};
-use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive as _;
+use rust_decimal::Decimal;
 
 use protopyne_kernels::indicator::encode_param_value;
 use protopyne_kernels::value::PineValue;
@@ -100,10 +100,7 @@ impl RunManifest {
         seed: u64,
     ) -> Self {
         let (first_ts, last_ts) = match (bars.first(), bars.last()) {
-            (Some(first), Some(last)) => (
-                first.ts.to_rfc3339(),
-                last.ts.to_rfc3339(),
-            ),
+            (Some(first), Some(last)) => (first.ts.to_rfc3339(), last.ts.to_rfc3339()),
             (None, _) | (_, None) => (String::new(), String::new()),
         };
         Self {
@@ -150,7 +147,8 @@ impl RunManifest {
         serde_json::to_string(self).unwrap_or_else(|e| {
             format!(
                 "{{\"serialization_error\":{}}}",
-                serde_json::to_string(&e.to_string()).unwrap_or_else(|_| "\"unencodable\"".to_owned())
+                serde_json::to_string(&e.to_string())
+                    .unwrap_or_else(|_| "\"unencodable\"".to_owned())
             )
         })
     }
@@ -159,9 +157,7 @@ impl RunManifest {
 /// Count bars whose close is non-positive (skipped by quote synthesis).
 #[must_use]
 pub fn count_unquotable_bars(bars: &[Bar]) -> u64 {
-    bars.iter()
-        .filter(|bar| bar.c <= Decimal::ZERO)
-        .count() as u64
+    bars.iter().filter(|bar| bar.c <= Decimal::ZERO).count() as u64
 }
 
 /// Canonical bytes for tape data: the exact replayed bars plus the planner
@@ -431,7 +427,8 @@ impl BacktestReport {
         serde_json::to_string(self).unwrap_or_else(|e| {
             format!(
                 "{{\"serialization_error\":{}}}",
-                serde_json::to_string(&e.to_string()).unwrap_or_else(|_| "\"unencodable\"".to_owned())
+                serde_json::to_string(&e.to_string())
+                    .unwrap_or_else(|_| "\"unencodable\"".to_owned())
             )
         })
     }
@@ -485,8 +482,10 @@ pub fn build_report(
     equity_curve: Vec<Money>,
     rsrs: Option<f64>,
 ) -> BacktestReport {
-    let equity_decimals: Vec<Decimal> =
-        equity_curve.iter().map(|money| money.as_decimal()).collect();
+    let equity_decimals: Vec<Decimal> = equity_curve
+        .iter()
+        .map(|money| money.as_decimal())
+        .collect();
     let cum_return = cum_return(&equity_decimals).and_then(|value| {
         use rust_decimal::prelude::ToPrimitive as _;
         value.to_f64()
@@ -600,10 +599,9 @@ pub fn render_tearsheet(report: &BacktestReport) -> String {
                     totals.open_quantity,
                 ));
                 for bucket in &totals.buckets {
-                    let open = bucket.open_side.map_or_else(
-                        || "flat".to_owned(),
-                        |side| side.to_string(),
-                    );
+                    let open = bucket
+                        .open_side
+                        .map_or_else(|| "flat".to_owned(), |side| side.to_string());
                     rows.push(format!(
                         "bucket {}/{}/{}/{}/{}: realized {} unrealized {} fees {} fills {} closed {} open {} {open}",
                         bucket.key.portfolio,

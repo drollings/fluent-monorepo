@@ -10,6 +10,7 @@ pub mod csv;
 pub mod error;
 pub mod gateway;
 pub mod history;
+pub mod history_root;
 pub mod metrics;
 pub mod parquet;
 pub mod portfolio;
@@ -22,6 +23,7 @@ pub use backtest::{BacktestConfig, BacktestVenue, HistorySource, LoadedHistory, 
 pub use csv::parse_bars_csv;
 pub use error::ServerError;
 pub use history::{HistoryFormat, format_of, load_bars_candidates, load_bars_file};
+pub use history_root::{DEFAULT_TICKER, HISTORY_ROOT_BASE, HistoryCache, HistoryRoot, SkippedFile, TickerLoad, load_history_path};
 pub use parquet::fold_frames;
 pub use metrics::{TRADING_DAYS_PER_YEAR, calmar, drawdown_fraction, mean, population_std, profit_factor, sharpe, sortino, step_returns, win_rate};
 pub use portfolio::{Aggregation, BookedFill, BucketKey, BucketSummary, PAPER_PORTFOLIO, PortfolioReport, PortfolioTotals, aggregate};

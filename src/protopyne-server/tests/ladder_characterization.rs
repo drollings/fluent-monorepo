@@ -16,7 +16,7 @@ fn data(name: &str) -> PathBuf {
 
 fn month_parquet() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../data/protopyne-rs/historical/SPY-2026-03-1M.parquet")
+        .join("../../data/protopyne-rs/historical/SPY/2026/03/SPY-2026-03-1M.parquet")
 }
 
 #[test]

@@ -16,10 +16,11 @@
 //! form's submit.
 //!
 //! Usage: `cargo run -p protopyne-egui --features server-gateway,demo
-//! --example terminal -- [--mock] [--base <label>] [HISTORY.csv|HISTORY.parquet]`,
+//! --example terminal -- [--mock] [--base <label>] [DIR|HISTORY.csv|HISTORY.parquet]`,
 //! or pass `--check` to pull every view through the trait object without
 //! opening a window. `--base` declares the history's bar spacing for the
-//! gateway fold (default `15M`); it is never inferred from the filename.
+//! gateway fold (default `15M` for files, `1M` for history-root directories);
+//! it is never inferred from the filename.
 
 use std::path::PathBuf;
 
@@ -118,12 +119,17 @@ fn check_lines(bundle: &ViewsBundle, charts: &ChartReads, replay: &ReplayScrub) 
     ]
 }
 
-async fn boot(path: PathBuf, base: String) -> Result<ServerHandle, String> {
-    let bars = protopyne_server::load_bars_file(&path)
+async fn boot(path: PathBuf, base: Option<String>) -> Result<ServerHandle, String> {
+    let bars = protopyne_server::load_history_path(&path, None)
         .map_err(|e| format!("parse {}: {e}", path.display()))?;
     if bars.is_empty() {
         return Err(format!("no bars in {}", path.display()));
     }
+    // Directories hold one-minute months by contract; files keep the legacy
+    // fifteen-minute default unless `--base` says otherwise.
+    let base = base.unwrap_or_else(|| {
+        if path.is_dir() { "1M".to_owned() } else { "15M".to_owned() }
+    });
     let config = ServerConfig::new()
         .bind("127.0.0.1:0".to_owned())
         .history_timeframe(base)
@@ -354,17 +360,17 @@ async fn main() {
     let mut path: Option<PathBuf> = None;
     let mut check = false;
     let mut mock = false;
-    let mut base = "15M".to_owned();
+    let mut base: Option<String> = None;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--check" => check = true,
             "--mock" => mock = true,
             "--base" => {
-                base = args.next().unwrap_or_else(|| {
+                base = Some(args.next().unwrap_or_else(|| {
                     eprintln!("protopyne-terminal: --base needs a label");
                     std::process::exit(1);
-                });
+                }));
             }
             _ => path = Some(PathBuf::from(arg)),
         }

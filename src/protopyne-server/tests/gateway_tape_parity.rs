@@ -10,10 +10,10 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use chrono::DateTime;
 use super::*;
 use crate::common_tape as tape;
-use crate::service::{ServerConfig, TapeReader, serve_with_tape};
+use crate::service::{serve_with_tape, ServerConfig, TapeReader};
+use chrono::DateTime;
 use protopyne_store::StoreStorage;
 use protopyne_types::Timeframe;
 use protopyne_view::{ChartBars, TerminalGateway};
@@ -144,7 +144,10 @@ async fn a_divergent_tape_serves_the_tape_series() {
         "the tape's series served, not the boot history"
     );
     assert!(
-        served.rows.iter().all(|row| (row.close - 777.0).abs() < 1e-6),
+        served
+            .rows
+            .iter()
+            .all(|row| (row.close - 777.0).abs() < 1e-6),
         "the tape's closes served"
     );
     let stats = handle.tape_serve_stats();
@@ -215,16 +218,29 @@ async fn miss_serve_miss_tallies_each_counter() {
 
     // Unknown symbol: the tape cannot serve it, so the boot history serves
     // the read and the miss is counted.
-    let fallback = gateway.chart_bars_for("NOPE", "15M").expect("fallback read");
-    assert_eq!(fallback.rows.len(), bars.len(), "the fallback serves the boot history");
+    let fallback = gateway
+        .chart_bars_for("NOPE", "15M")
+        .expect("fallback read");
+    assert_eq!(
+        fallback.rows.len(),
+        bars.len(),
+        "the fallback serves the boot history"
+    );
     // Unknown label: the tape records the miss, then the fallback itself
     // refuses — the counter still tallies the attempt.
-    assert!(gateway.chart_bars_for("SPY", "9M").is_err(), "no ladder serves 9M");
+    assert!(
+        gateway.chart_bars_for("SPY", "9M").is_err(),
+        "no ladder serves 9M"
+    );
     // Served: the tape's series, counted once.
-    let served = gateway.chart_bars_for("SPY", "15M").expect("store-backed read");
+    let served = gateway
+        .chart_bars_for("SPY", "15M")
+        .expect("store-backed read");
     assert_eq!(served.rows.len(), bars.len());
     // A second miss after the serve: the counters keep every outcome.
-    gateway.chart_bars_for("NOPE", "15M").expect("fallback read");
+    gateway
+        .chart_bars_for("NOPE", "15M")
+        .expect("fallback read");
 
     let stats = handle.tape_serve_stats();
     assert_eq!(stats.served, 1, "one tape serve");

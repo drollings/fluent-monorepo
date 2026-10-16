@@ -16,27 +16,24 @@
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
-use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive as _;
+use rust_decimal::Decimal;
 
 use fluent_dag::checkpointed::CheckpointedStepGraph;
-use protopyne_strategy::{
-    BreakerState, Direction, Grant, GrantDecision, GrantMarket, GrantUsage, ProposalSide,
-    ProposeInput, RiskEngine, RiskState, Strategy, StructureKind, evaluate_grant,
-};
 use protopyne_store::{CandleStore, SpanPlan};
+use protopyne_strategy::{
+    evaluate_grant, BreakerState, Direction, Grant, GrantDecision, GrantMarket, GrantUsage,
+    ProposalSide, ProposeInput, RiskEngine, RiskState, Strategy, StructureKind,
+};
 use protopyne_types::{Bar, Money};
 use protopyne_venue::{
-    CorporateEvent, OrderIntent, OrderSide, PaperConfig, PaperVenue, Position, Quote,
-    Venue,
+    CorporateEvent, OrderIntent, OrderSide, PaperConfig, PaperVenue, Position, Quote, Venue,
 };
 
-use crate::backtest::{
-    BacktestConfig, BacktestVenue, HistorySource, load_history, quote_for_bar,
-};
+use crate::backtest::{load_history, quote_for_bar, BacktestConfig, BacktestVenue, HistorySource};
 use crate::error::ServerError;
-use crate::portfolio::{BookedFill, PAPER_PORTFOLIO, aggregate};
-use crate::report::{RunManifest, BacktestReport, build_report, count_unquotable_bars};
+use crate::portfolio::{aggregate, BookedFill, PAPER_PORTFOLIO};
+use crate::report::{build_report, count_unquotable_bars, BacktestReport, RunManifest};
 
 /// Per-bar economics and identity for one backtest run.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -73,7 +70,14 @@ impl RunnerConfig {
         dte_days: u32,
         warmup_bars: usize,
     ) -> Self {
-        Self { underlying, strategy_name, max_loss, notional, dte_days, warmup_bars }
+        Self {
+            underlying,
+            strategy_name,
+            max_loss,
+            notional,
+            dte_days,
+            warmup_bars,
+        }
     }
 
     /// Fail-closed self-consistency check.
@@ -82,7 +86,9 @@ impl RunnerConfig {
             return Err(ServerError::Backtest("underlying must be named".to_owned()));
         }
         if self.strategy_name.trim().is_empty() {
-            return Err(ServerError::Backtest("strategy_name must be named".to_owned()));
+            return Err(ServerError::Backtest(
+                "strategy_name must be named".to_owned(),
+            ));
         }
         Ok(())
     }
@@ -200,8 +206,14 @@ pub fn side_for_direction(direction: Direction) -> OrderSide {
 #[must_use]
 pub fn checked_order_for(direction: Direction, quote: &Quote) -> CheckedOrder {
     match direction {
-        Direction::Long => CheckedOrder { side: side_for_direction(direction), limit: quote.ask },
-        Direction::Short => CheckedOrder { side: side_for_direction(direction), limit: quote.bid },
+        Direction::Long => CheckedOrder {
+            side: side_for_direction(direction),
+            limit: quote.ask,
+        },
+        Direction::Short => CheckedOrder {
+            side: side_for_direction(direction),
+            limit: quote.bid,
+        },
     }
 }
 
@@ -230,7 +242,11 @@ impl BarHealth {
     /// the per-bar construction site in each loop is that plug point.
     #[must_use]
     pub fn rehearsed() -> Self {
-        Self { quote_age_secs: 0, clock_skew_secs: 0, reconciliation_healthy: true }
+        Self {
+            quote_age_secs: 0,
+            clock_skew_secs: 0,
+            reconciliation_healthy: true,
+        }
     }
 }
 
@@ -273,7 +289,12 @@ pub async fn decide_and_submit<V: Venue>(
     let proposal_id = format!("run-{seed}-{bar_index}");
     let ts = bar.ts.to_rfc3339();
     let Some(quote) = quote_for_bar(bar, quote_config) else {
-        return skipped_decision(bar_index, ts, proposal_id, "unquotable bar: non-positive close");
+        return skipped_decision(
+            bar_index,
+            ts,
+            proposal_id,
+            "unquotable bar: non-positive close",
+        );
     };
     let Some(spread_width) = quote.spread_width() else {
         return skipped_decision(bar_index, ts, proposal_id, "crossed quote");
@@ -312,7 +333,11 @@ pub async fn decide_and_submit<V: Venue>(
         Ok(_) => (true, Vec::new()),
         Err(refused) => (
             false,
-            refused.reasons.iter().map(|reason| format!("{reason:?}")).collect(),
+            refused
+                .reasons
+                .iter()
+                .map(|reason| format!("{reason:?}"))
+                .collect(),
         ),
     };
     let market = GrantMarket::new()
@@ -324,10 +349,11 @@ pub async fn decide_and_submit<V: Venue>(
     // trip at submission instead, so the recorded verdict stays honest about
     // the trade while the run stops opening exposure.
     let clean_breakers = BreakerState::new().build();
-    let (grant_allow, grant_reasons) = match evaluate_grant(&proposal, grant, usage, &market, &clean_breakers, bar.ts) {
-        GrantDecision::Allow => (true, Vec::new()),
-        GrantDecision::Deny { reasons } => (false, reasons),
-    };
+    let (grant_allow, grant_reasons) =
+        match evaluate_grant(&proposal, grant, usage, &market, &clean_breakers, bar.ts) {
+            GrantDecision::Allow => (true, Vec::new()),
+            GrantDecision::Deny { reasons } => (false, reasons),
+        };
     if !(risk_pass && grant_allow) {
         return BarDecision {
             bar_index,
@@ -503,7 +529,8 @@ impl BacktestRun {
         let decisions = serde_json::to_string(&self.decisions).unwrap_or_else(|e| {
             format!(
                 "{{\"serialization_error\":{}}}",
-                serde_json::to_string(&e.to_string()).unwrap_or_else(|_| "\"unencodable\"".to_owned())
+                serde_json::to_string(&e.to_string())
+                    .unwrap_or_else(|_| "\"unencodable\"".to_owned())
             )
         });
         format!("{}\n{decisions}", self.manifest.to_canonical_json())
@@ -609,14 +636,21 @@ pub async fn run_backtest(
     runner_config.validate()?;
     venue_config.validate()?;
     if bars.is_empty() {
-        return Err(ServerError::Backtest("history must not be empty".to_owned()));
+        return Err(ServerError::Backtest(
+            "history must not be empty".to_owned(),
+        ));
     }
     let paper = PaperConfig::new().build();
     let venue = BacktestVenue::new(venue_config.clone(), bars.to_vec(), paper)
         .map_err(|e| ServerError::Backtest(e.to_string()))?;
     let config_json = config_json_of(runner_config, venue_config, risk, grant)?;
-    let manifest =
-        pinned_manifest(&venue_config.data_version, config_json, venue.bars(), seed, &[]);
+    let manifest = pinned_manifest(
+        &venue_config.data_version,
+        config_json,
+        venue.bars(),
+        seed,
+        &[],
+    );
     run_backtest_on_venue(
         strategy,
         risk,
@@ -664,8 +698,12 @@ pub async fn run_backtest_from_source(
     // Single ownership per run: the loaded bars move into the venue and the
     // decide path borrows them back from it — no second `Vec` beside the
     // venue's own history.
-    let venue = BacktestVenue::new(venue_config.clone(), loaded.bars, PaperConfig::new().build())
-        .map_err(|e| ServerError::Backtest(e.to_string()))?;
+    let venue = BacktestVenue::new(
+        venue_config.clone(),
+        loaded.bars,
+        PaperConfig::new().build(),
+    )
+    .map_err(|e| ServerError::Backtest(e.to_string()))?;
     run_backtest_on_venue(
         strategy,
         risk,
@@ -731,13 +769,33 @@ async fn run_backtest_on_venue<V: Venue>(
         // The decision future borrows the closes prefix: the window is the
         // loop's own `closes`, never a per-bar clone.
         decisions.push(
-            decide_and_submit(strategy, risk, grant, &mut usage, venue, venue_config, &mut breakers, BarHealth::rehearsed(), index, bar, &closes, runner_config, seed)
-                .await,
+            decide_and_submit(
+                strategy,
+                risk,
+                grant,
+                &mut usage,
+                venue,
+                venue_config,
+                &mut breakers,
+                BarHealth::rehearsed(),
+                index,
+                bar,
+                &closes,
+                runner_config,
+                seed,
+            )
+            .await,
         );
     }
     let equity = equity_curve_for(bars, &decisions);
-    let fills = decisions.iter().filter(|decision| decision.submitted).count() as u64;
-    let proposals = decisions.iter().filter(|decision| decision.direction.is_some()).count() as u64;
+    let fills = decisions
+        .iter()
+        .filter(|decision| decision.submitted)
+        .count() as u64;
+    let proposals = decisions
+        .iter()
+        .filter(|decision| decision.direction.is_some())
+        .count() as u64;
     let total_fees = decisions
         .iter()
         .filter_map(|decision| decision.fee)
@@ -758,7 +816,8 @@ async fn run_backtest_on_venue<V: Venue>(
             venue_config.quote_spread_bps, venue_config.quote_size
         ),
         "fills share paper's spread-aware fill code (liquidity filter, slippage, fees)".to_owned(),
-        "orders rest at the touch (buy ask, sell bid); proposal limits mark the bar close".to_owned(),
+        "orders rest at the touch (buy ask, sell bid); proposal limits mark the bar close"
+            .to_owned(),
         format!("max loss {} per proposal", runner_config.max_loss),
     ];
     let limits = vec![
@@ -822,7 +881,11 @@ async fn run_backtest_on_venue<V: Venue>(
     let marks: Vec<(chrono::DateTime<chrono::Utc>, Money)> =
         bars.iter().map(|bar| (bar.ts, Money::new(bar.c))).collect();
     report.portfolio = Some(aggregate(&booked)?.summarize(&marks)?);
-    Ok(BacktestRun { manifest, decisions, report })
+    Ok(BacktestRun {
+        manifest,
+        decisions,
+        report,
+    })
 }
 
 /// One symbol's leg of a multi-symbol run: its configs plus its bar source.
@@ -869,7 +932,8 @@ impl MultiRunManifest {
         serde_json::to_string(self).unwrap_or_else(|e| {
             format!(
                 "{{\"serialization_error\":{}}}",
-                serde_json::to_string(&e.to_string()).unwrap_or_else(|_| "\"unencodable\"".to_owned())
+                serde_json::to_string(&e.to_string())
+                    .unwrap_or_else(|_| "\"unencodable\"".to_owned())
             )
         })
     }
@@ -955,8 +1019,7 @@ pub async fn run_multi_backtest(
         input.venue_config.validate()?;
         let loaded = load_history(&input.history, input.store.as_deref())?;
         let bars = loaded.bars;
-        let config_json =
-            config_json_of(&input.runner_config, &input.venue_config, risk, grant)?;
+        let config_json = config_json_of(&input.runner_config, &input.venue_config, risk, grant)?;
         let manifest = pinned_manifest(
             &input.venue_config.data_version,
             config_json,
@@ -1076,8 +1139,22 @@ pub async fn run_paper_decisions(
             continue;
         }
         decisions.push(
-            decide_and_submit(strategy, risk, grant, &mut usage, venue, &quote_config, &mut breakers, BarHealth::rehearsed(), index, bar, &closes, runner_config, seed)
-                .await,
+            decide_and_submit(
+                strategy,
+                risk,
+                grant,
+                &mut usage,
+                venue,
+                &quote_config,
+                &mut breakers,
+                BarHealth::rehearsed(),
+                index,
+                bar,
+                &closes,
+                runner_config,
+                seed,
+            )
+            .await,
         );
     }
     decisions
@@ -1129,10 +1206,14 @@ pub async fn run_sweep(
     seed: u64,
 ) -> Result<Vec<SweepOutcome>, ServerError> {
     if grants.is_empty() {
-        return Err(ServerError::Backtest("sweep needs at least one variant".to_owned()));
+        return Err(ServerError::Backtest(
+            "sweep needs at least one variant".to_owned(),
+        ));
     }
     if bars.is_empty() {
-        return Err(ServerError::Backtest("history must not be empty".to_owned()));
+        return Err(ServerError::Backtest(
+            "history must not be empty".to_owned(),
+        ));
     }
     let shared = Arc::new(SweepShared {
         strategy,
@@ -1165,7 +1246,11 @@ pub async fn run_sweep(
                 )
                 .await
                 .map_err(|e| e.to_string())?;
-                let fills = run.decisions.iter().filter(|decision| decision.submitted).count() as u64;
+                let fills = run
+                    .decisions
+                    .iter()
+                    .filter(|decision| decision.submitted)
+                    .count() as u64;
                 Ok::<SweepOutcome, String>(SweepOutcome {
                     index: job.index,
                     decisions: run.decisions,
@@ -1210,10 +1295,14 @@ pub fn build_replay(
     checkpoint_every: usize,
 ) -> Result<CheckpointedStepGraph<String, ReplayStep>, ServerError> {
     if bars.is_empty() {
-        return Err(ServerError::Backtest("history must not be empty".to_owned()));
+        return Err(ServerError::Backtest(
+            "history must not be empty".to_owned(),
+        ));
     }
     if checkpoint_every == 0 {
-        return Err(ServerError::Backtest("checkpoint_every must be at least 1".to_owned()));
+        return Err(ServerError::Backtest(
+            "checkpoint_every must be at least 1".to_owned(),
+        ));
     }
     let mut graph: CheckpointedStepGraph<String, ReplayStep> = CheckpointedStepGraph::new();
     for (index, bar) in bars.iter().enumerate() {
@@ -1227,7 +1316,11 @@ pub fn build_replay(
             .add_step(
                 key.clone(),
                 &deps,
-                ReplayStep { bar_index: index, ts: bar.ts.to_rfc3339(), done: false },
+                ReplayStep {
+                    bar_index: index,
+                    ts: bar.ts.to_rfc3339(),
+                    done: false,
+                },
             )
             .map_err(|e| ServerError::Backtest(format!("replay step rejected: {e:?}")))?;
         if index % checkpoint_every == 0 {
@@ -1272,7 +1365,12 @@ pub fn triple_barrier(
     stop_loss: f64,
 ) -> Vec<Option<f64>> {
     let len = closes.len().min(highs.len()).min(lows.len());
-    if window < 2 || !take_profit.is_finite() || !stop_loss.is_finite() || take_profit <= 0.0 || stop_loss <= 0.0 {
+    if window < 2
+        || !take_profit.is_finite()
+        || !stop_loss.is_finite()
+        || take_profit <= 0.0
+        || stop_loss <= 0.0
+    {
         return vec![None; len];
     }
     (0..len)
@@ -1329,8 +1427,14 @@ pub fn triple_barrier(
 #[must_use]
 pub fn report_rsrs(bars: &[Bar]) -> Option<f64> {
     use rust_decimal::prelude::ToPrimitive as _;
-    let highs: Vec<f64> = bars.iter().map(|bar| bar.h.to_f64().unwrap_or(f64::NAN)).collect();
-    let lows: Vec<f64> = bars.iter().map(|bar| bar.l.to_f64().unwrap_or(f64::NAN)).collect();
+    let highs: Vec<f64> = bars
+        .iter()
+        .map(|bar| bar.h.to_f64().unwrap_or(f64::NAN))
+        .collect();
+    let lows: Vec<f64> = bars
+        .iter()
+        .map(|bar| bar.l.to_f64().unwrap_or(f64::NAN))
+        .collect();
     protopyne_kernels::research::rsrs(&highs, &lows, 18, 600)
         .into_iter()
         .flatten()
@@ -1343,7 +1447,9 @@ pub fn report_rsrs(bars: &[Bar]) -> Option<f64> {
 /// training ends, so no bar is evaluated twice.
 pub fn walk_forward_split(bars: &[Bar], train_len: usize) -> Result<(&[Bar], &[Bar]), ServerError> {
     if train_len == 0 || train_len >= bars.len() {
-        return Err(ServerError::Backtest("train split must be within (0, len)".to_owned()));
+        return Err(ServerError::Backtest(
+            "train split must be within (0, len)".to_owned(),
+        ));
     }
     Ok((&bars[..train_len], &bars[train_len..]))
 }

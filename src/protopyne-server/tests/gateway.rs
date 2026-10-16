@@ -8,13 +8,13 @@
 
 use std::path::PathBuf;
 
-use crate::service::{ServerConfig, ServerHandle, serve};
+use crate::service::{serve, ServerConfig, ServerHandle};
 use chrono::{TimeZone, Utc};
-use protopyne_types::Bar;
 use protopyne_strategy::{
     BreakerLimits, Direction, Grant, GrantBudgets, GrantPermission, GrantScope,
     PortfolioThresholds, SignalThresholds, StructureKind, TradeThresholds,
 };
+use protopyne_types::Bar;
 use protopyne_types::Money;
 use protopyne_view::TerminalGateway;
 
@@ -56,7 +56,10 @@ async fn gateway_reads_equal_route_reads() {
         .json()
         .await
         .expect("proposals are JSON");
-    assert_eq!(gateway.proposals().expect("gateway proposals read"), proposals);
+    assert_eq!(
+        gateway.proposals().expect("gateway proposals read"),
+        proposals
+    );
 
     let portfolio: protopyne_view::PortfolioView = client
         .get(format!("{base}/portfolio"))
@@ -66,7 +69,10 @@ async fn gateway_reads_equal_route_reads() {
         .json()
         .await
         .expect("portfolio is JSON");
-    assert_eq!(gateway.portfolio().expect("gateway portfolio reads"), portfolio);
+    assert_eq!(
+        gateway.portfolio().expect("gateway portfolio reads"),
+        portfolio
+    );
 
     assert!(
         gateway.journal().expect("gateway journal reads").is_empty(),
@@ -92,7 +98,9 @@ async fn gateway_reads_equal_route_reads() {
         .await
         .expect("overlay is JSON");
     assert_eq!(
-        gateway.chart_overlays("ema", 10).expect("gateway overlay reads"),
+        gateway
+            .chart_overlays("ema", 10)
+            .expect("gateway overlay reads"),
         overlay
     );
 
@@ -122,7 +130,11 @@ async fn replay_route_publishes_the_runner_graph_and_refuses_a_bad_cadence() {
     let gateway = handle.gateway();
 
     let view = gateway.replay().expect("gateway replay reads");
-    assert_eq!(view.steps.len(), history().len(), "one step per history bar");
+    assert_eq!(
+        view.steps.len(),
+        history().len(),
+        "one step per history bar"
+    );
     assert_eq!(view.total_bars, view.steps.len() as u64);
     assert_eq!(
         view.cursor, view.total_bars,
@@ -152,12 +164,18 @@ async fn replay_route_publishes_the_runner_graph_and_refuses_a_bad_cadence() {
         .await
         .expect("error body is JSON");
     assert!(
-        refused.error.contains("checkpoint_every must be at least 1"),
+        refused
+            .error
+            .contains("checkpoint_every must be at least 1"),
         "the core's own refusal surfaces, got: {}",
         refused.error
     );
     assert!(
-        !gateway.replay().expect("gateway replay still reads").steps.is_empty(),
+        !gateway
+            .replay()
+            .expect("gateway replay still reads")
+            .steps
+            .is_empty(),
         "the refused route read leaves the gateway read intact"
     );
 
@@ -173,7 +191,11 @@ fn arming_grant() -> Grant {
                 .underlyings(vec!["SPY".to_owned()])
                 .structures(vec![StructureKind::Vertical])
                 .directions(vec![Direction::Long])
-                .permissions(GrantPermission { entries: true, exits: true, rolls: false })
+                .permissions(GrantPermission {
+                    entries: true,
+                    exits: true,
+                    rolls: false,
+                })
                 .build(),
         )
         .budgets(
@@ -184,7 +206,12 @@ fn arming_grant() -> Grant {
                 .max_notional(Money::from(5_000))
                 .build(),
         )
-        .signal(SignalThresholds::new().min_conviction(0.0).min_activity_score(0.0).build())
+        .signal(
+            SignalThresholds::new()
+                .min_conviction(0.0)
+                .min_activity_score(0.0)
+                .build(),
+        )
         .trade(
             TradeThresholds::new()
                 .max_loss_per_trade(Money::from(10))
@@ -313,9 +340,10 @@ async fn gateway_patch_loosening_surfaces_the_core_refusal() {
 async fn gateway_patch_without_live_grant_refuses() {
     let handle = boot().await;
     let gateway = handle.gateway();
-    let patch =
-        serde_json::json!({"patch": {"breakers": r#"{"max_consecutive_errors":1}"#}});
-    let refused = gateway.arm(patch).expect_err("patch with no live grant refuses");
+    let patch = serde_json::json!({"patch": {"breakers": r#"{"max_consecutive_errors":1}"#}});
+    let refused = gateway
+        .arm(patch)
+        .expect_err("patch with no live grant refuses");
     assert!(
         format!("{refused:?}").contains("no live grant"),
         "got: {refused:?}"
@@ -355,7 +383,9 @@ async fn preview_arm_returns_the_worst_case_without_storing() {
         r#"{"max_trades":1,"max_contracts":4,"#,
         r#""max_loss":"500","max_notional":"5000"}"#,
     )}});
-    let preview = gateway.preview_arm(patch).expect("tightening patch previews");
+    let preview = gateway
+        .preview_arm(patch)
+        .expect("tightening patch previews");
     assert_eq!(preview.max_trades, 1);
     assert_eq!(preview.max_loss, Money::from(500));
     assert_eq!(preview.max_notional, Money::from(5_000));
@@ -385,7 +415,9 @@ async fn preview_arm_refuses_loosening_like_an_arm() {
         r#"{"max_trades":99,"max_contracts":4,"#,
         r#""max_loss":"500","max_notional":"5000"}"#,
     )}});
-    let refused = gateway.preview_arm(loosen).expect_err("loosening preview refuses");
+    let refused = gateway
+        .preview_arm(loosen)
+        .expect_err("loosening preview refuses");
     assert!(
         format!("{refused:?}").contains("tightening must not raise any budget"),
         "the core's tighten refusal surfaces, got: {refused:?}"
@@ -402,10 +434,14 @@ async fn preview_arm_refuses_loosening_like_an_arm() {
 async fn preview_arm_without_live_grant_refuses() {
     let handle = boot().await;
     let gateway = handle.gateway();
-    let patch =
-        serde_json::json!({"patch": {"breakers": r#"{"max_consecutive_errors":1}"#}});
-    let refused = gateway.preview_arm(patch).expect_err("preview with no live grant refuses");
-    assert!(format!("{refused:?}").contains("no live grant"), "got: {refused:?}");
+    let patch = serde_json::json!({"patch": {"breakers": r#"{"max_consecutive_errors":1}"#}});
+    let refused = gateway
+        .preview_arm(patch)
+        .expect_err("preview with no live grant refuses");
+    assert!(
+        format!("{refused:?}").contains("no live grant"),
+        "got: {refused:?}"
+    );
     handle.shutdown().await;
 }
 
@@ -464,15 +500,24 @@ async fn gateway_serves_symbol_scoped_bars_and_overlays_across_timeframes() {
     );
 
     let base = gateway.chart_bars().expect("gateway bars read");
-    assert!(!base.rows.is_empty(), "the fixture history serves bars on the default slot");
+    assert!(
+        !base.rows.is_empty(),
+        "the fixture history serves bars on the default slot"
+    );
     assert_eq!(
-        gateway.chart_bars_for("SPY", "15M").expect("default-slot bars read"),
+        gateway
+            .chart_bars_for("SPY", "15M")
+            .expect("default-slot bars read"),
         base,
         "the 15M slot is the base: the symbol-scoped read equals the slot-agnostic read"
     );
     assert_eq!(
-        gateway.chart_overlays_for("SPY", "15M", "ema", 10).expect("default-slot overlay read"),
-        gateway.chart_overlays("ema", 10).expect("gateway overlay read"),
+        gateway
+            .chart_overlays_for("SPY", "15M", "ema", 10)
+            .expect("default-slot overlay read"),
+        gateway
+            .chart_overlays("ema", 10)
+            .expect("gateway overlay read"),
         "the 15M overlay equals the slot-agnostic read"
     );
 
@@ -513,7 +558,10 @@ async fn gateway_serves_symbol_scoped_bars_and_overlays_across_timeframes() {
     // A coarser timeframe the base can fill folds upward: 1H is a whole 4x
     // fold of the 15M base, so it serves strictly fewer bars.
     let hour = gateway.chart_bars_for("SPY", "1H").expect("1H bars read");
-    assert!(hour.rows.len() < base.rows.len(), "1H folds the 15M base upward into fewer bars");
+    assert!(
+        hour.rows.len() < base.rows.len(),
+        "1H folds the 15M base upward into fewer bars"
+    );
 
     // Blank identifiers refuse before any read.
     assert!(
@@ -547,14 +595,22 @@ async fn preview_worst_case_matches_the_checked_in_golden() {
         r#"{"max_trades":1,"max_contracts":4,"#,
         r#""max_loss":"500","max_notional":"5000"}"#,
     )}});
-    let preview = gateway.preview_arm(patch).expect("tightening patch previews");
+    let preview = gateway
+        .preview_arm(patch)
+        .expect("tightening patch previews");
     let body = serde_json::to_string(&preview).expect("worst case serializes");
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("preview_worst_case.json");
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("data")
+        .join("preview_worst_case.json");
     if std::env::var("OVERWRITE_GOLDENS").is_ok() {
         std::fs::write(&path, &body).expect("golden writes");
     }
     let expected = std::fs::read_to_string(&path).expect("golden checked in");
-    assert_eq!(body, expected, "preview worst-case bytes drifted from the golden");
+    assert_eq!(
+        body, expected,
+        "preview worst-case bytes drifted from the golden"
+    );
     handle.shutdown().await;
 }
 
@@ -571,7 +627,9 @@ async fn patch_negative_integer_leaf_refuses_by_tier() {
         r#"{"max_trades":-1,"max_contracts":4,"#,
         r#""max_loss":"500","max_notional":"5000"}"#,
     )}});
-    let refused = gateway.preview_arm(patch).expect_err("negative trades refuse");
+    let refused = gateway
+        .preview_arm(patch)
+        .expect_err("negative trades refuse");
     assert!(
         format!("{refused:?}").contains("budgets"),
         "the refusal names the tier, got: {refused:?}"

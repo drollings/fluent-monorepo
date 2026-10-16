@@ -29,13 +29,25 @@ pub enum Hair {
     /// One OHLCV leg (`open`, `high`, `low`, `close`, `volume`).
     Ohlcv(String),
     /// `left op right` with `op` in `{+, -, *, /}`.
-    Binary { op: char, left: Box<Hair>, right: Box<Hair> },
+    Binary {
+        op: char,
+        left: Box<Hair>,
+        right: Box<Hair>,
+    },
     /// Conditional selection (accepted in HIR, never produced by the spike).
-    Where { cond: Box<Hair>, then: Box<Hair>, otherwise: Box<Hair> },
+    Where {
+        cond: Box<Hair>,
+        then: Box<Hair>,
+        otherwise: Box<Hair>,
+    },
     /// Series shift by `offset` bars.
     Shift { offset: i64, series: Box<Hair> },
     /// Rolling kernel application.
-    Rolling { kernel: String, length: Length, series: Box<Hair> },
+    Rolling {
+        kernel: String,
+        length: Length,
+        series: Box<Hair>,
+    },
     /// Kernel call with resolved arguments.
     Call { kernel: String, args: Vec<Hair> },
 }
@@ -121,7 +133,9 @@ const LEGS: [&str; 5] = ["open", "high", "low", "close", "volume"];
 const KERNELS: [&str; 4] = ["sma", "ema", "trima", "midpoint"];
 
 fn refuse(reasons: Vec<String>) -> SpikeOutcome {
-    SpikeOutcome::Refused { refusal: Refusal { reasons } }
+    SpikeOutcome::Refused {
+        refusal: Refusal { reasons },
+    }
 }
 
 /// Split a comma-separated argument list at depth zero.
@@ -169,11 +183,7 @@ fn split_assignment(line: &str) -> Option<(String, String)> {
 }
 
 /// Lower one expression: literal, leg, bound name, binary, or kernel call.
-fn lower_expr(
-    text: &str,
-    inputs: &InputDefaults,
-    bound: &BoundNames,
-) -> Result<Hair, String> {
+fn lower_expr(text: &str, inputs: &InputDefaults, bound: &BoundNames) -> Result<Hair, String> {
     let text = text.trim();
     if let Ok(value) = text.parse::<f64>() {
         return Ok(Hair::Const(value));
@@ -191,7 +201,11 @@ fn lower_expr(
             }
             let series = lower_expr(&args[0], inputs, bound)?;
             let length = lower_length(&args[1], inputs)?;
-            return Ok(Hair::Rolling { kernel: kernel.to_owned(), length, series: Box::new(series) });
+            return Ok(Hair::Rolling {
+                kernel: kernel.to_owned(),
+                length,
+                series: Box::new(series),
+            });
         }
     }
     // One binary operator at depth zero, resolved in a single scan:
@@ -269,16 +283,17 @@ fn split_binary(
     let result = (|| {
         let left = lower_expr(left, inputs, bound)?;
         let right = lower_expr(&right[1..], inputs, bound)?;
-        Ok(Hair::Binary { op, left: Box::new(left), right: Box::new(right) })
+        Ok(Hair::Binary {
+            op,
+            left: Box::new(left),
+            right: Box::new(right),
+        })
     })();
     Some(result)
 }
 
 /// Lower an averaging length: integer literal or input-bound name.
-fn lower_length(
-    text: &str,
-    inputs: &InputDefaults,
-) -> Result<Length, String> {
+fn lower_length(text: &str, inputs: &InputDefaults) -> Result<Length, String> {
     let text = text.trim();
     if let Ok(value) = text.parse::<i64>() {
         if value >= 1 {
@@ -409,7 +424,10 @@ pub fn compile_spike(source: &str) -> SpikeOutcome {
         return refuse(reasons);
     }
     let lowered = Lowered { bindings, plots };
-    SpikeOutcome::Accepted { rust: emit_rust(&lowered), lowered }
+    SpikeOutcome::Accepted {
+        rust: emit_rust(&lowered),
+        lowered,
+    }
 }
 
 /// Emit Rust source calling the real kernels for `lowered`.
@@ -437,7 +455,11 @@ fn emit_rust(lowered: &Lowered) -> String {
 /// bindings, a comment for structural ones carried in HIR only.
 fn emit_statement(name: &str, hair: &Hair) -> String {
     match hair {
-        Hair::Rolling { kernel, length, series } => {
+        Hair::Rolling {
+            kernel,
+            length,
+            series,
+        } => {
             let leg = emit_series(series);
             let len = match length {
                 Length::Literal(value) => value.to_string(),
@@ -464,11 +486,15 @@ fn emit_series(hair: &Hair) -> String {
     match hair {
         Hair::Ohlcv(leg) if leg == "close" => "values.close".to_owned(),
         Hair::Ohlcv(leg) => format!("values.{leg}"),
-        Hair::Name(name) => format!("/* bound series {name} resolved at evaluation */ values.close"),
-        Hair::Const(value) => format!("/* constant {value} */ values.close"),
-        Hair::Binary { .. } | Hair::Where { .. } | Hair::Shift { .. } | Hair::Rolling { .. } | Hair::Call { .. } => {
-            "values.close".to_owned()
+        Hair::Name(name) => {
+            format!("/* bound series {name} resolved at evaluation */ values.close")
         }
+        Hair::Const(value) => format!("/* constant {value} */ values.close"),
+        Hair::Binary { .. }
+        | Hair::Where { .. }
+        | Hair::Shift { .. }
+        | Hair::Rolling { .. }
+        | Hair::Call { .. } => "values.close".to_owned(),
     }
 }
 

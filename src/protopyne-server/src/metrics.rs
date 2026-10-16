@@ -100,16 +100,13 @@ pub fn sortino(
     if step_returns.is_empty() {
         return None;
     }
-    let shortfall_squared =
-        step_returns
-            .iter()
-            .try_fold(Decimal::ZERO, |sum, value| {
-                if *value >= target_per_step {
-                    return Some(sum);
-                }
-                let gap = target_per_step.checked_sub(*value)?;
-                sum.checked_add(gap.checked_mul(gap)?)
-            })?;
+    let shortfall_squared = step_returns.iter().try_fold(Decimal::ZERO, |sum, value| {
+        if *value >= target_per_step {
+            return Some(sum);
+        }
+        let gap = target_per_step.checked_sub(*value)?;
+        sum.checked_add(gap.checked_mul(gap)?)
+    })?;
     let downside = shortfall_squared
         .checked_div(Decimal::from(step_returns.len() as u64))?
         .sqrt()?;

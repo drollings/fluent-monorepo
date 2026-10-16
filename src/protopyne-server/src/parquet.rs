@@ -68,7 +68,7 @@ pub fn fold_frames(
 /// Map the store's ingest taxonomy onto the server's: I/O keeps its typed
 /// shape (the fallback ladder discriminates on it), everything else reports
 /// the file and the reason.
-fn parquet_error(path: &Path, error: StoreError) -> ServerError {
+pub(crate) fn parquet_error(path: &Path, error: StoreError) -> ServerError {
     match error {
         StoreError::Io(io) => ServerError::Io(io),
         other => ServerError::Parquet {

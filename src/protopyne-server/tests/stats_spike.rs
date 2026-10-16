@@ -10,14 +10,20 @@ fn decs(values: &[&str]) -> Vec<Decimal> {
 }
 
 fn f64s(values: &[&str]) -> Vec<f64> {
-    values.iter().map(|v| v.parse().expect("valid test float")).collect()
+    values
+        .iter()
+        .map(|v| v.parse().expect("valid test float"))
+        .collect()
 }
 
 #[test]
 fn spike_empty_inputs_report_none_both_families() {
     assert_eq!(mean(&[]), None);
     assert_eq!(population_std(&[]), None);
-    assert!(window_mean(&[]).is_nan(), "f64 mean of empty is NaN, not None");
+    assert!(
+        window_mean(&[]).is_nan(),
+        "f64 mean of empty is NaN, not None"
+    );
 }
 
 #[test]
@@ -42,8 +48,16 @@ fn spike_constant_series_zero_dispersion() {
 #[test]
 fn spike_one_sided_books_keep_documented_contract() {
     assert_eq!(profit_factor(&[]), None, "empty book has no ratio");
-    assert_eq!(profit_factor(&decs(&["1.0", "2.0"])), None, "all-win book is unbounded: None");
-    assert_eq!(profit_factor(&decs(&["-1.0", "-2.0"])), Some(Decimal::ZERO), "all-loss book is Some(0)");
+    assert_eq!(
+        profit_factor(&decs(&["1.0", "2.0"])),
+        None,
+        "all-win book is unbounded: None"
+    );
+    assert_eq!(
+        profit_factor(&decs(&["-1.0", "-2.0"])),
+        Some(Decimal::ZERO),
+        "all-loss book is Some(0)"
+    );
 }
 
 #[test]
@@ -59,9 +73,16 @@ fn spike_decimal_rounding_edges_are_exact() {
 #[allow(clippy::float_cmp)]
 fn spike_f64_subnormals_and_nan_legs() {
     assert_eq!(variance_pop(&[f64::MIN_POSITIVE, f64::MIN_POSITIVE]), 0.0);
-    assert!(window_mean(&[1.0, f64::NAN]).is_nan(), "NaN propagates in f64 mean");
+    assert!(
+        window_mean(&[1.0, f64::NAN]).is_nan(),
+        "NaN propagates in f64 mean"
+    );
     assert!(std_pop(&[1.0, f64::NAN]).is_nan());
-    assert_eq!(mean(&decs(&["1.0"])), Some(dec("1.0")), "Decimal has no NaN leg");
+    assert_eq!(
+        mean(&decs(&["1.0"])),
+        Some(dec("1.0")),
+        "Decimal has no NaN leg"
+    );
 }
 
 #[test]
@@ -70,5 +91,8 @@ fn spike_mean_agrees_on_terminating_values() {
     let decimal_mean = mean(&decs(&words)).expect("defined");
     let float_mean = window_mean(&f64s(&words));
     let back: f64 = decimal_mean.to_string().parse().expect("renders");
-    assert!((back - float_mean).abs() <= 1e-12, "terminating values agree: {back} vs {float_mean}");
+    assert!(
+        (back - float_mean).abs() <= 1e-12,
+        "terminating values agree: {back} vs {float_mean}"
+    );
 }

@@ -16,7 +16,10 @@ use rust_decimal::Decimal;
 
 use protopyne_store::{CandleStore, ReadRequest as TapeReadRequest, SpanPlan, TapeKey};
 use protopyne_types::{Bar, Money};
-use protopyne_venue::{AccountEvent, AccountSnapshot, BalanceEntry, CorporateEvent, DryRunOutcome, Fill, LegExecution, OrderIntent, OrderRecord, PaperConfig, PaperVenue, Position, Quote, Venue, VenueError};
+use protopyne_venue::{
+    AccountEvent, AccountSnapshot, BalanceEntry, CorporateEvent, DryRunOutcome, Fill, LegExecution,
+    OrderIntent, OrderRecord, PaperConfig, PaperVenue, Position, Quote, Venue, VenueError,
+};
 
 use crate::error::ServerError;
 
@@ -55,7 +58,9 @@ impl BacktestConfig {
             return Err(ServerError::Backtest("underlying must be named".to_owned()));
         }
         if self.data_version.trim().is_empty() {
-            return Err(ServerError::Backtest("data_version must be pinned".to_owned()));
+            return Err(ServerError::Backtest(
+                "data_version must be pinned".to_owned(),
+            ));
         }
         if self.quote_spread_bps > 10_000 {
             return Err(ServerError::Backtest(
@@ -147,7 +152,10 @@ impl LoadedHistory {
     /// A load with no planner provenance (the file and dynamic arms).
     #[must_use]
     pub fn untaped(bars: Vec<Bar>) -> Self {
-        Self { bars, provenance: Vec::new() }
+        Self {
+            bars,
+            provenance: Vec::new(),
+        }
     }
 }
 
@@ -163,12 +171,14 @@ pub fn load_history(
     store: Option<&dyn CandleStore>,
 ) -> Result<LoadedHistory, ServerError> {
     match source {
-        HistorySource::Files(candidates) => {
-            Ok(LoadedHistory::untaped(crate::history::load_bars_candidates(candidates)?))
-        }
+        HistorySource::Files(candidates) => Ok(LoadedHistory::untaped(
+            crate::history::load_bars_candidates(candidates)?,
+        )),
         HistorySource::Dynamic(bars) => {
             if bars.is_empty() {
-                return Err(ServerError::Backtest("history must not be empty".to_owned()));
+                return Err(ServerError::Backtest(
+                    "history must not be empty".to_owned(),
+                ));
             }
             Ok(LoadedHistory::untaped(bars.clone()))
         }
@@ -176,9 +186,9 @@ pub fn load_history(
             let store = store.ok_or_else(|| {
                 ServerError::Backtest("tape history needs a store to read from".to_owned())
             })?;
-            let series = store.read(request).map_err(|error| {
-                ServerError::Backtest(format!("tape read refused: {error}"))
-            })?;
+            let series = store
+                .read(request)
+                .map_err(|error| ServerError::Backtest(format!("tape read refused: {error}")))?;
             if series.key != *key {
                 return Err(ServerError::Backtest(format!(
                     "tape read served {:?} for the requested {key:?}",
@@ -186,9 +196,14 @@ pub fn load_history(
                 )));
             }
             if series.bars.is_empty() {
-                return Err(ServerError::Backtest("history must not be empty".to_owned()));
+                return Err(ServerError::Backtest(
+                    "history must not be empty".to_owned(),
+                ));
             }
-            Ok(LoadedHistory { bars: series.bars, provenance: series.provenance })
+            Ok(LoadedHistory {
+                bars: series.bars,
+                provenance: series.provenance,
+            })
         }
     }
 }
@@ -216,9 +231,15 @@ impl BacktestVenue {
     ) -> Result<Self, ServerError> {
         config.validate()?;
         if bars.is_empty() {
-            return Err(ServerError::Backtest("history must not be empty".to_owned()));
+            return Err(ServerError::Backtest(
+                "history must not be empty".to_owned(),
+            ));
         }
-        Ok(Self { config, bars, inner: PaperVenue::new(paper) })
+        Ok(Self {
+            config,
+            bars,
+            inner: PaperVenue::new(paper),
+        })
     }
 
     /// Borrow the venue configuration (pin + quote assumptions).

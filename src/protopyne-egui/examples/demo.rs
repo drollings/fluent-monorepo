@@ -1,28 +1,37 @@
 //! Native terminal demo shell: a thin composition over [`ChartWorkspace`].
 //!
-//! Loads history from the native fixtures and seeds the shared workspace: a
-//! CSV set (per-timeframe files), or one Parquet file read as-is and tallied
-//! into every toolbar frame on load. No chart-rendering or indicator math
-//! lives here: every pane comes from `paint_workspace` and every number from
-//! the shared kernels, so the demo and the gateway-backed terminal draw the
-//! same terminal.
+//! History arrives as one CLI argument with two shapes: a directory opens as
+//! a history root (`TICKER/YYYY/MM/*.parquet` months with `*.csv` supplements
+//! beside them, merged per ticker on demand through the shared
+//! [`HistoryCache`]); a `.csv`/`.parquet` file keeps the legacy single-file
+//! load. With no argument the shell opens the shipped
+//! `data/protopyne-rs/historical` root. `--symbol` names the first ticker
+//! (`SPY` when present, else the first in sorted order).
+//!
+//! No chart-rendering or indicator math lives here: every pane comes from
+//! `paint_workspace` and every number from the shared kernels, so the demo
+//! and the gateway-backed terminal draw the same terminal. Symbol picks in
+//! the modal load that ticker's months on the next frame and seed every
+//! toolbar frame through the shared load-time tally; a ticker that refuses
+//! paints its own label over empty rows (never stale rows) with the reason
+//! on screen. Display stays on the optimized path throughout: one cached
+//! series per ticker, revision-skipped recomputes, and trailing-window,
+//! culled, column-aggregated paint.
 //!
 //! Usage: `cargo run -p protopyne-egui --features demo --example demo --
-//! [HISTORY.csv|HISTORY.parquet]`, or pass `--check` to run the headless
-//! data path without opening a window and print a summary.
+//! [DIR|HISTORY.csv|HISTORY.parquet] [--symbol TICKER]`, or pass `--check`
+//! to run the headless data path without opening a window and print a
+//! summary.
 
 use std::path::{Path, PathBuf};
 
-use protopyne_chart_model::{ChartRow, rows_of};
-use protopyne_egui::{ChartWorkspace, TimeframeKey, paint_workspace};
-use protopyne_types::{Bar, Timeframe};
+use protopyne_chart_model::{rows_of, ChartRow};
+use protopyne_egui::{paint_workspace, ChartWorkspace, TimeframeKey};
+use protopyne_server::{HistoryCache, HistoryRoot, TickerLoad};
+use protopyne_types::{Bar, FoldEdges, Timeframe};
 
 fn history_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../data/protopyne-rs/historical")
-}
-
-fn default_m15() -> PathBuf {
-    history_dir().join("SPY_15M.csv")
 }
 
 fn is_parquet(path: &Path) -> bool {
@@ -47,9 +56,9 @@ fn load_rows(path: &Path) -> Result<Vec<ChartRow>, String> {
     Ok(rows_of(&load_bars(path)?).rows)
 }
 
-/// Native slot files the demo seeds from CSV, so `1M`/`5M`/`15M` switch the
-/// actual loaded candles (`1H`/`4H`/`1D` resample the `15M` slot inside the
-/// workspace).
+/// Native slot files the file-mode demo seeds from CSV, so `1M`/`5M`/`15M`
+/// switch the actual loaded candles (`1H`/`4H`/`1D` resample the `15M` slot
+/// inside the workspace).
 fn native_slots(path: &Path) -> [(TimeframeKey, PathBuf); 3] {
     let dir = history_dir();
     [
@@ -66,46 +75,152 @@ fn key_of(timeframe: Timeframe) -> Option<TimeframeKey> {
         .find(|key| key.timeframe() == timeframe)
 }
 
-/// Seed every frame the base can reach from one file: the base is read as-is
-/// and every whole-multiple coarser target is tallied on load through the
-/// shared bucket-anchored fold. Frames finer than the base stay unseeded
-/// (they cannot be synthesized); `1D` is seeded for a one-minute base.
-fn seed_base_frames(
-    workspace: &mut ChartWorkspace,
-    base: TimeframeKey,
-    path: &Path,
-) -> Result<(), String> {
-    let bars = load_bars(path)?;
-    let base_grid = base.timeframe();
+/// Fold one 1M series into every toolbar frame the base reaches: the base is
+/// taken as-is and every whole-multiple coarser target is tallied through
+/// the shared bucket-anchored fold. Frames finer than the base stay absent
+/// (they cannot be synthesized); `1D` folds from a one-minute base.
+fn frames_of(bars: &[Bar]) -> Result<Vec<(TimeframeKey, Vec<ChartRow>)>, String> {
+    let base = protopyne_server::HISTORY_ROOT_BASE;
     let targets: Vec<Timeframe> = TimeframeKey::all()
         .into_iter()
         .map(TimeframeKey::timeframe)
-        .filter(|target| target.is_whole_multiple_of(base_grid))
+        .filter(|target| target.is_whole_multiple_of(base))
         .collect();
-    let frames = protopyne_server::fold_frames(&bars, base_grid, &targets, protopyne_types::FoldEdges::CompleteOnly)
-        .map_err(|e| format!("tally {}: {e}", path.display()))?;
+    let frames = protopyne_server::fold_frames(bars, base, &targets, FoldEdges::CompleteOnly)
+        .map_err(|e| format!("tally 1M series: {e}"))?;
+    let mut seeded = Vec::with_capacity(frames.len());
     for (timeframe, frame) in frames {
-        let key =
-            key_of(timeframe).ok_or_else(|| format!("no toolbar slot for {timeframe:?}"))?;
-        let rows = rows_of(&frame).rows;
-        workspace
-            .seed_history(key, rows)
-            .map_err(|e| format!("seed {}: {e}", key.label()))?;
+        let key = key_of(timeframe).ok_or_else(|| format!("no toolbar slot for {timeframe:?}"))?;
+        seeded.push((key, rows_of(&frame).rows));
     }
-    Ok(())
+    Ok(seeded)
 }
 
-/// The window shell: owns the workspace and paints one frame per pass.
+/// Empty frames under every key: the fail-closed seed for a ticker that
+/// refuses to load — its label over no rows, never another ticker's.
+fn empty_frames() -> Vec<(TimeframeKey, Vec<ChartRow>)> {
+    TimeframeKey::all()
+        .into_iter()
+        .map(|key| (key, Vec::new()))
+        .collect()
+}
+
+/// A load notice for the status line: excluded months and superseded rows
+/// are observations about the source tree, rendered, never dropped.
+fn load_notice(ticker: &str, load: &TickerLoad) -> Option<Notice> {
+    if load.skipped.is_empty() && load.superseded == 0 {
+        return None;
+    }
+    let mut parts = Vec::new();
+    if !load.skipped.is_empty() {
+        let names: Vec<String> = load
+            .skipped
+            .iter()
+            .filter_map(|skip| {
+                skip.path
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+            })
+            .collect();
+        parts.push(format!(
+            "{} month file(s) excluded [{}]",
+            load.skipped.len(),
+            names.join(", ")
+        ));
+    }
+    if load.superseded > 0 {
+        parts.push(format!(
+            "{} parquet row(s) superseded by CSV",
+            load.superseded
+        ));
+    }
+    Some(Notice::warning(format!(
+        "{ticker}: {} (a corrected month in CSV is the fix path)",
+        parts.join(", ")
+    )))
+}
+
+/// A status-line notice: warnings disclose holes in served data, errors
+/// refuse the requested ticker outright.
+enum Notice {
+    Warning(String),
+    Error(String),
+}
+
+impl Notice {
+    fn warning(text: String) -> Self {
+        Self::Warning(text)
+    }
+
+    fn error(text: String) -> Self {
+        Self::Error(text)
+    }
+
+    fn text(&self) -> &str {
+        match self {
+            Self::Warning(text) | Self::Error(text) => text,
+        }
+    }
+
+    fn is_error(&self) -> bool {
+        matches!(self, Self::Error(_))
+    }
+}
+
+/// The window shell: owns the workspace and paints one frame per pass. In
+/// directory mode it also owns the history cache and the ticker whose
+/// frames are seeded, so a symbol pick loads on the next frame.
 struct DemoApp {
     workspace: ChartWorkspace,
+    cache: Option<HistoryCache>,
+    loaded_symbol: Option<String>,
+    notice: Option<Notice>,
 }
 
 impl DemoApp {
-    fn new(path: &Path) -> Result<Self, String> {
-        let mut workspace =
-            ChartWorkspace::new().map_err(|e| format!("workspace refused: {e}"))?;
+    fn new(path: &Path, symbol: Option<&str>) -> Result<Self, String> {
+        let mut workspace = ChartWorkspace::new().map_err(|e| format!("workspace refused: {e}"))?;
+        if path.is_dir() {
+            let root = HistoryRoot::open(path)
+                .map_err(|e| format!("history root {}: {e}", path.display()))?;
+            let mut cache = HistoryCache::new(root);
+            let tickers = cache
+                .tickers()
+                .map_err(|e| format!("list {}: {e}", path.display()))?;
+            let first = symbol
+                .map(str::to_owned)
+                .or_else(|| {
+                    tickers
+                        .iter()
+                        .find(|ticker| *ticker == protopyne_server::DEFAULT_TICKER)
+                        .cloned()
+                        .or_else(|| tickers.first().cloned())
+                })
+                .ok_or_else(|| format!("no tickers under {}", path.display()))?;
+            let load = cache
+                .load_for(&first)
+                .map_err(|e| format!("load {first}: {e}"))?;
+            let notice = load_notice(&first, &load);
+            let seeded = frames_of(&load.bars)?;
+            workspace
+                .switch_symbol_seeded(&first, seeded)
+                .map_err(|e| format!("seed {first}: {e}"))?;
+            return Ok(Self {
+                workspace,
+                cache: Some(cache),
+                loaded_symbol: Some(first),
+                notice,
+            });
+        }
         if is_parquet(path) {
-            seed_base_frames(&mut workspace, TimeframeKey::M1, path)?;
+            let bars = load_bars(path)?;
+            let seeded = frames_of(&bars)?;
+            // The file names no ticker; the workspace keeps its default
+            // label over the folded frames, as before.
+            let label = workspace.active_symbol().to_owned();
+            workspace
+                .switch_symbol_seeded(&label, seeded)
+                .map_err(|e| format!("seed {}: {e}", path.display()))?;
         } else {
             for (timeframe, file) in native_slots(path) {
                 let rows = load_rows(&file)?;
@@ -114,14 +229,66 @@ impl DemoApp {
                     .map_err(|e| format!("seed {}: {e}", timeframe.label()))?;
             }
         }
-        Ok(Self { workspace })
+        Ok(Self {
+            workspace,
+            cache: None,
+            loaded_symbol: None,
+            notice: None,
+        })
+    }
+
+    /// On-demand ticker switch: when the modal picked a symbol the seeded
+    /// frames do not hold, load its months through the cache and reseed.
+    /// Runs ahead of the paint so the frame draws the picked ticker; a
+    /// refusal seeds empty frames under the picked label and reports the
+    /// reason instead of painting stale rows.
+    fn maybe_switch_symbol(&mut self) {
+        let Some(cache) = self.cache.as_mut() else {
+            return;
+        };
+        let picked = self.workspace.active_symbol().to_owned();
+        if self.loaded_symbol.as_deref() == Some(picked.as_str()) {
+            return;
+        }
+        match cache.load_for(&picked) {
+            Ok(load) => {
+                let notice = load_notice(&picked, &load);
+                match frames_of(&load.bars).and_then(|seeded| {
+                    self.workspace
+                        .switch_symbol_seeded(&picked, seeded)
+                        .map_err(|e| format!("seed {picked}: {e}"))
+                }) {
+                    Ok(()) => {
+                        self.loaded_symbol = Some(picked);
+                        self.notice = notice;
+                    }
+                    Err(reason) => {
+                        self.notice = Some(Notice::error(reason));
+                    }
+                }
+            }
+            Err(error) => {
+                let _ = self.workspace.switch_symbol_seeded(&picked, empty_frames());
+                self.loaded_symbol = Some(picked.clone());
+                self.notice = Some(Notice::error(format!("load {picked}: {error}")));
+            }
+        }
     }
 }
 
 impl eframe::App for DemoApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        self.maybe_switch_symbol();
         if let Err(error) = paint_workspace(ui, &mut self.workspace, None) {
             ui.colored_label(egui::Color32::RED, format!("workspace refused: {error}"));
+        }
+        if let Some(notice) = &self.notice {
+            let ink = if notice.is_error() {
+                egui::Color32::RED
+            } else {
+                egui::Color32::YELLOW
+            };
+            ui.colored_label(ink, notice.text());
         }
     }
 }
@@ -145,17 +312,24 @@ fn summary(workspace: &ChartWorkspace) -> String {
 
 fn main() {
     let mut path: Option<PathBuf> = None;
+    let mut symbol: Option<String> = None;
     let mut check = false;
-    for arg in std::env::args().skip(1) {
-        if arg == "--check" {
-            check = true;
-        } else {
-            path = Some(PathBuf::from(arg));
+    let mut args = std::env::args().skip(1);
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--check" => check = true,
+            "--symbol" => {
+                symbol = Some(args.next().unwrap_or_else(|| {
+                    eprintln!("protopyne-gui: --symbol needs a ticker");
+                    std::process::exit(1);
+                }));
+            }
+            _ => path = Some(PathBuf::from(arg)),
         }
     }
-    let path = path.unwrap_or_else(default_m15);
+    let path = path.unwrap_or_else(history_dir);
     if check {
-        let app = match DemoApp::new(&path) {
+        let app = match DemoApp::new(&path, symbol.as_deref()) {
             Ok(app) => app,
             Err(e) => {
                 eprintln!("protopyne-gui: {e}");
@@ -163,9 +337,19 @@ fn main() {
             }
         };
         println!("protopyne-gui check: {}", summary(&app.workspace));
+        if let Some(cache) = app.cache.as_ref() {
+            match cache.root().tickers() {
+                Ok(tickers) => println!("protopyne-gui check: tickers=[{}]", tickers.join(",")),
+                Err(e) => println!("protopyne-gui check: tickers refused: {e}"),
+            }
+        }
+        match &app.notice {
+            Some(notice) => println!("protopyne-gui check: notice: {}", notice.text()),
+            None => println!("protopyne-gui check: notice: none"),
+        }
         return;
     }
-    let app = match DemoApp::new(&path) {
+    let app = match DemoApp::new(&path, symbol.as_deref()) {
         Ok(app) => app,
         Err(e) => {
             eprintln!("protopyne-gui: {e}");

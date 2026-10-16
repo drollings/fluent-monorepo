@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use crate::backtest::HistorySource;
 use crate::common_tape as tape;
-use crate::runner::{MultiSymbolInput, run_multi_backtest};
+use crate::runner::{run_multi_backtest, MultiSymbolInput};
 use protopyne_store::CandleStore;
 use protopyne_types::{Bar, Timeframe};
 

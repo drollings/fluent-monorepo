@@ -8,7 +8,9 @@ use protopyne_types::Timeframe;
 
 #[test]
 fn the_label_bridge_matches_the_one_bridge_on_every_spelling() {
-    for label in ["1M", "5M", "15M", "1H", "4H", "1D", "D", "60", "1W", "5S", "10"] {
+    for label in [
+        "1M", "5M", "15M", "1H", "4H", "1D", "D", "60", "1W", "5S", "10",
+    ] {
         assert_eq!(
             timeframe_of_label(label),
             Timeframe::from_chart_label(label),

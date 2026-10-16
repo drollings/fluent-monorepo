@@ -998,6 +998,37 @@ impl ChartWorkspace {
         self.recompute()
     }
 
+    /// Switch the active ticker over caller-seeded histories, without a
+    /// gateway: records `symbol`, replaces every timeframe slot with
+    /// `frames`, and binds the active timeframe's rows. The demo shell owns
+    /// this path — one ticker's months load on demand and seed here, so a
+    /// symbol pick never paints another ticker's rows. Slots the caller
+    /// omits resample from the `15M` slot on demand as usual; pass an
+    /// explicit empty set to paint the picked symbol with no rows (fail
+    /// closed on an unloadable ticker, never stale rows under a fresh
+    /// label).
+    pub fn switch_symbol_seeded(
+        &mut self,
+        symbol: &str,
+        frames: Vec<(TimeframeKey, Vec<ChartRow>)>,
+    ) -> Result<(), EguiError> {
+        self.set_symbol(symbol)?;
+        self.histories.clear();
+        for (timeframe, rows) in frames {
+            self.histories.insert(timeframe, rows);
+        }
+        // The select cannot fail when the caller seeds the active key (the
+        // demo always seeds every key); if it does, clear the rows rather
+        // than painting the previous ticker under the fresh label.
+        if let Err(error) = self.select_timeframe(self.timeframe) {
+            self.rows.clear();
+            self.rebind_viewports()?;
+            self.recompute()?;
+            return Err(error);
+        }
+        Ok(())
+    }
+
     /// The seeded history for `timeframe`, resampling coarser keys from the
     /// `15M` slot over whole buckets. `1M`/`5M`/`15M` read their own slots; a
     /// missing slot refuses by name rather than serving another timeframe.
@@ -1884,6 +1915,10 @@ pub fn paint_workspace(
 #[cfg(test)]
 #[path = "../tests/workspace.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/workspace_symbols.rs"]
+mod workspace_symbols_tests;
 
 #[cfg(test)]
 #[path = "../tests/workspace_tape.rs"]

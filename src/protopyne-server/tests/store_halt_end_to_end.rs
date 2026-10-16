@@ -48,8 +48,15 @@ async fn a_store_outage_halts_entries_and_refuses_previews() {
         .await
         .expect("health decodes");
     assert!(!health.allows_entries, "a store outage halts entries");
-    assert!(health.allows_exits, "exits stay routable through a store halt");
-    assert_eq!(health.store_reachable, Some(false), "the route names the reading");
+    assert!(
+        health.allows_exits,
+        "exits stay routable through a store halt"
+    );
+    assert_eq!(
+        health.store_reachable,
+        Some(false),
+        "the route names the reading"
+    );
 
     let response = client
         .post(format!("{base}/proposals/preview"))

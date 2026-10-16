@@ -11,7 +11,7 @@ use chrono::DateTime;
 use rust_decimal::Decimal;
 
 use crate::error::ServerError;
-use protopyne_types::{Bar, validate_new_bar};
+use protopyne_types::{validate_new_bar, Bar};
 
 /// Required columns after lowercasing the header row.
 const REQUIRED_COLUMNS: [&str; 6] = ["time", "open", "high", "low", "close", "volume"];
@@ -106,7 +106,10 @@ pub fn parse_bars_csv(content: &str) -> Result<Vec<Bar>, ServerError> {
         // shape, so the fallback ladder and audits treat it exactly like any
         // malformed row. Tampered or gapped history never flows into decisions.
         if let Err(e) = validate_new_bar(bars.last(), &bar) {
-            return Err(ServerError::BadRow { line, reason: e.to_string() });
+            return Err(ServerError::BadRow {
+                line,
+                reason: e.to_string(),
+            });
         }
         bars.push(bar);
     }

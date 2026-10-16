@@ -21,7 +21,11 @@ fn test_grant(id: &str, max_trades: u32) -> Grant {
                 .underlyings(vec!["SPY".to_owned()])
                 .structures(vec![StructureKind::Vertical])
                 .directions(vec![Direction::Long, Direction::Short])
-                .permissions(GrantPermission { entries: true, exits: true, rolls: false })
+                .permissions(GrantPermission {
+                    entries: true,
+                    exits: true,
+                    rolls: false,
+                })
                 .build(),
         )
         .budgets(
@@ -82,7 +86,9 @@ fn bar_frames_carry_feed_cycle() {
 #[tokio::test]
 async fn config_validation_is_fail_closed() {
     assert!(ServerConfig::default().validate().is_ok());
-    let bad = ServerConfig::new().bind("not-an-address".to_owned()).build();
+    let bad = ServerConfig::new()
+        .bind("not-an-address".to_owned())
+        .build();
     assert!(bad.validate().is_err());
     let zero = ServerConfig::new().max_concurrent_requests(0).build();
     assert!(zero.validate().is_err());
@@ -230,13 +236,24 @@ async fn unfilled_inbox_rows_carry_bar_close_limits() {
                 .expect("proposal id ends with bar index")
                 .parse()
                 .expect("bar index is numeric");
-            assert_ne!(row.limit_price, Money::from(0), "unfilled rows must not fabricate a zero limit");
-            assert_eq!(row.limit_price, Money::new(bars[index].c), "unfilled limit must be the bar close");
+            assert_ne!(
+                row.limit_price,
+                Money::from(0),
+                "unfilled rows must not fabricate a zero limit"
+            );
+            assert_eq!(
+                row.limit_price,
+                Money::new(bars[index].c),
+                "unfilled limit must be the bar close"
+            );
             // Sanity: the close must be representable or the bar would have skipped.
             assert!(bars[index].c.to_f64().is_some());
         }
     }
-    assert!(saw_proposed, "a fully denied preview must leave proposed rows");
+    assert!(
+        saw_proposed,
+        "a fully denied preview must leave proposed rows"
+    );
     handle.shutdown().await;
 }
 
@@ -263,7 +280,10 @@ async fn portfolio_positions_are_stable_across_previews() {
             .expect("portfolio is JSON");
         snapshots.push(serde_json::to_string(&portfolio.positions).expect("serializable"));
     }
-    assert_eq!(snapshots[0], snapshots[1], "position order must be deterministic");
+    assert_eq!(
+        snapshots[0], snapshots[1],
+        "position order must be deterministic"
+    );
     handle.shutdown().await;
 }
 
@@ -301,7 +321,10 @@ async fn out_of_window_grant_preview_explains_empty_fills() {
     assert_eq!(top.reason, "grant window not live");
     assert!(top.bars > 0);
     for entry in &response.deny_histogram {
-        assert!(entry.bars <= top.bars, "histogram must sort most frequent first");
+        assert!(
+            entry.bars <= top.bars,
+            "histogram must sort most frequent first"
+        );
     }
     handle.shutdown().await;
 }
@@ -368,7 +391,11 @@ fn mid_grant(id: &str) -> Grant {
                 .underlyings(vec!["SPY".to_owned()])
                 .structures(vec![StructureKind::Vertical])
                 .directions(vec![Direction::Long])
-                .permissions(GrantPermission { entries: true, exits: true, rolls: false })
+                .permissions(GrantPermission {
+                    entries: true,
+                    exits: true,
+                    rolls: false,
+                })
                 .build(),
         )
         .budgets(
@@ -429,11 +456,17 @@ async fn arming_refuses_every_loosened_tier() {
     widen("budgets", |g| g.budgets.max_trades = 11);
     widen("signal-conviction", |g| g.signal.min_conviction = 0.4);
     widen("signal-activity", |g| g.signal.min_activity_score = 0.4);
-    widen("trade-loss", |g| g.trade.max_loss_per_trade = Money::from(501));
-    widen("trade-spread", |g| g.trade.max_spread_width = Money::from(26));
+    widen("trade-loss", |g| {
+        g.trade.max_loss_per_trade = Money::from(501)
+    });
+    widen("trade-spread", |g| {
+        g.trade.max_spread_width = Money::from(26)
+    });
     widen("trade-min-dte", |g| g.trade.min_dte_days = 6);
     widen("trade-max-dte", |g| g.trade.max_dte_days = 61);
-    widen("portfolio-risk", |g| g.portfolio.max_open_risk = Money::from(1_000_001));
+    widen("portfolio-risk", |g| {
+        g.portfolio.max_open_risk = Money::from(1_000_001)
+    });
     widen("portfolio-age", |g| g.portfolio.quote_max_age_secs = 31);
     widen("breakers", |g| g.breakers.max_consecutive_errors = 3);
     widen("scope", |g| g.scope.directions.push(Direction::Short));
@@ -477,7 +510,10 @@ async fn arming_refuses_every_loosened_tier() {
         .send()
         .await
         .expect("tighten reachable");
-    assert!(accepted.status().is_success(), "every-tier-tighter must arm");
+    assert!(
+        accepted.status().is_success(),
+        "every-tier-tighter must arm"
+    );
     handle.shutdown().await;
 }
 
@@ -498,7 +534,10 @@ async fn chart_contract_matches_kernel_output() {
     assert_eq!(bars.rows[0].time, history()[0].ts.timestamp());
 
     let overlay: OverlaySeries = client
-        .get(format!("{}/chart/overlays?kind=sma&period=14", base(&handle)))
+        .get(format!(
+            "{}/chart/overlays?kind=sma&period=14",
+            base(&handle)
+        ))
         .send()
         .await
         .expect("overlay reachable")
@@ -522,7 +561,10 @@ async fn chart_contract_matches_kernel_output() {
         .values;
     assert_eq!(overlay.values, expected);
 
-    assert_eq!(overlay.dropped, 0, "clean history drops nothing from the overlay");
+    assert_eq!(
+        overlay.dropped, 0,
+        "clean history drops nothing from the overlay"
+    );
     assert_eq!(bars.dropped, 0);
     assert_eq!(
         overlay.values.len(),
@@ -531,13 +573,19 @@ async fn chart_contract_matches_kernel_output() {
     );
 
     let bad_kind = client
-        .get(format!("{}/chart/overlays?kind=wma&period=14", base(&handle)))
+        .get(format!(
+            "{}/chart/overlays?kind=wma&period=14",
+            base(&handle)
+        ))
         .send()
         .await
         .expect("bad kind reachable");
     assert_eq!(bad_kind.status(), reqwest::StatusCode::BAD_REQUEST);
     let bad_period = client
-        .get(format!("{}/chart/overlays?kind=sma&period=0", base(&handle)))
+        .get(format!(
+            "{}/chart/overlays?kind=sma&period=0",
+            base(&handle)
+        ))
         .send()
         .await
         .expect("bad period reachable");
@@ -556,7 +604,11 @@ fn overlay_scatter_holds_bar_alignment() {
     assert_eq!(values[2], None, "the unrepresentable bar holds its index");
     assert_eq!(values[3], None, "kernel warmup Nones survive the scatter");
     assert_eq!(values[0], Some(1.0));
-    assert_eq!(values[4], Some(4.0), "compacted slots map back to their bars");
+    assert_eq!(
+        values[4],
+        Some(4.0),
+        "compacted slots map back to their bars"
+    );
     assert_eq!(align_overlay(0, &[], &[]).len(), 0);
 }
 
@@ -584,7 +636,10 @@ async fn chart_overlay_serves_verified_overlaps_positionally() {
     let frame = Ohlcv::close_only(&closes);
 
     let bb: OverlaySeries = client
-        .get(format!("{}/chart/overlays?kind=bb&period=14", base(&handle)))
+        .get(format!(
+            "{}/chart/overlays?kind=bb&period=14",
+            base(&handle)
+        ))
         .send()
         .await
         .expect("bb overlay reachable")
@@ -594,16 +649,25 @@ async fn chart_overlay_serves_verified_overlaps_positionally() {
     let expected_bb = BbIndicator::new()
         .batch(
             &frame,
-            &ParamSet::new().with_int("length", 14).with_float("mult", 2.0),
+            &ParamSet::new()
+                .with_int("length", 14)
+                .with_float("mult", 2.0),
         )
         .expect("bb kernel runs")
         .values;
     assert_eq!(bb.values, expected_bb, "bb overlay is the band mid");
-    assert_eq!(bb.values.len(), bars.rows.len(), "bb overlay agrees positionally");
+    assert_eq!(
+        bb.values.len(),
+        bars.rows.len(),
+        "bb overlay agrees positionally"
+    );
     assert_eq!(bb.dropped, 0);
 
     let wide: OverlaySeries = client
-        .get(format!("{}/chart/overlays?kind=bb&period=14&mult=1.5", base(&handle)))
+        .get(format!(
+            "{}/chart/overlays?kind=bb&period=14&mult=1.5",
+            base(&handle)
+        ))
         .send()
         .await
         .expect("bb mult reachable")
@@ -613,14 +677,22 @@ async fn chart_overlay_serves_verified_overlaps_positionally() {
     let expected_wide = BbIndicator::new()
         .batch(
             &frame,
-            &ParamSet::new().with_int("length", 14).with_float("mult", 1.5),
+            &ParamSet::new()
+                .with_int("length", 14)
+                .with_float("mult", 1.5),
         )
         .expect("bb kernel runs")
         .values;
-    assert_eq!(wide.values, expected_wide, "explicit mult reaches the kernel");
+    assert_eq!(
+        wide.values, expected_wide,
+        "explicit mult reaches the kernel"
+    );
 
     let trima: OverlaySeries = client
-        .get(format!("{}/chart/overlays?kind=trima&period=14", base(&handle)))
+        .get(format!(
+            "{}/chart/overlays?kind=trima&period=14",
+            base(&handle)
+        ))
         .send()
         .await
         .expect("trima overlay reachable")
@@ -632,7 +704,11 @@ async fn chart_overlay_serves_verified_overlaps_positionally() {
         .expect("trima kernel runs")
         .values;
     assert_eq!(trima.values, expected_trima);
-    assert_eq!(trima.values.len(), bars.rows.len(), "trima overlay agrees positionally");
+    assert_eq!(
+        trima.values.len(),
+        bars.rows.len(),
+        "trima overlay agrees positionally"
+    );
     handle.shutdown().await;
 }
 
@@ -644,14 +720,24 @@ async fn chart_overlay_still_refuses_non_chartable_kinds() {
     let client = reqwest::Client::new();
     for kind in ["rsi", "stoch", "obv", "stddev", "wma"] {
         let refused = client
-            .get(format!("{}/chart/overlays?kind={kind}&period=14", base(&handle)))
+            .get(format!(
+                "{}/chart/overlays?kind={kind}&period=14",
+                base(&handle)
+            ))
             .send()
             .await
             .expect("refusal reachable");
-        assert_eq!(refused.status(), reqwest::StatusCode::BAD_REQUEST, "kind={kind} stays out");
+        assert_eq!(
+            refused.status(),
+            reqwest::StatusCode::BAD_REQUEST,
+            "kind={kind} stays out"
+        );
     }
     let bad_mult = client
-        .get(format!("{}/chart/overlays?kind=bb&period=14&mult=inf", base(&handle)))
+        .get(format!(
+            "{}/chart/overlays?kind=bb&period=14&mult=inf",
+            base(&handle)
+        ))
         .send()
         .await
         .expect("bad mult reachable");

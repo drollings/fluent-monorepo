@@ -7,8 +7,8 @@
 //! profit-factor count only decisive steps (flat steps excluded).
 
 use super::*;
-use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive as _;
+use rust_decimal::Decimal;
 
 fn decimal(value: &str) -> Decimal {
     value.parse::<Decimal>().expect("decimal")
@@ -19,9 +19,7 @@ fn returns(values: &[&str]) -> Vec<Decimal> {
 }
 
 fn close_enough(actual: Decimal, expected: f64) {
-    let actual = actual
-        .to_f64()
-        .expect("metric values stay in f64 range");
+    let actual = actual.to_f64().expect("metric values stay in f64 range");
     assert!(
         (actual - expected).abs() < 1e-9,
         "metric {actual} differs from hand-computed {expected}"

@@ -85,14 +85,22 @@ fn spread_above_full_close_is_refused_at_the_boundary() {
         .data_version("v".to_owned())
         .quote_spread_bps(10_001)
         .build();
-    let err = wide.validate().expect_err("spread above 100% must refuse at validate");
-    assert!(err.to_string().contains("quote_spread_bps"), "refusal names the bound, got: {err}");
+    let err = wide
+        .validate()
+        .expect_err("spread above 100% must refuse at validate");
+    assert!(
+        err.to_string().contains("quote_spread_bps"),
+        "refusal names the bound, got: {err}"
+    );
     let edge = BacktestConfig::new()
         .underlying("SPY".to_owned())
         .data_version("v".to_owned())
         .quote_spread_bps(10_000)
         .build();
-    assert!(edge.validate().is_ok(), "exactly 100% stays admissible at the boundary");
+    assert!(
+        edge.validate().is_ok(),
+        "exactly 100% stays admissible at the boundary"
+    );
 }
 
 #[test]
@@ -105,12 +113,8 @@ fn empty_history_is_rejected() {
 async fn backtest_venue_shares_paper_fill_behavior() {
     let bars = crate::csv::load_bars_csv(&test_data()).expect("vendored history loads");
     let bar = &bars[0];
-    let venue = BacktestVenue::new(
-        config(),
-        bars[..8].to_vec(),
-        PaperConfig::new().build(),
-    )
-    .expect("venue pins history");
+    let venue = BacktestVenue::new(config(), bars[..8].to_vec(), PaperConfig::new().build())
+        .expect("venue pins history");
     assert_eq!(venue.data_version(), "spy-15m-v1");
     assert_eq!(venue.bars().len(), 8);
     assert_eq!(venue.first_ts(), bars[0].ts);
@@ -129,15 +133,24 @@ async fn backtest_venue_shares_paper_fill_behavior() {
         .build();
     let dry = venue.dry_run(&intent, &quote).expect("dry run passes");
     assert!(dry.allowed);
-    let record = venue.submit(intent.clone(), &quote, bar.ts).await.expect("fills");
+    let record = venue
+        .submit(intent.clone(), &quote, bar.ts)
+        .await
+        .expect("fills");
     assert_eq!(record.filled_quantity, 1);
     // Idempotent resubmit returns the same record, never a second order.
-    let again = venue.submit(intent, &quote, bar.ts).await.expect("idempotent");
+    let again = venue
+        .submit(intent, &quote, bar.ts)
+        .await
+        .expect("idempotent");
     assert_eq!(again.filled_quantity, 1);
     assert_eq!(venue.orders().len(), 1);
     assert_eq!(venue.positions().len(), 1);
     let missing: Option<Quote> = None;
-    assert!([missing.as_ref()].into_iter().find_map(|entry| entry).is_none());
+    assert!([missing.as_ref()]
+        .into_iter()
+        .find_map(|entry| entry)
+        .is_none());
 }
 
 #[tokio::test]
@@ -175,8 +188,8 @@ fn backtest_snapshot_delegates_to_inner_venue() {
     let bars = crate::csv::load_bars_csv(&test_data()).expect("vendored history loads");
     let paper_cfg = PaperConfig::new().build();
     let paper = PaperVenue::new(paper_cfg.clone());
-    let venue = BacktestVenue::new(config(), bars[..8].to_vec(), paper_cfg)
-        .expect("venue pins history");
+    let venue =
+        BacktestVenue::new(config(), bars[..8].to_vec(), paper_cfg).expect("venue pins history");
     // Delegation equality on the same inputs: the backtest venue adds no
     // account logic of its own, it mirrors its inner paper venue.
     assert_eq!(venue.account_snapshot(), paper.account_snapshot());
@@ -200,12 +213,13 @@ fn fallback_loader_prefers_first_usable_source() {
 
 #[test]
 fn dynamic_history_loads_beside_files() {
-    use crate::backtest::{HistorySource, load_history};
+    use crate::backtest::{load_history, HistorySource};
 
     // Same tape, two sources: the dynamic variant must reproduce the files
     // path bar for bar — the harness treats them interchangeably.
-    let from_files =
-        load_history(&HistorySource::Files(vec![test_data()]), None).expect("files load").bars;
+    let from_files = load_history(&HistorySource::Files(vec![test_data()]), None)
+        .expect("files load")
+        .bars;
     assert!(!from_files.is_empty());
     let replayed = load_history(&HistorySource::Dynamic(from_files.clone()), None)
         .expect("dynamic loads")
@@ -215,7 +229,9 @@ fn dynamic_history_loads_beside_files() {
     // refuse instead of running on an empty tape.
     assert!(load_history(&HistorySource::Files(Vec::new()), None).is_err());
     assert!(load_history(&HistorySource::Dynamic(Vec::new()), None).is_err());
-    assert!(
-        load_history(&HistorySource::Files(vec![PathBuf::from("/nonexistent/x.csv")]), None).is_err()
-    );
+    assert!(load_history(
+        &HistorySource::Files(vec![PathBuf::from("/nonexistent/x.csv")]),
+        None
+    )
+    .is_err());
 }

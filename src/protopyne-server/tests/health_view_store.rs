@@ -54,9 +54,11 @@ async fn default_reading_serves_the_pre_store_bytes() {
     let base = format!("http://{}", handle.addr);
     let client = reqwest::Client::new();
     let body = get_body(&client, &base).await;
-    let expected =
-        std::fs::read_to_string(golden_path("health.json")).expect("golden checked in");
-    assert_eq!(body, expected, "default store reading must not move the payload");
+    let expected = std::fs::read_to_string(golden_path("health.json")).expect("golden checked in");
+    assert_eq!(
+        body, expected,
+        "default store reading must not move the payload"
+    );
     assert!(!body.contains("store_"), "no store key without a reading");
     handle.shutdown().await;
 }
@@ -157,7 +159,11 @@ async fn tape_counters_surface_on_the_route_and_the_gateway() {
     let client = reqwest::Client::new();
     let body = get_body(&client, &base).await;
     let routed: HealthView = serde_json::from_str(&body).expect("health is JSON");
-    assert_eq!(routed.tape_served, Some(1), "the serve is counted on /health");
+    assert_eq!(
+        routed.tape_served,
+        Some(1),
+        "the serve is counted on /health"
+    );
     assert_eq!(routed.tape_no_tape, Some(0));
     assert_eq!(routed.tape_unknown_symbol, Some(0));
     assert_eq!(routed.tape_unsupported_timeframe, Some(0));
@@ -190,8 +196,10 @@ async fn unobserved_tape_stats_report_no_fields() {
     let client = reqwest::Client::new();
     let body = get_body(&client, &base).await;
     assert!(!body.contains("tape_"), "no tape key before any tape read");
-    let expected =
-        std::fs::read_to_string(golden_path("health.json")).expect("golden checked in");
-    assert_eq!(body, expected, "unobserved tape stats must not move the payload");
+    let expected = std::fs::read_to_string(golden_path("health.json")).expect("golden checked in");
+    assert_eq!(
+        body, expected,
+        "unobserved tape stats must not move the payload"
+    );
     handle.shutdown().await;
 }

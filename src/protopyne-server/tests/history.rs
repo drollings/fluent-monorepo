@@ -28,7 +28,7 @@ fn data(name: &str) -> PathBuf {
 
 fn month_parquet() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../data/protopyne-rs/historical/SPY-2026-03-1M.parquet")
+        .join("../../data/protopyne-rs/historical/SPY/2026/03/SPY-2026-03-1M.parquet")
 }
 
 fn bar_at(ts_secs: i64, price: &str, volume: u64) -> Bar {

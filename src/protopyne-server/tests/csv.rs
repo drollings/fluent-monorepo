@@ -98,7 +98,10 @@ fn rejects_inverted_ohlc_row_with_line_and_rule() {
     match err {
         ServerError::BadRow { line, reason } => {
             assert_eq!(line, 3);
-            assert!(reason.contains("high"), "refusal names the rule, got: {reason}");
+            assert!(
+                reason.contains("high"),
+                "refusal names the rule, got: {reason}"
+            );
         }
         other => panic!("must refuse in the BadRow shape, got: {other:?}"),
     }

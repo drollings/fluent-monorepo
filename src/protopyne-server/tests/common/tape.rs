@@ -14,10 +14,9 @@ use protopyne_store::{
     TapeKey, TimeRange, WritePolicy,
 };
 use protopyne_strategy::{
-    BreakerLimits, Direction, FixedSignal, Grant, GrantBudgets, GrantPermission, GrantScope,
-    PortfolioThresholds, RiskEngine, RiskLimits, SignalThresholds, Strategy, StructureKind,
-    TradeThresholds,
-    elements::ExplicitStructure,
+    elements::ExplicitStructure, BreakerLimits, Direction, FixedSignal, Grant, GrantBudgets,
+    GrantPermission, GrantScope, PortfolioThresholds, RiskEngine, RiskLimits, SignalThresholds,
+    Strategy, StructureKind, TradeThresholds,
 };
 use protopyne_types::{Bar, Money, Timeframe};
 use protopyne_venue::PaperConfig;
@@ -42,7 +41,8 @@ pub fn seed(
     symbol: &str,
     timeframe: Timeframe,
     caps: &fluent_wvr::CapabilitySet,
-) -> (MarketTape, TapeKey, ReadRequest) {    let tape = MarketTape::open_in_memory().expect("ephemeral tape opens");
+) -> (MarketTape, TapeKey, ReadRequest) {
+    let tape = MarketTape::open_in_memory().expect("ephemeral tape opens");
     let key = fluent_wvr::CURRENT_CAPS.sync_scope(caps.clone(), || {
         let symbol_id = tape
             .register(
@@ -54,13 +54,24 @@ pub fn seed(
                 timeframe,
             )
             .expect("registration succeeds");
-        let key = TapeKey { symbol_id, timeframe };
+        let key = TapeKey {
+            symbol_id,
+            timeframe,
+        };
         tape.append(key, bars, WritePolicy::InsertIfAbsent)
             .expect("seed append succeeds");
         key
     });
-    let first = bars.first().expect("seed needs at least one bar").ts.timestamp_millis();
-    let last = bars.last().expect("seed needs at least one bar").ts.timestamp_millis();
+    let first = bars
+        .first()
+        .expect("seed needs at least one bar")
+        .ts
+        .timestamp_millis();
+    let last = bars
+        .last()
+        .expect("seed needs at least one bar")
+        .ts
+        .timestamp_millis();
     let end = last.saturating_add(timeframe.duration_ms());
     let request = ReadRequest {
         symbol: symbol.to_owned(),
@@ -86,8 +97,7 @@ pub fn seed_file(
     venue: &str,
 ) -> MarketTape {
     let tape = MarketTape::open(root).expect("file store opens");
-    let caps =
-        fluent_wvr::CapabilitySet::new().with(StoreStorage::new(root.to_path_buf()));
+    let caps = fluent_wvr::CapabilitySet::new().with(StoreStorage::new(root.to_path_buf()));
     fluent_wvr::CURRENT_CAPS.sync_scope(caps, || {
         let symbol_id = tape
             .register(
@@ -100,7 +110,10 @@ pub fn seed_file(
             )
             .expect("registration succeeds");
         tape.append(
-            TapeKey { symbol_id, timeframe },
+            TapeKey {
+                symbol_id,
+                timeframe,
+            },
             bars,
             WritePolicy::InsertIfAbsent,
         )
@@ -116,7 +129,9 @@ pub fn strategy() -> Strategy {
     Strategy::with_signal(Arc::new(
         FixedSignal::new(Direction::Long, 0.8, 0.8).expect("valid signal"),
     ))
-    .with_structure(Arc::new(ExplicitStructure { structure: StructureKind::Vertical }))
+    .with_structure(Arc::new(ExplicitStructure {
+        structure: StructureKind::Vertical,
+    }))
 }
 
 /// A permissive risk engine for a rehearsal run.
@@ -136,7 +151,11 @@ pub fn grant(symbol: &str) -> Grant {
                 .underlyings(vec![symbol.to_owned()])
                 .structures(vec![StructureKind::Vertical])
                 .directions(vec![Direction::Long, Direction::Short])
-                .permissions(GrantPermission { entries: true, exits: true, rolls: false })
+                .permissions(GrantPermission {
+                    entries: true,
+                    exits: true,
+                    rolls: false,
+                })
                 .build(),
         )
         .budgets(

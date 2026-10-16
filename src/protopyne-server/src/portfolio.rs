@@ -18,14 +18,14 @@
 
 use bon::Builder;
 use chrono::{DateTime, Utc};
-use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive as _;
+use rust_decimal::Decimal;
 use std::collections::BTreeMap;
 
 use protopyne_types::Money;
 use protopyne_venue::{
-    OrderSide, PositionFill, PositionSide, SpreadPosition, calculate_pnl_unrealised,
-    update_from_fill,
+    calculate_pnl_unrealised, update_from_fill, OrderSide, PositionFill, PositionSide,
+    SpreadPosition,
 };
 
 use crate::error::ServerError;
@@ -69,7 +69,9 @@ pub struct BookedFill {
 
 /// Grouping key: one attributed book. Plain strings — these are names that
 /// already appear in JSON (orders, grants, configs), never opaque keys.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
 pub struct BucketKey {
     /// Portfolio book.
     pub portfolio: String,
@@ -285,7 +287,10 @@ pub fn aggregate(fills: &[BookedFill]) -> Result<Aggregation, ServerError> {
             .or_insert_with(BookState::new)
             .apply(fill)?;
     }
-    Ok(Aggregation { fills: ordered, books })
+    Ok(Aggregation {
+        fills: ordered,
+        books,
+    })
 }
 
 impl Aggregation {
@@ -308,7 +313,10 @@ impl Aggregation {
     /// Refuses fail-closed when the fold spans more than one underlying: one
     /// price series cannot mark two instruments, and guessing is worse than
     /// refusing.
-    pub fn summarize(&self, marks: &[(DateTime<Utc>, Money)]) -> Result<PortfolioReport, ServerError> {
+    pub fn summarize(
+        &self,
+        marks: &[(DateTime<Utc>, Money)],
+    ) -> Result<PortfolioReport, ServerError> {
         let mut underlyings: Vec<&str> = self
             .fills
             .iter()
@@ -358,27 +366,31 @@ impl Aggregation {
         let last_mark = ordered.last().map(|(_, price)| *price);
         let mut totals: BTreeMap<&str, PortfolioTotals> = BTreeMap::new();
         for (key, book) in &self.books {
-            let entry = totals.entry(key.portfolio.as_str()).or_insert_with(|| PortfolioTotals {
-                portfolio: key.portfolio.clone(),
-                fills: 0,
-                closed_trades: 0,
-                pnl_realised: Money::zero(),
-                pnl_unrealised: Money::zero(),
-                fees: Money::zero(),
-                open_quantity: 0,
-                win_rate: None,
-                profit_factor: None,
-                sharpe: None,
-                sortino: None,
-                calmar: None,
-                buckets: Vec::new(),
-            });
+            let entry = totals
+                .entry(key.portfolio.as_str())
+                .or_insert_with(|| PortfolioTotals {
+                    portfolio: key.portfolio.clone(),
+                    fills: 0,
+                    closed_trades: 0,
+                    pnl_realised: Money::zero(),
+                    pnl_unrealised: Money::zero(),
+                    fees: Money::zero(),
+                    open_quantity: 0,
+                    win_rate: None,
+                    profit_factor: None,
+                    sharpe: None,
+                    sortino: None,
+                    calmar: None,
+                    buckets: Vec::new(),
+                });
             let snapshot = book.snapshot(key, last_mark);
             entry.fills += snapshot.fills;
             entry.closed_trades += snapshot.closed_trades;
-            entry.pnl_realised = Money::new(entry.pnl_realised.as_decimal() + snapshot.pnl_realised.as_decimal());
-            entry.pnl_unrealised =
-                Money::new(entry.pnl_unrealised.as_decimal() + snapshot.pnl_unrealised.as_decimal());
+            entry.pnl_realised =
+                Money::new(entry.pnl_realised.as_decimal() + snapshot.pnl_realised.as_decimal());
+            entry.pnl_unrealised = Money::new(
+                entry.pnl_unrealised.as_decimal() + snapshot.pnl_unrealised.as_decimal(),
+            );
             entry.fees = Money::new(entry.fees.as_decimal() + snapshot.fees.as_decimal());
             entry.open_quantity += snapshot.open_quantity;
             entry.buckets.push(snapshot);
@@ -400,8 +412,8 @@ impl Aggregation {
                 metrics::sharpe(&steps, Decimal::ZERO, annual).and_then(|value| value.to_f64());
             entry.sortino =
                 metrics::sortino(&steps, Decimal::ZERO, annual).and_then(|value| value.to_f64());
-            entry.calmar =
-                metrics::calmar(&curve_decimals, Decimal::ZERO, annual).and_then(|value| value.to_f64());
+            entry.calmar = metrics::calmar(&curve_decimals, Decimal::ZERO, annual)
+                .and_then(|value| value.to_f64());
         }
         Ok(PortfolioReport {
             portfolios: totals.into_values().collect(),

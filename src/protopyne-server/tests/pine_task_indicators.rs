@@ -40,7 +40,7 @@ use protopyne_kernels::{InputSet, RunOutcome};
 use protopyne_types::Bar;
 
 use super::common_golden::{check_golden, dump_canonical};
-use super::common_mtf::{WARMUP, data_root, engine_for, link_task_closure, load_history};
+use super::common_mtf::{data_root, engine_for, link_task_closure, load_history, WARMUP};
 
 /// Golden file for one indicator and chart timeframe.
 fn golden_path(indicator: &str, timeframe: &str) -> PathBuf {
@@ -71,8 +71,7 @@ fn prove_ppas_refuses(chart: &str, bars: &[Bar], label: &str) {
         .expect_err("skewed pattern reference refuses at full history")
         .to_string();
     assert_eq!(
-        reason,
-        "pine evaluation refused: unknown function 'libCandles.isPatternType'",
+        reason, "pine evaluation refused: unknown function 'libCandles.isPatternType'",
         "{label}: exact refusal pins the missing export"
     );
 }
@@ -100,12 +99,7 @@ fn plot_titles(outcome: &RunOutcome) -> Vec<&str> {
 /// evaluates with one snapshot, and an identical second run is
 /// byte-identical (rerun determinism, in memory — the golden pins the
 /// bytes on disk).
-fn prove_task(
-    outcome: &RunOutcome,
-    rerun: impl FnOnce() -> RunOutcome,
-    bars: &[Bar],
-    label: &str,
-) {
+fn prove_task(outcome: &RunOutcome, rerun: impl FnOnce() -> RunOutcome, bars: &[Bar], label: &str) {
     let expect_evaluated = bars.len() - WARMUP as usize;
     assert_eq!(
         outcome.evaluated, expect_evaluated,
@@ -243,4 +237,3 @@ fn rsimd_runs_clean_on_15m() {
     assert_eq!(outcome.plots.len(), 9, "RSIMD captures all nine plot sites");
     check_golden(&golden_path("rsimd", "15m"), &outcome, RSIMD_SERIES);
 }
-

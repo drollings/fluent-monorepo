@@ -24,10 +24,9 @@ pub fn dump_value(value: &Option<PineValue>) -> serde_json::Value {
         Some(PineValue::Bool(v)) => serde_json::Value::Bool(*v),
         Some(PineValue::Str(v)) => serde_json::Value::String(v.clone()),
         Some(PineValue::ColorHandle(v)) => serde_json::Value::Number(v.raw().into()),
-        Some(PineValue::EnumHandle(EnumHandle {
-            enum_name,
-            member,
-        })) => serde_json::Value::String(format!("{enum_name}.{member}")),
+        Some(PineValue::EnumHandle(EnumHandle { enum_name, member })) => {
+            serde_json::Value::String(format!("{enum_name}.{member}"))
+        }
         Some(PineValue::Array(items)) => {
             serde_json::Value::Array(items.iter().map(dump_value).collect())
         }
@@ -36,12 +35,7 @@ pub fn dump_value(value: &Option<PineValue>) -> serde_json::Value {
             keys.sort_unstable();
             serde_json::Value::Object(
                 keys.into_iter()
-                    .map(|k| {
-                        (
-                            k.to_string(),
-                            serde_json::Value::Number(entries[&k].into()),
-                        )
-                    })
+                    .map(|k| (k.to_string(), serde_json::Value::Number(entries[&k].into())))
                     .collect(),
             )
         }

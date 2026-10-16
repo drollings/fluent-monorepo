@@ -12,7 +12,10 @@ use std::path::PathBuf;
 use crate::backtest::HistorySource;
 
 fn data(name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join(name)
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("data")
+        .join(name)
 }
 
 #[test]
@@ -20,10 +23,15 @@ fn files_arm_matches_the_candidate_loader_and_carries_no_provenance() {
     let candidates = vec![data("SPY_15M.csv")];
     let via_source =
         crate::load_history(&HistorySource::Files(candidates.clone()), None).expect("files load");
-    let via_loader =
-        crate::history::load_bars_candidates(&candidates).expect("candidates load");
-    assert_eq!(via_source.bars, via_loader, "the files arm is the candidate loader");
-    assert!(via_source.provenance.is_empty(), "a file arm names no planner span");
+    let via_loader = crate::history::load_bars_candidates(&candidates).expect("candidates load");
+    assert_eq!(
+        via_source.bars, via_loader,
+        "the files arm is the candidate loader"
+    );
+    assert!(
+        via_source.provenance.is_empty(),
+        "a file arm names no planner span"
+    );
 }
 
 #[test]
@@ -46,7 +54,10 @@ fn dynamic_arm_replays_verbatim_and_refuses_empty() {
     let replayed =
         crate::load_history(&HistorySource::Dynamic(bars.clone()), None).expect("dynamic loads");
     assert_eq!(replayed.bars, bars, "the dynamic arm replays verbatim");
-    assert!(replayed.provenance.is_empty(), "an in-memory arm names no planner span");
+    assert!(
+        replayed.provenance.is_empty(),
+        "an in-memory arm names no planner span"
+    );
     assert!(
         crate::load_history(&HistorySource::Dynamic(Vec::new()), None).is_err(),
         "an empty dynamic tape refuses like an empty candidate set"
@@ -55,16 +66,22 @@ fn dynamic_arm_replays_verbatim_and_refuses_empty() {
 
 #[test]
 fn tape_arm_never_silently_falls_back_to_another_source() {
-    use protopyne_store::{TapeKey, SymbolId};
+    use protopyne_store::{SymbolId, TapeKey};
     use protopyne_types::Timeframe;
 
     let source = HistorySource::Tape {
-        key: TapeKey { symbol_id: SymbolId(1), timeframe: Timeframe::M15 },
+        key: TapeKey {
+            symbol_id: SymbolId(1),
+            timeframe: Timeframe::M15,
+        },
         request: protopyne_store::ReadRequest {
             symbol: "SPY".to_owned(),
             venue: "test-venue".to_owned(),
             timeframe: Timeframe::M15,
-            range: protopyne_store::TimeRange { start_ms: None, end_ms: None },
+            range: protopyne_store::TimeRange {
+                start_ms: None,
+                end_ms: None,
+            },
             limit: Some(10),
             policy: protopyne_store::FoldPolicy::ExtendToFullBuckets,
         },

@@ -117,7 +117,11 @@ fn flip_through_zero_reanchors_like_position_apply() {
     simple.apply(10, money("100"));
     simple.apply(-15, money("110"));
     assert_eq!(simple.quantity, -5);
-    assert_eq!(simple.avg_price, money("110"), "flip re-anchors at the fill");
+    assert_eq!(
+        simple.avg_price,
+        money("110"),
+        "flip re-anchors at the fill"
+    );
 }
 
 #[test]
@@ -135,9 +139,7 @@ fn closed_trade_stats_match_hand_computation() {
     ];
     let aggregation = aggregate(&fills).expect("clean fills aggregate");
     assert_eq!(bucket_of(&aggregation).closed_trades, 3);
-    let report = aggregation
-        .summarize(&[])
-        .expect("empty marks summarize");
+    let report = aggregation.summarize(&[]).expect("empty marks summarize");
     assert_eq!(report.portfolios.len(), 1);
     let totals = &report.portfolios[0];
     assert_eq!(totals.portfolio, "paper");
@@ -207,7 +209,7 @@ fn mtm_curve_stats_match_hand_computation() {
 
 #[test]
 fn tearsheet_golden() {
-    use crate::report::{RunManifest, build_report, render_tearsheet};
+    use crate::report::{build_report, render_tearsheet, RunManifest};
 
     // One round trip (realized 98.00, fees 2.00) marked once at the exit:
     // the book is flat, so the curve reads [0] and every return-based stat

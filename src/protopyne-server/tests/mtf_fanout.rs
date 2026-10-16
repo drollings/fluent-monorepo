@@ -23,9 +23,9 @@ use std::sync::{Arc, Mutex};
 
 use chrono::DateTime;
 use protopyne_kernels::{
-    LibraryId, LinkedModule, Lookahead, MarketContext, MarketContextKey, ModuleInput,
-    MtfStore, PineValue, RunOutcome, UserInstance, builtin_registry, fetch_all,
-    parse_pine_source, parse_program, resolve_imports,
+    builtin_registry, fetch_all, parse_pine_source, parse_program, resolve_imports, LibraryId,
+    LinkedModule, Lookahead, MarketContext, MarketContextKey, ModuleInput, MtfStore, PineValue,
+    RunOutcome, UserInstance,
 };
 use protopyne_types::{Bar, Timeframe};
 use rust_decimal::Decimal;
@@ -40,14 +40,19 @@ const APEX_IMPORTS: &str = "import showmethegrail/libUtil/12 as UTIL\n\
      import showmethegrail/libBars/12 as BARS\n\
      import showmethegrail/libDrawing/61 as libDrawing\n\
      import showmethegrail/libApex/88 as libApex\n";
-const CTX_DRIVER: &str = "var ctx = libApex.MarketContext.new()\nif barstate.isfirst\n    ctx.init()\nctx.fetch()\n";
+const CTX_DRIVER: &str =
+    "var ctx = libApex.MarketContext.new()\nif barstate.isfirst\n    ctx.init()\nctx.fetch()\n";
 
 /// One shipped library as a graph input (pattern cited from the kernels
 /// freeze suite).
 fn shipped(relpath: &str, publisher: &str, name: &str, version: u64) -> ModuleInput {
     let text = std::fs::read_to_string(data_root().join(relpath)).expect("shipped library loads");
     ModuleInput::new(
-        LibraryId { publisher: publisher.to_owned(), name: name.to_owned(), version },
+        LibraryId {
+            publisher: publisher.to_owned(),
+            name: name.to_owned(),
+            version,
+        },
         parse_pine_source(&format!("{publisher}/{name}"), &text),
         parse_program(&text).expect("shipped library parses"),
     )
@@ -61,13 +66,27 @@ fn shipped(relpath: &str, publisher: &str, name: &str, version: u64) -> ModuleIn
 fn linked_apex(driver: &str) -> Vec<LinkedModule> {
     let mut inputs = vec![
         shipped("libraries/_libUtil.pine", "showmethegrail", "libUtil", 12),
-        shipped("libraries/_libBuffers.pine", "showmethegrail", "libBuffers", 6),
+        shipped(
+            "libraries/_libBuffers.pine",
+            "showmethegrail",
+            "libBuffers",
+            6,
+        ),
         shipped("libraries/_libBars.pine", "showmethegrail", "libBars", 12),
-        shipped("libraries/_libDrawing.pine", "showmethegrail", "libDrawing", 61),
+        shipped(
+            "libraries/_libDrawing.pine",
+            "showmethegrail",
+            "libDrawing",
+            61,
+        ),
         shipped("libraries/_libApex.pine", "showmethegrail", "libApex", 88),
     ];
     inputs.push(ModuleInput::new(
-        LibraryId { publisher: "local".to_owned(), name: "Driver".to_owned(), version: 1 },
+        LibraryId {
+            publisher: "local".to_owned(),
+            name: "Driver".to_owned(),
+            version: 1,
+        },
         parse_pine_source("local/Driver", driver),
         parse_program(driver).expect("driver parses"),
     ));
@@ -160,7 +179,9 @@ fn assert_span_agrees(span_ms: i64, pine: &UserInstance, native: &MarketContext)
                     "{span_ms}ms {field}: pine {want} vs native {got}"
                 );
             }
-            (want, got) => panic!("{span_ms}ms {field}: na-ness diverges (pine {want:?}, native {got:?})"),
+            (want, got) => {
+                panic!("{span_ms}ms {field}: na-ness diverges (pine {want:?}, native {got:?})")
+            }
         }
     }
 }
@@ -227,7 +248,11 @@ fn span_jobs(last_ts_ms: i64) -> Vec<SpanJob> {
     .map(|(tf, span_ms)| {
         let key = MarketContextKey::new(tf);
         assert_eq!(key.tf_ms(), span_ms, "key names its span");
-        SpanJob { span_ms, key, now_ms: last_ts_ms + span_ms }
+        SpanJob {
+            span_ms,
+            key,
+            now_ms: last_ts_ms + span_ms,
+        }
     })
     .collect()
 }
@@ -257,7 +282,10 @@ async fn shared_store_fans_out_per_span_with_pine_agreement() {
             Lookahead::Off,
         )
         .expect("serial fetch fills");
-        serial.push((job.span_ms, contexts.into_iter().next().expect("one context")));
+        serial.push((
+            job.span_ms,
+            contexts.into_iter().next().expect("one context"),
+        ));
     }
     serial.sort_by_key(|(span_ms, _)| *span_ms);
 
@@ -315,6 +343,8 @@ async fn shared_store_fans_out_per_span_with_pine_agreement() {
             }
         }
     }
-    assert!(max_diff < EPS, "pooled max-abs-diff {max_diff} under frozen eps");
+    assert!(
+        max_diff < EPS,
+        "pooled max-abs-diff {max_diff} under frozen eps"
+    );
 }
-

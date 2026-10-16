@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use protopyne_server::{ServerConfig, load_bars_candidates, open_tape_reader, serve_with_tape};
+use protopyne_server::{ServerConfig, load_history_path, open_tape_reader, serve_with_tape};
 
 /// Startup arguments. Parsing lives here (never in library code): malformed
 /// flags exit loudly instead of binding half-configured.
@@ -70,7 +70,10 @@ Usage:
 Flags:
   --config PATH    JSON server config (defaults for every field when absent)
   --bind ADDR      override the bind address (default 127.0.0.1:9060)
-  --history PATH   bar-history CSV or Parquet (also accepted as history_path in --config)
+  --history PATH   bar-history CSV or Parquet file, or a history-root
+                   directory (TICKER/YYYY/MM/*.parquet with *.csv
+                   supplements; serves SPY, and history_timeframe reads
+                   1M). Also accepted as history_path in --config.
   --tape ROOT      durable tape store root (also accepted as tape_path in --config);
                    symbol-scoped chart reads plan through the tape, falling back
                    to the boot history per read
@@ -108,8 +111,13 @@ async fn run(raw: &[String]) -> Result<(), String> {
         .history
         .or_else(|| config.history_path.clone().map(PathBuf::from))
         .ok_or("no history: pass --history or set history_path in the config")?;
-    let history = load_bars_candidates(std::slice::from_ref(&history_path))
+    let history = load_history_path(&history_path, None)
         .map_err(|e| format!("history failed to load: {e}"))?;
+    if history_path.is_dir() {
+        // The tree contract is one-minute months; the boot base follows it
+        // so symbol- and timeframe-scoped reads fold by whole multiples.
+        config.history_timeframe = String::from("1M");
+    }
     let reader = config
         .tape_path
         .as_deref()

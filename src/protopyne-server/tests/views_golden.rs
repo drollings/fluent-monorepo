@@ -29,7 +29,11 @@ fn test_grant(id: &str, max_trades: u32) -> Grant {
                 .underlyings(vec!["SPY".to_owned()])
                 .structures(vec![StructureKind::Vertical])
                 .directions(vec![Direction::Long, Direction::Short])
-                .permissions(GrantPermission { entries: true, exits: true, rolls: false })
+                .permissions(GrantPermission {
+                    entries: true,
+                    exits: true,
+                    rolls: false,
+                })
                 .build(),
         )
         .budgets(
@@ -72,7 +76,11 @@ async fn boot() -> ServerHandle {
 }
 
 fn golden_path(name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("views").join(name)
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("data")
+        .join("views")
+        .join(name)
 }
 
 /// Byte-exact compare against the checked-in golden; with
@@ -106,7 +114,10 @@ async fn route_payloads_match_checked_in_goldens() {
     let client = reqwest::Client::new();
 
     check_golden("health.json", &get(&client, &base, "/health").await);
-    check_golden("portfolio_fresh.json", &get(&client, &base, "/portfolio").await);
+    check_golden(
+        "portfolio_fresh.json",
+        &get(&client, &base, "/portfolio").await,
+    );
 
     let preview = client
         .post(format!("{base}/proposals/preview"))

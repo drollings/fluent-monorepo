@@ -33,7 +33,9 @@ ROUTER_LOG := /tmp/coral-router.out
 # ── protopyne-rs ─────────────────────────────────────────────────────────────
 # Paper-trading HTTP surface over versioned bar history (default port :9060).
 # PROTOPYNE_PORT and PROTOPYNE_HISTORY override the bind port and history
-# file: `make protopyne-start PROTOPYNE_PORT=9061`.
+# source: a CSV/Parquet file loads directly, a directory opens as a
+# history root (TICKER/YYYY/MM/*.parquet + *.csv supplements, SPY served):
+# `make protopyne-start PROTOPYNE_PORT=9061`.
 PROTOPYNE_SERVER_BIN := target/debug/protopyne-server
 PROTOPYNE_HISTORY := src/protopyne-server/tests/data/SPY_15M.csv
 # Durable tape store root (empty by default: the server serves the boot
@@ -46,10 +48,13 @@ PROTOPYNE_HEALTH_URL := http://$(PROTOPYNE_BIND_ADDR)/health
 PROTOPYNE_START_TIMEOUT_S ?= 30
 PROTOPYNE_LOG := /tmp/protopyne-server.out
 # Native terminal demo shell over the headless chart stack (needs a display).
-# PROTOPYNE_GUI_HISTORY and PROTOPYNE_GUI_ARGS override the history file and
-# extra demo args: `make protopyne-demo PROTOPYNE_GUI_ARGS=--check`.
-PROTOPYNE_GUI_HISTORY ?= data/protopyne-rs/historical/SPY-2026-03-1M.parquet
-# data/protopyne-rs/historical/SPY_15M.csv
+# PROTOPYNE_GUI_HISTORY names the history: a directory opens as a history
+# root (TICKER/YYYY/MM/*.parquet months with *.csv supplements, tickers
+# loaded on demand as the symbol modal picks them), a file keeps the legacy
+# single-file load. PROTOPYNE_GUI_ARGS carries extra demo args
+# (`--symbol GLD --check` runs the headless data path only).
+PROTOPYNE_GUI_HISTORY ?= data/protopyne-rs/historical
+# data/protopyne-rs/historical/SPY-2026-03-1M.parquet
 PROTOPYNE_GUI_ARGS ?=
 CONFIG      := .guidance/guidance-config.json
 INSTALLDIR  := $(HOME)/.local/bin
@@ -369,9 +374,11 @@ protopyne-smoke: ## Build the Python-free container image and run the full smoke
 	$(Q)bash src/protopyne-server/smoke-container.sh
 
 # Needs a display: opens the native terminal demo shell (eframe/glow) over
-# the headless chart stack. PROTOPYNE_GUI_HISTORY=<csv|parquet> overrides the data.
+# the headless chart stack. PROTOPYNE_GUI_HISTORY=<dir|csv|parquet> selects
+# the history (default: the shipped history root); a directory tallies each
+# picked ticker's 1M months into 5M/15M/1H/4H/1D on demand.
 .PHONY: protopyne-demo
-protopyne-demo: ## Run the protopyne-rs native terminal UI (PROTOPYNE_GUI_HISTORY=<csv|parquet> overrides the history file; a parquet file is tallied into 5M/15M/1H/4H/1D on load; --check runs the headless data path only)
+protopyne-demo: ## Run the protopyne-rs native terminal UI (PROTOPYNE_GUI_HISTORY=<dir|csv|parquet> selects the history; --check runs the headless data path only)
 	$(Q)cargo run -p protopyne-egui --features demo --example demo -- $(PROTOPYNE_GUI_HISTORY) $(PROTOPYNE_GUI_ARGS)
 
 # ── YaGO Taxonomy + Async Parse-Review ───────────────────────────────────────

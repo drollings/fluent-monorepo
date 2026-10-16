@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 use std::sync::Mutex;
 
 use fluent_egui::{
-    CANDLE_BODY_FRACTION, CANDLE_GAP_THRESHOLD_PX, IndicatorStyle, candle_body_width,
+    candle_body_width, IndicatorStyle, CANDLE_BODY_FRACTION, CANDLE_GAP_THRESHOLD_PX,
 };
 use protopyne_chart_model::ChartRow;
 use protopyne_view::{
@@ -27,7 +27,9 @@ struct ScriptGateway {
 
 impl ScriptGateway {
     fn new() -> Self {
-        Self { calls: Mutex::new(Vec::new()) }
+        Self {
+            calls: Mutex::new(Vec::new()),
+        }
     }
 
     fn calls(&self) -> Vec<(String, String)> {
@@ -116,24 +118,51 @@ fn workspace_boots_with_gld_default_and_hot_slotted_integration_lite_and_fast_ma
     let gateway = MockGateway::new();
     let workspace = ChartWorkspace::with_gateway(&gateway).expect("the workspace boots");
 
-    assert_eq!(workspace.active_symbol(), "GLD", "the top bar defaults to the GLD ticker");
-    assert_eq!(workspace.timeframe(), TimeframeKey::M15, "the default timeframe is 15M");
+    assert_eq!(
+        workspace.active_symbol(),
+        "GLD",
+        "the top bar defaults to the GLD ticker"
+    );
+    assert_eq!(
+        workspace.timeframe(),
+        TimeframeKey::M15,
+        "the default timeframe is 15M"
+    );
     let ids = workspace.slot_ids();
-    assert!(ids.contains(&"integration_lite".to_owned()), "IntegrationLite is hot-slotted");
-    assert!(ids.contains(&"fast_mas".to_owned()), "Fast MAs is hot-slotted");
-    assert!(!workspace.rows().is_empty(), "the gateway supplied the first history");
+    assert!(
+        ids.contains(&"integration_lite".to_owned()),
+        "IntegrationLite is hot-slotted"
+    );
+    assert!(
+        ids.contains(&"fast_mas".to_owned()),
+        "Fast MAs is hot-slotted"
+    );
+    assert!(
+        !workspace.rows().is_empty(),
+        "the gateway supplied the first history"
+    );
     assert!(
         workspace.cached_series() > 0,
         "the DAG plan evaluated into the pane cache"
     );
-    assert!(!workspace.plan_order().expect("plan orders").is_empty(), "the plan holds nodes");
+    assert!(
+        !workspace.plan_order().expect("plan orders").is_empty(),
+        "the plan holds nodes"
+    );
 
     // The symbol catalog spans every asset class and is searchable.
     let mut catalog = build_symbol_catalog().expect("the symbol catalog builds");
     catalog.set_category(Some(AssetClass::Crypto));
-    let crypto: Vec<String> =
-        catalog.filtered().into_iter().map(|entry| entry.id().to_owned()).collect();
-    assert_eq!(crypto, vec!["BTC-USD".to_owned()], "only crypto shows under the Crypto tab");
+    let crypto: Vec<String> = catalog
+        .filtered()
+        .into_iter()
+        .map(|entry| entry.id().to_owned())
+        .collect();
+    assert_eq!(
+        crypto,
+        vec!["BTC-USD".to_owned()],
+        "only crypto shows under the Crypto tab"
+    );
     assert_eq!(AssetClass::All.label(), "All");
     assert_eq!(AssetClass::all().len(), 5, "five symbol tabs");
 }
@@ -147,27 +176,58 @@ fn workspace_symbol_and_timeframe_switches_pull_from_gateway_and_rebind_2d_inter
     // Pan the time axis, then prove the switch resets the 2D bounds.
     workspace.step_interaction(
         1.0 / 60.0,
-        &[PointerInput::Pan2D { dx_px: 30.0, dy_px: 0.0 }],
+        &[PointerInput::Pan2D {
+            dx_px: 30.0,
+            dy_px: 0.0,
+        }],
     );
     assert!(
-        workspace.main_viewport().expect("main viewport").x_offset_px().abs() > f32::EPSILON,
+        workspace
+            .main_viewport()
+            .expect("main viewport")
+            .x_offset_px()
+            .abs()
+            > f32::EPSILON,
         "the pan moved the time axis"
     );
 
-    workspace.switch_symbol("SPY", &gateway).expect("a symbol switch pulls fresh history");
+    workspace
+        .switch_symbol("SPY", &gateway)
+        .expect("a symbol switch pulls fresh history");
     assert_eq!(workspace.active_symbol(), "SPY", "the symbol switched");
-    assert_ne!(workspace.rows().len(), gld_rows, "SPY pulled a different history");
+    assert_ne!(
+        workspace.rows().len(),
+        gld_rows,
+        "SPY pulled a different history"
+    );
     assert!(
-        workspace.main_viewport().expect("main viewport").x_offset_px().abs() <= f32::EPSILON,
+        workspace
+            .main_viewport()
+            .expect("main viewport")
+            .x_offset_px()
+            .abs()
+            <= f32::EPSILON,
         "the switch reset the 2D interaction bounds"
     );
 
-    workspace.switch_timeframe(TimeframeKey::M5, &gateway).expect("a timeframe switch pulls");
-    assert_eq!(workspace.timeframe(), TimeframeKey::M5, "the timeframe switched");
+    workspace
+        .switch_timeframe(TimeframeKey::M5, &gateway)
+        .expect("a timeframe switch pulls");
+    assert_eq!(
+        workspace.timeframe(),
+        TimeframeKey::M5,
+        "the timeframe switched"
+    );
 
     let calls = gateway.calls();
-    assert!(calls.iter().any(|(symbol, _)| symbol == "SPY"), "SPY was pulled: {calls:?}");
-    assert!(calls.iter().any(|(_, timeframe)| timeframe == "5M"), "5M was pulled: {calls:?}");
+    assert!(
+        calls.iter().any(|(symbol, _)| symbol == "SPY"),
+        "SPY was pulled: {calls:?}"
+    );
+    assert!(
+        calls.iter().any(|(_, timeframe)| timeframe == "5M"),
+        "5M was pulled: {calls:?}"
+    );
 }
 
 #[test]
@@ -177,13 +237,19 @@ fn workspace_hot_slot_eye_and_bolt_controls_and_2d_pan_zoom_work_headlessly() {
 
     // Eye toggles one slot instantly.
     assert_eq!(workspace.slot_visible("fast_mas"), Some(true));
-    workspace.toggle_visibility("fast_mas").expect("the eye hides");
+    workspace
+        .toggle_visibility("fast_mas")
+        .expect("the eye hides");
     assert_eq!(workspace.slot_visible("fast_mas"), Some(false));
-    workspace.toggle_visibility("fast_mas").expect("the eye shows");
+    workspace
+        .toggle_visibility("fast_mas")
+        .expect("the eye shows");
     assert_eq!(workspace.slot_visible("fast_mas"), Some(true));
 
     // Bolt opens one slot's isolated settings; the tabbed edit is live.
-    workspace.open_settings("integration_lite").expect("the bolt opens");
+    workspace
+        .open_settings("integration_lite")
+        .expect("the bolt opens");
     workspace
         .set_settings_tab("integration_lite", SettingsTab::Inputs)
         .expect("the Inputs tab selects");
@@ -194,11 +260,17 @@ fn workspace_hot_slot_eye_and_bolt_controls_and_2d_pan_zoom_work_headlessly() {
     // 2D pan and cursor-anchored wheel zoom lock the sub-pane time axis.
     workspace.step_interaction(
         1.0 / 60.0,
-        &[PointerInput::Pan2D { dx_px: 30.0, dy_px: -6.0 }],
+        &[PointerInput::Pan2D {
+            dx_px: 30.0,
+            dy_px: -6.0,
+        }],
     );
     workspace.step_interaction(
         1.0 / 60.0,
-        &[PointerInput::WheelTime { delta_px: 40.0, anchor_x: 160.0 }],
+        &[PointerInput::WheelTime {
+            delta_px: 40.0,
+            anchor_x: 160.0,
+        }],
     );
     let main = workspace.main_viewport().expect("main viewport");
     let sub = workspace.sub_viewport().expect("sub viewport");
@@ -228,21 +300,31 @@ fn a_slots_style_tab_commits_colors_and_line_width_through_its_own_component() {
         .set_settings_tab("fast_mas", SettingsTab::Style)
         .expect("the Style tab selects");
     assert_eq!(
-        workspace.slot_style_field("fast_mas", "line_width").expect("the width reads"),
+        workspace
+            .slot_style_field("fast_mas", "line_width")
+            .expect("the width reads"),
         IndicatorStyle::default().line_width().to_string(),
         "the slot starts on the theme at the default width"
     );
     assert_eq!(
-        workspace.slot_style_field("fast_mas", "color_fast").expect("the color reads"),
+        workspace
+            .slot_style_field("fast_mas", "color_fast")
+            .expect("the color reads"),
         "",
         "and with no color override"
     );
 
-    workspace.seed_history(TimeframeKey::M1, ramp_rows(40)).expect("history seeds");
-    workspace.select_timeframe(TimeframeKey::M1).expect("M1 binds the viewports");
+    workspace
+        .seed_history(TimeframeKey::M1, ramp_rows(40))
+        .expect("history seeds");
+    workspace
+        .select_timeframe(TimeframeKey::M1)
+        .expect("M1 binds the viewports");
     let cached_before = workspace.cached_series();
-    let first_length_before =
-        workspace.stack.get_slot_field("fast_mas", "first_ma_length").unwrap_or_default();
+    let first_length_before = workspace
+        .stack
+        .get_slot_field("fast_mas", "first_ma_length")
+        .unwrap_or_default();
 
     workspace
         .set_slot_style_field("fast_mas", "line_width", "3")
@@ -251,7 +333,9 @@ fn a_slots_style_tab_commits_colors_and_line_width_through_its_own_component() {
         .set_slot_style_field("fast_mas", "color_fast", "#0A0B0C")
         .expect("a well-formed override writes");
     assert!(
-        workspace.set_slot_style_field("fast_mas", "color_slow", "not-a-color").is_err(),
+        workspace
+            .set_slot_style_field("fast_mas", "color_slow", "not-a-color")
+            .is_err(),
         "a malformed color refuses instead of being repaired"
     );
 
@@ -260,25 +344,41 @@ fn a_slots_style_tab_commits_colors_and_line_width_through_its_own_component() {
         (style.line_width() - 3.0).abs() < f32::EPSILON,
         "the stroke width the Style tab set is live"
     );
-    assert_eq!(style.override_color("fast"), Some("#0A0B0C"), "and so is the color override");
-    assert_eq!(style.override_color("slow"), None, "the refused value never landed");
+    assert_eq!(
+        style.override_color("fast"),
+        Some("#0A0B0C"),
+        "and so is the color override"
+    );
+    assert_eq!(
+        style.override_color("slow"),
+        None,
+        "the refused value never landed"
+    );
     assert_eq!(
         workspace.cached_series(),
         cached_before,
         "a style write repaints without republishing the pane cache"
     );
     assert_eq!(
-        workspace.stack.get_slot_field("fast_mas", "first_ma_length").unwrap_or_default(),
+        workspace
+            .stack
+            .get_slot_field("fast_mas", "first_ma_length")
+            .unwrap_or_default(),
         first_length_before,
         "and never touches the calculation inputs"
     );
     assert_eq!(
-        workspace.stack.indicator_style("integration_lite").override_color("fast"),
+        workspace
+            .stack
+            .indicator_style("integration_lite")
+            .override_color("fast"),
         None,
         "one slot's style never leaks to another"
     );
     assert!(
-        workspace.set_slot_style_field("nope", "line_width", "2").is_err(),
+        workspace
+            .set_slot_style_field("nope", "line_width", "2")
+            .is_err(),
         "an unknown slot refuses"
     );
 }
@@ -291,7 +391,10 @@ fn the_delta_histogram_tracks_the_same_zoom_the_candles_do() {
     for spacing in [1.0_f32, 8.0, 20.0, 64.0] {
         let half_width = candle_body_width(spacing) * DELTA_BAR_BODY_SHARE / 2.0;
         assert!(
-            close_to(half_width * 2.0, candle_body_width(spacing) * DELTA_BAR_BODY_SHARE),
+            close_to(
+                half_width * 2.0,
+                candle_body_width(spacing) * DELTA_BAR_BODY_SHARE
+            ),
             "the histogram is a fixed share of the candle body at spacing {spacing}"
         );
         assert!(
@@ -305,8 +408,12 @@ fn the_delta_histogram_tracks_the_same_zoom_the_candles_do() {
 fn the_style_tab_shows_every_paint_knob_for_a_slot() {
     let workspace = ChartWorkspace::new().expect("the workspace boots");
     for id in workspace.slot_ids() {
-        let Some(config) = workspace.stack.config(&id) else { continue };
-        let Some(style) = workspace.stack.style(&id) else { continue };
+        let Some(config) = workspace.stack.config(&id) else {
+            continue;
+        };
+        let Some(style) = workspace.stack.style(&id) else {
+            continue;
+        };
         let config_fields = fluent_egui::schema_fields(&config.describe());
         let style_fields = fluent_egui::schema_fields(&style.describe());
         let tab = fluent_egui::tab_fields(SettingsTab::Style, &config_fields, &style_fields);
@@ -336,19 +443,31 @@ fn pane_layout_reserves_the_price_axis_and_time_strip() {
     let same = |a: f32, b: f32| a.to_bits() == b.to_bits();
 
     let main = PaneLayout::split(rect, true);
-    assert!(same(main.plot.right(), rect.right() - AXIS_WIDTH), "the plot leaves room for the axis");
+    assert!(
+        same(main.plot.right(), rect.right() - AXIS_WIDTH),
+        "the plot leaves room for the axis"
+    );
     assert!(
         same(main.plot.bottom(), rect.bottom() - TIME_STRIP),
         "the plot leaves room for time labels"
     );
-    assert!(same(main.axis.left(), main.plot.right()), "the axis starts where the plot ends");
+    assert!(
+        same(main.axis.left(), main.plot.right()),
+        "the axis starts where the plot ends"
+    );
     let time = main.time.expect("the price pane reserves a time strip");
     assert!(same(time.top(), rect.bottom() - TIME_STRIP));
     assert!(same(time.left(), rect.left()));
-    assert!(same(time.right(), rect.right()), "the time strip spans the full pane width");
+    assert!(
+        same(time.right(), rect.right()),
+        "the time strip spans the full pane width"
+    );
 
     let sub = PaneLayout::split(rect, false);
-    assert!(same(sub.plot.bottom(), rect.bottom()), "the sub-pane has no time strip");
+    assert!(
+        same(sub.plot.bottom(), rect.bottom()),
+        "the sub-pane has no time strip"
+    );
     assert!(sub.time.is_none());
 }
 
@@ -430,26 +549,55 @@ fn grid_rows(start_sec: i64, count: usize) -> Vec<ChartRow> {
 #[test]
 fn seeded_timeframes_switch_the_loaded_candles_and_resample_coarser_keys() {
     let mut workspace = ChartWorkspace::new().expect("the workspace boots");
-    workspace.seed_history(TimeframeKey::M1, ramp_rows(20)).expect("1M seeds");
-    workspace.seed_history(TimeframeKey::M5, ramp_rows(12)).expect("5M seeds");
+    workspace
+        .seed_history(TimeframeKey::M1, ramp_rows(20))
+        .expect("1M seeds");
+    workspace
+        .seed_history(TimeframeKey::M5, ramp_rows(12))
+        .expect("5M seeds");
     let hour_sec = protopyne_types::Timeframe::H1.bucket_start_ms(1_700_000_000_000) / 1_000;
     workspace
         .seed_history(TimeframeKey::M15, grid_rows(hour_sec, 8))
         .expect("15M selects on seed");
 
-    assert_eq!(workspace.timeframe(), TimeframeKey::M15, "the default timeframe is selected");
-    assert_eq!(workspace.rows().len(), 8, "the seeded 15M history is active");
+    assert_eq!(
+        workspace.timeframe(),
+        TimeframeKey::M15,
+        "the default timeframe is selected"
+    );
+    assert_eq!(
+        workspace.rows().len(),
+        8,
+        "the seeded 15M history is active"
+    );
 
-    workspace.select_timeframe(TimeframeKey::M1).expect("1M selects");
-    assert_eq!(workspace.rows().len(), 20, "1M loads its own candles, not the 15M set");
-    workspace.select_timeframe(TimeframeKey::M5).expect("5M selects");
+    workspace
+        .select_timeframe(TimeframeKey::M1)
+        .expect("1M selects");
+    assert_eq!(
+        workspace.rows().len(),
+        20,
+        "1M loads its own candles, not the 15M set"
+    );
+    workspace
+        .select_timeframe(TimeframeKey::M5)
+        .expect("5M selects");
     assert_eq!(workspace.rows().len(), 12, "5M loads its own candles");
 
-    workspace.select_timeframe(TimeframeKey::H1).expect("1H resamples the 15M slot");
+    workspace
+        .select_timeframe(TimeframeKey::H1)
+        .expect("1H resamples the 15M slot");
     assert_eq!(workspace.timeframe(), TimeframeKey::H1);
     let hourly = workspace.rows();
-    assert_eq!(hourly.len(), 2, "8 fifteen-minute rows fold into 2 hourly bars");
-    assert_eq!(hourly[0].time, hour_sec, "a folded row stamps its bucket start");
+    assert_eq!(
+        hourly.len(),
+        2,
+        "8 fifteen-minute rows fold into 2 hourly bars"
+    );
+    assert_eq!(
+        hourly[0].time, hour_sec,
+        "a folded row stamps its bucket start"
+    );
     assert!(
         (hourly[0].open - 99.5).abs() < 1e-12,
         "open comes from the bucket's first row"
@@ -459,7 +607,11 @@ fn seeded_timeframes_switch_the_loaded_candles_and_resample_coarser_keys() {
         "close comes from the bucket's last row"
     );
     assert_eq!(hourly[0].volume, 40, "volume sums the bucket's rows");
-    assert_eq!(hourly[1].time, hour_sec + 3_600, "the second bucket stamps its own start");
+    assert_eq!(
+        hourly[1].time,
+        hour_sec + 3_600,
+        "the second bucket stamps its own start"
+    );
 
     // A short edge never fabricates a bar: three rows inside one hour fold
     // to nothing.
@@ -467,7 +619,9 @@ fn seeded_timeframes_switch_the_loaded_candles_and_resample_coarser_keys() {
     short
         .seed_history(TimeframeKey::M15, grid_rows(hour_sec, 3))
         .expect("15M selects on seed");
-    short.select_timeframe(TimeframeKey::H1).expect("1H selects");
+    short
+        .select_timeframe(TimeframeKey::H1)
+        .expect("1H selects");
     assert!(
         short.rows().is_empty(),
         "three quarter-hours cannot evidence a whole hour"
@@ -491,10 +645,15 @@ fn an_incomplete_trailing_bucket_never_sources_the_folded_edge() {
     workspace
         .seed_history(TimeframeKey::M15, grid_rows(hour_sec, 6))
         .expect("15M selects on seed");
-    workspace.select_timeframe(TimeframeKey::H1).expect("1H selects");
+    workspace
+        .select_timeframe(TimeframeKey::H1)
+        .expect("1H selects");
     let hourly = workspace.rows();
     assert_eq!(hourly.len(), 1, "the two-row tail emits no hourly bar");
-    assert_eq!(hourly[0].time, hour_sec, "the whole bucket stamps its start");
+    assert_eq!(
+        hourly[0].time, hour_sec,
+        "the whole bucket stamps its start"
+    );
     assert!(
         (hourly[0].close - 103.0).abs() < 1e-12,
         "the folded edge closes on the whole bucket's last row, not the live tail: {}",
@@ -508,8 +667,7 @@ fn a_full_day_grid_folds_whole_hours_and_a_whole_day_while_a_session_day_folds_n
     // A synthetic 24-hour quarter-hour grid from a UTC midnight: every hour
     // holds its four children and the day holds all 96, so whole H1 and D1
     // buckets emit.
-    let midnight_sec =
-        Timeframe::D1.bucket_start_ms(1_700_000_000_000) / 1_000;
+    let midnight_sec = Timeframe::D1.bucket_start_ms(1_700_000_000_000) / 1_000;
     let day: Vec<ChartRow> = (0..96)
         .map(|i| {
             let close = 100.0 + i as f64;
@@ -524,14 +682,36 @@ fn a_full_day_grid_folds_whole_hours_and_a_whole_day_while_a_session_day_folds_n
         })
         .collect();
     let mut workspace = ChartWorkspace::new().expect("the workspace boots");
-    workspace.seed_history(TimeframeKey::M15, day).expect("the day seeds");
-    workspace.select_timeframe(TimeframeKey::H1).expect("1H selects");
-    assert_eq!(workspace.rows().len(), 24, "24 whole hours emit from a full grid");
-    assert_eq!(workspace.rows()[0].time, midnight_sec, "hours stamp their bucket start");
-    workspace.select_timeframe(TimeframeKey::D1).expect("1D selects");
+    workspace
+        .seed_history(TimeframeKey::M15, day)
+        .expect("the day seeds");
+    workspace
+        .select_timeframe(TimeframeKey::H1)
+        .expect("1H selects");
+    assert_eq!(
+        workspace.rows().len(),
+        24,
+        "24 whole hours emit from a full grid"
+    );
+    assert_eq!(
+        workspace.rows()[0].time,
+        midnight_sec,
+        "hours stamp their bucket start"
+    );
+    workspace
+        .select_timeframe(TimeframeKey::D1)
+        .expect("1D selects");
     assert_eq!(workspace.rows().len(), 1, "a whole day emits one daily bar");
-    assert_eq!(workspace.rows()[0].time, midnight_sec, "the day stamps its bucket start");
-    assert_eq!(workspace.rows()[0].volume, 960, "the daily volume sums its 96 rows");
+    assert_eq!(
+        workspace.rows()[0].time,
+        midnight_sec,
+        "the day stamps its bucket start"
+    );
+    assert_eq!(
+        workspace.rows()[0].volume,
+        960,
+        "the daily volume sums its 96 rows"
+    );
 
     // A session-shaped day — 26 quarter-hours, 6.5 hours of prints — fills
     // six whole hours but no daily bucket: calendar-day folding of session
@@ -541,9 +721,17 @@ fn a_full_day_grid_folds_whole_hours_and_a_whole_day_while_a_session_day_folds_n
     session
         .seed_history(TimeframeKey::M15, grid_rows(midnight_sec, 26))
         .expect("the session seeds");
-    session.select_timeframe(TimeframeKey::H1).expect("1H selects");
-    assert_eq!(session.rows().len(), 6, "six whole hours emit from a session day");
-    session.select_timeframe(TimeframeKey::D1).expect("1D selects");
+    session
+        .select_timeframe(TimeframeKey::H1)
+        .expect("1H selects");
+    assert_eq!(
+        session.rows().len(),
+        6,
+        "six whole hours emit from a session day"
+    );
+    session
+        .select_timeframe(TimeframeKey::D1)
+        .expect("1D selects");
     assert!(
         session.rows().is_empty(),
         "26 quarter-hours cannot evidence a whole day"
@@ -556,8 +744,10 @@ fn a_full_day_grid_folds_whole_hours_and_a_whole_day_while_a_session_day_folds_n
 /// and the frame always agree about where the seam sits.
 fn wheel_layouts() -> (PaneLayout, PaneLayout) {
     let width = ui_width();
-    let canvas =
-        egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(width, NOMINAL_CANVAS_HEIGHT));
+    let canvas = egui::Rect::from_min_size(
+        egui::pos2(0.0, 0.0),
+        egui::vec2(width, NOMINAL_CANVAS_HEIGHT),
+    );
     let [main, sub] = split_canvas(canvas, DEFAULT_PANE_SHARE);
     (PaneLayout::split(main, true), PaneLayout::split(sub, false))
 }
@@ -585,8 +775,14 @@ fn chart_zones(
 ) -> WheelZones {
     WheelZones::new(
         vec![
-            PaneZones { plot: layout.plot.into(), axis: layout.axis.into() },
-            PaneZones { plot: sub.plot.into(), axis: sub.axis.into() },
+            PaneZones {
+                plot: layout.plot.into(),
+                axis: layout.axis.into(),
+            },
+            PaneZones {
+                plot: sub.plot.into(),
+                axis: sub.axis.into(),
+            },
         ],
         list,
     )
@@ -620,8 +816,14 @@ fn the_canvas_is_one_sensing_surface_split_into_two_panes() {
         "the oscillator takes the rest: {}",
         sub.height()
     );
-    assert_eq!(main.min, canvas.min, "the price pane starts at the canvas origin");
-    assert_eq!(sub.max, canvas.max, "and the sub-pane ends at its far corner");
+    assert_eq!(
+        main.min, canvas.min,
+        "the price pane starts at the canvas origin"
+    );
+    assert_eq!(
+        sub.max, canvas.max,
+        "and the sub-pane ends at its far corner"
+    );
     assert!(
         same_edge(main.bottom(), sub.top()),
         "the panes share the seam exactly, so no pixel is sensed twice or lost"
@@ -637,8 +839,10 @@ fn the_divider_strip_sits_on_the_seam_and_the_panes_still_tile() {
     // The draggable seam floats over the split: the strip centers on it while
     // both panes keep tiling the canvas exactly, so dragging never steals
     // pixels from either pane.
-    let canvas =
-        egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(640.0, NOMINAL_CANVAS_HEIGHT));
+    let canvas = egui::Rect::from_min_size(
+        egui::pos2(0.0, 0.0),
+        egui::vec2(640.0, NOMINAL_CANVAS_HEIGHT),
+    );
     for share in [MIN_PANE_SHARE, 0.5, DEFAULT_PANE_SHARE, MAX_PANE_SHARE] {
         let [main, sub] = split_canvas(canvas, share);
         let strip = divider_rect(canvas, share);
@@ -708,10 +912,18 @@ fn viewport_height_resync_keeps_the_window_spacing_and_offset() {
     // The frame measures the plots every pass (the canvas fills the window),
     // so the resync adopts the measured height while the price window, bar
     // spacing, and time offset ride along untouched.
-    let viewport = Viewport::new(PriceScaleMode::Normal, 90.0, 110.0, 300.0, 8.0, 100.0, false)
-        .expect("valid viewport")
-        .with_x_offset(24.0)
-        .expect("finite offset");
+    let viewport = Viewport::new(
+        PriceScaleMode::Normal,
+        90.0,
+        110.0,
+        300.0,
+        8.0,
+        100.0,
+        false,
+    )
+    .expect("valid viewport")
+    .with_x_offset(24.0)
+    .expect("finite offset");
     let resized = viewport_with_plot_height(viewport, 500.0).expect("a positive height resyncs");
     assert_eq!(
         resized.visible_range(),
@@ -747,9 +959,13 @@ fn rebind_derives_both_viewport_heights_from_the_pane_share() {
     // moves both mappings, so the first painted frame already agrees with
     // the rects it paints into.
     let mut workspace = ChartWorkspace::new().expect("the workspace boots");
-    workspace.seed_history(TimeframeKey::M1, ramp_rows(40)).expect("history seeds");
+    workspace
+        .seed_history(TimeframeKey::M1, ramp_rows(40))
+        .expect("history seeds");
     workspace.set_pane_share(0.5);
-    workspace.select_timeframe(TimeframeKey::M1).expect("M1 binds the viewports");
+    workspace
+        .select_timeframe(TimeframeKey::M1)
+        .expect("M1 binds the viewports");
     let price_h = NOMINAL_CANVAS_HEIGHT * 0.5 - TIME_STRIP;
     let sub_h = NOMINAL_CANVAS_HEIGHT * 0.5;
     assert!(
@@ -773,7 +989,10 @@ fn a_hover_anywhere_on_the_oscillator_pane_reaches_the_oscillators_axis() {
     let over_plot = egui::pos2(sub_layout.plot.center().x, sub_layout.plot.center().y);
     assert_eq!(
         zones.route(over_plot.into()),
-        Some(WheelTarget::Time { pane: SUB_PANE_ZONE, anchor_x: over_plot.x - sub_layout.plot.left() }),
+        Some(WheelTarget::Time {
+            pane: SUB_PANE_ZONE,
+            anchor_x: over_plot.x - sub_layout.plot.left()
+        }),
         "a wheel over the oscillator plot zooms the shared time axis"
     );
 
@@ -781,16 +1000,29 @@ fn a_hover_anywhere_on_the_oscillator_pane_reaches_the_oscillators_axis() {
     let routed = zones.route(over_labels.into());
     assert_eq!(
         routed,
-        Some(WheelTarget::Price { pane: SUB_PANE_ZONE, anchor_y: over_labels.y - sub_layout.plot.top() }),
+        Some(WheelTarget::Price {
+            pane: SUB_PANE_ZONE,
+            anchor_y: over_labels.y - sub_layout.plot.top()
+        }),
         "and a wheel over the oscillator's own Y labels zooms the oscillator"
     );
     if let Some(WheelTarget::Price { pane, anchor_y }) = routed {
         let mut workspace = ChartWorkspace::new().expect("the workspace boots");
-        workspace.seed_history(TimeframeKey::M1, ramp_rows(40)).expect("history seeds");
-        workspace.select_timeframe(TimeframeKey::M1).expect("M1 binds the viewports");
-        let before = workspace.sub_viewport().expect("sub viewport").visible_range();
+        workspace
+            .seed_history(TimeframeKey::M1, ramp_rows(40))
+            .expect("history seeds");
+        workspace
+            .select_timeframe(TimeframeKey::M1)
+            .expect("M1 binds the viewports");
+        let before = workspace
+            .sub_viewport()
+            .expect("sub viewport")
+            .visible_range();
         workspace.zoom_pane_price(pane, 50.0, anchor_y);
-        let after = workspace.sub_viewport().expect("sub viewport").visible_range();
+        let after = workspace
+            .sub_viewport()
+            .expect("sub viewport")
+            .visible_range();
         assert!(
             after.max - after.min < before.max - before.min,
             "the routed gesture narrowed the oscillator: {} -> {}",
@@ -806,8 +1038,12 @@ fn a_wheel_over_the_oscillator_plot_keeps_the_two_panes_on_one_time_axis() {
     // pane 1 must zoom x for both and must not disturb the price window.
     let (layout, sub_layout) = wheel_layouts();
     let mut workspace = ChartWorkspace::new().expect("the workspace boots");
-    workspace.seed_history(TimeframeKey::M1, ramp_rows(40)).expect("history seeds");
-    workspace.select_timeframe(TimeframeKey::M1).expect("M1 binds the viewports");
+    workspace
+        .seed_history(TimeframeKey::M1, ramp_rows(40))
+        .expect("history seeds");
+    workspace
+        .select_timeframe(TimeframeKey::M1)
+        .expect("M1 binds the viewports");
 
     let hover = egui::pos2(sub_layout.plot.center().x, sub_layout.plot.center().y);
     let zones = chart_zones(&layout, &sub_layout, None);
@@ -819,10 +1055,16 @@ fn a_wheel_over_the_oscillator_plot_keeps_the_two_panes_on_one_time_axis() {
     // The frame turns a routed target into exactly these machine inputs.
     workspace.step_interaction(
         1.0 / 60.0,
-        &[PointerInput::WheelTime { delta_px: 40.0, anchor_x }],
+        &[PointerInput::WheelTime {
+            delta_px: 40.0,
+            anchor_x,
+        }],
     );
 
-    assert_eq!(pane, SUB_PANE_ZONE, "the gesture came from the oscillator pane");
+    assert_eq!(
+        pane, SUB_PANE_ZONE,
+        "the gesture came from the oscillator pane"
+    );
     let main = workspace.main_viewport().expect("main");
     let sub = workspace.sub_viewport().expect("sub");
     assert!(
@@ -841,10 +1083,18 @@ fn candles_are_as_wide_as_the_unit_of_time_the_chart_is_showing() {
     // The width rule is shared scaffolding; what the terminal owes is reading
     // it from the LIVE viewport spacing rather than the configured default.
     let mut workspace = ChartWorkspace::new().expect("the workspace boots");
-    workspace.seed_history(TimeframeKey::M1, ramp_rows(40)).expect("history seeds");
-    workspace.select_timeframe(TimeframeKey::M1).expect("M1 binds the viewports");
+    workspace
+        .seed_history(TimeframeKey::M1, ramp_rows(40))
+        .expect("history seeds");
+    workspace
+        .select_timeframe(TimeframeKey::M1)
+        .expect("M1 binds the viewports");
 
-    let default_spacing = workspace.main_viewport().expect("main").scale().bar_spacing();
+    let default_spacing = workspace
+        .main_viewport()
+        .expect("main")
+        .scale()
+        .bar_spacing();
     assert!(
         close_to(candle_body_width(default_spacing), default_spacing),
         "at the configured zoom a candle fills its own time bar"
@@ -856,11 +1106,21 @@ fn candles_are_as_wide_as_the_unit_of_time_the_chart_is_showing() {
     for _ in 0..8 {
         workspace.step_interaction(
             1.0 / 60.0,
-            &[PointerInput::WheelTime { delta_px: 400.0, anchor_x: 320.0 }],
+            &[PointerInput::WheelTime {
+                delta_px: 400.0,
+                anchor_x: 320.0,
+            }],
         );
     }
-    let zoomed = workspace.main_viewport().expect("main").scale().bar_spacing();
-    assert!(zoomed > CANDLE_GAP_THRESHOLD_PX, "the pane really did zoom out: {zoomed}");
+    let zoomed = workspace
+        .main_viewport()
+        .expect("main")
+        .scale()
+        .bar_spacing();
+    assert!(
+        zoomed > CANDLE_GAP_THRESHOLD_PX,
+        "the pane really did zoom out: {zoomed}"
+    );
     assert!(
         close_to(candle_body_width(zoomed), zoomed * CANDLE_BODY_FRACTION),
         "and a wide candle keeps 80% of its bar so neighbours separate"
@@ -882,26 +1142,46 @@ fn the_legend_sits_clear_of_the_right_price_axis() {
         x,
         layout.axis.left()
     );
-    assert!(y >= layout.plot.top(), "the legend hangs from the pane's top edge");
+    assert!(
+        y >= layout.plot.top(),
+        "the legend hangs from the pane's top edge"
+    );
 }
 
 #[test]
 fn the_oscillator_axis_wheel_zooms_only_the_oscillators_price_range() {
     let (layout, sub_layout) = wheel_layouts();
     let mut workspace = ChartWorkspace::new().expect("the workspace boots");
-    workspace.seed_history(TimeframeKey::M1, ramp_rows(40)).expect("history seeds");
-    workspace.select_timeframe(TimeframeKey::M1).expect("M1 selects and rebinds the viewports");
+    workspace
+        .seed_history(TimeframeKey::M1, ramp_rows(40))
+        .expect("history seeds");
+    workspace
+        .select_timeframe(TimeframeKey::M1)
+        .expect("M1 selects and rebinds the viewports");
 
-    let before_main = workspace.main_viewport().expect("main viewport").visible_range();
-    let before_sub = workspace.sub_viewport().expect("sub viewport").visible_range();
-    let before_spacing = workspace.main_viewport().expect("main viewport").scale().bar_spacing();
+    let before_main = workspace
+        .main_viewport()
+        .expect("main viewport")
+        .visible_range();
+    let before_sub = workspace
+        .sub_viewport()
+        .expect("sub viewport")
+        .visible_range();
+    let before_spacing = workspace
+        .main_viewport()
+        .expect("main viewport")
+        .scale()
+        .bar_spacing();
 
     // A pointer over the oscillator's own price labels.
     let hover = egui::pos2(sub_layout.axis.center().x, sub_layout.axis.center().y);
     let target = chart_zones(&layout, &sub_layout, None).route(hover.into());
     assert_eq!(
         target,
-        Some(WheelTarget::Price { pane: SUB_PANE_ZONE, anchor_y: hover.y - sub_layout.plot.top() }),
+        Some(WheelTarget::Price {
+            pane: SUB_PANE_ZONE,
+            anchor_y: hover.y - sub_layout.plot.top()
+        }),
         "the oscillator's strip routes to its own price axis"
     );
 
@@ -909,7 +1189,10 @@ fn the_oscillator_axis_wheel_zooms_only_the_oscillators_price_range() {
         workspace.zoom_pane_price(pane, 50.0, anchor_y);
     }
 
-    let after_sub = workspace.sub_viewport().expect("sub viewport").visible_range();
+    let after_sub = workspace
+        .sub_viewport()
+        .expect("sub viewport")
+        .visible_range();
     assert!(
         after_sub.max - after_sub.min < before_sub.max - before_sub.min,
         "the oscillator window narrowed: {} -> {}",
@@ -917,13 +1200,20 @@ fn the_oscillator_axis_wheel_zooms_only_the_oscillators_price_range() {
         after_sub.max - after_sub.min
     );
     assert_eq!(
-        workspace.main_viewport().expect("main viewport").visible_range(),
+        workspace
+            .main_viewport()
+            .expect("main viewport")
+            .visible_range(),
         before_main,
         "the price pane's window is untouched"
     );
     assert!(
         unchanged(
-            workspace.main_viewport().expect("main viewport").scale().bar_spacing(),
+            workspace
+                .main_viewport()
+                .expect("main viewport")
+                .scale()
+                .bar_spacing(),
             before_spacing
         ),
         "the shared time axis is untouched"
@@ -934,14 +1224,21 @@ fn the_oscillator_axis_wheel_zooms_only_the_oscillators_price_range() {
 fn an_oscillator_zoom_out_stops_at_the_panes_design_band() {
     let (_, sub_layout) = wheel_layouts();
     let mut workspace = ChartWorkspace::new().expect("the workspace boots");
-    workspace.seed_history(TimeframeKey::M1, ramp_rows(40)).expect("history seeds");
-    workspace.select_timeframe(TimeframeKey::M1).expect("M1 selects and rebinds the viewports");
+    workspace
+        .seed_history(TimeframeKey::M1, ramp_rows(40))
+        .expect("history seeds");
+    workspace
+        .select_timeframe(TimeframeKey::M1)
+        .expect("M1 selects and rebinds the viewports");
     let anchor = sub_layout.plot.height() / 2.0;
 
     for _ in 0..200 {
         workspace.zoom_pane_price(SUB_PANE_ZONE, -500.0, anchor);
     }
-    let range = workspace.sub_viewport().expect("sub viewport").visible_range();
+    let range = workspace
+        .sub_viewport()
+        .expect("sub viewport")
+        .visible_range();
     let base = SUB_MAX - SUB_MIN;
     assert!(
         (range.max - range.min - base).abs() < 1e-6,
@@ -952,7 +1249,10 @@ fn an_oscillator_zoom_out_stops_at_the_panes_design_band() {
     for _ in 0..400 {
         workspace.zoom_pane_price(SUB_PANE_ZONE, 500.0, anchor);
     }
-    let tight = workspace.sub_viewport().expect("sub viewport").visible_range();
+    let tight = workspace
+        .sub_viewport()
+        .expect("sub viewport")
+        .visible_range();
     assert!(
         tight.max - tight.min >= base * SUB_MIN_SPAN_FRACTION,
         "zooming in stops above the legibility rail: {}",
@@ -967,7 +1267,10 @@ fn the_price_axis_wheel_is_answered_by_the_interaction_machine() {
     let target = chart_zones(&layout, &layout, None).route(hover.into());
     assert_eq!(
         target,
-        Some(WheelTarget::Price { pane: 0, anchor_y: hover.y - layout.plot.top() }),
+        Some(WheelTarget::Price {
+            pane: 0,
+            anchor_y: hover.y - layout.plot.top()
+        }),
         "the price pane's strip routes to pane 0, which the machine steps"
     );
 }
@@ -976,20 +1279,41 @@ fn the_price_axis_wheel_is_answered_by_the_interaction_machine() {
 fn a_wheel_over_the_legend_never_moves_the_chart() {
     let (layout, sub_layout) = wheel_layouts();
     let mut workspace = ChartWorkspace::new().expect("the workspace boots");
-    workspace.seed_history(TimeframeKey::M1, ramp_rows(40)).expect("history seeds");
-    workspace.select_timeframe(TimeframeKey::M1).expect("M1 selects and rebinds the viewports");
-    workspace.stack.set_origin((layout.plot.right() - 180.0, layout.plot.top() + 8.0));
+    workspace
+        .seed_history(TimeframeKey::M1, ramp_rows(40))
+        .expect("history seeds");
+    workspace
+        .select_timeframe(TimeframeKey::M1)
+        .expect("M1 selects and rebinds the viewports");
+    workspace
+        .stack
+        .set_origin((layout.plot.right() - 180.0, layout.plot.top() + 8.0));
 
-    let before_main = workspace.main_viewport().expect("main viewport").visible_range();
-    let before_spacing = workspace.main_viewport().expect("main viewport").scale().bar_spacing();
+    let before_main = workspace
+        .main_viewport()
+        .expect("main viewport")
+        .visible_range();
+    let before_spacing = workspace
+        .main_viewport()
+        .expect("main viewport")
+        .scale()
+        .bar_spacing();
     let before_scroll = workspace.stack.scroll_offset();
 
-    let list = workspace.stack.list_rect(layout.plot.height()).expect("a list to scroll");
+    let list = workspace
+        .stack
+        .list_rect(layout.plot.height())
+        .expect("a list to scroll");
     let zones = chart_zones(&layout, &sub_layout, Some(list.into()));
-    assert_eq!(zones.route(egui::pos2(list.center().x, list.center().y).into()), Some(WheelTarget::List));
+    assert_eq!(
+        zones.route(egui::pos2(list.center().x, list.center().y).into()),
+        Some(WheelTarget::List)
+    );
 
     // The gesture the router selects: scroll the list, chart untouched.
-    if let Some(WheelTarget::List) = zones.route(egui::pos2(list.center().x, list.center().y).into()) {
+    if let Some(WheelTarget::List) =
+        zones.route(egui::pos2(list.center().x, list.center().y).into())
+    {
         workspace.stack.scroll_by(-40.0, layout.plot.height());
     }
 
@@ -1004,10 +1328,21 @@ fn a_wheel_over_the_legend_never_moves_the_chart() {
         workspace.stack.content_height() <= layout.plot.height(),
         "the premise: the default legend column fits the chart pane"
     );
-    assert_eq!(workspace.main_viewport().expect("main viewport").visible_range(), before_main, "price held");
+    assert_eq!(
+        workspace
+            .main_viewport()
+            .expect("main viewport")
+            .visible_range(),
+        before_main,
+        "price held"
+    );
     assert!(
         unchanged(
-            workspace.main_viewport().expect("main viewport").scale().bar_spacing(),
+            workspace
+                .main_viewport()
+                .expect("main viewport")
+                .scale()
+                .bar_spacing(),
             before_spacing
         ),
         "the time axis held"
@@ -1032,7 +1367,9 @@ fn identical_republish_keeps_revisions_and_skips_the_derived_rebuild() {
     assert!(built > 0, "boot built the derived panes once");
     // The scripted gateway serves byte-identical bars per symbol, so a
     // second pull evaluates to identical series: every revision backdates.
-    workspace.refresh(&gateway).expect("an identical refresh recomputes");
+    workspace
+        .refresh(&gateway)
+        .expect("an identical refresh recomputes");
     assert_eq!(
         workspace.derived_builds(),
         built,
@@ -1051,7 +1388,9 @@ fn identical_republish_keeps_revisions_and_skips_the_derived_rebuild() {
         .set_slot_field("integration_lite", "eit_alpha", "0.5")
         .expect("the field restores");
     let rebuilt = workspace.derived_builds();
-    workspace.refresh(&gateway).expect("an identical refresh recomputes");
+    workspace
+        .refresh(&gateway)
+        .expect("an identical refresh recomputes");
     assert_eq!(
         workspace.derived_builds(),
         rebuilt,

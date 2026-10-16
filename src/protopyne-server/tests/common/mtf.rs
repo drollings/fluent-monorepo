@@ -16,9 +16,9 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
 use protopyne_kernels::{
-    ClosureEntry, LibraryId, LinkedModule, LtfDataset, ModuleGraph, ModuleInput, PineEngine,
-    PineRuntimeConfig, PineValue, REAL_LIBRARIES, RunOutcome, TASK_INDICATORS, UserInstance,
-    closure_data_root, load_listed_closure, parse_program, resolve_imports,
+    closure_data_root, load_listed_closure, parse_program, resolve_imports, ClosureEntry,
+    LibraryId, LinkedModule, LtfDataset, ModuleGraph, ModuleInput, PineEngine, PineRuntimeConfig,
+    PineValue, RunOutcome, UserInstance, REAL_LIBRARIES, TASK_INDICATORS,
 };
 use protopyne_types::Bar;
 use rust_decimal::Decimal;
@@ -82,10 +82,8 @@ pub fn resample(bars: &[Bar], bucket_ms: i64) -> Vec<Bar> {
             let first = rows.first().expect("nonempty bucket");
             let last = rows.last().expect("nonempty bucket");
             Bar::new()
-                .ts(
-                    DateTime::from_timestamp_millis(key * bucket_ms)
-                        .expect("bucket start in range"),
-                )
+                .ts(DateTime::from_timestamp_millis(key * bucket_ms)
+                    .expect("bucket start in range"))
                 .o(first.o)
                 .h(rows.iter().map(|b| b.h).max().expect("nonempty bucket"))
                 .l(rows.iter().map(|b| b.l).min().expect("nonempty bucket"))
@@ -113,7 +111,10 @@ pub fn inject_all(engine: &mut PineEngine, minute: &[Bar], m5: &[Bar], m15: &[Ba
         .expect("M15 injects");
     let h1 = resample(m15, 60 * 60 * 1000);
     let h4 = resample(m15, 4 * 60 * 60 * 1000);
-    assert!(!h1.is_empty() && !h4.is_empty(), "resampling covers the tape");
+    assert!(
+        !h1.is_empty() && !h4.is_empty(),
+        "resampling covers the tape"
+    );
     engine
         .inject_security("SPY", "60", dataset_of(&h1))
         .expect("H1 injects");
@@ -162,8 +163,7 @@ pub fn link_task_closure(name: &str) -> Vec<LinkedModule> {
         .find(|entry| entry.name == name)
         .expect("task indicator entry");
     let root = closure_data_root(env!("CARGO_MANIFEST_DIR"));
-    let sources =
-        load_listed_closure(&root, REAL_LIBRARIES, indicator).expect("closure loads");
+    let sources = load_listed_closure(&root, REAL_LIBRARIES, indicator).expect("closure loads");
     let inputs: Vec<ModuleInput> = sources
         .into_iter()
         .map(|(key, source)| {
@@ -208,7 +208,8 @@ pub fn present(outcome: &RunOutcome, at_bar: usize, name: &str) -> bool {
 /// One tick update: legs track bar-so-far OHLC plus the rounded cumulative
 /// volume over the constant bar-open time; the tick stamp rides the side
 /// channel. Cumulative rounding keeps the total error under one share.
-pub fn tick_update(    bar_open: DateTime<Utc>,
+pub fn tick_update(
+    bar_open: DateTime<Utc>,
     tick_ms: i64,
     open: f64,
     high: f64,
@@ -235,7 +236,8 @@ pub fn tick_update(    bar_open: DateTime<Utc>,
 /// One minute's tape legs: the bucket-open milliseconds, the rounded
 /// cumulative leg per tick, and the tick index of the bucket's last tick
 /// (the confirming tick of an isolated per-minute run).
-pub struct TickBucket {    pub open_ms: i64,
+pub struct TickBucket {
+    pub open_ms: i64,
     pub legs: Vec<f64>,
     pub last_at: usize,
 }
@@ -265,8 +267,7 @@ pub fn build_tick_legs(rows: &[(i64, f64, f64)]) -> (Vec<Bar>, Vec<i64>, Vec<Tic
         minute_high = minute_high.max(*price);
         minute_low = minute_low.min(*price);
         minute_cum += *volume;
-        let bar_open =
-            DateTime::from_timestamp_millis(open_ms).expect("bar-open stamp in range");
+        let bar_open = DateTime::from_timestamp_millis(open_ms).expect("bar-open stamp in range");
         let leg = minute_cum.round();
         let (bar, tick_ms) = tick_update(
             bar_open,
@@ -321,14 +322,17 @@ pub fn load_tick_rows_from(path: &Path) -> Vec<(i64, f64, f64)> {
     let mut lines = content.lines();
     let header = lines.next().expect("ticks header");
     assert_eq!(
-        header,
-        "timestamp_ms,price,volume,is_out_of_order,original_timestamp_ms",
+        header, "timestamp_ms,price,volume,is_out_of_order,original_timestamp_ms",
         "tick columns pinned"
     );
     lines
         .map(|line| {
             let mut cells = line.split(',');
-            let stamp = cells.next().expect("stamp").parse::<i64>().expect("int stamp");
+            let stamp = cells
+                .next()
+                .expect("stamp")
+                .parse::<i64>()
+                .expect("int stamp");
             let price = cells.next().expect("price").parse::<f64>().expect("price");
             let volume = cells
                 .next()

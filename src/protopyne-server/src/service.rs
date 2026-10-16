@@ -19,11 +19,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use axum::{
-    Router,
     extract::{Query, State, WebSocketUpgrade},
     http::StatusCode,
     response::{IntoResponse, Json},
     routing::{get, post},
+    Router,
 };
 use chrono::Utc;
 use fluent_concurrency::batch::SupervisedBatch;
@@ -32,32 +32,32 @@ use fluent_concurrency::scope::Scope;
 use fluent_wvr::prelude::*;
 use tokio::sync::broadcast;
 
+use protopyne_chart_model::{row_of, ChartRow};
 use protopyne_kernels::{
     BbIndicator, EmaIndicator, Indicator as _, Ohlcv, ParamSet, SmaIndicator, TrimaIndicator,
+};
+use protopyne_store::{
+    FoldPolicy, MarketTape, PlanError, ReadRequest as TapeReadRequest, StoreError, StoreHealth,
+    StoreStorage, TimeRange,
 };
 use protopyne_strategy::{
     BreakerLimits, Direction, FixedSignal, Grant, GrantBudgets, GrantPatch, GrantPermission,
     GrantScope, PortfolioThresholds, ProposalState, RiskEngine, RiskLimits, SignalThresholds,
     Strategy, StructureKind, TradeThresholds,
 };
-use protopyne_chart_model::{ChartRow, row_of};
-use protopyne_store::{
-    FoldPolicy, MarketTape, PlanError, ReadRequest as TapeReadRequest, StoreError,
-    StoreHealth, StoreStorage, TimeRange,
-};
 use protopyne_types::{Bar, Money, Timeframe};
 use protopyne_venue::{
-    HealthVerdict, Position, StateHandle, TradingState, serving_allows_entries, serving_verdict,
+    serving_allows_entries, serving_verdict, HealthVerdict, Position, StateHandle, TradingState,
 };
 use protopyne_view::{
     ArmResponse, ChartBar, ChartBars, CommandStatus, DenyCount, HealthView, OverlaySeries,
     PortfolioView, PositionView, ProposalView, ReplayStepView, ReplayView, WorstCase,
 };
 
+use crate::backtest::BacktestConfig;
 use crate::error::ServerError;
 use crate::gateway::FallbackLatch;
-use crate::runner::{BacktestRun, RunnerConfig, build_replay, complete_replay, run_backtest};
-use crate::backtest::BacktestConfig;
+use crate::runner::{build_replay, complete_replay, run_backtest, BacktestRun, RunnerConfig};
 
 /// Server tunables, loadable from JSON with defaults for every field.
 #[derive(
@@ -325,7 +325,12 @@ pub(crate) type Shared = Arc<AppState>;
 type ApiResult<T> = Result<Json<T>, (StatusCode, Json<ErrorBody>)>;
 
 fn api_error(status: StatusCode, message: impl Into<String>) -> (StatusCode, Json<ErrorBody>) {
-    (status, Json(ErrorBody { error: message.into() }))
+    (
+        status,
+        Json(ErrorBody {
+            error: message.into(),
+        }),
+    )
 }
 
 /// The bundled preview signal: fixed long exposure for rehearsal.
@@ -349,7 +354,11 @@ fn permissive_grant() -> Grant {
                 .underlyings(vec!["SPY".to_owned()])
                 .structures(vec![StructureKind::Vertical])
                 .directions(vec![Direction::Long, Direction::Short])
-                .permissions(GrantPermission { entries: true, exits: true, rolls: false })
+                .permissions(GrantPermission {
+                    entries: true,
+                    exits: true,
+                    rolls: false,
+                })
                 .build(),
         )
         .budgets(
@@ -541,9 +550,7 @@ pub struct TapeServeStats {
 }
 
 /// A point-in-time snapshot of [`TapeServeStats`].
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub struct TapeServeSnapshot {
     /// Reads the tape served.
     pub served: u64,
@@ -621,7 +628,10 @@ pub fn tape_serve(
         symbol: symbol.to_owned(),
         venue: reader.venue.clone(),
         timeframe: tf,
-        range: TimeRange { start_ms: None, end_ms: None },
+        range: TimeRange {
+            start_ms: None,
+            end_ms: None,
+        },
         limit: Some(limit.unwrap_or(reader.limit)),
         policy: FoldPolicy::ExtendToFullBuckets,
     };
@@ -694,7 +704,9 @@ fn tape_fields(snapshot: TapeServeSnapshot) -> TapeFieldSet {
     } else {
         TapeFieldSet {
             denied: Some(snapshot.denied),
-            last_miss: snapshot.last_miss.map(|kind| tape_miss_tag(kind).to_owned()),
+            last_miss: snapshot
+                .last_miss
+                .map(|kind| tape_miss_tag(kind).to_owned()),
             no_tape: Some(snapshot.no_tape),
             served: Some(snapshot.served),
             store_error: Some(snapshot.store_error),
@@ -716,8 +728,9 @@ fn tape_fields(snapshot: TapeServeSnapshot) -> TapeFieldSet {
 /// prints under the tape's first market venue, in id order, so a
 /// single-venue deployment names nothing twice.
 pub fn open_tape_reader(root: &std::path::Path) -> Result<TapeReader, ServerError> {
-    let tape = MarketTape::open(root)
-        .map_err(|e| ServerError::Service(format!("tape at {} failed to open: {e}", root.display())))?;
+    let tape = MarketTape::open(root).map_err(|e| {
+        ServerError::Service(format!("tape at {} failed to open: {e}", root.display()))
+    })?;
     let permit = StoreStorage::new(tape.root().to_path_buf());
     if permit.store_path() != root {
         return Err(ServerError::Service(format!(
@@ -732,27 +745,43 @@ pub fn open_tape_reader(root: &std::path::Path) -> Result<TapeReader, ServerErro
             .registry()
             .markets()
             .map_err(|e| ServerError::Service(format!("tape registry refused: {e}")))?;
-        let venue = markets.first().map(|market| market.venue.clone()).ok_or_else(|| {
-            ServerError::Service(format!(
-                "tape at {} holds no markets: register a market before serving",
-                root.display()
-            ))
-        })?;
+        let venue = markets
+            .first()
+            .map(|market| market.venue.clone())
+            .ok_or_else(|| {
+                ServerError::Service(format!(
+                    "tape at {} holds no markets: register a market before serving",
+                    root.display()
+                ))
+            })?;
         let probe = TapeReadRequest {
             symbol: "__tape_boot_probe__".to_owned(),
             venue: venue.clone(),
             timeframe: Timeframe::M15,
-            range: TimeRange { start_ms: None, end_ms: None },
+            range: TimeRange {
+                start_ms: None,
+                end_ms: None,
+            },
             limit: Some(1),
             policy: FoldPolicy::ExtendToFullBuckets,
         };
         match tape.read_scoped(&permit, &probe) {
             Err(StoreError::Plan(PlanError::UnknownSymbol(_))) => Ok(venue),
-            Err(other) => Err(ServerError::Service(format!("tape binding probe refused: {other}"))),
-            Ok(_) => Err(ServerError::Service("tape binding probe unexpectedly served".to_owned())),
+            Err(other) => Err(ServerError::Service(format!(
+                "tape binding probe refused: {other}"
+            ))),
+            Ok(_) => Err(ServerError::Service(
+                "tape binding probe unexpectedly served".to_owned(),
+            )),
         }
     })?;
-    Ok(TapeReader { store: Arc::new(tape), caps, permit, venue, limit: DEFAULT_TAPE_LIMIT })
+    Ok(TapeReader {
+        store: Arc::new(tape),
+        caps,
+        permit,
+        venue,
+        limit: DEFAULT_TAPE_LIMIT,
+    })
 }
 
 /// Liveness plus command-plane status: the trading state (halt/resume) and
@@ -850,7 +879,10 @@ async fn preview(
         .map_err(|e| api_error(StatusCode::BAD_REQUEST, e.to_string()))?;
     publish_run(&state, &run);
     let deny_histogram = deny_histogram_of(&run);
-    Ok(Json(PreviewResponse { run, deny_histogram }))
+    Ok(Json(PreviewResponse {
+        run,
+        deny_histogram,
+    }))
 }
 
 /// Maximum deny reasons surfaced on a preview; the long tail folds into one
@@ -866,21 +898,37 @@ fn deny_histogram_of(run: &BacktestRun) -> Vec<DenyCount> {
         if let Some(reason) = decision.skipped.as_deref() {
             *counts.entry(reason).or_insert(0) += 1;
         }
-        for reason in decision.risk_reasons.iter().chain(decision.grant_reasons.iter()) {
+        for reason in decision
+            .risk_reasons
+            .iter()
+            .chain(decision.grant_reasons.iter())
+        {
             *counts.entry(reason.as_str()).or_insert(0) += 1;
         }
     }
     let mut histogram: Vec<DenyCount> = counts
         .into_iter()
-        .map(|(reason, bars)| DenyCount { reason: reason.to_owned(), bars })
+        .map(|(reason, bars)| DenyCount {
+            reason: reason.to_owned(),
+            bars,
+        })
         .collect();
     histogram.sort_by(|left, right| {
-        right.bars.cmp(&left.bars).then_with(|| left.reason.cmp(&right.reason))
+        right
+            .bars
+            .cmp(&left.bars)
+            .then_with(|| left.reason.cmp(&right.reason))
     });
     if histogram.len() > DENY_HISTOGRAM_TOP {
-        let rest: u64 = histogram[DENY_HISTOGRAM_TOP..].iter().map(|entry| entry.bars).sum();
+        let rest: u64 = histogram[DENY_HISTOGRAM_TOP..]
+            .iter()
+            .map(|entry| entry.bars)
+            .sum();
         histogram.truncate(DENY_HISTOGRAM_TOP);
-        histogram.push(DenyCount { reason: "other".to_owned(), bars: rest });
+        histogram.push(DenyCount {
+            reason: "other".to_owned(),
+            bars: rest,
+        });
     }
     histogram
 }
@@ -922,8 +970,12 @@ fn publish_run(state: &Shared, run: &BacktestRun) {
     for decision in &run.decisions {
         if decision.submitted {
             filled_orders += 1;
-            let price = decision.fill_price.map_or(rust_decimal::Decimal::ZERO, Money::as_decimal);
-            let fee = decision.fee.map_or(rust_decimal::Decimal::ZERO, Money::as_decimal);
+            let price = decision
+                .fill_price
+                .map_or(rust_decimal::Decimal::ZERO, Money::as_decimal);
+            let fee = decision
+                .fee
+                .map_or(rust_decimal::Decimal::ZERO, Money::as_decimal);
             fees += fee;
             let signed: i64 = match decision.direction {
                 Some(Direction::Short) => -1,
@@ -932,7 +984,9 @@ fn publish_run(state: &Shared, run: &BacktestRun) {
             let Ok(key) = symbols.intern("SPY") else {
                 continue;
             };
-            let entry = positions.entry(key).or_insert((0, rust_decimal::Decimal::ZERO, 0));
+            let entry = positions
+                .entry(key)
+                .or_insert((0, rust_decimal::Decimal::ZERO, 0));
             entry.0 += signed;
             entry.1 += price;
             entry.2 += 1;
@@ -950,7 +1004,11 @@ fn publish_run(state: &Shared, run: &BacktestRun) {
             };
             let underlying = symbols.resolve(key).unwrap_or("SPY").to_owned();
             position_view(
-                &Position::new().underlying(underlying).quantity(quantity).avg_price(avg).build(),
+                &Position::new()
+                    .underlying(underlying)
+                    .quantity(quantity)
+                    .avg_price(avg)
+                    .build(),
             )
         })
         .collect();
@@ -958,7 +1016,11 @@ fn publish_run(state: &Shared, run: &BacktestRun) {
     portfolio.positions = positions;
     portfolio.filled_orders = filled_orders;
     portfolio.total_fees = Money::new(fees);
-    portfolio.open_contracts = portfolio.positions.iter().map(|position| position.quantity).sum();
+    portfolio.open_contracts = portfolio
+        .positions
+        .iter()
+        .map(|position| position.quantity)
+        .sum();
     portfolio.trading_state = trading_state;
 }
 
@@ -971,10 +1033,7 @@ pub(crate) fn live_grant(state: &Shared) -> Option<Grant> {
 /// Shared arm logic for the route and the gateway: validate, enforce
 /// tighten-only against the live grant, then store. The `Err` status rides
 /// along so both callers map the same refusal the same way.
-pub(crate) fn apply_arm(
-    state: &Shared,
-    grant: Grant,
-) -> Result<ArmResponse, (StatusCode, String)> {
+pub(crate) fn apply_arm(state: &Shared, grant: Grant) -> Result<ArmResponse, (StatusCode, String)> {
     validate_grant(&grant).map_err(|e| (StatusCode::BAD_REQUEST, e))?;
     let mut armed = common_core::sync::lock(&state.armed);
     if let Some(current) = armed.clone() {
@@ -1010,12 +1069,20 @@ async fn arm(
 /// is gone and there is exactly one parser per tier. Anything else —
 /// a non-object patch, a non-string tier, an unknown tier, an unparsable
 /// document — refuses naming the tier, before the core's tighten rule.
-pub(crate) fn parse_patch(document: &serde_json::Value) -> Result<GrantPatch, (StatusCode, String)> {
+pub(crate) fn parse_patch(
+    document: &serde_json::Value,
+) -> Result<GrantPatch, (StatusCode, String)> {
     let patch = document.get("patch").ok_or_else(|| {
-        (StatusCode::BAD_REQUEST, "grant patch envelope names no patch".to_owned())
+        (
+            StatusCode::BAD_REQUEST,
+            "grant patch envelope names no patch".to_owned(),
+        )
     })?;
     let tiers = patch.as_object().ok_or_else(|| {
-        (StatusCode::BAD_REQUEST, "grant patch must be an object of tier texts".to_owned())
+        (
+            StatusCode::BAD_REQUEST,
+            "grant patch must be an object of tier texts".to_owned(),
+        )
     })?;
     let mut assembled = GrantPatch::default();
     for (tier, text) in tiers {
@@ -1026,7 +1093,10 @@ pub(crate) fn parse_patch(document: &serde_json::Value) -> Result<GrantPatch, (S
             )
         })?;
         assembled.set_field(tier, text).map_err(|error| {
-            (StatusCode::BAD_REQUEST, format!("grant patch tier {tier} refuses: {error}"))
+            (
+                StatusCode::BAD_REQUEST,
+                format!("grant patch tier {tier} refuses: {error}"),
+            )
         })?;
     }
     Ok(assembled)
@@ -1042,12 +1112,11 @@ pub(crate) fn preview_arm_of(
     document: &serde_json::Value,
 ) -> Result<WorstCase, (StatusCode, String)> {
     let patch = parse_patch(document)?;
-    let current = live_grant(state).ok_or_else(|| {
-        (StatusCode::CONFLICT, "no live grant to tighten".to_owned())
-    })?;
-    let next = current.tighten(patch).map_err(|error| {
-        (StatusCode::CONFLICT, error.to_string())
-    })?;
+    let current = live_grant(state)
+        .ok_or_else(|| (StatusCode::CONFLICT, "no live grant to tighten".to_owned()))?;
+    let next = current
+        .tighten(patch)
+        .map_err(|error| (StatusCode::CONFLICT, error.to_string()))?;
     Ok(worst_case_of(&next))
 }
 
@@ -1151,7 +1220,10 @@ pub(crate) fn overlay_series_of(
     mult: f64,
 ) -> Result<OverlaySeries, (StatusCode, String)> {
     if !(1..=500).contains(&period) {
-        return Err((StatusCode::BAD_REQUEST, "period must be within [1, 500]".to_owned()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "period must be within [1, 500]".to_owned(),
+        ));
     }
     let mut closes: Vec<f64> = Vec::with_capacity(history.len());
     let mut positions: Vec<usize> = Vec::with_capacity(history.len());
@@ -1162,20 +1234,29 @@ pub(crate) fn overlay_series_of(
         }
     }
     if closes.is_empty() {
-        return Err((StatusCode::SERVICE_UNAVAILABLE, "no chartable closes".to_owned()));
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            "no chartable closes".to_owned(),
+        ));
     }
     let frame = Ohlcv::close_only(&closes);
     let params = ParamSet::new().with_int("length", period);
     let computed = match kind {
-        "sma" => SmaIndicator::new().batch(&frame, &params).map(|result| result.values),
-        "ema" => EmaIndicator::new().batch(&frame, &params).map(|result| result.values),
+        "sma" => SmaIndicator::new()
+            .batch(&frame, &params)
+            .map(|result| result.values),
+        "ema" => EmaIndicator::new()
+            .batch(&frame, &params)
+            .map(|result| result.values),
         // Chartable overlaps only: `bb` serves its mid (the primary leg),
         // `trima` its single output. Momentum, volume, and statistic kernels
         // are not price-chartable and stay refused below.
         "bb" => BbIndicator::new()
             .batch(&frame, &params.clone().with_float("mult", mult))
             .map(|result| result.values),
-        "trima" => TrimaIndicator::new().batch(&frame, &params).map(|result| result.values),
+        "trima" => TrimaIndicator::new()
+            .batch(&frame, &params)
+            .map(|result| result.values),
         _ => {
             return Err((
                 StatusCode::BAD_REQUEST,
@@ -1189,16 +1270,26 @@ pub(crate) fn overlay_series_of(
     // `values` is full-length by construction; the debug assert pins the
     // contract the native terminal relies on (rows and overlays agree).
     debug_assert_eq!(values.len(), history.len());
-    Ok(OverlaySeries { kind: kind.to_owned(), period, values, dropped })
+    Ok(OverlaySeries {
+        kind: kind.to_owned(),
+        period,
+        values,
+        dropped,
+    })
 }
 
 async fn chart_overlay(
     State(state): State<Shared>,
     Query(query): Query<OverlayQuery>,
 ) -> Result<Json<OverlaySeries>, (StatusCode, Json<ErrorBody>)> {
-    overlay_series_of(&state.history, &query.kind, query.period, query.mult.unwrap_or(2.0))
-        .map(Json)
-        .map_err(|(status, reason)| api_error(status, reason))
+    overlay_series_of(
+        &state.history,
+        &query.kind,
+        query.period,
+        query.mult.unwrap_or(2.0),
+    )
+    .map(Json)
+    .map_err(|(status, reason)| api_error(status, reason))
 }
 
 /// Bars between replay checkpoints when the route is asked for no cadence.
@@ -1236,7 +1327,10 @@ pub(crate) fn replay_view_of(
     let mut steps = Vec::with_capacity(keys.len());
     for key in &keys {
         let step = graph.status(key).ok_or_else(|| {
-            (StatusCode::INTERNAL_SERVER_ERROR, format!("replay step missing: {key:?}"))
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("replay step missing: {key:?}"),
+            )
         })?;
         steps.push(ReplayStepView {
             bar_index: step.bar_index as u64,
@@ -1248,7 +1342,11 @@ pub(crate) fn replay_view_of(
     // The head is one past the last bar index, so an untouched window reads
     // `cursor == total_bars` — the same shape the terminal cursor validates.
     let total_bars = steps.len() as u64;
-    Ok(ReplayView { cursor: total_bars, total_bars, steps })
+    Ok(ReplayView {
+        cursor: total_bars,
+        total_bars,
+        steps,
+    })
 }
 
 async fn replay(
@@ -1257,7 +1355,9 @@ async fn replay(
 ) -> Result<Json<ReplayView>, (StatusCode, Json<ErrorBody>)> {
     replay_view_of(
         &state.history,
-        query.checkpoint_every.unwrap_or(DEFAULT_REPLAY_CHECKPOINT_EVERY),
+        query
+            .checkpoint_every
+            .unwrap_or(DEFAULT_REPLAY_CHECKPOINT_EVERY),
     )
     .map(Json)
     .map_err(|(status, reason)| api_error(status, reason))
@@ -1285,23 +1385,28 @@ async fn feed(State(state): State<Shared>, upgrade: WebSocketUpgrade) -> impl In
 /// Bar frame published to feed subscribers. `cycle` counts completed passes
 /// over history so a resuming subscriber can tell a repeat from a stall.
 fn bar_frame(cycle: u64, index: usize, bar: &Bar) -> Option<String> {
-    Some(serde_json::json!({
-        "type": "bar",
-        "cycle": cycle,
-        "index": index,
-        "time": bar.ts.timestamp(),
-        "open": decimal_to_chart(bar.o)?,
-        "high": decimal_to_chart(bar.h)?,
-        "low": decimal_to_chart(bar.l)?,
-        "close": decimal_to_chart(bar.c)?,
-        "volume": bar.volume,
-    })
-    .to_string())
+    Some(
+        serde_json::json!({
+            "type": "bar",
+            "cycle": cycle,
+            "index": index,
+            "time": bar.ts.timestamp(),
+            "open": decimal_to_chart(bar.o)?,
+            "high": decimal_to_chart(bar.h)?,
+            "low": decimal_to_chart(bar.l)?,
+            "close": decimal_to_chart(bar.c)?,
+            "volume": bar.volume,
+        })
+        .to_string(),
+    )
 }
 
 /// Build a boot-gate unit: `check` runs inside `execute` so a failing gate
 /// cancels its dependents through the batch graph.
-fn gate_unit(name: &str, check: impl Fn() -> Result<String, String> + Send + Sync + 'static) -> Arc<dyn Component> {
+fn gate_unit(
+    name: &str,
+    check: impl Fn() -> Result<String, String> + Send + Sync + 'static,
+) -> Arc<dyn Component> {
     let adapter = ComponentAdapter::new(Arc::new(RiskLimits::new().build()))
         .with_name_override(name.to_owned())
         .with_execute_override(Arc::new(move |_ctx: &WorkContext| match check() {
@@ -1362,9 +1467,7 @@ pub async fn serve_with_tape(
     history: Vec<Bar>,
     tape: Option<TapeReader>,
 ) -> Result<ServerHandle, ServerError> {
-    config
-        .validate()
-        .map_err(ServerError::Service)?;
+    config.validate().map_err(ServerError::Service)?;
     if history.is_empty() {
         return Err(ServerError::Service("history must not be empty".to_owned()));
     }
@@ -1399,7 +1502,9 @@ pub async fn serve_with_tape(
         .map_err(|e| ServerError::Service(format!("boot gate rejected: {e:?}")))?;
     let summary = batch.await;
     if !(summary.failed.is_empty() && summary.panicked.is_empty() && summary.cancelled.is_empty()) {
-        return Err(ServerError::Service("boot gates refused to bind".to_owned()));
+        return Err(ServerError::Service(
+            "boot gates refused to bind".to_owned(),
+        ));
     }
     // Bounded fan-out: the broadcast ring holds at most `feed_capacity`
     // frames (validated 16..=100_000); lagged receivers skip by policy and
@@ -1464,7 +1569,12 @@ pub async fn serve_with_tape(
     let serve = tokio::spawn(async move {
         let _ = axum::serve(listener, app).await;
     });
-    Ok(ServerHandle { addr, serve, scope, state })
+    Ok(ServerHandle {
+        addr,
+        serve,
+        scope,
+        state,
+    })
 }
 
 #[cfg(test)]

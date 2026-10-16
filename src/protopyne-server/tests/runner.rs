@@ -6,13 +6,15 @@ use chrono::{TimeZone, Utc};
 use rust_decimal::Decimal;
 
 use protopyne_strategy::{
-    BreakerLimits, BreakerState, Direction, FixedSignal, Grant, GrantBudgets, GrantMarket, GrantPermission,
-    GrantScope, GrantUsage, PortfolioThresholds, ProposalSide, RiskEngine, RiskLimits, SignalThresholds,
-    Strategy, StructureKind, TradeThresholds,
     elements::{ExplicitStructure, FixedContracts},
+    BreakerLimits, BreakerState, Direction, FixedSignal, Grant, GrantBudgets, GrantMarket,
+    GrantPermission, GrantScope, GrantUsage, PortfolioThresholds, ProposalSide, RiskEngine,
+    RiskLimits, SignalThresholds, Strategy, StructureKind, TradeThresholds,
 };
 use protopyne_types::{Bar, Money};
-use protopyne_venue::{Fault, PaperConfig, PaperVenue, StreamConfig, SupervisedStream, TransportError};
+use protopyne_venue::{
+    Fault, PaperConfig, PaperVenue, StreamConfig, SupervisedStream, TransportError,
+};
 
 fn money(value: i64) -> Money {
     Money::new(Decimal::from(value))
@@ -31,7 +33,9 @@ fn strategy() -> Arc<Strategy> {
         Strategy::with_signal(Arc::new(
             FixedSignal::new(Direction::Long, 0.8, 0.8).expect("valid signal"),
         ))
-        .with_structure(Arc::new(ExplicitStructure { structure: StructureKind::Vertical })),
+        .with_structure(Arc::new(ExplicitStructure {
+            structure: StructureKind::Vertical,
+        })),
     )
 }
 
@@ -48,7 +52,11 @@ fn grant_with(min_conviction: f64) -> Grant {
                 .underlyings(vec!["SPY".to_owned()])
                 .structures(vec![StructureKind::Vertical])
                 .directions(vec![Direction::Long, Direction::Short])
-                .permissions(GrantPermission { entries: true, exits: true, rolls: false })
+                .permissions(GrantPermission {
+                    entries: true,
+                    exits: true,
+                    rolls: false,
+                })
                 .build(),
         )
         .budgets(
@@ -93,11 +101,23 @@ fn venue_config() -> BacktestConfig {
 }
 
 fn runner_config() -> RunnerConfig {
-    RunnerConfig::new("SPY".to_owned(), "ribbon".to_owned(), money(400), money(2_000), 30, 0)
+    RunnerConfig::new(
+        "SPY".to_owned(),
+        "ribbon".to_owned(),
+        money(400),
+        money(2_000),
+        30,
+        0,
+    )
 }
 
 fn signature(decision: &BarDecision) -> (Option<Direction>, bool, bool, bool) {
-    (decision.direction, decision.risk_pass, decision.grant_allow, decision.submitted)
+    (
+        decision.direction,
+        decision.risk_pass,
+        decision.grant_allow,
+        decision.submitted,
+    )
 }
 
 fn strategy_with_contracts(contracts: u32) -> Arc<Strategy> {
@@ -105,7 +125,9 @@ fn strategy_with_contracts(contracts: u32) -> Arc<Strategy> {
         Strategy::with_signal(Arc::new(
             FixedSignal::new(Direction::Long, 0.8, 0.8).expect("valid signal"),
         ))
-        .with_structure(Arc::new(ExplicitStructure { structure: StructureKind::Vertical }))
+        .with_structure(Arc::new(ExplicitStructure {
+            structure: StructureKind::Vertical,
+        }))
         .with_sizing(Arc::new(FixedContracts { contracts })),
     )
 }
@@ -115,7 +137,9 @@ fn directional_strategy(direction: Direction) -> Arc<Strategy> {
         Strategy::with_signal(Arc::new(
             FixedSignal::new(direction, 0.8, 0.8).expect("valid signal"),
         ))
-        .with_structure(Arc::new(ExplicitStructure { structure: StructureKind::Vertical })),
+        .with_structure(Arc::new(ExplicitStructure {
+            structure: StructureKind::Vertical,
+        })),
     )
 }
 
@@ -173,8 +197,16 @@ async fn equity_and_notional_scale_with_sizer_quantity() {
         one.report.fills, three.report.fills,
         "sizer must not change which bars fill"
     );
-    assert_eq!(one.report.equity_curve.len(), three.report.equity_curve.len());
-    for (single, triple) in one.report.equity_curve.iter().zip(three.report.equity_curve.iter()) {
+    assert_eq!(
+        one.report.equity_curve.len(),
+        three.report.equity_curve.len()
+    );
+    for (single, triple) in one
+        .report
+        .equity_curve
+        .iter()
+        .zip(three.report.equity_curve.iter())
+    {
         assert_eq!(
             triple.as_decimal(),
             single.as_decimal() * Decimal::from(3),
@@ -193,22 +225,48 @@ async fn backtest_and_paper_reach_identical_decisions() {
     let strategy = strategy();
     let risk = risk();
     let grant = grant_with(0.5);
-    let run = run_backtest(&strategy, &risk, &grant, &venue_config(), &runner_config(), &bars, 11)
-        .await
-        .expect("backtest runs");
+    let run = run_backtest(
+        &strategy,
+        &risk,
+        &grant,
+        &venue_config(),
+        &runner_config(),
+        &bars,
+        11,
+    )
+    .await
+    .expect("backtest runs");
     let paper = PaperVenue::new(PaperConfig::new().build());
-    let paper_decisions =
-        run_paper_decisions(&strategy, &risk, &grant, &paper, &runner_config(), &bars, 11).await;
+    let paper_decisions = run_paper_decisions(
+        &strategy,
+        &risk,
+        &grant,
+        &paper,
+        &runner_config(),
+        &bars,
+        11,
+    )
+    .await;
     assert_eq!(run.decisions.len(), bars.len());
     assert_eq!(paper_decisions.len(), bars.len());
     let backtest_json = serde_json::to_string(&run.decisions).expect("serializable");
     let paper_json = serde_json::to_string(&paper_decisions).expect("serializable");
-    assert_eq!(backtest_json, paper_json, "same code path must decide identically");
-    assert!(run.decisions.iter().any(|decision| decision.submitted), "liquid history must fill something");
+    assert_eq!(
+        backtest_json, paper_json,
+        "same code path must decide identically"
+    );
+    assert!(
+        run.decisions.iter().any(|decision| decision.submitted),
+        "liquid history must fill something"
+    );
     assert_touch_limits(&run.decisions, &bars, Direction::Long);
     assert_touch_limits(&paper_decisions, &bars, Direction::Long);
     assert!(run.report.fills > 0);
-    assert!(run.report.fill_assumptions.iter().any(|line| line.contains("touch")));
+    assert!(run
+        .report
+        .fill_assumptions
+        .iter()
+        .any(|line| line.contains("touch")));
     assert!(run.report.greeks_note.contains("unavailable"));
 }
 
@@ -238,16 +296,33 @@ async fn rerun_is_byte_identical() {
     let strategy = strategy();
     let risk = risk();
     let grant = grant_with(0.5);
-    let first =
-        run_backtest(&strategy, &risk, &grant, &venue_config(), &runner_config(), &bars, 11)
-            .await
-            .expect("first run");
-    let second =
-        run_backtest(&strategy, &risk, &grant, &venue_config(), &runner_config(), &bars, 11)
-            .await
-            .expect("second run");
+    let first = run_backtest(
+        &strategy,
+        &risk,
+        &grant,
+        &venue_config(),
+        &runner_config(),
+        &bars,
+        11,
+    )
+    .await
+    .expect("first run");
+    let second = run_backtest(
+        &strategy,
+        &risk,
+        &grant,
+        &venue_config(),
+        &runner_config(),
+        &bars,
+        11,
+    )
+    .await
+    .expect("second run");
     assert_eq!(first.to_canonical_json(), second.to_canonical_json());
-    assert_eq!(first.manifest.to_canonical_json(), second.manifest.to_canonical_json());
+    assert_eq!(
+        first.manifest.to_canonical_json(),
+        second.manifest.to_canonical_json()
+    );
 }
 
 #[tokio::test]
@@ -256,19 +331,33 @@ async fn walk_forward_test_segment_matches_full_run() {
     let strategy = strategy();
     let risk = risk();
     let grant = grant_with(0.5);
-    let full =
-        run_backtest(&strategy, &risk, &grant, &venue_config(), &runner_config(), &bars, 11)
-            .await
-            .expect("full run");
+    let full = run_backtest(
+        &strategy,
+        &risk,
+        &grant,
+        &venue_config(),
+        &runner_config(),
+        &bars,
+        11,
+    )
+    .await
+    .expect("full run");
     let (train, test) = walk_forward_split(&bars, bars.len() / 2).expect("split");
     assert_eq!(train.len(), bars.len() / 2);
     assert_eq!(test.len(), bars.len() - bars.len() / 2);
     assert!(walk_forward_split(&bars, 0).is_err());
     assert!(walk_forward_split(&bars, bars.len()).is_err());
-    let segment =
-        run_backtest(&strategy, &risk, &grant, &venue_config(), &runner_config(), test, 11)
-            .await
-            .expect("segment run");
+    let segment = run_backtest(
+        &strategy,
+        &risk,
+        &grant,
+        &venue_config(),
+        &runner_config(),
+        test,
+        11,
+    )
+    .await
+    .expect("segment run");
     // Warmup is zero and budgets never bind, so each bar's verdict depends
     // only on its own quote: the test segment must decide like the full run's
     // tail up to proposal identity (ids embed run-local indices).
@@ -299,8 +388,21 @@ async fn sweep_separates_loose_from_strict_grants() {
     assert_eq!(outcomes[0].index, 0);
     assert_eq!(outcomes[1].index, 1);
     assert!(outcomes[0].fills > 0, "loose grant must fill");
-    assert_eq!(outcomes[1].fills, 0, "strict grant must deny every proposal");
-    assert!(run_sweep(strategy(), RiskLimits::new().build(), &venue_config(), &runner_config(), &bars, Vec::new(), 11).await.is_err());
+    assert_eq!(
+        outcomes[1].fills, 0,
+        "strict grant must deny every proposal"
+    );
+    assert!(run_sweep(
+        strategy(),
+        RiskLimits::new().build(),
+        &venue_config(),
+        &runner_config(),
+        &bars,
+        Vec::new(),
+        11
+    )
+    .await
+    .is_err());
 }
 
 #[tokio::test]
@@ -308,7 +410,17 @@ async fn runner_rejects_empty_history() {
     let strategy = strategy();
     let risk = risk();
     let grant = grant_with(0.5);
-    assert!(run_backtest(&strategy, &risk, &grant, &venue_config(), &runner_config(), &[], 11).await.is_err());
+    assert!(run_backtest(
+        &strategy,
+        &risk,
+        &grant,
+        &venue_config(),
+        &runner_config(),
+        &[],
+        11
+    )
+    .await
+    .is_err());
 }
 
 #[test]
@@ -338,8 +450,15 @@ fn runner_helpers_stay_on_the_venue_trait() {
     let note = expire_position(&venue, "SPY", now).expect("expiry journals");
     assert!(note.contains("SPY"));
     let quote = quote_for_bar(&history()[0], &venue_config()).expect("quotable");
-    assert!([None, Some(&quote)].into_iter().find_map(|entry| entry).is_some());
-    let _ = (ProposalSide::Entry, GrantMarket::new, StructureKind::Vertical);
+    assert!([None, Some(&quote)]
+        .into_iter()
+        .find_map(|entry| entry)
+        .is_some());
+    let _ = (
+        ProposalSide::Entry,
+        GrantMarket::new,
+        StructureKind::Vertical,
+    );
 }
 
 fn decimal_money(value: &str) -> Money {
@@ -424,12 +543,23 @@ fn equity_curve_leaves_pre_fill_bars_flat() {
         flat_decision(1, bars[1].ts.to_rfc3339()),
         flat_decision(2, bars[2].ts.to_rfc3339()),
         flat_decision(3, bars[3].ts.to_rfc3339()),
-        filled_decision(4, bars[4].ts.to_rfc3339(), Direction::Long, 2, "100.00", "0.00"),
+        filled_decision(
+            4,
+            bars[4].ts.to_rfc3339(),
+            Direction::Long,
+            2,
+            "100.00",
+            "0.00",
+        ),
     ];
     let curve = equity_curve_for(&bars, &decisions);
     assert_eq!(curve.len(), 5);
     let zero = Decimal::ZERO;
-    assert_eq!(curve[0].as_decimal(), zero, "bars before any fill must read flat zero");
+    assert_eq!(
+        curve[0].as_decimal(),
+        zero,
+        "bars before any fill must read flat zero"
+    );
     assert_eq!(curve[1].as_decimal(), zero);
     assert_eq!(curve[2].as_decimal(), zero);
     assert_eq!(curve[3].as_decimal(), zero);
@@ -450,13 +580,31 @@ fn equity_curve_ramps_only_after_each_fill() {
     ];
     let decisions = vec![
         flat_decision(0, bars[0].ts.to_rfc3339()),
-        filled_decision(1, bars[1].ts.to_rfc3339(), Direction::Long, 1, "10.00", "1.00"),
+        filled_decision(
+            1,
+            bars[1].ts.to_rfc3339(),
+            Direction::Long,
+            1,
+            "10.00",
+            "1.00",
+        ),
         flat_decision(2, bars[2].ts.to_rfc3339()),
-        filled_decision(3, bars[3].ts.to_rfc3339(), Direction::Long, 1, "20.00", "1.00"),
+        filled_decision(
+            3,
+            bars[3].ts.to_rfc3339(),
+            Direction::Long,
+            1,
+            "20.00",
+            "1.00",
+        ),
     ];
     let curve = equity_curve_for(&bars, &decisions);
     assert_eq!(curve.len(), 4);
-    assert_eq!(curve[0].as_decimal(), Decimal::ZERO, "pre-fill bar must stay flat");
+    assert_eq!(
+        curve[0].as_decimal(),
+        Decimal::ZERO,
+        "pre-fill bar must stay flat"
+    );
     assert_eq!(
         curve[1].as_decimal(),
         Decimal::from(-11) + Decimal::from(100),
@@ -485,13 +633,28 @@ fn equity_curve_marks_shorts_against_later_closes() {
     let decisions = vec![
         flat_decision(0, bars[0].ts.to_rfc3339()),
         flat_decision(1, bars[1].ts.to_rfc3339()),
-        filled_decision(2, bars[2].ts.to_rfc3339(), Direction::Short, 1, "120.00", "0.00"),
+        filled_decision(
+            2,
+            bars[2].ts.to_rfc3339(),
+            Direction::Short,
+            1,
+            "120.00",
+            "0.00",
+        ),
         flat_decision(3, bars[3].ts.to_rfc3339()),
     ];
     let curve = equity_curve_for(&bars, &decisions);
     assert_eq!(curve[0].as_decimal(), Decimal::ZERO);
-    assert_eq!(curve[1].as_decimal(), Decimal::ZERO, "pre-fill bars stay flat on shorts too");
-    assert_eq!(curve[2].as_decimal(), Decimal::ZERO, "short filled at its own close marks zero");
+    assert_eq!(
+        curve[1].as_decimal(),
+        Decimal::ZERO,
+        "pre-fill bars stay flat on shorts too"
+    );
+    assert_eq!(
+        curve[2].as_decimal(),
+        Decimal::ZERO,
+        "short filled at its own close marks zero"
+    );
     assert_eq!(
         curve[3].as_decimal(),
         Decimal::from(120) - Decimal::from(130),
@@ -550,16 +713,26 @@ async fn quote_config_flows_into_submitted_touch() {
             checked += 1;
         }
     }
-    assert!(checked > 0, "liquid history must fill something under a wide spread");
+    assert!(
+        checked > 0,
+        "liquid history must fill something under a wide spread"
+    );
 }
 
 #[tokio::test]
 async fn paper_path_prices_at_its_labeled_default_spread() {
     let bars = history();
     let paper = PaperVenue::new(PaperConfig::new().build());
-    let decisions =
-        run_paper_decisions(&strategy(), &risk(), &grant_with(0.5), &paper, &runner_config(), &bars, 11)
-            .await;
+    let decisions = run_paper_decisions(
+        &strategy(),
+        &risk(),
+        &grant_with(0.5),
+        &paper,
+        &runner_config(),
+        &bars,
+        11,
+    )
+    .await;
     let labeled = BacktestConfig::new()
         .underlying("SPY".to_owned())
         .data_version("paper-synthetic".to_owned())
@@ -567,7 +740,9 @@ async fn paper_path_prices_at_its_labeled_default_spread() {
     let mut checked = 0;
     for decision in &decisions {
         if decision.submitted {
-            let touch = quote_for_bar(&bars[decision.bar_index], &labeled).expect("quotable bar").ask;
+            let touch = quote_for_bar(&bars[decision.bar_index], &labeled)
+                .expect("quotable bar")
+                .ask;
             assert_eq!(
                 decision.checked_limit, touch,
                 "paper fills must price at the labeled paper-synthetic default spread"
@@ -575,7 +750,10 @@ async fn paper_path_prices_at_its_labeled_default_spread() {
             checked += 1;
         }
     }
-    assert!(checked > 0, "liquid history must fill something on the paper path");
+    assert!(
+        checked > 0,
+        "liquid history must fill something on the paper path"
+    );
 }
 
 fn transport_skipped(decision: &BarDecision) -> &str {
@@ -589,13 +767,23 @@ async fn breaker_trips_past_the_configured_max_and_disarms_entries() {
     for _ in 0..5 {
         venue.inject(Fault::DropConnection);
     }
-    let decisions =
-        run_paper_decisions(&strategy(), &risk(), &grant_with(0.5), &venue, &runner_config(), &bars, 11)
-            .await;
+    let decisions = run_paper_decisions(
+        &strategy(),
+        &risk(),
+        &grant_with(0.5),
+        &venue,
+        &runner_config(),
+        &bars,
+        11,
+    )
+    .await;
     // max_consecutive_errors is 3: the first three transport failures still
     // arm (the venue is called), the fourth trips, the rest disarm.
     for (index, decision) in decisions.iter().enumerate().take(4) {
-        assert!(!decision.submitted, "bar {index} must fail on its injected fault");
+        assert!(
+            !decision.submitted,
+            "bar {index} must fail on its injected fault"
+        );
         let skipped = transport_skipped(decision);
         assert!(
             skipped.contains("connection dropped"),
@@ -606,10 +794,16 @@ async fn breaker_trips_past_the_configured_max_and_disarms_entries() {
             "bar {index} (error {} of 3+1) must still be armed",
             index + 1
         );
-        assert!(decision.risk_pass && decision.grant_allow, "merit still allows on bar {index}");
+        assert!(
+            decision.risk_pass && decision.grant_allow,
+            "merit still allows on bar {index}"
+        );
     }
     for (index, decision) in decisions.iter().enumerate().skip(4) {
-        assert!(!decision.submitted, "bar {index} must stay disarmed after the trip");
+        assert!(
+            !decision.submitted,
+            "bar {index} must stay disarmed after the trip"
+        );
         assert!(
             transport_skipped(decision).contains("breaker tripped"),
             "bar {index} must name the disarm, got: {:?}",
@@ -634,19 +828,31 @@ async fn errors_capped_at_the_max_still_arm_and_reset_on_success() {
     for _ in 0..3 {
         venue.inject(Fault::DropConnection);
     }
-    let decisions =
-        run_paper_decisions(&strategy(), &risk(), &grant_with(0.5), &venue, &runner_config(), &bars, 11)
-            .await;
+    let decisions = run_paper_decisions(
+        &strategy(),
+        &risk(),
+        &grant_with(0.5),
+        &venue,
+        &runner_config(),
+        &bars,
+        11,
+    )
+    .await;
     for decision in decisions.iter().take(3) {
         assert!(transport_skipped(decision).contains("connection dropped"));
-        assert!(!transport_skipped(decision).contains("breaker"), "exactly max errors must still arm");
+        assert!(
+            !transport_skipped(decision).contains("breaker"),
+            "exactly max errors must still arm"
+        );
     }
     assert!(
         decisions.iter().any(|decision| decision.submitted),
         "the first clean bar must submit once the streak resets"
     );
     assert!(
-        !decisions.iter().any(|decision| transport_skipped(decision).contains("breaker")),
+        !decisions
+            .iter()
+            .any(|decision| transport_skipped(decision).contains("breaker")),
         "a run that never exceeds the max must never disarm"
     );
 }
@@ -658,9 +864,16 @@ async fn merit_denials_never_feed_the_breaker() {
     for _ in 0..2 {
         venue.inject(Fault::DropConnection);
     }
-    let decisions =
-        run_paper_decisions(&strategy(), &risk(), &grant_with(0.95), &venue, &runner_config(), &bars, 11)
-            .await;
+    let decisions = run_paper_decisions(
+        &strategy(),
+        &risk(),
+        &grant_with(0.95),
+        &venue,
+        &runner_config(),
+        &bars,
+        11,
+    )
+    .await;
     assert!(decisions.iter().all(|decision| !decision.submitted));
     assert_eq!(
         venue.pending_faults(),
@@ -668,7 +881,9 @@ async fn merit_denials_never_feed_the_breaker() {
         "merit-denied proposals must never reach the venue, so faults stay queued"
     );
     assert!(
-        !decisions.iter().any(|decision| transport_skipped(decision).contains("breaker")),
+        !decisions
+            .iter()
+            .any(|decision| transport_skipped(decision).contains("breaker")),
         "denials are task-value information, never producer doubt"
     );
 }
@@ -705,18 +920,27 @@ async fn stale_quote_refuses_on_risk_and_grant_paths() {
     .await;
     assert!(!decision.risk_pass, "stale data must fail the risk gate");
     assert!(
-        decision.risk_reasons.iter().any(|reason| reason.contains("StaleQuote")),
+        decision
+            .risk_reasons
+            .iter()
+            .any(|reason| reason.contains("StaleQuote")),
         "risk refusal names the gate, got: {:?}",
         decision.risk_reasons
     );
     assert!(!decision.grant_allow, "stale data must fail the grant gate");
     assert!(
-        decision.grant_reasons.iter().any(|reason| reason.contains("stale")),
+        decision
+            .grant_reasons
+            .iter()
+            .any(|reason| reason.contains("stale")),
         "grant refusal names the gate, got: {:?}",
         decision.grant_reasons
     );
     assert!(!decision.submitted);
-    assert!(venue.orders().is_empty(), "refused bars never reach the venue");
+    assert!(
+        venue.orders().is_empty(),
+        "refused bars never reach the venue"
+    );
 }
 
 #[tokio::test]
@@ -747,8 +971,14 @@ async fn tripped_breaker_disarms_entries_without_touching_merit_verdicts() {
         11,
     )
     .await;
-    assert!(decision.risk_pass, "merit verdict must stay Allow while tripped");
-    assert!(decision.grant_allow, "merit verdict must stay Allow while tripped");
+    assert!(
+        decision.risk_pass,
+        "merit verdict must stay Allow while tripped"
+    );
+    assert!(
+        decision.grant_allow,
+        "merit verdict must stay Allow while tripped"
+    );
     assert!(decision.risk_reasons.is_empty() && decision.grant_reasons.is_empty());
     assert!(!decision.submitted, "tripped entries disarm");
     assert!(
@@ -756,7 +986,10 @@ async fn tripped_breaker_disarms_entries_without_touching_merit_verdicts() {
         "disarm names its cause, got: {:?}",
         decision.skipped
     );
-    assert!(venue.orders().is_empty(), "disarmed bars never reach the venue");
+    assert!(
+        venue.orders().is_empty(),
+        "disarmed bars never reach the venue"
+    );
 }
 
 struct TripCase {
@@ -785,11 +1018,25 @@ async fn soak_breaker_trip_precision_recall_with_clean_control() {
     // and labels feed the shared calibration harness; the table lands under
     // `target/calibration/` for the audit trail.
     let cases = vec![
-        TripCase { label: "clean-11", faults: vec![], seed: 11, should_trip: false },
-        TripCase { label: "clean-12", faults: vec![], seed: 12, should_trip: false },
+        TripCase {
+            label: "clean-11",
+            faults: vec![],
+            seed: 11,
+            should_trip: false,
+        },
+        TripCase {
+            label: "clean-12",
+            faults: vec![],
+            seed: 12,
+            should_trip: false,
+        },
         TripCase {
             label: "at-max-3-drops",
-            faults: vec![Fault::DropConnection, Fault::DropConnection, Fault::DropConnection],
+            faults: vec![
+                Fault::DropConnection,
+                Fault::DropConnection,
+                Fault::DropConnection,
+            ],
             seed: 11,
             should_trip: false,
         },
@@ -853,7 +1100,8 @@ async fn soak_breaker_trip_precision_recall_with_clean_control() {
         .await;
         let tripped = trip_observed(&decisions);
         assert_eq!(
-            tripped, case.should_trip,
+            tripped,
+            case.should_trip,
             "case {} must {}trip",
             case.label,
             if case.should_trip { "" } else { "not " }
@@ -887,10 +1135,22 @@ async fn soak_breaker_trip_precision_recall_with_clean_control() {
     common_core::calibration::emit_markdown_artifact("protopyne-breaker-trip", &reports);
     let operating = &reports[1].1;
     assert_eq!(operating.support, cases.len());
-    assert!((operating.precision - 1.0).abs() < f64::EPSILON, "no false trips: {operating:?}");
-    assert!((operating.recall - 1.0).abs() < f64::EPSILON, "no missed trips: {operating:?}");
-    assert!((operating.fpr - 0.0).abs() < f64::EPSILON, "clean controls never fire: {operating:?}");
-    assert!(operating.passes_gate(), "trip detector passes the shared gate: {operating:?}");
+    assert!(
+        (operating.precision - 1.0).abs() < f64::EPSILON,
+        "no false trips: {operating:?}"
+    );
+    assert!(
+        (operating.recall - 1.0).abs() < f64::EPSILON,
+        "no missed trips: {operating:?}"
+    );
+    assert!(
+        (operating.fpr - 0.0).abs() < f64::EPSILON,
+        "clean controls never fire: {operating:?}"
+    );
+    assert!(
+        operating.passes_gate(),
+        "trip detector passes the shared gate: {operating:?}"
+    );
 }
 
 #[tokio::test]
@@ -935,10 +1195,12 @@ async fn soak_real_run_marks_temporally_with_exact_fees() {
         expected,
         "first fill marks cash plus position at its own close"
     );
-    let filled_contracts: u32 =
-        run.decisions.iter().map(|decision| decision.filled_quantity).sum();
-    let expected_fees =
-        Decimal::new(65, 2) * Decimal::from(filled_contracts);
+    let filled_contracts: u32 = run
+        .decisions
+        .iter()
+        .map(|decision| decision.filled_quantity)
+        .sum();
+    let expected_fees = Decimal::new(65, 2) * Decimal::from(filled_contracts);
     assert_eq!(
         run.report.total_fees.as_decimal(),
         expected_fees,
@@ -994,15 +1256,31 @@ fn triple_barrier_touch_paths() {
         (1.0, 1.1, 1.0),
         (1.0, 1.0, 0.95),
     ]);
-    assert_eq!(triple_barrier(&closes, &highs, &lows, 2, 0.1, 0.05), vec![None, Some(1.0), Some(-1.0), None]);
+    assert_eq!(
+        triple_barrier(&closes, &highs, &lows, 2, 0.1, 0.05),
+        vec![None, Some(1.0), Some(-1.0), None]
+    );
     // Timeout settles on the horizon bar's signed drift, not zero.
-    let (closes, highs, lows) = barrier_bars(&[(100.0, 101.0, 99.0), (102.0, 103.0, 101.0), (101.0, 102.0, 100.0)]);
-    assert_eq!(triple_barrier(&closes, &highs, &lows, 2, 0.5, 0.5), vec![Some(1.0), Some(-1.0), None]);
+    let (closes, highs, lows) = barrier_bars(&[
+        (100.0, 101.0, 99.0),
+        (102.0, 103.0, 101.0),
+        (101.0, 102.0, 100.0),
+    ]);
+    assert_eq!(
+        triple_barrier(&closes, &highs, &lows, 2, 0.5, 0.5),
+        vec![Some(1.0), Some(-1.0), None]
+    );
     // Both barriers on one bar: the farther-from-close side wins.
     let (closes, highs, lows) = barrier_bars(&[(100.0, 100.0, 100.0), (100.0, 112.0, 96.0)]);
-    assert_eq!(triple_barrier(&closes, &highs, &lows, 2, 0.1, 0.05), vec![Some(1.0), None]);
+    assert_eq!(
+        triple_barrier(&closes, &highs, &lows, 2, 0.1, 0.05),
+        vec![Some(1.0), None]
+    );
     let (closes, highs, lows) = barrier_bars(&[(100.0, 100.0, 100.0), (100.0, 104.0, 90.0)]);
-    assert_eq!(triple_barrier(&closes, &highs, &lows, 2, 0.1, 0.05), vec![Some(-1.0), None]);
+    assert_eq!(
+        triple_barrier(&closes, &highs, &lows, 2, 0.1, 0.05),
+        vec![Some(-1.0), None]
+    );
     // Flat market never touches a barrier: every label expires at zero.
     let (closes, highs, lows) = barrier_bars(&[(50.0, 50.0, 50.0); 6]);
     assert_eq!(
@@ -1010,8 +1288,12 @@ fn triple_barrier_touch_paths() {
         vec![Some(0.0), Some(0.0), None, None, None, None]
     );
     // Degenerate windows refuse instead of indexing out of bounds.
-    assert!(triple_barrier(&closes, &highs, &lows, 1, 0.1, 0.05).iter().all(Option::is_none));
-    assert!(triple_barrier(&closes, &highs, &lows, 0, 0.1, 0.05).iter().all(Option::is_none));
+    assert!(triple_barrier(&closes, &highs, &lows, 1, 0.1, 0.05)
+        .iter()
+        .all(Option::is_none));
+    assert!(triple_barrier(&closes, &highs, &lows, 0, 0.1, 0.05)
+        .iter()
+        .all(Option::is_none));
 }
 
 fn rsrs_history(n: usize) -> Vec<Bar> {
@@ -1023,7 +1305,11 @@ fn rsrs_history(n: usize) -> Vec<Bar> {
             let close = 100.0 + k * 0.2 + (k * 0.7).sin() * 2.0;
             let spread = 0.5 + (k * 0.3).cos().abs() * 2.0;
             Bar::new()
-                .ts(chrono::Utc.with_ymd_and_hms(2026, 1, 2, 9, 0, 0).single().expect("ts") + chrono::Duration::minutes(k as i64))
+                .ts(chrono::Utc
+                    .with_ymd_and_hms(2026, 1, 2, 9, 0, 0)
+                    .single()
+                    .expect("ts")
+                    + chrono::Duration::minutes(k as i64))
                 .o(price(close))
                 .h(price(close + spread))
                 .l(price(close - spread))
@@ -1047,13 +1333,20 @@ async fn stream_breaker_trip_disarms_entries_through_breaker_state() {
             .breaker()
             .record_error(&TransportError::Transient("unavailable: storm".to_owned()));
     }
-    assert!(stream.breaker().tripped(), "the storm trips the stream breaker");
+    assert!(
+        stream.breaker().tripped(),
+        "the storm trips the stream breaker"
+    );
     let mut breakers = BreakerState::new().build();
     assert!(!breakers.tripped);
     stream.breaker().apply_to(&mut breakers);
     assert!(breakers.tripped, "the trip merges into BreakerState");
     assert!(
-        breakers.trip_reason.as_deref().unwrap_or("").contains("consecutive"),
+        breakers
+            .trip_reason
+            .as_deref()
+            .unwrap_or("")
+            .contains("consecutive"),
         "the merged reason names the budget, got: {:?}",
         breakers.trip_reason
     );
@@ -1080,15 +1373,24 @@ async fn stream_breaker_trip_disarms_entries_through_breaker_state() {
         11,
     )
     .await;
-    assert!(decision.risk_pass, "merit verdict must stay Allow while tripped");
-    assert!(decision.grant_allow, "merit verdict must stay Allow while tripped");
+    assert!(
+        decision.risk_pass,
+        "merit verdict must stay Allow while tripped"
+    );
+    assert!(
+        decision.grant_allow,
+        "merit verdict must stay Allow while tripped"
+    );
     assert!(!decision.submitted, "stream-tripped entries disarm");
     assert!(
         transport_skipped(&decision).contains("breaker tripped"),
         "disarm names its cause, got: {:?}",
         decision.skipped
     );
-    assert!(venue.orders().is_empty(), "disarmed bars never reach the venue");
+    assert!(
+        venue.orders().is_empty(),
+        "disarmed bars never reach the venue"
+    );
 }
 
 #[test]
@@ -1109,7 +1411,9 @@ fn rising_bars(start: &str, count: usize) -> Vec<Bar> {
         .map(|step| {
             let close = start + Decimal::from(step as u64);
             Bar::new()
-                .ts(Utc.timestamp_opt(1_767_344_400 + step as i64 * 900, 0).unwrap())
+                .ts(Utc
+                    .timestamp_opt(1_767_344_400 + step as i64 * 900, 0)
+                    .unwrap())
                 .o(close)
                 .h(close)
                 .l(close)
@@ -1169,20 +1473,22 @@ async fn multi_symbol_run_matches_single_symbol_runs() {
     let qqq_bars = rising_bars("500", spy_bars.len());
     let grant = grant_covering(&["SPY", "QQQ"]);
     let inputs = vec![
-        multi_input("SPY", "spy-15m-v1", HistorySource::Dynamic(spy_bars.clone())),
-        multi_input("QQQ", "qqq-synth-v1", HistorySource::Dynamic(qqq_bars.clone())),
+        multi_input(
+            "SPY",
+            "spy-15m-v1",
+            HistorySource::Dynamic(spy_bars.clone()),
+        ),
+        multi_input(
+            "QQQ",
+            "qqq-synth-v1",
+            HistorySource::Dynamic(qqq_bars.clone()),
+        ),
     ];
     let paper = PaperConfig::new().build();
-    let multi = crate::runner::run_multi_backtest(
-        &strategy(),
-        &risk(),
-        &grant,
-        paper.clone(),
-        inputs,
-        11,
-    )
-    .await
-    .expect("multi-symbol harness runs");
+    let multi =
+        crate::runner::run_multi_backtest(&strategy(), &risk(), &grant, paper.clone(), inputs, 11)
+            .await
+            .expect("multi-symbol harness runs");
     assert_eq!(multi.runs.len(), 2);
     assert_eq!(multi.manifest.symbols.len(), 2);
     assert_eq!(multi.manifest.symbols[0].data_version, "spy-15m-v1");
@@ -1206,14 +1512,27 @@ async fn multi_symbol_run_matches_single_symbol_runs() {
             30,
             0,
         );
-        let single =
-            run_backtest(&strategy(), &risk(), &grant, &venue_config, &runner_config, bars, 11)
-                .await
-                .expect("standalone run");
+        let single = run_backtest(
+            &strategy(),
+            &risk(),
+            &grant,
+            &venue_config,
+            &runner_config,
+            bars,
+            11,
+        )
+        .await
+        .expect("standalone run");
         // Config JSON pins input configs, so only decisions must match
         // exactly — the same decide path over the same bars.
-        assert_eq!(run.decisions, single.decisions, "{underlying} decisions identical");
-        assert!(run.decisions.iter().any(|decision| decision.submitted), "{underlying} fills");
+        assert_eq!(
+            run.decisions, single.decisions,
+            "{underlying} decisions identical"
+        );
+        assert!(
+            run.decisions.iter().any(|decision| decision.submitted),
+            "{underlying} fills"
+        );
     }
 
     // Rerun equality over the combined pin.
@@ -1230,7 +1549,10 @@ async fn multi_symbol_run_matches_single_symbol_runs() {
     )
     .await
     .expect("second harness run");
-    assert_eq!(multi.manifest.to_canonical_json(), again.manifest.to_canonical_json());
+    assert_eq!(
+        multi.manifest.to_canonical_json(),
+        again.manifest.to_canonical_json()
+    );
 }
 
 #[tokio::test]
@@ -1247,16 +1569,32 @@ async fn multi_symbol_reruns_are_identical_under_parallelism() {
     let paper = PaperConfig::new().build();
     let inputs = || {
         vec![
-            multi_input("SPY", "spy-15m-v1", HistorySource::Dynamic(spy_bars.clone())),
-            multi_input("QQQ", "qqq-synth-v1", HistorySource::Dynamic(qqq_bars.clone())),
+            multi_input(
+                "SPY",
+                "spy-15m-v1",
+                HistorySource::Dynamic(spy_bars.clone()),
+            ),
+            multi_input(
+                "QQQ",
+                "qqq-synth-v1",
+                HistorySource::Dynamic(qqq_bars.clone()),
+            ),
         ]
     };
-    let first = crate::runner::run_multi_backtest(&strategy(), &risk(), &grant, paper.clone(), inputs(), 11)
-        .await
-        .expect("first harness run");
-    let second = crate::runner::run_multi_backtest(&strategy(), &risk(), &grant, paper, inputs(), 11)
-        .await
-        .expect("second harness run");
+    let first = crate::runner::run_multi_backtest(
+        &strategy(),
+        &risk(),
+        &grant,
+        paper.clone(),
+        inputs(),
+        11,
+    )
+    .await
+    .expect("first harness run");
+    let second =
+        crate::runner::run_multi_backtest(&strategy(), &risk(), &grant, paper, inputs(), 11)
+            .await
+            .expect("second harness run");
     assert_eq!(first, second, "parallel reruns identical wholesale");
     assert_eq!(
         first.manifest.to_canonical_json(),
@@ -1280,11 +1618,21 @@ async fn multi_symbol_reruns_are_identical_under_parallelism() {
             30,
             0,
         );
-        let single =
-            run_backtest(&strategy(), &risk(), &grant, &venue_config, &runner_config, bars, 11)
-                .await
-                .expect("standalone run");
-        assert_eq!(run.decisions, single.decisions, "{underlying} decisions identical");
+        let single = run_backtest(
+            &strategy(),
+            &risk(),
+            &grant,
+            &venue_config,
+            &runner_config,
+            bars,
+            11,
+        )
+        .await
+        .expect("standalone run");
+        assert_eq!(
+            run.decisions, single.decisions,
+            "{underlying} decisions identical"
+        );
     }
 }
 
@@ -1324,10 +1672,25 @@ async fn bench_workload_smoke() {
         .underlying("SPY".to_owned())
         .data_version("bench-smoke".to_owned())
         .build();
-    let runner = RunnerConfig::new("SPY".to_owned(), "ribbon".to_owned(), money(400), money(2_000), 0, 0);
-    let run = run_backtest(&strategy(), &risk(), &grant_covering(&["SPY"]), &config, &runner, &bars, 3)
-        .await
-        .expect("tiny decide-path run executes");
+    let runner = RunnerConfig::new(
+        "SPY".to_owned(),
+        "ribbon".to_owned(),
+        money(400),
+        money(2_000),
+        0,
+        0,
+    );
+    let run = run_backtest(
+        &strategy(),
+        &risk(),
+        &grant_covering(&["SPY"]),
+        &config,
+        &runner,
+        &bars,
+        3,
+    )
+    .await
+    .expect("tiny decide-path run executes");
     assert_eq!(run.decisions.len(), bars.len());
     let outcomes = run_sweep(
         strategy(),
@@ -1359,7 +1722,11 @@ async fn run_report_carries_decision_consistent_portfolio() {
     )
     .await
     .expect("run with fills");
-    let summary = run.report.portfolio.as_ref().expect("run attaches a portfolio");
+    let summary = run
+        .report
+        .portfolio
+        .as_ref()
+        .expect("run attaches a portfolio");
     assert_eq!(summary.portfolios.len(), 1, "one run books one portfolio");
     let totals = &summary.portfolios[0];
     assert_eq!(totals.portfolio, PAPER_PORTFOLIO);
@@ -1392,8 +1759,14 @@ async fn run_report_carries_decision_consistent_portfolio() {
     // the portfolio, and the unavailable greeks — never an empty page.
     let sheet = crate::report::render_tearsheet(&run.report);
     assert!(sheet.contains("spy-15m"), "pin present, got:\n{sheet}");
-    assert!(sheet.contains(PAPER_PORTFOLIO), "portfolio present, got:\n{sheet}");
-    assert!(sheet.contains("unavailable"), "greeks honesty present, got:\n{sheet}");
+    assert!(
+        sheet.contains(PAPER_PORTFOLIO),
+        "portfolio present, got:\n{sheet}"
+    );
+    assert!(
+        sheet.contains("unavailable"),
+        "greeks honesty present, got:\n{sheet}"
+    );
 }
 
 #[tokio::test]
@@ -1410,7 +1783,11 @@ async fn fixed_history_run_records_its_shape_for_efficiency_work() {
     )
     .await
     .expect("fixed history runs");
-    assert_eq!(run.decisions.len(), bars.len(), "one verdict per replayed bar");
+    assert_eq!(
+        run.decisions.len(),
+        bars.len(),
+        "one verdict per replayed bar"
+    );
     let canonical = run.to_canonical_json();
     let sheet = crate::report::render_tearsheet(&run.report);
     eprintln!(
@@ -1426,7 +1803,10 @@ async fn fixed_history_run_records_its_shape_for_efficiency_work() {
 }
 
 fn golden_path(name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join(name)
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("data")
+        .join(name)
 }
 
 #[tokio::test]
@@ -1449,9 +1829,8 @@ async fn backtest_output_identity_pins_report_and_tearsheet() {
     .expect("fixed history runs");
     let canonical = run.to_canonical_json();
     let sheet = crate::report::render_tearsheet(&run.report);
-    let frozen_canonical =
-        std::fs::read_to_string(golden_path("backtest_identity_canonical.json"))
-            .expect("identity golden loads");
+    let frozen_canonical = std::fs::read_to_string(golden_path("backtest_identity_canonical.json"))
+        .expect("identity golden loads");
     let frozen_sheet = std::fs::read_to_string(golden_path("backtest_identity_tearsheet.txt"))
         .expect("tearsheet golden loads");
     assert_eq!(canonical, frozen_canonical, "report JSON byte-identical");

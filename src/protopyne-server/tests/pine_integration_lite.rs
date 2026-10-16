@@ -72,16 +72,16 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use protopyne_kernels::{
-    InputSet, LinkedModule, ModuleInput, PineEngine, PineRuntimeConfig, PineValue, RunOutcome,
-    indicator_library_id, load_closure_sources, parse_program,
+    indicator_library_id, load_closure_sources, parse_program, InputSet, LinkedModule, ModuleInput,
+    PineEngine, PineRuntimeConfig, PineValue, RunOutcome,
 };
 use protopyne_types::Bar;
 use rust_decimal::Decimal;
 
 use super::common_golden::{check_golden, dump_canonical};
 use super::common_mtf::{
-    WARMUP, bars_at, build_tick_legs, data_root, dataset_of, engine_for, field_num,
-    inject_all, linked_from_graph, load_history, load_tick_rows_from, num, present, resolve_inputs,
+    bars_at, build_tick_legs, data_root, dataset_of, engine_for, field_num, inject_all,
+    linked_from_graph, load_history, load_tick_rows_from, num, present, resolve_inputs, WARMUP,
 };
 
 /// Snapshot series the proof pins on confirmed bars.
@@ -128,7 +128,10 @@ fn linked_closure() -> Vec<LinkedModule> {
         })
         .collect();
     let graph = resolve_inputs(inputs);
-    assert!(graph.warnings().is_empty(), "clean v6 closure warns nothing");
+    assert!(
+        graph.warnings().is_empty(),
+        "clean v6 closure warns nothing"
+    );
     linked_from_graph(&graph)
 }
 
@@ -206,7 +209,10 @@ fn prove_chart(modules: &[LinkedModule], period: &str, bars: &[Bar]) -> RunOutco
         );
     }
     assert!(
-        outcome.fills.iter().any(|fill| fill.title == "Trend Ribbon"),
+        outcome
+            .fills
+            .iter()
+            .any(|fill| fill.title == "Trend Ribbon"),
         "ribbon fill pair captured"
     );
     for title in ["Ribbon Health Osc", "MA Health Osc", "Osc Fast", "Osc Slow"] {
@@ -246,7 +252,10 @@ fn prove_chart(modules: &[LinkedModule], period: &str, bars: &[Bar]) -> RunOutco
         )
     });
     if fast_crosses {
-        assert!(!labels.is_empty(), "threshold crossings record pivot labels");
+        assert!(
+            !labels.is_empty(),
+            "threshold crossings record pivot labels"
+        );
     } else {
         assert!(
             labels.is_empty(),
@@ -279,10 +288,9 @@ fn prove_chart(modules: &[LinkedModule], period: &str, bars: &[Bar]) -> RunOutco
         other => panic!("scheduler object on the last bar, got {other:?}"),
     };
     let next_due = match sched.fields.get("next_update").cloned().flatten() {
-        Some(PineValue::IntMap(entries)) => entries
-            .get(&180_000)
-            .copied()
-            .expect("M3 frame scheduled"),
+        Some(PineValue::IntMap(entries)) => {
+            entries.get(&180_000).copied().expect("M3 frame scheduled")
+        }
         other => panic!("scheduler holds its map, got {other:?}"),
     };
     let last_ts = bars[expect_evaluated - 1].ts.timestamp();
@@ -293,10 +301,8 @@ fn prove_chart(modules: &[LinkedModule], period: &str, bars: &[Bar]) -> RunOutco
         .count();
     if next_due <= last_ts {
         for member in expect_mtf.iter().copied() {
-            let wanted = PineValue::EnumHandle(protopyne_kernels::EnumHandle::new(
-                "Timeframes",
-                member,
-            ));
+            let wanted =
+                PineValue::EnumHandle(protopyne_kernels::EnumHandle::new("Timeframes", member));
             assert!(
                 mtf.values().any(|(_, value)| {
                     matches!(value, Some(PineValue::Object(instance))
@@ -543,17 +549,13 @@ fn integration_lite_tick_tape_reconciles_minute_volumes() {
             "pull gate fires exactly on seeding drift at {open_ms}"
         );
         prev_pulls = pulls_now;
-        let close_enough = |got: f64, want: f64| {
-            (got - want).abs() <= 1e-9 * want.abs().max(1.0)
-        };
+        let close_enough = |got: f64, want: f64| (got - want).abs() <= 1e-9 * want.abs().max(1.0);
         if expect_pull {
             // Pulled minute: the ring rebuilds from the confirmed prefix
             // (rows at or before the bar-open, last `PULL_WINDOW` of them)
             // keeping the oldest rows up to capacity, then the remainder
             // tops up only when the ring has room.
-            let visible = minute_data
-                .times
-                .partition_point(|time| *time <= open_ms);
+            let visible = minute_data.times.partition_point(|time| *time <= open_ms);
             let served = visible.min(PULL_WINDOW);
             let kept = served.min(capacity);
             let skip = visible - served;
@@ -628,11 +630,13 @@ fn ramp_bars(n: u32) -> Vec<Bar> {
             let close = 100.0 + 5.0 * f64::from(i);
             let decimal = |v: f64| format!("{v:.2}").parse::<Decimal>().expect("decimal");
             Bar::new()
-                .ts(
-                    chrono::TimeZone::timestamp_opt(&chrono::Utc, 1_700_000_000 + i64::from(i) * 60, 0)
-                        .single()
-                        .expect("valid test timestamp"),
+                .ts(chrono::TimeZone::timestamp_opt(
+                    &chrono::Utc,
+                    1_700_000_000 + i64::from(i) * 60,
+                    0,
                 )
+                .single()
+                .expect("valid test timestamp"))
                 .o(decimal(close - 0.25))
                 .h(decimal(close + 0.5))
                 .l(decimal(close - 0.5))
@@ -730,16 +734,43 @@ fn security_injection_agrees_with_kernels() {
     };
     let int = protopyne_kernels::ParamSet::new().with_int("length", 21);
     let close = |at: &str| field_num_at(&outcome, last, at);
-    assert!((close("ma_mean") - batch("ema", int)).abs() < 1e-9, "ema over tail");
+    assert!(
+        (close("ma_mean") - batch("ema", int)).abs() < 1e-9,
+        "ema over tail"
+    );
     let alma_params = protopyne_kernels::ParamSet::new()
         .with_int("length", 8)
         .with_float("offset", 0.85)
         .with_float("sigma", 6.0);
-    assert!((close("ma_primary") - batch("alma", alma_params)).abs() < 1e-9, "alma over tail");
-    assert!((close("atr") - batch("atr", protopyne_kernels::ParamSet::new().with_int("length", 14))).abs() < 1e-9, "atr over tail");
-    assert!((close("vol_sma") - batch_vol("sma", protopyne_kernels::ParamSet::new().with_int("length", 20))).abs() < 1e-9, "volume sma over tail");
+    assert!(
+        (close("ma_primary") - batch("alma", alma_params)).abs() < 1e-9,
+        "alma over tail"
+    );
+    assert!(
+        (close("atr")
+            - batch(
+                "atr",
+                protopyne_kernels::ParamSet::new().with_int("length", 14)
+            ))
+        .abs()
+            < 1e-9,
+        "atr over tail"
+    );
+    assert!(
+        (close("vol_sma")
+            - batch_vol(
+                "sma",
+                protopyne_kernels::ParamSet::new().with_int("length", 20)
+            ))
+        .abs()
+            < 1e-9,
+        "volume sma over tail"
+    );
     match ctx_field(&outcome, last, "tf") {
-        Some(PineValue::EnumHandle(handle)) => assert_eq!(handle.member, "M5", "context records the requested timeframe"),
+        Some(PineValue::EnumHandle(handle)) => assert_eq!(
+            handle.member, "M5",
+            "context records the requested timeframe"
+        ),
         other => panic!("timeframe field, got {other:?}"),
     }
 }
@@ -773,7 +804,9 @@ fn mtf_table_assembly_records_cells() {
         .filter(|event| event.object == "table")
         .collect();
     assert!(
-        tables.iter().any(|event| format!("{:?}", event.kind) == "Created"),
+        tables
+            .iter()
+            .any(|event| format!("{:?}", event.kind) == "Created"),
         "table created once on the last bar"
     );
     let cells = tables
@@ -782,10 +815,14 @@ fn mtf_table_assembly_records_cells() {
         .count();
     assert!(cells >= 20, "header and data cells recorded, got {cells}");
     assert!(
-        outcome.draw_events.iter().any(|event| event.object == "table"
-            && event.args.iter().any(|arg| arg.value == Some(PineValue::Str("Regime".to_owned())))),
+        outcome
+            .draw_events
+            .iter()
+            .any(|event| event.object == "table"
+                && event
+                    .args
+                    .iter()
+                    .any(|arg| arg.value == Some(PineValue::Str("Regime".to_owned())))),
         "row-label cell carries its text through the recorder"
     );
 }
-
-

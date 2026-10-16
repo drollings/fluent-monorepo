@@ -10,10 +10,10 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use chrono::DateTime;
 use super::*;
 use crate::common_tape as tape;
 use crate::service::open_tape_reader;
+use chrono::DateTime;
 use protopyne_store::StoreStorage;
 use protopyne_types::Timeframe;
 use protopyne_view::TerminalGateway;
@@ -70,7 +70,10 @@ async fn boot_with_tape_serves_the_tape_series() {
         "the tape's series served, not the boot history"
     );
     assert!(
-        served.rows.iter().all(|row| (row.close - 200.0).abs() < 1e-6),
+        served
+            .rows
+            .iter()
+            .all(|row| (row.close - 200.0).abs() < 1e-6),
         "the tape's closes served"
     );
     let stats = handle.tape_serve_stats();

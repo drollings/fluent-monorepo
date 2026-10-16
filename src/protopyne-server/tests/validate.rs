@@ -1,6 +1,6 @@
 use super::*;
 use fluent_wvr::prelude::*;
-use protopyne_types::{Money, Validate, check_for_execute};
+use protopyne_types::{check_for_execute, Money, Validate};
 use rust_decimal::Decimal;
 
 fn money(value: i64) -> Money {
@@ -55,7 +55,14 @@ fn backtest_and_runner_trait_parity() {
     );
     assert!(good_run.validate().is_ok());
     assert!(Validate::validate(&good_run).is_ok());
-    let bad_run = RunnerConfig::new(String::new(), "ribbon".to_owned(), money(400), money(2_000), 30, 0);
+    let bad_run = RunnerConfig::new(
+        String::new(),
+        "ribbon".to_owned(),
+        money(400),
+        money(2_000),
+        30,
+        0,
+    );
     assert!(bad_run.validate().is_err());
     assert!(Validate::validate(&bad_run).is_err());
 }
