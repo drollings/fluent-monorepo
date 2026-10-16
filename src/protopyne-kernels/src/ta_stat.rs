@@ -96,8 +96,8 @@ impl Indicator for StddevIndicator {
         if state.len() < period {
             return Ok(None);
         }
-        let window: Vec<f64> = state.closes().collect();
-        let raw = crate::math::std_pop(&window) * nbdev;
+        let window = state.scratch_closes();
+        let raw = crate::math::std_pop(window) * nbdev;
         state.set_last(raw);
         Ok(fin_or_none(raw))
     }
@@ -179,8 +179,8 @@ impl Indicator for VarIndicator {
         if state.len() < period {
             return Ok(None);
         }
-        let window: Vec<f64> = state.closes().collect();
-        let raw = crate::math::variance_pop(&window) * nbdev;
+        let window = state.scratch_closes();
+        let raw = crate::math::variance_pop(window) * nbdev;
         state.set_last(raw);
         Ok(fin_or_none(raw))
     }
@@ -259,9 +259,8 @@ impl Indicator for CorrelIndicator {
         if state.len() < period {
             return Ok(None);
         }
-        let highs: Vec<f64> = state.highs().collect();
-        let lows: Vec<f64> = state.lows().collect();
-        let out = crate::math::corr_pearson(&highs, &lows);
+        let (highs, lows) = state.scratch_highs_lows();
+        let out = crate::math::corr_pearson(highs, lows);
         state.set_last(out.unwrap_or(f64::NAN));
         Ok(out)
     }

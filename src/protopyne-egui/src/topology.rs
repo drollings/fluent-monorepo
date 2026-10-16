@@ -116,6 +116,39 @@ pub(crate) fn kernel_series(
     kernel.batch(&frame.views(), params).map(|result| result.values).map_err(|e| describe_kernel(&e))
 }
 
+/// A kernel's declared warmup for parameters: bars needed before the first
+/// trustworthy output. The evaluation window below sizes itself from this,
+/// never a magic number; unknown kernels refuse instead of warming up by
+/// zero (which would fabricate a value where a hole belongs).
+pub fn kernel_warmup(kernel_id: &str, params: &ParamSet) -> Result<usize, EguiError> {
+    let registry = builtin_registry().map_err(|e| describe_kernel(&e))?;
+    let kernel = registry.get(kernel_id).ok_or_else(|| EguiError::Dependency {
+        reason: format!("kernel not registered: {kernel_id}"),
+    })?;
+    kernel.warmup(params).map_err(|e| describe_kernel(&e))
+}
+
+/// Bar slice for visible-window-plus-warmup assessment: the visible bars
+/// plus the warmup bars before them, clamped to history.
+///
+/// Returns `(eval_start, eval_len)` with `eval_start + eval_len` clamped to
+/// `total_bars`, so the caller slices `bars[eval_start..eval_start + eval_len]`
+/// without a second bounds check. A visible window past the data (or no
+/// bars at all) evaluates nothing; a shortfall evaluates what exists, and
+/// leading holes stay holes downstream — the kernels emit `None` where
+/// history runs short, never a fabricated value.
+#[must_use]
+pub fn evaluation_window(
+    total_bars: usize,
+    visible_start: usize,
+    visible_len: usize,
+    warmup: usize,
+) -> (usize, usize) {
+    let eval_start = visible_start.saturating_sub(warmup).min(total_bars);
+    let eval_end = visible_start.saturating_add(visible_len).min(total_bars);
+    (eval_start, eval_end.saturating_sub(eval_start))
+}
+
 #[cfg(test)]
 #[path = "../tests/topology.rs"]
 mod tests;

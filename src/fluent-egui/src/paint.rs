@@ -28,7 +28,7 @@ use crate::hittest::{Crosshair, crosshair_pixel};
 use crate::view::{
     DeltaView, PivotMark, PivotSide, RibbonView, ribbon_fill_style_key, ribbon_style_key,
 };
-use crate::viewport::{BreakLine, Viewport};
+use crate::viewport::{BreakLine, Viewport, visible_rows};
 use crate::style::IndicatorStyle;
 
 /// One candle's screen geometry plus its tint keys.
@@ -91,6 +91,242 @@ pub fn candle_geoms(
     Ok(geoms)
 }
 
+/// Build candle geometry for the painted window only.
+///
+/// Slices `rows` and the parallel `ribbon_bullish` keys to the viewport's
+/// culled window ([`Viewport::culled_bar_range`]) before [`candle_geoms`],
+/// then re-offsets indices and x pixels to global bar coordinates — so the
+/// result is pixel-identical to the corresponding slice of full-slice
+/// geometry while zoomed-in views cost O(visible) instead of O(history).
+/// Off-window viewports yield no geometry; length mismatch refuses exactly
+/// as the full-slice builder does.
+pub fn culled_candle_geoms(
+    rows: &[ChartRow],
+    ribbon_bullish: &[bool],
+    viewport: &Viewport,
+    width_px: f32,
+) -> Result<Vec<CandleGeom>, EguiError> {
+    if rows.len() != ribbon_bullish.len() {
+        return Err(EguiError::InvalidParam {
+            what: "series".to_owned(),
+            reason: "rows and ribbon keys lengths differ".to_owned(),
+        });
+    }
+    let (start, end) = viewport.culled_bar_range(width_px, rows.len());
+    let window_rows = visible_rows(rows, start, end.saturating_sub(start));
+    let window_keys = visible_rows(ribbon_bullish, start, end.saturating_sub(start));
+    let mut geoms = candle_geoms(window_rows, window_keys, viewport)?;
+    for geom in &mut geoms {
+        geom.index += start;
+        geom.x = viewport.index_to_x(geom.index);
+    }
+    Ok(geoms)
+}
+
+/// Whether a bar spacing needs pixel-column aggregation: strictly below one
+/// pixel per bar. Exactly `1.0` still draws native candles — one bar owns
+/// its column — while below it bars overdraw, so one screen column folds to
+/// one candle. The predicate measures pixel-exactness (below one pixel per
+/// bar, per-candle drawing cannot add information), never confidence: there
+/// is nothing to tune, only the boundary to hold.
+#[must_use]
+pub fn needs_column_aggregation(bar_spacing: f32) -> bool {
+    bar_spacing.is_finite() && bar_spacing < 1.0
+}
+
+/// Candle geometry dispatched by pixel columns.
+///
+/// Above one pixel per bar this is the culled native path untouched
+/// ([`culled_candle_geoms`]); at or below it, the culled window is
+/// partitioned with [`column_runs`] over floored slot x-pixels and each run
+/// folds through [`aggregate_column`] before [`candle_geoms`]. Aggregates
+/// carry their run's first global bar index, paint at their screen column,
+/// and read the run's most recent trend key — a column reads as its newest
+/// bar. Rows reaching this dispatcher are transformed at native resolution
+/// first (Heikin-Ashi's opens recurse bar over bar, so aggregates must never
+/// feed it); only display sampling happens here.
+pub fn column_candle_geoms(
+    rows: &[ChartRow],
+    ribbon_bullish: &[bool],
+    viewport: &Viewport,
+    width_px: f32,
+) -> Result<Vec<CandleGeom>, EguiError> {
+    if rows.len() != ribbon_bullish.len() {
+        return Err(EguiError::InvalidParam {
+            what: "series".to_owned(),
+            reason: "rows and ribbon keys lengths differ".to_owned(),
+        });
+    }
+    if !needs_column_aggregation(viewport.scale().bar_spacing()) {
+        return culled_candle_geoms(rows, ribbon_bullish, viewport, width_px);
+    }
+    let (start, end) = viewport.culled_bar_range(width_px, rows.len());
+    let window = end.saturating_sub(start);
+    let window_rows = visible_rows(rows, start, window);
+    let window_keys = visible_rows(ribbon_bullish, start, window);
+    // Columns are screen pixels, so slots are global (the window offset
+    // carries a fractional shift that re-groups run boundaries).
+    let runs = column_runs(window, |slot| viewport.slot_to_x((start + slot) as f64).floor() as i64);
+    let mut folded_rows = Vec::with_capacity(runs.len());
+    let mut folded_keys = Vec::with_capacity(runs.len());
+    let mut folded_columns = Vec::with_capacity(runs.len());
+    let mut folded_firsts = Vec::with_capacity(runs.len());
+    for (column, range) in &runs {
+        // Runs hold at least one bar by construction, so the fold always
+        // lands; the refusal below is unreachable, never a substitute.
+        let folded = aggregate_column(&window_rows[range.clone()])
+            .expect("column runs are never empty");
+        folded_rows.push(folded);
+        folded_keys.push(window_keys[range.end - 1]);
+        folded_columns.push(*column);
+        folded_firsts.push(start + range.start);
+    }
+    let mut geoms = candle_geoms(&folded_rows, &folded_keys, viewport)?;
+    for ((geom, column), first) in
+        geoms.iter_mut().zip(folded_columns.iter()).zip(folded_firsts.iter())
+    {
+        geom.index = *first;
+        geom.x = *column as f32;
+    }
+    Ok(geoms)
+}
+
+/// Partition slot-ordered bars into consecutive pixel-column runs.
+///
+/// `column_of` maps a bar slot to its pixel column; the call site passes the
+/// floored x pixel of each slot, so one run is exactly the bars that would
+/// overdraw one screen column. Returns `(column, bar-range)` runs in slot
+/// order, one per non-empty column — a single linear pass, one `column_of`
+/// call per bar. Runs group consecutive-equal columns only, so a
+/// non-monotonic mapping still folds deterministically; monotonicity is the
+/// caller's contract, grouping is this function's.
+#[must_use]
+pub fn column_runs(
+    bar_count: usize,
+    column_of: impl Fn(usize) -> i64,
+) -> Vec<(i64, std::ops::Range<usize>)> {
+    let mut runs: Vec<(i64, std::ops::Range<usize>)> = Vec::new();
+    for slot in 0..bar_count {
+        let column = column_of(slot);
+        match runs.last_mut() {
+            Some((held, range)) if *held == column => range.end = slot + 1,
+            _ => runs.push((column, slot..slot + 1)),
+        }
+    }
+    runs
+}
+
+/// Fold one pixel column's rows into a single aggregate candle.
+///
+/// open = first open, high = max high, low = min low, close = last close,
+/// volume = saturating sum, time = first bar time. This is what makes
+/// sub-pixel zoom honest: one screen column can only ever show one vertical
+/// span, so the aggregate draws exactly the pixels the individual candles
+/// would have overdrawn. Empty input reads `None` — a column with no bars
+/// draws nothing, never a zero candle. Rows are conversion-finite
+/// (`rows_of` drops non-finite legs); a NaN leg would poison the fold, so
+/// callers pass converted rows, never raw floats.
+#[must_use]
+pub fn aggregate_column(rows: &[ChartRow]) -> Option<ChartRow> {
+    let first = rows.first()?;
+    let mut high = first.high;
+    let mut low = first.low;
+    let mut volume = 0u64;
+    for row in rows {
+        high = high.max(row.high);
+        low = low.min(row.low);
+        volume = volume.saturating_add(row.volume);
+    }
+    Some(ChartRow {
+        time: first.time,
+        open: first.open,
+        high,
+        low,
+        close: rows.last().expect("non-empty: `first` above proved it").close,
+        volume,
+    })
+}
+
+/// Last present value in a column window: the display sample for line-like
+/// series at sub-pixel zoom — including native-timeframe indicator output,
+/// which is computed over full-resolution bars and only *sampled* here.
+/// Holes never substitute: trailing holes fall back to the last present
+/// value, all-holes (or empty) reads `None`, so gaps stay gaps.
+#[must_use]
+pub fn sample_column_last(values: &[Option<f64>]) -> Option<f64> {
+    values.iter().rev().find_map(|slot| *slot)
+}
+
+/// Vertical span of the present values in a column window: the display
+/// sample for band-like series at sub-pixel zoom. Holes are skipped, never
+/// zero-filled; all-holes (or empty) reads `None`. Present values are
+/// lift-finite (`map_series_optional` holes non-finite outputs), so the
+/// fold needs no NaN guard of its own.
+#[must_use]
+pub fn sample_column_extremes(values: &[Option<f64>]) -> Option<(f64, f64)> {
+    let mut extremes: Option<(f64, f64)> = None;
+    for slot in values.iter().flatten() {
+        extremes = Some(match extremes {
+            Some((low, high)) => (low.min(*slot), high.max(*slot)),
+            None => (*slot, *slot),
+        });
+    }
+    extremes
+}
+
+/// Sampled vertices of one line-like series at sub-pixel zoom: one vertex
+/// per pixel column over global bar slots `base..`, sampled with
+/// [`sample_column_last`] and mapped like [`oscillator_points`].
+///
+/// This is the display-only sampler behind native-timeframe evaluation:
+/// indicator values are computed over full-resolution bars and only
+/// *sampled* here, so a zoomed-out overlay costs O(columns) vertices while
+/// carrying exactly what sampling the native series per column run yields.
+/// Holes stay holes (an all-hole run lifts the pen), trailing holes fall
+/// back to the run's last present value, and off-window samples refuse
+/// through the shared window predicate — never extrapolated, never
+/// zero-filled.
+#[must_use]
+pub fn sampled_line_points(
+    values: &[Option<f64>],
+    viewport: &Viewport,
+    base: usize,
+) -> Vec<Option<(f32, f32)>> {
+    column_runs(values.len(), |slot| viewport.slot_to_x((base + slot) as f64).floor() as i64)
+        .iter()
+        .map(|(column, range)| {
+            let sample = sample_column_last(&values[range.clone()])?;
+            let y = viewport.windowed_y(sample)?;
+            Some((*column as f32, y))
+        })
+        .collect()
+}
+
+/// Sampled spans of one band-like series at sub-pixel zoom: one `(x, top,
+/// bottom)` span per pixel column, sampled with [`sample_column_extremes`]
+/// and mapped through the shared window predicate.
+///
+/// The same display-only contract as [`sampled_line_points`]: full-resolution
+/// values in, one span per column out, holes staying holes at every stage.
+/// A run whose high or low leg sits off-window spans nothing — spans break at
+/// the window edge exactly where fill runs do.
+#[must_use]
+pub fn sampled_band_spans(
+    values: &[Option<f64>],
+    viewport: &Viewport,
+    base: usize,
+) -> Vec<Option<(f32, f32, f32)>> {
+    column_runs(values.len(), |slot| viewport.slot_to_x((base + slot) as f64).floor() as i64)
+        .iter()
+        .map(|(column, range)| {
+            let (low, high) = sample_column_extremes(&values[range.clone()])?;
+            let top = viewport.windowed_y(high)?;
+            let bottom = viewport.windowed_y(low)?;
+            Some((*column as f32, top, bottom))
+        })
+        .collect()
+}
+
 /// One ribbon fill strip between the band edges.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RibbonBand {
@@ -151,7 +387,22 @@ pub fn delta_bar_geoms(
     delta: &DeltaView,
     viewport: &Viewport,
 ) -> Result<Vec<DeltaBarGeom>, EguiError> {
-    if delta.buy_top.len() != delta.sell_bottom.len() {
+    delta_bar_geoms_sliced(&delta.buy_top, &delta.sell_bottom, viewport, 0)
+}
+
+/// Build zero-based delta bars over borrowed legs with a window base.
+///
+/// The single mapping behind [`delta_bar_geoms`] and the column dispatcher:
+/// `base` is the global index of the first leg, so culled windows re-offset
+/// indices and x pixels to window coordinates instead of cloning a window.
+/// Refuses exactly as the owned entry does.
+pub fn delta_bar_geoms_sliced(
+    buy_top: &[Option<f64>],
+    sell_bottom: &[Option<f64>],
+    viewport: &Viewport,
+    base: usize,
+) -> Result<Vec<DeltaBarGeom>, EguiError> {
+    if buy_top.len() != sell_bottom.len() {
         return Err(EguiError::InvalidParam {
             what: "series".to_owned(),
             reason: "buy and sell split lengths differ".to_owned(),
@@ -166,15 +417,78 @@ pub fn delta_bar_geoms(
             reason: "delta pane range must span zero".to_owned(),
         });
     };
-    let mut bars = Vec::with_capacity(delta.buy_top.len());
-    for (index, (buy, sell)) in delta.buy_top.iter().zip(delta.sell_bottom.iter()).enumerate() {
+    let mut bars = Vec::with_capacity(buy_top.len());
+    for (offset, (buy, sell)) in buy_top.iter().zip(sell_bottom.iter()).enumerate() {
         let buy_y = (*buy)
             .filter(|top| top.is_finite())
             .and_then(|top| viewport.price_to_y(top));
         let sell_y = (*sell)
             .filter(|depth| depth.is_finite())
             .and_then(|depth| viewport.price_to_y(-depth));
-        bars.push(DeltaBarGeom { index, x: viewport.index_to_x(index), buy_y, sell_y, zero_y });
+        bars.push(DeltaBarGeom {
+            index: base + offset,
+            x: viewport.index_to_x(base + offset),
+            buy_y,
+            sell_y,
+            zero_y,
+        });
+    }
+    Ok(bars)
+}
+
+/// Delta bars dispatched by pixel columns.
+///
+/// Above one pixel per bar this is the culled native path untouched (one
+/// linear slice, no per-bar copy beyond the emitted geoms); at or below it,
+/// the culled window folds each column run to its tallest legs — buy reads
+/// the run max, sell the run max depth — through the shared extremes
+/// sampler, holes staying holes per leg. Values never change, only display
+/// density does, exactly as the candle dispatcher behaves.
+pub fn column_delta_geoms(
+    buy_top: &[Option<f64>],
+    sell_bottom: &[Option<f64>],
+    viewport: &Viewport,
+    width_px: f32,
+) -> Result<Vec<DeltaBarGeom>, EguiError> {
+    if buy_top.len() != sell_bottom.len() {
+        return Err(EguiError::InvalidParam {
+            what: "series".to_owned(),
+            reason: "buy and sell split lengths differ".to_owned(),
+        });
+    }
+    let Some(zero_y) = viewport.windowed_y(0.0) else {
+        return Err(EguiError::InvalidParam {
+            what: "range".to_owned(),
+            reason: "delta pane range must span zero".to_owned(),
+        });
+    };
+    if !needs_column_aggregation(viewport.scale().bar_spacing()) {
+        let (start, end) = viewport.culled_bar_range(width_px, buy_top.len());
+        let window = end.saturating_sub(start);
+        let buys = visible_rows(buy_top, start, window);
+        let sells = visible_rows(sell_bottom, start, window);
+        return delta_bar_geoms_sliced(buys, sells, viewport, start);
+    }
+    let (start, end) = viewport.culled_bar_range(width_px, buy_top.len());
+    let window = end.saturating_sub(start);
+    let runs = column_runs(window, |slot| viewport.slot_to_x((start + slot) as f64).floor() as i64);
+    let mut bars = Vec::with_capacity(runs.len());
+    for (column, range) in &runs {
+        let buy = sample_column_extremes(&buy_top[start + range.start..start + range.end])
+            .map(|(_, high)| high)
+            .filter(|top| top.is_finite())
+            .and_then(|top| viewport.price_to_y(top));
+        let sell = sample_column_extremes(&sell_bottom[start + range.start..start + range.end])
+            .map(|(_, high)| high)
+            .filter(|depth| depth.is_finite())
+            .and_then(|depth| viewport.price_to_y(-depth));
+        bars.push(DeltaBarGeom {
+            index: start + range.start,
+            x: *column as f32,
+            buy_y: buy,
+            sell_y: sell,
+            zero_y,
+        });
     }
     Ok(bars)
 }
@@ -188,18 +502,51 @@ pub fn oscillator_points(
     values: &[Option<f64>],
     viewport: &Viewport,
 ) -> Vec<Option<(f32, f32)>> {
+    oscillator_points_sliced(values, viewport, 0)
+}
+
+/// Map a borrowed series window to screen points with a window base.
+///
+/// The single mapping behind [`oscillator_points`]: `base` is the global
+/// index of the first value, so culled windows re-offset x pixels to window
+/// coordinates instead of cloning a window. [`oscillator_points`] is the
+/// zero-based entry over the same core, never a second mapping.
+#[must_use]
+pub fn oscillator_points_sliced(
+    values: &[Option<f64>],
+    viewport: &Viewport,
+    base: usize,
+) -> Vec<Option<(f32, f32)>> {
     values
         .iter()
         .enumerate()
-        .map(|(index, slot)| {
+        .map(|(offset, slot)| {
             let value = (*slot)?;
             if !value.is_finite() {
                 return None;
             }
             let y = viewport.windowed_y(value)?;
-            Some((viewport.index_to_x(index), y))
+            Some((viewport.index_to_x(base + offset), y))
         })
         .collect()
+}
+
+/// Native line points over the twice-visible window only.
+///
+/// Computes the viewport's proportional window over `values`, borrows that
+/// slice through the shared slicer, and maps it with the window base — so the
+/// result is pixel-identical to the corresponding slice of full-window
+/// [`oscillator_points`] output while native-zoom frames cost O(visible)
+/// instead of O(history). Empty and off-window viewports paint nothing.
+#[must_use]
+pub fn proportional_line_points(
+    values: &[Option<f64>],
+    viewport: &Viewport,
+    width_px: f32,
+) -> Vec<Option<(f32, f32)>> {
+    let (start, end) = viewport.proportional_bar_range(width_px, values.len());
+    let window = visible_rows(values, start, end.saturating_sub(start));
+    oscillator_points_sliced(window, viewport, start)
 }
 
 /// One pivot dot on the oscillator pane.
@@ -503,15 +850,118 @@ pub struct RibbonPolygon {
 /// holed inputs yield no polygons.
 #[must_use]
 pub fn ribbon_polygons(ribbon: &RibbonView, viewport: &Viewport) -> Vec<RibbonPolygon> {
+    ribbon_polygons_sliced(&ribbon.upper, &ribbon.lower, &ribbon.bullish, viewport)
+}
+
+/// Build ribbon fill polygons over borrowed legs: the same run-closing core
+/// as [`ribbon_polygons`] with no per-frame copy — the canvas slices its
+/// window through the shared slicer and paints from the borrow. Length
+/// mismatch truncates to the shortest leg, never panicking; holes, trend
+/// flips, and off-window edges break runs exactly as the owned entry does.
+#[must_use]
+pub fn ribbon_polygons_sliced(
+    upper: &[Option<f64>],
+    lower: &[Option<f64>],
+    bullish: &[bool],
+    viewport: &Viewport,
+) -> Vec<RibbonPolygon> {
+    ribbon_polygons_based(upper, lower, bullish, viewport, 0)
+}
+
+/// Build ribbon fill polygons over borrowed legs with a window base.
+///
+/// The single entry behind [`ribbon_polygons_sliced`]: `base` is the global
+/// index of the first leg, so culled windows re-offset indices and x pixels
+/// to window coordinates instead of cloning a window. The zero-based entry
+/// is the same core, never a second polygon path.
+#[must_use]
+pub fn ribbon_polygons_based(
+    upper: &[Option<f64>],
+    lower: &[Option<f64>],
+    bullish: &[bool],
+    viewport: &Viewport,
+    base: usize,
+) -> Vec<RibbonPolygon> {
+    let len = upper.len().min(lower.len()).min(bullish.len());
     close_runs(
-        ribbon
-            .upper
-            .iter()
-            .zip(ribbon.lower.iter())
-            .zip(ribbon.bullish.iter())
-            .map(|((upper, lower), trend)| (*upper, *lower, *trend)),
+        (0..len).map(|offset| (upper[offset], lower[offset], bullish[offset])),
         viewport,
+        base,
     )
+}
+
+/// Native ribbon polygons over the twice-visible window only.
+///
+/// Borrows the proportional window through the shared slicer and closes runs
+/// through the same core — so the result carries the same pixels as the
+/// corresponding runs of full-window [`ribbon_polygons_sliced`] output while
+/// native-zoom frames cost O(visible) instead of O(history). Empty and
+/// off-window viewports fill nothing.
+#[must_use]
+pub fn proportional_ribbon_polygons(
+    upper: &[Option<f64>],
+    lower: &[Option<f64>],
+    bullish: &[bool],
+    viewport: &Viewport,
+    width_px: f32,
+) -> Vec<RibbonPolygon> {
+    let len = upper.len().min(lower.len()).min(bullish.len());
+    let (start, end) = viewport.proportional_bar_range(width_px, len);
+    let count = end.saturating_sub(start);
+    let upper = visible_rows(upper, start, count);
+    let lower = visible_rows(lower, start, count);
+    let bullish = visible_rows(bullish, start, count);
+    ribbon_polygons_based(upper, lower, bullish, viewport, start)
+}
+
+/// Sampled ribbon bands at sub-pixel zoom: one band per pixel column.
+///
+/// Composes the two display samplers, never a third: each column run (over
+/// floored slot pixels) spans the present upper legs through
+/// [`sample_column_extremes`] for its top and the present lower legs for its
+/// bottom, reading the run's most recent trend key — a column reads as its
+/// newest bar, exactly as the candle dispatcher does. Holes stay holes (an
+/// all-hole leg spans nothing); off-window edges refuse through the shared
+/// window predicate. Culls to the viewport window first, so a month view
+/// emits one band per painted column, never one per bar.
+#[must_use]
+pub fn sampled_ribbon_bands(
+    upper: &[Option<f64>],
+    lower: &[Option<f64>],
+    bullish: &[bool],
+    viewport: &Viewport,
+    width_px: f32,
+) -> (Vec<Option<RibbonBand>>, Vec<bool>) {
+    let len = upper.len().min(lower.len()).min(bullish.len());
+    let (start, end) = viewport.culled_bar_range(width_px, len);
+    let window = end.saturating_sub(start);
+    let runs = column_runs(window, |slot| viewport.slot_to_x((start + slot) as f64).floor() as i64);
+    let mut bands = Vec::with_capacity(runs.len());
+    let mut trends = Vec::with_capacity(runs.len());
+    for (column, range) in &runs {
+        let top_leg = sample_column_extremes(&upper[start + range.start..start + range.end])
+            .map(|(_, high)| high);
+        let bottom_leg = sample_column_extremes(&lower[start + range.start..start + range.end])
+            .map(|(low, _)| low);
+        let trend = bullish[start + range.end - 1];
+        let band = match (top_leg, bottom_leg) {
+            (Some(top), Some(bottom)) => {
+                match (viewport.windowed_y(top), viewport.windowed_y(bottom)) {
+                    (Some(top_y), Some(bottom_y)) => Some(RibbonBand {
+                        index: start + range.start,
+                        x: *column as f32,
+                        top_y,
+                        bottom_y,
+                    }),
+                    _ => None,
+                }
+            }
+            _ => None,
+        };
+        bands.push(band);
+        trends.push(trend);
+    }
+    (bands, trends)
 }
 
 /// Build area fill polygons: maximal runs of contiguous bars whose values
@@ -531,7 +981,7 @@ pub fn area_polygons(
     viewport: &Viewport,
 ) -> Vec<RibbonPolygon> {
     let lower = baseline.is_finite().then_some(baseline);
-    close_runs(values.iter().map(|upper| (*upper, lower, false)), viewport)
+    close_runs(values.iter().map(|upper| (*upper, lower, false)), viewport, 0)
 }
 
 /// One run-closing core behind ribbon and area fills: maximal runs of
@@ -539,10 +989,13 @@ pub fn area_polygons(
 /// legs, and unmappable or off-window edges break runs; a trend flip starts
 /// a new run. Off-window legs refuse through the shared window predicate
 /// rather than extrapolating off-pane, so fills lift the pen at the window
-/// edge exactly where oscillator and threshold emitters do.
+/// edge exactly where oscillator and threshold emitters do. `base` is the
+/// global index of the first leg, so culled windows carry global indices and
+/// window coordinates without a second core.
 fn close_runs(
     legs: impl IntoIterator<Item = (Option<f64>, Option<f64>, bool)>,
     viewport: &Viewport,
+    base: usize,
 ) -> Vec<RibbonPolygon> {
     let mut polygons = Vec::new();
     let mut upper_run: Vec<(f32, f32)> = Vec::new();
@@ -575,7 +1028,8 @@ fn close_runs(
         *open = false;
     };
 
-    for (index, (upper, lower, trend)) in legs.into_iter().enumerate() {
+    for (offset, (upper, lower, trend)) in legs.into_iter().enumerate() {
+        let index = base + offset;
         let mappable = match (upper, lower) {
             (Some(up), Some(lo)) if up.is_finite() && lo.is_finite() => {
                 match (viewport.windowed_y(up), viewport.windowed_y(lo)) {
@@ -1197,6 +1651,27 @@ pub fn translate_delta_bars(bars: Vec<DeltaBarGeom>, origin: (f32, f32)) -> Vec<
             bar.sell_y = bar.sell_y.map(|y| y + origin.1);
             bar.zero_y += origin.1;
             bar
+        })
+        .collect()
+}
+
+/// Shift pane-local ribbon bands into UI space (see [`translate_candles`]).
+/// Holes stay holes: the per-column sampled bands paint through the same
+/// rect emitter as the native strips, so both paths share one shift.
+#[must_use]
+pub fn translate_bands(
+    bands: Vec<Option<RibbonBand>>,
+    origin: (f32, f32),
+) -> Vec<Option<RibbonBand>> {
+    bands
+        .into_iter()
+        .map(|band| {
+            band.map(|mut strip| {
+                strip.x += origin.0;
+                strip.top_y += origin.1;
+                strip.bottom_y += origin.1;
+                strip
+            })
         })
         .collect()
 }

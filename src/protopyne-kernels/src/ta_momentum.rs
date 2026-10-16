@@ -1162,11 +1162,10 @@ impl Indicator for AroonIndicator {
         let (up_raw, down_raw) = if state.len() < period {
             (f64::NAN, f64::NAN)
         } else {
-            let highs: Vec<f64> = state.highs().collect();
-            let lows: Vec<f64> = state.lows().collect();
+            let (highs, lows) = state.scratch_highs_lows();
             (
-                Self::leg(&highs, true).unwrap_or(f64::NAN),
-                Self::leg(&lows, false).unwrap_or(f64::NAN),
+                Self::leg(highs, true).unwrap_or(f64::NAN),
+                Self::leg(lows, false).unwrap_or(f64::NAN),
             )
         };
         state.set_last(up_raw);
@@ -1375,11 +1374,13 @@ impl Indicator for AdxIndicator {
             Self::legs(&[bar.high], &[bar.low], &[bar.close], 0)
         } else {
             // Retained previous bar against the current tick: the same
-            // pairing the batch loop reads at each index past zero.
-            let highs: Vec<f64> = state.highs().collect();
-            let lows: Vec<f64> = state.lows().collect();
+            // pairing the batch loop reads at each index past zero. Only
+            // back-indexed scalars ever enter — no window is collected.
+            let back = state.len().saturating_sub(2);
+            let prev_high = state.highs().nth(back).unwrap_or(f64::NAN);
+            let prev_low = state.lows().nth(back).unwrap_or(f64::NAN);
             let prev_close = state.prev_close().unwrap_or(f64::NAN);
-            Self::legs_pair(highs[0], lows[0], prev_close, bar.high, bar.low, bar.close)
+            Self::legs_pair(prev_high, prev_low, prev_close, bar.high, bar.low, bar.close)
         };
         let rma = RmaIndicator::new();
         let rma_ps = Self::rma_params(period);

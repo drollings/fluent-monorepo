@@ -616,7 +616,7 @@ pub async fn run_backtest(
         .map_err(|e| ServerError::Backtest(e.to_string()))?;
     let config_json = config_json_of(runner_config, venue_config, risk, grant)?;
     let manifest =
-        pinned_manifest(&venue_config.data_version, config_json, bars, seed, &[]);
+        pinned_manifest(&venue_config.data_version, config_json, venue.bars(), seed, &[]);
     run_backtest_on_venue(
         strategy,
         risk,
@@ -624,7 +624,7 @@ pub async fn run_backtest(
         &venue,
         venue_config,
         runner_config,
-        bars,
+        venue.bars(),
         seed,
         manifest,
     )
@@ -653,18 +653,19 @@ pub async fn run_backtest_from_source(
     runner_config.validate()?;
     venue_config.validate()?;
     let loaded = load_history(source, store)?;
-    let bars = loaded.bars;
-    let paper = PaperConfig::new().build();
-    let venue = BacktestVenue::new(venue_config.clone(), bars.clone(), paper)
-        .map_err(|e| ServerError::Backtest(e.to_string()))?;
     let config_json = config_json_of(runner_config, venue_config, risk, grant)?;
     let manifest = pinned_manifest(
         &venue_config.data_version,
         config_json,
-        &bars,
+        &loaded.bars,
         seed,
         &loaded.provenance,
     );
+    // Single ownership per run: the loaded bars move into the venue and the
+    // decide path borrows them back from it — no second `Vec` beside the
+    // venue's own history.
+    let venue = BacktestVenue::new(venue_config.clone(), loaded.bars, PaperConfig::new().build())
+        .map_err(|e| ServerError::Backtest(e.to_string()))?;
     run_backtest_on_venue(
         strategy,
         risk,
@@ -672,7 +673,7 @@ pub async fn run_backtest_from_source(
         &venue,
         venue_config,
         runner_config,
-        &bars,
+        venue.bars(),
         seed,
         manifest,
     )
@@ -727,9 +728,10 @@ async fn run_backtest_on_venue<V: Venue>(
             ));
             continue;
         }
-        let window = closes.clone();
+        // The decision future borrows the closes prefix: the window is the
+        // loop's own `closes`, never a per-bar clone.
         decisions.push(
-            decide_and_submit(strategy, risk, grant, &mut usage, venue, venue_config, &mut breakers, BarHealth::rehearsed(), index, bar, &window, runner_config, seed)
+            decide_and_submit(strategy, risk, grant, &mut usage, venue, venue_config, &mut breakers, BarHealth::rehearsed(), index, bar, &closes, runner_config, seed)
                 .await,
         );
     }
@@ -981,7 +983,10 @@ pub async fn run_multi_backtest(
         workers,
         legs.len().max(1),
         move |job: MultiJob| async move {
-            let venue = BacktestVenue::new(job.venue_config.clone(), job.bars.clone(), job.paper.clone())
+            // Single ownership per leg: the leg's bars move into its venue
+            // and the decide path borrows them back — pool workers share
+            // nothing mutable and copy nothing per bar.
+            let venue = BacktestVenue::new(job.venue_config.clone(), job.bars, job.paper.clone())
                 .map_err(|e| e.to_string())?;
             let risk = RiskEngine::new(job.risk_limits);
             let run = run_backtest_on_venue(
@@ -991,7 +996,7 @@ pub async fn run_multi_backtest(
                 &venue,
                 &job.venue_config,
                 &job.runner_config,
-                &job.bars,
+                venue.bars(),
                 job.seed,
                 job.manifest,
             )
@@ -1070,9 +1075,8 @@ pub async fn run_paper_decisions(
             ));
             continue;
         }
-        let window = closes.clone();
         decisions.push(
-            decide_and_submit(strategy, risk, grant, &mut usage, venue, &quote_config, &mut breakers, BarHealth::rehearsed(), index, bar, &window, runner_config, seed)
+            decide_and_submit(strategy, risk, grant, &mut usage, venue, &quote_config, &mut breakers, BarHealth::rehearsed(), index, bar, &closes, runner_config, seed)
                 .await,
         );
     }

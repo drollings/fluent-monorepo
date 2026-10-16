@@ -63,15 +63,18 @@ pub use interaction::{
 pub use paint::{
     CANDLE_BODY_FRACTION, CANDLE_GAP_THRESHOLD_PX, CANDLE_MIN_BODY_PX, CandleGeom,
     CrosshairLines, DeltaBarGeom, EyeIconGeom, HexBoltIconGeom, MarkerDot, PivotDot, RibbonBand,
-    RibbonPolygon, SearchIconGeom, TintedCandle, TintedDeltaBar, alpha_u8, area_polygons, area_vertex_color,
-    candle_body_width, candle_geoms, crosshair_lines, delta_bar_geoms, eye_icon_geom,
-    hex_bolt_icon_geom, marker_dots, opacity_from_transparency, oscillator_points, parse_hex_color,
+    RibbonPolygon, SearchIconGeom, TintedCandle, TintedDeltaBar, aggregate_column, alpha_u8, area_polygons, area_vertex_color,
+    candle_body_width, candle_geoms, column_runs, column_candle_geoms, column_delta_geoms, crosshair_lines, culled_candle_geoms,
+    delta_bar_geoms, delta_bar_geoms_sliced, eye_icon_geom,
+    hex_bolt_icon_geom, marker_dots, needs_column_aggregation, opacity_from_transparency,
+    oscillator_points, oscillator_points_sliced, parse_hex_color,
     paint_area_fill, paint_candles, paint_candles_as, paint_candles_tinted, paint_crosshair,
     paint_delta_bars, paint_delta_bars_tinted, paint_error_chip, paint_eye_icon, paint_hex_bolt_icon,
     paint_markers, paint_oscillator, paint_oscillator_styled, paint_ribbon, paint_ribbon_fill,
     paint_search_icon, paint_session_breaks, paint_thresholds, pivot_dots, pivot_price_dots,
-    resolve_color, ribbon_bands, ribbon_polygons, search_icon_geom, threshold_line,
-    translate_breaks, translate_candles, translate_delta_bars, translate_dots, translate_markers,
+    proportional_line_points, proportional_ribbon_polygons, resolve_color, ribbon_bands, ribbon_polygons, ribbon_polygons_based, ribbon_polygons_sliced, sample_column_extremes, sample_column_last,
+    sampled_band_spans, sampled_line_points, sampled_ribbon_bands, search_icon_geom, threshold_line,
+    translate_bands, translate_breaks, translate_candles, translate_delta_bars, translate_dots, translate_markers,
     translate_points, translate_polygons,
 };
 pub use modal::{CatalogAction, CatalogEntry, CatalogModal, paint_catalog_modal};
@@ -90,7 +93,7 @@ pub use view::{
 };
 pub use style::{LINE_WIDTH_FIELD, MAX_LINE_WIDTH, MIN_LINE_WIDTH, STYLE_FIELDS, style_key};
 pub use viewport::{
-    BreakLine, Viewport, axis_ticks, thin_ticks, visible_rows,
+    BreakLine, CULL_OVERSCAN_BARS, PROPORTIONAL_CULL_FACTOR, Viewport, axis_ticks, thin_ticks, visible_rows,
 };
 pub use wheel::{PaneZones, Pos2 as WheelPos2, Rect as WheelRect, WheelTarget, WheelZones};
 

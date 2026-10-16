@@ -446,9 +446,8 @@ impl Indicator for MfiIndicator {
         if state.len() < period + 1 {
             return Ok(None);
         }
-        let prices: Vec<f64> = state.closes().collect();
-        let volumes: Vec<f64> = state.volumes().collect();
-        let out = Self::mfi_of(&prices, &volumes);
+        let (prices, volumes) = state.scratch_closes_volumes();
+        let out = Self::mfi_of(prices, volumes);
         state.set_last(out);
         Ok(fin_or_none(out))
     }
@@ -640,7 +639,10 @@ impl Indicator for CmfIndicator {
             return Ok(None);
         }
         // Retained legs run oldest-first in one shared order, so zipping
-        // them rebuilds exactly the trailing window the batch slices.
+        // them rebuilds exactly the trailing window the batch slices. The
+        // derived flows stay a per-bar `Vec`: `window_ratio` is shared with
+        // the batch path, which forbids reshaping it around the scratch
+        // buffer — only the retained volumes leg rides the reuse buffer.
         let flows: Vec<f64> = state
             .highs()
             .zip(state.lows())
@@ -648,8 +650,8 @@ impl Indicator for CmfIndicator {
             .zip(state.volumes())
             .map(|(((high, low), close), volume)| Self::flow(high, low, close, volume))
             .collect();
-        let volumes: Vec<f64> = state.volumes().collect();
-        let ratio = Self::window_ratio(&flows, &volumes);
+        let volumes = state.scratch_volumes();
+        let ratio = Self::window_ratio(&flows, volumes);
         state.set_last(ratio);
         Ok(fin_or_none(ratio))
     }

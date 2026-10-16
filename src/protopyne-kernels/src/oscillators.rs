@@ -472,8 +472,8 @@ impl Indicator for CciIndicator {
         if state.len() < period {
             return Ok(None);
         }
-        let window: Vec<f64> = state.closes().collect();
-        let out = Self::cci_of(&window);
+        let window = state.scratch_closes();
+        let out = Self::cci_of(window);
         state.set_last(out);
         Ok(fin_or_none(out))
     }
@@ -554,8 +554,8 @@ impl Indicator for CmoIndicator {
         if state.len() < period + 1 {
             return Ok(None);
         }
-        let window: Vec<f64> = state.closes().collect();
-        let out = Self::cmo_of(&window);
+        let window = state.scratch_closes();
+        let out = Self::cmo_of(window);
         state.set_last(out);
         Ok(fin_or_none(out))
     }

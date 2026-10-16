@@ -984,3 +984,885 @@ fn a_hex_slot_is_read_by_one_reader_for_both_themes_and_overrides() {
         assert!(parse_hex_color("fast", bad).is_err(), "{bad:?} is not a color");
     }
 }
+
+fn ohlc(time: i64, open: f64, high: f64, low: f64, close: f64, volume: u64) -> ChartRow {
+    ChartRow { time, open, high, low, close, volume }
+}
+
+#[test]
+fn column_runs_groups_consecutive_equal_columns() {
+    assert_eq!(
+        column_runs(10, |slot| (slot / 3) as i64),
+        vec![(0, 0..3), (1, 3..6), (2, 6..9), (3, 9..10)]
+    );
+    assert!(column_runs(0, |slot| slot as i64).is_empty(), "no bars, no runs");
+    assert_eq!(column_runs(1, |_| 7), vec![(7, 0..1)]);
+    // Consecutive-equal grouping even under a non-monotonic mapping: the
+    // caller owns monotonicity, this owns the grouping.
+    assert_eq!(
+        column_runs(4, |slot| [0, 0, 1, 0][slot]),
+        vec![(0, 0..2), (1, 2..3), (0, 3..4)]
+    );
+}
+
+#[test]
+fn aggregate_column_folds_first_open_extreme_span_last_close() {
+    let rows = vec![
+        ohlc(10, 100.0, 102.0, 99.0, 101.0, 1_000),
+        ohlc(11, 101.0, 105.0, 100.0, 104.0, 2_000),
+        ohlc(12, 104.0, 104.5, 98.0, 99.0, 500),
+    ];
+    assert_eq!(
+        aggregate_column(&rows),
+        Some(ohlc(10, 100.0, 105.0, 98.0, 99.0, 3_500)),
+        "open rides first, high/low span the run, close rides last, volume sums, time rides first"
+    );
+    let single = vec![ohlc(3, 50.0, 51.0, 49.0, 50.5, 7)];
+    assert_eq!(aggregate_column(&single), Some(single[0]), "one row round-trips");
+    assert_eq!(aggregate_column(&[]), None, "an empty column draws nothing");
+}
+
+#[test]
+fn aggregate_column_volume_saturates_instead_of_wrapping() {
+    let rows = vec![
+        ohlc(0, 1.0, 1.0, 1.0, 1.0, u64::MAX),
+        ohlc(1, 1.0, 1.0, 1.0, 1.0, 1),
+    ];
+    assert_eq!(
+        aggregate_column(&rows).expect("non-empty").volume,
+        u64::MAX,
+        "a month of heavy bars must clamp, never wrap to a thin column"
+    );
+}
+
+#[test]
+fn partition_then_fold_matches_a_manual_column_fold() {
+    let rows = [
+        ohlc(0, 10.0, 11.0, 9.0, 10.5, 100),
+        ohlc(1, 10.5, 12.0, 10.0, 11.0, 200),
+        ohlc(2, 11.0, 11.5, 8.0, 9.0, 300),
+        ohlc(3, 9.0, 9.5, 9.0, 9.25, 400),
+        ohlc(4, 9.25, 20.0, 9.0, 19.0, 500),
+    ];
+    let runs = column_runs(rows.len(), |slot| (slot / 2) as i64);
+    let folded: Vec<ChartRow> = runs
+        .iter()
+        .map(|(_, range)| aggregate_column(&rows[range.clone()]).expect("runs are non-empty"))
+        .collect();
+    assert_eq!(folded.len(), 3);
+    assert_eq!(folded[0], ohlc(0, 10.0, 12.0, 9.0, 11.0, 300));
+    assert_eq!(folded[1], ohlc(2, 11.0, 11.5, 8.0, 9.25, 700));
+    assert_eq!(folded[2], ohlc(4, 9.25, 20.0, 9.0, 19.0, 500));
+}
+
+#[test]
+fn sample_column_last_falls_back_through_trailing_holes() {
+    assert_eq!(sample_column_last(&[None, Some(1.0), None]), Some(1.0));
+    assert_eq!(sample_column_last(&[Some(2.0)]), Some(2.0));
+    assert_eq!(sample_column_last(&[None, None]), None, "all holes stay a gap");
+    assert_eq!(sample_column_last(&[]), None, "empty window has no sample");
+}
+
+#[test]
+fn sample_column_extremes_spans_present_values_only() {
+    assert_eq!(
+        sample_column_extremes(&[None, Some(1.0), Some(5.0), None, Some(3.0)]),
+        Some((1.0, 5.0))
+    );
+    assert_eq!(sample_column_extremes(&[Some(4.0)]), Some((4.0, 4.0)));
+    assert_eq!(sample_column_extremes(&[None]), None, "holes never zero-fill a band");
+    assert_eq!(sample_column_extremes(&[]), None);
+}
+
+#[test]
+fn aggregates_must_not_feed_indicators() {
+    // The fidelity pin behind the native-timeframe rule: one column holding
+    // closes [0.0, 10.0] aggregates to close 10.0, while the native series
+    // mean is 5.0. Any statistic read off the aggregate (10.0-flavored)
+    // aliases the true series value (5.0) — so indicators evaluate on
+    // full-resolution bars and only their *output* is column-sampled.
+    let rows = vec![
+        ohlc(0, 0.0, 10.0, 0.0, 0.0, 1),
+        ohlc(1, 0.0, 10.0, 0.0, 10.0, 1),
+    ];
+    let aggregate = aggregate_column(&rows).expect("non-empty");
+    let native_mean = rows.iter().map(|row| row.close).sum::<f64>() / rows.len() as f64;
+    assert_eq!(aggregate.close.to_bits(), 10.0f64.to_bits());
+    assert_eq!(native_mean.to_bits(), 5.0f64.to_bits());
+    assert_ne!(
+        aggregate.close.to_bits(),
+        native_mean.to_bits(),
+        "aggregate display values and native statistics disagree by construction"
+    );
+    // ...while sampling the native output preserves it exactly.
+    let native_sampled = sample_column_last(&[Some(5.0)]);
+    assert_eq!(native_sampled, Some(5.0));
+}
+
+fn month_rows() -> Vec<ChartRow> {
+    (0..20_000i32)
+        .map(|i| {
+            let close = 100.0 + f64::from(i) * 0.01;
+            ChartRow {
+                time: 1_700_000_000 + i64::from(i),
+                open: close - 0.05,
+                high: close + 0.10,
+                low: close - 0.10,
+                close,
+                volume: 1_000 + u64::try_from(i % 100).expect("non-negative remainder"),
+            }
+        })
+        .collect()
+}
+
+fn month_viewport() -> Viewport {
+    Viewport::new(protopyne_chart_scale::PriceScaleMode::Normal, 90.0, 310.0, 400.0, 8.0, 90.0, false)
+        .expect("month viewport builds")
+}
+
+#[test]
+fn month_geometry_covers_every_bar_without_dropping() {
+    let rows = month_rows();
+    let pane = month_viewport();
+    let trend = vec![true; rows.len()];
+    let geoms = candle_geoms(&rows, &trend, &pane).expect("month slice paints");
+    assert_eq!(geoms.len(), rows.len(), "geometry conserves every converted row");
+    for (index, geom) in geoms.iter().enumerate() {
+        assert_eq!(geom.index, index);
+        assert_eq!(geom.x.to_bits(), (index as f32 * 8.0).to_bits());
+        assert!(geom.up, "fixture opens sit below closes");
+        assert!(
+            geom.high_y <= geom.close_y && geom.close_y <= geom.open_y && geom.open_y <= geom.low_y,
+            "wick spans high to low through close then open at {index}: {geom:?}"
+        );
+        assert!(geom.trend_bullish);
+    }
+    let first = &geoms[0];
+    let middle = &geoms[10_000];
+    let last = &geoms[19_999];
+    for (label, geom, open, high, low, close) in [
+        ("first", first, 381.909f32, 381.636f32, 382.000f32, 381.818f32),
+        ("middle", middle, 200.091f32, 199.818f32, 200.182f32, 200.000f32),
+        ("last", last, 18.291f32, 18.018f32, 18.382f32, 18.200f32),
+    ] {
+        for (leg, actual, expected) in
+            [("open", geom.open_y, open), ("high", geom.high_y, high), ("low", geom.low_y, low), (
+                "close",
+                geom.close_y,
+                close,
+            )]
+        {
+            assert!(
+                (actual - expected).abs() <= 0.002,
+                "{label} {leg} drifts: {actual} vs pinned {expected}"
+            );
+        }
+        let _ = label;
+    }
+    eprintln!(
+        "month geometry baseline: bars={} first=({:.3},{:.3},{:.3},{:.3}) middle=({:.3},{:.3},{:.3},{:.3}) last=({:.3},{:.3},{:.3},{:.3})",
+        geoms.len(),
+        first.open_y,
+        first.high_y,
+        first.low_y,
+        first.close_y,
+        middle.open_y,
+        middle.high_y,
+        middle.low_y,
+        middle.close_y,
+        last.open_y,
+        last.high_y,
+        last.low_y,
+        last.close_y,
+    );
+    let checksum: f64 =
+        geoms.iter().map(|geom| f64::from(geom.open_y) + f64::from(geom.close_y)).sum();
+    eprintln!("month geometry checksum(open+close)={checksum:.6}");
+    assert!(checksum.is_finite(), "checksum stays finite over the month slice");
+}
+
+#[test]
+fn month_shape_count_matches_bar_count() {
+    let rows = month_rows();
+    let pane = month_viewport();
+    let trend = vec![true; rows.len()];
+    let geoms = candle_geoms(&rows, &trend, &pane).expect("month slice paints");
+    assert_eq!(geoms.len(), 20_000, "full slice materializes one shape per bar");
+    eprintln!("month shape baseline: rows={} geoms={}", rows.len(), geoms.len());
+}
+
+#[test]
+fn culled_geometry_matches_the_window_slice_of_full_geometry() {
+    let rows = month_rows();
+    let pane = month_viewport();
+    let trend = vec![true; rows.len()];
+    let full = candle_geoms(&rows, &trend, &pane).expect("month slice paints");
+    // 800 px at 8 px spacing: visible (0, 101), culled (0, 105).
+    let width = 800.0f32;
+    assert_eq!(pane.culled_bar_range(width, rows.len()), (0, 105));
+    let culled = culled_candle_geoms(&rows, &trend, &pane, width).expect("culled paints");
+    assert_eq!(culled.len(), 105, "one shape per bar in the window, nothing outside it");
+    assert!(culled.len() < full.len(), "culling sheds the off-window bars");
+    for (offset, geom) in culled.iter().enumerate() {
+        assert_eq!(
+            *geom, full[offset],
+            "culled bar {offset} carries its global index and pixels"
+        );
+    }
+    // Panned ten bars in: the same slice equality holds off-origin, read
+    // against full geometry under the identical shifted viewport (x pixels
+    // legitimately move with the pan; legs, indices, and keys do not).
+    let shifted = pane.with_x_offset(-80.0).expect("finite pan");
+    assert_eq!(shifted.culled_bar_range(width, rows.len()), (6, 115));
+    let full_shifted = candle_geoms(&rows, &trend, &shifted).expect("shifted slice paints");
+    let moved = culled_candle_geoms(&rows, &trend, &shifted, width).expect("panned paints");
+    assert_eq!(moved.len(), 115 - 6);
+    for (offset, geom) in moved.iter().enumerate() {
+        assert_eq!(geom.index, 6 + offset, "indices stay global under pan");
+        assert_eq!(
+            geom.x.to_bits(),
+            shifted.index_to_x(6 + offset).to_bits(),
+            "x tracks the global slot, never the window position"
+        );
+        assert_eq!(*geom, full_shifted[6 + offset], "panned culled bar matches the full slice");
+    }
+}
+
+#[test]
+fn panning_one_bar_keeps_mid_pane_candles_stable() {
+    let rows = month_rows();
+    let pane = month_viewport();
+    let trend = vec![true; rows.len()];
+    let width = 800.0f32;
+    // One full bar of pan in single-pixel steps at 8 px spacing.
+    let mut frames: Vec<Vec<usize>> = Vec::new();
+    for step in 0..=8 {
+        let shifted = pane.with_x_offset(-(step as f32)).expect("finite pan");
+        let geoms =
+            culled_candle_geoms(&rows, &trend, &shifted, width).expect("pan frame paints");
+        let indices: Vec<usize> = geoms.iter().map(|geom| geom.index).collect();
+        assert!(!indices.is_empty(), "step {step} still sees bars");
+        for pair in indices.windows(2) {
+            assert_eq!(pair[1], pair[0] + 1, "culled window stays contiguous at step {step}");
+        }
+        for geom in &geoms {
+            assert_eq!(
+                geom.x.to_bits(),
+                shifted.index_to_x(geom.index).to_bits(),
+                "x tracks the global slot at step {step}"
+            );
+        }
+        frames.push(indices);
+    }
+    // Bars far from both edges never flicker across the whole sweep.
+    for index in 30..80 {
+        for (step, frame) in frames.iter().enumerate() {
+            assert!(
+                frame.contains(&index),
+                "mid-pane bar {index} survives pan step {step}"
+            );
+        }
+    }
+    // Only the window edges may move, and by at most one bar per pixel step.
+    for (step, pair) in frames.windows(2).enumerate() {
+        let (first, second) = (&pair[0], &pair[1]);
+        assert!(
+            (first[0] as isize - second[0] as isize).abs() <= 1,
+            "leading edge creeps at step {step}"
+        );
+        let last_first = *first.last().expect("non-empty frame");
+        let last_second = *second.last().expect("non-empty frame");
+        assert!(
+            (last_first as isize - last_second as isize).abs() <= 1,
+            "trailing edge creeps at step {step}"
+        );
+    }
+}
+
+#[test]
+fn culled_geometry_is_empty_off_window_and_refuses_mismatched_keys() {    let rows = month_rows();
+    let pane = month_viewport();
+    let trend = vec![true; rows.len()];
+    assert!(
+        culled_candle_geoms(&rows, &trend, &pane, 0.0)
+            .expect("zero width paints")
+            .is_empty(),
+        "zero width paints nothing"
+    );
+    assert!(
+        culled_candle_geoms(&rows, &trend, &pane, -10.0)
+            .expect("negative width paints")
+            .is_empty(),
+        "negative width paints nothing"
+    );
+    assert!(
+        culled_candle_geoms(&rows[..0], &trend[..0], &pane, 800.0)
+            .expect("no rows paints")
+            .is_empty(),
+        "no rows paints nothing"
+    );
+    let past_left = pane.with_x_offset(200_000.0).expect("finite pan");
+    assert!(
+        culled_candle_geoms(&rows, &trend, &past_left, 800.0)
+            .expect("off-window paints")
+            .is_empty(),
+        "bars shoved past the pane paint nothing"
+    );
+    let past_right = pane.with_x_offset(-200_000.0).expect("finite pan");
+    assert!(
+        culled_candle_geoms(&rows, &trend, &past_right, 800.0)
+            .expect("off-window paints")
+            .is_empty(),
+        "bars shoved before the pane paint nothing"
+    );
+    assert!(
+        culled_candle_geoms(&rows[..2], &trend[..1], &pane, 800.0).is_err(),
+        "keys that do not line up with rows refuse"
+    );
+}
+
+fn sub_pixel_pane(spacing: f32) -> Viewport {
+    Viewport::new(
+        protopyne_chart_scale::PriceScaleMode::Normal,
+        90.0,
+        310.0,
+        400.0,
+        spacing,
+        90.0,
+        false,
+    )
+    .expect("sub-pixel pane builds")
+}
+
+#[test]
+fn column_dispatch_switches_strictly_below_one_pixel_per_bar() {
+    assert!(!needs_column_aggregation(8.0), "ordinary zoom stays native");
+    assert!(!needs_column_aggregation(1.0), "exactly one pixel per bar stays native");
+    assert!(needs_column_aggregation(0.999), "just below one pixel per bar aggregates");
+    assert!(!needs_column_aggregation(f32::NAN), "non-finite spacing stays native");
+    assert!(!needs_column_aggregation(f32::INFINITY), "infinite spacing stays native");
+    // Path-level: at exactly 1.0 the dispatcher is the native path untouched.
+    let rows = vec![row(100.0, 10), row(101.0, 20), row(99.0, 30)];
+    let trend = vec![true, false, true];
+    let native_pane = sub_pixel_pane(1.0);
+    let dispatched =
+        column_candle_geoms(&rows, &trend, &native_pane, 80.0).expect("boundary paints");
+    let full = candle_geoms(&rows, &trend, &native_pane).expect("native paints");
+    assert_eq!(dispatched, full, "the 1.0 boundary draws every native candle");
+    // Just below: bars sharing a column fold to one candle.
+    let tight_pane = sub_pixel_pane(0.5);
+    let folded =
+        column_candle_geoms(&rows, &trend, &tight_pane, 80.0).expect("sub-pixel paints");
+    // Floored x pixels over global slots 0..3 at 0.5 px: columns 0, 0, 1.
+    assert_eq!(folded.len(), 2, "two columns paint two candles, never three");
+    assert_eq!((folded[0].index, folded[1].index), (0, 2), "indices stay global");
+    assert_eq!((folded[0].x.to_bits(), folded[1].x.to_bits()), (0.0f32.to_bits(), 1.0f32.to_bits()));
+    // A single-bar column round-trips its native legs exactly.
+    let lone = &candle_geoms(&rows[2..3], &trend[2..3], &tight_pane).expect("lone paints")[0];
+    for (leg, folded_leg, lone_leg) in
+        [("open", folded[1].open_y, lone.open_y), ("high", folded[1].high_y, lone.high_y), (
+            "low",
+            folded[1].low_y,
+            lone.low_y,
+        ), (
+            "close", folded[1].close_y, lone.close_y,
+        )]
+    {
+        assert_eq!(folded_leg.to_bits(), lone_leg.to_bits(), "single-bar column keeps its {leg}");
+    }
+    assert_eq!(folded[1].trend_bullish, trend[2], "a column reads its most recent key");
+}
+
+#[test]
+fn aggregated_columns_reproduce_full_resolution_pixels() {
+    let rows = month_rows();
+    let pane = sub_pixel_pane(0.2);
+    let trend = vec![true; rows.len()];
+    let width = 800.0f32;
+    let (start, end) = pane.culled_bar_range(width, rows.len());
+    let full = candle_geoms(&rows, &trend, &pane).expect("month slice paints");
+    assert_eq!(full.len(), rows.len(), "the pixel truth covers every bar");
+    let dispatched =
+        column_candle_geoms(&rows, &trend, &pane, width).expect("dispatched paints");
+    // Shape count: one candle per painted column, a fraction of the bars.
+    let runs = column_runs(end - start, |slot| {
+        pane.slot_to_x((start + slot) as f64).floor() as i64
+    });
+    assert_eq!(dispatched.len(), runs.len(), "one shape per painted column");
+    assert!(
+        dispatched.len() * 20 < rows.len(),
+        "the month view emits O(pixels) shapes: {} vs {} bars",
+        dispatched.len(),
+        rows.len()
+    );
+    // Pixel-exactness: every aggregate leg is the fold of its members' legs.
+    for (geom, (_, range)) in dispatched.iter().zip(runs.iter()) {
+        let members = &rows[start + range.start..start + range.end];
+        let first = &members[0];
+        let last = &members[members.len() - 1];
+        assert_eq!(geom.index, start + range.start, "aggregates carry global indices");
+        assert_eq!(geom.up, last.close >= first.open, "direction follows first open, last close");
+        assert_eq!(geom.trend_bullish, trend[start + range.end - 1]);
+        let y = |price: f64| pane.price_to_y(price).expect("fixture maps");
+        assert_eq!(geom.open_y.to_bits(), y(first.open).to_bits());
+        assert_eq!(geom.close_y.to_bits(), y(last.close).to_bits());
+        let top = members.iter().map(|bar| y(bar.high)).fold(f32::INFINITY, f32::min);
+        let bottom = members.iter().map(|bar| y(bar.low)).fold(f32::NEG_INFINITY, f32::max);
+        assert_eq!(geom.high_y.to_bits(), top.to_bits(), "the wick tip is the highest member");
+        assert_eq!(geom.low_y.to_bits(), bottom.to_bits(), "the wick foot is the lowest member");
+        // Same pixels the members overdraw: one shared screen column.
+        for (member, member_geom) in full
+            .iter()
+            .enumerate()
+            .take(start + range.end)
+            .skip(start + range.start)
+        {
+            assert_eq!(
+                (member_geom.x.floor() as i64),
+                (geom.x.floor() as i64),
+                "member {member} overdraws the aggregate column"
+            );
+        }
+    }
+}
+
+#[test]
+fn aggregated_month_view_keeps_the_shape_budget_small() {
+    // The recorded month-view shape budget: 20k bars at 0.2 px spacing over
+    // an 800 px pane must stay at O(pixels) shapes, never O(bars).
+    let rows = month_rows();
+    let pane = sub_pixel_pane(0.2);
+    let trend = vec![true; rows.len()];
+    let dispatched =
+        column_candle_geoms(&rows, &trend, &pane, 800.0).expect("dispatched paints");
+    eprintln!(
+        "dispatched shape budget: rows={} geoms={}",
+        rows.len(),
+        dispatched.len()
+    );
+    assert!(dispatched.len() <= 810, "columns plus margin overscan stay small");
+}
+
+fn sampled_fixture() -> (Vec<Option<f64>>, Viewport) {
+    // Twenty bars with holes, over a pane whose 0.5 px spacing folds pairs
+    // into shared columns: values rise 100.0 by ones; bars 2..3 share a
+    // column that is holed throughout, bar 4 holes part of its column, and
+    // bar 17 is a trailing hole falling back to bar 16 in its column.
+    let values: Vec<Option<f64>> = (0..20)
+        .map(|i| match i {
+            2 | 3 | 4 | 17 => None,
+            _ => Some(100.0 + f64::from(i)),
+        })
+        .collect();
+    let pane = Viewport::new(
+        protopyne_chart_scale::PriceScaleMode::Normal,
+        90.0,
+        130.0,
+        400.0,
+        0.5,
+        90.0,
+        false,
+    )
+    .expect("sampling pane builds");
+    (values, pane)
+}
+
+#[test]
+fn sampled_line_vertices_equal_sampling_the_native_series() {
+    // Display-only sampling: the sampled polyline carries exactly what
+    // sampling the native series per column run yields — last present value
+    // per run at its screen column, holes staying holes.
+    let (values, pane) = sampled_fixture();
+    let vertices = sampled_line_points(&values, &pane, 0);
+    let runs = column_runs(values.len(), |slot| pane.slot_to_x(slot as f64).floor() as i64);
+    assert_eq!(vertices.len(), runs.len(), "one vertex per painted column");
+    for (vertex, (column, range)) in vertices.iter().zip(runs.iter()) {
+        let sample = sample_column_last(&values[range.clone()]);
+        let expected = sample.and_then(|price| {
+            pane.windowed_y(price).map(|y| (*column as f32, y))
+        });
+        assert_eq!(*vertex, expected, "column {column} samples its native run");
+    }
+    // The holed column (bars 2..3 share it) lifts the pen; the trailing hole
+    // at 17 falls back to bar 16's value in its column.
+    let holed = runs.iter().position(|(_, range)| range.start == 2).expect("paired runs");
+    assert_eq!(vertices[holed], None, "an all-hole column stays a gap");
+    assert!(vertices.iter().any(Option::is_some), "present values still paint");
+}
+
+#[test]
+fn sampled_line_vertices_match_native_mapping_at_full_resolution() {
+    // At one bar per column the sampler is the identity: singleton runs
+    // carry each bar's own value at its own pixel.
+    let (values, _) = sampled_fixture();
+    let pane = month_viewport();
+    let vertices = sampled_line_points(&values, &pane, 0);
+    let native = oscillator_points(&values, &pane);
+    assert_eq!(vertices.len(), native.len());
+    for (sampled, plain) in vertices.iter().zip(native.iter()) {
+        assert_eq!(sampled, plain, "singleton runs sample to themselves");
+    }
+}
+
+#[test]
+fn sampled_band_spans_equal_spanning_the_native_series() {
+    // Band-like outputs span the present values per column run through the
+    // extremes sampler: top reads the run high, bottom the run low, holes
+    // stay holes at every stage.
+    let (values, pane) = sampled_fixture();
+    let spans = sampled_band_spans(&values, &pane, 0);
+    let runs = column_runs(values.len(), |slot| pane.slot_to_x(slot as f64).floor() as i64);
+    assert_eq!(spans.len(), runs.len(), "one span per painted column");
+    for (span, (column, range)) in spans.iter().zip(runs.iter()) {
+        let expected = sample_column_extremes(&values[range.clone()]).and_then(|(low, high)| {
+            match (pane.windowed_y(high), pane.windowed_y(low)) {
+                (Some(top), Some(bottom)) => Some((*column as f32, top, bottom)),
+                _ => None,
+            }
+        });
+        assert_eq!(*span, expected, "column {column} spans its native run");
+    }
+    let holed = runs.iter().position(|(_, range)| range.start == 2).expect("paired runs");
+    assert_eq!(spans[holed], None, "an all-hole column spans nothing");
+}
+
+#[test]
+fn samplers_stay_total_over_empty_and_far_inputs() {
+    let (values, pane) = sampled_fixture();
+    assert!(sampled_line_points(&[], &pane, 0).is_empty(), "no values paint no vertices");
+    assert!(sampled_band_spans(&[], &pane, 0).is_empty(), "no values span nothing");
+    // A base far past the data still maps deterministically: columns shift,
+    // the sampler never panics, and every run still yields its vertex.
+    let shifted = sampled_line_points(&values, &pane, 1_000_000);
+    let runs = column_runs(values.len(), |slot| {
+        pane.slot_to_x((1_000_000 + slot) as f64).floor() as i64
+    });
+    assert_eq!(shifted.len(), runs.len(), "a far base still yields one vertex per run");
+}
+
+fn demo_zoom_pane() -> Viewport {
+    sub_pixel_pane(0.2)
+}
+
+fn demo_zero_pane() -> Viewport {
+    Viewport::new(PriceScaleMode::Normal, -1_300.0, 1_300.0, 200.0, 0.2, 0.0, false)
+        .expect("demo zero pane builds")
+}
+
+#[test]
+fn frame_shape_budget_stays_pixel_bound_at_demo_zoom() {
+    // The frame-path budget: a 20k-bar month at 0.2 px over an 800 px pane
+    // must emit O(pixels) shapes across every layer — candles, ribbon bands,
+    // delta bars, and line vertices — never O(bars).
+    let rows = month_rows();
+    let pane = demo_zoom_pane();
+    let zero = demo_zero_pane();
+    let width = 800.0f32;
+    let trend = vec![true; rows.len()];
+    let candles = column_candle_geoms(&rows, &trend, &pane, width).expect("candles dispatch");
+    let upper: Vec<Option<f64>> = rows.iter().map(|row| Some(row.high)).collect();
+    let lower: Vec<Option<f64>> = rows.iter().map(|row| Some(row.low)).collect();
+    let (bands, _) = sampled_ribbon_bands(&upper, &lower, &trend, &pane, width);
+    let ribbon_shapes = bands.iter().flatten().count();
+    let buy: Vec<Option<f64>> = rows.iter().map(|row| Some(row.volume as f64)).collect();
+    let sell: Vec<Option<f64>> = rows.iter().map(|row| Some(row.volume as f64 * 0.5)).collect();
+    let delta = column_delta_geoms(&buy, &sell, &zero, width).expect("delta dispatches");
+    let closes: Vec<Option<f64>> = rows.iter().map(|row| Some(row.close)).collect();
+    let line = sampled_line_points(&closes, &pane, 0);
+    let line_shapes = line.iter().flatten().count();
+    let total = candles.len() + ribbon_shapes + delta.len() + line_shapes;
+    eprintln!(
+        "frame shape budget: candles={} ribbon={} delta={} line={} total={}",
+        candles.len(),
+        ribbon_shapes,
+        delta.len(),
+        line_shapes,
+        total
+    );
+    assert!(candles.len() <= 810, "candles stay O(pixels): {}", candles.len());
+    assert!(ribbon_shapes <= 810, "ribbon stays O(pixels): {ribbon_shapes}");
+    assert!(delta.len() <= 810, "delta stays O(pixels): {}", delta.len());
+    assert!(line_shapes <= 4_005, "line samples one vertex per column: {line_shapes}");
+    assert!(total <= 4 * 810 + 4_005, "the frame stays O(pixels): {total}");
+    // Negative control: the native full-slice builders materialize O(bars).
+    let full = candle_geoms(&rows, &trend, &pane).expect("full slice paints");
+    assert_eq!(full.len(), rows.len(), "native geometry is O(bars)");
+    assert!(full.len() > total, "sampling sheds the overdraw");
+}
+
+#[test]
+fn sampled_ribbon_bands_span_their_native_runs() {
+    // Pixel-exactness: every sampled band is the union span of its column
+    // run's members (top reads the run's highest upper, bottom its lowest
+    // lower) at the run's screen column with the run's most recent trend.
+    let rows = month_rows();
+    let pane = demo_zoom_pane();
+    let width = 800.0f32;
+    let trend = vec![true; rows.len()];
+    let upper: Vec<Option<f64>> = rows.iter().map(|row| Some(row.high)).collect();
+    let lower: Vec<Option<f64>> = rows.iter().map(|row| Some(row.low)).collect();
+    let (bands, trends) = sampled_ribbon_bands(&upper, &lower, &trend, &pane, width);
+    let (start, end) = pane.culled_bar_range(width, rows.len());
+    let runs = column_runs(end - start, |slot| {
+        pane.slot_to_x((start + slot) as f64).floor() as i64
+    });
+    assert_eq!(bands.len(), runs.len(), "one band per painted column");
+    assert_eq!(trends.len(), runs.len());
+    for ((band, column_trend), (column, range)) in
+        bands.iter().zip(trends.iter()).zip(runs.iter())
+    {
+        let up_run = &upper[start + range.start..start + range.end];
+        let lo_run = &lower[start + range.start..start + range.end];
+        let expected_top = sample_column_extremes(up_run).map(|(_, high)| high);
+        let expected_bottom = sample_column_extremes(lo_run).map(|(low, _)| low);
+        match (band, expected_top, expected_bottom) {
+            (Some(strip), Some(top), Some(bottom)) => {
+                assert_eq!(strip.x.to_bits(), (*column as f32).to_bits());
+                assert_eq!(
+                    strip.top_y.to_bits(),
+                    pane.windowed_y(top).expect("fixture maps").to_bits()
+                );
+                assert_eq!(
+                    strip.bottom_y.to_bits(),
+                    pane.windowed_y(bottom).expect("fixture maps").to_bits()
+                );
+                assert_eq!(*column_trend, trend[start + range.end - 1]);
+                assert_eq!(strip.index, start + range.start);
+            }
+            (None, _, _) => {
+                assert!(
+                    expected_top.is_none() || expected_bottom.is_none(),
+                    "a holed column spans nothing"
+                );
+            }
+            (Some(_), _, _) => panic!("a present column never spans from holes"),
+        }
+    }
+    // Holes stay holes: an all-hole leg spans nothing at any zoom.
+    let holed_upper = vec![None; 64];
+    let holed_lower = vec![None; 64];
+    let holed_trend = vec![false; 64];
+    let (holed, _) =
+        sampled_ribbon_bands(&holed_upper, &holed_lower, &holed_trend, &pane, width);
+    assert!(holed.iter().all(Option::is_none), "all-hole legs span nothing");
+}
+
+#[test]
+fn column_delta_bars_fold_their_native_runs() {
+    // Pixel-exactness: an aggregated delta bar is the tallest leg of its
+    // column run per side (buy reads the run max, sell the run max depth) at
+    // the run's screen column; native geometry above one pixel per bar is
+    // the culled slice untouched.
+    let pane = demo_zoom_pane();
+    let zero = demo_zero_pane();
+    let width = 800.0f32;
+    let buy: Vec<Option<f64>> =
+        (0..2_000).map(|i| Some(400.0 + f64::from(i % 50))).collect();
+    let sell: Vec<Option<f64>> =
+        (0..2_000).map(|i| Some(200.0 + f64::from(i % 30))).collect();
+    let bars = column_delta_geoms(&buy, &sell, &zero, width).expect("delta dispatches");
+    let (start, end) = zero.culled_bar_range(width, buy.len());
+    let runs = column_runs(end - start, |slot| {
+        zero.slot_to_x((start + slot) as f64).floor() as i64
+    });
+    assert_eq!(bars.len(), runs.len(), "one bar per painted column");
+    for (bar, (column, range)) in bars.iter().zip(runs.iter()) {
+        let buy_run = &buy[start + range.start..start + range.end];
+        let sell_run = &sell[start + range.start..start + range.end];
+        let expected_buy = sample_column_extremes(buy_run)
+            .map(|(_, high)| high)
+            .and_then(|top| zero.price_to_y(top));
+        let expected_sell = sample_column_extremes(sell_run)
+            .map(|(_, high)| high)
+            .and_then(|depth| zero.price_to_y(-depth));
+        assert_eq!(bar.buy_y, expected_buy, "buy reads the run max");
+        assert_eq!(bar.sell_y, expected_sell, "sell reads the run max depth");
+        assert_eq!(bar.x.to_bits(), (*column as f32).to_bits());
+        assert_eq!(bar.index, start + range.start);
+    }
+    // Native path: above one pixel per bar the dispatcher is the culled
+    // slice untouched (over a zero-spanning pane at native spacing).
+    let native_pane = Viewport::new(PriceScaleMode::Normal, -1_300.0, 1_300.0, 200.0, 8.0, 0.0, false)
+        .expect("native zero pane builds");
+    let native = column_delta_geoms(&buy, &sell, &native_pane, width).expect("native paints");
+    let (nstart, nend) = native_pane.culled_bar_range(width, buy.len());
+    let sliced = delta_bar_geoms_sliced(
+        &buy[nstart..nend],
+        &sell[nstart..nend],
+        &native_pane,
+        nstart,
+    )
+    .expect("culled slice paints");
+    assert_eq!(native, sliced, "native dispatch is the culled slice");
+    // Holes stay holes per leg, never zero-filled.
+    let holed_buy = vec![None, Some(400.0), None];
+    let holed_sell = vec![Some(200.0), None, None];
+    let holed = delta_bar_geoms_sliced(&holed_buy, &holed_sell, &zero, 0).expect("holes map");
+    assert_eq!(holed.len(), 3);
+    assert_eq!(holed[0].buy_y, None, "an all-hole buy leg lifts");
+    assert!(holed[0].sell_y.is_some());
+    assert!(holed[1].buy_y.is_some());
+    assert_eq!(holed[1].sell_y, None);
+    let _ = pane;
+}
+
+#[test]
+fn sampled_close_lines_carry_their_native_runs_last_close() {
+    // The Line/Area price picture samples the close series per column run:
+    // closes never hole, so every sampled vertex is its run's last close at
+    // the run's screen column — the same pixels fewer shapes.
+    let rows = month_rows();
+    let pane = demo_zoom_pane();
+    let closes: Vec<Option<f64>> = rows.iter().map(|row| Some(row.close)).collect();
+    let vertices = sampled_line_points(&closes, &pane, 0);
+    let runs = column_runs(closes.len(), |slot| pane.slot_to_x(slot as f64).floor() as i64);
+    assert_eq!(vertices.len(), runs.len(), "one vertex per painted column");
+    assert!(vertices.len() < closes.len(), "sub-pixel zoom sheds shapes");
+    for (vertex, (column, range)) in vertices.iter().zip(runs.iter()) {
+        let last = closes[range.end - 1].expect("closes never hole");
+        let expected =
+            pane.windowed_y(last).map(|y| (*column as f32, y));
+        assert_eq!(*vertex, expected, "column {column} carries its last close");
+    }
+}
+
+#[test]
+fn sliced_ribbon_polygons_match_the_owned_entry() {
+    // No second polygon code: the borrowed entry closes the same runs and
+    // points as the owned one over identical legs.
+    let pane = month_viewport();
+    let ribbon = ribbon_view(
+        &[Some(102.0), Some(103.0), Some(98.0), None, Some(101.0)],
+        &[Some(100.0), Some(101.0), Some(100.0), Some(100.0), Some(100.0)],
+        0.5,
+    )
+    .expect("valid ribbon");
+    let owned = ribbon_polygons(&ribbon, &pane);
+    let sliced = ribbon_polygons_sliced(&ribbon.upper, &ribbon.lower, &ribbon.bullish, &pane);
+    assert_eq!(sliced, owned, "the borrowed entry closes identical runs");
+}
+
+#[test]
+fn native_overlay_shapes_stay_within_twice_the_visible_count() {
+    // At native zoom the full-window mappers materialize O(bars) shapes while
+    // the twice-visible native builders stay within twice the visible bar
+    // count: 20k bars at 8 px over 800 px shows 101 bars, so twice-visible
+    // spans at most 202.
+    let rows = month_rows();
+    let pane = month_viewport();
+    let width = 800.0f32;
+    let (visible_start, visible_end) = pane.visible_bar_range(width, rows.len());
+    let visible = visible_end - visible_start;
+    assert_eq!(visible, 101, "the fixture really shows 101 bars");
+    let closes: Vec<Option<f64>> = rows.iter().map(|row| Some(row.close)).collect();
+    let full = oscillator_points(&closes, &pane);
+    assert_eq!(full.len(), rows.len(), "the native mapper covers every bar");
+    let culled = proportional_line_points(&closes, &pane, width);
+    assert!(
+        culled.len() <= 2 * visible + 1,
+        "twice-visible line points stay bounded: {} vs visible {visible}",
+        culled.len()
+    );
+    assert!(culled.len() < full.len(), "culling sheds the off-window bars");
+    let upper: Vec<Option<f64>> = rows.iter().map(|row| Some(row.high)).collect();
+    let lower: Vec<Option<f64>> = rows.iter().map(|row| Some(row.low)).collect();
+    let trend = vec![true; rows.len()];
+    let full_polygons = ribbon_polygons_sliced(&upper, &lower, &trend, &pane);
+    let culled_polygons = proportional_ribbon_polygons(&upper, &lower, &trend, &pane, width);
+    let culled_bars: usize = culled_polygons.iter().map(|polygon| polygon.indices.len()).sum();
+    assert!(
+        culled_bars <= 2 * visible + 1,
+        "twice-visible ribbon bars stay bounded: {culled_bars} vs visible {visible}"
+    );
+    let full_bars: usize = full_polygons.iter().map(|polygon| polygon.indices.len()).sum();
+    assert!(culled_bars < full_bars, "culling sheds the off-window ribbon bars");
+}
+
+#[test]
+fn twice_visible_native_output_matches_the_full_window_slice() {
+    // Culling-equivalence: twice-visible native output, re-offset, equals the
+    // corresponding slice of full-window output — same pixels, fewer shapes.
+    let rows = month_rows();
+    let pane = month_viewport();
+    let width = 800.0f32;
+    let closes: Vec<Option<f64>> = rows.iter().map(|row| Some(row.close)).collect();
+    let full = oscillator_points(&closes, &pane);
+    let culled = proportional_line_points(&closes, &pane, width);
+    let (start, end) = pane.proportional_bar_range(width, closes.len());
+    assert_eq!(culled.len(), end - start, "one point per twice-visible bar");
+    for (offset, point) in culled.iter().enumerate() {
+        assert_eq!(*point, full[start + offset], "bar {} keeps its pixels", start + offset);
+    }
+    // Panned ten bars in: the same slice equality holds off-origin.
+    let shifted = pane.with_x_offset(-80.0).expect("finite pan");
+    let full_shifted = oscillator_points(&closes, &shifted);
+    let moved = proportional_line_points(&closes, &shifted, width);
+    let (moved_start, moved_end) = shifted.proportional_bar_range(width, closes.len());
+    assert_eq!(moved.len(), moved_end - moved_start);
+    for (offset, point) in moved.iter().enumerate() {
+        assert_eq!(
+            *point,
+            full_shifted[moved_start + offset],
+            "panned bar {} keeps its pixels",
+            moved_start + offset
+        );
+    }
+    // Ribbon polygons close identical runs over the twice-visible window.
+    let upper: Vec<Option<f64>> = rows.iter().map(|row| Some(row.high)).collect();
+    let lower: Vec<Option<f64>> = rows.iter().map(|row| Some(row.low)).collect();
+    let trend = vec![true; rows.len()];
+    let full_polygons = ribbon_polygons_sliced(&upper, &lower, &trend, &pane);
+    let culled_polygons = proportional_ribbon_polygons(&upper, &lower, &trend, &pane, width);
+    let mut full_points = std::collections::HashMap::new();
+    for polygon in &full_polygons {
+        for (index, point) in polygon.indices.iter().zip(polygon.points.iter()) {
+            full_points.insert(*index, *point);
+        }
+    }
+    for polygon in &culled_polygons {
+        for (index, point) in polygon.indices.iter().zip(polygon.points.iter()) {
+            assert_eq!(
+                full_points.get(index),
+                Some(point),
+                "ribbon bar {index} keeps its pixels"
+            );
+        }
+    }
+    assert!(!culled_polygons.is_empty(), "the visible window still fills");
+}
+
+#[test]
+fn twice_visible_native_output_is_empty_off_window() {
+    let rows = month_rows();
+    let pane = month_viewport();
+    let closes: Vec<Option<f64>> = rows.iter().map(|row| Some(row.close)).collect();
+    let upper: Vec<Option<f64>> = rows.iter().map(|row| Some(row.high)).collect();
+    let lower: Vec<Option<f64>> = rows.iter().map(|row| Some(row.low)).collect();
+    let trend = vec![true; rows.len()];
+    assert!(
+        proportional_line_points(&closes, &pane, 0.0).is_empty(),
+        "zero width paints nothing"
+    );
+    assert!(
+        proportional_ribbon_polygons(&upper, &lower, &trend, &pane, 0.0).is_empty(),
+        "zero width fills nothing"
+    );
+    assert!(
+        proportional_line_points(&[], &pane, 800.0).is_empty(),
+        "no values paint no vertices"
+    );
+    let past_left = pane.with_x_offset(200_000.0).expect("finite pan");
+    assert!(
+        proportional_line_points(&closes, &past_left, 800.0).is_empty(),
+        "bars shoved past the pane paint nothing"
+    );
+    assert!(
+        proportional_ribbon_polygons(&upper, &lower, &trend, &past_left, 800.0).is_empty(),
+        "bars shoved past the pane fill nothing"
+    );
+    let past_right = pane.with_x_offset(-200_000.0).expect("finite pan");
+    assert!(
+        proportional_line_points(&closes, &past_right, 800.0).is_empty(),
+        "bars shoved before the pane paint nothing"
+    );
+}

@@ -95,10 +95,13 @@ impl Indicator for RmaIndicator {
         if state.len() < period {
             return Ok(None);
         }
-        let window: Vec<f64> = state.closes().collect();
-        let next = match state.last() {
+        // The previous output copies out before the scratch fill: the window
+        // slice borrows the state, so all scalar reads lead it.
+        let prev = state.last();
+        let window = state.scratch_closes();
+        let next = match prev {
             Some(prev) if !prev.is_nan() => crate::math::wilder_step(prev, bar.close, period),
-            _ => crate::math::window_mean(&window),
+            _ => crate::math::window_mean(window),
         };
         state.set_last(next);
         Ok(fin_or_none(next))
@@ -184,8 +187,8 @@ impl Indicator for WmaIndicator {
         if state.len() < period {
             return Ok(None);
         }
-        let window: Vec<f64> = state.closes().collect();
-        let mean = Self::of_window(&window);
+        let window = state.scratch_closes();
+        let mean = Self::of_window(window);
         state.set_last(mean);
         Ok(fin_or_none(mean))
     }
@@ -483,8 +486,12 @@ impl Indicator for AlmaIndicator {
             return Ok(None);
         }
         let weights = Self::weights(period, offset, sigma);
-        let window: Vec<f64> = state.closes().collect();
-        let alma = Self::of_window(&window, &weights);
+        // The weights stay a derived per-bar `Vec`: they are computed
+        // constants, not a retained window, and sharing the recurrence with
+        // the batch path (`of_window`) forbids reshaping it around the
+        // scratch buffer. Only the window rides the reuse buffer.
+        let window = state.scratch_closes();
+        let alma = Self::of_window(window, &weights);
         state.set_last(alma);
         Ok(fin_or_none(alma))
     }

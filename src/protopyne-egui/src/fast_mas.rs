@@ -20,8 +20,9 @@ use protopyne_types::{Validate, check_for_execute, valid_output};
 use crate::topology::kernel_series;
 
 use fluent_egui::{
-    EguiError, IndicatorStyle, ThemeConfig, Viewport, oscillator_points, paint_oscillator_styled,
-    translate_points,
+    EguiError, IndicatorStyle, ThemeConfig, Viewport, needs_column_aggregation,
+    paint_oscillator_styled, proportional_line_points, sampled_line_points, translate_points,
+    visible_rows,
 };
 
 /// Moving-average kernels the module accepts as a line's smoothing.
@@ -425,17 +426,32 @@ pub fn evaluate_fast_mas(
 ///
 /// `style` is the owning slot's [`IndicatorStyle`]: each line paints under its
 /// own key, so one Style tab can restyle a single arm and leave the rest
-/// themed.
+/// themed. `base` is the global bar index of the view's first value, so the
+/// trailing window borrows through the shared slicer and column grouping lands
+/// on screen pixels; `width_px` bounds the native branch to the twice-visible
+/// window (display-only cull, same pixels fewer shapes): at sub-pixel zoom each
+/// line samples per column run through the shared display sampler
+/// (display-only, values untouched); at or above one pixel per bar the native
+/// mapping runs over the twice-visible borrow only.
 pub fn paint_fast_mas(
     painter: &egui::Painter,
     view: &FastMasView,
     viewport: &Viewport,
     origin: egui::Pos2,
+    base: usize,
+    width_px: f32,
     theme: &ThemeConfig,
     style: &IndicatorStyle,
 ) -> Result<(), EguiError> {
+    let aggregate = needs_column_aggregation(viewport.scale().bar_spacing());
     for line in &view.lines {
-        let points = oscillator_points(&line.values, viewport);
+        let points = if aggregate {
+            sampled_line_points(&line.values, viewport, base)
+        } else {
+            let len = line.values.len().saturating_sub(base);
+            let window = visible_rows(line.values.as_slice(), base, len);
+            proportional_line_points(window, viewport, width_px)
+        };
         let placed = translate_points(points, (origin.x, origin.y));
         paint_oscillator_styled(painter, &placed, &line.style, theme, style, 1.0)?;
     }

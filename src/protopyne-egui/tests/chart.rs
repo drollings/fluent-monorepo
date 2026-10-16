@@ -209,3 +209,272 @@ fn timeframe_keys_cover_intraday_to_daily_in_toolbar_order() {
         );
     }
 }
+
+#[test]
+fn prefold_levels_come_from_the_toolbar_grid_in_whole_multiples() {
+    // The levels a base can pre-fold into are toolbar keys at or coarser
+    // than the base that tile it whole — the same one-bridge grid the
+    // toolbar and the store already share, never a second table.
+    assert_eq!(
+        prefold_levels(TimeframeKey::M1),
+        vec![
+            TimeframeKey::M1,
+            TimeframeKey::M5,
+            TimeframeKey::M15,
+            TimeframeKey::H1,
+            TimeframeKey::H4,
+            TimeframeKey::D1,
+        ]
+    );
+    assert_eq!(
+        prefold_levels(TimeframeKey::M15),
+        vec![TimeframeKey::M15, TimeframeKey::H1, TimeframeKey::H4, TimeframeKey::D1]
+    );
+    assert_eq!(prefold_levels(TimeframeKey::D1), vec![TimeframeKey::D1]);
+    for base in TimeframeKey::all() {
+        let levels = prefold_levels(base);
+        assert_eq!(levels[0], base, "{base:?} always keeps its native level");
+        for pair in levels.windows(2) {
+            assert!(
+                pair[1].timeframe().is_whole_multiple_of(pair[0].timeframe()),
+                "{base:?} ladder stays tileable: {pair:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn stateless_pick_selects_the_finest_level_at_or_above_two_px() {
+    // Native pixels per bar times the fold multiple is the folded bar's
+    // screen width; the picker keeps the finest level still at or above two
+    // pixels. Multiples above M1 read 1/5/15/60/240/1440, so the switch
+    // points sit at 2/5 = 0.4, 2/15, 2/60, 2/240, and 2/1440 native px.
+    let cases = [
+        (8.0, TimeframeKey::M1),
+        (2.0, TimeframeKey::M1),
+        (1.9, TimeframeKey::M5),
+        (0.4, TimeframeKey::M5),
+        (0.39, TimeframeKey::M15),
+        (2.0 / 15.0, TimeframeKey::M15),
+        (2.0 / 15.0 - 1e-9, TimeframeKey::H1),
+        (2.0 / 60.0, TimeframeKey::H1),
+        (2.0 / 60.0 - 1e-9, TimeframeKey::H4),
+        (2.0 / 240.0, TimeframeKey::H4),
+        (2.0 / 240.0 - 1e-9, TimeframeKey::D1),
+        (2.0 / 1440.0, TimeframeKey::D1),
+        // Past the coarsest level nothing reaches two pixels; the picker
+        // holds the coarsest rather than inventing a wider one.
+        (0.0005, TimeframeKey::D1),
+        (0.05, TimeframeKey::H1),
+    ];
+    for (px, want) in cases {
+        assert_eq!(prefold_pick(px, TimeframeKey::M1), want, "native {px} px/bar");
+    }
+    // A non-finite spacing never switches: fail-safe, like the column
+    // dispatcher it feeds.
+    for px in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, 0.0, -1.0] {
+        assert_eq!(
+            prefold_pick(px, TimeframeKey::M15),
+            TimeframeKey::M15,
+            "non-positive spacing {px} holds native"
+        );
+    }
+    // From a coarser base the ladder shortens but the rule is the same.
+    assert_eq!(prefold_pick(8.0, TimeframeKey::H1), TimeframeKey::H1);
+    assert_eq!(prefold_pick(0.5, TimeframeKey::H1), TimeframeKey::H4);
+    assert_eq!(prefold_pick(8.0, TimeframeKey::D1), TimeframeKey::D1);
+    assert_eq!(prefold_pick(0.0001, TimeframeKey::D1), TimeframeKey::D1);
+}
+
+#[test]
+fn hysteretic_pick_moves_each_direction_past_its_own_edge() {
+    // The band around each switch point has a low edge (zooming out switches
+    // coarser below it) and a high edge (zooming in switches finer above
+    // it); between the edges the current level holds either way. Ladder
+    // multiples above M1 read 1/5/15/60/240/1440.
+    let keys = prefold_levels(TimeframeKey::M1);
+    let multiples = [1.0, 5.0, 15.0, 60.0, 240.0, 1440.0];
+    for (depth, window) in keys.windows(2).enumerate() {
+        let (finer, coarser) = (window[0], window[1]);
+        let fine_multiple = multiples[depth];
+        let low_px = (PREFOLD_TARGET_PX_PER_BAR - PREFOLD_HYSTERESIS_PX) / fine_multiple;
+        let high_px = (PREFOLD_TARGET_PX_PER_BAR + PREFOLD_HYSTERESIS_PX) / fine_multiple;
+        // Zooming out from the finer level: holds at the low edge, steps
+        // coarser just below it.
+        assert_eq!(
+            prefold_pick_hysteretic(finer, low_px, TimeframeKey::M1),
+            finer,
+            "{finer:?} holds at its low edge {low_px}"
+        );
+        assert_eq!(
+            prefold_pick_hysteretic(finer, low_px * 0.999, TimeframeKey::M1),
+            coarser,
+            "{finer:?} steps to {coarser:?} just below {low_px}"
+        );
+        // Zooming in from the coarser level: holds just below the high
+        // edge, steps finer at it.
+        assert_eq!(
+            prefold_pick_hysteretic(coarser, high_px * 0.999, TimeframeKey::M1),
+            coarser,
+            "{coarser:?} holds just below its high edge {high_px}"
+        );
+        assert_eq!(
+            prefold_pick_hysteretic(coarser, high_px, TimeframeKey::M1),
+            finer,
+            "{coarser:?} steps back to {finer:?} at {high_px}"
+        );
+        // Between the edges the current level holds from either side: the
+        // band is stability around one switch point, never a second rule.
+        let mid_px = PREFOLD_TARGET_PX_PER_BAR / fine_multiple;
+        assert_eq!(
+            prefold_pick_hysteretic(finer, mid_px, TimeframeKey::M1),
+            finer,
+            "{finer:?} holds mid-band coming out"
+        );
+        assert_eq!(
+            prefold_pick_hysteretic(coarser, mid_px, TimeframeKey::M1),
+            coarser,
+            "{coarser:?} holds mid-band coming in"
+        );
+    }
+    // A large zoom jump crosses several levels at once, never stopping
+    // mid-ladder: hysteresis steadies edges, it does not ratchet jumps.
+    assert_eq!(
+        prefold_pick_hysteretic(TimeframeKey::M1, 0.0005, TimeframeKey::M1),
+        TimeframeKey::D1,
+        "a deep zoom-out lands on the coarsest level"
+    );
+    assert_eq!(
+        prefold_pick_hysteretic(TimeframeKey::D1, 8.0, TimeframeKey::M1),
+        TimeframeKey::M1,
+        "a full zoom-in lands back on native"
+    );
+    // Non-finite spacing never switches from any level.
+    for px in [f64::NAN, f64::INFINITY, 0.0, -2.0] {
+        assert_eq!(
+            prefold_pick_hysteretic(TimeframeKey::H1, px, TimeframeKey::M1),
+            TimeframeKey::H1,
+            "spacing {px} holds the current level"
+        );
+    }
+}
+
+#[test]
+fn hysteresis_holds_through_drift_boundary_hover_and_single_level() {
+    // Control group one — slow drift inside the band: the M1/M5 low edge
+    // sits at 1.5 native px and the high edge at 2.5, so oscillating ±1%
+    // around 2.0 never flips the level from either side.
+    let mut level = TimeframeKey::M1;
+    for step in 0..40 {
+        let px = 2.0 * if step % 2 == 0 { 1.01 } else { 0.99 };
+        level = prefold_pick_hysteretic(level, px, TimeframeKey::M1);
+    }
+    assert_eq!(level, TimeframeKey::M1, "drift inside the band holds M1");
+    let mut level = TimeframeKey::M5;
+    for step in 0..40 {
+        let px = 2.0 * if step % 2 == 0 { 1.01 } else { 0.99 };
+        level = prefold_pick_hysteretic(level, px, TimeframeKey::M1);
+    }
+    assert_eq!(level, TimeframeKey::M5, "the same drift holds M5 coming in");
+    // Control group two — edge hover: the low edge itself (strict `<`
+    // switches below it) holds from either side, and mid-band holds too.
+    for px in [1.5, 2.0] {
+        assert_eq!(
+            prefold_pick_hysteretic(TimeframeKey::M1, px, TimeframeKey::M1),
+            TimeframeKey::M1,
+            "M1 holds at {px} px/bar"
+        );
+        assert_eq!(
+            prefold_pick_hysteretic(TimeframeKey::M5, px, TimeframeKey::M1),
+            TimeframeKey::M5,
+            "M5 holds at {px} px/bar"
+        );
+    }
+    // Control group three — single-level data: the daily base has no coarser
+    // level, so every zoom holds it.
+    for px in [8.0, 0.4, 0.001, 0.00001] {
+        assert_eq!(
+            prefold_pick_hysteretic(TimeframeKey::D1, px, TimeframeKey::D1),
+            TimeframeKey::D1,
+            "D1 holds at {px} px/bar"
+        );
+        assert_eq!(prefold_pick(px, TimeframeKey::D1), TimeframeKey::D1);
+    }
+}
+
+fn zoom_sweep_with_hover() -> Vec<f64> {
+    // A slow zoom-out with hover: geometric descent past every switch point
+    // with ±0.5% oscillation samples around each stateless switch, the way a
+    // wheel gesture stutters across a threshold instead of crossing cleanly.
+    let switches = [0.4, 2.0 / 15.0, 2.0 / 60.0, 2.0 / 240.0, 2.0 / 1440.0];
+    let mut sweep = Vec::new();
+    let mut px = 8.0;
+    while px > 0.0004 {
+        sweep.push(px);
+        for switch in switches {
+            if px > switch && px * 0.9 <= switch {
+                for _ in 0..6 {
+                    sweep.push(switch * 1.005);
+                    sweep.push(switch * 0.995);
+                }
+            }
+        }
+        px *= 0.9;
+    }
+    sweep
+}
+
+fn count_switches(levels: &[TimeframeKey]) -> usize {
+    levels.windows(2).filter(|pair| pair[0] != pair[1]).count()
+}
+
+#[test]
+fn flicker_sweep_stays_within_its_bound() {
+    let sweep = zoom_sweep_with_hover();
+    assert!(sweep.len() > 100, "the sweep stutters, it does not glide");
+    let stateless: Vec<TimeframeKey> =
+        sweep.iter().map(|px| prefold_pick(*px, TimeframeKey::M1)).collect();
+    let naive = count_switches(&stateless);
+    let mut level = TimeframeKey::M1;
+    let mut hysteretic = Vec::with_capacity(sweep.len());
+    for px in &sweep {
+        level = prefold_pick_hysteretic(level, *px, TimeframeKey::M1);
+        hysteretic.push(level);
+    }
+    let steadied = count_switches(&hysteretic);
+    eprintln!("flicker sweep samples={} naive={naive} hysteretic={steadied}", sweep.len());
+    assert!(naive > steadied, "hover stutters flip the stateless picker: {naive} vs {steadied}");
+    assert!(steadied <= 6, "one switch per ladder step, nothing more: {steadied}");
+}
+
+#[test]
+fn default_off_resolves_the_base_level_at_every_zoom() {
+    // The picker ships default-off: the const assertion below fails the
+    // build the moment the flag flips, and the sweep proves the resolver
+    // answers the base at every zoom from either starting level — so the
+    // column dispatcher below it runs exactly its M2 path.
+    const { assert!(!PREFOLD_ENABLED) };
+    let sweep = zoom_sweep_with_hover();
+    for px in sweep {
+        for current in TimeframeKey::all() {
+            assert_eq!(
+                resolve_prefold_level(false, current, px, TimeframeKey::M1),
+                TimeframeKey::M1,
+                "flag off holds the base at {px} px/bar from {current:?}"
+            );
+        }
+    }
+    // Flag on delegates to the hysteretic picker, non-finite included.
+    assert_eq!(
+        resolve_prefold_level(true, TimeframeKey::M1, 8.0, TimeframeKey::M1),
+        TimeframeKey::M1
+    );
+    assert_eq!(
+        resolve_prefold_level(true, TimeframeKey::M1, 0.0005, TimeframeKey::M1),
+        TimeframeKey::D1
+    );
+    assert_eq!(
+        resolve_prefold_level(true, TimeframeKey::H1, f64::NAN, TimeframeKey::M1),
+        TimeframeKey::H1
+    );
+}

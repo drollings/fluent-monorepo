@@ -40,8 +40,10 @@ pub mod workspace;
 
 pub use annotations::{annotations_of, annotations_of_counted, append_new};
 pub use chart::{
-    AreaView, ChartConfig, DEFAULT_SYMBOL, PictureSource, TimeframeKey, area_view, chart_price_bars,
-    default_symbol, line_values, picture_rows, picture_source, refuse_chart_type, timed_plan_build,
+    AreaView, ChartConfig, DEFAULT_SYMBOL, PREFOLD_ENABLED, PREFOLD_HYSTERESIS_PX,
+    PREFOLD_TARGET_PX_PER_BAR, PictureSource, TimeframeKey, area_view, chart_price_bars,
+    default_symbol, line_values, picture_rows, picture_source, prefold_levels, prefold_pick,
+    prefold_pick_hysteretic, refuse_chart_type, resolve_prefold_level, timed_plan_build,
     window_for_range,
 };
 pub use export::{
@@ -64,7 +66,7 @@ pub use integration_lite::{
     RAW_OSCILLATOR_LENGTH, RIBBON_HEALTH_K, RIBBON_MEAN_LENGTH, SIGNAL_EIT_ALPHA, VOL_SMA_LENGTH,
     VOLUME_TRANSPARENCY, candle_momentum_keys, candle_momentum_series, compare_freeze,
     integration_lite_sub_pane, integration_lite_view, integration_lite_view_calibrated,
-    momentum_tint, momentum_tints, native_lite_series, oscillator_transparency, precision_recall,
+    momentum_key_for, momentum_tint, momentum_tints, native_lite_series, oscillator_transparency, precision_recall,
     ribbon_fill_transparency, series_max_diff,
 };
 pub use oscillators::{
@@ -85,8 +87,8 @@ pub use regime_labels::{
 pub use session::{break_lines, time_grid_lines};
 pub use topology::{
     ADAPTIVE_NODE, HEALTH_MA_NODE, HEALTH_RIBBON_NODE, OSC_FAST_NODE, OSC_SLOW_NODE,
-    PRICE_NODE, RIBBON_NODE, SIGNAL_NODE, VOLUME_NODE, cache_key_for, kernel_order,
-    standard_plan, standard_replay,
+    PRICE_NODE, RIBBON_NODE, SIGNAL_NODE, VOLUME_NODE, cache_key_for, evaluation_window,
+    kernel_order, kernel_warmup, standard_plan, standard_replay,
 };
 pub use widgets::{
     INDICATOR_SEARCH_LABEL, MtfRow, SYMBOL_SEARCH_LABEL, TOP_BAR_CHART_TYPES, TopBarAction,

@@ -108,6 +108,132 @@ impl std::fmt::Display for TimeframeKey {
     }
 }
 
+/// Screen width a pre-folded bar must span before it earns its level: the
+/// picker keeps the finest level whose folded bars still cover at least this
+/// many pixels, so every level renders the same pixels the column dispatcher
+/// would draw from native bars — only fewer shapes.
+pub const PREFOLD_TARGET_PX_PER_BAR: f64 = 2.0;
+
+/// Half-band around each switch point, in folded-bar pixels. Hysteresis
+/// suppresses flicker (stability: slow zooms must not strobe levels), not
+/// error — every level renders identical pixels through the column fold, so
+/// there is nothing to be confident about and no calibration beyond the
+/// flicker bound applies.
+pub const PREFOLD_HYSTERESIS_PX: f64 = 0.5;
+
+/// Master switch for pre-folded levels. Ships off: with the flag off the
+/// resolver answers the base at every zoom and the column dispatcher runs
+/// exactly its native path. The picker is not trusted in production, and not
+/// used to persist anything, until its control groups pass.
+pub const PREFOLD_ENABLED: bool = false;
+
+/// Levels a base timeframe can pre-fold into: toolbar keys at or coarser
+/// than `base` that tile it whole, finest first. The ladder comes from the
+/// one toolbar-label bridge (`Timeframe::from_chart_label`) and the shared
+/// whole-multiple check, so the terminal, the store fold, and the kernels
+/// cannot disagree about which levels exist. The base always leads — even a
+/// daily base with no coarser level yields its native singleton.
+#[must_use]
+pub fn prefold_levels(base: TimeframeKey) -> Vec<TimeframeKey> {
+    TimeframeKey::all()
+        .into_iter()
+        .filter(|key| {
+            key.seconds() >= base.seconds()
+                && key.timeframe().is_whole_multiple_of(base.timeframe())
+        })
+        .collect()
+}
+
+/// Fold multiple of `level` over `base`: whole by construction on the
+/// [`prefold_levels`] ladder.
+fn prefold_multiple(base: TimeframeKey, level: TimeframeKey) -> f64 {
+    level.timeframe().duration_ms() as f64 / base.timeframe().duration_ms() as f64
+}
+
+/// Stateless pick: the finest level whose folded bars still span
+/// [`PREFOLD_TARGET_PX_PER_BAR`] pixels at `native_px_per_bar`, or the
+/// coarsest when nothing reaches it. A non-positive or non-finite spacing
+/// holds the base — the same fail-safe as the column dispatcher this feeds.
+#[must_use]
+pub fn prefold_pick(native_px_per_bar: f64, base: TimeframeKey) -> TimeframeKey {
+    if !native_px_per_bar.is_finite() || native_px_per_bar <= 0.0 {
+        return base;
+    }
+    let levels = prefold_levels(base);
+    levels
+        .iter()
+        .find(|level| {
+            native_px_per_bar * prefold_multiple(base, **level) >= PREFOLD_TARGET_PX_PER_BAR
+        })
+        .copied()
+        .unwrap_or_else(|| levels.into_iter().last().unwrap_or(base))
+}
+
+/// Stateful pick with hysteresis around each switch point: zooming out steps
+/// coarser only below the low edge (target minus band, measured in folded-bar
+/// pixels over the current level), zooming in steps finer only once a finer
+/// level clears the high edge. Between the edges the current level holds from
+/// either direction, so a hover stutters without strobing. Large jumps cross
+/// several levels at once. A level outside the base ladder (or a non-positive
+/// spacing) holds its level rather than guessing.
+#[must_use]
+pub fn prefold_pick_hysteretic(
+    current: TimeframeKey,
+    native_px_per_bar: f64,
+    base: TimeframeKey,
+) -> TimeframeKey {
+    let levels = prefold_levels(base);
+    let Some(mut depth) = levels.iter().position(|key| *key == current) else {
+        return current;
+    };
+    if !native_px_per_bar.is_finite() || native_px_per_bar <= 0.0 {
+        return current;
+    }
+    let low = PREFOLD_TARGET_PX_PER_BAR - PREFOLD_HYSTERESIS_PX;
+    let high = PREFOLD_TARGET_PX_PER_BAR + PREFOLD_HYSTERESIS_PX;
+    loop {
+        let width = native_px_per_bar * prefold_multiple(base, levels[depth]);
+        if width < low && depth + 1 < levels.len() {
+            depth += 1;
+            continue;
+        }
+        if depth > 0 {
+            let fine_width =
+                native_px_per_bar * prefold_multiple(base, levels[depth - 1]);
+            if fine_width >= high {
+                // Jump straight to the finest level clearing the high edge:
+                // one zoom gesture crosses several quiet levels at once.
+                depth = (0..depth)
+                    .rev()
+                    .find(|index| {
+                        native_px_per_bar * prefold_multiple(base, levels[*index]) >= high
+                    })
+                    .unwrap_or(depth - 1);
+                continue;
+            }
+        }
+        return levels[depth];
+    }
+}
+
+/// Flag gate for the picker: off answers the base at every zoom (the column
+/// dispatcher below runs exactly its native path); on delegates to the
+/// hysteretic picker. The live edge always renders from native bars — folded
+/// levels emit whole buckets only (`CompleteOnly`), so a partially complete
+/// trailing bucket never sources a level.
+#[must_use]
+pub fn resolve_prefold_level(
+    enabled: bool,
+    current: TimeframeKey,
+    native_px_per_bar: f64,
+    base: TimeframeKey,
+) -> TimeframeKey {
+    if !enabled {
+        return base;
+    }
+    prefold_pick_hysteretic(current, native_px_per_bar, base)
+}
+
 fn default_fast_oscillator() -> String {
     "rsi".to_owned()
 }

@@ -603,30 +603,18 @@ impl MarketTape {
             symbol_id: market.symbol_id,
             timeframe: market.timeframe,
         };
-        let mut bars = load_sealed(root, key)?;
+        let sealed = load_sealed(root, key)?;
         let path = log_path(root, market.symbol_id, market.timeframe);
-        let log = if path.exists() {
+        let (bars, log) = if path.exists() {
             let log = AppendLog::<TapeRecord>::open(&path)?;
+            let mut rows = Vec::new();
             for record in log.read_all()? {
                 let bar = record.to_bar().map_err(StoreError::InvalidBar)?;
-                match record.op {
-                    TapeOp::Insert => {
-                        if !bars.iter().any(|held| held.ts == bar.ts) {
-                            bars.push(bar);
-                        }
-                    }
-                    TapeOp::Replace => {
-                        if let Some(held) = bars.iter_mut().find(|held| held.ts == bar.ts) {
-                            *held = bar;
-                        } else {
-                            bars.push(bar);
-                        }
-                    }
-                }
+                rows.push((record.op, bar));
             }
-            Some(log)
+            (replay_log_records(sealed, &rows), Some(log))
         } else {
-            None
+            (sealed, None)
         };
         let bars = order_and_validate(bars)?;
         Ok(TapeData {
@@ -635,6 +623,40 @@ impl MarketTape {
             log,
         })
     }
+}
+
+/// Fold decoded log rows over sealed bars, by stamp index: inserts keep the
+/// first row they meet, replaces overwrite with the row they carry (pushing
+/// when the stamp is novel) — the same rule the live append path applies, so
+/// boot converges with runtime. One index build over the sealed bars plus one
+/// hash lookup per row: each record resolves its bar without scanning the
+/// tape, so replay is linear in the log instead of quadratic in the tape.
+/// Replay semantics are unchanged: same rows in, same bars out, in whatever
+/// order the log carried them (the caller sorts and validates after).
+fn replay_log_records(sealed: Vec<Bar>, rows: &[(TapeOp, Bar)]) -> Vec<Bar> {
+    let mut bars = sealed;
+    let mut index: HashMap<i64, usize> =
+        bars.iter().enumerate().map(|(at, bar)| (bar.ts.timestamp_millis(), at)).collect();
+    for (op, bar) in rows {
+        let stamp = bar.ts.timestamp_millis();
+        match op {
+            TapeOp::Insert => {
+                if let std::collections::hash_map::Entry::Vacant(slot) = index.entry(stamp) {
+                    slot.insert(bars.len());
+                    bars.push(bar.clone());
+                }
+            }
+            TapeOp::Replace => {
+                if let Some(&at) = index.get(&stamp) {
+                    bars[at] = bar.clone();
+                } else {
+                    index.insert(stamp, bars.len());
+                    bars.push(bar.clone());
+                }
+            }
+        }
+    }
+    bars
 }
 
 /// Load the latest sealed artifact for `key`, or nothing when no compaction

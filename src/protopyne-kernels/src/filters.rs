@@ -116,18 +116,18 @@ impl Indicator for EitIndicator {
     ) -> Result<Option<f64>, KernelError> {
         let alpha = Self::sensitivity(params)?;
         // Own history carries the source lookbacks; the first child history
-        // carries prior outputs as its closes.
+        // carries prior outputs as its closes. Only back-indexed scalars
+        // ever enter: the parent window rides the reuse buffer under the
+        // shared `checked_back` rule, child legs read by index — no window
+        // is collected.
         state.push(bar, 3);
-        let history: Vec<f64> = state.closes().collect();
-        let src1 = checked_back(&history, 1);
-        let src2 = checked_back(&history, 2);
-        let child_history: Vec<f64> = state.child(0).closes().collect();
-        let eit1 = child_history.last().copied();
-        let eit2 = if child_history.len() >= 2 {
-            Some(child_history[child_history.len() - 2])
-        } else {
-            None
+        let (src1, src2) = {
+            let history = state.scratch_closes();
+            (checked_back(history, 1), checked_back(history, 2))
         };
+        let child_len = state.child(0).len();
+        let eit1 = state.child(0).closes().nth(child_len.saturating_sub(1));
+        let eit2 = child_len.checked_sub(2).and_then(|index| state.child(0).closes().nth(index));
         let out = Self::step(alpha, bar.close, src1, src2, eit1, eit2);
         state
             .child(0)
@@ -406,26 +406,27 @@ impl Indicator for VossIndicator {
         let (_, order, alpha, s2, s3) = Self::shape(params)?;
         let delta = s2 - 1.0;
         state.push(bar, 3);
-        let history: Vec<f64> = state.closes().collect();
+        // Back-indexed scalars only: the parent window rides the reuse
+        // buffer, both child histories read by index — no window collected.
         let data_now = if bar.close.is_nan() { 0.0 } else { bar.close };
-        let data_ago = history
-            .get(history.len().saturating_sub(3))
-            .copied()
-            .unwrap_or(0.0);
-        let data_ago = if data_ago.is_nan() { 0.0 } else { data_ago };
-        let filter_history: Vec<f64> = state.child(0).closes().collect();
-        let filter_1 = filter_history.last().copied().unwrap_or(0.0);
-        let filter_2 = if filter_history.len() >= 2 {
-            filter_history[filter_history.len() - 2]
-        } else {
-            0.0
+        let data_ago = {
+            let history = state.scratch_closes();
+            history.get(history.len().saturating_sub(3)).copied().unwrap_or(0.0)
         };
-        let past: Vec<f64> = state.child(1).closes().collect();
-        let (filter, voss) = if past.len() <= order {
+        let data_ago = if data_ago.is_nan() { 0.0 } else { data_ago };
+        let filter_len = state.child(0).len();
+        let filter_1 = state.child(0).closes().nth(filter_len.saturating_sub(1)).unwrap_or(0.0);
+        let filter_2 = filter_len
+            .checked_sub(2)
+            .and_then(|index| state.child(0).closes().nth(index))
+            .unwrap_or(0.0);
+        let past_len = state.child(1).len();
+        let (filter, voss) = if past_len <= order {
             (0.0, 0.0)
         } else {
             let next_filter =
                 0.5 * s3 * (data_now - data_ago) + alpha * s2 * filter_1 - delta * filter_2;
+            let past = state.child(1).scratch_closes();
             let sum_c: f64 = (0..order)
                 .map(|k| {
                     (k + 1) as f64 / order as f64 * past[past.len() - order + k]

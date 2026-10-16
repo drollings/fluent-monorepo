@@ -38,6 +38,10 @@ fn close_ticks(data: &[f64]) -> Vec<BarTick> {
     data.iter().map(|&c| BarTick::close_only(c)).collect()
 }
 
+fn bits_of(values: &[Option<f64>]) -> Vec<Option<u64>> {
+    values.iter().map(|v| v.map(f64::to_bits)).collect()
+}
+
 #[test]
 fn rsi_seed_and_wilder_recurrence_by_hand() {
     let rsi = RsiIndicator::new();
@@ -156,4 +160,21 @@ fn cmo_all_gain_is_100_mixed_is_zero() {
     let result = cmo.batch(&closes(&data), &ps).expect("valid");
     approx(&result.values, &[None, None, Some(100.0), Some(0.0)], 1e-9);
     approx(&fold_all(&cmo, &close_ticks(&data), &ps).0, &result.values, 1e-12);
+}
+
+#[test]
+fn buffered_update_matches_batch_on_constant_and_subnormal_inputs() {
+    // Bit-exactness pin for the scratch migration, over the commodity
+    // channel representative (mean-deviation arithmetic must agree exactly).
+    use crate::oscillators::CciIndicator;
+    let cci = CciIndicator::new();
+    let ps = ParamSet::new().with_int("length", 14);
+    for data in [
+        vec![42.0; 40],
+        (1..=40).map(|i| f64::from(i) * 1e-310).collect::<Vec<_>>(),
+    ] {
+        let batch = cci.batch(&closes(&data), &ps).expect("valid").values;
+        let folded = fold_all(&cci, &close_ticks(&data), &ps).0;
+        assert_eq!(bits_of(&folded), bits_of(&batch), "cci reproduces batch bit-for-bit");
+    }
 }

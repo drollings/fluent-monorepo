@@ -1395,3 +1395,99 @@ async fn run_report_carries_decision_consistent_portfolio() {
     assert!(sheet.contains(PAPER_PORTFOLIO), "portfolio present, got:\n{sheet}");
     assert!(sheet.contains("unavailable"), "greeks honesty present, got:\n{sheet}");
 }
+
+#[tokio::test]
+async fn fixed_history_run_records_its_shape_for_efficiency_work() {
+    let bars = history();
+    let run = run_backtest(
+        &strategy(),
+        &risk(),
+        &grant_with(0.5),
+        &venue_config(),
+        &runner_config(),
+        &bars,
+        11,
+    )
+    .await
+    .expect("fixed history runs");
+    assert_eq!(run.decisions.len(), bars.len(), "one verdict per replayed bar");
+    let canonical = run.to_canonical_json();
+    let sheet = crate::report::render_tearsheet(&run.report);
+    eprintln!(
+        "backtest baseline: bars={} decisions={} fills={} canonical_bytes={} tearsheet_bytes={} equity_points={}",
+        bars.len(),
+        run.decisions.len(),
+        run.report.fills,
+        canonical.len(),
+        sheet.len(),
+        run.report.equity_curve.len(),
+    );
+    assert!(run.report.fills > 0, "liquid fixture must fill something");
+}
+
+fn golden_path(name: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join(name)
+}
+
+#[tokio::test]
+async fn backtest_output_identity_pins_report_and_tearsheet() {
+    // Ownership-reshape golden: the fixed-history report JSON and tearsheet
+    // must match byte-for-byte before and after the clone elimination, with
+    // no re-baselining. The goldens freeze today's output; any move is a
+    // revert, never an accepted diff.
+    let bars = history();
+    let run = run_backtest(
+        &strategy(),
+        &risk(),
+        &grant_with(0.5),
+        &venue_config(),
+        &runner_config(),
+        &bars,
+        11,
+    )
+    .await
+    .expect("fixed history runs");
+    let canonical = run.to_canonical_json();
+    let sheet = crate::report::render_tearsheet(&run.report);
+    let frozen_canonical =
+        std::fs::read_to_string(golden_path("backtest_identity_canonical.json"))
+            .expect("identity golden loads");
+    let frozen_sheet = std::fs::read_to_string(golden_path("backtest_identity_tearsheet.txt"))
+        .expect("tearsheet golden loads");
+    assert_eq!(canonical, frozen_canonical, "report JSON byte-identical");
+    assert_eq!(sheet, frozen_sheet, "tearsheet byte-identical");
+}
+
+#[test]
+fn per_bar_clone_sites_are_gone() {
+    // Allocation pin, grep-level by design (no timing assertions — they
+    // flake): the backtest hot path must carry no per-bar `closes.clone()`
+    // and no per-construction history `Vec` clone. The only history copies
+    // left are the two sanctioned owned constructions from borrowed inputs
+    // (single-run venue history, sweep-shared history); the Dynamic arm's
+    // borrowed-source copy is the single sanctioned one in `backtest.rs`.
+    const RUNNER_SRC: &str = include_str!("../src/runner.rs");
+    const BACKTEST_SRC: &str = include_str!("../src/backtest.rs");
+    assert!(
+        !RUNNER_SRC.contains("closes.clone()"),
+        "no per-bar closes clone survives on the decide path"
+    );
+    assert!(
+        !RUNNER_SRC.contains("job.bars.clone()"),
+        "multi-symbol legs move their bars into the venue"
+    );
+    assert!(
+        !RUNNER_SRC.contains("bars.clone()"),
+        "loaded histories move into the venue, never clone"
+    );
+    assert_eq!(
+        RUNNER_SRC.matches("bars.to_vec()").count(),
+        2,
+        "exactly the two sanctioned owned constructions (run venue, sweep share)"
+    );
+    assert_eq!(
+        BACKTEST_SRC.matches("bars.clone()").count(),
+        1,
+        "only the Dynamic arm copies its borrowed source"
+    );
+}

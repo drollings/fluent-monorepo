@@ -25,13 +25,11 @@ use protopyne_types::{Validate, check_for_execute, valid_output};
 
 use fluent_egui::{
     CatalogModal, EguiError, IndicatorStyle, ReadoutValue, SlotAttachment, ThemeConfig, Viewport,
-    cache_key, oscillator_points, paint_oscillator_styled, translate_points,
+    cache_key, needs_column_aggregation, paint_oscillator_styled,
+    proportional_line_points, sampled_line_points, translate_points, visible_rows,
 };
 
-use crate::fast_mas::{
-    ALMA_OFFSET, ALMA_SIGMA, FastMasConfig, FastMasLine, FastMasView, evaluate_fast_mas,
-    paint_fast_mas,
-};
+use crate::fast_mas::{ALMA_OFFSET, ALMA_SIGMA, FastMasConfig, evaluate_fast_mas};
 use crate::delta_volume_profile::{DELTA_VOLUME_PROFILE_ID, DeltaVolumeProfileIndicator};
 use crate::integration_lite::{IntegrationLiteConfig, integration_lite_sub_pane};
 use crate::topology::{kernel_preview_frame, kernel_series};
@@ -184,11 +182,13 @@ pub trait ChartIndicator: Send + Sync {
         evaluation: &IndicatorEvaluation,
         viewport: &Viewport,
         origin: egui::Pos2,
+        base: usize,
+        width_px: f32,
         theme: &ThemeConfig,
         _config: &dyn Component,
         style: &IndicatorStyle,
     ) -> Result<(), EguiError> {
-        paint_series(painter, evaluation, viewport, origin, theme, style)
+        paint_series(painter, evaluation, viewport, origin, base, width_px, theme, style)
     }
 
     /// Paint a sub-pane attachment (default: one polyline per series).
@@ -198,11 +198,13 @@ pub trait ChartIndicator: Send + Sync {
         evaluation: &IndicatorEvaluation,
         viewport: &Viewport,
         origin: egui::Pos2,
+        base: usize,
+        width_px: f32,
         theme: &ThemeConfig,
         _config: &dyn Component,
         style: &IndicatorStyle,
     ) -> Result<(), EguiError> {
-        paint_series(painter, evaluation, viewport, origin, theme, style)
+        paint_series(painter, evaluation, viewport, origin, base, width_px, theme, style)
     }
 }
 
@@ -211,17 +213,32 @@ pub trait ChartIndicator: Send + Sync {
 ///
 /// `style` is the owning slot's [`IndicatorStyle`], so a plugin never
 /// restyles itself: the Style tab in its settings pane is the only thing that
-/// decides a color override or a line width here.
+/// decides a color override or a line width here. `base` is the global bar
+/// index of the trailing window's first value within the full-history
+/// evaluation, so the window borrows through the shared slicer (no per-frame
+/// copy) and column grouping lands on screen pixels. `width_px` bounds the
+/// native branch to the twice-visible window (display-only cull, same pixels
+/// fewer shapes); at sub-pixel zoom the windowed series sample per column run
+/// (display-only sampling over native-timeframe values).
 fn paint_series(
     painter: &egui::Painter,
     evaluation: &IndicatorEvaluation,
     viewport: &Viewport,
     origin: egui::Pos2,
+    base: usize,
+    width_px: f32,
     theme: &ThemeConfig,
     style: &IndicatorStyle,
 ) -> Result<(), EguiError> {
+    let aggregate = needs_column_aggregation(viewport.scale().bar_spacing());
     for series in &evaluation.series {
-        let points = oscillator_points(&series.values, viewport);
+        let len = series.values.len().saturating_sub(base);
+        let window = visible_rows(&series.values, base, len);
+        let points = if aggregate {
+            sampled_line_points(window, viewport, base)
+        } else {
+            proportional_line_points(window, viewport, width_px)
+        };
         let placed = translate_points(points, (origin.x, origin.y));
         paint_oscillator_styled(painter, &placed, &series.style, theme, style, 1.0)?;
     }
@@ -406,23 +423,16 @@ impl ChartIndicator for FastMasIndicator {
         evaluation: &IndicatorEvaluation,
         viewport: &Viewport,
         origin: egui::Pos2,
+        base: usize,
+        width_px: f32,
         theme: &ThemeConfig,
         _config: &dyn Component,
         style: &IndicatorStyle,
     ) -> Result<(), EguiError> {
-        // Reuse the module's own painter rather than a second polyline pass.
-        let view = FastMasView {
-            lines: evaluation
-                .series
-                .iter()
-                .map(|series| FastMasLine {
-                    name: series.name.clone(),
-                    values: series.values.clone(),
-                    style: series.style.clone(),
-                })
-                .collect(),
-        };
-        paint_fast_mas(painter, &view, viewport, origin, theme, style)
+        // One polyline per average through the shared seam — the same
+        // sampler pair and the same styled emitter as every line-like
+        // series, so no second polyline mapping can drift from it.
+        paint_series(painter, evaluation, viewport, origin, base, width_px, theme, style)
     }
 }
 

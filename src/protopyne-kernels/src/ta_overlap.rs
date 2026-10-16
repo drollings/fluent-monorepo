@@ -138,9 +138,9 @@ impl Indicator for BbandsIndicator {
                 ],
             });
         }
-        let window: Vec<f64> = state.closes().collect();
-        let mean = crate::math::window_mean(&window);
-        let dev = crate::math::std_pop(&window);
+        let window = state.scratch_closes();
+        let mean = crate::math::window_mean(window);
+        let dev = crate::math::std_pop(window);
         state.set_last(mean);
         Ok(FullTick {
             primary: fin_or_none(mean),
@@ -581,9 +581,8 @@ impl Indicator for DonchianIndicator {
         state.push(bar, period);
         // Retained legs run oldest-first, so the whole retention is the
         // trailing window the batch slices — one shared `channel` rule.
-        let high: Vec<f64> = state.highs().collect();
-        let low: Vec<f64> = state.lows().collect();
-        let (u, m, l) = Self::channel(&high, &low, period);
+        let (high, low) = state.scratch_highs_lows();
+        let (u, m, l) = Self::channel(high, low, period);
         state.set_last(m);
         Ok(FullTick {
             primary: fin_or_none(m),
@@ -720,16 +719,15 @@ impl Indicator for IchimokuIndicator {
         let (tenkan_len, kijun_len, senkou_b_len) = Self::lengths(params)?;
         let span = tenkan_len.max(kijun_len).max(senkou_b_len);
         state.push(bar, span);
-        let high: Vec<f64> = state.highs().collect();
-        let low: Vec<f64> = state.lows().collect();
-        let tenkan = Self::leg(&high, &low, tenkan_len);
-        let kijun = Self::leg(&high, &low, kijun_len);
+        let (high, low) = state.scratch_highs_lows();
+        let tenkan = Self::leg(high, low, tenkan_len);
+        let kijun = Self::leg(high, low, kijun_len);
         let senkou_a = if tenkan.is_finite() && kijun.is_finite() {
             f64::midpoint(tenkan, kijun)
         } else {
             f64::NAN
         };
-        let senkou_b = Self::leg(&high, &low, senkou_b_len);
+        let senkou_b = Self::leg(high, low, senkou_b_len);
         state.set_last(tenkan);
         Ok(FullTick {
             primary: fin_or_none(tenkan),
@@ -998,25 +996,29 @@ impl Indicator for PsarIndicator {
         }
         // Retention holds the last three clean bars; holes never enter, so
         // the deque matches the batch loop's position by position. Leg
-        // iterators run oldest-first in one shared order.
+        // slices run oldest-first in one shared order. Scalar child reads
+        // lead the scratch fill — borrow order only, values identical.
         state.push(bar, 3);
-        let highs: Vec<f64> = state.highs().collect();
-        let lows: Vec<f64> = state.lows().collect();
-        let closes: Vec<f64> = state.closes().collect();
+        let seeded_sar = state.child(0).last();
+        let child_trend = state.child(3).last().unwrap_or(1.0);
+        let child_ep = state.child(1).last().unwrap_or(f64::NAN);
+        let child_af = state.child(2).last().unwrap_or(shape.0);
+        let (highs, lows, closes) = state.scratch_highs_lows_closes();
         let at = |index: usize| (highs[index], lows[index], closes[index]);
-        let seeded = matches!(state.child(0).last(), Some(sar) if sar.is_finite());
+        let depth = highs.len();
+        let seeded = matches!(seeded_sar, Some(sar) if sar.is_finite());
         let next = if seeded {
             let frame = PsarFrame {
-                sar: state.child(0).last().unwrap_or(f64::NAN),
-                trend: state.child(3).last().unwrap_or(1.0),
-                ep: state.child(1).last().unwrap_or(f64::NAN),
-                af: state.child(2).last().unwrap_or(shape.0),
+                sar: seeded_sar.unwrap_or(f64::NAN),
+                trend: child_trend,
+                ep: child_ep,
+                af: child_af,
             };
-            let newer = at(state.len() - 2);
-            let older = at(state.len() - 3);
+            let newer = at(depth - 2);
+            let older = at(depth - 3);
             let (clamp_newer, clamp_older) = Self::clamps(&frame, newer, older);
             frame.step(bar.high, bar.low, clamp_newer, clamp_older, shape)
-        } else if state.len() < 2 {
+        } else if depth < 2 {
             return Ok(FullTick {
                 primary: None,
                 secondary: vec![NamedValue {
@@ -1025,7 +1027,7 @@ impl Indicator for PsarIndicator {
                 }],
             });
         } else {
-            PsarFrame::seed(at(state.len() - 2), (bar.high, bar.low, bar.close), shape.0)
+            PsarFrame::seed(at(depth - 2), (bar.high, bar.low, bar.close), shape.0)
         };
         state.child(0).set_last(next.sar);
         state.child(1).set_last(next.ep);

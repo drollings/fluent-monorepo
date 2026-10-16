@@ -223,3 +223,34 @@ fn double_and_triple_passes_agree_incrementally() {
         assert_eq!(batch.len(), data.len());
     }
 }
+
+#[test]
+fn buffered_update_matches_batch_on_constant_and_subnormal_inputs() {
+    // Bit-exactness pin for the scratch migration, over the weighted-average
+    // representatives (the weight arithmetic must agree exactly, including
+    // underflow).
+    for series in [
+        vec![42.0; 40],
+        (1..=40).map(|i| f64::from(i) * 1e-310).collect::<Vec<_>>(),
+    ] {
+        let params = len_params(14);
+        let wma = WmaIndicator::new();
+        let batch = wma.batch(&closes(&series), &params).expect("valid").values;
+        assert_eq!(
+            bits_of(&fold_closes(&wma, &series, &params)),
+            bits_of(&batch),
+            "wma reproduces batch bit-for-bit"
+        );
+        let rma = RmaIndicator::new();
+        let batch = rma.batch(&closes(&series), &params).expect("valid").values;
+        assert_eq!(
+            bits_of(&fold_closes(&rma, &series, &params)),
+            bits_of(&batch),
+            "rma reproduces batch bit-for-bit"
+        );
+    }
+}
+
+fn bits_of(values: &[Option<f64>]) -> Vec<Option<u64>> {
+    values.iter().map(|v| v.map(f64::to_bits)).collect()
+}

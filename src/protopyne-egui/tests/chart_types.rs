@@ -10,7 +10,7 @@
 
 use super::*;
 use chrono::TimeZone as _;
-use fluent_egui::{Viewport, area_polygons, area_vertex_color, crosshair_data};
+use fluent_egui::{Viewport, aggregate_column, area_polygons, area_vertex_color, crosshair_data};
 use protopyne_chart_model::{ChartRow, ChartType, DateRange, heikin_ashi, rows_of};
 use protopyne_types::Bar;
 
@@ -98,8 +98,43 @@ fn heikin_picture_converts_before_windowing() {
 }
 
 #[test]
-fn unwired_picture_refuses() {
-    // The row dispatch refuses unwired types with the parameter named, like
+fn heikin_aggregates_after_transforming_never_before() {
+    // The recursion forbids the reverse: Heikin-Ashi opens recurse bar over
+    // bar, so folding columns first and transforming the folds re-seeds the
+    // open from the fold instead of history. The column dispatcher therefore
+    // only ever consumes rows transformed at native resolution first.
+    let bars = five_bars();
+    let native = rows_of(&heikin_ashi(&bars)).rows;
+    // The forbidden order's input, hand-folded in the test (never a helper):
+    // one bar spanning the run, transformed alone.
+    let folded = Bar::new()
+        .ts(bars[0].ts)
+        .o(bars.first().expect("non-empty").o)
+        .h(bars.iter().map(|bar| bar.h).max().expect("non-empty"))
+        .l(bars.iter().map(|bar| bar.l).min().expect("non-empty"))
+        .c(bars.last().expect("non-empty").c)
+        .volume(bars.iter().map(|bar| bar.volume).sum())
+        .maybe_adj(None)
+        .build();
+    let reversed = rows_of(&heikin_ashi(std::slice::from_ref(&folded))).rows;
+    let native_fold = aggregate_column(&native).expect("native rows fold");
+    assert_eq!(reversed.len(), 1, "one folded bar transforms to one row");
+    assert!(
+        (native_fold.open - reversed[0].open).abs() > 1e-9,
+        "aggregate-first re-seeds the open ({} vs {})",
+        native_fold.open,
+        reversed[0].open
+    );
+    // And the frame path feeds the dispatcher the native order: the painted
+    // Heikin picture is the transformed tail, whose fold is the native fold.
+    let painted =
+        picture_rows(&bars, DateRange::All, 60, ChartType::Heikin).expect("heikin picture");
+    assert_eq!(painted, native, "the dispatcher input is transform-first");
+    assert_eq!(aggregate_column(&painted), Some(native_fold), "its fold is the native fold");
+}
+
+#[test]
+fn unwired_picture_refuses() {    // The row dispatch refuses unwired types with the parameter named, like
     // the bar dispatch.
     let refused =
         picture_rows(&five_bars(), DateRange::All, 60, ChartType::Renko).expect_err("renko refuses");

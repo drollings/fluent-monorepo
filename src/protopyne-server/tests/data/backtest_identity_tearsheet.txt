@@ -1,0 +1,19 @@
+backtest tearsheet
+manifest: data=spy-15m-v1 code=0.2.0 bars=11 seed=11
+proposals: 11 fills: 11 fill_rate: 1
+fees: 7.15 notional: 7638.27909250 efficiency: 0.34719450420454545
+drawdown: 7.00200500 tail: 2.10354500 cum_return: 7.802864021226666 rsrs: n/a
+sharpe: 13.933514807657206 sortino: 170.4631778938704 calmar: n/a win_rate: 0.3 profit_factor: 0.10065810283871583
+portfolio paper: realized -7.15 unrealized -7.2490925000000000000000000 fees 7.15 fills 11 closed 0 open 11
+bucket paper/SPY/Vertical/ribbon/sweep-0.5: realized -7.15 unrealized -7.2490925000000000000000000 fees 7.15 fills 11 closed 0 open 11 long
+portfolio stats: win_rate n/a profit_factor n/a sharpe 16.372990761626422 sortino n/a calmar n/a
+assumptions:
+- quotes synthesized from closed-bar close with spread 5 bps, size 100
+- fills share paper's spread-aware fill code (liquidity filter, slippage, fees)
+- orders rest at the touch (buy ask, sell bid); proposal limits mark the bar close
+- max loss 400 per proposal
+limits:
+- single CSV history 'spy-15m-v1', 11 bars
+- 0 unquotable bars skipped; 0 warmup bars skipped
+- no corporate-action adjustments (cash dividends excluded from P&L); no option-chain data (greeks unavailable)
+greeks: greeks-over-time unavailable: prototype has no option-chain feed

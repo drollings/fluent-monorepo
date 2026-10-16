@@ -82,3 +82,42 @@ fn standard_replay_controller_carries_the_topology() {
     let key = cache_key_for(RIBBON_NODE, &ParamSet::new().with_int("length", 14));
     assert_eq!(controller.revision_of(key), None, "nothing published yet");
 }
+
+#[test]
+fn kernel_warmup_reads_declared_values_and_refuses_unknown() {
+    // Warmup lengths come from each kernel's declared warmup, never a magic
+    // number: the evaluation window below sizes itself from these.
+    let params = ParamSet::new().with_int("length", 14);
+    assert_eq!(kernel_warmup("sma", &params).expect("sma warmup"), 14);
+    assert_eq!(kernel_warmup("ema", &params).expect("ema warmup"), 14);
+    assert_eq!(kernel_warmup("atr", &params).expect("atr warmup"), 14);
+    assert!(
+        kernel_warmup("no-such-kernel", &params).is_err(),
+        "unknown kernels refuse instead of warming up by zero"
+    );
+}
+
+#[test]
+fn evaluation_window_covers_visible_plus_warmup_and_clamps() {
+    // The evaluation slice for visible-window-plus-warmup assessment: the
+    // visible bars plus the warmup bars before them, clamped to history.
+    assert_eq!(evaluation_window(5000, 4900, 100, 14), (4886, 114));
+    assert_eq!(evaluation_window(100, 0, 100, 14), (0, 100), "leading edge clamps");
+    assert_eq!(evaluation_window(100, 90, 10, 14), (76, 24), "trailing edge clamps");
+    assert_eq!(
+        evaluation_window(100, 95, 20, 14),
+        (81, 19),
+        "an overlong visible window clamps to history"
+    );
+    assert_eq!(
+        evaluation_window(10, 0, 10, 14),
+        (0, 10),
+        "shortfall evaluates what exists; leading holes stay holes downstream"
+    );
+    assert_eq!(evaluation_window(0, 0, 0, 14), (0, 0), "no bars evaluates nothing");
+    assert_eq!(
+        evaluation_window(100, 150, 10, 14),
+        (100, 0),
+        "a visible window past the data evaluates nothing"
+    );
+}

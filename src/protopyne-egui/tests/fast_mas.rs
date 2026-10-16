@@ -255,6 +255,8 @@ fn paint_fast_mas_blits_every_line_and_refuses_a_broken_theme() {
         &view,
         &price_viewport(),
         egui::Pos2::new(0.0, 0.0),
+        0,
+        640.0,
         &theme,
         &IndicatorStyle::default(),
     )
@@ -269,9 +271,45 @@ fn paint_fast_mas_blits_every_line_and_refuses_a_broken_theme() {
         &view,
         &price_viewport(),
         egui::Pos2::new(0.0, 0.0),
+        0,
+        640.0,
         &broken,
         &IndicatorStyle::default(),
     )
     .expect_err("a broken needed key refuses");
     assert!(refused.to_string().contains("slow"), "refusal names the key: {refused}");
+}
+
+#[test]
+fn paint_fast_mas_samples_per_column_at_sub_pixel_zoom() {
+    // The custom overlay routes through the shared sampler pair: at
+    // sub-pixel zoom each line emits one vertex per column run (the run's
+    // last present value), while the native mapping above one pixel per bar
+    // is untouched.
+    use fluent_egui::{needs_column_aggregation, oscillator_points, sampled_line_points};
+    let rows = ramp_rows();
+    let view = evaluate_fast_mas(&rows, &FastMasConfig::new().build()).expect("view builds");
+    let tight = Viewport::new(PriceScaleMode::Normal, 90.0, 170.0, 200.0, 0.2, 90.0, false)
+        .expect("sub-pixel viewport builds");
+    assert!(needs_column_aggregation(tight.scale().bar_spacing()));
+    for line in &view.lines {
+        let sampled = sampled_line_points(&line.values, &tight, 0);
+        let native = oscillator_points(&line.values, &price_viewport());
+        assert!(sampled.len() < native.len(), "sampling sheds shapes");
+        assert!(sampled.iter().any(Option::is_some), "present values still paint");
+    }
+    // And the painter accepts the sampled path without refusing.
+    let (ctx, painter) = test_painter();
+    paint_fast_mas(
+        &painter,
+        &view,
+        &tight,
+        egui::Pos2::new(0.0, 0.0),
+        0,
+        640.0,
+        &ThemeConfig::default(),
+        &IndicatorStyle::default(),
+    )
+    .expect("sampled zoom paints");
+    assert!(!end_frame(&ctx).shapes.is_empty(), "sampled lines emit shapes");
 }

@@ -318,3 +318,34 @@ fn stat_registry_and_matrix_cover_all_three() {
         assert!((row.eps - 1e-9).abs() == 0.0, "{id} frozen eps");
     }
 }
+
+fn bits_of(values: &[Option<f64>]) -> Vec<Option<u64>> {
+    values.iter().map(|v| v.map(f64::to_bits)).collect()
+}
+
+fn fold_stddev(closes: &[f64], params: &ParamSet) -> Vec<Option<f64>> {
+    let sd = StddevIndicator::new();
+    let mut state = IndicatorState::new();
+    closes
+        .iter()
+        .map(|close| {
+            sd.update(&mut state, BarTick::close_only(*close), params).expect("update runs")
+        })
+        .collect()
+}
+
+#[test]
+fn buffered_update_matches_batch_on_constant_and_subnormal_inputs() {
+    // Bit-exactness pin for the scratch migration, over the dispersion
+    // representative (two-pass deviation arithmetic must agree exactly,
+    // including a zero-variance flat line).
+    let params = stddev_params(14, 1.0);
+    for closes in [
+        vec![42.0; 40],
+        (1..=40).map(|i| f64::from(i) * 1e-310).collect::<Vec<_>>(),
+    ] {
+        let sd = StddevIndicator::new();
+        let batch = sd.batch(&Ohlcv::close_only(&closes), &params).expect("batch runs").values;
+        assert_eq!(bits_of(&fold_stddev(&closes, &params)), bits_of(&batch));
+    }
+}

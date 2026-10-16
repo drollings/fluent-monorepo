@@ -159,6 +159,54 @@ fn visible_rows_windows_without_copying_or_panicking() {
 }
 
 #[test]
+fn culled_window_widens_the_visible_range_by_the_margin_each_side() {
+    let base = viewport(PriceScaleMode::Normal, 90.0, 110.0); // 8 px spacing
+    // 160 px over 40 bars at rest: visible (0, 21), widened each side, clamped.
+    // Every expectation below names the margin outright, so a zero margin
+    // (culling without edge cover) fails here, not in production.
+    assert_eq!(base.visible_bar_range(160.0, 40), (0, 21));
+    assert_eq!(base.culled_bar_range(160.0, 40), (0, 21 + CULL_OVERSCAN_BARS));
+    // Panned ten bars left: the margin rides both edges.
+    let left = base.with_x_offset(-80.0).expect("offset");
+    assert_eq!(left.visible_bar_range(160.0, 40), (10, 31));
+    assert_eq!(
+        left.culled_bar_range(160.0, 40),
+        (10 - CULL_OVERSCAN_BARS, 31 + CULL_OVERSCAN_BARS)
+    );
+    // Panned right into the leading clamp: the margin still saturates at zero.
+    let right = base.with_x_offset(80.0).expect("offset");
+    assert_eq!(right.visible_bar_range(160.0, 40), (0, 11));
+    assert_eq!(right.culled_bar_range(160.0, 40), (0, 11 + CULL_OVERSCAN_BARS));
+    // Near the trailing edge the margin saturates at the bar count.
+    let tail = base.with_x_offset(-160.0).expect("offset");
+    let (visible_start, _) = tail.visible_bar_range(160.0, 40);
+    assert_eq!(
+        tail.culled_bar_range(160.0, 40),
+        (visible_start.saturating_sub(CULL_OVERSCAN_BARS), 40)
+    );
+}
+
+#[test]
+fn culled_window_stays_empty_when_nothing_is_visible() {
+    let base = viewport(PriceScaleMode::Normal, 90.0, 110.0); // 8 px spacing
+    // An empty visible range must not grow a margin: off-window stays empty.
+    let past_left = base.with_x_offset(400.0).expect("offset");
+    assert_eq!(past_left.visible_bar_range(320.0, 40), (0, 0));
+    assert_eq!(past_left.culled_bar_range(320.0, 40), (0, 0));
+    let past_right = base.with_x_offset(-400.0).expect("offset");
+    assert_eq!(past_right.visible_bar_range(320.0, 40), (40, 40));
+    assert_eq!(past_right.culled_bar_range(320.0, 40), (40, 40));
+    assert_eq!(base.culled_bar_range(320.0, 0), (0, 0), "no bars is empty");
+    assert_eq!(base.culled_bar_range(-5.0, 40), (0, 0), "negative width is empty");
+    assert_eq!(base.culled_bar_range(0.0, 40), (0, 0), "a pane with no area paints nothing");
+    assert_eq!(
+        base.culled_bar_range(f32::NAN, 40),
+        (0, 0),
+        "non-finite width paints nothing"
+    );
+}
+
+#[test]
 fn thinning_keeps_sparse_grids_whole_and_caps_dense_ones() {
     use protopyne_chart_scale::nice_ticks;
     // Sparse range: everything the generator emits must survive.
@@ -309,5 +357,49 @@ fn zoomed_window_keeps_four_fifths_of_ticks_inside() {
     assert!(
         inside * 5 >= total * 4,
         "at least four fifths of ticks land inside after zoom: {inside}/{total}"
+    );
+}
+
+#[test]
+fn proportional_window_covers_visible_within_twice_its_width() {
+    let base = viewport(PriceScaleMode::Normal, 90.0, 110.0); // 8 px spacing
+    // 800 px over 20k bars at rest: visible (0, 101), proportional (0, 202).
+    assert_eq!(base.visible_bar_range(800.0, 20_000), (0, 101));
+    assert_eq!(base.proportional_bar_range(800.0, 20_000), (0, 202));
+    // Panned ten bars left: visible (10, 111), proportional (0, 202).
+    let left = base.with_x_offset(-80.0).expect("offset");
+    assert_eq!(left.visible_bar_range(800.0, 20_000), (10, 111));
+    assert_eq!(left.proportional_bar_range(800.0, 20_000), (0, 202));
+    // Mid-history pan: the window spans twice the visible width around it.
+    let mid = base.with_x_offset(-8_000.0).expect("offset");
+    let (visible_start, visible_end) = mid.visible_bar_range(800.0, 20_000);
+    let width = visible_end - visible_start;
+    let (start, end) = mid.proportional_bar_range(800.0, 20_000);
+    assert!(start <= visible_start, "the proportional window covers the visible start");
+    assert!(end >= visible_end, "the proportional window covers the visible end");
+    assert!(end - start <= 2 * width, "the proportional window stays within twice visible");
+    // Near the trailing edge the window saturates at the bar count.
+    let tail = base.with_x_offset(-159_000.0).expect("offset");
+    let (tail_start, tail_end) = tail.proportional_bar_range(800.0, 20_000);
+    assert!(tail_end <= 20_000, "the trailing edge saturates");
+    assert!(tail_start <= tail_end, "the trailing window stays ordered");
+}
+
+#[test]
+fn proportional_window_stays_empty_when_nothing_is_visible() {
+    let base = viewport(PriceScaleMode::Normal, 90.0, 110.0); // 8 px spacing
+    let past_left = base.with_x_offset(400.0).expect("offset");
+    assert_eq!(past_left.visible_bar_range(320.0, 40), (0, 0));
+    assert_eq!(past_left.proportional_bar_range(320.0, 40), (0, 0));
+    let past_right = base.with_x_offset(-400.0).expect("offset");
+    assert_eq!(past_right.visible_bar_range(320.0, 40), (40, 40));
+    assert_eq!(past_right.proportional_bar_range(320.0, 40), (40, 40));
+    assert_eq!(base.proportional_bar_range(320.0, 0), (0, 0), "no bars is empty");
+    assert_eq!(base.proportional_bar_range(-5.0, 40), (0, 0), "negative width is empty");
+    assert_eq!(base.proportional_bar_range(0.0, 40), (0, 0), "a pane with no area paints nothing");
+    assert_eq!(
+        base.proportional_bar_range(f32::NAN, 40),
+        (0, 0),
+        "non-finite width paints nothing"
     );
 }

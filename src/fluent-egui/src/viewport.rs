@@ -8,7 +8,6 @@
 //! Domain overlays (session breaks, toolbar range windows) compose this
 //! viewport in the terminal crate. No paint types enter here.
 
-use protopyne_chart_model::ChartRow;
 use protopyne_chart_scale::{PriceRange, PriceScale, PriceScaleMode, Tick, nice_ticks};
 
 use crate::error::EguiError;
@@ -27,6 +26,21 @@ pub struct Viewport {
     scale: PriceScale,
     x_offset_px: f32,
 }
+
+/// Bars of overscan kept each side of the visible window when culling
+/// candle geometry. A candle whose center just left the pane still paints
+/// half its body and its wick inside it, so a hard clamp makes edge candles
+/// flicker in and out while panning. The margin suppresses that edge pop —
+/// a task-value choice pinned by the pan-sweep golden, not a confidence
+/// signal — and stays constant-bounded so zoomed-in views cost O(visible).
+pub const CULL_OVERSCAN_BARS: usize = 4;
+
+/// Visible widths covered by the proportional cull: at most twice the visible
+/// bar count, always covering the visible range. The factor bounds per-frame
+/// work while keeping edge-crossing segments exact — a task-value choice, not
+/// a confidence signal — so native overlays stay O(visible) instead of
+/// O(history) at native zoom.
+pub const PROPORTIONAL_CULL_FACTOR: usize = 2;
 
 impl Viewport {
     /// Build a viewport over `[min, max]`; refuses zero/negative geometry,
@@ -115,6 +129,50 @@ impl Viewport {
         (start.min(end), end)
     }
 
+    /// The `[start, end)` bar indices actually painted: the visible range
+    /// widened by [`CULL_OVERSCAN_BARS`] each side, clamped to
+    /// `[0, total_bars]`. Composes [`visible_bar_range`](Self::visible_bar_range),
+    /// never a second copy of its math. An empty visible range stays empty —
+    /// off-window viewports paint nothing, never a margin of stale bars — and
+    /// a pane with no area (`width_px <= 0.0`) paints nothing either: the one
+    /// edge bar straddling x `0.0` would clip to nothing downstream.
+    #[must_use]
+    pub fn culled_bar_range(self, width_px: f32, total_bars: usize) -> (usize, usize) {
+        if width_px <= 0.0 {
+            return (0, 0);
+        }
+        let (start, end) = self.visible_bar_range(width_px, total_bars);
+        if start >= end {
+            return (start, end);
+        }
+        let start = start.saturating_sub(CULL_OVERSCAN_BARS);
+        let end = end.saturating_add(CULL_OVERSCAN_BARS).min(total_bars);
+        (start, end)
+    }
+
+    /// The `[start, end)` bar indices kept by the proportional cull: the
+    /// visible range widened to at most twice its width, clamped to
+    /// `[0, total_bars]`. Composes [`visible_bar_range`](Self::visible_bar_range),
+    /// never a second copy of its math. From `(vs, ve)` with `V = ve - vs`,
+    /// `start = vs - min(vs, V)` and `end = min(len, start + 2V)` — at most
+    /// twice the visible width, always covering the visible range. Empty stays
+    /// empty and zero-area panes paint nothing, the same edge rules as the
+    /// constant-overscan helper.
+    #[must_use]
+    pub fn proportional_bar_range(self, width_px: f32, total_bars: usize) -> (usize, usize) {
+        if width_px <= 0.0 {
+            return (0, 0);
+        }
+        let (visible_start, visible_end) = self.visible_bar_range(width_px, total_bars);
+        if visible_start >= visible_end {
+            return (visible_start, visible_end);
+        }
+        let width = visible_end - visible_start;
+        let start = visible_start.saturating_sub(width.min(visible_start));
+        let end = start.saturating_add(width.saturating_mul(PROPORTIONAL_CULL_FACTOR)).min(total_bars);
+        (start, end)
+    }
+
     /// The price window on screen right now: the single answer to "what is
     /// on screen", read from the owned scale, never re-derived at a call
     /// site. Grid ticks, axis labels, and area baselines all read this; the
@@ -194,11 +252,13 @@ pub struct BreakLine {
     pub x: f32,
 }
 
-/// Window converted rows without copying; saturates out-of-range bounds
+/// Window a slice without copying; saturates out-of-range bounds
 /// instead of panicking, so scroll positions past the data edge show an
-/// empty (or trailing) window rather than aborting the frame.
+/// empty (or trailing) window rather than aborting the frame. Converted rows
+/// and their parallel key series share this one slicer, so both windows
+/// always agree.
 #[must_use]
-pub fn visible_rows(rows: &[ChartRow], start: usize, count: usize) -> &[ChartRow] {
+pub fn visible_rows<T>(rows: &[T], start: usize, count: usize) -> &[T] {
     let start = start.min(rows.len());
     let end = start.saturating_add(count).min(rows.len());
     &rows[start..end]

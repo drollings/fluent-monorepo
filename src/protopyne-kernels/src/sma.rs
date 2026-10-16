@@ -78,8 +78,8 @@ impl Indicator for SmaIndicator {
         if state.len() < period {
             return Ok(None);
         }
-        let window: Vec<f64> = state.closes().collect();
-        let mean = crate::math::window_mean(&window);
+        let window = state.scratch_closes();
+        let mean = crate::math::window_mean(window);
         state.set_last(mean);
         Ok(crate::indicator::fin_or_none(mean))
     }

@@ -478,6 +478,28 @@ fn seeded_timeframes_switch_the_loaded_candles_and_resample_coarser_keys() {
 }
 
 #[test]
+fn an_incomplete_trailing_bucket_never_sources_the_folded_edge() {
+    // The live edge renders from native bars, never from a partially
+    // complete folded bucket: six quarter-hours hold one whole hour plus a
+    // two-row tail, so the hourly fold emits exactly the whole bucket and
+    // the tail's prices appear nowhere in the folded edge.
+    let hour_sec = protopyne_types::Timeframe::H1.bucket_start_ms(1_700_000_000_000) / 1_000;
+    let mut workspace = ChartWorkspace::new().expect("the workspace boots");
+    workspace
+        .seed_history(TimeframeKey::M15, grid_rows(hour_sec, 6))
+        .expect("15M selects on seed");
+    workspace.select_timeframe(TimeframeKey::H1).expect("1H selects");
+    let hourly = workspace.rows();
+    assert_eq!(hourly.len(), 1, "the two-row tail emits no hourly bar");
+    assert_eq!(hourly[0].time, hour_sec, "the whole bucket stamps its start");
+    assert!(
+        (hourly[0].close - 103.0).abs() < 1e-12,
+        "the folded edge closes on the whole bucket's last row, not the live tail: {}",
+        hourly[0].close
+    );
+}
+
+#[test]
 fn a_full_day_grid_folds_whole_hours_and_a_whole_day_while_a_session_day_folds_no_day() {
     use protopyne_types::Timeframe;
     // A synthetic 24-hour quarter-hour grid from a UTC midnight: every hour
@@ -853,4 +875,84 @@ fn a_wheel_over_the_legend_never_moves_the_chart() {
 /// it compares the representation rather than a tolerance.
 fn unchanged(actual: f32, expected: f32) -> bool {
     actual.to_bits() == expected.to_bits()
+}
+
+#[test]
+fn identical_republish_keeps_revisions_and_skips_the_derived_rebuild() {
+    // The frame path republishes every indicator series before rebuilding
+    // the derived chart vectors (sub-pane, momentum keys, tints): when the
+    // republish backdates every revision, the rebuild is pure cost and must
+    // be skipped. The skip is observed through a build counter, never timing.
+    let gateway = ScriptGateway::new();
+    let mut workspace = ChartWorkspace::with_gateway(&gateway).expect("the workspace boots");
+    let built = workspace.derived_builds();
+    assert!(built > 0, "boot built the derived panes once");
+    // The scripted gateway serves byte-identical bars per symbol, so a
+    // second pull evaluates to identical series: every revision backdates.
+    workspace.refresh(&gateway).expect("an identical refresh recomputes");
+    assert_eq!(
+        workspace.derived_builds(),
+        built,
+        "identical republish keeps every revision and skips the derived rebuild"
+    );
+    // A real parameter change moves values, bumps revisions, and rebuilds.
+    workspace
+        .set_slot_field("integration_lite", "eit_alpha", "0.2")
+        .expect("the field edits");
+    assert!(
+        workspace.derived_builds() > built,
+        "changed content rebuilds the derived panes"
+    );
+    // Returning to the identical input skips again: the counter holds.
+    workspace
+        .set_slot_field("integration_lite", "eit_alpha", "0.5")
+        .expect("the field restores");
+    let rebuilt = workspace.derived_builds();
+    workspace.refresh(&gateway).expect("an identical refresh recomputes");
+    assert_eq!(
+        workspace.derived_builds(),
+        rebuilt,
+        "the restored input backdates again and skips the rebuild"
+    );
+}
+
+#[test]
+fn frame_path_borrows_windows_instead_of_cloning_them() {
+    // Borrow-profile pin (grep-level, never timing): the canvas windowing
+    // helpers that cloned per frame are gone — every layer borrows its
+    // trailing window through the shared slicer — and the per-frame momentum
+    // fold derives per-column keys from the borrowed trend slice through the
+    // one single-bar core instead of materializing a fresh window `Vec`.
+    // Full-history folds in `recompute` (and their `candle_momentum_keys`
+    // over `self.rows`) are out of scope: they run on data or parameter
+    // change, never per frame.
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/workspace.rs");
+    let text = std::fs::read_to_string(path).expect("the workspace source reads");
+    for token in [
+        "fn windowed_ribbon",
+        "fn windowed_evaluation",
+        "fn windowed_delta",
+        "candle_momentum_keys(window",
+    ] {
+        assert!(
+            !text.contains(token),
+            "the frame path borrows instead of cloning: {token} is still present"
+        );
+    }
+    assert!(
+        text.contains("visible_rows"),
+        "windows borrow through the shared slicer"
+    );
+    assert!(
+        text.contains("momentum_key_for"),
+        "per-column keys derive from the borrowed trend slice"
+    );
+    assert!(
+        text.contains("sampled_ribbon_bands"),
+        "the ribbon fill samples per column at sub-pixel zoom"
+    );
+    assert!(
+        text.contains("column_delta_geoms"),
+        "the delta histogram dispatches by pixel columns"
+    );
 }

@@ -167,6 +167,19 @@ pub fn oscillator_transparency(brightness: u32) -> f64 {
     f64::from(90_u32.saturating_sub(brightness))
 }
 
+/// One bar's momentum tint key from its direction crossed with the ribbon
+/// trend: the single-bar core behind [`candle_momentum_keys`], so the frame
+/// path derives per-column keys from the same borrowed trend slice instead
+/// of materializing a fresh window `Vec`.
+#[must_use]
+pub fn momentum_key_for(open: f64, close: f64, bullish: bool) -> &'static str {
+    match (close >= open, bullish) {
+        (true, true) => "bull",
+        (false, true) => "bull_down",
+        (false, false) => "bear",
+        (true, false) => "bear_up",
+    }
+}
 /// Candle tint keys from bar direction crossed with the ribbon trend.
 ///
 /// Mirrors the reference four-color `barcolor` branch in display space:
@@ -188,12 +201,7 @@ pub fn candle_momentum_keys(
     Ok(rows
         .iter()
         .zip(bullish.iter())
-        .map(|(row, trend)| match (row.close >= row.open, *trend) {
-            (true, true) => "bull",
-            (false, true) => "bull_down",
-            (false, false) => "bear",
-            (true, false) => "bear_up",
-        })
+        .map(|(row, trend)| momentum_key_for(row.open, row.close, *trend))
         .collect())
 }
 

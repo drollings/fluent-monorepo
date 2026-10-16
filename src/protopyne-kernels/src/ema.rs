@@ -93,12 +93,15 @@ impl Indicator for EmaIndicator {
         if state.len() < period {
             return Ok(None);
         }
-        let window: Vec<f64> = state.closes().collect();
-        let next = match state.last() {
+        // The previous output copies out before the scratch fill: the window
+        // slice borrows the state, so all scalar reads lead it.
+        let prev = state.last();
+        let window = state.scratch_closes();
+        let next = match prev {
             Some(prev) if !prev.is_nan() => {
                 crate::math::ema_step(prev, bar.close, Self::factor(period))
             }
-            _ => crate::math::window_mean(&window),
+            _ => crate::math::window_mean(window),
         };
         state.set_last(next);
         Ok(fin_or_none(next))

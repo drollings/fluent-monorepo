@@ -538,6 +538,12 @@ pub struct IndicatorState {
     history: VecDeque<BarTick>,
     last: Option<f64>,
     children: Vec<IndicatorState>,
+    /// Clear-and-refill window scratch: every `scratch_*` method refills
+    /// this one buffer instead of collecting a fresh `Vec` per bar, so the
+    /// incremental path allocates once per state lifetime, never once per
+    /// bar. Pair/triple fills stack their legs back-to-back in the same
+    /// buffer and split it — still one buffer, still no per-bar allocation.
+    scratch: Vec<f64>,
 }
 
 impl IndicatorState {
@@ -585,6 +591,65 @@ impl IndicatorState {
     /// Retained volumes, oldest first.
     pub fn volumes(&self) -> impl Iterator<Item = f64> + '_ {
         self.history.iter().map(|t| t.volume)
+    }
+
+    /// Retained closes as a reused slice, oldest first: refills the owned
+    /// scratch buffer (clear-and-refill, no allocation past the first fill
+    /// at a given capacity) instead of collecting a fresh `Vec` per bar.
+    /// The slice borrows the state, so child reads and `set_last` go after
+    /// its last use — data movement only, the arithmetic op order never
+    /// moves. Empty history yields an empty slice, never a refusal.
+    pub fn scratch_closes(&mut self) -> &[f64] {
+        self.scratch.clear();
+        self.scratch.extend(self.history.iter().map(|tick| tick.close));
+        &self.scratch
+    }
+
+    /// Retained volumes as a reused slice, oldest first. Same reuse
+    /// contract as [`scratch_closes`](Self::scratch_closes).
+    pub fn scratch_volumes(&mut self) -> &[f64] {
+        self.scratch.clear();
+        self.scratch.extend(self.history.iter().map(|tick| tick.volume));
+        &self.scratch
+    }
+
+    /// Retained closes then volumes as reused slices, oldest first: one
+    /// buffer, two legs stacked back-to-back. Same reuse contract as
+    /// [`scratch_closes`](Self::scratch_closes).
+    pub fn scratch_closes_volumes(&mut self) -> (&[f64], &[f64]) {
+        self.scratch.clear();
+        self.scratch.extend(self.history.iter().map(|tick| tick.close));
+        let mid = self.scratch.len();
+        self.scratch.extend(self.history.iter().map(|tick| tick.volume));
+        let (closes, volumes) = self.scratch.split_at(mid);
+        (closes, volumes)
+    }
+
+    /// Retained highs then lows as reused slices, oldest first: one buffer,
+    /// two legs stacked back-to-back. Same reuse contract as
+    /// [`scratch_closes`](Self::scratch_closes).
+    pub fn scratch_highs_lows(&mut self) -> (&[f64], &[f64]) {
+        self.scratch.clear();
+        self.scratch.extend(self.history.iter().map(|tick| tick.high));
+        let mid = self.scratch.len();
+        self.scratch.extend(self.history.iter().map(|tick| tick.low));
+        let (highs, lows) = self.scratch.split_at(mid);
+        (highs, lows)
+    }
+
+    /// Retained highs, lows, then closes as reused slices, oldest first:
+    /// one buffer, three legs stacked back-to-back. Same reuse contract as
+    /// [`scratch_closes`](Self::scratch_closes).
+    pub fn scratch_highs_lows_closes(&mut self) -> (&[f64], &[f64], &[f64]) {
+        self.scratch.clear();
+        self.scratch.extend(self.history.iter().map(|tick| tick.high));
+        let highs_end = self.scratch.len();
+        self.scratch.extend(self.history.iter().map(|tick| tick.low));
+        let lows_end = self.scratch.len();
+        self.scratch.extend(self.history.iter().map(|tick| tick.close));
+        let (head, closes) = self.scratch.split_at(lows_end);
+        let (highs, lows) = head.split_at(highs_end);
+        (highs, lows, closes)
     }
 
     /// Previous close (the bar before the one just pushed), if retained.

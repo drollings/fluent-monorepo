@@ -16,15 +16,16 @@
 use std::collections::HashMap;
 
 use fluent_egui::{
-    CatalogAction, CatalogModal, CrosshairLines, DeltaView, EguiError, HotSlotAction, HotSlotStack,
-    InteractionState, PaneCache, PanePlan, PaneZones, PointerInput, RibbonView,
+    CatalogAction, CatalogModal, CrosshairLines, EguiError, HotSlotAction, HotSlotStack,
+    InteractionState, PaneCache, PanePlan, PaneZones, PointerInput,
     SettingsCommit, SettingsTab, SlotAttachment, ThemeConfig, TintedCandle, TintedDeltaBar, Viewport,
-    WheelTarget, WheelZones, axis_ticks, candle_body_width, candle_geoms, crosshair_data,
-    crosshair_lines, delta_bar_geoms, opacity_from_transparency, paint_candles_tinted,
-    paint_catalog_modal, paint_crosshair, paint_delta_bars_tinted, paint_hot_slot_stack,
-    paint_oscillator, paint_ribbon_fill, paint_slot_settings_modal, resolve_color, ribbon_polygons,
-    translate_breaks, translate_candles, translate_delta_bars, translate_points, translate_polygons,
-    wheel_zoom_factor, zoom_range_around,
+    WheelTarget, WheelZones, axis_ticks, candle_body_width, column_candle_geoms, column_delta_geoms,
+    crosshair_data, crosshair_lines, needs_column_aggregation, opacity_from_transparency,
+    paint_candles_tinted, paint_catalog_modal, paint_crosshair,
+    paint_delta_bars_tinted, paint_hot_slot_stack, paint_oscillator, paint_ribbon, paint_ribbon_fill,
+    paint_slot_settings_modal, proportional_ribbon_polygons, resolve_color, sampled_line_points,
+    sampled_ribbon_bands, translate_bands, translate_breaks, translate_candles, translate_delta_bars,
+    translate_points, translate_polygons, visible_rows, wheel_zoom_factor, zoom_range_around,
 };
 use fluent_wvr::{FieldAccess, component_downcast_ref};
 use protopyne_chart_model::{ChartRow, ChartType, DateRange};
@@ -32,15 +33,15 @@ use protopyne_chart_scale::PriceScaleMode;
 use protopyne_types::{BucketAccum, SymbolIndex, SymKey, Timeframe};
 use protopyne_view::{ChartBars, TerminalGateway};
 
-use crate::chart::{ChartConfig, DEFAULT_SYMBOL, TimeframeKey, window_for_range};
+use crate::chart::{ChartConfig, DEFAULT_SYMBOL, TimeframeKey, line_values, window_for_range};
 use crate::indicators::{
-    ChartIndicator, IndicatorCategory, IndicatorEvaluation, IndicatorSeries, build_indicator_catalog,
+    ChartIndicator, IndicatorCategory, IndicatorEvaluation, build_indicator_catalog,
     instantiate_indicator,
 };
 use crate::integration_lite::{
     IntegrationLiteConfig, IntegrationLiteSubPane, MomentumPalette, MomentumTint,
-    candle_momentum_keys, candle_momentum_series, integration_lite_sub_pane, momentum_tints,
-    ribbon_fill_transparency,
+    candle_momentum_keys, candle_momentum_series, integration_lite_sub_pane, momentum_key_for,
+    momentum_tints, ribbon_fill_transparency,
 };
 use crate::session::{INTRADAY_SPAN_SECONDS, time_grid_lines};
 use crate::widgets::{TopBarAction, paint_top_bar};
@@ -312,54 +313,6 @@ impl ChartAccum {
             volume: self.volume,
         })
     }
-}
-
-/// Window a trend ribbon to `[start, start + len)` for pane-local painting.
-///
-/// Ribbon legs line up with the full history; the price pane paints the
-/// trailing range window, so its ribbon must be sliced to the same bars
-/// (candle geometry and ribbon polygons then share one index origin). An
-/// out-of-range slice yields an empty band rather than a misaligned one.
-fn windowed_ribbon(ribbon: &RibbonView, start: usize, len: usize) -> RibbonView {
-    let slice = |values: &[Option<f64>]| {
-        values.get(start..start + len).map_or_else(Vec::new, <[_]>::to_vec)
-    };
-    RibbonView {
-        upper: slice(&ribbon.upper),
-        lower: slice(&ribbon.lower),
-        bullish: ribbon.bullish.get(start..start + len).map_or_else(Vec::new, <[_]>::to_vec),
-        alpha: ribbon.alpha,
-    }
-}
-
-/// Window an indicator evaluation to `[start, start + len)` for pane-local
-/// painting: the plugins evaluate over the full history, but the canvas paints
-/// the trailing range window, so every series is sliced to the same bars the
-/// candles map (one index origin across the price pane and the sub-pane).
-fn windowed_evaluation(
-    evaluation: &IndicatorEvaluation,
-    start: usize,
-    len: usize,
-) -> IndicatorEvaluation {
-    IndicatorEvaluation {
-        series: evaluation
-            .series
-            .iter()
-            .map(|series| IndicatorSeries {
-                values: series.values.get(start..start + len).map_or_else(Vec::new, <[_]>::to_vec),
-                ..series.clone()
-            })
-            .collect(),
-    }
-}
-
-/// Window a delta histogram to `[start, start + len)` (see
-/// [`windowed_evaluation`]).
-fn windowed_delta(delta: &DeltaView, start: usize, len: usize) -> DeltaView {
-    let slice = |values: &[Option<f64>]| {
-        values.get(start..start + len).map_or_else(Vec::new, <[_]>::to_vec)
-    };
-    DeltaView { buy_top: slice(&delta.buy_top), sell_bottom: slice(&delta.sell_bottom) }
 }
 
 /// Resolve a ported momentum gradient tint to its paint color at the tint's
@@ -659,6 +612,16 @@ pub struct ChartWorkspace {
     sub_pane: Option<IntegrationLiteSubPane>,
     momentum_keys: Vec<&'static str>,
     tints: Vec<Option<MomentumTint>>,
+    /// Derived-pane builds actually executed: incremented only when the
+    /// published series revisions (or the rows shape) moved and the
+    /// sub-pane, momentum keys, and tints were rebuilt. Identical
+    /// republishes backdate every revision and skip the rebuild, so this
+    /// counts work done, never frames seen.
+    derived_builds: u64,
+    /// Last built series revisions, as sorted `(key, revision)` pairs.
+    last_series_revisions: Vec<(u64, u64)>,
+    /// Last built rows shape: length plus first/last bar times.
+    last_rows_shape: (usize, Option<i64>, Option<i64>),
     rows: Vec<ChartRow>,
     histories: HashMap<TimeframeKey, Vec<ChartRow>>,
     interaction: Option<InteractionState>,
@@ -694,6 +657,9 @@ impl ChartWorkspace {
             sub_pane: None,
             momentum_keys: Vec::new(),
             tints: Vec::new(),
+            derived_builds: 0,
+            last_series_revisions: Vec::new(),
+            last_rows_shape: (0, None, None),
             rows: Vec::new(),
             histories: HashMap::new(),
             interaction: None,
@@ -805,6 +771,14 @@ impl ChartWorkspace {
         self.cache.len()
     }
 
+    /// Derived-pane builds actually executed (sub-pane, momentum keys,
+    /// tints). Identical republishes skip the rebuild, so repeated frames
+    /// over unchanged content leave this untouched.
+    #[must_use]
+    pub fn derived_builds(&self) -> u64 {
+        self.derived_builds
+    }
+
     /// The DAG plan's execution order (every registered node).
     pub fn plan_order(&self) -> Result<Vec<String>, EguiError> {
         self.plan.order()
@@ -874,7 +848,14 @@ impl ChartWorkspace {
     pub fn remove_indicator(&mut self, id: &str) -> Result<(), EguiError> {
         self.stack.remove(id)?;
         self.plugins.retain(|plugin| plugin.id() != id);
-        self.evaluations.remove(id);
+        // Prune the removed evaluation's keys from the revision snapshot so
+        // the next recompute compares against what is actually cached — the
+        // direct rebuild below counts, like every derived build.
+        if let Some(evaluation) = self.evaluations.remove(id) {
+            for series in &evaluation.series {
+                self.last_series_revisions.retain(|(key, _)| *key != series.key);
+            }
+        }
         if id == INTEGRATION_LITE_ID {
             self.sub_pane = None;
             self.momentum_keys.clear();
@@ -884,7 +865,9 @@ impl ChartWorkspace {
             return Ok(());
         }
         self.sub_pane = self.compute_sub_pane()?;
-        self.recompute_tint()
+        self.recompute_tint()?;
+        self.derived_builds += 1;
+        Ok(())
     }
 
     /// Pull fresh bars for the active symbol and timeframe through `gateway`,
@@ -1065,15 +1048,21 @@ impl ChartWorkspace {
 
     /// Evaluate every active indicator into the pane cache and readouts, then
     /// rebuild the IntegrationLite delta histogram and the candle/delta tint
-    /// for the canvas.
+    /// for the canvas — unless every republish backdated. The cache answers
+    /// whether content moved (identical series keep their revisions), so the
+    /// per-bar derived vectors rebuild only on change; evaluations and
+    /// readouts still refresh, so the legend never goes stale on a skip.
     fn recompute(&mut self) -> Result<(), EguiError> {
         if self.rows.is_empty() {
             self.evaluations.clear();
             self.sub_pane = None;
             self.momentum_keys.clear();
             self.tints.clear();
+            self.last_series_revisions.clear();
+            self.last_rows_shape = (0, None, None);
             return Ok(());
         }
+        let mut revisions = Vec::new();
         for index in 0..self.plugins.len() {
             let id = self.plugins[index].id().to_owned();
             let evaluation = {
@@ -1084,14 +1073,23 @@ impl ChartWorkspace {
                 self.plugins[index].evaluate(&self.rows, config)?
             };
             for series in &evaluation.series {
-                self.cache.publish(series.key, series.values.clone());
+                revisions.push((series.key, self.cache.publish(series.key, series.values.clone())));
             }
             let readouts = self.plugins[index].readouts(&evaluation);
             self.stack.set_readouts(&id, readouts)?;
             self.evaluations.insert(id, evaluation);
         }
+        revisions.sort_unstable();
+        let rows_shape =
+            (self.rows.len(), self.rows.first().map(|row| row.time), self.rows.last().map(|row| row.time));
+        if revisions == self.last_series_revisions && rows_shape == self.last_rows_shape {
+            return Ok(());
+        }
+        self.last_series_revisions = revisions;
+        self.last_rows_shape = rows_shape;
         self.sub_pane = self.compute_sub_pane()?;
         self.recompute_tint()?;
+        self.derived_builds += 1;
         Ok(())
     }
 
@@ -1241,35 +1239,86 @@ impl ChartWorkspace {
             paint_price_grid(&plot, main, layout, &theme)?;
             paint_time_grid(&plot, main, window, bar_seconds, layout, &theme)?;
             // The trend ribbon (IntegrationLite's main-pane leg) and the
-            // candle tint both read the same windowed trend keys.
-            let ribbon = self
-                .sub_pane
-                .as_ref()
-                .map(|pane| windowed_ribbon(&pane.ribbon, window_start, window.len()));
-            let trend: Vec<bool> = ribbon
-                .as_ref()
-                .map_or_else(|| vec![false; window.len()], |band| band.bullish.clone());
-            if let Some(band) = &ribbon {
-                if self.sub_pane.as_ref().is_some_and(|pane| pane.show_ribbon)
+            // candle tint both read the same borrowed trend slice: the legs
+            // line up with the full history, so the trailing range borrows
+            // through the shared slicer — no per-frame window copy.
+            let ribbon_window = self.sub_pane.as_ref().map(|pane| {
+                let len = window.len();
+                (
+                    visible_rows(pane.ribbon.upper.as_slice(), window_start, len),
+                    visible_rows(pane.ribbon.lower.as_slice(), window_start, len),
+                    visible_rows(pane.ribbon.bullish.as_slice(), window_start, len),
+                    pane.ribbon.alpha,
+                    pane.show_ribbon,
+                )
+            });
+            // Candles need a trend key per bar; the ribbon supplies it, and
+            // a ribbon-less workspace reads every bar as bearish. The
+            // fallback allocates only when no ribbon exists (the default
+            // workspace always carries one, so the common frame borrows).
+            let fallback_trend =
+                if ribbon_window.is_none() { vec![false; window.len()] } else { Vec::new() };
+            let trend: &[bool] = match &ribbon_window {
+                Some((_, _, bullish, _, _)) => bullish,
+                None => &fallback_trend,
+            };
+            if let Some((upper, lower, bullish, alpha, show)) = &ribbon_window {
+                if *show
+                    && self.sub_pane.as_ref().is_some_and(|pane| pane.show_ribbon)
                     && self.stack.visible(INTEGRATION_LITE_ID) == Some(true)
                 {
-                    let placed = translate_polygons(
-                        ribbon_polygons(band, &main),
-                        (layout.plot.left(), layout.plot.top()),
-                    );
-                    let alpha = f32::from(opacity_from_transparency(ribbon_fill_transparency(
-                        band.alpha,
-                    ))) / 255.0;
-                    paint_ribbon_fill(&plot, &placed, &theme, alpha)?;
+                    let paint_alpha = f32::from(opacity_from_transparency(
+                        ribbon_fill_transparency(*alpha),
+                    )) / 255.0;
+                    if needs_column_aggregation(main.scale().bar_spacing()) {
+                        // One band per painted column through the shared
+                        // band sampler (display-only: values untouched,
+                        // holes stay holes), blitted as rects through the
+                        // same rect emitter as the native strips.
+                        let (bands, trends) =
+                            sampled_ribbon_bands(upper, lower, bullish, &main, layout.plot.width());
+                        let placed = translate_bands(
+                            bands,
+                            (layout.plot.left(), layout.plot.top()),
+                        );
+                        paint_ribbon(&plot, &placed, 0.5, &theme, &trends, paint_alpha)?;
+                    } else {
+                        // Native ribbon fills over the twice-visible borrow
+                        // only (display-only cull through the shared core:
+                        // same pixels, fewer polygons).
+                        let placed = translate_polygons(
+                            proportional_ribbon_polygons(
+                                upper,
+                                lower,
+                                bullish,
+                                &main,
+                                layout.plot.width(),
+                            ),
+                            (layout.plot.left(), layout.plot.top()),
+                        );
+                        paint_ribbon_fill(&plot, &placed, &theme, paint_alpha)?;
+                    }
                 }
             }
             if self.chart_type == ChartType::Candles {
-                let geoms = candle_geoms(window, &trend, &main)?;
+                // Candles dispatch by pixel columns: native geometry above
+                // one pixel per bar, one folded candle per screen column
+                // below it. Rows arrive transformed at native resolution
+                // first (bar-backed pictures convert before windowing), so
+                // the fold only ever samples display pixels, never feeds a
+                // recursive transform.
+                let geoms = column_candle_geoms(window, trend, &main, layout.plot.width())?;
                 let placed = translate_candles(geoms, (layout.plot.left(), layout.plot.top()));
-                let keys = candle_momentum_keys(window, &trend)?;
+                // Per-column momentum keys from the same borrowed trend
+                // slice: one single-bar lookup per painted candle, never a
+                // fresh window `Vec` — identical keys to the windowed fold
+                // through the one single-bar core.
                 let mut candles = Vec::with_capacity(placed.len());
                 for geom in &placed {
-                    let key = keys.get(geom.index).copied().unwrap_or("bull");
+                    let key = match (window.get(geom.index), trend.get(geom.index)) {
+                        (Some(row), Some(bull)) => momentum_key_for(row.open, row.close, *bull),
+                        _ => "bull",
+                    };
                     let color = self.bar_color(window_start + geom.index, key, &theme)?;
                     candles.push(TintedCandle { geom: *geom, color });
                 }
@@ -1284,15 +1333,30 @@ impl ChartWorkspace {
             } else {
                 // Line/Area (and any other display-row picture) render the
                 // close series; Heikin smoothing needs the core bar pipeline.
-                let points: Vec<Option<(f32, f32)>> = window
-                    .iter()
-                    .enumerate()
-                    .map(|(index, row)| {
-                        main.price_to_y(row.close).map(|y| (main.index_to_x(index), y))
-                    })
-                    .collect();
-                let placed = translate_points(points, (layout.plot.left(), layout.plot.top()));
-                paint_oscillator(&plot, &placed, "fast", &theme, 1.0)?;
+                // Culled to the viewport window first (borrowed, no copy),
+                // then one vertex per column through the shared line sampler
+                // at sub-pixel zoom (display-only) or the native mapping
+                // untouched above it — same pixels the full window would
+                // paint, off-pane shapes never built.
+                let (cstart, cend) = main.culled_bar_range(layout.plot.width(), window.len());
+                let cwindow = visible_rows(window, cstart, cend.saturating_sub(cstart));
+                if needs_column_aggregation(main.scale().bar_spacing()) {
+                    let closes = line_values(cwindow);
+                    let points = sampled_line_points(&closes, &main, cstart);
+                    let placed = translate_points(points, (layout.plot.left(), layout.plot.top()));
+                    paint_oscillator(&plot, &placed, "fast", &theme, 1.0)?;
+                } else {
+                    let points: Vec<Option<(f32, f32)>> = cwindow
+                        .iter()
+                        .enumerate()
+                        .map(|(offset, row)| {
+                            main.price_to_y(row.close)
+                                .map(|y| (main.index_to_x(cstart + offset), y))
+                        })
+                        .collect();
+                    let placed = translate_points(points, (layout.plot.left(), layout.plot.top()));
+                    paint_oscillator(&plot, &placed, "fast", &theme, 1.0)?;
+                }
             }
             for plugin in &self.plugins {
                 if plugin.attachment() != SlotAttachment::MainOverlay
@@ -1304,12 +1368,17 @@ impl ChartWorkspace {
                     continue;
                 };
                 if let Some(evaluation) = self.evaluations.get(plugin.id()) {
-                    let windowed = windowed_evaluation(evaluation, window_start, window.len());
+                    // Full-history evaluations borrow the trailing window
+                    // through the shared slicer inside each painter — no
+                    // per-frame, per-plugin window copy on this path. Native
+                    // legs cull to the twice-visible borrow (display-only).
                     plugin.paint_main_overlay(
                         &plot,
-                        &windowed,
+                        evaluation,
                         &main,
                         layout.plot.left_top(),
+                        window_start,
+                        layout.plot.width(),
                         &theme,
                         config,
                         &self.stack.indicator_style(plugin.id()),
@@ -1350,12 +1419,17 @@ impl ChartWorkspace {
                     let Some(config) = self.stack.config(plugin.id()) else {
                         continue;
                     };
-                    let windowed = windowed_evaluation(evaluation, window_start, window.len());
+                    // Full-history evaluations borrow the trailing window
+                    // through the shared slicer inside each painter — no
+                    // per-frame, per-plugin window copy on this path. Native
+                    // legs cull to the twice-visible borrow (display-only).
                     plugin.paint_sub_pane(
                         &sub_plot,
-                        &windowed,
+                        evaluation,
                         &sub,
                         sub_layout.plot.left_top(),
+                        window_start,
+                        sub_layout.plot.width(),
                         &theme,
                         config,
                         &self.stack.indicator_style(plugin.id()),
@@ -1363,8 +1437,16 @@ impl ChartWorkspace {
                 }
             }
             if let Some(pane) = &self.sub_pane {
-                let delta = windowed_delta(&pane.delta_volume, window_start, window.len());
-                let bars = delta_bar_geoms(&delta, &sub)?;
+                // The delta histogram borrows its trailing window and
+                // dispatches by pixel columns exactly as the candles do:
+                // native bars above one pixel per bar, one folded bar per
+                // screen column below it — display density only, values
+                // untouched, holes staying holes per leg.
+                let len = window.len();
+                let buy = visible_rows(pane.delta_volume.buy_top.as_slice(), window_start, len);
+                let sell =
+                    visible_rows(pane.delta_volume.sell_bottom.as_slice(), window_start, len);
+                let bars = column_delta_geoms(buy, sell, &sub, sub_layout.plot.width())?;
                 let placed =
                     translate_delta_bars(bars, (sub_layout.plot.left(), sub_layout.plot.top()));
                 let mut tinted = Vec::with_capacity(placed.len());

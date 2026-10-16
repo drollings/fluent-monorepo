@@ -2,7 +2,7 @@ use super::*;
 use crate::compat::compat_for;
 use crate::indicator::{builtin_registry, OwnedOhlcv};
 use crate::parity::{assert_expr_parity, expr_fixture};
-use crate::ta_volume::{AdIndicator, AdoscIndicator, CmfIndicator, ObvIndicator};
+use crate::ta_volume::{AdIndicator, AdoscIndicator, CmfIndicator, MfiIndicator, ObvIndicator};
 use polars::prelude::{EWMOptions, Expr, IntoLazy, col, lit, when};
 use protopyne_types::Bar;
 use std::path::PathBuf;
@@ -470,4 +470,48 @@ fn cmf_refuses_bad_periods_and_short_legs() {
         volume: vec![1.0, 2.0],
     };
     assert!(cmf.batch(&legs.views(), &cmf_params()).is_err(), "short volume refuses");
+}
+
+fn bits_of(values: &[Option<f64>]) -> Vec<Option<u64>> {
+    values.iter().map(|v| v.map(f64::to_bits)).collect()
+}
+
+fn volume_ticks(closes: &[f64]) -> (Vec<BarTick>, Vec<f64>, Vec<f64>, Vec<f64>) {
+    let high: Vec<f64> = closes.iter().map(|c| c + 0.5).collect();
+    let low: Vec<f64> = closes.iter().map(|c| c - 0.5).collect();
+    let volume: Vec<f64> = (1..=closes.len()).map(|i| f64::from(i as i32) * 10.0).collect();
+    let ticks: Vec<BarTick> = closes
+        .iter()
+        .enumerate()
+        .map(|(i, close)| BarTick {
+            open: *close,
+            high: high[i],
+            low: low[i],
+            close: *close,
+            volume: volume[i],
+        })
+        .collect();
+    (ticks, high, low, volume)
+}
+
+#[test]
+fn buffered_update_matches_batch_on_constant_and_subnormal_inputs() {
+    // Bit-exactness pin for the scratch migration, over the money-flow
+    // representative (the closes-plus-volumes pair must agree exactly).
+    let mfi = MfiIndicator::new();
+    let params = ParamSet::new().with_int("length", 14);
+    for closes in [
+        vec![42.0; 40],
+        (1..=40).map(|i| f64::from(i) * 1e-310).collect::<Vec<_>>(),
+    ] {
+        let (ticks, _, _, volume) = volume_ticks(&closes);
+        let frame = Ohlcv { open: &[], high: &[], low: &[], close: &closes, volume: &volume };
+        let batch = mfi.batch(&frame, &params).expect("batch runs").values;
+        let mut state = IndicatorState::new();
+        let folded: Vec<Option<f64>> = ticks
+            .iter()
+            .map(|tick| mfi.update(&mut state, *tick, &params).expect("update runs"))
+            .collect();
+        assert_eq!(bits_of(&folded), bits_of(&batch), "mfi reproduces batch bit-for-bit");
+    }
 }

@@ -75,6 +75,67 @@ fn atr_smooths_ranges_by_hand() {
     assert_eq!(result.values, folded);
 }
 
+fn trending_legs(bars: usize) -> (Vec<f64>, Vec<f64>, Vec<f64>) {
+    let close: Vec<f64> =
+        (0..bars).map(|i| 100.0 + i as f64 * 0.05 + ((i * 37 % 11) as f64) * 0.13).collect();
+    let high: Vec<f64> = close.iter().map(|c| c + 0.4).collect();
+    let low: Vec<f64> = close.iter().map(|c| c - 0.4).collect();
+    (high, low, close)
+}
+
+fn max_abs_diff(a: &[Option<f64>], b: &[Option<f64>]) -> f64 {
+    a.iter()
+        .zip(b.iter())
+        .map(|pair| match pair {
+            (Some(x), Some(y)) => (x - y).abs(),
+            (None, None) => 0.0,
+            _ => f64::INFINITY,
+        })
+        .fold(0.0, f64::max)
+}
+
+#[test]
+fn atr_windowed_plus_warmup_converges_to_full_history_over_visible_slice() {
+    // Same recursive-seeding transient as EMA (ATR smooths through the
+    // recursive RMA): the declared warmup buys convergence, not coincidence —
+    // see the EMA pin for the mechanism. The terminal keeps full-history
+    // evaluation (today's exact values, no regression).
+    let atr = AtrIndicator::new();
+    let ps = ParamSet::new().with_int("length", 14);
+    let warmup = atr.warmup(&ps).expect("declared warmup");
+    let (high, low, close) = trending_legs(500);
+    let frame = || ohlcv(&high, &low, &close);
+    let full = atr.batch(&frame(), &ps).expect("full history");
+    let visible_start: usize = 400;
+    let windowed_at = |extra: usize| {
+        let eval_start = visible_start.saturating_sub(warmup + extra);
+        atr.batch(
+            &ohlcv(&high[eval_start..], &low[eval_start..], &close[eval_start..]),
+            &ps,
+        )
+        .expect("windowed")
+    };
+    let one = windowed_at(0);
+    let four = windowed_at(3 * warmup);
+    let end = close.len() - visible_start;
+    let diff_one = max_abs_diff(&one.values[warmup..][..end], &full.values[visible_start..]);
+    let diff_four =
+        max_abs_diff(&four.values[3 * warmup + warmup..][..end], &full.values[visible_start..]);
+    assert!(
+        diff_one <= 0.05,
+        "declared-warmup transient stays small on the fixture: {diff_one}"
+    );
+    assert!(
+        diff_four * 8.0 <= diff_one,
+        "tripling the warmup shrinks the transient geometrically: {diff_four} vs {diff_one}"
+    );
+    let first = (one.values[warmup].unwrap() - full.values[visible_start].unwrap()).abs();
+    assert!(
+        (first - diff_one).abs() <= 1e-12,
+        "the transient peaks at the window head: {first} vs max {diff_one}"
+    );
+}
+
 #[test]
 fn bollinger_bands_use_population_stdev_by_hand() {
     let bb = BbIndicator::new();
@@ -374,4 +435,32 @@ fn supertrend_registry_and_matrix_cover_new_row() {
     assert!(registry.get("supertrend").is_some(), "supertrend registered");
     let row = crate::compat::compat_for("supertrend").expect("matrix row");
     assert!((row.eps - 1e-9).abs() == 0.0, "frozen eps");
+}
+
+fn bits_of(values: &[Option<f64>]) -> Vec<Option<u64>> {
+    values.iter().map(|v| v.map(f64::to_bits)).collect()
+}
+
+#[test]
+fn buffered_update_matches_batch_on_constant_and_subnormal_inputs() {
+    // Bit-exactness pin for the scratch migration, over the band
+    // representative (mean plus scaled deviation must agree exactly).
+    let bb = BbIndicator::new();
+    let ps = ParamSet::new().with_int("length", 14).with_float("mult", 2.0);
+    for closes in [
+        vec![42.0; 40],
+        (1..=40).map(|i| f64::from(i) * 1e-310).collect::<Vec<_>>(),
+    ] {
+        let batch = bb.batch(&Ohlcv::close_only(&closes), &ps).expect("batch runs").values;
+        let mut state = IndicatorState::new();
+        let folded: Vec<Option<f64>> = closes
+            .iter()
+            .map(|close| {
+                bb.update_full(&mut state, BarTick::close_only(*close), &ps)
+                    .expect("update runs")
+                    .primary
+            })
+            .collect();
+        assert_eq!(bits_of(&folded), bits_of(&batch), "bb reproduces batch bit-for-bit");
+    }
 }

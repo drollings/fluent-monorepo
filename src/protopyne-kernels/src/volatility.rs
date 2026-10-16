@@ -275,9 +275,9 @@ impl Indicator for BbIndicator {
                 ],
             });
         }
-        let window: Vec<f64> = state.closes().collect();
+        let window = state.scratch_closes();
         let mean = window.iter().sum::<f64>() / period as f64;
-        let dev = crate::math::std_pop(&window);
+        let dev = crate::math::std_pop(window);
         state.set_last(mean);
         Ok(FullTick {
             primary: fin_or_none(mean),

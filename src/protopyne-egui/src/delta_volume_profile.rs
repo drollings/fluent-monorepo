@@ -23,7 +23,8 @@ use protopyne_types::{Validate, check_for_execute, valid_output};
 
 use fluent_egui::{
     EguiError, IndicatorStyle, ReadoutValue, SlotAttachment, ThemeConfig, Viewport,
-    opacity_from_transparency, paint_oscillator_styled,
+    needs_column_aggregation, opacity_from_transparency, paint_oscillator_styled,
+    proportional_line_points, sampled_line_points, translate_points, visible_rows,
 };
 
 /// Plan-node namespace for the profile's per-bar primitive series.
@@ -638,9 +639,15 @@ pub fn profile_series(
     Ok(vec![high, low, close, volume, buy, vwap])
 }
 
-/// Rebuild the profile from a windowed evaluation's primitive series.
+/// Rebuild the profile from the trailing window of an evaluation's primitive
+/// series.
+///
+/// `base` is the global index of the window's first bar within the
+/// full-history evaluation, so the primitives borrow through the shared
+/// slicer (no per-frame copy) — the same trailing window the canvas paints.
 fn profile_from_series(
     evaluation: &crate::indicators::IndicatorEvaluation,
+    base: usize,
     bins: usize,
     value_area_pct: f64,
 ) -> DeltaVolumeProfile {
@@ -649,7 +656,10 @@ fn profile_from_series(
             .series
             .iter()
             .find(|series| series.node == node)
-            .map(|series| series.values.as_slice())
+            .map(|series| {
+                let len = series.values.len().saturating_sub(base);
+                visible_rows(series.values.as_slice(), base, len)
+            })
     };
     let (Some(high), Some(low), Some(close), Some(volume), Some(buy)) = (
         series("dvol:high"),
@@ -747,7 +757,7 @@ impl crate::indicators::ChartIndicator for DeltaVolumeProfileIndicator {
     ) -> Vec<ReadoutValue> {
         let defaults = DeltaVolumeProfileConfig::default();
         let profile =
-            profile_from_series(evaluation, defaults.bins as usize, defaults.value_area_pct);
+            profile_from_series(evaluation, 0, defaults.bins as usize, defaults.value_area_pct);
         vec![
             ReadoutValue { label: "POC".to_owned(), value: profile.poc_price() },
             ReadoutValue { label: "VWAP".to_owned(), value: profile.vwap },
@@ -760,6 +770,8 @@ impl crate::indicators::ChartIndicator for DeltaVolumeProfileIndicator {
         evaluation: &crate::indicators::IndicatorEvaluation,
         viewport: &Viewport,
         origin: egui::Pos2,
+        base: usize,
+        width_px: f32,
         theme: &ThemeConfig,
         config: &dyn Component,
         style: &IndicatorStyle,
@@ -770,12 +782,13 @@ impl crate::indicators::ChartIndicator for DeltaVolumeProfileIndicator {
                 reason: "delta_volume_profile expects a DeltaVolumeProfile configuration".to_owned(),
             })?;
         let profile =
-            profile_from_series(evaluation, config.bins as usize, config.value_area_pct);
+            profile_from_series(evaluation, base, config.bins as usize, config.value_area_pct);
         if profile.bins.is_empty() {
             return Ok(());
         }
         let palette = bin_palette(style, theme)?;
-        let count = evaluation.series.first().map_or(0, |series| series.values.len());
+        let full = evaluation.series.first().map_or(0, |series| series.values.len());
+        let count = full.saturating_sub(base);
         let anchor = count.saturating_sub(1) + config.offset as usize;
         if config.show_profile {
             for profile_box in
@@ -835,17 +848,19 @@ impl crate::indicators::ChartIndicator for DeltaVolumeProfileIndicator {
         }
         if config.show_vwap {
             if let Some(series) = evaluation.series.iter().find(|series| series.node == "dvol:vwap") {
-                let points: Vec<Option<(f32, f32)>> = series
-                    .values
-                    .iter()
-                    .enumerate()
-                    .map(|(index, slot)| {
-                        let value = (*slot)?;
-                        let y = viewport.windowed_y(value)?;
-                        Some((origin.x + viewport.index_to_x(index), origin.y + y))
-                    })
-                    .collect();
-                paint_oscillator_styled(painter, &points, "fast", theme, style, 1.0)?;
+                let len = series.values.len().saturating_sub(base);
+                let window = visible_rows(series.values.as_slice(), base, len);
+                // The anchored VWAP paints through the shared sampler pair
+                // like every line-like series: one vertex per column run at
+                // sub-pixel zoom, the twice-visible borrow above it
+                // (display-only cull, same pixels fewer shapes).
+                let points = if needs_column_aggregation(viewport.scale().bar_spacing()) {
+                    sampled_line_points(window, viewport, base)
+                } else {
+                    proportional_line_points(window, viewport, width_px)
+                };
+                let placed = translate_points(points, (origin.x, origin.y));
+                paint_oscillator_styled(painter, &placed, "fast", theme, style, 1.0)?;
             }
         }
         Ok(())
