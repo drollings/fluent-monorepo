@@ -300,12 +300,57 @@ fn a_refusing_month_is_excluded_and_named() {
         .expect("the good month still serves");
     assert_eq!(load.bars.len(), 1);
     assert_eq!(load.skipped.len(), 1, "the bad month is named, not silent");
+    assert_eq!(load.skipped_rows, 0, "structural skips carry no row count");
     assert_eq!(load.skipped[0].path, bad_path);
     assert!(
         load.skipped[0].reason.contains("close"),
         "the reason names the fault: {}",
         load.skipped[0].reason
     );
+}
+
+/// A month with dirty rows still serves its clean bars: per-row value
+/// faults are excluded and counted, never file-fatal.
+#[test]
+fn dirty_rows_are_excluded_and_counted_not_file_fatal() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let month = dir.path().join("SPY/2026/02");
+    std::fs::create_dir_all(&month).expect("month creates");
+    let base_ns = 1_772_442_000_000_000_000_i64;
+    let schema = vendor_schema();
+    let batch = RecordBatch::try_new(
+        schema.clone(),
+        vec![
+            Arc::new(
+                TimestampNanosecondArray::from(vec![
+                    base_ns,
+                    base_ns + 60_000_000_000,
+                    base_ns + 120_000_000_000,
+                ])
+                .with_timezone("UTC"),
+            ),
+            Arc::new(Float64Array::from(vec![100.0, 101.0, 102.0])),
+            Arc::new(Float64Array::from(vec![100.0, 101.0, 102.0])),
+            Arc::new(Float64Array::from(vec![100.0, 101.0, 102.0])),
+            // The middle row carries a NaN close: a row fault, not a file fault.
+            Arc::new(Float64Array::from(vec![100.0, f64::NAN, 102.0])),
+            Arc::new(Float64Array::from(vec![10.0, 20.0, 30.0])),
+            Arc::new(StringArray::from(vec!["SPY", "SPY", "SPY"])),
+        ],
+    )
+    .expect("batch builds");
+    let file = std::fs::File::create(month.join("SPY-2026-02-1M.parquet")).expect("creates");
+    let mut writer = ArrowWriter::try_new(file, schema, None).expect("writer builds");
+    writer.write(&batch).expect("writes");
+    writer.close().expect("closes");
+
+    let root = HistoryRoot::open(dir.path()).expect("root opens");
+    let load = root.load_ticker("SPY").expect("dirty month serves its clean bars");
+    assert_eq!(load.bars.len(), 2, "the good rows land");
+    assert!(load.skipped.is_empty(), "nothing is excluded whole");
+    assert_eq!(load.skipped_rows, 1, "the dirty row is counted");
+    assert_eq!(load.bars[0].volume, 10);
+    assert_eq!(load.bars[1].volume, 30);
 }
 
 #[test]
@@ -377,18 +422,14 @@ fn shipped_spy_months_merge_into_a_valid_series() {
     let load = root.load_ticker("SPY").expect("shipped SPY months merge");
     let bars = &load.bars;
     assert!(!bars.is_empty(), "the shipped months hold bars");
-    // The February 2026 vendor month carries fractional volumes and is
-    // excluded loudly: the series carries that hole, disclosed here.
+    // The February 2026 vendor month carries fractional volumes, which round
+    // to the nearest share: nothing is excluded, nothing is counted.
     assert!(
-        load.skipped
-            .iter()
-            .any(|skip| skip.path.ends_with("SPY-2026-02-1M.parquet")),
-        "the dirty February month is named: {:?}",
-        load.skipped
-            .iter()
-            .map(|skip| &skip.path)
-            .collect::<Vec<_>>()
+        load.skipped.is_empty(),
+        "no month is excluded whole: {:?}",
+        load.skipped.iter().map(|skip| &skip.path).collect::<Vec<_>>()
     );
+    assert_eq!(load.skipped_rows, 0, "rounding leaves no row behind");
     let mut last: Option<&Bar> = None;
     for bar in bars {
         validate_new_bar(last, bar).expect("the shipped series is clean");

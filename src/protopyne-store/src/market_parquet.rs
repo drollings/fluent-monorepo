@@ -9,8 +9,11 @@
 //! read as UTC), `open`/`high`/`low`/`close` as `Float64`, `Float32`, or
 //! `Decimal128`, `volume` as a float, integer, or decimal, and an optional
 //! `ticker` name column — and never guesses beyond it: any other column
-//! type, a missing required column, a null, a NaN, or a fractional volume
-//! refuses with the row named.
+//! type, a missing required column, a null, or a NaN refuses with the row
+//! named, or — through [`read_ohlcv_parquet_lenient`] — excludes that row
+//! and counts it in [`LenientRead::skipped`]. Fractional volumes round to
+//! the nearest share instead of refusing. Structural faults refuse in both
+//! modes.
 //!
 //! Three disciplines hold, matching the CSV ingest:
 //!
@@ -51,6 +54,29 @@ pub struct OhlcvRead {
     pub rows_filtered: usize,
 }
 
+/// One row the lenient read excluded: the file-relative row index and the
+/// refusal that excluded it. Counted observation, never a silent drop.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SkippedRow {
+    /// File-relative row index (0-based, across record batches in order).
+    pub row: usize,
+    /// The refusal that excluded the row, verbatim.
+    pub reason: String,
+}
+
+/// One lenient market Parquet read: the committed bars plus every excluded
+/// row, named. Structural faults (a missing column, a mixed-ticker file read
+/// without a filter) still refuse the whole file — skipping cannot resolve
+/// ambiguity about what the file is — while per-row value faults (a null, a
+/// NaN, a fractional volume, an inverted bar) exclude that row and count it.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct LenientRead {
+    /// The committed bars and merge/filter counts, as in the strict read.
+    pub read: OhlcvRead,
+    /// Rows excluded for per-row value faults, in file order.
+    pub skipped: Vec<SkippedRow>,
+}
+
 /// Read one market Parquet file into committed bars.
 ///
 /// `ticker` names the symbol to serve when the file carries a `ticker`
@@ -70,6 +96,26 @@ pub fn read_ohlcv_parquet(path: &Path, ticker: Option<&str>) -> Result<OhlcvRead
     }
 }
 
+/// Read one market Parquet file leniently: per-row value faults exclude that
+/// row and count it in [`LenientRead::skipped`] instead of refusing the
+/// file. Same `ticker` contract and same structural refusals as the strict
+/// read; the served bars are identical whenever no row faults. With the
+/// `parquet` feature off, reports the disabled feature.
+pub fn read_ohlcv_parquet_lenient(
+    path: &Path,
+    ticker: Option<&str>,
+) -> Result<LenientRead, StoreError> {
+    #[cfg(feature = "parquet")]
+    {
+        parquet_read::read_lenient(path, ticker)
+    }
+    #[cfg(not(feature = "parquet"))]
+    {
+        let _ = (path, ticker);
+        Err(StoreError::FeatureDisabled("parquet".to_owned()))
+    }
+}
+
 #[cfg(feature = "parquet")]
 mod parquet_read {
     use std::fs::File;
@@ -80,13 +126,38 @@ mod parquet_read {
     use protopyne_types::{validate_new_bar, Bar};
     use rust_decimal::Decimal;
 
-    use super::OhlcvRead;
+    use super::{LenientRead, OhlcvRead, SkippedRow};
     use crate::arrow_decode::{
         DecodeError, PriceColumn, StringColumn, TimeColumn, VolumeColumn, find,
         price_column_of, string_column_of, time_column_of, volume_column_of,
     };
     use crate::commit::KeyedSnapshot as _;
     use crate::error::StoreError;
+
+    /// What a per-row value fault does: refuse the file, or exclude the row
+    /// and count it. Structural faults refuse either way — one flag, one row
+    /// loop, never a second decoder.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum OnBadRow {
+        /// Refuse the file naming the row (the strict read).
+        Refuse,
+        /// Exclude the row and count it (the lenient read).
+        Skip,
+    }
+
+    /// Refuse the file naming `row`, or exclude the row and count it,
+    /// per `mode`. Diverges, so call sites read as value matches.
+    macro_rules! refuse_or_skip {
+        ($row:expr, $reason:expr, $skipped:expr, $mode:expr) => {
+            match $mode {
+                OnBadRow::Refuse => return Err(row_err($row, $reason)),
+                OnBadRow::Skip => {
+                    $skipped.push(SkippedRow { row: $row, reason: $reason.to_string() });
+                    continue;
+                }
+            }
+        };
+    }
 
     /// The column indices this reader requires, with the optional ticker.
     struct Columns {
@@ -181,6 +252,26 @@ mod parquet_read {
         path: &std::path::Path,
         ticker: Option<&str>,
     ) -> Result<OhlcvRead, StoreError> {
+        read_with(path, ticker, OnBadRow::Refuse).map(|lenient| lenient.read)
+    }
+
+    /// Read one market Parquet file leniently: row faults exclude the row
+    /// and count it instead of refusing the file.
+    pub(super) fn read_lenient(
+        path: &std::path::Path,
+        ticker: Option<&str>,
+    ) -> Result<LenientRead, StoreError> {
+        read_with(path, ticker, OnBadRow::Skip)
+    }
+
+    /// The one row loop behind both reads. Structural faults (schema, ticker
+    /// ambiguity, unreadable batches) refuse either way; per-row value
+    /// faults follow `bad_row`.
+    fn read_with(
+        path: &std::path::Path,
+        ticker: Option<&str>,
+        bad_row: OnBadRow,
+    ) -> Result<LenientRead, StoreError> {
         let file = File::open(path)?;
         let builder = ParquetRecordBatchReaderBuilder::try_new(file).map_err(ingest)?;
         let schema = builder.schema().clone();
@@ -197,6 +288,7 @@ mod parquet_read {
         let reader = builder.build().map_err(ingest)?;
         let mut bars: Vec<Bar> = Vec::new();
         let mut rows_filtered = 0usize;
+        let mut skipped: Vec<SkippedRow> = Vec::new();
         let mut seen_ticker: Option<String> = None;
         let mut row_index = 0usize;
         for batch in reader {
@@ -216,7 +308,7 @@ mod parquet_read {
                 row_index += 1;
                 if let Some(col) = ticker_col {
                     if col.is_null(batch_row) {
-                        return Err(row_err(row, "ticker is null"));
+                        refuse_or_skip!(row, "ticker is null", skipped, bad_row);
                     }
                     let value = col.value(batch_row);
                     match ticker {
@@ -240,31 +332,54 @@ mod parquet_read {
                     }
                 }
                 if time.is_null(batch_row) {
-                    return Err(row_err(row, "timestamp is null"));
+                    refuse_or_skip!(row, "timestamp is null", skipped, bad_row);
                 }
-                let ts_ms = time.millis(batch_row).map_err(|e| row_err(row, e))?;
-                let stamp = chrono::DateTime::from_timestamp_millis(ts_ms)
-                    .ok_or_else(|| row_err(row, format!("timestamp {ts_ms}ms out of range")))?;
-                let price = |column: &PriceColumn<'_>| -> Result<Decimal, StoreError> {
+                let ts_ms = match time.millis(batch_row) {
+                    Ok(stamp) => stamp,
+                    Err(reason) => refuse_or_skip!(row, reason, skipped, bad_row),
+                };
+                let Some(stamp) = chrono::DateTime::from_timestamp_millis(ts_ms) else {
+                    refuse_or_skip!(
+                        row,
+                        format!("timestamp {ts_ms}ms out of range"),
+                        skipped,
+                        bad_row
+                    );
+                };
+                let price = |column: &PriceColumn<'_>| -> Result<Decimal, String> {
                     if column.is_null(batch_row) {
-                        return Err(row_err(row, "price is null"));
+                        return Err("price is null".to_owned());
                     }
-                    column.decimal(batch_row).map_err(|e| row_err(row, e))
+                    column.decimal(batch_row)
                 };
                 if volume.is_null(batch_row) {
-                    return Err(row_err(row, "volume is null"));
+                    refuse_or_skip!(row, "volume is null", skipped, bad_row);
                 }
-                let shares = volume.whole(batch_row).map_err(|e| row_err(row, e))?;
-                let bar = Bar::new()
-                    .ts(stamp)
-                    .o(price(&open)?)
-                    .h(price(&high)?)
-                    .l(price(&low)?)
-                    .c(price(&close)?)
-                    .volume(shares)
-                    .maybe_adj(None)
-                    .build();
-                bar.validate().map_err(|e| row_err(row, e))?;
+                let shares = match volume.whole(batch_row) {
+                    Ok(shares) => shares,
+                    Err(reason) => refuse_or_skip!(row, reason, skipped, bad_row),
+                };
+                let o = match price(&open) {
+                    Ok(value) => value,
+                    Err(reason) => refuse_or_skip!(row, reason, skipped, bad_row),
+                };
+                let h = match price(&high) {
+                    Ok(value) => value,
+                    Err(reason) => refuse_or_skip!(row, reason, skipped, bad_row),
+                };
+                let l = match price(&low) {
+                    Ok(value) => value,
+                    Err(reason) => refuse_or_skip!(row, reason, skipped, bad_row),
+                };
+                let c = match price(&close) {
+                    Ok(value) => value,
+                    Err(reason) => refuse_or_skip!(row, reason, skipped, bad_row),
+                };
+                let bar =
+                    Bar::new().ts(stamp).o(o).h(h).l(l).c(c).volume(shares).maybe_adj(None).build();
+                if let Err(reason) = bar.validate() {
+                    refuse_or_skip!(row, reason, skipped, bad_row);
+                }
                 bars.push(bar);
             }
         }
@@ -295,10 +410,9 @@ mod parquet_read {
             })?;
             last = Some(bar);
         }
-        Ok(OhlcvRead {
-            bars: merged,
-            restatements_merged,
-            rows_filtered,
+        Ok(LenientRead {
+            read: OhlcvRead { bars: merged, restatements_merged, rows_filtered },
+            skipped,
         })
     }
 }

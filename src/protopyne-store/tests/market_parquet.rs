@@ -282,15 +282,17 @@ fn a_null_price_refuses_naming_its_row() {
 }
 
 #[test]
-fn a_fractional_volume_refuses() {
+fn a_fractional_volume_rounds_to_the_nearest_share() {
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("fractional.parquet");
     let mut rows = three_rows();
     rows[1].5 = 24153.5;
     write_vendor(&path, &rows, None);
 
-    let err = read_ohlcv_parquet(&path, None).expect_err("fractional volume refuses");
-    assert!(err.to_string().contains("not a whole share count"), "{err}");
+    let read = read_ohlcv_parquet(&path, None).expect("fractional volume reads");
+    assert_eq!(read.bars.len(), 3, "no row is lost over dust");
+    assert_eq!(read.bars[1].volume, 24_154, "ties round away from zero");
+    assert_eq!(read.bars[0].volume, 8_485, "whole counts pass through");
 }
 
 #[test]
@@ -390,4 +392,44 @@ fn bars_are_usable_as_committed_history() {
         protopyne_types::validate_new_bar(last, bar).expect("the reader's series is clean");
         last = Some(bar);
     }
+}
+
+/// The lenient read excludes per-row value faults and counts them, serving
+/// the good rows: one file's dirty rows never strand its clean months.
+#[test]
+fn lenient_read_skips_bad_rows_and_counts_them() {
+    use crate::market_parquet::read_ohlcv_parquet_lenient;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("dirty.parquet");
+    let mut rows = three_rows();
+    rows[1].4 = f64::NAN; // NaN close: a row fault, not a file fault
+    write_vendor(&path, &rows, None);
+
+    let lenient = read_ohlcv_parquet_lenient(&path, None).expect("lenient reads");
+    assert_eq!(lenient.read.bars.len(), 2, "the good rows serve");
+    assert_eq!(lenient.skipped.len(), 1, "the dirty row is counted, not silent");
+    assert_eq!(lenient.skipped[0].row, 1);
+    assert!(
+        lenient.skipped[0].reason.contains("not finite"),
+        "the reason names the fault: {}",
+        lenient.skipped[0].reason
+    );
+    assert_eq!(lenient.read.restatements_merged, 0);
+}
+
+/// Structural faults refuse in both modes: a missing column is ambiguity
+/// about what the file is, and skipping cannot resolve it.
+#[test]
+fn lenient_read_still_refuses_structural_faults() {
+    use crate::market_parquet::read_ohlcv_parquet_lenient;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("mixed.parquet");
+    let rows = vec![
+        (BASE_NS, 1.0, 1.0, 1.0, 1.0, 10.0, "QQQ"),
+        (BASE_NS + 60_000_000_000, 2.0, 2.0, 2.0, 2.0, 20.0, "SPY"),
+    ];
+    write_vendor(&path, &rows, None);
+
+    let err = read_ohlcv_parquet_lenient(&path, None).expect_err("mixed tickers refuse");
+    assert!(err.to_string().contains("name one ticker"), "{err}");
 }

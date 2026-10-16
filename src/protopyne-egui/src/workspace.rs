@@ -24,7 +24,7 @@ use fluent_egui::{
     paint_candles_tinted, paint_catalog_modal, paint_crosshair,
     paint_delta_bars_tinted, paint_hot_slot_stack, paint_oscillator, paint_ribbon, paint_ribbon_fill,
     paint_slot_settings_modal, proportional_ribbon_polygons, resolve_color, sampled_line_points,
-    sampled_ribbon_bands, translate_bands, translate_breaks, translate_candles, translate_delta_bars,
+    sampled_ribbon_bands, translate_bands, translate_candles, translate_delta_bars,
     translate_points, translate_polygons, visible_rows, wheel_zoom_factor, zoom_range_around,
 };
 use fluent_wvr::{FieldAccess, component_downcast_ref};
@@ -107,9 +107,9 @@ const TIME_STRIP: f32 = 18.0;
 /// Horizontal pane width the interaction envelope is bound to.
 const PANE_WIDTH_PX: f32 = 640.0;
 /// Minimum pixels between adjacent time-axis labels.
-const MIN_TIME_LABEL_GAP: f32 = 64.0;
-/// Width of the crosshair time tag on the time strip.
-const TIME_TAG_WIDTH: f32 = 56.0;
+const MIN_TIME_LABEL_GAP: f32 = 120.0;
+/// Width of the crosshair time tag on the time strip: room for `YYYY-MM-DD HH:MM`.
+const TIME_TAG_WIDTH: f32 = 112.0;
 /// Axis-label font size.
 const AXIS_FONT: f32 = 11.0;
 /// Background gridline stroke width: thinner than a candle wick so the grid
@@ -450,6 +450,71 @@ fn fmt_axis_time(epoch: i64, intraday: bool) -> String {
     }
 }
 
+/// Format an epoch timestamp for the crosshair time tag: always calendar
+/// date and clock time (`2026-03-02 09:30`), so the hovered readout names
+/// the bar exactly even when the strip labels read clock time alone.
+fn fmt_crosshair_time(epoch: i64) -> String {
+    match chrono::DateTime::from_timestamp(epoch, 0) {
+        Some(moment) => moment.format("%Y-%m-%d %H:%M").to_string(),
+        None => String::new(),
+    }
+}
+
+/// Decimals behind a price readout: two by default (cents), widening one
+/// step per leading zero below a dollar so sub-dollar moves stay legible.
+/// Non-finite prices fall back to the default rather than refusing the tag.
+fn price_decimals(price: f64) -> usize {
+    if !price.is_finite() {
+        return 2;
+    }
+    let magnitude = price.abs();
+    if magnitude == 0.0 || magnitude >= 1.0 {
+        2
+    } else if magnitude >= 0.1 {
+        3
+    } else if magnitude >= 0.01 {
+        4
+    } else if magnitude >= 0.001 {
+        5
+    } else {
+        6
+    }
+}
+
+/// Format a price readout at its relevant precision (see [`price_decimals`]).
+fn fmt_price(price: f64) -> String {
+    format!("{price:.dec$}", dec = price_decimals(price))
+}
+
+/// One visible time-grid mark: its pane-local x and the bar time behind the
+/// label.
+struct TimeMark {
+    x: f32,
+    time: i64,
+}
+
+/// Time-grid marks culled to the viewport's visible window: the shared
+/// [`time_grid_lines`] boundaries filtered to the culled bar range (with its
+/// overscan, so edge lines never pop), each carrying its bar time. The unit
+/// ladder is unchanged — a `1M` chart still grids hourly (60 bars), a `1H`
+/// chart daily (24 bars) — so a 5–60 bar view holds a fitting handful of
+/// dividers instead of the whole trailing window's worth.
+fn visible_time_marks(
+    viewport: Viewport,
+    rows: &[ChartRow],
+    bar_seconds: u64,
+    width: f32,
+) -> Vec<TimeMark> {
+    let (start, end) = viewport.culled_bar_range(width, rows.len());
+    time_grid_lines(&viewport, rows, bar_seconds)
+        .into_iter()
+        .filter(|line| line.index >= start && line.index < end)
+        .filter_map(|line| {
+            rows.get(line.index).map(|row| TimeMark { x: line.x, time: row.time })
+        })
+        .collect()
+}
+
 /// The dimmed, thin stroke every background gridline draws with, so the
 /// horizontal and vertical rules stay visually subordinate to the candles.
 fn grid_stroke(theme: &ThemeConfig) -> Result<egui::Stroke, EguiError> {
@@ -487,9 +552,10 @@ fn paint_time_grid(
     theme: &ThemeConfig,
 ) -> Result<(), EguiError> {
     let stroke = grid_stroke(theme)?;
-    for line in translate_breaks(time_grid_lines(&viewport, rows, bar_seconds), layout.plot.left()) {
+    for mark in visible_time_marks(viewport, rows, bar_seconds, layout.plot.width()) {
+        let x = layout.plot.left() + mark.x;
         painter.line_segment(
-            [egui::pos2(line.x, layout.plot.top()), egui::pos2(line.x, layout.plot.bottom())],
+            [egui::pos2(x, layout.plot.top()), egui::pos2(x, layout.plot.bottom())],
             stroke,
         );
     }
@@ -529,7 +595,7 @@ fn paint_price_axis(
             painter.text(
                 rect.center(),
                 egui::Align2::CENTER_CENTER,
-                format!("{price:.2}"),
+                fmt_price(price),
                 egui::FontId::proportional(AXIS_FONT),
                 egui::Color32::WHITE,
             );
@@ -556,8 +622,8 @@ fn paint_time_axis(
     let ink = resolve_color(theme, "grid")?;
     let clock_time = labels_show_clock_time(bar_seconds);
     let mut last_x = f32::NEG_INFINITY;
-    for line in translate_breaks(time_grid_lines(&viewport, rows, bar_seconds), layout.plot.left()) {
-        let x = line.x;
+    for mark in visible_time_marks(viewport, rows, bar_seconds, layout.plot.width()) {
+        let x = layout.plot.left() + mark.x;
         if x < strip.left() + TIME_TAG_WIDTH / 2.0
             || x > strip.right() - TIME_TAG_WIDTH / 2.0
             || x - last_x < MIN_TIME_LABEL_GAP
@@ -565,40 +631,89 @@ fn paint_time_axis(
             continue;
         }
         last_x = x;
-        if let Some(row) = rows.get(line.index) {
-            painter.text(
-                egui::pos2(x, strip.center().y),
-                egui::Align2::CENTER_CENTER,
-                fmt_axis_time(row.time, clock_time),
-                egui::FontId::proportional(AXIS_FONT),
-                ink,
-            );
-        }
+        painter.text(
+            egui::pos2(x, strip.center().y),
+            egui::Align2::CENTER_CENTER,
+            fmt_axis_time(mark.time, clock_time),
+            egui::FontId::proportional(AXIS_FONT),
+            ink,
+        );
     }
     Ok(())
 }
 
-/// Paint the hover crosshair: snapped vertical/horizontal lines plus the
-/// price tag on the axis and the time tag on the strip. The time tag shares
-/// the axis granularity ([`labels_show_clock_time`]), so the hovered readout
-/// and the strip labels can never disagree.
+/// Paint one vertical crosshair band through `x`: the oscillator-side half
+/// of the readout (and the main-pane half when the pointer sits over the
+/// oscillator). Same 1px `"grid"` stroke as [`paint_crosshair`], so the band
+/// reads as one readout across both panes.
+fn paint_crosshair_band(
+    painter: &egui::Painter,
+    x: f32,
+    top: f32,
+    bottom: f32,
+    theme: &ThemeConfig,
+) -> Result<(), EguiError> {
+    painter.line_segment(
+        [egui::pos2(x, top), egui::pos2(x, bottom)],
+        egui::Stroke::new(1.0, resolve_color(theme, "grid")?),
+    );
+    Ok(())
+}
+
+/// Paint the crosshair time tag on the strip: date and clock time
+/// ([`fmt_crosshair_time`]) centered on the snapped bar, clamped into the
+/// plot so the tag never hangs off the strip's edge.
+fn paint_time_tag(
+    chrome_painter: &egui::Painter,
+    layout: PaneLayout,
+    x: f32,
+    time: i64,
+    theme: &ThemeConfig,
+) -> Result<(), EguiError> {
+    let Some(strip) = layout.time else {
+        return Ok(());
+    };
+    let tag = resolve_color(theme, "grid")?;
+    let half = TIME_TAG_WIDTH / 2.0;
+    let tag_x = x.clamp(layout.plot.left() + half, layout.plot.right() - half);
+    let time_rect = egui::Rect::from_center_size(
+        egui::pos2(tag_x, strip.center().y),
+        egui::vec2(TIME_TAG_WIDTH, strip.height() - 4.0),
+    );
+    chrome_painter.rect_filled(time_rect, 3.0, tag);
+    chrome_painter.text(
+        time_rect.center(),
+        egui::Align2::CENTER_CENTER,
+        fmt_crosshair_time(time),
+        egui::FontId::proportional(AXIS_FONT),
+        egui::Color32::WHITE,
+    );
+    Ok(())
+}
+
+/// Paint the hover crosshair over the price pane: snapped
+/// vertical/horizontal lines plus the price tag on the axis and the time tag
+/// on the strip. Answers the snapped bar's screen x for the oscillator band,
+/// or `None` when the pointer names no bar. The time tag
+/// always reads date and clock time ([`fmt_crosshair_time`]) and the price
+/// tag reads at its relevant precision ([`fmt_price`]), so the hovered
+/// readout never depends on the strip's thinned granularity.
 fn paint_crosshair_overlay(
     plot_painter: &egui::Painter,
     chrome_painter: &egui::Painter,
     viewport: Viewport,
     rows: &[ChartRow],
-    bar_seconds: u64,
     layout: PaneLayout,
     hover: egui::Pos2,
     theme: &ThemeConfig,
-) -> Result<(), EguiError> {
+) -> Result<Option<f32>, EguiError> {
     let local = (hover.x - layout.plot.left(), hover.y - layout.plot.top());
     let Some(data) = crosshair_data(local, &viewport, rows.len()) else {
-        return Ok(());
+        return Ok(None);
     };
     let Some(span) = crosshair_lines(&data, &viewport, layout.plot.width(), layout.plot.height())
     else {
-        return Ok(());
+        return Ok(None);
     };
     let span = CrosshairLines {
         x: span.x + layout.plot.left(),
@@ -618,29 +733,14 @@ fn paint_crosshair_overlay(
     chrome_painter.text(
         price_rect.center(),
         egui::Align2::CENTER_CENTER,
-        format!("{:.2}", data.price),
+        fmt_price(data.price),
         egui::FontId::proportional(AXIS_FONT),
         egui::Color32::WHITE,
     );
-    if let (Some(strip), Some(row)) = (layout.time, rows.get(data.index)) {
-        let half = TIME_TAG_WIDTH / 2.0;
-        let tag_x = span
-            .x
-            .clamp(layout.plot.left() + half, layout.plot.right() - half);
-        let time_rect = egui::Rect::from_center_size(
-            egui::pos2(tag_x, strip.center().y),
-            egui::vec2(TIME_TAG_WIDTH, strip.height() - 4.0),
-        );
-        chrome_painter.rect_filled(time_rect, 3.0, tag);
-        chrome_painter.text(
-            time_rect.center(),
-            egui::Align2::CENTER_CENTER,
-            fmt_axis_time(row.time, labels_show_clock_time(bar_seconds)),
-            egui::FontId::proportional(AXIS_FONT),
-            egui::Color32::WHITE,
-        );
+    if let Some(row) = rows.get(data.index) {
+        paint_time_tag(chrome_painter, layout, span.x, row.time, theme)?;
     }
-    Ok(())
+    Ok(Some(span.x))
 }
 
 /// The terminal's central state store: active symbol, selectors, hot-slot
@@ -1378,6 +1478,10 @@ impl ChartWorkspace {
         let chrome = ui.painter_at(main_rect);
         chrome.rect_filled(main_rect, 0.0, background);
         let plot = ui.painter_at(layout.plot);
+        // The hovered bar's screen x, shared with the oscillator band below:
+        // set by whichever pane the pointer sits over, read when the
+        // oscillator paints, so the vertical band spans both panes.
+        let mut cross_x: Option<f32> = None;
         if let Some(main) = self.main {
             paint_price_grid(&plot, main, layout, &theme)?;
             paint_time_grid(&plot, main, window, bar_seconds, layout, &theme)?;
@@ -1537,11 +1641,36 @@ impl ChartWorkspace {
                 &theme,
             )?;
             paint_time_axis(&chrome, main, window, bar_seconds, layout, &theme)?;
+            // The crosshair answers over either pane: a hover over the price
+            // pane paints the full readout (lines plus both tags) and arms
+            // the oscillator band; a hover over the oscillator snaps through
+            // the same time mapping and paints the vertical band plus the
+            // time tag, so the band reads as one readout across both panes.
             if let Some(hover) = response.hover_pos() {
                 if layout.plot.contains(hover) {
-                    paint_crosshair_overlay(
-                        &plot, &chrome, main, window, bar_seconds, layout, hover, &theme,
+                    cross_x = paint_crosshair_overlay(
+                        &plot, &chrome, main, window, layout, hover, &theme,
                     )?;
+                } else if sub_layout.plot.contains(hover) {
+                    // Mid-plot height always maps to a price, so the readout
+                    // resolves the bar under the pointer through the exact
+                    // same rounding as the price pane; only the band and the
+                    // time tag paint, never a price from the wrong pane.
+                    let local = (hover.x - layout.plot.left(), layout.plot.height() / 2.0);
+                    if let Some(data) = crosshair_data(local, &main, window.len()) {
+                        if let Some(row) = window.get(data.index) {
+                            let x = main.index_to_x(data.index) + layout.plot.left();
+                            paint_crosshair_band(
+                                &plot,
+                                x,
+                                layout.plot.top(),
+                                layout.plot.bottom(),
+                                &theme,
+                            )?;
+                            paint_time_tag(&chrome, layout, x, row.time, &theme)?;
+                            cross_x = Some(x);
+                        }
+                    }
                 }
             }
         }
@@ -1608,6 +1737,18 @@ impl ChartWorkspace {
                     &tinted,
                     candle_body_width(sub.scale().bar_spacing()) * DELTA_BAR_BODY_SHARE / 2.0,
                 );
+            }
+            // The crosshair's vertical band spans the oscillator at the same
+            // snapped bar the price pane reads: the band is the shared time
+            // half of the readout, so it paints over either pane's hover.
+            if let Some(x) = cross_x {
+                paint_crosshair_band(
+                    &sub_plot,
+                    x,
+                    sub_layout.plot.top(),
+                    sub_layout.plot.bottom(),
+                    &theme,
+                )?;
             }
             // The zero line makes the centered histogram legible.
             if let Some(zero_y) = sub.windowed_y(0.0) {

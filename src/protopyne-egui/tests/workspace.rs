@@ -12,6 +12,7 @@ use std::sync::Mutex;
 use fluent_egui::{
     candle_body_width, IndicatorStyle, CANDLE_BODY_FRACTION, CANDLE_GAP_THRESHOLD_PX,
 };
+use chrono::TimeZone as _;
 use protopyne_chart_model::ChartRow;
 use protopyne_view::{
     ArmResponse, ChartBar, GatewayError, HealthView, JournalRowView, MockGateway, OverlaySeries,
@@ -497,17 +498,17 @@ fn crosshair_overlay_paints_when_the_pointer_is_in_the_plot() {
         );
 
         let painter = ui.painter_at(rect);
-        paint_crosshair_overlay(
+        let readout = paint_crosshair_overlay(
             &painter,
             &painter,
             viewport,
             &rows,
-            900,
             layout,
             hover,
             &ThemeConfig::default(),
         )
         .expect("the crosshair paints");
+        assert!(readout.is_some(), "the pointer names a bar for the oscillator band");
     });
 }
 
@@ -1437,4 +1438,79 @@ fn frame_path_borrows_windows_instead_of_cloning_them() {
         text.contains("column_delta_geoms"),
         "the delta histogram dispatches by pixel columns"
     );
+}
+
+/// Price readouts default to cents and widen below a dollar, so sub-dollar
+/// moves stay legible while everything at or above a dollar reads two
+/// decimals. Non-finite prices fall back to the default.
+#[test]
+fn price_readouts_default_to_cents_and_widen_below_a_dollar() {
+    assert_eq!(price_decimals(652.28), 2, "the default is cents");
+    assert_eq!(price_decimals(100.5), 2);
+    assert_eq!(price_decimals(0.0), 2, "zero reads the default, not a microscope");
+    assert_eq!(price_decimals(0.5), 3);
+    assert_eq!(price_decimals(0.05), 4);
+    assert_eq!(price_decimals(0.005), 5);
+    assert_eq!(price_decimals(0.0005), 6, "the widening stops at six places");
+    assert_eq!(price_decimals(f64::NAN), 2, "non-finite falls back");
+    assert_eq!(fmt_price(652.281), "652.28");
+    assert_eq!(fmt_price(0.051), "0.0510");
+}
+
+/// The crosshair time tag always names date and clock time, even when the
+/// strip labels read clock time alone.
+#[test]
+fn crosshair_time_tag_names_date_and_time() {
+    let epoch = chrono::Utc
+        .with_ymd_and_hms(2026, 3, 2, 9, 30, 0)
+        .single()
+        .expect("valid time")
+        .timestamp();
+    assert_eq!(fmt_crosshair_time(epoch), "2026-03-02 09:30");
+}
+
+/// Grid marks cull to the viewport window: the same boundaries the shared
+/// scan finds, restricted to the culled range, each carrying its bar time.
+#[test]
+fn grid_marks_cull_to_the_viewport_window() {
+    let start = chrono::Utc
+        .with_ymd_and_hms(2026, 3, 2, 9, 0, 0)
+        .single()
+        .expect("valid time")
+        .timestamp();
+    // Two hours of one-minute bars: the hour boundary sits at index 60.
+    let rows: Vec<ChartRow> = (0..120u32)
+        .map(|i| {
+            ChartRow {
+                time: start + i64::from(i) * 60,
+                open: 100.0,
+                high: 101.0,
+                low: 99.0,
+                close: 100.5,
+                volume: 10,
+            }
+        })
+        .collect();
+    // A 160px window at 8px bars offset to indices 40..60.
+    let viewport = Viewport::new(PriceScaleMode::Normal, 90.0, 110.0, 400.0, 8.0, 100.0, false)
+        .expect("valid viewport")
+        .with_x_offset(-320.0)
+        .expect("offset applies");
+    let marks = visible_time_marks(viewport, &rows, 60, 160.0);
+    let (cull_start, cull_end) = viewport.culled_bar_range(160.0, rows.len());
+    assert!(!marks.is_empty(), "the hour boundary lands in the culled range");
+    let cull_lines: Vec<usize> = time_grid_lines(&viewport, &rows, 60)
+        .into_iter()
+        .map(|line| line.index)
+        .filter(|index| *index >= cull_start && *index < cull_end)
+        .collect();
+    assert_eq!(marks.len(), cull_lines.len(), "culling keeps every in-range boundary");
+    for (mark, index) in marks.iter().zip(cull_lines.iter()) {
+        assert_eq!(mark.time, rows[*index].time, "each mark carries its bar time");
+        assert_eq!(
+            mark.x.to_bits(),
+            viewport.index_to_x(*index).to_bits(),
+            "x rides the shared mapping"
+        );
+    }
 }

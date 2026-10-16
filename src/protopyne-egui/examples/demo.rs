@@ -105,13 +105,20 @@ fn empty_frames() -> Vec<(TimeframeKey, Vec<ChartRow>)> {
         .collect()
 }
 
-/// A load notice for the status line: excluded months and superseded rows
-/// are observations about the source tree, rendered, never dropped.
+/// A load notice for the status line: excluded rows, excluded months, and
+/// superseded rows are observations about the source tree, rendered, never
+/// dropped.
 fn load_notice(ticker: &str, load: &TickerLoad) -> Option<Notice> {
-    if load.skipped.is_empty() && load.superseded == 0 {
+    if load.skipped.is_empty() && load.superseded == 0 && load.skipped_rows == 0 {
         return None;
     }
     let mut parts = Vec::new();
+    if load.skipped_rows > 0 {
+        parts.push(format!(
+            "{} row(s) excluded as unparseable",
+            load.skipped_rows
+        ));
+    }
     if !load.skipped.is_empty() {
         let names: Vec<String> = load
             .skipped

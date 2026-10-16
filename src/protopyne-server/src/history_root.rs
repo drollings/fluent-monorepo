@@ -9,15 +9,18 @@
 //! that ticker is asked for, and [`HistoryCache`] holds the merged series so
 //! a symbol switch back costs a clone, never a re-read.
 //!
-//! One dirty month never strands a ticker: a month file that refuses to parse
-//! is excluded from the merge and named in
-//! [`TickerLoad::skipped`], while a file that cannot be opened at all skips
-//! to the next file, like the single-file ladder. The exclusion is never
-//! silent — it rides the return value, every caller logs or renders it, and
-//! the CSV supplement is the fix path (a corrected month in CSV supersedes
-//! the refused Parquet outright). A merged series that is empty or fails the
-//! shared order validator still refuses the whole load: holes are disclosed,
-//! disorder is not served.
+//! One dirty month never strands a ticker: month files read leniently, so a
+//! row that refuses to parse is excluded and counted instead of discarding
+//! the month's good bars, while fractional vendor volumes round to the
+//! nearest share instead of refusing at all. Row exclusions ride
+//! [`TickerLoad::skipped_rows`]; a month that refuses structurally is
+//! excluded whole and named in [`TickerLoad::skipped`]; a file that cannot
+//! be opened at all skips to the next file, like the single-file ladder. Nothing here is ever silent —
+//! every exclusion rides the return value, every caller logs or renders it,
+//! and the CSV supplement is the fix path (a corrected month in CSV
+//! supersedes the refused rows outright). A merged series that is empty or
+//! fails the shared order validator still refuses the whole load: holes are
+//! disclosed, disorder is not served.
 //!
 //! Display stays on the existing optimized path: callers fold the merged 1M
 //! series into toolbar frames through [`crate::fold_frames`] (whole-multiple
@@ -34,7 +37,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
-use protopyne_store::{KeyedSnapshot as _, read_ohlcv_parquet};
+use protopyne_store::{KeyedSnapshot as _, read_ohlcv_parquet_lenient};
 use protopyne_types::{Bar, Timeframe, validate_new_bar};
 
 use crate::error::ServerError;
@@ -107,15 +110,17 @@ impl HistoryRoot {
     /// Load one ticker's merged 1M series: every `*.parquet` month under
     /// `<root>/<TICKER>/**` in sorted path order, then every `*.csv`
     /// supplement under the same subtree overwriting the timestamps it
-    /// names. Equal-stamp Parquet rows fold through the shared restatement
-    /// rule; CSV rows replace wholesale. The answer is ascending and
+    /// names. Months read leniently: unparseable rows are excluded and
+    /// counted in [`TickerLoad::skipped_rows`], never silently, while
+    /// equal-stamp Parquet rows fold through the shared restatement rule and
+    /// CSV rows replace wholesale. The answer is ascending and
     /// `validate_new_bar`-clean, or the load refuses naming the reason. A
-    /// month that cannot be opened skips; a month that refuses to parse is
-    /// excluded and named in [`TickerLoad::skipped`] — the same stop/skip
-    /// spirit as the single-file ladder, with the exclusion carried loudly
-    /// instead of stranding the ticker. A CSV supplement that refuses stops
-    /// the load: supplements are operator data, and a corrupt one is
-    /// investigated, never skipped over.
+    /// month that cannot be opened skips; a month that refuses structurally
+    /// is excluded whole and named in [`TickerLoad::skipped`] — the same
+    /// stop/skip spirit as the single-file ladder, with every exclusion
+    /// carried loudly instead of stranding the ticker. A CSV supplement that
+    /// refuses stops the load: supplements are operator data, and a corrupt
+    /// one is investigated, never skipped over.
     pub fn load_ticker(&self, ticker: &str) -> Result<TickerLoad, ServerError> {
         if !is_ticker_spelling(ticker) {
             return Err(ServerError::Backtest(format!(
@@ -136,9 +141,10 @@ impl HistoryRoot {
         }
         let mut merged: BTreeMap<i64, Bar> = BTreeMap::new();
         let mut skipped: Vec<SkippedFile> = Vec::new();
+        let mut skipped_rows = 0usize;
         for path in &parquet_files {
-            let bars = match read_ohlcv_parquet(path, Some(ticker)) {
-                Ok(read) => read.bars,
+            let lenient = match read_ohlcv_parquet_lenient(path, Some(ticker)) {
+                Ok(lenient) => lenient,
                 Err(protopyne_store::StoreError::Io(_)) => continue,
                 Err(other) => {
                     skipped.push(SkippedFile {
@@ -148,6 +154,8 @@ impl HistoryRoot {
                     continue;
                 }
             };
+            skipped_rows += lenient.skipped.len();
+            let bars = lenient.read.bars;
             for bar in bars {
                 let stamp = bar.ts.timestamp_millis();
                 match merged.get(&stamp) {
@@ -221,11 +229,7 @@ impl HistoryRoot {
             })?;
             last = Some(bar);
         }
-        Ok(TickerLoad {
-            bars,
-            skipped,
-            superseded,
-        })
+        Ok(TickerLoad { bars, skipped, skipped_rows, superseded })
     }
 }
 
@@ -240,14 +244,16 @@ pub struct SkippedFile {
 }
 
 /// One ticker's merged history: the ascending series plus the load facts
-/// that interpret it. The skip list is observation, never confidence — a
-/// non-empty list means the series carries holes the caller must disclose.
+/// that interpret it. Skips are observations, never confidence — a non-zero
+/// count means the series carries holes the caller must disclose.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TickerLoad {
     /// Merged 1M bars, ascending and `validate_new_bar`-clean.
     pub bars: Vec<Bar>,
-    /// Month files excluded from the merge, in load order.
+    /// Month files excluded whole from the merge, in load order.
     pub skipped: Vec<SkippedFile>,
+    /// Parquet rows excluded for per-row value faults, across all months.
+    pub skipped_rows: usize,
     /// CSV supplement rows that replaced a Parquet bar at their stamp.
     pub superseded: usize,
 }
@@ -360,6 +366,13 @@ pub fn load_history_path(path: &Path, preferred: Option<&str>) -> Result<Vec<Bar
             }
         };
         let load = root.load_ticker(&ticker)?;
+        if load.skipped_rows > 0 {
+            tracing::warn!(
+                skipped_rows = load.skipped_rows,
+                "history months for {ticker} excluded {} unparseable rows; series carries the holes",
+                load.skipped_rows
+            );
+        }
         for skipped in &load.skipped {
             tracing::warn!(
                 path = %skipped.path.display(),

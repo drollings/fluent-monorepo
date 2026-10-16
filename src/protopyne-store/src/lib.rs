@@ -81,7 +81,9 @@ pub use history::{
 pub use identity::VerifiedId;
 pub use key::{SymbolId, TapeKey};
 pub use manifest::{SealManifest, SnapshotRecord};
-pub use market_parquet::{OhlcvRead, read_ohlcv_parquet};
+pub use market_parquet::{
+    LenientRead, OhlcvRead, SkippedRow, read_ohlcv_parquet, read_ohlcv_parquet_lenient,
+};
 pub use plan::{ReadPlan, SpanOrigin, SpanPlan};
 pub use range::TimeRange;
 pub use repair::{

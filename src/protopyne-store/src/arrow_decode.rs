@@ -136,10 +136,12 @@ impl VolumeColumn<'_> {
         }
     }
 
-    /// The row's volume as whole shares. A fractional or negative value
-    /// refuses: a fraction means the file is not OHLCV share counts, and
-    /// a negative count is not representable, so neither may be rounded
-    /// into a plausible number.
+    /// The row's volume as whole shares. Vendor float volumes that land
+    /// between integers round to the nearest share (ties away from zero):
+    /// a fraction is vendor apportionment noise on a share count, not a
+    /// distinct quantity, so refusing the row would strand the bar over
+    /// dust. Non-finite values still refuse, and a negative or
+    /// unrepresentable count is not servable, so those refuse as before.
     pub(crate) fn whole(&self, row: usize) -> Result<u64, String> {
         let value = match self {
             Self::F64(v) => Decimal::from_f64(v.value(row))
@@ -150,10 +152,8 @@ impl VolumeColumn<'_> {
             Self::I32(v) => Decimal::from(v.value(row)),
             Self::Decimal(v, scale) => Decimal::from_i128_with_scale(v.value(row), *scale),
         };
-        if value.fract() != Decimal::ZERO {
-            return Err(format!("volume {value} is not a whole share count"));
-        }
         value
+            .round()
             .to_u64()
             .ok_or_else(|| format!("volume {value} is negative or out of range"))
     }
