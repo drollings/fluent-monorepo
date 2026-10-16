@@ -124,3 +124,19 @@ fn time_major_unit_stays_above_the_chart_timeframe() {
     assert_eq!(time_major_unit(14_400), 86_400, "4H bars grid daily (6 candles)");
     assert_eq!(time_major_unit(86_400), 604_800, "daily bars grid weekly (7 candles)");
 }
+
+/// Time-axis labels follow the chart timeframe, never the window span: any
+/// sub-daily timeframe reads hour and minute down in the strip, while daily
+/// bars and coarser read calendar dates.
+#[test]
+fn time_labels_follow_the_timeframe_not_the_window_span() {
+    for bar_seconds in [60, 300, 900, 3_600, 14_400] {
+        assert!(
+            labels_show_clock_time(bar_seconds),
+            "{bar_seconds}s bars label by clock time"
+        );
+    }
+    for bar_seconds in [86_400, 604_800] {
+        assert!(!labels_show_clock_time(bar_seconds), "{bar_seconds}s bars label by date");
+    }
+}

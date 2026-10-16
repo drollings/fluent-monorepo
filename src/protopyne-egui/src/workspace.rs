@@ -43,7 +43,7 @@ use crate::integration_lite::{
     candle_momentum_keys, candle_momentum_series, integration_lite_sub_pane, momentum_key_for,
     momentum_tints, ribbon_fill_transparency,
 };
-use crate::session::{INTRADAY_SPAN_SECONDS, time_grid_lines};
+use crate::session::{labels_show_clock_time, time_grid_lines};
 use crate::widgets::{TopBarAction, paint_top_bar};
 
 /// Stable id of the IntegrationLite slot whose richer sub-pane geometry
@@ -57,10 +57,27 @@ const DEFAULT_BAR_SPACING: f32 = 8.0;
 /// without asking the read to scan a whole tape. A gateway with no durable
 /// tape ignores it; one that plans a store read narrows to it.
 const CHART_WINDOW_BARS: usize = 5_000;
-/// Main chart area height.
-const PRICE_PANE_HEIGHT: f32 = 320.0;
-/// Sub-pane area height.
-const SUB_PANE_HEIGHT: f32 = 140.0;
+/// Share of the chart canvas height the price pane takes; the oscillator
+/// takes the rest. The default gives the price pane three quarters of the
+/// available height.
+const DEFAULT_PANE_SHARE: f32 = 0.75;
+/// Narrowest share either pane may take through the divider drag: both panes
+/// stay legible, and neither collapses to zero height.
+const MIN_PANE_SHARE: f32 = 0.15;
+/// Widest share the price pane may take through the divider drag; the mirror
+/// of the minimum, keeping the oscillator legible.
+const MAX_PANE_SHARE: f32 = 0.85;
+/// Divider strip height in pixels: the visible seam plus its grab area. The
+/// strip floats over the seam (both panes still tile the canvas exactly), so
+/// dragging it never steals pixels from either pane.
+const DIVIDER_HEIGHT: f32 = 6.0;
+/// Nominal canvas height for viewport binds before the first frame measures
+/// the window: proportions already follow the pane share, and the first
+/// painted frame resyncs both heights to the measured plots.
+const NOMINAL_CANVAS_HEIGHT: f32 = 460.0;
+/// Smallest canvas height the frame lays out: below this the price plot (its
+/// pane minus the time strip) would collapse at a narrow share.
+const MIN_CANVAS_HEIGHT: f32 = 160.0;
 /// Price scale base value for the main chart area.
 const PRICE_BASE: f64 = 100.0;
 /// Sub-pane oscillator band: the bounded `[-100, +100]` legs plus headroom.
@@ -87,9 +104,6 @@ const SUB_MAX_SPAN_FRACTION: f64 = 1.0;
 const AXIS_WIDTH: f32 = 68.0;
 /// Bottom time-axis strip height on the price pane.
 const TIME_STRIP: f32 = 18.0;
-/// Main price plot height: the price pane minus its time strip. The price
-/// scale binds to this so the visible window and the painted grid agree.
-const PRICE_PLOT_HEIGHT: f32 = PRICE_PANE_HEIGHT - TIME_STRIP;
 /// Horizontal pane width the interaction envelope is bound to.
 const PANE_WIDTH_PX: f32 = 640.0;
 /// Minimum pixels between adjacent time-axis labels.
@@ -359,7 +373,8 @@ impl PaneLayout {
 }
 
 /// Split the chart canvas rect into the price pane and the sub-pane beneath
-/// it, in the zone order [`WheelZones`] indexes.
+/// it at `share` of the canvas height, in the zone order [`WheelZones`]
+/// indexes.
 ///
 /// The canvas is allocated as **one** rect covering both panes, so a single
 /// pointer response senses the whole chart area. That is the whole point: a
@@ -368,13 +383,52 @@ impl PaneLayout {
 /// the pane would look dead to the wheel. One sensing surface plus region
 /// routing keeps "where is the pointer" and "what does the gesture act on"
 /// separate questions, and the two rects still tile the canvas exactly, so no
-/// pixel is sensed twice or left unsensed.
-fn split_canvas(canvas: egui::Rect) -> [egui::Rect; 2] {
-    let split_y = (canvas.top() + PRICE_PANE_HEIGHT).min(canvas.bottom());
+/// pixel is sensed twice or left unsensed. Out-of-range shares clamp to the
+/// legibility rails instead of collapsing a pane.
+fn split_canvas(canvas: egui::Rect, share: f32) -> [egui::Rect; 2] {
+    let share = share.clamp(MIN_PANE_SHARE, MAX_PANE_SHARE);
+    let split_y =
+        (canvas.top() + canvas.height() * share).clamp(canvas.top(), canvas.bottom());
     [
         egui::Rect::from_min_max(canvas.min, egui::pos2(canvas.right(), split_y)),
         egui::Rect::from_min_max(egui::pos2(canvas.left(), split_y), canvas.max),
     ]
+}
+
+/// The draggable strip over the pane seam: centered on the split at `share`,
+/// spanning the canvas width and at most [`DIVIDER_HEIGHT`] tall. Floating
+/// over the seam (rather than reserving its own row) keeps the two panes
+/// tiling the canvas exactly — the strip is a grab handle, never layout.
+fn divider_rect(canvas: egui::Rect, share: f32) -> egui::Rect {
+    let [main, _] = split_canvas(canvas, share);
+    let half = DIVIDER_HEIGHT / 2.0;
+    egui::Rect::from_min_max(
+        egui::pos2(canvas.left(), (main.bottom() - half).max(canvas.top())),
+        egui::pos2(canvas.right(), (main.bottom() + half).min(canvas.bottom())),
+    )
+}
+
+/// Rebuild a viewport onto a new plot height, keeping its price window, bar
+/// spacing, time offset, mode, base value, and inversion. The frame measures
+/// the plots every pass (the canvas fills the window), so the mapping the
+/// painters read always agrees with the rect they paint into. `None` on a
+/// non-positive or non-finite height — the caller then holds its viewport.
+fn viewport_with_plot_height(viewport: Viewport, height: f32) -> Option<Viewport> {
+    if !height.is_finite() || height <= 0.0 {
+        return None;
+    }
+    let scale = viewport.scale();
+    Viewport::new(
+        scale.mode(),
+        scale.range().min,
+        scale.range().max,
+        height,
+        scale.bar_spacing(),
+        scale.base_value(),
+        scale.inverted(),
+    )
+    .and_then(|view| view.with_x_offset(viewport.x_offset_px()))
+    .ok()
 }
 
 /// Where the floating indicator legend sits over a chart pane: the upper
@@ -386,23 +440,13 @@ fn legend_origin(chart: egui::Rect, card_width: f32) -> (f32, f32) {
     (x, chart.top() + 8.0)
 }
 
-/// Format an epoch timestamp for the time axis: clock time on an intraday
-/// window, month-day otherwise.
+/// Format an epoch timestamp for the time axis: clock time on a sub-daily
+/// timeframe, month-day otherwise.
 fn fmt_axis_time(epoch: i64, intraday: bool) -> String {
     match chrono::DateTime::from_timestamp(epoch, 0) {
         Some(moment) if intraday => moment.format("%H:%M").to_string(),
         Some(moment) => moment.format("%m-%d").to_string(),
         None => String::new(),
-    }
-}
-
-/// Whether a row window reads as intraday (time labels show clock time).
-fn is_intraday(rows: &[ChartRow]) -> bool {
-    match (rows.first(), rows.last()) {
-        (Some(first), Some(last)) => {
-            last.time.saturating_sub(first.time) <= INTRADAY_SPAN_SECONDS
-        }
-        _ => false,
     }
 }
 
@@ -495,7 +539,9 @@ fn paint_price_axis(
 }
 
 /// Paint thinned time labels along the bottom strip, one per major boundary,
-/// centered on the boundary's vertical gridline.
+/// centered on the boundary's vertical gridline. The label granularity
+/// follows the chart timeframe through [`labels_show_clock_time`] — any
+/// sub-daily timeframe reads hour and minute — never the window span.
 fn paint_time_axis(
     painter: &egui::Painter,
     viewport: Viewport,
@@ -508,7 +554,7 @@ fn paint_time_axis(
         return Ok(());
     };
     let ink = resolve_color(theme, "grid")?;
-    let intraday = is_intraday(rows);
+    let clock_time = labels_show_clock_time(bar_seconds);
     let mut last_x = f32::NEG_INFINITY;
     for line in translate_breaks(time_grid_lines(&viewport, rows, bar_seconds), layout.plot.left()) {
         let x = line.x;
@@ -523,7 +569,7 @@ fn paint_time_axis(
             painter.text(
                 egui::pos2(x, strip.center().y),
                 egui::Align2::CENTER_CENTER,
-                fmt_axis_time(row.time, intraday),
+                fmt_axis_time(row.time, clock_time),
                 egui::FontId::proportional(AXIS_FONT),
                 ink,
             );
@@ -533,12 +579,15 @@ fn paint_time_axis(
 }
 
 /// Paint the hover crosshair: snapped vertical/horizontal lines plus the
-/// price tag on the axis and the time tag on the strip.
+/// price tag on the axis and the time tag on the strip. The time tag shares
+/// the axis granularity ([`labels_show_clock_time`]), so the hovered readout
+/// and the strip labels can never disagree.
 fn paint_crosshair_overlay(
     plot_painter: &egui::Painter,
     chrome_painter: &egui::Painter,
     viewport: Viewport,
     rows: &[ChartRow],
+    bar_seconds: u64,
     layout: PaneLayout,
     hover: egui::Pos2,
     theme: &ThemeConfig,
@@ -586,7 +635,7 @@ fn paint_crosshair_overlay(
         chrome_painter.text(
             time_rect.center(),
             egui::Align2::CENTER_CENTER,
-            fmt_axis_time(row.time, is_intraday(rows)),
+            fmt_axis_time(row.time, labels_show_clock_time(bar_seconds)),
             egui::FontId::proportional(AXIS_FONT),
             egui::Color32::WHITE,
         );
@@ -624,6 +673,10 @@ pub struct ChartWorkspace {
     last_rows_shape: (usize, Option<i64>, Option<i64>),
     rows: Vec<ChartRow>,
     histories: HashMap<TimeframeKey, Vec<ChartRow>>,
+    /// Share of the canvas height the price pane takes; the oscillator takes
+    /// the rest. Owned here so the divider drag, the canvas split, and the
+    /// viewport binds all read one truth.
+    pane_share: f32,
     interaction: Option<InteractionState>,
     main: Option<Viewport>,
     sub: Option<Viewport>,
@@ -662,6 +715,7 @@ impl ChartWorkspace {
             last_rows_shape: (0, None, None),
             rows: Vec::new(),
             histories: HashMap::new(),
+            pane_share: DEFAULT_PANE_SHARE,
             interaction: None,
             main: None,
             sub: None,
@@ -733,6 +787,22 @@ impl ChartWorkspace {
     #[must_use]
     pub fn rows(&self) -> &[ChartRow] {
         &self.rows
+    }
+
+    /// Share of the canvas height the price pane takes; the oscillator takes
+    /// the rest. Defaults to three quarters.
+    #[must_use]
+    pub fn pane_share(&self) -> f32 {
+        self.pane_share
+    }
+
+    /// Move the price/oscillator seam to `share` of the canvas height,
+    /// clamped to the legibility rails; a non-finite input holds the seam
+    /// instead of poisoning the layout.
+    pub fn set_pane_share(&mut self, share: f32) {
+        if share.is_finite() {
+            self.pane_share = share.clamp(MIN_PANE_SHARE, MAX_PANE_SHARE);
+        }
     }
 
     /// The timeframes holding a seeded or pulled history, in toolbar order.
@@ -1006,7 +1076,9 @@ impl ChartWorkspace {
     }
 
     /// Rebind the main and sub-pane viewports (and the interaction bounds) to
-    /// the current rows and range.
+    /// the current rows and range. Heights follow the pane share over the
+    /// nominal canvas (the price plot minus its time strip); the first
+    /// painted frame resyncs both to the measured window.
     fn rebind_viewports(&mut self) -> Result<(), EguiError> {
         let window = window_for_range(&self.rows, self.range, self.timeframe.seconds());
         let (lo, hi) = price_extent(window);
@@ -1015,11 +1087,14 @@ impl ChartWorkspace {
         } else {
             DEFAULT_BAR_SPACING
         };
+        let share = self.pane_share.clamp(MIN_PANE_SHARE, MAX_PANE_SHARE);
+        let price_plot = NOMINAL_CANVAS_HEIGHT * share - TIME_STRIP;
+        let sub_plot = NOMINAL_CANVAS_HEIGHT * (1.0 - share);
         let main = Viewport::new(
             PriceScaleMode::Normal,
             lo,
             hi,
-            PRICE_PLOT_HEIGHT,
+            price_plot,
             spacing,
             PRICE_BASE,
             false,
@@ -1028,7 +1103,7 @@ impl ChartWorkspace {
             PriceScaleMode::Normal,
             SUB_MIN,
             SUB_MAX,
-            SUB_PANE_HEIGHT,
+            sub_plot,
             spacing,
             0.0,
             false,
@@ -1203,25 +1278,62 @@ impl ChartWorkspace {
     }
 
     /// Paint the main chart area and the sub-pane, stepping the interaction
-    /// machine from this frame's pointer gestures first.
+    /// machine from this frame's pointer gestures first. The canvas fills
+    /// the window: full available width and full remaining height, split
+    /// between the panes at the divider share.
     fn paint_canvas(&mut self, ui: &mut egui::Ui) -> Result<(), EguiError> {
-        let width = ui.available_width().max(PANE_WIDTH_PX);
+        // The canvas fills the window — full available width (bounded below
+        // by the interaction envelope) and full remaining height (bounded
+        // below by the smallest layout that keeps both plots positive). The
+        // legend floats over the chart and the modals are overlay windows, so
+        // nothing below competes for this height.
+        let available = ui.available_size();
+        let width = available.x.max(PANE_WIDTH_PX);
+        let height = available.y.max(MIN_CANVAS_HEIGHT);
         // One allocation spans both panes: the pointer response then senses the
         // price pane, the oscillator pane, and both price strips, so a wheel
         // anywhere over the chart reaches `step_from_response` and region
         // routing decides what it acts on.
-        let (canvas, response) = ui.allocate_exact_size(
-            egui::vec2(width, PRICE_PANE_HEIGHT + SUB_PANE_HEIGHT),
-            egui::Sense::drag(),
-        );
-        let [main_rect, sub_rect] = split_canvas(canvas);
+        let (canvas, response) =
+            ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::drag());
+        let mut share = self.pane_share;
+        let mut panes = split_canvas(canvas, share);
+        // The divider floats over the seam with its own drag sense: a grab
+        // resizes the panes' share of the canvas. While it is dragged the
+        // canvas pan stays out, so one gesture never pans and resizes at once.
+        let divider_id = ui.id().with("pane_divider");
+        let mut divider = divider_rect(canvas, share);
+        let divider_response = ui.interact(divider, divider_id, egui::Sense::drag());
+        if divider_response.hovered() || divider_response.dragged() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical);
+        }
+        let divider_dy = divider_response.drag_delta().y;
+        if divider_dy != 0.0 && canvas.height() > 0.0 {
+            self.set_pane_share(share + divider_dy / canvas.height());
+            share = self.pane_share;
+            panes = split_canvas(canvas, share);
+            divider = divider_rect(canvas, share);
+        }
+        let [main_rect, sub_rect] = panes;
         let layout = PaneLayout::split(main_rect, true);
         let sub_layout = PaneLayout::split(sub_rect, false);
+        // Resync both mappings to the measured plots, so grid, candles, and
+        // axis labels agree with the rects they paint into at any window size.
+        if let Some(main) = self.main {
+            if let Some(resized) = viewport_with_plot_height(main, layout.plot.height()) {
+                self.main = Some(resized);
+            }
+        }
+        if let Some(sub) = self.sub {
+            if let Some(resized) = viewport_with_plot_height(sub, sub_layout.plot.height()) {
+                self.sub = Some(resized);
+            }
+        }
         // Float the legend over the chart's upper-right before routing, so a
         // wheel already sitting over it scrolls the list this frame.
         let legend = legend_origin(main_rect, self.stack.card_width());
         self.stack.set_origin(legend);
-        self.step_from_response(ui, &response, &[layout, sub_layout]);
+        self.step_from_response(ui, &response, &[layout, sub_layout], divider_response.dragged());
         let bar_seconds = self.timeframe.seconds();
 
         let theme = self.theme.clone();
@@ -1396,7 +1508,9 @@ impl ChartWorkspace {
             paint_time_axis(&chrome, main, window, bar_seconds, layout, &theme)?;
             if let Some(hover) = response.hover_pos() {
                 if layout.plot.contains(hover) {
-                    paint_crosshair_overlay(&plot, &chrome, main, window, layout, hover, &theme)?;
+                    paint_crosshair_overlay(
+                        &plot, &chrome, main, window, bar_seconds, layout, hover, &theme,
+                    )?;
                 }
             }
         }
@@ -1478,6 +1592,18 @@ impl ChartWorkspace {
             }
             paint_price_axis(&sub_chrome, sub, sub_layout, None, &theme)?;
         }
+        // The divider seam on top: a dimmed strip with a grip line, so the
+        // grab handle reads without taking layout pixels from either pane.
+        let seam = ui.painter_at(divider);
+        seam.rect_filled(divider, 0.0, resolve_color(&theme, "background")?);
+        let grip_y = divider.center().y;
+        seam.line_segment(
+            [
+                egui::pos2(divider.left() + 8.0, grip_y),
+                egui::pos2(divider.right() - 8.0, grip_y),
+            ],
+            grid_stroke(&theme)?,
+        );
         Ok(())
     }
 
@@ -1495,18 +1621,22 @@ impl ChartWorkspace {
     /// the oscillator pane or its price labels reaches here exactly like one
     /// over the candles. `layouts` is indexed by the router's own pane index,
     /// so the routing decision and the geometry lookup can never disagree
-    /// about which pane a gesture landed on.
+    /// about which pane a gesture landed on. While the divider is dragged the
+    /// pan stays out, so one gesture never pans and resizes at once.
     fn step_from_response(
         &mut self,
         ui: &egui::Ui,
         response: &egui::Response,
         layouts: &[PaneLayout; 2],
+        divider_dragged: bool,
     ) {
         let dt = f64::from(ui.input(|input| input.stable_dt));
         let mut events = Vec::new();
-        let drag = response.drag_delta();
-        if drag.x != 0.0 || drag.y != 0.0 {
-            events.push(PointerInput::Pan2D { dx_px: drag.x, dy_px: drag.y });
+        if !divider_dragged {
+            let drag = response.drag_delta();
+            if drag.x != 0.0 || drag.y != 0.0 {
+                events.push(PointerInput::Pan2D { dx_px: drag.x, dy_px: drag.y });
+            }
         }
         if response.hovered() {
             let (scroll, modifiers) =

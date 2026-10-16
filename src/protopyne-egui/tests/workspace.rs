@@ -357,11 +357,13 @@ fn crosshair_overlay_paints_when_the_pointer_is_in_the_plot() {
     egui::__run_test_ui(|ui| {
         let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(640.0, 320.0));
         let layout = PaneLayout::split(rect, true);
+        // The mapping height is the measured plot height, the same agreement
+        // the frame's per-pass resync establishes.
         let viewport = Viewport::new(
             PriceScaleMode::Normal,
             90.0,
             110.0,
-            PRICE_PLOT_HEIGHT,
+            layout.plot.height(),
             8.0,
             100.0,
             false,
@@ -381,6 +383,7 @@ fn crosshair_overlay_paints_when_the_pointer_is_in_the_plot() {
             &painter,
             viewport,
             &rows,
+            900,
             layout,
             hover,
             &ThemeConfig::default(),
@@ -548,14 +551,14 @@ fn a_full_day_grid_folds_whole_hours_and_a_whole_day_while_a_session_day_folds_n
 }
 
 /// The two pane rects the wheel routes over: a price pane with its axis and
-/// time strip, and the oscillator pane below it with its own axis.
+/// time strip, and the oscillator pane below it with its own axis. Both come
+/// from the shared canvas split at the default share, so the test premise
+/// and the frame always agree about where the seam sits.
 fn wheel_layouts() -> (PaneLayout, PaneLayout) {
     let width = ui_width();
-    let main = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(width, PRICE_PANE_HEIGHT));
-    let sub = egui::Rect::from_min_size(
-        egui::pos2(0.0, PRICE_PANE_HEIGHT),
-        egui::vec2(width, SUB_PANE_HEIGHT),
-    );
+    let canvas =
+        egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(width, NOMINAL_CANVAS_HEIGHT));
+    let [main, sub] = split_canvas(canvas, DEFAULT_PANE_SHARE);
     (PaneLayout::split(main, true), PaneLayout::split(sub, false))
 }
 
@@ -598,14 +601,24 @@ fn the_canvas_is_one_sensing_surface_split_into_two_panes() {
     // labels unrouted — the pane would look dead to the wheel.
     let canvas = egui::Rect::from_min_size(
         egui::pos2(0.0, 0.0),
-        egui::vec2(640.0, PRICE_PANE_HEIGHT + SUB_PANE_HEIGHT),
+        egui::vec2(640.0, NOMINAL_CANVAS_HEIGHT),
     );
-    let [main, sub] = split_canvas(canvas);
+    let [main, sub] = split_canvas(canvas, DEFAULT_PANE_SHARE);
 
     assert_eq!(
-        (main.height(), sub.height()),
-        (PRICE_PANE_HEIGHT, SUB_PANE_HEIGHT),
-        "the panes keep their design heights"
+        DEFAULT_PANE_SHARE.to_bits(),
+        0.75_f32.to_bits(),
+        "the price pane defaults to three quarters of the canvas"
+    );
+    assert!(
+        (main.height() - NOMINAL_CANVAS_HEIGHT * DEFAULT_PANE_SHARE).abs() <= 1e-4,
+        "the price pane takes the share: {}",
+        main.height()
+    );
+    assert!(
+        (sub.height() - NOMINAL_CANVAS_HEIGHT * (1.0 - DEFAULT_PANE_SHARE)).abs() <= 1e-4,
+        "the oscillator takes the rest: {}",
+        sub.height()
     );
     assert_eq!(main.min, canvas.min, "the price pane starts at the canvas origin");
     assert_eq!(sub.max, canvas.max, "and the sub-pane ends at its far corner");
@@ -616,6 +629,136 @@ fn the_canvas_is_one_sensing_surface_split_into_two_panes() {
     assert!(
         main.union(sub) == canvas,
         "and together they are the whole sensing surface"
+    );
+}
+
+#[test]
+fn the_divider_strip_sits_on_the_seam_and_the_panes_still_tile() {
+    // The draggable seam floats over the split: the strip centers on it while
+    // both panes keep tiling the canvas exactly, so dragging never steals
+    // pixels from either pane.
+    let canvas =
+        egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(640.0, NOMINAL_CANVAS_HEIGHT));
+    for share in [MIN_PANE_SHARE, 0.5, DEFAULT_PANE_SHARE, MAX_PANE_SHARE] {
+        let [main, sub] = split_canvas(canvas, share);
+        let strip = divider_rect(canvas, share);
+        assert!(
+            (strip.center().y - main.bottom()).abs() <= 1e-4,
+            "the strip centers on the seam at share {share}"
+        );
+        assert!(
+            (strip.width() - canvas.width()).abs() <= 1e-4,
+            "the strip spans the canvas width at share {share}"
+        );
+        assert!(
+            strip.height() <= DIVIDER_HEIGHT + 1e-4,
+            "the strip never exceeds its grab height at share {share}"
+        );
+        assert!(
+            main.union(sub) == canvas,
+            "the panes still tile the canvas at share {share}"
+        );
+    }
+    // Out-of-range shares clamp to the legibility rails instead of
+    // collapsing a pane.
+    let [narrow, _] = split_canvas(canvas, -1.0);
+    assert!(
+        (narrow.height() - canvas.height() * MIN_PANE_SHARE).abs() <= 1e-4,
+        "a narrow share clamps to the minimum pane"
+    );
+    let [wide, _] = split_canvas(canvas, 2.0);
+    assert!(
+        (wide.height() - canvas.height() * MAX_PANE_SHARE).abs() <= 1e-4,
+        "a wide share clamps to the maximum pane"
+    );
+}
+
+#[test]
+fn the_pane_share_defaults_to_three_quarters_and_clamps() {
+    let mut workspace = ChartWorkspace::new().expect("the workspace boots");
+    assert_eq!(
+        workspace.pane_share().to_bits(),
+        DEFAULT_PANE_SHARE.to_bits(),
+        "the chart takes three quarters of the canvas by default"
+    );
+    workspace.set_pane_share(0.5);
+    assert_eq!(workspace.pane_share().to_bits(), 0.5_f32.to_bits());
+    workspace.set_pane_share(10.0);
+    assert_eq!(
+        workspace.pane_share().to_bits(),
+        MAX_PANE_SHARE.to_bits(),
+        "an over-wide share clamps to the maximum pane"
+    );
+    workspace.set_pane_share(-2.0);
+    assert_eq!(
+        workspace.pane_share().to_bits(),
+        MIN_PANE_SHARE.to_bits(),
+        "a negative share clamps to the minimum pane"
+    );
+    workspace.set_pane_share(f32::NAN);
+    assert_eq!(
+        workspace.pane_share().to_bits(),
+        MIN_PANE_SHARE.to_bits(),
+        "a non-finite share holds instead of poisoning the layout"
+    );
+}
+
+#[test]
+fn viewport_height_resync_keeps_the_window_spacing_and_offset() {
+    // The frame measures the plots every pass (the canvas fills the window),
+    // so the resync adopts the measured height while the price window, bar
+    // spacing, and time offset ride along untouched.
+    let viewport = Viewport::new(PriceScaleMode::Normal, 90.0, 110.0, 300.0, 8.0, 100.0, false)
+        .expect("valid viewport")
+        .with_x_offset(24.0)
+        .expect("finite offset");
+    let resized = viewport_with_plot_height(viewport, 500.0).expect("a positive height resyncs");
+    assert_eq!(
+        resized.visible_range(),
+        viewport.visible_range(),
+        "the price window holds"
+    );
+    assert_eq!(
+        resized.scale().bar_spacing().to_bits(),
+        viewport.scale().bar_spacing().to_bits(),
+        "the time axis holds"
+    );
+    assert_eq!(
+        resized.x_offset_px().to_bits(),
+        viewport.x_offset_px().to_bits(),
+        "the pan offset holds"
+    );
+    assert_eq!(
+        resized.scale().height().to_bits(),
+        500.0_f32.to_bits(),
+        "the measured height lands"
+    );
+    for bad in [0.0, -10.0, f32::NAN, f32::INFINITY] {
+        assert!(
+            viewport_with_plot_height(viewport, bad).is_none(),
+            "a degenerate height holds the viewport: {bad}"
+        );
+    }
+}
+
+#[test]
+fn rebind_derives_both_viewport_heights_from_the_pane_share() {
+    // Viewport binds follow the seam: moving the divider before a rebind
+    // moves both mappings, so the first painted frame already agrees with
+    // the rects it paints into.
+    let mut workspace = ChartWorkspace::new().expect("the workspace boots");
+    workspace.seed_history(TimeframeKey::M1, ramp_rows(40)).expect("history seeds");
+    workspace.set_pane_share(0.5);
+    workspace.select_timeframe(TimeframeKey::M1).expect("M1 binds the viewports");
+    let price_h = NOMINAL_CANVAS_HEIGHT * 0.5 - TIME_STRIP;
+    let sub_h = NOMINAL_CANVAS_HEIGHT * 0.5;
+    assert!(
+        (workspace.main_viewport().expect("main").scale().height() - price_h).abs() <= 1e-4,
+        "the price mapping tracks the share minus its time strip"
+    );
+    assert!(
+        (workspace.sub_viewport().expect("sub").scale().height() - sub_h).abs() <= 1e-4,
+        "the oscillator mapping tracks the rest"
     );
 }
 

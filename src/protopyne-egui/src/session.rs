@@ -25,7 +25,7 @@ const HOUR_SECONDS: i64 = 3_600;
 /// Seconds in four hours: the major unit above an intraday timeframe.
 const FOUR_HOURS_SECONDS: i64 = 4 * HOUR_SECONDS;
 /// Seconds in a day.
-const DAY_SECONDS: i64 = 86_400;
+pub const DAY_SECONDS: i64 = 86_400;
 /// Seconds in a week (seven days).
 const WEEK_SECONDS: i64 = 7 * DAY_SECONDS;
 /// Seconds in a 30-day month.
@@ -60,6 +60,19 @@ pub fn time_major_unit(bar_seconds: u64) -> i64 {
         unit = unit.saturating_mul(2);
     }
     unit
+}
+
+/// Whether time-axis labels for `bar_seconds` bars read as clock time
+/// (`%H:%M`) rather than calendar dates (`%m-%d`).
+///
+/// The granularity follows the chart timeframe, never the window span: any
+/// sub-daily timeframe labels down to hour and minute (a month of
+/// fifteen-minute bars still reads as clock time), while daily bars and
+/// coarser label by date. A zero duration sits below a day and reads clock
+/// time, matching the grid unit's one-second floor.
+#[must_use]
+pub fn labels_show_clock_time(bar_seconds: u64) -> bool {
+    bar_seconds < DAY_SECONDS as u64
 }
 
 /// Vertical time-gridlines at the major time unit for a chart of
