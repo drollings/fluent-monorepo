@@ -366,7 +366,7 @@ impl SupervisedStream {
             };
             match connected {
                 Err(error) => {
-                    let terminal = matches!(error, TransportError::Terminal(_));
+                    let terminal = !error.is_retryable();
                     self.breaker.record_error(&error);
                     if terminal {
                         return StreamOutcome::Terminal {

@@ -725,9 +725,7 @@ impl crate::indicators::ChartIndicator for DeltaVolumeProfileIndicator {
                 reason: format!("{} expects a DeltaVolumeProfile configuration", self.id()),
             })?;
         let series = profile_series(rows, config)?;
-        let fingerprint = common_core::hash::fnv1a64(
-            &serde_json::to_vec(config).unwrap_or_default(),
-        );
+        let fingerprint = common_core::hash::fingerprint_json(config);
         let built = PROFILE_NODES
             .iter()
             .zip(series)

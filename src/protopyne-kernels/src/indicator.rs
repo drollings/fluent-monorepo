@@ -300,21 +300,27 @@ impl ParamSet {
     /// they already behave distinctly in `period()`. Identity for
     /// in-memory caches only — never persisted, so no stability promise
     /// beyond the process; the golden suite pins the current values so any
-    /// change is a deliberate cache-invalidation event.
+    /// change is a deliberate cache-invalidation event. Thin domain name
+    /// over the shared length-framed builder: each value pre-encodes
+    /// through [`encode_param_value`] (self-delimiting tag frames), so the
+    /// bytes — and the golden digests — never change.
     #[must_use]
     pub fn fingerprint(&self) -> u64 {
         let mut names: Vec<&String> = self.values.keys().collect();
         names.sort();
-        let mut bytes = Vec::new();
+        let mut encoded: Vec<(&str, Vec<u8>)> = Vec::with_capacity(names.len());
         for name in names {
-            let Some(value) = self.values.get(name) else {
-                continue;
-            };
-            bytes.extend_from_slice(&(name.len() as u64).to_le_bytes());
-            bytes.extend_from_slice(name.as_bytes());
-            encode_param_value(&mut bytes, value);
+            if let Some(value) = self.values.get(name) {
+                let mut payload = Vec::new();
+                encode_param_value(&mut payload, value);
+                encoded.push((name.as_str(), payload));
+            }
         }
-        common_core::hash::fnv1a64(&bytes)
+        let frames: Vec<(&str, &[u8])> = encoded
+            .iter()
+            .map(|(name, payload)| (*name, payload.as_slice()))
+            .collect();
+        common_core::hash::fingerprint_framed(&frames)
     }
 }
 

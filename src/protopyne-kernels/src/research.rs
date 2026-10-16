@@ -16,7 +16,7 @@ use polars::prelude::*;
 
 use crate::error::KernelError;
 use crate::indicator::fin_or_none;
-use crate::math::strict_window;
+use crate::math::{div_or_none, linreg_slope, strict_window, variance_pop};
 use protopyne_types::Bar;
 
 /// Convert closed bars to a columnar research frame.
@@ -67,7 +67,11 @@ pub fn efficiency_ratio(closes: &[f64], period: usize) -> Vec<Option<f64>> {
             let window = strict_window(closes, i, period + 1)?;
             let displacement = (window[period] - window[0]).abs();
             let path: f64 = window.windows(2).map(|pair| (pair[1] - pair[0]).abs()).sum();
-            fin_or_none(displacement / path)
+            // Displacement never exceeds path on the same window, so a zero
+            // path means a zero displacement (`0/0` refuses on both
+            // spellings) and `div_or_none` matches the guarded division
+            // everywhere this arm can reach.
+            div_or_none(displacement, path)
         })
         .collect()
 }
@@ -86,7 +90,10 @@ pub fn price_density(highs: &[f64], lows: &[f64], period: usize) -> Vec<Option<f
             let extent =
                 high.iter().fold(f64::NEG_INFINITY, |a, b| a.max(*b))
                     - low.iter().fold(f64::INFINITY, |a, b| a.min(*b));
-            fin_or_none(inside / extent)
+            // A zero extent means every high equals every low, so the summed
+            // ranges are zero too (`0/0` refuses on both spellings) and
+            // `div_or_none` matches the guarded division everywhere here.
+            div_or_none(inside, extent)
         })
         .collect()
 }
@@ -117,7 +124,12 @@ pub fn fractal_dimension(
                 .windows(2)
                 .map(|pair| (unit + (pair[1] - pair[0]) / extent).sqrt())
                 .sum();
-            fin_or_none(1.0 + (length.ln() + std::f64::consts::LN_2) / scaled)
+            // `scaled = ln(2·period)` is finite and ≥ ln 2 for every period
+            // that reaches this arm (period 0 windows refuse first), so the
+            // guarded quotient matches `div_or_none` on all inputs here.
+            let quotient =
+                div_or_none(length.ln() + std::f64::consts::LN_2, scaled)?;
+            fin_or_none(1.0 + quotient)
         })
         .collect()
 }
@@ -149,38 +161,33 @@ pub fn rsrs(highs: &[f64], lows: &[f64], n: usize, m: usize) -> Vec<Option<f64>>
                 return None;
             }
             let mean = scores.iter().sum::<f64>() / m as f64;
-            let variance = scores.iter().map(|s| (s - mean) * (s - mean)).sum::<f64>() / m as f64;
+            // Population tail shared with the band kernels: `scores` holds
+            // exactly `m` finite legs here, so this is the same
+            // sum-then-divide-by-`m` fold. The exact-zero guard below is
+            // load-bearing (exact sums of squares), not an epsilon lint.
+            let variance = variance_pop(&scores);
             #[allow(clippy::float_cmp)]
             if variance == 0.0 {
                 return None;
             }
-            fin_or_none((scores[m - 1] - mean) / variance.sqrt())
+            // zero, so the guarded quotient matches `div_or_none` exactly
+            // here: same numerator, same single `sqrt`, same refusal.
+            div_or_none(scores[m - 1] - mean, variance.sqrt())
         })
         .collect()
 }
 
 /// Least-squares slope of `y` on `x` over the `n`-bar window ending at `end`.
-#[allow(clippy::float_cmp)]
 fn rolling_slope(highs: &[f64], lows: &[f64], end: usize, n: usize) -> Option<f64> {
     let high = strict_window(highs, end, n)?;
     let low = strict_window(lows, end, n)?;
-    let (mean_x, mean_y) = (
-        low.iter().sum::<f64>() / n as f64,
-        high.iter().sum::<f64>() / n as f64,
-    );
-    let (mut sxx, mut sxy) = (0.0, 0.0);
-    for (x, y) in low.iter().zip(high.iter()) {
-        sxx += (x - mean_x) * (x - mean_x);
-        sxy += (x - mean_x) * (y - mean_y);
-    }
-    // An exactly zero sum of squares means a constant window (sums of
-    // squares are exact here); no slope to score.
-    if sxx == 0.0 {
-        return None;
-    }
-    fin_or_none(sxy / sxx)
+    linreg_slope(low, high)
 }
 
 #[cfg(test)]
 #[path = "../tests/research.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/research_rsrs_parity.rs"]
+mod rsrs_parity_tests;

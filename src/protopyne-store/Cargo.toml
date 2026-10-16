@@ -42,7 +42,7 @@ protopyne-kernels = { path = "../protopyne-kernels" }
 protopyne-server = { path = "../protopyne-server" }
 criterion = { workspace = true }
 tempfile = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
 
 [[bench]]
 name = "coverage_scale"

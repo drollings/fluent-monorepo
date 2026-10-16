@@ -165,11 +165,20 @@ pub fn corr_pearson(a: &[f64], b: &[f64]) -> Option<f64> {
     div_or_none(cov / n, (var_a / n).sqrt() * (var_b / n).sqrt())
 }
 
-/// Least-squares slope and intercept of `y` on `x`; `None` when the fit is
-/// undefined: length mismatch, empty input, or constant/non-finite `x`
-/// (no slope exists there).
+/// Least-squares slope of `y` on `x`; `None` when the fit is undefined:
+/// length mismatch, empty input, or constant/non-finite `x` (no slope
+/// exists there). Holds the shared fit core: [`linreg_slope_intercept`]
+/// delegates to this for its slope leg, so the two never fork.
+///
+/// This is the canonical per-window fit for RSRS-style rolling regressions;
+/// the scoring tail composes [`variance_pop`] + [`fin_or_none`] (same
+/// sum-then-divide-by-`m`, `sqrt` once) or [`standardize_scores`] for the
+/// whole-window form. The slope leg deliberately carries no intercept
+/// finiteness gate: a finite slope stays `Some` even where
+/// `mean_y - slope * mean_x` would overflow, matching the historical
+/// rolling-fit callers that only score the slope.
 #[must_use]
-pub fn linreg_slope_intercept(x: &[f64], y: &[f64]) -> Option<(f64, f64)> {
+pub fn linreg_slope(x: &[f64], y: &[f64]) -> Option<f64> {
     if x.len() != y.len() || x.is_empty() {
         return None;
     }
@@ -180,7 +189,19 @@ pub fn linreg_slope_intercept(x: &[f64], y: &[f64]) -> Option<(f64, f64)> {
         cov += (xi - mean_x) * (yi - mean_y);
         var_x += (xi - mean_x) * (xi - mean_x);
     }
-    let slope = div_or_none(cov, var_x)?;
+    div_or_none(cov, var_x)
+}
+
+/// Least-squares slope and intercept of `y` on `x`; `None` when the fit is
+/// undefined: length mismatch, empty input, or constant/non-finite `x`
+/// (no slope exists there). The slope leg is [`linreg_slope`]; the
+/// intercept adds `fin_or_none(mean_y - slope * mean_x)`, so an
+/// overflowing intercept still refuses the pair while the slope reads
+/// `Some`.
+#[must_use]
+pub fn linreg_slope_intercept(x: &[f64], y: &[f64]) -> Option<(f64, f64)> {
+    let slope = linreg_slope(x, y)?;
+    let (mean_x, mean_y) = (window_mean(x), window_mean(y));
     fin_or_none(mean_y - slope * mean_x).map(|intercept| (slope, intercept))
 }
 

@@ -8,7 +8,7 @@ crate in the workspace. It must NOT import any `guidance-*`, `coral-*`,
 
 | Concern | Module | Path |
 |---------|--------|------|
-| Hashing (blake3, sha256, fnv1a64, hex) | `hash` | `src/common-core/src/hash.rs` |
+| Hashing (blake3, sha256, fnv1a64, hex) + canonical fingerprint framing (`fingerprint_json` for serializable configs, `fingerprint_framed` for sorted length-framed name/payload pairs) | `hash` | `src/common-core/src/hash.rs` |
 | Text utilities (contains_ignore_case, truncate_at_sentence, strip_html, strip_thinking_blocks, StreamingThinkFilter, AnsiStripper, filter_unsafe_chars, trim_doc_prefix, detect_identifier_kind, slugify, …) | `string` | `src/common-core/src/string.rs` |
 | Path/fs helpers (mtime, read_file_alloc_err, write_atomic, ensure_dir, …) | `io` | `src/common-core/src/io.rs` |
 | Shared error leaf types (IoError, SqliteError, ResolverError) + `impl_from_io_error!` macro | `error` | `src/common-core/src/error.rs` |
@@ -26,7 +26,7 @@ crate in the workspace. It must NOT import any `guidance-*`, `coral-*`,
 | ReadThroughCache<K, V>, LoadCache<K, V, E> (bounded get-or-load LRU) | `cache` | `src/common-core/src/cache.rs` |
 | Weighted-LRU eviction engine (eviction_score, eviction_order, evict_until_fit) — "evict largest × coldest until under budget"; composes the InstancePool residency loop | `cache` | `src/common-core/src/cache.rs` |
 | Generic keyed registry (insert/get/keys/remove/len) — `KeyedRegistry` (sync) and `ConcurrentRegistry` (thread-safe, `resolve_or_create` single-construction, Arc-shared) | `registry` | `src/common-core/src/registry.rs` |
-| Retry with jittered exponential backoff (`retry_async`, `backoff_ms`, `capped_backoff_ms`) + poll-with-backoff (`PollWithBackoff`, `PollResult`, `wait_healthy`) | `retry` | `src/common-core/src/retry.rs` |
+| Retry with jittered exponential backoff (`retry_async`, `backoff_ms`, `capped_backoff_ms`) + poll-with-backoff (`PollWithBackoff`, `PollResult`, `wait_healthy`) + abort-aware verdict-loop composition recipe (tested doc example on `retry`: loop-top abort check, per-error-type `is_retryable` verdict, sleep raced against abort only where the loop's abort-latency contract requires it) | `retry` | `src/common-core/src/retry.rs` |
 
 ## Import pattern
 

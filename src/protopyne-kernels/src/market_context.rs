@@ -25,6 +25,7 @@ use crate::bars::fast_tanh;
 use crate::ema::EmaIndicator;
 use crate::error::KernelError;
 use crate::indicator::{IndicatorRegistry, ParamSet, fin_or_none};
+use crate::math::div_or_none;
 use crate::mtf::{Lookahead, MtfStore, SeriesKey};
 use crate::oscillators::{CciIndicator, RsiIndicator};
 use crate::sma::SmaIndicator;
@@ -592,12 +593,17 @@ fn update_with_requests(
     let vol = frame.volume.get(at).copied().or_else(|| prev.and_then(|prior| prior.vol));
 
     let atr_distance = match (close, ma_mean, atr) {
-        (Some(close), Some(mean), Some(atr)) if atr != 0.0 => fin_or_none((close - mean) / atr),
+        // `atr` rides kernel outputs (finite where present), so the only
+        // zero/infinite refusal `div_or_none` adds beyond the old explicit
+        // guard is unreachable — the guard folds into the primitive.
+        (Some(close), Some(mean), Some(atr)) => div_or_none(close - mean, atr),
         _ => None,
     };
     let ma_health = health_mas(atr, ma_primary, ma_signal, ma_mean, HEALTH_K);
     let volatility_ratio = match (stdev, atr) {
-        (Some(stdev), Some(atr)) if atr != 0.0 => fin_or_none(stdev / atr),
+        // Same kernel-output finiteness argument as `atr_distance` above:
+        // the explicit zero guard folds into the primitive.
+        (Some(stdev), Some(atr)) => div_or_none(stdev, atr),
         _ => None,
     };
     // The volume guard is producer-confidence (do I have valid inputs?):

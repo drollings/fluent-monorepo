@@ -80,3 +80,7 @@ pub fn rows_of(bars: &[Bar]) -> ChartRows {
 #[cfg(test)]
 #[path = "../tests/convert.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/display_boundary.rs"]
+mod display_boundary_tests;

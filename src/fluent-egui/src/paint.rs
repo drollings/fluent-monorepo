@@ -451,7 +451,7 @@ pub fn paint_ribbon(
     bullish: &[bool],
     alpha: f32,
 ) -> Result<(), EguiError> {
-    let clamped = alpha.clamp(0.0, 1.0);
+    let opacity = alpha_u8(alpha);
     let bull = resolve_color(theme, ribbon_fill_style_key(true))?;
     let bear = resolve_color(theme, ribbon_fill_style_key(false))?;
     for (band, trend) in bands.iter().zip(bullish.iter()) {
@@ -463,7 +463,7 @@ pub fn paint_ribbon(
             base.r(),
             base.g(),
             base.b(),
-            (clamped * 255.0).round().clamp(0.0, 255.0) as u8,
+            opacity,
         );
         painter.rect_filled(
             egui::Rect::from_min_max(
@@ -625,8 +625,7 @@ pub fn paint_ribbon_fill(
     theme: &ThemeConfig,
     alpha: f32,
 ) -> Result<(), EguiError> {
-    let clamped = alpha.clamp(0.0, 1.0);
-    let opacity = (clamped * 255.0).round().clamp(0.0, 255.0) as u8;
+    let opacity = alpha_u8(alpha);
     let bull = resolve_color(theme, ribbon_fill_style_key(true))?;
     let bear = resolve_color(theme, ribbon_fill_style_key(false))?;
     for polygon in polygons {
@@ -803,6 +802,18 @@ pub fn paint_delta_bars_tinted(
     }
 }
 
+/// Map a unit alpha fraction to a byte opacity for premultiplied
+/// `Color32` blending: `clamp(0,1) * 255`, half-away rounding, then a
+/// second clamp into byte range before the float-to-int conversion (Rust
+/// saturation, never wrapping: NaN reads 0, out-of-range reads the nearer
+/// edge). The one spelling behind the ribbon fill, the ribbon polygons,
+/// and the stroked oscillator emitters — emitters pass their `alpha`
+/// straight through and never restate the arithmetic.
+#[must_use]
+pub fn alpha_u8(alpha: f32) -> u8 {
+    (alpha.clamp(0.0, 1.0) * 255.0).round().clamp(0.0, 255.0) as u8
+}
+
 /// Map a Pine-style transparency percent to a byte opacity.
 ///
 /// `color.new(c, t)` semantics: `0` is fully opaque, `100` fully invisible.
@@ -868,7 +879,7 @@ fn paint_stroked_oscillator(
     alpha: f32,
 ) -> Result<(), EguiError> {
     let base = style.color(theme, style_key)?;
-    let opacity = (alpha.clamp(0.0, 1.0) * 255.0).round().clamp(0.0, 255.0) as u8;
+    let opacity = alpha_u8(alpha);
     let color =
         egui::Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), opacity);
     let stroke = style.stroke(color);
@@ -1425,3 +1436,7 @@ pub fn paint_search_icon(
 #[cfg(test)]
 #[path = "../tests/paint.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/alpha_opacity.rs"]
+mod alpha_opacity_tests;

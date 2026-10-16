@@ -237,10 +237,10 @@ fn wrong_config(id: &str, expected: &str) -> EguiError {
 }
 
 /// A stable fingerprint of a configuration, over its serialized fields, so a
-/// cache key follows every edit (including string-valued fields).
+/// cache key follows every edit (including string-valued fields). Thin
+/// domain name over the shared JSON framer: same bytes, one implementation.
 fn config_fingerprint<T: serde::Serialize>(config: &T) -> u64 {
-    let bytes = serde_json::to_vec(config).unwrap_or_default();
-    common_core::hash::fnv1a64(&bytes)
+    common_core::hash::fingerprint_json(config)
 }
 
 /// The IntegrationLite plugin: the four-readout bounded oscillator sub-pane.

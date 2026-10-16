@@ -95,6 +95,39 @@ pub fn fnv1a64(input: &[u8]) -> u64 {
     hash
 }
 
+/// Fingerprint of a JSON-serializable value: `serde_json::to_vec` bytes
+/// hashed once through [`fnv1a64`]. An encode failure hashes the empty
+/// encoding (the `unwrap_or_default` fail-soft the terminal config
+/// fingerprint has always used) — a cache key that follows every edit,
+/// never a refusal.
+#[must_use]
+pub fn fingerprint_json<T: serde::Serialize>(value: &T) -> u64 {
+    fnv1a64(&serde_json::to_vec(value).unwrap_or_default())
+}
+
+/// Fingerprint of sorted length-framed `(name, payload)` pairs: names sort
+/// ascending, each frame is `u64 little-endian name length + name bytes +
+/// raw payload bytes`, hashed once through [`fnv1a64`]. This is the exact
+/// outer-loop byte layout the parameter fingerprint and the pane cache key
+/// already share — both delegate here, so the bytes on the wire never
+/// change. Payloads must be self-delimiting (fixed-width words or
+/// internally length-prefixed values): the frame carries no payload
+/// length, so a payload that is not self-delimiting would fork the
+/// framing. Fixed-width word streams without names (content hashes) keep
+/// their own layout and only share [`fnv1a64`], never this builder.
+#[must_use]
+pub fn fingerprint_framed(pairs: &[(&str, &[u8])]) -> u64 {
+    let mut ordered: Vec<(&str, &[u8])> = pairs.to_vec();
+    ordered.sort_by(|left, right| left.0.cmp(right.0));
+    let mut bytes = Vec::new();
+    for (name, payload) in ordered {
+        bytes.extend_from_slice(&(name.len() as u64).to_le_bytes());
+        bytes.extend_from_slice(name.as_bytes());
+        bytes.extend_from_slice(payload);
+    }
+    fnv1a64(&bytes)
+}
+
 pub fn content_hash_with_model(content: &str, model: &str) -> [u8; 16] {
     let mut hasher = Sha256::new();
     hasher.update(model.as_bytes());

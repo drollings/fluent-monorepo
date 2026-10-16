@@ -267,3 +267,55 @@ fn rsrs_calibration_controls() {
     let mean = scored.iter().sum::<f64>() / scored.len() as f64;
     assert!(mean.abs() < 0.5, "noise detunes near zero, got {mean}");
 }
+
+#[test]
+fn noise_divisions_refuse_non_finite_legs() {
+    // A non-finite leg anywhere in the window refuses the whole window
+    // (strict windows exclude it first); the division never sees it, so
+    // the `div_or_none` migrations below cannot change these arms.
+    let clean: Vec<f64> = (0..30).map(|i| 100.0 + f64::from(i) * 0.3).collect();
+    for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        let mut highs = clean.clone();
+        let mut lows = clean.clone();
+        highs[15] = bad;
+        lows[20] = bad;
+        for got in [
+            efficiency_ratio(&clean, 14),
+            price_density(&clean, &clean, 14),
+            fractal_dimension(&clean, &clean, &clean, 14),
+        ] {
+            assert!(got[29].is_some(), "clean window scores");
+        }
+        assert!(
+            efficiency_ratio(&highs, 14)[15..].iter().all(Option::is_none),
+            "non-finite close refuses every window covering it"
+        );
+        assert!(
+            price_density(&highs, &lows, 14)[29].is_none(),
+            "non-finite high/low refuses density"
+        );
+        assert!(
+            fractal_dimension(&highs, &lows, &highs, 14)[29].is_none(),
+            "non-finite leg refuses dimension"
+        );
+    }
+}
+
+#[test]
+fn noise_divisions_stay_vacuous_on_degenerate_periods() {
+    // Period 0 builds one-bar windows (zero displacement over zero path):
+    // `0/0` reads `None` on both spellings, never `Some(inf)`.
+    let closes: Vec<f64> = (0..10).map(|i| 100.0 + f64::from(i)).collect();
+    assert!(
+        efficiency_ratio(&closes, 0).iter().all(Option::is_none),
+        "zero period stays vacuous"
+    );
+    assert!(
+        price_density(&closes, &closes, 0).iter().all(Option::is_none),
+        "zero period stays vacuous"
+    );
+    // Empty inputs never fabricate a window.
+    assert!(efficiency_ratio(&[], 14).is_empty());
+    assert!(price_density(&[], &[], 14).is_empty());
+    assert!(fractal_dimension(&[], &[], &[], 14).is_empty());
+}

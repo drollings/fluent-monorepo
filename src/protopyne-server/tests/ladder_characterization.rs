@@ -14,8 +14,9 @@ fn data(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join(name)
 }
 
-fn trim_parquet() -> PathBuf {
-    data("SPY_1M_trim.parquet")
+fn month_parquet() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../data/protopyne-rs/historical/SPY-2026-03-1M.parquet")
 }
 
 #[test]
@@ -70,10 +71,10 @@ fn bad_row_csv_candidate_stops_the_walk() {
 
 #[test]
 fn parquet_ladder_skips_missing_and_stops_on_corrupt() {
-    let month = trim_parquet();
+    let month = month_parquet();
     let missing = month.with_file_name("does-not-exist.parquet");
     let bars = load_bars_candidates(&[missing, month.clone()]).expect("missing skips");
-    assert_eq!(bars.len(), 120);
+    assert_eq!(bars.len(), 20434);
     let dir = tempfile::tempdir().expect("tempdir");
     let corrupt_path = dir.path().join("corrupt.parquet");
     std::fs::write(&corrupt_path, "this is not parquet").expect("write");

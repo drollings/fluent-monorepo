@@ -281,6 +281,49 @@ pub fn pivot_marks(fast: &[Option<f64>], threshold: f64) -> Result<Vec<PivotMark
     Ok(marks)
 }
 
+/// Unit sigmoid both band mappers share: `x / (1 + |x|)`, strictly
+/// monotonic from `(-∞, +∞)` onto `(-1, +1)`, odd, with `0 → 0`. Pure
+/// display math — no series identity, no calibration; the domain crates
+/// own which constants flow through it.
+#[must_use]
+pub fn unit_squash(x: f64) -> f64 {
+    x / (1.0 + x.abs())
+}
+
+/// Map one reading through an affine input shift plus a scaled sigmoid.
+///
+/// Computes `unit_squash((value + offset) * slope) * scale` in exactly that
+/// op order: shift, scale, squash, then widen to the display band. The
+/// per-series calibration (`offset`, `slope`, `scale`) stays with the
+/// caller — this is the shape every calibrated band shares, not any one
+/// band's constants.
+#[must_use]
+pub fn affine_squash(value: f64, offset: f64, slope: f64, scale: f64) -> f64 {
+    unit_squash((value + offset) * slope) * scale
+}
+
+/// Compress one reading onto a symmetric band through the shared sigmoid.
+///
+/// Computes `unit_squash(value / divisor) * scale`: `0 → 0`, `±divisor →`
+/// `±scale / 2`, finite inputs stay strictly inside `±scale`. Non-finite
+/// inputs yield `NaN` (series callers turn that into a hole via
+/// [`map_series_optional`]).
+#[must_use]
+pub fn band_squash(value: f64, divisor: f64, scale: f64) -> f64 {
+    unit_squash(value / divisor) * scale
+}
+
+/// Lift a scalar map over an option series, preserving holes.
+///
+/// Length-preserving: output has one slot per input slot, `None` stays
+/// `None`, and a non-finite mapped value becomes a hole rather than a
+/// substituted value. The refusal (not repair) direction is load-bearing:
+/// every series built here lines up index-for-index with its source rows,
+/// so inventing a value would misalign the pane.
+pub fn map_series_optional(series: &[Option<f64>], f: impl Fn(f64) -> f64) -> Vec<Option<f64>> {
+    series.iter().map(|slot| slot.map(&f).filter(|mapped| mapped.is_finite())).collect()
+}
+
 #[cfg(test)]
 #[path = "../tests/view.rs"]
 mod tests;

@@ -63,7 +63,7 @@ pub use interaction::{
 pub use paint::{
     CANDLE_BODY_FRACTION, CANDLE_GAP_THRESHOLD_PX, CANDLE_MIN_BODY_PX, CandleGeom,
     CrosshairLines, DeltaBarGeom, EyeIconGeom, HexBoltIconGeom, MarkerDot, PivotDot, RibbonBand,
-    RibbonPolygon, SearchIconGeom, TintedCandle, TintedDeltaBar, area_polygons, area_vertex_color,
+    RibbonPolygon, SearchIconGeom, TintedCandle, TintedDeltaBar, alpha_u8, area_polygons, area_vertex_color,
     candle_body_width, candle_geoms, crosshair_lines, delta_bar_geoms, eye_icon_geom,
     hex_bolt_icon_geom, marker_dots, opacity_from_transparency, oscillator_points, parse_hex_color,
     paint_area_fill, paint_candles, paint_candles_as, paint_candles_tinted, paint_crosshair,
@@ -84,8 +84,9 @@ pub use slot::{
 };
 pub use style::IndicatorStyle;
 pub use view::{
-    DeltaView, PaneKind, PaneSeries, PivotMark, PivotSide, RibbonView, delta_candle_view,
-    pivot_marks, ribbon_fill_style_key, ribbon_style_key, ribbon_view,
+    DeltaView, PaneKind, PaneSeries, PivotMark, PivotSide, RibbonView, affine_squash, band_squash,
+    delta_candle_view, map_series_optional, pivot_marks, ribbon_fill_style_key, ribbon_style_key,
+    ribbon_view, unit_squash,
 };
 pub use style::{LINE_WIDTH_FIELD, MAX_LINE_WIDTH, MIN_LINE_WIDTH, STYLE_FIELDS, style_key};
 pub use viewport::{

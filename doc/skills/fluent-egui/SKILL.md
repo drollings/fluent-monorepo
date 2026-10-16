@@ -20,7 +20,7 @@ refusal carries a reason (`EguiError`) instead of substituting a value.
 | `fluent-wvr` | `Component`/`WorkUnit` + `FieldAccess`/`Describable` derives, `bon::Builder`, `impl_component!`, `Instrumented`, `ComponentAdapter`, `check_for_execute` bridge | `config.rs` (`PaneConfig`, `ThemeConfig`, `ReplayState`), `chart.rs`-side timing |
 | `fluent-concurrency` | `Scope` (feed ownership), `SupervisedBatch` (recompute waves), `ResultPool` (heavy rebuilds), `Limiter` (refresh gate), `StreamAbort` (pane-close signal), `flow` credit (bounded intake), `first_accept_in_order` (history fallback), `retry_async` (transport retry) | `feed.rs` |
 | `fluent-dag` | `DependencyGraph` (pane ordering/readiness/cancellation), `CheckpointedStepGraph` (replay checkpoints/rewind) | `plan.rs`, `replay.rs` |
-| `common-core` | `hash :: fnv1a64` (cache keys, content hashes), `retry`, `metrics :: LatencyHistogram`, `registry :: KeyedRegistry` (catalog ordering), `string :: LoweredHaystack` (single-lowering search) | `plan.rs`, `feed.rs`, `config.rs`, `modal.rs` |
+| `common-core` | `hash :: fnv1a64, fingerprint_framed` (cache keys, content hashes), `retry`, `metrics :: LatencyHistogram`, `registry :: KeyedRegistry` (catalog ordering), `string :: LoweredHaystack` (single-lowering search) | `plan.rs`, `feed.rs`, `config.rs`, `modal.rs` |
 
 Rules inherited from those skills apply unchanged: `dyn` at the pane
 boundary, concrete types in per-bar loops; `execute` stays
@@ -32,11 +32,11 @@ before `Arc`-sharing, override at runtime via `ComponentAdapter`.
 
 | File | Owns | Key symbols |
 |---|---|---|
-| `src/view.rs` | Headless pane view-models over `ChartRow` slices | `PaneKind`, `PaneSeries`, `ribbon_view`, `ribbon_fill_style_key`, `delta_candle_view`, `pivot_marks` |
+| `src/view.rs` | Headless pane view-models over `ChartRow` slices + domain-blind scalar maps and series lift | `PaneKind`, `PaneSeries`, `ribbon_view`, `ribbon_fill_style_key`, `delta_candle_view`, `pivot_marks`, `unit_squash`, `affine_squash`, `band_squash`, `map_series_optional` (affine/squash maps preserve `None` holes and hole non-finite outputs — refuse, never repair) |
 | `src/viewport.rs` | Pixel geometry on the canonical scale (headless) | `Viewport` (`with_x_offset`, `x_offset_px`, `sync_time_axis`, `visible_bar_range`), `visible_rows`, `thin_ticks`, `axis_ticks`, `BreakLine` |
 | `src/plan.rs` | DAG-ordered pane plan + fingerprint-keyed cache | `PanePlan`, `PaneCache`, `CachedSeries`, `cache_key` (`PaneCache :: with_capacity` refuses a zero capacity; `pin` keeps keys resident across waves) |
 | `src/config.rs` | Layout/theme control plane | `PaneConfig`, `ThemeConfig` |
-| `src/paint.rs` | Headless geometry builders + thin `egui` emitters | `candle_geoms`, `candle_body_width` (`CANDLE_MIN_BODY_PX`, `CANDLE_GAP_THRESHOLD_PX`, `CANDLE_BODY_FRACTION`), `ribbon_bands`, `delta_bar_geoms`, `oscillator_points`, `pivot_dots`, `pivot_price_dots`, `threshold_line`, `resolve_color`, `parse_hex_color`, `area_polygons`, `area_vertex_color`, `ribbon_polygons`, `marker_dots`, `crosshair_lines`, `translate_candles`/`translate_polygons`/`translate_breaks`/`translate_points`/`translate_dots`/`translate_markers`/`translate_delta_bars`, `eye_icon_geom`, `hex_bolt_icon_geom`, `search_icon_geom`, `paint_eye_icon`, `paint_hex_bolt_icon`, `paint_search_icon`, `paint_oscillator_styled`, `paint_*` |
+| `src/paint.rs` | Headless geometry builders + thin `egui` emitters | `candle_geoms`, `candle_body_width` (`CANDLE_MIN_BODY_PX`, `CANDLE_GAP_THRESHOLD_PX`, `CANDLE_BODY_FRACTION`), `ribbon_bands`, `delta_bar_geoms`, `oscillator_points`, `pivot_dots`, `pivot_price_dots`, `threshold_line`, `resolve_color`, `parse_hex_color`, `area_polygons`, `area_vertex_color`, `ribbon_polygons`, `marker_dots`, `crosshair_lines`, `translate_candles`/`translate_polygons`/`translate_breaks`/`translate_points`/`translate_dots`/`translate_markers`/`translate_delta_bars`, `eye_icon_geom`, `hex_bolt_icon_geom`, `search_icon_geom`, `paint_eye_icon`, `paint_hex_bolt_icon`, `paint_search_icon`, `paint_oscillator_styled`, `alpha_u8` (clamp-then-round byte opacity in call-site width), `opacity_from_transparency` (inverted variant, fail-soft to 255 on non-finite input), `paint_*` |
 | `src/annotations.rs` | Headless annotation set + timestamp-to-bar resolution | `AnnotationSet`, `TimeIndex`, `resolve_annotation` |
 | `src/hittest.rs` | Pointer-to-data readout + candle hit-testing (headless) | `Crosshair`, `crosshair_data`, `crosshair_pixel`, `Hit`, `hit_test`, `HIT_EPSILON_PX` |
 | `src/interaction.rs` | Deterministic pointer-interaction state machine (headless, clock-free) | `InteractionState` (`with_horizontal_bounds`, `kinetic_velocity_x`), `PointerInput` (`Pan2D`/`WheelTime`), `MIN_BAR_SPACING`, `MAX_BAR_SPACING`, `ANCHOR_DRIFT_EPS_PX`, `wheel_zoom_factor`, `zoom_range_around` |
@@ -150,7 +150,7 @@ plan.register_node("price", &[], 0)?;
 plan.register_node("ribbon", &["smoothing"], 0)?;
 for pane in plan.order()? { /* schedule wave in topo order */ }
 let dirty = plan.dirty_set("smoothing");   // failed node + transitive dependents, in plan order
-let key = cache_key("ribbon", fingerprint); // length-framed name + ParamSet fingerprint via fnv1a64
+let key = cache_key("ribbon", fingerprint); // length-framed name + ParamSet fingerprint, delegated to the shared framed-hash helper
 let revision = cache.publish(key, values);  // bit-identical republish keeps the revision
 ```
 

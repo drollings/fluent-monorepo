@@ -274,3 +274,16 @@ fn quiet_shapes_stay_untrending() {
     let flat_regime = last_regime(&flat);
     assert!(!is_trending(flat_regime), "flat tape stays untrending: {flat_regime:?}");
 }
+
+#[test]
+fn flat_tape_zeroes_the_atr_guarded_ratios() {
+    // A flat tape zeroes ATR (and stdev): the `atr != 0.0` guards refuse
+    // both ratios instead of dividing — the exact arms the `div_or_none`
+    // migration must preserve bit-for-bit.
+    let flat: Vec<Bar> = (0u32..40)
+        .map(|i| bar("100", "100", "100", "100", 1_000, 1_700_000_000 + i64::from(i) * 300))
+        .collect();
+    let ctx = native_regime(&flat, 39);
+    assert_eq!(ctx.atr_distance, None, "zero ATR refuses the distance ratio");
+    assert_eq!(ctx.volatility_ratio, None, "zero ATR refuses the volatility ratio");
+}

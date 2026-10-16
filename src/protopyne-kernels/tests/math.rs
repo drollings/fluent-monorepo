@@ -1,5 +1,5 @@
 use super::*;
-use crate::indicator::ParamSet;
+use crate::indicator::{ParamSet, fin_or_none};
 use crate::util::{highest, lowest};
 
 fn params_with_length(length: i64) -> ParamSet {
@@ -107,6 +107,98 @@ fn linreg_recovers_affine_line_and_refuses_constant_x() {
         None
     );
     assert_eq!(linreg_slope_intercept(&[1.0], &[1.0, 2.0]), None);
+}
+
+#[test]
+fn linreg_slope_leg_matches_pair_form_bit_exact() {
+    // The slope leg never forks from the pair form: bit-identical first
+    // element on every defined fit, `None` wherever the pair refuses.
+    let cases: Vec<(Vec<f64>, Vec<f64>)> = vec![
+        (vec![0.0, 1.0, 2.0, 3.0, 4.0], vec![1.0, 3.0, 5.0, 7.0, 9.0]),
+        (vec![1.0, 2.0, 3.0], vec![2.0, 2.0, 2.0]),
+        (vec![-3.0, -1.0, 0.5, 2.0], vec![4.0, 1.0, -2.0, 0.0]),
+        (vec![5.0, 5.0, 5.0], vec![1.0, 2.0, 3.0]),
+        (vec![], vec![]),
+        (vec![1.0], vec![1.0, 2.0]),
+        (vec![1.0, f64::NAN], vec![1.0, 2.0]),
+        (vec![1.0, 2.0], vec![1.0, f64::NAN]),
+        (vec![1.0, f64::INFINITY], vec![1.0, 2.0]),
+        (vec![1e-300, 2e-300], vec![3.0, 5.0]),
+    ];
+    for (x, y) in &cases {
+        let pair = linreg_slope_intercept(x, y);
+        let slope = linreg_slope(x, y);
+        assert_eq!(slope, pair.map(|(s, _)| s), "slope leg agrees on {x:?} / {y:?}");
+        if let (Some(got), Some((want, _))) = (slope, pair) {
+            assert_eq!(got.to_bits(), want.to_bits(), "bit-exact slope on {x:?}");
+        }
+    }
+    // Exact `sxx == 0` boundary: an exactly constant window refuses, while
+    // a window with any exact spread defines a slope.
+    assert_eq!(linreg_slope(&[5.0, 5.0, 5.0], &[1.0, 2.0, 3.0]), None);
+    assert!(linreg_slope(&[5.0, 5.0, 6.0], &[1.0, 2.0, 3.0]).is_some());
+    // Non-finite legs refuse through the shared guards, never a value.
+    assert_eq!(linreg_slope(&[1.0, f64::NAN], &[1.0, 2.0]), None);
+    assert_eq!(linreg_slope(&[1.0, 2.0], &[1.0, f64::INFINITY]), None);
+    assert_eq!(linreg_slope(&[], &[]), None);
+    assert_eq!(linreg_slope(&[1.0], &[1.0, 2.0]), None);
+}
+
+#[test]
+fn div_or_none_agrees_with_guarded_division_exactly() {
+    // The migration contract for every `fin_or_none(num / den)` call site
+    // (`fin_or_none` keeps ±inf: only NaN reads `None`). `div_or_none`
+    // agrees with the guarded division on every input except two
+    // overflow-class edges: a zero denominator with a nonzero numerator
+    // (guarded reads `Some(±inf)`, the primitive refuses) and an infinite
+    // denominator with a finite numerator (guarded reads `Some(±0)`).
+    // Every migrated site proves its numerator cannot hit those edges
+    // (bounded by its denominator, or a provably positive constant);
+    // the sweep below pins the exact divergence set so the proofs check
+    // against something.
+    let mut seed = 0x51E3_25C7_9B11_F00Du64;
+    let mut next = move || {
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        f64::from_bits(seed)
+    };
+    let mut specials: Vec<(f64, f64)> = vec![
+        (1.0, 0.0),
+        (0.0, 0.0),
+        (-1.0, 0.0),
+        (f64::INFINITY, 0.0),
+        (f64::NAN, 1.0),
+        (1.0, f64::NAN),
+        (f64::NAN, 0.0),
+        (1.0, f64::INFINITY),
+        (1.0, f64::NEG_INFINITY),
+        (f64::INFINITY, 2.0),
+        (f64::INFINITY, f64::INFINITY),
+        (0.0, f64::INFINITY),
+        (f64::NAN, f64::INFINITY),
+        (5.0, f64::MIN_POSITIVE),
+        (5.0, -0.0),
+        (0.0, -0.0),
+    ];
+    for _ in 0..500 {
+        specials.push((next(), next()));
+    }
+    for (num, den) in specials {
+        let guarded = fin_or_none(num / den);
+        let primitive = div_or_none(num, den);
+        let diverges = (den == 0.0 && num != 0.0 && !num.is_nan())
+            || (den.is_infinite() && num.is_finite());
+        if diverges {
+            assert_eq!(primitive, None, "primitive refuses {num} / {den}");
+            assert!(
+                guarded.is_some(),
+                "guarded division keeps ±inf/±0 on {num} / {den}"
+            );
+        } else {
+            assert_eq!(primitive, guarded, "agreement on {num} / {den}");
+        }
+    }
 }
 
 #[test]

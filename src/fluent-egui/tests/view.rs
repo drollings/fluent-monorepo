@@ -184,3 +184,80 @@ fn pivot_refuses_bad_threshold() {
     }
     assert!(pivot_marks(&[], 100.0).expect("empty is valid").is_empty());
 }
+
+#[test]
+fn unit_squash_is_odd_monotonic_and_bounded() {
+    assert_eq!(unit_squash(0.0).to_bits(), 0.0_f64.to_bits(), "zero stays centered");
+    for x in [0.001, 0.5, 1.0, 2.0, 100.0, 1.0e9] {
+        assert_eq!(unit_squash(-x).to_bits(), (-unit_squash(x)).to_bits(), "odd at {x}");
+        assert!(unit_squash(x) > 0.0 && unit_squash(x) < 1.0, "bounded at {x}");
+    }
+    let mut prev = 0.0;
+    for i in 1..=1000 {
+        let x = f64::from(i) / 10.0;
+        let got = unit_squash(x);
+        assert!(got > prev, "strictly monotonic at {x}");
+        prev = got;
+    }
+    assert!((unit_squash(1.0) - 0.5).abs() < 1e-15, "unit input halves");
+}
+
+#[test]
+fn affine_squash_matches_shift_scale_squash_widen_order() {
+    // Synthetic calibration (no domain table): the primitive must equal the
+    // restated op order bit-for-bit on finite inputs, and map 0 through the
+    // shift honestly rather than centering it.
+    let (offset, slope, scale) = (-50.0_f64, 0.0084_f64, 740.0_f64);
+    for raw in [-300.0, -100.0, -50.0, -1.0, 0.0, 1.0, 50.0, 100.0, 300.0] {
+        let want = ((raw + offset) * slope) / (1.0 + ((raw + offset) * slope).abs()) * scale;
+        assert_eq!(
+            affine_squash(raw, offset, slope, scale).to_bits(),
+            want.to_bits(),
+            "op order at {raw}"
+        );
+    }
+    assert_eq!(
+        affine_squash(50.0, offset, slope, scale).to_bits(),
+        0.0_f64.to_bits(),
+        "+offset zeroes the shift"
+    );
+    for raw in [-1.0e9, 1.0e9] {
+        assert!(affine_squash(raw, offset, slope, scale).abs() < scale, "band holds at {raw}");
+    }
+}
+
+#[test]
+fn band_squash_centers_zero_and_halves_at_divisor() {
+    assert_eq!(band_squash(0.0, 100.0, 100.0).to_bits(), 0.0_f64.to_bits(), "zero stays centered");
+    assert_eq!(band_squash(100.0, 100.0, 100.0).to_bits(), 50.0_f64.to_bits(), "divisor halves");
+    assert_eq!(band_squash(-100.0, 100.0, 100.0).to_bits(), (-50.0_f64).to_bits(), "rail mirrors");
+    for value in [-1.0e9, -1.0, -0.5, 0.5, 1.0, 1.0e9] {
+        assert!(band_squash(value, 100.0, 100.0).abs() < 100.0, "finite {value} stays inside");
+    }
+    assert!(band_squash(f64::NAN, 100.0, 100.0).is_nan(), "non-finite yields NaN for the lift");
+    assert!(band_squash(f64::INFINITY, 100.0, 100.0).is_nan(), "infinite yields NaN for the lift");
+}
+
+#[test]
+fn map_series_optional_preserves_holes_and_filters_non_finite() {
+    let series = vec![None, Some(1.0), Some(2.0), None, Some(3.0)];
+    let out = map_series_optional(&series, |v| v * 2.0);
+    assert_eq!(out, vec![None, Some(2.0), Some(4.0), None, Some(6.0)], "holes survive by position");
+    assert!(map_series_optional(&[], |v| v).is_empty(), "empty in, empty out");
+    assert_eq!(map_series_optional(&[None], |v| v), vec![None], "single hole");
+    assert_eq!(
+        map_series_optional(&[Some(f64::NAN)], |v| v),
+        vec![None],
+        "NaN becomes a hole, never a substitute"
+    );
+    assert_eq!(
+        map_series_optional(&[Some(1.0)], |_| f64::INFINITY),
+        vec![None],
+        "non-finite output becomes a hole"
+    );
+    // Composition is slot-for-slot: lifting the composed scalar equals
+    // composing the lifts, so callers may fuse or stage freely.
+    let staged = map_series_optional(&map_series_optional(&series, |v| v + 1.0), |v| v * 10.0);
+    let fused = map_series_optional(&series, |v| (v + 1.0) * 10.0);
+    assert_eq!(staged, fused, "stage or fuse, same slots");
+}

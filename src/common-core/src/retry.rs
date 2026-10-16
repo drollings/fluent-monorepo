@@ -6,6 +6,84 @@
 //! counterpart for non-async callers). The `async` loop below is the
 //! transport-retry helper; corrective re-prompting (e.g. `RetryClassifier`)
 //! is a distinct concern and does not use this module.
+//!
+//! ## Abort-aware verdict loops: composition recipe (not a driver)
+//!
+//! The supervised reconnect loop and the repair loop share one shape —
+//! loop-top abort check, attempt, verdict classification, scheduled sleep
+//! — around the SAME schedules below, but their interleavings are
+//! irreducibly different and must NOT be unified into one driver:
+//!
+//! - Sleep racing: the reconnect loop races every backoff sleep against
+//!   the abort signal (abort latency is one poll); the repair loop sleeps
+//!   unraced and observes cancellation at the loop top, with the pool
+//!   boundary dropping in-flight handlers. Racing the repair sleep would
+//!   change its `Deferred` reports; unracing the reconnect sleep would
+//!   stall aborts for a full backoff.
+//! - Attempt racing: the reconnect loop races `connect` against abort (a
+//!   dial may hang); the repair attempt runs unraced under its pool.
+//! - Verdict taxonomies stay at their layers: both classify through
+//!   per-type `is_retryable` mappings and sleep [`backoff_ms`] /
+//!   [`capped_exp_backoff_ms`], never through a shared enum — an enum
+//!   would add a mapping layer while deleting no arm (the repair
+//!   statuses are report outputs; the reconnect arms carry breaker
+//!   side-effects).
+//!
+//! Compose in this order: check the abort flag before every attempt;
+//! classify the error through the error type's own `is_retryable`;
+//! sleep the shared schedule for the failure count (raced against abort
+//! only where the loop's abort-latency contract requires it):
+//!
+//! ```rust
+//! use common_core::retry::backoff_ms;
+//! use std::sync::atomic::{AtomicBool, Ordering};
+//! use std::time::Duration;
+//! use std::vec::IntoIter;
+//!
+//! /// One abort-aware verdict loop over a scripted site: loop-top abort
+//! /// check, attempt, retryable verdicts sleep the shared schedule raced
+//! /// against the abort signal, anything else stops with its reason.
+//! async fn drive(
+//!     stop: &AtomicBool,
+//!     wake: &tokio::sync::Notify,
+//!     script: &mut IntoIter<bool>,
+//!     sleeps: &mut Vec<u64>,
+//! ) -> &'static str {
+//!     let mut failures = 0u32;
+//!     loop {
+//!         if stop.load(Ordering::SeqCst) {
+//!             return "aborted";
+//!         }
+//!         if script.next().expect("scripted attempt") {
+//!             return "done";
+//!         }
+//!         failures += 1;
+//!         let delay = backoff_ms(1, failures, 0);
+//!         sleeps.push(delay);
+//!         tokio::select! {
+//!             () = tokio::time::sleep(Duration::from_millis(delay)) => {},
+//!             () = wake.notified() => return "aborted",
+//!         }
+//!     }
+//! }
+//!
+//! #[tokio::main]
+//! async fn main() {
+//!     let stop = AtomicBool::new(false);
+//!     let wake = tokio::sync::Notify::new();
+//!     let mut script = vec![false, false, true].into_iter();
+//!     let mut sleeps = Vec::new();
+//!     assert_eq!(drive(&stop, &wake, &mut script, &mut sleeps).await, "done");
+//!     assert_eq!(sleeps, vec![1, 2]);
+//!
+//!     // A pre-fired abort starts no attempt and sleeps nothing.
+//!     stop.store(true, Ordering::SeqCst);
+//!     let mut script = vec![false].into_iter();
+//!     let mut sleeps = Vec::new();
+//!     assert_eq!(drive(&stop, &wake, &mut script, &mut sleeps).await, "aborted");
+//!     assert!(sleeps.is_empty());
+//! }
+//! ```
 
 use std::future::Future;
 use std::time::Duration;

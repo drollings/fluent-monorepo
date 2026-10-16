@@ -1,10 +1,11 @@
-//! Parquet history ingest over a hermetic trimmed fixture.
+//! Parquet history ingest over the March 2026 SPY minute file.
 //!
-//! The trimmed `SPY_1M_trim.parquet` holds the committed month's first 120
-//! one-minute bars, so the goldens below pin its bar count and its first and
-//! last bars without reading the 20k-row operator file. The fixture folds
-//! into whole-multiple frames with volume conserved, and the ladder stops on
-//! a structurally wrong candidate instead of skipping it.
+//! The month file (`data/protopyne-rs/historical/SPY-2026-03-1M.parquet`)
+//! holds the full month's one-minute bars, so the goldens below pin its bar
+//! count and its first and last bars. Three same-stamp restatements merge
+//! through the shared restatement rule. The fixture folds into
+//! whole-multiple frames with volume conserved, and the ladder stops on a
+//! structurally wrong candidate instead of skipping it.
 
 use std::path::PathBuf;
 
@@ -17,16 +18,17 @@ use protopyne_types::{validate_new_bar, Bar, FoldEdges, Timeframe};
 use protopyne_view::TerminalGateway;
 use rust_decimal::Decimal;
 
-fn trim_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("SPY_1M_trim.parquet")
+fn month_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../data/protopyne-rs/historical/SPY-2026-03-1M.parquet")
 }
 
 fn dec(text: &str) -> Decimal {
     text.parse().expect("decimal fixture parses")
 }
 
-fn load_trim() -> Vec<Bar> {
-    load_bars_file(&trim_path()).expect("the trimmed fixture loads")
+fn load_month() -> Vec<Bar> {
+    load_bars_file(&month_path()).expect("the month file loads")
 }
 
 fn assert_ascending(bars: &[Bar]) {
@@ -38,10 +40,10 @@ fn assert_ascending(bars: &[Bar]) {
 }
 
 #[test]
-fn the_trimmed_fixture_reads_as_is() {
-    let read = read_ohlcv_parquet(&trim_path(), Some("SPY")).expect("trim reads");
-    assert_eq!(read.bars.len(), 120, "the trim holds 120 committed bars");
-    assert_eq!(read.restatements_merged, 0, "the trim carries no restatements");
+fn the_month_file_reads_as_is() {
+    let read = read_ohlcv_parquet(&month_path(), Some("SPY")).expect("month reads");
+    assert_eq!(read.bars.len(), 20434, "20437 rows minus 3 merged restatements");
+    assert_eq!(read.restatements_merged, 3, "three same-stamp corrections merge");
     assert_eq!(read.rows_filtered, 0, "the file is SPY-only");
 
     let bars = read.bars;
@@ -51,17 +53,37 @@ fn the_trimmed_fixture_reads_as_is() {
     assert_eq!(bars[0].l, dec("676.54"));
     assert_eq!(bars[0].c, dec("677.00"));
     assert_eq!(bars[0].volume, 8485);
-    let last = bars.last().expect("the trim has bars");
-    assert_eq!(last.ts.to_rfc3339(), "2026-03-02T11:00:00+00:00");
-    assert_eq!(last.o, dec("679.50"));
-    assert_eq!(last.c, dec("679.54"));
-    assert_eq!(last.volume, 1426);
+    let last = bars.last().expect("the month has bars");
+    assert_eq!(last.ts.to_rfc3339(), "2026-03-31T23:59:00+00:00");
+    assert_eq!(last.o, dec("652.18"));
+    assert_eq!(last.h, dec("652.33"));
+    assert_eq!(last.l, dec("652.13"));
+    assert_eq!(last.c, dec("652.28"));
+    assert_eq!(last.volume, 9530);
     assert_ascending(&bars);
 }
 
 #[test]
-fn the_trim_tallies_into_frames_with_torn_buckets_omitted() {
-    let bars = load_trim();
+fn same_stamp_restatements_merge_newest_close_and_volume() {
+    let bars = load_month();
+    let at = |rfc: &str| {
+        bars.iter()
+            .find(|bar| bar.ts.to_rfc3339() == rfc)
+            .unwrap_or_else(|| panic!("merged bar present at {rfc}"))
+    };
+    // Open rides the first print; high/low cover both prints; close and
+    // volume ride the restatement.
+    let merged = at("2026-03-31T20:35:00+00:00");
+    assert_eq!(merged.o, dec("650.7"));
+    assert_eq!(merged.h, dec("650.75"));
+    assert_eq!(merged.l, dec("650.7"));
+    assert_eq!(merged.c, dec("650.71"));
+    assert_eq!(merged.volume, 30233);
+}
+
+#[test]
+fn the_month_tallies_into_frames_with_torn_buckets_omitted() {
+    let bars = load_month();
     let frames = fold_frames(
         &bars,
         Timeframe::M1,
@@ -75,14 +97,14 @@ fn the_trim_tallies_into_frames_with_torn_buckets_omitted() {
         assert!(!frame.is_empty(), "{target:?} frame holds bars");
     }
 
-    // The trim misses 10:36, so the buckets spanning it are torn and omitted:
-    // 24 five-minute buckets minus the 10:35 one, 8 quarter-hours minus the
-    // 10:30 one, and only the whole 09:00 hour. Omitted buckets carry their
-    // volume away with them — session data tallies to what is whole, never
-    // to a fabricated partial bar.
-    assert_eq!(frames[0].1.len(), 23, "the torn 10:35 bucket is omitted");
-    assert_eq!(frames[1].1.len(), 7, "the torn 10:30 bucket is omitted");
-    assert_eq!(frames[2].1.len(), 1, "the torn 10:00 hour is omitted");
+    // Overnight gaps tear every bucket they touch, and CompleteOnly omits
+    // the torn ones: 3754 whole five-minute buckets of 4224 touched, with
+    // the same whole-only rule on the coarser grids. Omitted buckets carry
+    // their volume away with them — session data tallies to what is whole,
+    // never to a fabricated partial bar.
+    assert_eq!(frames[0].1.len(), 3754, "only whole five-minute buckets emit");
+    assert_eq!(frames[1].1.len(), 1129, "only whole quarter-hours emit");
+    assert_eq!(frames[2].1.len(), 242, "only whole hours emit");
     for (target, frame) in &frames {
         assert!(frame.len() <= bars.len(), "{target:?} can only merge bars");
     }
@@ -94,11 +116,23 @@ fn the_trim_tallies_into_frames_with_torn_buckets_omitted() {
     assert_eq!(m5[0].c, bars[4].c, "bucket close is the last bar's close");
     let five: u64 = bars[0..5].iter().map(|bar| bar.volume).sum();
     assert_eq!(m5[0].volume, five, "bucket volume sums its children");
+
+    // The opening 09:00 hour is whole, so the first hourly bar opens here.
+    assert_eq!(
+        frames[2].1[0].o, bars[0].o,
+        "the whole 09:00 hour opens at the first bar"
+    );
+    let base_volume: u64 = bars.iter().map(|bar| bar.volume).sum();
+    let emitted: u64 = frames[0].1.iter().map(|bar| bar.volume).sum();
+    assert!(
+        emitted < base_volume,
+        "omitted buckets carry volume away with them: {emitted} < {base_volume}"
+    );
 }
 
 #[test]
 fn fold_frames_refuses_a_non_multiple_target() {
-    let bars = load_trim();
+    let bars = load_month();
     let err = fold_frames(&bars, Timeframe::M15, &[Timeframe::M10], FoldEdges::CompleteOnly)
         .expect_err("10 minutes is not a whole multiple of 15");
     assert!(err.to_string().contains("whole multiple"), "{err}");
@@ -106,15 +140,15 @@ fn fold_frames_refuses_a_non_multiple_target() {
 
 #[test]
 fn the_ladder_skips_a_missing_candidate_and_stops_on_a_wrong_one() {
-    let missing = trim_path().with_file_name("does-not-exist.parquet");
-    let bars = load_bars_candidates(&[missing.clone(), trim_path()])
+    let missing = month_path().with_file_name("does-not-exist.parquet");
+    let bars = load_bars_candidates(&[missing.clone(), month_path()])
         .expect("a missing candidate skips to the usable one");
-    assert_eq!(bars.len(), 120);
+    assert_eq!(bars.len(), 20434);
 
     let dir = tempfile::tempdir().expect("tempdir");
     let corrupt_path = dir.path().join("corrupt.parquet");
     std::fs::write(&corrupt_path, "this is not parquet").expect("write");
-    let err = load_bars_candidates(&[corrupt_path.clone(), trim_path()])
+    let err = load_bars_candidates(&[corrupt_path.clone(), month_path()])
         .expect_err("a structurally wrong candidate stops the walk");
     match err {
         ServerError::Parquet { path, .. } => {
@@ -126,9 +160,9 @@ fn the_ladder_skips_a_missing_candidate_and_stops_on_a_wrong_one() {
 
 #[test]
 fn a_files_history_source_loads_through_the_single_entry_point() {
-    let loaded: LoadedHistory = load_history(&HistorySource::Files(vec![trim_path()]), None)
+    let loaded: LoadedHistory = load_history(&HistorySource::Files(vec![month_path()]), None)
         .expect("the files arm loads");
-    assert_eq!(loaded.bars.len(), 120);
+    assert_eq!(loaded.bars.len(), 20434);
     assert!(
         loaded.provenance.is_empty(),
         "a file arm names no planner provenance"
@@ -137,12 +171,12 @@ fn a_files_history_source_loads_through_the_single_entry_point() {
 
 #[tokio::test]
 async fn a_one_minute_boot_history_resamples_from_its_actual_base() {
-    let bars = load_trim();
+    let bars = load_month();
     let config = ServerConfig::new()
         .bind("127.0.0.1:0".to_owned())
         .history_timeframe("1M".to_owned())
         .build();
-    let handle = serve(config, bars.clone()).await.expect("server boots");
+    let handle = serve(config.clone(), bars.clone()).await.expect("server boots");
     let gateway = handle.gateway();
 
     let base = gateway.chart_bars_for("SPY", "1M").expect("1M read");
@@ -152,8 +186,8 @@ async fn a_one_minute_boot_history_resamples_from_its_actual_base() {
         "the base serves unchanged at its own spacing"
     );
 
-    // Complete-only edges over the trim: whole buckets emit, short and torn
-    // buckets are omitted. The trim opens on a grid line (09:00 UTC), so the
+    // Complete-only edges over the month: whole buckets emit, short and torn
+    // buckets are omitted. The month opens on a grid line (09:00 UTC), so the
     // first bucket is whole on every grid.
     let five = gateway.chart_bars_for("SPY", "5M").expect("5M read");
     assert!(!five.rows.is_empty(), "5M serves the whole five-minute buckets");
@@ -163,10 +197,9 @@ async fn a_one_minute_boot_history_resamples_from_its_actual_base() {
     let hour = gateway.chart_bars_for("SPY", "1H").expect("1H read");
     assert!(!hour.rows.is_empty(), "1H serves the whole hours");
     let day = gateway.chart_bars_for("SPY", "1D").expect("1D read");
-    assert_eq!(
-        day.rows.len(),
-        bars.len(),
-        "a history shorter than one daily group serves the base unchanged rather than an empty window"
+    assert!(
+        day.rows.is_empty(),
+        "no day in the month file is whole (overnight gaps tear every daily bucket), so 1D serves an empty window"
     );
 
     let expected_open = to_f64(bars[0].o);
@@ -190,6 +223,22 @@ async fn a_one_minute_boot_history_resamples_from_its_actual_base() {
     );
 
     handle.shutdown().await;
+
+    // The short-history arm keeps its own pin on a synthetic ten-bar boot:
+    // a history shorter than one daily group serves the base unchanged
+    // rather than an empty window.
+    let short = bars[0..10].to_vec();
+    let short_handle = serve(config, short.clone()).await.expect("short boot");
+    let short_day = short_handle
+        .gateway()
+        .chart_bars_for("SPY", "1D")
+        .expect("short 1D read");
+    assert_eq!(
+        short_day.rows.len(),
+        short.len(),
+        "a short history serves the base unchanged at 1D"
+    );
+    short_handle.shutdown().await;
 }
 
 fn to_f64(value: Decimal) -> f64 {
@@ -220,8 +269,8 @@ fn load_bars_file_dispatches_csv_by_extension() {
 
 #[test]
 fn load_bars_file_dispatches_parquet_by_extension() {
-    let bars = load_bars_file(&trim_path()).expect("parquet dispatches");
-    assert_eq!(bars, load_trim(), "dispatch reads what the parquet loader reads");
+    let bars = load_bars_file(&month_path()).expect("parquet dispatches");
+    assert_eq!(bars, load_month(), "dispatch reads what the parquet loader reads");
 }
 
 #[test]

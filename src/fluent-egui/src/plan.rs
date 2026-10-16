@@ -163,19 +163,16 @@ impl Default for PanePlan {
 }
 
 /// Cache key for one pane: length-prefixed node name plus the caller's
-/// parameter fingerprint, hashed once through the shared FNV-1a helper (the
-/// same byte idiom parameter fingerprints use). The length prefix removes
+/// parameter fingerprint, hashed once through the shared length-framed
+/// builder (the same byte idiom parameter fingerprints use: the `u64`
+/// fingerprint rides as one fixed-width payload). The length prefix removes
 /// framing ambiguity — name/fingerprint splits that concatenate identically
 /// would otherwise key identically — but, like [`series_hash`] below, this
 /// does not claim hash injectivity: FNV-1a-64 can collide, so a key names
 /// the pane and parameters it was built from short of a collision.
 #[must_use]
 pub fn cache_key(node: &str, fingerprint: u64) -> u64 {
-    let mut bytes = Vec::with_capacity(8 + node.len() + 8);
-    bytes.extend_from_slice(&(node.len() as u64).to_le_bytes());
-    bytes.extend_from_slice(node.as_bytes());
-    bytes.extend_from_slice(&fingerprint.to_le_bytes());
-    common_core::hash::fnv1a64(&bytes)
+    common_core::hash::fingerprint_framed(&[(node, &fingerprint.to_le_bytes())])
 }
 
 /// Slot tags in the content hash: a hole encodes distinctly from every

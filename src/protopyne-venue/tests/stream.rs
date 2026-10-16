@@ -897,3 +897,199 @@ async fn spawned_stream_attaches_serves_and_drains() {
     session.shutdown().await;
     assert_eq!(vehicle.active_streams(), 0, "shutdown drains the driver");
 }
+
+// ── paused-time schedule traces (M6.1) ─────────────────────────────
+// The suites above pin jitter *bounds* on the wall clock; these pin the
+// *schedule* on virtual time: exact per-attempt sleep durations, exact
+// sleep counts, and abort preemption mid-sleep. The clock never advances
+// in wall time here — `start_paused` advances it only through the loop's
+// own `tokio::time::sleep` calls, so every measured gap is a sleep the
+// loop itself took. Attempt stamps below read `tokio::time::Instant`
+// (virtual), never the wall-clock stamps the `Script` helper keeps.
+
+/// Retryable sleeps match the shared schedule on virtual time: two
+/// transients sleep exactly `backoff_ms(10, k, 50)` each (floor `10*2^k`,
+/// ceiling `+5` jitter), the served generation and the sentinel sleep
+/// nothing, and the run's total virtual elapsed is the sum of its sleeps.
+#[tokio::test(start_paused = true)]
+async fn retryable_sleeps_match_schedule_on_virtual_time() {
+    let stream = SupervisedStream::new(fast_config());
+    let script = Script::new(vec![
+        Err(transient("unavailable: one")),
+        Err(transient("rate_limited: two")),
+        Ok(inbox_with(vec![balance_message()])),
+        Err(terminal("sentinel: script over")),
+    ]);
+    let vstamps = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let probe = vstamps.clone();
+    let abort = StreamAbort::new();
+    let (out_tx, mut out_rx) = mpsc::channel(8);
+    let vehicle = transport();
+    let started = tokio::time::Instant::now();
+    let outcome = stream
+        .run(
+            || async {
+                probe.lock().expect("stamps").push(tokio::time::Instant::now());
+                script.connect()
+            },
+            &abort,
+            out_tx,
+            &vehicle,
+        )
+        .await;
+    assert!(
+        matches!(outcome, StreamOutcome::Terminal { .. }),
+        "sentinel ends the run, got: {outcome:?}"
+    );
+    assert_eq!(script.attempt_count(), 4, "two retries, one serve, one sentinel");
+    let stamps = vstamps.lock().expect("stamps").clone();
+    assert_eq!(stamps.len(), 4);
+    let first = stamps[1] - stamps[0];
+    assert!(
+        first >= Duration::from_millis(10) && first <= Duration::from_millis(15),
+        "retry 1 sleeps backoff_ms(10, 1, 50) = [10, 15]ms, got {first:?}"
+    );
+    let second = stamps[2] - stamps[1];
+    assert!(
+        second >= Duration::from_millis(20) && second <= Duration::from_millis(25),
+        "retry 2 sleeps backoff_ms(10, 2, 50) = [20, 25]ms, got {second:?}"
+    );
+    assert_eq!(
+        stamps[3] - stamps[2],
+        Duration::ZERO,
+        "a served generation reconnects with no sleep"
+    );
+    assert_eq!(
+        started.elapsed(),
+        first + second,
+        "the run's virtual elapsed is exactly its sleeps"
+    );
+    let event = out_rx.recv().await.expect("served message lands");
+    assert!(
+        matches!(event, AccountEvent::BalanceUpdated(_)),
+        "served generation forwards events"
+    );
+}
+
+/// Abort during the backoff sleep ends the run with one attempt: the
+/// sleep's `select!` preempts, no second connect starts, and no error is
+/// counted for the preemption.
+#[tokio::test(start_paused = true)]
+async fn abort_during_backoff_sleep_ends_run_with_one_attempt() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let stream = SupervisedStream::new(fast_config());
+    let attempts = std::sync::Arc::new(AtomicUsize::new(0));
+    let counted = attempts.clone();
+    let abort = StreamAbort::new();
+    let fired = abort.clone();
+    let (out_tx, _out_rx) = mpsc::channel::<AccountEvent>(8);
+    let vehicle = transport();
+    let breaker = stream.breaker().clone();
+    let task = tokio::spawn(async move {
+        stream
+            .run(
+                || async {
+                    counted.fetch_add(1, Ordering::SeqCst);
+                    Err::<mpsc::Receiver<String>, _>(transient("down: scripted"))
+                },
+                &fired,
+                out_tx,
+                &vehicle,
+            )
+            .await
+    });
+    // The first attempt fails fast into a ≥10ms virtual sleep; firing once
+    // the attempt has landed puts the abort deterministically mid-sleep
+    // (no wall clock is involved).
+    while attempts.load(Ordering::SeqCst) < 1 {
+        tokio::task::yield_now().await;
+    }
+    abort.cancel();
+    tokio::time::advance(Duration::from_secs(60)).await;
+    let outcome = task.await.expect("run ends");
+    assert!(
+        matches!(outcome, StreamOutcome::Aborted),
+        "mid-sleep abort ends the run, got: {outcome:?}"
+    );
+    assert_eq!(attempts.load(Ordering::SeqCst), 1, "no second connect starts");
+    assert_eq!(breaker.consecutive_errors(), 1, "only the real failure counts");
+    assert!(!breaker.tripped());
+}
+
+/// A pre-fired abort starts no attempt: the loop-top check runs before
+/// the first connect, so nothing sleeps and nothing is counted.
+#[tokio::test(start_paused = true)]
+async fn pre_fired_abort_starts_no_attempt() {
+    let stream = SupervisedStream::new(fast_config());
+    let script = Script::new(vec![Err(transient("down: scripted"))]);
+    let abort = StreamAbort::new();
+    abort.cancel();
+    let (out_tx, _out_rx) = mpsc::channel::<AccountEvent>(8);
+    let vehicle = transport();
+    let started = tokio::time::Instant::now();
+    let outcome = stream
+        .run(|| async { script.connect() }, &abort, out_tx, &vehicle)
+        .await;
+    assert!(
+        matches!(outcome, StreamOutcome::Aborted),
+        "pre-fired abort ends the run, got: {outcome:?}"
+    );
+    assert_eq!(script.attempt_count(), 0, "no connect starts");
+    assert_eq!(started.elapsed(), Duration::ZERO, "nothing sleeps");
+    assert_eq!(stream.breaker().consecutive_errors(), 0, "abort counts no error");
+    assert!(!stream.breaker().tripped());
+}
+
+/// The N+1th consecutive error trips the loop: with
+/// `max_consecutive_errors = 2` the first two transients sleep and
+/// continue, the third trips with no further sleep — three attempts, two
+/// virtual sleeps, then `BreakerTripped`.
+#[tokio::test(start_paused = true)]
+async fn third_consecutive_error_trips_the_loop() {
+    let stream = SupervisedStream::new(fast_config());
+    let script = Script::new(vec![
+        Err(transient("unavailable: one")),
+        Err(transient("unavailable: two")),
+        Err(transient("unavailable: three")),
+    ]);
+    let vstamps = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let probe = vstamps.clone();
+    let abort = StreamAbort::new();
+    let (out_tx, _out_rx) = mpsc::channel::<AccountEvent>(8);
+    let vehicle = transport();
+    let started = tokio::time::Instant::now();
+    let outcome = stream
+        .run(
+            || async {
+                probe.lock().expect("stamps").push(tokio::time::Instant::now());
+                script.connect()
+            },
+            &abort,
+            out_tx,
+            &vehicle,
+        )
+        .await;
+    assert!(
+        matches!(outcome, StreamOutcome::BreakerTripped { .. }),
+        "N+1th error trips, got: {outcome:?}"
+    );
+    assert_eq!(script.attempt_count(), 3, "two retries, then the trip");
+    let stamps = vstamps.lock().expect("stamps").clone();
+    assert_eq!(stamps.len(), 3);
+    let first = stamps[1] - stamps[0];
+    let second = stamps[2] - stamps[1];
+    assert!(
+        first >= Duration::from_millis(10) && first <= Duration::from_millis(15),
+        "retry 1 sleeps [10, 15]ms, got {first:?}"
+    );
+    assert!(
+        second >= Duration::from_millis(20) && second <= Duration::from_millis(25),
+        "retry 2 sleeps [20, 25]ms, got {second:?}"
+    );
+    assert_eq!(
+        started.elapsed(),
+        first + second,
+        "the trip itself sleeps nothing"
+    );
+    assert!(stream.breaker().tripped());
+}

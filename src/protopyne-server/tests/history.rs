@@ -26,8 +26,9 @@ fn data(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join(name)
 }
 
-fn trim_parquet() -> PathBuf {
-    data("SPY_1M_trim.parquet")
+fn month_parquet() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../data/protopyne-rs/historical/SPY-2026-03-1M.parquet")
 }
 
 fn bar_at(ts_secs: i64, price: &str, volume: u64) -> Bar {
@@ -254,7 +255,7 @@ fn a_schema_mismatch_stops_the_walk() {
     let dir = tempfile::tempdir().expect("tempdir");
     let bad = dir.path().join("no_close.parquet");
     write_schema_mismatch_parquet(&bad);
-    let err = load_bars_candidates(&[bad.clone(), trim_parquet()])
+    let err = load_bars_candidates(&[bad.clone(), month_parquet()])
         .expect_err("a schema mismatch stops the walk");
     match err {
         ServerError::Parquet { path, .. } => {
@@ -269,7 +270,7 @@ fn a_mixed_ticker_file_stops_the_walk() {
     let dir = tempfile::tempdir().expect("tempdir");
     let mixed = dir.path().join("mixed.parquet");
     write_mixed_ticker_parquet(&mixed);
-    let err = load_bars_candidates(&[mixed.clone(), trim_parquet()])
+    let err = load_bars_candidates(&[mixed.clone(), month_parquet()])
         .expect_err("a mixed-ticker file stops the walk");
     match err {
         ServerError::Parquet { path, reason } => {
@@ -295,10 +296,10 @@ fn an_unknown_extension_stops_the_walk() {
 
 #[test]
 fn a_missing_parquet_candidate_skips_to_the_next() {
-    let missing = trim_parquet().with_file_name("does-not-exist.parquet");
+    let missing = month_parquet().with_file_name("does-not-exist.parquet");
     let bars =
-        load_bars_candidates(&[missing, trim_parquet()]).expect("a missing parquet skips");
-    assert_eq!(bars.len(), 120, "falls through to the usable file");
+        load_bars_candidates(&[missing, month_parquet()]).expect("a missing parquet skips");
+    assert_eq!(bars.len(), 20434, "falls through to the usable file");
 }
 
 #[test]
@@ -306,7 +307,7 @@ fn a_corrupt_parquet_candidate_stops_the_walk() {
     let dir = tempfile::tempdir().expect("tempdir");
     let corrupt = dir.path().join("corrupt.parquet");
     std::fs::write(&corrupt, "this is not parquet").expect("fixture writes");
-    let err = load_bars_candidates(&[corrupt.clone(), trim_parquet()])
+    let err = load_bars_candidates(&[corrupt.clone(), month_parquet()])
         .expect_err("a corrupt parquet stops the walk");
     match err {
         ServerError::Parquet { path, .. } => {
@@ -346,9 +347,9 @@ fn a_files_source_loads_end_to_end_and_refuses_empty() {
     assert_eq!(loaded.bars.len(), 11);
     assert!(loaded.provenance.is_empty(), "a file arm names no planner span");
 
-    let loaded = load_history(&HistorySource::Files(vec![trim_parquet()]), None)
+    let loaded = load_history(&HistorySource::Files(vec![month_parquet()]), None)
         .expect("a parquet candidate loads through the same arm");
-    assert_eq!(loaded.bars.len(), 120);
+    assert_eq!(loaded.bars.len(), 20434);
 
     assert!(
         load_history(&HistorySource::Files(Vec::new()), None).is_err(),
@@ -395,12 +396,14 @@ fn the_load_time_tally_conserves_volume_over_whole_buckets() {
 }
 
 #[test]
-fn the_tally_omits_the_trim_s_torn_buckets() {
-    // The trim misses 10:36, so the buckets spanning it are torn: the 10:35
-    // five-minute bucket (4 of 5 children), the 10:30 quarter-hour (14 of 15),
-    // and the 10:00 hour (59 of 60). Complete-only tally omits exactly those.
-    let bars = load_bars_file(&trim_parquet()).expect("the trim loads");
-    assert_eq!(bars.len(), 120);
+fn the_tally_omits_the_month_s_torn_buckets() {
+    // Overnight gaps tear every bucket they touch: the month folds to 3754
+    // whole five-minute buckets, 1129 whole quarter-hours, and 242 whole
+    // hours (pinned exactly in `parquet.rs`). Complete-only tally omits the
+    // torn ones; this test pins the omission rule (emitted < base) rather
+    // than restating those counts.
+    let bars = load_bars_file(&month_parquet()).expect("the month loads");
+    assert_eq!(bars.len(), 20434);
     let frames = fold_frames(
         &bars,
         Timeframe::M1,
@@ -408,13 +411,9 @@ fn the_tally_omits_the_trim_s_torn_buckets() {
         FoldEdges::CompleteOnly,
     )
     .expect("whole-multiple frames fold");
-    assert_eq!(frames[0].1.len(), 23, "24 five-minute buckets minus the torn 10:35");
-    assert_eq!(frames[1].1.len(), 7, "8 quarter-hours minus the torn 10:30");
-    assert_eq!(frames[2].1.len(), 1, "the torn 10:00 hour is omitted, not emitted partial");
-    assert_eq!(
-        frames[2].1[0].o, bars[0].o,
-        "the surviving 09:00 hour opens at the first bar"
-    );
+    assert_eq!(frames[0].1.len(), 3754, "only whole five-minute buckets emit");
+    assert_eq!(frames[1].1.len(), 1129, "only whole quarter-hours emit");
+    assert_eq!(frames[2].1.len(), 242, "only whole hours emit");
     let base_volume: u64 = bars.iter().map(|bar| bar.volume).sum();
     let emitted: u64 = frames[0].1.iter().map(|bar| bar.volume).sum();
     assert!(

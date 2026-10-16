@@ -235,3 +235,11 @@ pub fn profit_factor(step_moves: &[Decimal]) -> Option<Decimal> {
 #[cfg(test)]
 #[path = "../tests/metrics.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/stats_spike.rs"]
+mod stats_spike_tests;
+
+#[cfg(test)]
+#[path = "../tests/stats_generic_spike.rs"]
+mod stats_generic_spike_tests;

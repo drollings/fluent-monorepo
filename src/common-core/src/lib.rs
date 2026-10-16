@@ -13,6 +13,15 @@
 //! not here. The sole exceptions are generic storage backends (`rusqlite`
 //! behind the `sqlite` feature) and generic data utilities (hashing, I/O,
 //! strings, formatting, metrics, drift, interner, watchdogs).
+//!
+//! # Promotion threshold
+//!
+//! A cross-crate utility is promoted here once it has **two or more
+//! consumers**. Single-consumer items stay in their domain crate until a
+//! second consumer appears — at which point the *second* consumer moves to
+//! the shared home rather than copying the first consumer's implementation.
+//! No speculative promotion: one live consumer never justifies a shared
+//! primitive.
 pub mod blob_spec;
 pub mod cache;
 pub mod calibration;
