@@ -129,7 +129,7 @@ const LEGS: [&str; 5] = ["open", "high", "low", "close", "volume"];
 /// single-output overlaps. Multi-leg kernels (`bbands`: upper/mid/lower) do
 /// not fit single-series binding evaluation, nullary price kernels sit
 /// outside the two-argument call grammar, and `midprice` needs high/low legs
-/// the close-only evaluator does not carry — all three stay refused.
+/// together where a binding carries one series — all three stay refused.
 const KERNELS: [&str; 4] = ["sma", "ema", "trima", "midpoint"];
 
 fn refuse(reasons: Vec<String>) -> SpikeOutcome {
@@ -483,17 +483,19 @@ fn emit_statement(name: &str, hair: &Hair) -> Result<String, String> {
     }
 }
 
-/// Emit the series expression feeding a kernel. A plain leg emits; a computed
-/// series refuses — substituting `values.close` would silently compute the
-/// wrong indicator.
+/// Emit the series expression feeding a kernel. A plain leg emits against
+/// the frame the generated code receives; anything else refuses — a bound
+/// name would need binding resolution the spike does not do, and
+/// substituting `values.close` would silently compute the wrong indicator.
 fn emit_series(hair: &Hair) -> Result<String, String> {
     match hair {
-        Hair::Ohlcv(leg) if leg == "close" => Ok("values.close".to_owned()),
         Hair::Ohlcv(leg) => Ok(format!("values.{leg}")),
-        Hair::Name(name) => {
-            Ok(format!("/* bound series {name} resolved at evaluation */ values.close"))
-        }
-        Hair::Const(value) => Ok(format!("/* constant {value} */ values.close")),
+        Hair::Name(name) => Err(format!(
+            "bound-name series {name:?} outside the emission subset: binding resolution refused, never substituted"
+        )),
+        Hair::Const(value) => Err(format!(
+            "constant series {value} outside the emission subset: refused, never substituted"
+        )),
         unsupported => Err(format!(
             "{} series outside the emission subset: refused, never substituted",
             hair_kind(unsupported)
@@ -515,24 +517,49 @@ fn hair_kind(hair: &Hair) -> &'static str {
     }
 }
 
-/// Evaluate `lowered` over `closes` through the real kernels.
+/// Evaluate `lowered` over `frame` through the real kernels.
 ///
-/// Rolling bindings evaluate to per-bar outputs aligned with the input
-/// (`None` inside warmup); structural bindings (binary overlays) are carried
-/// in HIR only and skipped here. Lengths resolve from `inputs` defaults.
-/// Used by calibration to prove accepted scripts match golden kernel outputs.
-/// Returns `(binding name, values)` pairs in source order.
+/// Each rolling binding resolves its own series leg from the frame, so
+/// `ta.sma(open, 10)` averages opens: the single-output kernels run over a
+/// close-only view of that leg's values. Lengths resolve from `inputs`
+/// defaults. Rolling bindings evaluate to per-bar outputs aligned with the
+/// input (`None` inside warmup); structural bindings (binary overlays) are
+/// carried in HIR only and skipped here. A rolling binding over anything but
+/// a frame leg refuses — evaluating it over closes would silently compute
+/// the wrong indicator. Returns `(binding name, values)` pairs in source
+/// order.
 pub fn evaluate_lowered(
     lowered: &Lowered,
-    closes: &[f64],
+    frame: &Ohlcv<'_>,
     inputs: &InputDefaults,
 ) -> Result<NamedOutputs, ServerError> {
-    let frame = Ohlcv::close_only(closes);
     let mut outputs = Vec::new();
     for binding in &lowered.bindings {
-        let Hair::Rolling { kernel, length, .. } = &binding.hair else {
+        let Hair::Rolling { kernel, length, series } = &binding.hair else {
             continue;
         };
+        let leg = match series.as_ref() {
+            Hair::Ohlcv(leg) => leg,
+            other => {
+                return Err(ServerError::Service(format!(
+                    "cannot evaluate {} series: only frame legs resolve ({other:?} given)",
+                    hair_kind(other),
+                )));
+            }
+        };
+        let values = match leg.as_str() {
+            "open" => frame.open,
+            "high" => frame.high,
+            "low" => frame.low,
+            "close" => frame.close,
+            "volume" => frame.volume,
+            unknown => {
+                return Err(ServerError::Service(format!(
+                    "unknown series leg {unknown:?}: only open/high/low/close/volume resolve"
+                )));
+            }
+        };
+        let leg_frame = Ohlcv::close_only(values);
         let resolved = match length {
             Length::Literal(value) => *value,
             // A name with no supplied value refuses: substituting the
@@ -552,10 +579,10 @@ pub fn evaluate_lowered(
         }
         let params = ParamSet::new().with_int("length", resolved);
         let values = match kernel.as_str() {
-            "sma" => SmaIndicator::new().batch(&frame, &params),
-            "ema" => EmaIndicator::new().batch(&frame, &params),
-            "trima" => TrimaIndicator::new().batch(&frame, &params),
-            "midpoint" => MidpointIndicator::new().batch(&frame, &params),
+            "sma" => SmaIndicator::new().batch(&leg_frame, &params),
+            "ema" => EmaIndicator::new().batch(&leg_frame, &params),
+            "trima" => TrimaIndicator::new().batch(&leg_frame, &params),
+            "midpoint" => MidpointIndicator::new().batch(&leg_frame, &params),
             _ => return Err(ServerError::Service(format!("unknown kernel {kernel}"))),
         }
         .map_err(|e| ServerError::Service(format!("kernel failed: {e}")))?;

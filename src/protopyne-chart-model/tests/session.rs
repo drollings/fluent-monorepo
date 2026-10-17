@@ -131,3 +131,23 @@ fn overnight_sessions_refuse_at_parse() {
     assert!(protopyne_types::TradingSession::parse("1600-0930").is_err());
     assert!(protopyne_types::TradingSession::parse("0930-0930").is_err());
 }
+
+#[test]
+fn timestamp_slice_scan_matches_the_bar_scan() {
+    // One pairwise core: the timestamp entry and the bar entry agree break
+    // for break, so row-time callers and bar callers can never drift apart.
+    let bars = vec![
+        bar_at(2026, 1, 1, 12),
+        bar_at(2026, 1, 2, 1),
+        bar_at(2026, 1, 2, 12),
+        bar_at(2026, 2, 1, 12),
+    ];
+    let provider = DailySessionProvider::continuous();
+    let times: Vec<_> = bars.iter().map(|bar| bar.ts).collect();
+    assert_eq!(
+        session_breaks_between(&times, &provider),
+        find_session_breaks(&bars, &provider)
+    );
+    assert!(session_breaks_between(&[], &provider).is_empty());
+    assert!(session_breaks_between(&times[..1], &provider).is_empty());
+}

@@ -89,6 +89,10 @@ impl StructureKind {
 ///   -> Approved | Rejected | Expired -> Submitted -> Working
 ///   -> Filled | Partial | Cancelled
 /// ```
+///
+/// An approved-but-unsubmitted proposal may also cancel directly: withdrawing
+/// approval before submission (entries disarmed, quantity unrepresentable)
+/// terminalizes without journaling a submission that never happened.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ProposalState {
     /// Freshly created, not yet risk-checked.
@@ -167,7 +171,9 @@ pub fn transition(
         (S::PendingHuman | S::AutoApproved | S::Approved, E::Expire) => S::Expired,
         (S::AutoApproved | S::Approved, E::Submit) => S::Submitted,
         (S::Submitted, E::StartWork) => S::Working,
-        (S::Submitted | S::Working, E::Cancel) => S::Cancelled,
+        (S::Submitted | S::Working | S::AutoApproved | S::Approved, E::Cancel) => {
+            S::Cancelled
+        }
         (S::Working, E::Fill) => S::Filled,
         (S::Working, E::PartialFill) => S::Partial,
         _ => {

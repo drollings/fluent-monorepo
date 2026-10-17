@@ -285,15 +285,32 @@ impl SessionProvider for CompositeSessionProvider {
 /// Scan closed bars for session boundaries.
 ///
 /// Returns `(index, break)` pairs where `index` is the first bar of the new
-/// session.
+/// session. Timestamps are the only input read: the scan delegates to
+/// [`session_breaks_between`], so timestamp slices (display rows) and bars
+/// share one pairwise core instead of two scans.
 #[must_use]
 pub fn find_session_breaks(
     bars: &[Bar],
     provider: &dyn SessionProvider,
 ) -> Vec<(usize, SessionBreak)> {
+    session_breaks_between(
+        &bars.iter().map(|bar| bar.ts).collect::<Vec<_>>(),
+        provider,
+    )
+}
+
+/// Scan an ordered timestamp slice for session boundaries: the pairwise
+/// core behind [`find_session_breaks`], callable without bars. Returns
+/// `(index, break)` pairs where `index` is the first timestamp of the new
+/// session.
+#[must_use]
+pub fn session_breaks_between(
+    times: &[DateTime<Utc>],
+    provider: &dyn SessionProvider,
+) -> Vec<(usize, SessionBreak)> {
     let mut breaks = Vec::new();
-    for (index, window) in bars.windows(2).enumerate() {
-        if let Some(found) = provider.session_break_between(&window[0].ts, &window[1].ts) {
+    for (index, window) in times.windows(2).enumerate() {
+        if let Some(found) = provider.session_break_between(&window[0], &window[1]) {
             breaks.push((index + 1, found));
         }
     }

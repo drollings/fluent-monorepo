@@ -138,8 +138,14 @@ fn emitted_rust_is_syntactically_valid() {
 
 #[test]
 fn evaluated_scripts_match_kernel_goldens() {
-    let bars = closes(30);
-    let frame = Ohlcv::close_only(&bars);
+    // Distinct legs prove each binding resolves its own series: the `open`
+    // script must match the kernel over opens, never over closes.
+    let close = closes(30);
+    let open: Vec<f64> = close.iter().map(|v| v + 1.0).collect();
+    let high: Vec<f64> = close.iter().map(|v| v + 2.0).collect();
+    let low: Vec<f64> = close.iter().map(|v| v - 2.0).collect();
+    let volume: Vec<f64> = close.iter().enumerate().map(|(i, _)| 1_000.0 + i as f64).collect();
+    let frame = Ohlcv { open: &open, high: &high, low: &low, close: &close, volume: &volume };
     for (index, source) in must_transpile().iter().enumerate() {
         let SpikeOutcome::Accepted { lowered, .. } = compile_spike(source) else {
             panic!("canonical script {index} refused");
@@ -147,15 +153,27 @@ fn evaluated_scripts_match_kernel_goldens() {
         let inputs: HashMap<String, i64> = [("len".to_owned(), 14), ("mult".to_owned(), 2)]
             .into_iter()
             .collect();
-        let evaluated = evaluate_lowered(&lowered, &bars, &inputs).expect("evaluation runs");
+        let evaluated = evaluate_lowered(&lowered, &frame, &inputs).expect("evaluation runs");
         let by_name: HashMap<&str, &[Option<f64>]> = evaluated
             .iter()
             .map(|(name, values)| (name.as_str(), values.as_slice()))
             .collect();
         for binding in &lowered.bindings {
-            let Hair::Rolling { kernel, length, .. } = &binding.hair else {
+            let Hair::Rolling { kernel, length, series } = &binding.hair else {
                 continue;
             };
+            let Hair::Ohlcv(leg) = series.as_ref() else {
+                panic!("canonical script {index} binds a non-leg series");
+            };
+            let leg_values: &[f64] = match leg.as_str() {
+                "open" => &open,
+                "high" => &high,
+                "low" => &low,
+                "close" => &close,
+                "volume" => &volume,
+                unknown => panic!("canonical script {index} binds unknown leg {unknown}"),
+            };
+            let leg_frame = Ohlcv::close_only(leg_values);
             let values = by_name
                 .get(binding.name.as_str())
                 .expect("rolling binding evaluated");
@@ -167,25 +185,25 @@ fn evaluated_scripts_match_kernel_goldens() {
             let expected = match kernel.as_str() {
                 "sma" => {
                     SmaIndicator::new()
-                        .batch(&frame, &params)
+                        .batch(&leg_frame, &params)
                         .expect("kernel runs")
                         .values
                 }
                 "ema" => {
                     EmaIndicator::new()
-                        .batch(&frame, &params)
+                        .batch(&leg_frame, &params)
                         .expect("kernel runs")
                         .values
                 }
                 "trima" => {
                     TrimaIndicator::new()
-                        .batch(&frame, &params)
+                        .batch(&leg_frame, &params)
                         .expect("kernel runs")
                         .values
                 }
                 _ => {
                     MidpointIndicator::new()
-                        .batch(&frame, &params)
+                        .batch(&leg_frame, &params)
                         .expect("kernel runs")
                         .values
                 }
@@ -275,10 +293,11 @@ fn acceptance_is_parse_plus_numeric_not_rustc() {
         syn::parse_str::<syn::File>(&rust)
             .unwrap_or_else(|e| panic!("emitted Rust must parse: {e}\n{rust}"));
         let bars = closes(30);
+        let frame = Ohlcv::close_only(&bars);
         let inputs: HashMap<String, i64> = [("len".to_owned(), 14), ("mult".to_owned(), 2)]
             .into_iter()
             .collect();
-        let evaluated = evaluate_lowered(&lowered, &bars, &inputs).expect("evaluation runs");
+        let evaluated = evaluate_lowered(&lowered, &frame, &inputs).expect("evaluation runs");
         assert!(
             !evaluated.is_empty(),
             "accepted script must evaluate rolling bindings"
@@ -386,6 +405,11 @@ fn emitter_refuses_unsupported_series_instead_of_substituting() {
             kernel: "sma".to_owned(),
             args: vec![close()],
         },
+        // A bound name needs binding resolution the spike does not do;
+        // a constant is not a series at all. Both refuse rather than
+        // falling back to closes.
+        Hair::Name("basis".to_owned()),
+        Hair::Const(2.0),
     ];
     for series in unsupported {
         let reason = emit_rust(&rolling_over(series)).expect_err("unsupported series refuses");
@@ -435,7 +459,9 @@ fn evaluation_refuses_unknown_input_names() {
         plots: vec!["s".to_owned()],
     };
     let empty: HashMap<String, i64> = HashMap::new();
-    let err = evaluate_lowered(&lowered, &closes(30), &empty)
+    let bars = closes(30);
+    let frame = Ohlcv::close_only(&bars);
+    let err = evaluate_lowered(&lowered, &frame, &empty)
         .expect_err("unknown input must refuse, never substitute the default");
     assert!(
         err.to_string().contains("mystery"),
@@ -443,8 +469,72 @@ fn evaluation_refuses_unknown_input_names() {
     );
     let supplied: HashMap<String, i64> = [("mystery".to_owned(), 14)].into_iter().collect();
     let evaluated =
-        evaluate_lowered(&lowered, &closes(30), &supplied).expect("supplied input evaluates");
+        evaluate_lowered(&lowered, &frame, &supplied).expect("supplied input evaluates");
     assert_eq!(evaluated.len(), 1);
     assert_eq!(evaluated[0].0, "s");
     assert_eq!(evaluated[0].1.len(), 30);
+}
+
+#[test]
+fn evaluation_resolves_legs_and_refuses_non_leg_series() {
+    fn rolling_over(series: Hair) -> Lowered {
+        Lowered {
+            bindings: vec![Binding {
+                name: "s".to_owned(),
+                hair: Hair::Rolling {
+                    kernel: "sma".to_owned(),
+                    length: Length::Literal(14),
+                    series: Box::new(series),
+                },
+            }],
+            plots: vec!["s".to_owned()],
+        }
+    }
+    let close = closes(30);
+    let open: Vec<f64> = close.iter().map(|v| v + 1.0).collect();
+    let frame = Ohlcv {
+        open: &open,
+        high: &close,
+        low: &close,
+        close: &close,
+        volume: &close,
+    };
+    let inputs: HashMap<String, i64> = HashMap::new();
+    // Opens average opens: every output sits exactly 1.0 above the
+    // closes-run golden on this fixture.
+    let evaluated =
+        evaluate_lowered(&rolling_over(Hair::Ohlcv("open".to_owned())), &frame, &inputs)
+            .expect("a leg resolves");
+    let params = ParamSet::new().with_int("length", 14);
+    let over_closes = SmaIndicator::new()
+        .batch(&Ohlcv::close_only(&close), &params)
+        .expect("kernel runs")
+        .values;
+    assert_eq!(evaluated.len(), 1);
+    for (got, want) in evaluated[0].1.iter().zip(over_closes.iter()) {
+        match (got, want) {
+            (Some(got), Some(want)) => {
+                assert!((got - want - 1.0).abs() <= 1e-9, "opens average opens");
+            }
+            (None, None) => {}
+            _ => panic!("warmup shape must match"),
+        }
+    }
+    // Anything but a frame leg refuses: the evaluator never silently runs a
+    // computed, bound, constant, or unknown series over closes.
+    for series in [
+        Hair::Binary {
+            op: '+',
+            left: Box::new(Hair::Ohlcv("close".to_owned())),
+            right: Box::new(Hair::Ohlcv("open".to_owned())),
+        },
+        Hair::Name("basis".to_owned()),
+        Hair::Const(2.0),
+        Hair::Shift { offset: 1, series: Box::new(Hair::Ohlcv("close".to_owned())) },
+        Hair::Ohlcv("vwap".to_owned()),
+    ] {
+        let err = evaluate_lowered(&rolling_over(series), &frame, &inputs)
+            .expect_err("a non-leg series refuses");
+        assert!(!err.to_string().is_empty(), "the refusal explains itself");
+    }
 }

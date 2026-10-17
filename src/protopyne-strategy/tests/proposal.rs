@@ -105,6 +105,11 @@ fn decision_path_sequences_walk_legally() {
             &[E::PassRisk, E::AutoApprove, E::Submit, E::Cancel],
             S::Cancelled,
         ),
+        (&[E::PassRisk, E::AutoApprove, E::Cancel], S::Cancelled),
+        (
+            &[E::PassRisk, E::RequireHuman, E::Approve, E::Cancel],
+            S::Cancelled,
+        ),
     ];
     for (sequence, expected) in cases {
         let mut p = proposal();

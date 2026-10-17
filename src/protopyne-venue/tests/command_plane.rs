@@ -56,13 +56,48 @@ fn intent(id: &str, underlying: &str) -> OrderIntent {
         .build()
 }
 
-fn job(id: &str, underlying: &str, is_exit: bool) -> SubmitJob {
+fn job(journal: &Arc<Journal>, id: &str, underlying: &str, is_exit: bool) -> SubmitJob {
+    let proposal_id = format!("prop-{id}");
+    let mut order = intent(id, underlying);
+    order.proposal_id = proposal_id.clone();
     SubmitJob {
-        intent: intent(id, underlying),
+        intent: order,
         quote: quote(),
         at: now(),
         is_exit,
+        approved: approved_for_entry(&proposal_id),
+        journal: Arc::clone(journal),
     }
+}
+
+/// Risk approval minted for the job's entry proposal, matching its intent —
+/// mirroring the close-all helper below for the exit-free submission tests.
+fn approved_for_entry(proposal_id: &str) -> protopyne_strategy::RiskApproved {
+    let engine = protopyne_strategy::RiskEngine::new(protopyne_strategy::RiskLimits::default());
+    let proposal = protopyne_strategy::Proposal::new()
+        .id(proposal_id.to_owned())
+        .strategy("ribbon".to_owned())
+        .underlying("SPY".to_owned())
+        .direction(protopyne_strategy::Direction::Long)
+        .side(protopyne_strategy::ProposalSide::Entry)
+        .structure(protopyne_strategy::StructureKind::Vertical)
+        .quantity(protopyne_types::Qty::new(Decimal::from(2)))
+        .limit_price(money("600.50"))
+        .max_loss(money("300"))
+        .notional(money("1_000"))
+        .dte_days(30)
+        .conviction(0.8)
+        .activity_score(0.7)
+        .created_at(now())
+        .build();
+    let state = protopyne_strategy::RiskState {
+        quote_age_secs: 5,
+        clock_skew_secs: 1,
+        reconciliation_healthy: true,
+        is_limit_order: true,
+        is_spread: true,
+    };
+    engine.check(&proposal, &state).expect("healthy entry")
 }
 
 fn paper() -> Arc<PaperVenue> {
@@ -259,13 +294,16 @@ async fn unpermitted_command_refuses_without_mutating() {
 #[tokio::test]
 async fn halted_entries_refuse_while_exits_fill() {
     let venue = paper();
-    let session = session_over(registry_over(&venue));
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("session.db");
+    let journal = Arc::new(Journal::open(&path).expect("open"));
+    let session = session_over_with(registry_over(&venue), VenueStorage::new(path));
     let state = session.state_handle().clone();
     assert!(state.get().allows(false), "sessions boot allowing everything");
 
     state.set(TradingState::Disabled);
     let refusal = session
-        .submit_order(job("h#entry", "SPY", false))
+        .submit_order(job(&journal, "h#entry", "SPY", false))
         .await
         .expect_err("halted entries must refuse");
     let reason = refusal.to_string();
@@ -276,14 +314,14 @@ async fn halted_entries_refuse_while_exits_fill() {
     assert!(venue.orders().is_empty(), "refused entries never reach the venue");
 
     let exit = session
-        .submit_order(job("h#exit", "SPY", true))
+        .submit_order(job(&journal, "h#exit", "SPY", true))
         .await
         .expect("exits still flow while halted");
     assert_eq!(exit.filled_quantity, 2);
 
     state.set(TradingState::Enabled);
     let restored = session
-        .submit_order(job("h#entry2", "SPY", false))
+        .submit_order(job(&journal, "h#entry2", "SPY", false))
         .await
         .expect("resume restores entries");
     assert_eq!(restored.filled_quantity, 2);

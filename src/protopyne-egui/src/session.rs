@@ -6,9 +6,12 @@
 //! content ([`SessionBreakCache`]), so a per-frame paint path re-scans only
 //! when the window's contents move.
 
+use chrono::{DateTime, Utc};
 use common_core::hash::fnv1a64;
 use fluent_egui::{BreakLine, Viewport};
-use protopyne_chart_model::{ChartRow, SessionBreak, SessionProvider, find_session_breaks};
+use protopyne_chart_model::{
+    ChartRow, SessionBreak, SessionProvider, session_breaks_between,
+};
 use protopyne_types::Bar;
 
 /// Content-addressed memo of the session-break scan over closed bars.
@@ -39,11 +42,27 @@ impl SessionBreakCache {
     /// content — including an equal-content clone — keeps the revision and
     /// leaves the scan untouched.
     pub fn refresh(&mut self, bars: &[Bar], provider: &dyn SessionProvider) -> u64 {
-        let fingerprint = fingerprint(bars, provider);
+        self.refresh_times(
+            &bars.iter().map(|bar| bar.ts).collect::<Vec<_>>(),
+            provider,
+        )
+    }
+
+    /// Rescan iff the timestamp content moved: the same revision contract as
+    /// [`refresh`](Self::refresh) over bare timestamps, so a caller holding
+    /// display rows (epoch times, no bars) shares the memo instead of
+    /// rescanning per frame. The scan itself is the one
+    /// [`session_breaks_between`] core — never a second implementation.
+    pub fn refresh_times(
+        &mut self,
+        times: &[DateTime<Utc>],
+        provider: &dyn SessionProvider,
+    ) -> u64 {
+        let fingerprint = fingerprint_times(times, provider);
         if self.fingerprint == Some(fingerprint) {
             return self.revision;
         }
-        self.breaks = find_session_breaks(bars, provider);
+        self.breaks = session_breaks_between(times, provider);
         self.fingerprint = Some(fingerprint);
         self.revision += 1;
         self.rebuilds += 1;
@@ -79,16 +98,17 @@ impl SessionBreakCache {
     }
 }
 
-/// Content fingerprint of the scan inputs: every bar timestamp (fixed-width,
-/// length-prefixed so the trailing provider name can never be mistaken for a
-/// timestamp) plus the provider name. Hashed once through the shared
-/// [`fnv1a64`], the same content-hash idiom the pane cache uses. The provider
-/// is assumed fixed for the cache's life (the terminal installs one).
-fn fingerprint(bars: &[Bar], provider: &dyn SessionProvider) -> u64 {
-    let mut bytes = Vec::with_capacity(8 + bars.len() * 8 + provider.name().len());
-    bytes.extend_from_slice(&(bars.len() as u64).to_le_bytes());
-    for bar in bars {
-        bytes.extend_from_slice(&bar.ts.timestamp_millis().to_le_bytes());
+/// Content fingerprint of the scan inputs: every timestamp (fixed-width
+/// millis, length-prefixed so the trailing provider name can never be
+/// mistaken for a timestamp) plus the provider name. Hashed once through
+/// the shared [`fnv1a64`], the same content-hash idiom the pane cache uses.
+/// The provider is assumed fixed for the cache's life (the terminal installs
+/// one).
+fn fingerprint_times(times: &[DateTime<Utc>], provider: &dyn SessionProvider) -> u64 {
+    let mut bytes = Vec::with_capacity(8 + times.len() * 8 + provider.name().len());
+    bytes.extend_from_slice(&(times.len() as u64).to_le_bytes());
+    for at in times {
+        bytes.extend_from_slice(&at.timestamp_millis().to_le_bytes());
     }
     bytes.extend_from_slice(provider.name().as_bytes());
     fnv1a64(&bytes)
@@ -107,6 +127,21 @@ pub fn break_lines(
     provider: &dyn SessionProvider,
 ) -> Vec<BreakLine> {
     cache.refresh(bars, provider);
+    cache.lines(viewport)
+}
+
+/// Session-break gridlines over row times, served from `cache`: the row-time
+/// read twin of [`break_lines`] for paint paths holding display rows rather
+/// than bars. Times arrive as UTC stamps (row epoch seconds lifted); the
+/// scan runs only when the content moves (see [`SessionBreakCache`]).
+#[must_use]
+pub fn break_lines_times(
+    cache: &mut SessionBreakCache,
+    viewport: &Viewport,
+    times: &[DateTime<Utc>],
+    provider: &dyn SessionProvider,
+) -> Vec<BreakLine> {
+    cache.refresh_times(times, provider);
     cache.lines(viewport)
 }
 

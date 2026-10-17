@@ -209,11 +209,25 @@ pub struct RiskEngine {
 impl RiskEngine {
     /// Bind an engine to its limits, parsing both caps once. A cap with no
     /// decimal reading stores as `None`, and every later check fails closed.
+    ///
+    /// Construction itself is unchecked: a [`RiskLimits`] built through the
+    /// builder or serde may violate its declared bounds until validated.
+    /// Every owner must either call [`try_new`](Self::try_new) or run
+    /// [`check`](Self::check) (which validates on every proposal) before
+    /// trusting the engine — an unchecked value can exist but can never
+    /// approve.
     #[must_use]
     pub fn new(limits: RiskLimits) -> Self {
         let loss_cap = limits.loss_cap();
         let notional_cap = limits.notional_cap();
         Self { limits, loss_cap, notional_cap }
+    }
+
+    /// Bind an engine to pre-validated limits, refusing out-of-bound
+    /// configuration at construction instead of at the first check.
+    pub fn try_new(limits: RiskLimits) -> Result<Self, String> {
+        limits.validate()?;
+        Ok(Self::new(limits))
     }
 
     /// Borrow the configured limits. Hot-path reads go through here.

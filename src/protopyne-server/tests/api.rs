@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use chrono::{TimeZone, Utc};
 use protopyne_strategy::elements::ExplicitStructure;
+use protopyne_venue::calculate_price_entry_average;
 
 fn history() -> Vec<Bar> {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -1008,5 +1009,64 @@ async fn feed_streams_bar_frames() {
         }
     }
     assert_eq!(frames, 2, "feed must stream bar frames promptly");
+    handle.shutdown().await;
+}
+
+/// Opposite-direction fills reduce through the venue engine: a buy of 2 @
+/// 100 followed by a sell of 1 @ 110 leaves +1 at an average of 100 — the
+/// entry price is never re-averaged by the exit. A direction-blind fold
+/// would report (100*2 + 110)/3 instead.
+#[tokio::test]
+async fn portfolio_fold_reduces_opposite_direction_fills_like_the_venue() {
+    let handle = boot().await;
+    let strategy = Arc::new(Strategy::with_signal(Arc::new(
+        FixedSignal::new(Direction::Long, 0.8, 0.8).expect("valid signal"),
+    )));
+    let mut run = run_backtest(
+        &strategy,
+        &RiskEngine::new(RiskLimits::new().build()),
+        &test_grant("reduce", 1_000),
+        &BacktestConfig::new()
+            .underlying("SPY".to_owned())
+            .data_version("reduce".to_owned())
+            .build(),
+        &RunnerConfig::new(
+            "SPY".to_owned(),
+            "ribbon".to_owned(),
+            Money::from(400),
+            Money::from(2_000),
+            30,
+            0,
+        ),
+        &history(),
+        5,
+    )
+    .await
+    .expect("run");
+    assert!(run.decisions.len() >= 2, "fixture needs two fills");
+    run.decisions.truncate(2);
+    for (decision, (direction, quantity, price)) in run
+        .decisions
+        .iter_mut()
+        .zip([(Direction::Long, 2u32, 100i64), (Direction::Short, 1u32, 110i64)])
+    {
+        decision.submitted = true;
+        decision.direction = Some(direction);
+        decision.underlying = "SPY".to_owned();
+        decision.filled_quantity = quantity;
+        decision.fill_price = Some(Money::from(price));
+        decision.fee = Some(Money::from(0));
+    }
+    publish_run(&handle.state, &run);
+    let portfolio = common_core::sync::lock(&handle.state.portfolio).clone();
+    assert_eq!(portfolio.positions.len(), 1);
+    let position = &portfolio.positions[0];
+    assert_eq!(position.underlying, "SPY");
+    assert_eq!(position.quantity, 1, "buys minus sells, not the unsigned sum");
+    assert_eq!(
+        position.avg_price,
+        Money::from(100),
+        "a reduction never re-averages the entry"
+    );
     handle.shutdown().await;
 }

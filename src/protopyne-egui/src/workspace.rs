@@ -43,7 +43,7 @@ use crate::integration_lite::{
     candle_momentum_keys, candle_momentum_series, integration_lite_sub_pane, momentum_key_for,
     momentum_tints, ribbon_fill_transparency,
 };
-use crate::session::{labels_show_clock_time, time_grid_lines};
+use crate::session::{SessionBreakCache, labels_show_clock_time, time_grid_lines};
 use crate::widgets::{TopBarAction, paint_top_bar};
 
 /// Stable id of the IntegrationLite slot whose richer sub-pane geometry
@@ -705,6 +705,14 @@ pub struct ChartWorkspace {
     sub: Option<Viewport>,
     symbol_modal: Option<CatalogModal<AssetClass>>,
     indicator_modal: Option<CatalogModal<IndicatorCategory>>,
+    /// Session-break memo over the window's bar times. The loader refreshes
+    /// it when the window's contents move (see
+    /// [`refresh_session_breaks`](Self::refresh_session_breaks)); the paint
+    /// path reads it through
+    /// [`session_break_lines`](Self::session_break_lines) without rescanning.
+    /// No session overlay paints until a provider is installed — the memo
+    /// holds no provider of its own.
+    session_breaks: SessionBreakCache,
 }
 
 impl ChartWorkspace {
@@ -744,6 +752,7 @@ impl ChartWorkspace {
             sub: None,
             symbol_modal: None,
             indicator_modal: None,
+            session_breaks: SessionBreakCache::new(),
         };
         workspace.slot_indicator(INTEGRATION_LITE_ID)?;
         workspace.slot_indicator("fast_mas")?;
@@ -850,6 +859,29 @@ impl ChartWorkspace {
     #[must_use]
     pub fn sub_viewport(&self) -> Option<Viewport> {
         self.sub
+    }
+
+    /// Refresh the session-break memo from the window's bar times: the
+    /// recompute seam for a session-break paint path. Identical content
+    /// keeps the revision and skips the scan; changed content rescans once
+    /// no matter how many frames read it. The caller owns the provider (the
+    /// workspace installs none); the memo never outlives a provider swap
+    /// silently — a new provider name rekeys the fingerprint and rescans.
+    pub fn refresh_session_breaks(
+        &mut self,
+        times: &[chrono::DateTime<chrono::Utc>],
+        provider: &dyn protopyne_chart_model::SessionProvider,
+    ) -> u64 {
+        self.session_breaks.refresh_times(times, provider)
+    }
+
+    /// Session-break gridlines from the memo for `viewport`: the paint read
+    /// twin of [`refresh_session_breaks`](Self::refresh_session_breaks).
+    /// No scan runs here — a window whose contents never moved paints the
+    /// same lines every frame for free.
+    #[must_use]
+    pub fn session_break_lines(&self, viewport: &fluent_egui::Viewport) -> Vec<fluent_egui::BreakLine> {
+        self.session_breaks.lines(viewport)
     }
 
     /// The slotted indicator ids, in insertion order.

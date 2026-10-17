@@ -46,8 +46,8 @@ use protopyne_strategy::{
 };
 use protopyne_types::{Bar, Money, Timeframe};
 use protopyne_venue::{
-    calculate_price_entry_average, serving_allows_entries, serving_verdict, HealthVerdict,
-    Position, StateHandle, TradingState,
+    serving_allows_entries, serving_verdict, update_from_fill, HealthVerdict, Position,
+    PositionFill, PositionSide, SpreadPosition, StateHandle, TradingState,
 };
 use protopyne_view::{
     ArmResponse, ChartBars, CommandStatus, DenyCount, HealthView, OverlaySeries,
@@ -57,7 +57,7 @@ use protopyne_view::{
 use crate::backtest::BacktestConfig;
 use crate::error::ServerError;
 use crate::gateway::FallbackLatch;
-use crate::runner::{build_replay, complete_replay, run_backtest, BacktestRun, RunnerConfig};
+use crate::runner::{build_replay, complete_replay, run_backtest, side_for_direction, BacktestRun, RunnerConfig};
 
 /// Server tunables, loadable from JSON with defaults for every field.
 #[derive(
@@ -961,12 +961,14 @@ fn publish_run(state: &Shared, run: &BacktestRun) {
     }
     drop(inbox);
     // Preview-run position fold, grouped by the underlying each fill was
-    // booked under. Each fill increases the entry, averaged by the venue's
-    // own volume-weighted formula — the same one the portfolio fold and the
-    // live book use — so the served number has a single home. A submitted
-    // order without a priced fill counts toward orders and fees but adds no
-    // exposure.
-    let mut books: BTreeMap<&str, (i64, Money, u32)> = BTreeMap::new();
+    // booked under. Each fill folds through the venue's own
+    // `update_from_fill` — the same engine the live book and the portfolio
+    // fold use — so same-direction fills re-average by volume weight while
+    // opposite-direction fills reduce (never re-average) and full reductions
+    // close the book. The served number has a single home; the hand-rolled
+    // arithmetic-mean fold is gone. A submitted order without a priced fill
+    // counts toward orders and fees but adds no exposure.
+    let mut books: BTreeMap<String, SpreadPosition> = BTreeMap::new();
     let mut fees = rust_decimal::Decimal::ZERO;
     let mut filled_orders: u64 = 0;
     for decision in &run.decisions {
@@ -978,26 +980,34 @@ fn publish_run(state: &Shared, run: &BacktestRun) {
             .fee
             .map_or(rust_decimal::Decimal::ZERO, Money::as_decimal);
         let quantity = decision.filled_quantity;
-        let Some(price) = decision.fill_price else {
+        let (Some(direction), Some(price)) = (decision.direction, decision.fill_price) else {
             continue;
         };
         if quantity == 0 {
             continue;
         }
-        let signed = match decision.direction {
-            Some(Direction::Short) => -i64::from(quantity),
-            _ => i64::from(quantity),
+        let Ok(at) = chrono::DateTime::parse_from_rfc3339(&decision.ts) else {
+            continue;
         };
-        let book = books
-            .entry(decision.underlying.as_str())
-            .or_insert((0, Money::zero(), 0));
-        book.1 = if book.2 == 0 {
-            price
-        } else {
-            calculate_price_entry_average(book.1, book.2, price, quantity)
-        };
-        book.2 = book.2.saturating_add(quantity);
-        book.0 += signed;
+        let fill = PositionFill::new()
+            .underlying(decision.underlying.clone())
+            .side(side_for_direction(direction))
+            .quantity(quantity)
+            .price(price)
+            .fee(decision.fee.unwrap_or_else(Money::zero))
+            .trade_id(protopyne_venue::client_id_for(&decision.proposal_id, 0))
+            .at(at.with_timezone(&chrono::Utc))
+            .build();
+        let current = books.remove(&decision.underlying);
+        // A full reduction closes the book; anything else stays open under
+        // the venue's own averaging. The refusal arm is unreachable by
+        // construction (positive quantity, keyed underlying — the only two
+        // refusals): the view publisher stays infallible, dropping an
+        // impossible refusal's exposure while its orders and fees above
+        // still count it.
+        if let Ok((Some(position), _)) = update_from_fill(current, &fill) {
+            books.insert(decision.underlying.clone(), position);
+        }
     }
     let trading_state = trading_state_tag(state.trading_state.get()).to_owned();
     let mut portfolio = common_core::sync::lock(&state.portfolio);
@@ -1005,12 +1015,16 @@ fn publish_run(state: &Shared, run: &BacktestRun) {
     // underlying without a second pass.
     let positions: Vec<PositionView> = books
         .into_iter()
-        .map(|(underlying, (quantity, avg, _))| {
+        .map(|(underlying, book)| {
+            let quantity = match book.side {
+                PositionSide::Long => i64::from(book.quantity_abs),
+                PositionSide::Short => -i64::from(book.quantity_abs),
+            };
             position_view(
                 &Position::new()
-                    .underlying(underlying.to_owned())
+                    .underlying(underlying)
                     .quantity(quantity)
-                    .avg_price(avg)
+                    .avg_price(book.price_entry_average)
                     .build(),
             )
         })

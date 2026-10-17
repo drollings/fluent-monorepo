@@ -515,11 +515,9 @@ impl Indicator for NatrIndicator {
         params: &ParamSet,
     ) -> Result<Option<f64>, KernelError> {
         let period = Self::period(params)?;
-        let atr = AtrIndicator::new().update(
-            state.child(0),
-            bar,
-            &ParamSet::new().with_int("length", period as i64),
-        )?;
+        let (child, child_params) =
+            state.child_with_params(0, || ParamSet::new().with_int("length", period as i64));
+        let atr = AtrIndicator::new().update(child, bar, child_params)?;
         let ratio = atr.and_then(|v| crate::math::div_or_none(v, bar.close));
         if let Some(value) = ratio {
             state.set_last(value);

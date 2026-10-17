@@ -26,6 +26,7 @@ pub use range::DateRange;
 pub use session::{
     CompositeSessionProvider, DailySessionProvider, EtSessionProvider, MonthlySessionProvider,
     SessionBreak, SessionBreakType, SessionProvider, WeeklySessionProvider, find_session_breaks,
+    session_breaks_between,
 };
 pub use transform::{heikin_ashi, renko_bricks};
 

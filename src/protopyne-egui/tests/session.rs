@@ -202,3 +202,37 @@ fn time_labels_follow_the_timeframe_not_the_window_span() {
         assert!(!labels_show_clock_time(bar_seconds), "{bar_seconds}s bars label by date");
     }
 }
+
+#[test]
+fn timestamp_refresh_shares_the_memo_with_bar_refresh() {
+    use protopyne_chart_model::session_breaks_between;
+    let bars = vec![
+        bar_at_utc(2026, 1, 2, 12, 100.0),
+        bar_at_utc(2026, 1, 2, 20, 101.0),
+        bar_at_utc(2026, 1, 3, 12, 102.0),
+    ];
+    let provider = DailySessionProvider::continuous();
+    let times: Vec<_> = bars.iter().map(|bar| bar.ts).collect();
+    let pane = Viewport::new(PriceScaleMode::Normal, 90.0, 110.0, 400.0, 8.0, 90.0, false)
+        .expect("valid viewport");
+    // Bar refresh and timestamp refresh agree break for break: one core,
+    // two entries.
+    let mut by_bars = SessionBreakCache::new();
+    let bar_lines = break_lines(&mut by_bars, &pane, &bars, &provider);
+    let mut by_times = SessionBreakCache::new();
+    let time_lines = break_lines_times(&mut by_times, &pane, &times, &provider);
+    assert_eq!(bar_lines, time_lines);
+    assert_eq!(
+        by_times.breaks(),
+        session_breaks_between(&times, &provider).as_slice()
+    );
+    // The second entry rides the memo: same revision, no second scan.
+    let revision = by_times.refresh_times(&times, &provider);
+    assert_eq!(by_times.rebuilds(), 1, "identical content never rescans");
+    assert_eq!(revision, by_times.revision());
+    // A changed interior with fixed endpoints still recomputes.
+    let mut moved = times.clone();
+    moved[1] += chrono::Duration::days(1);
+    by_times.refresh_times(&moved, &provider);
+    assert_eq!(by_times.rebuilds(), 2);
+}

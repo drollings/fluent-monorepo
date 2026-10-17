@@ -163,6 +163,12 @@ pub struct BarDecision {
     /// emitted. The last entry's `to` state is the served lifecycle state.
     #[serde(default)]
     pub transitions: Vec<JournaledTransition>,
+    /// Lifecycle journal failure after the venue already reported: the fill
+    /// above still books (venue truth), but the journaled chain is short.
+    /// `None` on the clean path. Surfaced instead of swallowed so a run
+    /// whose recorder failed mid-verdict says so in its own bytes.
+    #[serde(default)]
+    pub lifecycle_error: Option<String>,
     /// Skip reason, when nothing reached the venue for a non-gate reason.
     pub skipped: Option<String>,
 }
@@ -197,6 +203,7 @@ fn skipped_decision(
         fill_price: None,
         fee: None,
         transitions: Vec::new(),
+        lifecycle_error: None,
         skipped: Some(reason.to_owned()),
     }
 }
@@ -415,6 +422,7 @@ fn proposed_decision(
         fill_price: None,
         fee: None,
         transitions: Vec::new(),
+        lifecycle_error: None,
         skipped: None,
     }
 }
@@ -564,6 +572,23 @@ pub async fn decide_and_submit<R: SubmissionRecorder, V: Venue>(
     if (breakers.tripped || breakers.consecutive_errors > grant.breakers.max_consecutive_errors)
         && proposal.side == ProposalSide::Entry
     {
+        // Entries are disarmed for this run: withdraw approval rather than
+        // parking the proposal at `AutoApproved`, so the served state is
+        // terminal and the journal shows why nothing was submitted.
+        match advance(
+            &mut proposal,
+            recorder,
+            &client_id,
+            ProposalEvent::Cancel,
+            "entries disarmed: breaker tripped",
+            bar.ts,
+        ) {
+            Ok(entry) => decision.transitions.push(entry),
+            Err(e) => {
+                decision.skipped = Some(e.to_string());
+                return decision;
+            }
+        }
         decision.skipped = Some(format!(
             "breaker tripped: entries disarmed after {} consecutive venue errors (max {})",
             breakers.consecutive_errors, grant.breakers.max_consecutive_errors,
@@ -571,6 +596,22 @@ pub async fn decide_and_submit<R: SubmissionRecorder, V: Venue>(
         return decision;
     }
     let Some(contracts) = proposal.contracts() else {
+        // A fractional or out-of-range quantity can never be submitted:
+        // withdraw approval for the same reason as above.
+        match advance(
+            &mut proposal,
+            recorder,
+            &client_id,
+            ProposalEvent::Cancel,
+            "quantity unrepresentable",
+            bar.ts,
+        ) {
+            Ok(entry) => decision.transitions.push(entry),
+            Err(e) => {
+                decision.skipped = Some(e.to_string());
+                return decision;
+            }
+        }
         decision.skipped = Some("unrepresentable quantity".to_owned());
         return decision;
     };
@@ -661,16 +702,18 @@ pub async fn decide_and_submit<R: SubmissionRecorder, V: Venue>(
     // Map the venue verdict onto the remaining lifecycle events. The
     // sequence is legal by construction and the runner's recorder is
     // in-memory/infallible; if the recorder itself fails mid-way, the fill
-    // the venue already reported still books — the journal alarm rides the
-    // recorder, not this decision.
-    drop(advance_verdict(
+    // the venue already reported still books — the failure rides on the
+    // decision as `lifecycle_error` instead of vanishing into a drop.
+    if let Err(e) = advance_verdict(
         &mut proposal,
         recorder,
         &client_id,
         record.status,
         bar.ts,
         &mut decision.transitions,
-    ));
+    ) {
+        decision.lifecycle_error = Some(e.to_string());
+    }
     let filled = record.filled_quantity;
     let submitted = record.intent.quantity;
     usage.used_trades = usage.used_trades.saturating_add(1);

@@ -84,7 +84,7 @@ pub use regime_labels::{
     STABILITY_BAND, QuietLabel, display_label, label_series, parity_label, regime_style_key,
     stability_band,
 };
-pub use session::{SessionBreakCache, break_lines, time_grid_lines};
+pub use session::{SessionBreakCache, break_lines, break_lines_times, time_grid_lines};
 pub use topology::{
     ADAPTIVE_NODE, HEALTH_MA_NODE, HEALTH_RIBBON_NODE, OSC_FAST_NODE, OSC_SLOW_NODE,
     PRICE_NODE, RIBBON_NODE, SIGNAL_NODE, VOLUME_NODE, cache_key_for, evaluation_window,

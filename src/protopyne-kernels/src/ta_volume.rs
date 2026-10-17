@@ -221,7 +221,8 @@ impl Indicator for AdoscIndicator {
     ) -> Result<Option<f64>, KernelError> {
         let (fast_len, slow_len) = Self::lengths(params)?;
         let ad = AdIndicator::new();
-        let line = ad.update(state.child(0), bar, &ParamSet::new())?;
+        let (child, child_params) = state.child_with_params(0, ParamSet::new);
+        let line = ad.update(child, bar, child_params)?;
         let ema = EmaIndicator::new();
         let (child, child_params) = state.child_with_params(1, || Self::ema_params(fast_len));
         let fast = ema.update(

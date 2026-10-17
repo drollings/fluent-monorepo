@@ -1539,3 +1539,45 @@ fn symbol_catalog_matches_the_shared_source() {
         );
     }
 }
+
+/// The workspace owns the session-break memo: consecutive frames over the
+/// same window share one scan, and the served lines match the canonical
+/// scan for the viewport.
+#[test]
+fn workspace_session_breaks_skip_identical_republishes() {
+    use fluent_egui::Viewport;
+    use protopyne_chart_model::{DailySessionProvider, find_session_breaks};
+    use protopyne_chart_scale::PriceScaleMode;
+    use protopyne_types::Bar;
+    fn bar_at(day: u32, hour: u32) -> Bar {
+        Bar::new()
+            .ts(
+                chrono::Utc
+                    .with_ymd_and_hms(2026, 1, day, hour, 0, 0)
+                    .single()
+                    .expect("valid time"),
+            )
+            .o("100".parse().expect("decimal"))
+            .h("101".parse().expect("decimal"))
+            .l("99".parse().expect("decimal"))
+            .c("100.5".parse().expect("decimal"))
+            .volume(10_u64)
+            .maybe_adj(None)
+            .build()
+    }
+    let bars = vec![bar_at(2, 12), bar_at(2, 20), bar_at(3, 12)];
+    let times: Vec<_> = bars.iter().map(|bar| bar.ts).collect();
+    let provider = DailySessionProvider::continuous();
+    let pane = Viewport::new(PriceScaleMode::Normal, 90.0, 110.0, 400.0, 8.0, 90.0, false)
+        .expect("valid viewport");
+    let mut workspace = ChartWorkspace::new().expect("the workspace boots");
+    let first = workspace.refresh_session_breaks(&times, &provider);
+    let second = workspace.refresh_session_breaks(&times, &provider);
+    assert_eq!(first, second, "an identical republish skips the rescan");
+    let lines = workspace.session_break_lines(&pane);
+    let scanned = find_session_breaks(&bars, &provider);
+    assert_eq!(lines.len(), scanned.len(), "every scanned break is served");
+    for (line, (index, _)) in lines.iter().zip(scanned.iter()) {
+        assert_eq!(line.index, *index);
+    }
+}

@@ -248,3 +248,34 @@ fn engine_field_edits_reparse_the_stored_caps() {
         .expect_err("the edited cap binds");
     assert!(refused.reasons.contains(&RiskReason::OverLossCap));
 }
+
+#[test]
+fn try_new_refuses_out_of_bound_configuration_up_front() {
+    assert!(RiskEngine::try_new(RiskLimits::default()).is_ok());
+    let edge = RiskLimits::new().quote_max_age_secs(3_600).clock_skew_secs(1).build();
+    assert!(RiskEngine::try_new(edge).is_ok(), "declared edges construct");
+    for (quote_age, skew) in [(3_601, 5), (0, 5), (60, 3_601), (60, 0)] {
+        let limits =
+            RiskLimits::new().quote_max_age_secs(quote_age).clock_skew_secs(skew).build();
+        assert!(
+            RiskEngine::try_new(limits).is_err(),
+            "quote {quote_age}/skew {skew} refuses at construction, not at first check"
+        );
+    }
+    let bad_cap = RiskLimits::new().max_loss_per_trade(f64::NAN).build();
+    assert!(RiskEngine::try_new(bad_cap).is_err(), "unreadable cap refuses up front");
+}
+
+#[test]
+fn engine_field_edits_cannot_widen_into_unchecked_bounds() {
+    use fluent_wvr::FieldAccess as _;
+    let mut engine = RiskEngine::new(RiskLimits::default());
+    assert!(engine.check(&proposal(), &healthy()).is_ok());
+    // The schema path enforces the declared bounds on the edit itself, so an
+    // over-bound age never lands in the engine to be caught later.
+    let refused = engine.set_field("quote_max_age_secs", "99999").expect_err("over-bound edit");
+    assert!(format!("{refused:?}").contains("3600"), "the refusal names the bound: {refused:?}");
+    assert!(engine.check(&proposal(), &healthy()).is_ok(), "the refused edit changed nothing");
+    let refused = engine.set_field("clock_skew_secs", "0").expect_err("under-bound edit");
+    assert!(format!("{refused:?}").contains("minimum 1"), "the refusal names the bound: {refused:?}");
+}

@@ -28,6 +28,8 @@ use tokio::sync::{broadcast, mpsc};
 use protopyne_types::Bar;
 use protopyne_types::SeriesContext;
 
+use protopyne_strategy::RiskApproved;
+
 use crate::backfill::{BackfillHandle, BackfillSource, BackfillUnit};
 use crate::command::{StateHandle, TradingState, TradingStateUnit};
 use crate::error::VenueError;
@@ -112,7 +114,16 @@ impl WorkUnit for SessionConfig {
 impl_component!(SessionConfig);
 
 /// One fan-out job: an intent plus the quote it was priced against.
-#[derive(Debug, Clone)]
+///
+/// The job carries its own risk token and journal: pool workers submit
+/// through the safe protocol (journal intent → dry-run → submit →
+/// query-by-ID), so the risk approval binds this submission path exactly as
+/// it binds the backtest runner — there is no token-free order path left in
+/// the session.
+//
+// `Clone` only: the journal has no `Debug` shape worth printing (a path
+// plus a locked fold), so jobs clone into the pool without one.
+#[derive(Clone)]
 pub struct SubmitJob {
     /// What to submit.
     pub intent: OrderIntent,
@@ -123,6 +134,11 @@ pub struct SubmitJob {
     /// Whether this job closes or reduces exposure (exits always route,
     /// even while halted); entries need [`TradingState::Enabled`].
     pub is_exit: bool,
+    /// Risk approval minted for this intent's proposal: a token for another
+    /// proposal refuses before anything journals.
+    pub approved: RiskApproved,
+    /// Journal the intent lands in before any venue call.
+    pub journal: Arc<Journal>,
 }
 
 /// The supervised session: feed scope, credit pair, fan-out pool, venue
@@ -155,9 +171,12 @@ struct ReconcileSensor {
 
 /// The session-owned backfill sensor and its shared gate. Attached only
 /// where bars arrive over a supervised stream that can drop; a session
-/// with no attached sensor runs every bar exactly as before.
+/// with no attached sensor runs every bar exactly as before. The concrete
+/// unit is retained (not just the erased component) so the feed pump can
+/// hand each reconnected bar to [`BackfillUnit::note_bar`] before any
+/// consumer reads it.
 struct BackfillSensor {
-    unit: Arc<dyn Component>,
+    unit: Arc<BackfillUnit>,
     handle: BackfillHandle,
 }
 
@@ -185,13 +204,35 @@ impl TradingSession {
             more_after: 1,
         });
         let worker_registry = Arc::clone(&registry);
+        let worker_storage = storage.clone();
         let pool = ResultPool::new(
             fluent_concurrency::tokio_runtime(),
             config.workers as usize,
             config.queue_capacity as usize,
             move |job: SubmitJob| {
                 let registry = Arc::clone(&worker_registry);
-                async move { registry.submit(job.intent, &job.quote, job.at).await }
+                let storage = worker_storage.clone();
+                async move {
+                    // The journal gate reads the task-local capability
+                    // scope: install this session's storage permit around
+                    // the protocol, the same channel `run_bar` uses, so
+                    // pool workers journal under the session's authority.
+                    let caps = fluent_wvr::CapabilitySet::new().with(storage.clone());
+                    fluent_wvr::CURRENT_CAPS
+                        .scope(
+                            caps,
+                            safe_submit(
+                                &storage,
+                                &job.journal,
+                                registry.as_ref(),
+                                &job.approved,
+                                job.intent,
+                                &job.quote,
+                                job.at,
+                            ),
+                        )
+                        .await
+                }
             },
         );
         Ok(Self {
@@ -306,9 +347,8 @@ impl TradingSession {
         warmup: usize,
     ) -> BackfillHandle {
         let handle = BackfillHandle::new();
-        let unit: Arc<dyn Component> =
-            Arc::new(BackfillUnit::new(ctx, sources, handle.clone(), warmup));
-        self.backfill = Some(BackfillSensor { unit: Arc::clone(&unit), handle: handle.clone() });
+        let unit = Arc::new(BackfillUnit::new(ctx, sources, handle.clone(), warmup));
+        self.backfill = Some(BackfillSensor { unit, handle: handle.clone() });
         handle
     }
 
@@ -349,13 +389,24 @@ impl TradingSession {
     }
 
     /// Spawn a feed task under the owned scope: closed bars flow into a
-    /// bounded channel, backpressuring the producer when full.
+    /// bounded channel, backpressuring the producer when full. When a
+    /// backfill sensor is attached, each bar enters it through
+    /// [`BackfillUnit::note_bar`] before any consumer reads it, so a forward
+    /// gap suspends entries ahead of the hole — the feed is the sensor's
+    /// caller, and an unattached session pumps exactly as before.
     pub fn spawn_feed(&mut self, bars: Vec<Bar>, capacity: usize) -> mpsc::Receiver<Bar> {
         // Bounded pipe: at most `capacity` bars buffer; the pump's send
         // awaits room, so burst history cannot outrun a slow consumer.
         let (tx, rx) = mpsc::channel(capacity);
+        let sensor = self.backfill.as_ref().map(|sensor| Arc::clone(&sensor.unit));
         self.scope.spawn(async move {
             for bar in bars {
+                if let Some(unit) = &sensor {
+                    // A stale redelivery refuses without touching state; the
+                    // pump still forwards it, since the sensor — not the
+                    // pipe — owns gap truth.
+                    let _ = unit.note_bar(bar.clone());
+                }
                 if tx.send(bar).await.is_err() {
                     break;
                 }
@@ -367,7 +418,10 @@ impl TradingSession {
     /// Credit-bounded submission: at most `credit_limit` submits stay in
     /// flight; the producer waits for a bump instead of growing a queue.
     /// The trading state gates first (before any credit is touched):
-    /// halted entries refuse with reason, exits always route.
+    /// halted entries refuse with reason, exits always route. Attached
+    /// reconciliation and backfill gates gate entries next, through the
+    /// same halt-entries/route-exits shape: a mismatched book or an
+    /// unspliced hole refuses entries while exits still flow.
     pub async fn submit_order(
         &self,
         job: SubmitJob,
@@ -376,12 +430,40 @@ impl TradingSession {
             .get()
             .check(job.is_exit)
             .map_err(ResultPoolError::Inner)?;
+        if !job.is_exit {
+            if let Some(sensor) = &self.reconcile {
+                sensor.handle.check_entries().map_err(ResultPoolError::Inner)?;
+            }
+            if let Some(sensor) = &self.backfill {
+                sensor.handle.check_entries().map_err(ResultPoolError::Inner)?;
+            }
+        }
         let outcome = self
             .credit_tx
             .send(|| async { self.pool.submit(job).await })
             .await;
         self.credit_rx.recv();
         outcome
+    }
+
+    /// Collect newly tripped or halted alerts from the attached gates into
+    /// `sink`: the breaker trip and the kill-switch transition alert on the
+    /// edge through `cursor`, banked reconciliation and backfill lines drain
+    /// exactly once. Unattached gates are unwatched. The production poll
+    /// entry point — tests and the soak harness drive the same function.
+    pub fn poll_alerts(
+        &self,
+        cursor: &mut crate::alert::AlertCursor,
+        sink: &dyn crate::alert::AlertSink,
+        now: DateTime<Utc>,
+    ) -> Result<usize, VenueError> {
+        let watch = crate::alert::GateWatch {
+            breaker: self.stream_breaker.as_deref(),
+            reconcile: self.reconcile.as_ref().map(|sensor| &sensor.handle),
+            backfill: self.backfill.as_ref().map(|sensor| &sensor.handle),
+            state: Some(&self.state),
+        };
+        crate::alert::poll_alerts(cursor, &watch, sink, now)
     }
 
     /// Submit operator close intents through the safe path: journal intent,
@@ -461,7 +543,8 @@ impl TradingSession {
             units.insert(0, Arc::clone(&sensor.unit));
         }
         if let Some(sensor) = &self.backfill {
-            units.insert(0, Arc::clone(&sensor.unit));
+            let erased: Arc<dyn Component> = sensor.unit.clone();
+            units.insert(0, erased);
         }
         for unit in units {
             let label = unit.name().to_owned();

@@ -508,6 +508,7 @@ fn filled_decision(
         fill_price: Some(decimal_money(price)),
         fee: Some(decimal_money(fee)),
         transitions: Vec::new(),
+        lifecycle_error: None,
         skipped: None,
     }
 }
@@ -534,6 +535,7 @@ fn flat_decision(bar_index: usize, ts: String) -> BarDecision {
         fill_price: None,
         fee: None,
         transitions: Vec::new(),
+        lifecycle_error: None,
         skipped: Some("warmup".to_owned()),
     }
 }
@@ -2113,4 +2115,196 @@ fn per_bar_clone_sites_are_gone() {
         1,
         "only the Dynamic arm copies its borrowed source"
     );
+}
+
+/// A disarmed bar terminalizes instead of parking: the chain ends
+/// `Cancelled` with the disarm reason journaled, so the served inbox state
+/// is terminal and no human waits on a proposal the run will never submit.
+#[tokio::test]
+async fn disarmed_entries_terminalize_as_cancelled() {
+    use protopyne_strategy::ProposalEvent;
+    let bars = history();
+    let bar = &bars[0];
+    let venue = PaperVenue::new(PaperConfig::new().build());
+    let mut usage = GrantUsage::new().build();
+    let mut breakers = BreakerState::new()
+        .tripped(true)
+        .trip_reason("test trip".to_owned())
+        .build();
+    let closes = vec![bar.c.to_f64().expect("representable close")];
+    let log = RunIntentLog::new();
+    let decision = decide_and_submit(
+        &strategy(),
+        &risk(),
+        &grant_with(0.5),
+        &mut usage,
+        &venue,
+        &log,
+        &venue_config(),
+        &mut breakers,
+        BarHealth::rehearsed(),
+        0,
+        bar,
+        &closes,
+        &runner_config(),
+        11,
+    )
+    .await;
+    assert!(!decision.submitted, "disarmed bars never submit");
+    let last = decision.transitions.last().expect("chain");
+    assert_eq!(last.to, ProposalState::Cancelled, "disarm terminalizes");
+    assert_eq!(last.from, ProposalState::AutoApproved);
+    assert!(last.reason.contains("disarmed"), "the journal names the cause: {}", last.reason);
+    for pair in decision.transitions.windows(2) {
+        assert_eq!(pair[0].to, pair[1].from, "the chain stays contiguous");
+    }
+    let replayed = log.replay().expect("run log replays");
+    assert!(
+        replayed
+            .events
+            .iter()
+            .any(|event| event.detail.contains(&format!("{:?}", ProposalEvent::Cancel))),
+        "the withdrawal is journaled, not just served"
+    );
+}
+
+/// A fractional quantity can never reach the venue: the risk engine refuses
+/// an unrepresentable quantity first, so the chain terminalizes as
+/// `Rejected` and the venue sees nothing. (The runner's own quantity gate
+/// below the risk check keeps a withdrawing `Cancel` as defense in depth
+/// for a path that cannot be reached through the checked proposal.)
+#[tokio::test]
+async fn unrepresentable_quantity_refuses_terminal() {
+    use protopyne_strategy::{SignalOutput, elements::Sizing};
+    use protopyne_types::Qty;
+    struct FractionalSizing;
+    impl Sizing for FractionalSizing {
+        fn size(&self, _signal: &SignalOutput) -> Qty {
+            Qty::new(Decimal::new(15, 1))
+        }
+    }
+    let bars = history();
+    let bar = &bars[0];
+    let venue = PaperVenue::new(PaperConfig::new().build());
+    let fractional = Arc::new(
+        Strategy::with_signal(Arc::new(
+            FixedSignal::new(Direction::Long, 0.8, 0.8).expect("valid signal"),
+        ))
+        .with_sizing(Arc::new(FractionalSizing)),
+    );
+    let mut usage = GrantUsage::new().build();
+    let mut breakers = BreakerState::new().build();
+    let closes = vec![bar.c.to_f64().expect("representable close")];
+    let decision = decide_and_submit(
+        &fractional,
+        &risk(),
+        &grant_with(0.5),
+        &mut usage,
+        &venue,
+        &RunIntentLog::new(),
+        &venue_config(),
+        &mut breakers,
+        BarHealth::rehearsed(),
+        0,
+        bar,
+        &closes,
+        &runner_config(),
+        11,
+    )
+    .await;
+    assert!(!decision.submitted, "fractional quantities never submit");
+    assert!(!decision.risk_pass, "the risk engine refuses first");
+    let last = decision.transitions.last().expect("chain");
+    assert_eq!(last.to, ProposalState::Rejected, "unrepresentable terminalizes");
+    assert_eq!(decision.skipped, None, "a risk refusal carries reasons, not a skip");
+    assert!(venue.orders().is_empty(), "the venue sees nothing");
+}
+
+/// A recorder that fails partway through the verdict: the venue already
+/// reported, so the fill still books — but the decision says so in
+/// `lifecycle_error` instead of dropping the failure.
+#[tokio::test]
+async fn verdict_journal_failure_surfaces_without_losing_the_fill() {
+    use protopyne_venue::{
+        LegExecution, OrderStatus, SubmissionRecorder, VenueError, PROPOSAL_TRANSITION_KIND,
+    };
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    struct FailLate {
+        log: RunIntentLog,
+        lifecycle_transitions: AtomicUsize,
+    }
+    impl SubmissionRecorder for FailLate {
+        fn record_intent(
+            &self,
+            intent: &protopyne_venue::OrderIntent,
+            now: chrono::DateTime<chrono::Utc>,
+        ) -> Result<bool, VenueError> {
+            self.log.record_intent(intent, now)
+        }
+        fn mark_status(
+            &self,
+            client_id: &str,
+            status: OrderStatus,
+            now: chrono::DateTime<chrono::Utc>,
+        ) -> Result<(), VenueError> {
+            self.log.mark_status(client_id, status, now)
+        }
+        fn record_leg_fill(
+            &self,
+            client_id: &str,
+            leg: &LegExecution,
+            now: chrono::DateTime<chrono::Utc>,
+        ) -> Result<(), VenueError> {
+            self.log.record_leg_fill(client_id, leg, now)
+        }
+        fn record_transition(
+            &self,
+            client_id: &str,
+            kind: &str,
+            detail: &str,
+            now: chrono::DateTime<chrono::Utc>,
+        ) -> Result<(), VenueError> {
+            // Only the lifecycle kind fails, and only once the gates and the
+            // submission are journaled: the protocol's own `verdict` row and
+            // every status row succeed, so the failure lands in the
+            // post-fill verdict drive rather than inside the submission.
+            if kind == PROPOSAL_TRANSITION_KIND
+                && self.lifecycle_transitions.fetch_add(1, Ordering::SeqCst) >= 3
+            {
+                return Err(VenueError::Journal("injected verdict journal failure".to_owned()));
+            }
+            self.log.record_transition(client_id, kind, detail, now)
+        }
+    }
+    let bars = history();
+    let bar = &bars[0];
+    let venue = PaperVenue::new(PaperConfig::new().build());
+    let mut usage = GrantUsage::new().build();
+    let mut breakers = BreakerState::new().build();
+    let closes = vec![bar.c.to_f64().expect("representable close")];
+    let recorder = FailLate {
+        log: RunIntentLog::new(),
+        lifecycle_transitions: AtomicUsize::new(0),
+    };
+    let decision = decide_and_submit(
+        &strategy(),
+        &risk(),
+        &grant_with(0.5),
+        &mut usage,
+        &venue,
+        &recorder,
+        &venue_config(),
+        &mut breakers,
+        BarHealth::rehearsed(),
+        0,
+        bar,
+        &closes,
+        &runner_config(),
+        11,
+    )
+    .await;
+    assert!(decision.submitted, "the venue verdict still books");
+    assert_eq!(decision.filled_quantity, 1, "the fill is not lost");
+    let error = decision.lifecycle_error.as_deref().expect("failure surfaces");
+    assert!(error.contains("injected verdict journal failure"), "the cause rides along: {error}");
 }
