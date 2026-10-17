@@ -262,10 +262,11 @@ pub trait NativeProvider: Send + Sync {
     /// provider that starts a call finishes it or names why, never a
     /// silent mid-call fallback. Default handles nothing.
     ///
-    /// In-place discipline: the taken table is mutated, never copied —
-    /// per-call full-array copies (clone plus drop) are what made the
-    /// interpreted hot paths slow, and reintroducing them here would
-    /// reproduce the bottleneck natively.
+    /// In-place discipline: the taken table is mutated, never copied, and
+    /// a `this`-returning serve hands the resident table back by handle
+    /// (`FieldTable` is copy-on-write) — per-call full-array copies (clone
+    /// plus drop) are what made the interpreted hot paths slow, and
+    /// reintroducing them here would reproduce the bottleneck natively.
     fn call(
         &self,
         _type_name: &str,

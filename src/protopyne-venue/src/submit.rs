@@ -15,35 +15,120 @@ use crate::error::VenueError;
 use crate::journal::{Journal, VenueStorage};
 use crate::order::{OrderIntent, OrderRecord, OrderStatus};
 use crate::quote::Quote;
-use crate::venue::Venue;
+use crate::venue::{LegExecution, Venue};
 
 /// How long one submit attempt may take before the caller queries by ID.
 pub const SUBMIT_TIMEOUT: Duration = Duration::from_secs(5);
 /// Retry budget for retryable venue failures (transport, 5xx, timeout).
 pub const SUBMIT_RETRIES: u32 = 3;
 
+/// The mutation sink the safe-submission protocol writes through.
+///
+/// The protocol is recorder-agnostic: the durable [`Journal`] in production
+/// and the in-memory [`RunIntentLog`](crate::journal::RunIntentLog) in a
+/// backtest run both implement it, so the same protocol runs everywhere and
+/// only the recorder differs. It carries the four mutations the protocol
+/// needs: the intent, each lifecycle status, each executed spread leg, and
+/// each transition. Implementations own their own durability/gating; the
+/// protocol never reads the log back, so an in-memory recorder is a
+/// first-class peer, not a second durable authority.
+pub trait SubmissionRecorder: Send + Sync {
+    /// Durably record `intent`, returning `false` when the client id was
+    /// already recorded — intent journaling is idempotent, which is what
+    /// makes retries safe.
+    fn record_intent(&self, intent: &OrderIntent, now: DateTime<Utc>) -> Result<bool, VenueError>;
+    /// Record the intent's send state (`submitted`, `acknowledged`, ...).
+    fn mark_status(
+        &self,
+        client_id: &str,
+        status: OrderStatus,
+        now: DateTime<Utc>,
+    ) -> Result<(), VenueError>;
+    /// Record one executed spread leg under `client_id`.
+    fn record_leg_fill(
+        &self,
+        client_id: &str,
+        leg: &LegExecution,
+        now: DateTime<Utc>,
+    ) -> Result<(), VenueError>;
+    /// Record a lifecycle transition (`kind` + machine-readable `detail`).
+    fn record_transition(
+        &self,
+        client_id: &str,
+        kind: &str,
+        detail: &str,
+        now: DateTime<Utc>,
+    ) -> Result<(), VenueError>;
+}
+
+/// The durable [`SubmissionRecorder`]: a [`Journal`] bound to the session's
+/// [`VenueStorage`] permit. Every mutation delegates to the journal method of
+/// the same name, so rows are byte-identical to the direct calls the journal
+/// has always made.
+struct JournalRecorder<'a> {
+    permit: &'a VenueStorage,
+    journal: &'a Journal,
+}
+
+impl SubmissionRecorder for JournalRecorder<'_> {
+    fn record_intent(&self, intent: &OrderIntent, now: DateTime<Utc>) -> Result<bool, VenueError> {
+        self.journal.record_intent(self.permit, intent, now)
+    }
+
+    fn mark_status(
+        &self,
+        client_id: &str,
+        status: OrderStatus,
+        now: DateTime<Utc>,
+    ) -> Result<(), VenueError> {
+        self.journal.mark_status(self.permit, client_id, status, now)
+    }
+
+    fn record_leg_fill(
+        &self,
+        client_id: &str,
+        leg: &LegExecution,
+        now: DateTime<Utc>,
+    ) -> Result<(), VenueError> {
+        self.journal.record_leg_fill(self.permit, client_id, leg, now)
+    }
+
+    fn record_transition(
+        &self,
+        client_id: &str,
+        kind: &str,
+        detail: &str,
+        now: DateTime<Utc>,
+    ) -> Result<(), VenueError> {
+        self.journal
+            .record_transition(self.permit, client_id, kind, detail, now)
+    }
+}
+
 /// Journal one row per executed spread leg. Empty for single-leg intents —
 /// venues that execute no legs report none — so the legacy journal shape is
 /// untouched when no spread filled.
-fn journal_legs<V: Venue>(
-    permit: &VenueStorage,
-    journal: &Journal,
+fn record_legs<R: SubmissionRecorder, V: Venue>(
+    recorder: &R,
     venue: &V,
     client_id: &str,
     now: DateTime<Utc>,
 ) -> Result<(), VenueError> {
     for leg in venue.executed_legs(client_id) {
-        journal.record_leg_fill(permit, client_id, &leg, now)?;
+        recorder.record_leg_fill(client_id, &leg, now)?;
     }
     Ok(())
 }
 
-/// Submit `intent` through the full safe protocol. Demands the
-/// [`RiskApproved`] token minted for this proposal: without it there is no
-/// submission path, so strategy code cannot bypass the risk engine.
-pub async fn safe_submit<V: Venue>(
-    permit: &VenueStorage,
-    journal: &Journal,
+/// The safe-submission protocol, recorder-agnostic: journal intent,
+/// dry-run, submit, then query-by-ID on any ambiguity — never a blind
+/// resubmit. Demands the [`RiskApproved`] token minted for this proposal:
+/// without it there is no submission path, so strategy code cannot bypass the
+/// risk engine. The recorder decides where the intent/status/leg/transition
+/// rows land (the durable [`Journal`] or an in-memory run log); the protocol
+/// itself is identical for both.
+pub async fn submit_guarded<R: SubmissionRecorder, V: Venue>(
+    recorder: &R,
     venue: &V,
     approved: &RiskApproved,
     intent: OrderIntent,
@@ -55,7 +140,7 @@ pub async fn safe_submit<V: Venue>(
             "risk approval belongs to a different proposal".to_owned(),
         ));
     }
-    let fresh = journal.record_intent(permit, &intent, now)?;
+    let fresh = recorder.record_intent(&intent, now)?;
     if !fresh {
         if let Some(known) = venue.query(&intent.client_id).await {
             return Ok(known);
@@ -63,10 +148,10 @@ pub async fn safe_submit<V: Venue>(
     }
     let dry = venue.dry_run(&intent, quote)?;
     if !dry.allowed {
-        journal.mark_status(permit, &intent.client_id, OrderStatus::Rejected, now)?;
+        recorder.mark_status(&intent.client_id, OrderStatus::Rejected, now)?;
         return Err(VenueError::Refused("dry run refused".to_owned()));
     }
-    journal.mark_status(permit, &intent.client_id, OrderStatus::Submitted, now)?;
+    recorder.mark_status(&intent.client_id, OrderStatus::Submitted, now)?;
 
     let attempt = common_core::retry::retry_async(
         SUBMIT_RETRIES,
@@ -95,10 +180,9 @@ pub async fn safe_submit<V: Venue>(
     match attempt {
         Ok(record) => {
             let status = record.status;
-            journal.mark_status(permit, &intent.client_id, status, now)?;
-            journal_legs(permit, journal, venue, &intent.client_id, now)?;
-            journal.record_transition(
-                permit,
+            recorder.mark_status(&intent.client_id, status, now)?;
+            record_legs(recorder, venue, &intent.client_id, now)?;
+            recorder.record_transition(
                 &intent.client_id,
                 "verdict",
                 &format!("status={status:?}"),
@@ -110,8 +194,8 @@ pub async fn safe_submit<V: Venue>(
             if e.is_retryable() {
                 if let Some(record) = venue.query(&intent.client_id).await {
                     let status = record.status;
-                    journal.mark_status(permit, &intent.client_id, status, now)?;
-                    journal_legs(permit, journal, venue, &intent.client_id, now)?;
+                    recorder.mark_status(&intent.client_id, status, now)?;
+                    record_legs(recorder, venue, &intent.client_id, now)?;
                     return Ok(record);
                 }
             }
@@ -120,6 +204,26 @@ pub async fn safe_submit<V: Venue>(
     }
 }
 
+/// Submit `intent` through the full safe protocol against the durable
+/// [`Journal`]. A thin wrapper over [`submit_guarded`] with the journal
+/// recorder, so durable rows stay byte-identical to the direct-call era.
+pub async fn safe_submit<V: Venue>(
+    permit: &VenueStorage,
+    journal: &Journal,
+    venue: &V,
+    approved: &RiskApproved,
+    intent: OrderIntent,
+    quote: &Quote,
+    now: DateTime<Utc>,
+) -> Result<OrderRecord, VenueError> {
+    let recorder = JournalRecorder { permit, journal };
+    submit_guarded(&recorder, venue, approved, intent, quote, now).await
+}
+
 #[cfg(test)]
 #[path = "../tests/submit.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/submit_recorder.rs"]
+mod submit_recorder_tests;

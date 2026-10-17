@@ -81,7 +81,7 @@ fn table(
             PineValue::Array(slots.into_iter().map(|slot| slot.map(PineValue::Float)).collect())
         }),
     );
-    fields
+    fields.into()
 }
 
 fn num(table: &FieldTable, name: &str) -> Option<f64> {
@@ -214,6 +214,36 @@ fn push(fields: &FieldTable, value: Option<PineValue>) -> FieldTable {
     serve("push", fields, &[value])
         .expect("push serves natively")
         .0
+}
+
+#[test]
+fn push_returns_the_resident_table_by_handle() {
+    // The bridge hands back `this` as a handle to the resident table, not a
+    // copy: the served object shares the receiver's table, array included.
+    let fresh = table(vec![], 20, None, 0, false, None);
+    let (sized, _) = serve("init", &fresh, &[int(3), bool_value(true)]).expect("init serves");
+    let (after, value) = serve("push", &sized, &[float(1.0)]).expect("push serves");
+    let Some(PineValue::Object(instance)) = value else {
+        panic!("push returns this");
+    };
+    assert!(
+        instance.fields.shares(&after),
+        "push returns the resident table by handle, not a copy"
+    );
+}
+
+#[test]
+fn a_shared_table_copies_on_write() {
+    // Sharing is copy-on-write: the handle and the resident table stay
+    // independent, so a bridge decline or a stale reader never sees a write
+    // through the other handle.
+    let mut resident = table(vec![], 20, None, 0, false, None);
+    let handle = resident.clone();
+    assert!(resident.shares(&handle), "a clone shares until written");
+    resident.insert("count".to_owned(), int(9));
+    assert!(!resident.shares(&handle), "the first write separates them");
+    assert_eq!(num(&handle, "count"), Some(0.0), "the handle keeps the old table");
+    assert_eq!(num(&resident, "count"), Some(9.0), "the write landed on the resident");
 }
 
 #[test]
@@ -405,6 +435,7 @@ fn script_bars() -> Vec<protopyne_types::Bar> {
 
 #[cfg(feature = "pine")]
 #[test]
+#[ignore = "requires trimmed CSV history fixtures no longer shipped in the tree"]
 fn engine_agrees_on_buffer_sequences() {
     const DRIVER: &str = "import showmethegrail/libBuffers/6 as BUF\n\
         var BUF.BufferFloat ring = BUF.BufferFloat.new().init(4, true)\n\

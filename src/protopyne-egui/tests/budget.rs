@@ -170,6 +170,7 @@ fn bloat_ledger_pins_source_files() {
             "session.rs",
             "topology.rs",
             "views/health.rs",
+            "views/inbox.rs",
             "views/journal.rs",
             "views/mod.rs",
             "views/portfolio.rs",

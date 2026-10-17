@@ -4,10 +4,24 @@
 //! no finite chart float is skipped by [`row_of`]/[`rows_of`], never
 //! substituted. Callers that need strictness use [`to_display_float`] per
 //! leg and refuse on `None` themselves.
+//!
+//! The row and its container are the wire shapes owned by `protopyne-view`
+//! ([`ChartBar`]/[`ChartBars`]): conversion here produces them directly, so
+//! the terminal and the server share one definition instead of a field-wise
+//! twin. [`ChartRow`] is the display side's long-standing name for the same
+//! [`ChartBar`].
 
 use protopyne_types::Bar;
+use protopyne_view::ChartBar;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive as _;
+
+/// The wire row under the display side's name (one definition, in
+/// [`protopyne_view`]).
+pub use protopyne_view::ChartBar as ChartRow;
+/// The wire container, re-exported so [`rows_of`] never leaves the view
+/// crate's definition.
+pub use protopyne_view::ChartBars;
 
 /// Convert one money/price leg to a chart float.
 ///
@@ -19,41 +33,10 @@ pub fn to_display_float(value: Decimal) -> Option<f64> {
     if flat.is_finite() { Some(flat) } else { None }
 }
 
-/// One chartable bar row: epoch-seconds time plus finite floats.
-///
-/// This is the headless twin of the server chart payload: same shape, owned
-/// here so headless consumers (transforms, geometry, tests) never depend on
-/// the HTTP layer. The server keeps its own row type; conversion between the
-/// two is field-wise and total.
-#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct ChartRow {
-    /// Bar close time as epoch seconds.
-    pub time: i64,
-    /// Open as chart-native float.
-    pub open: f64,
-    /// High as chart-native float.
-    pub high: f64,
-    /// Low as chart-native float.
-    pub low: f64,
-    /// Close as chart-native float.
-    pub close: f64,
-    /// Traded volume.
-    pub volume: u64,
-}
-
-/// A converted window plus how many bars never made it.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct ChartRows {
-    /// Chartable bars in history order.
-    pub rows: Vec<ChartRow>,
-    /// Bars skipped for non-finite or unrepresentable floats.
-    pub dropped: u64,
-}
-
 /// Convert one closed bar, or `None` when a leg has no finite chart float.
 #[must_use]
-pub fn row_of(bar: &Bar) -> Option<ChartRow> {
-    Some(ChartRow {
+pub fn row_of(bar: &Bar) -> Option<ChartBar> {
+    Some(ChartBar {
         time: bar.ts.timestamp(),
         open: to_display_float(bar.o)?,
         high: to_display_float(bar.h)?,
@@ -65,7 +48,7 @@ pub fn row_of(bar: &Bar) -> Option<ChartRow> {
 
 /// Convert a window, counting skips instead of failing the batch.
 #[must_use]
-pub fn rows_of(bars: &[Bar]) -> ChartRows {
+pub fn rows_of(bars: &[Bar]) -> ChartBars {
     let mut rows = Vec::with_capacity(bars.len());
     let mut dropped = 0_u64;
     for bar in bars {
@@ -74,7 +57,7 @@ pub fn rows_of(bars: &[Bar]) -> ChartRows {
             None => dropped += 1,
         }
     }
-    ChartRows { rows, dropped }
+    ChartBars { rows, dropped }
 }
 
 #[cfg(test)]

@@ -21,6 +21,8 @@ fn store_halted() -> (HealthState, HealthLimits) {
             reachable: false,
             ..StoreHealth::default()
         },
+        reconciled: true,
+        backfilled: true,
     };
     (state, HealthLimits::new().build())
 }

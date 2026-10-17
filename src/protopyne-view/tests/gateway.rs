@@ -117,6 +117,23 @@ fn mock_gateway_lists_gld_first_across_every_asset_class() {
 }
 
 #[test]
+fn mock_gateway_symbols_derive_from_the_shared_catalog() {
+    let gateway = MockGateway::new();
+    let symbols = gateway.symbols().expect("mock symbols read");
+    assert_eq!(
+        symbols,
+        crate::symbol_catalog(),
+        "the mock serves the shared catalog, never its own list"
+    );
+    let tickers: Vec<&str> = symbols.iter().map(|entry| entry.symbol.as_str()).collect();
+    assert_eq!(
+        tickers,
+        vec!["GLD", "SPY", "QQQ", "BTC-USD", "ES"],
+        "the shared catalog pins its contents"
+    );
+}
+
+#[test]
 fn mock_gateway_serves_bars_and_overlays_for_symbol_and_timeframe() {
     let gateway = MockGateway::new();
     let bars = gateway.chart_bars_for("GLD", "15M").expect("symbol-scoped bars read");

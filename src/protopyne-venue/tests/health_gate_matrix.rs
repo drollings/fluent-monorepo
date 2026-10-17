@@ -16,6 +16,8 @@ fn healthy() -> HealthState {
         clock_skew_secs: 1,
         stream_connected: true,
         store: StoreHealth::default(),
+        reconciled: true,
+        backfilled: true,
     }
 }
 
@@ -88,6 +90,24 @@ fn single_faults() -> Vec<(&'static str, HealthState, HealthGate, GateClass)> {
                 ..healthy()
             },
             HealthGate::StoreGaps,
+            GateClass::Integrity,
+        ),
+        (
+            "reconcil",
+            HealthState {
+                reconciled: false,
+                ..healthy()
+            },
+            HealthGate::Reconcile,
+            GateClass::Integrity,
+        ),
+        (
+            "backfill",
+            HealthState {
+                backfilled: false,
+                ..healthy()
+            },
+            HealthGate::Backfill,
             GateClass::Integrity,
         ),
     ]

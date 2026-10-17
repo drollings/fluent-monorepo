@@ -9,9 +9,14 @@
 //! Green is 1.0 accept plus 0.0 false-fire, mirroring the spike
 //! `CalibrationTally` shape (accept 1.0 plus reject 1.0) one crate over.
 
+use crate::KernelError;
 use crate::calibration::{Control, ParityDashboard, run_control};
 use crate::compat::{COMPATIBILITY, CompatStatus, NATIVE_MATRIX_ROWS, assert_matrix_covers, compat_for};
-use crate::indicator::builtin_registry;
+use crate::indicator::{
+    BarTick, Indicator, IndicatorResult, IndicatorSpec, IndicatorState, Ohlcv, ParamSet,
+    builtin_registry,
+};
+use std::sync::Arc;
 
 #[test]
 fn controls_hold_on_flat_null_short_and_single_tick() {
@@ -85,7 +90,7 @@ fn dashboard_is_green_with_full_accept_and_zero_false_fire() {
     let dashboard = ParityDashboard::build().expect("dashboard builds");
     let pending = ["eit", "kalman", "voss", "adx", "cmf", "donchian", "ichimoku", "sar", "supertrend"];
     for row in &dashboard.rows {
-        if pending.contains(&row.id) {
+        if pending.contains(&row.id.as_str()) {
             assert!(!row.accepted, "{} pending row must not read accepted", row.id);
             continue;
         }
@@ -97,4 +102,70 @@ fn dashboard_is_green_with_full_accept_and_zero_false_fire() {
         dashboard.rows.iter().filter(|row| row.false_fires > 0).collect::<Vec<_>>()
     );
     assert!(!dashboard.is_green(), "pending rows must hold full trust back");
+}
+
+/// Fixture kernel with no compatibility-matrix row: the dashboard must report
+/// the gap, never panic, so a forgotten matrix row surfaces as a red board.
+struct Uncalibrated {
+    spec: IndicatorSpec,
+}
+
+impl Uncalibrated {
+    fn new() -> Self {
+        Self {
+            spec: IndicatorSpec::new()
+                .id("fixture-uncalibrated".to_owned())
+                .display_name("fixture-uncalibrated".to_owned())
+                .warmup_bars(1_usize)
+                .build(),
+        }
+    }
+}
+
+impl Indicator for Uncalibrated {
+    fn spec(&self) -> &IndicatorSpec {
+        &self.spec
+    }
+
+    fn warmup(&self, _params: &ParamSet) -> Result<usize, KernelError> {
+        Ok(1)
+    }
+
+    fn batch(&self, data: &Ohlcv<'_>, _params: &ParamSet) -> Result<IndicatorResult, KernelError> {
+        Ok(IndicatorResult::new(
+            self.spec.id.clone(),
+            data.close.iter().map(|&c| Some(c)).collect(),
+        ))
+    }
+
+    fn update(
+        &self,
+        _state: &mut IndicatorState,
+        bar: BarTick,
+        _params: &ParamSet,
+    ) -> Result<Option<f64>, KernelError> {
+        Ok(Some(bar.close))
+    }
+}
+
+#[test]
+fn a_kernel_without_a_matrix_row_is_reported_not_panicked() {
+    // The gate must report a regression, not panic on it: a registered kernel
+    // that no matrix row covers lands as a refusal row (the dashboard's
+    // existing shape) and holds full trust back.
+    let mut registry = builtin_registry().expect("builtins");
+    registry.register(Arc::new(Uncalibrated::new())).expect("fixture registers");
+    let dashboard = ParityDashboard::build_with(&registry).expect("dashboard builds without panicking");
+    let row = dashboard
+        .rows
+        .iter()
+        .find(|row| row.id == "fixture-uncalibrated")
+        .expect("the uncalibrated kernel is reported");
+    assert!(!row.accepted, "a kernel without a matrix row must not read accepted");
+    assert!(
+        row.note.as_deref().is_some_and(|note| note.contains("matrix row")),
+        "the row names the missing matrix row: {:?}",
+        row.note
+    );
+    assert!(!dashboard.is_green(), "a missing row holds full trust back");
 }

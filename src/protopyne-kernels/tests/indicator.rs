@@ -130,6 +130,40 @@ fn scratch_windows_reproduce_the_leg_iterators_exactly() {
 }
 
 #[test]
+fn child_params_are_built_once_per_slot() {
+    // Composed kernels read their child parameters through this cache: the
+    // first request builds the set, later bars reuse the same allocation
+    // (the pointer is stable), and each slot keeps its own set.
+    let mut state = IndicatorState::new();
+    let first = std::ptr::from_ref(
+        state
+            .child_with_params(0, || ParamSet::new().with_int("length", 7))
+            .1,
+    );
+    let again = std::ptr::from_ref(
+        state
+            .child_with_params(0, || ParamSet::new().with_int("length", 99))
+            .1,
+    );
+    assert_eq!(first, again, "a slot reuses its cached parameter set");
+    assert_eq!(
+        state
+            .child_with_params(0, ParamSet::new)
+            .1
+            .int("child", "length")
+            .expect("cached length"),
+        7,
+        "the cached set wins over a later build"
+    );
+    let other = std::ptr::from_ref(
+        state
+            .child_with_params(1, || ParamSet::new().with_int("length", 5))
+            .1,
+    );
+    assert_ne!(first, other, "each slot owns its own parameter set");
+}
+
+#[test]
 fn scratch_buffer_reuses_its_allocation_across_refills() {
     // Clear-and-refill, never re-collect: refilling with fewer bars reuses
     // the buffer the first fill earned (same pointer, contents exact).

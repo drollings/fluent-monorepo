@@ -2,22 +2,112 @@
 //!
 //! Composes the canonical break scan with the generic viewport's index
 //! mapping: each returned line sits exactly on its break bar's x pixel, so
-//! bar indices and gridlines can never drift apart.
+//! bar indices and gridlines can never drift apart. The scan is memoized by
+//! content ([`SessionBreakCache`]), so a per-frame paint path re-scans only
+//! when the window's contents move.
 
+use common_core::hash::fnv1a64;
 use fluent_egui::{BreakLine, Viewport};
-use protopyne_chart_model::{ChartRow, SessionProvider, find_session_breaks};
+use protopyne_chart_model::{ChartRow, SessionBreak, SessionProvider, find_session_breaks};
 use protopyne_types::Bar;
 
-/// Session-break gridlines over closed bars.
+/// Content-addressed memo of the session-break scan over closed bars.
 ///
-/// Composes the canonical break scan with this viewport's index mapping:
-/// each returned line sits exactly on its break bar's x pixel.
+/// A break depends on the full ordered series — daylight rules and session
+/// boundaries inside the window, not just its endpoints — so the key is a
+/// fingerprint of every bar timestamp plus the provider identity; a
+/// two-endpoint key could serve a stale break when the interior changes.
+/// Mirrors the pane cache's revision model: identical content keeps the
+/// revision and skips [`find_session_breaks`]; changed content bumps it and
+/// re-runs the scan. Display-side only — the durable bars are never touched.
+#[derive(Debug, Default)]
+pub struct SessionBreakCache {
+    breaks: Vec<(usize, SessionBreak)>,
+    fingerprint: Option<u64>,
+    revision: u64,
+    rebuilds: u64,
+}
+
+impl SessionBreakCache {
+    /// Empty cache: the next [`refresh`](Self::refresh) always scans.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Rescan iff the content moved, returning the cache revision. Identical
+    /// content — including an equal-content clone — keeps the revision and
+    /// leaves the scan untouched.
+    pub fn refresh(&mut self, bars: &[Bar], provider: &dyn SessionProvider) -> u64 {
+        let fingerprint = fingerprint(bars, provider);
+        if self.fingerprint == Some(fingerprint) {
+            return self.revision;
+        }
+        self.breaks = find_session_breaks(bars, provider);
+        self.fingerprint = Some(fingerprint);
+        self.revision += 1;
+        self.rebuilds += 1;
+        self.revision
+    }
+
+    /// The cached `(index, break)` scan in bar order.
+    #[must_use]
+    pub fn breaks(&self) -> &[(usize, SessionBreak)] {
+        &self.breaks
+    }
+
+    /// Gridlines for `viewport` from the cached scan: each line sits on its
+    /// break bar's x pixel through the shared mapping.
+    #[must_use]
+    pub fn lines(&self, viewport: &Viewport) -> Vec<BreakLine> {
+        self.breaks
+            .iter()
+            .map(|(index, _)| BreakLine { index: *index, x: viewport.index_to_x(*index) })
+            .collect()
+    }
+
+    /// Cache revision: bumped only when the content moved.
+    #[must_use]
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
+
+    /// Scans actually executed; unchanged content never advances it.
+    #[must_use]
+    pub fn rebuilds(&self) -> u64 {
+        self.rebuilds
+    }
+}
+
+/// Content fingerprint of the scan inputs: every bar timestamp (fixed-width,
+/// length-prefixed so the trailing provider name can never be mistaken for a
+/// timestamp) plus the provider name. Hashed once through the shared
+/// [`fnv1a64`], the same content-hash idiom the pane cache uses. The provider
+/// is assumed fixed for the cache's life (the terminal installs one).
+fn fingerprint(bars: &[Bar], provider: &dyn SessionProvider) -> u64 {
+    let mut bytes = Vec::with_capacity(8 + bars.len() * 8 + provider.name().len());
+    bytes.extend_from_slice(&(bars.len() as u64).to_le_bytes());
+    for bar in bars {
+        bytes.extend_from_slice(&bar.ts.timestamp_millis().to_le_bytes());
+    }
+    bytes.extend_from_slice(provider.name().as_bytes());
+    fnv1a64(&bytes)
+}
+
+/// Session-break gridlines over closed bars, served from `cache`.
+///
+/// Composes the canonical break scan with this viewport's index mapping: each
+/// returned line sits exactly on its break bar's x pixel. The scan runs only
+/// when the content moves (see [`SessionBreakCache`]).
 #[must_use]
-pub fn break_lines(viewport: &Viewport, bars: &[Bar], provider: &dyn SessionProvider) -> Vec<BreakLine> {
-    find_session_breaks(bars, provider)
-        .into_iter()
-        .map(|(index, _)| BreakLine { index, x: viewport.index_to_x(index) })
-        .collect()
+pub fn break_lines(
+    cache: &mut SessionBreakCache,
+    viewport: &Viewport,
+    bars: &[Bar],
+    provider: &dyn SessionProvider,
+) -> Vec<BreakLine> {
+    cache.refresh(bars, provider);
+    cache.lines(viewport)
 }
 
 /// Seconds in an hour: the finest major time-grid unit.

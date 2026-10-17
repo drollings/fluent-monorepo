@@ -13,7 +13,8 @@ assumptions:
 - orders rest at the touch (buy ask, sell bid); proposal limits mark the bar close
 - max loss 400 per proposal
 limits:
-- single CSV history 'spy-15m-v1', 11 bars
+- in-memory history 'spy-15m-v1', 11 bars
 - 0 unquotable bars skipped; 0 warmup bars skipped
-- no corporate-action adjustments (cash dividends excluded from P&L); no option-chain data (greeks unavailable)
+- no corporate-action adjustments (cash dividends excluded from P&L); no option-chain data (greeks unavailable); single symbol; no point-in-time universe
+- no planner provenance: coverage not certified
 greeks: greeks-over-time unavailable: prototype has no option-chain feed

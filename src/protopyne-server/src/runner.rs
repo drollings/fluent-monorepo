@@ -23,17 +23,22 @@ use fluent_dag::checkpointed::CheckpointedStepGraph;
 use protopyne_store::{CandleStore, SpanPlan};
 use protopyne_strategy::{
     evaluate_grant, BreakerState, Direction, Grant, GrantDecision, GrantMarket, GrantUsage,
-    ProposalSide, ProposeInput, RiskEngine, RiskState, Strategy, StructureKind,
+    JournaledTransition, Proposal, ProposalEvent, ProposalSide, ProposeInput, RiskEngine,
+    RiskState, Strategy, StructureKind,
 };
 use protopyne_types::{Bar, Money};
 use protopyne_venue::{
-    CorporateEvent, OrderIntent, OrderSide, PaperConfig, PaperVenue, Position, Quote, Venue,
+    submit_guarded, CorporateEvent, OrderIntent, OrderSide, OrderStatus, PaperConfig, PaperVenue,
+    Position, Quote, RunIntentLog, SubmissionRecorder, Venue, VenueError, PROPOSAL_TRANSITION_KIND,
 };
 
 use crate::backtest::{load_history, quote_for_bar, BacktestConfig, BacktestVenue, HistorySource};
 use crate::error::ServerError;
 use crate::portfolio::{aggregate, BookedFill, PAPER_PORTFOLIO};
-use crate::report::{build_report, count_unquotable_bars, BacktestReport, RunManifest};
+use crate::report::{
+    build_report, count_unquotable_bars, history_source_limit, uncertified_coverage_limit,
+    BacktestReport, HistoryKind, RunManifest, ABSENT_CAPABILITIES,
+};
 
 /// Per-bar economics and identity for one backtest run.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -113,6 +118,18 @@ pub struct BarDecision {
     /// those fills `unrecorded` rather than guessing).
     #[serde(default)]
     pub structure: Option<StructureKind>,
+    /// Strategy that produced this bar's proposal, carried from the
+    /// proposal itself (`""` when no proposal was emitted).
+    #[serde(default)]
+    pub strategy: String,
+    /// Underlying the proposal traded, carried from the proposal itself
+    /// (`""` when no proposal was emitted).
+    #[serde(default)]
+    pub underlying: String,
+    /// Signal conviction of the proposal, carried from the proposal itself
+    /// (`0.0` when no proposal was emitted).
+    #[serde(default)]
+    pub conviction: f64,
     /// Whether the risk engine approved.
     pub risk_pass: bool,
     /// Risk refusal reasons (empty on approval).
@@ -140,6 +157,12 @@ pub struct BarDecision {
     pub fill_price: Option<Money>,
     /// Commission paid, when filled.
     pub fee: Option<Money>,
+    /// Journaled lifecycle transitions for this bar's proposal, in emission
+    /// order — the real state machine driven by the risk, grant, and venue
+    /// verdicts, never a post-hoc reconstruction. Empty when no proposal was
+    /// emitted. The last entry's `to` state is the served lifecycle state.
+    #[serde(default)]
+    pub transitions: Vec<JournaledTransition>,
     /// Skip reason, when nothing reached the venue for a non-gate reason.
     pub skipped: Option<String>,
 }
@@ -159,6 +182,9 @@ fn skipped_decision(
         proposal_id,
         direction: None,
         structure: None,
+        strategy: String::new(),
+        underlying: String::new(),
+        conviction: 0.0,
         risk_pass: false,
         risk_reasons: Vec::new(),
         grant_allow: false,
@@ -170,6 +196,7 @@ fn skipped_decision(
         filled_quantity: 0,
         fill_price: None,
         fee: None,
+        transitions: Vec::new(),
         skipped: Some(reason.to_owned()),
     }
 }
@@ -250,6 +277,148 @@ impl BarHealth {
     }
 }
 
+/// The journal kind under which a proposal's lifecycle transitions are
+/// recorded: the venue command plane's single home, re-exported here so the
+/// run path journals the same kind approval rows carry. Distinct from the
+/// venue's status/verdict kinds, so the status fold ignores it; a consumer
+/// that wants the chain reads the detail payload.
+pub const LIFECYCLE_KIND: &str = PROPOSAL_TRANSITION_KIND;
+
+/// Advance `proposal` by one lifecycle event, journaling the transition
+/// through `recorder` before the decision acts on the new state, and push the
+/// recorded entry onto `emitted` so the run carries its chain. An illegal
+/// move (a bug, by construction) refuses rather than silently no-op'ing, so
+/// the journal can never record a transition that did not happen.
+fn advance<R: SubmissionRecorder>(
+    proposal: &mut Proposal,
+    recorder: &R,
+    client_id: &str,
+    event: ProposalEvent,
+    reason: &str,
+    now: DateTime<Utc>,
+) -> Result<JournaledTransition, VenueError> {
+    let entry = proposal
+        .apply(event, reason, now)
+        .map_err(|e| VenueError::Invalid(format!("proposal lifecycle refused: {e}")))?;
+    let detail = serde_json::to_string(&entry)
+        .map_err(|e| VenueError::Journal(format!("proposal transition not encodable: {e}")))?;
+    recorder.record_transition(client_id, LIFECYCLE_KIND, &detail, now)?;
+    Ok(entry)
+}
+
+/// Drive the risk and grant portion of the lifecycle from `Proposed`: a risk
+/// refusal ends it; a grant-covered proposal auto-approves; one the grant
+/// does not cover asks a human. Records the moves in order on `emitted`.
+fn advance_gates<R: SubmissionRecorder>(
+    proposal: &mut Proposal,
+    recorder: &R,
+    client_id: &str,
+    risk_pass: bool,
+    grant_allow: bool,
+    now: DateTime<Utc>,
+    emitted: &mut Vec<JournaledTransition>,
+) -> Result<(), VenueError> {
+    if !risk_pass {
+        emitted.push(advance(
+            proposal,
+            recorder,
+            client_id,
+            ProposalEvent::FailRisk,
+            "risk refused",
+            now,
+        )?);
+        return Ok(());
+    }
+    emitted.push(advance(
+        proposal,
+        recorder,
+        client_id,
+        ProposalEvent::PassRisk,
+        "risk approved",
+        now,
+    )?);
+    let (event, reason) = if grant_allow {
+        (ProposalEvent::AutoApprove, "grant covers entry")
+    } else {
+        (ProposalEvent::RequireHuman, "no grant covers entry")
+    };
+    emitted.push(advance(proposal, recorder, client_id, event, reason, now)?);
+    Ok(())
+}
+
+/// The lifecycle events a venue verdict implies, in order. A filled or
+/// partially filled order acknowledges work before it can report the fill;
+/// a refusal terminalizes; an in-flight verdict advances to working only
+/// once the venue acknowledged.
+fn verdict_events(status: OrderStatus) -> &'static [ProposalEvent] {
+    match status {
+        OrderStatus::Filled => &[ProposalEvent::StartWork, ProposalEvent::Fill],
+        OrderStatus::Partial => &[ProposalEvent::StartWork, ProposalEvent::PartialFill],
+        OrderStatus::Acknowledged => &[ProposalEvent::StartWork],
+        OrderStatus::Rejected => &[ProposalEvent::Reject],
+        OrderStatus::Cancelled | OrderStatus::Expired | OrderStatus::OpenFailed => {
+            &[ProposalEvent::Cancel]
+        }
+        OrderStatus::Pending | OrderStatus::Submitted => &[],
+    }
+}
+
+/// Drive the post-submission lifecycle from the venue verdict, recording the
+/// moves in order on `emitted`.
+fn advance_verdict<R: SubmissionRecorder>(
+    proposal: &mut Proposal,
+    recorder: &R,
+    client_id: &str,
+    status: OrderStatus,
+    now: DateTime<Utc>,
+    emitted: &mut Vec<JournaledTransition>,
+) -> Result<(), VenueError> {
+    let reason = format!("venue verdict {status:?}");
+    for event in verdict_events(status) {
+        emitted.push(advance(proposal, recorder, client_id, *event, &reason, now)?);
+    }
+    Ok(())
+}
+
+/// The decision skeleton for a bar that produced a proposal: attribution and
+/// the checked limit come from the proposal itself, never fabricated. The
+/// caller fills the gate verdicts, lifecycle, and outcome.
+#[allow(clippy::too_many_arguments)]
+fn proposed_decision(
+    proposal: &Proposal,
+    bar_index: usize,
+    ts: String,
+    checked: CheckedOrder,
+    risk_pass: bool,
+    risk_reasons: Vec<String>,
+    grant_allow: bool,
+    grant_reasons: Vec<String>,
+) -> BarDecision {
+    BarDecision {
+        bar_index,
+        ts,
+        proposal_id: proposal.id.clone(),
+        direction: Some(proposal.direction),
+        structure: Some(proposal.structure),
+        strategy: proposal.strategy.clone(),
+        underlying: proposal.underlying.clone(),
+        conviction: proposal.conviction,
+        risk_pass,
+        risk_reasons,
+        grant_allow,
+        grant_reasons,
+        submitted: false,
+        limit_price: proposal.limit_price,
+        checked_limit: checked.limit,
+        submitted_quantity: 0,
+        filled_quantity: 0,
+        fill_price: None,
+        fee: None,
+        transitions: Vec::new(),
+        skipped: None,
+    }
+}
+
 /// Shared decision stack for one bar, used identically by backtest replay
 /// and the paper feed. Pure gates plus one venue submission; the caller owns
 /// `usage` accounting so both paths accumulate budgets the same way.
@@ -271,12 +440,13 @@ impl BarHealth {
 /// [`evaluate_grant`]: with `max_consecutive_errors = N`, the Nth consecutive
 /// error still arms, and the N+1th trips (`consecutive_errors > max`).
 #[allow(clippy::too_many_arguments)]
-pub async fn decide_and_submit<V: Venue>(
+pub async fn decide_and_submit<R: SubmissionRecorder, V: Venue>(
     strategy: &Strategy,
     risk: &RiskEngine,
     grant: &Grant,
     usage: &mut GrantUsage,
     venue: &V,
+    recorder: &R,
     quote_config: &BacktestConfig,
     breakers: &mut BreakerState,
     health: BarHealth,
@@ -311,17 +481,20 @@ pub async fn decide_and_submit<V: Venue>(
         dte_days: config.dte_days,
         created_at: bar.ts,
     };
-    let proposal = match strategy.propose(&proposal_id, input) {
+    let mut proposal = match strategy.propose(&proposal_id, input) {
         Ok(proposal) => proposal,
         Err(e) => {
             return skipped_decision(bar_index, ts, proposal_id, &format!("signal refused: {e}"));
         }
     };
-    let direction = Some(proposal.direction);
     // Orders rest at the touch so backtest flow is marketable under the same
     // liquidity filter paper enforces; the proposal limit marks the bar close
     // and the checked limit is the submitted price.
     let checked = checked_order_for(proposal.direction, &quote);
+    // The order's client key: the proposal id plus its single attempt. The
+    // same key names the intent and every lifecycle transition, so replay
+    // rebuilds one proposal history.
+    let client_id = protopyne_venue::client_id_for(&proposal.id, 0);
     let state = RiskState {
         quote_age_secs: health.quote_age_secs,
         clock_skew_secs: health.clock_skew_secs,
@@ -329,7 +502,10 @@ pub async fn decide_and_submit<V: Venue>(
         is_limit_order: true,
         is_spread: true,
     };
-    let (risk_pass, risk_reasons) = match risk.check(&proposal, &state) {
+    // Retain the token the engine mints on approval: the submission protocol
+    // demands it, so the runner cannot reach the venue without it.
+    let risk_check = risk.check(&proposal, &state);
+    let (risk_pass, risk_reasons) = match &risk_check {
         Ok(_) => (true, Vec::new()),
         Err(refused) => (
             false,
@@ -354,76 +530,52 @@ pub async fn decide_and_submit<V: Venue>(
             GrantDecision::Allow => (true, Vec::new()),
             GrantDecision::Deny { reasons } => (false, reasons),
         };
-    if !(risk_pass && grant_allow) {
-        return BarDecision {
-            bar_index,
-            ts,
-            proposal_id,
-            direction,
-            structure: Some(proposal.structure),
-            risk_pass,
-            risk_reasons,
-            grant_allow,
-            grant_reasons,
-            submitted: false,
-            limit_price: proposal.limit_price,
-            checked_limit: checked.limit,
-            submitted_quantity: 0,
-            filled_quantity: 0,
-            fill_price: None,
-            fee: None,
-            skipped: None,
-        };
+    // The decision skeleton carries the proposal's own attribution and the
+    // checked limit; the gates and the lifecycle below fill it in.
+    let mut decision = proposed_decision(
+        &proposal,
+        bar_index,
+        ts,
+        checked,
+        risk_pass,
+        risk_reasons,
+        grant_allow,
+        grant_reasons,
+    );
+    // Drive the real proposal lifecycle through the risk and grant verdicts,
+    // journaling each move before the decision acts on the new state. A move
+    // the state machine refuses (impossible by construction) fails the bar
+    // closed rather than recording a transition that did not happen.
+    if let Err(e) = advance_gates(
+        &mut proposal,
+        recorder,
+        &client_id,
+        risk_pass,
+        grant_allow,
+        bar.ts,
+        &mut decision.transitions,
+    ) {
+        decision.skipped = Some(e.to_string());
+        return decision;
+    }
+    if !(decision.risk_pass && decision.grant_allow) {
+        return decision;
     }
     if (breakers.tripped || breakers.consecutive_errors > grant.breakers.max_consecutive_errors)
         && proposal.side == ProposalSide::Entry
     {
-        return BarDecision {
-            bar_index,
-            ts,
-            proposal_id,
-            direction,
-            structure: Some(proposal.structure),
-            risk_pass,
-            risk_reasons,
-            grant_allow,
-            grant_reasons,
-            submitted: false,
-            limit_price: proposal.limit_price,
-            checked_limit: checked.limit,
-            submitted_quantity: 0,
-            filled_quantity: 0,
-            fill_price: None,
-            fee: None,
-            skipped: Some(format!(
-                "breaker tripped: entries disarmed after {} consecutive venue errors (max {})",
-                breakers.consecutive_errors, grant.breakers.max_consecutive_errors,
-            )),
-        };
+        decision.skipped = Some(format!(
+            "breaker tripped: entries disarmed after {} consecutive venue errors (max {})",
+            breakers.consecutive_errors, grant.breakers.max_consecutive_errors,
+        ));
+        return decision;
     }
     let Some(contracts) = proposal.contracts() else {
-        return BarDecision {
-            bar_index,
-            ts,
-            proposal_id,
-            direction,
-            structure: Some(proposal.structure),
-            risk_pass,
-            risk_reasons,
-            grant_allow,
-            grant_reasons,
-            submitted: false,
-            limit_price: proposal.limit_price,
-            checked_limit: checked.limit,
-            submitted_quantity: 0,
-            filled_quantity: 0,
-            fill_price: None,
-            fee: None,
-            skipped: Some("unrepresentable quantity".to_owned()),
-        };
+        decision.skipped = Some("unrepresentable quantity".to_owned());
+        return decision;
     };
     let intent = OrderIntent::new()
-        .client_id(protopyne_venue::client_id_for(&proposal.id, 0))
+        .client_id(client_id.clone())
         .proposal_id(proposal.id.clone())
         .strategy(proposal.strategy.clone())
         .underlying(proposal.underlying.clone())
@@ -435,12 +587,35 @@ pub async fn decide_and_submit<V: Venue>(
         intent.limit_price, checked.limit,
         "the submitted limit must be the checked limit"
     );
-    let submitted_quantity = intent.quantity;
+    decision.submitted_quantity = intent.quantity;
+    // Risk passed (guarded above), so the engine's token is present; the
+    // protocol demands it, and a missing token can never reach the venue.
+    let Ok(approved) = &risk_check else {
+        decision.skipped = Some("risk approval missing for an approved proposal".to_owned());
+        return decision;
+    };
+    // Hand the approved proposal to the venue: the lifecycle advances to
+    // `Submitted` before the call, so the intent to trade is journaled even
+    // when the verdict never returns.
+    match advance(
+        &mut proposal,
+        recorder,
+        &client_id,
+        ProposalEvent::Submit,
+        "handed to venue",
+        bar.ts,
+    ) {
+        Ok(entry) => decision.transitions.push(entry),
+        Err(e) => {
+            decision.skipped = Some(e.to_string());
+            return decision;
+        }
+    }
     // Only producer-health failures feed the confidence-axis counter: a
     // refused order speaks to the trade's merit, never to the venue's health,
     // so refusals leave the breaker alone. Success clears a cooling streak;
     // once tripped, the flag and its banked reason stay put for the run.
-    let record = match venue.submit(intent, &quote, bar.ts).await {
+    let record = match submit_guarded(recorder, venue, approved, intent, &quote, bar.ts).await {
         Ok(record) => {
             if !breakers.tripped {
                 breakers.consecutive_errors = 0;
@@ -459,28 +634,43 @@ pub async fn decide_and_submit<V: Venue>(
                         breakers.consecutive_errors, grant.breakers.max_consecutive_errors,
                     ));
                 }
+            } else {
+                // A permanent refusal terminalizes the proposal. A retryable
+                // failure leaves it `Submitted`: the intent is in the outbox
+                // and query-by-ID resolves the unknown verdict, so the served
+                // state never claims a rejection the venue did not make.
+                match advance(
+                    &mut proposal,
+                    recorder,
+                    &client_id,
+                    ProposalEvent::Reject,
+                    "venue refused",
+                    bar.ts,
+                ) {
+                    Ok(entry) => decision.transitions.push(entry),
+                    Err(advance_error) => {
+                        decision.skipped = Some(advance_error.to_string());
+                        return decision;
+                    }
+                }
             }
-            return BarDecision {
-                bar_index,
-                ts,
-                proposal_id,
-                direction,
-                structure: Some(proposal.structure),
-                risk_pass,
-                risk_reasons,
-                grant_allow,
-                grant_reasons,
-                submitted: false,
-                limit_price: proposal.limit_price,
-                checked_limit: checked.limit,
-                submitted_quantity,
-                filled_quantity: 0,
-                fill_price: None,
-                fee: None,
-                skipped: Some(e.to_string()),
-            };
+            decision.skipped = Some(e.to_string());
+            return decision;
         }
     };
+    // Map the venue verdict onto the remaining lifecycle events. The
+    // sequence is legal by construction and the runner's recorder is
+    // in-memory/infallible; if the recorder itself fails mid-way, the fill
+    // the venue already reported still books — the journal alarm rides the
+    // recorder, not this decision.
+    drop(advance_verdict(
+        &mut proposal,
+        recorder,
+        &client_id,
+        record.status,
+        bar.ts,
+        &mut decision.transitions,
+    ));
     let filled = record.filled_quantity;
     let submitted = record.intent.quantity;
     usage.used_trades = usage.used_trades.saturating_add(1);
@@ -488,25 +678,12 @@ pub async fn decide_and_submit<V: Venue>(
     usage.used_loss = Money::new(usage.used_loss.as_decimal() + proposal.max_loss.as_decimal());
     usage.used_notional =
         Money::new(usage.used_notional.as_decimal() + proposal.notional.as_decimal());
-    BarDecision {
-        bar_index,
-        ts,
-        proposal_id,
-        direction,
-        structure: Some(proposal.structure),
-        risk_pass,
-        risk_reasons,
-        grant_allow,
-        grant_reasons,
-        submitted: true,
-        limit_price: proposal.limit_price,
-        checked_limit: checked.limit,
-        submitted_quantity: submitted,
-        filled_quantity: filled,
-        fill_price: record.avg_price,
-        fee: Some(record.fees_paid),
-        skipped: None,
-    }
+    decision.submitted = true;
+    decision.submitted_quantity = submitted;
+    decision.filled_quantity = filled;
+    decision.fill_price = record.avg_price;
+    decision.fee = Some(record.fees_paid);
+    decision
 }
 
 /// One completed backtest run: pin, per-bar verdicts, and honest report.
@@ -661,6 +838,8 @@ pub async fn run_backtest(
         venue.bars(),
         seed,
         manifest,
+        HistoryKind::Dynamic,
+        false,
     )
     .await
 }
@@ -687,6 +866,7 @@ pub async fn run_backtest_from_source(
     runner_config.validate()?;
     venue_config.validate()?;
     let loaded = load_history(source, store)?;
+    let planner_certified = !loaded.provenance.is_empty();
     let config_json = config_json_of(runner_config, venue_config, risk, grant)?;
     let manifest = pinned_manifest(
         &venue_config.data_version,
@@ -714,6 +894,8 @@ pub async fn run_backtest_from_source(
         venue.bars(),
         seed,
         manifest,
+        HistoryKind::of(source),
+        planner_certified,
     )
     .await
 }
@@ -735,8 +917,14 @@ async fn run_backtest_on_venue<V: Venue>(
     bars: &[Bar],
     seed: u64,
     manifest: RunManifest,
+    kind: HistoryKind,
+    planner_certified: bool,
 ) -> Result<BacktestRun, ServerError> {
     let mut usage = GrantUsage::new().build();
+    // One in-memory intent log per run: the shared submission protocol runs
+    // unchanged, recording each intent/transition in memory with no durable
+    // journal and no fsync, so parallel runs stay isolated.
+    let recorder = RunIntentLog::new();
     // One breaker for the whole run: rebuilding it per bar would leave the
     // consecutive-error threshold decorative. Health is built per bar at the
     // matching construction site so a live feed can plug real observations in.
@@ -775,6 +963,7 @@ async fn run_backtest_on_venue<V: Venue>(
                 grant,
                 &mut usage,
                 venue,
+                &recorder,
                 venue_config,
                 &mut breakers,
                 BarHealth::rehearsed(),
@@ -820,11 +1009,17 @@ async fn run_backtest_on_venue<V: Venue>(
             .to_owned(),
         format!("max loss {} per proposal", runner_config.max_loss),
     ];
-    let limits = vec![
-        format!("single CSV history '{}', {} bars", venue_config.data_version, bars.len()),
+    // Limits are the source's facts, never asserted: the arm names itself, the
+    // declared capability set names the prototype's absences, and an uncertified
+    // source names the missing planner provenance.
+    let mut limits = vec![
+        history_source_limit(kind, &venue_config.data_version, bars.len()),
         format!("{unquotable} unquotable bars skipped; {skipped_warmup} warmup bars skipped"),
-        "no corporate-action adjustments (cash dividends excluded from P&L); no option-chain data (greeks unavailable)".to_owned(),
+        ABSENT_CAPABILITIES.to_owned(),
     ];
+    if let Some(omission) = uncertified_coverage_limit(planner_certified) {
+        limits.push(omission);
+    }
     let mut report = build_report(
         manifest.clone(),
         assumptions,
@@ -971,6 +1166,10 @@ struct MultiJob {
     bars: Vec<Bar>,
     /// Pinned manifest for this leg, built up front in input order.
     manifest: RunManifest,
+    /// Which arm this leg's bars came from, for `data_limits`.
+    kind: HistoryKind,
+    /// Whether this leg's source carried planner provenance.
+    planner_certified: bool,
     /// Suite seed shared across legs.
     seed: u64,
 }
@@ -1037,6 +1236,8 @@ pub async fn run_multi_backtest(
             runner_config: input.runner_config,
             bars,
             manifest,
+            kind: HistoryKind::of(&input.history),
+            planner_certified: !loaded.provenance.is_empty(),
             seed,
         });
     }
@@ -1062,6 +1263,8 @@ pub async fn run_multi_backtest(
                 venue.bars(),
                 job.seed,
                 job.manifest,
+                job.kind,
+                job.planner_certified,
             )
             .await
             .map_err(|e| e.to_string())?;
@@ -1118,6 +1321,9 @@ pub async fn run_paper_decisions(
     let mut closes: Vec<f64> = Vec::with_capacity(bars.len());
     let mut decisions: Vec<BarDecision> = Vec::with_capacity(bars.len());
     let mut breakers = BreakerState::new().build();
+    // One in-memory intent log per paper run: the shared protocol records
+    // here exactly as a durable journal would, with no I/O.
+    let recorder = RunIntentLog::new();
     for (index, bar) in bars.iter().enumerate() {
         let Some(close) = bar.c.to_f64() else {
             decisions.push(skipped_decision(
@@ -1145,6 +1351,7 @@ pub async fn run_paper_decisions(
                 grant,
                 &mut usage,
                 venue,
+                &recorder,
                 &quote_config,
                 &mut breakers,
                 BarHealth::rehearsed(),

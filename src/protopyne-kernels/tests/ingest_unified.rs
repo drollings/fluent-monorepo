@@ -55,7 +55,7 @@ fn legs_for(price: f64, cumvol: f64, high: f64, low: f64) -> BarTick {
 fn template_fields() -> FieldTable {
     let mut fields = HashMap::new();
     fields.insert("max_candles".to_owned(), Some(PineValue::Int(64)));
-    fields
+    fields.into()
 }
 
 fn snapshot(ring: &BarRing) -> FieldTable {

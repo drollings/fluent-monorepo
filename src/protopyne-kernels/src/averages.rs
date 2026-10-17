@@ -282,16 +282,16 @@ impl Indicator for HmaIndicator {
     ) -> Result<Option<f64>, KernelError> {
         let (half_len, full_len, root_len) = Self::periods(params)?;
         let wma = WmaIndicator::new();
-        let half_ps = Self::wma_params(half_len);
-        let full_ps = Self::wma_params(full_len);
-        let root_ps = Self::wma_params(root_len);
-        let half = wma.update(state.child(0), bar, &half_ps)?;
-        let full = wma.update(state.child(1), bar, &full_ps)?;
+        let (child, child_params) = state.child_with_params(0, || Self::wma_params(half_len));
+        let half = wma.update(child, bar, child_params)?;
+        let (child, child_params) = state.child_with_params(1, || Self::wma_params(full_len));
+        let full = wma.update(child, bar, child_params)?;
         let diff = match (half, full) {
             (Some(h), Some(f)) => 2.0 * h - f,
             _ => f64::NAN,
         };
-        wma.update(state.child(2), BarTick::close_only(diff), &root_ps)
+        let (child, child_params) = state.child_with_params(2, || Self::wma_params(root_len));
+        wma.update(child, BarTick::close_only(diff), child_params)
     }
 }
 
@@ -578,11 +578,13 @@ impl Indicator for DemaIndicator {
     ) -> Result<Option<f64>, KernelError> {
         let period = Self::period(params)?;
         let ema = EmaIndicator::new();
-        let first = ema.update(state.child(0), bar, &Self::ema_params(period))?;
+        let (child, child_params) = state.child_with_params(0, || Self::ema_params(period));
+        let first = ema.update(child, bar, child_params)?;
+        let (child, child_params) = state.child_with_params(1, || Self::ema_params(period));
         let second = ema.update(
-            state.child(1),
+            child,
             BarTick::close_only(first.unwrap_or(f64::NAN)),
-            &Self::ema_params(period),
+            child_params,
         )?;
         let raw = match (first, second) {
             (Some(one), Some(two)) => 2.0 * one - two,
@@ -685,16 +687,19 @@ impl Indicator for TemaIndicator {
     ) -> Result<Option<f64>, KernelError> {
         let period = Self::period(params)?;
         let ema = EmaIndicator::new();
-        let first = ema.update(state.child(0), bar, &Self::ema_params(period))?;
+        let (child, child_params) = state.child_with_params(0, || Self::ema_params(period));
+        let first = ema.update(child, bar, child_params)?;
+        let (child, child_params) = state.child_with_params(1, || Self::ema_params(period));
         let second = ema.update(
-            state.child(1),
+            child,
             BarTick::close_only(first.unwrap_or(f64::NAN)),
-            &Self::ema_params(period),
+            child_params,
         )?;
+        let (child, child_params) = state.child_with_params(2, || Self::ema_params(period));
         let third = ema.update(
-            state.child(2),
+            child,
             BarTick::close_only(second.unwrap_or(f64::NAN)),
-            &Self::ema_params(period),
+            child_params,
         )?;
         let raw = match (first, second, third) {
             (Some(one), Some(two), Some(three)) => 3.0 * one - 3.0 * two + three,

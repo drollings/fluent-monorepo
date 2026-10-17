@@ -7,8 +7,8 @@
 //! are uncached reads of fresh gateway state (a repeat pull rebuilds an
 //! equal bundle; a changed journal rebuilds a changed one).
 
-use crate::views::{HealthModel, PortfolioModel, Provenance, ViewsBundle, load_bundle};
-use protopyne_view::{HealthView, MockGateway, PortfolioView, TerminalGateway};
+use crate::views::{HealthModel, InboxModel, PortfolioModel, Provenance, ViewsBundle, load_bundle};
+use protopyne_view::{HealthView, MockGateway, PortfolioView, ProposalView, TerminalGateway};
 
 fn mock_gateway() -> MockGateway {
     MockGateway::new()
@@ -237,4 +237,70 @@ fn grown_journal_rebuilds_a_changed_bundle() {
     );
     assert_eq!(third.journal.len(), 3, "the rebuilt bundle carries the new row");
     assert_ne!(first, third, "an append never reads back as the old bundle");
+}
+
+fn inbox_row(id: &str, state: &str) -> ProposalView {
+    ProposalView {
+        id: id.to_owned(),
+        strategy: "ribbon".to_owned(),
+        underlying: "SPY".to_owned(),
+        direction: "Long".to_owned(),
+        structure: "Vertical".to_owned(),
+        limit_price: protopyne_types::Money::from(100),
+        conviction: 0.8,
+        state: state.to_owned(),
+    }
+}
+
+#[test]
+fn only_waiting_rows_carry_an_affordance() {
+    // The inbox split: `PendingHuman` rows await a human act; decided,
+    // proposed, and in-flight rows settle — including tags the terminal
+    // has never seen, which fail closed with no affordance.
+    let inbox = InboxModel::of(vec![
+        inbox_row("waiting", "PendingHuman"),
+        inbox_row("fresh", "Proposed"),
+        inbox_row("checked", "RiskChecked"),
+        inbox_row("auto", "AutoApproved"),
+        inbox_row("yes", "Approved"),
+        inbox_row("no", "Rejected"),
+        inbox_row("old", "Expired"),
+        inbox_row("sent", "Submitted"),
+        inbox_row("work", "Working"),
+        inbox_row("fill", "Filled"),
+        inbox_row("part", "Partial"),
+        inbox_row("gone", "Cancelled"),
+        inbox_row("future", "AwaitingQuantumReview"),
+    ]);
+    let actionable: Vec<&str> =
+        inbox.actionable().iter().map(|row| row.id.as_str()).collect();
+    assert_eq!(actionable, vec!["waiting"], "only the waiting row acts");
+    assert_eq!(inbox.settled().len(), 12, "everything else settles");
+    assert!(!inbox.is_empty(), "a waiting row is non-empty");
+    assert!(InboxModel::of(Vec::new()).is_empty(), "no rows is empty");
+    assert!(InboxModel::of(vec![inbox_row("yes", "Approved")]).is_empty(), "decided rows are empty");
+    assert!(InboxModel::is_actionable("PendingHuman"));
+    assert!(!InboxModel::is_actionable("Approved"), "decided tags carry no affordance");
+    assert!(
+        !InboxModel::is_actionable("AwaitingQuantumReview"),
+        "unknown tags fail closed"
+    );
+}
+
+#[test]
+fn decided_states_survive_the_bundle_round_trip() {
+    // The journaled states render: decided rows keep their tags through
+    // the bundle, so what the journal projected is what the glass shows.
+    let bundle = ViewsBundle::of(
+        &mock_health(),
+        &mock_gateway().portfolio().expect("mock portfolio reads"),
+        vec![inbox_row("waiting", "PendingHuman"), inbox_row("yes", "Approved")],
+        Vec::new(),
+    )
+    .expect("decided rows shape");
+    let inbox = InboxModel::of(bundle.proposals);
+    assert_eq!(inbox.actionable().len(), 1, "the waiting row still acts");
+    assert_eq!(inbox.actionable()[0].state, "PendingHuman");
+    assert_eq!(inbox.settled().len(), 1, "the decided row still settles");
+    assert_eq!(inbox.settled()[0].state, "Approved");
 }

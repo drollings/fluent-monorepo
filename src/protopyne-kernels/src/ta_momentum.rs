@@ -77,11 +77,12 @@ impl ApoIndicator {
         Ok((fast, slow, resolve_matype(Self::ID, params)?))
     }
 
+    fn leg_params(length: usize) -> ParamSet {
+        ParamSet::new().with_int("length", length as i64)
+    }
+
     fn legs(period: (usize, usize)) -> (ParamSet, ParamSet) {
-        (
-            ParamSet::new().with_int("length", period.0 as i64),
-            ParamSet::new().with_int("length", period.1 as i64),
-        )
+        (Self::leg_params(period.0), Self::leg_params(period.1))
     }
 }
 
@@ -135,19 +136,18 @@ impl Indicator for ApoIndicator {
         params: &ParamSet,
     ) -> Result<Option<f64>, KernelError> {
         let (fast, slow, use_ema) = Self::shape(params)?;
-        let (fast_ps, slow_ps) = Self::legs((fast, slow));
         let (fast_leg, slow_leg) = if use_ema {
             let ema = EmaIndicator::new();
-            (
-                ema.update(state.child(0), bar, &fast_ps)?,
-                ema.update(state.child(1), bar, &slow_ps)?,
-            )
+            let (child, child_params) = state.child_with_params(0, || Self::leg_params(fast));
+            let first = ema.update(child, bar, child_params)?;
+            let (child, child_params) = state.child_with_params(1, || Self::leg_params(slow));
+            (first, ema.update(child, bar, child_params)?)
         } else {
             let sma = SmaIndicator::new();
-            (
-                sma.update(state.child(0), bar, &fast_ps)?,
-                sma.update(state.child(1), bar, &slow_ps)?,
-            )
+            let (child, child_params) = state.child_with_params(0, || Self::leg_params(fast));
+            let first = sma.update(child, bar, child_params)?;
+            let (child, child_params) = state.child_with_params(1, || Self::leg_params(slow));
+            (first, sma.update(child, bar, child_params)?)
         };
         let raw = match (fast_leg, slow_leg) {
             (Some(f), Some(s)) => f - s,
@@ -244,19 +244,22 @@ impl Indicator for PpoIndicator {
         params: &ParamSet,
     ) -> Result<Option<f64>, KernelError> {
         let (fast, slow, use_ema) = Self::shape(params)?;
-        let (fast_ps, slow_ps) = ApoIndicator::legs((fast, slow));
         let (fast_leg, slow_leg) = if use_ema {
             let ema = EmaIndicator::new();
-            (
-                ema.update(state.child(0), bar, &fast_ps)?,
-                ema.update(state.child(1), bar, &slow_ps)?,
-            )
+            let (child, child_params) =
+                state.child_with_params(0, || ApoIndicator::leg_params(fast));
+            let first = ema.update(child, bar, child_params)?;
+            let (child, child_params) =
+                state.child_with_params(1, || ApoIndicator::leg_params(slow));
+            (first, ema.update(child, bar, child_params)?)
         } else {
             let sma = SmaIndicator::new();
-            (
-                sma.update(state.child(0), bar, &fast_ps)?,
-                sma.update(state.child(1), bar, &slow_ps)?,
-            )
+            let (child, child_params) =
+                state.child_with_params(0, || ApoIndicator::leg_params(fast));
+            let first = sma.update(child, bar, child_params)?;
+            let (child, child_params) =
+                state.child_with_params(1, || ApoIndicator::leg_params(slow));
+            (first, sma.update(child, bar, child_params)?)
         };
         let raw = match (fast_leg, slow_leg) {
             (Some(f), Some(s)) => Self::ratio(f, s),
@@ -922,16 +925,16 @@ impl Indicator for StochfIndicator {
     ) -> Result<FullTick, KernelError> {
         let (k_len, d_len) = Self::lengths(params)?;
         let rsv = RsvIndicator::new();
-        let fastk = rsv.update(
-            state.child(0),
-            bar,
-            &ParamSet::new().with_int("length", k_len as i64),
-        )?;
+        let (child, child_params) =
+            state.child_with_params(0, || ParamSet::new().with_int("length", k_len as i64));
+        let fastk = rsv.update(child, bar, child_params)?;
         let sma = SmaIndicator::new();
+        let (child, child_params) =
+            state.child_with_params(1, || ParamSet::new().with_int("length", d_len as i64));
         let fastd = sma.update(
-            state.child(1),
+            child,
             BarTick::close_only(fastk.unwrap_or(f64::NAN)),
-            &ParamSet::new().with_int("length", d_len as i64),
+            child_params,
         )?;
         state.set_last(fastk.unwrap_or(f64::NAN));
         Ok(FullTick {
@@ -1025,16 +1028,19 @@ impl Indicator for TrixIndicator {
     ) -> Result<Option<f64>, KernelError> {
         let period = Self::period(params)?;
         let ema = EmaIndicator::new();
-        let first = ema.update(state.child(0), bar, &Self::ema_params(period))?;
+        let (child, child_params) = state.child_with_params(0, || Self::ema_params(period));
+        let first = ema.update(child, bar, child_params)?;
+        let (child, child_params) = state.child_with_params(1, || Self::ema_params(period));
         let second = ema.update(
-            state.child(1),
+            child,
             BarTick::close_only(first.unwrap_or(f64::NAN)),
-            &Self::ema_params(period),
+            child_params,
         )?;
+        let (child, child_params) = state.child_with_params(2, || Self::ema_params(period));
         let third = ema.update(
-            state.child(2),
+            child,
             BarTick::close_only(second.unwrap_or(f64::NAN)),
-            &Self::ema_params(period),
+            child_params,
         )?;
         // Own `last` slot carries the previous third-pass value for the
         // one-bar shift; the smoothing windows live in the child states.
@@ -1383,12 +1389,12 @@ impl Indicator for AdxIndicator {
             Self::legs_pair(prev_high, prev_low, prev_close, bar.high, bar.low, bar.close)
         };
         let rma = RmaIndicator::new();
-        let rma_ps = Self::rma_params(period);
-        let smoothed_plus =
-            rma.update(state.child(0), BarTick::close_only(dm_plus), &rma_ps)?;
-        let smoothed_minus =
-            rma.update(state.child(1), BarTick::close_only(dm_minus), &rma_ps)?;
-        let smoothed_tr = rma.update(state.child(2), BarTick::close_only(range), &rma_ps)?;
+        let (child, child_params) = state.child_with_params(0, || Self::rma_params(period));
+        let smoothed_plus = rma.update(child, BarTick::close_only(dm_plus), child_params)?;
+        let (child, child_params) = state.child_with_params(1, || Self::rma_params(period));
+        let smoothed_minus = rma.update(child, BarTick::close_only(dm_minus), child_params)?;
+        let (child, child_params) = state.child_with_params(2, || Self::rma_params(period));
+        let smoothed_tr = rma.update(child, BarTick::close_only(range), child_params)?;
         let plus = Self::leg_of(smoothed_plus, smoothed_tr);
         let minus = Self::leg_of(smoothed_minus, smoothed_tr);
         let dx = if plus.is_finite() && minus.is_finite() {
@@ -1397,7 +1403,8 @@ impl Indicator for AdxIndicator {
         } else {
             f64::NAN
         };
-        let adx = rma.update(state.child(3), BarTick::close_only(dx), &rma_ps)?;
+        let (child, child_params) = state.child_with_params(3, || Self::rma_params(period));
+        let adx = rma.update(child, BarTick::close_only(dx), child_params)?;
         state.set_last(adx.unwrap_or(f64::NAN));
         Ok(FullTick {
             primary: adx,

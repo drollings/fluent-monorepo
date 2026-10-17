@@ -538,6 +538,11 @@ pub struct IndicatorState {
     history: VecDeque<BarTick>,
     last: Option<f64>,
     children: Vec<IndicatorState>,
+    /// Composed kernels' child `ParamSet`s, index-aligned with `children`:
+    /// each is built once per slot from the validated parameters and reused
+    /// across bars, so `update_full` reads a reference instead of
+    /// re-constructing a parameter map every bar.
+    child_params: Vec<Option<ParamSet>>,
     /// Clear-and-refill window scratch: every `scratch_*` method refills
     /// this one buffer instead of collecting a fresh `Vec` per bar, so the
     /// incremental path allocates once per state lifetime, never once per
@@ -669,6 +674,26 @@ impl IndicatorState {
             self.children.push(IndicatorState::new());
         }
         &mut self.children[index]
+    }
+
+    /// Borrow a composed leg's child state together with its cached child
+    /// parameters. `build` runs only the first time a slot is requested;
+    /// later bars reuse the same `ParamSet`, so the incremental path reads a
+    /// reference instead of allocating a parameter map per bar. Parameters
+    /// are fixed for a state's lifetime, exactly like its window.
+    pub fn child_with_params(
+        &mut self,
+        index: usize,
+        build: impl FnOnce() -> ParamSet,
+    ) -> (&mut IndicatorState, &ParamSet) {
+        while self.children.len() <= index {
+            self.children.push(IndicatorState::new());
+        }
+        if self.child_params.len() <= index {
+            self.child_params.resize_with(index + 1, || None);
+        }
+        let params = self.child_params[index].get_or_insert_with(build);
+        (&mut self.children[index], params)
     }
 
     /// Last emitted value, if any.

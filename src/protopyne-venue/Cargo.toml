@@ -5,6 +5,9 @@ edition.workspace = true
 autotests = false
 autobenches = false
 
+[features]
+live-ai = []
+
 [dependencies]
 protopyne-types = { path = "../protopyne-types" }
 # Venue uses only the store's health reading, never the optional sealed
@@ -31,3 +34,8 @@ workspace = true
 [dev-dependencies]
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
+
+[[test]]
+name = "live"
+path = "tests/live.rs"
+required-features = ["live-ai"]

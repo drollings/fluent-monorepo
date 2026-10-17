@@ -14,10 +14,12 @@
 //! shaping. Fresh locks on every pull is the honest price of fresh data.
 
 pub mod health;
+pub mod inbox;
 pub mod journal;
 pub mod portfolio;
 
 pub use health::HealthModel;
+pub use inbox::InboxModel;
 pub use journal::Provenance;
 pub use portfolio::PortfolioModel;
 

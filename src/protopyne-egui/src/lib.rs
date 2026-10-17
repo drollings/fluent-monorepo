@@ -47,7 +47,7 @@ pub use chart::{
     window_for_range,
 };
 pub use export::{
-    EXPORT_CSV_HEADER, OverlayExport, export_overlay_json, export_rows_csv, export_rows_json,
+    EXPORT_CSV_HEADER, export_overlay_json, export_rows_csv, export_rows_json,
 };
 pub use fast_mas::{
     FastMasConfig, FastMasLine, FastMasView, evaluate_fast_mas, paint_fast_mas,
@@ -84,7 +84,7 @@ pub use regime_labels::{
     STABILITY_BAND, QuietLabel, display_label, label_series, parity_label, regime_style_key,
     stability_band,
 };
-pub use session::{break_lines, time_grid_lines};
+pub use session::{SessionBreakCache, break_lines, time_grid_lines};
 pub use topology::{
     ADAPTIVE_NODE, HEALTH_MA_NODE, HEALTH_RIBBON_NODE, OSC_FAST_NODE, OSC_SLOW_NODE,
     PRICE_NODE, RIBBON_NODE, SIGNAL_NODE, VOLUME_NODE, cache_key_for, evaluation_window,
@@ -95,7 +95,8 @@ pub use widgets::{
     chart_type_label, mtf_table_shape, paint_mtf_table, paint_timeframe_toolbar, paint_toolbar,
     paint_top_bar, timeframe_labels, toolbar_labels,
 };
-pub use workspace::{AssetClass, ChartWorkspace, build_symbol_catalog, paint_workspace};
+pub use workspace::{ChartWorkspace, build_symbol_catalog, paint_workspace};
+pub use protopyne_view::AssetClass;
 
 /// Terminal marker; touches the linked paint dependency so wiring breaks
 /// loudly if the dependency stops resolving.

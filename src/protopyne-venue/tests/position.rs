@@ -207,6 +207,29 @@ fn entry_average_is_volume_weighted() {
 }
 
 #[test]
+fn multi_fill_entry_average_weights_by_quantity_not_fill_count() {
+    // Two increases of unequal size: the entry is volume-weighted, so it
+    // cannot be the two-price arithmetic mean.
+    let (position, _) = update_from_fill(None, &fill(OrderSide::Buy, 1, "100", "1"))
+        .expect("entry must open");
+    let (position, _) = update_from_fill(position, &fill(OrderSide::Buy, 3, "120", "1"))
+        .expect("increase must apply");
+    let position = position.expect("increase keeps the position open");
+    assert_eq!(position.price_entry_average, money("115"));
+    assert_ne!(
+        position.price_entry_average,
+        money("110"),
+        "the entry must not be the arithmetic mean of the two prices"
+    );
+    assert_eq!(position.quantity_abs, 4);
+    // The pure formula agrees over the same fills.
+    assert_eq!(
+        calculate_price_entry_average(money("100"), 1, money("120"), 3),
+        money("115")
+    );
+}
+
+#[test]
 fn realised_pnl_is_fee_inclusive_on_both_sides() {
     assert_eq!(
         calculate_pnl_realised(PositionSide::Long, money("100"), 2, money("150"), money("5")),

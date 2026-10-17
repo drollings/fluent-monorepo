@@ -25,14 +25,13 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use chrono::Utc;
 use fluent_concurrency::batch::SupervisedBatch;
 use fluent_concurrency::pool::Limiter;
 use fluent_concurrency::scope::Scope;
 use fluent_wvr::prelude::*;
 use tokio::sync::broadcast;
 
-use protopyne_chart_model::{row_of, ChartRow};
+use protopyne_chart_model::rows_of;
 use protopyne_kernels::{
     BbIndicator, EmaIndicator, Indicator as _, Ohlcv, ParamSet, SmaIndicator, TrimaIndicator,
 };
@@ -47,10 +46,11 @@ use protopyne_strategy::{
 };
 use protopyne_types::{Bar, Money, Timeframe};
 use protopyne_venue::{
-    serving_allows_entries, serving_verdict, HealthVerdict, Position, StateHandle, TradingState,
+    calculate_price_entry_average, serving_allows_entries, serving_verdict, HealthVerdict,
+    Position, StateHandle, TradingState,
 };
 use protopyne_view::{
-    ArmResponse, ChartBar, ChartBars, CommandStatus, DenyCount, HealthView, OverlaySeries,
+    ArmResponse, ChartBars, CommandStatus, DenyCount, HealthView, OverlaySeries,
     PortfolioView, PositionView, ProposalView, ReplayStepView, ReplayView, WorstCase,
 };
 
@@ -238,25 +238,18 @@ fn position_view(position: &Position) -> PositionView {
     }
 }
 
-/// Map one chart row to its view bar: field-identical, position for
-/// position.
-fn chart_bar_of(row: &ChartRow) -> ChartBar {
-    ChartBar {
-        time: row.time,
-        open: row.open,
-        high: row.high,
-        low: row.low,
-        close: row.close,
-        volume: row.volume,
-    }
-}
-
 /// Preview request parameters.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct PreviewParams {
     /// Seed for deterministic proposal identifiers.
     #[serde(default)]
     pub seed: u64,
+    /// The grant to evaluate under. `None` uses the fixed rehearsal grant; a
+    /// caller that wants a live or altered grant to apply supplies it here, so
+    /// the manifest is a pure function of the request rather than of an
+    /// ambient clock read.
+    #[serde(default)]
+    pub grant: Option<Grant>,
 }
 
 /// Preview outcome: the run plus why bars did not trade.
@@ -342,9 +335,9 @@ fn preview_strategy() -> Result<Arc<Strategy>, ServerError> {
     Ok(Arc::new(Strategy::with_signal(Arc::new(signal))))
 }
 
-/// Permissive rehearsal grant used only while no live grant is armed.
-/// The window covers the vendored history range by construction; evaluation
-/// happens at bar time, not wall-clock time.
+/// The fixed rehearsal grant used when the caller supplies none. The window is
+/// a compile-time constant (no ambient clock), so a preview's pinned config is
+/// reproducible; evaluation happens at bar time, never wall-clock time.
 fn permissive_grant() -> Grant {
     Grant::new()
         .id("preview-permissive".to_owned())
@@ -390,9 +383,15 @@ fn permissive_grant() -> Grant {
                 .build(),
         )
         .breakers(BreakerLimits::new().max_consecutive_errors(3).build())
-        .valid_from(chrono::DateTime::from_timestamp(1_700_000_000, 0).unwrap_or_else(Utc::now))
-        .valid_until(chrono::DateTime::from_timestamp(1_900_000_000, 0).unwrap_or_else(Utc::now))
+        .valid_from(rehearsal_stamp(1_700_000_000))
+        .valid_until(rehearsal_stamp(1_900_000_000))
         .build()
+}
+
+/// A fixed rehearsal-window stamp. The constant is a valid instant, so the
+/// `expect` states a construction invariant, never reads a clock.
+fn rehearsal_stamp(seconds: i64) -> chrono::DateTime<chrono::Utc> {
+    chrono::DateTime::from_timestamp(seconds, 0).expect("fixed rehearsal stamp is valid")
 }
 
 fn worst_case_of(grant: &Grant) -> WorstCase {
@@ -841,17 +840,15 @@ async fn preview(
             format!("halted: {}", reasons.join("; ")),
         ));
     }
+    // The grant is an explicit input: a supplied one, else the fixed rehearsal
+    // grant. Nothing here reads the clock or the armed state, so the pinned
+    // config is reproducible from the request alone.
+    let PreviewParams { seed, grant } = params;
+    let grant = grant.unwrap_or_else(permissive_grant);
     let run = state
         .limiter
         .run(|| async {
             let strategy = preview_strategy()?;
-            let grant = {
-                let armed = common_core::sync::lock(&state.armed);
-                match armed.clone() {
-                    Some(grant) if grant.is_live(Utc::now()) => grant,
-                    _ => permissive_grant(),
-                }
-            };
             let runner = RunnerConfig::new(
                 "SPY".to_owned(),
                 "ribbon".to_owned(),
@@ -871,7 +868,7 @@ async fn preview(
                 &venue,
                 &runner,
                 &state.history,
-                params.seed,
+                seed,
             )
             .await
         })
@@ -934,85 +931,90 @@ fn deny_histogram_of(run: &BacktestRun) -> Vec<DenyCount> {
 }
 
 /// Record a preview run's verdicts in the inbox and portfolio views.
+///
+/// The inbox is a projection of each decision's carried lifecycle: the
+/// attribution comes from the proposal itself, and the state is the final
+/// journaled transition's target. Nothing here is fabricated.
 fn publish_run(state: &Shared, run: &BacktestRun) {
     let mut inbox = common_core::sync::lock(&state.inbox);
     inbox.clear();
     for decision in &run.decisions {
-        if let Some(direction) = decision.direction {
-            inbox.push(ProposalView {
-                id: decision.proposal_id.clone(),
-                strategy: "ribbon".to_owned(),
-                underlying: "SPY".to_owned(),
-                direction: direction_tag(direction).to_owned(),
-                structure: structure_tag(StructureKind::Vertical).to_owned(),
-                limit_price: decision.limit_price,
-                conviction: 0.8,
-                state: proposal_state_tag(if decision.submitted {
-                    ProposalState::Filled
-                } else {
-                    ProposalState::Proposed
-                })
-                .to_owned(),
-            });
-        }
+        let Some(direction) = decision.direction else {
+            continue;
+        };
+        let state_tag = decision
+            .transitions
+            .last()
+            .map_or(ProposalState::Proposed, |transition| transition.to);
+        inbox.push(ProposalView {
+            id: decision.proposal_id.clone(),
+            strategy: decision.strategy.clone(),
+            underlying: decision.underlying.clone(),
+            direction: direction_tag(direction).to_owned(),
+            structure: decision
+                .structure
+                .map_or_else(|| "unrecorded".to_owned(), |kind| structure_tag(kind).to_owned()),
+            limit_price: decision.limit_price,
+            conviction: decision.conviction,
+            state: proposal_state_tag(state_tag).to_owned(),
+        });
     }
-    // Preview-run attribution fold, grouped by indexed symbol key through a
-    // run-local table (never global): same grouping as before, `Copy`-key
-    // lookups on the fold path, strings restored at the `Position`
-    // boundary so the wire shape is unchanged.
-    let mut symbols = protopyne_types::SymbolIndex::new();
-    let mut positions: std::collections::HashMap<
-        protopyne_types::SymKey,
-        (i64, rust_decimal::Decimal, u64),
-    > = std::collections::HashMap::new();
+    drop(inbox);
+    // Preview-run position fold, grouped by the underlying each fill was
+    // booked under. Each fill increases the entry, averaged by the venue's
+    // own volume-weighted formula — the same one the portfolio fold and the
+    // live book use — so the served number has a single home. A submitted
+    // order without a priced fill counts toward orders and fees but adds no
+    // exposure.
+    let mut books: BTreeMap<&str, (i64, Money, u32)> = BTreeMap::new();
     let mut fees = rust_decimal::Decimal::ZERO;
     let mut filled_orders: u64 = 0;
     for decision in &run.decisions {
-        if decision.submitted {
-            filled_orders += 1;
-            let price = decision
-                .fill_price
-                .map_or(rust_decimal::Decimal::ZERO, Money::as_decimal);
-            let fee = decision
-                .fee
-                .map_or(rust_decimal::Decimal::ZERO, Money::as_decimal);
-            fees += fee;
-            let signed: i64 = match decision.direction {
-                Some(Direction::Short) => -1,
-                _ => 1,
-            };
-            let Ok(key) = symbols.intern("SPY") else {
-                continue;
-            };
-            let entry = positions
-                .entry(key)
-                .or_insert((0, rust_decimal::Decimal::ZERO, 0));
-            entry.0 += signed;
-            entry.1 += price;
-            entry.2 += 1;
+        if !decision.submitted {
+            continue;
         }
+        filled_orders += 1;
+        fees += decision
+            .fee
+            .map_or(rust_decimal::Decimal::ZERO, Money::as_decimal);
+        let quantity = decision.filled_quantity;
+        let Some(price) = decision.fill_price else {
+            continue;
+        };
+        if quantity == 0 {
+            continue;
+        }
+        let signed = match decision.direction {
+            Some(Direction::Short) => -i64::from(quantity),
+            _ => i64::from(quantity),
+        };
+        let book = books
+            .entry(decision.underlying.as_str())
+            .or_insert((0, Money::zero(), 0));
+        book.1 = if book.2 == 0 {
+            price
+        } else {
+            calculate_price_entry_average(book.1, book.2, price, quantity)
+        };
+        book.2 = book.2.saturating_add(quantity);
+        book.0 += signed;
     }
     let trading_state = trading_state_tag(state.trading_state.get()).to_owned();
     let mut portfolio = common_core::sync::lock(&state.portfolio);
-    let mut positions: Vec<PositionView> = positions
+    // BTreeMap iteration is key order, so the served list is sorted by
+    // underlying without a second pass.
+    let positions: Vec<PositionView> = books
         .into_iter()
-        .map(|(key, (quantity, price_sum, count))| {
-            let avg = if count == 0 {
-                Money::from(0)
-            } else {
-                Money::new(price_sum / rust_decimal::Decimal::from(count))
-            };
-            let underlying = symbols.resolve(key).unwrap_or("SPY").to_owned();
+        .map(|(underlying, (quantity, avg, _))| {
             position_view(
                 &Position::new()
-                    .underlying(underlying)
+                    .underlying(underlying.to_owned())
                     .quantity(quantity)
                     .avg_price(avg)
                     .build(),
             )
         })
         .collect();
-    positions.sort_by(|left, right| left.underlying.cmp(&right.underlying));
     portfolio.positions = positions;
     portfolio.filled_orders = filled_orders;
     portfolio.total_fees = Money::new(fees);
@@ -1162,18 +1164,11 @@ fn decimal_to_chart(value: rust_decimal::Decimal) -> Option<f64> {
     protopyne_chart_model::to_display_float(value)
 }
 
-/// Chart bars over history: converted rows mapped to view bars, with the
-/// shared skip policy counting drops. Shared by the route and the gateway.
+/// Chart bars over history: the one headless conversion to the wire
+/// container, with its shared skip policy counting drops. Shared by the
+/// route and the gateway — no second field-wise mapping.
 pub(crate) fn chart_bars_of(history: &[Bar]) -> ChartBars {
-    let mut rows = Vec::with_capacity(history.len());
-    let mut dropped = 0u64;
-    for bar in history {
-        match row_of(bar) {
-            Some(row) => rows.push(chart_bar_of(&row)),
-            None => dropped += 1,
-        }
-    }
-    ChartBars { rows, dropped }
+    rows_of(history)
 }
 
 async fn chart_bars(State(state): State<Shared>) -> Json<ChartBars> {
@@ -1604,3 +1599,7 @@ mod labels_tests;
 #[cfg(test)]
 #[path = "../tests/tape_boot.rs"]
 mod tape_boot_tests;
+
+#[cfg(test)]
+#[path = "../tests/chart_contract.rs"]
+mod chart_contract_tests;

@@ -19,6 +19,7 @@ crate in the workspace. It must NOT import any `guidance-*`, `coral-*`,
 | Poison-safe mutex locking (lock, lock_read, lock_write — PoisonError::into_inner) | `sync` | `src/common-core/src/sync.rs` |
 | SQLite open helpers + schemas (open_wal, make_hnsw, init_embedding_cache, is_unique_violation, in_clause) | `sqlite` | `src/db/src/sqlite.rs` (feature `sqlite`) — sqlite helpers are owned by `fluent-db`, not common-core (see `src/common-core/tests/sqlite.rs`) |
 | JSON-RPC / MCP stdio loop | `jsonrpc` | `src/common-core/src/jsonrpc.rs` |
+| Sync→async runtime bridge — `block_on` (single-threaded fallback: concurrent callers serialize) and `block_on_shared` (process-wide multi-thread fallback: concurrent callers do not serialize, and the runtime outlives the call so spawned continuations are not dropped with it) | `runtime` | `src/common-core/src/runtime.rs` |
 | Token budget helpers | `tokens` | `src/common-core/src/tokens.rs` |
 | Directory walk / file scan | `walk` | `src/common-core/src/walk.rs` |
 | Shell / subprocess helpers | `shell` | `src/common-core/src/shell.rs` |

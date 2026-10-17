@@ -351,7 +351,7 @@ pub fn transform_account_event(body: &str) -> Result<AccountEvent, String> {
 /// [`crate::stream::terminal_reason`] (one closed set, one stated reason
 /// per code); this function only attaches the venue's message. The
 /// calibration freezes the table: terminal codes must show zero retries.
-fn envelope_error(body: &serde_json::Value) -> Option<TransportError> {
+pub(crate) fn envelope_error(body: &serde_json::Value) -> Option<TransportError> {
     let error = body.get("error")?;
     let code = error.get("code")?.as_str()?;
     let message = error

@@ -103,6 +103,55 @@ async fn tape_and_csv_runs_over_the_same_bars_decide_identically() {
         "store pins a digest"
     );
     assert_eq!(tape_run.manifest.data_bar_count, Some(bars.len() as u64));
+    // Each run names the arm it replayed: a file run and a store-backed run
+    // over the same bars must not share one data-limit line.
+    assert!(
+        csv_run
+            .report
+            .data_limits
+            .iter()
+            .any(|limit| limit.starts_with("file history")),
+        "the file run names its arm: {:?}",
+        csv_run.report.data_limits
+    );
+    assert!(
+        tape_run
+            .report
+            .data_limits
+            .iter()
+            .any(|limit| limit.starts_with("store-backed history")),
+        "the tape run names its arm: {:?}",
+        tape_run.report.data_limits
+    );
+    // The file arm carries no planner provenance, so it names the omission;
+    // the store arm's coverage is named by its tape line instead.
+    assert!(
+        csv_run
+            .report
+            .data_limits
+            .iter()
+            .any(|limit| limit.contains("no planner provenance")),
+        "the uncertified file run names the missing provenance: {:?}",
+        csv_run.report.data_limits
+    );
+    assert!(
+        !tape_run
+            .report
+            .data_limits
+            .iter()
+            .any(|limit| limit.contains("no planner provenance")),
+        "the store-backed run's coverage is certified: {:?}",
+        tape_run.report.data_limits
+    );
+    assert!(
+        tape_run
+            .report
+            .data_limits
+            .iter()
+            .any(|limit| limit.starts_with("tape data:")),
+        "the store-backed run names its tape coverage: {:?}",
+        tape_run.report.data_limits
+    );
 }
 
 #[tokio::test]

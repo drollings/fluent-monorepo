@@ -3,17 +3,18 @@
 //! Export reuses the server shapes field-wise, never a second format: CSV
 //! columns are `time,open,high,low,close,volume` (the header
 //! [`parse_bars_csv`] accepts), JSON rows serialize the chart-model
-//! [`ChartRows`] (field-identical to the server `ChartBars`), and overlay
-//! JSON uses the [`OverlayExport`] shape (field-identical to the server
-//! `OverlaySeries`). The round-trip tests parse these bytes with the server
-//! functions; this module holds no CSV parser of its own.
+//! [`ChartBars`] (the server's own wire container), and overlay
+//! JSON serializes the wire [`OverlaySeries`] directly — one type, no local
+//! twin. The round-trip tests parse these bytes with the server functions;
+//! this module holds no CSV parser of its own.
 //!
 //! [`parse_bars_csv`]: protopyne_server::csv::parse_bars_csv
 
 use std::fmt::Write as _;
 
 use fluent_egui::EguiError;
-use protopyne_chart_model::convert::{ChartRow, ChartRows};
+use protopyne_chart_model::convert::{ChartBars, ChartRow};
+use protopyne_view::OverlaySeries;
 
 /// CSV header spelling the server ingest accepts (lowercased before match,
 /// so this canonical lowercase form always resolves).
@@ -54,8 +55,8 @@ pub fn export_rows_csv(rows: &[ChartRow]) -> Result<String, EguiError> {
     Ok(out)
 }
 
-/// Export converted rows as server-shaped JSON: the [`ChartRows`] struct
-/// serializes field-identical to the server `ChartBars` (`rows`, `dropped`).
+/// Export converted rows as server-shaped JSON: the [`ChartBars`] struct is
+/// the server's own wire container (`rows`, `dropped`), serialized directly.
 /// Refuses non-finite legs (JSON has no `NaN` literal to read back).
 pub fn export_rows_json(rows: &[ChartRow], dropped: u64) -> Result<String, EguiError> {
     for (index, row) in rows.iter().enumerate() {
@@ -63,47 +64,16 @@ pub fn export_rows_json(rows: &[ChartRow], dropped: u64) -> Result<String, EguiE
             csv_float(leg, index)?;
         }
     }
-    serde_json::to_string(&ChartRows { rows: rows.to_vec(), dropped }).map_err(|e| {
+    serde_json::to_string(&ChartBars { rows: rows.to_vec(), dropped }).map_err(|e| {
         EguiError::Dependency { reason: format!("rows JSON refused: {e}") }
     })
 }
 
-/// Overlay payload field-identical to the server `OverlaySeries` (`kind`,
-/// `period`, `values`, `dropped`): one struct so the JSON shape cannot drift
-/// field-by-field from the contract the `/chart/overlays` clients read.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct OverlayExport {
-    /// Kernel id (for example `"sma"`).
-    pub kind: String,
-    /// Averaging length.
-    pub period: i64,
-    /// Per-bar values with warmup holes preserved.
-    pub values: Vec<Option<f64>>,
-    /// Bars without a value, counted never shifted.
-    pub dropped: u64,
-}
-
-impl OverlayExport {
-    /// Build the payload; refuses empty kernel ids with a reason.
-    pub fn new(
-        kind: impl Into<String>,
-        period: i64,
-        values: Vec<Option<f64>>,
-        dropped: u64,
-    ) -> Result<Self, EguiError> {
-        let kind = kind.into();
-        if kind.trim().is_empty() {
-            return Err(EguiError::InvalidParam {
-                what: "kind".to_owned(),
-                reason: "overlay kind must not be empty".to_owned(),
-            });
-        }
-        Ok(Self { kind, period, values, dropped })
-    }
-}
-
 /// Export one overlay series as server-shaped JSON. `None` holes serialize
-/// as `null` and read back as holes; non-finite `Some` legs refuse.
+/// as `null` and read back as holes; non-finite `Some` legs and empty kernel
+/// ids refuse. Serializes the wire [`OverlaySeries`] itself (field-identical
+/// to the contract the `/chart/overlays` clients read), so no local twin can
+/// drift from it.
 pub fn export_overlay_json(
     kind: &str,
     period: i64,
@@ -118,9 +88,19 @@ pub fn export_overlay_json(
             });
         }
     }
-    let payload = OverlayExport::new(kind, period, values.to_vec(), dropped)?;
-    serde_json::to_string(&payload)
-        .map_err(|e| EguiError::Dependency { reason: format!("overlay JSON refused: {e}") })
+    if kind.trim().is_empty() {
+        return Err(EguiError::InvalidParam {
+            what: "kind".to_owned(),
+            reason: "overlay kind must not be empty".to_owned(),
+        });
+    }
+    serde_json::to_string(&OverlaySeries {
+        kind: kind.to_owned(),
+        period,
+        values: values.to_vec(),
+        dropped,
+    })
+    .map_err(|e| EguiError::Dependency { reason: format!("overlay JSON refused: {e}") })
 }
 
 #[cfg(test)]

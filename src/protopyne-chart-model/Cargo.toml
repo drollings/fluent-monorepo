@@ -7,6 +7,7 @@ autobenches = false
 
 [dependencies]
 protopyne-types = { path = "../protopyne-types" }
+protopyne-view = { path = "../protopyne-view" }
 chrono = { workspace = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }

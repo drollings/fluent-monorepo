@@ -21,11 +21,13 @@ fn must_transpile() -> Vec<&'static str> {
     ]
 }
 
-/// Twelve scripts the spike must refuse, never miscompile: the six original
+/// Fourteen scripts the spike must refuse, never miscompile: the six original
 /// shapes plus unbalanced parentheses, an empty operator side, a version
 /// number that merely starts with 6, a ternary nested in an otherwise
 /// canonical script, a multi-leg overlap outside the single-series accept
-/// set, and a momentum kernel (overlaps only).
+/// set, a momentum kernel (overlaps only), and the two previously
+/// substituted series (a binary expression and a nested kernel fed to a
+/// rolling call).
 fn must_reject() -> Vec<&'static str> {
     vec![
         "//@version=6\nindicator(\"Switch\", overlay=true)\nimport posthum4n/x as x\ns = switch close\n    1 => ta.sma(close, 14)\n    => ta.ema(close, 14)\nplot(s)\n",
@@ -40,6 +42,8 @@ fn must_reject() -> Vec<&'static str> {
         "//@version=6\nindicator(\"NestedTernary\", overlay=true)\ns = ta.sma(close, 14 > 10 ? 12 : 16)\nplot(s)\n",
         "//@version=6\nindicator(\"Bands\", overlay=true)\nb = ta.bbands(close, 14)\nplot(b, \"bands\")\n",
         "//@version=6\nindicator(\"Momentum\", overlay=true)\nr = ta.rsi(close, 14)\nplot(r, \"rsi\")\n",
+        "//@version=6\nindicator(\"BinarySeries\", overlay=true)\ns = ta.sma(close + open, 14)\nplot(s, \"s\")\n",
+        "//@version=6\nindicator(\"NestedKernel\", overlay=true)\ns = ta.sma(ta.ema(close, 9), 14)\nplot(s, \"s\")\n",
     ]
 }
 
@@ -249,7 +253,7 @@ fn calibration_is_green_before_any_caching() {
         &must_reject().iter().map(|s| s as &str).collect::<Vec<_>>(),
     );
     assert_eq!(tally.must_transpile, 9);
-    assert_eq!(tally.must_reject, 12);
+    assert_eq!(tally.must_reject, 14);
     assert!((tally.accept_rate() - 1.0).abs() < f64::EPSILON);
     assert!((tally.reject_rate() - 1.0).abs() < f64::EPSILON);
     assert!(
@@ -338,6 +342,61 @@ fn overlap_scripts_lower_emit_and_evaluate() {
         assert!(
             matches!(compile_spike(source), SpikeOutcome::Refused { .. }),
             "non-accept-set kernel refused:\n{source}"
+        );
+    }
+}
+
+#[test]
+fn emitter_refuses_unsupported_series_instead_of_substituting() {
+    fn rolling_over(series: Hair) -> Lowered {
+        Lowered {
+            bindings: vec![Binding {
+                name: "s".to_owned(),
+                hair: Hair::Rolling {
+                    kernel: "sma".to_owned(),
+                    length: Length::Literal(14),
+                    series: Box::new(series),
+                },
+            }],
+            plots: vec!["s".to_owned()],
+        }
+    }
+    let close = || Hair::Ohlcv("close".to_owned());
+    let unsupported = [
+        Hair::Binary {
+            op: '+',
+            left: Box::new(close()),
+            right: Box::new(Hair::Ohlcv("open".to_owned())),
+        },
+        Hair::Where {
+            cond: Box::new(Hair::Const(1.0)),
+            then: Box::new(close()),
+            otherwise: Box::new(close()),
+        },
+        Hair::Shift {
+            offset: 1,
+            series: Box::new(close()),
+        },
+        Hair::Rolling {
+            kernel: "ema".to_owned(),
+            length: Length::Literal(9),
+            series: Box::new(close()),
+        },
+        Hair::Call {
+            kernel: "sma".to_owned(),
+            args: vec![close()],
+        },
+    ];
+    for series in unsupported {
+        let reason = emit_rust(&rolling_over(series)).expect_err("unsupported series refuses");
+        assert!(!reason.is_empty(), "refusal explains itself");
+    }
+    for leg in ["open", "high", "low", "close", "volume"] {
+        let rust = emit_rust(&rolling_over(Hair::Ohlcv(leg.to_owned())))
+            .expect("a plain leg emits");
+        assert!(
+            rust.contains(&format!("values.{leg}")),
+            "the leg feeds the kernel, got:\n{rust}"
         );
     }
 }

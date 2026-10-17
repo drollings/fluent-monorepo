@@ -18,11 +18,21 @@
 //! (`pending` when no status event exists) — status-kind rows land the same
 //! status no matter which method wrote them.
 //!
+//! The log stays the sole authority. In memory it also carries a derived
+//! fold — every committed row plus one offset per client id — rebuilt by a
+//! single linear pass on open and advanced as appends land, so intent
+//! idempotence and status reads answer without re-reading the file. It never
+//! outranks the log (a crash only costs a rebuild), and it carries no
+//! producer bound: its size tracks the durable rows the process already owns,
+//! and refusing to journal a trade to cap an index would be a risk, not a
+//! protection.
+//!
 //! All methods are synchronous and serialize under one mutex that is never
 //! held across an await.
 
 use chrono::{DateTime, Utc};
 use fluent_wvr::capability::check_capability;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -31,6 +41,10 @@ use protopyne_store::{AppendLog, AppendRecord};
 use crate::error::VenueError;
 use crate::order::{OrderIntent, OrderRecord, OrderStatus};
 use crate::venue::LegExecution;
+
+/// Event kind for a recorded intent. Its detail is the [`OrderIntent`] as
+/// JSON; it is the row replays fold into the intent set.
+pub const INTENT_KIND: &str = "intent";
 
 /// Event kind for one executed spread leg. The detail is the leg's
 /// [`LegExecution`] as JSON. Additive: rows written before legs existed
@@ -184,23 +198,93 @@ pub struct Journal {
     inner: Mutex<JournalInner>,
 }
 
+/// The live fold over the durable log: every committed row in append order,
+/// plus one offset per client id. Built by a single linear pass at
+/// [`Journal::open`] and advanced as appends land, so intent idempotence and
+/// status reads answer without re-reading and re-parsing the file. The log
+/// stays the sole authority; this is a derived accelerator a crash only ever
+/// costs a rebuild.
 struct JournalInner {
     log: AppendLog<JournalRecord>,
     next_seq: i64,
+    /// Every committed row, in append order — the replay medium.
+    records: Vec<JournalRecord>,
+    /// Client id → offset in `records` of its `intent` row.
+    intent_at: HashMap<String, usize>,
+    /// Client id → offset in `records` of its last status-kind row.
+    status_at: HashMap<String, usize>,
+}
+
+impl JournalInner {
+    /// Fold one committed row onto the resident state. The first `intent`
+    /// row opens a client (later duplicates are ignored, mirroring the
+    /// replay fold); a status-kind row advances a client that already has an
+    /// intent. Every other shape only extends the record stream.
+    fn remember(&mut self, record: JournalRecord) {
+        let at = self.records.len();
+        if record.kind == INTENT_KIND {
+            self.intent_at.entry(record.client_id.clone()).or_insert(at);
+        } else if is_status_kind(&record.kind) && self.intent_at.contains_key(&record.client_id) {
+            self.status_at.insert(record.client_id.clone(), at);
+        }
+        self.records.push(record);
+    }
+
+    /// Append one row, synced, and fold it in. One lock covers the whole
+    /// step, so an idempotence check and its append can never interleave.
+    fn append(
+        &mut self,
+        client_id: &str,
+        kind: &str,
+        detail: &str,
+        at_ms: i64,
+    ) -> Result<(), VenueError> {
+        let record = JournalRecord {
+            seq: self.next_seq,
+            client_id: client_id.to_owned(),
+            kind: kind.to_owned(),
+            detail: detail.to_owned(),
+            at_ms,
+        };
+        self.log
+            .append_batch(std::slice::from_ref(&record))
+            .map_err(|e| VenueError::Journal(e.to_string()))?;
+        self.next_seq = record.seq + 1;
+        self.remember(record);
+        Ok(())
+    }
+
+    /// A client's stored status: the kind of its last status-kind row, or
+    /// `pending` when none has landed. Caller checks intent presence.
+    fn status_of(&self, client_id: &str) -> String {
+        self.status_at
+            .get(client_id)
+            .map_or_else(|| "pending".to_owned(), |&at| self.records[at].kind.clone())
+    }
 }
 
 impl Journal {
     /// Open (or create) the journal at `path`, repairing a torn tail once
     /// when the previous writer died mid-record and refusing mid-file
-    /// corruption loudly.
+    /// corruption loudly, then folding the committed rows into the index.
     pub fn open(path: &Path) -> Result<Self, VenueError> {
         let log = AppendLog::<JournalRecord>::open(path)
             .map_err(|e| VenueError::Journal(e.to_string()))?;
-        let records = log.read_all().map_err(|e| VenueError::Journal(e.to_string()))?;
-        let next_seq = records.iter().map(|record| record.seq).max().unwrap_or(0) + 1;
+        let rows = log.read_all().map_err(|e| VenueError::Journal(e.to_string()))?;
+        let next_seq = rows.iter().map(|record| record.seq).max().unwrap_or(0) + 1;
+        let mut inner = JournalInner {
+            log,
+            next_seq,
+            records: Vec::with_capacity(rows.len()),
+            intent_at: HashMap::with_capacity(rows.len()),
+            status_at: HashMap::new(),
+        };
+        for row in rows {
+            inner.remember(row);
+        }
         Ok(Self {
             path: path.to_owned(),
-            inner: Mutex::new(JournalInner { log, next_seq }),
+            inner: Mutex::new(inner),
         })
     }
 
@@ -222,21 +306,7 @@ impl Journal {
         detail: &str,
         now: DateTime<Utc>,
     ) -> Result<(), VenueError> {
-        let mut inner = common_core::sync::lock(&self.inner);
-        let seq = inner.next_seq;
-        let record = JournalRecord {
-            seq,
-            client_id: client_id.to_owned(),
-            kind: kind.to_owned(),
-            detail: detail.to_owned(),
-            at_ms: now_ms(now),
-        };
-        inner
-            .log
-            .append_batch(std::slice::from_ref(&record))
-            .map_err(|e| VenueError::Journal(e.to_string()))?;
-        inner.next_seq = seq + 1;
-        Ok(())
+        common_core::sync::lock(&self.inner).append(client_id, kind, detail, now_ms(now))
     }
 
     /// Durably record an intent before any venue call. Recording the same
@@ -244,7 +314,8 @@ impl Journal {
     /// idempotent, which is what makes retries safe.
     ///
     /// One row lands for the first recording; the re-record writes nothing,
-    /// so the intent and its event can never disagree.
+    /// so the intent and its event can never disagree. The presence check
+    /// and the append share one lock over the index, never a file re-read.
     pub fn record_intent(
         &self,
         permit: &VenueStorage,
@@ -254,19 +325,11 @@ impl Journal {
         self.gate(permit)?;
         let payload =
             serde_json::to_string(intent).map_err(|e| VenueError::Journal(e.to_string()))?;
-        {
-            let inner = common_core::sync::lock(&self.inner);
-            let seen = inner
-                .log
-                .read_all()
-                .map_err(|e| VenueError::Journal(e.to_string()))?
-                .iter()
-                .any(|record| record.kind == "intent" && record.client_id == intent.client_id);
-            if seen {
-                return Ok(false);
-            }
+        let mut inner = common_core::sync::lock(&self.inner);
+        if inner.intent_at.contains_key(&intent.client_id) {
+            return Ok(false);
         }
-        self.append(&intent.client_id, "intent", &payload, now)?;
+        inner.append(&intent.client_id, INTENT_KIND, &payload, now_ms(now))?;
         Ok(true)
     }
 
@@ -324,27 +387,16 @@ impl Journal {
     ) -> Result<Vec<(OrderIntent, String)>, VenueError> {
         self.gate(permit)?;
         let inner = common_core::sync::lock(&self.inner);
-        let records = inner
-            .log
-            .read_all()
-            .map_err(|e| VenueError::Journal(e.to_string()))?;
-        let mut folded: Vec<(OrderIntent, String)> = Vec::new();
-        for record in &records {
-            if record.kind == "intent" {
-                if folded.iter().any(|(intent, _)| intent.client_id == record.client_id) {
-                    continue;
-                }
-                let intent: OrderIntent = serde_json::from_str(&record.detail)
-                    .map_err(|e| VenueError::Journal(e.to_string()))?;
-                folded.push((intent, "pending".to_owned()));
-            } else if is_status_kind(&record.kind) {
-                if let Some(entry) = folded
-                    .iter_mut()
-                    .find(|(intent, _)| intent.client_id == record.client_id)
-                {
-                    entry.1.clone_from(&record.kind);
-                }
+        let mut folded: Vec<(OrderIntent, String)> = Vec::with_capacity(inner.intent_at.len());
+        for (at, record) in inner.records.iter().enumerate() {
+            // The index holds each client's first intent offset, so the fold
+            // reads every intent once without a rescan per status row.
+            if record.kind != INTENT_KIND || inner.intent_at.get(&record.client_id) != Some(&at) {
+                continue;
             }
+            let intent: OrderIntent = serde_json::from_str(&record.detail)
+                .map_err(|e| VenueError::Journal(e.to_string()))?;
+            folded.push((intent, inner.status_of(&record.client_id)));
         }
         Ok(folded)
     }
@@ -368,39 +420,37 @@ impl Journal {
             .collect())
     }
 
-    /// Stored status of one intent, if journaled.
+    /// Stored status of one intent, if journaled. Reads the index alone: no
+    /// file access and no fold over the log.
     pub fn intent_status(
         &self,
         permit: &VenueStorage,
         client_id: &str,
     ) -> Result<Option<String>, VenueError> {
-        Ok(self
-            .fold_statuses(permit)?
-            .into_iter()
-            .find(|(intent, _)| intent.client_id == client_id)
-            .map(|(_, status)| status))
+        self.gate(permit)?;
+        let inner = common_core::sync::lock(&self.inner);
+        Ok(inner
+            .intent_at
+            .contains_key(client_id)
+            .then(|| inner.status_of(client_id)))
     }
 
     /// Rebuild state by replay: every intent in append order plus every
-    /// event, in sequence order.
+    /// event, in sequence order. Served from the resident fold, so replaying
+    /// never re-reads the file.
     pub fn replay(&self, permit: &VenueStorage) -> Result<ReplayedState, VenueError> {
         self.gate(permit)?;
         let inner = common_core::sync::lock(&self.inner);
-        let records = inner
-            .log
-            .read_all()
-            .map_err(|e| VenueError::Journal(e.to_string()))?;
-        let mut intents = Vec::new();
-        let mut seen = std::collections::HashSet::new();
-        for record in &records {
-            if record.kind == "intent" && seen.insert(record.client_id.clone()) {
+        let mut intents = Vec::with_capacity(inner.intent_at.len());
+        for (at, record) in inner.records.iter().enumerate() {
+            if record.kind == INTENT_KIND && inner.intent_at.get(&record.client_id) == Some(&at) {
                 intents.push(
                     serde_json::from_str(&record.detail)
                         .map_err(|e| VenueError::Journal(e.to_string()))?,
                 );
             }
         }
-        let events = records.iter().map(JournalEvent::from).collect();
+        let events = inner.records.iter().map(JournalEvent::from).collect();
         Ok(ReplayedState { intents, events })
     }
 
@@ -410,27 +460,35 @@ impl Journal {
         permit: &VenueStorage,
         client_id: &str,
     ) -> Result<Option<OrderRecord>, VenueError> {
-        let state = self.replay(permit)?;
-        let intent = state.intents.into_iter().find(|i| i.client_id == client_id);
-        Ok(intent.map(|intent| {
-            let mut record = OrderRecord::pending(intent, Utc::now());
-            for event in &state.events {
-                if event.client_id == client_id {
-                    record.status = match event.kind.as_str() {
-                        "submitted" => OrderStatus::Submitted,
-                        "acknowledged" => OrderStatus::Acknowledged,
-                        "partial" => OrderStatus::Partial,
-                        "filled" => OrderStatus::Filled,
-                        "cancelled" => OrderStatus::Cancelled,
-                        "rejected" => OrderStatus::Rejected,
-                        "expired" => OrderStatus::Expired,
-                        "open_failed" => OrderStatus::OpenFailed,
-                        _ => record.status,
-                    };
-                }
-            }
-            record
-        }))
+        self.gate(permit)?;
+        let inner = common_core::sync::lock(&self.inner);
+        let Some(&at) = inner.intent_at.get(client_id) else {
+            return Ok(None);
+        };
+        let intent: OrderIntent = serde_json::from_str(&inner.records[at].detail)
+            .map_err(|e| VenueError::Journal(e.to_string()))?;
+        let mut record = OrderRecord::pending(intent, Utc::now());
+        if inner.status_at.contains_key(client_id) {
+            record.status = status_from_name(&inner.status_of(client_id));
+        }
+        Ok(Some(record))
+    }
+}
+
+/// Inverse of [`status_name`] for rows read back from the log: a status-kind
+/// row's kind back to its enum. Unknown kinds read `pending`, matching the
+/// fold's default.
+fn status_from_name(name: &str) -> OrderStatus {
+    match name {
+        "submitted" => OrderStatus::Submitted,
+        "acknowledged" => OrderStatus::Acknowledged,
+        "partial" => OrderStatus::Partial,
+        "filled" => OrderStatus::Filled,
+        "cancelled" => OrderStatus::Cancelled,
+        "rejected" => OrderStatus::Rejected,
+        "expired" => OrderStatus::Expired,
+        "open_failed" => OrderStatus::OpenFailed,
+        _ => OrderStatus::Pending,
     }
 }
 
@@ -445,6 +503,141 @@ fn status_name(status: OrderStatus) -> &'static str {
         OrderStatus::Rejected => "rejected",
         OrderStatus::Expired => "expired",
         OrderStatus::OpenFailed => "open_failed",
+    }
+}
+
+/// In-memory, append-only, replayable recorder for one run's submissions.
+///
+/// The submission protocol writes through
+/// [`SubmissionRecorder`](crate::submit::SubmissionRecorder), which the
+/// durable [`Journal`] implements over a file. A backtest needs the same
+/// protocol without a durable log: this recorder keeps the identical event
+/// vocabulary in memory, so a run's intents and transitions replay with the
+/// same fold discipline and **no** I/O. It owns no durable authority — the
+/// [`Journal`] keeps sole ownership of persistence; this is the ephemeral
+/// recorder a run scopes to itself, never a second durable log.
+#[derive(Debug, Default)]
+pub struct RunIntentLog {
+    inner: Mutex<RunIntentLogInner>,
+}
+
+#[derive(Debug, Default)]
+struct RunIntentLogInner {
+    seq: i64,
+    events: Vec<JournalEvent>,
+}
+
+impl RunIntentLog {
+    /// Open an empty run log.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    fn append(&self, client_id: &str, kind: &str, detail: &str, now: DateTime<Utc>) {
+        let mut inner = common_core::sync::lock(&self.inner);
+        let seq = inner.seq + 1;
+        inner.seq = seq;
+        inner.events.push(JournalEvent {
+            seq,
+            client_id: client_id.to_owned(),
+            kind: kind.to_owned(),
+            detail: detail.to_owned(),
+            at_ms: now_ms(now),
+        });
+    }
+
+    fn has_intent(&self, client_id: &str) -> bool {
+        let inner = common_core::sync::lock(&self.inner);
+        inner
+            .events
+            .iter()
+            .any(|event| event.kind == INTENT_KIND && event.client_id == client_id)
+    }
+
+    /// Every recorded event, in append order.
+    #[must_use]
+    pub fn events(&self) -> Vec<JournalEvent> {
+        common_core::sync::lock(&self.inner).events.clone()
+    }
+
+    /// Rebuild state by replay: every intent in append order plus every
+    /// event, in sequence order — the in-memory twin of [`Journal::replay`].
+    pub fn replay(&self) -> Result<ReplayedState, VenueError> {
+        let events = self.events();
+        let mut intents = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for event in &events {
+            if event.kind == INTENT_KIND && seen.insert(event.client_id.clone()) {
+                intents.push(
+                    serde_json::from_str(&event.detail)
+                        .map_err(|e| VenueError::Journal(e.to_string()))?,
+                );
+            }
+        }
+        Ok(ReplayedState { intents, events })
+    }
+
+    /// Stored status of one intent, if recorded. `None` when absent; the
+    /// intent row implies `pending` until a status-kind event lands — the
+    /// in-memory twin of [`Journal::intent_status`].
+    #[must_use]
+    pub fn intent_status(&self, client_id: &str) -> Option<String> {
+        let events = self.events();
+        let mut status = events
+            .iter()
+            .any(|event| event.kind == INTENT_KIND && event.client_id == client_id)
+            .then(|| "pending".to_owned())?;
+        for event in &events {
+            if event.client_id == client_id && is_status_kind(&event.kind) {
+                status.clone_from(&event.kind);
+            }
+        }
+        Some(status)
+    }
+}
+
+impl crate::submit::SubmissionRecorder for RunIntentLog {
+    fn record_intent(&self, intent: &OrderIntent, now: DateTime<Utc>) -> Result<bool, VenueError> {
+        if self.has_intent(&intent.client_id) {
+            return Ok(false);
+        }
+        let payload =
+            serde_json::to_string(intent).map_err(|e| VenueError::Journal(e.to_string()))?;
+        self.append(&intent.client_id, INTENT_KIND, &payload, now);
+        Ok(true)
+    }
+
+    fn mark_status(
+        &self,
+        client_id: &str,
+        status: OrderStatus,
+        now: DateTime<Utc>,
+    ) -> Result<(), VenueError> {
+        self.append(client_id, status_name(status), "{}", now);
+        Ok(())
+    }
+
+    fn record_leg_fill(
+        &self,
+        client_id: &str,
+        leg: &LegExecution,
+        now: DateTime<Utc>,
+    ) -> Result<(), VenueError> {
+        let detail = serde_json::to_string(leg).map_err(|e| VenueError::Journal(e.to_string()))?;
+        self.append(client_id, LEG_FILL_KIND, &detail, now);
+        Ok(())
+    }
+
+    fn record_transition(
+        &self,
+        client_id: &str,
+        kind: &str,
+        detail: &str,
+        now: DateTime<Utc>,
+    ) -> Result<(), VenueError> {
+        self.append(client_id, kind, detail, now);
+        Ok(())
     }
 }
 

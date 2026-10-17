@@ -124,3 +124,72 @@ fn money_display_fromstr_try_into_money_round_trips_exactly() {
         assert_eq!(back, money, "Display → FromStr → crossing is exact for {text}");
     }
 }
+
+#[test]
+fn operator_text_agrees_with_the_shared_scale_guard() {
+    use protopyne_types::{DecimalScaleError, MAX_DECIMAL_SCALE, parse_scale_guarded};
+    use std::str::FromStr as _;
+
+    for (text, scale) in [
+        ("0", 0),
+        ("100.05", 2),
+        ("100.0500", 4),
+        ("+100.05", 2),
+        ("-5", 0),
+        (".5", 1),
+        ("5.", 0),
+        ("  100.05  ", 2),
+    ] {
+        assert_eq!(
+            parse_scale_guarded(text.trim()),
+            Ok(scale),
+            "shared scale decision for {text:?}"
+        );
+        let crossed = DisplayOnly::new(text.to_owned()).try_into_money().expect("shape accepted");
+        assert_eq!(
+            crossed,
+            Money::from_str(text).expect("money accepts the same shape"),
+            "both callers accept {text:?}"
+        );
+    }
+
+    let limit_text = format!("0.{}", "1".repeat(MAX_DECIMAL_SCALE as usize));
+    let over_text = format!("0.{}1", "0".repeat(MAX_DECIMAL_SCALE as usize));
+    assert_eq!(
+        parse_scale_guarded(&limit_text),
+        Ok(MAX_DECIMAL_SCALE),
+        "scale {MAX_DECIMAL_SCALE} is the shared acceptance edge"
+    );
+    assert_eq!(
+        parse_scale_guarded(&over_text),
+        Err(DecimalScaleError::ScaleTooLarge(MAX_DECIMAL_SCALE + 1)),
+        "scale above {MAX_DECIMAL_SCALE} is the shared refusal edge"
+    );
+    assert_eq!(
+        DisplayOnly::new(over_text).try_into_money(),
+        Err(DisplayOnlyError::InvalidDecimal("decimal scale exceeds 28 places"))
+    );
+
+    for (text, refusal, reason) in [
+        ("", DecimalScaleError::Empty, "empty decimal text"),
+        ("   ", DecimalScaleError::Empty, "empty decimal text"),
+        ("+", DecimalScaleError::SignWithoutDigits, "sign without digits"),
+        ("-", DecimalScaleError::SignWithoutDigits, "sign without digits"),
+        (".", DecimalScaleError::NoDigits, "no digits"),
+        ("abc", DecimalScaleError::InvalidCharacter, "not an ASCII decimal number"),
+        ("1,000", DecimalScaleError::InvalidCharacter, "not an ASCII decimal number"),
+        ("١٢٣", DecimalScaleError::InvalidCharacter, "not an ASCII decimal number"),
+        ("1e3", DecimalScaleError::InvalidCharacter, "not an ASCII decimal number"),
+    ] {
+        assert_eq!(
+            parse_scale_guarded(text.trim()),
+            Err(refusal),
+            "shared shape decision for {text:?}"
+        );
+        assert_eq!(
+            DisplayOnly::new(text.to_owned()).try_into_money(),
+            Err(DisplayOnlyError::InvalidDecimal(reason)),
+            "the fence keeps its reason for {text:?}"
+        );
+    }
+}

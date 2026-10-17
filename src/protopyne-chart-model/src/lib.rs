@@ -19,8 +19,8 @@ pub mod transform;
 
 pub use annotations::{Annotation, AnnotationKey, AnnotationStyle};
 pub use display_only::{DisplayOnly, DisplayOnlyError};
-pub use chart_type::{ChartType, ChartTypeCategory};
-pub use convert::{rows_of, row_of, to_display_float, ChartRow, ChartRows};
+pub use chart_type::ChartType;
+pub use convert::{rows_of, row_of, to_display_float, ChartBars, ChartRow};
 pub use error::ChartModelError;
 pub use range::DateRange;
 pub use session::{

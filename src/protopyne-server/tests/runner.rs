@@ -8,12 +8,13 @@ use rust_decimal::Decimal;
 use protopyne_strategy::{
     elements::{ExplicitStructure, FixedContracts},
     BreakerLimits, BreakerState, Direction, FixedSignal, Grant, GrantBudgets, GrantMarket,
-    GrantPermission, GrantScope, GrantUsage, PortfolioThresholds, ProposalSide, RiskEngine,
-    RiskLimits, SignalThresholds, Strategy, StructureKind, TradeThresholds,
+    GrantPermission, GrantScope, GrantUsage, PortfolioThresholds, ProposalSide, ProposalState,
+    RiskEngine, RiskLimits, SignalThresholds, Strategy, StructureKind, TradeThresholds,
 };
 use protopyne_types::{Bar, Money};
 use protopyne_venue::{
-    Fault, PaperConfig, PaperVenue, StreamConfig, SupervisedStream, TransportError,
+    Fault, PaperConfig, PaperVenue, RunIntentLog, StreamConfig, SupervisedStream, TransportError,
+    SUBMIT_RETRIES,
 };
 
 fn money(value: i64) -> Money {
@@ -492,6 +493,9 @@ fn filled_decision(
         proposal_id: format!("synthetic-{bar_index}"),
         direction: Some(direction),
         structure: Some(StructureKind::Vertical),
+        strategy: "ribbon".to_owned(),
+        underlying: "SPY".to_owned(),
+        conviction: 0.8,
         risk_pass: true,
         risk_reasons: Vec::new(),
         grant_allow: true,
@@ -503,6 +507,7 @@ fn filled_decision(
         filled_quantity: quantity,
         fill_price: Some(decimal_money(price)),
         fee: Some(decimal_money(fee)),
+        transitions: Vec::new(),
         skipped: None,
     }
 }
@@ -514,6 +519,9 @@ fn flat_decision(bar_index: usize, ts: String) -> BarDecision {
         proposal_id: format!("synthetic-{bar_index}"),
         direction: None,
         structure: None,
+        strategy: String::new(),
+        underlying: String::new(),
+        conviction: 0.0,
         risk_pass: false,
         risk_reasons: Vec::new(),
         grant_allow: false,
@@ -525,6 +533,7 @@ fn flat_decision(bar_index: usize, ts: String) -> BarDecision {
         filled_quantity: 0,
         fill_price: None,
         fee: None,
+        transitions: Vec::new(),
         skipped: Some("warmup".to_owned()),
     }
 }
@@ -764,7 +773,12 @@ fn transport_skipped(decision: &BarDecision) -> &str {
 async fn breaker_trips_past_the_configured_max_and_disarms_entries() {
     let bars = history();
     let venue = PaperVenue::new(PaperConfig::new().build());
-    for _ in 0..5 {
+    // The shared submission protocol retries a retryable venue failure
+    // `SUBMIT_RETRIES` times, so one failing bar burns that whole budget.
+    // max_consecutive_errors is 3: the first three failing bars still arm
+    // (each reaches the venue), the fourth trips, the rest disarm untouched.
+    let attempts = SUBMIT_RETRIES as usize;
+    for _ in 0..4 * attempts {
         venue.inject(Fault::DropConnection);
     }
     let decisions = run_paper_decisions(
@@ -777,8 +791,6 @@ async fn breaker_trips_past_the_configured_max_and_disarms_entries() {
         11,
     )
     .await;
-    // max_consecutive_errors is 3: the first three transport failures still
-    // arm (the venue is called), the fourth trips, the rest disarm.
     for (index, decision) in decisions.iter().enumerate().take(4) {
         assert!(
             !decision.submitted,
@@ -816,8 +828,8 @@ async fn breaker_trips_past_the_configured_max_and_disarms_entries() {
     }
     assert_eq!(
         venue.pending_faults(),
-        1,
-        "disarmed bars must not touch the venue at all"
+        0,
+        "the four failing bars burned the whole retry budget, and disarmed bars touch nothing"
     );
 }
 
@@ -825,7 +837,9 @@ async fn breaker_trips_past_the_configured_max_and_disarms_entries() {
 async fn errors_capped_at_the_max_still_arm_and_reset_on_success() {
     let bars = history();
     let venue = PaperVenue::new(PaperConfig::new().build());
-    for _ in 0..3 {
+    // Each failing bar burns the protocol's whole retry budget.
+    let attempts = SUBMIT_RETRIES as usize;
+    for _ in 0..3 * attempts {
         venue.inject(Fault::DropConnection);
     }
     let decisions = run_paper_decisions(
@@ -888,6 +902,231 @@ async fn merit_denials_never_feed_the_breaker() {
     );
 }
 
+/// The runner's decision path records each submitted proposal's intent in
+/// the run-scoped in-memory log — the same protocol the durable journal runs,
+/// with no file and no fsync.
+#[tokio::test]
+async fn runner_records_in_memory_intents_for_submitted_proposals() {
+    let bars = history();
+    let bar = &bars[0];
+    let venue = PaperVenue::new(PaperConfig::new().build());
+    let strategy = strategy();
+    let mut usage = GrantUsage::new().build();
+    let mut breakers = BreakerState::new().build();
+    let closes = vec![bar.c.to_f64().expect("representable close")];
+    let log = RunIntentLog::new();
+    let decision = decide_and_submit(
+        &strategy,
+        &risk(),
+        &grant_with(0.5),
+        &mut usage,
+        &venue,
+        &log,
+        &venue_config(),
+        &mut breakers,
+        BarHealth::rehearsed(),
+        0,
+        bar,
+        &closes,
+        &runner_config(),
+        11,
+    )
+    .await;
+    assert!(decision.submitted, "liquid first bar must submit");
+    let replayed = log.replay().expect("in-memory replay");
+    assert_eq!(replayed.intents.len(), 1, "one intent recorded");
+    assert!(
+        replayed.events.iter().any(|event| event.kind == "intent"),
+        "the protocol journals the intent before any venue call"
+    );
+    assert!(
+        replayed.events.iter().any(|event| event.kind == "filled"),
+        "the verdict lands in the run log"
+    );
+    assert_eq!(
+        log.intent_status(&replayed.intents[0].client_id).as_deref(),
+        Some("filled")
+    );
+}
+
+/// Every decided bar carries the lifecycle chain the decision actually
+/// walked: contiguous, starting from `Proposed`, ending at the venue
+/// outcome. A grant-covered entry auto-approves; a submitted order reaches
+/// `Filled`.
+#[tokio::test]
+async fn decisions_carry_the_proposal_lifecycle() {
+    let bars = history();
+    let run = run_backtest(
+        &strategy(),
+        &risk(),
+        &grant_with(0.5),
+        &venue_config(),
+        &runner_config(),
+        &bars,
+        11,
+    )
+    .await
+    .expect("run");
+    let mut submitted = 0;
+    for decision in &run.decisions {
+        if decision.direction.is_none() {
+            assert!(
+                decision.transitions.is_empty(),
+                "a bar with no proposal records no lifecycle"
+            );
+            continue;
+        }
+        let first = decision.transitions.first().expect("a proposal has a chain");
+        assert_eq!(first.from, ProposalState::Proposed);
+        for pair in decision.transitions.windows(2) {
+            assert_eq!(pair[0].to, pair[1].from, "the chain must be contiguous");
+        }
+        let last = decision.transitions.last().expect("chain");
+        assert!(decision.submitted, "the permissive grant must submit");
+        assert_eq!(last.to, ProposalState::Filled, "a filled order ends Filled");
+        assert!(
+            decision
+                .transitions
+                .iter()
+                .any(|entry| entry.to == ProposalState::AutoApproved),
+            "a grant-covered entry auto-approves"
+        );
+        assert_eq!(decision.strategy, "ribbon", "carried attribution");
+        assert_eq!(decision.underlying, "SPY", "carried attribution");
+        submitted += 1;
+    }
+    assert!(submitted > 0, "the fixture must submit something");
+}
+
+/// A grant that does not cover the proposal routes it to the human approval
+/// queue, and the recorded chain says so — never a fabricated rejection.
+#[tokio::test]
+async fn uncovered_grant_requires_human_in_the_chain() {
+    let bars = history();
+    let run = run_backtest(
+        &strategy(),
+        &risk(),
+        &grant_with(0.95),
+        &venue_config(),
+        &runner_config(),
+        &bars,
+        11,
+    )
+    .await
+    .expect("run");
+    let mut pending = 0;
+    for decision in &run.decisions {
+        if decision.direction.is_none() {
+            continue;
+        }
+        assert!(decision.risk_pass, "the risk engine approves");
+        assert!(!decision.grant_allow, "the strict grant denies");
+        assert!(!decision.submitted, "no uncovered entry is submitted");
+        let last = decision.transitions.last().expect("chain");
+        assert_eq!(last.to, ProposalState::PendingHuman);
+        assert!(decision
+            .transitions
+            .iter()
+            .any(|entry| entry.from == ProposalState::RiskChecked
+                && entry.to == ProposalState::PendingHuman));
+        pending += 1;
+    }
+    assert!(pending > 0, "the strict grant must leave pending-human rows");
+}
+
+/// A risk refusal is a terminal `Rejected`, recorded as `FailRisk`.
+#[tokio::test]
+async fn risk_refusal_terminalizes_the_chain() {
+    let bars = history();
+    let bar = &bars[0];
+    let venue = PaperVenue::new(PaperConfig::new().build());
+    let mut usage = GrantUsage::new().build();
+    let mut breakers = BreakerState::new().build();
+    let health = BarHealth {
+        quote_age_secs: 3_600,
+        clock_skew_secs: 0,
+        reconciliation_healthy: true,
+    };
+    let closes = vec![bar.c.to_f64().expect("representable close")];
+    let decision = decide_and_submit(
+        &strategy(),
+        &risk(),
+        &grant_with(0.5),
+        &mut usage,
+        &venue,
+        &RunIntentLog::new(),
+        &venue_config(),
+        &mut breakers,
+        health,
+        0,
+        bar,
+        &closes,
+        &runner_config(),
+        11,
+    )
+    .await;
+    assert!(!decision.risk_pass);
+    let last = decision.transitions.last().expect("chain");
+    assert_eq!(last.to, ProposalState::Rejected);
+    assert_eq!(decision.transitions.len(), 1, "a risk refusal is one move");
+    assert_eq!(decision.transitions[0].from, ProposalState::Proposed);
+    assert_eq!(decision.transitions[0].to, ProposalState::Rejected);
+}
+
+/// A filled submission walks `AutoApproved -> Submitted -> Working -> Filled`,
+/// and the merit outcome never trips the confidence breaker.
+#[tokio::test]
+async fn submitted_chain_walks_to_filled_without_tripping_the_breaker() {
+    let bars = history();
+    let bar = &bars[0];
+    let venue = PaperVenue::new(PaperConfig::new().build());
+    let mut usage = GrantUsage::new().build();
+    let mut breakers = BreakerState::new().build();
+    let closes = vec![bar.c.to_f64().expect("representable close")];
+    let decision = decide_and_submit(
+        &strategy(),
+        &risk(),
+        &grant_with(0.5),
+        &mut usage,
+        &venue,
+        &RunIntentLog::new(),
+        &venue_config(),
+        &mut breakers,
+        BarHealth::rehearsed(),
+        0,
+        bar,
+        &closes,
+        &runner_config(),
+        11,
+    )
+    .await;
+    assert!(decision.submitted, "the liquid first bar fills");
+    let states: Vec<ProposalState> = decision
+        .transitions
+        .iter()
+        .map(|entry| entry.to)
+        .collect();
+    assert_eq!(
+        states,
+        vec![
+            ProposalState::RiskChecked,
+            ProposalState::AutoApproved,
+            ProposalState::Submitted,
+            ProposalState::Working,
+            ProposalState::Filled,
+        ],
+        "the filled chain walks one legal move per state"
+    );
+    assert!(
+        decision
+            .transitions
+            .iter()
+            .all(|entry| entry.proposal_id == decision.proposal_id),
+        "every transition names this bar's proposal"
+    );
+    assert!(!breakers.tripped, "a merit outcome never trips the breaker");
+}
+
 #[tokio::test]
 async fn stale_quote_refuses_on_risk_and_grant_paths() {
     let bars = history();
@@ -908,6 +1147,7 @@ async fn stale_quote_refuses_on_risk_and_grant_paths() {
         &grant_with(0.5),
         &mut usage,
         &venue,
+        &RunIntentLog::new(),
         &venue_config(),
         &mut breakers,
         health,
@@ -961,6 +1201,7 @@ async fn tripped_breaker_disarms_entries_without_touching_merit_verdicts() {
         &grant_with(0.5),
         &mut usage,
         &venue,
+        &RunIntentLog::new(),
         &venue_config(),
         &mut breakers,
         BarHealth::rehearsed(),
@@ -1030,55 +1271,48 @@ async fn soak_breaker_trip_precision_recall_with_clean_control() {
             seed: 12,
             should_trip: false,
         },
+        // Each failing bar burns the shared protocol's whole retry budget.
         TripCase {
             label: "at-max-3-drops",
-            faults: vec![
-                Fault::DropConnection,
-                Fault::DropConnection,
-                Fault::DropConnection,
-            ],
+            faults: vec![Fault::DropConnection; 3 * SUBMIT_RETRIES as usize],
             seed: 11,
             should_trip: false,
         },
         TripCase {
             label: "over-max-4-drops",
-            faults: vec![
-                Fault::DropConnection,
-                Fault::DropConnection,
-                Fault::DropConnection,
-                Fault::DropConnection,
-            ],
+            faults: vec![Fault::DropConnection; 4 * SUBMIT_RETRIES as usize],
             seed: 11,
             should_trip: true,
         },
         TripCase {
             label: "over-max-8-drops",
-            faults: vec![Fault::DropConnection; 8],
+            faults: vec![Fault::DropConnection; 8 * SUBMIT_RETRIES as usize],
             seed: 11,
             should_trip: true,
         },
         TripCase {
             label: "over-max-4-status500",
-            faults: vec![Fault::Status500; 4],
+            faults: vec![Fault::Status500; 4 * SUBMIT_RETRIES as usize],
             seed: 11,
             should_trip: true,
         },
         TripCase {
             label: "over-max-mixed",
-            faults: vec![
-                Fault::DropConnection,
-                Fault::Status500,
-                Fault::DropConnection,
-                Fault::Status500,
-            ],
+            faults: [Fault::DropConnection, Fault::Status500]
+                .into_iter()
+                .cycle()
+                .take(4 * SUBMIT_RETRIES as usize)
+                .collect(),
             seed: 11,
             should_trip: true,
         },
+        // A lost acknowledgement is not a sustained failure: the protocol's
+        // query-by-ID recovers the fill, so the breaker never trips.
         TripCase {
-            label: "over-max-lost-acks",
+            label: "recovered-lost-acks",
             faults: vec![Fault::LoseAck; 4],
             seed: 11,
-            should_trip: true,
+            should_trip: false,
         },
     ];
     let bars = history();
@@ -1363,6 +1597,7 @@ async fn stream_breaker_trip_disarms_entries_through_breaker_state() {
         &grant_with(0.5),
         &mut usage,
         &venue,
+        &RunIntentLog::new(),
         &venue_config(),
         &mut breakers,
         BarHealth::rehearsed(),
@@ -1811,10 +2046,12 @@ fn golden_path(name: &str) -> PathBuf {
 
 #[tokio::test]
 async fn backtest_output_identity_pins_report_and_tearsheet() {
-    // Ownership-reshape golden: the fixed-history report JSON and tearsheet
-    // must match byte-for-byte before and after the clone elimination, with
-    // no re-baselining. The goldens freeze today's output; any move is a
-    // revert, never an accepted diff.
+    // Frozen-output golden: the fixed-history report JSON and tearsheet must
+    // match byte-for-byte. The decisions now carry the real proposal
+    // lifecycle and attribution, so this golden was re-baselined once for
+    // that stated change; after that, any move is a revert, never an
+    // accepted diff. Regenerate only with `OVERWRITE_GOLDENS=1` on reviewed
+    // code, exactly as the route-payload goldens do.
     let bars = history();
     let run = run_backtest(
         &strategy(),
@@ -1829,6 +2066,13 @@ async fn backtest_output_identity_pins_report_and_tearsheet() {
     .expect("fixed history runs");
     let canonical = run.to_canonical_json();
     let sheet = crate::report::render_tearsheet(&run.report);
+    if std::env::var("OVERWRITE_GOLDENS").is_ok() {
+        std::fs::write(golden_path("backtest_identity_canonical.json"), &canonical)
+            .expect("canonical golden writes");
+        std::fs::write(golden_path("backtest_identity_tearsheet.txt"), &sheet)
+            .expect("tearsheet golden writes");
+        return;
+    }
     let frozen_canonical = std::fs::read_to_string(golden_path("backtest_identity_canonical.json"))
         .expect("identity golden loads");
     let frozen_sheet = std::fs::read_to_string(golden_path("backtest_identity_tearsheet.txt"))

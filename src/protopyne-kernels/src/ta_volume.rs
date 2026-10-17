@@ -223,15 +223,17 @@ impl Indicator for AdoscIndicator {
         let ad = AdIndicator::new();
         let line = ad.update(state.child(0), bar, &ParamSet::new())?;
         let ema = EmaIndicator::new();
+        let (child, child_params) = state.child_with_params(1, || Self::ema_params(fast_len));
         let fast = ema.update(
-            state.child(1),
+            child,
             BarTick::close_only(line.unwrap_or(f64::NAN)),
-            &Self::ema_params(fast_len),
+            child_params,
         )?;
+        let (child, child_params) = state.child_with_params(2, || Self::ema_params(slow_len));
         let slow = ema.update(
-            state.child(2),
+            child,
             BarTick::close_only(line.unwrap_or(f64::NAN)),
-            &Self::ema_params(slow_len),
+            child_params,
         )?;
         let raw = match (fast, slow) {
             (Some(f), Some(s)) => f - s,

@@ -1,6 +1,7 @@
 use common_core::io::*;
 use std::fs;
 use std::path::Path;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tempfile::TempDir;
 
@@ -232,4 +233,106 @@ fn make_path_absolute_does_not_create_dirs() {
     let abs = make_path_absolute(&missing.to_string_lossy()).unwrap();
     assert_eq!(abs, missing.to_string_lossy());
     assert!(!missing.exists(), "resolution must not create directories");
+}
+
+// ---------------------------------------------------------------------------
+// Timestamp resolution.
+//
+// These stamps exist to be compared for *change*, so a stamp that cannot
+// out-resolve the gap between two writes is a correctness defect in every
+// caller, not a precision preference. The assertions below pin the properties
+// a millisecond-truncated read cannot satisfy: a fresh write carries a
+// sub-millisecond remainder, and back-to-back same-size rewrites get distinct
+// stamps with no sleep between them.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn mtime_ns_is_not_millisecond_truncated() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("stamp.bin");
+    fs::write(&path, b"payload").unwrap();
+
+    let ns = mtime_ns(&fs::metadata(&path).unwrap());
+    assert_ne!(
+        ns,
+        ns / 1_000_000 * 1_000_000,
+        "mtime_ns must retain sub-millisecond resolution, got {ns}"
+    );
+    assert!(
+        timestamp_is_resolved(ns),
+        "a fresh write must be usable as a change signal: {ns}"
+    );
+}
+
+#[test]
+fn mtime_ns_distinguishes_back_to_back_same_size_writes() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("rewrite.bin");
+    let (first, second) = (b"aaaa-old-bytes", b"bbbb-new-bytes");
+    assert_eq!(first.len(), second.len());
+
+    fs::write(&path, first).unwrap();
+    let before = mtime_ns(&fs::metadata(&path).unwrap());
+    fs::write(&path, second).unwrap();
+    let after = mtime_ns(&fs::metadata(&path).unwrap());
+    assert_eq!(
+        fs::metadata(&path).unwrap().len() as usize,
+        first.len(),
+        "the rewrite must stay the same length for this to be a real test"
+    );
+
+    assert_ne!(
+        before, after,
+        "two same-size rewrites with no sleep must produce distinct stamps"
+    );
+}
+
+#[test]
+fn ctime_ns_moves_on_a_same_size_rewrite() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("inode.bin");
+    let (first, second) = (b"cccc-original", b"dddd-rewrote!");
+    assert_eq!(first.len(), second.len());
+    fs::write(&path, first).unwrap();
+    let before = ctime_ns(&fs::metadata(&path).unwrap());
+    fs::write(&path, second).unwrap();
+    let after = ctime_ns(&fs::metadata(&path).unwrap());
+    assert_eq!(fs::metadata(&path).unwrap().len() as usize, first.len());
+
+    if cfg!(unix) {
+        assert_ne!(
+            before, after,
+            "ctime is the second witness for a change a coarse mtime can hide"
+        );
+    }
+}
+
+#[test]
+fn timestamp_is_resolved_rejects_absent_and_ms_aligned_stamps() {
+    assert!(!timestamp_is_resolved(0), "no stamp is not a signal");
+    assert!(
+        !timestamp_is_resolved(1_700_000_000_000),
+        "a millisecond-aligned stamp is exactly what a truncated read yields"
+    );
+    assert!(timestamp_is_resolved(1_700_000_000_000_123));
+}
+
+#[test]
+fn system_time_ns_is_zero_for_pre_epoch_times() {
+    assert_eq!(
+        system_time_ns(UNIX_EPOCH - Duration::from_secs(60)),
+        0,
+        "a pre-epoch stamp has no usable epoch offset"
+    );
+}
+
+#[test]
+fn now_ns_tracks_system_time_ns() {
+    let before = now_ns();
+    let sampled = system_time_ns(SystemTime::now());
+    let after = now_ns();
+    assert!(
+        (before..=after).contains(&sampled),
+        "sampled {sampled} outside {before}..={after}"
+    );
 }

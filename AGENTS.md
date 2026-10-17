@@ -63,6 +63,29 @@ See `doc/TESTING.md` for the full testing convention and the `test-<crate>` /
 `make test-live`.** No test in `make test` / `make router-test` /
 `make router-mock` / CI may dial a real inference endpoint.
 
+## Runtime-lifetime and HTTP-client ownership
+
+**A pooled resource must never outlive the runtime that created it.** This is
+the workspace's most expensive recurring async hazard: a connection handed
+back to a client's pool by work spawned on a runtime that is then dropped
+leaves the connection stranded with a waker whose runtime no longer exists.
+The next caller that checks it out parks forever — no error, no CPU, no
+recovery, bounded only by that client's timeout.
+
+Rules:
+
+- **Never bridge on a runtime built for a single call.** Compose
+  `common_core::runtime::block_on` (single-threaded fallback — concurrent
+  callers serialize) or `block_on_shared` (process-wide multi-thread
+  fallback — callers do not serialize, and the runtime outlives the call).
+  Do not inline a `tokio::runtime::Builder` fallback; both are already the
+  workspace's canonical bridges.
+- **Tests must not share a pooled `reqwest::Client` across `#[tokio::test]`
+  runtimes.** Each `#[tokio::test]` gets a fresh runtime that is destroyed when
+  the test ends, so a shared pool hands connections between runtimes that no
+  longer exist. Obtain test clients from `common_core::http::test_http_client()`
+  (pooling disabled by construction), or build a client per test.
+
 ## Import boundaries
 
 Shared library crates may NOT import from `guidance`, `router`, `coral`, or

@@ -248,17 +248,17 @@ fn do_http_post_outside_runtime_uses_fallback() {
 async fn do_http_post_inside_runtime_uses_block_in_place() {
     // Inside a tokio runtime, do_http_post must use block_in_place, not
     // construct a second runtime (which would panic).
-    let server = httpmock::MockServer::start();
-    let mock = server.mock(|when, then| {
+    let server = httpmock::MockServer::start_async().await;
+    let mock = server.mock_async(|when, then| {
         when.method(httpmock::Method::POST).path("/api/embed");
         then.status(200)
             .header("Content-Type", "application/json")
             .body(r#"{"embeddings": [[0.1, 0.2]]}"#);
-    });
+    }).await;
     let body = serde_json::json!({"model": "test", "input": ["x"]});
     let bytes = do_http_post(&mock_client(), &server.url("/api/embed"), &body, None).unwrap();
     assert!(serde_json::from_slice::<serde_json::Value>(&bytes).is_ok());
-    mock.assert();
+    mock.assert_async().await;
 }
 
 #[test]
@@ -339,32 +339,32 @@ fn parse_openai_batch_empty() {
 
 #[tokio::test]
 async fn test_ollama_embed_async_with_mock() {
-    let server = httpmock::MockServer::start();
-    let mock = server.mock(|when, then| {
+    let server = httpmock::MockServer::start_async().await;
+    let mock = server.mock_async(|when, then| {
         when.method(httpmock::Method::POST).path("/api/embed");
         then.status(200)
             .header("Content-Type", "application/json")
             .body(r#"{"embeddings": [[0.1, 0.2, 0.3]]}"#);
-    });
+    }).await;
     let p = OllamaEmbedding::new(Some("test"), Some(&server.url("")), 3)
         .unwrap()
         .with_client(mock_client());
     let vec = p.embed_async("hello").await.unwrap();
     assert_eq!(vec.len(), 3);
-    mock.assert();
+    mock.assert_async().await;
 }
 
 #[tokio::test]
 async fn test_openai_embed_async_with_mock() {
-    let server = httpmock::MockServer::start();
-    let mock = server.mock(|when, then| {
+    let server = httpmock::MockServer::start_async().await;
+    let mock = server.mock_async(|when, then| {
         when.method(httpmock::Method::POST)
             .path("/v1/embeddings")
             .header("Authorization", "Bearer sk-test");
         then.status(200)
             .header("Content-Type", "application/json")
             .body(r#"{"data": [{"embedding": [0.1, 0.2, 0.3], "index": 0}]}"#);
-    });
+    }).await;
     let p = OpenAiEmbedding::new(
         Some("text-embedding-3-small"),
         Some(&server.url("")),
@@ -375,7 +375,7 @@ async fn test_openai_embed_async_with_mock() {
     .with_client(mock_client());
     let vec = p.embed_async("hello").await.unwrap();
     assert_eq!(vec.len(), 3);
-    mock.assert();
+    mock.assert_async().await;
 }
 
 #[test]
@@ -419,32 +419,32 @@ async fn noop_embed_batch_async_delegates() {
 
 #[tokio::test]
 async fn ollama_embed_batch_async_with_mock() {
-    let server = httpmock::MockServer::start();
-    let mock = server.mock(|when, then| {
+    let server = httpmock::MockServer::start_async().await;
+    let mock = server.mock_async(|when, then| {
         when.method(httpmock::Method::POST).path("/api/embed");
         then.status(200)
             .header("Content-Type", "application/json")
             .body(r#"{"embeddings": [[0.1, 0.2], [0.3, 0.4]]}"#);
-    });
+    }).await;
     let p = OllamaEmbedding::new(Some("test"), Some(&server.url("")), 2)
         .unwrap()
         .with_client(mock_client());
     let batch = p.embed_batch_async(&["a", "b"]).await.unwrap();
     assert_eq!(batch.count, 2);
     assert_eq!(batch.dims, 2);
-    mock.assert();
+    mock.assert_async().await;
 }
 
 #[tokio::test]
 async fn openai_embed_batch_async_with_mock() {
-    let server = httpmock::MockServer::start();
-    let mock = server.mock(|when, then| {
+    let server = httpmock::MockServer::start_async().await;
+    let mock = server.mock_async(|when, then| {
         when.method(httpmock::Method::POST)
             .path("/v1/embeddings");
         then.status(200)
             .header("Content-Type", "application/json")
             .body(r#"{"data": [{"embedding": [0.1, 0.2], "index": 0}, {"embedding": [0.3, 0.4], "index": 1}]}"#);
-    });
+    }).await;
     let p = OpenAiEmbedding::new(
         Some("text-embedding-3-small"),
         Some(&server.url("")),
@@ -456,7 +456,7 @@ async fn openai_embed_batch_async_with_mock() {
     let batch = p.embed_batch_async(&["a", "b"]).await.unwrap();
     assert_eq!(batch.count, 2);
     assert_eq!(batch.dims, 2);
-    mock.assert();
+    mock.assert_async().await;
 }
 
 #[test]

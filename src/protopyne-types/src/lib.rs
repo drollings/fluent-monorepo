@@ -26,7 +26,7 @@ pub use chain::{
 };
 pub use error::TypesError;
 pub use fold::{BucketAccum, FoldEdges};
-pub use money::{Money, Qty};
+pub use money::{DecimalScaleError, MAX_DECIMAL_SCALE, Money, Qty, parse_scale_guarded};
 pub use series::{GapPolicy, LtfView, PriceSource, SeriesContext};
 pub use session::{TradingSession, et_offset_ms, is_dst_et};
 pub use symbol::{DEFAULT_MAX_SYMBOLS, SymKey, SymbolIndex};

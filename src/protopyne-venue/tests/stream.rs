@@ -1093,3 +1093,168 @@ async fn third_consecutive_error_trips_the_loop() {
     );
     assert!(stream.breaker().tripped());
 }
+
+// ── reconnect-backfill suite ─────────────────────────────────────────
+// After a drop, the missing closed bars are fetched through the source
+// ladder and spliced before signals resume: a gapped window suspends
+// entries, a completed backfill resumes them, and a failed fetch keeps
+// them suspended while flagging health (correctness, never confidence).
+
+use crate::backfill::{BackfillHandle, BackfillSource, BackfillUnit, BACKFILL_ASSET};
+use crate::health::{HealthGate, HealthLimits, HealthState, may_trade};
+use protopyne_types::{Bar, GapPolicy, SeriesContext, Timeframe};
+
+fn bar_at(minute: u32) -> Bar {
+    Bar::new()
+        .ts(chrono::TimeZone::with_ymd_and_hms(&chrono::Utc, 2026, 6, 1, 12, minute, 0).unwrap())
+        .o("600.00".parse().expect("decimal"))
+        .h("601.00".parse().expect("decimal"))
+        .l("599.00".parse().expect("decimal"))
+        .c("600.50".parse().expect("decimal"))
+        .volume(1_000)
+        .maybe_adj(None)
+        .build()
+}
+
+fn dense_ctx_through(minute: u32) -> SeriesContext {
+    let mut ctx = SeriesContext::new("SPY", Timeframe::M1, GapPolicy::Dense);
+    for minute in 0..=minute {
+        ctx.push(bar_at(minute)).expect("contiguous pushes hold");
+    }
+    ctx
+}
+
+/// Scripted history rung: serves canned bars per range, or fails shut.
+struct ScriptedHistory {
+    bars: Vec<Bar>,
+    fail: Option<String>,
+}
+
+impl ScriptedHistory {
+    fn serves(bars: Vec<Bar>) -> Self {
+        Self { bars, fail: None }
+    }
+    fn fails(reason: &str) -> Self {
+        Self {
+            bars: Vec::new(),
+            fail: Some(reason.to_owned()),
+        }
+    }
+}
+
+impl BackfillSource for ScriptedHistory {
+    fn fetch(&self, _start_ms: i64, _end_ms: i64) -> Result<Vec<Bar>, crate::VenueError> {
+        match &self.fail {
+            Some(reason) => Err(crate::VenueError::Transport(reason.clone())),
+            None => Ok(self.bars.clone()),
+        }
+    }
+}
+
+fn backfilled_state(gate: &BackfillHandle) -> HealthState {
+    HealthState {
+        quote_age_secs: 5,
+        clock_skew_secs: 1,
+        stream_connected: true,
+        store: protopyne_store::StoreHealth::default(),
+        reconciled: true,
+        backfilled: gate.backfilled(),
+    }
+}
+
+/// A dropped window backfills before resume: bars 0–2, a drop over 3–5,
+/// then bar 6 reconnects. The reconnect suspends entries; the fetch
+/// splices exactly the hole; later bars evaluate on a contiguous series
+/// and the health gate clears.
+#[test]
+fn dropped_window_backfills_before_resume() {
+    let gate = BackfillHandle::new();
+    let source: std::sync::Arc<dyn BackfillSource> =
+        std::sync::Arc::new(ScriptedHistory::serves(vec![bar_at(3), bar_at(4), bar_at(5)]));
+    let unit = BackfillUnit::new(dense_ctx_through(2), vec![source], gate.clone(), 1);
+    unit.note_bar(bar_at(6)).expect_err("the gap suspends the reconnect bar");
+    assert!(gate.entries_suspended(), "entries wait for the hole");
+    assert!(unit.provides_asset(), "the unit advertises its asset");
+    assert_eq!(unit.asset(), BACKFILL_ASSET);
+
+    let report = unit.resync();
+    assert!(report.complete, "the hole splices, got: {report:?}");
+    assert_eq!(report.filled, 3, "exactly the dropped window lands");
+    assert!(!gate.entries_suspended(), "entries resume on a contiguous series");
+    assert!(gate.check_entries().is_ok());
+    assert_eq!(unit.pending(), 0, "nothing waits after the splice");
+
+    unit.note_bar(bar_at(7)).expect("contiguous bars flow again");
+    let report = unit.resync();
+    assert!(report.complete && report.filled == 0, "a clean window fetches nothing");
+
+    let verdict = may_trade(&backfilled_state(&gate), &HealthLimits::new().build());
+    assert!(verdict.may_trade(), "a backfilled feed trades");
+}
+
+/// The ladder fans out in order: an empty first rung skips to the rung
+/// holding the hole, and the splice still lands exactly once.
+#[test]
+fn backfill_fans_out_across_ladder_rungs() {
+    let gate = BackfillHandle::new();
+    let empty: std::sync::Arc<dyn BackfillSource> =
+        std::sync::Arc::new(ScriptedHistory::serves(Vec::new()));
+    let full: std::sync::Arc<dyn BackfillSource> =
+        std::sync::Arc::new(ScriptedHistory::serves(vec![bar_at(3), bar_at(4)]));
+    let unit = BackfillUnit::new(dense_ctx_through(2), vec![empty, full], gate.clone(), 1);
+    unit.note_bar(bar_at(5)).expect_err("the gap suspends");
+    let report = unit.resync();
+    assert!(report.complete, "the second rung serves, got: {report:?}");
+    assert_eq!(report.filled, 2);
+    assert!(!gate.entries_suspended());
+}
+
+/// A failed fetch suspends signals and flags health: entries refuse at
+/// the gate, the sensor fails the bar's entry dependents while
+/// independents complete, and the health verdict halts on the backfill
+/// gate (correctness) — never touching the producer-confidence breaker.
+#[tokio::test]
+async fn failed_backfill_suspends_signals_and_flags_health() {
+    let gate = BackfillHandle::new();
+    let down: std::sync::Arc<dyn BackfillSource> =
+        std::sync::Arc::new(ScriptedHistory::fails("history dark: scripted"));
+    let unit = std::sync::Arc::new(BackfillUnit::new(
+        dense_ctx_through(2),
+        vec![down],
+        gate.clone(),
+        1,
+    ));
+    unit.note_bar(bar_at(6)).expect_err("the gap suspends");
+    let report = unit.resync();
+    assert!(!report.complete, "a dark history cannot complete");
+    assert!(gate.entries_suspended(), "signals stay suspended");
+    assert!(gate.check_entries().is_err(), "entries refuse while suspended");
+    assert_eq!(unit.pending(), 1, "the reconnect bar still waits");
+
+    let state = backfilled_state(&gate);
+    let report = crate::health::GateReport::evaluate(&state, &HealthLimits::new().build());
+    assert!(!report.verdict.may_trade(), "health halts on the hole");
+    assert!(
+        report.failures.iter().any(|failure| failure.gate == HealthGate::Backfill),
+        "the backfill gate names itself, got: {:?}",
+        report.failures
+    );
+
+    let calm = SupervisedStream::new(fast_config());
+    assert!(!calm.breaker().tripped(), "correctness never trips confidence");
+}
+
+/// A short fetch cannot close the hole: the reconnect bar still waits,
+/// entries stay suspended, and the next resync retries the fetch.
+#[test]
+fn short_fetch_keeps_the_hole_open() {
+    let gate = BackfillHandle::new();
+    let short: std::sync::Arc<dyn BackfillSource> =
+        std::sync::Arc::new(ScriptedHistory::serves(vec![bar_at(3)]));
+    let unit = BackfillUnit::new(dense_ctx_through(2), vec![short], gate.clone(), 1);
+    unit.note_bar(bar_at(6)).expect_err("the gap suspends");
+    let report = unit.resync();
+    assert!(!report.complete, "one of three bars cannot close the hole");
+    assert!(gate.entries_suspended());
+    assert_eq!(unit.pending(), 1, "the reconnect bar still waits");
+}

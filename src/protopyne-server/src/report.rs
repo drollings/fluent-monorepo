@@ -18,6 +18,7 @@ use protopyne_store::identity::VerifiedId;
 use protopyne_store::plan::{SpanOrigin, SpanPlan};
 use protopyne_types::{Bar, Money};
 
+use crate::backtest::HistorySource;
 use crate::metrics::{self, TRADING_DAYS_PER_YEAR};
 use crate::portfolio::PortfolioReport;
 
@@ -432,6 +433,64 @@ impl BacktestReport {
             )
         })
     }
+}
+
+/// Where a run's bars came from: the one source fact `data_limits` names.
+/// Reducing the source to this and rendering it in one place keeps the report
+/// from claiming a "single CSV history" for a store-backed tape.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HistoryKind {
+    /// File candidates in fallback order.
+    Files,
+    /// Caller-supplied in-memory bars.
+    Dynamic,
+    /// A store-backed tape read.
+    Tape,
+}
+
+impl HistoryKind {
+    /// Reduce a source arm. The report names the arm the run replayed; there
+    /// is no second place that decides which arm a source is.
+    #[must_use]
+    pub fn of(source: &HistorySource) -> Self {
+        match source {
+            HistorySource::Files(_) => Self::Files,
+            HistorySource::Dynamic(_) => Self::Dynamic,
+            HistorySource::Tape { .. } => Self::Tape,
+        }
+    }
+
+    /// The arm's noun in `data_limits`.
+    const fn label(self) -> &'static str {
+        match self {
+            Self::Files => "file",
+            Self::Dynamic => "in-memory",
+            Self::Tape => "store-backed",
+        }
+    }
+}
+
+/// The declared capability set every prototype run lacks: option chains,
+/// corporate-action adjustments, multi-symbol coverage, and point-in-time
+/// membership. One constant, so the honest absences cannot drift apart.
+pub const ABSENT_CAPABILITIES: &str = "no corporate-action adjustments (cash dividends \
+     excluded from P&L); no option-chain data (greeks unavailable); single symbol; \
+     no point-in-time universe";
+
+/// The source line for `data_limits`: the arm, its pinned version, and its
+/// bar count, derived from the source rather than asserted.
+#[must_use]
+pub fn history_source_limit(kind: HistoryKind, data_version: &str, bar_count: usize) -> String {
+    format!("{} history '{data_version}', {bar_count} bars", kind.label())
+}
+
+/// The coverage-omission line: a source with no planner provenance has an
+/// uncertified coverage the report must name, never let read as certified.
+/// `None` when the source is planner-backed — the tape line off the manifest
+/// names that coverage instead.
+#[must_use]
+pub fn uncertified_coverage_limit(planner_certified: bool) -> Option<String> {
+    (!planner_certified).then(|| "no planner provenance: coverage not certified".to_owned())
 }
 
 /// The tape-data line for `data_limits`: the tape's coverage (bar count

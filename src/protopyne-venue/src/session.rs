@@ -26,13 +26,16 @@ use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc};
 
 use protopyne_types::Bar;
+use protopyne_types::SeriesContext;
 
+use crate::backfill::{BackfillHandle, BackfillSource, BackfillUnit};
 use crate::command::{StateHandle, TradingState, TradingStateUnit};
 use crate::error::VenueError;
 use crate::journal::{Journal, VenueStorage};
 use crate::market::MarketEvent;
 use crate::order::{OrderIntent, OrderRecord};
 use crate::quote::Quote;
+use crate::reconcile::{ReconcileHandle, ReconcileSource, ReconcileUnit};
 use crate::registry::VenueRegistry;
 use crate::stream::{StreamBreaker, StreamHealthUnit, SupervisedStream};
 use crate::submit::safe_submit;
@@ -137,7 +140,25 @@ pub struct TradingSession {
     registry: Arc<VenueRegistry>,
     storage: VenueStorage,
     stream_breaker: Option<Arc<StreamBreaker>>,
+    reconcile: Option<ReconcileSensor>,
+    backfill: Option<BackfillSensor>,
     state: StateHandle,
+}
+
+/// The session-owned reconciliation sensor and its shared gate. Attached
+/// only where the venue can diverge from the journal; a session with no
+/// attached sensor runs every bar exactly as before.
+struct ReconcileSensor {
+    unit: Arc<dyn Component>,
+    handle: ReconcileHandle,
+}
+
+/// The session-owned backfill sensor and its shared gate. Attached only
+/// where bars arrive over a supervised stream that can drop; a session
+/// with no attached sensor runs every bar exactly as before.
+struct BackfillSensor {
+    unit: Arc<dyn Component>,
+    handle: BackfillHandle,
 }
 
 impl TradingSession {
@@ -181,6 +202,8 @@ impl TradingSession {
             registry,
             storage,
             stream_breaker: None,
+            reconcile: None,
+            backfill: None,
             // Sessions boot allowing everything they allowed before the
             // command plane was wired: the gate is a no-op until the first
             // operator command is journaled.
@@ -244,6 +267,57 @@ impl TradingSession {
     /// boot default.
     pub fn attach_trading_state(&mut self, state: StateHandle) {
         self.state = state;
+    }
+
+    /// Attach the reconciliation sensor: every later [`TradingSession::run_bar`]
+    /// runs one compare of the journal's book against venue truth before the
+    /// bar's other units, so a mismatch cancels entry-carrying units through
+    /// the batch graph while exits stay independent. Attach only where the
+    /// venue can diverge from the journal; a paper/backtest session that
+    /// leaves it detached runs exactly as before. Returns the shared gate the
+    /// submission path reads.
+    pub fn attach_reconcile(&mut self, source: Arc<dyn ReconcileSource>) -> ReconcileHandle {
+        let handle = ReconcileHandle::new();
+        let unit: Arc<dyn Component> = Arc::new(ReconcileUnit::new(source, handle.clone()));
+        self.reconcile = Some(ReconcileSensor { unit, handle: handle.clone() });
+        handle
+    }
+
+    /// The attached reconciliation gate, if any. Submissions read it through
+    /// [`ReconcileHandle::check_entries`]; a detached session returns `None`
+    /// and gates exactly as before.
+    #[must_use]
+    pub fn reconcile_handle(&self) -> Option<&ReconcileHandle> {
+        self.reconcile.as_ref().map(|sensor| &sensor.handle)
+    }
+
+    /// Attach the backfill sensor: every later [`TradingSession::run_bar`]
+    /// runs one resync pass before the bar's other units, so an unspliced
+    /// hole cancels entry-carrying units through the batch graph while exits
+    /// stay independent. Attach only where bars arrive over a stream that
+    /// can drop; a session that leaves it detached runs exactly as before.
+    /// Returns the shared gate the submission path reads. Reconnecting bars
+    /// reach the sensor through [`BackfillUnit::note_bar`], which the feed
+    /// owner calls; the bar units themselves only observe the gate.
+    pub fn attach_backfill(
+        &mut self,
+        ctx: SeriesContext,
+        sources: Vec<Arc<dyn BackfillSource>>,
+        warmup: usize,
+    ) -> BackfillHandle {
+        let handle = BackfillHandle::new();
+        let unit: Arc<dyn Component> =
+            Arc::new(BackfillUnit::new(ctx, sources, handle.clone(), warmup));
+        self.backfill = Some(BackfillSensor { unit: Arc::clone(&unit), handle: handle.clone() });
+        handle
+    }
+
+    /// The attached backfill gate, if any. Submissions read it through
+    /// [`BackfillHandle::check_entries`]; a detached session returns `None`
+    /// and gates exactly as before.
+    #[must_use]
+    pub fn backfill_handle(&self) -> Option<&BackfillHandle> {
+        self.backfill.as_ref().map(|sensor| &sensor.handle)
     }
 
     /// Spawn a supervised reconnect driver under the owned scope and attach
@@ -382,6 +456,12 @@ impl TradingSession {
                 0,
                 Arc::new(TradingStateUnit::new(self.state.clone())) as Arc<dyn Component>,
             );
+        }
+        if let Some(sensor) = &self.reconcile {
+            units.insert(0, Arc::clone(&sensor.unit));
+        }
+        if let Some(sensor) = &self.backfill {
+            units.insert(0, Arc::clone(&sensor.unit));
         }
         for unit in units {
             let label = unit.name().to_owned();

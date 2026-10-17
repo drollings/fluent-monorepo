@@ -18,7 +18,7 @@
 use std::convert::Infallible;
 use std::str::FromStr;
 
-use protopyne_types::Money;
+use protopyne_types::{DecimalScaleError, Money, parse_scale_guarded};
 use rust_decimal::Decimal;
 
 /// Fenced display float: provenance for values that came from `Decimal`.
@@ -97,44 +97,25 @@ impl DisplayOnly<String> {
     /// leading sign, then parsed exactly; anything else refuses with its
     /// reason. Negativity is accepted here — whether a field requires
     /// positive is the field's context (a tier bound, a tightening
-    /// direction), never money's. Representability is `Decimal`'s (scale
-    /// 28): the fractional digit count is checked on the text before
+    /// direction), never money's. Representability is `Decimal`'s maximum
+    /// scale: the fractional digit count is checked on the text before
     /// parsing, because the parse itself rounds excess places instead of
     /// refusing them.
     pub fn try_into_money(self) -> Result<Money, DisplayOnlyError> {
         let text = self.0.trim();
-        if text.is_empty() {
-            return Err(DisplayOnlyError::InvalidDecimal("empty decimal text"));
-        }
-        let body = text.strip_prefix('+').or_else(|| text.strip_prefix('-')).unwrap_or(text);
-        if body.is_empty() {
-            return Err(DisplayOnlyError::InvalidDecimal("sign without digits"));
-        }
-        let mut points = 0;
-        let mut digits = 0;
-        let mut fraction_digits = 0;
-        for ch in body.chars() {
-            match ch {
-                '0'..='9' => {
-                    digits += 1;
-                    fraction_digits += i32::from(points > 0);
-                }
-                '.' if points == 0 => points += 1,
-                _ => {
-                    return Err(DisplayOnlyError::InvalidDecimal(
-                        "not an ASCII decimal number",
-                    ));
-                }
+        parse_scale_guarded(text).map_err(|refusal| match refusal {
+            DecimalScaleError::Empty => DisplayOnlyError::InvalidDecimal("empty decimal text"),
+            DecimalScaleError::SignWithoutDigits => {
+                DisplayOnlyError::InvalidDecimal("sign without digits")
             }
-        }
-        if digits == 0 {
-            return Err(DisplayOnlyError::InvalidDecimal("no digits"));
-        }
-        if fraction_digits > 28 {
-            return Err(DisplayOnlyError::InvalidDecimal(
-                "decimal scale exceeds 28 places",
-            ));
-        }
+            DecimalScaleError::InvalidCharacter => {
+                DisplayOnlyError::InvalidDecimal("not an ASCII decimal number")
+            }
+            DecimalScaleError::NoDigits => DisplayOnlyError::InvalidDecimal("no digits"),
+            DecimalScaleError::ScaleTooLarge(_) => {
+                DisplayOnlyError::InvalidDecimal("decimal scale exceeds 28 places")
+            }
+        })?;
         let amount: Decimal =
             text.parse().map_err(|_| DisplayOnlyError::InvalidDecimal("decimal unrepresentable"))?;
         Ok(Money::new(amount))

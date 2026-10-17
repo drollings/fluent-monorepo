@@ -286,36 +286,7 @@ impl TerminalGateway for MockGateway {
     }
 
     fn symbols(&self) -> Result<Vec<SymbolInfoView>, GatewayError> {
-        // A small deterministic catalog spanning every asset class, with the
-        // terminal's default ticker first, so the Symbol Selection Modal's
-        // category tabs are never empty in headless tests.
-        Ok(vec![
-            SymbolInfoView {
-                symbol: "GLD".to_owned(),
-                name: "SPDR Gold Shares".to_owned(),
-                asset_class: "Funds".to_owned(),
-            },
-            SymbolInfoView {
-                symbol: "SPY".to_owned(),
-                name: "SPDR S&P 500 ETF Trust".to_owned(),
-                asset_class: "Stocks".to_owned(),
-            },
-            SymbolInfoView {
-                symbol: "QQQ".to_owned(),
-                name: "Invesco QQQ Trust".to_owned(),
-                asset_class: "Stocks".to_owned(),
-            },
-            SymbolInfoView {
-                symbol: "BTC-USD".to_owned(),
-                name: "Bitcoin".to_owned(),
-                asset_class: "Crypto".to_owned(),
-            },
-            SymbolInfoView {
-                symbol: "ES".to_owned(),
-                name: "E-mini S&P 500".to_owned(),
-                asset_class: "Futures".to_owned(),
-            },
-        ])
+        Ok(crate::symbol_catalog())
     }
 
     fn replay(&self) -> Result<ReplayView, GatewayError> {

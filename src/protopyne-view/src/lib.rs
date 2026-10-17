@@ -12,9 +12,11 @@
 //! `serde`/`serde_json`: no `egui`, no `strategy`/`venue`/`server`.
 
 pub mod gateway;
+pub mod symbols;
 pub mod views;
 
 pub use gateway::{GatewayError, MockGateway, TerminalGateway, validate_symbol_timeframe};
+pub use symbols::{AssetClass, SYMBOL_CATALOG, symbol_catalog};
 pub use views::{
     ArmResponse, ChartBar, ChartBars, CommandStatus, DenyCount, HealthView, JournalRowView,
     OverlaySeries, PortfolioView, PositionView, PreviewResponse, ProposalView, ReplayStepView,

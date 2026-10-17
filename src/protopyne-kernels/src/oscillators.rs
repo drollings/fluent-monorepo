@@ -111,9 +111,12 @@ impl Indicator for RsiIndicator {
             None => f64::NAN,
         };
         let rma = RmaIndicator::new();
-        let rma_ps = ParamSet::new().with_int("length", period as i64);
-        let avg_gain = rma.update(state.child(0), BarTick::close_only(gain), &rma_ps)?;
-        let avg_loss = rma.update(state.child(1), BarTick::close_only(loss), &rma_ps)?;
+        let (child, child_params) =
+            state.child_with_params(0, || ParamSet::new().with_int("length", period as i64));
+        let avg_gain = rma.update(child, BarTick::close_only(gain), child_params)?;
+        let (child, child_params) =
+            state.child_with_params(1, || ParamSet::new().with_int("length", period as i64));
+        let avg_loss = rma.update(child, BarTick::close_only(loss), child_params)?;
         let raw = match (avg_gain, avg_loss) {
             (Some(g), Some(l)) => Self::rsi_of(g, l),
             _ => f64::NAN,
@@ -224,16 +227,19 @@ impl Indicator for MacdIndicator {
     ) -> Result<FullTick, KernelError> {
         let (fast_len, slow_len, signal_len) = Self::lengths(params)?;
         let ema = EmaIndicator::new();
-        let fast = ema.update(state.child(0), bar, &Self::ema_params(fast_len))?;
-        let slow = ema.update(state.child(1), bar, &Self::ema_params(slow_len))?;
+        let (child, child_params) = state.child_with_params(0, || Self::ema_params(fast_len));
+        let fast = ema.update(child, bar, child_params)?;
+        let (child, child_params) = state.child_with_params(1, || Self::ema_params(slow_len));
+        let slow = ema.update(child, bar, child_params)?;
         let line_raw = match (fast, slow) {
             (Some(f), Some(s)) => f - s,
             _ => f64::NAN,
         };
+        let (child, child_params) = state.child_with_params(2, || Self::ema_params(signal_len));
         let signal = ema.update(
-            state.child(2),
+            child,
             BarTick::close_only(line_raw),
-            &Self::ema_params(signal_len),
+            child_params,
         )?;
         let signal_raw = signal.unwrap_or(f64::NAN);
         let hist_raw = if line_raw.is_nan() || signal_raw.is_nan() {
@@ -381,8 +387,9 @@ impl Indicator for StochIndicator {
             Self::k_of(bar.close, lowest, highest)
         };
         let sma = SmaIndicator::new();
-        let smooth_ps = ParamSet::new().with_int("length", Self::SMOOTH as i64);
-        let d = sma.update(state.child(0), BarTick::close_only(k_raw), &smooth_ps)?;
+        let (child, child_params) = state
+            .child_with_params(0, || ParamSet::new().with_int("length", Self::SMOOTH as i64));
+        let d = sma.update(child, BarTick::close_only(k_raw), child_params)?;
         state.set_last(k_raw);
         Ok(FullTick {
             primary: fin_or_none(k_raw),

@@ -106,6 +106,49 @@ pub struct PriceScale {
     bar_spacing: f32,
     base_value: f64,
     inverted: bool,
+    /// `range.min`/`range.max` reshaped into scale space, computed once at
+    /// construction. `None` when the range has no scaled image (the
+    /// degenerate-span guard): construction still succeeds and every map
+    /// refuses, exactly as before the pair was cached.
+    scaled_bounds: Option<(f64, f64)>,
+}
+
+/// Reshape one price into scale space (log/percentage/indexed/normal). The one
+/// implementation construction (the endpoints) and mapping (per price) share.
+fn to_scaled(mode: PriceScaleMode, base_value: f64, price: f64) -> Option<f64> {
+    if !price.is_finite() {
+        return None;
+    }
+    match mode {
+        PriceScaleMode::Normal => Some(price),
+        PriceScaleMode::Logarithmic => (price > 0.0).then(|| price.ln()),
+        PriceScaleMode::Percentage => Some((price - base_value) / base_value * 100.0),
+        PriceScaleMode::IndexedTo100 => Some(price / base_value * 100.0),
+    }
+}
+
+/// Invert [`to_scaled`].
+fn unscale(mode: PriceScaleMode, base_value: f64, scaled: f64) -> Option<f64> {
+    if !scaled.is_finite() {
+        return None;
+    }
+    match mode {
+        PriceScaleMode::Normal => Some(scaled),
+        PriceScaleMode::Logarithmic => Some(scaled.exp()),
+        PriceScaleMode::Percentage => Some(base_value * (scaled / 100.0 + 1.0)),
+        PriceScaleMode::IndexedTo100 => Some(base_value * scaled / 100.0),
+    }
+}
+
+/// Scale-space window bounds, or `None` when the range has no scaled image (a
+/// degenerate span or a non-representable endpoint).
+fn scaled_bounds(mode: PriceScaleMode, base_value: f64, range: PriceRange) -> Option<(f64, f64)> {
+    let low = to_scaled(mode, base_value, range.min)?;
+    let high = to_scaled(mode, base_value, range.max)?;
+    if (low - high).abs() < 1e-12 || !low.is_finite() || !high.is_finite() {
+        return None;
+    }
+    Some((low, high))
 }
 
 impl PriceScale {
@@ -151,7 +194,19 @@ impl PriceScale {
                 reason: "percentage modes cannot rebase onto zero".to_owned(),
             });
         }
-        Ok(Self { mode, range, height, bar_spacing, base_value, inverted })
+        // The scaled endpoints are fixed by the validated inputs, so they are
+        // reshaped once here instead of per price: the paint loop maps a price
+        // every bar every frame.
+        let bounds = scaled_bounds(mode, base_value, range);
+        Ok(Self {
+            mode,
+            range,
+            height,
+            bar_spacing,
+            base_value,
+            inverted,
+            scaled_bounds: bounds,
+        })
     }
 
     /// Active mode.
@@ -190,55 +245,12 @@ impl PriceScale {
         self.inverted
     }
 
-    /// Reshape one price into scale space (log/percentage/indexed/normal).
-    fn to_scaled(self, price: f64) -> Option<f64> {
-        if !price.is_finite() {
-            return None;
-        }
-        match self.mode {
-            PriceScaleMode::Normal => Some(price),
-            PriceScaleMode::Logarithmic => {
-                if price <= 0.0 {
-                    None
-                } else {
-                    Some(price.ln())
-                }
-            }
-            PriceScaleMode::Percentage => Some((price - self.base_value) / self.base_value * 100.0),
-            PriceScaleMode::IndexedTo100 => Some(price / self.base_value * 100.0),
-        }
-    }
-
-    /// Invert [`to_scaled`](Self::to_scaled).
-    fn unscale(self, scaled: f64) -> Option<f64> {
-        if !scaled.is_finite() {
-            return None;
-        }
-        match self.mode {
-            PriceScaleMode::Normal => Some(scaled),
-            PriceScaleMode::Logarithmic => Some(scaled.exp()),
-            PriceScaleMode::Percentage => Some(self.base_value * (scaled / 100.0 + 1.0)),
-            PriceScaleMode::IndexedTo100 => Some(self.base_value * scaled / 100.0),
-        }
-    }
-
-    /// Scaled window bounds, or `None` when the range has no scaled image
-    /// (unreachable after construction, guarded anyway).
-    fn scaled_bounds(self) -> Option<(f64, f64)> {
-        let low = self.to_scaled(self.range.min)?;
-        let high = self.to_scaled(self.range.max)?;
-        if (low - high).abs() < 1e-12 || !low.is_finite() || !high.is_finite() {
-            return None;
-        }
-        Some((low, high))
-    }
-
     /// Map a price to a y pixel (`0` at the top). `None` on non-finite or
     /// unmappable input.
     #[must_use]
     pub fn price_to_y(self, price: f64) -> Option<f32> {
-        let (low, high) = self.scaled_bounds()?;
-        let scaled = self.to_scaled(price)?;
+        let (low, high) = self.scaled_bounds?;
+        let scaled = to_scaled(self.mode, self.base_value, price)?;
         let height = f64::from(self.height);
         let ratio = (high - scaled) / (high - low);
         let y = ratio * height;
@@ -246,7 +258,7 @@ impl PriceScale {
         if y.is_finite() { Some(y as f32) } else { None }
     }
 
-    /// Invert [`price_to_y`](Self::price_to_y). `None` off-pane or degenerate.
+    /// Invert [`price_to_y`](Self::price_to_y). `None` off-pane.
     ///
     /// The pane is exactly `0..=height`; a pixel outside it is off-pane and
     /// has no price. [`price_to_y`](Self::price_to_y) still extrapolates for
@@ -260,12 +272,12 @@ impl PriceScale {
         if y < 0.0 || y > self.height {
             return None;
         }
-        let (low, high) = self.scaled_bounds()?;
+        let (low, high) = self.scaled_bounds?;
         let height = f64::from(self.height);
         let y = f64::from(y);
         let y = if self.inverted { height - y } else { y };
         let scaled = high - y / height * (high - low);
-        self.unscale(scaled)
+        unscale(self.mode, self.base_value, scaled)
     }
 
     /// Map a bar index to an x pixel. Total over the visible window.
@@ -285,9 +297,6 @@ impl PriceScale {
         }
     }
 }
-
-/// Backwards-compatible alias: the pane mapping type the render edge consumes.
-pub type ChartMapping = PriceScale;
 
 #[cfg(test)]
 #[path = "../tests/mapping.rs"]

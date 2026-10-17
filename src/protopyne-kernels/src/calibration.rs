@@ -20,7 +20,7 @@
 //! shared by the family-specific flat suite and the dashboard.
 
 use crate::error::KernelError;
-use crate::indicator::{OwnedOhlcv, ParamSet, builtin_registry};
+use crate::indicator::{IndicatorRegistry, OwnedOhlcv, ParamSet, builtin_registry};
 use crate::parity::assert_expr_parity;
 use polars::prelude::{
     DataFrame, EWMOptions, Expr, IntoLazy, NamedFrom as _, RollingFnParams, RollingOptionsFixedWindow,
@@ -324,7 +324,7 @@ pub fn null_alignment_diffs() -> Vec<ControlViolation> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParityRow {
     /// Registry id.
-    pub id: &'static str,
+    pub id: String,
     /// Frozen matrix eps the accept was measured at.
     pub eps: f64,
     /// Expr-parity held against the `Expr` reference at frozen eps.
@@ -369,12 +369,18 @@ impl ParityDashboard {
         (self.accept_rate() - 1.0).abs() < f64::EPSILON && self.false_fire_rate() == 0.0
     }
 
-    /// Measure every row: kernel batch versus staged `Expr` references on the
-    /// seeded frame, plus the four control inputs for false fires.
+    /// Measure the shipped registry.
     pub fn build() -> Result<Self, KernelError> {
+        Self::build_with(&builtin_registry()?)
+    }
+
+    /// Measure every kernel in `registry`: kernel batch versus staged `Expr`
+    /// references on the seeded frame, plus the four control inputs for false
+    /// fires. A kernel with no compatibility-matrix row is a reported refusal
+    /// row, never a panic — the dashboard exists to display exactly that gap.
+    pub fn build_with(registry: &IndicatorRegistry) -> Result<Self, KernelError> {
         let legs = seeded_legs(60, 40);
         let frame = ref_frame(&legs)?;
-        let registry = builtin_registry()?;
         let controls = [
             Control::Flat,
             Control::NullInjected,
@@ -388,8 +394,19 @@ impl ParityDashboard {
         for id in registry.ids() {
             let kernel = registry.get(&id).expect("registered");
             let params = canonical_params(&id);
-            let row_id: &'static str = matrix_id(&id);
-            let matrix_row = crate::compat::compat_for(row_id).expect("matrix row");
+            let false_fires = controls.iter().filter(|v| v.id == id).count();
+            // A registered kernel the matrix does not cover is a regression
+            // the gate reports, not a panic (no frozen eps to cite).
+            let Some(matrix_row) = crate::compat::compat_for(&id) else {
+                rows.push(ParityRow {
+                    id: id.clone(),
+                    eps: 0.0,
+                    accepted: false,
+                    note: Some("missing matrix row".to_owned()),
+                    false_fires,
+                });
+                continue;
+            };
             // Recurrence kernels (state feedback, not staged windows) admit
             // no staged-expression reference: they ride as pending rows with
             // their controls counted, never as silent accepts.
@@ -397,9 +414,8 @@ impl ParityDashboard {
                 matrix_row.status,
                 crate::compat::CompatStatus::FormulaVerified(_)
             ) {
-                let false_fires = controls.iter().filter(|v| v.id == id).count();
                 rows.push(ParityRow {
-                    id: row_id,
+                    id: id.clone(),
                     eps: matrix_row.eps,
                     accepted: false,
                     note: Some("staged reference pending".to_owned()),
@@ -409,7 +425,7 @@ impl ParityDashboard {
             }
             let eps = matrix_row.eps;
             let result = kernel.batch(&legs.views(), &params)?;
-            let refs = reference(row_id, &frame)?;
+            let refs = reference(&id, &frame)?;
             let mut accepted = true;
             let mut note = None;
             // Leg bijectivity per id: the kernel's leg set must match the
@@ -431,20 +447,10 @@ impl ParityDashboard {
                 accepted = false;
                 note = Some(format!("leg mismatch: kernel {kernel_legs:?} vs ref {ref_legs:?}"));
             }
-            let false_fires = controls.iter().filter(|v| v.id == id).count();
-            rows.push(ParityRow { id: row_id, eps, accepted, note, false_fires });
+            rows.push(ParityRow { id: id.clone(), eps, accepted, note, false_fires });
         }
         Ok(Self { rows })
     }
-}
-
-/// Registry ids are owned strings; the matrix holds the static twin.
-fn matrix_id(id: &str) -> &'static str {
-    crate::compat::COMPATIBILITY
-        .iter()
-        .find(|row| row.id == id)
-        .expect("matrix row")
-        .id
 }
 
 // ---------------------------------------------------------------------------

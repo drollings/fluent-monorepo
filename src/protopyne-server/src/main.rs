@@ -12,10 +12,12 @@ struct Args {
     bind: Option<String>,
     history: Option<PathBuf>,
     tape: Option<PathBuf>,
+    live: bool,
+    live_journal: Option<PathBuf>,
 }
 
 fn parse_args(raw: &[String]) -> Result<Args, String> {
-    let mut args = Args { config: None, bind: None, history: None, tape: None };
+    let mut args = Args { config: None, bind: None, history: None, tape: None, live: false, live_journal: None };
     let mut rest = raw.iter().skip(1);
     while let Some(flag) = rest.next() {
         match flag.as_str() {
@@ -37,8 +39,19 @@ fn parse_args(raw: &[String]) -> Result<Args, String> {
                     rest.next().ok_or("--tape needs a store root")?,
                 ));
             }
+            "--live" => {
+                args.live = true;
+            }
+            "--live-journal" => {
+                args.live_journal = Some(PathBuf::from(
+                    rest.next().ok_or("--live-journal needs a path")?,
+                ));
+            }
             unknown => return Err(format!("unknown flag {unknown}")),
         }
+    }
+    if args.live && args.live_journal.is_none() {
+        return Err("--live needs --live-journal PATH for the durable journal".to_owned());
     }
     Ok(args)
 }
@@ -77,6 +90,13 @@ Flags:
   --tape ROOT      durable tape store root (also accepted as tape_path in --config);
                    symbol-scoped chart reads plan through the tape, falling back
                    to the boot history per read
+  --live               boot the production trading session against the live
+                   venue and exit (no serving): reads TASTYTRADE_BASE_URL,
+                   TASTYTRADE_ACCOUNT, TASTYTRADE_LOGIN, TASTYTRADE_PASSWORD
+                   from the environment plus --live-journal PATH; refuses
+                   without all five. Live decision serving stays gated on the
+                   approval inbox and the cert-sandbox soak.
+  --live-journal PATH  durable journal file for --live (required with it)
   --help, -h       print this message
   --version, -V    print the version
 
@@ -97,6 +117,9 @@ Example:
 
 async fn run(raw: &[String]) -> Result<(), String> {
     let args = parse_args(raw)?;
+    if args.live {
+        return run_live(&args).await;
+    }
     let mut config = match args.config {
         Some(path) => common_core::config::load_json_or_default(&path),
         None => ServerConfig::default(),
@@ -128,5 +151,52 @@ async fn run(raw: &[String]) -> Result<(), String> {
     println!("protopyne-server listening on {}", handle.addr);
     let _ = tokio::signal::ctrl_c().await;
     handle.shutdown().await;
+    Ok(())
+}
+
+/// Boot the production trading session against the live venue: environment
+/// credentials in, authenticated session plus durable journal out, then a
+/// clean shutdown. This exercises the production boot path in the real
+/// binary (config → login → session → shutdown); it places no orders and
+/// serves nothing — live decision flow stays gated on the approval inbox
+/// and the cert-sandbox soak. Every missing input refuses before anything
+/// dials.
+async fn run_live(args: &Args) -> Result<(), String> {
+    // Empty secrets are missing secrets: each variable must be present and
+    // non-empty, else nothing dials.
+    fn env(name: &str) -> Result<String, String> {
+        let value =
+            std::env::var(name).map_err(|_| format!("--live needs {name} in the environment"))?;
+        if value.is_empty() {
+            return Err(format!("--live needs {name} in the environment"));
+        }
+        Ok(value)
+    }
+    let base_url = env("TASTYTRADE_BASE_URL")?;
+    let account = env("TASTYTRADE_ACCOUNT")?;
+    let username = env("TASTYTRADE_LOGIN")?;
+    let password = env("TASTYTRADE_PASSWORD")?;
+    let journal_path = args
+        .live_journal
+        .clone()
+        .ok_or("--live needs --live-journal PATH for the durable journal")?;
+    let boot = protopyne_venue::LiveBoot::new()
+        .session(protopyne_venue::SessionConfig::default())
+        .transport(
+            protopyne_venue::TastytradeConfig::new()
+                .base_url(base_url)
+                .build(),
+        )
+        .account(account.clone())
+        .journal_path(journal_path.clone())
+        .build();
+    let net = std::sync::Arc::new(fluent_concurrency::io::net::NetCapability::new());
+    let caps = fluent_wvr::CapabilitySet::new().with(fluent_concurrency::io::net::NetCapability::new());
+    let live = fluent_wvr::CURRENT_CAPS
+        .scope(caps, protopyne_venue::boot_live(&boot, net, &username, &password))
+        .await
+        .map_err(|e| format!("live boot refused: {e}"))?;
+    println!("live session ready: account {account}, journal {}", journal_path.display());
+    live.session.shutdown().await;
     Ok(())
 }

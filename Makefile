@@ -459,7 +459,8 @@ LIVE_CRATES := \
 	guidance:guidance-core \
 	llm:fluent-llm \
 	spacy:spacy-rs \
-	ort:fluent-onnx
+	ort:fluent-onnx \
+	venue:protopyne-venue
 
 # Live-AI feature sets per crate shorthand (the `ort` live tests drive real
 # `ort` sessions, so they need `onnx` on top of `live-ai`; every other crate's
@@ -469,6 +470,7 @@ LIVE_FEATURES_router := live-ai
 LIVE_FEATURES_guidance := live-ai
 LIVE_FEATURES_llm := live-ai
 LIVE_FEATURES_spacy := live-ai
+LIVE_FEATURES_venue := live-ai
 
 define live-crate-rule
 .PHONY: $(1)-test-live

@@ -183,13 +183,13 @@ and `src/protopyne-server/smoke-container.sh` for the exact probes.
   (aspirational goals and capabilities, no implementation details).
 - `ARCHITECTURE.md` — the implementation architecture map: crates,
   capabilities, orchestration, reuse findings, drill-down queue.
-- `../../PROMPT_PRIMITIVE_REVIEW.md` + `../../PROMPT_FEATURE_PARITY.md` —
-  the analysis and design roadmaps for the native-terminal program
-  (reverse-engineering reference charting into monorepo idioms).
-- `../../PROMPT_BUILD_PRIMITIVE.md` + `../../PROMPT_BUILD_PARITY.md` —
-  the corresponding build roadmaps (shared/domain primitives, then
-  feature parity on the `egui` paint edge).
-- `../../ROADMAP_20261008_PROTOPYNE_RS_PROTOTYPE.md` — the milestone
-  roadmap the current prototype implements.
-- `../../ROADMAP_20261008_PROTOPYNE_RS_PROTOTYPE_CHECKLIST.md` — per-item
-  completion state.
+- `../../ROADMAP_20261016_FIXES.md` — the active correctness, efficiency,
+  and DRY roadmap (milestones M1–M24 in dependency order).
+- `../../ROADMAP_20261016_FIXES_CHECKLIST.md` — per-item completion state.
+- `PRIMITIVES_INVENTORY.md` — the point-in-time file inventory behind the
+  shared/domain primitive extraction (symbol names authoritative; the
+  `M1..M7` IDs there are that program's, not the fix roadmap's).
+- `DIVERGENCE_LOG.md` — staged reference-expression divergences still open.
+- `RUNBOOKS.md` — operator runbooks: breaker trips, reconcile mismatches,
+  kill-mid-submit recovery, backfill holes, ticket drift, and the
+  cert-sandbox soak procedure.

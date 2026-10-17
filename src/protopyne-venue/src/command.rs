@@ -18,11 +18,12 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use common_core::registry::ConcurrentRegistry;
 use fluent_wvr::prelude::*;
 use serde::{Deserialize, Serialize};
 
+use protopyne_strategy::{JournaledTransition, Proposal, ProposalEvent, ProposalState, transition};
 use protopyne_types::{LegSide, Money, SpreadLeg, SpreadLegs, SymKey, SymbolIndex};
 
 use crate::error::VenueError;
@@ -202,6 +203,68 @@ pub fn replay_trading_state(events: &[JournalEvent]) -> TradingState {
         }
     }
     state
+}
+
+/// Journaled kind for a proposal lifecycle row. The single home: the run
+/// path journals the same kind with the same [`JournaledTransition`] detail
+/// shape, so approval rows and run rows fold through one projection.
+pub const PROPOSAL_TRANSITION_KIND: &str = "proposal_transition";
+
+/// Record a human decision on a proposal: validate the move against the
+/// lifecycle first, journal the transition, then advance the proposal. A
+/// refused move journals nothing and mutates nothing; only `Approve` and
+/// `Reject` travel this path, so the journal never confuses who authorized
+/// what — machine events stay on the run path.
+pub fn decide_proposal(
+    journal: &Journal,
+    permit: &VenueStorage,
+    proposal: &mut Proposal,
+    event: ProposalEvent,
+    reason: &str,
+    now: DateTime<Utc>,
+) -> Result<JournaledTransition, VenueError> {
+    if !matches!(event, ProposalEvent::Approve | ProposalEvent::Reject) {
+        return Err(VenueError::Invalid(format!(
+            "decision plane carries Approve/Reject, not {event:?}"
+        )));
+    }
+    let to = transition(proposal.state, event).map_err(|e| {
+        VenueError::Invalid(format!("proposal lifecycle refused: {e}"))
+    })?;
+    let entry = JournaledTransition {
+        proposal_id: proposal.id.clone(),
+        from: proposal.state,
+        to,
+        reason: reason.to_owned(),
+        at: now,
+    };
+    let detail =
+        serde_json::to_string(&entry).map_err(|e| VenueError::Journal(e.to_string()))?;
+    journal.record_transition(permit, &proposal.id, PROPOSAL_TRANSITION_KIND, &detail, now)?;
+    proposal
+        .apply(event, reason, now)
+        .map_err(|e| VenueError::Invalid(format!("proposal lifecycle refused: {e}")))?;
+    Ok(entry)
+}
+
+/// Project journaled lifecycle rows into per-proposal states: last row per
+/// proposal wins; unparseable rows and every other kind never project. The
+/// inbox reads this fold, so the served states are the journaled ones.
+#[must_use]
+pub fn replay_proposal_states(
+    events: &[JournalEvent],
+) -> std::collections::BTreeMap<String, ProposalState> {
+    let mut states = std::collections::BTreeMap::new();
+    for event in events {
+        if event.kind != PROPOSAL_TRANSITION_KIND {
+            continue;
+        }
+        let Ok(entry) = serde_json::from_str::<JournaledTransition>(&event.detail) else {
+            continue;
+        };
+        states.insert(entry.proposal_id, entry.to);
+    }
+    states
 }
 
 /// Asset the trading-state sensor provides: bar units carrying entries
@@ -646,11 +709,16 @@ impl StateReplica {
 
     /// Fold one event into a view. Single-event and whole-slice folds agree
     /// by construction. Operator command rows (`command.*`) carry authority
-    /// transitions, not orders: they advance the tip but never read as
+    /// transitions, not orders; proposal lifecycle rows carry human or run
+    /// decisions on proposals; manual-ticket rows carry the human-executed
+    /// ticket workflow: all three advance the tip but never read as
     /// phantom orders.
     pub fn apply_one(view: &mut PortfolioView, event: &JournalEvent) {
         view.last_seq = view.last_seq.max(event.seq);
-        if event.kind.starts_with("command.") {
+        if event.kind.starts_with("command.")
+            || event.kind == PROPOSAL_TRANSITION_KIND
+            || event.kind.starts_with("manual_ticket.")
+        {
             return;
         }
         if event.kind == LEG_FILL_KIND {

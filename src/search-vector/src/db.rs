@@ -521,7 +521,7 @@ impl GuidanceDb {
         Ok(value.and_then(|value| {
             let (mtime, count) = value.split_once(':')?;
             Some(NodeSyncFingerprint {
-                max_mtime_ms: mtime.parse().ok()?,
+                max_mtime_ns: mtime.parse().ok()?,
                 file_count: count.parse().ok()?,
             })
         }))
@@ -532,7 +532,7 @@ impl GuidanceDb {
         &self,
         fingerprint: &NodeSyncFingerprint,
     ) -> Result<(), VectorDbError> {
-        let value = format!("{}:{}", fingerprint.max_mtime_ms, fingerprint.file_count);
+        let value = format!("{}:{}", fingerprint.max_mtime_ns, fingerprint.file_count);
         self.store
             .execute(
                 "INSERT OR REPLACE INTO sync_state (key, value) VALUES ('node_sync', ?1)",

@@ -80,27 +80,50 @@ impl NetCapability {
     }
 
     pub async fn http_get(&self, url: &str) -> Result<String, IoError> {
+        self.http_get_with_headers(url, &[]).await
+    }
+
+    pub async fn http_post(&self, url: &str, body: &str) -> Result<String, IoError> {
+        self.http_post_with_headers(url, body, &[]).await
+    }
+
+    /// GET with caller-supplied headers (e.g. a session `Authorization`
+    /// token). The capability gates first, exactly as [`NetCapability::http_get`];
+    /// headers add no new effect class beyond the URL and body the
+    /// capability already permits.
+    pub async fn http_get_with_headers(
+        &self,
+        url: &str,
+        headers: &[(&str, &str)],
+    ) -> Result<String, IoError> {
         check_capability(self)?;
-        let response = self
-            .client
-            .get(url)
-            .send()
-            .await
-            .map_err(std::io::Error::other)?;
+        let mut request = self.client.get(url);
+        for (name, value) in headers {
+            request = request.header(*name, *value);
+        }
+        let response = request.send().await.map_err(std::io::Error::other)?;
         let body = response.text().await.map_err(std::io::Error::other)?;
         Ok(body)
     }
 
-    pub async fn http_post(&self, url: &str, body: &str) -> Result<String, IoError> {
+    /// POST a JSON body with caller-supplied headers. Same gating and
+    /// contract as [`NetCapability::http_post`], plus headers.
+    pub async fn http_post_with_headers(
+        &self,
+        url: &str,
+        body: &str,
+        headers: &[(&str, &str)],
+    ) -> Result<String, IoError> {
         check_capability(self)?;
-        let response = self
+        let mut request = self
             .client
             .post(url)
             .header("Content-Type", "application/json")
-            .body(body.to_string())
-            .send()
-            .await
-            .map_err(std::io::Error::other)?;
+            .body(body.to_string());
+        for (name, value) in headers {
+            request = request.header(*name, *value);
+        }
+        let response = request.send().await.map_err(std::io::Error::other)?;
         let response_body = response.text().await.map_err(std::io::Error::other)?;
         Ok(response_body)
     }
@@ -220,5 +243,105 @@ mod tests {
     #[test]
     fn net_capability_name() {
         assert_eq!(NetCapability::new().name(), "net");
+    }
+
+    /// Loopback echo: one raw-TCP HTTP server recording the request head,
+    /// so headered requests prove their headers arrive. Nothing dials
+    /// beyond `127.0.0.1`.
+    async fn serve_once() -> (String, tokio::sync::oneshot::Receiver<String>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let url = format!("http://{}/echo", listener.local_addr().expect("addr"));
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("accept");
+            let mut head = Vec::new();
+            let mut buf = [0_u8; 1024];
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            loop {
+                match stream.read(&mut buf).await {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => {
+                        head.extend_from_slice(&buf[..n]);
+                        if head.windows(4).any(|w| w == b"\r\n\r\n") {
+                            break;
+                        }
+                    }
+                }
+            }
+            let content_len = content_len_of(&head);
+            let mut body = vec![0_u8; content_len];
+            let mut read = 0;
+            while read < content_len {
+                match stream.read(&mut body[read..]).await {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => read += n,
+                }
+            }
+            let _ = tx.send(String::from_utf8_lossy(&head).into_owned());
+            let reply = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}";
+            let _ = stream.write_all(reply.as_bytes()).await;
+        });
+        (url, rx)
+    }
+
+    /// Test-only content-length read over the captured head.
+    fn content_len_of(head: &[u8]) -> usize {
+        head.windows(15)
+            .position(|w| w == b"Content-Length: ")
+            .map_or(0, |at| {
+                head[at + 16..]
+                    .iter()
+                    .take_while(|b| b.is_ascii_digit())
+                    .fold(0_usize, |acc, b| acc * 10 + (b - b'0') as usize)
+            })
+    }
+
+    fn caps() -> CapabilitySet {
+        CapabilitySet::new().with(NetCapability::new())
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn headered_requests_carry_their_headers() {
+        let net = NetCapability::new();
+        let (url, seen) = serve_once().await;
+        let body = CURRENT_CAPS
+            .scope(caps(), async {
+                net.http_post_with_headers(url.as_str(), r#"{"a":1}"#, &[("Authorization", "tok-1")])
+                    .await
+                    .expect("post")
+            })
+            .await;
+        assert_eq!(body, "{}");
+        let head = seen.await.expect("server saw the request");
+        // reqwest lowercases header names on the wire; match case-insensitively.
+        let lower = head.to_ascii_lowercase();
+        assert!(lower.contains("authorization: tok-1"), "got:\n{head}");
+        assert!(lower.contains("content-type: application/json"), "got:\n{head}");
+
+        let (url, seen) = serve_once().await;
+        CURRENT_CAPS
+            .scope(caps(), async {
+                net.http_get_with_headers(url.as_str(), &[("Authorization", "tok-2")])
+                    .await
+                    .expect("get");
+            })
+            .await;
+        let head = seen.await.expect("server saw the request");
+        assert!(
+            head.to_ascii_lowercase().contains("authorization: tok-2"),
+            "got:\n{head}"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn headered_requests_without_capability_are_denied() {
+        let net = NetCapability::new();
+        let err = net
+            .http_get_with_headers("http://127.0.0.1:1/", &[("Authorization", "x")])
+            .await
+            .expect_err("denied");
+        assert_eq!(err.kind(), std::io::ErrorKind::PermissionDenied);
     }
 }

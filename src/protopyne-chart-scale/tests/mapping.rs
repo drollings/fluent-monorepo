@@ -144,6 +144,64 @@ fn index_moves_by_bar_spacing() {
     assert!((half - 0.5).abs() < 1e-9);
 }
 
+/// Reference mapping recomputed from first principles (no cache): a
+/// construction-cached `PriceScale` must equal re-deriving `to_scaled` over
+/// the endpoints.
+fn reference_y(
+    mode: PriceScaleMode,
+    base: f64,
+    min: f64,
+    max: f64,
+    height: f64,
+    inverted: bool,
+    price: f64,
+) -> f64 {
+    let scaled = |p: f64| match mode {
+        PriceScaleMode::Normal => p,
+        PriceScaleMode::Logarithmic => p.ln(),
+        PriceScaleMode::Percentage => (p - base) / base * 100.0,
+        PriceScaleMode::IndexedTo100 => p / base * 100.0,
+    };
+    let low = scaled(min);
+    let high = scaled(max);
+    let y = (high - scaled(price)) / (high - low) * height;
+    if inverted { height - y } else { y }
+}
+
+#[test]
+fn cached_bounds_match_a_fresh_recompute_in_every_mode() {
+    for mode in [
+        PriceScaleMode::Normal,
+        PriceScaleMode::Logarithmic,
+        PriceScaleMode::Percentage,
+        PriceScaleMode::IndexedTo100,
+    ] {
+        let mapping = scale(mode, 90.0, 110.0);
+        for step in 0..=40 {
+            let price = 90.0 + 20.0 * f64::from(step) / 40.0;
+            let cached = mapping.price_to_y(price).expect("in-window price maps");
+            let fresh = reference_y(mode, 90.0, 90.0, 110.0, 400.0, false, price) as f32;
+            assert_eq!(
+                cached.to_bits(),
+                fresh.to_bits(),
+                "{mode:?} at {price}: cached {cached} vs fresh {fresh}"
+            );
+        }
+    }
+}
+
+#[test]
+fn degenerate_scaled_bounds_map_to_none() {
+    // A window narrower than the scaled-span guard has no image: construction
+    // still succeeds (the viewport still builds) and every map refuses — the
+    // same lazy refusal as before the pair was cached at construction.
+    let tiny = PriceRange::new(1.0, 1.0 + 1e-13).expect("range is well-formed");
+    let mapping = PriceScale::new(PriceScaleMode::Normal, tiny, 400.0, 8.0, 1.0, false)
+        .expect("degenerate geometry still constructs");
+    assert_eq!(mapping.price_to_y(1.0), None);
+    assert_eq!(mapping.y_to_price(200.0), None);
+}
+
 #[test]
 fn mode_parses_common_spellings() {
     use std::str::FromStr as _;

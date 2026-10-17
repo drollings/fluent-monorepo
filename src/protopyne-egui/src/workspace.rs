@@ -31,7 +31,7 @@ use fluent_wvr::{FieldAccess, component_downcast_ref};
 use protopyne_chart_model::{ChartRow, ChartType, DateRange};
 use protopyne_chart_scale::PriceScaleMode;
 use protopyne_types::{BucketAccum, SymbolIndex, SymKey, Timeframe};
-use protopyne_view::{ChartBars, TerminalGateway};
+use protopyne_view::{AssetClass, SYMBOL_CATALOG, TerminalGateway};
 
 use crate::chart::{ChartConfig, DEFAULT_SYMBOL, TimeframeKey, line_values, window_for_range};
 use crate::indicators::{
@@ -121,79 +121,18 @@ const GRID_DIM: f32 = 0.55;
 /// slot supplies one.
 const DEFAULT_EIT_ALPHA: f64 = 0.14;
 
-/// One asset class tab in the Symbol Selection Modal.
-///
-/// `All` is a selector, not an entry category, so
-/// [`entry`](Self::entry) maps it to `None` (the generic modal renders its own
-/// `All` tab).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum AssetClass {
-    /// Every instrument, regardless of class.
-    All,
-    /// Equities and equity ETFs.
-    Stocks,
-    /// Funds and commodity trusts.
-    Funds,
-    /// Futures contracts.
-    Futures,
-    /// Digital assets.
-    Crypto,
-}
-
-impl AssetClass {
-    /// Every tab, in render order.
-    #[must_use]
-    pub fn all() -> [Self; 5] {
-        [Self::All, Self::Stocks, Self::Funds, Self::Futures, Self::Crypto]
-    }
-
-    /// The tab label the modal renders.
-    #[must_use]
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::All => "All",
-            Self::Stocks => "Stocks",
-            Self::Funds => "Funds",
-            Self::Futures => "Futures",
-            Self::Crypto => "Crypto",
-        }
-    }
-
-    /// The entry category this tab selects, if it is a real category.
-    #[must_use]
-    pub fn entry(self) -> Option<Self> {
-        match self {
-            Self::All => None,
-            other => Some(other),
-        }
-    }
-}
-
-/// The shipped symbol catalog: `(symbol, name, class)`, the default ticker
-/// first.
-const SYMBOL_CATALOG: &[(&str, &str, AssetClass)] = &[
-    ("GLD", "SPDR Gold Shares", AssetClass::Funds),
-    ("SPY", "SPDR S&P 500 ETF Trust", AssetClass::Stocks),
-    ("QQQ", "Invesco QQQ Trust", AssetClass::Stocks),
-    ("BTC-USD", "Bitcoin", AssetClass::Crypto),
-    ("ES", "E-mini S&P 500", AssetClass::Futures),
-];
-
-/// Build the Symbol Selection Modal catalog, spanning every asset class.
+/// Build the Symbol Selection Modal catalog from the shared source.
 pub fn build_symbol_catalog() -> Result<CatalogModal<AssetClass>, EguiError> {
     let mut catalog = CatalogModal::new("Symbols");
     for (symbol, name, class) in SYMBOL_CATALOG {
-        catalog.register(symbol, name, *class)?;
+        catalog.register(symbol, name, class)?;
     }
     Ok(catalog)
 }
 
-/// The real asset-class tabs (everything but the `All` selector).
+/// The asset-class tabs (the modal renders its own `All` tab).
 fn symbol_categories() -> Vec<(AssetClass, &'static str)> {
-    AssetClass::all()
-        .into_iter()
-        .filter_map(|class| class.entry().map(|category| (category, category.label())))
-        .collect()
+    AssetClass::all().into_iter().map(|class| (class, class.label())).collect()
 }
 
 /// The indicator-catalog tabs that are real categories.
@@ -206,22 +145,6 @@ fn indicator_categories() -> Vec<(IndicatorCategory, &'static str)> {
     .into_iter()
     .map(|category| (category, category.label()))
     .collect()
-}
-
-/// Convert gateway chart bars into display rows (same shape, no `Decimal`
-/// leg — the bars are already display-native).
-fn chart_rows_of(bars: &ChartBars) -> Vec<ChartRow> {
-    bars.rows
-        .iter()
-        .map(|bar| ChartRow {
-            time: bar.time,
-            open: bar.open,
-            high: bar.high,
-            low: bar.low,
-            close: bar.close,
-            volume: bar.volume,
-        })
-        .collect()
 }
 
 /// The padded price extent of a row window; a degenerate window falls back to
@@ -1054,7 +977,8 @@ impl ChartWorkspace {
                 Some(CHART_WINDOW_BARS),
             )
             .map_err(|error| EguiError::Dependency { reason: error.to_string() })?;
-        self.rows = chart_rows_of(&bars);
+        // The wire rows are the display rows: one definition, no conversion.
+        self.rows = bars.rows;
         self.histories.insert(self.timeframe, self.rows.clone());
         self.rebind_viewports()?;
         self.recompute()

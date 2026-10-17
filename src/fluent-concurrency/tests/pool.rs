@@ -1,6 +1,78 @@
 use super::*;
 use crate::tokio_runtime;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
+
+/// `run_sync` from a thread with no active runtime must bridge on a runtime
+/// that outlives the call.
+///
+/// The bridged future spawns work and returns immediately. That work must
+/// still be able to make progress *after* `run_sync` has returned — if the
+/// bridge built a runtime for the call alone, dropping it would also drop
+/// the spawned task, and anything that task was holding a connection for
+/// would be stranded with a waker pointing at a dead runtime.
+#[test]
+fn run_sync_no_runtime_keeps_spawned_work_alive() {
+    let limiter = Limiter::new(1);
+    let completed = Arc::new(AtomicUsize::new(0));
+    let flag = Arc::clone(&completed);
+
+    limiter.run_sync(|| async move {
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            flag.store(1, Ordering::SeqCst);
+        });
+    });
+
+    // `run_sync` has returned. The spawned task must still run.
+    for _ in 0..300 {
+        if completed.load(Ordering::SeqCst) == 1 {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    panic!("spawned work was dropped when run_sync returned: the bridge runtime did not outlive the call");
+}
+
+/// `run_sync` from a thread with no active runtime must bridge on a
+/// multi-thread runtime, so that several sync callers make progress together
+/// instead of serializing on one runtime's single driver.
+///
+/// Asserted on the mechanism, not on wall-clock timing, which would be flaky.
+#[test]
+fn run_sync_no_runtime_bridges_on_multi_thread_runtime() {
+    let limiter = Limiter::new(1);
+    let flavor = limiter.run_sync(|| async {
+        tokio::runtime::Handle::current().runtime_flavor()
+    });
+    assert_eq!(
+        flavor,
+        tokio::runtime::RuntimeFlavor::MultiThread,
+        "the no-runtime bridge must be multi-thread so concurrent callers do not serialize"
+    );
+}
+
+/// Concurrent sync callers on a runtime-less thread must all complete. A
+/// limiter exists to bound concurrency across such callers, so this must not
+/// deadlock regardless of how the bridge is wired.
+#[test]
+fn run_sync_supports_concurrent_runtime_less_callers() {
+    let limiter = Arc::new(Limiter::new(4));
+    let handles: Vec<_> = (0..8)
+        .map(|i| {
+            let limiter = Arc::clone(&limiter);
+            std::thread::spawn(move || limiter.run_sync(|| async move { i }))
+        })
+        .collect();
+
+    let mut got: Vec<usize> = handles
+        .into_iter()
+        .map(|h| h.join().expect("run_sync caller panicked"))
+        .collect();
+    got.sort_unstable();
+    assert_eq!(got, (0..8).collect::<Vec<_>>());
+}
 
 #[tokio::test]
 async fn priority_pool_dispatches_high_first() {

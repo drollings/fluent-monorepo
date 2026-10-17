@@ -4,10 +4,10 @@ use std::time::Duration;
 
 use fluent_concurrency::batch::{CancelReason, SupervisedBatch, SupervisedBatchEvent};
 use fluent_wvr::{Describable, FieldAccess};
-use protopyne_chart_model::{ChartRow, ChartRows};
+use protopyne_chart_model::{ChartRow, ChartBars};
 
-fn batch_at(start: i64, count: usize) -> ChartRows {
-    ChartRows {
+fn batch_at(start: i64, count: usize) -> ChartBars {
+    ChartBars {
         rows: (0..count)
             .map(|i| ChartRow {
                 time: start + i as i64,

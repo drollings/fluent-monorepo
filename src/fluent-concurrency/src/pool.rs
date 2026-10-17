@@ -648,8 +648,8 @@ impl Limiter {
     }
 
     /// Synchronous version of `run` for callers without an async context.
-    /// Uses `Handle::block_on` if a tokio runtime is active, otherwise
-    /// creates a dedicated current-thread runtime for the duration of the call.
+    /// Uses `Handle::block_on` if a tokio runtime is active, otherwise bridges
+    /// on `common_core::runtime::block_on_shared`.
     ///
     /// When invoked from *inside* a running multi-threaded tokio runtime (the
     /// router's HTTP handler does this), the future is driven via
@@ -657,6 +657,28 @@ impl Limiter {
     /// the same canonical pattern as `fluent_llm::client::chat_complete`
     /// (see `src/llm/src/client.rs`). A bare `Handle::block_on` would panic
     /// with "Cannot start a runtime from within a runtime".
+    ///
+    /// With **no active runtime** the bridge goes to the workspace's
+    /// process-wide shared runtime (`common_core::runtime::block_on_shared`),
+    /// deliberately **not** a runtime built for this one call. Two properties
+    /// follow, both required for correctness:
+    ///
+    /// - The runtime **outlives the call**. A per-call runtime is dropped the
+    ///   instant `run_sync` returns, taking with it anything the bridged
+    ///   future spawned onto it. When the work touches a pooled HTTP
+    ///   connection, that spawn is the continuation which returns the
+    ///   connection to its client's pool; losing it strands the connection
+    ///   with a waker whose runtime no longer exists, so the next caller that
+    ///   checks that connection out waits forever — a silent lost wakeup,
+    ///   bounded only by the client's timeout. Worker-pool threads reach this
+    ///   branch (they carry no tokio runtime), so any `run_sync` whose work
+    ///   performs pooled HTTP must not bridge on a throwaway runtime.
+    /// - **Concurrent callers do not serialize.** This is a limiter: several
+    ///   threads bridging at once is the normal case. The shared runtime is
+    ///   multi-threaded, so each caller runs its own future on its own thread
+    ///   while one worker pool services everything they spawn. A
+    ///   single-threaded fallback would serialize them and make the limiter's
+    ///   cap the only thing bounding a queue.
     ///
     /// **Caveat:** on the multi-thread scheduler `block_in_place` *parks the
     /// calling worker thread* for the duration of the call — the scheduler
@@ -679,13 +701,7 @@ impl Limiter {
                 tokio::task::block_in_place(|| handle.block_on(block))
             }
             Ok(handle) => handle.block_on(block),
-            Err(_) => {
-                let rt = tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                    .expect("build runtime for Limiter::run_sync");
-                rt.block_on(block)
-            }
+            Err(_) => common_core::runtime::block_on_shared(block),
         }
     }
 }

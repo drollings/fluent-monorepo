@@ -61,6 +61,61 @@ fn human_path_routes_through_approval() {
     assert_eq!(p.state, ProposalState::Approved);
 }
 
+/// The exact event sequences the decision path drives from `Proposed`:
+/// the risk/grant verdicts, then the venue verdict, then the terminal
+/// outcome. Each is walked to its expected final state so the runtime path
+/// and the state machine cannot drift. A filled or partially filled order
+/// must acknowledge work before it can report a fill; a refused submission
+/// terminalizes straight from `Submitted`.
+#[test]
+fn decision_path_sequences_walk_legally() {
+    use ProposalEvent as E;
+    use ProposalState as S;
+    let now = Utc::now();
+    let cases: &[(&[ProposalEvent], ProposalState)] = &[
+        (&[E::FailRisk], S::Rejected),
+        (&[E::PassRisk, E::RequireHuman], S::PendingHuman),
+        (&[E::PassRisk, E::AutoApprove], S::AutoApproved),
+        (&[E::PassRisk, E::AutoApprove, E::Submit, E::Reject], S::Rejected),
+        (
+            &[E::PassRisk, E::AutoApprove, E::Submit, E::StartWork],
+            S::Working,
+        ),
+        (
+            &[
+                E::PassRisk,
+                E::AutoApprove,
+                E::Submit,
+                E::StartWork,
+                E::Fill,
+            ],
+            S::Filled,
+        ),
+        (
+            &[
+                E::PassRisk,
+                E::AutoApprove,
+                E::Submit,
+                E::StartWork,
+                E::PartialFill,
+            ],
+            S::Partial,
+        ),
+        (
+            &[E::PassRisk, E::AutoApprove, E::Submit, E::Cancel],
+            S::Cancelled,
+        ),
+    ];
+    for (sequence, expected) in cases {
+        let mut p = proposal();
+        for event in *sequence {
+            p.apply(*event, "decision path", now)
+                .unwrap_or_else(|e| panic!("{sequence:?} must walk legally: {e}"));
+        }
+        assert_eq!(p.state, *expected, "{sequence:?} final state");
+    }
+}
+
 #[test]
 fn illegal_moves_are_errors_never_silent_noops() {
     assert!(transition(ProposalState::Proposed, ProposalEvent::Submit).is_err());

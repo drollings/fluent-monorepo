@@ -420,11 +420,13 @@ impl Indicator for TrimaIndicator {
         let period = Self::period(params)?;
         let (first_len, second_len) = Self::sub_periods(period);
         let sma = SmaIndicator::new();
-        let first = sma.update(state.child(0), bar, &Self::sma_params(first_len))?;
+        let (child, child_params) = state.child_with_params(0, || Self::sma_params(first_len));
+        let first = sma.update(child, bar, child_params)?;
+        let (child, child_params) = state.child_with_params(1, || Self::sma_params(second_len));
         let second = sma.update(
-            state.child(1),
+            child,
             BarTick::close_only(first.unwrap_or(f64::NAN)),
-            &Self::sma_params(second_len),
+            child_params,
         )?;
         if let Some(value) = second {
             state.set_last(value);

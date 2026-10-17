@@ -73,32 +73,28 @@ pub struct FragmentFreshness {
 /// Change fingerprint for the node-sync gate (see
 /// [`GuidanceDb::sync_from_dir`]): the doc set is unchanged iff both
 /// the file count and the newest mtime match the last successful sync.
-/// Same risk class as all mtime discipline here — a delete+add pair
-/// that keeps the count with an older-or-equal max mtime reads as
+/// The mtime is carried at nanosecond resolution — a millisecond stamp
+/// cannot separate two same-length rewrites that land inside one
+/// millisecond, so a doc edited that way would read as unchanged and be
+/// skipped. Same risk class as all mtime discipline here: a delete+add
+/// pair that keeps the count with an older-or-equal max mtime reads as
 /// fresh (change detection, not content addressing).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct NodeSyncFingerprint {
-    /// Newest member-doc mtime (ms epoch), 0 when unreadable.
-    pub(crate) max_mtime_ms: i64,
+    /// Newest member-doc mtime (ns epoch), 0 when unreadable.
+    pub(crate) max_mtime_ns: i64,
     /// Member-doc file count.
     pub(crate) file_count: usize,
 }
 
 pub(crate) fn node_sync_fingerprint(json_files: &[std::path::PathBuf]) -> NodeSyncFingerprint {
-    let mut max_mtime_ms = 0i64;
+    let mut max_mtime_ns = 0i64;
     for path in json_files {
-        let ms = common_core::io::mtime(path)
-            .and_then(|mtime| {
-                mtime
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|elapsed| elapsed.as_millis() as i64)
-                    .ok()
-            })
-            .unwrap_or(0);
-        max_mtime_ms = max_mtime_ms.max(ms);
+        let ns = common_core::io::mtime(path).map_or(0, common_core::io::system_time_ns);
+        max_mtime_ns = max_mtime_ns.max(ns.min(i64::MAX as u64) as i64);
     }
     NodeSyncFingerprint {
-        max_mtime_ms,
+        max_mtime_ns,
         file_count: json_files.len(),
     }
 }

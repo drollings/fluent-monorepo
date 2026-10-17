@@ -307,7 +307,15 @@ struct NormalizedOptions<'a> {
 // Entry point.
 // ---------------------------------------------------------------------------
 
-const MANIFEST_VERSION: u32 = 1;
+/// Completion-marker schema version.
+///
+/// Version 2 replaced the millisecond `mtimeMs`/`ctimeMs` stamps with
+/// nanosecond ones and added `stampResolved`. A version-1 marker predates the
+/// resolution fix, so it is treated as no marker at all: the cache falls back
+/// to full hash verification once and a version-2 marker is written in its
+/// place. Paying one verification pass on upgrade is the cheap direction — the
+/// alternative is trusting stamps known to be too coarse to detect a change.
+const MANIFEST_VERSION: u32 = 2;
 
 /// Resolve a complete, integrity-checked local artifact snapshot.
 ///
@@ -332,7 +340,12 @@ pub async fn resolve_model_artifacts(
     for source in &normalized.sources {
         let manifest = &manifests[&source.kind];
         if validate_snapshot(&normalized.model, source, &normalized.artifacts, manifest)? {
-            write_complete_marker_best_effort(source, &normalized.artifacts, manifest);
+            write_complete_marker_best_effort(
+                &normalized.model,
+                source,
+                &normalized.artifacts,
+                manifest,
+            );
             return Ok(resolved_result(source, manifest));
         }
     }
@@ -747,7 +760,7 @@ fn validate_snapshot(
     artifacts: &[ModelArtifact],
     manifest: &SourceManifest,
 ) -> Result<bool, ArtifactError> {
-    if has_valid_complete_marker(source, artifacts, manifest)? {
+    if has_valid_complete_marker(model, source, artifacts, manifest)? {
         return Ok(true);
     }
     for artifact in artifacts {
@@ -759,6 +772,7 @@ fn validate_snapshot(
 }
 
 fn has_valid_complete_marker(
+    model: &str,
     source: &ModelArtifactSource,
     artifacts: &[ModelArtifact],
     manifest: &SourceManifest,
@@ -821,16 +835,91 @@ fn has_valid_complete_marker(
                 .into());
             }
         };
+        // Size is a hard gate under any timestamp resolution: a differing
+        // length is a change, and reading it costs nothing.
         if !stats.is_file()
             || stats.len() != artifact.size
             || stats.len() != recorded["size"].as_u64().unwrap_or(u64::MAX)
-            || mtime_ms(&stats) != recorded["mtimeMs"].as_u64().unwrap_or(u64::MAX)
-            || ctime_ms(&stats) != recorded["ctimeMs"].as_u64().unwrap_or(u64::MAX)
         {
+            return Ok(false);
+        }
+        let stamp = MarkerStamp::of(&stats);
+        if stamp.resolved && recorded["stampResolved"].as_bool().unwrap_or(false) {
+            // Fast path: the marker was written against, and the filesystem
+            // still reports, a sub-millisecond remainder. Equal stamps then
+            // mean the bytes are the bytes we pinned.
+            if !stamp.matches(recorded) {
+                return Ok(false);
+            }
+        } else if !content_matches_spec_hash(model, source, artifact, &local)? {
+            // The stamp cannot carry the decision — either the filesystem is
+            // not reporting usable resolution, or the recorded stamp did not.
+            // Hash against the spec instead of concluding "unchanged" from a
+            // timestamp that may never have moved.
             return Ok(false);
         }
     }
     Ok(true)
+}
+
+/// The change signal recorded for one cached artifact.
+///
+/// Nanosecond resolution is load-bearing. A millisecond stamp cannot tell a
+/// same-size in-place rewrite from no rewrite at all, so an artifact mutated
+/// inside the same millisecond as the recorded stamp still matched its marker
+/// and the cache trusted mutated bytes. `resolved` records whether the
+/// filesystem actually reported a sub-millisecond remainder for this file; a
+/// stamp that did not is not evidence of change *or* of its absence, so
+/// validation falls back to the pinned content hash.
+#[derive(Debug, Clone, Copy)]
+struct MarkerStamp {
+    mtime_ns: u64,
+    ctime_ns: u64,
+    resolved: bool,
+}
+
+impl MarkerStamp {
+    fn of(stats: &std::fs::Metadata) -> Self {
+        let mtime_ns = common_core::io::mtime_ns(stats);
+        let ctime_ns = common_core::io::ctime_ns(stats);
+        Self {
+            mtime_ns,
+            ctime_ns,
+            // ctime is the second witness: some filesystems leave mtime
+            // whole-second while ctime keeps a remainder, and vice versa.
+            resolved: common_core::io::timestamp_is_resolved(mtime_ns)
+                || common_core::io::timestamp_is_resolved(ctime_ns),
+        }
+    }
+
+    fn matches(&self, recorded: &serde_json::Value) -> bool {
+        self.mtime_ns == recorded["mtimeNs"].as_u64().unwrap_or(u64::MAX)
+            && self.ctime_ns == recorded["ctimeNs"].as_u64().unwrap_or(u64::MAX)
+    }
+}
+
+/// Compare a cached file's bytes against the artifact's pinned spec hash.
+fn content_matches_spec_hash(
+    model: &str,
+    source: &ModelArtifactSource,
+    artifact: &ModelArtifact,
+    local: &Path,
+) -> Result<bool, ArtifactError> {
+    let digest =
+        common_core::hash::hash_file(local, common_core::hash::HashAlgorithm::Sha256).map_err(
+            |error| {
+                filesystem_error(
+                    format!(
+                        "Unable to validate cached artifact '{}' for {model}",
+                        artifact.path
+                    ),
+                    source,
+                    Some(&artifact.path),
+                    error,
+                )
+            },
+        )?;
+    Ok(digest == artifact.sha256.to_lowercase())
 }
 
 fn validate_artifact(
@@ -862,19 +951,7 @@ fn validate_artifact(
     if !stats.is_file() || stats.len() != artifact.size {
         return Ok(false);
     }
-    let digest = common_core::hash::hash_file(&local, common_core::hash::HashAlgorithm::Sha256)
-        .map_err(|error| {
-            filesystem_error(
-                format!(
-                    "Unable to validate cached artifact '{}' for {model}",
-                    artifact.path
-                ),
-                source,
-                Some(&artifact.path),
-                error,
-            )
-        })?;
-    Ok(digest == artifact.sha256.to_lowercase())
+    content_matches_spec_hash(model, source, artifact, &local)
 }
 
 // ---------------------------------------------------------------------------
@@ -911,7 +988,7 @@ async fn download_source_snapshot(
             ),
         })?;
     // Another writer may have completed the snapshot while we waited.
-    if has_valid_complete_marker(source, &options.artifacts, manifest)
+    if has_valid_complete_marker(&options.model, source, &options.artifacts, manifest)
         .map_err(flatten_artifact_error)?
     {
         lock.release().ok();
@@ -1457,12 +1534,14 @@ fn write_complete_marker(
                 io::Error::other(format!("Artifact '{artifact_path}' is not a file")),
             )));
         }
+        let stamp = MarkerStamp::of(&stats);
         files.insert(
             artifact_path.clone(),
             serde_json::json!({
                 "size": stats.len(),
-                "mtimeMs": mtime_ms(&stats),
-                "ctimeMs": ctime_ms(&stats),
+                "mtimeNs": stamp.mtime_ns,
+                "ctimeNs": stamp.ctime_ns,
+                "stampResolved": stamp.resolved,
             }),
         );
     }
@@ -1490,13 +1569,14 @@ fn write_complete_marker(
 }
 
 fn write_complete_marker_best_effort(
+    model: &str,
     source: &ModelArtifactSource,
     artifacts: &[ModelArtifact],
     manifest: &SourceManifest,
 ) {
     // The marker is only a hashing optimization: a valid read-only cache
     // stays usable even when metadata cannot be written beside it.
-    let complete = has_valid_complete_marker(source, artifacts, manifest);
+    let complete = has_valid_complete_marker(model, source, artifacts, manifest);
     if !complete.unwrap_or(false) {
         let _ = write_complete_marker(source, manifest);
     }
@@ -1512,8 +1592,8 @@ struct FileIdentity {
     inode: u64,
     mode: u32,
     size: u64,
-    mtime_ms: u64,
-    ctime_ms: u64,
+    mtime_ns: u64,
+    ctime_ns: u64,
     replaceable: bool,
 }
 
@@ -1531,8 +1611,8 @@ fn file_identity(stats: &std::fs::Metadata) -> FileIdentity {
         inode: file_inode(stats),
         mode: file_mode(stats),
         size: stats.len(),
-        mtime_ms: mtime_ms(stats),
-        ctime_ms: ctime_ms(stats),
+        mtime_ns: common_core::io::mtime_ns(stats),
+        ctime_ns: common_core::io::ctime_ns(stats),
         replaceable: stats.is_file() || stats.is_symlink(),
     }
 }
@@ -1545,8 +1625,8 @@ fn same_file_identity(left: Option<&FileIdentity>, right: Option<&FileIdentity>)
                 && left.inode == right.inode
                 && left.mode == right.mode
                 && left.size == right.size
-                && left.mtime_ms == right.mtime_ms
-                && left.ctime_ms == right.ctime_ms
+                && left.mtime_ns == right.mtime_ns
+                && left.ctime_ns == right.ctime_ns
                 && left.replaceable == right.replaceable
         }
         (Some(_), None) | (None, Some(_)) => false,
@@ -1598,28 +1678,6 @@ fn partial_path(destination: &Path) -> PathBuf {
         std::process::id(),
         now_ms()
     ))
-}
-
-fn mtime_ms(metadata: &std::fs::Metadata) -> u64 {
-    metadata
-        .modified()
-        .ok()
-        .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
-        .map_or(0, |duration| duration.as_millis() as u64)
-}
-
-fn ctime_ms(metadata: &std::fs::Metadata) -> u64 {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt as _;
-        let millis = metadata.ctime() * 1000 + metadata.ctime_nsec() / 1_000_000;
-        millis.max(0) as u64
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = metadata;
-        0
-    }
 }
 
 #[cfg(unix)]

@@ -130,7 +130,7 @@ pub enum ProposalEvent {
     RequireHuman,
     /// Human approved.
     Approve,
-    /// Human or policy rejected.
+    /// Human, policy, or venue rejected.
     Reject,
     /// Approval window lapsed.
     Expire,
@@ -159,7 +159,8 @@ pub fn transition(
     use ProposalState as S;
     let next = match (from, event) {
         (S::Proposed, E::PassRisk) => S::RiskChecked,
-        (S::Proposed | S::RiskChecked, E::FailRisk) | (S::PendingHuman, E::Reject) => S::Rejected,
+        (S::Proposed | S::RiskChecked, E::FailRisk)
+        | (S::PendingHuman | S::Submitted, E::Reject) => S::Rejected,
         (S::RiskChecked, E::AutoApprove) => S::AutoApproved,
         (S::RiskChecked, E::RequireHuman) => S::PendingHuman,
         (S::PendingHuman, E::Approve) => S::Approved,

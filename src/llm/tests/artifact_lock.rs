@@ -216,3 +216,37 @@ async fn release_is_idempotent_and_cleans_up_only_its_own_files() {
     lock.release().unwrap();
     assert!(!path.exists(), "double release must stay silent");
 }
+
+#[tokio::test]
+async fn heartbeat_rewrites_get_distinguishable_timestamps() {
+    // The dead-owner/staleness gate compares heartbeat file mtimes. At
+    // millisecond resolution a burst of renewals inside one millisecond
+    // collapses to a single reading, which is what lets a contender mistake a
+    // live owner for a dead one and take its lock. This pins the resolution
+    // the gate is built on.
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("heartbeat.bin");
+    let stamp = |path: &std::path::Path| {
+        common_core::io::mtime_ns(&std::fs::metadata(path).unwrap())
+    };
+
+    std::fs::write(&path, b"beat-0").unwrap();
+    let first = stamp(&path);
+    std::fs::write(&path, b"beat-1").unwrap();
+    let second = stamp(&path);
+
+    assert_eq!(
+        std::fs::metadata(&path).unwrap().len(),
+        6,
+        "heartbeat rewrites are the same size; only the stamp may move"
+    );
+    assert_ne!(
+        first, second,
+        "back-to-back heartbeat rewrites must be distinguishable"
+    );
+    assert!(
+        common_core::io::timestamp_is_resolved(first)
+            && common_core::io::timestamp_is_resolved(second),
+        "heartbeat stamps must carry sub-millisecond resolution: {first}, {second}"
+    );
+}

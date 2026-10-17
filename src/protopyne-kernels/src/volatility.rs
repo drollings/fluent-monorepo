@@ -158,11 +158,9 @@ impl Indicator for AtrIndicator {
         let prev = state.prev_close();
         let tr = true_range(bar.high, bar.low, prev);
         let rma = RmaIndicator::new();
-        let smoothed = rma.update(
-            state.child(0),
-            BarTick::close_only(tr),
-            &ParamSet::new().with_int("length", period as i64),
-        )?;
+        let (child, child_params) =
+            state.child_with_params(0, || ParamSet::new().with_int("length", period as i64));
+        let smoothed = rma.update(child, BarTick::close_only(tr), child_params)?;
         state.set_last(smoothed.unwrap_or(f64::NAN));
         Ok(smoothed)
     }
@@ -417,8 +415,9 @@ impl Indicator for KcIndicator {
             bar.high - bar.low
         };
         let sma = SmaIndicator::new();
-        let len_ps = ParamSet::new().with_int("length", period as i64);
-        let span = sma.update(state.child(0), BarTick::close_only(range), &len_ps)?;
+        let (child, child_params) =
+            state.child_with_params(0, || ParamSet::new().with_int("length", period as i64));
+        let span = sma.update(child, BarTick::close_only(range), child_params)?;
         let basis = if state.len() < period {
             None
         } else {
@@ -726,8 +725,8 @@ impl Indicator for SupertrendIndicator {
         // the legs the batch ATR reads — while the band children below hold
         // through holes, mirroring the batch frame.
         let atr = AtrIndicator::new();
-        let span =
-            atr.update(state.child(0), bar, &Self::atr_params(length))?;
+        let (child, child_params) = state.child_with_params(0, || Self::atr_params(length));
+        let span = atr.update(child, bar, child_params)?;
         let clean = [bar.high, bar.low, bar.close].iter().all(|v| v.is_finite());
         let seeded = matches!(state.child(3).last(), Some(d) if d.is_finite());
         let (line, dir) = match (clean, span) {

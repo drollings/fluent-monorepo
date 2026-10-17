@@ -475,3 +475,201 @@ async fn close_all_emits_exactly_once_and_retries_lookup() {
     .await;
     session.shutdown().await;
 }
+
+// ── approval inbox: human decisions are journaled lifecycle rows ──
+
+/// A proposal waiting on a human: risk passed, no grant covers it. Setup
+/// moves stay in memory; only the human act journals — the tests pin that
+/// the decision row is what replay projects.
+fn pending_proposal(id: &str) -> protopyne_strategy::Proposal {
+    use protopyne_strategy::ProposalEvent as E;
+    let mut proposal = protopyne_strategy::Proposal::new()
+        .id(id.to_owned())
+        .strategy("ribbon".to_owned())
+        .underlying("SPY".to_owned())
+        .direction(protopyne_strategy::Direction::Long)
+        .side(protopyne_strategy::ProposalSide::Entry)
+        .structure(protopyne_strategy::StructureKind::Vertical)
+        .quantity(protopyne_types::Qty::new(Decimal::from(2)))
+        .limit_price(money("600.50"))
+        .max_loss(money("300"))
+        .notional(money("1_000"))
+        .dte_days(30)
+        .conviction(0.8)
+        .activity_score(0.7)
+        .created_at(now())
+        .build();
+    proposal.apply(E::PassRisk, "risk approved", now()).expect("pass risk");
+    proposal.apply(E::RequireHuman, "no grant covers entry", now()).expect("ask human");
+    assert_eq!(proposal.state, protopyne_strategy::ProposalState::PendingHuman);
+    proposal
+}
+
+fn transition_rows(events: &[crate::journal::JournalEvent]) -> Vec<&crate::journal::JournalEvent> {
+    events
+        .iter()
+        .filter(|event| event.kind == PROPOSAL_TRANSITION_KIND)
+        .collect()
+}
+
+/// Approving journals one lifecycle row, advances the proposal, replays to
+/// `Approved`, and leaves the order replica empty: a human decision is
+/// authority over a proposal, never a phantom order.
+#[tokio::test]
+async fn approval_journals_advances_and_replays() {
+    use protopyne_strategy::{ProposalEvent as E, ProposalState as S};
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("journal.db");
+    let (journal, permit) = journal_at(&path);
+    let mut proposal = pending_proposal("prop-approve-1");
+    scoped(permit.clone(), async {
+        let entry = decide_proposal(&journal, &permit, &mut proposal, E::Approve, "operator approved", now())
+            .expect("pending approval records");
+        assert_eq!((entry.from, entry.to), (S::PendingHuman, S::Approved));
+        assert_eq!(proposal.state, S::Approved);
+        let replayed = journal.replay(&permit).expect("replay").events;
+        assert_eq!(transition_rows(&replayed).len(), 1, "exactly one decision row");
+        assert_eq!(
+            replay_proposal_states(&replayed).get("prop-approve-1"),
+            Some(&S::Approved),
+            "replay projects the journaled decision"
+        );
+        assert!(
+            StateReplica::apply(&replayed).orders.is_empty(),
+            "lifecycle rows must not read as orders"
+        );
+    })
+    .await;
+}
+
+/// Rejecting journals one lifecycle row, advances to `Rejected`, and
+/// replays — the same shape as approval, the other terminal human answer.
+#[tokio::test]
+async fn rejection_journals_advances_and_replays() {
+    use protopyne_strategy::{ProposalEvent as E, ProposalState as S};
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("journal.db");
+    let (journal, permit) = journal_at(&path);
+    let mut proposal = pending_proposal("prop-reject-1");
+    scoped(permit.clone(), async {
+        let entry = decide_proposal(&journal, &permit, &mut proposal, E::Reject, "too much size", now())
+            .expect("pending rejection records");
+        assert_eq!((entry.from, entry.to), (S::PendingHuman, S::Rejected));
+        assert_eq!(proposal.state, S::Rejected);
+        let replayed = journal.replay(&permit).expect("replay").events;
+        assert_eq!(transition_rows(&replayed).len(), 1, "exactly one decision row");
+        assert_eq!(
+            replay_proposal_states(&replayed).get("prop-reject-1"),
+            Some(&S::Rejected)
+        );
+    })
+    .await;
+}
+
+/// Approving a proposal that is not waiting on a human refuses with the
+/// state named, journals nothing, and leaves the proposal untouched.
+#[tokio::test]
+async fn approval_outside_pending_human_refuses_without_a_row() {
+    use protopyne_strategy::{ProposalEvent as E, ProposalState as S};
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("journal.db");
+    let (journal, permit) = journal_at(&path);
+    let mut proposal = pending_proposal("prop-early-1");
+    proposal.state = S::Proposed;
+    scoped(permit.clone(), async {
+        let refusal = decide_proposal(&journal, &permit, &mut proposal, E::Approve, "too eager", now())
+            .expect_err("approval from Proposed must refuse");
+        assert!(refusal.to_string().contains("Proposed"), "refusal names the state, got: {refusal}");
+        assert_eq!(proposal.state, S::Proposed, "refused decisions change nothing");
+        let replayed = journal.replay(&permit).expect("replay").events;
+        assert!(transition_rows(&replayed).is_empty(), "no row without a decision");
+        assert!(replay_proposal_states(&replayed).is_empty(), "no projection without rows");
+    })
+    .await;
+}
+
+/// A second decision on a settled proposal refuses: terminal states take
+/// no further human act, and the first row stands alone.
+#[tokio::test]
+async fn second_decision_on_a_settled_proposal_refuses() {
+    use protopyne_strategy::ProposalEvent as E;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("journal.db");
+    let (journal, permit) = journal_at(&path);
+    let mut proposal = pending_proposal("prop-once-1");
+    scoped(permit.clone(), async {
+        decide_proposal(&journal, &permit, &mut proposal, E::Approve, "yes", now())
+            .expect("first decision records");
+        decide_proposal(&journal, &permit, &mut proposal, E::Approve, "yes again", now())
+            .expect_err("settled proposals take no second act");
+        let replayed = journal.replay(&permit).expect("replay").events;
+        assert_eq!(transition_rows(&replayed).len(), 1, "the first row stands alone");
+    })
+    .await;
+}
+
+/// The decision path carries human acts only: machine lifecycle events
+/// (`Submit`, `Fill`, …) refuse here and travel the run path instead, so
+/// the journal never confuses who authorized what.
+#[tokio::test]
+async fn machine_events_refuse_on_the_decision_path() {
+    use protopyne_strategy::{ProposalEvent as E, ProposalState as S};
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("journal.db");
+    let (journal, permit) = journal_at(&path);
+    let mut proposal = pending_proposal("prop-submit-1");
+    scoped(permit.clone(), async {
+        let refusal = decide_proposal(&journal, &permit, &mut proposal, E::Submit, "machine act", now())
+            .expect_err("machine events must refuse");
+        assert!(refusal.to_string().contains("Approve"), "refusal names the plane, got: {refusal}");
+        assert_eq!(proposal.state, S::PendingHuman, "refused events change nothing");
+        let replayed = journal.replay(&permit).expect("replay").events;
+        assert!(transition_rows(&replayed).is_empty(), "no row for a refused event");
+    })
+    .await;
+}
+
+/// The replay fold is last-wins per proposal, skips unparseable rows and
+/// every other kind: a corrupt detail never moves a projection.
+#[test]
+fn replay_fold_is_last_wins_and_skips_noise() {
+    use protopyne_strategy::{JournaledTransition, ProposalState as S};
+    let row = |seq: i64, id: &str, to: S| crate::journal::JournalEvent {
+        seq,
+        client_id: id.to_owned(),
+        kind: PROPOSAL_TRANSITION_KIND.to_owned(),
+        detail: serde_json::to_string(&JournaledTransition {
+            proposal_id: id.to_owned(),
+            from: S::PendingHuman,
+            to,
+            reason: "test".to_owned(),
+            at: now(),
+        })
+        .expect("detail encodes"),
+        at_ms: 1_700_000_000_000 + seq,
+    };
+    let events = vec![
+        row(1, "a", S::Approved),
+        crate::journal::JournalEvent {
+            seq: 2,
+            client_id: "a".to_owned(),
+            kind: "filled".to_owned(),
+            detail: "{}".to_owned(),
+            at_ms: 1_700_000_000_002,
+        },
+        crate::journal::JournalEvent {
+            seq: 3,
+            client_id: "b".to_owned(),
+            kind: PROPOSAL_TRANSITION_KIND.to_owned(),
+            detail: "not json".to_owned(),
+            at_ms: 1_700_000_000_003,
+        },
+        row(4, "a", S::Rejected),
+        row(5, "c", S::Approved),
+    ];
+    let states = replay_proposal_states(&events);
+    assert_eq!(states.get("a"), Some(&S::Rejected), "last row wins");
+    assert_eq!(states.get("c"), Some(&S::Approved));
+    assert!(!states.contains_key("b"), "corrupt details never project");
+    assert_eq!(states.len(), 2);
+}

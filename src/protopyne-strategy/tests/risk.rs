@@ -191,3 +191,60 @@ fn caps_read_exact_decimals() {
     let refused = engine.check(&over_cap, &healthy()).expect_err("over-cap refuses");
     assert!(refused.reasons.contains(&RiskReason::OverLossCap));
 }
+
+#[test]
+fn over_bound_quote_age_and_clock_skew_refuse_at_construction() {
+    for (quote_age, skew) in [(3_601, 5), (0, 5), (60, 3_601), (60, 0)] {
+        let limits =
+            RiskLimits::new().quote_max_age_secs(quote_age).clock_skew_secs(skew).build();
+        assert!(
+            limits.validate().is_err(),
+            "quote {quote_age}/skew {skew} refuses at construction"
+        );
+        let text = serde_json::to_string(&limits).expect("limits serialize");
+        let back: RiskLimits = serde_json::from_str(&text).expect("limits deserialize");
+        assert!(
+            back.validate().is_err(),
+            "the serde path refuses too: quote {quote_age}/skew {skew}"
+        );
+        let engine = RiskEngine::new(limits);
+        let refused = engine
+            .check(&proposal(), &healthy())
+            .expect_err("an invalid engine fails closed");
+        assert!(refused.reasons.contains(&RiskReason::Unrepresentable));
+    }
+    let edge = RiskLimits::new().quote_max_age_secs(3_600).clock_skew_secs(1).build();
+    assert!(edge.validate().is_ok(), "the declared bounds still construct");
+}
+
+#[test]
+fn unrepresentable_cap_fails_closed_at_construction() {
+    for cap in [f64::NAN, f64::INFINITY, f64::MAX] {
+        let limits = RiskLimits::new().max_loss_per_trade(cap).build();
+        assert_eq!(limits.loss_cap(), None, "the cap has no decimal reading");
+        let engine = RiskEngine::new(limits);
+        let refused = engine
+            .check(&proposal(), &healthy())
+            .expect_err("no reading fails closed");
+        assert!(refused.reasons.contains(&RiskReason::Unrepresentable));
+    }
+    let limits = RiskLimits::new().max_notional(f64::MAX).build();
+    assert_eq!(limits.notional_cap(), None, "the cap has no decimal reading");
+    let engine = RiskEngine::new(limits);
+    let refused = engine
+        .check(&proposal(), &healthy())
+        .expect_err("no reading fails closed");
+    assert!(refused.reasons.contains(&RiskReason::Unrepresentable));
+}
+
+#[test]
+fn engine_field_edits_reparse_the_stored_caps() {
+    use fluent_wvr::FieldAccess as _;
+    let mut engine = RiskEngine::new(RiskLimits::default());
+    assert!(engine.check(&proposal(), &healthy()).is_ok());
+    engine.set_field("max_loss_per_trade", "100").expect("cap edits");
+    let refused = engine
+        .check(&proposal(), &healthy())
+        .expect_err("the edited cap binds");
+    assert!(refused.reasons.contains(&RiskReason::OverLossCap));
+}

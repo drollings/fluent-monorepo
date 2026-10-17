@@ -2,16 +2,19 @@
 
 //! Generic paint scaffolding over headless chart data.
 //!
-//! This crate owns the domain-blind machinery every native chart UI needs —
+//! This crate owns the display-side machinery every native chart UI needs —
 //! pane view-models, viewport geometry, DAG-ordered compute plans,
 //! fingerprint-keyed series caches, layout/theme control-plane components,
 //! headless paint geometry plus thin `egui` emitters, supervised feed/wave
 //! plumbing, and replay cursors — composed from the workspace primitives
 //! (`fluent-wvr`, `fluent-concurrency`, `fluent-dag`, `common-core`) plus
-//! display vocabulary (chart-model rows), pure scale math (chart-scale), and
-//! the shared validation bridge (types). It knows no indicator, no regime,
-//! no Pine, and no trading path: trading-domain display truth lives in the
-//! terminal crate built on top.
+//! three chart-domain dependencies, stated explicitly: `protopyne-chart-model`
+//! (`ChartRow`/`ChartBars` rows, `Annotation` overlays, `to_display_float`),
+//! `protopyne-chart-scale` (`PriceRange`/`PriceScale` geometry, `nice_ticks`),
+//! and `protopyne-types` (`Validate`/`check_for_execute`/`valid_output`).
+//! "Domain-blind" means blind to indicator, regime, Pine, and trading-path
+//! logic — never dependency-free of chart display types. Trading-domain
+//! display truth lives in the terminal crate built on top.
 //!
 //! The numeric boundary is one-way: `Decimal` values become display `f64`
 //! through the chart-model conversion (`rows_of`/`row_of`/`to_display_float`),

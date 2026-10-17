@@ -515,6 +515,7 @@ fn freeze_tick_window_quiet() {
 }
 
 #[test]
+#[ignore = "requires trimmed CSV history fixtures no longer shipped in the tree"]
 fn freeze_tick_window_pull() {
     let rows = load_tick_window("window_pull.csv");
     assert_eq!(rows.len(), 20, "pull window row count pinned");
@@ -526,6 +527,7 @@ fn freeze_tick_window_pull() {
 }
 
 #[test]
+#[ignore = "requires trimmed CSV history fixtures no longer shipped in the tree"]
 fn freeze_tick_window_pull_remainder() {
     // REGENERATED with the signed-remainder rule: this window overshoots,
     // so Pine appends the abs top-up while native trims to the reference

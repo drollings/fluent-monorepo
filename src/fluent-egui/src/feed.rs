@@ -1,7 +1,7 @@
 //! Concurrency perimeter: feeds, waves, caps, aborts, backpressure.
 //!
 //! History and live bars flow through a [`ChartFeed`]: a `Scope`-owned set
-//! of feed tasks pushing [`ChartRows`] over a bounded channel, so a burst
+//! of feed tasks pushing [`ChartBars`] over a bounded channel, so a burst
 //! tape can never grow the queue. Pane recompute waves run as
 //! [`PaneWaveUnit`]s in a [`SupervisedBatch`] ordered by the pane plan — a
 //! failed unit cancels its transitive dependents only. Heavy series rebuilds
@@ -32,26 +32,26 @@ use fluent_concurrency::stream::StreamAbort;
 use fluent_concurrency::tokio_runtime;
 use fluent_wvr::prelude::*;
 use fluent_wvr::{Describable, FieldAccess};
-use protopyne_chart_model::ChartRows;
+use protopyne_chart_model::ChartBars;
 use tokio::sync::mpsc;
 
 use crate::error::EguiError;
 use crate::plan::PanePlan;
 
-/// `Scope`-owned history and live feed pushing [`ChartRows`] over a bounded
+/// `Scope`-owned history and live feed pushing [`ChartBars`] over a bounded
 /// channel.
 ///
 /// Dropping without [`close`](Self::close) aborts feed tasks synchronously;
 /// closing the feed drains them first. Either way tasks never outlive the feed.
 pub struct ChartFeed {
     scope: Scope,
-    tx: mpsc::Sender<ChartRows>,
+    tx: mpsc::Sender<ChartBars>,
 }
 
 impl ChartFeed {
     /// Open a feed whose channel holds at most `queue_capacity` batches;
     /// refuses a zero capacity with a reason.
-    pub fn new(queue_capacity: usize) -> Result<(Self, mpsc::Receiver<ChartRows>), EguiError> {
+    pub fn new(queue_capacity: usize) -> Result<(Self, mpsc::Receiver<ChartBars>), EguiError> {
         if queue_capacity == 0 {
             return Err(EguiError::InvalidParam {
                 what: "queue_capacity".to_owned(),
@@ -64,13 +64,13 @@ impl ChartFeed {
 
     /// Clone the batch sender for producers outside the scope.
     #[must_use]
-    pub fn sender(&self) -> mpsc::Sender<ChartRows> {
+    pub fn sender(&self) -> mpsc::Sender<ChartBars> {
         self.tx.clone()
     }
 
     /// Spawn a scope-owned task pushing `batches` in order; stops early when
     /// every receiver is gone.
-    pub fn spawn_history(&mut self, batches: Vec<ChartRows>) {
+    pub fn spawn_history(&mut self, batches: Vec<ChartBars>) {
         let tx = self.tx.clone();
         let _ = self.scope.spawn(async move {
             for batch in batches {
@@ -300,7 +300,7 @@ pub struct HistoryRung {
     /// Source name for diagnostics.
     pub name: String,
     /// Bars on hit; `None` means this rung misses.
-    pub rows: Option<ChartRows>,
+    pub rows: Option<ChartBars>,
     /// Whether a miss here is terminal (abort the ladder) rather than a skip.
     pub terminal: bool,
 }
@@ -316,14 +316,14 @@ pub enum HistoryError {
 /// Load history through the canonical first-Ok ladder: the first rung with
 /// bars wins, misses skip to the next rung, terminal misses abort the walk,
 /// and total exhaustion is a clean `Ok(None)`.
-pub async fn load_history(rungs: Vec<HistoryRung>) -> Result<Option<ChartRows>, HistoryError> {
+pub async fn load_history(rungs: Vec<HistoryRung>) -> Result<Option<ChartBars>, HistoryError> {
     first_accept_in_order(rungs, run_rung, |error| {
         matches!(error, HistoryError::Terminal(_))
     })
     .await
 }
 
-async fn run_rung(rung: HistoryRung) -> Result<Option<ChartRows>, HistoryError> {
+async fn run_rung(rung: HistoryRung) -> Result<Option<ChartBars>, HistoryError> {
     match rung {
         HistoryRung { rows: Some(rows), .. } => Ok(Some(rows)),
         HistoryRung { name, terminal: true, .. } => Err(HistoryError::Terminal(name)),

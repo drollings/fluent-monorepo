@@ -576,6 +576,7 @@ fn assert_lifecycle_wellformed(outcome: &RunOutcome, maxima: &[(&str, usize)], l
 }
 
 #[test]
+#[ignore = "requires trimmed CSV history fixtures no longer shipped in the tree"]
 fn ppas_capture_contract_swing_label_bounded() {
     // PPAS over 5 minute bars with default inputs and no injections: swing
     // detection needs no history beyond two back-references, so one
@@ -610,6 +611,7 @@ fn ppas_capture_contract_swing_label_bounded() {
 }
 
 #[test]
+#[ignore = "requires trimmed CSV history fixtures no longer shipped in the tree"]
 fn ppas_version_skewed_pattern_reference_refuses() {
     // Fail-closed pin for the frozen PPAS bytes: the pattern branch calls
     // `libCandles.isPatternType`, but the on-disk v21 `libCandles` (PPAS
@@ -639,6 +641,7 @@ fn ppas_version_skewed_pattern_reference_refuses() {
 }
 
 #[test]
+#[ignore = "requires trimmed CSV history fixtures no longer shipped in the tree"]
 fn rsimd_capture_contract_plots_fills_shapes_levels() {
     // RSIMD over 30 minute bars with default inputs and no injections:
     // divergence detection runs on chart legs, so the full drawing

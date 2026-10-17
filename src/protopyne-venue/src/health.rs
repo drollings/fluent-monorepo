@@ -30,6 +30,30 @@ pub struct HealthState {
     /// a genuine default-valued reading apart; the verdict treats both as
     /// no objection either way.
     pub store: StoreHealth,
+    /// Whether the journal's book agrees with the venue's. No objection by
+    /// default: a state built before the reconciliation driver ran (or on a
+    /// path with no venue to diverge) evaluates exactly as it did before the
+    /// reconciliation gate existed.
+    #[serde(default = "reconciled_when_absent")]
+    pub reconciled: bool,
+    /// Whether the evaluated series is contiguous. No objection by default:
+    /// a state built where no backfill sensor runs evaluates exactly as it
+    /// did before the backfill gate existed; only an observed hole fails it.
+    #[serde(default = "backfilled_when_absent")]
+    pub backfilled: bool,
+}
+
+/// A state that never observed reconciliation is no objection, matching the
+/// store reading's "no reading is no objection" rule; only a state that
+/// observed a mismatch fails the gate.
+fn reconciled_when_absent() -> bool {
+    true
+}
+
+/// A state that never ran a backfill sensor is no objection, matching the
+/// reconciliation rule; only a state that observed a hole fails the gate.
+fn backfilled_when_absent() -> bool {
+    true
 }
 
 /// Health bounds. All five are **(correctness)** gates.
@@ -94,6 +118,11 @@ pub enum HealthGate {
     StoreWatermarkAge,
     /// Store open gaps above the limit.
     StoreGaps,
+    /// Journal and venue books disagree.
+    Reconcile,
+    /// A reconnect hole is unspliced: the series the signals would read may
+    /// be wrong.
+    Backfill,
 }
 
 impl HealthGate {
@@ -109,7 +138,9 @@ impl HealthGate {
             | Self::ClockSkew
             | Self::StreamState
             | Self::StoreWatermarkAge
-            | Self::StoreGaps => GateClass::Integrity,
+            | Self::StoreGaps
+            | Self::Reconcile
+            | Self::Backfill => GateClass::Integrity,
         }
     }
 }
@@ -236,6 +267,18 @@ fn evaluate_gates(state: &HealthState, limits: &HealthLimits) -> Vec<GateFailure
             ),
         });
     }
+    if !state.reconciled {
+        failures.push(GateFailure {
+            gate: HealthGate::Reconcile,
+            reason: "reconciliation mismatch: journal and venue books disagree".to_owned(),
+        });
+    }
+    if !state.backfilled {
+        failures.push(GateFailure {
+            gate: HealthGate::Backfill,
+            reason: "backfill incomplete: signals suspended until the missing bars land".to_owned(),
+        });
+    }
     failures
 }
 
@@ -304,6 +347,8 @@ pub fn serving_verdict(reading: StoreHealth) -> HealthVerdict {
         clock_skew_secs: 0,
         stream_connected: true,
         store: reading,
+        reconciled: true,
+        backfilled: true,
     };
     may_trade(&state, &HealthLimits::new().build())
 }

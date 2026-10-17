@@ -57,7 +57,8 @@ fn break_lines_align_with_the_canonical_scan() {
     let provider = DailySessionProvider::continuous();
     let pane = Viewport::new(PriceScaleMode::Normal, 90.0, 110.0, 400.0, 8.0, 90.0, false)
         .expect("valid viewport");
-    let lines = break_lines(&pane, &bars, &provider);
+    let mut cache = SessionBreakCache::new();
+    let lines = break_lines(&mut cache, &pane, &bars, &provider);
     let scanned = find_session_breaks(&bars, &provider);
     assert_eq!(lines.len(), scanned.len(), "every scanned break gets exactly one gridline");
     assert_eq!(lines.len(), 1, "one midnight boundary in this fixture");
@@ -68,7 +69,68 @@ fn break_lines_align_with_the_canonical_scan() {
         // contract — never a second mapping call.
         assert_eq!(line.x.to_bits(), (*index as f32 * 8.0).to_bits());
     }
-    assert!(break_lines(&pane, &[], &provider).is_empty());
+    assert!(break_lines(&mut cache, &pane, &[], &provider).is_empty());
+}
+
+#[test]
+fn session_break_cache_matches_a_fresh_scan() {
+    let bars = vec![
+        bar_at_utc(2026, 1, 2, 12, 100.0),
+        bar_at_utc(2026, 1, 2, 20, 101.0),
+        bar_at_utc(2026, 1, 3, 12, 102.0),
+    ];
+    let provider = DailySessionProvider::continuous();
+    let pane = Viewport::new(PriceScaleMode::Normal, 90.0, 110.0, 400.0, 8.0, 90.0, false)
+        .expect("valid viewport");
+    let mut cache = SessionBreakCache::new();
+    cache.refresh(&bars, &provider);
+    assert_eq!(cache.breaks(), find_session_breaks(&bars, &provider).as_slice());
+    let lines = cache.lines(&pane);
+    assert_eq!(lines.len(), cache.breaks().len(), "one gridline per cached break");
+    for (line, (index, _)) in lines.iter().zip(cache.breaks().iter()) {
+        assert_eq!(line.index, *index);
+        assert_eq!(line.x.to_bits(), (*index as f32 * 8.0).to_bits());
+    }
+}
+
+#[test]
+fn identical_republish_skips_the_scan() {
+    let bars = vec![
+        bar_at_utc(2026, 1, 2, 12, 100.0),
+        bar_at_utc(2026, 1, 2, 20, 101.0),
+        bar_at_utc(2026, 1, 3, 12, 102.0),
+    ];
+    let provider = DailySessionProvider::continuous();
+    let mut cache = SessionBreakCache::new();
+    let first = cache.refresh(&bars, &provider);
+    assert_eq!(cache.rebuilds(), 1, "the first refresh scans");
+    // A republish of equal content keeps the revision and never re-scans —
+    // the key is the content, not the slice's identity.
+    assert_eq!(cache.refresh(&bars, &provider), first);
+    let equal_clone = bars.clone();
+    assert_eq!(cache.refresh(&equal_clone, &provider), first);
+    assert_eq!(cache.rebuilds(), 1, "identical content skips the scan");
+}
+
+#[test]
+fn a_changed_interior_recomputes_despite_fixed_endpoints() {
+    // Two endpoints that never move; the interior changes a day so the break
+    // count moves 1 -> 2. A two-endpoint key would serve the stale scan.
+    let provider = DailySessionProvider::continuous();
+    let mut bars = vec![
+        bar_at_utc(2026, 1, 1, 12, 100.0),
+        bar_at_utc(2026, 1, 1, 20, 101.0),
+        bar_at_utc(2026, 1, 3, 12, 102.0),
+    ];
+    let mut cache = SessionBreakCache::new();
+    let first = cache.refresh(&bars, &provider);
+    assert_eq!(cache.breaks().len(), 1, "day 1 -> day 3 is one break");
+    // Same first and last bars; the middle bar moves from day 1 to day 2.
+    bars[1] = bar_at_utc(2026, 1, 2, 12, 101.0);
+    let second = cache.refresh(&bars, &provider);
+    assert_ne!(first, second, "changed content bumps the revision");
+    assert_eq!(cache.rebuilds(), 2);
+    assert_eq!(cache.breaks().len(), 2, "day 1 -> day 2 -> day 3 is two breaks");
 }
 
 #[test]

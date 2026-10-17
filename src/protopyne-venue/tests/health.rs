@@ -7,6 +7,8 @@ fn healthy() -> HealthState {
         clock_skew_secs: 1,
         stream_connected: true,
         store: StoreHealth::default(),
+        reconciled: true,
+        backfilled: true,
     }
 }
 

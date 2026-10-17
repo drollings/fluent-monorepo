@@ -12,5 +12,5 @@ pub mod mapping;
 pub mod ticks;
 
 pub use error::ScaleError;
-pub use mapping::{ChartMapping, PriceRange, PriceScale, PriceScaleMode};
+pub use mapping::{PriceRange, PriceScale, PriceScaleMode};
 pub use ticks::{Tick, nice_ticks};

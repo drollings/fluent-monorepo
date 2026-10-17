@@ -17,8 +17,10 @@
 //! Performance discipline: the bridge mutates the taken field table in
 //! place and never copies the `data` array — not on hydrate (borrowed
 //! views only), not on serve (one slot written per `push`, none per
-//! `get`/`size`). Per-call full-array copies (clone plus drop, ~60µs on
-//! the DVP ratio) are what made the interpreted `reconcile` path slow;
+//! `get`/`size`). The `this` it hands back is a handle to the resident
+//! table (`FieldTable` is copy-on-write), so the return copies no table
+//! either. Per-call full-array copies (clone plus drop, ~60µs on the DVP
+//! ratio) are what made the interpreted `reconcile` path slow;
 //! reintroducing them here would reproduce the bottleneck natively.
 
 use crate::error::KernelError;

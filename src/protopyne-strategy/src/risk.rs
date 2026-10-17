@@ -99,6 +99,12 @@ impl RiskLimits {
         if !(self.max_notional > 0.0 && self.max_notional.is_finite()) {
             return Err("max_notional must be a positive finite cap".to_owned());
         }
+        if self.quote_max_age_secs < 1 || self.quote_max_age_secs > 3_600 {
+            return Err("quote_max_age_secs must be within [1, 3600]".to_owned());
+        }
+        if self.clock_skew_secs < 1 || self.clock_skew_secs > 3_600 {
+            return Err("clock_skew_secs must be within [1, 3600]".to_owned());
+        }
         Ok(())
     }
 
@@ -196,13 +202,18 @@ impl RiskApproved {
 /// side-effect-free function of proposal, limits, and observed state.
 pub struct RiskEngine {
     limits: RiskLimits,
+    loss_cap: Option<Decimal>,
+    notional_cap: Option<Decimal>,
 }
 
 impl RiskEngine {
-    /// Bind an engine to its limits.
+    /// Bind an engine to its limits, parsing both caps once. A cap with no
+    /// decimal reading stores as `None`, and every later check fails closed.
     #[must_use]
     pub fn new(limits: RiskLimits) -> Self {
-        Self { limits }
+        let loss_cap = limits.loss_cap();
+        let notional_cap = limits.notional_cap();
+        Self { limits, loss_cap, notional_cap }
     }
 
     /// Borrow the configured limits. Hot-path reads go through here.
@@ -230,7 +241,7 @@ impl RiskEngine {
             }
             None => reasons.push(RiskReason::Unrepresentable),
         }
-        match self.limits.loss_cap() {
+        match self.loss_cap {
             Some(cap) => {
                 if proposal.max_loss.as_decimal() > cap {
                     reasons.push(RiskReason::OverLossCap);
@@ -238,7 +249,7 @@ impl RiskEngine {
             }
             None => reasons.push(RiskReason::Unrepresentable),
         }
-        match self.limits.notional_cap() {
+        match self.notional_cap {
             Some(cap) => {
                 if proposal.notional.as_decimal() > cap {
                     reasons.push(RiskReason::OverNotionalCap);
@@ -294,7 +305,10 @@ impl WorkUnit for RiskEngine {
 
 impl FieldAccess for RiskEngine {
     fn set_field(&mut self, name: &str, value: &str) -> Result<(), FieldError> {
-        self.limits.set_field(name, value)
+        self.limits.set_field(name, value)?;
+        self.loss_cap = self.limits.loss_cap();
+        self.notional_cap = self.limits.notional_cap();
+        Ok(())
     }
 
     fn get_field(&self, name: &str) -> Result<String, FieldError> {

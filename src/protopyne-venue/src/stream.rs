@@ -67,8 +67,8 @@ pub fn terminal_reason(code: &str) -> Option<&'static str> {
 }
 
 /// Supervised-stream tunables. The breaker budgets below are initial values:
-/// the stream-breaker calibration milestone freezes them after the soak
-/// suite, so move them only through that suite — never by feel.
+/// the calibration suite freezes them after the soak suite, so move them
+/// only through that suite — never by feel.
 ///
 /// [`StreamConfig::validate`] enforces the bounds fail-closed.
 #[derive(

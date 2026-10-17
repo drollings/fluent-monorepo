@@ -32,7 +32,7 @@ fn table() -> FieldTable {
     fields.insert("head".to_owned(), Some(int(0)));
     fields.insert("count".to_owned(), Some(int(0)));
     fields.insert("needs_compaction".to_owned(), Some(bool_value(false)));
-    fields
+    fields.into()
 }
 
 #[test]

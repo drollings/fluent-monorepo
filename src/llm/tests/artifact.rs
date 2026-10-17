@@ -417,6 +417,153 @@ async fn does_not_trust_a_marker_after_same_size_mutation() {
 }
 
 // ---------------------------------------------------------------------------
+// Completion-marker change signal.
+//
+// The marker's whole job is to answer "is this still the file we pinned?"
+// without re-reading multi-GB weights, so the stamp it records must carry
+// enough resolution to tell a same-size rewrite from no rewrite. These
+// assertions read the marker's contents rather than racing wall-clock, which
+// is why they are stable on their own.
+// ---------------------------------------------------------------------------
+
+fn options_for<'a>(
+    cache: &std::path::Path,
+    artifacts: Vec<ModelArtifact>,
+    fetcher: &'a dyn ArtifactFetcher,
+) -> ResolveArtifactsOptions<'a> {
+    ResolveArtifactsOptions {
+        model: "local/test-model",
+        sources: vec![hf_source(cache)],
+        artifacts,
+        on_progress: None,
+        on_download_plan: None,
+        on_fallback: None,
+        fetcher,
+        timeouts: test_timeouts(),
+        lock: test_lock(),
+    }
+}
+
+async fn seed_marker(cache: &std::path::Path, bytes: &[u8]) -> ModelArtifactSource {
+    let source = hf_source(cache);
+    let mirror = StubMirror::new();
+    let options = options_for(
+        cache,
+        vec![artifact("model.gguf", bytes, &sha_of(bytes))],
+        &*mirror,
+    );
+    resolve_model_artifacts(&options).await.unwrap();
+    source
+}
+
+fn marker_path_for(
+    source: &ModelArtifactSource,
+    artifacts: &[ModelArtifact],
+) -> std::path::PathBuf {
+    snapshot_marker_path(source, &snapshot_fingerprint("local/test-model", source, artifacts))
+}
+
+#[tokio::test]
+async fn marker_records_nanosecond_stamps_not_truncated_milliseconds() {
+    let dir = TempDir::new().unwrap();
+    let cache = dir.path().join("cache");
+    std::fs::create_dir_all(&cache).unwrap();
+    let bytes = b"stamp resolution bytes!";
+    std::fs::write(cache.join("model.gguf"), bytes).unwrap();
+
+    let source = seed_marker(&cache, bytes).await;
+    let artifacts = vec![artifact("model.gguf", bytes, &sha_of(bytes))];
+    let path = marker_path_for(&source, &artifacts);
+    let marker: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    let entry = &marker["files"]["model.gguf"];
+
+    assert_eq!(
+        marker["version"], 2,
+        "the marker schema must be the nanosecond-stamp schema"
+    );
+    assert_eq!(
+        entry["stampResolved"],
+        serde_json::json!(true),
+        "a freshly written file on a resolving filesystem must be stamp-trusted"
+    );
+    for field in ["mtimeNs", "ctimeNs"] {
+        let ns = entry[field].as_u64().expect("nanosecond stamp must be recorded");
+        assert_ne!(
+            ns,
+            ns / 1_000_000 * 1_000_000,
+            "{field} must not be millisecond-truncated: {ns}"
+        );
+    }
+    let local = cache.join("model.gguf");
+    let local_ns = common_core::io::mtime_ns(&std::fs::metadata(local).unwrap());
+    assert_eq!(
+        entry["mtimeNs"].as_u64(),
+        Some(local_ns),
+        "the recorded stamp must be the file's own nanosecond mtime"
+    );
+}
+
+#[tokio::test]
+async fn marker_without_usable_resolution_falls_back_to_the_spec_hash() {
+    let dir = TempDir::new().unwrap();
+    let cache = dir.path().join("cache");
+    std::fs::create_dir_all(&cache).unwrap();
+    let bytes = b"coarse timestamp bytes";
+    std::fs::write(cache.join("model.gguf"), bytes).unwrap();
+
+    let source = seed_marker(&cache, bytes).await;
+    let artifacts = vec![artifact("model.gguf", bytes, &sha_of(bytes))];
+    let marker_path = marker_path_for(&source, &artifacts);
+
+    // Simulate a filesystem whose timestamps are too coarse to decide on: the
+    // marker declares its stamps unresolved and pins stale ones. The content is
+    // still correct, so the cache must stay valid — on the hash, not the stamp.
+    let text = std::fs::read_to_string(&marker_path).unwrap();
+    let mut marker: serde_json::Value = serde_json::from_str(&text).unwrap();
+    let entry = &mut marker["files"]["model.gguf"];
+    entry["stampResolved"] = serde_json::json!(false);
+    entry["mtimeNs"] = serde_json::json!(1);
+    entry["ctimeNs"] = serde_json::json!(1);
+    std::fs::write(&marker_path, serde_json::to_string(&marker).unwrap()).unwrap();
+
+    let mirror = StubMirror::new();
+    let good = resolve_model_artifacts(&options_for(
+        &cache,
+        artifacts.clone(),
+        &*mirror,
+    ))
+    .await
+    .unwrap();
+    assert!(
+        mirror.calls().is_empty(),
+        "an unresolved stamp must not cost a re-download when the bytes are right"
+    );
+    assert_eq!(std::fs::read(&good.paths["model.gguf"]).unwrap(), bytes);
+
+    // Same coarse marker, but the bytes are now wrong. The hash fallback is
+    // the only thing left between a mutated cache and a clean resolve, so the
+    // mutation has to be caught.
+    let garbage = b"COARSE TIMESTAMP BYTES";
+    assert_eq!(bytes.len(), garbage.len());
+    std::fs::write(cache.join("model.gguf"), garbage).unwrap();
+    let mirror = StubMirror::new();
+    mirror.route(
+        &model_artifact_url(&hf_source(&cache), "model.gguf"),
+        serve_bytes(bytes),
+    );
+    let repaired = resolve_model_artifacts(&options_for(&cache, artifacts, &*mirror))
+        .await
+        .unwrap();
+    assert!(!mirror.calls().is_empty(), "a mutated cache must re-download");
+    assert_eq!(
+        std::fs::read(&repaired.paths["model.gguf"]).unwrap(),
+        bytes,
+        "the resolved artifact must be the pinned bytes, not the mutated ones"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Fallback eligibility.
 // ---------------------------------------------------------------------------
 

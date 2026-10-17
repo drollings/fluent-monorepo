@@ -36,6 +36,10 @@ pub enum VenueError {
     /// Misconfiguration (bad caps, unknown client ID for cancel, ...).
     #[error("invalid venue request: {0}")]
     Invalid(String),
+    /// The out-of-band alert sink failed. Not retryable: retrying an alert
+    /// send could duplicate pages, so the failure reports loudly instead.
+    #[error("alert sink failure: {0}")]
+    Alert(String),
 }
 
 impl VenueError {

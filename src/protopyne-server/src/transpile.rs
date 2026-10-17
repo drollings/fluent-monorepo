@@ -424,21 +424,22 @@ pub fn compile_spike(source: &str) -> SpikeOutcome {
         return refuse(reasons);
     }
     let lowered = Lowered { bindings, plots };
-    SpikeOutcome::Accepted {
-        rust: emit_rust(&lowered),
-        lowered,
+    match emit_rust(&lowered) {
+        Ok(rust) => SpikeOutcome::Accepted { lowered, rust },
+        Err(reason) => refuse(vec![reason]),
     }
 }
 
-/// Emit Rust source calling the real kernels for `lowered`.
-fn emit_rust(lowered: &Lowered) -> String {
+/// Emit Rust source calling the real kernels for `lowered`, or the reason a
+/// series cannot be emitted honestly.
+fn emit_rust(lowered: &Lowered) -> Result<String, String> {
     let mut out = String::from(
         "use protopyne_kernels::{EmaIndicator, Indicator as _, MidpointIndicator, Ohlcv, ParamSet, SmaIndicator, TrimaIndicator};\n\n\
          /// Generated from an accepted script: one kernel batch per binding.\n\
          pub fn generated(values: &Ohlcv<'_>, params: &ParamSet) -> Result<Vec<protopyne_kernels::IndicatorResult>, protopyne_kernels::KernelError> {\n",
     );
     for binding in &lowered.bindings {
-        out.push_str(&emit_statement(&binding.name, &binding.hair));
+        out.push_str(&emit_statement(&binding.name, &binding.hair)?);
         out.push('\n');
     }
     out.push_str("    Ok(vec![");
@@ -448,19 +449,20 @@ fn emit_rust(lowered: &Lowered) -> String {
         out.push_str(", ");
     }
     out.push_str("])\n}\n");
-    out
+    Ok(out)
 }
 
 /// Emit one statement for a binding: a kernel-batch `let` for rolling
-/// bindings, a comment for structural ones carried in HIR only.
-fn emit_statement(name: &str, hair: &Hair) -> String {
+/// bindings, a comment for structural ones carried in HIR only. Refuses when
+/// the kernel series cannot be emitted honestly.
+fn emit_statement(name: &str, hair: &Hair) -> Result<String, String> {
     match hair {
         Hair::Rolling {
             kernel,
             length,
             series,
         } => {
-            let leg = emit_series(series);
+            let leg = emit_series(series)?;
             let len = match length {
                 Length::Literal(value) => value.to_string(),
                 Length::Input(binding, _) => {
@@ -473,28 +475,43 @@ fn emit_statement(name: &str, hair: &Hair) -> String {
                 "midpoint" => "MidpointIndicator::new()",
                 _ => "SmaIndicator::new()",
             };
-            format!(
+            Ok(format!(
                 "    let _{name} = {indicator}.batch(&Ohlcv::close_only({leg}), &ParamSet::new().with_int(\"length\", {len}))?;"
-            )
+            ))
         }
-        other => format!("    // non-rolling binding '{name}' carried in HIR only: {other:?}"),
+        other => Ok(format!("    // non-rolling binding '{name}' carried in HIR only: {other:?}")),
     }
 }
 
-/// Emit the series expression feeding a kernel.
-fn emit_series(hair: &Hair) -> String {
+/// Emit the series expression feeding a kernel. A plain leg emits; a computed
+/// series refuses — substituting `values.close` would silently compute the
+/// wrong indicator.
+fn emit_series(hair: &Hair) -> Result<String, String> {
     match hair {
-        Hair::Ohlcv(leg) if leg == "close" => "values.close".to_owned(),
-        Hair::Ohlcv(leg) => format!("values.{leg}"),
+        Hair::Ohlcv(leg) if leg == "close" => Ok("values.close".to_owned()),
+        Hair::Ohlcv(leg) => Ok(format!("values.{leg}")),
         Hair::Name(name) => {
-            format!("/* bound series {name} resolved at evaluation */ values.close")
+            Ok(format!("/* bound series {name} resolved at evaluation */ values.close"))
         }
-        Hair::Const(value) => format!("/* constant {value} */ values.close"),
-        Hair::Binary { .. }
-        | Hair::Where { .. }
-        | Hair::Shift { .. }
-        | Hair::Rolling { .. }
-        | Hair::Call { .. } => "values.close".to_owned(),
+        Hair::Const(value) => Ok(format!("/* constant {value} */ values.close")),
+        unsupported => Err(format!(
+            "{} series outside the emission subset: refused, never substituted",
+            hair_kind(unsupported)
+        )),
+    }
+}
+
+/// Short kind name for a refusal reason.
+fn hair_kind(hair: &Hair) -> &'static str {
+    match hair {
+        Hair::Const(_) => "constant",
+        Hair::Name(_) => "bound-name",
+        Hair::Ohlcv(_) => "leg",
+        Hair::Binary { .. } => "binary",
+        Hair::Where { .. } => "conditional",
+        Hair::Shift { .. } => "shift",
+        Hair::Rolling { .. } => "rolling",
+        Hair::Call { .. } => "call",
     }
 }
 

@@ -8,7 +8,15 @@
 //! mtime); a displaced owner fences itself on the missing token file.
 //! Stale locks are taken over after `stale_ms` without heartbeats, or
 //! immediately when the sole owner is a provably exited local PID.
+//!
+//! Heartbeat freshness is measured at nanosecond resolution
+//! (`common_core::io::mtime_ns`). A millisecond stamp can read two distinct
+//! heartbeat rewrites as one, and the failure that produces is not a stale
+//! cache but a split brain: a contender that under-reads a live owner's
+//! heartbeat concludes the owner is dead and takes the lock, leaving two
+//! writers on one artifact cache.
 
+use common_core::io::{mtime_ns, now_ns};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -297,7 +305,7 @@ fn remove_abandoned_lock(lock_path: &Path, options: &LockOptions) -> Result<bool
 struct LockObservation {
     device: u64,
     inode: u64,
-    newest_heartbeat_ms: u64,
+    newest_heartbeat_ns: u64,
     dead_owner: bool,
 }
 
@@ -312,11 +320,11 @@ fn inspect_lock(lock_path: &Path) -> Result<Option<LockObservation>, LockError> 
         return Ok(Some(LockObservation {
             device: file_device(&metadata),
             inode: file_inode(&metadata),
-            newest_heartbeat_ms: u64::MAX,
+            newest_heartbeat_ns: u64::MAX,
             dead_owner: false,
         }));
     }
-    let mut newest = mtime_ms(&metadata);
+    let mut newest = mtime_ns(&metadata);
     let mut owners = Vec::new();
     let entries = match std::fs::read_dir(lock_path) {
         Ok(entries) => entries,
@@ -331,7 +339,7 @@ fn inspect_lock(lock_path: &Path) -> Result<Option<LockObservation>, LockError> 
         }
         owners.push(name.clone());
         match std::fs::metadata(entry.path()) {
-            Ok(stats) => newest = newest.max(mtime_ms(&stats)),
+            Ok(stats) => newest = newest.max(mtime_ns(&stats)),
             Err(error) if is_missing(&error) => {}
             Err(error) => return Err(LockError::Io(error)),
         }
@@ -340,14 +348,21 @@ fn inspect_lock(lock_path: &Path) -> Result<Option<LockObservation>, LockError> 
     Ok(Some(LockObservation {
         device: file_device(&metadata),
         inode: file_inode(&metadata),
-        newest_heartbeat_ms: newest,
+        newest_heartbeat_ns: newest,
         dead_owner,
     }))
 }
 
 fn is_abandoned(observation: &LockObservation, options: &LockOptions) -> bool {
     observation.dead_owner
-        || now_ms().saturating_sub(observation.newest_heartbeat_ms) >= options.stale_ms
+        || now_ns().saturating_sub(observation.newest_heartbeat_ns) >= ms_to_ns(options.stale_ms)
+}
+
+/// Convert a millisecond lease option into the nanosecond units heartbeat
+/// stamps are recorded in. Saturating: a `stale_ms` large enough to overflow
+/// reads as "never expires", which is the safe direction.
+fn ms_to_ns(ms: u64) -> u64 {
+    ms.saturating_mul(1_000_000)
 }
 
 /// A sole owner counts as dead only when it names this host, its token file
@@ -409,14 +424,6 @@ fn is_missing(error: &io::Error) -> bool {
         error.kind(),
         io::ErrorKind::NotFound | io::ErrorKind::NotADirectory
     )
-}
-
-fn mtime_ms(metadata: &std::fs::Metadata) -> u64 {
-    metadata
-        .modified()
-        .ok()
-        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
-        .map_or(0, |duration| duration.as_millis() as u64)
 }
 
 #[cfg(unix)]

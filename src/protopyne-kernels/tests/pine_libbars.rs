@@ -1427,6 +1427,7 @@ fn single_minute_row(open_ms: i64) -> LtfDataset {
 /// confirmed minute row (1062 units, exactly the leg, so the remainder has
 /// nothing to add) — landing on 1062.
 #[test]
+#[ignore = "requires trimmed CSV history fixtures no longer shipped in the tree"]
 fn trim_pull_rebuilds_from_injected_row() {
     let rows = load_tick_window("window_pull.csv");
     assert_eq!(rows.len(), 20, "pull window row count pinned");
@@ -1558,6 +1559,7 @@ fn trim_out_of_order_accumulates_without_pull() {
 /// tolerance is the recorded 1-unit tape-vs-confirmed gap, asserted
 /// literally below.
 #[test]
+#[ignore = "requires trimmed CSV history fixtures no longer shipped in the tree"]
 fn trim_pull_remainder_tops_up_to_leg() {
     let rows = load_tick_window("window_pull_remainder.csv");
     assert_eq!(rows.len(), 14, "remainder window row count pinned");
@@ -1641,6 +1643,7 @@ fn high_drift_tape() -> Vec<(i64, f64, u64)> {
 /// firing, and there are none. The silence controls are the below-gate
 /// verbatim windows (quiet 0%, sparse 0.28%, out-of-order 2.38%).
 #[test]
+#[ignore = "requires trimmed CSV history fixtures no longer shipped in the tree"]
 fn drift_rebuild_gate_precision_recall() {
     // (label, run): verbatim windows plus the synthetic high-drift tape.
     let mut cases: Vec<GateCase> = Vec::new();

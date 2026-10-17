@@ -1,7 +1,10 @@
 use super::*;
 use rust_decimal::Decimal;
 
-use protopyne_types::{Bar, Money};
+use protopyne_store::{FoldPolicy, ReadRequest, SymbolId, TapeKey, TimeRange};
+use protopyne_types::{Bar, Money, Timeframe};
+
+use crate::backtest::HistorySource;
 
 fn money(value: &str) -> Money {
     Money::new(value.parse::<Decimal>().expect("decimal"))
@@ -260,4 +263,60 @@ fn report_carries_cum_return_and_rsrs_as_json_keys() {
     );
     assert_eq!(empty.cum_return, None);
     assert_eq!(empty.rsrs, None);
+}
+
+fn tape_source() -> HistorySource {
+    HistorySource::Tape {
+        key: TapeKey {
+            symbol_id: SymbolId(1),
+            timeframe: Timeframe::M15,
+        },
+        request: ReadRequest {
+            symbol: "SPY".to_owned(),
+            venue: "test-venue".to_owned(),
+            timeframe: Timeframe::M15,
+            range: TimeRange::new(None, None).expect("unbounded range"),
+            limit: None,
+            policy: FoldPolicy::ExtendToFullBuckets,
+        },
+    }
+}
+
+#[test]
+fn each_source_arm_names_its_own_history() {
+    // A file run and a store-backed tape must not share one "single CSV" line:
+    // the arm the report names is the arm that was replayed.
+    let version = "spy-15m-v1";
+    assert_eq!(
+        history_source_limit(HistoryKind::of(&HistorySource::Files(vec![])), version, 11),
+        "file history 'spy-15m-v1', 11 bars"
+    );
+    assert_eq!(
+        history_source_limit(HistoryKind::of(&HistorySource::Dynamic(vec![])), version, 11),
+        "in-memory history 'spy-15m-v1', 11 bars"
+    );
+    assert_eq!(
+        history_source_limit(HistoryKind::of(&tape_source()), version, 11),
+        "store-backed history 'spy-15m-v1', 11 bars"
+    );
+}
+
+#[test]
+fn a_source_missing_provenance_names_the_omission() {
+    let omission = uncertified_coverage_limit(false).expect("an uncertified source names it");
+    assert!(
+        omission.contains("provenance"),
+        "the omission names the missing planner provenance, got: {omission}"
+    );
+    assert!(
+        uncertified_coverage_limit(true).is_none(),
+        "a planner-backed source adds no omission line"
+    );
+}
+
+#[test]
+fn absent_capabilities_name_the_prototype_gaps() {
+    assert!(ABSENT_CAPABILITIES.contains("option-chain"));
+    assert!(ABSENT_CAPABILITIES.contains("corporate-action"));
+    assert!(ABSENT_CAPABILITIES.contains("single symbol"));
 }

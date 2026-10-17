@@ -19,8 +19,6 @@
 //! exactly (`#[allow(clippy::float_cmp)]` covers the count literals).
 #![allow(clippy::float_cmp)]
 
-use std::collections::HashMap;
-
 use chrono::TimeZone as _;
 
 use crate::indicator::BarTick;
@@ -383,7 +381,7 @@ fn overflow_declines_with_fields_untouched() {
     // The seam maps the signal to a decline with table and cursor
     // untouched (fresh ring: single deterministic pass).
     let mut ring = full_ring();
-    let mut fields = HashMap::new();
+    let mut fields = crate::FieldTable::new();
     fields.insert("max_candles".to_owned(), Some(PineValue::Int(6)));
     fields.insert("head".to_owned(), Some(PineValue::Int(0)));
     fields.insert("count".to_owned(), Some(PineValue::Int(6)));

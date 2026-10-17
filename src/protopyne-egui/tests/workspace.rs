@@ -15,8 +15,8 @@ use fluent_egui::{
 use chrono::TimeZone as _;
 use protopyne_chart_model::ChartRow;
 use protopyne_view::{
-    ArmResponse, ChartBar, GatewayError, HealthView, JournalRowView, MockGateway, OverlaySeries,
-    PortfolioView, ProposalView, ReplayView, WorstCase,
+    ArmResponse, ChartBar, ChartBars, GatewayError, HealthView, JournalRowView, MockGateway,
+    OverlaySeries, PortfolioView, ProposalView, ReplayView, WorstCase,
 };
 
 /// A gateway that scripts distinct bar counts per symbol, so a switch's
@@ -164,8 +164,7 @@ fn workspace_boots_with_gld_default_and_hot_slotted_integration_lite_and_fast_ma
         vec!["BTC-USD".to_owned()],
         "only crypto shows under the Crypto tab"
     );
-    assert_eq!(AssetClass::All.label(), "All");
-    assert_eq!(AssetClass::all().len(), 5, "five symbol tabs");
+    assert_eq!(AssetClass::all().len(), 4, "four class tabs plus the modal's own All");
 }
 
 #[test]
@@ -1511,6 +1510,32 @@ fn grid_marks_cull_to_the_viewport_window() {
             mark.x.to_bits(),
             viewport.index_to_x(*index).to_bits(),
             "x rides the shared mapping"
+        );
+    }
+}
+
+#[test]
+fn symbol_catalog_matches_the_shared_source() {
+    let shared = protopyne_view::symbol_catalog();
+    let catalog = build_symbol_catalog().expect("the symbol catalog builds");
+    assert_eq!(
+        catalog.len(),
+        shared.len(),
+        "the terminal derives its catalog from the shared source"
+    );
+    for entry in &shared {
+        let registered = catalog
+            .get(&entry.symbol)
+            .unwrap_or_else(|| panic!("shared ticker {} is registered", entry.symbol));
+        assert_eq!(
+            registered.title(),
+            entry.name,
+            "the terminal keeps the shared display name"
+        );
+        assert_eq!(
+            registered.category().label(),
+            entry.asset_class,
+            "the terminal groups by the shared class tag"
         );
     }
 }

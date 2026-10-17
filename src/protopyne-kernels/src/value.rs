@@ -11,7 +11,9 @@
 //! with a default and [`fixnan`] forward-fills a leg without ever
 //! resurrecting a leading warmup prefix.
 
+use std::collections::HashMap;
 use std::fmt;
+use std::sync::Arc;
 
 /// A Pine scalar. Old numeric variants keep their exact reader behavior;
 /// `Str` and the opaque display handles travel beside numerics and never
@@ -211,20 +213,17 @@ impl fmt::Display for EnumHandle {
 pub struct UserInstance {
     /// Declared type name (`Scheduler`).
     pub type_name: String,
-    /// Field bindings in no particular order.
-    pub fields: std::collections::HashMap<String, Option<PineValue>>,
+    /// Field bindings in no particular order, behind a cheap-to-clone handle.
+    pub fields: FieldTable,
 }
 
 impl UserInstance {
     /// Build an instance from evaluated field bindings.
     #[must_use]
-    pub fn new(
-        type_name: &str,
-        fields: std::collections::HashMap<String, Option<PineValue>>,
-    ) -> Self {
+    pub fn new(type_name: &str, fields: impl Into<FieldTable>) -> Self {
         Self {
             type_name: type_name.to_owned(),
-            fields,
+            fields: fields.into(),
         }
     }
 }
@@ -428,10 +427,75 @@ impl NativeCall {
 }
 
 /// Pine object field table shared with the engine bridge: field name to
-/// Pine value (`None` is Pine `na`). The engine owns the table; native
-/// calls receive it borrowed and return a replaced one, so unmapped fields
-/// pass through byte-identical without native code ever seeing them.
-pub type FieldTable = std::collections::HashMap<String, Option<PineValue>>;
+/// Pine value (`None` is Pine `na`). A cheap-to-clone handle over one
+/// resident map: cloning shares the table, and the first mutation after a
+/// share copies it (copy-on-write). So a native bridge that returns `this`
+/// hands back the resident table by handle instead of copying it — and
+/// never copies the arrays it holds — while an unmapped field still passes
+/// through byte-identical without native code ever seeing it.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct FieldTable(Arc<HashMap<String, Option<PineValue>>>);
+
+impl FieldTable {
+    /// An empty table.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Whether two handles share one resident table (no copy has separated
+    /// them yet). A native bridge that returns `this` hands back a handle to
+    /// the receiver's table, so the call copies no table — and none of the
+    /// arrays it holds.
+    #[must_use]
+    pub fn shares(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl From<HashMap<String, Option<PineValue>>> for FieldTable {
+    fn from(fields: HashMap<String, Option<PineValue>>) -> Self {
+        Self(Arc::new(fields))
+    }
+}
+
+impl FromIterator<(String, Option<PineValue>)> for FieldTable {
+    fn from_iter<T: IntoIterator<Item = (String, Option<PineValue>)>>(iter: T) -> Self {
+        Self(Arc::new(iter.into_iter().collect()))
+    }
+}
+
+impl std::ops::Deref for FieldTable {
+    type Target = HashMap<String, Option<PineValue>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for FieldTable {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        Arc::make_mut(&mut self.0)
+    }
+}
+
+impl<'a> IntoIterator for &'a FieldTable {
+    type Item = (&'a String, &'a Option<PineValue>);
+    type IntoIter = std::collections::hash_map::Iter<'a, String, Option<PineValue>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a mut FieldTable {
+    type Item = (&'a String, &'a mut Option<PineValue>);
+    type IntoIter = std::collections::hash_map::IterMut<'a, String, Option<PineValue>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        Arc::make_mut(&mut self.0).iter_mut()
+    }
+}
 
 #[cfg(test)]
 #[path = "../tests/value.rs"]
