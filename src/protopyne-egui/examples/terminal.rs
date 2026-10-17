@@ -10,8 +10,8 @@
 //!
 //! The window is a text dashboard over the gateway views (health and
 //! command-plane status, portfolio, proposals, chart-bar range, one
-//! overlay) plus the replay scrub; chart painting stays in the `demo` shell,
-//! which this file does not duplicate. No decision logic lives here: every
+//! overlay) plus the replay scrub; chart painting stays in the chart-shell
+//! (`demo`) example, which this file does not duplicate. No decision logic lives here: every
 //! number on screen is a gateway read, and the only write (`arm`) is the
 //! form's submit.
 //!
@@ -20,7 +20,9 @@
 //! or pass `--check` to pull every view through the trait object without
 //! opening a window. `--base` declares the history's bar spacing for the
 //! gateway fold (default `15M` for files, `1M` for history-root directories);
-//! it is never inferred from the filename.
+//! it is never inferred from the filename. `--mock --check` output is pinned
+//! in `tests/data/terminal_mock_check.txt`: the `protopyne-demo` make target
+//! reproduces it byte-for-byte.
 
 use std::path::PathBuf;
 

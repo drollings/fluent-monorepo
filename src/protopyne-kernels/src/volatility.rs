@@ -9,7 +9,7 @@
 use crate::averages::RmaIndicator;
 use crate::error::KernelError;
 use crate::indicator::{
-    fin_or_none, BarTick, FullTick, Indicator, IndicatorId, IndicatorResult, IndicatorSpec,
+    fin_or_none, nan_hole, BarTick, FullTick, Indicator, IndicatorId, IndicatorResult, IndicatorSpec,
     IndicatorState, NamedSeries, NamedValue, Ohlcv, ParamSet,
 };
 use crate::sma::SmaIndicator;
@@ -137,7 +137,7 @@ impl Indicator for AtrIndicator {
         let nans: Vec<f64> = ranges
             .values
             .iter()
-            .map(|v| v.unwrap_or(f64::NAN))
+            .map(|v| nan_hole(*v))
             .collect();
         let rma = RmaIndicator::new();
         let smoothed = rma.batch(
@@ -161,7 +161,7 @@ impl Indicator for AtrIndicator {
         let (child, child_params) =
             state.child_with_params(0, || ParamSet::new().with_int("length", period as i64));
         let smoothed = rma.update(child, BarTick::close_only(tr), child_params)?;
-        state.set_last(smoothed.unwrap_or(f64::NAN));
+        state.set_last(nan_hole(smoothed));
         Ok(smoothed)
     }
 }
@@ -568,7 +568,7 @@ impl StFrame {
         close: f64,
         prev_close: Option<f64>,
     ) -> Self {
-        let prev = prev_close.unwrap_or(f64::NAN);
+        let prev = nan_hole(prev_close);
         let upper = if basic_upper < self.upper || prev > self.upper {
             basic_upper
         } else {
@@ -733,8 +733,8 @@ impl Indicator for SupertrendIndicator {
                 let (basic_upper, basic_lower) = (hl2 + mult * span, hl2 - mult * span);
                 let next = if seeded {
                     let prev = StFrame {
-                        upper: state.child(1).last().unwrap_or(f64::NAN),
-                        lower: state.child(2).last().unwrap_or(f64::NAN),
+                        upper: nan_hole(state.child(1).last()),
+                        lower: nan_hole(state.child(2).last()),
                         line: f64::NAN,
                         direction: state.child(3).last().unwrap_or(1.0),
                     };

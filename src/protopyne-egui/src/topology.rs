@@ -8,10 +8,11 @@
 //! [`kernel_order`]; cache keys bind pane names to kernel parameter sets
 //! through [`cache_key_for`].
 
+use common_core::hash::fingerprint_framed;
 use fluent_egui::{EguiError, PanePlan, ReplayController, cache_key};
 use protopyne_chart_model::{ChartRow, DisplayOnly};
 use protopyne_kernels::indicator::{IndicatorId, IndicatorRegistry, ParamSet, execution_order};
-use protopyne_kernels::{OwnedOhlcv, builtin_registry};
+use protopyne_kernels::{OwnedOhlcv, PriceSource, builtin_registry, nan_hole};
 
 /// Price pane: converted rows, no upstream pane.
 pub const PRICE_NODE: &str = "price";
@@ -80,6 +81,182 @@ pub(crate) fn describe_kernel(error: &protopyne_kernels::KernelError) -> EguiErr
     EguiError::Dependency { reason: error.to_string() }
 }
 
+/// One indicator input: raw bars or a published series.
+///
+/// `Bars` reads an OHLC-derived column (the M1 registry); `Series` names a
+/// published node (`fast_mas:first`, `kernel:sma`, ...). Spellings are
+/// `close`-style names for bars and `series:<node>` for series; anything
+/// else refuses. A bare node without the prefix refuses — node ids must be
+/// explicit, never guessed from a bare word.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SeriesSource {
+    /// An OHLC-derived column over raw bars.
+    Bars(PriceSource),
+    /// A published series by node id.
+    Series(String),
+}
+
+impl Default for SeriesSource {
+    fn default() -> Self {
+        Self::Bars(PriceSource::Close)
+    }
+}
+
+impl SeriesSource {
+    /// Parse a source spelling: a price-source name or `series:<node>`.
+    #[must_use]
+    pub fn parse(text: &str) -> Option<Self> {
+        if let Some(source) = PriceSource::parse(text) {
+            return Some(Self::Bars(source));
+        }
+        let node = text.strip_prefix("series:")?;
+        if node.is_empty() || node.trim().is_empty() {
+            return None;
+        }
+        Some(Self::Series(node.to_owned()))
+    }
+
+    /// The published node this source reads, if any.
+    #[must_use]
+    pub fn series_node(&self) -> Option<&str> {
+        match self {
+            Self::Bars(_) => None,
+            Self::Series(node) => Some(node),
+        }
+    }
+}
+
+impl std::fmt::Display for SeriesSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Bars(source) => write!(f, "{}", source.name()),
+            Self::Series(node) => write!(f, "series:{node}"),
+        }
+    }
+}
+
+/// Published indicator outputs by stable node id: the series catalog a
+/// source picker lists. A producer's warmup is its leading-hole count —
+/// holes are producer self-knowledge, so composition reads them instead of
+/// asking each producer for a number.
+#[derive(Debug, Clone, Default)]
+pub struct SeriesCatalog {
+    series: std::collections::HashMap<String, PublishedSeries>,
+}
+
+/// One published series: its cache key (carrying the producer fingerprint)
+/// and its per-bar values.
+#[derive(Debug, Clone)]
+struct PublishedSeries {
+    key: u64,
+    values: Vec<Option<f64>>,
+}
+
+impl SeriesCatalog {
+    /// An empty catalog: no producer has published yet.
+    #[must_use]
+    pub fn empty() -> Self {
+        Self::default()
+    }
+
+    /// Publish (or replace) one node's series under its cache key.
+    pub fn publish(&mut self, node: &str, key: u64, values: Vec<Option<f64>>) {
+        self.series.insert(node.to_owned(), PublishedSeries { key, values });
+    }
+
+    /// Drop every published series (a removal or a fresh recompute).
+    pub fn clear(&mut self) {
+        self.series.clear();
+    }
+
+    /// The values published under `node`, if any.
+    #[must_use]
+    pub fn resolve(&self, node: &str) -> Option<&[Option<f64>]> {
+        self.series.get(node).map(|series| series.values.as_slice())
+    }
+
+    /// The cache key the published series carries, if any. A consumer folds
+    /// this into its own key, so a producer edit invalidates downstream.
+    #[must_use]
+    pub fn series_key(&self, node: &str) -> Option<u64> {
+        self.series.get(node).map(|series| series.key)
+    }
+
+    /// Leading holes of the published series: the producer's warmup in
+    /// bars. `None` when the node never published.
+    #[must_use]
+    pub fn leading_holes(&self, node: &str) -> Option<usize> {
+        self.resolve(node).map(|values| values.iter().take_while(|value| value.is_none()).count())
+    }
+}
+
+/// Single-column frame over a published series: every OHLC leg carries the
+/// series (holes as `NaN`, the kernel na-policy marker), volume stays real.
+/// Refuses a length mismatch — a series that does not align with the rows
+/// is investigated, never zipped.
+pub fn series_frame(rows: &[ChartRow], values: &[Option<f64>]) -> Result<OwnedOhlcv, EguiError> {
+    if values.len() != rows.len() {
+        return Err(EguiError::InvalidParam {
+            what: "series".to_owned(),
+            reason: format!("series length {} does not match {} rows", values.len(), rows.len()),
+        });
+    }
+    let column: Vec<f64> = values.iter().map(|value| nan_hole(*value)).collect();
+    let volume: Vec<f64> = rows.iter().map(|row| row.volume as f64).collect();
+    Ok(OwnedOhlcv {
+        open: column.clone(),
+        high: column.clone(),
+        low: column.clone(),
+        close: column,
+        volume,
+    })
+}
+
+/// The default input spelling: raw close bars.
+#[must_use]
+pub fn default_source_spelling() -> String {
+    SeriesSource::default().to_string()
+}
+
+/// The input column for a source: bar columns read the rows (producer
+/// warmup zero — kernels emit their own holes), series columns resolve from
+/// the catalog or refuse naming the node.
+pub fn resolve_input_column(
+    source: &SeriesSource,
+    rows: &[ChartRow],
+    series: &SeriesCatalog,
+) -> Result<(Vec<Option<f64>>, usize), EguiError> {
+    match source {
+        SeriesSource::Bars(price) => {
+            let frame = kernel_preview_frame_with_source(rows, *price);
+            Ok((frame.close.iter().map(|value| Some(*value)).collect(), 0))
+        }
+        SeriesSource::Series(node) => {
+            let values = series.resolve(node).ok_or_else(|| EguiError::InvalidParam {
+                what: "series".to_owned(),
+                reason: format!("unknown input series {node:?}"),
+            })?;
+            let warmup = series.leading_holes(node).unwrap_or(0);
+            Ok((values.to_vec(), warmup))
+        }
+    }
+}
+
+/// Cache key for a series consumed from another node: the node's own key
+/// framing, but the fingerprint folds the consumer config together with the
+/// producer's series key — so a producer edit invalidates every downstream
+/// key transitively, while an untouched pair stays stable.
+#[must_use]
+pub fn consumer_cache_key(node: &str, config_fingerprint: u64, producer_key: u64) -> u64 {
+    cache_key(
+        node,
+        fingerprint_framed(&[
+            ("config", &config_fingerprint.to_le_bytes()),
+            ("producer", &producer_key.to_le_bytes()),
+        ]),
+    )
+}
+
 /// Fenced full-OHLC preview frame for kernel batch evaluation.
 ///
 /// Display provenance is fenced: every leg enters as [`DisplayOnly`] and is
@@ -88,6 +265,15 @@ pub(crate) fn describe_kernel(error: &protopyne_kernels::KernelError) -> EguiErr
 /// terminal module shares, so the fence is named once and no module forks a
 /// second display-to-kernel bridge.
 pub(crate) fn kernel_preview_frame(rows: &[ChartRow]) -> OwnedOhlcv {
+    kernel_preview_frame_with_source(rows, PriceSource::Close)
+}
+
+/// Full-OHLC preview frame with an explicit default source.
+///
+/// The frame carries every leg, so output is byte-identical for all sources
+/// today; the argument names the default single-leg read downstream
+/// single-column builders resolve, keeping one spelling for the default.
+pub fn kernel_preview_frame_with_source(rows: &[ChartRow], _source: PriceSource) -> OwnedOhlcv {
     let open: Vec<DisplayOnly<f64>> = rows.iter().map(|row| DisplayOnly::new(row.open)).collect();
     let high: Vec<DisplayOnly<f64>> = rows.iter().map(|row| DisplayOnly::new(row.high)).collect();
     let low: Vec<DisplayOnly<f64>> = rows.iter().map(|row| DisplayOnly::new(row.low)).collect();
@@ -100,6 +286,21 @@ pub(crate) fn kernel_preview_frame(rows: &[ChartRow]) -> OwnedOhlcv {
         low: low.into_iter().map(DisplayOnly::reveal).collect(),
         close: close.into_iter().map(DisplayOnly::reveal).collect(),
         volume: volume.into_iter().map(DisplayOnly::reveal).collect(),
+    }
+}
+
+/// Single-column frame for single-leg kernels: every OHLC leg carries the
+/// selected source column, volume stays real. `Close` output is byte-identical
+/// to the former close-only fill.
+pub fn source_frame(rows: &[ChartRow], source: PriceSource) -> OwnedOhlcv {
+    let full = kernel_preview_frame_with_source(rows, source);
+    let column = source.column_of(&full);
+    OwnedOhlcv {
+        open: column.clone(),
+        high: column.clone(),
+        low: column.clone(),
+        close: column,
+        volume: full.volume,
     }
 }
 

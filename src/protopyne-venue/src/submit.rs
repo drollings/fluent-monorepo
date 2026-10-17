@@ -12,7 +12,7 @@ use std::time::Duration;
 use protopyne_strategy::RiskApproved;
 
 use crate::error::VenueError;
-use crate::journal::{Journal, VenueStorage};
+use crate::journal::{INTENT_KIND, Journal, LEG_FILL_KIND, VenueStorage, status_name};
 use crate::order::{OrderIntent, OrderRecord, OrderStatus};
 use crate::quote::Quote;
 use crate::venue::{LegExecution, Venue};
@@ -24,14 +24,13 @@ pub const SUBMIT_RETRIES: u32 = 3;
 
 /// The mutation sink the safe-submission protocol writes through.
 ///
-/// The protocol is recorder-agnostic: the durable [`Journal`] in production
-/// and the in-memory [`RunIntentLog`](crate::journal::RunIntentLog) in a
-/// backtest run both implement it, so the same protocol runs everywhere and
-/// only the recorder differs. It carries the four mutations the protocol
-/// needs: the intent, each lifecycle status, each executed spread leg, and
-/// each transition. Implementations own their own durability/gating; the
-/// protocol never reads the log back, so an in-memory recorder is a
-/// first-class peer, not a second durable authority.
+/// The protocol is recorder-agnostic: the single [`Recorder`] serves both
+/// durabilities behind this trait, so the same protocol runs everywhere and
+/// only the recorder's durability differs. It carries the four mutations the
+/// protocol needs: the intent, each lifecycle status, each executed spread
+/// leg, and each transition. The protocol never reads the log back, so an
+/// ephemeral recorder is a first-class peer, not a second durable
+/// authority.
 pub trait SubmissionRecorder: Send + Sync {
     /// Durably record `intent`, returning `false` when the client id was
     /// already recorded — intent journaling is idempotent, which is what
@@ -61,18 +60,44 @@ pub trait SubmissionRecorder: Send + Sync {
     ) -> Result<(), VenueError>;
 }
 
-/// The durable [`SubmissionRecorder`]: a [`Journal`] bound to the session's
-/// [`VenueStorage`] permit. Every mutation delegates to the journal method of
-/// the same name, so rows are byte-identical to the direct calls the journal
-/// has always made.
-struct JournalRecorder<'a> {
-    permit: &'a VenueStorage,
+/// The single recorder behind the submission protocol, parameterized by
+/// durability: one [`Journal`] plus the permit that gates it, or no permit
+/// for the ephemeral arm.
+///
+/// Durable recording bounds the [`Journal`] to the session's
+/// [`VenueStorage`] permit: every row is gated and synced, byte-identical
+/// to the direct journal calls. Ephemeral recording lands rows in memory
+/// only — no gate, no fsync — for production backtests that scope one
+/// recorder per run. The fold is identical, so both arms replay identically;
+/// the ephemeral arm owns no durable authority.
+pub struct Recorder<'a> {
     journal: &'a Journal,
+    permit: Option<&'a VenueStorage>,
 }
 
-impl SubmissionRecorder for JournalRecorder<'_> {
+impl<'a> Recorder<'a> {
+    /// Durable recording: every row gated through `permit` and synced.
+    #[must_use]
+    pub fn durable(journal: &'a Journal, permit: &'a VenueStorage) -> Self {
+        Self { journal, permit: Some(permit) }
+    }
+
+    /// Ephemeral recording: rows land in memory only.
+    #[must_use]
+    pub fn ephemeral(journal: &'a Journal) -> Self {
+        Self { journal, permit: None }
+    }
+}
+
+impl SubmissionRecorder for Recorder<'_> {
     fn record_intent(&self, intent: &OrderIntent, now: DateTime<Utc>) -> Result<bool, VenueError> {
-        self.journal.record_intent(self.permit, intent, now)
+        if let Some(permit) = self.permit {
+            self.journal.record_intent(permit, intent, now)
+        } else {
+            let payload =
+                serde_json::to_string(intent).map_err(|e| VenueError::Journal(e.to_string()))?;
+            self.journal.record_ephemeral(&intent.client_id, INTENT_KIND, &payload, now)
+        }
     }
 
     fn mark_status(
@@ -81,7 +106,11 @@ impl SubmissionRecorder for JournalRecorder<'_> {
         status: OrderStatus,
         now: DateTime<Utc>,
     ) -> Result<(), VenueError> {
-        self.journal.mark_status(self.permit, client_id, status, now)
+        if let Some(permit) = self.permit {
+            self.journal.mark_status(permit, client_id, status, now)
+        } else {
+            self.journal.record_ephemeral(client_id, status_name(status), "{}", now).map(|_| ())
+        }
     }
 
     fn record_leg_fill(
@@ -90,7 +119,13 @@ impl SubmissionRecorder for JournalRecorder<'_> {
         leg: &LegExecution,
         now: DateTime<Utc>,
     ) -> Result<(), VenueError> {
-        self.journal.record_leg_fill(self.permit, client_id, leg, now)
+        if let Some(permit) = self.permit {
+            self.journal.record_leg_fill(permit, client_id, leg, now)
+        } else {
+            let detail =
+                serde_json::to_string(leg).map_err(|e| VenueError::Journal(e.to_string()))?;
+            self.journal.record_ephemeral(client_id, LEG_FILL_KIND, &detail, now).map(|_| ())
+        }
     }
 
     fn record_transition(
@@ -100,8 +135,11 @@ impl SubmissionRecorder for JournalRecorder<'_> {
         detail: &str,
         now: DateTime<Utc>,
     ) -> Result<(), VenueError> {
-        self.journal
-            .record_transition(self.permit, client_id, kind, detail, now)
+        if let Some(permit) = self.permit {
+            self.journal.record_transition(permit, client_id, kind, detail, now)
+        } else {
+            self.journal.record_ephemeral(client_id, kind, detail, now).map(|_| ())
+        }
     }
 }
 
@@ -125,7 +163,7 @@ fn record_legs<R: SubmissionRecorder, V: Venue>(
 /// resubmit. Demands the [`RiskApproved`] token minted for this proposal:
 /// without it there is no submission path, so strategy code cannot bypass the
 /// risk engine. The recorder decides where the intent/status/leg/transition
-/// rows land (the durable [`Journal`] or an in-memory run log); the protocol
+/// rows land (the durable [`Journal`] or its ephemeral arm); the protocol
 /// itself is identical for both.
 pub async fn submit_guarded<R: SubmissionRecorder, V: Venue>(
     recorder: &R,
@@ -205,7 +243,7 @@ pub async fn submit_guarded<R: SubmissionRecorder, V: Venue>(
 }
 
 /// Submit `intent` through the full safe protocol against the durable
-/// [`Journal`]. A thin wrapper over [`submit_guarded`] with the journal
+/// [`Journal`]. A thin wrapper over [`submit_guarded`] with the durable
 /// recorder, so durable rows stay byte-identical to the direct-call era.
 pub async fn safe_submit<V: Venue>(
     permit: &VenueStorage,
@@ -216,7 +254,7 @@ pub async fn safe_submit<V: Venue>(
     quote: &Quote,
     now: DateTime<Utc>,
 ) -> Result<OrderRecord, VenueError> {
-    let recorder = JournalRecorder { permit, journal };
+    let recorder = Recorder::durable(journal, permit);
     submit_guarded(&recorder, venue, approved, intent, quote, now).await
 }
 

@@ -31,17 +31,28 @@
 //!
 //! [`load_history_path`] is the one dispatch both binaries share: a file
 //! argument keeps the legacy single-file ladder, a directory argument opens
-//! the root and serves the preferred ticker (`SPY` when present, else the
-//! first in sorted order).
+//! the root and serves the preferred ticker (the shared default rule:
+//! `SPY` when present, else the first in sorted order).
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
 use protopyne_store::{KeyedSnapshot as _, read_ohlcv_parquet_lenient};
 use protopyne_types::{Bar, Timeframe, validate_new_bar};
+use protopyne_view::{
+    AssetClass, InstrumentDecl, SymbolInfoView, discovered_symbol_rows, pick_default_symbol,
+};
 
 use crate::error::ServerError;
 use crate::parquet::parquet_error;
+
+/// Sidecar a ticker directory may carry to declare its display name and
+/// asset class: `{"name": "...", "class": "Stocks"}`. A shipped ticker keeps
+/// its shipped identity regardless; a sidecar only speaks for tickers the
+/// shipped list does not carry. Absent, unreadable, or an unrecognized
+/// class label declares nothing — the row lands on [`AssetClass::Unknown`],
+/// never a guessed class.
+const SIDECAR_FILE: &str = ".coral-instrument";
 
 /// The bar spacing every month file in a history root carries. The layout
 /// contract is one-minute months (`*-1M.parquet`); CSV supplements ride the
@@ -105,6 +116,32 @@ impl HistoryRoot {
         tickers.sort();
         tickers.dedup();
         Ok(tickers)
+    }
+
+    /// The sidecar declaration for `ticker`, if the directory carries one
+    /// that parses. An unreadable sidecar declares nothing (no error: the
+    /// row lands on Unknown, never a guess).
+    fn instrument_decl(&self, ticker: &str) -> Option<InstrumentDecl> {
+        let sidecar = self.root.join(ticker).join(SIDECAR_FILE);
+        let text = std::fs::read_to_string(sidecar).ok()?;
+        let raw: serde_json::Value = serde_json::from_str(&text).ok()?;
+        let name = raw.get("name").and_then(serde_json::Value::as_str).map(str::to_owned);
+        let class = raw
+            .get("class")
+            .and_then(serde_json::Value::as_str)
+            .and_then(AssetClass::parse);
+        Some(InstrumentDecl::new(name, class))
+    }
+
+    /// Wire rows for every ticker under this root: the shipped catalog for
+    /// shipped tickers, a sidecar declaration or `Unknown` class for the
+    /// rest. Discovery reads directories alone; an empty root answers an
+    /// empty row list, and the caller decides whether that refuses.
+    pub fn symbol_rows(&self) -> Result<Vec<SymbolInfoView>, ServerError> {
+        let tickers = self.tickers()?;
+        Ok(discovered_symbol_rows(&tickers, |ticker| {
+            self.instrument_decl(ticker)
+        }))
     }
 
     /// Load one ticker's merged 1M series: every `*.parquet` month under
@@ -345,8 +382,9 @@ impl HistoryCache {
 
 /// Load history from one CLI argument: a file keeps the legacy single-file
 /// ladder, a directory opens the history root and serves the preferred
-/// ticker (`preferred`, else `SPY` when present, else the first in sorted
-/// order). Refuses an empty series naming the argument.
+/// ticker (`preferred`, else the shared default rule: `SPY` when present,
+/// else the first in sorted order, else refuse). Refuses an empty series
+/// naming the argument.
 pub fn load_history_path(path: &Path, preferred: Option<&str>) -> Result<Vec<Bar>, ServerError> {
     if path.is_dir() {
         let root = HistoryRoot::open(path)?;
@@ -354,16 +392,9 @@ pub fn load_history_path(path: &Path, preferred: Option<&str>) -> Result<Vec<Bar
             ticker.to_owned()
         } else {
             let tickers = root.tickers()?;
-            if tickers.iter().any(|ticker| ticker == DEFAULT_TICKER) {
-                DEFAULT_TICKER.to_owned()
-            } else {
-                tickers.into_iter().next().ok_or_else(|| {
-                    ServerError::Backtest(format!(
-                        "no tickers under history root {}",
-                        path.display()
-                    ))
-                })?
-            }
+            pick_default_symbol(DEFAULT_TICKER, tickers.iter().map(String::as_str)).ok_or_else(
+                || ServerError::Backtest(format!("no tickers under history root {}", path.display())),
+            )?
         };
         let load = root.load_ticker(&ticker)?;
         if load.skipped_rows > 0 {

@@ -416,6 +416,100 @@ fn shipped_layout_discovers_spy_and_gld() {
     );
 }
 
+/// Make `tickers` appear as discovered directories under `root` (month
+/// subdirectories included: discovery reads directories, and the tree must
+/// read as real ticker data, not empty shells).
+fn ticker_tree(root: &Path, tickers: &[&str]) {
+    for ticker in tickers {
+        std::fs::create_dir_all(root.join(ticker).join("2026/01"))
+            .expect("ticker tree creates");
+    }
+}
+
+#[test]
+fn symbol_rows_discover_exactly_what_the_root_holds() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    ticker_tree(dir.path(), &["AAA", "ZZZ"]);
+    std::fs::create_dir_all(dir.path().join(".hidden")).expect("dot dir creates");
+    let root = HistoryRoot::open(dir.path()).expect("root opens");
+    let rows = root.symbol_rows().expect("rows read");
+    let ids: Vec<&str> = rows.iter().map(|row| row.symbol.as_str()).collect();
+    assert_eq!(ids, ["AAA", "ZZZ"], "no SPY/GLD unless present");
+    for row in &rows {
+        assert_eq!(
+            row.name, row.symbol,
+            "an undeclared ticker displays as itself"
+        );
+        assert_eq!(
+            row.asset_class, "Unknown",
+            "an unmapped ticker is a real Unknown class, never a guessed one"
+        );
+    }
+}
+
+#[test]
+fn symbol_rows_of_a_dot_only_root_stay_empty() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(dir.path().join(".cache")).expect("dot dir creates");
+    let root = HistoryRoot::open(dir.path()).expect("root opens");
+    let rows = root
+        .symbol_rows()
+        .expect("empty discovery answers empty, it is not an error");
+    assert!(rows.is_empty(), "empty, not a fallback leak: {rows:?}");
+}
+
+#[test]
+fn symbol_rows_of_a_shipped_root_are_the_shipped_wire() {
+    // Backward-compat pin: a root holding exactly the shipped tickers serves
+    // the identical wire the shipped catalog serves, byte for byte.
+    let dir = tempfile::tempdir().expect("tempdir");
+    ticker_tree(dir.path(), &["GLD", "SPY", "QQQ", "BTC-USD", "ES"]);
+    let root = HistoryRoot::open(dir.path()).expect("root opens");
+    let rows = root.symbol_rows().expect("rows read");
+    let shipped = protopyne_view::symbol_catalog();
+    assert_eq!(rows, shipped);
+    assert_eq!(
+        serde_json::to_string(&rows).expect("rows serialize"),
+        serde_json::to_string(&shipped).expect("shipped rows serialize"),
+        "byte-identical wire shape, not just equal fields"
+    );
+}
+
+#[test]
+fn symbol_rows_read_ticker_sidecar_declarations() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    ticker_tree(dir.path(), &["AAA", "BBB", "CCC"]);
+    std::fs::write(
+        dir.path().join("AAA").join(".coral-instrument"),
+        r#"{"name":"Acme Rentals","class":"Futures"}"#,
+    )
+    .expect("sidecar writes");
+    // A class label that does not parse: the name still applies, the class
+    // lands on Unknown rather than being guessed.
+    std::fs::write(
+        dir.path().join("BBB").join(".coral-instrument"),
+        r#"{"name":"Bee Freight","class":"Equities"}"#,
+    )
+    .expect("sidecar writes");
+    // An unreadable sidecar declares nothing at all.
+    std::fs::write(dir.path().join("CCC").join(".coral-instrument"), "not json")
+        .expect("sidecar writes");
+    let root = HistoryRoot::open(dir.path()).expect("root opens");
+    let rows = root.symbol_rows().expect("rows read");
+    let row = |ticker: &str| {
+        rows
+            .iter()
+            .find(|row| row.symbol == ticker)
+            .unwrap_or_else(|| panic!("{ticker} is listed"))
+    };
+    assert_eq!(row("AAA").name, "Acme Rentals");
+    assert_eq!(row("AAA").asset_class, "Futures");
+    assert_eq!(row("BBB").name, "Bee Freight");
+    assert_eq!(row("BBB").asset_class, "Unknown");
+    assert_eq!(row("CCC").name, "CCC");
+    assert_eq!(row("CCC").asset_class, "Unknown");
+}
+
 #[test]
 fn shipped_spy_months_merge_into_a_valid_series() {
     let root = HistoryRoot::open(&shipped_history_dir()).expect("shipped tree opens");

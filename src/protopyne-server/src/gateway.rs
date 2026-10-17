@@ -191,10 +191,16 @@ impl TerminalGateway for ServerGateway {
     }
 
     fn symbols(&self) -> Result<Vec<SymbolInfoView>, GatewayError> {
-        // The server serves its boot history for any requested symbol and
-        // curates no instrument master, so the catalog reads empty; the
-        // terminal drives its Symbol Selection Modal from its own catalog.
-        Ok(Vec::new())
+        // Ticker discovery at the data edge: a directory boot reads its root
+        // (shipped rows for shipped tickers, sidecar declarations or Unknown
+        // for the rest). A file boot has no root and serves the shipped
+        // offline list — never a second truth about a root it doesn't have.
+        match &self.state.history_root {
+            Some(root) => root.symbol_rows().map_err(|error| {
+                GatewayError::Unavailable(format!("history root unreadable: {error}"))
+            }),
+            None => Ok(protopyne_view::symbol_catalog()),
+        }
     }
 
     fn chart_bars_for(&self, symbol: &str, timeframe: &str) -> Result<ChartBars, GatewayError> {

@@ -8,6 +8,7 @@
 //! Domain overlays (session breaks, toolbar range windows) compose this
 //! viewport in the terminal crate. No paint types enter here.
 
+use protopyne_chart_model::ChartRow;
 use protopyne_chart_scale::{PriceRange, PriceScale, PriceScaleMode, Tick, nice_ticks};
 
 use crate::error::EguiError;
@@ -137,8 +138,7 @@ impl Viewport {
     /// a pane with no area (`width_px <= 0.0`) paints nothing either: the one
     /// edge bar straddling x `0.0` would clip to nothing downstream.
     #[must_use]
-    pub fn culled_bar_range(self, width_px: f32, total_bars: usize) -> (usize, usize) {
-        if width_px <= 0.0 {
+    pub fn culled_bar_range(self, width_px: f32, total_bars: usize) -> (usize, usize) {        if width_px <= 0.0 {
             return (0, 0);
         }
         let (start, end) = self.visible_bar_range(width_px, total_bars);
@@ -262,6 +262,58 @@ pub fn visible_rows<T>(rows: &[T], start: usize, count: usize) -> &[T] {
     let start = start.min(rows.len());
     let end = start.saturating_add(count).min(rows.len());
     &rows[start..end]
+}
+
+/// Fit the price range to a bar window: min over the window's lows, max over
+/// its highs, plus symmetric padding of `pad_fraction` times the window span
+/// on each side.
+///
+/// The headless AutoHeight policy (task value: legibility — wicks visible,
+/// no dead space; it claims nothing about whether the window is tradeable).
+/// Refuses empty rows, empty or out-of-bounds windows, flat or non-finite
+/// extremes, and non-finite or negative padding, all with reasons. NaN legs
+/// fold out (a hole carries no geometry); an all-NaN window refuses as
+/// degenerate. The caller holds the viewport and rebuilds it through the
+/// same constructor path as every other range change, so padding never
+/// inverts: a finite non-negative fraction keeps `min < max`.
+pub fn auto_height_range(
+    rows: &[ChartRow],
+    window: (usize, usize),
+    pad_fraction: f64,
+) -> Result<PriceRange, EguiError> {
+    if !pad_fraction.is_finite() || pad_fraction < 0.0 {
+        return Err(EguiError::InvalidParam {
+            what: "pad_fraction".to_owned(),
+            reason: "auto-height padding must be finite and non-negative".to_owned(),
+        });
+    }
+    let (start, end) = window;
+    if rows.is_empty() || start >= end {
+        return Err(EguiError::InvalidParam {
+            what: "window".to_owned(),
+            reason: "auto-height needs a non-empty bar window".to_owned(),
+        });
+    }
+    let Some(view) = rows.get(start..end) else {
+        return Err(EguiError::InvalidParam {
+            what: "window".to_owned(),
+            reason: "auto-height window reaches past the loaded rows".to_owned(),
+        });
+    };
+    let mut lo = f64::INFINITY;
+    let mut hi = f64::NEG_INFINITY;
+    for row in view {
+        lo = lo.min(row.low);
+        hi = hi.max(row.high);
+    }
+    if !lo.is_finite() || !hi.is_finite() || lo >= hi {
+        return Err(EguiError::InvalidParam {
+            what: "window".to_owned(),
+            reason: "auto-height needs a window with finite non-flat extremes".to_owned(),
+        });
+    }
+    let pad = (hi - lo) * pad_fraction;
+    PriceRange::new(lo - pad, hi + pad).map_err(describe_scale)
 }
 
 /// Cap grid labels for readability; order-preserving stride thinning.

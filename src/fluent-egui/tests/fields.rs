@@ -75,6 +75,24 @@ fn a_declared_bound_is_read_in_either_spelling() {
 }
 
 #[test]
+fn an_enum_list_lifts_a_select_and_a_malformed_one_falls_back_to_text() {
+    let lifted = schema_fields(&serde_json::json!({"properties": {
+        "kind": {"type": "string", "enum": ["sma", "ema"]}
+    }}));
+    assert_eq!(lifted[0].kind, FieldKind::Select);
+    assert_eq!(lifted[0].options, vec!["sma".to_owned(), "ema".to_owned()]);
+    for bad in [
+        serde_json::json!({"properties": {"kind": {"type": "string"}}}),
+        serde_json::json!({"properties": {"kind": {"type": "string", "enum": []}}}),
+        serde_json::json!({"properties": {"kind": {"type": "string", "enum": [1, 2]}}}),
+    ] {
+        let lifted = schema_fields(&bad);
+        assert_eq!(lifted[0].kind, FieldKind::Text, "a malformed list degrades: {bad}");
+        assert!(lifted[0].options.is_empty());
+    }
+}
+
+#[test]
 fn an_untyped_or_empty_schema_yields_no_fields() {
     assert!(schema_fields(&serde_json::json!({})).is_empty());
     assert!(schema_fields(&serde_json::json!({"properties": {}})).is_empty());
@@ -229,6 +247,7 @@ fn tab_field(name: &str, kind: FieldKind) -> SchemaField {
         minimum: None,
         maximum: None,
         max_len: None,
+        options: Vec::new(),
     }
 }
 

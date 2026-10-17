@@ -374,7 +374,8 @@ async fn lost_ack_resolves_through_query_with_no_second_order() {
     let base = serve(Arc::clone(&fake)).await;
     let (_transport, _net, venue) = venue_for(&base);
     scoped(async {
-        use crate::journal::RunIntentLog;
+        use crate::journal::Journal;
+        use crate::submit::Recorder;
         use crate::submit::submit_guarded;
         use protopyne_strategy::{RiskApproved, RiskEngine, RiskLimits, RiskState};
         venue.login("user", "right").await.expect("login");
@@ -412,8 +413,9 @@ async fn lost_ack_resolves_through_query_with_no_second_order() {
             is_spread: true,
         };
         let approved: RiskApproved = engine.check(&proposal, &state).expect("healthy");
-        let log = RunIntentLog::new();
-        let record = submit_guarded(&log, &venue, &approved, intent("d#0"), &quote, now())
+        let journal = Journal::ephemeral();
+        let recorder = Recorder::ephemeral(&journal);
+        let record = submit_guarded(&recorder, &venue, &approved, intent("d#0"), &quote, now())
             .await
             .expect("ack loss still resolves");
         assert_eq!(record.intent.client_id, "d#0");

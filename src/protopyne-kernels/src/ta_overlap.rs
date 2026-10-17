@@ -12,7 +12,7 @@
 
 use crate::error::KernelError;
 use crate::indicator::{
-    fin_or_none, BarTick, FullTick, Indicator, IndicatorId, IndicatorResult, IndicatorSpec,
+    fin_or_none, nan_hole, BarTick, FullTick, Indicator, IndicatorId, IndicatorResult, IndicatorSpec,
     IndicatorState, NamedSeries, NamedValue, Ohlcv, ParamSet,
 };
 use crate::sma::SmaIndicator;
@@ -406,7 +406,7 @@ impl Indicator for TrimaIndicator {
         let sma = SmaIndicator::new();
         let first = sma.batch(&Ohlcv::close_only(data.close), &Self::sma_params(first_len))?;
         let first_raw: Vec<f64> =
-            first.values.iter().map(|v| v.unwrap_or(f64::NAN)).collect();
+            first.values.iter().map(|v| nan_hole(*v)).collect();
         let second = sma.batch(&Ohlcv::close_only(&first_raw), &Self::sma_params(second_len))?;
         Ok(IndicatorResult::new(Self::ID.to_owned(), second.values))
     }
@@ -425,7 +425,7 @@ impl Indicator for TrimaIndicator {
         let (child, child_params) = state.child_with_params(1, || Self::sma_params(second_len));
         let second = sma.update(
             child,
-            BarTick::close_only(first.unwrap_or(f64::NAN)),
+            BarTick::close_only(nan_hole(first)),
             child_params,
         )?;
         if let Some(value) = second {
@@ -1003,7 +1003,7 @@ impl Indicator for PsarIndicator {
         state.push(bar, 3);
         let seeded_sar = state.child(0).last();
         let child_trend = state.child(3).last().unwrap_or(1.0);
-        let child_ep = state.child(1).last().unwrap_or(f64::NAN);
+        let child_ep = nan_hole(state.child(1).last());
         let child_af = state.child(2).last().unwrap_or(shape.0);
         let (highs, lows, closes) = state.scratch_highs_lows_closes();
         let at = |index: usize| (highs[index], lows[index], closes[index]);
@@ -1011,7 +1011,7 @@ impl Indicator for PsarIndicator {
         let seeded = matches!(seeded_sar, Some(sar) if sar.is_finite());
         let next = if seeded {
             let frame = PsarFrame {
-                sar: seeded_sar.unwrap_or(f64::NAN),
+                sar: nan_hole(seeded_sar),
                 trend: child_trend,
                 ep: child_ep,
                 af: child_af,

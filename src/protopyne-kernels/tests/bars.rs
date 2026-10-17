@@ -623,3 +623,41 @@ fn component_surface_validates_through_execute() {
     assert!(bad.set_field("anything", "v").is_err());
     let _ = bad.as_any();
 }
+
+#[test]
+fn shape_fallback_never_reports_above_low() {
+    // Calibration gate: the shape path carries no tick tape, so it must
+    // never claim above `Low` — on well-formed candles or degenerate ones.
+    // A seed that ever reports `Reduced`/`High` from this path fails here,
+    // and only a labeled-tape precision measurement may lift it.
+    let mut state: u64 = 0x5eed_2468_1357_9bdf;
+    let mut next = || {
+        state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        (state >> 33) as f64 / f64::from(u32::MAX)
+    };
+    for trial in 0..500 {
+        let base = 20.0 + next() * 400.0;
+        let spread = next() * base * 0.05;
+        let (mut open, mut high, low) = (
+            base + (next() - 0.5) * spread,
+            base + next() * spread,
+            base - next() * spread,
+        );
+        let mut close = low + next() * (high - low).max(f64::MIN_POSITIVE);
+        let mut vol = next() * 10_000.0;
+        match trial % 5 {
+            0 => {} // well-formed
+            1 => close = open, // doji
+            2 => vol = 0.0,   // no volume
+            3 => high = low,  // flat range
+            _ => open = f64::NAN, // non-finite leg
+        }
+        let estimate = estimate_delta_volume_estimated(open, high, low, close, vol);
+        assert_eq!(estimate.method, DeltaMethod::ShapeFallback, "trial {trial}: shape path only");
+        assert_eq!(
+            estimate.confidence,
+            DeltaConfidence::Low,
+            "trial {trial}: shape never exceeds Low"
+        );
+    }
+}

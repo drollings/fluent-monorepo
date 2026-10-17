@@ -15,6 +15,7 @@
 
 use std::collections::BTreeMap;
 use std::net::SocketAddr;
+use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -57,6 +58,7 @@ use protopyne_view::{
 use crate::backtest::BacktestConfig;
 use crate::error::ServerError;
 use crate::gateway::FallbackLatch;
+use crate::history_root::HistoryRoot;
 use crate::runner::{build_replay, complete_replay, run_backtest, side_for_direction, BacktestRun, RunnerConfig};
 
 /// Server tunables, loadable from JSON with defaults for every field.
@@ -301,6 +303,10 @@ pub struct AppState {
     /// Serving-path reads only; the repair worker publishes live readings
     /// here once it exists.
     store_health: Mutex<StoreHealth>,
+    /// The history root the server booted from, when the boot history came
+    /// from a directory. Symbol discovery reads it; a file boot has no root
+    /// and serves the shipped offline list.
+    pub(crate) history_root: Option<HistoryRoot>,
     /// The durable tape the gateway plans its symbol-scoped chart reads
     /// through, when the server was booted with one. `None` serves the boot
     /// history unchanged, so a store-less server behaves exactly as before.
@@ -1488,6 +1494,18 @@ pub async fn serve_with_tape(
             config.history_timeframe
         ))
     })?;
+    // Symbol discovery needs the root the history came from. Only a
+    // directory boot has one; a file boot serves the shipped offline list.
+    let history_root = config
+        .history_path
+        .as_deref()
+        .map(Path::new)
+        .filter(|path| path.is_dir())
+        .map(HistoryRoot::open)
+        .transpose()
+        .map_err(|error| {
+            ServerError::Service(format!("history root unreadable: {error}"))
+        })?;
     let history_len = history.len();
     let boot_message = format!("boot gates: {history_len} bars");
     let mut batch = SupervisedBatch::new(
@@ -1536,6 +1554,7 @@ pub async fn serve_with_tape(
         tape,
         tape_serve_stats: Arc::new(TapeServeStats::default()),
         fallback_latch: Mutex::new(FallbackLatch::default()),
+        history_root,
     });
     let mut scope = Scope::new();
     {

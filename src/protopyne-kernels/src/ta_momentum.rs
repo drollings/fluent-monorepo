@@ -22,7 +22,7 @@ use crate::averages::RmaIndicator;
 use crate::ema::EmaIndicator;
 use crate::error::KernelError;
 use crate::indicator::{
-    fin_or_none, BarTick, FullTick, Indicator, IndicatorResult, IndicatorSpec, IndicatorState,
+    fin_or_none, nan_hole, BarTick, FullTick, Indicator, IndicatorResult, IndicatorSpec, IndicatorState,
     NamedSeries, NamedValue, Ohlcv, ParamSet,
 };
 use crate::sma::SmaIndicator;
@@ -188,9 +188,9 @@ impl PpoIndicator {
     }
 
     fn ratio(fast: f64, slow: f64) -> f64 {
-        crate::math::div_or_none(fast, slow)
-            .and_then(|r| fin_or_none(r - 1.0))
-            .unwrap_or(f64::NAN)
+        nan_hole(
+            crate::math::div_or_none(fast, slow).and_then(|r| fin_or_none(r - 1.0))
+        )
     }
 }
 
@@ -335,7 +335,7 @@ impl Indicator for MomIndicator {
         if state.len() < period + 1 {
             return Ok(None);
         }
-        let back = state.closes().next().unwrap_or(f64::NAN);
+        let back = nan_hole(state.closes().next());
         let raw = bar.close - back;
         state.set_last(raw);
         Ok(fin_or_none(raw))
@@ -432,7 +432,7 @@ impl Indicator for RocpIndicator {
     ) -> Result<Option<f64>, KernelError> {
         let period = Self::period(params)?;
         let raw = match roc_shift(state, bar, period) {
-            Some((current, back)) => Self::ratio(current, back).unwrap_or(f64::NAN),
+            Some((current, back)) => nan_hole(Self::ratio(current, back)),
             None => f64::NAN,
         };
         state.set_last(raw);
@@ -500,9 +500,9 @@ impl Indicator for RocIndicator {
     ) -> Result<Option<f64>, KernelError> {
         let period = Self::period(params)?;
         let raw = match roc_shift(state, bar, period) {
-            Some((current, back)) => RocpIndicator::ratio(current, back)
-                .and_then(|r| fin_or_none(r * 100.0))
-                .unwrap_or(f64::NAN),
+            Some((current, back)) => {
+                nan_hole(RocpIndicator::ratio(current, back).and_then(|r| fin_or_none(r * 100.0)))
+            }
             None => f64::NAN,
         };
         state.set_last(raw);
@@ -568,7 +568,7 @@ impl Indicator for RocrIndicator {
     ) -> Result<Option<f64>, KernelError> {
         let period = Self::period(params)?;
         let raw = match roc_shift(state, bar, period) {
-            Some((current, back)) => crate::math::div_or_none(current, back).unwrap_or(f64::NAN),
+            Some((current, back)) => nan_hole(crate::math::div_or_none(current, back)),
             None => f64::NAN,
         };
         state.set_last(raw);
@@ -636,9 +636,9 @@ impl Indicator for Rocr100Indicator {
     ) -> Result<Option<f64>, KernelError> {
         let period = Self::period(params)?;
         let raw = match roc_shift(state, bar, period) {
-            Some((current, back)) => crate::math::div_or_none(current, back)
-                .and_then(|r| fin_or_none(r * 100.0))
-                .unwrap_or(f64::NAN),
+            Some((current, back)) => {
+                nan_hole(crate::math::div_or_none(current, back).and_then(|r| fin_or_none(r * 100.0)))
+            }
             None => f64::NAN,
         };
         state.set_last(raw);
@@ -898,7 +898,7 @@ impl Indicator for StochfIndicator {
         let fastk = rsv.batch(data, &ParamSet::new().with_int("length", k_len as i64))?;
         // The fastk leg never warms to `None` (defined-zero floor), so the
         // smoothing input is a plain finite series here.
-        let fastk_raw: Vec<f64> = fastk.values.iter().map(|v| v.unwrap_or(f64::NAN)).collect();
+        let fastk_raw: Vec<f64> = fastk.values.iter().map(|v| nan_hole(*v)).collect();
         let sma = SmaIndicator::new();
         let fastd = sma.batch(
             &Ohlcv::close_only(&fastk_raw),
@@ -933,10 +933,10 @@ impl Indicator for StochfIndicator {
             state.child_with_params(1, || ParamSet::new().with_int("length", d_len as i64));
         let fastd = sma.update(
             child,
-            BarTick::close_only(fastk.unwrap_or(f64::NAN)),
+            BarTick::close_only(nan_hole(fastk)),
             child_params,
         )?;
-        state.set_last(fastk.unwrap_or(f64::NAN));
+        state.set_last(nan_hole(fastk));
         Ok(FullTick {
             primary: fastk,
             secondary: vec![NamedValue {
@@ -981,7 +981,7 @@ impl TrixIndicator {
     }
 
     fn ratio_of(current: f64, prev: f64) -> f64 {
-        crate::math::div_or_none(current - prev, prev).unwrap_or(f64::NAN)
+        nan_hole(crate::math::div_or_none(current - prev, prev))
     }
 }
 
@@ -1005,10 +1005,10 @@ impl Indicator for TrixIndicator {
         let period = Self::period(params)?;
         let ema = EmaIndicator::new();
         let first = ema.batch(data, &Self::ema_params(period))?;
-        let first_raw: Vec<f64> = first.values.iter().map(|v| v.unwrap_or(f64::NAN)).collect();
+        let first_raw: Vec<f64> = first.values.iter().map(|v| nan_hole(*v)).collect();
         let second = ema.batch(&Ohlcv::close_only(&first_raw), &Self::ema_params(period))?;
         let second_raw: Vec<f64> =
-            second.values.iter().map(|v| v.unwrap_or(f64::NAN)).collect();
+            second.values.iter().map(|v| nan_hole(*v)).collect();
         let third = ema.batch(&Ohlcv::close_only(&second_raw), &Self::ema_params(period))?;
         let mut values = crate::math::warmup_none(data.len());
         for (i, slot) in values.iter_mut().enumerate().skip(1) {
@@ -1033,13 +1033,13 @@ impl Indicator for TrixIndicator {
         let (child, child_params) = state.child_with_params(1, || Self::ema_params(period));
         let second = ema.update(
             child,
-            BarTick::close_only(first.unwrap_or(f64::NAN)),
+            BarTick::close_only(nan_hole(first)),
             child_params,
         )?;
         let (child, child_params) = state.child_with_params(2, || Self::ema_params(period));
         let third = ema.update(
             child,
-            BarTick::close_only(second.unwrap_or(f64::NAN)),
+            BarTick::close_only(nan_hole(second)),
             child_params,
         )?;
         // Own `last` slot carries the previous third-pass value for the
@@ -1049,7 +1049,7 @@ impl Indicator for TrixIndicator {
             (Some(current), Some(prev)) => Self::ratio_of(current, prev),
             _ => f64::NAN,
         };
-        state.set_last(third.unwrap_or(f64::NAN));
+        state.set_last(nan_hole(third));
         Ok(fin_or_none(raw))
     }
 }
@@ -1170,8 +1170,8 @@ impl Indicator for AroonIndicator {
         } else {
             let (highs, lows) = state.scratch_highs_lows();
             (
-                Self::leg(highs, true).unwrap_or(f64::NAN),
-                Self::leg(lows, false).unwrap_or(f64::NAN),
+                nan_hole(Self::leg(highs, true)),
+                nan_hole(Self::leg(lows, false)),
             )
         };
         state.set_last(up_raw);
@@ -1283,7 +1283,7 @@ impl AdxIndicator {
     fn leg_of(smoothed: Option<f64>, smoothed_tr: Option<f64>) -> f64 {
         match (smoothed, smoothed_tr) {
             (Some(part), Some(total)) => {
-                crate::math::div_or_none(100.0 * part, total).unwrap_or(f64::NAN)
+                nan_hole(crate::math::div_or_none(100.0 * part, total))
             }
             _ => f64::NAN,
         }
@@ -1337,11 +1337,10 @@ impl Indicator for AdxIndicator {
             plus_di[i] = Self::leg_of(smoothed_plus[i], smoothed_tr[i]);
             minus_di[i] = Self::leg_of(smoothed_minus[i], smoothed_tr[i]);
             if plus_di[i].is_finite() && minus_di[i].is_finite() {
-                dx[i] = crate::math::div_or_none(
+                dx[i] = nan_hole(crate::math::div_or_none(
                     100.0 * (plus_di[i] - minus_di[i]).abs(),
                     plus_di[i] + minus_di[i],
-                )
-                .unwrap_or(f64::NAN);
+                ));
             }
         }
         let adx = rma.batch(&Ohlcv::close_only(&dx), &Self::rma_params(period))?;
@@ -1383,9 +1382,9 @@ impl Indicator for AdxIndicator {
             // pairing the batch loop reads at each index past zero. Only
             // back-indexed scalars ever enter — no window is collected.
             let back = state.len().saturating_sub(2);
-            let prev_high = state.highs().nth(back).unwrap_or(f64::NAN);
-            let prev_low = state.lows().nth(back).unwrap_or(f64::NAN);
-            let prev_close = state.prev_close().unwrap_or(f64::NAN);
+            let prev_high = nan_hole(state.highs().nth(back));
+            let prev_low = nan_hole(state.lows().nth(back));
+            let prev_close = nan_hole(state.prev_close());
             Self::legs_pair(prev_high, prev_low, prev_close, bar.high, bar.low, bar.close)
         };
         let rma = RmaIndicator::new();
@@ -1398,14 +1397,13 @@ impl Indicator for AdxIndicator {
         let plus = Self::leg_of(smoothed_plus, smoothed_tr);
         let minus = Self::leg_of(smoothed_minus, smoothed_tr);
         let dx = if plus.is_finite() && minus.is_finite() {
-            crate::math::div_or_none(100.0 * (plus - minus).abs(), plus + minus)
-                .unwrap_or(f64::NAN)
+            nan_hole(crate::math::div_or_none(100.0 * (plus - minus).abs(), plus + minus))
         } else {
             f64::NAN
         };
         let (child, child_params) = state.child_with_params(3, || Self::rma_params(period));
         let adx = rma.update(child, BarTick::close_only(dx), child_params)?;
-        state.set_last(adx.unwrap_or(f64::NAN));
+        state.set_last(nan_hole(adx));
         Ok(FullTick {
             primary: adx,
             secondary: vec![

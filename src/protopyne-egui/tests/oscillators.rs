@@ -78,6 +78,9 @@ fn reference_vector(kind: OscillatorKind) -> [f64; 7] {
             298.013245033113,
             299.334811529933,
         ],
+        OscillatorKind::Cdv => {
+            panic!("cdv refuses evaluation; it has no reference vector")
+        }
     }
 }
 
@@ -109,7 +112,11 @@ fn squash_constants_are_frozen() {
         (OscillatorKind::Raw, -50.0, 0.0084, 740.0),
     ];
     for (kind, offset, k, multiplier) in table {
-        assert_eq!(osc_params(kind), OscParams { offset, k, multiplier }, "{kind:?} constants moved");
+        assert_eq!(
+            kind.params(),
+            Some(OscParams { offset, k, multiplier }),
+            "{kind:?} constants moved"
+        );
     }
 }
 
@@ -119,7 +126,7 @@ fn normalization_matches_reference_vectors() {
         let expected = reference_vector(kind);
         let mut max_diff = 0.0_f64;
         for (index, raw) in RAW_PROBE.iter().enumerate() {
-            let got = normalize_oscillator(*raw, kind);
+            let got = normalize_oscillator(*raw, kind).expect("evaluable kind");
             max_diff = max_diff.max((got - expected[index]).abs());
         }
         assert!(
@@ -132,7 +139,7 @@ fn normalization_matches_reference_vectors() {
 #[test]
 fn normalize_series_preserves_warmup_holes() {
     let raw = vec![None, None, Some(50.0), Some(100.0), None, Some(0.0)];
-    let out = normalize_series(&raw, OscillatorKind::Rsi);
+    let out = normalize_series(&raw, OscillatorKind::Rsi).expect("evaluable kind");
     assert_eq!(out.len(), raw.len(), "output length must match input length");
     assert_eq!(&out[..2], &[None, None], "leading warmup run must survive");
     assert_eq!(out[4], None, "interior holes must survive");
@@ -140,7 +147,8 @@ fn normalize_series_preserves_warmup_holes() {
         match slot {
             None => assert_eq!(out[index], None),
             Some(value) => {
-                let expected = normalize_oscillator(*value, OscillatorKind::Rsi);
+                let expected = normalize_oscillator(*value, OscillatorKind::Rsi)
+                    .expect("evaluable kind");
                 assert_eq!(out[index], Some(expected));
             }
         }
@@ -149,9 +157,10 @@ fn normalize_series_preserves_warmup_holes() {
 
 #[test]
 fn normalize_series_turns_non_finite_into_holes() {
-    let out = normalize_series(&[Some(f64::NAN)], OscillatorKind::Rsi);
+    let out = normalize_series(&[Some(f64::NAN)], OscillatorKind::Rsi).expect("evaluable kind");
     assert_eq!(out, vec![None], "NaN must become a hole, never a substitute");
-    let unbounded = normalize_series(&[Some(f64::INFINITY)], OscillatorKind::Rsi);
+    let unbounded =
+        normalize_series(&[Some(f64::INFINITY)], OscillatorKind::Rsi).expect("evaluable kind");
     assert_eq!(unbounded, vec![None], "unbounded input must become a hole, never a substitute");
 }
 
@@ -174,7 +183,7 @@ fn squash_to_100_bounds_all_finite_inputs_within_signed_100_and_centers_zero() {
     );
     for kind in ALL_KINDS {
         for raw in RAW_PROBE {
-            let bounded = normalize_oscillator_bounded(raw, kind);
+            let bounded = normalize_oscillator_bounded(raw, kind).expect("evaluable kind");
             assert!(
                 bounded.abs() < BOUNDED_OSC_SCALE,
                 "{kind:?} at {raw} must stay inside the band, got {bounded}"
@@ -197,7 +206,7 @@ fn normalize_series_bounded_preserves_holes_and_stays_within_signed_100() {
         "holes stay holes and the rails map exactly"
     );
     let raw = vec![None, None, Some(50.0), Some(100.0), None, Some(0.0)];
-    let out = normalize_series_bounded(&raw, OscillatorKind::Rsi);
+    let out = normalize_series_bounded(&raw, OscillatorKind::Rsi).expect("evaluable kind");
     assert_eq!(out.len(), raw.len(), "length is preserved element-wise");
     assert_eq!(&out[..2], &[None, None], "leading warmup survives");
     assert_eq!(out[4], None, "interior holes survive");
@@ -206,7 +215,10 @@ fn normalize_series_bounded_preserves_holes_and_stays_within_signed_100() {
             None => assert_eq!(out[index], None),
             Some(value) => assert_eq!(
                 out[index],
-                Some(normalize_oscillator_bounded(*value, OscillatorKind::Rsi)),
+                Some(
+                    normalize_oscillator_bounded(*value, OscillatorKind::Rsi)
+                        .expect("evaluable kind")
+                ),
                 "each finite reading squashes element-wise"
             ),
         }
@@ -215,7 +227,7 @@ fn normalize_series_bounded_preserves_holes_and_stays_within_signed_100() {
         assert!(value.abs() < BOUNDED_OSC_SCALE, "bounded readout: {value}");
     }
     assert_eq!(
-        normalize_series_bounded(&[Some(f64::NAN)], OscillatorKind::Rsi),
+        normalize_series_bounded(&[Some(f64::NAN)], OscillatorKind::Rsi).expect("evaluable kind"),
         vec![None],
         "a non-finite reading becomes a hole, never a substitute"
     );

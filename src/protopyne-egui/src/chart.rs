@@ -246,6 +246,25 @@ fn default_theme() -> String {
     "default".to_owned()
 }
 
+/// Refuse an oscillator selection the catalog does not accept: unknown
+/// spellings name the spelling, known-but-non-evaluable rows (`Cdv`) carry
+/// the catalog's own refusal reason so callers never substitute defaults.
+fn check_oscillator_selection(what: &str, kind: &str) -> Result<(), EguiError> {
+    match parse_oscillator_kind(kind) {
+        None => Err(EguiError::InvalidParam {
+            what: what.to_owned(),
+            reason: format!(
+                "oscillator {kind:?} is not in the oscillator catalog (free-text names outside the catalog no longer validate)"
+            ),
+        }),
+        Some(parsed) if !parsed.is_evaluable() => Err(EguiError::InvalidParam {
+            what: what.to_owned(),
+            reason: parsed.refusal_reason().unwrap_or("oscillator refuses").to_owned(),
+        }),
+        Some(_) => Ok(()),
+    }
+}
+
 /// Top-level chart configuration: toolbar selection, pane switches, display
 /// threshold, ribbon fill bounds, geometry, and theme key.
 ///
@@ -280,16 +299,18 @@ pub struct ChartConfig {
     #[builder(default = true)]
     pub show_oscillator: bool,
     /// Fast oscillator kind name (settings spelling, for example "rsi").
-    #[field(desc = "Fast oscillator kind name", max_len = 16)]
+    #[field(desc = "Fast oscillator kind name", max_len = 16, variants = "crate::oscillators::evaluable_oscillator_ids")]
     #[builder(default = default_fast_oscillator())]
     #[serde(default = "default_fast_oscillator")]
     pub fast_oscillator: String,
     /// Slow oscillator kind name (settings spelling, for example "cci").
-    #[field(desc = "Slow oscillator kind name", max_len = 16)]
+    #[field(desc = "Slow oscillator kind name", max_len = 16, variants = "crate::oscillators::evaluable_oscillator_ids")]
     #[builder(default = default_slow_oscillator())]
     #[serde(default = "default_slow_oscillator")]
     pub slow_oscillator: String,
     /// Pivot threshold on the normalized band; zero never fires meaningfully.
+    /// Task value (alert fitness), not producer confidence: it says when a
+    /// swing is worth marking, never how sure the oscillator is.
     #[field(desc = "Pivot threshold on the normalized band", min = 1, max = 100000)]
     #[builder(default = 200)]
     pub threshold: u32,
@@ -379,12 +400,7 @@ impl ChartConfig {
         for (what, kind) in
             [("fast_oscillator", &self.fast_oscillator), ("slow_oscillator", &self.slow_oscillator)]
         {
-            if parse_oscillator_kind(kind).is_none() {
-                return Err(EguiError::InvalidParam {
-                    what: what.to_owned(),
-                    reason: format!("unknown oscillator kind {kind:?}"),
-                });
-            }
+            check_oscillator_selection(what, kind)?;
         }
         Ok(())
     }
@@ -426,11 +442,11 @@ impl WorkUnit for ChartConfig {
 
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         check_for_execute(self, "chart config invalid")?;
-        if parse_oscillator_kind(&self.fast_oscillator).is_none() {
-            return Err(WorkError::Execution("chart config invalid: bad fast kind".to_owned()));
-        }
-        if parse_oscillator_kind(&self.slow_oscillator).is_none() {
-            return Err(WorkError::Execution("chart config invalid: bad slow kind".to_owned()));
+        for (what, kind) in
+            [("fast_oscillator", &self.fast_oscillator), ("slow_oscillator", &self.slow_oscillator)]
+        {
+            check_oscillator_selection(what, kind)
+                .map_err(|err| WorkError::Execution(format!("chart config invalid: {err}")))?;
         }
         let panes = standard_plan()
             .map_err(|e| WorkError::Execution(format!("chart config invalid: {e}")))?

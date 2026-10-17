@@ -85,9 +85,20 @@ fn constraints_refuse_with_reasons() {
         ("empty theme", ChartConfig::new().theme("  ".to_owned()).build()),
         ("unknown fast", ChartConfig::new().fast_oscillator("sma".to_owned()).build()),
         ("unknown slow", ChartConfig::new().slow_oscillator("wavetrend".to_owned()).build()),
+        ("refused fast", ChartConfig::new().fast_oscillator("cdv".to_owned()).build()),
+        ("refused slow", ChartConfig::new().slow_oscillator("cdv".to_owned()).build()),
     ] {
         assert!(config.validate().is_err(), "{label} refuses");
     }
+    // The listed-but-refused `cdv` row refuses with the catalog's own
+    // reason, never as a generic unknown spelling and never by
+    // substituting the default constants.
+    let cdv = ChartConfig::new().fast_oscillator("cdv".to_owned()).build();
+    let err = cdv.validate().expect_err("cdv refuses evaluation");
+    assert!(
+        err.to_string().contains("cdv has no kernel"),
+        "carries the catalog refusal reason: {err}"
+    );
     assert!(default_chart().validate().is_ok(), "defaults validate");
 }
 

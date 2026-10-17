@@ -63,6 +63,13 @@ pub enum InputDef {
     /// override. The declaration itself seeds no value, so the default
     /// expression keeps riding the current bar until a caller overrides it.
     Source,
+    /// Price-source selector: names which OHLC-derived column an indicator
+    /// reads. The default is the canonical registry name (`"close"`, `"hlc3"`,
+    /// …); declaration and assignment both refuse unknown names.
+    PriceSource {
+        /// Canonical default source name.
+        default: String,
+    },
 }
 
 impl InputDef {
@@ -77,6 +84,7 @@ impl InputDef {
             Self::Enum { default } => Some(PineValue::EnumHandle(default.clone())),
             Self::Color { default } => Some(PineValue::ColorHandle(*default)),
             Self::Source => None,
+            Self::PriceSource { default } => Some(PineValue::Str(default.clone())),
         }
     }
 
@@ -143,6 +151,17 @@ impl InputDef {
                     "kind mismatch: source input got {got}"
                 ))),
             },
+            Self::PriceSource { .. } => match value {
+                PineValue::Str(name) if crate::price_source::PriceSource::parse(name).is_some() => {
+                    Ok(())
+                }
+                PineValue::Str(name) => Err(KernelError::InvalidInput(format!(
+                    "unknown price source {name:?}"
+                ))),
+                got => Err(KernelError::InvalidInput(format!(
+                    "kind mismatch: price-source input got {got}"
+                ))),
+            },
         }
     }
 
@@ -187,6 +206,14 @@ impl InputDef {
             | Self::Enum { .. }
             | Self::Color { .. }
             | Self::Source => Ok(()),
+            Self::PriceSource { default } => {
+                if crate::price_source::PriceSource::parse(default).is_none() {
+                    return Err(KernelError::InvalidInput(format!(
+                        "unknown price source {default:?}"
+                    )));
+                }
+                Ok(())
+            }
             Self::Session { default } => {
                 if default.trim().is_empty() {
                     return Err(KernelError::InvalidInput(
@@ -244,7 +271,21 @@ impl InputSet {
     #[cfg(feature = "pine")]
     #[must_use]
     pub(crate) fn is_source(&self, name: &str) -> bool {
-        matches!(self.defs.get(name), Some(InputDef::Source))
+        matches!(
+            self.defs.get(name),
+            Some(InputDef::Source | InputDef::PriceSource { .. })
+        )
+    }
+
+    /// Declared default price source for `name`, if it is a price-source input.
+    #[must_use]
+    pub fn price_source_default(&self, name: &str) -> Option<crate::price_source::PriceSource> {
+        match self.defs.get(name) {
+            Some(InputDef::PriceSource { default }) => {
+                crate::price_source::PriceSource::parse(default)
+            }
+            _ => None,
+        }
     }
 
     /// Read the current value; undeclared names are `None`.

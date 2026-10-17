@@ -1,5 +1,53 @@
 use super::*;
+use protopyne_kernels::PriceSource;
 use protopyne_kernels::indicator::{ParamSet, builtin_registry};
+use protopyne_chart_model::ChartRow;
+
+fn sample_rows() -> Vec<ChartRow> {
+    (0..8)
+        .map(|i| {
+            let close = 100.0 + i as f64;
+            ChartRow {
+                time: i,
+                open: close - 1.0,
+                high: close + 1.0,
+                low: close - 2.0,
+                close,
+                volume: 1_000 + i as u64,
+            }
+        })
+        .collect()
+}
+
+#[test]
+fn preview_frame_defaults_to_close_source() {
+    let rows = sample_rows();
+    let legacy = kernel_preview_frame(&rows);
+    let explicit = kernel_preview_frame_with_source(&rows, PriceSource::Close);
+    assert_eq!(legacy.open, explicit.open);
+    assert_eq!(legacy.high, explicit.high);
+    assert_eq!(legacy.low, explicit.low);
+    assert_eq!(legacy.close, explicit.close);
+    assert_eq!(legacy.volume, explicit.volume);
+    // The Close column of the full frame is the raw close leg.
+    let column = PriceSource::Close.column_of(&explicit);
+    assert_eq!(column, explicit.close);
+}
+
+#[test]
+fn source_frame_close_matches_single_column_contract() {
+    let rows = sample_rows();
+    let full = kernel_preview_frame(&rows);
+    let frame = source_frame(&rows, PriceSource::Hlc3);
+    let want = PriceSource::Hlc3.column_of(&full);
+    assert_eq!(frame.close, want);
+    assert_eq!(frame.open, want);
+    assert_eq!(frame.high, want);
+    assert_eq!(frame.low, want);
+    assert_eq!(frame.volume, full.volume);
+    let close_frame = source_frame(&rows, PriceSource::Close);
+    assert_eq!(close_frame.close, full.close);
+}
 
 fn position(order: &[String], node: &str) -> usize {
     order.iter().position(|n| n == node).unwrap_or_else(|| panic!("{node} ordered"))

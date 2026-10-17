@@ -563,3 +563,96 @@ fn cursor_anchored_wheel_zoom_and_2d_pan_calibration_controls() {
         zoomed_out.scale().bar_spacing()
     );
 }
+
+#[test]
+fn feel_constants_are_pinned() {
+    // Calibration gate: these are frozen feel heuristics (task value, never
+    // producer confidence). A retune edits the constant and this pin
+    // together, then re-runs the whole interaction suite — never a silent
+    // feel edit.
+    // Bit-exact pins (no float tolerance: a retune must move the pin).
+    for (name, got, want) in [
+        ("KINETIC_DAMPING_BASE", KINETIC_DAMPING_BASE, 0.92f64),
+        ("WHEEL_ZOOM_BASE", WHEEL_ZOOM_BASE, 1.15),
+        ("WHEEL_STEP_PX", WHEEL_STEP_PX, 50.0),
+        ("REST_FRACTION_OF_SPAN", REST_FRACTION_OF_SPAN, 1e-4),
+        ("ELASTIC_FRACTION", ELASTIC_FRACTION, 0.15),
+        ("VELOCITY_BLEND", VELOCITY_BLEND, 0.5),
+    ] {
+        assert_eq!(got.to_bits(), want.to_bits(), "{name} is frozen");
+    }
+    assert_eq!(MIN_BAR_SPACING.to_bits(), 1.0f32.to_bits(), "zoom rail floor is frozen");
+    assert_eq!(MAX_BAR_SPACING.to_bits(), 64.0f32.to_bits(), "zoom rail ceiling is frozen");
+}
+
+#[test]
+fn auto_height_reanchors_through_the_machine() {
+    // The menu action rides the same machine as every other range change:
+    // the fitted range applies, the vertical coast stops, and the time axis
+    // (spacing, offset, horizontal coast) is untouched.
+    let start = pane();
+    let mut state = free_state().with_horizontal_bounds(100, 400.0).expect("valid bounds");
+    let _ = state.step(1.0 / 60.0, &start, &[PointerInput::Drag { dy_px: 40.0 }]);
+    assert!(!state.is_settled(), "a drag seeds a coast");
+    let spacing_before = start.scale().bar_spacing();
+    let fitted = state.step(
+        1.0 / 60.0,
+        &start,
+        &[PointerInput::AutoHeight { min: 95.0, max: 105.0 }],
+    );
+    assert_eq!(state.kinetic_velocity().to_bits(), 0.0f64.to_bits(), "re-anchoring stops the coast");
+    assert!(state.is_settled(), "no horizontal coast was seeded");
+    let range = fitted.scale().range();
+    assert_eq!((range.min, range.max), (95.0, 105.0), "the fitted range applies");
+    assert_eq!(fitted.scale().bar_spacing().to_bits(), spacing_before.to_bits(), "time axis untouched");
+    assert_eq!(fitted.x_offset_px().to_bits(), start.x_offset_px().to_bits(), "pan offset untouched");
+}
+
+#[test]
+fn auto_height_refusals_hold_the_window() {
+    let start = pane();
+    let mut state = free_state();
+    for event in [
+        PointerInput::AutoHeight { min: f64::NAN, max: 105.0 },
+        PointerInput::AutoHeight { min: 105.0, max: 95.0 },
+        PointerInput::AutoHeight { min: 95.0, max: 95.0 },
+    ] {
+        let held = state.step(1.0 / 60.0, &start, &[event]);
+        let range = held.scale().range();
+        assert_eq!((range.min, range.max), (90.0, 110.0), "a refusal holds the window");
+        assert!(state.is_settled(), "a refusal seeds no coast");
+    }
+}
+
+#[test]
+fn scripted_auto_height_replays_deterministically() {
+    // (pan, wheel, AutoHeight, wheel): the same log twice yields the same
+    // viewport sequence, and the middle re-anchor composes — wheeling after
+    // the fit equals wheeling the fitted viewport directly.
+    let start = pane();
+    let log = vec![
+        PointerInput::Pan2D { dx_px: 24.0, dy_px: 30.0 },
+        PointerInput::Wheel { delta_px: 50.0, anchor_y: 200.0 },
+        PointerInput::AutoHeight { min: 95.0, max: 105.0 },
+        PointerInput::Wheel { delta_px: -50.0, anchor_y: 200.0 },
+    ];
+    let run = || {
+        let mut state = free_state();
+        let mut view = start;
+        let mut sequence = Vec::new();
+        for event in &log {
+            view = state.step(1.0 / 60.0, &view, std::slice::from_ref(event));
+            let range = view.scale().range();
+            sequence.push((range.min, range.max));
+        }
+        sequence
+    };
+    assert_eq!(run(), run(), "replay is deterministic");
+    let sequence = run();
+    assert_eq!(
+        (sequence[2].0, sequence[2].1),
+        (95.0, 105.0),
+        "the re-anchor lands exactly"
+    );
+    assert_ne!(sequence[3], sequence[2], "the trailing wheel still acts");
+}

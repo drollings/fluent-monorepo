@@ -506,14 +506,22 @@ fn display_fence_marks_kernel_preview_frames() {
     // Positive pin: every module that builds a kernel preview frame fences
     // display legs — the fence type must be named exactly where display floats
     // enter kernel frames, so a future refactor cannot silently drop the mark.
-    // `topology.rs` owns the shared full-OHLC preview frame; `integration_lite`
-    // and `fast_mas` own their close-only synth/MA frames.
-    for module in ["topology.rs", "integration_lite.rs", "fast_mas.rs"] {
+    // `topology.rs` owns the shared full-OHLC preview frame and the
+    // single-column source frames; `integration_lite` owns its close-only
+    // synth frame. `fast_mas` routes through the shared builder, so it pins
+    // the delegation instead of naming the fence twice.
+    for module in ["topology.rs", "integration_lite.rs"] {
         assert!(
             code_lines(&read_src(module)).iter().any(|line| line.contains("DisplayOnly")),
             "{module} must route preview frames through the DisplayOnly fence"
         );
     }
+    assert!(
+        code_lines(&read_src("fast_mas.rs"))
+            .iter()
+            .any(|line| line.contains("source_frame")),
+        "fast_mas.rs must route preview frames through the shared source-frame builder"
+    );
 }
 
 /// Code lines of the function whose signature line contains `marker`,

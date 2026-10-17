@@ -490,13 +490,38 @@ async fn grant_tiers_read_the_live_grant_as_display_text() {
 }
 
 #[tokio::test]
+async fn gateway_symbols_read_the_history_root_it_booted() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    for ticker in ["AAA", "ZZZ"] {
+        std::fs::create_dir_all(dir.path().join(ticker).join("2026/01"))
+            .expect("ticker tree creates");
+    }
+    let mut config = ServerConfig::new()
+        .bind("127.0.0.1:0".to_owned())
+        .build();
+    config.history_path = Some(dir.path().to_string_lossy().into_owned());
+    let handle = serve(config, history()).await.expect("test server boots");
+    let rows = handle
+        .gateway()
+        .symbols()
+        .expect("gateway symbols read");
+    let ids: Vec<&str> = rows.iter().map(|row| row.symbol.as_str()).collect();
+    assert_eq!(
+        ids, ["AAA", "ZZZ"],
+        "discovery drives the catalog; the shipped rows do not leak in"
+    );
+    handle.shutdown().await;
+}
+
+#[tokio::test]
 async fn gateway_serves_symbol_scoped_bars_and_overlays_across_timeframes() {
     let handle = boot().await;
     let gateway = handle.gateway();
 
-    assert!(
-        gateway.symbols().expect("gateway symbols read").is_empty(),
-        "the server curates no instrument master, so the catalog reads empty"
+    assert_eq!(
+        gateway.symbols().expect("gateway symbols read"),
+        protopyne_view::symbol_catalog(),
+        "a server booted without a history root serves the shipped offline list"
     );
 
     let base = gateway.chart_bars().expect("gateway bars read");

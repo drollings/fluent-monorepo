@@ -11,7 +11,7 @@ use crate::averages::RmaIndicator;
 use crate::ema::EmaIndicator;
 use crate::error::KernelError;
 use crate::indicator::{
-    fin_or_none, BarTick, FullTick, Indicator, IndicatorId, IndicatorResult, IndicatorSpec,
+    fin_or_none, nan_hole, BarTick, FullTick, Indicator, IndicatorId, IndicatorResult, IndicatorSpec,
     IndicatorState, NamedSeries, NamedValue, Ohlcv, ParamSet,
 };
 use crate::sma::SmaIndicator;
@@ -241,7 +241,7 @@ impl Indicator for MacdIndicator {
             BarTick::close_only(line_raw),
             child_params,
         )?;
-        let signal_raw = signal.unwrap_or(f64::NAN);
+        let signal_raw = nan_hole(signal);
         let hist_raw = if line_raw.is_nan() || signal_raw.is_nan() {
             f64::NAN
         } else {
@@ -436,8 +436,10 @@ impl CciIndicator {
         let mean = crate::math::window_mean(window);
         let deviation =
             window.iter().map(|v| (v - mean).abs()).sum::<f64>() / window.len() as f64;
-        crate::math::div_or_none(window[window.len() - 1] - mean, Self::SCALE * deviation)
-            .unwrap_or(f64::NAN)
+        nan_hole(crate::math::div_or_none(
+            window[window.len() - 1] - mean,
+            Self::SCALE * deviation
+        ))
     }
 }
 
@@ -519,7 +521,7 @@ impl CmoIndicator {
             let change = pair[1] - pair[0];
             (up + change.max(0.0), dn + (-change).max(0.0))
         });
-        crate::math::div_or_none(100.0 * (up - dn), up + dn).unwrap_or(f64::NAN)
+        nan_hole(crate::math::div_or_none(100.0 * (up - dn), up + dn))
     }
 }
 

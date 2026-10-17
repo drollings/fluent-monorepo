@@ -26,7 +26,7 @@
 use std::collections::HashMap;
 
 use crate::error::KernelError;
-use crate::indicator::{BarTick, IndicatorRegistry, IndicatorState, ParamSet, builtin_registry};
+use crate::indicator::{BarTick, IndicatorRegistry, IndicatorState, ParamSet, builtin_registry, nan_hole};
 use crate::value::PineValue;
 
 /// One script-facing `ta.*` namespace: kernels plus stream state.
@@ -247,7 +247,7 @@ impl TaBridge {
                     .checked_sub(length.saturating_add(1))
                     .and_then(|i| tail.get(i))
                     .copied();
-                let now = tail.last().copied().unwrap_or(f64::NAN);
+                let now = nan_hole(tail.last().copied());
                 Ok(match (now, back) {
                     (a, Some(b)) if !a.is_nan() && !b.is_nan() => Some(PineValue::Float(a - b)),
                     _ => None,

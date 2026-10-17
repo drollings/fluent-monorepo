@@ -28,8 +28,9 @@ use protopyne_strategy::{
 };
 use protopyne_types::{Bar, Money};
 use protopyne_venue::{
-    submit_guarded, CorporateEvent, OrderIntent, OrderSide, OrderStatus, PaperConfig, PaperVenue,
-    Position, Quote, RunIntentLog, SubmissionRecorder, Venue, VenueError, PROPOSAL_TRANSITION_KIND,
+    submit_guarded, CorporateEvent, Journal, OrderIntent, OrderSide, OrderStatus, PaperConfig,
+    PaperVenue, Position, Quote, Recorder, SubmissionRecorder, Venue, VenueError,
+    PROPOSAL_TRANSITION_KIND,
 };
 
 use crate::backtest::{load_history, quote_for_bar, BacktestConfig, BacktestVenue, HistorySource};
@@ -964,10 +965,11 @@ async fn run_backtest_on_venue<V: Venue>(
     planner_certified: bool,
 ) -> Result<BacktestRun, ServerError> {
     let mut usage = GrantUsage::new().build();
-    // One in-memory intent log per run: the shared submission protocol runs
+    // One ephemeral recorder per run: the shared submission protocol runs
     // unchanged, recording each intent/transition in memory with no durable
     // journal and no fsync, so parallel runs stay isolated.
-    let recorder = RunIntentLog::new();
+    let journal = Journal::ephemeral();
+    let recorder = Recorder::ephemeral(&journal);
     // One breaker for the whole run: rebuilding it per bar would leave the
     // consecutive-error threshold decorative. Health is built per bar at the
     // matching construction site so a live feed can plug real observations in.
@@ -1364,9 +1366,11 @@ pub async fn run_paper_decisions(
     let mut closes: Vec<f64> = Vec::with_capacity(bars.len());
     let mut decisions: Vec<BarDecision> = Vec::with_capacity(bars.len());
     let mut breakers = BreakerState::new().build();
-    // One in-memory intent log per paper run: the shared protocol records
-    // here exactly as a durable journal would, with no I/O.
-    let recorder = RunIntentLog::new();
+    // One ephemeral recorder per paper run: the shared submission protocol runs
+    // unchanged, recording each intent/transition in memory with no durable
+    // journal and no fsync, so parallel runs stay isolated.
+    let journal = Journal::ephemeral();
+    let recorder = Recorder::ephemeral(&journal);
     for (index, bar) in bars.iter().enumerate() {
         let Some(close) = bar.c.to_f64() else {
             decisions.push(skipped_decision(

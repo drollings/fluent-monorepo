@@ -54,7 +54,7 @@ pub use health::{
     GateFailure, GateReport, HealthGate, HealthLimits, HealthState, HealthVerdict, RouteIntent,
 };
 pub use journal::{
-    Journal, JournalEvent, ReplayedState, RunIntentLog, VenueStorage, INTENT_KIND, LEG_FILL_KIND,
+    Journal, JournalEvent, ReplayedState, VenueStorage, INTENT_KIND, LEG_FILL_KIND,
 };
 pub use live::{LiveBoot, LiveSession, TastytradeVenue, boot_live, positions_of};
 pub use market::{MarketEvent, MarketEventKind};
@@ -80,7 +80,7 @@ pub use stream::{
     terminal_reason,
 };
 pub use submit::{
-    safe_submit, submit_guarded, SubmissionRecorder, SUBMIT_RETRIES, SUBMIT_TIMEOUT,
+    safe_submit, submit_guarded, Recorder, SubmissionRecorder, SUBMIT_RETRIES, SUBMIT_TIMEOUT,
 };
 pub use tastytrade::{
     RETRY_BACKOFF_BASE_MS, RETRY_JITTER_PCT, RETRY_MAX_ATTEMPTS, TastytradeConfig,

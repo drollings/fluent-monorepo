@@ -559,6 +559,11 @@ fn current_value_matches(def: &InputDef, current: &PineValue) -> Result<(), Kern
         (InputDef::Source, PineValue::Float(_) | PineValue::Int(_) | PineValue::Bool(_)) => {
             Ok(())
         }
+        (InputDef::PriceSource { .. }, PineValue::Str(name))
+            if crate::price_source::PriceSource::parse(name).is_some() =>
+        {
+            Ok(())
+        }
         _ => Err(KernelError::Eval(format!(
             "input site holds {current}, which no longer matches its declaration"
         ))),

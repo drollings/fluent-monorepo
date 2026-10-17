@@ -3,7 +3,7 @@
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
-use syn::{parse_macro_input, Data, DataStruct, DeriveInput, Fields, Lit};
+use syn::{parse_macro_input, Data, DataStruct, DeriveInput, Fields, Lit, Path};
 
 struct FieldMeta {
     desc: Option<String>,
@@ -19,6 +19,7 @@ struct FieldMeta {
     coerce: Option<String>,
     parse: Option<String>,
     empty_is_none: bool,
+    variants: Option<TokenStream2>,
 }
 
 fn parse_field_attrs(field: &syn::Field) -> FieldMeta {
@@ -36,6 +37,7 @@ fn parse_field_attrs(field: &syn::Field) -> FieldMeta {
         coerce: None,
         parse: None,
         empty_is_none: true,
+        variants: None,
     };
 
     for attr in &field.attrs {
@@ -163,8 +165,23 @@ fn parse_field_attrs(field: &syn::Field) -> FieldMeta {
                 result.clamp = true;
                 return Ok(());
             }
+            if meta.path.is_ident("variants") {
+                // A selector's options: a zero-arg path called at
+                // `describe()` time, so the schema lists the live catalog
+                // instead of a frozen copy. The callee returns any
+                // JSON-serializable string list.
+                let value = meta.value()?;
+                let lit: Lit = value.parse()?;
+                if let Lit::Str(s) = lit {
+                    let path: Path = syn::parse_str(&s.value()).map_err(|error| {
+                        meta.error(format!("invalid variants path: {error}"))
+                    })?;
+                    result.variants = Some(quote! { #path });
+                }
+                return Ok(());
+            }
             Err(meta.error(
-                "unknown field attribute, expected `skip`, `desc`, `min`, `max`, `clamp`, `required`, `format`, `max_len`, `sanitize`, `pattern`, `coerce`, `parse`, or `empty_is_none`",
+                "unknown field attribute, expected `skip`, `desc`, `min`, `max`, `clamp`, `required`, `format`, `max_len`, `sanitize`, `pattern`, `coerce`, `parse`, `variants`, or `empty_is_none`",
             ))
         });
     }
@@ -765,6 +782,10 @@ pub fn derive_describable(input: TokenStream) -> TokenStream {
             schema.push(quote! { "parse": #parse });
         }
 
+        if let Some(ref variants) = meta.variants {
+            schema.push(quote! { "enum": #variants() });
+        }
+
         let field_name_lit = field_name_str.clone();
         properties.push(quote! {
             #field_name_lit: {
@@ -940,6 +961,14 @@ mod tests {
         let field = make_field(r#"pattern = "https://""#, "String", "url");
         let meta = parse_field_attrs(&field);
         assert_eq!(meta.pattern.as_deref(), Some("https://"));
+        assert!(meta.variants.is_none());
+    }
+
+    #[test]
+    fn parse_field_attrs_extracts_variants_path() {
+        let field = make_field(r#"variants = "crate::smoothing_ids""#, "String", "kind");
+        let meta = parse_field_attrs(&field);
+        assert_eq!(meta.variants.map(|tokens| tokens.to_string()), Some("crate :: smoothing_ids".to_owned()));
     }
 
     #[test]

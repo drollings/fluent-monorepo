@@ -15,7 +15,7 @@
 use polars::prelude::*;
 
 use crate::error::KernelError;
-use crate::indicator::fin_or_none;
+use crate::indicator::{fin_or_none, nan_hole};
 use crate::math::{div_or_none, linreg_slope, strict_window, variance_pop};
 use protopyne_types::Bar;
 
@@ -29,7 +29,7 @@ pub fn frame_of_bars(bars: &[Bar]) -> Result<DataFrame, KernelError> {
         bars.iter()
             .map(|b| {
                 use rust_decimal::prelude::ToPrimitive as _;
-                get(b).to_f64().unwrap_or(f64::NAN)
+                nan_hole(get(b).to_f64())
             })
             .collect::<Vec<f64>>()
     };

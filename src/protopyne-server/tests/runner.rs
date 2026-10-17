@@ -13,8 +13,8 @@ use protopyne_strategy::{
 };
 use protopyne_types::{Bar, Money};
 use protopyne_venue::{
-    Fault, PaperConfig, PaperVenue, RunIntentLog, StreamConfig, SupervisedStream, TransportError,
-    SUBMIT_RETRIES,
+    Fault, Journal, PaperConfig, PaperVenue, Recorder, StreamConfig, SupervisedStream,
+    TransportError, VenueStorage, SUBMIT_RETRIES,
 };
 
 fn money(value: i64) -> Money {
@@ -27,6 +27,12 @@ fn history() -> Vec<Bar> {
         .join("data")
         .join("SPY_15M.csv");
     crate::csv::load_bars_csv(&path).expect("vendored history loads")
+}
+
+/// A permit value the ephemeral gate ignores: ephemeral reads need a permit
+/// value but no installed capability (proven in the venue gate tests).
+fn ephemeral_permit() -> VenueStorage {
+    VenueStorage::new(PathBuf::from("ephemeral-test"))
 }
 
 fn strategy() -> Arc<Strategy> {
@@ -916,14 +922,15 @@ async fn runner_records_in_memory_intents_for_submitted_proposals() {
     let mut usage = GrantUsage::new().build();
     let mut breakers = BreakerState::new().build();
     let closes = vec![bar.c.to_f64().expect("representable close")];
-    let log = RunIntentLog::new();
+    let journal = Journal::ephemeral();
+    let recorder = Recorder::ephemeral(&journal);
     let decision = decide_and_submit(
         &strategy,
         &risk(),
         &grant_with(0.5),
         &mut usage,
         &venue,
-        &log,
+        &recorder,
         &venue_config(),
         &mut breakers,
         BarHealth::rehearsed(),
@@ -935,7 +942,7 @@ async fn runner_records_in_memory_intents_for_submitted_proposals() {
     )
     .await;
     assert!(decision.submitted, "liquid first bar must submit");
-    let replayed = log.replay().expect("in-memory replay");
+    let replayed = journal.replay(&ephemeral_permit()).expect("in-memory replay");
     assert_eq!(replayed.intents.len(), 1, "one intent recorded");
     assert!(
         replayed.events.iter().any(|event| event.kind == "intent"),
@@ -946,7 +953,10 @@ async fn runner_records_in_memory_intents_for_submitted_proposals() {
         "the verdict lands in the run log"
     );
     assert_eq!(
-        log.intent_status(&replayed.intents[0].client_id).as_deref(),
+        journal
+        .intent_status(&ephemeral_permit(), &replayed.intents[0].client_id)
+        .expect("status")
+        .as_deref(),
         Some("filled")
     );
 }
@@ -1050,13 +1060,15 @@ async fn risk_refusal_terminalizes_the_chain() {
         reconciliation_healthy: true,
     };
     let closes = vec![bar.c.to_f64().expect("representable close")];
+    let journal = Journal::ephemeral();
+    let recorder = Recorder::ephemeral(&journal);
     let decision = decide_and_submit(
         &strategy(),
         &risk(),
         &grant_with(0.5),
         &mut usage,
         &venue,
-        &RunIntentLog::new(),
+        &recorder,
         &venue_config(),
         &mut breakers,
         health,
@@ -1085,13 +1097,15 @@ async fn submitted_chain_walks_to_filled_without_tripping_the_breaker() {
     let mut usage = GrantUsage::new().build();
     let mut breakers = BreakerState::new().build();
     let closes = vec![bar.c.to_f64().expect("representable close")];
+    let journal = Journal::ephemeral();
+    let recorder = Recorder::ephemeral(&journal);
     let decision = decide_and_submit(
         &strategy(),
         &risk(),
         &grant_with(0.5),
         &mut usage,
         &venue,
-        &RunIntentLog::new(),
+        &recorder,
         &venue_config(),
         &mut breakers,
         BarHealth::rehearsed(),
@@ -1143,13 +1157,15 @@ async fn stale_quote_refuses_on_risk_and_grant_paths() {
         reconciliation_healthy: true,
     };
     let closes = vec![bar.c.to_f64().expect("representable close")];
+    let journal = Journal::ephemeral();
+    let recorder = Recorder::ephemeral(&journal);
     let decision = decide_and_submit(
         &strategy,
         &risk(),
         &grant_with(0.5),
         &mut usage,
         &venue,
-        &RunIntentLog::new(),
+        &recorder,
         &venue_config(),
         &mut breakers,
         health,
@@ -1197,13 +1213,15 @@ async fn tripped_breaker_disarms_entries_without_touching_merit_verdicts() {
         .trip_reason("test trip".to_owned())
         .build();
     let closes = vec![bar.c.to_f64().expect("representable close")];
+    let journal = Journal::ephemeral();
+    let recorder = Recorder::ephemeral(&journal);
     let decision = decide_and_submit(
         &strategy,
         &risk(),
         &grant_with(0.5),
         &mut usage,
         &venue,
-        &RunIntentLog::new(),
+        &recorder,
         &venue_config(),
         &mut breakers,
         BarHealth::rehearsed(),
@@ -1593,13 +1611,15 @@ async fn stream_breaker_trip_disarms_entries_through_breaker_state() {
     let strategy = strategy();
     let mut usage = GrantUsage::new().build();
     let closes = vec![bar.c.to_f64().expect("representable close")];
+    let journal = Journal::ephemeral();
+    let recorder = Recorder::ephemeral(&journal);
     let decision = decide_and_submit(
         &strategy,
         &risk(),
         &grant_with(0.5),
         &mut usage,
         &venue,
-        &RunIntentLog::new(),
+        &recorder,
         &venue_config(),
         &mut breakers,
         BarHealth::rehearsed(),
@@ -2132,14 +2152,15 @@ async fn disarmed_entries_terminalize_as_cancelled() {
         .trip_reason("test trip".to_owned())
         .build();
     let closes = vec![bar.c.to_f64().expect("representable close")];
-    let log = RunIntentLog::new();
+    let journal = Journal::ephemeral();
+    let recorder = Recorder::ephemeral(&journal);
     let decision = decide_and_submit(
         &strategy(),
         &risk(),
         &grant_with(0.5),
         &mut usage,
         &venue,
-        &log,
+        &recorder,
         &venue_config(),
         &mut breakers,
         BarHealth::rehearsed(),
@@ -2158,7 +2179,7 @@ async fn disarmed_entries_terminalize_as_cancelled() {
     for pair in decision.transitions.windows(2) {
         assert_eq!(pair[0].to, pair[1].from, "the chain stays contiguous");
     }
-    let replayed = log.replay().expect("run log replays");
+    let replayed = journal.replay(&ephemeral_permit()).expect("run log replays");
     assert!(
         replayed
             .events
@@ -2195,13 +2216,15 @@ async fn unrepresentable_quantity_refuses_terminal() {
     let mut usage = GrantUsage::new().build();
     let mut breakers = BreakerState::new().build();
     let closes = vec![bar.c.to_f64().expect("representable close")];
+    let journal = Journal::ephemeral();
+    let recorder = Recorder::ephemeral(&journal);
     let decision = decide_and_submit(
         &fractional,
         &risk(),
         &grant_with(0.5),
         &mut usage,
         &venue,
-        &RunIntentLog::new(),
+        &recorder,
         &venue_config(),
         &mut breakers,
         BarHealth::rehearsed(),
@@ -2226,11 +2249,12 @@ async fn unrepresentable_quantity_refuses_terminal() {
 #[tokio::test]
 async fn verdict_journal_failure_surfaces_without_losing_the_fill() {
     use protopyne_venue::{
-        LegExecution, OrderStatus, SubmissionRecorder, VenueError, PROPOSAL_TRANSITION_KIND,
+        Journal, LegExecution, OrderStatus, Recorder, SubmissionRecorder, VenueError,
+        PROPOSAL_TRANSITION_KIND,
     };
     use std::sync::atomic::{AtomicUsize, Ordering};
     struct FailLate {
-        log: RunIntentLog,
+        journal: Journal,
         lifecycle_transitions: AtomicUsize,
     }
     impl SubmissionRecorder for FailLate {
@@ -2239,7 +2263,7 @@ async fn verdict_journal_failure_surfaces_without_losing_the_fill() {
             intent: &protopyne_venue::OrderIntent,
             now: chrono::DateTime<chrono::Utc>,
         ) -> Result<bool, VenueError> {
-            self.log.record_intent(intent, now)
+            Recorder::ephemeral(&self.journal).record_intent(intent, now)
         }
         fn mark_status(
             &self,
@@ -2247,7 +2271,7 @@ async fn verdict_journal_failure_surfaces_without_losing_the_fill() {
             status: OrderStatus,
             now: chrono::DateTime<chrono::Utc>,
         ) -> Result<(), VenueError> {
-            self.log.mark_status(client_id, status, now)
+            Recorder::ephemeral(&self.journal).mark_status(client_id, status, now)
         }
         fn record_leg_fill(
             &self,
@@ -2255,7 +2279,7 @@ async fn verdict_journal_failure_surfaces_without_losing_the_fill() {
             leg: &LegExecution,
             now: chrono::DateTime<chrono::Utc>,
         ) -> Result<(), VenueError> {
-            self.log.record_leg_fill(client_id, leg, now)
+            Recorder::ephemeral(&self.journal).record_leg_fill(client_id, leg, now)
         }
         fn record_transition(
             &self,
@@ -2273,7 +2297,7 @@ async fn verdict_journal_failure_surfaces_without_losing_the_fill() {
             {
                 return Err(VenueError::Journal("injected verdict journal failure".to_owned()));
             }
-            self.log.record_transition(client_id, kind, detail, now)
+            Recorder::ephemeral(&self.journal).record_transition(client_id, kind, detail, now)
         }
     }
     let bars = history();
@@ -2283,7 +2307,7 @@ async fn verdict_journal_failure_surfaces_without_losing_the_fill() {
     let mut breakers = BreakerState::new().build();
     let closes = vec![bar.c.to_f64().expect("representable close")];
     let recorder = FailLate {
-        log: RunIntentLog::new(),
+        journal: Journal::ephemeral(),
         lifecycle_transitions: AtomicUsize::new(0),
     };
     let decision = decide_and_submit(

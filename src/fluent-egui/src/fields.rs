@@ -28,6 +28,11 @@ pub enum FieldKind {
     Boolean,
     /// Free text, edited as a single-line text edit.
     Text,
+    /// One of a schema-listed set, edited as a dropdown. The value on the
+    /// wire is still text; an option the list does not name is never
+    /// offered, but a current value outside the list still renders (as the
+    /// selected row) instead of disappearing.
+    Select,
     /// `#RRGGBB` color, edited as a swatch beside its hex text.
     Color,
 }
@@ -81,6 +86,9 @@ pub struct SchemaField {
     pub maximum: Option<f64>,
     /// Declared text length cap, when the schema carries one.
     pub max_len: Option<usize>,
+    /// Declared option set, when the schema carries an `enum` list. A
+    /// non-empty set makes this field a [`FieldKind::Select`].
+    pub options: Vec<String>,
 }
 
 /// Every field in `schema`, in schema order. Properties are read from the
@@ -98,7 +106,14 @@ pub fn schema_fields(schema: &serde_json::Value) -> Vec<SchemaField> {
                 .iter()
                 .map(|(name, hint)| SchemaField {
                     name: name.clone(),
-                    kind: FieldKind::of_hint(hint),
+                    kind: {
+                        let options = enum_hint(hint.get("enum"));
+                        if options.is_empty() {
+                            FieldKind::of_hint(hint)
+                        } else {
+                            FieldKind::Select
+                        }
+                    },
                     format: hint
                         .get("format")
                         .and_then(serde_json::Value::as_str)
@@ -111,6 +126,7 @@ pub fn schema_fields(schema: &serde_json::Value) -> Vec<SchemaField> {
                     minimum: number_hint(hint.get("minimum")),
                     maximum: number_hint(hint.get("maximum")),
                     max_len: usize_hint(hint.get("maxLength")),
+                    options: enum_hint(hint.get("enum")),
                 })
                 .collect()
         })
@@ -126,6 +142,20 @@ fn number_hint(hint: Option<&serde_json::Value>) -> Option<f64> {
         serde_json::Value::Number(number) => number.as_f64(),
         serde_json::Value::String(text) => text.parse().ok(),
         _ => None,
+    }
+}
+
+/// A declared option set, spelled as a JSON string array. Any other shape
+/// reads as no options, so a malformed list degrades to a text field rather
+/// than a broken dropdown.
+fn enum_hint(hint: Option<&serde_json::Value>) -> Vec<String> {
+    match hint {
+        Some(serde_json::Value::Array(options)) => options
+            .iter()
+            .filter_map(serde_json::Value::as_str)
+            .map(str::to_owned)
+            .collect(),
+        _ => Vec::new(),
     }
 }
 
@@ -419,6 +449,7 @@ fn paint_one(
             (response.changed() && value != current).then_some(value)
         }
         FieldKind::Color => edit_color(row, field, &current, edits),
+        FieldKind::Select => edit_select(row, field, &current),
     };
     let Some(edited) = edited else {
         return;
@@ -468,6 +499,29 @@ fn edit_number(
         return None;
     }
     Some(value.to_string())
+}
+
+/// A dropdown over the schema's option set. A current value outside the set
+/// (an old config the catalog no longer lists) still renders as the
+/// selected row, so stale data is visible instead of hidden; picking an
+/// option writes through the field's own contract, and its refusal is
+/// reported like any other write.
+fn edit_select(row: &mut egui::Ui, field: &SchemaField, current: &str) -> Option<String> {
+    let mut value = current.to_owned();
+    let mut changed = false;
+    egui::ComboBox::from_id_salt(format!("select:{}", field.name))
+        .selected_text(current)
+        .show_ui(row, |ui| {
+            if !field.options.iter().any(|option| option == current) {
+                ui.selectable_value(&mut value, current.to_owned(), format!("{current} (unlisted)"));
+            }
+            for option in &field.options {
+                if ui.selectable_value(&mut value, option.clone(), option).changed() {
+                    changed = true;
+                }
+            }
+        });
+    (changed && value != current).then_some(value)
 }
 
 /// One refusal, naming the field it belongs to.

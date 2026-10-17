@@ -14,6 +14,7 @@ use protopyne_chart_scale::PriceScaleMode;
 
 use crate::fast_mas::FastMasConfig;
 use crate::integration_lite::IntegrationLiteConfig;
+use crate::topology::SeriesCatalog;
 
 /// Sixty rising bars with a distinct volume leg, so every MA and volume
 /// kernel has data to weight.
@@ -128,7 +129,7 @@ fn chart_indicator_plugins_evaluate_into_cache_and_isolate_settings() {
         // Evaluate against the slot's own config (the settings authority).
         let evaluation: IndicatorEvaluation = {
             let config = stack.config(plugin.id()).expect("the slot owns its config");
-            plugin.evaluate(&rows, config).expect("the plugin evaluates")
+            plugin.evaluate(&rows, config, &SeriesCatalog::empty()).expect("the plugin evaluates")
         };
         assert!(!evaluation.series.is_empty(), "{id} produces series");
         for series in &evaluation.series {
@@ -178,7 +179,8 @@ fn chart_indicator_plugins_evaluate_into_cache_and_isolate_settings() {
     assert_eq!(FastMasIndicator::new().id(), "fast_mas");
     let kernel = KernelIndicator::new("sma").expect("a kernel plugin builds");
     assert_eq!(kernel.id(), "sma");
-    assert_eq!(kernel.attachment(), SlotAttachment::SubPane);
+    assert_eq!(kernel.title(), "Simple Moving Average", "titles come from the kernel spec");
+    assert_eq!(kernel.attachment(), SlotAttachment::MainOverlay, "single smoothings overlay");
     let kernel_config = KernelIndicatorConfig::new().kernel("sma".to_owned()).length(10).build();
     assert!(kernel_config.validate().is_ok(), "a valid kernel config passes");
 
@@ -200,7 +202,7 @@ fn chart_indicator_plugins_paint_their_attachments_headlessly() {
     let (ctx, painter) = test_painter();
     let lite = IntegrationLiteIndicator::new();
     let lite_config = lite.default_config();
-    let lite_view = lite.evaluate(&rows, &*lite_config).expect("lite evaluates");
+    let lite_view = lite.evaluate(&rows, &*lite_config, &SeriesCatalog::empty()).expect("lite evaluates");
     lite.paint_sub_pane(
         &painter,
         &lite_view,
@@ -216,7 +218,7 @@ fn chart_indicator_plugins_paint_their_attachments_headlessly() {
 
     let fast = FastMasIndicator::new();
     let fast_config = fast.default_config();
-    let fast_view = fast.evaluate(&rows, &*fast_config).expect("fast mas evaluates");
+    let fast_view = fast.evaluate(&rows, &*fast_config, &SeriesCatalog::empty()).expect("fast mas evaluates");
     fast.paint_main_overlay(
         &painter,
         &fast_view,

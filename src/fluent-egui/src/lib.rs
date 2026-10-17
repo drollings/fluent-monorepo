@@ -28,6 +28,7 @@
 
 pub mod annotations;
 pub mod config;
+pub mod context_menu;
 pub mod error;
 pub mod feed;
 pub mod fields;
@@ -45,6 +46,7 @@ pub mod wheel;
 
 pub use annotations::{AnnotationSet, MAX_UNDO_DEPTH, TimeIndex, annotate_at, resolve_annotation};
 pub use config::{PaneConfig, ThemeConfig};
+pub use context_menu::{ContextTrigger, detect_context_trigger, paint_context_menu};
 pub use error::EguiError;
 pub use feed::{
     ChartFeed, CreditIntake, HistoryError, HistoryRung, PaneHandle, PaneWaveUnit,
@@ -96,7 +98,8 @@ pub use view::{
 };
 pub use style::{LINE_WIDTH_FIELD, MAX_LINE_WIDTH, MIN_LINE_WIDTH, STYLE_FIELDS, style_key};
 pub use viewport::{
-    BreakLine, CULL_OVERSCAN_BARS, PROPORTIONAL_CULL_FACTOR, Viewport, axis_ticks, thin_ticks, visible_rows,
+    BreakLine, CULL_OVERSCAN_BARS, PROPORTIONAL_CULL_FACTOR, Viewport, auto_height_range,
+    axis_ticks, thin_ticks, visible_rows,
 };
 pub use wheel::{PaneZones, Pos2 as WheelPos2, Rect as WheelRect, WheelTarget, WheelZones};
 

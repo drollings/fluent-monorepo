@@ -3,6 +3,7 @@
 
 use super::*;
 use crate::indicators::ChartIndicator;
+use crate::topology::SeriesCatalog;
 use fluent_egui::IndicatorStyle;
 use protopyne_chart_scale::PriceScaleMode;
 
@@ -132,7 +133,7 @@ fn plugin_evaluates_reads_out_and_paints_headlessly() {
     assert_eq!(plugin.id(), DELTA_VOLUME_PROFILE_ID);
     assert_eq!(plugin.attachment(), SlotAttachment::MainOverlay);
     let config = plugin.default_config();
-    let evaluation = plugin.evaluate(&rows, config.as_ref()).expect("the plugin evaluates");
+    let evaluation = plugin.evaluate(&rows, config.as_ref(), &SeriesCatalog::empty()).expect("the plugin evaluates");
     assert_eq!(evaluation.series.len(), PROFILE_NODES.len());
     let readouts = plugin.readouts(&evaluation);
     assert!(readouts.iter().any(|readout| readout.label == "POC"), "the POC reads out");
@@ -390,7 +391,7 @@ fn the_profile_paints_its_boxes_through_the_ported_shading() {
         .collect();
     let plugin = DeltaVolumeProfileIndicator::new();
     let config = plugin.default_config();
-    let evaluation = plugin.evaluate(&rows, config.as_ref()).expect("the plugin evaluates");
+    let evaluation = plugin.evaluate(&rows, config.as_ref(), &SeriesCatalog::empty()).expect("the plugin evaluates");
     let viewport =
         Viewport::new(PriceScaleMode::Normal, 90.0, 110.0, 300.0, 8.0, 100.0, false)
             .expect("valid viewport");

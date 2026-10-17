@@ -140,6 +140,9 @@ async fn run(raw: &[String]) -> Result<(), String> {
         // The tree contract is one-minute months; the boot base follows it
         // so symbol- and timeframe-scoped reads fold by whole multiples.
         config.history_timeframe = String::from("1M");
+        // Record the root in the config so symbol discovery (the gateway's
+        // `symbols` read) sees the tree the history was loaded from.
+        config.history_path = Some(history_path.to_string_lossy().into_owned());
     }
     let reader = config
         .tape_path

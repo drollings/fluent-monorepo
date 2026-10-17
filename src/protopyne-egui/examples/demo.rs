@@ -1,4 +1,11 @@
-//! Native terminal demo shell: a thin composition over [`ChartWorkspace`].
+//! Chart-shell example (demo): a thin composition over [`ChartWorkspace`].
+//!
+//! This is the chart shell, not the trading demo: it paints candles,
+//! indicators, and the oscillator pane over seeded history, with no gateway,
+//! no portfolio, and no arming form. For the trading demo (gateway-backed
+//! views + workspace canvas + grant form + replay, no server boot), run the
+//! `terminal` example with `--mock` instead.
+//!
 //!
 //! History arrives as one CLI argument with two shapes: a directory opens as
 //! a history root (`TICKER/YYYY/MM/*.parquet` months with `*.csv` supplements
@@ -21,7 +28,8 @@
 //! Usage: `cargo run -p protopyne-egui --features demo --example demo --
 //! [DIR|HISTORY.csv|HISTORY.parquet] [--symbol TICKER]`, or pass `--check`
 //! to run the headless data path without opening a window and print a
-//! summary.
+//! summary. `--check` output is pinned in `tests/data/demo_check*.txt`: the
+//! `protopyne-demo` make target reproduces it byte-for-byte.
 
 use std::path::{Path, PathBuf};
 
@@ -49,23 +57,6 @@ fn load_bars(path: &Path) -> Result<Vec<Bar>, String> {
         return Err(format!("no bars in {}", path.display()));
     }
     Ok(bars)
-}
-
-/// Load one CSV as display rows (the workspace's native currency).
-fn load_rows(path: &Path) -> Result<Vec<ChartRow>, String> {
-    Ok(rows_of(&load_bars(path)?).rows)
-}
-
-/// Native slot files the file-mode demo seeds from CSV, so `1M`/`5M`/`15M`
-/// switch the actual loaded candles (`1H`/`4H`/`1D` resample the `15M` slot
-/// inside the workspace).
-fn native_slots(path: &Path) -> [(TimeframeKey, PathBuf); 3] {
-    let dir = history_dir();
-    [
-        (TimeframeKey::M1, dir.join("SPY_1M.csv")),
-        (TimeframeKey::M5, dir.join("SPY_5M.csv")),
-        (TimeframeKey::M15, path.to_path_buf()),
-    ]
 }
 
 /// The toolbar key behind a store-grid timeframe.
@@ -229,8 +220,19 @@ impl DemoApp {
                 .switch_symbol_seeded(&label, seeded)
                 .map_err(|e| format!("seed {}: {e}", path.display()))?;
         } else {
-            for (timeframe, file) in native_slots(path) {
-                let rows = load_rows(&file)?;
+            // Legacy single-file load, unified: the argument file seeds the
+            // `15M` slot while the shipped `1M`/`5M` trims seed the finer
+            // slots (`1H`/`4H`/`1D` resample the `15M` slot inside the
+            // workspace). Every file goes through the server's one entry
+            // point, so the rows are byte-identical to the old slot map
+            // (pinned in `tests/demo_shell.rs`).
+            let dir = history_dir();
+            for (timeframe, file) in [
+                (TimeframeKey::M1, dir.join("SPY_1M.csv")),
+                (TimeframeKey::M5, dir.join("SPY_5M.csv")),
+                (TimeframeKey::M15, path.to_path_buf()),
+            ] {
+                let rows = rows_of(&load_bars(&file)?).rows;
                 workspace
                     .seed_history(timeframe, rows)
                     .map_err(|e| format!("seed {}: {e}", timeframe.label()))?;
@@ -365,7 +367,7 @@ fn main() {
     };
     let options = eframe::NativeOptions::default();
     let run = eframe::run_native(
-        "protopyne terminal",
+        "protopyne chart shell",
         options,
         Box::new(|_cc| Ok::<_, Box<dyn std::error::Error + Send + Sync>>(Box::new(app))),
     );

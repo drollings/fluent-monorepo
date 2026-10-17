@@ -57,7 +57,8 @@ pub use grant_form::{GrantFormError, GrantFormField, GrantFormState, paint_grant
 pub use indicators::{
     ChartIndicator, FastMasIndicator, IndicatorCategory, IndicatorEvaluation, IndicatorSeries,
     IntegrationLiteIndicator, KernelIndicator, KernelIndicatorConfig, build_indicator_catalog,
-    instantiate_indicator,
+    build_indicator_catalog_with_manifest, instantiate_indicator, instantiate_indicator_with_manifest,
+    kernel_attachment, kernel_ids, kernel_title,
 };
 pub use integration_lite::{
     ATR_LENGTH, BOUNDED_DELTA_UNIT, CALIBRATED_PIVOT_THRESHOLD, CandleMomentum, FreezePair,
@@ -71,9 +72,9 @@ pub use integration_lite::{
 };
 pub use oscillators::{
     BOUNDED_OSC_SCALE, CALIBRATED_BOUNDED_PIVOT_THRESHOLD, OscParams, OscillatorKind,
-    SQUASH_100_DIVISOR, normalize_oscillator, normalize_oscillator_bounded, normalize_series,
-    normalize_series_bounded, osc_params, oscillator_kind_name, parse_oscillator_kind,
-    squash_series_to_100, squash_to_100,
+    OscillatorOption, WhichLeg, SQUASH_100_DIVISOR, evaluable_oscillator_ids, normalize_oscillator,
+    normalize_oscillator_bounded, normalize_series, normalize_series_bounded, oscillator_kind_name,
+    oscillator_options, parse_oscillator_kind, squash_series_to_100, squash_to_100,
 };
 pub use pine_overlay::{
     OverlayGeoms, PlacedLabel, SeriesGeom, overlay_geoms, paint_overlay, paint_unsupported_chip,
@@ -95,7 +96,7 @@ pub use widgets::{
     chart_type_label, mtf_table_shape, paint_mtf_table, paint_timeframe_toolbar, paint_toolbar,
     paint_top_bar, timeframe_labels, toolbar_labels,
 };
-pub use workspace::{ChartWorkspace, build_symbol_catalog, paint_workspace};
+pub use workspace::{ChartWorkspace, build_symbol_catalog, paint_workspace, symbol_modal_for};
 pub use protopyne_view::AssetClass;
 
 /// Terminal marker; touches the linked paint dependency so wiring breaks
@@ -117,3 +118,7 @@ mod budget_tests;
 #[cfg(test)]
 #[path = "../tests/gateway.rs"]
 mod gateway_tests;
+
+#[cfg(test)]
+#[path = "../tests/demo_shell.rs"]
+mod demo_shell_tests;

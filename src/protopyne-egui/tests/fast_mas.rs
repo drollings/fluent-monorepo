@@ -12,9 +12,10 @@ use fluent_egui::{IndicatorStyle, PaneCache, Viewport};
 use protopyne_chart_model::ChartRow;
 use protopyne_chart_scale::PriceScaleMode;
 use protopyne_kernels::indicator::ParamSet;
+use protopyne_kernels::smoothing::params_for_kernel;
 
 use crate::integration_lite::IntegrationLiteConfig;
-use crate::topology::cache_key_for;
+use crate::topology::{SeriesCatalog, cache_key_for, kernel_series, source_frame};
 
 /// Sixty rising bars with a distinct volume leg, so `vwma` has real weight
 /// and the close legs are bit-identical to the reference evaluation.
@@ -35,11 +36,11 @@ fn ramp_rows() -> Vec<ChartRow> {
 }
 
 /// Expected values for one MA arm through the shared kernel registry, using
-/// the module's own parameter mapping.
+/// the catalog's smoothing-aware parameters.
 fn expected(rows: &[ChartRow], kind: &str, length: i64) -> Vec<Option<f64>> {
-    let frame = close_frame(rows);
-    kernel_series(kind, &ma_params(kind, length).expect("supported arm"), &frame)
-        .expect("kernel evaluates")
+    let frame = source_frame(rows, protopyne_kernels::PriceSource::Close);
+    let params = params_for_kernel(kind, length).expect("supported arm");
+    kernel_series(kind, &params, &frame).expect("kernel evaluates")
 }
 
 #[test]
@@ -119,7 +120,7 @@ fn fast_mas_config_derives_component_and_validates_fail_closed() {
     assert!(unit.execute(&fluent_wvr::WorkContext::default()).is_ok(), "default executes");
     let rows = ramp_rows();
     assert!(
-        evaluate_fast_mas(&rows, &FastMasConfig::new().first_ma_length(0).build()).is_err(),
+        evaluate_fast_mas(&rows, &FastMasConfig::new().first_ma_length(0).build(), &SeriesCatalog::empty()).is_err(),
         "the evaluator refuses a config its own validation refuses"
     );
 }
@@ -127,7 +128,7 @@ fn fast_mas_config_derives_component_and_validates_fail_closed() {
 #[test]
 fn evaluate_fast_mas_matches_builtin_kernels_and_respects_visibility_flags() {
     let rows = ramp_rows();
-    let view = evaluate_fast_mas(&rows, &FastMasConfig::new().build()).expect("default view builds");
+    let view = evaluate_fast_mas(&rows, &FastMasConfig::new().build(), &SeriesCatalog::empty()).expect("default view builds");
     let names: Vec<&str> = view.lines.iter().map(|line| line.name.as_str()).collect();
     assert_eq!(names, vec!["First MA", "Signal MA", "Mean MA", "Trend MA", "Base MA"]);
     for line in &view.lines {
@@ -140,7 +141,7 @@ fn evaluate_fast_mas_matches_builtin_kernels_and_respects_visibility_flags() {
     assert_eq!(view.lines[3].values, expected(&rows, "ema", 34), "Trend MA is ema(34)");
     assert_eq!(view.lines[4].values, expected(&rows, "ema", 55), "Base MA is ema(55)");
     // The Second MA arm is opt-in and evaluates through `alma`.
-    let with_second = evaluate_fast_mas(&rows, &FastMasConfig::new().show_second_ma(true).build())
+    let with_second = evaluate_fast_mas(&rows, &FastMasConfig::new().show_second_ma(true).build(), &SeriesCatalog::empty())
         .expect("second arm builds");
     let second = with_second
         .lines
@@ -150,7 +151,7 @@ fn evaluate_fast_mas_matches_builtin_kernels_and_respects_visibility_flags() {
     assert_eq!(second.values, expected(&rows, "alma", 8), "Second MA is alma(8)");
     assert_eq!(with_second.lines.len(), view.lines.len() + 1);
     // The SMA trio is opt-in.
-    let with_smas = evaluate_fast_mas(&rows, &FastMasConfig::new().show_smas(true).build())
+    let with_smas = evaluate_fast_mas(&rows, &FastMasConfig::new().show_smas(true).build(), &SeriesCatalog::empty())
         .expect("sma arm builds");
     let sma_names: Vec<&str> = with_smas
         .lines
@@ -164,10 +165,32 @@ fn evaluate_fast_mas_matches_builtin_kernels_and_respects_visibility_flags() {
         assert_eq!(line.values, expected(&rows, "sma", length), "{name} is sma({length})");
     }
     // Extra MAs can be hidden entirely, leaving only the first arm.
-    let first_only = evaluate_fast_mas(&rows, &FastMasConfig::new().show_extra_mas(false).build())
+    let first_only = evaluate_fast_mas(&rows, &FastMasConfig::new().show_extra_mas(false).build(), &SeriesCatalog::empty())
         .expect("first-only builds");
     assert_eq!(first_only.lines.len(), 1);
     assert_eq!(first_only.lines[0].name, "First MA");
+}
+
+#[test]
+fn catalog_arms_validate_and_evaluate_through_the_fast_mas_path() {
+    use protopyne_kernels::smoothing::SmoothingFamily;
+    // Length-driven families beyond the legacy seven validate and evaluate.
+    for kind in ["kalman", "zlema", "na"] {
+        let config = FastMasConfig::new().first_ma_type(kind.to_owned()).first_ma_length(14).build();
+        assert!(config.validate().is_ok(), "{kind} validates");
+        let view = evaluate_fast_mas(&ramp_rows(), &config, &SeriesCatalog::empty()).expect("catalog arm evaluates");
+        let first = view.lines.iter().find(|line| line.name == "First MA").expect("first arm present");
+        assert_eq!(first.values.len(), 60);
+        let family = SmoothingFamily::parse(kind).expect("catalog covers it");
+        assert!(family.takes_length());
+    }
+    // `eit` names its missing alpha instead of miscomputing.
+    let eit = FastMasConfig::new().first_ma_type("eit".to_owned()).first_ma_length(14).build();
+    assert!(eit.validate().is_err(), "eit refuses without an alpha");
+    assert!(evaluate_fast_mas(&ramp_rows(), &eit, &SeriesCatalog::empty()).is_err());
+    // Unknown names still refuse.
+    let unknown = FastMasConfig::new().first_ma_type("not-a-smoothing".to_owned()).build();
+    assert!(unknown.validate().is_err());
 }
 
 #[test]
@@ -201,10 +224,10 @@ fn fast_mas_and_integration_lite_settings_are_completely_isolated() {
     let lite_revision = cache.publish(lite_key, vec![Some(1.0), Some(2.0), None]);
     let fast_key_before = cache_key_for(
         "fast_mas",
-        &ma_params("wma", FastMasConfig::new().build().first_ma_length).expect("supported"),
+        &params_for_kernel("wma", FastMasConfig::new().build().first_ma_length).expect("supported"),
     );
     let fast_key_after =
-        cache_key_for("fast_mas", &ma_params("wma", fast.first_ma_length).expect("supported"));
+        cache_key_for("fast_mas", &params_for_kernel("wma", fast.first_ma_length).expect("supported"));
     assert_ne!(fast_key_before, fast_key_after, "an edit moves the fast cache key");
     assert_ne!(lite_key, fast_key_after, "the two modules key apart");
     cache.publish(fast_key_after, vec![Some(9.0)]);
@@ -214,7 +237,7 @@ fn fast_mas_and_integration_lite_settings_are_completely_isolated() {
     // A second fast edit keeps the lite entry pinned and adds a fresh key.
     fast.set_field("first_ma_length", "11").expect("fast field edits");
     let fast_key_latest =
-        cache_key_for("fast_mas", &ma_params("wma", fast.first_ma_length).expect("supported"));
+        cache_key_for("fast_mas", &params_for_kernel("wma", fast.first_ma_length).expect("supported"));
     assert_ne!(fast_key_latest, fast_key_after);
     assert_eq!(
         cache.get(lite_key).expect("still resident").values,
@@ -247,7 +270,7 @@ fn price_viewport() -> Viewport {
 #[test]
 fn paint_fast_mas_blits_every_line_and_refuses_a_broken_theme() {
     let rows = ramp_rows();
-    let view = evaluate_fast_mas(&rows, &FastMasConfig::new().build()).expect("view builds");
+    let view = evaluate_fast_mas(&rows, &FastMasConfig::new().build(), &SeriesCatalog::empty()).expect("view builds");
     let theme = ThemeConfig::default();
     let (ctx, painter) = test_painter();
     paint_fast_mas(
@@ -288,7 +311,7 @@ fn paint_fast_mas_samples_per_column_at_sub_pixel_zoom() {
     // is untouched.
     use fluent_egui::{needs_column_aggregation, oscillator_points, sampled_line_points};
     let rows = ramp_rows();
-    let view = evaluate_fast_mas(&rows, &FastMasConfig::new().build()).expect("view builds");
+    let view = evaluate_fast_mas(&rows, &FastMasConfig::new().build(), &SeriesCatalog::empty()).expect("view builds");
     let tight = Viewport::new(PriceScaleMode::Normal, 90.0, 170.0, 200.0, 0.2, 90.0, false)
         .expect("sub-pixel viewport builds");
     assert!(needs_column_aggregation(tight.scale().bar_spacing()));

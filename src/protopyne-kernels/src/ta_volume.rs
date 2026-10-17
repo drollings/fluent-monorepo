@@ -15,7 +15,7 @@
 use crate::ema::EmaIndicator;
 use crate::error::KernelError;
 use crate::indicator::{
-    fin_or_none, BarTick, Indicator, IndicatorId, IndicatorResult, IndicatorSpec, IndicatorState,
+    fin_or_none, nan_hole, BarTick, Indicator, IndicatorId, IndicatorResult, IndicatorSpec, IndicatorState,
     Ohlcv, ParamSet,
 };
 
@@ -194,7 +194,7 @@ impl Indicator for AdoscIndicator {
         let line = ad.batch(data, &ParamSet::new())?;
         // The AD leg is gap-free on clean data but NaN-poisoned in general:
         // feed the smoothers the raw series so batch/update share the shape.
-        let line_raw: Vec<f64> = line.values.iter().map(|v| v.unwrap_or(f64::NAN)).collect();
+        let line_raw: Vec<f64> = line.values.iter().map(|v| nan_hole(*v)).collect();
         let ema = EmaIndicator::new();
         let fast = ema
             .batch(&Ohlcv::close_only(&line_raw), &Self::ema_params(fast_len))?
@@ -227,13 +227,13 @@ impl Indicator for AdoscIndicator {
         let (child, child_params) = state.child_with_params(1, || Self::ema_params(fast_len));
         let fast = ema.update(
             child,
-            BarTick::close_only(line.unwrap_or(f64::NAN)),
+            BarTick::close_only(nan_hole(line)),
             child_params,
         )?;
         let (child, child_params) = state.child_with_params(2, || Self::ema_params(slow_len));
         let slow = ema.update(
             child,
-            BarTick::close_only(line.unwrap_or(f64::NAN)),
+            BarTick::close_only(nan_hole(line)),
             child_params,
         )?;
         let raw = match (fast, slow) {
@@ -404,7 +404,7 @@ impl MfiIndicator {
                     (up, dn)
                 }
             });
-        crate::math::div_or_none(100.0 * up, up + dn).unwrap_or(f64::NAN)
+        nan_hole(crate::math::div_or_none(100.0 * up, up + dn))
     }
 }
 
@@ -588,8 +588,7 @@ impl CmfIndicator {
     /// Flow ratio over one trailing window: `NaN` while warming, when any
     /// window leg is missing, or when the window traded no volume.
     fn window_ratio(flows: &[f64], volumes: &[f64]) -> f64 {
-        crate::math::div_or_none(flows.iter().sum(), volumes.iter().sum())
-            .unwrap_or(f64::NAN)
+        nan_hole(crate::math::div_or_none(flows.iter().sum(), volumes.iter().sum()))
     }
 }
 

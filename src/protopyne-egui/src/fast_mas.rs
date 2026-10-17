@@ -13,11 +13,10 @@
 
 use fluent_wvr::prelude::*;
 use fluent_wvr::{Describable, FieldAccess};
-use protopyne_chart_model::{ChartRow, DisplayOnly};
-use protopyne_kernels::indicator::{OwnedOhlcv, ParamSet};
+use protopyne_chart_model::ChartRow;
+use protopyne_kernels::indicator::OwnedOhlcv;
+use protopyne_kernels::smoothing::{SmoothingArgs, SmoothingFamily};
 use protopyne_types::{Validate, check_for_execute, valid_output};
-
-use crate::topology::kernel_series;
 
 use fluent_egui::{
     EguiError, IndicatorStyle, ThemeConfig, Viewport, needs_column_aggregation,
@@ -25,57 +24,8 @@ use fluent_egui::{
     visible_rows,
 };
 
-/// Moving-average kernels the module accepts as a line's smoothing.
-///
-/// These are exactly the smoothing families the reference `factorySmoothing`
-/// dispatches; the check keeps an unsupported name from reaching the kernel
-/// registry and failing later with a less specific reason.
-pub const SUPPORTED_MA_KINDS: &[&str] = &["sma", "ema", "wma", "hma", "rma", "vwma", "alma"];
-
-/// ALMA offset applied when an arm selects `alma` (reference default).
-pub const ALMA_OFFSET: f64 = 0.85;
-/// ALMA sigma applied when an arm selects `alma` (reference default).
-pub const ALMA_SIGMA: f64 = 6.0;
-
 /// The fixed SMA trio the reference plots (lengths are not parameterized).
 const SMA_LENGTHS: [(&str, i64); 3] = [("SMA 50", 50), ("SMA 100", 100), ("SMA 200", 200)];
-
-/// Build the fenced close/volume frame the MA kernels evaluate over.
-///
-/// Every leg enters as [`DisplayOnly`] and is revealed exactly here — the
-/// auditable escape for a display-descended preview frame. `close` is
-/// authoritative for length and fills the unread OHLC legs; `volume` carries
-/// the real per-bar volume so `vwma` weights with data rather than zeros.
-fn close_frame(rows: &[ChartRow]) -> OwnedOhlcv {
-    let close: Vec<f64> =
-        rows.iter().map(|row| DisplayOnly::new(row.close).reveal()).collect();
-    let volume: Vec<f64> =
-        rows.iter().map(|row| DisplayOnly::new(row.volume as f64).reveal()).collect();
-    OwnedOhlcv {
-        open: close.clone(),
-        high: close.clone(),
-        low: close.clone(),
-        close,
-        volume,
-    }
-}
-
-/// Parameter set for one smoothing arm; `alma` carries its reference offset
-/// and sigma, every other arm reads only `length`.
-fn ma_params(kind: &str, length: i64) -> Result<ParamSet, EguiError> {
-    if !SUPPORTED_MA_KINDS.contains(&kind) {
-        return Err(EguiError::InvalidParam {
-            what: "ma_type".to_owned(),
-            reason: format!("unsupported smoothing {kind:?}"),
-        });
-    }
-    let params = ParamSet::new().with_int("length", length);
-    if kind == "alma" {
-        Ok(params.with_float("offset", ALMA_OFFSET).with_float("sigma", ALMA_SIGMA))
-    } else {
-        Ok(params)
-    }
-}
 
 /// One evaluated moving-average line: its name, per-bar display values with
 /// warmup holes preserved, and the theme style key resolved at paint time.
@@ -144,6 +94,10 @@ fn default_sma_style() -> String {
     "bull_down".to_owned()
 }
 
+fn default_source() -> String {
+    crate::topology::default_source_spelling()
+}
+
 /// One Fast MAs overlay's configuration: the single schema-driven control
 /// truth behind its settings pane.
 ///
@@ -162,7 +116,7 @@ fn default_sma_style() -> String {
 #[builder(start_fn = new)]
 pub struct FastMasConfig {
     /// Smoothing family for the first average.
-    #[field(desc = "First MA smoothing")]
+    #[field(desc = "First MA smoothing", variants = "protopyne_kernels::smoothing::length_smoothing_ids")]
     #[builder(default = default_first_ma_type())]
     pub first_ma_type: String,
     /// Length of the first average.
@@ -174,7 +128,7 @@ pub struct FastMasConfig {
     #[builder(default = default_line_style())]
     pub first_ma_style: String,
     /// Smoothing family for the second average.
-    #[field(desc = "Second MA smoothing")]
+    #[field(desc = "Second MA smoothing", variants = "protopyne_kernels::smoothing::length_smoothing_ids")]
     #[builder(default = default_second_ma_type())]
     pub second_ma_type: String,
     /// Length of the second average.
@@ -186,7 +140,7 @@ pub struct FastMasConfig {
     #[builder(default = default_accent_style())]
     pub second_ma_style: String,
     /// Smoothing family for the signal average.
-    #[field(desc = "Signal MA smoothing")]
+    #[field(desc = "Signal MA smoothing", variants = "protopyne_kernels::smoothing::length_smoothing_ids")]
     #[builder(default = default_ema_type())]
     pub signal_ma_type: String,
     /// Length of the signal average.
@@ -198,7 +152,7 @@ pub struct FastMasConfig {
     #[builder(default = default_accent_style())]
     pub signal_ma_style: String,
     /// Smoothing family for the mean average.
-    #[field(desc = "Mean MA smoothing")]
+    #[field(desc = "Mean MA smoothing", variants = "protopyne_kernels::smoothing::length_smoothing_ids")]
     #[builder(default = default_ema_type())]
     pub mean_ma_type: String,
     /// Length of the mean average.
@@ -210,7 +164,7 @@ pub struct FastMasConfig {
     #[builder(default = default_line_style())]
     pub mean_ma_style: String,
     /// Smoothing family for the trend average.
-    #[field(desc = "Trend MA smoothing")]
+    #[field(desc = "Trend MA smoothing", variants = "protopyne_kernels::smoothing::length_smoothing_ids")]
     #[builder(default = default_ema_type())]
     pub trend_ma_type: String,
     /// Length of the trend average.
@@ -222,7 +176,7 @@ pub struct FastMasConfig {
     #[builder(default = default_line_style())]
     pub trend_ma_style: String,
     /// Smoothing family for the base average.
-    #[field(desc = "Base MA smoothing")]
+    #[field(desc = "Base MA smoothing", variants = "protopyne_kernels::smoothing::length_smoothing_ids")]
     #[builder(default = default_ema_type())]
     pub base_ma_type: String,
     /// Length of the base average.
@@ -253,11 +207,25 @@ pub struct FastMasConfig {
     #[field(desc = "Show the SMA trio")]
     #[builder(default = false)]
     pub show_smas: bool,
+    /// Input series: a price-source name (`close`, `hl2`, ...) or
+    /// `series:<node>` naming a published line (`fast_mas:first`, ...).
+    #[field(desc = "Input series (price source or series:<node>)")]
+    #[builder(default = default_source())]
+    pub source: String,
 }
 
 impl FastMasConfig {
     /// Fail-closed self-consistency check.
     pub fn validate(&self) -> Result<(), EguiError> {
+        if crate::topology::SeriesSource::parse(&self.source).is_none() {
+            return Err(EguiError::InvalidParam {
+                what: "source".to_owned(),
+                reason: format!(
+                    "unknown input source {:?}: expected a price source (close, hl2, ...) or series:<node>",
+                    self.source
+                ),
+            });
+        }
         for (label, kind, length) in [
             ("first_ma", &self.first_ma_type, self.first_ma_length),
             ("second_ma", &self.second_ma_type, self.second_ma_length),
@@ -272,10 +240,12 @@ impl FastMasConfig {
                     reason: "moving-average length must be positive".to_owned(),
                 });
             }
-            if !SUPPORTED_MA_KINDS.contains(&kind.as_str()) {
+            if !is_supported_arm(kind) {
                 return Err(EguiError::InvalidParam {
                     what: format!("{label}_type"),
-                    reason: format!("unsupported smoothing {kind:?}"),
+                    reason: format!(
+                        "smoothing {kind:?} is not in the smoothing catalog (free-text names outside the catalog no longer validate)"
+                    ),
                 });
             }
         }
@@ -333,85 +303,119 @@ impl WorkUnit for FastMasConfig {
 
 impl_component!(FastMasConfig);
 
-/// Evaluate one arm into a line, delegating to the shared kernel registry.
+/// Whether a smoothing name is a length-driven catalog arm: every family but
+/// `Eit`, whose alpha length-only arms cannot set.
+fn is_supported_arm(kind: &str) -> bool {
+    matches!(SmoothingFamily::parse(kind), Some(family) if family.takes_length())
+}
+
+/// Evaluate one arm into a line through the smoothing catalog, reporting
+/// the arm's own warmup alongside the values so the caller can compose
+/// holes along the producer path.
 fn eval_line(
     name: &str,
     kind: &str,
     length: i64,
     style: &str,
     frame: &OwnedOhlcv,
-) -> Result<FastMasLine, EguiError> {
-    Ok(FastMasLine {
-        name: name.to_owned(),
-        values: kernel_series(kind, &ma_params(kind, length)?, frame)?,
-        style: style.to_owned(),
-    })
+) -> Result<(FastMasLine, usize), EguiError> {
+    let family = SmoothingFamily::parse(kind).ok_or_else(|| EguiError::InvalidParam {
+        what: "ma_type".to_owned(),
+        reason: format!(
+            "smoothing {kind:?} is not in the smoothing catalog (free-text names outside the catalog no longer validate)"
+        ),
+    })?;
+    if !family.takes_length() {
+        return Err(EguiError::InvalidParam {
+            what: "ma_type".to_owned(),
+            reason: format!("{kind:?} needs an alpha parameter length-only arms cannot set"),
+        });
+    }
+    let warmup = family
+        .warmup_for_length(length)
+        .map_err(|error| crate::topology::describe_kernel(&error))?;
+    let values = family
+        .evaluate(frame, &SmoothingArgs::length(length))
+        .map_err(|error| EguiError::Dependency { reason: error.to_string() })?;
+    Ok((FastMasLine { name: name.to_owned(), values, style: style.to_owned() }, warmup))
 }
 
-/// Evaluate every enabled average over converted rows.
+/// Extend a line's leading holes over the composed warmup: the producer's
+/// leading holes plus the arm's own. With no producer there is nothing to
+/// extend — the kernels' native holes stand, so bar-sourced output is
+/// byte-identical to the pre-series evaluation.
+fn extend_holes(line: &mut FastMasLine, producer_warmup: usize, own_warmup: usize) {
+    if producer_warmup == 0 {
+        return;
+    }
+    let holes = (producer_warmup + own_warmup).min(line.values.len());
+    for value in line.values.iter_mut().take(holes) {
+        *value = None;
+    }
+}
+
+/// Evaluate every enabled average over the configured input.
 ///
-/// Delegates each arm to the shared [`builtin_registry`], so `wma`, `alma`,
-/// `ema`, `sma`, `hma`, `rma`, and `vwma` all read the kernel truth. Refuses a
-/// config its own validation refuses. Every output line aligns with `rows`
-/// index-for-index, warmup holes preserved.
+/// Each arm evaluates through the smoothing catalog (pass-through, kernel, or
+/// recipe), so every length-driven `factorySmoothing` family reads one truth.
+/// The input is the configured [`SeriesSource`](crate::topology::SeriesSource):
+/// raw bars by default, or a published series resolved from `series`.
+/// Refuses a config its own validation refuses. Every output line aligns with
+/// `rows` index-for-index, warmup holes preserved and composed.
 pub fn evaluate_fast_mas(
     rows: &[ChartRow],
     config: &FastMasConfig,
+    series: &crate::topology::SeriesCatalog,
 ) -> Result<FastMasView, EguiError> {
     config.validate()?;
-    let frame = close_frame(rows);
+    let source = crate::topology::SeriesSource::parse(&config.source).ok_or_else(|| {
+        EguiError::InvalidParam {
+            what: "source".to_owned(),
+            reason: format!("unknown input source {:?}", config.source),
+        }
+    })?;
+    // Bar inputs read the shared source frame (byte-identical to the
+    // pre-series evaluation); series inputs resolve from the catalog.
+    let (frame, producer) = match &source {
+        crate::topology::SeriesSource::Bars(price) => {
+            (crate::topology::source_frame(rows, *price), 0)
+        }
+        crate::topology::SeriesSource::Series(node) => {
+            let values = series.resolve(node).ok_or_else(|| EguiError::InvalidParam {
+                what: "series".to_owned(),
+                reason: format!("unknown input series {node:?}"),
+            })?;
+            let warmup = series.leading_holes(node).unwrap_or(0);
+            (crate::topology::series_frame(rows, values)?, warmup)
+        }
+    };
     let mut lines = Vec::new();
+    let mut push = |name: &str, kind: &str, length: i64, style: &str| -> Result<(), EguiError> {
+        let (mut line, warmup) = eval_line(name, kind, length, style, &frame)?;
+        extend_holes(&mut line, producer, warmup);
+        lines.push(line);
+        Ok(())
+    };
     if config.show_first_ma {
-        lines.push(eval_line(
-            "First MA",
-            &config.first_ma_type,
-            config.first_ma_length,
-            &config.first_ma_style,
-            &frame,
-        )?);
+        push("First MA", &config.first_ma_type, config.first_ma_length, &config.first_ma_style)?;
     }
     if config.show_second_ma {
-        lines.push(eval_line(
+        push(
             "Second MA",
             &config.second_ma_type,
             config.second_ma_length,
             &config.second_ma_style,
-            &frame,
-        )?);
+        )?;
     }
     if config.show_extra_mas {
-        lines.push(eval_line(
-            "Signal MA",
-            &config.signal_ma_type,
-            config.signal_ma_length,
-            &config.signal_ma_style,
-            &frame,
-        )?);
-        lines.push(eval_line(
-            "Mean MA",
-            &config.mean_ma_type,
-            config.mean_ma_length,
-            &config.mean_ma_style,
-            &frame,
-        )?);
-        lines.push(eval_line(
-            "Trend MA",
-            &config.trend_ma_type,
-            config.trend_ma_length,
-            &config.trend_ma_style,
-            &frame,
-        )?);
-        lines.push(eval_line(
-            "Base MA",
-            &config.base_ma_type,
-            config.base_ma_length,
-            &config.base_ma_style,
-            &frame,
-        )?);
+        push("Signal MA", &config.signal_ma_type, config.signal_ma_length, &config.signal_ma_style)?;
+        push("Mean MA", &config.mean_ma_type, config.mean_ma_length, &config.mean_ma_style)?;
+        push("Trend MA", &config.trend_ma_type, config.trend_ma_length, &config.trend_ma_style)?;
+        push("Base MA", &config.base_ma_type, config.base_ma_length, &config.base_ma_style)?;
     }
     if config.show_smas {
         for (name, length) in SMA_LENGTHS {
-            lines.push(eval_line(name, "sma", length, &config.sma_style, &frame)?);
+            push(name, "sma", length, &config.sma_style)?;
         }
     }
     Ok(FastMasView { lines })

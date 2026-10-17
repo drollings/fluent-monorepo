@@ -18,7 +18,7 @@ use fluent_wvr::prelude::*;
 use fluent_wvr::{Describable, FieldAccess};
 use protopyne_chart_model::{ChartRow, DisplayOnly};
 use protopyne_kernels::bars::{DeltaConfidence, estimate_delta_volume_estimated, fast_tanh};
-use protopyne_kernels::indicator::{OwnedOhlcv, ParamSet};
+use protopyne_kernels::indicator::{OwnedOhlcv, ParamSet, nan_hole};
 
 use crate::topology::{kernel_preview_frame, kernel_series};
 use protopyne_kernels::market_context::{HEALTH_K, health_mas};
@@ -46,6 +46,32 @@ pub const SIGNAL_EIT_ALPHA: f64 = 0.12;
 /// evidence).
 pub const CALIBRATED_PIVOT_THRESHOLD: f64 = 100.0;
 
+/// Normalize one lite-pane arm (fast = RSI, slow = CCI).
+///
+/// Both are catalog rows with frozen constants, so the lift cannot refuse
+/// them here; a refusal would mean the catalog lost an evaluable row, which
+/// fails loudly instead of substituting defaults.
+fn lite_normalize(raw: &[Option<f64>], kind: OscillatorKind) -> Vec<Option<f64>> {
+    normalize_series(raw, kind).expect("lite fast/slow arms are evaluable")
+}
+
+/// Bounded sibling of [`lite_normalize`] (same evaluable-arm invariant).
+fn lite_normalize_bounded(raw: &[Option<f64>], kind: OscillatorKind) -> Vec<Option<f64>> {
+    normalize_series_bounded(raw, kind).expect("lite fast/slow arms are evaluable")
+}
+
+/// Fast arm of the lite pane (RSI).
+const LITE_FAST_KIND: OscillatorKind = OscillatorKind::Rsi;
+/// Slow arm of the lite pane (CCI).
+const LITE_SLOW_KIND: OscillatorKind = OscillatorKind::Cci;
+
+/// Kernel id for one lite arm, sourced from the catalog row instead of a
+/// hardcoded string; both lite arms are kernel-backed rows, so a missing
+/// kernel means the catalog lost an evaluable row and fails loudly.
+fn lite_kernel(kind: OscillatorKind) -> &'static str {
+    kind.kernel_id().expect("lite fast/slow arms are kernel-backed")
+}
+
 /// Native kernel series behind one pane: raw oscillators plus the
 /// smoothing pair, all over the same converted rows.
 #[derive(Debug, Clone)]
@@ -70,7 +96,7 @@ pub struct LiteNative {
 /// pane and the momentum inputs share, so the fence is named once.
 fn synth_close_frame(values: &[Option<f64>]) -> OwnedOhlcv {
     let revealed: Vec<f64> =
-        values.iter().map(|slot| DisplayOnly::new(slot.unwrap_or(f64::NAN)).reveal()).collect();
+        values.iter().map(|slot| DisplayOnly::new(nan_hole(*slot)).reveal()).collect();
     OwnedOhlcv {
         open: revealed.clone(),
         high: revealed.clone(),
@@ -90,8 +116,8 @@ pub fn native_lite_series(rows: &[ChartRow], eit_alpha: f64) -> Result<LiteNativ
     }
     let frame = kernel_preview_frame(rows);
     let length = ParamSet::new().with_int("length", RAW_OSCILLATOR_LENGTH);
-    let fast_raw = kernel_series("rsi", &length, &frame)?;
-    let slow_raw = kernel_series("cci", &length, &frame)?;
+    let fast_raw = kernel_series(lite_kernel(LITE_FAST_KIND), &length, &frame)?;
+    let slow_raw = kernel_series(lite_kernel(LITE_SLOW_KIND), &length, &frame)?;
     let adaptive =
         kernel_series("eit", &ParamSet::new().with_float("alpha", eit_alpha), &frame)?;
     // Relayed adaptive legs descend from the fenced frame above, so they
@@ -127,8 +153,8 @@ pub fn integration_lite_view(
     threshold: f64,
 ) -> Result<IntegrationLiteView, EguiError> {
     let native = native_lite_series(rows, eit_alpha)?;
-    let fast = normalize_series(&native.fast_raw, OscillatorKind::Rsi);
-    let slow = normalize_series(&native.slow_raw, OscillatorKind::Cci);
+    let fast = lite_normalize(&native.fast_raw, LITE_FAST_KIND);
+    let slow = lite_normalize(&native.slow_raw, LITE_SLOW_KIND);
     let ribbon = ribbon_view(&native.adaptive, &native.signal, fill_alpha)?;
     let pivots = pivot_marks(&fast, threshold)?;
     Ok(IntegrationLiteView { fast, slow, ribbon, pivots, threshold })
@@ -213,7 +239,8 @@ pub const RIBBON_MEAN_LENGTH: i64 = 21;
 pub const VOL_SMA_LENGTH: i64 = 20;
 /// ATR length behind the health distances (reference context ATR).
 pub const ATR_LENGTH: i64 = 14;
-/// Ribbon health gain (reference `i_ribbon_health_k`).
+/// Ribbon health gain (reference `i_ribbon_health_k`; task value: display
+/// fitness of the health fold, never producer confidence).
 pub const RIBBON_HEALTH_K: f64 = 1.8;
 
 /// Four tint corners at the reference `barcolor` call
@@ -455,8 +482,8 @@ impl LiteFrozen {
     #[must_use]
     pub fn from_native(native: &LiteNative) -> Self {
         Self {
-            fast: normalize_series(&native.fast_raw, OscillatorKind::Rsi),
-            slow: normalize_series(&native.slow_raw, OscillatorKind::Cci),
+            fast: lite_normalize(&native.fast_raw, LITE_FAST_KIND),
+            slow: lite_normalize(&native.slow_raw, LITE_SLOW_KIND),
             adaptive: native.adaptive.clone(),
         }
     }
@@ -539,7 +566,8 @@ pub fn precision_recall(
 /// (task-value: visual scaling on the sub-pane zero axis; strictly inside the
 /// `[-100, +100]` oscillator viewport).
 pub const BOUNDED_DELTA_UNIT: f64 = 80.0;
-/// MA-health oscillator gain (reference `i_ma_health_k`).
+/// MA-health oscillator gain (reference `i_ma_health_k`; task value: display
+/// fitness of the health fold, never producer confidence).
 pub const MA_HEALTH_K: f64 = 1.2;
 /// ALMA length behind the MA-health primary leg (reference context ALMA-8).
 const MA_PRIMARY_LENGTH: i64 = 8;
@@ -595,15 +623,19 @@ pub struct IntegrationLiteConfig {
     #[field(desc = "Ribbon fill strength", min = 0.0, max = 1.0)]
     #[builder(default = default_fill_alpha())]
     pub fill_alpha: f64,
-    /// Ribbon-health oscillator gain.
+    /// Ribbon-health oscillator gain (task value: display fitness of the
+    /// health fold, never producer confidence).
     #[field(desc = "Ribbon health gain", min = 0.2)]
     #[builder(default = default_ribbon_health_k())]
     pub ribbon_health_k: f64,
-    /// MA-health oscillator gain.
+    /// MA-health oscillator gain (task value: display fitness of the health
+    /// fold, never producer confidence).
     #[field(desc = "MA health gain", min = 0.2)]
     #[builder(default = default_ma_health_k())]
     pub ma_health_k: f64,
-    /// Delta-volume histogram height at average volume.
+    /// Delta-volume histogram height at average volume (task value: visual
+    /// scaling, never producer confidence — the split's self-doubt rides
+    /// `delta_confidence` beside it, never inside it).
     #[field(desc = "Delta volume height at average volume", min = 0.0)]
     #[builder(default = default_delta_unit())]
     pub delta_unit: f64,
@@ -724,8 +756,8 @@ pub fn integration_lite_sub_pane(
 ) -> Result<IntegrationLiteSubPane, EguiError> {
     config.validate()?;
     let native = native_lite_series(rows, config.eit_alpha)?;
-    let fast_bounded = normalize_series_bounded(&native.fast_raw, OscillatorKind::Rsi);
-    let slow_bounded = normalize_series_bounded(&native.slow_raw, OscillatorKind::Cci);
+    let fast_bounded = lite_normalize_bounded(&native.fast_raw, LITE_FAST_KIND);
+    let slow_bounded = lite_normalize_bounded(&native.slow_raw, LITE_SLOW_KIND);
     let (ribbon_health, _vol_ratio) =
         ribbon_health_inputs(rows, config.eit_alpha, config.ribbon_health_k)?;
     let ribbon_health_bounded = squash_series_to_100(&ribbon_health);

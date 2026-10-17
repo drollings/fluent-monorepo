@@ -14,7 +14,7 @@
 
 use crate::error::KernelError;
 use crate::indicator::{
-    fin_or_none, BarTick, Indicator, IndicatorResult, IndicatorSpec, IndicatorState, Ohlcv,
+    fin_or_none, nan_hole, BarTick, Indicator, IndicatorResult, IndicatorSpec, IndicatorState, Ohlcv,
     ParamSet,
 };
 
@@ -261,7 +261,7 @@ impl Indicator for CorrelIndicator {
         }
         let (highs, lows) = state.scratch_highs_lows();
         let out = crate::math::corr_pearson(highs, lows);
-        state.set_last(out.unwrap_or(f64::NAN));
+        state.set_last(nan_hole(out));
         Ok(out)
     }
 }

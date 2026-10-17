@@ -12,7 +12,7 @@
 use crate::error::KernelError;
 use crate::indicator::{
     BarTick, Indicator, IndicatorResult, IndicatorSpec, IndicatorState, NamedSeries, Ohlcv,
-    ParamSet, fin_or_none,
+    ParamSet, fin_or_none, nan_hole,
 };
 
 /// Exponential Indicator Transform (`eit`): a second-order predictive
@@ -229,7 +229,7 @@ impl Indicator for KalmanIndicator {
                 if v1.is_none() {
                     v1 = Some(if i >= 1 { closes[i - 1] } else { *src });
                 }
-                let v5 = v1.unwrap_or(f64::NAN);
+                let v5 = nan_hole(v1);
                 let v4 = v2 / (v2 + v3);
                 let next = v5 + v4 * (*src - v5);
                 v2 = (1.0 - v4) * v2 + beta / period as f64;
@@ -254,7 +254,7 @@ impl Indicator for KalmanIndicator {
             v1 = Some(state.prev_close().unwrap_or(bar.close));
         }
         let v2 = state.child(1).last().unwrap_or(1.0);
-        let v5 = v1.unwrap_or(f64::NAN);
+        let v5 = nan_hole(v1);
         let v4 = v2 / (v2 + v3);
         let next = v5 + v4 * (bar.close - v5);
         let next_v2 = (1.0 - v4) * v2 + beta / period as f64;

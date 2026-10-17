@@ -16,24 +16,28 @@
 use std::collections::HashMap;
 
 use fluent_egui::{
-    CatalogAction, CatalogModal, CrosshairLines, EguiError, HotSlotAction, HotSlotStack,
-    InteractionState, PaneCache, PanePlan, PaneZones, PointerInput,
-    SettingsCommit, SettingsTab, SlotAttachment, ThemeConfig, TintedCandle, TintedDeltaBar, Viewport,
-    WheelTarget, WheelZones, axis_ticks, candle_body_width, column_candle_geoms, column_delta_geoms,
-    crosshair_data, crosshair_lines, needs_column_aggregation, opacity_from_transparency,
-    paint_candles_tinted, paint_catalog_modal, paint_crosshair,
-    paint_delta_bars_tinted, paint_hot_slot_stack, paint_oscillator, paint_ribbon, paint_ribbon_fill,
-    paint_slot_settings_modal, proportional_ribbon_polygons, resolve_color, sampled_line_points,
-    sampled_ribbon_bands, translate_bands, translate_candles, translate_delta_bars,
-    translate_points, translate_polygons, visible_rows, wheel_zoom_factor, zoom_range_around,
+    CatalogAction, CatalogModal, ContextTrigger, CrosshairLines, EguiError, HotSlotAction,
+    HotSlotStack, InteractionState, PaneCache, PanePlan, PaneZones, PointerInput, SettingsCommit,
+    SettingsTab, SlotAttachment, ThemeConfig, TintedCandle, TintedDeltaBar, Viewport, WheelTarget,
+    WheelZones, auto_height_range, axis_ticks, candle_body_width, column_candle_geoms,
+    column_delta_geoms, crosshair_data, crosshair_lines, detect_context_trigger,
+    needs_column_aggregation, opacity_from_transparency, paint_candles_tinted, paint_catalog_modal,
+    paint_context_menu, paint_crosshair, paint_delta_bars_tinted, paint_hot_slot_stack,
+    paint_oscillator, paint_ribbon, paint_ribbon_fill, paint_slot_settings_modal,
+    proportional_ribbon_polygons, resolve_color, sampled_line_points, sampled_ribbon_bands,
+    translate_bands, translate_candles, translate_delta_bars, translate_points, translate_polygons,
+    visible_rows, wheel_zoom_factor, zoom_range_around,
 };
 use fluent_wvr::{FieldAccess, component_downcast_ref};
 use protopyne_chart_model::{ChartRow, ChartType, DateRange};
 use protopyne_chart_scale::PriceScaleMode;
 use protopyne_types::{BucketAccum, SymbolIndex, SymKey, Timeframe};
-use protopyne_view::{AssetClass, SYMBOL_CATALOG, TerminalGateway};
+use protopyne_view::{
+    AssetClass, SymbolInfoView, TerminalGateway, pick_default_symbol, symbol_catalog,
+};
 
 use crate::chart::{ChartConfig, DEFAULT_SYMBOL, TimeframeKey, line_values, window_for_range};
+use crate::topology::SeriesCatalog;
 use crate::indicators::{
     ChartIndicator, IndicatorCategory, IndicatorEvaluation, build_indicator_catalog,
     instantiate_indicator,
@@ -120,14 +124,97 @@ const GRID_DIM: f32 = 0.55;
 /// EIT adaptive smoothing used for the candle tint when no IntegrationLite
 /// slot supplies one.
 const DEFAULT_EIT_ALPHA: f64 = 0.14;
+/// Calibrated AutoHeight padding (task value: legibility — wicks visible, no
+/// dead space; it claims nothing about whether the window is tradeable).
+/// Calibrated in `tests/auto_height.rs`: the clipped-wick control needs tip
+/// clearance a 0.02 pad cannot give, the dead-space control needs occupancy
+/// a 0.25 pad cannot give, and 0.05 lands both with margin while matching
+/// the shipped full-view pad — so [`price_extent`] shares it instead of
+/// carrying a second magic number.
+pub const AUTO_HEIGHT_PAD_FRACTION: f64 = 0.05;
 
-/// Build the Symbol Selection Modal catalog from the shared source.
-pub fn build_symbol_catalog() -> Result<CatalogModal<AssetClass>, EguiError> {
+/// Domain menu actions behind the chart context menu. AutoHeight ships
+/// first; future entries reuse this enum (and [`chart_menu_items`]) instead
+/// of growing a second menu path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChartMenuAction {
+    /// Fit the price viewport to the visible window through the headless
+    /// policy and the interaction machine (same rebind path as every other
+    /// range change, never an inline field poke).
+    AutoHeight,
+}
+
+/// Menu rows for a price-axis trigger: action plus label, in paint order.
+#[must_use]
+pub fn chart_menu_items() -> [(ChartMenuAction, &'static str); 1] {
+    [(ChartMenuAction::AutoHeight, "AutoHeight")]
+}
+
+/// Decide whether this frame raises the chart context menu: only a secondary
+/// click whose hover sits on the price axis strip. The canvas keeps one
+/// `Sense::drag` allocation (a click-sensing widget would add drag latency),
+/// so the button state is polled once per frame and the hover routed through
+/// the headless detector — plot, legend, divider, and off-canvas hovers
+/// raise nothing, and without a bound viewport or rows there is no bar to
+/// name. Returns the trigger plus the screen anchor the menu opens at.
+#[must_use]
+pub fn context_menu_request(
+    secondary_clicked: bool,
+    hover: Option<egui::Pos2>,
+    plot: egui::Rect,
+    axis: egui::Rect,
+    viewport: Option<&Viewport>,
+    rows: &[ChartRow],
+) -> Option<(ContextTrigger, egui::Pos2)> {
+    if !secondary_clicked {
+        return None;
+    }
+    let at = hover?;
+    let view = viewport?;
+    let trigger = detect_context_trigger(
+        PRICE_PANE_ZONE,
+        axis.into(),
+        plot.into(),
+        view,
+        rows,
+        fluent_egui::WheelPos2::new(at.x, at.y),
+    )?;
+    Some((trigger, at))
+}
+
+/// Build the Symbol Selection Modal from gateway rows. The catalog is a
+/// derived view: the terminal renders whatever the gateway reports, and an
+/// empty row list refuses (a modal with nothing to select is a bug, not a
+/// state to paper over with the shipped list).
+pub fn build_symbol_catalog(rows: &[SymbolInfoView]) -> Result<CatalogModal<AssetClass>, EguiError> {
+    if rows.is_empty() {
+        return Err(EguiError::InvalidParam {
+            what: "symbol catalog".to_owned(),
+            reason: "the gateway served an empty symbol list".to_owned(),
+        });
+    }
     let mut catalog = CatalogModal::new("Symbols");
-    for (symbol, name, class) in SYMBOL_CATALOG {
-        catalog.register(symbol, name, class)?;
+    for row in rows {
+        let class = AssetClass::parse(&row.asset_class).unwrap_or(AssetClass::Unknown);
+        catalog.register(&row.symbol, &row.name, class)?;
     }
     Ok(catalog)
+}
+
+/// The Symbol Selection Modal for a live gateway (or the shipped offline
+/// list for a gateway-less workspace, the demo's CSV path).
+pub fn symbol_modal_for(
+    gateway: Option<&dyn TerminalGateway>,
+) -> Result<CatalogModal<AssetClass>, EguiError> {
+    let rows = match gateway {
+        Some(gateway) => gateway
+            .symbols()
+            .map_err(|error| EguiError::Dependency {
+                reason: format!("symbol catalog unavailable: {error}"),
+            })?,
+        None => symbol_catalog(),
+    };
+    build_symbol_catalog(&rows)
 }
 
 /// The asset-class tabs (the modal renders its own `All` tab).
@@ -159,7 +246,7 @@ fn price_extent(rows: &[ChartRow]) -> (f64, f64) {
     if !lo.is_finite() || !hi.is_finite() || lo >= hi {
         return (0.0, 1.0);
     }
-    let pad = (hi - lo) * 0.05;
+    let pad = (hi - lo) * AUTO_HEIGHT_PAD_FRACTION;
     (lo - pad, hi + pad)
 }
 
@@ -678,6 +765,10 @@ pub struct ChartWorkspace {
     theme: ThemeConfig,
     plan: PanePlan,
     cache: PaneCache,
+    /// Published indicator outputs by stable node id: the series catalog a
+    /// source picker lists. Rebuilt every recompute in plan order, so a
+    /// consumer never reads a stale producer.
+    series_catalog: SeriesCatalog,
     stack: HotSlotStack,
     plugins: Vec<Box<dyn ChartIndicator>>,
     evaluations: HashMap<String, IndicatorEvaluation>,
@@ -705,6 +796,10 @@ pub struct ChartWorkspace {
     sub: Option<Viewport>,
     symbol_modal: Option<CatalogModal<AssetClass>>,
     indicator_modal: Option<CatalogModal<IndicatorCategory>>,
+    /// Open chart context menu: the trigger plus the screen anchor the popup
+    /// lives at. Set by the secondary-click router, cleared when the popup
+    /// closes; the menu never owns rows or viewports, only this anchor.
+    context_menu: Option<(ContextTrigger, egui::Pos2)>,
     /// Session-break memo over the window's bar times. The loader refreshes
     /// it when the window's contents move (see
     /// [`refresh_session_breaks`](Self::refresh_session_breaks)); the paint
@@ -735,6 +830,7 @@ impl ChartWorkspace {
             theme: ThemeConfig::default(),
             plan: PanePlan::new(),
             cache: PaneCache::new(),
+            series_catalog: SeriesCatalog::empty(),
             stack: HotSlotStack::new(),
             plugins: Vec::new(),
             evaluations: HashMap::new(),
@@ -752,6 +848,7 @@ impl ChartWorkspace {
             sub: None,
             symbol_modal: None,
             indicator_modal: None,
+            context_menu: None,
             session_breaks: SessionBreakCache::new(),
         };
         workspace.slot_indicator(INTEGRATION_LITE_ID)?;
@@ -761,8 +858,21 @@ impl ChartWorkspace {
     }
 
     /// Boot and pull the first history through `gateway`.
+    ///
+    /// The active symbol is the default rule, not a constant: the gateway's
+    /// catalog is consulted and the preferred symbol is taken when present,
+    /// else the first in sorted order; a gateway that serves no catalog
+    /// leaves the preference seed standing (it will fail loudly on refresh).
     pub fn with_gateway(gateway: &dyn TerminalGateway) -> Result<Self, EguiError> {
         let mut workspace = Self::new()?;
+        if let Ok(catalog) = gateway.symbols() {
+            if !catalog.is_empty() {
+                let symbols: Vec<&str> = catalog.iter().map(|row| row.symbol.as_str()).collect();
+                if let Some(symbol) = pick_default_symbol(DEFAULT_SYMBOL, symbols) {
+                    workspace.set_symbol(&symbol)?;
+                }
+            }
+        }
         workspace.refresh(gateway)?;
         Ok(workspace)
     }
@@ -973,6 +1083,11 @@ impl ChartWorkspace {
     pub fn remove_indicator(&mut self, id: &str) -> Result<(), EguiError> {
         self.stack.remove(id)?;
         self.plugins.retain(|plugin| plugin.id() != id);
+        // The plan and the series catalog are derived per recompute; rebuild
+        // the plan now so a re-slot never trips over the removed nodes, and
+        // drop the catalog so no later reader meets a stale producer.
+        self.rebuild_series_plan()?;
+        self.series_catalog.clear();
         // Prune the removed evaluation's keys from the revision snapshot so
         // the next recompute compares against what is actually cached — the
         // direct rebuild below counts, like every derived build.
@@ -1108,8 +1223,7 @@ impl ChartWorkspace {
 
     /// Step the 2D interaction machine and lock the sub-pane time axis to the
     /// main chart area's.
-    pub fn step_interaction(&mut self, dt: f64, events: &[PointerInput]) {
-        let Some(main) = self.main else {
+    pub fn step_interaction(&mut self, dt: f64, events: &[PointerInput]) {        let Some(main) = self.main else {
             return;
         };
         let Some(machine) = self.interaction.as_mut() else {
@@ -1120,6 +1234,38 @@ impl ChartWorkspace {
         if let Some(sub) = self.sub {
             if let Ok(synced) = sub.sync_time_axis(&next) {
                 self.sub = Some(synced);
+            }
+        }
+    }
+
+    /// Build the AutoHeight event for the current culled window: fit the
+    /// visible bars' extremes with the calibrated pad. Refuses without a
+    /// bound viewport or with nothing visible to fit (an off-window viewport
+    /// holds instead of jumping); the caller owns the viewport.
+    pub fn auto_height_event(&self, plot_width: f32) -> Result<PointerInput, EguiError> {
+        let main = self.main.as_ref().ok_or(EguiError::InvalidParam {
+            what: "viewport".to_owned(),
+            reason: "auto-height needs a bound price viewport".to_owned(),
+        })?;
+        let (start, end) = main.culled_bar_range(plot_width, self.rows.len());
+        let fitted = auto_height_range(&self.rows, (start, end), AUTO_HEIGHT_PAD_FRACTION)?;
+        Ok(PointerInput::AutoHeight { min: fitted.min, max: fitted.max })
+    }
+
+    /// Apply one picked menu action. AutoHeight steps its fitted event with a
+    /// zero `dt` (a discrete re-anchor, never a coast seed) through
+    /// [`step_interaction`](Self::step_interaction), so the sub-pane time
+    /// axis follows and replay sees the same event the pointer raised.
+    pub fn apply_menu_action(
+        &mut self,
+        action: ChartMenuAction,
+        plot_width: f32,
+    ) -> Result<(), EguiError> {
+        match action {
+            ChartMenuAction::AutoHeight => {
+                let event = self.auto_height_event(plot_width)?;
+                self.step_interaction(0.0, &[event]);
+                Ok(())
             }
         }
     }
@@ -1147,6 +1293,8 @@ impl ChartWorkspace {
         let config = plugin.default_config();
         let nodes = plugin.plan_nodes(&*config)?;
         let node_refs: Vec<&str> = nodes.iter().map(String::as_str).collect();
+        let deps = plugin.plan_deps(&*config)?;
+        let dep_refs: Vec<&str> = deps.iter().map(String::as_str).collect();
         let fingerprint = common_core::hash::fnv1a64(id.as_bytes());
         self.stack.insert(
             plugin.id(),
@@ -1154,12 +1302,66 @@ impl ChartWorkspace {
             plugin.attachment(),
             config,
             &node_refs,
-            &[],
+            &dep_refs,
             fingerprint,
             &mut self.plan,
         )?;
         self.plugins.push(plugin);
         Ok(())
+    }
+
+    /// Rebuild the series plan from the live slot configs: every plugin's
+    /// current nodes with its current source edge. Config edits move edges,
+    /// so the plan is derived per recompute (and per removal), never trusted
+    /// from slot time. A node depending on itself refuses naming the cycle
+    /// (the graph skips self-loops by design, so this check owns them).
+    fn rebuild_series_plan(&mut self) -> Result<(), EguiError> {
+        let mut plan = PanePlan::new();
+        for plugin in &self.plugins {
+            let config = self.stack.config(plugin.id()).ok_or_else(|| EguiError::InvalidParam {
+                what: plugin.id().to_owned(),
+                reason: "slot owns no configuration".to_owned(),
+            })?;
+            let nodes = plugin.plan_nodes(config)?;
+            let deps = plugin.plan_deps(config)?;
+            for node in &nodes {
+                if deps.iter().any(|dep| dep == node) {
+                    return Err(EguiError::InvalidParam {
+                        what: "series".to_owned(),
+                        reason: format!("series cycle: {node} depends on itself"),
+                    });
+                }
+                let dep_refs: Vec<&str> = deps.iter().map(String::as_str).collect();
+                plan.register_node(node, &dep_refs, common_core::hash::fnv1a64(node.as_bytes()))?;
+            }
+        }
+        self.plan = plan;
+        Ok(())
+    }
+
+    /// Slot indices in evaluation order: plan order mapped back to plugins
+    /// (a plugin runs at its earliest node's position), stable by slot order
+    /// so edge-free panes evaluate exactly as slotted.
+    fn eval_order(&self) -> Result<Vec<usize>, EguiError> {
+        let node_order = self.plan.order()?;
+        let position: HashMap<&str, usize> =
+            node_order.iter().enumerate().map(|(index, node)| (node.as_str(), index)).collect();
+        let mut indices: Vec<usize> = (0..self.plugins.len()).collect();
+        indices.sort_by_key(|&index| {
+            let nodes = self
+                .stack
+                .config(self.plugins[index].id())
+                .and_then(|config| self.plugins[index].plan_nodes(config).ok());
+            match nodes {
+                Some(nodes) => nodes
+                    .iter()
+                    .filter_map(|node| position.get(node.as_str()).copied())
+                    .min()
+                    .unwrap_or(usize::MAX),
+                None => usize::MAX,
+            }
+        });
+        Ok(indices)
     }
 
     /// Rebind the main and sub-pane viewports (and the interaction bounds) to
@@ -1215,8 +1417,10 @@ impl ChartWorkspace {
     /// per-bar derived vectors rebuild only on change; evaluations and
     /// readouts still refresh, so the legend never goes stale on a skip.
     fn recompute(&mut self) -> Result<(), EguiError> {
+        self.rebuild_series_plan()?;
         if self.rows.is_empty() {
             self.evaluations.clear();
+            self.series_catalog.clear();
             self.sub_pane = None;
             self.momentum_keys.clear();
             self.tints.clear();
@@ -1224,18 +1428,21 @@ impl ChartWorkspace {
             self.last_rows_shape = (0, None, None);
             return Ok(());
         }
+        let order = self.eval_order()?;
         let mut revisions = Vec::new();
-        for index in 0..self.plugins.len() {
+        self.series_catalog.clear();
+        for index in order {
             let id = self.plugins[index].id().to_owned();
             let evaluation = {
                 let config = self.stack.config(&id).ok_or_else(|| EguiError::InvalidParam {
                     what: id.clone(),
                     reason: "slot owns no configuration".to_owned(),
                 })?;
-                self.plugins[index].evaluate(&self.rows, config)?
+                self.plugins[index].evaluate(&self.rows, config, &self.series_catalog)?
             };
             for series in &evaluation.series {
                 revisions.push((series.key, self.cache.publish(series.key, series.values.clone())));
+                self.series_catalog.publish(&series.node, series.key, series.values.clone());
             }
             let readouts = self.plugins[index].readouts(&evaluation);
             self.stack.set_readouts(&id, readouts)?;
@@ -1318,7 +1525,9 @@ impl ChartWorkspace {
         gateway: Option<&dyn TerminalGateway>,
     ) -> Result<(), EguiError> {
         match action {
-            TopBarAction::OpenSymbolSearch => self.symbol_modal = Some(build_symbol_catalog()?),
+            TopBarAction::OpenSymbolSearch => {
+                self.symbol_modal = Some(symbol_modal_for(gateway)?);
+            }
             TopBarAction::OpenIndicatorSearch => {
                 self.indicator_modal = Some(build_indicator_catalog()?);
             }
@@ -1421,6 +1630,23 @@ impl ChartWorkspace {
         let legend = legend_origin(main_rect, self.stack.card_width());
         self.stack.set_origin(legend);
         self.step_from_response(ui, &response, &[layout, sub_layout], divider_response.dragged());
+        // The context menu lives one frame behind its trigger: this frame
+        // routes the secondary click above, the popup paints here, and a pick
+        // steps its fitted event with a zero dt (a discrete re-anchor, never
+        // a coast seed). An outside click or escape closes through the
+        // popup's own write-back.
+        if let Some((_, at)) = self.context_menu {
+            let mut open = true;
+            let items = chart_menu_items();
+            if let Some(action) =
+                paint_context_menu(ui, ui.id().with("chart_menu"), at, &mut open, &items)
+            {
+                self.apply_menu_action(action, layout.plot.width())?;
+            }
+            if !open {
+                self.context_menu = None;
+            }
+        }
         let bar_seconds = self.timeframe.seconds();
 
         let theme = self.theme.clone();
@@ -1767,6 +1993,23 @@ impl ChartWorkspace {
             }
         }
         if response.hovered() {
+            // Secondary click is polled, never sensed: the canvas keeps its
+            // single `Sense::drag` allocation (a click sense would add drag
+            // latency) and no second `interact` steals gestures from the
+            // region router. Only the price axis strip answers.
+            let secondary =
+                ui.input(|input| input.pointer.button_clicked(egui::PointerButton::Secondary));
+            if secondary {
+                let price = &layouts[PRICE_PANE_ZONE];
+                self.context_menu = context_menu_request(
+                    true,
+                    response.hover_pos(),
+                    price.plot,
+                    price.axis,
+                    self.main.as_ref(),
+                    &self.rows,
+                );
+            }
             let (scroll, modifiers) =
                 ui.input(|input| (input.smooth_scroll_delta, input.modifiers));
             if scroll.y != 0.0 {
@@ -2020,3 +2263,11 @@ mod workspace_symbols_tests;
 #[cfg(test)]
 #[path = "../tests/workspace_tape.rs"]
 mod workspace_tape_tests;
+
+#[cfg(test)]
+#[path = "../tests/series_source.rs"]
+mod series_source_tests;
+
+#[cfg(test)]
+#[path = "../tests/auto_height.rs"]
+mod auto_height_tests;

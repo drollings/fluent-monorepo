@@ -728,3 +728,54 @@ fn delta_volume_histogram_controls_and_confidence_axis_separation() {
     assert_eq!(pane_b.delta_confidence, DeltaConfidence::Low);
 }
 
+
+/// Calibration gate (producer confidence): over randomized history windows —
+/// trends, gaps, dojis, spikes, flats — the shape split never reports above
+/// `Low`, and rescaling every volume leaves every pivot mark identical.
+/// History carries no tick tape; a claim above `Low` needs a labeled-tape
+/// precision measurement first, and no consumer may branch a decision on
+/// this field until that measurement lands.
+#[test]
+fn history_confidence_never_exceeds_low_and_never_moves_pivots() {
+    let config = IntegrationLiteConfig::new().build();
+    let mut state: u64 = 0x9e37_79b9_7f4a_7c15;
+    let mut next = || {
+        state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        (state >> 33) as f64 / f64::from(u32::MAX)
+    };
+    for seed in 0..25 {
+        let mut close = 100.0 + next() * 50.0;
+        let rows: Vec<ChartRow> = (0..40)
+            .map(|i| {
+                close += (next() - 0.48) * 4.0;
+                if seed % 5 == 4 && i == 20 {
+                    close += 15.0; // gap bar
+                }
+                let spread = 0.2 + next() * 0.8;
+                ChartRow {
+                    time: i,
+                    open: close - spread,
+                    high: close + spread,
+                    low: close - spread * 2.0,
+                    close,
+                    volume: 100 + (next() * 5_000.0) as u64,
+                }
+            })
+            .collect();
+        let pane = integration_lite_sub_pane(&rows, &config).expect("pane builds");
+        assert_eq!(
+            pane.delta_confidence,
+            DeltaConfidence::Low,
+            "seed {seed}: history never exceeds Low"
+        );
+        let scaled: Vec<ChartRow> = rows
+            .iter()
+            .map(|row| ChartRow { volume: row.volume.saturating_mul(9).max(1), ..*row })
+            .collect();
+        let rescaled = integration_lite_sub_pane(&scaled, &config).expect("rescaled builds");
+        assert_eq!(
+            pane.pivots, rescaled.pivots,
+            "seed {seed}: volume rescale never moves pivots"
+        );
+    }
+}

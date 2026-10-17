@@ -119,11 +119,19 @@ fn bloat_ledger_pins_source_files() {
     // into `interaction.rs` would drag `egui` geometry into that headless
     // module; folding it into `slot.rs` would make a chart-wide decision look
     // like a legend concern. Its own file is the smaller honest boundary.
+    // `context_menu.rs` earns its line by isolating the secondary-click
+    // decision (only a pane's axis strip answers, everywhere else raises
+    // nothing) plus the one generic popup wrapper from both the machine that
+    // applies the picked action and the domain crate that fills the menu.
+    // Folding detection into `hittest.rs` would make a gesture-routing
+    // question look like a readout question; folding the popup into `slot.rs`
+    // would tie a chart-wide menu to the legend stack.
     assert_eq!(
         src_file_names(),
         vec![
             "annotations.rs",
             "config.rs",
+            "context_menu.rs",
             "error.rs",
             "feed.rs",
             "fields.rs",

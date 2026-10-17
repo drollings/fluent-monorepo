@@ -29,6 +29,14 @@
 //!
 //! All methods are synchronous and serialize under one mutex that is never
 //! held across an await.
+//!
+//! The ephemeral arm ([`Journal::ephemeral`]) shares this exact fold over
+//! memory instead of a file: same rows, same indices, same replay — only the
+//! sync differs. It owns no durable authority, so its gate is a documented
+//! no-op and its rows land through [`Journal::record_ephemeral`], which
+//! refuses a durable journal outright. Production backtests scope one per
+//! run; the submission protocol reaches both arms through the single
+//! [`Recorder`](crate::submit::Recorder).
 
 use chrono::{DateTime, Utc};
 use fluent_wvr::capability::check_capability;
@@ -194,18 +202,35 @@ fn is_status_kind(kind: &str) -> bool {
 /// The durable side of the order state machine. The log is created on open;
 /// every append is synced before it reports success.
 pub struct Journal {
-    path: PathBuf,
+    /// Journal file this log syncs to, or `None` for the ephemeral arm
+    /// (which owns no durable authority and never touches the filesystem).
+    path: Option<PathBuf>,
     inner: Mutex<JournalInner>,
 }
 
-/// The live fold over the durable log: every committed row in append order,
-/// plus one offset per client id. Built by a single linear pass at
+/// Where committed rows land: the durability axis behind the one recorder.
+///
+/// The fold above this enum is identical for both arms — every committed row
+/// plus one offset per client id — so replay, status, and idempotence agree
+/// whether rows sync to a file or not. Only the sync differs.
+enum JournalSink {
+    /// File log: every append syncs before success is reported.
+    Durable(AppendLog<JournalRecord>),
+    /// Memory only: appends land in the resident fold, with no I/O, no
+    /// fsync, and no capability gate. Production backtests scope one per
+    /// run so parallel runs stay isolated; it owns no durable authority.
+    Ephemeral,
+}
+
+/// The live fold over the log: every committed row in append order, plus one
+/// offset per client id. Built by a single linear pass at
 /// [`Journal::open`] and advanced as appends land, so intent idempotence and
 /// status reads answer without re-reading and re-parsing the file. The log
 /// stays the sole authority; this is a derived accelerator a crash only ever
-/// costs a rebuild.
+/// costs a rebuild. The ephemeral arm shares this exact fold over memory
+/// instead of a file, so both durabilities replay identically.
 struct JournalInner {
-    log: AppendLog<JournalRecord>,
+    sink: JournalSink,
     next_seq: i64,
     /// Every committed row, in append order — the replay medium.
     records: Vec<JournalRecord>,
@@ -230,9 +255,10 @@ impl JournalInner {
         self.records.push(record);
     }
 
-    /// Append one row, synced, and fold it in. One lock covers the whole
-    /// step, so an idempotence check and its append can never interleave.
-    fn append(
+    /// Stage one row: assign its sequence number, sync when durable, and
+    /// fold it in. One lock covers the whole step, so an idempotence check
+    /// and its append can never interleave at either durability.
+    fn stage(
         &mut self,
         client_id: &str,
         kind: &str,
@@ -246,9 +272,10 @@ impl JournalInner {
             detail: detail.to_owned(),
             at_ms,
         };
-        self.log
-            .append_batch(std::slice::from_ref(&record))
-            .map_err(|e| VenueError::Journal(e.to_string()))?;
+        if let JournalSink::Durable(log) = &mut self.sink {
+            log.append_batch(std::slice::from_ref(&record))
+                .map_err(|e| VenueError::Journal(e.to_string()))?;
+        }
         self.next_seq = record.seq + 1;
         self.remember(record);
         Ok(())
@@ -273,7 +300,7 @@ impl Journal {
         let rows = log.read_all().map_err(|e| VenueError::Journal(e.to_string()))?;
         let next_seq = rows.iter().map(|record| record.seq).max().unwrap_or(0) + 1;
         let mut inner = JournalInner {
-            log,
+            sink: JournalSink::Durable(log),
             next_seq,
             records: Vec::with_capacity(rows.len()),
             intent_at: HashMap::with_capacity(rows.len()),
@@ -283,19 +310,68 @@ impl Journal {
             inner.remember(row);
         }
         Ok(Self {
-            path: path.to_owned(),
+            path: Some(path.to_owned()),
             inner: Mutex::new(inner),
         })
     }
 
+    /// Open an empty ephemeral log: the same fold over memory, with no file,
+    /// no sync, and no gate. Production backtests scope one per run; it owns
+    /// no durable authority and never touches the filesystem.
+    #[must_use]
+    pub fn ephemeral() -> Self {
+        Self {
+            path: None,
+            inner: Mutex::new(JournalInner {
+                sink: JournalSink::Ephemeral,
+                next_seq: 1,
+                records: Vec::new(),
+                intent_at: HashMap::new(),
+                status_at: HashMap::new(),
+            }),
+        }
+    }
+
     fn gate(&self, permit: &VenueStorage) -> Result<(), VenueError> {
-        if permit.journal_path != self.path {
+        let Some(path) = self.path.as_ref() else {
+            // The ephemeral arm owns no durable authority, so there is no
+            // session to bind and nothing to steal: the no-op is
+            // load-bearing, scoped to this sink by construction. Durable
+            // journals always carry a path and always check below.
+            return Ok(());
+        };
+        if permit.journal_path != *path {
             return Err(VenueError::Journal(
                 "storage permit is bound to a different journal".to_owned(),
             ));
         }
         check_capability(permit)
             .map_err(|_| VenueError::Journal("venue storage capability missing".to_owned()))
+    }
+
+    /// Permit-free row append for the ephemeral recorder: intent rows check
+    /// idempotence and append under one lock (atomic, unlike the old
+    /// check-then-append across two), every other kind appends. Refuses on a
+    /// durable journal — durable writes demand a permit through the gated
+    /// methods — so no ungated path into the durable log exists.
+    pub fn record_ephemeral(
+        &self,
+        client_id: &str,
+        kind: &str,
+        detail: &str,
+        now: DateTime<Utc>,
+    ) -> Result<bool, VenueError> {
+        if self.path.is_some() {
+            return Err(VenueError::Journal(
+                "durable writes demand a storage permit".to_owned(),
+            ));
+        }
+        let mut inner = common_core::sync::lock(&self.inner);
+        if kind == INTENT_KIND && inner.intent_at.contains_key(client_id) {
+            return Ok(false);
+        }
+        inner.stage(client_id, kind, detail, now_ms(now))?;
+        Ok(true)
     }
 
     /// Append one event row, synced before returning.
@@ -306,7 +382,7 @@ impl Journal {
         detail: &str,
         now: DateTime<Utc>,
     ) -> Result<(), VenueError> {
-        common_core::sync::lock(&self.inner).append(client_id, kind, detail, now_ms(now))
+        common_core::sync::lock(&self.inner).stage(client_id, kind, detail, now_ms(now))
     }
 
     /// Durably record an intent before any venue call. Recording the same
@@ -329,7 +405,7 @@ impl Journal {
         if inner.intent_at.contains_key(&intent.client_id) {
             return Ok(false);
         }
-        inner.append(&intent.client_id, INTENT_KIND, &payload, now_ms(now))?;
+        inner.stage(&intent.client_id, INTENT_KIND, &payload, now_ms(now))?;
         Ok(true)
     }
 
@@ -492,7 +568,7 @@ fn status_from_name(name: &str) -> OrderStatus {
     }
 }
 
-fn status_name(status: OrderStatus) -> &'static str {
+pub(crate) fn status_name(status: OrderStatus) -> &'static str {
     match status {
         OrderStatus::Pending => "pending",
         OrderStatus::Submitted => "submitted",
@@ -503,141 +579,6 @@ fn status_name(status: OrderStatus) -> &'static str {
         OrderStatus::Rejected => "rejected",
         OrderStatus::Expired => "expired",
         OrderStatus::OpenFailed => "open_failed",
-    }
-}
-
-/// In-memory, append-only, replayable recorder for one run's submissions.
-///
-/// The submission protocol writes through
-/// [`SubmissionRecorder`](crate::submit::SubmissionRecorder), which the
-/// durable [`Journal`] implements over a file. A backtest needs the same
-/// protocol without a durable log: this recorder keeps the identical event
-/// vocabulary in memory, so a run's intents and transitions replay with the
-/// same fold discipline and **no** I/O. It owns no durable authority — the
-/// [`Journal`] keeps sole ownership of persistence; this is the ephemeral
-/// recorder a run scopes to itself, never a second durable log.
-#[derive(Debug, Default)]
-pub struct RunIntentLog {
-    inner: Mutex<RunIntentLogInner>,
-}
-
-#[derive(Debug, Default)]
-struct RunIntentLogInner {
-    seq: i64,
-    events: Vec<JournalEvent>,
-}
-
-impl RunIntentLog {
-    /// Open an empty run log.
-    #[must_use]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    fn append(&self, client_id: &str, kind: &str, detail: &str, now: DateTime<Utc>) {
-        let mut inner = common_core::sync::lock(&self.inner);
-        let seq = inner.seq + 1;
-        inner.seq = seq;
-        inner.events.push(JournalEvent {
-            seq,
-            client_id: client_id.to_owned(),
-            kind: kind.to_owned(),
-            detail: detail.to_owned(),
-            at_ms: now_ms(now),
-        });
-    }
-
-    fn has_intent(&self, client_id: &str) -> bool {
-        let inner = common_core::sync::lock(&self.inner);
-        inner
-            .events
-            .iter()
-            .any(|event| event.kind == INTENT_KIND && event.client_id == client_id)
-    }
-
-    /// Every recorded event, in append order.
-    #[must_use]
-    pub fn events(&self) -> Vec<JournalEvent> {
-        common_core::sync::lock(&self.inner).events.clone()
-    }
-
-    /// Rebuild state by replay: every intent in append order plus every
-    /// event, in sequence order — the in-memory twin of [`Journal::replay`].
-    pub fn replay(&self) -> Result<ReplayedState, VenueError> {
-        let events = self.events();
-        let mut intents = Vec::new();
-        let mut seen = std::collections::HashSet::new();
-        for event in &events {
-            if event.kind == INTENT_KIND && seen.insert(event.client_id.clone()) {
-                intents.push(
-                    serde_json::from_str(&event.detail)
-                        .map_err(|e| VenueError::Journal(e.to_string()))?,
-                );
-            }
-        }
-        Ok(ReplayedState { intents, events })
-    }
-
-    /// Stored status of one intent, if recorded. `None` when absent; the
-    /// intent row implies `pending` until a status-kind event lands — the
-    /// in-memory twin of [`Journal::intent_status`].
-    #[must_use]
-    pub fn intent_status(&self, client_id: &str) -> Option<String> {
-        let events = self.events();
-        let mut status = events
-            .iter()
-            .any(|event| event.kind == INTENT_KIND && event.client_id == client_id)
-            .then(|| "pending".to_owned())?;
-        for event in &events {
-            if event.client_id == client_id && is_status_kind(&event.kind) {
-                status.clone_from(&event.kind);
-            }
-        }
-        Some(status)
-    }
-}
-
-impl crate::submit::SubmissionRecorder for RunIntentLog {
-    fn record_intent(&self, intent: &OrderIntent, now: DateTime<Utc>) -> Result<bool, VenueError> {
-        if self.has_intent(&intent.client_id) {
-            return Ok(false);
-        }
-        let payload =
-            serde_json::to_string(intent).map_err(|e| VenueError::Journal(e.to_string()))?;
-        self.append(&intent.client_id, INTENT_KIND, &payload, now);
-        Ok(true)
-    }
-
-    fn mark_status(
-        &self,
-        client_id: &str,
-        status: OrderStatus,
-        now: DateTime<Utc>,
-    ) -> Result<(), VenueError> {
-        self.append(client_id, status_name(status), "{}", now);
-        Ok(())
-    }
-
-    fn record_leg_fill(
-        &self,
-        client_id: &str,
-        leg: &LegExecution,
-        now: DateTime<Utc>,
-    ) -> Result<(), VenueError> {
-        let detail = serde_json::to_string(leg).map_err(|e| VenueError::Journal(e.to_string()))?;
-        self.append(client_id, LEG_FILL_KIND, &detail, now);
-        Ok(())
-    }
-
-    fn record_transition(
-        &self,
-        client_id: &str,
-        kind: &str,
-        detail: &str,
-        now: DateTime<Utc>,
-    ) -> Result<(), VenueError> {
-        self.append(client_id, kind, detail, now);
-        Ok(())
     }
 }
 

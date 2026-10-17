@@ -107,7 +107,7 @@ impl OwnedOhlcv {
     #[must_use]
     pub fn from_bars(bars: &[protopyne_types::Bar]) -> Self {
         use rust_decimal::prelude::ToPrimitive as _;
-        let conv = |d: rust_decimal::Decimal| d.to_f64().unwrap_or(f64::NAN);
+        let conv = |d: rust_decimal::Decimal| nan_hole(d.to_f64());
         Self {
             open: bars.iter().map(|b| conv(b.o)).collect(),
             high: bars.iter().map(|b| conv(b.h)).collect(),
@@ -179,6 +179,15 @@ pub fn fin_or_none(value: f64) -> Option<f64> {
     } else {
         Some(value)
     }
+}
+
+/// Map an output slot to its hole value: `None` becomes `NaN` (Pine `na`).
+/// The one spelling for the hole idiom every kernel's output edge repeats,
+/// inverse of [`fin_or_none`].
+#[inline]
+#[must_use]
+pub fn nan_hole(value: Option<f64>) -> f64 {
+    value.unwrap_or(f64::NAN)
 }
 
 /// Static description of one indicator: identity, warmup floor, and

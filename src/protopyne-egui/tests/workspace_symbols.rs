@@ -7,6 +7,15 @@
 
 use super::*;
 use protopyne_chart_model::ChartRow;
+use protopyne_view::{
+    ArmResponse, ChartBars, GatewayError, HealthView, JournalRowView, OverlaySeries, PortfolioView,
+    ProposalView, ReplayView, SymbolInfoView, TerminalGateway, WorstCase,
+};
+use std::collections::BTreeMap;
+
+fn unavailable() -> GatewayError {
+    GatewayError::Unavailable("catalog gateway serves bars only".to_owned())
+}
 
 fn grid_rows(start: i64, step: i64, count: usize) -> Vec<ChartRow> {
     (0..count)
@@ -106,5 +115,193 @@ fn seeded_switch_without_the_active_key_clears_stale_rows() {
     assert!(
         workspace.rows().is_empty(),
         "stale SPY rows never survive a failed switch"
+    );
+}
+
+/// A gateway whose symbol catalog is whatever a history root discovered; it
+/// serves bars for any symbol so the workspace can boot over it.
+struct RootGateway {
+    rows: Vec<SymbolInfoView>,
+}
+
+impl RootGateway {
+    fn new(rows: Vec<SymbolInfoView>) -> Self {
+        Self { rows }
+    }
+}
+
+fn scripted_bars(count: usize) -> ChartBars {
+    let rows = (0..count)
+        .map(|i| ChartRow {
+            time: 1_700_000_000 + i as i64 * 900,
+            open: 100.0,
+            high: 101.0,
+            low: 99.0,
+            close: 100.5,
+            volume: 10 + i as u64,
+        })
+        .collect();
+    ChartBars { rows, dropped: 0 }
+}
+
+impl TerminalGateway for RootGateway {
+    fn symbols(&self) -> Result<Vec<SymbolInfoView>, GatewayError> {
+        Ok(self.rows.clone())
+    }
+
+    fn chart_bars_for(&self, _symbol: &str, _timeframe: &str) -> Result<ChartBars, GatewayError> {
+        Ok(scripted_bars(120))
+    }
+
+    fn health(&self) -> Result<HealthView, GatewayError> {
+        Err(unavailable())
+    }
+
+    fn proposals(&self) -> Result<Vec<ProposalView>, GatewayError> {
+        Err(unavailable())
+    }
+
+    fn portfolio(&self) -> Result<PortfolioView, GatewayError> {
+        Err(unavailable())
+    }
+
+    fn journal(&self) -> Result<Vec<JournalRowView>, GatewayError> {
+        Err(unavailable())
+    }
+
+    fn chart_bars(&self) -> Result<ChartBars, GatewayError> {
+        Err(unavailable())
+    }
+
+    fn chart_overlays(&self, _kind: &str, _period: i64) -> Result<OverlaySeries, GatewayError> {
+        Err(unavailable())
+    }
+
+    fn replay(&self) -> Result<ReplayView, GatewayError> {
+        Err(unavailable())
+    }
+
+    fn preview_arm(&self, _patch: serde_json::Value) -> Result<WorstCase, GatewayError> {
+        Err(unavailable())
+    }
+
+    fn grant_tiers(&self) -> Result<BTreeMap<String, String>, GatewayError> {
+        Err(unavailable())
+    }
+
+    fn arm(&self, _grant: serde_json::Value) -> Result<ArmResponse, GatewayError> {
+        Err(unavailable())
+    }
+}
+
+#[test]
+fn symbol_catalog_builder_refuses_an_empty_row_list() {
+    let Err(err) = build_symbol_catalog(&[]) else {
+        panic!("an empty row list refuses");
+    };
+    assert!(        err.to_string().contains("empty"),
+        "the refusal names the emptiness: {err}"
+    );
+}
+
+#[test]
+fn symbol_catalog_builder_renders_discovered_rows_sorted_with_unknown_class() {
+    let rows = vec![
+        SymbolInfoView {
+            symbol: "ZZZ".to_owned(),
+            name: "ZZZ".to_owned(),
+            asset_class: "Unknown".to_owned(),
+        },
+        SymbolInfoView {
+            symbol: "AAA".to_owned(),
+            name: "AAA".to_owned(),
+            asset_class: "Unknown".to_owned(),
+        },
+        SymbolInfoView {
+            symbol: "SPY".to_owned(),
+            name: "SPDR S&P 500 ETF Trust".to_owned(),
+            asset_class: "Stocks".to_owned(),
+        },
+    ];
+    let mut catalog = build_symbol_catalog(&rows).expect("the catalog builds");
+    let ids: Vec<&str> = catalog
+        .filtered()
+        .into_iter()
+        .map(fluent_egui::CatalogEntry::id)
+        .collect();
+    assert_eq!(
+        ids, ["AAA", "SPY", "ZZZ"],
+        "the modal renders rows sorted by ticker"
+    );
+    catalog.set_category(Some(AssetClass::Unknown));
+    let ids: Vec<&str> = catalog
+        .filtered()
+        .into_iter()
+        .map(fluent_egui::CatalogEntry::id)
+        .collect();
+    assert_eq!(ids, ["AAA", "ZZZ"], "Unknown is a real tab, not a guess");
+}
+
+#[test]
+fn symbol_modal_follows_the_gateway_catalog_and_never_leaks_the_fallback() {
+    // A root holding AAA and ZZZ: the modal shows exactly those tickers.
+    let dir = tempfile::tempdir().expect("tempdir");
+    for ticker in ["ZZZ", "AAA"] {
+        std::fs::create_dir_all(dir.path().join(ticker).join("2026/01"))
+            .expect("ticker tree creates");
+    }
+    let root = protopyne_server::HistoryRoot::open(dir.path()).expect("root opens");
+    let gateway = RootGateway::new(root.symbol_rows().expect("rows read"));
+    let modal = symbol_modal_for(Some(&gateway)).expect("the modal builds");
+    let ids: Vec<&str> = modal
+        .filtered()
+        .into_iter()
+        .map(fluent_egui::CatalogEntry::id)
+        .collect();
+    assert_eq!(
+        ids, ["AAA", "ZZZ"],
+        "exactly the discovered tickers, no SPY/GLD unless present"
+    );
+
+    // A dot-only root discovers nothing: the modal refuses rather than
+    // leaking the shipped fallback in behind an empty discovery.
+    let dots = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(dots.path().join(".cache")).expect("dot dir creates");
+    let root = protopyne_server::HistoryRoot::open(dots.path()).expect("root opens");
+    let gateway = RootGateway::new(root.symbol_rows().expect("empty rows"));
+    let Err(err) = symbol_modal_for(Some(&gateway)) else {
+        panic!("an empty discovery refuses");
+    };
+    assert!(
+        err.to_string().contains("empty"),
+        "the refusal names the emptiness: {err}"
+    );
+
+    // A gateway-less workspace (the demo shell) serves the shipped offline
+    // list — the one documented fallback.
+    let modal = symbol_modal_for(None).expect("the offline modal builds");
+    assert_eq!(modal.len(), 5, "the shipped offline catalog");
+}
+
+#[test]
+fn workspace_boot_prefers_the_default_symbol_else_the_first_sorted() {
+    let rows = vec![
+        SymbolInfoView {
+            symbol: "ZZZ".to_owned(),
+            name: "ZZZ".to_owned(),
+            asset_class: "Unknown".to_owned(),
+        },
+        SymbolInfoView {
+            symbol: "AAA".to_owned(),
+            name: "AAA".to_owned(),
+            asset_class: "Unknown".to_owned(),
+        },
+    ];
+    let gateway = RootGateway::new(rows);
+    let workspace = ChartWorkspace::with_gateway(&gateway).expect("the workspace boots");
+    assert_eq!(
+        workspace.active_symbol(),
+        "AAA",
+        "an absent preference falls back to the first ticker in sorted order"
     );
 }

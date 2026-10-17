@@ -27,6 +27,7 @@ fn shared_with(trading: TradingState, reading: StoreHealth) -> Shared {
         tape: None,
         tape_serve_stats: Arc::new(TapeServeStats::default()),
         fallback_latch: Mutex::new(FallbackLatch::default()),
+        history_root: None,
     })
 }
 

@@ -127,6 +127,16 @@ pub enum PointerInput {
         /// Pane-local x pixel the zoom keeps fixed.
         anchor_x: f32,
     },
+    /// Re-anchor the price range to an explicit fitted interval (the
+    /// AutoHeight menu action): applies the range, stops the vertical coast
+    /// like every other re-anchor, and leaves the time axis untouched.
+    /// Non-finite or inverted bounds hold the window.
+    AutoHeight {
+        /// Fitted range minimum.
+        min: f64,
+        /// Fitted range maximum.
+        max: f64,
+    },
 }
 
 /// Pure interaction state: elastic data bounds plus kinetic velocity.
@@ -381,6 +391,13 @@ impl InteractionState {
                             continue;
                         };
                         (min, max) = (first.min(second), first.max(second));
+                        self.velocity = 0.0;
+                    }
+                    PointerInput::AutoHeight { min: fit_min, max: fit_max } => {
+                        if !fit_min.is_finite() || !fit_max.is_finite() || fit_min >= fit_max {
+                            continue;
+                        }
+                        (min, max) = (fit_min, fit_max);
                         self.velocity = 0.0;
                     }
                 }

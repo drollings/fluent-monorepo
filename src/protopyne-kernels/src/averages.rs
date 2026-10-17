@@ -16,7 +16,7 @@
 //! `NaN` in any leg propagates to `None`, matching Pine `na` semantics.
 
 use crate::indicator::{
-    fin_or_none, BarTick, Indicator, IndicatorId, IndicatorResult, IndicatorSpec, IndicatorState,
+    fin_or_none, nan_hole, BarTick, Indicator, IndicatorId, IndicatorResult, IndicatorSpec, IndicatorState,
     Ohlcv, ParamSet,
 };
 use crate::ema::EmaIndicator;
@@ -556,7 +556,7 @@ impl Indicator for DemaIndicator {
         let ema = EmaIndicator::new();
         let first = ema.batch(data, &Self::ema_params(period))?;
         let first_raw: Vec<f64> =
-            first.values.iter().map(|v| v.unwrap_or(f64::NAN)).collect();
+            first.values.iter().map(|v| nan_hole(*v)).collect();
         let second = ema.batch(&Ohlcv::close_only(&first_raw), &Self::ema_params(period))?;
         let values = first
             .values
@@ -583,7 +583,7 @@ impl Indicator for DemaIndicator {
         let (child, child_params) = state.child_with_params(1, || Self::ema_params(period));
         let second = ema.update(
             child,
-            BarTick::close_only(first.unwrap_or(f64::NAN)),
+            BarTick::close_only(nan_hole(first)),
             child_params,
         )?;
         let raw = match (first, second) {
@@ -661,10 +661,10 @@ impl Indicator for TemaIndicator {
         let ema = EmaIndicator::new();
         let first = ema.batch(data, &Self::ema_params(period))?;
         let first_raw: Vec<f64> =
-            first.values.iter().map(|v| v.unwrap_or(f64::NAN)).collect();
+            first.values.iter().map(|v| nan_hole(*v)).collect();
         let second = ema.batch(&Ohlcv::close_only(&first_raw), &Self::ema_params(period))?;
         let second_raw: Vec<f64> =
-            second.values.iter().map(|v| v.unwrap_or(f64::NAN)).collect();
+            second.values.iter().map(|v| nan_hole(*v)).collect();
         let third = ema.batch(&Ohlcv::close_only(&second_raw), &Self::ema_params(period))?;
         let values = first
             .values
@@ -692,13 +692,13 @@ impl Indicator for TemaIndicator {
         let (child, child_params) = state.child_with_params(1, || Self::ema_params(period));
         let second = ema.update(
             child,
-            BarTick::close_only(first.unwrap_or(f64::NAN)),
+            BarTick::close_only(nan_hole(first)),
             child_params,
         )?;
         let (child, child_params) = state.child_with_params(2, || Self::ema_params(period));
         let third = ema.update(
             child,
-            BarTick::close_only(second.unwrap_or(f64::NAN)),
+            BarTick::close_only(nan_hole(second)),
             child_params,
         )?;
         let raw = match (first, second, third) {

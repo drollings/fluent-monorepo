@@ -373,13 +373,18 @@ protopyne-matrix: ## Lean-build matrix: no-default kernels build+tests, polars-f
 protopyne-smoke: ## Build the Python-free container image and run the full smoke (no-Python proof, /health, paper preview, chart contract)
 	$(Q)bash src/protopyne-server/smoke-container.sh
 
-# Needs a display: opens the native terminal demo shell (eframe/glow) over
-# the headless chart stack. PROTOPYNE_GUI_HISTORY=<dir|csv|parquet> selects
-# the history (default: the shipped history root); a directory tallies each
-# picked ticker's 1M months into 5M/15M/1H/4H/1D on demand.
+# The trading demo contract, headless: the mock terminal's `--check` output
+# shows the gateway-backed trading views (health, portfolio, proposals,
+# chart reads, replay), then the chart shell's `--check` covers the canvas
+# data path over the same history arg. Both outputs are pinned in
+# `src/protopyne-egui/tests/data/` and reproduced byte-for-byte, so this
+# target is the headless CI form of the demo. For the interactive windows,
+# run the `terminal` example with `--mock` (trading demo, no server boot) or
+# the `demo` example (chart shell) directly.
 .PHONY: protopyne-demo
-protopyne-demo: ## Run the protopyne-rs native terminal UI (PROTOPYNE_GUI_HISTORY=<dir|csv|parquet> selects the history; --check runs the headless data path only)
-	$(Q)cargo run -p protopyne-egui --features demo --example demo -- $(PROTOPYNE_GUI_HISTORY) $(PROTOPYNE_GUI_ARGS)
+protopyne-demo: ## Run the protopyne-rs trading-demo contract headless: terminal --mock --check (trading views) plus demo --check (chart shell); PROTOPYNE_GUI_HISTORY=<dir|csv|parquet> selects the chart history
+	$(Q)cargo run -p protopyne-egui --features server-gateway,demo --example terminal -- --mock --check
+	$(Q)cargo run -p protopyne-egui --features demo --example demo -- --check $(PROTOPYNE_GUI_HISTORY) $(PROTOPYNE_GUI_ARGS)
 
 # ── YaGO Taxonomy + Async Parse-Review ───────────────────────────────────────
 # The interlingua spine (ROADMAP_20260826_INTERLINGUA_V2): the YaGO 4.5 class

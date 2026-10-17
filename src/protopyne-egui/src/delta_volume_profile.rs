@@ -728,6 +728,7 @@ impl crate::indicators::ChartIndicator for DeltaVolumeProfileIndicator {
         &self,
         rows: &[ChartRow],
         config: &dyn Component,
+        _series: &crate::topology::SeriesCatalog,
     ) -> Result<crate::indicators::IndicatorEvaluation, EguiError> {
         let config = fluent_wvr::component_downcast_ref::<DeltaVolumeProfileConfig>(config)
             .ok_or_else(|| EguiError::InvalidParam {

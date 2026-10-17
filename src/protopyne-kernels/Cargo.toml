@@ -39,6 +39,7 @@ polars = { version = "0.50", optional = true, default-features = false, features
 chrono = { workspace = true }
 criterion = { workspace = true }
 csv = { workspace = true }
+tempfile = { workspace = true }
 
 [[bench]]
 name = "mtf_streaming"

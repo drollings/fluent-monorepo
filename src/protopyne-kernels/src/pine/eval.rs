@@ -44,6 +44,7 @@ use crate::error::KernelError;
 use crate::inputs::InputSet;
 use crate::market_context::MarketContextKey;
 use crate::mtf::MtfStore;
+use crate::nan_hole;
 use crate::native_libs::{
     BarContextServe, FetchCounters, LeaseKey, LeasedRing, MethodCtx, NativeOptions,
     TickLegs,
@@ -264,7 +265,8 @@ struct DrawingObject {
 
 /// Concrete `f64` legs for one run, converted once up front (same
 /// decimal-to-float reading as the kernel batch path).
-struct Legs {
+#[cfg_attr(test, allow(dead_code))]
+pub(crate) struct Legs {
     open: Vec<f64>,
     high: Vec<f64>,
     low: Vec<f64>,
@@ -274,51 +276,37 @@ struct Legs {
     hl2: Vec<f64>,
     hlc3: Vec<f64>,
     ohlc4: Vec<f64>,
+    wcl: Vec<f64>,
 }
 
 impl Legs {
     fn of(bars: &[Bar]) -> Self {
         use rust_decimal::prelude::ToPrimitive as _;
-        let conv = |d: rust_decimal::Decimal| d.to_f64().unwrap_or(f64::NAN);
+        let conv = |d: rust_decimal::Decimal| nan_hole(d.to_f64());
         let open: Vec<f64> = bars.iter().map(|b| conv(b.o)).collect();
         let high: Vec<f64> = bars.iter().map(|b| conv(b.h)).collect();
         let low: Vec<f64> = bars.iter().map(|b| conv(b.l)).collect();
         let close: Vec<f64> = bars.iter().map(|b| conv(b.c)).collect();
         let volume: Vec<f64> = bars.iter().map(|b| b.volume as f64).collect();
         let time: Vec<f64> = bars.iter().map(|b| b.ts.timestamp() as f64).collect();
-        let mix = |xs: &[f64], ys: &[f64], zs: Option<&[f64]>| {
-            xs.iter()
-                .zip(ys.iter())
-                .enumerate()
-                .map(|(i, (x, y))| match zs {
-                    Some(ws) => (x + y + ws[i]) / 3.0,
-                    None => (x + y) / 2.0,
-                })
-                .collect()
+        let tick_at = |i: usize| crate::indicator::BarTick {
+            open: open[i],
+            high: high[i],
+            low: low[i],
+            close: close[i],
+            volume: volume[i],
         };
-        let hl2 = mix(&high, &low, None);
-        let hlc3 = mix(&high, &low, Some(&close));
-        let ohlc4 = open
-            .iter()
-            .zip(high.iter())
-            .zip(low.iter())
-            .zip(close.iter())
-            .map(|(((o, h), l), c)| (o + h + l + c) / 4.0)
-            .collect();
-        Self {
-            open,
-            high,
-            low,
-            close,
-            volume,
-            time,
-            hl2,
-            hlc3,
-            ohlc4,
-        }
+        let col = |source: crate::price_source::PriceSource| {
+            (0..bars.len()).map(|i| source.compute_bar(tick_at(i))).collect()
+        };
+        let hl2 = col(crate::price_source::PriceSource::Hl2);
+        let hlc3 = col(crate::price_source::PriceSource::Hlc3);
+        let ohlc4 = col(crate::price_source::PriceSource::Ohlc4);
+        let wcl = col(crate::price_source::PriceSource::Wcl);
+        Self { open, high, low, close, volume, time, hl2, hlc3, ohlc4, wcl }
     }
 
-    /// Borrow one named leg (`open/high/low/close/volume/time/hl2/hlc3/ohlc4`).
+    /// Borrow one named leg (`open/high/low/close/volume/time/hl2/hlc3/ohlc4/wcl`).
     fn named(&self, name: &str) -> Option<&[f64]> {
         match name {
             "open" => Some(&self.open),
@@ -330,9 +318,20 @@ impl Legs {
             "hl2" => Some(&self.hl2),
             "hlc3" => Some(&self.hlc3),
             "ohlc4" => Some(&self.ohlc4),
+            "wcl" => Some(&self.wcl),
             _ => None,
         }
     }
+
+    #[cfg(test)]
+    pub(crate) fn named_for_test(&self, name: &str) -> Option<&[f64]> {
+        self.named(name)
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn legs_of_for_test(bars: &[Bar]) -> Legs {
+    Legs::of(bars)
 }
 
 /// Per-run mutable state: series variables, histories, `var` records,
@@ -5314,9 +5313,7 @@ fn read_leg(legs: &Legs, name: &str, cursor: usize) -> Option<PineValue> {
 
 /// One named-leg raw float at the cursor (`NaN` when absent).
 fn leg_or_nan(legs: &Legs, name: &str, cursor: usize) -> f64 {
-    legs.named(name)
-        .and_then(|leg| leg.get(cursor).copied())
-        .unwrap_or(f64::NAN)
+    nan_hole(legs.named(name).and_then(|leg| leg.get(cursor).copied()))
 }
 
 /// Current chart-bar time in milliseconds for injection lookups: tick

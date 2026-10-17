@@ -45,7 +45,7 @@ impl RecomputePool {
             });
         }
         let pool = ResultPool::new(tokio_runtime(), cap, queue_capacity, |job: RecomputeJob| async move {
-            Ok(normalize_series(&job.values, job.kind))
+            normalize_series(&job.values, job.kind).map_err(|err| err.to_string())
         });
         Ok(Self { pool })
     }

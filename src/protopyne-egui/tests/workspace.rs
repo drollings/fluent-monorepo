@@ -152,7 +152,7 @@ fn workspace_boots_with_gld_default_and_hot_slotted_integration_lite_and_fast_ma
     );
 
     // The symbol catalog spans every asset class and is searchable.
-    let mut catalog = build_symbol_catalog().expect("the symbol catalog builds");
+    let mut catalog = build_symbol_catalog(&symbol_catalog()).expect("the symbol catalog builds");
     catalog.set_category(Some(AssetClass::Crypto));
     let crypto: Vec<String> = catalog
         .filtered()
@@ -164,7 +164,11 @@ fn workspace_boots_with_gld_default_and_hot_slotted_integration_lite_and_fast_ma
         vec!["BTC-USD".to_owned()],
         "only crypto shows under the Crypto tab"
     );
-    assert_eq!(AssetClass::all().len(), 4, "four class tabs plus the modal's own All");
+    assert_eq!(
+        AssetClass::all().len(),
+        5,
+        "five class tabs (the last for Unknown) plus the modal's own All"
+    );
 }
 
 #[test]
@@ -1517,7 +1521,8 @@ fn grid_marks_cull_to_the_viewport_window() {
 #[test]
 fn symbol_catalog_matches_the_shared_source() {
     let shared = protopyne_view::symbol_catalog();
-    let catalog = build_symbol_catalog().expect("the symbol catalog builds");
+    let catalog = build_symbol_catalog(&protopyne_view::symbol_catalog())
+        .expect("the symbol catalog builds");
     assert_eq!(
         catalog.len(),
         shared.len(),

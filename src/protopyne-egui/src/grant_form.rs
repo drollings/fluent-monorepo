@@ -329,7 +329,7 @@ impl GrantFormState {
                     serde_json::Value::String(money.to_string())
                 }).map_err(|error| refuse(error.to_string()))
             }
-            FieldKind::Text | FieldKind::Color => {
+            FieldKind::Text | FieldKind::Color | FieldKind::Select => {
                 Ok(serde_json::Value::String(draft.to_owned()))
             }
         }

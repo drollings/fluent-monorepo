@@ -36,6 +36,8 @@ pub use market_context::{
 };
 #[cfg(feature = "pine")]
 pub mod native_libs;
+#[cfg(feature = "pine")]
+pub mod manifest_files;
 pub mod oscillators;
 #[cfg(feature = "research")]
 pub mod parity;
@@ -45,6 +47,8 @@ pub mod pine;
 pub mod research;
 #[cfg(feature = "pine")]
 pub mod runtime;
+pub mod price_source;
+pub mod smoothing;
 pub mod timed;
 pub mod series;
 pub mod sma;
@@ -89,9 +93,9 @@ pub use ema::EmaIndicator;
 pub use error::KernelError;
 pub use filters::{EitIndicator, KalmanIndicator, VossIndicator};
 pub use indicator::{
-    fin_or_none, BarTick, FullTick, NamedSeries, NamedValue, Ohlcv, OwnedOhlcv, builtin_registry,
-    execution_order, Indicator, IndicatorId, IndicatorRegistry, IndicatorResult, IndicatorSpec,
-    IndicatorState, ParamSet,
+    fin_or_none, nan_hole, BarTick, FullTick, NamedSeries, NamedValue, Ohlcv, OwnedOhlcv,
+    builtin_registry, execution_order, Indicator, IndicatorId, IndicatorRegistry, IndicatorResult,
+    IndicatorSpec, IndicatorState, ParamSet,
 };
 pub use oscillators::{CciIndicator, CmoIndicator, MacdIndicator, RsiIndicator, StochIndicator};
 #[cfg(feature = "research")]
@@ -108,6 +112,12 @@ pub use pine::{
     TASK_INDICATORS, closure_data_root, display_program, indicator_library_id, lex,
     load_closure_sources, load_listed_closure,
     load_pine_source, parity_for, parse_pine_source, parse_program, project, resolve_imports,
+};
+#[cfg(feature = "pine")]
+pub use manifest_files::build_indicator_manifest;
+#[cfg(feature = "pine")]
+pub use pine::manifest::{
+    IndicatorManifestEntry, ManifestFile, ManifestParity, PROVEN_STEMS, build_manifest, manifest_id,
 };
 #[cfg(feature = "pine")]
 pub use pine::builtins_ta::TaBridge;
@@ -129,6 +139,8 @@ pub use wq_comb::{
     comb_subtract, comb_tail, comb_tan, comb_tanh, comb_var, comb_xor, comb_left_tail, comb_if_else,
 };
 pub use inputs::{InputDef, InputSet};
+pub use price_source::PriceSource;
+pub use smoothing::{SmoothingArgs, SmoothingCatalog, SmoothingFamily, SmoothingOption, length_smoothing_ids, params_for_kernel, smoothing_options};
 pub use math::{corr_pearson, div_or_none, ema_factor, ema_step, ewm_span_step, linreg_slope, linreg_slope_intercept, midpoint_of, period_len, rolling_max, rolling_min, rolling_min_periods_mask, std_pop, std_sample, variance_pop, variance_sample, warmup_none, wilder_step, window_mean, window_sum};
 pub use mtf::{
     BucketSpec, Lookahead, MtfStore, SeriesCache, SeriesKey, aligned_geq, bucket_has_gap,

@@ -28,7 +28,7 @@ use std::collections::{BTreeMap, VecDeque};
 use fluent_wvr::prelude::*;
 
 use crate::error::KernelError;
-use crate::indicator::BarTick;
+use crate::indicator::{BarTick, nan_hole};
 use crate::value::{FieldTable, PineValue};
 use crate::mtf::{Lookahead, floor_to_grid, fully_formed};
 use protopyne_types::{Bar, BarGap, BarWindow, Timeframe, validate_new_bar};
@@ -253,7 +253,7 @@ impl ClosedBar {
     #[must_use]
     pub fn from_proto_bar(bar: &protopyne_types::Bar) -> Self {
         use rust_decimal::prelude::ToPrimitive as _;
-        let conv = |d: rust_decimal::Decimal| d.to_f64().unwrap_or(f64::NAN);
+        let conv = |d: rust_decimal::Decimal| nan_hole(d.to_f64());
         Self {
             ts_ms: bar.ts.timestamp_millis(),
             o: conv(bar.o),
@@ -1245,7 +1245,7 @@ impl BarRing {
             self.volume_drift_pct = 0.0;
         }
         let report = self.drift_report(ctf.volume);
-        self.last_bar_drift = report.measured_drift_pct.unwrap_or(f64::NAN);
+        self.last_bar_drift = nan_hole(report.measured_drift_pct);
         self.last_bar_healthy = report.healthy();
         let mut outcome = ConfirmOutcome {
             confirmed: true,

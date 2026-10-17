@@ -403,3 +403,73 @@ fn proportional_window_stays_empty_when_nothing_is_visible() {
         "non-finite width paints nothing"
     );
 }
+
+fn wick_row(time: i64, low: f64, high: f64) -> ChartRow {
+    ChartRow { time, open: low, high, low, close: high, volume: 100 }
+}
+
+#[test]
+fn auto_height_range_pads_the_visible_window() {
+    let rows: Vec<ChartRow> =
+        (0..10).map(|i| wick_row(i, 90.0 + i as f64, 100.0 + i as f64)).collect();
+    let fitted = auto_height_range(&rows, (2, 6), 0.05).expect("window fits");
+    // Window highs/lows: lo 92, hi 105; pad 0.05 * 13 = 0.65 each side.
+    assert_eq!((fitted.min, fitted.max), (91.35, 105.65), "symmetric pad over the window");
+}
+
+#[test]
+fn auto_height_range_refuses_empty_and_degenerate() {
+    let rows: Vec<ChartRow> = (0..8).map(|i| wick_row(i, 90.0, 100.0)).collect();
+    let flat: Vec<ChartRow> = (0..8).map(|i| wick_row(i, 100.0, 100.0)).collect();
+    for (rows, window, pad) in [
+        (&[][..], (0, 0), 0.05),
+        (&rows[..], (3, 3), 0.05),
+        (&rows[..], (0, 0), 0.05),
+        (&rows[..], (0, 8), f64::NAN),
+        (&rows[..], (0, 8), -0.05),
+        (&rows[..], (6, 12), 0.05),
+        (&flat[..], (0, 8), 0.05),
+    ] {
+        let err = auto_height_range(rows, window, pad).expect_err("refuses with a reason");
+        assert!(!err.to_string().is_empty(), "the refusal names itself");
+    }
+}
+
+#[test]
+fn auto_height_range_never_inverts_and_covers_the_window() {
+    // Property over randomized windows: the fit strictly contains the
+    // window extremes with at least the pad, and identical inputs agree.
+    let mut state: u64 = 0x1234_5678_9abc_def0;
+    let mut next = || {
+        state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        (state >> 33) as f64 / f64::from(u32::MAX)
+    };
+    let rows: Vec<ChartRow> = (0..60)
+        .map(|i| {
+            let base = 80.0 + next() * 60.0;
+            wick_row(i, base, base + 1.0 + next() * 9.0)
+        })
+        .collect();
+    for _ in 0..25 {
+        let start = (next() * 50.0) as usize;
+        let end = (start + 2 + (next() * 8.0) as usize).min(60);
+        let pad = 0.01 + next() * 0.2;
+        let fitted = auto_height_range(&rows, (start, end), pad).expect("window fits");
+        let (mut lo, mut hi) = (f64::INFINITY, f64::NEG_INFINITY);
+        for row in &rows[start..end] {
+            lo = lo.min(row.low);
+            hi = hi.max(row.high);
+        }
+        let span = hi - lo;
+        assert!(fitted.min < lo && fitted.max > hi, "strict containment");
+        assert!(
+            (lo - fitted.min - pad * span).abs() <= 1e-9 * span.max(1.0)
+                && (fitted.max - hi - pad * span).abs() <= 1e-9 * span.max(1.0),
+            "symmetric pad, got ({}, {}) over [{lo}, {hi}] at pad {pad}",
+            fitted.min,
+            fitted.max
+        );
+        let again = auto_height_range(&rows, (start, end), pad).expect("window fits");
+        assert_eq!((again.min, again.max), (fitted.min, fitted.max), "replay determinism");
+    }
+}

@@ -10,7 +10,8 @@
 //! a trade on merit.
 
 use super::*;
-use crate::journal::{Journal, RunIntentLog, VenueStorage};
+use crate::journal::{Journal, VenueStorage};
+use crate::submit::Recorder;
 use crate::order::{OrderIntent, OrderRecord, OrderSide, OrderStatus, Position};
 use crate::reconcile::{JournalBook, ReconcileHandle, ReconcileSource, ReconcileUnit};
 use crate::stream::{StreamOutcome, SupervisedStream};
@@ -276,15 +277,23 @@ async fn kill_mid_submit_leaves_no_unknown_position_and_no_duplicate() {
     );
 
     let venue = FlakyOnce::new();
-    let log = RunIntentLog::new();
-    let record = crate::submit::submit_guarded(&log, &venue, &approved_for(&intent("soak#0")), intent("soak#0"), &quote(), now())
+    let journal = Journal::ephemeral();
+    let recorder = Recorder::ephemeral(&journal);
+    let record = crate::submit::submit_guarded(&recorder, &venue, &approved_for(&intent("soak#0")), intent("soak#0"), &quote(), now())
         .await
         .expect("the retry resolves");
     assert_eq!(record.status, OrderStatus::Acknowledged);
     assert_eq!(venue.submits.load(Ordering::SeqCst), 2, "one lost ack, one resolving retry");
     assert_eq!(venue.orders().len(), 1, "the retry was a lookup, never a second order");
+    let permit = VenueStorage::new(std::path::PathBuf::from("ephemeral-test"));
     assert_eq!(
-        log.events().iter().filter(|event| event.kind == crate::journal::INTENT_KIND).count(),
+        journal
+            .replay(&permit)
+            .expect("replay")
+            .events
+            .iter()
+            .filter(|event| event.kind == crate::journal::INTENT_KIND)
+            .count(),
         1,
         "one intent row for one order"
     );
