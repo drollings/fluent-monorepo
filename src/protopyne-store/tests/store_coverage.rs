@@ -59,8 +59,7 @@ async fn garbage_catalog_refuses_at_open() {
     let dir = tempfile::tempdir().expect("tempdir");
     let root = dir.path().join("store");
     std::fs::create_dir_all(&root).expect("root creates");
-    std::fs::write(root.join("catalog.json"), b"this is not a catalog")
-        .expect("write garbage");
+    std::fs::write(root.join("catalog.json"), b"this is not a catalog").expect("write garbage");
     let err = MarketTape::open(&root).expect_err("garbage refuses");
     assert!(
         matches!(err, StoreError::InvalidBar(_)),

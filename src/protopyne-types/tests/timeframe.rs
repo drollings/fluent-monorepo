@@ -268,9 +268,17 @@ fn sub_weekly_buckets_anchor_at_the_epoch() {
 #[test]
 fn weekly_buckets_anchor_on_the_epoch_monday() {
     let monday = -259_200_000_i64;
-    assert_eq!(Timeframe::W1.bucket_start_ms(0), monday, "the epoch Thursday sits in the Monday week");
+    assert_eq!(
+        Timeframe::W1.bucket_start_ms(0),
+        monday,
+        "the epoch Thursday sits in the Monday week"
+    );
     assert_eq!(Timeframe::W1.bucket_start_ms(-1), monday);
-    assert_eq!(Timeframe::W1.bucket_start_ms(monday), monday, "the anchor is idempotent");
+    assert_eq!(
+        Timeframe::W1.bucket_start_ms(monday),
+        monday,
+        "the anchor is idempotent"
+    );
     assert_eq!(
         Timeframe::W1.bucket_start_ms(monday - 1),
         monday - 604_800_000,
@@ -289,8 +297,15 @@ fn weekly_buckets_anchor_on_the_epoch_monday() {
 #[test]
 fn bucket_starts_are_idempotent() {
     for (variant, _) in all_variants() {
-        for stamp in [0_i64, 1, -1, 345_599_999, 345_600_000, 1_699_999_980_000, -1_699_999_980_001]
-        {
+        for stamp in [
+            0_i64,
+            1,
+            -1,
+            345_599_999,
+            345_600_000,
+            1_699_999_980_000,
+            -1_699_999_980_001,
+        ] {
             let start = variant.bucket_start_ms(stamp);
             assert_eq!(
                 variant.bucket_start_ms(start),

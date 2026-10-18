@@ -14,7 +14,7 @@ use crate::coverage::Coverage;
 use crate::error::StoreError;
 use crate::fold::{fold_bars, narrow_to_window};
 use crate::key::SymbolId;
-use crate::plan::{ReadPlan, wanted_window};
+use crate::plan::{wanted_window, ReadPlan};
 use crate::store::order_and_validate;
 use crate::store::{CandleSeries, ReadRequest};
 

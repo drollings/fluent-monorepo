@@ -68,7 +68,12 @@ impl PaneSeries {
                 reason: "style key must not be empty".to_owned(),
             });
         }
-        Ok(Self { name, pane, values, style })
+        Ok(Self {
+            name,
+            pane,
+            values,
+            style,
+        })
     }
 
     /// Number of per-bar slots (holes included).
@@ -139,13 +144,22 @@ pub fn ribbon_view(
             }
         }
     }
-    Ok(RibbonView { upper, lower, bullish, alpha })
+    Ok(RibbonView {
+        upper,
+        lower,
+        bullish,
+        alpha,
+    })
 }
 
 /// Theme style key for one ribbon bar; resolved against the theme at paint.
 #[must_use]
 pub fn ribbon_style_key(bullish: bool) -> &'static str {
-    if bullish { "bull" } else { "bear" }
+    if bullish {
+        "bull"
+    } else {
+        "bear"
+    }
 }
 
 /// Theme style key for one ribbon *fill* run.
@@ -156,7 +170,11 @@ pub fn ribbon_style_key(bullish: bool) -> &'static str {
 /// [`ribbon_style_key`] keeps candle trend polarity.
 #[must_use]
 pub fn ribbon_fill_style_key(bullish: bool) -> &'static str {
-    if bullish { "ribbon_bull" } else { "ribbon_bear" }
+    if bullish {
+        "ribbon_bull"
+    } else {
+        "ribbon_bear"
+    }
 }
 
 /// Zero-based delta volume bars.
@@ -229,7 +247,10 @@ pub fn delta_candle_view(
             Some(s) => Some(s * scale),
         });
     }
-    Ok(DeltaView { buy_top, sell_bottom })
+    Ok(DeltaView {
+        buy_top,
+        sell_bottom,
+    })
 }
 
 /// Which threshold crossing a pivot mark decorates.
@@ -273,9 +294,15 @@ pub fn pivot_marks(fast: &[Option<f64>], threshold: f64) -> Result<Vec<PivotMark
             continue;
         }
         if previous >= threshold && current < threshold {
-            marks.push(PivotMark { index, side: PivotSide::High });
+            marks.push(PivotMark {
+                index,
+                side: PivotSide::High,
+            });
         } else if previous <= -threshold && current > -threshold {
-            marks.push(PivotMark { index, side: PivotSide::Low });
+            marks.push(PivotMark {
+                index,
+                side: PivotSide::Low,
+            });
         }
     }
     Ok(marks)
@@ -321,7 +348,10 @@ pub fn band_squash(value: f64, divisor: f64, scale: f64) -> f64 {
 /// every series built here lines up index-for-index with its source rows,
 /// so inventing a value would misalign the pane.
 pub fn map_series_optional(series: &[Option<f64>], f: impl Fn(f64) -> f64) -> Vec<Option<f64>> {
-    series.iter().map(|slot| slot.map(&f).filter(|mapped| mapped.is_finite())).collect()
+    series
+        .iter()
+        .map(|slot| slot.map(&f).filter(|mapped| mapped.is_finite()))
+        .collect()
 }
 
 #[cfg(test)]

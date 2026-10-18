@@ -12,8 +12,8 @@
 
 use crate::error::KernelError;
 use crate::indicator::{
-    fin_or_none, nan_hole, BarTick, FullTick, Indicator, IndicatorId, IndicatorResult, IndicatorSpec,
-    IndicatorState, NamedSeries, NamedValue, Ohlcv, ParamSet,
+    fin_or_none, nan_hole, BarTick, FullTick, Indicator, IndicatorId, IndicatorResult,
+    IndicatorSpec, IndicatorState, NamedSeries, NamedValue, Ohlcv, ParamSet,
 };
 use crate::sma::SmaIndicator;
 
@@ -173,7 +173,11 @@ fn retained_extreme(
             seen = true;
         }
     }
-    if seen { fin_or_none(extreme) } else { None }
+    if seen {
+        fin_or_none(extreme)
+    } else {
+        None
+    }
 }
 
 /// Midpoint of closes (`(highest close + lowest close) / 2`), parameterized
@@ -405,9 +409,11 @@ impl Indicator for TrimaIndicator {
         let (first_len, second_len) = Self::sub_periods(period);
         let sma = SmaIndicator::new();
         let first = sma.batch(&Ohlcv::close_only(data.close), &Self::sma_params(first_len))?;
-        let first_raw: Vec<f64> =
-            first.values.iter().map(|v| nan_hole(*v)).collect();
-        let second = sma.batch(&Ohlcv::close_only(&first_raw), &Self::sma_params(second_len))?;
+        let first_raw: Vec<f64> = first.values.iter().map(|v| nan_hole(*v)).collect();
+        let second = sma.batch(
+            &Ohlcv::close_only(&first_raw),
+            &Self::sma_params(second_len),
+        )?;
         Ok(IndicatorResult::new(Self::ID.to_owned(), second.values))
     }
 
@@ -423,11 +429,7 @@ impl Indicator for TrimaIndicator {
         let (child, child_params) = state.child_with_params(0, || Self::sma_params(first_len));
         let first = sma.update(child, bar, child_params)?;
         let (child, child_params) = state.child_with_params(1, || Self::sma_params(second_len));
-        let second = sma.update(
-            child,
-            BarTick::close_only(nan_hole(first)),
-            child_params,
-        )?;
+        let second = sma.update(child, BarTick::close_only(nan_hole(first)), child_params)?;
         if let Some(value) = second {
             state.set_last(value);
         }
@@ -460,7 +462,11 @@ impl Indicator for TrimaIndicator {
 pub(crate) fn donchian_mid(high: &[f64], low: &[f64], length: usize, end: usize) -> f64 {
     let start = end + 1 - length;
     let (window_h, window_l) = (&high[start..=end], &low[start..=end]);
-    if !window_h.iter().chain(window_l.iter()).all(|v| v.is_finite()) {
+    if !window_h
+        .iter()
+        .chain(window_l.iter())
+        .all(|v| v.is_finite())
+    {
         return f64::NAN;
     }
     let highest = window_h.iter().copied().fold(f64::NEG_INFINITY, f64::max);
@@ -510,8 +516,14 @@ impl DonchianIndicator {
             return (f64::NAN, f64::NAN, f64::NAN);
         }
         let start = end + 1 - period;
-        let upper = high[start..=end].iter().copied().fold(f64::NEG_INFINITY, f64::max);
-        let lower = low[start..=end].iter().copied().fold(f64::INFINITY, f64::min);
+        let upper = high[start..=end]
+            .iter()
+            .copied()
+            .fold(f64::NEG_INFINITY, f64::max);
+        let lower = low[start..=end]
+            .iter()
+            .copied()
+            .fold(f64::INFINITY, f64::min);
         (upper, middle, lower)
     }
 }

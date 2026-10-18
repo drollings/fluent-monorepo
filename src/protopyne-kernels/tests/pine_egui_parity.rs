@@ -7,7 +7,7 @@
 //! the runnable filter is `pine::egui_parity`, not the file stem.
 
 use super::*;
-use crate::{InputSet, PineEngine, PineRuntimeConfig, TaBridge, parse_program};
+use crate::{parse_program, InputSet, PineEngine, PineRuntimeConfig, TaBridge};
 use chrono::TimeZone as _;
 use protopyne_types::Bar;
 
@@ -47,7 +47,11 @@ fn rows_cite_both_sides_with_reasons() {
             "duplicate construct row: {}",
             row.construct
         );
-        assert!(!row.egui.is_empty(), "{} cites the reference side", row.construct);
+        assert!(
+            !row.egui.is_empty(),
+            "{} cites the reference side",
+            row.construct
+        );
         assert!(
             !row.protopyne.is_empty(),
             "{} cites the engine side",
@@ -92,7 +96,14 @@ fn ta_surface_covered_both_directions() {
         .filter_map(|row| row.construct.strip_prefix("ta."))
         .collect();
     for missing in [
-        "dmi", "adx", "sar", "kc", "dc", "mode", "percentrank", "linreg",
+        "dmi",
+        "adx",
+        "sar",
+        "kc",
+        "dc",
+        "mode",
+        "percentrank",
+        "linreg",
     ] {
         assert!(
             refused.contains(&missing),

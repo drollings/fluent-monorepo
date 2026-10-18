@@ -17,22 +17,22 @@
 use fluent_wvr::prelude::*;
 use fluent_wvr::{Describable, FieldAccess};
 use protopyne_chart_model::{ChartRow, DisplayOnly};
-use protopyne_kernels::bars::{DeltaConfidence, estimate_delta_volume_estimated, fast_tanh};
-use protopyne_kernels::indicator::{OwnedOhlcv, ParamSet, nan_hole};
+use protopyne_kernels::bars::{estimate_delta_volume_estimated, fast_tanh, DeltaConfidence};
+use protopyne_kernels::indicator::{nan_hole, OwnedOhlcv, ParamSet};
 
 use crate::topology::{kernel_preview_frame, kernel_series};
-use protopyne_kernels::market_context::{HEALTH_K, health_mas};
-use protopyne_types::{Validate, check_for_execute, valid_output};
+use protopyne_kernels::market_context::{health_mas, HEALTH_K};
+use protopyne_types::{check_for_execute, valid_output, Validate};
 
 use fluent_egui::EguiError;
 use fluent_egui::{
-    DeltaView, PivotMark, RibbonView, ThemeConfig, delta_candle_view, pivot_marks, resolve_color,
-    ribbon_view,
+    delta_candle_view, pivot_marks, resolve_color, ribbon_view, DeltaView, PivotMark, RibbonView,
+    ThemeConfig,
 };
 
 use crate::oscillators::{
-    CALIBRATED_BOUNDED_PIVOT_THRESHOLD, OscillatorKind, normalize_series,
-    normalize_series_bounded, squash_series_to_100,
+    normalize_series, normalize_series_bounded, squash_series_to_100, OscillatorKind,
+    CALIBRATED_BOUNDED_PIVOT_THRESHOLD,
 };
 
 /// Kernel length for the fast/slow raw oscillators (freeze-pinned: the Pine
@@ -69,7 +69,8 @@ const LITE_SLOW_KIND: OscillatorKind = OscillatorKind::Cci;
 /// hardcoded string; both lite arms are kernel-backed rows, so a missing
 /// kernel means the catalog lost an evaluable row and fails loudly.
 fn lite_kernel(kind: OscillatorKind) -> &'static str {
-    kind.kernel_id().expect("lite fast/slow arms are kernel-backed")
+    kind.kernel_id()
+        .expect("lite fast/slow arms are kernel-backed")
 }
 
 /// Native kernel series behind one pane: raw oscillators plus the
@@ -95,8 +96,10 @@ pub struct LiteNative {
 /// for a display-descended preview frame. This is the single construction the
 /// pane and the momentum inputs share, so the fence is named once.
 fn synth_close_frame(values: &[Option<f64>]) -> OwnedOhlcv {
-    let revealed: Vec<f64> =
-        values.iter().map(|slot| DisplayOnly::new(nan_hole(*slot)).reveal()).collect();
+    let revealed: Vec<f64> = values
+        .iter()
+        .map(|slot| DisplayOnly::new(nan_hole(*slot)).reveal())
+        .collect();
     OwnedOhlcv {
         open: revealed.clone(),
         high: revealed.clone(),
@@ -118,15 +121,26 @@ pub fn native_lite_series(rows: &[ChartRow], eit_alpha: f64) -> Result<LiteNativ
     let length = ParamSet::new().with_int("length", RAW_OSCILLATOR_LENGTH);
     let fast_raw = kernel_series(lite_kernel(LITE_FAST_KIND), &length, &frame)?;
     let slow_raw = kernel_series(lite_kernel(LITE_SLOW_KIND), &length, &frame)?;
-    let adaptive =
-        kernel_series("eit", &ParamSet::new().with_float("alpha", eit_alpha), &frame)?;
+    let adaptive = kernel_series(
+        "eit",
+        &ParamSet::new().with_float("alpha", eit_alpha),
+        &frame,
+    )?;
     // Relayed adaptive legs descend from the fenced frame above, so they
     // stay fenced until the same reveal; the synthetic zero volume is a
     // literal, not display-descended, and needs no fence.
     let synth = synth_close_frame(&adaptive);
-    let signal =
-        kernel_series("eit", &ParamSet::new().with_float("alpha", SIGNAL_EIT_ALPHA), &synth)?;
-    Ok(LiteNative { fast_raw, slow_raw, adaptive, signal })
+    let signal = kernel_series(
+        "eit",
+        &ParamSet::new().with_float("alpha", SIGNAL_EIT_ALPHA),
+        &synth,
+    )?;
+    Ok(LiteNative {
+        fast_raw,
+        slow_raw,
+        adaptive,
+        signal,
+    })
 }
 
 /// Headless IntegrationLite pane: normalized oscillators, ribbon band, and
@@ -157,7 +171,13 @@ pub fn integration_lite_view(
     let slow = lite_normalize(&native.slow_raw, LITE_SLOW_KIND);
     let ribbon = ribbon_view(&native.adaptive, &native.signal, fill_alpha)?;
     let pivots = pivot_marks(&fast, threshold)?;
-    Ok(IntegrationLiteView { fast, slow, ribbon, pivots, threshold })
+    Ok(IntegrationLiteView {
+        fast,
+        slow,
+        ribbon,
+        pivots,
+        threshold,
+    })
 }
 
 /// Build the pane at the calibrated threshold.
@@ -264,9 +284,8 @@ impl MomentumPalette {
     /// theme refuses here — the caller surfaces it through the error chip
     /// instead of tinting from silent gray.
     pub fn from_theme(theme: &ThemeConfig) -> Result<Self, EguiError> {
-        let channel = |key: &str| {
-            resolve_color(theme, key).map(|color| [color.r(), color.g(), color.b()])
-        };
+        let channel =
+            |key: &str| resolve_color(theme, key).map(|color| [color.r(), color.g(), color.b()]);
         Ok(Self {
             bull_up: channel("bull")?,
             bear_down: channel("bear")?,
@@ -404,7 +423,11 @@ fn ribbon_health_inputs(
         &synth_close_frame(&native.adaptive),
     )?;
     let frame = kernel_preview_frame(rows);
-    let atr = kernel_series("atr", &ParamSet::new().with_int("length", ATR_LENGTH), &frame)?;
+    let atr = kernel_series(
+        "atr",
+        &ParamSet::new().with_int("length", ATR_LENGTH),
+        &frame,
+    )?;
     let volumes: Vec<Option<f64>> = rows.iter().map(|row| Some(row.volume as f64)).collect();
     let vol_sma = kernel_series(
         "sma",
@@ -417,7 +440,11 @@ fn ribbon_health_inputs(
         .map(|(row, sma)| match sma {
             Some(sma) if *sma > 0.0 => {
                 let ratio = row.volume as f64 / sma;
-                if ratio.is_finite() { ratio } else { 0.0 }
+                if ratio.is_finite() {
+                    ratio
+                } else {
+                    0.0
+                }
             }
             _ => 0.0,
         })
@@ -426,8 +453,14 @@ fn ribbon_health_inputs(
         .map(|index| {
             let gain = vol_ratio[index] * (eit_alpha + health_k);
             let leg = |series: &[Option<f64>]| series.get(index).and_then(|slot| *slot);
-            health_mas(leg(&atr), leg(&native.adaptive), leg(&native.signal), leg(&mean), gain)
-                .map(|score| score * health_k)
+            health_mas(
+                leg(&atr),
+                leg(&native.adaptive),
+                leg(&native.signal),
+                leg(&mean),
+                gain,
+            )
+            .map(|score| score * health_k)
         })
         .collect();
     Ok((health, vol_ratio))
@@ -536,7 +569,10 @@ pub struct FreezeReport {
 pub fn compare_freeze(native: &LiteFrozen, pine: &LiteFrozen) -> FreezeReport {
     let pair = |left: &[Option<f64>], right: &[Option<f64>]| {
         let (max_abs_diff, compared) = series_max_diff(left, right);
-        FreezePair { max_abs_diff, compared }
+        FreezePair {
+            max_abs_diff,
+            compared,
+        }
     };
     FreezeReport {
         fast: pair(&native.fast, &pine.fast),
@@ -555,10 +591,16 @@ pub fn precision_recall(
 ) -> Result<(f64, f64), EguiError> {
     let got = pivot_marks(fast, threshold)?;
     let hits = got.iter().filter(|mark| expected.contains(mark)).count();
-    let precision =
-        if got.is_empty() { f64::from(expected.is_empty()) } else { hits as f64 / got.len() as f64 };
-    let recall =
-        if expected.is_empty() { 1.0 } else { hits as f64 / expected.len() as f64 };
+    let precision = if got.is_empty() {
+        f64::from(expected.is_empty())
+    } else {
+        hits as f64 / got.len() as f64
+    };
+    let recall = if expected.is_empty() {
+        1.0
+    } else {
+        hits as f64 / expected.len() as f64
+    };
     Ok((precision, recall))
 }
 
@@ -611,7 +653,7 @@ fn default_show_ribbon() -> bool {
 /// `ribbon_health_k` / `ma_health_k` / `delta_unit` to Inputs, and
 /// `show_ribbon` to Visibility.
 #[derive(
-    Debug, Clone, bon::Builder, serde::Serialize, serde::Deserialize, FieldAccess, Describable
+    Debug, Clone, bon::Builder, serde::Serialize, serde::Deserialize, FieldAccess, Describable,
 )]
 #[builder(start_fn = new)]
 pub struct IntegrationLiteConfig {
@@ -710,7 +752,10 @@ impl WorkUnit for IntegrationLiteConfig {
 
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         check_for_execute(self, "integration lite config invalid")?;
-        Ok(valid_output(format!("integration lite ready (alpha {})", self.eit_alpha)))
+        Ok(valid_output(format!(
+            "integration lite ready (alpha {})",
+            self.eit_alpha
+        )))
     }
 }
 
@@ -795,11 +840,21 @@ fn ma_health_series(rows: &[ChartRow], k: f64) -> Result<Vec<Option<f64>>, EguiE
             .with_float("sigma", MA_PRIMARY_SIGMA),
         &frame,
     )?;
-    let vwma =
-        kernel_series("vwma", &ParamSet::new().with_int("length", MA_SIGNAL_LENGTH), &frame)?;
-    let ema =
-        kernel_series("ema", &ParamSet::new().with_int("length", RIBBON_MEAN_LENGTH), &frame)?;
-    let atr = kernel_series("atr", &ParamSet::new().with_int("length", ATR_LENGTH), &frame)?;
+    let vwma = kernel_series(
+        "vwma",
+        &ParamSet::new().with_int("length", MA_SIGNAL_LENGTH),
+        &frame,
+    )?;
+    let ema = kernel_series(
+        "ema",
+        &ParamSet::new().with_int("length", RIBBON_MEAN_LENGTH),
+        &frame,
+    )?;
+    let atr = kernel_series(
+        "atr",
+        &ParamSet::new().with_int("length", ATR_LENGTH),
+        &frame,
+    )?;
     Ok((0..rows.len())
         .map(|index| {
             let leg = |series: &[Option<f64>]| series.get(index).and_then(|slot| *slot);
@@ -836,7 +891,11 @@ fn delta_splits(rows: &[ChartRow]) -> (Vec<Option<f64>>, Vec<Option<f64>>, Delta
 
 /// The lower of two split confidences (`High > Reduced > Low`).
 fn lower_confidence(left: DeltaConfidence, right: DeltaConfidence) -> DeltaConfidence {
-    if confidence_rank(left) <= confidence_rank(right) { left } else { right }
+    if confidence_rank(left) <= confidence_rank(right) {
+        left
+    } else {
+        right
+    }
 }
 
 /// Ordering rank of a split confidence, `Low` lowest.

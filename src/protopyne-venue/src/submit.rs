@@ -12,7 +12,7 @@ use std::time::Duration;
 use protopyne_strategy::RiskApproved;
 
 use crate::error::VenueError;
-use crate::journal::{INTENT_KIND, Journal, LEG_FILL_KIND, VenueStorage, status_name};
+use crate::journal::{status_name, Journal, VenueStorage, INTENT_KIND, LEG_FILL_KIND};
 use crate::order::{OrderIntent, OrderRecord, OrderStatus};
 use crate::quote::Quote;
 use crate::venue::{LegExecution, Venue};
@@ -79,13 +79,19 @@ impl<'a> Recorder<'a> {
     /// Durable recording: every row gated through `permit` and synced.
     #[must_use]
     pub fn durable(journal: &'a Journal, permit: &'a VenueStorage) -> Self {
-        Self { journal, permit: Some(permit) }
+        Self {
+            journal,
+            permit: Some(permit),
+        }
     }
 
     /// Ephemeral recording: rows land in memory only.
     #[must_use]
     pub fn ephemeral(journal: &'a Journal) -> Self {
-        Self { journal, permit: None }
+        Self {
+            journal,
+            permit: None,
+        }
     }
 }
 
@@ -96,7 +102,8 @@ impl SubmissionRecorder for Recorder<'_> {
         } else {
             let payload =
                 serde_json::to_string(intent).map_err(|e| VenueError::Journal(e.to_string()))?;
-            self.journal.record_ephemeral(&intent.client_id, INTENT_KIND, &payload, now)
+            self.journal
+                .record_ephemeral(&intent.client_id, INTENT_KIND, &payload, now)
         }
     }
 
@@ -109,7 +116,9 @@ impl SubmissionRecorder for Recorder<'_> {
         if let Some(permit) = self.permit {
             self.journal.mark_status(permit, client_id, status, now)
         } else {
-            self.journal.record_ephemeral(client_id, status_name(status), "{}", now).map(|_| ())
+            self.journal
+                .record_ephemeral(client_id, status_name(status), "{}", now)
+                .map(|_| ())
         }
     }
 
@@ -124,7 +133,9 @@ impl SubmissionRecorder for Recorder<'_> {
         } else {
             let detail =
                 serde_json::to_string(leg).map_err(|e| VenueError::Journal(e.to_string()))?;
-            self.journal.record_ephemeral(client_id, LEG_FILL_KIND, &detail, now).map(|_| ())
+            self.journal
+                .record_ephemeral(client_id, LEG_FILL_KIND, &detail, now)
+                .map(|_| ())
         }
     }
 
@@ -136,9 +147,12 @@ impl SubmissionRecorder for Recorder<'_> {
         now: DateTime<Utc>,
     ) -> Result<(), VenueError> {
         if let Some(permit) = self.permit {
-            self.journal.record_transition(permit, client_id, kind, detail, now)
+            self.journal
+                .record_transition(permit, client_id, kind, detail, now)
         } else {
-            self.journal.record_ephemeral(client_id, kind, detail, now).map(|_| ())
+            self.journal
+                .record_ephemeral(client_id, kind, detail, now)
+                .map(|_| ())
         }
     }
 }
@@ -201,15 +215,13 @@ pub async fn submit_guarded<R: SubmissionRecorder, V: Venue>(
             match tokio::time::timeout(SUBMIT_TIMEOUT, submit).await {
                 Ok(Ok(record)) => Ok(record),
                 Ok(Err(e)) => Err(e),
-                Err(_) => {
-                    match venue.query(&intent.client_id).await {
-                        Some(record) => Ok(record),
-                        None => Err(VenueError::Timeout(format!(
-                            "no verdict for {}",
-                            intent.client_id
-                        ))),
-                    }
-                }
+                Err(_) => match venue.query(&intent.client_id).await {
+                    Some(record) => Ok(record),
+                    None => Err(VenueError::Timeout(format!(
+                        "no verdict for {}",
+                        intent.client_id
+                    ))),
+                },
             }
         },
     )

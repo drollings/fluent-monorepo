@@ -11,8 +11,8 @@
 
 use crate::error::KernelError;
 use crate::indicator::{
-    BarTick, Indicator, IndicatorResult, IndicatorSpec, IndicatorState, NamedSeries, Ohlcv,
-    ParamSet, fin_or_none, nan_hole,
+    fin_or_none, nan_hole, BarTick, Indicator, IndicatorResult, IndicatorSpec, IndicatorState,
+    NamedSeries, Ohlcv, ParamSet,
 };
 
 /// Exponential Indicator Transform (`eit`): a second-order predictive
@@ -54,7 +54,14 @@ impl EitIndicator {
         Ok(alpha)
     }
 
-    fn step(alpha: f64, src: f64, src1: Option<f64>, src2: Option<f64>, eit1: Option<f64>, eit2: Option<f64>) -> f64 {
+    fn step(
+        alpha: f64,
+        src: f64,
+        src1: Option<f64>,
+        src2: Option<f64>,
+        eit1: Option<f64>,
+        eit2: Option<f64>,
+    ) -> f64 {
         let s1 = src1.unwrap_or(src);
         let s2 = src2.unwrap_or(src);
         let init = (src + 2.0 * s1 + s2) / 4.0;
@@ -127,11 +134,11 @@ impl Indicator for EitIndicator {
         };
         let child_len = state.child(0).len();
         let eit1 = state.child(0).closes().nth(child_len.saturating_sub(1));
-        let eit2 = child_len.checked_sub(2).and_then(|index| state.child(0).closes().nth(index));
+        let eit2 = child_len
+            .checked_sub(2)
+            .and_then(|index| state.child(0).closes().nth(index));
         let out = Self::step(alpha, bar.close, src1, src2, eit1, eit2);
-        state
-            .child(0)
-            .push(BarTick::close_only(out), 3);
+        state.child(0).push(BarTick::close_only(out), 3);
         state.set_last(out);
         Ok(fin_or_none(out))
     }
@@ -309,7 +316,9 @@ impl VossIndicator {
     /// `(period, order, alpha, s2, s3)`.
     pub fn shape(params: &ParamSet) -> Result<(usize, usize, f64, f64, f64), KernelError> {
         let period = crate::math::period_len(Self::ID, params, "length")?;
-        let predict = params.int(Self::ID, "predict").unwrap_or(Self::DEFAULT_PREDICT);
+        let predict = params
+            .int(Self::ID, "predict")
+            .unwrap_or(Self::DEFAULT_PREDICT);
         if predict < 1 {
             return Err(KernelError::InvalidParam(format!(
                 "{}: predict must be at least 1, got {predict}",
@@ -382,10 +391,8 @@ impl Indicator for VossIndicator {
         }
         let primary = predictions.iter().map(|v| fin_or_none(*v)).collect();
         let secondary = filters.iter().map(|v| fin_or_none(*v)).collect();
-        Ok(
-            IndicatorResult::new(Self::ID.to_owned(), primary)
-                .with_secondary(NamedSeries::new("filter", secondary)),
-        )
+        Ok(IndicatorResult::new(Self::ID.to_owned(), primary)
+            .with_secondary(NamedSeries::new("filter", secondary)))
     }
 
     fn update(
@@ -411,11 +418,18 @@ impl Indicator for VossIndicator {
         let data_now = if bar.close.is_nan() { 0.0 } else { bar.close };
         let data_ago = {
             let history = state.scratch_closes();
-            history.get(history.len().saturating_sub(3)).copied().unwrap_or(0.0)
+            history
+                .get(history.len().saturating_sub(3))
+                .copied()
+                .unwrap_or(0.0)
         };
         let data_ago = if data_ago.is_nan() { 0.0 } else { data_ago };
         let filter_len = state.child(0).len();
-        let filter_1 = state.child(0).closes().nth(filter_len.saturating_sub(1)).unwrap_or(0.0);
+        let filter_1 = state
+            .child(0)
+            .closes()
+            .nth(filter_len.saturating_sub(1))
+            .unwrap_or(0.0);
         let filter_2 = filter_len
             .checked_sub(2)
             .and_then(|index| state.child(0).closes().nth(index))
@@ -428,9 +442,7 @@ impl Indicator for VossIndicator {
                 0.5 * s3 * (data_now - data_ago) + alpha * s2 * filter_1 - delta * filter_2;
             let past = state.child(1).scratch_closes();
             let sum_c: f64 = (0..order)
-                .map(|k| {
-                    (k + 1) as f64 / order as f64 * past[past.len() - order + k]
-                })
+                .map(|k| (k + 1) as f64 / order as f64 * past[past.len() - order + k])
                 .sum();
             let next_voss = ((3 + order) as f64 / 2.0) * next_filter - sum_c;
             (next_filter, next_voss)

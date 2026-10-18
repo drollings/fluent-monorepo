@@ -44,14 +44,22 @@ const PAINT_EDGES: &[&str] = &["fluent-egui", "protopyne-egui"];
 const DEFERRED_CRATES: &[(&str, &[&str], &str)] = &[
     (
         "src/router",
-        &["tests/ledger_annotations.rs", "tests/overlay_canonical.rs", "tests/vector_index.rs"],
+        &[
+            "tests/ledger_annotations.rs",
+            "tests/overlay_canonical.rs",
+            "tests/vector_index.rs",
+        ],
         "three suites nothing names. Two are concern-separation ratchets whose \
          subject moved to `search-vector`; closing this needs a decision on \
          whether they still assert anything, not a forwarder",
     ),
     (
         "src/ontology",
-        &["tests/normalize.rs", "tests/taxonomy_equivalence.rs", "tests/yago_interlingua.rs"],
+        &[
+            "tests/normalize.rs",
+            "tests/taxonomy_equivalence.rs",
+            "tests/yago_interlingua.rs",
+        ],
         "three suites left behind when the crate stopped forwarding its own \
          tree; each needs to be either forwarded or deleted, and deleting is \
          a decision the suite's subject has to make first",
@@ -69,14 +77,12 @@ const DEFERRED_CRATES: &[(&str, &[&str], &str)] = &[
 ///
 /// An entry that names no live file, or a file with no entry, is a ledger
 /// bug in either direction and both are asserted against.
-const FORWARDER_EXEMPTIONS: &[(&str, &str, &str)] = &[
-    (
-        "src/fluent-egui",
-        "tests/ui/no_generic_undo.rs",
-        "trybuild compile-fail case: driven by name from `tests/history.rs` \
+const FORWARDER_EXEMPTIONS: &[(&str, &str, &str)] = &[(
+    "src/fluent-egui",
+    "tests/ui/no_generic_undo.rs",
+    "trybuild compile-fail case: driven by name from `tests/history.rs` \
          (`cases.compile_fail(..)`), never by a forwarder — it must NOT compile",
-    ),
-];
+)];
 
 fn manifest_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -119,7 +125,10 @@ fn bracket_delta(line: &str) -> i32 {
 /// per-dependency table (`[dependencies.foo]`). `None` for section headers.
 fn pinned_dependency(header: &str) -> Option<String> {
     for section in ["dev-dependencies", "build-dependencies", "dependencies"] {
-        if let Some(name) = header.strip_prefix(section).and_then(|rest| rest.strip_prefix('.')) {
+        if let Some(name) = header
+            .strip_prefix(section)
+            .and_then(|rest| rest.strip_prefix('.'))
+        {
             return Some(name.to_owned());
         }
     }
@@ -131,7 +140,10 @@ fn pinned_dependency(header: &str) -> Option<String> {
 /// dev-dependency links the same test binary on the platforms it covers.
 fn opens_dependencies(header: &str) -> bool {
     let tail = header.rsplit('.').next().unwrap_or("");
-    matches!(tail, "dependencies" | "dev-dependencies" | "build-dependencies")
+    matches!(
+        tail,
+        "dependencies" | "dev-dependencies" | "build-dependencies"
+    )
 }
 
 /// Every dependency key a manifest declares, across every section.
@@ -178,7 +190,10 @@ fn workspace_member_dirs() -> Vec<String> {
         .map(|line| line.trim_matches(',').trim_matches('"').to_owned())
         .filter(|entry| !entry.is_empty())
         .collect();
-    assert!(!dirs.is_empty(), "the workspace must declare at least one member");
+    assert!(
+        !dirs.is_empty(),
+        "the workspace must declare at least one member"
+    );
     dirs
 }
 
@@ -193,7 +208,11 @@ fn package_name(manifest: &str, dir_name: &str) -> String {
     let declared = package[..end]
         .lines()
         .map(str::trim)
-        .find_map(|line| line.strip_prefix("name")?.split_once('=').map(|(_, rest)| rest))
+        .find_map(|line| {
+            line.strip_prefix("name")?
+                .split_once('=')
+                .map(|(_, rest)| rest)
+        })
         .map(|value| value.trim().trim_matches('"').to_owned());
     declared.unwrap_or_else(|| dir_name.to_owned())
 }
@@ -304,7 +323,9 @@ fn a_new_autotests_false_crate_is_governed_without_being_listed() {
     // Fail-closed control: governance is "every autotests = false member
     // that is not deferred", not "every crate someone remembered".
     assert!(
-        governed_crates().iter().any(|dir| dir == "src/protopyne-egui")
+        governed_crates()
+            .iter()
+            .any(|dir| dir == "src/protopyne-egui")
             && !governed_crates().iter().any(|dir| dir == "src/router"),
         "membership is derived from the manifests, not from a hand-kept list"
     );
@@ -355,7 +376,9 @@ fn rust_files_below(root: &Path, prefix: &str) -> Vec<String> {
     let mut out = Vec::new();
     collect_rs(root, Path::new(""), &mut out);
     out.sort();
-    out.into_iter().map(|name| format!("{prefix}{name}")).collect()
+    out.into_iter()
+        .map(|name| format!("{prefix}{name}"))
+        .collect()
 }
 
 fn collect_rs(dir: &Path, prefix: &Path, out: &mut Vec<String>) {
@@ -400,7 +423,10 @@ fn compiled_test_files(crate_root: &Path) -> BTreeSet<String> {
             continue;
         };
         if key.trim() == "path" {
-            keep(&mut reached, normalize(Path::new(value.trim().trim_matches('"'))));
+            keep(
+                &mut reached,
+                normalize(Path::new(value.trim().trim_matches('"'))),
+            );
         }
     }
 
@@ -411,7 +437,10 @@ fn compiled_test_files(crate_root: &Path) -> BTreeSet<String> {
         }
         for name in rust_files_under(&base) {
             let file = base.join(&name);
-            let dir = file.parent().expect("every file has a parent directory").to_path_buf();
+            let dir = file
+                .parent()
+                .expect("every file has a parent directory")
+                .to_path_buf();
             for line in read_text(&file).lines() {
                 let trimmed = line.trim();
                 if let Some(rest) = trimmed.strip_prefix("#[path") {
@@ -423,8 +452,8 @@ fn compiled_test_files(crate_root: &Path) -> BTreeSet<String> {
                 let declaration = trimmed.strip_prefix("pub ").unwrap_or(trimmed);
                 if let Some(module) = declaration.strip_prefix("mod ") {
                     let ident = module.trim().trim_end_matches(';').trim();
-                    let is_ident =
-                        !ident.is_empty() && ident.chars().all(|ch| ch.is_alphanumeric() || ch == '_');
+                    let is_ident = !ident.is_empty()
+                        && ident.chars().all(|ch| ch.is_alphanumeric() || ch == '_');
                     if is_ident {
                         for candidate in [format!("{ident}.rs"), format!("{ident}/mod.rs")] {
                             keep(&mut reached, resolve_under(&dir, &candidate, crate_root));
@@ -485,7 +514,9 @@ fn governed_crates() -> Vec<String> {
     workspace_member_dirs()
         .into_iter()
         .filter(|dir| {
-            !DEFERRED_CRATES.iter().any(|(deferred, _, _)| deferred == dir)
+            !DEFERRED_CRATES
+                .iter()
+                .any(|(deferred, _, _)| deferred == dir)
                 && read_text(&root.join(dir).join("Cargo.toml"))
                     .lines()
                     .any(|line| line.trim() == "autotests = false")
@@ -547,7 +578,10 @@ fn every_forwarder_exemption_names_a_live_file_and_a_reason() {
     // no reason is an unenforced escape hatch.
     let root = workspace_root();
     for (owner, file, reason) in FORWARDER_EXEMPTIONS {
-        assert!(!reason.trim().is_empty(), "{owner}: {file} exemption needs a reason");
+        assert!(
+            !reason.trim().is_empty(),
+            "{owner}: {file} exemption needs a reason"
+        );
         assert!(
             root.join(owner).join(file).is_file(),
             "{owner}: {file} exemption names a file that does not exist — drop the entry"
@@ -567,11 +601,18 @@ fn forwarder_coverage_gate_fires_on_a_synthetic_orphan() {
     ];
     assert_eq!(
         unforwarded_test_files(&tests, &compiled, &[]),
-        vec!["tests/orphan.rs".to_owned(), "tests/nested/orphan.rs".to_owned()],
+        vec![
+            "tests/orphan.rs".to_owned(),
+            "tests/nested/orphan.rs".to_owned()
+        ],
         "both orphans are reported, the forwarded file is not"
     );
     assert_eq!(
-        unforwarded_test_files(&tests, &compiled, &[("c".to_owned(), "tests/orphan.rs".to_owned())]),
+        unforwarded_test_files(
+            &tests,
+            &compiled,
+            &[("c".to_owned(), "tests/orphan.rs".to_owned())]
+        ),
         vec!["tests/nested/orphan.rs".to_owned()],
         "one exemption covers its own file only"
     );
@@ -582,6 +623,9 @@ fn forwarders_resolve_relative_to_the_declaring_file() {
     // The resolution rule itself: a forwarder two directories deep resolves
     // to the crate's `tests/` root, and a `..` segment normalizes.
     assert_eq!(normalize(Path::new("src/../tests/x.rs")), "tests/x.rs");
-    assert_eq!(normalize(Path::new("src/pine/../../tests/y.rs")), "tests/y.rs");
+    assert_eq!(
+        normalize(Path::new("src/pine/../../tests/y.rs")),
+        "tests/y.rs"
+    );
     assert_eq!(normalize(Path::new("./tests/./z.rs")), "tests/z.rs");
 }

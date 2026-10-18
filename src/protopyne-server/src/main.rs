@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use protopyne_server::{ServerConfig, load_history_path, open_tape_reader, serve_with_tape};
+use protopyne_server::{load_history_path, open_tape_reader, serve_with_tape, ServerConfig};
 
 /// Startup arguments. Parsing lives here (never in library code): malformed
 /// flags exit loudly instead of binding half-configured.
@@ -17,22 +17,25 @@ struct Args {
 }
 
 fn parse_args(raw: &[String]) -> Result<Args, String> {
-    let mut args = Args { config: None, bind: None, history: None, tape: None, live: false, live_journal: None };
+    let mut args = Args {
+        config: None,
+        bind: None,
+        history: None,
+        tape: None,
+        live: false,
+        live_journal: None,
+    };
     let mut rest = raw.iter().skip(1);
     while let Some(flag) = rest.next() {
         match flag.as_str() {
             "--config" => {
-                args.config = Some(PathBuf::from(
-                    rest.next().ok_or("--config needs a path")?,
-                ));
+                args.config = Some(PathBuf::from(rest.next().ok_or("--config needs a path")?));
             }
             "--bind" => {
                 args.bind = Some(rest.next().ok_or("--bind needs an address")?.clone());
             }
             "--history" => {
-                args.history = Some(PathBuf::from(
-                    rest.next().ok_or("--history needs a path")?,
-                ));
+                args.history = Some(PathBuf::from(rest.next().ok_or("--history needs a path")?));
             }
             "--tape" => {
                 args.tape = Some(PathBuf::from(
@@ -150,7 +153,9 @@ async fn run(raw: &[String]) -> Result<(), String> {
         .map(|root| open_tape_reader(std::path::Path::new(root)))
         .transpose()
         .map_err(|e| e.to_string())?;
-    let handle = serve_with_tape(config, history, reader).await.map_err(|e| e.to_string())?;
+    let handle = serve_with_tape(config, history, reader)
+        .await
+        .map_err(|e| e.to_string())?;
     println!("protopyne-server listening on {}", handle.addr);
     let _ = tokio::signal::ctrl_c().await;
     handle.shutdown().await;
@@ -194,12 +199,19 @@ async fn run_live(args: &Args) -> Result<(), String> {
         .journal_path(journal_path.clone())
         .build();
     let net = std::sync::Arc::new(fluent_concurrency::io::net::NetCapability::new());
-    let caps = fluent_wvr::CapabilitySet::new().with(fluent_concurrency::io::net::NetCapability::new());
+    let caps =
+        fluent_wvr::CapabilitySet::new().with(fluent_concurrency::io::net::NetCapability::new());
     let live = fluent_wvr::CURRENT_CAPS
-        .scope(caps, protopyne_venue::boot_live(&boot, net, &username, &password))
+        .scope(
+            caps,
+            protopyne_venue::boot_live(&boot, net, &username, &password),
+        )
         .await
         .map_err(|e| format!("live boot refused: {e}"))?;
-    println!("live session ready: account {account}, journal {}", journal_path.display());
+    println!(
+        "live session ready: account {account}, journal {}",
+        journal_path.display()
+    );
     live.session.shutdown().await;
     Ok(())
 }

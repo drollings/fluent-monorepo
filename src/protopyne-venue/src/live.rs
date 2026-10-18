@@ -86,7 +86,9 @@ impl TastytradeVenue {
             ));
         }
         if account.is_empty() {
-            return Err(VenueError::Invalid("tastytrade account is empty".to_owned()));
+            return Err(VenueError::Invalid(
+                "tastytrade account is empty".to_owned(),
+            ));
         }
         Ok(Self {
             transport,
@@ -122,7 +124,9 @@ impl TastytradeVenue {
     /// config. At most one token is ever banked.
     pub async fn login(&self, username: &str, password: &str) -> Result<(), VenueError> {
         if username.is_empty() || password.is_empty() {
-            return Err(VenueError::Invalid("tastytrade credentials are empty".to_owned()));
+            return Err(VenueError::Invalid(
+                "tastytrade credentials are empty".to_owned(),
+            ));
         }
         let url = format!("{}/sessions", self.base());
         let body = serde_json::json!({ "login": username, "password": password }).to_string();
@@ -189,9 +193,9 @@ impl TastytradeVenue {
     }
 
     fn bearer(&self) -> Result<String, VenueError> {
-        common_core::sync::lock(&self.token).clone().ok_or_else(|| {
-            VenueError::Invalid("tastytrade venue is not authenticated".to_owned())
-        })
+        common_core::sync::lock(&self.token)
+            .clone()
+            .ok_or_else(|| VenueError::Invalid("tastytrade venue is not authenticated".to_owned()))
     }
 
     async fn get_record(&self, client_id: &str) -> Result<Option<OrderRecord>, VenueError> {
@@ -203,8 +207,8 @@ impl TastytradeVenue {
             .http_get_with_headers(&url, &headers)
             .await
             .map_err(|e| VenueError::Transport(e.to_string()))?;
-        let wire: serde_json::Value =
-            serde_json::from_str(&raw).map_err(|e| VenueError::Server(format!("response is not JSON: {e}")))?;
+        let wire: serde_json::Value = serde_json::from_str(&raw)
+            .map_err(|e| VenueError::Server(format!("response is not JSON: {e}")))?;
         // Absent is absent under any retry taxonomy: a `not_found` envelope
         // answers the lookup, so it short-circuits before error mapping.
         if is_not_found(&wire) {
@@ -226,8 +230,8 @@ impl TastytradeVenue {
             .http_post_with_headers(path, body, &headers)
             .await
             .map_err(|e| VenueError::Transport(e.to_string()))?;
-        let wire: serde_json::Value =
-            serde_json::from_str(&raw).map_err(|e| VenueError::Server(format!("response is not JSON: {e}")))?;
+        let wire: serde_json::Value = serde_json::from_str(&raw)
+            .map_err(|e| VenueError::Server(format!("response is not JSON: {e}")))?;
         if let Some(failure) = crate::tastytrade::envelope_error(&wire) {
             return Err(into_venue(failure));
         }
@@ -287,13 +291,15 @@ pub fn positions_of(records: impl IntoIterator<Item = OrderRecord>) -> HashMap<S
             OrderSide::Buy => 1,
             OrderSide::Sell => -1,
         };
-        let position = positions.entry(record.intent.underlying.clone()).or_insert_with(|| {
-            Position::new()
-                .underlying(record.intent.underlying.clone())
-                .quantity(0)
-                .avg_price(Money::zero())
-                .build()
-        });
+        let position = positions
+            .entry(record.intent.underlying.clone())
+            .or_insert_with(|| {
+                Position::new()
+                    .underlying(record.intent.underlying.clone())
+                    .quantity(0)
+                    .avg_price(Money::zero())
+                    .build()
+            });
         position.apply(sign * i64::from(record.filled_quantity), price);
     }
     positions.retain(|_, position| position.quantity != 0);
@@ -313,12 +319,11 @@ impl Venue for TastytradeVenue {
         let headers = [("Authorization", token.as_str())];
         let url = format!("{}/dry-run", self.orders_path());
         let body = serde_json::to_string(intent).map_err(|e| VenueError::Invalid(e.to_string()))?;
-        let raw = common_core::runtime::block_on(
-            self.net.http_post_with_headers(&url, &body, &headers),
-        )
-        .map_err(|e| VenueError::Transport(e.to_string()))?;
-        let wire: serde_json::Value =
-            serde_json::from_str(&raw).map_err(|e| VenueError::Server(format!("response is not JSON: {e}")))?;
+        let raw =
+            common_core::runtime::block_on(self.net.http_post_with_headers(&url, &body, &headers))
+                .map_err(|e| VenueError::Transport(e.to_string()))?;
+        let wire: serde_json::Value = serde_json::from_str(&raw)
+            .map_err(|e| VenueError::Server(format!("response is not JSON: {e}")))?;
         if let Some(failure) = crate::tastytrade::envelope_error(&wire) {
             return Err(into_venue(failure));
         }
@@ -328,7 +333,9 @@ impl Venue for TastytradeVenue {
             .ok_or_else(|| VenueError::Server("dry-run wire carries no verdict".to_owned()))?;
         let reserved = wire
             .get("reserved_notional")
-            .ok_or_else(|| VenueError::Server("dry-run wire carries no reserved notional".to_owned()))
+            .ok_or_else(|| {
+                VenueError::Server("dry-run wire carries no reserved notional".to_owned())
+            })
             .and_then(|value| {
                 value
                     .as_str()
@@ -337,7 +344,10 @@ impl Venue for TastytradeVenue {
                     .map(Money::new)
                     .map_err(|_| VenueError::Server("reserved notional is not decimal".to_owned()))
             })?;
-        Ok(DryRunOutcome { allowed, reserved_notional: reserved })
+        Ok(DryRunOutcome {
+            allowed,
+            reserved_notional: reserved,
+        })
     }
 
     fn submit<'a>(
@@ -384,16 +394,21 @@ impl Venue for TastytradeVenue {
         _now: DateTime<Utc>,
     ) -> Pin<Box<dyn Future<Output = Result<OrderRecord, VenueError>> + Send + 'a>> {
         Box::pin(async move {
-            let known = self.get_record(client_id).await?.ok_or_else(|| {
-                VenueError::Invalid(format!("unknown order {client_id}"))
-            })?;
+            let known = self
+                .get_record(client_id)
+                .await?
+                .ok_or_else(|| VenueError::Invalid(format!("unknown order {client_id}")))?;
             if !known.status.is_active() {
                 return Err(VenueError::Invalid(format!(
                     "cancel refused: order {client_id} already terminal ({:?})",
                     known.status
                 )));
             }
-            let url = format!("{}/{}/cancel", self.orders_path(), encode_segment(client_id));
+            let url = format!(
+                "{}/{}/cancel",
+                self.orders_path(),
+                encode_segment(client_id)
+            );
             let record = self.post_record(&url, "{}").await?;
             self.remember(&record);
             Ok(record)
@@ -401,11 +416,17 @@ impl Venue for TastytradeVenue {
     }
 
     fn positions(&self) -> Vec<Position> {
-        common_core::sync::lock(&self.positions).values().cloned().collect()
+        common_core::sync::lock(&self.positions)
+            .values()
+            .cloned()
+            .collect()
     }
 
     fn orders(&self) -> Vec<OrderRecord> {
-        common_core::sync::lock(&self.book).values().cloned().collect()
+        common_core::sync::lock(&self.book)
+            .values()
+            .cloned()
+            .collect()
     }
 
     fn apply_corporate_event(
@@ -477,7 +498,9 @@ pub async fn boot_live(
     password: &str,
 ) -> Result<LiveSession, VenueError> {
     if username.is_empty() || password.is_empty() {
-        return Err(VenueError::Invalid("tastytrade credentials are empty".to_owned()));
+        return Err(VenueError::Invalid(
+            "tastytrade credentials are empty".to_owned(),
+        ));
     }
     let transport = Arc::new(TastytradeTransport::new(boot.transport.clone()));
     let venue = Arc::new(TastytradeVenue::new(transport, net, boot.account.clone())?);
@@ -486,7 +509,11 @@ pub async fn boot_live(
     let journal = Journal::open(&boot.journal_path)?;
     let registry = Arc::new(VenueRegistry::single(Arc::clone(&venue) as Arc<dyn Venue>));
     let session = TradingSession::boot(&boot.session, registry, storage)?;
-    Ok(LiveSession { session, journal, venue })
+    Ok(LiveSession {
+        session,
+        journal,
+        venue,
+    })
 }
 
 #[cfg(test)]

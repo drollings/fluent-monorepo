@@ -23,7 +23,7 @@ use crate::catalog::PriceScale;
 use crate::commit::test_tapes::bar;
 use crate::fold::FoldPolicy;
 use crate::range::TimeRange;
-use crate::tape::test_setup::{VENUE, m1_key, memory_tape, with_registry_caps};
+use crate::tape::test_setup::{m1_key, memory_tape, with_registry_caps, VENUE};
 
 /// Scales under test: whole-dollar, cents, crypto, and the Decimal maximum.
 const SCALES: &[u32] = &[0, 2, 8, 28];

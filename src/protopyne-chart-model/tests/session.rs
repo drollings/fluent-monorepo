@@ -8,7 +8,10 @@ fn dec(s: &str) -> rust_decimal::Decimal {
 
 fn bar_at(y: i32, m: u32, d: u32, h: u32) -> Bar {
     Bar::new()
-        .ts(chrono::Utc.with_ymd_and_hms(y, m, d, h, 0, 0).single().expect("valid test time"))
+        .ts(chrono::Utc
+            .with_ymd_and_hms(y, m, d, h, 0, 0)
+            .single()
+            .expect("valid test time"))
         .o(dec("100"))
         .h(dec("101"))
         .l(dec("99"))
@@ -21,7 +24,11 @@ fn bar_at(y: i32, m: u32, d: u32, h: u32) -> Bar {
 #[test]
 fn daily_breaks_fire_on_day_change() {
     let provider = DailySessionProvider::continuous();
-    let bars = vec![bar_at(2026, 1, 1, 12), bar_at(2026, 1, 2, 12), bar_at(2026, 1, 2, 13)];
+    let bars = vec![
+        bar_at(2026, 1, 1, 12),
+        bar_at(2026, 1, 2, 12),
+        bar_at(2026, 1, 2, 13),
+    ];
     let breaks = find_session_breaks(&bars, &provider);
     assert_eq!(breaks.len(), 1);
     assert_eq!(breaks[0].0, 1);
@@ -80,9 +87,7 @@ fn constructor_clamps_clock_fields() {
 }
 
 fn rth() -> EtSessionProvider {
-    EtSessionProvider::new(
-        protopyne_types::TradingSession::parse("0930-1600").expect("rth parses"),
-    )
+    EtSessionProvider::new(protopyne_types::TradingSession::parse("0930-1600").expect("rth parses"))
 }
 
 #[test]
@@ -122,7 +127,11 @@ fn et_breaks_respect_daylight_offset() {
     // 04:30 UTC Jul 9 == 00:30 ET Jul 9.
     let bars = vec![bar_at(2026, 7, 9, 3), bar_at(2026, 7, 9, 4)];
     let breaks = find_session_breaks(&bars, &provider);
-    assert_eq!(breaks.len(), 1, "daylight offset moves the break off utc midnight");
+    assert_eq!(
+        breaks.len(),
+        1,
+        "daylight offset moves the break off utc midnight"
+    );
     assert_eq!(breaks[0].1.label.as_deref(), Some("2026-07-09 ET"));
 }
 

@@ -27,12 +27,20 @@ pub struct RiskLimits {
     pub max_contracts_per_trade: u64,
     /// Maximum committed max loss on one proposal, in account-currency major
     /// units **(correctness)**.
-    #[field(desc = "Maximum committed loss on one proposal", min = 1, max = 1000000000)]
+    #[field(
+        desc = "Maximum committed loss on one proposal",
+        min = 1,
+        max = 1000000000
+    )]
     #[builder(default = 500.0)]
     pub max_loss_per_trade: f64,
     /// Maximum committed notional on one proposal, in account-currency major
     /// units **(correctness)**.
-    #[field(desc = "Maximum committed notional on one proposal", min = 1, max = 10000000000)]
+    #[field(
+        desc = "Maximum committed notional on one proposal",
+        min = 1,
+        max = 10000000000
+    )]
     #[builder(default = 50_000.0)]
     pub max_notional: f64,
     /// Maximum quote age in seconds before data counts as stale
@@ -220,7 +228,11 @@ impl RiskEngine {
     pub fn new(limits: RiskLimits) -> Self {
         let loss_cap = limits.loss_cap();
         let notional_cap = limits.notional_cap();
-        Self { limits, loss_cap, notional_cap }
+        Self {
+            limits,
+            loss_cap,
+            notional_cap,
+        }
     }
 
     /// Bind an engine to pre-validated limits, refusing out-of-bound
@@ -238,7 +250,11 @@ impl RiskEngine {
 
     /// Check one proposal against limits and observed state. Approvals mint
     /// a [`RiskApproved`] token; refusals collect every failed gate.
-    pub fn check(&self, proposal: &Proposal, state: &RiskState) -> Result<RiskApproved, RiskRefused> {
+    pub fn check(
+        &self,
+        proposal: &Proposal,
+        state: &RiskState,
+    ) -> Result<RiskApproved, RiskRefused> {
         let mut reasons: Vec<RiskReason> = Vec::new();
 
         if self.limits.kill_switch {

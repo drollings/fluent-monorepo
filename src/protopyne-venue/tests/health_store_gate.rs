@@ -46,7 +46,10 @@ fn unreachable_store_halts_entries_and_names_the_gate() {
     });
     match may_trade(&state, &limits()) {
         HealthVerdict::Halt { reasons } => {
-            assert!(reasons.iter().any(|r| r.contains("store")), "names the gate, got: {reasons:?}");
+            assert!(
+                reasons.iter().any(|r| r.contains("store")),
+                "names the gate, got: {reasons:?}"
+            );
         }
         HealthVerdict::Trade => panic!("unreachable store must halt"),
     }
@@ -84,7 +87,10 @@ fn open_gaps_halt_until_repair_closes_them() {
     });
     match may_trade(&gappy, &limits()) {
         HealthVerdict::Halt { reasons } => {
-            assert!(reasons.iter().any(|r| r.contains("gap")), "names the gate, got: {reasons:?}");
+            assert!(
+                reasons.iter().any(|r| r.contains("gap")),
+                "names the gate, got: {reasons:?}"
+            );
         }
         HealthVerdict::Trade => panic!("open gaps must halt"),
     }
@@ -142,8 +148,14 @@ fn every_failed_gate_is_named_together() {
     };
     match may_trade(&state, &limits()) {
         HealthVerdict::Halt { reasons } => {
-            assert!(reasons.iter().any(|r| r.contains("quote")), "got: {reasons:?}");
-            assert!(reasons.iter().any(|r| r.contains("store")), "got: {reasons:?}");
+            assert!(
+                reasons.iter().any(|r| r.contains("quote")),
+                "got: {reasons:?}"
+            );
+            assert!(
+                reasons.iter().any(|r| r.contains("store")),
+                "got: {reasons:?}"
+            );
         }
         HealthVerdict::Trade => panic!("two faults must halt"),
     }

@@ -15,8 +15,8 @@
 use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
-use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive as _;
+use rust_decimal::Decimal;
 
 use protopyne_types::{Bar, Money, Portfolio, PortfolioId, Qty};
 
@@ -64,8 +64,14 @@ pub fn utility(conviction: f64, activity_score: f64) -> f64 {
 /// same last-finite reading the backtest report uses.
 #[must_use]
 pub fn rsrs_score(bars: &[Bar], slope_lookback: usize, score_window: usize) -> Option<f64> {
-    let highs: Vec<f64> = bars.iter().map(|bar| bar.h.to_f64().unwrap_or(f64::NAN)).collect();
-    let lows: Vec<f64> = bars.iter().map(|bar| bar.l.to_f64().unwrap_or(f64::NAN)).collect();
+    let highs: Vec<f64> = bars
+        .iter()
+        .map(|bar| bar.h.to_f64().unwrap_or(f64::NAN))
+        .collect();
+    let lows: Vec<f64> = bars
+        .iter()
+        .map(|bar| bar.l.to_f64().unwrap_or(f64::NAN))
+        .collect();
     protopyne_kernels::research::rsrs(&highs, &lows, slope_lookback, score_window)
         .into_iter()
         .flatten()
@@ -199,8 +205,17 @@ impl Generator {
         }
         let span = (self.entry_threshold - self.hold_threshold).max(f64::EPSILON);
         let conviction = ((score - self.hold_threshold) / span).clamp(0.0, 1.0);
-        let direction = if score >= 0.0 { Direction::Long } else { Direction::Short };
-        let id = format!("{}-{}-{}", input.strategy, input.underlying, input.bars.len());
+        let direction = if score >= 0.0 {
+            Direction::Long
+        } else {
+            Direction::Short
+        };
+        let id = format!(
+            "{}-{}-{}",
+            input.strategy,
+            input.underlying,
+            input.bars.len()
+        );
         let proposal = Proposal::new()
             .id(id.clone())
             .strategy(input.strategy.to_owned())

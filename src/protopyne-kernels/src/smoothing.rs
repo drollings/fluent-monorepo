@@ -8,7 +8,7 @@
 //! the dispatch-coverage test here first.
 
 use crate::error::KernelError;
-use crate::indicator::{OwnedOhlcv, ParamSet, fin_or_none};
+use crate::indicator::{fin_or_none, OwnedOhlcv, ParamSet};
 
 /// Pine `factorySmoothing` default for `n1` (EIT alpha, ALMA offset).
 pub const DEFAULT_N1: f64 = 0.85;
@@ -179,10 +179,19 @@ impl SmoothingFamily {
         match self {
             Self::Alma => &[ParamSpec::Length, ParamSpec::Offset, ParamSpec::Sigma],
             Self::Eit => &[ParamSpec::Length, ParamSpec::Alpha],
-            Self::Kalman => &[ParamSpec::Length, ParamSpec::KalmanAlpha, ParamSpec::KalmanBeta],
-            Self::Na | Self::Ema | Self::Hma | Self::Rma | Self::Sma | Self::Vwma | Self::Wma | Self::Zlema => {
-                &[ParamSpec::Length]
-            }
+            Self::Kalman => &[
+                ParamSpec::Length,
+                ParamSpec::KalmanAlpha,
+                ParamSpec::KalmanBeta,
+            ],
+            Self::Na
+            | Self::Ema
+            | Self::Hma
+            | Self::Rma
+            | Self::Sma
+            | Self::Vwma
+            | Self::Wma
+            | Self::Zlema => &[ParamSpec::Length],
         }
     }
 
@@ -237,9 +246,15 @@ impl SmoothingFamily {
             }
             // Length-driven arms (Kalman reads its kernel defaults, the recipe
             // validates length for the derivation lag, the rest read length).
-            Self::Na | Self::Ema | Self::Hma | Self::Kalman | Self::Rma | Self::Sma | Self::Vwma | Self::Wma | Self::Zlema => {
-                Ok(ParamSet::new().with_int("length", args.length))
-            }
+            Self::Na
+            | Self::Ema
+            | Self::Hma
+            | Self::Kalman
+            | Self::Rma
+            | Self::Sma
+            | Self::Vwma
+            | Self::Wma
+            | Self::Zlema => Ok(ParamSet::new().with_int("length", args.length)),
         }
     }
 
@@ -303,7 +318,8 @@ impl SmoothingFamily {
                 KernelError::InvalidParam(format!("zlema: length {} overflows usize", args.length))
             })?;
             let lag = period.saturating_sub(1) / 2;
-            let derived: Vec<f64> = frame.close
+            let derived: Vec<f64> = frame
+                .close
                 .iter()
                 .enumerate()
                 .map(|(i, c)| {
@@ -440,7 +456,11 @@ impl SmoothingArgs {
     /// Bare length with Pine defaults for the rest.
     #[must_use]
     pub fn length(length: i64) -> Self {
-        Self { length, n1: DEFAULT_N1, param2: DEFAULT_PARAM2 }
+        Self {
+            length,
+            n1: DEFAULT_N1,
+            param2: DEFAULT_PARAM2,
+        }
     }
 
     /// Override the `n1` slot (EIT alpha / ALMA offset).

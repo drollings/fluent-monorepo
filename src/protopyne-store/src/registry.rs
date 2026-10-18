@@ -20,8 +20,8 @@ use std::sync::Mutex;
 
 use protopyne_types::Timeframe;
 
-use crate::capability::{StoreStorage, check_present};
-use crate::catalog::{AssetClass, Market, PriceScale, check_register};
+use crate::capability::{check_present, StoreStorage};
+use crate::catalog::{check_register, AssetClass, Market, PriceScale};
 use crate::error::StoreError;
 use crate::key::SymbolId;
 
@@ -67,7 +67,11 @@ impl MarketRegistry {
     /// Open an ephemeral registry with no backing file. For tests and
     /// scratch work; nothing persists past the handle.
     pub fn open_in_memory() -> Result<Self, StoreError> {
-        Self::open_with(Path::new(":memory:"), crate::catalog::DEFAULT_MAX_MARKETS, true)
+        Self::open_with(
+            Path::new(":memory:"),
+            crate::catalog::DEFAULT_MAX_MARKETS,
+            true,
+        )
     }
 
     /// Open an ephemeral registry with an explicit market bound, for the
@@ -157,7 +161,10 @@ impl MarketRegistry {
             symbol,
             venue,
             price_scale,
-            state.markets.iter().any(|market| market.symbol == symbol && market.venue == venue),
+            state
+                .markets
+                .iter()
+                .any(|market| market.symbol == symbol && market.venue == venue),
             state.markets.len(),
             self.max_markets,
         )?;

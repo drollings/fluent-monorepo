@@ -30,8 +30,7 @@ fn store_halted() -> (HealthState, HealthLimits) {
 #[test]
 fn store_halt_refuses_entries_and_routes_exits() {
     let (state, limits) = store_halted();
-    let err =
-        check_trade(&state, &limits, false).expect_err("store halt refuses entries");
+    let err = check_trade(&state, &limits, false).expect_err("store halt refuses entries");
     assert!(matches!(err, VenueError::Health(_)));
     assert!(
         check_trade(&state, &limits, true).is_ok(),

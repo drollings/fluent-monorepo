@@ -19,7 +19,7 @@ use protopyne_types::{Timeframe, Validate};
 
 use crate::coverage::Coverage;
 use crate::error::{PlanError, StoreError};
-use crate::fold::{FoldPolicy, bucket_start};
+use crate::fold::{bucket_start, FoldPolicy};
 use crate::key::{SymbolId, TapeKey};
 use crate::range::TimeRange;
 use crate::store::ReadRequest;
@@ -216,13 +216,7 @@ pub(crate) fn fetch_span(
     let (Some(start), Some(end)) = (wanted.start_ms, wanted.end_ms) else {
         return Err(PlanError::UnboundedUnlimited);
     };
-    Ok(widen(
-        start,
-        end,
-        request.timeframe,
-        stored,
-        request.policy,
-    ))
+    Ok(widen(start, end, request.timeframe, stored, request.policy))
 }
 
 /// A bar limit as a millisecond span at `step_ms`, saturating instead of
@@ -388,19 +382,17 @@ pub(crate) fn coverage_from_stamps(
     stamps: &[i64],
     stored: Timeframe,
 ) -> Coverage {
-    let bars = stamps.iter().filter(|stamp| fetch.contains(**stamp)).count();
+    let bars = stamps
+        .iter()
+        .filter(|stamp| fetch.contains(**stamp))
+        .count();
     let runs = Coverage::from_stamps(stamps, stored)
         .map(|coverage| coverage.runs().to_vec())
         .unwrap_or_default()
         .into_iter()
         .filter_map(|run| run.intersect(fetch))
         .collect::<Vec<_>>();
-    Coverage::from_extent_and_runs(
-        extent.first_ms,
-        extent.last_ms,
-        bars as u64,
-        runs,
-    )
+    Coverage::from_extent_and_runs(extent.first_ms, extent.last_ms, bars as u64, runs)
 }
 
 #[cfg(test)]

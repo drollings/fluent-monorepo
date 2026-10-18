@@ -12,8 +12,8 @@
 //! [`paint_unsupported_chip`], never as a partial overlay.
 
 use fluent_egui::{
-    EguiError, ThemeConfig, Viewport, oscillator_points, paint_oscillator, resolve_color,
-    translate_points,
+    oscillator_points, paint_oscillator, resolve_color, translate_points, EguiError, ThemeConfig,
+    Viewport,
 };
 use protopyne_kernels::{PlotPrimitive, ProjectionRefusal};
 
@@ -86,7 +86,12 @@ pub fn overlay_geoms(primitives: &[PlotPrimitive], viewport: &Viewport) -> Overl
                     });
                 }
             }
-            PlotPrimitive::Area { left, top, right, bottom } => {
+            PlotPrimitive::Area {
+                left,
+                top,
+                right,
+                bottom,
+            } => {
                 if let (Some(y0), Some(y1)) =
                     (viewport.price_to_y(*top), viewport.price_to_y(*bottom))
                 {
@@ -152,10 +157,7 @@ pub fn paint_overlay(
         let area_stroke = egui::Stroke::new(1.0, resolve_color(theme, AREA_KEY)?);
         for (x0, y0, x1, y1) in &geoms.areas {
             painter.rect_stroke(
-                egui::Rect::from_min_max(
-                    egui::Pos2::new(*x0, *y0),
-                    egui::Pos2::new(*x1, *y1),
-                ),
+                egui::Rect::from_min_max(egui::Pos2::new(*x0, *y0), egui::Pos2::new(*x1, *y1)),
                 0.0,
                 area_stroke,
                 egui::StrokeKind::Middle,
@@ -168,7 +170,10 @@ pub fn paint_overlay(
 /// Render a refused projection as an "unsupported" chip carrying the typed
 /// reason — the overlay paints nothing partial.
 pub fn paint_unsupported_chip(ui: &mut egui::Ui, refusal: &ProjectionRefusal) {
-    ui.colored_label(egui::Color32::RED, format!("pine overlay unsupported: {refusal}"));
+    ui.colored_label(
+        egui::Color32::RED,
+        format!("pine overlay unsupported: {refusal}"),
+    );
 }
 
 /// Shift pane-local overlay geometry into UI space by a pane origin.

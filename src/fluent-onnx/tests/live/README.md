@@ -3,7 +3,7 @@
 Opt-in tests that perform **real ONNX inference**. They are compiled only when
 the `live-ai` feature is enabled and run exclusively via
 `make test-live` / `make ort-test-live`. They never run under
-`make test` / `make router-test` / `make router-mock` / CI.
+`make test` / `make test-router` / `make router-mock` / CI.
 
 ## Env contract
 

@@ -75,8 +75,12 @@ async fn intent_journaling_is_idempotent() {
     let (_dir, journal, permit) = setup();
     let now = Utc::now();
     scoped(permit.clone(), async {
-        assert!(journal.record_intent(&permit, &intent("a#0"), now).expect("first"));
-        assert!(!journal.record_intent(&permit, &intent("a#0"), now).expect("replay"));
+        assert!(journal
+            .record_intent(&permit, &intent("a#0"), now)
+            .expect("first"));
+        assert!(!journal
+            .record_intent(&permit, &intent("a#0"), now)
+            .expect("replay"));
         assert_eq!(
             journal.intent_status(&permit, "a#0").expect("status"),
             Some("pending".to_owned())
@@ -90,8 +94,12 @@ async fn outbox_and_replay_rebuild_state() {
     let (_dir, journal, permit) = setup();
     let now = Utc::now();
     scoped(permit.clone(), async {
-        journal.record_intent(&permit, &intent("a#0"), now).expect("intent a");
-        journal.record_intent(&permit, &intent("b#0"), now).expect("intent b");
+        journal
+            .record_intent(&permit, &intent("a#0"), now)
+            .expect("intent a");
+        journal
+            .record_intent(&permit, &intent("b#0"), now)
+            .expect("intent b");
         journal
             .mark_status(&permit, "a#0", OrderStatus::Filled, now)
             .expect("filled");
@@ -109,7 +117,10 @@ async fn outbox_and_replay_rebuild_state() {
             .expect("record")
             .expect("known");
         assert_eq!(record.status, OrderStatus::Filled);
-        assert!(journal.record_from_replay(&permit, "zzz").expect("miss").is_none());
+        assert!(journal
+            .record_from_replay(&permit, "zzz")
+            .expect("miss")
+            .is_none());
     })
     .await;
 }
@@ -140,11 +151,16 @@ async fn intent_write_leaves_no_half_written_state() {
     let (_dir, journal, permit) = setup();
     let now = Utc::now();
     scoped(permit.clone(), async {
-        journal.record_intent(&permit, &intent("a#0"), now).expect("intent");
+        journal
+            .record_intent(&permit, &intent("a#0"), now)
+            .expect("intent");
         let state = journal.replay(&permit).expect("replay");
         assert_eq!(state.intents.len(), 1);
         assert!(
-            state.events.iter().any(|e| e.client_id == "a#0" && e.kind == "intent"),
+            state
+                .events
+                .iter()
+                .any(|e| e.client_id == "a#0" && e.kind == "intent"),
             "the intent event must land with the intent row"
         );
         assert_eq!(
@@ -162,7 +178,9 @@ async fn status_write_leaves_no_half_written_state() {
     let (_dir, journal, permit) = setup();
     let now = Utc::now();
     scoped(permit.clone(), async {
-        journal.record_intent(&permit, &intent("a#0"), now).expect("intent");
+        journal
+            .record_intent(&permit, &intent("a#0"), now)
+            .expect("intent");
         journal
             .mark_status(&permit, "a#0", OrderStatus::Submitted, now)
             .expect("submitted");
@@ -172,7 +190,10 @@ async fn status_write_leaves_no_half_written_state() {
         );
         let state = journal.replay(&permit).expect("replay");
         assert!(
-            state.events.iter().any(|e| e.client_id == "a#0" && e.kind == "submitted"),
+            state
+                .events
+                .iter()
+                .any(|e| e.client_id == "a#0" && e.kind == "submitted"),
             "the transition event must land with the status row"
         );
         let record = journal
@@ -193,10 +214,18 @@ async fn outbox_covers_every_mid_flight_status() {
     let (_dir, journal, permit) = setup();
     let now = Utc::now();
     scoped(permit.clone(), async {
-        journal.record_intent(&permit, &intent("a#0"), now).expect("intent a");
-        journal.record_intent(&permit, &intent("b#0"), now).expect("intent b");
-        journal.record_intent(&permit, &intent("c#0"), now).expect("intent c");
-        journal.record_intent(&permit, &intent("d#0"), now).expect("intent d");
+        journal
+            .record_intent(&permit, &intent("a#0"), now)
+            .expect("intent a");
+        journal
+            .record_intent(&permit, &intent("b#0"), now)
+            .expect("intent b");
+        journal
+            .record_intent(&permit, &intent("c#0"), now)
+            .expect("intent c");
+        journal
+            .record_intent(&permit, &intent("d#0"), now)
+            .expect("intent d");
         journal
             .mark_status(&permit, "a#0", OrderStatus::Submitted, now)
             .expect("submitted");
@@ -215,7 +244,10 @@ async fn outbox_covers_every_mid_flight_status() {
             .into_iter()
             .map(|intent| intent.client_id)
             .collect();
-        assert!(pending.contains(&"a#0".to_owned()), "submitted stays pending: {pending:?}");
+        assert!(
+            pending.contains(&"a#0".to_owned()),
+            "submitted stays pending: {pending:?}"
+        );
         assert!(
             pending.contains(&"b#0".to_owned()),
             "acknowledged stays pending — it is still mid-flight: {pending:?}"
@@ -224,7 +256,10 @@ async fn outbox_covers_every_mid_flight_status() {
             pending.contains(&"c#0".to_owned()),
             "partial stays pending — the venue may still change it: {pending:?}"
         );
-        assert!(!pending.contains(&"d#0".to_owned()), "filled leaves the outbox");
+        assert!(
+            !pending.contains(&"d#0".to_owned()),
+            "filled leaves the outbox"
+        );
     })
     .await;
 }
@@ -240,12 +275,24 @@ async fn index_rebuild_matches_the_linear_scan() {
     let now = Utc::now();
     let before = scoped(permit.clone(), async {
         let journal = Journal::open(&path).expect("open");
-        journal.record_intent(&permit, &intent("a#0"), now).expect("intent a");
-        journal.record_intent(&permit, &intent("b#0"), now).expect("intent b");
-        journal.record_intent(&permit, &intent("c#0"), now).expect("intent c");
-        journal.mark_status(&permit, "a#0", OrderStatus::Submitted, now).expect("submitted");
-        journal.mark_status(&permit, "a#0", OrderStatus::Acknowledged, now).expect("acknowledged");
-        journal.mark_status(&permit, "b#0", OrderStatus::Filled, now).expect("filled");
+        journal
+            .record_intent(&permit, &intent("a#0"), now)
+            .expect("intent a");
+        journal
+            .record_intent(&permit, &intent("b#0"), now)
+            .expect("intent b");
+        journal
+            .record_intent(&permit, &intent("c#0"), now)
+            .expect("intent c");
+        journal
+            .mark_status(&permit, "a#0", OrderStatus::Submitted, now)
+            .expect("submitted");
+        journal
+            .mark_status(&permit, "a#0", OrderStatus::Acknowledged, now)
+            .expect("acknowledged");
+        journal
+            .mark_status(&permit, "b#0", OrderStatus::Filled, now)
+            .expect("filled");
         // A `verdict` row is not a status kind: it must never move a status.
         journal
             .record_transition(&permit, "c#0", "verdict", "status=Partial", now)
@@ -261,13 +308,20 @@ async fn index_rebuild_matches_the_linear_scan() {
         let oracle = linear_scan(&state.events);
         let ids: Vec<String> = oracle.iter().map(|(id, _)| id.clone()).collect();
         assert_eq!(
-            state.intents.iter().map(|i| i.client_id.clone()).collect::<Vec<_>>(),
+            state
+                .intents
+                .iter()
+                .map(|i| i.client_id.clone())
+                .collect::<Vec<_>>(),
             ids,
             "rebuilt intents match the linear scan"
         );
         for (id, status) in &oracle {
             assert_eq!(
-                journal.intent_status(&permit, id).expect("status").as_deref(),
+                journal
+                    .intent_status(&permit, id)
+                    .expect("status")
+                    .as_deref(),
                 Some(status.as_str()),
                 "index status for {id} matches the linear scan"
             );
@@ -281,17 +335,26 @@ async fn index_rebuild_matches_the_linear_scan() {
         let expected: Vec<String> = oracle
             .iter()
             .filter(|(_, status)| {
-                matches!(status.as_str(), "pending" | "submitted" | "acknowledged" | "partial")
+                matches!(
+                    status.as_str(),
+                    "pending" | "submitted" | "acknowledged" | "partial"
+                )
             })
             .map(|(id, _)| id.clone())
             .collect();
         assert_eq!(pending, expected, "the outbox matches the linear scan");
         assert_eq!(
-            journal.intent_status(&permit, "c#0").expect("status").as_deref(),
+            journal
+                .intent_status(&permit, "c#0")
+                .expect("status")
+                .as_deref(),
             Some("pending"),
             "a non-status transition row leaves the status alone"
         );
-        assert!(journal.intent_status(&permit, "absent").expect("status").is_none());
+        assert!(journal
+            .intent_status(&permit, "absent")
+            .expect("status")
+            .is_none());
     })
     .await;
 }
@@ -307,11 +370,21 @@ async fn every_byte_offset_rebuilds_a_consistent_index() {
     let now = Utc::now();
     scoped(permit.clone(), async {
         let journal = Journal::open(&path).expect("open");
-        journal.record_intent(&permit, &intent("a#0"), now).expect("a");
-        journal.record_intent(&permit, &intent("b#0"), now).expect("b");
-        journal.mark_status(&permit, "a#0", OrderStatus::Submitted, now).expect("submitted");
-        journal.mark_status(&permit, "a#0", OrderStatus::Filled, now).expect("filled");
-        journal.record_leg_fill(&permit, "b#0", &leg("SPY 260117C00600000"), now).expect("leg");
+        journal
+            .record_intent(&permit, &intent("a#0"), now)
+            .expect("a");
+        journal
+            .record_intent(&permit, &intent("b#0"), now)
+            .expect("b");
+        journal
+            .mark_status(&permit, "a#0", OrderStatus::Submitted, now)
+            .expect("submitted");
+        journal
+            .mark_status(&permit, "a#0", OrderStatus::Filled, now)
+            .expect("filled");
+        journal
+            .record_leg_fill(&permit, "b#0", &leg("SPY 260117C00600000"), now)
+            .expect("leg");
     })
     .await;
     let raw = std::fs::read(&path).expect("journal bytes");
@@ -327,13 +400,20 @@ async fn every_byte_offset_rebuilds_a_consistent_index() {
                 let oracle = linear_scan(&state.events);
                 let ids: Vec<String> = oracle.iter().map(|(id, _)| id.clone()).collect();
                 assert_eq!(
-                    state.intents.iter().map(|i| i.client_id.clone()).collect::<Vec<_>>(),
+                    state
+                        .intents
+                        .iter()
+                        .map(|i| i.client_id.clone())
+                        .collect::<Vec<_>>(),
                     ids,
                     "offset {offset}: rebuilt intents match the linear scan"
                 );
                 for (id, status) in &oracle {
                     assert_eq!(
-                        journal.intent_status(&probe_permit, id).expect("status").as_deref(),
+                        journal
+                            .intent_status(&probe_permit, id)
+                            .expect("status")
+                            .as_deref(),
                         Some(status.as_str()),
                         "offset {offset}: index status for {id}"
                     );

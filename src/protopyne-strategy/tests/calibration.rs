@@ -232,8 +232,7 @@ fn tuning_report(rows: &[CorpusRow], grant: &Grant) -> (TuningReport, Vec<String
             (false, false) => {}
         }
     }
-    let precision = true_positives as f64
-        / (true_positives + false_positives) as f64;
+    let precision = true_positives as f64 / (true_positives + false_positives) as f64;
     let recall = true_positives as f64 / (true_positives + false_negatives) as f64;
     (
         TuningReport {
@@ -276,15 +275,29 @@ fn grant_evaluation_stays_pure_across_repeated_runs() {
     let first: Vec<bool> = rows
         .iter()
         .map(|r| {
-            evaluate_grant(&r.proposal, &grant(), &r.usage, &r.market, &r.breakers, now())
-                .is_allow()
+            evaluate_grant(
+                &r.proposal,
+                &grant(),
+                &r.usage,
+                &r.market,
+                &r.breakers,
+                now(),
+            )
+            .is_allow()
         })
         .collect();
     let second: Vec<bool> = rows
         .iter()
         .map(|r| {
-            evaluate_grant(&r.proposal, &grant(), &r.usage, &r.market, &r.breakers, now())
-                .is_allow()
+            evaluate_grant(
+                &r.proposal,
+                &grant(),
+                &r.usage,
+                &r.market,
+                &r.breakers,
+                now(),
+            )
+            .is_allow()
         })
         .collect();
     assert_eq!(first, second, "same inputs must decide identically");

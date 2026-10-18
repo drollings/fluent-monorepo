@@ -8,13 +8,12 @@
 //! runnable filter is `pine::closure`, not the file stem.
 
 use super::*;
-use crate::{PineSource, SourceKind, load_pine_source, parse_pine_source};
+use crate::{load_pine_source, parse_pine_source, PineSource, SourceKind};
 use protopyne_types::Validate;
 use std::path::PathBuf;
 
 fn data_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../data/protopyne-rs")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../data/protopyne-rs")
 }
 
 fn load(entry: &ClosureEntry) -> PineSource {
@@ -24,7 +23,11 @@ fn load(entry: &ClosureEntry) -> PineSource {
 
 #[test]
 fn seven_libraries_load_with_identities() {
-    assert_eq!(REAL_LIBRARIES.len(), 7, "five in-scope plus drawing/candles");
+    assert_eq!(
+        REAL_LIBRARIES.len(),
+        7,
+        "five in-scope plus drawing/candles"
+    );
     for entry in REAL_LIBRARIES {
         let source = load(entry);
         assert_eq!(source.version, Some(6), "{} declares v6", entry.relpath);
@@ -142,15 +145,24 @@ fn header_of(relative: &str) -> (Vec<String>, usize) {
 #[ignore = "requires trimmed CSV history fixtures no longer shipped in the tree"]
 fn bar_histories_pin_header_and_counts() {
     let (header, rows) = header_of("historical/SPY_1M.csv");
-    assert_eq!(header, vec!["time", "open", "high", "low", "close", "Volume"]);
+    assert_eq!(
+        header,
+        vec!["time", "open", "high", "low", "close", "Volume"]
+    );
     assert_eq!(rows, 436, "1M data rows after the header");
 
     let (header, rows) = header_of("historical/SPY_5M.csv");
-    assert_eq!(header, vec!["time", "open", "high", "low", "close", "Volume"]);
+    assert_eq!(
+        header,
+        vec!["time", "open", "high", "low", "close", "Volume"]
+    );
     assert_eq!(rows, 346, "5M data rows after the header");
 
     let (header, rows) = header_of("historical/SPY_15M.csv");
-    assert_eq!(header, vec!["time", "open", "high", "low", "close", "Volume"]);
+    assert_eq!(
+        header,
+        vec!["time", "open", "high", "low", "close", "Volume"]
+    );
     assert_eq!(rows, 116, "15M data rows after the header");
 }
 

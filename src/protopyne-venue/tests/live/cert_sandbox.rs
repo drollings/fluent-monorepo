@@ -9,9 +9,9 @@
 use std::sync::Arc;
 
 use fluent_concurrency::io::net::NetCapability;
-use fluent_wvr::{CURRENT_CAPS, CapabilitySet};
-use protopyne_venue::{LiveBoot, SessionConfig, TastytradeConfig, boot_live};
+use fluent_wvr::{CapabilitySet, CURRENT_CAPS};
 use protopyne_venue::Venue;
+use protopyne_venue::{boot_live, LiveBoot, SessionConfig, TastytradeConfig};
 
 fn env(name: &str) -> Option<String> {
     std::env::var(name).ok().filter(|value| !value.is_empty())

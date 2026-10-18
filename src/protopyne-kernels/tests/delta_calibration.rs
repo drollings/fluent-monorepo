@@ -109,7 +109,11 @@ struct DeltaReport {
 impl DeltaReport {
     /// Control-quiet rate: 1.0 when every control held, else 0.0.
     fn quiet_rate(&self) -> f64 {
-        if self.controls_quiet { 1.0 } else { 0.0 }
+        if self.controls_quiet {
+            1.0
+        } else {
+            0.0
+        }
     }
 
     /// Whether delta output may be trusted: every control quiet and both
@@ -136,14 +140,28 @@ struct SignedPrint {
 }
 
 fn signed(ts_ms: i64, price: f64, volume: f64, is_buy: bool) -> (RawTick, SignedPrint) {
-    (RawTick { ts_ms, price, volume }, SignedPrint { price, volume, is_buy })
+    (
+        RawTick {
+            ts_ms,
+            price,
+            volume,
+        },
+        SignedPrint {
+            price,
+            volume,
+            is_buy,
+        },
+    )
 }
 
 /// True buy share of a signed tape slice.
 fn true_share(prints: &[SignedPrint]) -> f64 {
     let total: f64 = prints.iter().map(|print| print.volume).sum();
-    let buys: f64 =
-        prints.iter().filter(|print| print.is_buy).map(|print| print.volume).sum();
+    let buys: f64 = prints
+        .iter()
+        .filter(|print| print.is_buy)
+        .map(|print| print.volume)
+        .sum();
     buys / total
 }
 
@@ -263,7 +281,10 @@ fn tick_signed_errors() -> Vec<f64> {
     let mut ring = fresh_ring();
     let outcome = ring.reconcile_with_ticks(&rows, &ticks, total, 100.0);
     assert_eq!(outcome.rebuilt, rows.len(), "market rebuilds whole");
-    assert!(outcome.remainder.is_none(), "exact reference tops up nothing");
+    assert!(
+        outcome.remainder.is_none(),
+        "exact reference tops up nothing"
+    );
     rows.iter()
         .zip(truths.iter())
         .enumerate()
@@ -290,18 +311,78 @@ fn tick_signed_errors() -> Vec<f64> {
 fn shape_market() -> Vec<(LtfRow, f64)> {
     vec![
         // Strong climb, all buys: 0.5 + 0.5 + 0.15 clamps to 0.98.
-        (LtfRow { ts_ms: T0, o: 100.0, h: 102.0, l: 100.0, c: 102.0, volume: 100.0 }, 1.0),
+        (
+            LtfRow {
+                ts_ms: T0,
+                o: 100.0,
+                h: 102.0,
+                l: 100.0,
+                c: 102.0,
+                volume: 100.0,
+            },
+            1.0,
+        ),
         // Strong slide, all sells: 0.5 - 0.5 - 0.15 clamps to 0.02.
-        (LtfRow { ts_ms: T0 + MIN, o: 102.0, h: 102.0, l: 100.0, c: 100.0, volume: 100.0 }, 0.0),
+        (
+            LtfRow {
+                ts_ms: T0 + MIN,
+                o: 102.0,
+                h: 102.0,
+                l: 100.0,
+                c: 100.0,
+                volume: 100.0,
+            },
+            0.0,
+        ),
         // Doji, balanced truth: body 0, close mid-range reads 0.5.
-        (LtfRow { ts_ms: T0 + 2 * MIN, o: 100.0, h: 101.0, l: 99.0, c: 100.0, volume: 100.0 }, 0.5),
+        (
+            LtfRow {
+                ts_ms: T0 + 2 * MIN,
+                o: 100.0,
+                h: 101.0,
+                l: 99.0,
+                c: 100.0,
+                volume: 100.0,
+            },
+            0.5,
+        ),
         // Mild climb, truth 0.7: 0.5 + 1/6 + 0.05.
-        (LtfRow { ts_ms: T0 + 3 * MIN, o: 100.0, h: 101.0, l: 99.5, c: 100.5, volume: 100.0 }, 0.7),
+        (
+            LtfRow {
+                ts_ms: T0 + 3 * MIN,
+                o: 100.0,
+                h: 101.0,
+                l: 99.5,
+                c: 100.5,
+                volume: 100.0,
+            },
+            0.7,
+        ),
         // Mild slide, truth 0.3: 0.5 - 1/6 - 0.05.
-        (LtfRow { ts_ms: T0 + 4 * MIN, o: 101.0, h: 102.0, l: 99.0, c: 100.0, volume: 100.0 }, 0.3),
+        (
+            LtfRow {
+                ts_ms: T0 + 4 * MIN,
+                o: 101.0,
+                h: 102.0,
+                l: 99.0,
+                c: 100.0,
+                volume: 100.0,
+            },
+            0.3,
+        ),
         // Flat directionless candle, truth 0.9: shape reads 0.5 and errs
         // 0.4 — the documented blindness, priced into the bound.
-        (LtfRow { ts_ms: T0 + 5 * MIN, o: 100.0, h: 100.5, l: 99.5, c: 100.0, volume: 100.0 }, 0.9),
+        (
+            LtfRow {
+                ts_ms: T0 + 5 * MIN,
+                o: 100.0,
+                h: 100.5,
+                l: 99.5,
+                c: 100.0,
+                volume: 100.0,
+            },
+            0.9,
+        ),
     ]
 }
 
@@ -310,8 +391,16 @@ fn shape_errors() -> Vec<f64> {
         .iter()
         .map(|(row, truth)| {
             let split = estimate_delta_volume_estimated(row.o, row.h, row.l, row.c, row.volume);
-            assert_eq!(split.method, DeltaMethod::ShapeFallback, "shape labels itself");
-            assert_eq!(split.confidence, DeltaConfidence::Low, "shape never claims more");
+            assert_eq!(
+                split.method,
+                DeltaMethod::ShapeFallback,
+                "shape labels itself"
+            );
+            assert_eq!(
+                split.confidence,
+                DeltaConfidence::Low,
+                "shape never claims more"
+            );
             (split.buy_volume / row.volume - truth).abs()
         })
         .collect()
@@ -326,14 +415,43 @@ fn shape_errors() -> Vec<f64> {
 #[test]
 fn controls_flat_auction_prints_stay_neutral() {
     let rows = vec![
-        LtfRow { ts_ms: T0, o: 100.0, h: 100.0, l: 100.0, c: 100.0, volume: 30.0 },
-        LtfRow { ts_ms: T0 + MIN, o: 100.0, h: 100.0, l: 100.0, c: 100.0, volume: 30.0 },
-        LtfRow { ts_ms: T0 + 2 * MIN, o: 100.0, h: 100.0, l: 100.0, c: 100.0, volume: 30.0 },
+        LtfRow {
+            ts_ms: T0,
+            o: 100.0,
+            h: 100.0,
+            l: 100.0,
+            c: 100.0,
+            volume: 30.0,
+        },
+        LtfRow {
+            ts_ms: T0 + MIN,
+            o: 100.0,
+            h: 100.0,
+            l: 100.0,
+            c: 100.0,
+            volume: 30.0,
+        },
+        LtfRow {
+            ts_ms: T0 + 2 * MIN,
+            o: 100.0,
+            h: 100.0,
+            l: 100.0,
+            c: 100.0,
+            volume: 30.0,
+        },
     ];
-    let mut ticks = vec![RawTick { ts_ms: T0 - 30_000, price: 100.0, volume: 10.0 }];
+    let mut ticks = vec![RawTick {
+        ts_ms: T0 - 30_000,
+        price: 100.0,
+        volume: 10.0,
+    }];
     for bucket in 0..3 {
         for offset in [5_000, 10_000, 15_000] {
-            ticks.push(RawTick { ts_ms: T0 + bucket * MIN + offset, price: 100.0, volume: 10.0 });
+            ticks.push(RawTick {
+                ts_ms: T0 + bucket * MIN + offset,
+                price: 100.0,
+                volume: 10.0,
+            });
         }
     }
     let mut ring = fresh_ring();
@@ -351,9 +469,18 @@ fn controls_flat_auction_prints_stay_neutral() {
     }
     // Print level: flat and NaN deltas split neutral, never directional.
     assert_eq!(estimate_buy_volume_estimated(10.0, 0.0).buy_volume, 5.0);
-    assert_eq!(estimate_buy_volume_estimated(10.0, f64::NAN).buy_volume, 5.0);
-    assert_eq!(estimate_buy_volume_estimated(10.0, 0.0).confidence, DeltaConfidence::Low);
-    assert_eq!(estimate_buy_volume_estimated(10.0, f64::NAN).confidence, DeltaConfidence::Low);
+    assert_eq!(
+        estimate_buy_volume_estimated(10.0, f64::NAN).buy_volume,
+        5.0
+    );
+    assert_eq!(
+        estimate_buy_volume_estimated(10.0, 0.0).confidence,
+        DeltaConfidence::Low
+    );
+    assert_eq!(
+        estimate_buy_volume_estimated(10.0, f64::NAN).confidence,
+        DeltaConfidence::Low
+    );
 }
 
 /// Dust-range and degenerate candles: the structural guard refuses them, so
@@ -361,20 +488,53 @@ fn controls_flat_auction_prints_stay_neutral() {
 #[test]
 fn controls_dust_candles_stay_neutral() {
     // Guard truth table: valid candles pass, dust/degenerate fail.
-    assert!(validate_ohlcv(100.0, 101.0, 99.0, 100.5, 50.0), "well-formed passes");
-    assert!(!validate_ohlcv(100.0, 100.0, 100.0, 100.0, 50.0), "flat range fails");
-    assert!(!validate_ohlcv(100.0, 100.0 + 1e-9, 100.0, 100.0, 50.0), "dust range fails");
-    assert!(!validate_ohlcv(f64::NAN, 102.0, 99.0, 101.0, 50.0), "NaN leg fails");
-    assert!(!validate_ohlcv(100.0, 101.0, 99.0, 100.5, 0.0), "empty volume fails");
+    assert!(
+        validate_ohlcv(100.0, 101.0, 99.0, 100.5, 50.0),
+        "well-formed passes"
+    );
+    assert!(
+        !validate_ohlcv(100.0, 100.0, 100.0, 100.0, 50.0),
+        "flat range fails"
+    );
+    assert!(
+        !validate_ohlcv(100.0, 100.0 + 1e-9, 100.0, 100.0, 50.0),
+        "dust range fails"
+    );
+    assert!(
+        !validate_ohlcv(f64::NAN, 102.0, 99.0, 101.0, 50.0),
+        "NaN leg fails"
+    );
+    assert!(
+        !validate_ohlcv(100.0, 101.0, 99.0, 100.5, 0.0),
+        "empty volume fails"
+    );
     let rows = vec![
-        LtfRow { ts_ms: T0, o: 100.0, h: 100.0, l: 100.0, c: 100.0, volume: 40.0 },
-        LtfRow { ts_ms: T0 + MIN, o: 100.0, h: 100.0 + 1e-9, l: 100.0, c: 100.0, volume: 60.0 },
+        LtfRow {
+            ts_ms: T0,
+            o: 100.0,
+            h: 100.0,
+            l: 100.0,
+            c: 100.0,
+            volume: 40.0,
+        },
+        LtfRow {
+            ts_ms: T0 + MIN,
+            o: 100.0,
+            h: 100.0 + 1e-9,
+            l: 100.0,
+            c: 100.0,
+            volume: 60.0,
+        },
     ];
     let mut ring = fresh_ring();
     ring.reconcile(&rows, 100.0, 100.0);
     for index in 0..2 {
         let candle = ring.get(index).expect("rebuilt candle");
-        assert_eq!(candle.buy_volume, candle.volume * 0.5, "candle {index} neutral");
+        assert_eq!(
+            candle.buy_volume,
+            candle.volume * 0.5,
+            "candle {index} neutral"
+        );
         assert_eq!(
             ring.buy_provenance(index),
             Some((DeltaMethod::ShapeFallback, DeltaConfidence::Low)),
@@ -389,13 +549,39 @@ fn controls_dust_candles_stay_neutral() {
 #[test]
 fn controls_single_print_buckets_never_high() {
     let rows = vec![
-        LtfRow { ts_ms: T0, o: 100.0, h: 101.0, l: 100.0, c: 101.0, volume: 10.0 },
-        LtfRow { ts_ms: T0 + MIN, o: 101.0, h: 101.0, l: 101.0, c: 101.0, volume: 10.0 },
+        LtfRow {
+            ts_ms: T0,
+            o: 100.0,
+            h: 101.0,
+            l: 100.0,
+            c: 101.0,
+            volume: 10.0,
+        },
+        LtfRow {
+            ts_ms: T0 + MIN,
+            o: 101.0,
+            h: 101.0,
+            l: 101.0,
+            c: 101.0,
+            volume: 10.0,
+        },
     ];
     let ticks = vec![
-        RawTick { ts_ms: T0 - 30_000, price: 100.0, volume: 10.0 },
-        RawTick { ts_ms: T0 + 5_000, price: 101.0, volume: 10.0 },
-        RawTick { ts_ms: T0 + MIN + 5_000, price: 101.0, volume: 10.0 },
+        RawTick {
+            ts_ms: T0 - 30_000,
+            price: 100.0,
+            volume: 10.0,
+        },
+        RawTick {
+            ts_ms: T0 + 5_000,
+            price: 101.0,
+            volume: 10.0,
+        },
+        RawTick {
+            ts_ms: T0 + MIN + 5_000,
+            price: 101.0,
+            volume: 10.0,
+        },
     ];
     let mut ring = fresh_ring();
     ring.reconcile_with_ticks(&rows, &ticks, 20.0, 100.0);
@@ -404,13 +590,21 @@ fn controls_single_print_buckets_never_high() {
         Some((DeltaMethod::TickSigned, DeltaConfidence::Reduced)),
         "lone directed print never reads High"
     );
-    assert_eq!(ring.get(0).expect("candle").buy_volume, 10.0, "uptick takes all");
+    assert_eq!(
+        ring.get(0).expect("candle").buy_volume,
+        10.0,
+        "uptick takes all"
+    );
     assert_eq!(
         ring.buy_provenance(1),
         Some((DeltaMethod::TickSigned, DeltaConfidence::Low)),
         "lone flat print carries no direction"
     );
-    assert_eq!(ring.get(1).expect("candle").buy_volume, 5.0, "flat splits neutral");
+    assert_eq!(
+        ring.get(1).expect("candle").buy_volume,
+        5.0,
+        "flat splits neutral"
+    );
 }
 
 /// NaN prints are skipped by the fold without advancing the direction
@@ -419,16 +613,57 @@ fn controls_single_print_buckets_never_high() {
 #[test]
 fn controls_nan_prints_donate_no_direction() {
     let rows = vec![
-        LtfRow { ts_ms: T0, o: 100.0, h: 101.0, l: 100.0, c: 100.5, volume: 10.0 },
-        LtfRow { ts_ms: T0 + MIN, o: 100.5, h: 101.0, l: 100.0, c: 100.5, volume: 50.0 },
-        LtfRow { ts_ms: T0 + 2 * MIN, o: 100.5, h: 100.0, l: 100.0, c: 100.0, volume: 10.0 },
+        LtfRow {
+            ts_ms: T0,
+            o: 100.0,
+            h: 101.0,
+            l: 100.0,
+            c: 100.5,
+            volume: 10.0,
+        },
+        LtfRow {
+            ts_ms: T0 + MIN,
+            o: 100.5,
+            h: 101.0,
+            l: 100.0,
+            c: 100.5,
+            volume: 50.0,
+        },
+        LtfRow {
+            ts_ms: T0 + 2 * MIN,
+            o: 100.5,
+            h: 100.0,
+            l: 100.0,
+            c: 100.0,
+            volume: 10.0,
+        },
     ];
     let ticks = vec![
-        RawTick { ts_ms: T0 - 30_000, price: 100.0, volume: 10.0 },
-        RawTick { ts_ms: T0 + 5_000, price: 100.5, volume: 10.0 },
-        RawTick { ts_ms: T0 + MIN + 5_000, price: f64::NAN, volume: 25.0 },
-        RawTick { ts_ms: T0 + MIN + 10_000, price: f64::NAN, volume: 25.0 },
-        RawTick { ts_ms: T0 + 2 * MIN + 5_000, price: 100.0, volume: 10.0 },
+        RawTick {
+            ts_ms: T0 - 30_000,
+            price: 100.0,
+            volume: 10.0,
+        },
+        RawTick {
+            ts_ms: T0 + 5_000,
+            price: 100.5,
+            volume: 10.0,
+        },
+        RawTick {
+            ts_ms: T0 + MIN + 5_000,
+            price: f64::NAN,
+            volume: 25.0,
+        },
+        RawTick {
+            ts_ms: T0 + MIN + 10_000,
+            price: f64::NAN,
+            volume: 25.0,
+        },
+        RawTick {
+            ts_ms: T0 + 2 * MIN + 5_000,
+            price: 100.0,
+            volume: 10.0,
+        },
     ];
     let mut ring = fresh_ring();
     ring.reconcile_with_ticks(&rows, &ticks, 70.0, 100.0);
@@ -442,7 +677,11 @@ fn controls_nan_prints_donate_no_direction() {
         Some((DeltaMethod::ShapeFallback, DeltaConfidence::Low)),
         "NaN-only bucket falls back to shape"
     );
-    assert_eq!(ring.get(1).expect("candle").buy_volume, 25.0, "shape-neutral split of 50");
+    assert_eq!(
+        ring.get(1).expect("candle").buy_volume,
+        25.0,
+        "shape-neutral split of 50"
+    );
     // The post-gap print signs down against 100.5 (NaN never became the
     // predecessor): takes none.
     assert_eq!(ring.get(2).expect("candle").buy_volume, 0.0);
@@ -489,8 +728,16 @@ fn shape_fallback_mae_within_frozen_bound() {
     assert_close(errors[0], 0.02, "clamped strong climb");
     assert_close(errors[1], 0.02, "clamped strong slide");
     assert_close(errors[2], 0.0, "balanced doji");
-    assert_close(errors[3], 0.5 + 1.0 / 6.0 + 0.05 - 0.7, "mild climb hand ratio");
-    assert_close(errors[4], 0.3 - (0.5 - 1.0 / 6.0 - 0.05), "mild slide hand ratio");
+    assert_close(
+        errors[3],
+        0.5 + 1.0 / 6.0 + 0.05 - 0.7,
+        "mild climb hand ratio",
+    );
+    assert_close(
+        errors[4],
+        0.3 - (0.5 - 1.0 / 6.0 - 0.05),
+        "mild slide hand ratio",
+    );
     assert_close(errors[5], 0.4, "adversarial doji blindness");
     let measured = mean_abs_err(&errors);
     // Frozen 2026-10-12: (0.02+0.02+0+0.0167+0.0167+0.4)/6 — the 0.4 is the
@@ -508,15 +755,49 @@ fn shape_fallback_mae_within_frozen_bound() {
 #[test]
 fn clamp_holds_under_print_candle_disagreement() {
     let rows = vec![
-        LtfRow { ts_ms: T0, o: 100.0, h: 101.0, l: 100.0, c: 101.0, volume: 60.0 },
-        LtfRow { ts_ms: T0 + MIN, o: 101.0, h: 101.0, l: 100.0, c: 100.0, volume: 200.0 },
+        LtfRow {
+            ts_ms: T0,
+            o: 100.0,
+            h: 101.0,
+            l: 100.0,
+            c: 101.0,
+            volume: 60.0,
+        },
+        LtfRow {
+            ts_ms: T0 + MIN,
+            o: 101.0,
+            h: 101.0,
+            l: 100.0,
+            c: 100.0,
+            volume: 200.0,
+        },
     ];
     let ticks = vec![
-        RawTick { ts_ms: T0 - 30_000, price: 100.0, volume: 10.0 },
-        RawTick { ts_ms: T0 + 5_000, price: 100.5, volume: 50.0 },
-        RawTick { ts_ms: T0 + 10_000, price: 101.0, volume: 50.0 },
-        RawTick { ts_ms: T0 + MIN + 5_000, price: 100.5, volume: 20.0 },
-        RawTick { ts_ms: T0 + MIN + 10_000, price: 100.0, volume: 20.0 },
+        RawTick {
+            ts_ms: T0 - 30_000,
+            price: 100.0,
+            volume: 10.0,
+        },
+        RawTick {
+            ts_ms: T0 + 5_000,
+            price: 100.5,
+            volume: 50.0,
+        },
+        RawTick {
+            ts_ms: T0 + 10_000,
+            price: 101.0,
+            volume: 50.0,
+        },
+        RawTick {
+            ts_ms: T0 + MIN + 5_000,
+            price: 100.5,
+            volume: 20.0,
+        },
+        RawTick {
+            ts_ms: T0 + MIN + 10_000,
+            price: 100.0,
+            volume: 20.0,
+        },
     ];
     let mut ring = fresh_ring();
     ring.reconcile_with_ticks(&rows, &ticks, 260.0, 100.0);
@@ -538,7 +819,9 @@ fn clamp_holds_under_print_candle_disagreement() {
 // ---------------------------------------------------------------------------
 
 fn load_tick_window(name: &str) -> Vec<RawTick> {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/data/ticks").join(name);
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/data/ticks")
+        .join(name);
     let content = std::fs::read_to_string(&path).expect("tick window loads");
     let mut lines = content.lines();
     assert_eq!(
@@ -576,14 +859,21 @@ fn recorded_windows_stay_clamped_and_labeled() {
         let mut buckets: std::collections::BTreeMap<i64, Vec<&RawTick>> =
             std::collections::BTreeMap::new();
         for tick in &ticks {
-            buckets.entry(tick.ts_ms.div_euclid(MIN)).or_default().push(tick);
+            buckets
+                .entry(tick.ts_ms.div_euclid(MIN))
+                .or_default()
+                .push(tick);
         }
         let rows: Vec<LtfRow> = buckets
             .values()
             .map(|prints| {
                 let slice: Vec<SignedPrint> = prints
                     .iter()
-                    .map(|tick| SignedPrint { price: tick.price, volume: tick.volume, is_buy: true })
+                    .map(|tick| SignedPrint {
+                        price: tick.price,
+                        volume: tick.volume,
+                        is_buy: true,
+                    })
                     .collect();
                 row_of(prints[0].ts_ms.div_euclid(MIN) * MIN, &slice)
             })
@@ -591,11 +881,17 @@ fn recorded_windows_stay_clamped_and_labeled() {
         let total: f64 = rows.iter().map(|row| row.volume).sum();
         let mut ring = fresh_ring();
         let outcome = ring.reconcile_with_ticks(&rows, &ticks, total, 100.0);
-        assert!(outcome.remainder.is_none(), "{name}: exact reference tops up nothing");
+        assert!(
+            outcome.remainder.is_none(),
+            "{name}: exact reference tops up nothing"
+        );
         assert_eq!(ring.len(), rows.len(), "{name}: every row lands");
         for index in 0..ring.len() {
             let candle = ring.get(index).expect("rebuilt candle");
-            assert!(ring.buy_provenance(index).is_some(), "{name} candle {index} labeled");
+            assert!(
+                ring.buy_provenance(index).is_some(),
+                "{name} candle {index} labeled"
+            );
             assert!(
                 (0.0..=candle.volume).contains(&candle.buy_volume),
                 "{name} candle {index} split inside its volume"
@@ -631,5 +927,8 @@ fn delta_report_is_green() {
         report.shape_mae <= SHAPE_SHARE_MAE_BOUND,
         "shape gate holds in the report"
     );
-    assert!(report.is_green(), "delta output may be trusted within its bounds");
+    assert!(
+        report.is_green(),
+        "delta output may be trusted within its bounds"
+    );
 }

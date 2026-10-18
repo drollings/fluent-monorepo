@@ -13,9 +13,9 @@
 #![allow(dead_code)]
 
 use crate::{
-    ClosureEntry, LibraryId, LinkedModule, ModuleId, ModuleInput, REAL_LIBRARIES,
-    TASK_INDICATORS, closure_data_root, load_listed_closure, load_pine_source,
-    parse_pine_source, parse_program, resolve_imports,
+    closure_data_root, load_listed_closure, load_pine_source, parse_pine_source, parse_program,
+    resolve_imports, ClosureEntry, LibraryId, LinkedModule, ModuleId, ModuleInput, REAL_LIBRARIES,
+    TASK_INDICATORS,
 };
 use protopyne_types::Bar;
 use std::collections::{BTreeMap, HashMap};
@@ -148,13 +148,15 @@ pub fn history_bars(file: &str) -> Vec<Bar> {
     lines
         .map(|line| {
             let mut cells = line.split(',');
-            let secs = cells.next().expect("time").parse::<i64>().expect("int time");
+            let secs = cells
+                .next()
+                .expect("time")
+                .parse::<i64>()
+                .expect("int time");
             Bar::new()
-                .ts(
-                    chrono::TimeZone::timestamp_opt(&chrono::Utc, secs, 0)
-                        .single()
-                        .expect("bar time in range"),
-                )
+                .ts(chrono::TimeZone::timestamp_opt(&chrono::Utc, secs, 0)
+                    .single()
+                    .expect("bar time in range"))
                 .o(cells.next().expect("o").parse().expect("decimal open"))
                 .h(cells.next().expect("h").parse().expect("decimal high"))
                 .l(cells.next().expect("l").parse().expect("decimal low"))
@@ -186,10 +188,8 @@ pub fn daily_of(bars: &[Bar]) -> Vec<Bar> {
             let first = rows.first().expect("nonempty bucket");
             let last = rows.last().expect("nonempty bucket");
             Bar::new()
-                .ts(
-                    chrono::DateTime::from_timestamp_millis(key * DAY_MS)
-                        .expect("bucket start in range"),
-                )
+                .ts(chrono::DateTime::from_timestamp_millis(key * DAY_MS)
+                    .expect("bucket start in range"))
                 .o(first.o)
                 .h(rows.iter().map(|bar| bar.h).max().expect("nonempty bucket"))
                 .l(rows.iter().map(|bar| bar.l).min().expect("nonempty bucket"))

@@ -132,11 +132,9 @@ impl OrderStatus {
         match self {
             Self::Pending | Self::Submitted => Some(ActiveOrderState::OpenInFlight),
             Self::Acknowledged | Self::Partial => Some(ActiveOrderState::Open),
-            Self::Filled
-            | Self::Cancelled
-            | Self::Rejected
-            | Self::Expired
-            | Self::OpenFailed => None,
+            Self::Filled | Self::Cancelled | Self::Rejected | Self::Expired | Self::OpenFailed => {
+                None
+            }
         }
     }
 }
@@ -268,8 +266,7 @@ impl Position {
             return;
         }
         if self.quantity == 0 || self.quantity.signum() == signed_qty.signum() {
-            let basis = Decimal::from(self.quantity.abs())
-                * self.avg_price.as_decimal()
+            let basis = Decimal::from(self.quantity.abs()) * self.avg_price.as_decimal()
                 + Decimal::from(signed_qty.abs()) * price.as_decimal();
             let denom = Decimal::from(next.abs());
             self.avg_price = Money::new(basis / denom);

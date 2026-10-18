@@ -23,11 +23,7 @@ impl Indicator for Stub {
         Ok(1)
     }
 
-    fn batch(
-        &self,
-        data: &Ohlcv<'_>,
-        _params: &ParamSet,
-    ) -> Result<IndicatorResult, KernelError> {
+    fn batch(&self, data: &Ohlcv<'_>, _params: &ParamSet) -> Result<IndicatorResult, KernelError> {
         Ok(IndicatorResult::new(
             self.spec.id.clone(),
             data.close.iter().map(|&c| Some(c)).collect(),
@@ -225,7 +221,12 @@ fn incremental_path_collects_no_window_per_bar() {
         ("ta_volume", include_str!("../src/ta_volume.rs")),
         ("filters", include_str!("../src/filters.rs")),
     ] {
-        for leg in [".closes().collect()", ".highs().collect()", ".lows().collect()", ".volumes().collect()"] {
+        for leg in [
+            ".closes().collect()",
+            ".highs().collect()",
+            ".lows().collect()",
+            ".volumes().collect()",
+        ] {
             assert!(
                 !source.contains(leg),
                 "{family} still collects a per-bar window via {leg}"

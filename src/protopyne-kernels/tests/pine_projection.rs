@@ -17,18 +17,16 @@
 #![allow(clippy::float_cmp)]
 
 use super::*;
-use crate::{InputSet, PineEngine, PineRuntimeConfig, parse_program};
+use crate::{parse_program, InputSet, PineEngine, PineRuntimeConfig};
 use chrono::TimeZone as _;
 use protopyne_types::Bar;
 
 fn bar_at(index: i64) -> Bar {
     Bar::new()
-        .ts(
-            chrono::Utc
-                .timestamp_opt(1_700_000_000 + index * 60, 0)
-                .single()
-                .expect("valid test timestamp"),
-        )
+        .ts(chrono::Utc
+            .timestamp_opt(1_700_000_000 + index * 60, 0)
+            .single()
+            .expect("valid test timestamp"))
         .o("100.00".parse().expect("decimal"))
         .h("101.00".parse().expect("decimal"))
         .l("99.00".parse().expect("decimal"))
@@ -68,19 +66,38 @@ fn project_outcome_with_warmup(script: &str, warmup_bars: u64) -> RunOutcome {
 fn plot_projects_to_series_golden() {
     // One `plot` call site becomes one series: title plus one domain value
     // per evaluated bar, `na` holes preserved as `None`.
-    let projection = project_script("plot(close, title=\"Close\")\nplot(close - 200, title=\"Low\")")
-        .expect("plots project");
+    let projection =
+        project_script("plot(close, title=\"Close\")\nplot(close - 200, title=\"Low\")")
+            .expect("plots project");
     assert_eq!(projection.primitives.len(), 2);
     let PlotPrimitive::Series { title, values } = &projection.primitives[0] else {
         panic!("plot projects to a series");
     };
     assert_eq!(title, "Close");
-    assert_eq!(values, &vec![Some(100.0), Some(101.0), Some(102.0), Some(103.0), Some(104.0)]);
+    assert_eq!(
+        values,
+        &vec![
+            Some(100.0),
+            Some(101.0),
+            Some(102.0),
+            Some(103.0),
+            Some(104.0)
+        ]
+    );
     let PlotPrimitive::Series { title, values } = &projection.primitives[1] else {
         panic!("second plot projects to a series");
     };
     assert_eq!(title, "Low");
-    assert_eq!(values, &vec![Some(-100.0), Some(-99.0), Some(-98.0), Some(-97.0), Some(-96.0)]);
+    assert_eq!(
+        values,
+        &vec![
+            Some(-100.0),
+            Some(-99.0),
+            Some(-98.0),
+            Some(-97.0),
+            Some(-96.0)
+        ]
+    );
 }
 
 #[test]
@@ -111,8 +128,7 @@ fn varying_hline_refuses() {
 fn label_projects_to_placed_points() {
     // `label.new` in global scope mints one label per bar: bar index, price,
     // and text in domain coordinates.
-    let projection =
-        project_script("label.new(bar_index, high, \"hi\")").expect("labels project");
+    let projection = project_script("label.new(bar_index, high, \"hi\")").expect("labels project");
     assert_eq!(projection.primitives.len(), 5);
     for (index, primitive) in projection.primitives.iter().enumerate() {
         let PlotPrimitive::Label { bar, price, text } = primitive else {
@@ -130,7 +146,13 @@ fn box_projects_to_area_golden() {
     let projection =
         project_script("box.new(bar_index, high, bar_index, low)").expect("boxes project");
     assert_eq!(projection.primitives.len(), 5);
-    let PlotPrimitive::Area { left, top, right, bottom } = &projection.primitives[2] else {
+    let PlotPrimitive::Area {
+        left,
+        top,
+        right,
+        bottom,
+    } = &projection.primitives[2]
+    else {
         panic!("box.new projects to an area");
     };
     assert_eq!((*left, *right), (2, 2));
@@ -141,13 +163,15 @@ fn box_projects_to_area_golden() {
 fn table_refuses_with_typed_reason() {
     // The engine captures tables (matrix `Match`); the overlay has no table
     // primitive, so the construct refuses here with its name on the reason.
-    let refused =
-        project_script("table.new(position.top_right, 2, 2)").expect_err("table refuses");
+    let refused = project_script("table.new(position.top_right, 2, 2)").expect_err("table refuses");
     assert!(
         matches!(&refused, ProjectionRefusal::Unsupported { construct, .. } if construct == "table.new"),
         "table refuses as unsupported, got {refused}"
     );
-    assert!(refused.to_string().contains("table.new"), "reason names the construct");
+    assert!(
+        refused.to_string().contains("table.new"),
+        "reason names the construct"
+    );
 }
 
 #[test]
@@ -190,13 +214,26 @@ fn parity_lookup_stays_consistent_with_the_table() {
     // never in the engine. `plot` stands `Correct` (per-site series, not the
     // reference merged series) — still projectable, pinned here.
     let standing = |construct: &str| {
-        parity_for(construct).unwrap_or_else(|| panic!("matrix covers {construct}")).verdict
+        parity_for(construct)
+            .unwrap_or_else(|| panic!("matrix covers {construct}"))
+            .verdict
     };
-    assert_eq!(standing("plot"), ParityVerdict::Correct, "plot stands corrected");
+    assert_eq!(
+        standing("plot"),
+        ParityVerdict::Correct,
+        "plot stands corrected"
+    );
     for construct in ["hline()", "label.new", "box.new", "table.new"] {
-        assert_eq!(standing(construct), ParityVerdict::Match, "{construct} stands matched");
+        assert_eq!(
+            standing(construct),
+            ParityVerdict::Match,
+            "{construct} stands matched"
+        );
     }
-    assert!(parity_for("no.such.construct").is_none(), "unknown constructs gate shut");
+    assert!(
+        parity_for("no.such.construct").is_none(),
+        "unknown constructs gate shut"
+    );
 }
 
 /// Bar indices of every `Label` primitive in a projection.
@@ -252,7 +289,11 @@ fn warmup_pads_the_series_with_holes_and_labels_ride_the_cursor() {
     assert_eq!(outcome.evaluated, 3, "five bars minus two warmup bars");
     assert_eq!(outcome.snapshots.len(), 3);
     assert_eq!(
-        outcome.snapshots.iter().map(|snapshot| snapshot.bar).collect::<Vec<_>>(),
+        outcome
+            .snapshots
+            .iter()
+            .map(|snapshot| snapshot.bar)
+            .collect::<Vec<_>>(),
         vec![2, 3, 4],
         "snapshots carry the absolute bar, not the evaluate position"
     );
@@ -266,7 +307,11 @@ fn warmup_pads_the_series_with_holes_and_labels_ride_the_cursor() {
         &vec![None, None, Some(102.0), Some(103.0), Some(104.0)],
         "warmup bars pad as holes; evaluated bars read their closes"
     );
-    assert_eq!(label_bars(&projection), vec![2, 3, 4], "labels ride the cursor");
+    assert_eq!(
+        label_bars(&projection),
+        vec![2, 3, 4],
+        "labels ride the cursor"
+    );
 }
 
 #[test]
@@ -314,7 +359,11 @@ fn plotshape_markers_ride_the_cursor_and_skip_na() {
     let projection = project_script("plotshape(close > open ? high : na, title=\"Up\")")
         .expect("plotshape projects");
     let bars = marker_bars(&projection);
-    assert_eq!(bars, vec![1, 2, 3, 4], "up bars mark, the down bar stays absent");
+    assert_eq!(
+        bars,
+        vec![1, 2, 3, 4],
+        "up bars mark, the down bar stays absent"
+    );
     for primitive in &projection.primitives {
         let PlotPrimitive::Marker { title, price, .. } = primitive else {
             panic!("plotshape projects to markers");
@@ -323,11 +372,8 @@ fn plotshape_markers_ride_the_cursor_and_skip_na() {
         assert_eq!(*price, 101.0);
     }
 
-    let warmed = project_script_with_warmup(
-        "plotshape(close > open ? high : na, title=\"Up\")",
-        2,
-    )
-    .expect("warmed plotshape projects");
+    let warmed = project_script_with_warmup("plotshape(close > open ? high : na, title=\"Up\")", 2)
+        .expect("warmed plotshape projects");
     assert_eq!(
         marker_bars(&warmed),
         vec![2, 3, 4],
@@ -339,30 +385,37 @@ fn plotshape_markers_ride_the_cursor_and_skip_na() {
 fn hidden_plot_projects_nothing_and_refuses_nothing() {
     // `display = display.none` is a skip, not a refusal: the hidden site
     // paints nothing, and a visible sibling still projects.
-    let hidden_only =
-        project_script("plot(close, title=\"H\", display=display.none)").expect("hidden plots skip");
+    let hidden_only = project_script("plot(close, title=\"H\", display=display.none)")
+        .expect("hidden plots skip");
     assert!(
         hidden_only.primitives.is_empty(),
         "a hidden plot leaves no primitive"
     );
 
-    let mixed = project_script(
-        "plot(close, title=\"V\")\nplot(open, title=\"H\", display=display.none)",
-    )
-    .expect("a hidden sibling refuses nothing");
+    let mixed =
+        project_script("plot(close, title=\"V\")\nplot(open, title=\"H\", display=display.none)")
+            .expect("a hidden sibling refuses nothing");
     assert_eq!(mixed.primitives.len(), 1, "only the visible site projects");
     let PlotPrimitive::Series { title, values } = &mixed.primitives[0] else {
         panic!("the visible plot projects to a series");
     };
     assert_eq!(title, "V");
-    assert_eq!(values, &vec![Some(100.0), Some(101.0), Some(102.0), Some(103.0), Some(104.0)]);
+    assert_eq!(
+        values,
+        &vec![
+            Some(100.0),
+            Some(101.0),
+            Some(102.0),
+            Some(103.0),
+            Some(104.0)
+        ]
+    );
 
     // A narrowed flag combination still shows its legs: only the explicit
     // zero hides.
-    let narrowed = project_script(
-        "plot(close, title=\"N\", display=display.all - display.status_line)",
-    )
-    .expect("narrowed display projects");
+    let narrowed =
+        project_script("plot(close, title=\"N\", display=display.all - display.status_line)")
+            .expect("narrowed display projects");
     assert_eq!(narrowed.primitives.len(), 1, "nonzero flags stay visible");
 }
 
@@ -382,7 +435,11 @@ fn unplaceable_drawings_drop_instead_of_substituting() {
     ] {
         let projection =
             project_script(script).unwrap_or_else(|e| panic!("{script:?} drops, not refuses: {e}"));
-        assert_eq!(series_domain(&projection), 0..5, "{script:?}: the plot survives");
+        assert_eq!(
+            series_domain(&projection),
+            0..5,
+            "{script:?}: the plot survives"
+        );
         assert!(
             label_bars(&projection).is_empty() && area_spans(&projection).is_empty(),
             "{script:?}: nothing unplaceable is placed"
@@ -439,8 +496,16 @@ fn repaints_keep_the_creation_geometry() {
          box.set_bgcolor(bx, color.red)",
     )
     .expect("repaints refuse nothing");
-    assert_eq!(series_domain(&projection), 0..5, "the plot survives the repaints");
-    assert_eq!(label_bars(&projection), vec![0, 1, 2, 3, 4], "repainted labels place");
+    assert_eq!(
+        series_domain(&projection),
+        0..5,
+        "the plot survives the repaints"
+    );
+    assert_eq!(
+        label_bars(&projection),
+        vec![0, 1, 2, 3, 4],
+        "repainted labels place"
+    );
     assert_eq!(
         area_spans(&projection),
         vec![(0, 0), (1, 1), (2, 2), (3, 3), (4, 4)],

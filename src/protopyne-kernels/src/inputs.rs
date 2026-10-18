@@ -314,9 +314,10 @@ impl InputSet {
 
     /// Assign an input after bounds and kind checks.
     pub fn set(&mut self, name: &str, value: PineValue) -> Result<(), KernelError> {
-        let def = self.defs.get(name).ok_or_else(|| {
-            KernelError::InvalidInput(format!("undeclared input: {name:?}"))
-        })?;
+        let def = self
+            .defs
+            .get(name)
+            .ok_or_else(|| KernelError::InvalidInput(format!("undeclared input: {name:?}")))?;
         def.check(&value)?;
         self.values.insert(name.to_owned(), value);
         Ok(())

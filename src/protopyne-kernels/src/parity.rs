@@ -28,7 +28,10 @@ use crate::research::frame_of_bars;
 /// null-aware: polars nulls become `None`, and `NaN` (Pine `na`) maps to
 /// `None` as well, so a null close never leaks as `Some(NaN)` downstream.
 /// Output length always equals the input length.
-pub fn expr_fixture(bars: &[protopyne_types::Bar], expr: Expr) -> Result<Vec<Option<f64>>, KernelError> {
+pub fn expr_fixture(
+    bars: &[protopyne_types::Bar],
+    expr: Expr,
+) -> Result<Vec<Option<f64>>, KernelError> {
     let frame = frame_of_bars(bars)?;
     let selected = frame
         .lazy()
@@ -46,12 +49,12 @@ pub fn expr_fixture(bars: &[protopyne_types::Bar], expr: Expr) -> Result<Vec<Opt
     let first = columns.first().ok_or_else(|| {
         KernelError::Research("expr_fixture: select produced no columns".to_owned())
     })?;
-    let cast = first.cast(&DataType::Float64).map_err(|e| {
-        KernelError::Research(format!("expr_fixture cast to f64: {e}"))
-    })?;
-    let chunked = cast.f64().map_err(|e| {
-        KernelError::Research(format!("expr_fixture f64 view: {e}"))
-    })?;
+    let cast = first
+        .cast(&DataType::Float64)
+        .map_err(|e| KernelError::Research(format!("expr_fixture cast to f64: {e}")))?;
+    let chunked = cast
+        .f64()
+        .map_err(|e| KernelError::Research(format!("expr_fixture f64 view: {e}")))?;
     Ok((0..chunked.len())
         .map(|i| chunked.get(i).and_then(fin_or_none))
         .collect())

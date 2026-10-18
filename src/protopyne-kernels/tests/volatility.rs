@@ -4,7 +4,7 @@ use crate::parity::{assert_expr_parity, expr_fixture};
 use crate::volatility::{
     AtrIndicator, BbIndicator, KcIndicator, NatrIndicator, SupertrendIndicator, TrIndicator,
 };
-use polars::prelude::{EWMOptions, Expr, col, lit, when};
+use polars::prelude::{col, lit, when, EWMOptions, Expr};
 use protopyne_types::Bar;
 use std::path::PathBuf;
 
@@ -53,7 +53,10 @@ fn true_range_uses_prev_close_gap_by_hand() {
     let mut state = IndicatorState::new();
     let mut folded = Vec::new();
     for tick in ticks(&[10.0, 11.0], &[9.0, 9.5], &[8.0, 10.0]) {
-        folded.push(tr.update(&mut state, tick, &ParamSet::new()).expect("valid"));
+        folded.push(
+            tr.update(&mut state, tick, &ParamSet::new())
+                .expect("valid"),
+        );
     }
     assert_eq!(result.values, folded);
 }
@@ -76,8 +79,9 @@ fn atr_smooths_ranges_by_hand() {
 }
 
 fn trending_legs(bars: usize) -> (Vec<f64>, Vec<f64>, Vec<f64>) {
-    let close: Vec<f64> =
-        (0..bars).map(|i| 100.0 + i as f64 * 0.05 + ((i * 37 % 11) as f64) * 0.13).collect();
+    let close: Vec<f64> = (0..bars)
+        .map(|i| 100.0 + i as f64 * 0.05 + ((i * 37 % 11) as f64) * 0.13)
+        .collect();
     let high: Vec<f64> = close.iter().map(|c| c + 0.4).collect();
     let low: Vec<f64> = close.iter().map(|c| c - 0.4).collect();
     (high, low, close)
@@ -110,7 +114,11 @@ fn atr_windowed_plus_warmup_converges_to_full_history_over_visible_slice() {
     let windowed_at = |extra: usize| {
         let eval_start = visible_start.saturating_sub(warmup + extra);
         atr.batch(
-            &ohlcv(&high[eval_start..], &low[eval_start..], &close[eval_start..]),
+            &ohlcv(
+                &high[eval_start..],
+                &low[eval_start..],
+                &close[eval_start..],
+            ),
             &ps,
         )
         .expect("windowed")
@@ -119,8 +127,10 @@ fn atr_windowed_plus_warmup_converges_to_full_history_over_visible_slice() {
     let four = windowed_at(3 * warmup);
     let end = close.len() - visible_start;
     let diff_one = max_abs_diff(&one.values[warmup..][..end], &full.values[visible_start..]);
-    let diff_four =
-        max_abs_diff(&four.values[3 * warmup + warmup..][..end], &full.values[visible_start..]);
+    let diff_four = max_abs_diff(
+        &four.values[3 * warmup + warmup..][..end],
+        &full.values[visible_start..],
+    );
     assert!(
         diff_one <= 0.05,
         "declared-warmup transient stays small on the fixture: {diff_one}"
@@ -144,9 +154,7 @@ fn bollinger_bands_use_population_stdev_by_hand() {
     let ps = ParamSet::new()
         .with_int("length", 3)
         .with_float("mult", 2.0);
-    let result = bb
-        .batch(&Ohlcv::close_only(&data), &ps)
-        .expect("valid");
+    let result = bb.batch(&Ohlcv::close_only(&data), &ps).expect("valid");
     let dev = (2.0_f64 / 3.0).sqrt();
     approx(&result.values[2..3], &[Some(2.0)], 1e-9);
     let upper = result.secondary("upper").expect("upper leg");
@@ -196,7 +204,14 @@ fn natr_bar(open: f64, high: f64, low: f64, close: f64, index: usize) -> Bar {
     let dec = |x: f64| rust_decimal::Decimal::from_f64_retain(x).expect("finite test price");
     Bar::new()
         .ts(chrono::Utc
-            .with_ymd_and_hms(2026, 1, 2, 9 + (index / 3600) as u32, ((index / 60) % 60) as u32, (index % 60) as u32)
+            .with_ymd_and_hms(
+                2026,
+                1,
+                2,
+                9 + (index / 3600) as u32,
+                ((index / 60) % 60) as u32,
+                (index % 60) as u32,
+            )
             .single()
             .expect("valid timestamp"))
         .o(dec(open))
@@ -233,7 +248,12 @@ fn natr_spy_bars(count: usize) -> Vec<Bar> {
     let mut bars = Vec::new();
     for record in reader.records().take(count) {
         let row = record.expect("readable row");
-        let num = |idx: usize| row.get(idx).expect("column").parse::<f64>().expect("number");
+        let num = |idx: usize| {
+            row.get(idx)
+                .expect("column")
+                .parse::<f64>()
+                .expect("number")
+        };
         let epoch: i64 = row.get(0).expect("time").parse().expect("epoch");
         let ts = chrono::DateTime::from_timestamp(epoch, 0).expect("valid epoch");
         let dec = |x: f64| rust_decimal::Decimal::from_f64_retain(x).expect("finite");
@@ -264,9 +284,7 @@ fn natr_expr(n: usize) -> Expr {
     let tr2 = (col("high") - prev_close.clone())
         .abs()
         .fill_null(neg_inf.clone());
-    let tr3 = (col("low") - prev_close)
-        .abs()
-        .fill_null(neg_inf);
+    let tr3 = (col("low") - prev_close).abs().fill_null(neg_inf);
     let m12 = when(tr1.clone().gt_eq(tr2.clone()))
         .then(tr1)
         .otherwise(tr2);
@@ -303,7 +321,9 @@ fn natr_flat_zero_is_none_not_zero() {
 fn natr_flat_price_is_confident_zero_after_warmup() {
     // A genuinely still market has a true zero ratio — confident and correct,
     // distinct from the degenerate refusal above.
-    let bars: Vec<Bar> = (0..30).map(|i| natr_bar(100.0, 100.0, 100.0, 100.0, i)).collect();
+    let bars: Vec<Bar> = (0..30)
+        .map(|i| natr_bar(100.0, 100.0, 100.0, 100.0, i))
+        .collect();
     let data = crate::indicator::OwnedOhlcv::from_bars(&bars);
     let ps = ParamSet::new().with_int("length", 14);
     let natr = NatrIndicator::new();
@@ -320,10 +340,18 @@ fn natr_matches_expr_once_seeded_and_agrees_on_spy() {
     // match, so the Expr-parity frame opens with a flat prefix (both seeds read
     // zero) before trending. Seeding, not smoothing, is the documented
     // difference between the two ratio definitions.
-    let mut bars: Vec<Bar> = (0..14).map(|i| natr_bar(100.0, 100.0, 100.0, 100.0, i)).collect();
+    let mut bars: Vec<Bar> = (0..14)
+        .map(|i| natr_bar(100.0, 100.0, 100.0, 100.0, i))
+        .collect();
     for i in 0..30 {
         let close = 100.0 + i as f64 * 0.9 + ((i * 7) % 4) as f64;
-        bars.push(natr_bar(close - 0.2, close + 0.9, close - 0.7, close, 14 + i));
+        bars.push(natr_bar(
+            close - 0.2,
+            close + 0.9,
+            close - 0.7,
+            close,
+            14 + i,
+        ));
     }
     let data = crate::indicator::OwnedOhlcv::from_bars(&bars);
     let ps = ParamSet::new().with_int("length", 14);
@@ -346,7 +374,9 @@ fn natr_matches_expr_once_seeded_and_agrees_on_spy() {
 }
 
 fn supertrend_params() -> ParamSet {
-    ParamSet::new().with_int("atr_length", 2).with_float("multiplier", 1.0)
+    ParamSet::new()
+        .with_int("atr_length", 2)
+        .with_float("multiplier", 1.0)
 }
 
 #[test]
@@ -366,15 +396,24 @@ fn supertrend_matches_hand_ratchet() {
     for (got, want) in result.values[1..].iter().zip([8.0, 9.0, 9.0]) {
         assert_eq!(*got, Some(want), "hand line");
     }
-    assert!(dir[1..].iter().all(|v| *v == Some(1.0)), "bullish throughout");
+    assert!(
+        dir[1..].iter().all(|v| *v == Some(1.0)),
+        "bullish throughout"
+    );
     let mut state = IndicatorState::new();
-    for (tick, (want_line, want_dir)) in
-        ticks(&high, &low, &close).into_iter().zip(result.values.iter().zip(dir.iter()))
+    for (tick, (want_line, want_dir)) in ticks(&high, &low, &close)
+        .into_iter()
+        .zip(result.values.iter().zip(dir.iter()))
     {
-        let tick_out = st.update_full(&mut state, tick, &supertrend_params()).expect("valid");
+        let tick_out = st
+            .update_full(&mut state, tick, &supertrend_params())
+            .expect("valid");
         assert_eq!(&tick_out.primary, want_line, "line agreement");
-        let got_dir =
-            tick_out.secondary.iter().find(|v| v.name == "direction").and_then(|v| v.value);
+        let got_dir = tick_out
+            .secondary
+            .iter()
+            .find(|v| v.name == "direction")
+            .and_then(|v| v.value);
         assert_eq!(got_dir, *want_dir, "direction agreement");
     }
 }
@@ -393,19 +432,28 @@ fn supertrend_flips_bearish_through_the_lower_band() {
     assert_eq!(dir[4], Some(-1.0), "breakdown flips bearish");
     assert_eq!(dir[5], Some(-1.0), "bearish holds");
     let line4 = result.values[4].expect("defined");
-    assert!((line4 - 10.25).abs() < 1e-9, "flip rides the upper band, got {line4}");
+    assert!(
+        (line4 - 10.25).abs() < 1e-9,
+        "flip rides the upper band, got {line4}"
+    );
     assert!(
         result.values[5].expect("defined") >= high[5],
         "bearish line stays over price"
     );
     let mut state = IndicatorState::new();
-    for (tick, (want_line, want_dir)) in
-        ticks(&high, &low, &close).into_iter().zip(result.values.iter().zip(dir.iter()))
+    for (tick, (want_line, want_dir)) in ticks(&high, &low, &close)
+        .into_iter()
+        .zip(result.values.iter().zip(dir.iter()))
     {
-        let tick_out = st.update_full(&mut state, tick, &supertrend_params()).expect("valid");
+        let tick_out = st
+            .update_full(&mut state, tick, &supertrend_params())
+            .expect("valid");
         assert_eq!(&tick_out.primary, want_line, "flip agreement");
-        let got_dir =
-            tick_out.secondary.iter().find(|v| v.name == "direction").and_then(|v| v.value);
+        let got_dir = tick_out
+            .secondary
+            .iter()
+            .find(|v| v.name == "direction")
+            .and_then(|v| v.value);
         assert_eq!(got_dir, *want_dir, "flip direction agreement");
     }
 }
@@ -414,17 +462,30 @@ fn supertrend_flips_bearish_through_the_lower_band() {
 fn supertrend_refuses_bad_shape() {
     let st = SupertrendIndicator::new();
     assert!(
-        st.warmup(&ParamSet::new().with_int("atr_length", 0).with_float("multiplier", 3.0)).is_err(),
+        st.warmup(
+            &ParamSet::new()
+                .with_int("atr_length", 0)
+                .with_float("multiplier", 3.0)
+        )
+        .is_err(),
         "zero length refuses"
     );
     assert!(
-        st.warmup(&ParamSet::new().with_int("atr_length", 10).with_float("multiplier", -1.0))
-            .is_err(),
+        st.warmup(
+            &ParamSet::new()
+                .with_int("atr_length", 10)
+                .with_float("multiplier", -1.0)
+        )
+        .is_err(),
         "negative multiplier refuses"
     );
     assert!(
-        st.warmup(&ParamSet::new().with_int("atr_length", 10).with_float("multiplier", f64::NAN))
-            .is_err(),
+        st.warmup(
+            &ParamSet::new()
+                .with_int("atr_length", 10)
+                .with_float("multiplier", f64::NAN)
+        )
+        .is_err(),
         "NaN multiplier refuses"
     );
 }
@@ -432,7 +493,10 @@ fn supertrend_refuses_bad_shape() {
 #[test]
 fn supertrend_registry_and_matrix_cover_new_row() {
     let registry = builtin_registry().expect("builtins");
-    assert!(registry.get("supertrend").is_some(), "supertrend registered");
+    assert!(
+        registry.get("supertrend").is_some(),
+        "supertrend registered"
+    );
     let row = crate::compat::compat_for("supertrend").expect("matrix row");
     assert!((row.eps - 1e-9).abs() == 0.0, "frozen eps");
 }
@@ -446,12 +510,17 @@ fn buffered_update_matches_batch_on_constant_and_subnormal_inputs() {
     // Bit-exactness pin for the scratch migration, over the band
     // representative (mean plus scaled deviation must agree exactly).
     let bb = BbIndicator::new();
-    let ps = ParamSet::new().with_int("length", 14).with_float("mult", 2.0);
+    let ps = ParamSet::new()
+        .with_int("length", 14)
+        .with_float("mult", 2.0);
     for closes in [
         vec![42.0; 40],
         (1..=40).map(|i| f64::from(i) * 1e-310).collect::<Vec<_>>(),
     ] {
-        let batch = bb.batch(&Ohlcv::close_only(&closes), &ps).expect("batch runs").values;
+        let batch = bb
+            .batch(&Ohlcv::close_only(&closes), &ps)
+            .expect("batch runs")
+            .values;
         let mut state = IndicatorState::new();
         let folded: Vec<Option<f64>> = closes
             .iter()
@@ -461,6 +530,10 @@ fn buffered_update_matches_batch_on_constant_and_subnormal_inputs() {
                     .primary
             })
             .collect();
-        assert_eq!(bits_of(&folded), bits_of(&batch), "bb reproduces batch bit-for-bit");
+        assert_eq!(
+            bits_of(&folded),
+            bits_of(&batch),
+            "bb reproduces batch bit-for-bit"
+        );
     }
 }

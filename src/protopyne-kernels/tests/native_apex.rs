@@ -30,10 +30,8 @@
 #![allow(clippy::float_cmp)]
 
 use crate::pine::test_fixture as fixture;
-use crate::pine::{ModuleGraph, resolve_imports};
-use crate::{
-    InputSet, LinkedModule, NativeOptions, PineEngine, PineRuntimeConfig,
-};
+use crate::pine::{resolve_imports, ModuleGraph};
+use crate::{InputSet, LinkedModule, NativeOptions, PineEngine, PineRuntimeConfig};
 use protopyne_types::Bar;
 
 /// Frozen agreement tolerance shared with the kernel-vs-Pine matrix.
@@ -51,11 +49,9 @@ const CTX_DRIVER: &str =
 /// One closed bar from decimal legs and a whole-second timestamp.
 fn bar(open: &str, high: &str, low: &str, close: &str, volume: u64, ts_secs: i64) -> Bar {
     Bar::new()
-        .ts(
-            chrono::TimeZone::timestamp_opt(&chrono::Utc, ts_secs, 0)
-                .single()
-                .expect("valid test timestamp"),
-        )
+        .ts(chrono::TimeZone::timestamp_opt(&chrono::Utc, ts_secs, 0)
+            .single()
+            .expect("valid test timestamp"))
         .o(open.parse().expect("decimal"))
         .h(high.parse().expect("decimal"))
         .l(low.parse().expect("decimal"))
@@ -68,9 +64,19 @@ fn bar(open: &str, high: &str, low: &str, close: &str, volume: u64, ts_secs: i64
 fn linked(driver: &str) -> Vec<LinkedModule> {
     fixture::linked_modules(vec![
         fixture::shipped_module("libraries/_libUtil.pine", "showmethegrail", "libUtil", 12),
-        fixture::shipped_module("libraries/_libBuffers.pine", "showmethegrail", "libBuffers", 6),
+        fixture::shipped_module(
+            "libraries/_libBuffers.pine",
+            "showmethegrail",
+            "libBuffers",
+            6,
+        ),
         fixture::shipped_module("libraries/_libBars.pine", "showmethegrail", "libBars", 12),
-        fixture::shipped_module("libraries/_libDrawing.pine", "showmethegrail", "libDrawing", 61),
+        fixture::shipped_module(
+            "libraries/_libDrawing.pine",
+            "showmethegrail",
+            "libDrawing",
+            61,
+        ),
         fixture::shipped_module("libraries/_libApex.pine", "showmethegrail", "libApex", 88),
         fixture::driver_module(driver),
     ])
@@ -113,11 +119,7 @@ fn ramp_bars(spacing_secs: i64) -> Vec<Bar> {
         .collect()
 }
 
-fn run_ctx(
-    engine: &mut PineEngine,
-    driver: &str,
-    bars: &[Bar],
-) -> crate::RunOutcome {
+fn run_ctx(engine: &mut PineEngine, driver: &str, bars: &[Bar]) -> crate::RunOutcome {
     let modules = linked(driver);
     engine
         .run_linked(&modules, bars, InputSet::new())
@@ -167,11 +169,7 @@ const FLOAT_FIELDS: [&str; 15] = [
     "trend_strength",
 ];
 
-fn assert_instances_agree(
-    pine: &crate::UserInstance,
-    native: &crate::UserInstance,
-    what: &str,
-) {
+fn assert_instances_agree(pine: &crate::UserInstance, native: &crate::UserInstance, what: &str) {
     for name in FLOAT_FIELDS {
         match (ofield(pine, name), ofield(native, name)) {
             (None, None) => {}
@@ -195,11 +193,7 @@ fn assert_instances_agree(
     assert_eq!(otf(native), otf(pine), "{what} tf");
 }
 
-fn instance_at(
-    outcome: &crate::RunOutcome,
-    at: usize,
-    name: &str,
-) -> crate::UserInstance {
+fn instance_at(outcome: &crate::RunOutcome, at: usize, name: &str) -> crate::UserInstance {
     match outcome.value_at(at, name) {
         Some(Some(crate::PineValue::Object(instance))) => instance,
         other => panic!("expected context object {name} at {at}, got {other:?}"),
@@ -214,13 +208,26 @@ fn apex_matches_pine_on_chart_spans() {
     for (period, spacing) in [("1", 60), ("5", 300), ("15", 900)] {
         let bars = ramp_bars(spacing);
         let driver = format!("{IMPORTS}{CTX_DRIVER}");
-let pine_outcome = run_ctx(&mut test_engine(period), &driver, &bars);
+        let pine_outcome = run_ctx(&mut test_engine(period), &driver, &bars);
         let native_outcome = run_ctx(&mut native_engine(period), &driver, &bars);
-eprintln!("DBG driver.len={} driver_tail={:?}", driver.len(), &driver[driver.len()-60..]);
-        eprintln!("DBG {period} bars={} last_close={} pine_ma={:?} native_ma={:?}",
-            bars.len(), bars.last().unwrap().c,
-            ofield(&instance_at(&pine_outcome, bars.len() - 1, "ctx"), "ma_primary"),
-            ofield(&instance_at(&native_outcome, bars.len() - 1, "ctx"), "ma_primary"));
+        eprintln!(
+            "DBG driver.len={} driver_tail={:?}",
+            driver.len(),
+            &driver[driver.len() - 60..]
+        );
+        eprintln!(
+            "DBG {period} bars={} last_close={} pine_ma={:?} native_ma={:?}",
+            bars.len(),
+            bars.last().unwrap().c,
+            ofield(
+                &instance_at(&pine_outcome, bars.len() - 1, "ctx"),
+                "ma_primary"
+            ),
+            ofield(
+                &instance_at(&native_outcome, bars.len() - 1, "ctx"),
+                "ma_primary"
+            )
+        );
         let at = bars.len() - 1;
         assert_instances_agree(
             &instance_at(&pine_outcome, at, "ctx"),
@@ -232,7 +239,11 @@ eprintln!("DBG driver.len={} driver_tail={:?}", driver.len(), &driver[driver.len
             &instance_at(&native_outcome, at, "ctx2"),
             &format!("{period}-chart fetch value"),
         );
-        assert_eq!(otf(&instance_at(&native_outcome, at, "ctx")), "C", "tf untouched");
+        assert_eq!(
+            otf(&instance_at(&native_outcome, at, "ctx")),
+            "C",
+            "tf untouched"
+        );
     }
 }
 
@@ -243,15 +254,13 @@ fn tick_tape() -> (Vec<Bar>, Vec<Bar>, Vec<i64>) {
     let t0_ms = 1_700_000_000_000i64;
     let bar = |o: &str, h: &str, l: &str, c: &str, v: u64, open_ms: i64| {
         Bar::new()
-            .ts(
-                chrono::TimeZone::timestamp_opt(
-                    &chrono::Utc,
-                    open_ms.div_euclid(1000),
-                    open_ms.rem_euclid(1000) as u32 * 1_000_000,
-                )
-                .single()
-                .expect("valid test timestamp"),
+            .ts(chrono::TimeZone::timestamp_opt(
+                &chrono::Utc,
+                open_ms.div_euclid(1000),
+                open_ms.rem_euclid(1000) as u32 * 1_000_000,
             )
+            .single()
+            .expect("valid test timestamp"))
             .o(o.parse().expect("decimal"))
             .h(h.parse().expect("decimal"))
             .l(l.parse().expect("decimal"))
@@ -262,8 +271,22 @@ fn tick_tape() -> (Vec<Bar>, Vec<Bar>, Vec<i64>) {
     };
     let chart = vec![
         bar("100.00", "100.40", "99.80", "100.20", 1_000, t0_ms),
-        bar("100.20", "100.60", "100.10", "100.50", 1_200, t0_ms + 60_000),
-        bar("100.50", "101.00", "100.40", "100.90", 1_400, t0_ms + 120_000),
+        bar(
+            "100.20",
+            "100.60",
+            "100.10",
+            "100.50",
+            1_200,
+            t0_ms + 60_000,
+        ),
+        bar(
+            "100.50",
+            "101.00",
+            "100.40",
+            "100.90",
+            1_400,
+            t0_ms + 120_000,
+        ),
     ];
     // Bar-so-far legs share the bar-open stamp; volumes cumulate.
     let ticks = vec![
@@ -272,7 +295,12 @@ fn tick_tape() -> (Vec<Bar>, Vec<Bar>, Vec<i64>) {
         bar("100.50", "100.70", "100.40", "100.60", 500, t0_ms + 120_000),
         chart[2].clone(),
     ];
-    let stamps = vec![t0_ms + 10_000, t0_ms + 70_000, t0_ms + 130_000, t0_ms + 170_000];
+    let stamps = vec![
+        t0_ms + 10_000,
+        t0_ms + 70_000,
+        t0_ms + 130_000,
+        t0_ms + 170_000,
+    ];
     (chart, ticks, stamps)
 }
 
@@ -294,7 +322,12 @@ fn apex_tick_runs_decline_byte_identical() {
     let native_outcome = native
         .run_linked_ticks(&modules, &bars, &ticks, InputSet::new())
         .expect("opted-in tick run evaluates");
-    for (at, what) in [(0, "first"), (1, "second"), (2, "mid-bar"), (3, "confirmed")] {
+    for (at, what) in [
+        (0, "first"),
+        (1, "second"),
+        (2, "mid-bar"),
+        (3, "confirmed"),
+    ] {
         assert_instances_agree(
             &instance_at(&pine_outcome, at, "ctx"),
             &instance_at(&native_outcome, at, "ctx"),
@@ -306,7 +339,10 @@ fn apex_tick_runs_decline_byte_identical() {
         &instance_at(&run_ctx(&mut test_engine("1"), &driver, &chart), 2, "ctx"),
         "vol",
     );
-    assert_ne!(mid_vol, closed_vol, "mid tick discriminates bar-so-far legs");
+    assert_ne!(
+        mid_vol, closed_vol,
+        "mid tick discriminates bar-so-far legs"
+    );
 }
 
 #[test]
@@ -320,7 +356,10 @@ fn apex_explicit_shapes_decline() {
     );
     let pine_err = run_ctx_err(&mut test_engine("1"), &driver, &bars);
     let native_err = run_ctx_err(&mut native_engine("1"), &driver, &bars);
-    assert_eq!(pine_err, native_err, "explicit HTF fetch refuses identically");
+    assert_eq!(
+        pine_err, native_err,
+        "explicit HTF fetch refuses identically"
+    );
     assert!(
         pine_err.contains("security"),
         "refusal names the uninjected pull, got: {pine_err}"
@@ -366,18 +405,29 @@ fn apex_audit_names_rust_where_served() {
     // pine). Libraries without a provider never appear as served.
     let inputs = vec![
         fixture::shipped_module("libraries/_libUtil.pine", "showmethegrail", "libUtil", 12),
-        fixture::shipped_module("libraries/_libBuffers.pine", "showmethegrail", "libBuffers", 6),
-        fixture::shipped_module("libraries/_libBars.pine", "showmethegrail", "libBars", 12),
-        fixture::shipped_module("libraries/_libDrawing.pine", "showmethegrail", "libDrawing", 61),
-        fixture::shipped_module("libraries/_libApex.pine", "showmethegrail", "libApex", 88),
-        fixture::driver_module(
-            "import showmethegrail/libApex/88 as APEX\nx = 1\n",
+        fixture::shipped_module(
+            "libraries/_libBuffers.pine",
+            "showmethegrail",
+            "libBuffers",
+            6,
         ),
+        fixture::shipped_module("libraries/_libBars.pine", "showmethegrail", "libBars", 12),
+        fixture::shipped_module(
+            "libraries/_libDrawing.pine",
+            "showmethegrail",
+            "libDrawing",
+            61,
+        ),
+        fixture::shipped_module("libraries/_libApex.pine", "showmethegrail", "libApex", 88),
+        fixture::driver_module("import showmethegrail/libApex/88 as APEX\nx = 1\n"),
     ];
     let graph: ModuleGraph = resolve_imports(inputs).expect("graph links");
     let on = crate::native_libs::apply_overrides(&graph, &NativeOptions::default())
         .expect("overlay applies");
-    assert!(on.is_served("showmethegrail", "libApex"), "apex serves under the default");
+    assert!(
+        on.is_served("showmethegrail", "libApex"),
+        "apex serves under the default"
+    );
     assert!(
         on.provides("showmethegrail", "libApex")
             .expect("native symbol table")
@@ -389,8 +439,15 @@ fn apex_audit_names_rust_where_served() {
         .iter()
         .find(|audit| audit.requested_name == "libApex")
         .expect("apex audit recorded");
-    assert_eq!(row.served, crate::NativeServed::Rust, "audit reads rust where served");
-    assert!(!on.is_served("showmethegrail", "libUtil"), "unprovided library stays Pine");
+    assert_eq!(
+        row.served,
+        crate::NativeServed::Rust,
+        "audit reads rust where served"
+    );
+    assert!(
+        !on.is_served("showmethegrail", "libUtil"),
+        "unprovided library stays Pine"
+    );
     let off = crate::native_libs::apply_overrides(
         &graph,
         &NativeOptions {
@@ -404,5 +461,9 @@ fn apex_audit_names_rust_where_served() {
         .iter()
         .find(|audit| audit.requested_name == "libApex")
         .expect("apex audit recorded");
-    assert_eq!(row.served, crate::NativeServed::Pine, "audit reads pine where not served");
+    assert_eq!(
+        row.served,
+        crate::NativeServed::Pine,
+        "audit reads pine where not served"
+    );
 }

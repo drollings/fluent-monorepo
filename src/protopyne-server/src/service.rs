@@ -51,15 +51,20 @@ use protopyne_venue::{
     PositionFill, PositionSide, SpreadPosition, StateHandle, TradingState,
 };
 use protopyne_view::{
-    ArmResponse, ChartBars, CommandStatus, DenyCount, HealthView, OverlaySeries,
-    PortfolioView, PositionView, ProposalView, ReplayStepView, ReplayView, WorstCase,
+    ArmResponse, ChartBars, CommandStatus, DenyCount, HealthView, OverlaySeries, PortfolioView,
+    PositionView, ProposalView, ReplayStepView, ReplayView, WorstCase,
 };
 
 use crate::backtest::BacktestConfig;
+use crate::chain_history::{ChainFeedConfig, HistoricalChainSource};
 use crate::error::ServerError;
 use crate::gateway::FallbackLatch;
 use crate::history_root::HistoryRoot;
-use crate::runner::{build_replay, complete_replay, run_backtest, side_for_direction, BacktestRun, RunnerConfig};
+use crate::replay_session::ReplayRegistry;
+use crate::runner::{
+    build_replay, complete_replay, run_backtest, side_for_direction, BacktestRun, BarDecision,
+    RunnerConfig,
+};
 
 /// Server tunables, loadable from JSON with defaults for every field.
 #[derive(
@@ -83,6 +88,15 @@ pub struct ServerConfig {
     #[field(desc = "Durable tape store root")]
     #[serde(default)]
     pub tape_path: Option<String>,
+    /// Option-chain feed config file path (JSON [`ChainFeedConfig`](crate::chain_history::ChainFeedConfig):
+    /// chain history file plus the tastytrade credentials path the fetch
+    /// path reads). Absent leaves chains unconfigured and every
+    /// multi-leg proposal keeps refusing with the missing feed named.
+    /// `#[serde(default)]` keeps older config files (which name no chain
+    /// feed) loading.
+    #[field(desc = "Option-chain feed config file path")]
+    #[serde(default)]
+    pub chain_feed_path: Option<String>,
     /// Maximum concurrent preview executions **(correctness-as-boundedness)**.
     #[field(desc = "Max concurrent previews", min = 1, max = 1024)]
     #[builder(default = 32)]
@@ -156,6 +170,11 @@ impl ServerConfig {
                 return Err("tape_path must not be blank".to_owned());
             }
         }
+        if let Some(path) = &self.chain_feed_path {
+            if path.trim().is_empty() {
+                return Err("chain_feed_path must not be blank".to_owned());
+            }
+        }
         Ok(())
     }
 }
@@ -184,8 +203,9 @@ impl_component!(ServerConfig);
 /// Display-enum bridges: the one home mapping domain enums to their stable
 /// wire tags. Exhaustive matches, so a new variant breaks the build until
 /// its tag is decided — tags can never silently drift. The cast is one-way:
-/// nothing parses tags back into domain enums.
-fn direction_tag(direction: Direction) -> &'static str {
+/// nothing parses tags back into domain enums. Crate-visible so the gateway's
+/// interactive replay state reads the same tags as the preview publisher.
+pub(crate) fn direction_tag(direction: Direction) -> &'static str {
     match direction {
         Direction::Long => "Long",
         Direction::Short => "Short",
@@ -193,7 +213,7 @@ fn direction_tag(direction: Direction) -> &'static str {
 }
 
 /// See [`direction_tag`]: option-structure tags.
-fn structure_tag(structure: StructureKind) -> &'static str {
+pub(crate) fn structure_tag(structure: StructureKind) -> &'static str {
     match structure {
         StructureKind::Single => "Single",
         StructureKind::Vertical => "Vertical",
@@ -204,7 +224,7 @@ fn structure_tag(structure: StructureKind) -> &'static str {
 }
 
 /// See [`direction_tag`]: proposal-lifecycle tags.
-fn proposal_state_tag(state: ProposalState) -> &'static str {
+pub(crate) fn proposal_state_tag(state: ProposalState) -> &'static str {
     match state {
         ProposalState::Proposed => "Proposed",
         ProposalState::RiskChecked => "RiskChecked",
@@ -318,6 +338,16 @@ pub struct AppState {
     /// a recovery logs once rather than one line per read. Observation only:
     /// the read decides fallback before consulting it.
     pub(crate) fallback_latch: Mutex<FallbackLatch>,
+    /// Live interactive replay drivers by session id. A terminal opens,
+    /// steps, and closes its slot through the gateway; each driver owns a
+    /// session-scoped venue and journal, so a replay never touches the live
+    /// paper journal or the inbox/portfolio views a preview publishes.
+    pub(crate) replay: Mutex<ReplayRegistry>,
+    /// Boot-loaded option-chain history, when the server was booted with a
+    /// chain feed config naming a chain data file. The gateway slices the
+    /// replay window out of this at open; `None` (or an empty load) keeps
+    /// the chain gate exactly where it was.
+    pub(crate) chain_history: Option<HistoricalChainSource>,
 }
 
 pub(crate) type Shared = Arc<AppState>;
@@ -334,8 +364,10 @@ fn api_error(status: StatusCode, message: impl Into<String>) -> (StatusCode, Jso
 
 /// The bundled preview signal: fixed long exposure for rehearsal.
 /// Constants sit inside `[0, 1]` by construction; any refusal is a bug the
-/// caller sees as a failed preview, never a fallback signal.
-fn preview_strategy() -> Result<Arc<Strategy>, ServerError> {
+/// caller sees as a failed preview, never a fallback signal. Crate-visible
+/// so the interactive replay opens the same signal (its structure is pinned
+/// to singles separately, at the session).
+pub(crate) fn preview_strategy() -> Result<Arc<Strategy>, ServerError> {
     let signal = FixedSignal::new(Direction::Long, 0.8, 0.8)
         .map_err(|e| ServerError::Service(format!("bundled signal refused: {e}")))?;
     Ok(Arc::new(Strategy::with_signal(Arc::new(signal))))
@@ -345,13 +377,29 @@ fn preview_strategy() -> Result<Arc<Strategy>, ServerError> {
 /// a compile-time constant (no ambient clock), so a preview's pinned config is
 /// reproducible; evaluation happens at bar time, never wall-clock time.
 fn permissive_grant() -> Grant {
+    rehearsal_grant("preview-permissive", vec![StructureKind::Vertical])
+}
+
+/// The fixed rehearsal grant an interactive replay runs under when the
+/// opener supplies no grant document: the preview shape, scoped to the
+/// requested structure. Singles behave exactly as before; a multi-leg scope
+/// admits the shape the window's chains cover — uncovered bars are still
+/// refused by the session's coverage screen before the grant ever sees them.
+pub(crate) fn replay_grant_for(structure: StructureKind) -> Grant {
+    rehearsal_grant("replay-permissive", vec![structure])
+}
+
+/// One rehearsal-grant body over an explicit structure scope and id: preview
+/// and replay differ only in which structures they admit, never in budgets,
+/// thresholds, or breakers.
+fn rehearsal_grant(id: &str, structures: Vec<StructureKind>) -> Grant {
     Grant::new()
-        .id("preview-permissive".to_owned())
+        .id(id.to_owned())
         .scope(
             GrantScope::new()
                 .strategies(vec!["ribbon".to_owned()])
                 .underlyings(vec!["SPY".to_owned()])
-                .structures(vec![StructureKind::Vertical])
+                .structures(structures)
                 .directions(vec![Direction::Long, Direction::Short])
                 .permissions(GrantPermission {
                     entries: true,
@@ -957,15 +1005,34 @@ fn publish_run(state: &Shared, run: &BacktestRun) {
             strategy: decision.strategy.clone(),
             underlying: decision.underlying.clone(),
             direction: direction_tag(direction).to_owned(),
-            structure: decision
-                .structure
-                .map_or_else(|| "unrecorded".to_owned(), |kind| structure_tag(kind).to_owned()),
+            structure: decision.structure.map_or_else(
+                || "unrecorded".to_owned(),
+                |kind| structure_tag(kind).to_owned(),
+            ),
             limit_price: decision.limit_price,
             conviction: decision.conviction,
             state: proposal_state_tag(state_tag).to_owned(),
         });
     }
     drop(inbox);
+    let trading_state = trading_state_tag(state.trading_state.get()).to_owned();
+    let folded = portfolio_of_decisions(&run.decisions, &trading_state);
+    let mut portfolio = common_core::sync::lock(&state.portfolio);
+    *portfolio = folded;
+}
+
+/// Fold booked fills into a portfolio view: the same engine the live book
+/// and the portfolio fold use, so same-direction fills re-average by volume
+/// weight while opposite-direction fills reduce (never re-average) and full
+/// reductions close the book. A submitted order without a priced fill counts
+/// toward orders and fees but adds no exposure. Shared by the preview
+/// publisher and the interactive replay state — one fold, two readers.
+/// `trading_state` is the caller's own tag: the preview reads the live
+/// handle, the replay names its mode.
+pub(crate) fn portfolio_of_decisions(
+    decisions: &[BarDecision],
+    trading_state: &str,
+) -> PortfolioView {
     // Preview-run position fold, grouped by the underlying each fill was
     // booked under. Each fill folds through the venue's own
     // `update_from_fill` — the same engine the live book and the portfolio
@@ -977,7 +1044,7 @@ fn publish_run(state: &Shared, run: &BacktestRun) {
     let mut books: BTreeMap<String, SpreadPosition> = BTreeMap::new();
     let mut fees = rust_decimal::Decimal::ZERO;
     let mut filled_orders: u64 = 0;
-    for decision in &run.decisions {
+    for decision in decisions {
         if !decision.submitted {
             continue;
         }
@@ -1015,8 +1082,6 @@ fn publish_run(state: &Shared, run: &BacktestRun) {
             books.insert(decision.underlying.clone(), position);
         }
     }
-    let trading_state = trading_state_tag(state.trading_state.get()).to_owned();
-    let mut portfolio = common_core::sync::lock(&state.portfolio);
     // BTreeMap iteration is key order, so the served list is sorted by
     // underlying without a second pass.
     let positions: Vec<PositionView> = books
@@ -1035,15 +1100,14 @@ fn publish_run(state: &Shared, run: &BacktestRun) {
             )
         })
         .collect();
-    portfolio.positions = positions;
-    portfolio.filled_orders = filled_orders;
-    portfolio.total_fees = Money::new(fees);
-    portfolio.open_contracts = portfolio
-        .positions
-        .iter()
-        .map(|position| position.quantity)
-        .sum();
-    portfolio.trading_state = trading_state;
+    let open_contracts = positions.iter().map(|position| position.quantity).sum();
+    PortfolioView {
+        positions,
+        filled_orders,
+        total_fees: Money::new(fees),
+        open_contracts,
+        trading_state: trading_state.to_owned(),
+    }
 }
 
 /// The live armed grant, if any. The gateway's patch path reads through
@@ -1468,6 +1532,30 @@ pub async fn serve(config: ServerConfig, history: Vec<Bar>) -> Result<ServerHand
     serve_with_tape(config, history, None).await
 }
 
+/// Boot-load option-chain history from the chain feed config, when one is
+/// named. A named-but-unreadable config, a failed validation, or a named
+/// chain file that will not parse refuses to bind (fail closed): a replay
+/// must never open against half-loaded chains. No config — or a config
+/// naming no chain file, or an empty file — loads `None`, and the chain
+/// gate stays exactly where it was.
+fn load_chain_history_at_boot(
+    config: &ServerConfig,
+) -> Result<Option<HistoricalChainSource>, ServerError> {
+    let Some(feed_path) = config.chain_feed_path.as_deref() else {
+        return Ok(None);
+    };
+    let feed = ChainFeedConfig::load(Path::new(feed_path));
+    feed.validate()?;
+    let Some(chain_path) = feed.chain_data_path.as_deref() else {
+        return Ok(None);
+    };
+    let quotes = crate::chain_history::load_chain_history(Path::new(chain_path))?;
+    if quotes.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(HistoricalChainSource::new(quotes)))
+}
+
 /// Boot the HTTP surface over `history`, optionally with a durable tape the
 /// symbol-scoped chart reads plan and read through.
 ///
@@ -1503,9 +1591,12 @@ pub async fn serve_with_tape(
         .filter(|path| path.is_dir())
         .map(HistoryRoot::open)
         .transpose()
-        .map_err(|error| {
-            ServerError::Service(format!("history root unreadable: {error}"))
-        })?;
+        .map_err(|error| ServerError::Service(format!("history root unreadable: {error}")))?;
+    // Option chains load once at boot from the chain feed config file, when
+    // one is named — never per replay open, and never from the network.
+    // Absent config (or absent chain file) leaves `None`, and the chain gate
+    // stays exactly where it was.
+    let chain_history = load_chain_history_at_boot(&config)?;
     let history_len = history.len();
     let boot_message = format!("boot gates: {history_len} bars");
     let mut batch = SupervisedBatch::new(
@@ -1554,6 +1645,8 @@ pub async fn serve_with_tape(
         tape,
         tape_serve_stats: Arc::new(TapeServeStats::default()),
         fallback_latch: Mutex::new(FallbackLatch::default()),
+        replay: Mutex::new(ReplayRegistry::new()),
+        chain_history,
         history_root,
     });
     let mut scope = Scope::new();

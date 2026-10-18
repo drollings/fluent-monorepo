@@ -76,12 +76,15 @@ impl VenueRegistry {
     /// registration. Empty symbols refuse fail-closed.
     pub fn add_route(&self, underlying: &str, venue: Arc<dyn Venue>) -> Result<(), VenueError> {
         if underlying.is_empty() {
-            return Err(VenueError::Invalid("route symbol must not be empty".to_owned()));
+            return Err(VenueError::Invalid(
+                "route symbol must not be empty".to_owned(),
+            ));
         }
         let mut inner = common_core::sync::lock(&self.inner);
-        let key = inner.index.intern(underlying).map_err(|e| {
-            VenueError::Invalid(format!("route symbol {underlying} refused: {e}"))
-        })?;
+        let key = inner
+            .index
+            .intern(underlying)
+            .map_err(|e| VenueError::Invalid(format!("route symbol {underlying} refused: {e}")))?;
         if let Some(slot) = inner.routes.iter_mut().find(|(route, _)| *route == key) {
             slot.1 = Arc::clone(&venue);
         } else {
@@ -245,8 +248,7 @@ impl Venue for VenueRegistry {
         event: CorporateEvent,
         now: chrono::DateTime<chrono::Utc>,
     ) -> Result<String, VenueError> {
-        let chain =
-            Self::chain_for(self, underlying).ok_or_else(|| Self::unrouted(underlying))?;
+        let chain = Self::chain_for(self, underlying).ok_or_else(|| Self::unrouted(underlying))?;
         chain
             .first()
             .expect("chain never empty")

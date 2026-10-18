@@ -57,15 +57,14 @@ pub struct Crosshair {
 /// tip; a zero-length segment reads the point distance. Non-finite inputs
 /// read infinite distance (fail-closed: never claim a hit).
 #[must_use]
-pub fn point_to_segment_distance(
-    px: f32,
-    py: f32,
-    x0: f32,
-    y0: f32,
-    x1: f32,
-    y1: f32,
-) -> f32 {
-    if !px.is_finite() || !py.is_finite() || !x0.is_finite() || !y0.is_finite() || !x1.is_finite() || !y1.is_finite() {
+pub fn point_to_segment_distance(px: f32, py: f32, x0: f32, y0: f32, x1: f32, y1: f32) -> f32 {
+    if !px.is_finite()
+        || !py.is_finite()
+        || !x0.is_finite()
+        || !y0.is_finite()
+        || !x1.is_finite()
+        || !y1.is_finite()
+    {
         return f32::INFINITY;
     }
     let dx = x1 - x0;
@@ -123,11 +122,7 @@ pub fn crosshair_pixel(crosshair: &Crosshair, viewport: &Viewport) -> Option<(f3
 /// point; a bar with no mappable price at all is a miss. Empty input is a
 /// miss.
 #[must_use]
-pub fn hit_test(
-    pointer: (f32, f32),
-    viewport: &Viewport,
-    rows: &[ChartRow],
-) -> Option<Hit> {
+pub fn hit_test(pointer: (f32, f32), viewport: &Viewport, rows: &[ChartRow]) -> Option<Hit> {
     if rows.is_empty() {
         return None;
     }
@@ -147,7 +142,12 @@ pub fn hit_test(
         return None;
     }
     let y = viewport.price_to_y(data.price)?;
-    Some(Hit { index: data.index, price: data.price, x, y })
+    Some(Hit {
+        index: data.index,
+        price: data.price,
+        x,
+        y,
+    })
 }
 
 #[cfg(test)]

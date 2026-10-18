@@ -14,8 +14,11 @@ pub mod elements;
 pub mod error;
 pub mod generator;
 pub mod grant;
+pub mod legs;
 pub mod proposal;
 pub mod risk;
+
+pub use legs::{LegSelectRefusal, LegSelector};
 
 pub use elements::{
     ExplicitStructure, FixedContracts, FixedSignal, HoldLoss, LimitMonitor, LossAction, LossMgmt,
@@ -24,18 +27,18 @@ pub use elements::{
 };
 pub use error::StrategyError;
 pub use generator::{
-    Exposure, GenerateInput, Generator, GeneratorBuilder, RebalanceMode, RebalanceOutcome, Rung,
-    REPORT_SCORE_WINDOW, REPORT_SLOPE_LOOKBACK, ladder_rung, portfolio_for, rebalance, rsrs_score,
-    utility,
+    ladder_rung, portfolio_for, rebalance, rsrs_score, utility, Exposure, GenerateInput, Generator,
+    GeneratorBuilder, RebalanceMode, RebalanceOutcome, Rung, REPORT_SCORE_WINDOW,
+    REPORT_SLOPE_LOOKBACK,
 };
 pub use grant::{
-    BreakerLimits, BreakerState, Grant, GrantBudgets, GrantDecision, GrantMarket, GrantPatch,
-    GrantPermission, GrantScope, GrantUsage, PortfolioThresholds, SignalThresholds,
-    TradeThresholds, evaluate_grant,
+    evaluate_grant, BreakerLimits, BreakerState, Grant, GrantBudgets, GrantDecision, GrantMarket,
+    GrantPatch, GrantPermission, GrantScope, GrantUsage, PortfolioThresholds, SignalThresholds,
+    TradeThresholds,
 };
 pub use proposal::{
-    Direction, JournaledTransition, Proposal, ProposalEvent, ProposalSide, ProposalState,
-    StructureKind, transition,
+    transition, Direction, JournaledTransition, Proposal, ProposalEvent, ProposalSide,
+    ProposalState, StructureKind,
 };
 pub use risk::{RiskApproved, RiskEngine, RiskLimits, RiskReason, RiskRefused, RiskState};
 

@@ -1,7 +1,7 @@
 use super::*;
-use protopyne_kernels::PriceSource;
-use protopyne_kernels::indicator::{ParamSet, builtin_registry};
 use protopyne_chart_model::ChartRow;
+use protopyne_kernels::indicator::{builtin_registry, ParamSet};
+use protopyne_kernels::PriceSource;
 
 fn sample_rows() -> Vec<ChartRow> {
     (0..8)
@@ -50,7 +50,10 @@ fn source_frame_close_matches_single_column_contract() {
 }
 
 fn position(order: &[String], node: &str) -> usize {
-    order.iter().position(|n| n == node).unwrap_or_else(|| panic!("{node} ordered"))
+    order
+        .iter()
+        .position(|n| n == node)
+        .unwrap_or_else(|| panic!("{node} ordered"))
 }
 
 #[test]
@@ -71,7 +74,10 @@ fn standard_topology_orders_nine_panes_dependencies_first() {
 #[test]
 fn standard_topology_readiness_and_cancel_scope() {
     let mut plan = standard_plan().expect("standard topology builds");
-    assert_eq!(plan.ready_steps(), vec![PRICE_NODE.to_owned(), VOLUME_NODE.to_owned()]);
+    assert_eq!(
+        plan.ready_steps(),
+        vec![PRICE_NODE.to_owned(), VOLUME_NODE.to_owned()]
+    );
     plan.complete(PRICE_NODE);
     assert!(plan.is_ready(ADAPTIVE_NODE));
     assert!(plan.is_ready(HEALTH_MA_NODE));
@@ -84,12 +90,21 @@ fn standard_topology_readiness_and_cancel_scope() {
     for node in [SIGNAL_NODE, RIBBON_NODE, HEALTH_RIBBON_NODE] {
         assert!(dirty.contains(&node.to_owned()), "{node} dirty");
     }
-    for node in [PRICE_NODE, VOLUME_NODE, ADAPTIVE_NODE, OSC_FAST_NODE, OSC_SLOW_NODE, HEALTH_MA_NODE]
-    {
+    for node in [
+        PRICE_NODE,
+        VOLUME_NODE,
+        ADAPTIVE_NODE,
+        OSC_FAST_NODE,
+        OSC_SLOW_NODE,
+        HEALTH_MA_NODE,
+    ] {
         assert!(!dirty.contains(&node.to_owned()), "{node} stays clean");
     }
     let root_dirty = plan.dirty_set(PRICE_NODE);
-    assert!(!root_dirty.contains(&VOLUME_NODE.to_owned()), "volume is independent of price");
+    assert!(
+        !root_dirty.contains(&VOLUME_NODE.to_owned()),
+        "volume is independent of price"
+    );
     assert!(root_dirty.contains(&HEALTH_RIBBON_NODE.to_owned()));
 }
 
@@ -97,9 +112,17 @@ fn standard_topology_readiness_and_cancel_scope() {
 fn parameter_sets_key_panes_directly() {
     let params = ParamSet::new().with_int("length", 14).with_float("k", 1.2);
     let again = ParamSet::new().with_float("k", 1.2).with_int("length", 14);
-    assert_eq!(params.fingerprint(), again.fingerprint(), "insertion order never matters");
+    assert_eq!(
+        params.fingerprint(),
+        again.fingerprint(),
+        "insertion order never matters"
+    );
     let expected = fluent_egui::cache_key(RIBBON_NODE, params.fingerprint());
-    assert_eq!(cache_key_for(RIBBON_NODE, &params), expected, "parameter sets key directly");
+    assert_eq!(
+        cache_key_for(RIBBON_NODE, &params),
+        expected,
+        "parameter sets key directly"
+    );
     assert_ne!(
         cache_key_for(RIBBON_NODE, &params),
         cache_key_for(OSC_FAST_NODE, &params),
@@ -116,8 +139,14 @@ fn parameter_sets_key_panes_directly() {
 fn kernel_waves_order_through_the_registry() {
     let registry = builtin_registry().expect("builtin kernels register");
     let order = kernel_order(&registry, &["dema".to_owned()]).expect("dema orders");
-    let ema = order.iter().position(|id| id == "ema").expect("ema ordered");
-    let dema = order.iter().position(|id| id == "dema").expect("dema ordered");
+    let ema = order
+        .iter()
+        .position(|id| id == "ema")
+        .expect("ema ordered");
+    let dema = order
+        .iter()
+        .position(|id| id == "dema")
+        .expect("dema ordered");
     assert!(ema < dema, "dependencies execute first: {order:?}");
     assert!(kernel_order(&registry, &["no-such-kernel".to_owned()]).is_err());
 }
@@ -150,8 +179,16 @@ fn evaluation_window_covers_visible_plus_warmup_and_clamps() {
     // The evaluation slice for visible-window-plus-warmup assessment: the
     // visible bars plus the warmup bars before them, clamped to history.
     assert_eq!(evaluation_window(5000, 4900, 100, 14), (4886, 114));
-    assert_eq!(evaluation_window(100, 0, 100, 14), (0, 100), "leading edge clamps");
-    assert_eq!(evaluation_window(100, 90, 10, 14), (76, 24), "trailing edge clamps");
+    assert_eq!(
+        evaluation_window(100, 0, 100, 14),
+        (0, 100),
+        "leading edge clamps"
+    );
+    assert_eq!(
+        evaluation_window(100, 90, 10, 14),
+        (76, 24),
+        "trailing edge clamps"
+    );
     assert_eq!(
         evaluation_window(100, 95, 20, 14),
         (81, 19),
@@ -162,7 +199,11 @@ fn evaluation_window_covers_visible_plus_warmup_and_clamps() {
         (0, 10),
         "shortfall evaluates what exists; leading holes stay holes downstream"
     );
-    assert_eq!(evaluation_window(0, 0, 0, 14), (0, 0), "no bars evaluates nothing");
+    assert_eq!(
+        evaluation_window(0, 0, 0, 14),
+        (0, 0),
+        "no bars evaluates nothing"
+    );
     assert_eq!(
         evaluation_window(100, 150, 10, 14),
         (100, 0),

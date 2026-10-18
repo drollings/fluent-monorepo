@@ -39,7 +39,11 @@ fn empty_batches_append_nothing_and_reopen_clean() {
     let mut log = open_rw(dir.path(), "empty.csv");
     let before = log.last_good_offset();
     log.append_batch(&[]).expect("empty batch appends");
-    assert_eq!(log.last_good_offset(), before, "an empty batch writes no bytes");
+    assert_eq!(
+        log.last_good_offset(),
+        before,
+        "an empty batch writes no bytes"
+    );
     let reopened = open_rw(dir.path(), "empty.csv");
     assert!(reopened.read_all().expect("replay").is_empty());
 }
@@ -55,7 +59,8 @@ fn a_failed_batch_leaves_the_pre_batch_state() {
     // Fail the write partway through the second batch.
     log.fail_after_bytes(good_offset + 4);
     let batch = vec![kv("c", "3"), kv("d", "4"), kv("e", "5")];
-    log.append_batch(&batch).expect_err("injected failure refuses");
+    log.append_batch(&batch)
+        .expect_err("injected failure refuses");
     assert_eq!(
         log.last_good_offset(),
         good_offset,
@@ -75,12 +80,15 @@ fn a_failed_batch_leaves_the_pre_batch_state() {
 fn torn_tail_at_every_byte_offset_replays_the_prefix_and_repairs_once() {
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("torn.csv");
-    let rows: Vec<Kv> = (0..8).map(|i| kv(&format!("k{i}"), &format!("v{i}"))).collect();
+    let rows: Vec<Kv> = (0..8)
+        .map(|i| kv(&format!("k{i}"), &format!("v{i}")))
+        .collect();
     let mut ends = Vec::new();
     {
         let mut log = AppendLog::<Kv>::open(&path).expect("log opens");
         for row in &rows {
-            log.append_batch(std::slice::from_ref(row)).expect("row lands");
+            log.append_batch(std::slice::from_ref(row))
+                .expect("row lands");
             ends.push(log.last_good_offset());
         }
     }
@@ -113,7 +121,10 @@ fn torn_tail_at_every_byte_offset_replays_the_prefix_and_repairs_once() {
         let second = AppendLog::<Kv>::open(&trial).expect("second open");
         let after_second = std::fs::read(&trial).expect("trial re-reads again");
         assert_eq!(after_first, after_second, "the repair happens exactly once");
-        assert_eq!(second.read_all().expect("replay"), trial_log.read_all().expect("replay"));
+        assert_eq!(
+            second.read_all().expect("replay"),
+            trial_log.read_all().expect("replay")
+        );
     }
 }
 
@@ -123,7 +134,9 @@ fn mid_file_corruption_refuses_loudly() {
     let path = dir.path().join("corrupt.csv");
     {
         let mut log = AppendLog::<Kv>::open(&path).expect("log opens");
-        let rows: Vec<Kv> = (0..4).map(|i| kv(&format!("k{i}"), &format!("v{i}"))).collect();
+        let rows: Vec<Kv> = (0..4)
+            .map(|i| kv(&format!("k{i}"), &format!("v{i}")))
+            .collect();
         log.append_batch(&rows).expect("rows land");
     }
     let mut bytes = std::fs::read(&path).expect("log reads");
@@ -140,7 +153,10 @@ fn mid_file_corruption_refuses_loudly() {
     std::fs::write(&path, &bytes).expect("corruption lands");
     match AppendLog::<Kv>::open(&path) {
         Err(StoreError::InvalidBar(reason)) => {
-            assert!(reason.contains("corrupt") || reason.contains("line"), "the refusal names the damage: {reason}");
+            assert!(
+                reason.contains("corrupt") || reason.contains("line"),
+                "the refusal names the damage: {reason}"
+            );
         }
         other => panic!("mid-file corruption must refuse loudly, got {other:?}"),
     }
@@ -153,7 +169,10 @@ fn a_wrong_domain_or_version_refuses() {
     std::fs::write(&path, "other_domain,1\nk,v\nk1,v1\n").expect("foreign log lands");
     match AppendLog::<Kv>::open(&path) {
         Err(StoreError::InvalidBar(reason)) => {
-            assert!(reason.contains("domain") || reason.contains("version"), "the refusal names the mismatch: {reason}");
+            assert!(
+                reason.contains("domain") || reason.contains("version"),
+                "the refusal names the mismatch: {reason}"
+            );
         }
         other => panic!("a foreign log must refuse, got {other:?}"),
     }
@@ -172,7 +191,10 @@ fn order_continues_across_reopen() {
         log.append_batch(&[kv("b", "2")]).expect("second lands");
     }
     let log = AppendLog::<Kv>::open(&path).expect("final reopen");
-    assert_eq!(log.read_all().expect("replay"), vec![kv("a", "1"), kv("b", "2")]);
+    assert_eq!(
+        log.read_all().expect("replay"),
+        vec![kv("a", "1"), kv("b", "2")]
+    );
 }
 
 #[test]
@@ -180,9 +202,12 @@ fn truncate_to_forgets_the_truncated_suffix() {
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("trunc.csv");
     let mut log = AppendLog::<Kv>::open(&path).expect("log opens");
-    let rows: Vec<Kv> = (0..4).map(|i| kv(&format!("k{i}"), &format!("v{i}"))).collect();
+    let rows: Vec<Kv> = (0..4)
+        .map(|i| kv(&format!("k{i}"), &format!("v{i}")))
+        .collect();
     for row in &rows {
-        log.append_batch(std::slice::from_ref(row)).expect("row lands");
+        log.append_batch(std::slice::from_ref(row))
+            .expect("row lands");
     }
     log.truncate_to(0).expect("truncate");
     // Truncating to zero drops the header too: the next open rewrites it

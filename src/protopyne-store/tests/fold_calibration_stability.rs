@@ -6,7 +6,7 @@
 //! harness itself, so the recorded figures are facts about the fold rather
 //! than about the run that happened to record them.
 
-use crate::fold::test_fold::{FoldTally, load_goldens};
+use crate::fold::test_fold::{load_goldens, FoldTally};
 
 #[test]
 fn repeated_runs_yield_identical_tallies() {

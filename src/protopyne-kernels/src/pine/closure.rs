@@ -11,7 +11,7 @@
 use std::path::{Path, PathBuf};
 
 use super::modules::ModuleId;
-use super::source::{LibraryId, PineSource, load_pine_source};
+use super::source::{load_pine_source, LibraryId, PineSource};
 use crate::error::KernelError;
 
 /// One real Pine file in the closure: identity plus its own import lines as
@@ -192,9 +192,7 @@ pub fn closure_data_root(manifest_dir: &str) -> PathBuf {
 /// Load the seven library sources plus the indicator without executing them.
 /// Version skew warns on the loaded source and still resolves; only
 /// unreadable or empty files refuse.
-pub fn load_closure_sources(
-    data_root: &Path,
-) -> Result<Vec<(String, PineSource)>, KernelError> {
+pub fn load_closure_sources(data_root: &Path) -> Result<Vec<(String, PineSource)>, KernelError> {
     let mut sources = Vec::with_capacity(REAL_LIBRARIES.len() + 1);
     for entry in REAL_LIBRARIES {
         let source = load_pine_source(&data_root.join(entry.relpath))?;
@@ -219,10 +217,7 @@ pub fn load_listed_closure(
         sources.push((format!("{}/{}", entry.publisher, entry.name), source));
     }
     let root = load_pine_source(&data_root.join(indicator.relpath))?;
-    sources.push((
-        format!("{}/{}", indicator.publisher, indicator.name),
-        root,
-    ));
+    sources.push((format!("{}/{}", indicator.publisher, indicator.name), root));
     Ok(sources)
 }
 

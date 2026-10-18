@@ -428,7 +428,11 @@ impl SqlitePool {
     }
 
     /// Append `payload` under `key` to the shared outbox (idempotent per key).
-    pub async fn outbox_append(self: &Arc<Self>, key: &str, payload: &[u8]) -> Result<i64, DbError> {
+    pub async fn outbox_append(
+        self: &Arc<Self>,
+        key: &str,
+        payload: &[u8],
+    ) -> Result<i64, DbError> {
         let key = key.to_string();
         let payload = payload.to_vec();
         self.with_conn(move |conn| crate::outbox::append(conn, &key, &payload))

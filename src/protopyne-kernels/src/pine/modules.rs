@@ -72,7 +72,11 @@ impl ModuleInput {
     /// Bundle one already-loaded, already-parsed module for resolution.
     #[must_use]
     pub fn new(id: LibraryId, source: PineSource, program: PineProgram) -> Self {
-        Self { id, source, program }
+        Self {
+            id,
+            source,
+            program,
+        }
     }
 
     /// Graph identity: publisher and name only.

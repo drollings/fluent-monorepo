@@ -76,7 +76,10 @@ fn decision_path_sequences_walk_legally() {
         (&[E::FailRisk], S::Rejected),
         (&[E::PassRisk, E::RequireHuman], S::PendingHuman),
         (&[E::PassRisk, E::AutoApprove], S::AutoApproved),
-        (&[E::PassRisk, E::AutoApprove, E::Submit, E::Reject], S::Rejected),
+        (
+            &[E::PassRisk, E::AutoApprove, E::Submit, E::Reject],
+            S::Rejected,
+        ),
         (
             &[E::PassRisk, E::AutoApprove, E::Submit, E::StartWork],
             S::Working,

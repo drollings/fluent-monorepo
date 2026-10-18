@@ -550,7 +550,10 @@ impl fmt::Display for PineParseError {
                 found,
                 line,
                 column,
-            } => write!(f, "parse error at {line}:{column}: expected {expected}, found {found}"),
+            } => write!(
+                f,
+                "parse error at {line}:{column}: expected {expected}, found {found}"
+            ),
             Self::UnexpectedEof => write!(f, "unexpected end of file"),
             Self::InvalidSyntax(message) => write!(f, "invalid syntax: {message}"),
         }
@@ -574,7 +577,10 @@ impl PineParser {
     /// Prepare to parse `tokens` (must end in `Eof`, as [`lex`](super::lexer::lex) provides).
     #[must_use]
     pub fn new(tokens: Vec<PineToken>) -> Self {
-        Self { tokens, position: 0 }
+        Self {
+            tokens,
+            position: 0,
+        }
     }
 
     /// Parse every top-level statement.
@@ -684,26 +690,28 @@ impl PineParser {
     /// statement inside the `else` block. An `else` binds only at its own
     /// `if`'s column: a dedented `else` after a nested `if` closes the
     /// outer block instead of feeding the inner one an empty branch.
-    fn parse_if_statement(&mut self, line_column: Option<usize>) -> Result<PineStmt, PineParseError> {
+    fn parse_if_statement(
+        &mut self,
+        line_column: Option<usize>,
+    ) -> Result<PineStmt, PineParseError> {
         let column = line_column.unwrap_or_else(|| self.current().column);
         self.advance();
         let condition = Box::new(self.parse_expression()?);
         let then_branch = self.parse_block(column)?;
         self.skip_trivia();
-        let else_branch = if self.current_kind() == &TokenKind::Else
-            && self.current().column == column
-        {
-            let else_column = self.current().column;
-            self.advance();
-            self.skip_comments();
-            if self.current_kind() == &TokenKind::If {
-                Some(vec![self.parse_if_statement(Some(else_column))?])
+        let else_branch =
+            if self.current_kind() == &TokenKind::Else && self.current().column == column {
+                let else_column = self.current().column;
+                self.advance();
+                self.skip_comments();
+                if self.current_kind() == &TokenKind::If {
+                    Some(vec![self.parse_if_statement(Some(else_column))?])
+                } else {
+                    Some(self.parse_block(column)?)
+                }
             } else {
-                Some(self.parse_block(column)?)
-            }
-        } else {
-            None
-        };
+                None
+            };
         Ok(PineStmt::If {
             condition,
             then_branch,
@@ -905,7 +913,10 @@ impl PineParser {
             self.skip_trivia();
             self.expect(&TokenKind::Equal)?;
             let value = self.parse_expression()?;
-            members.push(EnumMember { name: member, value });
+            members.push(EnumMember {
+                name: member,
+                value,
+            });
         }
         Ok(PineStmt::EnumDecl { name, members })
     }
@@ -1398,10 +1409,7 @@ impl PineParser {
         // A scrutinee rides the `switch` line; a newline opens the bare
         // boolean-arm form instead.
         self.skip_comments();
-        let scrutinee = if matches!(
-            self.current_kind(),
-            TokenKind::Newline | TokenKind::Eof
-        ) {
+        let scrutinee = if matches!(self.current_kind(), TokenKind::Newline | TokenKind::Eof) {
             None
         } else {
             Some(Box::new(self.parse_expression()?))
@@ -1712,8 +1720,9 @@ impl PineParser {
             }
             TokenKind::ColorHex(digits) => {
                 self.advance();
-                super::builtins_core::color_of_hex(&digits).map(PineExpr::ColorLiteral).ok_or_else(
-                    || {
+                super::builtins_core::color_of_hex(&digits)
+                    .map(PineExpr::ColorLiteral)
+                    .ok_or_else(|| {
                         let token = self.current().clone();
                         PineParseError::UnexpectedToken {
                             expected: "color literal".to_owned(),
@@ -1721,8 +1730,7 @@ impl PineParser {
                             line: token.line,
                             column: token.column,
                         }
-                    },
-                )
+                    })
             }
             TokenKind::True => {
                 self.advance();

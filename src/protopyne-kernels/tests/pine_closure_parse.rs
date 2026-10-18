@@ -356,8 +356,7 @@ fn malformed_corpus_still_refuses() {
 fn assert_round_trip(source: &str) {
     let program = parse_program(source).expect("round-trip fixture parses");
     let displayed = display_program(&program);
-    let reparsed =
-        parse_program(&displayed).expect("displayed output re-parses");
+    let reparsed = parse_program(&displayed).expect("displayed output re-parses");
     assert_eq!(
         reparsed, program,
         "parse-then-display is structurally stable for {source:?}\ndisplayed:\n{displayed}"
@@ -455,8 +454,7 @@ fn display_round_trips_real_closure() {
     for relative in files {
         let program = parse_file(relative);
         let displayed = display_program(&program);
-        let reparsed = parse_program(&displayed)
-            .expect("displayed real file re-parses");
+        let reparsed = parse_program(&displayed).expect("displayed real file re-parses");
         assert_eq!(
             reparsed, program,
             "real file {relative} survives parse-then-display"

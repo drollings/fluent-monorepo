@@ -79,13 +79,7 @@ fn parity_match_is_ok_including_warmup_nones() {
 
 #[test]
 fn parity_mismatch_names_every_index_not_just_first() {
-    let actual = vec![
-        Some(1.0),
-        Some(2.0),
-        Some(99.0),
-        Some(4.0),
-        Some(77.0),
-    ];
+    let actual = vec![Some(1.0), Some(2.0), Some(99.0), Some(4.0), Some(77.0)];
     let expected = vec![Some(1.0), Some(2.0), Some(3.0), Some(4.0), Some(5.0)];
     let err =
         assert_expr_parity(&actual, &expected, 1e-9, "planted").expect_err("must report drift");
@@ -93,7 +87,10 @@ fn parity_mismatch_names_every_index_not_just_first() {
     assert!(err.contains("position 2"), "missing index 2: {err}");
     assert!(err.contains("position 4"), "missing index 4: {err}");
     // Both sides of each drift are named.
-    assert!(err.contains("99") && err.contains("3"), "missing sides: {err}");
+    assert!(
+        err.contains("99") && err.contains("3"),
+        "missing sides: {err}"
+    );
     // Largest drift |99 - 3| = 96 is named.
     assert!(err.contains("96"), "missing max drift: {err}");
 }
@@ -107,8 +104,7 @@ fn parity_none_vs_some_is_missing_not_silent() {
 
 #[test]
 fn fixture_csv_header_convention_pinned() {
-    let text =
-        std::fs::read_to_string(fixture_path("parity_sma10.csv")).expect("fixture present");
+    let text = std::fs::read_to_string(fixture_path("parity_sma10.csv")).expect("fixture present");
     let mut lines = text.lines();
     assert_eq!(lines.next().expect("header line"), "bar,close,sma10");
     let rows: Vec<&str> = lines.collect();

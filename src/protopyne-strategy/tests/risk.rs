@@ -164,9 +164,7 @@ fn engine_serves_as_a_component_with_test_doubles() {
     let doubled = ComponentAdapter::new(inner).with_execute_override(Arc::new(|_| {
         Ok(WorkOutput::ok("double refuses everything"))
     }));
-    let output = doubled
-        .execute(&ctx)
-        .expect("double executes");
+    let output = doubled.execute(&ctx).expect("double executes");
     assert!(output.message.contains("double"));
 }
 
@@ -175,7 +173,10 @@ fn caps_read_exact_decimals() {
     // A configured cap means exactly what it says: 19.99 is 19.99, not the
     // binary retain artifact (19.989999...), which would refuse a proposal
     // booked at exactly the cap.
-    let limits = RiskLimits::new().max_loss_per_trade(19.99).max_notional(19.99).build();
+    let limits = RiskLimits::new()
+        .max_loss_per_trade(19.99)
+        .max_notional(19.99)
+        .build();
     let exact: Decimal = "19.99".parse().expect("decimal");
     assert_eq!(limits.loss_cap(), Some(exact));
     assert_eq!(limits.notional_cap(), Some(exact));
@@ -184,19 +185,26 @@ fn caps_read_exact_decimals() {
     let mut at_cap = proposal();
     at_cap.max_loss = Money::new(exact);
     at_cap.notional = Money::new(exact);
-    assert!(engine.check(&at_cap, &healthy()).is_ok(), "at-cap proposals pass");
+    assert!(
+        engine.check(&at_cap, &healthy()).is_ok(),
+        "at-cap proposals pass"
+    );
 
     let mut over_cap = proposal();
     over_cap.max_loss = Money::new(exact + Decimal::from(1));
-    let refused = engine.check(&over_cap, &healthy()).expect_err("over-cap refuses");
+    let refused = engine
+        .check(&over_cap, &healthy())
+        .expect_err("over-cap refuses");
     assert!(refused.reasons.contains(&RiskReason::OverLossCap));
 }
 
 #[test]
 fn over_bound_quote_age_and_clock_skew_refuse_at_construction() {
     for (quote_age, skew) in [(3_601, 5), (0, 5), (60, 3_601), (60, 0)] {
-        let limits =
-            RiskLimits::new().quote_max_age_secs(quote_age).clock_skew_secs(skew).build();
+        let limits = RiskLimits::new()
+            .quote_max_age_secs(quote_age)
+            .clock_skew_secs(skew)
+            .build();
         assert!(
             limits.validate().is_err(),
             "quote {quote_age}/skew {skew} refuses at construction"
@@ -213,8 +221,14 @@ fn over_bound_quote_age_and_clock_skew_refuse_at_construction() {
             .expect_err("an invalid engine fails closed");
         assert!(refused.reasons.contains(&RiskReason::Unrepresentable));
     }
-    let edge = RiskLimits::new().quote_max_age_secs(3_600).clock_skew_secs(1).build();
-    assert!(edge.validate().is_ok(), "the declared bounds still construct");
+    let edge = RiskLimits::new()
+        .quote_max_age_secs(3_600)
+        .clock_skew_secs(1)
+        .build();
+    assert!(
+        edge.validate().is_ok(),
+        "the declared bounds still construct"
+    );
 }
 
 #[test]
@@ -229,7 +243,11 @@ fn unrepresentable_cap_fails_closed_at_construction() {
         assert!(refused.reasons.contains(&RiskReason::Unrepresentable));
     }
     let limits = RiskLimits::new().max_notional(f64::MAX).build();
-    assert_eq!(limits.notional_cap(), None, "the cap has no decimal reading");
+    assert_eq!(
+        limits.notional_cap(),
+        None,
+        "the cap has no decimal reading"
+    );
     let engine = RiskEngine::new(limits);
     let refused = engine
         .check(&proposal(), &healthy())
@@ -242,7 +260,9 @@ fn engine_field_edits_reparse_the_stored_caps() {
     use fluent_wvr::FieldAccess as _;
     let mut engine = RiskEngine::new(RiskLimits::default());
     assert!(engine.check(&proposal(), &healthy()).is_ok());
-    engine.set_field("max_loss_per_trade", "100").expect("cap edits");
+    engine
+        .set_field("max_loss_per_trade", "100")
+        .expect("cap edits");
     let refused = engine
         .check(&proposal(), &healthy())
         .expect_err("the edited cap binds");
@@ -252,18 +272,29 @@ fn engine_field_edits_reparse_the_stored_caps() {
 #[test]
 fn try_new_refuses_out_of_bound_configuration_up_front() {
     assert!(RiskEngine::try_new(RiskLimits::default()).is_ok());
-    let edge = RiskLimits::new().quote_max_age_secs(3_600).clock_skew_secs(1).build();
-    assert!(RiskEngine::try_new(edge).is_ok(), "declared edges construct");
+    let edge = RiskLimits::new()
+        .quote_max_age_secs(3_600)
+        .clock_skew_secs(1)
+        .build();
+    assert!(
+        RiskEngine::try_new(edge).is_ok(),
+        "declared edges construct"
+    );
     for (quote_age, skew) in [(3_601, 5), (0, 5), (60, 3_601), (60, 0)] {
-        let limits =
-            RiskLimits::new().quote_max_age_secs(quote_age).clock_skew_secs(skew).build();
+        let limits = RiskLimits::new()
+            .quote_max_age_secs(quote_age)
+            .clock_skew_secs(skew)
+            .build();
         assert!(
             RiskEngine::try_new(limits).is_err(),
             "quote {quote_age}/skew {skew} refuses at construction, not at first check"
         );
     }
     let bad_cap = RiskLimits::new().max_loss_per_trade(f64::NAN).build();
-    assert!(RiskEngine::try_new(bad_cap).is_err(), "unreadable cap refuses up front");
+    assert!(
+        RiskEngine::try_new(bad_cap).is_err(),
+        "unreadable cap refuses up front"
+    );
 }
 
 #[test]
@@ -273,9 +304,22 @@ fn engine_field_edits_cannot_widen_into_unchecked_bounds() {
     assert!(engine.check(&proposal(), &healthy()).is_ok());
     // The schema path enforces the declared bounds on the edit itself, so an
     // over-bound age never lands in the engine to be caught later.
-    let refused = engine.set_field("quote_max_age_secs", "99999").expect_err("over-bound edit");
-    assert!(format!("{refused:?}").contains("3600"), "the refusal names the bound: {refused:?}");
-    assert!(engine.check(&proposal(), &healthy()).is_ok(), "the refused edit changed nothing");
-    let refused = engine.set_field("clock_skew_secs", "0").expect_err("under-bound edit");
-    assert!(format!("{refused:?}").contains("minimum 1"), "the refusal names the bound: {refused:?}");
+    let refused = engine
+        .set_field("quote_max_age_secs", "99999")
+        .expect_err("over-bound edit");
+    assert!(
+        format!("{refused:?}").contains("3600"),
+        "the refusal names the bound: {refused:?}"
+    );
+    assert!(
+        engine.check(&proposal(), &healthy()).is_ok(),
+        "the refused edit changed nothing"
+    );
+    let refused = engine
+        .set_field("clock_skew_secs", "0")
+        .expect_err("under-bound edit");
+    assert!(
+        format!("{refused:?}").contains("minimum 1"),
+        "the refusal names the bound: {refused:?}"
+    );
 }

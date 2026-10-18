@@ -55,7 +55,10 @@ fn money(value: &str) -> Money {
 }
 
 fn level(price: &str, size: u64) -> PriceLevel {
-    PriceLevel { price: money(price), size }
+    PriceLevel {
+        price: money(price),
+        size,
+    }
 }
 
 fn base_ts() -> chrono::DateTime<Utc> {
@@ -171,8 +174,14 @@ fn slow_drift_stays_silent() {
         let bid = Decimal::new(60_000 + step as i64, 2);
         let ask = Decimal::new(60_010 + step as i64, 2);
         book.snapshot_replace(
-            &[PriceLevel { price: Money::new(bid), size: 50 }],
-            &[PriceLevel { price: Money::new(ask), size: 40 }],
+            &[PriceLevel {
+                price: Money::new(bid),
+                size: 50,
+            }],
+            &[PriceLevel {
+                price: Money::new(ask),
+                size: 40,
+            }],
             step + 1,
             base_ts() + Duration::seconds(step as i64),
         )
@@ -186,13 +195,8 @@ fn slow_drift_stays_silent() {
 #[test]
 fn single_tick_flicker_stays_silent() {
     let (mut book, _index) = book_for("SPY");
-    book.snapshot_replace(
-        &[level("600.00", 50)],
-        &[level("600.10", 40)],
-        1,
-        base_ts(),
-    )
-    .expect("flicker baseline sets");
+    book.snapshot_replace(&[level("600.00", 50)], &[level("600.10", 40)], 1, base_ts())
+        .expect("flicker baseline sets");
     assert_silent(&book, fresh_now(), "flicker baseline");
     for (sequence, bids, asks) in [
         (2, vec![level("599.99", 50)], vec![]),
@@ -200,8 +204,13 @@ fn single_tick_flicker_stays_silent() {
         (4, vec![], vec![level("600.11", 40)]),
         (5, vec![], vec![level("600.10", 40)]),
     ] {
-        book.apply_delta(&DepthDelta { bids, asks, sequence, ts: base_ts() })
-            .expect("flicker delta applies");
+        book.apply_delta(&DepthDelta {
+            bids,
+            asks,
+            sequence,
+            ts: base_ts(),
+        })
+        .expect("flicker delta applies");
         assert_silent(&book, fresh_now(), "single-tick flicker");
     }
 }
@@ -213,23 +222,13 @@ fn single_tick_flicker_stays_silent() {
 #[test]
 fn injected_crosses_fire() {
     let (mut book, _index) = book_for("SPY");
-    book.snapshot_replace(
-        &[level("600.20", 50)],
-        &[level("600.10", 40)],
-        1,
-        base_ts(),
-    )
-    .expect("crossed snapshot sets");
+    book.snapshot_replace(&[level("600.20", 50)], &[level("600.10", 40)], 1, base_ts())
+        .expect("crossed snapshot sets");
     let reason = is_crossed(&book).expect("crossed top must fire");
     assert!(reason.contains("SPY"), "reason names the book: {reason}");
 
-    book.snapshot_replace(
-        &[level("600.10", 50)],
-        &[level("600.10", 40)],
-        2,
-        base_ts(),
-    )
-    .expect("locked snapshot sets");
+    book.snapshot_replace(&[level("600.10", 50)], &[level("600.10", 40)], 2, base_ts())
+        .expect("locked snapshot sets");
     let reason = is_crossed(&book).expect("locked top must fire");
     assert!(reason.contains("SPY"), "reason names the book: {reason}");
 }
@@ -239,13 +238,8 @@ fn injected_crosses_fire() {
 #[test]
 fn dropped_sequences_refuse() {
     let (mut book, _index) = book_for("SPY");
-    book.snapshot_replace(
-        &[level("600.00", 50)],
-        &[level("600.10", 40)],
-        5,
-        base_ts(),
-    )
-    .expect("snapshot sets");
+    book.snapshot_replace(&[level("600.00", 50)], &[level("600.10", 40)], 5, base_ts())
+        .expect("snapshot sets");
     let before = book.top().expect("touch");
     let refusal = book
         .apply_delta(&DepthDelta {
@@ -264,10 +258,19 @@ fn dropped_sequences_refuse() {
 
     let mut manager = BookManager::new();
     manager
-        .apply_snapshot("SPY", &[level("600.00", 50)], &[level("600.10", 40)], 1, base_ts())
+        .apply_snapshot(
+            "SPY",
+            &[level("600.00", 50)],
+            &[level("600.10", 40)],
+            1,
+            base_ts(),
+        )
         .expect("manager snapshot opens");
     let refusal = manager
-        .apply_event(&MarketEvent::BookDelta { underlying: "SPY".to_owned(), sequence: 3 })
+        .apply_event(&MarketEvent::BookDelta {
+            underlying: "SPY".to_owned(),
+            sequence: 3,
+        })
         .expect_err("manager heartbeat gap must refuse");
     assert!(
         refusal.to_string().contains("sequence gap"),
@@ -281,16 +284,15 @@ fn dropped_sequences_refuse() {
 #[test]
 fn stale_feeds_fire() {
     let (mut book, _index) = book_for("SPY");
-    book.snapshot_replace(
-        &[level("600.00", 50)],
-        &[level("600.10", 40)],
-        1,
-        base_ts(),
-    )
-    .expect("snapshot sets");
+    book.snapshot_replace(&[level("600.00", 50)], &[level("600.10", 40)], 1, base_ts())
+        .expect("snapshot sets");
     assert!(
-        is_stale(&book, base_ts() + Duration::seconds(MAX_BOOK_AGE_SECS as i64), MAX_BOOK_AGE_SECS)
-            .is_none(),
+        is_stale(
+            &book,
+            base_ts() + Duration::seconds(MAX_BOOK_AGE_SECS as i64),
+            MAX_BOOK_AGE_SECS
+        )
+        .is_none(),
         "a book exactly at the bound is fresh"
     );
     let late = base_ts() + Duration::seconds(MAX_BOOK_AGE_SECS as i64 + 1);
@@ -306,10 +308,22 @@ fn stale_feeds_fire() {
 fn mixed_manager_scan_records_expected_findings() {
     let mut manager = BookManager::new();
     manager
-        .apply_snapshot("SPY", &[level("600.00", 50)], &[level("600.10", 40)], 1, base_ts())
+        .apply_snapshot(
+            "SPY",
+            &[level("600.00", 50)],
+            &[level("600.10", 40)],
+            1,
+            base_ts(),
+        )
         .expect("clean book opens");
     manager
-        .apply_snapshot("AAPL", &[level("100.20", 10)], &[level("100.10", 10)], 1, base_ts())
+        .apply_snapshot(
+            "AAPL",
+            &[level("100.20", 10)],
+            &[level("100.10", 10)],
+            1,
+            base_ts(),
+        )
         .expect("crossed book opens");
     manager
         .apply_snapshot(
@@ -321,8 +335,15 @@ fn mixed_manager_scan_records_expected_findings() {
         )
         .expect("old book opens");
     let findings = manager.scan(fresh_now(), MAX_BOOK_AGE_SECS);
-    let symbols: Vec<&str> = findings.iter().map(|finding| finding.symbol.as_str()).collect();
-    assert_eq!(symbols, vec!["AAPL", "MSFT"], "only the faulty books record");
+    let symbols: Vec<&str> = findings
+        .iter()
+        .map(|finding| finding.symbol.as_str())
+        .collect();
+    assert_eq!(
+        symbols,
+        vec!["AAPL", "MSFT"],
+        "only the faulty books record"
+    );
     assert!(
         findings[0].reason.contains("crossed"),
         "crossed finding names the fault: {}",
@@ -346,7 +367,13 @@ fn book_detector_calibration_is_green() {
     let mut false_fires = 0;
     let mut clean = BookManager::new();
     clean
-        .apply_snapshot("SPY", &[level("600.00", 50)], &[level("600.01", 40)], 1, base_ts())
+        .apply_snapshot(
+            "SPY",
+            &[level("600.00", 50)],
+            &[level("600.01", 40)],
+            1,
+            base_ts(),
+        )
         .expect("tight book opens");
     false_fires += clean.scan(fresh_now(), MAX_BOOK_AGE_SECS).len();
     for step in 0..DRIFT_STEPS {
@@ -355,8 +382,14 @@ fn book_detector_calibration_is_green() {
         clean
             .apply_snapshot(
                 "SPY",
-                &[PriceLevel { price: Money::new(bid), size: 50 }],
-                &[PriceLevel { price: Money::new(ask), size: 40 }],
+                &[PriceLevel {
+                    price: Money::new(bid),
+                    size: 50,
+                }],
+                &[PriceLevel {
+                    price: Money::new(ask),
+                    size: 40,
+                }],
                 step + 1,
                 base_ts(),
             )
@@ -388,15 +421,31 @@ fn book_detector_calibration_is_green() {
             .is_err(),
     );
     fired += usize::from(
-        is_stale(&crossed, base_ts() + Duration::seconds(MAX_BOOK_AGE_SECS as i64 + 1), MAX_BOOK_AGE_SECS)
-            .is_some(),
+        is_stale(
+            &crossed,
+            base_ts() + Duration::seconds(MAX_BOOK_AGE_SECS as i64 + 1),
+            MAX_BOOK_AGE_SECS,
+        )
+        .is_some(),
     );
     let mut mixed = BookManager::new();
     mixed
-        .apply_snapshot("SPY", &[level("600.00", 50)], &[level("600.10", 40)], 1, base_ts())
+        .apply_snapshot(
+            "SPY",
+            &[level("600.00", 50)],
+            &[level("600.10", 40)],
+            1,
+            base_ts(),
+        )
         .expect("clean book opens");
     mixed
-        .apply_snapshot("AAPL", &[level("100.20", 10)], &[level("100.10", 10)], 1, base_ts())
+        .apply_snapshot(
+            "AAPL",
+            &[level("100.20", 10)],
+            &[level("100.10", 10)],
+            1,
+            base_ts(),
+        )
         .expect("crossed book opens");
     fired += usize::from(mixed.scan(fresh_now(), MAX_BOOK_AGE_SECS).len() == 1);
 

@@ -165,8 +165,14 @@ impl GrantFormState {
                 .and_then(serde_json::Value::as_str)
                 .unwrap_or_default()
                 .to_owned();
-            tiers.push(GrantTier { name: tier.clone(), description: description.clone() });
-            match hint.get("properties").and_then(serde_json::Value::as_object) {
+            tiers.push(GrantTier {
+                name: tier.clone(),
+                description: description.clone(),
+            });
+            match hint
+                .get("properties")
+                .and_then(serde_json::Value::as_object)
+            {
                 Some(leaves) => {
                     for (leaf, leaf_hint) in leaves {
                         fields.push(GrantFormField {
@@ -175,7 +181,9 @@ impl GrantFormState {
                             kind: leaf_hint
                                 .get("type")
                                 .and_then(serde_json::Value::as_str)
-                                .map_or(FieldKind::Text, |declared| FieldKind::of_schema(Some(declared))),
+                                .map_or(FieldKind::Text, |declared| {
+                                    FieldKind::of_schema(Some(declared))
+                                }),
                             format: leaf_hint
                                 .get("format")
                                 .and_then(serde_json::Value::as_str)
@@ -194,7 +202,9 @@ impl GrantFormState {
                     kind: hint
                         .get("type")
                         .and_then(serde_json::Value::as_str)
-                        .map_or(FieldKind::Text, |declared| FieldKind::of_schema(Some(declared))),
+                        .map_or(FieldKind::Text, |declared| {
+                            FieldKind::of_schema(Some(declared))
+                        }),
                     format: hint
                         .get("format")
                         .and_then(serde_json::Value::as_str)
@@ -273,7 +283,9 @@ impl GrantFormState {
     #[must_use]
     pub fn is_preview_fresh(&self) -> bool {
         matches!(&self.preview, Some(Ok(_)))
-            && self.assemble_tiers().is_ok_and(|tiers| tiers == self.previewed)
+            && self
+                .assemble_tiers()
+                .is_ok_and(|tiers| tiers == self.previewed)
     }
 
     /// Last submit refusal, if any, for the painter to echo.
@@ -302,9 +314,13 @@ impl GrantFormState {
     /// parser and a second one here would be the duplication the envelope
     /// exists to avoid. A color field is text on the wire exactly like any
     /// other string, so it rides verbatim beside it.
-    fn leaf_value(field: &GrantFormField, draft: &str) -> Result<serde_json::Value, GrantFormError> {
-        let refuse = |reason: String| {
-            GrantFormError::FieldParse { field: field.path(), reason }
+    fn leaf_value(
+        field: &GrantFormField,
+        draft: &str,
+    ) -> Result<serde_json::Value, GrantFormError> {
+        let refuse = |reason: String| GrantFormError::FieldParse {
+            field: field.path(),
+            reason,
         };
         match field.kind {
             FieldKind::Integer => draft
@@ -325,9 +341,10 @@ impl GrantFormState {
                 _ => Err(refuse(format!("{draft:?} is not true or false"))),
             },
             FieldKind::Text if field.format.as_deref() == Some("decimal") => {
-                DisplayOnly::new(draft.to_owned()).try_into_money().map(|money| {
-                    serde_json::Value::String(money.to_string())
-                }).map_err(|error| refuse(error.to_string()))
+                DisplayOnly::new(draft.to_owned())
+                    .try_into_money()
+                    .map(|money| serde_json::Value::String(money.to_string()))
+                    .map_err(|error| refuse(error.to_string()))
             }
             FieldKind::Text | FieldKind::Color | FieldKind::Select => {
                 Ok(serde_json::Value::String(draft.to_owned()))
@@ -342,8 +359,11 @@ impl GrantFormState {
     fn assemble_tiers(&self) -> Result<BTreeMap<String, String>, GrantFormError> {
         let mut tiers = BTreeMap::new();
         for tier in &self.tiers {
-            let leaves: Vec<&GrantFormField> =
-                self.fields.iter().filter(|field| field.tier == tier.name).collect();
+            let leaves: Vec<&GrantFormField> = self
+                .fields
+                .iter()
+                .filter(|field| field.tier == tier.name)
+                .collect();
             let mut document = serde_json::Map::new();
             let mut missing = Vec::new();
             let mut drafted = 0;
@@ -425,8 +445,9 @@ impl GrantFormState {
         if tiers == self.previewed && self.preview.is_some() {
             return;
         }
-        let outcome =
-            gateway.preview_arm(Self::envelope(&tiers)).map_err(|error| error.to_string());
+        let outcome = gateway
+            .preview_arm(Self::envelope(&tiers))
+            .map_err(|error| error.to_string());
         self.previewed = tiers;
         self.preview = Some(outcome);
     }
@@ -437,10 +458,7 @@ impl GrantFormState {
     /// partial tier refuses, and an unfresh preview refuses — then the
     /// envelope wraps the tier strings as a patch, never a grant, and the
     /// outcome is recorded for the painter.
-    pub fn submit(
-        &mut self,
-        gateway: &dyn TerminalGateway,
-    ) -> Result<ArmResponse, GrantFormError> {
+    pub fn submit(&mut self, gateway: &dyn TerminalGateway) -> Result<ArmResponse, GrantFormError> {
         self.last_error = None;
         self.last_response = None;
         let tiers = match self.assemble_tiers() {
@@ -480,12 +498,17 @@ pub fn paint_grant_form(
         if field.tier != current_tier {
             current_tier.clone_from(&field.tier);
             let tier_text = form.tier_text_of(&current_tier).to_owned();
-            ui.label(format!("tier: {current_tier}")).on_hover_text(tier_text);
+            ui.label(format!("tier: {current_tier}"))
+                .on_hover_text(tier_text);
         }
         let path = field.path();
         if field.kind == FieldKind::Boolean {
             let mut value = form.draft_of(&path) == "true";
-            if ui.checkbox(&mut value, path.clone()).on_hover_text(field.description.clone()).changed() {
+            if ui
+                .checkbox(&mut value, path.clone())
+                .on_hover_text(field.description.clone())
+                .changed()
+            {
                 form.set_draft(&path, value.to_string());
             }
         } else {
@@ -519,7 +542,10 @@ pub fn paint_grant_form(
         }
     }
     let fresh = form.is_preview_fresh();
-    if ui.add_enabled(fresh, egui::Button::new("Submit tightening")).clicked() {
+    if ui
+        .add_enabled(fresh, egui::Button::new("Submit tightening"))
+        .clicked()
+    {
         let _ = form.submit(gateway);
     }
     if let Some(error) = form.last_error() {

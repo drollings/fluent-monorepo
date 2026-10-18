@@ -32,23 +32,44 @@ fn crate_is_a_workspace_member() {
 #[test]
 fn own_manifest_declares_paint_deps_and_no_autotests() {
     let text = read_text(&manifest_dir().join("Cargo.toml"));
-    assert!(text.contains("autotests = false"), "autotests must stay off");
-    assert!(text.contains("egui"), "paint dependency must be declared here");
+    assert!(
+        text.contains("autotests = false"),
+        "autotests must stay off"
+    );
+    assert!(
+        text.contains("egui"),
+        "paint dependency must be declared here"
+    );
     assert!(text.contains("eframe"), "demo shell must be declared here");
     assert!(
         text.contains("optional = true"),
         "demo shell must stay optional so the default build needs no windowing backend"
     );
-    assert!(text.contains("fluent-egui"), "terminal composes the scaffolding, never forks it");
+    assert!(
+        text.contains("fluent-egui"),
+        "terminal composes the scaffolding, never forks it"
+    );
 }
 
 #[test]
 fn lib_forbids_unsafe_and_documents_one_way_boundary() {
     let text = read_text(&manifest_dir().join("src").join("lib.rs"));
-    assert!(text.contains("forbid(unsafe_code)"), "paint edge must forbid unsafe");
-    assert!(text.contains("one-way"), "boundary direction must be documented");
-    assert!(text.contains("Decimal"), "money side of the boundary must be named");
-    assert!(text.contains("f64"), "display side of the boundary must be named");
+    assert!(
+        text.contains("forbid(unsafe_code)"),
+        "paint edge must forbid unsafe"
+    );
+    assert!(
+        text.contains("one-way"),
+        "boundary direction must be documented"
+    );
+    assert!(
+        text.contains("Decimal"),
+        "money side of the boundary must be named"
+    );
+    assert!(
+        text.contains("f64"),
+        "display side of the boundary must be named"
+    );
     assert!(
         !text.contains("pub use egui"),
         "paint dependency must not be re-exported from the crate root"

@@ -5,18 +5,18 @@
 
 use std::collections::HashMap;
 use std::sync::{
-    Arc,
     atomic::{AtomicUsize, Ordering},
+    Arc,
 };
 
 use chrono::{TimeZone, Utc};
 use fluent_concurrency::io::net::NetCapability;
-use fluent_wvr::{CURRENT_CAPS, CapabilitySet};
+use fluent_wvr::{CapabilitySet, CURRENT_CAPS};
 use rust_decimal::Decimal;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use crate::journal::VenueStorage;
-use crate::live::{LiveBoot, TastytradeVenue, boot_live, positions_of};
+use crate::live::{boot_live, positions_of, LiveBoot, TastytradeVenue};
 use crate::order::{OrderIntent, OrderRecord, OrderSide, OrderStatus};
 use crate::session::SessionConfig;
 use crate::tastytrade::{TastytradeConfig, TastytradeTransport};
@@ -121,18 +121,31 @@ impl Fake {
                 .to_owned();
             let intent: OrderIntent = serde_json::from_str(body).expect("intent");
             let record = record_for(intent, OrderStatus::Acknowledged);
-            self.orders.lock().expect("orders").insert(client_id, record.clone());
+            self.orders
+                .lock()
+                .expect("orders")
+                .insert(client_id, record.clone());
             // Ack loss is accept-then-silence: the order stands, only the
             // reply is dropped — so the retry must resolve by query.
             if self.drop_next_order_post.fetch_sub(1, Ordering::SeqCst) > 0 {
                 return "drop".to_owned();
             }
-            return ok(&serde_json::to_string(&serde_json::json!({ "order": record })).expect("json"));
+            return ok(
+                &serde_json::to_string(&serde_json::json!({ "order": record })).expect("json"),
+            );
         }
         if method == "GET" && path.contains("/orders/") {
             let id = decode_segment(path.rsplit('/').next().unwrap_or_default());
-            if let Some(record) = self.orders.lock().expect("orders").get(id.as_str()).cloned() {
-                return ok(&serde_json::to_string(&serde_json::json!({ "order": record })).expect("json"));
+            if let Some(record) = self
+                .orders
+                .lock()
+                .expect("orders")
+                .get(id.as_str())
+                .cloned()
+            {
+                return ok(
+                    &serde_json::to_string(&serde_json::json!({ "order": record })).expect("json"),
+                );
             }
             return ok(r#"{"error":{"code":"not_found","message":"unknown order"}}"#);
         }
@@ -148,7 +161,10 @@ impl Fake {
                     record.status = OrderStatus::Cancelled;
                     record.updated_at = now();
                     let record = record.clone();
-                    return ok(&serde_json::to_string(&serde_json::json!({ "order": record })).expect("json"));
+                    return ok(
+                        &serde_json::to_string(&serde_json::json!({ "order": record }))
+                            .expect("json"),
+                    );
                 }
             }
         }
@@ -195,7 +211,9 @@ fn http_response(body: &str) -> String {
 }
 
 async fn serve(fake: Arc<Fake>) -> String {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind");
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
     let base = format!("http://{}", listener.local_addr().expect("addr"));
     tokio::spawn(async move {
         loop {
@@ -211,17 +229,17 @@ async fn serve(fake: Arc<Fake>) -> String {
                         Ok(0) | Err(_) => return,
                         Ok(n) => {
                             head.extend_from_slice(&buf[..n]);
-                            if let Some(at) = head
-                                .windows(4)
-                                .position(|w| w == b"\r\n\r\n")
-                            {
+                            if let Some(at) = head.windows(4).position(|w| w == b"\r\n\r\n") {
                                 break at + 4;
                             }
                         }
                     }
                 };
                 let head_text = String::from_utf8_lossy(&head[..header_end]).into_owned();
-                if head_text.to_ascii_lowercase().contains("expect: 100-continue") {
+                if head_text
+                    .to_ascii_lowercase()
+                    .contains("expect: 100-continue")
+                {
                     let _ = stream.write_all(b"HTTP/1.1 100 Continue\r\n\r\n").await;
                 }
                 let content_len = head_text
@@ -265,7 +283,13 @@ where
     CURRENT_CAPS.scope(net_caps(), f).await
 }
 
-fn venue_for(base: &str) -> (Arc<TastytradeTransport>, Arc<NetCapability>, TastytradeVenue) {
+fn venue_for(
+    base: &str,
+) -> (
+    Arc<TastytradeTransport>,
+    Arc<NetCapability>,
+    TastytradeVenue,
+) {
     let transport = Arc::new(TastytradeTransport::new(
         TastytradeConfig::new().base_url(base.to_owned()).build(),
     ));
@@ -282,9 +306,16 @@ async fn login_stores_token_and_bad_creds_stop_without_retry() {
     let (_transport, _net, venue) = venue_for(&base);
     scoped(async {
         assert!(!venue.is_authenticated());
-        venue.login("user", "wrong").await.expect_err("bad creds refuse");
+        venue
+            .login("user", "wrong")
+            .await
+            .expect_err("bad creds refuse");
         assert!(!venue.is_authenticated(), "no token banked on refusal");
-        assert_eq!(fake.paths("POST", "/sessions"), 1, "terminal: exactly one login attempt");
+        assert_eq!(
+            fake.paths("POST", "/sessions"),
+            1,
+            "terminal: exactly one login attempt"
+        );
         venue.login("user", "right").await.expect("good creds");
         assert!(venue.is_authenticated());
     })
@@ -304,9 +335,17 @@ async fn unauthenticated_order_calls_refuse_without_dialing() {
             .ask_size(50)
             .ts(now())
             .build();
-        venue.dry_run(&intent("a#0"), &quote).expect_err("no token refuses");
-        venue.submit(intent("a#0"), &quote, now()).await.expect_err("no token refuses");
-        venue.cancel("a#0", now()).await.expect_err("no token refuses");
+        venue
+            .dry_run(&intent("a#0"), &quote)
+            .expect_err("no token refuses");
+        venue
+            .submit(intent("a#0"), &quote, now())
+            .await
+            .expect_err("no token refuses");
+        venue
+            .cancel("a#0", now())
+            .await
+            .expect_err("no token refuses");
         assert!(venue.query("a#0").await.is_none(), "query fails closed");
         assert_eq!(fake.seen.lock().expect("seen").len(), 0, "nothing dialed");
     })
@@ -332,15 +371,27 @@ async fn dry_run_submit_and_query_round_trip() {
         assert_eq!(dry.reserved_notional, money("1201.00"));
         {
             let seen = fake.seen.lock().expect("seen");
-            let dry_call = seen.iter().find(|s| s.path.ends_with("/dry-run")).expect("dry call");
+            let dry_call = seen
+                .iter()
+                .find(|s| s.path.ends_with("/dry-run"))
+                .expect("dry call");
             assert!(dry_call.authorized, "the token rides the header");
-            assert!(dry_call.body.contains("\"client_id\":\"b#0\""), "the intent rides the body");
+            assert!(
+                dry_call.body.contains("\"client_id\":\"b#0\""),
+                "the intent rides the body"
+            );
         }
-        let record = venue.submit(intent("b#0"), &quote, now()).await.expect("submit");
+        let record = venue
+            .submit(intent("b#0"), &quote, now())
+            .await
+            .expect("submit");
         assert_eq!(record.status, OrderStatus::Acknowledged);
         let found = venue.query("b#0").await.expect("query finds");
         assert_eq!(found.intent.client_id, "b#0");
-        assert!(venue.query("missing#0").await.is_none(), "unknown is None, not error");
+        assert!(
+            venue.query("missing#0").await.is_none(),
+            "unknown is None, not error"
+        );
         assert_eq!(venue.orders().len(), 1, "mirror carries the order");
     })
     .await;
@@ -360,10 +411,20 @@ async fn resubmit_returns_the_record_with_no_second_post() {
             .ask_size(50)
             .ts(now())
             .build();
-        venue.submit(intent("c#0"), &quote, now()).await.expect("first");
-        let again = venue.submit(intent("c#0"), &quote, now()).await.expect("resubmit");
+        venue
+            .submit(intent("c#0"), &quote, now())
+            .await
+            .expect("first");
+        let again = venue
+            .submit(intent("c#0"), &quote, now())
+            .await
+            .expect("resubmit");
         assert_eq!(again.status, OrderStatus::Acknowledged);
-        assert_eq!(fake.posts_to_orders.load(Ordering::SeqCst), 1, "one order POST total");
+        assert_eq!(
+            fake.posts_to_orders.load(Ordering::SeqCst),
+            1,
+            "one order POST total"
+        );
     })
     .await;
 }
@@ -375,8 +436,8 @@ async fn lost_ack_resolves_through_query_with_no_second_order() {
     let (_transport, _net, venue) = venue_for(&base);
     scoped(async {
         use crate::journal::Journal;
-        use crate::submit::Recorder;
         use crate::submit::submit_guarded;
+        use crate::submit::Recorder;
         use protopyne_strategy::{RiskApproved, RiskEngine, RiskLimits, RiskState};
         venue.login("user", "right").await.expect("login");
         fake.drop_next_order_post.store(1, Ordering::SeqCst);
@@ -442,11 +503,20 @@ async fn cancel_unknown_and_terminal_refuse() {
             .ask_size(50)
             .ts(now())
             .build();
-        venue.cancel("ghost#0", now()).await.expect_err("unknown refuses");
-        venue.submit(intent("e#0"), &quote, now()).await.expect("submit");
+        venue
+            .cancel("ghost#0", now())
+            .await
+            .expect_err("unknown refuses");
+        venue
+            .submit(intent("e#0"), &quote, now())
+            .await
+            .expect("submit");
         let cancelled = venue.cancel("e#0", now()).await.expect("cancel");
         assert_eq!(cancelled.status, OrderStatus::Cancelled);
-        venue.cancel("e#0", now()).await.expect_err("terminal refuses");
+        venue
+            .cancel("e#0", now())
+            .await
+            .expect_err("terminal refuses");
     })
     .await;
 }
@@ -459,8 +529,10 @@ fn order_record_wire_refuses_without_panicking() {
         .expect_err("non-record refuses");
     assert!(reason.contains("order"), "got: {reason}");
     let record = TastytradeVenue::parse_order_record(
-        &serde_json::to_string(&serde_json::json!({ "order": record_for(intent("f#0"), OrderStatus::Acknowledged) }))
-            .expect("json"),
+        &serde_json::to_string(
+            &serde_json::json!({ "order": record_for(intent("f#0"), OrderStatus::Acknowledged) }),
+        )
+        .expect("json"),
     )
     .expect("envelope parses");
     assert_eq!(record.intent.client_id, "f#0");

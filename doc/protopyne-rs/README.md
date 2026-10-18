@@ -107,10 +107,13 @@ make protopyne-start PROTOPYNE_PORT=9061 \
 # Stop it
 make protopyne-stop
 
-# Run the five trading-crate suites + a binary dry-run
-make protopyne-test
+# Per-component gates (fast path): format / lint / smoke / test / soak
+make protopyne-smoke
 
-# Chart crates ride the workspace gate, not protopyne-test
+# Six trading-crate suites (--all-features) + a binary --help dry-run
+make protopyne-trading-suite
+
+# Chart crates ride the workspace gate, not protopyne-trading-suite
 cargo test -p protopyne-chart-model -p protopyne-chart-scale
 ```
 
@@ -165,7 +168,7 @@ for the native terminal to consume over localhost.
 ```sh
 # Build the image and run the full smoke:
 # no-Python proof, /health, one paper preview, chart contract
-make protopyne-smoke
+make protopyne-container-smoke
 
 # Manual equivalent
 bash src/protopyne-server/smoke-container.sh

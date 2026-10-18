@@ -9,18 +9,25 @@
 //! Green is 1.0 accept plus 0.0 false-fire, mirroring the spike
 //! `CalibrationTally` shape (accept 1.0 plus reject 1.0) one crate over.
 
-use crate::KernelError;
-use crate::calibration::{Control, ParityDashboard, run_control};
-use crate::compat::{COMPATIBILITY, CompatStatus, NATIVE_MATRIX_ROWS, assert_matrix_covers, compat_for};
-use crate::indicator::{
-    BarTick, Indicator, IndicatorResult, IndicatorSpec, IndicatorState, Ohlcv, ParamSet,
-    builtin_registry,
+use crate::calibration::{run_control, Control, ParityDashboard};
+use crate::compat::{
+    assert_matrix_covers, compat_for, CompatStatus, COMPATIBILITY, NATIVE_MATRIX_ROWS,
 };
+use crate::indicator::{
+    builtin_registry, BarTick, Indicator, IndicatorResult, IndicatorSpec, IndicatorState, Ohlcv,
+    ParamSet,
+};
+use crate::KernelError;
 use std::sync::Arc;
 
 #[test]
 fn controls_hold_on_flat_null_short_and_single_tick() {
-    for control in [Control::Flat, Control::NullInjected, Control::Short, Control::SingleTick] {
+    for control in [
+        Control::Flat,
+        Control::NullInjected,
+        Control::Short,
+        Control::SingleTick,
+    ] {
         let violations = run_control(control);
         assert!(
             violations.is_empty(),
@@ -72,7 +79,17 @@ fn frozen_eps_table_never_widens() {
     }
     assert_eq!(
         pending,
-        ["eit", "kalman", "voss", "adx", "cmf", "donchian", "ichimoku", "sar", "supertrend"],
+        [
+            "eit",
+            "kalman",
+            "voss",
+            "adx",
+            "cmf",
+            "donchian",
+            "ichimoku",
+            "sar",
+            "supertrend"
+        ],
         "pending set is exact: additions promote or extend this list deliberately"
     );
     for id in registry.ids() {
@@ -88,20 +105,45 @@ fn dashboard_is_green_with_full_accept_and_zero_false_fire() {
     // the pending set — `is_green` stays the full-trust signal and is not
     // asserted while anything pends.
     let dashboard = ParityDashboard::build().expect("dashboard builds");
-    let pending = ["eit", "kalman", "voss", "adx", "cmf", "donchian", "ichimoku", "sar", "supertrend"];
+    let pending = [
+        "eit",
+        "kalman",
+        "voss",
+        "adx",
+        "cmf",
+        "donchian",
+        "ichimoku",
+        "sar",
+        "supertrend",
+    ];
     for row in &dashboard.rows {
         if pending.contains(&row.id.as_str()) {
-            assert!(!row.accepted, "{} pending row must not read accepted", row.id);
+            assert!(
+                !row.accepted,
+                "{} pending row must not read accepted",
+                row.id
+            );
             continue;
         }
-        assert!(row.accepted, "{} must-fire accept < 1.0: {:?}", row.id, row.note);
+        assert!(
+            row.accepted,
+            "{} must-fire accept < 1.0: {:?}",
+            row.id, row.note
+        );
     }
     assert!(
         dashboard.rows.iter().all(|row| row.false_fires == 0),
         "must-NOT-fire controls tripped: {:#?}",
-        dashboard.rows.iter().filter(|row| row.false_fires > 0).collect::<Vec<_>>()
+        dashboard
+            .rows
+            .iter()
+            .filter(|row| row.false_fires > 0)
+            .collect::<Vec<_>>()
     );
-    assert!(!dashboard.is_green(), "pending rows must hold full trust back");
+    assert!(
+        !dashboard.is_green(),
+        "pending rows must hold full trust back"
+    );
 }
 
 /// Fixture kernel with no compatibility-matrix row: the dashboard must report
@@ -154,16 +196,24 @@ fn a_kernel_without_a_matrix_row_is_reported_not_panicked() {
     // that no matrix row covers lands as a refusal row (the dashboard's
     // existing shape) and holds full trust back.
     let mut registry = builtin_registry().expect("builtins");
-    registry.register(Arc::new(Uncalibrated::new())).expect("fixture registers");
-    let dashboard = ParityDashboard::build_with(&registry).expect("dashboard builds without panicking");
+    registry
+        .register(Arc::new(Uncalibrated::new()))
+        .expect("fixture registers");
+    let dashboard =
+        ParityDashboard::build_with(&registry).expect("dashboard builds without panicking");
     let row = dashboard
         .rows
         .iter()
         .find(|row| row.id == "fixture-uncalibrated")
         .expect("the uncalibrated kernel is reported");
-    assert!(!row.accepted, "a kernel without a matrix row must not read accepted");
     assert!(
-        row.note.as_deref().is_some_and(|note| note.contains("matrix row")),
+        !row.accepted,
+        "a kernel without a matrix row must not read accepted"
+    );
+    assert!(
+        row.note
+            .as_deref()
+            .is_some_and(|note| note.contains("matrix row")),
         "the row names the missing matrix row: {:?}",
         row.note
     );

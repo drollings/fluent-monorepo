@@ -100,6 +100,8 @@ fn shared_with(store_health: StoreHealth) -> Shared {
         tape: None,
         tape_serve_stats: Arc::new(TapeServeStats::default()),
         fallback_latch: Mutex::new(FallbackLatch::default()),
+        replay: Mutex::new(ReplayRegistry::new()),
+        chain_history: None,
         history_root: None,
     })
 }

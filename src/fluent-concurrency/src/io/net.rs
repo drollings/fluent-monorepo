@@ -308,9 +308,13 @@ mod tests {
         let (url, seen) = serve_once().await;
         let body = CURRENT_CAPS
             .scope(caps(), async {
-                net.http_post_with_headers(url.as_str(), r#"{"a":1}"#, &[("Authorization", "tok-1")])
-                    .await
-                    .expect("post")
+                net.http_post_with_headers(
+                    url.as_str(),
+                    r#"{"a":1}"#,
+                    &[("Authorization", "tok-1")],
+                )
+                .await
+                .expect("post")
             })
             .await;
         assert_eq!(body, "{}");
@@ -318,7 +322,10 @@ mod tests {
         // reqwest lowercases header names on the wire; match case-insensitively.
         let lower = head.to_ascii_lowercase();
         assert!(lower.contains("authorization: tok-1"), "got:\n{head}");
-        assert!(lower.contains("content-type: application/json"), "got:\n{head}");
+        assert!(
+            lower.contains("content-type: application/json"),
+            "got:\n{head}"
+        );
 
         let (url, seen) = serve_once().await;
         CURRENT_CAPS

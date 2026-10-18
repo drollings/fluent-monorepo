@@ -81,7 +81,16 @@ fn hma_composes_wma_without_divergence() {
     let result = hma.batch(&closes(&data), &len_params(4)).expect("valid");
     assert_approx(
         &result.values,
-        &[None, None, None, None, Some(5.0), Some(6.0), Some(7.0), Some(8.0)],
+        &[
+            None,
+            None,
+            None,
+            None,
+            Some(5.0),
+            Some(6.0),
+            Some(7.0),
+            Some(8.0),
+        ],
         1e-9,
     );
     assert_eq!(result.values, fold_closes(&hma, &data, &len_params(4)));
@@ -110,12 +119,7 @@ fn vwma_weights_by_volume() {
         1e-9,
     );
     // Incremental path over matching ticks.
-    let ticks = [
-        (1.0, 10.0),
-        (2.0, 20.0),
-        (3.0, 30.0),
-        (4.0, 40.0),
-    ];
+    let ticks = [(1.0, 10.0), (2.0, 20.0), (3.0, 30.0), (4.0, 40.0)];
     let mut state = IndicatorState::new();
     let ps = len_params(2);
     let mut folded = Vec::new();
@@ -146,9 +150,7 @@ fn alma_peaks_at_offset_and_stays_in_window() {
         .with_float("offset", 0.85)
         .with_float("sigma", 6.0);
     let data = [1.0, 2.0, 3.0, 10.0, 3.0, 2.0, 1.0];
-    let result = alma
-        .batch(&closes(&data), &ps)
-        .expect("valid");
+    let result = alma.batch(&closes(&data), &ps).expect("valid");
     // Gaussian weights peak 1.7 bars back: the response tracks the window
     // mean tilted toward recent bars, always inside the window extremes.
     assert!(result.values[0].is_none() && result.values[1].is_none());

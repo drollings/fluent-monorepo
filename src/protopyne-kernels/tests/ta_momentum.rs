@@ -7,7 +7,7 @@ use crate::ta_momentum::{
     RocpIndicator, Rocr100Indicator, RocrIndicator, RsvIndicator, StochfIndicator, TrixIndicator,
     WillrIndicator,
 };
-use polars::prelude::{EWMOptions, Expr, IntoLazy, RollingOptionsFixedWindow, col, lit, when};
+use polars::prelude::{col, lit, when, EWMOptions, Expr, IntoLazy, RollingOptionsFixedWindow};
 use protopyne_types::Bar;
 use std::path::PathBuf;
 
@@ -19,7 +19,14 @@ fn bar_at(open: f64, high: f64, low: f64, close: f64, volume: u64, index: usize)
     use chrono::TimeZone as _;
     Bar::new()
         .ts(chrono::Utc
-            .with_ymd_and_hms(2026, 1, 2, 9 + (index / 3600) as u32, ((index / 60) % 60) as u32, (index % 60) as u32)
+            .with_ymd_and_hms(
+                2026,
+                1,
+                2,
+                9 + (index / 3600) as u32,
+                ((index / 60) % 60) as u32,
+                (index % 60) as u32,
+            )
             .single()
             .expect("valid timestamp"))
         .o(dec(open))
@@ -40,7 +47,11 @@ fn trend_bars(n: usize) -> Vec<Bar> {
         let drift = i as f64 * 0.7 + ((i * 13) % 5) as f64 * 0.9;
         let close = 100.0 + drift;
         let gap = if i > 0 && i % 10 == 0 { 2.5 } else { 0.0 };
-        let open = if i == 0 { close } else { prev_close + gap + 0.1 };
+        let open = if i == 0 {
+            close
+        } else {
+            prev_close + gap + 0.1
+        };
         let high = open.max(close) + 0.8;
         let low = open.min(close) - 0.8;
         bars.push(bar_at(open, high, low, close, 1_000 + i as u64 * 37, i));
@@ -85,7 +96,12 @@ fn spy_bars(count: usize) -> Vec<Bar> {
     let mut bars = Vec::new();
     for record in reader.records().take(count) {
         let row = record.expect("readable row");
-        let num = |idx: usize| row.get(idx).expect("column").parse::<f64>().expect("number");
+        let num = |idx: usize| {
+            row.get(idx)
+                .expect("column")
+                .parse::<f64>()
+                .expect("number")
+        };
         let epoch: i64 = row.get(0).expect("time").parse().expect("epoch");
         let ts = chrono::DateTime::from_timestamp(epoch, 0).expect("valid epoch");
         bars.push(
@@ -251,7 +267,9 @@ fn trix_reference(bars: &[Bar], n: usize) -> Vec<Option<f64>> {
 fn first_match(rungs: &[(Expr, f64)]) -> Expr {
     match rungs.split_first() {
         None => lit(f64::NAN),
-        Some(((cond, k), rest)) => when(cond.clone()).then(lit(*k)).otherwise(first_match(rest)),
+        Some(((cond, k), rest)) => when(cond.clone())
+            .then(lit(*k))
+            .otherwise(first_match(rest)),
     }
 }
 
@@ -372,7 +390,9 @@ fn ppo_matches_expr_and_zero_convention() {
     let eq = apo_params(8, 8, 0.0);
     let result = ppo.batch(&data30.views(), &eq).expect("valid");
     assert!(result.values[..7].iter().all(Option::is_none));
-    assert!(result.values[7..].iter().all(|v| matches!(v, Some(x) if x.abs() <= 1e-9)));
+    assert!(result.values[7..]
+        .iter()
+        .all(|v| matches!(v, Some(x) if x.abs() <= 1e-9)));
 
     // Update path tracks batch on both smoothing modes.
     let bars = trend_bars(40);
@@ -421,17 +441,28 @@ fn roc_family_matches_expr() {
     for (kernel, expr, name) in cases {
         assert_eq!(kernel.warmup(&ps).expect("valid"), 10, "{name} warmup");
         let result = kernel.batch(&data.views(), &ps).expect("valid");
-        assert!(result.values[..9].iter().all(Option::is_none), "{name} shift warmup");
+        assert!(
+            result.values[..9].iter().all(Option::is_none),
+            "{name} shift warmup"
+        );
         let want = expr_fixture(&bars, expr).expect("fixture");
         assert_expr_parity(&result.values, &want, 1e-9, name).expect("parity");
         let mut state = IndicatorState::new();
         for (tick, want) in ticks_of(&bars).into_iter().zip(result.values.iter()) {
-            assert_eq!(&kernel.update(&mut state, tick, &ps).expect("valid"), want, "{name} agreement");
+            assert_eq!(
+                &kernel.update(&mut state, tick, &ps).expect("valid"),
+                want,
+                "{name} agreement"
+            );
         }
     }
     // ×100 scaling is exact: roc == rocp * 100 positionally.
-    let rocp = RocpIndicator::new().batch(&data.views(), &ps).expect("valid");
-    let roc = RocIndicator::new().batch(&data.views(), &ps).expect("valid");
+    let rocp = RocpIndicator::new()
+        .batch(&data.views(), &ps)
+        .expect("valid");
+    let roc = RocIndicator::new()
+        .batch(&data.views(), &ps)
+        .expect("valid");
     for (p, r) in rocp.values.iter().zip(roc.values.iter()) {
         match (p, r) {
             (Some(p), Some(r)) => assert!((r - p * 100.0).abs() <= 1e-9),
@@ -456,11 +487,17 @@ fn rsv_matches_expr_with_zero_floor() {
         assert_expr_parity(&result.values, &want, 1e-9, &format!("rsv-{name}")).expect("parity");
         let mut state = IndicatorState::new();
         for (tick, want) in ticks_of(&bars).into_iter().zip(result.values.iter()) {
-            assert_eq!(&rsv.update(&mut state, tick, &ps).expect("valid"), want, "rsv agreement");
+            assert_eq!(
+                &rsv.update(&mut state, tick, &ps).expect("valid"),
+                want,
+                "rsv agreement"
+            );
         }
     }
     // Flat market pins the defined zero, on both paths.
-    let flat: Vec<Bar> = (0..20).map(|i| bar_at(10.0, 10.0, 10.0, 10.0, 1_000, i)).collect();
+    let flat: Vec<Bar> = (0..20)
+        .map(|i| bar_at(10.0, 10.0, 10.0, 10.0, 1_000, i))
+        .collect();
     let data = OwnedOhlcv::from_bars(&flat);
     let result = rsv.batch(&data.views(), &ps).expect("valid");
     assert!(result.values.iter().all(|v| *v == Some(0.0)));
@@ -479,15 +516,20 @@ fn willr_matches_expr_with_zero_floor() {
         let data = OwnedOhlcv::from_bars(&bars);
         let result = willr.batch(&data.views(), &ps).expect("valid");
         let want = expr_fixture(&bars, willr_expr(14)).expect("fixture");
-        assert_expr_parity(&result.values, &want, 1e-9, &format!("willr-{name}"))
-            .expect("parity");
+        assert_expr_parity(&result.values, &want, 1e-9, &format!("willr-{name}")).expect("parity");
         let mut state = IndicatorState::new();
         for (tick, want) in ticks_of(&bars).into_iter().zip(result.values.iter()) {
-            assert_eq!(&willr.update(&mut state, tick, &ps).expect("valid"), want, "willr agreement");
+            assert_eq!(
+                &willr.update(&mut state, tick, &ps).expect("valid"),
+                want,
+                "willr agreement"
+            );
         }
     }
     // willr + rsv partition the range: flat markets define both as zero.
-    let flat: Vec<Bar> = (0..20).map(|i| bar_at(10.0, 10.0, 10.0, 10.0, 1_000, i)).collect();
+    let flat: Vec<Bar> = (0..20)
+        .map(|i| bar_at(10.0, 10.0, 10.0, 10.0, 1_000, i))
+        .collect();
     let data = OwnedOhlcv::from_bars(&flat);
     let result = willr.batch(&data.views(), &ps).expect("valid");
     assert!(result.values.iter().all(|v| *v == Some(0.0)));
@@ -512,9 +554,10 @@ fn stochf_matches_expr_both_legs() {
         assert!(fastd[..2].iter().all(Option::is_none));
         assert!(fastd[2].is_some());
         let mut state = IndicatorState::new();
-        for (tick, (want_k, want_d)) in ticks_of(&bars).into_iter().zip(
-            result.values.iter().zip(fastd.iter()),
-        ) {
+        for (tick, (want_k, want_d)) in ticks_of(&bars)
+            .into_iter()
+            .zip(result.values.iter().zip(fastd.iter()))
+        {
             let tick_out = stochf.update_full(&mut state, tick, &ps).expect("valid");
             assert_eq!(&tick_out.primary, want_k, "stochf-k agreement");
             let got_d = tick_out
@@ -541,7 +584,11 @@ fn trix_matches_nested_ema_expr() {
     assert_expr_parity(&result.values, &want, 1e-9, "trix").expect("parity");
     let mut state = IndicatorState::new();
     for (tick, want) in ticks_of(&bars).into_iter().zip(result.values.iter()) {
-        assert_eq!(&trix.update(&mut state, tick, &ps).expect("valid"), want, "trix agreement");
+        assert_eq!(
+            &trix.update(&mut state, tick, &ps).expect("valid"),
+            want,
+            "trix agreement"
+        );
     }
 }
 
@@ -558,12 +605,13 @@ fn aroon_matches_reverse_argmax_expr() {
             .expect("parity");
         let down = result.secondary("down").expect("down leg");
         let want_down = expr_fixture(&bars, aroon_expr(5, false)).expect("fixture");
-        assert_expr_parity(down, &want_down, 1e-9, &format!("aroon-down-{name}"))
-            .expect("parity");
+        assert_expr_parity(down, &want_down, 1e-9, &format!("aroon-down-{name}")).expect("parity");
         // Aroon lives on the (0, 1] grid: strict warmup, then 1/n steps.
         assert!(result.values[..4].iter().all(Option::is_none));
         assert!(
-            result.values[4..].iter().all(|v| matches!(v, Some(x) if *x > 0.0 && *x <= 1.0)),
+            result.values[4..]
+                .iter()
+                .all(|v| matches!(v, Some(x) if *x > 0.0 && *x <= 1.0)),
             "aroon range on {name}"
         );
         let mut state = IndicatorState::new();
@@ -589,7 +637,11 @@ fn aroon_tie_break_prefers_most_recent_extreme() {
     // reads 1.0 — the reference reverses the window before argmax.
     let bars: Vec<Bar> = (0..10)
         .map(|i| {
-            let high = if i == 4 || i == 9 { 120.0 } else { 100.0 + i as f64 };
+            let high = if i == 4 || i == 9 {
+                120.0
+            } else {
+                100.0 + i as f64
+            };
             bar_at(100.0, high, 99.0, 100.0 + i as f64 * 0.1, 1_000, i)
         })
         .collect();
@@ -606,8 +658,8 @@ fn aroon_tie_break_prefers_most_recent_extreme() {
 fn momentum_registry_and_matrix_cover_all_thirteen() {
     let registry = builtin_registry().expect("builtins");
     for id in [
-        "apo", "mom", "ppo", "roc", "rocp", "rocr", "rocr100", "rsv", "stochf", "trix",
-        "willr", "aroon", "adx",
+        "apo", "mom", "ppo", "roc", "rocp", "rocr", "rocr100", "rsv", "stochf", "trix", "willr",
+        "aroon", "adx",
     ] {
         assert!(registry.get(id).is_some(), "{id} registered");
         let row = compat_for(id).unwrap_or_else(|| panic!("{id} matrix row"));
@@ -655,7 +707,10 @@ fn adx_matches_hand_stepped_rma_composition() {
     let adx = AdxIndicator::new();
     assert_eq!(adx.warmup(&adx2_params()).expect("valid"), 3);
     let result = adx.batch(&data.views(), &adx2_params()).expect("valid");
-    assert!(result.values[..2].iter().all(Option::is_none), "two smoothings warm");
+    assert!(
+        result.values[..2].iter().all(Option::is_none),
+        "two smoothings warm"
+    );
     let plus = result.secondary("plus_di").expect("plus leg");
     let minus = result.secondary("minus_di").expect("minus leg");
     assert_close(plus[2], 30.0, "plus_di[2]");
@@ -670,7 +725,11 @@ fn adx_matches_hand_stepped_rma_composition() {
 #[test]
 fn adx_update_agrees_with_batch_on_all_legs() {
     let adx = AdxIndicator::new();
-    for (bars, name) in [(trend_bars(60), "trend"), (spy_bars(60), "spy"), (adx_bars(), "hand")] {
+    for (bars, name) in [
+        (trend_bars(60), "trend"),
+        (spy_bars(60), "spy"),
+        (adx_bars(), "hand"),
+    ] {
         let data = OwnedOhlcv::from_bars(&bars);
         let result = adx.batch(&data.views(), &adx_params()).expect("valid");
         let plus = result.secondary("plus_di").expect("plus leg");
@@ -680,7 +739,9 @@ fn adx_update_agrees_with_batch_on_all_legs() {
             .into_iter()
             .zip(result.values.iter().zip(plus.iter()).zip(minus.iter()))
         {
-            let tick_out = adx.update_full(&mut state, tick, &adx_params()).expect("valid");
+            let tick_out = adx
+                .update_full(&mut state, tick, &adx_params())
+                .expect("valid");
             assert_eq!(&tick_out.primary, want_adx, "adx agreement on {name}");
             let got_plus = tick_out
                 .secondary
@@ -704,7 +765,10 @@ fn adx_reads_strong_on_a_steady_uptrend() {
     let data = OwnedOhlcv::from_bars(&bars);
     let adx = AdxIndicator::new();
     let result = adx.batch(&data.views(), &adx_params()).expect("valid");
-    assert!(result.values[..26].iter().all(Option::is_none), "ADX warms 26 bars");
+    assert!(
+        result.values[..26].iter().all(Option::is_none),
+        "ADX warms 26 bars"
+    );
     for leg in [&result.values, result.secondary("plus_di").expect("plus")] {
         for v in leg.iter().flatten().skip(26) {
             assert!((0.0..=100.0).contains(v), "DMI legs range");
@@ -742,14 +806,21 @@ fn adx_holes_emit_none_without_failing() {
     );
     let mut state = IndicatorState::new();
     for (tick, want) in ticks.into_iter().zip(result.values.iter()) {
-        assert_eq!(&adx.update(&mut state, tick, &adx2_params()).expect("valid"), want, "adx hole agreement");
+        assert_eq!(
+            &adx.update(&mut state, tick, &adx2_params()).expect("valid"),
+            want,
+            "adx hole agreement"
+        );
     }
 }
 
 #[test]
 fn adx_refuses_bad_periods() {
     let adx = AdxIndicator::new();
-    assert!(adx.warmup(&ParamSet::new().with_int("length", 0)).is_err(), "zero refuses");
+    assert!(
+        adx.warmup(&ParamSet::new().with_int("length", 0)).is_err(),
+        "zero refuses"
+    );
     assert!(adx.warmup(&ParamSet::new()).is_err(), "missing refuses");
 }
 
@@ -769,7 +840,13 @@ fn buffered_update_matches_batch_on_constant_and_subnormal_inputs() {
     ] {
         let high: Vec<f64> = closes.iter().map(|c| c + 0.5).collect();
         let low: Vec<f64> = closes.iter().map(|c| c - 0.5).collect();
-        let frame = Ohlcv { open: &[], high: &high, low: &low, close: &closes, volume: &[] };
+        let frame = Ohlcv {
+            open: &[],
+            high: &high,
+            low: &low,
+            close: &closes,
+            volume: &[],
+        };
         let batch = aroon.batch(&frame, &params).expect("batch runs").values;
         let mut state = IndicatorState::new();
         let folded: Vec<Option<f64>> = closes
@@ -779,13 +856,23 @@ fn buffered_update_matches_batch_on_constant_and_subnormal_inputs() {
                 aroon
                     .update_full(
                         &mut state,
-                        BarTick { open: *close, high: high[i], low: low[i], close: *close, volume: 0.0 },
+                        BarTick {
+                            open: *close,
+                            high: high[i],
+                            low: low[i],
+                            close: *close,
+                            volume: 0.0,
+                        },
                         &params,
                     )
                     .expect("update runs")
                     .primary
             })
             .collect();
-        assert_eq!(bits_of(&folded), bits_of(&batch), "aroon reproduces batch bit-for-bit");
+        assert_eq!(
+            bits_of(&folded),
+            bits_of(&batch),
+            "aroon reproduces batch bit-for-bit"
+        );
     }
 }

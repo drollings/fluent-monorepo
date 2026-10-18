@@ -607,11 +607,11 @@ impl ClassificationEngine {
                 user_text,
             ) {
                 // `matched_via: self_assess` marks terminals an assessment actually
-                    // ran for: singletons flow through the ladder with zero
-                    // assessments (expansion pick, no calls), so they report
-                    // no marker.
-                    let assessed = Some(tm.assessments).filter(|a| !a.is_empty());
-                    return Some((tm.primary, assessed));
+                // ran for: singletons flow through the ladder with zero
+                // assessments (expansion pick, no calls), so they report
+                // no marker.
+                let assessed = Some(tm.assessments).filter(|a| !a.is_empty());
+                return Some((tm.primary, assessed));
             }
         }
 

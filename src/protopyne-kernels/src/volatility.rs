@@ -9,8 +9,8 @@
 use crate::averages::RmaIndicator;
 use crate::error::KernelError;
 use crate::indicator::{
-    fin_or_none, nan_hole, BarTick, FullTick, Indicator, IndicatorId, IndicatorResult, IndicatorSpec,
-    IndicatorState, NamedSeries, NamedValue, Ohlcv, ParamSet,
+    fin_or_none, nan_hole, BarTick, FullTick, Indicator, IndicatorId, IndicatorResult,
+    IndicatorSpec, IndicatorState, NamedSeries, NamedValue, Ohlcv, ParamSet,
 };
 use crate::sma::SmaIndicator;
 
@@ -68,7 +68,11 @@ impl Indicator for TrIndicator {
         );
         let mut values = Vec::with_capacity(data.len());
         for (i, (&h, &l)) in high.iter().zip(low.iter()).enumerate() {
-            let prev = if i == 0 { None } else { Some(data.close[i - 1]) };
+            let prev = if i == 0 {
+                None
+            } else {
+                Some(data.close[i - 1])
+            };
             values.push(fin_or_none(true_range(h, l, prev)));
         }
         Ok(IndicatorResult::new(Self::ID.to_owned(), values))
@@ -134,11 +138,7 @@ impl Indicator for AtrIndicator {
         let period = Self::period(params)?;
         let tr = TrIndicator::new();
         let ranges = tr.batch(data, &ParamSet::new())?;
-        let nans: Vec<f64> = ranges
-            .values
-            .iter()
-            .map(|v| nan_hole(*v))
-            .collect();
+        let nans: Vec<f64> = ranges.values.iter().map(|v| nan_hole(*v)).collect();
         let rma = RmaIndicator::new();
         let smoothed = rma.batch(
             &Ohlcv::close_only(&nans),
@@ -495,10 +495,8 @@ impl Indicator for NatrIndicator {
 
     fn batch(&self, data: &Ohlcv<'_>, params: &ParamSet) -> Result<IndicatorResult, KernelError> {
         let period = Self::period(params)?;
-        let atr = AtrIndicator::new().batch(
-            data,
-            &ParamSet::new().with_int("length", period as i64),
-        )?;
+        let atr =
+            AtrIndicator::new().batch(data, &ParamSet::new().with_int("length", period as i64))?;
         let values = atr
             .values
             .iter()
@@ -677,11 +675,17 @@ impl Indicator for SupertrendIndicator {
         let mut direction = vec![None; n];
         let mut frame: Option<StFrame> = None;
         for i in 0..n {
-            let clean = [high[i], low[i], data.close[i]].iter().all(|v| v.is_finite());
+            let clean = [high[i], low[i], data.close[i]]
+                .iter()
+                .all(|v| v.is_finite());
             if let (true, Some(span)) = (clean, spans.values[i]) {
                 let hl2 = f64::midpoint(high[i], low[i]);
                 let (basic_upper, basic_lower) = (hl2 + mult * span, hl2 - mult * span);
-                let prev_close = if i == 0 { None } else { Some(data.close[i - 1]) };
+                let prev_close = if i == 0 {
+                    None
+                } else {
+                    Some(data.close[i - 1])
+                };
                 let next = match frame {
                     None => StFrame {
                         upper: basic_upper,
@@ -689,9 +693,7 @@ impl Indicator for SupertrendIndicator {
                         line: basic_lower,
                         direction: 1.0,
                     },
-                    Some(prev) => {
-                        prev.step(basic_upper, basic_lower, data.close[i], prev_close)
-                    }
+                    Some(prev) => prev.step(basic_upper, basic_lower, data.close[i], prev_close),
                 };
                 frame = Some(next);
                 line[i] = Some(next.line);

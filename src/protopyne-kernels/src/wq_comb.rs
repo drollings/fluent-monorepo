@@ -38,13 +38,7 @@ use crate::indicator::fin_or_none;
 fn map_one(values: &[f64], f: impl Fn(f64) -> f64) -> Vec<Option<f64>> {
     values
         .iter()
-        .map(|v| {
-            if v.is_nan() {
-                None
-            } else {
-                fin_or_none(f(*v))
-            }
-        })
+        .map(|v| if v.is_nan() { None } else { fin_or_none(f(*v)) })
         .collect()
 }
 
@@ -421,20 +415,26 @@ pub fn comb_signed_power(x: &[f64], y: &[f64]) -> Vec<Option<f64>> {
 /// missing.
 #[must_use]
 pub fn comb_max(legs: &[&[f64]]) -> Vec<Option<f64>> {
-    horizontal(legs, |present| present.iter().copied().fold(f64::NEG_INFINITY, f64::max))
+    horizontal(legs, |present| {
+        present.iter().copied().fold(f64::NEG_INFINITY, f64::max)
+    })
 }
 
 /// Horizontal minimum, same null contract as [`comb_max`].
 #[must_use]
 pub fn comb_min(legs: &[&[f64]]) -> Vec<Option<f64>> {
-    horizontal(legs, |present| present.iter().copied().fold(f64::INFINITY, f64::min))
+    horizontal(legs, |present| {
+        present.iter().copied().fold(f64::INFINITY, f64::min)
+    })
 }
 
 /// Horizontal mean ignoring missing legs; `None` only where every leg is
 /// missing.
 #[must_use]
 pub fn comb_mean(legs: &[&[f64]]) -> Vec<Option<f64>> {
-    horizontal(legs, |present| present.iter().sum::<f64>() / present.len() as f64)
+    horizontal(legs, |present| {
+        present.iter().sum::<f64>() / present.len() as f64
+    })
 }
 
 /// Horizontal variance as the *unnormalized* sum of squared deviations over
@@ -445,7 +445,11 @@ pub fn comb_var(legs: &[&[f64]]) -> Vec<Option<f64>> {
     let len = legs.iter().map(|leg| leg.len()).min().unwrap_or(0);
     (0..len)
         .map(|i| {
-            let present: Vec<f64> = legs.iter().map(|leg| leg[i]).filter(|v| !v.is_nan()).collect();
+            let present: Vec<f64> = legs
+                .iter()
+                .map(|leg| leg[i])
+                .filter(|v| !v.is_nan())
+                .collect();
             if present.is_empty() {
                 return Some(0.0);
             }
@@ -468,7 +472,11 @@ fn horizontal(legs: &[&[f64]], fold: impl Fn(&[f64]) -> f64) -> Vec<Option<f64>>
     let len = legs.iter().map(|leg| leg.len()).min().unwrap_or(0);
     (0..len)
         .map(|i| {
-            let present: Vec<f64> = legs.iter().map(|leg| leg[i]).filter(|v| !v.is_nan()).collect();
+            let present: Vec<f64> = legs
+                .iter()
+                .map(|leg| leg[i])
+                .filter(|v| !v.is_nan())
+                .collect();
             if present.is_empty() {
                 None
             } else {
@@ -491,7 +499,10 @@ pub fn comb_and(first: &[f64], rest: &[&[f64]]) -> Vec<Option<f64>> {
     (0..len)
         .map(|i| {
             let mut seen_none = false;
-            let mut legs = [first].into_iter().chain(rest.iter().copied()).map(|leg| leg[i]);
+            let mut legs = [first]
+                .into_iter()
+                .chain(rest.iter().copied())
+                .map(|leg| leg[i]);
             for value in &mut legs {
                 match truth(value) {
                     Some(false) => return Some(bool_of(false)),
@@ -499,7 +510,11 @@ pub fn comb_and(first: &[f64], rest: &[&[f64]]) -> Vec<Option<f64>> {
                     Some(true) => {}
                 }
             }
-            if seen_none { None } else { Some(bool_of(true)) }
+            if seen_none {
+                None
+            } else {
+                Some(bool_of(true))
+            }
         })
         .collect()
 }
@@ -512,7 +527,10 @@ pub fn comb_or(first: &[f64], rest: &[&[f64]]) -> Vec<Option<f64>> {
     (0..len)
         .map(|i| {
             let mut seen_none = false;
-            let mut legs = [first].into_iter().chain(rest.iter().copied()).map(|leg| leg[i]);
+            let mut legs = [first]
+                .into_iter()
+                .chain(rest.iter().copied())
+                .map(|leg| leg[i]);
             for value in &mut legs {
                 match truth(value) {
                     Some(true) => return Some(bool_of(true)),
@@ -520,7 +538,11 @@ pub fn comb_or(first: &[f64], rest: &[&[f64]]) -> Vec<Option<f64>> {
                     Some(false) => {}
                 }
             }
-            if seen_none { None } else { Some(bool_of(false)) }
+            if seen_none {
+                None
+            } else {
+                Some(bool_of(false))
+            }
         })
         .collect()
 }
@@ -540,7 +562,10 @@ pub fn comb_xor(a: &[f64], b: &[f64]) -> Vec<Option<f64>> {
 /// Logical negation; missing stays missing.
 #[must_use]
 pub fn comb_not(values: &[f64]) -> Vec<Option<f64>> {
-    values.iter().map(|v| truth(*v).map(|t| bool_of(!t))).collect()
+    values
+        .iter()
+        .map(|v| truth(*v).map(|t| bool_of(!t)))
+        .collect()
 }
 
 /// Alias of [`comb_not`]: the reference defines `negate` as `not_`.
@@ -652,7 +677,12 @@ pub fn comb_clamp(values: &[f64], lower: f64, upper: f64) -> Vec<Option<f64>> {
 /// (`None` mask writes missing), values outside pass through. Same
 /// fail-closed contract as [`comb_clamp`].
 #[must_use]
-pub fn comb_clamp_inverse(values: &[f64], lower: f64, upper: f64, mask: Option<f64>) -> Vec<Option<f64>> {
+pub fn comb_clamp_inverse(
+    values: &[f64],
+    lower: f64,
+    upper: f64,
+    mask: Option<f64>,
+) -> Vec<Option<f64>> {
     if lower.is_nan() || upper.is_nan() || lower > upper {
         return vec![None; values.len()];
     }
@@ -754,7 +784,13 @@ pub fn comb_purify(values: &[f64]) -> Vec<Option<f64>> {
 pub fn comb_fill_null(values: &[f64], value: f64) -> Vec<Option<f64>> {
     values
         .iter()
-        .map(|v| if v.is_nan() { fin_or_none(value) } else { Some(*v) })
+        .map(|v| {
+            if v.is_nan() {
+                fin_or_none(value)
+            } else {
+                Some(*v)
+            }
+        })
         .collect()
 }
 

@@ -6,6 +6,11 @@
 
 use chrono::{DateTime, Datelike as _, Duration, NaiveDate, Utc};
 
+/// Seconds in the 30-day calendar month the month presets measure. One home
+/// for the month unit the presets, the fetch sizing, and the load-more window
+/// all count in.
+pub const MONTH_SECONDS: i64 = 30 * 24 * 3_600;
+
 /// Quick-pick lookback windows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum DateRange {
@@ -47,19 +52,29 @@ impl DateRange {
         }
     }
 
+    /// Parse a preset from its short label (`1D`, `1M`, `YTD`, …), the
+    /// inverse of [`label`](Self::label). Unknown spellings answer `None`
+    /// rather than guessing a default.
+    #[must_use]
+    pub fn from_label(label: &str) -> Option<Self> {
+        Self::default_presets()
+            .into_iter()
+            .find(|preset| preset.label() == label)
+    }
+
     /// Longer tooltip text.
     #[must_use]
     pub fn tooltip(self) -> &'static str {
         match self {
-            Self::Day1 => "1 day in 1 minute intervals",
-            Self::Day5 => "5 days in 5 minutes intervals",
-            Self::Month1 => "1 month in 30 minutes intervals",
-            Self::Month3 => "3 months in 1 hour intervals",
-            Self::Month6 => "6 months in 2 hours intervals",
-            Self::Ytd => "Year to day in 1 day intervals",
-            Self::Year1 => "1 year in 1 day intervals",
-            Self::Year5 => "5 years in 1 week intervals",
-            Self::All => "All data in 1 month intervals",
+            Self::Day1 => "1 day",
+            Self::Day5 => "5 days",
+            Self::Month1 => "1 month",
+            Self::Month3 => "3 months",
+            Self::Month6 => "6 months",
+            Self::Ytd => "Year to date",
+            Self::Year1 => "1 year",
+            Self::Year5 => "5 years",
+            Self::All => "All available data",
         }
     }
 
@@ -77,6 +92,37 @@ impl DateRange {
             Self::Year5,
             Self::All,
         ]
+    }
+
+    /// Chart-range presets offered in the range menu, in display order: the
+    /// coarse spans an operator scans with (one month through everything).
+    /// Orthogonal to the bar timeframe — the preset sets months or years of
+    /// range and the loader completes it on demand.
+    #[must_use]
+    pub fn chart_presets() -> Vec<Self> {
+        vec![
+            Self::Month1,
+            Self::Month3,
+            Self::Ytd,
+            Self::Year1,
+            Self::Year5,
+            Self::All,
+        ]
+    }
+
+    /// Lookback in whole months for the load-more window: `None` for
+    /// [`DateRange::All`] (no fixed horizon). Day/week presets round up to
+    /// one month so the window always holds at least the requested span.
+    #[must_use]
+    pub fn lookback_months(self) -> Option<u32> {
+        match self {
+            Self::Day1 | Self::Day5 | Self::Month1 => Some(1),
+            Self::Month3 => Some(3),
+            Self::Month6 => Some(6),
+            Self::Ytd | Self::Year1 => Some(12),
+            Self::Year5 => Some(60),
+            Self::All => None,
+        }
     }
 
     /// Absolute start timestamp, or `None` for [`DateRange::All`].
@@ -108,24 +154,33 @@ impl DateRange {
         (self.start_timestamp(), Utc::now())
     }
 
+    /// The preset's calendar span in seconds: the one definition of how wide
+    /// each range is. [`estimated_bars`](Self::estimated_bars) divides this by
+    /// the bar spacing, and the fetch planner sizes the trailing read from it,
+    /// so the window and the read can never disagree about the span.
+    #[must_use]
+    pub fn span_seconds(self) -> u64 {
+        let seconds: i64 = match self {
+            Self::Day1 => 24 * 3_600,
+            Self::Day5 => 5 * 24 * 3_600,
+            Self::Month1 => MONTH_SECONDS,
+            Self::Month3 => 3 * MONTH_SECONDS,
+            Self::Month6 => 6 * MONTH_SECONDS,
+            Self::Ytd => i64::from(Utc::now().ordinal()) * 24 * 3_600,
+            Self::Year1 => 365 * 24 * 3_600,
+            Self::Year5 => 5 * 365 * 24 * 3_600,
+            Self::All => 10 * 365 * 24 * 3_600,
+        };
+        seconds.max(0) as u64
+    }
+
     /// Rough bar count for `bar_duration_seconds` spacing.
     ///
     /// Calendar math, not session-aware: weekends and holidays still count.
     /// Fetch planners treat it as an upper bound alongside warmup headroom.
     #[must_use]
     pub fn estimated_bars(self, bar_duration_seconds: u64) -> usize {
-        let duration_seconds = match self {
-            Self::Day1 => 24 * 3_600,
-            Self::Day5 => 5 * 24 * 3_600,
-            Self::Month1 => 30 * 24 * 3_600,
-            Self::Month3 => 90 * 24 * 3_600,
-            Self::Month6 => 180 * 24 * 3_600,
-            Self::Ytd => u64::from(Utc::now().ordinal()) * 24 * 3_600,
-            Self::Year1 => 365 * 24 * 3_600,
-            Self::Year5 => 5 * 365 * 24 * 3_600,
-            Self::All => 10 * 365 * 24 * 3_600,
-        };
-        (duration_seconds / bar_duration_seconds.max(1)) as usize
+        (self.span_seconds() / bar_duration_seconds.max(1)) as usize
     }
 }
 

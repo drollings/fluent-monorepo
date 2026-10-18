@@ -13,10 +13,20 @@ fn default_chart() -> ChartConfig {
 #[test]
 fn chart_schema_lists_every_field() {
     let config = default_chart();
-    assert_eq!(config.symbol, "GLD", "the top bar defaults to the GLD ticker");
-    assert_eq!(DEFAULT_SYMBOL, "GLD", "the default ticker is the GLD constant");
-    assert_eq!(default_symbol(), "GLD", "the builder default reads the same constant");
-    assert_eq!(config.get_field("symbol").expect("symbol reads"), "GLD");
+    assert_eq!(
+        config.symbol, "SPY",
+        "the top bar defaults to the SPY ticker"
+    );
+    assert_eq!(
+        DEFAULT_SYMBOL, "SPY",
+        "the default ticker is the SPY constant"
+    );
+    assert_eq!(
+        default_symbol(),
+        "SPY",
+        "the builder default reads the same constant"
+    );
+    assert_eq!(config.get_field("symbol").expect("symbol reads"), "SPY");
     let schema = config.describe();
     assert_eq!(schema["type"], "object");
     for name in [
@@ -41,15 +51,21 @@ fn chart_schema_lists_every_field() {
         assert!(config.get_field(name).is_ok(), "field {name} reads");
     }
     let empty_symbol = ChartConfig::new().symbol(String::new()).build();
-    let err = empty_symbol.validate().expect_err("an empty symbol refuses");
+    let err = empty_symbol
+        .validate()
+        .expect_err("an empty symbol refuses");
     assert!(err.to_string().contains("symbol"), "names the field: {err}");
 }
 
 #[test]
 fn chart_fields_round_trip_through_strings() {
     let mut config = default_chart();
-    config.set_field("timeframe", "H1").expect("timeframe writes");
-    config.set_field("show_price", "false").expect("bool writes");
+    config
+        .set_field("timeframe", "H1")
+        .expect("timeframe writes");
+    config
+        .set_field("show_price", "false")
+        .expect("bool writes");
     config.set_field("threshold", "150").expect("int writes");
     config.set_field("alpha_low", "0.2").expect("float writes");
     config.set_field("theme", "midnight").expect("theme writes");
@@ -58,7 +74,10 @@ fn chart_fields_round_trip_through_strings() {
     assert_eq!(config.threshold, 150);
     assert!((config.alpha_low - 0.2).abs() < 1e-12);
     assert_eq!(config.theme, "midnight");
-    assert!(config.set_field("no_such_field", "x").is_err(), "unknown fields refuse");
+    assert!(
+        config.set_field("no_such_field", "x").is_err(),
+        "unknown fields refuse"
+    );
     let json = serde_json::to_value(&config).expect("chart config serializes");
     let back: ChartConfig = serde_json::from_value(json).expect("chart config deserializes");
     assert_eq!(back.timeframe, "H1");
@@ -67,10 +86,14 @@ fn chart_fields_round_trip_through_strings() {
 
 #[test]
 fn constraints_refuse_with_reasons() {
-    let bad_threshold =
-        ChartConfig::new().threshold(0).build();
-    let err = bad_threshold.validate().expect_err("zero threshold refuses");
-    assert!(err.to_string().contains("threshold"), "names the field: {err}");
+    let bad_threshold = ChartConfig::new().threshold(0).build();
+    let err = bad_threshold
+        .validate()
+        .expect_err("zero threshold refuses");
+    assert!(
+        err.to_string().contains("threshold"),
+        "names the field: {err}"
+    );
 
     let flipped = ChartConfig::new().alpha_low(0.9).alpha_high(0.1).build();
     assert!(flipped.validate().is_err(), "low above high refuses");
@@ -80,13 +103,36 @@ fn constraints_refuse_with_reasons() {
         ("high alpha", ChartConfig::new().alpha_high(1.5).build()),
         ("zero height", ChartConfig::new().height(0).build()),
         ("flat spacing", ChartConfig::new().bar_spacing(0.0).build()),
-        ("wild spacing", ChartConfig::new().bar_spacing(f64::INFINITY).build()),
-        ("empty timeframe", ChartConfig::new().timeframe(String::new()).build()),
-        ("empty theme", ChartConfig::new().theme("  ".to_owned()).build()),
-        ("unknown fast", ChartConfig::new().fast_oscillator("sma".to_owned()).build()),
-        ("unknown slow", ChartConfig::new().slow_oscillator("wavetrend".to_owned()).build()),
-        ("refused fast", ChartConfig::new().fast_oscillator("cdv".to_owned()).build()),
-        ("refused slow", ChartConfig::new().slow_oscillator("cdv".to_owned()).build()),
+        (
+            "wild spacing",
+            ChartConfig::new().bar_spacing(f64::INFINITY).build(),
+        ),
+        (
+            "empty timeframe",
+            ChartConfig::new().timeframe(String::new()).build(),
+        ),
+        (
+            "empty theme",
+            ChartConfig::new().theme("  ".to_owned()).build(),
+        ),
+        (
+            "unknown fast",
+            ChartConfig::new().fast_oscillator("sma".to_owned()).build(),
+        ),
+        (
+            "unknown slow",
+            ChartConfig::new()
+                .slow_oscillator("wavetrend".to_owned())
+                .build(),
+        ),
+        (
+            "refused fast",
+            ChartConfig::new().fast_oscillator("cdv".to_owned()).build(),
+        ),
+        (
+            "refused slow",
+            ChartConfig::new().slow_oscillator("cdv".to_owned()).build(),
+        ),
     ] {
         assert!(config.validate().is_err(), "{label} refuses");
     }
@@ -105,23 +151,41 @@ fn constraints_refuse_with_reasons() {
 #[test]
 fn adapter_overrides_change_render_config_never_kernel_params() {
     let inner = Arc::new(default_chart());
-    let kernel_before = ParamSet::new().with_int("length", 14).with_float("k", 1.2).fingerprint();
+    let kernel_before = ParamSet::new()
+        .with_int("length", 14)
+        .with_float("k", 1.2)
+        .fingerprint();
     let adapter = ComponentAdapter::new(inner.clone()).with_field_override("threshold", "150");
-    assert_eq!(adapter.get_field("threshold").expect("override reads"), "150");
-    assert_eq!(inner.get_field("threshold").expect("inner reads"), "200", "inner untouched");
-    let kernel_after = ParamSet::new().with_int("length", 14).with_float("k", 1.2).fingerprint();
-    assert_eq!(kernel_before, kernel_after, "kernel params never move under render overrides");
+    assert_eq!(
+        adapter.get_field("threshold").expect("override reads"),
+        "150"
+    );
+    assert_eq!(
+        inner.get_field("threshold").expect("inner reads"),
+        "200",
+        "inner untouched"
+    );
+    let kernel_after = ParamSet::new()
+        .with_int("length", 14)
+        .with_float("k", 1.2)
+        .fingerprint();
+    assert_eq!(
+        kernel_before, kernel_after,
+        "kernel params never move under render overrides"
+    );
     let schema = adapter.describe();
     assert_eq!(schema["adapted"], true);
-    assert!(schema.get("field_overrides").is_some(), "overrides stay visible in schema");
+    assert!(
+        schema.get("field_overrides").is_some(),
+        "overrides stay visible in schema"
+    );
 }
 
 #[test]
 fn chart_config_is_a_component_without_hand_rolled_downcasts() {
     let chart: Arc<dyn Component> = Arc::new(default_chart());
     assert!(fluent_wvr::component_downcast_ref::<ChartConfig>(&*chart).is_some());
-    let pane: Arc<dyn Component> =
-        Arc::new(PaneConfig::new().name("price".to_owned()).build());
+    let pane: Arc<dyn Component> = Arc::new(PaneConfig::new().name("price".to_owned()).build());
     assert!(fluent_wvr::component_downcast_ref::<PaneConfig>(&*pane).is_some());
     assert!(fluent_wvr::component_downcast_ref::<PaneConfig>(&*chart).is_none());
 }
@@ -130,14 +194,23 @@ fn chart_config_is_a_component_without_hand_rolled_downcasts() {
 fn timed_plan_build_reports_panes_and_records_latency() {
     let histogram = Arc::new(LatencyHistogram::new());
     let unit = timed_plan_build(default_chart(), Arc::clone(&histogram));
-    let output = unit.execute(&WorkContext::default()).expect("valid config builds");
+    let output = unit
+        .execute(&WorkContext::default())
+        .expect("valid config builds");
     assert!(output.success);
-    assert!(output.message.contains("9 panes"), "plan size reported: {}", output.message);
+    assert!(
+        output.message.contains("9 panes"),
+        "plan size reported: {}",
+        output.message
+    );
     assert!(histogram.count() >= 1, "plan-build timing observed");
 
     let broken = ChartConfig::new().threshold(0).build();
     let unit = timed_plan_build(broken, Arc::new(LatencyHistogram::new()));
-    assert!(unit.execute(&WorkContext::default()).is_err(), "invalid config refuses");
+    assert!(
+        unit.execute(&WorkContext::default()).is_err(),
+        "invalid config refuses"
+    );
 }
 
 #[test]
@@ -150,14 +223,24 @@ fn pane_layout_projects_switches_onto_generic_panes() {
     }
     let names: Vec<&str> = layout.iter().map(|pane| pane.name.as_str()).collect();
     assert_eq!(names, vec!["price", "volume", "oscillator"]);
-    let reduced = ChartConfig::new().show_volume(false).show_oscillator(false).build();
+    let reduced = ChartConfig::new()
+        .show_volume(false)
+        .show_oscillator(false)
+        .build();
     let layout = reduced.pane_layout();
     assert_eq!(layout.len(), 1, "switches filter the layout");
     assert_eq!(layout[0].name, "price");
 }
 
 fn row_at(time: i64) -> ChartRow {
-    ChartRow { time, open: 100.0, high: 101.0, low: 99.0, close: 100.0, volume: 1 }
+    ChartRow {
+        time,
+        open: 100.0,
+        high: 101.0,
+        low: 99.0,
+        close: 100.0,
+        volume: 1,
+    }
 }
 
 #[test]
@@ -187,17 +270,35 @@ fn timeframe_keys_cover_intraday_to_daily_in_toolbar_order() {
             TimeframeKey::D1,
         ]
     );
-    assert_eq!(TimeframeKey::default(), TimeframeKey::M15);
+    assert_eq!(
+        TimeframeKey::default(),
+        TimeframeKey::M5,
+        "five-minute default"
+    );
     let labels: Vec<&str> = keys.iter().map(|key| key.label()).collect();
     assert_eq!(labels, vec!["1M", "5M", "15M", "1H", "4H", "1D"]);
     let seconds: Vec<u64> = keys.iter().map(|key| key.seconds()).collect();
     assert_eq!(seconds, vec![60, 300, 900, 3_600, 14_400, 86_400]);
-    assert_eq!(TimeframeKey::H1.timeframe().duration_ms(), 3_600_000, "one hour holds four quarter-hours");
+    assert_eq!(
+        TimeframeKey::H1.timeframe().duration_ms(),
+        3_600_000,
+        "one hour holds four quarter-hours"
+    );
     assert_eq!(TimeframeKey::H4.timeframe().duration_ms(), 14_400_000);
-    assert_eq!(TimeframeKey::D1.timeframe().duration_ms(), 86_400_000, "one day holds 96 quarter-hours");
-    assert!(TimeframeKey::H1.timeframe().is_whole_multiple_of(TimeframeKey::M15.timeframe()));
-    assert!(TimeframeKey::H4.timeframe().is_whole_multiple_of(TimeframeKey::M15.timeframe()));
-    assert!(TimeframeKey::D1.timeframe().is_whole_multiple_of(TimeframeKey::M15.timeframe()));
+    assert_eq!(
+        TimeframeKey::D1.timeframe().duration_ms(),
+        86_400_000,
+        "one day holds 96 quarter-hours"
+    );
+    assert!(TimeframeKey::H1
+        .timeframe()
+        .is_whole_multiple_of(TimeframeKey::M15.timeframe()));
+    assert!(TimeframeKey::H4
+        .timeframe()
+        .is_whole_multiple_of(TimeframeKey::M15.timeframe()));
+    assert!(TimeframeKey::D1
+        .timeframe()
+        .is_whole_multiple_of(TimeframeKey::M15.timeframe()));
     // The one toolbar-label bridge: every toolbar label resolves through
     // `Timeframe::from_chart_label` to the key's own spacing, so the serving
     // boundary (`timeframe_of_label`) and the terminal cannot disagree.
@@ -239,7 +340,12 @@ fn prefold_levels_come_from_the_toolbar_grid_in_whole_multiples() {
     );
     assert_eq!(
         prefold_levels(TimeframeKey::M15),
-        vec![TimeframeKey::M15, TimeframeKey::H1, TimeframeKey::H4, TimeframeKey::D1]
+        vec![
+            TimeframeKey::M15,
+            TimeframeKey::H1,
+            TimeframeKey::H4,
+            TimeframeKey::D1
+        ]
     );
     assert_eq!(prefold_levels(TimeframeKey::D1), vec![TimeframeKey::D1]);
     for base in TimeframeKey::all() {
@@ -247,7 +353,9 @@ fn prefold_levels_come_from_the_toolbar_grid_in_whole_multiples() {
         assert_eq!(levels[0], base, "{base:?} always keeps its native level");
         for pair in levels.windows(2) {
             assert!(
-                pair[1].timeframe().is_whole_multiple_of(pair[0].timeframe()),
+                pair[1]
+                    .timeframe()
+                    .is_whole_multiple_of(pair[0].timeframe()),
                 "{base:?} ladder stays tileable: {pair:?}"
             );
         }
@@ -279,7 +387,11 @@ fn stateless_pick_selects_the_finest_level_at_or_above_two_px() {
         (0.05, TimeframeKey::H1),
     ];
     for (px, want) in cases {
-        assert_eq!(prefold_pick(px, TimeframeKey::M1), want, "native {px} px/bar");
+        assert_eq!(
+            prefold_pick(px, TimeframeKey::M1),
+            want,
+            "native {px} px/bar"
+        );
     }
     // A non-finite spacing never switches: fail-safe, like the column
     // dispatcher it feeds.
@@ -443,8 +555,10 @@ fn count_switches(levels: &[TimeframeKey]) -> usize {
 fn flicker_sweep_stays_within_its_bound() {
     let sweep = zoom_sweep_with_hover();
     assert!(sweep.len() > 100, "the sweep stutters, it does not glide");
-    let stateless: Vec<TimeframeKey> =
-        sweep.iter().map(|px| prefold_pick(*px, TimeframeKey::M1)).collect();
+    let stateless: Vec<TimeframeKey> = sweep
+        .iter()
+        .map(|px| prefold_pick(*px, TimeframeKey::M1))
+        .collect();
     let naive = count_switches(&stateless);
     let mut level = TimeframeKey::M1;
     let mut hysteretic = Vec::with_capacity(sweep.len());
@@ -453,9 +567,18 @@ fn flicker_sweep_stays_within_its_bound() {
         hysteretic.push(level);
     }
     let steadied = count_switches(&hysteretic);
-    eprintln!("flicker sweep samples={} naive={naive} hysteretic={steadied}", sweep.len());
-    assert!(naive > steadied, "hover stutters flip the stateless picker: {naive} vs {steadied}");
-    assert!(steadied <= 6, "one switch per ladder step, nothing more: {steadied}");
+    eprintln!(
+        "flicker sweep samples={} naive={naive} hysteretic={steadied}",
+        sweep.len()
+    );
+    assert!(
+        naive > steadied,
+        "hover stutters flip the stateless picker: {naive} vs {steadied}"
+    );
+    assert!(
+        steadied <= 6,
+        "one switch per ladder step, nothing more: {steadied}"
+    );
 }
 
 #[test]

@@ -14,7 +14,7 @@
 //! supported `which` legs, and trailing-smoothing eligibility. A Pine edit
 //! that changes an arm fails the shipped-source drift test here first.
 
-use fluent_egui::{EguiError, affine_squash, band_squash, map_series_optional};
+use fluent_egui::{affine_squash, band_squash, map_series_optional, EguiError};
 
 /// Oscillator identity for the normalization catalog.
 ///
@@ -165,17 +165,47 @@ impl OscillatorKind {
     #[must_use]
     pub fn params(self) -> Option<OscParams> {
         let params = match self {
-            Self::Aroon => OscParams { offset: -50.0, k: 0.005, multiplier: 800.0 },
-            Self::Cci => OscParams { offset: -50.0, k: 0.0035, multiplier: 500.0 },
+            Self::Aroon => OscParams {
+                offset: -50.0,
+                k: 0.005,
+                multiplier: 800.0,
+            },
+            Self::Cci => OscParams {
+                offset: -50.0,
+                k: 0.0035,
+                multiplier: 500.0,
+            },
             Self::Cdv => return None,
-            Self::Cmo => OscParams { offset: 0.0, k: 0.002, multiplier: 1000.0 },
-            Self::Mfi | Self::Rsi | Self::Raw => {
-                OscParams { offset: -50.0, k: 0.0084, multiplier: 740.0 }
-            }
-            Self::Srsi => OscParams { offset: -50.0, k: 0.0006, multiplier: 7000.0 },
-            Self::Stoch => OscParams { offset: -50.0, k: 0.0005, multiplier: 7000.0 },
-            Self::TrendSi => OscParams { offset: 0.0, k: 0.016, multiplier: 9000.0 },
-            Self::Voss => OscParams { offset: 0.0, k: 1.5, multiplier: 300.0 },
+            Self::Cmo => OscParams {
+                offset: 0.0,
+                k: 0.002,
+                multiplier: 1000.0,
+            },
+            Self::Mfi | Self::Rsi | Self::Raw => OscParams {
+                offset: -50.0,
+                k: 0.0084,
+                multiplier: 740.0,
+            },
+            Self::Srsi => OscParams {
+                offset: -50.0,
+                k: 0.0006,
+                multiplier: 7000.0,
+            },
+            Self::Stoch => OscParams {
+                offset: -50.0,
+                k: 0.0005,
+                multiplier: 7000.0,
+            },
+            Self::TrendSi => OscParams {
+                offset: 0.0,
+                k: 0.016,
+                multiplier: 9000.0,
+            },
+            Self::Voss => OscParams {
+                offset: 0.0,
+                k: 1.5,
+                multiplier: 300.0,
+            },
         };
         Some(params)
     }
@@ -258,7 +288,12 @@ pub fn oscillator_options() -> Vec<OscillatorOption> {
         .map(|kind| OscillatorOption {
             id: kind.id().to_owned(),
             pine_name: kind.pine_name().to_owned(),
-            legs: kind.which_legs().iter().copied().map(WhichLeg::which).collect(),
+            legs: kind
+                .which_legs()
+                .iter()
+                .copied()
+                .map(WhichLeg::which)
+                .collect(),
             evaluable: kind.is_evaluable(),
             refusal: kind.refusal_reason().map(str::to_owned),
         })
@@ -303,7 +338,10 @@ pub struct OscParams {
 fn refuse(kind: OscillatorKind) -> EguiError {
     EguiError::InvalidParam {
         what: "oscillator".to_owned(),
-        reason: kind.refusal_reason().unwrap_or("unspecified refusal").to_owned(),
+        reason: kind
+            .refusal_reason()
+            .unwrap_or("unspecified refusal")
+            .to_owned(),
     }
 }
 
@@ -317,7 +355,12 @@ fn refuse(kind: OscillatorKind) -> EguiError {
 /// catalog above stays the only calibration.
 pub fn normalize_oscillator(raw: f64, kind: OscillatorKind) -> Result<f64, EguiError> {
     let params = kind.params().ok_or_else(|| refuse(kind))?;
-    Ok(affine_squash(raw, params.offset, params.k, params.multiplier))
+    Ok(affine_squash(
+        raw,
+        params.offset,
+        params.k,
+        params.multiplier,
+    ))
 }
 
 /// Map a raw oscillator series into the shared display band, or refuse a
@@ -373,10 +416,7 @@ pub fn squash_series_to_100(series: &[Option<f64>]) -> Vec<Option<f64>> {
 ///
 /// Composes the frozen per-kind squash with the bounded compressor, so the
 /// bounded reading is `squash_to_100(normalize_oscillator(raw, kind))`.
-pub fn normalize_oscillator_bounded(
-    raw: f64,
-    kind: OscillatorKind,
-) -> Result<f64, EguiError> {
+pub fn normalize_oscillator_bounded(raw: f64, kind: OscillatorKind) -> Result<f64, EguiError> {
     Ok(squash_to_100(normalize_oscillator(raw, kind)?))
 }
 
@@ -394,7 +434,12 @@ pub fn normalize_series_bounded(
 ) -> Result<Vec<Option<f64>>, EguiError> {
     let params = kind.params().ok_or_else(|| refuse(kind))?;
     Ok(map_series_optional(raw, |value| {
-        squash_to_100(affine_squash(value, params.offset, params.k, params.multiplier))
+        squash_to_100(affine_squash(
+            value,
+            params.offset,
+            params.k,
+            params.multiplier,
+        ))
     }))
 }
 

@@ -13,8 +13,8 @@
 
 use super::*;
 use crate::{
-    ClosureEntry, ModuleGraph, TASK_INDICATORS, closure_data_root, display_program,
-    load_listed_closure, parse_program, resolve_imports,
+    closure_data_root, display_program, load_listed_closure, parse_program, resolve_imports,
+    ClosureEntry, ModuleGraph, TASK_INDICATORS,
 };
 
 use crate::pine::test_fixture as fixture;
@@ -24,7 +24,8 @@ use fixture::{library_id, module_key};
 /// Load, parse, and link one task indicator with the on-disk libraries.
 fn link_task(indicator: &ClosureEntry) -> ModuleGraph {
     let root = closure_data_root(env!("CARGO_MANIFEST_DIR"));
-    let sources = load_listed_closure(&root, REAL_LIBRARIES, indicator).expect("task closure loads");
+    let sources =
+        load_listed_closure(&root, REAL_LIBRARIES, indicator).expect("task closure loads");
     let modules: Vec<crate::ModuleInput> = sources
         .into_iter()
         .map(|(key, source)| {
@@ -50,7 +51,10 @@ fn link_task(indicator: &ClosureEntry) -> ModuleGraph {
 fn task_table_lists_three_indicators_beside_frozen_closure() {
     assert_eq!(TASK_INDICATORS.len(), 3, "DVP, PPAS, RSIMD under proof");
     for entry in TASK_INDICATORS {
-        assert_eq!(entry.publisher, "local", "indicator root travels under local");
+        assert_eq!(
+            entry.publisher, "local",
+            "indicator root travels under local"
+        );
         assert_eq!(entry.version, 6, "indicator declares v6");
     }
     // The frozen closure is untouched by the new table.
@@ -97,7 +101,11 @@ fn task_indicators_parse_and_link() {
             .iter()
             .map(|(name, alias)| (*name, *alias))
             .collect();
-        assert_eq!(imports, pinned, "{} import lines match the table", indicator.name);
+        assert_eq!(
+            imports, pinned,
+            "{} import lines match the table",
+            indicator.name
+        );
     }
 }
 
@@ -121,7 +129,11 @@ fn task_indicator_shapes_are_pinned() {
         let (_, source) = sources.last().expect("indicator is last");
         let program =
             parse_program(&source.text).unwrap_or_else(|err| panic!("{stem} parses: {err}"));
-        assert_eq!(program.statements.len(), statements, "{stem} statement count");
+        assert_eq!(
+            program.statements.len(),
+            statements,
+            "{stem} statement count"
+        );
         let graph = link_task(entry);
         let root_id = module_key("local", stem);
         assert_eq!(

@@ -142,6 +142,7 @@ fn report_for(curve: &[&str]) -> crate::report::BacktestReport {
         money("0"),
         curve.iter().map(|value| money(value)).collect(),
         None,
+        None,
     )
 }
 

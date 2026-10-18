@@ -124,10 +124,7 @@ impl SubmissionRecorder for StubRecorder {
         _leg: &LegExecution,
         _now: DateTime<Utc>,
     ) -> Result<(), VenueError> {
-        self.calls
-            .lock()
-            .unwrap()
-            .push(format!("leg:{client_id}"));
+        self.calls.lock().unwrap().push(format!("leg:{client_id}"));
         Ok(())
     }
 
@@ -159,9 +156,7 @@ async fn submit_guarded_is_recorder_agnostic() {
     assert_eq!(calls.first().map(String::as_str), Some("intent:r#0"));
     assert!(calls.iter().any(|call| call == "status:r#0:Submitted"));
     assert!(calls.iter().any(|call| call == "status:r#0:Filled"));
-    assert!(calls
-        .iter()
-        .any(|call| call == "transition:r#0:verdict"));
+    assert!(calls.iter().any(|call| call == "transition:r#0:verdict"));
     assert_eq!(venue.orders().len(), 1, "the venue still executed once");
 }
 
@@ -179,9 +174,17 @@ async fn journal_recorder_matches_safe_submit_rows() {
     let token = approved();
 
     let events_a = scoped(permit_a.clone(), async {
-        safe_submit(&permit_a, &journal_a, &venue_a, &token, intent("m#0"), &quote(), now())
-            .await
-            .expect("safe_submit");
+        safe_submit(
+            &permit_a,
+            &journal_a,
+            &venue_a,
+            &token,
+            intent("m#0"),
+            &quote(),
+            now(),
+        )
+        .await
+        .expect("safe_submit");
         journal_a.replay(&permit_a).expect("replay a").events
     })
     .await;
@@ -225,30 +228,43 @@ async fn ephemeral_recorder_replays_recorded_state() {
     let replayed = journal.replay(&permit).expect("replay");
     assert_eq!(replayed.intents.len(), 1, "one intent recorded");
     assert_eq!(replayed.intents[0].client_id, "v#0");
-    assert!(replayed.events.iter().any(|event| event.kind == INTENT_KIND));
     assert!(replayed
         .events
         .iter()
-        .any(|event| event.kind == "filled"));
-    assert!(replayed
-        .events
-        .iter()
-        .any(|event| event.kind == "verdict"));
-    assert_eq!(journal.intent_status(&permit, "v#0").expect("status").as_deref(), Some("filled"));
-    assert_eq!(journal.intent_status(&permit, "absent").expect("status"), None);
+        .any(|event| event.kind == INTENT_KIND));
+    assert!(replayed.events.iter().any(|event| event.kind == "filled"));
+    assert!(replayed.events.iter().any(|event| event.kind == "verdict"));
+    assert_eq!(
+        journal
+            .intent_status(&permit, "v#0")
+            .expect("status")
+            .as_deref(),
+        Some("filled")
+    );
+    assert_eq!(
+        journal.intent_status(&permit, "absent").expect("status"),
+        None
+    );
     // The permit value is vacuous for the ephemeral arm: a different permit
     // reads the same rows.
     let other = VenueStorage::new(std::path::PathBuf::from("other-test"));
-    assert_eq!(journal.replay(&other).expect("replay").events, replayed.events);
+    assert_eq!(
+        journal.replay(&other).expect("replay").events,
+        replayed.events
+    );
 }
 
 #[tokio::test]
 async fn ephemeral_intent_recording_is_idempotent() {
     let journal = Journal::ephemeral();
     let recorder = Recorder::ephemeral(&journal);
-    assert!(recorder.record_intent(&intent("i#0"), now()).expect("first"));
+    assert!(recorder
+        .record_intent(&intent("i#0"), now())
+        .expect("first"));
     assert!(
-        !recorder.record_intent(&intent("i#0"), now()).expect("replay"),
+        !recorder
+            .record_intent(&intent("i#0"), now())
+            .expect("replay"),
         "re-recording the same client id writes nothing"
     );
     let permit = ephemeral_permit();
@@ -289,7 +305,9 @@ async fn both_durabilities_replay_identically() {
     }
     assert_eq!(
         durable_state,
-        ephemeral.replay(&ephemeral_permit()).expect("ephemeral replay"),
+        ephemeral
+            .replay(&ephemeral_permit())
+            .expect("ephemeral replay"),
         "one recorder replays identically at both durabilities"
     );
 }
@@ -304,20 +322,26 @@ async fn durable_refuses_without_capability_ephemeral_needs_none() {
     let permit = VenueStorage::new(path);
     // No `scoped` capabilities installed: the durable write refuses.
     assert!(
-        durable.record_intent(&permit, &intent("g#0"), now()).is_err(),
+        durable
+            .record_intent(&permit, &intent("g#0"), now())
+            .is_err(),
         "durable writes demand an installed capability"
     );
     // The ephemeral arm records with no capabilities installed.
     let ephemeral = Journal::ephemeral();
     let recorder = Recorder::ephemeral(&ephemeral);
     assert!(
-        recorder.record_intent(&intent("g#0"), now()).expect("ephemeral records"),
+        recorder
+            .record_intent(&intent("g#0"), now())
+            .expect("ephemeral records"),
         "first recording lands"
     );
     // And the ephemeral core refuses a durable journal outright: no ungated
     // path into the durable log exists.
     assert!(
-        durable.record_ephemeral("g#1", INTENT_KIND, "{}", now()).is_err(),
+        durable
+            .record_ephemeral("g#1", INTENT_KIND, "{}", now())
+            .is_err(),
         "the ephemeral core never writes a durable journal"
     );
 }
@@ -333,13 +357,20 @@ fn ephemeral_intent_recording_is_atomic() {
         for _ in 0..16 {
             scope.spawn(|| {
                 let recorder = Recorder::ephemeral(&journal);
-                if recorder.record_intent(&intent("race#0"), now()).expect("records") {
+                if recorder
+                    .record_intent(&intent("race#0"), now())
+                    .expect("records")
+                {
                     wins.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 }
             });
         }
     });
-    assert_eq!(wins.load(std::sync::atomic::Ordering::SeqCst), 1, "one winner");
+    assert_eq!(
+        wins.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "one winner"
+    );
     let permit = ephemeral_permit();
     assert_eq!(
         journal.replay(&permit).expect("replay").events.len(),

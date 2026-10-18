@@ -14,8 +14,8 @@ use protopyne_types::Timeframe;
 use crate::fold::FoldPolicy;
 use crate::key::TapeKey;
 use crate::range::TimeRange;
-use crate::tape::test_conformance::grid;
 use crate::store::{CandleStore, ReadRequest, WritePolicy};
+use crate::tape::test_conformance::grid;
 use crate::tape::test_setup::with_registry_caps;
 
 const VENUE: &str = "test-venue";
@@ -63,8 +63,12 @@ async fn exactly_max_bars_loads_and_one_more_refuses() {
         tape.append(key, &grid(FIRST_MS, 4), WritePolicy::InsertIfAbsent)
             .expect("exactly max loads");
         let message = capacity_message(
-            tape.append(key, &grid(FIRST_MS + 4 * 60_000, 1), WritePolicy::InsertIfAbsent)
-                .expect_err("one over max refuses"),
+            tape.append(
+                key,
+                &grid(FIRST_MS + 4 * 60_000, 1),
+                WritePolicy::InsertIfAbsent,
+            )
+            .expect_err("one over max refuses"),
         );
         assert!(message.contains("SPY"), "names the tape: {message}");
         assert!(message.contains('4'), "names the bound: {message}");
@@ -114,8 +118,11 @@ async fn reopen_after_refusal_sees_the_unmodified_log() {
     // handle handed out — there is no partial state to serve from.
     let message = with_registry_caps(async {
         capacity_message(
-            MarketTape::open_with_options(&root, crate::tape::TapeOptions::new().max_bars(4).build())
-                .expect_err("over-budget open refuses"),
+            MarketTape::open_with_options(
+                &root,
+                crate::tape::TapeOptions::new().max_bars(4).build(),
+            )
+            .expect_err("over-budget open refuses"),
         )
     })
     .await;
@@ -171,8 +178,17 @@ async fn recall_control_expected_working_sets_load_under_the_default() {
         };
         tape.append(other, &grid(FIRST_MS, 120), WritePolicy::InsertIfAbsent)
             .expect("fixture-universe shape loads");
-        assert_eq!(tape.coverage(key).expect("coverage").expect("covered").bars, 390);
-        assert_eq!(tape.coverage(other).expect("coverage").expect("covered").bars, 120);
+        assert_eq!(
+            tape.coverage(key).expect("coverage").expect("covered").bars,
+            390
+        );
+        assert_eq!(
+            tape.coverage(other)
+                .expect("coverage")
+                .expect("covered")
+                .bars,
+            120
+        );
         let _ = spy_key(&tape);
     })
     .await;

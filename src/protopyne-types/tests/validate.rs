@@ -1,7 +1,6 @@
 use super::{check_for_execute, valid_output};
 use crate::{
-    Adjustment, Bar, Money, OptionContract, OptionKind, Portfolio, PortfolioId,
-    validate::Validate,
+    validate::Validate, Adjustment, Bar, Money, OptionContract, OptionKind, Portfolio, PortfolioId,
 };
 use chrono::TimeZone as _;
 

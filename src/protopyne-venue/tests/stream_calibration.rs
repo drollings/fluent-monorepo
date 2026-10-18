@@ -40,8 +40,8 @@ use crate::tastytrade::TastytradeConfig;
 use fluent_concurrency::stream::StreamAbort;
 use std::collections::VecDeque;
 use std::sync::{
-    Arc,
     atomic::{AtomicUsize, Ordering},
+    Arc,
 };
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
@@ -82,7 +82,9 @@ fn production_config() -> StreamConfig {
 
 fn transport() -> Arc<TastytradeTransport> {
     Arc::new(TastytradeTransport::new(
-        TastytradeConfig::new().base_url("http://127.0.0.1:9".to_owned()).build(),
+        TastytradeConfig::new()
+            .base_url("http://127.0.0.1:9".to_owned())
+            .build(),
     ))
 }
 
@@ -234,7 +236,12 @@ async fn jitter_soak_stays_untripped() {
     let driver = stream.clone();
     let run = tokio::spawn(async move {
         driver
-            .run(|| async { script.connect() }, &driver_abort, out_tx, &vehicle)
+            .run(
+                || async { script.connect() },
+                &driver_abort,
+                out_tx,
+                &vehicle,
+            )
             .await
     });
     // Exact drain: every valid message arrives, then the consumer leaves.
@@ -279,7 +286,9 @@ async fn single_blips_stay_untripped() {
     let stream = SupervisedStream::new(production_config());
     let script = Script::new(vec![
         Err(transient("blip 1: upstream hiccup")),
-        Ok(inbox_with(vec!["not json: dropped, not counted".to_owned()])),
+        Ok(inbox_with(
+            vec!["not json: dropped, not counted".to_owned()],
+        )),
         Err(transient("blip 2: upstream hiccup")),
         Ok(inbox_with(vec![balance_message("1000.00")])),
     ]);
@@ -302,7 +311,11 @@ async fn single_blips_stay_untripped() {
         0,
         "each successful generation clears the cooling streak"
     );
-    assert_eq!(stream.breaker().restart_count(), 1, "one clean close banked");
+    assert_eq!(
+        stream.breaker().restart_count(),
+        1,
+        "one clean close banked"
+    );
     assert!(
         vehicle.dropped_messages() > 0,
         "the drop path ran (banked, never breaker-fed)"
@@ -378,10 +391,7 @@ async fn sustained_5xx_trips_within_error_budget() {
     let outcome = stream
         .run(|| async { script.connect() }, &abort, out_tx, &vehicle)
         .await;
-    let reason = stream
-        .breaker()
-        .trip_reason()
-        .expect("trip banks a reason");
+    let reason = stream.breaker().trip_reason().expect("trip banks a reason");
     assert!(
         matches!(outcome, StreamOutcome::BreakerTripped { .. }),
         "sustained errors trip the run, got: {outcome:?}"
@@ -414,10 +424,7 @@ async fn repeated_ack_loss_trips_within_restart_budget() {
     let outcome = stream
         .run(|| async { script.connect() }, &abort, out_tx, &vehicle)
         .await;
-    let reason = stream
-        .breaker()
-        .trip_reason()
-        .expect("trip banks a reason");
+    let reason = stream.breaker().trip_reason().expect("trip banks a reason");
     assert!(
         matches!(outcome, StreamOutcome::BreakerTripped { .. }),
         "ack loss trips the run, got: {outcome:?}"
@@ -433,17 +440,19 @@ async fn repeated_ack_loss_trips_within_restart_budget() {
     );
 }
 
-
-
 /// Restart storm: flapping generations that deliver one message each still
 /// trip on churn — producer-confidence trips on rate even while traffic
 /// flows.
 #[tokio::test]
 async fn restart_storm_trips_within_window() {
     let stream = SupervisedStream::new(production_config());
-    let flaps: Vec<Result<mpsc::Receiver<String>, TransportError>> = (0
-        ..=MAX_RESTARTS_PER_WINDOW)
-        .map(|i| Ok(inbox_with(vec![balance_message(&format!("{}.00", 3000 + i))])))
+    let flaps: Vec<Result<mpsc::Receiver<String>, TransportError>> = (0..=MAX_RESTARTS_PER_WINDOW)
+        .map(|i| {
+            Ok(inbox_with(vec![balance_message(&format!(
+                "{}.00",
+                3000 + i
+            ))]))
+        })
         .collect();
     let script = Script::new(flaps);
     let abort = StreamAbort::new();

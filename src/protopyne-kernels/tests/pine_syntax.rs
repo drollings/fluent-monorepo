@@ -19,7 +19,9 @@ fn parse(text: &str) -> PineProgram {
 }
 
 fn data_path(name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../data/protopyne-rs").join(name)
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../data/protopyne-rs")
+        .join(name)
 }
 
 fn load(name: &str) -> PineProgram {
@@ -102,8 +104,14 @@ fn roundtrip_binary_matches_egui() {
     match &program.statements[0] {
         PineStmt::Expression(PineExpr::Binary { left, op, right }) => {
             assert_eq!(*op, BinaryOp::Greater);
-            assert!(matches!(left.as_ref(), PineExpr::BuiltinVariable(BuiltinVar::Close)));
-            assert!(matches!(right.as_ref(), PineExpr::BuiltinVariable(BuiltinVar::Open)));
+            assert!(matches!(
+                left.as_ref(),
+                PineExpr::BuiltinVariable(BuiltinVar::Close)
+            ));
+            assert!(matches!(
+                right.as_ref(),
+                PineExpr::BuiltinVariable(BuiltinVar::Open)
+            ));
         }
         other => panic!("expected binary expression, got {other:?}"),
     }
@@ -256,7 +264,10 @@ fn negative_arm_does_not_glue_to_previous_body() {
                 ));
                 assert!(matches!(
                     block.arms[1].pattern,
-                    Some(PineExpr::Unary { op: UnaryOp::Negate, .. })
+                    Some(PineExpr::Unary {
+                        op: UnaryOp::Negate,
+                        ..
+                    })
                 ));
             }
             other => panic!("expected switch, got {other:?}"),
@@ -277,7 +288,11 @@ fn binary_continuation_needs_trailing_operator() {
         other => panic!("expected assignment, got {other:?}"),
     }
     let program = parse("a\n[b]");
-    assert_eq!(program.statements.len(), 2, "operand and tuple stay separate");
+    assert_eq!(
+        program.statements.len(),
+        2,
+        "operand and tuple stay separate"
+    );
     assert!(matches!(
         &program.statements[1],
         PineStmt::Expression(PineExpr::ArrayLiteral(_))
@@ -308,7 +323,10 @@ fn declarations_functions_and_types_parse() {
             PineStmt::FuncDecl { name, params, body } => {
                 assert_eq!(name, "f");
                 assert_eq!(params.len(), 2);
-                assert_eq!(params[0].type_name.as_ref().map(|t| t.name.as_str()), Some("float"));
+                assert_eq!(
+                    params[0].type_name.as_ref().map(|t| t.name.as_str()),
+                    Some("float")
+                );
                 assert_eq!(params[1].qualifier.as_deref(), Some("simple"));
                 assert!(params[1].default.is_some());
                 assert_eq!(body.len(), 1);
@@ -382,7 +400,9 @@ fn summarize(program: &PineProgram) -> String {
                 let _ = writeln!(out, "indicator args={}", args.len());
             }
             PineStmt::ExportDecl(inner) => match inner.as_ref() {
-                PineStmt::ConstDecl { type_name, name, .. } => {
+                PineStmt::ConstDecl {
+                    type_name, name, ..
+                } => {
                     let _ = writeln!(out, "export const {} {name}", type_name.name);
                 }
                 PineStmt::EnumDecl { name, members } => {
@@ -472,7 +492,11 @@ fn count_switches(stmts: &[PineStmt]) -> usize {
         .iter()
         .map(|stmt| match stmt {
             PineStmt::Switch(block) => {
-                1 + block.arms.iter().map(|arm| count_switches(&arm.body)).sum::<usize>()
+                1 + block
+                    .arms
+                    .iter()
+                    .map(|arm| count_switches(&arm.body))
+                    .sum::<usize>()
             }
             PineStmt::ExportDecl(inner) => count_switches(std::slice::from_ref(inner)),
             PineStmt::FuncDecl { body, .. }
@@ -485,7 +509,9 @@ fn count_switches(stmts: &[PineStmt]) -> usize {
                 ..
             } => {
                 count_switches(then_branch)
-                    + else_branch.as_ref().map_or(0, |branch| count_switches(branch))
+                    + else_branch
+                        .as_ref()
+                        .map_or(0, |branch| count_switches(branch))
             }
             PineStmt::VarDeclaration { value, .. }
             | PineStmt::Declaration { value, .. }
@@ -514,18 +540,25 @@ fn count_switch_expr(expr: &PineExpr) -> usize {
             condition,
             then_expr,
             else_expr,
-        } => count_switch_expr(condition) + count_switch_expr(then_expr) + count_switch_expr(else_expr),
+        } => {
+            count_switch_expr(condition)
+                + count_switch_expr(then_expr)
+                + count_switch_expr(else_expr)
+        }
         PineExpr::FunctionCall { args, .. } | PineExpr::MethodCall { args, .. } => {
             args.iter().map(|arg| count_switch_expr(&arg.value)).sum()
         }
-        PineExpr::InstanceCall {
-            receiver, args, ..
-        } => {
+        PineExpr::InstanceCall { receiver, args, .. } => {
             count_switch_expr(receiver)
-                + args.iter().map(|arg| count_switch_expr(&arg.value)).sum::<usize>()
+                + args
+                    .iter()
+                    .map(|arg| count_switch_expr(&arg.value))
+                    .sum::<usize>()
         }
         PineExpr::FieldRead { receiver, .. } => count_switch_expr(receiver),
-        PineExpr::ArrayAccess { array, index } => count_switch_expr(array) + count_switch_expr(index),
+        PineExpr::ArrayAccess { array, index } => {
+            count_switch_expr(array) + count_switch_expr(index)
+        }
         PineExpr::SeriesOffset { series, .. } => count_switch_expr(series),
         PineExpr::ArrayLiteral(items) => items.iter().map(count_switch_expr).sum(),
         PineExpr::Number(_)
@@ -605,9 +638,7 @@ fn switch_bodies<'a>(expr: &'a PineExpr, out: &mut Vec<&'a PineStmt>) {
                 switch_bodies(&arg.value, out);
             }
         }
-        PineExpr::InstanceCall {
-            receiver, args, ..
-        } => {
+        PineExpr::InstanceCall { receiver, args, .. } => {
             switch_bodies(receiver, out);
             for arg in args {
                 switch_bodies(&arg.value, out);
@@ -664,8 +695,7 @@ fn every_expr<'a>(stmts: &'a [PineStmt], out: &mut Vec<&'a PineExpr>) {
                 expr_children(value, out);
             }
             PineStmt::ExportDecl(inner) => every_expr(std::slice::from_ref(inner), out),
-            PineStmt::FuncDecl { params, body, .. }
-            | PineStmt::MethodDecl { params, body, .. } => {
+            PineStmt::FuncDecl { params, body, .. } | PineStmt::MethodDecl { params, body, .. } => {
                 for param in params {
                     if let Some(default) = &param.default {
                         out.push(default);
@@ -706,14 +736,14 @@ fn every_expr<'a>(stmts: &'a [PineStmt], out: &mut Vec<&'a PineExpr>) {
                     every_expr(branch, out);
                 }
             }
-            PineStmt::For { start, end, body, .. } => {
+            PineStmt::For {
+                start, end, body, ..
+            } => {
                 out.push(start);
                 out.push(end);
                 every_expr(body, out);
             }
-            PineStmt::ForIn {
-                iterable, body, ..
-            } => {
+            PineStmt::ForIn { iterable, body, .. } => {
                 out.push(iterable);
                 expr_children(iterable, out);
                 every_expr(body, out);
@@ -760,9 +790,7 @@ fn expr_children<'a>(expr: &'a PineExpr, out: &mut Vec<&'a PineExpr>) {
                 expr_children(&arg.value, out);
             }
         }
-        PineExpr::InstanceCall {
-            receiver, args, ..
-        } => {
+        PineExpr::InstanceCall { receiver, args, .. } => {
             out.push(receiver);
             expr_children(receiver, out);
             for arg in args {
@@ -888,10 +916,7 @@ fn golden_lib_mas_structure() {
             _ => None,
         })
         .collect();
-    assert!(
-        arms.contains(&12),
-        "11 arms plus default, got {arms:?}"
-    );
+    assert!(arms.contains(&12), "11 arms plus default, got {arms:?}");
     // Tuple returns and tuple destructuring across the library.
     let mut exprs = Vec::new();
     every_expr(&program.statements, &mut exprs);
@@ -1026,7 +1051,9 @@ fn augmented_assignment_keeps_dotted_receivers() {
 fn for_in_parses_single_and_tuple_targets() {
     let program = parse("for child_id in element.child_ids\n    child_id");
     match &program.statements[0] {
-        PineStmt::ForIn { targets, iterable, .. } => {
+        PineStmt::ForIn {
+            targets, iterable, ..
+        } => {
             assert_eq!(targets, &vec!["child_id".to_owned()]);
             assert!(matches!(iterable.as_ref(), PineExpr::Variable(v) if v == "element.child_ids"));
         }
@@ -1090,7 +1117,10 @@ fn multi_declaration_accepts_repeated_and_shared_types() {
     }
     // One item stays a plain declaration.
     let program = parse("float o = na");
-    assert!(matches!(program.statements[0], PineStmt::Declaration { .. }));
+    assert!(matches!(
+        program.statements[0],
+        PineStmt::Declaration { .. }
+    ));
 }
 
 #[test]
@@ -1208,14 +1238,18 @@ fn chained_calls_parse_on_computed_receivers() {
     let program = parse("element := VisualElement.new().init(this, 1, name)");
     match &program.statements[0] {
         PineStmt::Reassign { value, .. } => {
-            assert!(matches!(value.as_ref(), PineExpr::InstanceCall { method, .. } if method == "init"));
+            assert!(
+                matches!(value.as_ref(), PineExpr::InstanceCall { method, .. } if method == "init")
+            );
         }
         other => panic!("expected reassignment, got {other:?}"),
     }
     let program = parse("v = map.get(m, k).version");
     match &program.statements[0] {
         PineStmt::Assignment { value, .. } => {
-            assert!(matches!(value.as_ref(), PineExpr::FieldRead { field, .. } if field == "version"));
+            assert!(
+                matches!(value.as_ref(), PineExpr::FieldRead { field, .. } if field == "version")
+            );
         }
         other => panic!("expected assignment, got {other:?}"),
     }

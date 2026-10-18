@@ -69,8 +69,7 @@ fn a_short_trailing_edge_is_not_complete() {
 fn a_torn_bucket_is_not_complete() {
     let step = Timeframe::M5.duration_ms();
     let start = Timeframe::M5.bucket_start_ms(1_700_000_000_000);
-    let stamps: Vec<i64> =
-        [0, 2, 3, 4].iter().map(|i| start + i * 60_000).collect();
+    let stamps: Vec<i64> = [0, 2, 3, 4].iter().map(|i| start + i * 60_000).collect();
     assert!(!accumulate(&stamps, start).is_complete(step));
 }
 
@@ -130,7 +129,11 @@ fn the_accumulator_agrees_with_the_slice_reference_on_every_bucket() {
                     // Mixed child spacings: one- and two-minute grids, so the
                     // accumulator must read the gap off the children, never
                     // assume it.
-                    cursor += if next_rand(&mut rng) % 2 == 0 { 60_000 } else { 120_000 };
+                    cursor += if next_rand(&mut rng) % 2 == 0 {
+                        60_000
+                    } else {
+                        120_000
+                    };
                     if holes != 0 && next_rand(&mut rng) % 11 < holes {
                         continue;
                     }
@@ -143,7 +146,10 @@ fn the_accumulator_agrees_with_the_slice_reference_on_every_bucket() {
                 let mut bucketed: std::collections::BTreeMap<i64, Vec<i64>> =
                     std::collections::BTreeMap::new();
                 for &stamp in &stamps {
-                    bucketed.entry(target.bucket_start_ms(stamp)).or_default().push(stamp);
+                    bucketed
+                        .entry(target.bucket_start_ms(stamp))
+                        .or_default()
+                        .push(stamp);
                 }
                 for (start, bucket) in &bucketed {
                     let actual = accumulate(bucket, *start).is_complete(step);
@@ -157,5 +163,8 @@ fn the_accumulator_agrees_with_the_slice_reference_on_every_bucket() {
             }
         }
     }
-    assert!(buckets_checked > 1_000, "the sweep must cover buckets, saw {buckets_checked}");
+    assert!(
+        buckets_checked > 1_000,
+        "the sweep must cover buckets, saw {buckets_checked}"
+    );
 }

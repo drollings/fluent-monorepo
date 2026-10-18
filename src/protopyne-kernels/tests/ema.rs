@@ -29,9 +29,7 @@ fn batch_agrees_with_incremental_update_fold() {
     let ema = EmaIndicator::new();
     let closes = [3.0, 1.0, 4.0, 1.0, 5.0, 9.0, 2.0, 6.0];
     let ps = params(4);
-    let batch = ema
-        .batch(&Ohlcv::close_only(&closes), &ps)
-        .expect("valid");
+    let batch = ema.batch(&Ohlcv::close_only(&closes), &ps).expect("valid");
     let mut state = IndicatorState::new();
     let mut folded = Vec::new();
     for &close in &closes {
@@ -58,7 +56,9 @@ fn invalid_periods_are_typed_errors_and_oversize_is_all_na() {
 }
 
 fn trending_closes(bars: usize) -> Vec<f64> {
-    (0..bars).map(|i| 100.0 + i as f64 * 0.05 + ((i * 37 % 11) as f64) * 0.13).collect()
+    (0..bars)
+        .map(|i| 100.0 + i as f64 * 0.05 + ((i * 37 % 11) as f64) * 0.13)
+        .collect()
 }
 
 fn max_abs_diff(a: &[Option<f64>], b: &[Option<f64>]) -> f64 {
@@ -88,18 +88,23 @@ fn windowed_plus_warmup_converges_to_full_history_over_visible_slice() {
     let ps = params(14);
     let warmup = ema.warmup(&ps).expect("declared warmup");
     let closes = trending_closes(500);
-    let full = ema.batch(&Ohlcv::close_only(&closes), &ps).expect("full history");
+    let full = ema
+        .batch(&Ohlcv::close_only(&closes), &ps)
+        .expect("full history");
     let visible_start: usize = 400;
     let windowed_at = |extra: usize| {
         let eval_start = visible_start.saturating_sub(warmup + extra);
-        ema.batch(&Ohlcv::close_only(&closes[eval_start..]), &ps).expect("windowed")
+        ema.batch(&Ohlcv::close_only(&closes[eval_start..]), &ps)
+            .expect("windowed")
     };
     let one = windowed_at(0);
     let four = windowed_at(3 * warmup);
     let end = closes.len() - visible_start;
     let diff_one = max_abs_diff(&one.values[warmup..][..end], &full.values[visible_start..]);
-    let diff_four =
-        max_abs_diff(&four.values[3 * warmup + warmup..][..end], &full.values[visible_start..]);
+    let diff_four = max_abs_diff(
+        &four.values[3 * warmup + warmup..][..end],
+        &full.values[visible_start..],
+    );
     assert!(
         diff_one <= 0.05,
         "declared-warmup transient stays small on the fixture: {diff_one}"
@@ -123,7 +128,8 @@ fn fold_updates(closes: &[f64], params: &ParamSet) -> Vec<Option<f64>> {
     closes
         .iter()
         .map(|close| {
-            ema.update(&mut state, BarTick::close_only(*close), params).expect("update runs")
+            ema.update(&mut state, BarTick::close_only(*close), params)
+                .expect("update runs")
         })
         .collect()
 }
@@ -140,8 +146,15 @@ fn buffered_update_matches_batch_on_constant_and_subnormal_inputs() {
         vec![42.0; 40],
         (1..=40).map(|i| f64::from(i) * 1e-310).collect::<Vec<_>>(),
     ] {
-        let batch = ema.batch(&Ohlcv::close_only(&closes), &ps).expect("batch runs").values;
-        assert_eq!(bits_of(&fold_updates(&closes, &ps)), bits_of(&batch), "update fold reproduces batch bit-for-bit");
+        let batch = ema
+            .batch(&Ohlcv::close_only(&closes), &ps)
+            .expect("batch runs")
+            .values;
+        assert_eq!(
+            bits_of(&fold_updates(&closes, &ps)),
+            bits_of(&batch),
+            "update fold reproduces batch bit-for-bit"
+        );
     }
 }
 

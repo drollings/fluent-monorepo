@@ -15,7 +15,7 @@ use protopyne_kernels::indicator::ParamSet;
 use protopyne_kernels::smoothing::params_for_kernel;
 
 use crate::integration_lite::IntegrationLiteConfig;
-use crate::topology::{SeriesCatalog, cache_key_for, kernel_series, source_frame};
+use crate::topology::{cache_key_for, kernel_series, source_frame, SeriesCatalog};
 
 /// Sixty rising bars with a distinct volume leg, so `vwma` has real weight
 /// and the close legs are bit-identical to the reference evaluation.
@@ -72,10 +72,17 @@ fn fast_mas_config_derives_component_and_validates_fail_closed() {
         "show_extra_mas",
         "show_smas",
     ] {
-        assert!(names.contains(&expected_name), "{expected_name} is in the schema: {names:?}");
+        assert!(
+            names.contains(&expected_name),
+            "{expected_name} is in the schema: {names:?}"
+        );
     }
     let fields = fluent_egui::schema_fields(&config.describe());
-    assert_eq!(fields.len(), names.len(), "the schema describes every field");
+    assert_eq!(
+        fields.len(),
+        names.len(),
+        "the schema describes every field"
+    );
     let (mut inputs, mut style, mut visibility) = (0_u32, 0_u32, 0_u32);
     for field in &fields {
         match fluent_egui::classify_schema_field(field) {
@@ -88,7 +95,10 @@ fn fast_mas_config_derives_component_and_validates_fail_closed() {
         inputs > 0 && style > 0 && visibility > 0,
         "fields partition across Inputs/Style/Visibility: {inputs}/{style}/{visibility}"
     );
-    assert!(config.validate().is_ok(), "the default config is self-consistent");
+    assert!(
+        config.validate().is_ok(),
+        "the default config is self-consistent"
+    );
     // Zero lengths refuse on every arm.
     for field in [
         "first_ma_length",
@@ -105,22 +115,34 @@ fn fast_mas_config_derives_component_and_validates_fail_closed() {
     // Unsupported MA kernel names refuse.
     for field in ["first_ma_type", "second_ma_type", "signal_ma_type"] {
         let mut candidate = FastMasConfig::new().build();
-        candidate.set_field(field, "not-a-smoothing").expect("field is writable");
+        candidate
+            .set_field(field, "not-a-smoothing")
+            .expect("field is writable");
         assert!(candidate.validate().is_err(), "unsupported {field} refuses");
     }
     // Blank style keys refuse.
     let mut blank = FastMasConfig::new().build();
-    blank.set_field("first_ma_style", "   ").expect("field is writable");
+    blank
+        .set_field("first_ma_style", "   ")
+        .expect("field is writable");
     assert!(blank.validate().is_err(), "a blank style key refuses");
     // The WorkUnit contract is contract-complete.
     let unit: &dyn fluent_wvr::WorkUnit = &config;
     assert_eq!(unit.name(), "fast_mas_config");
     assert!(unit.depends().is_empty());
     assert!(unit.provides().is_empty());
-    assert!(unit.execute(&fluent_wvr::WorkContext::default()).is_ok(), "default executes");
+    assert!(
+        unit.execute(&fluent_wvr::WorkContext::default()).is_ok(),
+        "default executes"
+    );
     let rows = ramp_rows();
     assert!(
-        evaluate_fast_mas(&rows, &FastMasConfig::new().first_ma_length(0).build(), &SeriesCatalog::empty()).is_err(),
+        evaluate_fast_mas(
+            &rows,
+            &FastMasConfig::new().first_ma_length(0).build(),
+            &SeriesCatalog::empty()
+        )
+        .is_err(),
         "the evaluator refuses a config its own validation refuses"
     );
 }
@@ -128,31 +150,76 @@ fn fast_mas_config_derives_component_and_validates_fail_closed() {
 #[test]
 fn evaluate_fast_mas_matches_builtin_kernels_and_respects_visibility_flags() {
     let rows = ramp_rows();
-    let view = evaluate_fast_mas(&rows, &FastMasConfig::new().build(), &SeriesCatalog::empty()).expect("default view builds");
+    let view = evaluate_fast_mas(
+        &rows,
+        &FastMasConfig::new().build(),
+        &SeriesCatalog::empty(),
+    )
+    .expect("default view builds");
     let names: Vec<&str> = view.lines.iter().map(|line| line.name.as_str()).collect();
-    assert_eq!(names, vec!["First MA", "Signal MA", "Mean MA", "Trend MA", "Base MA"]);
+    assert_eq!(
+        names,
+        vec!["First MA", "Signal MA", "Mean MA", "Trend MA", "Base MA"]
+    );
     for line in &view.lines {
-        assert_eq!(line.values.len(), rows.len(), "{} aligns with the rows", line.name);
+        assert_eq!(
+            line.values.len(),
+            rows.len(),
+            "{} aligns with the rows",
+            line.name
+        );
     }
     // Every arm is the shared kernel's own output, never a re-implementation.
-    assert_eq!(view.lines[0].values, expected(&rows, "wma", 3), "First MA is wma(3)");
-    assert_eq!(view.lines[1].values, expected(&rows, "ema", 8), "Signal MA is ema(8)");
-    assert_eq!(view.lines[2].values, expected(&rows, "ema", 21), "Mean MA is ema(21)");
-    assert_eq!(view.lines[3].values, expected(&rows, "ema", 34), "Trend MA is ema(34)");
-    assert_eq!(view.lines[4].values, expected(&rows, "ema", 55), "Base MA is ema(55)");
+    assert_eq!(
+        view.lines[0].values,
+        expected(&rows, "wma", 3),
+        "First MA is wma(3)"
+    );
+    assert_eq!(
+        view.lines[1].values,
+        expected(&rows, "ema", 8),
+        "Signal MA is ema(8)"
+    );
+    assert_eq!(
+        view.lines[2].values,
+        expected(&rows, "ema", 21),
+        "Mean MA is ema(21)"
+    );
+    assert_eq!(
+        view.lines[3].values,
+        expected(&rows, "ema", 34),
+        "Trend MA is ema(34)"
+    );
+    assert_eq!(
+        view.lines[4].values,
+        expected(&rows, "ema", 55),
+        "Base MA is ema(55)"
+    );
     // The Second MA arm is opt-in and evaluates through `alma`.
-    let with_second = evaluate_fast_mas(&rows, &FastMasConfig::new().show_second_ma(true).build(), &SeriesCatalog::empty())
-        .expect("second arm builds");
+    let with_second = evaluate_fast_mas(
+        &rows,
+        &FastMasConfig::new().show_second_ma(true).build(),
+        &SeriesCatalog::empty(),
+    )
+    .expect("second arm builds");
     let second = with_second
         .lines
         .iter()
         .find(|line| line.name == "Second MA")
         .expect("Second MA is present when shown");
-    assert_eq!(second.values, expected(&rows, "alma", 8), "Second MA is alma(8)");
+    assert_eq!(
+        second.values,
+        expected(&rows, "alma", 8),
+        "Second MA is alma(8)"
+    );
     assert_eq!(with_second.lines.len(), view.lines.len() + 1);
     // The SMA trio is opt-in.
-    let with_smas = evaluate_fast_mas(&rows, &FastMasConfig::new().show_smas(true).build(), &SeriesCatalog::empty())
-        .expect("sma arm builds");
+    let with_smas = evaluate_fast_mas(
+        &rows,
+        &FastMasConfig::new().show_smas(true).build(),
+        &SeriesCatalog::empty(),
+    )
+    .expect("sma arm builds");
     let sma_names: Vec<&str> = with_smas
         .lines
         .iter()
@@ -161,12 +228,24 @@ fn evaluate_fast_mas_matches_builtin_kernels_and_respects_visibility_flags() {
         .collect();
     assert_eq!(sma_names, vec!["SMA 50", "SMA 100", "SMA 200"]);
     for (name, length) in [("SMA 50", 50), ("SMA 100", 100), ("SMA 200", 200)] {
-        let line = with_smas.lines.iter().find(|line| line.name == name).expect("sma present");
-        assert_eq!(line.values, expected(&rows, "sma", length), "{name} is sma({length})");
+        let line = with_smas
+            .lines
+            .iter()
+            .find(|line| line.name == name)
+            .expect("sma present");
+        assert_eq!(
+            line.values,
+            expected(&rows, "sma", length),
+            "{name} is sma({length})"
+        );
     }
     // Extra MAs can be hidden entirely, leaving only the first arm.
-    let first_only = evaluate_fast_mas(&rows, &FastMasConfig::new().show_extra_mas(false).build(), &SeriesCatalog::empty())
-        .expect("first-only builds");
+    let first_only = evaluate_fast_mas(
+        &rows,
+        &FastMasConfig::new().show_extra_mas(false).build(),
+        &SeriesCatalog::empty(),
+    )
+    .expect("first-only builds");
     assert_eq!(first_only.lines.len(), 1);
     assert_eq!(first_only.lines[0].name, "First MA");
 }
@@ -176,20 +255,33 @@ fn catalog_arms_validate_and_evaluate_through_the_fast_mas_path() {
     use protopyne_kernels::smoothing::SmoothingFamily;
     // Length-driven families beyond the legacy seven validate and evaluate.
     for kind in ["kalman", "zlema", "na"] {
-        let config = FastMasConfig::new().first_ma_type(kind.to_owned()).first_ma_length(14).build();
+        let config = FastMasConfig::new()
+            .first_ma_type(kind.to_owned())
+            .first_ma_length(14)
+            .build();
         assert!(config.validate().is_ok(), "{kind} validates");
-        let view = evaluate_fast_mas(&ramp_rows(), &config, &SeriesCatalog::empty()).expect("catalog arm evaluates");
-        let first = view.lines.iter().find(|line| line.name == "First MA").expect("first arm present");
+        let view = evaluate_fast_mas(&ramp_rows(), &config, &SeriesCatalog::empty())
+            .expect("catalog arm evaluates");
+        let first = view
+            .lines
+            .iter()
+            .find(|line| line.name == "First MA")
+            .expect("first arm present");
         assert_eq!(first.values.len(), 60);
         let family = SmoothingFamily::parse(kind).expect("catalog covers it");
         assert!(family.takes_length());
     }
     // `eit` names its missing alpha instead of miscomputing.
-    let eit = FastMasConfig::new().first_ma_type("eit".to_owned()).first_ma_length(14).build();
+    let eit = FastMasConfig::new()
+        .first_ma_type("eit".to_owned())
+        .first_ma_length(14)
+        .build();
     assert!(eit.validate().is_err(), "eit refuses without an alpha");
     assert!(evaluate_fast_mas(&ramp_rows(), &eit, &SeriesCatalog::empty()).is_err());
     // Unknown names still refuse.
-    let unknown = FastMasConfig::new().first_ma_type("not-a-smoothing".to_owned()).build();
+    let unknown = FastMasConfig::new()
+        .first_ma_type("not-a-smoothing".to_owned())
+        .build();
     assert!(unknown.validate().is_err());
 }
 
@@ -199,16 +291,26 @@ fn fast_mas_and_integration_lite_settings_are_completely_isolated() {
     let mut fast = FastMasConfig::new().build();
     // Distinct schemas: neither config names the other's fields.
     for name in fast.field_names() {
-        assert!(!lite.field_names().contains(name), "{name} is fast-MAs-only");
+        assert!(
+            !lite.field_names().contains(name),
+            "{name} is fast-MAs-only"
+        );
     }
     for name in lite.field_names() {
-        assert!(!fast.field_names().contains(name), "{name} is Integration-Lite-only");
+        assert!(
+            !fast.field_names().contains(name),
+            "{name} is Integration-Lite-only"
+        );
     }
     // Editing one config never reaches into the other.
     let lite_alpha = lite.get_field("eit_alpha").expect("lite field reads");
-    fast.set_field("first_ma_length", "9").expect("fast field edits");
+    fast.set_field("first_ma_length", "9")
+        .expect("fast field edits");
     assert_eq!(fast.first_ma_length, 9, "the fast edit landed");
-    assert_eq!(lite.get_field("eit_alpha").expect("lite field reads"), lite_alpha);
+    assert_eq!(
+        lite.get_field("eit_alpha").expect("lite field reads"),
+        lite_alpha
+    );
     assert_eq!(
         lite.eit_alpha.to_bits(),
         IntegrationLiteConfig::new().build().eit_alpha.to_bits(),
@@ -226,18 +328,31 @@ fn fast_mas_and_integration_lite_settings_are_completely_isolated() {
         "fast_mas",
         &params_for_kernel("wma", FastMasConfig::new().build().first_ma_length).expect("supported"),
     );
-    let fast_key_after =
-        cache_key_for("fast_mas", &params_for_kernel("wma", fast.first_ma_length).expect("supported"));
-    assert_ne!(fast_key_before, fast_key_after, "an edit moves the fast cache key");
+    let fast_key_after = cache_key_for(
+        "fast_mas",
+        &params_for_kernel("wma", fast.first_ma_length).expect("supported"),
+    );
+    assert_ne!(
+        fast_key_before, fast_key_after,
+        "an edit moves the fast cache key"
+    );
     assert_ne!(lite_key, fast_key_after, "the two modules key apart");
     cache.publish(fast_key_after, vec![Some(9.0)]);
-    let resident = cache.get(lite_key).expect("the Integration-Lite entry stays resident");
-    assert_eq!(resident.revision, lite_revision, "the lite revision is untouched");
+    let resident = cache
+        .get(lite_key)
+        .expect("the Integration-Lite entry stays resident");
+    assert_eq!(
+        resident.revision, lite_revision,
+        "the lite revision is untouched"
+    );
     assert_eq!(resident.values, vec![Some(1.0), Some(2.0), None]);
     // A second fast edit keeps the lite entry pinned and adds a fresh key.
-    fast.set_field("first_ma_length", "11").expect("fast field edits");
-    let fast_key_latest =
-        cache_key_for("fast_mas", &params_for_kernel("wma", fast.first_ma_length).expect("supported"));
+    fast.set_field("first_ma_length", "11")
+        .expect("fast field edits");
+    let fast_key_latest = cache_key_for(
+        "fast_mas",
+        &params_for_kernel("wma", fast.first_ma_length).expect("supported"),
+    );
     assert_ne!(fast_key_latest, fast_key_after);
     assert_eq!(
         cache.get(lite_key).expect("still resident").values,
@@ -251,8 +366,11 @@ fn fast_mas_and_integration_lite_settings_are_completely_isolated() {
 fn test_painter() -> (egui::Context, egui::Painter) {
     let ctx = egui::Context::default();
     ctx.begin_pass(egui::RawInput::default());
-    let painter =
-        egui::Painter::new(ctx.clone(), egui::LayerId::background(), egui::Rect::EVERYTHING);
+    let painter = egui::Painter::new(
+        ctx.clone(),
+        egui::LayerId::background(),
+        egui::Rect::EVERYTHING,
+    );
     (ctx, painter)
 }
 
@@ -270,7 +388,12 @@ fn price_viewport() -> Viewport {
 #[test]
 fn paint_fast_mas_blits_every_line_and_refuses_a_broken_theme() {
     let rows = ramp_rows();
-    let view = evaluate_fast_mas(&rows, &FastMasConfig::new().build(), &SeriesCatalog::empty()).expect("view builds");
+    let view = evaluate_fast_mas(
+        &rows,
+        &FastMasConfig::new().build(),
+        &SeriesCatalog::empty(),
+    )
+    .expect("view builds");
     let theme = ThemeConfig::default();
     let (ctx, painter) = test_painter();
     paint_fast_mas(
@@ -300,7 +423,10 @@ fn paint_fast_mas_blits_every_line_and_refuses_a_broken_theme() {
         &IndicatorStyle::default(),
     )
     .expect_err("a broken needed key refuses");
-    assert!(refused.to_string().contains("slow"), "refusal names the key: {refused}");
+    assert!(
+        refused.to_string().contains("slow"),
+        "refusal names the key: {refused}"
+    );
 }
 
 #[test]
@@ -311,7 +437,12 @@ fn paint_fast_mas_samples_per_column_at_sub_pixel_zoom() {
     // is untouched.
     use fluent_egui::{needs_column_aggregation, oscillator_points, sampled_line_points};
     let rows = ramp_rows();
-    let view = evaluate_fast_mas(&rows, &FastMasConfig::new().build(), &SeriesCatalog::empty()).expect("view builds");
+    let view = evaluate_fast_mas(
+        &rows,
+        &FastMasConfig::new().build(),
+        &SeriesCatalog::empty(),
+    )
+    .expect("view builds");
     let tight = Viewport::new(PriceScaleMode::Normal, 90.0, 170.0, 200.0, 0.2, 90.0, false)
         .expect("sub-pixel viewport builds");
     assert!(needs_column_aggregation(tight.scale().bar_spacing()));
@@ -319,7 +450,10 @@ fn paint_fast_mas_samples_per_column_at_sub_pixel_zoom() {
         let sampled = sampled_line_points(&line.values, &tight, 0);
         let native = oscillator_points(&line.values, &price_viewport());
         assert!(sampled.len() < native.len(), "sampling sheds shapes");
-        assert!(sampled.iter().any(Option::is_some), "present values still paint");
+        assert!(
+            sampled.iter().any(Option::is_some),
+            "present values still paint"
+        );
     }
     // And the painter accepts the sampled path without refusing.
     let (ctx, painter) = test_painter();
@@ -334,5 +468,8 @@ fn paint_fast_mas_samples_per_column_at_sub_pixel_zoom() {
         &IndicatorStyle::default(),
     )
     .expect("sampled zoom paints");
-    assert!(!end_frame(&ctx).shapes.is_empty(), "sampled lines emit shapes");
+    assert!(
+        !end_frame(&ctx).shapes.is_empty(),
+        "sampled lines emit shapes"
+    );
 }

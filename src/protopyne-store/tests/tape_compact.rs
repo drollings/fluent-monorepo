@@ -12,8 +12,8 @@ use protopyne_types::Timeframe;
 use crate::fold::FoldPolicy;
 use crate::key::TapeKey;
 use crate::range::TimeRange;
-use crate::tape::test_conformance::grid;
 use crate::store::{CandleStore, ReadRequest, WritePolicy};
+use crate::tape::test_conformance::grid;
 use crate::tape::test_setup::with_registry_caps;
 
 const VENUE: &str = "test-venue";
@@ -70,7 +70,11 @@ async fn compact_seals_then_truncates_and_reopen_sees_every_bar() {
         let tape = MarketTape::open(&root).expect("tape opens");
         register_and_seed(&tape);
         let sealed = tape
-            .compact(spy_key(&tape), crate::snapshot::SealOptions::new().build(), SEAL_NOW_MS)
+            .compact(
+                spy_key(&tape),
+                crate::snapshot::SealOptions::new().build(),
+                SEAL_NOW_MS,
+            )
             .expect("compact seals");
         assert_eq!(sealed.row_count, 16);
         all_bars(&tape)
@@ -90,12 +94,17 @@ async fn compact_seals_then_truncates_and_reopen_sees_every_bar() {
     // Appends continue past the compaction point.
     with_registry_caps(async {
         after
-            .append(spy_key(&after), &grid(FIRST_MS + 16 * 60_000, 4), WritePolicy::InsertIfAbsent)
+            .append(
+                spy_key(&after),
+                &grid(FIRST_MS + 16 * 60_000, 4),
+                WritePolicy::InsertIfAbsent,
+            )
             .expect("post-compact append lands");
         assert_eq!(all_bars(&after).len(), 20);
     })
     .await;
-    let reopened = with_registry_caps(async { MarketTape::open(&root).expect("tape reopens") }).await;
+    let reopened =
+        with_registry_caps(async { MarketTape::open(&root).expect("tape reopens") }).await;
     let reopened_bars = with_registry_caps(async { all_bars(&reopened) }).await;
     assert_eq!(reopened_bars.len(), 20, "post-compact rows replay too");
 }
@@ -130,13 +139,21 @@ async fn crash_between_seal_and_truncate_converges_on_reopen() {
     // The next compaction finishes the truncation.
     with_registry_caps(async {
         after
-            .compact(spy_key(&after), crate::snapshot::SealOptions::new().build(), SEAL_NOW_MS)
+            .compact(
+                spy_key(&after),
+                crate::snapshot::SealOptions::new().build(),
+                SEAL_NOW_MS,
+            )
             .expect("second compact finishes");
     })
     .await;
-    let finished = with_registry_caps(async { MarketTape::open(&root).expect("tape reopens") }).await;
+    let finished =
+        with_registry_caps(async { MarketTape::open(&root).expect("tape reopens") }).await;
     let finished_bars = with_registry_caps(async { all_bars(&finished) }).await;
-    assert_eq!(finished_bars, before, "the finished compaction keeps every bar");
+    assert_eq!(
+        finished_bars, before,
+        "the finished compaction keeps every bar"
+    );
 }
 
 #[tokio::test]
@@ -160,10 +177,15 @@ async fn reopen_with_duplicate_stamps_and_a_torn_tail_replays_every_bar() {
         let mut fixed = grid(FIRST_MS, 1).pop().expect("one bar");
         fixed.c = "101".parse().expect("decimal");
         fixed.h = "101".parse().expect("decimal");
-        tape.repair_one(key, fixed.ts.timestamp_millis(), &fixed).expect("repair lands");
+        tape.repair_one(key, fixed.ts.timestamp_millis(), &fixed)
+            .expect("repair lands");
         // Four novel bars past the seed.
-        tape.append(key, &grid(FIRST_MS + 16 * 60_000, 4), WritePolicy::InsertIfAbsent)
-            .expect("tail append lands");
+        tape.append(
+            key,
+            &grid(FIRST_MS + 16 * 60_000, 4),
+            WritePolicy::InsertIfAbsent,
+        )
+        .expect("tail append lands");
         all_bars(&tape)
     })
     .await;
@@ -181,7 +203,10 @@ async fn reopen_with_duplicate_stamps_and_a_torn_tail_replays_every_bar() {
     }
     let after = with_registry_caps(async { MarketTape::open(&root).expect("tape reopens") }).await;
     let after_bars = with_registry_caps(async { all_bars(&after) }).await;
-    assert_eq!(after_bars, expected, "torn tail plus duplicates converge on reopen");
+    assert_eq!(
+        after_bars, expected,
+        "torn tail plus duplicates converge on reopen"
+    );
 }
 
 #[test]
@@ -189,7 +214,7 @@ fn indexed_replay_folds_duplicate_stamps_like_the_naive_rule() {
     // The boot fold, both ways: the indexed replay must produce exactly the
     // tape the naive per-row scan produces — inserts keep the first row,
     // replaces overwrite (or push when novel) — over duplicate stamps.
-    use super::{TapeOp, replay_log_records};
+    use super::{replay_log_records, TapeOp};
     use crate::store::order_and_validate;
     let sealed = grid(FIRST_MS, 8);
     let novel = grid(FIRST_MS + 8 * 60_000, 4);

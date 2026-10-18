@@ -64,7 +64,10 @@ impl DailySessionProvider {
     /// Break clock time in UTC, clamped into range.
     #[must_use]
     pub fn new(hour: u32, minute: u32) -> Self {
-        Self { break_hour: hour.min(23), break_minute: minute.min(59) }
+        Self {
+            break_hour: hour.min(23),
+            break_minute: minute.min(59),
+        }
     }
 
     /// Regular-session close preset (16:00 ET ≈ 21:00 UTC in standard time).
@@ -125,7 +128,9 @@ impl WeeklySessionProvider {
 
 impl Default for WeeklySessionProvider {
     fn default() -> Self {
-        Self { break_day: Weekday::Fri }
+        Self {
+            break_day: Weekday::Fri,
+        }
     }
 }
 
@@ -215,7 +220,10 @@ impl SessionProvider for EtSessionProvider {
             Some(SessionBreak {
                 ts: *to,
                 break_type: SessionBreakType::Daily,
-                label: Some(format!("{:04}-{:02}-{:02} ET", to_date.0, to_date.1, to_date.2)),
+                label: Some(format!(
+                    "{:04}-{:02}-{:02} ET",
+                    to_date.0, to_date.1, to_date.2
+                )),
             })
         }
     }
@@ -238,7 +246,9 @@ impl CompositeSessionProvider {
     /// Empty combination.
     #[must_use]
     pub fn new() -> Self {
-        Self { providers: Vec::new() }
+        Self {
+            providers: Vec::new(),
+        }
     }
 
     /// Add one provider, consulted after the previously added ones.
@@ -293,10 +303,7 @@ pub fn find_session_breaks(
     bars: &[Bar],
     provider: &dyn SessionProvider,
 ) -> Vec<(usize, SessionBreak)> {
-    session_breaks_between(
-        &bars.iter().map(|bar| bar.ts).collect::<Vec<_>>(),
-        provider,
-    )
+    session_breaks_between(&bars.iter().map(|bar| bar.ts).collect::<Vec<_>>(), provider)
 }
 
 /// Scan an ordered timestamp slice for session boundaries: the pairwise

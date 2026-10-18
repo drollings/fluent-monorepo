@@ -27,7 +27,7 @@
 use std::collections::HashSet;
 use std::fmt::{Display, Formatter};
 
-use fluent_egui::{EguiError, ReplayController, ReplayState, paint_schema_fields, schema_fields};
+use fluent_egui::{paint_schema_fields, schema_fields, EguiError, ReplayController, ReplayState};
 use fluent_wvr::Describable;
 use protopyne_kernels::indicator::ParamSet;
 use protopyne_view::{GatewayError, ReplayView, TerminalGateway};
@@ -74,13 +74,19 @@ impl Display for ScrubRefusal {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::NoTimeline => {
-                write!(formatter, "no replay window read yet: nothing to scrub over")
+                write!(
+                    formatter,
+                    "no replay window read yet: nothing to scrub over"
+                )
             }
             Self::InconsistentWindow(reason) => {
                 write!(formatter, "replay window is inconsistent: {reason}")
             }
             Self::UnknownBar { bar, total_bars } => {
-                write!(formatter, "bar {bar} is outside the {total_bars}-bar replay window")
+                write!(
+                    formatter,
+                    "bar {bar} is outside the {total_bars}-bar replay window"
+                )
             }
             Self::Plan(error) => write!(formatter, "pane topology refused the rewind: {error}"),
             Self::NotSettleable { pane, reason } => {
@@ -138,7 +144,8 @@ impl ReplayScrub {
     /// Read the window from the gateway and adopt it.
     pub fn ingest(&mut self, gateway: &dyn TerminalGateway) -> Result<(), GatewayError> {
         let view = gateway.replay()?;
-        self.apply_window(view).map_err(|refusal| GatewayError::Malformed(refusal.to_string()))
+        self.apply_window(view)
+            .map_err(|refusal| GatewayError::Malformed(refusal.to_string()))
     }
 
     /// Adopt one window read.
@@ -173,7 +180,11 @@ impl ReplayScrub {
                 view.cursor
             )));
         }
-        let cursor = if self.window.is_none() { view.cursor } else { self.cursor.cursor };
+        let cursor = if self.window.is_none() {
+            view.cursor
+        } else {
+            self.cursor.cursor
+        };
         if cursor > total {
             return self.refuse(ScrubRefusal::InconsistentWindow(format!(
                 "the applied cursor {cursor} runs past the new {total}-bar window"
@@ -202,7 +213,10 @@ impl ReplayScrub {
         };
         let total = window.total_bars;
         if bar > total {
-            return self.refuse(ScrubRefusal::UnknownBar { bar, total_bars: total });
+            return self.refuse(ScrubRefusal::UnknownBar {
+                bar,
+                total_bars: total,
+            });
         }
         if bar == self.cursor.cursor {
             return Ok(ScrubOutcome::Held { cursor: bar });
@@ -225,15 +239,21 @@ impl ReplayScrub {
         let mut rewound: HashSet<String> = HashSet::new();
         for anchor in &anchors {
             self.controller.mark(anchor).map_err(ScrubRefusal::Plan)?;
-            for pane in self.controller.rewind_to(anchor).map_err(ScrubRefusal::Plan)? {
+            for pane in self
+                .controller
+                .rewind_to(anchor)
+                .map_err(ScrubRefusal::Plan)?
+            {
                 rewound.insert(pane);
             }
         }
         // Plan order, not rewind order: catch-up waves run in plan order, so
         // the list the caller works through must match it.
         let order = self.controller.plan().order().map_err(ScrubRefusal::Plan)?;
-        let panes: Vec<String> =
-            order.into_iter().filter(|pane| rewound.contains(pane)).collect();
+        let panes: Vec<String> = order
+            .into_iter()
+            .filter(|pane| rewound.contains(pane))
+            .collect();
         self.cursor = next;
         Ok(ScrubOutcome::Rewound { cursor: bar, panes })
     }
@@ -247,7 +267,10 @@ impl ReplayScrub {
     /// cannot act on is refused here rather than dropped where the painter
     /// cannot see it. The mark validates before the cursor moves, so a
     /// draft with both a new cursor and an invalid mark applies neither.
-    pub fn apply_draft(&mut self, draft: &ReplayState) -> Result<Option<ScrubOutcome>, ScrubRefusal> {
+    pub fn apply_draft(
+        &mut self,
+        draft: &ReplayState,
+    ) -> Result<Option<ScrubOutcome>, ScrubRefusal> {
         self.last_refusal = None;
         if draft.total_bars != self.cursor.total_bars {
             return self.refuse(ScrubRefusal::WindowNotResizable);
@@ -368,7 +391,10 @@ impl ReplayScrub {
     fn rewind_anchors(&self) -> Result<Vec<String>, ScrubRefusal> {
         let plan = self.controller.plan();
         let order = plan.order().map_err(ScrubRefusal::Plan)?;
-        Ok(order.into_iter().filter(|pane| plan.dependencies(pane).is_empty()).collect())
+        Ok(order
+            .into_iter()
+            .filter(|pane| plan.dependencies(pane).is_empty())
+            .collect())
     }
 
     /// Record a refusal and hand it back, so every failing call leaves the
@@ -384,7 +410,10 @@ impl std::fmt::Debug for ReplayScrub {
         formatter
             .debug_struct("ReplayScrub")
             .field("state", &self.cursor)
-            .field("steps", &self.window.as_ref().map_or(0, |view| view.steps.len()))
+            .field(
+                "steps",
+                &self.window.as_ref().map_or(0, |view| view.steps.len()),
+            )
             .field("last_refusal", &self.last_refusal)
             // The controller prints as the cache it holds plus the panes it
             // still owes, so a scrub never dumps pane state into a log.
@@ -422,7 +451,11 @@ pub fn paint_replay_scrub(ui: &mut egui::Ui, scrub: &mut ReplayScrub) -> Option<
         }
     };
     let pending = scrub.ready().len();
-    let position = format!("bar {} of {}", scrub.state().cursor, scrub.state().total_bars);
+    let position = format!(
+        "bar {} of {}",
+        scrub.state().cursor,
+        scrub.state().total_bars
+    );
     let status = match &outcome {
         Some(ScrubOutcome::Rewound { panes, .. }) => {
             format!("{position} · {} panes recompute", panes.len())

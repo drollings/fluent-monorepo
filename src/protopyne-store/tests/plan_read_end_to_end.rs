@@ -6,14 +6,14 @@
 //! "what the reader served" fails loudly instead of reaching a runner.
 
 use super::*;
-use protopyne_types::{Bar, Timeframe, validate_new_bar};
+use protopyne_types::{validate_new_bar, Bar, Timeframe};
 
 use crate::commit::test_tapes::{bar, stamp};
 use crate::fold::FoldPolicy;
 use crate::plan::SpanPlan;
 use crate::range::TimeRange;
-use crate::tape::test_setup::{VENUE, seeded, with_registry_caps};
 use crate::store::CandleStore;
+use crate::tape::test_setup::{seeded, with_registry_caps, VENUE};
 
 fn ms(step: i64) -> i64 {
     stamp(step).timestamp_millis()
@@ -54,7 +54,8 @@ async fn seed_resolve_read_agrees_on_a_direct_read() {
         let (tape, key) = seeded("SPY", &bars).await;
         let request = read_request(Timeframe::M1, 0, 10);
         let coverage = tape.coverage(key).expect("coverage reads");
-        let plan = ReadPlan::resolve_for(Some((key.symbol_id, key.timeframe)), coverage, &request).expect("plan resolves");
+        let plan = ReadPlan::resolve_for(Some((key.symbol_id, key.timeframe)), coverage, &request)
+            .expect("plan resolves");
         let series = tape.read(&request).expect("read serves");
         assert_eq!(series.bars.len(), 10);
         assert_ascending_and_valid(&series.bars, "direct read");
@@ -84,7 +85,8 @@ async fn seed_resolve_read_agrees_on_a_folded_read() {
         let (tape, key) = seeded("SPY", &bars).await;
         let request = read_request(Timeframe::M5, 0, 10);
         let coverage = tape.coverage(key).expect("coverage reads");
-        let plan = ReadPlan::resolve_for(Some((key.symbol_id, key.timeframe)), coverage, &request).expect("plan resolves");
+        let plan = ReadPlan::resolve_for(Some((key.symbol_id, key.timeframe)), coverage, &request)
+            .expect("plan resolves");
         let series = tape.read(&request).expect("folded read serves");
         assert_eq!(
             series.bars.len(),

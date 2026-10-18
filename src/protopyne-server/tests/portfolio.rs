@@ -247,6 +247,7 @@ fn tearsheet_golden() {
         money("2000.00"),
         vec![money("0"), money("98.00")],
         None,
+        None,
     );
     report.portfolio = Some(portfolio);
     let version = env!("CARGO_PKG_VERSION");

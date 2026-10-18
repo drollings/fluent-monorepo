@@ -1,8 +1,7 @@
 # Workspace Testing Convention
 
 **Single source of truth for how this monorepo's Rust crates are tested.**
-It supersedes `doc/router/TESTING.md` (folded in below; that file is now a
-pointer). Adopt this convention for all new test code; migrate existing suites
+Adopt this convention for all new test code; migrate existing suites
 incrementally per `ROADMAP_20260816_TESTS.md`.
 
 ---
@@ -13,7 +12,7 @@ incrementally per `ROADMAP_20260816_TESTS.md`.
    GPU, no weights, no real `llama-server`, no external (non-loopback)
    service. Any test that needs a real model call is walled off behind an
    opt-in live pathway (§4) and can never run in `make test` /
-   `make router-test` / `make router-mock` / CI.
+   `make test-router` / `make router-mock` / CI.
 2. **DRY.** Every helper that appears ≥2× lives in one sanctioned home (§3).
    Never copy a helper into a new test module.
 3. **One assertion per tier.** The same behavior is asserted at most once per
@@ -41,7 +40,7 @@ constraint.
 | **0** | Module unit tests | inline `#[cfg(test)] mod tests` in each source file | private | `cargo test` / `make test` |
 | **1** | Crate unit/integration suites | `src/tests.rs` (or `src/tests/<name>.rs`), wired once via `#[cfg(test)] mod tests;` in `lib.rs` | crate-internal (can use `pub(crate)` test-support) | `cargo test` / `make test-<crate>` |
 | **2** | E2E / black-box tests | crate-root `tests/`, `tests/common/mod.rs` for shared fixtures | public API only | `cargo test` / `make test-<crate>` |
-| **3** | Live AI-inference tests | `tests/live/<name>_live.rs` | public API only | **opt-in only** — `#[ignore]` + `#[cfg(feature = "live-ai")]`, run via `make test-live`; NEVER in `make test` / `make router-test` / `make router-mock` / CI |
+| **3** | Live AI-inference tests | `tests/live/<name>_live.rs` | public API only | **opt-in only** — `#[ignore]` + `#[cfg(feature = "live-ai")]`, run via `make test-live`; NEVER in `make test` / `make test-router` / `make router-mock` / CI |
 
 - **Tier 0 inline** — tests sit next to the code they verify; private access;
   incremental compilation per module.
@@ -127,7 +126,7 @@ Quick commands:
 
 ```sh
 # All fluent-router tests (unit + golden + e2e + server + config-synced)
-make router-test
+make test-router
 
 # Config-synced routing integration tests (intent → model_group)
 make router-mock
@@ -150,7 +149,7 @@ cargo test --workspace
    with a `skip`-not-fail policy when the env contract is absent (use
    `std::env::var` guard + early `return`, never panic).
 3. Live tests run **only** via `make test-live` (or `make <crate>-test-live`).
-   They are excluded from `make test`, `make router-test`, `make router-mock`,
+   They are excluded from `make test`, `make test-router`, `make router-mock`,
    `make pre-commit`, and `.github/workflows/ci.yml`.
 4. **Hermeticity is the default and must be preserved.** Any new mock-backed
    test that could accidentally dial the network must use unreachable/refused
@@ -165,17 +164,55 @@ cargo test --workspace
 
 ## 5. Makefile / CI contract
 
+### Rigor levels (per component and repo-wide)
+
+Every component (a binary/product target or a main shared crate) exposes the
+same five gates, `<component>-<level>`; the repo-wide mirrors are the bare
+level names. `AGENTS.md` "Build-Test Loop" says **when** to run each; only
+`format` mutates files.
+
+| Level | Per component | Repo-wide | Runs |
+|---|---|---|---|
+| format | `make <component>-format` | `make format` (write) / `format-check` (verify) | rustfmt over the component's packages |
+| lint | `make <component>-lint` | `make lint` | clippy `--all-targets -- -D warnings` |
+| smoke | `make <component>-smoke` | `make smoke` | `cargo check --all-targets` + `cargo test --lib --bins` (unit only) |
+| test | `make <component>-test` | `make test` | the component's / workspace's full hermetic suite |
+| soak | `make <component>-soak` | `make soak` | the `#[ignore]`d heavy tests (`-- --ignored`) |
+
+Components: `common-core`, `fluent-wvr`, `fluent-concurrency`, `dag`,
+`fluent-egui`, `coral-router`, `guidance`, `coral`, `protopyne`,
+`protopyne-egui`. `smoke` runs only the tests compiled into a lib/bin target;
+a crate whose tests are all auto-discovered integration targets reports 0 smoke
+tests (its `-test` gate covers them).
+
+### Output capture
+
+Every matrix gate (and its repo-wide mirror) runs through `bin/gate-run.sh`,
+which captures the full command output to `$GATE_LOG_DIR/<target>.log` (default
+`/tmp/opencode/monorepo-gates`; `smoke` keeps `<target>.build.log` and
+`<target>.unit.log`) and prints one summary line on success. On failure it prints
+a diagnostic excerpt capped at `GATE_HEAD` lines (default 50) — the libtest
+`failures:` blocks for a test failure, or the `error[E…]`/`error:` diagnostics
+when the build failed — plus the log path, and exits with the command's status.
+`cargo test` runs with `--quiet` (one character per test) to keep the log small.
+Read the log instead of re-running the gate.
+
+### Composite and legacy targets
+
 | Target | Runs | Notes |
 |---|---|---|
-| `make test` | `cargo test --workspace` | Hermetic; no AI. |
-| `make router-test` | `cargo test -p fluent-router` | Hermetic; no AI. |
+| `make router` / `router-start` | build / build+(re)start coral-router | ort-free unless `ROUTER_FEATURES=onnx`. |
+| `make test-router` | build + stop + `cargo test -p fluent-router` + `--help` dry-run | Hermetic; no AI. `router-test` is an alias. |
 | `make router-mock` | `cargo test -p fluent-router config_route_tests` | Hermetic; config-synced. |
-| `make router-test-all` | `router-test` + `cargo test -p coral-context --features hnsw-bench -- --ignored` | Benchmark only, no AI. |
-| `make test-<crate>` | Tier-0/1/2 suite of one crate | Per-crate gate; hermetic, no AI. |
+| `make test-router-all` | `test-router` + `cargo test -p coral-context --features hnsw-bench -- --ignored` | Benchmark only, no AI. `router-test-all` is an alias. |
+| `make protopyne-trading-suite` | six trading crates `--all-features` + `--help` dry-run | Hermetic; no AI. |
+| `make protopyne-container-smoke` | Python-free container image smoke | Ops; distinct from the `protopyne-smoke` gate. |
+| `make protopyne-demo-check` | terminal `--mock --check` + chart-shell `--check` | Headless golden contract. |
+| `make test-<shorthand>` | Tier-0/1/2 suite of one crate | Hermetic; no AI. Canonical form is `<component>-test`. |
 | `make test-live` | live-ai crates with `--features live-ai --test live -- --ignored` | **The only pathway that runs real inference.** Skips cleanly when the env contract is absent. |
 | `make <crate>-test-live` | One crate's live-ai tests (e.g. `router-test-live`) | Same skip-not-fail policy. |
+| `make test-heavy` | curated `#[ignore]` sets | The curated subset of repo-wide `soak`. |
 | `make lint-live-ai` | `bin/live-ai-guard.sh` | Hermeticity guard: every `#[ignore]` has a `reason`; no hermetic test dials a non-loopback host. |
-| `make lint` | `cargo clippy --workspace -- -D warnings` | Static gate. |
 
 CI (`.github/workflows/ci.yml`) runs `cargo clippy --workspace -- -D warnings`,
 `cargo test --workspace`, a fast hermetic `router-mock` job, and the
@@ -217,7 +254,7 @@ Every `#[ignore]` carries a `reason`. Currently:
 
 - **1 benchmark**: the coral-context HNSW 100K-node KNN benchmark
   (`src/coral/src/db/mod.rs`), feature-gated `hnsw-bench`, run via
-  `make router-test-all`.
+  `make test-router-all`.
 - **3 live-AI smoke tests** (feature-gated `live-ai` + `#[ignore]`, compiled
   only under the feature, run via `make test-live` / `make <crate>-test-live`):
   `fluent-llm` `tests/live/smoke_live.rs`, `guidance-core`

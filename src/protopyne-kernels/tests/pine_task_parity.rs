@@ -54,10 +54,7 @@
 //! the file stem.
 
 use crate::parity::{assert_expr_parity, expr_fixture};
-use crate::{
-    InputSet, OwnedOhlcv, ParamSet, PineEngine, PineRuntimeConfig, PineValue,
-    RunOutcome,
-};
+use crate::{InputSet, OwnedOhlcv, ParamSet, PineEngine, PineRuntimeConfig, PineValue, RunOutcome};
 use polars::prelude::*;
 use protopyne_types::Bar;
 
@@ -360,10 +357,14 @@ fn rsimd_volume_sma_matches_sma_expr() {
     for (chart, file) in CHARTS {
         let (bars, outcome) = run_rsimd(chart, file);
         let actual = float_series(&outcome, "_volume_sma");
-        let expected =
-            expr_fixture(&bars, sma_volume_expr(50)).expect("volume sma evaluates");
-        assert_expr_parity(&actual, &expected, 1e-9, &format!("rsimd volume sma {chart}m"))
-            .expect("volume sma parity");
+        let expected = expr_fixture(&bars, sma_volume_expr(50)).expect("volume sma evaluates");
+        assert_expr_parity(
+            &actual,
+            &expected,
+            1e-9,
+            &format!("rsimd volume sma {chart}m"),
+        )
+        .expect("volume sma parity");
         assert_bridge_matches_batch(
             &actual,
             &bars,
@@ -397,8 +398,7 @@ fn dvp_vol_sma_matches_sma_expr() {
     for (chart, file) in CHARTS {
         let bars = fixture::history_bars(file);
         let actual = kernel_batch(&bars, "sma", &params, true);
-        let expected =
-            expr_fixture(&bars, sma_volume_expr(20)).expect("volume sma evaluates");
+        let expected = expr_fixture(&bars, sma_volume_expr(20)).expect("volume sma evaluates");
         assert_expr_parity(&actual, &expected, 1e-9, &format!("dvp vol sma {chart}m"))
             .expect("vol sma parity");
     }
@@ -415,8 +415,7 @@ fn dvp_stddev_matches_stdev_expr() {
     for (chart, file) in CHARTS {
         let bars = fixture::history_bars(file);
         let actual = kernel_batch(&bars, "stddev", &params, false);
-        let expected =
-            expr_fixture(&bars, stdev_close_expr(20)).expect("stdev evaluates");
+        let expected = expr_fixture(&bars, stdev_close_expr(20)).expect("stdev evaluates");
         assert_expr_parity(&actual, &expected, 1e-9, &format!("dvp stddev {chart}m"))
             .expect("stddev parity");
     }
@@ -443,9 +442,7 @@ fn momentum_smooth_reference(bars: &[Bar]) -> Vec<Option<f64>> {
         .expect("f64 cast");
     let chunked = column.f64().expect("f64 view");
     (0..chunked.len())
-        .map(|i| {
-            chunked.get(i).and_then(crate::indicator::fin_or_none)
-        })
+        .map(|i| chunked.get(i).and_then(crate::indicator::fin_or_none))
         .collect()
 }
 

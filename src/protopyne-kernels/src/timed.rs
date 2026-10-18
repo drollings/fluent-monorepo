@@ -39,8 +39,7 @@ impl KernelUnit {
             .iter()
             .map(|d| ArcIntern::from(d.as_str()))
             .collect();
-        let provides: Vec<ArcIntern<str>> =
-            vec![ArcIntern::from(indicator.spec().id.as_str())];
+        let provides: Vec<ArcIntern<str>> = vec![ArcIntern::from(indicator.spec().id.as_str())];
         Self {
             indicator,
             params,

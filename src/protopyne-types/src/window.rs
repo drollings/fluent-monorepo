@@ -114,9 +114,9 @@ impl BarWindow {
     #[must_use]
     pub fn has_gaps(&self) -> bool {
         let step_secs = self.timeframe.total_seconds() as i64;
-        self.bars.windows(2).any(|pair| {
-            (pair[1].ts - pair[0].ts).num_seconds() != step_secs
-        })
+        self.bars
+            .windows(2)
+            .any(|pair| (pair[1].ts - pair[0].ts).num_seconds() != step_secs)
     }
 }
 

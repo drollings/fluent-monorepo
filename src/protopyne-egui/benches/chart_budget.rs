@@ -8,10 +8,10 @@
 //! `tests/budget.rs`), wall-time is recorded in the bench note only.
 //! Mirrors the `backtest_path` bench harness idiom (`harness = false`).
 
-use criterion::{Criterion, criterion_group, criterion_main};
+use criterion::{criterion_group, criterion_main, Criterion};
 use protopyne_chart_model::convert::ChartRow;
 use protopyne_egui::{
-    OscillatorKind, export_rows_csv, integration_lite_view, label_series, normalize_series,
+    export_rows_csv, integration_lite_view, label_series, normalize_series, OscillatorKind,
 };
 use protopyne_kernels::market_context::MarketRegime;
 
@@ -32,7 +32,9 @@ fn bench_rows(count: usize) -> Vec<ChartRow> {
 }
 
 fn bench_series(count: usize, base: f64) -> Vec<Option<f64>> {
-    (0..count).map(|i| Some(base + (i as f64 * 0.05).sin() * 40.0)).collect()
+    (0..count)
+        .map(|i| Some(base + (i as f64 * 0.05).sin() * 40.0))
+        .collect()
 }
 
 fn normalize_band(c: &mut Criterion) {

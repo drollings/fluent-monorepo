@@ -28,10 +28,10 @@ use std::collections::{BTreeMap, VecDeque};
 use fluent_wvr::prelude::*;
 
 use crate::error::KernelError;
-use crate::indicator::{BarTick, nan_hole};
+use crate::indicator::{nan_hole, BarTick};
+use crate::mtf::{floor_to_grid, fully_formed, Lookahead};
 use crate::value::{FieldTable, PineValue};
-use crate::mtf::{Lookahead, floor_to_grid, fully_formed};
-use protopyne_types::{Bar, BarGap, BarWindow, Timeframe, validate_new_bar};
+use protopyne_types::{validate_new_bar, Bar, BarGap, BarWindow, Timeframe};
 
 /// Minimum volume that counts as meaningful (reconstructed candles and
 /// accumulator finalization below this are skipped, never stored).
@@ -467,7 +467,11 @@ impl DriftReport {
         } else {
             DriftDecision::Accept
         };
-        Self { measured_drift_pct, threshold_pct, decision }
+        Self {
+            measured_drift_pct,
+            threshold_pct,
+            decision,
+        }
     }
 
     /// Whether the caller should reconcile against closed rows.
@@ -481,7 +485,8 @@ impl DriftReport {
     /// drift (too unsure to trust, too quiet to pull).
     #[must_use]
     pub fn healthy(self) -> bool {
-        self.measured_drift_pct.is_some_and(|drift| drift < self.threshold_pct)
+        self.measured_drift_pct
+            .is_some_and(|drift| drift < self.threshold_pct)
     }
 }
 
@@ -970,8 +975,7 @@ impl BarRing {
         if !bar_vol.is_finite() || bar_vol <= 0.0 {
             return false;
         }
-        let expected =
-            htf_vol_sma * self.config.ltf_ms as f64 / self.config.htf_ms as f64;
+        let expected = htf_vol_sma * self.config.ltf_ms as f64 / self.config.htf_ms as f64;
         if !expected.is_finite() || expected <= 0.0 {
             return false;
         }
@@ -996,7 +1000,11 @@ impl BarRing {
         let safe_atr_short = nonzero_or(atr_short, 1.0);
         let safe_atr_long = nonzero_or(atr_long, 1.0);
         let safe_stddev = nonzero_or(stddev_val, 0.1);
-        let safe_atr_distance = if atr_distance.is_nan() { 0.0 } else { atr_distance };
+        let safe_atr_distance = if atr_distance.is_nan() {
+            0.0
+        } else {
+            atr_distance
+        };
         if safe_vol_sma <= 0.0 || safe_atr_long <= 0.0 {
             return 0.08;
         }
@@ -1015,18 +1023,13 @@ impl BarRing {
         let mut delta_alpha = buy_height - sell_height;
         let vol_alpha = (vol / safe_vol_sma)
             + (buy_height + sell_height)
-                / (1.0f64.max(nonzero_or(
-                    safe_vol_sma / 0.05f64.max(bar_ratio),
-                    1.0,
-                )));
+                / (1.0f64.max(nonzero_or(safe_vol_sma / 0.05f64.max(bar_ratio), 1.0)));
         let volatility = 0.1f64.max(safe_atr_short / safe_atr_long);
         let squeeze = safe_stddev / safe_atr_long;
         if delta_alpha < 0.0 && safe_atr_distance > 0.0 {
-            delta_alpha =
-                safe_atr_distance * sell_height / (sell_height / 2.0).max(buy_height);
+            delta_alpha = safe_atr_distance * sell_height / (sell_height / 2.0).max(buy_height);
         } else if delta_alpha > 0.0 && safe_atr_distance < 0.0 {
-            delta_alpha =
-                (-safe_atr_distance) * buy_height / (buy_height / 2.0).max(sell_height);
+            delta_alpha = (-safe_atr_distance) * buy_height / (buy_height / 2.0).max(sell_height);
         }
         fast_tanh(((6.0 * vol_alpha) + (2.0 * delta_alpha) + volatility + (2.0 * squeeze)) / 50.0)
     }
@@ -1124,12 +1127,19 @@ impl BarRing {
                         self.acc_b_confidence = DeltaConfidence::Low;
                     }
                     self.acc_h = self.acc_h.max(price);
-                    self.acc_l = if self.acc_l == 0.0 { price } else { self.acc_l.min(price) };
+                    self.acc_l = if self.acc_l == 0.0 {
+                        price
+                    } else {
+                        self.acc_l.min(price)
+                    };
                     self.acc_c = price;
                     self.last_time_diff = Some(stamp - self.last_time.unwrap_or(stamp));
                     self.last_time = Some(stamp);
                     self.last_volume = Some(cum_volume);
-                    TickIngest::Accumulated { volume_delta, buy_volume: buy }
+                    TickIngest::Accumulated {
+                        volume_delta,
+                        buy_volume: buy,
+                    }
                 } else {
                     TickIngest::Unchanged
                 }
@@ -1320,9 +1330,9 @@ impl BarRing {
                             method: DeltaMethod::TickSigned,
                             confidence: bucket_confidence(bucket.prints, bucket.directed),
                         },
-                        None => estimate_delta_volume_estimated(
-                            row.o, row.h, row.l, row.c, row.volume,
-                        ),
+                        None => {
+                            estimate_delta_volume_estimated(row.o, row.h, row.l, row.c, row.volume)
+                        }
                     };
                     self.write_candle(
                         self.candles.back().map_or(rows[0].o, |candle| candle.c),
@@ -1342,7 +1352,10 @@ impl BarRing {
         if self.candles.is_empty() {
             self.candle_open = Some(fallback_open);
         }
-        let mut outcome = ReconcileOutcome { rebuilt: self.candles.len(), remainder: None };
+        let mut outcome = ReconcileOutcome {
+            rebuilt: self.candles.len(),
+            remainder: None,
+        };
         if !rows.is_empty() {
             let remainder_vol = reference_vol - self.total_vol;
             if let Some(last) = rows.last() {
@@ -1405,7 +1418,10 @@ impl BarRing {
     /// non-empty, else the bar open. One rule for every write site, so
     /// stored opens equal what the old read-time chain returned.
     fn chained_open(&self) -> Option<f64> {
-        self.candles.back().map(|candle| candle.c).or(self.candle_open)
+        self.candles
+            .back()
+            .map(|candle| candle.c)
+            .or(self.candle_open)
     }
 
     fn write_candle(
@@ -1470,7 +1486,9 @@ impl BarRing {
         // returned candle keeps the accumulator close as its open (callers
         // read stored opens through `get`).
         let open = self.chained_open().unwrap_or(self.acc_c);
-        self.write_candle(open, self.acc_h, self.acc_l, self.acc_c, self.acc_v, split, start);
+        self.write_candle(
+            open, self.acc_h, self.acc_l, self.acc_c, self.acc_v, split, start,
+        );
         self.acc_v = 0.0;
         self.acc_b = 0.0;
         self.acc_b_confidence = DeltaConfidence::High;
@@ -1499,7 +1517,15 @@ impl BarRing {
                 method: DeltaMethod::ShapeFallback,
                 confidence: DeltaConfidence::Low,
             };
-            self.write_candle(last_close, last_close, last_close, last_close, 0.0, placeholder, gap_time);
+            self.write_candle(
+                last_close,
+                last_close,
+                last_close,
+                last_close,
+                0.0,
+                placeholder,
+                gap_time,
+            );
             out.push(BarParts {
                 ts_ms: gap_time,
                 o: last_close,
@@ -1573,7 +1599,15 @@ impl BarRing {
         // (its old read was absent).
         let stored = self.chained_open().unwrap_or(close);
         self.write_candle(stored, high, low, close, vol, split, ts_ms);
-        Some(BarParts { ts_ms, o: open, h: high, l: low, c: close, volume: vol, buy_volume: split.buy_volume })
+        Some(BarParts {
+            ts_ms,
+            o: open,
+            h: high,
+            l: low,
+            c: close,
+            volume: vol,
+            buy_volume: split.buy_volume,
+        })
     }
 
     /// Trim `overshoot` volume newest-first toward the reference. Each
@@ -1649,7 +1683,11 @@ impl protopyne_types::Validate for BarRing {
 }
 
 fn nonzero_or(value: f64, default: f64) -> f64 {
-    if value.is_nan() { default } else { value }
+    if value.is_nan() {
+        default
+    } else {
+        value
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1755,10 +1793,17 @@ fn pine_int(value: &PineValue, field: &str) -> Result<i64, KernelError> {
         // returns unify to float): exact integral values convert, anything
         // fractional refuses — never a silent truncation.
         PineValue::Float(raw) => {
-            if raw.is_finite() && raw.fract() == 0.0 && *raw >= i64::MIN as f64 && *raw <= i64::MAX as f64 {
+            if raw.is_finite()
+                && raw.fract() == 0.0
+                && *raw >= i64::MIN as f64
+                && *raw <= i64::MAX as f64
+            {
                 Ok(*raw as i64)
             } else {
-                Err(bridge_invalid(field, &format!("float {raw} is not an integral int")))
+                Err(bridge_invalid(
+                    field,
+                    &format!("float {raw} is not an integral int"),
+                ))
             }
         }
         other => Err(bridge_invalid(field, &format!("is not an int ({other:?})"))),
@@ -1790,8 +1835,7 @@ fn field_req_bool(fields: &FieldTable, name: &str) -> Result<bool, KernelError> 
 
 fn field_req_usize(fields: &FieldTable, name: &str) -> Result<usize, KernelError> {
     let raw = field_req_int(fields, name)?;
-    usize::try_from(raw)
-        .map_err(|_| bridge_invalid(name, &format!("is negative ({raw})")))
+    usize::try_from(raw).map_err(|_| bridge_invalid(name, &format!("is negative ({raw})")))
 }
 
 fn field_float_array(
@@ -1804,7 +1848,10 @@ fn field_float_array(
         Some(None) => return Err(bridge_invalid(name, "is na (run init first)")),
         Some(Some(PineValue::Array(items))) => items,
         Some(Some(other)) => {
-            return Err(bridge_invalid(name, &format!("is not an array ({other:?})")));
+            return Err(bridge_invalid(
+                name,
+                &format!("is not an array ({other:?})"),
+            ));
         }
     };
     if items.len() != expect_len {
@@ -1834,7 +1881,10 @@ fn field_int_array(
         Some(None) => return Err(bridge_invalid(name, "is na (run init first)")),
         Some(Some(PineValue::Array(items))) => items,
         Some(Some(other)) => {
-            return Err(bridge_invalid(name, &format!("is not an array ({other:?})")));
+            return Err(bridge_invalid(
+                name,
+                &format!("is not an array ({other:?})"),
+            ));
         }
     };
     if items.len() != expect_len {
@@ -1878,9 +1928,9 @@ impl BarRing {
             fill_gaps: field_req_bool(fields, "fill_gaps")?,
         };
         use protopyne_types::Validate as _;
-        config.validate().map_err(|err| {
-            bridge_invalid("config", &format!("spans invalid ({err})"))
-        })?;
+        config
+            .validate()
+            .map_err(|err| bridge_invalid("config", &format!("spans invalid ({err})")))?;
         let max = field_req_usize(fields, "max_candles")?;
         if max == 0 || config.max_candles() != max {
             return Err(bridge_invalid(
@@ -1891,10 +1941,16 @@ impl BarRing {
         let head = field_req_usize(fields, "head")?;
         let count = field_req_usize(fields, "count")?;
         if head >= max {
-            return Err(bridge_invalid("head", &format!("{head} over capacity {max}")));
+            return Err(bridge_invalid(
+                "head",
+                &format!("{head} over capacity {max}"),
+            ));
         }
         if count > max {
-            return Err(bridge_invalid("count", &format!("{count} over capacity {max}")));
+            return Err(bridge_invalid(
+                "count",
+                &format!("{count} over capacity {max}"),
+            ));
         }
         let ch = field_float_array(fields, "ch", max)?;
         let cl = field_float_array(fields, "cl", max)?;
@@ -1902,9 +1958,8 @@ impl BarRing {
         let cv = field_float_array(fields, "cv", max)?;
         let cb = field_float_array(fields, "cb", max)?;
         let ct = field_int_array(fields, "ct", max)?;
-        let mut ring = Self::new(&config).map_err(|err| {
-            bridge_invalid("config", &format!("ring refuses spans ({err})"))
-        })?;
+        let mut ring = Self::new(&config)
+            .map_err(|err| bridge_invalid("config", &format!("ring refuses spans ({err})")))?;
         // Opens do not serialize to the Pine table (the oracle keeps no
         // open array): hydration re-chains from the candle_open field
         // exactly like the old read-time rule, so hydrated reads stay
@@ -2025,7 +2080,11 @@ impl BarRing {
         let put = |fields: &mut FieldTable, key: &str, value: Option<PineValue>| {
             fields.insert(key.to_owned(), value);
         };
-        put(fields, "head", Some(PineValue::Int(((head + appended) % max) as i64)));
+        put(
+            fields,
+            "head",
+            Some(PineValue::Int(((head + appended) % max) as i64)),
+        );
         put(
             fields,
             "count",
@@ -2059,11 +2118,19 @@ impl BarRing {
         put(fields, "b", num(self.acc_b));
         put(fields, "accum_start_time", opt_int(self.acc_start));
         put(fields, "last_fetch_time", opt_int(self.last_fetch_time));
-        put(fields, "last_confirmed_ctf_time", opt_int(self.last_confirmed));
+        put(
+            fields,
+            "last_confirmed_ctf_time",
+            opt_int(self.last_confirmed),
+        );
         put(fields, "tick_accuracy", num(self.tick_accuracy));
         put(fields, "volume_drift_pct", num(self.volume_drift_pct));
         put(fields, "last_bar_drift", num(self.last_bar_drift));
-        put(fields, "last_bar_healthy", Some(PineValue::Bool(self.last_bar_healthy)));
+        put(
+            fields,
+            "last_bar_healthy",
+            Some(PineValue::Bool(self.last_bar_healthy)),
+        );
         put(fields, "rollback_count", counter(self.rollback_count));
         Ok(())
     }
@@ -2109,10 +2176,7 @@ impl BarRing {
         if tick.is_new {
             fields.insert("last_ltf_check_time".to_owned(), None);
         }
-        let value = PineValue::Object(crate::value::UserInstance::new(
-            type_name,
-            fields.clone(),
-        ));
+        let value = PineValue::Object(crate::value::UserInstance::new(type_name, fields.clone()));
         let next = RingCursor {
             head: field_req_usize(fields, "head")?,
             count: field_req_usize(fields, "count")?,
@@ -2130,7 +2194,10 @@ impl BarRing {
     /// re-runs Pine, which raises the identical lower-tf refusal. Appends
     /// are counted exactly; any capacity ambiguity sets `fallback_capacity`
     /// instead of a miscounted cursor.
-    pub fn fetch_tick_native(&mut self, tick: &NativeFetchTick) -> Result<FetchNativeOut, KernelError> {
+    pub fn fetch_tick_native(
+        &mut self,
+        tick: &NativeFetchTick,
+    ) -> Result<FetchNativeOut, KernelError> {
         let bar = &tick.legs;
         let mut appended = 0usize;
         if tick.is_new {
@@ -2282,7 +2349,8 @@ pub fn tick_resample(
     let buckets = fold_tick_buckets(ticks, ltf_ms);
     if buckets.len() < 2 {
         return Err(KernelError::InvalidInput(
-            "resample refused before the first closed bar: the tape never closes a bucket".to_owned(),
+            "resample refused before the first closed bar: the tape never closes a bucket"
+                .to_owned(),
         ));
     }
     let last_idx = *buckets.keys().last().expect("nonempty buckets");
@@ -2294,7 +2362,10 @@ pub fn tick_resample(
             break;
         }
         if fill_gaps {
-            if let Some(prev) = out.last().map(|bar: &BarParts| bar.ts_ms.div_euclid(ltf_ms)) {
+            if let Some(prev) = out
+                .last()
+                .map(|bar: &BarParts| bar.ts_ms.div_euclid(ltf_ms))
+            {
                 for missing in (prev + 1)..idx {
                     let ts = missing * ltf_ms;
                     out.push(BarParts {
@@ -2346,7 +2417,10 @@ pub(crate) fn bucket_bar_ranges(
         let idx = floor_to_grid(bar.ts_ms, grid).div_euclid(target_ms);
         buckets.entry(idx).or_insert((at, at)).1 = at;
     }
-    Ok(buckets.into_iter().map(|(idx, (first, last))| (idx, first, last)).collect())
+    Ok(buckets
+        .into_iter()
+        .map(|(idx, (first, last))| (idx, first, last))
+        .collect())
 }
 
 /// Finalize one bucket range into its closed bar: first open, high/low
@@ -2368,7 +2442,14 @@ pub(crate) fn fold_bucket_range(
         l = l.min(bar.l);
         v += bar.volume;
     }
-    ClosedBar { ts_ms: bucket_open_ms, o: head.o, h, l, c: tail.c, volume: v }
+    ClosedBar {
+        ts_ms: bucket_open_ms,
+        o: head.o,
+        h,
+        l,
+        c: tail.c,
+        volume: v,
+    }
 }
 
 /// Project closed bars onto a coarser grid (the native
@@ -2435,7 +2516,10 @@ fn check_row(prev: Option<&Bar>, bar: &Bar) -> Result<ClosedBar, KernelError> {
         )));
     }
     let closed = ClosedBar::from_proto_bar(bar);
-    if !(closed.o.is_finite() && closed.h.is_finite() && closed.l.is_finite() && closed.c.is_finite())
+    if !(closed.o.is_finite()
+        && closed.h.is_finite()
+        && closed.l.is_finite()
+        && closed.c.is_finite())
     {
         return Err(KernelError::InvalidInput(format!(
             "bar legs unrepresentable at {}: refused, never NaN",
@@ -2472,7 +2556,9 @@ impl BarsHistory {
     /// input refuses, mirroring the loader's empty-tape refusal.
     pub fn from_bars(bars: &[Bar], timeframe: Timeframe) -> Result<Self, KernelError> {
         if bars.is_empty() {
-            return Err(KernelError::InvalidInput("history must not be empty".to_owned()));
+            return Err(KernelError::InvalidInput(
+                "history must not be empty".to_owned(),
+            ));
         }
         let mut prev = None;
         let mut closed = Vec::with_capacity(bars.len());
@@ -2480,7 +2566,11 @@ impl BarsHistory {
             closed.push(check_row(prev, bar)?);
             prev = Some(bar);
         }
-        Ok(Self { timeframe, bars: bars.to_vec(), closed })
+        Ok(Self {
+            timeframe,
+            bars: bars.to_vec(),
+            closed,
+        })
     }
 
     /// Bar spacing this history was loaded at.
@@ -2558,7 +2648,9 @@ impl BarsHistory {
         corrected: &[Bar],
     ) -> Result<usize, KernelError> {
         let Some(first) = corrected.first() else {
-            return Err(KernelError::InvalidInput("correction must carry at least one bar".to_owned()));
+            return Err(KernelError::InvalidInput(
+                "correction must carry at least one bar".to_owned(),
+            ));
         };
         if first.ts.timestamp_millis() != from_ts_ms {
             return Err(KernelError::InvalidInput(format!(
@@ -2566,8 +2658,9 @@ impl BarsHistory {
                 first.ts.timestamp_millis()
             )));
         }
-        let retained =
-            self.bars.partition_point(|bar| bar.ts.timestamp_millis() < from_ts_ms);
+        let retained = self
+            .bars
+            .partition_point(|bar| bar.ts.timestamp_millis() < from_ts_ms);
         if retained >= self.bars.len() {
             return Err(KernelError::InvalidInput(format!(
                 "correction starts past the last bar: {from_ts_ms} beyond coverage"
@@ -2613,7 +2706,7 @@ impl protopyne_types::Validate for BarsHistory {
 // The wall-clock predicate lives in the foundation crate so chart-model
 // session providers delegate to the same clock instead of copying its
 // daylight math; this re-export keeps every existing `bars::` path working.
-pub use protopyne_types::{TradingSession, et_offset_ms, is_dst_et};
+pub use protopyne_types::{et_offset_ms, is_dst_et, TradingSession};
 
 #[cfg(test)]
 #[path = "../tests/bars.rs"]

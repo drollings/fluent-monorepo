@@ -27,9 +27,8 @@ impl TradingSession {
     /// close) refuse: regular sessions never wrap midnight.
     pub fn parse(session: &str) -> Result<Self, TypesError> {
         let bytes = session.as_bytes();
-        let bad = || {
-            TypesError::InvalidSession(format!("session must read HHMM-HHMM, got {session:?}"))
-        };
+        let bad =
+            || TypesError::InvalidSession(format!("session must read HHMM-HHMM, got {session:?}"));
         if bytes.len() != 9 || bytes[4] != b'-' {
             return Err(bad());
         }
@@ -49,7 +48,10 @@ impl TradingSession {
                 "session must open before it closes, got {session:?}"
             )));
         }
-        Ok(Self { open_min, close_min })
+        Ok(Self {
+            open_min,
+            close_min,
+        })
     }
 
     /// Whether the stamp falls inside the session on its ET wall clock.
@@ -93,7 +95,11 @@ pub fn is_dst_et(ts_ms: i64) -> bool {
 /// UTC offset of America/New_York at the stamp, in milliseconds.
 #[must_use]
 pub fn et_offset_ms(ts_ms: i64) -> i64 {
-    if is_dst_et(ts_ms) { -4 * 3_600_000 } else { -5 * 3_600_000 }
+    if is_dst_et(ts_ms) {
+        -4 * 3_600_000
+    } else {
+        -5 * 3_600_000
+    }
 }
 
 /// Spring-forward instant: second Sunday of March, 07:00 UTC.

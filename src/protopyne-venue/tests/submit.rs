@@ -89,9 +89,17 @@ async fn happy_path_journals_every_step() {
     let (_dir, journal, permit, venue) = setup();
     let token = approved();
     scoped(permit.clone(), async {
-        let record = safe_submit(&permit, &journal, &venue, &token, intent("s#0"), &quote(), now())
-            .await
-            .expect("submit");
+        let record = safe_submit(
+            &permit,
+            &journal,
+            &venue,
+            &token,
+            intent("s#0"),
+            &quote(),
+            now(),
+        )
+        .await
+        .expect("submit");
         assert_eq!(record.status, OrderStatus::Filled);
         assert_eq!(
             journal.intent_status(&permit, "s#0").expect("status"),
@@ -126,9 +134,17 @@ async fn lost_ack_recovers_through_query_with_one_order() {
     venue.inject(Fault::LoseAck);
     let token = approved();
     scoped(permit.clone(), async {
-        let record = safe_submit(&permit, &journal, &venue, &token, intent("k#0"), &quote(), now())
-            .await
-            .expect("recovers by ID");
+        let record = safe_submit(
+            &permit,
+            &journal,
+            &venue,
+            &token,
+            intent("k#0"),
+            &quote(),
+            now(),
+        )
+        .await
+        .expect("recovers by ID");
         assert_eq!(record.status, OrderStatus::Filled);
         assert_eq!(venue.orders().len(), 1);
         assert_eq!(
@@ -151,9 +167,17 @@ async fn kill_mid_submit_replay_leaves_no_unknown_position() {
         let permit = VenueStorage::new(path.clone());
         let token = approved();
         scoped(permit.clone(), async {
-            let crashed = safe_submit(&permit, &journal, &venue, &token, intent("c#0"), &quote(), now())
-                .await
-                .expect("retry dedups the lost ack");
+            let crashed = safe_submit(
+                &permit,
+                &journal,
+                &venue,
+                &token,
+                intent("c#0"),
+                &quote(),
+                now(),
+            )
+            .await
+            .expect("retry dedups the lost ack");
             assert_eq!(crashed.status, OrderStatus::Filled);
         })
         .await;

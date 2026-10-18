@@ -7,9 +7,9 @@
 //! the working tape and its sealed artifact cannot disagree about what fits.
 
 use super::*;
+use crate::catalog::test_scale::{FIT, REFUSE};
 use crate::catalog::{AssetClass, Market, PriceScale};
 use crate::key::SymbolId;
-use crate::catalog::test_scale::{FIT, REFUSE};
 use protopyne_types::Timeframe;
 
 /// A market row at `scale`, for a direct writer call that bypasses `append`

@@ -7,11 +7,11 @@
 
 #![allow(dead_code)]
 
-use protopyne_types::{Bar, Timeframe, validate_new_bar};
+use protopyne_types::{validate_new_bar, Bar, Timeframe};
 
-use crate::coverage::{Coverage, FreshnessPolicy, GapClass, classify};
+use crate::coverage::{classify, Coverage, FreshnessPolicy, GapClass};
 use crate::error::{PlanError, StoreError};
-use crate::fold::{FoldEdges, FoldPolicy, fold_bars, fold_bars_edges};
+use crate::fold::{fold_bars, fold_bars_edges, FoldEdges, FoldPolicy};
 use crate::plan::SpanOrigin;
 use crate::range::TimeRange;
 use crate::store::{AppendOutcome, CandleSeries, CandleStore, ReadRequest, WritePolicy};
@@ -43,7 +43,11 @@ pub fn assert_ascending_valid(bars: &[Bar], what: &str) {
 pub fn assert_provenance_shape(series: &CandleSeries, what: &str) {
     let mut last_end: Option<i64> = None;
     for span in &series.provenance {
-        assert_eq!(span.origin(), SpanOrigin::Stored, "{what}: span origin is stored");
+        assert_eq!(
+            span.origin(),
+            SpanOrigin::Stored,
+            "{what}: span origin is stored"
+        );
         if let (Some(start), Some(end)) = (span.span().start_ms, span.span().end_ms) {
             assert!(start < end, "{what}: span is ordered");
             if let Some(prev) = last_end {
@@ -83,7 +87,10 @@ pub fn check_append_policies(outcome_redeliver: AppendOutcome, outcome_upsert: A
         },
         "re-delivery stores nothing"
     );
-    assert!(outcome_redeliver.conflicts > 0, "re-delivery counts conflicts");
+    assert!(
+        outcome_redeliver.conflicts > 0,
+        "re-delivery counts conflicts"
+    );
     assert_eq!(outcome_upsert.conflicts, 1, "upsert resolves one collision");
 }
 
@@ -102,9 +109,15 @@ pub fn check_fold_matrix(bars: &[Bar]) {
         assert_eq!(edged, legacy, "{tf:?} KeepPartial stays byte-identical");
         let complete =
             fold_bars_edges(bars, tf, FoldEdges::CompleteOnly).expect("complete fold builds");
-        assert!(complete.len() <= legacy.len(), "{tf:?} CompleteOnly is a subset");
+        assert!(
+            complete.len() <= legacy.len(),
+            "{tf:?} CompleteOnly is a subset"
+        );
         for bar in &complete {
-            assert!(legacy.iter().any(|kept| kept == bar), "{tf:?} CompleteOnly emits no new bars");
+            assert!(
+                legacy.iter().any(|kept| kept == bar),
+                "{tf:?} CompleteOnly emits no new bars"
+            );
         }
     }
 }
@@ -129,7 +142,10 @@ pub fn check_gap_classes(first_ms: i64, step_ms: i64) {
         GapClass::Fresh,
         "contiguous current tape reads Fresh"
     );
-    let torn: Vec<i64> = contiguous.into_iter().filter(|stamp| stamp % (2 * step_ms) != first_ms % (2 * step_ms)).collect();
+    let torn: Vec<i64> = contiguous
+        .into_iter()
+        .filter(|stamp| stamp % (2 * step_ms) != first_ms % (2 * step_ms))
+        .collect();
     if let Some(coverage) = Coverage::from_stamps(&torn, Timeframe::M1) {
         let verdict = classify(
             Some(coverage),
@@ -142,8 +158,7 @@ pub fn check_gap_classes(first_ms: i64, step_ms: i64) {
             "a torn current tape reads Torn, got {verdict:?}"
         );
     }
-    let stale_cover =
-        Coverage::from_stamps(&[first_ms], Timeframe::M1).expect("one bar covers");
+    let stale_cover = Coverage::from_stamps(&[first_ms], Timeframe::M1).expect("one bar covers");
     let verdict = classify(
         Some(stale_cover),
         first_ms + 100 * step_ms,

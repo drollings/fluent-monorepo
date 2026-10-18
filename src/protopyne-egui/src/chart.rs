@@ -15,14 +15,14 @@ use common_core::metrics::LatencyHistogram;
 use fluent_egui::{EguiError, PaneConfig};
 use fluent_wvr::prelude::*;
 use fluent_wvr::{Describable, FieldAccess};
-use protopyne_chart_model::{ChartRow, ChartType, DateRange, heikin_ashi, rows_of};
-use protopyne_types::{Bar, Validate, check_for_execute, valid_output};
+use protopyne_chart_model::{heikin_ashi, rows_of, ChartRow, ChartType, DateRange};
+use protopyne_types::{check_for_execute, valid_output, Bar, Validate};
 
 use crate::oscillators::parse_oscillator_kind;
 use crate::topology::standard_plan;
 
 fn default_timeframe() -> String {
-    "M15".to_owned()
+    "5M".to_owned()
 }
 
 /// The terminal's default ticker symbol.
@@ -32,7 +32,12 @@ pub fn default_symbol() -> String {
 }
 
 /// Ticker symbol shown by default in the top-bar symbol dropdown.
-pub const DEFAULT_SYMBOL: &str = "GLD";
+pub const DEFAULT_SYMBOL: &str = "SPY";
+
+/// Trailing window the chart starts on: one month up to the latest bar.
+/// Selecting a larger preset (or a Beginning date) grows the loaded history
+/// on demand; a smaller one prunes the window without a re-read.
+pub const DEFAULT_RANGE: DateRange = DateRange::Month1;
 
 /// Intraday-to-daily bar timeframe key behind the terminal toolbar.
 ///
@@ -45,10 +50,10 @@ pub const DEFAULT_SYMBOL: &str = "GLD";
 pub enum TimeframeKey {
     /// One-minute bars.
     M1,
-    /// Five-minute bars.
-    M5,
-    /// Fifteen-minute bars (default).
+    /// Five-minute bars (default).
     #[default]
+    M5,
+    /// Fifteen-minute bars.
     M15,
     /// One-hour bars (resampled ×4 from `M15`).
     H1,
@@ -198,8 +203,7 @@ pub fn prefold_pick_hysteretic(
             continue;
         }
         if depth > 0 {
-            let fine_width =
-                native_px_per_bar * prefold_multiple(base, levels[depth - 1]);
+            let fine_width = native_px_per_bar * prefold_multiple(base, levels[depth - 1]);
             if fine_width >= high {
                 // Jump straight to the finest level clearing the high edge:
                 // one zoom gesture crosses several quiet levels at once.
@@ -272,7 +276,7 @@ fn check_oscillator_selection(what: &str, kind: &str) -> Result<(), EguiError> {
 /// oscillator pair and reports its size — plan construction is the unit's
 /// work, so [`timed_plan_build`] times exactly this.
 #[derive(
-    Debug, Clone, bon::Builder, serde::Serialize, serde::Deserialize, FieldAccess, Describable
+    Debug, Clone, bon::Builder, serde::Serialize, serde::Deserialize, FieldAccess, Describable,
 )]
 #[builder(start_fn = new)]
 pub struct ChartConfig {
@@ -299,12 +303,20 @@ pub struct ChartConfig {
     #[builder(default = true)]
     pub show_oscillator: bool,
     /// Fast oscillator kind name (settings spelling, for example "rsi").
-    #[field(desc = "Fast oscillator kind name", max_len = 16, variants = "crate::oscillators::evaluable_oscillator_ids")]
+    #[field(
+        desc = "Fast oscillator kind name",
+        max_len = 16,
+        variants = "crate::oscillators::evaluable_oscillator_ids"
+    )]
     #[builder(default = default_fast_oscillator())]
     #[serde(default = "default_fast_oscillator")]
     pub fast_oscillator: String,
     /// Slow oscillator kind name (settings spelling, for example "cci").
-    #[field(desc = "Slow oscillator kind name", max_len = 16, variants = "crate::oscillators::evaluable_oscillator_ids")]
+    #[field(
+        desc = "Slow oscillator kind name",
+        max_len = 16,
+        variants = "crate::oscillators::evaluable_oscillator_ids"
+    )]
     #[builder(default = default_slow_oscillator())]
     #[serde(default = "default_slow_oscillator")]
     pub slow_oscillator: String,
@@ -365,7 +377,10 @@ impl ChartConfig {
                 reason: "pivot threshold must be at least 1".to_owned(),
             });
         }
-        for (what, value) in [("alpha_low", self.alpha_low), ("alpha_high", self.alpha_high)] {
+        for (what, value) in [
+            ("alpha_low", self.alpha_low),
+            ("alpha_high", self.alpha_high),
+        ] {
             if !value.is_finite() || value < 0.0 || value > 1.0 {
                 return Err(EguiError::InvalidParam {
                     what: what.to_owned(),
@@ -397,9 +412,10 @@ impl ChartConfig {
                 reason: "theme key must not be empty".to_owned(),
             });
         }
-        for (what, kind) in
-            [("fast_oscillator", &self.fast_oscillator), ("slow_oscillator", &self.slow_oscillator)]
-        {
+        for (what, kind) in [
+            ("fast_oscillator", &self.fast_oscillator),
+            ("slow_oscillator", &self.slow_oscillator),
+        ] {
             check_oscillator_selection(what, kind)?;
         }
         Ok(())
@@ -442,9 +458,10 @@ impl WorkUnit for ChartConfig {
 
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         check_for_execute(self, "chart config invalid")?;
-        for (what, kind) in
-            [("fast_oscillator", &self.fast_oscillator), ("slow_oscillator", &self.slow_oscillator)]
-        {
+        for (what, kind) in [
+            ("fast_oscillator", &self.fast_oscillator),
+            ("slow_oscillator", &self.slow_oscillator),
+        ] {
             check_oscillator_selection(what, kind)
                 .map_err(|err| WorkError::Execution(format!("chart config invalid: {err}")))?;
         }
@@ -482,6 +499,28 @@ pub fn window_for_range(
 ) -> &[ChartRow] {
     let keep = range.estimated_bars(bar_duration_seconds).min(rows.len());
     &rows[rows.len() - keep..]
+}
+
+/// Fetch size for a range preset at a bar spacing, plus warmup headroom.
+///
+/// The floor keeps small windows on the bounded trailing read; above it the
+/// fetch is exactly the calendar need plus warmup — never more. Calendar
+/// math knowingly over-counts sessions (weekends still count), so the bound
+/// favors coverage, never precision.
+#[must_use]
+pub fn fetch_for_window(range: DateRange, bar_seconds: u64, warmup: usize) -> usize {
+    fetch_for_span(range.span_seconds(), bar_seconds, warmup)
+}
+
+/// Fetch size for a calendar span (seconds) at a bar spacing, plus warmup
+/// headroom: the one sizing rule behind every chart read, shared by presets
+/// and a custom Beginning span so neither invents its own bar-count math.
+/// Floored at [`CHART_WINDOW_BARS`](crate::workspace::CHART_WINDOW_BARS) so a
+/// short window still plans a cheap, pannable read.
+#[must_use]
+pub fn fetch_for_span(span_seconds: u64, bar_seconds: u64, warmup: usize) -> usize {
+    let bars = (span_seconds / bar_seconds.max(1)) as usize;
+    crate::workspace::CHART_WINDOW_BARS.max(bars.saturating_add(warmup))
 }
 
 /// Where one chart type's terminal picture comes from.
@@ -602,13 +641,20 @@ pub fn area_view(
             reason: "area values must not be empty".to_owned(),
         });
     }
-    if values.iter().any(|slot| matches!(slot, Some(value) if !value.is_finite())) {
+    if values
+        .iter()
+        .any(|slot| matches!(slot, Some(value) if !value.is_finite()))
+    {
         return Err(EguiError::InvalidParam {
             what: "values".to_owned(),
             reason: "area values must be finite where present; holes stay None".to_owned(),
         });
     }
-    Ok(AreaView { values, baseline, alpha })
+    Ok(AreaView {
+        values,
+        baseline,
+        alpha,
+    })
 }
 
 /// Rows painted for one chart type over a bar history: candles, line, and
@@ -652,3 +698,7 @@ mod tests;
 #[cfg(test)]
 #[path = "../tests/chart_types.rs"]
 mod chart_types_tests;
+
+#[cfg(test)]
+#[path = "../tests/fetch_window.rs"]
+mod fetch_window_tests;

@@ -169,7 +169,9 @@ impl Rect {
     /// Whether `point` lies within the rectangle (inclusive of edges).
     #[must_use]
     pub fn contains(&self, point: Pos2) -> bool {
-        point.x >= self.min_x && point.x <= self.max_x && point.y >= self.min_y
+        point.x >= self.min_x
+            && point.x <= self.max_x
+            && point.y >= self.min_y
             && point.y <= self.max_y
     }
 }

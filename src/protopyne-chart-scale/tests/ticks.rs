@@ -5,11 +5,16 @@ fn ticks_cover_window_within_budget() {
     let ticks = nice_ticks(90.0, 110.0, 6);
     assert!(!ticks.is_empty());
     assert!(ticks.len() <= 12);
-    assert!(ticks.iter().all(|t| t.value >= 90.0 - 1e-9 && t.value <= 110.0 + 1e-9));
+    assert!(ticks
+        .iter()
+        .all(|t| t.value >= 90.0 - 1e-9 && t.value <= 110.0 + 1e-9));
     // Sorted ascending.
     let mut sorted = ticks.clone();
     sorted.sort_by(|a, b| a.value.partial_cmp(&b.value).expect("finite ticks"));
-    assert_eq!(sorted.iter().map(|t| t.value.to_bits()).collect::<Vec<_>>(), ticks.iter().map(|t| t.value.to_bits()).collect::<Vec<_>>());
+    assert_eq!(
+        sorted.iter().map(|t| t.value.to_bits()).collect::<Vec<_>>(),
+        ticks.iter().map(|t| t.value.to_bits()).collect::<Vec<_>>()
+    );
 }
 
 #[test]
@@ -17,8 +22,7 @@ fn steps_are_round_numbers() {
     let ticks = nice_ticks(0.0, 100.0, 5);
     assert!(ticks.len() >= 3);
     // Gaps between consecutive ticks are equal (uniform grid).
-    let gaps: Vec<f64> =
-        ticks.windows(2).map(|w| w[1].value - w[0].value).collect();
+    let gaps: Vec<f64> = ticks.windows(2).map(|w| w[1].value - w[0].value).collect();
     for gap in &gaps {
         assert!((gap - gaps[0]).abs() < 1e-9);
     }
@@ -32,18 +36,31 @@ fn steps_are_round_numbers() {
 /// the documented `budget + 1` lattice-edge bound.
 #[test]
 fn narrow_and_wide_windows_keep_density_spacing_and_coverage() {
-    for (name, min, max, budget) in
-        [("narrow", 99.5, 100.5, 8), ("wide", 0.0, 1_000_000.0, 8), ("unit", 0.0, 100.0, 5)]
-    {
+    for (name, min, max, budget) in [
+        ("narrow", 99.5, 100.5, 8),
+        ("wide", 0.0, 1_000_000.0, 8),
+        ("unit", 0.0, 100.0, 5),
+    ] {
         let ticks = nice_ticks(min, max, budget);
         let span = max - min;
-        assert!(ticks.len() >= 2, "{name}: a usable grid has at least two ticks");
-        assert!(ticks.len() <= budget + 1, "{name}: count within the documented bound");
-        let gaps: Vec<f64> =
-            ticks.windows(2).map(|window| window[1].value - window[0].value).collect();
+        assert!(
+            ticks.len() >= 2,
+            "{name}: a usable grid has at least two ticks"
+        );
+        assert!(
+            ticks.len() <= budget + 1,
+            "{name}: count within the documented bound"
+        );
+        let gaps: Vec<f64> = ticks
+            .windows(2)
+            .map(|window| window[1].value - window[0].value)
+            .collect();
         let step = gaps[0];
         assert!(step > 0.0, "{name}: gaps run forward");
-        assert!(ticks[0].value <= min + step, "{name}: grid reaches the lower edge");
+        assert!(
+            ticks[0].value <= min + step,
+            "{name}: grid reaches the lower edge"
+        );
         assert!(
             ticks.last().expect("non-empty grid").value >= max - step,
             "{name}: grid reaches the upper edge"

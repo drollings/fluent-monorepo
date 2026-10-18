@@ -6,12 +6,12 @@ use super::*;
 use fluent_egui::{IndicatorStyle, Viewport};
 use protopyne_chart_model::ChartRow;
 use protopyne_chart_scale::PriceScaleMode;
-use protopyne_kernels::smoothing::{SmoothingFamily, length_smoothing_ids, smoothing_options};
+use protopyne_kernels::smoothing::{length_smoothing_ids, smoothing_options, SmoothingFamily};
 
 use crate::chart::ChartConfig;
 use crate::fast_mas::FastMasConfig;
 use crate::integration_lite::IntegrationLiteConfig;
-use crate::oscillators::{OscillatorKind, oscillator_options};
+use crate::oscillators::{oscillator_options, OscillatorKind};
 use crate::topology::SeriesCatalog;
 
 /// Sixty rising bars with a distinct volume leg.
@@ -34,8 +34,11 @@ fn ramp_rows() -> Vec<ChartRow> {
 fn test_painter() -> (egui::Context, egui::Painter) {
     let ctx = egui::Context::default();
     ctx.begin_pass(egui::RawInput::default());
-    let painter =
-        egui::Painter::new(ctx.clone(), egui::LayerId::background(), egui::Rect::EVERYTHING);
+    let painter = egui::Painter::new(
+        ctx.clone(),
+        egui::LayerId::background(),
+        egui::Rect::EVERYTHING,
+    );
     (ctx, painter)
 }
 
@@ -48,12 +51,23 @@ fn end_frame(ctx: &egui::Context) -> egui::FullOutput {
 #[test]
 fn smoothing_picker_lists_exactly_the_m2_families() {
     let options = smoothing_options();
-    let family_ids: Vec<&str> = SmoothingFamily::all().iter().copied().map(SmoothingFamily::id).collect();
+    let family_ids: Vec<&str> = SmoothingFamily::all()
+        .iter()
+        .copied()
+        .map(SmoothingFamily::id)
+        .collect();
     let option_ids: Vec<&str> = options.iter().map(|option| option.id.as_str()).collect();
-    assert_eq!(option_ids, family_ids, "the picker is the catalog, in catalog order");
+    assert_eq!(
+        option_ids, family_ids,
+        "the picker is the catalog, in catalog order"
+    );
     for (option, family) in options.iter().zip(SmoothingFamily::all()) {
         assert_eq!(option.label, family.label(), "labels ride along");
-        assert_eq!(option.takes_length, family.takes_length(), "length eligibility rides along");
+        assert_eq!(
+            option.takes_length,
+            family.takes_length(),
+            "length eligibility rides along"
+        );
     }
     let length_ids = length_smoothing_ids();
     assert!(
@@ -62,7 +76,10 @@ fn smoothing_picker_lists_exactly_the_m2_families() {
     );
     assert_eq!(
         length_ids.len(),
-        SmoothingFamily::all().iter().filter(|family| family.takes_length()).count(),
+        SmoothingFamily::all()
+            .iter()
+            .filter(|family| family.takes_length())
+            .count(),
         "the schema list is exactly what validates"
     );
 }
@@ -70,30 +87,63 @@ fn smoothing_picker_lists_exactly_the_m2_families() {
 #[test]
 fn oscillator_picker_lists_exactly_the_m3_kinds_with_legs() {
     let options = oscillator_options();
-    let kind_ids: Vec<&str> = OscillatorKind::all().iter().copied().map(OscillatorKind::id).collect();
+    let kind_ids: Vec<&str> = OscillatorKind::all()
+        .iter()
+        .copied()
+        .map(OscillatorKind::id)
+        .collect();
     let option_ids: Vec<&str> = options.iter().map(|option| option.id.as_str()).collect();
-    assert_eq!(option_ids, kind_ids, "the picker is the catalog, in catalog order");
+    assert_eq!(
+        option_ids, kind_ids,
+        "the picker is the catalog, in catalog order"
+    );
     for (option, kind) in options.iter().zip(OscillatorKind::all()) {
         let legs: Vec<i64> = kind.which_legs().iter().map(|leg| leg.which()).collect();
         assert_eq!(option.legs, legs, "{} carries its which legs", option.id);
-        assert_eq!(option.evaluable, kind.is_evaluable(), "{} carries evaluability", option.id);
+        assert_eq!(
+            option.evaluable,
+            kind.is_evaluable(),
+            "{} carries evaluability",
+            option.id
+        );
     }
-    let cdv = options.iter().find(|option| option.id == "cdv").expect("cdv lists");
+    let cdv = options
+        .iter()
+        .find(|option| option.id == "cdv")
+        .expect("cdv lists");
     assert!(!cdv.evaluable, "cdv lists but never evaluates");
     assert!(cdv.refusal.is_some(), "cdv carries its reason");
 }
 
 #[test]
 fn unknown_names_refuse_with_a_migration_message() {
-    let fast = FastMasConfig::new().first_ma_type("hull99".to_owned()).build();
+    let fast = FastMasConfig::new()
+        .first_ma_type("hull99".to_owned())
+        .build();
     let err = fast.validate().expect_err("an unlisted smoothing refuses");
-    assert!(err.to_string().contains("catalog"), "the refusal names the catalog: {err}");
-    let kernel = KernelIndicatorConfig::new().kernel("hull99".to_owned()).build();
+    assert!(
+        err.to_string().contains("catalog"),
+        "the refusal names the catalog: {err}"
+    );
+    let kernel = KernelIndicatorConfig::new()
+        .kernel("hull99".to_owned())
+        .build();
     let err = kernel.validate().expect_err("an unlisted kernel refuses");
-    assert!(err.to_string().contains("catalog"), "the refusal names the catalog: {err}");
-    let chart = ChartConfig { fast_oscillator: "nope".to_owned(), ..ChartConfig::default() };
-    let err = chart.validate().expect_err("an unlisted oscillator refuses");
-    assert!(err.to_string().contains("catalog"), "the refusal names the catalog: {err}");
+    assert!(
+        err.to_string().contains("catalog"),
+        "the refusal names the catalog: {err}"
+    );
+    let chart = ChartConfig {
+        fast_oscillator: "nope".to_owned(),
+        ..ChartConfig::default()
+    };
+    let err = chart
+        .validate()
+        .expect_err("an unlisted oscillator refuses");
+    assert!(
+        err.to_string().contains("catalog"),
+        "the refusal names the catalog: {err}"
+    );
 }
 
 #[test]
@@ -114,11 +164,17 @@ fn settings_schemas_expose_catalog_selectors() {
             .unwrap_or_else(|| panic!("{field} is described"))
             .get("enum")
             .unwrap_or_else(|| panic!("{field} is a selector"));
-        let listed: Vec<&str> =
-            options.as_array().expect("string options").iter().map(|option| {
-                option.as_str().expect("string option")
-            }).collect();
-        assert_eq!(listed, length_smoothing_ids(), "{field} lists what validates");
+        let listed: Vec<&str> = options
+            .as_array()
+            .expect("string options")
+            .iter()
+            .map(|option| option.as_str().expect("string option"))
+            .collect();
+        assert_eq!(
+            listed,
+            length_smoothing_ids(),
+            "{field} lists what validates"
+        );
     }
     let kernel = KernelIndicatorConfig::new().build().describe();
     let options = kernel
@@ -129,14 +185,21 @@ fn settings_schemas_expose_catalog_selectors() {
         .get("enum")
         .expect("kernel is a selector");
     assert!(
-        options.as_array().expect("string options").iter().any(|option| option == "sma"),
+        options
+            .as_array()
+            .expect("string options")
+            .iter()
+            .any(|option| option == "sma"),
         "the kernel selector lists registry ids"
     );
     let lite = IntegrationLiteConfig::default().describe();
     assert!(
-        lite.get("properties").expect("object properties").as_object().expect("object").values().all(
-            |hint| hint.get("enum").is_none()
-        ),
+        lite.get("properties")
+            .expect("object properties")
+            .as_object()
+            .expect("object")
+            .values()
+            .all(|hint| hint.get("enum").is_none()),
         "numeric-only schemas gain no selectors"
     );
     for (name, config) in [
@@ -178,7 +241,10 @@ fn catalog_round_trip_without_hardcoded_ids() {
     let evaluation = plugin
         .evaluate(&rows, &*config, &SeriesCatalog::empty())
         .expect("the picked smoothing evaluates");
-    assert!(!evaluation.series.is_empty(), "the smoothing publishes a series");
+    assert!(
+        !evaluation.series.is_empty(),
+        "the smoothing publishes a series"
+    );
     plugin
         .paint_main_overlay(
             &painter,
@@ -195,13 +261,23 @@ fn catalog_round_trip_without_hardcoded_ids() {
     let kind = oscillator_options()
         .into_iter()
         .find(|option| option.evaluable)
-        .and_then(|option| OscillatorKind::all().into_iter().find(|kind| kind.id() == option.id))
+        .and_then(|option| {
+            OscillatorKind::all()
+                .into_iter()
+                .find(|kind| kind.id() == option.id)
+        })
         .expect("an evaluable oscillator lists");
     let raw: Vec<Option<f64>> = rows.iter().map(|row| Some(row.close)).collect();
     let normalized = crate::oscillators::normalize_series(&raw, kind).expect("normalizes");
-    assert!(normalized.iter().any(Option::is_some), "the oscillator resolves values");
+    assert!(
+        normalized.iter().any(Option::is_some),
+        "the oscillator resolves values"
+    );
     let points = fluent_egui::oscillator_points(&normalized, &overlay);
-    assert!(points.iter().any(Option::is_some), "the oscillator maps to screen points");
+    assert!(
+        points.iter().any(Option::is_some),
+        "the oscillator maps to screen points"
+    );
     fluent_egui::paint_oscillator_styled(
         &painter,
         &points,
@@ -211,5 +287,8 @@ fn catalog_round_trip_without_hardcoded_ids() {
         1.0,
     )
     .expect("the oscillator paints");
-    assert!(!end_frame(&ctx).shapes.is_empty(), "the picks emit geometry");
+    assert!(
+        !end_frame(&ctx).shapes.is_empty(),
+        "the picks emit geometry"
+    );
 }

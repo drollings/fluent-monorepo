@@ -11,7 +11,7 @@ use super::test_history as th;
 
 use crate::range::TimeRange;
 use crate::repair::{
-    RecoveryCoordinator, RepairConfig, RepairReason, RepairStatus, retry_delay_ms,
+    retry_delay_ms, RecoveryCoordinator, RepairConfig, RepairReason, RepairStatus,
 };
 
 fn backoff_config() -> RepairConfig {
@@ -233,9 +233,12 @@ async fn deferred_sleeps_follow_the_schedule_exactly_on_virtual_time() {
         ]),
     ));
     let provider: std::sync::Arc<dyn crate::history::HistoryProvider> = scripted.clone();
-    let coordinator =
-        RecoveryCoordinator::new(std::sync::Arc::new(handle), vec![(key.symbol_id, provider)], trace_config())
-            .expect("valid config");
+    let coordinator = RecoveryCoordinator::new(
+        std::sync::Arc::new(handle),
+        vec![(key.symbol_id, provider)],
+        trace_config(),
+    )
+    .expect("valid config");
     let first = file_bars.first().expect("nonempty").ts.timestamp_millis();
     let end = file_bars
         .last()
@@ -281,9 +284,12 @@ async fn unreachable_iterations_sleep_without_attempting() {
     ));
     scripted.set_reachable(false);
     let provider: std::sync::Arc<dyn crate::history::HistoryProvider> = scripted.clone();
-    let coordinator =
-        RecoveryCoordinator::new(std::sync::Arc::new(handle), vec![(key.symbol_id, provider)], trace_config())
-            .expect("valid config");
+    let coordinator = RecoveryCoordinator::new(
+        std::sync::Arc::new(handle),
+        vec![(key.symbol_id, provider)],
+        trace_config(),
+    )
+    .expect("valid config");
     let first = file_bars.first().expect("nonempty").ts.timestamp_millis();
     let end = file_bars
         .last()
@@ -304,12 +310,23 @@ async fn unreachable_iterations_sleep_without_attempting() {
     for _ in 0..8 {
         tokio::time::advance(std::time::Duration::from_millis(7_500)).await;
         tokio::task::yield_now().await;
-        if scripted.calls().iter().filter(|call| call.as_str() == "check").count() >= 2 {
+        if scripted
+            .calls()
+            .iter()
+            .filter(|call| call.as_str() == "check")
+            .count()
+            >= 2
+        {
             break;
         }
     }
     assert!(
-        scripted.calls().iter().filter(|call| call.as_str() == "check").count() >= 2,
+        scripted
+            .calls()
+            .iter()
+            .filter(|call| call.as_str() == "check")
+            .count()
+            >= 2,
         "two unreachable iterations accrue: {:?}",
         scripted.calls()
     );
@@ -414,5 +431,9 @@ async fn planned_unavailable_short_circuits_with_zero_fetches() {
     assert_eq!(reports[0].attempts, 0, "zero attempts");
     assert_eq!(scripted.fetch_count(), 0, "no fetch ran");
     assert!(scripted.calls().is_empty(), "no provider call at all");
-    assert_eq!(started.elapsed(), std::time::Duration::ZERO, "nothing sleeps");
+    assert_eq!(
+        started.elapsed(),
+        std::time::Duration::ZERO,
+        "nothing sleeps"
+    );
 }

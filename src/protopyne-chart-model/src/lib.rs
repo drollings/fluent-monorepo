@@ -18,17 +18,17 @@ pub mod session;
 pub mod transform;
 
 pub use annotations::{Annotation, AnnotationKey, AnnotationStyle};
-pub use display_only::{DisplayOnly, DisplayOnlyError};
 pub use chart_type::ChartType;
-pub use convert::{rows_of, row_of, to_display_float, ChartBars, ChartRow};
+pub use convert::{row_of, rows_of, to_display_float, ChartBars, ChartRow};
+pub use display_only::{DisplayOnly, DisplayOnlyError};
 pub use error::ChartModelError;
-pub use range::DateRange;
+pub use range::{DateRange, MONTH_SECONDS};
 pub use session::{
-    CompositeSessionProvider, DailySessionProvider, EtSessionProvider, MonthlySessionProvider,
-    SessionBreak, SessionBreakType, SessionProvider, WeeklySessionProvider, find_session_breaks,
-    session_breaks_between,
+    find_session_breaks, session_breaks_between, CompositeSessionProvider, DailySessionProvider,
+    EtSessionProvider, MonthlySessionProvider, SessionBreak, SessionBreakType, SessionProvider,
+    WeeklySessionProvider,
 };
-pub use transform::{heikin_ashi, renko_bricks};
+pub use transform::{heikin_ashi, heikin_rows_of, renko_bricks};
 
 #[cfg(test)]
 #[path = "../tests/budget.rs"]

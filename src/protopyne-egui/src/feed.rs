@@ -9,7 +9,7 @@ use fluent_concurrency::pool::{ResultPool, ResultPoolError};
 use fluent_concurrency::tokio_runtime;
 use fluent_egui::EguiError;
 
-use crate::oscillators::{OscillatorKind, normalize_series};
+use crate::oscillators::{normalize_series, OscillatorKind};
 
 /// One heavy series rebuild: normalize `values` into the shared band.
 #[derive(Debug, Clone)]
@@ -28,10 +28,7 @@ pub struct RecomputePool {
 impl RecomputePool {
     /// Open a pool with `cap` workers and `queue_capacity` queued jobs;
     /// refuses zero caps with reasons.
-    pub fn new(
-        cap: usize,
-        queue_capacity: usize,
-    ) -> Result<Self, EguiError> {
+    pub fn new(cap: usize, queue_capacity: usize) -> Result<Self, EguiError> {
         if cap == 0 {
             return Err(EguiError::InvalidParam {
                 what: "cap".to_owned(),
@@ -44,9 +41,14 @@ impl RecomputePool {
                 reason: "recompute queue must hold at least one job".to_owned(),
             });
         }
-        let pool = ResultPool::new(tokio_runtime(), cap, queue_capacity, |job: RecomputeJob| async move {
-            normalize_series(&job.values, job.kind).map_err(|err| err.to_string())
-        });
+        let pool = ResultPool::new(
+            tokio_runtime(),
+            cap,
+            queue_capacity,
+            |job: RecomputeJob| async move {
+                normalize_series(&job.values, job.kind).map_err(|err| err.to_string())
+            },
+        );
         Ok(Self { pool })
     }
 

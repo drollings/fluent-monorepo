@@ -43,9 +43,7 @@ fn every_scalar_type_distinguishes_its_neighbors() {
         "name matters"
     );
     assert_ne!(
-        ParamSet::new()
-            .with_float("mult", 2.0)
-            .fingerprint(),
+        ParamSet::new().with_float("mult", 2.0).fingerprint(),
         ParamSet::new().with_float("mult", 2.5).fingerprint(),
         "float payload matters"
     );

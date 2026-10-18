@@ -15,7 +15,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use crate::pine::source::{SUPPORTED_PINE_VERSION, parse_pine_source};
+use crate::pine::source::{parse_pine_source, SUPPORTED_PINE_VERSION};
 
 /// Indicator stems the parity suites cover (closure roots and task proofs):
 /// the only scripts that may verify. Every other script lists as unverified
@@ -97,7 +97,9 @@ fn indicator_stem(relpath: &str) -> String {
 /// Display title from the `indicator("...")` header's first string literal;
 /// the stem when no header parses. Pure over values.
 fn manifest_title(stem: &str, text: &str) -> String {
-    let Some(start) = text.find("indicator(") else { return stem.to_owned() };
+    let Some(start) = text.find("indicator(") else {
+        return stem.to_owned();
+    };
     let mut chars = text[start..].chars();
     loop {
         match chars.next() {
@@ -113,7 +115,11 @@ fn manifest_title(stem: &str, text: &str) -> String {
                     } else if char == '\\' {
                         escaped = true;
                     } else if char == quote {
-                        return if title.trim().is_empty() { stem.to_owned() } else { title };
+                        return if title.trim().is_empty() {
+                            stem.to_owned()
+                        } else {
+                            title
+                        };
                     } else {
                         title.push(char);
                     }
@@ -138,7 +144,9 @@ fn unverified(
         source_path: source_path.to_owned(),
         version,
         closure_hash: 0,
-        parity: ManifestParity::Unverified { reason: reason.into() },
+        parity: ManifestParity::Unverified {
+            reason: reason.into(),
+        },
     }
 }
 
@@ -149,20 +157,32 @@ pub fn build_manifest(
     indicators: &[ManifestFile],
     libraries: &[ManifestFile],
 ) -> Vec<IndicatorManifestEntry> {
-    let provided: HashMap<String, &ManifestFile> =
-        libraries.iter().filter_map(|file| library_name(&file.relpath).map(|name| (name, file))).collect();
-    let mut manifest: Vec<IndicatorManifestEntry> =
-        indicators.iter().map(|file| entry_for(file, &provided)).collect();
+    let provided: HashMap<String, &ManifestFile> = libraries
+        .iter()
+        .filter_map(|file| library_name(&file.relpath).map(|name| (name, file)))
+        .collect();
+    let mut manifest: Vec<IndicatorManifestEntry> = indicators
+        .iter()
+        .map(|file| entry_for(file, &provided))
+        .collect();
     manifest.sort_by(|left, right| left.id.cmp(&right.id));
     manifest
 }
 
 /// One manifest row: title, version gate, import resolution, closure hash,
 /// and harness coverage — each refusal naming its cause.
-fn entry_for(file: &ManifestFile, libraries: &HashMap<String, &ManifestFile>) -> IndicatorManifestEntry {
+fn entry_for(
+    file: &ManifestFile,
+    libraries: &HashMap<String, &ManifestFile>,
+) -> IndicatorManifestEntry {
     let stem = indicator_stem(&file.relpath);
     if file.text.trim().is_empty() {
-        return unverified(&stem, &file.relpath, None, "empty source (unreadable or empty file)");
+        return unverified(
+            &stem,
+            &file.relpath,
+            None,
+            "empty source (unreadable or empty file)",
+        );
     }
     let source = parse_pine_source(&file.relpath, &file.text);
     let title = manifest_title(&stem, &file.text);
@@ -215,7 +235,9 @@ fn entry_for(file: &ManifestFile, libraries: &HashMap<String, &ManifestFile>) ->
             version: source.version,
             closure_hash,
             parity: ManifestParity::Unverified {
-                reason: format!("no parity harness covers {stem:?}: proven stems are {PROVEN_STEMS:?}"),
+                reason: format!(
+                    "no parity harness covers {stem:?}: proven stems are {PROVEN_STEMS:?}"
+                ),
             },
         };
     }

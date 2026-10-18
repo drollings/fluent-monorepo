@@ -8,12 +8,12 @@
 
 use super::*;
 
-use crate::fold::FoldPolicy;
 use crate::fold::test_fold::{load_goldens, load_spy, seed_spy_slice};
+use crate::fold::FoldPolicy;
 use crate::plan::SpanOrigin;
 use crate::range::TimeRange;
-use crate::tape::test_setup::{VENUE, with_registry_caps};
 use crate::store::{CandleStore, ReadRequest};
+use crate::tape::test_setup::{with_registry_caps, VENUE};
 
 #[tokio::test]
 async fn truncate_edges_reports_partial_and_differs() {

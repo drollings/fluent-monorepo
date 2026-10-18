@@ -14,8 +14,8 @@
 
 use super::*;
 use crate::{
-    InputSet, LibraryId, ModuleInput, PineRuntimeConfig, TaBridge, load_pine_source, parse_program,
-    parse_pine_source,
+    load_pine_source, parse_pine_source, parse_program, InputSet, LibraryId, ModuleInput,
+    PineRuntimeConfig, TaBridge,
 };
 use chrono::TimeZone as _;
 use protopyne_types::Bar;
@@ -96,7 +96,10 @@ fn real_triple_linked() -> Vec<LinkedModule> {
             library_id("showmethegrail", "libMAs", 95),
             "libraries/_libMAs.pine",
         ),
-        real_module(library_id("local", "FastMAs", 6), "indicators/_FastMAs.pine"),
+        real_module(
+            library_id("local", "FastMAs", 6),
+            "indicators/_FastMAs.pine",
+        ),
     ])
     .expect("triple resolves");
     graph
@@ -186,7 +189,10 @@ fn bridge_method_list_is_frozen() {
     // Stale-row analog: the table above and the bridge agree exactly, so a
     // silent addition or removal fails here first. Deliberate changes update
     // both together, with justification.
-    let table: Vec<&str> = ta_canonical().iter().map(|(method, _, _)| *method).collect();
+    let table: Vec<&str> = ta_canonical()
+        .iter()
+        .map(|(method, _, _)| *method)
+        .collect();
     assert_eq!(
         table,
         TaBridge::supported_methods(),
@@ -433,13 +439,18 @@ fn pine_calibration_is_green() {
     }
     // Import-graph refusals: a cycle and an unknown import never link.
     let cycle = vec![
-        synthetic_module("pub", "A", "import pub/B/1 as B\nlibrary('A')\nexport f() =>\n    1.0"),
-        synthetic_module("pub", "B", "import pub/A/1 as A\nlibrary('B')\nexport g() =>\n    2.0"),
+        synthetic_module(
+            "pub",
+            "A",
+            "import pub/B/1 as B\nlibrary('A')\nexport f() =>\n    1.0",
+        ),
+        synthetic_module(
+            "pub",
+            "B",
+            "import pub/A/1 as A\nlibrary('B')\nexport g() =>\n    2.0",
+        ),
     ];
-    assert!(
-        crate::resolve_imports(cycle).is_err(),
-        "import cycle links"
-    );
+    assert!(crate::resolve_imports(cycle).is_err(), "import cycle links");
     tally.refused += 1;
     let unknown = vec![synthetic_module(
         "local",
@@ -523,8 +534,7 @@ fn pine_surface_caches_nothing() {
         .join("src")
         .join("pine");
     let mut sources = Vec::new();
-    let entries =
-        std::fs::read_dir(&dir).expect("pine source directory readable");
+    let entries = std::fs::read_dir(&dir).expect("pine source directory readable");
     for entry in entries {
         let path = entry.expect("readable entry").path();
         if path.extension().and_then(|ext| ext.to_str()) == Some("rs") {

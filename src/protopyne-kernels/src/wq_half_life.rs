@@ -14,7 +14,9 @@ use crate::math::strict_window;
 #[must_use]
 pub fn hl_weights(window: usize, half_life: u32) -> Vec<f64> {
     let step = 0.5f64.powf(1.0 / f64::from(half_life));
-    (0..window).map(|k| step.powi((window - 1 - k) as i32)).collect()
+    (0..window)
+        .map(|k| step.powi((window - 1 - k) as i32))
+        .collect()
 }
 
 /// Half-life weighted mean over the strict window.

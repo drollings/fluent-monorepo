@@ -11,7 +11,8 @@
 
 use crate::error::KernelError;
 use crate::indicator::{
-    fin_or_none, BarTick, Indicator, IndicatorResult, IndicatorSpec, IndicatorState, Ohlcv, ParamSet,
+    fin_or_none, BarTick, Indicator, IndicatorResult, IndicatorSpec, IndicatorState, Ohlcv,
+    ParamSet,
 };
 
 /// Average price (`(open + high + low + close) / 4`).

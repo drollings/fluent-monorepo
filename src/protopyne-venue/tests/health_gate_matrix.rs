@@ -131,7 +131,10 @@ fn entries_refuse_each_single_fault_and_name_the_gate() {
         };
         match err {
             VenueError::Health(reason) => {
-                assert!(reason.contains(keyword), "{keyword} fault must name its gate, got: {reason}");
+                assert!(
+                    reason.contains(keyword),
+                    "{keyword} fault must name its gate, got: {reason}"
+                );
             }
             other => panic!("{keyword} fault must halt with a health reason, got: {other:?}"),
         }
@@ -188,8 +191,8 @@ fn each_single_fault_reports_exactly_its_gate_and_class() {
 
 #[test]
 fn routed_entries_carry_the_passing_report() {
-    let report = check_route(&healthy(), &limits(), RouteIntent::Entry)
-        .expect("healthy entries route");
+    let report =
+        check_route(&healthy(), &limits(), RouteIntent::Entry).expect("healthy entries route");
     assert_eq!(report.verdict, HealthVerdict::Trade);
     assert!(report.failures.is_empty());
 }

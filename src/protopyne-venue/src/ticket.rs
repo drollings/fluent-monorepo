@@ -67,9 +67,7 @@ impl ManualTicket {
             .map(|legs| {
                 legs.legs()
                     .iter()
-                    .map(|leg| {
-                        format!("{} {}x {}", leg.side, leg.ratio, leg.contract.occ_symbol())
-                    })
+                    .map(|leg| format!("{} {}x {}", leg.side, leg.ratio, leg.contract.occ_symbol()))
                     .collect::<Vec<_>>()
                     .join(", ")
             })
@@ -169,7 +167,8 @@ impl TicketTracker {
             )));
         }
         let id = intent.client_id.clone();
-        self.open.insert(id.clone(), ManualTicket::from_intent(intent, issued_at));
+        self.open
+            .insert(id.clone(), ManualTicket::from_intent(intent, issued_at));
         Ok(&self.open[&id])
     }
 
@@ -189,10 +188,14 @@ impl TicketTracker {
             OrderSide::Buy => i64::from(fill.quantity),
             OrderSide::Sell => -i64::from(fill.quantity),
         };
-        self.confirmed.push((ticket.intent.underlying.clone(), signed));
+        self.confirmed
+            .push((ticket.intent.underlying.clone(), signed));
         let drift = Self::check_fill(&ticket, &fill).map(|(kind, detail)| {
-            let drift =
-                TicketDrift { ticket_id: ticket_id.to_owned(), kind, detail };
+            let drift = TicketDrift {
+                ticket_id: ticket_id.to_owned(),
+                kind,
+                detail,
+            };
             self.drifts.push(drift.clone());
             drift
         });
@@ -221,7 +224,10 @@ impl TicketTracker {
     /// accumulation so the two books cannot disagree on arithmetic.
     #[must_use]
     pub fn confirmed_net(&self, underlying: &str) -> i64 {
-        journal_net(&self.confirmed).get(underlying).copied().unwrap_or(0)
+        journal_net(&self.confirmed)
+            .get(underlying)
+            .copied()
+            .unwrap_or(0)
     }
 
     /// Journal-first issue: validate, journal the row, then track. A
@@ -308,14 +314,20 @@ impl TicketTracker {
     pub fn apply_import(&mut self, read: &dyn TicketRead) -> Result<(), VenueError> {
         let snapshot = read.snapshot()?;
         self.imported = snapshot;
-        self.drifts.retain(|drift| drift.kind != DriftKind::ImportMismatch);
+        self.drifts
+            .retain(|drift| drift.kind != DriftKind::ImportMismatch);
         let book = journal_net(&self.confirmed);
-        let mut underlyings: Vec<&String> = self.imported.iter().map(|line| &line.underlying).collect();
+        let mut underlyings: Vec<&String> =
+            self.imported.iter().map(|line| &line.underlying).collect();
         underlyings.sort();
         underlyings.dedup();
         for underlying in underlyings {
-            let held: i64 =
-                self.imported.iter().filter(|line| &line.underlying == underlying).map(|line| line.quantity).sum();
+            let held: i64 = self
+                .imported
+                .iter()
+                .filter(|line| &line.underlying == underlying)
+                .map(|line| line.quantity)
+                .sum();
             let confirmed = book.get(underlying).copied().unwrap_or(0);
             if held != confirmed {
                 self.drifts.push(TicketDrift {

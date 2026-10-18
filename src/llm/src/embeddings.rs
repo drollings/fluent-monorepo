@@ -612,7 +612,12 @@ impl EmbeddingProvider for OpenAiEmbedding {
             return Ok(Vec::new());
         }
         let body = self.request_body(&serde_json::json!(text));
-        let resp_bytes = do_http_post(&self.client, &self.embeddings_url(), &body, Some(&self.api_key))?;
+        let resp_bytes = do_http_post(
+            &self.client,
+            &self.embeddings_url(),
+            &body,
+            Some(&self.api_key),
+        )?;
         parse_openai_response(&resp_bytes)
     }
 
@@ -622,7 +627,12 @@ impl EmbeddingProvider for OpenAiEmbedding {
             .map(|t| serde_json::Value::String(t.to_string()))
             .collect();
         let body = self.request_body(&serde_json::Value::Array(inputs));
-        let resp_bytes = do_http_post(&self.client, &self.embeddings_url(), &body, Some(&self.api_key))?;
+        let resp_bytes = do_http_post(
+            &self.client,
+            &self.embeddings_url(),
+            &body,
+            Some(&self.api_key),
+        )?;
         parse_openai_batch_response(&resp_bytes)
     }
 
@@ -631,8 +641,13 @@ impl EmbeddingProvider for OpenAiEmbedding {
             return Ok(Vec::new());
         }
         let body = self.request_body(&serde_json::json!(text));
-        let resp_bytes =
-            do_http_post_async(&self.client, &self.embeddings_url(), &body, Some(&self.api_key)).await?;
+        let resp_bytes = do_http_post_async(
+            &self.client,
+            &self.embeddings_url(),
+            &body,
+            Some(&self.api_key),
+        )
+        .await?;
         parse_openai_response(&resp_bytes)
     }
 
@@ -642,8 +657,13 @@ impl EmbeddingProvider for OpenAiEmbedding {
             .map(|t| serde_json::Value::String(t.to_string()))
             .collect();
         let body = self.request_body(&serde_json::Value::Array(inputs));
-        let resp_bytes =
-            do_http_post_async(&self.client, &self.embeddings_url(), &body, Some(&self.api_key)).await?;
+        let resp_bytes = do_http_post_async(
+            &self.client,
+            &self.embeddings_url(),
+            &body,
+            Some(&self.api_key),
+        )
+        .await?;
         parse_openai_batch_response(&resp_bytes)
     }
 }

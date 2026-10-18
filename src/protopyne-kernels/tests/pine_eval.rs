@@ -7,18 +7,16 @@
 //! seeding) has a pinning test named for the correction.
 
 use super::*;
-use crate::{PineRuntimeConfig, inputs::InputSet, parse_program};
+use crate::{inputs::InputSet, parse_program, PineRuntimeConfig};
 use chrono::TimeZone as _;
 use protopyne_types::Bar;
 
 fn bar(open: &str, close: &str) -> Bar {
     Bar::new()
-        .ts(
-            chrono::Utc
-                .with_ymd_and_hms(2026, 1, 2, 9, 0, 0)
-                .single()
-                .expect("valid test timestamp"),
-        )
+        .ts(chrono::Utc
+            .with_ymd_and_hms(2026, 1, 2, 9, 0, 0)
+            .single()
+            .expect("valid test timestamp"))
         .o(open.parse().expect("decimal"))
         .h("101.00".parse().expect("decimal"))
         .l("99.00".parse().expect("decimal"))
@@ -95,18 +93,9 @@ fn binary_operators_match_reference() {
     assert_eq!(num(&outcome, 0, "m"), Some(12.0));
     assert_eq!(num(&outcome, 0, "d"), Some(2.5));
     assert_eq!(num(&outcome, 0, "r"), Some(1.0));
-    assert_eq!(
-        outcome.value_at(0, "eq"),
-        Some(Some(PineValue::Bool(true)))
-    );
-    assert_eq!(
-        outcome.value_at(0, "ne"),
-        Some(Some(PineValue::Bool(true)))
-    );
-    assert_eq!(
-        outcome.value_at(0, "lt"),
-        Some(Some(PineValue::Bool(true)))
-    );
+    assert_eq!(outcome.value_at(0, "eq"), Some(Some(PineValue::Bool(true))));
+    assert_eq!(outcome.value_at(0, "ne"), Some(Some(PineValue::Bool(true))));
+    assert_eq!(outcome.value_at(0, "lt"), Some(Some(PineValue::Bool(true))));
     assert_eq!(
         outcome.value_at(0, "ge"),
         Some(Some(PineValue::Bool(false)))
@@ -158,7 +147,10 @@ fn builtin_legs_read_current_bar() {
 fn offsets_read_history_and_go_na_out_of_range() {
     let bars = closes();
     let outcome = run_default("prev = close[1]\nfar = close[5]", &bars);
-    assert!(is_absent(&outcome, 0, "prev"), "no history on the first bar");
+    assert!(
+        is_absent(&outcome, 0, "prev"),
+        "no history on the first bar"
+    );
     assert_eq!(num(&outcome, 1, "prev"), Some(10.0));
     assert_eq!(num(&outcome, 3, "prev"), Some(12.0));
     for at_bar in 0..4 {
@@ -186,7 +178,10 @@ fn var_counter_persists_across_bars() {
 #[test]
 fn if_else_branches_on_comparison() {
     let bars = vec![bar("9.00", "10.00"), bar("12.00", "11.00")];
-    let outcome = run_default("dir = 0\nif close > open\n    dir := 1\nelse\n    dir := -1", &bars);
+    let outcome = run_default(
+        "dir = 0\nif close > open\n    dir := 1\nelse\n    dir := -1",
+        &bars,
+    );
     assert_eq!(num(&outcome, 0, "dir"), Some(1.0));
     assert_eq!(num(&outcome, 1, "dir"), Some(-1.0));
 }
@@ -228,14 +223,8 @@ fn nz_and_na_match_reference() {
     );
     assert_eq!(num(&outcome, 0, "n"), Some(0.0));
     assert_eq!(num(&outcome, 2, "m"), Some(12.0));
-    assert_eq!(
-        outcome.value_at(0, "b"),
-        Some(Some(PineValue::Bool(false)))
-    );
-    assert_eq!(
-        outcome.value_at(0, "c"),
-        Some(Some(PineValue::Bool(true)))
-    );
+    assert_eq!(outcome.value_at(0, "b"), Some(Some(PineValue::Bool(false))));
+    assert_eq!(outcome.value_at(0, "c"), Some(Some(PineValue::Bool(true))));
 }
 
 #[test]
@@ -284,14 +273,8 @@ fn var_initializes_on_first_evaluated_bar() {
     // evaluated bar — never silently data-bar zero.
     let bars = closes();
     let program = parse_program("var x = close").expect("parses");
-    let mut engine = PineEngine::new(
-        PineRuntimeConfig::new()
-            .warmup_bars(2)
-            .build(),
-    );
-    let outcome = engine
-        .run(&program, &bars, InputSet::new())
-        .expect("runs");
+    let mut engine = PineEngine::new(PineRuntimeConfig::new().warmup_bars(2).build());
+    let outcome = engine.run(&program, &bars, InputSet::new()).expect("runs");
     assert_eq!(outcome.evaluated, 2);
     assert_eq!(num(&outcome, 0, "x"), Some(12.0));
     assert_eq!(num(&outcome, 1, "x"), Some(12.0));
@@ -342,9 +325,15 @@ fn unknown_function_refuses_naming_it() {
     let bars = closes();
     // Bare calls still refuse; namespaced dispatch names the method.
     let reason = run_err("x = nosuchfn(close)", &bars);
-    assert!(reason.contains("nosuchfn"), "reason names the callee: {reason}");
+    assert!(
+        reason.contains("nosuchfn"),
+        "reason names the callee: {reason}"
+    );
     let reason = run_err("x = ta.dmi(close, 14)", &bars);
-    assert!(reason.contains("ta.dmi"), "reason names the method: {reason}");
+    assert!(
+        reason.contains("ta.dmi"),
+        "reason names the method: {reason}"
+    );
     let reason = run_err("x = close.foo()", &bars);
     assert!(reason.contains("foo"), "reason names the method: {reason}");
 }
@@ -384,7 +373,10 @@ fn ta_calls_honor_source_and_recurrence() {
 
     // Arity problems refuse through the engine with the method named.
     let reason = run_err("s = ta.sma(close)", &bars);
-    assert!(reason.contains("ta.sma"), "refusal names the method: {reason}");
+    assert!(
+        reason.contains("ta.sma"),
+        "refusal names the method: {reason}"
+    );
 }
 
 #[test]
@@ -392,10 +384,7 @@ fn methods_arrays_and_switches_refuse_with_reasons() {
     let bars = closes();
     // Header lines are inert (the loader/graph own them); unknown
     // namespaces still refuse naming the method.
-    for (script, want) in [
-        ("x = close.foo()", "foo"),
-        ("x = XX.fn(1.0)", "xx.fn"),
-    ] {
+    for (script, want) in [("x = close.foo()", "foo"), ("x = XX.fn(1.0)", "xx.fn")] {
         let reason = run_err(script, &bars);
         assert!(
             reason.to_lowercase().contains(want),
@@ -442,9 +431,7 @@ fn concurrent_runs_stay_isolated() {
 
     // Re-running the first engine reproduces its own run exactly: per-run
     // state resets, so sequential runs never leak into each other either.
-    let repeat = first
-        .run(&program, &low, InputSet::new())
-        .expect("re-runs");
+    let repeat = first.run(&program, &low, InputSet::new()).expect("re-runs");
     assert_eq!(num(&repeat, 3, "c"), Some(4.0));
     assert_eq!(num(&repeat, 3, "x"), Some(13.0));
 }
@@ -481,7 +468,8 @@ fn multi_declaration_binds_every_item() {
 
 #[test]
 fn bare_switch_takes_first_truthy_arm() {
-    let script = "x = switch\n    close > 11.0 => \"high\"\n    close > 10.0 => \"mid\"\n    => \"low\"";
+    let script =
+        "x = switch\n    close > 11.0 => \"high\"\n    close > 10.0 => \"mid\"\n    => \"low\"";
     let outcome = run_default(script, &closes());
     let text = |bar: usize| match outcome.value_at(bar, "x") {
         Some(Some(PineValue::Str(text))) => Some(text.clone()),
@@ -535,20 +523,17 @@ fn nested_field_method_refusals_keep_their_shape() {
     let script = "export type Box2\n    int n = 0\nexport method bump(Box2 this, int d) =>\n    this.n += d\n    this.n\nexport type Wrap\n    Box2 box = na\n    float plain = 0.0\nw = Wrap.new()\nw.box := Box2.new()";
     let reason = run_err(&format!("{script}\ny = w.nope.bump(1)"), &closes());
     assert_eq!(
-        reason,
-        "pine evaluation refused: unknown method 'w.nope.bump'",
+        reason, "pine evaluation refused: unknown method 'w.nope.bump'",
         "unknown field refuses"
     );
     let reason = run_err(&format!("{script}\ny = w.plain.bump(1)"), &closes());
     assert_eq!(
-        reason,
-        "pine evaluation refused: unknown method 'w.plain.bump'",
+        reason, "pine evaluation refused: unknown method 'w.plain.bump'",
         "non-object field refuses"
     );
     let reason = run_err(&format!("{script}\ny = w.box.spin(1)"), &closes());
     assert_eq!(
-        reason,
-        "pine evaluation refused: unknown method 'Box2.spin'",
+        reason, "pine evaluation refused: unknown method 'Box2.spin'",
         "unknown method refuses"
     );
 }
@@ -573,12 +558,10 @@ fn for_in_over_scalar_refuses_with_reason() {
 
 fn timed_bar(year: i32, month: u32, day: u32, hour: u32, minute: u32) -> Bar {
     Bar::new()
-        .ts(
-            chrono::Utc
-                .with_ymd_and_hms(year, month, day, hour, minute, 0)
-                .single()
-                .expect("valid test timestamp"),
-        )
+        .ts(chrono::Utc
+            .with_ymd_and_hms(year, month, day, hour, minute, 0)
+            .single()
+            .expect("valid test timestamp"))
         .o("100.00".parse().expect("decimal"))
         .h("101.00".parse().expect("decimal"))
         .l("99.00".parse().expect("decimal"))
@@ -629,7 +612,10 @@ fn timeframe_change_fires_on_new_period_buckets() {
     // An `na` period reads `na` on every bar.
     let outcome = run_default("c = timeframe.change(na)", &bucket_bars());
     for at in 0..4 {
-        assert!(is_absent(&outcome, at, "c"), "na period reads na on bar {at}");
+        assert!(
+            is_absent(&outcome, at, "c"),
+            "na period reads na on bar {at}"
+        );
     }
 }
 
@@ -663,20 +649,17 @@ fn float_cast_refuses_non_numbers_and_bad_arity() {
     let bars = closes();
     let reason = run_err("a = float(true)", &bars);
     assert_eq!(
-        reason,
-        "pine evaluation refused: 'float' takes a number, got true",
+        reason, "pine evaluation refused: 'float' takes a number, got true",
         "bools refuse"
     );
     let reason = run_err("a = float(\"3\")", &bars);
     assert_eq!(
-        reason,
-        "pine evaluation refused: 'float' takes a number, got 3",
+        reason, "pine evaluation refused: 'float' takes a number, got 3",
         "strings refuse"
     );
     let reason = run_err("a = float(1.0, 2.0)", &bars);
     assert_eq!(
-        reason,
-        "pine evaluation refused: 'float' takes exactly one argument",
+        reason, "pine evaluation refused: 'float' takes exactly one argument",
         "arity refuses"
     );
 }
@@ -693,9 +676,18 @@ fn bar_index_history_subscript_reads_prior_cursors() {
         Some(None),
         "bar 0 binds prev to na (not missing)"
     );
-    for (at, want, want_prev) in [(0, 0.0, None), (1, 1.0, Some(0.0)), (2, 2.0, Some(1.0)), (3, 3.0, Some(2.0))] {
+    for (at, want, want_prev) in [
+        (0, 0.0, None),
+        (1, 1.0, Some(0.0)),
+        (2, 2.0, Some(1.0)),
+        (3, 3.0, Some(2.0)),
+    ] {
         assert_eq!(num(&outcome, at, "bi"), Some(want), "cursor on bar {at}");
-        assert_eq!(num(&outcome, at, "prev"), want_prev, "prior cursor on bar {at}");
+        assert_eq!(
+            num(&outcome, at, "prev"),
+            want_prev,
+            "prior cursor on bar {at}"
+        );
     }
 }
 
@@ -705,12 +697,12 @@ fn bare_color_cast_passes_color_through() {
     // absence stays absence (PPAS spells `color(na)` for the transparent
     // pen); anything else refuses with the reason.
     let bars = closes();
-    let outcome = run_default(
-        "kept = color(color.red)\ngone = color(na)",
-        &bars,
-    );
+    let outcome = run_default("kept = color(color.red)\ngone = color(na)", &bars);
     assert!(
-        matches!(outcome.value_at(3, "kept"), Some(Some(PineValue::ColorHandle(_)))),
+        matches!(
+            outcome.value_at(3, "kept"),
+            Some(Some(PineValue::ColorHandle(_)))
+        ),
         "kept is a color handle"
     );
     assert_eq!(
@@ -720,8 +712,7 @@ fn bare_color_cast_passes_color_through() {
     );
     let reason = run_err("bad = color(1.0)", &bars);
     assert_eq!(
-        reason,
-        "pine evaluation refused: 'color' takes a color, got 1",
+        reason, "pine evaluation refused: 'color' takes a color, got 1",
         "non-colors refuse"
     );
 }
@@ -774,6 +765,14 @@ fn primitive_first_method_binds_without_receiver() {
     let outcome = PineEngine::new(PineRuntimeConfig::new().build())
         .run_linked(&modules, &bars, InputSet::new())
         .expect("primitive-head method evaluates");
-    assert_eq!(num(&outcome, 3, "t"), Some(5.0), "true head takes the value");
-    assert_eq!(num(&outcome, 3, "f"), Some(0.0), "false head takes the default");
+    assert_eq!(
+        num(&outcome, 3, "t"),
+        Some(5.0),
+        "true head takes the value"
+    );
+    assert_eq!(
+        num(&outcome, 3, "f"),
+        Some(0.0),
+        "false head takes the default"
+    );
 }

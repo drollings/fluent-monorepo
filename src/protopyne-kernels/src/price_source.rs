@@ -6,7 +6,7 @@
 //! every frame builder reads it. Formulas are plain `f64` arithmetic so `NaN`
 //! holes propagate row-locally, never repaired.
 
-use crate::indicator::{BarTick, OwnedOhlcv, nan_hole};
+use crate::indicator::{nan_hole, BarTick, OwnedOhlcv};
 
 /// Which OHLC-derived column an indicator reads.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
@@ -34,7 +34,16 @@ impl PriceSource {
     /// Every variant, in canonical order.
     #[must_use]
     pub fn all() -> [Self; 8] {
-        [Self::Close, Self::Open, Self::High, Self::Low, Self::Hl2, Self::Hlc3, Self::Ohlc4, Self::Wcl]
+        [
+            Self::Close,
+            Self::Open,
+            Self::High,
+            Self::Low,
+            Self::Hl2,
+            Self::Hlc3,
+            Self::Ohlc4,
+            Self::Wcl,
+        ]
     }
 
     /// Canonical id: also the Pine `Legs::named` spelling.

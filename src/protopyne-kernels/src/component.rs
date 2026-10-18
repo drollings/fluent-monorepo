@@ -82,11 +82,7 @@ impl IndicatorComponentBuilder {
     /// Bind the component (an absent window evaluates over no bars).
     #[must_use]
     pub fn build(self) -> IndicatorComponent {
-        IndicatorComponent::new(
-            self.indicator,
-            self.params,
-            self.input.unwrap_or_default(),
-        )
+        IndicatorComponent::new(self.indicator, self.params, self.input.unwrap_or_default())
     }
 }
 
@@ -102,8 +98,7 @@ impl IndicatorComponent {
             .iter()
             .map(|d| ArcIntern::from(d.as_str()))
             .collect();
-        let provides: Vec<ArcIntern<str>> =
-            vec![ArcIntern::from(indicator.spec().id.as_str())];
+        let provides: Vec<ArcIntern<str>> = vec![ArcIntern::from(indicator.spec().id.as_str())];
         Self {
             indicator,
             params,
@@ -239,7 +234,9 @@ impl ComponentRegistry {
     /// Look up an indicator by id.
     #[must_use]
     pub fn get(&self, id: &str) -> Option<Arc<dyn Indicator>> {
-        self.inner.get(&id.to_string()).map(|shared| Arc::clone(&shared.0))
+        self.inner
+            .get(&id.to_string())
+            .map(|shared| Arc::clone(&shared.0))
     }
 
     /// Registered ids in sorted order.
@@ -281,7 +278,10 @@ impl ComponentRegistry {
     /// requested ids and dependencies on unregistered indicators are
     /// [`GraphError::NodeNotFound`]; loops surface as
     /// [`GraphError::CircularDependency`].
-    pub fn execution_order(&self, requested: &[IndicatorId]) -> Result<Vec<IndicatorId>, GraphError> {
+    pub fn execution_order(
+        &self,
+        requested: &[IndicatorId],
+    ) -> Result<Vec<IndicatorId>, GraphError> {
         for id in requested {
             if self.get(id).is_none() {
                 return Err(GraphError::NodeNotFound(id.clone()));
@@ -313,10 +313,7 @@ impl Default for ComponentRegistry {
 /// Canning cannot fail in practice; a serialization failure still reports
 /// loudly in the message instead of succeeding with a null payload.
 #[must_use]
-pub fn indicator_double(
-    base: Arc<dyn Component>,
-    output: &IndicatorResult,
-) -> ComponentAdapter {
+pub fn indicator_double(base: Arc<dyn Component>, output: &IndicatorResult) -> ComponentAdapter {
     let name = base.name().to_owned();
     let (payload, message) = match serde_json::to_value(output) {
         Ok(payload) => (payload, format!("doubled {name}")),

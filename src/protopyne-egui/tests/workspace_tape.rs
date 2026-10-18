@@ -115,6 +115,12 @@ async fn a_store_backed_switch_replans_and_paints_headlessly() {
     let gateway = handle.gateway();
 
     let mut workspace = ChartWorkspace::new().expect("the workspace boots");
+    // The store and boot history are both 15-minute; select that key so the
+    // store-backed read is served natively (the five-minute default cannot be
+    // synthesized from a 15-minute base).
+    workspace
+        .switch_timeframe(TimeframeKey::M15, &gateway)
+        .expect("the store serves M15");
     workspace
         .switch_symbol("SPY", &gateway)
         .expect("a store-backed symbol switch pulls history");

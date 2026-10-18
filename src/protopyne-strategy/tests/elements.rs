@@ -10,9 +10,7 @@ fn money(value: i64) -> Money {
 }
 
 fn signal() -> Arc<dyn Signal> {
-    Arc::new(
-        FixedSignal::new(Direction::Long, 0.8, 0.7).expect("valid scores"),
-    )
+    Arc::new(FixedSignal::new(Direction::Long, 0.8, 0.7).expect("valid scores"))
 }
 
 fn input(closes: &[f64]) -> ProposeInput<'_> {
@@ -67,12 +65,10 @@ fn optional_elements_swap_independently() {
 #[test]
 fn loss_and_monitor_default_to_quiet() {
     let strategy = Strategy::with_signal(signal());
-    assert!(strategy.review_position(money(-1_000), money(-500)).is_none());
-    assert!(
-        strategy
-            .observe(money(100), money(10_000))
-            .is_empty()
-    );
+    assert!(strategy
+        .review_position(money(-1_000), money(-500))
+        .is_none());
+    assert!(strategy.observe(money(100), money(10_000)).is_empty());
 }
 
 #[test]
@@ -98,21 +94,39 @@ fn propose_refuses_negative_economics() {
     let closes = [100.0, 101.0];
     let mut bad_limit = input(&closes);
     bad_limit.limit_price = negative_money();
-    let err = strategy.propose("p", bad_limit).expect_err("negative limit");
+    let err = strategy
+        .propose("p", bad_limit)
+        .expect_err("negative limit");
     assert!(matches!(err, StrategyError::InvalidElement(_)));
-    assert!(err.to_string().contains("limit"), "refusal names the field, got: {err}");
+    assert!(
+        err.to_string().contains("limit"),
+        "refusal names the field, got: {err}"
+    );
 
     let mut bad_loss = input(&closes);
     bad_loss.max_loss = negative_money();
-    let err = strategy.propose("p", bad_loss).expect_err("negative max loss");
+    let err = strategy
+        .propose("p", bad_loss)
+        .expect_err("negative max loss");
     assert!(matches!(err, StrategyError::InvalidElement(_)));
-    assert!(err.to_string().contains("max loss"), "refusal names the field, got: {err}");
+    assert!(
+        err.to_string().contains("max loss"),
+        "refusal names the field, got: {err}"
+    );
 
     let mut bad_notional = input(&closes);
     bad_notional.notional = negative_money();
-    let err = strategy.propose("p", bad_notional).expect_err("negative notional");
+    let err = strategy
+        .propose("p", bad_notional)
+        .expect_err("negative notional");
     assert!(matches!(err, StrategyError::InvalidElement(_)));
-    assert!(err.to_string().contains("notional"), "refusal names the field, got: {err}");
+    assert!(
+        err.to_string().contains("notional"),
+        "refusal names the field, got: {err}"
+    );
 
-    assert!(strategy.propose("p", input(&closes)).is_ok(), "non-negative economics still propose");
+    assert!(
+        strategy.propose("p", input(&closes)).is_ok(),
+        "non-negative economics still propose"
+    );
 }

@@ -22,7 +22,12 @@ fn watch<'a>(
     reconcile: Option<&'a ReconcileHandle>,
     state: Option<&'a StateHandle>,
 ) -> GateWatch<'a> {
-    GateWatch { breaker, reconcile, backfill: None, state }
+    GateWatch {
+        breaker,
+        reconcile,
+        backfill: None,
+        state,
+    }
 }
 
 fn mismatch_report(line: &str) -> ReconcileReport {
@@ -44,23 +49,43 @@ fn mismatch_report(line: &str) -> ReconcileReport {
 #[test]
 fn breaker_trip_delivers_one_confidence_alert_then_silence() {
     let breaker = StreamBreaker::new(StreamConfig::new().build());
-    breaker.record_error(&TransportError::Terminal("unauthorized: scripted".to_owned()));
+    breaker.record_error(&TransportError::Terminal(
+        "unauthorized: scripted".to_owned(),
+    ));
     assert!(breaker.tripped());
 
     let sink = MemorySink::new();
     let mut cursor = AlertCursor::new();
-    let sent = poll_alerts(&mut cursor, &watch(Some(&breaker), None, None), &sink, now())
-        .expect("delivery");
+    let sent = poll_alerts(
+        &mut cursor,
+        &watch(Some(&breaker), None, None),
+        &sink,
+        now(),
+    )
+    .expect("delivery");
     assert_eq!(sent, 1);
     let alerts = sink.alerts();
     assert_eq!(alerts.len(), 1);
     assert_eq!(alerts[0].source, AlertSource::BreakerTrip);
     assert_eq!(alerts[0].class, AlertClass::ProducerConfidence);
-    assert_eq!(alerts[0].class, alerts[0].source.class(), "the source names its own side");
-    assert!(alerts[0].detail.contains("unauthorized"), "got: {}", alerts[0].detail);
+    assert_eq!(
+        alerts[0].class,
+        alerts[0].source.class(),
+        "the source names its own side"
+    );
+    assert!(
+        alerts[0].detail.contains("unauthorized"),
+        "got: {}",
+        alerts[0].detail
+    );
 
-    let sent = poll_alerts(&mut cursor, &watch(Some(&breaker), None, None), &sink, now())
-        .expect("delivery");
+    let sent = poll_alerts(
+        &mut cursor,
+        &watch(Some(&breaker), None, None),
+        &sink,
+        now(),
+    )
+    .expect("delivery");
     assert_eq!(sent, 0, "a reported trip never re-alerts");
     assert_eq!(sink.alerts().len(), 1);
 }
@@ -75,16 +100,16 @@ fn reconcile_mismatch_drains_into_correctness_alerts_without_clearing_the_halt()
 
     let sink = MemorySink::new();
     let mut cursor = AlertCursor::new();
-    let sent = poll_alerts(&mut cursor, &watch(None, Some(&gate), None), &sink, now())
-        .expect("delivery");
+    let sent =
+        poll_alerts(&mut cursor, &watch(None, Some(&gate), None), &sink, now()).expect("delivery");
     assert_eq!(sent, 1);
     let alerts = sink.alerts();
     assert_eq!(alerts[0].source, AlertSource::ReconcileMismatch);
     assert_eq!(alerts[0].class, AlertClass::Correctness);
     assert!(gate.entries_halted(), "delivery never clears the halt");
 
-    let sent = poll_alerts(&mut cursor, &watch(None, Some(&gate), None), &sink, now())
-        .expect("delivery");
+    let sent =
+        poll_alerts(&mut cursor, &watch(None, Some(&gate), None), &sink, now()).expect("delivery");
     assert_eq!(sent, 0, "the bank drained exactly once");
 }
 
@@ -98,24 +123,24 @@ fn kill_switch_transition_alerts_once_across_cycles() {
     let mut cursor = AlertCursor::new();
 
     state.set(TradingState::Disabled);
-    let sent = poll_alerts(&mut cursor, &watch(None, None, Some(&state)), &sink, now())
-        .expect("delivery");
+    let sent =
+        poll_alerts(&mut cursor, &watch(None, None, Some(&state)), &sink, now()).expect("delivery");
     assert_eq!(sent, 1);
     assert_eq!(sink.alerts()[0].source, AlertSource::KillSwitch);
     assert_eq!(sink.alerts()[0].class, AlertClass::Correctness);
 
-    let sent = poll_alerts(&mut cursor, &watch(None, None, Some(&state)), &sink, now())
-        .expect("delivery");
+    let sent =
+        poll_alerts(&mut cursor, &watch(None, None, Some(&state)), &sink, now()).expect("delivery");
     assert_eq!(sent, 0, "a held halt never re-alerts");
 
     state.set(TradingState::Enabled);
-    let sent = poll_alerts(&mut cursor, &watch(None, None, Some(&state)), &sink, now())
-        .expect("delivery");
+    let sent =
+        poll_alerts(&mut cursor, &watch(None, None, Some(&state)), &sink, now()).expect("delivery");
     assert_eq!(sent, 0, "resume is not an alert");
 
     state.set(TradingState::Disabled);
-    let sent = poll_alerts(&mut cursor, &watch(None, None, Some(&state)), &sink, now())
-        .expect("delivery");
+    let sent =
+        poll_alerts(&mut cursor, &watch(None, None, Some(&state)), &sink, now()).expect("delivery");
     assert_eq!(sent, 1, "a second halt alerts again");
 }
 
@@ -130,8 +155,13 @@ fn file_sink_appends_parseable_json_lines() {
     let breaker = StreamBreaker::new(StreamConfig::new().build());
     breaker.record_error(&TransportError::Terminal("gone: scripted".to_owned()));
     let mut cursor = AlertCursor::new();
-    poll_alerts(&mut cursor, &watch(Some(&breaker), None, None), &sink, now())
-        .expect("delivery");
+    poll_alerts(
+        &mut cursor,
+        &watch(Some(&breaker), None, None),
+        &sink,
+        now(),
+    )
+    .expect("delivery");
 
     let text = std::fs::read_to_string(&path).expect("alert file");
     let lines: Vec<&str> = text.lines().collect();
@@ -139,7 +169,13 @@ fn file_sink_appends_parseable_json_lines() {
     let parsed: serde_json::Value = serde_json::from_str(lines[0]).expect("JSON line");
     assert_eq!(parsed["source"], "BreakerTrip", "got: {parsed}");
     assert_eq!(parsed["class"], "ProducerConfidence", "got: {parsed}");
-    assert!(parsed["detail"].as_str().unwrap_or_default().contains("gone"), "got: {parsed}");
+    assert!(
+        parsed["detail"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("gone"),
+        "got: {parsed}"
+    );
 }
 
 /// Fan-out attempts every sink even when one is dark, and reports the
@@ -162,7 +198,9 @@ fn fanout_attempts_every_sink_and_reports_the_failure() {
         detail: "RECONCILE HALT: scripted".to_owned(),
         at: now(),
     };
-    let err = fanout.send(&alert).expect_err("a dark member fails the fan-out");
+    let err = fanout
+        .send(&alert)
+        .expect_err("a dark member fails the fan-out");
     assert!(err.to_string().contains("dark sink"), "got: {err}");
     assert_eq!(good.alerts().len(), 1, "the live member still delivered");
 }

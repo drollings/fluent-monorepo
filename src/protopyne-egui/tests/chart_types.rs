@@ -10,18 +10,16 @@
 
 use super::*;
 use chrono::TimeZone as _;
-use fluent_egui::{Viewport, aggregate_column, area_polygons, area_vertex_color, crosshair_data};
-use protopyne_chart_model::{ChartRow, ChartType, DateRange, heikin_ashi, rows_of};
+use fluent_egui::{aggregate_column, area_polygons, area_vertex_color, crosshair_data, Viewport};
+use protopyne_chart_model::{heikin_ashi, rows_of, ChartRow, ChartType, DateRange};
 use protopyne_types::Bar;
 
 fn bar_at(index: i64) -> Bar {
     Bar::new()
-        .ts(
-            chrono::Utc
-                .timestamp_opt(1_700_000_000 + index * 60, 0)
-                .single()
-                .expect("valid test timestamp"),
-        )
+        .ts(chrono::Utc
+            .timestamp_opt(1_700_000_000 + index * 60, 0)
+            .single()
+            .expect("valid test timestamp"))
         .o("100.00".parse().expect("decimal"))
         .h("101.00".parse().expect("decimal"))
         .l("99.00".parse().expect("decimal"))
@@ -36,7 +34,14 @@ fn five_bars() -> Vec<Bar> {
 }
 
 fn row(price: f64) -> ChartRow {
-    ChartRow { time: 0, open: price, high: price + 1.0, low: price - 1.0, close: price, volume: 10 }
+    ChartRow {
+        time: 0,
+        open: price,
+        high: price + 1.0,
+        low: price - 1.0,
+        close: price,
+        volume: 10,
+    }
 }
 
 #[test]
@@ -63,7 +68,10 @@ fn unwired_chart_type_refuses() {
     // of rendering a guess.
     let refused =
         chart_price_bars(&five_bars(), ChartType::Renko).expect_err("renko stays unwired");
-    assert!(refused.to_string().contains("chart_type"), "reason names the parameter");
+    assert!(
+        refused.to_string().contains("chart_type"),
+        "reason names the parameter"
+    );
 }
 
 #[test]
@@ -89,7 +97,11 @@ fn heikin_picture_converts_before_windowing() {
         picture_rows(&bars, DateRange::Day1, 43_200, ChartType::Heikin).expect("heikin picture");
     let full = rows_of(&heikin_ashi(&bars)).rows;
     assert_eq!(painted.len(), 2, "the day window cuts five bars to two");
-    assert_eq!(painted, full[3..], "convert-then-window paints the converted tail");
+    assert_eq!(
+        painted,
+        full[3..],
+        "convert-then-window paints the converted tail"
+    );
     let sliced = rows_of(&heikin_ashi(&bars[3..])).rows;
     assert!(
         (sliced[0].open - full[3].open).abs() > 1e-9,
@@ -130,15 +142,23 @@ fn heikin_aggregates_after_transforming_never_before() {
     let painted =
         picture_rows(&bars, DateRange::All, 60, ChartType::Heikin).expect("heikin picture");
     assert_eq!(painted, native, "the dispatcher input is transform-first");
-    assert_eq!(aggregate_column(&painted), Some(native_fold), "its fold is the native fold");
+    assert_eq!(
+        aggregate_column(&painted),
+        Some(native_fold),
+        "its fold is the native fold"
+    );
 }
 
 #[test]
-fn unwired_picture_refuses() {    // The row dispatch refuses unwired types with the parameter named, like
+fn unwired_picture_refuses() {
+    // The row dispatch refuses unwired types with the parameter named, like
     // the bar dispatch.
-    let refused =
-        picture_rows(&five_bars(), DateRange::All, 60, ChartType::Renko).expect_err("renko refuses");
-    assert!(refused.to_string().contains("chart_type"), "reason names the parameter");
+    let refused = picture_rows(&five_bars(), DateRange::All, 60, ChartType::Renko)
+        .expect_err("renko refuses");
+    assert!(
+        refused.to_string().contains("chart_type"),
+        "reason names the parameter"
+    );
 }
 
 /// Outcome of one dispatcher call, reduced to the two facts a table needs:
@@ -194,7 +214,11 @@ fn every_chart_type_reaches_both_dispatchers() {
         }
     }
     let classified = painted_by_both.len() + refused_by_both.len() + split.len();
-    assert_eq!(classified, ChartType::all().len(), "every variant is classified exactly once");
+    assert_eq!(
+        classified,
+        ChartType::all().len(),
+        "every variant is classified exactly once"
+    );
     // The outcome split is the rows-backed pair, exactly: splitting by
     // outcome is expected where the classification splits (the bars path
     // refuses what the rows path paints), and the agreement table below
@@ -224,7 +248,9 @@ fn picture_rows_and_chart_price_bars_agree_for_every_chart_type() {
             Ok(PictureSource::Bars) => {
                 let (Dispatch::Painted(bar_count), Dispatch::Painted(row_count)) = (&bars, &rows)
                 else {
-                    panic!("{kind:?} is bar-backed but misses a path: bars={bars:?}, rows={rows:?}");
+                    panic!(
+                        "{kind:?} is bar-backed but misses a path: bars={bars:?}, rows={rows:?}"
+                    );
                 };
                 assert_eq!(
                     bar_count, row_count,
@@ -286,15 +312,18 @@ fn crosshair_tie_at_half_offset_rounds_up() {
     .expect("test viewport builds");
     let y = pane.price_to_y(100.0).expect("mid-pane price maps");
     let cases: [(f32, usize); 5] = [
-        (27.0, 3),  // clearly inside bar 3's half
-        (27.9, 3),  // a tenth below the tie still reads low
-        (28.0, 4),  // the tie itself reads up
-        (28.1, 4),  // a tenth above the tie reads high
-        (29.0, 4),  // clearly inside bar 4's half
+        (27.0, 3), // clearly inside bar 3's half
+        (27.9, 3), // a tenth below the tie still reads low
+        (28.0, 4), // the tie itself reads up
+        (28.1, 4), // a tenth above the tie reads high
+        (29.0, 4), // clearly inside bar 4's half
     ];
     for (x, expected) in cases {
         let data = crosshair_data((x, y), &pane, 10).expect("in-pane pointer reads");
-        assert_eq!(data.index, expected, "pointer at x = {x} names bar {expected}");
+        assert_eq!(
+            data.index, expected,
+            "pointer at x = {x} names bar {expected}"
+        );
     }
     // And the tie decides the same way twice — determinism, not luck.
     let first = crosshair_data((28.0, y), &pane, 10).expect("tie reads");
@@ -322,7 +351,10 @@ fn area_baseline_is_the_window_floor_not_the_data_floor() {
     )
     .expect("zoomed window builds");
     let floor = window.visible_range().min;
-    assert!(floor > data_floor, "the zoomed floor sits above the data floor: {floor} vs {data_floor}");
+    assert!(
+        floor > data_floor,
+        "the zoomed floor sits above the data floor: {floor} vs {data_floor}"
+    );
     let view = area_view(line_values(&rows), floor, 0.5).expect("window-floored area builds");
     assert_eq!(
         view.baseline.to_bits(),
@@ -337,10 +369,17 @@ fn area_baseline_is_the_window_floor_not_the_data_floor() {
     // mapping, never a second mapping call.
     let foot_y = 420.0;
     let polygons = area_polygons(&view.values, view.baseline, &window);
-    assert!(!polygons.is_empty(), "present values close at least one run");
+    assert!(
+        !polygons.is_empty(),
+        "present values close at least one run"
+    );
     for polygon in &polygons {
         let foot = &polygon.points[polygon.indices.len()..];
-        assert_eq!(foot.len(), polygon.indices.len(), "each run closes its own foot");
+        assert_eq!(
+            foot.len(),
+            polygon.indices.len(),
+            "each run closes its own foot"
+        );
         for (x, y) in foot {
             assert!(
                 (y - foot_y).abs() < 1e-3,
@@ -357,7 +396,11 @@ fn area_view_moves_the_caller_series_without_copying() {
     let values = line_values(&[row(100.0), row(101.0)]);
     let before = values.as_ptr();
     let view = area_view(values, 99.0, 0.5).expect("area view builds");
-    assert_eq!(view.values.as_ptr(), before, "the series moves, never copies");
+    assert_eq!(
+        view.values.as_ptr(),
+        before,
+        "the series moves, never copies"
+    );
 }
 
 #[test]
@@ -373,26 +416,42 @@ fn area_view_refuses_beyond_alpha() {
             "baseline refusal names baseline: {refused}"
         );
     }
-    for bad in [vec![Some(100.0), Some(f64::NAN)], vec![None, Some(f64::INFINITY)]] {
+    for bad in [
+        vec![Some(100.0), Some(f64::NAN)],
+        vec![None, Some(f64::INFINITY)],
+    ] {
         let refused = area_view(bad, 99.0, 0.5).expect_err("non-finite leg refuses");
         assert!(
             refused.to_string().contains("values"),
             "leg refusal names values: {refused}"
         );
     }
-    let holed =
-        area_view(vec![Some(100.0), None, Some(101.0)], 99.0, 0.5).expect("holes build");
-    assert_eq!(holed.values, vec![Some(100.0), None, Some(101.0)], "holes are preserved");
+    let holed = area_view(vec![Some(100.0), None, Some(101.0)], 99.0, 0.5).expect("holes build");
+    assert_eq!(
+        holed.values,
+        vec![Some(100.0), None, Some(101.0)],
+        "holes are preserved"
+    );
     let refused = area_view(Vec::new(), 99.0, 0.5).expect_err("empty series refuses");
-    assert!(refused.to_string().contains("values"), "empty refusal names values: {refused}");
+    assert!(
+        refused.to_string().contains("values"),
+        "empty refusal names values: {refused}"
+    );
     let refused = area_view(values, 99.0, 2.0).expect_err("alpha discipline unchanged");
-    assert!(refused.to_string().contains("alpha"), "alpha refusal names alpha: {refused}");
+    assert!(
+        refused.to_string().contains("alpha"),
+        "alpha refusal names alpha: {refused}"
+    );
 }
 
 #[test]
-fn line_wiring_equals_closes() {    // The line series is the row closes, holes preserved.
+fn line_wiring_equals_closes() {
+    // The line series is the row closes, holes preserved.
     let rows = vec![row(100.0), row(101.5), row(99.25)];
-    assert_eq!(line_values(&rows), vec![Some(100.0), Some(101.5), Some(99.25)]);
+    assert_eq!(
+        line_values(&rows),
+        vec![Some(100.0), Some(101.5), Some(99.25)]
+    );
 }
 
 #[test]
@@ -428,8 +487,7 @@ fn area_fill_vertex_colors_run_golden() {
         // Channels are `u8` by construction (the range guarantee); against
         // a transparent foot the pins are a monotone fade: premultiplied
         // channels scale down with alpha, never up, never past the foot.
-        let color =
-            area_vertex_color(top, bottom, *y, top_y, bottom_y).expect("pane pixels blend");
+        let color = area_vertex_color(top, bottom, *y, top_y, bottom_y).expect("pane pixels blend");
         assert!(
             color.r() <= top.r() && color.g() <= top.g() && color.b() <= top.b(),
             "channels fade downward at ({x}, {y})"

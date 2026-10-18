@@ -11,10 +11,10 @@
 
 use super::*;
 use crate::journal::{Journal, VenueStorage};
-use crate::submit::Recorder;
 use crate::order::{OrderIntent, OrderRecord, OrderSide, OrderStatus, Position};
 use crate::reconcile::{JournalBook, ReconcileHandle, ReconcileSource, ReconcileUnit};
 use crate::stream::{StreamOutcome, SupervisedStream};
+use crate::submit::Recorder;
 use crate::tastytrade::TransportError;
 use crate::venue::{DryRunOutcome, Venue};
 use chrono::{TimeZone, Utc};
@@ -24,8 +24,8 @@ use rust_decimal::Decimal;
 use std::collections::{HashMap, VecDeque};
 use std::future::Future;
 use std::sync::{
-    Arc,
     atomic::{AtomicUsize, Ordering},
+    Arc,
 };
 use tokio::sync::mpsc;
 
@@ -81,7 +81,11 @@ impl Script {
 
     fn connect(&self) -> Result<mpsc::Receiver<String>, TransportError> {
         self.attempts.fetch_add(1, Ordering::SeqCst);
-        self.outcomes.lock().expect("outcomes").pop_front().expect("scripted outcome")
+        self.outcomes
+            .lock()
+            .expect("outcomes")
+            .pop_front()
+            .expect("scripted outcome")
     }
 }
 
@@ -103,17 +107,29 @@ async fn reconnect_storm_trips_on_the_third_attempt() {
     let abort = StreamAbort::new();
     let (out_tx, _out_rx) = mpsc::channel::<AccountEvent>(8);
     let vehicle = Arc::new(TastytradeTransport::new(
-        TastytradeConfig::new().base_url("http://127.0.0.1:9".to_owned()).build(),
+        TastytradeConfig::new()
+            .base_url("http://127.0.0.1:9".to_owned())
+            .build(),
     ));
-    let outcome = stream.run(|| async { script.connect() }, &abort, out_tx, &vehicle).await;
+    let outcome = stream
+        .run(|| async { script.connect() }, &abort, out_tx, &vehicle)
+        .await;
     assert!(
         matches!(outcome, StreamOutcome::BreakerTripped { .. }),
         "the storm trips, got: {outcome:?}"
     );
-    assert_eq!(script.attempts.load(Ordering::SeqCst), 3, "trip on the third error, then stop");
+    assert_eq!(
+        script.attempts.load(Ordering::SeqCst),
+        3,
+        "trip on the third error, then stop"
+    );
     assert!(stream.breaker().tripped());
     assert!(
-        stream.breaker().trip_reason().unwrap_or_default().contains("3 consecutive"),
+        stream
+            .breaker()
+            .trip_reason()
+            .unwrap_or_default()
+            .contains("3 consecutive"),
         "got: {:?}",
         stream.breaker().trip_reason()
     );
@@ -142,7 +158,10 @@ impl FlakyOnce {
 
 impl Venue for FlakyOnce {
     fn dry_run(&self, _intent: &OrderIntent, _quote: &Quote) -> Result<DryRunOutcome, VenueError> {
-        Ok(DryRunOutcome { allowed: true, reserved_notional: Money::zero() })
+        Ok(DryRunOutcome {
+            allowed: true,
+            reserved_notional: Money::zero(),
+        })
     }
 
     fn submit<'a>(
@@ -200,7 +219,12 @@ impl Venue for FlakyOnce {
     }
 
     fn orders(&self) -> Vec<OrderRecord> {
-        self.orders.lock().expect("orders").values().cloned().collect()
+        self.orders
+            .lock()
+            .expect("orders")
+            .values()
+            .cloned()
+            .collect()
     }
 
     fn apply_corporate_event(
@@ -209,7 +233,9 @@ impl Venue for FlakyOnce {
         _event: CorporateEvent,
         _now: chrono::DateTime<Utc>,
     ) -> Result<String, VenueError> {
-        Err(VenueError::Invalid("no corporate surface on the stub".to_owned()))
+        Err(VenueError::Invalid(
+            "no corporate surface on the stub".to_owned(),
+        ))
     }
 }
 
@@ -259,14 +285,19 @@ async fn kill_mid_submit_leaves_no_unknown_position_and_no_duplicate() {
     fluent_wvr::CURRENT_CAPS
         .scope(caps, async {
             let journal = Journal::open(&path).expect("open");
-            journal.record_intent(&permit, &intent("soak#0"), now()).expect("journal the intent");
+            journal
+                .record_intent(&permit, &intent("soak#0"), now())
+                .expect("journal the intent");
         })
         .await;
     // The crash: the handle above dropped. Reopen replays the intent.
     let caps = fluent_wvr::CapabilitySet::new().with(permit.clone());
     let replayed = fluent_wvr::CURRENT_CAPS
         .scope(caps, async {
-            Journal::open(&path).expect("reopen").replay(&permit).expect("replay")
+            Journal::open(&path)
+                .expect("reopen")
+                .replay(&permit)
+                .expect("replay")
         })
         .await;
     assert_eq!(replayed.intents.len(), 1, "the intent survives the crash");
@@ -279,12 +310,27 @@ async fn kill_mid_submit_leaves_no_unknown_position_and_no_duplicate() {
     let venue = FlakyOnce::new();
     let journal = Journal::ephemeral();
     let recorder = Recorder::ephemeral(&journal);
-    let record = crate::submit::submit_guarded(&recorder, &venue, &approved_for(&intent("soak#0")), intent("soak#0"), &quote(), now())
-        .await
-        .expect("the retry resolves");
+    let record = crate::submit::submit_guarded(
+        &recorder,
+        &venue,
+        &approved_for(&intent("soak#0")),
+        intent("soak#0"),
+        &quote(),
+        now(),
+    )
+    .await
+    .expect("the retry resolves");
     assert_eq!(record.status, OrderStatus::Acknowledged);
-    assert_eq!(venue.submits.load(Ordering::SeqCst), 2, "one lost ack, one resolving retry");
-    assert_eq!(venue.orders().len(), 1, "the retry was a lookup, never a second order");
+    assert_eq!(
+        venue.submits.load(Ordering::SeqCst),
+        2,
+        "one lost ack, one resolving retry"
+    );
+    assert_eq!(
+        venue.orders().len(),
+        1,
+        "the retry was a lookup, never a second order"
+    );
     let permit = VenueStorage::new(std::path::PathBuf::from("ephemeral-test"));
     assert_eq!(
         journal
@@ -307,7 +353,10 @@ struct Drifted;
 
 impl ReconcileSource for Drifted {
     fn journal(&self) -> JournalBook {
-        JournalBook { net: HashMap::from([("SPY".to_owned(), 2)]), legs: HashMap::new() }
+        JournalBook {
+            net: HashMap::from([("SPY".to_owned(), 2)]),
+            legs: HashMap::new(),
+        }
     }
 
     fn venue_positions(&self) -> Vec<Position> {
@@ -339,17 +388,24 @@ fn reconcile_mismatch_halts_entries_and_pages_out_of_band() {
         reconciled: gate.reconciled(),
         backfilled: true,
     };
-    assert!(!may_trade(&state, &HealthLimits::new().build()).may_trade(), "health fails closed");
+    assert!(
+        !may_trade(&state, &HealthLimits::new().build()).may_trade(),
+        "health fails closed"
+    );
 
     let dir = tempfile::tempdir().expect("tempdir");
     let memory = MemorySink::new();
-    let file: Arc<dyn AlertSink> =
-        Arc::new(FileSink::new(dir.path().join("soak-alerts.jsonl")));
+    let file: Arc<dyn AlertSink> = Arc::new(FileSink::new(dir.path().join("soak-alerts.jsonl")));
     let fanout = FanoutSink::new(vec![Arc::new(memory.clone()) as Arc<dyn AlertSink>, file]);
     let mut cursor = AlertCursor::new();
     let sent = poll_alerts(
         &mut cursor,
-        &GateWatch { breaker: None, reconcile: Some(&gate), backfill: None, state: None },
+        &GateWatch {
+            breaker: None,
+            reconcile: Some(&gate),
+            backfill: None,
+            state: None,
+        },
         &fanout,
         now(),
     )

@@ -172,7 +172,11 @@ pub fn ts_cum_max(values: &[f64]) -> Vec<Option<f64>> {
         .iter()
         .map(|v| {
             if v.is_nan() {
-                return if running.is_finite() { Some(running) } else { None };
+                return if running.is_finite() {
+                    Some(running)
+                } else {
+                    None
+                };
             }
             running = running.max(*v);
             Some(running)
@@ -188,7 +192,11 @@ pub fn ts_cum_min(values: &[f64]) -> Vec<Option<f64>> {
         .iter()
         .map(|v| {
             if v.is_nan() {
-                return if running.is_finite() { Some(running) } else { None };
+                return if running.is_finite() {
+                    Some(running)
+                } else {
+                    None
+                };
             }
             running = running.min(*v);
             Some(running)
@@ -389,13 +397,18 @@ pub fn ts_moment(values: &[f64], d: usize, k: i32) -> Vec<Option<f64>> {
             if d == 0 || i + 1 < d {
                 return None;
             }
-            let present: Vec<f64> =
-                values[i + 1 - d..=i].iter().copied().filter(|v| !v.is_nan()).collect();
+            let present: Vec<f64> = values[i + 1 - d..=i]
+                .iter()
+                .copied()
+                .filter(|v| !v.is_nan())
+                .collect();
             if present.is_empty() {
                 return None;
             }
             let mean = present.iter().sum::<f64>() / present.len() as f64;
-            fin_or_none(present.iter().map(|v| (v - mean).powi(k)).sum::<f64>() / present.len() as f64)
+            fin_or_none(
+                present.iter().map(|v| (v - mean).powi(k)).sum::<f64>() / present.len() as f64,
+            )
         })
         .collect()
 }
@@ -459,7 +472,10 @@ fn standardized_moment(values: &[f64], d: usize, bias: bool, order: u32) -> Vec<
             if d < 3 || (order == 4 && d < 4) {
                 return None;
             }
-            let total: f64 = window.iter().map(|v| ((v - mean) / variance.sqrt()).powi(order as i32)).sum();
+            let total: f64 = window
+                .iter()
+                .map(|v| ((v - mean) / variance.sqrt()).powi(order as i32))
+                .sum();
             fin_or_none(if order == 3 {
                 n / ((n - 1.0) * (n - 2.0)) * total
             } else {
@@ -492,8 +508,7 @@ pub fn ts_ir(values: &[f64], d: usize) -> Vec<Option<f64>> {
         .map(|(i, _)| {
             let window = strict_window(values, i, d)?;
             let mean = window.iter().sum::<f64>() / d as f64;
-            let variance =
-                window.iter().map(|v| (v - mean) * (v - mean)).sum::<f64>() / d as f64;
+            let variance = window.iter().map(|v| (v - mean) * (v - mean)).sum::<f64>() / d as f64;
             if variance <= 0.0 {
                 return None;
             }
@@ -601,7 +616,10 @@ fn arg_extreme(values: &[f64], d: usize, reverse: bool, want_max: bool) -> Vec<O
                 window.iter().copied().reduce(f64::min)
             }?;
             let position = if reverse {
-                window.iter().rposition(|v| *v == extreme).map(|from_start| d - 1 - from_start)
+                window
+                    .iter()
+                    .rposition(|v| *v == extreme)
+                    .map(|from_start| d - 1 - from_start)
             } else {
                 window.iter().position(|v| *v == extreme)
             };
@@ -647,8 +665,10 @@ pub fn ts_covariance(xs: &[f64], ys: &[f64], d: usize, ddof: usize) -> Vec<Optio
 fn pair_sums(xs: &[f64], ys: &[f64], end: usize, d: usize) -> Option<(f64, f64, f64)> {
     let xw = strict_window(xs, end, d)?;
     let yw = strict_window(ys, end, d)?;
-    let (mean_x, mean_y) =
-        (xw.iter().sum::<f64>() / d as f64, yw.iter().sum::<f64>() / d as f64);
+    let (mean_x, mean_y) = (
+        xw.iter().sum::<f64>() / d as f64,
+        yw.iter().sum::<f64>() / d as f64,
+    );
     let mut sums = (0.0, 0.0, 0.0);
     for (x, y) in xw.iter().zip(yw.iter()) {
         sums.0 += (x - mean_x) * (y - mean_y);
@@ -670,8 +690,7 @@ pub fn ts_zscore(values: &[f64], d: usize) -> Vec<Option<f64>> {
             }
             let window = strict_window(values, i, d)?;
             let mean = window.iter().sum::<f64>() / d as f64;
-            let variance =
-                window.iter().map(|v| (v - mean) * (v - mean)).sum::<f64>() / d as f64;
+            let variance = window.iter().map(|v| (v - mean) * (v - mean)).sum::<f64>() / d as f64;
             if variance <= 0.0 {
                 return None;
             }
@@ -713,8 +732,11 @@ pub fn ts_decay_linear(values: &[f64], d: usize) -> Vec<Option<f64>> {
         .enumerate()
         .map(|(i, _)| {
             let window = strict_window(values, i, d)?;
-            let total: f64 =
-                window.iter().enumerate().map(|(k, v)| (k + 1) as f64 * v).sum();
+            let total: f64 = window
+                .iter()
+                .enumerate()
+                .map(|(k, v)| (k + 1) as f64 * v)
+                .sum();
             fin_or_none(total / (d * (d + 1) / 2) as f64)
         })
         .collect()
@@ -850,8 +872,7 @@ pub fn ts_realized_volatility(values: &[f64], d: usize) -> Vec<Option<f64>> {
                 diffs.push(diff);
             }
             let mean = diffs.iter().sum::<f64>() / d as f64;
-            let variance =
-                diffs.iter().map(|v| (v - mean) * (v - mean)).sum::<f64>() / d as f64;
+            let variance = diffs.iter().map(|v| (v - mean) * (v - mean)).sum::<f64>() / d as f64;
             fin_or_none(variance.sqrt())
         })
         .collect()
@@ -901,20 +922,19 @@ fn count_condition(values: &[f64], d: usize, n: usize, at_least: bool) -> Vec<Op
         if end + 1 < width {
             return None;
         }
-        Some(values[end + 1 - width..=end].iter().filter(|v| **v != 0.0).count())
+        Some(
+            values[end + 1 - width..=end]
+                .iter()
+                .filter(|v| **v != 0.0)
+                .count(),
+        )
     };
     values
         .iter()
         .enumerate()
         .map(|(i, _)| {
             let recent = truthy(i, n).map(|count| count == n);
-            let total = truthy(i, d).map(|count| {
-                if at_least {
-                    count >= n
-                } else {
-                    count == n
-                }
-            });
+            let total = truthy(i, d).map(|count| if at_least { count >= n } else { count == n });
             match (recent, total) {
                 (Some(false), _) | (_, Some(false)) => Some(0.0),
                 (Some(true), Some(true)) => Some(1.0),

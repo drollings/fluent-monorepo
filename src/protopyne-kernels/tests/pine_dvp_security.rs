@@ -24,9 +24,9 @@
 //! file stem.
 
 use crate::{
-    ClosureEntry, InputSet, LinkedModule, LtfDataset, PineEngine, PineRuntimeConfig,
-    PineValue, REAL_LIBRARIES, TASK_INDICATORS, closure_data_root,
-    load_listed_closure, parse_program, PineExpr, PineStmt,
+    closure_data_root, load_listed_closure, parse_program, ClosureEntry, InputSet, LinkedModule,
+    LtfDataset, PineEngine, PineExpr, PineRuntimeConfig, PineStmt, PineValue, REAL_LIBRARIES,
+    TASK_INDICATORS,
 };
 use protopyne_types::Bar;
 use std::collections::{BTreeMap, BTreeSet};
@@ -256,10 +256,9 @@ fn request_sites_per_closure(
 /// else (which the engine refuses at the call site).
 fn merge_mode(expr: &PineExpr) -> String {
     match expr {
-        PineExpr::Variable(spelling) => spelling
-            .strip_prefix("barmerge.")
-            .unwrap_or("?")
-            .to_owned(),
+        PineExpr::Variable(spelling) => {
+            spelling.strip_prefix("barmerge.").unwrap_or("?").to_owned()
+        }
         _ => "?".to_owned(),
     }
 }
@@ -371,8 +370,7 @@ fn walk_request_stmts(stmts: &[PineStmt], sink: &mut BTreeMap<String, BTreeSet<S
             PineStmt::ExportDecl(inner) => {
                 walk_request_stmts(std::slice::from_ref(inner), sink);
             }
-            PineStmt::FuncDecl { params, body, .. }
-            | PineStmt::MethodDecl { params, body, .. } => {
+            PineStmt::FuncDecl { params, body, .. } | PineStmt::MethodDecl { params, body, .. } => {
                 for param in params {
                     if let Some(default) = &param.default {
                         walk_request_expr(default, sink);
@@ -462,14 +460,22 @@ fn request_sites_per_task_closure_are_pinned() {
             "security",
             "gaps_off+lookahead_off",
         ),
-        ("showmethegrail/libApex", "security", "gaps_off+lookahead_off"),
+        (
+            "showmethegrail/libApex",
+            "security",
+            "gaps_off+lookahead_off",
+        ),
     ];
     let expected: &[(&str, &[(&str, &str, &str)])] = &[
         ("DeltaVolumeProfileProtopyne", triple),
         ("ApexPPAS", triple),
         ("ApexRSIMD", triple),
     ];
-    assert_eq!(TASK_INDICATORS.len(), expected.len(), "closures under proof");
+    assert_eq!(
+        TASK_INDICATORS.len(),
+        expected.len(),
+        "closures under proof"
+    );
     for (indicator, want) in TASK_INDICATORS.iter().zip(expected.iter()) {
         let (_, files) = want;
         let mut got = Vec::new();
@@ -529,7 +535,9 @@ fn libapex_fetch_matches_raw_security_shape() {
     // production `libApex.fetch` code path over the same injected dataset.
     let bars = fixture::history_bars("historical/SPY_1M.csv");
     let last = bars.len() - 1;
-    let daily = LtfDataset::of_bars(&fixture::daily_of(&fixture::history_bars("historical/SPY_15M.csv")));
+    let daily = LtfDataset::of_bars(&fixture::daily_of(&fixture::history_bars(
+        "historical/SPY_15M.csv",
+    )));
     let datasets = vec![("D".to_owned(), daily.clone())];
     let raw = run_cell("1", "historical/SPY_1M.csv", "D", &datasets, None, |_| {});
     let driver = "import showmethegrail/libUtil/12 as UTIL\n\
@@ -563,15 +571,31 @@ fn libapex_fetch_matches_raw_security_shape() {
     // Direct assignments read the raw positions; the derived metrics follow
     // the production recomposition exactly (the MTF branch applies its own
     // normalization on top of the already-normalized list values).
-    assert_eq!(field("ma_primary"), canon_value(raw[6].as_ref()), "alma leg");
+    assert_eq!(
+        field("ma_primary"),
+        canon_value(raw[6].as_ref()),
+        "alma leg"
+    );
     assert_eq!(field("ma_signal"), canon_value(raw[7].as_ref()), "vwma leg");
     assert_eq!(field("ma_mean"), canon_value(raw[8].as_ref()), "ema leg");
     assert_eq!(field("atr"), canon_value(raw[9].as_ref()), "atr leg");
-    assert_eq!(field("atr_long"), canon_value(raw[10].as_ref()), "long atr leg");
+    assert_eq!(
+        field("atr_long"),
+        canon_value(raw[10].as_ref()),
+        "long atr leg"
+    );
     assert_eq!(field("stdev"), canon_value(raw[13].as_ref()), "stdev leg");
     assert_eq!(field("vol"), canon_value(raw[4].as_ref()), "volume leg");
-    assert_eq!(field("vol_sma"), canon_value(raw[5].as_ref()), "volume average leg");
-    assert_eq!(field("tf"), "enum:Timeframes.D1", "context records the requested timeframe");
+    assert_eq!(
+        field("vol_sma"),
+        canon_value(raw[5].as_ref()),
+        "volume average leg"
+    );
+    assert_eq!(
+        field("tf"),
+        "enum:Timeframes.D1",
+        "context records the requested timeframe"
+    );
 }
 
 /// Five synthetic closed bars: enough history for short windows, too short
@@ -718,24 +742,39 @@ fn lookahead_calibration_nine_cells_green() {
             let cell = format!("chart={chart} injected={pair}");
             let plain = canon_array(&run_cell(chart, chart_file, pair, &datasets, None, |_| {}));
             let future_ms = chart_last_ms.max(base_last) + step_ms;
-            let spiked =
-                canon_array(&run_cell(chart, chart_file, pair, &datasets, None, |dataset| {
+            let spiked = canon_array(&run_cell(
+                chart,
+                chart_file,
+                pair,
+                &datasets,
+                None,
+                |dataset| {
                     push_row(dataset, sentinel_row(future_ms, base_close, base_volume));
-                }));
+                },
+            ));
             if spiked != plain {
                 failures.push(format!("{cell}: future sentinel leaked into the fetch"));
             }
             let same_ms = chart_last_ms.div_euclid(step_ms) * step_ms;
-            let controlled =
-                canon_array(&run_cell(chart, chart_file, pair, &datasets, None, |dataset| {
+            let controlled = canon_array(&run_cell(
+                chart,
+                chart_file,
+                pair,
+                &datasets,
+                None,
+                |dataset| {
                     push_row(dataset, sentinel_row(same_ms, base_close, base_volume));
-                }));
+                },
+            ));
             if controlled == plain {
                 failures.push(format!("{cell}: same-bar control stayed invisible"));
             }
         }
     }
-    assert!(failures.is_empty(), "look-ahead calibration failures: {failures:?}");
+    assert!(
+        failures.is_empty(),
+        "look-ahead calibration failures: {failures:?}"
+    );
 }
 
 /// Gap calibration over the same nine cells: deleting one injected row
@@ -764,9 +803,7 @@ fn gap_calibration_nine_cells_green() {
             // `[hole, next)`): otherwise the deletion is invisible by grid
             // geometry, not by carry-forward, and the cell proves nothing.
             let middle_ms = chart_first_ms
-                + (bars.last().expect("chart nonempty").ts.timestamp_millis()
-                    - chart_first_ms)
-                    / 2;
+                + (bars.last().expect("chart nonempty").ts.timestamp_millis() - chart_first_ms) / 2;
             let mut candidates: Vec<usize> = (1..base.times.len()).collect();
             candidates.sort_by_key(|&index| (base.times[index] - middle_ms).abs());
             let found = candidates.into_iter().find_map(|index| {
@@ -792,14 +829,21 @@ fn gap_calibration_nine_cells_green() {
                 })
                 .expect("hole is observed");
             let plain = run_cell(chart, chart_file, pair, &datasets, Some(probe_bar), |_| {});
-            let gapped = run_cell(chart, chart_file, pair, &datasets, Some(probe_bar), |dataset| {
-                dataset.times.remove(hole);
-                dataset.opens.remove(hole);
-                dataset.highs.remove(hole);
-                dataset.lows.remove(hole);
-                dataset.closes.remove(hole);
-                dataset.volumes.remove(hole);
-            });
+            let gapped = run_cell(
+                chart,
+                chart_file,
+                pair,
+                &datasets,
+                Some(probe_bar),
+                |dataset| {
+                    dataset.times.remove(hole);
+                    dataset.opens.remove(hole);
+                    dataset.highs.remove(hole);
+                    dataset.lows.remove(hole);
+                    dataset.closes.remove(hole);
+                    dataset.volumes.remove(hole);
+                },
+            );
             // Bare `close` is the fourth fetch position.
             let gapped_close = canon_value(gapped[3].as_ref());
             let plain_close = canon_value(plain[3].as_ref());
@@ -813,5 +857,8 @@ fn gap_calibration_nine_cells_green() {
             }
         }
     }
-    assert!(failures.is_empty(), "gap calibration failures: {failures:?}");
+    assert!(
+        failures.is_empty(),
+        "gap calibration failures: {failures:?}"
+    );
 }

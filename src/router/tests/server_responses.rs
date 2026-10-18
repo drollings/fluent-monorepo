@@ -18,7 +18,10 @@ fn terminal_failures_are_error_statuses_not_completions() {
     // Terminal dispatch failure leaves the router as an HTTP error status
     // (`error_response`), never a 200 completion — there is no fallback
     // completion constructor anymore.
-    let resp = error_response(hyper::StatusCode::BAD_GATEWAY, "all dispatch targets failed");
+    let resp = error_response(
+        hyper::StatusCode::BAD_GATEWAY,
+        "all dispatch targets failed",
+    );
     assert_eq!(resp.status(), hyper::StatusCode::BAD_GATEWAY);
     let overflow = error_response(hyper::StatusCode::BAD_REQUEST, "prompt exceeds the window");
     assert_eq!(overflow.status(), hyper::StatusCode::BAD_REQUEST);

@@ -77,7 +77,12 @@ impl Alert {
     /// Build an alert whose class follows its source.
     #[must_use]
     pub fn new(source: AlertSource, detail: String, at: DateTime<Utc>) -> Self {
-        Self { source, class: source.class(), detail, at }
+        Self {
+            source,
+            class: source.class(),
+            detail,
+            at,
+        }
     }
 }
 
@@ -194,7 +199,10 @@ impl AlertSink for FanoutSink {
         if failures.is_empty() {
             Ok(())
         } else {
-            Err(VenueError::Alert(format!("dark alert members: {}", failures.join("; "))))
+            Err(VenueError::Alert(format!(
+                "dark alert members: {}",
+                failures.join("; ")
+            )))
         }
     }
 }
@@ -244,7 +252,9 @@ pub fn poll_alerts(
         if breaker.tripped() && !cursor.breaker_reported {
             alerts.push(Alert::new(
                 AlertSource::BreakerTrip,
-                breaker.trip_reason().unwrap_or_else(|| "stream breaker tripped".to_owned()),
+                breaker
+                    .trip_reason()
+                    .unwrap_or_else(|| "stream breaker tripped".to_owned()),
                 now,
             ));
             cursor.breaker_reported = true;

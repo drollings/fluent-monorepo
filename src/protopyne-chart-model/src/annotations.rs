@@ -43,7 +43,10 @@ impl AnnotationKey {
     /// exact decimals use the struct literal directly.
     #[must_use]
     pub fn from_display(bar_timestamp: i64, price: f64) -> Option<Self> {
-        Some(Self { bar_timestamp, price: Decimal::from_f64_retain(price)? })
+        Some(Self {
+            bar_timestamp,
+            price: Decimal::from_f64_retain(price)?,
+        })
     }
 }
 

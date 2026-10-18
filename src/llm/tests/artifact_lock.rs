@@ -226,9 +226,8 @@ async fn heartbeat_rewrites_get_distinguishable_timestamps() {
     // the gate is built on.
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("heartbeat.bin");
-    let stamp = |path: &std::path::Path| {
-        common_core::io::mtime_ns(&std::fs::metadata(path).unwrap())
-    };
+    let stamp =
+        |path: &std::path::Path| common_core::io::mtime_ns(&std::fs::metadata(path).unwrap());
 
     std::fs::write(&path, b"beat-0").unwrap();
     let first = stamp(&path);

@@ -13,4 +13,4 @@ pub mod ticks;
 
 pub use error::ScaleError;
 pub use mapping::{PriceRange, PriceScale, PriceScaleMode};
-pub use ticks::{Tick, nice_ticks};
+pub use ticks::{nice_ticks, Tick};

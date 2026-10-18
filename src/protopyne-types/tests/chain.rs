@@ -63,13 +63,7 @@ fn empty_spread_is_refused() {
 
 #[test]
 fn five_leg_spread_is_refused() {
-    let legs = vec![
-        long_leg(),
-        long_leg(),
-        short_leg(),
-        short_leg(),
-        long_leg(),
-    ];
+    let legs = vec![long_leg(), long_leg(), short_leg(), short_leg(), long_leg()];
     let err = SpreadLegs::try_new(legs).expect_err("5 legs must refuse");
     assert!(!err.to_string().is_empty());
 }

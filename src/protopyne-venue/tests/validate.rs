@@ -1,6 +1,6 @@
 use super::*;
 use fluent_wvr::prelude::*;
-use protopyne_types::{Validate, check_for_execute};
+use protopyne_types::{check_for_execute, Validate};
 
 #[test]
 fn session_config_trait_parity() {

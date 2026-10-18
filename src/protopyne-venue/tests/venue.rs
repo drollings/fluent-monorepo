@@ -68,8 +68,7 @@ impl Venue for OrdersOnly {
     fn query<'a>(
         &'a self,
         _client_id: &'a str,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<OrderRecord>> + Send + 'a>>
-    {
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<OrderRecord>> + Send + 'a>> {
         Box::pin(std::future::ready(None))
     }
 

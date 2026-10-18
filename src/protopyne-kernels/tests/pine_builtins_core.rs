@@ -8,7 +8,7 @@
 
 use super::*;
 use crate::pine::syntax::PineType;
-use crate::{PineRuntimeConfig, inputs::InputSet, parse_program};
+use crate::{inputs::InputSet, parse_program, PineRuntimeConfig};
 use chrono::TimeZone as _;
 use protopyne_types::Bar;
 
@@ -62,12 +62,18 @@ fn run_err(namespace: &str, method: &str, args: &[CoreArg]) -> String {
 fn math_abs_max_min_match_reference() {
     assert_eq!(math_num("abs", &[float_arg(-3.5)]), Some(3.5));
     assert_eq!(math_num("abs", &[int_arg(-4)]), Some(4.0));
-    assert_eq!(math_num("max", &[float_arg(1.0), float_arg(5.0)]), Some(5.0));
+    assert_eq!(
+        math_num("max", &[float_arg(1.0), float_arg(5.0)]),
+        Some(5.0)
+    );
     assert_eq!(
         math_num("max", &[float_arg(1.0), float_arg(5.0), float_arg(3.0)]),
         Some(5.0)
     );
-    assert_eq!(math_num("min", &[float_arg(1.0), float_arg(5.0)]), Some(1.0));
+    assert_eq!(
+        math_num("min", &[float_arg(1.0), float_arg(5.0)]),
+        Some(1.0)
+    );
     // Absence propagates, never coerces to zero.
     assert_eq!(math_num("max", &[pos(None), float_arg(5.0)]), None);
     assert_eq!(math_num("abs", &[pos(None)]), None);
@@ -85,14 +91,20 @@ fn math_floor_ceil_round_pow_match_reference() {
         math_num("round", &[float_arg(2.345), int_arg(2)]),
         Some(2.35)
     );
-    assert_eq!(math_num("pow", &[float_arg(2.0), float_arg(10.0)]), Some(1024.0));
+    assert_eq!(
+        math_num("pow", &[float_arg(2.0), float_arg(10.0)]),
+        Some(1024.0)
+    );
 }
 
 #[test]
 fn math_sqrt_log_exp_sign_match_reference() {
     assert_eq!(math_num("sqrt", &[float_arg(16.0)]), Some(4.0));
     assert_eq!(math_num("sqrt", &[float_arg(-1.0)]), None);
-    assert_eq!(math_num("log", &[float_arg(std::f64::consts::E)]), Some(1.0));
+    assert_eq!(
+        math_num("log", &[float_arg(std::f64::consts::E)]),
+        Some(1.0)
+    );
     assert_eq!(math_num("exp", &[float_arg(0.0)]), Some(1.0));
     assert_eq!(math_num("sign", &[float_arg(-4.0)]), Some(-1.0));
     assert_eq!(math_num("sign", &[float_arg(0.0)]), Some(0.0));
@@ -122,13 +134,25 @@ fn math_avg_sum_fold_all_arguments() {
 #[test]
 fn math_refusals_carry_names() {
     let message = run_err("math", "abs", &[]);
-    assert!(message.contains("math.abs"), "arity names the function: {message}");
+    assert!(
+        message.contains("math.abs"),
+        "arity names the function: {message}"
+    );
     let message = run_err("math", "abs", &[str_arg("x")]);
-    assert!(message.contains("math.abs"), "kind names the function: {message}");
+    assert!(
+        message.contains("math.abs"),
+        "kind names the function: {message}"
+    );
     let message = run_err("math", "no_such_fn", &[float_arg(1.0)]);
-    assert!(message.contains("math.no_such_fn"), "unknown names itself: {message}");
+    assert!(
+        message.contains("math.no_such_fn"),
+        "unknown names itself: {message}"
+    );
     let message = run_err("nope", "abs", &[float_arg(1.0)]);
-    assert!(message.contains("nope.abs"), "unknown namespace names itself: {message}");
+    assert!(
+        message.contains("nope.abs"),
+        "unknown namespace names itself: {message}"
+    );
 }
 
 // ---- str.* (reference overlap, transcribed) ----
@@ -139,10 +163,22 @@ fn str_tostring_renders_scalars() {
     let mut render = |value: Option<PineValue>| {
         call("str", "tostring", "s", &[pos(value)], &[], &mut inputs).expect("renders")
     };
-    assert_eq!(render(Some(PineValue::Float(3.25))), Some(PineValue::Str("3.25".to_owned())));
-    assert_eq!(render(Some(PineValue::Int(42))), Some(PineValue::Str("42".to_owned())));
-    assert_eq!(render(Some(PineValue::Bool(true))), Some(PineValue::Str("true".to_owned())));
-    assert_eq!(render(Some(PineValue::Str("hi".to_owned()))), Some(PineValue::Str("hi".to_owned())));
+    assert_eq!(
+        render(Some(PineValue::Float(3.25))),
+        Some(PineValue::Str("3.25".to_owned()))
+    );
+    assert_eq!(
+        render(Some(PineValue::Int(42))),
+        Some(PineValue::Str("42".to_owned()))
+    );
+    assert_eq!(
+        render(Some(PineValue::Bool(true))),
+        Some(PineValue::Str("true".to_owned()))
+    );
+    assert_eq!(
+        render(Some(PineValue::Str("hi".to_owned()))),
+        Some(PineValue::Str("hi".to_owned()))
+    );
     assert_eq!(render(None), Some(PineValue::Str("NaN".to_owned())));
 }
 
@@ -205,9 +241,18 @@ fn str_predicates_and_case_match_reference() {
         Some(PineValue::Bool(true))
     );
     assert_eq!(one("length", &[str_arg("abc")]), Some(PineValue::Int(3)));
-    assert_eq!(one("upper", &[str_arg("wma")]), Some(PineValue::Str("WMA".to_owned())));
-    assert_eq!(one("lower", &[str_arg("WMA")]), Some(PineValue::Str("wma".to_owned())));
-    assert_eq!(one("trim", &[str_arg("  a  ")]), Some(PineValue::Str("a".to_owned())));
+    assert_eq!(
+        one("upper", &[str_arg("wma")]),
+        Some(PineValue::Str("WMA".to_owned()))
+    );
+    assert_eq!(
+        one("lower", &[str_arg("WMA")]),
+        Some(PineValue::Str("wma".to_owned()))
+    );
+    assert_eq!(
+        one("trim", &[str_arg("  a  ")]),
+        Some(PineValue::Str("a".to_owned()))
+    );
     assert_eq!(
         one("startswith", &[str_arg("FastMAs"), str_arg("Fast")]),
         Some(PineValue::Bool(true))
@@ -217,10 +262,7 @@ fn str_predicates_and_case_match_reference() {
         Some(PineValue::Bool(true))
     );
     assert_eq!(
-        one(
-            "replace",
-            &[str_arg("a-b-c"), str_arg("-"), str_arg("_")]
-        ),
+        one("replace", &[str_arg("a-b-c"), str_arg("-"), str_arg("_")]),
         Some(PineValue::Str("a_b_c".to_owned()))
     );
 }
@@ -258,7 +300,9 @@ fn input_int_declares_bounds_and_returns_default() {
     let out = call("input", "int", "site-a", &args, &[], &mut inputs).expect("declares");
     assert_eq!(out, Some(PineValue::Int(3)));
     // Re-declaring the same site returns the stored value, and overrides win.
-    inputs.set("unused", PineValue::Bool(true)).expect_err("undeclared refuses");
+    inputs
+        .set("unused", PineValue::Bool(true))
+        .expect_err("undeclared refuses");
     let out = call("input", "int", "site-a", &args, &[], &mut inputs).expect("idempotent");
     assert_eq!(out, Some(PineValue::Int(3)));
 }
@@ -275,7 +319,9 @@ fn input_int_maxval_refuses_out_of_range_override() {
     // Overrides flow through the same bounds: 500 exceeds maxval 200.
     let refused = inputs.set("site-b", PineValue::Int(500));
     assert!(refused.is_err(), "out-of-range override refuses");
-    inputs.set("site-b", PineValue::Int(100)).expect("in-range override applies");
+    inputs
+        .set("site-b", PineValue::Int(100))
+        .expect("in-range override applies");
     let out = call("input", "int", "site-b", &args, &[], &mut inputs).expect("reads back");
     assert_eq!(out, Some(PineValue::Int(100)));
 }
@@ -287,7 +333,10 @@ fn input_bool_float_string_source_passthrough() {
         "input",
         "bool",
         "site-c",
-        &[pos(Some(PineValue::Bool(true))), named("title", Some(PineValue::Str("show".to_owned())))],
+        &[
+            pos(Some(PineValue::Bool(true))),
+            named("title", Some(PineValue::Str("show".to_owned()))),
+        ],
         &[],
         &mut inputs,
     )
@@ -305,8 +354,15 @@ fn input_bool_float_string_source_passthrough() {
     assert_eq!(out, Some(PineValue::Str("-".to_owned())));
     // `input.source` evaluates its default expression per bar and stores
     // nothing: the default rides through untouched.
-    let out = call("input", "source", "site-e", &[float_arg(7.5)], &[], &mut inputs)
-        .expect("source passes through");
+    let out = call(
+        "input",
+        "source",
+        "site-e",
+        &[float_arg(7.5)],
+        &[],
+        &mut inputs,
+    )
+    .expect("source passes through");
     assert_eq!(out, Some(PineValue::Float(7.5)));
 }
 
@@ -314,8 +370,15 @@ fn input_bool_float_string_source_passthrough() {
 fn input_enum_keeps_opaque_member() {
     let mut inputs = InputSet::new();
     let member = PineValue::EnumHandle(crate::value::EnumHandle::new("Smoothings", "WMA"));
-    let out = call("input", "enum", "site-f", &[pos(Some(member.clone()))], &[], &mut inputs)
-        .expect("enum declares");
+    let out = call(
+        "input",
+        "enum",
+        "site-f",
+        &[pos(Some(member.clone()))],
+        &[],
+        &mut inputs,
+    )
+    .expect("enum declares");
     assert_eq!(out, Some(member));
 }
 
@@ -340,7 +403,8 @@ fn array_from_get_size_match_targets() {
         &mut inputs,
     )
     .expect("from builds");
-    let size = call("array", "size", "s", &[pos(from.clone())], &[], &mut inputs).expect("size reads");
+    let size =
+        call("array", "size", "s", &[pos(from.clone())], &[], &mut inputs).expect("size reads");
     assert_eq!(size, Some(PineValue::Int(3)));
     let second = call(
         "array",
@@ -361,7 +425,10 @@ fn array_from_get_size_match_targets() {
         &mut inputs,
     );
     assert!(oob.is_err(), "out-of-bounds get refuses");
-    assert_eq!(num_array(from.as_ref()), vec![Some(5_000.0), Some(15_000.0), Some(30_000.0)]);
+    assert_eq!(
+        num_array(from.as_ref()),
+        vec![Some(5_000.0), Some(15_000.0), Some(30_000.0)]
+    );
 }
 
 #[test]
@@ -420,15 +487,24 @@ fn array_push_pop_slice_sort_are_functional() {
     };
     let base = one("from", &[float_arg(3.0), float_arg(1.0)]);
     let pushed = one("push", &[pos(base.clone()), float_arg(2.0)]);
-    assert_eq!(num_array(pushed.as_ref()), vec![Some(3.0), Some(1.0), Some(2.0)]);
+    assert_eq!(
+        num_array(pushed.as_ref()),
+        vec![Some(3.0), Some(1.0), Some(2.0)]
+    );
     // The input array is untouched: ops return new arrays, never mutate.
     assert_eq!(num_array(base.as_ref()), vec![Some(3.0), Some(1.0)]);
-    assert_eq!(num_of(one("pop", &[pos(pushed.clone())]).as_ref()), Some(2.0));
+    assert_eq!(
+        num_of(one("pop", &[pos(pushed.clone())]).as_ref()),
+        Some(2.0)
+    );
     assert_eq!(
         num_array(one("slice", &[pos(pushed.clone()), int_arg(1), int_arg(3)]).as_ref()),
         vec![Some(1.0), Some(2.0)]
     );
-    assert_eq!(num_array(one("sort", &[pos(pushed)]).as_ref()), vec![Some(1.0), Some(2.0), Some(3.0)]);
+    assert_eq!(
+        num_array(one("sort", &[pos(pushed)]).as_ref()),
+        vec![Some(1.0), Some(2.0), Some(3.0)]
+    );
 }
 
 #[test]
@@ -437,19 +513,38 @@ fn array_reductions_skip_absent() {
     let mut one = |method: &str, args: &[CoreArg]| {
         call("array", method, "s", args, &[], &mut inputs).expect("valid array call")
     };
-    let base = one("from", &[float_arg(1.0), float_arg(2.0), float_arg(3.0), float_arg(4.0)]);
-    assert_eq!(num_of(one("sum", &[pos(base.clone())]).as_ref()), Some(10.0));
+    let base = one(
+        "from",
+        &[
+            float_arg(1.0),
+            float_arg(2.0),
+            float_arg(3.0),
+            float_arg(4.0),
+        ],
+    );
+    assert_eq!(
+        num_of(one("sum", &[pos(base.clone())]).as_ref()),
+        Some(10.0)
+    );
     assert_eq!(num_of(one("avg", &[pos(base.clone())]).as_ref()), Some(2.5));
     assert_eq!(num_of(one("max", &[pos(base.clone())]).as_ref()), Some(4.0));
     assert_eq!(num_of(one("min", &[pos(base.clone())]).as_ref()), Some(1.0));
-    let unbiased = one("stdev", &[pos(base.clone()), pos(Some(PineValue::Bool(false)))]);
-    assert!((num_of(unbiased.as_ref()).expect("stdev defined") - 1.290_994_448_735_805_6).abs() < 1e-12);
+    let unbiased = one(
+        "stdev",
+        &[pos(base.clone()), pos(Some(PineValue::Bool(false)))],
+    );
+    assert!(
+        (num_of(unbiased.as_ref()).expect("stdev defined") - 1.290_994_448_735_805_6).abs() < 1e-12
+    );
 }
 
 // ---- map.* (int-to-int, the scheduler's state shape) ----
 
 fn int_type() -> PineType {
-    PineType { name: "int".to_owned(), args: Vec::new() }
+    PineType {
+        name: "int".to_owned(),
+        args: Vec::new(),
+    }
 }
 
 #[test]
@@ -461,7 +556,10 @@ fn map_put_get_contains_size_keys_round_trip() {
         call("map", method, "s", args, &[], &mut inputs).expect("valid map call")
     };
     let filled = one("put", &[pos(empty), int_arg(7), int_arg(42)]);
-    assert_eq!(one("get", &[pos(filled.clone()), int_arg(7)]), Some(PineValue::Int(42)));
+    assert_eq!(
+        one("get", &[pos(filled.clone()), int_arg(7)]),
+        Some(PineValue::Int(42))
+    );
     assert_eq!(one("get", &[pos(filled.clone()), int_arg(8)]), None);
     assert_eq!(
         one("contains", &[pos(filled.clone()), int_arg(7)]),
@@ -482,7 +580,10 @@ fn color_rgb_named_new_gradient_stay_opaque() {
     let mut one = |method: &str, args: &[CoreArg]| {
         call("color", method, "s", args, &[], &mut inputs).expect("valid color call")
     };
-    let rgb = one("rgb", &[int_arg(250), int_arg(240), int_arg(40), int_arg(20)]);
+    let rgb = one(
+        "rgb",
+        &[int_arg(250), int_arg(240), int_arg(40), int_arg(20)],
+    );
     assert!(matches!(rgb, Some(PineValue::ColorHandle(_))));
     assert_eq!(num_of(rgb.as_ref()), None, "handles never read as numbers");
     let white = resolve_constant("color.white").expect("white resolves");
@@ -492,7 +593,13 @@ fn color_rgb_named_new_gradient_stay_opaque() {
     let mut grad = |v: f64| {
         one(
             "from_gradient",
-            &[float_arg(v), float_arg(0.0), float_arg(100.0), pos(start.clone()), pos(end.clone())],
+            &[
+                float_arg(v),
+                float_arg(0.0),
+                float_arg(100.0),
+                pos(start.clone()),
+                pos(end.clone()),
+            ],
         )
     };
     assert_eq!(grad(0.0), start, "bottom endpoint is the start color");
@@ -550,7 +657,11 @@ fn display_constants_resolve_opaque() {
     for name in ["size.tiny", "size.auto", "position.top_right"] {
         let got = resolve_constant(name).expect("constant resolves");
         assert!(matches!(got, PineValue::EnumHandle(_)), "{name} is opaque");
-        assert_eq!(num_of(Some(got).as_ref()), None, "{name} never reads numeric");
+        assert_eq!(
+            num_of(Some(got).as_ref()),
+            None,
+            "{name} never reads numeric"
+        );
     }
     assert_eq!(
         resolve_constant("timeframe.period"),
@@ -565,12 +676,27 @@ fn display_constants_resolve_opaque() {
 fn timeframe_in_seconds_maps_period_strings() {
     let mut inputs = InputSet::new();
     let mut one = |value: &str| {
-        call("timeframe", "in_seconds", "s", &[str_arg(value)], &[], &mut inputs).expect("maps")
+        call(
+            "timeframe",
+            "in_seconds",
+            "s",
+            &[str_arg(value)],
+            &[],
+            &mut inputs,
+        )
+        .expect("maps")
     };
     assert_eq!(one("5"), Some(PineValue::Int(300)));
     assert_eq!(one("D"), Some(PineValue::Int(86_400)));
     assert_eq!(one("15S"), Some(PineValue::Int(15)));
-    let bad = call("timeframe", "in_seconds", "s", &[str_arg("nope")], &[], &mut inputs);
+    let bad = call(
+        "timeframe",
+        "in_seconds",
+        "s",
+        &[str_arg("nope")],
+        &[],
+        &mut inputs,
+    );
     assert!(bad.is_err(), "unparseable timeframe refuses");
 }
 
@@ -579,21 +705,49 @@ fn input_timeframe_answers_its_period_string() {
     // The default validates against the chart-period parser and reads
     // back as text; overrides replace it wholesale.
     let mut inputs = InputSet::new();
-    let out = call("input", "timeframe", "site-tf", &[str_arg("D")], &[], &mut inputs)
-        .expect("timeframe declares");
+    let out = call(
+        "input",
+        "timeframe",
+        "site-tf",
+        &[str_arg("D")],
+        &[],
+        &mut inputs,
+    )
+    .expect("timeframe declares");
     assert_eq!(out, Some(PineValue::Str("D".to_owned())));
-    let out = call("input", "timeframe", "site-tf", &[str_arg("D")], &[], &mut inputs)
-        .expect("re-declare reads back");
+    let out = call(
+        "input",
+        "timeframe",
+        "site-tf",
+        &[str_arg("D")],
+        &[],
+        &mut inputs,
+    )
+    .expect("re-declare reads back");
     assert_eq!(out, Some(PineValue::Str("D".to_owned())));
     inputs
         .set("site-tf", PineValue::Str("60".to_owned()))
         .expect("override applies");
-    let out = call("input", "timeframe", "site-tf", &[str_arg("D")], &[], &mut inputs)
-        .expect("override wins");
+    let out = call(
+        "input",
+        "timeframe",
+        "site-tf",
+        &[str_arg("D")],
+        &[],
+        &mut inputs,
+    )
+    .expect("override wins");
     assert_eq!(out, Some(PineValue::Str("60".to_owned())));
     // Non-string defaults and unparseable periods refuse with reasons.
     let mut inputs = InputSet::new();
-    let bad = call("input", "timeframe", "site-bad", &[int_arg(5)], &[], &mut inputs);
+    let bad = call(
+        "input",
+        "timeframe",
+        "site-bad",
+        &[int_arg(5)],
+        &[],
+        &mut inputs,
+    );
     assert!(bad.is_err(), "non-string default refuses");
     let bad = call(
         "input",
@@ -672,12 +826,10 @@ fn timeframe_bucket_counts_sub_daily_and_calendar_units() {
 
 fn bar(open: &str, close: &str) -> Bar {
     Bar::new()
-        .ts(
-            chrono::Utc
-                .with_ymd_and_hms(2026, 1, 2, 9, 0, 0)
-                .single()
-                .expect("valid test timestamp"),
-        )
+        .ts(chrono::Utc
+            .with_ymd_and_hms(2026, 1, 2, 9, 0, 0)
+            .single()
+            .expect("valid test timestamp"))
         .o(open.parse().expect("decimal"))
         .h("101.00".parse().expect("decimal"))
         .l("99.00".parse().expect("decimal"))
@@ -691,13 +843,18 @@ fn run_script(script: &str) -> crate::pine::RunOutcome {
     let bars = vec![bar("100.00", "10.00"), bar("100.00", "11.00")];
     let program = parse_program(script).expect("script parses");
     let mut engine = crate::pine::PineEngine::new(PineRuntimeConfig::new().build());
-    engine.run(&program, &bars, InputSet::new()).expect("script runs")
+    engine
+        .run(&program, &bars, InputSet::new())
+        .expect("script runs")
 }
 
 #[test]
 fn engine_dispatches_scalar_namespaces() {
     let outcome = run_script("x = math.max(1, 5)\ns = str.tostring(3.25)\n");
-    assert_eq!(num_of(outcome.value_at(0, "x").expect("x bound").as_ref()), Some(5.0));
+    assert_eq!(
+        num_of(outcome.value_at(0, "x").expect("x bound").as_ref()),
+        Some(5.0)
+    );
     assert_eq!(
         outcome.value_at(0, "s").expect("s bound"),
         Some(PineValue::Str("3.25".to_owned()))
@@ -706,8 +863,12 @@ fn engine_dispatches_scalar_namespaces() {
 
 #[test]
 fn engine_declares_inputs_and_resolves_display_constants() {
-    let outcome = run_script("len = input.int(3, minval=3)\nd = display.none\nc = color.rgb(1, 2, 3)\n");
-    assert_eq!(num_of(outcome.value_at(0, "len").expect("len bound").as_ref()), Some(3.0));
+    let outcome =
+        run_script("len = input.int(3, minval=3)\nd = display.none\nc = color.rgb(1, 2, 3)\n");
+    assert_eq!(
+        num_of(outcome.value_at(0, "len").expect("len bound").as_ref()),
+        Some(3.0)
+    );
     assert_eq!(
         outcome.value_at(0, "d").expect("d bound"),
         Some(PineValue::Int(0)),

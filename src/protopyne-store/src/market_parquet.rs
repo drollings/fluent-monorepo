@@ -128,8 +128,8 @@ mod parquet_read {
 
     use super::{LenientRead, OhlcvRead, SkippedRow};
     use crate::arrow_decode::{
-        DecodeError, PriceColumn, StringColumn, TimeColumn, VolumeColumn, find,
-        price_column_of, string_column_of, time_column_of, volume_column_of,
+        find, price_column_of, string_column_of, time_column_of, volume_column_of, DecodeError,
+        PriceColumn, StringColumn, TimeColumn, VolumeColumn,
     };
     use crate::commit::KeyedSnapshot as _;
     use crate::error::StoreError;
@@ -152,7 +152,10 @@ mod parquet_read {
             match $mode {
                 OnBadRow::Refuse => return Err(row_err($row, $reason)),
                 OnBadRow::Skip => {
-                    $skipped.push(SkippedRow { row: $row, reason: $reason.to_string() });
+                    $skipped.push(SkippedRow {
+                        row: $row,
+                        reason: $reason.to_string(),
+                    });
                     continue;
                 }
             }
@@ -214,13 +217,8 @@ mod parquet_read {
     }
 
     fn time_column(batch: &RecordBatch, index: usize) -> Result<TimeColumn<'_>, StoreError> {
-        time_column_of(batch, index).map_err(|err| {
-            decode(
-                "timestamp column",
-                "a timestamp unit or ts_ms integer",
-                err,
-            )
-        })
+        time_column_of(batch, index)
+            .map_err(|err| decode("timestamp column", "a timestamp unit or ts_ms integer", err))
     }
 
     fn price_column<'a>(
@@ -375,8 +373,15 @@ mod parquet_read {
                     Ok(value) => value,
                     Err(reason) => refuse_or_skip!(row, reason, skipped, bad_row),
                 };
-                let bar =
-                    Bar::new().ts(stamp).o(o).h(h).l(l).c(c).volume(shares).maybe_adj(None).build();
+                let bar = Bar::new()
+                    .ts(stamp)
+                    .o(o)
+                    .h(h)
+                    .l(l)
+                    .c(c)
+                    .volume(shares)
+                    .maybe_adj(None)
+                    .build();
                 if let Err(reason) = bar.validate() {
                     refuse_or_skip!(row, reason, skipped, bad_row);
                 }
@@ -411,7 +416,11 @@ mod parquet_read {
             last = Some(bar);
         }
         Ok(LenientRead {
-            read: OhlcvRead { bars: merged, restatements_merged, rows_filtered },
+            read: OhlcvRead {
+                bars: merged,
+                restatements_merged,
+                rows_filtered,
+            },
             skipped,
         })
     }

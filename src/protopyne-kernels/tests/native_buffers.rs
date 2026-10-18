@@ -18,9 +18,9 @@
 
 use std::collections::HashMap;
 
-use crate::value::FieldTable;
 #[cfg(feature = "pine")]
 use crate::native_libs::NativeOptions;
+use crate::value::FieldTable;
 use crate::PineValue;
 #[cfg(feature = "pine")]
 use crate::{InputSet, LinkedModule, PineEngine, PineRuntimeConfig};
@@ -78,7 +78,12 @@ fn table(
     fields.insert(
         "_linear".to_owned(),
         linear.map(|slots| {
-            PineValue::Array(slots.into_iter().map(|slot| slot.map(PineValue::Float)).collect())
+            PineValue::Array(
+                slots
+                    .into_iter()
+                    .map(|slot| slot.map(PineValue::Float))
+                    .collect(),
+            )
         }),
     );
     fields.into()
@@ -136,7 +141,8 @@ fn serve(
 /// byte-identical (the engine would run the Pine body on it next).
 fn declines(method: &str, fields: &FieldTable, args: &[Option<PineValue>], named: bool) -> bool {
     let mut next = fields.clone();
-    let outcome = crate::buffers::serve_buffer_method("BufferFloat", method, &mut next, args, named);
+    let outcome =
+        crate::buffers::serve_buffer_method("BufferFloat", method, &mut next, args, named);
     assert_eq!(next, *fields, "{method} decline leaves the table untouched");
     outcome.is_declined()
 }
@@ -148,21 +154,24 @@ fn declines(method: &str, fields: &FieldTable, args: &[Option<PineValue>], named
 #[test]
 fn init_ring_builds_sized_absent_data() {
     let before = table(vec![], 20, None, 0, false, None);
-    let (after, value) = serve("init", &before, &[int(5), bool_value(true)])
-        .expect("init serves natively");
+    let (after, value) =
+        serve("init", &before, &[int(5), bool_value(true)]).expect("init serves natively");
     assert_eq!(data_of(&after), vec![None, None, None, None, None]);
     assert_eq!(num(&after, "max_size"), Some(5.0));
     assert_eq!(num(&after, "head"), Some(0.0));
     assert_eq!(num(&after, "count"), Some(0.0));
     assert!(!flag(&after, "needs_compaction"));
-    assert!(matches!(value, Some(PineValue::Object(_))), "init returns this");
+    assert!(
+        matches!(value, Some(PineValue::Object(_))),
+        "init returns this"
+    );
 }
 
 #[test]
 fn init_array_builds_empty_data_with_absent_head() {
     let before = table(vec![], 20, None, 0, false, None);
-    let (after, _) = serve("init", &before, &[int(5), bool_value(false)])
-        .expect("init serves natively");
+    let (after, _) =
+        serve("init", &before, &[int(5), bool_value(false)]).expect("init serves natively");
     assert!(data_of(&after).is_empty());
     assert_eq!(num(&after, "head"), None, "array mode keeps head absent");
 }
@@ -180,8 +189,8 @@ fn init_preserves_linear_cache_like_pine() {
     // The oracle never touches `_linear` in `init` (even a stale cache
     // survives); the bridge must pass it through byte-identical.
     let before = table(vec![], 20, None, 0, false, Some(vec![Some(1.0)]));
-    let (after, _) = serve("init", &before, &[int(3), bool_value(true)])
-        .expect("init serves natively");
+    let (after, _) =
+        serve("init", &before, &[int(3), bool_value(true)]).expect("init serves natively");
     assert_eq!(
         after.get("_linear"),
         before.get("_linear"),
@@ -242,8 +251,16 @@ fn a_shared_table_copies_on_write() {
     assert!(resident.shares(&handle), "a clone shares until written");
     resident.insert("count".to_owned(), int(9));
     assert!(!resident.shares(&handle), "the first write separates them");
-    assert_eq!(num(&handle, "count"), Some(0.0), "the handle keeps the old table");
-    assert_eq!(num(&resident, "count"), Some(9.0), "the write landed on the resident");
+    assert_eq!(
+        num(&handle, "count"),
+        Some(0.0),
+        "the handle keeps the old table"
+    );
+    assert_eq!(
+        num(&resident, "count"),
+        Some(9.0),
+        "the write landed on the resident"
+    );
 }
 
 #[test]
@@ -265,7 +282,11 @@ fn ring_push_wraps_and_get_reads_newest_first() {
     let (_, oldest) = serve("get", &s4, &[int(2)]).expect("get serves");
     assert_eq!(oldest, float(2.0), "1.0 evicted by the wrap");
     let (_, size) = serve("size", &s4, &[]).expect("size serves");
-    assert_eq!(size, float(3.0), "ring size unifies to float (math.min over floats)");
+    assert_eq!(
+        size,
+        float(3.0),
+        "ring size unifies to float (math.min over floats)"
+    );
 }
 
 #[test]
@@ -287,7 +308,11 @@ fn ring_push_invalidates_linear_cache() {
         Some(PineValue::Array(vec![float(9.0)])),
     );
     let after = push(&cached, float(1.0));
-    assert_eq!(after.get("_linear"), Some(&None), "ring write clears the cache");
+    assert_eq!(
+        after.get("_linear"),
+        Some(&None),
+        "ring write clears the cache"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -350,11 +375,19 @@ fn clear_ring_keeps_length_and_clears_cache() {
     let (sized, _) = serve("init", &fresh, &[int(3), bool_value(true)]).expect("init serves");
     let pushed = push(&push(&sized, float(1.0)), float(2.0));
     let (cleared, _) = serve("clear", &pushed, &[]).expect("clear serves");
-    assert_eq!(data_of(&cleared), vec![None, None, None], "fill keeps length");
+    assert_eq!(
+        data_of(&cleared),
+        vec![None, None, None],
+        "fill keeps length"
+    );
     assert_eq!(num(&cleared, "head"), Some(0.0));
     assert_eq!(num(&cleared, "count"), Some(0.0));
     assert!(!flag(&cleared, "needs_compaction"));
-    assert_eq!(cleared.get("_linear"), Some(&None), "ring clear clears the cache");
+    assert_eq!(
+        cleared.get("_linear"),
+        Some(&None),
+        "ring clear clears the cache"
+    );
 }
 
 #[test]
@@ -375,8 +408,18 @@ fn clear_array_empties_data_and_keeps_absent_head() {
 fn unserved_methods_and_types_decline() {
     let fresh = table(vec![], 20, None, 0, false, None);
     let (sized, _) = serve("init", &fresh, &[int(2), bool_value(true)]).expect("init serves");
-    for method in ["stdev", "max", "sum", "getLinearized", "compact", "valid_count"] {
-        assert!(declines(method, &sized, &[], false), "{method} stays interpreted");
+    for method in [
+        "stdev",
+        "max",
+        "sum",
+        "getLinearized",
+        "compact",
+        "valid_count",
+    ] {
+        assert!(
+            declines(method, &sized, &[], false),
+            "{method} stays interpreted"
+        );
     }
     {
         // BufferInt stays interpreted in v1: same table, foreign type.
@@ -456,7 +499,9 @@ fn engine_agrees_on_buffer_sequences() {
     };
     let native = {
         let mut engine = script_engine();
-        engine.set_native_options(native_on()).expect("opt-in applies");
+        engine
+            .set_native_options(native_on())
+            .expect("opt-in applies");
         engine
             .run_linked(&modules, &bars, InputSet::new())
             .expect("native run evaluates")

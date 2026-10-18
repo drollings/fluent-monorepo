@@ -172,6 +172,7 @@ fn affixes_with(text: &str, mode: SpecialCaseMode) -> Vec<String> {
     )
 }
 
+#[ignore = "heavy (~7s): eight English tokenizer builds per run; run via `make test-heavy`"]
 #[test]
 fn affix_text_agrees_with_specials_on_and_off() {
     for text in ["dyn-o-mite", "hello!", "well-known fact", "(parenthetical)"] {
@@ -187,6 +188,7 @@ fn affix_text_agrees_with_specials_on_and_off() {
     );
 }
 
+#[ignore = "heavy (~2s): paired English tokenizer builds; run via `make test-heavy`"]
 #[test]
 fn special_text_expands_only_with_specials_on() {
     assert_eq!(
@@ -198,6 +200,7 @@ fn special_text_expands_only_with_specials_on() {
     assert_eq!(off.join("").replace(' ', ""), "can't", "lossless split");
 }
 
+#[ignore = "heavy (~5s): six English tokenizer builds per run; run via `make test-heavy`"]
 #[test]
 fn whitespace_paths_agree_with_specials_on_and_off() {
     for text in ["a  b", " hello ", "tab\tseparated"] {
@@ -223,6 +226,7 @@ fn en_tokenizer_no_heuristics() -> Tokenizer {
     Tokenizer::new(vocab, &config, en::exceptions::RULES).expect("builds")
 }
 
+#[ignore = "heavy (~2.4s): full fast plus heuristic-free tokenizer builds over the corpus; run via `make test-heavy`"]
 #[test]
 fn faster_heuristics_off_keeps_public_output() {
     let fast = en_tokenizer();

@@ -13,13 +13,29 @@ fn grid(ms: i64) -> NonZeroI64 {
 
 #[test]
 fn floor_grids_and_refuses() {
-    assert_eq!(floor_to_grid(1_699_999_980_000, grid(60_000)), 1_699_999_980_000);
-    assert_eq!(floor_to_grid(1_699_999_980_001, grid(60_000)), 1_699_999_980_000);
-    assert_eq!(floor_to_grid(-1, grid(60_000)), -60_000, "euclid floors negatives");
-    assert_eq!(floor_to_grid_checked(61_000, 60_000).expect("valid"), 60_000);
+    assert_eq!(
+        floor_to_grid(1_699_999_980_000, grid(60_000)),
+        1_699_999_980_000
+    );
+    assert_eq!(
+        floor_to_grid(1_699_999_980_001, grid(60_000)),
+        1_699_999_980_000
+    );
+    assert_eq!(
+        floor_to_grid(-1, grid(60_000)),
+        -60_000,
+        "euclid floors negatives"
+    );
+    assert_eq!(
+        floor_to_grid_checked(61_000, 60_000).expect("valid"),
+        60_000
+    );
     for bad in [0, -60_000] {
         let err = floor_to_grid_checked(61_000, bad).expect_err("bad grid refuses");
-        assert!(err.to_string().contains("grid"), "refusal names the reason: {err}");
+        assert!(
+            err.to_string().contains("grid"),
+            "refusal names the reason: {err}"
+        );
     }
 }
 
@@ -29,7 +45,15 @@ fn floor_grids_and_refuses() {
 fn sub_weekly_grid_matches_the_relocated_bucket_rule() {
     for variant in [Timeframe::M15, Timeframe::H1, Timeframe::H4, Timeframe::D1] {
         let step = variant.duration_ms();
-        for stamp in [0_i64, 1, -1, step - 1, step, 1_699_999_980_001, -1_699_999_980_001] {
+        for stamp in [
+            0_i64,
+            1,
+            -1,
+            step - 1,
+            step,
+            1_699_999_980_001,
+            -1_699_999_980_001,
+        ] {
             assert_eq!(
                 floor_to_grid(stamp, grid(step)),
                 variant.bucket_start_ms(stamp),
@@ -47,7 +71,11 @@ fn sub_weekly_grid_matches_the_relocated_bucket_rule() {
 #[test]
 fn weekly_grid_divergence_from_the_relocated_bucket_rule_is_pinned() {
     let week_ms = Timeframe::W1.duration_ms();
-    assert_eq!(floor_to_grid(0, grid(week_ms)), 0, "streaming grid stays epoch-anchored");
+    assert_eq!(
+        floor_to_grid(0, grid(week_ms)),
+        0,
+        "streaming grid stays epoch-anchored"
+    );
     assert_eq!(
         Timeframe::W1.bucket_start_ms(0),
         -259_200_000,
@@ -65,7 +93,10 @@ fn fully_formed_edges() {
     // Bucket [T, T+60s) confirms exactly when now reaches T+60s.
     assert!(fully_formed(1_000_000, grid(60_000), 1_060_000));
     assert!(!fully_formed(1_000_000, grid(60_000), 1_059_999));
-    assert!(!fully_formed(1_000_000, grid(60_000), 1_000_000), "open bucket unformed");
+    assert!(
+        !fully_formed(1_000_000, grid(60_000), 1_000_000),
+        "open bucket unformed"
+    );
 }
 
 #[test]
@@ -82,8 +113,24 @@ fn merge_prefers_later_on_overlap() {
     assert_eq!(merge_sorted(&a, &[]), a, "empty side is identity");
     assert_eq!(merge_sorted(&[], &b), b);
     // Generic arm over timestamped rows: same contract, any payload.
-    let rows_a = [BarParts { ts_ms: 1_000, o: 1.0, h: 1.0, l: 1.0, c: 1.0, volume: 5.0, buy_volume: 5.0 }];
-    let rows_b = [BarParts { ts_ms: 1_000, o: 2.0, h: 2.0, l: 2.0, c: 2.0, volume: 7.0, buy_volume: 7.0 }];
+    let rows_a = [BarParts {
+        ts_ms: 1_000,
+        o: 1.0,
+        h: 1.0,
+        l: 1.0,
+        c: 1.0,
+        volume: 5.0,
+        buy_volume: 5.0,
+    }];
+    let rows_b = [BarParts {
+        ts_ms: 1_000,
+        o: 2.0,
+        h: 2.0,
+        l: 2.0,
+        c: 2.0,
+        volume: 7.0,
+        buy_volume: 7.0,
+    }];
     let joined = merge_sorted_by(&rows_a, &rows_b, |row| row.ts_ms);
     assert_eq!(joined.len(), 1);
     assert_eq!(joined[0].volume, 7.0, "later row wins");
@@ -117,7 +164,10 @@ fn buckets_detect_gaps() {
     assert_eq!(bucket_ids(&dense, grid(60_000)), vec![16, 17, 18]);
     assert!(!bucket_has_gap(&dense, grid(60_000)));
     let sparse = [1_000_000, 1_180_000];
-    assert!(bucket_has_gap(&sparse, grid(60_000)), "skipped bucket reads as gap");
+    assert!(
+        bucket_has_gap(&sparse, grid(60_000)),
+        "skipped bucket reads as gap"
+    );
     assert!(!bucket_has_gap(&[], grid(60_000)));
     assert!(!bucket_has_gap(&[1_000_000], grid(60_000)));
 }
@@ -133,7 +183,11 @@ fn grid_math_roundtrips_and_ceils() {
     // 1_000_000 % 60_000 == 40_000: unaligned, ceils to 1_020_000.
     assert_eq!(aligned_geq(1_000_000, grid(60_000)), 1_020_000, "ceils up");
     assert_eq!(aligned_geq(1_000_001, grid(60_000)), 1_020_000, "ceils up");
-    assert_eq!(aligned_geq(1_020_000, grid(60_000)), 1_020_000, "aligned stays");
+    assert_eq!(
+        aligned_geq(1_020_000, grid(60_000)),
+        1_020_000,
+        "aligned stays"
+    );
 }
 
 #[test]
@@ -141,15 +195,30 @@ fn split_validation_fails_closed() {
     validate_split(1_000_000, 2_000_000, 1_500_000, 60_000).expect("interior aligned split holds");
     for (first, last, split, grid_ms, why) in [
         (1_000_000, 2_000_000, 1_500_001, 60_000, "off-grid split"),
-        (1_000_000, 2_000_000, 1_000_000 - 60_000, 60_000, "split before first"),
-        (1_000_000, 2_000_000, 2_000_000, 60_000, "split at last leaves no test side"),
+        (
+            1_000_000,
+            2_000_000,
+            1_000_000 - 60_000,
+            60_000,
+            "split before first",
+        ),
+        (
+            1_000_000,
+            2_000_000,
+            2_000_000,
+            60_000,
+            "split at last leaves no test side",
+        ),
         (1_000_000, 1_000_000, 1_000_000, 60_000, "single-bar range"),
         (2_000_000, 1_000_000, 1_500_000, 60_000, "inverted range"),
         (1_000_000, 2_000_000, 1_500_000, 0, "dead grid"),
         (1_000_000, 2_000_000, 1_500_000, -60_000, "negative grid"),
     ] {
         let err = validate_split(first, last, split, grid_ms).expect_err("{why} must refuse");
-        assert!(!err.to_string().is_empty(), "{why} refusal carries a reason");
+        assert!(
+            !err.to_string().is_empty(),
+            "{why} refusal carries a reason"
+        );
     }
 }
 
@@ -157,7 +226,10 @@ fn split_validation_fails_closed() {
 fn lookahead_stays_refused() {
     Lookahead::Off.require_off().expect("off passes");
     let err = Lookahead::On.require_off().expect_err("on refuses");
-    assert!(err.to_string().contains("lookahead"), "refusal names the reason: {err}");
+    assert!(
+        err.to_string().contains("lookahead"),
+        "refusal names the reason: {err}"
+    );
 }
 
 #[test]

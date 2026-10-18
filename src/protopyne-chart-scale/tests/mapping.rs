@@ -1,8 +1,15 @@
 use super::*;
 
 fn scale(mode: PriceScaleMode, min: f64, max: f64) -> PriceScale {
-    PriceScale::new(mode, PriceRange::new(min, max).expect("valid test range"), 400.0, 8.0, min, false)
-        .expect("valid test scale")
+    PriceScale::new(
+        mode,
+        PriceRange::new(min, max).expect("valid test range"),
+        400.0,
+        8.0,
+        min,
+        false,
+    )
+    .expect("valid test scale")
 }
 
 #[test]
@@ -12,7 +19,10 @@ fn price_round_trips_within_a_tenth_of_a_percent() {
         let y = mapping.price_to_y(price).expect("mappable price");
         let back = mapping.y_to_price(y).expect("invertible pixel");
         let tolerance = price.abs() * 1e-3 + 1e-6;
-        assert!((back - price).abs() <= tolerance, "price {price} -> {y} -> {back}");
+        assert!(
+            (back - price).abs() <= tolerance,
+            "price {price} -> {y} -> {back}"
+        );
     }
 }
 
@@ -29,10 +39,10 @@ fn top_price_maps_near_top_and_bottom_near_bottom() {
 #[test]
 fn inverted_scale_flips_direction() {
     let range = PriceRange::new(90.0, 110.0).expect("valid test range");
-    let normal =
-        PriceScale::new(PriceScaleMode::Normal, range, 400.0, 8.0, 90.0, false).expect("valid scale");
-    let flipped =
-        PriceScale::new(PriceScaleMode::Normal, range, 400.0, 8.0, 90.0, true).expect("valid scale");
+    let normal = PriceScale::new(PriceScaleMode::Normal, range, 400.0, 8.0, 90.0, false)
+        .expect("valid scale");
+    let flipped = PriceScale::new(PriceScaleMode::Normal, range, 400.0, 8.0, 90.0, true)
+        .expect("valid scale");
     let y_normal = normal.price_to_y(110.0).expect("maps");
     let y_flipped = flipped.price_to_y(110.0).expect("maps");
     assert!((y_normal + y_flipped - 400.0).abs() < 1e-3);
@@ -56,9 +66,8 @@ fn log_mode_refuses_non_positive_bounds() {
 #[test]
 fn percentage_mode_rebases_onto_first_value() {
     let range = PriceRange::new(90.0, 110.0).expect("valid test range");
-    let mapping =
-        PriceScale::new(PriceScaleMode::Percentage, range, 400.0, 8.0, 100.0, false)
-            .expect("valid scale");
+    let mapping = PriceScale::new(PriceScaleMode::Percentage, range, 400.0, 8.0, 100.0, false)
+        .expect("valid scale");
     let y_base = mapping.price_to_y(100.0).expect("base maps");
     let y_high = mapping.price_to_y(110.0).expect("high maps");
     assert!(y_high < y_base, "a 10% gain sits above the baseline");
@@ -95,21 +104,38 @@ fn in_pane_round_trips_and_off_pane_refuses() {
             let y = mapping.price_to_y(price).expect("in-pane price maps");
             let back = mapping.y_to_price(y).expect("in-pane pixel inverts");
             let tolerance = price.abs() * 1e-3 + 1e-6;
-            assert!((back - price).abs() <= tolerance, "{mode:?}: {price} -> {y} -> {back}");
+            assert!(
+                (back - price).abs() <= tolerance,
+                "{mode:?}: {price} -> {y} -> {back}"
+            );
         }
         // The pane is exactly `0..=height`; both edges invert, either side refuses.
-        assert!(mapping.y_to_price(0.0).is_some(), "{mode:?} top edge inverts");
-        assert!(mapping.y_to_price(400.0).is_some(), "{mode:?} bottom edge inverts");
-        assert_eq!(mapping.y_to_price(-0.5), None, "{mode:?} above the pane refuses");
-        assert_eq!(mapping.y_to_price(400.5), None, "{mode:?} below the pane refuses");
+        assert!(
+            mapping.y_to_price(0.0).is_some(),
+            "{mode:?} top edge inverts"
+        );
+        assert!(
+            mapping.y_to_price(400.0).is_some(),
+            "{mode:?} bottom edge inverts"
+        );
+        assert_eq!(
+            mapping.y_to_price(-0.5),
+            None,
+            "{mode:?} above the pane refuses"
+        );
+        assert_eq!(
+            mapping.y_to_price(400.5),
+            None,
+            "{mode:?} below the pane refuses"
+        );
     }
 }
 
 #[test]
 fn inverted_scale_off_pane_refuses() {
     let range = PriceRange::new(90.0, 110.0).expect("valid range");
-    let flipped =
-        PriceScale::new(PriceScaleMode::Normal, range, 400.0, 8.0, 90.0, true).expect("valid scale");
+    let flipped = PriceScale::new(PriceScaleMode::Normal, range, 400.0, 8.0, 90.0, true)
+        .expect("valid scale");
     assert!(flipped.y_to_price(200.0).is_some());
     assert_eq!(flipped.y_to_price(-1.0), None);
     assert_eq!(flipped.y_to_price(401.0), None);
@@ -127,9 +153,18 @@ fn inverted_scale_off_pane_refuses() {
 #[test]
 fn mapping_promises_match_behavior() {
     let mapping = scale(PriceScaleMode::Normal, 90.0, 110.0);
-    let extrapolated = mapping.price_to_y(200.0).expect("price_to_y extrapolates by design");
-    assert!(extrapolated < 0.0, "an above-window price maps above the pane");
-    assert_eq!(mapping.y_to_price(-1.0), None, "y_to_price refuses off-pane");
+    let extrapolated = mapping
+        .price_to_y(200.0)
+        .expect("price_to_y extrapolates by design");
+    assert!(
+        extrapolated < 0.0,
+        "an above-window price maps above the pane"
+    );
+    assert_eq!(
+        mapping.y_to_price(-1.0),
+        None,
+        "y_to_price refuses off-pane"
+    );
     assert_eq!(mapping.index_to_x(0).to_bits(), 0.0_f32.to_bits());
     assert_eq!(mapping.x_to_index(f32::INFINITY), None);
 }
@@ -165,7 +200,11 @@ fn reference_y(
     let low = scaled(min);
     let high = scaled(max);
     let y = (high - scaled(price)) / (high - low) * height;
-    if inverted { height - y } else { y }
+    if inverted {
+        height - y
+    } else {
+        y
+    }
 }
 
 #[test]
@@ -205,7 +244,13 @@ fn degenerate_scaled_bounds_map_to_none() {
 #[test]
 fn mode_parses_common_spellings() {
     use std::str::FromStr as _;
-    assert_eq!(PriceScaleMode::from_str("log").expect("parses"), PriceScaleMode::Logarithmic);
-    assert_eq!(PriceScaleMode::from_str("%").expect("parses"), PriceScaleMode::Percentage);
+    assert_eq!(
+        PriceScaleMode::from_str("log").expect("parses"),
+        PriceScaleMode::Logarithmic
+    );
+    assert_eq!(
+        PriceScaleMode::from_str("%").expect("parses"),
+        PriceScaleMode::Percentage
+    );
     assert!(PriceScaleMode::from_str("exponential").is_err());
 }

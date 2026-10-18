@@ -12,7 +12,7 @@
 #![allow(clippy::float_cmp)]
 
 use super::*;
-use crate::indicator::{ParamSet, builtin_registry};
+use crate::indicator::{builtin_registry, ParamSet};
 use protopyne_types::Bar;
 use rust_decimal::Decimal;
 
@@ -38,7 +38,9 @@ fn bar_at(open_ms: i64, step: i64, volume: u64) -> Bar {
 }
 
 fn tape(count: i64) -> Vec<Bar> {
-    (0..count).map(|i| bar_at(T0 + i * MIN, i, 100 * (i as u64 + 1))).collect()
+    (0..count)
+        .map(|i| bar_at(T0 + i * MIN, i, 100 * (i as u64 + 1)))
+        .collect()
 }
 
 /// SMA-14 requests over the 5- and 15-minute spans (builtin kernel, so the
@@ -46,8 +48,14 @@ fn tape(count: i64) -> Vec<Bar> {
 fn requests() -> Vec<(SeriesKey, ParamSet)> {
     let params = ParamSet::new().with_int("length", 14);
     vec![
-        (SeriesKey::new(FIVE, "sma", &params).expect("span valid"), params.clone()),
-        (SeriesKey::new(FIFTEEN, "sma", &params).expect("span valid"), params),
+        (
+            SeriesKey::new(FIVE, "sma", &params).expect("span valid"),
+            params.clone(),
+        ),
+        (
+            SeriesKey::new(FIFTEEN, "sma", &params).expect("span valid"),
+            params,
+        ),
     ]
 }
 
@@ -57,7 +65,9 @@ fn ensure_now(
     now_ms: i64,
 ) -> Vec<SeriesKey> {
     let registry = builtin_registry().expect("builtins load");
-    store.ensure(&registry, requests, now_ms, Lookahead::Off).expect("ensure runs")
+    store
+        .ensure(&registry, requests, now_ms, Lookahead::Off)
+        .expect("ensure runs")
 }
 
 /// One frame's observable legs: stamps plus five OHLCV legs. Plain
@@ -74,7 +84,10 @@ struct FrameSnapshot {
 
 /// Frame legs for equality across stores.
 fn frame_legs(store: &MtfStore, tf_ms: i64) -> FrameSnapshot {
-    let stamps = store.frame_stamps(tf_ms).expect("frame materialized").to_vec();
+    let stamps = store
+        .frame_stamps(tf_ms)
+        .expect("frame materialized")
+        .to_vec();
     let frame = store.frame(tf_ms).expect("frame legs present");
     FrameSnapshot {
         stamps,
@@ -119,10 +132,18 @@ fn incremental_append_matches_from_scratch() {
     // Observable state equal per span and per series; revisions excluded —
     // absolute counter values depend on bump history, not content.
     for tf_ms in [FIVE, FIFTEEN] {
-        assert_eq!(frame_legs(&streamed, tf_ms), frame_legs(&fresh, tf_ms), "span {tf_ms} frame equal");
+        assert_eq!(
+            frame_legs(&streamed, tf_ms),
+            frame_legs(&fresh, tf_ms),
+            "span {tf_ms} frame equal"
+        );
     }
     for (key, _) in &reqs {
-        assert_eq!(cached_values(&streamed, key), cached_values(&fresh, key), "series {key} equal");
+        assert_eq!(
+            cached_values(&streamed, key),
+            cached_values(&fresh, key),
+            "series {key} equal"
+        );
     }
 }
 
@@ -144,8 +165,15 @@ fn fence_bar_closing_exactly_at_now_confirms() {
     assert!(!early.contains(&bucket), "forming bucket excluded at now-1");
     ensure_now(&mut store, &reqs, fence);
     let fenced: Vec<i64> = store.frame_stamps(FIVE).expect("frame present").to_vec();
-    assert!(fenced.contains(&bucket), "fence-close bucket confirms exactly at now");
-    assert_eq!(fenced.len(), early.len() + 1, "only the fence bucket newly confirms");
+    assert!(
+        fenced.contains(&bucket),
+        "fence-close bucket confirms exactly at now"
+    );
+    assert_eq!(
+        fenced.len(),
+        early.len() + 1,
+        "only the fence bucket newly confirms"
+    );
 }
 
 #[test]
@@ -158,7 +186,10 @@ fn forming_tail_excluded_then_confirms_on_now_advance() {
     let head = floor_to_grid(T0, grid);
     let tail = head + FIFTEEN;
     let mid_now = T0 + 11 * MIN + 30_000;
-    assert!(head + FIFTEEN <= mid_now && mid_now < tail + FIFTEEN, "now sits mid-tail-bucket");
+    assert!(
+        head + FIFTEEN <= mid_now && mid_now < tail + FIFTEEN,
+        "now sits mid-tail-bucket"
+    );
     let mut store = MtfStore::new();
     store.set_base(&bars).expect("base loads");
     ensure_now(&mut store, &reqs, mid_now);
@@ -171,11 +202,18 @@ fn forming_tail_excluded_then_confirms_on_now_advance() {
     let late_now = tail + FIFTEEN;
     ensure_now(&mut store, &reqs, late_now);
     let confirmed: Vec<i64> = store.frame_stamps(FIFTEEN).expect("frame present").to_vec();
-    assert!(confirmed.contains(&tail), "advanced fence confirms the tail");
+    assert!(
+        confirmed.contains(&tail),
+        "advanced fence confirms the tail"
+    );
     let mut fresh = MtfStore::new();
     fresh.set_base(&bars).expect("base loads");
     ensure_now(&mut fresh, &reqs, late_now);
-    assert_eq!(frame_legs(&store, FIFTEEN), frame_legs(&fresh, FIFTEEN), "tail-only advance matches");
+    assert_eq!(
+        frame_legs(&store, FIFTEEN),
+        frame_legs(&fresh, FIFTEEN),
+        "tail-only advance matches"
+    );
     assert!(
         store.revision() >= revision_before,
         "revision never runs backward across the fence"
@@ -194,17 +232,28 @@ fn unchanged_append_leaves_revisions_untouched() {
     let settled = store.revision();
     // Same `now`, same base: pure no-op.
     ensure_now(&mut store, &reqs, now_ms);
-    assert_eq!(store.revision(), settled, "identical ensure backdates everything");
+    assert_eq!(
+        store.revision(),
+        settled,
+        "identical ensure backdates everything"
+    );
     // Append bars that complete no new bucket at this `now`: the forming
     // bucket extends, confirmed output stands still, revisions hold.
     for bar in bars.iter().skip(25).take(3) {
         store.append_bar(bar).expect("tape advances");
         ensure_now(&mut store, &reqs, now_ms);
-        assert_eq!(store.revision(), settled, "bucket-incomplete append bumps nothing");
+        assert_eq!(
+            store.revision(),
+            settled,
+            "bucket-incomplete append bumps nothing"
+        );
     }
     for tf_ms in [FIVE, FIFTEEN] {
         let stamps = store.frame_stamps(tf_ms).expect("frame present");
-        assert!(stamps.iter().all(|stamp| stamp + tf_ms <= now_ms), "no forming bucket leaks");
+        assert!(
+            stamps.iter().all(|stamp| stamp + tf_ms <= now_ms),
+            "no forming bucket leaks"
+        );
     }
 }
 
@@ -226,10 +275,15 @@ fn set_base_replace_rebuilds_changed_history() {
     ensure_now(&mut store, &reqs, now_ms);
     let after = frame_legs(&store, FIVE);
     assert_ne!(before, after, "replaced history rebuilds buckets");
-    assert!(store.revision() > settled, "changed content bumps the revision");
+    assert!(
+        store.revision() > settled,
+        "changed content bumps the revision"
+    );
     // Replacing with identical content backdates instead of bumping.
     let quiet = store.revision();
-    store.set_base(&edited).expect("identical replacement loads");
+    store
+        .set_base(&edited)
+        .expect("identical replacement loads");
     ensure_now(&mut store, &reqs, now_ms);
     assert_eq!(store.revision(), quiet, "identical replace backdates");
 }

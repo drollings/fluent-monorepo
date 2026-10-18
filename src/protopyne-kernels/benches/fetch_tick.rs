@@ -29,10 +29,10 @@
 //! | `fetch_tick/small_ring` | 3.79 µs/iter |
 //! | `fetch_tick/large_ring` | 76.3 µs/iter |
 
-use criterion::{Criterion, criterion_group, criterion_main};
+use criterion::{criterion_group, criterion_main, Criterion};
 use protopyne_kernels::{
-    BarRing, BarsConfig, FieldTable, LtfRow, NativeCall, NativeFetchTick, PineValue,
-    RingCursor, indicator::BarTick,
+    indicator::BarTick, BarRing, BarsConfig, FieldTable, LtfRow, NativeCall, NativeFetchTick,
+    PineValue, RingCursor,
 };
 
 const MIN: i64 = 60_000;
@@ -77,7 +77,10 @@ fn rig(config: &BarsConfig, row_count: usize) -> Rig {
         fields.insert(key.to_owned(), Some(PineValue::Array(vec![None; max])));
     }
     fields.insert("max_candles".to_owned(), Some(PineValue::Int(max as i64)));
-    let cursor = RingCursor { head: 0, count: ring.len() };
+    let cursor = RingCursor {
+        head: 0,
+        count: ring.len(),
+    };
     let last = built.last().expect("rows non-empty");
     let ticks = (0..8u32)
         .map(|step| NativeFetchTick {
@@ -95,7 +98,13 @@ fn rig(config: &BarsConfig, row_count: usize) -> Rig {
             confirm: None,
         })
         .collect();
-    Rig { ring, fields, cursor, ticks, next: 0 }
+    Rig {
+        ring,
+        fields,
+        cursor,
+        ticks,
+        next: 0,
+    }
 }
 
 fn steady_serve(criterion: &mut Criterion, name: &str, config: &BarsConfig, row_count: usize) {

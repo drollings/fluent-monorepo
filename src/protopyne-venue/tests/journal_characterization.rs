@@ -48,8 +48,12 @@ async fn replay_survives_reopen_with_intents_statuses_and_events() {
     let permit = VenueStorage::new(path.clone());
     scoped(permit.clone(), async {
         let journal = Journal::open(&path).expect("open");
-        journal.record_intent(&permit, &intent("a#0"), now).expect("intent a");
-        journal.record_intent(&permit, &intent("b#0"), now).expect("intent b");
+        journal
+            .record_intent(&permit, &intent("a#0"), now)
+            .expect("intent a");
+        journal
+            .record_intent(&permit, &intent("b#0"), now)
+            .expect("intent b");
         journal
             .mark_status(&permit, "a#0", OrderStatus::Submitted, now)
             .expect("submitted");
@@ -63,7 +67,10 @@ async fn replay_survives_reopen_with_intents_statuses_and_events() {
         assert_eq!(before, after, "replay is stable across re-open");
         assert_eq!(after.intents.len(), 2);
         assert!(
-            after.events.iter().any(|e| e.client_id == "a#0" && e.kind == "intent"),
+            after
+                .events
+                .iter()
+                .any(|e| e.client_id == "a#0" && e.kind == "intent"),
             "intent event survives reopen"
         );
         assert_eq!(
@@ -75,8 +82,14 @@ async fn replay_survives_reopen_with_intents_statuses_and_events() {
         );
         let pending = reopened.outbox_pending(&permit).expect("outbox");
         let ids: Vec<String> = pending.into_iter().map(|i| i.client_id).collect();
-        assert!(ids.contains(&"a#0".to_owned()), "submitted stays in the outbox: {ids:?}");
-        assert!(ids.contains(&"b#0".to_owned()), "pending stays in the outbox: {ids:?}");
+        assert!(
+            ids.contains(&"a#0".to_owned()),
+            "submitted stays in the outbox: {ids:?}"
+        );
+        assert!(
+            ids.contains(&"b#0".to_owned()),
+            "pending stays in the outbox: {ids:?}"
+        );
     })
     .await;
 }
@@ -88,14 +101,23 @@ async fn status_and_events_agree_after_every_transition() {
     let permit = VenueStorage::new(path.clone());
     scoped(permit.clone(), async {
         let journal = Journal::open(&path).expect("open");
-        journal.record_intent(&permit, &intent("a#0"), now).expect("intent");
-        for status in [OrderStatus::Submitted, OrderStatus::Acknowledged, OrderStatus::Filled] {
-            journal.mark_status(&permit, "a#0", status, now).expect("transition");
+        journal
+            .record_intent(&permit, &intent("a#0"), now)
+            .expect("intent");
+        for status in [
+            OrderStatus::Submitted,
+            OrderStatus::Acknowledged,
+            OrderStatus::Filled,
+        ] {
+            journal
+                .mark_status(&permit, "a#0", status, now)
+                .expect("transition");
             let stored = journal.intent_status(&permit, "a#0").expect("status");
             let state = journal.replay(&permit).expect("replay");
             let last = state
                 .events
-                .iter().rfind(|e| e.client_id == "a#0")
+                .iter()
+                .rfind(|e| e.client_id == "a#0")
                 .expect("transition event exists");
             let expected = match status {
                 OrderStatus::Submitted => "submitted",
@@ -118,7 +140,9 @@ async fn leg_fills_are_additive_rows() {
     let permit = VenueStorage::new(path.clone());
     scoped(permit.clone(), async {
         let journal = Journal::open(&path).expect("open");
-        journal.record_intent(&permit, &intent("spread#0"), now).expect("intent");
+        journal
+            .record_intent(&permit, &intent("spread#0"), now)
+            .expect("intent");
         let before = journal.replay(&permit).expect("replay").events.len();
         for fill in ["SPY 260117C00600000", "SPY 260117P00550000"] {
             let leg = LegExecution {
@@ -128,7 +152,9 @@ async fn leg_fills_are_additive_rows() {
                 price: money("2.50"),
                 fee: money("0.65"),
             };
-            journal.record_leg_fill(&permit, "spread#0", &leg, now).expect("leg fill");
+            journal
+                .record_leg_fill(&permit, "spread#0", &leg, now)
+                .expect("leg fill");
         }
         let after = journal.replay(&permit).expect("replay");
         let legs: Vec<_> = after

@@ -4,7 +4,7 @@ use crate::indicator::{builtin_registry, OwnedOhlcv};
 use crate::parity::{assert_expr_parity, expr_fixture};
 use crate::ta_stat::{CorrelIndicator, StddevIndicator, VarIndicator};
 use polars::prelude::{
-    IntoLazy, RollingFnParams, RollingOptionsFixedWindow, RollingVarParams, col, lit, when,
+    col, lit, when, IntoLazy, RollingFnParams, RollingOptionsFixedWindow, RollingVarParams,
 };
 use protopyne_types::Bar;
 use std::path::PathBuf;
@@ -17,7 +17,14 @@ fn bar_at(open: f64, high: f64, low: f64, close: f64, volume: u64, index: usize)
     use chrono::TimeZone as _;
     Bar::new()
         .ts(chrono::Utc
-            .with_ymd_and_hms(2026, 1, 2, 9 + (index / 3600) as u32, ((index / 60) % 60) as u32, (index % 60) as u32)
+            .with_ymd_and_hms(
+                2026,
+                1,
+                2,
+                9 + (index / 3600) as u32,
+                ((index / 60) % 60) as u32,
+                (index % 60) as u32,
+            )
             .single()
             .expect("valid timestamp"))
         .o(dec(open))
@@ -36,7 +43,11 @@ fn trend_bars(n: usize) -> Vec<Bar> {
         let drift = i as f64 * 0.7 + ((i * 13) % 5) as f64 * 0.9;
         let close = 100.0 + drift;
         let gap = if i > 0 && i % 10 == 0 { 2.5 } else { 0.0 };
-        let open = if i == 0 { close } else { prev_close + gap + 0.1 };
+        let open = if i == 0 {
+            close
+        } else {
+            prev_close + gap + 0.1
+        };
         let high = open.max(close) + 0.8;
         let low = open.min(close) - 0.8;
         bars.push(bar_at(open, high, low, close, 1_000 + i as u64 * 37, i));
@@ -57,7 +68,12 @@ fn spy_bars(count: usize) -> Vec<Bar> {
     let mut bars = Vec::new();
     for record in reader.records().take(count) {
         let row = record.expect("readable row");
-        let num = |idx: usize| row.get(idx).expect("column").parse::<f64>().expect("number");
+        let num = |idx: usize| {
+            row.get(idx)
+                .expect("column")
+                .parse::<f64>()
+                .expect("number")
+        };
         let epoch: i64 = row.get(0).expect("time").parse().expect("epoch");
         let ts = chrono::DateTime::from_timestamp(epoch, 0).expect("valid epoch");
         bars.push(
@@ -138,9 +154,15 @@ fn correl_reference(bars: &[Bar], n: usize) -> Vec<Option<f64>> {
         .with_columns([
             col("__hx").rolling_sum(strict(n)).alias("__sx"),
             col("__hy").rolling_sum(strict(n)).alias("__sy"),
-            (col("__hx") * col("__hy")).rolling_sum(strict(n)).alias("__sxy"),
-            (col("__hx") * col("__hx")).rolling_sum(strict(n)).alias("__sxx"),
-            (col("__hy") * col("__hy")).rolling_sum(strict(n)).alias("__syy"),
+            (col("__hx") * col("__hy"))
+                .rolling_sum(strict(n))
+                .alias("__sxy"),
+            (col("__hx") * col("__hx"))
+                .rolling_sum(strict(n))
+                .alias("__sxx"),
+            (col("__hy") * col("__hy"))
+                .rolling_sum(strict(n))
+                .alias("__syy"),
         ])
         .collect()
         .expect("staged frame");
@@ -184,11 +206,14 @@ fn stddev_matches_population_expr() {
         let result = stddev.batch(&data.views(), &ps).expect("valid");
         assert!(result.values[..4].iter().all(Option::is_none));
         let want = expr_fixture(&bars, stddev_expr(5, 2.0)).expect("fixture");
-        assert_expr_parity(&result.values, &want, 1e-9, &format!("stddev-{name}"))
-            .expect("parity");
+        assert_expr_parity(&result.values, &want, 1e-9, &format!("stddev-{name}")).expect("parity");
         let mut state = IndicatorState::new();
         for (tick, want) in ticks_of(&bars).into_iter().zip(result.values.iter()) {
-            assert_eq!(&stddev.update(&mut state, tick, &ps).expect("valid"), want, "stddev agreement");
+            assert_eq!(
+                &stddev.update(&mut state, tick, &ps).expect("valid"),
+                want,
+                "stddev agreement"
+            );
         }
     }
 }
@@ -202,7 +227,9 @@ fn stddev_locks_population_denominator() {
     let bars = trend_bars(10);
     let data = OwnedOhlcv::from_bars(&bars);
     let ps = stddev_params(3, 1.0);
-    let result = StddevIndicator::new().batch(&data.views(), &ps).expect("valid");
+    let result = StddevIndicator::new()
+        .batch(&data.views(), &ps)
+        .expect("valid");
     let pop = expr_fixture(&bars, stddev_expr(3, 1.0)).expect("fixture");
     assert_expr_parity(&result.values, &pop, 1e-9, "stddev-pop").expect("parity");
     let ratio = (3.0f64 / 2.0).sqrt();
@@ -221,9 +248,13 @@ fn stddev_locks_population_denominator() {
         }
     }
     // Flat market: zero dispersion is a confident zero, not a refusal.
-    let flat: Vec<Bar> = (0..20).map(|i| bar_at(10.0, 10.0, 10.0, 10.0, 1_000, i)).collect();
+    let flat: Vec<Bar> = (0..20)
+        .map(|i| bar_at(10.0, 10.0, 10.0, 10.0, 1_000, i))
+        .collect();
     let data = OwnedOhlcv::from_bars(&flat);
-    let result = StddevIndicator::new().batch(&data.views(), &ps).expect("valid");
+    let result = StddevIndicator::new()
+        .batch(&data.views(), &ps)
+        .expect("valid");
     assert!(result.values[..2].iter().all(Option::is_none));
     assert!(result.values[2..].iter().all(|v| *v == Some(0.0)));
 }
@@ -240,7 +271,11 @@ fn var_matches_population_expr_and_squares_stddev() {
         assert_expr_parity(&result.values, &want, 1e-9, &format!("var-{name}")).expect("parity");
         let mut state = IndicatorState::new();
         for (tick, want) in ticks_of(&bars).into_iter().zip(result.values.iter()) {
-            assert_eq!(&var.update(&mut state, tick, &ps).expect("valid"), want, "var agreement");
+            assert_eq!(
+                &var.update(&mut state, tick, &ps).expect("valid"),
+                want,
+                "var agreement"
+            );
         }
     }
     // Variance is the squared deviation within tolerance (not bit-identical:
@@ -248,8 +283,12 @@ fn var_matches_population_expr_and_squares_stddev() {
     let bars = trend_bars(30);
     let data = OwnedOhlcv::from_bars(&bars);
     let unit = stddev_params(5, 1.0);
-    let dev = StddevIndicator::new().batch(&data.views(), &unit).expect("valid");
-    let variance = VarIndicator::new().batch(&data.views(), &unit).expect("valid");
+    let dev = StddevIndicator::new()
+        .batch(&data.views(), &unit)
+        .expect("valid");
+    let variance = VarIndicator::new()
+        .batch(&data.views(), &unit)
+        .expect("valid");
     for (v, d) in variance.values.iter().zip(dev.values.iter()) {
         match (v, d) {
             (Some(v), Some(d)) => assert!((v - d * d).abs() <= 1e-9, "var tracks squared stddev"),
@@ -269,19 +308,26 @@ fn correl_matches_staged_reference() {
         let result = correl.batch(&data.views(), &ps).expect("valid");
         assert!(result.values[..4].iter().all(Option::is_none));
         let want = correl_reference(&bars, 5);
-        assert_expr_parity(&result.values, &want, 1e-9, &format!("correl-{name}"))
-            .expect("parity");
+        assert_expr_parity(&result.values, &want, 1e-9, &format!("correl-{name}")).expect("parity");
         assert!(
-            result.values[4..].iter().all(|v| matches!(v, Some(x) if *x >= -1.0 && *x <= 1.0)),
+            result.values[4..]
+                .iter()
+                .all(|v| matches!(v, Some(x) if *x >= -1.0 && *x <= 1.0)),
             "correlation bounds on {name}"
         );
         let mut state = IndicatorState::new();
         for (tick, want) in ticks_of(&bars).into_iter().zip(result.values.iter()) {
-            assert_eq!(&correl.update(&mut state, tick, &ps).expect("valid"), want, "correl agreement");
+            assert_eq!(
+                &correl.update(&mut state, tick, &ps).expect("valid"),
+                want,
+                "correl agreement"
+            );
         }
     }
     // Constant legs carry no direction: honest `None` throughout, on both paths.
-    let flat: Vec<Bar> = (0..20).map(|i| bar_at(10.0, 10.0, 10.0, 10.0, 1_000, i)).collect();
+    let flat: Vec<Bar> = (0..20)
+        .map(|i| bar_at(10.0, 10.0, 10.0, 10.0, 1_000, i))
+        .collect();
     let data = OwnedOhlcv::from_bars(&flat);
     let result = correl.batch(&data.views(), &ps).expect("valid");
     assert!(result.values.iter().all(Option::is_none));
@@ -329,7 +375,8 @@ fn fold_stddev(closes: &[f64], params: &ParamSet) -> Vec<Option<f64>> {
     closes
         .iter()
         .map(|close| {
-            sd.update(&mut state, BarTick::close_only(*close), params).expect("update runs")
+            sd.update(&mut state, BarTick::close_only(*close), params)
+                .expect("update runs")
         })
         .collect()
 }
@@ -345,7 +392,10 @@ fn buffered_update_matches_batch_on_constant_and_subnormal_inputs() {
         (1..=40).map(|i| f64::from(i) * 1e-310).collect::<Vec<_>>(),
     ] {
         let sd = StddevIndicator::new();
-        let batch = sd.batch(&Ohlcv::close_only(&closes), &params).expect("batch runs").values;
+        let batch = sd
+            .batch(&Ohlcv::close_only(&closes), &params)
+            .expect("batch runs")
+            .values;
         assert_eq!(bits_of(&fold_stddev(&closes, &params)), bits_of(&batch));
     }
 }

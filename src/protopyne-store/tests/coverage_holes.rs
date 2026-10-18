@@ -80,11 +80,9 @@ fn assert_agreement(stamps: &[i64]) {
 fn a_complete_series_has_no_holes_on_either_side() {
     let stamps: Vec<i64> = (0..10).map(|n| T0 + n * STEP_MS).collect();
     assert!(!window_of(&stamps).has_gaps());
-    assert!(
-        coverage_of(&stamps)
-            .holes(&whole_tape(), Timeframe::M1)
-            .is_empty()
-    );
+    assert!(coverage_of(&stamps)
+        .holes(&whole_tape(), Timeframe::M1)
+        .is_empty());
 }
 
 #[test]

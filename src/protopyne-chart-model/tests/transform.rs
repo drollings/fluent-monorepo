@@ -8,7 +8,10 @@ fn dec(s: &str) -> Decimal {
 
 fn bar_at(day: u32, o: &str, h: &str, l: &str, c: &str) -> Bar {
     Bar::new()
-        .ts(chrono::Utc.with_ymd_and_hms(2026, 1, day, 12, 0, 0).single().expect("valid test time"))
+        .ts(chrono::Utc
+            .with_ymd_and_hms(2026, 1, day, 12, 0, 0)
+            .single()
+            .expect("valid test time"))
         .o(dec(o))
         .h(dec(h))
         .l(dec(l))
@@ -73,8 +76,10 @@ fn renko_emits_fixed_bricks_up() {
 
 #[test]
 fn renko_ignores_sub_brick_noise() {
-    let bars =
-        vec![bar_at(2, "100", "100", "100", "100"), bar_at(3, "100", "100.4", "99.8", "100.4")];
+    let bars = vec![
+        bar_at(2, "100", "100", "100", "100"),
+        bar_at(3, "100", "100.4", "99.8", "100.4"),
+    ];
     let bricks = renko_bricks(&bars, dec("1")).expect("positive brick size builds");
     assert!(bricks.is_empty());
 }
@@ -92,5 +97,89 @@ fn renko_empty_is_empty() {
     assert!(bricks.is_empty());
 }
 
+fn trend_rows(count: u32) -> Vec<crate::ChartRow> {
+    let bars: Vec<Bar> = (0..count)
+        .map(|i| {
+            let base = 100 + i64::from(i);
+            bar_at(
+                2 + i,
+                &base.to_string(),
+                &(base + 2).to_string(),
+                &(base - 1).to_string(),
+                &(base + 1).to_string(),
+            )
+        })
+        .collect();
+    crate::rows_of(&bars).rows
+}
 
+#[test]
+fn heikin_rows_match_bar_transform_through_conversion() {
+    use crate::heikin_rows_of;
+    // Integer legs keep every quarter-point exact in both `Decimal` and
+    // `f64`, so the display helper must agree bit-for-bit with the
+    // bar-backed transform pushed through conversion.
+    let bars: Vec<Bar> = (0..8)
+        .map(|i| {
+            let base = 100 + i64::from(i);
+            bar_at(
+                2 + i as u32,
+                &base.to_string(),
+                &(base + 2).to_string(),
+                &(base - 1).to_string(),
+                &(base + 1).to_string(),
+            )
+        })
+        .collect();
+    let rows = crate::rows_of(&bars).rows;
+    let converted = crate::rows_of(&crate::heikin_ashi(&bars)).rows;
+    assert_eq!(
+        heikin_rows_of(&rows),
+        converted,
+        "one recurrence, two numeric homes"
+    );
+}
 
+#[test]
+fn heikin_cache_windows_keep_overlaps_bit_identical() {
+    use crate::heikin_rows_of;
+    let full = trend_rows(10);
+    let cached = heikin_rows_of(&full);
+    assert_eq!(
+        cached.len(),
+        full.len(),
+        "the transform covers the full history"
+    );
+    for (index, row) in cached.iter().enumerate() {
+        assert_eq!(row.time, full[index].time, "times carry over untouched");
+        assert_eq!(
+            row.volume, full[index].volume,
+            "volumes carry over untouched"
+        );
+    }
+    // Windowing the cached transform is a pure slice: windows opened at
+    // different offsets agree bit-for-bit on their overlap.
+    let early = &cached[2..6];
+    let late = &cached[4..8];
+    assert_eq!(
+        &early[2..],
+        &late[..2],
+        "overlapping bars never move with the window"
+    );
+    // Re-seeding per window (the old paint path) shifts the seam open, and
+    // the shift propagates down the recursion — which is why the cache
+    // must be built once from row zero.
+    let reseeded = heikin_rows_of(&full[4..8]);
+    assert_ne!(
+        reseeded[0].open.to_bits(),
+        cached[4].open.to_bits(),
+        "a window-seeded open differs from the full-history open"
+    );
+    assert_ne!(reseeded, late, "the seed shift propagates past the seam");
+}
+
+#[test]
+fn heikin_rows_empty_is_empty() {
+    use crate::heikin_rows_of;
+    assert!(heikin_rows_of(&[]).is_empty());
+}

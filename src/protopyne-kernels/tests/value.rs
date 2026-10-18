@@ -44,7 +44,9 @@ fn new_variants_never_read_as_scalar() {
 fn na_is_none_and_survives_the_float_boundary() {
     let absent: Option<PineValue> = None;
     assert!(absent.is_none(), "absence is None, never a sentinel");
-    let nan = PineValue::Float(f64::NAN).as_float().expect("NaN still reads");
+    let nan = PineValue::Float(f64::NAN)
+        .as_float()
+        .expect("NaN still reads");
     assert!(nan.is_nan());
     assert_eq!(fin_or_none(nan), None, "NaN maps to None at the boundary");
     assert_eq!(fin_or_none(1.5), Some(1.5));
@@ -103,5 +105,8 @@ fn handles_carry_identity_beside_numerics() {
         PineValue::EnumHandle(member.clone()),
         PineValue::EnumHandle(EnumHandle::new("Smoothings", "WMA"))
     );
-    assert_eq!(PineValue::Str("a".to_owned()), PineValue::Str("a".to_owned()));
+    assert_eq!(
+        PineValue::Str("a".to_owned()),
+        PineValue::Str("a".to_owned())
+    );
 }

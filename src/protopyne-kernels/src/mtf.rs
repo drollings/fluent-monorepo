@@ -21,7 +21,7 @@ use std::num::NonZeroI64;
 use fluent_dag::dep_graph::{DependencyGraph, GraphError};
 use fluent_wvr::prelude::*;
 
-use crate::bars::{ClosedBar, bucket_bar_ranges, fold_bucket_range, project_bars};
+use crate::bars::{bucket_bar_ranges, fold_bucket_range, project_bars, ClosedBar};
 use crate::error::KernelError;
 use crate::indicator::{IndicatorId, IndicatorRegistry, Ohlcv, OwnedOhlcv, ParamSet};
 
@@ -56,11 +56,7 @@ pub fn fully_formed(bucket_open_ms: i64, grid: NonZeroI64, now_ms: i64) -> bool 
 /// both with the earlier side's item first. Order within each side is
 /// preserved (stable); the inputs must already ascend.
 #[must_use]
-pub fn interleave_sorted_by<T: Clone>(
-    a: &[T],
-    b: &[T],
-    ms: impl Fn(&T) -> i64,
-) -> Vec<T> {
+pub fn interleave_sorted_by<T: Clone>(a: &[T], b: &[T], ms: impl Fn(&T) -> i64) -> Vec<T> {
     let mut out = Vec::with_capacity(a.len() + b.len());
     let (mut i, mut j) = (0, 0);
     while i < a.len() && j < b.len() {
@@ -129,11 +125,7 @@ pub fn merge_sorted(a: &[(i64, f64)], b: &[(i64, f64)]) -> Vec<(i64, f64)> {
 /// order: the cross-timeframe pairing behind higher-timeframe diffs. Stamps
 /// present on one side only pair with nothing and are skipped.
 #[must_use]
-pub fn pairs_from_sorted<T: Clone>(
-    a: &[T],
-    b: &[T],
-    ms: impl Fn(&T) -> i64,
-) -> Vec<(T, T)> {
+pub fn pairs_from_sorted<T: Clone>(a: &[T], b: &[T], ms: impl Fn(&T) -> i64) -> Vec<(T, T)> {
     let mut out = Vec::new();
     let (mut i, mut j) = (0, 0);
     while i < a.len() && j < b.len() {
@@ -426,7 +418,11 @@ impl SeriesKey {
 
 impl fmt::Display for SeriesKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}ms/{}#{:016x}", self.tf_ms, self.kernel, self.params_hash)?;
+        write!(
+            f,
+            "{}ms/{}#{:016x}",
+            self.tf_ms, self.kernel, self.params_hash
+        )?;
         if self.volume_source {
             f.write_str("~vol")?;
         }
@@ -538,7 +534,9 @@ impl MtfStore {
     /// and backdates whatever recomputes identically.
     pub fn set_base(&mut self, bars: &[protopyne_types::Bar]) -> Result<(), KernelError> {
         if bars.is_empty() {
-            return Err(KernelError::InvalidInput("store base must not be empty".to_owned()));
+            return Err(KernelError::InvalidInput(
+                "store base must not be empty".to_owned(),
+            ));
         }
         let mut prev = None;
         for bar in bars {
@@ -685,11 +683,13 @@ impl MtfStore {
             }
             let deps = graph.deps_of(node).unwrap_or(&[]).to_vec();
             let fresh = match self.caches.get(node) {
-                Some(cache) => cache.inputs.len() == deps.len()
-                    && cache
-                        .inputs
-                        .iter()
-                        .all(|(dep, rev)| self.current_rev(dep) == Some(*rev)),
+                Some(cache) => {
+                    cache.inputs.len() == deps.len()
+                        && cache
+                            .inputs
+                            .iter()
+                            .all(|(dep, rev)| self.current_rev(dep) == Some(*rev))
+                }
                 None => false,
             };
             if !fresh {
@@ -809,7 +809,10 @@ impl MtfStore {
         now_ms: i64,
         grid: NonZeroI64,
     ) -> Result<bool, KernelError> {
-        let last_stamp = self.frames.get(&tf_ms).and_then(|frame| frame.stamps.last().copied());
+        let last_stamp = self
+            .frames
+            .get(&tf_ms)
+            .and_then(|frame| frame.stamps.last().copied());
         let rebase_from = match last_stamp {
             Some(stamp) => self.closed.partition_point(|bar| bar.ts_ms < stamp),
             None => 0,
@@ -915,7 +918,9 @@ impl MtfStore {
             self.revision = self.revision.wrapping_add(1);
             self.revision
         } else {
-            self.frames.get(&tf_ms).map_or(self.revision, |frame| frame.revision)
+            self.frames
+                .get(&tf_ms)
+                .map_or(self.revision, |frame| frame.revision)
         };
         self.frames.insert(
             tf_ms,
@@ -971,7 +976,9 @@ pub fn build_graph(
     let mut graph = DependencyGraph::new();
     let mut params_of: HashMap<SeriesKey, ParamSet> = HashMap::new();
     for (key, params) in requests {
-        params_of.entry(key.clone()).or_insert_with(|| params.clone());
+        params_of
+            .entry(key.clone())
+            .or_insert_with(|| params.clone());
     }
     let mut stack: Vec<SeriesKey> = requests.iter().map(|(key, _)| key.clone()).collect();
     while let Some(key) = stack.pop() {

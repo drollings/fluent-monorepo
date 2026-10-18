@@ -23,11 +23,23 @@ fn close(actual: f64, expected: f64) -> bool {
 
 #[test]
 fn bounds_refuse_degenerate() {
-    assert!(InteractionState::new(10.0, 10.0).is_err(), "empty extent refuses");
-    assert!(InteractionState::new(20.0, 10.0).is_err(), "inverted extent refuses");
-    assert!(InteractionState::new(f64::NAN, 10.0).is_err(), "non-finite extent refuses");
+    assert!(
+        InteractionState::new(10.0, 10.0).is_err(),
+        "empty extent refuses"
+    );
+    assert!(
+        InteractionState::new(20.0, 10.0).is_err(),
+        "inverted extent refuses"
+    );
+    assert!(
+        InteractionState::new(f64::NAN, 10.0).is_err(),
+        "non-finite extent refuses"
+    );
     let err = InteractionState::new(0.0, 0.0).expect_err("refusal carries a reason");
-    assert!(err.to_string().contains("bounds"), "refusal names bounds: {err}");
+    assert!(
+        err.to_string().contains("bounds"),
+        "refusal names bounds: {err}"
+    );
 }
 
 #[test]
@@ -36,10 +48,22 @@ fn same_inputs_give_same_viewport() {
         let mut state = free_state();
         let script = vec![
             (1.0 / 60.0, vec![PointerInput::Drag { dy_px: 40.0 }]),
-            (1.0 / 60.0, vec![PointerInput::Wheel { delta_px: 50.0, anchor_y: 200.0 }]),
+            (
+                1.0 / 60.0,
+                vec![PointerInput::Wheel {
+                    delta_px: 50.0,
+                    anchor_y: 200.0,
+                }],
+            ),
             (1.0 / 60.0, vec![]),
             (1.0 / 30.0, vec![]),
-            (1.0 / 60.0, vec![PointerInput::Pinch { scale: 1.5, anchor_y: 100.0 }]),
+            (
+                1.0 / 60.0,
+                vec![PointerInput::Pinch {
+                    scale: 1.5,
+                    anchor_y: 100.0,
+                }],
+            ),
         ];
         let mut ranges = Vec::new();
         let mut velocities = Vec::new();
@@ -54,7 +78,10 @@ fn same_inputs_give_same_viewport() {
     let (first_ranges, first_velocities) = script();
     let (second_ranges, second_velocities) = script();
     assert_eq!(first_ranges, second_ranges, "replay is bit-identical");
-    assert_eq!(first_velocities, second_velocities, "velocity replay is bit-identical");
+    assert_eq!(
+        first_velocities, second_velocities,
+        "velocity replay is bit-identical"
+    );
 }
 
 #[test]
@@ -63,10 +90,18 @@ fn drag_pans_price_window_grab_style() {
     let start = pane();
     // Dragging down 40 px pulls content down: the window rises 2 price units.
     let moved = state.step(1.0 / 60.0, &start, &[PointerInput::Drag { dy_px: 40.0 }]);
-    assert_eq!(range_of(&moved), (92.0, 112.0), "grab drag shifts the window by dy-mapped prices");
+    assert_eq!(
+        range_of(&moved),
+        (92.0, 112.0),
+        "grab drag shifts the window by dy-mapped prices"
+    );
     // Dragging back up restores the window exactly.
     let back = state.step(1.0 / 60.0, &moved, &[PointerInput::Drag { dy_px: -40.0 }]);
-    assert_eq!(range_of(&back), (90.0, 110.0), "opposite drags cancel bit-for-bit");
+    assert_eq!(
+        range_of(&back),
+        (90.0, 110.0),
+        "opposite drags cancel bit-for-bit"
+    );
 }
 
 #[test]
@@ -75,7 +110,11 @@ fn drag_seeds_kinetic_velocity() {
     assert!(state.is_settled(), "fresh state is at rest");
     let _dragged = state.step(1.0 / 60.0, &pane(), &[PointerInput::Drag { dy_px: 40.0 }]);
     // 2 price units in 1/60 s, half-blended into rest: ~60 price/s.
-    assert!(close(state.kinetic_velocity(), 60.0), "velocity seeds from the drag: {}", state.kinetic_velocity());
+    assert!(
+        close(state.kinetic_velocity(), 60.0),
+        "velocity seeds from the drag: {}",
+        state.kinetic_velocity()
+    );
     assert!(!state.is_settled(), "a drag leaves motion to coast");
 }
 
@@ -86,23 +125,158 @@ fn wheel_zooms_around_anchor() {
     let zoomed = state.step(
         1.0 / 60.0,
         &start,
-        &[PointerInput::Wheel { delta_px: 50.0, anchor_y: 200.0 }],
+        &[PointerInput::Wheel {
+            delta_px: 50.0,
+            anchor_y: 200.0,
+        }],
     );
     let (min, max) = range_of(&zoomed);
     // Anchor price (100 at mid-pane) is preserved; the span shrinks by 1.15x.
     let anchor = zoomed.y_to_price(200.0).expect("anchor stays mapped");
-    assert!(close(anchor, 100.0), "zoom keeps the anchor price: {anchor}");
-    assert!(close(max - min, 20.0 / 1.15), "one wheel step scales the span: {}", max - min);
-    assert!(min > 90.0 && max < 110.0, "scroll up zooms in: [{min}, {max}]");
+    assert!(
+        close(anchor, 100.0),
+        "zoom keeps the anchor price: {anchor}"
+    );
+    assert!(
+        close(max - min, 20.0 / 1.15),
+        "one wheel step scales the span: {}",
+        max - min
+    );
+    assert!(
+        min > 90.0 && max < 110.0,
+        "scroll up zooms in: [{min}, {max}]"
+    );
     // Scroll down zooms back out past the start span.
     let out = state.step(
         1.0 / 60.0,
         &zoomed,
-        &[PointerInput::Wheel { delta_px: -50.0, anchor_y: 200.0 }],
+        &[PointerInput::Wheel {
+            delta_px: -50.0,
+            anchor_y: 200.0,
+        }],
     );
     let (omin, omax) = range_of(&out);
     assert!(omax - omin > max - min, "scroll down zooms out");
-    assert!(close(omin + omax, 200.0), "zoom stays centered on the anchor: [{omin}, {omax}]");
+    assert!(
+        close(omin + omax, 200.0),
+        "zoom stays centered on the anchor: [{omin}, {omax}]"
+    );
+}
+
+/// A wheel zoom stays anchored to the cursor even when a span clamp or the
+/// elastic wall fires: up and down notches are symmetric and the window never
+/// pans out from under the pointer.
+#[test]
+fn wheel_zoom_stays_cursor_anchored_at_the_wall() {
+    let mut state = free_state();
+    // Anchor near the top of the pane: price ~107.5 at y = 50.
+    let anchor_y = 50.0;
+    let mut viewport = pane();
+    let start_price = viewport.y_to_price(anchor_y).expect("anchor maps");
+    // Zoom out far enough to exceed the envelope span (data [0, 200], margin
+    // 15% per side -> 260) so the wall clamps the span on later notches.
+    for _ in 0..24 {
+        viewport = state.step(
+            1.0 / 60.0,
+            &viewport,
+            &[PointerInput::Wheel {
+                delta_px: -50.0,
+                anchor_y,
+            }],
+        );
+    }
+    let anchored = viewport.y_to_price(anchor_y).expect("anchor stays mapped");
+    assert!(
+        close(anchored, start_price),
+        "the clamped zoom keeps the cursor price fixed: {start_price} -> {anchored}"
+    );
+    let (min, max) = range_of(&viewport);
+    let envelope_span = (200.0 - 0.0) * (1.0 + 2.0 * ELASTIC_FRACTION);
+    assert!(
+        max - min <= envelope_span + 1e-6,
+        "zoom-out stops at the envelope span: {}",
+        max - min
+    );
+    // Symmetric: zooming back in the same number of notches returns the span
+    // toward the start and keeps the anchor fixed throughout.
+    for _ in 0..24 {
+        viewport = state.step(
+            1.0 / 60.0,
+            &viewport,
+            &[PointerInput::Wheel {
+                delta_px: 50.0,
+                anchor_y,
+            }],
+        );
+    }
+    let back = viewport.y_to_price(anchor_y).expect("anchor stays mapped");
+    assert!(
+        close(back, start_price),
+        "zoom-in keeps the cursor price fixed: {back}"
+    );
+}
+
+/// The hard value floor pins the window's lower edge: no zoom or pan pushes a
+/// price pane below zero.
+#[test]
+fn value_floor_pins_the_lower_edge() {
+    let mut state = InteractionState::new(0.0, 110.0)
+        .expect("valid bounds")
+        .with_value_floor(0.0)
+        .expect("finite floor");
+    // Drag up hard enough that an unfloored window would drop below zero.
+    let dropped = state.step(
+        1.0 / 60.0,
+        &pane(),
+        &[PointerInput::Drag { dy_px: -1_900.0 }],
+    );
+    let (min, _) = range_of(&dropped);
+    assert!(
+        min.abs() < 1e-12,
+        "the price floor pins the lower edge at zero: {min}"
+    );
+    // A non-finite floor refuses.
+    assert!(
+        InteractionState::new(0.0, 110.0)
+            .expect("bounds")
+            .with_value_floor(f64::NAN)
+            .is_err(),
+        "a non-finite floor refuses"
+    );
+}
+
+/// `anchor_window` rebuilds a span around a fractional cursor position, so a
+/// clamped zoom keeps the same fraction instead of translating.
+#[test]
+fn anchor_window_holds_the_fraction() {
+    let window = anchor_window(100.0, 0.25, 20.0).expect("valid window");
+    assert_eq!(
+        (window.min, window.max),
+        (95.0, 115.0),
+        "anchor sits at the fraction"
+    );
+    // Out-of-range fractions clamp to the edges.
+    let low = anchor_window(100.0, -3.0, 20.0).expect("valid window");
+    assert_eq!(
+        (low.min, low.max),
+        (100.0, 120.0),
+        "a low fraction clamps to the floor edge"
+    );
+    let high = anchor_window(100.0, 3.0, 20.0).expect("valid window");
+    assert_eq!(
+        (high.min, high.max),
+        (80.0, 100.0),
+        "a high fraction clamps to the ceiling edge"
+    );
+    // Degenerate spans and non-finite inputs refuse.
+    assert!(
+        anchor_window(100.0, 0.5, 0.0).is_none(),
+        "a zero span refuses"
+    );
+    assert!(
+        anchor_window(f64::NAN, 0.5, 20.0).is_none(),
+        "a non-finite anchor refuses"
+    );
 }
 
 #[test]
@@ -112,31 +286,58 @@ fn pinch_and_box_zoom_known_answers() {
     let pinched = state.step(
         1.0 / 60.0,
         &pane(),
-        &[PointerInput::Pinch { scale: 2.0, anchor_y: 200.0 }],
+        &[PointerInput::Pinch {
+            scale: 2.0,
+            anchor_y: 200.0,
+        }],
     );
     let (min, max) = range_of(&pinched);
-    assert!(close(min, 95.0) && close(max, 105.0), "pinch halves around the anchor: [{min}, {max}]");
+    assert!(
+        close(min, 95.0) && close(max, 105.0),
+        "pinch halves around the anchor: [{min}, {max}]"
+    );
     // Box y=[100, 300] spans prices [95, 105] exactly.
     let boxed = state.step(
         1.0 / 60.0,
         &pane(),
-        &[PointerInput::BoxZoom { top_y: 100.0, bottom_y: 300.0 }],
+        &[PointerInput::BoxZoom {
+            top_y: 100.0,
+            bottom_y: 300.0,
+        }],
     );
-    assert_eq!(range_of(&boxed), (95.0, 105.0), "box sets the spanned range");
+    assert_eq!(
+        range_of(&boxed),
+        (95.0, 105.0),
+        "box sets the spanned range"
+    );
     // Reversed box ends name the same window.
     let reversed = state.step(
         1.0 / 60.0,
         &pane(),
-        &[PointerInput::BoxZoom { top_y: 300.0, bottom_y: 100.0 }],
+        &[PointerInput::BoxZoom {
+            top_y: 300.0,
+            bottom_y: 100.0,
+        }],
     );
-    assert_eq!(range_of(&reversed), (95.0, 105.0), "box ends are order-independent");
+    assert_eq!(
+        range_of(&reversed),
+        (95.0, 105.0),
+        "box ends are order-independent"
+    );
     // A zero-height box names no window and holds.
     let held = state.step(
         1.0 / 60.0,
         &pane(),
-        &[PointerInput::BoxZoom { top_y: 200.0, bottom_y: 200.0 }],
+        &[PointerInput::BoxZoom {
+            top_y: 200.0,
+            bottom_y: 200.0,
+        }],
     );
-    assert_eq!(range_of(&held), (90.0, 110.0), "degenerate box holds the window");
+    assert_eq!(
+        range_of(&held),
+        (90.0, 110.0),
+        "degenerate box holds the window"
+    );
 }
 
 #[test]
@@ -144,13 +345,29 @@ fn off_pane_anchors_hold_the_window() {
     let mut state = free_state();
     let start = pane();
     for events in [
-        vec![PointerInput::Wheel { delta_px: 50.0, anchor_y: -10.0 }],
-        vec![PointerInput::Wheel { delta_px: 50.0, anchor_y: 450.0 }],
-        vec![PointerInput::Pinch { scale: 2.0, anchor_y: f32::NAN }],
-        vec![PointerInput::BoxZoom { top_y: -5.0, bottom_y: 200.0 }],
+        vec![PointerInput::Wheel {
+            delta_px: 50.0,
+            anchor_y: -10.0,
+        }],
+        vec![PointerInput::Wheel {
+            delta_px: 50.0,
+            anchor_y: 450.0,
+        }],
+        vec![PointerInput::Pinch {
+            scale: 2.0,
+            anchor_y: f32::NAN,
+        }],
+        vec![PointerInput::BoxZoom {
+            top_y: -5.0,
+            bottom_y: 200.0,
+        }],
     ] {
         let held = state.step(1.0 / 60.0, &start, &events);
-        assert_eq!(range_of(&held), (90.0, 110.0), "off-pane anchor holds: {events:?}");
+        assert_eq!(
+            range_of(&held),
+            (90.0, 110.0),
+            "off-pane anchor holds: {events:?}"
+        );
     }
 }
 
@@ -164,7 +381,10 @@ fn coast_decays_monotonically_and_settles() {
     for _ in 0..600 {
         current = state.step(1.0 / 60.0, &current, &[]);
         let velocity = state.kinetic_velocity();
-        assert!(velocity <= previous, "energy never grows without input: {velocity} <= {previous}");
+        assert!(
+            velocity <= previous,
+            "energy never grows without input: {velocity} <= {previous}"
+        );
         if previous != 0.0 {
             assert!(velocity < previous, "coast strictly decays until rest");
         }
@@ -172,10 +392,18 @@ fn coast_decays_monotonically_and_settles() {
     }
     assert!(state.is_settled(), "coast reaches rest");
     // Bit-exact: the rest snap assigns literal zero, so replay holds it.
-    assert_eq!(state.kinetic_velocity().to_bits(), 0.0f64.to_bits(), "rest is exact zero");
+    assert_eq!(
+        state.kinetic_velocity().to_bits(),
+        0.0f64.to_bits(),
+        "rest is exact zero"
+    );
     let settled_range = range_of(&current);
     let again = state.step(1.0 / 60.0, &current, &[]);
-    assert_eq!(range_of(&again), settled_range, "rest holds the window bit-for-bit");
+    assert_eq!(
+        range_of(&again),
+        settled_range,
+        "rest holds the window bit-for-bit"
+    );
 }
 
 #[test]
@@ -186,14 +414,20 @@ fn at_rest_stays_at_rest() {
     for _ in 0..10 {
         current = state.step(1.0 / 60.0, &current, &[]);
     }
-    assert_eq!(range_of(&current), (90.0, 110.0), "no input means no motion");
+    assert_eq!(
+        range_of(&current),
+        (90.0, 110.0),
+        "no input means no motion"
+    );
     assert!(state.is_settled(), "rest never self-excites");
 }
 
 #[test]
 fn discrete_gestures_ignore_dt() {
-    let gestures =
-        vec![vec![PointerInput::Drag { dy_px: 40.0 }], vec![PointerInput::Drag { dy_px: -13.0 }]];
+    let gestures = vec![
+        vec![PointerInput::Drag { dy_px: 40.0 }],
+        vec![PointerInput::Drag { dy_px: -13.0 }],
+    ];
     let run = |dt: f64| {
         let mut state = free_state();
         let mut current = pane();
@@ -202,7 +436,11 @@ fn discrete_gestures_ignore_dt() {
         }
         range_of(&current)
     };
-    assert_eq!(run(1.0 / 60.0), run(1.0 / 30.0), "displacements never read dt");
+    assert_eq!(
+        run(1.0 / 60.0),
+        run(1.0 / 30.0),
+        "displacements never read dt"
+    );
 }
 
 #[test]
@@ -224,7 +462,10 @@ fn coast_splitting_matches_closed_form() {
         current = split.step(0.05, &current, &[]);
     }
     let (smin, smax) = range_of(&current);
-    assert!(close(wmin, smin) && close(wmax, smax), "split coast matches: [{wmin}, {wmax}] vs [{smin}, {smax}]");
+    assert!(
+        close(wmin, smin) && close(wmax, smax),
+        "split coast matches: [{wmin}, {wmax}] vs [{smin}, {smax}]"
+    );
     assert!(
         close(whole_velocity, split.kinetic_velocity()),
         "split decay matches: {} vs {}",
@@ -241,7 +482,10 @@ fn zoom_kills_coast_velocity() {
     let zoomed = state.step(
         1.0 / 60.0,
         &dragged,
-        &[PointerInput::Wheel { delta_px: 50.0, anchor_y: 200.0 }],
+        &[PointerInput::Wheel {
+            delta_px: 50.0,
+            anchor_y: 200.0,
+        }],
     );
     assert!(state.is_settled(), "re-anchoring stops the coast");
     let (min, max) = range_of(&zoomed);
@@ -259,15 +503,26 @@ fn far_from_target_motion_is_exact_and_wall_free() {
     for dy in [40.0_f32, 40.0, 10.0] {
         current = state.step(1.0 / 60.0, &current, &[PointerInput::Drag { dy_px: dy }]);
     }
-    assert_eq!(range_of(&current), (94.5, 114.5), "in-bounds drags sum exactly");
+    assert_eq!(
+        range_of(&current),
+        (94.5, 114.5),
+        "in-bounds drags sum exactly"
+    );
     assert!(!state.is_settled(), "no spurious wall absorption");
     for _ in 0..600 {
         current = state.step(1.0 / 60.0, &current, &[]);
     }
     assert!(state.is_settled(), "decay (not the wall) settles the coast");
     let (min, max) = range_of(&current);
-    assert!(min > 0.0 && max < 1000.0, "rest sits deep inside: [{min}, {max}]");
-    assert!(close(max - min, 20.0), "translation preserves the span: {}", max - min);
+    assert!(
+        min > 0.0 && max < 1000.0,
+        "rest sits deep inside: [{min}, {max}]"
+    );
+    assert!(
+        close(max - min, 20.0),
+        "translation preserves the span: {}",
+        max - min
+    );
 }
 
 /// Calibration control: non-positive or non-finite `dt` never invents or
@@ -277,7 +532,11 @@ fn invalid_dt_holds_kinetic_state() {
     for dt in [0.0, -1.0, f64::NAN] {
         let mut state = free_state();
         let moved = state.step(dt, &pane(), &[PointerInput::Drag { dy_px: 40.0 }]);
-        assert_eq!(range_of(&moved), (92.0, 112.0), "displacement never reads dt ({dt})");
+        assert_eq!(
+            range_of(&moved),
+            (92.0, 112.0),
+            "displacement never reads dt ({dt})"
+        );
         assert!(state.is_settled(), "bad dt seeds no velocity ({dt})");
         let held = state.step(1.0 / 60.0, &moved, &[]);
         assert_eq!(range_of(&held), (92.0, 112.0), "no phantom motion ({dt})");
@@ -291,10 +550,17 @@ fn invalid_dt_holds_kinetic_state() {
 #[test]
 fn subnormal_dt_seeds_no_velocity() {
     let dt = f64::MIN_POSITIVE / 2.0;
-    assert!(dt > 0.0 && dt.is_finite(), "the probe dt is subnormal-but-positive");
+    assert!(
+        dt > 0.0 && dt.is_finite(),
+        "the probe dt is subnormal-but-positive"
+    );
     let mut state = free_state();
     let moved = state.step(dt, &pane(), &[PointerInput::Drag { dy_px: 40.0 }]);
-    assert_eq!(range_of(&moved), (92.0, 112.0), "displacement still applies");
+    assert_eq!(
+        range_of(&moved),
+        (92.0, 112.0),
+        "displacement still applies"
+    );
     assert!(state.is_settled(), "an infinite rate seeds no velocity");
     assert!(
         state.kinetic_velocity().is_finite(),
@@ -314,22 +580,38 @@ fn elastic_bounds_never_exceeded() {
     let slammed = state.step(1.0 / 60.0, &start, &[PointerInput::Drag { dy_px: 4000.0 }]);
     let (min, max) = range_of(&slammed);
     assert!(min >= 87.0 && max <= 113.0, "wall holds: [{min}, {max}]");
-    assert_eq!((min, max), (93.0, 113.0), "sustained pull pins the wall, span preserved");
+    assert_eq!(
+        (min, max),
+        (93.0, 113.0),
+        "sustained pull pins the wall, span preserved"
+    );
     assert!(min < max, "the pinned window stays valid");
     // Zooming out past the data also stops at the envelope.
     let mut zoomed = start;
     for _ in 0..40 {
-        zoomed = state.step(1.0 / 60.0, &zoomed, &[PointerInput::Wheel { delta_px: -50.0, anchor_y: 200.0 }]);
+        zoomed = state.step(
+            1.0 / 60.0,
+            &zoomed,
+            &[PointerInput::Wheel {
+                delta_px: -50.0,
+                anchor_y: 200.0,
+            }],
+        );
     }
     let (zmin, zmax) = range_of(&zoomed);
-    assert!(zmin >= 87.0 && zmax <= 113.0, "zoom-out stops at the envelope: [{zmin}, {zmax}]");
+    assert!(
+        zmin >= 87.0 && zmax <= 113.0,
+        "zoom-out stops at the envelope: [{zmin}, {zmax}]"
+    );
     // Wall contact absorbs the coast: release into the wall settles.
     assert!(state.is_settled(), "the wall absorbs velocity");
 }
 
 /// A generous horizontal envelope so coasting is never clamped mid-test.
 fn horizontal_state() -> InteractionState {
-    free_state().with_horizontal_bounds(1000, 320.0).expect("valid horizontal bounds")
+    free_state()
+        .with_horizontal_bounds(1000, 320.0)
+        .expect("valid horizontal bounds")
 }
 
 #[test]
@@ -339,12 +621,23 @@ fn pan_2d_shifts_price_and_time_axes_and_coasts_in_closed_form() {
     let moved = state.step(
         1.0 / 60.0,
         &start,
-        &[PointerInput::Pan2D { dx_px: 40.0, dy_px: 40.0 }],
+        &[PointerInput::Pan2D {
+            dx_px: 40.0,
+            dy_px: 40.0,
+        }],
     );
     // The vertical leg matches a plain drag; the horizontal leg shifts the
     // time-axis offset by exactly dx.
-    assert_eq!(range_of(&moved), (92.0, 112.0), "vertical pan matches drag semantics");
-    assert_eq!(moved.x_offset_px().to_bits(), 40.0f32.to_bits(), "horizontal pan shifts x by dx");
+    assert_eq!(
+        range_of(&moved),
+        (92.0, 112.0),
+        "vertical pan matches drag semantics"
+    );
+    assert_eq!(
+        moved.x_offset_px().to_bits(),
+        40.0f32.to_bits(),
+        "horizontal pan shifts x by dx"
+    );
     assert!(state.kinetic_velocity() > 0.0, "vertical coast seeded");
     assert!(state.kinetic_velocity_x() > 0.0, "horizontal coast seeded");
     assert!(!state.is_settled(), "a 2D pan leaves both axes coasting");
@@ -352,7 +645,14 @@ fn pan_2d_shifts_price_and_time_axes_and_coasts_in_closed_form() {
     // Closed-form split: same seed, same total coast, different splits agree
     // on both axes.
     let seed = |s: &mut InteractionState| {
-        s.step(1.0 / 60.0, &start, &[PointerInput::Pan2D { dx_px: 40.0, dy_px: 40.0 }])
+        s.step(
+            1.0 / 60.0,
+            &start,
+            &[PointerInput::Pan2D {
+                dx_px: 40.0,
+                dy_px: 40.0,
+            }],
+        )
     };
     let mut whole = horizontal_state();
     let mut current = seed(&mut whole);
@@ -367,13 +667,19 @@ fn pan_2d_shifts_price_and_time_axes_and_coasts_in_closed_form() {
         current = split.step(0.05, &current, &[]);
     }
     let (smin, smax) = range_of(&current);
-    assert!(close(wmin, smin) && close(wmax, smax), "vertical split coast matches");
+    assert!(
+        close(wmin, smin) && close(wmax, smax),
+        "vertical split coast matches"
+    );
     assert!(
         (wx - f64::from(current.x_offset_px())).abs() <= 1e-6,
         "horizontal split coast matches: {wx} vs {}",
         current.x_offset_px()
     );
-    assert!(close(wvx, split.kinetic_velocity_x()), "horizontal decay matches");
+    assert!(
+        close(wvx, split.kinetic_velocity_x()),
+        "horizontal decay matches"
+    );
 }
 
 #[test]
@@ -385,7 +691,10 @@ fn wheel_time_zooms_bar_spacing_anchored_at_cursor_x() {
     let zoomed = state.step(
         1.0 / 60.0,
         &start,
-        &[PointerInput::WheelTime { delta_px: 50.0, anchor_x }],
+        &[PointerInput::WheelTime {
+            delta_px: 50.0,
+            anchor_x,
+        }],
     );
     let spacing = zoomed.scale().bar_spacing();
     assert!(spacing > 8.0, "scroll up widens the bars: {spacing}");
@@ -408,35 +717,57 @@ fn wheel_time_zooms_bar_spacing_anchored_at_cursor_x() {
     let out = state.step(
         1.0 / 60.0,
         &zoomed,
-        &[PointerInput::WheelTime { delta_px: -50.0, anchor_x }],
+        &[PointerInput::WheelTime {
+            delta_px: -50.0,
+            anchor_x,
+        }],
     );
-    assert!(out.scale().bar_spacing() < spacing, "scroll down narrows the bars");
+    assert!(
+        out.scale().bar_spacing() < spacing,
+        "scroll down narrows the bars"
+    );
     let out_slot = out.x_to_index(anchor_x).expect("finite");
-    assert!((out_slot - slot_before).abs() <= 1e-6, "anchor holds across zoom-out");
+    assert!(
+        (out_slot - slot_before).abs() <= 1e-6,
+        "anchor holds across zoom-out"
+    );
 }
 
 #[test]
 fn horizontal_elastic_and_spacing_rails_hold() {
     let start = pane(); // spacing 8
-    // Slam the time axis right: hi_lim = margin_slots * spacing = 6 * 8 = 48.
-    let mut state = free_state().with_horizontal_bounds(40, 320.0).expect("bounds");
+                        // Slam the time axis right: hi_lim = margin_slots * spacing = 6 * 8 = 48.
+    let mut state = free_state()
+        .with_horizontal_bounds(40, 320.0)
+        .expect("bounds");
     let slammed = state.step(
         1.0 / 60.0,
         &start,
-        &[PointerInput::Pan2D { dx_px: 4000.0, dy_px: 0.0 }],
+        &[PointerInput::Pan2D {
+            dx_px: 4000.0,
+            dy_px: 0.0,
+        }],
     );
     assert!(
         (f64::from(slammed.x_offset_px()) - 48.0).abs() <= 1e-3,
         "horizontal wall holds at hi_lim: {}",
         slammed.x_offset_px()
     );
-    assert!(state.is_settled(), "wall contact absorbs the horizontal coast");
+    assert!(
+        state.is_settled(),
+        "wall contact absorbs the horizontal coast"
+    );
     // Slam the time axis left: lo_lim = 320 - (40 + 6) * 8 = -48.
-    let mut state = free_state().with_horizontal_bounds(40, 320.0).expect("bounds");
+    let mut state = free_state()
+        .with_horizontal_bounds(40, 320.0)
+        .expect("bounds");
     let slammed = state.step(
         1.0 / 60.0,
         &start,
-        &[PointerInput::Pan2D { dx_px: -4000.0, dy_px: 0.0 }],
+        &[PointerInput::Pan2D {
+            dx_px: -4000.0,
+            dy_px: 0.0,
+        }],
     );
     assert!(
         (f64::from(slammed.x_offset_px()) + 48.0).abs() <= 1e-3,
@@ -444,13 +775,18 @@ fn horizontal_elastic_and_spacing_rails_hold() {
         slammed.x_offset_px()
     );
     // Spacing rails: sustained zoom-in clamps at MAX_BAR_SPACING.
-    let mut state = free_state().with_horizontal_bounds(40, 320.0).expect("bounds");
+    let mut state = free_state()
+        .with_horizontal_bounds(40, 320.0)
+        .expect("bounds");
     let mut current = start;
     for _ in 0..40 {
         current = state.step(
             1.0 / 60.0,
             &current,
-            &[PointerInput::WheelTime { delta_px: 50.0, anchor_x: 160.0 }],
+            &[PointerInput::WheelTime {
+                delta_px: 50.0,
+                anchor_x: 160.0,
+            }],
         );
     }
     assert!(
@@ -459,13 +795,18 @@ fn horizontal_elastic_and_spacing_rails_hold() {
         current.scale().bar_spacing()
     );
     // Sustained zoom-out clamps at MIN_BAR_SPACING.
-    let mut state = free_state().with_horizontal_bounds(40, 320.0).expect("bounds");
+    let mut state = free_state()
+        .with_horizontal_bounds(40, 320.0)
+        .expect("bounds");
     let mut current = start;
     for _ in 0..80 {
         current = state.step(
             1.0 / 60.0,
             &current,
-            &[PointerInput::WheelTime { delta_px: -50.0, anchor_x: 160.0 }],
+            &[PointerInput::WheelTime {
+                delta_px: -50.0,
+                anchor_x: 160.0,
+            }],
         );
     }
     assert!(
@@ -474,8 +815,14 @@ fn horizontal_elastic_and_spacing_rails_hold() {
         current.scale().bar_spacing()
     );
     // Bad horizontal bounds refuse with the parameter named.
-    assert!(free_state().with_horizontal_bounds(0, 320.0).is_err(), "zero bars refuses");
-    assert!(free_state().with_horizontal_bounds(40, 0.0).is_err(), "zero width refuses");
+    assert!(
+        free_state().with_horizontal_bounds(0, 320.0).is_err(),
+        "zero bars refuses"
+    );
+    assert!(
+        free_state().with_horizontal_bounds(40, 0.0).is_err(),
+        "zero width refuses"
+    );
 }
 
 /// Calibration controls for the 2D pan and cursor-anchored wheel-zoom
@@ -486,14 +833,22 @@ fn horizontal_elastic_and_spacing_rails_hold() {
 fn cursor_anchored_wheel_zoom_and_2d_pan_calibration_controls() {
     // Control group (at rest / zero delta): 120 idle frames move neither the
     // horizontal offset nor the bar spacing.
-    let mut state = free_state().with_horizontal_bounds(5_000, 320.0).expect("valid bounds");
+    let mut state = free_state()
+        .with_horizontal_bounds(5_000, 320.0)
+        .expect("valid bounds");
     let start = pane(); // spacing 8, offset 0
     let mut current = start;
     for frame in 0..120 {
         let events = if frame % 2 == 0 {
-            vec![PointerInput::Pan2D { dx_px: 0.0, dy_px: 0.0 }]
+            vec![PointerInput::Pan2D {
+                dx_px: 0.0,
+                dy_px: 0.0,
+            }]
         } else {
-            vec![PointerInput::WheelTime { delta_px: 0.0, anchor_x: 160.0 }]
+            vec![PointerInput::WheelTime {
+                delta_px: 0.0,
+                anchor_x: 160.0,
+            }]
         };
         current = state.step(1.0 / 60.0, &current, &events);
     }
@@ -516,13 +871,18 @@ fn cursor_anchored_wheel_zoom_and_2d_pan_calibration_controls() {
     for anchor_x in [40.0_f32, 160.0, 310.0] {
         let slot = start.x_to_index(anchor_x).expect("finite anchor slot");
         for delta in [50.0_f32, -50.0] {
-            let mut state = free_state().with_horizontal_bounds(5_000, 320.0).expect("valid bounds");
+            let mut state = free_state()
+                .with_horizontal_bounds(5_000, 320.0)
+                .expect("valid bounds");
             let mut current = start;
             for step in 0..20 {
                 current = state.step(
                     1.0 / 60.0,
                     &current,
-                    &[PointerInput::WheelTime { delta_px: delta, anchor_x }],
+                    &[PointerInput::WheelTime {
+                        delta_px: delta,
+                        anchor_x,
+                    }],
                 );
                 let drift = (f64::from(current.slot_to_x(slot)) - f64::from(anchor_x)).abs();
                 assert!(
@@ -534,13 +894,18 @@ fn cursor_anchored_wheel_zoom_and_2d_pan_calibration_controls() {
     }
 
     // The spacing rails hold across a sustained zoom sweep.
-    let mut state = free_state().with_horizontal_bounds(5_000, 320.0).expect("valid bounds");
+    let mut state = free_state()
+        .with_horizontal_bounds(5_000, 320.0)
+        .expect("valid bounds");
     let mut zoomed_in = start;
     for _ in 0..40 {
         zoomed_in = state.step(
             1.0 / 60.0,
             &zoomed_in,
-            &[PointerInput::WheelTime { delta_px: 50.0, anchor_x: 160.0 }],
+            &[PointerInput::WheelTime {
+                delta_px: 50.0,
+                anchor_x: 160.0,
+            }],
         );
     }
     assert!(
@@ -548,13 +913,18 @@ fn cursor_anchored_wheel_zoom_and_2d_pan_calibration_controls() {
         "zoom-in clamps at the max rail: {}",
         zoomed_in.scale().bar_spacing()
     );
-    let mut state = free_state().with_horizontal_bounds(5_000, 320.0).expect("valid bounds");
+    let mut state = free_state()
+        .with_horizontal_bounds(5_000, 320.0)
+        .expect("valid bounds");
     let mut zoomed_out = start;
     for _ in 0..40 {
         zoomed_out = state.step(
             1.0 / 60.0,
             &zoomed_out,
-            &[PointerInput::WheelTime { delta_px: -50.0, anchor_x: 160.0 }],
+            &[PointerInput::WheelTime {
+                delta_px: -50.0,
+                anchor_x: 160.0,
+            }],
         );
     }
     assert!(
@@ -581,8 +951,16 @@ fn feel_constants_are_pinned() {
     ] {
         assert_eq!(got.to_bits(), want.to_bits(), "{name} is frozen");
     }
-    assert_eq!(MIN_BAR_SPACING.to_bits(), 1.0f32.to_bits(), "zoom rail floor is frozen");
-    assert_eq!(MAX_BAR_SPACING.to_bits(), 64.0f32.to_bits(), "zoom rail ceiling is frozen");
+    assert_eq!(
+        MIN_BAR_SPACING.to_bits(),
+        1.0f32.to_bits(),
+        "zoom rail floor is frozen"
+    );
+    assert_eq!(
+        MAX_BAR_SPACING.to_bits(),
+        64.0f32.to_bits(),
+        "zoom rail ceiling is frozen"
+    );
 }
 
 #[test]
@@ -591,21 +969,42 @@ fn auto_height_reanchors_through_the_machine() {
     // the fitted range applies, the vertical coast stops, and the time axis
     // (spacing, offset, horizontal coast) is untouched.
     let start = pane();
-    let mut state = free_state().with_horizontal_bounds(100, 400.0).expect("valid bounds");
+    let mut state = free_state()
+        .with_horizontal_bounds(100, 400.0)
+        .expect("valid bounds");
     let _ = state.step(1.0 / 60.0, &start, &[PointerInput::Drag { dy_px: 40.0 }]);
     assert!(!state.is_settled(), "a drag seeds a coast");
     let spacing_before = start.scale().bar_spacing();
     let fitted = state.step(
         1.0 / 60.0,
         &start,
-        &[PointerInput::AutoHeight { min: 95.0, max: 105.0 }],
+        &[PointerInput::AutoHeight {
+            min: 95.0,
+            max: 105.0,
+        }],
     );
-    assert_eq!(state.kinetic_velocity().to_bits(), 0.0f64.to_bits(), "re-anchoring stops the coast");
+    assert_eq!(
+        state.kinetic_velocity().to_bits(),
+        0.0f64.to_bits(),
+        "re-anchoring stops the coast"
+    );
     assert!(state.is_settled(), "no horizontal coast was seeded");
     let range = fitted.scale().range();
-    assert_eq!((range.min, range.max), (95.0, 105.0), "the fitted range applies");
-    assert_eq!(fitted.scale().bar_spacing().to_bits(), spacing_before.to_bits(), "time axis untouched");
-    assert_eq!(fitted.x_offset_px().to_bits(), start.x_offset_px().to_bits(), "pan offset untouched");
+    assert_eq!(
+        (range.min, range.max),
+        (95.0, 105.0),
+        "the fitted range applies"
+    );
+    assert_eq!(
+        fitted.scale().bar_spacing().to_bits(),
+        spacing_before.to_bits(),
+        "time axis untouched"
+    );
+    assert_eq!(
+        fitted.x_offset_px().to_bits(),
+        start.x_offset_px().to_bits(),
+        "pan offset untouched"
+    );
 }
 
 #[test]
@@ -613,13 +1012,26 @@ fn auto_height_refusals_hold_the_window() {
     let start = pane();
     let mut state = free_state();
     for event in [
-        PointerInput::AutoHeight { min: f64::NAN, max: 105.0 },
-        PointerInput::AutoHeight { min: 105.0, max: 95.0 },
-        PointerInput::AutoHeight { min: 95.0, max: 95.0 },
+        PointerInput::AutoHeight {
+            min: f64::NAN,
+            max: 105.0,
+        },
+        PointerInput::AutoHeight {
+            min: 105.0,
+            max: 95.0,
+        },
+        PointerInput::AutoHeight {
+            min: 95.0,
+            max: 95.0,
+        },
     ] {
         let held = state.step(1.0 / 60.0, &start, &[event]);
         let range = held.scale().range();
-        assert_eq!((range.min, range.max), (90.0, 110.0), "a refusal holds the window");
+        assert_eq!(
+            (range.min, range.max),
+            (90.0, 110.0),
+            "a refusal holds the window"
+        );
         assert!(state.is_settled(), "a refusal seeds no coast");
     }
 }
@@ -631,10 +1043,22 @@ fn scripted_auto_height_replays_deterministically() {
     // the fit equals wheeling the fitted viewport directly.
     let start = pane();
     let log = vec![
-        PointerInput::Pan2D { dx_px: 24.0, dy_px: 30.0 },
-        PointerInput::Wheel { delta_px: 50.0, anchor_y: 200.0 },
-        PointerInput::AutoHeight { min: 95.0, max: 105.0 },
-        PointerInput::Wheel { delta_px: -50.0, anchor_y: 200.0 },
+        PointerInput::Pan2D {
+            dx_px: 24.0,
+            dy_px: 30.0,
+        },
+        PointerInput::Wheel {
+            delta_px: 50.0,
+            anchor_y: 200.0,
+        },
+        PointerInput::AutoHeight {
+            min: 95.0,
+            max: 105.0,
+        },
+        PointerInput::Wheel {
+            delta_px: -50.0,
+            anchor_y: 200.0,
+        },
     ];
     let run = || {
         let mut state = free_state();

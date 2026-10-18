@@ -10,7 +10,7 @@
 use std::path::PathBuf;
 
 use super::*;
-use crate::backtest::{LoadedHistory, load_history, HistorySource};
+use crate::backtest::{load_history, HistorySource, LoadedHistory};
 use crate::history::{load_bars_candidates, load_bars_file};
 use crate::service::{serve, ServerConfig};
 use protopyne_store::read_ohlcv_parquet;
@@ -42,8 +42,15 @@ fn assert_ascending(bars: &[Bar]) {
 #[test]
 fn the_month_file_reads_as_is() {
     let read = read_ohlcv_parquet(&month_path(), Some("SPY")).expect("month reads");
-    assert_eq!(read.bars.len(), 20434, "20437 rows minus 3 merged restatements");
-    assert_eq!(read.restatements_merged, 3, "three same-stamp corrections merge");
+    assert_eq!(
+        read.bars.len(),
+        20434,
+        "20437 rows minus 3 merged restatements"
+    );
+    assert_eq!(
+        read.restatements_merged, 3,
+        "three same-stamp corrections merge"
+    );
     assert_eq!(read.rows_filtered, 0, "the file is SPY-only");
 
     let bars = read.bars;
@@ -102,7 +109,11 @@ fn the_month_tallies_into_frames_with_torn_buckets_omitted() {
     // the same whole-only rule on the coarser grids. Omitted buckets carry
     // their volume away with them — session data tallies to what is whole,
     // never to a fabricated partial bar.
-    assert_eq!(frames[0].1.len(), 3754, "only whole five-minute buckets emit");
+    assert_eq!(
+        frames[0].1.len(),
+        3754,
+        "only whole five-minute buckets emit"
+    );
     assert_eq!(frames[1].1.len(), 1129, "only whole quarter-hours emit");
     assert_eq!(frames[2].1.len(), 242, "only whole hours emit");
     for (target, frame) in &frames {
@@ -133,8 +144,13 @@ fn the_month_tallies_into_frames_with_torn_buckets_omitted() {
 #[test]
 fn fold_frames_refuses_a_non_multiple_target() {
     let bars = load_month();
-    let err = fold_frames(&bars, Timeframe::M15, &[Timeframe::M10], FoldEdges::CompleteOnly)
-        .expect_err("10 minutes is not a whole multiple of 15");
+    let err = fold_frames(
+        &bars,
+        Timeframe::M15,
+        &[Timeframe::M10],
+        FoldEdges::CompleteOnly,
+    )
+    .expect_err("10 minutes is not a whole multiple of 15");
     assert!(err.to_string().contains("whole multiple"), "{err}");
 }
 
@@ -160,8 +176,8 @@ fn the_ladder_skips_a_missing_candidate_and_stops_on_a_wrong_one() {
 
 #[test]
 fn a_files_history_source_loads_through_the_single_entry_point() {
-    let loaded: LoadedHistory = load_history(&HistorySource::Files(vec![month_path()]), None)
-        .expect("the files arm loads");
+    let loaded: LoadedHistory =
+        load_history(&HistorySource::Files(vec![month_path()]), None).expect("the files arm loads");
     assert_eq!(loaded.bars.len(), 20434);
     assert!(
         loaded.provenance.is_empty(),
@@ -176,7 +192,9 @@ async fn a_one_minute_boot_history_resamples_from_its_actual_base() {
         .bind("127.0.0.1:0".to_owned())
         .history_timeframe("1M".to_owned())
         .build();
-    let handle = serve(config.clone(), bars.clone()).await.expect("server boots");
+    let handle = serve(config.clone(), bars.clone())
+        .await
+        .expect("server boots");
     let gateway = handle.gateway();
 
     let base = gateway.chart_bars_for("SPY", "1M").expect("1M read");
@@ -190,10 +208,16 @@ async fn a_one_minute_boot_history_resamples_from_its_actual_base() {
     // buckets are omitted. The month opens on a grid line (09:00 UTC), so the
     // first bucket is whole on every grid.
     let five = gateway.chart_bars_for("SPY", "5M").expect("5M read");
-    assert!(!five.rows.is_empty(), "5M serves the whole five-minute buckets");
+    assert!(
+        !five.rows.is_empty(),
+        "5M serves the whole five-minute buckets"
+    );
     assert!(five.rows.len() <= bars.len());
     let fifteen = gateway.chart_bars_for("SPY", "15M").expect("15M read");
-    assert!(!fifteen.rows.is_empty(), "15M serves the whole quarter-hours");
+    assert!(
+        !fifteen.rows.is_empty(),
+        "15M serves the whole quarter-hours"
+    );
     let hour = gateway.chart_bars_for("SPY", "1H").expect("1H read");
     assert!(!hour.rows.is_empty(), "1H serves the whole hours");
     let day = gateway.chart_bars_for("SPY", "1D").expect("1D read");
@@ -270,7 +294,11 @@ fn load_bars_file_dispatches_csv_by_extension() {
 #[test]
 fn load_bars_file_dispatches_parquet_by_extension() {
     let bars = load_bars_file(&month_path()).expect("parquet dispatches");
-    assert_eq!(bars, load_month(), "dispatch reads what the parquet loader reads");
+    assert_eq!(
+        bars,
+        load_month(),
+        "dispatch reads what the parquet loader reads"
+    );
 }
 
 #[test]

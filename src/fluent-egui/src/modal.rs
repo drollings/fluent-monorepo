@@ -241,7 +241,10 @@ impl<C: Ord + Clone> CatalogModal<C> {
 
 /// Unknown-entry refusal naming the id.
 fn unknown_entry(id: &str) -> EguiError {
-    EguiError::InvalidParam { what: id.to_owned(), reason: "unknown catalog entry".to_owned() }
+    EguiError::InvalidParam {
+        what: id.to_owned(),
+        reason: "unknown catalog entry".to_owned(),
+    }
 }
 
 /// Paint the catalog: title, a search field, a favorites toggle, optional
@@ -291,7 +294,15 @@ pub fn paint_catalog_modal<C: Ord + Clone>(
         .collect();
     for (id, title, favorite) in rows {
         ui.horizontal(|row| {
-            let marker = if favorite { "[x]" } else { "[ ]" };
+            // A hollow star marks the unselected default; a filled, accented
+            // star marks a favorite. The star is the affordance the Favorites
+            // filter keys on, so an unstarred row reads as "not yet
+            // favorited" rather than "unchecked".
+            let marker = if favorite {
+                egui::RichText::new("★").color(accent)
+            } else {
+                egui::RichText::new("☆")
+            };
             if row.button(marker).clicked() {
                 actions.push(CatalogAction::ToggledFavorite(id.clone()));
             }

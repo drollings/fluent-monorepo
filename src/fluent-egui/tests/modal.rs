@@ -15,33 +15,64 @@ enum Class {
 
 fn catalog() -> CatalogModal<Class> {
     let mut modal = CatalogModal::new("Symbols");
-    modal.register("gld", "SPDR Gold Shares", Class::Funds).expect("registers");
-    modal.register("spy", "SPDR S&P 500", Class::Stocks).expect("registers");
-    modal.register("es", "E-mini S&P", Class::Futures).expect("registers");
-    modal.register("btc", "Bitcoin", Class::Crypto).expect("registers");
+    modal
+        .register("gld", "SPDR Gold Shares", Class::Funds)
+        .expect("registers");
+    modal
+        .register("spy", "SPDR S&P 500", Class::Stocks)
+        .expect("registers");
+    modal
+        .register("es", "E-mini S&P", Class::Futures)
+        .expect("registers");
+    modal
+        .register("btc", "Bitcoin", Class::Crypto)
+        .expect("registers");
     modal
 }
 
 fn ids(modal: &CatalogModal<Class>) -> Vec<String> {
-    modal.filtered().iter().map(|entry| entry.id().to_owned()).collect()
+    modal
+        .filtered()
+        .iter()
+        .map(|entry| entry.id().to_owned())
+        .collect()
 }
 
 #[test]
 fn catalog_modal_orders_entries_deterministically_via_keyed_registry() {
     let mut modal = CatalogModal::new("Symbols");
-    modal.register("zeta", "Zeta Fund", Class::Funds).expect("registers");
-    modal.register("alpha", "Alpha Corp", Class::Stocks).expect("registers");
-    modal.register("mid", "Mid Futures", Class::Futures).expect("registers");
-    assert_eq!(modal.ids(), vec!["alpha", "mid", "zeta"], "keys come back sorted");
+    modal
+        .register("zeta", "Zeta Fund", Class::Funds)
+        .expect("registers");
+    modal
+        .register("alpha", "Alpha Corp", Class::Stocks)
+        .expect("registers");
+    modal
+        .register("mid", "Mid Futures", Class::Futures)
+        .expect("registers");
+    assert_eq!(
+        modal.ids(),
+        vec!["alpha", "mid", "zeta"],
+        "keys come back sorted"
+    );
     let entries: Vec<&CatalogEntry<Class>> = modal.filtered();
     let ordered: Vec<&str> = entries.iter().map(|entry| entry.id()).collect();
-    assert_eq!(ordered, vec!["alpha", "mid", "zeta"], "filtered follows registry order");
+    assert_eq!(
+        ordered,
+        vec!["alpha", "mid", "zeta"],
+        "filtered follows registry order"
+    );
     assert_eq!(modal.len(), 3);
     assert!(modal.contains("alpha"), "registered keys are present");
-    assert_eq!(modal.get("mid").map(CatalogEntry::title), Some("Mid Futures"));
+    assert_eq!(
+        modal.get("mid").map(CatalogEntry::title),
+        Some("Mid Futures")
+    );
     // Re-registering an existing key replaces it in place: the registry does
     // not grow and the sorted order holds.
-    modal.register("mid", "Midpoint", Class::Futures).expect("replaces");
+    modal
+        .register("mid", "Midpoint", Class::Futures)
+        .expect("replaces");
     assert_eq!(modal.len(), 3, "a replace does not grow the registry");
     assert_eq!(modal.get("mid").map(CatalogEntry::title), Some("Midpoint"));
 }
@@ -52,15 +83,30 @@ fn catalog_modal_filters_by_category_favorites_and_case_insensitive_query() {
 
     // Case-insensitive substring query, over both id and title.
     modal.set_query("spdr");
-    assert_eq!(ids(&modal), vec!["gld", "spy"], "substring match ignores case");
+    assert_eq!(
+        ids(&modal),
+        vec!["gld", "spy"],
+        "substring match ignores case"
+    );
     modal.set_query("SPDR");
-    assert_eq!(ids(&modal), vec!["gld", "spy"], "query casing never matters");
+    assert_eq!(
+        ids(&modal),
+        vec!["gld", "spy"],
+        "query casing never matters"
+    );
     modal.set_query("btc");
     assert_eq!(ids(&modal), vec!["btc"], "the id is searchable");
     modal.set_query("zzzz_no_match");
-    assert!(modal.filtered().is_empty(), "a disjoint query matches nothing");
+    assert!(
+        modal.filtered().is_empty(),
+        "a disjoint query matches nothing"
+    );
     modal.set_query("");
-    assert_eq!(modal.filtered().len(), 4, "an empty query matches every entry");
+    assert_eq!(
+        modal.filtered().len(),
+        4,
+        "an empty query matches every entry"
+    );
 
     // Category tab filtering; `None` clears the tab back to all.
     modal.set_category(Some(Class::Stocks));
@@ -70,41 +116,77 @@ fn catalog_modal_filters_by_category_favorites_and_case_insensitive_query() {
     assert_eq!(modal.filtered().len(), 4, "clearing the category shows all");
 
     // Favorite toggling plus the favorites-only filter.
-    assert_eq!(modal.is_favorite("gld"), Some(false), "entries start unfavorited");
-    assert!(modal.toggle_favorite("gld").expect("toggles"), "first toggle favorites");
+    assert_eq!(
+        modal.is_favorite("gld"),
+        Some(false),
+        "entries start unfavorited"
+    );
+    assert!(
+        modal.toggle_favorite("gld").expect("toggles"),
+        "first toggle favorites"
+    );
     assert_eq!(modal.is_favorite("gld"), Some(true));
     modal.set_favorites_only(true);
-    assert_eq!(ids(&modal), vec!["gld"], "favorites-only shows just the starred entry");
-    assert!(!modal.toggle_favorite("gld").expect("toggles"), "second toggle unfavorites");
+    assert_eq!(
+        ids(&modal),
+        vec!["gld"],
+        "favorites-only shows just the starred entry"
+    );
+    assert!(
+        !modal.toggle_favorite("gld").expect("toggles"),
+        "second toggle unfavorites"
+    );
     modal.set_favorites_only(false);
 
     // Category, favorite, and query compose.
     modal.set_category(Some(Class::Funds));
     modal.set_query("gold");
     assert_eq!(ids(&modal), vec!["gld"], "category and query compose");
-    assert!(modal.toggle_favorite("missing").is_err(), "unknown ids refuse the star");
-    assert!(modal.is_favorite("missing").is_none(), "unknown reads answer nothing");
+    assert!(
+        modal.toggle_favorite("missing").is_err(),
+        "unknown ids refuse the star"
+    );
+    assert!(
+        modal.is_favorite("missing").is_none(),
+        "unknown reads answer nothing"
+    );
 }
 
 #[test]
 fn catalog_modal_refuses_empty_ids_and_renders_headlessly() {
     let mut modal = CatalogModal::<Class>::new("Symbols");
-    let blank_id = modal.register("", "Title", Class::Stocks).expect_err("blank id refuses");
-    assert!(blank_id.to_string().contains("id"), "the refusal names the id: {blank_id}");
-    assert!(modal.register("ok", "   ", Class::Stocks).is_err(), "blank title refuses");
+    let blank_id = modal
+        .register("", "Title", Class::Stocks)
+        .expect_err("blank id refuses");
+    assert!(
+        blank_id.to_string().contains("id"),
+        "the refusal names the id: {blank_id}"
+    );
+    assert!(
+        modal.register("ok", "   ", Class::Stocks).is_err(),
+        "blank title refuses"
+    );
     assert!(modal.is_empty(), "a refusal leaves the catalog untouched");
-    modal.register("gld", "Gold", Class::Funds).expect("registers");
+    modal
+        .register("gld", "Gold", Class::Funds)
+        .expect("registers");
 
     let theme = ThemeConfig::default();
     egui::__run_test_ui(|ui| {
         let actions: Vec<CatalogAction> =
             paint_catalog_modal(ui, &mut modal, &[(Class::Stocks, "Stocks")], &theme)
                 .expect("the modal paints");
-        assert!(actions.is_empty(), "an untouched frame raises nothing: {actions:?}");
+        assert!(
+            actions.is_empty(),
+            "an untouched frame raises nothing: {actions:?}"
+        );
     });
     // A theme that cannot resolve the accent key refuses with the key named
     // instead of painting a silent default.
-    let broken = ThemeConfig { fast: "not-a-color".to_owned(), ..Default::default() };
+    let broken = ThemeConfig {
+        fast: "not-a-color".to_owned(),
+        ..Default::default()
+    };
     egui::__run_test_ui(|ui| {
         assert!(
             paint_catalog_modal(ui, &mut modal, &[], &broken).is_err(),
@@ -122,13 +204,24 @@ fn catalog_search_precision_and_recall_controls() {
     let mut modal = catalog();
     let evaluate = |modal: &CatalogModal<Class>, expected: &[&str]| -> (f64, f64) {
         let returned = ids(modal);
-        let hits = returned.iter().filter(|id| expected.contains(&id.as_str())).count();
+        let hits = returned
+            .iter()
+            .filter(|id| expected.contains(&id.as_str()))
+            .count();
         let precision = if returned.is_empty() {
-            if expected.is_empty() { 1.0 } else { 0.0 }
+            if expected.is_empty() {
+                1.0
+            } else {
+                0.0
+            }
         } else {
             hits as f64 / returned.len() as f64
         };
-        let recall = if expected.is_empty() { 1.0 } else { hits as f64 / expected.len() as f64 };
+        let recall = if expected.is_empty() {
+            1.0
+        } else {
+            hits as f64 / expected.len() as f64
+        };
         (precision, recall)
     };
     // Positive queries: every returned entry is a true positive, and every
@@ -150,7 +243,10 @@ fn catalog_search_precision_and_recall_controls() {
     // Negative controls: disjoint and whitespace-only queries match nothing.
     for query in ["zzzz_no_match", "   ", "\t\t"] {
         modal.set_query(query);
-        assert!(modal.filtered().is_empty(), "query {query:?} yields no false positives");
+        assert!(
+            modal.filtered().is_empty(),
+            "query {query:?} yields no false positives"
+        );
         let (precision, recall) = evaluate(&modal, &[]);
         assert!(
             (precision - 1.0).abs() < 1e-12 && (recall - 1.0).abs() < 1e-12,
@@ -161,7 +257,10 @@ fn catalog_search_precision_and_recall_controls() {
     // tab returns nothing, so the excluded match is never a false positive.
     modal.set_category(Some(Class::Stocks));
     modal.set_query("gold");
-    assert!(modal.filtered().is_empty(), "category exclusion drops the match");
+    assert!(
+        modal.filtered().is_empty(),
+        "category exclusion drops the match"
+    );
     let (precision, recall) = evaluate(&modal, &[]);
     assert!(
         (precision - 1.0).abs() < 1e-12 && (recall - 1.0).abs() < 1e-12,
@@ -170,7 +269,10 @@ fn catalog_search_precision_and_recall_controls() {
     // The favorites filter composes with the query the same way.
     modal.set_category(None);
     modal.set_query("spdr");
-    assert!(modal.toggle_favorite("spy").expect("toggles"), "spy becomes a favorite");
+    assert!(
+        modal.toggle_favorite("spy").expect("toggles"),
+        "spy becomes a favorite"
+    );
     modal.set_favorites_only(true);
     let (precision, recall) = evaluate(&modal, &["spy"]);
     assert!(

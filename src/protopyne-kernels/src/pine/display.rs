@@ -37,9 +37,7 @@ struct Renderer {
 
 impl Renderer {
     fn new() -> Self {
-        Self {
-            out: String::new(),
-        }
+        Self { out: String::new() }
     }
 
     fn finish(self) -> String {
@@ -114,11 +112,17 @@ impl Renderer {
             }
             PineStmt::ExportDecl(inner) => match inner.as_ref() {
                 PineStmt::FuncDecl { name, params, body } => {
-                    self.line(level, &format!("export {} =>", self.func_head(name, params)));
+                    self.line(
+                        level,
+                        &format!("export {} =>", self.func_head(name, params)),
+                    );
                     self.body(level + 1, body);
                 }
                 PineStmt::MethodDecl { name, params, body } => {
-                    self.line(level, &format!("export {} =>", self.method_head(name, params)));
+                    self.line(
+                        level,
+                        &format!("export {} =>", self.method_head(name, params)),
+                    );
                     self.body(level + 1, body);
                 }
                 PineStmt::EnumDecl { name, members } => {
@@ -173,9 +177,9 @@ impl Renderer {
                 is_varip,
             } => {
                 let keyword = if *is_varip { "varip" } else { "var" };
-                let typed = type_name
-                    .as_ref()
-                    .map_or_else(String::new, |type_name| format!("{} ", display_type(type_name)));
+                let typed = type_name.as_ref().map_or_else(String::new, |type_name| {
+                    format!("{} ", display_type(type_name))
+                });
                 self.line(
                     level,
                     &format!("{keyword} {typed}{name} = {}", self.expr(level, value)),
@@ -196,16 +200,20 @@ impl Renderer {
                 );
             }
             PineStmt::MultiDeclaration { decls } => {
-                let rendered: Vec<String> =
-                    decls.iter().map(|decl| self.multi_decl(level, decl)).collect();
+                let rendered: Vec<String> = decls
+                    .iter()
+                    .map(|decl| self.multi_decl(level, decl))
+                    .collect();
                 self.line(level, &rendered.join(", "));
             }
             PineStmt::Assignment { name, value } => {
                 self.line(level, &format!("{name} = {}", self.expr(level, value)));
             }
             PineStmt::MultiAssign { items } => {
-                let rendered: Vec<String> =
-                    items.iter().map(|item| self.assign_item(level, item)).collect();
+                let rendered: Vec<String> = items
+                    .iter()
+                    .map(|item| self.assign_item(level, item))
+                    .collect();
                 self.line(level, &rendered.join(", "));
             }
             PineStmt::Reassign { name, value } => {
@@ -255,7 +263,10 @@ impl Renderer {
                 } else {
                     format!("[{}]", targets.join(", "))
                 };
-                self.line(level, &format!("for {bound} in {}", self.expr(level, iterable)));
+                self.line(
+                    level,
+                    &format!("for {bound} in {}", self.expr(level, iterable)),
+                );
                 self.body(level + 1, body);
             }
             PineStmt::While { condition, body } => {
@@ -344,7 +355,9 @@ impl Renderer {
                 let typed = param
                     .type_name
                     .as_ref()
-                    .map_or_else(String::new, |type_name| format!("{} ", display_type(type_name)));
+                    .map_or_else(String::new, |type_name| {
+                        format!("{} ", display_type(type_name))
+                    });
                 let default = param.default.as_ref().map_or_else(String::new, |default| {
                     format!(" = {}", self.expr(0, default))
                 });
@@ -365,10 +378,12 @@ impl Renderer {
 
     fn type_fields(&mut self, level: usize, fields: &[FieldDecl]) {
         for field in fields {
-            let persistence = field.persistence.map_or("", |persistence| match persistence {
-                FieldPersistence::Var => "var ",
-                FieldPersistence::Varip => "varip ",
-            });
+            let persistence = field
+                .persistence
+                .map_or("", |persistence| match persistence {
+                    FieldPersistence::Var => "var ",
+                    FieldPersistence::Varip => "varip ",
+                });
             let type_name = display_type(&field.type_name);
             let head = if type_name.is_empty() {
                 format!("{persistence}{}", field.name)
@@ -388,7 +403,9 @@ impl Renderer {
         let typed = decl
             .type_name
             .as_ref()
-            .map_or_else(String::new, |type_name| format!("{} ", display_type(type_name)));
+            .map_or_else(String::new, |type_name| {
+                format!("{} ", display_type(type_name))
+            });
         match &decl.value {
             Some(value) => format!("{typed}{} = {}", decl.name, self.expr(level, value)),
             None => format!("{typed}{}", decl.name),
@@ -422,7 +439,11 @@ impl Renderer {
             PineExpr::Variable(name) => name.clone(),
             PineExpr::BuiltinVariable(variable) => variable.to_string(),
             PineExpr::Binary { left, op, right } => {
-                format!("({} {op} {})", self.expr(level, left), self.expr(level, right))
+                format!(
+                    "({} {op} {})",
+                    self.expr(level, left),
+                    self.expr(level, right)
+                )
             }
             PineExpr::Unary { op, expr } => {
                 let mark = match op {

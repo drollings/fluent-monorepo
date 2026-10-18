@@ -42,20 +42,39 @@ fn checkpoint_goldens_mark_rewind_and_refuse() {
     let mut controller = standard_replay().expect("standard replay builds");
     let order = controller.plan().order().expect("plan orders");
     assert_eq!(order.len(), 9, "standard topology holds nine panes");
-    let position = |name: &str| order.iter().position(|pane| pane == name).expect("pane known");
+    let position = |name: &str| {
+        order
+            .iter()
+            .position(|pane| pane == name)
+            .expect("pane known")
+    };
     assert!(position(ADAPTIVE_NODE) < position(SIGNAL_NODE));
     assert!(position(SIGNAL_NODE) < position(RIBBON_NODE));
     assert!(position(RIBBON_NODE) < position(HEALTH_RIBBON_NODE));
 
     controller.mark(RIBBON_NODE).expect("known pane marks");
     assert!(controller.is_checkpoint(RIBBON_NODE));
-    assert!(controller.mark("nope").is_err(), "unknown pane refuses the mark");
-    assert!(controller.rewind_to("nope").is_err(), "unknown mark refuses the rewind");
+    assert!(
+        controller.mark("nope").is_err(),
+        "unknown pane refuses the mark"
+    );
+    assert!(
+        controller.rewind_to("nope").is_err(),
+        "unknown mark refuses the rewind"
+    );
 
     complete_all(&mut controller);
-    let suffix = controller.rewind_to(RIBBON_NODE).expect("marked rewind runs");
-    assert_eq!(suffix, vec![RIBBON_NODE, HEALTH_RIBBON_NODE, HEALTH_MA_NODE]);
-    assert!(!controller.is_checkpoint(RIBBON_NODE), "rewind consumes the mark");
+    let suffix = controller
+        .rewind_to(RIBBON_NODE)
+        .expect("marked rewind runs");
+    assert_eq!(
+        suffix,
+        vec![RIBBON_NODE, HEALTH_RIBBON_NODE, HEALTH_MA_NODE]
+    );
+    assert!(
+        !controller.is_checkpoint(RIBBON_NODE),
+        "rewind consumes the mark"
+    );
     assert_eq!(
         controller.ready(),
         vec![RIBBON_NODE.to_owned(), HEALTH_MA_NODE.to_owned()],
@@ -71,19 +90,25 @@ fn rewind_rerun_reproduces_identical_revisions() {
     // First run: complete every pane in plan order, publishing per-pane series.
     let mut before = Vec::new();
     for (tag, pane) in order.iter().enumerate() {
-        let revision =
-            controller.publish(cache_key_for(pane, &pane_params(tag as i64)), pane_values(tag as f64));
+        let revision = controller.publish(
+            cache_key_for(pane, &pane_params(tag as i64)),
+            pane_values(tag as f64),
+        );
         controller.complete(pane);
         before.push((pane.clone(), tag as i64, revision));
     }
     assert!(controller.ready().is_empty(), "full run drains the plan");
     // Scrub back and re-run the suffix with bit-identical content.
-    let suffix = controller.rewind_to(RIBBON_NODE).expect("marked rewind runs");
+    let suffix = controller
+        .rewind_to(RIBBON_NODE)
+        .expect("marked rewind runs");
     assert_eq!(suffix.len(), 3);
     for (pane, tag, revision) in &before {
         if suffix.contains(pane) {
-            let rerun =
-                controller.publish(cache_key_for(pane, &pane_params(*tag)), pane_values(*tag as f64));
+            let rerun = controller.publish(
+                cache_key_for(pane, &pane_params(*tag)),
+                pane_values(*tag as f64),
+            );
             assert_eq!(rerun, *revision, "{pane} backdates on identical content");
         }
     }
@@ -96,17 +121,27 @@ fn rewind_rerun_reproduces_identical_revisions() {
         }
         waves.push(wave);
     }
-    assert_eq!(waves.concat().len(), suffix.len(), "catch-up replays every suffix pane once");
+    assert_eq!(
+        waves.concat().len(),
+        suffix.len(),
+        "catch-up replays every suffix pane once"
+    );
     let mut replayed = waves.concat();
     replayed.sort();
     let mut expected = suffix.clone();
     expected.sort();
-    assert_eq!(replayed, expected, "catch-up replays exactly the suffix set");
+    assert_eq!(
+        replayed, expected,
+        "catch-up replays exactly the suffix set"
+    );
     // The identity proof is not vacuous: changed content bumps the revision.
-    let changed =
-        controller.publish(cache_key_for(RIBBON_NODE, &pane_params(6)), pane_values(900.0));
-    let held =
-        controller.revision_of(cache_key_for(RIBBON_NODE, &pane_params(6))).expect("published");
+    let changed = controller.publish(
+        cache_key_for(RIBBON_NODE, &pane_params(6)),
+        pane_values(900.0),
+    );
+    let held = controller
+        .revision_of(cache_key_for(RIBBON_NODE, &pane_params(6)))
+        .expect("published");
     assert_eq!(changed, held);
     assert!(
         before
@@ -124,7 +159,9 @@ fn rewind_rerun_reproduces_identical_revisions() {
 /// A scrub over the standard topology with the mock gateway's window read.
 fn scrubbed() -> ReplayScrub {
     let mut scrub = ReplayScrub::standard().expect("standard scrub builds");
-    scrub.ingest(&MockGateway::new()).expect("the mock supplies a replay window");
+    scrub
+        .ingest(&MockGateway::new())
+        .expect("the mock supplies a replay window");
     scrub
 }
 
@@ -160,7 +197,9 @@ fn drain(scrub: &mut ReplayScrub) {
 /// so the map says so rather than inventing one.
 fn revisions(scrub: &ReplayScrub) -> HashMap<String, Option<u64>> {
     let tags = pane_tags(scrub);
-    tags.iter().map(|(pane, tag)| (pane.clone(), scrub.revision_of(pane, &pane_params(*tag)))).collect()
+    tags.iter()
+        .map(|(pane, tag)| (pane.clone(), scrub.revision_of(pane, &pane_params(*tag))))
+        .collect()
 }
 
 fn plan_order(scrub: &ReplayScrub) -> Vec<String> {
@@ -178,13 +217,22 @@ fn position(scrub: &ReplayScrub) -> (u64, u64, String) {
 #[test]
 fn the_scrub_stands_where_the_core_read_puts_it() {
     let scrub = scrubbed();
-    assert_eq!(scrub.state().total_bars, 3, "the window is the core's, not a guess");
+    assert_eq!(
+        scrub.state().total_bars,
+        3,
+        "the window is the core's, not a guess"
+    );
     assert_eq!(scrub.state().cursor, 3, "a fresh read stands at the head");
-    assert_eq!(scrub.state().mark, "live", "the untouched position keeps its live name");
+    assert_eq!(
+        scrub.state().mark,
+        "live",
+        "the untouched position keeps its live name"
+    );
     let window = scrub.window().expect("the adopted window is readable");
     assert_eq!(window.steps.len(), 3);
     assert!(
-        window.steps.iter().any(|step| step.checkpoint) && window.steps.iter().any(|step| !step.checkpoint),
+        window.steps.iter().any(|step| step.checkpoint)
+            && window.steps.iter().any(|step| !step.checkpoint),
         "the core's own anchors stay distinct from the terminal's mark"
     );
 }
@@ -196,7 +244,10 @@ fn a_moved_cursor_makes_the_whole_topology_due_in_plan_order() {
     let outcome = scrub.scrub_to(1).expect("scrub inside the window");
     assert_eq!(
         outcome,
-        ScrubOutcome::Rewound { cursor: 1, panes: plan_order(&scrub) },
+        ScrubOutcome::Rewound {
+            cursor: 1,
+            panes: plan_order(&scrub)
+        },
         "every pane series is a function of the window, so a move makes the topology due \
          — in plan order, which is the order the catch-up waves run in"
     );
@@ -224,10 +275,15 @@ fn a_second_scrub_without_settle_still_rewinds_the_whole_topology() {
     );
     // No settle between the two scrubs: the consume-and-remark loop over
     // the plan's single rewind marker must still drive every pane due.
-    let second = scrub.scrub_to(0).expect("second scrub without settle moves");
+    let second = scrub
+        .scrub_to(0)
+        .expect("second scrub without settle moves");
     assert_eq!(
         second,
-        ScrubOutcome::Rewound { cursor: 0, panes: plan_order(&scrub) },
+        ScrubOutcome::Rewound {
+            cursor: 0,
+            panes: plan_order(&scrub)
+        },
         "a repeat scrub re-arms every anchor, so the whole topology is due again"
     );
     assert!(!scrub.settled(), "nothing settled between the scrubs");
@@ -239,9 +295,17 @@ fn a_draft_with_a_moved_cursor_and_an_invalid_mark_applies_neither() {
     let mut scrub = scrubbed();
     drain(&mut scrub);
     let before = position(&scrub);
-    let draft = ReplayState { cursor: 1, total_bars: before.1, mark: String::new() };
+    let draft = ReplayState {
+        cursor: 1,
+        total_bars: before.1,
+        mark: String::new(),
+    };
     assert!(scrub.apply_draft(&draft).is_err(), "a blank mark refuses");
-    assert_eq!(position(&scrub), before, "the refused draft moved neither axis");
+    assert_eq!(
+        position(&scrub),
+        before,
+        "the refused draft moved neither axis"
+    );
 }
 
 #[test]
@@ -250,14 +314,19 @@ fn a_scrub_to_either_end_settles_with_every_revision_present() {
     drain(&mut scrub);
     let first_run = revisions(&scrub);
     assert_eq!(first_run.len(), 9, "every pane published a series");
-    assert!(first_run.values().all(|revision| revision.is_some_and(|held| held > 0)));
+    assert!(first_run
+        .values()
+        .all(|revision| revision.is_some_and(|held| held > 0)));
 
     for bar in [0, 3] {
         assert!(
             matches!(scrub.scrub_to(bar), Ok(ScrubOutcome::Rewound { .. })),
             "scrub to bar {bar} rewinds"
         );
-        assert!(!scrub.settled(), "the move to bar {bar} made the topology due again");
+        assert!(
+            !scrub.settled(),
+            "the move to bar {bar} made the topology due again"
+        );
         drain(&mut scrub);
         assert_eq!(
             revisions(&scrub),
@@ -269,8 +338,14 @@ fn a_scrub_to_either_end_settles_with_every_revision_present() {
     // The backdating above is not vacuous: a pane whose content really
     // changes moves its revision on the same key.
     let price = pane_tags(&scrub)[PRICE_NODE];
-    let moved = scrub.settle(PRICE_NODE, &pane_params(price), pane_values(900.0)).expect("settles");
-    assert_ne!(Some(moved), first_run[PRICE_NODE], "changed content moves the revision");
+    let moved = scrub
+        .settle(PRICE_NODE, &pane_params(price), pane_values(900.0))
+        .expect("settles");
+    assert_ne!(
+        Some(moved),
+        first_run[PRICE_NODE],
+        "changed content moves the revision"
+    );
 }
 
 #[test]
@@ -282,11 +357,16 @@ fn a_no_op_scrub_backdates_instead_of_bumping_revisions() {
     let settled = revisions(&scrub);
 
     assert_eq!(
-        scrub.scrub_to(2).expect("scrubbing to the bar already on screen is not a refusal"),
+        scrub
+            .scrub_to(2)
+            .expect("scrubbing to the bar already on screen is not a refusal"),
         ScrubOutcome::Held { cursor: 2 },
         "a cursor that does not move rewinds nothing"
     );
-    assert!(scrub.settled(), "nothing is left pending after a held scrub");
+    assert!(
+        scrub.settled(),
+        "nothing is left pending after a held scrub"
+    );
     drain(&mut scrub);
     assert_eq!(
         revisions(&scrub),
@@ -302,26 +382,55 @@ fn every_refusal_names_what_was_wrong_and_moves_nothing() {
         scrub.scrub_to(0).expect_err("nothing to scrub over"),
         ScrubRefusal::NoTimeline
     );
-    assert!(scrub.last_refusal().is_some_and(|reason| reason.contains("no replay window read")));
+    assert!(scrub
+        .last_refusal()
+        .is_some_and(|reason| reason.contains("no replay window read")));
 
     // Windows that disagree with themselves are refused whole: the scrub
     // indexes steps by bar, so a window whose steps are not the bars they
     // claim would answer with another bar's step.
     let good = MockGateway::new().replay().expect("mock window reads");
     for (label, view) in [
-        ("bar count", ReplayView { total_bars: 2, ..good.clone() }),
+        (
+            "bar count",
+            ReplayView {
+                total_bars: 2,
+                ..good.clone()
+            },
+        ),
         (
             "step order",
             ReplayView {
                 steps: vec![
-                    protopyne_view::ReplayStepView { bar_index: 1, ts: "t".to_owned(), done: true, checkpoint: false },
-                    protopyne_view::ReplayStepView { bar_index: 2, ts: "t".to_owned(), done: true, checkpoint: false },
-                    protopyne_view::ReplayStepView { bar_index: 3, ts: "t".to_owned(), done: true, checkpoint: false },
+                    protopyne_view::ReplayStepView {
+                        bar_index: 1,
+                        ts: "t".to_owned(),
+                        done: true,
+                        checkpoint: false,
+                    },
+                    protopyne_view::ReplayStepView {
+                        bar_index: 2,
+                        ts: "t".to_owned(),
+                        done: true,
+                        checkpoint: false,
+                    },
+                    protopyne_view::ReplayStepView {
+                        bar_index: 3,
+                        ts: "t".to_owned(),
+                        done: true,
+                        checkpoint: false,
+                    },
                 ],
                 ..good.clone()
             },
         ),
-        ("cursor", ReplayView { cursor: 9, ..good.clone() }),
+        (
+            "cursor",
+            ReplayView {
+                cursor: 9,
+                ..good.clone()
+            },
+        ),
     ] {
         let refusal = scrub.apply_window(view.clone()).expect_err(label);
         assert!(
@@ -331,18 +440,36 @@ fn every_refusal_names_what_was_wrong_and_moves_nothing() {
         assert!(scrub.window().is_none(), "{label} is not half-adopted");
     }
 
-    scrub.ingest(&MockGateway::new()).expect("a consistent window is adopted");
-    let refusal = scrub.scrub_to(4).expect_err("a bar past the window refuses");
-    assert_eq!(refusal, ScrubRefusal::UnknownBar { bar: 4, total_bars: 3 });
+    scrub
+        .ingest(&MockGateway::new())
+        .expect("a consistent window is adopted");
+    let refusal = scrub
+        .scrub_to(4)
+        .expect_err("a bar past the window refuses");
+    assert_eq!(
+        refusal,
+        ScrubRefusal::UnknownBar {
+            bar: 4,
+            total_bars: 3
+        }
+    );
     assert_eq!(scrub.state().cursor, 3, "a refused scrub moves nothing");
-    assert!(scrub.last_refusal().is_some_and(|reason| reason.contains("bar 4")));
+    assert!(scrub
+        .last_refusal()
+        .is_some_and(|reason| reason.contains("bar 4")));
 
     assert!(
         scrub.rename("  ").is_err(),
         "a blank mark refuses: a position with no name is not a position"
     );
-    assert_eq!(scrub.state().mark, "live", "the refused rename changed nothing");
-    scrub.rename("session open").expect("a named position is accepted");
+    assert_eq!(
+        scrub.state().mark,
+        "live",
+        "the refused rename changed nothing"
+    );
+    scrub
+        .rename("session open")
+        .expect("a named position is accepted");
     assert_eq!(scrub.state().mark, "session open");
     assert_eq!(scrub.state().cursor, 3, "renaming is a label, not an axis");
 }
@@ -358,17 +485,23 @@ fn a_pane_settles_only_once_its_inputs_have() {
             if pane == RIBBON_NODE && reason.contains("not settled")),
         "got: {refusal}"
     );
-    let unknown =
-        scrub.settle("nope", &pane_params(0), pane_values(1.0)).expect_err("unknown pane refuses");
+    let unknown = scrub
+        .settle("nope", &pane_params(0), pane_values(1.0))
+        .expect_err("unknown pane refuses");
     assert!(
         matches!(&unknown, ScrubRefusal::NotSettleable { reason, .. } if reason.contains("no such pane")),
         "got: {unknown}"
     );
-    assert!(scrub.revision_of(RIBBON_NODE, &pane_params(0)).is_none(), "a refused settle publishes nothing");
+    assert!(
+        scrub.revision_of(RIBBON_NODE, &pane_params(0)).is_none(),
+        "a refused settle publishes nothing"
+    );
     drain(&mut scrub);
     let ribbon_tag = pane_tags(&scrub)[RIBBON_NODE];
     assert!(
-        scrub.revision_of(RIBBON_NODE, &pane_params(ribbon_tag)).is_some(),
+        scrub
+            .revision_of(RIBBON_NODE, &pane_params(ribbon_tag))
+            .is_some(),
         "a drained scrub published the ribbon under its own parameters"
     );
 }
@@ -376,7 +509,9 @@ fn a_pane_settles_only_once_its_inputs_have() {
 #[test]
 fn a_refresh_widens_the_window_without_yanking_the_scrub_back() {
     let mut scrub = scrubbed();
-    scrub.scrub_to(2).expect("the operator scrubs back from the head");
+    scrub
+        .scrub_to(2)
+        .expect("the operator scrubs back from the head");
     let mut wider = MockGateway::new().replay().expect("mock window reads");
     wider.total_bars = 5;
     wider.steps.push(protopyne_view::ReplayStepView {
@@ -392,9 +527,12 @@ fn a_refresh_widens_the_window_without_yanking_the_scrub_back() {
         checkpoint: false,
     });
     wider.cursor = 5;
-    scrub.apply_window(wider.clone()).expect("a wider window is adopted");
+    scrub
+        .apply_window(wider.clone())
+        .expect("a wider window is adopted");
     assert_eq!(
-        scrub.state().cursor, 2,
+        scrub.state().cursor,
+        2,
         "a repeated read never moves the operator's position under them"
     );
     assert_eq!(scrub.state().total_bars, 5);
@@ -403,7 +541,11 @@ fn a_refresh_widens_the_window_without_yanking_the_scrub_back() {
     // the position moves when the operator moves it, or not at all. The
     // read's own cursor is legal here — it is the *applied* one that the
     // window would drop.
-    let shrunk = ReplayView { cursor: 1, total_bars: 1, steps: wider.steps[..1].to_vec() };
+    let shrunk = ReplayView {
+        cursor: 1,
+        total_bars: 1,
+        steps: wider.steps[..1].to_vec(),
+    };
     let refusal = scrub
         .apply_window(shrunk)
         .expect_err("a window that drops the applied cursor refuses");
@@ -412,8 +554,16 @@ fn a_refresh_widens_the_window_without_yanking_the_scrub_back() {
             if reason.contains("the applied cursor 2")),
         "got: {refusal}"
     );
-    assert_eq!(scrub.state().total_bars, 5, "the refused window is not adopted");
-    assert_eq!(scrub.state().cursor, 2, "and the position never moved under the operator");
+    assert_eq!(
+        scrub.state().total_bars,
+        5,
+        "the refused window is not adopted"
+    );
+    assert_eq!(
+        scrub.state().cursor,
+        2,
+        "and the position never moved under the operator"
+    );
 }
 
 #[test]
@@ -422,8 +572,16 @@ fn an_edited_draft_scrubs_renames_and_refuses_what_it_cannot_act_on() {
     let applied = scrub.state().clone();
 
     // Nothing edited: nothing happens, and no refusal is invented.
-    assert_eq!(scrub.apply_draft(&applied).expect("an untouched draft applies"), None);
-    assert_eq!(position(&scrub), (applied.cursor, applied.total_bars, applied.mark.clone()));
+    assert_eq!(
+        scrub
+            .apply_draft(&applied)
+            .expect("an untouched draft applies"),
+        None
+    );
+    assert_eq!(
+        position(&scrub),
+        (applied.cursor, applied.total_bars, applied.mark.clone())
+    );
 
     // The window is the core's read; an editor that resizes it is refused
     // out loud rather than silently ignored.
@@ -433,7 +591,9 @@ fn an_edited_draft_scrubs_renames_and_refuses_what_it_cannot_act_on() {
         .mark(applied.mark.clone())
         .build();
     assert_eq!(
-        scrub.apply_draft(&resized).expect_err("the control may not resize the window"),
+        scrub
+            .apply_draft(&resized)
+            .expect_err("the control may not resize the window"),
         ScrubRefusal::WindowNotResizable
     );
     assert_eq!(
@@ -443,18 +603,46 @@ fn an_edited_draft_scrubs_renames_and_refuses_what_it_cannot_act_on() {
     );
 
     // A moved cursor scrubs; a renamed position does not recompute.
-    let moved = ReplayState::new().cursor(0).total_bars(applied.total_bars).mark("open".to_owned()).build();
-    let outcome = scrub.apply_draft(&moved).expect("a moved cursor applies").expect("it rewound");
-    assert_eq!(outcome, ScrubOutcome::Rewound { cursor: 0, panes: plan_order(&scrub) });
-    assert_eq!(scrub.state().mark, "open", "the draft's own mark survives the scrub");
+    let moved = ReplayState::new()
+        .cursor(0)
+        .total_bars(applied.total_bars)
+        .mark("open".to_owned())
+        .build();
+    let outcome = scrub
+        .apply_draft(&moved)
+        .expect("a moved cursor applies")
+        .expect("it rewound");
+    assert_eq!(
+        outcome,
+        ScrubOutcome::Rewound {
+            cursor: 0,
+            panes: plan_order(&scrub)
+        }
+    );
+    assert_eq!(
+        scrub.state().mark,
+        "open",
+        "the draft's own mark survives the scrub"
+    );
     assert!(!scrub.settled(), "and the move still made the topology due");
 
     let settled_cursor = scrub.state().clone();
-    let renamed =
-        ReplayState::new().cursor(0).total_bars(settled_cursor.total_bars).mark("first bar".to_owned()).build();
-    assert_eq!(scrub.apply_draft(&renamed).expect("a renamed position applies"), None);
+    let renamed = ReplayState::new()
+        .cursor(0)
+        .total_bars(settled_cursor.total_bars)
+        .mark("first bar".to_owned())
+        .build();
+    assert_eq!(
+        scrub
+            .apply_draft(&renamed)
+            .expect("a renamed position applies"),
+        None
+    );
     assert_eq!(scrub.state().mark, "first bar", "a label is not an axis");
-    assert!(!scrub.settled(), "renaming left the scrub exactly as due as it was");
+    assert!(
+        !scrub.settled(),
+        "renaming left the scrub exactly as due as it was"
+    );
 }
 
 #[test]
@@ -465,15 +653,20 @@ fn the_scrub_control_reads_its_fields_from_the_cursor_schema() {
     // ledger scans.)
     let text = std::fs::read_to_string(manifest_dir().join("src").join("replay.rs"))
         .expect("the scrub module reads");
-    let code: Vec<&str> =
-        text.lines().map(str::trim).filter(|line| !line.is_empty() && !line.starts_with('/')).collect();
+    let code: Vec<&str> = text
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('/'))
+        .collect();
     assert!(!code.is_empty(), "the scrub module must exist");
     for field in ["cursor", "total_bars", "mark"] {
         let literal = format!("\"{field}\"");
         assert!(
             !code.iter().any(|line| line.contains(&literal)),
             "{field} must come from the cursor's schema, not a literal (line: {})",
-            code.iter().find(|line| line.contains(&literal)).unwrap_or(&"")
+            code.iter()
+                .find(|line| line.contains(&literal))
+                .unwrap_or(&"")
         );
     }
     assert!(
@@ -486,8 +679,16 @@ fn the_scrub_control_reads_its_fields_from_the_cursor_schema() {
 fn the_scrub_control_paints_headlessly_without_moving_the_cursor() {
     let mut scrub = scrubbed();
     egui::__run_test_ui(|ui| {
-        assert_eq!(paint_replay_scrub(ui, &mut scrub), None, "an untouched frame moves nothing");
-        assert_eq!(paint_replay_scrub(ui, &mut scrub), None, "and a second frame");
+        assert_eq!(
+            paint_replay_scrub(ui, &mut scrub),
+            None,
+            "an untouched frame moves nothing"
+        );
+        assert_eq!(
+            paint_replay_scrub(ui, &mut scrub),
+            None,
+            "and a second frame"
+        );
     });
     assert_eq!(scrub.state().cursor, 3);
     assert_eq!(scrub.state().mark, "live");

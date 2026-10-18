@@ -255,7 +255,11 @@ impl PriceScale {
         let ratio = (high - scaled) / (high - low);
         let y = ratio * height;
         let y = if self.inverted { height - y } else { y };
-        if y.is_finite() { Some(y as f32) } else { None }
+        if y.is_finite() {
+            Some(y as f32)
+        } else {
+            None
+        }
     }
 
     /// Invert [`price_to_y`](Self::price_to_y). `None` off-pane.

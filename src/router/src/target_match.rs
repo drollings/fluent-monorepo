@@ -796,43 +796,43 @@ impl TargetMatcher {
             for (offset, candidate) in suffix.iter().enumerate() {
                 let i = start + offset;
                 let assessed = &results[offset];
-            let reason = assessed
-                .as_ref()
-                .ok()
-                .map(|s| s.reason.clone())
-                .unwrap_or_default();
-
-            // Match rule: assessed <= intelligence, OR this is the last member
-            // (the ladder always terminates — the last member always matches).
-            let matched = i == candidates.len() - 1
-                || assessed
+                let reason = assessed
                     .as_ref()
-                    .is_ok_and(|s| is_match(candidate, s.complexity));
+                    .ok()
+                    .map(|s| s.reason.clone())
+                    .unwrap_or_default();
 
-            let record = AssessmentRecord {
-                model_key: candidate.model_key.clone(),
-                model_name: candidate.model_name.clone(),
-                assessed: assessed.as_ref().ok().map(|s| s.complexity),
-                reason,
-                // Self-assessment failure → conservative escalate.
-                error: assessed.as_ref().err().map(ToString::to_string),
-                matched,
-            };
-            crate::audit::emit(
-                "target_match",
-                serde_json::json!({
-                    "stage": "assessment",
-                    "route": route,
-                    "role": role,
-                    "model_key": candidate.model_key,
-                    "model_name": candidate.model_name,
-                    "intelligence": candidate.intelligence,
-                    "assessed": record.assessed,
-                    "reason": record.reason,
-                    "error": record.error,
-                    "matched": record.matched,
-                }),
-            );
+                // Match rule: assessed <= intelligence, OR this is the last member
+                // (the ladder always terminates — the last member always matches).
+                let matched = i == candidates.len() - 1
+                    || assessed
+                        .as_ref()
+                        .is_ok_and(|s| is_match(candidate, s.complexity));
+
+                let record = AssessmentRecord {
+                    model_key: candidate.model_key.clone(),
+                    model_name: candidate.model_name.clone(),
+                    assessed: assessed.as_ref().ok().map(|s| s.complexity),
+                    reason,
+                    // Self-assessment failure → conservative escalate.
+                    error: assessed.as_ref().err().map(ToString::to_string),
+                    matched,
+                };
+                crate::audit::emit(
+                    "target_match",
+                    serde_json::json!({
+                        "stage": "assessment",
+                        "route": route,
+                        "role": role,
+                        "model_key": candidate.model_key,
+                        "model_name": candidate.model_name,
+                        "intelligence": candidate.intelligence,
+                        "assessed": record.assessed,
+                        "reason": record.reason,
+                        "error": record.error,
+                        "matched": record.matched,
+                    }),
+                );
                 assessments.push(record);
 
                 if matched {

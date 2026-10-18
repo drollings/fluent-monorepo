@@ -95,15 +95,18 @@ pub(crate) fn mentions(text: &str, token: &str) -> bool {
     if needle.is_empty() || needle.len() > chars.len() {
         return false;
     }
-    chars.windows(needle.len()).enumerate().any(|(start, window)| {
-        if window != needle.as_slice() {
-            return false;
-        }
-        let before_ok = start == 0 || !is_word(chars[start - 1]);
-        let after = start + needle.len();
-        let after_ok = after >= chars.len() || !is_word(chars[after]);
-        before_ok && after_ok
-    })
+    chars
+        .windows(needle.len())
+        .enumerate()
+        .any(|(start, window)| {
+            if window != needle.as_slice() {
+                return false;
+            }
+            let before_ok = start == 0 || !is_word(chars[start - 1]);
+            let after = start + needle.len();
+            let after_ok = after >= chars.len() || !is_word(chars[after]);
+            before_ok && after_ok
+        })
 }
 
 /// Every non-comment line of `text` that names `token`.
@@ -165,6 +168,7 @@ fn bloat_ledger_pins_source_files() {
             "lib.rs",
             "oscillators.rs",
             "pine_overlay.rs",
+            "prefs.rs",
             "regime_labels.rs",
             "replay.rs",
             "session.rs",
@@ -371,7 +375,10 @@ fn optional_dependency_gate_fires_when_the_attribute_is_removed() {
         "eframe = { version = \"0.36\", optional = true, default-features = false }",
         "eframe = { version = \"0.36\", default-features = false }",
     );
-    assert_ne!(guarded, unguarded, "the synthetic edit must actually change the manifest");
+    assert_ne!(
+        guarded, unguarded,
+        "the synthetic edit must actually change the manifest"
+    );
     assert!(
         manifest_section(&unguarded, "[dependencies]").contains("optional = true"),
         "the other dependency is still optional, which is what makes the gate non-trivial"
@@ -379,7 +386,10 @@ fn optional_dependency_gate_fires_when_the_attribute_is_removed() {
     let refused =
         gate_optional_dependency(&unguarded, "eframe", "the default build needs no backend")
             .expect_err("removing the attribute must fail the gate");
-    assert!(refused.contains("eframe must stay optional"), "reason names the dependency: {refused}");
+    assert!(
+        refused.contains("eframe must stay optional"),
+        "reason names the dependency: {refused}"
+    );
 
     // A dependency declared nowhere in the section is a different failure and
     // must not read as "optional".
@@ -388,7 +398,10 @@ fn optional_dependency_gate_fires_when_the_attribute_is_removed() {
         "protopyne-server",
         "the composition root",
     );
-    assert!(absent.is_err(), "a missing declaration is never an optional declaration");
+    assert!(
+        absent.is_err(),
+        "a missing declaration is never an optional declaration"
+    );
 }
 
 #[test]
@@ -463,7 +476,10 @@ fn the_workspace_plans_through_the_bounded_gateway_read() {
 #[test]
 fn terminal_never_mutates_the_trading_path() {
     for token in TRADING_TOKENS {
-        forbid_in_src(token, "trading crates are read at dev time only, never a main dependency");
+        forbid_in_src(
+            token,
+            "trading crates are read at dev time only, never a main dependency",
+        );
     }
     forbid_trading_tokens_in_src();
 }
@@ -478,17 +494,31 @@ fn token_matching_is_whole_word() {
     assert!(!mentions("protopyne_venue_extra", "protopyne_venue"));
     assert!(!mentions("my_protopyne_venue", "protopyne_venue"));
     assert!(!mentions("protopyne_ven", "protopyne_venue"));
-    assert_eq!(lines_naming("a protopyne_venue b\n// protopyne_venue\n", "protopyne_venue"),
-        vec!["a protopyne_venue b".to_owned()]);
+    assert_eq!(
+        lines_naming(
+            "a protopyne_venue b\n// protopyne_venue\n",
+            "protopyne_venue"
+        ),
+        vec!["a protopyne_venue b".to_owned()]
+    );
 }
 
 #[test]
 fn compute_truth_is_reused_never_forked() {
     // One table, one band, one error type: the terminal adapts kernel
     // outputs for display but never redefines them.
-    forbid_in_src("enum EguiError", "the error type lives in the scaffolding (single truth)");
-    forbid_in_src("REGIME_HYSTERESIS =", "the band constant lives in kernels (re-export only)");
-    forbid_in_src("struct PanePlan", "the plan lives in the scaffolding (topology pours in)");
+    forbid_in_src(
+        "enum EguiError",
+        "the error type lives in the scaffolding (single truth)",
+    );
+    forbid_in_src(
+        "REGIME_HYSTERESIS =",
+        "the band constant lives in kernels (re-export only)",
+    );
+    forbid_in_src(
+        "struct PanePlan",
+        "the plan lives in the scaffolding (topology pours in)",
+    );
     forbid_in_src("struct PaneCache", "the cache lives in the scaffolding");
     forbid_in_src("struct Viewport", "the viewport lives in the scaffolding");
     forbid_in_src("struct ThemeConfig", "the theme lives in the scaffolding");
@@ -512,7 +542,9 @@ fn display_fence_marks_kernel_preview_frames() {
     // the delegation instead of naming the fence twice.
     for module in ["topology.rs", "integration_lite.rs"] {
         assert!(
-            code_lines(&read_src(module)).iter().any(|line| line.contains("DisplayOnly")),
+            code_lines(&read_src(module))
+                .iter()
+                .any(|line| line.contains("DisplayOnly")),
             "{module} must route preview frames through the DisplayOnly fence"
         );
     }
@@ -571,12 +603,18 @@ fn bloat_ledger_pins_area_view_allocation_shape() {
 /// boundary — same ledger, same rule.
 #[test]
 fn bloat_ledger_pins_pane_cache_pin_allocation_shape() {
-    let path =
-        workspace_root().join("src").join("fluent-egui").join("src").join("plan.rs");
+    let path = workspace_root()
+        .join("src")
+        .join("fluent-egui")
+        .join("src")
+        .join("plan.rs");
     let body = fn_body_lines(&read_text(&path), "pub fn pin");
     let code = code_lines(&body);
     let hits: Vec<&&str> = code.iter().filter(|line| mentions(line, "clone")).collect();
-    assert!(hits.is_empty(), "PaneCache::pin must not clone (Arc promotion only): {hits:?}");
+    assert!(
+        hits.is_empty(),
+        "PaneCache::pin must not clone (Arc promotion only): {hits:?}"
+    );
 }
 
 /// Workspace member directories (`src/protopyne-view`), in manifest order.
@@ -601,7 +639,10 @@ fn workspace_member_dirs() -> Vec<String> {
         .map(|line| line.trim_matches(',').trim_matches('"').to_owned())
         .filter(|entry| !entry.is_empty())
         .collect();
-    assert!(!dirs.is_empty(), "the workspace must declare at least one member");
+    assert!(
+        !dirs.is_empty(),
+        "the workspace must declare at least one member"
+    );
     dirs
 }
 
@@ -623,9 +664,7 @@ fn display_escape_offenders(members: &[String], root: &Path) -> (usize, Vec<Stri
                 // fixtures (e.g. trimmed Parquet histories) that are not
                 // valid UTF-8 and never enter this scan.
                 .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("rs"))
-                .map(move |path| {
-                    (path.display().to_string(), read_text(&path))
-                })
+                .map(move |path| (path.display().to_string(), read_text(&path)))
         })
         .collect();
     display_escape_offenders_in(members, &files)
@@ -649,12 +688,18 @@ fn display_escape_offenders_in(
         .filter(|(path, _)| {
             path.ends_with(".rs")
                 && members.iter().any(|dir| path.contains(&format!("{dir}/")))
-                && decision.iter().any(|name| path.contains(&format!("{name}/")))
+                && decision
+                    .iter()
+                    .any(|name| path.contains(&format!("{name}/")))
         })
         .flat_map(|(path, text)| {
             code_lines(text)
                 .into_iter()
-                .filter(|line| ["DisplayOnly", "display_only"].iter().any(|t| line.contains(t)))
+                .filter(|line| {
+                    ["DisplayOnly", "display_only"]
+                        .iter()
+                        .any(|t| line.contains(t))
+                })
                 .map(move |line| format!("{path}: {line}"))
                 .collect::<Vec<_>>()
         })
@@ -665,7 +710,10 @@ fn display_escape_offenders_in(
 #[test]
 fn display_escape_stays_out_of_decision_crates() {
     let (scanned, escapees) = display_escape_offenders(&workspace_member_dirs(), &workspace_root());
-    assert!(scanned >= 5, "the fence scan must cover the decision crates, saw {scanned}");
+    assert!(
+        scanned >= 5,
+        "the fence scan must cover the decision crates, saw {scanned}"
+    );
     assert!(
         escapees.is_empty(),
         "the display escape must stay in the paint crates and its home crate; \
@@ -680,7 +728,10 @@ fn display_escape_fence_fires_on_a_synthetic_workspace_member() {
     // that names it is not. `protopyne-view` is the crate the hand-written
     // directory list used to miss, so it stands in for the class of crate most
     // likely to want a display float.
-    let members = vec!["src/protopyne-types".to_owned(), "src/protopyne-view".to_owned()];
+    let members = vec![
+        "src/protopyne-types".to_owned(),
+        "src/protopyne-view".to_owned(),
+    ];
     let files = vec![
         (
             "src/protopyne-types/src/bar.rs".to_owned(),
@@ -718,7 +769,10 @@ fn display_escape_fence_fires_on_a_synthetic_workspace_member() {
     // control meaningful rather than vacuous.
     let (live_scanned, live_offenders) = display_escape_offenders(&members, &workspace_root());
     assert_eq!(live_scanned, 2);
-    assert!(live_offenders.is_empty(), "neither crate names the escape today");
+    assert!(
+        live_offenders.is_empty(),
+        "neither crate names the escape today"
+    );
 }
 
 #[test]
@@ -745,7 +799,9 @@ fn frame_holds_no_per_widget_machinery() {
         }
     }
     assert!(
-        code_lines(&read_src("chart.rs")).iter().any(|line| line.contains("Instrumented")),
+        code_lines(&read_src("chart.rs"))
+            .iter()
+            .any(|line| line.contains("Instrumented")),
         "plan-build timing must stay composed (the wrapper has exactly one home)"
     );
 }
@@ -774,7 +830,10 @@ fn timing_is_observed_never_asserted() {
         }
     }
     assert!(
-        manifest_dir().join("benches").join("chart_budget.rs").is_file(),
+        manifest_dir()
+            .join("benches")
+            .join("chart_budget.rs")
+            .is_file(),
         "domain budgets ride the bench harness, which must exist"
     );
 }
@@ -789,14 +848,18 @@ fn theme_ships_no_embedded_assets() {
         .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("svg"))
         .map(|path| path.display().to_string())
         .collect();
-    assert!(embedded.is_empty(), "no SVG assets ship with the crate: {embedded:?}");
+    assert!(
+        embedded.is_empty(),
+        "no SVG assets ship with the crate: {embedded:?}"
+    );
 }
 
 fn walk_files(root: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
     let mut stack = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {
-        let entries = std::fs::read_dir(&dir).unwrap_or_else(|e| panic!("list {}: {e}", dir.display()));
+        let entries =
+            std::fs::read_dir(&dir).unwrap_or_else(|e| panic!("list {}: {e}", dir.display()));
         for entry in entries.filter_map(Result::ok) {
             let path = entry.path();
             if path.is_dir() {
@@ -857,14 +920,18 @@ fn pub_declarations(module: &str, text: &str) -> Vec<Decl> {
             // the module's own surface.
             let line = raw.trim_end();
             let rest = line.strip_prefix("pub ")?;
-            let (kind, tail) = ["fn", "struct", "enum", "const", "static", "type", "trait", "mod"]
-                .into_iter()
-                .find_map(|kind| {
-                    rest.strip_prefix(kind)
-                        .and_then(|tail| tail.strip_prefix(' '))
-                        .map(|tail| (kind, tail))
-                })?;
-            let name = tail.split(|ch: char| !(ch.is_alphanumeric() || ch == '_')).next()?;
+            let (kind, tail) = [
+                "fn", "struct", "enum", "const", "static", "type", "trait", "mod",
+            ]
+            .into_iter()
+            .find_map(|kind| {
+                rest.strip_prefix(kind)
+                    .and_then(|tail| tail.strip_prefix(' '))
+                    .map(|tail| (kind, tail))
+            })?;
+            let name = tail
+                .split(|ch: char| !(ch.is_alphanumeric() || ch == '_'))
+                .next()?;
             (!name.is_empty()).then(|| Decl {
                 module: module.to_owned(),
                 file: format!("src/{module}"),
@@ -917,8 +984,10 @@ fn consumer_lines() -> BTreeMap<String, Vec<String>> {
     let mut files: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for name in src_file_names() {
         if name != "lib.rs" {
-            let lines: Vec<String> =
-                code_lines(&read_src(&name)).into_iter().map(str::to_owned).collect();
+            let lines: Vec<String> = code_lines(&read_src(&name))
+                .into_iter()
+                .map(str::to_owned)
+                .collect();
             files.insert(format!("src/{name}"), lines);
         }
     }
@@ -936,8 +1005,10 @@ fn consumer_lines() -> BTreeMap<String, Vec<String>> {
                 .unwrap_or(&path)
                 .to_string_lossy()
                 .replace('\\', "/");
-            let lines: Vec<String> =
-                code_lines(&read_text(&path)).into_iter().map(str::to_owned).collect();
+            let lines: Vec<String> = code_lines(&read_text(&path))
+                .into_iter()
+                .map(str::to_owned)
+                .collect();
             files.insert(format!("{tree}/{relative}"), lines);
         }
     }
@@ -978,8 +1049,10 @@ fn unwired_exports(
 }
 
 fn live_unwired_exports() -> Vec<Decl> {
-    let modules =
-        src_file_names().into_iter().filter(|name| name != "lib.rs").collect::<Vec<_>>();
+    let modules = src_file_names()
+        .into_iter()
+        .filter(|name| name != "lib.rs")
+        .collect::<Vec<_>>();
     let decls: Vec<Decl> = modules
         .iter()
         .flat_map(|module| pub_declarations(module, &read_src(module)))
@@ -1011,11 +1084,19 @@ fn every_reachability_exemption_names_a_live_item_and_a_reason() {
     let unwired = live_unwired_exports();
     let mut seen: Vec<(&str, &str)> = Vec::new();
     for (module, name, reason) in REACHABILITY_EXEMPTIONS {
-        assert!(!reason.trim().is_empty(), "{module}::{name} exemption needs a reason");
-        assert!(!seen.contains(&(*module, *name)), "{module}::{name} is exempted twice");
+        assert!(
+            !reason.trim().is_empty(),
+            "{module}::{name} exemption needs a reason"
+        );
+        assert!(
+            !seen.contains(&(*module, *name)),
+            "{module}::{name} is exempted twice"
+        );
         seen.push((module, name));
         assert!(
-            unwired.iter().any(|decl| decl.module == *module && decl.name == *name),
+            unwired
+                .iter()
+                .any(|decl| decl.module == *module && decl.name == *name),
             "{module}::{name} is exempted but is wired — delete the exemption"
         );
     }
@@ -1050,14 +1131,20 @@ fn reachability_gate_fires_on_a_synthetic_unwired_item() {
         decl("d.rs", "fn", "Private"),
     ];
     let consumers = BTreeMap::from([
-        ("src/a.rs".to_owned(), vec!["fn caller() { Wired(); }".to_owned()]),
+        (
+            "src/a.rs".to_owned(),
+            vec!["fn caller() { Wired(); }".to_owned()],
+        ),
         (
             "src/b.rs".to_owned(),
             vec!["pub fn builder() -> SignatureWired { SignatureWired }".to_owned()],
         ),
         ("src/c.rs".to_owned(), vec!["fn helper() {}".to_owned()]),
         ("src/d.rs".to_owned(), vec!["fn helper() {}".to_owned()]),
-        ("src/lib.rs".to_owned(), vec!["pub use c::ReexportedOnly;".to_owned()]),
+        (
+            "src/lib.rs".to_owned(),
+            vec!["pub use c::ReexportedOnly;".to_owned()],
+        ),
     ]);
     assert_eq!(
         unwired_exports(&decls, &reexports, &consumers)
@@ -1089,7 +1176,10 @@ fn pub_declarations_are_parsed_at_top_level_only() {
     );
     let found = pub_declarations("m.rs", text);
     assert_eq!(
-        found.iter().map(|decl| (decl.kind, decl.name.as_str())).collect::<Vec<_>>(),
+        found
+            .iter()
+            .map(|decl| (decl.kind, decl.name.as_str()))
+            .collect::<Vec<_>>(),
         vec![
             ("fn", "f"),
             ("struct", "S"),
@@ -1134,5 +1224,8 @@ fn crate_reexports_reads_multiline_use_blocks() {
     for expected in ["paint_area_fill", "PanePlan"] {
         assert!(names.contains(expected), "{expected} is re-exported");
     }
-    assert!(!names.contains("views"), "a `pub mod` is not a re-exported item");
+    assert!(
+        !names.contains("views"),
+        "a `pub mod` is not a re-exported item"
+    );
 }

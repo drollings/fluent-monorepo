@@ -58,8 +58,7 @@ fn session_with_journal(
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("journal.db");
     let journal = Arc::new(Journal::open(&path).expect("open"));
-    let session =
-        TradingSession::boot(config, registry, VenueStorage::new(path)).expect("boot");
+    let session = TradingSession::boot(config, registry, VenueStorage::new(path)).expect("boot");
     (session, dir, journal)
 }
 
@@ -177,7 +176,12 @@ impl Venue for StubVenue {
         _quote: &'a Quote,
         now: chrono::DateTime<Utc>,
     ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = Result<crate::order::OrderRecord, crate::error::VenueError>> + Send + 'a>,
+        Box<
+            dyn std::future::Future<
+                    Output = Result<crate::order::OrderRecord, crate::error::VenueError>,
+                > + Send
+                + 'a,
+        >,
     > {
         Box::pin(async move {
             let mut record = crate::order::OrderRecord::pending(intent, now);
@@ -191,8 +195,9 @@ impl Venue for StubVenue {
     fn query<'a>(
         &'a self,
         client_id: &'a str,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<crate::order::OrderRecord>> + Send + 'a>>
-    {
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Option<crate::order::OrderRecord>> + Send + 'a>,
+    > {
         Box::pin(async move {
             self.served
                 .lock()
@@ -208,7 +213,12 @@ impl Venue for StubVenue {
         client_id: &'a str,
         _now: chrono::DateTime<Utc>,
     ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = Result<crate::order::OrderRecord, crate::error::VenueError>> + Send + 'a>,
+        Box<
+            dyn std::future::Future<
+                    Output = Result<crate::order::OrderRecord, crate::error::VenueError>,
+                > + Send
+                + 'a,
+        >,
     > {
         Box::pin(async move {
             self.served
@@ -334,7 +344,10 @@ async fn pool_fanout_returns_each_verdict() {
         &SessionConfig::new().build(),
         Arc::new(VenueRegistry::single(venue)),
     );
-    let record = session.submit_order(job(&journal, "p#0")).await.expect("fills");
+    let record = session
+        .submit_order(job(&journal, "p#0"))
+        .await
+        .expect("fills");
     assert_eq!(record.filled_quantity, 2);
     assert_eq!(session.registry().orders().len(), 1);
     session.shutdown().await;
@@ -348,10 +361,13 @@ async fn session_routes_across_two_venues_with_paper_equality() {
     let paper: Arc<dyn Venue> = Arc::new(PaperVenue::new(PaperConfig::new().build()));
     let stub: Arc<dyn Venue> = Arc::new(StubVenue::new());
     let registry = Arc::new(VenueRegistry::single(Arc::clone(&paper)));
-    registry.add_route("AAPL", Arc::clone(&stub)).expect("route");
-    registry.add_route("SPY", Arc::clone(&paper)).expect("route");
-    let (session, _dir, journal) =
-        session_with_journal(&SessionConfig::new().build(), registry);
+    registry
+        .add_route("AAPL", Arc::clone(&stub))
+        .expect("route");
+    registry
+        .add_route("SPY", Arc::clone(&paper))
+        .expect("route");
+    let (session, _dir, journal) = session_with_journal(&SessionConfig::new().build(), registry);
     let routed = session
         .submit_order(job_for(&journal, "x#aapl", "AAPL"))
         .await
@@ -360,7 +376,10 @@ async fn session_routes_across_two_venues_with_paper_equality() {
     assert_eq!(routed.filled_quantity, 2);
 
     let paper_job = job_for(&journal, "x#spy", "SPY");
-    let through_session = session.submit_order(paper_job.clone()).await.expect("fills");
+    let through_session = session
+        .submit_order(paper_job.clone())
+        .await
+        .expect("fills");
     let bare_paper = PaperVenue::new(PaperConfig::new().build());
     let direct = bare_paper
         .submit(paper_job.intent, &paper_job.quote, paper_job.at)
@@ -440,7 +459,11 @@ async fn duplicate_registration_fails_the_bar_summary() {
             stub("freshness", &[], &["quote.fresh"], false),
         ])
         .await;
-    assert_eq!(summary.failed.len(), 1, "the duplicate name must fail the batch");
+    assert_eq!(
+        summary.failed.len(),
+        1,
+        "the duplicate name must fail the batch"
+    );
     let message = format!("{:?}", summary.failed[0]);
     assert!(
         message.contains("freshness"),
@@ -462,7 +485,10 @@ async fn mismatched_risk_token_refuses_before_any_journal_row() {
     );
     let mut bad = job_for(&journal, "x#bad", "SPY");
     bad.approved = approved_for("prop-someone-else");
-    let refusal = session.submit_order(bad).await.expect_err("token must bind");
+    let refusal = session
+        .submit_order(bad)
+        .await
+        .expect_err("token must bind");
     assert!(
         refusal.to_string().contains("different proposal"),
         "refusal names the cause, got: {refusal}"
@@ -487,9 +513,7 @@ async fn mismatched_risk_token_refuses_before_any_journal_row() {
 #[tokio::test]
 async fn reconcile_mismatch_halts_entries_while_exits_route() {
     use crate::order::Position;
-    use crate::reconcile::{
-        JournalBook, ReconcileMismatch, ReconcileReport, ReconcileSource,
-    };
+    use crate::reconcile::{JournalBook, ReconcileMismatch, ReconcileReport, ReconcileSource};
     use std::collections::HashMap;
     struct StillBook;
     impl ReconcileSource for StillBook {
@@ -604,7 +628,10 @@ async fn feed_pump_notes_bars_into_the_backfill_sensor() {
     );
     let mut rx = clean.spawn_feed(vec![bar(0), bar(1), bar(2)], 8);
     while rx.recv().await.is_some() {}
-    assert!(!gate.entries_suspended(), "a contiguous feed needs no fetch");
+    assert!(
+        !gate.entries_suspended(),
+        "a contiguous feed needs no fetch"
+    );
     clean.shutdown().await;
 }
 
@@ -614,9 +641,7 @@ async fn feed_pump_notes_bars_into_the_backfill_sensor() {
 async fn session_poll_alerts_delivers_banked_lines_exactly_once() {
     use crate::alert::{AlertCursor, AlertSource, MemorySink};
     use crate::order::Position;
-    use crate::reconcile::{
-        JournalBook, ReconcileMismatch, ReconcileReport, ReconcileSource,
-    };
+    use crate::reconcile::{JournalBook, ReconcileMismatch, ReconcileReport, ReconcileSource};
     use std::collections::HashMap;
     struct StillBook;
     impl ReconcileSource for StillBook {

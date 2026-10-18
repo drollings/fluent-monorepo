@@ -36,9 +36,9 @@
 //! is either committed or it is not. Uncertainty at write time is resolved by
 //! not writing.
 
+pub mod append_log;
 #[cfg(feature = "parquet")]
 pub(crate) mod arrow_decode;
-pub mod append_log;
 pub mod capability;
 pub mod catalog;
 pub mod commit;
@@ -54,48 +54,49 @@ pub mod manifest;
 pub mod market_parquet;
 pub mod plan;
 pub mod range;
-pub mod repair;
 pub mod registry;
+pub mod repair;
 pub mod snapshot;
 pub mod store;
 pub mod tape;
 
 pub use append_log::{AppendLog, AppendRecord};
 pub use capability::StoreStorage;
-pub use catalog::{AssetClass, DEFAULT_MAX_MARKETS, Market, PriceScale};
+pub use catalog::{AssetClass, Market, PriceScale, DEFAULT_MAX_MARKETS};
 pub use commit::{Arrival, ClosedCounts, ClosedEmitter, KeyedSnapshot, SealReason};
 pub use coverage::{
-    Coverage, DEFAULT_MAX_LAG_BARS, FreshnessPolicy, GapClass, Watermark, classify,
+    classify, Coverage, FreshnessPolicy, GapClass, Watermark, DEFAULT_MAX_LAG_BARS,
 };
 pub use error::{PlanError, SnapshotError, StoreError};
 pub use fold::{
-    FOLD_ORIGIN_MS, FoldEdges, FoldPolicy, WEEK_FOLD_ORIGIN_MS, bucket_start, fold_bars,
-    fold_bars_edges, fold_origin_ms,
+    bucket_start, fold_bars, fold_bars_edges, fold_origin_ms, FoldEdges, FoldPolicy,
+    FOLD_ORIGIN_MS, WEEK_FOLD_ORIGIN_MS,
 };
 pub use health::StoreHealth;
-pub use health_edge::{HealthEdge, health_edge, next_health};
+pub use health_edge::{health_edge, next_health, HealthEdge};
 pub use history::{
-    BoxFuture, DEFAULT_PAGE_BARS, FetchPage, FetchRequest, FileHistory, HistoryError,
-    HistoryProvider, NetworkStub, ParseFn,
+    BoxFuture, FetchPage, FetchRequest, FileHistory, HistoryError, HistoryProvider, NetworkStub,
+    ParseFn, DEFAULT_PAGE_BARS,
 };
 pub use identity::VerifiedId;
 pub use key::{SymbolId, TapeKey};
 pub use manifest::{SealManifest, SnapshotRecord};
 pub use market_parquet::{
-    LenientRead, OhlcvRead, SkippedRow, read_ohlcv_parquet, read_ohlcv_parquet_lenient,
+    read_ohlcv_parquet, read_ohlcv_parquet_lenient, LenientRead, OhlcvRead, SkippedRow,
 };
 pub use plan::{ReadPlan, SpanOrigin, SpanPlan};
 pub use range::TimeRange;
+pub use registry::{MarketRegistry, CATALOG_FILE};
 pub use repair::{
+    classify_history_error, classify_store_error, retry_delay_ms, spans_for_want,
     RecoveryCoordinator, RecoveryPlan, RepairConfig, RepairReason, RepairStatus, RepairWorker,
-    SymbolRepair, classify_history_error, classify_store_error, retry_delay_ms, spans_for_want,
+    SymbolRepair,
 };
-pub use registry::{CATALOG_FILE, MarketRegistry};
 pub use snapshot::{
-    DEFAULT_MIN_PART_ROWS, ReconcileReport, SealOptions, SealedSnapshot, SnapshotWriter,
-    read_snapshot, reconcile_orphans, seal,
+    read_snapshot, reconcile_orphans, seal, ReconcileReport, SealOptions, SealedSnapshot,
+    SnapshotWriter, DEFAULT_MIN_PART_ROWS,
 };
 pub use store::{
-    AppendOutcome, CandleSeries, CandleStore, DEFAULT_APPEND_CHUNK, ReadRequest, WritePolicy,
+    AppendOutcome, CandleSeries, CandleStore, ReadRequest, WritePolicy, DEFAULT_APPEND_CHUNK,
 };
-pub use tape::{DEFAULT_MAX_BARS, SEALS_DIR, TAPES_DIR, MarketTape, TapeOptions};
+pub use tape::{MarketTape, TapeOptions, DEFAULT_MAX_BARS, SEALS_DIR, TAPES_DIR};

@@ -15,12 +15,12 @@
 //!
 //! `NaN` in any leg propagates to `None`, matching Pine `na` semantics.
 
-use crate::indicator::{
-    fin_or_none, nan_hole, BarTick, Indicator, IndicatorId, IndicatorResult, IndicatorSpec, IndicatorState,
-    Ohlcv, ParamSet,
-};
 use crate::ema::EmaIndicator;
 use crate::error::KernelError;
+use crate::indicator::{
+    fin_or_none, nan_hole, BarTick, Indicator, IndicatorId, IndicatorResult, IndicatorSpec,
+    IndicatorState, Ohlcv, ParamSet,
+};
 
 /// Wilder's smoothing (`rma`), parameterized by `length`.
 pub struct RmaIndicator {
@@ -249,14 +249,8 @@ impl Indicator for HmaIndicator {
     fn batch(&self, data: &Ohlcv<'_>, params: &ParamSet) -> Result<IndicatorResult, KernelError> {
         let (half_len, full_len, root_len) = Self::periods(params)?;
         let wma = WmaIndicator::new();
-        let half = wma.batch(
-            data,
-            &Self::wma_params(half_len),
-        )?;
-        let full = wma.batch(
-            data,
-            &Self::wma_params(full_len),
-        )?;
+        let half = wma.batch(data, &Self::wma_params(half_len))?;
+        let full = wma.batch(data, &Self::wma_params(full_len))?;
         let diff: Vec<f64> = half
             .values
             .iter()
@@ -267,10 +261,7 @@ impl Indicator for HmaIndicator {
             })
             .collect();
         let diff_data = Ohlcv::close_only(&diff);
-        let raw = wma.batch(
-            &diff_data,
-            &Self::wma_params(root_len),
-        )?;
+        let raw = wma.batch(&diff_data, &Self::wma_params(root_len))?;
         Ok(IndicatorResult::new(Self::ID.to_owned(), raw.values))
     }
 
@@ -347,9 +338,7 @@ impl Indicator for VwmaIndicator {
                 let (num, den) = closes[i + 1 - period..=i]
                     .iter()
                     .zip(&volume[i + 1 - period..=i])
-                    .fold((0.0, 0.0), |(num, den), (&c, &v)| {
-                        (num + c * v, den + v)
-                    });
+                    .fold((0.0, 0.0), |(num, den), (&c, &v)| (num + c * v, den + v));
                 *value = fin_or_none(num / den);
             }
         }
@@ -370,9 +359,7 @@ impl Indicator for VwmaIndicator {
         let (num, den) = state
             .closes()
             .zip(state.volumes())
-            .fold((0.0, 0.0), |(num, den), (c, v)| {
-                (num + c * v, den + v)
-            });
+            .fold((0.0, 0.0), |(num, den), (c, v)| (num + c * v, den + v));
         let vwma = num / den;
         state.set_last(vwma);
         Ok(fin_or_none(vwma))
@@ -555,8 +542,7 @@ impl Indicator for DemaIndicator {
         let period = Self::period(params)?;
         let ema = EmaIndicator::new();
         let first = ema.batch(data, &Self::ema_params(period))?;
-        let first_raw: Vec<f64> =
-            first.values.iter().map(|v| nan_hole(*v)).collect();
+        let first_raw: Vec<f64> = first.values.iter().map(|v| nan_hole(*v)).collect();
         let second = ema.batch(&Ohlcv::close_only(&first_raw), &Self::ema_params(period))?;
         let values = first
             .values
@@ -581,11 +567,7 @@ impl Indicator for DemaIndicator {
         let (child, child_params) = state.child_with_params(0, || Self::ema_params(period));
         let first = ema.update(child, bar, child_params)?;
         let (child, child_params) = state.child_with_params(1, || Self::ema_params(period));
-        let second = ema.update(
-            child,
-            BarTick::close_only(nan_hole(first)),
-            child_params,
-        )?;
+        let second = ema.update(child, BarTick::close_only(nan_hole(first)), child_params)?;
         let raw = match (first, second) {
             (Some(one), Some(two)) => 2.0 * one - two,
             _ => f64::NAN,
@@ -660,11 +642,9 @@ impl Indicator for TemaIndicator {
         let period = Self::period(params)?;
         let ema = EmaIndicator::new();
         let first = ema.batch(data, &Self::ema_params(period))?;
-        let first_raw: Vec<f64> =
-            first.values.iter().map(|v| nan_hole(*v)).collect();
+        let first_raw: Vec<f64> = first.values.iter().map(|v| nan_hole(*v)).collect();
         let second = ema.batch(&Ohlcv::close_only(&first_raw), &Self::ema_params(period))?;
-        let second_raw: Vec<f64> =
-            second.values.iter().map(|v| nan_hole(*v)).collect();
+        let second_raw: Vec<f64> = second.values.iter().map(|v| nan_hole(*v)).collect();
         let third = ema.batch(&Ohlcv::close_only(&second_raw), &Self::ema_params(period))?;
         let values = first
             .values
@@ -690,17 +670,9 @@ impl Indicator for TemaIndicator {
         let (child, child_params) = state.child_with_params(0, || Self::ema_params(period));
         let first = ema.update(child, bar, child_params)?;
         let (child, child_params) = state.child_with_params(1, || Self::ema_params(period));
-        let second = ema.update(
-            child,
-            BarTick::close_only(nan_hole(first)),
-            child_params,
-        )?;
+        let second = ema.update(child, BarTick::close_only(nan_hole(first)), child_params)?;
         let (child, child_params) = state.child_with_params(2, || Self::ema_params(period));
-        let third = ema.update(
-            child,
-            BarTick::close_only(nan_hole(second)),
-            child_params,
-        )?;
+        let third = ema.update(child, BarTick::close_only(nan_hole(second)), child_params)?;
         let raw = match (first, second, third) {
             (Some(one), Some(two), Some(three)) => 3.0 * one - 3.0 * two + three,
             _ => f64::NAN,

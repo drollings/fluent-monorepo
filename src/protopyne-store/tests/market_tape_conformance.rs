@@ -9,17 +9,17 @@ use protopyne_types::Timeframe;
 
 use crate::catalog::PriceScale;
 use crate::commit::test_tapes::{at_ms, bar};
-use crate::coverage::{FreshnessPolicy, GapClass, classify};
+use crate::coverage::{classify, FreshnessPolicy, GapClass};
 use crate::fold::FoldPolicy;
 use crate::key::TapeKey;
 use crate::range::TimeRange;
+use crate::store::{AppendOutcome, CandleStore, ReadRequest, WritePolicy};
 use crate::tape::test_conformance::{
     assert_ascending_valid, assert_no_partial_on_refusal, assert_provenance_shape,
     check_append_policies, check_fold_matrix, check_gap_classes, check_request_shape,
     check_scale_outcome, check_unbounded_refusal, check_unknown_symbol, grid, upsert_policy,
 };
-use crate::store::{AppendOutcome, CandleStore, ReadRequest, WritePolicy};
-use crate::tape::test_setup::{VENUE, m1_key, memory_tape, seeded, with_registry_caps};
+use crate::tape::test_setup::{m1_key, memory_tape, seeded, with_registry_caps, VENUE};
 
 fn window_req(symbol: &str, start_ms: i64, end_ms: i64) -> ReadRequest {
     ReadRequest {
@@ -82,7 +82,11 @@ async fn append_policies_count_insert_conflict_reject() {
     with_registry_caps(async {
         let (tape, key) = seeded("SPY", &grid(1_767_225_900_000, 4)).await;
         let redeliver = tape
-            .append(key, &grid(1_767_225_900_000, 4), WritePolicy::InsertIfAbsent)
+            .append(
+                key,
+                &grid(1_767_225_900_000, 4),
+                WritePolicy::InsertIfAbsent,
+            )
             .expect("re-delivery appends");
         assert_eq!(
             redeliver,
@@ -220,11 +224,8 @@ async fn whole_tape_coverage_shape_holds() {
                 symbol: "SPY".to_owned(),
                 venue: VENUE.to_owned(),
                 timeframe: Timeframe::M1,
-                range: TimeRange::bounded(
-                    1_767_225_900_000,
-                    1_767_225_900_000 + 6 * 60_000,
-                )
-                .expect("ordered"),
+                range: TimeRange::bounded(1_767_225_900_000, 1_767_225_900_000 + 6 * 60_000)
+                    .expect("ordered"),
                 limit: None,
                 policy: FoldPolicy::ExtendToFullBuckets,
             })
@@ -261,8 +262,16 @@ async fn upsert_restatement_folds_through_the_one_restatement_rule() {
             ))
             .expect("read back");
         let first = &series.bars[0];
-        assert_eq!(first.o.to_string(), "100", "the open stays the first print's");
-        assert_eq!(first.c.to_string(), "101", "the close becomes the latest print's");
+        assert_eq!(
+            first.o.to_string(),
+            "100",
+            "the open stays the first print's"
+        );
+        assert_eq!(
+            first.c.to_string(),
+            "101",
+            "the close becomes the latest print's"
+        );
         assert_eq!(first.h.to_string(), "101", "the range widens up");
         assert_eq!(first.l.to_string(), "99", "the range widens down");
     })

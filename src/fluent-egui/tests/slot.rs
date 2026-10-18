@@ -49,7 +49,11 @@ impl WorkUnit for ProbeConfig {
 fluent_wvr::impl_component!(ProbeConfig);
 
 fn probe(length: i64) -> ProbeConfig {
-    ProbeConfig { length, line_color: "#20C8F0".to_owned(), show_line: true }
+    ProbeConfig {
+        length,
+        line_color: "#20C8F0".to_owned(),
+        show_line: true,
+    }
 }
 
 fn stacked() -> (HotSlotStack, PanePlan) {
@@ -85,15 +89,26 @@ fn stacked() -> (HotSlotStack, PanePlan) {
 #[test]
 fn slot_config_exposes_the_settings_authority() {
     let (mut stack, _) = stacked();
-    let config = stack.config("integration_lite").expect("a slotted config reads");
+    let config = stack
+        .config("integration_lite")
+        .expect("a slotted config reads");
     assert_eq!(config.get_field("length").expect("reads"), "14");
-    stack.set_slot_field("integration_lite", "length", "21").expect("the field edits");
+    stack
+        .set_slot_field("integration_lite", "length", "21")
+        .expect("the field edits");
     assert_eq!(
-        stack.config("integration_lite").expect("reads").get_field("length").expect("reads"),
+        stack
+            .config("integration_lite")
+            .expect("reads")
+            .get_field("length")
+            .expect("reads"),
         "21",
         "the borrow sees the same config the settings modal edits"
     );
-    assert!(stack.config("missing").is_none(), "unknown slots answer None");
+    assert!(
+        stack.config("missing").is_none(),
+        "unknown slots answer None"
+    );
 }
 
 #[test]
@@ -103,25 +118,47 @@ fn hot_slot_stack_registers_and_isolates_independent_components() {
     assert!(stack.contains("fast_mas"), "second slot registers");
     assert_eq!(stack.len(), 2);
     for node in ["osc_fast", "osc_slow", "fast_ma"] {
-        assert!(plan.contains(node), "slot node {node} registers into the pane plan");
+        assert!(
+            plan.contains(node),
+            "slot node {node} registers into the pane plan"
+        );
     }
     // One slot's field write never touches the other slot's component or
     // fingerprint.
-    stack.set_slot_field("integration_lite", "length", "21").expect("field writes");
-    assert_eq!(stack.get_slot_field("integration_lite", "length").expect("reads"), "21");
+    stack
+        .set_slot_field("integration_lite", "length", "21")
+        .expect("field writes");
+    assert_eq!(
+        stack
+            .get_slot_field("integration_lite", "length")
+            .expect("reads"),
+        "21"
+    );
     assert_eq!(
         stack.get_slot_field("fast_mas", "length").expect("reads"),
         "8",
         "the other slot keeps its own value"
     );
-    assert_eq!(stack.slot_fingerprint("fast_mas"), Some(0xB2), "the other fingerprint holds");
+    assert_eq!(
+        stack.slot_fingerprint("fast_mas"),
+        Some(0xB2),
+        "the other fingerprint holds"
+    );
     // Unknown slots and fields refuse with the slot or field named.
-    assert!(stack.set_slot_field("missing", "length", "1").is_err(), "unknown slot refuses");
     assert!(
-        stack.set_slot_field("integration_lite", "length", "0").is_err(),
+        stack.set_slot_field("missing", "length", "1").is_err(),
+        "unknown slot refuses"
+    );
+    assert!(
+        stack
+            .set_slot_field("integration_lite", "length", "0")
+            .is_err(),
         "the field contract refuses below its minimum"
     );
-    assert!(stack.get_slot_field("missing", "length").is_err(), "unknown slot reads refuse");
+    assert!(
+        stack.get_slot_field("missing", "length").is_err(),
+        "unknown slot reads refuse"
+    );
     // Duplicates and blanks refuse instead of aliasing a live slot.
     let mut plan = plan;
     let refused = stack
@@ -136,7 +173,10 @@ fn hot_slot_stack_registers_and_isolates_independent_components() {
             &mut plan,
         )
         .expect_err("duplicate id refuses");
-    assert!(refused.to_string().contains("integration_lite"), "refusal names the id: {refused}");
+    assert!(
+        refused.to_string().contains("integration_lite"),
+        "refusal names the id: {refused}"
+    );
     assert!(
         stack
             .insert(
@@ -157,30 +197,64 @@ fn hot_slot_stack_registers_and_isolates_independent_components() {
 #[test]
 fn eye_toggle_flips_visibility_instantly_and_preserves_settings() {
     let (mut stack, _) = stacked();
-    stack.set_slot_field("integration_lite", "length", "21").expect("configure");
-    stack.set_slot_field("integration_lite", "line_color", "#B42020").expect("configure");
-    stack.set_readouts(
-        "integration_lite",
-        vec![ReadoutValue { label: "fast".to_owned(), value: Some(42.0) }],
-    )
-    .expect("readouts set");
-    assert!(stack.visible("integration_lite").expect("reads"), "slots start shown");
-    stack.toggle_visibility("integration_lite").expect("eye toggles");
-    assert!(!stack.visible("integration_lite").expect("reads"), "the eye hides instantly");
-    stack.toggle_visibility("integration_lite").expect("eye toggles back");
-    assert!(stack.visible("integration_lite").expect("reads"), "the eye shows again");
+    stack
+        .set_slot_field("integration_lite", "length", "21")
+        .expect("configure");
+    stack
+        .set_slot_field("integration_lite", "line_color", "#B42020")
+        .expect("configure");
+    stack
+        .set_readouts(
+            "integration_lite",
+            vec![ReadoutValue {
+                label: "fast".to_owned(),
+                value: Some(42.0),
+            }],
+        )
+        .expect("readouts set");
+    assert!(
+        stack.visible("integration_lite").expect("reads"),
+        "slots start shown"
+    );
+    stack
+        .toggle_visibility("integration_lite")
+        .expect("eye toggles");
+    assert!(
+        !stack.visible("integration_lite").expect("reads"),
+        "the eye hides instantly"
+    );
+    stack
+        .toggle_visibility("integration_lite")
+        .expect("eye toggles back");
+    assert!(
+        stack.visible("integration_lite").expect("reads"),
+        "the eye shows again"
+    );
     // Every configured field and readout survives both flips.
-    assert_eq!(stack.get_slot_field("integration_lite", "length").expect("reads"), "21");
     assert_eq!(
-        stack.get_slot_field("integration_lite", "line_color").expect("reads"),
+        stack
+            .get_slot_field("integration_lite", "length")
+            .expect("reads"),
+        "21"
+    );
+    assert_eq!(
+        stack
+            .get_slot_field("integration_lite", "line_color")
+            .expect("reads"),
         "#B42020"
     );
     assert_eq!(
         stack.readouts("integration_lite").expect("reads"),
-        &[ReadoutValue { label: "fast".to_owned(), value: Some(42.0) }],
+        &[ReadoutValue {
+            label: "fast".to_owned(),
+            value: Some(42.0)
+        }],
         "readouts survive the toggle"
     );
-    assert!(stack.toggle_visibility("missing").is_err(), "unknown slots refuse the eye");
+    assert!(
+        stack.toggle_visibility("missing").is_err(),
+        "unknown slots refuse the eye"
+    );
 }
 
 #[test]
@@ -188,21 +262,46 @@ fn bolt_action_opens_isolated_tabbed_settings_modal() {
     let (mut stack, _) = stacked();
     assert!(!stack.settings_open("fast_mas"), "settings start closed");
     stack.open_settings("fast_mas").expect("bolt opens");
-    assert!(stack.settings_open("fast_mas"), "the bolt opens fast_mas settings");
-    assert!(!stack.settings_open("integration_lite"), "the other slot stays closed");
+    assert!(
+        stack.settings_open("fast_mas"),
+        "the bolt opens fast_mas settings"
+    );
+    assert!(
+        !stack.settings_open("integration_lite"),
+        "the other slot stays closed"
+    );
     // The modal cycles all three tabs on the open slot only.
     for tab in SettingsTab::all() {
-        stack.set_settings_tab("fast_mas", tab).expect("tab selects");
+        stack
+            .set_settings_tab("fast_mas", tab)
+            .expect("tab selects");
         assert_eq!(stack.settings_tab("fast_mas"), Some(tab), "the tab holds");
     }
-    assert_eq!(stack.settings_tab("integration_lite"), Some(SettingsTab::Inputs), "untouched");
+    assert_eq!(
+        stack.settings_tab("integration_lite"),
+        Some(SettingsTab::Inputs),
+        "untouched"
+    );
     // Editing through the open slot never reaches the closed one.
-    stack.set_slot_field("fast_mas", "length", "34").expect("edits");
-    assert_eq!(stack.get_slot_field("fast_mas", "length").expect("reads"), "34");
-    assert_eq!(stack.get_slot_field("integration_lite", "length").expect("reads"), "14");
+    stack
+        .set_slot_field("fast_mas", "length", "34")
+        .expect("edits");
+    assert_eq!(
+        stack.get_slot_field("fast_mas", "length").expect("reads"),
+        "34"
+    );
+    assert_eq!(
+        stack
+            .get_slot_field("integration_lite", "length")
+            .expect("reads"),
+        "14"
+    );
     stack.close_settings("fast_mas").expect("bolt closes");
     assert!(!stack.settings_open("fast_mas"), "the bolt closes");
-    assert!(stack.open_settings("missing").is_err(), "unknown slots refuse the bolt");
+    assert!(
+        stack.open_settings("missing").is_err(),
+        "unknown slots refuse the bolt"
+    );
 }
 
 #[test]
@@ -213,7 +312,10 @@ fn removing_slot_fires_stream_abort_on_pane_handle() {
     stack.remove("fast_mas").expect("removal unslots");
     assert!(handle.is_closed(), "removal closes the pane handle");
     assert!(!stack.contains("fast_mas"), "the slot is gone");
-    assert!(stack.contains("integration_lite"), "the other slot survives");
+    assert!(
+        stack.contains("integration_lite"),
+        "the other slot survives"
+    );
     assert!(stack.remove("fast_mas").is_err(), "double removal refuses");
 }
 
@@ -238,7 +340,10 @@ fn control_hit_test_distinguishes_eye_bolt_and_card_from_canvas() {
         );
         // Inside the card but clear of both controls: the card hit.
         let card = (rect.card.min.x + 5.0, rect.card.center().y);
-        assert!(!rect.eye.contains(egui::Pos2::new(card.0, card.1)), "probe point is clear");
+        assert!(
+            !rect.eye.contains(egui::Pos2::new(card.0, card.1)),
+            "probe point is clear"
+        );
         assert_eq!(
             stack.hit_test_controls(card),
             Some(SlotControlHit::Card(rect.slot_id.clone())),
@@ -247,8 +352,16 @@ fn control_hit_test_distinguishes_eye_bolt_and_card_from_canvas() {
     }
     // The chart canvas answers no control: pointer events there reach the
     // candle annotation path untouched.
-    assert_eq!(stack.hit_test_controls((1000.0, 800.0)), None, "canvas clicks pass through");
-    assert_eq!(stack.hit_test_controls((-50.0, -50.0)), None, "off-stack clicks pass through");
+    assert_eq!(
+        stack.hit_test_controls((1000.0, 800.0)),
+        None,
+        "canvas clicks pass through"
+    );
+    assert_eq!(
+        stack.hit_test_controls((-50.0, -50.0)),
+        None,
+        "off-stack clicks pass through"
+    );
     assert_eq!(first.title(), "Integration Lite", "the slot reads back");
 }
 
@@ -261,11 +374,16 @@ fn paint_stack_and_settings_modal_render_headlessly() {
     egui::__run_test_ui(|ui| {
         let actions: Vec<HotSlotAction> =
             paint_hot_slot_stack(ui, &mut stack, &theme).expect("the stack paints");
-        assert!(actions.is_empty(), "an untouched frame raises no actions: {actions:?}");
+        assert!(
+            actions.is_empty(),
+            "an untouched frame raises no actions: {actions:?}"
+        );
     });
     stack.open_settings("fast_mas").expect("bolt opens");
     for tab in SettingsTab::all() {
-        stack.set_settings_tab("fast_mas", tab).expect("tab selects");
+        stack
+            .set_settings_tab("fast_mas", tab)
+            .expect("tab selects");
         egui::__run_test_ui(|ui| {
             let outcome = paint_slot_settings_modal(ui, &mut stack, "fast_mas", &theme)
                 .expect("the modal paints");
@@ -299,7 +417,10 @@ fn staged_settings_buffer_isolates_edits_from_the_live_config() {
         "every style field is staged, so the editor can read each one"
     );
     assert!(
-        pending.style.values().all(|value| value.is_empty() || value == "1"),
+        pending
+            .style
+            .values()
+            .all(|value| value.is_empty() || value == "1"),
         "and a no-op style stages nothing to change: {:?}",
         pending.style
     );
@@ -309,19 +430,36 @@ fn staged_settings_buffer_isolates_edits_from_the_live_config() {
             style: &mut pending.style,
             style_names: style.field_names(),
         };
-        target.set_field("length", "99").expect("a staged write accepts");
+        target
+            .set_field("length", "99")
+            .expect("a staged write accepts");
         assert_eq!(target.get_field("length").expect("reads"), "99");
     }
-    assert_eq!(config.get_field("length").expect("reads"), "14", "the live config is untouched");
+    assert_eq!(
+        config.get_field("length").expect("reads"),
+        "14",
+        "the live config is untouched"
+    );
     for (name, value) in &pending.config {
-        config.set_field(name, value).expect("valid staged values commit");
+        config
+            .set_field(name, value)
+            .expect("valid staged values commit");
     }
-    assert_eq!(config.get_field("length").expect("reads"), "99", "commit applies the draft");
+    assert_eq!(
+        config.get_field("length").expect("reads"),
+        "99",
+        "commit applies the draft"
+    );
     // An out-of-range staged value is refused at the field's own contract.
     let mut staged = seed_fields(&*config);
     staged.insert("length".to_owned(), "0".to_owned());
-    let refused = staged.iter().any(|(name, value)| config.set_field(name, value).is_err());
-    assert!(refused, "the field contract refuses a below-minimum staged value");
+    let refused = staged
+        .iter()
+        .any(|(name, value)| config.set_field(name, value).is_err());
+    assert!(
+        refused,
+        "the field contract refuses a below-minimum staged value"
+    );
 }
 
 /// Open seeds the staged buffer and clears any other slot's; commit replays it
@@ -331,8 +469,14 @@ fn settings_commit_discard_and_close_manage_the_staged_buffer() {
     let (mut stack, _) = stacked();
     assert!(!stack.has_pending_settings("integration_lite"));
     stack.open_settings("integration_lite").expect("opens");
-    assert!(stack.has_pending_settings("integration_lite"), "open seeds the buffer");
-    assert!(!stack.has_pending_settings("fast_mas"), "opening one clears the other");
+    assert!(
+        stack.has_pending_settings("integration_lite"),
+        "open seeds the buffer"
+    );
+    assert!(
+        !stack.has_pending_settings("fast_mas"),
+        "opening one clears the other"
+    );
     stack
         .slots
         .get_mut("integration_lite")
@@ -343,20 +487,44 @@ fn settings_commit_discard_and_close_manage_the_staged_buffer() {
         .config
         .insert("length".to_owned(), "42".to_owned());
     let refused = stack.commit_settings("integration_lite").expect("commit");
-    assert!(refused.is_empty(), "a valid staged value commits cleanly: {refused:?}");
-    assert_eq!(stack.get_slot_field("integration_lite", "length").expect("reads"), "42");
-    assert!(!stack.has_pending_settings("integration_lite"), "commit drops the buffer");
+    assert!(
+        refused.is_empty(),
+        "a valid staged value commits cleanly: {refused:?}"
+    );
+    assert_eq!(
+        stack
+            .get_slot_field("integration_lite", "length")
+            .expect("reads"),
+        "42"
+    );
+    assert!(
+        !stack.has_pending_settings("integration_lite"),
+        "commit drops the buffer"
+    );
     stack.open_settings("integration_lite").expect("reopens");
-    stack.discard_settings("integration_lite").expect("discard drops the draft");
+    stack
+        .discard_settings("integration_lite")
+        .expect("discard drops the draft");
     assert!(!stack.has_pending_settings("integration_lite"));
-    stack.open_settings("integration_lite").expect("reopens again");
-    stack.close_settings("integration_lite").expect("close drops the draft");
+    stack
+        .open_settings("integration_lite")
+        .expect("reopens again");
+    stack
+        .close_settings("integration_lite")
+        .expect("close drops the draft");
     assert!(!stack.has_pending_settings("integration_lite"));
 }
 
 /// A candle whose wick spans `[low, high]` with a finite close at every bar.
 fn wick_row(time: i64, high: f64, low: f64, close: f64) -> ChartRow {
-    ChartRow { time, open: close, high, low, close, volume: 1_000 }
+    ChartRow {
+        time,
+        open: close,
+        high,
+        low,
+        close,
+        volume: 1_000,
+    }
 }
 
 /// Calibration (task value: operator click disambiguation): a candle wick
@@ -371,8 +539,9 @@ fn overlay_control_clicks_never_leak_to_canvas_annotation() {
     // otherwise annotate.
     let pane = Viewport::new(PriceScaleMode::Normal, 90.0, 110.0, 400.0, 8.0, 90.0, false)
         .expect("valid pane");
-    let rows: Vec<ChartRow> =
-        (0..40).map(|i| wick_row(i64::from(i), 108.5, 104.0, 107.0)).collect();
+    let rows: Vec<ChartRow> = (0..40)
+        .map(|i| wick_row(i64::from(i), 108.5, 104.0, 107.0))
+        .collect();
     let (stack, _) = stacked();
     let mut false_annotations = 0_u32;
     for rect in stack.control_rects() {
@@ -403,7 +572,10 @@ fn overlay_control_clicks_never_leak_to_canvas_annotation() {
             }
         }
     }
-    assert_eq!(false_annotations, 0, "no control click leaks to a canvas annotation");
+    assert_eq!(
+        false_annotations, 0,
+        "no control click leaks to a canvas annotation"
+    );
 }
 
 /// A stack of `count` slots, each with its own plan node.
@@ -429,11 +601,20 @@ fn many(count: usize) -> HotSlotStack {
 
 #[test]
 fn content_height_counts_cards_and_gaps() {
-    assert!(close_px(HotSlotStack::new().content_height(), 0.0), "an empty stack has no column");
-    assert!(close_px(many(1).content_height(), STACK_CARD_HEIGHT), "one card is one card tall");
+    assert!(
+        close_px(HotSlotStack::new().content_height(), 0.0),
+        "an empty stack has no column"
+    );
+    assert!(
+        close_px(many(1).content_height(), STACK_CARD_HEIGHT),
+        "one card is one card tall"
+    );
     let three = many(3).content_height();
     assert!(
-        close_px(three, 2.0 * (STACK_CARD_HEIGHT + STACK_CARD_GAP) + STACK_CARD_HEIGHT),
+        close_px(
+            three,
+            2.0 * (STACK_CARD_HEIGHT + STACK_CARD_GAP) + STACK_CARD_HEIGHT
+        ),
         "three cards carry two gaps between them: {three}"
     );
 }
@@ -445,15 +626,24 @@ fn scrolling_stops_at_both_ends_of_the_column() {
     let slack = stack.content_height() - viewport;
 
     stack.scroll_by(1_000.0, viewport);
-    assert!(close_px(stack.scroll_offset(), 0.0), "scrolling up past the first card clamps at the top");
+    assert!(
+        close_px(stack.scroll_offset(), 0.0),
+        "scrolling up past the first card clamps at the top"
+    );
 
     stack.scroll_by(-1_000.0, viewport);
-    assert!(close_px(stack.scroll_offset(), slack), "scrolling down stops at the content end");
+    assert!(
+        close_px(stack.scroll_offset(), slack),
+        "scrolling down stops at the content end"
+    );
 
     // A viewport taller than the column leaves nothing to scroll.
     let mut tall = many(3);
     tall.scroll_by(-50.0, 10_000.0);
-    assert!(close_px(tall.scroll_offset(), 0.0), "a column that fits never scrolls");
+    assert!(
+        close_px(tall.scroll_offset(), 0.0),
+        "a column that fits never scrolls"
+    );
 }
 
 #[test]
@@ -467,7 +657,11 @@ fn scrolling_moves_cards_and_hit_tests_together() {
             SlotControlHit::Card(id) => Some(id),
             _ => None,
         });
-    assert_eq!(second_before.as_deref(), Some("slot_1"), "the second card starts below the first");
+    assert_eq!(
+        second_before.as_deref(),
+        Some("slot_1"),
+        "the second card starts below the first"
+    );
 
     stack.scroll_by(-(STACK_CARD_HEIGHT + STACK_CARD_GAP), viewport);
     assert!(
@@ -482,7 +676,11 @@ fn scrolling_moves_cards_and_hit_tests_together() {
             SlotControlHit::Card(id) => Some(id),
             _ => None,
         });
-    assert_eq!(second_after.as_deref(), Some("slot_2"), "hit-testing follows the scroll");
+    assert_eq!(
+        second_after.as_deref(),
+        Some("slot_2"),
+        "hit-testing follows the scroll"
+    );
     let rects = stack.control_rects();
     assert_eq!(rects.len(), 6, "scrolling never drops a card");
     assert!(
@@ -491,7 +689,10 @@ fn scrolling_moves_cards_and_hit_tests_together() {
         rects[1].card.min.y
     );
     assert!(
-        close_px(rects[0].card.min.y, 50.0 - (STACK_CARD_HEIGHT + STACK_CARD_GAP)),
+        close_px(
+            rects[0].card.min.y,
+            50.0 - (STACK_CARD_HEIGHT + STACK_CARD_GAP)
+        ),
         "the first card moved up by exactly one slot: {}",
         rects[0].card.min.y
     );
@@ -501,7 +702,10 @@ fn scrolling_moves_cards_and_hit_tests_together() {
 fn scrolling_refuses_a_non_finite_wheel() {
     let mut stack = many(6);
     stack.scroll_by(f32::NAN, 60.0);
-    assert!(close_px(stack.scroll_offset(), 0.0), "a degenerate wheel holds the list");
+    assert!(
+        close_px(stack.scroll_offset(), 0.0),
+        "a degenerate wheel holds the list"
+    );
 }
 
 #[test]
@@ -513,8 +717,14 @@ fn the_list_region_is_the_scrolling_column() {
         "an empty stack has no region to scroll"
     );
     stack.set_origin((100.0, 50.0));
-    let rect = stack.list_rect(60.0).expect("a populated stack has a region");
-    assert_eq!(rect.min, egui::pos2(100.0, 50.0), "the region starts at the stack origin");
+    let rect = stack
+        .list_rect(60.0)
+        .expect("a populated stack has a region");
+    assert_eq!(
+        rect.min,
+        egui::pos2(100.0, 50.0),
+        "the region starts at the stack origin"
+    );
     assert!(
         close_px(rect.height(), 60.0),
         "the region is the viewport, not the whole column: {}",
@@ -526,8 +736,16 @@ fn the_list_region_is_the_scrolling_column() {
         close_px(tall.height(), stack.content_height()),
         "the region never exceeds the cards it holds"
     );
-    assert_eq!(stack.list_rect(0.0), None, "a zero-height viewport has nothing to scroll");
-    assert_eq!(stack.list_rect(f32::NAN), None, "a degenerate viewport has nothing to scroll");
+    assert_eq!(
+        stack.list_rect(0.0),
+        None,
+        "a zero-height viewport has nothing to scroll"
+    );
+    assert_eq!(
+        stack.list_rect(f32::NAN),
+        None,
+        "a degenerate viewport has nothing to scroll"
+    );
 }
 
 #[test]
@@ -535,7 +753,10 @@ fn removing_a_slot_reclamps_a_now_overshooting_scroll() {
     let mut stack = many(6);
     stack.set_origin((100.0, 50.0));
     stack.scroll_by(-1_000.0, 60.0);
-    assert!(stack.scroll_offset() > 0.0, "the column scrolled to its end");
+    assert!(
+        stack.scroll_offset() > 0.0,
+        "the column scrolled to its end"
+    );
     let end = stack.scroll_offset();
 
     stack.remove("slot_5").expect("removes the last card");
@@ -544,7 +765,10 @@ fn removing_a_slot_reclamps_a_now_overshooting_scroll() {
         "removing a card pulls the scroll back inside the shorter column"
     );
     assert!(
-        close_px(stack.scroll_offset(), stack.content_height().min(stack.scroll_offset())),
+        close_px(
+            stack.scroll_offset(),
+            stack.content_height().min(stack.scroll_offset())
+        ),
         "the offset stays a real scroll position"
     );
 }
@@ -560,20 +784,33 @@ fn close_px(actual: f32, expected: f32) -> bool {
 fn a_slot_owns_an_isolated_style_component_beside_its_config() {
     let (mut stack, _) = stacked();
     assert!(
-        stack.style("integration_lite").is_some_and(|style| !style.field_names().is_empty()),
+        stack
+            .style("integration_lite")
+            .is_some_and(|style| !style.field_names().is_empty()),
         "a slot carries a style component with its own schema"
     );
     assert!(
-        stack.indicator_style("integration_lite").override_color("fast").is_none(),
+        stack
+            .indicator_style("integration_lite")
+            .override_color("fast")
+            .is_none(),
         "which starts inheriting the theme"
     );
 
-    let slot_style = &mut stack.slots.get_mut("integration_lite").expect("slotted").style;
+    let slot_style = &mut stack
+        .slots
+        .get_mut("integration_lite")
+        .expect("slotted")
+        .style;
     let style = fluent_wvr::component_downcast_mut::<IndicatorStyle>(&mut **slot_style)
         .expect("the slot\'s style component is an IndicatorStyle");
-    style.set_field("color_fast", "#0A0B0C").expect("a well-formed override writes");
+    style
+        .set_field("color_fast", "#0A0B0C")
+        .expect("a well-formed override writes");
     assert_eq!(
-        stack.indicator_style("integration_lite").override_color("fast"),
+        stack
+            .indicator_style("integration_lite")
+            .override_color("fast"),
         Some("#0A0B0C"),
         "one slot's override is its own"
     );
@@ -583,11 +820,16 @@ fn a_slot_owns_an_isolated_style_component_beside_its_config() {
         "and never leaks to its neighbour"
     );
     assert_eq!(
-        stack.get_slot_field("integration_lite", "length").expect("reads"),
+        stack
+            .get_slot_field("integration_lite", "length")
+            .expect("reads"),
         "14",
         "nor to the config"
     );
-    assert!(stack.style("nope").is_none(), "an unknown slot has no style component");
+    assert!(
+        stack.style("nope").is_none(),
+        "an unknown slot has no style component"
+    );
 }
 
 /// The plain `insert` form gives a slot the no-op style, and
@@ -597,7 +839,9 @@ fn insert_with_style_registers_the_callers_overrides() {
     let mut plan = PanePlan::new();
     let mut stack = HotSlotStack::new();
     let mut style = IndicatorStyle::default();
-    style.set_field("color_fast", "#0A0B0C").expect("a well-formed override writes");
+    style
+        .set_field("color_fast", "#0A0B0C")
+        .expect("a well-formed override writes");
     stack
         .insert_with_style(
             "styled",
@@ -622,7 +866,10 @@ fn insert_with_style_registers_the_callers_overrides() {
         "and the plain insert beside it still inherits"
     );
     assert!(
-        stack.indicator_style("nope").override_color("fast").is_none(),
+        stack
+            .indicator_style("nope")
+            .override_color("fast")
+            .is_none(),
         "an unknown slot reads as the no-op style rather than failing the frame"
     );
 }
@@ -639,14 +886,21 @@ fn the_style_tab_renders_config_paint_knobs_and_the_whole_style_schema() {
 
     let style_tab = tab_fields(SettingsTab::Style, &config_fields, &style_fields);
     let names: Vec<&str> = style_tab.iter().map(|field| field.name.as_str()).collect();
-    assert!(names.contains(&"line_color"), "the config's own paint knob is here: {names:?}");
+    assert!(
+        names.contains(&"line_color"),
+        "the config's own paint knob is here: {names:?}"
+    );
     assert!(
         names.contains(&"line_width") && names.contains(&"color_fast"),
         "and so is the whole style schema: {names:?}"
     );
     assert_eq!(
         names.len(),
-        style_tab.iter().map(|field| &field.name).collect::<std::collections::BTreeSet<_>>().len(),
+        style_tab
+            .iter()
+            .map(|field| &field.name)
+            .collect::<std::collections::BTreeSet<_>>()
+            .len(),
         "no field renders twice"
     );
 
@@ -673,16 +927,31 @@ fn commit_writes_the_style_overrides_and_the_config_together() {
     let slot = stack.slots.get_mut("integration_lite").expect("slotted");
     let pending = slot.pending.as_mut().expect("seeded");
     pending.config.insert("length".to_owned(), "42".to_owned());
-    pending.style.insert("line_width".to_owned(), "3".to_owned());
-    pending.style.insert("color_fast".to_owned(), "#0A0B0C".to_owned());
+    pending
+        .style
+        .insert("line_width".to_owned(), "3".to_owned());
+    pending
+        .style
+        .insert("color_fast".to_owned(), "#0A0B0C".to_owned());
     // A value the style's own contract refuses, beside two it accepts.
-    pending.style.insert("color_slow".to_owned(), "not-a-color".to_owned());
+    pending
+        .style
+        .insert("color_slow".to_owned(), "not-a-color".to_owned());
 
     let refused = stack.commit_settings("integration_lite").expect("commit");
-    assert_eq!(refused.len(), 1, "only the malformed color refuses: {refused:?}");
-    assert!(refused[0].starts_with("color_slow:"), "the refusal names its field");
     assert_eq!(
-        stack.get_slot_field("integration_lite", "length").expect("reads"),
+        refused.len(),
+        1,
+        "only the malformed color refuses: {refused:?}"
+    );
+    assert!(
+        refused[0].starts_with("color_slow:"),
+        "the refusal names its field"
+    );
+    assert_eq!(
+        stack
+            .get_slot_field("integration_lite", "length")
+            .expect("reads"),
         "42",
         "the input landed"
     );
@@ -691,6 +960,14 @@ fn commit_writes_the_style_overrides_and_the_config_together() {
         (style.line_width() - 3.0).abs() < f32::EPSILON,
         "the stroke width landed"
     );
-    assert_eq!(style.override_color("fast"), Some("#0A0B0C"), "the color landed");
-    assert_eq!(style.override_color("slow"), None, "the refused color did not");
+    assert_eq!(
+        style.override_color("fast"),
+        Some("#0A0B0C"),
+        "the color landed"
+    );
+    assert_eq!(
+        style.override_color("slow"),
+        None,
+        "the refused color did not"
+    );
 }

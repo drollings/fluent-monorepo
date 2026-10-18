@@ -32,10 +32,8 @@
 //! (freshness backdates everything); append cost scales with the tail fold
 //! plus whole-window kernel recompute only when bucket values change.
 
-use criterion::{Criterion, criterion_group, criterion_main};
-use protopyne_kernels::{
-    Lookahead, MtfStore, ParamSet, SeriesKey, indicator::builtin_registry,
-};
+use criterion::{criterion_group, criterion_main, Criterion};
+use protopyne_kernels::{indicator::builtin_registry, Lookahead, MtfStore, ParamSet, SeriesKey};
 use protopyne_types::Bar;
 use rust_decimal::Decimal;
 
@@ -62,13 +60,19 @@ fn requests() -> Vec<(SeriesKey, ParamSet)> {
     let params = ParamSet::new().with_int("length", 14);
     SPANS
         .iter()
-        .map(|span| (SeriesKey::new(*span, "sma", &params).expect("span valid"), params.clone()))
+        .map(|span| {
+            (
+                SeriesKey::new(*span, "sma", &params).expect("span valid"),
+                params.clone(),
+            )
+        })
         .collect()
 }
 
 fn append_one_bar(criterion: &mut Criterion) {
-    let base: Vec<Bar> =
-        (0..STREAM_BASE as i64).map(|step| bar_at(T0 + step * MIN, step)).collect();
+    let base: Vec<Bar> = (0..STREAM_BASE as i64)
+        .map(|step| bar_at(T0 + step * MIN, step))
+        .collect();
     let reqs = requests();
     let registry = builtin_registry().expect("builtins load");
     criterion.bench_function("mtf_streaming/append_one_bar", |bencher| {
@@ -87,20 +91,25 @@ fn append_one_bar(criterion: &mut Criterion) {
             next += 1;
             store.append_bar(&bar).expect("tape advances");
             now_ms = bar.ts.timestamp_millis() + MIN;
-            store.ensure(&registry, &reqs, now_ms, Lookahead::Off).expect("streaming ensure runs");
+            store
+                .ensure(&registry, &reqs, now_ms, Lookahead::Off)
+                .expect("streaming ensure runs");
         });
     });
 }
 
 fn steady_noop_ensure(criterion: &mut Criterion) {
-    let bars: Vec<Bar> =
-        (0..TAPE_BARS as i64).map(|step| bar_at(T0 + step * MIN, step)).collect();
+    let bars: Vec<Bar> = (0..TAPE_BARS as i64)
+        .map(|step| bar_at(T0 + step * MIN, step))
+        .collect();
     let reqs = requests();
     let registry = builtin_registry().expect("builtins load");
     let mut store = MtfStore::new();
     store.set_base(&bars).expect("base loads");
     let now_ms = T0 + TAPE_BARS as i64 * MIN;
-    store.ensure(&registry, &reqs, now_ms, Lookahead::Off).expect("initial ensure runs");
+    store
+        .ensure(&registry, &reqs, now_ms, Lookahead::Off)
+        .expect("initial ensure runs");
     criterion.bench_function("mtf_streaming/steady_noop_ensure", |bencher| {
         bencher.iter(|| {
             store

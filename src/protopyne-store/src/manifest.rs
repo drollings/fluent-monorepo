@@ -87,10 +87,7 @@ impl SealManifest {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Self::default()),
             Err(e) => Err(StoreError::Io(common_core::error::IoError::from(e))),
             Ok(text) => serde_json::from_str(&text).map_err(|e| {
-                StoreError::InvalidBar(format!(
-                    "seal manifest {} is corrupt: {e}",
-                    path.display()
-                ))
+                StoreError::InvalidBar(format!("seal manifest {} is corrupt: {e}", path.display()))
             }),
         }
     }
@@ -100,8 +97,11 @@ impl SealManifest {
         std::fs::create_dir_all(seals_dir).map_err(common_core::error::IoError::from)?;
         let mut ordered = self.records.clone();
         ordered.sort_by(|a, b| {
-            (a.symbol_id, a.timeframe.code(), &a.path)
-                .cmp(&(b.symbol_id, b.timeframe.code(), &b.path))
+            (a.symbol_id, a.timeframe.code(), &a.path).cmp(&(
+                b.symbol_id,
+                b.timeframe.code(),
+                &b.path,
+            ))
         });
         let doc = Self { records: ordered };
         let text = serde_json::to_string_pretty(&doc).map_err(|e| {

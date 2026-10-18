@@ -15,18 +15,8 @@ fn outcome_of(publisher: &str, name: &str, version: Option<u64>) -> String {
 
 #[test]
 fn version_pins_resolve_identically() {
-    for (publisher, name) in [
-        ("showmethegrail", "libBars"),
-        ("showmethegrail", "libApex"),
-    ] {
-        let versions = [
-            Some(1),
-            Some(6),
-            Some(12),
-            Some(88),
-            Some(99),
-            None,
-        ];
+    for (publisher, name) in [("showmethegrail", "libBars"), ("showmethegrail", "libApex")] {
+        let versions = [Some(1), Some(6), Some(12), Some(88), Some(99), None];
         let first = outcome_of(publisher, name, versions[0]);
         for version in versions.iter().skip(1) {
             assert_eq!(
@@ -50,8 +40,8 @@ fn unknown_publisher_or_name_refuses_with_reason() {
         ("", "libBars"),
         ("showmethegrail", ""),
     ] {
-        let err = find_native(publisher, name, Some(12))
-            .expect_err("unknown native library must refuse");
+        let err =
+            find_native(publisher, name, Some(12)).expect_err("unknown native library must refuse");
         let text = err.to_string();
         assert!(
             !text.trim().is_empty(),
@@ -116,8 +106,7 @@ fn non_native_libraries_stay_unmatched() {
         assert!(
             !entry.enabled,
             "native serving stays disabled: {}/{}",
-            entry.publisher,
-            entry.name
+            entry.publisher, entry.name
         );
     }
     let err = find_native("showmethegrail", "libDrawing", Some(6))

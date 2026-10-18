@@ -61,13 +61,8 @@ fn decline_leaves_field_table_bit_identical() {
         ("size", vec![Some(int(0))]),
     ] {
         let mut next = before.clone();
-        let outcome = crate::buffers::serve_buffer_method(
-            "BufferFloat",
-            method,
-            &mut next,
-            &args,
-            false,
-        );
+        let outcome =
+            crate::buffers::serve_buffer_method("BufferFloat", method, &mut next, &args, false);
         assert!(outcome.is_declined(), "{method} declines");
         assert_eq!(next, before, "{method} decline touches no field");
     }
@@ -78,38 +73,38 @@ fn decline_paths_cover_type_method_named_and_shape() {
     let before = table();
     // Foreign type declines.
     let mut next = before.clone();
-    assert!(
-        crate::buffers::serve_buffer_method("BufferInt", "push", &mut next, &[Some(int(1))], false)
-            .is_declined()
-    );
+    assert!(crate::buffers::serve_buffer_method(
+        "BufferInt",
+        "push",
+        &mut next,
+        &[Some(int(1))],
+        false
+    )
+    .is_declined());
     assert_eq!(next, before);
     // Named args decline.
     let mut next = before.clone();
-    assert!(
-        crate::buffers::serve_buffer_method(
-            "BufferFloat",
-            "push",
-            &mut next,
-            &[Some(float(1.0))],
-            true
-        )
-        .is_declined()
-    );
+    assert!(crate::buffers::serve_buffer_method(
+        "BufferFloat",
+        "push",
+        &mut next,
+        &[Some(float(1.0))],
+        true
+    )
+    .is_declined());
     assert_eq!(next, before);
     // Misshaped state declines (absent data array).
     let mut ragged = before.clone();
     ragged.insert("data".to_owned(), None);
     let mut next = ragged.clone();
-    assert!(
-        crate::buffers::serve_buffer_method(
-            "BufferFloat",
-            "push",
-            &mut next,
-            &[Some(float(1.0))],
-            false
-        )
-        .is_declined()
-    );
+    assert!(crate::buffers::serve_buffer_method(
+        "BufferFloat",
+        "push",
+        &mut next,
+        &[Some(float(1.0))],
+        false
+    )
+    .is_declined());
     assert_eq!(next, ragged);
 }
 

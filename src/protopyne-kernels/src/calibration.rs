@@ -20,11 +20,11 @@
 //! shared by the family-specific flat suite and the dashboard.
 
 use crate::error::KernelError;
-use crate::indicator::{IndicatorRegistry, OwnedOhlcv, ParamSet, builtin_registry};
+use crate::indicator::{builtin_registry, IndicatorRegistry, OwnedOhlcv, ParamSet};
 use crate::parity::assert_expr_parity;
 use polars::prelude::{
-    DataFrame, EWMOptions, Expr, IntoLazy, NamedFrom as _, RollingFnParams, RollingOptionsFixedWindow,
-    RollingVarParams, Series, col, lit, when,
+    col, lit, when, DataFrame, EWMOptions, Expr, IntoLazy, NamedFrom as _, RollingFnParams,
+    RollingOptionsFixedWindow, RollingVarParams, Series,
 };
 
 // ---------------------------------------------------------------------------
@@ -135,7 +135,13 @@ fn seeded_legs(n_flat: usize, n_trend: usize) -> OwnedOhlcv {
         volume.push(1_000.0 + i as f64 * 11.0);
         prev_close = shut;
     }
-    OwnedOhlcv { open, high, low, close, volume }
+    OwnedOhlcv {
+        open,
+        high,
+        low,
+        close,
+        volume,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -227,7 +233,11 @@ pub fn run_control(control: Control) -> Vec<ControlViolation> {
                 violations.push(ControlViolation {
                     id: id.clone(),
                     control: control.name(),
-                    detail: format!("leg {:?} length {} != input {n}", leg.name, leg.values.len()),
+                    detail: format!(
+                        "leg {:?} length {} != input {n}",
+                        leg.name,
+                        leg.values.len()
+                    ),
                 });
             }
         }
@@ -298,9 +308,19 @@ pub fn null_alignment_diffs() -> Vec<ControlViolation> {
         let before = kernel.batch(&clean.views(), &params).expect("clean runs");
         let after = kernel.batch(&nulled.views(), &params).expect("nulled runs");
         let mut legs_before = vec![("values", before.values.as_slice())];
-        legs_before.extend(before.secondary.iter().map(|leg| (leg.name.as_str(), leg.values.as_slice())));
+        legs_before.extend(
+            before
+                .secondary
+                .iter()
+                .map(|leg| (leg.name.as_str(), leg.values.as_slice())),
+        );
         let mut legs_after = vec![("values", after.values.as_slice())];
-        legs_after.extend(after.secondary.iter().map(|leg| (leg.name.as_str(), leg.values.as_slice())));
+        legs_after.extend(
+            after
+                .secondary
+                .iter()
+                .map(|leg| (leg.name.as_str(), leg.values.as_slice())),
+        );
         for ((name, was), (_, is)) in legs_before.iter().zip(legs_after.iter()) {
             for (i, (w, v)) in was.iter().zip(is.iter()).enumerate() {
                 if w.is_none() && v.is_some() {
@@ -445,9 +465,17 @@ impl ParityDashboard {
                 }
             } else {
                 accepted = false;
-                note = Some(format!("leg mismatch: kernel {kernel_legs:?} vs ref {ref_legs:?}"));
+                note = Some(format!(
+                    "leg mismatch: kernel {kernel_legs:?} vs ref {ref_legs:?}"
+                ));
             }
-            rows.push(ParityRow { id: id.clone(), eps, accepted, note, false_fires });
+            rows.push(ParityRow {
+                id: id.clone(),
+                eps,
+                accepted,
+                note,
+                false_fires,
+            });
         }
         Ok(Self { rows })
     }
@@ -458,7 +486,13 @@ impl ParityDashboard {
 // ---------------------------------------------------------------------------
 
 fn strict(n: usize) -> RollingOptionsFixedWindow {
-    RollingOptionsFixedWindow { window_size: n, min_periods: n, weights: None, center: false, fn_params: None }
+    RollingOptionsFixedWindow {
+        window_size: n,
+        min_periods: n,
+        weights: None,
+        center: false,
+        fn_params: None,
+    }
 }
 
 fn pop_opts(n: usize) -> RollingOptionsFixedWindow {
@@ -472,15 +506,33 @@ fn pop_opts(n: usize) -> RollingOptionsFixedWindow {
 }
 
 fn ewm_span(n: usize) -> EWMOptions {
-    EWMOptions { alpha: 2.0 / (n as f64 + 1.0), adjust: false, bias: false, min_periods: n, ignore_nulls: true }
+    EWMOptions {
+        alpha: 2.0 / (n as f64 + 1.0),
+        adjust: false,
+        bias: false,
+        min_periods: n,
+        ignore_nulls: true,
+    }
 }
 
 fn ewm_wilder(n: usize) -> EWMOptions {
-    EWMOptions { alpha: 1.0 / n as f64, adjust: false, bias: false, min_periods: n, ignore_nulls: true }
+    EWMOptions {
+        alpha: 1.0 / n as f64,
+        adjust: false,
+        bias: false,
+        min_periods: n,
+        ignore_nulls: true,
+    }
 }
 
 fn weighted(n: usize, weights: Vec<f64>) -> RollingOptionsFixedWindow {
-    RollingOptionsFixedWindow { window_size: n, min_periods: n, weights: Some(weights), center: false, fn_params: None }
+    RollingOptionsFixedWindow {
+        window_size: n,
+        min_periods: n,
+        weights: Some(weights),
+        center: false,
+        fn_params: None,
+    }
 }
 
 /// Ascending linear weights, oldest lightest: the kernel weights the `i`-th
@@ -530,7 +582,9 @@ fn select_legs(frame: &DataFrame, exprs: Vec<Expr>) -> Result<Vec<Vec<Option<f64
             let chunked = cast
                 .f64()
                 .map_err(|e| KernelError::Research(format!("calibration f64 view: {e}")))?;
-            Ok((0..chunked.len()).map(|i| chunked.get(i).and_then(fin_or_none)).collect())
+            Ok((0..chunked.len())
+                .map(|i| chunked.get(i).and_then(fin_or_none))
+                .collect())
         })
         .collect()
 }
@@ -577,9 +631,9 @@ fn aroon_expr(n: usize, use_high: bool) -> Expr {
     fn first_match(rungs: &[((Expr, Expr), usize)]) -> Expr {
         match rungs {
             [] => lit(f64::NAN),
-            [((cond, _), k), rest @ ..] => {
-                when(cond.clone()).then(lit(*k as f64)).otherwise(first_match(rest))
-            }
+            [((cond, _), k), rest @ ..] => when(cond.clone())
+                .then(lit(*k as f64))
+                .otherwise(first_match(rest)),
         }
     }
     let nf = n as f64;
@@ -634,10 +688,27 @@ type ReferenceLegs = Vec<(&'static str, Vec<Option<f64>>)>;
 fn reference(id: &str, frame: &DataFrame) -> Result<ReferenceLegs, KernelError> {
     let n = 14;
     let legs = match id {
-        "sma" => vec![("values", single(frame, col("close").rolling_mean(strict(n)).alias("values"))?)],
-        "ema" => vec![("values", single(frame, col("close").ewm_mean(ewm_span(n)).alias("values"))?)],
-        "rma" => vec![("values", single(frame, col("close").ewm_mean(ewm_wilder(n)).alias("values"))?)],
-        "wma" => vec![("values", single(frame, col("close").rolling_mean(weighted(n, linear_weights(n))).alias("values"))?)],
+        "sma" => vec![(
+            "values",
+            single(frame, col("close").rolling_mean(strict(n)).alias("values"))?,
+        )],
+        "ema" => vec![(
+            "values",
+            single(frame, col("close").ewm_mean(ewm_span(n)).alias("values"))?,
+        )],
+        "rma" => vec![(
+            "values",
+            single(frame, col("close").ewm_mean(ewm_wilder(n)).alias("values"))?,
+        )],
+        "wma" => vec![(
+            "values",
+            single(
+                frame,
+                col("close")
+                    .rolling_mean(weighted(n, linear_weights(n)))
+                    .alias("values"),
+            )?,
+        )],
         "hma" => {
             // Shift-expanded weighted mean: the weighted `rolling_mean`
             // panics on null-bearing input in this polars version, so the
@@ -648,8 +719,12 @@ fn reference(id: &str, frame: &DataFrame) -> Result<ReferenceLegs, KernelError> 
                 .clone()
                 .lazy()
                 .with_columns([
-                    col("close").rolling_mean(weighted(7, linear_weights(7))).alias("__half"),
-                    col("close").rolling_mean(weighted(14, linear_weights(14))).alias("__full"),
+                    col("close")
+                        .rolling_mean(weighted(7, linear_weights(7)))
+                        .alias("__half"),
+                    col("close")
+                        .rolling_mean(weighted(14, linear_weights(14)))
+                        .alias("__full"),
                 ])
                 .with_columns([(col("__half") * lit(2.0) - col("__full")).alias("__diff")])
                 .collect()
@@ -661,7 +736,8 @@ fn reference(id: &str, frame: &DataFrame) -> Result<ReferenceLegs, KernelError> 
                 // Kernel weights the `i`-th oldest bar `(i + 1) * n`; the bar
                 // `bars_back` back is the `(n - 1 - bars_back)`-th oldest, and
                 // the shared `* n` factor cancels in normalization.
-                let term = lit((root - bars_back) as f64) * col("__diff").shift(lit(bars_back as i64));
+                let term =
+                    lit((root - bars_back) as f64) * col("__diff").shift(lit(bars_back as i64));
                 sum = Some(match sum {
                     None => term,
                     Some(acc) => acc + term,
@@ -677,8 +753,9 @@ fn reference(id: &str, frame: &DataFrame) -> Result<ReferenceLegs, KernelError> 
             "values",
             single(
                 frame,
-                ((col("close") * col("volume")).rolling_sum(strict(n)) / col("volume").rolling_sum(strict(n)))
-                    .alias("values"),
+                ((col("close") * col("volume")).rolling_sum(strict(n))
+                    / col("volume").rolling_sum(strict(n)))
+                .alias("values"),
             )?,
         )],
         "alma" => vec![("values", single(frame, alma_expr(n))?)],
@@ -694,7 +771,9 @@ fn reference(id: &str, frame: &DataFrame) -> Result<ReferenceLegs, KernelError> 
             let staged = stage_ema_chain(frame, n, 3)?;
             let cols = select_legs(
                 &staged,
-                vec![(col("__e1") * lit(3.0) - col("__e2") * lit(3.0) + col("__e3")).alias("values")],
+                vec![
+                    (col("__e1") * lit(3.0) - col("__e2") * lit(3.0) + col("__e3")).alias("values"),
+                ],
             )?;
             vec![("values", cols.into_iter().next().expect("one column"))]
         }
@@ -716,7 +795,10 @@ fn reference(id: &str, frame: &DataFrame) -> Result<ReferenceLegs, KernelError> 
                     col("__up").ewm_mean(ewm_wilder(n)).alias("__ag"),
                     col("__dn").ewm_mean(ewm_wilder(n)).alias("__al"),
                 ])
-                .select([(lit(100.0) - lit(100.0) / (lit(1.0) + col("__ag") / col("__al"))).alias("values")])
+                .select([
+                    (lit(100.0) - lit(100.0) / (lit(1.0) + col("__ag") / col("__al")))
+                        .alias("values"),
+                ])
                 .collect()
                 .map_err(|e| KernelError::Research(format!("rsi stage: {e}")))?;
             vec![("values", column_of(&staged, "values")?)]
@@ -757,10 +839,16 @@ fn reference(id: &str, frame: &DataFrame) -> Result<ReferenceLegs, KernelError> 
                 .clone()
                 .lazy()
                 .with_columns([k])
-                .select([col("__k").alias("values"), col("__k").rolling_mean(strict(3)).alias("d")])
+                .select([
+                    col("__k").alias("values"),
+                    col("__k").rolling_mean(strict(3)).alias("d"),
+                ])
                 .collect()
                 .map_err(|e| KernelError::Research(format!("stoch stage: {e}")))?;
-            vec![("values", column_of(&staged, "values")?), ("d", column_of(&staged, "d")?)]
+            vec![
+                ("values", column_of(&staged, "values")?),
+                ("d", column_of(&staged, "d")?),
+            ]
         }
         "tr" => vec![("values", single(frame, tr_expr().alias("values"))?)],
         "atr" => {
@@ -847,35 +935,44 @@ fn reference(id: &str, frame: &DataFrame) -> Result<ReferenceLegs, KernelError> 
             "values",
             single(
                 frame,
-                ((col("close").rolling_max(strict(n)) + col("close").rolling_min(strict(n))) / lit(2.0))
-                    .alias("values"),
+                ((col("close").rolling_max(strict(n)) + col("close").rolling_min(strict(n)))
+                    / lit(2.0))
+                .alias("values"),
             )?,
         )],
         "midprice" => vec![(
             "values",
             single(
                 frame,
-                ((col("high").rolling_max(strict(n)) + col("low").rolling_min(strict(n))) / lit(2.0))
-                    .alias("values"),
+                ((col("high").rolling_max(strict(n)) + col("low").rolling_min(strict(n)))
+                    / lit(2.0))
+                .alias("values"),
             )?,
         )],
         "trima" => vec![(
             "values",
             single(
                 frame,
-                col("close").rolling_mean(strict(7)).rolling_mean(strict(8)).alias("values"),
+                col("close")
+                    .rolling_mean(strict(7))
+                    .rolling_mean(strict(8))
+                    .alias("values"),
             )?,
         )],
         "avgprice" => vec![(
             "values",
             single(
                 frame,
-                ((col("open") + col("high") + col("low") + col("close")) / lit(4.0)).alias("values"),
+                ((col("open") + col("high") + col("low") + col("close")) / lit(4.0))
+                    .alias("values"),
             )?,
         )],
         "medprice" => vec![(
             "values",
-            single(frame, ((col("high") + col("low")) / lit(2.0)).alias("values"))?,
+            single(
+                frame,
+                ((col("high") + col("low")) / lit(2.0)).alias("values"),
+            )?,
         )],
         "typprice" => vec![(
             "values",
@@ -897,8 +994,9 @@ fn reference(id: &str, frame: &DataFrame) -> Result<ReferenceLegs, KernelError> 
                 "values",
                 single(
                     frame,
-                    (col("close").rolling_mean(strict(fast)) - col("close").rolling_mean(strict(slow)))
-                        .alias("values"),
+                    (col("close").rolling_mean(strict(fast))
+                        - col("close").rolling_mean(strict(slow)))
+                    .alias("values"),
                 )?,
             )]
         }
@@ -908,26 +1006,44 @@ fn reference(id: &str, frame: &DataFrame) -> Result<ReferenceLegs, KernelError> 
                 col("close").rolling_mean(strict(fast)),
                 col("close").rolling_mean(strict(slow)),
             );
-            vec![("values", single(frame, (f.clone() / s - lit(1.0)).alias("values"))?)]
+            vec![(
+                "values",
+                single(frame, (f.clone() / s - lit(1.0)).alias("values"))?,
+            )]
         }
         "mom" => vec![(
             "values",
-            single(frame, (col("close") - col("close").shift(lit(n as i64))).alias("values"))?,
+            single(
+                frame,
+                (col("close") - col("close").shift(lit(n as i64))).alias("values"),
+            )?,
         )],
         "roc" => {
             let prev = col("close").shift(lit(n as i64));
             vec![(
                 "values",
-                single(frame, ((col("close") - prev.clone()) / prev * lit(100.0)).alias("values"))?,
+                single(
+                    frame,
+                    ((col("close") - prev.clone()) / prev * lit(100.0)).alias("values"),
+                )?,
             )]
         }
         "rocp" => {
             let prev = col("close").shift(lit(n as i64));
-            vec![("values", single(frame, ((col("close") - prev.clone()) / prev).alias("values"))?)]
+            vec![(
+                "values",
+                single(
+                    frame,
+                    ((col("close") - prev.clone()) / prev).alias("values"),
+                )?,
+            )]
         }
         "rocr" => vec![(
             "values",
-            single(frame, (col("close") / col("close").shift(lit(n as i64))).alias("values"))?,
+            single(
+                frame,
+                (col("close") / col("close").shift(lit(n as i64))).alias("values"),
+            )?,
         )],
         "rocr100" => vec![(
             "values",
@@ -942,15 +1058,24 @@ fn reference(id: &str, frame: &DataFrame) -> Result<ReferenceLegs, KernelError> 
                 .clone()
                 .lazy()
                 .with_columns([rsv_expr(5).alias("__k")])
-                .select([col("__k").alias("values"), col("__k").rolling_mean(strict(3)).alias("fastd")])
+                .select([
+                    col("__k").alias("values"),
+                    col("__k").rolling_mean(strict(3)).alias("fastd"),
+                ])
                 .collect()
                 .map_err(|e| KernelError::Research(format!("stochf stage: {e}")))?;
-            vec![("values", column_of(&staged, "values")?), ("fastd", column_of(&staged, "fastd")?)]
+            vec![
+                ("values", column_of(&staged, "values")?),
+                ("fastd", column_of(&staged, "fastd")?),
+            ]
         }
         "trix" => {
             let staged = stage_ema_chain(frame, 10, 3)?;
             let prev = col("__e3").shift(lit(1_i64));
-            let cols = select_legs(&staged, vec![((col("__e3") - prev.clone()) / prev).alias("values")])?;
+            let cols = select_legs(
+                &staged,
+                vec![((col("__e3") - prev.clone()) / prev).alias("values")],
+            )?;
             vec![("values", cols.into_iter().next().expect("one column"))]
         }
         "willr" => vec![("values", single(frame, willr_expr(n).alias("values"))?)],
@@ -961,15 +1086,24 @@ fn reference(id: &str, frame: &DataFrame) -> Result<ReferenceLegs, KernelError> 
                 .select([aroon_expr(n, true), aroon_expr(n, false)])
                 .collect()
                 .map_err(|e| KernelError::Research(format!("aroon stage: {e}")))?;
-            vec![("values", column_of(&staged, "values")?), ("down", column_of(&staged, "down")?)]
+            vec![
+                ("values", column_of(&staged, "values")?),
+                ("down", column_of(&staged, "down")?),
+            ]
         }
         "stddev" => vec![(
             "values",
-            single(frame, (col("close").rolling_std(pop_opts(n)) * lit(1.0)).alias("values"))?,
+            single(
+                frame,
+                (col("close").rolling_std(pop_opts(n)) * lit(1.0)).alias("values"),
+            )?,
         )],
         "var" => vec![(
             "values",
-            single(frame, (col("close").rolling_var(pop_opts(n)) * lit(1.0)).alias("values"))?,
+            single(
+                frame,
+                (col("close").rolling_var(pop_opts(n)) * lit(1.0)).alias("values"),
+            )?,
         )],
         "correl" => {
             // Staged moment form over shift-demeaned legs: per-window
@@ -985,9 +1119,15 @@ fn reference(id: &str, frame: &DataFrame) -> Result<ReferenceLegs, KernelError> 
                 .with_columns([
                     col("__hx").rolling_sum(strict(n)).alias("__sx"),
                     col("__hy").rolling_sum(strict(n)).alias("__sy"),
-                    (col("__hx") * col("__hy")).rolling_sum(strict(n)).alias("__sxy"),
-                    (col("__hx") * col("__hx")).rolling_sum(strict(n)).alias("__sxx"),
-                    (col("__hy") * col("__hy")).rolling_sum(strict(n)).alias("__syy"),
+                    (col("__hx") * col("__hy"))
+                        .rolling_sum(strict(n))
+                        .alias("__sxy"),
+                    (col("__hx") * col("__hx"))
+                        .rolling_sum(strict(n))
+                        .alias("__sxx"),
+                    (col("__hy") * col("__hy"))
+                        .rolling_sum(strict(n))
+                        .alias("__syy"),
                 ])
                 .collect()
                 .map_err(|e| KernelError::Research(format!("correl stage: {e}")))?;
@@ -998,12 +1138,10 @@ fn reference(id: &str, frame: &DataFrame) -> Result<ReferenceLegs, KernelError> 
             let sqrt = den.clone().sqrt();
             let cols = select_legs(
                 &staged,
-                vec![
-                    when(sqrt.clone().eq(lit(0.0)))
-                        .then(lit(f64::NAN))
-                        .otherwise(num / sqrt)
-                        .alias("values"),
-                ],
+                vec![when(sqrt.clone().eq(lit(0.0)))
+                    .then(lit(f64::NAN))
+                    .otherwise(num / sqrt)
+                    .alias("values")],
             )?;
             vec![("values", cols.into_iter().next().expect("one column"))]
         }
@@ -1016,7 +1154,10 @@ fn reference(id: &str, frame: &DataFrame) -> Result<ReferenceLegs, KernelError> 
                 .otherwise(lit(0.0));
             vec![(
                 "values",
-                single(frame, ((mfm * col("volume")).cum_sum(false)).alias("values"))?,
+                single(
+                    frame,
+                    ((mfm * col("volume")).cum_sum(false)).alias("values"),
+                )?,
             )]
         }
         "adosc" => {
@@ -1031,8 +1172,9 @@ fn reference(id: &str, frame: &DataFrame) -> Result<ReferenceLegs, KernelError> 
                 .clone()
                 .lazy()
                 .with_columns([(mfm * col("volume")).cum_sum(false).alias("__ad")])
-                .select([(col("__ad").ewm_mean(ewm_span(fast)) - col("__ad").ewm_mean(ewm_span(slow)))
-                    .alias("values")])
+                .select([(col("__ad").ewm_mean(ewm_span(fast))
+                    - col("__ad").ewm_mean(ewm_span(slow)))
+                .alias("values")])
                 .collect()
                 .map_err(|e| KernelError::Research(format!("adosc stage: {e}")))?;
             vec![("values", column_of(&staged, "values")?)]
@@ -1043,10 +1185,18 @@ fn reference(id: &str, frame: &DataFrame) -> Result<ReferenceLegs, KernelError> 
             // difference is the opening print, not a flat bar.
             let sign = when(d.clone().is_null()).then(lit(1.0)).otherwise(
                 when(d.clone().gt(lit(0.0))).then(lit(1.0)).otherwise(
-                    when(d.clone().lt(lit(0.0))).then(lit(-1.0)).otherwise(lit(0.0)),
+                    when(d.clone().lt(lit(0.0)))
+                        .then(lit(-1.0))
+                        .otherwise(lit(0.0)),
                 ),
             );
-            vec![("values", single(frame, ((sign * col("volume")).cum_sum(false)).alias("values"))?)]
+            vec![(
+                "values",
+                single(
+                    frame,
+                    ((sign * col("volume")).cum_sum(false)).alias("values"),
+                )?,
+            )]
         }
         "cci" => {
             let mean = col("close").rolling_mean(strict(n));
@@ -1056,8 +1206,7 @@ fn reference(id: &str, frame: &DataFrame) -> Result<ReferenceLegs, KernelError> 
             // rolling mean — a different quantity entirely.
             let mut dev_sum: Option<Expr> = None;
             for lag in 0..n {
-                let term =
-                    (col("close").shift(lit(lag as i64)) - mean.clone()).abs();
+                let term = (col("close").shift(lit(lag as i64)) - mean.clone()).abs();
                 dev_sum = Some(match dev_sum {
                     None => term,
                     Some(acc) => acc + term,
@@ -1115,7 +1264,11 @@ fn reference(id: &str, frame: &DataFrame) -> Result<ReferenceLegs, KernelError> 
                     .alias("values"),
             )?,
         )],
-        other => return Err(KernelError::Research(format!("no calibration reference for {other:?}"))),
+        other => {
+            return Err(KernelError::Research(format!(
+                "no calibration reference for {other:?}"
+            )))
+        }
     };
     Ok(legs)
 }
@@ -1130,7 +1283,8 @@ fn stage_ema_chain(frame: &DataFrame, n: usize, depth: usize) -> Result<DataFram
         lazy = lazy.with_columns([col(prev).ewm_mean(ewm_span(n)).alias(*name)]);
         prev = name;
     }
-    lazy.collect().map_err(|e| KernelError::Research(format!("ema chain stage: {e}")))
+    lazy.collect()
+        .map_err(|e| KernelError::Research(format!("ema chain stage: {e}")))
 }
 
 fn column_of(staged: &DataFrame, name: &str) -> Result<Vec<Option<f64>>, KernelError> {
@@ -1143,6 +1297,7 @@ fn column_of(staged: &DataFrame, name: &str) -> Result<Vec<Option<f64>>, KernelE
     let chunked = cast
         .f64()
         .map_err(|e| KernelError::Research(format!("calibration f64 view: {e}")))?;
-    Ok((0..chunked.len()).map(|i| chunked.get(i).and_then(fin_or_none)).collect())
+    Ok((0..chunked.len())
+        .map(|i| chunked.get(i).and_then(fin_or_none))
+        .collect())
 }
-

@@ -192,7 +192,11 @@ impl SeriesContext {
     /// One leg of every stored bar under a price source.
     #[must_use]
     pub fn source_series(&self, source: PriceSource) -> Vec<Decimal> {
-        self.window.bars().iter().map(|bar| source.select(bar)).collect()
+        self.window
+            .bars()
+            .iter()
+            .map(|bar| source.select(bar))
+            .collect()
     }
 }
 

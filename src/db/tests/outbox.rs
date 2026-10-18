@@ -103,8 +103,7 @@ fn concurrent_claimants_never_share_a_row() {
     let seed = SqliteStore::open(&path).unwrap();
     seed.with_conn(outbox::init_schema).unwrap();
     for i in 0..20 {
-        seed
-            .with_conn(|conn| outbox::append(conn, &format!("k{i:02}"), b"x"))
+        seed.with_conn(|conn| outbox::append(conn, &format!("k{i:02}"), b"x"))
             .unwrap();
     }
     drop(seed);
@@ -116,7 +115,12 @@ fn concurrent_claimants_never_share_a_row() {
                     .map_err(crate::error::DbError::from)
             })
             .unwrap();
-        store.outbox_claim(100, 60_000, 1_000).unwrap().into_iter().map(|e| e.id).collect::<Vec<_>>()
+        store
+            .outbox_claim(100, 60_000, 1_000)
+            .unwrap()
+            .into_iter()
+            .map(|e| e.id)
+            .collect::<Vec<_>>()
     };
     let p1 = path.clone();
     let p2 = path.clone();
@@ -130,7 +134,11 @@ fn concurrent_claimants_never_share_a_row() {
     both.extend(b.iter().copied());
     both.sort_unstable();
     both.dedup();
-    assert_eq!(both.len(), 20, "every row claimed exactly once across both claimants");
+    assert_eq!(
+        both.len(),
+        20,
+        "every row claimed exactly once across both claimants"
+    );
     assert!(a.iter().all(|id| !b.contains(id)), "no row claimed by both");
 }
 
@@ -179,13 +187,19 @@ fn outbox_claim_calibration() {
     let claimed = store.outbox_claim(100, 60_000, 1_000).unwrap();
     assert_eq!(claimed.len(), 5);
     for _ in &claimed {
-        cases.push(Case { fired: true, due: true });
+        cases.push(Case {
+            fired: true,
+            due: true,
+        });
     }
     // Control: still leased, so an immediate re-claim fires nothing.
     let leased = store.outbox_claim(100, 60_000, 2_000).unwrap();
     assert!(leased.is_empty());
     for _ in 0..5 {
-        cases.push(Case { fired: false, due: false });
+        cases.push(Case {
+            fired: false,
+            due: false,
+        });
     }
     // Ack 2 rows; expire the other 3 leases. Only the 3 must redeliver.
     let acked: Vec<i64> = claimed.iter().take(2).map(|e| e.id).collect();
@@ -193,21 +207,28 @@ fn outbox_claim_calibration() {
     let redelivered = store.outbox_claim(100, 1_000, 500_000).unwrap();
     assert_eq!(redelivered.len(), 3);
     for _ in &redelivered {
-        cases.push(Case { fired: true, due: true });
+        cases.push(Case {
+            fired: true,
+            due: true,
+        });
     }
     // Control: the 2 acked rows stay silent past any lease.
     for _ in 0..2 {
-        cases.push(Case { fired: false, due: false });
+        cases.push(Case {
+            fired: false,
+            due: false,
+        });
     }
-    let report = calibrate_threshold(
-        &cases,
-        |c| if c.fired { 1.0 } else { 0.0 },
-        |c| c.due,
-        0.5,
+    let report = calibrate_threshold(&cases, |c| if c.fired { 1.0 } else { 0.0 }, |c| c.due, 0.5);
+    assert_eq!(
+        report.fp, 0,
+        "leased/acked control rows must never fire: {report:?}"
     );
-    assert_eq!(report.fp, 0, "leased/acked control rows must never fire: {report:?}");
     assert_eq!(report.r#fn, 0, "due rows must always fire: {report:?}");
-    assert!(report.passes_gate(), "outbox claim calibration must pass: {report:?}");
+    assert!(
+        report.passes_gate(),
+        "outbox claim calibration must pass: {report:?}"
+    );
     emit_markdown_artifact(
         "outbox-claim",
         &sweep_thresholds(

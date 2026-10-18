@@ -47,11 +47,26 @@ fn fill() -> Fill {
 
 fn events() -> Vec<MarketEvent> {
     vec![
-        MarketEvent::Quote { underlying: "SPY".to_owned(), quote: quote() },
-        MarketEvent::Trade { underlying: "SPY".to_owned(), fill: fill() },
-        MarketEvent::BookDelta { underlying: "AAPL".to_owned(), sequence: 7 },
-        MarketEvent::Candle { underlying: "SPY".to_owned(), bar: bar() },
-        MarketEvent::Quote { underlying: "AAPL".to_owned(), quote: quote() },
+        MarketEvent::Quote {
+            underlying: "SPY".to_owned(),
+            quote: quote(),
+        },
+        MarketEvent::Trade {
+            underlying: "SPY".to_owned(),
+            fill: fill(),
+        },
+        MarketEvent::BookDelta {
+            underlying: "AAPL".to_owned(),
+            sequence: 7,
+        },
+        MarketEvent::Candle {
+            underlying: "SPY".to_owned(),
+            bar: bar(),
+        },
+        MarketEvent::Quote {
+            underlying: "AAPL".to_owned(),
+            quote: quote(),
+        },
     ]
 }
 
@@ -67,7 +82,10 @@ fn session() -> TradingSession {
 
 #[test]
 fn event_routing_header() {
-    let quote = MarketEvent::Quote { underlying: "SPY".to_owned(), quote: quote() };
+    let quote = MarketEvent::Quote {
+        underlying: "SPY".to_owned(),
+        quote: quote(),
+    };
     assert_eq!(quote.symbol(), "SPY");
     assert_eq!(quote.kind(), MarketEventKind::Quote);
     assert!(quote.matches(Some("SPY"), Some(MarketEventKind::Quote)));
@@ -86,12 +104,18 @@ fn event_routing_header() {
 fn payloads_reuse_existing_vocabulary() {
     // No new price/fill/candle types: the payloads are the venue/types
     // vocabulary by construction.
-    let trade = MarketEvent::Trade { underlying: "SPY".to_owned(), fill: fill() };
+    let trade = MarketEvent::Trade {
+        underlying: "SPY".to_owned(),
+        fill: fill(),
+    };
     match trade {
         MarketEvent::Trade { fill, .. } => assert_eq!(fill.quantity, 2),
         _ => panic!("wrong variant"),
     }
-    let candle = MarketEvent::Candle { underlying: "SPY".to_owned(), bar: bar() };
+    let candle = MarketEvent::Candle {
+        underlying: "SPY".to_owned(),
+        bar: bar(),
+    };
     match candle {
         MarketEvent::Candle { bar, .. } => assert_eq!(bar.volume, 1_000),
         _ => panic!("wrong variant"),
@@ -178,10 +202,9 @@ async fn ladder_falls_back_and_fails_closed() {
         name: "fallback".to_owned(),
         quote: Some(quote()),
     });
-    let (served, rung) =
-        TradingSession::resolve_quote(vec![dark.clone(), lit.clone()], "SPY")
-            .await
-            .expect("fallback serves");
+    let (served, rung) = TradingSession::resolve_quote(vec![dark.clone(), lit.clone()], "SPY")
+        .await
+        .expect("fallback serves");
     assert_eq!(served, quote());
     assert_eq!(rung, "fallback");
     let lit_primary: Arc<dyn QuoteSource> = Arc::new(FixedSource {
@@ -196,7 +219,9 @@ async fn ladder_falls_back_and_fails_closed() {
         "first rung with a quote wins"
     );
     assert!(
-        TradingSession::resolve_quote(vec![dark], "SPY").await.is_none(),
+        TradingSession::resolve_quote(vec![dark], "SPY")
+            .await
+            .is_none(),
         "every feed dark means no quote"
     );
 }
@@ -214,7 +239,10 @@ fn lagged_receiver_skips_and_continues() {
     tx.send("c".to_owned()).expect("buffered");
     match slow.try_recv() {
         Err(tokio::sync::broadcast::error::TryRecvError::Lagged(skipped)) => {
-            assert_eq!(skipped, 2, "two frames overwritten in a capacity-one buffer");
+            assert_eq!(
+                skipped, 2,
+                "two frames overwritten in a capacity-one buffer"
+            );
         }
         other => panic!("slow receiver must observe lag, got {other:?}"),
     }

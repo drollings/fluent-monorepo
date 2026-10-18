@@ -1,5 +1,5 @@
 use super::*;
-use crate::indicator::{ParamSet, fin_or_none};
+use crate::indicator::{fin_or_none, ParamSet};
 use crate::util::{highest, lowest};
 
 fn params_with_length(length: i64) -> ParamSet {
@@ -14,14 +14,33 @@ fn math_placeholder() {
 
 #[test]
 fn period_validation_accepts_and_refuses() {
-    assert_eq!(period_len("sma", &params_with_length(14), "length").unwrap(), 14);
+    assert_eq!(
+        period_len("sma", &params_with_length(14), "length").unwrap(),
+        14
+    );
     let err = period_len("sma", &params_with_length(0), "length").unwrap_err();
-    assert_eq!(err.to_string(), "invalid parameter: sma: length must be at least 1, got 0");
+    assert_eq!(
+        err.to_string(),
+        "invalid parameter: sma: length must be at least 1, got 0"
+    );
     // Missing parameter surfaces the ParamSet error, not a panic.
     assert!(period_len("sma", &ParamSet::new(), "length").is_err());
     // Named parameters (macd's fast/slow/signal legs) share the helper.
-    assert_eq!(period_len("macd", &ParamSet::new().with_int("fast_length", 12), "fast_length").unwrap(), 12);
-    let err = period_len("macd", &ParamSet::new().with_int("fast_length", 0), "fast_length").unwrap_err();
+    assert_eq!(
+        period_len(
+            "macd",
+            &ParamSet::new().with_int("fast_length", 12),
+            "fast_length"
+        )
+        .unwrap(),
+        12
+    );
+    let err = period_len(
+        "macd",
+        &ParamSet::new().with_int("fast_length", 0),
+        "fast_length",
+    )
+    .unwrap_err();
     assert!(err.to_string().contains("fast_length must be at least 1"));
 }
 
@@ -30,7 +49,9 @@ fn window_mean_matches_direct_sum() {
     let window = [1.0, 2.0, 3.0, 4.0];
     assert!((window_sum(&window) - 10.0).abs() <= f64::EPSILON);
     assert!((window_mean(&window) - 2.5).abs() <= f64::EPSILON);
-    assert!((window_mean(&window) - window_sum(&window) / window.len() as f64).abs() <= f64::EPSILON);
+    assert!(
+        (window_mean(&window) - window_sum(&window) / window.len() as f64).abs() <= f64::EPSILON
+    );
 }
 
 #[test]
@@ -48,7 +69,10 @@ fn ema_and_wilder_steps_reproduce_recurrences() {
     let factor = ema_factor(period);
     assert!((factor - 2.0 / 15.0).abs() <= f64::EPSILON);
     // Same op order as the kernel recurrences, bit for bit.
-    assert_eq!(ema_step(100.0, 102.0, factor).to_bits(), (102.0 * factor + 100.0 * (1.0 - factor)).to_bits());
+    assert_eq!(
+        ema_step(100.0, 102.0, factor).to_bits(),
+        (102.0 * factor + 100.0 * (1.0 - factor)).to_bits()
+    );
     assert_eq!(
         wilder_step(100.0, 102.0, period).to_bits(),
         ((102.0 + 100.0 * (period as f64 - 1.0)) / period as f64).to_bits()
@@ -128,7 +152,11 @@ fn linreg_slope_leg_matches_pair_form_bit_exact() {
     for (x, y) in &cases {
         let pair = linreg_slope_intercept(x, y);
         let slope = linreg_slope(x, y);
-        assert_eq!(slope, pair.map(|(s, _)| s), "slope leg agrees on {x:?} / {y:?}");
+        assert_eq!(
+            slope,
+            pair.map(|(s, _)| s),
+            "slope leg agrees on {x:?} / {y:?}"
+        );
         if let (Some(got), Some((want, _))) = (slope, pair) {
             assert_eq!(got.to_bits(), want.to_bits(), "bit-exact slope on {x:?}");
         }
@@ -187,8 +215,8 @@ fn div_or_none_agrees_with_guarded_division_exactly() {
     for (num, den) in specials {
         let guarded = fin_or_none(num / den);
         let primitive = div_or_none(num, den);
-        let diverges = (den == 0.0 && num != 0.0 && !num.is_nan())
-            || (den.is_infinite() && num.is_finite());
+        let diverges =
+            (den == 0.0 && num != 0.0 && !num.is_nan()) || (den.is_infinite() && num.is_finite());
         if diverges {
             assert_eq!(primitive, None, "primitive refuses {num} / {den}");
             assert!(

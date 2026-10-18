@@ -113,8 +113,7 @@ pub fn discovered_symbol_rows(
     tickers: &[String],
     declared: impl Fn(&str) -> Option<InstrumentDecl>,
 ) -> Vec<SymbolInfoView> {
-    let present: std::collections::HashSet<&str> =
-        tickers.iter().map(String::as_str).collect();
+    let present: std::collections::HashSet<&str> = tickers.iter().map(String::as_str).collect();
     let shipped_rows: Vec<SymbolInfoView> = SYMBOL_CATALOG
         .iter()
         .filter(|(symbol, ..)| present.contains(symbol))
@@ -136,11 +135,7 @@ pub fn discovered_symbol_rows(
         SymbolInfoView {
             symbol: ticker.to_owned(),
             name: decl.name.unwrap_or_else(|| ticker.to_owned()),
-            asset_class: decl
-                .class
-                .unwrap_or(AssetClass::Unknown)
-                .label()
-                .to_owned(),
+            asset_class: decl.class.unwrap_or(AssetClass::Unknown).label().to_owned(),
         }
     });
     shipped_rows.into_iter().chain(newcomer_rows).collect()

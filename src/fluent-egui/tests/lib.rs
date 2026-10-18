@@ -28,14 +28,20 @@ fn protopyne_crate_dirs() -> Vec<PathBuf> {
         })
         .collect();
     dirs.sort();
-    assert!(!dirs.is_empty(), "expected protopyne-* crates under {}", src.display());
+    assert!(
+        !dirs.is_empty(),
+        "expected protopyne-* crates under {}",
+        src.display()
+    );
     dirs
 }
 
 /// Paint-edge crates: the only crates allowed to name paint dependencies.
 /// `protopyne-egui` is the trading terminal over this scaffolding.
 fn is_paint_edge_crate(dir: &std::path::Path) -> bool {
-    dir.file_name().and_then(|n| n.to_str()).is_some_and(|n| n == "protopyne-egui")
+    dir.file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|n| n == "protopyne-egui")
 }
 
 #[test]
@@ -59,8 +65,14 @@ fn crate_is_a_workspace_member() {
 #[test]
 fn own_manifest_declares_paint_deps_and_no_autotests() {
     let text = read_text(&manifest_dir().join("Cargo.toml"));
-    assert!(text.contains("autotests = false"), "autotests must stay off");
-    assert!(text.contains("egui"), "paint dependency must be declared here");
+    assert!(
+        text.contains("autotests = false"),
+        "autotests must stay off"
+    );
+    assert!(
+        text.contains("egui"),
+        "paint dependency must be declared here"
+    );
     assert!(text.contains("eframe"), "demo shell must be declared here");
     assert!(
         text.contains("optional = true"),
@@ -71,10 +83,22 @@ fn own_manifest_declares_paint_deps_and_no_autotests() {
 #[test]
 fn lib_forbids_unsafe_and_documents_one_way_boundary() {
     let text = read_text(&manifest_dir().join("src").join("lib.rs"));
-    assert!(text.contains("forbid(unsafe_code)"), "paint edge must forbid unsafe");
-    assert!(text.contains("one-way"), "boundary direction must be documented");
-    assert!(text.contains("Decimal"), "money side of the boundary must be named");
-    assert!(text.contains("f64"), "display side of the boundary must be named");
+    assert!(
+        text.contains("forbid(unsafe_code)"),
+        "paint edge must forbid unsafe"
+    );
+    assert!(
+        text.contains("one-way"),
+        "boundary direction must be documented"
+    );
+    assert!(
+        text.contains("Decimal"),
+        "money side of the boundary must be named"
+    );
+    assert!(
+        text.contains("f64"),
+        "display side of the boundary must be named"
+    );
     assert!(
         !text.contains("pub use egui"),
         "paint dependency must not be re-exported from the crate root"

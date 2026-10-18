@@ -101,9 +101,7 @@ fn unified_fold_agrees_tick_for_tick() {
         is_confirmed: false,
         confirm: None,
     };
-    let out = native
-        .fetch_tick_native(&first)
-        .expect("open tick commits");
+    let out = native.fetch_tick_native(&first).expect("open tick commits");
     assert_eq!(out.signal, FetchSignal::Commit);
     assert_eq!(out.appended, 0);
 
@@ -135,8 +133,14 @@ fn unified_fold_agrees_tick_for_tick() {
     // accumulation stamps the tick-to-tick delta, flats and rollbacks keep
     // the prior delta. Native diffs under the bar-open clock: absence after
     // the seed, zero ever after.
-    let expected_rehearsal_diffs: [Option<i64>; 6] =
-        [None, Some(8_000), Some(8_000), Some(8_000), Some(7_000), Some(7_000)];
+    let expected_rehearsal_diffs: [Option<i64>; 6] = [
+        None,
+        Some(8_000),
+        Some(8_000),
+        Some(8_000),
+        Some(7_000),
+        Some(7_000),
+    ];
     let expected_native_diffs: [Option<i64>; 6] =
         [None, Some(0), Some(0), Some(0), Some(0), Some(0)];
 
@@ -147,7 +151,12 @@ fn unified_fold_agrees_tick_for_tick() {
         let legs = legs_for(*price, *cumvol, high, low);
 
         let kind = rehearsal.ingest_tick(legs, stamp);
-        assert_eq!(kind, expected_kinds[index], "fold arm on tick {}", index + 1);
+        assert_eq!(
+            kind,
+            expected_kinds[index],
+            "fold arm on tick {}",
+            index + 1
+        );
 
         let tick = NativeFetchTick {
             legs,
@@ -210,10 +219,7 @@ fn unified_fold_agrees_tick_for_tick() {
     // Counters agree end to end.
     assert_eq!(rehearsal.tick_count(), native.tick_count());
     assert_eq!(rehearsal.tick_count(), 2, "two accumulating ticks");
-    assert_eq!(
-        rehearsal.tick_volume_total(),
-        native.tick_volume_total()
-    );
+    assert_eq!(rehearsal.tick_volume_total(), native.tick_volume_total());
     assert_eq!(rehearsal.tick_volume_total(), 200.0);
     assert_eq!(rehearsal.tick_buy_volume(), native.tick_buy_volume());
     assert_eq!(rehearsal.tick_buy_volume(), 100.0);

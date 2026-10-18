@@ -35,10 +35,8 @@ fn spy_ohlcv() -> OwnedOhlcv {
 }
 
 fn load_golden(name: &str) -> Vec<Option<f64>> {
-    serde_json::from_str(
-        &std::fs::read_to_string(data_path(name)).expect("golden file present"),
-    )
-    .expect("golden file parses")
+    serde_json::from_str(&std::fs::read_to_string(data_path(name)).expect("golden file present"))
+        .expect("golden file parses")
 }
 
 fn golden_path(name: &str) -> PathBuf {
@@ -104,8 +102,11 @@ fn m5_kernels_match_frozen_goldens() {
             .batch(&views, &golden_params(id))
             .expect("valid params");
         if std::env::var("UPDATE_KERNEL_GOLDENS").is_ok() {
-            std::fs::write(golden_path(file), serde_json::to_string(&result).expect("golden serializes"))
-                .expect("golden writable");
+            std::fs::write(
+                golden_path(file),
+                serde_json::to_string(&result).expect("golden serializes"),
+            )
+            .expect("golden writable");
         }
         let frozen: IndicatorResult =
             serde_json::from_str(&std::fs::read_to_string(golden_path(file)).expect("golden"))
@@ -134,13 +135,7 @@ fn assert_golden_close(result: &IndicatorResult, frozen: &IndicatorResult, id: &
     }
 }
 
-fn assert_series_close(
-    got: &[Option<f64>],
-    want: &[Option<f64>],
-    tol: f64,
-    id: &str,
-    leg: &str,
-) {
+fn assert_series_close(got: &[Option<f64>], want: &[Option<f64>], tol: f64, id: &str, leg: &str) {
     assert_eq!(got.len(), want.len(), "length drift in {id}:{leg}");
     for (i, (g, w)) in got.iter().zip(want.iter()).enumerate() {
         match (g, w) {
@@ -278,7 +273,10 @@ fn spy5m_fastmas_baseline() {
             let stepped = kernel
                 .update(&mut state, BarTick::close_only(c), &params)
                 .expect("valid update");
-            assert_eq!(stepped, result.values[i], "batch/update drift in {name}[{i}]");
+            assert_eq!(
+                stepped, result.values[i],
+                "batch/update drift in {name}[{i}]"
+            );
         }
 
         let path = fastmas_baseline_path(name);
@@ -286,7 +284,8 @@ fn spy5m_fastmas_baseline() {
             std::fs::write(&path, write_baseline_csv(&result.values)).expect("golden writable");
         }
         let frozen = read_baseline_csv(
-            &std::fs::read_to_string(&path).expect("golden frozen; rerun with UPDATE_FASTMAS_BASELINE=1 to write it"),
+            &std::fs::read_to_string(&path)
+                .expect("golden frozen; rerun with UPDATE_FASTMAS_BASELINE=1 to write it"),
         );
         assert_series_close(&result.values, &frozen, 1e-12, name, "primary");
     }
@@ -304,10 +303,7 @@ fn sma14_matches_frozen_golden() {
     let sma = SmaIndicator::new();
     let data = spy_ohlcv();
     let result = sma
-        .batch(
-            &data.views(),
-            &ParamSet::new().with_int("length", 14),
-        )
+        .batch(&data.views(), &ParamSet::new().with_int("length", 14))
         .expect("valid params");
     if std::env::var("UPDATE_KERNEL_GOLDENS").is_ok() {
         std::fs::write(
@@ -324,10 +320,7 @@ fn ema14_matches_frozen_golden() {
     let ema = EmaIndicator::new();
     let data = spy_ohlcv();
     let result = ema
-        .batch(
-            &data.views(),
-            &ParamSet::new().with_int("length", 14),
-        )
+        .batch(&data.views(), &ParamSet::new().with_int("length", 14))
         .expect("valid params");
     if std::env::var("UPDATE_KERNEL_GOLDENS").is_ok() {
         std::fs::write(

@@ -24,8 +24,8 @@
 //! reintroducing them here would reproduce the bottleneck natively.
 
 use crate::error::KernelError;
-use crate::value::{FieldTable, NativeCall};
 use crate::value::PineValue;
+use crate::value::{FieldTable, NativeCall};
 
 /// Methods served natively on `BufferFloat` (v1 scope). Every other method
 /// declines to Pine.
@@ -60,7 +60,9 @@ pub fn serve_buffer_method(
 }
 
 fn bridge_invalid(field: &str, detail: &str) -> KernelError {
-    KernelError::InvalidInput(format!("native BufferFloat bridge: field '{field}' {detail}"))
+    KernelError::InvalidInput(format!(
+        "native BufferFloat bridge: field '{field}' {detail}"
+    ))
 }
 
 /// Borrowed buffer view: the `data` slots plus the scalar bookkeeping. No
@@ -88,7 +90,10 @@ fn field_usize(fields: &FieldTable, name: &str) -> Result<Option<usize>, KernelE
             if value.is_finite() && value.fract() == 0.0 && *value >= 0.0 {
                 Ok(Some(*value as usize))
             } else {
-                Err(bridge_invalid(name, &format!("float {value} is not a non-negative int")))
+                Err(bridge_invalid(
+                    name,
+                    &format!("float {value} is not a non-negative int"),
+                ))
             }
         }
         Some(Some(other)) => Err(bridge_invalid(name, &format!("is not an int ({other:?})"))),
@@ -100,7 +105,8 @@ fn field_usize(fields: &FieldTable, name: &str) -> Result<Option<usize>, KernelE
 /// errors — and every caller maps that to a decline, so Pine owns the
 /// refusal exactly as today.
 fn view(fields: &mut FieldTable) -> Result<BufferView<'_>, KernelError> {
-    let max_size = field_usize(fields, "max_size")?.ok_or_else(|| bridge_invalid("max_size", "is na"))?;
+    let max_size =
+        field_usize(fields, "max_size")?.ok_or_else(|| bridge_invalid("max_size", "is na"))?;
     let head = field_usize(fields, "head")?;
     if head.is_some_and(|head| head >= max_size && max_size > 0) {
         return Err(bridge_invalid("head", "is past max_size"));
@@ -111,7 +117,8 @@ fn view(fields: &mut FieldTable) -> Result<BufferView<'_>, KernelError> {
     };
     let Some(Some(PineValue::Array(data))) = fields.get_mut("data") else {
         return Err(bridge_invalid("data", "is not an array"));
-    };    if head.is_some() && data.len() != max_size {
+    };
+    if head.is_some() && data.len() != max_size {
         return Err(bridge_invalid("data", "ring length differs from max_size"));
     }
     Ok(BufferView {
@@ -136,7 +143,10 @@ fn arg_usize(args: &[Option<PineValue>], index: usize) -> Result<Option<usize>, 
             if value.is_finite() && value.fract() == 0.0 && *value >= 0.0 {
                 Ok(Some(*value as usize))
             } else {
-                Err(bridge_invalid("arg", &format!("float {value} is not a non-negative int")))
+                Err(bridge_invalid(
+                    "arg",
+                    &format!("float {value} is not a non-negative int"),
+                ))
             }
         }
         Some(Some(other)) => Err(bridge_invalid("arg", &format!("is not an int ({other:?})"))),
@@ -285,11 +295,7 @@ fn serve_get(fields: &mut FieldTable, args: &[Option<PineValue>]) -> NativeCall 
     // short-circuits first), so they serve `na` rather than declining.
     let index = match &args[0] {
         Some(PineValue::Int(value)) => *value,
-        Some(PineValue::Float(value))
-            if value.is_finite() && value.fract() == 0.0 =>
-        {
-            *value as i64
-        }
+        Some(PineValue::Float(value)) if value.is_finite() && value.fract() == 0.0 => *value as i64,
         None | Some(_) => return NativeCall::Declined,
     };
     let Ok(buffer) = view(fields) else {

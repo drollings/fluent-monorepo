@@ -17,8 +17,8 @@ use crate::error::{PlanError, StoreError};
 use crate::history::HistoryError;
 use crate::range::TimeRange;
 use crate::repair::{
-    RecoveryCoordinator, RepairConfig, RepairReason, RepairStatus, RepairWorker,
-    classify_history_error, classify_store_error,
+    classify_history_error, classify_store_error, RecoveryCoordinator, RepairConfig, RepairReason,
+    RepairStatus, RepairWorker,
 };
 use fluent_wvr::WorkUnit as _;
 use protopyne_types::Validate as _;

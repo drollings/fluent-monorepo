@@ -308,9 +308,10 @@ pub fn check_route(
             let report = GateReport::evaluate(state, limits);
             match &report.verdict {
                 HealthVerdict::Trade => Ok(report),
-                HealthVerdict::Halt { reasons } => {
-                    Err(VenueError::Health(format!("halted: {}", reasons.join("; "))))
-                }
+                HealthVerdict::Halt { reasons } => Err(VenueError::Health(format!(
+                    "halted: {}",
+                    reasons.join("; ")
+                ))),
             }
         }
     }
@@ -360,10 +361,7 @@ pub fn serving_verdict(reading: StoreHealth) -> HealthVerdict {
 /// stay the command plane's answer, which routes exits through and never
 /// strands a position.
 #[must_use]
-pub fn serving_allows_entries(
-    trading: crate::command::TradingState,
-    reading: StoreHealth,
-) -> bool {
+pub fn serving_allows_entries(trading: crate::command::TradingState, reading: StoreHealth) -> bool {
     trading.allows(false) && serving_verdict(reading).may_trade()
 }
 

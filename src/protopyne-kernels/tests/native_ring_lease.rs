@@ -71,15 +71,13 @@ fn reinit_driver() -> String {
 
 fn ms_bar(open: &str, high: &str, low: &str, close: &str, volume: u64, ts_millis: i64) -> Bar {
     Bar::new()
-        .ts(
-            chrono::Utc
-                .timestamp_opt(
-                    ts_millis.div_euclid(1000),
-                    ts_millis.rem_euclid(1000) as u32 * 1_000_000,
-                )
-                .single()
-                .expect("valid test timestamp"),
-        )
+        .ts(chrono::Utc
+            .timestamp_opt(
+                ts_millis.div_euclid(1000),
+                ts_millis.rem_euclid(1000) as u32 * 1_000_000,
+            )
+            .single()
+            .expect("valid test timestamp"))
         .o(open.parse().expect("decimal"))
         .h(high.parse().expect("decimal"))
         .l(low.parse().expect("decimal"))
@@ -98,9 +96,13 @@ fn fmt2(price: f64) -> String {
 /// `isnew` fires only on bar opens.
 fn two_bar_legs() -> (Vec<Bar>, Vec<i64>) {
     let open1 = 100.00;
-    let prices1 = [100.00, 100.05, 100.03, 100.10, 100.08, 100.12, 100.09, 100.15];
+    let prices1 = [
+        100.00, 100.05, 100.03, 100.10, 100.08, 100.12, 100.09, 100.15,
+    ];
     let vols1 = [1u64, 2, 100, 100, 100, 100, 100, 100];
-    let dts1 = [5_000i64, 12_000, 20_000, 33_000, 40_000, 47_000, 52_000, 58_000];
+    let dts1 = [
+        5_000i64, 12_000, 20_000, 33_000, 40_000, 47_000, 52_000, 58_000,
+    ];
     let open2 = 100.20;
     let prices2 = [100.20, 100.22, 100.18, 100.25];
     // Seed absorbs the first two prints (cum 10); the rest must stay within

@@ -407,7 +407,11 @@ fn lenient_read_skips_bad_rows_and_counts_them() {
 
     let lenient = read_ohlcv_parquet_lenient(&path, None).expect("lenient reads");
     assert_eq!(lenient.read.bars.len(), 2, "the good rows serve");
-    assert_eq!(lenient.skipped.len(), 1, "the dirty row is counted, not silent");
+    assert_eq!(
+        lenient.skipped.len(),
+        1,
+        "the dirty row is counted, not silent"
+    );
     assert_eq!(lenient.skipped[0].row, 1);
     assert!(
         lenient.skipped[0].reason.contains("not finite"),

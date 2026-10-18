@@ -17,26 +17,26 @@
 //! pane-plan node namespace, so two plugins never share a field, a
 //! fingerprint, or a cache key.
 
-use fluent_wvr::prelude::*;
 use fluent_wvr::component_downcast_ref;
+use fluent_wvr::prelude::*;
 use protopyne_chart_model::ChartRow;
-use protopyne_kernels::smoothing::SmoothingFamily;
 use protopyne_kernels::builtin_registry;
 use protopyne_kernels::pine::manifest::{IndicatorManifestEntry, ManifestParity};
-use protopyne_types::{Validate, check_for_execute, valid_output};
+use protopyne_kernels::smoothing::SmoothingFamily;
+use protopyne_types::{check_for_execute, valid_output, Validate};
 
 use fluent_egui::{
-    CatalogModal, EguiError, IndicatorStyle, ReadoutValue, SlotAttachment, ThemeConfig, Viewport,
-    cache_key, needs_column_aggregation, paint_oscillator_styled,
-    proportional_line_points, sampled_line_points, translate_points, visible_rows,
+    cache_key, needs_column_aggregation, paint_oscillator_styled, proportional_line_points,
+    sampled_line_points, translate_points, visible_rows, CatalogModal, EguiError, IndicatorStyle,
+    ReadoutValue, SlotAttachment, ThemeConfig, Viewport,
 };
 
-use crate::fast_mas::{FastMasConfig, evaluate_fast_mas};
-use crate::delta_volume_profile::{DELTA_VOLUME_PROFILE_ID, DeltaVolumeProfileIndicator};
-use crate::integration_lite::{IntegrationLiteConfig, integration_lite_sub_pane};
+use crate::delta_volume_profile::{DeltaVolumeProfileIndicator, DELTA_VOLUME_PROFILE_ID};
+use crate::fast_mas::{evaluate_fast_mas, FastMasConfig};
+use crate::integration_lite::{integration_lite_sub_pane, IntegrationLiteConfig};
 use crate::topology::{
-    SeriesCatalog, SeriesSource, consumer_cache_key, kernel_series,
-    kernel_warmup, resolve_input_column, series_frame,
+    consumer_cache_key, kernel_series, kernel_warmup, resolve_input_column, series_frame,
+    SeriesCatalog, SeriesSource,
 };
 
 /// Stable id of the IntegrationLite script indicator.
@@ -79,7 +79,13 @@ impl IndicatorCategory {
     /// Every tab, in render order.
     #[must_use]
     pub fn all() -> [Self; 5] {
-        [Self::All, Self::Favorites, Self::MyScripts, Self::Technical, Self::Financial]
+        [
+            Self::All,
+            Self::Favorites,
+            Self::MyScripts,
+            Self::Technical,
+            Self::Financial,
+        ]
     }
 
     /// The tab label the modal renders.
@@ -160,6 +166,11 @@ pub trait ChartIndicator: Send + Sync {
     /// The pane-plan node names this plugin registers for `config`.
     fn plan_nodes(&self, config: &dyn Component) -> Result<Vec<String>, EguiError>;
 
+    /// Fingerprint of the live `config`, over the same serialized fields
+    /// `evaluate` folds into its series keys — so a gate holding this key
+    /// can never serve stale evaluations after a config edit.
+    fn config_key(&self, config: &dyn Component) -> Result<u64, EguiError>;
+
     /// The published nodes this plugin reads for `config`: its
     /// [`SeriesSource`] edge, empty for bar-reading plugins. The workspace
     /// registers these as plan dependencies, so evaluation orders producer
@@ -205,7 +216,9 @@ pub trait ChartIndicator: Send + Sync {
         _config: &dyn Component,
         style: &IndicatorStyle,
     ) -> Result<(), EguiError> {
-        paint_series(painter, evaluation, viewport, origin, base, width_px, theme, style)
+        paint_series(
+            painter, evaluation, viewport, origin, base, width_px, theme, style,
+        )
     }
 
     /// Paint a sub-pane attachment (default: one polyline per series).
@@ -221,7 +234,9 @@ pub trait ChartIndicator: Send + Sync {
         _config: &dyn Component,
         style: &IndicatorStyle,
     ) -> Result<(), EguiError> {
-        paint_series(painter, evaluation, viewport, origin, base, width_px, theme, style)
+        paint_series(
+            painter, evaluation, viewport, origin, base, width_px, theme, style,
+        )
     }
 }
 
@@ -340,7 +355,16 @@ impl ChartIndicator for IntegrationLiteIndicator {
     }
 
     fn plan_nodes(&self, _config: &dyn Component) -> Result<Vec<String>, EguiError> {
-        Ok(INTEGRATION_LITE_NODES.iter().map(|node| (*node).to_owned()).collect())
+        Ok(INTEGRATION_LITE_NODES
+            .iter()
+            .map(|node| (*node).to_owned())
+            .collect())
+    }
+
+    fn config_key(&self, config: &dyn Component) -> Result<u64, EguiError> {
+        let config = component_downcast_ref::<IntegrationLiteConfig>(config)
+            .ok_or_else(|| wrong_config(self.id(), "IntegrationLite"))?;
+        Ok(config_fingerprint(config))
     }
 
     fn evaluate(
@@ -436,7 +460,16 @@ impl ChartIndicator for FastMasIndicator {
     fn plan_nodes(&self, config: &dyn Component) -> Result<Vec<String>, EguiError> {
         let config = component_downcast_ref::<FastMasConfig>(config)
             .ok_or_else(|| wrong_config(self.id(), "FastMas"))?;
-        Ok(fast_mas_nodes(config).into_iter().map(str::to_owned).collect())
+        Ok(fast_mas_nodes(config)
+            .into_iter()
+            .map(str::to_owned)
+            .collect())
+    }
+
+    fn config_key(&self, config: &dyn Component) -> Result<u64, EguiError> {
+        let config = component_downcast_ref::<FastMasConfig>(config)
+            .ok_or_else(|| wrong_config(self.id(), "FastMas"))?;
+        Ok(config_fingerprint(config))
     }
 
     fn plan_deps(&self, config: &dyn Component) -> Result<Vec<String>, EguiError> {
@@ -486,7 +519,9 @@ impl ChartIndicator for FastMasIndicator {
         // One polyline per average through the shared seam — the same
         // sampler pair and the same styled emitter as every line-like
         // series, so no second polyline mapping can drift from it.
-        paint_series(painter, evaluation, viewport, origin, base, width_px, theme, style)
+        paint_series(
+            painter, evaluation, viewport, origin, base, width_px, theme, style,
+        )
     }
 }
 
@@ -509,7 +544,7 @@ fn default_kernel_source() -> String {
 /// One kernel plugin's configuration: which kernel, its length, and its
 /// paint style.
 #[derive(
-    Debug, Clone, bon::Builder, serde::Serialize, serde::Deserialize, FieldAccess, Describable
+    Debug, Clone, bon::Builder, serde::Serialize, serde::Deserialize, FieldAccess, Describable,
 )]
 #[builder(start_fn = new)]
 pub struct KernelIndicatorConfig {
@@ -521,13 +556,20 @@ pub struct KernelIndicatorConfig {
     #[field(desc = "Kernel length")]
     #[builder(default = default_kernel_length())]
     pub length: i64,
-    /// Line theme style key.
-    #[field(desc = "Line theme style key")]
+    /// Line theme style key: a catalogue pick, never free text.
+    #[field(
+        desc = "Line theme style key",
+        variants = "crate::topology::theme_style_keys"
+    )]
     #[builder(default = default_kernel_style())]
     pub style: String,
-    /// Input series: a price-source name (`close`, `hl2`, ...) or
-    /// `series:<node>` naming a published line (`fast_mas:first`, ...).
-    #[field(desc = "Input series (price source or series:<node>)")]
+    /// Input series: a price-source catalogue pick (`close`, `hl2`, ...) or
+    /// `series:<node>` naming a published line (`fast_mas:first`, ...). The
+    /// series picker beside the settings pane offers the live producer nodes.
+    #[field(
+        desc = "Input series (price source or series:<node>)",
+        variants = "crate::topology::price_source_ids"
+    )]
     #[builder(default = default_kernel_source())]
     pub source: String,
 }
@@ -542,8 +584,9 @@ impl KernelIndicatorConfig {
                 reason: "kernel id must not be empty".to_owned(),
             });
         }
-        let registry =
-            builtin_registry().map_err(|error| EguiError::Dependency { reason: error.to_string() })?;
+        let registry = builtin_registry().map_err(|error| EguiError::Dependency {
+            reason: error.to_string(),
+        })?;
         if registry.get(&self.kernel).is_none() {
             return Err(EguiError::InvalidParam {
                 what: "kernel".to_owned(),
@@ -606,7 +649,10 @@ impl WorkUnit for KernelIndicatorConfig {
 
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         check_for_execute(self, "kernel indicator config invalid")?;
-        Ok(valid_output(format!("kernel indicator ready ({})", self.kernel)))
+        Ok(valid_output(format!(
+            "kernel indicator ready ({})",
+            self.kernel
+        )))
     }
 }
 
@@ -616,7 +662,9 @@ impl_component!(KernelIndicatorConfig);
 /// the registry itself fails to build (which also refuses instantiation).
 #[must_use]
 pub fn kernel_ids() -> Vec<String> {
-    builtin_registry().map(|registry| registry.ids()).unwrap_or_default()
+    builtin_registry()
+        .map(|registry| registry.ids())
+        .unwrap_or_default()
 }
 
 /// Display title for a kernel id: the kernel's own spec name, falling back
@@ -625,7 +673,11 @@ pub fn kernel_ids() -> Vec<String> {
 pub fn kernel_title(kernel: &str) -> String {
     builtin_registry()
         .ok()
-        .and_then(|registry| registry.get(kernel).map(|indicator| indicator.spec().display_name.clone()))
+        .and_then(|registry| {
+            registry
+                .get(kernel)
+                .map(|indicator| indicator.spec().display_name.clone())
+        })
         .unwrap_or_else(|| kernel.to_owned())
 }
 
@@ -667,9 +719,15 @@ impl KernelIndicator {
     }
 
     /// Bind a plugin to a kernel, refusing one the registry does not hold.
-    fn bind(id: &str, title: &str, kernel: &str, attachment: SlotAttachment) -> Result<Self, EguiError> {
-        let registry =
-            builtin_registry().map_err(|error| EguiError::Dependency { reason: error.to_string() })?;
+    fn bind(
+        id: &str,
+        title: &str,
+        kernel: &str,
+        attachment: SlotAttachment,
+    ) -> Result<Self, EguiError> {
+        let registry = builtin_registry().map_err(|error| EguiError::Dependency {
+            reason: error.to_string(),
+        })?;
         if registry.get(kernel).is_none() {
             return Err(EguiError::InvalidParam {
                 what: "kernel".to_owned(),
@@ -678,7 +736,12 @@ impl KernelIndicator {
                 ),
             });
         }
-        Ok(Self { id: id.to_owned(), title: title.to_owned(), kernel: kernel.to_owned(), attachment })
+        Ok(Self {
+            id: id.to_owned(),
+            title: title.to_owned(),
+            kernel: kernel.to_owned(),
+            attachment,
+        })
     }
 }
 
@@ -696,11 +759,21 @@ impl ChartIndicator for KernelIndicator {
     }
 
     fn default_config(&self) -> Box<dyn Component> {
-        Box::new(KernelIndicatorConfig::new().kernel(self.kernel.clone()).build())
+        Box::new(
+            KernelIndicatorConfig::new()
+                .kernel(self.kernel.clone())
+                .build(),
+        )
     }
 
     fn plan_nodes(&self, _config: &dyn Component) -> Result<Vec<String>, EguiError> {
         Ok(vec![format!("kernel:{}", self.id)])
+    }
+
+    fn config_key(&self, config: &dyn Component) -> Result<u64, EguiError> {
+        let config = component_downcast_ref::<KernelIndicatorConfig>(config)
+            .ok_or_else(|| wrong_config(self.id(), "KernelIndicator"))?;
+        Ok(config_fingerprint(config))
     }
 
     fn plan_deps(&self, config: &dyn Component) -> Result<Vec<String>, EguiError> {
@@ -718,14 +791,17 @@ impl ChartIndicator for KernelIndicator {
         let config = component_downcast_ref::<KernelIndicatorConfig>(config)
             .ok_or_else(|| wrong_config(self.id(), "KernelIndicator"))?;
         config.validate()?;
-        let source = SeriesSource::parse(&config.source).ok_or_else(|| EguiError::InvalidParam {
-            what: "source".to_owned(),
-            reason: format!("unknown input source {:?}", config.source),
-        })?;
+        let source =
+            SeriesSource::parse(&config.source).ok_or_else(|| EguiError::InvalidParam {
+                what: "source".to_owned(),
+                reason: format!("unknown input source {:?}", config.source),
+            })?;
         let (column, producer) = resolve_input_column(&source, rows, series)?;
         let frame = series_frame(rows, &column)?;
         let params = protopyne_kernels::smoothing::params_for_kernel(&config.kernel, config.length)
-            .map_err(|error| EguiError::Dependency { reason: error.to_string() })?;
+            .map_err(|error| EguiError::Dependency {
+                reason: error.to_string(),
+            })?;
         let mut values = kernel_series(&config.kernel, &params, &frame)?;
         // Warmup composes along the path: with a producer, holes cover the
         // producer's leading holes plus the kernel's own warmup. Without
@@ -738,7 +814,11 @@ impl ChartIndicator for KernelIndicator {
             }
         }
         let node = format!("kernel:{}", self.id);
-        let key = series_key_for(&node, config_fingerprint(config), producer_series_key(&config.source, series));
+        let key = series_key_for(
+            &node,
+            config_fingerprint(config),
+            producer_series_key(&config.source, series),
+        );
         let attachment = self.attachment;
         Ok(IndicatorEvaluation {
             series: vec![IndicatorSeries {
@@ -768,7 +848,11 @@ pub fn build_indicator_catalog_with_manifest(
     rows: &[IndicatorManifestEntry],
 ) -> Result<CatalogModal<IndicatorCategory>, EguiError> {
     let mut catalog = CatalogModal::new("Indicators");
-    catalog.register(INTEGRATION_LITE_ID, "Integration Lite", IndicatorCategory::MyScripts)?;
+    catalog.register(
+        INTEGRATION_LITE_ID,
+        "Integration Lite",
+        IndicatorCategory::MyScripts,
+    )?;
     catalog.register(FAST_MAS_ID, "Fast MAs", IndicatorCategory::MyScripts)?;
     catalog.register(
         DELTA_VOLUME_PROFILE_ID,
@@ -778,12 +862,17 @@ pub fn build_indicator_catalog_with_manifest(
     for row in rows {
         catalog.register(&row.id, &row.title, IndicatorCategory::MyScripts)?;
     }
-    let registry =
-        builtin_registry().map_err(|error| EguiError::Dependency { reason: error.to_string() })?;
+    let registry = builtin_registry().map_err(|error| EguiError::Dependency {
+        reason: error.to_string(),
+    })?;
     for id in registry.ids() {
         catalog.register(&id, &kernel_title(&id), IndicatorCategory::Technical)?;
     }
-    catalog.register(REGIME_ID, "Market Regime Monitor", IndicatorCategory::Financial)?;
+    catalog.register(
+        REGIME_ID,
+        "Market Regime Monitor",
+        IndicatorCategory::Financial,
+    )?;
     catalog.register(HEALTH_ID, "MA Health Monitor", IndicatorCategory::Financial)?;
     Ok(catalog)
 }
@@ -816,10 +905,13 @@ pub fn instantiate_indicator_with_manifest(
     rows: &[IndicatorManifestEntry],
 ) -> Result<Box<dyn ChartIndicator>, EguiError> {
     if let Some(stem) = id.strip_prefix("pine:") {
-        let entry = rows.iter().find(|row| row.id == id).ok_or_else(|| EguiError::InvalidParam {
-            what: "indicator".to_owned(),
-            reason: format!("unknown indicator {id:?}: no manifest row lists it"),
-        })?;
+        let entry =
+            rows.iter()
+                .find(|row| row.id == id)
+                .ok_or_else(|| EguiError::InvalidParam {
+                    what: "indicator".to_owned(),
+                    reason: format!("unknown indicator {id:?}: no manifest row lists it"),
+                })?;
         if let ManifestParity::Unverified { reason } = &entry.parity {
             return Err(EguiError::InvalidParam {
                 what: "indicator".to_owned(),
@@ -828,7 +920,9 @@ pub fn instantiate_indicator_with_manifest(
         }
         let backing = manifest_backing(id).ok_or_else(|| EguiError::InvalidParam {
             what: "indicator".to_owned(),
-            reason: format!("{stem:?} has no native plugin: pine-backed execution is not wired yet"),
+            reason: format!(
+                "{stem:?} has no native plugin: pine-backed execution is not wired yet"
+            ),
         })?;
         return instantiate_indicator(backing);
     }
@@ -836,13 +930,20 @@ pub fn instantiate_indicator_with_manifest(
         INTEGRATION_LITE_ID => Ok(Box::new(IntegrationLiteIndicator::new())),
         FAST_MAS_ID => Ok(Box::new(FastMasIndicator::new())),
         DELTA_VOLUME_PROFILE_ID => Ok(Box::new(DeltaVolumeProfileIndicator::new())),
-        REGIME_ID => {
-            Ok(Box::new(KernelIndicator::monitor(REGIME_ID, "Market Regime Monitor", "eit")?))
-        }
-        HEALTH_ID => Ok(Box::new(KernelIndicator::monitor(HEALTH_ID, "MA Health Monitor", "vwma")?)),
+        REGIME_ID => Ok(Box::new(KernelIndicator::monitor(
+            REGIME_ID,
+            "Market Regime Monitor",
+            "eit",
+        )?)),
+        HEALTH_ID => Ok(Box::new(KernelIndicator::monitor(
+            HEALTH_ID,
+            "MA Health Monitor",
+            "vwma",
+        )?)),
         other => {
-            let registry = builtin_registry()
-                .map_err(|error| EguiError::Dependency { reason: error.to_string() })?;
+            let registry = builtin_registry().map_err(|error| EguiError::Dependency {
+                reason: error.to_string(),
+            })?;
             if registry.get(other).is_some() {
                 Ok(Box::new(KernelIndicator::new(other)?))
             } else {

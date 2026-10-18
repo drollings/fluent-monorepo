@@ -38,12 +38,10 @@ fn linked(driver: &str) -> Vec<LinkedModule> {
 
 fn bar_ms(close: &str, ts_millis: i64) -> Bar {
     Bar::new()
-        .ts(
-            chrono::Utc
-                .timestamp_opt(ts_millis, 0)
-                .single()
-                .expect("valid test timestamp"),
-        )
+        .ts(chrono::Utc
+            .timestamp_opt(ts_millis, 0)
+            .single()
+            .expect("valid test timestamp"))
         .o("100.00".parse().expect("decimal"))
         .h("101.00".parse().expect("decimal"))
         .l("99.00".parse().expect("decimal"))
@@ -67,7 +65,10 @@ fn run_linked(driver: &str, bars: &[Bar], chart_period: &str) -> RunOutcome {
 }
 
 fn two_bars() -> Vec<Bar> {
-    vec![bar_ms("10.00", 1_700_000_000_000), bar_ms("11.00", 1_700_000_060_000)]
+    vec![
+        bar_ms("10.00", 1_700_000_000_000),
+        bar_ms("11.00", 1_700_000_060_000),
+    ]
 }
 
 fn num(outcome: &RunOutcome, at_bar: usize, name: &str) -> f64 {
@@ -167,12 +168,7 @@ fn timeframe_from_milliseconds_round_trips_and_falls_back() {
          f_s10 = UTIL.getTimeframeFromMS(10000)"
     );
     let outcome = run_linked(&driver, &two_bars(), "5");
-    for (name, want) in [
-        ("f_m1", "M1"),
-        ("f_h1", "H1"),
-        ("f_d", "D1"),
-        ("f_w", "W1"),
-    ] {
+    for (name, want) in [("f_m1", "M1"), ("f_h1", "H1"), ("f_d", "D1"), ("f_w", "W1")] {
         assert_eq!(member(&outcome, 0, name).1, want, "{name}");
     }
     // Unknown intervals read `NA`, including the ten-second row the reverse
@@ -243,7 +239,11 @@ fn bars_in_timeframes_and_chart_match_pin_ratios() {
     );
     let outcome = run_linked(&driver, &two_bars(), "5");
     assert_eq!(num(&outcome, 0, "b_up"), 5.0, "five ones fit a five");
-    assert_eq!(num(&outcome, 0, "b_down"), 1.0, "inverted ratios floor to one");
+    assert_eq!(
+        num(&outcome, 0, "b_down"),
+        1.0,
+        "inverted ratios floor to one"
+    );
     assert_eq!(num(&outcome, 0, "b_same"), 1.0, "equal frames read one");
     assert!(flag(&outcome, 0, "c_hit"), "five-minute chart matches");
     assert!(!flag(&outcome, 0, "c_miss"), "one-minute target misses");
@@ -291,7 +291,11 @@ fn size_line_position_tables_stay_opaque_and_pane_aware() {
         ("l_dashed", "line", "style_dashed"),
         ("p_corner", "position", "top_right"),
     ] {
-        assert_eq!(member(&outcome, 0, name), (namespace.to_owned(), want.to_owned()), "{name}");
+        assert_eq!(
+            member(&outcome, 0, name),
+            (namespace.to_owned(), want.to_owned()),
+            "{name}"
+        );
     }
     // Pane positions collapse onto their chart corner.
     assert_eq!(
@@ -427,7 +431,10 @@ fn scheduler_timing_pins_due_reschedule_and_catch_up() {
     assert!(flag(&outcome, 3, "due"), "far jump still fires once");
     for (at_bar, want_next) in [(1, base + 120_000), (2, base + 180_000)] {
         let next = scheduled_at(&outcome, at_bar, 60_000);
-        assert_eq!(next, want_next, "normal case extends the prior slot at {at_bar}");
+        assert_eq!(
+            next, want_next,
+            "normal case extends the prior slot at {at_bar}"
+        );
     }
     // The far jump exceeds three intervals, so the frame resets from the
     // current bar instead of extending the stale slot.
@@ -478,4 +485,3 @@ fn earliest_due(outcome: &RunOutcome, at_bar: usize) -> i64 {
         other => panic!("scheduler holds an instance at {at_bar}, got {other:?}"),
     }
 }
-

@@ -8,6 +8,7 @@
 use protopyne_types::Bar;
 use rust_decimal::Decimal;
 
+use crate::convert::ChartRow;
 use crate::error::ChartModelError;
 
 /// Smoothed heikin-ashi candles over closed bars.
@@ -46,6 +47,38 @@ pub fn heikin_ashi(bars: &[Bar]) -> Vec<Bar> {
     out
 }
 
+/// Heikin-Ashi over display rows: the same recurrence as [`heikin_ashi`],
+/// seeded once from row zero. Display smoothing only, never a decision
+/// input — the sole home of the row-space recurrence, so paint and any
+/// future caller share one seeding instead of re-seeding per window
+/// (windowing first would miscompute every open past the seam).
+#[must_use]
+pub fn heikin_rows_of(rows: &[ChartRow]) -> Vec<ChartRow> {
+    let mut out = Vec::with_capacity(rows.len());
+    let mut prev_open: Option<f64> = None;
+    let mut prev_close: Option<f64> = None;
+    for row in rows {
+        let ha_close = (row.open + row.high + row.low + row.close) / 4.0;
+        let ha_open = match (prev_open, prev_close) {
+            (Some(open), Some(close)) => f64::midpoint(open, close),
+            _ => f64::midpoint(row.open, row.close),
+        };
+        let ha_high = row.high.max(ha_open).max(ha_close);
+        let ha_low = row.low.min(ha_open).min(ha_close);
+        out.push(ChartRow {
+            time: row.time,
+            open: ha_open,
+            high: ha_high,
+            low: ha_low,
+            close: ha_close,
+            volume: row.volume,
+        });
+        prev_open = Some(ha_open);
+        prev_close = Some(ha_close);
+    }
+    out
+}
+
 /// Fixed-brick renko series over bar closes.
 ///
 /// Walks closes from the first bar: every `brick_size` move from the last
@@ -53,10 +86,7 @@ pub fn heikin_ashi(bars: &[Bar]) -> Vec<Bar> {
 /// edge, wicks collapsed to the brick body). Timestamps come from the bar
 /// that triggered the brick; volume is zero (bricks aggregate price, not
 /// flow). A non-positive brick size is refused fail-closed.
-pub fn renko_bricks(
-    bars: &[Bar],
-    brick_size: Decimal,
-) -> Result<Vec<Bar>, ChartModelError> {
+pub fn renko_bricks(bars: &[Bar], brick_size: Decimal) -> Result<Vec<Bar>, ChartModelError> {
     if brick_size <= Decimal::ZERO {
         return Err(ChartModelError::InvalidParam {
             what: "brick_size".to_owned(),
@@ -70,9 +100,17 @@ pub fn renko_bricks(
     let mut edge = bars[0].c;
     for bar in &bars[1..] {
         while (bar.c - edge).abs() >= brick_size {
-            let direction = if bar.c > edge { Decimal::ONE } else { Decimal::NEGATIVE_ONE };
+            let direction = if bar.c > edge {
+                Decimal::ONE
+            } else {
+                Decimal::NEGATIVE_ONE
+            };
             let next = edge + direction * brick_size;
-            let (open, close) = if direction > Decimal::ZERO { (edge, next) } else { (next, edge) };
+            let (open, close) = if direction > Decimal::ZERO {
+                (edge, next)
+            } else {
+                (next, edge)
+            };
             // Renko bricks are direction bodies: open/close are the edges,
             // wicks collapse onto the body so no second high/low math lives here.
             let (high, low) = (close.max(open), close.min(open));

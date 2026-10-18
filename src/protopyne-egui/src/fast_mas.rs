@@ -16,12 +16,12 @@ use fluent_wvr::{Describable, FieldAccess};
 use protopyne_chart_model::ChartRow;
 use protopyne_kernels::indicator::OwnedOhlcv;
 use protopyne_kernels::smoothing::{SmoothingArgs, SmoothingFamily};
-use protopyne_types::{Validate, check_for_execute, valid_output};
+use protopyne_types::{check_for_execute, valid_output, Validate};
 
 use fluent_egui::{
-    EguiError, IndicatorStyle, ThemeConfig, Viewport, needs_column_aggregation,
-    paint_oscillator_styled, proportional_line_points, sampled_line_points, translate_points,
-    visible_rows,
+    needs_column_aggregation, paint_oscillator_styled, proportional_line_points,
+    sampled_line_points, translate_points, visible_rows, EguiError, IndicatorStyle, ThemeConfig,
+    Viewport,
 };
 
 /// The fixed SMA trio the reference plots (lengths are not parameterized).
@@ -111,12 +111,15 @@ fn default_source() -> String {
 /// fragment the one settings schema the modal renders from.
 #[allow(clippy::struct_excessive_bools)]
 #[derive(
-    Debug, Clone, bon::Builder, serde::Serialize, serde::Deserialize, FieldAccess, Describable
+    Debug, Clone, bon::Builder, serde::Serialize, serde::Deserialize, FieldAccess, Describable,
 )]
 #[builder(start_fn = new)]
 pub struct FastMasConfig {
     /// Smoothing family for the first average.
-    #[field(desc = "First MA smoothing", variants = "protopyne_kernels::smoothing::length_smoothing_ids")]
+    #[field(
+        desc = "First MA smoothing",
+        variants = "protopyne_kernels::smoothing::length_smoothing_ids"
+    )]
     #[builder(default = default_first_ma_type())]
     pub first_ma_type: String,
     /// Length of the first average.
@@ -124,11 +127,17 @@ pub struct FastMasConfig {
     #[builder(default = default_first_ma_length())]
     pub first_ma_length: i64,
     /// Theme style key for the first average.
-    #[field(desc = "First MA theme style key")]
+    #[field(
+        desc = "First MA theme style key",
+        variants = "crate::topology::theme_style_keys"
+    )]
     #[builder(default = default_line_style())]
     pub first_ma_style: String,
     /// Smoothing family for the second average.
-    #[field(desc = "Second MA smoothing", variants = "protopyne_kernels::smoothing::length_smoothing_ids")]
+    #[field(
+        desc = "Second MA smoothing",
+        variants = "protopyne_kernels::smoothing::length_smoothing_ids"
+    )]
     #[builder(default = default_second_ma_type())]
     pub second_ma_type: String,
     /// Length of the second average.
@@ -136,11 +145,17 @@ pub struct FastMasConfig {
     #[builder(default = default_second_ma_length())]
     pub second_ma_length: i64,
     /// Theme style key for the second average.
-    #[field(desc = "Second MA theme style key")]
+    #[field(
+        desc = "Second MA theme style key",
+        variants = "crate::topology::theme_style_keys"
+    )]
     #[builder(default = default_accent_style())]
     pub second_ma_style: String,
     /// Smoothing family for the signal average.
-    #[field(desc = "Signal MA smoothing", variants = "protopyne_kernels::smoothing::length_smoothing_ids")]
+    #[field(
+        desc = "Signal MA smoothing",
+        variants = "protopyne_kernels::smoothing::length_smoothing_ids"
+    )]
     #[builder(default = default_ema_type())]
     pub signal_ma_type: String,
     /// Length of the signal average.
@@ -148,11 +163,17 @@ pub struct FastMasConfig {
     #[builder(default = default_signal_ma_length())]
     pub signal_ma_length: i64,
     /// Theme style key for the signal average.
-    #[field(desc = "Signal MA theme style key")]
+    #[field(
+        desc = "Signal MA theme style key",
+        variants = "crate::topology::theme_style_keys"
+    )]
     #[builder(default = default_accent_style())]
     pub signal_ma_style: String,
     /// Smoothing family for the mean average.
-    #[field(desc = "Mean MA smoothing", variants = "protopyne_kernels::smoothing::length_smoothing_ids")]
+    #[field(
+        desc = "Mean MA smoothing",
+        variants = "protopyne_kernels::smoothing::length_smoothing_ids"
+    )]
     #[builder(default = default_ema_type())]
     pub mean_ma_type: String,
     /// Length of the mean average.
@@ -160,11 +181,17 @@ pub struct FastMasConfig {
     #[builder(default = default_mean_ma_length())]
     pub mean_ma_length: i64,
     /// Theme style key for the mean average.
-    #[field(desc = "Mean MA theme style key")]
+    #[field(
+        desc = "Mean MA theme style key",
+        variants = "crate::topology::theme_style_keys"
+    )]
     #[builder(default = default_line_style())]
     pub mean_ma_style: String,
     /// Smoothing family for the trend average.
-    #[field(desc = "Trend MA smoothing", variants = "protopyne_kernels::smoothing::length_smoothing_ids")]
+    #[field(
+        desc = "Trend MA smoothing",
+        variants = "protopyne_kernels::smoothing::length_smoothing_ids"
+    )]
     #[builder(default = default_ema_type())]
     pub trend_ma_type: String,
     /// Length of the trend average.
@@ -172,11 +199,17 @@ pub struct FastMasConfig {
     #[builder(default = default_trend_ma_length())]
     pub trend_ma_length: i64,
     /// Theme style key for the trend average.
-    #[field(desc = "Trend MA theme style key")]
+    #[field(
+        desc = "Trend MA theme style key",
+        variants = "crate::topology::theme_style_keys"
+    )]
     #[builder(default = default_line_style())]
     pub trend_ma_style: String,
     /// Smoothing family for the base average.
-    #[field(desc = "Base MA smoothing", variants = "protopyne_kernels::smoothing::length_smoothing_ids")]
+    #[field(
+        desc = "Base MA smoothing",
+        variants = "protopyne_kernels::smoothing::length_smoothing_ids"
+    )]
     #[builder(default = default_ema_type())]
     pub base_ma_type: String,
     /// Length of the base average.
@@ -184,11 +217,17 @@ pub struct FastMasConfig {
     #[builder(default = default_base_ma_length())]
     pub base_ma_length: i64,
     /// Theme style key for the base average.
-    #[field(desc = "Base MA theme style key")]
+    #[field(
+        desc = "Base MA theme style key",
+        variants = "crate::topology::theme_style_keys"
+    )]
     #[builder(default = default_line_style())]
     pub base_ma_style: String,
     /// Theme style key for the SMA trio.
-    #[field(desc = "SMA theme style key")]
+    #[field(
+        desc = "SMA theme style key",
+        variants = "crate::topology::theme_style_keys"
+    )]
     #[builder(default = default_sma_style())]
     pub sma_style: String,
     /// Whether the first average paints.
@@ -209,7 +248,12 @@ pub struct FastMasConfig {
     pub show_smas: bool,
     /// Input series: a price-source name (`close`, `hl2`, ...) or
     /// `series:<node>` naming a published line (`fast_mas:first`, ...).
-    #[field(desc = "Input series (price source or series:<node>)")]
+    /// Bar inputs are a catalogue pick; producer inputs ride `series:<node>`
+    /// and are offered by the series picker beside the settings pane.
+    #[field(
+        desc = "Input series (price source or series:<node>)",
+        variants = "crate::topology::price_source_ids"
+    )]
     #[builder(default = default_source())]
     pub source: String,
 }
@@ -297,7 +341,10 @@ impl WorkUnit for FastMasConfig {
 
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         check_for_execute(self, "fast mas config invalid")?;
-        Ok(valid_output(format!("fast mas ready (first {})", self.first_ma_type)))
+        Ok(valid_output(format!(
+            "fast mas ready (first {})",
+            self.first_ma_type
+        )))
     }
 }
 
@@ -336,8 +383,17 @@ fn eval_line(
         .map_err(|error| crate::topology::describe_kernel(&error))?;
     let values = family
         .evaluate(frame, &SmoothingArgs::length(length))
-        .map_err(|error| EguiError::Dependency { reason: error.to_string() })?;
-    Ok((FastMasLine { name: name.to_owned(), values, style: style.to_owned() }, warmup))
+        .map_err(|error| EguiError::Dependency {
+            reason: error.to_string(),
+        })?;
+    Ok((
+        FastMasLine {
+            name: name.to_owned(),
+            values,
+            style: style.to_owned(),
+        },
+        warmup,
+    ))
 }
 
 /// Extend a line's leading holes over the composed warmup: the producer's
@@ -381,10 +437,12 @@ pub fn evaluate_fast_mas(
             (crate::topology::source_frame(rows, *price), 0)
         }
         crate::topology::SeriesSource::Series(node) => {
-            let values = series.resolve(node).ok_or_else(|| EguiError::InvalidParam {
-                what: "series".to_owned(),
-                reason: format!("unknown input series {node:?}"),
-            })?;
+            let values = series
+                .resolve(node)
+                .ok_or_else(|| EguiError::InvalidParam {
+                    what: "series".to_owned(),
+                    reason: format!("unknown input series {node:?}"),
+                })?;
             let warmup = series.leading_holes(node).unwrap_or(0);
             (crate::topology::series_frame(rows, values)?, warmup)
         }
@@ -397,7 +455,12 @@ pub fn evaluate_fast_mas(
         Ok(())
     };
     if config.show_first_ma {
-        push("First MA", &config.first_ma_type, config.first_ma_length, &config.first_ma_style)?;
+        push(
+            "First MA",
+            &config.first_ma_type,
+            config.first_ma_length,
+            &config.first_ma_style,
+        )?;
     }
     if config.show_second_ma {
         push(
@@ -408,10 +471,30 @@ pub fn evaluate_fast_mas(
         )?;
     }
     if config.show_extra_mas {
-        push("Signal MA", &config.signal_ma_type, config.signal_ma_length, &config.signal_ma_style)?;
-        push("Mean MA", &config.mean_ma_type, config.mean_ma_length, &config.mean_ma_style)?;
-        push("Trend MA", &config.trend_ma_type, config.trend_ma_length, &config.trend_ma_style)?;
-        push("Base MA", &config.base_ma_type, config.base_ma_length, &config.base_ma_style)?;
+        push(
+            "Signal MA",
+            &config.signal_ma_type,
+            config.signal_ma_length,
+            &config.signal_ma_style,
+        )?;
+        push(
+            "Mean MA",
+            &config.mean_ma_type,
+            config.mean_ma_length,
+            &config.mean_ma_style,
+        )?;
+        push(
+            "Trend MA",
+            &config.trend_ma_type,
+            config.trend_ma_length,
+            &config.trend_ma_style,
+        )?;
+        push(
+            "Base MA",
+            &config.base_ma_type,
+            config.base_ma_length,
+            &config.base_ma_style,
+        )?;
     }
     if config.show_smas {
         for (name, length) in SMA_LENGTHS {

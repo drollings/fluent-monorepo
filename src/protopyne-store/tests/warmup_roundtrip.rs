@@ -10,7 +10,7 @@
 //! adjust exactly, across a frozen table of `(warmup, timeframe, limit)`
 //! triples.
 
-use protopyne_types::{Timeframe, adjust_fetch_bounds, trim_indicator_output, warmup_headroom};
+use protopyne_types::{adjust_fetch_bounds, trim_indicator_output, warmup_headroom, Timeframe};
 
 /// The user-requested start every row of the table widens from: large enough
 /// that no headroom in the table clamps it at zero, so every row exercises

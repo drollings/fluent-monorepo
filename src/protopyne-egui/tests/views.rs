@@ -7,7 +7,7 @@
 //! are uncached reads of fresh gateway state (a repeat pull rebuilds an
 //! equal bundle; a changed journal rebuilds a changed one).
 
-use crate::views::{HealthModel, InboxModel, PortfolioModel, Provenance, ViewsBundle, load_bundle};
+use crate::views::{load_bundle, HealthModel, InboxModel, PortfolioModel, Provenance, ViewsBundle};
 use protopyne_view::{HealthView, MockGateway, PortfolioView, ProposalView, TerminalGateway};
 
 fn mock_gateway() -> MockGateway {
@@ -35,10 +35,24 @@ fn provenance_ordering_matches_journal_order() {
     assert_eq!(rows.len(), 2, "mock journal carries intent then fill");
 
     let provenance = Provenance::of(rows).expect("acyclic journal builds");
-    assert_eq!(provenance.timeline(), vec![1, 2], "provenance follows journal sequence order");
-    assert_eq!(provenance.followed_by(1), vec![2], "the fill follows the intent");
-    assert!(provenance.followed_by(2).is_empty(), "nothing follows the fill");
-    assert!(provenance.followed_by(99).is_empty(), "unknown rows have no followers");
+    assert_eq!(
+        provenance.timeline(),
+        vec![1, 2],
+        "provenance follows journal sequence order"
+    );
+    assert_eq!(
+        provenance.followed_by(1),
+        vec![2],
+        "the fill follows the intent"
+    );
+    assert!(
+        provenance.followed_by(2).is_empty(),
+        "nothing follows the fill"
+    );
+    assert!(
+        provenance.followed_by(99).is_empty(),
+        "unknown rows have no followers"
+    );
     assert_eq!(
         provenance.row(1).expect("row 1 exists").kind,
         "intent",
@@ -52,22 +66,36 @@ fn out_of_order_arrival_still_renders_causal_order() {
     // rows arrive fill-first across two interleaved clients, and the
     // timeline must still follow sequence numbers — with follow-ups
     // skipping the other client's rows.
-    let arrival =
-        vec![journal_row(3, "a", "fill"), journal_row(1, "a", "intent"), journal_row(2, "b", "intent")];
+    let arrival = vec![
+        journal_row(3, "a", "fill"),
+        journal_row(1, "a", "intent"),
+        journal_row(2, "b", "intent"),
+    ];
     let provenance = Provenance::of(arrival).expect("shuffled journal builds");
-    assert_eq!(provenance.timeline(), vec![1, 2, 3], "causal order, never arrival order");
+    assert_eq!(
+        provenance.timeline(),
+        vec![1, 2, 3],
+        "causal order, never arrival order"
+    );
     assert_eq!(
         provenance.followed_by(1),
         vec![3],
         "a's fill follows a's intent across b's interleaved row"
     );
-    assert!(provenance.followed_by(2).is_empty(), "b's chain ends at its intent");
+    assert!(
+        provenance.followed_by(2).is_empty(),
+        "b's chain ends at its intent"
+    );
 
     let bundle = ViewsBundle::of(
         &mock_health(),
         &mock_gateway().portfolio().expect("mock portfolio reads"),
         Vec::new(),
-        vec![journal_row(3, "a", "fill"), journal_row(1, "a", "intent"), journal_row(2, "b", "intent")],
+        vec![
+            journal_row(3, "a", "fill"),
+            journal_row(1, "a", "intent"),
+            journal_row(2, "b", "intent"),
+        ],
     )
     .expect("shuffled journal shapes");
     assert_eq!(
@@ -75,7 +103,11 @@ fn out_of_order_arrival_still_renders_causal_order() {
         vec![1, 2, 3],
         "the bundle stores sequence order, not arrival order"
     );
-    assert_eq!(bundle.provenance_order, vec![1, 2, 3], "order and journal agree");
+    assert_eq!(
+        bundle.provenance_order,
+        vec![1, 2, 3],
+        "order and journal agree"
+    );
 }
 
 #[test]
@@ -105,7 +137,10 @@ fn halted_trading_state_renders_halted() {
         ..mock_health()
     });
     assert!(halted.halted(), "Disabled renders as halted");
-    assert!(!halted.entry_affordance(), "halted shows no entry affordance");
+    assert!(
+        !halted.entry_affordance(),
+        "halted shows no entry affordance"
+    );
     assert!(!halted.exit_affordance(), "Disabled routes no exits either");
 
     let exit_only = HealthModel::of(&HealthView {
@@ -115,13 +150,25 @@ fn halted_trading_state_renders_halted() {
         ..mock_health()
     });
     assert!(exit_only.halted(), "ExitOnly is not the enabled state");
-    assert!(!exit_only.entry_affordance(), "exit-only shows no entry affordance");
-    assert!(exit_only.exit_affordance(), "exit-only keeps the exit affordance");
+    assert!(
+        !exit_only.entry_affordance(),
+        "exit-only shows no entry affordance"
+    );
+    assert!(
+        exit_only.exit_affordance(),
+        "exit-only keeps the exit affordance"
+    );
 
     let enabled = HealthModel::of(&mock_health());
     assert!(!enabled.halted(), "Enabled renders as live");
-    assert!(enabled.entry_affordance(), "enabled keeps the entry affordance");
-    assert!(enabled.exit_affordance(), "enabled keeps the exit affordance");
+    assert!(
+        enabled.entry_affordance(),
+        "enabled keeps the entry affordance"
+    );
+    assert!(
+        enabled.exit_affordance(),
+        "enabled keeps the exit affordance"
+    );
 }
 
 #[test]
@@ -218,7 +265,11 @@ fn grown_journal_rebuilds_a_changed_bundle() {
     // pull shapes — a new row can never read back as the old bundle.
     let gateway = mock_gateway();
     let first: ViewsBundle = load_bundle(&gateway).expect("first pull builds");
-    assert_eq!(first.provenance_order, vec![1, 2], "mock journal carries intent then fill");
+    assert_eq!(
+        first.provenance_order,
+        vec![1, 2],
+        "mock journal carries intent then fill"
+    );
 
     let grown = ExtraJournal {
         extra: protopyne_view::JournalRowView {
@@ -235,7 +286,11 @@ fn grown_journal_rebuilds_a_changed_bundle() {
         vec![1, 2, 3],
         "the rebuilt timeline extends the journal order"
     );
-    assert_eq!(third.journal.len(), 3, "the rebuilt bundle carries the new row");
+    assert_eq!(
+        third.journal.len(),
+        3,
+        "the rebuilt bundle carries the new row"
+    );
     assert_ne!(first, third, "an append never reads back as the old bundle");
 }
 
@@ -272,15 +327,24 @@ fn only_waiting_rows_carry_an_affordance() {
         inbox_row("gone", "Cancelled"),
         inbox_row("future", "AwaitingQuantumReview"),
     ]);
-    let actionable: Vec<&str> =
-        inbox.actionable().iter().map(|row| row.id.as_str()).collect();
+    let actionable: Vec<&str> = inbox
+        .actionable()
+        .iter()
+        .map(|row| row.id.as_str())
+        .collect();
     assert_eq!(actionable, vec!["waiting"], "only the waiting row acts");
     assert_eq!(inbox.settled().len(), 12, "everything else settles");
     assert!(!inbox.is_empty(), "a waiting row is non-empty");
     assert!(InboxModel::of(Vec::new()).is_empty(), "no rows is empty");
-    assert!(InboxModel::of(vec![inbox_row("yes", "Approved")]).is_empty(), "decided rows are empty");
+    assert!(
+        InboxModel::of(vec![inbox_row("yes", "Approved")]).is_empty(),
+        "decided rows are empty"
+    );
     assert!(InboxModel::is_actionable("PendingHuman"));
-    assert!(!InboxModel::is_actionable("Approved"), "decided tags carry no affordance");
+    assert!(
+        !InboxModel::is_actionable("Approved"),
+        "decided tags carry no affordance"
+    );
     assert!(
         !InboxModel::is_actionable("AwaitingQuantumReview"),
         "unknown tags fail closed"
@@ -294,7 +358,10 @@ fn decided_states_survive_the_bundle_round_trip() {
     let bundle = ViewsBundle::of(
         &mock_health(),
         &mock_gateway().portfolio().expect("mock portfolio reads"),
-        vec![inbox_row("waiting", "PendingHuman"), inbox_row("yes", "Approved")],
+        vec![
+            inbox_row("waiting", "PendingHuman"),
+            inbox_row("yes", "Approved"),
+        ],
         Vec::new(),
     )
     .expect("decided rows shape");

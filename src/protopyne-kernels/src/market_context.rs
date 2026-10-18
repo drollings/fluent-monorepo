@@ -24,7 +24,7 @@ use crate::averages::{AlmaIndicator, VwmaIndicator};
 use crate::bars::fast_tanh;
 use crate::ema::EmaIndicator;
 use crate::error::KernelError;
-use crate::indicator::{IndicatorRegistry, ParamSet, fin_or_none};
+use crate::indicator::{fin_or_none, IndicatorRegistry, ParamSet};
 use crate::math::div_or_none;
 use crate::mtf::{Lookahead, MtfStore, SeriesKey};
 use crate::oscillators::{CciIndicator, RsiIndicator};
@@ -229,7 +229,9 @@ impl MarketContextKey {
             atr50: len(50),
             cci14: len(14),
             rsi14: len(14),
-            stdev14: ParamSet::new().with_int("length", 14).with_float("nbdev", 1.0),
+            stdev14: ParamSet::new()
+                .with_int("length", 14)
+                .with_float("nbdev", 1.0),
             vol_sma20: len(20),
         }
     }
@@ -260,7 +262,10 @@ impl MarketContextKey {
             (one(AtrIndicator::ID, &self.atr50), self.atr50.clone()),
             (one(CciIndicator::ID, &self.cci14), self.cci14.clone()),
             (one(RsiIndicator::ID, &self.rsi14), self.rsi14.clone()),
-            (one(StddevIndicator::ID, &self.stdev14), self.stdev14.clone()),
+            (
+                one(StddevIndicator::ID, &self.stdev14),
+                self.stdev14.clone(),
+            ),
             (
                 SeriesKey {
                     tf_ms,
@@ -296,12 +301,8 @@ pub fn health_mas(
 ) -> Option<f64> {
     // Pine `na` comparisons read false; present-but-unequal stacks compare
     // on raw legs even when the distances themselves are absent.
-    let gt = |left: Option<f64>, right: Option<f64>| {
-        matches!((left, right), (Some(left), Some(right)) if left > right)
-    };
-    let lt = |left: Option<f64>, right: Option<f64>| {
-        matches!((left, right), (Some(left), Some(right)) if left < right)
-    };
+    let gt = |left: Option<f64>, right: Option<f64>| matches!((left, right), (Some(left), Some(right)) if left > right);
+    let lt = |left: Option<f64>, right: Option<f64>| matches!((left, right), (Some(left), Some(right)) if left < right);
     let dist = |a: Option<f64>, b: Option<f64>| match (a, b, atr) {
         (Some(a), Some(b), Some(atr)) if atr != 0.0 => Some((a - b) / atr),
         _ => None,
@@ -366,7 +367,9 @@ fn regime_surfaces(
     let volatility = volatility_ratio
         .and_then(fin_or_none)
         .map(|ratio| VOLATILITY_SCALE * ratio);
-    let volume = vol_ratio.and_then(fin_or_none).map(|ratio| VOLUME_SCALE * ratio);
+    let volume = vol_ratio
+        .and_then(fin_or_none)
+        .map(|ratio| VOLUME_SCALE * ratio);
     (trend, volatility, volume)
 }
 
@@ -394,9 +397,7 @@ pub fn detect_regime(
     let (trend, volatility, volume) = regime_surfaces(ma_health, volatility_ratio, vol_ratio);
     // Propagating max: one absent surface voids every tie.
     let max = match (trend, volatility, volume) {
-        (Some(trend), Some(volatility), Some(volume)) => {
-            Some(trend.max(volatility).max(volume))
-        }
+        (Some(trend), Some(volatility), Some(volume)) => Some(trend.max(volatility).max(volume)),
         _ => None,
     };
     let tied = |score: Option<f64>| match (max, score) {
@@ -409,9 +410,7 @@ pub fn detect_regime(
         } else {
             MarketRegime::TrendingBear
         }
-    } else if tied(volatility)
-        && volatility.is_some_and(|score| score > VOLATILITY_SCORE_FLOOR)
-    {
+    } else if tied(volatility) && volatility.is_some_and(|score| score > VOLATILITY_SCORE_FLOOR) {
         MarketRegime::Volatile
     } else if tied(volume) && volume.is_some_and(|score| score > VOLUME_SCORE_FLOOR) {
         MarketRegime::Ranging
@@ -442,9 +441,13 @@ pub fn detect_regime_stable(
         return fresh;
     }
     // Same surface (bull↔bear): the sign flip is decisive, never held.
-    if matches!(prev, MarketRegime::TrendingBull | MarketRegime::TrendingBear)
-        && matches!(fresh, MarketRegime::TrendingBull | MarketRegime::TrendingBear)
-    {
+    if matches!(
+        prev,
+        MarketRegime::TrendingBull | MarketRegime::TrendingBear
+    ) && matches!(
+        fresh,
+        MarketRegime::TrendingBull | MarketRegime::TrendingBear
+    ) {
         return fresh;
     }
     let (trend, volatility, volume) = regime_surfaces(ma_health, volatility_ratio, vol_ratio);
@@ -505,9 +508,9 @@ fn read_leg(
     volume_source: bool,
     params: Option<&ParamSet>,
 ) -> Result<Option<f64>, KernelError> {
-    let mut candidates = requests
-        .iter()
-        .filter(|(candidate, _)| candidate.kernel == kernel && candidate.volume_source == volume_source);
+    let mut candidates = requests.iter().filter(|(candidate, _)| {
+        candidate.kernel == kernel && candidate.volume_source == volume_source
+    });
     let (series, _) = if let Some(params) = params {
         candidates
             .find(|(_, have)| have.fingerprint() == params.fingerprint())
@@ -528,7 +531,9 @@ fn read_leg(
         })?
     };
     let cache = store.cache(series).ok_or_else(|| {
-        KernelError::InvalidInput(format!("series {series} not ensured (call fetch_all first)"))
+        KernelError::InvalidInput(format!(
+            "series {series} not ensured (call fetch_all first)"
+        ))
     })?;
     Ok(cache.values.get(at).copied().flatten())
 }
@@ -581,8 +586,22 @@ fn update_with_requests(
     let ma_mean = read_leg(store, requests, at, EmaIndicator::ID, false, None)?;
     // The two ATR spans share one kernel id: resolved by parameters, so a
     // reordered bundle reads identically.
-    let atr = read_leg(store, requests, at, AtrIndicator::ID, false, Some(&key.atr14))?;
-    let atr_long = read_leg(store, requests, at, AtrIndicator::ID, false, Some(&key.atr50))?;
+    let atr = read_leg(
+        store,
+        requests,
+        at,
+        AtrIndicator::ID,
+        false,
+        Some(&key.atr14),
+    )?;
+    let atr_long = read_leg(
+        store,
+        requests,
+        at,
+        AtrIndicator::ID,
+        false,
+        Some(&key.atr50),
+    )?;
     let cci = read_leg(store, requests, at, CciIndicator::ID, false, None)?
         .map(|value| value * CCI_SCALE);
     let rsi = read_leg(store, requests, at, RsiIndicator::ID, false, None)?
@@ -590,7 +609,11 @@ fn update_with_requests(
     let stdev = read_leg(store, requests, at, StddevIndicator::ID, false, None)?;
     let vol_sma = read_leg(store, requests, at, SmaIndicator::ID, true, None)?;
     let close = frame.close.get(at).copied();
-    let vol = frame.volume.get(at).copied().or_else(|| prev.and_then(|prior| prior.vol));
+    let vol = frame
+        .volume
+        .get(at)
+        .copied()
+        .or_else(|| prev.and_then(|prior| prior.vol));
 
     let atr_distance = match (close, ma_mean, atr) {
         // `atr` rides kernel outputs (finite where present), so the only
@@ -614,7 +637,9 @@ fn update_with_requests(
         (Some(vol), Some(sma)) if sma > 0.0 => fin_or_none(vol / sma),
         _ => prev.and_then(|prior| prior.vol_ratio).or(Some(0.0)),
     };
-    let trend_strength = ma_health.map(|health| health.abs() / TREND_NORM).and_then(fin_or_none);
+    let trend_strength = ma_health
+        .map(|health| health.abs() / TREND_NORM)
+        .and_then(fin_or_none);
     let trend_direction = match ma_health {
         Some(health) if health > DIRECTION_BAND => Some(1.0),
         Some(health) if health < -DIRECTION_BAND => Some(-1.0),

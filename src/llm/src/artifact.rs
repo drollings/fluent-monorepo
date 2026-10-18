@@ -905,20 +905,18 @@ fn content_matches_spec_hash(
     artifact: &ModelArtifact,
     local: &Path,
 ) -> Result<bool, ArtifactError> {
-    let digest =
-        common_core::hash::hash_file(local, common_core::hash::HashAlgorithm::Sha256).map_err(
-            |error| {
-                filesystem_error(
-                    format!(
-                        "Unable to validate cached artifact '{}' for {model}",
-                        artifact.path
-                    ),
-                    source,
-                    Some(&artifact.path),
-                    error,
-                )
-            },
-        )?;
+    let digest = common_core::hash::hash_file(local, common_core::hash::HashAlgorithm::Sha256)
+        .map_err(|error| {
+            filesystem_error(
+                format!(
+                    "Unable to validate cached artifact '{}' for {model}",
+                    artifact.path
+                ),
+                source,
+                Some(&artifact.path),
+                error,
+            )
+        })?;
     Ok(digest == artifact.sha256.to_lowercase())
 }
 

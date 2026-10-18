@@ -1,0 +1,2 @@
+protopyne-gui check: symbol=SPY timeframe=5M bars=346 frames=[1M,5M,15M] slots=[integration_lite,fast_mas,delta_volume_profile] cached=15
+protopyne-gui check: notice: none

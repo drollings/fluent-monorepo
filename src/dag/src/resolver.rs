@@ -124,7 +124,8 @@ impl<'a> DependencyResolver<'a> {
         self
     }
 
-    pub fn resolve(&self, target_names: &[&str]) -> Result<ExecutionPlan, ResolverError> {        if target_names.is_empty() {
+    pub fn resolve(&self, target_names: &[&str]) -> Result<ExecutionPlan, ResolverError> {
+        if target_names.is_empty() {
             return Ok(ExecutionPlan {
                 order: Vec::new(),
                 target_names: Vec::new(),
@@ -412,8 +413,7 @@ impl<'a> DependencyResolver<'a> {
                         if narrowed_caps.contains(&ci) {
                             continue;
                         }
-                        let providers =
-                            live_providers(self.registry.get_providers(ci), excluded);
+                        let providers = live_providers(self.registry.get_providers(ci), excluded);
                         if providers.len() > 1 {
                             narrowed_caps.insert(ci);
                             if apply_narrowed(

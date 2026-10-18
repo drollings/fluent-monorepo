@@ -7,7 +7,10 @@ fn dec(s: &str) -> Decimal {
 }
 
 fn ts(year: i32, month: u32, day: u32) -> chrono::DateTime<chrono::Utc> {
-    chrono::Utc.with_ymd_and_hms(year, month, day, 12, 0, 0).single().expect("valid test time")
+    chrono::Utc
+        .with_ymd_and_hms(year, month, day, 12, 0, 0)
+        .single()
+        .expect("valid test time")
 }
 
 fn bar_at(year: i32, month: u32, day: u32, open: &str, high: &str, low: &str, close: &str) -> Bar {
@@ -40,8 +43,10 @@ fn row_of_keeps_time_and_volume() {
 
 #[test]
 fn rows_of_counts_without_failing() {
-    let bars =
-        vec![bar_at(2026, 1, 2, "100", "101", "99", "100.5"), bar_at(2026, 1, 3, "101", "102", "100", "101")];
+    let bars = vec![
+        bar_at(2026, 1, 2, "100", "101", "99", "100.5"),
+        bar_at(2026, 1, 3, "101", "102", "100", "101"),
+    ];
     let out = rows_of(&bars);
     assert_eq!(out.rows.len(), 2);
     assert_eq!(out.dropped, 0);

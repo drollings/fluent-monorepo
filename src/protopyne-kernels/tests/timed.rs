@@ -49,10 +49,20 @@ fn kernel_unit_reports_counts_with_decodable_data() {
         ParamSet::new().with_int("length", 2),
         input,
     );
-    let output = unit.execute(&WorkContext::default()).expect("kernel executes");
+    let output = unit
+        .execute(&WorkContext::default())
+        .expect("kernel executes");
     assert!(output.success);
-    assert!(output.message.contains("sma"), "message names the kernel, got: {}", output.message);
-    assert!(output.message.contains('4'), "message carries the bar count, got: {}", output.message);
+    assert!(
+        output.message.contains("sma"),
+        "message names the kernel, got: {}",
+        output.message
+    );
+    assert!(
+        output.message.contains('4'),
+        "message carries the bar count, got: {}",
+        output.message
+    );
     let decoded: IndicatorResult = output.data_take().expect("payload decodes, never null");
     assert_eq!(decoded.values.len(), 4);
 }

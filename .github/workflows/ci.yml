@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - run: cargo clippy --workspace -- -D warnings
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - run: cargo test --workspace
+
+  # Fast, hermetic config-synced routing suite (intent -> model_group),
+  # derived from env/coral-router.json at runtime. No live-AI; no weights.
+  router-mock:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - run: cargo test -p fluent-router config_route_tests
+
+  # Cheap hermeticity guard (no compilation): every `#[ignore]` carries a
+  # reason, and no hermetic test dials a non-loopback host. Live-AI tests are
+  # exempt because they live under tests/live/ and are feature-gated.
+  live-ai-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bin/live-ai-guard.sh
+
+  # Cheap consolidation guard (no compilation): no re-export shims, no
+  # second threshold/error source, no fresh distance→similarity closures.
+  vector-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bin/vector-check.sh

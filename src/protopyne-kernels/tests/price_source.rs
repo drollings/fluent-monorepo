@@ -102,7 +102,12 @@ fn columns_are_length_and_hole_preserving() {
             close: (0..len).map(|_| next() * 100.0).collect(),
             volume: vec![1.0; len],
         };
-        for leg in [&mut frame.open, &mut frame.high, &mut frame.low, &mut frame.close] {
+        for leg in [
+            &mut frame.open,
+            &mut frame.high,
+            &mut frame.low,
+            &mut frame.close,
+        ] {
             let leg_len = leg.len();
             for (i, cell) in leg.iter_mut().enumerate() {
                 if (i * 7 + leg_len) % 5 == 0 {
@@ -151,13 +156,25 @@ fn names_parse_round_trip_and_reject_unknown() {
 fn price_source_input_declares_and_refuses_unknown() {
     let mut inputs = InputSet::new();
     inputs
-        .declare("src", InputDef::PriceSource { default: "close".to_owned() })
+        .declare(
+            "src",
+            InputDef::PriceSource {
+                default: "close".to_owned(),
+            },
+        )
         .expect("known source declares");
     assert!(inputs
-        .declare("bad", InputDef::PriceSource { default: "nope".to_owned() })
+        .declare(
+            "bad",
+            InputDef::PriceSource {
+                default: "nope".to_owned()
+            }
+        )
         .is_err());
     assert!(inputs.set("src", PineValue::Str("hlc3".to_owned())).is_ok());
-    assert!(inputs.set("src", PineValue::Str("nope".to_owned())).is_err());
+    assert!(inputs
+        .set("src", PineValue::Str("nope".to_owned()))
+        .is_err());
     assert!(inputs.set("src", PineValue::Float(1.0)).is_err());
 }
 
@@ -172,7 +189,12 @@ fn pine_legs_agree_with_registry_on_spy_trim() {
         let mut cells = line.split(',');
         let secs: i64 = cells.next().expect("time").parse().expect("epoch");
         let num = |cell: Option<&str>| cell.expect("leg").parse::<f64>().expect("number");
-        let (o, h, l, c) = (num(cells.next()), num(cells.next()), num(cells.next()), num(cells.next()));
+        let (o, h, l, c) = (
+            num(cells.next()),
+            num(cells.next()),
+            num(cells.next()),
+            num(cells.next()),
+        );
         let ts = chrono::DateTime::from_timestamp(secs, 0).expect("valid epoch");
         bars.push(
             protopyne_types::Bar::new()

@@ -1,6 +1,6 @@
 use super::*;
 use crate::parity::{assert_expr_parity, expr_fixture};
-use polars::prelude::{Expr, col, lit, when};
+use polars::prelude::{col, lit, when, Expr};
 use protopyne_types::Bar;
 use std::path::PathBuf;
 
@@ -12,7 +12,14 @@ fn bar_at(open: f64, high: f64, low: f64, close: f64, volume: u64, index: usize)
     use chrono::TimeZone as _;
     Bar::new()
         .ts(chrono::Utc
-            .with_ymd_and_hms(2026, 1, 2, 9 + (index / 3600) as u32, ((index / 60) % 60) as u32, (index % 60) as u32)
+            .with_ymd_and_hms(
+                2026,
+                1,
+                2,
+                9 + (index / 3600) as u32,
+                ((index / 60) % 60) as u32,
+                (index % 60) as u32,
+            )
             .single()
             .expect("valid timestamp"))
         .o(dec(open))
@@ -31,7 +38,11 @@ fn trend_bars(n: usize) -> Vec<Bar> {
         let drift = i as f64 * 0.7 + ((i * 13) % 5) as f64 * 0.9;
         let close = 100.0 + drift;
         let gap = if i > 0 && i % 10 == 0 { 2.5 } else { 0.0 };
-        let open = if i == 0 { close } else { prev_close + gap + 0.1 };
+        let open = if i == 0 {
+            close
+        } else {
+            prev_close + gap + 0.1
+        };
         let high = open.max(close) + 0.8;
         let low = open.min(close) - 0.8;
         bars.push(bar_at(open, high, low, close, 1_000 + i as u64 * 37, i));
@@ -52,7 +63,12 @@ fn spy_bars(count: usize) -> Vec<Bar> {
     let mut bars = Vec::new();
     for record in reader.records().take(count) {
         let row = record.expect("readable row");
-        let num = |idx: usize| row.get(idx).expect("column").parse::<f64>().expect("number");
+        let num = |idx: usize| {
+            row.get(idx)
+                .expect("column")
+                .parse::<f64>()
+                .expect("number")
+        };
         let epoch: i64 = row.get(0).expect("time").parse().expect("epoch");
         let ts = chrono::DateTime::from_timestamp(epoch, 0).expect("valid epoch");
         bars.push(
@@ -83,7 +99,13 @@ fn ticks_of(bars: &[Bar]) -> Vec<BarTick> {
         .collect()
 }
 fn tick(open: f64, high: f64, low: f64, close: f64) -> BarTick {
-    BarTick { open, high, low, close, volume: 1_000.0 }
+    BarTick {
+        open,
+        high,
+        low,
+        close,
+        volume: 1_000.0,
+    }
 }
 
 /// Bit-exact float equality: these hand values are exactly representable,
@@ -218,12 +240,36 @@ fn missing_legs_never_affirm_a_pattern() {
 #[test]
 fn single_bar_fns_match_reference_exprs() {
     let cases: Vec<MeasureCase<'_>> = vec![
-        ("real_body", (close() - open()).abs(), Box::new(|t| Some(real_body(t)))),
-        ("upper_shadow", high() - max2(open(), close()), Box::new(|t| Some(upper_shadow(t)))),
-        ("lower_shadow", min2(open(), close()) - low(), Box::new(|t| Some(lower_shadow(t)))),
-        ("high_low_range", high() - low(), Box::new(|t| Some(high_low_range(t)))),
-        ("upper_body", max2(open(), close()), Box::new(|t| Some(upper_body(t)))),
-        ("lower_body", min2(open(), close()), Box::new(|t| Some(lower_body(t)))),
+        (
+            "real_body",
+            (close() - open()).abs(),
+            Box::new(|t| Some(real_body(t))),
+        ),
+        (
+            "upper_shadow",
+            high() - max2(open(), close()),
+            Box::new(|t| Some(upper_shadow(t))),
+        ),
+        (
+            "lower_shadow",
+            min2(open(), close()) - low(),
+            Box::new(|t| Some(lower_shadow(t))),
+        ),
+        (
+            "high_low_range",
+            high() - low(),
+            Box::new(|t| Some(high_low_range(t))),
+        ),
+        (
+            "upper_body",
+            max2(open(), close()),
+            Box::new(|t| Some(upper_body(t))),
+        ),
+        (
+            "lower_body",
+            min2(open(), close()),
+            Box::new(|t| Some(lower_body(t))),
+        ),
         (
             "shadows",
             (high() - low()) - (close() - open()).abs(),
@@ -255,12 +301,18 @@ fn single_bar_fns_match_reference_exprs() {
         ),
         (
             "dragonfly",
-            (open() - close()).abs().lt_eq(lit(TA_EPSILON)).and(low().lt(close() - lit(TA_EPSILON))),
+            (open() - close())
+                .abs()
+                .lt_eq(lit(TA_EPSILON))
+                .and(low().lt(close() - lit(TA_EPSILON))),
             Box::new(|t| Some(f64::from(dragonfly(t)))),
         ),
         (
             "gravestone",
-            (open() - close()).abs().lt_eq(lit(TA_EPSILON)).and(high().gt(close() + lit(TA_EPSILON))),
+            (open() - close())
+                .abs()
+                .lt_eq(lit(TA_EPSILON))
+                .and(high().gt(close() + lit(TA_EPSILON))),
             Box::new(|t| Some(f64::from(gravestone(t)))),
         ),
     ];

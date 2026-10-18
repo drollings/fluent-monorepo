@@ -66,7 +66,10 @@ pub fn efficiency_ratio(closes: &[f64], period: usize) -> Vec<Option<f64>> {
         .map(|(i, _)| {
             let window = strict_window(closes, i, period + 1)?;
             let displacement = (window[period] - window[0]).abs();
-            let path: f64 = window.windows(2).map(|pair| (pair[1] - pair[0]).abs()).sum();
+            let path: f64 = window
+                .windows(2)
+                .map(|pair| (pair[1] - pair[0]).abs())
+                .sum();
             // Displacement never exceeds path on the same window, so a zero
             // path means a zero displacement (`0/0` refuses on both
             // spellings) and `div_or_none` matches the guarded division
@@ -87,9 +90,8 @@ pub fn price_density(highs: &[f64], lows: &[f64], period: usize) -> Vec<Option<f
             let high = strict_window(highs, i, period)?;
             let low = strict_window(lows, i, period)?;
             let inside: f64 = high.iter().zip(low.iter()).map(|(h, l)| h - l).sum();
-            let extent =
-                high.iter().fold(f64::NEG_INFINITY, |a, b| a.max(*b))
-                    - low.iter().fold(f64::INFINITY, |a, b| a.min(*b));
+            let extent = high.iter().fold(f64::NEG_INFINITY, |a, b| a.max(*b))
+                - low.iter().fold(f64::INFINITY, |a, b| a.min(*b));
             // A zero extent means every high equals every low, so the summed
             // ranges are zero too (`0/0` refuses on both spellings) and
             // `div_or_none` matches the guarded division everywhere here.
@@ -127,8 +129,7 @@ pub fn fractal_dimension(
             // `scaled = ln(2·period)` is finite and ≥ ln 2 for every period
             // that reaches this arm (period 0 windows refuse first), so the
             // guarded quotient matches `div_or_none` on all inputs here.
-            let quotient =
-                div_or_none(length.ln() + std::f64::consts::LN_2, scaled)?;
+            let quotient = div_or_none(length.ln() + std::f64::consts::LN_2, scaled)?;
             fin_or_none(1.0 + quotient)
         })
         .collect()

@@ -26,16 +26,13 @@
 
 use std::path::PathBuf;
 
+use common_core::config::load_json_or_default;
+use common_core::io::write_atomic;
 use fluent_wvr::Describable;
-use protopyne_egui::views::{HealthModel, PortfolioModel, ViewsBundle, load_bundle};
-use protopyne_egui::{
-    ChartWorkspace, GrantFormState, ReplayScrub, ScrubOutcome, paint_grant_form,
-    paint_replay_scrub, paint_workspace,
-};
-use protopyne_server::{ServerConfig, ServerHandle, serve};
-use protopyne_view::{
-    ChartBars, GatewayError, MockGateway, OverlaySeries, TerminalGateway,
-};
+use protopyne_egui::views::{load_bundle, HealthModel, PortfolioModel, ViewsBundle};
+use protopyne_egui::{paint_workspace, prefs_path, ChartWorkspace, ReplayScrub, TerminalPrefs};
+use protopyne_server::{serve, ServerConfig, ServerHandle};
+use protopyne_view::{ChartBars, GatewayError, MockGateway, OverlaySeries, TerminalGateway};
 
 /// Overlay shown on the dashboard: same kernel and length the parity test
 /// pins, so the example and the suite read the same view.
@@ -46,8 +43,11 @@ fn history_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../data/protopyne-rs/historical")
 }
 
-fn default_m15() -> PathBuf {
-    history_dir().join("SPY_15M.csv")
+/// Default boot history and the bar spacing its file holds: the one-minute
+/// SPY trim, so the default `5M` timeframe is served natively (folded up from
+/// one-minute) and every other key — including `1M` — remains reachable.
+fn default_history() -> (PathBuf, &'static str) {
+    (history_dir().join("SPY_1M.csv"), "1M")
 }
 
 /// Chart reads are gateway DTOs with no display view-model: the dashboard
@@ -114,9 +114,11 @@ fn check_lines(bundle: &ViewsBundle, charts: &ChartReads, replay: &ReplayScrub) 
             "replay bars={} cursor={} anchors={}",
             replay.state().total_bars,
             replay.state().cursor,
-            replay
-                .window()
-                .map_or(0, |window| window.steps.iter().filter(|step| step.checkpoint).count()),
+            replay.window().map_or(0, |window| window
+                .steps
+                .iter()
+                .filter(|step| step.checkpoint)
+                .count()),
         ),
     ]
 }
@@ -130,230 +132,95 @@ async fn boot(path: PathBuf, base: Option<String>) -> Result<ServerHandle, Strin
     // Directories hold one-minute months by contract; files keep the legacy
     // fifteen-minute default unless `--base` says otherwise.
     let base = base.unwrap_or_else(|| {
-        if path.is_dir() { "1M".to_owned() } else { "15M".to_owned() }
+        if path.is_dir() {
+            "1M".to_owned()
+        } else {
+            "15M".to_owned()
+        }
     });
     let config = ServerConfig::new()
         .bind("127.0.0.1:0".to_owned())
         .history_timeframe(base)
         .build();
-    serve(config, bars).await.map_err(|e| format!("server refused to boot: {e}"))
+    serve(config, bars)
+        .await
+        .map_err(|e| format!("server refused to boot: {e}"))
 }
 
 struct TerminalApp {
     gateway: Box<dyn TerminalGateway>,
-    /// The shared chart workspace, booted over the same gateway: the chart
-    /// canvas and the gateway dashboard render side by side.
+    /// The shared chart workspace, booted over the same gateway: Material top
+    /// bar, floating left-boundary dock drawer (gateway terminal, health,
+    /// portfolio, proposals, chart, journals, arm-grant, replay), canvas with
+    /// the upper-left hotlist, and the symbol/indicator modals.
     workspace: Result<ChartWorkspace, String>,
-    bundle: Result<ViewsBundle, String>,
-    charts: Result<ChartReads, String>,
-    /// Journal rows pre-rendered in provenance order at refresh time: the
-    /// frame reads lines, it never scans the journal per row per frame.
-    journal_lines: Vec<String>,
-    /// The replay scrub over the standard topology: the gateway supplies the
-    /// window, this app owns where the cursor stands.
-    replay: Option<ReplayScrub>,
-    replay_error: Option<String>,
-    /// The arming form over the patch descriptor: drafts, preview, and
-    /// submit all run through the gateway, never around it.
-    grant_form: GrantFormState,
+    /// Where the favorites/loadout/settings document lives.
+    prefs_path: PathBuf,
+    /// Last persisted snapshot, so the frame writes only on a real change.
+    saved: TerminalPrefs,
 }
 
 impl TerminalApp {
-    fn new(gateway: Box<dyn TerminalGateway>) -> Self {
-        let workspace = ChartWorkspace::with_gateway(&*gateway).map_err(|e| e.to_string());
-        let (replay, replay_error) = match ReplayScrub::standard() {
-            Ok(scrub) => (Some(scrub), None),
-            // A topology that cannot be built is a refused scrub, reported in
-            // the panel that would have hosted it rather than a dead frame.
-            Err(e) => (None, Some(e.to_string())),
-        };
-        let mut app = Self {
+    fn new(gateway: Box<dyn TerminalGateway>, history: &std::path::Path) -> Self {
+        let path = prefs_path(history);
+        let prefs = load_json_or_default::<TerminalPrefs>(&path);
+        let workspace = ChartWorkspace::with_gateway(&*gateway)
+            .map(|mut workspace| {
+                // The composition root owns the descriptor; the workspace owns
+                // the form. Until set, the dock's arm-grant subpane shows
+                // read-only tier texts.
+                workspace.set_grant_schema(&protopyne_strategy::GrantPatch::default().describe());
+                // Restore the persisted selection over the boot history; a
+                // persisted timeframe switches the live read.
+                let symbol = prefs.symbol.clone();
+                workspace.apply_prefs(&prefs).ok();
+                if let Some(symbol) = symbol.filter(|s| !s.trim().is_empty()) {
+                    let _ = workspace.switch_symbol(&symbol, &*gateway);
+                }
+                if let Some(label) = prefs.timeframe.as_deref() {
+                    if let Some(key) = protopyne_egui::TimeframeKey::all()
+                        .into_iter()
+                        .find(|key| key.label() == label)
+                    {
+                        let _ = workspace.switch_timeframe(key, &*gateway);
+                    }
+                }
+                // Dock data (journal/portfolio) and the replay window stream on
+                // demand when the dock opens; boot pays for the chart alone.
+                workspace
+            })
+            .map_err(|e| e.to_string());
+        Self {
             gateway,
             workspace,
-            bundle: Err("no pull yet".to_owned()),
-            charts: Err("no pull yet".to_owned()),
-            journal_lines: Vec::new(),
-            replay,
-            replay_error,
-            grant_form: GrantFormState::from_schema(
-                &protopyne_strategy::GrantPatch::default().describe(),
-            ),
-        };
-        app.refresh();
-        app
-    }
-
-    fn refresh(&mut self) {
-        // Uncached by design: every refresh reads fresh gateway state, so a
-        // halted venue can never render as live from a stale bundle.
-        self.bundle = load_bundle(&*self.gateway).map_err(|e| e.to_string());
-        // One seq-to-row index per refresh, then one line per ordered row:
-        // the per-frame journal walk is a line read, not a find per row.
-        self.journal_lines = self.bundle.as_ref().map_or_else(
-            |_| Vec::new(),
-            |bundle| {
-                let by_seq: std::collections::HashMap<i64, &protopyne_view::JournalRowView> =
-                    bundle.journal.iter().map(|row| (row.seq, row)).collect();
-                bundle
-                    .provenance_order
-                    .iter()
-                    .filter_map(|seq| by_seq.get(seq))
-                    .map(|row| format!("#{} {} {} {}", row.seq, row.client_id, row.kind, row.at_ms))
-                    .collect()
-            },
-        );
-        self.charts = pull_charts(&*self.gateway).map_err(|e| e.to_string());
-        // A repeated read widens the window; it never moves the operator's
-        // cursor, so a refresh cannot yank a scrub back to the head.
-        if let Some(scrub) = self.replay.as_mut() {
-            self.replay_error = scrub.ingest(&*self.gateway).err().map(|e| e.to_string());
+            prefs_path: path,
+            saved: prefs,
         }
     }
 }
 
 impl eframe::App for TerminalApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        egui::Panel::top("gateway-header").show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.heading("gateway terminal");
-                if ui.button("refresh").clicked() {
-                    self.refresh();
+        // The dock owns every gateway view now: terminal, health, portfolio,
+        // proposals, chart, journals, arm-grant, replay. No second panel tree
+        // lives here — the workspace is the single terminal truth.
+        match &mut self.workspace {
+            Ok(workspace) => {
+                if let Err(error) = paint_workspace(ui, workspace, Some(&*self.gateway)) {
+                    ui.colored_label(egui::Color32::RED, format!("workspace refused: {error}"));
                 }
-            });
-        });
-        egui::CentralPanel::default().show(ui, |ui| {
-            // The shared workspace canvas over the same gateway: top bar,
-            // candles, hot-slot legend, and the oscillator sub-pane.
-            match &mut self.workspace {
-                Ok(workspace) => {
-                    if let Err(error) = paint_workspace(ui, workspace, Some(&*self.gateway)) {
-                        ui.colored_label(egui::Color32::RED, format!("workspace refused: {error}"));
+                let prefs = workspace.prefs();
+                if prefs != self.saved {
+                    if let Ok(bytes) = serde_json::to_vec_pretty(&prefs) {
+                        let _ = write_atomic(&self.prefs_path, &bytes);
                     }
-                }
-                Err(reason) => {
-                    ui.colored_label(egui::Color32::RED, format!("workspace refused: {reason}"));
+                    self.saved = prefs;
                 }
             }
-            ui.separator();
-            let bundle = match &self.bundle {
-                Ok(bundle) => bundle,
-                Err(reason) => {
-                    ui.colored_label(egui::Color32::RED, format!("gateway refused: {reason}"));
-                    return;
-                }
-            };
-            ui.collapsing("health", |ui| {
-                let health = &bundle.health;
-                ui.label(health_summary_line(health));
-                if health.halted() {
-                    ui.colored_label(egui::Color32::RED, "HALTED: no entry affordance");
-                }
-                ui.label(format!(
-                    "entry affordance: {} exit affordance: {}",
-                    health.entry_affordance(),
-                    health.exit_affordance(),
-                ));
-                match &health.last_command {
-                    Some(command) => {
-                        ui.label(format!(
-                            "last command: {} ({})",
-                            command.kind, command.detail
-                        ));
-                    }
-                    None => {
-                        ui.label("last command: none");
-                    }
-                }
-            });
-            ui.collapsing(
-                format!("portfolio ({} positions)", bundle.portfolio.positions.len()),
-                |ui| {
-                    if bundle.portfolio.is_empty() {
-                        ui.label("empty: no positions, no fills");
-                    }
-                    for position in &bundle.portfolio.positions {
-                        ui.label(format!(
-                            "{} qty={} avg={}",
-                            position.underlying, position.quantity, position.avg_price,
-                        ));
-                    }
-                    ui.label(portfolio_summary_line(&bundle.portfolio));
-                },
-            );
-            ui.collapsing(format!("proposals ({})", bundle.proposals.len()), |ui| {
-                for proposal in &bundle.proposals {
-                    ui.label(format!(
-                        "{} {} {} {} {} limit={} conviction={:.3} state={}",
-                        proposal.id,
-                        proposal.strategy,
-                        proposal.underlying,
-                        proposal.direction,
-                        proposal.structure,
-                        proposal.limit_price,
-                        proposal.conviction,
-                        proposal.state,
-                    ));
-                }
-            });
-            match &self.charts {
-                Ok(charts) => {
-                    ui.collapsing(
-                        format!("chart ({} bars, {} dropped)", charts.bars.rows.len(), charts.bars.dropped),
-                        |ui| {
-                            if let (Some(first), Some(last)) =
-                                (charts.bars.rows.first(), charts.bars.rows.last())
-                            {
-                                ui.label(format!(
-                                    "first={} last={} last_close={:.2}",
-                                    first.time, last.time, last.close,
-                                ));
-                            }
-                            let overlay = &charts.overlay;
-                            let defined = overlay.values.iter().flatten().count();
-                            ui.label(format!(
-                                "overlay {}/{}: {defined}/{} defined",
-                                overlay.kind,
-                                overlay.period,
-                                overlay.values.len(),
-                            ));
-                        },
-                    );
-                }
-                Err(reason) => {
-                    ui.colored_label(egui::Color32::RED, format!("chart reads refused: {reason}"));
-                }
+            Err(reason) => {
+                ui.colored_label(egui::Color32::RED, format!("workspace refused: {reason}"));
             }
-            egui::Panel::right("replay-scrub").show(ui, |ui| {
-                if let Some(reason) = self.replay_error.clone() {
-                    ui.colored_label(egui::Color32::RED, format!("replay refused: {reason}"));
-                }
-                if let Some(scrub) = self.replay.as_mut() {
-                    if let Some(ScrubOutcome::Rewound { panes, .. }) =
-                        paint_replay_scrub(ui, scrub)
-                    {
-                    // The panes a move made due are this terminal's own
-                    // recompute work list. The dashboard lists them: pane
-                    // series belong to the chart shell, which owns the
-                    // kernels this file deliberately does not duplicate.
-                        ui.separator();
-                        ui.label(format!("{} panes to recompute:", panes.len()));
-                        for pane in &panes {
-                            ui.label(format!("  {pane}"));
-                        }
-                    }
-                }
-            });
-            ui.collapsing(format!("journal ({})", bundle.journal.len()), |ui| {
-                // Provenance order, not arrival order: the rows were ordered
-                // and rendered at refresh time, so the frame only reads.
-                for line in &self.journal_lines {
-                    ui.label(line);
-                }
-            });
-            egui::Panel::left("grant-arm").show(ui, |ui| {
-                paint_grant_form(ui, &mut self.grant_form, &*self.gateway);
-            });
-        });
+        }
     }
 }
 
@@ -377,10 +244,18 @@ async fn main() {
             _ => path = Some(PathBuf::from(arg)),
         }
     }
+    let (history_path, default_base) = if let Some(path) = path {
+        (path, None)
+    } else {
+        let (path, base) = default_history();
+        (path, Some(base.to_owned()))
+    };
+    let base = base.or(default_base);
+    let prefs_source = history_path.clone();
     let handle: Option<ServerHandle> = if mock {
         None
     } else {
-        match boot(path.unwrap_or_else(default_m15), base).await {
+        match boot(history_path, base).await {
             Ok(handle) => Some(handle),
             Err(e) => {
                 eprintln!("protopyne-terminal: {e}");
@@ -398,7 +273,10 @@ async fn main() {
         let scrub: Result<ReplayScrub, String> = ReplayScrub::standard()
             .map_err(|e| e.to_string())
             .and_then(|mut scrub| {
-                scrub.ingest(&*gateway).map(|()| scrub).map_err(|e| e.to_string())
+                scrub
+                    .ingest(&*gateway)
+                    .map(|()| scrub)
+                    .map_err(|e| e.to_string())
             });
         match ChartWorkspace::with_gateway(&*gateway) {
             Ok(workspace) => println!(
@@ -430,7 +308,7 @@ async fn main() {
             }
         }
     } else {
-        let app = TerminalApp::new(gateway);
+        let app = TerminalApp::new(gateway, &prefs_source);
         let run = eframe::run_native(
             "protopyne gateway terminal",
             eframe::NativeOptions::default(),

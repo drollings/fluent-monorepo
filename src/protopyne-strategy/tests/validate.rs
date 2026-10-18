@@ -1,7 +1,7 @@
 use super::*;
 use chrono::{TimeZone, Utc};
 use fluent_wvr::prelude::*;
-use protopyne_types::{Money, Validate, check_for_execute};
+use protopyne_types::{check_for_execute, Money, Validate};
 use rust_decimal::Decimal;
 
 fn money(value: i64) -> Money {

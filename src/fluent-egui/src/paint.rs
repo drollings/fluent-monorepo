@@ -24,12 +24,12 @@ use protopyne_chart_model::{Annotation, AnnotationStyle, ChartRow};
 
 use crate::config::ThemeConfig;
 use crate::error::EguiError;
-use crate::hittest::{Crosshair, crosshair_pixel};
-use crate::view::{
-    DeltaView, PivotMark, PivotSide, RibbonView, ribbon_fill_style_key, ribbon_style_key,
-};
-use crate::viewport::{BreakLine, Viewport, visible_rows};
+use crate::hittest::{crosshair_pixel, Crosshair};
 use crate::style::IndicatorStyle;
+use crate::view::{
+    ribbon_fill_style_key, ribbon_style_key, DeltaView, PivotMark, PivotSide, RibbonView,
+};
+use crate::viewport::{visible_rows, BreakLine, Viewport};
 
 /// One candle's screen geometry plus its tint keys.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -166,7 +166,9 @@ pub fn column_candle_geoms(
     let window_keys = visible_rows(ribbon_bullish, start, window);
     // Columns are screen pixels, so slots are global (the window offset
     // carries a fractional shift that re-groups run boundaries).
-    let runs = column_runs(window, |slot| viewport.slot_to_x((start + slot) as f64).floor() as i64);
+    let runs = column_runs(window, |slot| {
+        viewport.slot_to_x((start + slot) as f64).floor() as i64
+    });
     let mut folded_rows = Vec::with_capacity(runs.len());
     let mut folded_keys = Vec::with_capacity(runs.len());
     let mut folded_columns = Vec::with_capacity(runs.len());
@@ -174,16 +176,18 @@ pub fn column_candle_geoms(
     for (column, range) in &runs {
         // Runs hold at least one bar by construction, so the fold always
         // lands; the refusal below is unreachable, never a substitute.
-        let folded = aggregate_column(&window_rows[range.clone()])
-            .expect("column runs are never empty");
+        let folded =
+            aggregate_column(&window_rows[range.clone()]).expect("column runs are never empty");
         folded_rows.push(folded);
         folded_keys.push(window_keys[range.end - 1]);
         folded_columns.push(*column);
         folded_firsts.push(start + range.start);
     }
     let mut geoms = candle_geoms(&folded_rows, &folded_keys, viewport)?;
-    for ((geom, column), first) in
-        geoms.iter_mut().zip(folded_columns.iter()).zip(folded_firsts.iter())
+    for ((geom, column), first) in geoms
+        .iter_mut()
+        .zip(folded_columns.iter())
+        .zip(folded_firsts.iter())
     {
         geom.index = *first;
         geom.x = *column as f32;
@@ -242,7 +246,10 @@ pub fn aggregate_column(rows: &[ChartRow]) -> Option<ChartRow> {
         open: first.open,
         high,
         low,
-        close: rows.last().expect("non-empty: `first` above proved it").close,
+        close: rows
+            .last()
+            .expect("non-empty: `first` above proved it")
+            .close,
         volume,
     })
 }
@@ -292,14 +299,16 @@ pub fn sampled_line_points(
     viewport: &Viewport,
     base: usize,
 ) -> Vec<Option<(f32, f32)>> {
-    column_runs(values.len(), |slot| viewport.slot_to_x((base + slot) as f64).floor() as i64)
-        .iter()
-        .map(|(column, range)| {
-            let sample = sample_column_last(&values[range.clone()])?;
-            let y = viewport.windowed_y(sample)?;
-            Some((*column as f32, y))
-        })
-        .collect()
+    column_runs(values.len(), |slot| {
+        viewport.slot_to_x((base + slot) as f64).floor() as i64
+    })
+    .iter()
+    .map(|(column, range)| {
+        let sample = sample_column_last(&values[range.clone()])?;
+        let y = viewport.windowed_y(sample)?;
+        Some((*column as f32, y))
+    })
+    .collect()
 }
 
 /// Sampled spans of one band-like series at sub-pixel zoom: one `(x, top,
@@ -316,15 +325,17 @@ pub fn sampled_band_spans(
     viewport: &Viewport,
     base: usize,
 ) -> Vec<Option<(f32, f32, f32)>> {
-    column_runs(values.len(), |slot| viewport.slot_to_x((base + slot) as f64).floor() as i64)
-        .iter()
-        .map(|(column, range)| {
-            let (low, high) = sample_column_extremes(&values[range.clone()])?;
-            let top = viewport.windowed_y(high)?;
-            let bottom = viewport.windowed_y(low)?;
-            Some((*column as f32, top, bottom))
-        })
-        .collect()
+    column_runs(values.len(), |slot| {
+        viewport.slot_to_x((base + slot) as f64).floor() as i64
+    })
+    .iter()
+    .map(|(column, range)| {
+        let (low, high) = sample_column_extremes(&values[range.clone()])?;
+        let top = viewport.windowed_y(high)?;
+        let bottom = viewport.windowed_y(low)?;
+        Some((*column as f32, top, bottom))
+    })
+    .collect()
 }
 
 /// One ribbon fill strip between the band edges.
@@ -359,7 +370,12 @@ pub fn ribbon_bands(ribbon: &RibbonView, viewport: &Viewport) -> Vec<Option<Ribb
             else {
                 return None;
             };
-            Some(RibbonBand { index, x: viewport.index_to_x(index), top_y, bottom_y })
+            Some(RibbonBand {
+                index,
+                x: viewport.index_to_x(index),
+                top_y,
+                bottom_y,
+            })
         })
         .collect()
 }
@@ -471,7 +487,9 @@ pub fn column_delta_geoms(
     }
     let (start, end) = viewport.culled_bar_range(width_px, buy_top.len());
     let window = end.saturating_sub(start);
-    let runs = column_runs(window, |slot| viewport.slot_to_x((start + slot) as f64).floor() as i64);
+    let runs = column_runs(window, |slot| {
+        viewport.slot_to_x((start + slot) as f64).floor() as i64
+    });
     let mut bars = Vec::with_capacity(runs.len());
     for (column, range) in &runs {
         let buy = sample_column_extremes(&buy_top[start + range.start..start + range.end])
@@ -498,10 +516,7 @@ pub fn column_delta_geoms(
 /// lifts the pen. Off-window legs refuse through the shared window
 /// predicate rather than extrapolating off-pane.
 #[must_use]
-pub fn oscillator_points(
-    values: &[Option<f64>],
-    viewport: &Viewport,
-) -> Vec<Option<(f32, f32)>> {
+pub fn oscillator_points(values: &[Option<f64>], viewport: &Viewport) -> Vec<Option<(f32, f32)>> {
     oscillator_points_sliced(values, viewport, 0)
 }
 
@@ -569,11 +584,7 @@ pub struct PivotDot {
 /// through the shared window predicate, so the dots lift the pen exactly
 /// where [`oscillator_points`] does.
 #[must_use]
-pub fn pivot_dots(
-    marks: &[PivotMark],
-    fast: &[Option<f64>],
-    viewport: &Viewport,
-) -> Vec<PivotDot> {
+pub fn pivot_dots(marks: &[PivotMark], fast: &[Option<f64>], viewport: &Viewport) -> Vec<PivotDot> {
     marks
         .iter()
         .filter_map(|mark| {
@@ -582,7 +593,12 @@ pub fn pivot_dots(
                 return None;
             }
             let y = viewport.windowed_y(value)?;
-            Some(PivotDot { index: mark.index, x: viewport.index_to_x(mark.index), y, side: mark.side })
+            Some(PivotDot {
+                index: mark.index,
+                x: viewport.index_to_x(mark.index),
+                y,
+                side: mark.side,
+            })
         })
         .collect()
 }
@@ -612,7 +628,12 @@ pub fn pivot_price_dots(
                 return None;
             }
             let y = viewport.windowed_y(extreme)?;
-            Some(PivotDot { index: mark.index, x: viewport.index_to_x(mark.index), y, side: mark.side })
+            Some(PivotDot {
+                index: mark.index,
+                x: viewport.index_to_x(mark.index),
+                y,
+                side: mark.side,
+            })
         })
         .collect()
 }
@@ -661,9 +682,11 @@ pub fn parse_hex_color(key: &str, slot: &str) -> Result<egui::Color32, EguiError
         let text = std::str::from_utf8(pair).map_err(|_| invalid())?;
         u8::from_str_radix(text, 16).map_err(|_| invalid())
     };
-    Ok(egui::Color32::from_rgb(channel(&bytes[1..3])?, channel(&bytes[3..5])?, channel(
-        &bytes[5..7],
-    )?))
+    Ok(egui::Color32::from_rgb(
+        channel(&bytes[1..3])?,
+        channel(&bytes[3..5])?,
+        channel(&bytes[5..7])?,
+    ))
 }
 
 /// Narrowest a candle body may paint, so a fully zoomed-out bar is still a
@@ -695,8 +718,11 @@ pub fn candle_body_width(bar_spacing: f32) -> f32 {
     if !bar_spacing.is_finite() {
         return CANDLE_MIN_BODY_PX;
     }
-    let spaced =
-        if bar_spacing > CANDLE_GAP_THRESHOLD_PX { bar_spacing * CANDLE_BODY_FRACTION } else { bar_spacing };
+    let spaced = if bar_spacing > CANDLE_GAP_THRESHOLD_PX {
+        bar_spacing * CANDLE_BODY_FRACTION
+    } else {
+        bar_spacing
+    };
     spaced.max(CANDLE_MIN_BODY_PX)
 }
 
@@ -711,7 +737,10 @@ fn paint_one_candle(
     color: egui::Color32,
 ) {
     painter.line_segment(
-        [egui::Pos2::new(geom.x, geom.high_y), egui::Pos2::new(geom.x, geom.low_y)],
+        [
+            egui::Pos2::new(geom.x, geom.high_y),
+            egui::Pos2::new(geom.x, geom.low_y),
+        ],
         egui::Stroke::new(1.0, color),
     );
     let top = geom.open_y.min(geom.close_y);
@@ -737,7 +766,12 @@ pub fn paint_candles(
     let bull = resolve_color(theme, ribbon_style_key(true))?;
     let bear = resolve_color(theme, ribbon_style_key(false))?;
     for geom in geoms {
-        paint_one_candle(painter, geom, body_width, if geom.trend_bullish { bull } else { bear });
+        paint_one_candle(
+            painter,
+            geom,
+            body_width,
+            if geom.trend_bullish { bull } else { bear },
+        );
     }
     Ok(())
 }
@@ -760,11 +794,7 @@ pub struct TintedCandle {
 /// Same min-visibility body rule as [`paint_candles`]; each candle carries
 /// its own resolved color, so per-bar tints (momentum gradients, conviction
 /// fades) need no grouping pass.
-pub fn paint_candles_tinted(
-    painter: &egui::Painter,
-    candles: &[TintedCandle],
-    body_width: f32,
-) {
+pub fn paint_candles_tinted(painter: &egui::Painter, candles: &[TintedCandle], body_width: f32) {
     for candle in candles {
         paint_one_candle(painter, &candle.geom, body_width, candle.color);
     }
@@ -806,12 +836,7 @@ pub fn paint_ribbon(
             continue;
         };
         let base = if *trend { bull } else { bear };
-        let fill = egui::Color32::from_rgba_unmultiplied(
-            base.r(),
-            base.g(),
-            base.b(),
-            opacity,
-        );
+        let fill = egui::Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), opacity);
         painter.rect_filled(
             egui::Rect::from_min_max(
                 egui::Pos2::new(strip.x - half_width, strip.top_y),
@@ -935,7 +960,9 @@ pub fn sampled_ribbon_bands(
     let len = upper.len().min(lower.len()).min(bullish.len());
     let (start, end) = viewport.culled_bar_range(width_px, len);
     let window = end.saturating_sub(start);
-    let runs = column_runs(window, |slot| viewport.slot_to_x((start + slot) as f64).floor() as i64);
+    let runs = column_runs(window, |slot| {
+        viewport.slot_to_x((start + slot) as f64).floor() as i64
+    });
     let mut bands = Vec::with_capacity(runs.len());
     let mut trends = Vec::with_capacity(runs.len());
     for (column, range) in &runs {
@@ -981,7 +1008,11 @@ pub fn area_polygons(
     viewport: &Viewport,
 ) -> Vec<RibbonPolygon> {
     let lower = baseline.is_finite().then_some(baseline);
-    close_runs(values.iter().map(|upper| (*upper, lower, false)), viewport, 0)
+    close_runs(
+        values.iter().map(|upper| (*upper, lower, false)),
+        viewport,
+        0,
+    )
 }
 
 /// One run-closing core behind ribbon and area fills: maximal runs of
@@ -1042,11 +1073,25 @@ fn close_runs(
             _ => None,
         };
         let Some((x, top_y, bottom_y)) = mappable else {
-            flush(&mut polygons, &mut upper_run, &mut lower_run, &mut run_indices, run_trend, &mut open);
+            flush(
+                &mut polygons,
+                &mut upper_run,
+                &mut lower_run,
+                &mut run_indices,
+                run_trend,
+                &mut open,
+            );
             continue;
         };
         if !open || run_trend != trend {
-            flush(&mut polygons, &mut upper_run, &mut lower_run, &mut run_indices, run_trend, &mut open);
+            flush(
+                &mut polygons,
+                &mut upper_run,
+                &mut lower_run,
+                &mut run_indices,
+                run_trend,
+                &mut open,
+            );
             run_trend = trend;
             open = true;
         }
@@ -1054,7 +1099,14 @@ fn close_runs(
         lower_run.push((x, bottom_y));
         run_indices.push(index);
     }
-    flush(&mut polygons, &mut upper_run, &mut lower_run, &mut run_indices, run_trend, &mut open);
+    flush(
+        &mut polygons,
+        &mut upper_run,
+        &mut lower_run,
+        &mut run_indices,
+        run_trend,
+        &mut open,
+    );
     polygons
 }
 
@@ -1065,7 +1117,13 @@ fn paintable_points(polygon: &RibbonPolygon) -> Option<Vec<egui::Pos2>> {
     if polygon.points.len() < 3 {
         return None;
     }
-    Some(polygon.points.iter().map(|(x, y)| egui::Pos2::new(*x, *y)).collect())
+    Some(
+        polygon
+            .points
+            .iter()
+            .map(|(x, y)| egui::Pos2::new(*x, *y))
+            .collect(),
+    )
 }
 
 /// Paint ribbon fill runs as translucent areas between the band edges.
@@ -1088,7 +1146,11 @@ pub fn paint_ribbon_fill(
         };
         let base = if polygon.bullish { bull } else { bear };
         let fill = egui::Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), opacity);
-        painter.add(egui::Shape::convex_polygon(points, fill, egui::Stroke::NONE));
+        painter.add(egui::Shape::convex_polygon(
+            points,
+            fill,
+            egui::Stroke::NONE,
+        ));
     }
     Ok(())
 }
@@ -1115,10 +1177,15 @@ pub fn area_vertex_color(
         return None;
     }
     let span = bottom_y - top_y;
-    let ratio = if span.abs() < f32::EPSILON { 0.0 } else { ((y - top_y) / span).clamp(0.0, 1.0) };
+    let ratio = if span.abs() < f32::EPSILON {
+        0.0
+    } else {
+        ((y - top_y) / span).clamp(0.0, 1.0)
+    };
     let blend = |high: u8, low: u8| {
-        (f32::from(high) + (f32::from(low) - f32::from(high)) * ratio).round().clamp(0.0, 255.0)
-            as u8
+        (f32::from(high) + (f32::from(low) - f32::from(high)) * ratio)
+            .round()
+            .clamp(0.0, 255.0) as u8
     };
     Some(egui::Color32::from_rgba_premultiplied(
         blend(top.r(), bottom.r()),
@@ -1146,9 +1213,16 @@ pub fn paint_area_fill(
         let Some(vertices) = paintable_points(polygon) else {
             continue;
         };
-        let top_y = polygon.points.iter().map(|(_, y)| *y).fold(f32::INFINITY, f32::min);
-        let bottom_y =
-            polygon.points.iter().map(|(_, y)| *y).fold(f32::NEG_INFINITY, f32::max);
+        let top_y = polygon
+            .points
+            .iter()
+            .map(|(_, y)| *y)
+            .fold(f32::INFINITY, f32::min);
+        let bottom_y = polygon
+            .points
+            .iter()
+            .map(|(_, y)| *y)
+            .fold(f32::NEG_INFINITY, f32::max);
         // Any unblendable vertex skips the polygon: a gradient mesh needs a
         // color per vertex, and no substituted color may stand in.
         let Some(colors): Option<Vec<egui::Color32>> = polygon
@@ -1170,7 +1244,8 @@ pub fn paint_area_fill(
             });
         }
         for index in 1..vertices.len() - 1 {
-            mesh.indices.extend_from_slice(&[0, index as u32, index as u32 + 1]);
+            mesh.indices
+                .extend_from_slice(&[0, index as u32, index as u32 + 1]);
         }
         painter.add(mesh);
     }
@@ -1227,11 +1302,7 @@ pub struct TintedDeltaBar {
 /// across the histogram; call [`paint_delta_bars`] for the fixed bull/bear
 /// split. Same leg rule as that emitter: buys rise from zero, sells extend
 /// downward, holes lift the pen.
-pub fn paint_delta_bars_tinted(
-    painter: &egui::Painter,
-    bars: &[TintedDeltaBar],
-    half_width: f32,
-) {
+pub fn paint_delta_bars_tinted(painter: &egui::Painter, bars: &[TintedDeltaBar], half_width: f32) {
     for bar in bars {
         if let Some(buy_y) = bar.geom.buy_y {
             painter.rect_filled(
@@ -1298,7 +1369,14 @@ pub fn paint_oscillator(
     theme: &ThemeConfig,
     alpha: f32,
 ) -> Result<(), EguiError> {
-    paint_stroked_oscillator(painter, points, style_key, theme, &IndicatorStyle::default(), alpha)
+    paint_stroked_oscillator(
+        painter,
+        points,
+        style_key,
+        theme,
+        &IndicatorStyle::default(),
+        alpha,
+    )
 }
 
 /// Paint a zero-centered oscillator polyline under one indicator's style: the
@@ -1334,8 +1412,7 @@ fn paint_stroked_oscillator(
 ) -> Result<(), EguiError> {
     let base = style.color(theme, style_key)?;
     let opacity = alpha_u8(alpha);
-    let color =
-        egui::Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), opacity);
+    let color = egui::Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), opacity);
     let stroke = style.stroke(color);
     for window in points.windows(2) {
         if let (Some((x0, y0)), Some((x1, y1))) = (window[0], window[1]) {
@@ -1408,7 +1485,14 @@ pub fn crosshair_lines(
         return None;
     }
     let (x, y) = crosshair_pixel(crosshair, viewport)?;
-    Some(CrosshairLines { x, y, left: 0.0, right: width, top: 0.0, bottom: height })
+    Some(CrosshairLines {
+        x,
+        y,
+        left: 0.0,
+        right: width,
+        top: 0.0,
+        bottom: height,
+    })
 }
 
 /// Paint the crosshair readout: full-pane horizontal + vertical lines
@@ -1420,11 +1504,17 @@ pub fn paint_crosshair(
 ) -> Result<(), EguiError> {
     let stroke = egui::Stroke::new(1.0, resolve_color(theme, "grid")?);
     painter.line_segment(
-        [egui::Pos2::new(lines.left, lines.y), egui::Pos2::new(lines.right, lines.y)],
+        [
+            egui::Pos2::new(lines.left, lines.y),
+            egui::Pos2::new(lines.right, lines.y),
+        ],
         stroke,
     );
     painter.line_segment(
-        [egui::Pos2::new(lines.x, lines.top), egui::Pos2::new(lines.x, lines.bottom)],
+        [
+            egui::Pos2::new(lines.x, lines.top),
+            egui::Pos2::new(lines.x, lines.bottom),
+        ],
         stroke,
     );
     Ok(())
@@ -1501,7 +1591,11 @@ pub fn marker_dots(
 /// its literal key — both dot emitters read this one mapping, so the two
 /// can never disagree about what "up" paints again.
 fn polarity_color(bullish: bool, bull: egui::Color32, bear: egui::Color32) -> egui::Color32 {
-    if bullish { bull } else { bear }
+    if bullish {
+        bull
+    } else {
+        bear
+    }
 }
 
 /// Paint annotation markers: filled dots in the style's theme color.
@@ -1543,7 +1637,10 @@ pub fn paint_session_breaks(
     let stroke = egui::Stroke::new(1.0, resolve_color(theme, "grid")?);
     for line in lines {
         painter.line_segment(
-            [egui::Pos2::new(line.x, top_y), egui::Pos2::new(line.x, bottom_y)],
+            [
+                egui::Pos2::new(line.x, top_y),
+                egui::Pos2::new(line.x, bottom_y),
+            ],
             stroke,
         );
     }
@@ -1615,8 +1712,7 @@ pub fn translate_points(
 /// Shift pane-local pivot dots into UI space (see [`translate_candles`]).
 #[must_use]
 pub fn translate_dots(dots: Vec<PivotDot>, origin: (f32, f32)) -> Vec<PivotDot> {
-    dots
-        .into_iter()
+    dots.into_iter()
         .map(|mut dot| {
             dot.x += origin.0;
             dot.y += origin.1;
@@ -1628,8 +1724,7 @@ pub fn translate_dots(dots: Vec<PivotDot>, origin: (f32, f32)) -> Vec<PivotDot> 
 /// Shift pane-local markers into UI space (see [`translate_candles`]).
 #[must_use]
 pub fn translate_markers(dots: Vec<MarkerDot>, origin: (f32, f32)) -> Vec<MarkerDot> {
-    dots
-        .into_iter()
+    dots.into_iter()
         .map(|mut dot| {
             dot.x += origin.0;
             dot.y += origin.1;
@@ -1643,8 +1738,7 @@ pub fn translate_markers(dots: Vec<MarkerDot>, origin: (f32, f32)) -> Vec<Marker
 /// holed.
 #[must_use]
 pub fn translate_delta_bars(bars: Vec<DeltaBarGeom>, origin: (f32, f32)) -> Vec<DeltaBarGeom> {
-    bars
-        .into_iter()
+    bars.into_iter()
         .map(|mut bar| {
             bar.x += origin.0;
             bar.buy_y = bar.buy_y.map(|y| y + origin.1);
@@ -1714,8 +1808,7 @@ pub fn eye_icon_geom(center: (f32, f32), radius: f32, visible: bool) -> Option<E
     let lid = |start: f64, end: f64| {
         let mut arc: Vec<(f32, f32)> = (0..LID_ARC_SAMPLES)
             .map(|step| {
-                let angle =
-                    start + (end - start) * step as f64 / (LID_ARC_SAMPLES - 1) as f64;
+                let angle = start + (end - start) * step as f64 / (LID_ARC_SAMPLES - 1) as f64;
                 (
                     center.0 + radius * angle.cos() as f32,
                     center.1 + 0.6 * radius * angle.sin() as f32,
@@ -1825,7 +1918,10 @@ pub fn search_icon_geom(center: (f32, f32), radius: f32) -> Option<SearchIconGeo
 fn stroke_polyline(painter: &egui::Painter, points: &[(f32, f32)], stroke: egui::Stroke) {
     for pair in points.windows(2) {
         painter.line_segment(
-            [egui::Pos2::new(pair[0].0, pair[0].1), egui::Pos2::new(pair[1].0, pair[1].1)],
+            [
+                egui::Pos2::new(pair[0].0, pair[0].1),
+                egui::Pos2::new(pair[1].0, pair[1].1),
+            ],
             stroke,
         );
     }
@@ -1900,8 +1996,8 @@ pub fn paint_search_icon(
     );
     painter.line_segment(
         [
-            egui::Pos2::new(geom.handle.0.0, geom.handle.0.1),
-            egui::Pos2::new(geom.handle.1.0, geom.handle.1.1),
+            egui::Pos2::new(geom.handle.0 .0, geom.handle.0 .1),
+            egui::Pos2::new(geom.handle.1 .0, geom.handle.1 .1),
         ],
         stroke,
     );

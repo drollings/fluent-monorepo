@@ -2,12 +2,12 @@ use super::*;
 
 use chrono::TimeZone as _;
 use protopyne_kernels::{
-    InputSet, LibraryId, LinkedModule, ModuleGraph, ModuleInput, PineEngine, PineRuntimeConfig,
-    PineValue, parse_pine_source, parse_program, resolve_imports,
+    parse_pine_source, parse_program, resolve_imports, InputSet, LibraryId, LinkedModule,
+    ModuleGraph, ModuleInput, PineEngine, PineRuntimeConfig, PineValue,
 };
 use protopyne_types::Bar;
-use rust_decimal::Decimal;
 use rust_decimal::prelude::FromPrimitive as _;
+use rust_decimal::Decimal;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -22,7 +22,11 @@ fn data_root() -> PathBuf {
 }
 
 fn library_id(publisher: &str, name: &str, version: u64) -> LibraryId {
-    LibraryId { publisher: publisher.to_owned(), name: name.to_owned(), version }
+    LibraryId {
+        publisher: publisher.to_owned(),
+        name: name.to_owned(),
+        version,
+    }
 }
 
 fn shipped_module(file: &str, publisher: &str, name: &str, version: u64) -> ModuleInput {
@@ -78,13 +82,11 @@ fn wobble_bars() -> Vec<Bar> {
             let close = 100.0 + 0.3 * (i as f64) + ((i % 7) as f64);
             let px = |v: f64| Decimal::from_f64(v).expect("exact test decimal");
             Bar::new()
-                .ts(
-                    chrono::Utc
-                        .with_ymd_and_hms(2026, 1, 5, 0, 0, 0)
-                        .single()
-                        .expect("valid time")
-                        + chrono::Duration::minutes(i),
-                )
+                .ts(chrono::Utc
+                    .with_ymd_and_hms(2026, 1, 5, 0, 0, 0)
+                    .single()
+                    .expect("valid time")
+                    + chrono::Duration::minutes(i))
                 .o(px(close - 0.25))
                 .h(px(close + 0.5))
                 .l(px(close - 0.5))
@@ -100,10 +102,14 @@ fn wobble_bars() -> Vec<Bar> {
 fn run_two(driver: &str, bars: &[Bar]) -> (Vec<Option<f64>>, Vec<Option<f64>>) {
     let modules = linked(driver);
     let mut engine = PineEngine::new(
-        PineRuntimeConfig::new().chart_symbol("SPY".to_owned()).chart_period("5".to_owned()).build(),
+        PineRuntimeConfig::new()
+            .chart_symbol("SPY".to_owned())
+            .chart_period("5".to_owned())
+            .build(),
     );
-    let outcome =
-        engine.run_linked(&modules, bars, InputSet::new()).expect("linked run evaluates");
+    let outcome = engine
+        .run_linked(&modules, bars, InputSet::new())
+        .expect("linked run evaluates");
     let read = |name: &str| {
         (0..bars.len())
             .map(|bar| match outcome.value_at(bar, name) {
@@ -131,12 +137,10 @@ fn golden_driver(osc: &str) -> String {
         "VOSS" => {
             "[v, f] = MAS.getVossPredictiveFilter(close, 14, 3, 0.25)\nraw = v - f".to_owned()
         }
-        "AROON" => {
-            "up = 100 * (ta.highestbars(high, 15) + 14) / 14\n\
+        "AROON" => "up = 100 * (ta.highestbars(high, 15) + 14) / 14\n\
              down = 100 * (ta.lowestbars(low, 15) + 14) / 14\n\
              raw = up - down"
-                .to_owned()
-        }
+            .to_owned(),
         other => panic!("no golden raw arm for {other}"),
     };
     format!(
@@ -145,11 +149,7 @@ fn golden_driver(osc: &str) -> String {
 }
 
 /// Compare two option series slot-for-slot within tolerance.
-fn assert_series_close(
-    got: &[Option<f64>],
-    want: &[Option<f64>],
-    label: &str,
-) {
+fn assert_series_close(got: &[Option<f64>], want: &[Option<f64>], label: &str) {
     assert_eq!(got.len(), want.len(), "{label}: length");
     for (index, (g, w)) in got.iter().zip(want).enumerate() {
         match (g, w) {
@@ -185,7 +185,11 @@ fn catalog_rows_match_the_pine_normalize_osc_arms() {
         let params = kind.params().expect("pine arm is evaluable");
         assert_eq!(
             params,
-            OscParams { offset: *offset, k: *k, multiplier: *multiplier },
+            OscParams {
+                offset: *offset,
+                k: *k,
+                multiplier: *multiplier
+            },
             "{member} constants moved from the pine arm"
         );
     }
@@ -223,7 +227,9 @@ fn pine_oscillator_enum_members_all_map_to_catalog_rows() {
     for line in enum_body.lines() {
         let line = line.trim();
         if let Some(rest) = line.strip_prefix(|c: char| c.is_ascii_alphabetic()) {
-            let Some((name, value)) = rest.split_once('=') else { continue };
+            let Some((name, value)) = rest.split_once('=') else {
+                continue;
+            };
             let name = name.trim();
             if name == "NA" {
                 // Pine `NA` ("-" pass-through) maps to the Rust `Raw` row.
@@ -231,14 +237,22 @@ fn pine_oscillator_enum_members_all_map_to_catalog_rows() {
                 checked += 1;
                 continue;
             }
-            let value = value.split("//").next().unwrap_or(value).trim().trim_matches('"');
+            let value = value
+                .split("//")
+                .next()
+                .unwrap_or(value)
+                .trim()
+                .trim_matches('"');
             let kind =
                 parse_oscillator_kind(value).unwrap_or_else(|| panic!("{value} has a catalog row"));
             assert_eq!(kind.pine_name(), value, "{name} pine spelling");
             checked += 1;
         }
     }
-    assert!(checked >= 11, "every pine Oscillators member mapped, got {checked}");
+    assert!(
+        checked >= 11,
+        "every pine Oscillators member mapped, got {checked}"
+    );
 }
 
 #[test]
@@ -301,7 +315,10 @@ fn leg_driver(osc: &str, which: i64) -> String {
 #[test]
 fn each_which_leg_matches_pine_for_the_multi_leg_families() {
     let bars = wobble_bars();
-    for (osc, kind) in [("VOSS", OscillatorKind::Voss), ("AROON", OscillatorKind::Aroon)] {
+    for (osc, kind) in [
+        ("VOSS", OscillatorKind::Voss),
+        ("AROON", OscillatorKind::Aroon),
+    ] {
         let mut distinct: Vec<Vec<Option<f64>>> = Vec::new();
         for leg in kind.which_legs() {
             let which = leg.which();
@@ -319,15 +336,15 @@ fn each_which_leg_matches_pine_for_the_multi_leg_families() {
         // second series the family produces.
         for (i, left) in distinct.iter().enumerate() {
             for right in &distinct[i + 1..] {
-                let differs = left
-                    .iter()
-                    .zip(right)
-                    .any(|(a, b)| match (a, b) {
-                        (Some(a), Some(b)) => (a - b).abs() > 1e-9,
-                        (None, None) => false,
-                        _ => true,
-                    });
-                assert!(differs, "{osc}: legs {i} and the next produce identical series");
+                let differs = left.iter().zip(right).any(|(a, b)| match (a, b) {
+                    (Some(a), Some(b)) => (a - b).abs() > 1e-9,
+                    (None, None) => false,
+                    _ => true,
+                });
+                assert!(
+                    differs,
+                    "{osc}: legs {i} and the next produce identical series"
+                );
             }
         }
     }
@@ -337,7 +354,9 @@ fn each_which_leg_matches_pine_for_the_multi_leg_families() {
 fn squash_to_100_is_bijective_with_the_pivot_thresholds() {
     // A reading fires the unbounded threshold iff its bounded image fires
     // the bounded threshold; `squash_to_100(±100) = ±50` pins the rails.
-    for value in [-1.0e6, -300.0, -100.0, -99.9, -0.0, 0.0, 99.9, 100.0, 300.0, 1.0e6] {
+    for value in [
+        -1.0e6, -300.0, -100.0, -99.9, -0.0, 0.0, 99.9, 100.0, 300.0, 1.0e6,
+    ] {
         let bounded = squash_to_100(value);
         let fires_unbounded = value.abs() >= crate::integration_lite::CALIBRATED_PIVOT_THRESHOLD;
         let fires_bounded = bounded.abs() >= CALIBRATED_BOUNDED_PIVOT_THRESHOLD;
@@ -346,8 +365,14 @@ fn squash_to_100_is_bijective_with_the_pivot_thresholds() {
             "{value} fires both thresholds together (bounded {bounded})"
         );
     }
-    assert!((squash_to_100(100.0) - 50.0).abs() < 1e-12, "the +100 rail maps to +50");
-    assert!((squash_to_100(-100.0) + 50.0).abs() < 1e-12, "the -100 rail maps to -50");
+    assert!(
+        (squash_to_100(100.0) - 50.0).abs() < 1e-12,
+        "the +100 rail maps to +50"
+    );
+    assert!(
+        (squash_to_100(-100.0) + 50.0).abs() < 1e-12,
+        "the -100 rail maps to -50"
+    );
 }
 
 #[test]
@@ -358,18 +383,28 @@ fn cdv_refuses_and_raw_passes_through() {
     assert!(!cdv.is_evaluable(), "cdv refuses, never substitutes");
     assert!(cdv.refusal_reason().is_some(), "cdv names its refusal");
     assert_eq!(cdv.kernel_id(), None, "cdv has no kernel");
-    assert!(cdv.params().is_none(), "cdv never falls back to default constants");
+    assert!(
+        cdv.params().is_none(),
+        "cdv never falls back to default constants"
+    );
     let refused = normalize_series(&[Some(50.0)], cdv).expect_err("cdv refuses");
     assert!(
         refused.to_string().contains("cdv has no kernel"),
         "refusal names its reason, got {refused}"
     );
-    assert!(normalize_series_bounded(&[Some(50.0)], cdv).is_err(), "bounded path also refuses");
+    assert!(
+        normalize_series_bounded(&[Some(50.0)], cdv).is_err(),
+        "bounded path also refuses"
+    );
     // `Raw` is the pass-through: default constants, no kernel.
     let raw = parse_oscillator_kind("raw").expect("raw parses");
     assert!(raw.is_evaluable(), "raw evaluates as pass-through");
     assert_eq!(raw.kernel_id(), None, "raw has no kernel");
-    assert_eq!(raw.params(), OscillatorKind::Rsi.params(), "raw shares the default constants");
+    assert_eq!(
+        raw.params(),
+        OscillatorKind::Rsi.params(),
+        "raw shares the default constants"
+    );
 }
 
 #[test]
@@ -393,7 +428,11 @@ fn which_legs_match_the_reference_dispatch() {
         OscillatorKind::TrendSi,
         OscillatorKind::Raw,
     ] {
-        assert_eq!(kind.which_legs(), &[WhichLeg::Fast, WhichLeg::Slow], "{kind:?} length axis");
+        assert_eq!(
+            kind.which_legs(),
+            &[WhichLeg::Fast, WhichLeg::Slow],
+            "{kind:?} length axis"
+        );
     }
     assert_eq!(WhichLeg::from_which(1), Some(WhichLeg::Fast));
     assert_eq!(WhichLeg::from_which(-1), Some(WhichLeg::Slow));
@@ -407,8 +446,14 @@ fn which_legs_match_the_reference_dispatch() {
 }
 
 #[test]
-fn catalog_ids_and_pine_names_round_trip() {    for kind in OscillatorKind::all() {
-        assert_eq!(parse_oscillator_kind(kind.id()), Some(kind), "{} parses", kind.id());
+fn catalog_ids_and_pine_names_round_trip() {
+    for kind in OscillatorKind::all() {
+        assert_eq!(
+            parse_oscillator_kind(kind.id()),
+            Some(kind),
+            "{} parses",
+            kind.id()
+        );
         assert_eq!(
             parse_oscillator_kind(kind.pine_name()),
             Some(kind),

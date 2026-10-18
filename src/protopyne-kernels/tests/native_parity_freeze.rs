@@ -56,15 +56,15 @@ enum RemainderExpect {
     SignedDivergence,
 }
 
-use chrono::TimeZone as _;
 use crate::pine::test_fixture as fixture;
 use crate::{
-    BarRing, BarTick, BarsConfig, ConfirmOutcome, ConfirmedBar, InputSet, LinkedModule,
-    LtfRow, MarketContext, MarketContextKey, ModuleId, ModuleInput, MtfStore, NativeOptions,
-    NativeResolution, NativeServed, PineEngine, PineRuntimeConfig, PineValue, RunOutcome,
-    UserInstance, apply_overrides, assert_native_matrix_covers, compat_for, fetch_all,
-    health_mas, resolve_imports, update,
+    apply_overrides, assert_native_matrix_covers, compat_for, fetch_all, health_mas,
+    resolve_imports, update, BarRing, BarTick, BarsConfig, ConfirmOutcome, ConfirmedBar, InputSet,
+    LinkedModule, LtfRow, MarketContext, MarketContextKey, ModuleId, ModuleInput, MtfStore,
+    NativeOptions, NativeResolution, NativeServed, PineEngine, PineRuntimeConfig, PineValue,
+    RunOutcome, UserInstance,
 };
+use chrono::TimeZone as _;
 use protopyne_types::{Bar, Timeframe};
 use std::path::PathBuf;
 
@@ -99,9 +99,19 @@ fn linked_bars(driver: &str) -> Vec<LinkedModule> {
 fn linked_apex(driver: &str) -> Vec<LinkedModule> {
     fixture::linked_modules(vec![
         shipped_module("libraries/_libUtil.pine", "showmethegrail", "libUtil", 12),
-        shipped_module("libraries/_libBuffers.pine", "showmethegrail", "libBuffers", 6),
+        shipped_module(
+            "libraries/_libBuffers.pine",
+            "showmethegrail",
+            "libBuffers",
+            6,
+        ),
         shipped_module("libraries/_libBars.pine", "showmethegrail", "libBars", 12),
-        shipped_module("libraries/_libDrawing.pine", "showmethegrail", "libDrawing", 61),
+        shipped_module(
+            "libraries/_libDrawing.pine",
+            "showmethegrail",
+            "libDrawing",
+            61,
+        ),
         shipped_module("libraries/_libApex.pine", "showmethegrail", "libApex", 88),
         driver_module(driver),
     ])
@@ -118,15 +128,13 @@ fn test_engine() -> PineEngine {
 
 fn ms_bar(open: &str, high: &str, low: &str, close: &str, volume: u64, ts_millis: i64) -> Bar {
     Bar::new()
-        .ts(
-            chrono::Utc
-                .timestamp_opt(
-                    ts_millis.div_euclid(1000),
-                    ts_millis.rem_euclid(1000) as u32 * 1_000_000,
-                )
-                .single()
-                .expect("valid test timestamp"),
-        )
+        .ts(chrono::Utc
+            .timestamp_opt(
+                ts_millis.div_euclid(1000),
+                ts_millis.rem_euclid(1000) as u32 * 1_000_000,
+            )
+            .single()
+            .expect("valid test timestamp"))
         .o(open.parse().expect("decimal"))
         .h(high.parse().expect("decimal"))
         .l(low.parse().expect("decimal"))
@@ -138,11 +146,9 @@ fn ms_bar(open: &str, high: &str, low: &str, close: &str, volume: u64, ts_millis
 
 fn secs_bar(open: &str, high: &str, low: &str, close: &str, volume: u64, ts_secs: i64) -> Bar {
     Bar::new()
-        .ts(
-            chrono::TimeZone::timestamp_opt(&chrono::Utc, ts_secs, 0)
-                .single()
-                .expect("valid test timestamp"),
-        )
+        .ts(chrono::TimeZone::timestamp_opt(&chrono::Utc, ts_secs, 0)
+            .single()
+            .expect("valid test timestamp"))
         .o(open.parse().expect("decimal"))
         .h(high.parse().expect("decimal"))
         .l(low.parse().expect("decimal"))
@@ -216,9 +222,17 @@ fn load_tick_window(name: &str) -> Vec<(i64, f64, f64)> {
     lines
         .map(|line| {
             let mut cells = line.split(',');
-            let stamp = cells.next().expect("stamp").parse::<i64>().expect("int stamp");
+            let stamp = cells
+                .next()
+                .expect("stamp")
+                .parse::<i64>()
+                .expect("int stamp");
             let price = cells.next().expect("price").parse::<f64>().expect("price");
-            let volume = cells.next().expect("volume").parse::<f64>().expect("volume");
+            let volume = cells
+                .next()
+                .expect("volume")
+                .parse::<f64>()
+                .expect("volume");
             (stamp, price, volume)
         })
         .collect()
@@ -237,7 +251,14 @@ fn tick_update(
 ) -> (Bar, i64) {
     let fmt = |v: f64| format!("{v:.2}");
     (
-        ms_bar(&fmt(open), &fmt(high), &fmt(low), &fmt(price), cumvol, bar_open_ms),
+        ms_bar(
+            &fmt(open),
+            &fmt(high),
+            &fmt(low),
+            &fmt(price),
+            cumvol,
+            bar_open_ms,
+        ),
         tick_ms,
     )
 }
@@ -263,7 +284,15 @@ fn window_legs(rows: &[(i64, f64, f64)], open_of: &dyn Fn(i64) -> i64) -> Vec<(B
         high = high.max(*price);
         low = low.min(*price);
         cum += *volume;
-        updates.push(tick_update(bucket, *stamp, open, high, low, *price, cum.round() as u64));
+        updates.push(tick_update(
+            bucket,
+            *stamp,
+            open,
+            high,
+            low,
+            *price,
+            cum.round() as u64,
+        ));
     }
     updates
 }
@@ -276,7 +305,11 @@ fn minute_row(open_ms: i64) -> LtfRow {
     let mut picked: Option<LtfRow> = None;
     for line in content.lines().skip(1) {
         let mut cells = line.split(',');
-        let secs = cells.next().expect("time").parse::<i64>().expect("int time");
+        let secs = cells
+            .next()
+            .expect("time")
+            .parse::<i64>()
+            .expect("int time");
         if secs * 1000 > open_ms {
             break;
         }
@@ -361,7 +394,13 @@ fn replay_native(
             ring.on_bar_open(open, high, low, last_price, bucket);
             first = false;
         } else {
-            let legs = BarTick { open, high, low, close: last_price, volume: cum.round() };
+            let legs = BarTick {
+                open,
+                high,
+                low,
+                close: last_price,
+                volume: cum.round(),
+            };
             ring.ingest_tick(legs, *stamp);
         }
         ring.confirm_ltf(*stamp, last_price, None);
@@ -405,7 +444,14 @@ fn assert_window_agrees(
     pull_rows: Option<&[LtfRow]>,
     inject: bool,
 ) -> f64 {
-    assert_window_agrees_inner(window, rows, open_of, pull_rows, inject, RemainderExpect::Agree)
+    assert_window_agrees_inner(
+        window,
+        rows,
+        open_of,
+        pull_rows,
+        inject,
+        RemainderExpect::Agree,
+    )
 }
 
 fn assert_window_agrees_inner(
@@ -469,14 +515,22 @@ fn assert_window_agrees_inner(
                 "{window} pine appends the abs top-up"
             );
             let reference: f64 = rows.iter().map(|row| row.2).sum::<f64>().round();
-            float_eq(native.total_vol, reference, "{window} native trims to the reference");
+            float_eq(
+                native.total_vol,
+                reference,
+                "{window} native trims to the reference",
+            );
             assert!(
                 pine_total > reference,
                 "{window} pine fabricates past the reference: {pine_total} vs {reference}"
             );
         }
     }
-    assert_eq!(instance_num(&state, "pull_count"), native.pull_count as f64, "{window} pull_count");
+    assert_eq!(
+        instance_num(&state, "pull_count"),
+        native.pull_count as f64,
+        "{window} pull_count"
+    );
     assert_eq!(
         instance_num(&state, "fetch_check_count"),
         native.fetch_check_count as f64,
@@ -487,16 +541,36 @@ fn assert_window_agrees_inner(
         native.boundary_count as f64,
         "{window} boundary_count"
     );
-    assert_eq!(instance_num(&state, "gap_count"), native.gap_count as f64, "{window} gap_count");
+    assert_eq!(
+        instance_num(&state, "gap_count"),
+        native.gap_count as f64,
+        "{window} gap_count"
+    );
     assert_eq!(
         instance_num(&state, "rollback_count"),
         native.rollback_count as f64,
         "{window} rollback_count"
     );
-    assert_eq!(instance_num(&state, "tick_count"), native.tick_count as f64, "{window} tick_count");
-    float_eq(instance_num(&state, "tick_accuracy"), native.tick_accuracy, "tick_accuracy");
-    float_eq(instance_num(&state, "volume_drift_pct"), native.volume_drift_pct, "volume_drift_pct");
-    float_eq(instance_num(&state, "last_bar_drift"), native.last_bar_drift, "last_bar_drift");
+    assert_eq!(
+        instance_num(&state, "tick_count"),
+        native.tick_count as f64,
+        "{window} tick_count"
+    );
+    float_eq(
+        instance_num(&state, "tick_accuracy"),
+        native.tick_accuracy,
+        "tick_accuracy",
+    );
+    float_eq(
+        instance_num(&state, "volume_drift_pct"),
+        native.volume_drift_pct,
+        "volume_drift_pct",
+    );
+    float_eq(
+        instance_num(&state, "last_bar_drift"),
+        native.last_bar_drift,
+        "last_bar_drift",
+    );
     assert_eq!(
         pine_bool_value(&state, "last_bar_healthy"),
         native.last_bar_healthy,
@@ -511,7 +585,10 @@ fn freeze_tick_window_quiet() {
     assert_eq!(rows.len(), 15, "quiet window row count pinned");
     let per_minute = |stamp: i64| stamp.div_euclid(60_000) * 60_000;
     let max_diff = assert_window_agrees("quiet", &rows, &per_minute, None, false);
-    assert!(max_diff < EPS, "quiet max-abs-diff {max_diff} under frozen eps");
+    assert!(
+        max_diff < EPS,
+        "quiet max-abs-diff {max_diff} under frozen eps"
+    );
 }
 
 #[test]
@@ -522,8 +599,17 @@ fn freeze_tick_window_pull() {
     let open_ms = rows[0].0.div_euclid(60_000) * 60_000;
     let row = minute_row(open_ms);
     let per_minute = |stamp: i64| stamp.div_euclid(60_000) * 60_000;
-    let max_diff = assert_window_agrees("pull", &rows, &per_minute, Some(std::slice::from_ref(&row)), true);
-    assert!(max_diff < EPS, "pull max-abs-diff {max_diff} under frozen eps");
+    let max_diff = assert_window_agrees(
+        "pull",
+        &rows,
+        &per_minute,
+        Some(std::slice::from_ref(&row)),
+        true,
+    );
+    assert!(
+        max_diff < EPS,
+        "pull max-abs-diff {max_diff} under frozen eps"
+    );
 }
 
 #[test]
@@ -547,7 +633,10 @@ fn freeze_tick_window_pull_remainder() {
         true,
         RemainderExpect::SignedDivergence,
     );
-    assert!(max_diff < EPS, "remainder max-abs-diff {max_diff} under frozen eps");
+    assert!(
+        max_diff < EPS,
+        "remainder max-abs-diff {max_diff} under frozen eps"
+    );
 }
 
 #[test]
@@ -561,7 +650,10 @@ fn freeze_tick_window_sparse() {
     );
     let one_bar = |_: i64| BAR_OPEN;
     let max_diff = assert_window_agrees("sparse", &rows, &one_bar, None, false);
-    assert!(max_diff < EPS, "sparse max-abs-diff {max_diff} under frozen eps");
+    assert!(
+        max_diff < EPS,
+        "sparse max-abs-diff {max_diff} under frozen eps"
+    );
 }
 
 #[test]
@@ -570,7 +662,10 @@ fn freeze_tick_window_out_of_order() {
     assert_eq!(rows.len(), 30, "out-of-order window row count pinned");
     let per_minute = |stamp: i64| stamp.div_euclid(60_000) * 60_000;
     let max_diff = assert_window_agrees("out_of_order", &rows, &per_minute, None, false);
-    assert!(max_diff < EPS, "out-of-order max-abs-diff {max_diff} under frozen eps");
+    assert!(
+        max_diff < EPS,
+        "out-of-order max-abs-diff {max_diff} under frozen eps"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -583,7 +678,8 @@ const APEX_IMPORTS: &str = "import showmethegrail/libUtil/12 as UTIL\n\
      import showmethegrail/libBars/12 as BARS\n\
      import showmethegrail/libDrawing/61 as libDrawing\n\
      import showmethegrail/libApex/88 as libApex\n";
-const CTX_DRIVER: &str = "var ctx = libApex.MarketContext.new()\nif barstate.isfirst\n    ctx.init()\nctx.fetch()\n";
+const CTX_DRIVER: &str =
+    "var ctx = libApex.MarketContext.new()\nif barstate.isfirst\n    ctx.init()\nctx.fetch()\n";
 
 fn drive_closes(closes: &[f64]) -> Vec<Bar> {
     closes
@@ -602,12 +698,18 @@ fn drive_closes(closes: &[f64]) -> Vec<Bar> {
         .collect()
 }
 
-fn wobble_shape(base: f64, volume_spike: Option<(u32, u64)>, truncate_to: Option<usize>) -> Vec<Bar> {
+fn wobble_shape(
+    base: f64,
+    volume_spike: Option<(u32, u64)>,
+    truncate_to: Option<usize>,
+) -> Vec<Bar> {
     let mut bars: Vec<Bar> = (0u32..40)
         .map(|i| {
             let wobble = if i % 2 == 0 { 0.0 } else { 0.4 };
             let close = base + wobble;
-            let volume = volume_spike.filter(|(at, _)| *at == i).map_or(1_000, |(_, v)| v);
+            let volume = volume_spike
+                .filter(|(at, _)| *at == i)
+                .map_or(1_000, |(_, v)| v);
             secs_bar(
                 &format!("{:.2}", close - 0.2),
                 &format!("{:.2}", close + 0.4),
@@ -630,8 +732,15 @@ fn native_context(bars: &[Bar]) -> MarketContext {
     store.set_base(bars).expect("base loads");
     let key = MarketContextKey::new(Timeframe::M5);
     let now = bars.last().expect("nonempty").ts.timestamp_millis() + 300_000;
-    fetch_all(&mut store, &registry, std::slice::from_ref(&key), &std::collections::HashMap::new(), now, crate::Lookahead::Off)
-        .expect("fetch fills");
+    fetch_all(
+        &mut store,
+        &registry,
+        std::slice::from_ref(&key),
+        &std::collections::HashMap::new(),
+        now,
+        crate::Lookahead::Off,
+    )
+    .expect("fetch fills");
     let frame_len = store.frame_stamps(key.tf_ms()).expect("frame").len();
     update(&store, &key, frame_len - 1, None).expect("context reads")
 }
@@ -691,7 +800,9 @@ fn assert_context_agrees(label: &str, bars: &[Bar]) -> f64 {
                     "{label} {field}: pine {want} vs native {got}"
                 );
             }
-            (other, _) => panic!("{label} {field}: na-ness or shape diverges (pine {other:?}, native {got:?})"),
+            (other, _) => panic!(
+                "{label} {field}: na-ness or shape diverges (pine {other:?}, native {got:?})"
+            ),
         }
     }
     max_diff
@@ -743,7 +854,10 @@ fn freeze_context_regime_tapes() {
     ] {
         max_diff = max_diff.max(assert_context_agrees(label, &bars));
     }
-    assert!(max_diff < EPS, "regime tapes max-abs-diff {max_diff} under frozen eps");
+    assert!(
+        max_diff < EPS,
+        "regime tapes max-abs-diff {max_diff} under frozen eps"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -752,14 +866,20 @@ fn freeze_context_regime_tapes() {
 // ---------------------------------------------------------------------------
 
 fn load_spy_csv(name: &str) -> Vec<Bar> {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/data").join(name);
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/data")
+        .join(name);
     let content = std::fs::read_to_string(&path).expect("spy history loads");
     content
         .lines()
         .skip(1)
         .map(|line| {
             let mut cells = line.split(',');
-            let secs = cells.next().expect("time").parse::<i64>().expect("int time");
+            let secs = cells
+                .next()
+                .expect("time")
+                .parse::<i64>()
+                .expect("int time");
             secs_bar(
                 cells.next().expect("o"),
                 cells.next().expect("h"),
@@ -814,7 +934,9 @@ fn spy_agreement(display: &str, tf: Timeframe, csv: &str) -> SpyGolden {
     let bars = load_spy_csv(csv);
     let tf_ms = tf.duration_ms();
     let raw = std::fs::read_to_string(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/data").join(csv),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/data")
+            .join(csv),
     )
     .expect("spy history loads");
     let native = {
@@ -823,8 +945,15 @@ fn spy_agreement(display: &str, tf: Timeframe, csv: &str) -> SpyGolden {
         store.set_base(&bars).expect("base loads");
         let key = MarketContextKey::new(tf);
         let now = bars.last().expect("nonempty").ts.timestamp_millis() + tf_ms;
-        fetch_all(&mut store, &registry, std::slice::from_ref(&key), &std::collections::HashMap::new(), now, crate::Lookahead::Off)
-            .expect("fetch fills");
+        fetch_all(
+            &mut store,
+            &registry,
+            std::slice::from_ref(&key),
+            &std::collections::HashMap::new(),
+            now,
+            crate::Lookahead::Off,
+        )
+        .expect("fetch fills");
         let frame_len = store.frame_stamps(key.tf_ms()).expect("frame").len();
         update(&store, &key, frame_len - 1, None).expect("context reads")
     };
@@ -851,7 +980,9 @@ fn spy_agreement(display: &str, tf: Timeframe, csv: &str) -> SpyGolden {
             (Some(Some(PineValue::Int(want))), Some(got)) => {
                 max_diff = max_diff.max((*want as f64 - got).abs());
             }
-            (other, _) => panic!("{display} {field}: shape diverges (pine {other:?}, native {got:?})"),
+            (other, _) => {
+                panic!("{display} {field}: shape diverges (pine {other:?}, native {got:?})")
+            }
         }
     }
     SpyGolden {
@@ -898,7 +1029,10 @@ fn freeze_spy_1m_golden() {
     // parser, not the implementation. The agreement gate below stays the
     // real correctness proof; the golden pins drift byte for byte.
     let golden = spy_agreement("1M", Timeframe::M1, "SPY_1M.csv");
-    assert!(golden.max_abs_diff_vs_pine < EPS, "1M max-abs-diff under frozen eps");
+    assert!(
+        golden.max_abs_diff_vs_pine < EPS,
+        "1M max-abs-diff under frozen eps"
+    );
     let rendered = serde_json::to_string_pretty(&golden).expect("golden serializes");
     assert_golden_stable(&rendered, &read_spy_golden_text("1m"), "1M");
 }
@@ -906,7 +1040,10 @@ fn freeze_spy_1m_golden() {
 #[test]
 fn freeze_spy_5m_golden() {
     let golden = spy_agreement("5M", Timeframe::M5, "SPY_5M.csv");
-    assert!(golden.max_abs_diff_vs_pine < EPS, "5M max-abs-diff under frozen eps");
+    assert!(
+        golden.max_abs_diff_vs_pine < EPS,
+        "5M max-abs-diff under frozen eps"
+    );
     let rendered = serde_json::to_string_pretty(&golden).expect("golden serializes");
     assert_golden_stable(&rendered, &read_spy_golden_text("5m"), "5M");
 }
@@ -914,7 +1051,10 @@ fn freeze_spy_5m_golden() {
 #[test]
 fn freeze_spy_15m_golden() {
     let golden = spy_agreement("15M", Timeframe::M15, "SPY_15M.csv");
-    assert!(golden.max_abs_diff_vs_pine < EPS, "15M max-abs-diff under frozen eps");
+    assert!(
+        golden.max_abs_diff_vs_pine < EPS,
+        "15M max-abs-diff under frozen eps"
+    );
     let rendered = serde_json::to_string_pretty(&golden).expect("golden serializes");
     assert_golden_stable(&rendered, &read_spy_golden_text("15m"), "15M");
 }
@@ -938,8 +1078,11 @@ fn generate_spy_goldens() {
             "{display} must agree before recording"
         );
         let path = golden_dir().join(format!("native_freeze_spy_{}.json", display.to_lowercase()));
-        std::fs::write(&path, serde_json::to_string_pretty(&golden).expect("golden serializes"))
-            .expect("golden writes");
+        std::fs::write(
+            &path,
+            serde_json::to_string_pretty(&golden).expect("golden serializes"),
+        )
+        .expect("golden writes");
     }
 }
 
@@ -974,9 +1117,19 @@ fn freeze_default_options_serve_libraries_with_pine_fallback() {
     assert!(options.enabled, "native serves by default after cutover");
     let inputs = vec![
         shipped_module("libraries/_libUtil.pine", "showmethegrail", "libUtil", 12),
-        shipped_module("libraries/_libBuffers.pine", "showmethegrail", "libBuffers", 6),
+        shipped_module(
+            "libraries/_libBuffers.pine",
+            "showmethegrail",
+            "libBuffers",
+            6,
+        ),
         shipped_module("libraries/_libBars.pine", "showmethegrail", "libBars", 12),
-        shipped_module("libraries/_libDrawing.pine", "showmethegrail", "libDrawing", 61),
+        shipped_module(
+            "libraries/_libDrawing.pine",
+            "showmethegrail",
+            "libDrawing",
+            61,
+        ),
         shipped_module("libraries/_libApex.pine", "showmethegrail", "libApex", 88),
         driver_module(
             "import showmethegrail/libBars/12 as BARS\n\
@@ -986,7 +1139,10 @@ fn freeze_default_options_serve_libraries_with_pine_fallback() {
     let graph = resolve_imports(inputs).expect("graph links");
     let overlay = apply_overrides(&graph, &options).expect("overlay applies");
     let driver = ModuleId::new("local", "Driver");
-    assert!(overlay.is_served("showmethegrail", "libBars"), "libBars serves natively");
+    assert!(
+        overlay.is_served("showmethegrail", "libBars"),
+        "libBars serves natively"
+    );
     assert!(
         overlay
             .provides("showmethegrail", "libBars")
@@ -994,7 +1150,10 @@ fn freeze_default_options_serve_libraries_with_pine_fallback() {
             .contains(&"Bars"),
         "Bars in the served surface"
     );
-    assert!(overlay.is_served("showmethegrail", "libApex"), "apex serves natively");
+    assert!(
+        overlay.is_served("showmethegrail", "libApex"),
+        "apex serves natively"
+    );
     assert!(
         overlay
             .provides("showmethegrail", "libApex")
@@ -1007,12 +1166,20 @@ fn freeze_default_options_serve_libraries_with_pine_fallback() {
         .iter()
         .find(|audit| audit.requested_name == "libBars")
         .expect("libBars audit recorded");
-    assert_eq!(libbars.served, NativeServed::Rust, "audit reads rust under the default");
+    assert_eq!(
+        libbars.served,
+        NativeServed::Rust,
+        "audit reads rust under the default"
+    );
     let apex = audits
         .iter()
         .find(|audit| audit.requested_name == "libApex")
         .expect("libApex audit recorded");
-    assert_eq!(apex.served, NativeServed::Rust, "apex audit reads rust under the default");
+    assert_eq!(
+        apex.served,
+        NativeServed::Rust,
+        "apex audit reads rust under the default"
+    );
     match overlay.resolve_reference(&driver, "APEX", "MarketContext") {
         Ok(NativeResolution::Native { .. }) => {}
         other => panic!("served symbol routes native, got {other:?}"),
@@ -1020,4 +1187,3 @@ fn freeze_default_options_serve_libraries_with_pine_fallback() {
     let unknown = overlay.resolve_reference(&driver, "APEX", "noSuchSymbol");
     assert!(unknown.is_err(), "unknown symbol refuses, never canned");
 }
-

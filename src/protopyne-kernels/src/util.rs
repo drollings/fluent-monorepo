@@ -100,7 +100,9 @@ fn momentum(source: &[f64], length: usize) -> Vec<Option<f64>> {
 /// every leg is missing, matching the reference fold shape.
 #[must_use]
 pub fn add_expr(a: &[f64], b: &[f64], rest: &[&[f64]]) -> Vec<Option<f64>> {
-    let len = rest.iter().fold(a.len().min(b.len()), |m, s| m.min(s.len()));
+    let len = rest
+        .iter()
+        .fold(a.len().min(b.len()), |m, s| m.min(s.len()));
     (0..len)
         .map(|i| {
             let mut sum = 0.0;
@@ -111,7 +113,11 @@ pub fn add_expr(a: &[f64], b: &[f64], rest: &[&[f64]]) -> Vec<Option<f64>> {
                     seen = true;
                 }
             }
-            if seen { Some(sum) } else { None }
+            if seen {
+                Some(sum)
+            } else {
+                None
+            }
         })
         .collect()
 }
@@ -120,7 +126,9 @@ pub fn add_expr(a: &[f64], b: &[f64], rest: &[&[f64]]) -> Vec<Option<f64>> {
 /// every leg is missing.
 #[must_use]
 pub fn mul_expr(a: &[f64], b: &[f64], rest: &[&[f64]]) -> Vec<Option<f64>> {
-    let len = rest.iter().fold(a.len().min(b.len()), |m, s| m.min(s.len()));
+    let len = rest
+        .iter()
+        .fold(a.len().min(b.len()), |m, s| m.min(s.len()));
     (0..len)
         .map(|i| {
             let mut product = 1.0;
@@ -131,7 +139,11 @@ pub fn mul_expr(a: &[f64], b: &[f64], rest: &[&[f64]]) -> Vec<Option<f64>> {
                     seen = true;
                 }
             }
-            if seen { Some(product) } else { None }
+            if seen {
+                Some(product)
+            } else {
+                None
+            }
         })
         .collect()
 }

@@ -18,7 +18,7 @@
 //! [`display_label`]: display_label
 
 use protopyne_kernels::market_context::{
-    MarketRegime, REGIME_HYSTERESIS, detect_regime, detect_regime_stable,
+    detect_regime, detect_regime_stable, MarketRegime, REGIME_HYSTERESIS,
 };
 
 use fluent_egui::EguiError;

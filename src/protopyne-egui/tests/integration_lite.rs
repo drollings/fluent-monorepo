@@ -7,12 +7,12 @@ use fluent_egui::PivotSide;
 use protopyne_chart_model::ChartRow;
 use protopyne_kernels::bars::NEUTRAL_BUY_RATIO;
 use protopyne_kernels::{
-    FetchCounters, InputSet, LibraryId, LinkedModule, ModuleGraph, ModuleInput, PineEngine,
-    PineRuntimeConfig, PineValue, RunOutcome, parse_pine_source, parse_program, resolve_imports,
+    parse_pine_source, parse_program, resolve_imports, FetchCounters, InputSet, LibraryId,
+    LinkedModule, ModuleGraph, ModuleInput, PineEngine, PineRuntimeConfig, PineValue, RunOutcome,
 };
 use protopyne_types::Bar;
-use rust_decimal::Decimal;
 use rust_decimal::prelude::FromPrimitive as _;
+use rust_decimal::Decimal;
 
 /// Frozen agreement tolerance shared with the kernel-vs-Pine matrix.
 const EPS: f64 = 1e-9;
@@ -25,7 +25,11 @@ fn data_root() -> PathBuf {
 }
 
 fn library_id(publisher: &str, name: &str, version: u64) -> LibraryId {
-    LibraryId { publisher: publisher.to_owned(), name: name.to_owned(), version }
+    LibraryId {
+        publisher: publisher.to_owned(),
+        name: name.to_owned(),
+        version,
+    }
 }
 
 fn shipped_module(file: &str, publisher: &str, name: &str, version: u64) -> ModuleInput {
@@ -83,13 +87,11 @@ fn ramp_bars() -> Vec<Bar> {
             let close = 100.0 + i as f64;
             let px = |v: f64| Decimal::from_f64(v).expect("exact test decimal");
             Bar::new()
-                .ts(
-                    chrono::Utc
-                        .with_ymd_and_hms(2026, 1, 5, 0, 0, 0)
-                        .single()
-                        .expect("valid time")
-                        + chrono::Duration::minutes(i),
-                )
+                .ts(chrono::Utc
+                    .with_ymd_and_hms(2026, 1, 5, 0, 0, 0)
+                    .single()
+                    .expect("valid time")
+                    + chrono::Duration::minutes(i))
                 .o(px(close - 0.25))
                 .h(px(close + 0.5))
                 .l(px(close - 0.5))
@@ -123,10 +125,14 @@ fn ramp_rows() -> Vec<ChartRow> {
 fn run_driver(driver: &str, bars: &[Bar]) -> (Vec<Option<f64>>, FetchCounters) {
     let modules = linked(driver);
     let mut engine = PineEngine::new(
-        PineRuntimeConfig::new().chart_symbol("SPY".to_owned()).chart_period("5".to_owned()).build(),
+        PineRuntimeConfig::new()
+            .chart_symbol("SPY".to_owned())
+            .chart_period("5".to_owned())
+            .build(),
     );
-    let outcome: RunOutcome =
-        engine.run_linked(&modules, bars, InputSet::new()).expect("linked run evaluates");
+    let outcome: RunOutcome = engine
+        .run_linked(&modules, bars, InputSet::new())
+        .expect("linked run evaluates");
     let series = (0..bars.len())
         .map(|bar| match outcome.value_at(bar, "out") {
             Some(Some(PineValue::Float(value))) => Some(value),
@@ -140,8 +146,14 @@ fn run_driver(driver: &str, bars: &[Bar]) -> (Vec<Option<f64>>, FetchCounters) {
 
 fn freeze_drivers() -> [(&'static str, &'static str); 3] {
     [
-        ("fast", "out = MAS.normalizeOsc(close, UTIL.Oscillators.RSI, 0, 5, 14, UTIL.Smoothings.NA, 0)"),
-        ("slow", "out = MAS.normalizeOsc(close, UTIL.Oscillators.CCI, 0, 5, 14, UTIL.Smoothings.NA, 0)"),
+        (
+            "fast",
+            "out = MAS.normalizeOsc(close, UTIL.Oscillators.RSI, 0, 5, 14, UTIL.Smoothings.NA, 0)",
+        ),
+        (
+            "slow",
+            "out = MAS.normalizeOsc(close, UTIL.Oscillators.CCI, 0, 5, 14, UTIL.Smoothings.NA, 0)",
+        ),
         ("adaptive", "out = MAS.getEIT(close, 0.14)"),
     ]
 }
@@ -149,14 +161,16 @@ fn freeze_drivers() -> [(&'static str, &'static str); 3] {
 #[test]
 fn freeze_pins_native_against_pine() {
     let bars = ramp_bars();
-    let native =
-        native_lite_series(&ramp_rows(), 0.14).expect("native series evaluate");
+    let native = native_lite_series(&ramp_rows(), 0.14).expect("native series evaluate");
     let frozen = LiteFrozen::from_native(&native);
-    let mut pine = LiteFrozen { fast: Vec::new(), slow: Vec::new(), adaptive: Vec::new() };
+    let mut pine = LiteFrozen {
+        fast: Vec::new(),
+        slow: Vec::new(),
+        adaptive: Vec::new(),
+    };
     let mut fallbacks = 0_u64;
     for (which, expr) in freeze_drivers() {
-        let (series, counters) =
-            run_driver(&format!("{DRIVER_IMPORTS}{expr}"), &bars);
+        let (series, counters) = run_driver(&format!("{DRIVER_IMPORTS}{expr}"), &bars);
         fallbacks = fallbacks.max(counters.fallbacks());
         match which {
             "fast" => pine.fast = series,
@@ -174,9 +188,11 @@ fn freeze_pins_native_against_pine() {
         report.adaptive.max_abs_diff,
         report.adaptive.compared,
     );
-    for (name, pair) in
-        [("fast", report.fast), ("slow", report.slow), ("adaptive", report.adaptive)]
-    {
+    for (name, pair) in [
+        ("fast", report.fast),
+        ("slow", report.slow),
+        ("adaptive", report.adaptive),
+    ] {
         assert!(
             pair.compared >= 30,
             "{name}: only {} bars co-read after warmup — fixture too short",
@@ -193,8 +209,8 @@ fn freeze_pins_native_against_pine() {
 
 #[test]
 fn calibrated_view_holds_shape_over_the_ramp() {
-    let view = integration_lite_view_calibrated(&ramp_rows(), 0.14, 0.5)
-        .expect("calibrated view builds");
+    let view =
+        integration_lite_view_calibrated(&ramp_rows(), 0.14, 0.5).expect("calibrated view builds");
     assert!(
         (view.threshold - CALIBRATED_PIVOT_THRESHOLD).abs() < 1e-12,
         "view carries the frozen threshold"
@@ -203,9 +219,17 @@ fn calibrated_view_holds_shape_over_the_ramp() {
     assert_eq!(view.slow.len(), 60);
     assert_eq!(view.ribbon.upper.len(), 60);
     // Monotonic ramp pins the oscillator high: no threshold crossings.
-    assert!(view.pivots.is_empty(), "steady ramp fires no pivots: {:?}", view.pivots);
-    for (index, (up, lo)) in
-        view.ribbon.upper.iter().zip(view.ribbon.lower.iter()).enumerate()
+    assert!(
+        view.pivots.is_empty(),
+        "steady ramp fires no pivots: {:?}",
+        view.pivots
+    );
+    for (index, (up, lo)) in view
+        .ribbon
+        .upper
+        .iter()
+        .zip(view.ribbon.lower.iter())
+        .enumerate()
     {
         if let (Some(a), Some(b)) = (up, lo) {
             assert!(a >= b, "ribbon orders at {index}");
@@ -216,11 +240,23 @@ fn calibrated_view_holds_shape_over_the_ramp() {
 #[test]
 fn bad_alphas_and_thresholds_refuse() {
     let rows = ramp_rows();
-    assert!(native_lite_series(&rows, 0.0).is_err(), "zero EIT alpha refuses");
-    assert!(native_lite_series(&rows, 1.5).is_err(), "divergent EIT alpha refuses");
+    assert!(
+        native_lite_series(&rows, 0.0).is_err(),
+        "zero EIT alpha refuses"
+    );
+    assert!(
+        native_lite_series(&rows, 1.5).is_err(),
+        "divergent EIT alpha refuses"
+    );
     assert!(native_lite_series(&rows, f64::NAN).is_err());
-    assert!(integration_lite_view(&rows, 0.14, 2.0, 100.0).is_err(), "fill alpha refuses");
-    assert!(integration_lite_view(&rows, 0.14, 0.5, 0.0).is_err(), "zero threshold refuses");
+    assert!(
+        integration_lite_view(&rows, 0.14, 2.0, 100.0).is_err(),
+        "fill alpha refuses"
+    );
+    assert!(
+        integration_lite_view(&rows, 0.14, 0.5, 0.0).is_err(),
+        "zero threshold refuses"
+    );
 }
 
 fn flat_fast(bars: usize, level: f64) -> Vec<Option<f64>> {
@@ -228,38 +264,55 @@ fn flat_fast(bars: usize, level: f64) -> Vec<Option<f64>> {
 }
 
 fn chop_fast(bars: usize) -> Vec<Option<f64>> {
-    (0..bars).map(|i| Some(if i % 2 == 0 { 60.0 } else { -60.0 })).collect()
+    (0..bars)
+        .map(|i| Some(if i % 2 == 0 { 60.0 } else { -60.0 }))
+        .collect()
 }
 
 fn rise_reversal() -> (Vec<Option<f64>>, Vec<PivotMark>) {
-    let fast = [60.0, 80.0, 100.0, 120.0, 150.0, 170.0, 150.0, 90.0, 70.0, 60.0]
-        .map(Some)
-        .to_vec();
-    (fast, vec![PivotMark { index: 7, side: PivotSide::High }])
+    let fast = [
+        60.0, 80.0, 100.0, 120.0, 150.0, 170.0, 150.0, 90.0, 70.0, 60.0,
+    ]
+    .map(Some)
+    .to_vec();
+    (
+        fast,
+        vec![PivotMark {
+            index: 7,
+            side: PivotSide::High,
+        }],
+    )
 }
 
 fn fall_recovery() -> (Vec<Option<f64>>, Vec<PivotMark>) {
-    let fast = [40.0, 10.0, -30.0, -80.0, -120.0, -90.0, -40.0, 0.0].map(Some).to_vec();
-    (fast, vec![PivotMark { index: 5, side: PivotSide::Low }])
+    let fast = [40.0, 10.0, -30.0, -80.0, -120.0, -90.0, -40.0, 0.0]
+        .map(Some)
+        .to_vec();
+    (
+        fast,
+        vec![PivotMark {
+            index: 5,
+            side: PivotSide::Low,
+        }],
+    )
 }
 
 #[test]
 fn controls_stay_quiet_at_the_frozen_threshold() {
     for (name, fast) in [("flat", flat_fast(40, 5.0)), ("chop", chop_fast(40))] {
-        let marks =
-            pivot_marks(&fast, CALIBRATED_PIVOT_THRESHOLD).expect("valid threshold");
+        let marks = pivot_marks(&fast, CALIBRATED_PIVOT_THRESHOLD).expect("valid threshold");
         assert!(marks.is_empty(), "{name} control must not fire: {marks:?}");
     }
 }
 
 #[test]
 fn known_pivots_score_full_precision_and_recall() {
-    for (name, (fast, expected)) in
-        [("rise_reversal", rise_reversal()), ("fall_recovery", fall_recovery())]
-    {
-        let (precision, recall) =
-            precision_recall(&fast, &expected, CALIBRATED_PIVOT_THRESHOLD)
-                .expect("valid threshold");
+    for (name, (fast, expected)) in [
+        ("rise_reversal", rise_reversal()),
+        ("fall_recovery", fall_recovery()),
+    ] {
+        let (precision, recall) = precision_recall(&fast, &expected, CALIBRATED_PIVOT_THRESHOLD)
+            .expect("valid threshold");
         assert!(
             (precision - 1.0).abs() < 1e-12 && (recall - 1.0).abs() < 1e-12,
             "{name} must score fully: {precision}/{recall}"
@@ -273,8 +326,9 @@ fn known_pivots_score_full_precision_and_recall() {
         "empty scores perfectly only against empty"
     );
     let (_, expected) = rise_reversal();
-    let (_, missed_recall) = precision_recall(&flat_fast(10, 5.0), &expected, CALIBRATED_PIVOT_THRESHOLD)
-        .expect("valid");
+    let (_, missed_recall) =
+        precision_recall(&flat_fast(10, 5.0), &expected, CALIBRATED_PIVOT_THRESHOLD)
+            .expect("valid");
     assert!(missed_recall < 1e-12, "missed pivots recall zero");
 }
 
@@ -298,20 +352,28 @@ fn calibration_report_matches_fixture() {
                 .expect("control marks recorded");
             assert_eq!(marks.len() as u64, recorded, "{name} at {threshold}");
         }
-        for (name, (fast, expected)) in
-            [("rise_reversal", rise_reversal()), ("fall_recovery", fall_recovery())]
-        {
+        for (name, (fast, expected)) in [
+            ("rise_reversal", rise_reversal()),
+            ("fall_recovery", fall_recovery()),
+        ] {
             let marks = pivot_marks(&fast, threshold).expect("valid threshold");
             let (precision, recall) =
                 precision_recall(&fast, &expected, threshold).expect("valid threshold");
             let window = &report["windows"][name];
-            let recorded_marks =
-                window["marks"][key.as_str()].as_u64().expect("window marks recorded");
-            let recorded_precision =
-                window["precision"][key.as_str()].as_f64().expect("precision recorded");
-            let recorded_recall =
-                window["recall"][key.as_str()].as_f64().expect("recall recorded");
-            assert_eq!(marks.len() as u64, recorded_marks, "{name} marks at {threshold}");
+            let recorded_marks = window["marks"][key.as_str()]
+                .as_u64()
+                .expect("window marks recorded");
+            let recorded_precision = window["precision"][key.as_str()]
+                .as_f64()
+                .expect("precision recorded");
+            let recorded_recall = window["recall"][key.as_str()]
+                .as_f64()
+                .expect("recall recorded");
+            assert_eq!(
+                marks.len() as u64,
+                recorded_marks,
+                "{name} marks at {threshold}"
+            );
             assert!(
                 (precision - recorded_precision).abs() < 1e-12
                     && (recall - recorded_recall).abs() < 1e-12,
@@ -326,9 +388,10 @@ fn calibration_sweep_is_reported() {
     // Candidate sweep each window fires through; the checked-in report
     // records these numbers (floors pin only the frozen threshold above).
     let mut table = serde_json::Map::new();
-    for (name, (fast, expected)) in
-        [("rise_reversal", rise_reversal()), ("fall_recovery", fall_recovery())]
-    {
+    for (name, (fast, expected)) in [
+        ("rise_reversal", rise_reversal()),
+        ("fall_recovery", fall_recovery()),
+    ] {
         let mut row = serde_json::Map::new();
         for threshold in [50.0, 100.0, 150.0, 200.0] {
             let marks = pivot_marks(&fast, threshold).expect("valid threshold");
@@ -349,7 +412,10 @@ fn calibration_sweep_is_reported() {
         let mut row = serde_json::Map::new();
         for threshold in [50.0, 100.0, 150.0, 200.0] {
             let marks = pivot_marks(&fast, threshold).expect("valid threshold");
-            row.insert(format!("{threshold}"), serde_json::json!({ "marks": marks.len() }));
+            row.insert(
+                format!("{threshold}"),
+                serde_json::json!({ "marks": marks.len() }),
+            );
         }
         table.insert(name.to_owned(), serde_json::Value::Object(row));
     }
@@ -366,10 +432,18 @@ fn momentum_keys_cross_direction_with_trend() {
         close,
         volume: 10,
     };
-    let rows = vec![row(100.0, 101.0), row(100.0, 99.0), row(100.0, 99.0), row(100.0, 101.0)];
+    let rows = vec![
+        row(100.0, 101.0),
+        row(100.0, 99.0),
+        row(100.0, 99.0),
+        row(100.0, 101.0),
+    ];
     let keys = candle_momentum_keys(&rows, &[true, true, false, false]).expect("aligned inputs");
     assert_eq!(keys, vec!["bull", "bull_down", "bear", "bear_up"]);
-    assert!(candle_momentum_keys(&rows, &[true]).is_err(), "key mismatch refuses");
+    assert!(
+        candle_momentum_keys(&rows, &[true]).is_err(),
+        "key mismatch refuses"
+    );
 }
 
 #[test]
@@ -394,7 +468,10 @@ fn specified_transparencies_follow_the_reference_inputs() {
             "90 - brightness: {brightness} -> {got}, want {expected}"
         );
     }
-    assert!((VOLUME_TRANSPARENCY - 60.0).abs() < 1e-12, "reference volume color input");
+    assert!(
+        (VOLUME_TRANSPARENCY - 60.0).abs() < 1e-12,
+        "reference volume color input"
+    );
 }
 
 fn test_palette() -> MomentumPalette {
@@ -412,20 +489,50 @@ fn momentum_tint_matches_hand_computed_gradient() {
     // Bull bar, mid conviction: fast_tanh(1.5) = 0.6 -> na 54, t 46;
     // leg 50 * 54 / 100 = 27 -> pos 0.635 over relief-blue -> bull-green.
     let tint = momentum_tint(100.0, 101.0, 50.0, 0.5, 1.0, &palette).expect("finite inputs tint");
-    assert_eq!(tint, MomentumTint { red: 32, green: 169, blue: 157, transparency: 46.0 });
+    assert_eq!(
+        tint,
+        MomentumTint {
+            red: 32,
+            green: 169,
+            blue: 157,
+            transparency: 46.0
+        }
+    );
     // Bear bar, softer conviction: fast_tanh(1.0) = 0.5 -> na 45, t 55;
     // leg -40 * 45 / 100 = -18 -> pos 0.41 over bear-red -> retrace-orange.
     let tint = momentum_tint(101.0, 100.0, -40.0, 0.5, 0.5, &palette).expect("finite inputs tint");
-    assert_eq!(tint, MomentumTint { red: 211, green: 81, blue: 19, transparency: 55.0 });
+    assert_eq!(
+        tint,
+        MomentumTint {
+            red: 211,
+            green: 81,
+            blue: 19,
+            transparency: 55.0
+        }
+    );
     // Flat reads bearish through the `else`: leg 0 -> midpoint at t 88.
     let tint = momentum_tint(100.0, 100.0, 0.0, 0.14, 0.0, &palette).expect("flat tints");
-    assert_eq!(tint, MomentumTint { red: 218, green: 92, blue: 16, transparency: 88.0 });
+    assert_eq!(
+        tint,
+        MomentumTint {
+            red: 218,
+            green: 92,
+            blue: 16,
+            transparency: 88.0
+        }
+    );
     // Momentum clamps to +/-100 before the map.
     let over = momentum_tint(100.0, 101.0, 300.0, 0.5, 1.0, &palette).expect("clamped tints");
     let at = momentum_tint(100.0, 101.0, 100.0, 0.5, 1.0, &palette).expect("clamped tints");
     assert_eq!(over, at, "over-range momentum reads at the rail");
-    assert!(momentum_tint(100.0, 101.0, f64::NAN, 0.5, 1.0, &palette).is_none(), "na propagates");
-    assert!(momentum_tint(100.0, 101.0, 50.0, f64::NAN, 1.0, &palette).is_none(), "na propagates");
+    assert!(
+        momentum_tint(100.0, 101.0, f64::NAN, 0.5, 1.0, &palette).is_none(),
+        "na propagates"
+    );
+    assert!(
+        momentum_tint(100.0, 101.0, 50.0, f64::NAN, 1.0, &palette).is_none(),
+        "na propagates"
+    );
 }
 
 #[test]
@@ -434,18 +541,42 @@ fn momentum_batch_preserves_holes_and_refuses() {
     let rows = ramp_rows();
     let window = &rows[..8];
     let momentum = CandleMomentum {
-        health: vec![Some(20.0), None, Some(-30.0), Some(0.0), None, Some(90.0), Some(10.0), Some(-10.0)],
+        health: vec![
+            Some(20.0),
+            None,
+            Some(-30.0),
+            Some(0.0),
+            None,
+            Some(90.0),
+            Some(10.0),
+            Some(-10.0),
+        ],
         vol_ratio: vec![1.0; 8],
     };
     let tints = momentum_tints(window, &momentum, 0.14, &palette).expect("aligned inputs tint");
     assert_eq!(tints.len(), window.len());
     assert!(tints[0].is_some());
-    assert!(tints[1].is_none(), "warming bars fall back to the discrete key");
+    assert!(
+        tints[1].is_none(),
+        "warming bars fall back to the discrete key"
+    );
     assert!(tints[4].is_none());
-    let short = CandleMomentum { health: vec![Some(1.0)], vol_ratio: vec![1.0] };
-    assert!(momentum_tints(window, &short, 0.14, &palette).is_err(), "length mismatch refuses");
-    assert!(momentum_tints(window, &momentum, 0.0, &palette).is_err(), "zero alpha refuses");
-    assert!(momentum_tints(window, &momentum, f64::NAN, &palette).is_err(), "na alpha refuses");
+    let short = CandleMomentum {
+        health: vec![Some(1.0)],
+        vol_ratio: vec![1.0],
+    };
+    assert!(
+        momentum_tints(window, &short, 0.14, &palette).is_err(),
+        "length mismatch refuses"
+    );
+    assert!(
+        momentum_tints(window, &momentum, 0.0, &palette).is_err(),
+        "zero alpha refuses"
+    );
+    assert!(
+        momentum_tints(window, &momentum, f64::NAN, &palette).is_err(),
+        "na alpha refuses"
+    );
 }
 
 #[test]
@@ -458,19 +589,29 @@ fn momentum_series_builds_from_kernels_over_the_ramp() {
         momentum.vol_ratio[..19].iter().all(|ratio| *ratio == 0.0),
         "volume SMA warmup reads zero conviction, never a partial ratio"
     );
-    assert!(momentum.vol_ratio.iter().all(|ratio| *ratio >= 0.0), "conviction never negative");
+    assert!(
+        momentum.vol_ratio.iter().all(|ratio| *ratio >= 0.0),
+        "conviction never negative"
+    );
     assert!(
         momentum.health.iter().any(Option::is_some),
         "warmed legs score health on a 60-bar ramp"
     );
-    assert!(candle_momentum_series(&rows, 0.0).is_err(), "zero EIT alpha refuses");
+    assert!(
+        candle_momentum_series(&rows, 0.0).is_err(),
+        "zero EIT alpha refuses"
+    );
 }
 
 #[test]
 fn momentum_palette_resolves_the_pine_input_hues() {
     let palette = MomentumPalette::from_theme(&fluent_egui::ThemeConfig::default())
         .expect("default theme resolves");
-    assert_eq!(palette, test_palette(), "theme defaults carry the barcolor inputs");
+    assert_eq!(
+        palette,
+        test_palette(),
+        "theme defaults carry the barcolor inputs"
+    );
 }
 
 #[test]
@@ -503,14 +644,23 @@ fn sub_pane_builds_four_bounded_oscillators_and_centered_delta_volume_histogram(
     }
     assert_eq!(pane.delta_volume.buy_top.len(), rows.len());
     assert_eq!(pane.delta_volume.sell_bottom.len(), rows.len());
-    for (top, bottom) in
-        pane.delta_volume.buy_top.iter().zip(pane.delta_volume.sell_bottom.iter())
+    for (top, bottom) in pane
+        .delta_volume
+        .buy_top
+        .iter()
+        .zip(pane.delta_volume.sell_bottom.iter())
     {
         if let Some(value) = top {
-            assert!(*value >= 0.0 && *value <= BOUNDED_DELTA_UNIT, "buy top {value} in [0, unit]");
+            assert!(
+                *value >= 0.0 && *value <= BOUNDED_DELTA_UNIT,
+                "buy top {value} in [0, unit]"
+            );
         }
         if let Some(value) = bottom {
-            assert!(*value >= 0.0 && *value <= BOUNDED_DELTA_UNIT, "sell bottom {value} in [0, unit]");
+            assert!(
+                *value >= 0.0 && *value <= BOUNDED_DELTA_UNIT,
+                "sell bottom {value} in [0, unit]"
+            );
         }
     }
     assert_eq!(
@@ -518,9 +668,22 @@ fn sub_pane_builds_four_bounded_oscillators_and_centered_delta_volume_histogram(
         DeltaConfidence::Low,
         "shape-estimated splits read low confidence"
     );
-    assert_eq!(pane.pivots.len(), 0, "a steady ramp fires no pivots: {:?}", pane.pivots);
-    assert_eq!(pane.ribbon.upper.len(), rows.len(), "the ribbon leg aligns with the rows");
-    assert_eq!(pane.ribbon.bullish.len(), rows.len(), "trend keys align with the rows");
+    assert_eq!(
+        pane.pivots.len(),
+        0,
+        "a steady ramp fires no pivots: {:?}",
+        pane.pivots
+    );
+    assert_eq!(
+        pane.ribbon.upper.len(),
+        rows.len(),
+        "the ribbon leg aligns with the rows"
+    );
+    assert_eq!(
+        pane.ribbon.bullish.len(),
+        rows.len(),
+        "trend keys align with the rows"
+    );
     assert!(pane.show_ribbon, "the trend ribbon is enabled by config");
 }
 
@@ -528,13 +691,25 @@ fn sub_pane_builds_four_bounded_oscillators_and_centered_delta_volume_histogram(
 fn integration_lite_config_derives_component_schema_and_validates_fail_closed() {
     let config = IntegrationLiteConfig::new().build();
     let names = config.field_names();
-    for expected in
-        ["eit_alpha", "fill_alpha", "ribbon_health_k", "ma_health_k", "delta_unit", "show_ribbon"]
-    {
-        assert!(names.contains(&expected), "{expected} is in the schema: {names:?}");
+    for expected in [
+        "eit_alpha",
+        "fill_alpha",
+        "ribbon_health_k",
+        "ma_health_k",
+        "delta_unit",
+        "show_ribbon",
+    ] {
+        assert!(
+            names.contains(&expected),
+            "{expected} is in the schema: {names:?}"
+        );
     }
     let fields = fluent_egui::schema_fields(&config.describe());
-    assert_eq!(fields.len(), names.len(), "the schema describes every field");
+    assert_eq!(
+        fields.len(),
+        names.len(),
+        "the schema describes every field"
+    );
     let (mut inputs, mut style, mut visibility) = (0_u32, 0_u32, 0_u32);
     for field in &fields {
         match fluent_egui::classify_schema_field(field) {
@@ -548,27 +723,51 @@ fn integration_lite_config_derives_component_schema_and_validates_fail_closed() 
         "fields partition across Inputs/Style/Visibility: {inputs}/{style}/{visibility}"
     );
     assert!(
-        IntegrationLiteConfig::new().eit_alpha(0.0).build().validate().is_err(),
+        IntegrationLiteConfig::new()
+            .eit_alpha(0.0)
+            .build()
+            .validate()
+            .is_err(),
         "zero adaptive smoothing refuses"
     );
     assert!(
-        IntegrationLiteConfig::new().eit_alpha(1.5).build().validate().is_err(),
+        IntegrationLiteConfig::new()
+            .eit_alpha(1.5)
+            .build()
+            .validate()
+            .is_err(),
         "divergent adaptive smoothing refuses"
     );
     assert!(
-        IntegrationLiteConfig::new().fill_alpha(2.0).build().validate().is_err(),
+        IntegrationLiteConfig::new()
+            .fill_alpha(2.0)
+            .build()
+            .validate()
+            .is_err(),
         "fill strength above one refuses"
     );
     assert!(
-        IntegrationLiteConfig::new().ribbon_health_k(0.0).build().validate().is_err(),
+        IntegrationLiteConfig::new()
+            .ribbon_health_k(0.0)
+            .build()
+            .validate()
+            .is_err(),
         "zero ribbon health gain refuses"
     );
     assert!(
-        IntegrationLiteConfig::new().ma_health_k(0.0).build().validate().is_err(),
+        IntegrationLiteConfig::new()
+            .ma_health_k(0.0)
+            .build()
+            .validate()
+            .is_err(),
         "zero MA health gain refuses"
     );
     assert!(
-        IntegrationLiteConfig::new().delta_unit(0.0).build().validate().is_err(),
+        IntegrationLiteConfig::new()
+            .delta_unit(0.0)
+            .build()
+            .validate()
+            .is_err(),
         "zero delta unit refuses"
     );
     let rows = ramp_rows();
@@ -598,11 +797,15 @@ fn bounded_tanh_pivot_threshold_calibration_matches_unbounded_bijection() {
     for (name, fast) in [("flat_40", flat_fast(40, 5.0)), ("chop_40", chop_fast(40))] {
         let bounded = squash_series_to_100(&fast);
         let marks = pivot_marks(&bounded, CALIBRATED_BOUNDED_PIVOT_THRESHOLD).expect("valid");
-        assert!(marks.is_empty(), "{name} control must not fire on the bounded band: {marks:?}");
+        assert!(
+            marks.is_empty(),
+            "{name} control must not fire on the bounded band: {marks:?}"
+        );
     }
-    for (name, (fast, expected)) in
-        [("rise_reversal", rise_reversal()), ("fall_recovery", fall_recovery())]
-    {
+    for (name, (fast, expected)) in [
+        ("rise_reversal", rise_reversal()),
+        ("fall_recovery", fall_recovery()),
+    ] {
         let bounded = squash_series_to_100(&fast);
         // Target window: the bounded band scores full precision and recall.
         let (precision, recall) =
@@ -636,7 +839,14 @@ fn bounded_tanh_pivot_threshold_calibration_matches_unbounded_bijection() {
 /// A fully flat bar: no body and no range, so its shape carries no direction
 /// and the delta split reads the declared neutral prior.
 fn flat_row(time: i64, price: f64, volume: u64) -> ChartRow {
-    ChartRow { time, open: price, high: price, low: price, close: price, volume }
+    ChartRow {
+        time,
+        open: price,
+        high: price,
+        low: price,
+        close: price,
+        volume,
+    }
 }
 
 /// Calibration (task value: histogram scaling; producer-confidence vs.
@@ -650,16 +860,41 @@ fn delta_volume_histogram_controls_and_confidence_axis_separation() {
     // Control: zero-volume bars. The split is exactly zero (no division by the
     // absent volume), and the histogram reads zero height without NaN.
     let zero_rows: Vec<ChartRow> = (0..8)
-        .map(|i| ChartRow { time: i, open: 100.0, high: 101.0, low: 99.0, close: 100.5, volume: 0 })
+        .map(|i| ChartRow {
+            time: i,
+            open: 100.0,
+            high: 101.0,
+            low: 99.0,
+            close: 100.5,
+            volume: 0,
+        })
         .collect();
     let (buy, sell, confidence) = delta_splits(&zero_rows);
-    assert_eq!(confidence, DeltaConfidence::Low, "shape splits read producer-low");
-    assert!(buy.iter().all(|slot| *slot == Some(0.0)), "zero-volume buy split is zero: {buy:?}");
-    assert!(sell.iter().all(|slot| *slot == Some(0.0)), "zero-volume sell split is zero: {sell:?}");
+    assert_eq!(
+        confidence,
+        DeltaConfidence::Low,
+        "shape splits read producer-low"
+    );
+    assert!(
+        buy.iter().all(|slot| *slot == Some(0.0)),
+        "zero-volume buy split is zero: {buy:?}"
+    );
+    assert!(
+        sell.iter().all(|slot| *slot == Some(0.0)),
+        "zero-volume sell split is zero: {sell:?}"
+    );
     let zero_view = delta_candle_view(&zero_rows, &buy, &sell, unit).expect("histogram builds");
     for (top, bottom) in zero_view.buy_top.iter().zip(zero_view.sell_bottom.iter()) {
-        assert_eq!(*top, Some(0.0), "zero-volume buy top is exactly zero, never NaN");
-        assert_eq!(*bottom, Some(0.0), "zero-volume sell bottom is exactly zero, never NaN");
+        assert_eq!(
+            *top,
+            Some(0.0),
+            "zero-volume buy top is exactly zero, never NaN"
+        );
+        assert_eq!(
+            *bottom,
+            Some(0.0),
+            "zero-volume sell bottom is exactly zero, never NaN"
+        );
     }
     // Control: fully flat doji bars split 50/50 at the neutral prior, and the
     // two legs are exact complements. (A doji with `open == close` but a
@@ -682,7 +917,14 @@ fn delta_volume_histogram_controls_and_confidence_axis_separation() {
     let spiked: Vec<ChartRow> = (0..40)
         .map(|i| {
             let volume = if i == 20 { 5_000_000 } else { 100 + i as u64 };
-            ChartRow { time: i, open: 100.0, high: 101.0, low: 99.0, close: 100.5, volume }
+            ChartRow {
+                time: i,
+                open: 100.0,
+                high: 101.0,
+                low: 99.0,
+                close: 100.5,
+                volume,
+            }
         })
         .collect();
     let (spike_buy, spike_sell, _) = delta_splits(&spiked);
@@ -690,7 +932,10 @@ fn delta_volume_histogram_controls_and_confidence_axis_separation() {
         delta_candle_view(&spiked, &spike_buy, &spike_sell, unit).expect("histogram builds");
     for (top, bottom) in spike_view.buy_top.iter().zip(spike_view.sell_bottom.iter()) {
         for value in [top, bottom].into_iter().flatten() {
-            assert!(*value >= 0.0 && *value <= unit, "histogram stays inside the unit: {value}");
+            assert!(
+                *value >= 0.0 && *value <= unit,
+                "histogram stays inside the unit: {value}"
+            );
         }
     }
     // Axis separation: the pivots are price-derived task-value marks, so
@@ -698,7 +943,11 @@ fn delta_volume_histogram_controls_and_confidence_axis_separation() {
     // while the split confidence stays producer-low.
     let closes: Vec<f64> = (0..40)
         .map(|i| {
-            if i < 20 { 100.0 + 2.0 * f64::from(i) } else { 138.0 - 2.0 * f64::from(i - 20) }
+            if i < 20 {
+                100.0 + 2.0 * f64::from(i)
+            } else {
+                138.0 - 2.0 * f64::from(i - 20)
+            }
         })
         .collect();
     let make_rows = |scale: u64| -> Vec<ChartRow> {
@@ -723,11 +972,13 @@ fn delta_volume_histogram_controls_and_confidence_axis_separation() {
         "the reversal window fires bounded pivots: {:?}",
         pane_a.pivots
     );
-    assert_eq!(pane_a.pivots, pane_b.pivots, "pivots are invariant to the volume split");
+    assert_eq!(
+        pane_a.pivots, pane_b.pivots,
+        "pivots are invariant to the volume split"
+    );
     assert_eq!(pane_a.delta_confidence, DeltaConfidence::Low);
     assert_eq!(pane_b.delta_confidence, DeltaConfidence::Low);
 }
-
 
 /// Calibration gate (producer confidence): over randomized history windows —
 /// trends, gaps, dojis, spikes, flats — the shape split never reports above
@@ -740,7 +991,9 @@ fn history_confidence_never_exceeds_low_and_never_moves_pivots() {
     let config = IntegrationLiteConfig::new().build();
     let mut state: u64 = 0x9e37_79b9_7f4a_7c15;
     let mut next = || {
-        state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         (state >> 33) as f64 / f64::from(u32::MAX)
     };
     for seed in 0..25 {
@@ -770,7 +1023,10 @@ fn history_confidence_never_exceeds_low_and_never_moves_pivots() {
         );
         let scaled: Vec<ChartRow> = rows
             .iter()
-            .map(|row| ChartRow { volume: row.volume.saturating_mul(9).max(1), ..*row })
+            .map(|row| ChartRow {
+                volume: row.volume.saturating_mul(9).max(1),
+                ..*row
+            })
             .collect();
         let rescaled = integration_lite_sub_pane(&scaled, &config).expect("rescaled builds");
         assert_eq!(

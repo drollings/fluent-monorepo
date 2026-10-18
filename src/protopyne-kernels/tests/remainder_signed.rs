@@ -23,7 +23,14 @@ fn test_config() -> BarsConfig {
 }
 
 fn row(ts_ms: i64, o: f64, h: f64, l: f64, c: f64, volume: f64) -> LtfRow {
-    LtfRow { ts_ms, o, h, l, c, volume }
+    LtfRow {
+        ts_ms,
+        o,
+        h,
+        l,
+        c,
+        volume,
+    }
 }
 
 fn rows_total_1000() -> Vec<LtfRow> {
@@ -113,13 +120,13 @@ fn dust_undershoot_tops_up_nothing() {
 fn empty_ring_negative_reference_tops_up_nothing() {
     let mut ring = BarRing::new(&test_config()).expect("valid config");
     let outcome = ring.reconcile(&[], -50.0, 100.0);
-    assert!(outcome.remainder.is_none(), "nothing to trim on an empty ring");
+    assert!(
+        outcome.remainder.is_none(),
+        "nothing to trim on an empty ring"
+    );
     assert!(ring.is_empty(), "empty ring stays empty");
 }
 
 fn assert_close(got: f64, want: f64, what: &str) {
-    assert!(
-        (got - want).abs() <= 1e-9,
-        "{what}: got {got}, want {want}"
-    );
+    assert!((got - want).abs() <= 1e-9, "{what}: got {got}, want {want}");
 }

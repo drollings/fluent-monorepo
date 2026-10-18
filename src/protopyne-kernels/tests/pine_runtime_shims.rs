@@ -16,18 +16,16 @@ use super::*;
 use crate::{
     inputs::InputDef,
     parse_program,
-    pine::builtins_core::{CoreArg, call as core_call},
+    pine::builtins_core::{call as core_call, CoreArg},
 };
 use chrono::TimeZone as _;
 
 fn bar_at(index: i64) -> Bar {
     Bar::new()
-        .ts(
-            chrono::Utc
-                .timestamp_opt(1_700_000_000 + index * 60, 0)
-                .single()
-                .expect("valid test timestamp"),
-        )
+        .ts(chrono::Utc
+            .timestamp_opt(1_700_000_000 + index * 60, 0)
+            .single()
+            .expect("valid test timestamp"))
         .o("100.00".parse().expect("decimal"))
         .h("101.00".parse().expect("decimal"))
         .l("99.00".parse().expect("decimal"))
@@ -97,16 +95,25 @@ fn cursor_flags_follow_the_full_run_without_warmup() {
     let first = [true, false, false, false, false];
     let last = [false, false, false, false, true];
     for at_bar in 0..5 {
-        assert_eq!(flag(&outcome, at_bar, "first"), first[at_bar], "isfirst {at_bar}");
-        assert!(flag(&outcome, at_bar, "new_bar"), "isnew {at_bar}");
-        assert!(
-            flag(&outcome, at_bar, "confirmed"),
-            "isconfirmed {at_bar}"
+        assert_eq!(
+            flag(&outcome, at_bar, "first"),
+            first[at_bar],
+            "isfirst {at_bar}"
         );
-        assert_eq!(flag(&outcome, at_bar, "last"), last[at_bar], "islast {at_bar}");
+        assert!(flag(&outcome, at_bar, "new_bar"), "isnew {at_bar}");
+        assert!(flag(&outcome, at_bar, "confirmed"), "isconfirmed {at_bar}");
+        assert_eq!(
+            flag(&outcome, at_bar, "last"),
+            last[at_bar],
+            "islast {at_bar}"
+        );
         assert!(flag(&outcome, at_bar, "history"), "ishistory {at_bar}");
         assert!(!flag(&outcome, at_bar, "live"), "isrealtime {at_bar}");
-        assert_eq!(num(&outcome, at_bar, "idx"), at_bar as f64, "index {at_bar}");
+        assert_eq!(
+            num(&outcome, at_bar, "idx"),
+            at_bar as f64,
+            "index {at_bar}"
+        );
     }
 }
 
@@ -137,7 +144,10 @@ fn cursor_flags_use_absolute_bars_when_warmup_is_skipped() {
 #[test]
 fn unknown_cursor_member_refuses() {
     let reason = run_err("x = barstate.future", &five_bars(), 0);
-    assert!(reason.contains("barstate"), "reason names the table: {reason}");
+    assert!(
+        reason.contains("barstate"),
+        "reason names the table: {reason}"
+    );
 }
 
 #[test]
@@ -158,7 +168,11 @@ fn time_and_now_read_injected_timestamps() {
 
 #[test]
 fn chart_scope_reads_symbol_and_period_strings() {
-    let outcome = run("sym = syminfo.tickerid\ntf = timeframe.period", &five_bars(), 0);
+    let outcome = run(
+        "sym = syminfo.tickerid\ntf = timeframe.period",
+        &five_bars(),
+        0,
+    );
     assert_eq!(text(&outcome, 0, "sym"), "SPY");
     assert_eq!(text(&outcome, 0, "tf"), "5");
 }
@@ -171,7 +185,10 @@ fn session_time_supports_only_the_chart_period() {
         "mismatched timeframe refuses: {reason}"
     );
     let reason = run_err("x = time(\"5\", \"\")", &five_bars(), 0);
-    assert!(reason.contains("session"), "empty session refuses: {reason}");
+    assert!(
+        reason.contains("session"),
+        "empty session refuses: {reason}"
+    );
     let reason = run_err(
         "x = time(\"5\", \"0930-1600\", \"America/New_York\")",
         &five_bars(),
@@ -314,7 +331,9 @@ fn enum_and_color_inputs_keep_overrides() {
     )
     .expect("enum declares");
     assert_eq!(declared, Some(wma.clone()));
-    inputs.set("enum-site", ema.clone()).expect("override applies");
+    inputs
+        .set("enum-site", ema.clone())
+        .expect("override applies");
     let read_back = core_call(
         "input",
         "enum",

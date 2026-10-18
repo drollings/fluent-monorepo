@@ -88,7 +88,10 @@ fn ticket_renders_the_exact_human_ticket() {
     for occ in ["SPY   260116C00600000", "SPY   260116C00610000"] {
         assert!(text.contains(occ), "ticket lists leg {occ}, got: {text}");
     }
-    assert!(text.contains("long") && text.contains("short"), "ticket sides each leg, got: {text}");
+    assert!(
+        text.contains("long") && text.contains("short"),
+        "ticket sides each leg, got: {text}"
+    );
 }
 
 /// Issued tickets wait as unconfirmed; a matching fill confirms cleanly and
@@ -101,7 +104,14 @@ fn unconfirmed_tracking_issue_then_confirm() {
     assert_eq!(tracker.unconfirmed().len(), 2);
 
     let drift = tracker
-        .confirm("rh-1", ConfirmedFill { quantity: 2, price: money("600.40") }, now())
+        .confirm(
+            "rh-1",
+            ConfirmedFill {
+                quantity: 2,
+                price: money("600.40"),
+            },
+            now(),
+        )
         .expect("confirm");
     assert!(drift.is_none(), "a matching fill reports no drift");
     assert_eq!(tracker.unconfirmed().len(), 1);
@@ -116,11 +126,21 @@ fn quantity_mismatch_flags_drift() {
     let mut tracker = TicketTracker::new();
     tracker.issue(intent("rh-1"), now()).expect("issue");
     let drift = tracker
-        .confirm("rh-1", ConfirmedFill { quantity: 1, price: money("600.40") }, now())
+        .confirm(
+            "rh-1",
+            ConfirmedFill {
+                quantity: 1,
+                price: money("600.40"),
+            },
+            now(),
+        )
         .expect("confirm still lands");
     let drift = drift.expect("short fill flags drift");
     assert_eq!(drift.kind, DriftKind::QuantityMismatch);
-    assert!(tracker.unconfirmed().is_empty(), "confirmed tickets never wait twice");
+    assert!(
+        tracker.unconfirmed().is_empty(),
+        "confirmed tickets never wait twice"
+    );
     assert_eq!(tracker.drifts().len(), 1);
 }
 
@@ -131,7 +151,14 @@ fn price_outside_limit_flags_drift() {
     let mut tracker = TicketTracker::new();
     tracker.issue(intent("rh-buy"), now()).expect("issue");
     let drift = tracker
-        .confirm("rh-buy", ConfirmedFill { quantity: 2, price: money("600.60") }, now())
+        .confirm(
+            "rh-buy",
+            ConfirmedFill {
+                quantity: 2,
+                price: money("600.60"),
+            },
+            now(),
+        )
         .expect("confirm lands");
     assert!(
         drift.is_some_and(|drift| drift.kind == DriftKind::PriceOutsideLimit),
@@ -143,7 +170,14 @@ fn price_outside_limit_flags_drift() {
     sell.side = OrderSide::Sell;
     tracker.issue(sell, now()).expect("issue");
     let drift = tracker
-        .confirm("rh-sell", ConfirmedFill { quantity: 2, price: money("600.40") }, now())
+        .confirm(
+            "rh-sell",
+            ConfirmedFill {
+                quantity: 2,
+                price: money("600.40"),
+            },
+            now(),
+        )
         .expect("confirm lands");
     assert!(
         drift.is_some_and(|drift| drift.kind == DriftKind::PriceOutsideLimit),
@@ -153,7 +187,14 @@ fn price_outside_limit_flags_drift() {
     let mut tracker = TicketTracker::new();
     tracker.issue(intent("rh-even"), now()).expect("issue");
     let drift = tracker
-        .confirm("rh-even", ConfirmedFill { quantity: 2, price: money("600.50") }, now())
+        .confirm(
+            "rh-even",
+            ConfirmedFill {
+                quantity: 2,
+                price: money("600.50"),
+            },
+            now(),
+        )
         .expect("confirm");
     assert!(drift.is_none(), "a fill at the limit is clean");
 }
@@ -165,7 +206,14 @@ fn unknown_confirm_refuses() {
     let mut tracker = TicketTracker::new();
     tracker.issue(intent("rh-1"), now()).expect("issue");
     tracker
-        .confirm("rh-ghost", ConfirmedFill { quantity: 2, price: money("600.40") }, now())
+        .confirm(
+            "rh-ghost",
+            ConfirmedFill {
+                quantity: 2,
+                price: money("600.40"),
+            },
+            now(),
+        )
         .expect_err("unknown tickets refuse");
     assert_eq!(tracker.unconfirmed().len(), 1);
     assert!(tracker.drifts().is_empty());
@@ -176,7 +224,9 @@ fn unknown_confirm_refuses() {
 fn duplicate_issue_refuses() {
     let mut tracker = TicketTracker::new();
     tracker.issue(intent("rh-1"), now()).expect("issue");
-    tracker.issue(intent("rh-1"), now()).expect_err("double issue refuses");
+    tracker
+        .issue(intent("rh-1"), now())
+        .expect_err("double issue refuses");
     assert_eq!(tracker.unconfirmed().len(), 1);
 }
 
@@ -192,28 +242,28 @@ async fn journaled_issue_and_confirm_replay() {
 
     let caps = fluent_wvr::CapabilitySet::new().with(permit.clone());
     let events = fluent_wvr::CURRENT_CAPS
-        .scope(
-            caps,
-            async {
-                let mut tracker = TicketTracker::new();
-                tracker
-                    .issue_journaled(&journal, &permit, intent("rh-1"), now())
-                    .expect("issue");
-                tracker
-                    .issue_journaled(&journal, &permit, intent("rh-2"), now())
-                    .expect("issue");
-                tracker
-                    .confirm_journaled(
-                        &journal,
-                        &permit,
-                        "rh-1",
-                        ConfirmedFill { quantity: 2, price: money("600.40") },
-                        now(),
-                    )
-                    .expect("confirm");
-                journal.replay(&permit).expect("replay").events
-            },
-        )
+        .scope(caps, async {
+            let mut tracker = TicketTracker::new();
+            tracker
+                .issue_journaled(&journal, &permit, intent("rh-1"), now())
+                .expect("issue");
+            tracker
+                .issue_journaled(&journal, &permit, intent("rh-2"), now())
+                .expect("issue");
+            tracker
+                .confirm_journaled(
+                    &journal,
+                    &permit,
+                    "rh-1",
+                    ConfirmedFill {
+                        quantity: 2,
+                        price: money("600.40"),
+                    },
+                    now(),
+                )
+                .expect("confirm");
+            journal.replay(&permit).expect("replay").events
+        })
         .await;
     let kinds: Vec<&str> = events.iter().map(|event| event.kind.as_str()).collect();
     assert!(
@@ -226,7 +276,11 @@ async fn journaled_issue_and_confirm_replay() {
     assert_eq!(rebuilt.unconfirmed()[0].ticket_id(), "rh-2");
 
     let view = crate::command::StateReplica::apply(&events);
-    assert!(view.orders.is_empty(), "ticket rows never read as orders: {:?}", view.orders);
+    assert!(
+        view.orders.is_empty(),
+        "ticket rows never read as orders: {:?}",
+        view.orders
+    );
     assert!(view.leg_fills.is_empty());
 }
 
@@ -237,21 +291,39 @@ fn failing_import_leaves_the_tracker_untouched() {
     struct Dark;
     impl TicketRead for Dark {
         fn snapshot(&self) -> Result<Vec<ImportedPosition>, crate::VenueError> {
-            Err(crate::VenueError::Transport("robinhood dark: scripted".to_owned()))
+            Err(crate::VenueError::Transport(
+                "robinhood dark: scripted".to_owned(),
+            ))
         }
     }
 
     let mut tracker = TicketTracker::new();
     tracker.issue(intent("rh-1"), now()).expect("issue");
     tracker
-        .apply_import(&Serving(vec![ImportedPosition { underlying: "SPY".to_owned(), quantity: 0 }]))
+        .apply_import(&Serving(vec![ImportedPosition {
+            underlying: "SPY".to_owned(),
+            quantity: 0,
+        }]))
         .expect("good import lands");
     assert_eq!(tracker.imported().len(), 1);
 
-    tracker.apply_import(&Dark).expect_err("a dark import reports its failure");
-    assert_eq!(tracker.unconfirmed().len(), 1, "open tickets survive a dark import");
-    assert!(tracker.drifts().is_empty(), "a dark import invents no drift");
-    assert_eq!(tracker.imported().len(), 1, "the last good snapshot survives");
+    tracker
+        .apply_import(&Dark)
+        .expect_err("a dark import reports its failure");
+    assert_eq!(
+        tracker.unconfirmed().len(),
+        1,
+        "open tickets survive a dark import"
+    );
+    assert!(
+        tracker.drifts().is_empty(),
+        "a dark import invents no drift"
+    );
+    assert_eq!(
+        tracker.imported().len(),
+        1,
+        "the last good snapshot survives"
+    );
 }
 
 /// A clean import agrees with the confirmed book; a position the human
@@ -261,23 +333,45 @@ fn import_mismatch_flags_drift() {
     let mut tracker = TicketTracker::new();
     tracker.issue(intent("rh-1"), now()).expect("issue");
     tracker
-        .confirm("rh-1", ConfirmedFill { quantity: 2, price: money("600.40") }, now())
+        .confirm(
+            "rh-1",
+            ConfirmedFill {
+                quantity: 2,
+                price: money("600.40"),
+            },
+            now(),
+        )
         .expect("confirm");
 
     tracker
-        .apply_import(&Serving(vec![ImportedPosition { underlying: "SPY".to_owned(), quantity: 2 }]))
+        .apply_import(&Serving(vec![ImportedPosition {
+            underlying: "SPY".to_owned(),
+            quantity: 2,
+        }]))
         .expect("agreement lands");
-    assert!(tracker.drifts().is_empty(), "an agreeing import stays silent");
+    assert!(
+        tracker.drifts().is_empty(),
+        "an agreeing import stays silent"
+    );
 
     tracker
-        .apply_import(&Serving(vec![ImportedPosition { underlying: "SPY".to_owned(), quantity: 5 }]))
+        .apply_import(&Serving(vec![ImportedPosition {
+            underlying: "SPY".to_owned(),
+            quantity: 5,
+        }]))
         .expect("disagreement lands");
     assert!(
-        tracker.drifts().iter().any(|drift| drift.kind == DriftKind::ImportMismatch),
+        tracker
+            .drifts()
+            .iter()
+            .any(|drift| drift.kind == DriftKind::ImportMismatch),
         "an unconfirmed position flags drift, got: {:?}",
         tracker.drifts()
     );
-    assert!(tracker.unconfirmed().is_empty(), "imports never reopen confirmed tickets");
+    assert!(
+        tracker.unconfirmed().is_empty(),
+        "imports never reopen confirmed tickets"
+    );
 }
 
 /// Scripted read-only rung: serves canned positions, never mutates.

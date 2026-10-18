@@ -51,7 +51,9 @@ fn rejects_out_of_order_push() {
     window.push(bar_at_15m(1)).expect("first push");
     let err = window.push(bar_at_15m(0)).expect_err("must reject rewind");
     assert!(matches!(err, TypesError::InvalidBar(_)));
-    let dup = window.push(bar_at_15m(1)).expect_err("must reject duplicate ts");
+    let dup = window
+        .push(bar_at_15m(1))
+        .expect_err("must reject duplicate ts");
     assert!(matches!(dup, TypesError::InvalidBar(_)));
     assert_eq!(window.len(), 1);
 }

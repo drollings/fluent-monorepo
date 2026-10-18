@@ -615,7 +615,8 @@ impl IndicatorState {
     /// moves. Empty history yields an empty slice, never a refusal.
     pub fn scratch_closes(&mut self) -> &[f64] {
         self.scratch.clear();
-        self.scratch.extend(self.history.iter().map(|tick| tick.close));
+        self.scratch
+            .extend(self.history.iter().map(|tick| tick.close));
         &self.scratch
     }
 
@@ -623,7 +624,8 @@ impl IndicatorState {
     /// contract as [`scratch_closes`](Self::scratch_closes).
     pub fn scratch_volumes(&mut self) -> &[f64] {
         self.scratch.clear();
-        self.scratch.extend(self.history.iter().map(|tick| tick.volume));
+        self.scratch
+            .extend(self.history.iter().map(|tick| tick.volume));
         &self.scratch
     }
 
@@ -632,9 +634,11 @@ impl IndicatorState {
     /// [`scratch_closes`](Self::scratch_closes).
     pub fn scratch_closes_volumes(&mut self) -> (&[f64], &[f64]) {
         self.scratch.clear();
-        self.scratch.extend(self.history.iter().map(|tick| tick.close));
+        self.scratch
+            .extend(self.history.iter().map(|tick| tick.close));
         let mid = self.scratch.len();
-        self.scratch.extend(self.history.iter().map(|tick| tick.volume));
+        self.scratch
+            .extend(self.history.iter().map(|tick| tick.volume));
         let (closes, volumes) = self.scratch.split_at(mid);
         (closes, volumes)
     }
@@ -644,9 +648,11 @@ impl IndicatorState {
     /// [`scratch_closes`](Self::scratch_closes).
     pub fn scratch_highs_lows(&mut self) -> (&[f64], &[f64]) {
         self.scratch.clear();
-        self.scratch.extend(self.history.iter().map(|tick| tick.high));
+        self.scratch
+            .extend(self.history.iter().map(|tick| tick.high));
         let mid = self.scratch.len();
-        self.scratch.extend(self.history.iter().map(|tick| tick.low));
+        self.scratch
+            .extend(self.history.iter().map(|tick| tick.low));
         let (highs, lows) = self.scratch.split_at(mid);
         (highs, lows)
     }
@@ -656,11 +662,14 @@ impl IndicatorState {
     /// [`scratch_closes`](Self::scratch_closes).
     pub fn scratch_highs_lows_closes(&mut self) -> (&[f64], &[f64], &[f64]) {
         self.scratch.clear();
-        self.scratch.extend(self.history.iter().map(|tick| tick.high));
+        self.scratch
+            .extend(self.history.iter().map(|tick| tick.high));
         let highs_end = self.scratch.len();
-        self.scratch.extend(self.history.iter().map(|tick| tick.low));
+        self.scratch
+            .extend(self.history.iter().map(|tick| tick.low));
         let lows_end = self.scratch.len();
-        self.scratch.extend(self.history.iter().map(|tick| tick.close));
+        self.scratch
+            .extend(self.history.iter().map(|tick| tick.close));
         let (head, closes) = self.scratch.split_at(lows_end);
         let (highs, lows) = head.split_at(highs_end);
         (highs, lows, closes)

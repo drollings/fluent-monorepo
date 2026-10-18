@@ -123,9 +123,7 @@ pub fn find_native(
         .iter()
         .find(|entry| entry.publisher == publisher && entry.name == name)
     {
-        Some(entry) if entry.enabled => {
-            Ok(NativeLibraryId::new(entry.publisher, entry.name))
-        }
+        Some(entry) if entry.enabled => Ok(NativeLibraryId::new(entry.publisher, entry.name)),
         Some(entry) => Err(KernelError::UnknownIndicator(format!(
             "native library '{}/{}' is registered but disabled (served from Pine)",
             entry.publisher, entry.name
@@ -218,11 +216,7 @@ impl fmt::Display for NativeAudit {
         write!(
             f,
             "native audit: requested {}/{} version {} served {} pine_sha {}",
-            self.requested_publisher,
-            self.requested_name,
-            version,
-            self.served,
-            self.pine_sha
+            self.requested_publisher, self.requested_name, version, self.served, self.pine_sha
         )
     }
 }
@@ -291,10 +285,7 @@ pub trait NativeProvider: Send + Sync {
     /// context providers resolve the bundle, run the shared context fold,
     /// and write the Pine field table. Guards decline before touching
     /// fields, so a decline always runs the Pine body from the taken state.
-    fn serve_bar_context(
-        &self,
-        _serve: BarContextServe<'_>,
-    ) -> Result<NativeCall, KernelError> {
+    fn serve_bar_context(&self, _serve: BarContextServe<'_>) -> Result<NativeCall, KernelError> {
         Ok(NativeCall::Declined)
     }
 }
@@ -529,10 +520,7 @@ impl NativeProvider for LibApexProvider {
     /// Pine fields (`tf` untouched — the chart member is already home).
     /// Every guard declines before touching fields; the served value is the
     /// updated object, mirroring Pine's `this` return.
-    fn serve_bar_context(
-        &self,
-        serve: BarContextServe<'_>,
-    ) -> Result<NativeCall, KernelError> {
+    fn serve_bar_context(&self, serve: BarContextServe<'_>) -> Result<NativeCall, KernelError> {
         let BarContextServe {
             type_name,
             method,
@@ -618,10 +606,7 @@ impl NativeProvider for LibApexProvider {
 /// implementation exists yet. Membership comes from the one native table;
 /// rows without an implementation stay Pine-served and
 /// never refuse — refusal would break callers that never opted in.
-pub(crate) fn provider_for(
-    publisher: &str,
-    name: &str,
-) -> Option<&'static dyn NativeProvider> {
+pub(crate) fn provider_for(publisher: &str, name: &str) -> Option<&'static dyn NativeProvider> {
     if !NATIVE_LIBRARIES
         .iter()
         .any(|entry| entry.publisher == publisher && entry.name == name)
@@ -658,7 +643,10 @@ pub struct NativeOptions {
 
 impl Default for NativeOptions {
     fn default() -> Self {
-        Self { enabled: true, only_symbols: None }
+        Self {
+            enabled: true,
+            only_symbols: None,
+        }
     }
 }
 
@@ -794,7 +782,8 @@ impl<'graph> NativeOverlay<'graph> {
     /// Whether `publisher/name` serves natively under this overlay.
     #[must_use]
     pub fn is_served(&self, publisher: &str, name: &str) -> bool {
-        self.served.contains_key(&NativeLibraryId::new(publisher, name))
+        self.served
+            .contains_key(&NativeLibraryId::new(publisher, name))
     }
 
     /// Native symbol table for a served library; `None` when Pine serves it.
@@ -830,7 +819,12 @@ impl<'graph> NativeOverlay<'graph> {
         alias: &str,
         item: &str,
     ) -> Result<NativeResolution, KernelError> {
-        if let Some(target) = self.graph.alias_table(importer).unwrap_or_default().get(alias) {
+        if let Some(target) = self
+            .graph
+            .alias_table(importer)
+            .unwrap_or_default()
+            .get(alias)
+        {
             let library = NativeLibraryId::from(target);
             if let Some(provider) = self.served.get(&library) {
                 if provider.provides().contains(&item) {
@@ -992,7 +986,3 @@ mod native_ring_lease_tests;
 #[cfg(test)]
 #[path = "../tests/native_apex.rs"]
 mod native_apex_tests;
-
-
-
-

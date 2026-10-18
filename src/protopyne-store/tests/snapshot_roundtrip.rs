@@ -7,7 +7,7 @@
 //! run input.
 
 use super::*;
-use crate::snapshot::test_snapshot::{SEAL_NOW_MS, varied_bars, with_seeded_tape};
+use crate::snapshot::test_snapshot::{varied_bars, with_seeded_tape, SEAL_NOW_MS};
 
 /// The canonical stored spelling of every leg, in order — what the tape
 /// keeps and what a sealed artifact must keep identically.
@@ -43,8 +43,14 @@ async fn sealed_then_read_changes_not_one_value() {
         )
         .expect("seal succeeds");
         assert_eq!(sealed.row_count, source.len() as u64);
-        assert_eq!(sealed.first_ts_ms, source.first().unwrap().ts.timestamp_millis());
-        assert_eq!(sealed.last_ts_ms, source.last().unwrap().ts.timestamp_millis());
+        assert_eq!(
+            sealed.first_ts_ms,
+            source.first().unwrap().ts.timestamp_millis()
+        );
+        assert_eq!(
+            sealed.last_ts_ms,
+            source.last().unwrap().ts.timestamp_millis()
+        );
         let read = read_snapshot(registry, key, &sealed.path).expect("read back");
         assert_eq!(read, source, "the round-trip is the identity");
         assert_eq!(

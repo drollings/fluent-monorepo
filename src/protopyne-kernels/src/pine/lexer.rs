@@ -452,9 +452,7 @@ impl PineLexer {
         let (line, column) = (self.line, self.column);
         let mut digits = String::new();
         let mut index = self.position + 1;
-        while index < self.input.len()
-            && digits.len() < 8
-            && self.input[index].is_ascii_hexdigit()
+        while index < self.input.len() && digits.len() < 8 && self.input[index].is_ascii_hexdigit()
         {
             digits.push(self.input[index]);
             index += 1;
@@ -513,9 +511,7 @@ impl PineLexer {
         let (line, column) = (self.line, self.column);
         let mut number = String::new();
 
-        while !self.is_at_end()
-            && (self.current().is_ascii_digit() || self.current() == '.')
-        {
+        while !self.is_at_end() && (self.current().is_ascii_digit() || self.current() == '.') {
             number.push(self.current());
             self.advance();
         }
@@ -535,7 +531,11 @@ impl PineLexer {
             }
         }
 
-        PineToken::new(TokenKind::Number(number.parse().unwrap_or(0.0)), line, column)
+        PineToken::new(
+            TokenKind::Number(number.parse().unwrap_or(0.0)),
+            line,
+            column,
+        )
     }
 
     fn read_identifier(&mut self) -> PineToken {

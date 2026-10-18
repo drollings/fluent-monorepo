@@ -107,7 +107,8 @@ impl<R: AppendRecord> AppendLog<R> {
                 .open(path)
                 .map_err(common_core::error::IoError::from)?;
             let bytes = header_bytes::<R>();
-            file.write_all(&bytes).map_err(common_core::error::IoError::from)?;
+            file.write_all(&bytes)
+                .map_err(common_core::error::IoError::from)?;
             file.flush().map_err(common_core::error::IoError::from)?;
             file.sync_all().map_err(common_core::error::IoError::from)?;
             let committed_len = bytes.len() as u64;
@@ -131,7 +132,10 @@ impl<R: AppendRecord> AppendLog<R> {
                 "append log torn tail repaired: truncated to the last whole record"
             );
         }
-        let file = std::fs::OpenOptions::new().append(true).open(path).map_err(common_core::error::IoError::from)?;
+        let file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(path)
+            .map_err(common_core::error::IoError::from)?;
         let mut log = Self {
             path: path.to_path_buf(),
             file: FailFile {
@@ -149,8 +153,14 @@ impl<R: AppendRecord> AppendLog<R> {
             // The tear took the header with it: rewrite it so the log
             // reads empty rather than corrupt.
             let bytes = header_bytes::<R>();
-            log.file.file.write_all(&bytes).map_err(common_core::error::IoError::from)?;
-            log.file.file.sync_all().map_err(common_core::error::IoError::from)?;
+            log.file
+                .file
+                .write_all(&bytes)
+                .map_err(common_core::error::IoError::from)?;
+            log.file
+                .file
+                .sync_all()
+                .map_err(common_core::error::IoError::from)?;
             log.file.written = bytes.len() as u64;
             log.committed_len = bytes.len() as u64;
         }
@@ -178,15 +188,17 @@ impl<R: AppendRecord> AppendLog<R> {
             return Ok(());
         }
         let encoded = {
-            let mut writer = csv::WriterBuilder::new().has_headers(false).from_writer(Vec::new());
+            let mut writer = csv::WriterBuilder::new()
+                .has_headers(false)
+                .from_writer(Vec::new());
             for record in records {
                 writer.write_record(record.encode()).map_err(|e| {
                     StoreError::InvalidBar(format!("log record does not encode: {e}"))
                 })?;
             }
-            writer.into_inner().map_err(|e| {
-                StoreError::InvalidBar(format!("log record does not encode: {e}"))
-            })?
+            writer
+                .into_inner()
+                .map_err(|e| StoreError::InvalidBar(format!("log record does not encode: {e}")))?
         };
         let before = self.committed_len;
         if let Err(e) = self.file.write_chunk(&encoded).and_then(|()| {
@@ -235,8 +247,14 @@ impl<R: AppendRecord> AppendLog<R> {
     /// Fsync the log without appending. For callers that wrote through
     /// another handle and need the durability promise stated once.
     pub fn sync(&mut self) -> Result<(), StoreError> {
-        self.file.file.flush().map_err(common_core::error::IoError::from)?;
-        self.file.file.sync_all().map_err(common_core::error::IoError::from)?;
+        self.file
+            .file
+            .flush()
+            .map_err(common_core::error::IoError::from)?;
+        self.file
+            .file
+            .sync_all()
+            .map_err(common_core::error::IoError::from)?;
         Ok(())
     }
 
@@ -247,8 +265,14 @@ impl<R: AppendRecord> AppendLog<R> {
     pub fn truncate_all(&mut self) -> Result<(), StoreError> {
         truncate_file_to(&mut self.file.file, 0).map_err(common_core::error::IoError::from)?;
         let bytes = header_bytes::<R>();
-        self.file.file.write_all(&bytes).map_err(common_core::error::IoError::from)?;
-        self.file.file.sync_all().map_err(common_core::error::IoError::from)?;
+        self.file
+            .file
+            .write_all(&bytes)
+            .map_err(common_core::error::IoError::from)?;
+        self.file
+            .file
+            .sync_all()
+            .map_err(common_core::error::IoError::from)?;
         self.file.written = bytes.len() as u64;
         self.committed_len = bytes.len() as u64;
         Ok(())
@@ -315,8 +339,8 @@ fn parse_forward<R: AppendRecord>(path: &Path, raw: &[u8]) -> Result<(Vec<R>, u6
     }
     // The version line commits first and alone: a mismatch here is
     // corruption, never a tear — the writer fsyncs it whole.
-    let version = csv_record(chunks[0])
-        .ok_or_else(|| corrupt("line 1 holds no record".to_owned()))?;
+    let version =
+        csv_record(chunks[0]).ok_or_else(|| corrupt("line 1 holds no record".to_owned()))?;
     let domain = version.first().map_or("", String::as_str);
     let file_version = version.get(1).map_or("", String::as_str);
     if domain != R::domain() || file_version != R::version().to_string() {
@@ -330,8 +354,8 @@ fn parse_forward<R: AppendRecord>(path: &Path, raw: &[u8]) -> Result<(Vec<R>, u6
         // The header never committed: truncate to nothing and rewrite it.
         return Ok((Vec::new(), 0));
     }
-    let header_owned = csv_record(chunks[1])
-        .ok_or_else(|| corrupt("line 2 holds no record".to_owned()))?;
+    let header_owned =
+        csv_record(chunks[1]).ok_or_else(|| corrupt("line 2 holds no record".to_owned()))?;
     let header: Vec<&str> = header_owned.iter().map(String::as_str).collect();
     if header != R::header() {
         return Err(corrupt(format!(
@@ -343,8 +367,8 @@ fn parse_forward<R: AppendRecord>(path: &Path, raw: &[u8]) -> Result<(Vec<R>, u6
     let mut offset: u64 = chunks[0].len() as u64 + 1 + chunks[1].len() as u64 + 1;
     for (index, chunk) in chunks.iter().enumerate().skip(2) {
         let line_no = index + 1;
-        let cells_owned = csv_record(chunk)
-            .ok_or_else(|| corrupt(format!("line {line_no} holds no record")))?;
+        let cells_owned =
+            csv_record(chunk).ok_or_else(|| corrupt(format!("line {line_no} holds no record")))?;
         let cells: Vec<&str> = cells_owned.iter().map(String::as_str).collect();
         records.push(R::decode(&cells).map_err(|e| corrupt(format!("line {line_no}: {e}")))?);
         offset += chunk.len() as u64 + 1;
@@ -363,7 +387,9 @@ fn csv_record(line: &[u8]) -> Option<Vec<String>> {
         .from_reader(text.as_bytes())
         .into_records()
         .next()?;
-    record.ok().map(|fields| fields.iter().map(str::to_owned).collect())
+    record
+        .ok()
+        .map(|fields| fields.iter().map(str::to_owned).collect())
 }
 
 #[cfg(test)]

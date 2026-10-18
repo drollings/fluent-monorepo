@@ -26,7 +26,7 @@
 use std::fs::File;
 use std::path::{Path, PathBuf};
 
-use protopyne_types::{Bar, validate_new_bar};
+use protopyne_types::{validate_new_bar, Bar};
 
 use crate::capability::check_present;
 use crate::catalog::Market;
@@ -49,9 +49,9 @@ use arrow::record_batch::RecordBatch;
 #[cfg(feature = "parquet")]
 use chrono::DateTime;
 #[cfg(feature = "parquet")]
-use parquet::arrow::ArrowWriter;
-#[cfg(feature = "parquet")]
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
+#[cfg(feature = "parquet")]
+use parquet::arrow::ArrowWriter;
 #[cfg(feature = "parquet")]
 use parquet::basic::Compression;
 #[cfg(feature = "parquet")]
@@ -409,9 +409,11 @@ fn write_parquet(
     let final_path = writer.path_for(key);
     let tmp_path = final_path.with_extension("parquet.tmp");
     let scale = market.price_scale.digits;
-    let scale_i8 = i8::try_from(scale).map_err(|_| StoreError::Config(format!(
-        "price scale {scale} does not fit the Arrow decimal scale"
-    )))?;
+    let scale_i8 = i8::try_from(scale).map_err(|_| {
+        StoreError::Config(format!(
+            "price scale {scale} does not fit the Arrow decimal scale"
+        ))
+    })?;
     let schema = arrow_schema(scale_i8);
     let properties = WriterProperties::builder()
         .set_compression(Compression::SNAPPY)
@@ -424,8 +426,8 @@ fn write_parquet(
     );
     {
         let file = File::create(&tmp_path)?;
-        let mut arrow_writer = ArrowWriter::try_new(file, Arc::clone(&schema), Some(properties))
-            .map_err(artifact)?;
+        let mut arrow_writer =
+            ArrowWriter::try_new(file, Arc::clone(&schema), Some(properties)).map_err(artifact)?;
         let mut start = 0_usize;
         for part in &parts {
             let batch = build_batch(&schema, market, &bars[start..start + *part], scale_i8)?;
@@ -441,7 +443,8 @@ fn write_parquet(
     sync_dir(writer.out_dir);
 
     let byte_len = std::fs::metadata(&final_path)?.len();
-    let digest = common_core::hash::hash_file(&final_path, common_core::hash::HashAlgorithm::Blake3)?;
+    let digest =
+        common_core::hash::hash_file(&final_path, common_core::hash::HashAlgorithm::Blake3)?;
     Ok(SealedSnapshot {
         key,
         path: final_path,
@@ -467,10 +470,22 @@ fn sync_dir(dir: &Path) {
 fn arrow_schema(scale: i8) -> SchemaRef {
     Arc::new(Schema::new(vec![
         Field::new("ts_ms", DataType::Int64, false),
-        Field::new("open", DataType::Decimal128(DECIMAL_PRECISION, scale), false),
-        Field::new("high", DataType::Decimal128(DECIMAL_PRECISION, scale), false),
+        Field::new(
+            "open",
+            DataType::Decimal128(DECIMAL_PRECISION, scale),
+            false,
+        ),
+        Field::new(
+            "high",
+            DataType::Decimal128(DECIMAL_PRECISION, scale),
+            false,
+        ),
         Field::new("low", DataType::Decimal128(DECIMAL_PRECISION, scale), false),
-        Field::new("close", DataType::Decimal128(DECIMAL_PRECISION, scale), false),
+        Field::new(
+            "close",
+            DataType::Decimal128(DECIMAL_PRECISION, scale),
+            false,
+        ),
         Field::new("volume", DataType::Int64, false),
         Field::new("adj", DataType::Utf8, true),
     ]))
@@ -549,7 +564,9 @@ fn encode_decimal(symbol: &str, value: Decimal, scale: u32) -> Result<i128, Stor
     if value_scale > scale {
         return Err(refuse());
     }
-    let factor = 10_i128.checked_pow(scale - value_scale).ok_or_else(refuse)?;
+    let factor = 10_i128
+        .checked_pow(scale - value_scale)
+        .ok_or_else(refuse)?;
     normalized.mantissa().checked_mul(factor).ok_or_else(refuse)
 }
 
@@ -611,7 +628,11 @@ fn read_parquet(path: &Path) -> Result<Vec<Bar>, StoreError> {
 /// type. Positions are the contract — `ts_ms` first, `adj` last — and the
 /// shared decode layer performs the downcast.
 #[cfg(feature = "parquet")]
-fn column<'a, T: 'static>(batch: &'a RecordBatch, index: usize, name: &str) -> Result<&'a T, StoreError> {
+fn column<'a, T: 'static>(
+    batch: &'a RecordBatch,
+    index: usize,
+    name: &str,
+) -> Result<&'a T, StoreError> {
     crate::arrow_decode::column_at(batch, index).map_err(|_| {
         StoreError::Snapshot(SnapshotError::Artifact {
             reason: format!("sealed column {name} has an unexpected type"),

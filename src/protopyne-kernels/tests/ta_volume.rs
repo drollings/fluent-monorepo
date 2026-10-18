@@ -3,7 +3,7 @@ use crate::compat::compat_for;
 use crate::indicator::{builtin_registry, OwnedOhlcv};
 use crate::parity::{assert_expr_parity, expr_fixture};
 use crate::ta_volume::{AdIndicator, AdoscIndicator, CmfIndicator, MfiIndicator, ObvIndicator};
-use polars::prelude::{EWMOptions, Expr, IntoLazy, col, lit, when};
+use polars::prelude::{col, lit, when, EWMOptions, Expr, IntoLazy};
 use protopyne_types::Bar;
 use std::path::PathBuf;
 
@@ -15,7 +15,14 @@ fn bar_at(open: f64, high: f64, low: f64, close: f64, volume: u64, index: usize)
     use chrono::TimeZone as _;
     Bar::new()
         .ts(chrono::Utc
-            .with_ymd_and_hms(2026, 1, 2, 9 + (index / 3600) as u32, ((index / 60) % 60) as u32, (index % 60) as u32)
+            .with_ymd_and_hms(
+                2026,
+                1,
+                2,
+                9 + (index / 3600) as u32,
+                ((index / 60) % 60) as u32,
+                (index % 60) as u32,
+            )
             .single()
             .expect("valid timestamp"))
         .o(dec(open))
@@ -34,7 +41,11 @@ fn trend_bars(n: usize) -> Vec<Bar> {
         let drift = i as f64 * 0.7 + ((i * 13) % 5) as f64 * 0.9;
         let close = 100.0 + drift;
         let gap = if i > 0 && i % 10 == 0 { 2.5 } else { 0.0 };
-        let open = if i == 0 { close } else { prev_close + gap + 0.1 };
+        let open = if i == 0 {
+            close
+        } else {
+            prev_close + gap + 0.1
+        };
         let high = open.max(close) + 0.8;
         let low = open.min(close) - 0.8;
         bars.push(bar_at(open, high, low, close, 1_000 + i as u64 * 37, i));
@@ -78,7 +89,12 @@ fn spy_bars(count: usize) -> Vec<Bar> {
     let mut bars = Vec::new();
     for record in reader.records().take(count) {
         let row = record.expect("readable row");
-        let num = |idx: usize| row.get(idx).expect("column").parse::<f64>().expect("number");
+        let num = |idx: usize| {
+            row.get(idx)
+                .expect("column")
+                .parse::<f64>()
+                .expect("number")
+        };
         let epoch: i64 = row.get(0).expect("time").parse().expect("epoch");
         let ts = chrono::DateTime::from_timestamp(epoch, 0).expect("valid epoch");
         bars.push(
@@ -174,7 +190,9 @@ fn obv_expr() -> Expr {
     let d = col("close") - col("close").shift(lit(1_i64));
     let sign = when(d.clone().is_null()).then(lit(1.0)).otherwise(
         when(d.clone().gt(lit(0.0))).then(lit(1.0)).otherwise(
-            when(d.clone().lt(lit(0.0))).then(lit(-1.0)).otherwise(lit(0.0)),
+            when(d.clone().lt(lit(0.0)))
+                .then(lit(-1.0))
+                .otherwise(lit(0.0)),
         ),
     );
     ((sign * col("volume")).cum_sum(false)).alias("obv")
@@ -197,12 +215,19 @@ fn ad_matches_expr_on_trend_and_spy() {
         let data = OwnedOhlcv::from_bars(&bars);
         let result = ad.batch(&data.views(), &ps).expect("valid");
         // Cumulative from bar zero: no warming nulls on clean data.
-        assert!(result.values.iter().all(Option::is_some), "ad defined from bar zero on {name}");
+        assert!(
+            result.values.iter().all(Option::is_some),
+            "ad defined from bar zero on {name}"
+        );
         let want = expr_fixture(&bars, ad_expr()).expect("fixture");
         assert_expr_parity(&result.values, &want, 1e-9, &format!("ad-{name}")).expect("parity");
         let mut state = IndicatorState::new();
         for (tick, want) in ticks_of(&bars).into_iter().zip(result.values.iter()) {
-            assert_eq!(&ad.update(&mut state, tick, &ps).expect("valid"), want, "ad agreement");
+            assert_eq!(
+                &ad.update(&mut state, tick, &ps).expect("valid"),
+                want,
+                "ad agreement"
+            );
         }
     }
 }
@@ -213,11 +238,15 @@ fn ad_zero_flows_and_missing_legs() {
     let ps = empty_params();
     // Zero range and zero volume contribute nothing but stay defined: the
     // reference multiplies the defined-zero multiplier by the volume.
-    let flat: Vec<Bar> = (0..20).map(|i| bar_at(10.0, 10.0, 10.0, 10.0, 1_000, i)).collect();
+    let flat: Vec<Bar> = (0..20)
+        .map(|i| bar_at(10.0, 10.0, 10.0, 10.0, 1_000, i))
+        .collect();
     let data = OwnedOhlcv::from_bars(&flat);
     let result = ad.batch(&data.views(), &ps).expect("valid");
     assert!(result.values.iter().all(|v| *v == Some(0.0)));
-    let zero_vol: Vec<Bar> = (0..20).map(|i| bar_at(9.0, 11.0, 8.0, 10.0, 0, i)).collect();
+    let zero_vol: Vec<Bar> = (0..20)
+        .map(|i| bar_at(9.0, 11.0, 8.0, 10.0, 0, i))
+        .collect();
     let data = OwnedOhlcv::from_bars(&zero_vol);
     let result = ad.batch(&data.views(), &ps).expect("valid");
     assert!(result.values.iter().all(|v| *v == Some(0.0)));
@@ -256,14 +285,22 @@ fn adosc_matches_staged_ema_difference() {
     assert_expr_parity(&result.values, &want, 1e-9, "adosc").expect("parity");
     let mut state = IndicatorState::new();
     for (tick, want) in ticks_of(&bars).into_iter().zip(result.values.iter()) {
-        assert_eq!(&adosc.update(&mut state, tick, &ps).expect("valid"), want, "adosc agreement");
+        assert_eq!(
+            &adosc.update(&mut state, tick, &ps).expect("valid"),
+            want,
+            "adosc agreement"
+        );
     }
     // Flat flow: the oscillator of a constant line reads zero.
-    let flat: Vec<Bar> = (0..20).map(|i| bar_at(10.0, 10.0, 10.0, 10.0, 1_000, i)).collect();
+    let flat: Vec<Bar> = (0..20)
+        .map(|i| bar_at(10.0, 10.0, 10.0, 10.0, 1_000, i))
+        .collect();
     let data = OwnedOhlcv::from_bars(&flat);
     let result = adosc.batch(&data.views(), &ps).expect("valid");
     assert!(result.values[..9].iter().all(Option::is_none));
-    assert!(result.values[9..].iter().all(|v| matches!(v, Some(x) if x.abs() <= 1e-9)));
+    assert!(result.values[9..]
+        .iter()
+        .all(|v| matches!(v, Some(x) if x.abs() <= 1e-9)));
 }
 
 #[test]
@@ -274,17 +311,26 @@ fn obv_matches_expr_with_first_bar_long() {
     for (bars, name) in [(trend_bars(60), "trend"), (spy_bars(60), "spy")] {
         let data = OwnedOhlcv::from_bars(&bars);
         let result = obv.batch(&data.views(), &ps).expect("valid");
-        assert!(result.values.iter().all(Option::is_some), "obv defined from bar zero on {name}");
+        assert!(
+            result.values.iter().all(Option::is_some),
+            "obv defined from bar zero on {name}"
+        );
         let want = expr_fixture(&bars, obv_expr()).expect("fixture");
         assert_expr_parity(&result.values, &want, 1e-9, &format!("obv-{name}")).expect("parity");
         let mut state = IndicatorState::new();
         for (tick, want) in ticks_of(&bars).into_iter().zip(result.values.iter()) {
-            assert_eq!(&obv.update(&mut state, tick, &ps).expect("valid"), want, "obv agreement");
+            assert_eq!(
+                &obv.update(&mut state, tick, &ps).expect("valid"),
+                want,
+                "obv agreement"
+            );
         }
     }
     // Flat closes accumulate nothing after the opening print: increments are
     // zero, so the line pins at the first bar's volume.
-    let flat: Vec<Bar> = (0..20).map(|i| bar_at(10.0, 10.5, 9.5, 10.0, 1_000, i)).collect();
+    let flat: Vec<Bar> = (0..20)
+        .map(|i| bar_at(10.0, 10.5, 9.5, 10.0, 1_000, i))
+        .collect();
     let data = OwnedOhlcv::from_bars(&flat);
     let result = obv.batch(&data.views(), &ps).expect("valid");
     assert!(result.values.iter().all(|v| *v == Some(1_000.0)));
@@ -408,14 +454,21 @@ fn cmf_matches_hand_ratio() {
     assert_eq!(cmf.warmup(&cmf_params()).expect("valid"), 3);
     let result = cmf.batch(&data.views(), &cmf_params()).expect("valid");
     assert_eq!(result.values.len(), 3);
-    assert!(result.values[..2].iter().all(Option::is_none), "window warms");
+    assert!(
+        result.values[..2].iter().all(Option::is_none),
+        "window warms"
+    );
     match result.values[2] {
         Some(v) => assert!((v - 0.375).abs() < 1e-12, "hand ratio {v}"),
         None => panic!("hand window defined"),
     }
     let mut state = IndicatorState::new();
     for (tick, want) in ticks_of(&bars).into_iter().zip(result.values.iter()) {
-        assert_eq!(&cmf.update(&mut state, tick, &cmf_params()).expect("valid"), want, "cmf agreement");
+        assert_eq!(
+            &cmf.update(&mut state, tick, &cmf_params()).expect("valid"),
+            want,
+            "cmf agreement"
+        );
     }
 }
 
@@ -424,17 +477,25 @@ fn cmf_zero_volume_window_is_na_and_flat_range_is_zero() {
     let cmf = CmfIndicator::new();
     let ps = ParamSet::new().with_int("length", 5);
     // Zero volume everywhere: 0/0 windows refuse instead of printing zero.
-    let dry: Vec<Bar> =
-        (0..20).map(|i| bar_at(9.0, 11.0, 8.0, 10.0, 0, i)).collect();
+    let dry: Vec<Bar> = (0..20)
+        .map(|i| bar_at(9.0, 11.0, 8.0, 10.0, 0, i))
+        .collect();
     let data = OwnedOhlcv::from_bars(&dry);
     let result = cmf.batch(&data.views(), &ps).expect("valid");
-    assert!(result.values.iter().all(Option::is_none), "dry windows are na");
+    assert!(
+        result.values.iter().all(Option::is_none),
+        "dry windows are na"
+    );
     // Flat ranges with real volume: defined-zero flow over real volume.
-    let flat: Vec<Bar> =
-        (0..20).map(|i| bar_at(10.0, 10.0, 10.0, 10.0, 1_000, i)).collect();
+    let flat: Vec<Bar> = (0..20)
+        .map(|i| bar_at(10.0, 10.0, 10.0, 10.0, 1_000, i))
+        .collect();
     let data = OwnedOhlcv::from_bars(&flat);
     let result = cmf.batch(&data.views(), &ps).expect("valid");
-    assert!(result.values[..4].iter().all(Option::is_none), "window warms");
+    assert!(
+        result.values[..4].iter().all(Option::is_none),
+        "window warms"
+    );
     assert!(
         result.values[4..].iter().all(|v| *v == Some(0.0)),
         "flat flow reads zero, not na"
@@ -454,14 +515,21 @@ fn cmf_holds_bounds_and_update_agreement_on_spy() {
     }
     let mut state = IndicatorState::new();
     for (tick, want) in ticks_of(&bars).into_iter().zip(result.values.iter()) {
-        assert_eq!(&cmf.update(&mut state, tick, &ps).expect("valid"), want, "cmf spy agreement");
+        assert_eq!(
+            &cmf.update(&mut state, tick, &ps).expect("valid"),
+            want,
+            "cmf spy agreement"
+        );
     }
 }
 
 #[test]
 fn cmf_refuses_bad_periods_and_short_legs() {
     let cmf = CmfIndicator::new();
-    assert!(cmf.warmup(&ParamSet::new().with_int("length", 0)).is_err(), "zero refuses");
+    assert!(
+        cmf.warmup(&ParamSet::new().with_int("length", 0)).is_err(),
+        "zero refuses"
+    );
     let legs = OwnedOhlcv {
         open: vec![],
         high: vec![1.0, 2.0, 3.0],
@@ -469,7 +537,10 @@ fn cmf_refuses_bad_periods_and_short_legs() {
         close: vec![1.0, 2.0, 3.0],
         volume: vec![1.0, 2.0],
     };
-    assert!(cmf.batch(&legs.views(), &cmf_params()).is_err(), "short volume refuses");
+    assert!(
+        cmf.batch(&legs.views(), &cmf_params()).is_err(),
+        "short volume refuses"
+    );
 }
 
 fn bits_of(values: &[Option<f64>]) -> Vec<Option<u64>> {
@@ -479,7 +550,9 @@ fn bits_of(values: &[Option<f64>]) -> Vec<Option<u64>> {
 fn volume_ticks(closes: &[f64]) -> (Vec<BarTick>, Vec<f64>, Vec<f64>, Vec<f64>) {
     let high: Vec<f64> = closes.iter().map(|c| c + 0.5).collect();
     let low: Vec<f64> = closes.iter().map(|c| c - 0.5).collect();
-    let volume: Vec<f64> = (1..=closes.len()).map(|i| f64::from(i as i32) * 10.0).collect();
+    let volume: Vec<f64> = (1..=closes.len())
+        .map(|i| f64::from(i as i32) * 10.0)
+        .collect();
     let ticks: Vec<BarTick> = closes
         .iter()
         .enumerate()
@@ -505,13 +578,23 @@ fn buffered_update_matches_batch_on_constant_and_subnormal_inputs() {
         (1..=40).map(|i| f64::from(i) * 1e-310).collect::<Vec<_>>(),
     ] {
         let (ticks, _, _, volume) = volume_ticks(&closes);
-        let frame = Ohlcv { open: &[], high: &[], low: &[], close: &closes, volume: &volume };
+        let frame = Ohlcv {
+            open: &[],
+            high: &[],
+            low: &[],
+            close: &closes,
+            volume: &volume,
+        };
         let batch = mfi.batch(&frame, &params).expect("batch runs").values;
         let mut state = IndicatorState::new();
         let folded: Vec<Option<f64>> = ticks
             .iter()
             .map(|tick| mfi.update(&mut state, *tick, &params).expect("update runs"))
             .collect();
-        assert_eq!(bits_of(&folded), bits_of(&batch), "mfi reproduces batch bit-for-bit");
+        assert_eq!(
+            bits_of(&folded),
+            bits_of(&batch),
+            "mfi reproduces batch bit-for-bit"
+        );
     }
 }

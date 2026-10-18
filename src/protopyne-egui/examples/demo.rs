@@ -33,8 +33,10 @@
 
 use std::path::{Path, PathBuf};
 
+use common_core::config::load_json_or_default;
+use common_core::io::write_atomic;
 use protopyne_chart_model::{rows_of, ChartRow};
-use protopyne_egui::{paint_workspace, ChartWorkspace, TimeframeKey};
+use protopyne_egui::{paint_workspace, prefs_path, ChartWorkspace, TerminalPrefs, TimeframeKey};
 use protopyne_server::{HistoryCache, HistoryRoot, TickerLoad};
 use protopyne_types::{Bar, FoldEdges, Timeframe};
 
@@ -77,12 +79,26 @@ fn frames_of(bars: &[Bar]) -> Result<Vec<(TimeframeKey, Vec<ChartRow>)>, String>
         .map(TimeframeKey::timeframe)
         .filter(|target| target.is_whole_multiple_of(base))
         .collect();
-    let frames = protopyne_server::fold_frames(bars, base, &targets, FoldEdges::CompleteOnly)
-        .map_err(|e| format!("tally 1M series: {e}"))?;
-    let mut seeded = Vec::with_capacity(frames.len());
-    for (timeframe, frame) in frames {
-        let key = key_of(timeframe).ok_or_else(|| format!("no toolbar slot for {timeframe:?}"))?;
-        seeded.push((key, rows_of(&frame).rows));
+    // Sub-daily frames fold complete-only (torn intraday buckets are omitted);
+    // day-and-coarser frames fold keep-partial, because a trading session
+    // cannot tile a 24-hour UTC day, so a complete-only daily fold emits
+    // nothing and the 1D chart would go dark. This mirrors the workspace's
+    // display fold, so a seeded 1D frame and an on-demand resample agree.
+    let (intraday, daily): (Vec<Timeframe>, Vec<Timeframe>) = targets
+        .into_iter()
+        .partition(|target| target.duration_ms() < Timeframe::D1.duration_ms());
+    let mut seeded = Vec::new();
+    for (group, edges) in [
+        (intraday, FoldEdges::CompleteOnly),
+        (daily, FoldEdges::KeepPartial),
+    ] {
+        let frames = protopyne_server::fold_frames(bars, base, &group, edges)
+            .map_err(|e| format!("tally 1M series: {e}"))?;
+        for (timeframe, frame) in frames {
+            let key =
+                key_of(timeframe).ok_or_else(|| format!("no toolbar slot for {timeframe:?}"))?;
+            seeded.push((key, rows_of(&frame).rows));
+        }
     }
     Ok(seeded)
 }
@@ -173,9 +189,18 @@ struct DemoApp {
     cache: Option<HistoryCache>,
     loaded_symbol: Option<String>,
     notice: Option<Notice>,
+    /// Where the favorites/loadout/settings document lives (`protopyne.json`
+    /// beside the historical root).
+    prefs_path: PathBuf,
+    /// Last persisted snapshot, so the frame writes only on a real change.
+    saved: TerminalPrefs,
 }
 
 impl DemoApp {
+    /// Seed a workspace from `path` under the built-in defaults. The persisted
+    /// document is applied later, by [`load_prefs`](Self::load_prefs), so the
+    /// headless `--check` path stays deterministic and independent of any
+    /// on-disk `protopyne.json`.
     fn new(path: &Path, symbol: Option<&str>) -> Result<Self, String> {
         let mut workspace = ChartWorkspace::new().map_err(|e| format!("workspace refused: {e}"))?;
         if path.is_dir() {
@@ -203,12 +228,13 @@ impl DemoApp {
             workspace
                 .switch_symbol_seeded(&first, seeded)
                 .map_err(|e| format!("seed {first}: {e}"))?;
-            return Ok(Self {
+            return Ok(Self::assemble(
                 workspace,
-                cache: Some(cache),
-                loaded_symbol: Some(first),
+                path,
+                Some(cache),
+                Some(first),
                 notice,
-            });
+            ));
         }
         if is_parquet(path) {
             let bars = load_bars(path)?;
@@ -238,12 +264,41 @@ impl DemoApp {
                     .map_err(|e| format!("seed {}: {e}", timeframe.label()))?;
             }
         }
-        Ok(Self {
+        Ok(Self::assemble(workspace, path, None, None, None))
+    }
+
+    /// Seed a workspace with the prefs path and an empty snapshot. The
+    /// document is applied only when [`load_prefs`](Self::load_prefs) runs.
+    fn assemble(
+        workspace: ChartWorkspace,
+        path: &Path,
+        cache: Option<HistoryCache>,
+        loaded_symbol: Option<String>,
+        notice: Option<Notice>,
+    ) -> Self {
+        Self {
             workspace,
-            cache: None,
-            loaded_symbol: None,
-            notice: None,
-        })
+            cache,
+            loaded_symbol,
+            notice,
+            prefs_path: prefs_path(path),
+            saved: TerminalPrefs::default(),
+        }
+    }
+
+    /// Apply the persisted document over the seeded workspace: restore the
+    /// favorites, loadout, session selection, and chart settings, then
+    /// re-select the persisted timeframe over the seeded frames so the label
+    /// and the rows agree. Recorded as the baseline so the first write only
+    /// lands on a real change.
+    fn load_prefs(&mut self, path: &Path) {
+        let prefs = load_json_or_default::<TerminalPrefs>(&prefs_path(path));
+        if let Err(error) = self.workspace.apply_prefs(&prefs) {
+            eprintln!("protopyne-gui: prefs ignored: {error}");
+            return;
+        }
+        let _ = self.workspace.select_timeframe(self.workspace.timeframe());
+        self.saved = prefs;
     }
 
     /// On-demand ticker switch: when the modal picked a symbol the seeded
@@ -285,12 +340,29 @@ impl DemoApp {
     }
 }
 
+impl DemoApp {
+    /// Persist the favorites, loadout, and settings when they change: the
+    /// snapshot is compared against the last write so the file is touched only
+    /// on a real edit.
+    fn persist_prefs(&mut self) {
+        let prefs = self.workspace.prefs();
+        if prefs == self.saved {
+            return;
+        }
+        if let Ok(bytes) = serde_json::to_vec_pretty(&prefs) {
+            let _ = write_atomic(&self.prefs_path, &bytes);
+        }
+        self.saved = prefs;
+    }
+}
+
 impl eframe::App for DemoApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.maybe_switch_symbol();
         if let Err(error) = paint_workspace(ui, &mut self.workspace, None) {
             ui.colored_label(egui::Color32::RED, format!("workspace refused: {error}"));
         }
+        self.persist_prefs();
         if let Some(notice) = &self.notice {
             let ink = if notice.is_error() {
                 egui::Color32::RED
@@ -358,13 +430,14 @@ fn main() {
         }
         return;
     }
-    let app = match DemoApp::new(&path, symbol.as_deref()) {
+    let mut app = match DemoApp::new(&path, symbol.as_deref()) {
         Ok(app) => app,
         Err(e) => {
             eprintln!("protopyne-gui: {e}");
             std::process::exit(1);
         }
     };
+    app.load_prefs(&path);
     let options = eframe::NativeOptions::default();
     let run = eframe::run_native(
         "protopyne chart shell",

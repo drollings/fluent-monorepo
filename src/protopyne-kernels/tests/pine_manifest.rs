@@ -45,13 +45,29 @@ fn manifest_marks_good_and_missing_imports() {
     ]);
     let manifest = build_indicator_manifest(root.path()).expect("the manifest builds");
     assert_eq!(manifest.len(), 2, "both scripts are listed: {manifest:?}");
-    let good = manifest.iter().find(|entry| entry.id == "pine:_IntegrationLite").expect("good listed");
-    assert_eq!(good.parity, ManifestParity::Verified, "good import verifies");
-    assert_eq!(good.title, "Integration Lite", "title comes from the header");
-    let broken = manifest.iter().find(|entry| entry.id == "pine:_Broken").expect("broken listed");
+    let good = manifest
+        .iter()
+        .find(|entry| entry.id == "pine:_IntegrationLite")
+        .expect("good listed");
+    assert_eq!(
+        good.parity,
+        ManifestParity::Verified,
+        "good import verifies"
+    );
+    assert_eq!(
+        good.title, "Integration Lite",
+        "title comes from the header"
+    );
+    let broken = manifest
+        .iter()
+        .find(|entry| entry.id == "pine:_Broken")
+        .expect("broken listed");
     match &broken.parity {
         ManifestParity::Unverified { reason } => {
-            assert!(reason.contains("libNope"), "the refusal names the import: {reason}");
+            assert!(
+                reason.contains("libNope"),
+                "the refusal names the import: {reason}"
+            );
         }
         ManifestParity::Verified => panic!("a missing import never verifies"),
     }
@@ -71,17 +87,29 @@ fn manifest_refuses_version_skew_and_uncovered_stems() {
         ("libraries/_libUtil.pine", LIB_UTIL),
     ]);
     let manifest = build_indicator_manifest(root.path()).expect("the manifest builds");
-    let skewed = manifest.iter().find(|entry| entry.id == "pine:_IntegrationLite").expect("listed");
+    let skewed = manifest
+        .iter()
+        .find(|entry| entry.id == "pine:_IntegrationLite")
+        .expect("listed");
     match &skewed.parity {
         ManifestParity::Unverified { reason } => {
-            assert!(reason.contains('5'), "the refusal names the version: {reason}");
+            assert!(
+                reason.contains('5'),
+                "the refusal names the version: {reason}"
+            );
         }
         ManifestParity::Verified => panic!("version skew never verifies"),
     }
-    let uncovered = manifest.iter().find(|entry| entry.id == "pine:_Whatever").expect("listed");
+    let uncovered = manifest
+        .iter()
+        .find(|entry| entry.id == "pine:_Whatever")
+        .expect("listed");
     match &uncovered.parity {
         ManifestParity::Unverified { reason } => {
-            assert!(reason.contains("harness"), "the refusal names coverage: {reason}");
+            assert!(
+                reason.contains("harness"),
+                "the refusal names coverage: {reason}"
+            );
         }
         ManifestParity::Verified => panic!("an uncovered script never verifies"),
     }
@@ -89,12 +117,16 @@ fn manifest_refuses_version_skew_and_uncovered_stems() {
 
 #[test]
 fn manifest_title_falls_back_to_stem() {
-    let root = temp_root(&[
-        ("indicators/_Mystery.pine", "//@version=6\n// no header here\n"),
-    ]);
+    let root = temp_root(&[(
+        "indicators/_Mystery.pine",
+        "//@version=6\n// no header here\n",
+    )]);
     let manifest = build_indicator_manifest(root.path()).expect("the manifest builds");
     assert_eq!(manifest.len(), 1);
-    assert_eq!(manifest[0].title, "_Mystery", "the stem stands in for a title");
+    assert_eq!(
+        manifest[0].title, "_Mystery",
+        "the stem stands in for a title"
+    );
 }
 
 #[test]
@@ -110,7 +142,10 @@ fn manifest_is_sorted_and_deterministic() {
     let second = build_indicator_manifest(root.path()).expect("the manifest rebuilds");
     assert_eq!(first, second, "a rerun is byte-identical");
     let ids: Vec<&str> = first.iter().map(|entry| entry.id.as_str()).collect();
-    assert!(ids.windows(2).all(|pair| pair[0] <= pair[1]), "ids sort: {ids:?}");
+    assert!(
+        ids.windows(2).all(|pair| pair[0] <= pair[1]),
+        "ids sort: {ids:?}"
+    );
 }
 
 #[test]
@@ -125,7 +160,11 @@ fn manifest_missing_root_refuses() {
 #[test]
 fn manifest_real_root_covers_the_proven_set() {
     let manifest = build_indicator_manifest(&data_root()).expect("the real root builds");
-    assert!(manifest.len() >= 5, "every checked-in script is listed: {}", manifest.len());
+    assert!(
+        manifest.len() >= 5,
+        "every checked-in script is listed: {}",
+        manifest.len()
+    );
     for stem in [
         "_IntegrationLite",
         "_FastMAs",

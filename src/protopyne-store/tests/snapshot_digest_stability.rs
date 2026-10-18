@@ -9,7 +9,7 @@
 
 use super::*;
 use crate::manifest::SealManifest;
-use crate::snapshot::test_snapshot::{SEAL_NOW_MS, varied_bars, with_seeded_tape};
+use crate::snapshot::test_snapshot::{varied_bars, with_seeded_tape, SEAL_NOW_MS};
 
 #[tokio::test]
 async fn same_series_seals_to_the_same_digest() {

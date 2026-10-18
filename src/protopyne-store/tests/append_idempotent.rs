@@ -14,7 +14,7 @@ use protopyne_types::Timeframe;
 use crate::commit::test_tapes::{at_ms, bar};
 use crate::fold::FoldPolicy;
 use crate::range::TimeRange;
-use crate::tape::test_setup::{VENUE, seeded, with_registry_caps};
+use crate::tape::test_setup::{seeded, with_registry_caps, VENUE};
 
 /// Ten flat minute bars starting at `first_ms`, one per 60_000 ms.
 fn grid(first_ms: i64, count: i64) -> Vec<Bar> {

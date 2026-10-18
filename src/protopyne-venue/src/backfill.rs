@@ -20,7 +20,7 @@ use std::sync::{Arc, Mutex};
 
 use fluent_concurrency::ladder::first_accept_in_order_sync;
 use fluent_wvr::prelude::*;
-use protopyne_types::{AdjustedBounds, Bar, BarGap, SeriesContext, Timeframe, adjust_fetch_bounds};
+use protopyne_types::{adjust_fetch_bounds, AdjustedBounds, Bar, BarGap, SeriesContext, Timeframe};
 
 use crate::error::VenueError;
 
@@ -266,7 +266,10 @@ impl BackfillUnit {
         warmup: usize,
     ) -> Self {
         Self {
-            state: Mutex::new(ResyncState { ctx, stash: Vec::new() }),
+            state: Mutex::new(ResyncState {
+                ctx,
+                stash: Vec::new(),
+            }),
             sources,
             gate,
             warmup,
@@ -324,17 +327,19 @@ impl BackfillUnit {
             ))),
             Some(tip) if (bar.ts - tip).num_seconds() == step_secs => {
                 if state.stash.is_empty() {
-                    state
-                        .ctx
-                        .push(bar)
-                        .map_err(|e| VenueError::Invalid(format!("backfill refused the bar: {e}")))?;
+                    state.ctx.push(bar).map_err(|e| {
+                        VenueError::Invalid(format!("backfill refused the bar: {e}"))
+                    })?;
                 } else {
                     state.stash.push(bar);
                 }
                 Ok(())
             }
             Some(tip) => {
-                let missing = (bar.ts - tip).num_seconds().div_euclid(step_secs).saturating_sub(1);
+                let missing = (bar.ts - tip)
+                    .num_seconds()
+                    .div_euclid(step_secs)
+                    .saturating_sub(1);
                 let reason = format!(
                     "reconnect gap: {missing} bars missing between {tip} and {ts}",
                     ts = bar.ts
@@ -353,7 +358,11 @@ impl BackfillUnit {
     pub fn resync(&self) -> BackfillReport {
         let mut state = common_core::sync::lock(&self.state);
         if state.stash.is_empty() {
-            let report = BackfillReport { complete: true, filled: 0, alerts: Vec::new() };
+            let report = BackfillReport {
+                complete: true,
+                filled: 0,
+                alerts: Vec::new(),
+            };
             drop(state);
             self.gate.observe(&report);
             return report;
@@ -364,9 +373,18 @@ impl BackfillUnit {
         let timeframe = state.ctx.timeframe();
         let step_secs = timeframe.total_seconds() as i64;
         let step_ms = timeframe.duration_ms();
-        let low = state.ctx.bars().last().expect("non-empty series has a tip").ts;
+        let low = state
+            .ctx
+            .bars()
+            .last()
+            .expect("non-empty series has a tip")
+            .ts;
         let high = state.stash.first().expect("non-empty stash has a head").ts;
-        let missing = (high - low).num_seconds().div_euclid(step_secs).saturating_sub(1).max(0) as u64;
+        let missing = (high - low)
+            .num_seconds()
+            .div_euclid(step_secs)
+            .saturating_sub(1)
+            .max(0) as u64;
         let gap = BarGap::new()
             .at_index(state.ctx.len())
             .expected_ts(low + chrono::Duration::milliseconds(step_ms))
@@ -374,7 +392,9 @@ impl BackfillUnit {
             .missing_bars(missing)
             .build();
         let bounds = missing_range(&gap, timeframe, self.warmup);
-        let start_ms = bounds.fetch_start_ms.unwrap_or_else(|| gap.expected_ts.timestamp_millis());
+        let start_ms = bounds
+            .fetch_start_ms
+            .unwrap_or_else(|| gap.expected_ts.timestamp_millis());
         let end_ms = gap.actual_ts.timestamp_millis() - step_ms;
         let fetched = match fetch_through(&self.sources, start_ms, end_ms) {
             Ok(fetched) => fetched,
@@ -390,7 +410,11 @@ impl BackfillUnit {
     /// Push waiters into the series in order. Unpushable waiters (a short
     /// fetch left a second hole) stay stashed with entries suspended;
     /// partial progress is kept either way.
-    fn drain_waiters(state: &mut ResyncState, gate: &BackfillHandle, filled: usize) -> BackfillReport {
+    fn drain_waiters(
+        state: &mut ResyncState,
+        gate: &BackfillHandle,
+        filled: usize,
+    ) -> BackfillReport {
         while !state.stash.is_empty() {
             let tip = state.ctx.bars().last().map(|bar| bar.ts);
             if tip.is_some_and(|tip| state.stash[0].ts <= tip) {
@@ -407,14 +431,22 @@ impl BackfillUnit {
                 }
             }
         }
-        let report = BackfillReport { complete: true, filled, alerts: Vec::new() };
+        let report = BackfillReport {
+            complete: true,
+            filled,
+            alerts: Vec::new(),
+        };
         gate.observe(&report);
         report
     }
 
     /// Suspend with reason and report the incomplete pass.
     fn suspended(gate: &BackfillHandle, reason: String) -> BackfillReport {
-        let report = BackfillReport { complete: false, filled: 0, alerts: vec![reason.clone()] };
+        let report = BackfillReport {
+            complete: false,
+            filled: 0,
+            alerts: vec![reason.clone()],
+        };
         gate.suspend(reason);
         report
     }

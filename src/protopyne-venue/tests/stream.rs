@@ -19,16 +19,16 @@
 
 use super::*;
 use crate::{
-    AccountEvent, DepthBook, LiquidityFilter, OrderIntent, OrderSide, PaperConfig, PaperVenue, PriceLevel,
-    Quote, SessionConfig, TastytradeConfig, TastytradeTransport, TradingSession, TransportError,
-    VenueRegistry, VenueStorage,
     depth::is_crossed,
     venue::{QuoteSource, Venue},
+    AccountEvent, DepthBook, LiquidityFilter, OrderIntent, OrderSide, PaperConfig, PaperVenue,
+    PriceLevel, Quote, SessionConfig, TastytradeConfig, TastytradeTransport, TradingSession,
+    TransportError, VenueRegistry, VenueStorage,
 };
 use std::collections::VecDeque;
 use std::sync::{
-    Arc,
     atomic::{AtomicUsize, Ordering},
+    Arc,
 };
 use std::time::{Duration, Instant};
 
@@ -64,7 +64,9 @@ fn fast_config() -> StreamConfig {
 
 fn transport() -> Arc<TastytradeTransport> {
     Arc::new(TastytradeTransport::new(
-        TastytradeConfig::new().base_url("http://127.0.0.1:9".to_owned()).build(),
+        TastytradeConfig::new()
+            .base_url("http://127.0.0.1:9".to_owned())
+            .build(),
     ))
 }
 
@@ -182,7 +184,11 @@ async fn retryable_backs_off_within_jitter_bounds_then_serves() {
         matches!(outcome, StreamOutcome::Terminal { .. }),
         "sentinel ends the run, got: {outcome:?}"
     );
-    assert_eq!(script.attempt_count(), 4, "two retries, one serve, one sentinel");
+    assert_eq!(
+        script.attempt_count(),
+        4,
+        "two retries, one serve, one sentinel"
+    );
     let stamps = script.stamps.lock().expect("stamps").clone();
     assert_eq!(stamps.len(), 4);
     for (k, window) in stamps.windows(2).enumerate().take(2) {
@@ -300,7 +306,11 @@ async fn closed_consumer_ends_the_run() {
         matches!(outcome, StreamOutcome::ConsumerGone),
         "closed outbox ends the run, got: {outcome:?}"
     );
-    assert_eq!(script.attempt_count(), 1, "no reconnect after the consumer leaves");
+    assert_eq!(
+        script.attempt_count(),
+        1,
+        "no reconnect after the consumer leaves"
+    );
 }
 
 // ── breaker suite ──────────────────────────────────────────────────
@@ -321,7 +331,10 @@ async fn consecutive_errors_trip_and_never_auto_rearm() {
     breaker.record_error(&transient("unavailable: three"));
     assert!(breaker.tripped(), "N+1th error trips");
     let reason = breaker.trip_reason().expect("trip banks a reason");
-    assert!(reason.contains("consecutive"), "reason names the budget: {reason}");
+    assert!(
+        reason.contains("consecutive"),
+        "reason names the budget: {reason}"
+    );
 
     breaker.record_success();
     breaker.record_success();
@@ -350,7 +363,10 @@ async fn restart_storm_trips_within_budget() {
     breaker.record_restart();
     breaker.record_restart();
     breaker.record_restart();
-    assert!(breaker.tripped(), "the sixth restart exceeds five per window");
+    assert!(
+        breaker.tripped(),
+        "the sixth restart exceeds five per window"
+    );
     assert!(
         breaker
             .trip_reason()
@@ -411,7 +427,9 @@ async fn breaker_leaves_quotes_and_fills_alone() {
         .ts(Utc::now())
         .build();
     venue_transport.put_cached("SPY", quote);
-    let served = venue_transport.latest("SPY").expect("tripped breaker serves quotes");
+    let served = venue_transport
+        .latest("SPY")
+        .expect("tripped breaker serves quotes");
     assert_eq!(served.bid, money("600.00"), "pricing untouched");
 
     let venue = PaperVenue::new(PaperConfig::new().build());
@@ -441,7 +459,9 @@ async fn breaker_leaves_quotes_and_fills_alone() {
 fn breaker_never_masks_correctness() {
     let stream = SupervisedStream::new(fast_config());
     for _ in 0..3 {
-        stream.breaker().record_error(&transient("unavailable: storm"));
+        stream
+            .breaker()
+            .record_error(&transient("unavailable: storm"));
     }
     assert!(stream.breaker().tripped());
 
@@ -464,8 +484,14 @@ fn breaker_never_masks_correctness() {
     let mut index = protopyne_types::SymbolIndex::new();
     let mut book = DepthBook::new("SPY".to_owned(), &mut index).expect("intern");
     book.snapshot_replace(
-        &[PriceLevel { price: money("600.20"), size: 50 }],
-        &[PriceLevel { price: money("600.10"), size: 40 }],
+        &[PriceLevel {
+            price: money("600.20"),
+            size: 50,
+        }],
+        &[PriceLevel {
+            price: money("600.10"),
+            size: 40,
+        }],
         1,
         ts(),
     )
@@ -482,7 +508,9 @@ fn breaker_never_masks_correctness() {
 fn breaker_never_judges_merit() {
     let stream = SupervisedStream::new(fast_config());
     for _ in 0..3 {
-        stream.breaker().record_error(&transient("unavailable: storm"));
+        stream
+            .breaker()
+            .record_error(&transient("unavailable: storm"));
     }
     assert!(stream.breaker().tripped());
     let wide = Quote::new()
@@ -525,7 +553,13 @@ fn terminal_set_carries_a_stated_reason_per_code() {
         );
         assert!(!TransportError::Terminal(code.to_owned()).is_retryable());
     }
-    for code in ["unavailable", "rate_limited", "timeout", "reset", "future_code"] {
+    for code in [
+        "unavailable",
+        "rate_limited",
+        "timeout",
+        "reset",
+        "future_code",
+    ] {
         assert!(terminal_reason(code).is_none(), "{code} stays transient");
     }
 }
@@ -661,8 +695,7 @@ async fn panic_cancels_dependents_only() {
     impl_component!(PanicSource);
 
     let stream = SupervisedStream::new(fast_config());
-    let sensor: Arc<dyn Component> =
-        Arc::new(StreamHealthUnit::new(Arc::clone(stream.breaker())));
+    let sensor: Arc<dyn Component> = Arc::new(StreamHealthUnit::new(Arc::clone(stream.breaker())));
     let mut batch = SupervisedBatch::new(
         fluent_concurrency::tokio_runtime(),
         fluent_wvr::CapabilitySet::new(),
@@ -673,7 +706,9 @@ async fn panic_cancels_dependents_only() {
     batch.register(panicking).expect("register source");
     register_pending(&mut batch, probe("entries", &["stream.feed"], true));
     batch.register(sensor).expect("register sensor");
-    batch.register(probe("telemetry", &[], false)).expect("register free");
+    batch
+        .register(probe("telemetry", &[], false))
+        .expect("register free");
     let summary = batch.await;
     assert_eq!(summary.panicked.len(), 1, "the panic is contained");
     assert!(
@@ -693,7 +728,11 @@ async fn panic_cancels_dependents_only() {
         "independents are never cancelled, got: {:?}",
         summary.cancelled
     );
-    assert_eq!(summary.completed.len(), 2, "sensor and free complete: {summary:?}");
+    assert_eq!(
+        summary.completed.len(),
+        2,
+        "sensor and free complete: {summary:?}"
+    );
 }
 
 /// The health sensor reports the breaker into the batch: untripped completes
@@ -705,8 +744,7 @@ async fn health_sensor_reports_breaker_state() {
     use fluent_wvr::prelude::*;
 
     async fn run_sensor(breaker: &Arc<StreamBreaker>) -> String {
-        let sensor: Arc<dyn Component> =
-            Arc::new(StreamHealthUnit::new(Arc::clone(breaker)));
+        let sensor: Arc<dyn Component> = Arc::new(StreamHealthUnit::new(Arc::clone(breaker)));
         let mut batch = SupervisedBatch::new(
             fluent_concurrency::tokio_runtime(),
             fluent_wvr::CapabilitySet::new(),
@@ -725,7 +763,9 @@ async fn health_sensor_reports_breaker_state() {
 
     let stormy = SupervisedStream::new(fast_config());
     for _ in 0..3 {
-        stormy.breaker().record_error(&transient("unavailable: storm"));
+        stormy
+            .breaker()
+            .record_error(&transient("unavailable: storm"));
     }
     let report = run_sensor(stormy.breaker()).await;
     assert!(
@@ -740,24 +780,27 @@ async fn health_sensor_reports_breaker_state() {
 /// batch-level proof behind the session's per-bar sensor.
 #[tokio::test]
 async fn tripped_sensor_cancels_dependents_through_graph() {
-    use fluent_concurrency::batch::{
-        CancelReason, SupervisedBatch, SupervisedBatchEvent,
-    };
+    use fluent_concurrency::batch::{CancelReason, SupervisedBatch, SupervisedBatchEvent};
 
     let stream = SupervisedStream::new(fast_config());
     for _ in 0..3 {
-        stream.breaker().record_error(&transient("unavailable: storm"));
+        stream
+            .breaker()
+            .record_error(&transient("unavailable: storm"));
     }
     let mut batch = SupervisedBatch::new(
         fluent_concurrency::tokio_runtime(),
         fluent_wvr::CapabilitySet::new(),
     );
     batch
-        .register(Arc::new(StreamHealthUnit::new(Arc::clone(stream.breaker())))
-            as Arc<dyn Component>)
+        .register(
+            Arc::new(StreamHealthUnit::new(Arc::clone(stream.breaker()))) as Arc<dyn Component>,
+        )
         .expect("register sensor");
     register_pending(&mut batch, probe("entries", &["stream.health"], true));
-    batch.register(probe("telemetry", &[], false)).expect("register free");
+    batch
+        .register(probe("telemetry", &[], false))
+        .expect("register free");
     let summary = batch.await;
     assert!(
         summary.failed.iter().any(
@@ -825,7 +868,9 @@ async fn attached_stream_sensor_reports_trip_per_bar() {
     // independent unit still completes.
     let stormy = SupervisedStream::new(fast_config());
     for _ in 0..3 {
-        stormy.breaker().record_error(&transient("unavailable: storm"));
+        stormy
+            .breaker()
+            .record_error(&transient("unavailable: storm"));
     }
     guarded.attach_stream_breaker(Arc::clone(stormy.breaker()));
     let summary = guarded.run_bar(units()).await;
@@ -874,7 +919,13 @@ async fn spawned_stream_attaches_serves_and_drains() {
             async move { script.connect() }
         }
     };
-    session.spawn_supervised_stream(&stream, connector, StreamAbort::new(), out_tx, Arc::clone(&vehicle));
+    session.spawn_supervised_stream(
+        &stream,
+        connector,
+        StreamAbort::new(),
+        out_tx,
+        Arc::clone(&vehicle),
+    );
     let event = tokio::time::timeout(Duration::from_secs(5), out_rx.recv())
         .await
         .expect("served promptly")
@@ -929,7 +980,10 @@ async fn retryable_sleeps_match_schedule_on_virtual_time() {
     let outcome = stream
         .run(
             || async {
-                probe.lock().expect("stamps").push(tokio::time::Instant::now());
+                probe
+                    .lock()
+                    .expect("stamps")
+                    .push(tokio::time::Instant::now());
                 script.connect()
             },
             &abort,
@@ -941,7 +995,11 @@ async fn retryable_sleeps_match_schedule_on_virtual_time() {
         matches!(outcome, StreamOutcome::Terminal { .. }),
         "sentinel ends the run, got: {outcome:?}"
     );
-    assert_eq!(script.attempt_count(), 4, "two retries, one serve, one sentinel");
+    assert_eq!(
+        script.attempt_count(),
+        4,
+        "two retries, one serve, one sentinel"
+    );
     let stamps = vstamps.lock().expect("stamps").clone();
     assert_eq!(stamps.len(), 4);
     let first = stamps[1] - stamps[0];
@@ -1011,8 +1069,16 @@ async fn abort_during_backoff_sleep_ends_run_with_one_attempt() {
         matches!(outcome, StreamOutcome::Aborted),
         "mid-sleep abort ends the run, got: {outcome:?}"
     );
-    assert_eq!(attempts.load(Ordering::SeqCst), 1, "no second connect starts");
-    assert_eq!(breaker.consecutive_errors(), 1, "only the real failure counts");
+    assert_eq!(
+        attempts.load(Ordering::SeqCst),
+        1,
+        "no second connect starts"
+    );
+    assert_eq!(
+        breaker.consecutive_errors(),
+        1,
+        "only the real failure counts"
+    );
     assert!(!breaker.tripped());
 }
 
@@ -1036,7 +1102,11 @@ async fn pre_fired_abort_starts_no_attempt() {
     );
     assert_eq!(script.attempt_count(), 0, "no connect starts");
     assert_eq!(started.elapsed(), Duration::ZERO, "nothing sleeps");
-    assert_eq!(stream.breaker().consecutive_errors(), 0, "abort counts no error");
+    assert_eq!(
+        stream.breaker().consecutive_errors(),
+        0,
+        "abort counts no error"
+    );
     assert!(!stream.breaker().tripped());
 }
 
@@ -1061,7 +1131,10 @@ async fn third_consecutive_error_trips_the_loop() {
     let outcome = stream
         .run(
             || async {
-                probe.lock().expect("stamps").push(tokio::time::Instant::now());
+                probe
+                    .lock()
+                    .expect("stamps")
+                    .push(tokio::time::Instant::now());
                 script.connect()
             },
             &abort,
@@ -1101,7 +1174,7 @@ async fn third_consecutive_error_trips_the_loop() {
 // them suspended while flagging health (correctness, never confidence).
 
 use crate::backfill::{BackfillHandle, BackfillSource, BackfillUnit, BACKFILL_ASSET};
-use crate::health::{HealthGate, HealthLimits, HealthState, may_trade};
+use crate::health::{may_trade, HealthGate, HealthLimits, HealthState};
 use protopyne_types::{Bar, GapPolicy, SeriesContext, Timeframe};
 
 fn bar_at(minute: u32) -> Bar {
@@ -1170,9 +1243,14 @@ fn backfilled_state(gate: &BackfillHandle) -> HealthState {
 fn dropped_window_backfills_before_resume() {
     let gate = BackfillHandle::new();
     let source: std::sync::Arc<dyn BackfillSource> =
-        std::sync::Arc::new(ScriptedHistory::serves(vec![bar_at(3), bar_at(4), bar_at(5)]));
+        std::sync::Arc::new(ScriptedHistory::serves(vec![
+            bar_at(3),
+            bar_at(4),
+            bar_at(5),
+        ]));
     let unit = BackfillUnit::new(dense_ctx_through(2), vec![source], gate.clone(), 1);
-    unit.note_bar(bar_at(6)).expect_err("the gap suspends the reconnect bar");
+    unit.note_bar(bar_at(6))
+        .expect_err("the gap suspends the reconnect bar");
     assert!(gate.entries_suspended(), "entries wait for the hole");
     assert!(unit.provides_asset(), "the unit advertises its asset");
     assert_eq!(unit.asset(), BACKFILL_ASSET);
@@ -1180,13 +1258,20 @@ fn dropped_window_backfills_before_resume() {
     let report = unit.resync();
     assert!(report.complete, "the hole splices, got: {report:?}");
     assert_eq!(report.filled, 3, "exactly the dropped window lands");
-    assert!(!gate.entries_suspended(), "entries resume on a contiguous series");
+    assert!(
+        !gate.entries_suspended(),
+        "entries resume on a contiguous series"
+    );
     assert!(gate.check_entries().is_ok());
     assert_eq!(unit.pending(), 0, "nothing waits after the splice");
 
-    unit.note_bar(bar_at(7)).expect("contiguous bars flow again");
+    unit.note_bar(bar_at(7))
+        .expect("contiguous bars flow again");
     let report = unit.resync();
-    assert!(report.complete && report.filled == 0, "a clean window fetches nothing");
+    assert!(
+        report.complete && report.filled == 0,
+        "a clean window fetches nothing"
+    );
 
     let verdict = may_trade(&backfilled_state(&gate), &HealthLimits::new().build());
     assert!(verdict.may_trade(), "a backfilled feed trades");
@@ -1228,20 +1313,29 @@ async fn failed_backfill_suspends_signals_and_flags_health() {
     let report = unit.resync();
     assert!(!report.complete, "a dark history cannot complete");
     assert!(gate.entries_suspended(), "signals stay suspended");
-    assert!(gate.check_entries().is_err(), "entries refuse while suspended");
+    assert!(
+        gate.check_entries().is_err(),
+        "entries refuse while suspended"
+    );
     assert_eq!(unit.pending(), 1, "the reconnect bar still waits");
 
     let state = backfilled_state(&gate);
     let report = crate::health::GateReport::evaluate(&state, &HealthLimits::new().build());
     assert!(!report.verdict.may_trade(), "health halts on the hole");
     assert!(
-        report.failures.iter().any(|failure| failure.gate == HealthGate::Backfill),
+        report
+            .failures
+            .iter()
+            .any(|failure| failure.gate == HealthGate::Backfill),
         "the backfill gate names itself, got: {:?}",
         report.failures
     );
 
     let calm = SupervisedStream::new(fast_config());
-    assert!(!calm.breaker().tripped(), "correctness never trips confidence");
+    assert!(
+        !calm.breaker().tripped(),
+        "correctness never trips confidence"
+    );
 }
 
 /// A short fetch cannot close the hole: the reconnect bar still waits,

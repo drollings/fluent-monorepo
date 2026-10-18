@@ -10,7 +10,7 @@
 //! shifts any candidate's numbers fails here instead of silently re-freezing.
 
 use super::*;
-use crate::coverage::test_calibration::{GapTally, load_corpus};
+use crate::coverage::test_calibration::{load_corpus, GapTally};
 
 /// Render the measured sweep table for assertion messages: one line per
 /// candidate bound, so a drift names every candidate that moved.

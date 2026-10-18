@@ -14,8 +14,8 @@ use protopyne_types::Timeframe;
 
 use crate::commit::test_tapes::at_ms;
 use crate::key::{SymbolId, TapeKey};
-use crate::tape::test_setup::{VENUE, memory_tape, with_registry_caps};
 use crate::store::{CandleStore, WritePolicy};
+use crate::tape::test_setup::{memory_tape, with_registry_caps, VENUE};
 
 fn key_of(id: SymbolId) -> TapeKey {
     TapeKey {
@@ -153,9 +153,8 @@ async fn scoped_read_with_a_foreign_permit_is_refused_on_its_face() {
     let root = dir.path().join("store");
     let foreign = dir.path().join("other");
     // Seed one bar under the root-bound token.
-    let caps = fluent_wvr::CapabilitySet::new().with(crate::capability::StoreStorage::new(
-        root.clone(),
-    ));
+    let caps =
+        fluent_wvr::CapabilitySet::new().with(crate::capability::StoreStorage::new(root.clone()));
     fluent_wvr::CURRENT_CAPS
         .scope(caps, async {
             let tape = crate::tape::MarketTape::open(&root).expect("tape opens");

@@ -15,8 +15,8 @@
 use crate::ema::EmaIndicator;
 use crate::error::KernelError;
 use crate::indicator::{
-    fin_or_none, nan_hole, BarTick, Indicator, IndicatorId, IndicatorResult, IndicatorSpec, IndicatorState,
-    Ohlcv, ParamSet,
+    fin_or_none, nan_hole, BarTick, Indicator, IndicatorId, IndicatorResult, IndicatorSpec,
+    IndicatorState, Ohlcv, ParamSet,
 };
 
 /// Accumulation/distribution (`ad`): cumulative money-flow-volume. Defined
@@ -225,17 +225,9 @@ impl Indicator for AdoscIndicator {
         let line = ad.update(child, bar, child_params)?;
         let ema = EmaIndicator::new();
         let (child, child_params) = state.child_with_params(1, || Self::ema_params(fast_len));
-        let fast = ema.update(
-            child,
-            BarTick::close_only(nan_hole(line)),
-            child_params,
-        )?;
+        let fast = ema.update(child, BarTick::close_only(nan_hole(line)), child_params)?;
         let (child, child_params) = state.child_with_params(2, || Self::ema_params(slow_len));
-        let slow = ema.update(
-            child,
-            BarTick::close_only(nan_hole(line)),
-            child_params,
-        )?;
+        let slow = ema.update(child, BarTick::close_only(nan_hole(line)), child_params)?;
         let raw = match (fast, slow) {
             (Some(f), Some(s)) => f - s,
             _ => f64::NAN,
@@ -330,7 +322,11 @@ impl Indicator for ObvIndicator {
                 // The predecessor is the immediate prior bar (matching the
                 // incremental path's retained window): a missing bar shadows
                 // its successor too, so both paths agree positionally.
-                let prev = if i == 0 { None } else { Some(data.close[i - 1]) };
+                let prev = if i == 0 {
+                    None
+                } else {
+                    Some(data.close[i - 1])
+                };
                 Self::flow(close, prev, volume[i])
                     .map(|flow| {
                         running += flow;
@@ -350,7 +346,11 @@ impl Indicator for ObvIndicator {
     ) -> Result<Option<f64>, KernelError> {
         state.push(bar, 2);
         // The opener counts long: no predecessor on the first retained bar.
-        let prev = if state.len() < 2 { None } else { state.prev_close() };
+        let prev = if state.len() < 2 {
+            None
+        } else {
+            state.prev_close()
+        };
         let running = match Self::flow(bar.close, prev, bar.volume) {
             Some(flow) => state.last().unwrap_or(0.0) + flow,
             None => return Ok(None),
@@ -391,10 +391,9 @@ impl MfiIndicator {
     }
 
     fn mfi_of(prices: &[f64], volumes: &[f64]) -> f64 {
-        let (up, dn) = prices
-            .windows(2)
-            .zip(volumes.iter().skip(1))
-            .fold((0.0, 0.0), |(up, dn), (pair, volume)| {
+        let (up, dn) = prices.windows(2).zip(volumes.iter().skip(1)).fold(
+            (0.0, 0.0),
+            |(up, dn), (pair, volume)| {
                 let flow = volume * pair[1];
                 if pair[1] > pair[0] {
                     (up + flow, dn)
@@ -403,7 +402,8 @@ impl MfiIndicator {
                 } else {
                     (up, dn)
                 }
-            });
+            },
+        );
         nan_hole(crate::math::div_or_none(100.0 * up, up + dn))
     }
 }
@@ -588,7 +588,10 @@ impl CmfIndicator {
     /// Flow ratio over one trailing window: `NaN` while warming, when any
     /// window leg is missing, or when the window traded no volume.
     fn window_ratio(flows: &[f64], volumes: &[f64]) -> f64 {
-        nan_hole(crate::math::div_or_none(flows.iter().sum(), volumes.iter().sum()))
+        nan_hole(crate::math::div_or_none(
+            flows.iter().sum(),
+            volumes.iter().sum(),
+        ))
     }
 }
 

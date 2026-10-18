@@ -10,8 +10,8 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use fluent_concurrency::io::net::NetCapability;
-use fluent_wvr::{CURRENT_CAPS, CapabilitySet};
-use protopyne_venue::{LiveBoot, SessionConfig, TastytradeConfig, Venue, boot_live};
+use fluent_wvr::{CapabilitySet, CURRENT_CAPS};
+use protopyne_venue::{boot_live, LiveBoot, SessionConfig, TastytradeConfig, Venue};
 
 fn env(name: &str) -> Option<String> {
     std::env::var(name).ok().filter(|value| !value.is_empty())
@@ -51,7 +51,10 @@ async fn cert_sandbox_read_storm() {
     for round in 0..ROUNDS {
         let started = Instant::now();
         let missing = live.venue.query(&format!("soak-probe-{round}#0")).await;
-        assert!(missing.is_none(), "round {round}: an unplaced order reads absent");
+        assert!(
+            missing.is_none(),
+            "round {round}: an unplaced order reads absent"
+        );
         let _snapshot = live.venue.account_snapshot();
         worst_ms = worst_ms.max(started.elapsed().as_millis());
     }

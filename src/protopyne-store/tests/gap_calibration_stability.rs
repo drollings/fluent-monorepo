@@ -6,7 +6,7 @@
 //! the harness itself, so the recorded measurement is a fact about the
 //! classifier rather than about the run that happened to record it.
 
-use crate::coverage::test_calibration::{GapTally, load_corpus};
+use crate::coverage::test_calibration::{load_corpus, GapTally};
 
 #[test]
 fn repeated_runs_yield_identical_tallies() {

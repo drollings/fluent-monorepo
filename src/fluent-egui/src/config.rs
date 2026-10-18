@@ -11,7 +11,7 @@
 
 use fluent_wvr::prelude::*;
 use fluent_wvr::{Describable, FieldAccess};
-use protopyne_types::{Validate, check_for_execute, valid_output};
+use protopyne_types::{check_for_execute, valid_output, Validate};
 
 use crate::error::EguiError;
 
@@ -61,7 +61,7 @@ fn default_grid() -> String {
 
 /// One pane's layout entry: visibility plus its share of chart height.
 #[derive(
-    Debug, Clone, bon::Builder, serde::Serialize, serde::Deserialize, FieldAccess, Describable
+    Debug, Clone, bon::Builder, serde::Serialize, serde::Deserialize, FieldAccess, Describable,
 )]
 #[builder(start_fn = new)]
 pub struct PaneConfig {
@@ -131,7 +131,7 @@ impl_component!(PaneConfig);
 /// for a kernel — the paint edge resolves a series' style key here instead
 /// of carrying color literals in compute.
 #[derive(
-    Debug, Clone, bon::Builder, serde::Serialize, serde::Deserialize, FieldAccess, Describable
+    Debug, Clone, bon::Builder, serde::Serialize, serde::Deserialize, FieldAccess, Describable,
 )]
 #[builder(start_fn = new)]
 pub struct ThemeConfig {

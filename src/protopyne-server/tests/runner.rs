@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use chrono::{TimeZone, Utc};
+use rust_decimal::prelude::ToPrimitive as _;
 use rust_decimal::Decimal;
 
 use protopyne_strategy::{
@@ -939,10 +940,13 @@ async fn runner_records_in_memory_intents_for_submitted_proposals() {
         &closes,
         &runner_config(),
         11,
+        None,
     )
     .await;
     assert!(decision.submitted, "liquid first bar must submit");
-    let replayed = journal.replay(&ephemeral_permit()).expect("in-memory replay");
+    let replayed = journal
+        .replay(&ephemeral_permit())
+        .expect("in-memory replay");
     assert_eq!(replayed.intents.len(), 1, "one intent recorded");
     assert!(
         replayed.events.iter().any(|event| event.kind == "intent"),
@@ -954,9 +958,9 @@ async fn runner_records_in_memory_intents_for_submitted_proposals() {
     );
     assert_eq!(
         journal
-        .intent_status(&ephemeral_permit(), &replayed.intents[0].client_id)
-        .expect("status")
-        .as_deref(),
+            .intent_status(&ephemeral_permit(), &replayed.intents[0].client_id)
+            .expect("status")
+            .as_deref(),
         Some("filled")
     );
 }
@@ -988,7 +992,10 @@ async fn decisions_carry_the_proposal_lifecycle() {
             );
             continue;
         }
-        let first = decision.transitions.first().expect("a proposal has a chain");
+        let first = decision
+            .transitions
+            .first()
+            .expect("a proposal has a chain");
         assert_eq!(first.from, ProposalState::Proposed);
         for pair in decision.transitions.windows(2) {
             assert_eq!(pair[0].to, pair[1].from, "the chain must be contiguous");
@@ -1043,7 +1050,10 @@ async fn uncovered_grant_requires_human_in_the_chain() {
                 && entry.to == ProposalState::PendingHuman));
         pending += 1;
     }
-    assert!(pending > 0, "the strict grant must leave pending-human rows");
+    assert!(
+        pending > 0,
+        "the strict grant must leave pending-human rows"
+    );
 }
 
 /// A risk refusal is a terminal `Rejected`, recorded as `FailRisk`.
@@ -1077,6 +1087,7 @@ async fn risk_refusal_terminalizes_the_chain() {
         &closes,
         &runner_config(),
         11,
+        None,
     )
     .await;
     assert!(!decision.risk_pass);
@@ -1114,14 +1125,11 @@ async fn submitted_chain_walks_to_filled_without_tripping_the_breaker() {
         &closes,
         &runner_config(),
         11,
+        None,
     )
     .await;
     assert!(decision.submitted, "the liquid first bar fills");
-    let states: Vec<ProposalState> = decision
-        .transitions
-        .iter()
-        .map(|entry| entry.to)
-        .collect();
+    let states: Vec<ProposalState> = decision.transitions.iter().map(|entry| entry.to).collect();
     assert_eq!(
         states,
         vec![
@@ -1174,6 +1182,7 @@ async fn stale_quote_refuses_on_risk_and_grant_paths() {
         &closes,
         &runner_config(),
         11,
+        None,
     )
     .await;
     assert!(!decision.risk_pass, "stale data must fail the risk gate");
@@ -1230,6 +1239,7 @@ async fn tripped_breaker_disarms_entries_without_touching_merit_verdicts() {
         &closes,
         &runner_config(),
         11,
+        None,
     )
     .await;
     assert!(
@@ -1628,6 +1638,7 @@ async fn stream_breaker_trip_disarms_entries_through_breaker_state() {
         &closes,
         &runner_config(),
         11,
+        None,
     )
     .await;
     assert!(
@@ -2169,22 +2180,28 @@ async fn disarmed_entries_terminalize_as_cancelled() {
         &closes,
         &runner_config(),
         11,
+        None,
     )
     .await;
     assert!(!decision.submitted, "disarmed bars never submit");
     let last = decision.transitions.last().expect("chain");
     assert_eq!(last.to, ProposalState::Cancelled, "disarm terminalizes");
     assert_eq!(last.from, ProposalState::AutoApproved);
-    assert!(last.reason.contains("disarmed"), "the journal names the cause: {}", last.reason);
+    assert!(
+        last.reason.contains("disarmed"),
+        "the journal names the cause: {}",
+        last.reason
+    );
     for pair in decision.transitions.windows(2) {
         assert_eq!(pair[0].to, pair[1].from, "the chain stays contiguous");
     }
-    let replayed = journal.replay(&ephemeral_permit()).expect("run log replays");
+    let replayed = journal
+        .replay(&ephemeral_permit())
+        .expect("run log replays");
     assert!(
-        replayed
-            .events
-            .iter()
-            .any(|event| event.detail.contains(&format!("{:?}", ProposalEvent::Cancel))),
+        replayed.events.iter().any(|event| event
+            .detail
+            .contains(&format!("{:?}", ProposalEvent::Cancel))),
         "the withdrawal is journaled, not just served"
     );
 }
@@ -2196,7 +2213,7 @@ async fn disarmed_entries_terminalize_as_cancelled() {
 /// for a path that cannot be reached through the checked proposal.)
 #[tokio::test]
 async fn unrepresentable_quantity_refuses_terminal() {
-    use protopyne_strategy::{SignalOutput, elements::Sizing};
+    use protopyne_strategy::{elements::Sizing, SignalOutput};
     use protopyne_types::Qty;
     struct FractionalSizing;
     impl Sizing for FractionalSizing {
@@ -2233,13 +2250,21 @@ async fn unrepresentable_quantity_refuses_terminal() {
         &closes,
         &runner_config(),
         11,
+        None,
     )
     .await;
     assert!(!decision.submitted, "fractional quantities never submit");
     assert!(!decision.risk_pass, "the risk engine refuses first");
     let last = decision.transitions.last().expect("chain");
-    assert_eq!(last.to, ProposalState::Rejected, "unrepresentable terminalizes");
-    assert_eq!(decision.skipped, None, "a risk refusal carries reasons, not a skip");
+    assert_eq!(
+        last.to,
+        ProposalState::Rejected,
+        "unrepresentable terminalizes"
+    );
+    assert_eq!(
+        decision.skipped, None,
+        "a risk refusal carries reasons, not a skip"
+    );
     assert!(venue.orders().is_empty(), "the venue sees nothing");
 }
 
@@ -2295,7 +2320,9 @@ async fn verdict_journal_failure_surfaces_without_losing_the_fill() {
             if kind == PROPOSAL_TRANSITION_KIND
                 && self.lifecycle_transitions.fetch_add(1, Ordering::SeqCst) >= 3
             {
-                return Err(VenueError::Journal("injected verdict journal failure".to_owned()));
+                return Err(VenueError::Journal(
+                    "injected verdict journal failure".to_owned(),
+                ));
             }
             Recorder::ephemeral(&self.journal).record_transition(client_id, kind, detail, now)
         }
@@ -2325,10 +2352,205 @@ async fn verdict_journal_failure_surfaces_without_losing_the_fill() {
         &closes,
         &runner_config(),
         11,
+        None,
     )
     .await;
     assert!(decision.submitted, "the venue verdict still books");
     assert_eq!(decision.filled_quantity, 1, "the fill is not lost");
-    let error = decision.lifecycle_error.as_deref().expect("failure surfaces");
-    assert!(error.contains("injected verdict journal failure"), "the cause rides along: {error}");
+    let error = decision
+        .lifecycle_error
+        .as_deref()
+        .expect("failure surfaces");
+    assert!(
+        error.contains("injected verdict journal failure"),
+        "the cause rides along: {error}"
+    );
+}
+
+/// M3 runner plumbing: legs onto the intent, batch byte-identical.
+///
+/// A stub chain source serving both the selection snapshot and per-leg
+/// fills. Selection reads `chain_snapshot`; fills read `leg_quote_at` —
+/// one handle, two reads, no second fill math.
+struct SnapshotChain {
+    quotes: Vec<protopyne_types::ChainQuote>,
+}
+
+impl protopyne_venue::LegQuoteSource for SnapshotChain {
+    fn leg_quote(
+        &self,
+        contract: &protopyne_types::OptionContract,
+    ) -> Option<protopyne_venue::Quote> {
+        self.quotes
+            .iter()
+            .rfind(|quote| quote.contract == *contract)
+            .map(fill_quote_of)
+    }
+
+    fn leg_quote_at(
+        &self,
+        contract: &protopyne_types::OptionContract,
+        at: chrono::DateTime<chrono::Utc>,
+    ) -> Option<protopyne_venue::Quote> {
+        self.quotes
+            .iter()
+            .rfind(|quote| quote.contract == *contract && quote.timestamp <= at)
+            .map(fill_quote_of)
+    }
+
+    fn chain_snapshot(
+        &self,
+        underlying: &str,
+        at: chrono::DateTime<chrono::Utc>,
+    ) -> Vec<protopyne_types::ChainQuote> {
+        self.quotes
+            .iter()
+            .filter(|quote| quote.contract.underlying == underlying && quote.timestamp <= at)
+            .cloned()
+            .collect()
+    }
+}
+
+fn fill_quote_of(chain: &protopyne_types::ChainQuote) -> protopyne_venue::Quote {
+    protopyne_venue::Quote::new()
+        .bid(chain.bid)
+        .ask(chain.ask)
+        .bid_size(50)
+        .ask_size(50)
+        .ts(chain.timestamp)
+        .build()
+}
+
+fn chain_contract(strike: i64) -> protopyne_types::OptionContract {
+    protopyne_types::OptionContract::new()
+        .underlying("SPY".to_owned())
+        .expiry(chrono::NaiveDate::from_ymd_opt(2026, 7, 17).expect("valid expiry"))
+        .strike(Money::new(Decimal::from(strike)))
+        .kind(protopyne_types::OptionKind::Call)
+        .build()
+}
+
+fn chain_quote_for(
+    strike: i64,
+    bid: i64,
+    ask: i64,
+    ts: chrono::DateTime<chrono::Utc>,
+) -> protopyne_types::ChainQuote {
+    protopyne_types::ChainQuote::new()
+        .contract(chain_contract(strike))
+        .bid(Money::new(Decimal::from(bid)))
+        .ask(Money::new(Decimal::from(ask)))
+        .timestamp(ts)
+        .build()
+}
+
+/// Chain snapshot covering `bar`: 690/695 call pair around its ~694 close.
+fn covering_chain(bar: &Bar) -> Vec<protopyne_types::ChainQuote> {
+    vec![
+        chain_quote_for(690, 3, 4, bar.ts),
+        chain_quote_for(695, 2, 3, bar.ts),
+    ]
+}
+
+async fn submit_with_chain(
+    chain: Option<&SnapshotChain>,
+    venue: &PaperVenue,
+    bar: &Bar,
+    seed: u64,
+) -> BarDecision {
+    let mut usage = GrantUsage::new().build();
+    let mut breakers = BreakerState::new().build();
+    let closes = vec![bar.c.to_f64().expect("representable close")];
+    let journal = Journal::ephemeral();
+    let recorder = Recorder::ephemeral(&journal);
+    decide_and_submit(
+        &strategy(),
+        &risk(),
+        &grant_with(0.5),
+        &mut usage,
+        venue,
+        &recorder,
+        &venue_config(),
+        &mut breakers,
+        BarHealth::rehearsed(),
+        0,
+        bar,
+        &closes,
+        &runner_config(),
+        seed,
+        chain.map(|source| source as &dyn protopyne_venue::LegQuoteSource),
+    )
+    .await
+}
+
+#[tokio::test]
+async fn covered_multileg_books_legs_on_the_intent() {
+    let bars = history();
+    let bar = &bars[0];
+    let chain = SnapshotChain {
+        quotes: covering_chain(bar),
+    };
+    let mut venue = PaperVenue::new(PaperConfig::new().build());
+    venue.set_leg_quotes(Arc::new(SnapshotChain {
+        quotes: covering_chain(bar),
+    }));
+    let decision = submit_with_chain(Some(&chain), &venue, bar, 11).await;
+    assert!(
+        decision.submitted,
+        "covered vertical submits: {:?}",
+        decision.skipped
+    );
+    assert_eq!(decision.filled_quantity, 2, "one unit times two legs");
+    let executions = venue.executed_legs(&protopyne_venue::client_id_for("run-11-0", 0));
+    assert_eq!(
+        executions.len(),
+        2,
+        "both legs fill through the one spread path"
+    );
+    assert!(
+        !decision.transitions.is_empty(),
+        "the lifecycle journals the fill"
+    );
+}
+
+#[tokio::test]
+async fn uncovered_multileg_skips_without_touching_lifecycle() {
+    let bars = history();
+    let bar = &bars[0];
+    // Quotes stamped after the bar: the snapshot at-or-before it is empty.
+    let late = bar.ts + chrono::Duration::days(30);
+    let chain = SnapshotChain {
+        quotes: vec![
+            chain_quote_for(690, 3, 4, late),
+            chain_quote_for(695, 2, 3, late),
+        ],
+    };
+    let venue = PaperVenue::new(PaperConfig::new().build());
+    let decision = submit_with_chain(Some(&chain), &venue, bar, 12).await;
+    assert!(!decision.submitted, "no coverage means no submission");
+    assert!(
+        decision.skipped.is_some(),
+        "the skip names the missing coverage"
+    );
+    assert!(
+        decision.transitions.is_empty(),
+        "refused selection journals nothing"
+    );
+}
+
+#[tokio::test]
+async fn chainless_multileg_keeps_legacy_single_leg_booking() {
+    // Batch divergence, pinned not fixed: without a chain handle a spread
+    // label still books one stock fill, exactly as before this milestone.
+    let bars = history();
+    let bar = &bars[0];
+    let venue = PaperVenue::new(PaperConfig::new().build());
+    let decision = submit_with_chain(None, &venue, bar, 13).await;
+    assert!(decision.submitted, "legacy path still submits");
+    assert!(
+        venue
+            .executed_legs(&protopyne_venue::client_id_for("run-13-0", 0))
+            .is_empty(),
+        "no legs attach without a chain handle"
+    );
 }

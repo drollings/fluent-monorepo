@@ -54,7 +54,10 @@ impl BackfillSource for Scripted {
 #[test]
 fn missing_range_names_the_hole() {
     let bounds = missing_range(&gap_over(2, 6, 3), Timeframe::M1, 1);
-    assert_eq!(bounds.original_start_ms, Some(bar_at(3).ts.timestamp_millis()));
+    assert_eq!(
+        bounds.original_start_ms,
+        Some(bar_at(3).ts.timestamp_millis())
+    );
     assert_eq!(bounds.original_limit, Some(3));
 }
 
@@ -70,7 +73,11 @@ fn warmup_headroom_widens_the_fetch_start() {
         warmed.fetch_start_ms,
         plain.fetch_start_ms
     );
-    assert_eq!(warmed.original_limit, Some(3), "the hole count never widens");
+    assert_eq!(
+        warmed.original_limit,
+        Some(3),
+        "the hole count never widens"
+    );
 }
 
 /// The splice lands hole bars in order, skips already-present headroom,
@@ -90,9 +97,14 @@ fn splice_lands_skips_and_refuses() {
 /// past retryable errors, and stops at terminal ones.
 #[test]
 fn ladder_prefers_skip_and_stop_in_order() {
-    let empty: Arc<dyn BackfillSource> = Arc::new(Scripted { bars: Vec::new(), error: None });
-    let full: Arc<dyn BackfillSource> =
-        Arc::new(Scripted { bars: vec![bar_at(3)], error: None });
+    let empty: Arc<dyn BackfillSource> = Arc::new(Scripted {
+        bars: Vec::new(),
+        error: None,
+    });
+    let full: Arc<dyn BackfillSource> = Arc::new(Scripted {
+        bars: vec![bar_at(3)],
+        error: None,
+    });
     let found = fetch_through(&[empty.clone(), full.clone()], 0, 1).expect("second rung serves");
     assert_eq!(found.len(), 1);
 
@@ -109,6 +121,9 @@ fn ladder_prefers_skip_and_stop_in_order() {
     });
     fetch_through(&[terminal, full], 0, 1).expect_err("terminal stops the walk");
 
-    let nothing: Arc<dyn BackfillSource> = Arc::new(Scripted { bars: Vec::new(), error: None });
+    let nothing: Arc<dyn BackfillSource> = Arc::new(Scripted {
+        bars: Vec::new(),
+        error: None,
+    });
     fetch_through(&[nothing], 0, 1).expect_err("no bars anywhere stays a failure");
 }

@@ -35,7 +35,11 @@ fn eit_unit_alpha_matches_hand_steps() {
     let ps = ParamSet::new().with_float("alpha", 1.0);
     let data = [4.0, 8.0, 12.0, 16.0];
     let result = eit.batch(&closes(&data), &ps).expect("valid");
-    approx(&result.values, &[Some(4.0), Some(6.0), Some(12.0), Some(16.0)], 1e-9);
+    approx(
+        &result.values,
+        &[Some(4.0), Some(6.0), Some(12.0), Some(16.0)],
+        1e-9,
+    );
     approx(&fold(&eit, &data, &ps), &result.values, 1e-12);
 }
 

@@ -43,9 +43,7 @@ fn run_sync_no_runtime_keeps_spawned_work_alive() {
 #[test]
 fn run_sync_no_runtime_bridges_on_multi_thread_runtime() {
     let limiter = Limiter::new(1);
-    let flavor = limiter.run_sync(|| async {
-        tokio::runtime::Handle::current().runtime_flavor()
-    });
+    let flavor = limiter.run_sync(|| async { tokio::runtime::Handle::current().runtime_flavor() });
     assert_eq!(
         flavor,
         tokio::runtime::RuntimeFlavor::MultiThread,

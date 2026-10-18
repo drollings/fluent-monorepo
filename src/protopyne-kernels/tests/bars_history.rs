@@ -48,7 +48,14 @@ fn bar_at(open_ms: i64, open: i64, close: i64, volume: u64) -> Bar {
 /// Ten aligned minute bars: opens `T0 + i*MIN`, volumes `100*(i+1)`.
 fn ten_bars() -> Vec<Bar> {
     (0..10)
-        .map(|i| bar_at(T0 + i * MIN, 10_000 + i * 5, 10_000 + i * 5 + 2, 100 * (i as u64 + 1)))
+        .map(|i| {
+            bar_at(
+                T0 + i * MIN,
+                10_000 + i * 5,
+                10_000 + i * 5 + 2,
+                100 * (i as u64 + 1),
+            )
+        })
         .collect()
 }
 
@@ -112,7 +119,11 @@ fn tail_never_finalizes_control() {
     assert_eq!(gated.len(), 9, "forming tail never passes the gate");
     let ring = ring_of(&gated);
     assert_eq!(ring.len(), 9, "nine finalized candles");
-    assert_close(ring.total_volume(), 100.0 * 45.0, "prefix volume sums exactly");
+    assert_close(
+        ring.total_volume(),
+        100.0 * 45.0,
+        "prefix volume sums exactly",
+    );
     // Tail-only input yields zero finalized candles.
     let tail_only =
         BarsHistory::from_bars(&ten_bars()[9..], Timeframe::M1).expect("single bar loads");
@@ -124,7 +135,10 @@ fn tail_never_finalizes_control() {
         .collect();
     assert!(tail_gated.is_empty(), "unconfirmed tail admits nothing");
     let tail_ring = ring_of(&tail_gated);
-    assert!(tail_ring.is_empty(), "zero finalized candles from tail only");
+    assert!(
+        tail_ring.is_empty(),
+        "zero finalized candles from tail only"
+    );
 }
 
 #[test]
@@ -132,10 +146,19 @@ fn confirmed_prefix_finalizes_exactly() {
     let history = BarsHistory::from_bars(&ten_bars(), Timeframe::M1).expect("aligned loads");
     // Bar closes exactly at `now` count as confirmed (the fence is `<=`).
     let now = T0 + 9 * MIN;
-    assert!(history.is_confirmed(T0 + 8 * MIN, now, Lookahead::Off), "closed bar passes");
-    assert!(!history.is_confirmed(T0 + 9 * MIN, now, Lookahead::Off), "bar closing at now waits");
+    assert!(
+        history.is_confirmed(T0 + 8 * MIN, now, Lookahead::Off),
+        "closed bar passes"
+    );
+    assert!(
+        !history.is_confirmed(T0 + 9 * MIN, now, Lookahead::Off),
+        "bar closing at now waits"
+    );
     let later = T0 + 10 * MIN;
-    assert!(history.is_confirmed(T0 + 9 * MIN, later, Lookahead::Off), "closed bar passes later");
+    assert!(
+        history.is_confirmed(T0 + 9 * MIN, later, Lookahead::Off),
+        "closed bar passes later"
+    );
     let gated: Vec<ClosedBar> = history
         .bars()
         .iter()
@@ -144,7 +167,11 @@ fn confirmed_prefix_finalizes_exactly() {
         .collect();
     assert_eq!(gated.len(), 10, "whole history confirmed past its close");
     let ring = ring_of(&gated);
-    assert_close(ring.total_volume(), 100.0 * 55.0, "full volume sums exactly");
+    assert_close(
+        ring.total_volume(),
+        100.0 * 55.0,
+        "full volume sums exactly",
+    );
     ring.validate().expect("ring stays coherent");
 }
 
@@ -168,7 +195,15 @@ fn csv_vs_dynamic_equality() {
             h.rescale(8);
             l.rescale(8);
             c.rescale(8);
-            Bar::new().ts(bar.ts).o(o).h(h).l(l).c(c).volume(bar.volume).maybe_adj(None).build()
+            Bar::new()
+                .ts(bar.ts)
+                .o(o)
+                .h(h)
+                .l(l)
+                .c(c)
+                .volume(bar.volume)
+                .maybe_adj(None)
+                .build()
         })
         .collect();
     let from_csv = BarsHistory::from_bars(&csv_bars, Timeframe::M1).expect("csv arm loads");
@@ -179,11 +214,19 @@ fn csv_vs_dynamic_equality() {
     // Stamp convention pinned: history stamps read as bucket opens, the
     // exchange-CSV convention the projection goldens prove.
     let first_secs = csv_bars[0].ts.timestamp();
-    assert_eq!(from_csv.bars()[0].ts_ms, first_secs * 1000, "stamps map identically");
+    assert_eq!(
+        from_csv.bars()[0].ts_ms,
+        first_secs * 1000,
+        "stamps map identically"
+    );
     for bar in from_csv.bars() {
         assert_eq!(bar.ts_ms % MIN, 0, "fixture stamps sit on the grid");
     }
-    assert_eq!(from_csv.tf_ms(), Timeframe::M1.duration_ms(), "span comes from the single table");
+    assert_eq!(
+        from_csv.tf_ms(),
+        Timeframe::M1.duration_ms(),
+        "span comes from the single table"
+    );
 }
 
 #[test]
@@ -204,19 +247,44 @@ fn correction_equals_rebuild() {
             .build();
     }
     let scratch = BarsHistory::from_bars(&corrected, Timeframe::M1).expect("corrected loads");
-    let mut incremental =
-        BarsHistory::from_bars(&original, Timeframe::M1).expect("original loads");
+    let mut incremental = BarsHistory::from_bars(&original, Timeframe::M1).expect("original loads");
     let retained = incremental
         .rebuild_suffix(T0 + 6 * MIN, &corrected[6..])
         .expect("suffix rebuilds");
     assert_eq!(retained, 6, "six-bar prefix untouched");
-    assert_eq!(incremental.bars(), scratch.bars(), "rebuild equals from-scratch");
-    assert_eq!(incremental.gaps(), scratch.gaps(), "gap reports agree after rebuild");
+    assert_eq!(
+        incremental.bars(),
+        scratch.bars(),
+        "rebuild equals from-scratch"
+    );
+    assert_eq!(
+        incremental.gaps(),
+        scratch.gaps(),
+        "gap reports agree after rebuild"
+    );
     // Misaligned, empty, and out-of-range corrections refuse fail-closed.
-    assert!(incremental.rebuild_suffix(T0 + 6 * MIN, &corrected[7..]).is_err(), "start must match");
-    assert!(incremental.rebuild_suffix(T0 + 6 * MIN, &[]).is_err(), "empty suffix refuses");
-    assert!(incremental.rebuild_suffix(T0 + 40 * MIN, &corrected[6..]).is_err(), "past-the-end refuses");
-    assert!(incremental.rebuild_suffix(T0 + 5 * MIN, &corrected[6..]).is_err(), "overlap refuses");
+    assert!(
+        incremental
+            .rebuild_suffix(T0 + 6 * MIN, &corrected[7..])
+            .is_err(),
+        "start must match"
+    );
+    assert!(
+        incremental.rebuild_suffix(T0 + 6 * MIN, &[]).is_err(),
+        "empty suffix refuses"
+    );
+    assert!(
+        incremental
+            .rebuild_suffix(T0 + 40 * MIN, &corrected[6..])
+            .is_err(),
+        "past-the-end refuses"
+    );
+    assert!(
+        incremental
+            .rebuild_suffix(T0 + 5 * MIN, &corrected[6..])
+            .is_err(),
+        "overlap refuses"
+    );
 }
 
 #[test]
@@ -240,16 +308,29 @@ fn lookahead_non_leakage_probe() {
         .collect();
     assert_eq!(admitted.len(), 9, "prefix admitted, tail held");
     let ring = ring_of(&admitted);
-    assert_close(ring.total_volume(), 100.0 * 45.0, "future volume never finalizes");
-    assert!(ring.iter().all(|candle| candle.ts_ms < now), "no future stamps aboard");
+    assert_close(
+        ring.total_volume(),
+        100.0 * 45.0,
+        "future volume never finalizes",
+    );
+    assert!(
+        ring.iter().all(|candle| candle.ts_ms < now),
+        "no future stamps aboard"
+    );
 }
 
 #[test]
 fn from_bars_refuses_bad_input() {
-    assert!(BarsHistory::from_bars(&[], Timeframe::M1).is_err(), "empty refuses like the loader");
+    assert!(
+        BarsHistory::from_bars(&[], Timeframe::M1).is_err(),
+        "empty refuses like the loader"
+    );
     let mut unordered = ten_bars();
     unordered.swap(3, 4);
-    assert!(BarsHistory::from_bars(&unordered, Timeframe::M1).is_err(), "reorder refuses");
+    assert!(
+        BarsHistory::from_bars(&unordered, Timeframe::M1).is_err(),
+        "reorder refuses"
+    );
     let mut inverted = ten_bars();
     inverted[5] = Bar::new()
         .ts(inverted[5].ts)
@@ -260,15 +341,24 @@ fn from_bars_refuses_bad_input() {
         .volume(100)
         .maybe_adj(None)
         .build();
-    assert!(BarsHistory::from_bars(&inverted, Timeframe::M1).is_err(), "inverted OHLC refuses");
+    assert!(
+        BarsHistory::from_bars(&inverted, Timeframe::M1).is_err(),
+        "inverted OHLC refuses"
+    );
     // Share counts past 2^53 lose integer precision in `f64`: refused
     // rather than rounded.
     let mut coarse = ten_bars();
     coarse[2] = bar_at(T0 + 2 * MIN, 10_000, 10_002, (1 << 53) + 1);
-    assert!(BarsHistory::from_bars(&coarse, Timeframe::M1).is_err(), "imprecise volume refuses");
+    assert!(
+        BarsHistory::from_bars(&coarse, Timeframe::M1).is_err(),
+        "imprecise volume refuses"
+    );
     let mut exact = ten_bars();
     exact[2] = bar_at(T0 + 2 * MIN, 10_000, 10_002, 1 << 53);
-    assert!(BarsHistory::from_bars(&exact, Timeframe::M1).is_ok(), "2^53 itself converts exactly");
+    assert!(
+        BarsHistory::from_bars(&exact, Timeframe::M1).is_ok(),
+        "2^53 itself converts exactly"
+    );
 }
 
 #[test]
@@ -283,8 +373,14 @@ fn gaps_report_sparse_holes_without_confirming_them() {
     // Gaps change no verdict: both sides confirm on their own span once
     // formed, and the hole itself never materializes.
     let now = T0 + 10 * MIN;
-    assert!(history.is_confirmed(T0 + 3 * MIN, now, Lookahead::Off), "left edge confirms");
-    assert!(history.is_confirmed(T0 + 7 * MIN, now, Lookahead::Off), "right edge confirms");
+    assert!(
+        history.is_confirmed(T0 + 3 * MIN, now, Lookahead::Off),
+        "left edge confirms"
+    );
+    assert!(
+        history.is_confirmed(T0 + 7 * MIN, now, Lookahead::Off),
+        "right edge confirms"
+    );
     let aligned = BarsHistory::from_bars(&ten_bars(), Timeframe::M1).expect("aligned loads");
     assert!(aligned.gaps().is_empty(), "aligned history reports no gaps");
 }
@@ -294,9 +390,24 @@ fn gate_fence_arithmetic() {
     // The confirmation fence is `open + span <= now`: a close exactly at
     // `now` counts, one millisecond early does not.
     let open = T0;
-    assert!(is_confirmed_bar(open, MIN, open + MIN, Lookahead::Off), "close at now confirms");
-    assert!(!is_confirmed_bar(open, MIN, open + MIN - 1, Lookahead::Off), "open span waits");
-    assert!(!is_confirmed_bar(open, 0, open + MIN, Lookahead::Off), "non-positive span refuses");
-    assert!(!is_confirmed_bar(open, -MIN, open + MIN, Lookahead::Off), "negative span refuses");
-    assert!(!is_confirmed_bar(open, MIN, open + MIN, Lookahead::On), "lookahead refuses");
+    assert!(
+        is_confirmed_bar(open, MIN, open + MIN, Lookahead::Off),
+        "close at now confirms"
+    );
+    assert!(
+        !is_confirmed_bar(open, MIN, open + MIN - 1, Lookahead::Off),
+        "open span waits"
+    );
+    assert!(
+        !is_confirmed_bar(open, 0, open + MIN, Lookahead::Off),
+        "non-positive span refuses"
+    );
+    assert!(
+        !is_confirmed_bar(open, -MIN, open + MIN, Lookahead::Off),
+        "negative span refuses"
+    );
+    assert!(
+        !is_confirmed_bar(open, MIN, open + MIN, Lookahead::On),
+        "lookahead refuses"
+    );
 }

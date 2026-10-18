@@ -34,9 +34,7 @@ fn in_window(stamps: &[i64], start: Option<i64>, end: Option<i64>) -> Vec<i64> {
     stamps
         .iter()
         .copied()
-        .filter(|stamp| {
-            start.is_none_or(|lo| *stamp >= lo) && end.is_none_or(|hi| *stamp < hi)
-        })
+        .filter(|stamp| start.is_none_or(|lo| *stamp >= lo) && end.is_none_or(|hi| *stamp < hi))
         .collect()
 }
 
@@ -75,10 +73,7 @@ fn stamps_and_bars_agree_on_torn_tapes() {
         assert!(!stamps.is_empty(), "the torn tape holds rows");
         let windows = [
             (None, None),
-            (
-                Some(BASE_MS + 20 * STEP_MS),
-                Some(BASE_MS + 90 * STEP_MS),
-            ),
+            (Some(BASE_MS + 20 * STEP_MS), Some(BASE_MS + 90 * STEP_MS)),
             (None, Some(BASE_MS + 60 * STEP_MS)),
             (Some(BASE_MS + 200 * STEP_MS), None),
         ];
@@ -103,7 +98,9 @@ fn stamps_of_nothing_is_no_coverage() {
 fn stamps_walk_pre_epoch_and_coarse_grids() {
     // A pre-epoch hour grid and a coarse daily grid: the run rule is grid
     // arithmetic, never calendar arithmetic.
-    let hourly: Vec<i64> = (0..30).map(|step| -9 * 3_600_000 + step * 3_600_000).collect();
+    let hourly: Vec<i64> = (0..30)
+        .map(|step| -9 * 3_600_000 + step * 3_600_000)
+        .collect();
     let bars = bars_of(&hourly);
     assert_eq!(
         Coverage::from_stamps(&hourly, Timeframe::H1),

@@ -445,6 +445,7 @@ mod tests {
         );
     }
 
+    #[ignore = "heavy (~6s): retry/backoff against a dead loopback port; run via `make guidance-soak`"]
     #[test]
     fn test_enhance_doc_no_llm_fallback() {
         let mut doc = GuidanceDoc {

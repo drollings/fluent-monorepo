@@ -12,7 +12,8 @@ use protopyne_types::Money;
 
 use crate::views::{
     ArmResponse, ChartBar, ChartBars, HealthView, JournalRowView, OverlaySeries, PortfolioView,
-    PositionView, ProposalView, ReplayStepView, ReplayView, SymbolInfoView, WorstCase,
+    PositionView, ProposalView, ReplayStartParams, ReplayStateView, ReplayStepView, ReplayView,
+    SymbolInfoView, WorstCase,
 };
 
 /// Terminal-gateway failure: transport, shape, or refused submit.
@@ -29,8 +30,12 @@ pub enum GatewayError {
 impl Display for GatewayError {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Unavailable(reason) => write!(formatter, "terminal gateway unavailable: {reason}"),
-            Self::Malformed(reason) => write!(formatter, "terminal gateway payload malformed: {reason}"),
+            Self::Unavailable(reason) => {
+                write!(formatter, "terminal gateway unavailable: {reason}")
+            }
+            Self::Malformed(reason) => {
+                write!(formatter, "terminal gateway payload malformed: {reason}")
+            }
             Self::InvalidGrant(reason) => write!(formatter, "grant refused: {reason}"),
         }
     }
@@ -45,10 +50,14 @@ impl std::error::Error for GatewayError {}
 /// same way. Whitespace-only values count as blank.
 pub fn validate_symbol_timeframe(symbol: &str, timeframe: &str) -> Result<(), GatewayError> {
     if symbol.trim().is_empty() {
-        return Err(GatewayError::Malformed("symbol must not be empty".to_owned()));
+        return Err(GatewayError::Malformed(
+            "symbol must not be empty".to_owned(),
+        ));
     }
     if timeframe.trim().is_empty() {
-        return Err(GatewayError::Malformed("timeframe must not be empty".to_owned()));
+        return Err(GatewayError::Malformed(
+            "timeframe must not be empty".to_owned(),
+        ));
     }
     Ok(())
 }
@@ -139,6 +148,48 @@ pub trait TerminalGateway: Send + Sync {
         let _ = limit;
         validate_symbol_timeframe(symbol, timeframe)?;
         self.chart_bars_for(symbol, timeframe)
+    }
+
+    /// Open an interactive replay session over the core's history.
+    ///
+    /// Additive and default-refused: only a gateway with a session registry
+    /// behind it overrides this. `params.session_id` names the registry
+    /// slot; opening replaces any session already there.
+    fn replay_start(&self, params: ReplayStartParams) -> Result<ReplayStateView, GatewayError> {
+        let _ = params;
+        Err(GatewayError::Unavailable(
+            "interactive replay is not served by this gateway".to_owned(),
+        ))
+    }
+
+    /// Decide the next `bars` bars of a live session through the shared
+    /// decision stack. Additive and default-refused beside
+    /// [`replay_start`](Self::replay_start).
+    fn replay_step(&self, session_id: &str, bars: u64) -> Result<ReplayStateView, GatewayError> {
+        let _ = (session_id, bars);
+        Err(GatewayError::Unavailable(
+            "interactive replay is not served by this gateway".to_owned(),
+        ))
+    }
+
+    /// Read a live session's cursor, verdicts, fills, and journal without
+    /// deciding anything. Additive and default-refused beside
+    /// [`replay_start`](Self::replay_start).
+    fn replay_state(&self, session_id: &str) -> Result<ReplayStateView, GatewayError> {
+        let _ = session_id;
+        Err(GatewayError::Unavailable(
+            "interactive replay is not served by this gateway".to_owned(),
+        ))
+    }
+
+    /// Close a live session and release its registry slot. Additive and
+    /// default-refused beside [`replay_start`](Self::replay_start); stopping
+    /// an unknown session refuses rather than succeeding emptily.
+    fn replay_stop(&self, session_id: &str) -> Result<(), GatewayError> {
+        let _ = session_id;
+        Err(GatewayError::Unavailable(
+            "interactive replay is not served by this gateway".to_owned(),
+        ))
     }
 
     /// One indicator overlay for one symbol and timeframe.
@@ -276,6 +327,29 @@ impl TerminalGateway for MockGateway {
         })
     }
 
+    /// Bounded mock read: `limit` narrows the canned slot to its trailing
+    /// bars, so load-more growth is observable in tests; `None` and oversize
+    /// serve the canned slot untouched, exactly like the default.
+    fn chart_bars_for_limit(
+        &self,
+        symbol: &str,
+        timeframe: &str,
+        limit: Option<usize>,
+    ) -> Result<ChartBars, GatewayError> {
+        validate_symbol_timeframe(symbol, timeframe)?;
+        let bars = self.chart_bars_for(symbol, timeframe)?;
+        Ok(match limit {
+            Some(count) => {
+                let skip = bars.rows.len().saturating_sub(count);
+                ChartBars {
+                    rows: bars.rows[skip..].to_vec(),
+                    dropped: bars.dropped,
+                }
+            }
+            None => bars,
+        })
+    }
+
     fn chart_overlays(&self, kind: &str, period: i64) -> Result<OverlaySeries, GatewayError> {
         Ok(OverlaySeries {
             kind: kind.to_owned(),
@@ -294,19 +368,26 @@ impl TerminalGateway for MockGateway {
         // checkpoint on bar 0, matching what the core publishes for a short
         // history at the default cadence. Refusal and cadence shapes are not
         // mocked — tests needing them drive the server gateway instead.
-        let steps: Vec<ReplayStepView> =
-            ["2023-11-14T22:13:20+00:00", "2023-11-14T22:28:20+00:00", "2023-11-14T22:43:20+00:00"]
-                .into_iter()
-                .enumerate()
-                .map(|(bar_index, ts)| ReplayStepView {
-                    bar_index: bar_index as u64,
-                    ts: ts.to_owned(),
-                    done: true,
-                    checkpoint: bar_index == 0,
-                })
-                .collect();
+        let steps: Vec<ReplayStepView> = [
+            "2023-11-14T22:13:20+00:00",
+            "2023-11-14T22:28:20+00:00",
+            "2023-11-14T22:43:20+00:00",
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(bar_index, ts)| ReplayStepView {
+            bar_index: bar_index as u64,
+            ts: ts.to_owned(),
+            done: true,
+            checkpoint: bar_index == 0,
+        })
+        .collect();
         let total_bars = steps.len() as u64;
-        Ok(ReplayView { cursor: total_bars, total_bars, steps })
+        Ok(ReplayView {
+            cursor: total_bars,
+            total_bars,
+            steps,
+        })
     }
 
     fn preview_arm(&self, _patch: serde_json::Value) -> Result<WorstCase, GatewayError> {
@@ -357,7 +438,9 @@ impl TerminalGateway for MockGateway {
         let grant_id = grant
             .get("grant_id")
             .and_then(serde_json::Value::as_str)
-            .ok_or_else(|| GatewayError::InvalidGrant("grant document names no grant_id".to_owned()))?;
+            .ok_or_else(|| {
+                GatewayError::InvalidGrant("grant document names no grant_id".to_owned())
+            })?;
         Ok(ArmResponse {
             grant_id: grant_id.to_owned(),
             worst_case: WorstCase {

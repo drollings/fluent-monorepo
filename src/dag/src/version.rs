@@ -37,7 +37,8 @@ impl Version {
         }
         let mut parts = Vec::new();
         for part in raw.split('.') {
-            part.parse::<u64>().map_err(|_| format!("invalid version {raw:?}"))?;
+            part.parse::<u64>()
+                .map_err(|_| format!("invalid version {raw:?}"))?;
             parts.push(part.parse::<u64>().expect("just validated"));
         }
         while parts.len() > 1 && parts.last() == Some(&0) {
@@ -142,7 +143,11 @@ pub fn select_provider<'t>(
 ) -> Result<&'t Target, ResolverError> {
     let mut matching: Vec<&Target> = candidates
         .into_iter()
-        .filter(|t| versions.get(&t.name.to_string()).is_some_and(|v| req.matches(v)))
+        .filter(|t| {
+            versions
+                .get(&t.name.to_string())
+                .is_some_and(|v| req.matches(v))
+        })
         .collect();
     matching.sort_by(|a, b| a.name.cmp(&b.name));
     match matching.len() {

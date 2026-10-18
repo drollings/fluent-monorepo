@@ -12,22 +12,39 @@ fn mock_gateway_serves_every_read_method() {
     assert_eq!(portfolio.positions.len(), 1, "mock book holds one position");
     let journal = gateway.journal().expect("mock journal reads");
     assert_eq!(journal.len(), 2, "mock journal holds two rows");
-    assert!(journal.windows(2).all(|pair| pair[0].seq < pair[1].seq), "journal reads in sequence order");
+    assert!(
+        journal.windows(2).all(|pair| pair[0].seq < pair[1].seq),
+        "journal reads in sequence order"
+    );
     let bars = gateway.chart_bars().expect("mock bars read");
     assert_eq!(bars.rows.len(), 3, "mock chart holds three bars");
-    let overlay =
-        gateway.chart_overlays("sma", 14).expect("mock overlay reads");
+    let overlay = gateway
+        .chart_overlays("sma", 14)
+        .expect("mock overlay reads");
     assert_eq!(overlay.kind, "sma");
     assert_eq!(overlay.period, 14);
-    assert_eq!(overlay.values.len(), bars.rows.len(), "overlay agrees with bars positionally");
+    assert_eq!(
+        overlay.values.len(),
+        bars.rows.len(),
+        "overlay agrees with bars positionally"
+    );
     let replay = gateway.replay().expect("mock replay reads");
-    assert_eq!(replay.steps.len(), bars.rows.len(), "replay window matches the chart window");
+    assert_eq!(
+        replay.steps.len(),
+        bars.rows.len(),
+        "replay window matches the chart window"
+    );
     assert_eq!(replay.total_bars, replay.steps.len() as u64);
-    assert_eq!(replay.cursor, replay.total_bars, "a fresh read stands at the head");
+    assert_eq!(
+        replay.cursor, replay.total_bars,
+        "a fresh read stands at the head"
+    );
     assert!(
-        replay.steps.iter().enumerate().all(|(position, step)| {
-            step.bar_index == position as u64 && step.done
-        }),
+        replay
+            .steps
+            .iter()
+            .enumerate()
+            .all(|(position, step)| { step.bar_index == position as u64 && step.done }),
         "steps are in bar order and every one was reached"
     );
     assert_eq!(
@@ -46,7 +63,10 @@ fn mock_gateway_arms_explicit_grants_and_refuses_vague_ones() {
     assert_eq!(response.grant_id, "grant-1");
     let vague = serde_json::json!({"scope": "everything"});
     let error = gateway.arm(vague).expect_err("grant without an id refuses");
-    assert_eq!(error, GatewayError::InvalidGrant("grant document names no grant_id".to_owned()));
+    assert_eq!(
+        error,
+        GatewayError::InvalidGrant("grant document names no grant_id".to_owned())
+    );
 }
 
 #[test]
@@ -102,16 +122,23 @@ fn symbol_info_view_round_trips_through_serde() {
 fn mock_gateway_lists_gld_first_across_every_asset_class() {
     let gateway = MockGateway::new();
     let symbols = gateway.symbols().expect("mock symbols read");
-    assert_eq!(symbols[0].symbol, "GLD", "the terminal's default ticker heads the catalog");
-    let classes: std::collections::BTreeSet<&str> =
-        symbols.iter().map(|entry| entry.asset_class.as_str()).collect();
+    assert_eq!(
+        symbols[0].symbol, "GLD",
+        "the terminal's default ticker heads the catalog"
+    );
+    let classes: std::collections::BTreeSet<&str> = symbols
+        .iter()
+        .map(|entry| entry.asset_class.as_str())
+        .collect();
     assert_eq!(
         classes,
         std::collections::BTreeSet::from(["Crypto", "Funds", "Futures", "Stocks"]),
         "every asset class the Symbol Selection Modal tab-strips on is represented"
     );
     assert!(
-        symbols.iter().all(|entry| !entry.symbol.is_empty() && !entry.name.is_empty()),
+        symbols
+            .iter()
+            .all(|entry| !entry.symbol.is_empty() && !entry.name.is_empty()),
         "no catalog row ships a blank ticker or name"
     );
 }
@@ -136,7 +163,9 @@ fn mock_gateway_symbols_derive_from_the_shared_catalog() {
 #[test]
 fn mock_gateway_serves_bars_and_overlays_for_symbol_and_timeframe() {
     let gateway = MockGateway::new();
-    let bars = gateway.chart_bars_for("GLD", "15M").expect("symbol-scoped bars read");
+    let bars = gateway
+        .chart_bars_for("GLD", "15M")
+        .expect("symbol-scoped bars read");
     assert_eq!(
         bars,
         gateway.chart_bars().expect("canned bars read"),
@@ -147,10 +176,56 @@ fn mock_gateway_serves_bars_and_overlays_for_symbol_and_timeframe() {
         .expect("symbol-scoped overlay reads");
     assert_eq!(
         overlay,
-        gateway.chart_overlays("ema", 10).expect("canned overlay reads"),
+        gateway
+            .chart_overlays("ema", 10)
+            .expect("canned overlay reads"),
         "the mock's default symbol/timeframe slot is the canned slot"
     );
-    assert_eq!(overlay.values.len(), bars.rows.len(), "overlay agrees with bars positionally");
+    assert_eq!(
+        overlay.values.len(),
+        bars.rows.len(),
+        "overlay agrees with bars positionally"
+    );
+}
+
+#[test]
+fn mock_gateway_limit_reads_the_trailing_bars() {
+    let gateway = MockGateway::new();
+    let full = gateway.chart_bars().expect("canned bars read");
+    let unbounded = gateway
+        .chart_bars_for_limit("GLD", "15M", None)
+        .expect("unbounded limit reads");
+    assert_eq!(
+        unbounded.rows, full.rows,
+        "None serves the canned slot untouched"
+    );
+    assert_eq!(
+        unbounded.dropped, full.dropped,
+        "an unbound read drops nothing"
+    );
+    let oversize = gateway
+        .chart_bars_for_limit("GLD", "15M", Some(99))
+        .expect("oversize limit reads");
+    assert_eq!(
+        oversize.rows, full.rows,
+        "an oversize limit serves the canned slot untouched"
+    );
+    let tail = gateway
+        .chart_bars_for_limit("GLD", "15M", Some(2))
+        .expect("bounded limit reads");
+    assert_eq!(
+        tail.rows,
+        full.rows[1..],
+        "limit 2 serves the last two bars"
+    );
+    assert_eq!(
+        tail.dropped, full.dropped,
+        "a read bound never counts as dropped"
+    );
+    let last = gateway
+        .chart_bars_for_limit("GLD", "15M", Some(1))
+        .expect("limit 1 reads");
+    assert_eq!(last.rows, full.rows[2..], "limit 1 serves the newest bar");
 }
 
 #[test]
@@ -179,3 +254,37 @@ fn symbol_scoped_reads_refuse_blank_identifiers() {
     );
 }
 
+#[test]
+fn interactive_replay_defaults_refuse_without_a_session_registry() {
+    // The mock serves no registry: every interactive verb refuses as
+    // Unavailable, so a terminal against the mock shows a refusal line,
+    // never an empty session.
+    let gateway = MockGateway::new();
+    let params = ReplayStartParams {
+        session_id: "terminal".to_owned(),
+        underlying: "SPY".to_owned(),
+        strategy_name: "ribbon".to_owned(),
+        max_loss: Money::from(400),
+        notional: Money::from(2_000),
+        dte_days: 30,
+        warmup_bars: 0,
+        seed: 7,
+        start_bar: 0,
+        structure: "Single".to_owned(),
+        grant: None,
+    };
+    for outcome in [
+        gateway.replay_start(params).map(|_| ()),
+        gateway.replay_step("terminal", 1).map(|_| ()),
+        gateway.replay_state("terminal").map(|_| ()),
+        gateway.replay_stop("terminal"),
+    ] {
+        assert_eq!(
+            outcome,
+            Err(GatewayError::Unavailable(
+                "interactive replay is not served by this gateway".to_owned()
+            )),
+            "a registry-less gateway refuses every interactive verb"
+        );
+    }
+}

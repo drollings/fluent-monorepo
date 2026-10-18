@@ -10,6 +10,7 @@
 
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
@@ -18,7 +19,8 @@ use protopyne_store::{CandleStore, ReadRequest as TapeReadRequest, SpanPlan, Tap
 use protopyne_types::{Bar, Money};
 use protopyne_venue::{
     AccountEvent, AccountSnapshot, BalanceEntry, CorporateEvent, DryRunOutcome, Fill, LegExecution,
-    OrderIntent, OrderRecord, PaperConfig, PaperVenue, Position, Quote, Venue, VenueError,
+    LegQuoteSource, OrderIntent, OrderRecord, PaperConfig, PaperVenue, Position, Quote, Venue,
+    VenueError,
 };
 
 use crate::error::ServerError;
@@ -270,6 +272,14 @@ impl BacktestVenue {
     #[must_use]
     pub fn last_ts(&self) -> DateTime<Utc> {
         self.bars[self.bars.len() - 1].ts
+    }
+
+    /// Install the per-leg market data source for spread evaluation on the
+    /// inner paper venue. Without a source, multi-leg intents refuse
+    /// fail-closed; with one, legs price through the time-parameterized
+    /// read as of each submission's bar.
+    pub fn set_leg_quotes(&mut self, source: Arc<dyn LegQuoteSource>) {
+        self.inner.set_leg_quotes(source);
     }
 }
 

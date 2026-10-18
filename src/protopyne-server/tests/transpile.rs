@@ -144,8 +144,18 @@ fn evaluated_scripts_match_kernel_goldens() {
     let open: Vec<f64> = close.iter().map(|v| v + 1.0).collect();
     let high: Vec<f64> = close.iter().map(|v| v + 2.0).collect();
     let low: Vec<f64> = close.iter().map(|v| v - 2.0).collect();
-    let volume: Vec<f64> = close.iter().enumerate().map(|(i, _)| 1_000.0 + i as f64).collect();
-    let frame = Ohlcv { open: &open, high: &high, low: &low, close: &close, volume: &volume };
+    let volume: Vec<f64> = close
+        .iter()
+        .enumerate()
+        .map(|(i, _)| 1_000.0 + i as f64)
+        .collect();
+    let frame = Ohlcv {
+        open: &open,
+        high: &high,
+        low: &low,
+        close: &close,
+        volume: &volume,
+    };
     for (index, source) in must_transpile().iter().enumerate() {
         let SpikeOutcome::Accepted { lowered, .. } = compile_spike(source) else {
             panic!("canonical script {index} refused");
@@ -159,7 +169,12 @@ fn evaluated_scripts_match_kernel_goldens() {
             .map(|(name, values)| (name.as_str(), values.as_slice()))
             .collect();
         for binding in &lowered.bindings {
-            let Hair::Rolling { kernel, length, series } = &binding.hair else {
+            let Hair::Rolling {
+                kernel,
+                length,
+                series,
+            } = &binding.hair
+            else {
                 continue;
             };
             let Hair::Ohlcv(leg) = series.as_ref() else {
@@ -416,8 +431,8 @@ fn emitter_refuses_unsupported_series_instead_of_substituting() {
         assert!(!reason.is_empty(), "refusal explains itself");
     }
     for leg in ["open", "high", "low", "close", "volume"] {
-        let rust = emit_rust(&rolling_over(Hair::Ohlcv(leg.to_owned())))
-            .expect("a plain leg emits");
+        let rust =
+            emit_rust(&rolling_over(Hair::Ohlcv(leg.to_owned()))).expect("a plain leg emits");
         assert!(
             rust.contains(&format!("values.{leg}")),
             "the leg feeds the kernel, got:\n{rust}"
@@ -502,9 +517,12 @@ fn evaluation_resolves_legs_and_refuses_non_leg_series() {
     let inputs: HashMap<String, i64> = HashMap::new();
     // Opens average opens: every output sits exactly 1.0 above the
     // closes-run golden on this fixture.
-    let evaluated =
-        evaluate_lowered(&rolling_over(Hair::Ohlcv("open".to_owned())), &frame, &inputs)
-            .expect("a leg resolves");
+    let evaluated = evaluate_lowered(
+        &rolling_over(Hair::Ohlcv("open".to_owned())),
+        &frame,
+        &inputs,
+    )
+    .expect("a leg resolves");
     let params = ParamSet::new().with_int("length", 14);
     let over_closes = SmaIndicator::new()
         .batch(&Ohlcv::close_only(&close), &params)
@@ -530,7 +548,10 @@ fn evaluation_resolves_legs_and_refuses_non_leg_series() {
         },
         Hair::Name("basis".to_owned()),
         Hair::Const(2.0),
-        Hair::Shift { offset: 1, series: Box::new(Hair::Ohlcv("close".to_owned())) },
+        Hair::Shift {
+            offset: 1,
+            series: Box::new(Hair::Ohlcv("close".to_owned())),
+        },
         Hair::Ohlcv("vwap".to_owned()),
     ] {
         let err = evaluate_lowered(&rolling_over(series), &frame, &inputs)

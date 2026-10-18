@@ -27,7 +27,10 @@ fn rows() -> Vec<ChartRow> {
 
 fn note(bar: i64, text: &str) -> Annotation {
     Annotation {
-        key: AnnotationKey { bar_timestamp: 1_700_000_000 + bar * 60, price: price("100.50") },
+        key: AnnotationKey {
+            bar_timestamp: 1_700_000_000 + bar * 60,
+            price: price("100.50"),
+        },
         label: text.to_owned(),
         style: AnnotationStyle::Note,
     }
@@ -49,7 +52,11 @@ fn undo_retracts_appends_last_in_first_out() {
     assert_eq!(undone.label, "second");
     assert_eq!(set.len(), 1, "only the retracted entry leaves");
     let live: Vec<String> = set.iter().map(|ann| ann.label.clone()).collect();
-    assert_eq!(live, vec!["first".to_owned()], "survivors keep append order");
+    assert_eq!(
+        live,
+        vec!["first".to_owned()],
+        "survivors keep append order"
+    );
 }
 
 #[test]
@@ -61,9 +68,13 @@ fn undo_refuses_exactly_past_the_depth() {
         set.append(note(0, &format!("mark-{index}")));
     }
     for undone in 0..MAX_UNDO_DEPTH {
-        set.undo().unwrap_or_else(|| panic!("retraction {undone} succeeds"));
+        set.undo()
+            .unwrap_or_else(|| panic!("retraction {undone} succeeds"));
     }
-    assert!(set.undo().is_none(), "the 33rd retraction refuses: the log holds 32");
+    assert!(
+        set.undo().is_none(),
+        "the 33rd retraction refuses: the log holds 32"
+    );
     assert_eq!(set.len(), 1, "one entry stays published");
 }
 
@@ -78,7 +89,11 @@ fn undo_depth_is_bounded() {
         retracted += 1;
     }
     assert_eq!(retracted, MAX_UNDO_DEPTH, "only the last N appends retract");
-    assert_eq!(set.len(), 5, "older entries stay published, never silently dropped");
+    assert_eq!(
+        set.len(),
+        5,
+        "older entries stay published, never silently dropped"
+    );
 }
 
 #[test]
@@ -90,18 +105,28 @@ fn duplicate_timestamps_bind_nothing() {
     let mut rows = rows();
     rows[4].time = rows[3].time;
     let index = TimeIndex::of(&rows);
-    assert_eq!(index.lookup(rows[0].time), Some(0), "unique timestamps still map");
+    assert_eq!(
+        index.lookup(rows[0].time),
+        Some(0),
+        "unique timestamps still map"
+    );
     assert_eq!(
         index.lookup(rows[3].time),
         None,
         "a duplicated timestamp binds nothing, never the first match"
     );
     let duplicated = Annotation {
-        key: AnnotationKey { bar_timestamp: rows[3].time, price: price("100.50") },
+        key: AnnotationKey {
+            bar_timestamp: rows[3].time,
+            price: price("100.50"),
+        },
         label: "two bars, one time".to_owned(),
         style: AnnotationStyle::Note,
     };
-    assert!(index.resolve(&duplicated, &pane).is_none(), "map path binds nothing");
+    assert!(
+        index.resolve(&duplicated, &pane).is_none(),
+        "map path binds nothing"
+    );
     assert!(
         resolve_annotation(&duplicated, &rows, &pane).is_none(),
         "single-resolve path detects too"
@@ -112,7 +137,11 @@ fn duplicate_timestamps_bind_nothing() {
         "unique neighbors are unaffected"
     );
     let dots = marker_dots(&[duplicated, neighbor], &rows, &pane);
-    assert_eq!(dots.len(), 1, "the batch path skips the duplicate, paints the neighbor");
+    assert_eq!(
+        dots.len(),
+        1,
+        "the batch path skips the duplicate, paints the neighbor"
+    );
     assert_eq!(dots[0].index, 5);
 }
 
@@ -126,7 +155,10 @@ fn clicks_without_a_candle_create_nothing() {
     let mid_y = pane.price_to_y(100.0).expect("100 maps");
     for (name, pointer) in [
         ("past the last bar", (pane.index_to_x(15), mid_y)),
-        ("gutter past the last slot", (pane.index_to_x(10) + 2.0, mid_y)),
+        (
+            "gutter past the last slot",
+            (pane.index_to_x(10) + 2.0, mid_y),
+        ),
         ("above the pane", (pane.index_to_x(3), -40.0)),
     ] {
         assert!(
@@ -190,7 +222,10 @@ fn placement_radius_confirms_intent_monotonically() {
             previously_created = now_created;
         }
     }
-    assert_eq!(transitions, 1, "one hit-to-miss transition, never a gap and return");
+    assert_eq!(
+        transitions, 1,
+        "one hit-to-miss transition, never a gap and return"
+    );
     let precision = f64::from(true_positives) / f64::from(true_positives + false_positives);
     let recall = f64::from(true_positives) / f64::from(true_positives + false_negatives);
     assert_eq!(
@@ -211,7 +246,11 @@ fn clicks_land_on_bar_data_not_pointer_data() {
     let created =
         annotate_at((pane.index_to_x(3), low_y), &pane, &rows).expect("low-wick click creates");
     assert_eq!(created.key.bar_timestamp, rows[3].time, "time is the bar's");
-    assert_eq!(created.key.price, price("100"), "price is the bar's close, not the pointer's");
+    assert_eq!(
+        created.key.price,
+        price("100"),
+        "price is the bar's close, not the pointer's"
+    );
     assert_eq!(created.style, AnnotationStyle::Note, "clicks land neutral");
 }
 
@@ -227,9 +266,15 @@ fn resolve_maps_domain_keys_to_window_pixels() {
     // second mapping call. A resolution through the bar close (100.0) would
     // land a full 10 px lower, so the tolerance still discriminates.
     assert_eq!(x.to_bits(), 24.0f32.to_bits(), "x is the bar center");
-    assert!((y - 190.0).abs() < 1e-3, "y is the key-price pixel, got {y}");
+    assert!(
+        (y - 190.0).abs() < 1e-3,
+        "y is the key-price pixel, got {y}"
+    );
     let missing = Annotation {
-        key: AnnotationKey { bar_timestamp: 1_800_000_000, price: price("100.50") },
+        key: AnnotationKey {
+            bar_timestamp: 1_800_000_000,
+            price: price("100.50"),
+        },
         label: "no such bar".to_owned(),
         style: AnnotationStyle::Note,
     };
@@ -247,8 +292,16 @@ fn keys_survive_pan_zoom_and_resize() {
     let rows = rows();
     let annotation = note(4, "fourth bar");
     let pan = pane();
-    let zoomed = Viewport::new(PriceScaleMode::Normal, 98.0, 102.0, 400.0, 16.0, 98.0, false)
-        .expect("valid zoomed pane");
+    let zoomed = Viewport::new(
+        PriceScaleMode::Normal,
+        98.0,
+        102.0,
+        400.0,
+        16.0,
+        98.0,
+        false,
+    )
+    .expect("valid zoomed pane");
     let resized = Viewport::new(PriceScaleMode::Normal, 90.0, 110.0, 800.0, 8.0, 90.0, false)
         .expect("valid resized pane");
     let mut pixels = Vec::new();
@@ -264,7 +317,11 @@ fn keys_survive_pan_zoom_and_resize() {
         pixels[0] != pixels[1] && pixels[0] != pixels[2],
         "pixels move across zoom/resize: {pixels:?}"
     );
-    assert_eq!(annotation.key.bar_timestamp, 1_700_000_000 + 4 * 60, "key untouched");
+    assert_eq!(
+        annotation.key.bar_timestamp,
+        1_700_000_000 + 4 * 60,
+        "key untouched"
+    );
 }
 
 #[test]
@@ -274,7 +331,10 @@ fn markers_render_from_the_append_only_set() {
     let mut set = AnnotationSet::new();
     set.append(note(1, "one"));
     set.append(Annotation {
-        key: AnnotationKey { bar_timestamp: 1_700_000_000 + 5 * 60, price: price("99.25") },
+        key: AnnotationKey {
+            bar_timestamp: 1_700_000_000 + 5 * 60,
+            price: price("99.25"),
+        },
         label: "five".to_owned(),
         style: AnnotationStyle::Bear,
     });

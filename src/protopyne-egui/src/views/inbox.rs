@@ -33,7 +33,10 @@ impl InboxModel {
                 settled.push(proposal);
             }
         }
-        Self { actionable, settled }
+        Self {
+            actionable,
+            settled,
+        }
     }
 
     /// Whether a lifecycle tag carries approve/reject. Only the waiting

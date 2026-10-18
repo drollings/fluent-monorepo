@@ -44,7 +44,10 @@ fn descriptor_tier_names() -> Vec<String> {
 /// when the tier itself is the leaf).
 fn tier_leaves(tier: &str) -> Vec<String> {
     let hint = descriptor()["properties"][tier].clone();
-    match hint.get("properties").and_then(serde_json::Value::as_object) {
+    match hint
+        .get("properties")
+        .and_then(serde_json::Value::as_object)
+    {
         Some(leaves) => leaves.keys().map(|leaf| format!("{tier}.{leaf}")).collect(),
         None => vec![tier.to_owned()],
     }
@@ -157,7 +160,10 @@ fn form_field_set_fans_out_to_typed_leaves() {
         descriptor_tier_names(),
         "the form exposes exactly the descriptor's tiers"
     );
-    assert!(!form.field_paths().is_empty(), "the descriptor is not empty");
+    assert!(
+        !form.field_paths().is_empty(),
+        "the descriptor is not empty"
+    );
     let mut decimal_leaves = 0;
     for field in form.fields() {
         let path = field.path();
@@ -165,7 +171,10 @@ fn form_field_set_fans_out_to_typed_leaves() {
             path == field.tier || path.starts_with(&format!("{}.", field.tier)),
             "leaf {path} belongs to its tier"
         );
-        assert!(!field.description.is_empty(), "leaf {path} carries its schema hint");
+        assert!(
+            !field.description.is_empty(),
+            "leaf {path} carries its schema hint"
+        );
         if field.format.as_deref() == Some("decimal") {
             decimal_leaves += 1;
             assert_eq!(field.kind, FieldKind::Text, "decimal is text on the wire");
@@ -220,13 +229,19 @@ fn submit_sends_string_tiers_and_mints_no_grant() {
     assert!(response.armed);
 
     for document in [gateway.previewed(), gateway.sent()].into_iter().flatten() {
-        let patch = document.get("patch").expect("the document is a patch envelope");
+        let patch = document
+            .get("patch")
+            .expect("the document is a patch envelope");
         assert!(
             document.get("id").is_none(),
             "the form mints no grant identity, sent: {document}"
         );
         let tiers = patch.as_object().expect("patch is an object");
-        assert_eq!(tiers.len(), 1, "only drafted tiers ride the patch, sent: {document}");
+        assert_eq!(
+            tiers.len(),
+            1,
+            "only drafted tiers ride the patch, sent: {document}"
+        );
         for (tier, text) in tiers {
             assert!(
                 text.is_string(),
@@ -248,7 +263,11 @@ fn money_leaves_ride_decimal_text_never_json_numbers() {
         .find(|field| field.format.as_deref() == Some("decimal"))
         .expect("a decimal leaf exists")
         .path();
-    let tier = money_leaf.split('.').next().expect("leaf has a tier").to_owned();
+    let tier = money_leaf
+        .split('.')
+        .next()
+        .expect("leaf has a tier")
+        .to_owned();
     for leaf in tier_leaves(&tier) {
         let draft = if leaf == money_leaf { "100.05" } else { "1" };
         form.set_draft(&leaf, draft.to_owned());
@@ -270,15 +289,11 @@ fn money_leaves_ride_decimal_text_never_json_numbers() {
 fn empty_form_refuses_without_calling_the_gateway() {
     let gateway = RecordGateway::new();
     let mut form = GrantFormState::from_schema(&descriptor());
-    let refused = form.submit(&gateway).expect_err("an empty patch refuses locally");
-    assert!(
-        matches!(refused, GrantFormError::Empty),
-        "got: {refused:?}"
-    );
-    assert!(
-        gateway.sent().is_none(),
-        "a local refusal sends nothing"
-    );
+    let refused = form
+        .submit(&gateway)
+        .expect_err("an empty patch refuses locally");
+    assert!(matches!(refused, GrantFormError::Empty), "got: {refused:?}");
+    assert!(gateway.sent().is_none(), "a local refusal sends nothing");
 }
 
 #[test]
@@ -322,14 +337,24 @@ fn partial_tier_refuses_naming_the_missing_leaves() {
     form.refresh_preview(&gateway);
     let refused = form.submit(&gateway).expect_err("a partial tier refuses");
     match &refused {
-        GrantFormError::PartialTier { tier: refused_tier, missing } => {
+        GrantFormError::PartialTier {
+            tier: refused_tier,
+            missing,
+        } => {
             assert_eq!(refused_tier, &tier);
-            assert_eq!(missing.len(), leaves.len() - 1, "every undrafted leaf is named");
+            assert_eq!(
+                missing.len(),
+                leaves.len() - 1,
+                "every undrafted leaf is named"
+            );
         }
         other => panic!("a partial tier names its missing leaves, got: {other:?}"),
     }
     assert!(gateway.sent().is_none(), "a partial tier sends nothing");
-    assert!(gateway.previewed().is_none(), "a partial tier previews nothing");
+    assert!(
+        gateway.previewed().is_none(),
+        "a partial tier previews nothing"
+    );
 }
 
 #[test]
@@ -341,12 +366,17 @@ fn submit_without_preview_refuses_stale() {
     for leaf in tier_leaves(&descriptor_tier_names()[0]) {
         form.set_draft(&leaf, "1".to_owned());
     }
-    let refused = form.submit(&gateway).expect_err("unpreviewed drafts refuse");
+    let refused = form
+        .submit(&gateway)
+        .expect_err("unpreviewed drafts refuse");
     assert!(
         matches!(refused, GrantFormError::PreviewStale),
         "got: {refused:?}"
     );
-    assert!(gateway.sent().is_none(), "an unpreviewed submit sends nothing");
+    assert!(
+        gateway.sent().is_none(),
+        "an unpreviewed submit sends nothing"
+    );
 }
 
 #[test]
@@ -364,10 +394,19 @@ fn edited_drafts_invalidate_the_preview() {
     form.set_draft(&leaves[0], "2".to_owned());
     assert!(!form.is_preview_fresh(), "an edit invalidates the preview");
     let refused = form.submit(&gateway).expect_err("edited drafts refuse");
-    assert!(matches!(refused, GrantFormError::PreviewStale), "got: {refused:?}");
+    assert!(
+        matches!(refused, GrantFormError::PreviewStale),
+        "got: {refused:?}"
+    );
     form.refresh_preview(&gateway);
     assert!(form.is_preview_fresh(), "re-previewing covers the edit");
-    assert_eq!(gateway.previewed().expect("two previews ran")["patch"].as_object().expect("patch").len(), 1);
+    assert_eq!(
+        gateway.previewed().expect("two previews ran")["patch"]
+            .as_object()
+            .expect("patch")
+            .len(),
+        1
+    );
 }
 
 #[test]
@@ -384,11 +423,17 @@ fn failed_preview_blocks_submit() {
     form.refresh_preview(&gateway);
     assert!(!form.is_preview_fresh(), "a refused preview is never fresh");
     assert!(
-        form.preview_outcome().is_some_and(|outcome| outcome.is_err()),
+        form.preview_outcome()
+            .is_some_and(|outcome| outcome.is_err()),
         "the core's refusal is on record for the painter"
     );
-    let refused = form.submit(&gateway).expect_err("a refused preview blocks submit");
-    assert!(matches!(refused, GrantFormError::PreviewStale), "got: {refused:?}");
+    let refused = form
+        .submit(&gateway)
+        .expect_err("a refused preview blocks submit");
+    assert!(
+        matches!(refused, GrantFormError::PreviewStale),
+        "got: {refused:?}"
+    );
     assert!(gateway.sent().is_none(), "a refused preview sends nothing");
 }
 
@@ -401,7 +446,11 @@ fn arming_grant() -> Grant {
                 .underlyings(vec!["SPY".to_owned()])
                 .structures(vec![StructureKind::Vertical])
                 .directions(vec![Direction::Long])
-                .permissions(GrantPermission { entries: true, exits: true, rolls: false })
+                .permissions(GrantPermission {
+                    entries: true,
+                    exits: true,
+                    rolls: false,
+                })
                 .build(),
         )
         .budgets(
@@ -412,7 +461,12 @@ fn arming_grant() -> Grant {
                 .max_notional(Money::from(5_000))
                 .build(),
         )
-        .signal(SignalThresholds::new().min_conviction(0.0).min_activity_score(0.0).build())
+        .signal(
+            SignalThresholds::new()
+                .min_conviction(0.0)
+                .min_activity_score(0.0)
+                .build(),
+        )
         .trade(
             TradeThresholds::new()
                 .max_loss_per_trade(Money::from(10))
@@ -443,8 +497,12 @@ async fn loosening_submission_surfaces_the_core_refusal() {
         &manifest_dir().join("../protopyne-server/tests/data/SPY_15M.csv"),
     )
     .expect("vendored history loads");
-    let config = protopyne_server::ServerConfig::new().bind("127.0.0.1:0".to_owned()).build();
-    let handle = protopyne_server::serve(config, history).await.expect("test server boots");
+    let config = protopyne_server::ServerConfig::new()
+        .bind("127.0.0.1:0".to_owned())
+        .build();
+    let handle = protopyne_server::serve(config, history)
+        .await
+        .expect("test server boots");
     let base = format!("http://{}", handle.addr);
     let client = reqwest::Client::new();
     let gateway = handle.gateway();
@@ -474,7 +532,9 @@ async fn loosening_submission_surfaces_the_core_refusal() {
     let loosening = serde_json::json!({"patch": {
         "budgets": r#"{"max_trades":99,"max_contracts":8,"max_loss":"500","max_notional":"5000"}"#,
     }});
-    let core_refused = gateway.arm(loosening).expect_err("the core refuses loosening");
+    let core_refused = gateway
+        .arm(loosening)
+        .expect_err("the core refuses loosening");
     match &core_refused {
         GatewayError::InvalidGrant(reason) => assert!(
             reason.contains("tightening must not raise any budget"),
@@ -509,8 +569,12 @@ async fn submit_past_preview_meets_the_core_when_the_grant_moves() {
         &manifest_dir().join("../protopyne-server/tests/data/SPY_15M.csv"),
     )
     .expect("vendored history loads");
-    let config = protopyne_server::ServerConfig::new().bind("127.0.0.1:0".to_owned()).build();
-    let handle = protopyne_server::serve(config, history).await.expect("test server boots");
+    let config = protopyne_server::ServerConfig::new()
+        .bind("127.0.0.1:0".to_owned())
+        .build();
+    let handle = protopyne_server::serve(config, history)
+        .await
+        .expect("test server boots");
     let gateway = handle.gateway();
     gateway
         .arm(serde_json::to_value(arming_grant()).expect("grant serializes"))
@@ -522,7 +586,10 @@ async fn submit_past_preview_meets_the_core_when_the_grant_moves() {
     form.set_draft("budgets.max_loss", "500".to_owned());
     form.set_draft("budgets.max_notional", "5000".to_owned());
     form.refresh_preview(&gateway);
-    assert!(form.is_preview_fresh(), "the tightening previews against the live grant");
+    assert!(
+        form.is_preview_fresh(),
+        "the tightening previews against the live grant"
+    );
 
     // The world moves: a narrower whole grant arms (tightening, allowed),
     // and the previewed patch is now a loosening against it.
@@ -539,7 +606,9 @@ async fn submit_past_preview_meets_the_core_when_the_grant_moves() {
 
     // The painter would re-preview on the next frame and show the refusal;
     // driving submit directly must surface the core's answer, not a local one.
-    let refused = form.submit(&gateway).expect_err("moved grant refuses the submit");
+    let refused = form
+        .submit(&gateway)
+        .expect_err("moved grant refuses the submit");
     match &refused {
         GrantFormError::Gateway(GatewayError::InvalidGrant(reason)) => assert!(
             reason.contains("tightening must not raise any budget"),

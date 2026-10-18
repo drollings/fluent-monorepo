@@ -16,15 +16,17 @@ use crate::commit::test_tapes::at_ms;
 use crate::fold::FoldPolicy;
 use crate::key::TapeKey;
 use crate::range::TimeRange;
-use crate::tape::test_setup::{VENUE, seeded, with_registry_caps};
 use crate::store::{CandleStore, ReadRequest};
 use crate::tape::test_oracle::{assert_same_outcome, oracle_from_pieces};
+use crate::tape::test_setup::{seeded, with_registry_caps, VENUE};
 
 const STEP_MS: i64 = 60_000;
 const BASE_MS: i64 = 1_767_225_900_000;
 
 fn bars_from(first_ms: i64, count: i64) -> Vec<Bar> {
-    (0..count).map(|step| at_ms(first_ms + step * STEP_MS)).collect()
+    (0..count)
+        .map(|step| at_ms(first_ms + step * STEP_MS))
+        .collect()
 }
 
 fn read_req(
@@ -38,10 +40,7 @@ fn read_req(
         symbol: "SPY".to_owned(),
         venue: VENUE.to_owned(),
         timeframe,
-        range: TimeRange {
-            start_ms,
-            end_ms,
-        },
+        range: TimeRange { start_ms, end_ms },
         limit,
         policy,
     }
@@ -133,12 +132,24 @@ fn requests() -> Vec<(&'static str, ReadRequest)> {
             "unknown symbol",
             ReadRequest {
                 symbol: "NOBODY".to_owned(),
-                ..read_req(Timeframe::M1, Some(BASE_MS), Some(BASE_MS + STEP_MS), None, FoldPolicy::ExtendToFullBuckets)
+                ..read_req(
+                    Timeframe::M1,
+                    Some(BASE_MS),
+                    Some(BASE_MS + STEP_MS),
+                    None,
+                    FoldPolicy::ExtendToFullBuckets,
+                )
             },
         ),
         (
             "unbounded unlimited",
-            read_req(Timeframe::M1, None, None, None, FoldPolicy::ExtendToFullBuckets),
+            read_req(
+                Timeframe::M1,
+                None,
+                None,
+                None,
+                FoldPolicy::ExtendToFullBuckets,
+            ),
         ),
     ]
 }

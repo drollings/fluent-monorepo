@@ -10,12 +10,12 @@
 
 use super::*;
 
+use crate::fold::test_fold::{load_goldens, load_spy, seed_spy_slice, FoldTally};
 use crate::fold::FoldPolicy;
-use crate::fold::test_fold::{FoldTally, load_goldens, load_spy, seed_spy_slice};
 use crate::plan::SpanPlan;
 use crate::range::TimeRange;
-use crate::tape::test_setup::{VENUE, with_registry_caps};
 use crate::store::{CandleStore, ReadRequest};
+use crate::tape::test_setup::{with_registry_caps, VENUE};
 
 /// Render the measured tally for assertion messages: one line per check, so
 /// a drift names the check that moved.

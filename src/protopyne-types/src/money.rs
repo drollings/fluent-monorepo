@@ -88,7 +88,10 @@ pub fn parse_scale_guarded(text: &str) -> Result<u32, DecimalScaleError> {
     if text.is_empty() {
         return Err(DecimalScaleError::Empty);
     }
-    let body = text.strip_prefix('+').or_else(|| text.strip_prefix('-')).unwrap_or(text);
+    let body = text
+        .strip_prefix('+')
+        .or_else(|| text.strip_prefix('-'))
+        .unwrap_or(text);
     if body.is_empty() {
         return Err(DecimalScaleError::SignWithoutDigits);
     }
@@ -125,8 +128,13 @@ impl FromStr for Money {
         // is checked on the text first: over-scale text refuses here exactly
         // as the operator-text fence refuses it, never rounding into a
         // decision.
-        if matches!(parse_scale_guarded(text), Err(DecimalScaleError::ScaleTooLarge(_))) {
-            return Err(TypesError::InvalidMoney(format!("invalid money value: {s}")));
+        if matches!(
+            parse_scale_guarded(text),
+            Err(DecimalScaleError::ScaleTooLarge(_))
+        ) {
+            return Err(TypesError::InvalidMoney(format!(
+                "invalid money value: {s}"
+            )));
         }
         text.parse::<Decimal>()
             .map(Self)
@@ -188,7 +196,8 @@ impl<'de> Deserialize<'de> for Money {
                 f.write_str("exact decimal money as a string, or an integer")
             }
             fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Money, E> {
-                Money::from_str(value).map_err(|_| E::custom(format!("invalid money value: {value}")))
+                Money::from_str(value)
+                    .map_err(|_| E::custom(format!("invalid money value: {value}")))
             }
             fn visit_string<E: serde::de::Error>(self, value: String) -> Result<Money, E> {
                 self.visit_str(&value)
@@ -214,8 +223,13 @@ impl FromStr for Qty {
         let text = s.trim();
         // Same scale guard as money: excess precision refuses rather than
         // rounding into a count.
-        if matches!(parse_scale_guarded(text), Err(DecimalScaleError::ScaleTooLarge(_))) {
-            return Err(TypesError::InvalidQuantity(format!("invalid quantity value: {s}")));
+        if matches!(
+            parse_scale_guarded(text),
+            Err(DecimalScaleError::ScaleTooLarge(_))
+        ) {
+            return Err(TypesError::InvalidQuantity(format!(
+                "invalid quantity value: {s}"
+            )));
         }
         text.parse::<Decimal>()
             .map(Self)
@@ -232,7 +246,8 @@ impl<'de> Deserialize<'de> for Qty {
                 f.write_str("exact decimal quantity as a string, or an integer")
             }
             fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Qty, E> {
-                Qty::from_str(value).map_err(|_| E::custom(format!("invalid quantity value: {value}")))
+                Qty::from_str(value)
+                    .map_err(|_| E::custom(format!("invalid quantity value: {value}")))
             }
             fn visit_string<E: serde::de::Error>(self, value: String) -> Result<Qty, E> {
                 self.visit_str(&value)

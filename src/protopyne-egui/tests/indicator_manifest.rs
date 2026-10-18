@@ -23,7 +23,9 @@ fn red_entry() -> IndicatorManifestEntry {
         source_path: "indicators/_Broken.pine".to_owned(),
         version: Some(6),
         closure_hash: 2,
-        parity: ManifestParity::Unverified { reason: "unknown import \"libNope\"".to_owned() },
+        parity: ManifestParity::Unverified {
+            reason: "unknown import \"libNope\"".to_owned(),
+        },
     }
 }
 
@@ -43,8 +45,11 @@ fn catalog_from_manifest_renders_titles_under_my_scripts() {
     let rows = vec![green_backed(), red_entry()];
     let mut catalog = build_indicator_catalog_with_manifest(&rows).expect("the catalog builds");
     catalog.set_category(Some(IndicatorCategory::MyScripts));
-    let titles: Vec<String> =
-        catalog.filtered().iter().map(|entry| entry.title().to_owned()).collect();
+    let titles: Vec<String> = catalog
+        .filtered()
+        .iter()
+        .map(|entry| entry.title().to_owned())
+        .collect();
     assert!(
         titles.contains(&"Integration Lite (manifest)".to_owned()),
         "the manifest title renders, not the id: {titles:?}"
@@ -64,15 +69,25 @@ fn instantiate_with_manifest_refuses_red_and_unbacked() {
     let rows = vec![green_backed(), red_entry(), green_unbacked()];
     let plugin = instantiate_indicator_with_manifest("pine:_IntegrationLite", &rows)
         .expect("the backed script resolves");
-    assert_eq!(plugin.id(), "integration_lite", "backed scripts ride the shipped plugin");
+    assert_eq!(
+        plugin.id(),
+        "integration_lite",
+        "backed scripts ride the shipped plugin"
+    );
     let Err(err) = instantiate_indicator_with_manifest("pine:_Broken", &rows) else {
         panic!("red parity refuses")
     };
-    assert!(err.to_string().contains("libNope"), "the refusal carries the reason: {err}");
+    assert!(
+        err.to_string().contains("libNope"),
+        "the refusal carries the reason: {err}"
+    );
     let Err(err) = instantiate_indicator_with_manifest("pine:_ApexRSIMD", &rows) else {
         panic!("an unbacked script refuses")
     };
-    assert!(err.to_string().contains("no native plugin"), "the refusal names the gap: {err}");
+    assert!(
+        err.to_string().contains("no native plugin"),
+        "the refusal names the gap: {err}"
+    );
     assert!(
         instantiate_indicator_with_manifest("pine:_Absent", &rows).is_err(),
         "an unlisted manifest id refuses"
@@ -83,8 +98,11 @@ fn instantiate_with_manifest_refuses_red_and_unbacked() {
 fn manifest_free_catalog_has_no_ambient_rows() {
     let mut catalog = build_indicator_catalog().expect("the catalog builds");
     catalog.set_category(Some(IndicatorCategory::MyScripts));
-    let titles: Vec<String> =
-        catalog.filtered().iter().map(|entry| entry.title().to_owned()).collect();
+    let titles: Vec<String> = catalog
+        .filtered()
+        .iter()
+        .map(|entry| entry.title().to_owned())
+        .collect();
     assert!(
         !titles.iter().any(|title| title.starts_with("pine:")),
         "no directory read feeds the widget: {titles:?}"

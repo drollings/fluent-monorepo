@@ -399,7 +399,10 @@ impl BookManager {
     /// skip.
     pub fn apply_event(&mut self, event: &MarketEvent) -> Result<(), VenueError> {
         let (underlying, sequence) = match event {
-            MarketEvent::BookDelta { underlying, sequence } => (underlying, *sequence),
+            MarketEvent::BookDelta {
+                underlying,
+                sequence,
+            } => (underlying, *sequence),
             _ => {
                 return Err(VenueError::Invalid(
                     "book manager advances on book deltas only".to_owned(),

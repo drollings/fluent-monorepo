@@ -49,7 +49,7 @@ fn golden(name: &str) -> String {
 
 /// `--check` contracts pinned as golden text: the chart shell's directory
 /// and legacy-CSV outputs plus the mock terminal's trading-view output.
-/// Repointing `make protopyne-demo` must reproduce these byte-for-byte.
+/// Repointing `make protopyne-demo-check` must reproduce these byte-for-byte.
 #[test]
 fn check_contracts_are_pinned() {
     let Some(demo) = example_binary("demo") else {
@@ -70,7 +70,10 @@ fn check_contracts_are_pinned() {
         golden("demo_csv_check.txt"),
         "the legacy CSV contract"
     );
-    assert_eq!(run_check(&terminal, &["--mock", "--check"]), golden("terminal_mock_check.txt"));
+    assert_eq!(
+        run_check(&terminal, &["--mock", "--check"]),
+        golden("terminal_mock_check.txt")
+    );
 }
 
 /// Legacy CSV slots through the unified loader: each file the old slot map
@@ -83,15 +86,63 @@ fn legacy_csv_slots_match_unified_loader() {
     for (file, count, first, last) in [
         ("SPY_1M.csv", 436, (1767974400, 692.06), (1768006440, 694.4)),
         ("SPY_5M.csv", 346, (1767873600, 688.03), (1768006200, 694.4)),
-        ("SPY_15M.csv", 116, (1767873600, 688.209), (1768005900, 694.4)),
+        (
+            "SPY_15M.csv",
+            116,
+            (1767873600, 688.209),
+            (1768005900, 694.4),
+        ),
     ] {
         let bars = protopyne_server::load_bars_file(&dir.join(file))
             .unwrap_or_else(|error| panic!("load {file}: {error}"));
         let rows = rows_of(&bars).rows;
         assert_eq!(rows.len(), count, "{file}: row count");
-        assert_eq!((rows.first().expect("rows").time, rows.first().expect("rows").close), (first.0, first.1), "{file}: first bar");
-        assert_eq!((rows.last().expect("rows").time, rows.last().expect("rows").close), (last.0, last.1), "{file}: last bar");
+        assert_eq!(
+            (
+                rows.first().expect("rows").time,
+                rows.first().expect("rows").close
+            ),
+            (first.0, first.1),
+            "{file}: first bar"
+        );
+        assert_eq!(
+            (
+                rows.last().expect("rows").time,
+                rows.last().expect("rows").close
+            ),
+            (last.0, last.1),
+            "{file}: last bar"
+        );
     }
+}
+
+/// The 1D fix, pinned end to end: a session-shaped history folds to a
+/// non-empty daily frame under `KeepPartial` (the demo's daily fold), so the
+/// 1D chart has bars instead of going dark.
+#[test]
+fn daily_fold_over_real_history_is_non_empty() {
+    use protopyne_types::{FoldEdges, Timeframe};
+    let dir = manifest_dir().join("../../data/protopyne-rs/historical");
+    let Ok(root) = protopyne_server::HistoryRoot::open(&dir) else {
+        eprintln!("skip: no history root at {}", dir.display());
+        return;
+    };
+    let mut cache = protopyne_server::HistoryCache::new(root);
+    let Ok(load) = cache.load_for("SPY") else {
+        eprintln!("skip: no SPY history under {}", dir.display());
+        return;
+    };
+    let frames = protopyne_server::fold_frames(
+        &load.bars,
+        protopyne_server::HISTORY_ROOT_BASE,
+        &[Timeframe::D1],
+        FoldEdges::KeepPartial,
+    )
+    .expect("fold SPY to daily");
+    assert!(
+        !frames[0].1.is_empty(),
+        "a session history folds to daily bars under KeepPartial"
+    );
 }
 
 /// Deletion gate: the twins earlier milestones made redundant stay gone.

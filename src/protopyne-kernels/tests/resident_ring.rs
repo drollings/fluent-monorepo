@@ -72,15 +72,13 @@ fn varip_single_driver() -> String {
 
 fn ms_bar(open: &str, high: &str, low: &str, close: &str, volume: u64, ts_millis: i64) -> Bar {
     Bar::new()
-        .ts(
-            chrono::Utc
-                .timestamp_opt(
-                    ts_millis.div_euclid(1000),
-                    ts_millis.rem_euclid(1000) as u32 * 1_000_000,
-                )
-                .single()
-                .expect("valid test timestamp"),
-        )
+        .ts(chrono::Utc
+            .timestamp_opt(
+                ts_millis.div_euclid(1000),
+                ts_millis.rem_euclid(1000) as u32 * 1_000_000,
+            )
+            .single()
+            .expect("valid test timestamp"))
         .o(open.parse().expect("decimal"))
         .h(high.parse().expect("decimal"))
         .l(low.parse().expect("decimal"))
@@ -95,7 +93,9 @@ fn fmt2(price: f64) -> String {
 }
 
 fn prices() -> Vec<f64> {
-    vec![100.00, 100.05, 100.03, 100.10, 100.08, 100.12, 100.09, 100.15]
+    vec![
+        100.00, 100.05, 100.03, 100.10, 100.08, 100.12, 100.09, 100.15,
+    ]
 }
 
 fn volumes() -> Vec<u64> {
@@ -103,10 +103,12 @@ fn volumes() -> Vec<u64> {
 }
 
 fn stamps() -> Vec<i64> {
-    [5_000, 12_000, 20_000, 33_000, 40_000, 47_000, 52_000, 58_000]
-        .iter()
-        .map(|dt| T0 + dt)
-        .collect()
+    [
+        5_000, 12_000, 20_000, 33_000, 40_000, 47_000, 52_000, 58_000,
+    ]
+    .iter()
+    .map(|dt| T0 + dt)
+    .collect()
 }
 
 /// One-bar tape with bar-so-far legs over a constant bar-open time.
@@ -323,10 +325,7 @@ fn resident_table_tracks_oracle_across_the_bar() {
     let oracle = bars_at(&pine, bars.len() - 1);
     for key in ["head", "count"] {
         assert_eq!(
-            num_of(
-                &UserInstance::new("Bars", resident.clone()),
-                key
-            ),
+            num_of(&UserInstance::new("Bars", resident.clone()), key),
             num_of(&oracle, key),
             "cursor field {key} exact after the bar"
         );

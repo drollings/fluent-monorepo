@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use fluent_concurrency::batch::{CancelReason, SupervisedBatch, SupervisedBatchEvent};
 use fluent_wvr::{Describable, FieldAccess};
-use protopyne_chart_model::{ChartRow, ChartBars};
+use protopyne_chart_model::{ChartBars, ChartRow};
 
 fn batch_at(start: i64, count: usize) -> ChartBars {
     ChartBars {
@@ -49,7 +49,10 @@ fn burst_intake_stays_within_cap() {
     let tx = feed.sender();
     tx.try_send(batch_at(0, 1)).expect("first fits");
     tx.try_send(batch_at(1, 1)).expect("second fits");
-    assert!(tx.try_send(batch_at(2, 1)).is_err(), "burst past cap refuses instead of growing");
+    assert!(
+        tx.try_send(batch_at(2, 1)).is_err(),
+        "burst past cap refuses instead of growing"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -83,7 +86,11 @@ async fn pane_close_stops_tasks_at_the_next_yield() {
     for _ in 0..10 {
         tokio::task::yield_now().await;
     }
-    assert_eq!(counter.load(Ordering::SeqCst), frozen, "no progress after close");
+    assert_eq!(
+        counter.load(Ordering::SeqCst),
+        frozen,
+        "no progress after close"
+    );
 
     // The sticky signal stops tasks before their first progress.
     let fresh = Arc::new(AtomicUsize::new(0));
@@ -102,7 +109,11 @@ async fn pane_close_stops_tasks_at_the_next_yield() {
     })
     .await
     .expect("join succeeds");
-    assert_eq!(fresh.load(Ordering::SeqCst), 0, "closed panes admit no new work");
+    assert_eq!(
+        fresh.load(Ordering::SeqCst),
+        0,
+        "closed panes admit no new work"
+    );
 }
 
 /// Fault-injection double for the cancellation test. The batch spawns every
@@ -145,10 +156,16 @@ impl WorkUnit for SlowPaneUnit {
 
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         if self.fault {
-            return Err(WorkError::Execution(format!("{} injected fault", self.name)));
+            return Err(WorkError::Execution(format!(
+                "{} injected fault",
+                self.name
+            )));
         }
         if self.retryable {
-            return Err(WorkError::Dependency(format!("{} waiting on upstream", self.name)));
+            return Err(WorkError::Dependency(format!(
+                "{} waiting on upstream",
+                self.name
+            )));
         }
         Ok(WorkOutput::ok(format!("{} done", self.name)))
     }
@@ -172,24 +189,35 @@ async fn failed_wave_cancels_overlays_only() {
     let runtime = tokio_runtime();
     let caps = default_capability_set();
     let mut batch = SupervisedBatch::new(Arc::clone(&runtime), caps.clone());
-    batch.register(Arc::new(slow("root", &[], false, false))).expect("registers");
-    batch.register(Arc::new(slow("mid", &["root"], true, false))).expect("registers");
+    batch
+        .register(Arc::new(slow("root", &[], false, false)))
+        .expect("registers");
+    batch
+        .register(Arc::new(slow("mid", &["root"], true, false)))
+        .expect("registers");
     // The leaf parks in retry backoff (a real suspension point), so the
     // dependent-cancel abort lands while it is still in flight.
-    let leaf_ctx =
-        WorkContext::for_unit_in_batch(&runtime, &caps, |ctx| ctx.max_retries = 2);
+    let leaf_ctx = WorkContext::for_unit_in_batch(&runtime, &caps, |ctx| ctx.max_retries = 2);
     batch
         .register_with_context(Arc::new(slow("leaf", &["mid"], false, true)), leaf_ctx)
         .expect("registers");
-    batch.register(Arc::new(slow("side", &[], false, false))).expect("registers");
+    batch
+        .register(Arc::new(slow("side", &[], false, false)))
+        .expect("registers");
     let summary = batch.await;
 
     let failed: Vec<String> = summary.failed.iter().map(event_name).collect();
     assert_eq!(failed, vec!["mid".to_owned()], "only the faulty unit fails");
     let completed: Vec<String> = summary.completed.iter().map(event_name).collect();
     assert!(completed.contains(&"root".to_owned()), "upstream completes");
-    assert!(completed.contains(&"side".to_owned()), "independents continue");
-    assert!(!completed.contains(&"leaf".to_owned()), "dependents never complete");
+    assert!(
+        completed.contains(&"side".to_owned()),
+        "independents continue"
+    );
+    assert!(
+        !completed.contains(&"leaf".to_owned()),
+        "dependents never complete"
+    );
     assert_eq!(summary.cancelled.len(), 1, "exactly the dependent cancels");
     match &summary.cancelled[0] {
         SupervisedBatchEvent::Cancelled { name, reason } => {
@@ -205,9 +233,12 @@ async fn failed_wave_cancels_overlays_only() {
 
 fn wave_plan() -> PanePlan {
     let mut plan = PanePlan::new();
-    plan.register_node("price", &[], 0).expect("price registers");
-    plan.register_node("signal", &["price"], 0).expect("signal registers");
-    plan.register_node("ribbon", &["signal"], 0).expect("ribbon registers");
+    plan.register_node("price", &[], 0)
+        .expect("price registers");
+    plan.register_node("signal", &["price"], 0)
+        .expect("signal registers");
+    plan.register_node("ribbon", &["signal"], 0)
+        .expect("ribbon registers");
     plan
 }
 
@@ -222,9 +253,16 @@ fn wave_units_count_kept_and_fault_on_demand() {
     let unit = PaneWaveUnit::for_plan(&plan, "ribbon", vec![Some(1.0), None, Some(f64::NAN)]);
     let output = unit.execute(&WorkContext::default()).expect("healthy unit");
     assert!(output.success);
-    assert!(output.message.contains("1/3 kept"), "skip tally reported: {}", output.message);
+    assert!(
+        output.message.contains("1/3 kept"),
+        "skip tally reported: {}",
+        output.message
+    );
     let faulty = unit.with_fault("boom");
-    assert!(faulty.execute(&WorkContext::default()).is_err(), "injected fault fails");
+    assert!(
+        faulty.execute(&WorkContext::default()).is_err(),
+        "injected fault fails"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -243,14 +281,21 @@ async fn wave_runs_plan_units_and_reports() {
         .iter()
         .map(|name| {
             let unit = PaneWaveUnit::for_plan(&plan, name, vec![Some(1.0)]);
-            if name == "signal" { unit.with_fault("signal lost") } else { unit }
+            if name == "signal" {
+                unit.with_fault("signal lost")
+            } else {
+                unit
+            }
         })
         .collect();
     let summary = run_wave(units).await.expect("faulty wave still drains");
     let failed: Vec<String> = summary.failed.iter().map(event_name).collect();
     assert_eq!(failed, vec!["signal".to_owned()]);
     let completed: Vec<String> = summary.completed.iter().map(event_name).collect();
-    assert!(completed.contains(&"price".to_owned()), "independents continue past failure");
+    assert!(
+        completed.contains(&"price".to_owned()),
+        "independents continue past failure"
+    );
     // Dependent cancellation of instant units races completion (they never
     // yield); the deterministic cancel property lives in
     // `failed_wave_cancels_overlays_only`, whose leaf parks in backoff.
@@ -267,9 +312,21 @@ async fn ladder_first_ok_wins() {
     let warm = batch_at(0, 2);
     let hot = batch_at(100, 2);
     let out = load_history(vec![
-        HistoryRung { name: "cold".to_owned(), rows: None, terminal: false },
-        HistoryRung { name: "warm".to_owned(), rows: Some(warm), terminal: false },
-        HistoryRung { name: "hot".to_owned(), rows: Some(hot), terminal: false },
+        HistoryRung {
+            name: "cold".to_owned(),
+            rows: None,
+            terminal: false,
+        },
+        HistoryRung {
+            name: "warm".to_owned(),
+            rows: Some(warm),
+            terminal: false,
+        },
+        HistoryRung {
+            name: "hot".to_owned(),
+            rows: Some(hot),
+            terminal: false,
+        },
     ])
     .await
     .expect("ladder loads");
@@ -280,9 +337,21 @@ async fn ladder_first_ok_wins() {
 async fn ladder_terminal_aborts() {
     let late = batch_at(100, 1);
     let err = load_history(vec![
-        HistoryRung { name: "cold".to_owned(), rows: None, terminal: false },
-        HistoryRung { name: "dead".to_owned(), rows: None, terminal: true },
-        HistoryRung { name: "late".to_owned(), rows: Some(late), terminal: false },
+        HistoryRung {
+            name: "cold".to_owned(),
+            rows: None,
+            terminal: false,
+        },
+        HistoryRung {
+            name: "dead".to_owned(),
+            rows: None,
+            terminal: true,
+        },
+        HistoryRung {
+            name: "late".to_owned(),
+            rows: Some(late),
+            terminal: false,
+        },
     ])
     .await
     .expect_err("terminal rung aborts");
@@ -292,8 +361,16 @@ async fn ladder_terminal_aborts() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn ladder_exhaustion_is_clean() {
     let out = load_history(vec![
-        HistoryRung { name: "a".to_owned(), rows: None, terminal: false },
-        HistoryRung { name: "b".to_owned(), rows: None, terminal: false },
+        HistoryRung {
+            name: "a".to_owned(),
+            rows: None,
+            terminal: false,
+        },
+        HistoryRung {
+            name: "b".to_owned(),
+            rows: None,
+            terminal: false,
+        },
     ])
     .await
     .expect("exhaustion is not an error");
@@ -352,13 +429,20 @@ async fn transport_retry_recovers_then_exhausts() {
     let attempts = Arc::new(AtomicUsize::new(0));
     let probe = Arc::clone(&attempts);
     let out = policy
-        .run(|_: &String| true, move || {
-            let probe = Arc::clone(&probe);
-            async move {
-                let n = probe.fetch_add(1, Ordering::SeqCst) + 1;
-                if n < 3 { Err("flaky".to_owned()) } else { Ok(n) }
-            }
-        })
+        .run(
+            |_: &String| true,
+            move || {
+                let probe = Arc::clone(&probe);
+                async move {
+                    let n = probe.fetch_add(1, Ordering::SeqCst) + 1;
+                    if n < 3 {
+                        Err("flaky".to_owned())
+                    } else {
+                        Ok(n)
+                    }
+                }
+            },
+        )
         .await;
     assert_eq!(out, Ok(3));
     assert_eq!(attempts.load(Ordering::SeqCst), 3);
@@ -366,16 +450,26 @@ async fn transport_retry_recovers_then_exhausts() {
     let attempts = Arc::new(AtomicUsize::new(0));
     let probe = Arc::clone(&attempts);
     let err = TransportRetry::default()
-        .run(|_: &String| true, move || {
-            let probe = Arc::clone(&probe);
-            async move {
-                probe.fetch_add(1, Ordering::SeqCst);
-                Err::<u32, String>("down".to_owned())
-            }
-        })
+        .run(
+            |_: &String| true,
+            move || {
+                let probe = Arc::clone(&probe);
+                async move {
+                    probe.fetch_add(1, Ordering::SeqCst);
+                    Err::<u32, String>("down".to_owned())
+                }
+            },
+        )
         .await
         .expect_err("exhaustion surfaces");
     assert_eq!(err, "down");
-    assert_eq!(attempts.load(Ordering::SeqCst), 3, "default policy tries three times");
-    assert!(TransportRetry::new(0, 1, 0).is_err(), "zero attempts refuse");
+    assert_eq!(
+        attempts.load(Ordering::SeqCst),
+        3,
+        "default policy tries three times"
+    );
+    assert!(
+        TransportRetry::new(0, 1, 0).is_err(),
+        "zero attempts refuse"
+    );
 }

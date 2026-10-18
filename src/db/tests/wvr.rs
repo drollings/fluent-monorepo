@@ -2,8 +2,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common_core::metrics::LatencyHistogram;
-use fluent_wvr::CURRENT_CAPS;
 use fluent_wvr::wrapper::Instrumented;
+use fluent_wvr::CURRENT_CAPS;
 
 use super::*;
 use crate::tests::common::{db_caps, in_memory_pool, store_with_t};

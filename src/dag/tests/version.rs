@@ -53,7 +53,10 @@ fn exact_match_selects_pinned_provider() {
     let resolver =
         DependencyResolver::with_narrowing(&reg, &caps).with_selection(ProviderSelection::All);
     let plan = resolver
-        .resolve_versioned(&["app", "bars/11"], &versions(&[("bars10", "10"), ("bars11", "11")]))
+        .resolve_versioned(
+            &["app", "bars/11"],
+            &versions(&[("bars10", "10"), ("bars11", "11")]),
+        )
         .expect("exact match resolves");
     assert!(plan.target_names.contains(&"bars11".to_string()));
     assert!(!plan.target_names.contains(&"bars10".to_string()));
@@ -64,7 +67,10 @@ fn compatible_range_selects_matching_provider() {
     let (reg, caps) = registry_with_caps();
     let resolver = DependencyResolver::with_narrowing(&reg, &caps);
     let plan = resolver
-        .resolve_versioned(&["bars/>=10"], &versions(&[("bars10", "9"), ("bars11", "11")]))
+        .resolve_versioned(
+            &["bars/>=10"],
+            &versions(&[("bars10", "9"), ("bars11", "11")]),
+        )
         .expect("range match resolves");
     assert!(plan.target_names.contains(&"bars11".to_string()));
     assert!(!plan.target_names.contains(&"bars10".to_string()));
@@ -75,12 +81,18 @@ fn mismatch_refuses_with_actionable_reason() {
     let (reg, caps) = registry_with_caps();
     let resolver = DependencyResolver::with_narrowing(&reg, &caps);
     let err = resolver
-        .resolve_versioned(&["bars/12"], &versions(&[("bars10", "10"), ("bars11", "11")]))
+        .resolve_versioned(
+            &["bars/12"],
+            &versions(&[("bars10", "10"), ("bars11", "11")]),
+        )
         .expect_err("mismatch must refuse");
     let msg = err.to_string();
     assert!(msg.contains("bars"), "names the capability: {msg}");
     assert!(msg.contains("12"), "names the requested version: {msg}");
-    assert!(msg.contains("10") && msg.contains("11"), "lists what exists: {msg}");
+    assert!(
+        msg.contains("10") && msg.contains("11"),
+        "lists what exists: {msg}"
+    );
 }
 
 #[test]
@@ -88,7 +100,10 @@ fn duplicate_version_is_ambiguous_with_candidates() {
     let (reg, caps) = registry_with_caps();
     let resolver = DependencyResolver::with_narrowing(&reg, &caps);
     let err = resolver
-        .resolve_versioned(&["bars/11"], &versions(&[("bars10", "11"), ("bars11", "11")]))
+        .resolve_versioned(
+            &["bars/11"],
+            &versions(&[("bars10", "11"), ("bars11", "11")]),
+        )
         .expect_err("duplicate versions must be ambiguous");
     match err {
         common_core::error::ResolverError::AmbiguousDependency { name, candidates } => {

@@ -226,7 +226,10 @@ async fn preview_manifest_is_a_pure_function_of_its_inputs() {
     // the same manifest because the clock is not an input.
     let first = preview_manifest(&client, &handle, &params).await;
     let second = preview_manifest(&client, &handle, &params).await;
-    assert_eq!(first, second, "the clock must not move a preview's manifest");
+    assert_eq!(
+        first, second,
+        "the clock must not move a preview's manifest"
+    );
 
     // The armed grant is server state, not a request input: arming one must
     // not silently change a preview that supplies none.
@@ -319,7 +322,10 @@ async fn unfilled_inbox_rows_carry_bar_close_limits() {
         // Sanity: the close must be representable or the bar would have skipped.
         assert!(bars[index].c.to_f64().is_some());
     }
-    assert!(saw_pending, "a fully denied preview must leave pending rows");
+    assert!(
+        saw_pending,
+        "a fully denied preview must leave pending rows"
+    );
     handle.shutdown().await;
 }
 
@@ -368,7 +374,10 @@ async fn inbox_projects_the_decisions_real_attribution() {
     for row in &inbox {
         assert_eq!(row.strategy, "gamma", "served strategy is the decision's");
         assert_eq!(row.underlying, "QQQ", "served underlying is the decision's");
-        assert_eq!(row.structure, "Calendar", "served structure is the decision's");
+        assert_eq!(
+            row.structure, "Calendar",
+            "served structure is the decision's"
+        );
         assert!(
             (row.conviction - 0.42).abs() < f64::EPSILON,
             "served conviction is the decision's, got {}",
@@ -506,9 +515,9 @@ async fn portfolio_positions_are_stable_across_previews() {
         let preview = client
             .post(format!("{}/proposals/preview", base(&handle)))
             .json(&PreviewParams {
-            seed: 3,
-            grant: None,
-        })
+                seed: 3,
+                grant: None,
+            })
             .send()
             .await
             .expect("preview reachable");
@@ -1045,11 +1054,10 @@ async fn portfolio_fold_reduces_opposite_direction_fills_like_the_venue() {
     .expect("run");
     assert!(run.decisions.len() >= 2, "fixture needs two fills");
     run.decisions.truncate(2);
-    for (decision, (direction, quantity, price)) in run
-        .decisions
-        .iter_mut()
-        .zip([(Direction::Long, 2u32, 100i64), (Direction::Short, 1u32, 110i64)])
-    {
+    for (decision, (direction, quantity, price)) in run.decisions.iter_mut().zip([
+        (Direction::Long, 2u32, 100i64),
+        (Direction::Short, 1u32, 110i64),
+    ]) {
         decision.submitted = true;
         decision.direction = Some(direction);
         decision.underlying = "SPY".to_owned();
@@ -1062,7 +1070,10 @@ async fn portfolio_fold_reduces_opposite_direction_fills_like_the_venue() {
     assert_eq!(portfolio.positions.len(), 1);
     let position = &portfolio.positions[0];
     assert_eq!(position.underlying, "SPY");
-    assert_eq!(position.quantity, 1, "buys minus sells, not the unsigned sum");
+    assert_eq!(
+        position.quantity, 1,
+        "buys minus sells, not the unsigned sum"
+    );
     assert_eq!(
         position.avg_price,
         Money::from(100),

@@ -2,7 +2,7 @@ use super::*;
 use crate::indicator::{Ohlcv, OwnedOhlcv};
 use crate::parity::{assert_expr_parity, expr_fixture};
 use crate::ta_price::{AvgPriceIndicator, MedPriceIndicator, TypPriceIndicator, WclPriceIndicator};
-use polars::prelude::{Expr, col, lit};
+use polars::prelude::{col, lit, Expr};
 use protopyne_types::Bar;
 use std::path::PathBuf;
 
@@ -14,7 +14,14 @@ fn bar_at(open: f64, high: f64, low: f64, close: f64, volume: u64, index: usize)
     use chrono::TimeZone as _;
     Bar::new()
         .ts(chrono::Utc
-            .with_ymd_and_hms(2026, 1, 2, 9 + (index / 3600) as u32, ((index / 60) % 60) as u32, (index % 60) as u32)
+            .with_ymd_and_hms(
+                2026,
+                1,
+                2,
+                9 + (index / 3600) as u32,
+                ((index / 60) % 60) as u32,
+                (index % 60) as u32,
+            )
             .single()
             .expect("valid timestamp"))
         .o(dec(open))
@@ -32,7 +39,11 @@ fn trend_bars(n: usize) -> Vec<Bar> {
     for i in 0..n {
         let close = 100.0 + i as f64 * 0.7 + ((i * 13) % 5) as f64 * 0.9;
         let gap = if i > 0 && i % 10 == 0 { 2.5 } else { 0.0 };
-        let open = if i == 0 { close } else { prev_close + gap + 0.1 };
+        let open = if i == 0 {
+            close
+        } else {
+            prev_close + gap + 0.1
+        };
         let high = open.max(close) + 0.8;
         let low = open.min(close) - 0.8;
         bars.push(bar_at(open, high, low, close, 1_000 + i as u64 * 37, i));
@@ -53,7 +64,12 @@ fn spy_bars(count: usize) -> Vec<Bar> {
     let mut bars = Vec::new();
     for record in reader.records().take(count) {
         let row = record.expect("readable row");
-        let num = |idx: usize| row.get(idx).expect("column").parse::<f64>().expect("number");
+        let num = |idx: usize| {
+            row.get(idx)
+                .expect("column")
+                .parse::<f64>()
+                .expect("number")
+        };
         let epoch: i64 = row.get(0).expect("time").parse().expect("epoch");
         let ts = chrono::DateTime::from_timestamp(epoch, 0).expect("valid epoch");
         bars.push(
@@ -84,12 +100,7 @@ fn ticks_of(bars: &[Bar]) -> Vec<BarTick> {
         .collect()
 }
 
-fn check_price_kernel(
-    kernel: &dyn Indicator,
-    bars: &[Bar],
-    expr: Expr,
-    context: &str,
-) {
+fn check_price_kernel(kernel: &dyn Indicator, bars: &[Bar], expr: Expr, context: &str) {
     let data = OwnedOhlcv::from_bars(bars);
     let ps = ParamSet::new();
     let result = kernel.batch(&data.views(), &ps).expect("valid params");

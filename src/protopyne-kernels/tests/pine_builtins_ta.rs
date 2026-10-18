@@ -101,11 +101,15 @@ fn single_source_kernels_agree_with_batch() {
         ),
         (
             "stdev",
-            ParamSet::new().with_int("length", 14).with_float("nbdev", 1.0),
+            ParamSet::new()
+                .with_int("length", 14)
+                .with_float("nbdev", 1.0),
         ),
         (
             "variance",
-            ParamSet::new().with_int("length", 14).with_float("nbdev", 1.0),
+            ParamSet::new()
+                .with_int("length", 14)
+                .with_float("nbdev", 1.0),
         ),
     ];
     let registry = crate::indicator::builtin_registry().expect("builtins");
@@ -117,16 +121,12 @@ fn single_source_kernels_agree_with_batch() {
             other => other,
         };
         let kernel = registry.get(kernel_id).expect("kernel registered");
-        let expected = kernel.batch(&legs.views(), params).expect("valid batch").values;
+        let expected = kernel
+            .batch(&legs.views(), params)
+            .expect("valid batch")
+            .values;
         let args_for: Box<dyn Fn(f64) -> Vec<Option<PineValue>>> = if *method == "alma" {
-            Box::new(|c| {
-                vec![
-                    float(c),
-                    Some(PineValue::Int(14)),
-                    float(0.85),
-                    float(6.0),
-                ]
-            })
+            Box::new(|c| vec![float(c), Some(PineValue::Int(14)), float(0.85), float(6.0)])
         } else {
             Box::new(|c| vec![float(c), Some(PineValue::Int(14))])
         };
@@ -166,7 +166,9 @@ fn multi_output_and_multi_leg_kernels_agree_with_batch() {
     assert_expr_parity(&got, &expected, 1e-9, "macd").expect("macd line matches");
 
     // bb primary (basis) only.
-    let bb_ps = ParamSet::new().with_int("length", 14).with_float("mult", 2.0);
+    let bb_ps = ParamSet::new()
+        .with_int("length", 14)
+        .with_float("mult", 2.0);
     let bb = registry.get("bb").expect("registered");
     let expected = bb.batch(&legs.views(), &bb_ps).expect("valid").values;
     let got = stream(
@@ -209,7 +211,12 @@ fn multi_output_and_multi_leg_kernels_agree_with_batch() {
                 .call(
                     "stoch",
                     "stoch",
-                    &[float(tick.close), float(tick.high), float(tick.low), float(14.0)],
+                    &[
+                        float(tick.close),
+                        float(tick.high),
+                        float(tick.low),
+                        float(14.0),
+                    ],
                     tick,
                 )
                 .expect("valid call");
@@ -257,12 +264,21 @@ fn recurrence_filters_agree_with_batch() {
     let eit_ps = ParamSet::new().with_float("alpha", 0.5);
     let eit = registry.get("eit").expect("registered");
     let expected = eit.batch(&legs.views(), &eit_ps).expect("valid").values;
-    let got = stream(&mut bridge, "eit", "eit", |c| vec![float(c), float(0.5)], &ticks);
+    let got = stream(
+        &mut bridge,
+        "eit",
+        "eit",
+        |c| vec![float(c), float(0.5)],
+        &ticks,
+    );
     assert_expr_parity(&got, &expected, 1e-9, "eit").expect("eit matches");
 
     let kalman_ps = ParamSet::new().with_int("length", 14);
     let kalman = registry.get("kalman").expect("registered");
-    let expected = kalman.batch(&legs.views(), &kalman_ps).expect("valid").values;
+    let expected = kalman
+        .batch(&legs.views(), &kalman_ps)
+        .expect("valid")
+        .values;
     let got = stream(
         &mut bridge,
         "kalman",
@@ -294,10 +310,22 @@ fn window_operators_agree_with_shared_utils() {
     let ticks = closes(&legs.close);
     let mut bridge = TaBridge::new().expect("bridge builds");
     let len = 14.0;
-    let highest = stream(&mut bridge, "hi", "highest", |c| vec![float(c), float(len)], &ticks);
+    let highest = stream(
+        &mut bridge,
+        "hi",
+        "highest",
+        |c| vec![float(c), float(len)],
+        &ticks,
+    );
     let expected = crate::util::highest(&legs.close, 14);
     assert_expr_parity(&highest, &expected, 1e-12, "highest").expect("highest matches util");
-    let lowest = stream(&mut bridge, "lo", "lowest", |c| vec![float(c), float(len)], &ticks);
+    let lowest = stream(
+        &mut bridge,
+        "lo",
+        "lowest",
+        |c| vec![float(c), float(len)],
+        &ticks,
+    );
     let expected = crate::util::lowest(&legs.close, 14);
     assert_expr_parity(&lowest, &expected, 1e-12, "lowest").expect("lowest matches util");
 
@@ -326,7 +354,12 @@ fn window_operators_agree_with_shared_utils() {
         .zip(b.iter())
         .map(|(&tick, &level)| {
             let out = bridge
-                .call("cross", "crossover", &[float(tick.close), float(level)], tick)
+                .call(
+                    "cross",
+                    "crossover",
+                    &[float(tick.close), float(level)],
+                    tick,
+                )
                 .expect("valid");
             match out {
                 Some(PineValue::Bool(flag)) => Some(flag),
@@ -343,14 +376,24 @@ fn cum_change_median_and_correlation_behave() {
     let mut bridge = TaBridge::new().expect("bridge builds");
     let sums: Vec<Option<f64>> = ticks
         .iter()
-        .map(|&tick| num(bridge.call("c", "cum", &[float(tick.close)], tick).expect("valid").as_ref()))
+        .map(|&tick| {
+            num(bridge
+                .call("c", "cum", &[float(tick.close)], tick)
+                .expect("valid")
+                .as_ref())
+        })
         .collect();
     assert_eq!(sums, vec![Some(1.0), Some(3.0), Some(6.0), Some(11.0)]);
 
     let mut bridge = TaBridge::new().expect("bridge builds");
     let changes: Vec<Option<f64>> = ticks
         .iter()
-        .map(|&tick| num(bridge.call("ch", "change", &[float(tick.close)], tick).expect("valid").as_ref()))
+        .map(|&tick| {
+            num(bridge
+                .call("ch", "change", &[float(tick.close)], tick)
+                .expect("valid")
+                .as_ref())
+        })
         .collect();
     assert_eq!(changes, vec![None, Some(1.0), Some(1.0), Some(2.0)]);
 
@@ -374,7 +417,12 @@ fn cum_change_median_and_correlation_behave() {
         .iter()
         .map(|&tick| {
             bridge
-                .call("r", "correlation", &[float(tick.close), float(tick.close), float(14.0)], tick)
+                .call(
+                    "r",
+                    "correlation",
+                    &[float(tick.close), float(tick.close), float(14.0)],
+                    tick,
+                )
                 .expect("valid")
         })
         .last()
@@ -391,8 +439,16 @@ fn arg_validation_refuses_with_reasons() {
         ("sma", vec![float(1.0)], "argument"),
         ("sma", vec![float(1.0), float(0.0)], "positive"),
         ("sma", vec![float(1.0), float(2.5)], "whole"),
-        ("sma", vec![float(1.0), Some(PineValue::Bool(true))], "positive"),
-        ("sma", vec![Some(PineValue::Str("x".to_owned())), float(3.0)], "numeric"),
+        (
+            "sma",
+            vec![float(1.0), Some(PineValue::Bool(true))],
+            "positive",
+        ),
+        (
+            "sma",
+            vec![Some(PineValue::Str("x".to_owned())), float(3.0)],
+            "numeric",
+        ),
         ("macd", vec![float(1.0), float(2.0)], "signal"),
         ("bb", vec![float(1.0), float(14.0)], "mult"),
         ("stoch", vec![float(1.0), float(2.0)], "high"),
@@ -484,7 +540,10 @@ fn valuewhen_reads_the_nth_firing_source_value() {
     let ticks = closes(&[10.0, 20.0, 30.0, 40.0, 50.0]);
     let cond = [true, false, true, false, false];
     for (occurrence, want) in [
-        (0_i64, vec![Some(10.0), Some(10.0), Some(30.0), Some(30.0), Some(30.0)]),
+        (
+            0_i64,
+            vec![Some(10.0), Some(10.0), Some(30.0), Some(30.0), Some(30.0)],
+        ),
         (1_i64, vec![None, None, Some(10.0), Some(10.0), Some(10.0)]),
         (2_i64, vec![None, None, None, None, None]),
     ] {
@@ -497,7 +556,11 @@ fn valuewhen_reads_the_nth_firing_source_value() {
                     .call(
                         "vw",
                         "valuewhen",
-                        &[flag(hit), float(tick.close), Some(PineValue::Int(occurrence))],
+                        &[
+                            flag(hit),
+                            float(tick.close),
+                            Some(PineValue::Int(occurrence)),
+                        ],
                         tick,
                     )
                     .expect("valid")
@@ -515,7 +578,12 @@ fn valuewhen_propagates_na_and_refuses_bad_occurrence() {
     let ticks = closes(&[1.0, 2.0]);
     let mut bridge = TaBridge::new().expect("bridge builds");
     let out = bridge
-        .call("na", "valuewhen", &[flag(true), None, Some(PineValue::Int(0))], ticks[0])
+        .call(
+            "na",
+            "valuewhen",
+            &[flag(true), None, Some(PineValue::Int(0))],
+            ticks[0],
+        )
         .expect("valid");
     assert_eq!(out, None, "na source on a firing bar reads na");
     let mut bridge = TaBridge::new().expect("bridge builds");
@@ -541,7 +609,12 @@ fn valuewhen_propagates_na_and_refuses_bad_occurrence() {
         .to_string();
     assert!(err.contains("non-negative"), "occurrence refusal: {err}");
     let err = bridge
-        .call("cond", "valuewhen", &[float(1.0), float(1.0), Some(PineValue::Int(0))], ticks[0])
+        .call(
+            "cond",
+            "valuewhen",
+            &[float(1.0), float(1.0), Some(PineValue::Int(0))],
+            ticks[0],
+        )
         .expect_err("numeric condition refuses")
         .to_string();
     assert!(err.contains("bool condition"), "condition refusal: {err}");
@@ -583,16 +656,29 @@ fn pivots_confirm_on_source_history_not_chart_legs() {
     let mut last = None;
     for &value in &spike {
         last = bridge
-            .call("legs", "pivothigh", &[float(value), float(2.0), float(2.0)], flat_legs)
+            .call(
+                "legs",
+                "pivothigh",
+                &[float(value), float(2.0), float(2.0)],
+                flat_legs,
+            )
             .expect("valid");
     }
     assert_eq!(last, Some(PineValue::Float(1000.0)), "legs ignored");
     let mut bridge = TaBridge::new().expect("bridge builds");
     let mut last = None;
     for &value in &[50.0; 5] {
-        let spiking = BarTick { high: 1000.0, ..flat_legs };
+        let spiking = BarTick {
+            high: 1000.0,
+            ..flat_legs
+        };
         last = bridge
-            .call("flat", "pivothigh", &[float(value), float(2.0), float(2.0)], spiking)
+            .call(
+                "flat",
+                "pivothigh",
+                &[float(value), float(2.0), float(2.0)],
+                spiking,
+            )
             .expect("valid");
     }
     assert_eq!(last, None, "flat source never pivots");
@@ -626,13 +712,23 @@ fn pivots_reject_equal_extremes_and_na_windows() {
     let mut last = None;
     for &tick in &ticks {
         last = bridge
-            .call("eq", "pivothigh", &[float(tick.close), float(2.0), float(2.0)], tick)
+            .call(
+                "eq",
+                "pivothigh",
+                &[float(tick.close), float(2.0), float(2.0)],
+                tick,
+            )
             .expect("valid");
     }
     assert_eq!(last, None, "equal extremes never pivot");
     let mut bridge = TaBridge::new().expect("bridge builds");
     let out = bridge
-        .call("short", "pivothigh", &[float(1.0), float(0.0), float(2.0)], ticks[0])
+        .call(
+            "short",
+            "pivothigh",
+            &[float(1.0), float(0.0), float(2.0)],
+            ticks[0],
+        )
         .expect_err("zero leftbars refuses")
         .to_string();
     assert!(out.contains("positive"), "length refusal: {out}");

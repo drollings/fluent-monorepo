@@ -13,12 +13,12 @@
 
 const EPS: f64 = 1e-9;
 
-use chrono::TimeZone as _;
 use crate::pine::test_fixture as fixture;
 use crate::{
     BarRing, InputSet, LibBarsProvider, LinkedModule, MethodCtx, NativeCall, NativeOptions,
     NativeProvider, PineEngine, PineRuntimeConfig, PineValue, RunOutcome, TickLegs, UserInstance,
 };
+use chrono::TimeZone as _;
 use protopyne_types::Bar;
 
 fn native_on() -> NativeOptions {
@@ -30,18 +30,8 @@ fn native_on() -> NativeOptions {
 
 fn linked_fetch(driver_tail: &str) -> Vec<LinkedModule> {
     fixture::linked_modules(vec![
-        fixture::shipped_module(
-            "libraries/_libUtil.pine",
-            "showmethegrail",
-            "libUtil",
-            12,
-        ),
-        fixture::shipped_module(
-            "libraries/_libBars.pine",
-            "showmethegrail",
-            "libBars",
-            12,
-        ),
+        fixture::shipped_module("libraries/_libUtil.pine", "showmethegrail", "libUtil", 12),
+        fixture::shipped_module("libraries/_libBars.pine", "showmethegrail", "libBars", 12),
         fixture::driver_module(driver_tail),
     ])
 }
@@ -57,15 +47,13 @@ fn test_engine() -> PineEngine {
 
 fn ms_bar(open: &str, high: &str, low: &str, close: &str, volume: u64, ts_millis: i64) -> Bar {
     Bar::new()
-        .ts(
-            chrono::Utc
-                .timestamp_opt(
-                    ts_millis.div_euclid(1000),
-                    ts_millis.rem_euclid(1000) as u32 * 1_000_000,
-                )
-                .single()
-                .expect("valid test timestamp"),
-        )
+        .ts(chrono::Utc
+            .timestamp_opt(
+                ts_millis.div_euclid(1000),
+                ts_millis.rem_euclid(1000) as u32 * 1_000_000,
+            )
+            .single()
+            .expect("valid test timestamp"))
         .o(open.parse().expect("decimal"))
         .h(high.parse().expect("decimal"))
         .l(low.parse().expect("decimal"))
@@ -81,7 +69,12 @@ fn fmt2(price: f64) -> String {
 
 /// Synthetic one-bar tape: `(Bar legs, tick stamp)` with bar-so-far OHLC
 /// and rounded cumulative volume legs over a constant bar-open time.
-fn one_bar_legs(bar_open_ms: i64, prices: &[f64], volumes: &[u64], stamps: &[i64]) -> (Vec<Bar>, Vec<i64>) {
+fn one_bar_legs(
+    bar_open_ms: i64,
+    prices: &[f64],
+    volumes: &[u64],
+    stamps: &[i64],
+) -> (Vec<Bar>, Vec<i64>) {
     assert_eq!(prices.len(), volumes.len(), "price per tick");
     assert_eq!(prices.len(), stamps.len(), "stamp per tick");
     let mut bars = Vec::with_capacity(prices.len());
@@ -123,14 +116,18 @@ const T0: i64 = 1_767_344_400_000;
 /// (and refuses without an injected lower-tf pair). Quiet legs keep the
 /// seeding pair tiny; the pull legs below spend it deliberately.
 fn quiet_stamps() -> Vec<i64> {
-    [5_000, 12_000, 20_000, 33_000, 40_000, 47_000, 52_000, 58_000]
-        .iter()
-        .map(|dt| T0 + dt)
-        .collect::<Vec<_>>()
+    [
+        5_000, 12_000, 20_000, 33_000, 40_000, 47_000, 52_000, 58_000,
+    ]
+    .iter()
+    .map(|dt| T0 + dt)
+    .collect::<Vec<_>>()
 }
 
 fn quiet_prices() -> Vec<f64> {
-    vec![100.00, 100.05, 100.03, 100.10, 100.08, 100.12, 100.09, 100.15]
+    vec![
+        100.00, 100.05, 100.03, 100.10, 100.08, 100.12, 100.09, 100.15,
+    ]
 }
 
 /// Per-tick volumes with a 3-unit seeding loss on a ~600-unit bar
@@ -353,7 +350,11 @@ fn unserved_method_runs_pine_over_native_state() {
         let native_imb = native
             .value_at(tick, "vol_imb")
             .unwrap_or_else(|| panic!("native vol_imb missing on tick {tick}"));
-        assert_value_eq(pine_imb.as_ref(), native_imb.as_ref(), &format!("vol_imb@{tick}"));
+        assert_value_eq(
+            pine_imb.as_ref(),
+            native_imb.as_ref(),
+            &format!("vol_imb@{tick}"),
+        );
     }
 }
 

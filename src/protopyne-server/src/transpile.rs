@@ -479,7 +479,9 @@ fn emit_statement(name: &str, hair: &Hair) -> Result<String, String> {
                 "    let _{name} = {indicator}.batch(&Ohlcv::close_only({leg}), &ParamSet::new().with_int(\"length\", {len}))?;"
             ))
         }
-        other => Ok(format!("    // non-rolling binding '{name}' carried in HIR only: {other:?}")),
+        other => Ok(format!(
+            "    // non-rolling binding '{name}' carried in HIR only: {other:?}"
+        )),
     }
 }
 
@@ -535,7 +537,12 @@ pub fn evaluate_lowered(
 ) -> Result<NamedOutputs, ServerError> {
     let mut outputs = Vec::new();
     for binding in &lowered.bindings {
-        let Hair::Rolling { kernel, length, series } = &binding.hair else {
+        let Hair::Rolling {
+            kernel,
+            length,
+            series,
+        } = &binding.hair
+        else {
             continue;
         };
         let leg = match series.as_ref() {

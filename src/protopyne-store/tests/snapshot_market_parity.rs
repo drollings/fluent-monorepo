@@ -7,8 +7,8 @@
 //! contract — the snapshot reader carries it — which the test asserts
 //! explicitly rather than letting the comparison hide it.
 
-use super::test_snapshot::{SEAL_NOW_MS, varied_bars, with_seeded_tape};
-use super::{SealOptions, read_parquet, seal};
+use super::test_snapshot::{varied_bars, with_seeded_tape, SEAL_NOW_MS};
+use super::{read_parquet, seal, SealOptions};
 use crate::market_parquet::read_ohlcv_parquet;
 
 #[tokio::test]

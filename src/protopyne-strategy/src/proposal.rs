@@ -171,9 +171,7 @@ pub fn transition(
         (S::PendingHuman | S::AutoApproved | S::Approved, E::Expire) => S::Expired,
         (S::AutoApproved | S::Approved, E::Submit) => S::Submitted,
         (S::Submitted, E::StartWork) => S::Working,
-        (S::Submitted | S::Working | S::AutoApproved | S::Approved, E::Cancel) => {
-            S::Cancelled
-        }
+        (S::Submitted | S::Working | S::AutoApproved | S::Approved, E::Cancel) => S::Cancelled,
         (S::Working, E::Fill) => S::Filled,
         (S::Working, E::PartialFill) => S::Partial,
         _ => {

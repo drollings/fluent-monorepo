@@ -6,10 +6,10 @@
 //! fold. Clarity and batch/update identity win over a rolling-sum fast path
 //! at this scale.
 
+use crate::error::KernelError;
 use crate::indicator::{
     BarTick, Indicator, IndicatorResult, IndicatorSpec, IndicatorState, Ohlcv, ParamSet,
 };
-use crate::error::KernelError;
 
 /// Simple moving average (`sma`), parameterized by `length`.
 pub struct SmaIndicator {

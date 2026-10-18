@@ -21,18 +21,24 @@ fn crossings_fire_only_on_strict_transitions() {
 fn crossings_reject_equality_and_missing_data() {
     // Touching without passing through never fires.
     assert_eq!(crossover(&[1.0, 1.0], &[1.0, 1.0]), vec![None, Some(false)]);
-    assert_eq!(crossunder(&[1.0, 1.0], &[1.0, 1.0]), vec![None, Some(false)]);
-    // NaN on either side is missing data, never a signal.
     assert_eq!(
-        crossover(&[1.0, f64::NAN], &[0.0, 0.0]),
-        vec![None, None]
+        crossunder(&[1.0, 1.0], &[1.0, 1.0]),
+        vec![None, Some(false)]
     );
+    // NaN on either side is missing data, never a signal.
+    assert_eq!(crossover(&[1.0, f64::NAN], &[0.0, 0.0]), vec![None, None]);
 }
 
 #[test]
 fn window_extremes_and_momentum_by_hand() {
-    assert_eq!(highest(&[3.0, 1.0, 2.0], 2), vec![None, Some(3.0), Some(2.0)]);
-    assert_eq!(lowest(&[3.0, 1.0, 2.0], 2), vec![None, Some(1.0), Some(1.0)]);
+    assert_eq!(
+        highest(&[3.0, 1.0, 2.0], 2),
+        vec![None, Some(3.0), Some(2.0)]
+    );
+    assert_eq!(
+        lowest(&[3.0, 1.0, 2.0], 2),
+        vec![None, Some(1.0), Some(1.0)]
+    );
     assert_eq!(change(&[5.0, 7.0, 6.0]), vec![None, Some(2.0), Some(-1.0)]);
     assert_eq!(mom(&[5.0, 7.0, 6.0], 2), vec![None, None, Some(1.0)]);
     // Oversize windows stay honest instead of shrinking silently.
@@ -81,9 +87,18 @@ fn operator_sub_div_propagate_and_refuse() {
 #[test]
 fn operator_windows_are_strict() {
     let clean = [3.0, 1.0, 2.0, 5.0];
-    assert_eq!(max_window(&clean, 2), vec![None, Some(3.0), Some(2.0), Some(5.0)]);
-    assert_eq!(min_window(&clean, 2), vec![None, Some(1.0), Some(1.0), Some(2.0)]);
-    assert_eq!(sum_window(&clean, 2), vec![None, Some(4.0), Some(3.0), Some(7.0)]);
+    assert_eq!(
+        max_window(&clean, 2),
+        vec![None, Some(3.0), Some(2.0), Some(5.0)]
+    );
+    assert_eq!(
+        min_window(&clean, 2),
+        vec![None, Some(1.0), Some(1.0), Some(2.0)]
+    );
+    assert_eq!(
+        sum_window(&clean, 2),
+        vec![None, Some(4.0), Some(3.0), Some(7.0)]
+    );
     // Any NaN-bearing window is None (strict full-window nulling), and
     // oversize windows stay honest.
     let gapped = [3.0, f64::NAN, 2.0, 5.0];
@@ -118,6 +133,9 @@ fn operator_arg_ties_prefer_most_recent() {
         argmin_window(&[4.0, 1.0, 1.0, 3.0], 3),
         vec![None, None, Some(0), Some(1)]
     );
-    assert_eq!(argmax_window(&[1.0, f64::NAN, 2.0], 2), vec![None, None, None]);
+    assert_eq!(
+        argmax_window(&[1.0, f64::NAN, 2.0], 2),
+        vec![None, None, None]
+    );
     assert_eq!(argmin_window(&[1.0], 5), vec![None]);
 }

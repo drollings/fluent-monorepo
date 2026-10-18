@@ -16,9 +16,9 @@
 //! `Decimal` scale refuses.
 
 use arrow::array::{
-    Array, Decimal128Array, Float32Array, Float64Array, Int32Array, Int64Array,
-    LargeStringArray, StringArray, TimestampMicrosecondArray, TimestampMillisecondArray,
-    TimestampNanosecondArray, TimestampSecondArray,
+    Array, Decimal128Array, Float32Array, Float64Array, Int32Array, Int64Array, LargeStringArray,
+    StringArray, TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray,
+    TimestampSecondArray,
 };
 use arrow::datatypes::{DataType, Field, Schema, TimeUnit};
 use arrow::record_batch::RecordBatch;
@@ -219,10 +219,7 @@ pub(crate) fn decimal_scale_of(schema: &Schema, column: &str) -> Result<u32, Dec
 }
 
 /// Downcast the positional column to the reader's pinned array type.
-pub(crate) fn column_at<T: 'static>(
-    batch: &RecordBatch,
-    index: usize,
-) -> Result<&T, DecodeError> {
+pub(crate) fn column_at<T: 'static>(batch: &RecordBatch, index: usize) -> Result<&T, DecodeError> {
     batch
         .column(index)
         .as_any()

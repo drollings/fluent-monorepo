@@ -9,7 +9,7 @@
 
 use super::*;
 use crate::error::{SnapshotError, StoreError};
-use crate::snapshot::test_snapshot::{SEAL_NOW_MS, varied_bars, with_seeded_tape};
+use crate::snapshot::test_snapshot::{varied_bars, with_seeded_tape, SEAL_NOW_MS};
 
 #[tokio::test]
 async fn orphan_file_is_reported_and_removed() {

@@ -298,6 +298,147 @@ pub struct ReplayView {
     pub steps: Vec<ReplayStepView>,
 }
 
+/// Parameters for opening an interactive replay session.
+///
+/// Neutral data only: the core builds the strategy, risk engine, and grant
+/// from these knobs (a supplied grant document, else its fixed rehearsal
+/// grant), so the terminal never links the trading path. `start_bar` is the
+/// first bar the session decides; earlier bars feed indicator context only
+/// (signal inputs match a batch run from that bar, with fresh budgets).
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ReplayStartParams {
+    /// Registry slot the session occupies; replaces any session already there.
+    pub session_id: String,
+    /// Underlying the replay trades (grant scope permitting).
+    pub underlying: String,
+    /// Strategy name carried on every proposal for attribution.
+    pub strategy_name: String,
+    /// Worst-case loss booked per proposal.
+    pub max_loss: Money,
+    /// Committed notional booked per proposal.
+    pub notional: Money,
+    /// Days to expiry booked per proposal.
+    pub dte_days: u32,
+    /// Bars skipped before the first proposal (warmup honesty).
+    pub warmup_bars: usize,
+    /// Deterministic proposal identifiers (`run-{seed}-{index}`).
+    pub seed: u64,
+    /// First bar the session decides (0-based, at most the bar count).
+    pub start_bar: u64,
+    /// Requested structure tag (`"Single"`, `"Vertical"`, …): the core
+    /// builds the replay strategy and grant scope from it. Defaults to
+    /// `"Single"`, so payloads written before the picker decode unchanged.
+    #[serde(default = "default_replay_structure")]
+    pub structure: String,
+    /// Grant document; `None` replays under the core's fixed rehearsal grant.
+    pub grant: Option<serde_json::Value>,
+}
+
+/// The default structure tag for payloads that predate the picker.
+fn default_replay_structure() -> String {
+    "Single".to_owned()
+}
+
+/// One replayed bar's verdict, in display vocabulary.
+///
+/// Direction and structure ride the same stable tags as [`ProposalView`]
+/// (`"Long"`, `"Vertical"`, …); both are `None` when no proposal was
+/// emitted. `state` is the last journaled lifecycle target, or the skip
+/// reason verbatim when nothing was proposed. `legs` carries one row per
+/// executed spread leg, read off the venue's own executions (empty for
+/// singles, refusals, and verdicts recorded before leg rows existed).
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ReplayDecisionView {
+    /// Absolute bar index into the replayed history.
+    pub bar_index: u64,
+    /// Deterministic proposal id (`run-{seed}-{index}`).
+    pub proposal_id: String,
+    /// Bar timestamp (RFC 3339), exactly as the core recorded it.
+    pub ts: String,
+    /// Signal direction tag, when a proposal was emitted.
+    pub direction: Option<String>,
+    /// Option structure tag, when a proposal was emitted.
+    pub structure: Option<String>,
+    /// Last lifecycle target, or the skip reason when nothing was proposed.
+    pub state: String,
+    /// Signal conviction (`0.0` when no proposal was emitted).
+    pub conviction: f64,
+    /// Whether an order reached the venue.
+    pub submitted: bool,
+    /// Contracts the venue filled.
+    pub filled_quantity: u32,
+    /// Average fill price, when filled.
+    pub fill_price: Option<Money>,
+    /// Skip reason, when nothing reached the venue for a non-gate reason.
+    pub skipped: Option<String>,
+    /// The session refused a multi-leg structure for the missing
+    /// option-chain feed. Set beside `skipped`, never parsed from it, so a
+    /// terminal can count spread refusals without matching reason text.
+    pub chain_gated: bool,
+    /// Per-leg execution rows for a filled spread, in fill order. Display
+    /// only: the terminal shows what the venue filled, never authority.
+    /// Empty for singles, refusals, and older payloads (which decode
+    /// unchanged through the default).
+    #[serde(default)]
+    pub legs: Vec<ReplayLegView>,
+}
+
+/// One executed spread leg, in display vocabulary: the OCC contract, the
+/// fill side (`"buy"`/`"sell"`), contracts filled, slipped price, and
+/// commission.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ReplayLegView {
+    /// Contract filled, as its OCC symbol.
+    pub contract: String,
+    /// Fill side tag.
+    pub side: String,
+    /// Contracts filled on this leg.
+    pub quantity: u32,
+    /// Slipped execution price per contract.
+    pub price: Money,
+    /// Commission on this leg.
+    pub fee: Money,
+}
+
+/// Net position in one underlying, folded from the session's fills.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ReplayPositionView {
+    /// Underlying symbol.
+    pub underlying: String,
+    /// Signed contracts (or shares); negative is short.
+    pub quantity: i64,
+    /// Volume-weighted average entry price.
+    pub avg_price: Money,
+}
+
+/// Interactive replay state: cursor, verdicts so far, fills, and journal.
+///
+/// Decisions and journal rows cover decided bars only — the session never
+/// reports a bar it has not stepped. `active` is false only on the terminal
+/// stop shape (a live session always reports true); the gateway refuses a
+/// stopped or unknown session instead of serving an empty one.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ReplayStateView {
+    /// Registry slot this state belongs to.
+    pub session_id: String,
+    /// Whether the session is live.
+    pub active: bool,
+    /// Index of the next bar a step will decide.
+    pub cursor: u64,
+    /// Bars in the replay window.
+    pub total_bars: u64,
+    /// Verdicts in replay order, decided bars only.
+    pub decisions: Vec<ReplayDecisionView>,
+    /// Net positions folded from the session's fills.
+    pub positions: Vec<ReplayPositionView>,
+    /// Submitted orders so far.
+    pub filled_orders: u64,
+    /// Commission paid so far.
+    pub total_fees: Money,
+    /// Journaled lifecycle transitions in emission order.
+    pub journal: Vec<JournalRowView>,
+}
+
 #[cfg(test)]
 #[path = "../tests/views.rs"]
 mod tests;

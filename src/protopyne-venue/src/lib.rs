@@ -15,7 +15,8 @@ pub mod alert;
 pub mod backfill;
 pub mod command;
 pub mod depth;
-pub mod error;pub mod health;
+pub mod error;
+pub mod health;
 pub mod journal;
 pub mod live;
 pub mod market;
@@ -41,22 +42,20 @@ pub use backfill::{
     BackfillSource, BackfillUnit, BACKFILL_ASSET,
 };
 pub use command::{
-    cancel_all_ids, close_all_intents, decide_proposal, replay_proposal_states, replay_trading_state,
-    CommandKind, CommandUnit, LegGroup,
-    PortfolioRegistry, PortfolioView, ReplicaOrder, StateHandle, StateReplica, TradingState,
-    TradingStateUnit, COMMAND_CANCEL_ALL_KIND, COMMAND_CLOSE_ALL_KIND, COMMAND_DISARM_KIND,
-    COMMAND_RESUME_KIND, OPERATOR_CLIENT_ID, PROPOSAL_TRANSITION_KIND, TRADING_ENABLED_ASSET,
+    cancel_all_ids, close_all_intents, decide_proposal, replay_proposal_states,
+    replay_trading_state, CommandKind, CommandUnit, LegGroup, PortfolioRegistry, PortfolioView,
+    ReplicaOrder, StateHandle, StateReplica, TradingState, TradingStateUnit,
+    COMMAND_CANCEL_ALL_KIND, COMMAND_CLOSE_ALL_KIND, COMMAND_DISARM_KIND, COMMAND_RESUME_KIND,
+    OPERATOR_CLIENT_ID, PROPOSAL_TRANSITION_KIND, TRADING_ENABLED_ASSET,
 };
-pub use depth::{DEFAULT_MAX_LEVELS, BookManager, DarkFinding, DepthBook, DepthDelta, PriceLevel};
+pub use depth::{BookManager, DarkFinding, DepthBook, DepthDelta, PriceLevel, DEFAULT_MAX_LEVELS};
 pub use error::VenueError;
 pub use health::{
     check_route, check_trade, may_trade, serving_allows_entries, serving_verdict, GateClass,
     GateFailure, GateReport, HealthGate, HealthLimits, HealthState, HealthVerdict, RouteIntent,
 };
-pub use journal::{
-    Journal, JournalEvent, ReplayedState, VenueStorage, INTENT_KIND, LEG_FILL_KIND,
-};
-pub use live::{LiveBoot, LiveSession, TastytradeVenue, boot_live, positions_of};
+pub use journal::{Journal, JournalEvent, ReplayedState, VenueStorage, INTENT_KIND, LEG_FILL_KIND};
+pub use live::{boot_live, positions_of, LiveBoot, LiveSession, TastytradeVenue};
 pub use market::{MarketEvent, MarketEventKind};
 pub use order::{
     client_id_for, qty_of, ActiveOrderState, CorporateEvent, Fill, OrderIntent, OrderRecord,
@@ -76,22 +75,25 @@ pub use reconcile::{
 pub use registry::VenueRegistry;
 pub use session::{check_unit, SessionConfig, SubmitJob, TradingSession};
 pub use stream::{
-    STREAM_HEALTH_ASSET, StreamBreaker, StreamConfig, StreamHealthUnit, StreamOutcome, SupervisedStream,
-    terminal_reason,
+    terminal_reason, StreamBreaker, StreamConfig, StreamHealthUnit, StreamOutcome,
+    SupervisedStream, STREAM_HEALTH_ASSET,
 };
 pub use submit::{
     safe_submit, submit_guarded, Recorder, SubmissionRecorder, SUBMIT_RETRIES, SUBMIT_TIMEOUT,
 };
 pub use tastytrade::{
-    RETRY_BACKOFF_BASE_MS, RETRY_JITTER_PCT, RETRY_MAX_ATTEMPTS, TastytradeConfig,
-    TastytradeTransport, TransportError, transform_account_event, transform_chain_quote,
-    transform_quote, validate_subscription,
+    transform_account_event, transform_chain_quote, transform_quote, validate_subscription,
+    TastytradeConfig, TastytradeTransport, TransportError, RETRY_BACKOFF_BASE_MS, RETRY_JITTER_PCT,
+    RETRY_MAX_ATTEMPTS,
 };
 pub use ticket::{
-    ConfirmedFill, DriftKind, ImportedPosition, ManualTicket, TicketDrift, TicketRead, TicketTracker,
-    TICKET_CONFIRMED_KIND, TICKET_ISSUED_KIND,
+    ConfirmedFill, DriftKind, ImportedPosition, ManualTicket, TicketDrift, TicketRead,
+    TicketTracker, TICKET_CONFIRMED_KIND, TICKET_ISSUED_KIND,
 };
-pub use venue::{AccountEvent, AccountSnapshot, BalanceEntry, DryRunOutcome, LegExecution, LegQuoteSource, QuoteSource, Venue};
+pub use venue::{
+    AccountEvent, AccountSnapshot, BalanceEntry, DryRunOutcome, LegExecution, LegQuoteSource,
+    QuoteSource, Venue,
+};
 
 #[cfg(test)]
 #[path = "../tests/soak.rs"]

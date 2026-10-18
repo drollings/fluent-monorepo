@@ -46,11 +46,13 @@ use crate::market_context::MarketContextKey;
 use crate::mtf::MtfStore;
 use crate::nan_hole;
 use crate::native_libs::{
-    BarContextServe, FetchCounters, LeaseKey, LeasedRing, MethodCtx, NativeOptions,
-    TickLegs,
+    BarContextServe, FetchCounters, LeaseKey, LeasedRing, MethodCtx, NativeOptions, TickLegs,
 };
 use crate::runtime::{PineRuntime, PineRuntimeConfig};
-use crate::value::{ColorHandle, DrawingHandle, DrawingKind, EnumHandle, FieldTable, NativeCall, PineValue, UserInstance, nz};
+use crate::value::{
+    nz, ColorHandle, DrawingHandle, DrawingKind, EnumHandle, FieldTable, NativeCall, PineValue,
+    UserInstance,
+};
 
 /// Fail-closed bound for `for` total iterations and `while` iterations.
 /// Breaching loops refuse instead of hanging the run.
@@ -297,13 +299,26 @@ impl Legs {
             volume: volume[i],
         };
         let col = |source: crate::price_source::PriceSource| {
-            (0..bars.len()).map(|i| source.compute_bar(tick_at(i))).collect()
+            (0..bars.len())
+                .map(|i| source.compute_bar(tick_at(i)))
+                .collect()
         };
         let hl2 = col(crate::price_source::PriceSource::Hl2);
         let hlc3 = col(crate::price_source::PriceSource::Hlc3);
         let ohlc4 = col(crate::price_source::PriceSource::Ohlc4);
         let wcl = col(crate::price_source::PriceSource::Wcl);
-        Self { open, high, low, close, volume, time, hl2, hlc3, ohlc4, wcl }
+        Self {
+            open,
+            high,
+            low,
+            close,
+            volume,
+            time,
+            hl2,
+            hlc3,
+            ohlc4,
+            wcl,
+        }
     }
 
     /// Borrow one named leg (`open/high/low/close/volume/time/hl2/hlc3/ohlc4/wcl`).
@@ -550,11 +565,7 @@ pub struct LinkedModule {
 impl LinkedModule {
     /// Bundle one parsed program with its alias table for linked execution.
     #[must_use]
-    pub fn new(
-        key: &str,
-        program: PineProgram,
-        aliases: HashMap<String, String>,
-    ) -> Self {
+    pub fn new(key: &str, program: PineProgram, aliases: HashMap<String, String>) -> Self {
         Self {
             key: key.to_owned(),
             program,
@@ -822,8 +833,12 @@ impl PineEngine {
         inputs: InputSet,
     ) -> Result<RunOutcome, KernelError> {
         self.state = EngineState::fresh();
-        self.state.chart_symbol.clone_from(&self.runtime.config().chart_symbol);
-        self.state.chart_period.clone_from(&self.runtime.config().chart_period);
+        self.state
+            .chart_symbol
+            .clone_from(&self.runtime.config().chart_symbol);
+        self.state
+            .chart_period
+            .clone_from(&self.runtime.config().chart_period);
         self.state.tick_times = tick_times;
         self.state.ltf_injections.clone_from(&self.ltf_injections);
         self.state
@@ -832,7 +847,10 @@ impl PineEngine {
         self.state.native.clone_from(&self.native);
         // The context provider's resident tape: clone the chart bars only
         // when the run links the library, so non-context runs pay nothing.
-        if modules.iter().any(|module| module.key == "showmethegrail/libApex") {
+        if modules
+            .iter()
+            .any(|module| module.key == "showmethegrail/libApex")
+        {
             self.state.run_bars = bars.to_vec();
         }
         // The input registry seeds from the run's inputs so caller overrides
@@ -840,10 +858,9 @@ impl PineEngine {
         self.state.core_inputs = inputs.clone();
         for module in modules {
             for (alias, target) in &module.aliases {
-                self.state.module_aliases.insert(
-                    (module.key.clone(), alias.clone()),
-                    target.clone(),
-                );
+                self.state
+                    .module_aliases
+                    .insert((module.key.clone(), alias.clone()), target.clone());
             }
         }
         // Unconditional top-level declarations register once, before the
@@ -916,12 +933,9 @@ impl EngineState {
             .functions
             .entry((self.current_module.clone(), name.to_owned()))
             .or_default();
-        if !slot
-            .iter()
-            .any(|(known_params, known_body)| {
-                known_params == params && known_body.as_slice() == body
-            })
-        {
+        if !slot.iter().any(|(known_params, known_body)| {
+            known_params == params && known_body.as_slice() == body
+        }) {
             slot.push((params.to_vec(), std::sync::Arc::new(body.to_vec())));
         }
     }
@@ -1210,9 +1224,7 @@ impl EngineState {
                         if let Some((mut instance, home)) = self.take_object(ctx, head)? {
                             if !instance.fields.contains_key(field) {
                                 self.put_object(ctx, home, instance, false)?;
-                                return Err(refused(format!(
-                                    "unknown field '{head}.{field}'"
-                                )));
+                                return Err(refused(format!("unknown field '{head}.{field}'")));
                             }
                             instance.fields.insert(field.to_owned(), assigned);
                             self.put_object(ctx, home, instance, true)?;
@@ -1382,9 +1394,11 @@ impl EngineState {
                 loop {
                     // An `na` condition ends the loop, mirroring the `if`
                     // rule above; numbers still refuse.
-                    let keep =
-                        branch_of("while condition", self.eval_expr(condition, ctx, legs)?.as_ref())?
-                            .unwrap_or(false);
+                    let keep = branch_of(
+                        "while condition",
+                        self.eval_expr(condition, ctx, legs)?.as_ref(),
+                    )?
+                    .unwrap_or(false);
                     if !keep {
                         break;
                     }
@@ -1410,9 +1424,7 @@ impl EngineState {
                 self.break_flag = false;
                 Ok(())
             }
-            PineStmt::Import(_)
-            | PineStmt::LibraryDecl { .. }
-            | PineStmt::IndicatorDecl { .. } => {
+            PineStmt::Import(_) | PineStmt::LibraryDecl { .. } | PineStmt::IndicatorDecl { .. } => {
                 // Headers declare metadata for the loader and the import
                 // graph; the executor ignores them. A linked run carries the
                 // graph separately, so executing a program that still holds
@@ -1431,9 +1443,7 @@ impl EngineState {
                 self.declare_func(name, params, body);
                 Ok(())
             }
-            PineStmt::MethodDecl { name, params, body } => {
-                self.declare_method(name, params, body)
-            }
+            PineStmt::MethodDecl { name, params, body } => self.declare_method(name, params, body),
             PineStmt::ConstDecl { name, value, .. } => {
                 // Compile-time bindings evaluate once, on the first
                 // evaluated bar that declares them.
@@ -1563,9 +1573,7 @@ impl EngineState {
     /// shadow outer bindings, so the search runs top-down: a nested call
     /// reusing its caller's alias still reaches the nested receiver.
     fn receiver_slot(&self, alias: &str) -> Option<usize> {
-        self.receiver
-            .iter()
-            .rposition(|slot| slot.alias == alias)
+        self.receiver.iter().rposition(|slot| slot.alias == alias)
     }
 
     /// Write one field through a receiver alias into the live slot.
@@ -1749,7 +1757,9 @@ impl EngineState {
         mut current: UserInstance,
     ) -> Result<(), KernelError> {
         while let Some((mut parent, field)) = parents.pop() {
-            parent.fields.insert(field, Some(PineValue::Object(current)));
+            parent
+                .fields
+                .insert(field, Some(PineValue::Object(current)));
             current = parent;
         }
         self.put_object(ctx, home, current, false)
@@ -1849,7 +1859,9 @@ impl EngineState {
     /// so `fill(plot_var, ...)` pairs it; anything else clears a stale tag.
     fn refresh_plot_var(&mut self, name: &str, rhs: &PineExpr) {
         match rhs {
-            PineExpr::FunctionCall { name: callee, args, .. } if callee == "plot" => {
+            PineExpr::FunctionCall {
+                name: callee, args, ..
+            } if callee == "plot" => {
                 self.plot_vars.insert(name.to_owned(), plot_site_key(args));
             }
             _ => {
@@ -1886,10 +1898,8 @@ impl EngineState {
                     if let PineExpr::Variable(map_var) = &map_arg.value {
                         if let Some(key_value) = self.eval_expr(&key_arg.value, ctx, legs)? {
                             if let Some(key) = crate::value::map_key_of(&key_value) {
-                                self.map_prov.insert(
-                                    name.to_owned(),
-                                    (map_var.clone(), key, key_value),
-                                );
+                                self.map_prov
+                                    .insert(name.to_owned(), (map_var.clone(), key, key_value));
                             }
                         }
                     }
@@ -1939,8 +1949,7 @@ impl EngineState {
                 // only the returned value flows on.
                 match self.eval_expr(receiver, ctx, legs)? {
                     Some(PineValue::Object(instance)) => {
-                        let outcome =
-                            self.run_method(instance, method, args, ctx, legs, None)?;
+                        let outcome = self.run_method(instance, method, args, ctx, legs, None)?;
                         outcome.value
                     }
                     Some(other) => Err(refused(format!(
@@ -2058,7 +2067,9 @@ impl EngineState {
                 }
             }
         } else if let Some(depth) = self.receiver_slot(name) {
-            return Ok(Some(PineValue::Object(self.receiver[depth].instance.clone())));
+            return Ok(Some(PineValue::Object(
+                self.receiver[depth].instance.clone(),
+            )));
         }
         if let Some(bound) = self.variables.get(name) {
             return Ok(bound.clone());
@@ -2073,9 +2084,7 @@ impl EngineState {
             return self
                 .receiver
                 .last()
-                .map(|slot| {
-                    Some(PineValue::Object(slot.instance.clone()))
-                })
+                .map(|slot| Some(PineValue::Object(slot.instance.clone())))
                 .ok_or_else(|| refused("'this' is only bound inside a method"));
         }
         if let Some(field) = name.strip_prefix("this.") {
@@ -2200,9 +2209,8 @@ impl EngineState {
                 "negative history offset {bars_back} is not a series read"
             )));
         }
-        let back = usize::try_from(bars_back).map_err(|_| {
-            refused(format!("history offset {bars_back} does not fit this run"))
-        })?;
+        let back = usize::try_from(bars_back)
+            .map_err(|_| refused(format!("history offset {bars_back} does not fit this run")))?;
         if name == "bar_index" {
             // The cursor is a computed series, never a recorded one:
             // `bar_index[n]` reads the cursor `n` bars back, `na` when the
@@ -2254,7 +2262,11 @@ impl EngineState {
             }
         }
         Ok(position
-            .and_then(|index| self.history.get(name).and_then(|slot| slot.get(index).cloned()))
+            .and_then(|index| {
+                self.history
+                    .get(name)
+                    .and_then(|slot| slot.get(index).cloned())
+            })
             .flatten())
     }
 
@@ -2262,11 +2274,7 @@ impl EngineState {
     /// stores. The outer `None` means unbound here and now, which is
     /// distinct from bound-to-`na` — hence the nested option.
     #[allow(clippy::option_option)]
-    fn current_binding(
-        &self,
-        name: &str,
-        ctx: &RunCtx<'_>,
-    ) -> Option<Option<PineValue>> {
+    fn current_binding(&self, name: &str, ctx: &RunCtx<'_>) -> Option<Option<PineValue>> {
         if let Some(bound) = self.variables.get(name) {
             return Some(bound.clone());
         }
@@ -2422,12 +2430,12 @@ impl EngineState {
                 }
                 let site = format!("plotshape@{args:?}");
                 let series = values[0].clone();
-                let title = call_title(args, &values, &format!("plotshape:{}", self.plotshapes.len()));
-                match self
-                    .plotshapes
-                    .iter_mut()
-                    .find(|shape| shape.site == site)
-                {
+                let title = call_title(
+                    args,
+                    &values,
+                    &format!("plotshape:{}", self.plotshapes.len()),
+                );
+                match self.plotshapes.iter_mut().find(|shape| shape.site == site) {
                     Some(shape) => {
                         shape.values.push(series);
                     }
@@ -2456,7 +2464,14 @@ impl EngineState {
                     })
                     .collect();
                 let site = format!("input@{args:?}");
-                super::builtins_core::call("input", method, &site, &core_args, &[], &mut self.core_inputs)
+                super::builtins_core::call(
+                    "input",
+                    method,
+                    &site,
+                    &core_args,
+                    &[],
+                    &mut self.core_inputs,
+                )
             }
             "time" => self.call_session_time(&values, ctx, legs),
             // Alert declarations evaluate their condition and record
@@ -2504,11 +2519,13 @@ impl EngineState {
                 legs.len()
             )));
         }
-        let [open, high, low, close] = legs
-            .try_into()
-            .expect("four legs checked above");
+        let [open, high, low, close] = legs.try_into().expect("four legs checked above");
         let site = format!("plotcandle@{args:?}");
-        let title = named_title(args, values, &format!("plotcandle:{}", self.plotcandles.len()));
+        let title = named_title(
+            args,
+            values,
+            &format!("plotcandle:{}", self.plotcandles.len()),
+        );
         let display = named_value(args, values, "display");
         let color = named_value(args, values, "color");
         let wickcolor = named_value(args, values, "wickcolor");
@@ -2603,7 +2620,9 @@ impl EngineState {
         let mut keys = Vec::with_capacity(2);
         for (arg, _) in positional.iter().take(2) {
             match &arg.value {
-                PineExpr::FunctionCall { name, args: inner, .. } if name == "plot" => {
+                PineExpr::FunctionCall {
+                    name, args: inner, ..
+                } if name == "plot" => {
                     keys.push(plot_site_key(inner));
                 }
                 PineExpr::Variable(var) => match self.plot_vars.get(var) {
@@ -2679,7 +2698,9 @@ impl EngineState {
             Some(Some(PineValue::Str(period))) => period,
             Some(None) => return Ok(None),
             Some(Some(other)) => {
-                return Err(refused(format!("time takes a timeframe string, got {other}")));
+                return Err(refused(format!(
+                    "time takes a timeframe string, got {other}"
+                )));
             }
             _ => return Err(refused("time takes a timeframe and an optional session")),
         };
@@ -2702,9 +2723,7 @@ impl EngineState {
                 Ok(read_leg(legs, "time", ctx.cursor()))
             }
             Some(None) => Ok(None),
-            Some(Some(other)) => Err(refused(format!(
-                "time takes a session string, got {other}"
-            ))),
+            Some(Some(other)) => Err(refused(format!("time takes a session string, got {other}"))),
             None => Ok(read_leg(legs, "time", ctx.cursor())),
         }
     }
@@ -2724,7 +2743,8 @@ impl EngineState {
         ctx: &mut RunCtx<'_>,
         legs: &Legs,
     ) -> Result<Option<PineValue>, KernelError> {
-        let usage = "request.security_lower_tf takes a symbol, a timeframe and a leg-expression list";
+        let usage =
+            "request.security_lower_tf takes a symbol, a timeframe and a leg-expression list";
         let mut positional = args.iter().filter(|arg| arg.name.is_none());
         let symbol_arg = positional.next().ok_or_else(|| refused(usage))?;
         let timeframe_arg = positional.next().ok_or_else(|| refused(usage))?;
@@ -2838,12 +2858,48 @@ impl EngineState {
         let mut columns = Vec::with_capacity(legs_wanted.len());
         for leg in &legs_wanted {
             let column: Vec<Option<PineValue>> = match leg.as_str() {
-                "time" => dataset.times.iter().skip(skip).take(take).map(|t| Some(PineValue::Int(*t))).collect(),
-                "open" => dataset.opens.iter().skip(skip).take(take).map(|v| crate::indicator::fin_or_none(*v).map(PineValue::Float)).collect(),
-                "high" => dataset.highs.iter().skip(skip).take(take).map(|v| crate::indicator::fin_or_none(*v).map(PineValue::Float)).collect(),
-                "low" => dataset.lows.iter().skip(skip).take(take).map(|v| crate::indicator::fin_or_none(*v).map(PineValue::Float)).collect(),
-                "close" => dataset.closes.iter().skip(skip).take(take).map(|v| crate::indicator::fin_or_none(*v).map(PineValue::Float)).collect(),
-                _ => dataset.volumes.iter().skip(skip).take(take).map(|v| crate::indicator::fin_or_none(*v).map(PineValue::Float)).collect(),
+                "time" => dataset
+                    .times
+                    .iter()
+                    .skip(skip)
+                    .take(take)
+                    .map(|t| Some(PineValue::Int(*t)))
+                    .collect(),
+                "open" => dataset
+                    .opens
+                    .iter()
+                    .skip(skip)
+                    .take(take)
+                    .map(|v| crate::indicator::fin_or_none(*v).map(PineValue::Float))
+                    .collect(),
+                "high" => dataset
+                    .highs
+                    .iter()
+                    .skip(skip)
+                    .take(take)
+                    .map(|v| crate::indicator::fin_or_none(*v).map(PineValue::Float))
+                    .collect(),
+                "low" => dataset
+                    .lows
+                    .iter()
+                    .skip(skip)
+                    .take(take)
+                    .map(|v| crate::indicator::fin_or_none(*v).map(PineValue::Float))
+                    .collect(),
+                "close" => dataset
+                    .closes
+                    .iter()
+                    .skip(skip)
+                    .take(take)
+                    .map(|v| crate::indicator::fin_or_none(*v).map(PineValue::Float))
+                    .collect(),
+                _ => dataset
+                    .volumes
+                    .iter()
+                    .skip(skip)
+                    .take(take)
+                    .map(|v| crate::indicator::fin_or_none(*v).map(PineValue::Float))
+                    .collect(),
             };
             columns.push(Some(PineValue::Array(column)));
         }
@@ -2871,7 +2927,8 @@ impl EngineState {
         ctx: &mut RunCtx<'_>,
         legs: &Legs,
     ) -> Result<Option<PineValue>, KernelError> {
-        let usage = "request.security takes a symbol, a timeframe and an expression or expression list";
+        let usage =
+            "request.security takes a symbol, a timeframe and an expression or expression list";
         let mut positional = args.iter().filter(|arg| arg.name.is_none());
         let symbol_arg = positional.next().ok_or_else(|| refused(usage))?;
         let timeframe_arg = positional.next().ok_or_else(|| refused(usage))?;
@@ -3128,9 +3185,7 @@ impl EngineState {
             return Ok(Some(PineValue::Bool(false)));
         }
         let times = legs.named("time").unwrap_or(&[]);
-        let (Some(&now), Some(&prev)) =
-            (times.get(cursor), times.get(cursor - 1))
-        else {
+        let (Some(&now), Some(&prev)) = (times.get(cursor), times.get(cursor - 1)) else {
             return Err(refused("timeframe.change needs bar times".to_owned()));
         };
         let bucket = super::builtins_core::timeframe_bucket(period, now as i64)?;
@@ -3258,7 +3313,10 @@ impl EngineState {
         values: &[Option<PineValue>],
     ) -> Result<Option<PineValue>, KernelError> {
         if kind != DrawingKind::Table {
-            return Err(refused(format!("unknown method '{}.cell'", kind.namespace())));
+            return Err(refused(format!(
+                "unknown method '{}.cell'",
+                kind.namespace()
+            )));
         }
         let handle = self.drawing_handle(kind, "cell", args, values)?;
         self.draw_events.push(DrawingEvent {
@@ -3363,7 +3421,9 @@ impl EngineState {
                 ))
             })?;
             for (prop, index) in &updates {
-                object.props.insert((*prop).to_owned(), positional[*index].clone());
+                object
+                    .props
+                    .insert((*prop).to_owned(), positional[*index].clone());
             }
             self.draw_events.push(DrawingEvent {
                 bar: self.snapshots.len(),
@@ -3511,11 +3571,12 @@ impl EngineState {
             return self.call_drawing(namespace, method, args, ctx, legs);
         }
         if namespace != "ta"
-            && !matches!(namespace, "math" | "str" | "input" | "array" | "matrix" | "map" | "color" | "timeframe")
+            && !matches!(
+                namespace,
+                "math" | "str" | "input" | "array" | "matrix" | "map" | "color" | "timeframe"
+            )
         {
-            if namespace == "this"
-                || (method == "new" && self.types.contains_key(namespace))
-            {
+            if namespace == "this" || (method == "new" && self.types.contains_key(namespace)) {
                 return self.call_instance_method(namespace, method, args, ctx, legs);
             }
             // Imported-type construction (`ALIAS.Type.new()`) resolves the
@@ -3524,9 +3585,7 @@ impl EngineState {
             if method == "new" {
                 if let Some((alias, type_name)) = namespace.split_once('.') {
                     let owner = self.current_module.clone();
-                    if self
-                        .module_aliases
-                        .contains_key(&(owner, alias.to_owned()))
+                    if self.module_aliases.contains_key(&(owner, alias.to_owned()))
                         && self.types.contains_key(type_name)
                     {
                         return self.call_instance_method(type_name, method, args, ctx, legs);
@@ -3566,8 +3625,12 @@ impl EngineState {
                     for arg in args {
                         values.push(self.eval_expr(&arg.value, ctx, legs)?);
                     }
-                    let (params, body) =
-                        select_function(&format!("{namespace}.{method}"), &overloads, args, &values)?;
+                    let (params, body) = select_function(
+                        &format!("{namespace}.{method}"),
+                        &overloads,
+                        args,
+                        &values,
+                    )?;
                     let site = format!("{target}::{method}@{args:?}");
                     return self.exec_call(site, &target, &params, args, &values, &body, ctx, legs);
                 }
@@ -3580,12 +3643,8 @@ impl EngineState {
                 if let Some((receiver_type, (method_owner, params, body))) = self
                     .methods
                     .iter()
-                    .find(|((_, name), (owner, _, _))| {
-                        *name == *method && *owner == target
-                    })
-                    .map(|((receiver_type, _), found)| {
-                        (receiver_type.clone(), found.clone())
-                    })
+                    .find(|((_, name), (owner, _, _))| *name == *method && *owner == target)
+                    .map(|((receiver_type, _), found)| (receiver_type.clone(), found.clone()))
                 {
                     let mut values = Vec::with_capacity(args.len());
                     for arg in args {
@@ -3645,16 +3704,9 @@ impl EngineState {
                             ctx,
                             legs,
                         );
-                        let back = self
-                            .receiver
-                            .pop()
-                            .expect("receiver pushed above");
+                        let back = self.receiver.pop().expect("receiver pushed above");
                         if let Some(home) = home {
-                            self.assign_path(
-                                ctx,
-                                &home,
-                                Some(PineValue::Object(back.instance)),
-                            )?;
+                            self.assign_path(ctx, &home, Some(PineValue::Object(back.instance)))?;
                         }
                         return value;
                     }
@@ -3670,9 +3722,7 @@ impl EngineState {
                         legs,
                     );
                 }
-                return Err(refused(format!(
-                    "unknown function '{namespace}.{method}'"
-                )));
+                return Err(refused(format!("unknown function '{namespace}.{method}'")));
             }
             // Collection method-call syntax (`items.push(x)`): a
             // variable-held array/matrix/map shares its namespace bridge.
@@ -3717,7 +3767,14 @@ impl EngineState {
             })
             .collect();
         let site = format!("{namespace}.{method}@{args:?}");
-        super::builtins_core::call(namespace, method, &site, &core_args, type_args, &mut self.core_inputs)
+        super::builtins_core::call(
+            namespace,
+            method,
+            &site,
+            &core_args,
+            type_args,
+            &mut self.core_inputs,
+        )
     }
 
     /// Collection method-call syntax (`items.push(x)`): a variable-held
@@ -3877,7 +3934,9 @@ impl EngineState {
                         "'{namespace}.new' takes no arguments here; fields bind through methods"
                     )));
                 }
-                return Ok(Some(PineValue::Object(self.construct(namespace, &fields, ctx, legs)?)));
+                return Ok(Some(PineValue::Object(
+                    self.construct(namespace, &fields, ctx, legs)?,
+                )));
             }
         }
         // Receiver-alias dispatch (`level.updateLevelSuccess(...)`): the
@@ -3894,17 +3953,14 @@ impl EngineState {
                     return outcome.value;
                 }
                 None => {
-                    return Err(refused(
-                        "receiver alias slot vanished during a method call",
-                    ));
+                    return Err(refused("receiver alias slot vanished during a method call"));
                 }
             }
         }
         match self.take_object(ctx, namespace)? {
             Some((instance, home)) => {
                 let lease = Self::lease_key_for(&home);
-                let outcome =
-                    self.run_method(instance, method, args, ctx, legs, lease)?;
+                let outcome = self.run_method(instance, method, args, ctx, legs, lease)?;
                 // Native serves synced the lease; Pine bodies invalidate it.
                 self.put_object(ctx, home, outcome.receiver, !outcome.served_native)?;
                 outcome.value
@@ -3912,14 +3968,11 @@ impl EngineState {
             None => match self.take_nested_object(ctx, namespace)? {
                 Some((instance, home)) => {
                     let lease = Self::lease_key_for(&home);
-                    let outcome =
-                        self.run_method(instance, method, args, ctx, legs, lease)?;
+                    let outcome = self.run_method(instance, method, args, ctx, legs, lease)?;
                     self.put_object(ctx, home, outcome.receiver, !outcome.served_native)?;
                     outcome.value
                 }
-                None => Err(refused(format!(
-                    "unknown method '{namespace}.{method}'"
-                ))),
+                None => Err(refused(format!("unknown method '{namespace}.{method}'"))),
             },
         }
     }
@@ -4009,65 +4062,65 @@ impl EngineState {
         if !self.tick_mode() || !self.ltf_injections.is_empty() {
             return Ok(NativeCall::Declined);
         }
-            let cursor = ctx.cursor();
-            let leg = |leg_name: &str| {
-                legs.named(leg_name)
-                    .and_then(|leg| leg.get(cursor).copied())
-            };
-            let (Some(open), Some(high), Some(low), Some(close), Some(volume)) = (
-                leg("open"),
-                leg("high"),
-                leg("low"),
-                leg("close"),
-                leg("volume"),
-            ) else {
-                return Ok(NativeCall::Declined);
-            };
-            let (Some(is_new), Some(is_confirmed)) = (
-                barstate_flag("isnew", ctx, legs, true),
-                barstate_flag("isconfirmed", ctx, legs, true),
-            ) else {
-                return Ok(NativeCall::Declined);
-            };
-            let Some(tick_ms) = self.tick_times.get(cursor).copied() else {
-                return Ok(NativeCall::Declined);
-            };
-            let frame = MethodCtx {
-                is_new,
-                is_confirmed,
-                legs: TickLegs {
-                    open,
-                    high,
-                    low,
-                    close,
-                    volume,
-                },
-                bar_open_ms: chart_ms(legs, cursor, true),
-                tick_ms,
-            };
-            // The resident-ring fast path: `Bars.fetch` on a leased slot
-            // with no positional-argument shape to misbind (named args
-            // already declined above). Anything else keeps the provider
-            // bridge, whose guard stays the single shape rule.
-            if type_name == "Bars"
-                && method == "fetch"
-                && args.is_empty()
-                && publisher == "showmethegrail"
-                && name == "libBars"
-            {
-                if let Some(key) = lease {
-                    return self.serve_leased(
-                        type_name,
-                        method,
-                        receiver_fields,
-                        values,
-                        &frame,
-                        key,
-                        provider,
-                    );
-                }
+        let cursor = ctx.cursor();
+        let leg = |leg_name: &str| {
+            legs.named(leg_name)
+                .and_then(|leg| leg.get(cursor).copied())
+        };
+        let (Some(open), Some(high), Some(low), Some(close), Some(volume)) = (
+            leg("open"),
+            leg("high"),
+            leg("low"),
+            leg("close"),
+            leg("volume"),
+        ) else {
+            return Ok(NativeCall::Declined);
+        };
+        let (Some(is_new), Some(is_confirmed)) = (
+            barstate_flag("isnew", ctx, legs, true),
+            barstate_flag("isconfirmed", ctx, legs, true),
+        ) else {
+            return Ok(NativeCall::Declined);
+        };
+        let Some(tick_ms) = self.tick_times.get(cursor).copied() else {
+            return Ok(NativeCall::Declined);
+        };
+        let frame = MethodCtx {
+            is_new,
+            is_confirmed,
+            legs: TickLegs {
+                open,
+                high,
+                low,
+                close,
+                volume,
+            },
+            bar_open_ms: chart_ms(legs, cursor, true),
+            tick_ms,
+        };
+        // The resident-ring fast path: `Bars.fetch` on a leased slot
+        // with no positional-argument shape to misbind (named args
+        // already declined above). Anything else keeps the provider
+        // bridge, whose guard stays the single shape rule.
+        if type_name == "Bars"
+            && method == "fetch"
+            && args.is_empty()
+            && publisher == "showmethegrail"
+            && name == "libBars"
+        {
+            if let Some(key) = lease {
+                return self.serve_leased(
+                    type_name,
+                    method,
+                    receiver_fields,
+                    values,
+                    &frame,
+                    key,
+                    provider,
+                );
             }
-            provider.call(type_name, method, receiver_fields, values, &frame)
+        }
+        provider.call(type_name, method, receiver_fields, values, &frame)
     }
 
     /// Serve one closed-bar context read (`MarketContext.fetch` shape) over
@@ -4167,18 +4220,41 @@ impl EngineState {
         let current = self.lease_versions.get(&key).copied().unwrap_or(0);
         let hit = matches!(self.leased_rings.get(&key), Some(entry) if entry.version == current);
         if !hit {
-            return self.serve_miss(type_name, method, receiver_fields, values, frame, key, current, provider);
+            return self.serve_miss(
+                type_name,
+                method,
+                receiver_fields,
+                values,
+                frame,
+                key,
+                current,
+                provider,
+            );
         }
         let tick = crate::native_libs::fetch_tick_from_frame(frame);
         let result = {
             let Some(entry) = self.leased_rings.get_mut(&key) else {
                 return self.serve_miss(
-                    type_name, method, receiver_fields, values, frame, key, current, provider,
+                    type_name,
+                    method,
+                    receiver_fields,
+                    values,
+                    frame,
+                    key,
+                    current,
+                    provider,
                 );
             };
             if entry.version != current {
                 return self.serve_miss(
-                    type_name, method, receiver_fields, values, frame, key, current, provider,
+                    type_name,
+                    method,
+                    receiver_fields,
+                    values,
+                    frame,
+                    key,
+                    current,
+                    provider,
                 );
             }
             entry
@@ -4312,10 +4388,7 @@ impl EngineState {
             alias: head.name.clone(),
         });
         let value = self.exec_call(site, &owner, &params[1..], args, &values, &body, ctx, legs);
-        let back = self
-            .receiver
-            .pop()
-            .expect("receiver pushed above");
+        let back = self.receiver.pop().expect("receiver pushed above");
         Ok(MethodOutcome {
             receiver: back.instance,
             value,
@@ -4344,9 +4417,7 @@ impl EngineState {
         legs: &Legs,
     ) -> Result<Option<PineValue>, KernelError> {
         if self.call_stack.len() >= MAX_CALL_DEPTH {
-            return Err(refused(format!(
-                "call depth exceeds {MAX_CALL_DEPTH}"
-            )));
+            return Err(refused(format!("call depth exceeds {MAX_CALL_DEPTH}")));
         }
         let mut bindings: Vec<(String, Option<PineValue>, Option<String>)> =
             Vec::with_capacity(params.len());
@@ -4431,7 +4502,12 @@ impl EngineState {
                 let current = self.variables.get(name).cloned().flatten();
                 if matches!(
                     current,
-                    Some(PineValue::Array(_) | PineValue::IntMap(_) | PineValue::Map(_) | PineValue::Matrix(_))
+                    Some(
+                        PineValue::Array(_)
+                            | PineValue::IntMap(_)
+                            | PineValue::Map(_)
+                            | PineValue::Matrix(_)
+                    )
                 ) {
                     write_backs.push((target.clone(), current));
                 }
@@ -4561,9 +4637,7 @@ impl EngineState {
             type_args: _,
         } = expr
         {
-            if let Some(PineExpr::Variable(target)) =
-                args.first().map(|arg| &arg.value)
-            {
+            if let Some(PineExpr::Variable(target)) = args.first().map(|arg| &arg.value) {
                 if namespace == "array" && method == "shift" {
                     return self.exec_shift_stmt(target, args, ctx, legs);
                 }
@@ -4649,9 +4723,11 @@ impl EngineState {
         ctx: &mut RunCtx<'_>,
         legs: &Legs,
     ) -> Result<&'a [PineStmt], KernelError> {
-        let taken =
-            branch_of("if condition", self.eval_expr(condition, ctx, legs)?.as_ref())?
-                .unwrap_or(false);
+        let taken = branch_of(
+            "if condition",
+            self.eval_expr(condition, ctx, legs)?.as_ref(),
+        )?
+        .unwrap_or(false);
         Ok(if taken {
             then_branch
         } else {
@@ -4808,11 +4884,7 @@ fn select_function(
 /// named arguments match by name, positionals fill the rest in order,
 /// defaults cover the remainder, and every provided value clears its
 /// parameter's declared type.
-fn overload_matches(
-    params: &[Param],
-    args: &[CallArg],
-    values: &[Option<PineValue>],
-) -> bool {
+fn overload_matches(params: &[Param], args: &[CallArg], values: &[Option<PineValue>]) -> bool {
     let mut positional = args
         .iter()
         .zip(values.iter())
@@ -4874,12 +4946,10 @@ fn param_matches(param: &Param, value: Option<&PineValue>) -> bool {
         "color" => matches!(present, PineValue::ColorHandle(_)),
         other => match present {
             PineValue::Object(instance) => {
-                instance.type_name == *other
-                    || trailing_type(other) == instance.type_name.as_str()
-            },
+                instance.type_name == *other || trailing_type(other) == instance.type_name.as_str()
+            }
             PineValue::EnumHandle(handle) => {
-                handle.enum_name == *other
-                    || trailing_type(other) == handle.enum_name.as_str()
+                handle.enum_name == *other || trailing_type(other) == handle.enum_name.as_str()
             }
             _ => false,
         },
@@ -4960,13 +5030,10 @@ fn bare_input_method(
     match first {
         None => Err(refused("'input' takes a default value")),
         Some(
-            PineExpr::BuiltinVariable(_)
-            | PineExpr::Variable(_)
-            | PineExpr::SeriesOffset { .. },
+            PineExpr::BuiltinVariable(_) | PineExpr::Variable(_) | PineExpr::SeriesOffset { .. },
         ) => Ok("source"),
         Some(PineExpr::Number(v)) => {
-            if v.fract() == 0.0
-                && (-9_007_199_254_740_992.0..=9_007_199_254_740_992.0).contains(v)
+            if v.fract() == 0.0 && (-9_007_199_254_740_992.0..=9_007_199_254_740_992.0).contains(v)
             {
                 Ok("int")
             } else {
@@ -5005,7 +5072,8 @@ struct MethodOutcome {
 /// Where a method-call receiver lives while the call runs, so the
 /// (possibly mutated) instance returns to the same home afterwards.
 #[derive(Debug)]
-enum ObjectHome {    /// Series variable in engine state.
+enum ObjectHome {
+    /// Series variable in engine state.
     Variables(String),
     /// Persistent `var` (`false`) or `varip` (`true`) binding.
     VarStore(String, bool),
@@ -5062,11 +5130,7 @@ fn draw_args(args: &[CallArg], values: &[Option<PineValue>]) -> Vec<DrawingArg> 
 
 /// Read one named drawing argument (`title`, `color`, `display`, ...):
 /// the evaluated value, whatever it is (absence included).
-fn named_value(
-    args: &[CallArg],
-    values: &[Option<PineValue>],
-    name: &str,
-) -> Option<PineValue> {
+fn named_value(args: &[CallArg], values: &[Option<PineValue>], name: &str) -> Option<PineValue> {
     args.iter()
         .zip(values.iter())
         .find(|(arg, _)| arg.name.as_deref() == Some(name))
@@ -5127,9 +5191,7 @@ fn branch_of(what: &str, value: Option<&PineValue>) -> Result<Option<bool>, Kern
     match value {
         Some(PineValue::Bool(flag)) => Ok(Some(*flag)),
         None => Ok(None),
-        Some(other) => Err(refused(format!(
-            "'{what}' needs a bool, got {other}"
-        ))),
+        Some(other) => Err(refused(format!("'{what}' needs a bool, got {other}"))),
     }
 }
 
@@ -5172,16 +5234,14 @@ fn kleene_absent(
     for side in [left, right] {
         match side {
             Some(PineValue::Bool(flag)) => {
-                let annihilates = matches!(op, BinaryOp::And) && !flag
-                    || matches!(op, BinaryOp::Or) && *flag;
+                let annihilates =
+                    matches!(op, BinaryOp::And) && !flag || matches!(op, BinaryOp::Or) && *flag;
                 if annihilates {
                     decided = Some(*flag);
                 }
             }
             Some(other) => {
-                return Err(refused(format!(
-                    "operator '{op}' needs bools, got {other}"
-                )));
+                return Err(refused(format!("operator '{op}' needs bools, got {other}")));
             }
             None => {}
         }
@@ -5203,9 +5263,7 @@ fn whole_number(what: &str, value: Option<&PineValue>) -> Result<i64, KernelErro
             Ok(*f as i64)
         }
         None => Err(refused(format!("'{what}' is na"))),
-        Some(other) => Err(refused(format!(
-            "'{what}' needs an int, got {other}"
-        ))),
+        Some(other) => Err(refused(format!("'{what}' needs an int, got {other}"))),
     }
 }
 
@@ -5292,7 +5350,11 @@ fn barstate_flag(member: &str, ctx: &RunCtx<'_>, legs: &Legs, tick_mode: bool) -
     };
     match member {
         "isfirst" => Some(cursor == 0),
-        "isnew" => Some(if tick_mode { changed_since_prev() } else { true }),
+        "isnew" => Some(if tick_mode {
+            changed_since_prev()
+        } else {
+            true
+        }),
         "isconfirmed" => Some(if tick_mode {
             changes_before_next()
         } else {
@@ -5307,8 +5369,7 @@ fn barstate_flag(member: &str, ctx: &RunCtx<'_>, legs: &Legs, tick_mode: bool) -
 
 /// One named-leg read at the cursor.
 fn read_leg(legs: &Legs, name: &str, cursor: usize) -> Option<PineValue> {
-    legs.named(name)
-        .and_then(|leg| read_leg_slice(leg, cursor))
+    legs.named(name).and_then(|leg| read_leg_slice(leg, cursor))
 }
 
 /// One named-leg raw float at the cursor (`NaN` when absent).
@@ -5388,9 +5449,7 @@ fn binary(
             BinaryOp::Equal => a == b,
             BinaryOp::NotEqual => a != b,
             _ => {
-                return Err(refused(format!(
-                    "operator '{op}' does not apply to bools"
-                )));
+                return Err(refused(format!("operator '{op}' does not apply to bools")));
             }
         }))),
         (PineValue::Str(a), PineValue::Str(b)) => Ok(Some(match op {
@@ -5438,15 +5497,17 @@ fn binary(
                 )));
             }
         }))),
-        (PineValue::EnumHandle(a), PineValue::EnumHandle(b)) => Ok(Some(PineValue::Bool(match op {
-            BinaryOp::Equal => a.enum_name == b.enum_name && a.member == b.member,
-            BinaryOp::NotEqual => a.enum_name != b.enum_name || a.member != b.member,
-            _ => {
-                return Err(refused(format!(
-                    "operator '{op}' does not apply to enum members"
-                )));
-            }
-        }))),
+        (PineValue::EnumHandle(a), PineValue::EnumHandle(b)) => {
+            Ok(Some(PineValue::Bool(match op {
+                BinaryOp::Equal => a.enum_name == b.enum_name && a.member == b.member,
+                BinaryOp::NotEqual => a.enum_name != b.enum_name || a.member != b.member,
+                _ => {
+                    return Err(refused(format!(
+                        "operator '{op}' does not apply to enum members"
+                    )));
+                }
+            })))
+        }
         _ => Err(refused(format!(
             "operator '{op}' does not apply to {first} and {second}"
         ))),
@@ -5500,9 +5561,7 @@ fn float_binary(op: BinaryOp, a: f64, b: f64) -> Result<Option<PineValue>, Kerne
         BinaryOp::Greater => PineValue::Bool(a > b),
         BinaryOp::GreaterEqual => PineValue::Bool(a >= b),
         BinaryOp::And | BinaryOp::Or => {
-            return Err(refused(format!(
-                "operator '{op}' needs bools, got numbers"
-            )));
+            return Err(refused(format!("operator '{op}' needs bools, got numbers")));
         }
     }))
 }
@@ -5510,15 +5569,18 @@ fn float_binary(op: BinaryOp, a: f64, b: f64) -> Result<Option<PineValue>, Kerne
 /// Integer arithmetic (`/` widens to float, as in Pine); connectives refuse.
 fn int_binary(op: BinaryOp, a: i64, b: i64) -> Result<Option<PineValue>, KernelError> {
     Ok(Some(match op {
-        BinaryOp::Add => PineValue::Int(a.checked_add(b).ok_or_else(|| {
-            refused("integer addition overflowed")
-        })?),
-        BinaryOp::Subtract => PineValue::Int(a.checked_sub(b).ok_or_else(|| {
-            refused("integer subtraction overflowed")
-        })?),
-        BinaryOp::Multiply => PineValue::Int(a.checked_mul(b).ok_or_else(|| {
-            refused("integer multiplication overflowed")
-        })?),
+        BinaryOp::Add => PineValue::Int(
+            a.checked_add(b)
+                .ok_or_else(|| refused("integer addition overflowed"))?,
+        ),
+        BinaryOp::Subtract => PineValue::Int(
+            a.checked_sub(b)
+                .ok_or_else(|| refused("integer subtraction overflowed"))?,
+        ),
+        BinaryOp::Multiply => PineValue::Int(
+            a.checked_mul(b)
+                .ok_or_else(|| refused("integer multiplication overflowed"))?,
+        ),
         BinaryOp::Divide => {
             if b == 0 {
                 return Ok(None);
@@ -5529,9 +5591,10 @@ fn int_binary(op: BinaryOp, a: i64, b: i64) -> Result<Option<PineValue>, KernelE
             if b == 0 {
                 return Ok(None);
             }
-            PineValue::Int(a.checked_rem(b).ok_or_else(|| {
-                refused("integer remainder overflowed")
-            })?)
+            PineValue::Int(
+                a.checked_rem(b)
+                    .ok_or_else(|| refused("integer remainder overflowed"))?,
+            )
         }
         BinaryOp::Equal => PineValue::Bool(a == b),
         BinaryOp::NotEqual => PineValue::Bool(a != b),
@@ -5540,9 +5603,7 @@ fn int_binary(op: BinaryOp, a: i64, b: i64) -> Result<Option<PineValue>, KernelE
         BinaryOp::Greater => PineValue::Bool(a > b),
         BinaryOp::GreaterEqual => PineValue::Bool(a >= b),
         BinaryOp::And | BinaryOp::Or => {
-            return Err(refused(format!(
-                "operator '{op}' needs bools, got numbers"
-            )));
+            return Err(refused(format!("operator '{op}' needs bools, got numbers")));
         }
     }))
 }
@@ -5557,14 +5618,17 @@ fn unary(op: UnaryOp, value: Option<&PineValue>) -> Result<Option<PineValue>, Ke
     };
     match (op, present) {
         (UnaryOp::Negate, PineValue::Float(v)) => Ok(Some(PineValue::Float(-*v))),
-        (UnaryOp::Negate, PineValue::Int(v)) => Ok(Some(PineValue::Int(v.checked_neg().ok_or_else(
-            || refused("integer negation overflowed"),
-        )?))),
+        (UnaryOp::Negate, PineValue::Int(v)) => Ok(Some(PineValue::Int(
+            v.checked_neg()
+                .ok_or_else(|| refused("integer negation overflowed"))?,
+        ))),
         (UnaryOp::Not, PineValue::Bool(flag)) => Ok(Some(PineValue::Bool(!*flag))),
         (UnaryOp::Not, _) => Err(refused(format!(
             "operator '{op}' needs a bool, got {present}"
         ))),
-        _ => Err(refused(format!("operator '{op}' does not apply to {present}"))),
+        _ => Err(refused(format!(
+            "operator '{op}' does not apply to {present}"
+        ))),
     }
 }
 

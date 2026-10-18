@@ -13,8 +13,8 @@
 
 use protopyne_types::Bar;
 use protopyne_view::ChartBar;
-use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive as _;
+use rust_decimal::Decimal;
 
 /// The wire row under the display side's name (one definition, in
 /// [`protopyne_view`]).
@@ -30,7 +30,11 @@ pub use protopyne_view::ChartBars;
 #[must_use]
 pub fn to_display_float(value: Decimal) -> Option<f64> {
     let flat = value.to_f64()?;
-    if flat.is_finite() { Some(flat) } else { None }
+    if flat.is_finite() {
+        Some(flat)
+    } else {
+        None
+    }
 }
 
 /// Convert one closed bar, or `None` when a leg has no finite chart float.

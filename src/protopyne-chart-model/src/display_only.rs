@@ -18,7 +18,7 @@
 use std::convert::Infallible;
 use std::str::FromStr;
 
-use protopyne_types::{DecimalScaleError, Money, parse_scale_guarded};
+use protopyne_types::{parse_scale_guarded, DecimalScaleError, Money};
 use rust_decimal::Decimal;
 
 /// Fenced display float: provenance for values that came from `Decimal`.
@@ -116,8 +116,9 @@ impl DisplayOnly<String> {
                 DisplayOnlyError::InvalidDecimal("decimal scale exceeds 28 places")
             }
         })?;
-        let amount: Decimal =
-            text.parse().map_err(|_| DisplayOnlyError::InvalidDecimal("decimal unrepresentable"))?;
+        let amount: Decimal = text
+            .parse()
+            .map_err(|_| DisplayOnlyError::InvalidDecimal("decimal unrepresentable"))?;
         Ok(Money::new(amount))
     }
 }

@@ -64,8 +64,12 @@ pub fn export_rows_json(rows: &[ChartRow], dropped: u64) -> Result<String, EguiE
             csv_float(leg, index)?;
         }
     }
-    serde_json::to_string(&ChartBars { rows: rows.to_vec(), dropped }).map_err(|e| {
-        EguiError::Dependency { reason: format!("rows JSON refused: {e}") }
+    serde_json::to_string(&ChartBars {
+        rows: rows.to_vec(),
+        dropped,
+    })
+    .map_err(|e| EguiError::Dependency {
+        reason: format!("rows JSON refused: {e}"),
     })
 }
 
@@ -100,7 +104,9 @@ pub fn export_overlay_json(
         values: values.to_vec(),
         dropped,
     })
-    .map_err(|e| EguiError::Dependency { reason: format!("overlay JSON refused: {e}") })
+    .map_err(|e| EguiError::Dependency {
+        reason: format!("overlay JSON refused: {e}"),
+    })
 }
 
 #[cfg(test)]

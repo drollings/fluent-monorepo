@@ -32,31 +32,54 @@ fn pane_and_theme_fields_round_trip() {
     }
     theme.set_field("bull", "#FFFFFF").expect("color writes");
     assert_eq!(theme.bull, "#FFFFFF");
-    assert!(theme.set_field("no_such_field", "x").is_err(), "unknown fields refuse");
+    assert!(
+        theme.set_field("no_such_field", "x").is_err(),
+        "unknown fields refuse"
+    );
 }
 
 #[test]
 fn constraints_refuse_with_reasons() {
     assert!(
-        PaneConfig::new().name(String::new()).build().validate().is_err(),
+        PaneConfig::new()
+            .name(String::new())
+            .build()
+            .validate()
+            .is_err(),
         "empty pane name refuses"
     );
     for share in [0.0, -0.5, 1.5, f64::NAN] {
         assert!(
-            PaneConfig::new().name("price".to_owned()).height_share(share).build().validate().is_err(),
+            PaneConfig::new()
+                .name("price".to_owned())
+                .height_share(share)
+                .build()
+                .validate()
+                .is_err(),
             "share {share} refuses"
         );
     }
 
     assert!(
-        ThemeConfig::new().bull("red".to_owned()).build().validate().is_err(),
+        ThemeConfig::new()
+            .bull("red".to_owned())
+            .build()
+            .validate()
+            .is_err(),
         "non-hex color refuses"
     );
     assert!(
-        ThemeConfig::new().name(String::new()).build().validate().is_err(),
+        ThemeConfig::new()
+            .name(String::new())
+            .build()
+            .validate()
+            .is_err(),
         "empty theme name refuses"
     );
-    assert!(ThemeConfig::default().validate().is_ok(), "default theme validates");
+    assert!(
+        ThemeConfig::default().validate().is_ok(),
+        "default theme validates"
+    );
 }
 
 #[test]
@@ -77,8 +100,7 @@ fn theme_resolves_style_keys() {
 
 #[test]
 fn configs_are_components_without_hand_rolled_downcasts() {
-    let pane: Arc<dyn Component> =
-        Arc::new(PaneConfig::new().name("price".to_owned()).build());
+    let pane: Arc<dyn Component> = Arc::new(PaneConfig::new().name("price".to_owned()).build());
     assert!(fluent_wvr::component_downcast_ref::<PaneConfig>(&*pane).is_some());
     let theme: Arc<dyn Component> = Arc::new(ThemeConfig::default());
     assert!(fluent_wvr::component_downcast_ref::<ThemeConfig>(&*theme).is_some());
@@ -90,7 +112,18 @@ fn pane_and_theme_execute_when_valid() {
     let ctx = WorkContext::default();
     let pane = PaneConfig::new().name("price".to_owned()).build();
     assert!(pane.execute(&ctx).expect("valid pane").success);
-    assert!(ThemeConfig::default().execute(&ctx).expect("valid theme").success);
-    let broken = PaneConfig::new().name("x".to_owned()).height_share(0.0).build();
-    assert!(broken.execute(&ctx).is_err(), "invalid pane refuses at execute");
+    assert!(
+        ThemeConfig::default()
+            .execute(&ctx)
+            .expect("valid theme")
+            .success
+    );
+    let broken = PaneConfig::new()
+        .name("x".to_owned())
+        .height_share(0.0)
+        .build();
+    assert!(
+        broken.execute(&ctx).is_err(),
+        "invalid pane refuses at execute"
+    );
 }

@@ -15,13 +15,14 @@ pub mod gateway;
 pub mod symbols;
 pub mod views;
 
-pub use gateway::{GatewayError, MockGateway, TerminalGateway, validate_symbol_timeframe};
+pub use gateway::{validate_symbol_timeframe, GatewayError, MockGateway, TerminalGateway};
 pub use symbols::{
-    AssetClass, InstrumentDecl, SYMBOL_CATALOG, discovered_symbol_rows, pick_default_symbol,
-    symbol_catalog,
+    discovered_symbol_rows, pick_default_symbol, symbol_catalog, AssetClass, InstrumentDecl,
+    SYMBOL_CATALOG,
 };
 pub use views::{
     ArmResponse, ChartBar, ChartBars, CommandStatus, DenyCount, HealthView, JournalRowView,
-    OverlaySeries, PortfolioView, PositionView, PreviewResponse, ProposalView, ReplayStepView,
+    OverlaySeries, PortfolioView, PositionView, PreviewResponse, ProposalView, ReplayDecisionView,
+    ReplayLegView, ReplayPositionView, ReplayStartParams, ReplayStateView, ReplayStepView,
     ReplayView, SymbolInfoView, WorstCase,
 };

@@ -13,7 +13,7 @@
 use protopyne_types::{Bar, Timeframe};
 
 use crate::key::{SymbolId, TapeKey};
-pub use crate::registry::test_setup::{VENUE, with_registry_caps};
+pub use crate::registry::test_setup::{with_registry_caps, VENUE};
 use crate::store::{CandleStore, WritePolicy};
 use crate::tape::MarketTape;
 

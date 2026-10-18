@@ -199,9 +199,15 @@ async fn cancel_on_terminal_orders_is_refused() {
         .await
         .expect("buy fills");
     assert_eq!(record.status, OrderStatus::Filled);
-    let err = venue.cancel("t#0", now()).await.expect_err("terminal cancel must refuse");
+    let err = venue
+        .cancel("t#0", now())
+        .await
+        .expect_err("terminal cancel must refuse");
     assert!(matches!(err, VenueError::Invalid(_)));
-    assert!(err.to_string().contains("terminal"), "refusal names the state, got: {err}");
+    assert!(
+        err.to_string().contains("terminal"),
+        "refusal names the state, got: {err}"
+    );
 }
 
 #[tokio::test]

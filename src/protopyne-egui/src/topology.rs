@@ -9,10 +9,10 @@
 //! through [`cache_key_for`].
 
 use common_core::hash::fingerprint_framed;
-use fluent_egui::{EguiError, PanePlan, ReplayController, cache_key};
+use fluent_egui::{cache_key, EguiError, PanePlan, ReplayController};
 use protopyne_chart_model::{ChartRow, DisplayOnly};
-use protopyne_kernels::indicator::{IndicatorId, IndicatorRegistry, ParamSet, execution_order};
-use protopyne_kernels::{OwnedOhlcv, PriceSource, builtin_registry, nan_hole};
+use protopyne_kernels::indicator::{execution_order, IndicatorId, IndicatorRegistry, ParamSet};
+use protopyne_kernels::{builtin_registry, nan_hole, OwnedOhlcv, PriceSource};
 
 /// Price pane: converted rows, no upstream pane.
 pub const PRICE_NODE: &str = "price";
@@ -35,7 +35,9 @@ pub const HEALTH_MA_NODE: &str = "health:ma";
 
 /// Carry a graph refusal across the crate boundary without a second error type.
 fn describe_graph(error: &fluent_dag::dep_graph::GraphError) -> EguiError {
-    EguiError::Dependency { reason: error.to_string() }
+    EguiError::Dependency {
+        reason: error.to_string(),
+    }
 }
 
 /// Build the standard pane topology: price/volume roots, the smoothing pair,
@@ -78,7 +80,9 @@ pub fn cache_key_for(node: &str, params: &ParamSet) -> u64 {
 
 /// Carry a kernel refusal across the crate boundary without a second error type.
 pub(crate) fn describe_kernel(error: &protopyne_kernels::KernelError) -> EguiError {
-    EguiError::Dependency { reason: error.to_string() }
+    EguiError::Dependency {
+        reason: error.to_string(),
+    }
 }
 
 /// One indicator input: raw bars or a published series.
@@ -161,7 +165,8 @@ impl SeriesCatalog {
 
     /// Publish (or replace) one node's series under its cache key.
     pub fn publish(&mut self, node: &str, key: u64, values: Vec<Option<f64>>) {
-        self.series.insert(node.to_owned(), PublishedSeries { key, values });
+        self.series
+            .insert(node.to_owned(), PublishedSeries { key, values });
     }
 
     /// Drop every published series (a removal or a fresh recompute).
@@ -186,7 +191,17 @@ impl SeriesCatalog {
     /// bars. `None` when the node never published.
     #[must_use]
     pub fn leading_holes(&self, node: &str) -> Option<usize> {
-        self.resolve(node).map(|values| values.iter().take_while(|value| value.is_none()).count())
+        self.resolve(node)
+            .map(|values| values.iter().take_while(|value| value.is_none()).count())
+    }
+
+    /// Published node names, sorted: the series picker lists these as
+    /// `series:<node>` options beside the price-source catalogue.
+    #[must_use]
+    pub fn node_names(&self) -> Vec<String> {
+        let mut names: Vec<String> = self.series.keys().cloned().collect();
+        names.sort();
+        names
     }
 }
 
@@ -198,7 +213,11 @@ pub fn series_frame(rows: &[ChartRow], values: &[Option<f64>]) -> Result<OwnedOh
     if values.len() != rows.len() {
         return Err(EguiError::InvalidParam {
             what: "series".to_owned(),
-            reason: format!("series length {} does not match {} rows", values.len(), rows.len()),
+            reason: format!(
+                "series length {} does not match {} rows",
+                values.len(),
+                rows.len()
+            ),
         });
     }
     let column: Vec<f64> = values.iter().map(|value| nan_hole(*value)).collect();
@@ -218,6 +237,40 @@ pub fn default_source_spelling() -> String {
     SeriesSource::default().to_string()
 }
 
+/// Canonical price-source ids for pickers: the eight OHLC-derived columns a
+/// smoothing or oscillator may read, in canonical order. Used as the
+/// `variants` behind every `source` field so the settings pane offers a
+/// dropdown, never free text, for bar inputs (`series:<node>` spellings still
+/// validate and render as unlisted rows for producer inputs).
+#[must_use]
+pub fn price_source_ids() -> Vec<String> {
+    PriceSource::all()
+        .iter()
+        .map(|source| source.name().to_owned())
+        .collect()
+}
+
+/// Theme style keys for pickers: every key a series may resolve against the
+/// theme. Used as the `variants` behind every `*_style`/`style` field so line
+/// colors are catalogue picks, never free text. The Style tab's per-indicator
+/// overrides (colors, width) stay on the shared `IndicatorStyle` component
+/// with its own Material color/slider editors.
+#[must_use]
+pub fn theme_style_keys() -> Vec<String> {
+    vec![
+        "bull".to_owned(),
+        "bear".to_owned(),
+        "fast".to_owned(),
+        "slow".to_owned(),
+        "bull_down".to_owned(),
+        "bear_up".to_owned(),
+        "ribbon_bull".to_owned(),
+        "ribbon_bear".to_owned(),
+        "grid".to_owned(),
+        "background".to_owned(),
+    ]
+}
+
 /// The input column for a source: bar columns read the rows (producer
 /// warmup zero — kernels emit their own holes), series columns resolve from
 /// the catalog or refuse naming the node.
@@ -232,10 +285,12 @@ pub fn resolve_input_column(
             Ok((frame.close.iter().map(|value| Some(*value)).collect(), 0))
         }
         SeriesSource::Series(node) => {
-            let values = series.resolve(node).ok_or_else(|| EguiError::InvalidParam {
-                what: "series".to_owned(),
-                reason: format!("unknown input series {node:?}"),
-            })?;
+            let values = series
+                .resolve(node)
+                .ok_or_else(|| EguiError::InvalidParam {
+                    what: "series".to_owned(),
+                    reason: format!("unknown input series {node:?}"),
+                })?;
             let warmup = series.leading_holes(node).unwrap_or(0);
             Ok((values.to_vec(), warmup))
         }
@@ -278,8 +333,10 @@ pub fn kernel_preview_frame_with_source(rows: &[ChartRow], _source: PriceSource)
     let high: Vec<DisplayOnly<f64>> = rows.iter().map(|row| DisplayOnly::new(row.high)).collect();
     let low: Vec<DisplayOnly<f64>> = rows.iter().map(|row| DisplayOnly::new(row.low)).collect();
     let close: Vec<DisplayOnly<f64>> = rows.iter().map(|row| DisplayOnly::new(row.close)).collect();
-    let volume: Vec<DisplayOnly<f64>> =
-        rows.iter().map(|row| DisplayOnly::new(row.volume as f64)).collect();
+    let volume: Vec<DisplayOnly<f64>> = rows
+        .iter()
+        .map(|row| DisplayOnly::new(row.volume as f64))
+        .collect();
     OwnedOhlcv {
         open: open.into_iter().map(DisplayOnly::reveal).collect(),
         high: high.into_iter().map(DisplayOnly::reveal).collect(),
@@ -311,10 +368,15 @@ pub(crate) fn kernel_series(
     frame: &OwnedOhlcv,
 ) -> Result<Vec<Option<f64>>, EguiError> {
     let registry = builtin_registry().map_err(|e| describe_kernel(&e))?;
-    let kernel = registry.get(kernel_id).ok_or_else(|| EguiError::Dependency {
-        reason: format!("kernel not registered: {kernel_id}"),
-    })?;
-    kernel.batch(&frame.views(), params).map(|result| result.values).map_err(|e| describe_kernel(&e))
+    let kernel = registry
+        .get(kernel_id)
+        .ok_or_else(|| EguiError::Dependency {
+            reason: format!("kernel not registered: {kernel_id}"),
+        })?;
+    kernel
+        .batch(&frame.views(), params)
+        .map(|result| result.values)
+        .map_err(|e| describe_kernel(&e))
 }
 
 /// A kernel's declared warmup for parameters: bars needed before the first
@@ -323,9 +385,11 @@ pub(crate) fn kernel_series(
 /// zero (which would fabricate a value where a hole belongs).
 pub fn kernel_warmup(kernel_id: &str, params: &ParamSet) -> Result<usize, EguiError> {
     let registry = builtin_registry().map_err(|e| describe_kernel(&e))?;
-    let kernel = registry.get(kernel_id).ok_or_else(|| EguiError::Dependency {
-        reason: format!("kernel not registered: {kernel_id}"),
-    })?;
+    let kernel = registry
+        .get(kernel_id)
+        .ok_or_else(|| EguiError::Dependency {
+            reason: format!("kernel not registered: {kernel_id}"),
+        })?;
     kernel.warmup(params).map_err(|e| describe_kernel(&e))
 }
 

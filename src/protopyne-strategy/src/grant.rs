@@ -31,8 +31,7 @@ macro_rules! json_boundary {
         impl FromStr for $ty {
             type Err = String;
             fn from_str(s: &str) -> Result<Self, Self::Err> {
-                serde_json::from_str(s)
-                    .map_err(|e| format!("invalid {} document: {e}", $what))
+                serde_json::from_str(s).map_err(|e| format!("invalid {} document: {e}", $what))
             }
         }
 
@@ -46,9 +45,7 @@ macro_rules! json_boundary {
 
 /// Entry/exit/roll permissions inside a grant's scope. Exit-only operation
 /// is the low-risk default: entries need an explicit opt-in.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, FieldAccess, Describable,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, FieldAccess, Describable)]
 pub struct GrantPermission {
     /// Whether new exposure may be opened.
     #[field(desc = "Whether new exposure may be opened (tightening clears it)")]
@@ -89,7 +86,9 @@ pub struct GrantScope {
     #[field(skip)]
     pub directions: Vec<Direction>,
     /// Lifecycle permissions.
-    #[field(desc = "Lifecycle permissions as a JSON document (tightening clears entries, exits, rolls)")]
+    #[field(
+        desc = "Lifecycle permissions as a JSON document (tightening clears entries, exits, rolls)"
+    )]
     pub permissions: GrantPermission,
 }
 
@@ -122,7 +121,10 @@ impl GrantScope {
     #[must_use]
     pub fn is_subset_of(&self, other: &Self) -> bool {
         self.strategies.iter().all(|s| other.strategies.contains(s))
-            && self.underlyings.iter().all(|u| other.underlyings.contains(u))
+            && self
+                .underlyings
+                .iter()
+                .all(|u| other.underlyings.contains(u))
             && self.structures.iter().all(|s| other.structures.contains(s))
             && self.directions.iter().all(|d| other.directions.contains(d))
             && (!self.permissions.entries || other.permissions.entries)
@@ -156,10 +158,16 @@ json_boundary!(SignalThresholds, "signal thresholds");
 #[builder(start_fn = new)]
 pub struct TradeThresholds {
     /// Maximum loss any single trade may commit **(task-value)**.
-    #[field(desc = "Maximum loss one trade may commit, decimal major units (tightening lowers it)", format = "decimal")]
+    #[field(
+        desc = "Maximum loss one trade may commit, decimal major units (tightening lowers it)",
+        format = "decimal"
+    )]
     pub max_loss_per_trade: Money,
     /// Maximum bid/ask spread width the fill model tolerates **(task-value)**.
-    #[field(desc = "Maximum bid/ask spread width, decimal major units (tightening lowers it)", format = "decimal")]
+    #[field(
+        desc = "Maximum bid/ask spread width, decimal major units (tightening lowers it)",
+        format = "decimal"
+    )]
     pub max_spread_width: Money,
     /// Minimum days to expiry **(task-value)**.
     #[field(desc = "Minimum days to expiry (tightening raises it)")]
@@ -181,7 +189,10 @@ json_boundary!(TradeThresholds, "trade thresholds");
 pub struct PortfolioThresholds {
     /// Maximum aggregate committed max loss across open risk
     /// **(task-value)**.
-    #[field(desc = "Maximum aggregate committed max loss, decimal major units (tightening lowers it)", format = "decimal")]
+    #[field(
+        desc = "Maximum aggregate committed max loss, decimal major units (tightening lowers it)",
+        format = "decimal"
+    )]
     pub max_open_risk: Money,
     /// Maximum quote age in seconds before data counts as stale
     /// **(correctness)**.
@@ -206,10 +217,16 @@ pub struct GrantBudgets {
     #[field(desc = "Maximum contracts under this grant (tightening lowers it)")]
     pub max_contracts: u32,
     /// Maximum committed max loss under this grant **(task-value)**.
-    #[field(desc = "Maximum committed max loss, decimal major units (tightening lowers it)", format = "decimal")]
+    #[field(
+        desc = "Maximum committed max loss, decimal major units (tightening lowers it)",
+        format = "decimal"
+    )]
     pub max_loss: Money,
     /// Maximum committed notional under this grant **(task-value)**.
-    #[field(desc = "Maximum committed notional, decimal major units (tightening lowers it)", format = "decimal")]
+    #[field(
+        desc = "Maximum committed notional, decimal major units (tightening lowers it)",
+        format = "decimal"
+    )]
     pub max_notional: Money,
 }
 
@@ -238,8 +255,7 @@ pub struct GrantUsage {
 /// measure doubt in the producer's health, never the trade's merit, and must
 /// never approve or veto a trade on merit.
 #[derive(
-    Debug, Clone, Copy, Builder, PartialEq, Eq, Serialize, Deserialize, FieldAccess,
-    Describable,
+    Debug, Clone, Copy, Builder, PartialEq, Eq, Serialize, Deserialize, FieldAccess, Describable,
 )]
 #[builder(start_fn = new)]
 pub struct BreakerLimits {
@@ -503,9 +519,7 @@ pub struct GrantPatch {
     #[field(desc = "Replacement trade thresholds, one value per leaf (caps must not widen)")]
     pub trade: Option<TradeThresholds>,
     /// Replacement portfolio thresholds (caps must not widen).
-    #[field(
-        desc = "Replacement portfolio thresholds, one value per leaf (caps must not widen)"
-    )]
+    #[field(desc = "Replacement portfolio thresholds, one value per leaf (caps must not widen)")]
     pub portfolio: Option<PortfolioThresholds>,
     /// Replacement breaker limits (caps must not rise).
     #[field(desc = "Replacement breaker limits, one value per leaf (caps must not rise)")]
@@ -514,7 +528,10 @@ pub struct GrantPatch {
     #[field(skip)]
     pub scope: Option<GrantScope>,
     /// Replacement window end (must not move later).
-    #[field(desc = "Replacement window end, RFC 3339 (must not move later)", format = "date-time")]
+    #[field(
+        desc = "Replacement window end, RFC 3339 (must not move later)",
+        format = "date-time"
+    )]
     pub valid_until: Option<DateTime<Utc>>,
 }
 
@@ -548,7 +565,11 @@ impl Describable for GrantPatch {
             (
                 "signal",
                 "Replacement signal thresholds, one value per leaf (minimums must not fall)",
-                SignalThresholds::new().min_conviction(0.0).min_activity_score(0.0).build().describe(),
+                SignalThresholds::new()
+                    .min_conviction(0.0)
+                    .min_activity_score(0.0)
+                    .build()
+                    .describe(),
             ),
             (
                 "trade",
@@ -573,12 +594,18 @@ impl Describable for GrantPatch {
             (
                 "breakers",
                 "Replacement breaker limits, one value per leaf (caps must not rise)",
-                BreakerLimits::new().max_consecutive_errors(0).build().describe(),
+                BreakerLimits::new()
+                    .max_consecutive_errors(0)
+                    .build()
+                    .describe(),
             ),
         ];
         let mut properties = serde_json::Map::new();
         for (tier, description, schema) in leaf_schemas {
-            let leaves = schema.get("properties").cloned().unwrap_or(serde_json::Value::Null);
+            let leaves = schema
+                .get("properties")
+                .cloned()
+                .unwrap_or(serde_json::Value::Null);
             properties.insert(
                 tier.to_owned(),
                 serde_json::json!({
@@ -624,7 +651,13 @@ impl GrantDecision {
 /// Compare one committed total against its cap, denying on arithmetic
 /// overflow: an unrepresentable sum must refuse, never wrap or saturate into
 /// an authorization.
-fn budget_exceeded(used: Decimal, commit: Decimal, cap: Decimal, reasons: &mut Vec<String>, exhausted: &str) {
+fn budget_exceeded(
+    used: Decimal,
+    commit: Decimal,
+    cap: Decimal,
+    reasons: &mut Vec<String>,
+    exhausted: &str,
+) {
     match used.checked_add(commit) {
         Some(total) => {
             if total > cap {
@@ -727,8 +760,7 @@ pub fn evaluate_grant(
     if market.spread_width.as_decimal() > grant.trade.max_spread_width.as_decimal() {
         reasons.push("spread width above trade threshold".to_owned());
     }
-    if proposal.dte_days < grant.trade.min_dte_days
-        || proposal.dte_days > grant.trade.max_dte_days
+    if proposal.dte_days < grant.trade.min_dte_days || proposal.dte_days > grant.trade.max_dte_days
     {
         reasons.push("DTE outside trade window".to_owned());
     }

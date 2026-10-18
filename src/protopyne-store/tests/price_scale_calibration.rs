@@ -16,12 +16,12 @@
 use super::*;
 use protopyne_types::Timeframe;
 
+use crate::catalog::test_scale::{canonical, FIT, REFUSE};
 use crate::catalog::PriceScale;
 use crate::commit::test_tapes::{bar, ohlc};
 use crate::fold::FoldPolicy;
 use crate::range::TimeRange;
-use crate::catalog::test_scale::{FIT, REFUSE, canonical};
-use crate::tape::test_setup::{VENUE, m1_key, memory_tape, with_registry_caps};
+use crate::tape::test_setup::{m1_key, memory_tape, with_registry_caps, VENUE};
 
 /// Tally of the round-trip sweep: counts plus every mismatch named.
 struct ScaleReport {

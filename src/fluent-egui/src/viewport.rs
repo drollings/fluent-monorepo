@@ -9,7 +9,7 @@
 //! viewport in the terminal crate. No paint types enter here.
 
 use protopyne_chart_model::ChartRow;
-use protopyne_chart_scale::{PriceRange, PriceScale, PriceScaleMode, Tick, nice_ticks};
+use protopyne_chart_scale::{nice_ticks, PriceRange, PriceScale, PriceScaleMode, Tick};
 
 use crate::error::EguiError;
 
@@ -59,10 +59,12 @@ impl Viewport {
         inverted: bool,
     ) -> Result<Self, EguiError> {
         let range = PriceRange::new(min, max).map_err(describe_scale)?;
-        let scale =
-            PriceScale::new(mode, range, height, bar_spacing, base_value, inverted)
-                .map_err(describe_scale)?;
-        Ok(Self { scale, x_offset_px: 0.0 })
+        let scale = PriceScale::new(mode, range, height, bar_spacing, base_value, inverted)
+            .map_err(describe_scale)?;
+        Ok(Self {
+            scale,
+            x_offset_px: 0.0,
+        })
     }
 
     /// The owned canonical scale.
@@ -87,7 +89,10 @@ impl Viewport {
                 reason: "horizontal offset must be finite".to_owned(),
             });
         }
-        Ok(Self { x_offset_px, ..self })
+        Ok(Self {
+            x_offset_px,
+            ..self
+        })
     }
 
     /// Adopt another viewport's time axis: copy its `bar_spacing` and
@@ -104,7 +109,10 @@ impl Viewport {
             self.scale.inverted(),
         )
         .map_err(describe_scale)?;
-        Ok(Self { scale, x_offset_px: source.x_offset_px })
+        Ok(Self {
+            scale,
+            x_offset_px: source.x_offset_px,
+        })
     }
 
     /// The `[start, end)` bar indices whose centers fall inside the pane
@@ -138,7 +146,8 @@ impl Viewport {
     /// a pane with no area (`width_px <= 0.0`) paints nothing either: the one
     /// edge bar straddling x `0.0` would clip to nothing downstream.
     #[must_use]
-    pub fn culled_bar_range(self, width_px: f32, total_bars: usize) -> (usize, usize) {        if width_px <= 0.0 {
+    pub fn culled_bar_range(self, width_px: f32, total_bars: usize) -> (usize, usize) {
+        if width_px <= 0.0 {
             return (0, 0);
         }
         let (start, end) = self.visible_bar_range(width_px, total_bars);
@@ -169,7 +178,9 @@ impl Viewport {
         }
         let width = visible_end - visible_start;
         let start = visible_start.saturating_sub(width.min(visible_start));
-        let end = start.saturating_add(width.saturating_mul(PROPORTIONAL_CULL_FACTOR)).min(total_bars);
+        let end = start
+            .saturating_add(width.saturating_mul(PROPORTIONAL_CULL_FACTOR))
+            .min(total_bars);
         (start, end)
     }
 

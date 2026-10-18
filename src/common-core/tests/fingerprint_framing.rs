@@ -37,7 +37,10 @@ fn framed_digest_is_order_insensitive() {
 fn framed_digest_splits_adjacent_names() {
     let ab_c = fnv1a64(&framed_bytes(&[("ab", b"c")]));
     let a_bc = fnv1a64(&framed_bytes(&[("a", b"bc")]));
-    assert_ne!(ab_c, a_bc, "length framing must separate (\"ab\",\"c\") from (\"a\",\"bc\")");
+    assert_ne!(
+        ab_c, a_bc,
+        "length framing must separate (\"ab\",\"c\") from (\"a\",\"bc\")"
+    );
 }
 
 #[test]
@@ -64,14 +67,28 @@ fn json_digest_is_order_sensitive_struct_bytes() {
         length: i64,
         source: String,
     }
-    let bytes = serde_json::to_vec(&Cfg { length: 14, source: "close".to_owned() }).expect("serializes");
+    let bytes = serde_json::to_vec(&Cfg {
+        length: 14,
+        source: "close".to_owned(),
+    })
+    .expect("serializes");
     let digest = fnv1a64(&bytes);
-    assert_eq!(digest, fnv1a64(&serde_json::to_vec(&serde_json::json!({
-        "length": 14,
-        "source": "close",
-    })).expect("serializes")));
+    assert_eq!(
+        digest,
+        fnv1a64(
+            &serde_json::to_vec(&serde_json::json!({
+                "length": 14,
+                "source": "close",
+            }))
+            .expect("serializes")
+        )
+    );
     let other = fnv1a64(
-        &serde_json::to_vec(&Cfg { length: 15, source: "close".to_owned() }).expect("serializes"),
+        &serde_json::to_vec(&Cfg {
+            length: 15,
+            source: "close".to_owned(),
+        })
+        .expect("serializes"),
     );
     assert_ne!(digest, other);
 }

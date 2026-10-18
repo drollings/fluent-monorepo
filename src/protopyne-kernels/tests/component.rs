@@ -1,5 +1,7 @@
 use super::*;
-use crate::indicator::{Indicator, IndicatorResult, IndicatorSpec, IndicatorState, Ohlcv, ParamSet};
+use crate::indicator::{
+    Indicator, IndicatorResult, IndicatorSpec, IndicatorState, Ohlcv, ParamSet,
+};
 use crate::sma::SmaIndicator;
 use fluent_wvr::{Component, WorkContext, WorkUnit};
 use std::sync::Arc;
@@ -80,14 +82,17 @@ fn component_executes_batch_with_spec_identity() {
     let ctx = WorkContext::default();
     let output = unit.execute(&ctx).expect("batch executes");
     assert!(output.success);
-    let direct = indicator.batch(&closes_input().views(), &sma_params()).expect("direct batch");
+    let direct = indicator
+        .batch(&closes_input().views(), &sma_params())
+        .expect("direct batch");
     let decoded: IndicatorResult = output.data_take().expect("typed output round-trips");
     assert_eq!(decoded, direct, "the adapter must not skew values");
 }
 
 #[test]
 fn component_wires_spec_dependencies() {
-    let indicator: Arc<dyn Indicator> = Arc::new(ChainIndicator::new("child", vec!["sma".to_string()]));
+    let indicator: Arc<dyn Indicator> =
+        Arc::new(ChainIndicator::new("child", vec!["sma".to_string()]));
     let unit = IndicatorComponent::new(Arc::clone(&indicator), sma_params(), closes_input());
     let depends: Vec<String> = unit.depends().iter().map(ToString::to_string).collect();
     assert_eq!(depends, vec!["sma".to_string()]);
@@ -98,8 +103,12 @@ fn component_wires_spec_dependencies() {
 #[test]
 fn shared_registry_refuses_duplicates() {
     let registry = ComponentRegistry::new();
-    registry.register(Arc::new(SmaIndicator::new())).expect("first registration");
-    let err = registry.register(Arc::new(SmaIndicator::new())).expect_err("duplicate refused");
+    registry
+        .register(Arc::new(SmaIndicator::new()))
+        .expect("first registration");
+    let err = registry
+        .register(Arc::new(SmaIndicator::new()))
+        .expect_err("duplicate refused");
     assert!(err.to_string().contains("sma"));
     assert_eq!(registry.len(), 1);
 }
@@ -107,11 +116,18 @@ fn shared_registry_refuses_duplicates() {
 #[test]
 fn shared_registry_orders_dependencies_first() {
     let registry = ComponentRegistry::new();
-    registry.register(Arc::new(SmaIndicator::new())).expect("sma");
     registry
-        .register(Arc::new(ChainIndicator::new("child", vec!["sma".to_string()])))
+        .register(Arc::new(SmaIndicator::new()))
+        .expect("sma");
+    registry
+        .register(Arc::new(ChainIndicator::new(
+            "child",
+            vec!["sma".to_string()],
+        )))
         .expect("child");
-    let order = registry.execution_order(&["child".to_string()]).expect("order resolves");
+    let order = registry
+        .execution_order(&["child".to_string()])
+        .expect("order resolves");
     assert_eq!(order, vec!["sma".to_string(), "child".to_string()]);
     assert!(registry.execution_order(&["ghost".to_string()]).is_err());
 }
@@ -120,12 +136,17 @@ fn shared_registry_orders_dependencies_first() {
 fn doubles_override_execute_without_touching_kernels() {
     use crate::component::indicator_double;
     let indicator: Arc<dyn Indicator> = Arc::new(SmaIndicator::new());
-    let base: Arc<dyn Component> =
-        Arc::new(IndicatorComponent::new(indicator, sma_params(), closes_input()));
+    let base: Arc<dyn Component> = Arc::new(IndicatorComponent::new(
+        indicator,
+        sma_params(),
+        closes_input(),
+    ));
     let canned = IndicatorResult::new("sma".to_string(), vec![Some(1.0)]);
     let double = indicator_double(base, &canned);
     assert_eq!(double.name(), "sma");
-    let output = double.execute(&WorkContext::default()).expect("double executes");
+    let output = double
+        .execute(&WorkContext::default())
+        .expect("double executes");
     let decoded: IndicatorResult = output.data_take().expect("typed output round-trips");
     assert_eq!(decoded, canned);
 }
@@ -136,12 +157,21 @@ fn double_names_its_kernel_in_the_message() {
     // payload failure would surface in the message instead of a null success.
     use crate::component::indicator_double;
     let indicator: Arc<dyn Indicator> = Arc::new(SmaIndicator::new());
-    let base: Arc<dyn Component> =
-        Arc::new(IndicatorComponent::new(indicator, sma_params(), closes_input()));
+    let base: Arc<dyn Component> = Arc::new(IndicatorComponent::new(
+        indicator,
+        sma_params(),
+        closes_input(),
+    ));
     let canned = IndicatorResult::new("sma".to_string(), vec![Some(1.0)]);
     let double = indicator_double(base, &canned);
-    let output = double.execute(&WorkContext::default()).expect("double executes");
-    assert!(output.message.contains("doubled sma"), "got: {}", output.message);
+    let output = double
+        .execute(&WorkContext::default())
+        .expect("double executes");
+    assert!(
+        output.message.contains("doubled sma"),
+        "got: {}",
+        output.message
+    );
 }
 
 #[test]
@@ -149,8 +179,12 @@ fn dynamic_handles_run_bound_kernels() {
     use crate::component::dynamic_indicator;
     let indicator: Arc<dyn Indicator> = Arc::new(SmaIndicator::new());
     let handle = dynamic_indicator(Arc::clone(&indicator), sma_params(), closes_input());
-    let output = handle.execute(&WorkContext::default()).expect("dynamic executes");
+    let output = handle
+        .execute(&WorkContext::default())
+        .expect("dynamic executes");
     let decoded: IndicatorResult = output.data_take().expect("typed output round-trips");
-    let direct = indicator.batch(&closes_input().views(), &sma_params()).expect("direct batch");
+    let direct = indicator
+        .batch(&closes_input().views(), &sma_params())
+        .expect("direct batch");
     assert_eq!(decoded, direct);
 }

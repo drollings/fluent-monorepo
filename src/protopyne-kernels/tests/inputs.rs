@@ -43,11 +43,14 @@ fn declare_rejects_bad_bounds_and_duplicates() {
         )
         .is_err());
     assert!(inputs
-        .declare("nan", InputDef::Float {
-            default: f64::NAN,
-            min: 0.0,
-            max: 1.0,
-        })
+        .declare(
+            "nan",
+            InputDef::Float {
+                default: f64::NAN,
+                min: 0.0,
+                max: 1.0,
+            }
+        )
         .is_err());
     inputs.declare("length", length_def()).expect("valid def");
     assert!(inputs.declare("length", length_def()).is_err());

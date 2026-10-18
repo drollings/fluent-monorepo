@@ -36,7 +36,10 @@ fn serving_verdict_passes_healthy_and_unobserved_and_halts_on_outage() {
     );
     match serving_verdict(outage_reading()) {
         HealthVerdict::Halt { reasons } => {
-            assert!(reasons.iter().any(|r| r.contains("store")), "got: {reasons:?}");
+            assert!(
+                reasons.iter().any(|r| r.contains("store")),
+                "got: {reasons:?}"
+            );
         }
         HealthVerdict::Trade => panic!("an observed outage must halt"),
     }

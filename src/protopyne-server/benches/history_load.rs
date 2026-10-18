@@ -20,8 +20,8 @@ use criterion::{criterion_group, Criterion};
 
 use protopyne_server::{fold_frames, load_bars_file};
 use protopyne_store::{
-    AssetClass, CandleStore as _, FoldPolicy, MarketTape, PriceScale, ReadRequest as TapeReadRequest,
-    StoreStorage, TapeKey, TimeRange, WritePolicy,
+    AssetClass, CandleStore as _, FoldPolicy, MarketTape, PriceScale,
+    ReadRequest as TapeReadRequest, StoreStorage, TapeKey, TimeRange, WritePolicy,
 };
 use protopyne_types::{Bar, Timeframe};
 
@@ -226,7 +226,13 @@ fn tally_parquet(c: &mut Criterion) {
     group.bench_function("parquet_frames", |b| {
         b.iter(|| {
             let bars = load_bars_file(&fixtures.parquet).expect("loads");
-            let frames = fold_frames(&bars, Timeframe::M1, &TARGETS, protopyne_types::FoldEdges::CompleteOnly).expect("folds");
+            let frames = fold_frames(
+                &bars,
+                Timeframe::M1,
+                &TARGETS,
+                protopyne_types::FoldEdges::CompleteOnly,
+            )
+            .expect("folds");
             assert_eq!(frames.len(), TARGETS.len());
         });
     });
@@ -240,7 +246,13 @@ fn tally_csv(c: &mut Criterion) {
     group.bench_function("csv_frames", |b| {
         b.iter(|| {
             let bars = load_bars_file(&fixtures.csv).expect("loads");
-            let frames = fold_frames(&bars, Timeframe::M1, &TARGETS, protopyne_types::FoldEdges::CompleteOnly).expect("folds");
+            let frames = fold_frames(
+                &bars,
+                Timeframe::M1,
+                &TARGETS,
+                protopyne_types::FoldEdges::CompleteOnly,
+            )
+            .expect("folds");
             assert_eq!(frames.len(), TARGETS.len());
         });
     });

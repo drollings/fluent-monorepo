@@ -13,7 +13,7 @@ use super::*;
 use protopyne_types::Timeframe;
 
 use crate::commit::test_tapes::at_ms;
-use crate::fold::{FoldEdges, fold_bars, fold_bars_edges};
+use crate::fold::{fold_bars, fold_bars_edges, FoldEdges};
 
 /// One priced bar at an absolute millisecond stamp.
 fn bar_at(ts_ms: i64, o: &str, h: &str, l: &str, c: &str, volume: u64) -> Bar {
@@ -105,14 +105,25 @@ fn keep_partial_matches_fold_bars_bar_for_bar() {
 #[test]
 fn complete_only_serves_whole_buckets_with_window_edge_values() {
     let hour = Timeframe::H1.bucket_start_ms(1_700_000_000_000);
-    let folded =
-        fold_bars_edges(&eight_quarter_hours(hour), Timeframe::H1, FoldEdges::CompleteOnly)
-            .expect("aligned fold builds");
+    let folded = fold_bars_edges(
+        &eight_quarter_hours(hour),
+        Timeframe::H1,
+        FoldEdges::CompleteOnly,
+    )
+    .expect("aligned fold builds");
     assert_eq!(folded.len(), 2, "eight quarter-hours fill two whole hours");
     let first = &folded[0];
-    assert_eq!(first.ts.timestamp_millis(), hour, "stamped at the bucket start");
+    assert_eq!(
+        first.ts.timestamp_millis(),
+        hour,
+        "stamped at the bucket start"
+    );
     assert_eq!(first.o.to_string(), "100", "open is the first child's open");
-    assert_eq!(first.c.to_string(), "98.5", "close is the last child's close");
+    assert_eq!(
+        first.c.to_string(),
+        "98.5",
+        "close is the last child's close"
+    );
     assert_eq!(first.h.to_string(), "102", "high is the bucket maximum");
     assert_eq!(first.l.to_string(), "97.5", "low is the bucket minimum");
     assert_eq!(first.volume, 100, "volume sums the bucket's children");
@@ -135,7 +146,11 @@ fn complete_only_omits_a_short_trailing_edge() {
     ]);
     let folded =
         fold_bars_edges(&bars, Timeframe::H1, FoldEdges::CompleteOnly).expect("fold builds");
-    assert_eq!(folded.len(), 2, "three children cannot evidence the third hour");
+    assert_eq!(
+        folded.len(),
+        2,
+        "three children cannot evidence the third hour"
+    );
     assert_eq!(folded[1].ts.timestamp_millis(), hour + 3_600_000);
 }
 
@@ -149,7 +164,11 @@ fn complete_only_omits_a_short_leading_edge() {
         fold_bars_edges(&bars, Timeframe::H1, FoldEdges::CompleteOnly).expect("fold builds");
     assert_eq!(folded.len(), 1, "only the whole second hour emits");
     assert_eq!(folded[0].ts.timestamp_millis(), hour + 3_600_000);
-    assert_eq!(folded[0].o.to_string(), "99", "the kept bucket opens at its first child");
+    assert_eq!(
+        folded[0].o.to_string(),
+        "99",
+        "the kept bucket opens at its first child"
+    );
 }
 
 #[test]
@@ -161,9 +180,16 @@ fn complete_only_omits_torn_buckets_but_keeps_whole_neighbors() {
     bars.remove(1);
     let folded =
         fold_bars_edges(&bars, Timeframe::H1, FoldEdges::CompleteOnly).expect("fold builds");
-    assert_eq!(folded.len(), 1, "the torn hour is omitted, not emitted partial");
+    assert_eq!(
+        folded.len(),
+        1,
+        "the torn hour is omitted, not emitted partial"
+    );
     assert_eq!(folded[0].ts.timestamp_millis(), hour + 3_600_000);
-    assert_eq!(folded[0].volume, 260, "the whole neighbor keeps its own sum");
+    assert_eq!(
+        folded[0].volume, 260,
+        "the whole neighbor keeps its own sum"
+    );
 }
 
 #[test]
@@ -189,11 +215,9 @@ fn complete_only_omits_lone_child_buckets() {
 
 #[test]
 fn complete_only_empty_is_empty() {
-    assert!(
-        fold_bars_edges(&[], Timeframe::H1, FoldEdges::CompleteOnly)
-            .expect("empty fold builds")
-            .is_empty()
-    );
+    assert!(fold_bars_edges(&[], Timeframe::H1, FoldEdges::CompleteOnly)
+        .expect("empty fold builds")
+        .is_empty());
 }
 
 #[test]
@@ -203,5 +227,8 @@ fn complete_only_refuses_unsorted_input_like_the_legacy_fold() {
     bars.swap(0, 7);
     let err = fold_bars_edges(&bars, Timeframe::H1, FoldEdges::CompleteOnly)
         .expect_err("shuffled input refuses");
-    assert!(matches!(err, StoreError::InvalidBar(_)), "misordered input is a caller bug: {err:?}");
+    assert!(
+        matches!(err, StoreError::InvalidBar(_)),
+        "misordered input is a caller bug: {err:?}"
+    );
 }

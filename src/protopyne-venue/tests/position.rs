@@ -50,11 +50,9 @@ fn entry_opens_with_fees_debited_and_no_unrealised() {
 
 #[test]
 fn increase_averages_entry_and_accumulates_fees() {
-    let (position, exited) = update_from_fill(
-        Some(open_long()),
-        &fill(OrderSide::Buy, 2, "120", "10"),
-    )
-    .expect("increase must apply");
+    let (position, exited) =
+        update_from_fill(Some(open_long()), &fill(OrderSide::Buy, 2, "120", "10"))
+            .expect("increase must apply");
     assert!(exited.is_none());
     let position = position.expect("increase keeps the position open");
     assert_eq!(position.price_entry_average, money("110"));
@@ -68,11 +66,9 @@ fn increase_averages_entry_and_accumulates_fees() {
 
 #[test]
 fn partial_reduce_keeps_basis_and_books_fee_inclusive_realised() {
-    let (position, exited) = update_from_fill(
-        Some(open_long()),
-        &fill(OrderSide::Sell, 1, "150", "5"),
-    )
-    .expect("reduce must apply");
+    let (position, exited) =
+        update_from_fill(Some(open_long()), &fill(OrderSide::Sell, 1, "150", "5"))
+            .expect("reduce must apply");
     assert!(exited.is_none());
     let position = position.expect("partial reduce keeps the position open");
     assert_eq!(position.quantity_abs, 1);
@@ -86,11 +82,8 @@ fn partial_reduce_keeps_basis_and_books_fee_inclusive_realised() {
 
 #[test]
 fn unrealised_includes_estimated_exit_fees() {
-    let (position, _) = update_from_fill(
-        Some(open_long()),
-        &fill(OrderSide::Sell, 1, "150", "5"),
-    )
-    .expect("reduce must apply");
+    let (position, _) = update_from_fill(Some(open_long()), &fill(OrderSide::Sell, 1, "150", "5"))
+        .expect("reduce must apply");
     let position = position.expect("position stays open");
     // Naive mark would be (150 - 100) * 1 = 50; the engine subtracts the
     // pro-rata exit estimate (1/2 of the 10 entry fees) = 5.
@@ -111,11 +104,9 @@ fn unrealised_includes_estimated_exit_fees() {
 
 #[test]
 fn exact_close_ends_the_position_with_a_closed_record() {
-    let (position, exited) = update_from_fill(
-        Some(open_long()),
-        &fill(OrderSide::Sell, 2, "150", "5"),
-    )
-    .expect("exact close must apply");
+    let (position, exited) =
+        update_from_fill(Some(open_long()), &fill(OrderSide::Sell, 2, "150", "5"))
+            .expect("exact close must apply");
     assert!(position.is_none(), "exact close leaves no open position");
     let exited = exited.expect("exact close yields a closed record");
     // -10 entry debit + (150 - 100) * 2 - 5 exit fee.
@@ -129,11 +120,9 @@ fn exact_close_ends_the_position_with_a_closed_record() {
 
 #[test]
 fn flip_splits_fees_proportionally_and_opens_the_other_side() {
-    let (position, exited) = update_from_fill(
-        Some(open_long()),
-        &fill(OrderSide::Sell, 5, "150", "15"),
-    )
-    .expect("flip must apply");
+    let (position, exited) =
+        update_from_fill(Some(open_long()), &fill(OrderSide::Sell, 5, "150", "15"))
+            .expect("flip must apply");
     let exited = exited.expect("flip closes the old side");
     // Closing 2 of 5: exit share 15 * 2/5 = 6; realised -10 + (50 * 2 - 6).
     assert_eq!(exited.fees_exit, money("6"));
@@ -190,7 +179,8 @@ fn zero_quantity_and_wrong_instrument_refuse_without_panic() {
         .trade_id("t-other".to_owned())
         .at(ts(1_767_344_400))
         .build();
-    let err = update_from_fill(Some(open_long()), &other).expect_err("wrong instrument must refuse");
+    let err =
+        update_from_fill(Some(open_long()), &other).expect_err("wrong instrument must refuse");
     assert!(err.to_string().contains("QQQ"));
 }
 
@@ -210,8 +200,8 @@ fn entry_average_is_volume_weighted() {
 fn multi_fill_entry_average_weights_by_quantity_not_fill_count() {
     // Two increases of unequal size: the entry is volume-weighted, so it
     // cannot be the two-price arithmetic mean.
-    let (position, _) = update_from_fill(None, &fill(OrderSide::Buy, 1, "100", "1"))
-        .expect("entry must open");
+    let (position, _) =
+        update_from_fill(None, &fill(OrderSide::Buy, 1, "100", "1")).expect("entry must open");
     let (position, _) = update_from_fill(position, &fill(OrderSide::Buy, 3, "120", "1"))
         .expect("increase must apply");
     let position = position.expect("increase keeps the position open");
@@ -232,11 +222,23 @@ fn multi_fill_entry_average_weights_by_quantity_not_fill_count() {
 #[test]
 fn realised_pnl_is_fee_inclusive_on_both_sides() {
     assert_eq!(
-        calculate_pnl_realised(PositionSide::Long, money("100"), 2, money("150"), money("5")),
+        calculate_pnl_realised(
+            PositionSide::Long,
+            money("100"),
+            2,
+            money("150"),
+            money("5")
+        ),
         money("95")
     );
     assert_eq!(
-        calculate_pnl_realised(PositionSide::Short, money("100"), 2, money("80"), money("5")),
+        calculate_pnl_realised(
+            PositionSide::Short,
+            money("100"),
+            2,
+            money("80"),
+            money("5")
+        ),
         money("35")
     );
 }

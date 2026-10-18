@@ -15,7 +15,9 @@
 #![allow(clippy::float_cmp)]
 
 use super::*;
-use crate::{InputSet, LinkedModule, ModuleInput, OwnedOhlcv, ParamSet, PineRuntimeConfig, UserInstance};
+use crate::{
+    InputSet, LinkedModule, ModuleInput, OwnedOhlcv, ParamSet, PineRuntimeConfig, UserInstance,
+};
 use protopyne_types::Bar;
 
 use crate::pine::test_fixture as fixture;
@@ -44,9 +46,19 @@ fn driver_module(text: &str) -> ModuleInput {
 fn linked(driver: &str) -> Vec<LinkedModule> {
     fixture::linked_modules(vec![
         shipped_module("libraries/_libUtil.pine", "showmethegrail", "libUtil", 12),
-        shipped_module("libraries/_libBuffers.pine", "showmethegrail", "libBuffers", 6),
+        shipped_module(
+            "libraries/_libBuffers.pine",
+            "showmethegrail",
+            "libBuffers",
+            6,
+        ),
         shipped_module("libraries/_libBars.pine", "showmethegrail", "libBars", 12),
-        shipped_module("libraries/_libDrawing.pine", "showmethegrail", "libDrawing", 61),
+        shipped_module(
+            "libraries/_libDrawing.pine",
+            "showmethegrail",
+            "libDrawing",
+            61,
+        ),
         shipped_module("libraries/_libApex.pine", "showmethegrail", "libApex", 88),
         driver_module(driver),
     ])
@@ -64,11 +76,9 @@ fn test_engine() -> PineEngine {
 /// One closed bar from decimal legs and a whole-second timestamp.
 fn bar(open: &str, high: &str, low: &str, close: &str, volume: u64, ts_secs: i64) -> Bar {
     Bar::new()
-        .ts(
-            chrono::TimeZone::timestamp_opt(&chrono::Utc, ts_secs, 0)
-                .single()
-                .expect("valid test timestamp"),
-        )
+        .ts(chrono::TimeZone::timestamp_opt(&chrono::Utc, ts_secs, 0)
+            .single()
+            .expect("valid test timestamp"))
         .o(open.parse().expect("decimal"))
         .h(high.parse().expect("decimal"))
         .l(low.parse().expect("decimal"))
@@ -156,7 +166,8 @@ fn ramp_ohlcv() -> OwnedOhlcv {
     }
 }
 
-const CTX_DRIVER: &str = "var ctx = libApex.MarketContext.new()\nif barstate.isfirst\n    ctx.init()\nctx.fetch()\n";
+const CTX_DRIVER: &str =
+    "var ctx = libApex.MarketContext.new()\nif barstate.isfirst\n    ctx.init()\nctx.fetch()\n";
 
 #[test]
 fn health_perfect_bull_scores_upper_band() {
@@ -212,7 +223,9 @@ fn fetch_chart_branch_matches_kernels_within_eps() {
         .with_int("length", 8)
         .with_float("offset", 0.85)
         .with_float("sigma", 6.0);
-    let stdev14 = ParamSet::new().with_int("length", 14).with_float("nbdev", 1.0);
+    let stdev14 = ParamSet::new()
+        .with_int("length", 14)
+        .with_float("nbdev", 1.0);
     let len = |n: i64| ParamSet::new().with_int("length", n);
     for (field, kernel, params) in [
         ("ma_primary", "alma", alma),
@@ -230,9 +243,15 @@ fn fetch_chart_branch_matches_kernels_within_eps() {
     }
     // Normalized twins: cci x3, (rsi - 50) x2.
     let cci = expect("cci", &len(14)) * 3.0;
-    assert!((field_num(&state, "cci") - cci).abs() < EPS, "cci normalizes x3");
+    assert!(
+        (field_num(&state, "cci") - cci).abs() < EPS,
+        "cci normalizes x3"
+    );
     let rsi = (expect("rsi", &len(14)) - 50.0) * 2.0;
-    assert!((field_num(&state, "rsi") - rsi).abs() < EPS, "rsi normalizes to zero center");
+    assert!(
+        (field_num(&state, "rsi") - rsi).abs() < EPS,
+        "rsi normalizes to zero center"
+    );
     // `sma(volume, 20)` runs the kernel over the volume leg, so the
     // oracle feeds the volume series as the kernel's source port.
     let vol_ohlcv = OwnedOhlcv {
@@ -263,13 +282,21 @@ fn fetch_chart_branch_matches_kernels_within_eps() {
         (field_num(&state, "trend_strength") - health.abs() / 100.0).abs() < EPS,
         "trend strength normalizes health"
     );
-    assert_eq!(field_num(&state, "trend_direction"), 0.0, "monotone ramp stays directionless");
+    assert_eq!(
+        field_num(&state, "trend_direction"),
+        0.0,
+        "monotone ramp stays directionless"
+    );
     assert_eq!(
         field_enum(&state, "regime"),
         "VOLATILE",
         "monotone ramp: dispersion beats alignment, so volatility wins"
     );
-    assert_eq!(field_enum(&state, "tf"), "C", "chart fetch keeps the chart timeframe");
+    assert_eq!(
+        field_enum(&state, "tf"),
+        "C",
+        "chart fetch keeps the chart timeframe"
+    );
 }
 
 #[test]
@@ -288,8 +315,15 @@ fn fetch_explicit_chart_timeframe_takes_chart_branch() {
     let state = ctx_at(&outcome, last);
     let ema21 = kernel_batch("ema", &ParamSet::new().with_int("length", 21), &ohlcv)[last]
         .expect("kernel warm");
-    assert!((field_num(&state, "ma_mean") - ema21).abs() < EPS, "M5 fetch runs kernels");
-    assert_eq!(field_enum(&state, "tf"), "M5", "context records the requested timeframe");
+    assert!(
+        (field_num(&state, "ma_mean") - ema21).abs() < EPS,
+        "M5 fetch runs kernels"
+    );
+    assert_eq!(
+        field_enum(&state, "tf"),
+        "M5",
+        "context records the requested timeframe"
+    );
 }
 
 #[test]
@@ -304,7 +338,8 @@ fn fetch_mtf_branch_refuses_headlessly() {
         .run_linked(&modules, &bars, InputSet::new())
         .expect_err("MTF fetch refuses without injection");
     assert!(
-        err.to_string().contains("live request.security is refused headlessly"),
+        err.to_string()
+            .contains("live request.security is refused headlessly"),
         "refusal names the live fetch: {err}"
     );
 }
@@ -328,9 +363,15 @@ fn fetch_numbers_reach_mtf_through_injected_legs() {
         .collect();
     let ohlcv = OwnedOhlcv {
         close: (0u32..60).map(|i| 500.0 + f64::from(i) * 5.0).collect(),
-        open: (0u32..60).map(|i| 500.0 + f64::from(i) * 5.0 - 0.5).collect(),
-        high: (0u32..60).map(|i| 500.0 + f64::from(i) * 5.0 + 1.0).collect(),
-        low: (0u32..60).map(|i| 500.0 + f64::from(i) * 5.0 - 1.0).collect(),
+        open: (0u32..60)
+            .map(|i| 500.0 + f64::from(i) * 5.0 - 0.5)
+            .collect(),
+        high: (0u32..60)
+            .map(|i| 500.0 + f64::from(i) * 5.0 + 1.0)
+            .collect(),
+        low: (0u32..60)
+            .map(|i| 500.0 + f64::from(i) * 5.0 - 1.0)
+            .collect(),
         volume: (0u32..60).map(|i| 5_000.0 + 20.0 * f64::from(i)).collect(),
     };
     let outcome = run_linked(&format!("{IMPORTS}{CTX_DRIVER}"), &bars);
@@ -338,7 +379,10 @@ fn fetch_numbers_reach_mtf_through_injected_legs() {
     let state = ctx_at(&outcome, last);
     let ema21 = kernel_batch("ema", &ParamSet::new().with_int("length", 21), &ohlcv)[last]
         .expect("kernel warm");
-    assert!((field_num(&state, "ma_mean") - ema21).abs() < EPS, "injected legs run kernels");
+    assert!(
+        (field_num(&state, "ma_mean") - ema21).abs() < EPS,
+        "injected legs run kernels"
+    );
     assert_eq!(
         field_enum(&state, "regime"),
         "VOLATILE",
@@ -458,7 +502,11 @@ fn chop_alternation_characterization() {
     for amp in ["0.40", "0.10", "0.05"] {
         let bars: Vec<Bar> = (0..40)
             .map(|i| {
-                let wobble: f64 = if i % 2 == 0 { 0.0 } else { amp.parse().unwrap() };
+                let wobble: f64 = if i % 2 == 0 {
+                    0.0
+                } else {
+                    amp.parse().unwrap()
+                };
                 let close = 100.0 + wobble;
                 bar(
                     &format!("{:.2}", close - 0.2),
@@ -527,7 +575,14 @@ fn pivot_extreme_finds_highest_high_offsets() {
     let bars: Vec<Bar> = (0..12)
         .map(|i| {
             let high = if i == 8 { 120.0 } else { 100.0 + f64::from(i) };
-            bar("100", &format!("{high:.1}"), "99", "100", 1000, 1_700_000_000 + i64::from(i) * 300)
+            bar(
+                "100",
+                &format!("{high:.1}"),
+                "99",
+                "100",
+                1000,
+                1_700_000_000 + i64::from(i) * 300,
+            )
         })
         .collect();
     let outcome = run_linked(
@@ -539,7 +594,10 @@ fn pivot_extreme_finds_highest_high_offsets() {
     assert_eq!(num(&outcome, 11, "pt"), 1.0);
     assert_eq!(num(&outcome, 11, "pb"), 8.0);
     assert_eq!(num(&outcome, 11, "ph"), 120.0);
-    assert!(matches!(outcome.value_at(11, "pl"), Some(None)), "no pivot low on an upper extreme");
+    assert!(
+        matches!(outcome.value_at(11, "pl"), Some(None)),
+        "no pivot low on an upper extreme"
+    );
 }
 
 #[test]
@@ -547,7 +605,14 @@ fn pivot_extreme_lower_mirror_and_quiet_pair() {
     let bars: Vec<Bar> = (0..12)
         .map(|i| {
             let low = if i == 8 { 80.0 } else { 99.0 };
-            bar("100", "101", &format!("{low:.1}"), "100", 1000, 1_700_000_000 + i64::from(i) * 300)
+            bar(
+                "100",
+                "101",
+                &format!("{low:.1}"),
+                "100",
+                1000,
+                1_700_000_000 + i64::from(i) * 300,
+            )
         })
         .collect();
     let outcome = run_linked(
@@ -560,9 +625,15 @@ fn pivot_extreme_lower_mirror_and_quiet_pair() {
     assert_eq!(num(&outcome, 11, "pt"), -1.0);
     assert_eq!(num(&outcome, 11, "pb"), 8.0);
     assert_eq!(num(&outcome, 11, "pl"), 80.0);
-    assert!(matches!(outcome.value_at(11, "ph"), Some(None)), "no pivot high on a lower extreme");
+    assert!(
+        matches!(outcome.value_at(11, "ph"), Some(None)),
+        "no pivot high on a lower extreme"
+    );
     assert_eq!(num(&outcome, 11, "qt"), 0.0, "quiet pair types zero");
-    assert!(matches!(outcome.value_at(11, "qb"), Some(None)), "quiet pair bars na");
+    assert!(
+        matches!(outcome.value_at(11, "qb"), Some(None)),
+        "quiet pair bars na"
+    );
 }
 
 #[test]
@@ -612,14 +683,26 @@ fn market_level_touch_success_break_flip_lifecycle() {
         other => panic!("expected MarketLevel on bar 4, got {other:?}"),
     };
     assert_eq!(field_num(&state, "price_low"), 90.0);
-    assert_eq!(field_num(&state, "touch_count"), 1.0 + 5.0 + 5.0, "init plus five touches plus five breaks");
-    assert_eq!(field_num(&state, "successes"), 2.0, "init plus the bar-1 success");
+    assert_eq!(
+        field_num(&state, "touch_count"),
+        1.0 + 5.0 + 5.0,
+        "init plus five touches plus five breaks"
+    );
+    assert_eq!(
+        field_num(&state, "successes"),
+        2.0,
+        "init plus the bar-1 success"
+    );
     assert_eq!(field_num(&state, "last_touch_bar"), 4.0);
     assert_eq!(field_num(&state, "last_success_bar"), 1.0);
     assert_eq!(field_num(&state, "last_active_bar"), 4.0);
     assert_eq!(field_num(&state, "breach_count"), 1.0, "one flip");
     assert_eq!(field_num(&state, "direction"), -1.0, "flip reverses");
-    assert_eq!(field_num(&state, "pressure"), 0.0, "zero pressure stays zero through halving");
+    assert_eq!(
+        field_num(&state, "pressure"),
+        0.0,
+        "zero pressure stays zero through halving"
+    );
     assert_eq!(field_num(&state, "price_high"), 110.0);
     match outcome.value_at(4, "flipped") {
         Some(Some(PineValue::Bool(true))) => {}
@@ -698,7 +781,8 @@ fn managed_table_column_mismatch_refuses() {
         .run_linked(&modules, &bars, InputSet::new())
         .expect_err("column mismatch refuses");
     assert!(
-        err.to_string().contains("Data matrix columns must match header count"),
+        err.to_string()
+            .contains("Data matrix columns must match header count"),
         "library's own message survives: {err}"
     );
 }
@@ -725,5 +809,8 @@ fn for_in_iterates_arrays_with_index_and_value() {
     let err = engine
         .run_linked(&modules, &bars, InputSet::new())
         .expect_err("for-in over a scalar refuses");
-    assert!(err.to_string().contains("for ... in"), "names the construct: {err}");
+    assert!(
+        err.to_string().contains("for ... in"),
+        "names the construct: {err}"
+    );
 }

@@ -14,7 +14,9 @@ fn kinds_of(source: &str) -> Vec<TokenKind> {
 }
 
 fn data_path(name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../data/protopyne-rs").join(name)
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../data/protopyne-rs")
+        .join(name)
 }
 
 // ---- Transcribed egui corpus: `test_tokenize_numbers` ----
@@ -213,10 +215,7 @@ fn differential_numbers_corners_match_egui() {
 fn differential_string_escapes_match_egui() {
     assert_eq!(
         kinds_of("\"a\\n b\\t\\\\\\\"\""),
-        vec![
-            TokenKind::String("a\n b\t\\\"".to_owned()),
-            TokenKind::Eof,
-        ]
+        vec![TokenKind::String("a\n b\t\\\"".to_owned()), TokenKind::Eof,]
     );
 }
 
@@ -308,10 +307,7 @@ fn v6_dotted_names_lex_whole() {
 fn v6_annotations_lex_as_trivia() {
     assert_eq!(
         kinds_of("//@version=6"),
-        vec![
-            TokenKind::Comment("@version=6".to_owned()),
-            TokenKind::Eof,
-        ]
+        vec![TokenKind::Comment("@version=6".to_owned()), TokenKind::Eof,]
     );
     assert_eq!(
         kinds_of("// @function foo"),
@@ -326,10 +322,7 @@ fn v6_annotations_lex_as_trivia() {
 fn v6_emoji_strings_and_comments_survive() {
     assert_eq!(
         kinds_of("'👁️ First MA'"),
-        vec![
-            TokenKind::String("👁️ First MA".to_owned()),
-            TokenKind::Eof,
-        ]
+        vec![TokenKind::String("👁️ First MA".to_owned()), TokenKind::Eof,]
     );
     assert_eq!(
         kinds_of("a := 1 // 2π constant"),
@@ -395,8 +388,8 @@ fn assert_golden(source_file: &str, golden_file: &str) {
     if std::env::var("UPDATE_PINE_LEXER_GOLDENS").is_ok() {
         std::fs::write(&path, snapshot_of(&tokens)).expect("golden writable");
     }
-    let frozen =
-        std::fs::read_to_string(&path).expect("golden frozen; rerun with UPDATE_PINE_LEXER_GOLDENS=1");
+    let frozen = std::fs::read_to_string(&path)
+        .expect("golden frozen; rerun with UPDATE_PINE_LEXER_GOLDENS=1");
     assert_eq!(snapshot_of(&tokens), frozen, "token drift in {source_file}");
 }
 
@@ -446,7 +439,8 @@ fn target_streams_cover_v6_surface() {
         assert!(has(&kind), "v6 surface token missing from triple: {kind}");
     }
     assert!(
-        all.iter().any(|token| token.kind == TokenKind::Identifier("UTIL.Smoothings.WMA".to_owned())),
+        all.iter()
+            .any(|token| token.kind == TokenKind::Identifier("UTIL.Smoothings.WMA".to_owned())),
         "dotted enum member missing from triple"
     );
 }

@@ -26,7 +26,9 @@
 use std::collections::HashMap;
 
 use crate::error::KernelError;
-use crate::indicator::{BarTick, IndicatorRegistry, IndicatorState, ParamSet, builtin_registry, nan_hole};
+use crate::indicator::{
+    builtin_registry, nan_hole, BarTick, IndicatorRegistry, IndicatorState, ParamSet,
+};
 use crate::value::PineValue;
 
 /// One script-facing `ta.*` namespace: kernels plus stream state.
@@ -49,11 +51,46 @@ impl TaBridge {
     #[must_use]
     pub fn supported_methods() -> &'static [&'static str] {
         &[
-            "sma", "ema", "wma", "hma", "rma", "vwma", "rsi", "mom", "roc", "cci", "cmo",
-            "mfi", "alma", "macd", "bb", "atr", "tr", "obv", "stoch", "vwap", "wpr",
-            "stdev", "variance", "highest", "lowest", "highestbars", "lowestbars", "change",
-            "crossover", "crossunder", "cum", "correlation", "median", "eit", "kalman", "voss",
-            "barssince", "valuewhen", "pivothigh", "pivotlow",
+            "sma",
+            "ema",
+            "wma",
+            "hma",
+            "rma",
+            "vwma",
+            "rsi",
+            "mom",
+            "roc",
+            "cci",
+            "cmo",
+            "mfi",
+            "alma",
+            "macd",
+            "bb",
+            "atr",
+            "tr",
+            "obv",
+            "stoch",
+            "vwap",
+            "wpr",
+            "stdev",
+            "variance",
+            "highest",
+            "lowest",
+            "highestbars",
+            "lowestbars",
+            "change",
+            "crossover",
+            "crossunder",
+            "cum",
+            "correlation",
+            "median",
+            "eit",
+            "kalman",
+            "voss",
+            "barssince",
+            "valuewhen",
+            "pivothigh",
+            "pivotlow",
         ]
     }
 
@@ -91,7 +128,8 @@ impl TaBridge {
                 let [source, length] = args else {
                     return Err(bad_arity("source and length"));
                 };
-                let params = ParamSet::new().with_int("length", pine_length(method, length.as_ref())?);
+                let params =
+                    ParamSet::new().with_int("length", pine_length(method, length.as_ref())?);
                 self.update_kernel(site, method, source.as_ref(), &params, tick)
             }
             "alma" => {
@@ -127,14 +165,16 @@ impl TaBridge {
                 let [length] = args else {
                     return Err(bad_arity("length"));
                 };
-                let params = ParamSet::new().with_int("length", pine_length(method, length.as_ref())?);
+                let params =
+                    ParamSet::new().with_int("length", pine_length(method, length.as_ref())?);
                 self.run_kernel(site, "atr", tick, &params)
             }
             "tr" => {
                 if let [handle] = args {
                     if matches!(handle, Some(PineValue::Bool(true))) {
                         return Err(KernelError::Eval(
-                            "ta.tr(true) requests alternate na handling, which is not bridged".to_owned(),
+                            "ta.tr(true) requests alternate na handling, which is not bridged"
+                                .to_owned(),
                         ));
                     }
                 } else if !args.is_empty() {
@@ -152,7 +192,8 @@ impl TaBridge {
                 let [source, high, low, length] = args else {
                     return Err(bad_arity("source, high, low and length"));
                 };
-                let params = ParamSet::new().with_int("length", pine_length(method, length.as_ref())?);
+                let params =
+                    ParamSet::new().with_int("length", pine_length(method, length.as_ref())?);
                 let directed = BarTick {
                     high: pine_source(high.as_ref())?,
                     low: pine_source(low.as_ref())?,
@@ -160,24 +201,25 @@ impl TaBridge {
                 };
                 self.run_kernel(site, "stoch", directed, &params)
             }
-            "vwap" => {
-                match args {
-                    [] => self.run_kernel(site, "vwap", tick, &ParamSet::new()),
-                    [one] => self.update_kernel(site, "vwap", one.as_ref(), &ParamSet::new(), tick),
-                    _ => Err(bad_arity("zero or one argument")),
-                }
-            }
+            "vwap" => match args {
+                [] => self.run_kernel(site, "vwap", tick, &ParamSet::new()),
+                [one] => self.update_kernel(site, "vwap", one.as_ref(), &ParamSet::new(), tick),
+                _ => Err(bad_arity("zero or one argument")),
+            },
             "wpr" => {
                 let [length] = args else {
                     return Err(bad_arity("length"));
                 };
-                let params = ParamSet::new().with_int("length", pine_length(method, length.as_ref())?);
+                let params =
+                    ParamSet::new().with_int("length", pine_length(method, length.as_ref())?);
                 self.run_kernel(site, "willr", tick, &params)
             }
             "stdev" | "variance" => {
                 let (source, length, biased) = match args {
                     [source, length] => (source, length, true),
-                    [source, length, biased] => (source, length, pine_bool(method, biased.as_ref())?),
+                    [source, length, biased] => {
+                        (source, length, pine_bool(method, biased.as_ref())?)
+                    }
                     _ => return Err(bad_arity("source, length and optional biased")),
                 };
                 if biased {
@@ -227,13 +269,11 @@ impl TaBridge {
                     crate::util::argmin_window(window, length)
                 };
                 let ago = bars.last().copied().flatten();
-                ago.map(|back| {
-                    i64::try_from(back).map(|bars_back| PineValue::Int(-bars_back))
-                })
-                .transpose()
-                .map_err(|_| {
-                    KernelError::Eval(format!("ta.{method} window does not fit this run"))
-                })
+                ago.map(|back| i64::try_from(back).map(|bars_back| PineValue::Int(-bars_back)))
+                    .transpose()
+                    .map_err(|_| {
+                        KernelError::Eval(format!("ta.{method} window does not fit this run"))
+                    })
             }
             "change" => {
                 let (source, length) = match args {
@@ -322,8 +362,8 @@ impl TaBridge {
                 let [source, alpha] = args else {
                     return Err(bad_arity("source and alpha"));
                 };
-                let params =
-                    ParamSet::new().with_float("alpha", pine_number(method, alpha.as_ref(), "alpha")?);
+                let params = ParamSet::new()
+                    .with_float("alpha", pine_number(method, alpha.as_ref(), "alpha")?);
                 self.update_kernel(site, "eit", source.as_ref(), &params, tick)
             }
             "kalman" => {
@@ -380,15 +420,12 @@ impl TaBridge {
                     .iter()
                     .rposition(|&hit| hit)
                     .map(|at| history.len() - 1 - at);
-                back
-                    .map(|ago| {
-                        i64::try_from(ago).map(PineValue::Int).map_err(|_| {
-                            KernelError::Eval(format!(
-                                "ta.{method} window does not fit this run"
-                            ))
-                        })
+                back.map(|ago| {
+                    i64::try_from(ago).map(PineValue::Int).map_err(|_| {
+                        KernelError::Eval(format!("ta.{method} window does not fit this run"))
                     })
-                    .transpose()
+                })
+                .transpose()
             }
             "valuewhen" => {
                 let [condition, source, occurrence] = args else {
@@ -414,9 +451,9 @@ impl TaBridge {
                         seen += 1;
                     }
                 }
-                Ok(found.and_then(|index| {
-                    sources.get(index).copied().filter(|v| !v.is_nan())
-                }).map(PineValue::Float))
+                Ok(found
+                    .and_then(|index| sources.get(index).copied().filter(|v| !v.is_nan()))
+                    .map(PineValue::Float))
             }
             "pivothigh" | "pivotlow" => {
                 let [source, left, right] = args else {
@@ -427,7 +464,9 @@ impl TaBridge {
                 let tail = self.push_history(site, pine_source(source.as_ref())?);
                 Ok(pivot_at(tail, left, right, method == "pivothigh"))
             }
-            _ => Err(KernelError::Eval(format!("unknown ta function 'ta.{method}'"))),
+            _ => Err(KernelError::Eval(format!(
+                "unknown ta function 'ta.{method}'"
+            ))),
         }
     }
 
@@ -455,13 +494,12 @@ impl TaBridge {
         tick: BarTick,
         params: &ParamSet,
     ) -> Result<Option<PineValue>, KernelError> {
-        let indicator = self.registry.get(kernel).ok_or_else(|| {
-            KernelError::Eval(format!("ta bridge has no '{kernel}' kernel"))
-        })?;
+        let indicator = self
+            .registry
+            .get(kernel)
+            .ok_or_else(|| KernelError::Eval(format!("ta bridge has no '{kernel}' kernel")))?;
         let state = self.kernel_states.entry(site.to_owned()).or_default();
-        Ok(indicator
-            .update(state, tick, params)?
-            .map(PineValue::Float))
+        Ok(indicator.update(state, tick, params)?.map(PineValue::Float))
     }
 
     /// Append one source value to a site history, returning the full history.
@@ -515,13 +553,20 @@ impl TaBridge {
             ))
         };
         let over = |kernel: &str, params: &crate::indicator::ParamSet| {
-            let indicator = self.registry.get(kernel).ok_or_else(|| {
-                KernelError::Eval(format!("ta bridge has no '{kernel}' kernel"))
-            })?;
+            let indicator = self
+                .registry
+                .get(kernel)
+                .ok_or_else(|| KernelError::Eval(format!("ta bridge has no '{kernel}' kernel")))?;
             let mut data = ohlcv.clone();
             data.close = source.to_vec();
             let batch = indicator.batch(&data.views(), params)?;
-            Ok(batch.values.last().copied().flatten().and_then(crate::indicator::fin_or_none).map(PineValue::Float))
+            Ok(batch
+                .values
+                .last()
+                .copied()
+                .flatten()
+                .and_then(crate::indicator::fin_or_none)
+                .map(PineValue::Float))
         };
         match method {
             "sma" | "ema" | "wma" | "hma" | "rma" | "vwma" | "rsi" | "mom" | "roc" | "cci"
@@ -529,8 +574,8 @@ impl TaBridge {
                 let [_, length] = args else {
                     return Err(bad_arity("source and length"));
                 };
-                let params = ParamSet::new()
-                    .with_int("length", pine_length(method, length.as_ref())?);
+                let params =
+                    ParamSet::new().with_int("length", pine_length(method, length.as_ref())?);
                 over(method, &params)
             }
             "alma" => {
@@ -547,13 +592,20 @@ impl TaBridge {
                 let [length] = args else {
                     return Err(bad_arity("length"));
                 };
-                let params = ParamSet::new()
-                    .with_int("length", pine_length(method, length.as_ref())?);
-                let indicator = self.registry.get("atr").ok_or_else(|| {
-                    KernelError::Eval("ta bridge has no 'atr' kernel".to_owned())
-                })?;
+                let params =
+                    ParamSet::new().with_int("length", pine_length(method, length.as_ref())?);
+                let indicator = self
+                    .registry
+                    .get("atr")
+                    .ok_or_else(|| KernelError::Eval("ta bridge has no 'atr' kernel".to_owned()))?;
                 let batch = indicator.batch(&ohlcv.views(), &params)?;
-                Ok(batch.values.last().copied().flatten().and_then(crate::indicator::fin_or_none).map(PineValue::Float))
+                Ok(batch
+                    .values
+                    .last()
+                    .copied()
+                    .flatten()
+                    .and_then(crate::indicator::fin_or_none)
+                    .map(PineValue::Float))
             }
             "stdev" | "variance" => {
                 let (length, biased) = match args {
@@ -599,8 +651,7 @@ fn pivot_at(history: &[f64], left: usize, right: usize, is_high: bool) -> Option
         return None;
     }
     let extreme = |&v: &f64| !v.is_nan() && (if is_high { v < value } else { v > value });
-    if history[pivot - left..pivot].iter().all(extreme)
-        && history[pivot + 1..].iter().all(extreme)
+    if history[pivot - left..pivot].iter().all(extreme) && history[pivot + 1..].iter().all(extreme)
     {
         Some(PineValue::Float(value))
     } else {
@@ -629,7 +680,10 @@ pub(crate) fn sample_spread(method: &str, window: &[f64], length: usize) -> Opti
 
 /// Override a tick's `close` with an evaluated source value.
 fn with_source(tick: BarTick, source: f64) -> BarTick {
-    BarTick { close: source, ..tick }
+    BarTick {
+        close: source,
+        ..tick
+    }
 }
 
 /// A script source value as a leg float: absence is `NaN` (`na`, which

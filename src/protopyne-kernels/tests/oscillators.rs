@@ -147,7 +147,11 @@ fn cci_flat_window_is_na_hot_window_hits_100() {
         &[None, None, Some(100.0), Some(50.0), None, None],
         1e-9,
     );
-    approx(&fold_all(&cci, &close_ticks(&data), &ps).0, &result.values, 1e-12);
+    approx(
+        &fold_all(&cci, &close_ticks(&data), &ps).0,
+        &result.values,
+        1e-12,
+    );
 }
 
 #[test]
@@ -159,7 +163,11 @@ fn cmo_all_gain_is_100_mixed_is_zero() {
     let data = [1.0, 2.0, 3.0, 2.0];
     let result = cmo.batch(&closes(&data), &ps).expect("valid");
     approx(&result.values, &[None, None, Some(100.0), Some(0.0)], 1e-9);
-    approx(&fold_all(&cmo, &close_ticks(&data), &ps).0, &result.values, 1e-12);
+    approx(
+        &fold_all(&cmo, &close_ticks(&data), &ps).0,
+        &result.values,
+        1e-12,
+    );
 }
 
 #[test]
@@ -175,6 +183,10 @@ fn buffered_update_matches_batch_on_constant_and_subnormal_inputs() {
     ] {
         let batch = cci.batch(&closes(&data), &ps).expect("valid").values;
         let folded = fold_all(&cci, &close_ticks(&data), &ps).0;
-        assert_eq!(bits_of(&folded), bits_of(&batch), "cci reproduces batch bit-for-bit");
+        assert_eq!(
+            bits_of(&folded),
+            bits_of(&batch),
+            "cci reproduces batch bit-for-bit"
+        );
     }
 }

@@ -59,11 +59,19 @@ async fn identical_fill_sequences_resolve_identically() {
     let second = venue();
     for venue in [&first, &second] {
         venue
-            .submit(intent("b#0", "SPY", OrderSide::Buy, "600.50", 2), &quote(), now())
+            .submit(
+                intent("b#0", "SPY", OrderSide::Buy, "600.50", 2),
+                &quote(),
+                now(),
+            )
             .await
             .expect("buy fills");
         venue
-            .submit(intent("s#0", "AAPL", OrderSide::Sell, "599.50", 1), &quote(), now())
+            .submit(
+                intent("s#0", "AAPL", OrderSide::Sell, "599.50", 1),
+                &quote(),
+                now(),
+            )
             .await
             .expect("sell fills");
     }
@@ -79,7 +87,11 @@ async fn venues_are_isolated() {
     let first = venue();
     let second = venue();
     first
-        .submit(intent("b#0", "SPY", OrderSide::Buy, "600.50", 2), &quote(), now())
+        .submit(
+            intent("b#0", "SPY", OrderSide::Buy, "600.50", 2),
+            &quote(),
+            now(),
+        )
         .await
         .expect("buy fills");
     assert_eq!(sorted_positions(&first), vec![("SPY".to_owned(), 2)]);
@@ -93,7 +105,11 @@ async fn venues_are_isolated() {
 async fn corporate_events_resolve_through_keys() {
     let venue = venue();
     venue
-        .submit(intent("b#0", "SPY", OrderSide::Buy, "600.50", 2), &quote(), now())
+        .submit(
+            intent("b#0", "SPY", OrderSide::Buy, "600.50", 2),
+            &quote(),
+            now(),
+        )
         .await
         .expect("buy fills");
     venue
@@ -109,11 +125,9 @@ async fn corporate_events_resolve_through_keys() {
     venue
         .apply_corporate_event("MSFT", CorporateEvent::Expiry, now())
         .expect("unknown expiry is a no-op");
-    assert!(
-        venue
-            .apply_corporate_event("MSFT", CorporateEvent::Split(2), now())
-            .is_err()
-    );
+    assert!(venue
+        .apply_corporate_event("MSFT", CorporateEvent::Split(2), now())
+        .is_err());
 }
 
 #[test]

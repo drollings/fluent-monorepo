@@ -10,12 +10,12 @@
 //! the second half of the regression proof.
 
 use super::*;
-use protopyne_types::{Timeframe, validate_new_bar};
+use protopyne_types::{validate_new_bar, Timeframe};
 
 use crate::commit::test_tapes::at_ms;
 use crate::fold::FoldPolicy;
 use crate::range::TimeRange;
-use crate::tape::test_setup::{VENUE, seeded, with_registry_caps};
+use crate::tape::test_setup::{seeded, with_registry_caps, VENUE};
 
 /// Ten minute bars, deliberately shuffled: reversed with two neighbours
 /// swapped back, so the input is neither sorted nor reversed.

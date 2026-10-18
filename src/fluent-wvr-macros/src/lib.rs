@@ -968,7 +968,10 @@ mod tests {
     fn parse_field_attrs_extracts_variants_path() {
         let field = make_field(r#"variants = "crate::smoothing_ids""#, "String", "kind");
         let meta = parse_field_attrs(&field);
-        assert_eq!(meta.variants.map(|tokens| tokens.to_string()), Some("crate :: smoothing_ids".to_owned()));
+        assert_eq!(
+            meta.variants.map(|tokens| tokens.to_string()),
+            Some("crate :: smoothing_ids".to_owned())
+        );
     }
 
     #[test]

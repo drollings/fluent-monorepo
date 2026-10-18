@@ -11,12 +11,12 @@
 //! allowance costs at each size so a regression in the log tail is visible.
 
 use chrono::DateTime;
-use criterion::{Criterion, criterion_group, criterion_main};
-use protopyne_types::{Bar, Timeframe};
+use criterion::{criterion_group, criterion_main, Criterion};
 use protopyne_store::{
     AssetClass, CandleStore, FoldPolicy, MarketTape, PriceScale, ReadRequest, StoreStorage,
     TapeKey, TimeRange, WritePolicy,
 };
+use protopyne_types::{Bar, Timeframe};
 
 const STEP_MS: i64 = 60_000;
 const DAY_MS: i64 = 1_440 * STEP_MS;
@@ -44,7 +44,10 @@ fn caps_for(root: &std::path::Path) -> fluent_wvr::CapabilitySet {
 /// touch, proving interior holes elsewhere do not move a distant page's
 /// cost. Seeding runs outside the measured loop; each day appends as one
 /// chunk.
-fn seed_tape(months: i64, torn: bool) -> (MarketTape, tempfile::TempDir, fluent_wvr::CapabilitySet) {
+fn seed_tape(
+    months: i64,
+    torn: bool,
+) -> (MarketTape, tempfile::TempDir, fluent_wvr::CapabilitySet) {
     let dir = tempfile::tempdir().expect("tempdir");
     let root = dir.path().join("bench-store");
     let caps = caps_for(&root);
@@ -97,11 +100,7 @@ fn day_request(day: i64) -> ReadRequest {
     }
 }
 
-fn scoped_read(
-    caps: &fluent_wvr::CapabilitySet,
-    tape: &MarketTape,
-    req: &ReadRequest,
-) -> usize {
+fn scoped_read(caps: &fluent_wvr::CapabilitySet, tape: &MarketTape, req: &ReadRequest) -> usize {
     fluent_wvr::CURRENT_CAPS.sync_scope(caps.clone(), || {
         tape.read(req).expect("bench read serves").bars.len()
     })
@@ -150,9 +149,8 @@ fn boot_replay(c: &mut Criterion) {
         group.bench_function(format!("{months}mo"), |b| {
             b.iter(|| {
                 let caps = caps_for(&root);
-                fluent_wvr::CURRENT_CAPS.sync_scope(caps, || {
-                    MarketTape::open(&root).expect("replay opens")
-                })
+                fluent_wvr::CURRENT_CAPS
+                    .sync_scope(caps, || MarketTape::open(&root).expect("replay opens"))
             });
         });
     }

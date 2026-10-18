@@ -22,8 +22,8 @@ use crate::averages::RmaIndicator;
 use crate::ema::EmaIndicator;
 use crate::error::KernelError;
 use crate::indicator::{
-    fin_or_none, nan_hole, BarTick, FullTick, Indicator, IndicatorResult, IndicatorSpec, IndicatorState,
-    NamedSeries, NamedValue, Ohlcv, ParamSet,
+    fin_or_none, nan_hole, BarTick, FullTick, Indicator, IndicatorResult, IndicatorSpec,
+    IndicatorState, NamedSeries, NamedValue, Ohlcv, ParamSet,
 };
 use crate::sma::SmaIndicator;
 
@@ -188,9 +188,7 @@ impl PpoIndicator {
     }
 
     fn ratio(fast: f64, slow: f64) -> f64 {
-        nan_hole(
-            crate::math::div_or_none(fast, slow).and_then(|r| fin_or_none(r - 1.0))
-        )
+        nan_hole(crate::math::div_or_none(fast, slow).and_then(|r| fin_or_none(r - 1.0)))
     }
 }
 
@@ -636,9 +634,9 @@ impl Indicator for Rocr100Indicator {
     ) -> Result<Option<f64>, KernelError> {
         let period = Self::period(params)?;
         let raw = match roc_shift(state, bar, period) {
-            Some((current, back)) => {
-                nan_hole(crate::math::div_or_none(current, back).and_then(|r| fin_or_none(r * 100.0)))
-            }
+            Some((current, back)) => nan_hole(
+                crate::math::div_or_none(current, back).and_then(|r| fin_or_none(r * 100.0)),
+            ),
             None => f64::NAN,
         };
         state.set_last(raw);
@@ -931,11 +929,7 @@ impl Indicator for StochfIndicator {
         let sma = SmaIndicator::new();
         let (child, child_params) =
             state.child_with_params(1, || ParamSet::new().with_int("length", d_len as i64));
-        let fastd = sma.update(
-            child,
-            BarTick::close_only(nan_hole(fastk)),
-            child_params,
-        )?;
+        let fastd = sma.update(child, BarTick::close_only(nan_hole(fastk)), child_params)?;
         state.set_last(nan_hole(fastk));
         Ok(FullTick {
             primary: fastk,
@@ -1007,8 +1001,7 @@ impl Indicator for TrixIndicator {
         let first = ema.batch(data, &Self::ema_params(period))?;
         let first_raw: Vec<f64> = first.values.iter().map(|v| nan_hole(*v)).collect();
         let second = ema.batch(&Ohlcv::close_only(&first_raw), &Self::ema_params(period))?;
-        let second_raw: Vec<f64> =
-            second.values.iter().map(|v| nan_hole(*v)).collect();
+        let second_raw: Vec<f64> = second.values.iter().map(|v| nan_hole(*v)).collect();
         let third = ema.batch(&Ohlcv::close_only(&second_raw), &Self::ema_params(period))?;
         let mut values = crate::math::warmup_none(data.len());
         for (i, slot) in values.iter_mut().enumerate().skip(1) {
@@ -1031,17 +1024,9 @@ impl Indicator for TrixIndicator {
         let (child, child_params) = state.child_with_params(0, || Self::ema_params(period));
         let first = ema.update(child, bar, child_params)?;
         let (child, child_params) = state.child_with_params(1, || Self::ema_params(period));
-        let second = ema.update(
-            child,
-            BarTick::close_only(nan_hole(first)),
-            child_params,
-        )?;
+        let second = ema.update(child, BarTick::close_only(nan_hole(first)), child_params)?;
         let (child, child_params) = state.child_with_params(2, || Self::ema_params(period));
-        let third = ema.update(
-            child,
-            BarTick::close_only(nan_hole(second)),
-            child_params,
-        )?;
+        let third = ema.update(child, BarTick::close_only(nan_hole(second)), child_params)?;
         // Own `last` slot carries the previous third-pass value for the
         // one-bar shift; the smoothing windows live in the child states.
         let prev = state.last();
@@ -1241,7 +1226,14 @@ impl AdxIndicator {
         if i == 0 {
             return (0.0, 0.0, high[0] - low[0]);
         }
-        Self::legs_pair(high[i - 1], low[i - 1], close[i - 1], high[i], low[i], close[i])
+        Self::legs_pair(
+            high[i - 1],
+            low[i - 1],
+            close[i - 1],
+            high[i],
+            low[i],
+            close[i],
+        )
     }
 
     /// Raw (+DM, -DM, TR) legs for one bar against its predecessor, or `NaN`
@@ -1282,9 +1274,7 @@ impl AdxIndicator {
     /// `div_or_none`, so flat markets read `None`, never `inf`).
     fn leg_of(smoothed: Option<f64>, smoothed_tr: Option<f64>) -> f64 {
         match (smoothed, smoothed_tr) {
-            (Some(part), Some(total)) => {
-                nan_hole(crate::math::div_or_none(100.0 * part, total))
-            }
+            (Some(part), Some(total)) => nan_hole(crate::math::div_or_none(100.0 * part, total)),
             _ => f64::NAN,
         }
     }
@@ -1344,18 +1334,17 @@ impl Indicator for AdxIndicator {
             }
         }
         let adx = rma.batch(&Ohlcv::close_only(&dx), &Self::rma_params(period))?;
-        Ok(IndicatorResult::new(
-            Self::ID.to_owned(),
-            adx.values.clone(),
+        Ok(
+            IndicatorResult::new(Self::ID.to_owned(), adx.values.clone())
+                .with_secondary(NamedSeries::new(
+                    "plus_di",
+                    plus_di.iter().map(|&v| fin_or_none(v)).collect(),
+                ))
+                .with_secondary(NamedSeries::new(
+                    "minus_di",
+                    minus_di.iter().map(|&v| fin_or_none(v)).collect(),
+                )),
         )
-        .with_secondary(NamedSeries::new(
-            "plus_di",
-            plus_di.iter().map(|&v| fin_or_none(v)).collect(),
-        ))
-        .with_secondary(NamedSeries::new(
-            "minus_di",
-            minus_di.iter().map(|&v| fin_or_none(v)).collect(),
-        )))
     }
 
     fn update(
@@ -1385,7 +1374,9 @@ impl Indicator for AdxIndicator {
             let prev_high = nan_hole(state.highs().nth(back));
             let prev_low = nan_hole(state.lows().nth(back));
             let prev_close = nan_hole(state.prev_close());
-            Self::legs_pair(prev_high, prev_low, prev_close, bar.high, bar.low, bar.close)
+            Self::legs_pair(
+                prev_high, prev_low, prev_close, bar.high, bar.low, bar.close,
+            )
         };
         let rma = RmaIndicator::new();
         let (child, child_params) = state.child_with_params(0, || Self::rma_params(period));
@@ -1397,7 +1388,10 @@ impl Indicator for AdxIndicator {
         let plus = Self::leg_of(smoothed_plus, smoothed_tr);
         let minus = Self::leg_of(smoothed_minus, smoothed_tr);
         let dx = if plus.is_finite() && minus.is_finite() {
-            nan_hole(crate::math::div_or_none(100.0 * (plus - minus).abs(), plus + minus))
+            nan_hole(crate::math::div_or_none(
+                100.0 * (plus - minus).abs(),
+                plus + minus,
+            ))
         } else {
             f64::NAN
         };

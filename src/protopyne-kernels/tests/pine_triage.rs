@@ -12,9 +12,9 @@
 
 use super::*;
 use crate::{
-    KernelError, LibraryId, ModuleGraph, ModuleId, ModuleInput, SourceKind,
-    SUPPORTED_PINE_VERSION, closure_data_root, load_closure_sources, load_pine_source,
-    parse_pine_source, parse_program, resolve_imports,
+    closure_data_root, load_closure_sources, load_pine_source, parse_pine_source, parse_program,
+    resolve_imports, KernelError, LibraryId, ModuleGraph, ModuleId, ModuleInput, SourceKind,
+    SUPPORTED_PINE_VERSION,
 };
 use protopyne_types::Validate;
 use std::path::PathBuf;
@@ -237,7 +237,10 @@ fn visuals_absent_regressions_quarantined() {
         imports.contains(&("libPivots", 9)),
         "substitute still pins the second absent import: {imports:?}"
     );
-    for missing in ["libraries/_libTrendConsensus.pine", "libraries/_libPivots.pine"] {
+    for missing in [
+        "libraries/_libTrendConsensus.pine",
+        "libraries/_libPivots.pine",
+    ] {
         let err = load_pine_source(&data_root().join(missing))
             .expect_err("quarantined library has no file");
         assert!(
@@ -303,7 +306,9 @@ fn loader_version_property() {
     let missing = parse_pine_source("probe.pine", "indicator('probe')\n");
     assert_eq!(missing.version, None);
     assert_eq!(missing.warnings.len(), 1, "missing header warns once");
-    missing.validate().expect("headerless source still validates");
+    missing
+        .validate()
+        .expect("headerless source still validates");
     let empty = parse_pine_source("empty.pine", "  \n");
     empty
         .validate()

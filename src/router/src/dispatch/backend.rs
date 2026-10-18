@@ -368,9 +368,9 @@ async fn classify_error_response(response: reqwest::Response) -> DispatchError {
         let body = response.text().await.unwrap_or_else(|_| String::new());
         if let Some((needed, available)) = parse_context_overflow(&body) {
             let detail = match (needed, available) {
-                (Some(n), Some(a)) => format!(
-                    "request (~{n} tokens) exceeds the available context size ({a} tokens)"
-                ),
+                (Some(n), Some(a)) => {
+                    format!("request (~{n} tokens) exceeds the available context size ({a} tokens)")
+                }
                 _ => body.chars().take(240).collect::<String>(),
             };
             return DispatchError::ContextOverflow {

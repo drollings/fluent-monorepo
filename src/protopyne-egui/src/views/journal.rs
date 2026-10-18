@@ -45,16 +45,21 @@ impl Provenance {
             if index.insert(row.seq, position).is_some() {
                 return Err(EguiError::InvalidParam {
                     what: "journal".to_owned(),
-                    reason: format!(
-                        "duplicate sequence number {} has no causal order",
-                        row.seq
-                    ),
+                    reason: format!("duplicate sequence number {} has no causal order", row.seq),
                 });
             }
-            chains.entry(row.client_id.clone()).or_default().push(row.seq);
+            chains
+                .entry(row.client_id.clone())
+                .or_default()
+                .push(row.seq);
             order.push(row.seq);
         }
-        Ok(Self { rows, order, index, chains })
+        Ok(Self {
+            rows,
+            order,
+            index,
+            chains,
+        })
     }
 
     /// Sequence numbers in causal order (matches journal order for a
@@ -92,7 +97,9 @@ impl Provenance {
     /// The row behind a sequence number, if present.
     #[must_use]
     pub fn row(&self, seq: i64) -> Option<&JournalRowView> {
-        self.index.get(&seq).and_then(|position| self.rows.get(*position))
+        self.index
+            .get(&seq)
+            .and_then(|position| self.rows.get(*position))
     }
 
     /// The journal in sequence order: the sorted rows this was built from,

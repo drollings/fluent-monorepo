@@ -4,7 +4,11 @@ use super::*;
 fn wrap_and_reveal_round_trips_bit_exact() {
     for value in [0.0_f64, -0.0, 100.05, f64::MIN_POSITIVE, 1.0e300] {
         let fenced = DisplayOnly::new(value);
-        assert_eq!(fenced.reveal().to_bits(), value.to_bits(), "the fence stores, never converts");
+        assert_eq!(
+            fenced.reveal().to_bits(),
+            value.to_bits(),
+            "the fence stores, never converts"
+        );
     }
 }
 
@@ -24,7 +28,9 @@ fn money_crossing_refuses_unconditionally() {
     // Refusal is unconditional, not validation: even a clean integral
     // display value never becomes a decision denomination.
     for value in [0.0_f64, 100.0, 100.05] {
-        let error = DisplayOnly::new(value).try_into_money().expect_err("display never mints money");
+        let error = DisplayOnly::new(value)
+            .try_into_money()
+            .expect_err("display never mints money");
         assert_eq!(
             error,
             DisplayOnlyError::DecisionRefused,
@@ -87,9 +93,14 @@ fn operator_decimals_become_exact_money() {
         ("5.", rust_decimal::Decimal::new(5, 0)),
         ("  100.05  ", rust_decimal::Decimal::new(10005, 2)),
     ] {
-        let money =
-            DisplayOnly::new(text.to_owned()).try_into_money().expect("exact text mints: {text}");
-        assert_eq!(money, Money::new(amount), "text {text:?} denotes exactly {amount}");
+        let money = DisplayOnly::new(text.to_owned())
+            .try_into_money()
+            .expect("exact text mints: {text}");
+        assert_eq!(
+            money,
+            Money::new(amount),
+            "text {text:?} denotes exactly {amount}"
+        );
     }
 }
 
@@ -118,16 +129,20 @@ fn money_display_fromstr_try_into_money_round_trips_exactly() {
     for amount in amounts {
         let money = Money::new(amount);
         let text = money.to_string();
-        let fenced: DisplayOnly<String> =
-            text.parse().expect("operator text enters the fence: {text}");
+        let fenced: DisplayOnly<String> = text
+            .parse()
+            .expect("operator text enters the fence: {text}");
         let back = fenced.try_into_money().expect("round trip holds: {text}");
-        assert_eq!(back, money, "Display → FromStr → crossing is exact for {text}");
+        assert_eq!(
+            back, money,
+            "Display → FromStr → crossing is exact for {text}"
+        );
     }
 }
 
 #[test]
 fn operator_text_agrees_with_the_shared_scale_guard() {
-    use protopyne_types::{DecimalScaleError, MAX_DECIMAL_SCALE, parse_scale_guarded};
+    use protopyne_types::{parse_scale_guarded, DecimalScaleError, MAX_DECIMAL_SCALE};
     use std::str::FromStr as _;
 
     for (text, scale) in [
@@ -145,7 +160,9 @@ fn operator_text_agrees_with_the_shared_scale_guard() {
             Ok(scale),
             "shared scale decision for {text:?}"
         );
-        let crossed = DisplayOnly::new(text.to_owned()).try_into_money().expect("shape accepted");
+        let crossed = DisplayOnly::new(text.to_owned())
+            .try_into_money()
+            .expect("shape accepted");
         assert_eq!(
             crossed,
             Money::from_str(text).expect("money accepts the same shape"),
@@ -167,19 +184,45 @@ fn operator_text_agrees_with_the_shared_scale_guard() {
     );
     assert_eq!(
         DisplayOnly::new(over_text).try_into_money(),
-        Err(DisplayOnlyError::InvalidDecimal("decimal scale exceeds 28 places"))
+        Err(DisplayOnlyError::InvalidDecimal(
+            "decimal scale exceeds 28 places"
+        ))
     );
 
     for (text, refusal, reason) in [
         ("", DecimalScaleError::Empty, "empty decimal text"),
         ("   ", DecimalScaleError::Empty, "empty decimal text"),
-        ("+", DecimalScaleError::SignWithoutDigits, "sign without digits"),
-        ("-", DecimalScaleError::SignWithoutDigits, "sign without digits"),
+        (
+            "+",
+            DecimalScaleError::SignWithoutDigits,
+            "sign without digits",
+        ),
+        (
+            "-",
+            DecimalScaleError::SignWithoutDigits,
+            "sign without digits",
+        ),
         (".", DecimalScaleError::NoDigits, "no digits"),
-        ("abc", DecimalScaleError::InvalidCharacter, "not an ASCII decimal number"),
-        ("1,000", DecimalScaleError::InvalidCharacter, "not an ASCII decimal number"),
-        ("١٢٣", DecimalScaleError::InvalidCharacter, "not an ASCII decimal number"),
-        ("1e3", DecimalScaleError::InvalidCharacter, "not an ASCII decimal number"),
+        (
+            "abc",
+            DecimalScaleError::InvalidCharacter,
+            "not an ASCII decimal number",
+        ),
+        (
+            "1,000",
+            DecimalScaleError::InvalidCharacter,
+            "not an ASCII decimal number",
+        ),
+        (
+            "١٢٣",
+            DecimalScaleError::InvalidCharacter,
+            "not an ASCII decimal number",
+        ),
+        (
+            "1e3",
+            DecimalScaleError::InvalidCharacter,
+            "not an ASCII decimal number",
+        ),
     ] {
         assert_eq!(
             parse_scale_guarded(text.trim()),

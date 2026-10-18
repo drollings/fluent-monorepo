@@ -15,8 +15,8 @@ use super::*;
 use crate::pine::test_fixture as fixture;
 #[cfg(feature = "pine")]
 use crate::{InputSet, LinkedModule, PineEngine, PineRuntimeConfig};
-use protopyne_types::Timeframe;
 use protopyne_types::Bar;
+use protopyne_types::Timeframe;
 use std::collections::HashMap;
 
 /// Frozen agreement tolerance shared with the kernel-vs-Pine matrix.
@@ -37,11 +37,9 @@ const CTX_DRIVER: &str =
 /// One closed bar from decimal legs and a whole-second timestamp.
 fn bar(open: &str, high: &str, low: &str, close: &str, volume: u64, ts_secs: i64) -> Bar {
     Bar::new()
-        .ts(
-            chrono::TimeZone::timestamp_opt(&chrono::Utc, ts_secs, 0)
-                .single()
-                .expect("valid test timestamp"),
-        )
+        .ts(chrono::TimeZone::timestamp_opt(&chrono::Utc, ts_secs, 0)
+            .single()
+            .expect("valid test timestamp"))
         .o(open.parse().expect("decimal"))
         .h(high.parse().expect("decimal"))
         .l(low.parse().expect("decimal"))
@@ -55,9 +53,19 @@ fn bar(open: &str, high: &str, low: &str, close: &str, volume: u64, ts_secs: i64
 fn linked(driver: &str) -> Vec<LinkedModule> {
     fixture::linked_modules(vec![
         fixture::shipped_module("libraries/_libUtil.pine", "showmethegrail", "libUtil", 12),
-        fixture::shipped_module("libraries/_libBuffers.pine", "showmethegrail", "libBuffers", 6),
+        fixture::shipped_module(
+            "libraries/_libBuffers.pine",
+            "showmethegrail",
+            "libBuffers",
+            6,
+        ),
         fixture::shipped_module("libraries/_libBars.pine", "showmethegrail", "libBars", 12),
-        fixture::shipped_module("libraries/_libDrawing.pine", "showmethegrail", "libDrawing", 61),
+        fixture::shipped_module(
+            "libraries/_libDrawing.pine",
+            "showmethegrail",
+            "libDrawing",
+            61,
+        ),
         fixture::shipped_module("libraries/_libApex.pine", "showmethegrail", "libApex", 88),
         fixture::driver_module(driver),
     ])
@@ -150,7 +158,11 @@ fn assert_ctx_parity(oracle: &crate::UserInstance, native: &MarketContext, what:
             _ => panic!("{what} field {name}: na-ness diverges (oracle {want:?}, native {got:?})"),
         }
     }
-    assert_eq!(native.trend_direction, ofield(oracle, "trend_direction"), "{what} direction");
+    assert_eq!(
+        native.trend_direction,
+        ofield(oracle, "trend_direction"),
+        "{what} direction"
+    );
     assert_eq!(native.regime.to_string(), oregime(oracle), "{what} regime");
 }
 
@@ -177,17 +189,20 @@ fn close_now(bars: &[Bar], spacing_secs: i64) -> i64 {
 }
 
 #[cfg(feature = "pine")]
-fn native_last(
-    bars: &[Bar],
-    tf: Timeframe,
-    now_ms: i64,
-) -> (MtfStore, MarketContext) {
+fn native_last(bars: &[Bar], tf: Timeframe, now_ms: i64) -> (MtfStore, MarketContext) {
     let registry = crate::indicator::builtin_registry().expect("builtins");
     let mut store = MtfStore::new();
     store.set_base(bars).expect("base loads");
     let key = MarketContextKey::new(tf);
-    let contexts = fetch_all(&mut store, &registry, &[key], &HashMap::new(), now_ms, Lookahead::Off)
-        .expect("native fetch fills");
+    let contexts = fetch_all(
+        &mut store,
+        &registry,
+        &[key],
+        &HashMap::new(),
+        now_ms,
+        Lookahead::Off,
+    )
+    .expect("native fetch fills");
     (store, contexts.into_iter().next().expect("one context"))
 }
 
@@ -200,7 +215,11 @@ fn chart_branch_parity_at_eps() {
     let (_store, native) = native_last(&bars, Timeframe::M5, now);
     assert_ctx_parity(&oracle, &native, "ramp last bar");
     assert_eq!(otf(&oracle), "C", "oracle keeps chart-relative tf");
-    assert_eq!(native.tf, Timeframe::M5, "native resolves the fixed-ms span");
+    assert_eq!(
+        native.tf,
+        Timeframe::M5,
+        "native resolves the fixed-ms span"
+    );
 }
 
 #[cfg(feature = "pine")]
@@ -225,7 +244,11 @@ fn injected_legs_parity_at_eps() {
     let now = close_now(&bars, 900);
     let (_store, native) = native_last(&bars, Timeframe::M15, now);
     assert_ctx_parity(&oracle, &native, "injected 15M last bar");
-    assert_eq!(native.regime, MarketRegime::Volatile, "dispersion wins on injected legs too");
+    assert_eq!(
+        native.regime,
+        MarketRegime::Volatile,
+        "dispersion wins on injected legs too"
+    );
 }
 
 #[cfg(feature = "pine")]
@@ -262,7 +285,16 @@ fn flat_tape_oracle_probe() {
     // derivation runs the oracle's divide-by-zero path. Whatever the engine
     // reports becomes the port's contract — predicted quiet, verified here.
     let bars: Vec<Bar> = (0u32..30)
-        .map(|i| bar("100", "100", "100", "100", 1_000, 1_700_000_000 + i64::from(i) * 300))
+        .map(|i| {
+            bar(
+                "100",
+                "100",
+                "100",
+                "100",
+                1_000,
+                1_700_000_000 + i64::from(i) * 300,
+            )
+        })
         .collect();
     let oracle = oracle_ctx(&format!("{IMPORTS}{CTX_DRIVER}"), &bars, bars.len() - 1);
     let now = close_now(&bars, 300);
@@ -278,24 +310,48 @@ fn flat_tape_oracle_probe() {
 #[test]
 fn health_mas_units_match_hand_computation() {
     // Oracle-pinned literals from `pine_libapex` health goldens.
-    assert_eq!(health_mas(Some(2.0), Some(110.0), Some(105.0), Some(100.0), 2.0), Some(110.0));
-    assert_eq!(health_mas(Some(2.0), Some(100.0), Some(105.0), Some(110.0), 2.0), Some(-150.0));
-    assert_eq!(health_mas(Some(2.0), Some(105.0), Some(100.0), Some(102.0), 2.0), Some(5.625));
-    assert_eq!(health_mas(Some(2.0), Some(100.0), Some(100.0), Some(100.0), 2.0), Some(0.0));
+    assert_eq!(
+        health_mas(Some(2.0), Some(110.0), Some(105.0), Some(100.0), 2.0),
+        Some(110.0)
+    );
+    assert_eq!(
+        health_mas(Some(2.0), Some(100.0), Some(105.0), Some(110.0), 2.0),
+        Some(-150.0)
+    );
+    assert_eq!(
+        health_mas(Some(2.0), Some(105.0), Some(100.0), Some(102.0), 2.0),
+        Some(5.625)
+    );
+    assert_eq!(
+        health_mas(Some(2.0), Some(100.0), Some(100.0), Some(100.0), 2.0),
+        Some(0.0)
+    );
     // Absence mirrors Pine `na` structurally: unaligned stacks with
     // absent legs read exactly 0.0 (warming/flat oracle probes); a true
     // comparison against an absent distance poisons to na.
-    assert_eq!(health_mas(Some(2.0), Some(100.0), Some(100.0), Some(100.0), 2.0), Some(0.0));
+    assert_eq!(
+        health_mas(Some(2.0), Some(100.0), Some(100.0), Some(100.0), 2.0),
+        Some(0.0)
+    );
     assert_eq!(health_mas(None, None, None, None, 2.0), Some(0.0));
     // Aligned comparisons with absent distances refuse (unreachable with
     // the frozen bundle — alignment needs the slow average, which warms
     // long after ATR — so fail-closed na, never a guess).
-    assert_eq!(health_mas(Some(0.0), Some(110.0), Some(105.0), Some(100.0), 2.0), None);
-    assert_eq!(health_mas(None, Some(110.0), Some(105.0), Some(100.0), 2.0), None);
+    assert_eq!(
+        health_mas(Some(0.0), Some(110.0), Some(105.0), Some(100.0), 2.0),
+        None
+    );
+    assert_eq!(
+        health_mas(None, Some(110.0), Some(105.0), Some(100.0), 2.0),
+        None
+    );
     // Partial absence blends: mid/slow present and truly ordered, fast
     // absent — the true leg's distance carries the blend to exactly 10.0
     // (-10 + 1.75/1.75*20 with slow_dist 2.5 weighted 0.7).
-    assert_eq!(health_mas(Some(2.0), None, Some(105.0), Some(100.0), 2.0), Some(10.0));
+    assert_eq!(
+        health_mas(Some(2.0), None, Some(105.0), Some(100.0), 2.0),
+        Some(10.0)
+    );
 }
 
 #[test]
@@ -319,23 +375,46 @@ fn fetch_all_shares_one_store_across_spans() {
     let mut store = MtfStore::new();
     store.set_base(&bars).expect("base loads");
     let now = close_now(&bars, 60);
-    let keys = [MarketContextKey::new(Timeframe::M1), MarketContextKey::new(Timeframe::M5)];
-    let contexts = fetch_all(&mut store, &registry, &keys, &HashMap::new(), now, Lookahead::Off)
-        .expect("multi-span fetch fills");
+    let keys = [
+        MarketContextKey::new(Timeframe::M1),
+        MarketContextKey::new(Timeframe::M5),
+    ];
+    let contexts = fetch_all(
+        &mut store,
+        &registry,
+        &keys,
+        &HashMap::new(),
+        now,
+        Lookahead::Off,
+    )
+    .expect("multi-span fetch fills");
     assert_eq!(contexts.len(), 2, "one context per requested span");
     assert_eq!(contexts[0].tf, Timeframe::M1);
     assert_eq!(contexts[1].tf, Timeframe::M5);
     assert_eq!(store.frame_stamps(60_000).expect("1m frame").len(), 30);
     assert_eq!(store.frame_stamps(300_000).expect("5m frame").len(), 6);
     // The M1 context warms everything but the 50-bar ATR over thirty bars.
-    assert!(contexts[0].ma_mean.is_some(), "mean warm on thirty 1M buckets");
+    assert!(
+        contexts[0].ma_mean.is_some(),
+        "mean warm on thirty 1M buckets"
+    );
     assert!(contexts[0].atr.is_some(), "atr warm");
     assert!(contexts[0].vol_sma.is_some(), "volume sma warm");
-    assert_eq!(contexts[0].atr_long, None, "atr50 floor unmet at thirty bars");
+    assert_eq!(
+        contexts[0].atr_long, None,
+        "atr50 floor unmet at thirty bars"
+    );
     // The M5 context sees six buckets: long kernels stay absent and the
     // all-absent scores resolve to the fail-closed quiet label.
-    assert_eq!(contexts[1].ma_mean, None, "ema21 needs twenty-one 5M buckets");
-    assert_eq!(contexts[1].regime, MarketRegime::LowVolume, "short frame stays quiet");
+    assert_eq!(
+        contexts[1].ma_mean, None,
+        "ema21 needs twenty-one 5M buckets"
+    );
+    assert_eq!(
+        contexts[1].regime,
+        MarketRegime::LowVolume,
+        "short frame stays quiet"
+    );
 }
 
 #[test]
@@ -347,11 +426,24 @@ fn update_carry_and_fail_closed_probes() {
     let key = MarketContextKey::new(Timeframe::M5);
     let now = close_now(&bars, 300);
     // Unensured series refuse (caller must ensure first — never silent na).
-    assert!(update(&store, &key, 59, None).is_err(), "unensured update refuses");
-    fetch_all(&mut store, &registry, std::slice::from_ref(&key), &HashMap::new(), now, Lookahead::Off)
-        .expect("fetch fills");
+    assert!(
+        update(&store, &key, 59, None).is_err(),
+        "unensured update refuses"
+    );
+    fetch_all(
+        &mut store,
+        &registry,
+        std::slice::from_ref(&key),
+        &HashMap::new(),
+        now,
+        Lookahead::Off,
+    )
+    .expect("fetch fills");
     let at = store.frame_stamps(key.tf_ms()).expect("frame").len() - 1;
-    assert!(update(&store, &key, at + 100, None).is_err(), "out-of-range bar refuses");
+    assert!(
+        update(&store, &key, at + 100, None).is_err(),
+        "out-of-range bar refuses"
+    );
     // Carry mechanics: an explicit prior ratio survives a guard-failing
     // tape (zero-volume bars block the vol update; the prior holds).
     let zeros: Vec<Bar> = (0u32..30)
@@ -372,12 +464,27 @@ fn update_carry_and_fail_closed_probes() {
     let mut zero_store = MtfStore::new();
     zero_store.set_base(&zeros).expect("zero tape loads");
     let zero_now = close_now(&zeros, 300);
-    fetch_all(&mut zero_store, &registry, std::slice::from_ref(&key), &HashMap::new(), zero_now, Lookahead::Off)
-        .expect("zero fetch fills");
+    fetch_all(
+        &mut zero_store,
+        &registry,
+        std::slice::from_ref(&key),
+        &HashMap::new(),
+        zero_now,
+        Lookahead::Off,
+    )
+    .expect("zero fetch fills");
     let zero_at = zero_store.frame_stamps(key.tf_ms()).expect("frame").len() - 1;
     let carried = update(&zero_store, &key, zero_at, Some(&prior)).expect("carry reads");
-    assert_eq!(carried.vol_ratio, Some(7.0), "guard-fail carries the prior ratio");
-    assert_eq!(carried.vol, Some(0.0), "zero volume still reports (nz shape)");
+    assert_eq!(
+        carried.vol_ratio,
+        Some(7.0),
+        "guard-fail carries the prior ratio"
+    );
+    assert_eq!(
+        carried.vol,
+        Some(0.0),
+        "zero volume still reports (nz shape)"
+    );
     // Empty confirmed frame refuses: now inside the first bucket, before
     // any bucket closes (bucket-aligned math, not bar-aligned).
     let mut early = MtfStore::new();
@@ -385,8 +492,15 @@ fn update_carry_and_fail_closed_probes() {
     let first_ts = bars[0].ts.timestamp_millis();
     let first_open = first_ts.div_euclid(300_000) * 300_000;
     assert!(
-        fetch_all(&mut early, &registry, std::slice::from_ref(&key), &HashMap::new(), first_open + 300_000 - 1, Lookahead::Off)
-            .is_err(),
+        fetch_all(
+            &mut early,
+            &registry,
+            std::slice::from_ref(&key),
+            &HashMap::new(),
+            first_open + 300_000 - 1,
+            Lookahead::Off
+        )
+        .is_err(),
         "no confirmed bucket refuses"
     );
 }
@@ -423,8 +537,15 @@ fn atr_leg_resolution_ignores_request_order() {
     store.set_base(&bars).expect("base loads");
     let key = MarketContextKey::new(Timeframe::M5);
     let now = close_now(&bars, 300);
-    fetch_all(&mut store, &registry, std::slice::from_ref(&key), &HashMap::new(), now, Lookahead::Off)
-        .expect("fetch fills");
+    fetch_all(
+        &mut store,
+        &registry,
+        std::slice::from_ref(&key),
+        &HashMap::new(),
+        now,
+        Lookahead::Off,
+    )
+    .expect("fetch fills");
     let at = store.frame_stamps(key.tf_ms()).expect("frame").len() - 1;
     let plain = update(&store, &key, at, None).expect("plain update reads");
     assert_ne!(plain.atr, plain.atr_long, "tape discriminates the two legs");
@@ -446,8 +567,8 @@ fn atr_leg_resolution_ignores_request_order() {
     let second = atr_positions.pop().expect("two legs");
     let first = atr_positions.pop().expect("two legs");
     swapped.swap(first, second);
-    let reordered = update_with_requests(&store, &key, &swapped, at, None)
-        .expect("reordered update reads");
+    let reordered =
+        update_with_requests(&store, &key, &swapped, at, None).expect("reordered update reads");
     assert_eq!(reordered, plain, "ATR order never moves the reading");
 }
 
@@ -483,13 +604,27 @@ fn prev_carry_never_crosses_spans() {
     let mut decoy = MarketContext::fresh(Timeframe::M15);
     decoy.vol_ratio = Some(9.9);
     let prevs = HashMap::from([(m5.tf_ms(), m5_prev), (Timeframe::M15.duration_ms(), decoy)]);
-    let contexts =
-        fetch_all(&mut store, &registry, &[m1.clone(), m5.clone()], &prevs, now, Lookahead::Off)
-            .expect("multi-span fetch fills");
+    let contexts = fetch_all(
+        &mut store,
+        &registry,
+        &[m1.clone(), m5.clone()],
+        &prevs,
+        now,
+        Lookahead::Off,
+    )
+    .expect("multi-span fetch fills");
     assert_eq!(contexts.len(), 2, "one context per requested span");
-    assert_eq!(contexts[0].vol_ratio, Some(0.0), "M1 reads fresh, never the M5 carry");
+    assert_eq!(
+        contexts[0].vol_ratio,
+        Some(0.0),
+        "M1 reads fresh, never the M5 carry"
+    );
     assert_eq!(contexts[1].vol_ratio, Some(7.0), "M5 carries its own prev");
-    assert_eq!(contexts[0].vol, Some(0.0), "zero volume still reports (nz shape)");
+    assert_eq!(
+        contexts[0].vol,
+        Some(0.0),
+        "zero volume still reports (nz shape)"
+    );
 }
 
 #[test]
@@ -503,8 +638,15 @@ fn mismatched_prev_tf_refuses() {
     let m1 = MarketContextKey::new(Timeframe::M1);
     let m5 = MarketContextKey::new(Timeframe::M5);
     let now = close_now(&bars, 300);
-    fetch_all(&mut store, &registry, &[m1.clone(), m5.clone()], &HashMap::new(), now, Lookahead::Off)
-        .expect("fetch fills");
+    fetch_all(
+        &mut store,
+        &registry,
+        &[m1.clone(), m5.clone()],
+        &HashMap::new(),
+        now,
+        Lookahead::Off,
+    )
+    .expect("fetch fills");
     let at = store.frame_stamps(m1.tf_ms()).expect("frame").len() - 1;
     let foreign = MarketContext::fresh(Timeframe::M5);
     assert!(
@@ -525,7 +667,13 @@ fn regime_stability_transition_table() {
     // names the rule it exercises; hand-computed from the frozen floors
     // (trend/volatility 20, volume 25) and the 5.0 switch band.
     use MarketRegime::{LowVolume, Ranging, TrendingBear, TrendingBull, Volatile};
-    type Probe = (MarketRegime, Option<f64>, Option<f64>, Option<f64>, MarketRegime);
+    type Probe = (
+        MarketRegime,
+        Option<f64>,
+        Option<f64>,
+        Option<f64>,
+        MarketRegime,
+    );
     let table: &[Probe] = &[
         // Fresh agrees: stability never overrides the detector.
         (TrendingBull, Some(30.0), Some(0.5), Some(0.5), TrendingBull),
@@ -534,7 +682,13 @@ fn regime_stability_transition_table() {
         // Quiet never vetoes a fresh signal.
         (LowVolume, Some(5.0), Some(4.375), Some(2.6), Volatile),
         // Same-surface sign flip is decisive, never held.
-        (TrendingBull, Some(-30.0), Some(0.5), Some(0.5), TrendingBear),
+        (
+            TrendingBull,
+            Some(-30.0),
+            Some(0.5),
+            Some(0.5),
+            TrendingBear,
+        ),
         // Held surface decayed below floor minus band: release to quiet
         // (fresh LowVolume: trend 10 present, volume max 20 below its 25
         // floor, so no win fires).
@@ -561,4 +715,3 @@ fn regime_stability_transition_table() {
         );
     }
 }
-

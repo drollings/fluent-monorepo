@@ -8,7 +8,7 @@
 
 use super::*;
 use crate::commit::test_tapes::at_ms;
-use crate::coverage::{Coverage, FreshnessPolicy, classify};
+use crate::coverage::{classify, Coverage, FreshnessPolicy};
 
 /// Minute zero of the derivation clock, in epoch milliseconds.
 const T0: i64 = 1_767_225_900_000;

@@ -16,9 +16,9 @@
 #![allow(clippy::float_cmp)]
 
 use super::*;
-use crate::{InputSet, LinkedModule, ModuleInput, PineRuntimeConfig};
 use crate::indicator::{OwnedOhlcv, ParamSet};
 use crate::parity::assert_expr_parity;
+use crate::{InputSet, LinkedModule, ModuleInput, PineRuntimeConfig};
 use chrono::TimeZone as _;
 use protopyne_types::Bar;
 
@@ -49,12 +49,10 @@ fn linked(driver: &str) -> Vec<LinkedModule> {
 
 fn bar_full(open: &str, high: &str, low: &str, close: &str, volume: u64, ts_millis: i64) -> Bar {
     Bar::new()
-        .ts(
-            chrono::Utc
-                .timestamp_opt(ts_millis, 0)
-                .single()
-                .expect("valid test timestamp"),
-        )
+        .ts(chrono::Utc
+            .timestamp_opt(ts_millis, 0)
+            .single()
+            .expect("valid test timestamp"))
         .o(open.parse().expect("decimal"))
         .h(high.parse().expect("decimal"))
         .l(low.parse().expect("decimal"))
@@ -155,7 +153,8 @@ fn ramp_ohlcv(n: usize) -> OwnedOhlcv {
     }
 }
 
-const IMPORTS: &str = "import showmethegrail/libUtil/12 as UTIL\nimport showmethegrail/libMAs/95 as MAS\n";
+const IMPORTS: &str =
+    "import showmethegrail/libUtil/12 as UTIL\nimport showmethegrail/libMAs/95 as MAS\n";
 
 fn smoothing_driver(member: &str) -> String {
     format!("{IMPORTS}out = MAS.factorySmoothing(close, UTIL.Smoothings.{member}, 14)")
@@ -182,16 +181,8 @@ fn factory_smoothing_matches_kernels_within_eps() {
                 .with_float("offset", 0.85)
                 .with_float("sigma", 6.0),
         ),
-        (
-            "EIT",
-            "eit",
-            ParamSet::new().with_float("alpha", 0.85),
-        ),
-        (
-            "KALMAN",
-            "kalman",
-            ParamSet::new().with_int("length", 14),
-        ),
+        ("EIT", "eit", ParamSet::new().with_float("alpha", 0.85)),
+        ("KALMAN", "kalman", ParamSet::new().with_int("length", 14)),
     ];
     for (member, kernel_id, params) in cases {
         let outcome = run_linked(&smoothing_driver(member), &bars);
@@ -254,7 +245,8 @@ fn factory_smoothing_guards_refuse_or_default() {
     )
     .expect_err("zero length refuses");
     assert!(
-        err.to_string().contains("Smoothing length must be positive"),
+        err.to_string()
+            .contains("Smoothing length must be positive"),
         "length guard names its reason, got {err}"
     );
     // A non-enum smoothing falls into the default arm, whose
@@ -292,8 +284,16 @@ fn get_eit_pins_hand_steps() {
     // prior outputs once defined.
     assert_eq!(num(&outcome, 0, "out"), 10.0, "bar 0 seeds from source");
     assert_eq!(num(&outcome, 1, "out"), 10.0, "bar 1 carries the seed");
-    assert_eq!(num(&outcome, 2, "out"), 11.0, "bar 2 engages both lookbacks");
-    assert_eq!(num(&outcome, 3, "out"), 12.25, "bar 3 runs the full recurrence");
+    assert_eq!(
+        num(&outcome, 2, "out"),
+        11.0,
+        "bar 2 engages both lookbacks"
+    );
+    assert_eq!(
+        num(&outcome, 3, "out"),
+        12.25,
+        "bar 3 runs the full recurrence"
+    );
 }
 
 #[test]
@@ -328,7 +328,11 @@ fn get_kalman_pins_hand_steps() {
         })
         .collect();
     let outcome = run_linked(&format!("{IMPORTS}out = MAS.getKalman(close, 5)"), &bars);
-    assert_eq!(num(&outcome, 0, "out"), 10.0, "bar 0 seeds the estimate from source");
+    assert_eq!(
+        num(&outcome, 0, "out"),
+        10.0,
+        "bar 0 seeds the estimate from source"
+    );
     // Independent stepwise transcription: v3 = alpha * period, the gain
     // updates the estimate, then the error accrues `beta / period`.
     let (alpha, beta, period) = (0.012_f64, 0.1_f64, 5.0_f64);
@@ -361,7 +365,9 @@ fn get_voss_matches_kernel_batch() {
             )
         })
         .collect();
-    let closes: Vec<f64> = (0..80).map(|i| 100.0 + 0.3 * f64::from(i) + f64::from(i % 7)).collect();
+    let closes: Vec<f64> = (0..80)
+        .map(|i| 100.0 + 0.3 * f64::from(i) + f64::from(i % 7))
+        .collect();
     let ohlcv = OwnedOhlcv {
         open: closes.clone(),
         high: closes.iter().map(|c| c + 0.5).collect(),
@@ -393,7 +399,11 @@ fn get_voss_matches_kernel_batch() {
         .expect("library filter matches kernel filter");
     // The initialization gate holds both outputs at zero through bar 9.
     for bar in 0..=9 {
-        assert_eq!(num(&outcome, bar, "v"), 0.0, "gated prediction on bar {bar}");
+        assert_eq!(
+            num(&outcome, bar, "v"),
+            0.0,
+            "gated prediction on bar {bar}"
+        );
         assert_eq!(num(&outcome, bar, "f"), 0.0, "gated filter on bar {bar}");
     }
 }
@@ -459,7 +469,8 @@ fn get_macd_pins_composition() {
     )
     .expect_err("fast >= slow refuses");
     assert!(
-        err.to_string().contains("Fast length must be less than slow length"),
+        err.to_string()
+            .contains("Fast length must be less than slow length"),
         "MACD guard names its reason, got {err}"
     );
 }
@@ -530,7 +541,11 @@ fn get_supertrend_pins_direction_recurrence() {
         let direction = if atr_prev.is_none() {
             1_i64
         } else if st_prev == Some(upper_prev) {
-            if closes[i] > upper { -1 } else { 1 }
+            if closes[i] > upper {
+                -1
+            } else {
+                1
+            }
         } else if closes[i] < lower {
             1
         } else {
@@ -665,7 +680,10 @@ fn normalize_osc_pins_spot_goldens() {
     for osc in ["MFI", "SRSI", "STOCH"] {
         let outcome = run_linked(&normalize_driver(osc, 0, "NA", 0), &wobble);
         let got = num(&outcome, 59, "out");
-        assert!(got.is_finite(), "{osc} fires finite on the wobble, got {got}");
+        assert!(
+            got.is_finite(),
+            "{osc} fires finite on the wobble, got {got}"
+        );
     }
 }
 
@@ -755,17 +773,42 @@ fn nested_scope_history_reads_its_own_past() {
         ),
         &bars,
     );
-    assert_eq!(num(&outcome, 2, "first"), 1010.0, "scaled call reads scaled past");
-    assert_eq!(num(&outcome, 2, "second"), 101.0, "plain call reads plain past");
-    assert_eq!(num(&outcome, 3, "first"), 1020.0, "scaled call advances on its own past");
-    assert_eq!(num(&outcome, 3, "second"), 102.0, "plain call advances on its own past");
+    assert_eq!(
+        num(&outcome, 2, "first"),
+        1010.0,
+        "scaled call reads scaled past"
+    );
+    assert_eq!(
+        num(&outcome, 2, "second"),
+        101.0,
+        "plain call reads plain past"
+    );
+    assert_eq!(
+        num(&outcome, 3, "first"),
+        1020.0,
+        "scaled call advances on its own past"
+    );
+    assert_eq!(
+        num(&outcome, 3, "second"),
+        102.0,
+        "plain call advances on its own past"
+    );
 }
 
 #[test]
 fn oscillator_calibration_gate_is_green() {
     let bars = wobble_bars();
     let flat: Vec<Bar> = (0..60)
-        .map(|i| bar_full("100.00", "100.50", "99.50", "100.00", 1_000, 1_700_000_000_000 + i * 60_000))
+        .map(|i| {
+            bar_full(
+                "100.00",
+                "100.50",
+                "99.50",
+                "100.00",
+                1_000,
+                1_700_000_000_000 + i * 60_000,
+            )
+        })
         .collect();
     let members = [
         "AROON", "CCI", "CMO", "MFI", "RSI", "SRSI", "STOCH", "TRENDSI", "VOSS",
@@ -782,7 +825,9 @@ fn oscillator_calibration_gate_is_green() {
     // Must-NOT-fire: flat data stays quiet — absent or bounded by the
     // oscillator's own multiplier — and absent sources stay absent for
     // the source-consuming arms.
-    let bounds = [800.0, 500.0, 1000.0, 740.0, 740.0, 7000.0, 7000.0, 9000.0, 300.0];
+    let bounds = [
+        800.0, 500.0, 1000.0, 740.0, 740.0, 7000.0, 7000.0, 9000.0, 300.0,
+    ];
     let mut quiet = 0;
     for (osc, bound) in members.iter().zip(bounds.iter()) {
         let outcome = run_linked(&normalize_driver(osc, 0, "NA", 0), &flat);
@@ -826,7 +871,11 @@ fn leg_driven_arms_ignore_the_source() {
     // consumes the source, so it pins `na`-out with the source arms.)
     let bars = ramp_bars();
     for osc in ["AROON", "STOCH"] {
-        let live = series_of(&run_linked(&normalize_driver(osc, 0, "NA", 0), &bars), "out", 60);
+        let live = series_of(
+            &run_linked(&normalize_driver(osc, 0, "NA", 0), &bars),
+            "out",
+            60,
+        );
         let absent = series_of(
             &run_linked(
                 &format!(

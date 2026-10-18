@@ -11,8 +11,8 @@ use crate::averages::RmaIndicator;
 use crate::ema::EmaIndicator;
 use crate::error::KernelError;
 use crate::indicator::{
-    fin_or_none, nan_hole, BarTick, FullTick, Indicator, IndicatorId, IndicatorResult, IndicatorSpec,
-    IndicatorState, NamedSeries, NamedValue, Ohlcv, ParamSet,
+    fin_or_none, nan_hole, BarTick, FullTick, Indicator, IndicatorId, IndicatorResult,
+    IndicatorSpec, IndicatorState, NamedSeries, NamedValue, Ohlcv, ParamSet,
 };
 use crate::sma::SmaIndicator;
 
@@ -152,7 +152,11 @@ impl MacdIndicator {
     /// Validate parameters shared by batch and update paths.
     pub fn lengths(params: &ParamSet) -> Result<(usize, usize, usize), KernelError> {
         let each = |name: &str| crate::math::period_len(Self::ID, params, name);
-        Ok((each("fast_length")?, each("slow_length")?, each("signal_length")?))
+        Ok((
+            each("fast_length")?,
+            each("slow_length")?,
+            each("signal_length")?,
+        ))
     }
 
     /// Sub-pass parameters shared by batch, update, and the declared
@@ -236,11 +240,7 @@ impl Indicator for MacdIndicator {
             _ => f64::NAN,
         };
         let (child, child_params) = state.child_with_params(2, || Self::ema_params(signal_len));
-        let signal = ema.update(
-            child,
-            BarTick::close_only(line_raw),
-            child_params,
-        )?;
+        let signal = ema.update(child, BarTick::close_only(line_raw), child_params)?;
         let signal_raw = nan_hole(signal);
         let hist_raw = if line_raw.is_nan() || signal_raw.is_nan() {
             f64::NAN
@@ -356,10 +356,11 @@ impl Indicator for StochIndicator {
         let sma = SmaIndicator::new();
         let smooth_ps = ParamSet::new().with_int("length", Self::SMOOTH as i64);
         let d = sma.batch(&Ohlcv::close_only(&k), &smooth_ps)?;
-        Ok(
-            IndicatorResult::new(Self::ID.to_owned(), k.iter().map(|&v| fin_or_none(v)).collect())
-                .with_secondary(NamedSeries::new("d", d.values)),
+        Ok(IndicatorResult::new(
+            Self::ID.to_owned(),
+            k.iter().map(|&v| fin_or_none(v)).collect(),
         )
+        .with_secondary(NamedSeries::new("d", d.values)))
     }
 
     fn update(
@@ -387,8 +388,9 @@ impl Indicator for StochIndicator {
             Self::k_of(bar.close, lowest, highest)
         };
         let sma = SmaIndicator::new();
-        let (child, child_params) = state
-            .child_with_params(0, || ParamSet::new().with_int("length", Self::SMOOTH as i64));
+        let (child, child_params) = state.child_with_params(0, || {
+            ParamSet::new().with_int("length", Self::SMOOTH as i64)
+        });
         let d = sma.update(child, BarTick::close_only(k_raw), child_params)?;
         state.set_last(k_raw);
         Ok(FullTick {
@@ -434,11 +436,10 @@ impl CciIndicator {
 
     fn cci_of(window: &[f64]) -> f64 {
         let mean = crate::math::window_mean(window);
-        let deviation =
-            window.iter().map(|v| (v - mean).abs()).sum::<f64>() / window.len() as f64;
+        let deviation = window.iter().map(|v| (v - mean).abs()).sum::<f64>() / window.len() as f64;
         nan_hole(crate::math::div_or_none(
             window[window.len() - 1] - mean,
-            Self::SCALE * deviation
+            Self::SCALE * deviation,
         ))
     }
 }

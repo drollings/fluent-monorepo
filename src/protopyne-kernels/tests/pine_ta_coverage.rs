@@ -15,8 +15,8 @@
 
 use super::*;
 use crate::{
-    InputSet, PineEngine, PineRuntimeConfig, REAL_LIBRARIES, TASK_INDICATORS,
-    closure_data_root, load_listed_closure, parse_program, PineExpr, PineStmt,
+    closure_data_root, load_listed_closure, parse_program, InputSet, PineEngine, PineExpr,
+    PineRuntimeConfig, PineStmt, REAL_LIBRARIES, TASK_INDICATORS,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -26,14 +26,12 @@ use std::collections::{BTreeMap, BTreeSet};
 /// its exact refusal string, and the probe below executes it.
 const REFUSE_LIST: &[(&str, &str)] = &[];
 
-fn closure_sources(
-    indicator: &crate::ClosureEntry,
-) -> Vec<(String, crate::PineProgram)> {
+fn closure_sources(indicator: &crate::ClosureEntry) -> Vec<(String, crate::PineProgram)> {
     let root = closure_data_root(env!("CARGO_MANIFEST_DIR"));
     load_listed_closure(&root, REAL_LIBRARIES, indicator)
         .expect("task closure loads")
         .into_iter()
-       .map(|(key, source)| {
+        .map(|(key, source)| {
             let program = parse_program(&source.text)
                 .unwrap_or_else(|err| panic!("closure file {key} parses: {err}"));
             (key, program)
@@ -65,8 +63,11 @@ fn walk_switch(
 
 fn walk_expr(expr: &PineExpr, sink: &mut BTreeSet<String>) {
     match expr {
-        PineExpr::Number(_) | PineExpr::StringLiteral(_) | PineExpr::Boolean(_)
-        | PineExpr::Variable(_) | PineExpr::BuiltinVariable(_)
+        PineExpr::Number(_)
+        | PineExpr::StringLiteral(_)
+        | PineExpr::Boolean(_)
+        | PineExpr::Variable(_)
+        | PineExpr::BuiltinVariable(_)
         | PineExpr::ColorLiteral(_) => {}
         PineExpr::Binary { left, right, .. } => {
             walk_expr(left, sink);
@@ -85,11 +86,7 @@ fn walk_expr(expr: &PineExpr, sink: &mut BTreeSet<String>) {
             }
             walk_call_args(args, sink);
         }
-        PineExpr::InstanceCall {
-            receiver,
-            args,
-            ..
-        } => {
+        PineExpr::InstanceCall { receiver, args, .. } => {
             walk_expr(receiver, sink);
             walk_call_args(args, sink);
         }
@@ -123,8 +120,7 @@ fn walk_stmts(stmts: &[PineStmt], sink: &mut BTreeSet<String>) {
             PineStmt::Import(_) | PineStmt::LibraryDecl { .. } | PineStmt::Break => {}
             PineStmt::IndicatorDecl { args } => walk_call_args(args, sink),
             PineStmt::ExportDecl(inner) => walk_stmts(std::slice::from_ref(inner), sink),
-            PineStmt::FuncDecl { params, body, .. }
-            | PineStmt::MethodDecl { params, body, .. } => {
+            PineStmt::FuncDecl { params, body, .. } | PineStmt::MethodDecl { params, body, .. } => {
                 for param in params {
                     if let Some(default) = &param.default {
                         walk_expr(default, sink);
@@ -181,9 +177,7 @@ fn walk_stmts(stmts: &[PineStmt], sink: &mut BTreeSet<String>) {
                 walk_expr(end, sink);
                 walk_stmts(body, sink);
             }
-            PineStmt::ForIn {
-                iterable, body, ..
-            } => {
+            PineStmt::ForIn { iterable, body, .. } => {
                 walk_expr(iterable, sink);
                 walk_stmts(body, sink);
             }
@@ -200,9 +194,7 @@ fn walk_stmts(stmts: &[PineStmt], sink: &mut BTreeSet<String>) {
 
 /// Every `ta.*` name per closure file, in file order of the closure load
 /// (libraries first, indicator root last).
-fn ta_sites_per_closure(
-    indicator: &crate::ClosureEntry,
-) -> Vec<(String, BTreeSet<String>)> {
+fn ta_sites_per_closure(indicator: &crate::ClosureEntry) -> Vec<(String, BTreeSet<String>)> {
     closure_sources(indicator)
         .iter()
         .map(|(key, program)| {
@@ -215,18 +207,20 @@ fn ta_sites_per_closure(
 
 #[test]
 fn task_closure_ta_calls_are_closed_over_bridge_or_refuse_list() {
-    let supported: BTreeSet<&str> =
-        TaBridge::supported_methods().iter().copied().collect();
+    let supported: BTreeSet<&str> = TaBridge::supported_methods().iter().copied().collect();
     let refused: BTreeMap<&str, &str> = REFUSE_LIST.iter().copied().collect();
     // The refuse-list carries exact strings, so its shape is pinned here:
     // any entry must be deliberate, never a silent widening.
-    assert_eq!(REFUSE_LIST, &[], "no closure call site is knowingly refused");
+    assert_eq!(
+        REFUSE_LIST,
+        &[],
+        "no closure call site is knowingly refused"
+    );
     let mut uncovered = Vec::new();
     for indicator in TASK_INDICATORS {
         for (file, sites) in ta_sites_per_closure(indicator) {
             for method in &sites {
-                if !supported.contains(method.as_str()) && !refused.contains_key(method.as_str())
-                {
+                if !supported.contains(method.as_str()) && !refused.contains_key(method.as_str()) {
                     uncovered.push(format!("{file}: ta.{method}"));
                 }
             }
@@ -251,30 +245,78 @@ fn task_closure_ta_inventory_is_pinned() {
         per_closure.insert(indicator.name, union.into_iter().collect::<Vec<_>>());
     }
     assert_eq!(
-        per_closure.get("DeltaVolumeProfileProtopyne").expect("dvp inventoried"),
+        per_closure
+            .get("DeltaVolumeProfileProtopyne")
+            .expect("dvp inventoried"),
         &vec![
-            "alma", "atr", "cci", "cmo", "correlation", "ema", "highestbars",
-            "hma", "lowestbars", "mfi", "rma", "rsi", "sma", "stdev", "stoch",
-            "vwma", "wma",
+            "alma",
+            "atr",
+            "cci",
+            "cmo",
+            "correlation",
+            "ema",
+            "highestbars",
+            "hma",
+            "lowestbars",
+            "mfi",
+            "rma",
+            "rsi",
+            "sma",
+            "stdev",
+            "stoch",
+            "vwma",
+            "wma",
         ],
         "DVP ta.* vocabulary pinned (indicator plus linked libraries)",
     );
     assert_eq!(
         per_closure.get("ApexPPAS").expect("ppas inventoried"),
         &vec![
-            "alma", "atr", "cci", "cmo", "correlation", "ema", "highestbars",
-            "hma", "lowestbars", "mfi", "rma", "rsi", "sma", "stdev", "stoch",
-            "vwma", "wma",
+            "alma",
+            "atr",
+            "cci",
+            "cmo",
+            "correlation",
+            "ema",
+            "highestbars",
+            "hma",
+            "lowestbars",
+            "mfi",
+            "rma",
+            "rsi",
+            "sma",
+            "stdev",
+            "stoch",
+            "vwma",
+            "wma",
         ],
         "PPAS ta.* vocabulary pinned (ta.*-free indicator; library union)",
     );
     assert_eq!(
         per_closure.get("ApexRSIMD").expect("rsimd inventoried"),
         &vec![
-            "alma", "atr", "barssince", "cci", "cmo", "correlation", "ema",
-            "highestbars", "hma", "lowestbars", "mfi", "mom", "pivothigh",
-            "pivotlow", "rma", "rsi", "sma", "stdev", "stoch", "valuewhen",
-            "vwma", "wma",
+            "alma",
+            "atr",
+            "barssince",
+            "cci",
+            "cmo",
+            "correlation",
+            "ema",
+            "highestbars",
+            "hma",
+            "lowestbars",
+            "mfi",
+            "mom",
+            "pivothigh",
+            "pivotlow",
+            "rma",
+            "rsi",
+            "sma",
+            "stdev",
+            "stoch",
+            "valuewhen",
+            "vwma",
+            "wma",
         ],
         "RSIMD ta.* vocabulary pinned",
     );

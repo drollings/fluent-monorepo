@@ -222,7 +222,11 @@ async fn command_rows_replay_into_trading_state() {
 
     scoped(permit.clone(), async {
         let replayed = journal.replay(&permit).expect("replay");
-        let kinds: Vec<&str> = replayed.events.iter().map(|event| event.kind.as_str()).collect();
+        let kinds: Vec<&str> = replayed
+            .events
+            .iter()
+            .map(|event| event.kind.as_str())
+            .collect();
         assert!(
             kinds.contains(&COMMAND_DISARM_KIND),
             "disarm journaled its row, got: {kinds:?}"
@@ -274,7 +278,9 @@ async fn unpermitted_command_refuses_without_mutating() {
         .journal(Arc::new(journal))
         .build();
     // No capability scope: the permit path is absent.
-    let refusal = disarm.execute(&WorkContext::default()).expect_err("must refuse");
+    let refusal = disarm
+        .execute(&WorkContext::default())
+        .expect_err("must refuse");
     assert!(
         matches!(refusal, WorkError::Execution(_)),
         "refusal is an execution failure, got: {refusal:?}"
@@ -299,7 +305,10 @@ async fn halted_entries_refuse_while_exits_fill() {
     let journal = Arc::new(Journal::open(&path).expect("open"));
     let session = session_over_with(registry_over(&venue), VenueStorage::new(path));
     let state = session.state_handle().clone();
-    assert!(state.get().allows(false), "sessions boot allowing everything");
+    assert!(
+        state.get().allows(false),
+        "sessions boot allowing everything"
+    );
 
     state.set(TradingState::Disabled);
     let refusal = session
@@ -311,7 +320,10 @@ async fn halted_entries_refuse_while_exits_fill() {
         reason.contains("halt") || reason.contains("Disabled"),
         "refusal names its cause, got: {reason}"
     );
-    assert!(venue.orders().is_empty(), "refused entries never reach the venue");
+    assert!(
+        venue.orders().is_empty(),
+        "refused entries never reach the venue"
+    );
 
     let exit = session
         .submit_order(job(&journal, "h#exit", "SPY", true))
@@ -451,16 +463,23 @@ async fn close_all_emits_exactly_once_and_retries_lookup() {
             .strategy("ribbon".to_owned())
             .journal(Arc::clone(&journal))
             .build();
-        let output = close.execute(&ctx_with(&permit)).expect("close-all executes");
+        let output = close
+            .execute(&ctx_with(&permit))
+            .expect("close-all executes");
         let intents: Vec<OrderIntent> =
             serde_json::from_value(output.data.clone()).expect("intents round-trip as data");
         assert_eq!(intents.len(), 2, "one intent per position, never per leg");
-        let mut ids: Vec<&str> = intents.iter().map(|intent| intent.client_id.as_str()).collect();
+        let mut ids: Vec<&str> = intents
+            .iter()
+            .map(|intent| intent.client_id.as_str())
+            .collect();
         ids.sort_unstable();
         assert_eq!(ids, vec!["close-0-AAPL", "close-1-SPY"]);
 
         // Same groups, same intents: emission is deterministic.
-        let again = close.execute(&ctx_with(&permit)).expect("close-all executes");
+        let again = close
+            .execute(&ctx_with(&permit))
+            .expect("close-all executes");
         let intents_again: Vec<OrderIntent> =
             serde_json::from_value(again.data.clone()).expect("intents round-trip as data");
         assert_eq!(intents, intents_again, "close-all is deterministic");
@@ -479,7 +498,10 @@ async fn close_all_emits_exactly_once_and_retries_lookup() {
             .submit_close_intents(&journal, &approved, intents.clone(), &quote(), now())
             .await
             .expect("retries look up");
-        assert_eq!(second_round, first_round, "retry returns the original records");
+        assert_eq!(
+            second_round, first_round,
+            "retry returns the original records"
+        );
         assert_eq!(registry.orders().len(), 4, "no duplicate orders minted");
 
         // Cancel sweeps: every order here is filled (terminal), so the sweep
@@ -506,7 +528,9 @@ async fn close_all_emits_exactly_once_and_retries_lookup() {
         // The close-all invocation journaled its audit row.
         let tailed = journal.replay(&permit).expect("replay").events;
         assert!(
-            tailed.iter().any(|event| event.kind == COMMAND_CLOSE_ALL_KIND),
+            tailed
+                .iter()
+                .any(|event| event.kind == COMMAND_CLOSE_ALL_KIND),
             "close-all journals its audit row"
         );
     })
@@ -537,9 +561,16 @@ fn pending_proposal(id: &str) -> protopyne_strategy::Proposal {
         .activity_score(0.7)
         .created_at(now())
         .build();
-    proposal.apply(E::PassRisk, "risk approved", now()).expect("pass risk");
-    proposal.apply(E::RequireHuman, "no grant covers entry", now()).expect("ask human");
-    assert_eq!(proposal.state, protopyne_strategy::ProposalState::PendingHuman);
+    proposal
+        .apply(E::PassRisk, "risk approved", now())
+        .expect("pass risk");
+    proposal
+        .apply(E::RequireHuman, "no grant covers entry", now())
+        .expect("ask human");
+    assert_eq!(
+        proposal.state,
+        protopyne_strategy::ProposalState::PendingHuman
+    );
     proposal
 }
 
@@ -561,12 +592,23 @@ async fn approval_journals_advances_and_replays() {
     let (journal, permit) = journal_at(&path);
     let mut proposal = pending_proposal("prop-approve-1");
     scoped(permit.clone(), async {
-        let entry = decide_proposal(&journal, &permit, &mut proposal, E::Approve, "operator approved", now())
-            .expect("pending approval records");
+        let entry = decide_proposal(
+            &journal,
+            &permit,
+            &mut proposal,
+            E::Approve,
+            "operator approved",
+            now(),
+        )
+        .expect("pending approval records");
         assert_eq!((entry.from, entry.to), (S::PendingHuman, S::Approved));
         assert_eq!(proposal.state, S::Approved);
         let replayed = journal.replay(&permit).expect("replay").events;
-        assert_eq!(transition_rows(&replayed).len(), 1, "exactly one decision row");
+        assert_eq!(
+            transition_rows(&replayed).len(),
+            1,
+            "exactly one decision row"
+        );
         assert_eq!(
             replay_proposal_states(&replayed).get("prop-approve-1"),
             Some(&S::Approved),
@@ -590,12 +632,23 @@ async fn rejection_journals_advances_and_replays() {
     let (journal, permit) = journal_at(&path);
     let mut proposal = pending_proposal("prop-reject-1");
     scoped(permit.clone(), async {
-        let entry = decide_proposal(&journal, &permit, &mut proposal, E::Reject, "too much size", now())
-            .expect("pending rejection records");
+        let entry = decide_proposal(
+            &journal,
+            &permit,
+            &mut proposal,
+            E::Reject,
+            "too much size",
+            now(),
+        )
+        .expect("pending rejection records");
         assert_eq!((entry.from, entry.to), (S::PendingHuman, S::Rejected));
         assert_eq!(proposal.state, S::Rejected);
         let replayed = journal.replay(&permit).expect("replay").events;
-        assert_eq!(transition_rows(&replayed).len(), 1, "exactly one decision row");
+        assert_eq!(
+            transition_rows(&replayed).len(),
+            1,
+            "exactly one decision row"
+        );
         assert_eq!(
             replay_proposal_states(&replayed).get("prop-reject-1"),
             Some(&S::Rejected)
@@ -615,13 +668,33 @@ async fn approval_outside_pending_human_refuses_without_a_row() {
     let mut proposal = pending_proposal("prop-early-1");
     proposal.state = S::Proposed;
     scoped(permit.clone(), async {
-        let refusal = decide_proposal(&journal, &permit, &mut proposal, E::Approve, "too eager", now())
-            .expect_err("approval from Proposed must refuse");
-        assert!(refusal.to_string().contains("Proposed"), "refusal names the state, got: {refusal}");
-        assert_eq!(proposal.state, S::Proposed, "refused decisions change nothing");
+        let refusal = decide_proposal(
+            &journal,
+            &permit,
+            &mut proposal,
+            E::Approve,
+            "too eager",
+            now(),
+        )
+        .expect_err("approval from Proposed must refuse");
+        assert!(
+            refusal.to_string().contains("Proposed"),
+            "refusal names the state, got: {refusal}"
+        );
+        assert_eq!(
+            proposal.state,
+            S::Proposed,
+            "refused decisions change nothing"
+        );
         let replayed = journal.replay(&permit).expect("replay").events;
-        assert!(transition_rows(&replayed).is_empty(), "no row without a decision");
-        assert!(replay_proposal_states(&replayed).is_empty(), "no projection without rows");
+        assert!(
+            transition_rows(&replayed).is_empty(),
+            "no row without a decision"
+        );
+        assert!(
+            replay_proposal_states(&replayed).is_empty(),
+            "no projection without rows"
+        );
     })
     .await;
 }
@@ -638,10 +711,21 @@ async fn second_decision_on_a_settled_proposal_refuses() {
     scoped(permit.clone(), async {
         decide_proposal(&journal, &permit, &mut proposal, E::Approve, "yes", now())
             .expect("first decision records");
-        decide_proposal(&journal, &permit, &mut proposal, E::Approve, "yes again", now())
-            .expect_err("settled proposals take no second act");
+        decide_proposal(
+            &journal,
+            &permit,
+            &mut proposal,
+            E::Approve,
+            "yes again",
+            now(),
+        )
+        .expect_err("settled proposals take no second act");
         let replayed = journal.replay(&permit).expect("replay").events;
-        assert_eq!(transition_rows(&replayed).len(), 1, "the first row stands alone");
+        assert_eq!(
+            transition_rows(&replayed).len(),
+            1,
+            "the first row stands alone"
+        );
     })
     .await;
 }
@@ -657,12 +741,29 @@ async fn machine_events_refuse_on_the_decision_path() {
     let (journal, permit) = journal_at(&path);
     let mut proposal = pending_proposal("prop-submit-1");
     scoped(permit.clone(), async {
-        let refusal = decide_proposal(&journal, &permit, &mut proposal, E::Submit, "machine act", now())
-            .expect_err("machine events must refuse");
-        assert!(refusal.to_string().contains("Approve"), "refusal names the plane, got: {refusal}");
-        assert_eq!(proposal.state, S::PendingHuman, "refused events change nothing");
+        let refusal = decide_proposal(
+            &journal,
+            &permit,
+            &mut proposal,
+            E::Submit,
+            "machine act",
+            now(),
+        )
+        .expect_err("machine events must refuse");
+        assert!(
+            refusal.to_string().contains("Approve"),
+            "refusal names the plane, got: {refusal}"
+        );
+        assert_eq!(
+            proposal.state,
+            S::PendingHuman,
+            "refused events change nothing"
+        );
         let replayed = journal.replay(&permit).expect("replay").events;
-        assert!(transition_rows(&replayed).is_empty(), "no row for a refused event");
+        assert!(
+            transition_rows(&replayed).is_empty(),
+            "no row for a refused event"
+        );
     })
     .await;
 }

@@ -88,12 +88,18 @@ fn json_matches_serialized_bytes() {
         length: i64,
         source: String,
     }
-    let cfg = Cfg { length: 14, source: "close".to_owned() };
+    let cfg = Cfg {
+        length: 14,
+        source: "close".to_owned(),
+    };
     let bytes = serde_json::to_vec(&cfg).expect("serializes");
     assert_eq!(fingerprint_json(&cfg), fnv1a64(&bytes));
     assert_ne!(
         fingerprint_json(&cfg),
-        fingerprint_json(&Cfg { length: 15, source: "close".to_owned() })
+        fingerprint_json(&Cfg {
+            length: 15,
+            source: "close".to_owned()
+        })
     );
 }
 

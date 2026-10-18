@@ -9,7 +9,11 @@ fn sessions_gate_rth_and_dst() {
     use chrono::TimeZone as _;
     let session = TradingSession::parse("0930-1600").expect("rth parses");
     let stamp = |y: i32, mo: u32, d: u32, h: u32, mi: u32| {
-        chrono::Utc.with_ymd_and_hms(y, mo, d, h, mi, 0).single().expect("valid stamp").timestamp_millis()
+        chrono::Utc
+            .with_ymd_and_hms(y, mo, d, h, mi, 0)
+            .single()
+            .expect("valid stamp")
+            .timestamp_millis()
     };
     // Standard time (EST, UTC-5): 09:30 ET == 14:30 UTC.
     assert!(!session.contains(stamp(2026, 1, 9, 14, 29)));
@@ -29,8 +33,22 @@ fn sessions_gate_rth_and_dst() {
     assert!(is_dst_et(stamp(2026, 11, 1, 5, 59)));
     assert!(!is_dst_et(stamp(2026, 11, 1, 6, 0)));
     // Session dates follow ET wall clock, not UTC days.
-    assert_eq!(session.session_date(stamp(2026, 1, 10, 0, 30)), (2026, 1, 9));
-    for bad in ["0930", "0930-1600-1700", "abcd-efgh", "1600-0930", "0930-0930", "2400-2500", ""] {
-        assert!(TradingSession::parse(bad).is_err(), "session {bad:?} must refuse");
+    assert_eq!(
+        session.session_date(stamp(2026, 1, 10, 0, 30)),
+        (2026, 1, 9)
+    );
+    for bad in [
+        "0930",
+        "0930-1600-1700",
+        "abcd-efgh",
+        "1600-0930",
+        "0930-0930",
+        "2400-2500",
+        "",
+    ] {
+        assert!(
+            TradingSession::parse(bad).is_err(),
+            "session {bad:?} must refuse"
+        );
     }
 }

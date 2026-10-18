@@ -56,9 +56,7 @@ impl Quote {
         if self.ask.as_decimal() <= self.bid.as_decimal() {
             return None;
         }
-        Some(Money::new(
-            self.ask.as_decimal() - self.bid.as_decimal(),
-        ))
+        Some(Money::new(self.ask.as_decimal() - self.bid.as_decimal()))
     }
 
     /// Age in seconds against `now`, saturating on clock skew.
@@ -106,15 +104,10 @@ impl LiquidityFilter {
             quote.bid_size
         };
         if size < self.min_size {
-            return Err(format!(
-                "size {size} below minimum {}",
-                self.min_size
-            ));
+            return Err(format!("size {size} below minimum {}", self.min_size));
         }
         if u64::from(contracts) > size {
-            return Err(format!(
-                "order for {contracts} exceeds quoted size {size}"
-            ));
+            return Err(format!("order for {contracts} exceeds quoted size {size}"));
         }
         if quote.age_secs(now) > self.max_age_secs {
             return Err(format!(

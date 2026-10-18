@@ -32,16 +32,7 @@ const MALFORMED: [(&str, DecimalScaleError); 10] = [
     ("0x10", DecimalScaleError::InvalidCharacter),
 ];
 
-const DECIMAL_REJECTED: [&str; 8] = [
-    "",
-    "   ",
-    "+",
-    "-",
-    ".",
-    "abc",
-    "1,000",
-    "١٢٣",
-];
+const DECIMAL_REJECTED: [&str; 8] = ["", "   ", "+", "-", ".", "abc", "1,000", "١٢٣"];
 
 #[test]
 fn scale_guard_counts_ascii_fraction_digits() {

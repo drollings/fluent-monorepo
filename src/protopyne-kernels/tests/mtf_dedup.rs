@@ -20,8 +20,8 @@ use crate::{
 };
 use protopyne_types::Bar;
 use rust_decimal::Decimal;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
 /// Minute-aligned base for synthetic tapes.
 const T0: i64 = 1_699_999_980_000;
@@ -44,7 +44,9 @@ fn bar_at(open_ms: i64, step: i64, volume: u64) -> Bar {
 
 /// Ten aligned minute bars: closes `100.02 + 0.05*i`, volumes `100*(i+1)`.
 fn ten_bars() -> Vec<Bar> {
-    (0..10).map(|i| bar_at(T0 + i * MIN, i, 100 * (i as u64 + 1))).collect()
+    (0..10)
+        .map(|i| bar_at(T0 + i * MIN, i, 100 * (i as u64 + 1)))
+        .collect()
 }
 
 fn stored() -> MtfStore {
@@ -95,7 +97,10 @@ impl Indicator for Leaf {
 
     fn batch(&self, data: &Ohlcv<'_>, _params: &ParamSet) -> Result<IndicatorResult, KernelError> {
         self.calls.fetch_add(1, Ordering::SeqCst);
-        Ok(IndicatorResult::new(self.spec.id.clone(), mean3(data.close)))
+        Ok(IndicatorResult::new(
+            self.spec.id.clone(),
+            mean3(data.close),
+        ))
     }
 
     fn update(
@@ -151,7 +156,10 @@ impl Indicator for Composer {
 
     fn batch(&self, data: &Ohlcv<'_>, _params: &ParamSet) -> Result<IndicatorResult, KernelError> {
         self.calls.fetch_add(1, Ordering::SeqCst);
-        Ok(IndicatorResult::new(self.spec.id.clone(), mean3(data.close)))
+        Ok(IndicatorResult::new(
+            self.spec.id.clone(),
+            mean3(data.close),
+        ))
     }
 
     fn update(
@@ -210,10 +218,17 @@ impl Indicator for GhostComposer {
     }
 }
 
-fn doubles_registry(leaf_calls: &Arc<AtomicUsize>, composer_calls: &Arc<AtomicUsize>) -> IndicatorRegistry {
+fn doubles_registry(
+    leaf_calls: &Arc<AtomicUsize>,
+    composer_calls: &Arc<AtomicUsize>,
+) -> IndicatorRegistry {
     let mut registry = IndicatorRegistry::new();
-    registry.register(Leaf::new(leaf_calls)).expect("leaf registers");
-    registry.register(Composer::new(composer_calls)).expect("composer registers");
+    registry
+        .register(Leaf::new(leaf_calls))
+        .expect("leaf registers");
+    registry
+        .register(Composer::new(composer_calls))
+        .expect("composer registers");
     registry
 }
 
@@ -249,16 +264,30 @@ fn shared_parametric_dep_computes_once() {
     let ordered = store
         .ensure(&registry, &requests, now, Lookahead::Off)
         .expect("parametric fill");
-    assert_eq!(leaf_calls.load(Ordering::SeqCst), 1, "shared sub-key computes once");
-    assert_eq!(composer_calls.load(Ordering::SeqCst), 1, "composer computes once");
+    assert_eq!(
+        leaf_calls.load(Ordering::SeqCst),
+        1,
+        "shared sub-key computes once"
+    );
+    assert_eq!(
+        composer_calls.load(Ordering::SeqCst),
+        1,
+        "composer computes once"
+    );
     let cached = store.cache(&leaf_key(10)).expect("dep key cached");
     assert_eq!(cached.values.len(), 10, "dep series covers the frame");
     assert!(
         store.cache(&default_leaf_key()).is_none(),
         "no default-params squatter caches a series nobody asked for"
     );
-    let leaf_pos = ordered.iter().position(|k| k == &leaf_key(10)).expect("dep ordered");
-    let composer_pos = ordered.iter().position(|k| k == &composer_key(20)).expect("composer ordered");
+    let leaf_pos = ordered
+        .iter()
+        .position(|k| k == &leaf_key(10))
+        .expect("dep ordered");
+    let composer_pos = ordered
+        .iter()
+        .position(|k| k == &composer_key(20))
+        .expect("composer ordered");
     assert!(leaf_pos < composer_pos, "dep-first order");
 }
 
@@ -277,11 +306,22 @@ fn distinct_param_keys_compute_separately() {
     store
         .ensure(&registry, &requests, now, Lookahead::Off)
         .expect("distinct keys fill");
-    assert_eq!(leaf_calls.load(Ordering::SeqCst), 2, "one compute per series key");
-    assert_eq!(composer_calls.load(Ordering::SeqCst), 1, "composer computes once");
+    assert_eq!(
+        leaf_calls.load(Ordering::SeqCst),
+        2,
+        "one compute per series key"
+    );
+    assert_eq!(
+        composer_calls.load(Ordering::SeqCst),
+        1,
+        "composer computes once"
+    );
     assert!(store.cache(&leaf_key(10)).is_some(), "dep key cached");
     assert!(store.cache(&leaf_key(7)).is_some(), "direct key cached");
-    assert!(store.cache(&default_leaf_key()).is_none(), "no default-params squatter");
+    assert!(
+        store.cache(&default_leaf_key()).is_none(),
+        "no default-params squatter"
+    );
 }
 
 #[test]
@@ -291,11 +331,23 @@ fn parametric_edges_are_dep_first_with_real_params() {
     let registry = doubles_registry(&leaf_calls, &composer_calls);
     let roots = vec![(composer_key(20), composer_params(20))];
     let (graph, dep_params) = build_graph(&registry, &roots).expect("parametric graph");
-    assert!(graph.nodes().contains(&leaf_key(10)), "real-params dep is a node");
-    assert!(!graph.nodes().contains(&default_leaf_key()), "default lift is gone");
+    assert!(
+        graph.nodes().contains(&leaf_key(10)),
+        "real-params dep is a node"
+    );
+    assert!(
+        !graph.nodes().contains(&default_leaf_key()),
+        "default lift is gone"
+    );
     let order = order_for(&graph, &[composer_key(20)]).expect("order");
-    let leaf_pos = order.iter().position(|k| k == &leaf_key(10)).expect("dep ordered");
-    let composer_pos = order.iter().position(|k| k == &composer_key(20)).expect("composer ordered");
+    let leaf_pos = order
+        .iter()
+        .position(|k| k == &leaf_key(10))
+        .expect("dep ordered");
+    let composer_pos = order
+        .iter()
+        .position(|k| k == &composer_key(20))
+        .expect("composer ordered");
     assert!(leaf_pos < composer_pos, "dep-first order");
     // Resolved parameters travel with the graph so the compute step reads
     // the dep's real params, never a default fallback.
@@ -310,8 +362,15 @@ fn parametric_edges_are_dep_first_with_real_params() {
         .expect("composer key")
         .with_volume_source();
     let (vol_graph, _) = build_graph(&registry, &[(vol_root, composer_params(20))]).expect("graph");
-    let dep = vol_graph.nodes().iter().find(|k| k.kernel == "leaf").expect("dep node");
-    assert!(dep.volume_source, "dep inherits the request's leg selection");
+    let dep = vol_graph
+        .nodes()
+        .iter()
+        .find(|k| k.kernel == "leaf")
+        .expect("dep node");
+    assert!(
+        dep.volume_source,
+        "dep inherits the request's leg selection"
+    );
 }
 
 #[test]
@@ -327,7 +386,10 @@ fn unknown_parametric_dep_refuses() {
         }))
         .expect("ghost registers");
     let key = SeriesKey::new(MIN, "haunt", &ParamSet::new()).expect("key");
-    assert!(build_graph(&registry, &[(key, ParamSet::new())]).is_err(), "ghost dep refuses");
+    assert!(
+        build_graph(&registry, &[(key, ParamSet::new())]).is_err(),
+        "ghost dep refuses"
+    );
 }
 
 fn length_params(length: i64) -> ParamSet {
@@ -337,18 +399,16 @@ fn length_params(length: i64) -> ParamSet {
 #[test]
 fn builtin_composer_edges_use_real_params() {
     let registry = crate::indicator::builtin_registry().expect("builtins load");
-    let sma = |length: i64| {
-        SeriesKey::new(MIN, "sma", &length_params(length)).expect("sma key")
-    };
-    let ema = |length: i64| {
-        SeriesKey::new(MIN, "ema", &length_params(length)).expect("ema key")
-    };
+    let sma = |length: i64| SeriesKey::new(MIN, "sma", &length_params(length)).expect("sma key");
+    let ema = |length: i64| SeriesKey::new(MIN, "ema", &length_params(length)).expect("ema key");
     let ad = SeriesKey::new(MIN, "ad", &ParamSet::new()).expect("ad key");
     let macd_params = ParamSet::new()
         .with_int("fast_length", 12)
         .with_int("slow_length", 26)
         .with_int("signal_length", 9);
-    let adosc_params = ParamSet::new().with_int("fast_length", 3).with_int("slow_length", 10);
+    let adosc_params = ParamSet::new()
+        .with_int("fast_length", 3)
+        .with_int("slow_length", 10);
     let cases: Vec<(&str, ParamSet, Vec<SeriesKey>)> = vec![
         ("trima", length_params(20), vec![sma(10), sma(11)]),
         ("dema", length_params(14), vec![ema(14)]),
@@ -369,11 +429,17 @@ fn builtin_composer_edges_use_real_params() {
             let squatter =
                 SeriesKey::new(MIN, &dep.kernel, &ParamSet::new()).expect("squatter key");
             if !deps.contains(&squatter) {
-                assert!(!graph.nodes().contains(&squatter), "{id} lifts no {squatter}");
+                assert!(
+                    !graph.nodes().contains(&squatter),
+                    "{id} lifts no {squatter}"
+                );
             }
         }
         let order = order_for(&graph, std::slice::from_ref(&key)).expect("composer orders");
-        let composer_pos = order.iter().position(|k| k == &key).expect("composer ordered");
+        let composer_pos = order
+            .iter()
+            .position(|k| k == &key)
+            .expect("composer ordered");
         for dep in deps {
             let dep_pos = order.iter().position(|k| k == dep).expect("dep ordered");
             assert!(dep_pos < composer_pos, "{id}: {dep} precedes composer");
@@ -383,20 +449,39 @@ fn builtin_composer_edges_use_real_params() {
     // frame: it stays inline and never becomes an edge.
     let macd_key = SeriesKey::new(MIN, "macd", &cases[3].1).expect("macd key");
     let (macd_graph, _) = build_graph(&registry, &[(macd_key, cases[3].1.clone())]).expect("graph");
-    assert!(!macd_graph.nodes().contains(&ema(9)), "signal pass stays inline");
+    assert!(
+        !macd_graph.nodes().contains(&ema(9)),
+        "signal pass stays inline"
+    );
 }
 
 #[test]
 fn builtin_execution_order_is_dep_first() {
     let registry = crate::indicator::builtin_registry().expect("builtins load");
     let order = crate::execution_order(&registry, &["trima".to_owned()]).expect("trima orders");
-    assert_eq!(order, vec!["sma".to_owned(), "trima".to_owned()], "sma precedes trima");
+    assert_eq!(
+        order,
+        vec!["sma".to_owned(), "trima".to_owned()],
+        "sma precedes trima"
+    );
     let order = crate::execution_order(&registry, &["dema".to_owned()]).expect("dema orders");
-    assert_eq!(order, vec!["ema".to_owned(), "dema".to_owned()], "ema precedes dema");
+    assert_eq!(
+        order,
+        vec!["ema".to_owned(), "dema".to_owned()],
+        "ema precedes dema"
+    );
     let order = crate::execution_order(&registry, &["macd".to_owned()]).expect("macd orders");
-    assert_eq!(order, vec!["ema".to_owned(), "macd".to_owned()], "ema precedes macd");
+    assert_eq!(
+        order,
+        vec!["ema".to_owned(), "macd".to_owned()],
+        "ema precedes macd"
+    );
     let order = crate::execution_order(&registry, &["adosc".to_owned()]).expect("adosc orders");
-    assert_eq!(order, vec!["ad".to_owned(), "adosc".to_owned()], "ad precedes adosc");
+    assert_eq!(
+        order,
+        vec!["ad".to_owned(), "adosc".to_owned()],
+        "ad precedes adosc"
+    );
 }
 
 #[test]
@@ -406,7 +491,9 @@ fn static_and_parametric_deps_agree() {
         .with_int("fast_length", 12)
         .with_int("slow_length", 26)
         .with_int("signal_length", 9);
-    let adosc_params = ParamSet::new().with_int("fast_length", 3).with_int("slow_length", 10);
+    let adosc_params = ParamSet::new()
+        .with_int("fast_length", 3)
+        .with_int("slow_length", 10);
     let cases: Vec<(&str, ParamSet)> = vec![
         ("trima", length_params(20)),
         ("dema", length_params(14)),
@@ -415,14 +502,22 @@ fn static_and_parametric_deps_agree() {
         ("adosc", adosc_params),
     ];
     for (id, params) in &cases {
-        let kernel = registry.get(id).unwrap_or_else(|| panic!("{id} registered"));
-        let mut from_params: Vec<String> =
-            kernel.deps_with_params(params).iter().map(|(dep, _)| dep.clone()).collect();
+        let kernel = registry
+            .get(id)
+            .unwrap_or_else(|| panic!("{id} registered"));
+        let mut from_params: Vec<String> = kernel
+            .deps_with_params(params)
+            .iter()
+            .map(|(dep, _)| dep.clone())
+            .collect();
         from_params.sort();
         from_params.dedup();
         let mut from_spec = kernel.spec().depends.clone();
         from_spec.sort();
-        assert_eq!(from_params, from_spec, "{id}: static ids match parametric ids");
+        assert_eq!(
+            from_params, from_spec,
+            "{id}: static ids match parametric ids"
+        );
     }
 }
 
@@ -464,7 +559,10 @@ fn trima_store_values_match_direct_batch() {
         "shared sub-key equals direct batch"
     );
     let squatter = SeriesKey::new(MIN, "sma", &ParamSet::new()).expect("squatter key");
-    assert!(store.cache(&squatter).is_none(), "no default-params squatter");
+    assert!(
+        store.cache(&squatter).is_none(),
+        "no default-params squatter"
+    );
 }
 
 #[test]
@@ -478,11 +576,23 @@ fn kernel_unit_depends_provides_derive_from_spec() {
         close: vec![1.0],
         volume: vec![],
     });
-    let trima = KernelUnit::new(Arc::new(TrimaIndicator::new()), length_params(20), input.clone());
+    let trima = KernelUnit::new(
+        Arc::new(TrimaIndicator::new()),
+        length_params(20),
+        input.clone(),
+    );
     let depends: Vec<String> = trima.depends().iter().map(ToString::to_string).collect();
-    assert_eq!(depends, vec!["sma".to_owned()], "composer unit depends on its sub-kernel");
+    assert_eq!(
+        depends,
+        vec!["sma".to_owned()],
+        "composer unit depends on its sub-kernel"
+    );
     let provides: Vec<String> = trima.provides().iter().map(ToString::to_string).collect();
-    assert_eq!(provides, vec!["trima".to_owned()], "unit provides its own id");
+    assert_eq!(
+        provides,
+        vec!["trima".to_owned()],
+        "unit provides its own id"
+    );
     let sma = KernelUnit::new(Arc::new(SmaIndicator::new()), length_params(10), input);
     assert!(sma.depends().is_empty(), "leaf unit depends on nothing");
     let provides: Vec<String> = sma.provides().iter().map(ToString::to_string).collect();

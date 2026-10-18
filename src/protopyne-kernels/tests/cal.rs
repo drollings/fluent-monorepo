@@ -17,7 +17,7 @@ use crate::averages::{HmaIndicator, RmaIndicator, WmaIndicator};
 use crate::calibration::canonical_params;
 use crate::compat::compat_for;
 use crate::ema::EmaIndicator;
-use crate::indicator::{Indicator, Ohlcv, OwnedOhlcv, ParamSet, builtin_registry};
+use crate::indicator::{builtin_registry, Indicator, Ohlcv, OwnedOhlcv, ParamSet};
 use crate::oscillators::{MacdIndicator, RsiIndicator, StochIndicator};
 use crate::util::{crossover, crossunder};
 use crate::volatility::BbIndicator;
@@ -80,8 +80,8 @@ fn first_value_seed_ema(closes: &[f64], length: usize) -> Vec<Option<f64>> {
 /// Must differ from the population-deviation `bb`.
 fn sample_dev(window: &[f64]) -> f64 {
     let mean = window.iter().sum::<f64>() / window.len() as f64;
-    let var = window.iter().map(|v| (v - mean) * (v - mean)).sum::<f64>()
-        / (window.len() - 1) as f64;
+    let var =
+        window.iter().map(|v| (v - mean) * (v - mean)).sum::<f64>() / (window.len() - 1) as f64;
     var.sqrt()
 }
 
@@ -142,10 +142,7 @@ fn must_fire_band_and_composition_traps() {
     let hma = HmaIndicator::new();
     let full_data: Vec<f64> = (1..=30).map(f64::from).collect();
     let full = hma
-        .batch(
-            &closes(&full_data),
-            &ParamSet::new().with_int("length", 14),
-        )
+        .batch(&closes(&full_data), &ParamSet::new().with_int("length", 14))
         .expect("valid");
     let tail = hma
         .batch(
@@ -277,7 +274,10 @@ fn must_not_fire_flat_constant_and_spike_controls() {
             // Flat flow accumulates nothing: ad/adosc pin at zero, obv pins
             // at the opening print (every bar's volume on a constant).
             "ad" | "adosc" => assert!(expect_value(0.0), "{id} must read zero on flat input"),
-            "obv" => assert!(expect_value(1_000.0), "{id} must pin at first volume on flat input"),
+            "obv" => assert!(
+                expect_value(1_000.0),
+                "{id} must pin at first volume on flat input"
+            ),
             // Oscillator differences vanish on a constant; dispersion reads
             // zero; ratios read their defined flat values. Chaikin money
             // flow joins them: zero flow over real volume reads zero.
@@ -309,18 +309,30 @@ fn must_not_fire_flat_constant_and_spike_controls() {
             // their direction legs pin bullish: equal closes seed an
             // uptrend that a flat market never reverses.
             "sar" => {
-                assert!(expect_value(42.0), "{id} must ride the constant on flat input");
+                assert!(
+                    expect_value(42.0),
+                    "{id} must ride the constant on flat input"
+                );
                 let trend = result.secondary("trend").expect("trend leg");
                 assert!(
-                    trend.iter().filter_map(|x| *x).all(|x| (x - 1.0).abs() <= e),
+                    trend
+                        .iter()
+                        .filter_map(|x| *x)
+                        .all(|x| (x - 1.0).abs() <= e),
                     "{id}:trend must pin bullish on flat input"
                 );
             }
             "supertrend" => {
-                assert!(expect_value(42.0), "{id} must ride the constant on flat input");
+                assert!(
+                    expect_value(42.0),
+                    "{id} must ride the constant on flat input"
+                );
                 let direction = result.secondary("direction").expect("direction leg");
                 assert!(
-                    direction.iter().filter_map(|x| *x).all(|x| (x - 1.0).abs() <= e),
+                    direction
+                        .iter()
+                        .filter_map(|x| *x)
+                        .all(|x| (x - 1.0).abs() <= e),
                     "{id}:direction must pin bullish on flat input"
                 );
             }
@@ -366,10 +378,7 @@ fn must_not_fire_flat_constant_and_spike_controls() {
         let kernel = registry.get(&id).expect("registered");
         let result = kernel.batch(&views, &params(&id)).expect("valid");
         assert!(
-            result
-                .values
-                .iter()
-                .all(|v| v.is_none_or(f64::is_finite)),
+            result.values.iter().all(|v| v.is_none_or(f64::is_finite)),
             "{id} must stay finite through a single spike"
         );
     }

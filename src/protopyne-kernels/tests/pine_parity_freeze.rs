@@ -45,10 +45,10 @@
 use super::*;
 use crate::compat::assert_matrix_covers;
 use crate::filters::{KalmanIndicator, VossIndicator};
-use crate::indicator::{OwnedOhlcv, ParamSet, builtin_registry};
+use crate::indicator::{builtin_registry, OwnedOhlcv, ParamSet};
 use crate::{
-    InputSet, LibraryId, LinkedModule, LtfDataset, ModuleInput, PineEngine, PineRuntimeConfig,
-    parse_pine_source, parse_program,
+    parse_pine_source, parse_program, InputSet, LibraryId, LinkedModule, LtfDataset, ModuleInput,
+    PineEngine, PineRuntimeConfig,
 };
 use chrono::TimeZone as _;
 use protopyne_types::Bar;
@@ -108,11 +108,7 @@ fn run_probe60(script: &str) -> Result<crate::RunOutcome, crate::KernelError> {
 
 fn run_probe_warmup(script: &str, warmup: u64) -> Result<crate::RunOutcome, crate::KernelError> {
     let program = parse_program(script).expect("probe parses");
-    let mut engine = PineEngine::new(
-        PineRuntimeConfig::new()
-            .warmup_bars(warmup)
-            .build(),
-    );
+    let mut engine = PineEngine::new(PineRuntimeConfig::new().warmup_bars(warmup).build());
     engine.run(&program, &bars24(), InputSet::new())
 }
 
@@ -129,9 +125,7 @@ fn kernel_last(kernel: &str, params: &ParamSet) -> f64 {
     let registry = builtin_registry().expect("builtins register");
     let indicator = registry.get(kernel).expect("kernel bound");
     let data = legs_of(60);
-    let result = indicator
-        .batch(&data.views(), params)
-        .expect("batch runs");
+    let result = indicator.batch(&data.views(), params).expect("batch runs");
     result
         .values
         .last()
@@ -207,10 +201,7 @@ fn assert_pin(outcome: &crate::RunOutcome, var: &str, pin: Pin, ctx: &str) {
             }
             other => panic!("{ctx}: {var} reads an array, got {other:?}"),
         },
-        Pin::Present => assert!(
-            got.is_some(),
-            "{ctx}: {var} reads a present value"
-        ),
+        Pin::Present => assert!(got.is_some(), "{ctx}: {var} reads a present value"),
     }
 }
 
@@ -412,8 +403,7 @@ fn freeze_match_rows_carry_probes() {
         }
     }
     assert_eq!(
-        probeless,
-        LINKED_ROWS,
+        probeless, LINKED_ROWS,
         "every Match row carries a probe except the linked rows"
     );
 }
@@ -463,17 +453,20 @@ fn freeze_match_ta_bridge_agrees_with_kernels() {
     }
     // Unbiased spread takes the sample path, not the kernel: hand-derived
     // `sqrt(227.5 / 13)` over window `146..=159`.
-    let outcome =
-        run_probe60("x = ta.stdev(close, 14, false)").expect("unbiased stdev runs");
+    let outcome = run_probe60("x = ta.stdev(close, 14, false)").expect("unbiased stdev runs");
     assert_pin(
         &outcome,
         "x",
         Pin::Num((227.5_f64 / 13.0).sqrt()),
         "ta.stdev unbiased",
     );
-    let outcome =
-        run_probe60("x = ta.variance(close, 14, false)").expect("unbiased variance runs");
-    assert_pin(&outcome, "x", Pin::Num(227.5 / 13.0), "ta.variance unbiased");
+    let outcome = run_probe60("x = ta.variance(close, 14, false)").expect("unbiased variance runs");
+    assert_pin(
+        &outcome,
+        "x",
+        Pin::Num(227.5 / 13.0),
+        "ta.variance unbiased",
+    );
 }
 
 /// `(construct, var, pin)`: hand-computed last-bar pins for literal-shaped
@@ -488,7 +481,11 @@ const SCALAR_PINS: &[(&str, &str, Pin)] = &[
     ("string literal", "x", Pin::Text("hi")),
     ("boolean literal", "x", Pin::Bool(true)),
     ("variable", "x", Pin::Num(7.0)),
-    ("built-in series (open/high/low/close/volume/time)", "x", Pin::Num(123.0)),
+    (
+        "built-in series (open/high/low/close/volume/time)",
+        "x",
+        Pin::Num(123.0),
+    ),
     ("arithmetic (+ - * %)", "x", Pin::Num(10.0)),
     ("comparison (== != < <= > >=)", "x", Pin::Bool(true)),
     ("unary (- not)", "x", Pin::Bool(true)),
@@ -552,13 +549,13 @@ const SCALAR_PINS: &[(&str, &str, Pin)] = &[
     (
         "array.standardize",
         "x",
-        Pin::Floats(&[Some(-1.224_744_871_391_589), Some(0.0), Some(1.224_744_871_391_589)]),
+        Pin::Floats(&[
+            Some(-1.224_744_871_391_589),
+            Some(0.0),
+            Some(1.224_744_871_391_589),
+        ]),
     ),
-    (
-        "array.percentile_linear_interpolation",
-        "x",
-        Pin::Num(1.5),
-    ),
+    ("array.percentile_linear_interpolation", "x", Pin::Num(1.5)),
     ("array.covariance", "x", Pin::Num(0.5)),
     ("int() cast", "x", Pin::Int(5)),
     ("line.style_* constants", "x", Pin::Present),
@@ -572,11 +569,7 @@ const SCALAR_PINS: &[(&str, &str, Pin)] = &[
     ("switch expression value", "y", Pin::Num(20.0)),
     ("nested scope history isolation", "first", Pin::Num(1220.0)),
     ("nested scope history isolation", "second", Pin::Num(122.0)),
-    (
-        "array.concat",
-        "x",
-        Pin::Floats(&[Some(1.0), Some(2.0)]),
-    ),
+    ("array.concat", "x", Pin::Floats(&[Some(1.0), Some(2.0)])),
 ];
 
 #[test]
@@ -612,11 +605,9 @@ fn freeze_match_captures_recorded() {
         let bars = outcome.snapshots.len();
         assert!(bars > 0, "{construct} evaluates bars");
         match construct {
-            "plotcandle" => assert_eq!(
-                outcome.plotcandles.len(),
-                1,
-                "one plotcandle site captured"
-            ),
+            "plotcandle" => {
+                assert_eq!(outcome.plotcandles.len(), 1, "one plotcandle site captured")
+            }
             "barcolor" => {
                 assert_eq!(outcome.barcolors.len(), 1, "one barcolor site captured");
                 assert_eq!(
@@ -639,11 +630,7 @@ fn freeze_match_captures_recorded() {
                 );
             }
             "hline()" => {
-                assert_eq!(
-                    outcome.hlines.len(),
-                    1,
-                    "one level capture per call site"
-                );
+                assert_eq!(outcome.hlines.len(), 1, "one level capture per call site");
                 assert_eq!(
                     outcome.hlines[0].values.len(),
                     bars,
@@ -661,7 +648,11 @@ fn freeze_match_captures_recorded() {
     let row = parity_for("plot").expect("plot row known");
     let outcome = run_probe(row.probe.expect("plot carries a probe")).expect("plot runs");
     assert_eq!(outcome.plots.len(), 2, "one series per plot site");
-    let titles: Vec<&str> = outcome.plots.iter().map(|plot| plot.title.as_str()).collect();
+    let titles: Vec<&str> = outcome
+        .plots
+        .iter()
+        .map(|plot| plot.title.as_str())
+        .collect();
     assert_eq!(titles, ["A", "B"], "plot titles recorded per site");
 }
 
@@ -715,11 +706,7 @@ const ARRAY_PINS: &[(&str, &str, Pin)] = &[
     // Biased population spread of `[1, 2, 3]`: `sqrt(2 / 3)`.
     ("array.stdev", "x", Pin::Num(0.816_496_580_927_726)),
     ("array.fill", "x", Pin::Num(9.0)),
-    (
-        "array.slice",
-        "x",
-        Pin::Floats(&[Some(2.0), Some(3.0)]),
-    ),
+    ("array.slice", "x", Pin::Floats(&[Some(2.0), Some(3.0)])),
     ("array.reverse", "x", Pin::Num(2.0)),
     ("array.sort", "x", Pin::Num(1.0)),
 ];
@@ -752,7 +739,11 @@ const CORRECT_PINS: &[(&str, &str, Pin)] = &[
     ("na comparison (two-valued)", "lt", Pin::Bool(false)),
     ("timeframe.change (UTC buckets)", "c", Pin::Bool(false)),
     ("function call", "x", Pin::Num(3.0)),
-    ("method body scope (calls owner, reads caller)", "x", Pin::Num(1001.0)),
+    (
+        "method body scope (calls owner, reads caller)",
+        "x",
+        Pin::Num(1001.0),
+    ),
     ("ta.* source argument", "a", Pin::Num(100.0)),
     ("ta.* source argument", "x", Pin::Num(152.5)),
     // Source-honoring pivots: the spike at bar 21 of the 24-bar fixture
@@ -781,12 +772,17 @@ fn freeze_correct_divergences_pinned() {
     let row = parity_for("ta.macd/ta.bb/ta.stoch tuple shape").expect("tuple row known");
     let outcome = run_probe60(row.probe.expect("tuple carries a probe")).expect("runs");
     let want = kernel_last("macd", &macd12269());
-    assert_pin(&outcome, "x", Pin::Num(want), "ta.macd/ta.bb/ta.stoch tuple shape");
+    assert_pin(
+        &outcome,
+        "x",
+        Pin::Num(want),
+        "ta.macd/ta.bb/ta.stoch tuple shape",
+    );
     // `var` initializes on the first *evaluated* bar: under a two-bar
     // warmup the binding opens at `close[2]`, not the reference's bar 0.
     let row = parity_for("var declaration").expect("var row known");
-    let outcome = run_probe_warmup(row.probe.expect("var carries a probe"), 2)
-        .expect("var probe runs");
+    let outcome =
+        run_probe_warmup(row.probe.expect("var carries a probe"), 2).expect("var probe runs");
     assert_eq!(outcome.snapshots.len(), 22, "warmup bars stay unseen");
     let first = outcome.snapshots.first().expect("first evaluated bar");
     assert_eq!(first.bar, 2, "first snapshot is the first evaluated bar");
@@ -828,8 +824,7 @@ fn freeze_correct_divergences_pinned() {
     // bucket cuts at bar 47 (23:00 UTC) and holds on either side.
     let row = parity_for("timeframe.change (UTC buckets)").expect("change row known");
     assert_eq!(row.verdict, ParityVerdict::Correct, "change stands");
-    let outcome =
-        run_probe60("c = timeframe.change(\"60\")").expect("hour buckets run");
+    let outcome = run_probe60("c = timeframe.change(\"60\")").expect("hour buckets run");
     let at = |bar: usize| outcome.value_at(bar, "c").flatten();
     assert_eq!(
         at(46),
@@ -893,8 +888,7 @@ fn freeze_correct_refusals_pin_strings() {
     );
     // Destructuring a non-array call result refuses instead of binding a
     // partial tuple (the tuple-shape row's pinned arm).
-    let err =
-        run_probe("[a, b] = 42").expect_err("non-array destructure refuses");
+    let err = run_probe("[a, b] = 42").expect_err("non-array destructure refuses");
     assert_eq!(
         err.to_string(),
         "pine evaluation refused: destructuring binds array values, got 42",
@@ -930,7 +924,10 @@ fn freeze_refuse_probes_pin_strings() {
         );
         count += 1;
     }
-    assert!(count >= 11, "refuse suite covers every Refuse row, got {count}");
+    assert!(
+        count >= 11,
+        "refuse suite covers every Refuse row, got {count}"
+    );
 }
 
 /// Task-value gate: 1.0 accept over every must-run program, 1.0 refuse
@@ -986,8 +983,7 @@ fn freeze_tally_full_accept_full_refuse() {
                 refuse_total += 1;
                 match run_probe(probe) {
                     Err(err)
-                        if err.to_string()
-                            == format!("pine evaluation refused: {refusal}") =>
+                        if err.to_string() == format!("pine evaluation refused: {refusal}") =>
                     {
                         refuse += 1;
                     }
@@ -1011,10 +1007,7 @@ fn freeze_tally_full_accept_full_refuse() {
             "x = 0\nif 1\n    x := 9",
             "'if condition' needs a bool, got 1",
         ),
-        (
-            "[a, b] = 42",
-            "destructuring binds array values, got 42",
-        ),
+        ("[a, b] = 42", "destructuring binds array values, got 42"),
         (
             "x = ta.tr(true)",
             "ta.tr(true) requests alternate na handling, which is not bridged",
@@ -1022,9 +1015,7 @@ fn freeze_tally_full_accept_full_refuse() {
     ] {
         refuse_total += 1;
         match run_probe(probe) {
-            Err(err)
-                if err.to_string() == format!("pine evaluation refused: {refusal}") =>
-            {
+            Err(err) if err.to_string() == format!("pine evaluation refused: {refusal}") => {
                 refuse += 1;
             }
             _ => refuse_names.push(probe),
@@ -1091,7 +1082,12 @@ fn freeze_imported_rows_run_linked() {
     // The method body reads the bare `K` through the live caller frame, so
     // the driver's shadowing global wins over the owner's constant: this
     // pins the caller-reads half of the scope row (the corrected standing).
-    assert_pin(&outcome, "x", Pin::Num(1001.0), "method body scope reads caller");
+    assert_pin(
+        &outcome,
+        "x",
+        Pin::Num(1001.0),
+        "method body scope reads caller",
+    );
 }
 
 #[test]
@@ -1210,8 +1206,7 @@ fn freeze_match_color_cast() {
     // propagates absence instead of refusing.
     let row = parity_for("color() identity cast").expect("color row known");
     assert_eq!(row.verdict, ParityVerdict::Match, "color stands");
-    let outcome =
-        run_probe(row.probe.expect("color carries a probe")).expect("color runs");
+    let outcome = run_probe(row.probe.expect("color carries a probe")).expect("color runs");
     let at = outcome.snapshots.len() - 1;
     assert!(
         matches!(
@@ -1233,8 +1228,7 @@ fn freeze_match_plot_variable_pairing() {
     // site tags: the same captures as the inline form, titles included.
     let row = parity_for("plot variable site tag").expect("plot-var row known");
     assert_eq!(row.verdict, ParityVerdict::Match, "plot-var stands");
-    let outcome =
-        run_probe(row.probe.expect("plot-var carries a probe")).expect("runs");
+    let outcome = run_probe(row.probe.expect("plot-var carries a probe")).expect("runs");
     assert_eq!(outcome.plots.len(), 2, "both plots capture");
     assert_eq!(outcome.fills.len(), 1, "one fill per call site");
     let fill = &outcome.fills[0];
@@ -1248,8 +1242,7 @@ fn freeze_match_gradient_fill() {
     // the capture keeps the call title and both leg titles.
     let row = parity_for("gradient fill (six-positional)").expect("gradient row known");
     assert_eq!(row.verdict, ParityVerdict::Match, "gradient stands");
-    let outcome =
-        run_probe(row.probe.expect("gradient carries a probe")).expect("runs");
+    let outcome = run_probe(row.probe.expect("gradient carries a probe")).expect("runs");
     assert_eq!(outcome.fills.len(), 1, "one fill per call site");
     let fill = &outcome.fills[0];
     assert_eq!(fill.title, "Band", "call title kept");
@@ -1271,4 +1264,3 @@ fn freeze_match_alertcondition_records_nothing() {
     assert!(outcome.barcolors.is_empty(), "no barcolors recorded");
     assert!(outcome.draw_events.is_empty(), "no draw events recorded");
 }
-

@@ -11,14 +11,15 @@
 use std::path::{Path, PathBuf};
 
 use crate::error::KernelError;
-use crate::pine::manifest::{IndicatorManifestEntry, ManifestFile, build_manifest};
+use crate::pine::manifest::{build_manifest, IndicatorManifestEntry, ManifestFile};
 
 /// Read every `.pine` file directly under `dir`, sorted by file name. An
 /// unreadable file still lists (as empty text, which the builder refuses
 /// with a reason) so one bad file never hides its siblings.
 fn read_pine_dir(dir: &Path) -> Result<Vec<ManifestFile>, KernelError> {
-    let entries = std::fs::read_dir(dir)
-        .map_err(|error| KernelError::UnreadableSource(format!("cannot list {}: {error}", dir.display())))?;
+    let entries = std::fs::read_dir(dir).map_err(|error| {
+        KernelError::UnreadableSource(format!("cannot list {}: {error}", dir.display()))
+    })?;
     let mut names: Vec<String> = Vec::new();
     for entry in entries {
         let entry = entry.map_err(|error| {
@@ -38,7 +39,10 @@ fn read_pine_dir(dir: &Path) -> Result<Vec<ManifestFile>, KernelError> {
         .into_iter()
         .map(|name| {
             let text = std::fs::read_to_string(dir.join(&name)).unwrap_or_default();
-            ManifestFile { relpath: format!("{prefix}/{name}"), text }
+            ManifestFile {
+                relpath: format!("{prefix}/{name}"),
+                text,
+            }
         })
         .collect())
 }
@@ -46,7 +50,9 @@ fn read_pine_dir(dir: &Path) -> Result<Vec<ManifestFile>, KernelError> {
 /// Discover every indicator under `<root>/indicators`, resolving imports
 /// against `<root>/libraries`. Sorted by id; a rerun over unchanged files
 /// is identical. A missing root refuses; an empty directory yields no rows.
-pub fn build_indicator_manifest(data_root: &Path) -> Result<Vec<IndicatorManifestEntry>, KernelError> {
+pub fn build_indicator_manifest(
+    data_root: &Path,
+) -> Result<Vec<IndicatorManifestEntry>, KernelError> {
     let root = PathBuf::from(data_root);
     let indicators = read_pine_dir(&root.join("indicators"))?;
     let libraries = read_pine_dir(&root.join("libraries")).unwrap_or_default();

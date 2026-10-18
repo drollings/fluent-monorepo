@@ -21,15 +21,13 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 
-use fluent_wvr::prelude::*;
 use fluent_wvr::component_downcast_ref;
+use fluent_wvr::prelude::*;
 
 use crate::config::ThemeConfig;
 use crate::error::EguiError;
 use crate::feed::PaneHandle;
-use crate::fields::{
-    FieldEdits, SettingsTab, paint_tabbed_schema_fields_compact, schema_fields,
-};
+use crate::fields::{paint_tabbed_schema_fields_compact, schema_fields, FieldEdits, SettingsTab};
 use crate::paint::{
     eye_icon_geom, hex_bolt_icon_geom, paint_eye_icon, paint_hex_bolt_icon, resolve_color,
 };
@@ -58,15 +56,18 @@ pub struct ReadoutValue {
 }
 
 /// The three pointer zones one slot card owns: the eye toggle, the bolt
-/// settings opener, and the card body itself.
+/// settings opener, the close (unload) control, and the card body itself.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SlotControlRect {
     /// Owning slot id.
     pub slot_id: String,
-    /// Eye toggle zone (right side of the card).
+    /// Eye toggle zone (left of the bolt).
     pub eye: egui::Rect,
-    /// Bolt settings zone (right of the eye zone).
+    /// Bolt settings zone (right of the eye).
     pub bolt: egui::Rect,
+    /// Close zone (right of the bolt): unloads the indicator immediately.
+    /// Material "X" affordance — same touch size as eye/bolt, no confirm.
+    pub close: egui::Rect,
     /// Whole card zone, controls included.
     pub card: egui::Rect,
 }
@@ -78,7 +79,9 @@ pub enum SlotControlHit {
     Eye(String),
     /// Inside the bolt settings zone.
     Bolt(String),
-    /// Inside the card body, clear of both controls.
+    /// Inside the close (unload) zone.
+    Close(String),
+    /// Inside the card body, clear of all controls.
     Card(String),
 }
 
@@ -93,7 +96,9 @@ pub enum HotSlotAction {
     OpenedSettings(String),
     /// The shell closed a slot's settings pane.
     ClosedSettings(String),
-    /// The shell removed a slot (its pane handle already closed).
+    /// The shell removed a slot (its pane handle already closed). The painter
+    /// raises this directly from the X control — unload is immediate, no
+    /// confirm, so workstation and touch behave identically.
     Removed(String),
     /// The shell selected a slot card.
     SelectedCard(String),
@@ -236,7 +241,12 @@ impl HotSlotStack {
     /// Create an empty stack at the default origin.
     #[must_use]
     pub fn new() -> Self {
-        Self { order: Vec::new(), slots: HashMap::new(), origin: STACK_ORIGIN, scroll_px: 0.0 }
+        Self {
+            order: Vec::new(),
+            slots: HashMap::new(),
+            origin: STACK_ORIGIN,
+            scroll_px: 0.0,
+        }
     }
 
     /// Stack origin (top-left of the first card).
@@ -530,7 +540,9 @@ impl HotSlotStack {
     /// unknown ids).
     #[must_use]
     pub fn has_pending_settings(&self, id: &str) -> bool {
-        self.slots.get(id).is_some_and(|slot| slot.pending.is_some())
+        self.slots
+            .get(id)
+            .is_some_and(|slot| slot.pending.is_some())
     }
 
     /// The overlayed card width in pixels, so a caller can place the stack
@@ -589,17 +601,14 @@ impl HotSlotStack {
 
     /// Write one field through the slot's own `FieldAccess` contract; the
     /// field's own validation refuses, never the stack. Unknown ids refuse.
-    pub fn set_slot_field(
-        &mut self,
-        id: &str,
-        name: &str,
-        value: &str,
-    ) -> Result<(), EguiError> {
+    pub fn set_slot_field(&mut self, id: &str, name: &str, value: &str) -> Result<(), EguiError> {
         let slot = self.slots.get_mut(id).ok_or_else(|| unknown_slot(id))?;
-        slot.config.set_field(name, value).map_err(|error| EguiError::InvalidParam {
-            what: name.to_owned(),
-            reason: error.to_string(),
-        })
+        slot.config
+            .set_field(name, value)
+            .map_err(|error| EguiError::InvalidParam {
+                what: name.to_owned(),
+                reason: error.to_string(),
+            })
     }
 
     /// Write one Style field straight through the slot's style component's own
@@ -611,36 +620,64 @@ impl HotSlotStack {
     /// A style write needs no recompute: it changes how a series paints, never
     /// what a series is, so it deliberately does not touch the pane cache the
     /// way a config write does.
-    pub fn set_style_field(
-        &mut self,
-        id: &str,
-        name: &str,
-        value: &str,
-    ) -> Result<(), EguiError> {
+    pub fn set_style_field(&mut self, id: &str, name: &str, value: &str) -> Result<(), EguiError> {
         let slot = self.slots.get_mut(id).ok_or_else(|| unknown_slot(id))?;
-        slot.style.set_field(name, value).map_err(|error| EguiError::InvalidParam {
-            what: name.to_owned(),
-            reason: error.to_string(),
-        })
+        slot.style
+            .set_field(name, value)
+            .map_err(|error| EguiError::InvalidParam {
+                what: name.to_owned(),
+                reason: error.to_string(),
+            })
     }
 
     /// Read one Style field through the slot's style component's own
     /// `FieldAccess` contract. Unknown ids refuse.
     pub fn get_style_field(&self, id: &str, name: &str) -> Result<String, EguiError> {
         let slot = self.slots.get(id).ok_or_else(|| unknown_slot(id))?;
-        slot.style.get_field(name).map_err(|error| EguiError::InvalidParam {
-            what: name.to_owned(),
-            reason: error.to_string(),
-        })
+        slot.style
+            .get_field(name)
+            .map_err(|error| EguiError::InvalidParam {
+                what: name.to_owned(),
+                reason: error.to_string(),
+            })
     }
 
     /// Read one field through the slot's own `FieldAccess` contract.
     pub fn get_slot_field(&self, id: &str, name: &str) -> Result<String, EguiError> {
         let slot = self.slots.get(id).ok_or_else(|| unknown_slot(id))?;
-        slot.config.get_field(name).map_err(|error| EguiError::InvalidParam {
-            what: name.to_owned(),
-            reason: error.to_string(),
-        })
+        slot.config
+            .get_field(name)
+            .map_err(|error| EguiError::InvalidParam {
+                what: name.to_owned(),
+                reason: error.to_string(),
+            })
+    }
+
+    /// Write one field into the slot's staged settings buffer (the settings
+    /// pane's draft), when the pane is open. This is the series-picker path:
+    /// a catalogue pick lands in the draft so Cancel still discards it and
+    /// Apply commits it through the live contract. Refuses unknown ids or a
+    /// closed pane — a draft write with nowhere to stage is a bug, not a
+    /// state to paper over.
+    pub fn set_staged_field(&mut self, id: &str, name: &str, value: &str) -> Result<(), EguiError> {
+        let slot = self.slots.get_mut(id).ok_or_else(|| unknown_slot(id))?;
+        let Some(pending) = slot.pending.as_mut() else {
+            return Err(EguiError::InvalidParam {
+                what: id.to_owned(),
+                reason: "slot settings are closed".to_owned(),
+            });
+        };
+        // Route exactly like `StagedFields`: style-owned names go to the style
+        // buffer, everything else to the config buffer. The two key sets are
+        // disjoint (style owns `color_*` + `line_width`), so the route is
+        // unambiguous.
+        let style_names = slot.style.field_names();
+        if style_names.contains(&name) {
+            pending.style.insert(name.to_owned(), value.to_owned());
+        } else {
+            pending.config.insert(name.to_owned(), value.to_owned());
+        }
+        Ok(())
     }
 
     /// Restamp a slot's parameter fingerprint after its fields change, so
@@ -658,11 +695,7 @@ impl HotSlotStack {
     }
 
     /// Replace a slot's live card readouts. Unknown ids refuse.
-    pub fn set_readouts(
-        &mut self,
-        id: &str,
-        readouts: Vec<ReadoutValue>,
-    ) -> Result<(), EguiError> {
+    pub fn set_readouts(&mut self, id: &str, readouts: Vec<ReadoutValue>) -> Result<(), EguiError> {
         let slot = self.slots.get_mut(id).ok_or_else(|| unknown_slot(id))?;
         slot.readouts = readouts;
         Ok(())
@@ -682,6 +715,8 @@ impl HotSlotStack {
 
     /// Pointer zones for every slot, in stack order. This is the layout the
     /// painter draws and the hit-test reads — one computation, never two.
+    /// Layout right-to-left: close (X) at the far right, bolt left of it,
+    /// eye left of the bolt; the title ends at the eye's left edge.
     #[must_use]
     pub fn control_rects(&self) -> Vec<SlotControlRect> {
         self.order
@@ -691,10 +726,17 @@ impl HotSlotStack {
                     egui::Pos2::new(self.origin.0, self.origin.1 + self.card_top(id)?),
                     egui::Vec2::new(STACK_CARD_WIDTH, STACK_CARD_HEIGHT),
                 );
-                let bolt = egui::Rect::from_min_size(
+                let close = egui::Rect::from_min_size(
                     egui::Pos2::new(
                         card.max.x - STACK_CONTROL_PAD - STACK_CONTROL_SIZE,
                         card.min.y + (STACK_CARD_HEIGHT - STACK_CONTROL_SIZE) / 2.0,
+                    ),
+                    egui::Vec2::splat(STACK_CONTROL_SIZE),
+                );
+                let bolt = egui::Rect::from_min_size(
+                    egui::Pos2::new(
+                        close.min.x - STACK_CONTROL_PAD - STACK_CONTROL_SIZE,
+                        close.min.y,
                     ),
                     egui::Vec2::splat(STACK_CONTROL_SIZE),
                 );
@@ -705,14 +747,20 @@ impl HotSlotStack {
                     ),
                     egui::Vec2::splat(STACK_CONTROL_SIZE),
                 );
-                Some(SlotControlRect { slot_id: id.clone(), eye, bolt, card })
+                Some(SlotControlRect {
+                    slot_id: id.clone(),
+                    eye,
+                    bolt,
+                    close,
+                    card,
+                })
             })
             .collect()
     }
 
     /// Route a pointer before the canvas path: control zones answer with
     /// their slot, anywhere else answers `None` so the event reaches candle
-    /// annotation untouched. Eye wins over bolt wins over card.
+    /// annotation untouched. Eye wins over bolt wins over close wins over card.
     #[must_use]
     pub fn hit_test_controls(&self, point: (f32, f32)) -> Option<SlotControlHit> {
         let pointer = egui::Pos2::new(point.0, point.1);
@@ -723,6 +771,9 @@ impl HotSlotStack {
             if rect.bolt.contains(pointer) {
                 return Some(SlotControlHit::Bolt(rect.slot_id));
             }
+            if rect.close.contains(pointer) {
+                return Some(SlotControlHit::Close(rect.slot_id));
+            }
             if rect.card.contains(pointer) {
                 return Some(SlotControlHit::Card(rect.slot_id));
             }
@@ -732,11 +783,14 @@ impl HotSlotStack {
 
     /// Top offset of one card above the stack origin (`None` for unknown ids).
     fn card_top(&self, id: &str) -> Option<f32> {
-        self.order.iter().position(|known| known == id).map(|index| {
-            // Slot counts are single digits, so the `usize`-to-`f32` cast is
-            // exact for every realistic stack.
-            index as f32 * (STACK_CARD_HEIGHT + STACK_CARD_GAP) - self.scroll_px
-        })
+        self.order
+            .iter()
+            .position(|known| known == id)
+            .map(|index| {
+                // Slot counts are single digits, so the `usize`-to-`f32` cast is
+                // exact for every realistic stack.
+                index as f32 * (STACK_CARD_HEIGHT + STACK_CARD_GAP) - self.scroll_px
+            })
     }
 }
 
@@ -748,7 +802,10 @@ impl Default for HotSlotStack {
 
 /// Unknown-slot refusal naming the id.
 fn unknown_slot(id: &str) -> EguiError {
-    EguiError::InvalidParam { what: id.to_owned(), reason: "unknown slot id".to_owned() }
+    EguiError::InvalidParam {
+        what: id.to_owned(),
+        reason: "unknown slot id".to_owned(),
+    }
 }
 
 /// Seed a staged settings buffer from a live config: one string per declared
@@ -758,7 +815,12 @@ fn seed_fields(config: &dyn Component) -> HashMap<String, String> {
     config
         .field_names()
         .iter()
-        .filter_map(|name| config.get_field(name).ok().map(|value| ((*name).to_owned(), value)))
+        .filter_map(|name| {
+            config
+                .get_field(name)
+                .ok()
+                .map(|value| ((*name).to_owned(), value))
+        })
         .collect()
 }
 
@@ -800,16 +862,25 @@ struct StagedFields<'a> {
 
 impl FieldAccess for StagedFields<'_> {
     fn set_field(&mut self, name: &str, value: &str) -> Result<(), FieldError> {
-        let buffer =
-            if self.style_names.contains(&name) { &mut *self.style } else { &mut *self.config };
+        let buffer = if self.style_names.contains(&name) {
+            &mut *self.style
+        } else {
+            &mut *self.config
+        };
         buffer.insert(name.to_owned(), value.to_owned());
         Ok(())
     }
 
     fn get_field(&self, name: &str) -> Result<String, FieldError> {
-        let buffer =
-            if self.style_names.contains(&name) { &*self.style } else { &*self.config };
-        buffer.get(name).cloned().ok_or_else(|| FieldError::NotFound(name.to_owned()))
+        let buffer = if self.style_names.contains(&name) {
+            &*self.style
+        } else {
+            &*self.config
+        };
+        buffer
+            .get(name)
+            .cloned()
+            .ok_or_else(|| FieldError::NotFound(name.to_owned()))
     }
 
     fn field_names(&self) -> &'static [&'static str] {
@@ -843,14 +914,14 @@ pub struct SettingsOutcome {
 }
 
 /// Paint the overlay stack: one borderless compact card per slot (title plus
-/// live readouts), an eye toggle, and a bolt opener, each at the rect
-/// [`HotSlotStack::control_rects`] reports.
+/// live readouts), an eye toggle, a bolt opener, and a close (unload) X, each
+/// at the rect [`HotSlotStack::control_rects`] reports.
 ///
 /// The cards carry no frame, so the legend floats over the candles without a
 /// boundary box; only the controls are painted. Clicks raise [`HotSlotAction`]s
-/// (eye toggles flip instantly, bolt opens isolate to one slot); an untouched
-/// frame raises nothing. A theme that cannot resolve the eye or bolt key
-/// refuses with the key named.
+/// (eye toggles flip instantly, bolt opens isolate to one slot, X unloads
+/// immediately with no confirm); an untouched frame raises nothing. A theme
+/// that cannot resolve the eye or bolt key refuses with the key named.
 pub fn paint_hot_slot_stack(
     ui: &mut egui::Ui,
     stack: &mut HotSlotStack,
@@ -858,21 +929,29 @@ pub fn paint_hot_slot_stack(
 ) -> Result<Vec<HotSlotAction>, EguiError> {
     let mut actions = Vec::new();
     for rect in stack.control_rects() {
-        let Some(slot) = stack.slots.get_mut(&rect.slot_id) else {
-            continue;
+        let slot_id = rect.slot_id.clone();
+        // Snapshot title/readouts/visibility without holding the borrow across
+        // the bolt-open loop below (which mutates every slot).
+        let (card_text, visible) = {
+            let Some(slot) = stack.slots.get(&slot_id) else {
+                continue;
+            };
+            let mut card_text = slot.title.clone();
+            let live: Vec<String> = slot
+                .readouts
+                .iter()
+                .filter_map(|readout| {
+                    readout
+                        .value
+                        .map(|value| format!("{} {value:.1}", readout.label))
+                })
+                .collect();
+            if !live.is_empty() {
+                card_text.push('\n');
+                card_text.push_str(&live.join("  "));
+            }
+            (card_text, slot.visible)
         };
-        let mut card_text = slot.title.clone();
-        let live: Vec<String> = slot
-            .readouts
-            .iter()
-            .filter_map(|readout| {
-                readout.value.map(|value| format!("{} {value:.1}", readout.label))
-            })
-            .collect();
-        if !live.is_empty() {
-            card_text.push('\n');
-            card_text.push_str(&live.join("  "));
-        }
         let text_rect = egui::Rect::from_min_max(
             egui::Pos2::new(rect.card.min.x + STACK_CONTROL_PAD, rect.card.min.y + 2.0),
             egui::Pos2::new(rect.eye.min.x - STACK_CONTROL_PAD, rect.card.max.y - 2.0),
@@ -886,17 +965,18 @@ pub fn paint_hot_slot_stack(
         );
         let eye_response = ui.allocate_rect(rect.eye, egui::Sense::click());
         if eye_response.clicked() {
-            slot.visible = !slot.visible;
-            actions.push(HotSlotAction::ToggledVisibility(slot.id.clone()));
+            if let Some(slot) = stack.slots.get_mut(&slot_id) {
+                slot.visible = !slot.visible;
+            }
+            actions.push(HotSlotAction::ToggledVisibility(slot_id.clone()));
         }
-        if let Some(eye) = eye_icon_geom(eye_center(&rect.eye), eye_radius(), slot.visible) {
+        if let Some(eye) = eye_icon_geom(eye_center(&rect.eye), eye_radius(), visible) {
             paint_eye_icon(ui.painter(), &eye, "fast", theme)?;
         }
         let bolt_response = ui.allocate_rect(rect.bolt, egui::Sense::click());
         if bolt_response.clicked() {
-            let opened = slot.id.clone();
             for other in stack.slots.values_mut() {
-                let open = other.id == opened;
+                let open = other.id == slot_id;
                 other.settings_open = open;
                 if open {
                     other.pending = Some(seed_pending(&*other.config, &*other.style));
@@ -904,11 +984,27 @@ pub fn paint_hot_slot_stack(
                     other.pending = None;
                 }
             }
-            actions.push(HotSlotAction::OpenedSettings(opened));
+            actions.push(HotSlotAction::OpenedSettings(slot_id.clone()));
         }
         if let Some(bolt) = hex_bolt_icon_geom(bolt_center(&rect.bolt), bolt_radius()) {
             paint_hex_bolt_icon(ui.painter(), &bolt, "slow", theme)?;
         }
+        // Close (X) affordance right of the bolt: immediate unload, no confirm.
+        // Painted as two crossing strokes in the theme grid ink so it reads as
+        // chrome, never data; hovered state brightens via the response.
+        let close_response = ui.allocate_rect(rect.close, egui::Sense::click());
+        if close_response.clicked() {
+            actions.push(HotSlotAction::Removed(slot_id.clone()));
+        }
+        let ink = resolve_color(theme, "grid")?;
+        let pad = 4.0;
+        let p0 = egui::pos2(rect.close.min.x + pad, rect.close.min.y + pad);
+        let p1 = egui::pos2(rect.close.max.x - pad, rect.close.max.y - pad);
+        let p2 = egui::pos2(rect.close.max.x - pad, rect.close.min.y + pad);
+        let p3 = egui::pos2(rect.close.min.x + pad, rect.close.max.y - pad);
+        let stroke = egui::Stroke::new(1.5, ink);
+        ui.painter().line_segment([p0, p1], stroke);
+        ui.painter().line_segment([p2, p3], stroke);
     }
     Ok(actions)
 }
@@ -948,7 +1044,10 @@ pub fn paint_slot_settings_modal(
     theme: &ThemeConfig,
 ) -> Result<SettingsOutcome, EguiError> {
     let accent = resolve_color(theme, "fast")?;
-    let slot = stack.slots.get_mut(slot_id).ok_or_else(|| unknown_slot(slot_id))?;
+    let slot = stack
+        .slots
+        .get_mut(slot_id)
+        .ok_or_else(|| unknown_slot(slot_id))?;
     if !slot.settings_open {
         return Err(EguiError::InvalidParam {
             what: slot_id.to_owned(),
@@ -961,7 +1060,12 @@ pub fn paint_slot_settings_modal(
     if slot.pending.is_none() {
         slot.pending = Some(seed_pending(&*slot.config, &*slot.style));
     }
-    let HotSlot { pending, settings_tab, style, .. } = slot;
+    let HotSlot {
+        pending,
+        settings_tab,
+        style,
+        ..
+    } = slot;
     let pending = pending.as_mut().expect("staged buffers are seeded above");
     let mut target = StagedFields {
         config: &mut pending.config,
@@ -991,7 +1095,10 @@ pub fn paint_slot_settings_modal(
         });
         edits
     });
-    Ok(SettingsOutcome { edits: outcome.inner, commit })
+    Ok(SettingsOutcome {
+        edits: outcome.inner,
+        commit,
+    })
 }
 
 #[cfg(test)]

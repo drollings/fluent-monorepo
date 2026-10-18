@@ -29,7 +29,9 @@ fn rsrs_constant_window_reads_none() {
 
 #[test]
 fn rsrs_short_history_reads_none() {
-    assert!(rsrs(&[1.0, 2.0], &[1.0, 2.0], 5, 10).iter().all(Option::is_none));
+    assert!(rsrs(&[1.0, 2.0], &[1.0, 2.0], 5, 10)
+        .iter()
+        .all(Option::is_none));
     let nearly = vec![1.0; 9];
     assert!(rsrs(&nearly, &nearly, 5, 10).iter().all(Option::is_none));
 }
@@ -46,8 +48,12 @@ fn rsrs_zero_score_window_reads_none() {
 fn rsrs_non_finite_slope_window_reads_none() {
     // Wobbled legs so the slope variance stays positive (perfect lines
     // score None everywhere: nothing to rank).
-    let mut highs: Vec<f64> = (0..30).map(|i| 100.0 + f64::from(i) * 0.7 + (f64::from(i) * 1.3).sin()).collect();
-    let lows: Vec<f64> = (0..30).map(|i| 99.0 + f64::from(i) * 0.3 + (f64::from(i) * 0.7).cos()).collect();
+    let mut highs: Vec<f64> = (0..30)
+        .map(|i| 100.0 + f64::from(i) * 0.7 + (f64::from(i) * 1.3).sin())
+        .collect();
+    let lows: Vec<f64> = (0..30)
+        .map(|i| 99.0 + f64::from(i) * 0.3 + (f64::from(i) * 0.7).cos())
+        .collect();
     highs[12] = f64::NAN;
     let got = rsrs(&highs, &lows, 5, 10);
     assert_eq!(got.len(), 30);
@@ -58,7 +64,10 @@ fn rsrs_non_finite_slope_window_reads_none() {
     // from the five None slopes, 26+ recovers.
     assert!(got[9].is_none(), "slope warmup stays None");
     assert!(got[16].is_none(), "contaminated score window reads None");
-    assert!(got[25].is_none(), "last contaminated score window reads None");
+    assert!(
+        got[25].is_none(),
+        "last contaminated score window reads None"
+    );
     assert!(got[26].is_some(), "post-contamination scores recover");
 }
 
@@ -102,7 +111,12 @@ fn rsrs_scoring_tail_matches_population_variance() {
         .copied()
         .collect();
     assert!(!finite.is_empty());
-    let tail: Vec<f64> = slopes.iter().flatten().filter(|s| s.is_finite()).copied().collect();
+    let tail: Vec<f64> = slopes
+        .iter()
+        .flatten()
+        .filter(|s| s.is_finite())
+        .copied()
+        .collect();
     assert!(!tail.is_empty());
     let mean = tail.iter().sum::<f64>() / tail.len() as f64;
     let var = variance_pop(&tail);
@@ -167,10 +181,23 @@ fn rsrs_known_fixture_is_deterministic() {
     assert_eq!(first.len(), 40);
     assert_eq!(first, second, "bit-identical rerun");
     // First score needs (n-1)+(m-1) = 30 bars of history before it.
-    assert!(first[..30].iter().all(Option::is_none), "warming prefix stays None");
-    assert!(first[30..].iter().any(Option::is_some), "full windows score");
-    let long_highs: Vec<f64> = (0..80).map(|i| 100.0 + f64::from(i) * 0.7 + (f64::from(i)).sin()).collect();
-    let long_lows: Vec<f64> = (0..80).map(|i| 99.0 + f64::from(i) * 0.3 + (f64::from(i) * 0.5).cos()).collect();
+    assert!(
+        first[..30].iter().all(Option::is_none),
+        "warming prefix stays None"
+    );
+    assert!(
+        first[30..].iter().any(Option::is_some),
+        "full windows score"
+    );
+    let long_highs: Vec<f64> = (0..80)
+        .map(|i| 100.0 + f64::from(i) * 0.7 + (f64::from(i)).sin())
+        .collect();
+    let long_lows: Vec<f64> = (0..80)
+        .map(|i| 99.0 + f64::from(i) * 0.3 + (f64::from(i) * 0.5).cos())
+        .collect();
     let scored = rsrs(&long_highs, &long_lows, 18, 14);
-    assert!(scored.iter().any(Option::is_some), "long noisy history scores");
+    assert!(
+        scored.iter().any(Option::is_some),
+        "long noisy history scores"
+    );
 }

@@ -21,7 +21,7 @@ use crate::error::VenueError;
 use crate::order::{
     CorporateEvent, Fill, OrderIntent, OrderRecord, OrderSide, OrderStatus, Position,
 };
-use crate::position::{PositionFill, SpreadPosition, update_from_fill};
+use crate::position::{update_from_fill, PositionFill, SpreadPosition};
 use crate::quote::{FeeSchedule, LiquidityFilter, Quote, Slippage, DEFAULT_SLIPPAGE_BPS};
 use crate::venue::{DryRunOutcome, LegExecution, LegQuoteSource, Venue};
 
@@ -234,16 +234,19 @@ impl PaperVenue {
         if intent.quantity == 0 {
             return Err(VenueError::Invalid("quantity must be positive".to_owned()));
         }
-        let source = self
-            .leg_source()
-            .ok_or_else(|| VenueError::Invalid("spread intent has no leg market data".to_owned()))?;
+        let source = self.leg_source().ok_or_else(|| {
+            VenueError::Invalid("spread intent has no leg market data".to_owned())
+        })?;
         let mut legs = Vec::with_capacity(spread.legs().len());
         let mut net = Decimal::ZERO;
         for (index, leg) in spread.legs().iter().enumerate() {
             let occ = leg.contract.occ_symbol();
-            let quote = source.leg_quote(&leg.contract).ok_or_else(|| {
-                VenueError::Refused(format!("leg {index} ({occ}): no quote"))
-            })?;
+            // Time-parameterized read: a historical source prices the leg as
+            // of this submission's bar, a live source answers newest — the
+            // same call serves both, so replay and live cannot diverge here.
+            let quote = source
+                .leg_quote_at(&leg.contract, now)
+                .ok_or_else(|| VenueError::Refused(format!("leg {index} ({occ}): no quote")))?;
             let leg_qty = intent.quantity.checked_mul(leg.ratio).ok_or_else(|| {
                 VenueError::Refused(format!("leg {index} ({occ}): quantity overflow"))
             })?;
@@ -259,9 +262,10 @@ impl PaperVenue {
                 )));
             }
             let slipped = self.config.slippage.apply(touch, is_buy);
-            let fee = self.config.fees.fee_for(leg_qty).ok_or_else(|| {
-                VenueError::Refused(format!("leg {index} ({occ}): fee overflow"))
-            })?;
+            let fee =
+                self.config.fees.fee_for(leg_qty).ok_or_else(|| {
+                    VenueError::Refused(format!("leg {index} ({occ}): fee overflow"))
+                })?;
             let sign = if is_buy {
                 Decimal::ONE
             } else {
@@ -291,14 +295,14 @@ impl PaperVenue {
                 intent.side
             )));
         }
-        let filled_quantity: u32 = legs
-            .iter()
-            .map(|leg| leg.quantity)
-            .try_fold(0_u32, |total, qty| {
-                total
-                    .checked_add(qty)
-                    .ok_or_else(|| VenueError::Refused("filled quantity overflow".to_owned()))
-            })?;
+        let filled_quantity: u32 =
+            legs.iter()
+                .map(|leg| leg.quantity)
+                .try_fold(0_u32, |total, qty| {
+                    total
+                        .checked_add(qty)
+                        .ok_or_else(|| VenueError::Refused("filled quantity overflow".to_owned()))
+                })?;
         let fees_paid = Money::new(legs.iter().map(|leg| leg.fee.as_decimal()).sum());
         let mut record = OrderRecord::pending(intent.clone(), now);
         record.status = OrderStatus::Acknowledged;
@@ -343,9 +347,8 @@ impl PaperVenue {
                 .at(now)
                 .build();
             let current = book.spread.remove(&key);
-            let (next, _exited) = update_from_fill(current, &fill).map_err(|e| {
-                VenueError::Server(format!("leg commit refused: {e}"))
-            })?;
+            let (next, _exited) = update_from_fill(current, &fill)
+                .map_err(|e| VenueError::Server(format!("leg commit refused: {e}")))?;
             if let Some(mut position) = next {
                 position.legs = Some(structure.clone());
                 book.spread.insert(key, position);
@@ -450,9 +453,10 @@ impl Venue for PaperVenue {
         // acted.
         let outcome = (|| {
             let mut book = common_core::sync::lock(&self.book);
-            let record = book.orders.get_mut(client_id).ok_or_else(|| {
-                VenueError::Invalid(format!("unknown order {client_id}"))
-            })?;
+            let record = book
+                .orders
+                .get_mut(client_id)
+                .ok_or_else(|| VenueError::Invalid(format!("unknown order {client_id}")))?;
             if !record.status.is_active() {
                 let status = record.status;
                 return Err(VenueError::Invalid(format!(
@@ -505,7 +509,9 @@ impl Venue for PaperVenue {
                 if let Some(key) = key {
                     book.positions.remove(&key);
                 }
-                Ok(format!("{event:?} on {underlying}: position closed for review"))
+                Ok(format!(
+                    "{event:?} on {underlying}: position closed for review"
+                ))
             }
             CorporateEvent::Dividend(amount) => Ok(format!(
                 "dividend {amount} on {underlying}: cash booked outside position"
@@ -519,12 +525,18 @@ impl Venue for PaperVenue {
                 let Some(key) = key else {
                     return Err(VenueError::Invalid(format!("no position in {underlying}")));
                 };
-                let position = book.positions.get_mut(&key).ok_or_else(|| {
-                    VenueError::Invalid(format!("no position in {underlying}"))
-                })?;
-                position.quantity = position.quantity.checked_mul(i64::from(factor)).ok_or_else(|| {
-                    VenueError::Invalid(format!("split {factor}-for-1 overflows position in {underlying}"))
-                })?;
+                let position = book
+                    .positions
+                    .get_mut(&key)
+                    .ok_or_else(|| VenueError::Invalid(format!("no position in {underlying}")))?;
+                position.quantity = position
+                    .quantity
+                    .checked_mul(i64::from(factor))
+                    .ok_or_else(|| {
+                        VenueError::Invalid(format!(
+                            "split {factor}-for-1 overflows position in {underlying}"
+                        ))
+                    })?;
                 let price = position.avg_price.as_decimal() / Decimal::from(factor);
                 position.avg_price = Money::new(price);
                 Ok(format!("split {factor}-for-1 on {underlying}"))

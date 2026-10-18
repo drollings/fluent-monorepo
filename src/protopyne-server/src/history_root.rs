@@ -37,10 +37,10 @@
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
-use protopyne_store::{KeyedSnapshot as _, read_ohlcv_parquet_lenient};
-use protopyne_types::{Bar, Timeframe, validate_new_bar};
+use protopyne_store::{read_ohlcv_parquet_lenient, KeyedSnapshot as _};
+use protopyne_types::{validate_new_bar, Bar, Timeframe};
 use protopyne_view::{
-    AssetClass, InstrumentDecl, SymbolInfoView, discovered_symbol_rows, pick_default_symbol,
+    discovered_symbol_rows, pick_default_symbol, AssetClass, InstrumentDecl, SymbolInfoView,
 };
 
 use crate::error::ServerError;
@@ -125,7 +125,10 @@ impl HistoryRoot {
         let sidecar = self.root.join(ticker).join(SIDECAR_FILE);
         let text = std::fs::read_to_string(sidecar).ok()?;
         let raw: serde_json::Value = serde_json::from_str(&text).ok()?;
-        let name = raw.get("name").and_then(serde_json::Value::as_str).map(str::to_owned);
+        let name = raw
+            .get("name")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned);
         let class = raw
             .get("class")
             .and_then(serde_json::Value::as_str)
@@ -266,7 +269,12 @@ impl HistoryRoot {
             })?;
             last = Some(bar);
         }
-        Ok(TickerLoad { bars, skipped, skipped_rows, superseded })
+        Ok(TickerLoad {
+            bars,
+            skipped,
+            skipped_rows,
+            superseded,
+        })
     }
 }
 
@@ -393,7 +401,12 @@ pub fn load_history_path(path: &Path, preferred: Option<&str>) -> Result<Vec<Bar
         } else {
             let tickers = root.tickers()?;
             pick_default_symbol(DEFAULT_TICKER, tickers.iter().map(String::as_str)).ok_or_else(
-                || ServerError::Backtest(format!("no tickers under history root {}", path.display())),
+                || {
+                    ServerError::Backtest(format!(
+                        "no tickers under history root {}",
+                        path.display()
+                    ))
+                },
             )?
         };
         let load = root.load_ticker(&ticker)?;

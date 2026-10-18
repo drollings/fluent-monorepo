@@ -32,21 +32,21 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use protopyne_types::{Bar, Timeframe, adjust_fetch_bounds, trim_indicator_output};
+use protopyne_types::{adjust_fetch_bounds, trim_indicator_output, Bar, Timeframe};
 
 use crate::append_log::{AppendLog, AppendRecord};
-use crate::capability::{StoreStorage, check_binding, check_present};
+use crate::capability::{check_binding, check_present, StoreStorage};
 use crate::catalog::Market;
 use crate::commit::KeyedSnapshot as _;
 use crate::coverage::{Coverage, FreshnessPolicy};
 use crate::error::{PlanError, StoreError};
-use crate::fold::{FoldPolicy, fold_bars, narrow_to_window};
+use crate::fold::{fold_bars, narrow_to_window, FoldPolicy};
 use crate::history::HistoryProvider;
 use crate::key::{SymbolId, TapeKey};
-use crate::plan::{ReadPlan, coverage_from_stamps, coverage_windows, wanted_window};
+use crate::plan::{coverage_from_stamps, coverage_windows, wanted_window, ReadPlan};
 use crate::range::TimeRange;
 use crate::registry::MarketRegistry;
-use crate::repair::{RepairConfig, fill_headroom, repair_spans, spans_for_want};
+use crate::repair::{fill_headroom, repair_spans, spans_for_want, RepairConfig};
 use crate::snapshot::{SealOptions, SealedSnapshot};
 use crate::store::order_and_validate;
 use crate::store::{AppendOutcome, CandleSeries, CandleStore, ReadRequest, WritePolicy};
@@ -189,7 +189,9 @@ impl AppendRecord for TapeRecord {
     }
 
     fn header() -> Vec<&'static str> {
-        vec!["op", "ts_ms", "open", "high", "low", "close", "volume", "adj"]
+        vec![
+            "op", "ts_ms", "open", "high", "low", "close", "volume", "adj",
+        ]
     }
 
     fn encode(&self) -> Vec<String> {
@@ -211,12 +213,16 @@ impl AppendRecord for TapeRecord {
         };
         Ok(Self {
             op: TapeOp::parse(op).ok_or_else(|| format!("unknown op {op:?}"))?,
-            ts_ms: ts_ms.parse().map_err(|_| format!("stamp {ts_ms:?} is not an integer"))?,
+            ts_ms: ts_ms
+                .parse()
+                .map_err(|_| format!("stamp {ts_ms:?} is not an integer"))?,
             open: (*open).to_owned(),
             high: (*high).to_owned(),
             low: (*low).to_owned(),
             close: (*close).to_owned(),
-            volume: volume.parse().map_err(|_| format!("volume {volume:?} is not an integer"))?,
+            volume: volume
+                .parse()
+                .map_err(|_| format!("volume {volume:?} is not an integer"))?,
             adj: (*adj).to_owned(),
         })
     }
@@ -427,7 +433,8 @@ impl MarketTape {
             timeframe: market.timeframe,
         };
         let coverage = self.coverage(key)?;
-        let class = crate::coverage::classify(coverage.clone(), now_ms, market.timeframe, freshness);
+        let class =
+            crate::coverage::classify(coverage.clone(), now_ms, market.timeframe, freshness);
         let request = ReadRequest {
             symbol: symbol.to_owned(),
             venue: venue.to_owned(),
@@ -559,7 +566,10 @@ impl MarketTape {
         )?;
         let mut tapes = common_core::sync::lock(&self.tapes);
         let tape = tapes.get_mut(&key).ok_or_else(|| {
-            StoreError::Plan(PlanError::UnknownSymbol(format!("symbol_id {}", key.symbol_id.0)))
+            StoreError::Plan(PlanError::UnknownSymbol(format!(
+                "symbol_id {}",
+                key.symbol_id.0
+            )))
         })?;
         if let Some(log) = tape.log.as_mut() {
             log.truncate_all()?;
@@ -589,7 +599,10 @@ impl MarketTape {
     fn bars_of(&self, key: TapeKey) -> Result<Vec<Bar>, StoreError> {
         let tapes = common_core::sync::lock(&self.tapes);
         let tape = tapes.get(&key).ok_or_else(|| {
-            StoreError::Plan(PlanError::UnknownSymbol(format!("symbol_id {}", key.symbol_id.0)))
+            StoreError::Plan(PlanError::UnknownSymbol(format!(
+                "symbol_id {}",
+                key.symbol_id.0
+            )))
         })?;
         Ok(tape.bars.clone())
     }
@@ -635,8 +648,11 @@ impl MarketTape {
 /// order the log carried them (the caller sorts and validates after).
 fn replay_log_records(sealed: Vec<Bar>, rows: &[(TapeOp, Bar)]) -> Vec<Bar> {
     let mut bars = sealed;
-    let mut index: HashMap<i64, usize> =
-        bars.iter().enumerate().map(|(at, bar)| (bar.ts.timestamp_millis(), at)).collect();
+    let mut index: HashMap<i64, usize> = bars
+        .iter()
+        .enumerate()
+        .map(|(at, bar)| (bar.ts.timestamp_millis(), at))
+        .collect();
     for (op, bar) in rows {
         let stamp = bar.ts.timestamp_millis();
         match op {
@@ -681,11 +697,8 @@ fn load_sealed(root: &Path, key: TapeKey) -> Result<Vec<Bar>, StoreError> {
 
 /// The log file for one tape: deterministic, so reopening finds it.
 fn log_path(root: &Path, symbol_id: SymbolId, timeframe: Timeframe) -> PathBuf {
-    root.join(TAPES_DIR).join(format!(
-        "{:010}-{}.csv",
-        symbol_id.0,
-        timeframe.code()
-    ))
+    root.join(TAPES_DIR)
+        .join(format!("{:010}-{}.csv", symbol_id.0, timeframe.code()))
 }
 
 /// Refuse a tape-log file that names no registered market — or no parseable
@@ -741,7 +754,10 @@ impl CandleStore for MarketTape {
         let market = self.market_for(key)?;
         let tapes = common_core::sync::lock(&self.tapes);
         let tape = tapes.get(&key).ok_or_else(|| {
-            StoreError::Plan(PlanError::UnknownSymbol(format!("symbol_id {}", key.symbol_id.0)))
+            StoreError::Plan(PlanError::UnknownSymbol(format!(
+                "symbol_id {}",
+                key.symbol_id.0
+            )))
         })?;
         Ok(whole_tape_coverage(&tape.bars, market.timeframe))
     }
@@ -782,7 +798,10 @@ impl CandleStore for MarketTape {
         // the gate caps held plus genuinely new stamps.
         let held: usize = tapes.values().map(|held| held.bars.len()).sum();
         let tape = tapes.get_mut(&key).ok_or_else(|| {
-            StoreError::Plan(PlanError::UnknownSymbol(format!("symbol_id {}", key.symbol_id.0)))
+            StoreError::Plan(PlanError::UnknownSymbol(format!(
+                "symbol_id {}",
+                key.symbol_id.0
+            )))
         })?;
         // Compute the merged state first (reads only): inserts land sorted,
         // restatements fold through the one restatement rule, and every
@@ -871,7 +890,10 @@ impl CandleStore for MarketTape {
         let record = TapeRecord::of(TapeOp::Replace, bar)?;
         let mut tapes = common_core::sync::lock(&self.tapes);
         let tape = tapes.get_mut(&key).ok_or_else(|| {
-            StoreError::Plan(PlanError::UnknownSymbol(format!("symbol_id {}", key.symbol_id.0)))
+            StoreError::Plan(PlanError::UnknownSymbol(format!(
+                "symbol_id {}",
+                key.symbol_id.0
+            )))
         })?;
         let idx = tape.stamps.binary_search(&ts_ms).map_err(|_| {
             StoreError::InvalidBar(format!("no committed row at ts_ms {ts_ms} for repair"))
@@ -913,7 +935,10 @@ impl CandleStore for MarketTape {
         };
         let tapes = common_core::sync::lock(&self.tapes);
         let tape = tapes.get(&key).ok_or_else(|| {
-            StoreError::Plan(PlanError::UnknownSymbol(format!("symbol_id {}", symbol_id.0)))
+            StoreError::Plan(PlanError::UnknownSymbol(format!(
+                "symbol_id {}",
+                symbol_id.0
+            )))
         })?;
         // Stamp-planned coverage over the served window — extent plus
         // windowed runs — never a whole-tape bar walk.

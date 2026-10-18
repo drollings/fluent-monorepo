@@ -9,7 +9,7 @@
 
 use super::*;
 use crate::error::PlanError;
-use crate::registry::test_setup::{VENUE, register_defaults, with_registry_caps};
+use crate::registry::test_setup::{register_defaults, with_registry_caps, VENUE};
 
 #[tokio::test]
 async fn register_then_resolve_round_trip() {
@@ -18,7 +18,9 @@ async fn register_then_resolve_round_trip() {
         let id = register_defaults(&registry, "SPY", VENUE).expect("register");
         assert_eq!(registry.resolve("SPY", VENUE).expect("resolve"), Some(id));
         assert_eq!(
-            registry.tape_of("SPY", VENUE).map(|(_, timeframe)| timeframe),
+            registry
+                .tape_of("SPY", VENUE)
+                .map(|(_, timeframe)| timeframe),
             Some(protopyne_types::Timeframe::M1),
             "the planner's lookup carries the spacing"
         );
@@ -43,9 +45,18 @@ async fn same_symbol_on_two_venues_registers_twice() {
         let registry = MarketRegistry::open_in_memory().expect("registry opens");
         let first = register_defaults(&registry, "SPY", "venue-a").expect("first venue");
         let second = register_defaults(&registry, "SPY", "venue-b").expect("second venue");
-        assert_ne!(first, second, "identity is per (symbol, venue), not per spelling");
-        assert_eq!(registry.resolve("SPY", "venue-a").expect("resolve a"), Some(first));
-        assert_eq!(registry.resolve("SPY", "venue-b").expect("resolve b"), Some(second));
+        assert_ne!(
+            first, second,
+            "identity is per (symbol, venue), not per spelling"
+        );
+        assert_eq!(
+            registry.resolve("SPY", "venue-a").expect("resolve a"),
+            Some(first)
+        );
+        assert_eq!(
+            registry.resolve("SPY", "venue-b").expect("resolve b"),
+            Some(second)
+        );
     })
     .await;
 }
@@ -94,8 +105,7 @@ async fn resolve_unknown_is_none_not_error() {
 #[tokio::test]
 async fn full_table_refuses_rather_than_evicting() {
     with_registry_caps(async {
-        let registry =
-            MarketRegistry::open_in_memory_with_max(2).expect("bounded registry opens");
+        let registry = MarketRegistry::open_in_memory_with_max(2).expect("bounded registry opens");
         register_defaults(&registry, "SPY", VENUE).expect("first");
         register_defaults(&registry, "QQQ", VENUE).expect("second");
         let err = register_defaults(&registry, "IWM", VENUE).expect_err("full refuses");
@@ -132,7 +142,10 @@ async fn file_round_trip_survives_reopen() {
         id
     })
     .await;
-    assert!(root.join("catalog.json").is_file(), "the catalog persists as JSON");
+    assert!(
+        root.join("catalog.json").is_file(),
+        "the catalog persists as JSON"
+    );
     with_registry_caps(async {
         let reopened = MarketRegistry::open(&root).expect("registry reopens");
         assert_eq!(reopened.resolve("SPY", VENUE).expect("resolve"), Some(id));
@@ -224,21 +237,43 @@ async fn the_catalog_json_shape_is_pinned() {
     let text = std::fs::read_to_string(root.join("catalog.json")).expect("catalog reads");
     let value: serde_json::Value = serde_json::from_str(&text).expect("valid JSON");
     assert_eq!(
-        value.get("next_symbol_id").and_then(serde_json::Value::as_u64),
+        value
+            .get("next_symbol_id")
+            .and_then(serde_json::Value::as_u64),
         Some(2),
         "one registration advances the allocator past id 1: {text}"
     );
-    let markets = value.get("markets").and_then(serde_json::Value::as_array).expect("markets array");
+    let markets = value
+        .get("markets")
+        .and_then(serde_json::Value::as_array)
+        .expect("markets array");
     assert_eq!(markets.len(), 1);
     let market = &markets[0];
-    assert_eq!(market.get("symbol").and_then(serde_json::Value::as_str), Some("SPY"));
-    assert_eq!(market.get("venue").and_then(serde_json::Value::as_str), Some(VENUE));
-    assert_eq!(market.get("asset_class").and_then(serde_json::Value::as_str), Some("stock"));
-    assert_eq!(market.get("time_zone").and_then(serde_json::Value::as_str), Some("UTC"));
+    assert_eq!(
+        market.get("symbol").and_then(serde_json::Value::as_str),
+        Some("SPY")
+    );
+    assert_eq!(
+        market.get("venue").and_then(serde_json::Value::as_str),
+        Some(VENUE)
+    );
+    assert_eq!(
+        market
+            .get("asset_class")
+            .and_then(serde_json::Value::as_str),
+        Some("stock")
+    );
+    assert_eq!(
+        market.get("time_zone").and_then(serde_json::Value::as_str),
+        Some("UTC")
+    );
     assert_eq!(
         market.get("price_scale"),
         Some(&serde_json::json!({"digits": 2})),
         "the scale keeps its structured shape: {text}"
     );
-    assert_eq!(market.get("symbol_id").and_then(serde_json::Value::as_u64), Some(1));
+    assert_eq!(
+        market.get("symbol_id").and_then(serde_json::Value::as_u64),
+        Some(1)
+    );
 }

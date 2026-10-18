@@ -17,9 +17,7 @@ fn test_config() -> ReconnectConfig {
     }
 }
 
-fn worker_with_log(
-    config: ReconnectConfig,
-) -> (Arc<ReconnectWorker<u64>>, Arc<Mutex<Vec<u64>>>) {
+fn worker_with_log(config: ReconnectConfig) -> (Arc<ReconnectWorker<u64>>, Arc<Mutex<Vec<u64>>>) {
     let log: Arc<Mutex<Vec<u64>>> = Arc::new(Mutex::new(Vec::new()));
     let inner = Arc::clone(&log);
     let worker = Arc::new(ReconnectWorker::new(
@@ -215,9 +213,7 @@ async fn reconnect_delivery_calibration() {
     assert!(matches!(report, HandleReport::Resumed(_)));
     assert_eq!(worker.drops(), 0, "resubscribe resets the drop count");
     // A stale live replay after resume must not deliver.
-    let replay = worker
-        .handle(SourceEvent::Live(Sequenced::new(2, 2)))
-        .await;
+    let replay = worker.handle(SourceEvent::Live(Sequenced::new(2, 2))).await;
     assert_eq!(replay, HandleReport::Live { accepted: false });
     for seq in 6..=7u64 {
         worker
@@ -231,19 +227,29 @@ async fn reconnect_delivery_calibration() {
     // Reconstruct detector cases: every unseen-at-accept item fired exactly
     // once; the two duplicates (backfilled 3, replayed 2) never fired.
     let mut cases: Vec<Case> = (1..=7u64)
-        .map(|seq| Case { fired: seen_set.contains(&seq), due: true })
+        .map(|seq| Case {
+            fired: seen_set.contains(&seq),
+            due: true,
+        })
         .collect();
-    cases.push(Case { fired: false, due: false });
-    cases.push(Case { fired: false, due: false });
-    let report = calibrate_threshold(
-        &cases,
-        |c| if c.fired { 1.0 } else { 0.0 },
-        |c| c.due,
-        0.5,
+    cases.push(Case {
+        fired: false,
+        due: false,
+    });
+    cases.push(Case {
+        fired: false,
+        due: false,
+    });
+    let report = calibrate_threshold(&cases, |c| if c.fired { 1.0 } else { 0.0 }, |c| c.due, 0.5);
+    assert_eq!(
+        report.fp, 0,
+        "duplicate control items must never fire: {report:?}"
     );
-    assert_eq!(report.fp, 0, "duplicate control items must never fire: {report:?}");
     assert_eq!(report.r#fn, 0, "due items must always fire: {report:?}");
-    assert!(report.passes_gate(), "reconnect calibration must pass: {report:?}");
+    assert!(
+        report.passes_gate(),
+        "reconnect calibration must pass: {report:?}"
+    );
     emit_markdown_artifact(
         "reconnect-delivery",
         &sweep_thresholds(

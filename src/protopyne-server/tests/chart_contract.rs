@@ -8,8 +8,8 @@
 //! back into that container unchanged.
 
 use super::chart_bars_of;
-use protopyne_chart_model::{ChartBars, ChartRow, rows_of, to_display_float};
 use chrono::TimeZone as _;
+use protopyne_chart_model::{rows_of, to_display_float, ChartBars, ChartRow};
 use protopyne_types::Bar;
 use rust_decimal::Decimal;
 
@@ -23,12 +23,10 @@ fn corpus() -> Vec<Bar> {
             let open = 100.0 + f64::from(i) * 0.5;
             let leg = |v: f64| dec(&format!("{v:.2}"));
             Bar::new()
-                .ts(
-                    chrono::Utc
-                        .timestamp_opt(1_700_000_000 + i64::from(i) * 60, 0)
-                        .single()
-                        .expect("valid time"),
-                )
+                .ts(chrono::Utc
+                    .timestamp_opt(1_700_000_000 + i64::from(i) * 60, 0)
+                    .single()
+                    .expect("valid time"))
                 .o(leg(open))
                 .h(leg(open + 1.0))
                 .l(leg(open - 1.0))
@@ -45,7 +43,10 @@ fn route_bars_and_headless_rows_are_one_shape() {
     let bars = corpus();
     let route = chart_bars_of(&bars);
     let headless = rows_of(&bars);
-    assert_eq!(route, headless, "route and headless build the same container");
+    assert_eq!(
+        route, headless,
+        "route and headless build the same container"
+    );
     assert_eq!(route.dropped, 0, "finite legs never drop");
     assert_eq!(route.rows.len(), bars.len());
     for (bar, row) in bars.iter().zip(route.rows.iter()) {
@@ -58,7 +59,11 @@ fn route_bars_and_headless_rows_are_one_shape() {
             (row.close, bar.c),
         ] {
             let want = to_display_float(want).expect("finite leg converts");
-            assert_eq!(got.to_bits(), want.to_bits(), "leg round-trips bit-identically");
+            assert_eq!(
+                got.to_bits(),
+                want.to_bits(),
+                "leg round-trips bit-identically"
+            );
         }
     }
 }
@@ -67,8 +72,14 @@ fn route_bars_and_headless_rows_are_one_shape() {
 fn route_json_round_trips_through_the_row_container() {
     let route = chart_bars_of(&corpus());
     let json = serde_json::to_string(&route).expect("serialize the route payload");
-    assert!(json.contains("\"rows\""), "the container keeps its wire keys: {json}");
-    assert!(json.contains("\"dropped\""), "the container keeps its wire keys: {json}");
+    assert!(
+        json.contains("\"rows\""),
+        "the container keeps its wire keys: {json}"
+    );
+    assert!(
+        json.contains("\"dropped\""),
+        "the container keeps its wire keys: {json}"
+    );
     let back: ChartBars = serde_json::from_str(&json).expect("decode into the wire container");
     assert_eq!(back, route, "the container JSON round-trips unchanged");
     let row_json = serde_json::to_string(&route.rows[0]).expect("serialize one row");

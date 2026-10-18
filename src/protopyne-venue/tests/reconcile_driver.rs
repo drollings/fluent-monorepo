@@ -42,8 +42,14 @@ impl Scripted {
     /// against the venue's reported positions.
     fn net(journal: &[(&str, i64)], venue: &[(&str, i64)]) -> Self {
         Self {
-            journal: JournalBook { net: pairs(journal), legs: HashMap::new() },
-            positions: venue.iter().map(|(underlying, qty)| position(underlying, *qty)).collect(),
+            journal: JournalBook {
+                net: pairs(journal),
+                legs: HashMap::new(),
+            },
+            positions: venue
+                .iter()
+                .map(|(underlying, qty)| position(underlying, *qty))
+                .collect(),
             legs: HashMap::new(),
         }
     }
@@ -52,7 +58,10 @@ impl Scripted {
     /// against the venue's.
     fn legs(journal: &[(&str, i64)], venue: &[(&str, i64)]) -> Self {
         Self {
-            journal: JournalBook { net: HashMap::new(), legs: pairs(journal) },
+            journal: JournalBook {
+                net: HashMap::new(),
+                legs: pairs(journal),
+            },
             positions: Vec::new(),
             legs: pairs(venue),
         }
@@ -83,7 +92,10 @@ impl ReconcileSource for Scripted {
 }
 
 fn pairs(entries: &[(&str, i64)]) -> HashMap<String, i64> {
-    entries.iter().map(|(key, qty)| ((*key).to_owned(), *qty)).collect()
+    entries
+        .iter()
+        .map(|(key, qty)| ((*key).to_owned(), *qty))
+        .collect()
 }
 
 fn position(underlying: &str, qty: i64) -> Position {
@@ -163,11 +175,18 @@ fn injected_net_drift_fires() {
 fn injected_leg_drift_fires() {
     let (report, gate) = drive(Scripted::legs(
         &[("SPY-260116C00600000", 1), ("SPY-260116C00610000", -1)],
-        &[("SPY-260116C00600000", 1), ("SPY-260116C00610000", -1), ("SPY-260116C00620000", 1)],
+        &[
+            ("SPY-260116C00600000", 1),
+            ("SPY-260116C00610000", -1),
+            ("SPY-260116C00620000", 1),
+        ],
     ));
     assert!(!report.matched);
     assert!(
-        report.mismatches.iter().any(|m| m.underlying.contains("00620000")),
+        report
+            .mismatches
+            .iter()
+            .any(|m| m.underlying.contains("00620000")),
         "the drifted leg is named: {report:?}"
     );
     assert!(gate.entries_halted());
@@ -187,16 +206,25 @@ fn missing_position_fires() {
 #[test]
 fn mismatch_halts_entries_through_may_trade_and_routes_exits() {
     let gate = ReconcileHandle::new();
-    let before = HealthState { reconciled: gate.reconciled(), ..healthy() };
+    let before = HealthState {
+        reconciled: gate.reconciled(),
+        ..healthy()
+    };
     assert_eq!(may_trade(&before, &limits()), HealthVerdict::Trade);
 
-    let unit = ReconcileUnit::new(Arc::new(Scripted::net(&[("SPY", 2)], &[("SPY", 5)])), gate.clone());
+    let unit = ReconcileUnit::new(
+        Arc::new(Scripted::net(&[("SPY", 2)], &[("SPY", 5)])),
+        gate.clone(),
+    );
     let report = unit.observe();
     assert!(!report.matched);
 
     // The mismatch flows into the health gate as a correctness failure:
     // entries refuse naming the gate, exits still route.
-    let halted = HealthState { reconciled: gate.reconciled(), ..healthy() };
+    let halted = HealthState {
+        reconciled: gate.reconciled(),
+        ..healthy()
+    };
     match may_trade(&halted, &limits()) {
         HealthVerdict::Halt { reasons } => assert!(
             reasons.iter().any(|reason| reason.contains("reconcil")),
@@ -214,13 +242,19 @@ fn mismatch_halts_entries_through_may_trade_and_routes_exits() {
 #[test]
 fn a_clean_pass_clears_the_halt() {
     let gate = ReconcileHandle::new();
-    let unit = ReconcileUnit::new(Arc::new(Scripted::net(&[("SPY", 2)], &[("SPY", 5)])), gate.clone());
+    let unit = ReconcileUnit::new(
+        Arc::new(Scripted::net(&[("SPY", 2)], &[("SPY", 5)])),
+        gate.clone(),
+    );
     let _ = unit.observe();
     assert!(gate.entries_halted());
 
     // Rebuilding the unit with an agreeing source is the operator's repair
     // path: a matching pass clears the halt through the same handle.
-    let repaired = ReconcileUnit::new(Arc::new(Scripted::net(&[("SPY", 2)], &[("SPY", 2)])), gate.clone());
+    let repaired = ReconcileUnit::new(
+        Arc::new(Scripted::net(&[("SPY", 2)], &[("SPY", 2)])),
+        gate.clone(),
+    );
     let report = repaired.observe();
     assert!(report.matched);
     assert!(!gate.entries_halted());
@@ -232,14 +266,24 @@ fn a_clean_pass_clears_the_halt() {
 #[test]
 fn unit_fails_on_mismatch_and_completes_on_agreement() {
     let gate = ReconcileHandle::new();
-    let drifting = ReconcileUnit::new(Arc::new(Scripted::net(&[("SPY", 2)], &[("SPY", 5)])), gate.clone());
-    let err = drifting.execute(&WorkContext::default()).expect_err("a mismatch fails the unit");
+    let drifting = ReconcileUnit::new(
+        Arc::new(Scripted::net(&[("SPY", 2)], &[("SPY", 5)])),
+        gate.clone(),
+    );
+    let err = drifting
+        .execute(&WorkContext::default())
+        .expect_err("a mismatch fails the unit");
     match err {
-        WorkError::Execution(reason) => assert!(reason.contains("RECONCILE"), "names the alert: {reason}"),
+        WorkError::Execution(reason) => {
+            assert!(reason.contains("RECONCILE"), "names the alert: {reason}")
+        }
         other => panic!("a mismatch is an execution failure, got: {other:?}"),
     }
 
-    let agreeing = ReconcileUnit::new(Arc::new(Scripted::net(&[("SPY", 2)], &[("SPY", 2)])), gate.clone());
+    let agreeing = ReconcileUnit::new(
+        Arc::new(Scripted::net(&[("SPY", 2)], &[("SPY", 2)])),
+        gate.clone(),
+    );
     assert!(agreeing.execute(&WorkContext::default()).is_ok());
 }
 
@@ -265,7 +309,10 @@ impl WorkUnit for PendingStub {
     }
 
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
-        Err(WorkError::Dependency(format!("{} waits for an upstream asset", self.name)))
+        Err(WorkError::Dependency(format!(
+            "{} waits for an upstream asset",
+            self.name
+        )))
     }
 }
 
@@ -286,8 +333,8 @@ fn session_with(source: Scripted) -> (TradingSession, ReconcileHandle, tempfile:
     let permit = VenueStorage::new(path);
     let venue: Arc<dyn Venue> = Arc::new(PaperVenue::new(PaperConfig::new().build()));
     let registry = Arc::new(VenueRegistry::single(venue));
-    let mut session = TradingSession::boot(&SessionConfig::new().build(), registry, permit)
-        .expect("boot");
+    let mut session =
+        TradingSession::boot(&SessionConfig::new().build(), registry, permit).expect("boot");
     let handle = session.attach_reconcile(Arc::new(source));
     (session, handle, dir)
 }
@@ -301,7 +348,10 @@ async fn session_runs_the_driver_and_halts_on_mismatch() {
 
     let (clean, clean_gate, _dir) = session_with(Scripted::net(&[("SPY", 2)], &[("SPY", 2)]));
     let summary = clean.run_bar(Vec::new()).await;
-    assert!(!clean_gate.entries_halted(), "an agreeing book never halts: {summary:?}");
+    assert!(
+        !clean_gate.entries_halted(),
+        "an agreeing book never halts: {summary:?}"
+    );
     assert!(
         summary.completed.iter().any(|event| matches!(
             event,
@@ -313,7 +363,10 @@ async fn session_runs_the_driver_and_halts_on_mismatch() {
 
     let (drift, drift_gate, _dir) = session_with(Scripted::net(&[("SPY", 2)], &[("SPY", 5)]));
     let summary = drift.run_bar(Vec::new()).await;
-    assert!(drift_gate.entries_halted(), "a mismatch halts entries: {summary:?}");
+    assert!(
+        drift_gate.entries_halted(),
+        "a mismatch halts entries: {summary:?}"
+    );
     assert!(
         summary.failed.iter().any(|event| matches!(
             event,
@@ -331,9 +384,7 @@ async fn session_runs_the_driver_and_halts_on_mismatch() {
 /// exhausts its attempts.
 #[tokio::test]
 async fn dependent_entries_cancel_through_the_batch_graph() {
-    use fluent_concurrency::batch::{
-        CancelReason, SupervisedBatch, SupervisedBatchEvent,
-    };
+    use fluent_concurrency::batch::{CancelReason, SupervisedBatch, SupervisedBatchEvent};
 
     let gate = ReconcileHandle::new();
     let sensor: Arc<dyn Component> = Arc::new(ReconcileUnit::new(
@@ -375,7 +426,10 @@ async fn dependent_entries_cancel_through_the_batch_graph() {
         "the reconcile-dependent entry cancels: {summary:?}"
     );
     assert!(
-        !summary.cancelled.iter().any(|event| format!("{event:?}").contains("telemetry")),
+        !summary
+            .cancelled
+            .iter()
+            .any(|event| format!("{event:?}").contains("telemetry")),
         "an independent unit is never cancelled: {summary:?}"
     );
 }
@@ -451,7 +505,11 @@ fn reconcile_calibration_is_green() {
         Scripted::net(&[("SPY", 2)], &[("SPY", 5)]),
         Scripted::legs(
             &[("SPY-260116C00600000", 1), ("SPY-260116C00610000", -1)],
-            &[("SPY-260116C00600000", 1), ("SPY-260116C00610000", -1), ("SPY-260116C00620000", 1)],
+            &[
+                ("SPY-260116C00600000", 1),
+                ("SPY-260116C00610000", -1),
+                ("SPY-260116C00620000", 1),
+            ],
         ),
         Scripted::net(&[("SPY", 1)], &[]),
     ];

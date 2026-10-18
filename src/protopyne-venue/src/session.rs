@@ -190,9 +190,7 @@ impl TradingSession {
         registry: Arc<VenueRegistry>,
         storage: VenueStorage,
     ) -> Result<Self, VenueError> {
-        config
-            .validate()
-            .map_err(VenueError::Invalid)?;
+        config.validate().map_err(VenueError::Invalid)?;
         // Bounded intake, two interlocking caps (both validated 1..=10_000):
         // the credit pair admits at most `credit_limit` submits in flight
         // (the producer waits for a bump instead of queueing), and the pool
@@ -320,7 +318,10 @@ impl TradingSession {
     pub fn attach_reconcile(&mut self, source: Arc<dyn ReconcileSource>) -> ReconcileHandle {
         let handle = ReconcileHandle::new();
         let unit: Arc<dyn Component> = Arc::new(ReconcileUnit::new(source, handle.clone()));
-        self.reconcile = Some(ReconcileSensor { unit, handle: handle.clone() });
+        self.reconcile = Some(ReconcileSensor {
+            unit,
+            handle: handle.clone(),
+        });
         handle
     }
 
@@ -348,7 +349,10 @@ impl TradingSession {
     ) -> BackfillHandle {
         let handle = BackfillHandle::new();
         let unit = Arc::new(BackfillUnit::new(ctx, sources, handle.clone(), warmup));
-        self.backfill = Some(BackfillSensor { unit, handle: handle.clone() });
+        self.backfill = Some(BackfillSensor {
+            unit,
+            handle: handle.clone(),
+        });
         handle
     }
 
@@ -398,7 +402,10 @@ impl TradingSession {
         // Bounded pipe: at most `capacity` bars buffer; the pump's send
         // awaits room, so burst history cannot outrun a slow consumer.
         let (tx, rx) = mpsc::channel(capacity);
-        let sensor = self.backfill.as_ref().map(|sensor| Arc::clone(&sensor.unit));
+        let sensor = self
+            .backfill
+            .as_ref()
+            .map(|sensor| Arc::clone(&sensor.unit));
         self.scope.spawn(async move {
             for bar in bars {
                 if let Some(unit) = &sensor {
@@ -432,10 +439,16 @@ impl TradingSession {
             .map_err(ResultPoolError::Inner)?;
         if !job.is_exit {
             if let Some(sensor) = &self.reconcile {
-                sensor.handle.check_entries().map_err(ResultPoolError::Inner)?;
+                sensor
+                    .handle
+                    .check_entries()
+                    .map_err(ResultPoolError::Inner)?;
             }
             if let Some(sensor) = &self.backfill {
-                sensor.handle.check_entries().map_err(ResultPoolError::Inner)?;
+                sensor
+                    .handle
+                    .check_entries()
+                    .map_err(ResultPoolError::Inner)?;
             }
         }
         let outcome = self
@@ -483,8 +496,16 @@ impl TradingSession {
         let mut records = Vec::with_capacity(intents.len());
         for intent in intents {
             records.push(
-                safe_submit(&self.storage, journal, self.registry.as_ref(), approved, intent, quote, now)
-                    .await?,
+                safe_submit(
+                    &self.storage,
+                    journal,
+                    self.registry.as_ref(),
+                    approved,
+                    intent,
+                    quote,
+                    now,
+                )
+                .await?,
             );
         }
         Ok(records)
@@ -523,8 +544,10 @@ impl TradingSession {
     ) -> fluent_concurrency::batch::SupervisedBatchSummary {
         use fluent_concurrency::batch::{SupervisedBatchError, SupervisedBatchEvent};
         let caps = fluent_wvr::CapabilitySet::new().with(self.storage.clone());
-        let mut batch =
-            fluent_concurrency::batch::SupervisedBatch::new(fluent_concurrency::tokio_runtime(), caps);
+        let mut batch = fluent_concurrency::batch::SupervisedBatch::new(
+            fluent_concurrency::tokio_runtime(),
+            caps,
+        );
         let mut registration_failure: Option<SupervisedBatchError> = None;
         let mut units = units;
         if let Some(breaker) = &self.stream_breaker {
@@ -565,7 +588,9 @@ impl TradingSession {
         if let Some(SupervisedBatchError::DuplicateName(name)) = registration_failure {
             summary.failed.push(SupervisedBatchEvent::Failed {
                 name,
-                error: WorkError::Execution("bar registration rejected a duplicate unit name".to_owned()),
+                error: WorkError::Execution(
+                    "bar registration rejected a duplicate unit name".to_owned(),
+                ),
             });
         }
         summary

@@ -14,9 +14,7 @@
 //! plus the frozen golden — never an assumed external match.
 
 use super::*;
-use crate::{
-    InputSet, LibraryId, ModuleInput, PineRuntimeConfig, load_pine_source, parse_program,
-};
+use crate::{load_pine_source, parse_program, InputSet, LibraryId, ModuleInput, PineRuntimeConfig};
 use chrono::TimeZone as _;
 use protopyne_types::Bar;
 use std::collections::HashMap;
@@ -62,7 +60,10 @@ fn real_triple_linked() -> Vec<LinkedModule> {
             library_id("showmethegrail", "libMAs", 95),
             "libraries/_libMAs.pine",
         ),
-        real_module(library_id("local", "FastMAs", 6), "indicators/_FastMAs.pine"),
+        real_module(
+            library_id("local", "FastMAs", 6),
+            "indicators/_FastMAs.pine",
+        ),
     ])
     .expect("triple resolves");
     graph
@@ -214,9 +215,8 @@ fn linked_bare_calls_stay_module_local() {
         "export pick() =>\n    1.0\nexport wrapped() =>\n    helper()\nhelper() =>\n    pick()",
     )
     .expect("lib parses");
-    let root =
-        parse_program("pick() =>\n    2.0\nb = L.pick()\nc = pick()\nd = L.wrapped()")
-            .expect("root parses");
+    let root = parse_program("pick() =>\n    2.0\nb = L.pick()\nc = pick()\nd = L.wrapped()")
+        .expect("root parses");
     let modules = [
         LinkedModule {
             key: "pub/Lib".to_owned(),
@@ -294,8 +294,7 @@ fn bare_source_input_rides_the_series_through() {
 fn bare_color_input_declares_its_handle() {
     // `input(color.rgb(...))` infers the color overload from its default.
     let bars = spy5m_bars()[..4].to_vec();
-    let program =
-        parse_program("c = input(color.rgb(192, 192, 192, 20), \"\")").expect("parses");
+    let program = parse_program("c = input(color.rgb(192, 192, 192, 20), \"\")").expect("parses");
     let modules = [LinkedModule {
         key: "local/T".to_owned(),
         program,
@@ -410,7 +409,7 @@ fn fastmas_warmup_alignment_holds() {
 fn fastmas_series_match_direct_kernels() {
     // Self-consistency: every scripted series equals the direct kernel
     // `batch` over the same legs at `eps = 1e-9`.
-    use crate::{OwnedOhlcv, builtin_registry};
+    use crate::{builtin_registry, OwnedOhlcv};
     let (outcome, bars) = fastmas_outcome();
     let data = OwnedOhlcv::from_bars(&bars);
     let views = data.views();

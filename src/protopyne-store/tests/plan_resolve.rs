@@ -13,8 +13,8 @@ use protopyne_types::{Bar, Timeframe};
 
 use crate::commit::test_tapes::{bar, stamp};
 use crate::fold::FoldPolicy;
-use crate::tape::test_setup::{VENUE, memory_tape, seeded, with_registry_caps};
 use crate::store::CandleStore;
+use crate::tape::test_setup::{memory_tape, seeded, with_registry_caps, VENUE};
 
 /// Which tape a case plans against.
 #[derive(Clone, Copy)]
@@ -256,9 +256,10 @@ async fn resolve_answers_every_case() {
                     case.name
                 ),
                 Expect::Spans(expected) => {
-                    let plan = ReadPlan::resolve_for(lookup, coverage, &request).unwrap_or_else(|e| {
-                        panic!("{}: expected spans, refused: {e:?}", case.name)
-                    });
+                    let plan =
+                        ReadPlan::resolve_for(lookup, coverage, &request).unwrap_or_else(|e| {
+                            panic!("{}: expected spans, refused: {e:?}", case.name)
+                        });
                     let got: Vec<(TimeRange, SpanOrigin, bool)> = plan
                         .spans()
                         .iter()

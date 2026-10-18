@@ -79,7 +79,14 @@ pub(crate) async fn record_dispatch_outcome(
             .wait(std::time::Duration::from_millis(wait_timeout_ms))
             .await
             .unwrap_or_else(|| label.clone());
-        record_ledger_result(ledger.as_ref(), node_id, accepted, accepted.then_some(1.0), content.clone()).await;
+        record_ledger_result(
+            ledger.as_ref(),
+            node_id,
+            accepted,
+            accepted.then_some(1.0),
+            content.clone(),
+        )
+        .await;
         if let Some(step) = step {
             step.complete(
                 accepted,

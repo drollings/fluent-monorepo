@@ -21,12 +21,10 @@ use chrono::TimeZone as _;
 
 fn bar_at(index: i64) -> Bar {
     Bar::new()
-        .ts(
-            chrono::Utc
-                .timestamp_opt(1_700_000_000 + index * 60, 0)
-                .single()
-                .expect("valid test timestamp"),
-        )
+        .ts(chrono::Utc
+            .timestamp_opt(1_700_000_000 + index * 60, 0)
+            .single()
+            .expect("valid test timestamp"))
         .o("100.00".parse().expect("decimal"))
         .h("101.00".parse().expect("decimal"))
         .l("99.00".parse().expect("decimal"))
@@ -87,14 +85,26 @@ fn plotcandle_legs_captured_per_bar() {
     assert_eq!(buy.closes.len(), 5);
     for bar in 0..5 {
         assert_eq!(num(buy.opens[bar].as_ref()), 0.0, "buy open pins zero");
-        assert_eq!(num(buy.highs[bar].as_ref()), 101.0, "buy top rides the high leg");
+        assert_eq!(
+            num(buy.highs[bar].as_ref()),
+            101.0,
+            "buy top rides the high leg"
+        );
         assert_eq!(num(buy.lows[bar].as_ref()), 0.0, "buy bottom pins zero");
-        assert_eq!(num(buy.closes[bar].as_ref()), 101.0, "buy close rides the high leg");
+        assert_eq!(
+            num(buy.closes[bar].as_ref()),
+            101.0,
+            "buy close rides the high leg"
+        );
     }
     let sell = &outcome.plotcandles[1];
     assert_eq!(sell.title, "Delta Sell");
     for bar in 0..5 {
-        assert_eq!(num(sell.lows[bar].as_ref()), -99.0, "sell bottom negates the low leg");
+        assert_eq!(
+            num(sell.lows[bar].as_ref()),
+            -99.0,
+            "sell bottom negates the low leg"
+        );
         assert_eq!(
             num(sell.closes[bar].as_ref()),
             -99.0,
@@ -175,20 +185,32 @@ fn plotshape_and_hline_capture_per_bar() {
         "plotshape(close > open ? high : na, title=\"Up\", style=shape.labelup, location=location.absolute)\n\
          hline(0, \"Neutral\", color=close, linestyle=hline.style_dashed)",
     );
-    assert_eq!(outcome.plotshapes.len(), 1, "one shape capture per call site");
+    assert_eq!(
+        outcome.plotshapes.len(),
+        1,
+        "one shape capture per call site"
+    );
     let shape = &outcome.plotshapes[0];
     assert_eq!(shape.title, "Up");
     assert_eq!(shape.values.len(), 5);
     assert!(shape.values[0].is_none(), "bar 0 ties and stays absent");
     for bar in 1..5 {
-        assert_eq!(num(shape.values[bar].as_ref()), 101.0, "marked bars carry high");
+        assert_eq!(
+            num(shape.values[bar].as_ref()),
+            101.0,
+            "marked bars carry high"
+        );
     }
     assert_eq!(outcome.hlines.len(), 1, "one hline capture per call site");
     let level = &outcome.hlines[0];
     assert_eq!(level.title, "Neutral");
     assert_eq!(level.values.len(), 5);
     for bar in 0..5 {
-        assert_eq!(num(level.values[bar].as_ref()), 0.0, "constant level repeats");
+        assert_eq!(
+            num(level.values[bar].as_ref()),
+            0.0,
+            "constant level repeats"
+        );
     }
 }
 
@@ -197,11 +219,9 @@ fn fill_pairs_variable_held_plots() {
     // The shipped-indicator shape (`p1 = plot(...); fill(p1, p2, ...)`):
     // variables bound from `plot()` calls pair through their recorded
     // site tags, resolving to the same captures as the inline form.
-    let outcome = run(
-        "p1 = plot(high, title=\"Fast\")\n\
+    let outcome = run("p1 = plot(high, title=\"Fast\")\n\
          p2 = plot(low, title=\"Slow\")\n\
-         fill(p1, p2, title=\"Ribbon\")",
-    );
+         fill(p1, p2, title=\"Ribbon\")");
     assert_eq!(outcome.plots.len(), 2, "both plots capture");
     assert_eq!(outcome.fills.len(), 1, "one fill per call site");
     let fill = &outcome.fills[0];
@@ -222,11 +242,9 @@ fn fill_gradient_bounds_pair_with_top_color_ink() {
     // The gradient overload (`plot, plot, top, bottom, top color, bottom
     // color`): the region still spans the two plots while the capture ink
     // reads the top color first, the bottom only as a fallback.
-    let outcome = run(
-        "p1 = plot(high, title=\"Fast\")\n\
+    let outcome = run("p1 = plot(high, title=\"Fast\")\n\
          p2 = plot(low, title=\"Slow\")\n\
-         fill(p1, p2, 50, -50, close, na, title=\"Band\")",
-    );
+         fill(p1, p2, 50, -50, close, na, title=\"Band\")");
     assert_eq!(outcome.fills.len(), 1);
     let fill = &outcome.fills[0];
     assert_eq!(fill.title, "Band");
@@ -245,11 +263,9 @@ fn fill_gradient_bounds_pair_with_top_color_ink() {
         other => panic!("expected fill pair, got {other:?}"),
     }
     // Bottom color is the fallback when the top is absent.
-    let fallback = run(
-        "p1 = plot(high, title=\"Fast\")\n\
+    let fallback = run("p1 = plot(high, title=\"Fast\")\n\
          p2 = plot(low, title=\"Slow\")\n\
-         fill(p1, p2, 50, -50, na, open, title=\"Band\")",
-    );
+         fill(p1, p2, 50, -50, na, open, title=\"Band\")");
     assert_eq!(
         num(fallback.fills[0].color.as_ref()),
         100.0,
@@ -279,18 +295,15 @@ fn label_pivot_markers_gate_on_type_and_show() {
     // Pivot markers record only when the pivot fired (`pivot_type != 0`)
     // and display is enabled (`i_pivots_show`): both gates scripted across
     // one five-bar run.
-    let outcome = run(
-        "show = bar_index < 2\n\
+    let outcome = run("show = bar_index < 2\n\
          piv = bar_index == 1 ? 0 : 1\n\
          if piv != 0 and show\n\
-         \x20   label.new(bar_index, high, \"x\", style=label.style_label_down)",
-    );
+         \x20   label.new(bar_index, high, \"x\", style=label.style_label_down)");
     let labels: Vec<&crate::pine::eval::DrawingEvent> = outcome
         .draw_events
         .iter()
         .filter(|event| {
-            event.object == "label"
-                && event.kind == crate::pine::eval::DrawingEventKind::Created
+            event.object == "label" && event.kind == crate::pine::eval::DrawingEventKind::Created
         })
         .collect();
     assert_eq!(labels.len(), 1, "only bar 0 passes both gates");
@@ -301,14 +314,12 @@ fn label_pivot_markers_gate_on_type_and_show() {
 fn table_create_delete_lifecycle_on_first_last() {
     // Managed-table shape without the matrix dependency: create plus a
     // header cell on the first bar, delete on the last.
-    let outcome = run(
-        "var t = na\n\
+    let outcome = run("var t = na\n\
          if barstate.isfirst\n\
          \x20   t := table.new(position.top_right, 2, 1)\n\
          \x20   table.cell(t, 0, 0, \"h\")\n\
          if barstate.islast\n\
-         \x20   table.delete(t)",
-    );
+         \x20   table.delete(t)");
     let kinds: Vec<crate::pine::eval::DrawingEventKind> = outcome
         .draw_events
         .iter()
@@ -333,18 +344,21 @@ fn table_create_delete_lifecycle_on_first_last() {
 fn table_merge_cells_records_an_update_row() {
     // Merging is display-only: the range records as an update against the
     // live table handle, and nothing readable changes.
-    let outcome = run(
-        "var t = na\n\
+    let outcome = run("var t = na\n\
          if barstate.isfirst\n\
          \x20   t := table.new(position.top_right, 2, 1)\n\
-         \x20   table.merge_cells(t, 0, 0, 1, 0)",
-    );
+         \x20   table.merge_cells(t, 0, 0, 1, 0)");
     let tables: Vec<&crate::pine::eval::DrawingEvent> = outcome
         .draw_events
         .iter()
         .filter(|event| event.object == "table")
         .collect();
-    assert_eq!(tables.len(), 2, "create plus merge, got: {:?}", outcome.draw_events);
+    assert_eq!(
+        tables.len(),
+        2,
+        "create plus merge, got: {:?}",
+        outcome.draw_events
+    );
     assert_eq!(tables[0].kind, crate::pine::eval::DrawingEventKind::Created);
     assert_eq!(tables[1].kind, crate::pine::eval::DrawingEventKind::Updated);
     assert_eq!(tables[1].bar, 0);
@@ -354,8 +368,7 @@ fn table_merge_cells_records_an_update_row() {
 #[test]
 fn drawing_getters_read_back_created_state() {
     // Getters observe the recorded object: creation args plus later moves.
-    let outcome = run(
-        "lb = label.new(3, high, \"x\")\n\
+    let outcome = run("lb = label.new(3, high, \"x\")\n\
          label.set_x(lb, 7)\n\
          gx = label.get_x(lb)\n\
          bx = box.new(1, high, 4, low)\n\
@@ -363,8 +376,7 @@ fn drawing_getters_read_back_created_state() {
          gr = box.get_right(bx)\n\
          ln = line.new(1, low, 2, high)\n\
          line.set_x2(ln, 8)\n\
-         g2 = line.get_x2(ln)",
-    );
+         g2 = line.get_x2(ln)");
     let get = |name: &str| match outcome.value_at(4, name) {
         Some(Some(PineValue::Float(v))) => v,
         Some(Some(PineValue::Int(v))) => v as f64,
@@ -377,14 +389,12 @@ fn drawing_getters_read_back_created_state() {
 
 #[test]
 fn drawing_handles_compare_without_arithmetic() {
-    let outcome = run(
-        "a = label.new(1, high, \"x\")\n\
+    let outcome = run("a = label.new(1, high, \"x\")\n\
          b = a\n\
          c = label.new(2, low, \"y\")\n\
          same = a == b\n\
          diff = a != c\n\
-         present = not na(a)",
-    );
+         present = not na(a)");
     assert!(flag(&outcome, "same"), "same object compares equal");
     assert!(flag(&outcome, "diff"), "distinct objects compare unequal");
     assert!(flag(&outcome, "present"), "fresh handle is not na");
@@ -402,8 +412,7 @@ fn dropped_capture_regression_every_shape_records() {
     // through persistent handles, and deleted on the last bar — so the
     // test also pins cross-bar handle persistence. If a new drawing call
     // is added without a recorder, it lands here and fails.
-    let outcome = run(
-        "var lb = na\n\
+    let outcome = run("var lb = na\n\
          var tb = na\n\
          var bx = na\n\
          var ln = na\n\
@@ -426,8 +435,7 @@ fn dropped_capture_regression_every_shape_records() {
          \x20   label.delete(lb)\n\
          \x20   table.delete(tb)\n\
          \x20   box.delete(bx)\n\
-         \x20   line.delete(ln)",
-    );
+         \x20   line.delete(ln)");
     assert_eq!(outcome.plotcandles.len(), 1);
     assert_eq!(outcome.barcolors.len(), 1);
     assert_eq!(outcome.fills.len(), 1);
@@ -465,8 +473,7 @@ fn unknown_drawing_methods_still_refuse() {
     // drawing calls refuse with a reason.
     let err = run_err("lb = label.new(1, high, \"x\")\nlabel.frobenicate(lb)");
     assert_eq!(
-        err,
-        "pine evaluation refused: unknown method 'label.frobenicate'",
+        err, "pine evaluation refused: unknown method 'label.frobenicate'",
         "exact refusal pins the recorded surface"
     );
     let gone = run_err("lb = label.new(1, high, \"x\")\nlabel.delete(lb)\nlabel.get_x(lb)");
@@ -634,8 +641,7 @@ fn ppas_version_skewed_pattern_reference_refuses() {
         .expect_err("skewed reference refuses")
         .to_string();
     assert_eq!(
-        reason,
-        "pine evaluation refused: unknown function 'libCandles.isPatternType'",
+        reason, "pine evaluation refused: unknown function 'libCandles.isPatternType'",
         "exact refusal pins the missing export"
     );
 }
@@ -650,7 +656,11 @@ fn rsimd_capture_contract_plots_fills_shapes_levels() {
     let chart = fixture::history_bars("historical/SPY_1M.csv");
     let outcome = run_capture("ApexRSIMD", &chart[..30], &[], None);
     assert_eq!(outcome.evaluated, 30, "every sliced bar evaluates");
-    let titles: Vec<&str> = outcome.plots.iter().map(|plot| plot.title.as_str()).collect();
+    let titles: Vec<&str> = outcome
+        .plots
+        .iter()
+        .map(|plot| plot.title.as_str())
+        .collect();
     assert_eq!(
         titles,
         vec![
@@ -690,7 +700,11 @@ fn rsimd_capture_contract_plots_fills_shapes_levels() {
         ],
         "all four markers capture"
     );
-    let levels: Vec<&str> = outcome.hlines.iter().map(|line| line.title.as_str()).collect();
+    let levels: Vec<&str> = outcome
+        .hlines
+        .iter()
+        .map(|line| line.title.as_str())
+        .collect();
     assert_eq!(
         levels,
         vec!["Trend Neutral", "Trending Threshold", "Trending Threshold"],
@@ -708,11 +722,9 @@ fn same_titled_plots_pair_by_site_key() {
     // Site-keying distinguishes same-titled plots: two `plot()` calls
     // with one title capture as two series under two site keys, and a
     // fill over their variables pairs the tagged sites, not the title.
-    let outcome = run(
-        "a = plot(high, title=\"Same\")\n\
+    let outcome = run("a = plot(high, title=\"Same\")\n\
          b = plot(low, title=\"Same\")\n\
-         fill(a, b, title=\"Pair\")",
-    );
+         fill(a, b, title=\"Pair\")");
     assert_eq!(outcome.plots.len(), 2, "two captures, one title");
     assert_eq!(outcome.plots[0].title, "Same");
     assert_eq!(outcome.plots[1].title, "Same");
@@ -738,18 +750,36 @@ fn same_titled_plots_pair_by_site_key() {
 
 /// Pure-constant drawing namespaces: these heads can never be variables,
 /// so every non-call token must resolve through `resolve_constant`.
-const CONSTANT_NAMESPACES: &[&str] = &[
-    "display", "size", "position", "shape", "location", "hline",
-];
+const CONSTANT_NAMESPACES: &[&str] = &["display", "size", "position", "shape", "location", "hline"];
 
 /// Drawing-namespace methods the recorder serves (mirrors the
 /// `call_drawing` dispatch table: new/delete/cell/merge_cells plus the
 /// setter/getter arms).
 const SERVED_DRAWING_METHODS: &[&str] = &[
-    "new", "delete", "cell", "merge_cells", "set_x", "set_y", "set_textcolor", "set_style",
-    "set_tooltip", "set_text", "set_color", "set_left", "set_top", "set_right", "set_bottom",
-    "set_bgcolor", "set_border_color", "set_xy1", "set_xy2", "set_width", "set_x2", "get_x",
-    "get_right", "get_x2",
+    "new",
+    "delete",
+    "cell",
+    "merge_cells",
+    "set_x",
+    "set_y",
+    "set_textcolor",
+    "set_style",
+    "set_tooltip",
+    "set_text",
+    "set_color",
+    "set_left",
+    "set_top",
+    "set_right",
+    "set_bottom",
+    "set_bgcolor",
+    "set_border_color",
+    "set_xy1",
+    "set_xy2",
+    "set_width",
+    "set_x2",
+    "get_x",
+    "get_right",
+    "get_x2",
 ];
 
 /// Drawing-namespace methods observed in the frozen task files but dead on
@@ -766,26 +796,32 @@ const DEFERRED_DRAWING_METHODS: &[(&str, &str)] = &[
 
 /// Bare drawing calls the engine captures.
 const SERVED_BARE_CALLS: &[&str] = &[
-    "plot", "plotshape", "plotcandle", "barcolor", "fill", "hline",
+    "plot",
+    "plotshape",
+    "plotcandle",
+    "barcolor",
+    "fill",
+    "hline",
 ];
 
 /// Closure files under proof: the three task closures plus IntegrationLite
 /// (libraries shared; Regressions stays quarantined per M0 and contributes
 /// no file here).
 fn m5_closure_files() -> Vec<(String, String)> {
-    use crate::{REAL_LIBRARIES, TASK_INDICATORS, closure_data_root, load_closure_sources, load_listed_closure};
+    use crate::{
+        closure_data_root, load_closure_sources, load_listed_closure, REAL_LIBRARIES,
+        TASK_INDICATORS,
+    };
     let root = closure_data_root(env!("CARGO_MANIFEST_DIR"));
     let mut files = Vec::new();
     for indicator in TASK_INDICATORS {
-        for (key, source) in load_listed_closure(&root, REAL_LIBRARIES, indicator)
-            .expect("task closure loads")
+        for (key, source) in
+            load_listed_closure(&root, REAL_LIBRARIES, indicator).expect("task closure loads")
         {
             files.push((format!("task:{key}"), source.text));
         }
     }
-    for (key, source) in
-        load_closure_sources(&root).expect("IntegrationLite closure loads")
-    {
+    for (key, source) in load_closure_sources(&root).expect("IntegrationLite closure loads") {
         files.push((format!("lite:{key}"), source.text));
     }
     files
@@ -825,7 +861,9 @@ fn dotted_tokens(text: &str) -> Vec<(String, String, bool)> {
     while i < bytes.len() {
         if bytes[i] == b'.' {
             let mut start = i;
-            while start > 0 && (bytes[start - 1].is_ascii_alphanumeric() || bytes[start - 1] == b'_') {
+            while start > 0
+                && (bytes[start - 1].is_ascii_alphanumeric() || bytes[start - 1] == b'_')
+            {
                 start -= 1;
             }
             let mut end = i + 1;
@@ -851,7 +889,11 @@ fn dotted_tokens(text: &str) -> Vec<(String, String, bool)> {
                 while rest < bytes.len() && bytes[rest].is_ascii_whitespace() {
                     rest += 1;
                 }
-                out.push((head.to_owned(), member.to_owned(), rest < bytes.len() && bytes[rest] == b'('));
+                out.push((
+                    head.to_owned(),
+                    member.to_owned(),
+                    rest < bytes.len() && bytes[rest] == b'(',
+                ));
             }
             i = end.max(i + 1);
         } else {
@@ -900,7 +942,11 @@ fn drawing_constants_resolve_or_name_deferred() {
             }
         }
     }
-    assert!(failures.is_empty(), "drawing surface probe:\n{}", failures.join("\n"));
+    assert!(
+        failures.is_empty(),
+        "drawing surface probe:\n{}",
+        failures.join("\n")
+    );
 }
 
 #[test]
@@ -914,7 +960,9 @@ fn bare_drawing_calls_stay_captured() {
         while i < bytes.len() {
             if bytes[i] == b'(' {
                 let mut start = i;
-                while start > 0 && (bytes[start - 1].is_ascii_alphanumeric() || bytes[start - 1] == b'_') {
+                while start > 0
+                    && (bytes[start - 1].is_ascii_alphanumeric() || bytes[start - 1] == b'_')
+                {
                     start -= 1;
                 }
                 let name = &text[start..i];
@@ -924,8 +972,15 @@ fn bare_drawing_calls_stay_captured() {
                         || bytes[start - 1] == b'.');
                 if boundary_before
                     && [
-                        "plot", "plotshape", "plotchar", "plotbar", "plotcandle", "barcolor",
-                        "bgcolor", "fill", "hline",
+                        "plot",
+                        "plotshape",
+                        "plotchar",
+                        "plotbar",
+                        "plotcandle",
+                        "barcolor",
+                        "bgcolor",
+                        "fill",
+                        "hline",
                     ]
                     .contains(&name)
                     && !SERVED_BARE_CALLS.contains(&name)
@@ -938,7 +993,11 @@ fn bare_drawing_calls_stay_captured() {
             }
         }
     }
-    assert!(found.is_empty(), "bare drawing calls:\n{}", found.join("\n"));
+    assert!(
+        found.is_empty(),
+        "bare drawing calls:\n{}",
+        found.join("\n")
+    );
 }
 
 #[test]
@@ -958,7 +1017,9 @@ fn display_round_trip_preserves_drawing_sites() {
         while i < bytes.len() {
             if bytes[i] == b'(' {
                 let mut start = i;
-                while start > 0 && (bytes[start - 1].is_ascii_alphanumeric() || bytes[start - 1] == b'_') {
+                while start > 0
+                    && (bytes[start - 1].is_ascii_alphanumeric() || bytes[start - 1] == b'_')
+                {
                     start -= 1;
                 }
                 let name = &text[start..i];

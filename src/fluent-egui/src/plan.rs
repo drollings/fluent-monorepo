@@ -27,7 +27,9 @@ use crate::error::EguiError;
 
 /// Carry a graph refusal across the crate boundary without a second error type.
 fn describe_graph(error: &GraphError) -> EguiError {
-    EguiError::Dependency { reason: error.to_string() }
+    EguiError::Dependency {
+        reason: error.to_string(),
+    }
 }
 
 /// DAG-ordered pane compute plan over caller-registered nodes.
@@ -43,7 +45,9 @@ impl PanePlan {
     /// Create an empty plan; register nodes before ordering.
     #[must_use]
     pub fn new() -> Self {
-        Self { steps: CheckpointedStepGraph::new() }
+        Self {
+            steps: CheckpointedStepGraph::new(),
+        }
     }
 
     /// Register one pane node; each node provides its own name. Surfaces the
@@ -55,7 +59,9 @@ impl PanePlan {
         fingerprint: u64,
     ) -> Result<(), EguiError> {
         let owned: Vec<String> = deps.iter().map(|d| (*d).to_owned()).collect();
-        self.steps.add_step(name.to_owned(), &owned, fingerprint).map_err(|e| describe_graph(&e))
+        self.steps
+            .add_step(name.to_owned(), &owned, fingerprint)
+            .map_err(|e| describe_graph(&e))
     }
 
     /// Whether `name` is a registered pane.
@@ -67,13 +73,19 @@ impl PanePlan {
     /// Direct dependencies of one pane (empty for roots and unknown names).
     #[must_use]
     pub fn dependencies(&self, name: &str) -> Vec<String> {
-        self.steps.graph().deps_of(&name.to_owned()).map_or_else(Vec::new, <[String]>::to_vec)
+        self.steps
+            .graph()
+            .deps_of(&name.to_owned())
+            .map_or_else(Vec::new, <[String]>::to_vec)
     }
 
     /// Topologically sorted pane names: dependencies always precede
     /// dependents. The frame schedules recompute waves in this order.
     pub fn order(&self) -> Result<Vec<String>, EguiError> {
-        self.steps.graph().topo_sort().map_err(|e| describe_graph(&e))
+        self.steps
+            .graph()
+            .topo_sort()
+            .map_err(|e| describe_graph(&e))
     }
 
     /// Panes whose dependencies are all complete, in plan order.
@@ -114,7 +126,10 @@ impl PanePlan {
         let mut dirty: HashSet<String> = self.cancel_dependents(name).into_iter().collect();
         dirty.insert(owned);
         if let Ok(order) = self.steps.graph().topo_sort() {
-            return order.into_iter().filter(|node| dirty.contains(node)).collect();
+            return order
+                .into_iter()
+                .filter(|node| dirty.contains(node))
+                .collect();
         }
         let mut fallback: Vec<String> = dirty.into_iter().collect();
         fallback.sort();
@@ -123,7 +138,9 @@ impl PanePlan {
 
     /// Mark `name` as a replay checkpoint; fails for unregistered names.
     pub fn checkpoint(&mut self, name: &str) -> Result<(), EguiError> {
-        self.steps.checkpoint(name.to_owned()).map_err(|e| describe_graph(&e))
+        self.steps
+            .checkpoint(name.to_owned())
+            .map_err(|e| describe_graph(&e))
     }
 
     /// Whether `name` is a recorded checkpoint.
@@ -135,7 +152,9 @@ impl PanePlan {
     /// Rewind to checkpoint `name`: returns the ordered steps from `name`
     /// onward (inclusive) and un-completes them for re-run.
     pub fn rewind_to(&mut self, name: &str) -> Result<Vec<String>, EguiError> {
-        self.steps.rewind_to(&name.to_owned()).map_err(|e| describe_graph(&e))
+        self.steps
+            .rewind_to(&name.to_owned())
+            .map_err(|e| describe_graph(&e))
     }
 
     /// Record a pane's parameter fingerprint; fails for unregistered names.
@@ -145,7 +164,9 @@ impl PanePlan {
                 *slot = fingerprint;
                 Ok(())
             }
-            None => Err(EguiError::Dependency { reason: format!("node not found: {name:?}") }),
+            None => Err(EguiError::Dependency {
+                reason: format!("node not found: {name:?}"),
+            }),
         }
     }
 
@@ -255,7 +276,10 @@ impl PaneCache {
                 what: "capacity".to_owned(),
                 reason,
             })?;
-        Ok(Self { entries, revision: 0 })
+        Ok(Self {
+            entries,
+            revision: 0,
+        })
     }
 
     /// Refresh LRU order for the current working set: every present key
@@ -289,7 +313,14 @@ impl PaneCache {
         }
         self.revision += 1;
         let revision = self.revision;
-        self.entries.insert_owned(key, CachedSeries { values, revision, values_hash: hash });
+        self.entries.insert_owned(
+            key,
+            CachedSeries {
+                values,
+                revision,
+                values_hash: hash,
+            },
+        );
         revision
     }
 

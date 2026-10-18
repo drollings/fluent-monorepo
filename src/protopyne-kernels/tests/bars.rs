@@ -71,7 +71,13 @@ fn replay_clean(ring: &mut BarRing) -> Vec<LtfOutcome> {
             // isnew update: opens the bar, accumulates nothing.
             first = false;
         } else {
-            let legs = BarTick { open: 100.0, high, low, close: price, volume: cumvol };
+            let legs = BarTick {
+                open: 100.0,
+                high,
+                low,
+                close: price,
+                volume: cumvol,
+            };
             ring.ingest_tick(legs, stamp);
         }
         outcomes.push(ring.confirm_ltf(stamp, price, None));
@@ -101,7 +107,10 @@ fn helper_edge_table() {
     assert!(!validate_ohlcv(100.0, 101.0, 99.0, 100.5, 0.0));
     assert!(!validate_ohlcv(f64::NAN, 101.0, 99.0, 100.5, 200.0));
     // Degenerate range falls back to the neutral split.
-    assert_eq!(estimate_delta_volume(100.0, 100.0, 100.0, 100.0, 200.0), 100.0);
+    assert_eq!(
+        estimate_delta_volume(100.0, 100.0, 100.0, 100.0, 200.0),
+        100.0
+    );
     assert_eq!(fast_tanh(0.0), 0.0);
     assert_close(fast_tanh(1.0), 0.5, "fast tanh at one");
 }
@@ -137,8 +146,22 @@ fn ring_identity_get_chains_and_bounds() {
     assert_eq!(ring.get(0), None, "empty ring reads absent");
     ring.on_bar_open(100.0, 101.0, 99.0, 100.5, T0);
     let rows = [
-        LtfRow { ts_ms: T0, o: 100.0, h: 101.0, l: 99.0, c: 100.5, volume: 400.0 },
-        LtfRow { ts_ms: T0 + 60_000, o: 100.5, h: 102.0, l: 100.0, c: 101.5, volume: 300.0 },
+        LtfRow {
+            ts_ms: T0,
+            o: 100.0,
+            h: 101.0,
+            l: 99.0,
+            c: 100.5,
+            volume: 400.0,
+        },
+        LtfRow {
+            ts_ms: T0 + 60_000,
+            o: 100.5,
+            h: 102.0,
+            l: 100.0,
+            c: 101.5,
+            volume: 300.0,
+        },
     ];
     ring.reconcile(&rows, 700.0, 100.0);
     assert_eq!(ring.len(), 2);
@@ -172,7 +195,11 @@ fn ring_evicts_oldest_beyond_capacity() {
         .collect();
     ring.reconcile(&rows, 800.0, 100.0);
     assert_eq!(ring.len(), 6, "capacity bounds memory");
-    assert_close(ring.total_volume(), 600.0, "evicted volumes leave the totals");
+    assert_close(
+        ring.total_volume(),
+        600.0,
+        "evicted volumes leave the totals",
+    );
     assert_eq!(
         ring.get(0).expect("oldest").ts_ms,
         T0 + 2 * 60_000,
@@ -265,7 +292,11 @@ fn clean_tape_replays_pine_goldens() {
     assert_eq!((first.h, first.l, first.c), (102.0, 100.0, 101.5));
     assert_eq!(first.buy_volume, 400.0);
     assert_eq!(first.sell_volume(), 150.0);
-    assert_close(ring.volume_imbalance(), 275.0 / 3.0, "buy pressure positive");
+    assert_close(
+        ring.volume_imbalance(),
+        275.0 / 3.0,
+        "buy pressure positive",
+    );
 }
 
 #[test]
@@ -274,10 +305,20 @@ fn rollback_resets_accumulator() {
     // isnew update opens the bar and seeds nothing; ticks fold from t2.
     ring.on_bar_open(100.0, 101.0, 100.0, 100.0, T0);
     ring.confirm_ltf(T0 + 5_000, 100.0, None);
-    let tape = [(10_000, 101.0, 2.0), (20_000, 100.5, 1.0), (30_000, 100.5, 100.0)];
+    let tape = [
+        (10_000, 101.0, 2.0),
+        (20_000, 100.5, 1.0),
+        (30_000, 100.5, 100.0),
+    ];
     let mut kinds = Vec::new();
     for (offset, price, cumvol) in tape {
-        let legs = BarTick { open: 100.0, high: 101.0, low: 100.0, close: price, volume: cumvol };
+        let legs = BarTick {
+            open: 100.0,
+            high: 101.0,
+            low: 100.0,
+            close: price,
+            volume: cumvol,
+        };
         kinds.push(ring.ingest_tick(legs, T0 + offset));
         ring.confirm_ltf(T0 + offset, price, None);
     }
@@ -314,7 +355,14 @@ fn pull_reconcile_rebuilds_from_closed_rows() {
         (T0 - 600_000, 102.5, 104.0, 102.0, 103.5),
         (T0, 103.5, 105.0, 103.0, 104.5),
     ]
-    .map(|(ts_ms, o, h, l, c)| LtfRow { ts_ms, o, h, l, c, volume: 200.0 });
+    .map(|(ts_ms, o, h, l, c)| LtfRow {
+        ts_ms,
+        o,
+        h,
+        l,
+        c,
+        volume: 200.0,
+    });
     let outcome = ring.reconcile(&rows, 1000.0, 100.0);
     assert_eq!(outcome.rebuilt, 5);
     assert!(outcome.remainder.is_none(), "exact reference adds nothing");
@@ -367,12 +415,17 @@ fn spike_and_alpha_follow_pine_guards() {
     // Newest candle holds 20 units over a 60s/86400s slice of any reference
     // far above it: no spike. A tiny reference makes the same candle spike.
     assert!(!ring.is_spike(1_000_000.0));
-    assert!(ring.is_spike(10.0), "20 units dwarf a 10-unit reference slice");
+    assert!(
+        ring.is_spike(10.0),
+        "20 units dwarf a 10-unit reference slice"
+    );
     let alpha = ring.alpha(1000.0, 900.0, 1.0, 1.0, 2.0, 0.5);
     assert!(alpha.is_finite(), "alpha stays finite");
     assert!((0.01..=0.90).contains(&alpha), "alpha stays in range");
     assert_eq!(
-        BarRing::new(&test_config()).expect("ring").alpha(0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+        BarRing::new(&test_config())
+            .expect("ring")
+            .alpha(0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
         0.08,
         "empty guards read the default"
     );
@@ -382,25 +435,45 @@ fn spike_and_alpha_follow_pine_guards() {
 fn tick_resample_folds_and_refuses() {
     // Raw prints accumulate whole: the first print seeds direction-neutral,
     // every print's volume folds in, and only closed buckets emit.
-    let ticks: Vec<RawTick> = [(0, 100.0, 10.0), (20_000, 101.0, 200.0), (70_000, 101.5, 150.0), (130_000, 102.0, 50.0)]
-        .map(|(offset, price, volume)| RawTick { ts_ms: T0 + offset, price, volume })
-        .to_vec();
+    let ticks: Vec<RawTick> = [
+        (0, 100.0, 10.0),
+        (20_000, 101.0, 200.0),
+        (70_000, 101.5, 150.0),
+        (130_000, 102.0, 50.0),
+    ]
+    .map(|(offset, price, volume)| RawTick {
+        ts_ms: T0 + offset,
+        price,
+        volume,
+    })
+    .to_vec();
     let parts = tick_resample(&ticks, 60_000, false, Lookahead::Off).expect("two buckets close");
     assert_eq!(parts.len(), 2, "trailing partial bucket stays unconfirmed");
     assert_eq!(parts[0].ts_ms, T0);
-    assert_eq!((parts[0].o, parts[0].h, parts[0].l, parts[0].c), (100.0, 101.0, 100.0, 101.0));
+    assert_eq!(
+        (parts[0].o, parts[0].h, parts[0].l, parts[0].c),
+        (100.0, 101.0, 100.0, 101.0)
+    );
     assert_eq!(parts[0].volume, 210.0);
     assert_eq!(parts[1].ts_ms, T0 + 60_000);
     assert_eq!(parts[1].volume, 150.0);
     // Single-bucket tape: nothing confirmed yet.
     let err = tick_resample(&ticks[..2], 60_000, false, Lookahead::Off)
         .expect_err("refused before first closed bar");
-    assert!(err.to_string().contains("closed"), "refusal names the reason: {err}");
+    assert!(
+        err.to_string().contains("closed"),
+        "refusal names the reason: {err}"
+    );
     // Lookahead stays refused even on valid input.
-    let err = tick_resample(&ticks, 60_000, false, Lookahead::On)
-        .expect_err("lookahead refuses");
-    assert!(err.to_string().contains("lookahead"), "refusal names the reason: {err}");
-    assert!(tick_resample(&[], 60_000, false, Lookahead::Off).is_err(), "empty tape refuses");
+    let err = tick_resample(&ticks, 60_000, false, Lookahead::On).expect_err("lookahead refuses");
+    assert!(
+        err.to_string().contains("lookahead"),
+        "refusal names the reason: {err}"
+    );
+    assert!(
+        tick_resample(&[], 60_000, false, Lookahead::Off).is_err(),
+        "empty tape refuses"
+    );
     // Deterministic: two folds agree bit for bit.
     let again = tick_resample(&ticks, 60_000, false, Lookahead::Off).expect("stable");
     assert_eq!(parts, again);
@@ -409,7 +482,28 @@ fn tick_resample_folds_and_refuses() {
 #[test]
 fn tick_resample_sparse_skips_dense_fills() {
     // Buckets 0 and 2 populated, bucket 1 empty.
-    let ticks = [RawTick { ts_ms: T0, price: 100.0, volume: 10.0 }, RawTick { ts_ms: T0 + 20_000, price: 101.0, volume: 5.0 }, RawTick { ts_ms: T0 + 130_000, price: 102.0, volume: 7.0 }, RawTick { ts_ms: T0 + 190_000, price: 103.0, volume: 9.0 }];
+    let ticks = [
+        RawTick {
+            ts_ms: T0,
+            price: 100.0,
+            volume: 10.0,
+        },
+        RawTick {
+            ts_ms: T0 + 20_000,
+            price: 101.0,
+            volume: 5.0,
+        },
+        RawTick {
+            ts_ms: T0 + 130_000,
+            price: 102.0,
+            volume: 7.0,
+        },
+        RawTick {
+            ts_ms: T0 + 190_000,
+            price: 103.0,
+            volume: 9.0,
+        },
+    ];
     let sparse = tick_resample(&ticks, 60_000, false, Lookahead::Off).expect("sparse folds");
     assert_eq!(sparse.len(), 2, "empty bucket leaves no candle");
     assert_eq!(sparse[1].ts_ms, T0 + 120_000);
@@ -428,11 +522,18 @@ fn load_history_csv(name: &str) -> Vec<ClosedBar> {
     let content =
         std::fs::read_to_string(data_root().join("historical").join(name)).expect("history loads");
     let mut lines = content.lines();
-    assert_eq!(lines.next().expect("header"), "time,open,high,low,close,Volume");
+    assert_eq!(
+        lines.next().expect("header"),
+        "time,open,high,low,close,Volume"
+    );
     lines
         .map(|line| {
             let mut cells = line.split(',');
-            let secs = cells.next().expect("time").parse::<i64>().expect("int time");
+            let secs = cells
+                .next()
+                .expect("time")
+                .parse::<i64>()
+                .expect("int time");
             let num = |cell: Option<&str>| cell.expect("cell").parse::<f64>().expect("number");
             ClosedBar {
                 ts_ms: secs * 1000,
@@ -454,8 +555,16 @@ fn load_history_volumes(name: &str) -> Vec<(i64, f64)> {
         .skip(1)
         .map(|line| {
             let mut cells = line.split(',');
-            let secs = cells.next().expect("time").parse::<i64>().expect("int time");
-            let vol = cells.nth(4).expect("volume").parse::<f64>().expect("number");
+            let secs = cells
+                .next()
+                .expect("time")
+                .parse::<i64>()
+                .expect("int time");
+            let vol = cells
+                .nth(4)
+                .expect("volume")
+                .parse::<f64>()
+                .expect("number");
             (secs * 1000, vol)
         })
         .collect()
@@ -480,7 +589,10 @@ fn project_bars_matches_exchange_minutes() {
         for bar in &projected {
             if let Some(want) = by_ts.get(&bar.ts_ms) {
                 overlap += 1;
-                assert_eq!((bar.o, bar.h, bar.l, bar.c), (want.o, want.h, want.l, want.c));
+                assert_eq!(
+                    (bar.o, bar.h, bar.l, bar.c),
+                    (want.o, want.h, want.l, want.c)
+                );
                 assert_eq!(bar.volume, want.volume, "volumes sum exactly");
             }
         }
@@ -505,8 +617,13 @@ fn project_bars_is_conservative_and_closed() {
     let now_inside_last = direct.last().expect("tail").ts_ms + 1;
     let cut = project_bars(&m1, 900_000, Lookahead::Off, Some(now_inside_last)).expect("cuts");
     assert_eq!(cut.len(), direct.len() - 1, "unconfirmed tail excluded");
-    assert!(project_bars(&m1, 900_000, Lookahead::On, None).is_err(), "lookahead refuses");
-    assert!(project_bars(&[], 900_000, Lookahead::Off, None).expect("empty").is_empty());
+    assert!(
+        project_bars(&m1, 900_000, Lookahead::On, None).is_err(),
+        "lookahead refuses"
+    );
+    assert!(project_bars(&[], 900_000, Lookahead::Off, None)
+        .expect("empty")
+        .is_empty());
 }
 
 #[test]
@@ -535,10 +652,17 @@ fn tick_tape_resample_conserves_and_aligns() {
     for bar in &parts {
         assert_eq!(bar.ts_ms % 60_000, 0, "every bucket aligned");
     }
-    assert!(parts.windows(2).all(|w| w[0].ts_ms < w[1].ts_ms), "oldest to newest");
+    assert!(
+        parts.windows(2).all(|w| w[0].ts_ms < w[1].ts_ms),
+        "oldest to newest"
+    );
     let tape_total: f64 = ticks.iter().map(|tick| tick.volume).sum();
     let parts_total: f64 = parts.iter().map(|bar| bar.volume).sum();
-    let trailing_idx = ticks.iter().map(|tick| tick.ts_ms.div_euclid(60_000)).max().expect("tape");
+    let trailing_idx = ticks
+        .iter()
+        .map(|tick| tick.ts_ms.div_euclid(60_000))
+        .max()
+        .expect("tape");
     let trailing: f64 = ticks
         .iter()
         .filter(|tick| tick.ts_ms.div_euclid(60_000) == trailing_idx)
@@ -549,9 +673,15 @@ fn tick_tape_resample_conserves_and_aligns() {
         parts_total + trailing,
         "resample conserves tape volume past the unconfirmed tail",
     );
-    let m1_total: f64 = load_history_volumes("SPY_1M.csv").iter().map(|(_, v)| v).sum();
+    let m1_total: f64 = load_history_volumes("SPY_1M.csv")
+        .iter()
+        .map(|(_, v)| v)
+        .sum();
     let drift = (tape_total - m1_total).abs() / m1_total * 100.0;
-    assert!(drift < 5.0, "tape tracks minute history within 5%, got {drift:.2}%");
+    assert!(
+        drift < 5.0,
+        "tape tracks minute history within 5%, got {drift:.2}%"
+    );
 }
 
 #[test]
@@ -560,7 +690,9 @@ fn timeframe_sweep_aligns_midnights_mondays_and_ms() {
     // Monday 2026-01-12T00:00:00Z; midnight grid floors must hold for every
     // timeframe including seconds.
     let monday_ms: i64 = 1_768_608_000_000;
-    for target_ms in [5_000, 15_000, 30_000, 60_000, 300_000, 600_000, 900_000, 1_800_000] {
+    for target_ms in [
+        5_000, 15_000, 30_000, 60_000, 300_000, 600_000, 900_000, 1_800_000,
+    ] {
         assert_eq!(monday_ms % target_ms, 0, "fixture sits on every grid");
         let bars: Vec<ClosedBar> = [-2, -1, 0, 1]
             .map(|k| ClosedBar {
@@ -574,15 +706,24 @@ fn timeframe_sweep_aligns_midnights_mondays_and_ms() {
             .to_vec();
         let projected = project_bars(&bars, target_ms, Lookahead::Off, None).expect("sweeps");
         assert_eq!(projected.len(), 4, "exact-boundary stamps keep own buckets");
-        assert_eq!(projected[2].ts_ms, monday_ms, "midnight/Monday bucket exact");
+        assert_eq!(
+            projected[2].ts_ms, monday_ms,
+            "midnight/Monday bucket exact"
+        );
     }
 }
 
 #[test]
 fn tick_bar_states_follow_bar_time() {
     let single = tick_bar_state(true, true);
-    assert!(single.is_new && single.is_confirmed, "single-tick bar opens and confirms");
-    assert!(!single.is_history && single.is_realtime, "tick runs emulate realtime");
+    assert!(
+        single.is_new && single.is_confirmed,
+        "single-tick bar opens and confirms"
+    );
+    assert!(
+        !single.is_history && single.is_realtime,
+        "tick runs emulate realtime"
+    );
     let first = tick_bar_state(true, false);
     assert!(first.is_new && !first.is_confirmed);
     let last = tick_bar_state(false, true);
@@ -593,11 +734,31 @@ fn tick_bar_states_follow_bar_time() {
 
 #[test]
 fn source_choice_and_volume_deltas() {
-    assert_eq!(choose_source(500, 500), ResampleSource::Ticks, "full cover folds ticks");
-    assert_eq!(choose_source(100, 500), ResampleSource::Bars, "partial cover reuses bars");
-    assert_eq!(choose_source(0, 500), ResampleSource::Bars, "uncovered reuses bars");
-    assert_eq!(choose_source(0, 0), ResampleSource::Bars, "nothing to cover reuses bars");
-    assert_eq!(volume_deltas(&[10.0, 20.0, 25.0]), vec![10.0, 5.0], "first seeds");
+    assert_eq!(
+        choose_source(500, 500),
+        ResampleSource::Ticks,
+        "full cover folds ticks"
+    );
+    assert_eq!(
+        choose_source(100, 500),
+        ResampleSource::Bars,
+        "partial cover reuses bars"
+    );
+    assert_eq!(
+        choose_source(0, 500),
+        ResampleSource::Bars,
+        "uncovered reuses bars"
+    );
+    assert_eq!(
+        choose_source(0, 0),
+        ResampleSource::Bars,
+        "nothing to cover reuses bars"
+    );
+    assert_eq!(
+        volume_deltas(&[10.0, 20.0, 25.0]),
+        vec![10.0, 5.0],
+        "first seeds"
+    );
     assert!(volume_deltas(&[]).is_empty());
     assert!(volume_deltas(&[7.0]).is_empty());
 }
@@ -609,10 +770,21 @@ fn component_surface_validates_through_execute() {
     let mut config = test_config();
     assert_eq!(
         config.field_names(),
-        &["ltf_ms", "fetch_ms", "ctf_ms", "htf_ms", "spike_threshold", "drift_threshold", "fill_gaps"]
+        &[
+            "ltf_ms",
+            "fetch_ms",
+            "ctf_ms",
+            "htf_ms",
+            "spike_threshold",
+            "drift_threshold",
+            "fill_gaps"
+        ]
     );
     assert_eq!(config.get_field("ltf_ms").expect("reads"), "60000");
-    assert!(config.set_field("ltf_ms", "1").is_err(), "reconfigure by rebuilding");
+    assert!(
+        config.set_field("ltf_ms", "1").is_err(),
+        "reconfigure by rebuilding"
+    );
     assert!(config.get_field("nope").is_err());
     let ctx = fluent_wvr::prelude::WorkContext::default();
     let output = config.execute(&ctx).expect("valid config executes");
@@ -632,7 +804,9 @@ fn shape_fallback_never_reports_above_low() {
     // and only a labeled-tape precision measurement may lift it.
     let mut state: u64 = 0x5eed_2468_1357_9bdf;
     let mut next = || {
-        state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         (state >> 33) as f64 / f64::from(u32::MAX)
     };
     for trial in 0..500 {
@@ -646,14 +820,18 @@ fn shape_fallback_never_reports_above_low() {
         let mut close = low + next() * (high - low).max(f64::MIN_POSITIVE);
         let mut vol = next() * 10_000.0;
         match trial % 5 {
-            0 => {} // well-formed
-            1 => close = open, // doji
-            2 => vol = 0.0,   // no volume
-            3 => high = low,  // flat range
+            0 => {}               // well-formed
+            1 => close = open,    // doji
+            2 => vol = 0.0,       // no volume
+            3 => high = low,      // flat range
             _ => open = f64::NAN, // non-finite leg
         }
         let estimate = estimate_delta_volume_estimated(open, high, low, close, vol);
-        assert_eq!(estimate.method, DeltaMethod::ShapeFallback, "trial {trial}: shape path only");
+        assert_eq!(
+            estimate.method,
+            DeltaMethod::ShapeFallback,
+            "trial {trial}: shape path only"
+        );
         assert_eq!(
             estimate.confidence,
             DeltaConfidence::Low,

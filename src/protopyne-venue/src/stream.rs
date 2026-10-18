@@ -35,8 +35,8 @@
 use std::collections::VecDeque;
 use std::future::Future;
 use std::sync::{
-    Arc, Mutex,
     atomic::{AtomicBool, AtomicU32, Ordering},
+    Arc, Mutex,
 };
 use std::time::Instant;
 
@@ -87,7 +87,11 @@ pub struct StreamConfig {
     /// Consecutive retryable connect errors that disarm entries
     /// **(producer-confidence)**. The Nth error still arms; the N+1th
     /// trips — the same contract as the submission-side breaker.
-    #[field(desc = "Consecutive stream errors before the breaker trips", min = 1, max = 1_000)]
+    #[field(
+        desc = "Consecutive stream errors before the breaker trips",
+        min = 1,
+        max = 1_000
+    )]
     #[builder(default = 3)]
     pub max_consecutive_errors: u32,
     /// Window in seconds for counting stream restarts
@@ -97,7 +101,11 @@ pub struct StreamConfig {
     pub restart_window_secs: u64,
     /// Restarts inside one window that trip the breaker
     /// **(producer-confidence)**.
-    #[field(desc = "Restarts per window before the breaker trips", min = 1, max = 1_000)]
+    #[field(
+        desc = "Restarts per window before the breaker trips",
+        min = 1,
+        max = 1_000
+    )]
     #[builder(default = 5)]
     pub max_restarts_per_window: u32,
 }

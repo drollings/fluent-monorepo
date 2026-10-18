@@ -345,7 +345,9 @@ fn dirty_rows_are_excluded_and_counted_not_file_fatal() {
     writer.close().expect("closes");
 
     let root = HistoryRoot::open(dir.path()).expect("root opens");
-    let load = root.load_ticker("SPY").expect("dirty month serves its clean bars");
+    let load = root
+        .load_ticker("SPY")
+        .expect("dirty month serves its clean bars");
     assert_eq!(load.bars.len(), 2, "the good rows land");
     assert!(load.skipped.is_empty(), "nothing is excluded whole");
     assert_eq!(load.skipped_rows, 1, "the dirty row is counted");
@@ -421,8 +423,7 @@ fn shipped_layout_discovers_spy_and_gld() {
 /// read as real ticker data, not empty shells).
 fn ticker_tree(root: &Path, tickers: &[&str]) {
     for ticker in tickers {
-        std::fs::create_dir_all(root.join(ticker).join("2026/01"))
-            .expect("ticker tree creates");
+        std::fs::create_dir_all(root.join(ticker).join("2026/01")).expect("ticker tree creates");
     }
 }
 
@@ -497,8 +498,7 @@ fn symbol_rows_read_ticker_sidecar_declarations() {
     let root = HistoryRoot::open(dir.path()).expect("root opens");
     let rows = root.symbol_rows().expect("rows read");
     let row = |ticker: &str| {
-        rows
-            .iter()
+        rows.iter()
             .find(|row| row.symbol == ticker)
             .unwrap_or_else(|| panic!("{ticker} is listed"))
     };
@@ -521,7 +521,10 @@ fn shipped_spy_months_merge_into_a_valid_series() {
     assert!(
         load.skipped.is_empty(),
         "no month is excluded whole: {:?}",
-        load.skipped.iter().map(|skip| &skip.path).collect::<Vec<_>>()
+        load.skipped
+            .iter()
+            .map(|skip| &skip.path)
+            .collect::<Vec<_>>()
     );
     assert_eq!(load.skipped_rows, 0, "rounding leaves no row behind");
     let mut last: Option<&Bar> = None;

@@ -56,7 +56,9 @@ fn mock_gateway_covers_every_trait_method() {
     assert_eq!(bars.rows.len(), 3);
     assert_eq!(bars.dropped, 0);
 
-    let overlay = gateway.chart_overlays("sma", 20).expect("mock overlay reads");
+    let overlay = gateway
+        .chart_overlays("sma", 20)
+        .expect("mock overlay reads");
     assert_eq!(overlay.kind, "sma");
     assert_eq!(overlay.period, 20);
     assert_eq!(overlay.values.len(), bars.rows.len());
@@ -77,7 +79,10 @@ fn mock_gateway_covers_every_trait_method() {
         replay.steps.len() as u64,
         "the mock replay window spans its own steps"
     );
-    assert_eq!(replay.cursor, replay.total_bars, "a fresh read stands at the head");
+    assert_eq!(
+        replay.cursor, replay.total_bars,
+        "a fresh read stands at the head"
+    );
     assert!(
         replay.steps.iter().any(|step| step.checkpoint),
         "the mock window carries anchors to scrub to"
@@ -88,9 +93,12 @@ fn mock_gateway_covers_every_trait_method() {
 async fn server_gateway_matches_http_routes() {
     let history =
         protopyne_server::load_bars_file(&history_path()).expect("vendored history loads");
-    let config =
-        protopyne_server::ServerConfig::new().bind("127.0.0.1:0".to_owned()).build();
-    let handle = protopyne_server::serve(config, history).await.expect("test server boots");
+    let config = protopyne_server::ServerConfig::new()
+        .bind("127.0.0.1:0".to_owned())
+        .build();
+    let handle = protopyne_server::serve(config, history)
+        .await
+        .expect("test server boots");
     let base = format!("http://{}", handle.addr);
     let client = reqwest::Client::new();
     let gateway = handle.gateway();
@@ -100,7 +108,14 @@ async fn server_gateway_matches_http_routes() {
     where
         T: serde::de::DeserializeOwned,
     {
-        client.get(url).send().await.expect("route reachable").json().await.expect("route is JSON")
+        client
+            .get(url)
+            .send()
+            .await
+            .expect("route reachable")
+            .json()
+            .await
+            .expect("route is JSON")
     }
 
     let health: protopyne_view::HealthView = route(&client, format!("{base}/health")).await;
@@ -108,11 +123,17 @@ async fn server_gateway_matches_http_routes() {
 
     let proposals: Vec<protopyne_view::ProposalView> =
         route(&client, format!("{base}/proposals")).await;
-    assert_eq!(gateway.proposals().expect("gateway proposals read"), proposals);
+    assert_eq!(
+        gateway.proposals().expect("gateway proposals read"),
+        proposals
+    );
 
     let portfolio: protopyne_view::PortfolioView =
         route(&client, format!("{base}/portfolio")).await;
-    assert_eq!(gateway.portfolio().expect("gateway portfolio reads"), portfolio);
+    assert_eq!(
+        gateway.portfolio().expect("gateway portfolio reads"),
+        portfolio
+    );
 
     // No journal route exists yet, so there is no parity to assert — but
     // the placeholder is a contract with two halves, and both are pinned so
@@ -123,8 +144,12 @@ async fn server_gateway_matches_http_routes() {
         gateway.journal().expect("gateway journal reads").is_empty(),
         "until the route lands, the gateway serves the same empty read the missing route would"
     );
-    let journal_status =
-        client.get(format!("{base}/journal")).send().await.expect("server answers").status();
+    let journal_status = client
+        .get(format!("{base}/journal"))
+        .send()
+        .await
+        .expect("server answers")
+        .status();
     assert_eq!(
         journal_status,
         reqwest::StatusCode::NOT_FOUND,
@@ -136,7 +161,12 @@ async fn server_gateway_matches_http_routes() {
 
     let overlay: protopyne_view::OverlaySeries =
         route(&client, format!("{base}/chart/overlays?kind=ema&period=10")).await;
-    assert_eq!(gateway.chart_overlays("ema", 10).expect("gateway overlay reads"), overlay);
+    assert_eq!(
+        gateway
+            .chart_overlays("ema", 10)
+            .expect("gateway overlay reads"),
+        overlay
+    );
 
     // Replay parity: the gateway reads the route's default cadence, so the
     // terminal's scrub sees the same window through either side.
@@ -158,14 +188,19 @@ async fn server_gateway_matches_http_routes() {
 async fn a_scrub_over_the_server_window_moves_panes_and_writes_nothing() {
     let history =
         protopyne_server::load_bars_file(&history_path()).expect("vendored history loads");
-    let config =
-        protopyne_server::ServerConfig::new().bind("127.0.0.1:0".to_owned()).build();
-    let handle = protopyne_server::serve(config, history).await.expect("test server boots");
+    let config = protopyne_server::ServerConfig::new()
+        .bind("127.0.0.1:0".to_owned())
+        .build();
+    let handle = protopyne_server::serve(config, history)
+        .await
+        .expect("test server boots");
     let gateway = handle.gateway();
     let gateway: &dyn TerminalGateway = &gateway;
 
     let mut scrub = ReplayScrub::standard().expect("standard scrub builds");
-    scrub.ingest(gateway).expect("the server supplies a replay window");
+    scrub
+        .ingest(gateway)
+        .expect("the server supplies a replay window");
     let window = gateway.replay().expect("gateway replay reads");
     assert_eq!(
         scrub.state().total_bars,
@@ -205,7 +240,9 @@ fn composition_root_ledger_delegates_to_the_shared_scan() {
         .collect();
     for token in super::budget_tests::TRADING_TOKENS {
         assert!(
-            !code.iter().any(|line| line.contains(&format!("\"{token}\""))),
+            !code
+                .iter()
+                .any(|line| line.contains(&format!("\"{token}\""))),
             "the trading token list lives in the terminal ledger only; {token:?} \
              must not be restated here"
         );
@@ -217,7 +254,8 @@ fn composition_root_ledger_delegates_to_the_shared_scan() {
         );
     }
     assert!(
-        code.iter().any(|line| line.contains("forbid_trading_tokens_in_src")),
+        code.iter()
+            .any(|line| line.contains("forbid_trading_tokens_in_src")),
         "this file must call the shared scan"
     );
 }

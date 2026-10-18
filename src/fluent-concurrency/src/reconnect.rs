@@ -29,7 +29,7 @@ use common_core::sync::lock;
 use fluent_wvr::Runtime;
 use tokio::task::JoinHandle;
 
-use crate::feed_worker::{FeedConfig, CreditedFeedWorker};
+use crate::feed_worker::{CreditedFeedWorker, FeedConfig};
 
 /// Whether a backfilled series must be contiguous.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -165,7 +165,11 @@ impl<T: Send + Sync + 'static> ReconnectWorker<T> {
         F: Fn(Sequenced<T>) -> Fut + Send + Sync + 'static,
         Fut: std::future::Future<Output = ()> + Send + 'static,
     {
-        let feed = Arc::new(CreditedFeedWorker::new(runtime, config.feed.clone(), handler));
+        let feed = Arc::new(CreditedFeedWorker::new(
+            runtime,
+            config.feed.clone(),
+            handler,
+        ));
         Self {
             feed,
             config,

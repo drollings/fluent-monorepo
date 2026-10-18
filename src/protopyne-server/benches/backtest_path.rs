@@ -19,21 +19,20 @@
 use std::sync::Arc;
 
 use chrono::{TimeZone, Utc};
-use criterion::{Criterion, criterion_group, criterion_main};
+use criterion::{criterion_group, criterion_main, Criterion};
 use rust_decimal::Decimal;
 
 use protopyne_server::{
-    BacktestConfig, HistorySource, MultiSymbolInput, RunnerConfig, run_backtest,
-    run_multi_backtest, run_sweep,
+    run_backtest, run_multi_backtest, run_sweep, BacktestConfig, HistorySource, MultiSymbolInput,
+    RunnerConfig,
 };
-use protopyne_venue::PaperConfig;
 use protopyne_strategy::{
-    BreakerLimits, Direction, FixedSignal, Grant, GrantBudgets, GrantPermission, GrantScope,
-    PortfolioThresholds, RiskEngine, RiskLimits, SignalThresholds, Strategy, StructureKind,
-    TradeThresholds,
-    elements::ExplicitStructure,
+    elements::ExplicitStructure, BreakerLimits, Direction, FixedSignal, Grant, GrantBudgets,
+    GrantPermission, GrantScope, PortfolioThresholds, RiskEngine, RiskLimits, SignalThresholds,
+    Strategy, StructureKind, TradeThresholds,
 };
 use protopyne_types::{Bar, Money};
+use protopyne_venue::PaperConfig;
 
 fn money(value: i64) -> Money {
     Money::from(value)
@@ -45,7 +44,9 @@ fn rising_bars(count: usize) -> Vec<Bar> {
         .map(|step| {
             let close = start + Decimal::from(step as u64);
             Bar::new()
-                .ts(Utc.timestamp_opt(1_767_344_400 + step as i64 * 900, 0).unwrap())
+                .ts(Utc
+                    .timestamp_opt(1_767_344_400 + step as i64 * 900, 0)
+                    .unwrap())
                 .o(close)
                 .h(close)
                 .l(close)
@@ -77,7 +78,11 @@ fn grant(id: &str) -> Grant {
                 .underlyings(vec!["SPY".to_owned()])
                 .structures(vec![StructureKind::Vertical])
                 .directions(vec![Direction::Long, Direction::Short])
-                .permissions(GrantPermission { entries: true, exits: true, rolls: false })
+                .permissions(GrantPermission {
+                    entries: true,
+                    exits: true,
+                    rolls: false,
+                })
                 .build(),
         )
         .budgets(
@@ -161,7 +166,9 @@ fn sweep_fanout(criterion: &mut Criterion) {
     let (venue, runner) = configs();
     let strategy = strategy();
     let limits = RiskLimits::new().build();
-    let grants: Vec<Grant> = (0..4).map(|variant| grant(&format!("bench-{variant}"))).collect();
+    let grants: Vec<Grant> = (0..4)
+        .map(|variant| grant(&format!("bench-{variant}")))
+        .collect();
     let runtime = runtime();
     criterion.bench_function("sweep_fanout", |bencher| {
         bencher.iter(|| {
@@ -245,9 +252,9 @@ fn multi_fanout(criterion: &mut Criterion) {
 #[cfg(feature = "pine")]
 fn native_vs_pine(criterion: &mut Criterion) {
     use protopyne_kernels::{
-        InputSet, LibraryId, LinkedModule, Lookahead, MarketContextKey, ModuleInput, MtfStore,
-        PineEngine, PineRuntimeConfig, fetch_all, parse_pine_source, parse_program,
-        resolve_imports,
+        fetch_all, parse_pine_source, parse_program, resolve_imports, InputSet, LibraryId,
+        LinkedModule, Lookahead, MarketContextKey, ModuleInput, MtfStore, PineEngine,
+        PineRuntimeConfig,
     };
     use protopyne_types::Timeframe;
 
@@ -259,7 +266,9 @@ fn native_vs_pine(criterion: &mut Criterion) {
         .map(|step| {
             let close = Decimal::from(600) + Decimal::from(step as u64);
             Bar::new()
-                .ts(Utc.timestamp_opt(1_767_344_400 + i64::from(step) * 60, 0).unwrap())
+                .ts(Utc
+                    .timestamp_opt(1_767_344_400 + i64::from(step) * 60, 0)
+                    .unwrap())
                 .o(close)
                 .h(close)
                 .l(close)
@@ -280,8 +289,7 @@ fn native_vs_pine(criterion: &mut Criterion) {
     ]
     .into_iter()
     .map(|(relpath, name, version)| {
-        let text =
-            std::fs::read_to_string(data_root.join(relpath)).expect("shipped library loads");
+        let text = std::fs::read_to_string(data_root.join(relpath)).expect("shipped library loads");
         ModuleInput::new(
             LibraryId {
                 publisher: "showmethegrail".to_owned(),
@@ -301,7 +309,11 @@ fn native_vs_pine(criterion: &mut Criterion) {
          var ctx = libApex.MarketContext.new()\n\
          if barstate.isfirst\n    ctx.init()\nctx.fetch()\n";
     inputs.push(ModuleInput::new(
-        LibraryId { publisher: "local".to_owned(), name: "Driver".to_owned(), version: 1 },
+        LibraryId {
+            publisher: "local".to_owned(),
+            name: "Driver".to_owned(),
+            version: 1,
+        },
         parse_pine_source("local/Driver", driver),
         parse_program(driver).expect("driver parses"),
     ));
@@ -341,8 +353,7 @@ fn native_vs_pine(criterion: &mut Criterion) {
     });
     criterion.bench_function("native_vs_pine/native_fetch", |bencher| {
         bencher.iter(|| {
-            let registry =
-                protopyne_kernels::indicator::builtin_registry().expect("builtins");
+            let registry = protopyne_kernels::indicator::builtin_registry().expect("builtins");
             let mut store = MtfStore::new();
             store.set_base(&bars).expect("base loads");
             let key = MarketContextKey::new(Timeframe::M1);
@@ -360,7 +371,13 @@ fn native_vs_pine(criterion: &mut Criterion) {
 }
 
 #[cfg(feature = "pine")]
-criterion_group!(benches, decide_path, sweep_fanout, multi_fanout, native_vs_pine);
+criterion_group!(
+    benches,
+    decide_path,
+    sweep_fanout,
+    multi_fanout,
+    native_vs_pine
+);
 #[cfg(not(feature = "pine"))]
 criterion_group!(benches, decide_path, sweep_fanout, multi_fanout);
 criterion_main!(benches);

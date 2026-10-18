@@ -59,7 +59,13 @@ impl ChartFeed {
             });
         }
         let (tx, rx) = mpsc::channel(queue_capacity);
-        Ok((Self { scope: Scope::new(), tx }, rx))
+        Ok((
+            Self {
+                scope: Scope::new(),
+                tx,
+            },
+            rx,
+        ))
     }
 
     /// Clone the batch sender for producers outside the scope.
@@ -124,8 +130,11 @@ impl PaneWaveUnit {
     /// can never drift from plan edges.
     #[must_use]
     pub fn for_plan(plan: &PanePlan, name: &str, values: Vec<Option<f64>>) -> Self {
-        let depends =
-            plan.dependencies(name).iter().map(|d| ArcIntern::from(d.as_str())).collect();
+        let depends = plan
+            .dependencies(name)
+            .iter()
+            .map(|d| ArcIntern::from(d.as_str()))
+            .collect();
         Self {
             name: name.to_owned(),
             depends,
@@ -160,9 +169,17 @@ impl WorkUnit for PaneWaveUnit {
         if let Some(reason) = &self.fault {
             return Err(WorkError::Execution(reason.clone()));
         }
-        let kept =
-            self.values.iter().filter(|v| matches!(v, Some(x) if x.is_finite())).count();
-        Ok(WorkOutput::ok(format!("{}: {}/{} kept", self.name, kept, self.values.len())))
+        let kept = self
+            .values
+            .iter()
+            .filter(|v| matches!(v, Some(x) if x.is_finite()))
+            .count();
+        Ok(WorkOutput::ok(format!(
+            "{}: {}/{} kept",
+            self.name,
+            kept,
+            self.values.len()
+        )))
     }
 }
 
@@ -194,7 +211,9 @@ impl RefreshGate {
                 reason: "refresh gate needs at least one permit".to_owned(),
             });
         }
-        Ok(Self { limiter: Limiter::new(permits) })
+        Ok(Self {
+            limiter: Limiter::new(permits),
+        })
     }
 
     /// Run `work` under the gate.
@@ -219,7 +238,9 @@ impl PaneHandle {
     /// Open a handle with a live (unfired) signal.
     #[must_use]
     pub fn new() -> Self {
-        Self { abort: StreamAbort::new() }
+        Self {
+            abort: StreamAbort::new(),
+        }
     }
 
     /// Borrow the abort signal for task `select!` wiring.
@@ -268,7 +289,10 @@ impl CreditIntake {
                 reason: "intake must release credit after processing".to_owned(),
             });
         }
-        let (sender, receiver) = flow::new(CreditSpec { initial: credit_limit, more_after });
+        let (sender, receiver) = flow::new(CreditSpec {
+            initial: credit_limit,
+            more_after,
+        });
         Ok(Self { sender, receiver })
     }
 
@@ -325,9 +349,17 @@ pub async fn load_history(rungs: Vec<HistoryRung>) -> Result<Option<ChartBars>, 
 
 async fn run_rung(rung: HistoryRung) -> Result<Option<ChartBars>, HistoryError> {
     match rung {
-        HistoryRung { rows: Some(rows), .. } => Ok(Some(rows)),
-        HistoryRung { name, terminal: true, .. } => Err(HistoryError::Terminal(name)),
-        HistoryRung { terminal: false, .. } => Ok(None),
+        HistoryRung {
+            rows: Some(rows), ..
+        } => Ok(Some(rows)),
+        HistoryRung {
+            name,
+            terminal: true,
+            ..
+        } => Err(HistoryError::Terminal(name)),
+        HistoryRung {
+            terminal: false, ..
+        } => Ok(None),
     }
 }
 
@@ -344,7 +376,11 @@ pub struct TransportRetry {
 
 impl Default for TransportRetry {
     fn default() -> Self {
-        Self { attempts: 3, base_ms: 100, jitter_pct: 50 }
+        Self {
+            attempts: 3,
+            base_ms: 100,
+            jitter_pct: 50,
+        }
     }
 }
 
@@ -357,7 +393,11 @@ impl TransportRetry {
                 reason: "transport retry needs at least one attempt".to_owned(),
             });
         }
-        Ok(Self { attempts, base_ms, jitter_pct })
+        Ok(Self {
+            attempts,
+            base_ms,
+            jitter_pct,
+        })
     }
 
     /// Run `op` to success or exhaustion: non-retryable errors short-circuit
@@ -371,7 +411,14 @@ impl TransportRetry {
         F: FnMut() -> Fut,
         Fut: std::future::Future<Output = Result<T, E>>,
     {
-        retry_async(self.attempts, self.base_ms, self.jitter_pct, is_retryable, &mut op).await
+        retry_async(
+            self.attempts,
+            self.base_ms,
+            self.jitter_pct,
+            is_retryable,
+            &mut op,
+        )
+        .await
     }
 }
 

@@ -8,7 +8,8 @@
 use crate::error::VenueError;
 use crate::order::{CorporateEvent, Fill, OrderIntent, OrderRecord, OrderSide, Position};
 use crate::quote::Quote;
-use protopyne_types::{ContractId, OptionContract};
+use chrono::{DateTime, Utc};
+use protopyne_types::{ChainQuote, ContractId, OptionContract};
 use serde::{Deserialize, Serialize};
 use std::future::Future;
 use std::pin::Pin;
@@ -99,9 +100,34 @@ pub struct LegExecution {
 /// callers inject the source (tests stub it, the transport will serve it).
 /// A spread leg without a quote refuses fail-closed — legs never fall back
 /// to the single-underlying quote, which would misprice them.
+///
+/// The time-parameterized [`leg_quote_at`](Self::leg_quote_at) is the
+/// history-capable read: a source over point-in-time chains answers the
+/// newest quote at-or-before `at`, so a replay prices legs as of the bar it
+/// decides. The default delegates to [`leg_quote`](Self::leg_quote), so
+/// live (newest-only) sources keep compiling and behaving exactly as before.
 pub trait LegQuoteSource: Send + Sync {
     /// Newest quote for `contract`, or `None` when this source has none.
     fn leg_quote(&self, contract: &OptionContract) -> Option<Quote>;
+
+    /// Newest quote for `contract` at-or-before `at`, or `None` when this
+    /// source holds none. Historical sources override this; live sources
+    /// inherit the newest-only read.
+    fn leg_quote_at(&self, contract: &OptionContract, at: DateTime<Utc>) -> Option<Quote> {
+        let _ = at;
+        self.leg_quote(contract)
+    }
+
+    /// Point-in-time snapshot for `underlying`: every held quote stamped
+    /// at-or-before `at`, in source order. Leg selection reads this — the
+    /// caller never sees the future, so selection cannot borrow it either.
+    /// Defaults to empty (a newest-only source cannot serve history
+    /// honestly); historical sources override. Object-safe: no generics,
+    /// no `Self` returns.
+    fn chain_snapshot(&self, underlying: &str, at: DateTime<Utc>) -> Vec<ChainQuote> {
+        let _ = (underlying, at);
+        Vec::new()
+    }
 }
 
 /// One code path for every venue. Implementations are `Send + Sync` so fan-out

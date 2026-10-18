@@ -15,7 +15,10 @@ fn text_msg(role: &str, content: &str) -> RouterMessage {
 fn request_with_history(session: Option<&str>, turns: usize, pad: usize) -> RouterRequest {
     let mut messages = vec![text_msg("system", "you are helpful")];
     for i in 0..turns {
-        messages.push(text_msg("user", &format!("question {i} {}", "w".repeat(pad))));
+        messages.push(text_msg(
+            "user",
+            &format!("question {i} {}", "w".repeat(pad)),
+        ));
         messages.push(text_msg(
             "assistant",
             &format!("answer {i} {}", "v".repeat(pad)),
@@ -42,15 +45,22 @@ fn request_with_history(session: Option<&str>, turns: usize, pad: usize) -> Rout
 /// Seed an in-memory ledger the way the serving path does: one user node +
 /// one accepted assistant node per turn (eager LOD5 labels ride along).
 fn seeded_ledger(session: &str, turns: usize) -> Arc<ContentNodeStore> {
-    let store = Arc::new(
-        ContentNodeStore::open_in_memory().expect("in-memory ledger opens"),
-    );
+    let store = Arc::new(ContentNodeStore::open_in_memory().expect("in-memory ledger opens"));
     for i in 0..turns {
         let node = store
-            .record_request(session, &format!("r{i}"), &format!("question {i} about dragons"))
+            .record_request(
+                session,
+                &format!("r{i}"),
+                &format!("question {i} about dragons"),
+            )
             .expect("record request");
         store
-            .record_result(node, true, Some(1.0), &format!("answer {i} the mood is calm"))
+            .record_result(
+                node,
+                true,
+                Some(1.0),
+                &format!("answer {i} the mood is calm"),
+            )
             .expect("record result");
     }
     store

@@ -456,8 +456,8 @@ pub async fn seed_spy_slice(
     bars: &[Bar],
 ) -> (crate::tape::MarketTape, crate::key::TapeKey) {
     use crate::catalog::{AssetClass, PriceScale};
-    use crate::tape::test_setup::{VENUE, m1_key, memory_tape, with_registry_caps};
     use crate::store::{CandleStore as _, WritePolicy};
+    use crate::tape::test_setup::{m1_key, memory_tape, with_registry_caps, VENUE};
 
     with_registry_caps(async {
         let tape = memory_tape();

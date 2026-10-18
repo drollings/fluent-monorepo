@@ -16,20 +16,20 @@
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
-use rust_decimal::prelude::ToPrimitive as _;
 use rust_decimal::Decimal;
 
+use crate::replay_session::needs_chain_data;
 use fluent_dag::checkpointed::CheckpointedStepGraph;
 use protopyne_store::{CandleStore, SpanPlan};
 use protopyne_strategy::{
     evaluate_grant, BreakerState, Direction, Grant, GrantDecision, GrantMarket, GrantUsage,
-    JournaledTransition, Proposal, ProposalEvent, ProposalSide, ProposeInput, RiskEngine,
-    RiskState, Strategy, StructureKind,
+    JournaledTransition, LegSelector, Proposal, ProposalEvent, ProposalSide, ProposeInput,
+    RiskEngine, RiskState, Strategy, StructureKind,
 };
 use protopyne_types::{Bar, Money};
 use protopyne_venue::{
-    submit_guarded, CorporateEvent, Journal, OrderIntent, OrderSide, OrderStatus, PaperConfig,
-    PaperVenue, Position, Quote, Recorder, SubmissionRecorder, Venue, VenueError,
+    submit_guarded, CorporateEvent, LegQuoteSource, OrderIntent, OrderSide, OrderStatus,
+    PaperConfig, PaperVenue, Position, Quote, SubmissionRecorder, Venue, VenueError,
     PROPOSAL_TRANSITION_KIND,
 };
 
@@ -176,8 +176,9 @@ pub struct BarDecision {
 
 /// A verdict for a bar that never reached the gates: warmup, unquotable
 /// data, or a refused signal. One constructor keeps every early return
-/// identical in shape.
-fn skipped_decision(
+/// identical in shape. Crate-visible so the replay session builds the same
+/// verdicts as the batch loops.
+pub(crate) fn skipped_decision(
     bar_index: usize,
     ts: String,
     proposal_id: String,
@@ -383,7 +384,9 @@ fn advance_verdict<R: SubmissionRecorder>(
 ) -> Result<(), VenueError> {
     let reason = format!("venue verdict {status:?}");
     for event in verdict_events(status) {
-        emitted.push(advance(proposal, recorder, client_id, *event, &reason, now)?);
+        emitted.push(advance(
+            proposal, recorder, client_id, *event, &reason, now,
+        )?);
     }
     Ok(())
 }
@@ -448,6 +451,12 @@ fn proposed_decision(
 /// The trip rule upholds the same contract as the breaker tier of
 /// [`evaluate_grant`]: with `max_consecutive_errors = N`, the Nth consecutive
 /// error still arms, and the N+1th trips (`consecutive_errors > max`).
+///
+/// `chain` carries per-leg market data for selection, when installed: `None`
+/// preserves the pinned batch legacy byte-identically (spread labels book as
+/// single legs); `Some` with a multi-leg proposal selects legs as of this
+/// bar through the frozen selector and attaches them to the intent, so the
+/// existing spread fill path prices them.
 #[allow(clippy::too_many_arguments)]
 pub async fn decide_and_submit<R: SubmissionRecorder, V: Venue>(
     strategy: &Strategy,
@@ -464,6 +473,7 @@ pub async fn decide_and_submit<R: SubmissionRecorder, V: Venue>(
     closes: &[f64],
     config: &RunnerConfig,
     seed: u64,
+    chain: Option<&dyn LegQuoteSource>,
 ) -> BarDecision {
     let proposal_id = format!("run-{seed}-{bar_index}");
     let ts = bar.ts.to_rfc3339();
@@ -495,6 +505,43 @@ pub async fn decide_and_submit<R: SubmissionRecorder, V: Venue>(
         Err(e) => {
             return skipped_decision(bar_index, ts, proposal_id, &format!("signal refused: {e}"));
         }
+    };
+    // Leg selection runs before any gate journals: a multi-leg proposal with
+    // an installed chain source resolves to concrete legs as of this bar
+    // (the bar-derived touch is the quote mid by construction), and any
+    // refusal skips with the lifecycle untouched. Without a source the
+    // pinned legacy flows unchanged — that divergence is preserved here,
+    // never fixed.
+    let selected_legs = if needs_chain_data(proposal.structure) {
+        match chain {
+            None => None,
+            Some(source) => {
+                let snapshot = source.chain_snapshot(&config.underlying, bar.ts);
+                if snapshot.is_empty() {
+                    return skipped_decision(
+                        bar_index,
+                        ts,
+                        proposal_id,
+                        "no chain quotes at-or-before this bar",
+                    );
+                }
+                match LegSelector::new().build().select_legs(
+                    proposal.structure,
+                    config.dte_days,
+                    &config.underlying,
+                    Money::new(bar.c),
+                    bar.ts.date_naive(),
+                    &snapshot,
+                ) {
+                    Ok(legs) => Some(legs),
+                    Err(refusal) => {
+                        return skipped_decision(bar_index, ts, proposal_id, &refusal.to_string());
+                    }
+                }
+            }
+        }
+    } else {
+        None
     };
     // Orders rest at the touch so backtest flow is marketable under the same
     // liquidity filter paper enforces; the proposal limit marks the bar close
@@ -624,6 +671,7 @@ pub async fn decide_and_submit<R: SubmissionRecorder, V: Venue>(
         .side(checked.side)
         .quantity(contracts)
         .limit_price(checked.limit)
+        .maybe_legs(selected_legs)
         .build();
     debug_assert_eq!(
         intent.limit_price, checked.limit,
@@ -964,63 +1012,24 @@ async fn run_backtest_on_venue<V: Venue>(
     kind: HistoryKind,
     planner_certified: bool,
 ) -> Result<BacktestRun, ServerError> {
-    let mut usage = GrantUsage::new().build();
-    // One ephemeral recorder per run: the shared submission protocol runs
-    // unchanged, recording each intent/transition in memory with no durable
-    // journal and no fsync, so parallel runs stay isolated.
-    let journal = Journal::ephemeral();
-    let recorder = Recorder::ephemeral(&journal);
-    // One breaker for the whole run: rebuilding it per bar would leave the
-    // consecutive-error threshold decorative. Health is built per bar at the
-    // matching construction site so a live feed can plug real observations in.
-    let mut breakers = BreakerState::new().build();
-    let mut closes: Vec<f64> = Vec::with_capacity(bars.len());
-    let mut decisions: Vec<BarDecision> = Vec::with_capacity(bars.len());
-    let mut skipped_warmup: u64 = 0;
-    for (index, bar) in bars.iter().enumerate() {
-        if let Some(close) = bar.c.to_f64() {
-            closes.push(close);
-        } else {
-            decisions.push(skipped_decision(
-                index,
-                bar.ts.to_rfc3339(),
-                format!("run-{seed}-{index}"),
-                "close not representable",
-            ));
-            continue;
-        }
-        if closes.len() <= runner_config.warmup_bars {
-            skipped_warmup += 1;
-            decisions.push(skipped_decision(
-                index,
-                bar.ts.to_rfc3339(),
-                format!("run-{seed}-{index}"),
-                "warmup",
-            ));
-            continue;
-        }
-        // The decision future borrows the closes prefix: the window is the
-        // loop's own `closes`, never a per-bar clone.
-        decisions.push(
-            decide_and_submit(
-                strategy,
-                risk,
-                grant,
-                &mut usage,
-                venue,
-                &recorder,
-                venue_config,
-                &mut breakers,
-                BarHealth::rehearsed(),
-                index,
-                bar,
-                &closes,
-                runner_config,
-                seed,
-            )
-            .await,
-        );
-    }
+    // One loop body for batch and interactive runs: the session owns the
+    // usage, breaker, closes prefix, and ephemeral journal, and steps each
+    // bar through the shared decision stack. Driving it to completion here
+    // reproduces the historical inline loop decision-for-decision.
+    let mut session = crate::replay_session::ReplaySession::start(
+        strategy,
+        risk,
+        grant,
+        venue,
+        venue_config.clone(),
+        runner_config.clone(),
+        crate::replay_session::ChainPolicy::Unscreened,
+        bars,
+        seed,
+    )?;
+    while session.step().await.is_some() {}
+    let decisions = session.decisions().to_vec();
+    let skipped_warmup = session.skipped_warmup();
     let equity = equity_curve_for(bars, &decisions);
     let fills = decisions
         .iter()
@@ -1076,6 +1085,9 @@ async fn run_backtest_on_venue<V: Venue>(
         Money::new(reserved_notional),
         equity,
         report_rsrs(bars),
+        // Batch installs no chain source: the run's chain facts are absent,
+        // so the absence line stays verbatim and no chain line joins.
+        None,
     );
     // Portfolio aggregation over the run's fills: decisions are the runner's
     // fill record, keyed back to bars by replay index (built in lockstep
@@ -1355,7 +1367,6 @@ pub async fn run_paper_decisions(
     bars: &[Bar],
     seed: u64,
 ) -> Vec<BarDecision> {
-    let mut usage = GrantUsage::new().build();
     // The paper feed has no pinned history, so it states its own synthesis
     // assumptions under an explicit paper label (default spread/size, same
     // values the shared path always used — now named instead of hidden).
@@ -1363,55 +1374,25 @@ pub async fn run_paper_decisions(
         .underlying(runner_config.underlying.clone())
         .data_version("paper-synthetic".to_owned())
         .build();
-    let mut closes: Vec<f64> = Vec::with_capacity(bars.len());
-    let mut decisions: Vec<BarDecision> = Vec::with_capacity(bars.len());
-    let mut breakers = BreakerState::new().build();
-    // One ephemeral recorder per paper run: the shared submission protocol runs
-    // unchanged, recording each intent/transition in memory with no durable
-    // journal and no fsync, so parallel runs stay isolated.
-    let journal = Journal::ephemeral();
-    let recorder = Recorder::ephemeral(&journal);
-    for (index, bar) in bars.iter().enumerate() {
-        let Some(close) = bar.c.to_f64() else {
-            decisions.push(skipped_decision(
-                index,
-                bar.ts.to_rfc3339(),
-                format!("run-{seed}-{index}"),
-                "close not representable",
-            ));
-            continue;
-        };
-        closes.push(close);
-        if closes.len() <= runner_config.warmup_bars {
-            decisions.push(skipped_decision(
-                index,
-                bar.ts.to_rfc3339(),
-                format!("run-{seed}-{index}"),
-                "warmup",
-            ));
-            continue;
-        }
-        decisions.push(
-            decide_and_submit(
-                strategy,
-                risk,
-                grant,
-                &mut usage,
-                venue,
-                &recorder,
-                &quote_config,
-                &mut breakers,
-                BarHealth::rehearsed(),
-                index,
-                bar,
-                &closes,
-                runner_config,
-                seed,
-            )
-            .await,
-        );
+    // Same session, paper venue: identical inputs produce identical decisions
+    // whether the venue is versioned history or paper.
+    if bars.is_empty() {
+        return Vec::new();
     }
-    decisions
+    let mut session = crate::replay_session::ReplaySession::start(
+        strategy,
+        risk,
+        grant,
+        venue,
+        quote_config,
+        runner_config.clone(),
+        crate::replay_session::ChainPolicy::Unscreened,
+        bars,
+        seed,
+    )
+    .expect("paper replay validates: configs are built, bars are lent");
+    while session.step().await.is_some() {}
+    session.decisions().to_vec()
 }
 
 /// One sweep outcome: which variant ran and what it filled.

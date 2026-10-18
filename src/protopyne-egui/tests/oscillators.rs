@@ -114,7 +114,11 @@ fn squash_constants_are_frozen() {
     for (kind, offset, k, multiplier) in table {
         assert_eq!(
             kind.params(),
-            Some(OscParams { offset, k, multiplier }),
+            Some(OscParams {
+                offset,
+                k,
+                multiplier
+            }),
             "{kind:?} constants moved"
         );
     }
@@ -140,15 +144,19 @@ fn normalization_matches_reference_vectors() {
 fn normalize_series_preserves_warmup_holes() {
     let raw = vec![None, None, Some(50.0), Some(100.0), None, Some(0.0)];
     let out = normalize_series(&raw, OscillatorKind::Rsi).expect("evaluable kind");
-    assert_eq!(out.len(), raw.len(), "output length must match input length");
+    assert_eq!(
+        out.len(),
+        raw.len(),
+        "output length must match input length"
+    );
     assert_eq!(&out[..2], &[None, None], "leading warmup run must survive");
     assert_eq!(out[4], None, "interior holes must survive");
     for (index, slot) in raw.iter().enumerate() {
         match slot {
             None => assert_eq!(out[index], None),
             Some(value) => {
-                let expected = normalize_oscillator(*value, OscillatorKind::Rsi)
-                    .expect("evaluable kind");
+                let expected =
+                    normalize_oscillator(*value, OscillatorKind::Rsi).expect("evaluable kind");
                 assert_eq!(out[index], Some(expected));
             }
         }
@@ -158,16 +166,30 @@ fn normalize_series_preserves_warmup_holes() {
 #[test]
 fn normalize_series_turns_non_finite_into_holes() {
     let out = normalize_series(&[Some(f64::NAN)], OscillatorKind::Rsi).expect("evaluable kind");
-    assert_eq!(out, vec![None], "NaN must become a hole, never a substitute");
+    assert_eq!(
+        out,
+        vec![None],
+        "NaN must become a hole, never a substitute"
+    );
     let unbounded =
         normalize_series(&[Some(f64::INFINITY)], OscillatorKind::Rsi).expect("evaluable kind");
-    assert_eq!(unbounded, vec![None], "unbounded input must become a hole, never a substitute");
+    assert_eq!(
+        unbounded,
+        vec![None],
+        "unbounded input must become a hole, never a substitute"
+    );
 }
 
 #[test]
 fn squash_to_100_bounds_all_finite_inputs_within_signed_100_and_centers_zero() {
-    assert!((BOUNDED_OSC_SCALE - 100.0).abs() < 1e-12, "the bounded band half-width is 100");
-    assert!((SQUASH_100_DIVISOR - 100.0).abs() < 1e-12, "the compressor divisor is 100");
+    assert!(
+        (BOUNDED_OSC_SCALE - 100.0).abs() < 1e-12,
+        "the bounded band half-width is 100"
+    );
+    assert!(
+        (SQUASH_100_DIVISOR - 100.0).abs() < 1e-12,
+        "the compressor divisor is 100"
+    );
     assert!(
         (CALIBRATED_BOUNDED_PIVOT_THRESHOLD - 50.0).abs() < 1e-12,
         "the bounded pivot threshold"

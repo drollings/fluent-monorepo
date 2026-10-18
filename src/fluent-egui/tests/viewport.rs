@@ -7,7 +7,14 @@ fn viewport(mode: PriceScaleMode, min: f64, max: f64) -> Viewport {
 }
 
 fn row_at(time: i64, price: f64, volume: u64) -> ChartRow {
-    ChartRow { time, open: price, high: price, low: price, close: price, volume }
+    ChartRow {
+        time,
+        open: price,
+        high: price,
+        low: price,
+        close: price,
+        volume,
+    }
 }
 
 #[test]
@@ -33,7 +40,10 @@ fn index_round_trip_inverts_tightly() {
     for index in [0_usize, 1, 7, 100, 4096] {
         let x = pane.index_to_x(index);
         let back = pane.x_to_index(x).expect("finite x inverts");
-        assert!((back - index as f64).abs() <= 1e-9, "index {index} -> {x} -> {back}");
+        assert!(
+            (back - index as f64).abs() <= 1e-9,
+            "index {index} -> {x} -> {back}"
+        );
     }
 }
 
@@ -43,7 +53,11 @@ fn x_offset_shifts_and_inverts_bar_slots_exactly() {
     for bad in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
         assert!(base.with_x_offset(bad).is_err(), "offset {bad} refuses");
     }
-    assert_eq!(base.x_offset_px().to_bits(), 0.0f32.to_bits(), "default offset is zero");
+    assert_eq!(
+        base.x_offset_px().to_bits(),
+        0.0f32.to_bits(),
+        "default offset is zero"
+    );
     assert_eq!(
         base.index_to_x(5).to_bits(),
         (5.0f32 * 8.0).to_bits(),
@@ -59,52 +73,114 @@ fn x_offset_shifts_and_inverts_bar_slots_exactly() {
         );
     }
     for index in [0_usize, 3, 42] {
-        let back = shifted.x_to_index(shifted.index_to_x(index)).expect("finite x inverts");
-        assert!((back - index as f64).abs() <= 1e-6, "index {index} round-trips under offset");
+        let back = shifted
+            .x_to_index(shifted.index_to_x(index))
+            .expect("finite x inverts");
+        assert!(
+            (back - index as f64).abs() <= 1e-6,
+            "index {index} round-trips under offset"
+        );
     }
     // The continuous slot mapping agrees with the integer mapping at integers.
     for index in [0_usize, 4, 9] {
-        assert_eq!(shifted.slot_to_x(index as f64).to_bits(), shifted.index_to_x(index).to_bits());
+        assert_eq!(
+            shifted.slot_to_x(index as f64).to_bits(),
+            shifted.index_to_x(index).to_bits()
+        );
     }
 }
 
 #[test]
 fn sync_time_axis_copies_bar_spacing_and_x_offset_only() {
-    let main = Viewport::new(PriceScaleMode::Normal, 90.0, 110.0, 400.0, 16.0, 90.0, false)
-        .expect("main builds")
-        .with_x_offset(24.0)
-        .expect("offset");
-    let sub = Viewport::new(PriceScaleMode::Logarithmic, 1.0, 1000.0, 120.0, 8.0, 1.0, false)
-        .expect("sub builds");
+    let main = Viewport::new(
+        PriceScaleMode::Normal,
+        90.0,
+        110.0,
+        400.0,
+        16.0,
+        90.0,
+        false,
+    )
+    .expect("main builds")
+    .with_x_offset(24.0)
+    .expect("offset");
+    let sub = Viewport::new(
+        PriceScaleMode::Logarithmic,
+        1.0,
+        1000.0,
+        120.0,
+        8.0,
+        1.0,
+        false,
+    )
+    .expect("sub builds");
     let synced = sub.sync_time_axis(&main).expect("sync succeeds");
-    assert_eq!(synced.scale().bar_spacing().to_bits(), 16.0f32.to_bits(), "spacing follows the source");
-    assert_eq!(synced.x_offset_px().to_bits(), 24.0f32.to_bits(), "offset follows the source");
+    assert_eq!(
+        synced.scale().bar_spacing().to_bits(),
+        16.0f32.to_bits(),
+        "spacing follows the source"
+    );
+    assert_eq!(
+        synced.x_offset_px().to_bits(),
+        24.0f32.to_bits(),
+        "offset follows the source"
+    );
     // The sub-pane keeps its own price axis: range, mode, and height.
-    assert_eq!((synced.visible_range().min, synced.visible_range().max), (1.0, 1000.0));
+    assert_eq!(
+        (synced.visible_range().min, synced.visible_range().max),
+        (1.0, 1000.0)
+    );
     assert!(matches!(synced.scale().mode(), PriceScaleMode::Logarithmic));
     assert_eq!(synced.scale().height().to_bits(), 120.0f32.to_bits());
     // The time axes now map identically.
     for x in [0.0f32, 40.0, 160.0] {
-        assert_eq!(synced.x_to_index(x), main.x_to_index(x), "time axis matches at {x}");
+        assert_eq!(
+            synced.x_to_index(x),
+            main.x_to_index(x),
+            "time axis matches at {x}"
+        );
     }
     for index in [0_usize, 3, 11] {
-        assert_eq!(synced.index_to_x(index).to_bits(), main.index_to_x(index).to_bits());
+        assert_eq!(
+            synced.index_to_x(index).to_bits(),
+            main.index_to_x(index).to_bits()
+        );
     }
 }
 
 #[test]
 fn visible_bar_range_clamps_to_data_bounds() {
     let base = viewport(PriceScaleMode::Normal, 90.0, 110.0); // 8 px spacing
-    assert_eq!(base.visible_bar_range(320.0, 40), (0, 40), "resting pane shows every bar");
+    assert_eq!(
+        base.visible_bar_range(320.0, 40),
+        (0, 40),
+        "resting pane shows every bar"
+    );
     let right = base.with_x_offset(16.0).expect("offset");
-    assert_eq!(right.visible_bar_range(320.0, 40), (0, 39), "positive offset drops the trailing bar");
+    assert_eq!(
+        right.visible_bar_range(320.0, 40),
+        (0, 39),
+        "positive offset drops the trailing bar"
+    );
     let left = base.with_x_offset(-16.0).expect("offset");
-    assert_eq!(left.visible_bar_range(320.0, 40), (2, 40), "negative offset drops leading bars");
+    assert_eq!(
+        left.visible_bar_range(320.0, 40),
+        (2, 40),
+        "negative offset drops leading bars"
+    );
     // Fully off-window clamps to an empty range at the edge.
     let past_left = base.with_x_offset(400.0).expect("offset");
-    assert_eq!(past_left.visible_bar_range(320.0, 40), (0, 0), "past the left edge is empty");
+    assert_eq!(
+        past_left.visible_bar_range(320.0, 40),
+        (0, 0),
+        "past the left edge is empty"
+    );
     let past_right = base.with_x_offset(-400.0).expect("offset");
-    assert_eq!(past_right.visible_bar_range(320.0, 40), (40, 40), "past the right edge is empty");
+    assert_eq!(
+        past_right.visible_bar_range(320.0, 40),
+        (40, 40),
+        "past the right edge is empty"
+    );
     assert_eq!(base.visible_bar_range(320.0, 0), (0, 0), "no bars is empty");
 }
 
@@ -122,30 +198,72 @@ fn degenerate_geometry_refuses() {
     // Zero height.
     assert!(Viewport::new(PriceScaleMode::Normal, 90.0, 110.0, 0.0, 8.0, 90.0, false).is_err());
     // Negative bar spacing.
-    assert!(Viewport::new(PriceScaleMode::Normal, 90.0, 110.0, 400.0, -1.0, 90.0, false).is_err());
+    assert!(Viewport::new(
+        PriceScaleMode::Normal,
+        90.0,
+        110.0,
+        400.0,
+        -1.0,
+        90.0,
+        false
+    )
+    .is_err());
     // Inverted range.
     assert!(Viewport::new(PriceScaleMode::Normal, 110.0, 90.0, 400.0, 8.0, 90.0, false).is_err());
     // Non-finite bounds.
-    assert!(Viewport::new(PriceScaleMode::Normal, f64::NAN, 110.0, 400.0, 8.0, 90.0, false).is_err());
+    assert!(Viewport::new(
+        PriceScaleMode::Normal,
+        f64::NAN,
+        110.0,
+        400.0,
+        8.0,
+        90.0,
+        false
+    )
+    .is_err());
     // Log mode with non-positive bounds.
-    assert!(
-        Viewport::new(PriceScaleMode::Logarithmic, -5.0, 10.0, 400.0, 8.0, 1.0, false).is_err()
-    );
+    assert!(Viewport::new(
+        PriceScaleMode::Logarithmic,
+        -5.0,
+        10.0,
+        400.0,
+        8.0,
+        1.0,
+        false
+    )
+    .is_err());
     // Percentage mode rebased onto zero.
-    assert!(
-        Viewport::new(PriceScaleMode::Percentage, 90.0, 110.0, 400.0, 8.0, 0.0, false).is_err()
-    );
+    assert!(Viewport::new(
+        PriceScaleMode::Percentage,
+        90.0,
+        110.0,
+        400.0,
+        8.0,
+        0.0,
+        false
+    )
+    .is_err());
     // Non-finite base value.
-    assert!(
-        Viewport::new(PriceScaleMode::Normal, 90.0, 110.0, 400.0, 8.0, f64::NAN, false).is_err()
-    );
+    assert!(Viewport::new(
+        PriceScaleMode::Normal,
+        90.0,
+        110.0,
+        400.0,
+        8.0,
+        f64::NAN,
+        false
+    )
+    .is_err());
 }
 
 #[test]
 fn error_names_the_refusing_parameter() {
     let err = Viewport::new(PriceScaleMode::Normal, 90.0, 110.0, 0.0, 8.0, 90.0, false)
         .expect_err("zero height refuses");
-    assert!(err.to_string().contains("height"), "refusal names height: {err}");
+    assert!(
+        err.to_string().contains("height"),
+        "refusal names height: {err}"
+    );
 }
 
 #[test]
@@ -153,19 +271,29 @@ fn visible_rows_windows_without_copying_or_panicking() {
     let rows: Vec<ChartRow> = (0..10).map(|i| row_at(i, 100.0, 1)).collect();
     assert_eq!(visible_rows(&rows, 2, 3).len(), 3);
     assert_eq!(visible_rows(&rows, 2, 3)[0].time, 2);
-    assert_eq!(visible_rows(&rows, 8, 100).len(), 2, "count saturates at the data edge");
-    assert!(visible_rows(&rows, 50, 10).is_empty(), "start past the end shows empty");
+    assert_eq!(
+        visible_rows(&rows, 8, 100).len(),
+        2,
+        "count saturates at the data edge"
+    );
+    assert!(
+        visible_rows(&rows, 50, 10).is_empty(),
+        "start past the end shows empty"
+    );
     assert!(visible_rows(&[] as &[ChartRow], 0, 10).is_empty());
 }
 
 #[test]
 fn culled_window_widens_the_visible_range_by_the_margin_each_side() {
     let base = viewport(PriceScaleMode::Normal, 90.0, 110.0); // 8 px spacing
-    // 160 px over 40 bars at rest: visible (0, 21), widened each side, clamped.
-    // Every expectation below names the margin outright, so a zero margin
-    // (culling without edge cover) fails here, not in production.
+                                                              // 160 px over 40 bars at rest: visible (0, 21), widened each side, clamped.
+                                                              // Every expectation below names the margin outright, so a zero margin
+                                                              // (culling without edge cover) fails here, not in production.
     assert_eq!(base.visible_bar_range(160.0, 40), (0, 21));
-    assert_eq!(base.culled_bar_range(160.0, 40), (0, 21 + CULL_OVERSCAN_BARS));
+    assert_eq!(
+        base.culled_bar_range(160.0, 40),
+        (0, 21 + CULL_OVERSCAN_BARS)
+    );
     // Panned ten bars left: the margin rides both edges.
     let left = base.with_x_offset(-80.0).expect("offset");
     assert_eq!(left.visible_bar_range(160.0, 40), (10, 31));
@@ -176,7 +304,10 @@ fn culled_window_widens_the_visible_range_by_the_margin_each_side() {
     // Panned right into the leading clamp: the margin still saturates at zero.
     let right = base.with_x_offset(80.0).expect("offset");
     assert_eq!(right.visible_bar_range(160.0, 40), (0, 11));
-    assert_eq!(right.culled_bar_range(160.0, 40), (0, 11 + CULL_OVERSCAN_BARS));
+    assert_eq!(
+        right.culled_bar_range(160.0, 40),
+        (0, 11 + CULL_OVERSCAN_BARS)
+    );
     // Near the trailing edge the margin saturates at the bar count.
     let tail = base.with_x_offset(-160.0).expect("offset");
     let (visible_start, _) = tail.visible_bar_range(160.0, 40);
@@ -189,7 +320,7 @@ fn culled_window_widens_the_visible_range_by_the_margin_each_side() {
 #[test]
 fn culled_window_stays_empty_when_nothing_is_visible() {
     let base = viewport(PriceScaleMode::Normal, 90.0, 110.0); // 8 px spacing
-    // An empty visible range must not grow a margin: off-window stays empty.
+                                                              // An empty visible range must not grow a margin: off-window stays empty.
     let past_left = base.with_x_offset(400.0).expect("offset");
     assert_eq!(past_left.visible_bar_range(320.0, 40), (0, 0));
     assert_eq!(past_left.culled_bar_range(320.0, 40), (0, 0));
@@ -197,8 +328,16 @@ fn culled_window_stays_empty_when_nothing_is_visible() {
     assert_eq!(past_right.visible_bar_range(320.0, 40), (40, 40));
     assert_eq!(past_right.culled_bar_range(320.0, 40), (40, 40));
     assert_eq!(base.culled_bar_range(320.0, 0), (0, 0), "no bars is empty");
-    assert_eq!(base.culled_bar_range(-5.0, 40), (0, 0), "negative width is empty");
-    assert_eq!(base.culled_bar_range(0.0, 40), (0, 0), "a pane with no area paints nothing");
+    assert_eq!(
+        base.culled_bar_range(-5.0, 40),
+        (0, 0),
+        "negative width is empty"
+    );
+    assert_eq!(
+        base.culled_bar_range(0.0, 40),
+        (0, 0),
+        "a pane with no area paints nothing"
+    );
     assert_eq!(
         base.culled_bar_range(f32::NAN, 40),
         (0, 0),
@@ -212,7 +351,11 @@ fn thinning_keeps_sparse_grids_whole_and_caps_dense_ones() {
     // Sparse range: everything the generator emits must survive.
     let sparse = nice_ticks(0.0, 1.0, 4);
     assert!(!sparse.is_empty());
-    assert_eq!(thin_ticks(sparse.clone(), 8), sparse, "sparse grids are never thinned");
+    assert_eq!(
+        thin_ticks(sparse.clone(), 8),
+        sparse,
+        "sparse grids are never thinned"
+    );
     // Dense range: the cap binds, legibility survives, order survives.
     let dense = nice_ticks(0.0, 1000.0, 64);
     assert!(dense.len() > 8, "fixture really is dense: {}", dense.len());
@@ -222,12 +365,20 @@ fn thinning_keeps_sparse_grids_whole_and_caps_dense_ones() {
     let mut ordered = thinned.clone();
     ordered.sort_by(|a, b| a.value.partial_cmp(&b.value).expect("finite ticks"));
     assert_eq!(
-        ordered.iter().map(|t| t.value.to_bits()).collect::<Vec<_>>(),
-        thinned.iter().map(|t| t.value.to_bits()).collect::<Vec<_>>(),
+        ordered
+            .iter()
+            .map(|t| t.value.to_bits())
+            .collect::<Vec<_>>(),
+        thinned
+            .iter()
+            .map(|t| t.value.to_bits())
+            .collect::<Vec<_>>(),
         "thinning preserves order"
     );
     for tick in &thinned {
-        assert!(dense.iter().any(|d| d.value.to_bits() == tick.value.to_bits()));
+        assert!(dense
+            .iter()
+            .any(|d| d.value.to_bits() == tick.value.to_bits()));
         assert!(tick.value >= 0.0 && tick.value <= 1000.0);
     }
     // Zero cap hides the axis without refusing.
@@ -240,12 +391,17 @@ fn thinning_keeps_sparse_grids_whole_and_caps_dense_ones() {
 /// grid, and never crowds denser than the capped count allows.
 #[test]
 fn axis_ticks_keep_budget_and_spacing_on_narrow_and_wide_windows() {
-    for (name, min, max, budget, cap) in
-        [("narrow", 99.5, 100.5, 8, 8), ("wide", 0.0, 1_000_000.0, 8, 8), ("dense", 0.0, 100.0, 40, 8)]
-    {
+    for (name, min, max, budget, cap) in [
+        ("narrow", 99.5, 100.5, 8, 8),
+        ("wide", 0.0, 1_000_000.0, 8, 8),
+        ("dense", 0.0, 100.0, 40, 8),
+    ] {
         let grid = nice_ticks(min, max, budget);
         let labels = axis_ticks(min, max, budget, cap);
-        assert!(labels.len() <= cap, "{name}: label count within the readability cap");
+        assert!(
+            labels.len() <= cap,
+            "{name}: label count within the readability cap"
+        );
         assert!(!labels.is_empty(), "{name}: usable windows label something");
         let grid_values: Vec<f64> = grid.iter().map(|tick| tick.value).collect();
         let label_values: Vec<f64> = labels.iter().map(|tick| tick.value).collect();
@@ -256,8 +412,14 @@ fn axis_ticks_keep_budget_and_spacing_on_narrow_and_wide_windows() {
         let mut ordered = label_values.clone();
         ordered.sort_by(|a, b| a.partial_cmp(b).expect("finite labels"));
         assert_eq!(
-            ordered.iter().map(|value| value.to_bits()).collect::<Vec<_>>(),
-            label_values.iter().map(|value| value.to_bits()).collect::<Vec<_>>(),
+            ordered
+                .iter()
+                .map(|value| value.to_bits())
+                .collect::<Vec<_>>(),
+            label_values
+                .iter()
+                .map(|value| value.to_bits())
+                .collect::<Vec<_>>(),
             "{name}: thinning preserves order"
         );
         if label_values.len() >= 2 {
@@ -279,14 +441,25 @@ fn axis_ticks_keep_budget_and_spacing_on_narrow_and_wide_windows() {
 /// above; restating its one-line definition here could never fail.)
 #[test]
 fn axis_ticks_stay_empty_on_degenerate_windows() {
-    assert!(axis_ticks(f64::NAN, 10.0, 6, 8).is_empty(), "degenerate windows stay empty");
+    assert!(
+        axis_ticks(f64::NAN, 10.0, 6, 8).is_empty(),
+        "degenerate windows stay empty"
+    );
 }
 
 /// Demo-equivalent price geometry: data spanning 99–101, the 2% pad the
 /// terminal seeds its viewport with, and the 420 px price pane height.
 fn demo_window() -> Viewport {
-    Viewport::new(PriceScaleMode::Normal, 98.96, 101.04, 420.0, 8.0, 99.0, false)
-        .expect("demo-equivalent window builds")
+    Viewport::new(
+        PriceScaleMode::Normal,
+        98.96,
+        101.04,
+        420.0,
+        8.0,
+        99.0,
+        false,
+    )
+    .expect("demo-equivalent window builds")
 }
 
 fn ticks_of(window: &Viewport) -> Vec<protopyne_chart_scale::Tick> {
@@ -294,11 +467,17 @@ fn ticks_of(window: &Viewport) -> Vec<protopyne_chart_scale::Tick> {
     axis_ticks(extent.min, extent.max, 8, 8)
 }
 
-fn inside_fraction(window: &Viewport, ticks: &[protopyne_chart_scale::Tick], height: f32) -> (usize, usize) {
+fn inside_fraction(
+    window: &Viewport,
+    ticks: &[protopyne_chart_scale::Tick],
+    height: f32,
+) -> (usize, usize) {
     let inside = ticks
         .iter()
         .filter(|tick| {
-            window.price_to_y(tick.value).is_some_and(|y| (0.0..=height).contains(&y))
+            window
+                .price_to_y(tick.value)
+                .is_some_and(|y| (0.0..=height).contains(&y))
         })
         .count();
     (inside, ticks.len())
@@ -310,7 +489,11 @@ fn unzoomed_window_pins_its_tick_golden() {
     // tick-density drift fails here instead of moving the axis silently.
     let ticks = ticks_of(&demo_window());
     let values: Vec<f64> = ticks.iter().map(|tick| tick.value).collect();
-    assert_eq!(values, vec![99.0, 99.5, 100.0, 100.5, 101.0], "resting grid is pinned");
+    assert_eq!(
+        values,
+        vec![99.0, 99.5, 100.0, 100.5, 101.0],
+        "resting grid is pinned"
+    );
 }
 
 #[test]
@@ -323,18 +506,37 @@ fn windowed_ticks_stay_inside_the_pane() {
         ("unzoomed", demo_window()),
         (
             "zoomed",
-            Viewport::new(PriceScaleMode::Normal, 99.48, 100.52, height, 8.0, 99.0, false)
-                .expect("2x window builds"),
+            Viewport::new(
+                PriceScaleMode::Normal,
+                99.48,
+                100.52,
+                height,
+                8.0,
+                99.0,
+                false,
+            )
+            .expect("2x window builds"),
         ),
         (
             "panned",
-            Viewport::new(PriceScaleMode::Normal, 100.0, 102.08, height, 8.0, 99.0, false)
-                .expect("panned window builds"),
+            Viewport::new(
+                PriceScaleMode::Normal,
+                100.0,
+                102.08,
+                height,
+                8.0,
+                99.0,
+                false,
+            )
+            .expect("panned window builds"),
         ),
     ];
     for (name, window) in cases {
         let ticks = ticks_of(&window);
-        assert!(!ticks.is_empty(), "{name}: a usable window labels something");
+        assert!(
+            !ticks.is_empty(),
+            "{name}: a usable window labels something"
+        );
         let (inside, total) = inside_fraction(&window, &ticks, height);
         assert_eq!(
             inside, total,
@@ -350,8 +552,16 @@ fn zoomed_window_keeps_four_fifths_of_ticks_inside() {
     // extent instead manage 3/5 here — that shortfall is the desync this
     // windowed grid replaces.
     let height = 420.0;
-    let zoomed = Viewport::new(PriceScaleMode::Normal, 99.48, 100.52, height, 8.0, 99.0, false)
-        .expect("2x window builds");
+    let zoomed = Viewport::new(
+        PriceScaleMode::Normal,
+        99.48,
+        100.52,
+        height,
+        8.0,
+        99.0,
+        false,
+    )
+    .expect("2x window builds");
     let ticks = ticks_of(&zoomed);
     let (inside, total) = inside_fraction(&zoomed, &ticks, height);
     assert!(
@@ -363,7 +573,7 @@ fn zoomed_window_keeps_four_fifths_of_ticks_inside() {
 #[test]
 fn proportional_window_covers_visible_within_twice_its_width() {
     let base = viewport(PriceScaleMode::Normal, 90.0, 110.0); // 8 px spacing
-    // 800 px over 20k bars at rest: visible (0, 101), proportional (0, 202).
+                                                              // 800 px over 20k bars at rest: visible (0, 101), proportional (0, 202).
     assert_eq!(base.visible_bar_range(800.0, 20_000), (0, 101));
     assert_eq!(base.proportional_bar_range(800.0, 20_000), (0, 202));
     // Panned ten bars left: visible (10, 111), proportional (0, 202).
@@ -375,9 +585,18 @@ fn proportional_window_covers_visible_within_twice_its_width() {
     let (visible_start, visible_end) = mid.visible_bar_range(800.0, 20_000);
     let width = visible_end - visible_start;
     let (start, end) = mid.proportional_bar_range(800.0, 20_000);
-    assert!(start <= visible_start, "the proportional window covers the visible start");
-    assert!(end >= visible_end, "the proportional window covers the visible end");
-    assert!(end - start <= 2 * width, "the proportional window stays within twice visible");
+    assert!(
+        start <= visible_start,
+        "the proportional window covers the visible start"
+    );
+    assert!(
+        end >= visible_end,
+        "the proportional window covers the visible end"
+    );
+    assert!(
+        end - start <= 2 * width,
+        "the proportional window stays within twice visible"
+    );
     // Near the trailing edge the window saturates at the bar count.
     let tail = base.with_x_offset(-159_000.0).expect("offset");
     let (tail_start, tail_end) = tail.proportional_bar_range(800.0, 20_000);
@@ -394,9 +613,21 @@ fn proportional_window_stays_empty_when_nothing_is_visible() {
     let past_right = base.with_x_offset(-400.0).expect("offset");
     assert_eq!(past_right.visible_bar_range(320.0, 40), (40, 40));
     assert_eq!(past_right.proportional_bar_range(320.0, 40), (40, 40));
-    assert_eq!(base.proportional_bar_range(320.0, 0), (0, 0), "no bars is empty");
-    assert_eq!(base.proportional_bar_range(-5.0, 40), (0, 0), "negative width is empty");
-    assert_eq!(base.proportional_bar_range(0.0, 40), (0, 0), "a pane with no area paints nothing");
+    assert_eq!(
+        base.proportional_bar_range(320.0, 0),
+        (0, 0),
+        "no bars is empty"
+    );
+    assert_eq!(
+        base.proportional_bar_range(-5.0, 40),
+        (0, 0),
+        "negative width is empty"
+    );
+    assert_eq!(
+        base.proportional_bar_range(0.0, 40),
+        (0, 0),
+        "a pane with no area paints nothing"
+    );
     assert_eq!(
         base.proportional_bar_range(f32::NAN, 40),
         (0, 0),
@@ -405,16 +636,28 @@ fn proportional_window_stays_empty_when_nothing_is_visible() {
 }
 
 fn wick_row(time: i64, low: f64, high: f64) -> ChartRow {
-    ChartRow { time, open: low, high, low, close: high, volume: 100 }
+    ChartRow {
+        time,
+        open: low,
+        high,
+        low,
+        close: high,
+        volume: 100,
+    }
 }
 
 #[test]
 fn auto_height_range_pads_the_visible_window() {
-    let rows: Vec<ChartRow> =
-        (0..10).map(|i| wick_row(i, 90.0 + i as f64, 100.0 + i as f64)).collect();
+    let rows: Vec<ChartRow> = (0..10)
+        .map(|i| wick_row(i, 90.0 + i as f64, 100.0 + i as f64))
+        .collect();
     let fitted = auto_height_range(&rows, (2, 6), 0.05).expect("window fits");
     // Window highs/lows: lo 92, hi 105; pad 0.05 * 13 = 0.65 each side.
-    assert_eq!((fitted.min, fitted.max), (91.35, 105.65), "symmetric pad over the window");
+    assert_eq!(
+        (fitted.min, fitted.max),
+        (91.35, 105.65),
+        "symmetric pad over the window"
+    );
 }
 
 #[test]
@@ -441,7 +684,9 @@ fn auto_height_range_never_inverts_and_covers_the_window() {
     // window extremes with at least the pad, and identical inputs agree.
     let mut state: u64 = 0x1234_5678_9abc_def0;
     let mut next = || {
-        state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         (state >> 33) as f64 / f64::from(u32::MAX)
     };
     let rows: Vec<ChartRow> = (0..60)
@@ -470,6 +715,10 @@ fn auto_height_range_never_inverts_and_covers_the_window() {
             fitted.max
         );
         let again = auto_height_range(&rows, (start, end), pad).expect("window fits");
-        assert_eq!((again.min, again.max), (fitted.min, fitted.max), "replay determinism");
+        assert_eq!(
+            (again.min, again.max),
+            (fitted.min, fitted.max),
+            "replay determinism"
+        );
     }
 }

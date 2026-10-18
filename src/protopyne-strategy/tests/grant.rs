@@ -142,12 +142,26 @@ fn scope_mismatches_deny() {
     let (usage, market, breakers) = context();
     let mut p = proposal();
     p.strategy = "other".to_owned();
-    let reasons = deny_reasons(evaluate_grant(&p, &grant(), &usage, &market, &breakers, now()));
+    let reasons = deny_reasons(evaluate_grant(
+        &p,
+        &grant(),
+        &usage,
+        &market,
+        &breakers,
+        now(),
+    ));
     assert!(reasons.iter().any(|r| r.contains("scope")));
 
     let mut p = proposal();
     p.side = ProposalSide::Roll;
-    let reasons = deny_reasons(evaluate_grant(&p, &grant(), &usage, &market, &breakers, now()));
+    let reasons = deny_reasons(evaluate_grant(
+        &p,
+        &grant(),
+        &usage,
+        &market,
+        &breakers,
+        now(),
+    ));
     assert!(reasons.iter().any(|r| r.contains("scope")));
 }
 
@@ -204,17 +218,38 @@ fn weak_signals_and_bad_trades_deny() {
     let (usage, market, breakers) = context();
     let mut p = proposal();
     p.conviction = 0.1;
-    let reasons = deny_reasons(evaluate_grant(&p, &grant(), &usage, &market, &breakers, now()));
+    let reasons = deny_reasons(evaluate_grant(
+        &p,
+        &grant(),
+        &usage,
+        &market,
+        &breakers,
+        now(),
+    ));
     assert!(reasons.iter().any(|r| r.contains("conviction")));
 
     let mut p = proposal();
     p.activity_score = 0.1;
-    let reasons = deny_reasons(evaluate_grant(&p, &grant(), &usage, &market, &breakers, now()));
+    let reasons = deny_reasons(evaluate_grant(
+        &p,
+        &grant(),
+        &usage,
+        &market,
+        &breakers,
+        now(),
+    ));
     assert!(reasons.iter().any(|r| r.contains("activity")));
 
     let mut p = proposal();
     p.max_loss = money(5_000);
-    let reasons = deny_reasons(evaluate_grant(&p, &grant(), &usage, &market, &breakers, now()));
+    let reasons = deny_reasons(evaluate_grant(
+        &p,
+        &grant(),
+        &usage,
+        &market,
+        &breakers,
+        now(),
+    ));
     assert!(reasons.iter().any(|r| r.contains("per-trade")));
 
     let wide = GrantMarket::new()
@@ -233,7 +268,14 @@ fn weak_signals_and_bad_trades_deny() {
 
     let mut p = proposal();
     p.dte_days = 2;
-    let reasons = deny_reasons(evaluate_grant(&p, &grant(), &usage, &market, &breakers, now()));
+    let reasons = deny_reasons(evaluate_grant(
+        &p,
+        &grant(),
+        &usage,
+        &market,
+        &breakers,
+        now(),
+    ));
     assert!(reasons.iter().any(|r| r.contains("DTE")));
 }
 
@@ -242,7 +284,14 @@ fn naked_short_is_excluded_even_when_in_scope() {
     let (usage, market, breakers) = context();
     let mut p = proposal();
     p.structure = StructureKind::NakedShort;
-    let reasons = deny_reasons(evaluate_grant(&p, &grant(), &usage, &market, &breakers, now()));
+    let reasons = deny_reasons(evaluate_grant(
+        &p,
+        &grant(),
+        &usage,
+        &market,
+        &breakers,
+        now(),
+    ));
     assert!(reasons.iter().any(|r| r.contains("naked")));
 }
 
@@ -376,7 +425,10 @@ fn tightening_predicate_accepts_self_and_stricter_grants() {
     let current = grant();
     assert!(current.tightens(&current), "a grant tightens itself");
     let tighter = tightened_every_tier();
-    assert!(tighter.tightens(&current), "every tier stricter must count as tightening");
+    assert!(
+        tighter.tightens(&current),
+        "every tier stricter must count as tightening"
+    );
     assert!(
         !current.tightens(&tighter),
         "the wider grant is not a tightening of the narrower one"
@@ -495,17 +547,30 @@ fn scope_and_structure_denials_keep_distinct_meanings() {
         .structures
         .retain(|structure| *structure != StructureKind::NakedShort);
     let (usage, market, breakers) = context();
-    let reasons = deny_reasons(evaluate_grant(&naked, &narrow, &usage, &market, &breakers, now()));
+    let reasons = deny_reasons(evaluate_grant(
+        &naked,
+        &narrow,
+        &usage,
+        &market,
+        &breakers,
+        now(),
+    ));
     assert!(
-        reasons.iter().any(|reason| reason == "proposal outside grant scope"),
+        reasons
+            .iter()
+            .any(|reason| reason == "proposal outside grant scope"),
         "whole-scope gate fires, got: {reasons:?}"
     );
     assert!(
-        reasons.iter().any(|reason| reason == "naked short structures excluded"),
+        reasons
+            .iter()
+            .any(|reason| reason == "naked short structures excluded"),
         "defined-risk ban fires independently of scope, got: {reasons:?}"
     );
     assert!(
-        reasons.iter().any(|reason| reason == "structure outside grant scope"),
+        reasons
+            .iter()
+            .any(|reason| reason == "structure outside grant scope"),
         "structure attribution fires for audit, got: {reasons:?}"
     );
 }
@@ -524,7 +589,11 @@ fn budgets() -> GrantBudgets {
 }
 
 fn permissions() -> GrantPermission {
-    GrantPermission { entries: true, exits: true, rolls: false }
+    GrantPermission {
+        entries: true,
+        exits: true,
+        rolls: false,
+    }
 }
 
 fn assert_copy<T: Copy>() {}
@@ -548,14 +617,27 @@ fn descriptor_tiers_are_copy_so_get_field_compiles() {
 fn patch_descriptor_names_the_settable_tiers() {
     assert_eq!(
         GrantPatch::default().field_names(),
-        &["budgets", "signal", "trade", "portfolio", "breakers", "valid_until"],
+        &[
+            "budgets",
+            "signal",
+            "trade",
+            "portfolio",
+            "breakers",
+            "valid_until"
+        ],
         "scope stays out of the descriptor (see GrantPatch docs)"
     );
     let schema = GrantPatch::default().describe();
-    let required = schema["required"].as_array().expect("schema carries required");
-    assert!(required.is_empty(), "every patch tier is optional, got: {required:?}");
-    let properties =
-        schema["properties"].as_object().expect("schema carries properties");
+    let required = schema["required"]
+        .as_array()
+        .expect("schema carries required");
+    assert!(
+        required.is_empty(),
+        "every patch tier is optional, got: {required:?}"
+    );
+    let properties = schema["properties"]
+        .as_object()
+        .expect("schema carries properties");
     for tier in GrantPatch::default().field_names() {
         let hint = &properties[*tier];
         assert!(
@@ -572,12 +654,23 @@ fn leaf_descriptors_name_their_fields() {
         live.budgets.field_names(),
         &["max_trades", "max_contracts", "max_loss", "max_notional"]
     );
-    assert_eq!(live.signal.field_names(), &["min_conviction", "min_activity_score"]);
+    assert_eq!(
+        live.signal.field_names(),
+        &["min_conviction", "min_activity_score"]
+    );
     assert_eq!(
         live.trade.field_names(),
-        &["max_loss_per_trade", "max_spread_width", "min_dte_days", "max_dte_days"]
+        &[
+            "max_loss_per_trade",
+            "max_spread_width",
+            "min_dte_days",
+            "max_dte_days"
+        ]
     );
-    assert_eq!(live.portfolio.field_names(), &["max_open_risk", "quote_max_age_secs"]);
+    assert_eq!(
+        live.portfolio.field_names(),
+        &["max_open_risk", "quote_max_age_secs"]
+    );
     assert_eq!(live.breakers.field_names(), &["max_consecutive_errors"]);
     assert_eq!(permissions().field_names(), &["entries", "exits", "rolls"]);
     assert_eq!(
@@ -603,7 +696,10 @@ fn tier_json_boundary_round_trips() {
             serde_json::from_str(&rendered).expect("tier displays as JSON");
         assert!(value.is_object(), "tier {name} displays as a JSON object");
     }
-    assert_eq!(GrantBudgets::from_str(&budgets().to_string()).expect("budgets parse"), budgets());
+    assert_eq!(
+        GrantBudgets::from_str(&budgets().to_string()).expect("budgets parse"),
+        budgets()
+    );
     assert_eq!(
         GrantPermission::from_str(&permissions().to_string()).expect("permissions parse"),
         permissions()
@@ -635,18 +731,26 @@ fn patch_set_field_round_trips_tier_json() {
         patch.set_field("scope", "{}").is_err(),
         "the skipped scope tier refuses by name"
     );
-    assert!(patch.set_field("nope", "1").is_err(), "unknown fields refuse");
+    assert!(
+        patch.set_field("nope", "1").is_err(),
+        "unknown fields refuse"
+    );
 }
 
 #[test]
 fn patch_valid_until_parses_rfc3339() {
     let mut patch = GrantPatch::default();
-    patch.set_field("valid_until", "2027-01-01T00:00:00Z").expect("RFC 3339 sets");
+    patch
+        .set_field("valid_until", "2027-01-01T00:00:00Z")
+        .expect("RFC 3339 sets");
     assert_eq!(
         patch.valid_until,
         Some(Utc.with_ymd_and_hms(2027, 1, 1, 0, 0, 0).unwrap())
     );
-    assert!(patch.set_field("valid_until", "tomorrow").is_err(), "vague dates refuse");
+    assert!(
+        patch.set_field("valid_until", "tomorrow").is_err(),
+        "vague dates refuse"
+    );
 }
 
 #[test]
@@ -656,29 +760,82 @@ fn patch_descriptor_nests_each_tier_leaf_schema() {
     use fluent_wvr::{Describable as _, FieldAccess as _};
     let schema = GrantPatch::default().describe();
     let properties = schema["properties"].as_object().expect("properties");
-    let mut top: Vec<&str> =
-        properties.keys().map(String::as_str).collect();
+    let mut top: Vec<&str> = properties.keys().map(String::as_str).collect();
     top.sort_unstable();
     let mut fields: Vec<&str> = GrantPatch::default().field_names().to_vec();
     fields.sort_unstable();
-    assert_eq!(top, fields, "descriptor tiers are exactly the settable fields");
+    assert_eq!(
+        top, fields,
+        "descriptor tiers are exactly the settable fields"
+    );
     for (tier, leaves) in [
-        ("budgets", GrantBudgets::new().max_trades(0).max_contracts(0).max_loss(Money::zero()).max_notional(Money::zero()).build().field_names()),
-        ("signal", SignalThresholds::new().min_conviction(0.0).min_activity_score(0.0).build().field_names()),
-        ("trade", TradeThresholds::new().max_loss_per_trade(Money::zero()).max_spread_width(Money::zero()).min_dte_days(0).max_dte_days(0).build().field_names()),
-        ("portfolio", PortfolioThresholds::new().max_open_risk(Money::zero()).quote_max_age_secs(0).build().field_names()),
-        ("breakers", BreakerLimits::new().max_consecutive_errors(0).build().field_names()),
+        (
+            "budgets",
+            GrantBudgets::new()
+                .max_trades(0)
+                .max_contracts(0)
+                .max_loss(Money::zero())
+                .max_notional(Money::zero())
+                .build()
+                .field_names(),
+        ),
+        (
+            "signal",
+            SignalThresholds::new()
+                .min_conviction(0.0)
+                .min_activity_score(0.0)
+                .build()
+                .field_names(),
+        ),
+        (
+            "trade",
+            TradeThresholds::new()
+                .max_loss_per_trade(Money::zero())
+                .max_spread_width(Money::zero())
+                .min_dte_days(0)
+                .max_dte_days(0)
+                .build()
+                .field_names(),
+        ),
+        (
+            "portfolio",
+            PortfolioThresholds::new()
+                .max_open_risk(Money::zero())
+                .quote_max_age_secs(0)
+                .build()
+                .field_names(),
+        ),
+        (
+            "breakers",
+            BreakerLimits::new()
+                .max_consecutive_errors(0)
+                .build()
+                .field_names(),
+        ),
     ] {
-        let nested = properties[tier]["properties"].as_object().expect("tier nests leaves");
+        let nested = properties[tier]["properties"]
+            .as_object()
+            .expect("tier nests leaves");
         let mut nested_names: Vec<&str> = nested.keys().map(String::as_str).collect();
         nested_names.sort_unstable();
         let mut leaf_names: Vec<&str> = leaves.to_vec();
         leaf_names.sort_unstable();
-        assert_eq!(nested_names, leaf_names, "tier {tier} nests exactly its leaves");
+        assert_eq!(
+            nested_names, leaf_names,
+            "tier {tier} nests exactly its leaves"
+        );
     }
     let until = &properties["valid_until"];
-    assert_eq!(until["type"], serde_json::json!("string"), "window end stays a string leaf");
-    assert_eq!(until["format"], serde_json::json!("date-time"), "window end keeps its date-time format");
+    assert_eq!(
+        until["type"],
+        serde_json::json!("string"),
+        "window end stays a string leaf"
+    );
+    assert_eq!(
+        until["format"],
+        serde_json::json!("date-time"),
+        "window end keeps its date-time format"
+    );
 }
 
 #[test]
@@ -704,25 +861,40 @@ fn every_tier_marks_its_money_leaves_decimal() {
 }
 
 #[test]
-fn every_tier_display_fromstr_round_trips() {    // Both codecs carry every tier: Display renders the document the form
+fn every_tier_display_fromstr_round_trips() {
+    // Both codecs carry every tier: Display renders the document the form
     // previews, FromStr parses it back. One parser per tier, no second one.
-    let signal = SignalThresholds::new().min_conviction(0.5).min_activity_score(0.25).build();
+    let signal = SignalThresholds::new()
+        .min_conviction(0.5)
+        .min_activity_score(0.25)
+        .build();
     let trade = TradeThresholds::new()
         .max_loss_per_trade(Money::from(10))
         .max_spread_width(Money::from(5))
         .min_dte_days(1)
         .max_dte_days(30)
         .build();
-    let portfolio =
-        PortfolioThresholds::new().max_open_risk(Money::from(10_000)).quote_max_age_secs(60).build();
+    let portfolio = PortfolioThresholds::new()
+        .max_open_risk(Money::from(10_000))
+        .quote_max_age_secs(60)
+        .build();
     let breakers = BreakerLimits::new().max_consecutive_errors(3).build();
-    assert_eq!(SignalThresholds::from_str(&signal.to_string()).expect("signal parses"), signal);
-    assert_eq!(TradeThresholds::from_str(&trade.to_string()).expect("trade parses"), trade);
+    assert_eq!(
+        SignalThresholds::from_str(&signal.to_string()).expect("signal parses"),
+        signal
+    );
+    assert_eq!(
+        TradeThresholds::from_str(&trade.to_string()).expect("trade parses"),
+        trade
+    );
     assert_eq!(
         PortfolioThresholds::from_str(&portfolio.to_string()).expect("portfolio parses"),
         portfolio
     );
-    assert_eq!(BreakerLimits::from_str(&breakers.to_string()).expect("breakers parse"), breakers);
+    assert_eq!(
+        BreakerLimits::from_str(&breakers.to_string()).expect("breakers parse"),
+        breakers
+    );
 }
 
 #[test]
@@ -733,7 +905,9 @@ fn excess_decimal_scale_refuses_on_both_money_paths() {
     // too, so neither path rounds excess precision into a decision.
     let deep = "0.00000000000000000000000000001";
     let mut patch = GrantPatch::default();
-    let tier = format!(r#"{{"max_trades":1,"max_contracts":1,"max_loss":"{deep}","max_notional":"1000"}}"#);
+    let tier = format!(
+        r#"{{"max_trades":1,"max_contracts":1,"max_loss":"{deep}","max_notional":"1000"}}"#
+    );
     assert!(
         patch.set_field("budgets", &tier).is_err(),
         "the tier codec refuses 29-place decimal text"

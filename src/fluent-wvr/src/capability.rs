@@ -118,7 +118,11 @@ impl BlockingJoinError {
 
 impl std::fmt::Display for BlockingJoinError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "capability-scoped blocking worker failed: {}", self.detail)
+        write!(
+            f,
+            "capability-scoped blocking worker failed: {}",
+            self.detail
+        )
     }
 }
 
@@ -141,13 +145,11 @@ where
     F: FnOnce() -> R + Send,
 {
     match tokio::runtime::Handle::try_current() {
-        Ok(handle) if handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread => Ok(
-            CURRENT_CAPS.sync_scope(caps, || tokio::task::block_in_place(op)),
-        ),
+        Ok(handle) if handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread => {
+            Ok(CURRENT_CAPS.sync_scope(caps, || tokio::task::block_in_place(op)))
+        }
         _ => match std::thread::scope(|scope| {
-            scope
-                .spawn(|| CURRENT_CAPS.sync_scope(caps, op))
-                .join()
+            scope.spawn(|| CURRENT_CAPS.sync_scope(caps, op)).join()
         }) {
             Ok(value) => Ok(value),
             Err(payload) => Err(BlockingJoinError::panicked(payload.as_ref())),

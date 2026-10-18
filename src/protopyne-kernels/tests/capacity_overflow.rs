@@ -59,27 +59,46 @@ fn assert_close(got: f64, want: f64, what: &str) {
 #[test]
 fn sizing_table_fits_and_overflows() {
     // (ltf, ctf, ratio, max): every canonical span divides evenly.
-    for (ltf_ms, ctf_ms, ratio) in
-        [(MIN, 5 * MIN, 5), (MIN, 15 * MIN, 15), (MIN, 60 * MIN, 60),
-         (5 * MIN, 15 * MIN, 3), (5 * MIN, 60 * MIN, 12), (15 * MIN, 60 * MIN, 4)]
-    {
+    for (ltf_ms, ctf_ms, ratio) in [
+        (MIN, 5 * MIN, 5),
+        (MIN, 15 * MIN, 15),
+        (MIN, 60 * MIN, 60),
+        (5 * MIN, 15 * MIN, 3),
+        (5 * MIN, 60 * MIN, 12),
+        (15 * MIN, 60 * MIN, 4),
+    ] {
         let config = BarsConfig::new(ltf_ms, ltf_ms, ctf_ms, 86_400_000);
         let max = ratio + BUFFER_PADDING;
-        assert_eq!(config.max_candles(), max, "sizing rule for {ltf_ms}/{ctf_ms}");
+        assert_eq!(
+            config.max_candles(),
+            max,
+            "sizing rule for {ltf_ms}/{ctf_ms}"
+        );
         // Must-fit: ratio + 5 rows all retained, totals exact.
         let fit = rows(max, ltf_ms);
         let mut ring = BarRing::new(&config).expect("valid config");
         let reference: f64 = fit.iter().map(|row| row.volume).sum();
         let outcome = ring.reconcile(&fit, reference, 100.0);
-        assert_eq!(ring.len(), max, "must-fit retains everything for {ltf_ms}/{ctf_ms}");
-        assert!(outcome.remainder.is_none(), "exact reference tops up nothing");
+        assert_eq!(
+            ring.len(),
+            max,
+            "must-fit retains everything for {ltf_ms}/{ctf_ms}"
+        );
+        assert!(
+            outcome.remainder.is_none(),
+            "exact reference tops up nothing"
+        );
         assert_close(ring.total_volume(), reference, "must-fit totals exact");
         // Must-overflow: one row past capacity evicts exactly once.
         let over = rows(max + 1, ltf_ms);
         let mut ring = BarRing::new(&config).expect("valid config");
         let reference: f64 = over.iter().map(|row| row.volume).sum();
         ring.reconcile(&over, reference, 100.0);
-        assert_eq!(ring.len(), max, "must-overflow fires eviction for {ltf_ms}/{ctf_ms}");
+        assert_eq!(
+            ring.len(),
+            max,
+            "must-overflow fires eviction for {ltf_ms}/{ctf_ms}"
+        );
         assert_eq!(
             ring.get(0).expect("oldest readable").ts_ms,
             over[1].ts_ms,
@@ -96,7 +115,11 @@ fn overflow_keeps_newest() {
     let mut ring = BarRing::new(&config).expect("valid config");
     ring.reconcile(&over, 120.0, 100.0);
     assert_eq!(ring.len(), 10, "overflow caps at capacity");
-    assert_eq!(ring.get(0).expect("readable").ts_ms, over[2].ts_ms, "oldest two dropped");
+    assert_eq!(
+        ring.get(0).expect("readable").ts_ms,
+        over[2].ts_ms,
+        "oldest two dropped"
+    );
     assert_close(ring.get(9).expect("readable").c, 111.0, "newest row kept");
     assert_close(ring.total_volume(), 100.0, "totals cover the kept rows");
 }
@@ -113,7 +136,13 @@ fn tick_path_evicts_oldest() {
         cum += 100.0;
         let stamp = base + i * MIN;
         ring.ingest_tick(
-            crate::indicator::BarTick { open: price, high: price, low: price, close: price, volume: cum },
+            crate::indicator::BarTick {
+                open: price,
+                high: price,
+                low: price,
+                close: price,
+                volume: cum,
+            },
             stamp,
         );
         ring.confirm_ltf(stamp, price, None);
@@ -124,7 +153,11 @@ fn tick_path_evicts_oldest() {
         base + MIN,
         "tick eviction drops the oldest bucket"
     );
-    assert_close(ring.total_volume(), 1_000.0, "tick totals cover the kept buckets");
+    assert_close(
+        ring.total_volume(),
+        1_000.0,
+        "tick totals cover the kept buckets",
+    );
 }
 
 /// Past-capacity split, executed on both sides: Pine stops (keeps the
@@ -133,11 +166,10 @@ fn tick_path_evicts_oldest() {
 #[cfg(feature = "pine")]
 #[test]
 fn pine_stop_keeps_oldest() {
-    use crate::{
-        InputSet, LinkedModule, PineEngine, PineRuntimeConfig, PineValue, RunOutcome,
-        UserInstance,
-    };
     use crate::pine::test_fixture as fixture;
+    use crate::{
+        InputSet, LinkedModule, PineEngine, PineRuntimeConfig, PineValue, RunOutcome, UserInstance,
+    };
     use chrono::TimeZone as _;
     use protopyne_types::Bar;
 
@@ -146,7 +178,11 @@ fn pine_stop_keeps_oldest() {
     const PROLOGUE: &str = "var bars = BARS.Bars.new()\nif barstate.isfirst\n    bars.init(UTIL.Timeframes.M1, UTIL.Timeframes.M1, UTIL.Timeframes.D1)\n";
 
     fn array_of(values: &[f64]) -> String {
-        values.iter().map(|v| format!("{v:?}")).collect::<Vec<_>>().join(", ")
+        values
+            .iter()
+            .map(|v| format!("{v:?}"))
+            .collect::<Vec<_>>()
+            .join(", ")
     }
     let vals: Vec<f64> = (1..=12).map(f64::from).collect();
     let vols = vec![10.0; 12];
@@ -170,7 +206,10 @@ fn pine_stop_keeps_oldest() {
         fixture::driver_module(&driver),
     ]);
     let bar = Bar::new()
-        .ts(chrono::Utc.timestamp_opt(1_699_999_980, 0).single().expect("valid stamp"))
+        .ts(chrono::Utc
+            .timestamp_opt(1_699_999_980, 0)
+            .single()
+            .expect("valid stamp"))
         .o("100.00".parse().expect("decimal"))
         .h("101.00".parse().expect("decimal"))
         .l("99.00".parse().expect("decimal"))
@@ -179,7 +218,10 @@ fn pine_stop_keeps_oldest() {
         .maybe_adj(None)
         .build();
     let mut engine = PineEngine::new(
-        PineRuntimeConfig::new().chart_symbol("SPY".to_owned()).chart_period("5".to_owned()).build(),
+        PineRuntimeConfig::new()
+            .chart_symbol("SPY".to_owned())
+            .chart_period("5".to_owned())
+            .build(),
     );
     let outcome: RunOutcome = engine
         .run_linked(&modules, std::slice::from_ref(&bar), InputSet::new())
@@ -207,8 +249,16 @@ fn pine_stop_keeps_oldest() {
     let mut ring = BarRing::new(&BarsConfig::new(MIN, MIN, 5 * MIN, 86_400_000)).expect("valid");
     ring.reconcile(&over, 120.0, 100.0);
     assert_eq!(ring.len(), 10, "native caps at ten slots");
-    assert_eq!(ring.get(0).expect("readable").ts_ms, over[2].ts_ms, "native drops the oldest");
+    assert_eq!(
+        ring.get(0).expect("readable").ts_ms,
+        over[2].ts_ms,
+        "native drops the oldest"
+    );
     // The split, pinned both ways.
     assert_eq!(num("h0"), 1.0, "pine first row is the overfeed head");
-    assert_close(ring.get(0).expect("readable").c, 102.0, "native first row is third fed");
+    assert_close(
+        ring.get(0).expect("readable").c,
+        102.0,
+        "native first row is third fed",
+    );
 }

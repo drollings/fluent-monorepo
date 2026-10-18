@@ -12,18 +12,16 @@
 #![allow(clippy::float_cmp)]
 
 use super::*;
-use crate::{PineRuntimeConfig, inputs::InputSet, parse_program};
+use crate::{inputs::InputSet, parse_program, PineRuntimeConfig};
 use chrono::TimeZone as _;
 use protopyne_types::Bar;
 
 fn bar_ts(open: &str, close: &str, ts: i64) -> Bar {
     Bar::new()
-        .ts(
-            chrono::Utc
-                .timestamp_opt(ts, 0)
-                .single()
-                .expect("valid test timestamp"),
-        )
+        .ts(chrono::Utc
+            .timestamp_opt(ts, 0)
+            .single()
+            .expect("valid test timestamp"))
         .o(open.parse().expect("decimal"))
         .h("101.00".parse().expect("decimal"))
         .l("99.00".parse().expect("decimal"))
@@ -176,14 +174,8 @@ fn enum_handles_compare_for_equality_only() {
         "export enum S\n    A = \"a\"\n    N = \"n\"\nv = S.A\nx = v != S.N\ny = v == S.A",
         &bars,
     );
-    assert_eq!(
-        outcome.value_at(0, "x"),
-        Some(Some(PineValue::Bool(true)))
-    );
-    assert_eq!(
-        outcome.value_at(0, "y"),
-        Some(Some(PineValue::Bool(true)))
-    );
+    assert_eq!(outcome.value_at(0, "x"), Some(Some(PineValue::Bool(true))));
+    assert_eq!(outcome.value_at(0, "y"), Some(Some(PineValue::Bool(true))));
 }
 
 // ---- consts + exports ----
@@ -208,9 +200,7 @@ fn export_decls_record_their_names() {
     )
     .expect("parses");
     let mut engine = PineEngine::new(PineRuntimeConfig::new().build());
-    engine
-        .run(&program, &bars, InputSet::new())
-        .expect("runs");
+    engine.run(&program, &bars, InputSet::new()).expect("runs");
     let mut names = engine.exported_names();
     names.sort_unstable();
     assert_eq!(names, vec!["CENTER", "S", "ms"]);
@@ -388,9 +378,7 @@ fn nine_plots_capture_titles_and_series() {
     for (i, plot) in outcome.plots.iter().enumerate() {
         assert_eq!(plot.title, format!("MA{i}"));
         assert_eq!(plot.values.len(), 4);
-        let first = plot.values[0]
-            .as_ref()
-            .and_then(PineValue::as_float);
+        let first = plot.values[0].as_ref().and_then(PineValue::as_float);
         assert_eq!(first, Some(10.0));
     }
 }
@@ -468,7 +456,11 @@ fn supertrend_tuple_matches_hand_computation() {
     // Bar 0: bands collapse against `na` history, but comparisons with an
     // absent side read false (two-valued: `na < 0` is false), so the
     // recurrence holds the nz-seeded previous band (0.0); `atr[1]` is `na`.
-    assert_eq!(num(&outcome, 0, "st"), Some(0.0), "bar 0 holds the seed band");
+    assert_eq!(
+        num(&outcome, 0, "st"),
+        Some(0.0),
+        "bar 0 holds the seed band"
+    );
     assert_eq!(num(&outcome, 0, "dir"), Some(1.0));
     for at_bar in 1..4 {
         let dir = num(&outcome, at_bar, "dir").expect("direction defined");
@@ -554,5 +546,8 @@ fn unknown_type_method_refuses_naming_it() {
         "export type Scheduler\n    map<int, int> next_update = na\ns = Scheduler.new()\ns.nosuch()",
         &bars,
     );
-    assert!(reason.contains("nosuch"), "reason names the method: {reason}");
+    assert!(
+        reason.contains("nosuch"),
+        "reason names the method: {reason}"
+    );
 }

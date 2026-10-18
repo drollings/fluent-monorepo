@@ -26,7 +26,7 @@ use std::collections::BTreeMap;
 
 use fluent_wvr::prelude::*;
 use fluent_wvr::{Describable, FieldAccess};
-use protopyne_types::{Validate, check_for_execute, valid_output};
+use protopyne_types::{check_for_execute, valid_output, Validate};
 
 use crate::config::ThemeConfig;
 use crate::error::EguiError;
@@ -130,7 +130,8 @@ impl IndicatorStyle {
     /// Fail-closed self-consistency check: the stroke width sits in its band
     /// and every set override spells a `#RRGGBB` color.
     pub fn validate(&self) -> Result<(), EguiError> {
-        if !self.line_width.is_finite() || !(MIN_LINE_WIDTH..=MAX_LINE_WIDTH).contains(&self.line_width)
+        if !self.line_width.is_finite()
+            || !(MIN_LINE_WIDTH..=MAX_LINE_WIDTH).contains(&self.line_width)
         {
             return Err(EguiError::InvalidParam {
                 what: LINE_WIDTH_FIELD.to_owned(),
@@ -156,7 +157,10 @@ impl Default for IndicatorStyle {
     /// The style that changes nothing: the theme's own colors at the
     /// historical hairline width.
     fn default() -> Self {
-        Self { line_width: DEFAULT_LINE_WIDTH, colors: BTreeMap::new() }
+        Self {
+            line_width: DEFAULT_LINE_WIDTH,
+            colors: BTreeMap::new(),
+        }
     }
 }
 
@@ -173,10 +177,11 @@ impl FieldAccess for IndicatorStyle {
     /// refused with the field named, leaving the style exactly as it was.
     fn set_field(&mut self, name: &str, value: &str) -> Result<(), FieldError> {
         if name == LINE_WIDTH_FIELD {
-            let width: f64 =
-                value.trim().parse().map_err(|_| FieldError::Parse(format!(
+            let width: f64 = value.trim().parse().map_err(|_| {
+                FieldError::Parse(format!(
                     "invalid line width for '{LINE_WIDTH_FIELD}': {value}"
-                )))?;
+                ))
+            })?;
             if !width.is_finite() || !(MIN_LINE_WIDTH..=MAX_LINE_WIDTH).contains(&width) {
                 return Err(FieldError::Constraint(format!(
                     "line width must be finite and sit within [{MIN_LINE_WIDTH}, {MAX_LINE_WIDTH}]: {value}"
@@ -191,8 +196,7 @@ impl FieldAccess for IndicatorStyle {
             self.colors.remove(key);
             return Ok(());
         }
-        parse_hex_color(key, slot)
-            .map_err(|error| FieldError::Constraint(format!("{error}")))?;
+        parse_hex_color(key, slot).map_err(|error| FieldError::Constraint(format!("{error}")))?;
         self.colors.insert(key.to_owned(), slot.to_owned());
         Ok(())
     }
@@ -228,7 +232,10 @@ impl Describable for IndicatorStyle {
                 "maximum": MAX_LINE_WIDTH,
             }),
         );
-        for field in STYLE_FIELDS.iter().filter(|field| **field != LINE_WIDTH_FIELD) {
+        for field in STYLE_FIELDS
+            .iter()
+            .filter(|field| **field != LINE_WIDTH_FIELD)
+        {
             let key = style_key(field).unwrap_or_default();
             properties.insert(
                 (*field).to_owned(),

@@ -41,8 +41,16 @@ fn stored_opens_match_chained_reads() {
     // First open chains from the first row; later opens chain from the
     // previous close — exactly what the read-time chain returned.
     assert_close(ring.get(0).expect("readable").o, 200.0, "first open");
-    assert_close(ring.get(1).expect("readable").o, 100.0, "second chains prev close");
-    assert_close(ring.get(2).expect("readable").o, 101.0, "third chains prev close");
+    assert_close(
+        ring.get(1).expect("readable").o,
+        100.0,
+        "second chains prev close",
+    );
+    assert_close(
+        ring.get(2).expect("readable").o,
+        101.0,
+        "third chains prev close",
+    );
 }
 
 #[test]
@@ -57,7 +65,11 @@ fn evicted_first_candle_keeps_own_open() {
     assert_eq!(ring.len(), 10, "overflow caps at capacity");
     let first = ring.get(0).expect("readable");
     assert_eq!(first.ts_ms, rows[2].ts_ms, "oldest two evicted");
-    assert_close(first.o, 101.0, "evicted first keeps its chained open, not stale candle_open");
+    assert_close(
+        first.o,
+        101.0,
+        "evicted first keeps its chained open, not stale candle_open",
+    );
 }
 
 #[test]
@@ -68,10 +80,22 @@ fn remainder_adjustments_keep_chained_opens() {
     // Shortfall appends: the top-up chains from the previous close.
     let short = ring.reconcile(&rows, 30.0, 200.0);
     assert!(short.remainder.is_some(), "shortfall tops up");
-    assert_close(ring.get(2).expect("readable").o, 101.0, "top-up chains prev close");
+    assert_close(
+        ring.get(2).expect("readable").o,
+        101.0,
+        "top-up chains prev close",
+    );
     // Overshoot trims: surviving candles keep their stored opens.
     let over = ring.reconcile(&rows, 15.0, 200.0);
     assert!(over.remainder.is_some(), "overshoot trims");
-    assert_close(ring.get(0).expect("readable").o, 200.0, "trim keeps first open");
-    assert_close(ring.get(1).expect("readable").o, 100.0, "trim keeps chained open");
+    assert_close(
+        ring.get(0).expect("readable").o,
+        200.0,
+        "trim keeps first open",
+    );
+    assert_close(
+        ring.get(1).expect("readable").o,
+        100.0,
+        "trim keeps chained open",
+    );
 }

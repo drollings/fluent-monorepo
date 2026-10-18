@@ -83,6 +83,7 @@ fn fragment_ingest_skips_unchanged_files_on_second_pass() {
     assert!(!hits.is_empty(), "skipped files must stay FTS-visible");
 }
 
+#[ignore = "heavy (~1.6s): two full workspace ingests; run via `make guidance-soak`"]
 #[test]
 fn fragment_ingest_reingests_modified_files() {
     // Must-NOT-fire control for the skip above: changed content (size
@@ -101,6 +102,7 @@ fn fragment_ingest_reingests_modified_files() {
     assert_eq!(second.skipped_unchanged, 1, "{second:?}");
 }
 
+#[ignore = "heavy (~2.7s): 1.1s mtime-tick sleep plus two full workspace ingests; run via `make guidance-soak`"]
 #[test]
 fn fragment_ingest_reingests_same_size_edits() {
     // Must-NOT-fire control for the mtime arm: same byte length but

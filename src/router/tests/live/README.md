@@ -4,7 +4,7 @@ Tests in this directory perform **real model calls** against a live inference
 endpoint. They are **never** part of the default test suite: each is
 `#[ignore]`d **and** gated behind the `live-ai` feature (so the test file is
 only compiled when the feature is enabled) and they are excluded from
-`make test` / `make router-test` / `make router-mock` / CI. The only way to
+`make test` / `make test-router` / `make router-mock` / CI. The only way to
 run them is:
 
 ```sh

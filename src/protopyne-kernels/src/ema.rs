@@ -8,11 +8,11 @@
 //! and [`update`](crate::indicator::Indicator::update) apply the identical
 //! recurrence in the identical order, so the two paths agree bit-for-bit.
 
+use crate::error::KernelError;
 use crate::indicator::{
     fin_or_none, BarTick, Indicator, IndicatorResult, IndicatorSpec, IndicatorState, Ohlcv,
     ParamSet,
 };
-use crate::error::KernelError;
 
 /// Exponential moving average (`ema`), parameterized by `length`.
 pub struct EmaIndicator {

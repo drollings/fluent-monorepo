@@ -14,8 +14,8 @@
 use bon::Builder;
 use chrono::{DateTime, NaiveDate, Utc};
 use fluent_wvr::{Describable, FieldAccess};
-use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive as _;
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -393,7 +393,15 @@ impl SpreadLegs {
 /// Membership is runtime configuration (hence `FieldAccess`/`Describable`);
 /// per-spread reads stay on direct fields.
 #[derive(
-    Debug, Clone, bon::Builder, PartialEq, Eq, serde::Serialize, serde::Deserialize, FieldAccess, Describable,
+    Debug,
+    Clone,
+    bon::Builder,
+    PartialEq,
+    Eq,
+    serde::Serialize,
+    serde::Deserialize,
+    FieldAccess,
+    Describable,
 )]
 #[builder(start_fn = new)]
 pub struct Portfolio {

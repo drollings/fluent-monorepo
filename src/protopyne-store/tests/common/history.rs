@@ -12,19 +12,19 @@
 
 use std::path::PathBuf;
 use std::sync::{
-    Mutex,
     atomic::{AtomicBool, Ordering},
+    Mutex,
 };
 
 use fluent_concurrency::stream::StreamAbort;
 use protopyne_types::{Bar, Timeframe};
 
 use crate::catalog::AssetClass;
-use crate::store::CandleStore;
-use crate::tape::MarketTape;
 use crate::history::{BoxFuture, FetchPage, FetchRequest, HistoryError, HistoryProvider};
 use crate::key::TapeKey;
 use crate::range::TimeRange;
+use crate::store::CandleStore;
+use crate::tape::MarketTape;
 
 /// The venue every history-test market prints on.
 pub const VENUE: &str = "test-venue";

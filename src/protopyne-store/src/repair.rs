@@ -24,26 +24,26 @@
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::sync::{
-    Arc,
     atomic::{AtomicBool, Ordering},
+    Arc,
 };
 use std::time::Duration;
 
 use common_core::retry::capped_exp_backoff_ms;
 use fluent_concurrency::pool::ResultPool;
 use fluent_concurrency::stream::StreamAbort;
-use fluent_wvr::CURRENT_CAPS;
 use fluent_wvr::prelude::*;
+use fluent_wvr::CURRENT_CAPS;
 use protopyne_types::Validate as _;
 
-use crate::capability::{StoreStorage, check_binding, check_present};
+use crate::capability::{check_binding, check_present, StoreStorage};
 use crate::coverage::{Coverage, FreshnessPolicy, GapClass};
 use crate::error::StoreError;
-use crate::tape::MarketTape;
 use crate::history::{FetchRequest, HistoryError, HistoryProvider};
 use crate::key::{SymbolId, TapeKey};
 use crate::range::TimeRange;
 use crate::store::{CandleStore, WritePolicy};
+use crate::tape::MarketTape;
 
 /// Why a repair pass fills. Mirrors the classifier's repair verdicts: the
 /// worker consumes the verdict and never re-derives which spans to fill.

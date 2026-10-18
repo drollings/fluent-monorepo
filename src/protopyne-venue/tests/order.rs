@@ -156,19 +156,13 @@ fn active_states_round_trip_through_inactive() {
     assert_eq!(A::Open.to_inactive().to_active(), Some(A::Open));
     // A cancel request collapses to the last confirmed working state on the
     // status side: the venue has not confirmed anything yet.
-    assert_eq!(
-        A::CancelInFlight.to_inactive(),
-        OrderStatus::Acknowledged
-    );
+    assert_eq!(A::CancelInFlight.to_inactive(), OrderStatus::Acknowledged);
 }
 
 #[test]
 fn cancel_requests_convert_only_from_workable_states() {
     use ActiveOrderState as A;
-    assert_eq!(
-        A::OpenInFlight.to_request_cancel(),
-        Some(A::CancelInFlight)
-    );
+    assert_eq!(A::OpenInFlight.to_request_cancel(), Some(A::CancelInFlight));
     assert_eq!(A::Open.to_request_cancel(), Some(A::CancelInFlight));
     assert_eq!(A::CancelInFlight.to_request_cancel(), None);
 }

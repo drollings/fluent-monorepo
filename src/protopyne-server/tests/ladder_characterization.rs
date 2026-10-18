@@ -11,7 +11,10 @@ use std::path::PathBuf;
 use crate::history::load_bars_candidates;
 
 fn data(name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join(name)
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("data")
+        .join(name)
 }
 
 fn month_parquet() -> PathBuf {

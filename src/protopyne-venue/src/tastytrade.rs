@@ -25,8 +25,8 @@
 use std::collections::{HashMap, VecDeque};
 use std::path::Path;
 use std::sync::{
-    Arc, Mutex,
     atomic::{AtomicUsize, Ordering},
+    Arc, Mutex,
 };
 
 use chrono::{DateTime, Utc};
@@ -56,8 +56,15 @@ pub const RETRY_JITTER_PCT: u32 = 50;
 /// never a second loader. No credential field: [`NetCapability`] sends no
 /// auth headers, so this skeleton runs unauthenticated loopback only.
 #[derive(
-    Debug, Clone, bon::Builder, PartialEq, Eq, serde::Serialize, serde::Deserialize,
-    FieldAccess, Describable,
+    Debug,
+    Clone,
+    bon::Builder,
+    PartialEq,
+    Eq,
+    serde::Serialize,
+    serde::Deserialize,
+    FieldAccess,
+    Describable,
 )]
 #[builder(start_fn = new)]
 pub struct TastytradeConfig {
@@ -144,13 +151,17 @@ pub fn validate_subscription(symbol: &str) -> Result<(), String> {
         return Err("subscription symbol is empty".to_owned());
     }
     if symbol.len() > 24 {
-        return Err(format!("subscription symbol {symbol} exceeds 24 characters"));
+        return Err(format!(
+            "subscription symbol {symbol} exceeds 24 characters"
+        ));
     }
     if !symbol
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_')
     {
-        return Err(format!("subscription symbol {symbol} is not a plain symbol"));
+        return Err(format!(
+            "subscription symbol {symbol} is not a plain symbol"
+        ));
     }
     Ok(())
 }
@@ -168,10 +179,7 @@ fn as_decimal(value: &serde_json::Value) -> Result<Decimal, String> {
     }
 }
 
-fn field<'a>(
-    body: &'a serde_json::Value,
-    name: &str,
-) -> Result<&'a serde_json::Value, String> {
+fn field<'a>(body: &'a serde_json::Value, name: &str) -> Result<&'a serde_json::Value, String> {
     body.get(name)
         .ok_or_else(|| format!("wire message is missing {name}"))
 }
@@ -339,7 +347,9 @@ pub fn transform_account_event(body: &str) -> Result<AccountEvent, String> {
                     .build(),
             ))
         }
-        other => Err(format!("account kind {other} is not balance, order, or trade")),
+        other => Err(format!(
+            "account kind {other} is not balance, order, or trade"
+        )),
     }
 }
 
@@ -456,7 +466,10 @@ impl TastytradeTransport {
     /// feed cannot grow memory without bound.
     #[must_use]
     pub fn rejections(&self) -> Vec<String> {
-        common_core::sync::lock(&self.rejections).iter().cloned().collect()
+        common_core::sync::lock(&self.rejections)
+            .iter()
+            .cloned()
+            .collect()
     }
 
     fn bank_rejection(&self, reason: String) {
@@ -503,6 +516,76 @@ impl TastytradeTransport {
         .await?;
         self.put_cached(underlying, quote);
         Ok(quote)
+    }
+
+    /// Fetch one chain snapshot over REST: GET the snapshot envelope,
+    /// translate every entry through [`transform_chain_quote`], and return
+    /// the quotes. The wire speaks `{"quotes":[<chain-wire>, ...]}` with
+    /// each entry in the documented chain-wire shape; errors ride the same
+    /// `error.code` envelope as the quote path, so the terminal/transient
+    /// taxonomy is shared, never reimplemented. Any entry that will not
+    /// transform — or an empty snapshot — refuses the whole fetch: a
+    /// partial window never becomes half a file downstream. The bearer
+    /// token travels one call (never stored, never logged); an empty token
+    /// or an unconfigured base refuses before anything dials.
+    pub async fn fetch_chain_snapshot(
+        &self,
+        net: &NetCapability,
+        underlying: &str,
+        token: &str,
+    ) -> Result<Vec<ChainQuote>, TransportError> {
+        if self.config.base_url.is_empty() {
+            return Err(TransportError::Terminal(
+                "tastytrade base URL unconfigured: refusing to dial".to_owned(),
+            ));
+        }
+        validate_subscription(underlying).map_err(TransportError::Terminal)?;
+        if token.is_empty() {
+            return Err(TransportError::Terminal(
+                "tastytrade credentials absent: refusing to dial".to_owned(),
+            ));
+        }
+        let url = format!("{}/chains/{underlying}", self.config.base_url);
+        let attempts = self.config.max_attempts.max(1);
+        let bearer = format!("Bearer {token}");
+        common_core::retry::retry_async(
+            attempts,
+            self.config.backoff_base_ms,
+            RETRY_JITTER_PCT,
+            TransportError::is_retryable,
+            || async {
+                let body = net
+                    .http_get_with_headers(&url, &[("Authorization", bearer.as_str())])
+                    .await
+                    .map_err(|e| TransportError::Rest(e.to_string()))?;
+                let wire: serde_json::Value = serde_json::from_str(&body)
+                    .map_err(|e| TransportError::Transient(format!("response is not JSON: {e}")))?;
+                if let Some(failure) = envelope_error(&wire) {
+                    return Err(failure);
+                }
+                let entries = wire
+                    .get("quotes")
+                    .and_then(serde_json::Value::as_array)
+                    .ok_or_else(|| {
+                        TransportError::Transient("chain snapshot names no quotes array".to_owned())
+                    })?;
+                if entries.is_empty() {
+                    return Err(TransportError::Transient(
+                        "chain snapshot holds no quotes".to_owned(),
+                    ));
+                }
+                entries
+                    .iter()
+                    .map(|entry| transform_chain_quote(&entry.to_string()))
+                    .map(|parsed| {
+                        parsed.map_err(|reason| {
+                            TransportError::Transient(format!("chain entry refused: {reason}"))
+                        })
+                    })
+                    .collect()
+            },
+        )
+        .await
     }
 
     /// Run the stream loop under `scope`: every inbox message transforms to
@@ -581,7 +664,9 @@ impl Drop for StreamGuard<'_> {
 
 impl QuoteSource for TastytradeTransport {
     fn latest(&self, underlying: &str) -> Option<Quote> {
-        let quote = common_core::sync::lock(&self.cache).get(underlying).copied()?;
+        let quote = common_core::sync::lock(&self.cache)
+            .get(underlying)
+            .copied()?;
         if quote.age_secs(Utc::now()) > self.config.quote_max_age_secs {
             return None;
         }

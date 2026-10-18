@@ -26,13 +26,13 @@
 
 use super::*;
 use std::sync::{
-    Arc,
     atomic::{AtomicUsize, Ordering},
+    Arc,
 };
 
 use chrono::{TimeZone, Utc};
 use fluent_concurrency::io::net::NetCapability;
-use fluent_wvr::{CURRENT_CAPS, CapabilitySet};
+use fluent_wvr::{CapabilitySet, CURRENT_CAPS};
 use rust_decimal::Decimal;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -85,7 +85,9 @@ async fn read_head(stream: &mut tokio::net::TcpStream) {
 /// Loopback REST script: each connection pops the next canned body.
 /// Returns the base URL plus the served-request counter.
 async fn serve_script(script: Vec<String>) -> (String, Arc<AtomicUsize>) {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind");
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
     let base = format!("http://{}", listener.local_addr().expect("addr"));
     let count = Arc::new(AtomicUsize::new(0));
     let bodies = Arc::new(std::sync::Mutex::new(script));
@@ -112,7 +114,9 @@ async fn serve_script(script: Vec<String>) -> (String, Arc<AtomicUsize>) {
 /// then serves the script: the transport-level reset the envelope can never
 /// name, so it must ride the retryable path by construction.
 async fn serve_reset_once_then(script: Vec<String>) -> (String, Arc<AtomicUsize>) {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind");
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
     let base = format!("http://{}", listener.local_addr().expect("addr"));
     let count = Arc::new(AtomicUsize::new(0));
     let bodies = Arc::new(std::sync::Mutex::new(script));
@@ -252,9 +256,12 @@ async fn terminal_control_group_shows_zero_retries() {
 #[tokio::test]
 async fn transient_group_resolves_with_exact_retries() {
     // Two transients then success: exactly two retries, then the quote.
-    let (base, count) =
-        serve_script(vec![quote_body(), error_body("unavailable"), error_body("unavailable")])
-            .await;
+    let (base, count) = serve_script(vec![
+        quote_body(),
+        error_body("unavailable"),
+        error_body("unavailable"),
+    ])
+    .await;
     let quote = refresh(&transport_for(&base), "SPY")
         .await
         .expect("transients resolve");
@@ -263,18 +270,24 @@ async fn transient_group_resolves_with_exact_retries() {
 
     // One rate-limit then success.
     let (base, count) = serve_script(vec![quote_body(), error_body("rate_limited")]).await;
-    refresh(&transport_for(&base), "SPY").await.expect("rate limit resolves");
+    refresh(&transport_for(&base), "SPY")
+        .await
+        .expect("rate limit resolves");
     assert_eq!(count.load(Ordering::SeqCst), 2);
 
     // Named timeout envelope is transient, not terminal.
     let (base, count) = serve_script(vec![quote_body(), error_body("timeout")]).await;
-    refresh(&transport_for(&base), "SPY").await.expect("timeout resolves");
+    refresh(&transport_for(&base), "SPY")
+        .await
+        .expect("timeout resolves");
     assert_eq!(count.load(Ordering::SeqCst), 2);
 
     // Unknown codes retry bounded and resolve: the terminal set is closed,
     // everything else leans transient until max attempts fail it closed.
     let (base, count) = serve_script(vec![quote_body(), error_body("future_code")]).await;
-    refresh(&transport_for(&base), "SPY").await.expect("unknown resolves");
+    refresh(&transport_for(&base), "SPY")
+        .await
+        .expect("unknown resolves");
     assert_eq!(count.load(Ordering::SeqCst), 2);
 }
 
@@ -320,7 +333,10 @@ async fn ladder_precision_and_recall_are_one() {
         .await
         .map(|(_, name)| name);
         let correct = served.as_deref() == expected;
-        assert!(correct, "ladder rung diverged: served {served:?}, want {expected:?}");
+        assert!(
+            correct,
+            "ladder rung diverged: served {served:?}, want {expected:?}"
+        );
         if served.is_some() {
             served_total += 1;
         }
@@ -331,8 +347,14 @@ async fn ladder_precision_and_recall_are_one() {
             served_correct += 1;
         }
     }
-    assert_eq!(served_correct, served_total, "precision: served implies should-serve");
-    assert_eq!(served_correct, should_total, "recall: should-serve implies served");
+    assert_eq!(
+        served_correct, served_total,
+        "precision: served implies should-serve"
+    );
+    assert_eq!(
+        served_correct, should_total,
+        "recall: should-serve implies served"
+    );
     assert!(should_total > 0, "the mix must contain servable cases");
 }
 
@@ -343,11 +365,16 @@ async fn gapped_primary_backfills_before_resuming() {
     // and primary serves again.
     let (base, _) = serve_script(vec![quote_body()]).await;
     let primary = transport_for(&base);
-    let fallback: Arc<dyn QuoteSource> = Arc::new(FreshSource { quote: fresh_quote() });
+    let fallback: Arc<dyn QuoteSource> = Arc::new(FreshSource {
+        quote: fresh_quote(),
+    });
 
     primary.put_cached("SPY", fresh_quote());
     let (_, first) = crate::session::TradingSession::resolve_quote(
-        vec![primary.clone() as Arc<dyn QuoteSource>, Arc::clone(&fallback)],
+        vec![
+            primary.clone() as Arc<dyn QuoteSource>,
+            Arc::clone(&fallback),
+        ],
         "SPY",
     )
     .await
@@ -356,7 +383,10 @@ async fn gapped_primary_backfills_before_resuming() {
 
     primary.put_cached("SPY", stale_quote());
     let (_, gap) = crate::session::TradingSession::resolve_quote(
-        vec![primary.clone() as Arc<dyn QuoteSource>, Arc::clone(&fallback)],
+        vec![
+            primary.clone() as Arc<dyn QuoteSource>,
+            Arc::clone(&fallback),
+        ],
         "SPY",
     )
     .await
@@ -390,13 +420,20 @@ async fn slow_subscriber_lag_skips() {
     drop(inbox_tx);
 
     let first = out_rx.recv().await.expect("first event lands");
-    assert!(matches!(first, crate::venue::AccountEvent::BalanceUpdated(_)));
+    assert!(matches!(
+        first,
+        crate::venue::AccountEvent::BalanceUpdated(_)
+    ));
     scope.close().await;
     assert_eq!(
         transport.skipped_messages(),
         2,
         "slow subscriber skips lag, keeps the first"
     );
-    assert_eq!(transport.dropped_messages(), 0, "skips are lag, not malformed");
+    assert_eq!(
+        transport.dropped_messages(),
+        0,
+        "skips are lag, not malformed"
+    );
     assert_eq!(transport.active_streams(), 0);
 }

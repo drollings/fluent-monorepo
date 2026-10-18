@@ -10,8 +10,8 @@
 use protopyne_types::{Bar, Timeframe};
 
 use crate::key::TapeKey;
+use crate::registry::test_setup::{with_registry_caps, VENUE};
 use crate::registry::MarketRegistry;
-use crate::registry::test_setup::{VENUE, with_registry_caps};
 
 /// The stamp every snapshot test seals at, so a written record is
 /// deterministic across runs. A real seal passes the wall clock.

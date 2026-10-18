@@ -921,21 +921,16 @@ async fn stream_fanout_uses_injected_runtime() {
 #[test]
 fn parse_context_overflow_fork_shape() {
     // Our fork's refusal, bare.
-    let body = "request (8483 tokens) exceeds the available context size (8192 tokens), try increasing it";
-    assert_eq!(
-        parse_context_overflow(body),
-        Some((Some(8483), Some(8192)))
-    );
+    let body =
+        "request (8483 tokens) exceeds the available context size (8192 tokens), try increasing it";
+    assert_eq!(parse_context_overflow(body), Some((Some(8483), Some(8192))));
 }
 
 #[test]
 fn parse_context_overflow_json_wrapped() {
     // Same refusal JSON-wrapped (`{"error":{"message":...}}`).
     let body = r#"{"error":{"code":400,"message":"request (8483 tokens) exceeds the available context size (8192 tokens)","type":"invalid_request_error"}}"#;
-    assert_eq!(
-        parse_context_overflow(body),
-        Some((Some(8483), Some(8192)))
-    );
+    assert_eq!(parse_context_overflow(body), Some((Some(8483), Some(8192))));
 }
 
 #[test]
@@ -950,8 +945,14 @@ fn parse_context_overflow_openai_shape() {
 #[test]
 fn parse_context_overflow_generic_400_returns_none() {
     // A generic 400 without the overflow marker is not an overflow.
-    assert_eq!(parse_context_overflow(r#"{"error":{"message":"bad request"}}"#), None);
-    assert_eq!(parse_context_overflow("no free instance in group 'x'"), None);
+    assert_eq!(
+        parse_context_overflow(r#"{"error":{"message":"bad request"}}"#),
+        None
+    );
+    assert_eq!(
+        parse_context_overflow("no free instance in group 'x'"),
+        None
+    );
 }
 
 #[test]
@@ -963,8 +964,14 @@ fn context_overflow_error_semantics() {
         available_tokens: Some(8192),
         detail: "x".into(),
     };
-    assert!(!overflow.is_retryable(), "same-target retry is always doomed");
-    assert!(overflow.continues_chain(), "fallbacks and ladders still run");
+    assert!(
+        !overflow.is_retryable(),
+        "same-target retry is always doomed"
+    );
+    assert!(
+        overflow.continues_chain(),
+        "fallbacks and ladders still run"
+    );
     assert!(
         !DispatchError::Http("HTTP 400 Bad Request".into()).continues_chain(),
         "generic HTTP errors keep the old chain-stop meaning"
@@ -981,10 +988,20 @@ async fn retry_backend_does_not_retry_context_overflow() {
         available_tokens: Some(8192),
         detail: "request too large".into(),
     };
-    let retrying =
-        RetryBackend::new(StubBackend::new(vec![Err(overflow()), Ok(dummy_response())]), 3, 0);
+    let retrying = RetryBackend::new(
+        StubBackend::new(vec![Err(overflow()), Ok(dummy_response())]),
+        3,
+        0,
+    );
     let result = retrying
-        .complete(make_test_request("hi"), "m".into(), None, 5000, 30000, false)
+        .complete(
+            make_test_request("hi"),
+            "m".into(),
+            None,
+            5000,
+            30000,
+            false,
+        )
         .await;
     assert!(
         matches!(result, Err(DispatchError::ContextOverflow { .. })),
@@ -1000,7 +1017,8 @@ async fn complete_maps_400_overflow_body_to_context_overflow() {
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
-    let body = "request (8483 tokens) exceeds the available context size (8192 tokens), try increasing it";
+    let body =
+        "request (8483 tokens) exceeds the available context size (8192 tokens), try increasing it";
     let body_owned = body.to_string();
     let _server = tokio::spawn(async move {
         let (mut stream, _) = listener.accept().await.unwrap();
@@ -1034,7 +1052,14 @@ async fn complete_maps_400_overflow_body_to_context_overflow() {
 
     let backend = OpenAiChatBackend::new(reqwest::Client::new(), format!("http://{addr}"));
     let result = backend
-        .complete(make_test_request("hi"), "m".into(), None, 5000, 30000, false)
+        .complete(
+            make_test_request("hi"),
+            "m".into(),
+            None,
+            5000,
+            30000,
+            false,
+        )
         .await;
     match result {
         Err(DispatchError::ContextOverflow {

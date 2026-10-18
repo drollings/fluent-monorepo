@@ -18,7 +18,7 @@ use std::sync::Arc;
 
 use fluent_llm::tokens::estimate_tokens;
 use fluent_types::openai_wire::{RouterMessage, RouterMessageContent, RouterRequest};
-use fluent_types::{LOD5_LABEL, OriginRole};
+use fluent_types::{OriginRole, LOD5_LABEL};
 
 use crate::config::RoleEntry;
 use crate::node_store::ContentNodeStore;
@@ -107,7 +107,9 @@ pub(crate) fn maybe_compact_request(
         .map(|m| estimate_tokens(&m.role) + estimate_tokens(&m.content.to_string_lossy()))
         .sum();
     summary_allowance = summary_allowance.saturating_sub(system_tokens);
-    let nodes = ledger.get_session_nodes(session_id, MAX_SESSION_NODES).ok()?;
+    let nodes = ledger
+        .get_session_nodes(session_id, MAX_SESSION_NODES)
+        .ok()?;
     let skip = tail.len().min(nodes.len());
     let mut labels: Vec<String> = Vec::new();
     for node in nodes
@@ -137,7 +139,7 @@ pub(crate) fn maybe_compact_request(
         if text.trim().is_empty() {
             continue;
         }
-            let role = node.role.as_ref().map_or("msg", role_name);
+        let role = node.role.as_ref().map_or("msg", role_name);
         let line = format!("[{role}] {text}");
         let line_tokens = estimate_tokens(&line);
         if !labels.is_empty() && summary_allowance < line_tokens {
@@ -156,7 +158,10 @@ pub(crate) fn maybe_compact_request(
         .filter(|m| m.role == "system")
         .cloned()
         .collect();
-    let dropped = request.messages.len().saturating_sub(tail.len() + messages.len());
+    let dropped = request
+        .messages
+        .len()
+        .saturating_sub(tail.len() + messages.len());
     messages.push(RouterMessage {
         role: "system".into(),
         content: RouterMessageContent::Text(format!(

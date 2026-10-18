@@ -94,7 +94,10 @@ impl MatrixValue {
     /// Replace one cell by row and column; off-shape writes are refused
     /// by the caller, never clamped.
     pub fn set(&mut self, row: usize, col: usize, cell: Option<PineValue>) -> bool {
-        let Some(index) = row.checked_mul(self.cols).and_then(|base| base.checked_add(col)) else {
+        let Some(index) = row
+            .checked_mul(self.cols)
+            .and_then(|base| base.checked_add(col))
+        else {
             return false;
         };
         let Some(slot) = self.cells.get_mut(index) else {

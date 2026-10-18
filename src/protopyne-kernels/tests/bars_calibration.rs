@@ -108,14 +108,21 @@ fn thresholds_frozen() {
 fn drift_report_separates_measurement_from_decision() {
     let ring = ring_with_volumes(&[400.0, 600.0]);
     let report = ring.drift_report(900.0);
-    assert_close(report.measured_drift_pct.unwrap_or(f64::NAN), 100.0 * 100.0 / 900.0, "measured drift");
+    assert_close(
+        report.measured_drift_pct.unwrap_or(f64::NAN),
+        100.0 * 100.0 / 900.0,
+        "measured drift",
+    );
     assert_eq!(report.threshold_pct, BarsConfig::DEFAULT_DRIFT_THRESHOLD);
     assert_eq!(report.decision, DriftDecision::Pull);
     assert!(report.pull_needed());
     assert!(!report.healthy());
     // Same measurement, looser verdict: the decision derives from the
     // threshold, the measurement stands on its own.
-    let loose = BarsConfig { drift_threshold: 20.0, ..test_config() };
+    let loose = BarsConfig {
+        drift_threshold: 20.0,
+        ..test_config()
+    };
     let loose_ring = ring_with_volumes_in(&loose, &[400.0, 600.0]);
     let loose_report = loose_ring.drift_report(900.0);
     assert_close(
@@ -149,7 +156,11 @@ fn pull_must_fire_set_precision_one() {
     for (volumes, reference, want_drift) in &cases {
         let mut ring = ring_with_volumes(volumes);
         let report = ring.drift_report(*reference);
-        assert_close(report.measured_drift_pct.unwrap_or(f64::NAN), *want_drift, "hand drift");
+        assert_close(
+            report.measured_drift_pct.unwrap_or(f64::NAN),
+            *want_drift,
+            "hand drift",
+        );
         fired.push(report.decision == DriftDecision::Pull);
         let confirm = ring.confirm(&ConfirmedBar {
             bar_open_ms: 0,
@@ -233,7 +244,11 @@ fn pull_must_not_fire_controls_zero_false_fires() {
     // Zero reference with volume aboard: Pine guards to 0.0, never pulls.
     let quirk = ring_with_volumes(&[60.0, 40.0]);
     let quirk_report = quirk.drift_report(0.0);
-    assert_eq!(quirk_report.measured_drift_pct, Some(0.0), "Pine zero-guard");
+    assert_eq!(
+        quirk_report.measured_drift_pct,
+        Some(0.0),
+        "Pine zero-guard"
+    );
     if quirk_report.pull_needed() {
         false_fires += 1;
     }
@@ -300,10 +315,19 @@ fn gap_sparse_dense_matrix() {
     // four skipped buckets. Sparse stores only the traded buckets; dense
     // materializes exact `O=H=L=C=last_close, v=0` placeholders.
     for fill_gaps in [false, true] {
-        let config = BarsConfig { fill_gaps, ..test_config() };
+        let config = BarsConfig {
+            fill_gaps,
+            ..test_config()
+        };
         let mut ring = BarRing::new(&config).expect("config valid");
         ring.on_bar_open(100.0, 100.0, 100.0, 100.0, T0);
-        let legs = |price: f64, cum: f64| BarTick { open: 100.0, high: 100.0, low: 100.0, close: price, volume: cum };
+        let legs = |price: f64, cum: f64| BarTick {
+            open: 100.0,
+            high: 100.0,
+            low: 100.0,
+            close: price,
+            volume: cum,
+        };
         ring.ingest_tick(legs(100.0, 0.0), T0 + 5_000);
         ring.ingest_tick(legs(100.0, 50.0), T0 + 10_000);
         ring.ingest_tick(legs(101.0, 80.0), T0 + 305_000);
@@ -314,7 +338,11 @@ fn gap_sparse_dense_matrix() {
         if fill_gaps {
             assert_eq!(outcome.finalized.len(), 5, "trade plus four placeholders");
             for (at, candle) in outcome.finalized.iter().skip(1).enumerate() {
-                assert_eq!(candle.ts_ms, T0 + (at as i64 + 1) * LTF, "grid-aligned placeholder");
+                assert_eq!(
+                    candle.ts_ms,
+                    T0 + (at as i64 + 1) * LTF,
+                    "grid-aligned placeholder"
+                );
                 assert_eq!(candle.o, 101.0, "placeholder opens at last close");
                 assert_eq!(candle.h, 101.0, "placeholder high equals last close");
                 assert_eq!(candle.l, 101.0, "placeholder low equals last close");
@@ -326,7 +354,10 @@ fn gap_sparse_dense_matrix() {
         } else {
             assert_eq!(outcome.finalized.len(), 1, "sparse stores the trade only");
             assert_eq!(ring.len(), 1, "sparse ring holds no placeholders");
-            assert!(ring.iter().all(|candle| candle.volume > 0.0), "no zero-volume rows");
+            assert!(
+                ring.iter().all(|candle| candle.volume > 0.0),
+                "no zero-volume rows"
+            );
         }
     }
 }
@@ -349,7 +380,14 @@ fn rollback_and_fence_control_group() {
     ring.ingest_tick(legs(101.0, 101.0, 100.0, 60.0), T0 + 10_000);
     ring.ingest_tick(legs(100.5, 101.0, 100.0, 20.0), T0 + 15_000);
     assert_eq!(ring.rollback_count(), 1, "volume decrease rolls back");
-    let bar = ConfirmedBar { bar_open_ms: T0, o: 100.0, h: 101.0, l: 100.0, c: 100.5, volume: 0.0 };
+    let bar = ConfirmedBar {
+        bar_open_ms: T0,
+        o: 100.0,
+        h: 101.0,
+        l: 100.0,
+        c: 100.5,
+        volume: 0.0,
+    };
     let first = ring.confirm(&bar);
     assert!(first.confirmed, "post-rollback confirm lands");
     assert!(!first.pull_needed, "zero-reference guard stays quiet");
@@ -371,7 +409,11 @@ fn drift_reports_never_cache() {
     let third = ring.drift_report(950.0);
     assert_eq!(first, second, "same input repeats identically");
     assert_eq!(third.decision, DriftDecision::Pull, "new input re-derives");
-    assert_close(third.measured_drift_pct.unwrap_or(f64::NAN), 100.0 * 50.0 / 950.0, "fresh measurement");
+    assert_close(
+        third.measured_drift_pct.unwrap_or(f64::NAN),
+        100.0 * 50.0 / 950.0,
+        "fresh measurement",
+    );
     assert_eq!(ring.pull_count(), 1, "reports serve no pulls");
     assert_eq!(ring.fetch_check_count(), 0, "reports run no fetch checks");
     assert_close(ring.total_volume(), 1000.0, "totals untouched");

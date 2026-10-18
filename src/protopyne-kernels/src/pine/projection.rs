@@ -25,7 +25,7 @@
 
 use thiserror::Error;
 
-use super::egui_parity::{ParityVerdict, parity_for};
+use super::egui_parity::{parity_for, ParityVerdict};
 use super::eval::{
     DrawingArg, DrawingEvent, DrawingEventKind, HlineCapture, PlotCapture, PlotShapeCapture,
     RunOutcome,
@@ -181,7 +181,11 @@ impl CursorSpace {
     /// Map one run's evaluated positions to their absolute bars.
     fn of(outcome: &RunOutcome) -> Self {
         Self {
-            absolute: outcome.snapshots.iter().map(|snapshot| snapshot.bar).collect(),
+            absolute: outcome
+                .snapshots
+                .iter()
+                .map(|snapshot| snapshot.bar)
+                .collect(),
         }
     }
 
@@ -265,7 +269,10 @@ fn series_of(capture: &PlotCapture, space: &CursorSpace) -> Option<PlotPrimitive
             }
         }
     }
-    Some(PlotPrimitive::Series { title: capture.title.clone(), values })
+    Some(PlotPrimitive::Series {
+        title: capture.title.clone(),
+        values,
+    })
 }
 
 /// One `plotshape()` call site becomes one marker per resolved cell, each
@@ -297,11 +304,16 @@ fn level_of(capture: &HlineCapture) -> Result<Option<PlotPrimitive>, ProjectionR
             (None, Some(price)) => level = Some(price),
             (Some(seen), Some(price)) if seen.to_bits() == price.to_bits() => {}
             (Some(_), Some(_)) => {
-                return Err(ProjectionRefusal::VaryingLevel { title: capture.title.clone() });
+                return Err(ProjectionRefusal::VaryingLevel {
+                    title: capture.title.clone(),
+                });
             }
         }
     }
-    Ok(level.map(|price| PlotPrimitive::Level { title: capture.title.clone(), price }))
+    Ok(level.map(|price| PlotPrimitive::Level {
+        title: capture.title.clone(),
+        price,
+    }))
 }
 
 /// One placed `label.new`, or `None` when its geometry is unplaceable — or
@@ -330,7 +342,12 @@ fn area_of(event: &DrawingEvent, space: &CursorSpace) -> Option<PlotPrimitive> {
     if !space.projects(left) || !space.projects(right) {
         return None;
     }
-    Some(PlotPrimitive::Area { left, top, right, bottom })
+    Some(PlotPrimitive::Area {
+        left,
+        top,
+        right,
+        bottom,
+    })
 }
 
 /// One live drawing object replayed from its lifecycle: creation plus
@@ -359,21 +376,24 @@ fn replay_drawings(events: &[DrawingEvent]) -> Vec<DrawingState> {
                 deleted: false,
             }),
             DrawingEventKind::Updated => {
-                if let Some(state) = states.iter_mut().find(|state| state.created.key == event.key)
+                if let Some(state) = states
+                    .iter_mut()
+                    .find(|state| state.created.key == event.key)
                 {
                     // A repaint leaves the creation geometry paintable; a
                     // move, a resize, new content, an empty property list, or
                     // an unknown write keeps the flag. Empty means no producer
                     // named what changed, so it fails closed as a move.
-                    if event.props.is_empty()
-                        || event.props.iter().any(|prop| !is_cosmetic(prop))
-                    {
+                    if event.props.is_empty() || event.props.iter().any(|prop| !is_cosmetic(prop)) {
                         state.mutated = true;
                     }
                 }
             }
             DrawingEventKind::Deleted => {
-                if let Some(state) = states.iter_mut().find(|state| state.created.key == event.key) {
+                if let Some(state) = states
+                    .iter_mut()
+                    .find(|state| state.created.key == event.key)
+                {
                     state.deleted = true;
                 }
             }
@@ -386,7 +406,10 @@ fn replay_drawings(events: &[DrawingEvent]) -> Vec<DrawingState> {
 /// placement/content mutations refuse; repaints place the creation
 /// geometry; every other namespace refuses as unsupported (tables first).
 /// Unplaceable geometry skips, like `na` coordinates.
-fn drawings_of(events: &[DrawingEvent], space: &CursorSpace) -> Result<Vec<PlotPrimitive>, ProjectionRefusal> {
+fn drawings_of(
+    events: &[DrawingEvent],
+    space: &CursorSpace,
+) -> Result<Vec<PlotPrimitive>, ProjectionRefusal> {
     let mut primitives = Vec::new();
     for state in replay_drawings(events) {
         if state.object != "label" && state.object != "box" {
@@ -398,7 +421,9 @@ fn drawings_of(events: &[DrawingEvent], space: &CursorSpace) -> Result<Vec<PlotP
             continue;
         }
         if state.mutated {
-            return Err(ProjectionRefusal::Mutated { key: state.created.key.clone() });
+            return Err(ProjectionRefusal::Mutated {
+                key: state.created.key.clone(),
+            });
         }
         gate(&format!("{}.new", state.object))?;
         let placed = if state.object == "label" {
@@ -427,7 +452,12 @@ pub fn project(outcome: &RunOutcome) -> Result<OverlayProjection, ProjectionRefu
     let mut primitives = Vec::new();
     if !outcome.plots.is_empty() {
         gate("plot")?;
-        primitives.extend(outcome.plots.iter().filter_map(|plot| series_of(plot, &space)));
+        primitives.extend(
+            outcome
+                .plots
+                .iter()
+                .filter_map(|plot| series_of(plot, &space)),
+        );
     }
     if !outcome.plotcandles.is_empty() {
         gate("plotcandle")?;
@@ -443,7 +473,12 @@ pub fn project(outcome: &RunOutcome) -> Result<OverlayProjection, ProjectionRefu
     }
     if !outcome.plotshapes.is_empty() {
         gate("plotshape()")?;
-        primitives.extend(outcome.plotshapes.iter().flat_map(|shape| markers_of(shape, &space)));
+        primitives.extend(
+            outcome
+                .plotshapes
+                .iter()
+                .flat_map(|shape| markers_of(shape, &space)),
+        );
     }
     if !outcome.hlines.is_empty() {
         gate("hline()")?;

@@ -9,10 +9,10 @@ use super::*;
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 
+use chrono::TimeZone as _;
 use fluent_egui::{
     candle_body_width, IndicatorStyle, CANDLE_BODY_FRACTION, CANDLE_GAP_THRESHOLD_PX,
 };
-use chrono::TimeZone as _;
 use protopyne_chart_model::ChartRow;
 use protopyne_view::{
     ArmResponse, ChartBar, ChartBars, GatewayError, HealthView, JournalRowView, MockGateway,
@@ -115,19 +115,19 @@ impl TerminalGateway for ScriptGateway {
 }
 
 #[test]
-fn workspace_boots_with_gld_default_and_hot_slotted_integration_lite_and_fast_mas() {
+fn workspace_boots_with_spy_default_and_hot_slotted_integration_lite_and_fast_mas() {
     let gateway = MockGateway::new();
     let workspace = ChartWorkspace::with_gateway(&gateway).expect("the workspace boots");
 
     assert_eq!(
         workspace.active_symbol(),
-        "GLD",
-        "the top bar defaults to the GLD ticker"
+        "SPY",
+        "the top bar defaults to the SPY ticker"
     );
     assert_eq!(
         workspace.timeframe(),
-        TimeframeKey::M15,
-        "the default timeframe is 15M"
+        TimeframeKey::M5,
+        "the default timeframe is five minutes"
     );
     let ids = workspace.slot_ids();
     assert!(
@@ -175,7 +175,7 @@ fn workspace_boots_with_gld_default_and_hot_slotted_integration_lite_and_fast_ma
 fn workspace_symbol_and_timeframe_switches_pull_from_gateway_and_rebind_2d_interaction() {
     let gateway = ScriptGateway::new();
     let mut workspace = ChartWorkspace::with_gateway(&gateway).expect("the workspace boots");
-    let gld_rows = workspace.rows().len();
+    let spy_rows = workspace.rows().len();
 
     // Pan the time axis, then prove the switch resets the 2D bounds.
     workspace.step_interaction(
@@ -196,13 +196,13 @@ fn workspace_symbol_and_timeframe_switches_pull_from_gateway_and_rebind_2d_inter
     );
 
     workspace
-        .switch_symbol("SPY", &gateway)
+        .switch_symbol("GLD", &gateway)
         .expect("a symbol switch pulls fresh history");
-    assert_eq!(workspace.active_symbol(), "SPY", "the symbol switched");
+    assert_eq!(workspace.active_symbol(), "GLD", "the symbol switched");
     assert_ne!(
         workspace.rows().len(),
-        gld_rows,
-        "SPY pulled a different history"
+        spy_rows,
+        "GLD pulled a different history"
     );
     assert!(
         workspace
@@ -225,8 +225,8 @@ fn workspace_symbol_and_timeframe_switches_pull_from_gateway_and_rebind_2d_inter
 
     let calls = gateway.calls();
     assert!(
-        calls.iter().any(|(symbol, _)| symbol == "SPY"),
-        "SPY was pulled: {calls:?}"
+        calls.iter().any(|(symbol, _)| symbol == "GLD"),
+        "GLD was pulled: {calls:?}"
     );
     assert!(
         calls.iter().any(|(_, timeframe)| timeframe == "5M"),
@@ -511,7 +511,9 @@ fn crosshair_overlay_paints_when_the_pointer_is_in_the_plot() {
             &ThemeConfig::default(),
         )
         .expect("the crosshair paints");
-        assert!(readout.is_some(), "the pointer names a bar for the oscillator band");
+        let (x, index) = readout.expect("the pointer names a bar for the oscillator band");
+        assert!(x.is_finite(), "the band anchor is a finite pixel");
+        assert!(index < rows.len(), "the named bar is inside the rows");
     });
 }
 
@@ -534,6 +536,27 @@ fn ramp_rows(count: usize) -> Vec<ChartRow> {
 
 /// Rows on the quarter-hour grid from an hour boundary, so resampling pins
 /// the bucket anchor instead of the fixture's layout.
+/// The Range button opens the interactive dialog and seeds its draft from the
+/// live window; a second press closes it. Nothing on the chart moves until OK.
+#[test]
+fn range_menu_toggle_seeds_and_closes_the_dialog() {
+    let mut workspace = ChartWorkspace::with_rows(ramp_rows(200)).expect("workspace boots");
+    assert!(!workspace.range_menu_open, "the dialog starts closed");
+    workspace
+        .apply_top_bar_action(TopBarAction::ToggleRangeMenu, None)
+        .expect("range toggle applies");
+    assert!(workspace.range_menu_open, "the button opens the dialog");
+    assert_eq!(
+        workspace.range_draft,
+        Some(DEFAULT_RANGE),
+        "the live range is drafted"
+    );
+    workspace
+        .apply_top_bar_action(TopBarAction::ToggleRangeMenu, None)
+        .expect("range toggle applies");
+    assert!(!workspace.range_menu_open, "a second press closes it");
+}
+
 fn grid_rows(start_sec: i64, count: usize) -> Vec<ChartRow> {
     (0..count)
         .map(|i| {
@@ -566,27 +589,27 @@ fn seeded_timeframes_switch_the_loaded_candles_and_resample_coarser_keys() {
 
     assert_eq!(
         workspace.timeframe(),
-        TimeframeKey::M15,
-        "the default timeframe is selected"
+        TimeframeKey::M5,
+        "the default five-minute timeframe stays active"
     );
     assert_eq!(
         workspace.rows().len(),
-        8,
-        "the seeded 15M history is active"
+        12,
+        "the seeded 5M history is active"
     );
 
-    workspace
-        .select_timeframe(TimeframeKey::M1)
-        .expect("1M selects");
-    assert_eq!(
-        workspace.rows().len(),
-        20,
-        "1M loads its own candles, not the 15M set"
-    );
     workspace
         .select_timeframe(TimeframeKey::M5)
         .expect("5M selects");
     assert_eq!(workspace.rows().len(), 12, "5M loads its own candles");
+    workspace
+        .select_timeframe(TimeframeKey::M15)
+        .expect("15M selects");
+    assert_eq!(
+        workspace.rows().len(),
+        8,
+        "15M loads its own candles, not another key's set"
+    );
 
     workspace
         .select_timeframe(TimeframeKey::H1)
@@ -718,9 +741,9 @@ fn a_full_day_grid_folds_whole_hours_and_a_whole_day_while_a_session_day_folds_n
     );
 
     // A session-shaped day — 26 quarter-hours, 6.5 hours of prints — fills
-    // six whole hours but no daily bucket: calendar-day folding of session
-    // data legitimately emits no daily bars, and loading a native daily file
-    // is the supported answer.
+    // six whole hours, and folds to one partial daily bar: the display fold
+    // keeps partial day-and-coarser buckets so a session day reads as a daily
+    // bar instead of nothing.
     let mut session = ChartWorkspace::new().expect("the workspace boots");
     session
         .seed_history(TimeframeKey::M15, grid_rows(midnight_sec, 26))
@@ -736,9 +759,15 @@ fn a_full_day_grid_folds_whole_hours_and_a_whole_day_while_a_session_day_folds_n
     session
         .select_timeframe(TimeframeKey::D1)
         .expect("1D selects");
-    assert!(
-        session.rows().is_empty(),
-        "26 quarter-hours cannot evidence a whole day"
+    assert_eq!(
+        session.rows().len(),
+        1,
+        "a session day emits one partial daily bar"
+    );
+    assert_eq!(
+        session.rows()[0].time,
+        midnight_sec,
+        "the daily bar stamps its UTC bucket start"
     );
 }
 
@@ -1450,11 +1479,19 @@ fn frame_path_borrows_windows_instead_of_cloning_them() {
 fn price_readouts_default_to_cents_and_widen_below_a_dollar() {
     assert_eq!(price_decimals(652.28), 2, "the default is cents");
     assert_eq!(price_decimals(100.5), 2);
-    assert_eq!(price_decimals(0.0), 2, "zero reads the default, not a microscope");
+    assert_eq!(
+        price_decimals(0.0),
+        2,
+        "zero reads the default, not a microscope"
+    );
     assert_eq!(price_decimals(0.5), 3);
     assert_eq!(price_decimals(0.05), 4);
     assert_eq!(price_decimals(0.005), 5);
-    assert_eq!(price_decimals(0.0005), 6, "the widening stops at six places");
+    assert_eq!(
+        price_decimals(0.0005),
+        6,
+        "the widening stops at six places"
+    );
     assert_eq!(price_decimals(f64::NAN), 2, "non-finite falls back");
     assert_eq!(fmt_price(652.281), "652.28");
     assert_eq!(fmt_price(0.051), "0.0510");
@@ -1483,33 +1520,49 @@ fn grid_marks_cull_to_the_viewport_window() {
         .timestamp();
     // Two hours of one-minute bars: the hour boundary sits at index 60.
     let rows: Vec<ChartRow> = (0..120u32)
-        .map(|i| {
-            ChartRow {
-                time: start + i64::from(i) * 60,
-                open: 100.0,
-                high: 101.0,
-                low: 99.0,
-                close: 100.5,
-                volume: 10,
-            }
+        .map(|i| ChartRow {
+            time: start + i64::from(i) * 60,
+            open: 100.0,
+            high: 101.0,
+            low: 99.0,
+            close: 100.5,
+            volume: 10,
         })
         .collect();
     // A 160px window at 8px bars offset to indices 40..60.
-    let viewport = Viewport::new(PriceScaleMode::Normal, 90.0, 110.0, 400.0, 8.0, 100.0, false)
-        .expect("valid viewport")
-        .with_x_offset(-320.0)
-        .expect("offset applies");
+    let viewport = Viewport::new(
+        PriceScaleMode::Normal,
+        90.0,
+        110.0,
+        400.0,
+        8.0,
+        100.0,
+        false,
+    )
+    .expect("valid viewport")
+    .with_x_offset(-320.0)
+    .expect("offset applies");
     let marks = visible_time_marks(viewport, &rows, 60, 160.0);
     let (cull_start, cull_end) = viewport.culled_bar_range(160.0, rows.len());
-    assert!(!marks.is_empty(), "the hour boundary lands in the culled range");
+    assert!(
+        !marks.is_empty(),
+        "the hour boundary lands in the culled range"
+    );
     let cull_lines: Vec<usize> = time_grid_lines(&viewport, &rows, 60)
         .into_iter()
         .map(|line| line.index)
         .filter(|index| *index >= cull_start && *index < cull_end)
         .collect();
-    assert_eq!(marks.len(), cull_lines.len(), "culling keeps every in-range boundary");
+    assert_eq!(
+        marks.len(),
+        cull_lines.len(),
+        "culling keeps every in-range boundary"
+    );
     for (mark, index) in marks.iter().zip(cull_lines.iter()) {
-        assert_eq!(mark.time, rows[*index].time, "each mark carries its bar time");
+        assert_eq!(
+            mark.time, rows[*index].time,
+            "each mark carries its bar time"
+        );
         assert_eq!(
             mark.x.to_bits(),
             viewport.index_to_x(*index).to_bits(),
@@ -1521,8 +1574,8 @@ fn grid_marks_cull_to_the_viewport_window() {
 #[test]
 fn symbol_catalog_matches_the_shared_source() {
     let shared = protopyne_view::symbol_catalog();
-    let catalog = build_symbol_catalog(&protopyne_view::symbol_catalog())
-        .expect("the symbol catalog builds");
+    let catalog =
+        build_symbol_catalog(&protopyne_view::symbol_catalog()).expect("the symbol catalog builds");
     assert_eq!(
         catalog.len(),
         shared.len(),
@@ -1551,17 +1604,15 @@ fn symbol_catalog_matches_the_shared_source() {
 #[test]
 fn workspace_session_breaks_skip_identical_republishes() {
     use fluent_egui::Viewport;
-    use protopyne_chart_model::{DailySessionProvider, find_session_breaks};
+    use protopyne_chart_model::{find_session_breaks, DailySessionProvider};
     use protopyne_chart_scale::PriceScaleMode;
     use protopyne_types::Bar;
     fn bar_at(day: u32, hour: u32) -> Bar {
         Bar::new()
-            .ts(
-                chrono::Utc
-                    .with_ymd_and_hms(2026, 1, day, hour, 0, 0)
-                    .single()
-                    .expect("valid time"),
-            )
+            .ts(chrono::Utc
+                .with_ymd_and_hms(2026, 1, day, hour, 0, 0)
+                .single()
+                .expect("valid time"))
             .o("100".parse().expect("decimal"))
             .h("101".parse().expect("decimal"))
             .l("99".parse().expect("decimal"))

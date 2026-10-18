@@ -19,17 +19,23 @@ use fluent_wvr::prelude::*;
 use fluent_wvr::{Describable, FieldAccess};
 use protopyne_chart_model::ChartRow;
 use protopyne_kernels::bars::estimate_delta_volume_estimated;
-use protopyne_types::{Validate, check_for_execute, valid_output};
+use protopyne_types::{check_for_execute, valid_output, Validate};
 
 use fluent_egui::{
-    EguiError, IndicatorStyle, ReadoutValue, SlotAttachment, ThemeConfig, Viewport,
     needs_column_aggregation, opacity_from_transparency, paint_oscillator_styled,
-    proportional_line_points, sampled_line_points, translate_points, visible_rows,
+    proportional_line_points, sampled_line_points, translate_points, visible_rows, EguiError,
+    IndicatorStyle, ReadoutValue, SlotAttachment, ThemeConfig, Viewport,
 };
 
 /// Plan-node namespace for the profile's per-bar primitive series.
-pub const PROFILE_NODES: [&str; 6] =
-    ["dvol:high", "dvol:low", "dvol:close", "dvol:volume", "dvol:buy", "dvol:vwap"];
+pub const PROFILE_NODES: [&str; 6] = [
+    "dvol:high",
+    "dvol:low",
+    "dvol:close",
+    "dvol:volume",
+    "dvol:buy",
+    "dvol:vwap",
+];
 
 /// Stable plugin id (also the hot-slot id).
 pub const DELTA_VOLUME_PROFILE_ID: &str = "delta_volume_profile";
@@ -165,7 +171,12 @@ pub fn build_profile(bars: &[ProfileBar], bins: usize, value_area_pct: f64) -> D
         return empty;
     }
     let mut bins_out = vec![
-        VolumeBin { price_low: low, price_high: low, volume: 0.0, imbalance: 0.0 };
+        VolumeBin {
+            price_low: low,
+            price_high: low,
+            volume: 0.0,
+            imbalance: 0.0
+        };
         bins
     ];
     for (index, bin) in bins_out.iter_mut().enumerate() {
@@ -179,7 +190,11 @@ pub fn build_profile(bars: &[ProfileBar], bins: usize, value_area_pct: f64) -> D
         if !total.is_finite() || total <= 0.0 {
             continue;
         }
-        let buy = if bar.buy.is_finite() { bar.buy.clamp(0.0, total) } else { total * 0.5 };
+        let buy = if bar.buy.is_finite() {
+            bar.buy.clamp(0.0, total)
+        } else {
+            total * 0.5
+        };
         let typical = (bar.high + bar.low + bar.close) / 3.0;
         if typical.is_finite() {
             vwap_num += typical * total;
@@ -205,17 +220,31 @@ pub fn build_profile(bars: &[ProfileBar], bins: usize, value_area_pct: f64) -> D
     }
     let max_volume = bins_out.iter().map(|bin| bin.volume).fold(0.0, f64::max);
     let poc = if max_volume > 0.0 {
-        bins_out.iter().enumerate().max_by(|a, b| a.1.volume.total_cmp(&b.1.volume)).map(|(i, _)| i)
+        bins_out
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.volume.total_cmp(&b.1.volume))
+            .map(|(i, _)| i)
     } else {
         None
     };
-    let (vah, val) = poc.map_or((None, None), |index| value_area(&bins_out, index, value_area_pct));
+    let (vah, val) = poc.map_or((None, None), |index| {
+        value_area(&bins_out, index, value_area_pct)
+    });
     let vwap = (vwap_den > 0.0).then_some(vwap_num / vwap_den);
     // The mean is over every requested bin, empty ones included, exactly as
     // the reference divides its total by the array size.
     let total: f64 = bins_out.iter().map(|bin| bin.volume).sum();
     let avg_volume = total / bins_out.len() as f64;
-    DeltaVolumeProfile { bins: bins_out, poc, vah, val, vwap, max_volume, avg_volume }
+    DeltaVolumeProfile {
+        bins: bins_out,
+        poc,
+        vah,
+        val,
+        vwap,
+        max_volume,
+        avg_volume,
+    }
 }
 
 /// The bin index a price falls in, clamped to the valid range.
@@ -246,8 +275,16 @@ fn value_area(bins: &[VolumeBin], poc: usize, pct: f64) -> (Option<f64>, Option<
     let mut high = poc;
     let mut acc = bins[poc].volume;
     while acc < target && (low > 0 || high + 1 < bins.len()) {
-        let below = if low > 0 { bins[low - 1].volume } else { f64::NEG_INFINITY };
-        let above = if high + 1 < bins.len() { bins[high + 1].volume } else { f64::NEG_INFINITY };
+        let below = if low > 0 {
+            bins[low - 1].volume
+        } else {
+            f64::NEG_INFINITY
+        };
+        let above = if high + 1 < bins.len() {
+            bins[high + 1].volume
+        } else {
+            f64::NEG_INFINITY
+        };
         if above >= below {
             high += 1;
             acc += bins[high].volume;
@@ -307,10 +344,7 @@ impl BinFill {
 /// Resolve the profile's two gradient endpoints for one indicator: the bull
 /// and bear slots, through that slot's [`IndicatorStyle`] so the Style tab can
 /// restyle the profile exactly as it restyles the indicator's lines.
-pub fn bin_palette(
-    style: &IndicatorStyle,
-    theme: &ThemeConfig,
-) -> Result<BinPalette, EguiError> {
+pub fn bin_palette(style: &IndicatorStyle, theme: &ThemeConfig) -> Result<BinPalette, EguiError> {
     let channel = |color: egui::Color32| [color.r(), color.g(), color.b()];
     Ok(BinPalette {
         support: channel(style.color(theme, "bull")?),
@@ -368,16 +402,24 @@ pub fn imbalance_ratio(bin: &VolumeBin) -> f64 {
 /// exactly as the reference returns `COLOR_NONE`; the caller then paints
 /// nothing for that bin rather than substituting neutral gray.
 #[must_use]
-pub fn bin_fill(profile: &DeltaVolumeProfile, index: usize, palette: &BinPalette) -> Option<BinFill> {
+pub fn bin_fill(
+    profile: &DeltaVolumeProfile,
+    index: usize,
+    palette: &BinPalette,
+) -> Option<BinFill> {
     let bin = profile.bins.get(index)?;
     if !bin.volume.is_finite() || bin.volume < VOLUME_EPSILON {
         return None;
     }
     let imbalance = imbalance_ratio(bin);
     let avg_volume = profile.avg_volume;
-    let volume_ratio =
-        if avg_volume.is_finite() && avg_volume > VOLUME_EPSILON { bin.volume / avg_volume } else { 1.0 };
-    let amplified = (0.5 + imbalance.abs().powf(AMPLIFY_EXPONENT) * imbalance.signum() * AMPLIFY_GAIN)
+    let volume_ratio = if avg_volume.is_finite() && avg_volume > VOLUME_EPSILON {
+        bin.volume / avg_volume
+    } else {
+        1.0
+    };
+    let amplified = (0.5
+        + imbalance.abs().powf(AMPLIFY_EXPONENT) * imbalance.signum() * AMPLIFY_GAIN)
         .clamp(0.0, 1.0);
     let volume_strength = (volume_ratio / VOLUME_STRENGTH_DIVISOR).powi(2);
     // Pine `int()` truncates toward zero before the clamp.
@@ -441,9 +483,10 @@ pub fn profile_boxes(
         let Some(fill) = bin_fill(profile, index, palette) else {
             continue;
         };
-        let (Some(y_high), Some(y_low)) =
-            (viewport.windowed_y(bin.price_high), viewport.windowed_y(bin.price_low))
-        else {
+        let (Some(y_high), Some(y_low)) = (
+            viewport.windowed_y(bin.price_high),
+            viewport.windowed_y(bin.price_low),
+        ) else {
             continue;
         };
         let (top, bottom) = (y_high.min(y_low), y_high.max(y_low));
@@ -452,7 +495,12 @@ pub fn profile_boxes(
             egui::pos2(anchor_x - width, origin.y + top),
             egui::pos2(anchor_x, origin.y + bottom),
         );
-        boxes.push(ProfileBox { rect, bin: index, fill, poc: profile.poc == Some(index) });
+        boxes.push(ProfileBox {
+            rect,
+            bin: index,
+            fill,
+            poc: profile.poc == Some(index),
+        });
     }
     boxes
 }
@@ -464,7 +512,7 @@ pub fn profile_boxes(
 /// fragment the one settings schema the modal renders from.
 #[allow(clippy::struct_excessive_bools)]
 #[derive(
-    Debug, Clone, bon::Builder, serde::Serialize, serde::Deserialize, FieldAccess, Describable
+    Debug, Clone, bon::Builder, serde::Serialize, serde::Deserialize, FieldAccess, Describable,
 )]
 #[builder(start_fn = new)]
 pub struct DeltaVolumeProfileConfig {
@@ -590,7 +638,10 @@ impl WorkUnit for DeltaVolumeProfileConfig {
 
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         check_for_execute(self, "delta volume profile config invalid")?;
-        Ok(valid_output(format!("delta volume profile ready ({} bins)", self.bins)))
+        Ok(valid_output(format!(
+            "delta volume profile ready ({} bins)",
+            self.bins
+        )))
     }
 }
 
@@ -670,7 +721,12 @@ fn profile_from_series(
     ) else {
         return build_profile(&[], bins, value_area_pct);
     };
-    let count = high.len().min(low.len()).min(close.len()).min(volume.len()).min(buy.len());
+    let count = high
+        .len()
+        .min(low.len())
+        .min(close.len())
+        .min(volume.len())
+        .min(buy.len());
     let bars: Vec<ProfileBar> = (0..count)
         .filter_map(|index| {
             Some(ProfileBar {
@@ -721,7 +777,19 @@ impl crate::indicators::ChartIndicator for DeltaVolumeProfileIndicator {
     }
 
     fn plan_nodes(&self, _config: &dyn Component) -> Result<Vec<String>, EguiError> {
-        Ok(PROFILE_NODES.iter().map(|node| (*node).to_owned()).collect())
+        Ok(PROFILE_NODES
+            .iter()
+            .map(|node| (*node).to_owned())
+            .collect())
+    }
+
+    fn config_key(&self, config: &dyn Component) -> Result<u64, EguiError> {
+        let config = fluent_wvr::component_downcast_ref::<DeltaVolumeProfileConfig>(config)
+            .ok_or_else(|| EguiError::InvalidParam {
+                what: "config".to_owned(),
+                reason: format!("{} expects a DeltaVolumeProfile configuration", self.id()),
+            })?;
+        Ok(common_core::hash::fingerprint_json(config))
     }
 
     fn evaluate(
@@ -752,16 +820,23 @@ impl crate::indicators::ChartIndicator for DeltaVolumeProfileIndicator {
         Ok(crate::indicators::IndicatorEvaluation { series: built })
     }
 
-    fn readouts(
-        &self,
-        evaluation: &crate::indicators::IndicatorEvaluation,
-    ) -> Vec<ReadoutValue> {
+    fn readouts(&self, evaluation: &crate::indicators::IndicatorEvaluation) -> Vec<ReadoutValue> {
         let defaults = DeltaVolumeProfileConfig::default();
-        let profile =
-            profile_from_series(evaluation, 0, defaults.bins as usize, defaults.value_area_pct);
+        let profile = profile_from_series(
+            evaluation,
+            0,
+            defaults.bins as usize,
+            defaults.value_area_pct,
+        );
         vec![
-            ReadoutValue { label: "POC".to_owned(), value: profile.poc_price() },
-            ReadoutValue { label: "VWAP".to_owned(), value: profile.vwap },
+            ReadoutValue {
+                label: "POC".to_owned(),
+                value: profile.poc_price(),
+            },
+            ReadoutValue {
+                label: "VWAP".to_owned(),
+                value: profile.vwap,
+            },
         ]
     }
 
@@ -780,15 +855,23 @@ impl crate::indicators::ChartIndicator for DeltaVolumeProfileIndicator {
         let config = fluent_wvr::component_downcast_ref::<DeltaVolumeProfileConfig>(config)
             .ok_or_else(|| EguiError::InvalidParam {
                 what: "config".to_owned(),
-                reason: "delta_volume_profile expects a DeltaVolumeProfile configuration".to_owned(),
+                reason: "delta_volume_profile expects a DeltaVolumeProfile configuration"
+                    .to_owned(),
             })?;
-        let profile =
-            profile_from_series(evaluation, base, config.bins as usize, config.value_area_pct);
+        let profile = profile_from_series(
+            evaluation,
+            base,
+            config.bins as usize,
+            config.value_area_pct,
+        );
         if profile.bins.is_empty() {
             return Ok(());
         }
         let palette = bin_palette(style, theme)?;
-        let full = evaluation.series.first().map_or(0, |series| series.values.len());
+        let full = evaluation
+            .series
+            .first()
+            .map_or(0, |series| series.values.len());
         let count = full.saturating_sub(base);
         let anchor = count.saturating_sub(1) + config.offset as usize;
         if config.show_profile {
@@ -831,7 +914,10 @@ impl crate::indicators::ChartIndicator for DeltaVolumeProfileIndicator {
             for level in [profile.vah, profile.val].into_iter().flatten() {
                 if let Some(y) = viewport.windowed_y(level) {
                     painter.line_segment(
-                        [egui::pos2(left, origin.y + y), egui::pos2(right, origin.y + y)],
+                        [
+                            egui::pos2(left, origin.y + y),
+                            egui::pos2(right, origin.y + y),
+                        ],
                         stroke,
                     );
                 }
@@ -841,14 +927,21 @@ impl crate::indicators::ChartIndicator for DeltaVolumeProfileIndicator {
             if let Some(price) = profile.poc_price() {
                 if let Some(y) = viewport.windowed_y(price) {
                     painter.line_segment(
-                        [egui::pos2(left, origin.y + y), egui::pos2(right, origin.y + y)],
+                        [
+                            egui::pos2(left, origin.y + y),
+                            egui::pos2(right, origin.y + y),
+                        ],
                         egui::Stroke::new(style.line_width(), style.color(theme, "fast")?),
                     );
                 }
             }
         }
         if config.show_vwap {
-            if let Some(series) = evaluation.series.iter().find(|series| series.node == "dvol:vwap") {
+            if let Some(series) = evaluation
+                .series
+                .iter()
+                .find(|series| series.node == "dvol:vwap")
+            {
                 let len = series.values.len().saturating_sub(base);
                 let window = visible_rows(series.values.as_slice(), base, len);
                 // The anchored VWAP paints through the shared sampler pair

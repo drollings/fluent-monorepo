@@ -60,11 +60,9 @@ fn test_engine() -> PineEngine {
 /// One closed bar from decimal legs and a whole-second timestamp.
 fn bar(open: &str, high: &str, low: &str, close: &str, volume: u64, ts_secs: i64) -> Bar {
     Bar::new()
-        .ts(
-            chrono::TimeZone::timestamp_opt(&chrono::Utc, ts_secs, 0)
-                .single()
-                .expect("valid test timestamp"),
-        )
+        .ts(chrono::TimeZone::timestamp_opt(&chrono::Utc, ts_secs, 0)
+            .single()
+            .expect("valid test timestamp"))
         .o(open.parse().expect("decimal"))
         .h(high.parse().expect("decimal"))
         .l(low.parse().expect("decimal"))
@@ -211,7 +209,10 @@ fn ring_mode_wraps_and_bounds() {
     assert_eq!(num(&outcome, 4, "g0"), 50.0);
     assert_eq!(num(&outcome, 4, "g1"), 40.0);
     assert_eq!(num(&outcome, 4, "g2"), 30.0);
-    assert!(is_absent(&outcome, 4, "g3"), "index past the window reads absent");
+    assert!(
+        is_absent(&outcome, 4, "g3"),
+        "index past the window reads absent"
+    );
     assert_eq!(num(&outcome, 4, "cap"), 3.0);
     assert_eq!(fld(&obj_at(&outcome, 4, "b"), "count"), 5.0);
 }
@@ -249,8 +250,14 @@ fn linearized_view_tracks_chronology_and_invalidates() {
         ),
         &bars,
     );
-    assert_eq!(arr_nums(&outcome, 3, "before"), vec![Some(10.0), Some(20.0), Some(30.0)]);
-    assert_eq!(arr_nums(&outcome, 3, "after"), vec![Some(20.0), Some(30.0), Some(40.0)]);
+    assert_eq!(
+        arr_nums(&outcome, 3, "before"),
+        vec![Some(10.0), Some(20.0), Some(30.0)]
+    );
+    assert_eq!(
+        arr_nums(&outcome, 3, "after"),
+        vec![Some(20.0), Some(30.0), Some(40.0)]
+    );
     assert_eq!(num(&outcome, 3, "n_before"), 3.0);
     assert_eq!(num(&outcome, 3, "n_after"), 3.0);
     // Array mode linearizes to the raw store contents in push order.
@@ -358,7 +365,10 @@ fn correlation_linreg_predict_hand_rolled() {
         ),
         &bars,
     );
-    assert!(is_absent(&outcome, 4, "c"), "singleton correlation reads na");
+    assert!(
+        is_absent(&outcome, 4, "c"),
+        "singleton correlation reads na"
+    );
     assert!(is_absent(&outcome, 4, "s"), "singleton slope reads na");
     assert!(is_absent(&outcome, 4, "i"), "singleton intercept reads na");
     assert!(is_absent(&outcome, 4, "p"), "singleton prediction reads na");
@@ -380,10 +390,19 @@ fn push_and_limit_pins_both_overloads() {
         &bars,
     );
     assert_eq!(num(&outcome, 4, "fs"), 3.0);
-    assert_eq!(arr_nums(&outcome, 4, "fa"), vec![Some(2.0), Some(3.0), Some(4.0)]);
+    assert_eq!(
+        arr_nums(&outcome, 4, "fa"),
+        vec![Some(2.0), Some(3.0), Some(4.0)]
+    );
     assert_eq!(num(&outcome, 4, "isz"), 3.0);
-    assert_eq!(arr_nums(&outcome, 4, "ia"), vec![Some(2.0), Some(3.0), Some(4.0)]);
-    assert!(is_absent(&outcome, 4, "zn"), "non-positive cap takes no branch");
+    assert_eq!(
+        arr_nums(&outcome, 4, "ia"),
+        vec![Some(2.0), Some(3.0), Some(4.0)]
+    );
+    assert!(
+        is_absent(&outcome, 4, "zn"),
+        "non-positive cap takes no branch"
+    );
 }
 
 #[test]
@@ -411,10 +430,20 @@ fn standalone_mutations_write_back_to_caller_arrays() {
     assert_eq!(num(&outcome, 0, "newest"), 2.0, "marked slot skipped");
     assert!(!is_true(&outcome, 0, "oob"), "past-the-end mark fails");
     assert!(is_true(&outcome, 0, "gone"));
-    assert_eq!(num(&outcome, 0, "after"), 1.0, "removed value compacted away");
-    assert!(!is_true(&outcome, 0, "again"), "second removal finds nothing");
+    assert_eq!(
+        num(&outcome, 0, "after"),
+        1.0,
+        "removed value compacted away"
+    );
+    assert!(
+        !is_true(&outcome, 0, "again"),
+        "second removal finds nothing"
+    );
     assert_eq!(num(&outcome, 0, "kept"), 0.0, "already packed");
-    assert!(!is_true(&outcome, 4, "marked"), "consumed array rejects the mark");
+    assert!(
+        !is_true(&outcome, 4, "marked"),
+        "consumed array rejects the mark"
+    );
     assert_eq!(num(&outcome, 4, "after"), 1.0, "lone survivor reads back");
 }
 
@@ -450,7 +479,10 @@ fn standalone_valid_helpers_covariance_and_regression() {
     assert!((num(&outcome, 4, "s") - 4.0).abs() < EPS);
     assert!((num(&outcome, 4, "i") - 1.0).abs() < EPS);
     assert!((num(&outcome, 4, "p") - 9.0).abs() < EPS);
-    assert!(is_absent(&outcome, 4, "thin"), "singleton correlation reads na");
+    assert!(
+        is_absent(&outcome, 4, "thin"),
+        "singleton correlation reads na"
+    );
 }
 
 #[test]
@@ -557,7 +589,10 @@ fn array_helpers_concat_shift_and_bounds() {
         &bars,
     );
     assert_eq!(num(&outcome, 4, "nc"), 3.0);
-    assert_eq!(arr_nums(&outcome, 4, "c"), vec![Some(1.0), Some(2.0), Some(3.0)]);
+    assert_eq!(
+        arr_nums(&outcome, 4, "c"),
+        vec![Some(1.0), Some(2.0), Some(3.0)]
+    );
     assert_eq!(num(&outcome, 4, "s"), 1.0);
     assert!(is_absent(&outcome, 4, "e"), "empty shift reads absent");
     let reason = run_err(
@@ -631,19 +666,24 @@ fn no_native_buffer_mirror_in_sources() {
                     .strip_prefix("pub(crate) ")
                     .or_else(|| code.strip_prefix("pub "))
                     .unwrap_or(code);
-                let declares = head.strip_prefix("struct ").or_else(|| head.strip_prefix("enum "));
+                let declares = head
+                    .strip_prefix("struct ")
+                    .or_else(|| head.strip_prefix("enum "));
                 if let Some(rest) = declares {
-                    let item = rest
-                        .split(['<', '(', '{', ' ', ';'])
-                        .next()
-                        .unwrap_or("");
-                    if matches!(item, "BufferFloat" | "BufferInt" | "FloatBuffer" | "IntBuffer") {
+                    let item = rest.split(['<', '(', '{', ' ', ';']).next().unwrap_or("");
+                    if matches!(
+                        item,
+                        "BufferFloat" | "BufferInt" | "FloatBuffer" | "IntBuffer"
+                    ) {
                         offenders.push(format!("{}:{}: {line}", path.display(), index + 1));
                     }
                 }
                 if let Some(rest) = head.strip_prefix("type ") {
                     let item = rest.split(['<', '=', ' ', ';']).next().unwrap_or("");
-                    if matches!(item, "BufferFloat" | "BufferInt" | "FloatBuffer" | "IntBuffer") {
+                    if matches!(
+                        item,
+                        "BufferFloat" | "BufferInt" | "FloatBuffer" | "IntBuffer"
+                    ) {
                         offenders.push(format!("{}:{}: {line}", path.display(), index + 1));
                     }
                 }
@@ -659,4 +699,3 @@ fn no_native_buffer_mirror_in_sources() {
         "native buffer mirror introduced: {offenders:?}"
     );
 }
-

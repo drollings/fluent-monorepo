@@ -31,14 +31,26 @@ fn alpha_spelling_reference_table() {
 
 #[test]
 fn alpha_spelling_nan_saturates_to_zero() {
-    assert_eq!(current_alpha_spelling(f32::NAN), 0, "NaN saturates, never wraps");
+    assert_eq!(
+        current_alpha_spelling(f32::NAN),
+        0,
+        "NaN saturates, never wraps"
+    );
 }
 
 #[test]
 fn alpha_spelling_rounds_half_away() {
     assert_eq!(current_alpha_spelling(0.5), 128, "127.5 rounds to 128");
-    assert_eq!(current_alpha_spelling(1.0 / 255.0), 1, "single step reads 1");
-    assert_eq!(current_alpha_spelling(254.5 / 255.0), 255, "254.5 rounds to 255");
+    assert_eq!(
+        current_alpha_spelling(1.0 / 255.0),
+        1,
+        "single step reads 1"
+    );
+    assert_eq!(
+        current_alpha_spelling(254.5 / 255.0),
+        255,
+        "254.5 rounds to 255"
+    );
 }
 
 #[test]
@@ -51,15 +63,31 @@ fn transparency_variant_reference_table() {
         (150.0, 0),
     ];
     for (transparency, want) in cases {
-        assert_eq!(opacity_from_transparency(*transparency), *want, "transparency {transparency}");
+        assert_eq!(
+            opacity_from_transparency(*transparency),
+            *want,
+            "transparency {transparency}"
+        );
     }
 }
 
 #[test]
 fn transparency_variant_nan_paints_opaque() {
-    assert_eq!(opacity_from_transparency(f64::NAN), 255, "non-finite stays visible");
-    assert_eq!(opacity_from_transparency(f64::INFINITY), 255, "positive infinite stays visible");
-    assert_eq!(opacity_from_transparency(f64::NEG_INFINITY), 255, "negative infinite stays visible");
+    assert_eq!(
+        opacity_from_transparency(f64::NAN),
+        255,
+        "non-finite stays visible"
+    );
+    assert_eq!(
+        opacity_from_transparency(f64::INFINITY),
+        255,
+        "positive infinite stays visible"
+    );
+    assert_eq!(
+        opacity_from_transparency(f64::NEG_INFINITY),
+        255,
+        "negative infinite stays visible"
+    );
 }
 
 #[test]

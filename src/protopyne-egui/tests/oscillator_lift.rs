@@ -37,7 +37,10 @@ fn lifts_agree_with_scalar_composition_slot_for_slot() {
         let series = normalize_series(&raw, kind).expect("evaluable kind");
         let bounded = normalize_series_bounded(&raw, kind).expect("evaluable kind");
         let via_squash = squash_series_to_100(&series);
-        assert_eq!(bounded, via_squash, "series bounded composition for {kind:?}");
+        assert_eq!(
+            bounded, via_squash,
+            "series bounded composition for {kind:?}"
+        );
         assert_eq!(bounded.len(), raw.len(), "length-preserving for {kind:?}");
     }
 }
@@ -46,10 +49,15 @@ fn lifts_agree_with_scalar_composition_slot_for_slot() {
 fn lifts_on_degenerate_inputs() {
     for kind in KINDS {
         assert!(
-            normalize_series(&[], kind).expect("evaluable kind").is_empty(),
+            normalize_series(&[], kind)
+                .expect("evaluable kind")
+                .is_empty(),
             "empty in, empty out for {kind:?}"
         );
-        assert!(squash_series_to_100(&[]).is_empty(), "empty in, empty out for {kind:?}");
+        assert!(
+            squash_series_to_100(&[]).is_empty(),
+            "empty in, empty out for {kind:?}"
+        );
         assert_eq!(
             normalize_series(&[None], kind).expect("evaluable kind"),
             vec![None],

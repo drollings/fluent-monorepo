@@ -155,7 +155,10 @@ fn registry_groups_named_portfolios() {
     assert_eq!(registry.len(), 3);
     let paper = registry.get("paper").expect("paper registered");
     assert_eq!(paper.name, "paper");
-    assert!(registry.get("live").is_none(), "unknown portfolio is absence, not error");
+    assert!(
+        registry.get("live").is_none(),
+        "unknown portfolio is absence, not error"
+    );
     let mut names = registry.names();
     names.sort();
     assert_eq!(names, vec!["backtest", "manual-ticket", "paper"]);
@@ -165,9 +168,15 @@ fn registry_groups_named_portfolios() {
 fn disarm_halts_entries_while_exits_route() {
     assert!(TradingState::Enabled.allows(false));
     assert!(TradingState::Enabled.allows(true));
-    assert!(!TradingState::ExitOnly.allows(false), "exit-only halts entries");
+    assert!(
+        !TradingState::ExitOnly.allows(false),
+        "exit-only halts entries"
+    );
     assert!(TradingState::ExitOnly.allows(true));
-    assert!(!TradingState::Disabled.allows(false), "disabled halts entries");
+    assert!(
+        !TradingState::Disabled.allows(false),
+        "disabled halts entries"
+    );
 
     let venue = Arc::new(PaperVenue::new(PaperConfig::new().build()));
     let state = StateHandle::new(TradingState::Enabled);
@@ -209,12 +218,24 @@ fn close_all_emits_one_atomic_intent_per_leg_group() {
     assert_eq!(intents.len(), 2, "one intent per leg-group, never per leg");
 
     let spread = &intents[0];
-    assert_eq!(spread.side, OrderSide::Sell, "long package closes by selling");
+    assert_eq!(
+        spread.side,
+        OrderSide::Sell,
+        "long package closes by selling"
+    );
     assert_eq!(spread.quantity, 1);
     let legs = spread.legs.as_ref().expect("spread close stays atomic");
     assert_eq!(legs.legs().len(), 2, "both legs ride one intent");
-    assert_eq!(legs.legs()[0].side, LegSide::Short, "closing flips the long leg");
-    assert_eq!(legs.legs()[1].side, LegSide::Long, "closing flips the short leg");
+    assert_eq!(
+        legs.legs()[0].side,
+        LegSide::Short,
+        "closing flips the long leg"
+    );
+    assert_eq!(
+        legs.legs()[1].side,
+        LegSide::Long,
+        "closing flips the short leg"
+    );
 
     let single = &intents[1];
     assert_eq!(single.side, OrderSide::Buy, "short single closes by buying");
@@ -229,13 +250,11 @@ fn close_all_emits_one_atomic_intent_per_leg_group() {
 fn close_all_refuses_a_flip_into_naked_short() {
     // A lone long leg closes into a lone short leg: undefined risk, so the
     // command refuses instead of emitting it.
-    let lone_long = SpreadLegs::try_new(vec![
-        SpreadLeg::new()
-            .contract(contract("600", OptionKind::Call))
-            .side(LegSide::Long)
-            .ratio(1)
-            .build(),
-    ])
+    let lone_long = SpreadLegs::try_new(vec![SpreadLeg::new()
+        .contract(contract("600", OptionKind::Call))
+        .side(LegSide::Long)
+        .ratio(1)
+        .build()])
     .expect("lone long is defined-risk");
     let groups = vec![LegGroup {
         underlying: "SPY".to_owned(),
@@ -258,7 +277,10 @@ fn cancel_all_lists_only_active_orders() {
         record_with_status("d", OrderStatus::Cancelled),
         record_with_status("e", OrderStatus::Expired),
     ];
-    assert_eq!(cancel_all_ids(&orders), vec!["a".to_owned(), "b".to_owned()]);
+    assert_eq!(
+        cancel_all_ids(&orders),
+        vec!["a".to_owned(), "b".to_owned()]
+    );
 }
 
 fn record_with_status(client_id: &str, status: OrderStatus) -> OrderRecord {
@@ -271,13 +293,23 @@ fn record_with_status(client_id: &str, status: OrderStatus) -> OrderRecord {
 async fn close_all_through_venue_round_trip_is_atomic() {
     let legs = vertical();
     let mut map = HashMap::new();
-    map.insert(legs.legs()[0].contract.occ_symbol(), fresh_quote("2.50", "2.70"));
-    map.insert(legs.legs()[1].contract.occ_symbol(), fresh_quote("1.20", "1.40"));
+    map.insert(
+        legs.legs()[0].contract.occ_symbol(),
+        fresh_quote("2.50", "2.70"),
+    );
+    map.insert(
+        legs.legs()[1].contract.occ_symbol(),
+        fresh_quote("1.20", "1.40"),
+    );
     let mut venue = PaperVenue::new(PaperConfig::new().build());
     venue.set_leg_quotes(Arc::new(MapLegQuotes { map }));
     let venue = Arc::new(venue);
     venue
-        .submit(spread_intent("round-trip"), &fresh_quote("600.00", "600.10"), now())
+        .submit(
+            spread_intent("round-trip"),
+            &fresh_quote("600.00", "600.10"),
+            now(),
+        )
         .await
         .expect("spread fills");
     assert_eq!(venue.spread_positions().len(), 2, "two leg positions open");
@@ -286,7 +318,9 @@ async fn close_all_through_venue_round_trip_is_atomic() {
     registry.register(portfolio("paper"));
     let close = CommandUnit::new()
         .name("cmd.close.paper".to_owned())
-        .command(CommandKind::CloseAll { portfolio: "paper".to_owned() })
+        .command(CommandKind::CloseAll {
+            portfolio: "paper".to_owned(),
+        })
         .venue(Arc::clone(&venue))
         .state(StateHandle::new(TradingState::Enabled))
         .registry(Arc::clone(&registry))
@@ -294,7 +328,9 @@ async fn close_all_through_venue_round_trip_is_atomic() {
         .proposal_id("close-1".to_owned())
         .strategy("ribbon".to_owned())
         .build();
-    let output = close.execute(&WorkContext::default()).expect("close-all executes");
+    let output = close
+        .execute(&WorkContext::default())
+        .expect("close-all executes");
     let intents: Vec<OrderIntent> =
         serde_json::from_value(output.data.clone()).expect("intents round-trip as data");
     assert_eq!(intents.len(), 1, "one execution closes with one intent");
@@ -312,7 +348,9 @@ async fn dependent_cancellation_on_injected_failure() {
     // saw. The command refuses fail-closed instead of closing blind.
     let failer = CommandUnit::new()
         .name("cmd.close.unknown".to_owned())
-        .command(CommandKind::CloseAll { portfolio: "no-such".to_owned() })
+        .command(CommandKind::CloseAll {
+            portfolio: "no-such".to_owned(),
+        })
         .venue(Arc::clone(&venue))
         .state(StateHandle::new(TradingState::Enabled))
         .registry(Arc::clone(&registry))
@@ -333,16 +371,20 @@ async fn dependent_cancellation_on_injected_failure() {
         .build();
 
     let caps = fluent_wvr::CapabilitySet::new();
-    let mut batch =
-        SupervisedBatch::new(fluent_concurrency::tokio_runtime(), caps);
+    let mut batch = SupervisedBatch::new(fluent_concurrency::tokio_runtime(), caps);
     batch.register(Arc::new(failer)).expect("register failer");
     batch
         .register_with_context(
             Arc::new(dependent),
-            WorkContext { max_retries: 10, ..WorkContext::default() },
+            WorkContext {
+                max_retries: 10,
+                ..WorkContext::default()
+            },
         )
         .expect("register dependent");
-    batch.register(Arc::new(independent)).expect("register independent");
+    batch
+        .register(Arc::new(independent))
+        .expect("register independent");
     let summary: SupervisedBatchSummary = batch.await;
 
     let failed: Vec<String> = summary
@@ -411,13 +453,14 @@ async fn replica_replay_equals_incremental_fold() {
     );
 }
 
-fn journal_script(
-    journal: &Journal,
-    permit: &VenueStorage,
-) -> Vec<crate::journal::JournalEvent> {
+fn journal_script(journal: &Journal, permit: &VenueStorage) -> Vec<crate::journal::JournalEvent> {
     let at = now();
-    journal.record_intent(permit, &spread_intent("cmd-a#0"), at).expect("intent a");
-    journal.record_intent(permit, &spread_intent("cmd-b#0"), at).expect("intent b");
+    journal
+        .record_intent(permit, &spread_intent("cmd-a#0"), at)
+        .expect("intent a");
+    journal
+        .record_intent(permit, &spread_intent("cmd-b#0"), at)
+        .expect("intent b");
     journal
         .mark_status(permit, "cmd-a#0", OrderStatus::Filled, at)
         .expect("filled");
@@ -429,7 +472,11 @@ fn journal_script(
                 "cmd-a#0",
                 &crate::venue::LegExecution {
                     contract: ContractId::new(leg.contract.occ_symbol()),
-                    side: if index == 0 { OrderSide::Buy } else { OrderSide::Sell },
+                    side: if index == 0 {
+                        OrderSide::Buy
+                    } else {
+                        OrderSide::Sell
+                    },
                     quantity: 1,
                     price: money("2.00"),
                     fee: money("0.65"),
@@ -463,7 +510,11 @@ fn replica_ignores_unknown_command_rows_without_phantom_orders() {
         mock_event(5, "operator", "command.something_new"),
     ];
     let view = StateReplica::apply(&events);
-    assert!(view.orders.is_empty(), "no phantom orders, got: {:?}", view.orders);
+    assert!(
+        view.orders.is_empty(),
+        "no phantom orders, got: {:?}",
+        view.orders
+    );
     assert_eq!(view.last_seq, 5, "the tip still advances past command rows");
 }
 

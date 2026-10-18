@@ -74,7 +74,12 @@ pub fn annotations_of_counted(
                     dropped += 1;
                 }
             }
-            PlotPrimitive::Area { left, top, right, bottom } => {
+            PlotPrimitive::Area {
+                left,
+                top,
+                right,
+                bottom,
+            } => {
                 if let Some(corner) = note_at(*left, *top, String::new(), bars) {
                     annotations.push(corner);
                 } else {
@@ -86,7 +91,9 @@ pub fn annotations_of_counted(
                     dropped += 1;
                 }
             }
-            PlotPrimitive::Series { .. } | PlotPrimitive::Level { .. } | PlotPrimitive::Marker { .. } => {}
+            PlotPrimitive::Series { .. }
+            | PlotPrimitive::Level { .. }
+            | PlotPrimitive::Marker { .. } => {}
         }
     }
     (annotations, dropped)

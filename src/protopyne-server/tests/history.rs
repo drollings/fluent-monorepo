@@ -10,20 +10,23 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use super::*;
-use crate::backtest::{HistorySource, load_history};
+use crate::backtest::{load_history, HistorySource};
 use crate::fold_frames;
-use crate::history::{HistoryFormat, format_of, load_bars_candidates, load_bars_file};
+use crate::history::{format_of, load_bars_candidates, load_bars_file, HistoryFormat};
 use arrow::array::{Float64Array, Int64Array, StringArray, TimestampNanosecondArray};
 use arrow::datatypes::{DataType, Field, Schema, TimeUnit};
 use arrow::record_batch::RecordBatch;
 use chrono::{TimeZone, Utc};
 use parquet::arrow::ArrowWriter;
 use protopyne_types::{Bar, FoldEdges, Timeframe};
-use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive as _;
+use rust_decimal::Decimal;
 
 fn data(name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join(name)
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("data")
+        .join(name)
 }
 
 fn month_parquet() -> PathBuf {
@@ -90,12 +93,16 @@ fn vendor_schema() -> Arc<Schema> {
 
 fn write_vendor_parquet(path: &Path, bars: &[Bar], ticker: &str) {
     let schema = vendor_schema();
-    let ns: Vec<i64> =
-        bars.iter().map(|bar| bar.ts.timestamp_nanos_opt().expect("in range")).collect();
+    let ns: Vec<i64> = bars
+        .iter()
+        .map(|bar| bar.ts.timestamp_nanos_opt().expect("in range"))
+        .collect();
     let ts = TimestampNanosecondArray::from(ns).with_timezone("UTC");
     let prices = |pick: fn(&Bar) -> Decimal| {
         Float64Array::from(
-            bars.iter().map(|bar| pick(bar).to_f64().expect("representable")).collect::<Vec<_>>(),
+            bars.iter()
+                .map(|bar| pick(bar).to_f64().expect("representable"))
+                .collect::<Vec<_>>(),
         )
     };
     let batch = RecordBatch::try_new(
@@ -122,8 +129,8 @@ fn write_vendor_parquet(path: &Path, bars: &[Bar], ticker: &str) {
 fn write_mixed_ticker_parquet(path: &Path) {
     let schema = vendor_schema();
     let base_ns = 1_772_442_000_000_000_000_i64;
-    let ts =
-        TimestampNanosecondArray::from(vec![base_ns, base_ns + 60_000_000_000]).with_timezone("UTC");
+    let ts = TimestampNanosecondArray::from(vec![base_ns, base_ns + 60_000_000_000])
+        .with_timezone("UTC");
     let batch = RecordBatch::try_new(
         schema.clone(),
         vec![
@@ -185,7 +192,10 @@ fn format_of_dispatches_on_extension() {
 #[test]
 fn format_of_refuses_unknown_and_missing_extensions_by_name() {
     let err = format_of(Path::new("history.json")).expect_err("json refuses");
-    assert!(err.to_string().contains("json"), "the refusal names the extension: {err}");
+    assert!(
+        err.to_string().contains("json"),
+        "the refusal names the extension: {err}"
+    );
     let err = format_of(Path::new("history")).expect_err("bare refuses");
     let text = err.to_string();
     assert!(
@@ -197,8 +207,7 @@ fn format_of_refuses_unknown_and_missing_extensions_by_name() {
 #[test]
 fn a_missing_candidate_skips_to_the_next() {
     let missing = data("does-not-exist.csv");
-    let bars =
-        load_bars_candidates(&[missing, data("SPY_15M.csv")]).expect("a missing file skips");
+    let bars = load_bars_candidates(&[missing, data("SPY_15M.csv")]).expect("a missing file skips");
     assert_eq!(bars.len(), 11, "falls through to the usable file");
 }
 
@@ -209,8 +218,8 @@ fn an_unreadable_candidate_skips_to_the_next() {
     let dir = tempfile::tempdir().expect("tempdir");
     let unreadable = dir.path().join("history.csv");
     std::fs::create_dir(&unreadable).expect("a directory named like a file");
-    let bars = load_bars_candidates(&[unreadable, data("SPY_15M.csv")])
-        .expect("an unreadable file skips");
+    let bars =
+        load_bars_candidates(&[unreadable, data("SPY_15M.csv")]).expect("an unreadable file skips");
     assert_eq!(bars.len(), 11, "falls through to the usable file");
 }
 
@@ -219,8 +228,8 @@ fn a_bad_header_stops_the_walk() {
     let dir = tempfile::tempdir().expect("tempdir");
     let bad = dir.path().join("bad.csv");
     std::fs::write(&bad, "time,open,high\n1,2,3").expect("fixture writes");
-    let err = load_bars_candidates(&[bad, data("SPY_15M.csv")])
-        .expect_err("a bad header stops the walk");
+    let err =
+        load_bars_candidates(&[bad, data("SPY_15M.csv")]).expect_err("a bad header stops the walk");
     assert!(
         matches!(err, ServerError::BadHeader(_)),
         "a bad header stops in the header shape, got: {err:?}"
@@ -242,8 +251,8 @@ fn a_bad_row_stops_the_walk() {
         load_bars_file(&bad),
         Err(ServerError::BadRow { .. })
     ));
-    let err = load_bars_candidates(&[bad, data("SPY_15M.csv")])
-        .expect_err("a bad row stops the walk");
+    let err =
+        load_bars_candidates(&[bad, data("SPY_15M.csv")]).expect_err("a bad row stops the walk");
     assert!(
         matches!(err, ServerError::BadRow { .. }),
         "a bad row stops in the row shape, got: {err:?}"
@@ -259,7 +268,11 @@ fn a_schema_mismatch_stops_the_walk() {
         .expect_err("a schema mismatch stops the walk");
     match err {
         ServerError::Parquet { path, .. } => {
-            assert_eq!(path, bad.display().to_string(), "the refusal names the candidate");
+            assert_eq!(
+                path,
+                bad.display().to_string(),
+                "the refusal names the candidate"
+            );
         }
         other => panic!("must stop in the Parquet shape, got: {other:?}"),
     }
@@ -274,8 +287,15 @@ fn a_mixed_ticker_file_stops_the_walk() {
         .expect_err("a mixed-ticker file stops the walk");
     match err {
         ServerError::Parquet { path, reason } => {
-            assert_eq!(path, mixed.display().to_string(), "the refusal names the candidate");
-            assert!(reason.contains("ticker"), "the refusal names the fix: {reason}");
+            assert_eq!(
+                path,
+                mixed.display().to_string(),
+                "the refusal names the candidate"
+            );
+            assert!(
+                reason.contains("ticker"),
+                "the refusal names the fix: {reason}"
+            );
         }
         other => panic!("must stop in the Parquet shape, got: {other:?}"),
     }
@@ -297,8 +317,7 @@ fn an_unknown_extension_stops_the_walk() {
 #[test]
 fn a_missing_parquet_candidate_skips_to_the_next() {
     let missing = month_parquet().with_file_name("does-not-exist.parquet");
-    let bars =
-        load_bars_candidates(&[missing, month_parquet()]).expect("a missing parquet skips");
+    let bars = load_bars_candidates(&[missing, month_parquet()]).expect("a missing parquet skips");
     assert_eq!(bars.len(), 20434, "falls through to the usable file");
 }
 
@@ -319,10 +338,15 @@ fn a_corrupt_parquet_candidate_stops_the_walk() {
 
 #[test]
 fn exhaustion_without_a_usable_file_refuses() {
-    let err =
-        load_bars_candidates(&[data("does-not-exist.csv")]).expect_err("exhaustion refuses");
-    assert!(err.to_string().contains("no candidate"), "the refusal says so: {err}");
-    assert!(load_bars_candidates(&[]).is_err(), "an empty candidate set refuses");
+    let err = load_bars_candidates(&[data("does-not-exist.csv")]).expect_err("exhaustion refuses");
+    assert!(
+        err.to_string().contains("no candidate"),
+        "the refusal says so: {err}"
+    );
+    assert!(
+        load_bars_candidates(&[]).is_err(),
+        "an empty candidate set refuses"
+    );
 }
 
 #[test]
@@ -345,7 +369,10 @@ fn a_files_source_loads_end_to_end_and_refuses_empty() {
     let loaded = load_history(&HistorySource::Files(vec![data("SPY_15M.csv")]), None)
         .expect("the files arm loads");
     assert_eq!(loaded.bars.len(), 11);
-    assert!(loaded.provenance.is_empty(), "a file arm names no planner span");
+    assert!(
+        loaded.provenance.is_empty(),
+        "a file arm names no planner span"
+    );
 
     let loaded = load_history(&HistorySource::Files(vec![month_parquet()]), None)
         .expect("a parquet candidate loads through the same arm");
@@ -370,8 +397,9 @@ fn the_load_time_tally_conserves_volume_over_whole_buckets() {
     // Ten contiguous minute bars: two whole five-minute buckets and one whole
     // ten-minute bucket, so conservation is exact and countable.
     let base = 1_772_442_000_i64;
-    let bars: Vec<Bar> =
-        (0..10).map(|i| bar_at(base + i * 60, &format!("{}.00", 100 + i), 1_000)).collect();
+    let bars: Vec<Bar> = (0..10)
+        .map(|i| bar_at(base + i * 60, &format!("{}.00", 100 + i), 1_000))
+        .collect();
     let frames = fold_frames(
         &bars,
         Timeframe::M1,
@@ -379,8 +407,16 @@ fn the_load_time_tally_conserves_volume_over_whole_buckets() {
         FoldEdges::CompleteOnly,
     )
     .expect("whole-multiple frames fold");
-    assert_eq!(frames[0].1.len(), 2, "ten minutes fill two whole five-minute buckets");
-    assert_eq!(frames[1].1.len(), 1, "ten minutes fill one whole ten-minute bucket");
+    assert_eq!(
+        frames[0].1.len(),
+        2,
+        "ten minutes fill two whole five-minute buckets"
+    );
+    assert_eq!(
+        frames[1].1.len(),
+        1,
+        "ten minutes fill one whole ten-minute bucket"
+    );
     let base_volume: u64 = bars.iter().map(|bar| bar.volume).sum();
     for (target, frame) in &frames {
         let folded: u64 = frame.iter().map(|bar| bar.volume).sum();
@@ -391,8 +427,14 @@ fn the_load_time_tally_conserves_volume_over_whole_buckets() {
             last = Some(bar);
         }
     }
-    assert_eq!(frames[0].1[0].o, bars[0].o, "the first bucket opens at the first bar");
-    assert_eq!(frames[0].1[1].c, bars[9].c, "the last bucket closes at the last bar");
+    assert_eq!(
+        frames[0].1[0].o, bars[0].o,
+        "the first bucket opens at the first bar"
+    );
+    assert_eq!(
+        frames[0].1[1].c, bars[9].c,
+        "the last bucket closes at the last bar"
+    );
 }
 
 #[test]
@@ -411,7 +453,11 @@ fn the_tally_omits_the_month_s_torn_buckets() {
         FoldEdges::CompleteOnly,
     )
     .expect("whole-multiple frames fold");
-    assert_eq!(frames[0].1.len(), 3754, "only whole five-minute buckets emit");
+    assert_eq!(
+        frames[0].1.len(),
+        3754,
+        "only whole five-minute buckets emit"
+    );
     assert_eq!(frames[1].1.len(), 1129, "only whole quarter-hours emit");
     assert_eq!(frames[2].1.len(), 242, "only whole hours emit");
     let base_volume: u64 = bars.iter().map(|bar| bar.volume).sum();

@@ -230,9 +230,18 @@ pub fn classify_schema_field(field: &SchemaField) -> SettingsTab {
     if field.kind == FieldKind::Boolean && is_toggle {
         return SettingsTab::Visibility;
     }
-    if ["color", "alpha", "transparency", "brightness", "width", "threshold", "style", "theme"]
-        .iter()
-        .any(|token| name.contains(token))
+    if [
+        "color",
+        "alpha",
+        "transparency",
+        "brightness",
+        "width",
+        "threshold",
+        "style",
+        "theme",
+    ]
+    .iter()
+    .any(|token| name.contains(token))
     {
         return SettingsTab::Style;
     }
@@ -242,7 +251,11 @@ pub fn classify_schema_field(field: &SchemaField) -> SettingsTab {
 /// The schema fields that render under `tab`, in schema order.
 #[must_use]
 pub fn fields_for_tab(fields: &[SchemaField], tab: SettingsTab) -> Vec<SchemaField> {
-    fields.iter().filter(|field| classify_schema_field(field) == tab).cloned().collect()
+    fields
+        .iter()
+        .filter(|field| classify_schema_field(field) == tab)
+        .cloned()
+        .collect()
 }
 
 /// The fields one settings tab renders for a slot that owns both a
@@ -266,7 +279,9 @@ pub fn tab_fields(
 ) -> Vec<SchemaField> {
     let own = fields_for_tab(config_fields, tab);
     if tab == SettingsTab::Style {
-        own.into_iter().chain(style_fields.iter().cloned()).collect()
+        own.into_iter()
+            .chain(style_fields.iter().cloned())
+            .collect()
     } else {
         own
     }
@@ -292,7 +307,11 @@ pub fn paint_tabbed_schema_fields(
             bar.selectable_value(active_tab, tab, tab.label());
         }
     });
-    paint_schema_fields(ui, &tab_fields(*active_tab, config_fields, style_fields), target)
+    paint_schema_fields(
+        ui,
+        &tab_fields(*active_tab, config_fields, style_fields),
+        target,
+    )
 }
 
 /// The compact editor's fixed label-column width, so the editors line up.
@@ -358,11 +377,8 @@ fn paint_schema_fields_sized(
         ui.horizontal(|row| {
             match label_width {
                 Some(width) => {
-                    row.add_sized(
-                        [width, COMPACT_ROW_HEIGHT],
-                        egui::Label::new(&field.name),
-                    )
-                    .on_hover_text(bounds_hint(field));
+                    row.add_sized([width, COMPACT_ROW_HEIGHT], egui::Label::new(&field.name))
+                        .on_hover_text(bounds_hint(field));
                 }
                 None => {
                     row.label(&field.name).on_hover_text(bounds_hint(field));
@@ -443,9 +459,8 @@ fn paint_one(
         }
         FieldKind::Text => {
             let mut value = current.clone();
-            let response = row.add(
-                egui::TextEdit::singleline(&mut value).hint_text(field.description.clone()),
-            );
+            let response = row
+                .add(egui::TextEdit::singleline(&mut value).hint_text(field.description.clone()));
             (response.changed() && value != current).then_some(value)
         }
         FieldKind::Color => edit_color(row, field, &current, edits),
@@ -461,7 +476,10 @@ fn paint_one(
 }
 
 /// A whole-number editor. A value this editor cannot hold is reported, not
-/// rounded or wrapped into the widget.
+/// rounded or wrapped into the widget. When the schema declares both bounds,
+/// a Material slider is offered alongside the drag value so workstation and
+/// touch operators choose precisely; the write still goes through the field's
+/// own contract, never a clamp.
 fn edit_integer(
     row: &mut egui::Ui,
     field: &SchemaField,
@@ -469,16 +487,34 @@ fn edit_integer(
     edits: &mut FieldEdits,
 ) -> Option<String> {
     let Ok(value) = current.parse::<i64>() else {
-        edits.refusals.push(refusal(field, format!("{current} is not an editable integer")));
+        edits.refusals.push(refusal(
+            field,
+            format!("{current} is not an editable integer"),
+        ));
         return None;
     };
     let mut value = value;
-    let changed = row.add(egui::DragValue::new(&mut value).speed(1)).changed();
+    // Material: bounded integers get a slider (touch-friendly), unbounded
+    // keep the compact drag value.
+    let changed = match (field.minimum, field.maximum) {
+        (Some(min), Some(max)) if max > min => {
+            let min_i = min.ceil() as i64;
+            let max_i = max.floor() as i64;
+            if max_i > min_i {
+                row.add(egui::Slider::new(&mut value, min_i..=max_i))
+                    .changed()
+            } else {
+                row.add(egui::DragValue::new(&mut value).speed(1)).changed()
+            }
+        }
+        _ => row.add(egui::DragValue::new(&mut value).speed(1)).changed(),
+    };
     changed.then(|| value.to_string())
 }
 
 /// A real-number editor. `NaN` and the infinities are never written: a
-/// control holding one would render it as a value it does not have.
+/// control holding one would render it as a value it does not have. Bounded
+/// numbers render as Material sliders; unbounded keep the drag value.
 fn edit_number(
     row: &mut egui::Ui,
     field: &SchemaField,
@@ -486,16 +522,28 @@ fn edit_number(
     edits: &mut FieldEdits,
 ) -> Option<String> {
     let Ok(value) = current.parse::<f64>() else {
-        edits.refusals.push(refusal(field, format!("{current} is not an editable number")));
+        edits.refusals.push(refusal(
+            field,
+            format!("{current} is not an editable number"),
+        ));
         return None;
     };
     let mut value = value;
-    let changed = row.add(egui::DragValue::new(&mut value).speed(0.01)).changed();
+    let changed = match (field.minimum, field.maximum) {
+        (Some(min), Some(max)) if max > min && min.is_finite() && max.is_finite() => {
+            row.add(egui::Slider::new(&mut value, min..=max)).changed()
+        }
+        _ => row
+            .add(egui::DragValue::new(&mut value).speed(0.01))
+            .changed(),
+    };
     if !changed {
         return None;
     }
     if !value.is_finite() {
-        edits.refusals.push(refusal(field, "a real number must be finite".to_owned()));
+        edits
+            .refusals
+            .push(refusal(field, "a real number must be finite".to_owned()));
         return None;
     }
     Some(value.to_string())
@@ -513,10 +561,17 @@ fn edit_select(row: &mut egui::Ui, field: &SchemaField, current: &str) -> Option
         .selected_text(current)
         .show_ui(row, |ui| {
             if !field.options.iter().any(|option| option == current) {
-                ui.selectable_value(&mut value, current.to_owned(), format!("{current} (unlisted)"));
+                ui.selectable_value(
+                    &mut value,
+                    current.to_owned(),
+                    format!("{current} (unlisted)"),
+                );
             }
             for option in &field.options {
-                if ui.selectable_value(&mut value, option.clone(), option).changed() {
+                if ui
+                    .selectable_value(&mut value, option.clone(), option)
+                    .changed()
+                {
                     changed = true;
                 }
             }
@@ -532,14 +587,16 @@ fn refusal(field: &SchemaField, reason: impl std::fmt::Display) -> String {
 /// Edge length of the swatch drawn beside a color field's hex text.
 const COLOR_SWATCH_PX: f32 = 16.0;
 
-/// A color editor: the parsed swatch beside the field's own hex text.
+/// A color editor: a Material color picker beside the field's own hex text.
 ///
-/// The swatch is a *readout*, never a picker: it shows exactly what the text
-/// spells, and text this crate cannot read paints no swatch rather than a
-/// stand-in color. An empty value (a field whose contract treats empty as
-/// "inherit") paints the swatch hollow, so "unset" is visibly different from
-/// "set to black". The write path is the field's own — a malformed value the
-/// field refuses is reported, not repaired.
+/// The swatch button opens the platform color picker (touch-friendly) and the
+/// hex text remains the precise path: both write through the field's own
+/// contract. The picker shows exactly what the text spells, and text this
+/// crate cannot read paints no swatch rather than a stand-in color. An empty
+/// value (a field whose contract treats empty as "inherit") paints the swatch
+/// hollow and the picker starts from a neutral, so "unset" is visibly
+/// different from "set to black". A malformed value the field refuses is
+/// reported, not repaired.
 fn edit_color(
     row: &mut egui::Ui,
     field: &SchemaField,
@@ -547,7 +604,7 @@ fn edit_color(
     edits: &mut FieldEdits,
 ) -> Option<String> {
     let trimmed = current.trim();
-    let swatch = if trimmed.is_empty() {
+    let parsed: Option<egui::Color32> = if trimmed.is_empty() {
         None
     } else {
         match crate::paint::parse_hex_color(&field.name, trimmed) {
@@ -559,6 +616,25 @@ fn edit_color(
         }
     };
     let outline = row.visuals().widgets.noninteractive.bg_stroke.color;
+    // Material picker: a swatch button that opens the color popup. Hollow
+    // when unset (inherit), absent readout when unreadable. egui 0.36 edits
+    // sRGB bytes, so the wire hex is derived from those bytes.
+    let mut picker_srgb: [u8; 3] = match parsed {
+        Some(color) => [color.r(), color.g(), color.b()],
+        None => [32, 200, 240],
+    };
+    let picker_response = row.color_edit_button_srgb(&mut picker_srgb);
+    if picker_response.changed() {
+        // Picker edits resolve to opaque #RRGGBB on the wire (alpha rides the
+        // theme/transparency path, never the hex text).
+        let hex = format!(
+            "#{:02X}{:02X}{:02X}",
+            picker_srgb[0], picker_srgb[1], picker_srgb[2]
+        );
+        if hex != current {
+            return Some(hex);
+        }
+    }
     let (rect, _) = row.allocate_exact_size(
         egui::vec2(COLOR_SWATCH_PX, COLOR_SWATCH_PX),
         egui::Sense::hover(),
@@ -567,13 +643,8 @@ fn edit_color(
         rect.center(),
         egui::vec2(COLOR_SWATCH_PX - 2.0, COLOR_SWATCH_PX - 2.0),
     );
-    match swatch {
-        Some(color) => {
-            row.painter().rect_filled(swatch_rect, 2.0, color);
-        }
-        // Hollow for unset, and no swatch at all for an unreadable value: an
-        // unreadable color shows no color rather than a wrong one.
-        None if trimmed.is_empty() => {
+    match trimmed {
+        "" => {
             row.painter().rect_stroke(
                 swatch_rect,
                 2.0,
@@ -581,7 +652,11 @@ fn edit_color(
                 egui::StrokeKind::Inside,
             );
         }
-        None => {}
+        _ => {
+            if let Ok(color) = crate::paint::parse_hex_color(&field.name, trimmed) {
+                row.painter().rect_filled(swatch_rect, 2.0, color);
+            }
+        }
     }
     let mut value = current.to_owned();
     let response = row.add(egui::TextEdit::singleline(&mut value));

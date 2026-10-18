@@ -14,8 +14,8 @@
 
 use crate::error::KernelError;
 use crate::indicator::{
-    fin_or_none, nan_hole, BarTick, Indicator, IndicatorResult, IndicatorSpec, IndicatorState, Ohlcv,
-    ParamSet,
+    fin_or_none, nan_hole, BarTick, Indicator, IndicatorResult, IndicatorSpec, IndicatorState,
+    Ohlcv, ParamSet,
 };
 
 /// Population standard deviation (`stddev`), parameterized by `length` and
@@ -239,10 +239,8 @@ impl Indicator for CorrelIndicator {
         let mut values = crate::math::warmup_none(data.len());
         if period <= data.len() {
             for (i, slot) in values.iter_mut().enumerate().skip(period - 1) {
-                *slot = crate::math::corr_pearson(
-                    &high[i + 1 - period..=i],
-                    &low[i + 1 - period..=i],
-                );
+                *slot =
+                    crate::math::corr_pearson(&high[i + 1 - period..=i], &low[i + 1 - period..=i]);
             }
         }
         Ok(IndicatorResult::new(Self::ID.to_owned(), values))

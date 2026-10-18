@@ -8,10 +8,10 @@
 
 use crate::error::{SnapshotError, StoreError};
 use crate::key::TapeKey;
+use crate::registry::test_setup::{register_defaults, with_registry_caps, VENUE};
 use crate::registry::MarketRegistry;
-use crate::registry::test_setup::{VENUE, register_defaults, with_registry_caps};
-use crate::snapshot::test_snapshot::{SEAL_NOW_MS, varied_bars};
-use crate::snapshot::{SealOptions, SealedSnapshot, read_snapshot, reconcile_orphans, seal};
+use crate::snapshot::test_snapshot::{varied_bars, SEAL_NOW_MS};
+use crate::snapshot::{read_snapshot, reconcile_orphans, seal, SealOptions, SealedSnapshot};
 
 fn seal_one(
     registry: &MarketRegistry,
@@ -153,10 +153,16 @@ async fn manifest_round_trip_through_reopen() {
         sealed.path.to_string_lossy().into_owned()
     })
     .await;
-    assert!(seals.join("manifest.json").is_file(), "the manifest persists as JSON");
+    assert!(
+        seals.join("manifest.json").is_file(),
+        "the manifest persists as JSON"
+    );
     with_registry_caps(async {
         let registry = MarketRegistry::open(&root).expect("registry reopens");
-        let symbol_id = registry.resolve("REOPEN", VENUE).expect("resolve").expect("known");
+        let symbol_id = registry
+            .resolve("REOPEN", VENUE)
+            .expect("resolve")
+            .expect("known");
         let key = TapeKey {
             symbol_id,
             timeframe: protopyne_types::Timeframe::M1,
@@ -198,7 +204,10 @@ async fn the_manifest_json_shape_is_pinned() {
     .await;
     let text = std::fs::read_to_string(seals.join("manifest.json")).expect("manifest reads");
     let value: serde_json::Value = serde_json::from_str(&text).expect("valid JSON");
-    let records = value.get("records").and_then(serde_json::Value::as_array).expect("records array");
+    let records = value
+        .get("records")
+        .and_then(serde_json::Value::as_array)
+        .expect("records array");
     assert_eq!(records.len(), 1);
     let record = &records[0];
     for field in [
@@ -217,9 +226,14 @@ async fn the_manifest_json_shape_is_pinned() {
             "the manifest row keeps its SQL-era field {field:?}: {text}"
         );
     }
-    assert_eq!(record.get("row_count").and_then(serde_json::Value::as_u64), Some(4));
     assert_eq!(
-        record.get("written_at_ms").and_then(serde_json::Value::as_i64),
+        record.get("row_count").and_then(serde_json::Value::as_u64),
+        Some(4)
+    );
+    assert_eq!(
+        record
+            .get("written_at_ms")
+            .and_then(serde_json::Value::as_i64),
         Some(SEAL_NOW_MS)
     );
 }

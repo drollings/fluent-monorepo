@@ -48,8 +48,12 @@ fn setup() -> (tempfile::TempDir, std::path::PathBuf) {
 /// below replays. Returns the replayed events in log order.
 fn seed_small(journal: &Journal, permit: &VenueStorage) -> Vec<JournalEvent> {
     let now = Utc::now();
-    journal.record_intent(permit, &intent("a#0"), now).expect("intent a");
-    journal.record_intent(permit, &intent("b#0"), now).expect("intent b");
+    journal
+        .record_intent(permit, &intent("a#0"), now)
+        .expect("intent a");
+    journal
+        .record_intent(permit, &intent("b#0"), now)
+        .expect("intent b");
     journal
         .mark_status(permit, "a#0", OrderStatus::Submitted, now)
         .expect("submitted");
@@ -94,14 +98,27 @@ async fn intents_replay_in_append_order_with_projected_status() {
     scoped(permit.clone(), async {
         let journal = Journal::open(&path).expect("open");
         let now = Utc::now();
-        journal.record_intent(&permit, &intent("b#0"), now).expect("intent b");
-        journal.record_intent(&permit, &intent("a#0"), now).expect("intent a");
         journal
-            .mark_status(&permit, &intent("a#0").client_id, OrderStatus::Submitted, now)
+            .record_intent(&permit, &intent("b#0"), now)
+            .expect("intent b");
+        journal
+            .record_intent(&permit, &intent("a#0"), now)
+            .expect("intent a");
+        journal
+            .mark_status(
+                &permit,
+                &intent("a#0").client_id,
+                OrderStatus::Submitted,
+                now,
+            )
             .expect("submitted");
         let state = journal.replay(&permit).expect("replay");
         let ids: Vec<_> = state.intents.iter().map(|i| i.client_id.clone()).collect();
-        assert_eq!(ids, vec!["b#0".to_owned(), "a#0".to_owned()], "append order wins");
+        assert_eq!(
+            ids,
+            vec!["b#0".to_owned(), "a#0".to_owned()],
+            "append order wins"
+        );
         assert_eq!(
             journal.intent_status(&permit, "a#0").expect("status"),
             Some("submitted".to_owned())
@@ -126,7 +143,9 @@ async fn status_is_a_projection_of_every_status_kind_event() {
     scoped(permit.clone(), async {
         let journal = Journal::open(&path).expect("open");
         let now = Utc::now();
-        journal.record_intent(&permit, &intent("a#0"), now).expect("intent");
+        journal
+            .record_intent(&permit, &intent("a#0"), now)
+            .expect("intent");
         journal
             .record_transition(&permit, "a#0", "acknowledged", "{}", now)
             .expect("transition");
@@ -141,7 +160,10 @@ async fn status_is_a_projection_of_every_status_kind_event() {
             .into_iter()
             .map(|i| i.client_id)
             .collect();
-        assert!(pending.contains(&"a#0".to_owned()), "acknowledged stays mid-flight");
+        assert!(
+            pending.contains(&"a#0".to_owned()),
+            "acknowledged stays mid-flight"
+        );
     })
     .await;
 }
@@ -153,11 +175,18 @@ async fn idempotent_rerecord_writes_no_second_row() {
     scoped(permit.clone(), async {
         let journal = Journal::open(&path).expect("open");
         let now = Utc::now();
-        assert!(journal.record_intent(&permit, &intent("a#0"), now).expect("first"));
-        assert!(!journal.record_intent(&permit, &intent("a#0"), now).expect("replay"));
+        assert!(journal
+            .record_intent(&permit, &intent("a#0"), now)
+            .expect("first"));
+        assert!(!journal
+            .record_intent(&permit, &intent("a#0"), now)
+            .expect("replay"));
         let events = journal.replay(&permit).expect("replay").events;
         assert_eq!(
-            events.iter().filter(|e| e.client_id == "a#0" && e.kind == "intent").count(),
+            events
+                .iter()
+                .filter(|e| e.client_id == "a#0" && e.kind == "intent")
+                .count(),
             1,
             "one intent row, never two"
         );
@@ -173,7 +202,9 @@ async fn leg_fills_are_additive_and_survive_reopen() {
     scoped(permit.clone(), async {
         let journal = Journal::open(&path).expect("open");
         let now = Utc::now();
-        journal.record_intent(&permit, &intent("spread#0"), now).expect("intent");
+        journal
+            .record_intent(&permit, &intent("spread#0"), now)
+            .expect("intent");
         for fill in ["SPY 260117C00600000", "SPY 260117P00550000"] {
             journal
                 .record_leg_fill(
@@ -192,13 +223,21 @@ async fn leg_fills_are_additive_and_survive_reopen() {
         }
         let before = journal.replay(&permit).expect("replay");
         assert_eq!(
-            before.events.iter().filter(|e| e.kind == LEG_FILL_KIND).count(),
+            before
+                .events
+                .iter()
+                .filter(|e| e.kind == LEG_FILL_KIND)
+                .count(),
             2,
             "one row per executed leg"
         );
         drop(journal);
         let reopened = Journal::open(&path).expect("reopen");
-        assert_eq!(reopened.replay(&permit).expect("replay"), before, "leg rows survive reopen");
+        assert_eq!(
+            reopened.replay(&permit).expect("replay"),
+            before,
+            "leg rows survive reopen"
+        );
     })
     .await;
 }
@@ -275,9 +314,17 @@ async fn every_byte_offset_replays_a_prefix() {
             .await;
         let n = replayed.events.len();
         assert!(n <= full.len(), "offset {offset}: no invented rows");
-        assert_eq!(&replayed.events, &full[..n], "offset {offset}: a committed prefix");
+        assert_eq!(
+            &replayed.events,
+            &full[..n],
+            "offset {offset}: a committed prefix"
+        );
         assert!(
-            replayed.events.iter().enumerate().all(|(i, e)| e.seq == i as i64 + 1),
+            replayed
+                .events
+                .iter()
+                .enumerate()
+                .all(|(i, e)| e.seq == i as i64 + 1),
             "offset {offset}: sequences stay contiguous from 1"
         );
         std::fs::remove_file(&probe).ok();
@@ -298,7 +345,13 @@ async fn mid_file_corruption_refuses_loudly() {
         let mut raw = std::fs::read(&path).expect("journal bytes");
         // Corrupt the first data row's kind field (past the two header
         // lines) while leaving the rest of the file intact.
-        let second_newline = raw.iter().enumerate().filter(|(_, b)| **b == b'\n').nth(1).expect("headers").0;
+        let second_newline = raw
+            .iter()
+            .enumerate()
+            .filter(|(_, b)| **b == b'\n')
+            .nth(1)
+            .expect("headers")
+            .0;
         let victim = second_newline + 8;
         raw[victim] = if raw[victim] == b'x' { b'y' } else { b'x' };
         // If the flip landed inside a field the row may still parse (a
@@ -316,7 +369,10 @@ async fn mid_file_corruption_refuses_loudly() {
             panic!("corruption refuses")
         };
         let text = err.to_string();
-        assert!(text.contains("corrupt"), "the refusal names the damage: {text}");
+        assert!(
+            text.contains("corrupt"),
+            "the refusal names the damage: {text}"
+        );
     })
     .await;
 }

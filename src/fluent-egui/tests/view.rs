@@ -2,17 +2,22 @@ use super::*;
 use chrono::TimeZone as _;
 use protopyne_chart_model::{rows_of, to_display_float};
 use protopyne_types::Bar;
-use rust_decimal::Decimal;
 use rust_decimal::prelude::FromPrimitive as _;
+use rust_decimal::Decimal;
 
 #[test]
 fn pane_series_names_pane_and_style_key() {
-    let series =
-        PaneSeries::new("fast", PaneKind::Oscillator, vec![None, Some(1.0)], "fast").expect("valid");
+    let series = PaneSeries::new("fast", PaneKind::Oscillator, vec![None, Some(1.0)], "fast")
+        .expect("valid");
     assert_eq!(series.len(), 2);
     assert!(!series.is_empty());
-    assert!(PaneSeries::new("x", PaneKind::Price, Vec::new(), "bull").expect("valid").is_empty());
-    assert!(PaneSeries::new("", PaneKind::Price, Vec::new(), "bull").is_err(), "empty name refuses");
+    assert!(PaneSeries::new("x", PaneKind::Price, Vec::new(), "bull")
+        .expect("valid")
+        .is_empty());
+    assert!(
+        PaneSeries::new("", PaneKind::Price, Vec::new(), "bull").is_err(),
+        "empty name refuses"
+    );
     assert!(
         PaneSeries::new("x", PaneKind::Price, Vec::new(), "  ").is_err(),
         "empty style key refuses"
@@ -51,12 +56,22 @@ fn ribbon_fill_style_keys_map_to_teal_and_purple_slots() {
 fn ribbon_refuses_mismatched_lengths_and_bad_alpha() {
     assert!(ribbon_view(&[Some(1.0)], &[Some(1.0), Some(2.0)], 0.5).is_err());
     for bad in [f64::NAN, -0.1, 1.1] {
-        assert!(ribbon_view(&[Some(1.0)], &[Some(1.0)], bad).is_err(), "alpha {bad} refuses");
+        assert!(
+            ribbon_view(&[Some(1.0)], &[Some(1.0)], bad).is_err(),
+            "alpha {bad} refuses"
+        );
     }
 }
 
 fn chart_row(volume: u64) -> ChartRow {
-    ChartRow { time: 0, open: 100.0, high: 101.0, low: 99.0, close: 100.0, volume }
+    ChartRow {
+        time: 0,
+        open: 100.0,
+        high: 101.0,
+        low: 99.0,
+        close: 100.0,
+        volume,
+    }
 }
 
 #[test]
@@ -75,8 +90,16 @@ fn delta_scales_by_causal_peak() {
     let prefix = delta_candle_view(&rows[..1], &buy[..1], &sell[..1], 300.0).expect("prefix");
     assert_eq!(prefix.buy_top[0], view.buy_top[0]);
     assert_eq!(view.buy_top[2], None, "holes stay holes");
-    for slot in view.buy_top.iter().flatten().chain(view.sell_bottom.iter().flatten()) {
-        assert!(*slot >= 0.0 && *slot <= 300.0 + 1e-9, "bars stay within [0, unit]");
+    for slot in view
+        .buy_top
+        .iter()
+        .flatten()
+        .chain(view.sell_bottom.iter().flatten())
+    {
+        assert!(
+            *slot >= 0.0 && *slot <= 300.0 + 1e-9,
+            "bars stay within [0, unit]"
+        );
     }
 }
 
@@ -92,7 +115,10 @@ fn delta_with_zero_volume_yields_zero_height() {
 #[test]
 fn delta_refuses_mismatch_bad_unit_and_negative_splits() {
     let rows = vec![chart_row(100)];
-    assert!(delta_candle_view(&rows, &[], &[Some(1.0)], 300.0).is_err(), "length mismatch refuses");
+    assert!(
+        delta_candle_view(&rows, &[], &[Some(1.0)], 300.0).is_err(),
+        "length mismatch refuses"
+    );
     for bad in [0.0, -1.0, f64::NAN] {
         assert!(
             delta_candle_view(&rows, &[Some(1.0)], &[Some(1.0)], bad).is_err(),
@@ -111,7 +137,10 @@ fn delta_refuses_mismatch_bad_unit_and_negative_splits() {
 
 fn bar_at(day: u32, px: &str) -> Bar {
     Bar::new()
-        .ts(chrono::Utc.with_ymd_and_hms(2026, 1, day, 12, 0, 0).single().expect("valid time"))
+        .ts(chrono::Utc
+            .with_ymd_and_hms(2026, 1, day, 12, 0, 0)
+            .single()
+            .expect("valid time"))
         .o(px.parse::<Decimal>().expect("valid decimal"))
         .h(px.parse::<Decimal>().expect("valid decimal"))
         .l(px.parse::<Decimal>().expect("valid decimal"))
@@ -138,7 +167,11 @@ fn dropped_count_is_conserved_into_views() {
     for row in &converted.rows {
         for leg in [row.open, row.high, row.low, row.close] {
             assert!(leg.is_finite(), "converted legs are finite display floats");
-            assert_eq!(to_display_float(px_decimal(leg)), Some(leg), "legs round-trip exactly");
+            assert_eq!(
+                to_display_float(px_decimal(leg)),
+                Some(leg),
+                "legs round-trip exactly"
+            );
         }
     }
 }
@@ -151,15 +184,30 @@ fn px_decimal(display: f64) -> Decimal {
 fn pivot_marks_fire_only_on_crossings_sign_correct() {
     // Drops below +100 -> High at 1 and 5; rises above -100 -> Low at 3.
     // Index 2 and 4 start inside the band, so no crossing fires there.
-    let fast =
-        vec![Some(150.0), Some(90.0), Some(-120.0), Some(-80.0), Some(140.0), Some(60.0)];
+    let fast = vec![
+        Some(150.0),
+        Some(90.0),
+        Some(-120.0),
+        Some(-80.0),
+        Some(140.0),
+        Some(60.0),
+    ];
     let marks = pivot_marks(&fast, 100.0).expect("valid threshold");
     assert_eq!(
         marks,
         vec![
-            PivotMark { index: 1, side: PivotSide::High },
-            PivotMark { index: 3, side: PivotSide::Low },
-            PivotMark { index: 5, side: PivotSide::High },
+            PivotMark {
+                index: 1,
+                side: PivotSide::High
+            },
+            PivotMark {
+                index: 3,
+                side: PivotSide::Low
+            },
+            PivotMark {
+                index: 5,
+                side: PivotSide::High
+            },
         ]
     );
 }
@@ -180,17 +228,31 @@ fn pivot_marks_ignore_holes_and_flat_runs() {
 #[test]
 fn pivot_refuses_bad_threshold() {
     for bad in [0.0, -100.0, f64::NAN, f64::INFINITY] {
-        assert!(pivot_marks(&[Some(1.0)], bad).is_err(), "threshold {bad} refuses");
+        assert!(
+            pivot_marks(&[Some(1.0)], bad).is_err(),
+            "threshold {bad} refuses"
+        );
     }
     assert!(pivot_marks(&[], 100.0).expect("empty is valid").is_empty());
 }
 
 #[test]
 fn unit_squash_is_odd_monotonic_and_bounded() {
-    assert_eq!(unit_squash(0.0).to_bits(), 0.0_f64.to_bits(), "zero stays centered");
+    assert_eq!(
+        unit_squash(0.0).to_bits(),
+        0.0_f64.to_bits(),
+        "zero stays centered"
+    );
     for x in [0.001, 0.5, 1.0, 2.0, 100.0, 1.0e9] {
-        assert_eq!(unit_squash(-x).to_bits(), (-unit_squash(x)).to_bits(), "odd at {x}");
-        assert!(unit_squash(x) > 0.0 && unit_squash(x) < 1.0, "bounded at {x}");
+        assert_eq!(
+            unit_squash(-x).to_bits(),
+            (-unit_squash(x)).to_bits(),
+            "odd at {x}"
+        );
+        assert!(
+            unit_squash(x) > 0.0 && unit_squash(x) < 1.0,
+            "bounded at {x}"
+        );
     }
     let mut prev = 0.0;
     for i in 1..=1000 {
@@ -222,29 +284,64 @@ fn affine_squash_matches_shift_scale_squash_widen_order() {
         "+offset zeroes the shift"
     );
     for raw in [-1.0e9, 1.0e9] {
-        assert!(affine_squash(raw, offset, slope, scale).abs() < scale, "band holds at {raw}");
+        assert!(
+            affine_squash(raw, offset, slope, scale).abs() < scale,
+            "band holds at {raw}"
+        );
     }
 }
 
 #[test]
 fn band_squash_centers_zero_and_halves_at_divisor() {
-    assert_eq!(band_squash(0.0, 100.0, 100.0).to_bits(), 0.0_f64.to_bits(), "zero stays centered");
-    assert_eq!(band_squash(100.0, 100.0, 100.0).to_bits(), 50.0_f64.to_bits(), "divisor halves");
-    assert_eq!(band_squash(-100.0, 100.0, 100.0).to_bits(), (-50.0_f64).to_bits(), "rail mirrors");
+    assert_eq!(
+        band_squash(0.0, 100.0, 100.0).to_bits(),
+        0.0_f64.to_bits(),
+        "zero stays centered"
+    );
+    assert_eq!(
+        band_squash(100.0, 100.0, 100.0).to_bits(),
+        50.0_f64.to_bits(),
+        "divisor halves"
+    );
+    assert_eq!(
+        band_squash(-100.0, 100.0, 100.0).to_bits(),
+        (-50.0_f64).to_bits(),
+        "rail mirrors"
+    );
     for value in [-1.0e9, -1.0, -0.5, 0.5, 1.0, 1.0e9] {
-        assert!(band_squash(value, 100.0, 100.0).abs() < 100.0, "finite {value} stays inside");
+        assert!(
+            band_squash(value, 100.0, 100.0).abs() < 100.0,
+            "finite {value} stays inside"
+        );
     }
-    assert!(band_squash(f64::NAN, 100.0, 100.0).is_nan(), "non-finite yields NaN for the lift");
-    assert!(band_squash(f64::INFINITY, 100.0, 100.0).is_nan(), "infinite yields NaN for the lift");
+    assert!(
+        band_squash(f64::NAN, 100.0, 100.0).is_nan(),
+        "non-finite yields NaN for the lift"
+    );
+    assert!(
+        band_squash(f64::INFINITY, 100.0, 100.0).is_nan(),
+        "infinite yields NaN for the lift"
+    );
 }
 
 #[test]
 fn map_series_optional_preserves_holes_and_filters_non_finite() {
     let series = vec![None, Some(1.0), Some(2.0), None, Some(3.0)];
     let out = map_series_optional(&series, |v| v * 2.0);
-    assert_eq!(out, vec![None, Some(2.0), Some(4.0), None, Some(6.0)], "holes survive by position");
-    assert!(map_series_optional(&[], |v| v).is_empty(), "empty in, empty out");
-    assert_eq!(map_series_optional(&[None], |v| v), vec![None], "single hole");
+    assert_eq!(
+        out,
+        vec![None, Some(2.0), Some(4.0), None, Some(6.0)],
+        "holes survive by position"
+    );
+    assert!(
+        map_series_optional(&[], |v| v).is_empty(),
+        "empty in, empty out"
+    );
+    assert_eq!(
+        map_series_optional(&[None], |v| v),
+        vec![None],
+        "single hole"
+    );
     assert_eq!(
         map_series_optional(&[Some(f64::NAN)], |v| v),
         vec![None],

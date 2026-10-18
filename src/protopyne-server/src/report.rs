@@ -16,7 +16,7 @@ use protopyne_kernels::indicator::encode_param_value;
 use protopyne_kernels::value::PineValue;
 use protopyne_store::identity::VerifiedId;
 use protopyne_store::plan::{SpanOrigin, SpanPlan};
-use protopyne_types::{Bar, Money};
+use protopyne_types::{Bar, ChainQuote, Money};
 
 use crate::backtest::HistorySource;
 use crate::metrics::{self, TRADING_DAYS_PER_YEAR};
@@ -477,11 +477,51 @@ pub const ABSENT_CAPABILITIES: &str = "no corporate-action adjustments (cash div
      excluded from P&L); no option-chain data (greeks unavailable); single symbol; \
      no point-in-time universe";
 
+/// The same declaration for a run that priced legs off option-chain data:
+/// the chain clause drops — the chain-data line names the coverage instead
+/// — while every other absence stands.
+pub const ABSENT_CAPABILITIES_WITH_CHAINS: &str =
+    "no corporate-action adjustments (cash dividends \
+     excluded from P&L); single symbol; no point-in-time universe";
+
+/// The chain-data line for `data_limits`: the run's chain coverage (quote
+/// count plus stamped range) beside the metrics, so a spread-priced run
+/// states what it traded off. `None` when the run held no chain source, in
+/// which case reports read exactly as before.
+#[must_use]
+pub fn chain_data_limit_line(quotes: &[ChainQuote]) -> Option<String> {
+    if quotes.is_empty() {
+        return None;
+    }
+    let (first, last) = quotes.iter().fold((None, None), |(low, high), quote| {
+        let ts = quote.timestamp;
+        (
+            Some(low.map_or(ts, |held: chrono::DateTime<chrono::Utc>| held.min(ts))),
+            Some(high.map_or(ts, |held: chrono::DateTime<chrono::Utc>| held.max(ts))),
+        )
+    });
+    let (first, last) = (first?, last?);
+    let count = quotes.len();
+    let noun = if count == 1 {
+        "1 quote".to_owned()
+    } else {
+        format!("{count} quotes")
+    };
+    Some(format!(
+        "option-chain data: {noun} {}..{}",
+        rfc3339(&first),
+        rfc3339(&last)
+    ))
+}
+
 /// The source line for `data_limits`: the arm, its pinned version, and its
 /// bar count, derived from the source rather than asserted.
 #[must_use]
 pub fn history_source_limit(kind: HistoryKind, data_version: &str, bar_count: usize) -> String {
-    format!("{} history '{data_version}', {bar_count} bars", kind.label())
+    format!(
+        "{} history '{data_version}', {bar_count} bars",
+        kind.label()
+    )
 }
 
 /// The coverage-omission line: a source with no planner provenance has an
@@ -527,7 +567,10 @@ pub fn tape_data_limit_line(manifest: &RunManifest) -> Option<String> {
 }
 
 /// Assemble a report from run facts. Pure function: same inputs, same
-/// report.
+/// report. `chain_quotes` carries the run's chain source facts (`None` when
+/// the run held none): a chained run names its coverage in `data_limits`
+/// and drops the no-chains clause from the absence line, while a chainless
+/// run reads exactly as before — absence line verbatim, no chain line.
 #[must_use]
 pub fn build_report(
     manifest: RunManifest,
@@ -540,6 +583,7 @@ pub fn build_report(
     reserved_notional: Money,
     equity_curve: Vec<Money>,
     rsrs: Option<f64>,
+    chain_quotes: Option<&[ChainQuote]>,
 ) -> BacktestReport {
     let equity_decimals: Vec<Decimal> = equity_curve
         .iter()
@@ -566,6 +610,14 @@ pub fn build_report(
     let mut data_limits = data_limits;
     if let Some(tape_line) = tape_data_limit_line(&manifest) {
         data_limits.push(tape_line);
+    }
+    if let Some(chain_line) = chain_quotes.and_then(chain_data_limit_line) {
+        for limit in &mut data_limits {
+            if *limit == ABSENT_CAPABILITIES {
+                ABSENT_CAPABILITIES_WITH_CHAINS.clone_into(limit);
+            }
+        }
+        data_limits.push(chain_line);
     }
     BacktestReport {
         manifest,

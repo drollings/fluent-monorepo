@@ -9,9 +9,7 @@ use crate::journal::{Journal, VenueStorage, LEG_FILL_KIND};
 use crate::order::{OrderIntent, OrderSide, OrderStatus};
 use crate::reconcile::{journal_leg_net, reconcile_legs, ReconcileGate};
 use crate::venue::{LegExecution, LegQuoteSource, Venue};
-use protopyne_types::{
-    LegSide, Money, OptionContract, OptionKind, SpreadLeg, SpreadLegs,
-};
+use protopyne_types::{LegSide, Money, OptionContract, OptionKind, SpreadLeg, SpreadLegs};
 
 fn money(value: &str) -> Money {
     Money::new(value.parse::<Decimal>().expect("decimal"))
@@ -146,7 +144,11 @@ async fn vertical_fills_atomically_per_leg() {
     let venue = venue_with(liquid_vertical_quotes());
     let legs = vertical();
     let record = venue
-        .submit(spread_intent("v#0", legs.clone()), &quote("600.00", "600.10"), now())
+        .submit(
+            spread_intent("v#0", legs.clone()),
+            &quote("600.00", "600.10"),
+            now(),
+        )
         .await
         .expect("liquid vertical fills");
     // Long 2.70 ask slipped up (2.7027), short 1.20 bid slipped down (1.1988).
@@ -158,7 +160,10 @@ async fn vertical_fills_atomically_per_leg() {
     let executions = venue.executed_legs("v#0");
     assert_eq!(executions.len(), 2);
     assert_eq!(
-        executions.iter().map(|e| e.contract.as_str()).collect::<Vec<_>>(),
+        executions
+            .iter()
+            .map(|e| e.contract.as_str())
+            .collect::<Vec<_>>(),
         vec![
             legs.legs()[0].contract.occ_symbol(),
             legs.legs()[1].contract.occ_symbol(),
@@ -183,7 +188,11 @@ async fn one_illiquid_leg_refuses_the_whole_spread() {
     let venue = venue_with(MapLegQuotes { map });
 
     let err = venue
-        .submit(spread_intent("w#0", legs.clone()), &quote("600.00", "600.10"), now())
+        .submit(
+            spread_intent("w#0", legs.clone()),
+            &quote("600.00", "600.10"),
+            now(),
+        )
         .await
         .expect_err("wide leg must refuse the spread");
     let reason = err.to_string();
@@ -201,7 +210,11 @@ async fn one_illiquid_leg_refuses_the_whole_spread() {
 async fn spread_without_leg_market_data_refuses_fail_closed() {
     let venue = PaperVenue::new(PaperConfig::new().build());
     let err = venue
-        .submit(spread_intent("d#0", vertical()), &quote("600.00", "600.10"), now())
+        .submit(
+            spread_intent("d#0", vertical()),
+            &quote("600.00", "600.10"),
+            now(),
+        )
         .await
         .expect_err("legs without quotes must not fill");
     assert!(matches!(err, VenueError::Invalid(_)));
@@ -213,7 +226,11 @@ async fn spread_lose_ack_resolves_through_query_by_id() {
     let venue = venue_with(liquid_vertical_quotes());
     venue.inject(Fault::LoseAck);
     let err = venue
-        .submit(spread_intent("l#0", vertical()), &quote("600.00", "600.10"), now())
+        .submit(
+            spread_intent("l#0", vertical()),
+            &quote("600.00", "600.10"),
+            now(),
+        )
         .await
         .expect_err("lost ack errors");
     assert!(matches!(err, VenueError::Transport(_)));
@@ -224,7 +241,11 @@ async fn spread_lose_ack_resolves_through_query_by_id() {
     assert_eq!(venue.spread_positions().len(), 2);
     // Retry after the lost ack dedups: still exactly one order, one leg set.
     let again = venue
-        .submit(spread_intent("l#0", vertical()), &quote("600.00", "600.10"), now())
+        .submit(
+            spread_intent("l#0", vertical()),
+            &quote("600.00", "600.10"),
+            now(),
+        )
         .await
         .expect("idempotent resubmit");
     assert_eq!(again.filled_quantity, 2);
@@ -351,4 +372,123 @@ async fn pre_migration_rows_replay_unchanged() {
             assert!(journal_leg_net(&state.events).expect("leg net").is_empty());
         })
         .await;
+}
+
+/// Time-varying leg quotes: each contract reads from a stamped ladder, so a
+/// submission prices legs as of its own `now`.
+struct LadderLegQuotes {
+    early: HashMap<String, Quote>,
+    late: HashMap<String, Quote>,
+    switch_at: chrono::DateTime<Utc>,
+}
+
+impl LegQuoteSource for LadderLegQuotes {
+    fn leg_quote(&self, contract: &OptionContract) -> Option<Quote> {
+        self.late.get(&contract.occ_symbol()).copied()
+    }
+
+    fn leg_quote_at(&self, contract: &OptionContract, at: chrono::DateTime<Utc>) -> Option<Quote> {
+        let ladder = if at < self.switch_at {
+            &self.early
+        } else {
+            &self.late
+        };
+        ladder.get(&contract.occ_symbol()).copied()
+    }
+}
+
+#[tokio::test]
+async fn spread_prices_legs_as_of_submission_time() {
+    let legs = vertical();
+    let early_now = Utc.with_ymd_and_hms(2026, 6, 1, 12, 0, 5).unwrap();
+    let late_now = Utc.with_ymd_and_hms(2026, 6, 3, 12, 0, 5).unwrap();
+    // Ladder quotes carry their own instant's stamp, so the age gate passes
+    // at the submission that reads them.
+    let stamped = |bid: &str, ask: &str, ts: chrono::DateTime<Utc>| {
+        Quote::new()
+            .bid(money(bid))
+            .ask(money(ask))
+            .bid_size(50)
+            .ask_size(50)
+            .ts(ts)
+            .build()
+    };
+    let early = HashMap::from([
+        (
+            legs.legs()[0].contract.occ_symbol(),
+            stamped("2.50", "2.70", early_now),
+        ),
+        (
+            legs.legs()[1].contract.occ_symbol(),
+            stamped("1.20", "1.40", early_now),
+        ),
+    ]);
+    // Late ladder is exactly double the early one: any as-of pricing shows
+    // up as a doubled net debit.
+    let late = HashMap::from([
+        (
+            legs.legs()[0].contract.occ_symbol(),
+            stamped("5.00", "5.40", late_now),
+        ),
+        (
+            legs.legs()[1].contract.occ_symbol(),
+            stamped("2.40", "2.80", late_now),
+        ),
+    ]);
+    let switch_at = Utc.with_ymd_and_hms(2026, 6, 2, 12, 0, 0).unwrap();
+    let mut venue = PaperVenue::new(PaperConfig::new().build());
+    venue.set_leg_quotes(Arc::new(LadderLegQuotes {
+        early,
+        late,
+        switch_at,
+    }));
+
+    // Same intent, same limit, two submission instants straddling the switch.
+    let early_record = venue
+        .submit(
+            spread_intent("v#early", legs.clone()),
+            &quote("600.00", "600.10"),
+            early_now,
+        )
+        .await
+        .expect("early vertical fills");
+    let late_record = venue
+        .submit(
+            spread_intent("v#late", legs.clone()),
+            &quote("600.00", "600.10"),
+            late_now,
+        )
+        .await
+        .expect("late vertical fills");
+    // Early net debit 1.5039 (pinned above); late legs double, so the net
+    // doubles exactly — the submission read its own instant's ladder.
+    assert_eq!(early_record.avg_price, Some(money("1.5039")));
+    assert_eq!(
+        late_record.avg_price,
+        Some(money("3.0078")),
+        "the late submission prices the late ladder, never the early one"
+    );
+}
+
+#[tokio::test]
+async fn timeless_stubs_keep_newest_only_behavior() {
+    // A stub implementing only `leg_quote` (the pre-time default) serves the
+    // same quote at every instant: backward compatibility is behavior, not
+    // just compilation.
+    let venue = venue_with(liquid_vertical_quotes());
+    let legs = vertical();
+    let past = Utc.with_ymd_and_hms(2020, 1, 1, 0, 0, 0).unwrap();
+    let record = venue
+        .submit(
+            spread_intent("v#past", legs),
+            &quote("600.00", "600.10"),
+            past,
+        )
+        .await
+        .expect("timeless stub still fills");
+    assert_eq!(
+        record.avg_price,
+        Some(money("1.5039")),
+        "the default leg_quote_at delegates to leg_quote at any instant"
+    );
 }

@@ -82,15 +82,18 @@ fn mentions(text: &str, token: &str) -> bool {
     if needle.is_empty() || needle.len() > chars.len() {
         return false;
     }
-    chars.windows(needle.len()).enumerate().any(|(start, window)| {
-        if window != needle.as_slice() {
-            return false;
-        }
-        let before_ok = start == 0 || !is_word(chars[start - 1]);
-        let after = start + needle.len();
-        let after_ok = after >= chars.len() || !is_word(chars[after]);
-        before_ok && after_ok
-    })
+    chars
+        .windows(needle.len())
+        .enumerate()
+        .any(|(start, window)| {
+            if window != needle.as_slice() {
+                return false;
+            }
+            let before_ok = start == 0 || !is_word(chars[start - 1]);
+            let after = start + needle.len();
+            let after_ok = after >= chars.len() || !is_word(chars[after]);
+            before_ok && after_ok
+        })
 }
 
 fn forbid_in_src(token: &str, why: &str) {
@@ -285,7 +288,10 @@ fn scaffolding_names_no_compute_truth_or_trading_path() {
         "protopyne-strategy",
         "protopyne-venue",
     ] {
-        forbid_in_src(token, "compute truth and trading crates are never a scaffolding dependency");
+        forbid_in_src(
+            token,
+            "compute truth and trading crates are never a scaffolding dependency",
+        );
     }
 }
 
@@ -349,12 +355,30 @@ const TRADING_VOCABULARY_DENIED: &[(&str, &str)] = &[
 /// Each entry is the concrete symbol the crate ships, so the match is
 /// whole-word and cannot be satisfied by an unrelated word in a comment.
 const SCAFFOLDING_VOCABULARY_OWNED: &[(&str, &str)] = &[
-    ("ribbon", "a bounded band between two smoothed series — a shape, not a signal"),
-    ("pivot_marks", "detected local extremes — geometry, not a trade decision"),
-    ("oscillator_points", "a normalized bounded series mapped to pixels — a scale, not a strategy"),
-    ("delta_bar_geoms", "change-over-window bars — arithmetic, not a position"),
-    ("\"bull\"", "a style key naming an up close, resolved to a color at paint time"),
-    ("\"bear\"", "a style key naming a down close, resolved to a color at paint time"),
+    (
+        "ribbon",
+        "a bounded band between two smoothed series — a shape, not a signal",
+    ),
+    (
+        "pivot_marks",
+        "detected local extremes — geometry, not a trade decision",
+    ),
+    (
+        "oscillator_points",
+        "a normalized bounded series mapped to pixels — a scale, not a strategy",
+    ),
+    (
+        "delta_bar_geoms",
+        "change-over-window bars — arithmetic, not a position",
+    ),
+    (
+        "\"bull\"",
+        "a style key naming an up close, resolved to a color at paint time",
+    ),
+    (
+        "\"bear\"",
+        "a style key naming a down close, resolved to a color at paint time",
+    ),
 ];
 
 /// Code lines in every `src/` module, with the file they came from.
@@ -407,9 +431,15 @@ fn owned_chart_vocabulary_is_actually_used() {
         if !used {
             unused.push(*token);
         }
-        assert!(!why.trim().is_empty(), "owned vocabulary {token} needs a justification");
+        assert!(
+            !why.trim().is_empty(),
+            "owned vocabulary {token} needs a justification"
+        );
     }
-    assert!(unused.is_empty(), "owned chart vocabulary no longer appears in the crate: {unused:?}");
+    assert!(
+        unused.is_empty(),
+        "owned chart vocabulary no longer appears in the crate: {unused:?}"
+    );
 }
 
 #[test]
@@ -422,17 +452,30 @@ fn trading_vocabulary_gate_fires_on_a_synthetic_module() {
         ("paint.rs", "use protopyne_strategy::grant::Grant;"),
         ("plan.rs", "let grant: GrantPatch = load();"),
         ("view.rs", "let band = ribbon_bands(&view, &viewport);"),
-        ("paint.rs", "// Grant is discussed here, and this line documents it"),
+        (
+            "paint.rs",
+            "// Grant is discussed here, and this line documents it",
+        ),
         ("paint.rs", "let GrantFree = 1;"),
     ]
     .into_iter()
     .flat_map(|(file, text)| {
-        code_lines(text).into_iter().map(str::to_owned).map(move |line| (file.to_owned(), line))
+        code_lines(text)
+            .into_iter()
+            .map(str::to_owned)
+            .map(move |line| (file.to_owned(), line))
     })
     .collect();
     let hits = trading_vocabulary_hits(&lines);
-    assert_eq!(hits.len(), 2, "both grant references are caught, the comment is not: {hits:?}");
-    assert!(hits.iter().all(|hit| hit.contains("strategy")), "each names the owning crate");
+    assert_eq!(
+        hits.len(),
+        2,
+        "both grant references are caught, the comment is not: {hits:?}"
+    );
+    assert!(
+        hits.iter().all(|hit| hit.contains("strategy")),
+        "each names the owning crate"
+    );
     assert!(
         !hits.iter().any(|hit| hit.contains("ribbon")),
         "chart vocabulary the crate owns is not a violation"
@@ -460,8 +503,14 @@ fn frame_holds_no_per_widget_machinery() {
     forbid_in_src("Middleware", "no middleware layer per frame");
     // Timing lives in the terminal crate (plan-build timing over the domain
     // topology): no scaffolding module may name the wrapper.
-    forbid_in_src("Instrumented", "timing covers domain plan builds in the terminal crate only");
-    forbid_in_src("LatencyHistogram", "timing covers domain plan builds in the terminal crate only");
+    forbid_in_src(
+        "Instrumented",
+        "timing covers domain plan builds in the terminal crate only",
+    );
+    forbid_in_src(
+        "LatencyHistogram",
+        "timing covers domain plan builds in the terminal crate only",
+    );
 }
 
 #[test]
@@ -492,7 +541,10 @@ fn timing_is_observed_never_asserted() {
         }
     }
     assert!(
-        manifest_dir().join("benches").join("frame_budget.rs").is_file(),
+        manifest_dir()
+            .join("benches")
+            .join("frame_budget.rs")
+            .is_file(),
         "frame budgets ride the bench harness, which must exist"
     );
 }
@@ -510,14 +562,18 @@ fn theme_ships_no_embedded_assets() {
         .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("svg"))
         .map(|path| path.display().to_string())
         .collect();
-    assert!(embedded.is_empty(), "no SVG assets ship with the crate: {embedded:?}");
+    assert!(
+        embedded.is_empty(),
+        "no SVG assets ship with the crate: {embedded:?}"
+    );
 }
 
 fn walk_files(root: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
     let mut stack = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {
-        let entries = std::fs::read_dir(&dir).unwrap_or_else(|e| panic!("list {}: {e}", dir.display()));
+        let entries =
+            std::fs::read_dir(&dir).unwrap_or_else(|e| panic!("list {}: {e}", dir.display()));
         for entry in entries.filter_map(Result::ok) {
             let path = entry.path();
             if path.is_dir() {
@@ -592,14 +648,18 @@ fn pub_declarations(module: &str, text: &str) -> Vec<Decl> {
         .filter_map(|raw| {
             let line = raw.trim_end();
             let rest = line.strip_prefix("pub ")?;
-            let (kind, tail) = ["fn", "struct", "enum", "const", "static", "type", "trait", "mod"]
-                .into_iter()
-                .find_map(|kind| {
-                    rest.strip_prefix(kind)
-                        .and_then(|tail| tail.strip_prefix(' '))
-                        .map(|tail| (kind, tail))
-                })?;
-            let name = tail.split(|ch: char| !(ch.is_alphanumeric() || ch == '_')).next()?;
+            let (kind, tail) = [
+                "fn", "struct", "enum", "const", "static", "type", "trait", "mod",
+            ]
+            .into_iter()
+            .find_map(|kind| {
+                rest.strip_prefix(kind)
+                    .and_then(|tail| tail.strip_prefix(' '))
+                    .map(|tail| (kind, tail))
+            })?;
+            let name = tail
+                .split(|ch: char| !(ch.is_alphanumeric() || ch == '_'))
+                .next()?;
             (!name.is_empty()).then(|| Decl {
                 module: module.to_owned(),
                 file: format!("src/{module}"),
@@ -645,10 +705,11 @@ fn crate_reexports() -> std::collections::BTreeSet<String> {
 ///   asks about, so counting it would make every gate vacuous.
 fn consumer_lines() -> std::collections::BTreeMap<String, Vec<String>> {
     let mut files: std::collections::BTreeMap<String, Vec<String>> = Default::default();
-    let absorb = |files: &mut std::collections::BTreeMap<String, Vec<String>>, key: String, text: String| {
-        let lines: Vec<String> = code_lines(&text).into_iter().map(str::to_owned).collect();
-        files.insert(key, lines);
-    };
+    let absorb =
+        |files: &mut std::collections::BTreeMap<String, Vec<String>>, key: String, text: String| {
+            let lines: Vec<String> = code_lines(&text).into_iter().map(str::to_owned).collect();
+            files.insert(key, lines);
+        };
     for name in src_file_names() {
         if name != "lib.rs" {
             absorb(&mut files, format!("src/{name}"), read_src(&name));
@@ -679,7 +740,11 @@ fn consumer_lines() -> std::collections::BTreeMap<String, Vec<String>> {
                     .unwrap_or(&path)
                     .to_string_lossy()
                     .replace('\\', "/");
-                absorb(&mut files, format!("{downstream}/{relative}"), read_text(&path));
+                absorb(
+                    &mut files,
+                    format!("{downstream}/{relative}"),
+                    read_text(&path),
+                );
             }
         }
     }
@@ -718,8 +783,10 @@ fn unwired_exports(
 }
 
 fn live_unwired_exports() -> Vec<Decl> {
-    let modules =
-        src_file_names().into_iter().filter(|name| name != "lib.rs").collect::<Vec<_>>();
+    let modules = src_file_names()
+        .into_iter()
+        .filter(|name| name != "lib.rs")
+        .collect::<Vec<_>>();
     let decls: Vec<Decl> = modules
         .iter()
         .flat_map(|module| pub_declarations(module, &read_src(module)))
@@ -751,11 +818,19 @@ fn every_reachability_exemption_names_a_live_item_and_a_reason() {
     let unwired = live_unwired_exports();
     let mut seen: Vec<(&str, &str)> = Vec::new();
     for (module, name, reason) in REACHABILITY_EXEMPTIONS {
-        assert!(!reason.trim().is_empty(), "{module}::{name} exemption needs a reason");
-        assert!(!seen.contains(&(*module, *name)), "{module}::{name} is exempted twice");
+        assert!(
+            !reason.trim().is_empty(),
+            "{module}::{name} exemption needs a reason"
+        );
+        assert!(
+            !seen.contains(&(*module, *name)),
+            "{module}::{name} is exempted twice"
+        );
         seen.push((module, name));
         assert!(
-            unwired.iter().any(|decl| decl.module == *module && decl.name == *name),
+            unwired
+                .iter()
+                .any(|decl| decl.module == *module && decl.name == *name),
             "{module}::{name} is exempted but is wired — delete the exemption"
         );
     }
@@ -768,7 +843,9 @@ fn downstream_consumer_surface_is_actually_scanned() {
     // and the reachability gate would fail loudly — so assert it directly.
     let consumers = consumer_lines();
     assert!(
-        consumers.keys().any(|key| key.starts_with("src/protopyne-egui/")),
+        consumers
+            .keys()
+            .any(|key| key.starts_with("src/protopyne-egui/")),
         "the terminal crate must be in the consumer surface"
     );
     // The terminal's candle blit lives in the library workspace module, so
@@ -777,7 +854,9 @@ fn downstream_consumer_surface_is_actually_scanned() {
     assert!(
         consumers.iter().any(|(key, lines)| {
             key.starts_with("src/protopyne-egui/")
-                && lines.iter().any(|line| mentions(line, "paint_candles_tinted"))
+                && lines
+                    .iter()
+                    .any(|line| mentions(line, "paint_candles_tinted"))
         }),
         "the terminal's candle blit is read somewhere in the downstream surface"
     );
@@ -822,7 +901,10 @@ fn reachability_gate_fires_on_a_synthetic_unwired_item() {
         ),
         ("src/c.rs".to_owned(), vec!["fn helper() {}".to_owned()]),
         ("src/d.rs".to_owned(), vec!["fn helper() {}".to_owned()]),
-        ("src/lib.rs".to_owned(), vec!["pub use c::ReexportedOnly;".to_owned()]),
+        (
+            "src/lib.rs".to_owned(),
+            vec!["pub use c::ReexportedOnly;".to_owned()],
+        ),
         (
             "src/protopyne-egui/examples/demo.rs".to_owned(),
             vec!["paint(DownstreamWired());".to_owned()],

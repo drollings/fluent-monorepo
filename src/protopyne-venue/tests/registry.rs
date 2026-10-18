@@ -90,8 +90,7 @@ impl StubVenue {
     }
 
     fn submits(&self) -> usize {
-        self.submit_count
-            .load(std::sync::atomic::Ordering::SeqCst)
+        self.submit_count.load(std::sync::atomic::Ordering::SeqCst)
     }
 }
 
@@ -160,7 +159,12 @@ impl Venue for StubVenue {
     }
 
     fn orders(&self) -> Vec<OrderRecord> {
-        self.served.lock().expect("served").values().cloned().collect()
+        self.served
+            .lock()
+            .expect("served")
+            .values()
+            .cloned()
+            .collect()
     }
 
     fn apply_corporate_event(
@@ -311,7 +315,9 @@ async fn resubmit_by_client_id_returns_original_across_fallback() {
         .expect("first venue serves");
     assert_eq!(first.submits(), 1);
 
-    registry.add_route("AAPL", second.clone()).expect("re-route");
+    registry
+        .add_route("AAPL", second.clone())
+        .expect("re-route");
     let again = registry
         .submit(intent("c-aapl", "AAPL"), &quote(), now())
         .await
@@ -357,7 +363,9 @@ async fn truth_unions_across_venues() {
     let default_paper = paper();
     let aapl_paper = paper();
     let registry = VenueRegistry::single(default_paper.clone());
-    registry.add_route("AAPL", aapl_paper.clone()).expect("route");
+    registry
+        .add_route("AAPL", aapl_paper.clone())
+        .expect("route");
     registry
         .add_route("SPY", default_paper.clone())
         .expect("route");

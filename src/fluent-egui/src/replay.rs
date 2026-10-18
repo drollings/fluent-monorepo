@@ -17,7 +17,7 @@
 //! [`ready`]: ReplayController::ready
 
 use fluent_wvr::prelude::*;
-use protopyne_types::{Validate, check_for_execute, valid_output};
+use protopyne_types::{check_for_execute, valid_output, Validate};
 
 use crate::error::EguiError;
 use crate::plan::{PaneCache, PanePlan};
@@ -26,7 +26,7 @@ use crate::plan::{PaneCache, PanePlan};
 /// which named mark. Renders from [`Describable`] schema; `execute`
 /// validates through the shared bridge and reports the cursor.
 #[derive(
-    Debug, Clone, bon::Builder, serde::Serialize, serde::Deserialize, FieldAccess, Describable
+    Debug, Clone, bon::Builder, serde::Serialize, serde::Deserialize, FieldAccess, Describable,
 )]
 #[builder(start_fn = new)]
 pub struct ReplayState {
@@ -99,7 +99,10 @@ impl WorkUnit for ReplayState {
 
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         check_for_execute(self, "replay state invalid")?;
-        Ok(valid_output(format!("replay ready (cursor {}/{})", self.cursor, self.total_bars)))
+        Ok(valid_output(format!(
+            "replay ready (cursor {}/{})",
+            self.cursor, self.total_bars
+        )))
     }
 }
 
@@ -120,13 +123,19 @@ impl ReplayController {
     /// Create an empty controller; register the plan topology before use.
     #[must_use]
     pub fn new() -> Self {
-        Self { plan: PanePlan::new(), cache: PaneCache::new() }
+        Self {
+            plan: PanePlan::new(),
+            cache: PaneCache::new(),
+        }
     }
 
     /// Create a controller over an already-built plan.
     #[must_use]
     pub fn with_plan(plan: PanePlan) -> Self {
-        Self { plan, cache: PaneCache::new() }
+        Self {
+            plan,
+            cache: PaneCache::new(),
+        }
     }
 
     /// Borrow the pane plan (order, readiness, checkpoints).
@@ -168,7 +177,11 @@ impl ReplayController {
     /// completed panes are excluded — a wave is work to do, not work done.
     #[must_use]
     pub fn ready(&self) -> Vec<String> {
-        self.plan.ready_steps().into_iter().filter(|pane| !self.plan.is_completed(pane)).collect()
+        self.plan
+            .ready_steps()
+            .into_iter()
+            .filter(|pane| !self.plan.is_completed(pane))
+            .collect()
     }
 
     /// Scrub back to mark `checkpoint`: returns the ordered panes from the

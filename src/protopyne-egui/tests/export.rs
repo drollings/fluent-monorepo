@@ -1,11 +1,15 @@
 use super::*;
-use protopyne_chart_model::convert::{ChartRow, to_display_float};
+use protopyne_chart_model::convert::{to_display_float, ChartRow};
 use protopyne_view::{ChartBars, OverlaySeries};
 
 /// Exact float comparison without tripping the strict-comparison lint:
 /// the export round-trips must be bit-identical, not merely close.
 fn assert_same_float(got: f64, want: f64, leg: &str) {
-    assert_eq!(got.to_bits(), want.to_bits(), "{leg} round-trips bit-identically");
+    assert_eq!(
+        got.to_bits(),
+        want.to_bits(),
+        "{leg} round-trips bit-identically"
+    );
 }
 
 fn replay_rows() -> Vec<ChartRow> {
@@ -52,10 +56,22 @@ fn csv_export_round_trips_through_the_server_ingest() {
     assert_eq!(bars.len(), rows.len());
     for (bar, row) in bars.iter().zip(rows.iter()) {
         assert_eq!(bar.ts.timestamp(), row.time);
-        assert_same_float(to_display_float(bar.o).expect("finite leg"), row.open, "open");
-        assert_same_float(to_display_float(bar.h).expect("finite leg"), row.high, "high");
+        assert_same_float(
+            to_display_float(bar.o).expect("finite leg"),
+            row.open,
+            "open",
+        );
+        assert_same_float(
+            to_display_float(bar.h).expect("finite leg"),
+            row.high,
+            "high",
+        );
         assert_same_float(to_display_float(bar.l).expect("finite leg"), row.low, "low");
-        assert_same_float(to_display_float(bar.c).expect("finite leg"), row.close, "close");
+        assert_same_float(
+            to_display_float(bar.c).expect("finite leg"),
+            row.close,
+            "close",
+        );
         assert_eq!(bar.volume, row.volume);
     }
 }

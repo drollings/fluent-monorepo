@@ -11,7 +11,7 @@ use super::*;
 use protopyne_types::Timeframe;
 
 use crate::commit::test_tapes::{bar, ohlc};
-use crate::fold::{FOLD_ORIGIN_MS, WEEK_FOLD_ORIGIN_MS, bucket_start, fold_bars, fold_origin_ms};
+use crate::fold::{bucket_start, fold_bars, fold_origin_ms, FOLD_ORIGIN_MS, WEEK_FOLD_ORIGIN_MS};
 
 /// Ten minute bars over two five-minute buckets. The fixture base sits on a
 /// five-minute grid line, so steps 0–4 fill the first bucket exactly and

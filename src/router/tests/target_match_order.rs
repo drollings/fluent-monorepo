@@ -260,11 +260,12 @@ fn single_candidate_makes_no_call_but_keeps_the_pick() {
         .match_target("local", "default", &routing, &cands, None, "hello")
         .expect("single candidate matches");
     assert_eq!(tm.primary.model, "m9-only:default");
-    assert!(
-        tm.assessments.is_empty(),
-        "singleton runs assessment-free"
+    assert!(tm.assessments.is_empty(), "singleton runs assessment-free");
+    assert_eq!(
+        backend.calls(),
+        0,
+        "no assessment LLM call for one candidate"
     );
-    assert_eq!(backend.calls(), 0, "no assessment LLM call for one candidate");
 }
 
 #[test]

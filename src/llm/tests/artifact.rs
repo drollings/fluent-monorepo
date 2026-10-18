@@ -460,7 +460,10 @@ fn marker_path_for(
     source: &ModelArtifactSource,
     artifacts: &[ModelArtifact],
 ) -> std::path::PathBuf {
-    snapshot_marker_path(source, &snapshot_fingerprint("local/test-model", source, artifacts))
+    snapshot_marker_path(
+        source,
+        &snapshot_fingerprint("local/test-model", source, artifacts),
+    )
 }
 
 #[tokio::test]
@@ -488,7 +491,9 @@ async fn marker_records_nanosecond_stamps_not_truncated_milliseconds() {
         "a freshly written file on a resolving filesystem must be stamp-trusted"
     );
     for field in ["mtimeNs", "ctimeNs"] {
-        let ns = entry[field].as_u64().expect("nanosecond stamp must be recorded");
+        let ns = entry[field]
+            .as_u64()
+            .expect("nanosecond stamp must be recorded");
         assert_ne!(
             ns,
             ns / 1_000_000 * 1_000_000,
@@ -528,13 +533,9 @@ async fn marker_without_usable_resolution_falls_back_to_the_spec_hash() {
     std::fs::write(&marker_path, serde_json::to_string(&marker).unwrap()).unwrap();
 
     let mirror = StubMirror::new();
-    let good = resolve_model_artifacts(&options_for(
-        &cache,
-        artifacts.clone(),
-        &*mirror,
-    ))
-    .await
-    .unwrap();
+    let good = resolve_model_artifacts(&options_for(&cache, artifacts.clone(), &*mirror))
+        .await
+        .unwrap();
     assert!(
         mirror.calls().is_empty(),
         "an unresolved stamp must not cost a re-download when the bytes are right"
@@ -555,7 +556,10 @@ async fn marker_without_usable_resolution_falls_back_to_the_spec_hash() {
     let repaired = resolve_model_artifacts(&options_for(&cache, artifacts, &*mirror))
         .await
         .unwrap();
-    assert!(!mirror.calls().is_empty(), "a mutated cache must re-download");
+    assert!(
+        !mirror.calls().is_empty(),
+        "a mutated cache must re-download"
+    );
     assert_eq!(
         std::fs::read(&repaired.paths["model.gguf"]).unwrap(),
         bytes,

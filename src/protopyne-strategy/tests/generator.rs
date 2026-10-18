@@ -119,8 +119,14 @@ fn ladder_rungs_are_hand_checked() {
 fn utility_scales_with_conviction() {
     let high = utility(0.8, 0.5);
     let low = utility(0.4, 0.5);
-    assert!((high - 2.0 * low).abs() < 1e-12, "utility is proportional to conviction");
-    assert!(utility(0.0, 0.5).abs() < 1e-12, "zero conviction is zero utility");
+    assert!(
+        (high - 2.0 * low).abs() < 1e-12,
+        "utility is proportional to conviction"
+    );
+    assert!(
+        utility(0.0, 0.5).abs() < 1e-12,
+        "zero conviction is zero utility"
+    );
 }
 
 #[test]
@@ -139,18 +145,30 @@ fn breakout_emits_full_vertical() {
 #[test]
 fn range_bound_vetoes() {
     let bars = range_bars();
-    assert_eq!(rsrs_score(&bars, 3, 5), None, "flat market has nothing to rank");
+    assert_eq!(
+        rsrs_score(&bars, 3, 5),
+        None,
+        "flat market has nothing to rank"
+    );
     let mut generator = generator();
-    assert!(generator.propose(input("SPY", &bars)).is_none(), "must veto");
+    assert!(
+        generator.propose(input("SPY", &bars)).is_none(),
+        "must veto"
+    );
 }
 
 #[test]
 fn mid_trend_emits_half_quantity() {
     let bars = steady_bars();
     let score = rsrs_score(&bars, 3, 5).expect("steady trend still scores");
-    assert!(score < 1.0, "constant slope carries no surprise, got {score}");
+    assert!(
+        score < 1.0,
+        "constant slope carries no surprise, got {score}"
+    );
     let mut generator = generator();
-    let proposal = generator.propose(input("SPY", &bars)).expect("must emit at half");
+    let proposal = generator
+        .propose(input("SPY", &bars))
+        .expect("must emit at half");
     assert_eq!(proposal.quantity, Qty::new(Decimal::from(1)));
 }
 
@@ -185,22 +203,41 @@ fn proposals_stay_sorted_by_utility_with_rescores() {
     let reranked = generator.ranked();
     assert_eq!(reranked[0].id, low_id, "re-score re-sorts");
     assert_eq!(reranked[1].id, high_id);
-    assert_eq!(generator.scores.len(), 2, "re-score map is the only per-key state");
+    assert_eq!(
+        generator.scores.len(),
+        2,
+        "re-score map is the only per-key state"
+    );
 }
 
 #[test]
 fn portfolio_carry_over_equality() {
     let step_one = vec![
-        Exposure { underlying: "SPY".to_owned(), strategy: "ribbon".to_owned() },
-        Exposure { underlying: "SPY".to_owned(), strategy: "ribbon".to_owned() },
+        Exposure {
+            underlying: "SPY".to_owned(),
+            strategy: "ribbon".to_owned(),
+        },
+        Exposure {
+            underlying: "SPY".to_owned(),
+            strategy: "ribbon".to_owned(),
+        },
     ];
     let step_two = vec![
-        Exposure { underlying: "SPY".to_owned(), strategy: "ribbon".to_owned() },
-        Exposure { underlying: "SPY".to_owned(), strategy: "ribbon".to_owned() },
+        Exposure {
+            underlying: "SPY".to_owned(),
+            strategy: "ribbon".to_owned(),
+        },
+        Exposure {
+            underlying: "SPY".to_owned(),
+            strategy: "ribbon".to_owned(),
+        },
     ];
     let carried = portfolio_for("SPY", &step_one);
     let derived = portfolio_for("SPY", &step_two);
-    assert_eq!(carried, derived, "mid-curve derivation equals the carried portfolio");
+    assert_eq!(
+        carried, derived,
+        "mid-curve derivation equals the carried portfolio"
+    );
     carried.validate().expect("derived portfolios validate");
     let other = portfolio_for("QQQ", &step_two);
     assert_ne!(carried.id, other.id);

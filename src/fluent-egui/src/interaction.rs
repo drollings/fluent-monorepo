@@ -162,6 +162,15 @@ pub struct InteractionState {
     /// Optional horizontal envelope `(total_bars, pane_width_px)`; `None`
     /// leaves the time axis unclamped.
     horizontal: Option<(f64, f64)>,
+    /// Optional hard lower bound on the price window (`None` leaves it
+    /// unclamped). A price pane that wants a floor sets `0.0`; a pane that
+    /// must roam free leaves it unset.
+    value_floor: Option<f64>,
+    /// Whether the vertical elastic envelope and any value floor apply. A
+    /// free-roaming price pane clears this so zoom and pan on the Y axis are
+    /// unbounded — the data extent a chart opens on is a fitting hint, never
+    /// a wall.
+    vertical_bounded: bool,
 }
 
 impl InteractionState {
@@ -186,7 +195,19 @@ impl InteractionState {
             velocity: 0.0,
             velocity_x: 0.0,
             horizontal: None,
+            value_floor: None,
+            vertical_bounded: true,
         })
+    }
+
+    /// Clear the vertical envelope: the Y axis zooms and pans without an
+    /// upper limit. The data extent bound at construction becomes a hint
+    /// only; a value floor set via [`with_value_floor`](Self::with_value_floor)
+    /// still holds. Chainable after [`new`](Self::new).
+    #[must_use]
+    pub fn without_vertical_bounds(mut self) -> Self {
+        self.vertical_bounded = false;
+        self
     }
 
     /// Bind the horizontal elastic envelope to `total_bars` over a pane
@@ -211,6 +232,21 @@ impl InteractionState {
             });
         }
         self.horizontal = Some((total_bars as f64, f64::from(pane_width_px)));
+        Ok(self)
+    }
+
+    /// Set a hard lower bound on the price window; a non-finite `floor`
+    /// refuses. A price pane passes `0.0`, so the window's lower edge never
+    /// crosses zero however far a zoom or pan is pushed. Holds whether or
+    /// not the vertical envelope bounds the axis.
+    pub fn with_value_floor(mut self, floor: f64) -> Result<Self, EguiError> {
+        if !floor.is_finite() {
+            return Err(EguiError::InvalidParam {
+                what: "value_floor".to_owned(),
+                reason: "the value floor must be finite".to_owned(),
+            });
+        }
+        self.value_floor = Some(floor);
         Ok(self)
     }
 
@@ -251,9 +287,10 @@ impl InteractionState {
         // Edge-sampled price-per-pixel: exact for linear scales, first-order
         // for log/percentage (small per-frame gestures). Unreachable for a
         // constructed viewport; guarded anyway.
-        let (Some(top), Some(bottom)) =
-            (viewport.y_to_price(0.0), viewport.y_to_price(scale.height()))
-        else {
+        let (Some(top), Some(bottom)) = (
+            viewport.y_to_price(0.0),
+            viewport.y_to_price(scale.height()),
+        ) else {
             self.velocity = 0.0;
             self.velocity_x = 0.0;
             return *viewport;
@@ -264,6 +301,10 @@ impl InteractionState {
         // Horizontal state carried on the caller's viewport, advanced here.
         let mut spacing = f64::from(scale.bar_spacing());
         let mut x_offset = f64::from(viewport.x_offset_px());
+        // Set by a wheel zoom: the cursor price and its fractional position,
+        // re-applied after the elastic envelope so a clamped zoom stays
+        // anchored to the cursor instead of translating the window.
+        let mut wheel_anchor: Option<(f64, f64)> = None;
 
         if events.is_empty() {
             if dt_valid {
@@ -285,8 +326,7 @@ impl InteractionState {
                     let displacement = self.velocity_x * (1.0 - decay) / lambda;
                     x_offset += displacement;
                     self.velocity_x *= decay;
-                    if self.velocity_x.abs()
-                        <= REST_FRACTION_OF_SPAN * self.horizontal_reference()
+                    if self.velocity_x.abs() <= REST_FRACTION_OF_SPAN * self.horizontal_reference()
                     {
                         self.velocity_x = 0.0;
                     }
@@ -343,19 +383,30 @@ impl InteractionState {
                         if !delta_px.is_finite() {
                             continue;
                         }
-                        let Some(anchor) = viewport.y_to_price(anchor_y) else { continue };
+                        let Some(anchor) = viewport.y_to_price(anchor_y) else {
+                            continue;
+                        };
                         // Same factor and the same rescale a caller gets from
                         // `wheel_zoom_factor` / `zoom_range_around`, so a
                         // pane that zooms outside the machine still feels and
                         // behaves identically to one that steps it.
                         let factor = wheel_zoom_factor(delta_px);
-                        let Some(next) =
-                            zoom_range_around(scale.range(), anchor, factor)
-                        else {
+                        let Some(next) = zoom_range_around(scale.range(), anchor, factor) else {
                             continue;
                         };
                         (min, max) = (next.min, next.max);
                         self.velocity = 0.0;
+                        // Remember the cursor anchor and its fractional
+                        // position so the elastic wall cannot translate the
+                        // window out from under the cursor: a clamped zoom
+                        // stays anchored, never pans.
+                        let span = scale.range().max - scale.range().min;
+                        let frac = if span > 0.0 {
+                            ((anchor - scale.range().min) / span).clamp(0.0, 1.0)
+                        } else {
+                            0.5
+                        };
+                        wheel_anchor = Some((anchor, frac));
                     }
                     PointerInput::WheelTime { delta_px, anchor_x } => {
                         if !delta_px.is_finite() || !anchor_x.is_finite() {
@@ -363,8 +414,7 @@ impl InteractionState {
                         }
                         // Scroll up (positive) widens the bars — zoom in on
                         // the time axis, mirroring the price-axis wheel.
-                        let factor =
-                            WHEEL_ZOOM_BASE.powf(f64::from(delta_px) / WHEEL_STEP_PX);
+                        let factor = WHEEL_ZOOM_BASE.powf(f64::from(delta_px) / WHEEL_STEP_PX);
                         let new_spacing = (spacing * factor)
                             .clamp(f64::from(MIN_BAR_SPACING), f64::from(MAX_BAR_SPACING));
                         // Cursor anchor: solve new_offset = anchor_x - slot *
@@ -376,11 +426,16 @@ impl InteractionState {
                         spacing = new_spacing;
                         self.velocity_x = 0.0;
                     }
-                    PointerInput::Pinch { scale: pinch, anchor_y } => {
+                    PointerInput::Pinch {
+                        scale: pinch,
+                        anchor_y,
+                    } => {
                         if !pinch.is_finite() || pinch <= 0.0 {
                             continue;
                         }
-                        let Some(anchor) = viewport.y_to_price(anchor_y) else { continue };
+                        let Some(anchor) = viewport.y_to_price(anchor_y) else {
+                            continue;
+                        };
                         (min, max) = zoom_around(min, max, anchor, 1.0 / f64::from(pinch));
                         self.velocity = 0.0;
                     }
@@ -393,7 +448,10 @@ impl InteractionState {
                         (min, max) = (first.min(second), first.max(second));
                         self.velocity = 0.0;
                     }
-                    PointerInput::AutoHeight { min: fit_min, max: fit_max } => {
+                    PointerInput::AutoHeight {
+                        min: fit_min,
+                        max: fit_max,
+                    } => {
                         if !fit_min.is_finite() || !fit_max.is_finite() || fit_min >= fit_max {
                             continue;
                         }
@@ -404,30 +462,51 @@ impl InteractionState {
             }
         }
 
-        // Elastic envelope: the data extent plus the margin per side.
-        let data_span = self.soft_max - self.soft_min;
-        let margin = ELASTIC_FRACTION * data_span;
-        let (lo_lim, hi_lim) = (self.soft_min - margin, self.soft_max + margin);
         let mut fitted = (min, max);
-        if min.is_finite() && max.is_finite() && min < max {
-            let span = max - min;
-            if span <= hi_lim - lo_lim {
-                // Translate-to-fit: the span survives, the wall only moves it.
-                let mut shift = 0.0;
-                if min < lo_lim {
-                    shift += lo_lim - min;
+        if self.vertical_bounded {
+            // Elastic envelope: the data extent plus the margin per side.
+            let data_span = self.soft_max - self.soft_min;
+            let margin = ELASTIC_FRACTION * data_span;
+            let (lo_lim, hi_lim) = (self.soft_min - margin, self.soft_max + margin);
+            if min.is_finite() && max.is_finite() && min < max {
+                let span = max - min;
+                if span <= hi_lim - lo_lim {
+                    // Translate-to-fit: the span survives, the wall only moves it.
+                    let mut shift = 0.0;
+                    if min < lo_lim {
+                        shift += lo_lim - min;
+                    }
+                    if max + shift > hi_lim {
+                        shift -= (max + shift) - hi_lim;
+                    }
+                    fitted = (min + shift, max + shift);
+                } else {
+                    fitted = (min.max(lo_lim), max.min(hi_lim));
                 }
-                if max + shift > hi_lim {
-                    shift -= (max + shift) - hi_lim;
+            }
+            if fitted != (min, max) {
+                // Wall contact absorbs the coast.
+                self.velocity = 0.0;
+            }
+            // A wheel zoom is cursor-anchored: the wall may clamp the span, but
+            // it must not translate the window. Re-apply the cursor anchor over
+            // the clamped span so up and down notches stay symmetric.
+            if let Some((anchor, frac)) = wheel_anchor {
+                let span = fitted.1 - fitted.0;
+                if let Some(reanchored) = anchor_window(anchor, frac, span) {
+                    fitted = (reanchored.min, reanchored.max);
                 }
-                fitted = (min + shift, max + shift);
-            } else {
-                fitted = (min.max(lo_lim), max.min(hi_lim));
             }
         }
-        if fitted != (min, max) {
-            // Wall contact absorbs the coast.
-            self.velocity = 0.0;
+        // Hard value floor: the price window never dips below it. Applies
+        // whether or not the elastic envelope bounds the axis, so an
+        // unbounded price pane still treats zero as its absolute lower limit
+        // for both zooming and panning.
+        if let Some(floor) = self.value_floor {
+            if fitted.0 < floor {
+                fitted.0 = floor;
+                self.velocity = 0.0;
+            }
         }
         if fitted.0 >= fitted.1 {
             self.velocity = 0.0;
@@ -469,7 +548,10 @@ impl InteractionState {
 
 /// Rescale the window span by `factor`, keeping `anchor` fixed.
 fn zoom_around(min: f64, max: f64, anchor: f64, factor: f64) -> (f64, f64) {
-    (anchor - (anchor - min) * factor, anchor + (max - anchor) * factor)
+    (
+        anchor - (anchor - min) * factor,
+        anchor + (max - anchor) * factor,
+    )
 }
 
 /// The multiplicative factor a wheel gesture of `delta_px` applies to a price
@@ -493,6 +575,25 @@ pub fn zoom_range_around(range: PriceRange, anchor: f64, factor: f64) -> Option<
     let (min, max) = (range.min, range.max);
     let (next_min, next_max) = zoom_around(min, max, anchor, factor);
     PriceRange::new(next_min, next_max).ok()
+}
+
+/// Rebuild a window of `span` with the price `anchor` sitting at fraction
+/// `frac` of it (`0` is the window's lower edge, `1` its upper edge).
+///
+/// A cursor-anchored zoom keeps the anchor price at a fixed pixel, so its
+/// fraction is invariant under [`zoom_range_around`]. When the span must be
+/// clamped (a pane's design band, or the elastic wall) this rebuilds the
+/// window around that same fraction, so a clamped zoom stays anchored instead
+/// of translating — an up notch and a down notch behave symmetrically.
+/// Refuses a non-finite anchor/fraction or a non-positive, non-finite span.
+#[must_use]
+pub fn anchor_window(anchor: f64, frac: f64, span: f64) -> Option<PriceRange> {
+    if !anchor.is_finite() || !frac.is_finite() || !span.is_finite() || span <= 0.0 {
+        return None;
+    }
+    let frac = frac.clamp(0.0, 1.0);
+    let min = anchor - frac * span;
+    PriceRange::new(min, min + span).ok()
 }
 
 #[cfg(test)]

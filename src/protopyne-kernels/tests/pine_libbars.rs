@@ -32,7 +32,7 @@
 #![allow(clippy::float_cmp)]
 
 use super::*;
-use crate::{InputSet, LtfDataset, ModuleInput, PineRuntimeConfig, UserInstance, parse_program};
+use crate::{parse_program, InputSet, LtfDataset, ModuleInput, PineRuntimeConfig, UserInstance};
 use chrono::TimeZone as _;
 use protopyne_types::Bar;
 use std::collections::HashMap;
@@ -86,15 +86,13 @@ fn test_engine() -> PineEngine {
 /// One bar from decimal legs and a millisecond timestamp (exact below 2^53).
 fn ms_bar(open: &str, high: &str, low: &str, close: &str, volume: u64, ts_millis: i64) -> Bar {
     Bar::new()
-        .ts(
-            chrono::Utc
-                .timestamp_opt(
-                    ts_millis.div_euclid(1000),
-                    ts_millis.rem_euclid(1000) as u32 * 1_000_000,
-                )
-                .single()
-                .expect("valid test timestamp"),
-        )
+        .ts(chrono::Utc
+            .timestamp_opt(
+                ts_millis.div_euclid(1000),
+                ts_millis.rem_euclid(1000) as u32 * 1_000_000,
+            )
+            .single()
+            .expect("valid test timestamp"))
         .o(open.parse().expect("decimal"))
         .h(high.parse().expect("decimal"))
         .l(low.parse().expect("decimal"))
@@ -125,7 +123,14 @@ fn tick_update(
 ) -> (Bar, i64) {
     let fmt = |v: f64| format!("{v:.2}");
     (
-        ms_bar(&fmt(open), &fmt(high), &fmt(low), &fmt(price), cumvol, bar_open_ms),
+        ms_bar(
+            &fmt(open),
+            &fmt(high),
+            &fmt(low),
+            &fmt(price),
+            cumvol,
+            bar_open_ms,
+        ),
         tick_ms,
     )
 }
@@ -206,20 +211,42 @@ fn helper_edge_table() {
         &bars,
     );
     assert_eq!(num(&outcome, 0, "drift"), 10.0, "10% drift");
-    assert_eq!(num(&outcome, 0, "drift_full"), 100.0, "zero actual is full drift");
-    assert_eq!(num(&outcome, 0, "drift_zero_ref"), 0.0, "zero reference guards to zero");
-    assert_eq!(num(&outcome, 0, "drift_neg_ref"), 0.0, "negative reference guards to zero");
-    assert!(is_absent(&outcome, 0, "drift_na"), "absent actual propagates");
+    assert_eq!(
+        num(&outcome, 0, "drift_full"),
+        100.0,
+        "zero actual is full drift"
+    );
+    assert_eq!(
+        num(&outcome, 0, "drift_zero_ref"),
+        0.0,
+        "zero reference guards to zero"
+    );
+    assert_eq!(
+        num(&outcome, 0, "drift_neg_ref"),
+        0.0,
+        "negative reference guards to zero"
+    );
+    assert!(
+        is_absent(&outcome, 0, "drift_na"),
+        "absent actual propagates"
+    );
     assert_eq!(num(&outcome, 0, "buy_up"), 100.0, "up move takes all");
     assert_eq!(num(&outcome, 0, "buy_down"), 0.0, "down move takes none");
-    assert_eq!(num(&outcome, 0, "buy_flat"), 50.0, "flat splits at the neutral ratio");
+    assert_eq!(
+        num(&outcome, 0, "buy_flat"),
+        50.0,
+        "flat splits at the neutral ratio"
+    );
     assert_eq!(
         num(&outcome, 0, "buy_na"),
         50.0,
         "absent delta reads false on both guards, so the neutral split applies (comparisons are two-valued)"
     );
     assert!(boolean(&outcome, 0, "valid"));
-    assert!(!boolean(&outcome, 0, "valid_eps"), "epsilon itself is dust (strict)");
+    assert!(
+        !boolean(&outcome, 0, "valid_eps"),
+        "epsilon itself is dust (strict)"
+    );
     assert!(boolean(&outcome, 0, "valid_above"));
     assert!(!boolean(&outcome, 0, "valid_zero"));
     assert!(!boolean(&outcome, 0, "valid_neg"));
@@ -240,8 +267,16 @@ fn ltf_boundary_math() {
         &bars,
     );
     // floor(1700000050000 / 60000) = 28333334; 28333334 * 60000 = 1700000040000.
-    assert_eq!(num(&outcome, 0, "edge"), 1_700_000_040_000.0, "boundary floors to the bucket open");
-    assert_eq!(num(&outcome, 0, "aligned"), 1_700_000_040_000.0, "aligned stamp is its own boundary");
+    assert_eq!(
+        num(&outcome, 0, "edge"),
+        1_700_000_040_000.0,
+        "boundary floors to the bucket open"
+    );
+    assert_eq!(
+        num(&outcome, 0, "aligned"),
+        1_700_000_040_000.0,
+        "aligned stamp is its own boundary"
+    );
 }
 
 #[test]
@@ -257,18 +292,42 @@ fn array_set_golden() {
         &bars,
     );
     assert_eq!(num(&outcome, 0, "hit"), 5.0, "set slot reads back");
-    assert_eq!(num(&outcome, 0, "miss_low"), 0.0, "untouched slot keeps its fill");
-    assert!(is_absent(&outcome, 0, "na_set"), "absent array stays absent");
-    assert!(is_absent(&outcome, 0, "na_idx"), "absent index stays absent");
+    assert_eq!(
+        num(&outcome, 0, "miss_low"),
+        0.0,
+        "untouched slot keeps its fill"
+    );
+    assert!(
+        is_absent(&outcome, 0, "na_set"),
+        "absent array stays absent"
+    );
+    assert!(
+        is_absent(&outcome, 0, "na_idx"),
+        "absent index stays absent"
+    );
 
     for (source, refusal) in [
-        ("a = array.new<float>(3, 0.0)\narray.set(a, 3, 1.0)", "array.set index 3 is past size 3"),
-        ("a = array.new<float>(3, 0.0)\narray.set(a, -1, 1.0)", "array.set takes an index in 0..size, got -1"),
+        (
+            "a = array.new<float>(3, 0.0)\narray.set(a, 3, 1.0)",
+            "array.set index 3 is past size 3",
+        ),
+        (
+            "a = array.new<float>(3, 0.0)\narray.set(a, -1, 1.0)",
+            "array.set takes an index in 0..size, got -1",
+        ),
     ] {
         let err = PineEngine::new(PineRuntimeConfig::new().build())
-            .run(&parse_program(source).expect("probes parse"), &bars, InputSet::new())
+            .run(
+                &parse_program(source).expect("probes parse"),
+                &bars,
+                InputSet::new(),
+            )
             .expect_err("out-of-range set refuses");
-        assert_eq!(err.to_string(), format!("pine evaluation refused: {refusal}"), "exact refusal pins the fail-closed bound");
+        assert_eq!(
+            err.to_string(),
+            format!("pine evaluation refused: {refusal}"),
+            "exact refusal pins the fail-closed bound"
+        );
     }
 }
 
@@ -297,13 +356,29 @@ fn break_golden() {
         &bars,
     );
     assert_eq!(num(&outcome, 0, "x"), 3.0, "for stops at the break");
-    assert_eq!(num(&outcome, 0, "j"), 3.0, "while condition ran three guards");
-    assert_eq!(num(&outcome, 0, "y"), 2.0, "while body stopped before the third yield");
-    assert_eq!(num(&outcome, 0, "outer"), 6.0, "inner breaks do not unwind the outer loop (3 x 2)");
+    assert_eq!(
+        num(&outcome, 0, "j"),
+        3.0,
+        "while condition ran three guards"
+    );
+    assert_eq!(
+        num(&outcome, 0, "y"),
+        2.0,
+        "while body stopped before the third yield"
+    );
+    assert_eq!(
+        num(&outcome, 0, "outer"),
+        6.0,
+        "inner breaks do not unwind the outer loop (3 x 2)"
+    );
 
     // A loop-less `break` refuses instead of unwinding the run.
     let err = PineEngine::new(PineRuntimeConfig::new().build())
-        .run(&parse_program("break").expect("probe parses"), &bars, InputSet::new())
+        .run(
+            &parse_program("break").expect("probe parses"),
+            &bars,
+            InputSet::new(),
+        )
         .expect_err("top-level break refuses");
     assert_eq!(
         err.to_string(),
@@ -330,7 +405,10 @@ fn break_golden() {
     let first = parse_program("for i = 0 to 5\n    if i > 1\n        break\n    x := i")
         .expect("break snippet parses");
     let shown = crate::display_program(&first);
-    assert!(shown.contains("break"), "displayed source keeps the statement");
+    assert!(
+        shown.contains("break"),
+        "displayed source keeps the statement"
+    );
     let second = parse_program(&shown).expect("displayed source reparses");
     assert_eq!(first, second, "break survives the display round-trip");
 }
@@ -348,11 +426,18 @@ fn init_allocates_buffers() {
     assert_eq!(field_num(&state, "ratio_fetch_ltf"), 1.0);
     assert_eq!(field_num(&state, "ratio_htf_ltf"), 1440.0);
     assert_eq!(field_num(&state, "max_candles"), 10.0);
-    assert_eq!(field_num(&state, "count"), 0.0, "fresh buffers hold no candles");
+    assert_eq!(
+        field_num(&state, "count"),
+        0.0,
+        "fresh buffers hold no candles"
+    );
     assert_eq!(num(&outcome, 0, "sz"), 0.0);
     assert_eq!(field_num(&state, "spike_threshold"), 2.0);
     assert_eq!(field_num(&state, "drift_threshold"), 4.0);
-    assert!(!field_bool(&state, "fill_gaps"), "sparse representation is the default");
+    assert!(
+        !field_bool(&state, "fill_gaps"),
+        "sparse representation is the default"
+    );
     assert_eq!(field_num(&state, "pull_count"), 0.0);
     assert_eq!(field_num(&state, "fetch_check_count"), 0.0);
 }
@@ -367,8 +452,15 @@ fn clear_resets_bar_state() {
     assert_eq!(field_num(&state, "total_buy"), 0.0);
     assert_eq!(field_num(&state, "boundary_count"), 0.0);
     assert_eq!(field_num(&state, "gap_count"), 0.0);
-    assert_eq!(field_num(&state, "candle_open"), 100.0, "open leg seeds the next candle chain");
-    assert!(!field_bool(&state, "ready_ltf_boundary"), "flags rest pulsed-off");
+    assert_eq!(
+        field_num(&state, "candle_open"),
+        100.0,
+        "open leg seeds the next candle chain"
+    );
+    assert!(
+        !field_bool(&state, "ready_ltf_boundary"),
+        "flags rest pulsed-off"
+    );
 }
 
 #[test]
@@ -390,8 +482,16 @@ fn ring_wrap_preserves_newest() {
     // Twelve writes into ten slots: the count saturates, the head wraps to
     // slot 2, and reads serve the newest ten in logical order.
     assert_eq!(field_num(&state, "count"), 10.0);
-    assert_eq!(num(&outcome, 0, "phys0"), 2.0, "logical zero sits at the wrapped head");
-    assert_eq!(num(&outcome, 0, "last"), 1.0, "last written slot trails the head");
+    assert_eq!(
+        num(&outcome, 0, "phys0"),
+        2.0,
+        "logical zero sits at the wrapped head"
+    );
+    assert_eq!(
+        num(&outcome, 0, "last"),
+        1.0,
+        "last written slot trails the head"
+    );
     // Third write (i=3) is the oldest held: h=113, l=103, c=108.
     assert_eq!(num(&outcome, 0, "h0"), 113.0);
     assert_eq!(num(&outcome, 0, "l0"), 103.0);
@@ -403,7 +503,11 @@ fn ring_wrap_preserves_newest() {
     assert_eq!(num(&outcome, 0, "l9"), 112.0);
     assert_eq!(num(&outcome, 0, "c9"), 117.0);
     // Running totals accumulate every write, including evicted candles.
-    assert_eq!(field_num(&state, "total_vol"), 120.0, "evicted candles keep their totals");
+    assert_eq!(
+        field_num(&state, "total_vol"),
+        120.0,
+        "evicted candles keep their totals"
+    );
     assert_eq!(field_num(&state, "total_buy"), 60.0);
 }
 
@@ -436,9 +540,16 @@ fn get_tuple_shape() {
     // Later opens chain from the previous close.
     assert_eq!(num(&outcome, 0, "o1"), 100.5);
     assert_eq!(num(&outcome, 0, "c1"), 101.5);
-    assert_eq!(num(&outcome, 0, "b0") + num(&outcome, 0, "s0"), 60.0, "buy and sell split the candle");
+    assert_eq!(
+        num(&outcome, 0, "b0") + num(&outcome, 0, "s0"),
+        60.0,
+        "buy and sell split the candle"
+    );
     assert_eq!(num(&outcome, 0, "b1") + num(&outcome, 0, "s1"), 40.0);
-    assert!(is_absent(&outcome, 0, "x0"), "out-of-range reads are absent, never invented");
+    assert!(
+        is_absent(&outcome, 0, "x0"),
+        "out-of-range reads are absent, never invented"
+    );
 }
 
 #[test]
@@ -463,7 +574,11 @@ fn process_arrays_truncates_and_ignores_empty() {
     // ten instead of aborting the run.
     assert_eq!(field_num(&state, "count"), 10.0);
     assert_eq!(num(&outcome, 0, "h9"), 10.0, "tenth row is the newest held");
-    assert_eq!(field_num(&state, "candle_open"), 1.0, "first LTF open chains the reads");
+    assert_eq!(
+        field_num(&state, "candle_open"),
+        1.0,
+        "first LTF open chains the reads"
+    );
 
     // Empty and absent arrays are no-ops, never refusals.
     let outcome = run_linked(
@@ -560,14 +675,31 @@ fn tick_flags_follow_bar_time() {
         Some(Some(PineValue::Bool(value))) => value,
         other => panic!("expected bool for {name} on bar {bar}, got {other:?}"),
     };
-    assert!(flag(0, "n") && !flag(0, "c"), "first tick opens unconfirmed");
+    assert!(
+        flag(0, "n") && !flag(0, "c"),
+        "first tick opens unconfirmed"
+    );
     assert!(!flag(1, "n") && flag(1, "c"), "middle tick closes the bar");
-    assert!(flag(2, "n") && flag(2, "c"), "single-tick bar both opens and confirms");
+    assert!(
+        flag(2, "n") && flag(2, "c"),
+        "single-tick bar both opens and confirms"
+    );
     for (bar, stamp) in stamps.iter().enumerate() {
-        assert!(!flag(bar, "h") && flag(bar, "r"), "tick runs emulate realtime");
-        assert_eq!(num(&outcome, bar, "t"), *stamp as f64, "timenow reads the tick stamp");
+        assert!(
+            !flag(bar, "h") && flag(bar, "r"),
+            "tick runs emulate realtime"
+        );
+        assert_eq!(
+            num(&outcome, bar, "t"),
+            *stamp as f64,
+            "timenow reads the tick stamp"
+        );
     }
-    assert_eq!(num(&outcome, 0, "bt"), T0 as f64, "time leg runs in milliseconds here");
+    assert_eq!(
+        num(&outcome, 0, "bt"),
+        T0 as f64,
+        "time leg runs in milliseconds here"
+    );
 
     // Length mismatch refuses fail-closed.
     let program = parse_program("x = 1").expect("probe parses");
@@ -609,35 +741,75 @@ fn tick_reconstruction_clean() {
     let state = bars_at(&outcome, last);
     // Four distributed candles plus the remainder top-up.
     assert_eq!(field_num(&state, "count"), 5.0);
-    assert_eq!(field_num(&state, "total_vol"), 1000.0, "remainder tops up to the reference");
+    assert_eq!(
+        field_num(&state, "total_vol"),
+        1000.0,
+        "remainder tops up to the reference"
+    );
     // Remainder buy hand roll: range 3, body 0.5, direction +1 gives
     // 0.5 + 0.5/3/2 = 0.5833...; 20 * 0.5833... = 35/3.
     assert_eq!(field_num(&state, "total_buy"), 580.0 + 35.0 / 3.0);
-    assert_eq!(field_num(&state, "gap_count"), 1.0, "bucket 2 had no trades");
-    assert_eq!(field_num(&state, "boundary_count"), 4.0, "crossings at ticks 5, 7 (+2), 9");
-    assert_eq!(field_num(&state, "pull_count"), 0.0, "reconciled bars trigger no pull");
+    assert_eq!(
+        field_num(&state, "gap_count"),
+        1.0,
+        "bucket 2 had no trades"
+    );
+    assert_eq!(
+        field_num(&state, "boundary_count"),
+        4.0,
+        "crossings at ticks 5, 7 (+2), 9"
+    );
+    assert_eq!(
+        field_num(&state, "pull_count"),
+        0.0,
+        "reconciled bars trigger no pull"
+    );
     assert_eq!(field_num(&state, "fetch_check_count"), 0.0);
-    assert_eq!(field_num(&state, "tick_count"), 8.0, "ticks 3-10 accumulate");
-    assert_eq!(field_num(&state, "tick_volume_total"), 980.0, "first two ticks seed the tracker");
+    assert_eq!(
+        field_num(&state, "tick_count"),
+        8.0,
+        "ticks 3-10 accumulate"
+    );
+    assert_eq!(
+        field_num(&state, "tick_volume_total"),
+        980.0,
+        "first two ticks seed the tracker"
+    );
     assert_eq!(field_num(&state, "tick_accuracy"), 0.98);
     assert_eq!(field_num(&state, "volume_drift_pct"), 2.0);
     assert_eq!(field_num(&state, "last_bar_drift"), 2.0);
-    assert!(field_bool(&state, "last_bar_healthy"), "2% drift is under the 4% threshold");
+    assert!(
+        field_bool(&state, "last_bar_healthy"),
+        "2% drift is under the 4% threshold"
+    );
     // First distributed candle: ticks 3-5 bleed into it (102/100/101.5,
     // 550 total, 400 buy, stamped at the accumulator start).
-    assert_eq!(num(&outcome, last, "o0"), 100.0, "reads chain from the bar open");
+    assert_eq!(
+        num(&outcome, last, "o0"),
+        100.0,
+        "reads chain from the bar open"
+    );
     assert_eq!(num(&outcome, last, "h0"), 102.0);
     assert_eq!(num(&outcome, last, "l0"), 100.0);
     assert_eq!(num(&outcome, last, "c0"), 101.5);
     assert_eq!(num(&outcome, last, "b0"), 400.0);
     assert_eq!(num(&outcome, last, "s0"), 150.0);
     // Imbalance hand roll: (580 + 35/3) - 500 = 275/3.
-    assert!((num(&outcome, last, "imb") - 275.0 / 3.0).abs() < EPS, "buy pressure reads positive");
+    assert!(
+        (num(&outcome, last, "imb") - 275.0 / 3.0).abs() < EPS,
+        "buy pressure reads positive"
+    );
     // Boundary flags pulse on crossing ticks only.
     for bar in [4, 6, 8] {
-        assert!(field_bool(&bars_at(&outcome, bar), "ready_ltf_boundary"), "pulse on tick {bar}");
+        assert!(
+            field_bool(&bars_at(&outcome, bar), "ready_ltf_boundary"),
+            "pulse on tick {bar}"
+        );
     }
-    assert!(!field_bool(&state, "ready_ltf_boundary"), "quiet on the confirming tick");
+    assert!(
+        !field_bool(&state, "ready_ltf_boundary"),
+        "quiet on the confirming tick"
+    );
 }
 
 /// Injected LTF rows with hand-split buys: row 1 buys at 0.70
@@ -704,15 +876,34 @@ fn tick_pull_reconciles_drifted_bar() {
     // The pull replaces the tick-built candles with the injected rows
     // (200 each): 140 + 4 x 165 hand splits.
     assert_eq!(field_num(&state, "count"), 5.0);
-    assert_eq!(field_num(&state, "total_vol"), 1000.0, "injected rows sum to the reference");
-    assert_eq!(field_num(&state, "total_buy"), 800.0, "140 + 4 x 165 hand splits");
+    assert_eq!(
+        field_num(&state, "total_vol"),
+        1000.0,
+        "injected rows sum to the reference"
+    );
+    assert_eq!(
+        field_num(&state, "total_buy"),
+        800.0,
+        "140 + 4 x 165 hand splits"
+    );
     assert_eq!(field_num(&state, "pull_count"), 1.0, "realtime pull counts");
-    assert_eq!(field_num(&state, "fetch_check_count"), 1.0, "confirm-time checks count too");
+    assert_eq!(
+        field_num(&state, "fetch_check_count"),
+        1.0,
+        "confirm-time checks count too"
+    );
     assert_eq!(field_num(&state, "tick_accuracy"), 0.4);
     assert_eq!(field_num(&state, "volume_drift_pct"), 60.0);
     assert_eq!(field_num(&state, "last_bar_drift"), 60.0);
-    assert!(!field_bool(&state, "last_bar_healthy"), "60% drift trips the 4% threshold");
-    assert_eq!(field_num(&state, "candle_open"), 100.0, "first injected open chains reads");
+    assert!(
+        !field_bool(&state, "last_bar_healthy"),
+        "60% drift trips the 4% threshold"
+    );
+    assert_eq!(
+        field_num(&state, "candle_open"),
+        100.0,
+        "first injected open chains reads"
+    );
     assert_eq!(num(&outcome, last, "o0"), 100.0);
     assert_eq!(num(&outcome, last, "h0"), 101.0);
     assert_eq!(num(&outcome, last, "c0"), 100.5);
@@ -750,16 +941,28 @@ fn tick_rollback_resets_accumulator() {
         .run_linked_ticks(&modules, &bars, &stamps, InputSet::new())
         .expect("rollback run evaluates");
     let state = bars_at(&outcome, 3);
-    assert_eq!(field_num(&state, "rollback_count"), 1.0, "volume decrease detected once");
+    assert_eq!(
+        field_num(&state, "rollback_count"),
+        1.0,
+        "volume decrease detected once"
+    );
     // Post-reset delta (100 - 1) is the only accumulated volume; the 1%
     // confirm drift reconciles through the remainder path with no pull.
     assert_eq!(field_num(&state, "tick_volume_total"), 99.0);
     assert_eq!(field_num(&state, "total_vol"), 100.0);
-    assert_eq!(field_num(&state, "count"), 2.0, "finalized candle plus remainder top-up");
+    assert_eq!(
+        field_num(&state, "count"),
+        2.0,
+        "finalized candle plus remainder top-up"
+    );
     assert_eq!(field_num(&state, "pull_count"), 0.0);
     assert_eq!(field_num(&state, "tick_accuracy"), 0.99);
     assert!(field_bool(&state, "last_bar_healthy"));
-    assert_eq!(num(&outcome, 3, "h0"), 101.0, "reset accumulator tracks bar legs");
+    assert_eq!(
+        num(&outcome, 3, "h0"),
+        101.0,
+        "reset accumulator tracks bar legs"
+    );
     assert_eq!(num(&outcome, 3, "c0"), 100.5);
     assert_eq!(num(&outcome, 3, "b0"), 49.5, "flat delta splits neutral");
 }
@@ -784,15 +987,26 @@ fn flat_tape_splits_neutral() {
         .collect();
     let bars: Vec<Bar> = updates.iter().map(|(bar, _)| bar.clone()).collect();
     let stamps: Vec<i64> = updates.iter().map(|(_, stamp)| *stamp).collect();
-    let modules = linked(&format!("{}imb = bars.getVolumeImbalance()", fetch_driver()));
+    let modules = linked(&format!(
+        "{}imb = bars.getVolumeImbalance()",
+        fetch_driver()
+    ));
     let mut engine = test_engine();
     let outcome = engine
         .run_linked_ticks(&modules, &bars, &stamps, InputSet::new())
         .expect("flat run evaluates");
     // Ticks 3-5 accumulate 300 with 150 buy; the 304 reference reconciles
     // through a 4-unit doji remainder (buy 2), keeping both splits exact.
-    assert_eq!(num(&outcome, 2, "imb"), 0.0, "accumulator split is neutral mid-bar");
-    assert_eq!(num(&outcome, 4, "imb"), 0.0, "ring split is neutral after confirm");
+    assert_eq!(
+        num(&outcome, 2, "imb"),
+        0.0,
+        "accumulator split is neutral mid-bar"
+    );
+    assert_eq!(
+        num(&outcome, 4, "imb"),
+        0.0,
+        "ring split is neutral after confirm"
+    );
     assert_eq!(field_num(&bars_at(&outcome, 4), "pull_count"), 0.0);
     assert!(field_bool(&bars_at(&outcome, 4), "last_bar_healthy"));
 }
@@ -821,7 +1035,11 @@ fn spike_precision_recall() {
     let mut false_negatives = 0;
     for (slot, label) in labels.iter().enumerate() {
         let fired = boolean(&outcome, 0, &format!("spike{slot}"));
-        assert_eq!(fired, *label, "window {slot} (vol {}) fires {label}", vols[slot]);
+        assert_eq!(
+            fired, *label,
+            "window {slot} (vol {}) fires {label}",
+            vols[slot]
+        );
         match (fired, label) {
             (true, true) => true_positives += 1,
             (true, false) => false_positives += 1,
@@ -829,10 +1047,8 @@ fn spike_precision_recall() {
             (false, false) => {}
         }
     }
-    let precision =
-        f64::from(true_positives) / f64::from(true_positives + false_positives);
-    let recall =
-        f64::from(true_positives) / f64::from(true_positives + false_negatives);
+    let precision = f64::from(true_positives) / f64::from(true_positives + false_positives);
+    let recall = f64::from(true_positives) / f64::from(true_positives + false_negatives);
     assert_eq!(precision, 1.0, "no flat window fires");
     assert_eq!(recall, 1.0, "every spike window fires");
 }
@@ -861,7 +1077,10 @@ fn spike_degenerates_quiet() {
     assert!(!boolean(&outcome, 0, "empty"), "empty buffers never spike");
     assert!(!boolean(&outcome, 0, "zero_sma"));
     assert!(!boolean(&outcome, 0, "neg_sma"));
-    assert!(!boolean(&outcome, 0, "zero_sma_full"), "400x volume still quiet without a baseline");
+    assert!(
+        !boolean(&outcome, 0, "zero_sma_full"),
+        "400x volume still quiet without a baseline"
+    );
     assert!(
         !boolean(&outcome, 0, "na_sma"),
         "absent baseline reads false (comparisons are two-valued, never na)"
@@ -926,8 +1145,15 @@ fn alpha_bounds_and_defaults() {
         (num(&outcome, 0, "live") - num(&outcome, 0, "expected")).abs() < EPS,
         "alpha composes the hand-derived fast_tanh argument"
     );
-    assert!((0.01..=0.90).contains(&num(&outcome, 0, "live")), "live alpha stays in range");
-    assert_eq!(num(&outcome, 0, "zero_sma"), 0.08, "degenerate baseline takes the default");
+    assert!(
+        (0.01..=0.90).contains(&num(&outcome, 0, "live")),
+        "live alpha stays in range"
+    );
+    assert_eq!(
+        num(&outcome, 0, "zero_sma"),
+        0.08,
+        "degenerate baseline takes the default"
+    );
     assert_eq!(num(&outcome, 0, "neg_sma"), 0.08);
     assert_eq!(
         num(&outcome, 0, "na_sma"),
@@ -937,7 +1163,9 @@ fn alpha_bounds_and_defaults() {
 
     // Empty buffers take the default without touching a kernel.
     let outcome = run_linked(
-        &format!("{IMPORTS}{BARS_PROLOGUE}empty = bars.getAlpha(1000.0, 1000.0, 0.5, 1.0, 2.0, 0.5)"),
+        &format!(
+            "{IMPORTS}{BARS_PROLOGUE}empty = bars.getAlpha(1000.0, 1000.0, 0.5, 1.0, 2.0, 0.5)"
+        ),
         &bars,
     );
     assert_eq!(num(&outcome, 0, "empty"), 0.08);
@@ -961,11 +1189,26 @@ fn onconfirm_is_idempotent() {
     );
     for bar in 0..2 {
         let state = bars_at(&outcome, bar);
-        assert_eq!(field_num(&state, "total_vol"), 1000.0, "one reconciliation per bar {bar}");
-        assert_eq!(field_num(&state, "count"), 2.0, "no duplicate remainder on bar {bar}");
-        assert!(field_bool(&state, "last_bar_healthy"), "zero drift stays healthy");
+        assert_eq!(
+            field_num(&state, "total_vol"),
+            1000.0,
+            "one reconciliation per bar {bar}"
+        );
+        assert_eq!(
+            field_num(&state, "count"),
+            2.0,
+            "no duplicate remainder on bar {bar}"
+        );
+        assert!(
+            field_bool(&state, "last_bar_healthy"),
+            "zero drift stays healthy"
+        );
     }
-    assert_eq!(field_num(&bars_at(&outcome, 0), "tick_accuracy"), 0.0, "no ticks tracked");
+    assert_eq!(
+        field_num(&bars_at(&outcome, 0), "tick_accuracy"),
+        0.0,
+        "no ticks tracked"
+    );
 }
 
 #[test]
@@ -997,12 +1240,32 @@ fn fetch_boundary_pull_reports_accounting() {
     assert_eq!(field_num(&state, "fetch_check_count"), 1.0);
     assert_eq!(field_num(&state, "total_vol"), 2000.0);
     assert_eq!(field_num(&state, "count"), 5.0);
-    assert_eq!(field_num(&state, "boundary_count"), 5.0, "five LTF buckets crossed");
-    assert_eq!(field_num(&state, "gap_count"), 4.0, "sparse gaps counted, not filled");
-    assert_eq!(field_num(&state, "pull_count"), 0.0, "closed-bar history never counts pulls");
+    assert_eq!(
+        field_num(&state, "boundary_count"),
+        5.0,
+        "five LTF buckets crossed"
+    );
+    assert_eq!(
+        field_num(&state, "gap_count"),
+        4.0,
+        "sparse gaps counted, not filled"
+    );
+    assert_eq!(
+        field_num(&state, "pull_count"),
+        0.0,
+        "closed-bar history never counts pulls"
+    );
     let steady = bars_at(&outcome, 1);
-    assert_eq!(field_num(&steady, "fetch_check_count"), 1.0, "second bar crosses nothing new");
-    assert_eq!(field_num(&steady, "total_vol"), 2000.0, "one-shot setup persists across bars");
+    assert_eq!(
+        field_num(&steady, "fetch_check_count"),
+        1.0,
+        "second bar crosses nothing new"
+    );
+    assert_eq!(
+        field_num(&steady, "total_vol"),
+        2000.0,
+        "one-shot setup persists across bars"
+    );
     assert_eq!(field_num(&steady, "count"), 5.0);
     assert_eq!(field_num(&steady, "boundary_count"), 5.0);
 }
@@ -1020,7 +1283,10 @@ fn pull_precision_recall() {
             *last = ms_bar("100", "102", "99", "100.5", ref_vol, T0);
         }
         (
-            owned.iter().map(|(bar, _)| bar.clone()).collect::<Vec<Bar>>(),
+            owned
+                .iter()
+                .map(|(bar, _)| bar.clone())
+                .collect::<Vec<Bar>>(),
             owned.iter().map(|(_, stamp)| *stamp).collect::<Vec<i64>>(),
         )
     };
@@ -1109,10 +1375,8 @@ fn pull_precision_recall() {
             (false, false) => {}
         }
     }
-    let precision =
-        f64::from(true_positives) / f64::from(true_positives + false_positives);
-    let recall =
-        f64::from(true_positives) / f64::from(true_positives + false_negatives);
+    let precision = f64::from(true_positives) / f64::from(true_positives + false_positives);
+    let recall = f64::from(true_positives) / f64::from(true_positives + false_negatives);
     assert_eq!(precision, 1.0, "clean windows never pull");
     assert_eq!(recall, 1.0, "drifted windows always pull");
 }
@@ -1162,8 +1426,16 @@ fn ltf_injection_contract() {
     let outcome = engine
         .run_linked(&modules, &bars, InputSet::new())
         .expect("counted call evaluates");
-    assert_eq!(num(&outcome, 0, "n"), 2.0, "calc_bars_count keeps the last rows");
-    assert_eq!(num(&outcome, 0, "first"), 11.2, "window starts at the second row");
+    assert_eq!(
+        num(&outcome, 0, "n"),
+        2.0,
+        "calc_bars_count keeps the last rows"
+    );
+    assert_eq!(
+        num(&outcome, 0, "first"),
+        11.2,
+        "window starts at the second row"
+    );
 
     // Unregistered pairs and mismatched symbols refuse with the documented
     // live-fetch reason, never chart data.
@@ -1310,9 +1582,17 @@ fn load_tick_window(name: &str) -> Vec<(i64, f64, f64)> {
     lines
         .map(|line| {
             let mut cells = line.split(',');
-            let stamp = cells.next().expect("stamp").parse::<i64>().expect("int stamp");
+            let stamp = cells
+                .next()
+                .expect("stamp")
+                .parse::<i64>()
+                .expect("int stamp");
             let price = cells.next().expect("price").parse::<f64>().expect("price");
-            let volume = cells.next().expect("volume").parse::<f64>().expect("volume");
+            let volume = cells
+                .next()
+                .expect("volume")
+                .parse::<f64>()
+                .expect("volume");
             (stamp, price, volume)
         })
         .collect()
@@ -1322,10 +1602,7 @@ fn load_tick_window(name: &str) -> Vec<(i64, f64, f64)> {
 /// cumulative volume, per-row bar-open times; tick stamps ride the side
 /// channel. Cumulative legs never decrease (all tape volumes are
 /// positive), so the rollback path stays quiet on real windows.
-fn window_updates(
-    rows: &[(i64, f64, f64)],
-    open_of: impl Fn(i64) -> i64,
-) -> (Vec<Bar>, Vec<i64>) {
+fn window_updates(rows: &[(i64, f64, f64)], open_of: impl Fn(i64) -> i64) -> (Vec<Bar>, Vec<i64>) {
     let mut bars = Vec::with_capacity(rows.len());
     let mut stamps = Vec::with_capacity(rows.len());
     let mut open = 0.0;
@@ -1344,15 +1621,8 @@ fn window_updates(
         high = high.max(*price);
         low = low.min(*price);
         cum += *volume;
-        let (bar, tick_ms) = tick_update(
-            bucket,
-            *stamp,
-            open,
-            high,
-            low,
-            *price,
-            cum.round() as u64,
-        );
+        let (bar, tick_ms) =
+            tick_update(bucket, *stamp, open, high, low, *price, cum.round() as u64);
         bars.push(bar);
         stamps.push(tick_ms);
     }
@@ -1385,17 +1655,36 @@ fn trim_quiet_reconciles_without_pull() {
     let outcome = run_window(&fetch_driver(), &bars, &stamps);
     let last = rows.len() - 1;
     let state = bars_at(&outcome, last);
-    assert_eq!(field_num(&state, "count"), 1.0, "finalize only, no remainder");
+    assert_eq!(
+        field_num(&state, "count"),
+        1.0,
+        "finalize only, no remainder"
+    );
     assert_close(field_num(&state, "total_vol"), 1105.0, "tape total");
-    assert_eq!(field_num(&state, "pull_count"), 0.0, "zero drift pulls nothing");
+    assert_eq!(
+        field_num(&state, "pull_count"),
+        0.0,
+        "zero drift pulls nothing"
+    );
     assert_eq!(field_num(&state, "fetch_check_count"), 0.0);
     assert_eq!(field_num(&state, "boundary_count"), 0.0, "one LTF bucket");
     assert_eq!(field_num(&state, "gap_count"), 0.0);
-    assert_eq!(field_num(&state, "rollback_count"), 0.0, "cumulatives never decrease");
-    assert_close(field_num(&state, "tick_accuracy"), 1.0, "full tape accumulates");
+    assert_eq!(
+        field_num(&state, "rollback_count"),
+        0.0,
+        "cumulatives never decrease"
+    );
+    assert_close(
+        field_num(&state, "tick_accuracy"),
+        1.0,
+        "full tape accumulates",
+    );
     assert_close(field_num(&state, "volume_drift_pct"), 0.0, "no drift");
     assert_close(field_num(&state, "last_bar_drift"), 0.0, "no drift");
-    assert!(field_bool(&state, "last_bar_healthy"), "zero drift is healthy");
+    assert!(
+        field_bool(&state, "last_bar_healthy"),
+        "zero drift is healthy"
+    );
 }
 
 /// One real `SPY_1M.csv` row at or before `open_ms`, for pull windows
@@ -1406,7 +1695,11 @@ fn single_minute_row(open_ms: i64) -> LtfDataset {
     let mut picked: Option<LtfDataset> = None;
     for line in content.lines().skip(1) {
         let mut cells = line.split(',');
-        let secs = cells.next().expect("time").parse::<i64>().expect("int time");
+        let secs = cells
+            .next()
+            .expect("time")
+            .parse::<i64>()
+            .expect("int time");
         if secs * 1000 > open_ms {
             break;
         }
@@ -1444,9 +1737,21 @@ fn trim_pull_rebuilds_from_injected_row() {
     let last = rows.len() - 1;
     let state = bars_at(&outcome, last);
     assert_eq!(field_num(&state, "pull_count"), 1.0, "drift trips one pull");
-    assert_eq!(field_num(&state, "fetch_check_count"), 1.0, "confirm check counts");
-    assert_eq!(field_num(&state, "count"), 1.0, "rebuilt row only, zero overshoot");
-    assert_close(field_num(&state, "total_vol"), 1062.0, "window plus abs remainder");
+    assert_eq!(
+        field_num(&state, "fetch_check_count"),
+        1.0,
+        "confirm check counts"
+    );
+    assert_eq!(
+        field_num(&state, "count"),
+        1.0,
+        "rebuilt row only, zero overshoot"
+    );
+    assert_close(
+        field_num(&state, "total_vol"),
+        1062.0,
+        "window plus abs remainder",
+    );
     assert_close(
         field_num(&state, "tick_accuracy"),
         974.0 / 1062.0,
@@ -1462,10 +1767,17 @@ fn trim_pull_rebuilds_from_injected_row() {
         88.0 / 1062.0 * 100.0,
         "seeding drift",
     );
-    assert!(!field_bool(&state, "last_bar_healthy"), "drift trips the threshold");
+    assert!(
+        !field_bool(&state, "last_bar_healthy"),
+        "drift trips the threshold"
+    );
     assert_eq!(field_num(&state, "boundary_count"), 0.0, "one LTF bucket");
     assert_eq!(field_num(&state, "gap_count"), 0.0);
-    assert_eq!(field_num(&state, "rollback_count"), 0.0, "cumulatives never decrease");
+    assert_eq!(
+        field_num(&state, "rollback_count"),
+        0.0,
+        "cumulatives never decrease"
+    );
 }
 
 /// Twenty real ticks across three minutes with the middle minute empty,
@@ -1485,12 +1797,32 @@ fn trim_sparse_gap_registers_without_pull() {
     let outcome = run_window(&fetch_driver(), &bars, &stamps);
     let last = rows.len() - 1;
     let state = bars_at(&outcome, last);
-    assert_eq!(field_num(&state, "boundary_count"), 2.0, "two LTF crossings past the hole");
-    assert_eq!(field_num(&state, "gap_count"), 1.0, "middle minute had no trades");
-    assert_eq!(field_num(&state, "pull_count"), 0.0, "drift stays under threshold");
+    assert_eq!(
+        field_num(&state, "boundary_count"),
+        2.0,
+        "two LTF crossings past the hole"
+    );
+    assert_eq!(
+        field_num(&state, "gap_count"),
+        1.0,
+        "middle minute had no trades"
+    );
+    assert_eq!(
+        field_num(&state, "pull_count"),
+        0.0,
+        "drift stays under threshold"
+    );
     assert_eq!(field_num(&state, "fetch_check_count"), 0.0);
-    assert_eq!(field_num(&state, "rollback_count"), 0.0, "cumulatives never decrease");
-    assert_eq!(field_num(&state, "count"), 3.0, "two finalized candles plus remainder");
+    assert_eq!(
+        field_num(&state, "rollback_count"),
+        0.0,
+        "cumulatives never decrease"
+    );
+    assert_eq!(
+        field_num(&state, "count"),
+        3.0,
+        "two finalized candles plus remainder"
+    );
     assert_close(field_num(&state, "total_vol"), 1421.0, "bar total");
     assert_close(
         field_num(&state, "tick_accuracy"),
@@ -1502,7 +1834,10 @@ fn trim_sparse_gap_registers_without_pull() {
         4.0 / 1421.0 * 100.0,
         "seeding drift",
     );
-    assert!(field_bool(&state, "last_bar_healthy"), "drift stays healthy");
+    assert!(
+        field_bool(&state, "last_bar_healthy"),
+        "drift stays healthy"
+    );
 }
 
 /// Thirty real ticks carrying four out-of-order flags, under per-minute
@@ -1515,8 +1850,7 @@ fn trim_out_of_order_accumulates_without_pull() {
     let rows = load_tick_window("window_out_of_order.csv");
     assert_eq!(rows.len(), 30, "out-of-order window row count pinned");
     let flags = std::fs::read_to_string(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/data/ticks/window_out_of_order.csv"),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/data/ticks/window_out_of_order.csv"),
     )
     .expect("window loads")
     .lines()
@@ -1528,14 +1862,30 @@ fn trim_out_of_order_accumulates_without_pull() {
     let outcome = run_window(&fetch_driver(), &bars, &stamps);
     let last = rows.len() - 1;
     let state = bars_at(&outcome, last);
-    assert_eq!(field_num(&state, "count"), 2.0, "finalized candle plus remainder");
+    assert_eq!(
+        field_num(&state, "count"),
+        2.0,
+        "finalized candle plus remainder"
+    );
     assert_close(field_num(&state, "total_vol"), 23577.0, "tape total");
-    assert_eq!(field_num(&state, "pull_count"), 0.0, "drift stays under threshold");
+    assert_eq!(
+        field_num(&state, "pull_count"),
+        0.0,
+        "drift stays under threshold"
+    );
     assert_eq!(field_num(&state, "fetch_check_count"), 0.0);
     assert_eq!(field_num(&state, "boundary_count"), 0.0, "one LTF bucket");
     assert_eq!(field_num(&state, "gap_count"), 0.0);
-    assert_eq!(field_num(&state, "rollback_count"), 0.0, "flags never decrease cumulatives");
-    assert_eq!(field_num(&state, "tick_count"), 28.0, "ticks 3-30 accumulate");
+    assert_eq!(
+        field_num(&state, "rollback_count"),
+        0.0,
+        "flags never decrease cumulatives"
+    );
+    assert_eq!(
+        field_num(&state, "tick_count"),
+        28.0,
+        "ticks 3-30 accumulate"
+    );
     assert_close(
         field_num(&state, "tick_accuracy"),
         23016.0 / 23577.0,
@@ -1546,7 +1896,10 @@ fn trim_out_of_order_accumulates_without_pull() {
         561.0 / 23577.0 * 100.0,
         "seeding drift",
     );
-    assert!(field_bool(&state, "last_bar_healthy"), "drift stays healthy");
+    assert!(
+        field_bool(&state, "last_bar_healthy"),
+        "drift stays healthy"
+    );
 }
 
 /// Fourteen real ticks with a 107-unit seeding loss over a 298-unit tape
@@ -1576,9 +1929,21 @@ fn trim_pull_remainder_tops_up_to_leg() {
     let last = rows.len() - 1;
     let state = bars_at(&outcome, last);
     assert_eq!(field_num(&state, "pull_count"), 1.0, "drift trips one pull");
-    assert_eq!(field_num(&state, "fetch_check_count"), 1.0, "confirm check counts");
-    assert_eq!(field_num(&state, "count"), 2.0, "rebuilt row plus abs remainder");
-    assert_close(field_num(&state, "total_vol"), 300.0, "299 rebuilt plus 1 abs unit");
+    assert_eq!(
+        field_num(&state, "fetch_check_count"),
+        1.0,
+        "confirm check counts"
+    );
+    assert_eq!(
+        field_num(&state, "count"),
+        2.0,
+        "rebuilt row plus abs remainder"
+    );
+    assert_close(
+        field_num(&state, "total_vol"),
+        300.0,
+        "299 rebuilt plus 1 abs unit",
+    );
     assert_close(
         field_num(&state, "tick_accuracy"),
         191.0 / 298.0,
@@ -1594,15 +1959,30 @@ fn trim_pull_remainder_tops_up_to_leg() {
         107.0 / 298.0 * 100.0,
         "pre-pull drift",
     );
-    assert!(!field_bool(&state, "last_bar_healthy"), "drift trips the threshold");
+    assert!(
+        !field_bool(&state, "last_bar_healthy"),
+        "drift trips the threshold"
+    );
     assert_eq!(field_num(&state, "boundary_count"), 0.0, "one LTF bucket");
     assert_eq!(field_num(&state, "gap_count"), 0.0);
-    assert_eq!(field_num(&state, "rollback_count"), 0.0, "cumulatives never decrease");
+    assert_eq!(
+        field_num(&state, "rollback_count"),
+        0.0,
+        "cumulatives never decrease"
+    );
     // Rebuilt row chains from the confirmed minute row (693.86/693.88/
     // 693.86/693.861 x 299); the remainder carries the minute legs with the
     // 1-unit abs top-up, and both candles conserve buy+sell into volume.
-    assert_eq!(field_num(&state, "candle_open"), 693.86, "first injected open chains reads");
-    assert_close(field_num(&state, "total_vol") - 299.0, 1.0, "tape-vs-confirmed overshoot recorded");
+    assert_eq!(
+        field_num(&state, "candle_open"),
+        693.86,
+        "first injected open chains reads"
+    );
+    assert_close(
+        field_num(&state, "total_vol") - 299.0,
+        1.0,
+        "tape-vs-confirmed overshoot recorded",
+    );
 }
 
 /// A calibration window: legs, tick stamps, and the optional pull injection.
@@ -1699,7 +2079,10 @@ fn drift_rebuild_gate_precision_recall() {
         let drift = field_num(&state, "volume_drift_pct");
         let fired = field_num(&state, "pull_count") > 0.0;
         let want = drift > 4.0;
-        assert_eq!(fired, want, "{name} fires exactly above the 4% gate (drift {drift})");
+        assert_eq!(
+            fired, want,
+            "{name} fires exactly above the 4% gate (drift {drift})"
+        );
         match (fired, want) {
             (true, true) => true_positives += 1,
             (true, false) => false_positives += 1,
@@ -1707,10 +2090,8 @@ fn drift_rebuild_gate_precision_recall() {
             (false, false) => {}
         }
     }
-    let precision =
-        f64::from(true_positives) / f64::from(true_positives + false_positives);
-    let recall =
-        f64::from(true_positives) / f64::from(true_positives + false_negatives);
+    let precision = f64::from(true_positives) / f64::from(true_positives + false_positives);
+    let recall = f64::from(true_positives) / f64::from(true_positives + false_negatives);
     assert_eq!(precision, 1.0, "no below-gate window fires");
     assert_eq!(recall, 1.0, "every above-gate window fires");
 }
@@ -1741,9 +2122,17 @@ fn soak_full_tape_reconstructs() {
     let rows: Vec<(i64, f64, f64)> = lines
         .map(|line| {
             let mut cells = line.split(',');
-            let stamp = cells.next().expect("stamp").parse::<i64>().expect("int stamp");
+            let stamp = cells
+                .next()
+                .expect("stamp")
+                .parse::<i64>()
+                .expect("int stamp");
             let price = cells.next().expect("price").parse::<f64>().expect("price");
-            let volume = cells.next().expect("volume").parse::<f64>().expect("volume");
+            let volume = cells
+                .next()
+                .expect("volume")
+                .parse::<f64>()
+                .expect("volume");
             (stamp, price, volume)
         })
         .collect();
@@ -1761,13 +2150,27 @@ fn soak_full_tape_reconstructs() {
     };
     for line in history.lines().skip(1) {
         let mut cells = line.split(',');
-        let secs = cells.next().expect("time").parse::<i64>().expect("int time");
+        let secs = cells
+            .next()
+            .expect("time")
+            .parse::<i64>()
+            .expect("int time");
         dataset.times.push(secs * 1000);
-        dataset.opens.push(cells.next().expect("o").parse::<f64>().expect("open"));
-        dataset.highs.push(cells.next().expect("h").parse::<f64>().expect("high"));
-        dataset.lows.push(cells.next().expect("l").parse::<f64>().expect("low"));
-        dataset.closes.push(cells.next().expect("c").parse::<f64>().expect("close"));
-        dataset.volumes.push(cells.next().expect("v").parse::<f64>().expect("volume"));
+        dataset
+            .opens
+            .push(cells.next().expect("o").parse::<f64>().expect("open"));
+        dataset
+            .highs
+            .push(cells.next().expect("h").parse::<f64>().expect("high"));
+        dataset
+            .lows
+            .push(cells.next().expect("l").parse::<f64>().expect("low"));
+        dataset
+            .closes
+            .push(cells.next().expect("c").parse::<f64>().expect("close"));
+        dataset
+            .volumes
+            .push(cells.next().expect("v").parse::<f64>().expect("volume"));
     }
     let minutes = dataset.times.len();
     let modules = linked(&fetch_driver());
@@ -1787,13 +2190,20 @@ fn soak_full_tape_reconstructs() {
         .run_linked_ticks(&modules, &bars, &stamps, InputSet::new())
         .expect("soak evaluates with zero refusals");
     let elapsed = started.elapsed();
-    assert_eq!(outcome.evaluated, rows.len(), "every tape row evaluates once");
+    assert_eq!(
+        outcome.evaluated,
+        rows.len(),
+        "every tape row evaluates once"
+    );
     let state = bars_at(&outcome, rows.len() - 1);
     assert!(
         field_num(&state, "pull_count") >= 1.0,
         "pulled minutes fire on real drift"
     );
-    assert!(field_num(&state, "total_vol") > 0.0, "final bar reconstructs");
+    assert!(
+        field_num(&state, "total_vol") > 0.0,
+        "final bar reconstructs"
+    );
     assert!(field_num(&state, "count") > 0.0, "final bar holds candles");
     println!(
         "tick soak: {} ticks over {minutes} injected minutes in {:.1}s",
@@ -1801,14 +2211,3 @@ fn soak_full_tape_reconstructs() {
         elapsed.as_secs_f64()
     );
 }
-
-
-
-
-
-
-
-
-
-
-

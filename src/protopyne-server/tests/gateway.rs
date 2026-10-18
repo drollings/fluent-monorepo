@@ -496,18 +496,14 @@ async fn gateway_symbols_read_the_history_root_it_booted() {
         std::fs::create_dir_all(dir.path().join(ticker).join("2026/01"))
             .expect("ticker tree creates");
     }
-    let mut config = ServerConfig::new()
-        .bind("127.0.0.1:0".to_owned())
-        .build();
+    let mut config = ServerConfig::new().bind("127.0.0.1:0".to_owned()).build();
     config.history_path = Some(dir.path().to_string_lossy().into_owned());
     let handle = serve(config, history()).await.expect("test server boots");
-    let rows = handle
-        .gateway()
-        .symbols()
-        .expect("gateway symbols read");
+    let rows = handle.gateway().symbols().expect("gateway symbols read");
     let ids: Vec<&str> = rows.iter().map(|row| row.symbol.as_str()).collect();
     assert_eq!(
-        ids, ["AAA", "ZZZ"],
+        ids,
+        ["AAA", "ZZZ"],
         "discovery drives the catalog; the shipped rows do not leak in"
     );
     handle.shutdown().await;
@@ -681,4 +677,43 @@ async fn patch_zero_trade_budget_refuses_at_core_validation() {
         "the core's validation names the bound, got: {refused:?}"
     );
     handle.shutdown().await;
+}
+
+#[test]
+fn resampled_fallback_limit_reads_the_trailing_bars() {
+    use protopyne_types::Timeframe;
+    // The vendored fixture holds eleven 15M bars aligned to whole hours, so
+    // the hourly fold emits exactly two whole bars.
+    let bars = history();
+    assert_eq!(bars.len(), 11, "the fixture pins its bar count");
+    let unbounded =
+        super::resampled_history(&bars, Timeframe::M15, "15M", None).expect("unbounded reads");
+    assert_eq!(unbounded, bars, "None serves the boot history untouched");
+    let oversize = super::resampled_history(&bars, Timeframe::M15, "15M", Some(10_000))
+        .expect("oversize reads");
+    assert_eq!(
+        oversize, bars,
+        "an oversize limit serves the boot history untouched"
+    );
+    let tail =
+        super::resampled_history(&bars, Timeframe::M15, "15M", Some(5)).expect("bounded reads");
+    assert_eq!(
+        tail,
+        bars[bars.len() - 5..],
+        "limit 5 serves the last five bars"
+    );
+    let hourly_full =
+        super::resampled_history(&bars, Timeframe::M15, "1H", None).expect("hourly folds");
+    assert_eq!(
+        hourly_full.len(),
+        2,
+        "eleven aligned 15M bars fold to two whole hours"
+    );
+    let hourly_one =
+        super::resampled_history(&bars, Timeframe::M15, "1H", Some(1)).expect("bounded fold reads");
+    assert_eq!(
+        hourly_one,
+        hourly_full[1..],
+        "resample and limit compose: the newest hourly bar"
+    );
 }

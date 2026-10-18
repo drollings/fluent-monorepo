@@ -23,7 +23,7 @@ use common_core::registry::ConcurrentRegistry;
 use fluent_wvr::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use protopyne_strategy::{JournaledTransition, Proposal, ProposalEvent, ProposalState, transition};
+use protopyne_strategy::{transition, JournaledTransition, Proposal, ProposalEvent, ProposalState};
 use protopyne_types::{LegSide, Money, SpreadLeg, SpreadLegs, SymKey, SymbolIndex};
 
 use crate::error::VenueError;
@@ -228,9 +228,8 @@ pub fn decide_proposal(
             "decision plane carries Approve/Reject, not {event:?}"
         )));
     }
-    let to = transition(proposal.state, event).map_err(|e| {
-        VenueError::Invalid(format!("proposal lifecycle refused: {e}"))
-    })?;
+    let to = transition(proposal.state, event)
+        .map_err(|e| VenueError::Invalid(format!("proposal lifecycle refused: {e}")))?;
     let entry = JournaledTransition {
         proposal_id: proposal.id.clone(),
         from: proposal.state,
@@ -238,8 +237,7 @@ pub fn decide_proposal(
         reason: reason.to_owned(),
         at: now,
     };
-    let detail =
-        serde_json::to_string(&entry).map_err(|e| VenueError::Journal(e.to_string()))?;
+    let detail = serde_json::to_string(&entry).map_err(|e| VenueError::Journal(e.to_string()))?;
     journal.record_transition(permit, &proposal.id, PROPOSAL_TRANSITION_KIND, &detail, now)?;
     proposal
         .apply(event, reason, now)
@@ -336,7 +334,10 @@ pub fn close_all_intents(
             .map(flip_legs)
             .transpose()
             .map_err(|reason| {
-                VenueError::Invalid(format!("close group {index} on {}: {reason}", group.underlying))
+                VenueError::Invalid(format!(
+                    "close group {index} on {}: {reason}",
+                    group.underlying
+                ))
             })?;
         let side = match group.side {
             PositionSide::Long => OrderSide::Sell,
@@ -491,10 +492,10 @@ impl CommandUnit {
         let mut prefixes: Vec<String> = executions.keys().cloned().collect();
         prefixes.sort();
         for prefix in prefixes {
-            let legs = executions.remove(&prefix).expect("sorted prefixes come from the map");
-            let structure = legs
-                .iter()
-                .find_map(|(_, position)| position.legs.clone());
+            let legs = executions
+                .remove(&prefix)
+                .expect("sorted prefixes come from the map");
+            let structure = legs.iter().find_map(|(_, position)| position.legs.clone());
             let dominant = legs
                 .iter()
                 .max_by_key(|(_, position)| position.quantity_abs)
@@ -523,7 +524,12 @@ impl CommandUnit {
     /// audit row through the [`VenueStorage`] permit from the batch
     /// capability set before anything mutates. A missing permit or a failed
     /// write refuses the command — state changes only behind a durable row.
-    fn journal_command(&self, ctx: &WorkContext, kind: &str, detail: &str) -> Result<(), WorkError> {
+    fn journal_command(
+        &self,
+        ctx: &WorkContext,
+        kind: &str,
+        detail: &str,
+    ) -> Result<(), WorkError> {
         let Some(journal) = &self.journal else {
             return Ok(());
         };
@@ -557,7 +563,9 @@ impl WorkUnit for CommandUnit {
             CommandKind::Disarm => {
                 self.journal_command(ctx, COMMAND_DISARM_KIND, "{}")?;
                 self.state.set(TradingState::Disabled);
-                Ok(WorkOutput::ok("disarmed: entries halted, exits still route"))
+                Ok(WorkOutput::ok(
+                    "disarmed: entries halted, exits still route",
+                ))
             }
             CommandKind::Resume => {
                 self.journal_command(ctx, COMMAND_RESUME_KIND, "{}")?;
@@ -572,8 +580,9 @@ impl WorkUnit for CommandUnit {
                     &serde_json::json!({ "portfolio": portfolio }).to_string(),
                 )?;
                 let groups = self.open_groups();
-                let intents = close_all_intents(&groups, self.limit, &self.proposal_id, &self.strategy)
-                    .map_err(|e| WorkError::Execution(e.to_string()))?;
+                let intents =
+                    close_all_intents(&groups, self.limit, &self.proposal_id, &self.strategy)
+                        .map_err(|e| WorkError::Execution(e.to_string()))?;
                 WorkOutput::typed("close-all intents emitted", &intents)
             }
             CommandKind::CancelAll { portfolio } => {

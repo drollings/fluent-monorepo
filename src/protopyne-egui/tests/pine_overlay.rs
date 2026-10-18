@@ -28,9 +28,17 @@ fn series_points_map_through_the_viewport() {
     assert_eq!(geoms.series.len(), 1);
     let points = &geoms.series[0].points;
     assert_eq!(points.len(), 3);
-    assert_eq!(points[0].map(|(_, y)| y), Some(0.0), "range top paints y = 0");
+    assert_eq!(
+        points[0].map(|(_, y)| y),
+        Some(0.0),
+        "range top paints y = 0"
+    );
     assert_eq!(points[1], None, "holes stay holes");
-    assert_eq!(points[2].map(|(_, y)| y), Some(200.0), "range bottom paints y = height");
+    assert_eq!(
+        points[2].map(|(_, y)| y),
+        Some(200.0),
+        "range bottom paints y = height"
+    );
     // Bar slots start at bar zero on the 8 px spacing: literals on the
     // documented contract, never a second mapping call.
     assert_eq!(points[0].map(|(x, _)| x), Some(0.0));
@@ -46,10 +54,26 @@ fn levels_markers_labels_and_areas_place() {
     let pane = viewport();
     let geoms = overlay_geoms(
         &[
-            PlotPrimitive::Level { title: "L".to_owned(), price: 100.0 },
-            PlotPrimitive::Marker { title: "M".to_owned(), bar: 1, price: 105.0 },
-            PlotPrimitive::Label { bar: 2, price: 95.0, text: "hi".to_owned() },
-            PlotPrimitive::Area { left: 0, top: 108.0, right: 3, bottom: 92.0 },
+            PlotPrimitive::Level {
+                title: "L".to_owned(),
+                price: 100.0,
+            },
+            PlotPrimitive::Marker {
+                title: "M".to_owned(),
+                bar: 1,
+                price: 105.0,
+            },
+            PlotPrimitive::Label {
+                bar: 2,
+                price: 95.0,
+                text: "hi".to_owned(),
+            },
+            PlotPrimitive::Area {
+                left: 0,
+                top: 108.0,
+                right: 3,
+                bottom: 92.0,
+            },
         ],
         &pane,
     );
@@ -63,21 +87,44 @@ fn levels_markers_labels_and_areas_place() {
 }
 
 #[test]
-fn unmappable_prices_stay_unpainted() {    // Non-finite prices map to nothing: the overlay skips them instead of
+fn unmappable_prices_stay_unpainted() {
+    // Non-finite prices map to nothing: the overlay skips them instead of
     // substituting a pixel.
     let geoms = overlay_geoms(
         &[
-            PlotPrimitive::Series { title: "S".to_owned(), values: vec![Some(f64::NAN)] },
-            PlotPrimitive::Level { title: "L".to_owned(), price: f64::INFINITY },
-            PlotPrimitive::Marker { title: "M".to_owned(), bar: 0, price: f64::NAN },
-            PlotPrimitive::Label { bar: 0, price: f64::NAN, text: "x".to_owned() },
-            PlotPrimitive::Area { left: 0, top: f64::NAN, right: 1, bottom: 90.0 },
+            PlotPrimitive::Series {
+                title: "S".to_owned(),
+                values: vec![Some(f64::NAN)],
+            },
+            PlotPrimitive::Level {
+                title: "L".to_owned(),
+                price: f64::INFINITY,
+            },
+            PlotPrimitive::Marker {
+                title: "M".to_owned(),
+                bar: 0,
+                price: f64::NAN,
+            },
+            PlotPrimitive::Label {
+                bar: 0,
+                price: f64::NAN,
+                text: "x".to_owned(),
+            },
+            PlotPrimitive::Area {
+                left: 0,
+                top: f64::NAN,
+                right: 1,
+                bottom: 90.0,
+            },
         ],
         &viewport(),
     );
     assert_eq!(geoms.series[0].points, vec![None]);
     assert!(geoms.levels.is_empty(), "no level for an unmappable price");
-    assert!(geoms.markers.is_empty(), "no marker for an unmappable price");
+    assert!(
+        geoms.markers.is_empty(),
+        "no marker for an unmappable price"
+    );
     assert!(geoms.labels.is_empty(), "no label for an unmappable price");
     assert!(geoms.areas.is_empty(), "no area for an unmappable price");
 }
@@ -95,7 +142,11 @@ fn a_warmup_padded_series_aligns_with_its_labels() {
                 title: "S".to_owned(),
                 values: vec![None, None, Some(100.0)],
             },
-            PlotPrimitive::Label { bar: 2, price: 100.0, text: "w".to_owned() },
+            PlotPrimitive::Label {
+                bar: 2,
+                price: 100.0,
+                text: "w".to_owned(),
+            },
         ],
         &pane,
     );
@@ -118,8 +169,11 @@ fn a_warmup_padded_series_aligns_with_its_labels() {
 fn test_painter() -> (egui::Context, egui::Painter) {
     let ctx = egui::Context::default();
     ctx.begin_pass(egui::RawInput::default());
-    let painter =
-        egui::Painter::new(ctx.clone(), egui::LayerId::background(), egui::Rect::EVERYTHING);
+    let painter = egui::Painter::new(
+        ctx.clone(),
+        egui::LayerId::background(),
+        egui::Rect::EVERYTHING,
+    );
     (ctx, painter)
 }
 
@@ -149,9 +203,18 @@ fn unused_theme_keys_never_refuse_the_overlay() {
     // Malformed "slow" (labels/areas) and "grid" (levels) with a series-only
     // projection: neither key is needed, so both paint.
     for (key, theme) in [
-        ("slow", ThemeConfig::new().slow("not-a-color".to_owned()).build()),
-        ("grid", ThemeConfig::new().grid("not-a-color".to_owned()).build()),
-        ("bull", ThemeConfig::new().bull("not-a-color".to_owned()).build()),
+        (
+            "slow",
+            ThemeConfig::new().slow("not-a-color".to_owned()).build(),
+        ),
+        (
+            "grid",
+            ThemeConfig::new().grid("not-a-color".to_owned()).build(),
+        ),
+        (
+            "bull",
+            ThemeConfig::new().bull("not-a-color".to_owned()).build(),
+        ),
     ] {
         let (_, painter) = test_painter();
         if let Err(refusal) = paint_overlay(&painter, &series_only_geoms(), &theme, 320.0) {
@@ -160,10 +223,21 @@ fn unused_theme_keys_never_refuse_the_overlay() {
     }
     // The same malformed "grid" with levels present refuses, naming "grid".
     let (_, painter) = test_painter();
-    let with_levels = OverlayGeoms { levels: vec![100.0], ..series_only_geoms() };
-    let refused = paint_overlay(&painter, &with_levels, &ThemeConfig::new().grid("not-a-color".to_owned()).build(), 320.0)
-        .expect_err("a needed malformed key refuses");
-    assert!(refused.to_string().contains("grid"), "refusal names the key: {refused}");
+    let with_levels = OverlayGeoms {
+        levels: vec![100.0],
+        ..series_only_geoms()
+    };
+    let refused = paint_overlay(
+        &painter,
+        &with_levels,
+        &ThemeConfig::new().grid("not-a-color".to_owned()).build(),
+        320.0,
+    )
+    .expect_err("a needed malformed key refuses");
+    assert!(
+        refused.to_string().contains("grid"),
+        "refusal names the key: {refused}"
+    );
     // And a needed key paints shapes when healthy.
     let (ctx, painter) = test_painter();
     paint_overlay(&painter, &with_levels, &full, 320.0).expect("levels paint");
@@ -182,13 +256,23 @@ fn translate_overlay_shifts_all_five_primitive_vecs() {
         }],
         levels: vec![50.0],
         markers: vec![(8.0, 100.0)],
-        labels: vec![PlacedLabel { x: 16.0, y: 150.0, text: "hi".to_owned() }],
+        labels: vec![PlacedLabel {
+            x: 16.0,
+            y: 150.0,
+            text: "hi".to_owned(),
+        }],
         areas: vec![(0.0, 20.0, 24.0, 180.0)],
     };
     let shifted = translate_overlay(geoms, origin);
-    assert_eq!(shifted.series[0].points[0], Some((0.0 + origin.0, 100.0 + origin.1)));
+    assert_eq!(
+        shifted.series[0].points[0],
+        Some((0.0 + origin.0, 100.0 + origin.1))
+    );
     assert_eq!(shifted.series[0].points[1], None, "holes stay holed");
-    assert_eq!(shifted.series[0].points[2], Some((8.0 + origin.0, 90.0 + origin.1)));
+    assert_eq!(
+        shifted.series[0].points[2],
+        Some((8.0 + origin.0, 90.0 + origin.1))
+    );
     assert_eq!(shifted.levels, vec![50.0 + origin.1]);
     assert_eq!(shifted.markers, vec![(8.0 + origin.0, 100.0 + origin.1)]);
     assert_eq!(
@@ -197,7 +281,12 @@ fn translate_overlay_shifts_all_five_primitive_vecs() {
     );
     assert_eq!(
         shifted.areas[0],
-        (0.0 + origin.0, 20.0 + origin.1, 24.0 + origin.0, 180.0 + origin.1)
+        (
+            0.0 + origin.0,
+            20.0 + origin.1,
+            24.0 + origin.0,
+            180.0 + origin.1
+        )
     );
 }
 

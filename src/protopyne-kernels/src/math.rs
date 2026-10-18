@@ -109,11 +109,7 @@ pub fn warmup_none(len: usize) -> Vec<Option<f64>> {
 #[must_use]
 pub fn variance_pop(window: &[f64]) -> f64 {
     let mean = window_mean(window);
-    window
-        .iter()
-        .map(|v| (v - mean) * (v - mean))
-        .sum::<f64>()
-        / window.len() as f64
+    window.iter().map(|v| (v - mean) * (v - mean)).sum::<f64>() / window.len() as f64
 }
 
 /// Population standard deviation of a window (dividing by `n`, matching the
@@ -130,11 +126,7 @@ pub fn std_pop(window: &[f64]) -> f64 {
 #[must_use]
 pub fn variance_sample(window: &[f64]) -> f64 {
     let mean = window_mean(window);
-    window
-        .iter()
-        .map(|v| (v - mean) * (v - mean))
-        .sum::<f64>()
-        / (window.len() as f64 - 1.0)
+    window.iter().map(|v| (v - mean) * (v - mean)).sum::<f64>() / (window.len() as f64 - 1.0)
 }
 
 /// Sample standard deviation of a window (dividing by `n - 1`).
@@ -236,7 +228,10 @@ pub fn mode_of(values: &[f64]) -> Option<f64> {
         if values[..at].iter().any(|seen| seen == value) {
             continue;
         }
-        let count = values.iter().filter(|candidate| *candidate == value).count();
+        let count = values
+            .iter()
+            .filter(|candidate| *candidate == value)
+            .count();
         if best.is_none_or(|(_, held)| count > held) {
             best = Some((*value, count));
         }

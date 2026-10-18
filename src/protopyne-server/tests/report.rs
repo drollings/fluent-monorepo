@@ -85,6 +85,7 @@ fn report_states_limits_and_unavailable_greeks() {
         money("200"),
         curve,
         None,
+        None,
     );
     assert_eq!(report.bars, 4);
     assert_eq!(report.fill_rate, Some(0.5));
@@ -111,6 +112,7 @@ fn report_with_no_proposals_has_no_fill_rate() {
         money("0"),
         money("0"),
         Vec::new(),
+        None,
         None,
     );
     assert_eq!(report.fill_rate, None);
@@ -145,6 +147,7 @@ fn fill_rate_survives_counts_past_u32() {
         money("0"),
         Vec::new(),
         None,
+        None,
     );
     assert_eq!(even.fill_rate, Some(1.0));
     let half = build_report(
@@ -157,6 +160,7 @@ fn fill_rate_survives_counts_past_u32() {
         money("0"),
         money("0"),
         Vec::new(),
+        None,
         None,
     );
     assert_eq!(half.fill_rate, Some(0.5));
@@ -236,6 +240,7 @@ fn report_carries_cum_return_and_rsrs_as_json_keys() {
         money("0"),
         curve,
         Some(2.5),
+        None,
     );
     assert!((report.cum_return.expect("cum_return") - -0.1).abs() < 1e-12);
     assert_eq!(report.rsrs, Some(2.5));
@@ -259,6 +264,7 @@ fn report_carries_cum_return_and_rsrs_as_json_keys() {
         money("0"),
         money("0"),
         Vec::new(),
+        None,
         None,
     );
     assert_eq!(empty.cum_return, None);
@@ -292,7 +298,11 @@ fn each_source_arm_names_its_own_history() {
         "file history 'spy-15m-v1', 11 bars"
     );
     assert_eq!(
-        history_source_limit(HistoryKind::of(&HistorySource::Dynamic(vec![])), version, 11),
+        history_source_limit(
+            HistoryKind::of(&HistorySource::Dynamic(vec![])),
+            version,
+            11
+        ),
         "in-memory history 'spy-15m-v1', 11 bars"
     );
     assert_eq!(

@@ -8,7 +8,31 @@ Here is an optimized technical design description and specification for a coding
 
 * **Layout Structure**:
 
-* **Top Bar**: Contains the ticker symbol dropdown (defaulting to "GLD"), timeframe selectors across the top, and a global search trigger button for adding indicators and symbols.
+* **Top Bar**: Contains the ticker symbol button (showing the loaded ticker,
+  defaulting to "SPY"), an indicator selector, the timeframe selector right
+  of it, a display-mode pulldown, a `Range` button opening an interactive
+  range dialog (presets 1M/3M/YTD/1Y/5Y/All atop a Beginning calendar and a
+  Jump To Time field, applied with OK), refresh / AutoHeight buttons, and a
+  label-free rewind-to-beginning / rewind / forward / forward-to-last pan
+  cluster (each pan refits AutoHeight). Every control shares one height and
+  one bold label style (Material app-bar emphasis). The chart loads a
+  one-month window at the five-minute default timeframe; larger ranges, other
+  tickers, and a Beginning pick stream on demand, always relative to the
+  latest loaded bar.
+
+* **Time Grid**: The boundary lines and the pane-divider labels show only
+  major time units (hour, four hours, day, week, month) — never an arbitrary
+  minute like `23:05`. The unit is the next sensible boundary above the
+  chart's own magnitude (1M/5M hourly, 15M/1H every four hours, 4H daily, 1D
+  weekly), and each label reads at the detail of the largest unit elapsed: a
+  day change shows `MM/DD HH:MM`, an hour change `HH:MM`.
+
+* **Catalog Starring & Persistence**: The symbol and indicator catalogue rows
+  carry a favorite star (a hollow `☆` until starred, a filled accent `★`
+  afterwards) that toggles a persisted favorites list, so the modal's
+  Favorites filter means what it says. Favorites, the indicator loadout, and
+  non-default chart settings serialize to `protopyne.json` beside the
+  historical/indicator/library roots and reload on boot.
 
 * **Main Chart Area**: The primary candlestick/line rendering surface with price scale on the right axis and time scale along the bottom.
 

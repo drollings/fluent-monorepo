@@ -323,16 +323,14 @@ pub fn update_from_fill(
             fill.price,
             fill.quantity,
         );
-        position.quantity_abs = position.quantity_abs.checked_add(fill.quantity).ok_or_else(|| {
-            VenueError::Invalid("position quantity overflow".to_owned())
-        })?;
+        position.quantity_abs = position
+            .quantity_abs
+            .checked_add(fill.quantity)
+            .ok_or_else(|| VenueError::Invalid("position quantity overflow".to_owned()))?;
         position.quantity_abs_max = position.quantity_abs_max.max(position.quantity_abs);
-        position.pnl_realised = Money::new(
-            position.pnl_realised.as_decimal() - fill.fee.as_decimal(),
-        );
-        position.fees_enter = Money::new(
-            position.fees_enter.as_decimal() + fill.fee.as_decimal(),
-        );
+        position.pnl_realised =
+            Money::new(position.pnl_realised.as_decimal() - fill.fee.as_decimal());
+        position.fees_enter = Money::new(position.fees_enter.as_decimal() + fill.fee.as_decimal());
         position.time_updated = fill.at;
         position.refresh_unrealised(fill.price);
         return Ok((Some(position), None));
@@ -349,9 +347,7 @@ pub fn update_from_fill(
         position.pnl_realised =
             Money::new(position.pnl_realised.as_decimal() + realised.as_decimal());
         position.quantity_abs -= fill.quantity;
-        position.fees_exit = Money::new(
-            position.fees_exit.as_decimal() + fill.fee.as_decimal(),
-        );
+        position.fees_exit = Money::new(position.fees_exit.as_decimal() + fill.fee.as_decimal());
         position.time_updated = fill.at;
         position.refresh_unrealised(fill.price);
         return Ok((Some(position), None));
@@ -367,9 +363,7 @@ pub fn update_from_fill(
         );
         position.pnl_realised =
             Money::new(position.pnl_realised.as_decimal() + realised.as_decimal());
-        position.fees_exit = Money::new(
-            position.fees_exit.as_decimal() + fill.fee.as_decimal(),
-        );
+        position.fees_exit = Money::new(position.fees_exit.as_decimal() + fill.fee.as_decimal());
         position.time_updated = fill.at;
         position.quantity_abs = 0;
         position.refresh_unrealised(fill.price);
@@ -378,11 +372,9 @@ pub fn update_from_fill(
 
     let leftover = fill.quantity - position.quantity_abs;
     let total = Decimal::from(fill.quantity);
-    let fee_exit_share = Money::new(
-        fill.fee.as_decimal() * Decimal::from(position.quantity_abs) / total,
-    );
-    let fee_enter_next =
-        Money::new(fill.fee.as_decimal() * Decimal::from(leftover) / total);
+    let fee_exit_share =
+        Money::new(fill.fee.as_decimal() * Decimal::from(position.quantity_abs) / total);
+    let fee_enter_next = Money::new(fill.fee.as_decimal() * Decimal::from(leftover) / total);
     let realised = calculate_pnl_realised(
         position.side,
         position.price_entry_average,
@@ -390,11 +382,8 @@ pub fn update_from_fill(
         fill.price,
         fee_exit_share,
     );
-    position.pnl_realised =
-        Money::new(position.pnl_realised.as_decimal() + realised.as_decimal());
-    position.fees_exit = Money::new(
-        position.fees_exit.as_decimal() + fee_exit_share.as_decimal(),
-    );
+    position.pnl_realised = Money::new(position.pnl_realised.as_decimal() + realised.as_decimal());
+    position.fees_exit = Money::new(position.fees_exit.as_decimal() + fee_exit_share.as_decimal());
     position.time_updated = fill.at;
     position.quantity_abs = 0;
     position.refresh_unrealised(fill.price);

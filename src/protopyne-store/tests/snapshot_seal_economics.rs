@@ -100,7 +100,8 @@ fn load_fixture() -> Fixture {
 fn frozen_default_equals_the_crate_constant() {
     let fixture = load_fixture();
     assert_eq!(
-        crate::snapshot::DEFAULT_MIN_PART_ROWS, fixture.frozen_min_part_rows,
+        crate::snapshot::DEFAULT_MIN_PART_ROWS,
+        fixture.frozen_min_part_rows,
         "the frozen measurement and the crate default are one value read from \
          two places"
     );

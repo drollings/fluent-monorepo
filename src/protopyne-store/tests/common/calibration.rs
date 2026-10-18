@@ -24,7 +24,7 @@ use protopyne_types::Timeframe;
 use serde::Deserialize;
 
 use crate::commit::test_tapes::at_ms;
-use crate::coverage::{Coverage, FreshnessPolicy, GapClass, classify};
+use crate::coverage::{classify, Coverage, FreshnessPolicy, GapClass};
 
 /// The labelled corpus as recorded on disk.
 #[derive(Debug, Clone, Deserialize)]

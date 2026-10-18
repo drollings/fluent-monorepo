@@ -23,9 +23,7 @@ fn batch_agrees_with_incremental_update_fold() {
     let sma = SmaIndicator::new();
     let closes = [3.0, 1.0, 4.0, 1.0, 5.0, 9.0, 2.0, 6.0];
     let ps = params(4);
-    let batch = sma
-        .batch(&Ohlcv::close_only(&closes), &ps)
-        .expect("valid");
+    let batch = sma.batch(&Ohlcv::close_only(&closes), &ps).expect("valid");
     let mut state = IndicatorState::new();
     let mut folded = Vec::new();
     for &close in &closes {
@@ -60,7 +58,9 @@ fn invalid_periods_are_typed_errors_and_oversize_is_all_na() {
 }
 
 fn trending_closes(bars: usize) -> Vec<f64> {
-    (0..bars).map(|i| 100.0 + i as f64 * 0.05 + ((i * 37 % 11) as f64) * 0.13).collect()
+    (0..bars)
+        .map(|i| 100.0 + i as f64 * 0.05 + ((i * 37 % 11) as f64) * 0.13)
+        .collect()
 }
 
 #[test]
@@ -74,7 +74,9 @@ fn windowed_plus_warmup_matches_full_history_over_visible_slice() {
     let ps = params(14);
     let warmup = sma.warmup(&ps).expect("declared warmup");
     let closes = trending_closes(500);
-    let full = sma.batch(&Ohlcv::close_only(&closes), &ps).expect("full history");
+    let full = sma
+        .batch(&Ohlcv::close_only(&closes), &ps)
+        .expect("full history");
     let visible_start: usize = 400;
     let eval_start = visible_start.saturating_sub(warmup);
     let windowed = sma
@@ -109,7 +111,8 @@ fn fold_updates(closes: &[f64], params: &ParamSet) -> Vec<Option<f64>> {
     closes
         .iter()
         .map(|close| {
-            sma.update(&mut state, BarTick::close_only(*close), params).expect("update runs")
+            sma.update(&mut state, BarTick::close_only(*close), params)
+                .expect("update runs")
         })
         .collect()
 }
@@ -126,8 +129,15 @@ fn buffered_update_matches_batch_on_constant_and_subnormal_inputs() {
         vec![42.0; 40],
         (1..=40).map(|i| f64::from(i) * 1e-310).collect::<Vec<_>>(),
     ] {
-        let batch = sma.batch(&Ohlcv::close_only(&closes), &ps).expect("batch runs").values;
-        assert_eq!(bits_of(&fold_updates(&closes, &ps)), bits_of(&batch), "update fold reproduces batch bit-for-bit");
+        let batch = sma
+            .batch(&Ohlcv::close_only(&closes), &ps)
+            .expect("batch runs")
+            .values;
+        assert_eq!(
+            bits_of(&fold_updates(&closes, &ps)),
+            bits_of(&batch),
+            "update fold reproduces batch bit-for-bit"
+        );
     }
 }
 

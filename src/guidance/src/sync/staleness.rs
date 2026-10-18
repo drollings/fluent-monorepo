@@ -88,6 +88,7 @@ mod tests {
         assert!(is_stale(&json, &source));
     }
 
+    #[ignore = "heavy (~1.5s): mtime-tick sleep; run via `make guidance-soak`"]
     #[test]
     fn test_stale_when_json_older_by_2s() {
         let dir = tempdir();

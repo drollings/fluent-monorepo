@@ -11,7 +11,9 @@ use super::*;
 use chrono::TimeZone as _;
 use fluent_egui::AnnotationSet;
 use protopyne_chart_model::AnnotationStyle;
-use protopyne_kernels::{InputSet, PineEngine, PineRuntimeConfig, PlotPrimitive, parse_program, project};
+use protopyne_kernels::{
+    parse_program, project, InputSet, PineEngine, PineRuntimeConfig, PlotPrimitive,
+};
 use protopyne_types::Bar;
 use rust_decimal::Decimal;
 
@@ -20,12 +22,10 @@ fn bars() -> Vec<Bar> {
     (0..5_i64)
         .map(|index| {
             Bar::new()
-                .ts(
-                    chrono::Utc
-                        .timestamp_opt(1_700_000_000 + index * 60, 0)
-                        .single()
-                        .expect("valid test timestamp"),
-                )
+                .ts(chrono::Utc
+                    .timestamp_opt(1_700_000_000 + index * 60, 0)
+                    .single()
+                    .expect("valid test timestamp"))
                 .o("100.00".parse().expect("decimal"))
                 .h("101.00".parse().expect("decimal"))
                 .l("99.00".parse().expect("decimal"))
@@ -51,13 +51,25 @@ fn labels_convert_with_text_time_and_exact_price() {
     // One label: the bar's close time, the exact decimal price, its text.
     let bars = bars();
     let converted = annotations_of(
-        &[PlotPrimitive::Label { bar: 2, price: 99.5, text: "hi".to_owned() }],
+        &[PlotPrimitive::Label {
+            bar: 2,
+            price: 99.5,
+            text: "hi".to_owned(),
+        }],
         &bars,
     );
     assert_eq!(converted.len(), 1);
     let annotation = &converted[0];
-    assert_eq!(annotation.key.bar_timestamp, 1_700_000_000 + 2 * 60, "time is the bar's close time");
-    assert_eq!(annotation.key.price, Decimal::new(995, 1), "price is exact, never a float echo");
+    assert_eq!(
+        annotation.key.bar_timestamp,
+        1_700_000_000 + 2 * 60,
+        "time is the bar's close time"
+    );
+    assert_eq!(
+        annotation.key.price,
+        Decimal::new(995, 1),
+        "price is exact, never a float echo"
+    );
     assert_eq!(annotation.label, "hi");
     assert_eq!(annotation.style, AnnotationStyle::Note);
 }
@@ -68,7 +80,12 @@ fn areas_convert_to_corner_pairs() {
     // labels because the primitive carries no text.
     let bars = bars();
     let converted = annotations_of(
-        &[PlotPrimitive::Area { left: 1, top: 101.0, right: 3, bottom: 99.0 }],
+        &[PlotPrimitive::Area {
+            left: 1,
+            top: 101.0,
+            right: 3,
+            bottom: 99.0,
+        }],
         &bars,
     );
     assert_eq!(converted.len(), 2);
@@ -76,7 +93,9 @@ fn areas_convert_to_corner_pairs() {
     assert_eq!(converted[0].key.price, Decimal::new(1010, 1));
     assert_eq!(converted[1].key.bar_timestamp, 1_700_000_000 + 3 * 60);
     assert_eq!(converted[1].key.price, Decimal::new(990, 1));
-    assert!(converted.iter().all(|annotation| annotation.label.is_empty()));
+    assert!(converted
+        .iter()
+        .all(|annotation| annotation.label.is_empty()));
 }
 
 #[test]
@@ -86,9 +105,19 @@ fn continuous_output_converts_to_nothing() {
     let bars = bars();
     let converted = annotations_of(
         &[
-            PlotPrimitive::Series { title: "S".to_owned(), values: vec![Some(100.0)] },
-            PlotPrimitive::Level { title: "L".to_owned(), price: 100.0 },
-            PlotPrimitive::Marker { title: "M".to_owned(), bar: 0, price: 100.0 },
+            PlotPrimitive::Series {
+                title: "S".to_owned(),
+                values: vec![Some(100.0)],
+            },
+            PlotPrimitive::Level {
+                title: "L".to_owned(),
+                price: 100.0,
+            },
+            PlotPrimitive::Marker {
+                title: "M".to_owned(),
+                bar: 0,
+                price: 100.0,
+            },
         ],
         &bars,
     );
@@ -103,9 +132,21 @@ fn misaligned_primitives_drop_instead_of_substituting() {
     let bars = bars();
     let converted = annotations_of(
         &[
-            PlotPrimitive::Label { bar: 99, price: 100.0, text: "past".to_owned() },
-            PlotPrimitive::Label { bar: 0, price: f64::NAN, text: "vapor".to_owned() },
-            PlotPrimitive::Label { bar: 1, price: 100.0, text: "kept".to_owned() },
+            PlotPrimitive::Label {
+                bar: 99,
+                price: 100.0,
+                text: "past".to_owned(),
+            },
+            PlotPrimitive::Label {
+                bar: 0,
+                price: f64::NAN,
+                text: "vapor".to_owned(),
+            },
+            PlotPrimitive::Label {
+                bar: 1,
+                price: 100.0,
+                text: "kept".to_owned(),
+            },
         ],
         &bars,
     );
@@ -120,7 +161,11 @@ fn appends_are_idempotent_per_content() {
     let bars = bars();
     let mut set = AnnotationSet::new();
     let one = annotations_of(
-        &[PlotPrimitive::Label { bar: 0, price: 100.0, text: "a".to_owned() }],
+        &[PlotPrimitive::Label {
+            bar: 0,
+            price: 100.0,
+            text: "a".to_owned(),
+        }],
         &bars,
     );
     assert_eq!(append_new(&mut set, &one), 1);
@@ -128,7 +173,11 @@ fn appends_are_idempotent_per_content() {
     assert_eq!(rerun, 0, "a re-run adds nothing");
     assert_eq!(set.len(), 1);
     let two = annotations_of(
-        &[PlotPrimitive::Label { bar: 4, price: 100.0, text: "b".to_owned() }],
+        &[PlotPrimitive::Label {
+            bar: 4,
+            price: 100.0,
+            text: "b".to_owned(),
+        }],
         &bars,
     );
     assert_eq!(append_new(&mut set, &two), 1, "a new drawing appends");
@@ -141,17 +190,24 @@ fn repainted_labels_reach_the_store() {
     // followed by a cosmetic `set_textcolor` does not refuse, so the label
     // converts and appends with its creation geometry.
     let bars = bars();
-    let primitives = run(
-        "lb = label.new(bar_index, high, \"x\")\n\
-         label.set_textcolor(lb, color.red)",
-    );
+    let primitives = run("lb = label.new(bar_index, high, \"x\")\n\
+         label.set_textcolor(lb, color.red)");
     let mut set = AnnotationSet::new();
     let converted = annotations_of(&primitives, &bars);
-    assert_eq!(append_new(&mut set, &converted), 5, "all five repainted labels append");
-    let times: Vec<i64> = set.iter().map(|annotation| annotation.key.bar_timestamp).collect();
+    assert_eq!(
+        append_new(&mut set, &converted),
+        5,
+        "all five repainted labels append"
+    );
+    let times: Vec<i64> = set
+        .iter()
+        .map(|annotation| annotation.key.bar_timestamp)
+        .collect();
     assert_eq!(
         times,
-        (0..5_i64).map(|index| 1_700_000_000 + index * 60).collect::<Vec<_>>(),
+        (0..5_i64)
+            .map(|index| 1_700_000_000 + index * 60)
+            .collect::<Vec<_>>(),
         "one annotation per bar, in order"
     );
     assert!(
@@ -174,5 +230,8 @@ fn moved_labels_never_reach_the_store() {
     let outcome = PineEngine::new(PineRuntimeConfig::new().build())
         .run(&program, &bars, InputSet::new())
         .expect("script runs");
-    assert!(project(&outcome).is_err(), "the move refuses before conversion");
+    assert!(
+        project(&outcome).is_err(),
+        "the move refuses before conversion"
+    );
 }

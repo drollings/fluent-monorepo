@@ -9,13 +9,13 @@
 
 use super::*;
 use std::sync::{
-    Arc,
     atomic::{AtomicUsize, Ordering},
+    Arc,
 };
 
 use chrono::{TimeZone, Utc};
 use fluent_concurrency::io::net::NetCapability;
-use fluent_wvr::{CURRENT_CAPS, CapabilitySet};
+use fluent_wvr::{CapabilitySet, CURRENT_CAPS};
 use rust_decimal::Decimal;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -53,7 +53,9 @@ fn http_response(body: &str) -> String {
 /// Loopback REST script: each connection pops the next canned body.
 /// Returns the base URL plus the served-request counter.
 async fn serve_script(script: Vec<String>) -> (String, Arc<AtomicUsize>) {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind");
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
     let base = format!("http://{}", listener.local_addr().expect("addr"));
     let count = Arc::new(AtomicUsize::new(0));
     let bodies = Arc::new(std::sync::Mutex::new(script));
@@ -113,8 +115,11 @@ fn config_defaults_and_json_round_trip() {
 
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("tasty.json");
-    std::fs::write(&path, r#"{"base_url":"http://127.0.0.1:9","quote_max_age_secs":30}"#)
-        .expect("write");
+    std::fs::write(
+        &path,
+        r#"{"base_url":"http://127.0.0.1:9","quote_max_age_secs":30}"#,
+    )
+    .expect("write");
     let loaded = TastytradeConfig::load(&path);
     assert_eq!(loaded.base_url, "http://127.0.0.1:9");
     assert_eq!(loaded.quote_max_age_secs, 30);
@@ -133,13 +138,18 @@ fn transformer_parses_quote_wire() {
 fn transformer_rejects_malformed_with_reasons() {
     let missing_ask = r#"{"bid":"2.50","bid_size":50,"ask_size":50,"ts":"2026-06-01T12:00:00Z"}"#;
     let reason = transform_quote(missing_ask).expect_err("ask is required");
-    assert!(reason.contains("ask"), "names the missing field, got: {reason}");
+    assert!(
+        reason.contains("ask"),
+        "names the missing field, got: {reason}"
+    );
 
-    let negative_bid = r#"{"bid":"-1.00","ask":"2.70","bid_size":50,"ask_size":50,"ts":"2026-06-01T12:00:00Z"}"#;
+    let negative_bid =
+        r#"{"bid":"-1.00","ask":"2.70","bid_size":50,"ask_size":50,"ts":"2026-06-01T12:00:00Z"}"#;
     let reason = transform_quote(negative_bid).expect_err("bid must be non-negative");
     assert!(reason.contains("bid"), "got: {reason}");
 
-    let crossed = r#"{"bid":"2.70","ask":"2.50","bid_size":50,"ask_size":50,"ts":"2026-06-01T12:00:00Z"}"#;
+    let crossed =
+        r#"{"bid":"2.70","ask":"2.50","bid_size":50,"ask_size":50,"ts":"2026-06-01T12:00:00Z"}"#;
     let reason = transform_quote(crossed).expect_err("crossed refuses");
     assert!(reason.contains("crossed"), "got: {reason}");
 
@@ -147,7 +157,10 @@ fn transformer_rejects_malformed_with_reasons() {
     let reason = transform_quote(bad_ts).expect_err("ts must parse");
     assert!(reason.contains("ts"), "got: {reason}");
 
-    assert!(transform_quote("not json").is_err(), "non-JSON never panics");
+    assert!(
+        transform_quote("not json").is_err(),
+        "non-JSON never panics"
+    );
 }
 
 #[test]
@@ -259,7 +272,9 @@ async fn terminal_error_stops_without_retry() {
     let (base, count) = serve_script(vec![error_body("unauthorized")]).await;
     let transport = transport_for(&base);
     let net = NetCapability::new();
-    let outcome = CURRENT_CAPS.scope(net_caps(), transport.refresh_quote(&net, "SPY")).await;
+    let outcome = CURRENT_CAPS
+        .scope(net_caps(), transport.refresh_quote(&net, "SPY"))
+        .await;
     assert!(
         matches!(outcome, Err(TransportError::Terminal(_))),
         "terminal is first-class Err, got: {outcome:?}"
@@ -292,9 +307,14 @@ async fn stale_primary_falls_back() {
         .build();
     let primary = transport_for("http://127.0.0.1:9");
     primary.put_cached("SPY", stale);
-    assert!(primary.latest("SPY").is_none(), "stale primary serves nothing");
+    assert!(
+        primary.latest("SPY").is_none(),
+        "stale primary serves nothing"
+    );
 
-    let fallback = FreshSource { quote: transform_quote(&quote_body()).expect("wire") };
+    let fallback = FreshSource {
+        quote: transform_quote(&quote_body()).expect("wire"),
+    };
     let served = crate::session::TradingSession::resolve_quote(
         vec![
             primary as Arc<dyn QuoteSource>,
@@ -310,7 +330,9 @@ async fn stale_primary_falls_back() {
     let primary_only: Vec<Arc<dyn QuoteSource>> =
         vec![transport_for("http://127.0.0.1:9") as Arc<dyn QuoteSource>];
     assert!(
-        crate::session::TradingSession::resolve_quote(primary_only, "SPY").await.is_none(),
+        crate::session::TradingSession::resolve_quote(primary_only, "SPY")
+            .await
+            .is_none(),
         "all-stale reads None, never blind"
     );
 }
@@ -340,7 +362,232 @@ async fn stream_forwards_valid_drops_malformed() {
     assert!(out_rx.recv().await.is_none(), "stream ends with the inbox");
 
     scope.close().await;
-    assert_eq!(transport.dropped_messages(), 1, "malformed counted, not forwarded");
+    assert_eq!(
+        transport.dropped_messages(),
+        1,
+        "malformed counted, not forwarded"
+    );
     assert_eq!(transport.rejections().len(), 1, "reason banked for review");
     assert_eq!(transport.active_streams(), 0, "no task leaks past close");
+}
+
+/// Chain-snapshot fetch over the documented envelope: success is
+/// `{"quotes":[<chain-wire>, ...]}` with each entry in the
+/// `transform_chain_quote` shape; errors ride the same `error.code`
+/// envelope as the quote path (terminal codes stop, the rest retry).
+fn chain_wire(ts: &str, strike: &str, kind: &str, bid: &str, ask: &str) -> String {
+    format!(
+        r#"{{"underlying":"SPY","expiry":"2026-07-17","strike":"{strike}","kind":"{kind}","bid":"{bid}","ask":"{ask}","bid_size":50,"ask_size":50,"ts":"{ts}"}}"#
+    )
+}
+
+fn snapshot_body(wires: &[String]) -> String {
+    format!(r#"{{"quotes":[{}]}}"#, wires.join(","))
+}
+
+/// Loopback chain script that also banks the `Authorization` header it saw,
+/// so the fetch proves it authenticates without the test ever reading the
+/// token back out of an error.
+async fn serve_chain_script(
+    script: Vec<String>,
+) -> (String, Arc<AtomicUsize>, Arc<std::sync::Mutex<Vec<String>>>) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let base = format!("http://{}", listener.local_addr().expect("addr"));
+    let count = Arc::new(AtomicUsize::new(0));
+    let seen_auth = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let bodies = Arc::new(std::sync::Mutex::new(script));
+    let counted = Arc::clone(&count);
+    let seen = Arc::clone(&seen_auth);
+    tokio::spawn(async move {
+        loop {
+            let Ok((mut stream, _)) = listener.accept().await else {
+                break;
+            };
+            let mut buf = vec![0_u8; 8192];
+            let mut head = Vec::new();
+            loop {
+                match stream.read(&mut buf).await {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => {
+                        head.extend_from_slice(&buf[..n]);
+                        if head.windows(4).any(|w| w == b"\r\n\r\n") {
+                            break;
+                        }
+                    }
+                }
+            }
+            let text = String::from_utf8_lossy(&head).into_owned();
+            let auth = text
+                .lines()
+                .find(|line| line.to_ascii_lowercase().starts_with("authorization:"))
+                .map(|line| {
+                    line.split_once(':')
+                        .map_or("", |part| part.1)
+                        .trim()
+                        .to_owned()
+                })
+                .unwrap_or_default();
+            seen.lock().expect("auth log locks").push(auth);
+            let body = bodies
+                .lock()
+                .ok()
+                .and_then(|mut guard| guard.pop())
+                .unwrap_or_else(|| error_body("unavailable"));
+            counted.fetch_add(1, Ordering::SeqCst);
+            let _ = stream.write_all(http_response(&body).as_bytes()).await;
+        }
+    });
+    (base, count, seen_auth)
+}
+
+#[tokio::test]
+async fn chain_snapshot_fetch_serves_loopback_wires() {
+    let ts = "2026-01-09T22:00:00Z";
+    let wires = vec![
+        chain_wire(ts, "690", "call", "3", "4"),
+        chain_wire(ts, "695", "call", "2", "3"),
+    ];
+    let (base, count, seen_auth) = serve_chain_script(vec![snapshot_body(&wires)]).await;
+    let transport = transport_for(&base);
+    let net = NetCapability::new();
+    let quotes = CURRENT_CAPS
+        .scope(
+            net_caps(),
+            transport.fetch_chain_snapshot(&net, "SPY", "tok-1"),
+        )
+        .await
+        .expect("loopback snapshot serves");
+    assert_eq!(quotes.len(), 2, "one quote per wire entry");
+    assert_eq!(quotes[0].contract.strike, money("690"));
+    assert_eq!(quotes[1].contract.strike, money("695"));
+    assert_eq!(
+        count.load(Ordering::SeqCst),
+        1,
+        "one request serves one snapshot"
+    );
+    assert_eq!(
+        seen_auth.lock().expect("auth log locks").as_slice(),
+        ["Bearer tok-1"],
+        "the fetch authenticates on the wire"
+    );
+}
+
+#[tokio::test]
+async fn chain_snapshot_terminal_error_stops_without_retry() {
+    let (base, count, _) = serve_chain_script(vec![error_body("unauthorized")]).await;
+    let transport = transport_for(&base);
+    let net = NetCapability::new();
+    let outcome = CURRENT_CAPS
+        .scope(
+            net_caps(),
+            transport.fetch_chain_snapshot(&net, "SPY", "tok-1"),
+        )
+        .await;
+    assert!(
+        matches!(outcome, Err(TransportError::Terminal(_))),
+        "terminal is first-class Err, got: {outcome:?}"
+    );
+    assert_eq!(count.load(Ordering::SeqCst), 1, "terminal never retries");
+}
+
+#[tokio::test]
+async fn chain_snapshot_transient_error_retries_then_succeeds() {
+    let ts = "2026-01-09T22:00:00Z";
+    let good = snapshot_body(&[chain_wire(ts, "690", "call", "3", "4")]);
+    let (base, count, _) = serve_chain_script(vec![good, error_body("unavailable")]).await;
+    let transport = transport_for(&base);
+    let net = NetCapability::new();
+    let quotes = CURRENT_CAPS
+        .scope(
+            net_caps(),
+            transport.fetch_chain_snapshot(&net, "SPY", "tok-1"),
+        )
+        .await
+        .expect("transient resolves on retry");
+    assert_eq!(quotes.len(), 1);
+    assert_eq!(count.load(Ordering::SeqCst), 2, "exactly one retry");
+}
+
+#[tokio::test]
+async fn chain_snapshot_malformed_entry_refuses_the_whole_snapshot() {
+    let ts = "2026-01-09T22:00:00Z";
+    let wires = vec![
+        chain_wire(ts, "690", "call", "3", "4"),
+        chain_wire(ts, "690", "sideways", "3", "4"),
+    ];
+    // One malformed snapshot per attempt: every retry meets the same bad
+    // entry, so the terminal reason names the entry, never a fallback.
+    let bad = snapshot_body(&wires);
+    let (base, count, _) =
+        serve_chain_script(vec![bad.clone(), bad.clone(), bad.clone(), bad]).await;
+    let transport = transport_for(&base);
+    let net = NetCapability::new();
+    // Served repeatedly so a retry would succeed past a transient; the
+    // refusal must be the entry itself, never a partial snapshot.
+    let outcome = CURRENT_CAPS
+        .scope(
+            net_caps(),
+            transport.fetch_chain_snapshot(&net, "SPY", "tok-1"),
+        )
+        .await;
+    let reason = outcome.expect_err("a bad entry refuses the snapshot");
+    assert!(
+        reason.to_string().contains("kind"),
+        "names the entry fault, got: {reason}"
+    );
+    assert!(count.load(Ordering::SeqCst) >= 1);
+}
+
+#[tokio::test]
+async fn chain_snapshot_empty_quotes_refuse_as_partial_window() {
+    let (base, _, _) = serve_chain_script(vec![r#"{"quotes":[]}"#.to_owned()]).await;
+    let transport = transport_for(&base);
+    let net = NetCapability::new();
+    let outcome = CURRENT_CAPS
+        .scope(
+            net_caps(),
+            transport.fetch_chain_snapshot(&net, "SPY", "tok-1"),
+        )
+        .await;
+    assert!(
+        outcome.is_err(),
+        "an empty snapshot refuses, never an empty file"
+    );
+}
+
+#[tokio::test]
+async fn chain_snapshot_missing_auth_or_config_refuses_before_dial() {
+    let (base, count, _) = serve_chain_script(vec![snapshot_body(&[chain_wire(
+        "2026-01-09T22:00:00Z",
+        "690",
+        "call",
+        "3",
+        "4",
+    )])])
+    .await;
+    let transport = transport_for(&base);
+    let net = NetCapability::new();
+    let outcome = CURRENT_CAPS
+        .scope(net_caps(), transport.fetch_chain_snapshot(&net, "SPY", ""))
+        .await;
+    assert!(outcome.is_err(), "an empty token refuses before any dial");
+    assert_eq!(
+        count.load(Ordering::SeqCst),
+        0,
+        "no request leaves without credentials"
+    );
+    let unconfigured = Arc::new(TastytradeTransport::new(TastytradeConfig::new().build()));
+    let outcome = CURRENT_CAPS
+        .scope(
+            net_caps(),
+            unconfigured.fetch_chain_snapshot(&net, "SPY", "tok-1"),
+        )
+        .await;
+    assert!(
+        outcome.is_err(),
+        "an unconfigured base refuses without dialing"
+    );
+    assert_eq!(count.load(Ordering::SeqCst), 0, "still no request");
 }

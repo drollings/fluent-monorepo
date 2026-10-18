@@ -107,7 +107,11 @@ fn missing_header_fixture_warns_without_refusal() {
     let source = parse_pine_source("bare.pine", text);
     assert_eq!(source.text, text, "loaded text byte-identical");
     assert_eq!(source.version, None);
-    assert_eq!(source.warnings.len(), 1, "missing header warns exactly once");
+    assert_eq!(
+        source.warnings.len(),
+        1,
+        "missing header warns exactly once"
+    );
     assert_eq!(source.warnings[0].declared, None);
     source.validate().expect("warn-only: still valid");
 }
@@ -156,7 +160,10 @@ fn component_surface_validates_through_execute() {
         source.get_field("path").expect("path readable"),
         path.to_string_lossy()
     );
-    assert!(source.set_field("path", "x").is_err(), "loaded source immutable");
+    assert!(
+        source.set_field("path", "x").is_err(),
+        "loaded source immutable"
+    );
     let ctx = fluent_wvr::prelude::WorkContext::default();
     let output = source.execute(&ctx).expect("valid source executes");
     assert!(output.success);

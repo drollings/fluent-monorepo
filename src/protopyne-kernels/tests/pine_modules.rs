@@ -37,8 +37,14 @@ fn real_module(id: LibraryId, file: &str) -> ModuleInput {
 
 fn real_triple() -> Vec<ModuleInput> {
     vec![
-        real_module(library_id("showmethegrail", "libUtil", 12), "libraries/_libUtil.pine"),
-        real_module(library_id("showmethegrail", "libMAs", 95), "libraries/_libMAs.pine"),
+        real_module(
+            library_id("showmethegrail", "libUtil", 12),
+            "libraries/_libUtil.pine",
+        ),
+        real_module(
+            library_id("showmethegrail", "libMAs", 95),
+            "libraries/_libMAs.pine",
+        ),
         // The indicator is the graph root: it declares no library identity
         // of its own, so it travels under its file stem.
         real_module(
@@ -89,8 +95,14 @@ fn real_triple_aliases_bind_to_exports() {
     let graph = resolve_imports(real_triple()).expect("triple resolves");
     let root = module_key("local", "FastMAs");
     let aliases = graph.alias_table(&root).expect("root aliases known");
-    assert_eq!(aliases.get("UTIL"), Some(&module_key("showmethegrail", "libUtil")));
-    assert_eq!(aliases.get("libMAs"), Some(&module_key("showmethegrail", "libMAs")));
+    assert_eq!(
+        aliases.get("UTIL"),
+        Some(&module_key("showmethegrail", "libUtil"))
+    );
+    assert_eq!(
+        aliases.get("libMAs"),
+        Some(&module_key("showmethegrail", "libMAs"))
+    );
 
     let util = graph
         .resolve_reference(&root, "UTIL", "Smoothings")
@@ -131,8 +143,16 @@ fn unknown_import_refuses_with_reason() {
 #[test]
 fn import_cycle_refuses_with_reason() {
     let modules = vec![
-        synthetic_module("local", "alpha", "import local/beta/1 as B\nalpha() =>\n    B.beta()"),
-        synthetic_module("local", "beta", "import local/alpha/1 as A\nalpha2() =>\n    A.alpha()"),
+        synthetic_module(
+            "local",
+            "alpha",
+            "import local/beta/1 as B\nalpha() =>\n    B.beta()",
+        ),
+        synthetic_module(
+            "local",
+            "beta",
+            "import local/alpha/1 as A\nalpha2() =>\n    A.alpha()",
+        ),
     ];
     let err = resolve_imports(modules).expect_err("cycle refuses");
     let reason = err.to_string();
@@ -145,7 +165,11 @@ fn version_five_double_load_warns_once_and_resolves() {
     let first = synthetic_module("showmethegrail", "libUtil", text_v5);
     let second = synthetic_module("showmethegrail", "libUtil", text_v5);
     let graph = resolve_imports(vec![first, second]).expect("warn-only version still resolves");
-    assert_eq!(graph.order().len(), 1, "duplicate loads dedup to one module");
+    assert_eq!(
+        graph.order().len(),
+        1,
+        "duplicate loads dedup to one module"
+    );
     assert_eq!(
         graph.warnings().len(),
         1,
@@ -166,7 +190,11 @@ fn non_exported_helper_is_invisible_to_importers() {
             "lib",
             "export visible() =>\n    1\nhelper() =>\n    2",
         ),
-        synthetic_module("local", "user", "import local/lib/1 as LIB\nrun() =>\n    LIB.visible()"),
+        synthetic_module(
+            "local",
+            "user",
+            "import local/lib/1 as LIB\nrun() =>\n    LIB.visible()",
+        ),
     ];
     let graph = resolve_imports(modules).expect("pair resolves");
     let user = module_key("local", "user");
@@ -256,7 +284,10 @@ fn real_closure_resolves_dependencies_first() {
         ("showmethegrail", "libApex"),
         ("showmethegrail", "libCandles"),
     );
-    assert!(graph.warnings().is_empty(), "clean v6 closure warns nothing");
+    assert!(
+        graph.warnings().is_empty(),
+        "clean v6 closure warns nothing"
+    );
 }
 
 #[test]
@@ -309,8 +340,7 @@ fn real_closure_alias_tables_are_pinned() {
 #[test]
 fn real_closure_version_skew_warns_and_preserves_order() {
     let clean = resolve_imports(real_closure()).expect("clean closure resolves");
-    let clean_order: Vec<String> =
-        clean.order().iter().map(ToString::to_string).collect();
+    let clean_order: Vec<String> = clean.order().iter().map(ToString::to_string).collect();
     // Copy fixture: the real libUtil text under a skewed declared version.
     let root = closure_data_root(env!("CARGO_MANIFEST_DIR"));
     let skewed_text = std::fs::read_to_string(root.join("libraries/_libUtil.pine"))
@@ -335,8 +365,7 @@ fn real_closure_version_skew_warns_and_preserves_order() {
         skewed_program,
     );
     let graph = resolve_imports(skewed).expect("skewed closure still resolves");
-    let skewed_order: Vec<String> =
-        graph.order().iter().map(ToString::to_string).collect();
+    let skewed_order: Vec<String> = graph.order().iter().map(ToString::to_string).collect();
     assert_eq!(skewed_order, clean_order, "skew preserves order");
     assert_eq!(graph.warnings().len(), 1, "skew warns once overall");
 }

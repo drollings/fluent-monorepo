@@ -8,7 +8,10 @@ fn money(value: &str) -> Money {
 }
 
 fn level(price: &str, size: u64) -> PriceLevel {
-    PriceLevel { price: money(price), size }
+    PriceLevel {
+        price: money(price),
+        size,
+    }
 }
 
 fn ts() -> chrono::DateTime<Utc> {
@@ -21,7 +24,12 @@ fn book() -> DepthBook {
 }
 
 fn delta(bids: Vec<PriceLevel>, asks: Vec<PriceLevel>, sequence: u64) -> DepthDelta {
-    DepthDelta { bids, asks, sequence, ts: ts() }
+    DepthDelta {
+        bids,
+        asks,
+        sequence,
+        ts: ts(),
+    }
 }
 
 // ── empty-side fixture ───────────────────────────────────────────────
@@ -33,7 +41,10 @@ fn empty_book_has_no_touch_and_trips_no_detector() {
     assert_eq!(book.sequence(), 0);
     assert_eq!(book.level_counts(), (0, 0));
     assert!(is_crossed(&book).is_none(), "empties are dark, not crossed");
-    assert!(is_stale(&book, ts(), 60).is_none(), "a fresh empty is not stale");
+    assert!(
+        is_stale(&book, ts(), 60).is_none(),
+        "a fresh empty is not stale"
+    );
     assert!(Validate::validate(&book).is_ok());
 }
 
@@ -81,13 +92,8 @@ fn snapshot_refuses_stale_duplicates_and_bad_prices() {
         "duplicate prices in one snapshot refuse"
     );
     assert!(
-        book.snapshot_replace(
-            &[level("0.00", 50)],
-            &[level("600.10", 40)],
-            4,
-            ts()
-        )
-        .is_err(),
+        book.snapshot_replace(&[level("0.00", 50)], &[level("600.10", 40)], 4, ts())
+            .is_err(),
         "non-positive prices refuse"
     );
     assert_eq!(book.sequence(), 3, "refused snapshots commit nothing");
@@ -101,7 +107,8 @@ fn delta_gap_refuses_and_commits_nothing() {
     book.snapshot_replace(&[level("600.00", 50)], &[level("600.10", 40)], 1, ts())
         .expect("snapshot");
     assert!(
-        book.apply_delta(&delta(vec![level("600.05", 30)], vec![], 3)).is_err(),
+        book.apply_delta(&delta(vec![level("600.05", 30)], vec![], 3))
+            .is_err(),
         "a skipped sequence is a gap, not a fast-forward"
     );
     assert_eq!(book.sequence(), 1);
@@ -118,8 +125,12 @@ fn delta_upsert_and_remove_semantics() {
     book.snapshot_replace(&[level("600.00", 50)], &[level("600.10", 40)], 1, ts())
         .expect("snapshot");
     // Size zero removes the level; nonzero upserts.
-    book.apply_delta(&delta(vec![level("600.00", 0)], vec![level("600.10", 99)], 2))
-        .expect("remove + upsert");
+    book.apply_delta(&delta(
+        vec![level("600.00", 0)],
+        vec![level("600.10", 99)],
+        2,
+    ))
+    .expect("remove + upsert");
     let top = book.top();
     assert!(top.is_none(), "removing the only bid darkens the top");
     book.apply_delta(&delta(vec![level("599.95", 20)], vec![], 3))
@@ -140,7 +151,10 @@ fn crossed_top_reports_a_reason_while_clean_books_stay_silent() {
     book.snapshot_replace(&[level("600.20", 50)], &[level("600.10", 40)], 2, ts())
         .expect("crossed snapshot");
     let reason = is_crossed(&book).expect("crossed trips");
-    assert!(reason.contains("crossed"), "names the verdict, got: {reason}");
+    assert!(
+        reason.contains("crossed"),
+        "names the verdict, got: {reason}"
+    );
     assert!(reason.contains("SPY"), "names the book, got: {reason}");
     // Locked books have no valid mid either.
     book.snapshot_replace(&[level("600.10", 50)], &[level("600.10", 40)], 3, ts())
@@ -188,7 +202,10 @@ fn random_levels(rng: &mut Rng, base: &str, count: usize) -> Vec<PriceLevel> {
     prices.dedup();
     prices
         .into_iter()
-        .map(|price| PriceLevel { price: Money::new(price / Decimal::from(100)), size: (rng.next() % 50) + 1 })
+        .map(|price| PriceLevel {
+            price: Money::new(price / Decimal::from(100)),
+            size: (rng.next() % 50) + 1,
+        })
         .collect()
 }
 
@@ -209,9 +226,11 @@ fn delta_streams_converge_to_the_snapshot_state() {
         // Path one: one level per delta, sequences 1..=target.
         let mut streamed = book();
         let mut sequence = 0_u64;
-        for level in bids.iter().map(|l| (vec![*l], Vec::new())).chain(
-            asks.iter().map(|l| (Vec::new(), vec![*l])),
-        ) {
+        for level in bids
+            .iter()
+            .map(|l| (vec![*l], Vec::new()))
+            .chain(asks.iter().map(|l| (Vec::new(), vec![*l])))
+        {
             sequence += 1;
             streamed
                 .apply_delta(&delta(level.0, level.1, sequence))
@@ -223,7 +242,11 @@ fn delta_streams_converge_to_the_snapshot_state() {
             .snapshot_replace(&bids, &asks, sequence, ts())
             .expect("snapshot sets");
         assert_eq!(streamed.sequence(), snapshotted.sequence());
-        assert_eq!(streamed.top(), snapshotted.top(), "seed {seed}: tops converge");
+        assert_eq!(
+            streamed.top(),
+            snapshotted.top(),
+            "seed {seed}: tops converge"
+        );
         assert_eq!(
             streamed.level_counts(),
             snapshotted.level_counts(),
@@ -240,11 +263,20 @@ fn manager_holds_one_book_per_key_with_scoped_isolation() {
     assert!(manager.is_empty());
     assert!(manager.book("SPY").is_none(), "reads never insert");
     let key = manager
-        .apply_snapshot("SPY", &[level("600.00", 50)], &[level("600.10", 40)], 1, ts())
+        .apply_snapshot(
+            "SPY",
+            &[level("600.00", 50)],
+            &[level("600.10", 40)],
+            1,
+            ts(),
+        )
         .expect("snapshot opens the book");
     assert_eq!(manager.len(), 1);
     assert!(manager.book("SPY").is_some());
-    assert!(manager.book("AAPL").is_none(), "no cross-talk between symbols");
+    assert!(
+        manager.book("AAPL").is_none(),
+        "no cross-talk between symbols"
+    );
     assert_eq!(manager.book("SPY").expect("book").key(), key);
 }
 
@@ -254,26 +286,44 @@ fn manager_events_advance_consecutive_markers_only() {
     let mut manager = BookManager::new();
     assert!(
         manager
-            .apply_event(&MarketEvent::BookDelta { underlying: "SPY".to_owned(), sequence: 1 })
+            .apply_event(&MarketEvent::BookDelta {
+                underlying: "SPY".to_owned(),
+                sequence: 1
+            })
             .is_err(),
         "books open on snapshot, never on a mid-stream delta"
     );
     manager
-        .apply_snapshot("SPY", &[level("600.00", 50)], &[level("600.10", 40)], 1, ts())
+        .apply_snapshot(
+            "SPY",
+            &[level("600.00", 50)],
+            &[level("600.10", 40)],
+            1,
+            ts(),
+        )
         .expect("snapshot opens");
     manager
-        .apply_event(&MarketEvent::BookDelta { underlying: "SPY".to_owned(), sequence: 2 })
+        .apply_event(&MarketEvent::BookDelta {
+            underlying: "SPY".to_owned(),
+            sequence: 2,
+        })
         .expect("consecutive heartbeat advances");
     assert_eq!(manager.book("SPY").expect("book").sequence(), 2);
     assert!(
         manager
-            .apply_event(&MarketEvent::BookDelta { underlying: "SPY".to_owned(), sequence: 4 })
+            .apply_event(&MarketEvent::BookDelta {
+                underlying: "SPY".to_owned(),
+                sequence: 4
+            })
             .is_err(),
         "gaps refuse so the book re-snapshots"
     );
     assert!(
         manager
-            .apply_event(&MarketEvent::Quote { underlying: "SPY".to_owned(), quote: manager.book("SPY").expect("book").top().expect("touch") })
+            .apply_event(&MarketEvent::Quote {
+                underlying: "SPY".to_owned(),
+                quote: manager.book("SPY").expect("book").top().expect("touch")
+            })
             .is_err(),
         "misrouted kinds refuse instead of skipping silently"
     );
@@ -283,13 +333,31 @@ fn manager_events_advance_consecutive_markers_only() {
 fn scan_is_record_only_and_sorted() {
     let mut manager = BookManager::new();
     manager
-        .apply_snapshot("SPY", &[level("600.20", 50)], &[level("600.10", 40)], 1, ts())
+        .apply_snapshot(
+            "SPY",
+            &[level("600.20", 50)],
+            &[level("600.10", 40)],
+            1,
+            ts(),
+        )
         .expect("crossed SPY");
     manager
-        .apply_snapshot("AAPL", &[level("100.00", 10)], &[level("100.05", 10)], 1, ts() - chrono::Duration::seconds(500))
+        .apply_snapshot(
+            "AAPL",
+            &[level("100.00", 10)],
+            &[level("100.05", 10)],
+            1,
+            ts() - chrono::Duration::seconds(500),
+        )
         .expect("stale AAPL");
     manager
-        .apply_snapshot("MSFT", &[level("200.00", 10)], &[level("200.05", 10)], 1, ts())
+        .apply_snapshot(
+            "MSFT",
+            &[level("200.00", 10)],
+            &[level("200.05", 10)],
+            1,
+            ts(),
+        )
         .expect("clean MSFT");
     let findings = manager.scan(ts(), 60);
     assert_eq!(findings.len(), 2, "one crossed, one stale, none for MSFT");

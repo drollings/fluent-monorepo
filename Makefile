@@ -83,9 +83,14 @@ GUIDANCE_DB   := .guidance.db
 ENV_DIR      := .env
 HASH_DIR     := $(ENV_DIR)/.make_hashes
 
-# Verbosity control: V=1 enables shell echo
+# Verbosity control: V=1 enables shell echo. Gate logs live in GATE_LOG_DIR.
 V ?= 0
 Q := $(if $(filter 1,$V),,@)
+
+# Directory holding the full captured output of every development-loop gate
+# (`bin/gate-run.sh` writes "<target>.log" here, then prints one summary line on
+# success or the diagnostic excerpt on failure). Override per run.
+export GATE_LOG_DIR ?= /tmp/opencode/monorepo-gates
 
 # ==============================================================================
 # MISE INTEGRATION
@@ -101,6 +106,11 @@ include env/mk/common.mk
 .PHONY: help
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make <target>\n"} /^[a-zA-Z0-9_-]+:.*?##/ { printf "  %-22s%s\n", $$1, $$2 } /^##@/ { printf "\n%s\n", substr($$0, 5) }' $(MAKEFILE_LIST)
+	@printf "\n%s\n" "Rigor gates (per component): make <component>-{format,lint,smoke,test,soak}"
+	@printf "  components: %s\n" "$(COMPONENT_NAMES)"
+	@printf "  repo-wide:  make {format,format-check,lint,smoke,test,soak}\n"
+	@printf "  gate logs:  %s\n" "$(GATE_LOG_DIR)"
+	@printf "  see AGENTS.md \"Build-Test Loop\" for when to run each level.\n"
 
 ##@ Intelligence Layer
 
@@ -260,20 +270,20 @@ spacy-parse-benchmark: ## Score the deterministic ArcEager ladder (UPOS/UAS/LAS 
 doc-check: ## Doc consistency lint — types named in skill/router docs must exist in source
 	$(Q)bin/doc-check.sh --types
 
-.PHONY: router-test
-router-test: $(CORAL_ROUTER_BIN) ## Run fluent-router unit/golden/e2e tests + a --help dry-run of the built binary (ort-free unless ROUTER_FEATURES=onnx; stops a running router first)
+.PHONY: test-router
+test-router: $(CORAL_ROUTER_BIN) ## Run fluent-router unit/golden/e2e tests + a --help dry-run of the built binary (ort-free unless ROUTER_FEATURES=onnx; stops a running router first)
 	$(stop-router)
 	$(Q)echo "Running fluent-router unit + golden + e2e mock tests $(if $(ROUTER_FEATURES),with features: $(ROUTER_FEATURES),(ort-free default))"
 	$(Q)cargo test -p fluent-router $(ROUTER_FEATURE_ARGS)
 	$(Q)echo "Validating coral-router --help"
 	$(Q)$(CORAL_ROUTER_BIN) --help > /dev/null && echo "All router tests passed." || echo "ERRROR: coral-router did NOT successfully run."
 
-.PHONY: router-test-onnx
-router-test-onnx: ## router-test with the ONNX fleet (ort + tokenizers via --features onnx)
-	$(Q)$(MAKE) router-test ROUTER_FEATURES=onnx
+.PHONY: test-router-onnx
+test-router-onnx: ## test-router with the ONNX fleet (ort + tokenizers via --features onnx)
+	$(Q)$(MAKE) test-router ROUTER_FEATURES=onnx
 
-.PHONY: router-test-all
-router-test-all: $(CORAL_ROUTER_BIN) ## router-test + coral-context HNSW benchmarks (large, slow; ort-free unless ROUTER_FEATURES=onnx; stops a running router first)
+.PHONY: test-router-all
+test-router-all: $(CORAL_ROUTER_BIN) ## test-router + coral-context HNSW benchmarks (large, slow; ort-free unless ROUTER_FEATURES=onnx; stops a running router first)
 	$(stop-router)
 	$(Q)echo "Running fluent-router unit + golden + e2e mock tests"
 	$(Q)cargo test -p fluent-router $(ROUTER_FEATURE_ARGS)
@@ -357,10 +367,10 @@ protopyne-start: $(PROTOPYNE_SERVER_BIN) ## Build (if needed), (re)start protopy
 	$(Q)nohup $(PROTOPYNE_SERVER_BIN) --bind $(PROTOPYNE_BIND_ADDR) --history $(PROTOPYNE_HISTORY) $(if $(PROTOPYNE_TAPE),--tape $(PROTOPYNE_TAPE)) > $(PROTOPYNE_LOG) 2>&1 &
 	$(Q)bash $(ROUTER_WAIT_SCRIPT) $(PROTOPYNE_HEALTH_URL) $(PROTOPYNE_START_TIMEOUT_S) $(PROTOPYNE_LOG) protopyne-server
 
-.PHONY: protopyne-test
-protopyne-test: $(PROTOPYNE_SERVER_BIN) ## Run the six trading-crate protopyne-rs suites + a --help dry-run of the built binary (stops a running server first; chart crates ride the workspace gate)
+.PHONY: protopyne-trading-suite
+protopyne-trading-suite: $(PROTOPYNE_SERVER_BIN) ## Six trading-crate protopyne-rs suites (--all-features) + a protopyne-server --help dry-run (stops a running server first; the per-component regular gate is protopyne-test)
 	$(stop-protopyne)
-	$(Q)echo "Running protopyne-rs unit + integration suites"
+	$(Q)echo "Running protopyne-rs unit + integration suites (--all-features)"
 	$(Q)cargo test -p protopyne-types -p protopyne-kernels -p protopyne-strategy -p protopyne-venue -p protopyne-server -p protopyne-store --all-features
 	$(Q)echo "Validating protopyne-server --help"
 	$(Q)$(PROTOPYNE_SERVER_BIN) --help > /dev/null && echo "All protopyne tests passed." || (echo "ERROR: protopyne-server did NOT successfully run."; exit 1)
@@ -369,20 +379,36 @@ protopyne-test: $(PROTOPYNE_SERVER_BIN) ## Run the six trading-crate protopyne-r
 protopyne-matrix: ## Lean-build matrix: no-default kernels build+tests, polars-free ship closure, full --all-features suites
 	$(Q)bin/protopyne-build-matrix.sh
 
-.PHONY: protopyne-smoke
-protopyne-smoke: ## Build the Python-free container image and run the full smoke (no-Python proof, /health, paper preview, chart contract)
+.PHONY: protopyne-container-smoke
+protopyne-container-smoke: ## Build the Python-free container image and run the full smoke (no-Python proof, /health, paper preview, chart contract)
 	$(Q)bash src/protopyne-server/smoke-container.sh
 
 # The trading demo contract, headless: the mock terminal's `--check` output
 # shows the gateway-backed trading views (health, portfolio, proposals,
 # chart reads, replay), then the chart shell's `--check` covers the canvas
 # data path over the same history arg. Both outputs are pinned in
-# `src/protopyne-egui/tests/data/` and reproduced byte-for-byte, so this
-# target is the headless CI form of the demo. For the interactive windows,
-# run the `terminal` example with `--mock` (trading demo, no server boot) or
-# the `demo` example (chart shell) directly.
+# `src/protopyne-egui/tests/data/` and reproduced byte-for-byte, so
+# `protopyne-demo-check` is the headless CI form of the demo. For the
+# interactive windows, `protopyne-demo` opens the trading terminal UI
+# (`terminal` example with `--mock`, no server boot) and
+# `protopyne-demo-chart` opens the chart shell (`demo` example) directly.
+# PROTOPYNE_DEMO_MOCK=1 uses the mock gateway (tiny fixture data) instead of
+# the loopback server over PROTOPYNE_GUI_HISTORY.
+PROTOPYNE_DEMO_MOCK ?= 0
 .PHONY: protopyne-demo
-protopyne-demo: ## Run the protopyne-rs trading-demo contract headless: terminal --mock --check (trading views) plus demo --check (chart shell); PROTOPYNE_GUI_HISTORY=<dir|csv|parquet> selects the chart history
+protopyne-demo: ## Open the interactive trading terminal UI (needs a display; boots a loopback server over PROTOPYNE_GUI_HISTORY by default, PROTOPYNE_DEMO_MOCK=1 uses the mock gateway instead; PROTOPYNE_GUI_ARGS forwards extra terminal args such as --base 1M)
+ifeq ($(PROTOPYNE_DEMO_MOCK),0)
+	$(Q)cargo run -p protopyne-egui --features server-gateway,demo --example terminal -- $(PROTOPYNE_GUI_HISTORY) $(PROTOPYNE_GUI_ARGS)
+else
+	$(Q)cargo run -p protopyne-egui --features server-gateway,demo --example terminal -- --mock $(PROTOPYNE_GUI_ARGS)
+endif
+
+.PHONY: protopyne-demo-chart
+protopyne-demo-chart: ## Open the interactive chart shell UI (needs a display; PROTOPYNE_GUI_HISTORY selects the history, PROTOPYNE_GUI_ARGS forwards extra args such as --symbol GLD)
+	$(Q)cargo run -p protopyne-egui --features demo --example demo -- $(PROTOPYNE_GUI_HISTORY) $(PROTOPYNE_GUI_ARGS)
+
+.PHONY: protopyne-demo-check
+protopyne-demo-check: ## Run the protopyne-rs trading-demo contract headless: terminal --mock --check (trading views) plus demo --check (chart shell); PROTOPYNE_GUI_HISTORY=<dir|csv|parquet> selects the chart history
 	$(Q)cargo run -p protopyne-egui --features server-gateway,demo --example terminal -- --mock --check
 	$(Q)cargo run -p protopyne-egui --features demo --example demo -- --check $(PROTOPYNE_GUI_HISTORY) $(PROTOPYNE_GUI_ARGS)
 
@@ -425,14 +451,13 @@ onnx-gpu-check: ## Probe the linked onnxruntime for the AMD ROCm GPU (MIGraphX) 
 # `live-ai`, so they stay hermetic. Package names are the Cargo package ids
 # (`rg '^name' <crate>/Cargo.toml`). See doc/TESTING.md §5.
 
+# Only the crates whose `test-<shorthand>` has no canonical `<component>-test`
+# yet stay here. The named shared crates (`common-core`, `fluent-wvr`,
+# `fluent-concurrency`, `dag`, `fluent-egui`) and the binary components carry
+# the component gate matrix above; their historical `test-<shorthand>` names
+# live on as thin aliases in the block just below.
 TEST_CRATES := \
-	router:fluent-router \
-	concurrency:fluent-concurrency \
-	wvr:fluent-wvr \
 	db:fluent-db \
-	dag:fluent-dag \
-	coral:coral-context \
-	guidance:guidance-core \
 	llm:fluent-llm \
 	macros:fluent-wvr-macros \
 	spacy:spacy-rs \
@@ -447,15 +472,104 @@ test-$(1): ## Run the $(2) Tier-0/1/2 suite (hermetic; no live-AI)
 endef
 $(foreach pair,$(TEST_CRATES),$(eval $(call test-crate-rule,$(firstword $(subst :, ,$(pair))),$(lastword $(subst :, ,$(pair))))))
 
+# Historical `test-<shorthand>` / `router-*` spellings: thin aliases onto the
+# canonical `<component>-test` (and the rich `test-router`) so every name in
+# the docs and older scripts keeps resolving to one implementation.
+.PHONY: test-wvr test-concurrency test-dag test-coral test-guidance
+test-wvr: fluent-wvr-test
+test-concurrency: fluent-concurrency-test
+test-dag: dag-test
+test-coral: coral-test
+test-guidance: guidance-test
+
+.PHONY: router-test router-test-all
+router-test: test-router
+router-test-all: test-router-all
+
 .PHONY: test-ort-onnx
 test-ort-onnx: ## Run the fluent-onnx Tier-0/1/2 suite with the ort workers (onnx + tokenizers)
 	$(Q)cargo test -p fluent-onnx --features onnx
+
+# ── Rigor Gates (per-component matrix) ───────────────────────────────────────
+# Every major component — a product/binary target (`coral-router`, `guidance`,
+# `protopyne`, `protopyne-egui`, `coral`) or a shared library crate
+# (`common-core`, `fluent-wvr`, `fluent-concurrency`, `dag`, `fluent-egui`) —
+# exposes the SAME five gates, named `<component>-<level>`:
+#
+#   <c>-format  rustfmt the component's packages (WRITE, like `make format`)
+#   <c>-lint    clippy --all-targets -D warnings on the component's packages
+#   <c>-smoke   FAST    — type-check every target, then run unit tests (`--lib --bins`)
+#   <c>-test    REGULAR — the component's full hermetic suite (unit + integration/e2e)
+#   <c>-soak    SLOW    — the component's `#[ignore]`d heavy tests (`-- --ignored`)
+#
+# Only `format` mutates files; `lint`/`smoke`/`test`/`soak` verify. `smoke` runs
+# the tests compiled into a lib/bin target — a crate that keeps every test in
+# an auto-discovered integration target will report 0 smoke tests (its
+# all-target type-check and its `-test` gate still cover it).
+# Repo-wide equivalents are `make format` (write) / `format-check` / `lint` /
+# `smoke` / `test` / `soak`. AGENTS.md "Build-Test Loop" says WHEN to run which
+# level: smoke for a minor milestone on the component you are working in,
+# regular for a concluded component, and the repo-wide levels only at the ends
+# described there. The rich, composite targets keep their own names
+# (`test-router`, `protopyne-trading-suite`, `protopyne-demo-check`,
+# `test-<shorthand>`, `test-live`, …); the matrix is the uniform
+# format/lint/smoke/test/soak subset every component shares.
+
+COMPONENT_NAMES := \
+	common-core \
+	fluent-wvr \
+	fluent-concurrency \
+	dag \
+	fluent-egui \
+	coral-router \
+	guidance \
+	coral \
+	protopyne \
+	protopyne-egui
+
+# component -> the Cargo packages that make it up, plus any extra cargo args
+# (features). `dag` is the workspace name of package `fluent-dag`; the binary
+# components bundle their library (e.g. `coral-router` = `fluent-router` + the
+# `coral-router` bin; `guidance` = `guidance-core` + `guidance` + ontology).
+common-core_PKGS        := common-core
+fluent-wvr_PKGS         := fluent-wvr
+fluent-concurrency_PKGS := fluent-concurrency
+dag_PKGS                := fluent-dag
+fluent-egui_PKGS        := fluent-egui
+coral-router_PKGS       := fluent-router coral-router
+guidance_PKGS           := guidance-core guidance guidance-ontology
+coral_PKGS              := coral-context coral
+protopyne_PKGS          := protopyne-types protopyne-kernels protopyne-store protopyne-strategy protopyne-venue protopyne-server
+protopyne-egui_PKGS     := protopyne-egui
+# The trading terminal's golden/contract tests compile only under these
+# features, so its gates carry them (its `demo_shell` golden suite is skipped
+# without them).
+protopyne-egui_ARGS     := --features server-gateway,demo
+
+# Emit the five gates for one component. `$(1)` is the component name; the
+# PKGS/ARGS variables are looked up through it. Kept as a macro so the five
+# levels can never drift between components.
+define component-gates
+.PHONY: $(1)-format $(1)-lint $(1)-smoke $(1)-test $(1)-soak
+$(1)-format: ## Format the $(1) component (rustfmt, write)
+	$(Q)bin/gate-run.sh $(1)-format fmt -- cargo fmt $(addprefix -p ,$($(1)_PKGS))
+$(1)-lint: ## clippy -D warnings for the $(1) component
+	$(Q)bin/gate-run.sh $(1)-lint lint -- cargo clippy $(addprefix -p ,$($(1)_PKGS)) --all-targets $($(1)_ARGS) -- -D warnings
+$(1)-smoke: ## FAST gate for $(1): all-target type-check + unit tests
+	$(Q)bin/gate-run.sh $(1)-smoke check build -- cargo check $(addprefix -p ,$($(1)_PKGS)) --all-targets $($(1)_ARGS)
+	$(Q)bin/gate-run.sh $(1)-smoke test unit -- cargo test --quiet $(addprefix -p ,$($(1)_PKGS)) --lib --bins $($(1)_ARGS)
+$(1)-test: ## REGULAR gate for $(1): full hermetic suite
+	$(Q)bin/gate-run.sh $(1)-test test -- cargo test --quiet $(addprefix -p ,$($(1)_PKGS)) $($(1)_ARGS)
+$(1)-soak: ## SLOW gate for $(1): ignored heavy tests
+	$(Q)bin/gate-run.sh $(1)-soak test -- cargo test --quiet $(addprefix -p ,$($(1)_PKGS)) $($(1)_ARGS) -- --ignored
+endef
+$(foreach c,$(COMPONENT_NAMES),$(eval $(call component-gates,$(c))))
 
 # ── Live-AI Test Pathway ────────────────────────────────────────────────────
 # THE ONLY pathway that runs real inference. Every live test is `#[ignore]` +
 # `live-ai`-gated (in `tests/live/`); these targets enable the feature and run
 # ONLY the ignored tests in the `live` test target. They NEVER run under
-# `make test` / `make router-test` / `make router-mock` / CI. Live tests skip
+# `make test` / `make test-router` / `make router-mock` / CI. Live tests skip
 # cleanly (early `return`) when the env contract (LLM_BASE_URL/LLM_MODEL) is
 # absent, per the skip-not-fail policy in doc/TESTING.md §4.
 
@@ -498,14 +612,33 @@ test-live: ## Run ALL live-AI tests (the ONLY real-inference pathway); skips cle
 	done
 
 # ── Standard Targets ──────────────────────────────────────────────────────────
+# Repo-wide rigor levels. They mirror the per-component matrix above but span
+# the whole workspace; AGENTS.md "Build-Test Loop" governs when to run each:
+# `smoke` at the end of a workflow, `test` on user command (never per
+# milestone), `soak` only when a change touches concurrency/timing/calibration.
+#
+# Every gate runs through `bin/gate-run.sh`, which captures the command's full
+# output to "$GATE_LOG_DIR/<target>.log" (default /tmp/opencode/monorepo-gates)
+# and prints one summary line on success — a failure prints the diagnostic
+# excerpt and the log path and exits non-zero. `cargo test` runs with
+# `--quiet` (one character per test) so the captured log stays small.
+
+.PHONY: smoke
+smoke: ## Repo-wide FAST gate (workflow end): all-target type-check + unit tests
+	$(Q)bin/gate-run.sh smoke check build -- cargo check --workspace --all-targets
+	$(Q)bin/gate-run.sh smoke test unit -- cargo test --quiet --workspace --lib --bins
 
 .PHONY: test
-test: ## Run unit tests across the Rust source in src
-	$(Q)cargo test --workspace
+test: ## Repo-wide REGULAR gate (user command before commit): full hermetic suite
+	$(Q)bin/gate-run.sh test test -- cargo test --quiet --workspace
+
+.PHONY: soak
+soak: ## Repo-wide SLOW gate: `#[ignore]`d heavy tests across the workspace
+	$(Q)bin/gate-run.sh soak test -- cargo test --quiet --workspace -- --ignored
 
 .PHONY: lint
-lint: lint-vector ## Run clippy across the Rust source in src on all .rs files
-	$(Q)cargo clippy --workspace -- -D warnings
+lint: lint-vector ## Static gate: clippy across the workspace on all targets
+	$(Q)bin/gate-run.sh lint lint -- cargo clippy --workspace --all-targets -- -D warnings
 
 .PHONY: lint-vector
 lint-vector: ## Consolidation guard: raw HNSW types contained; no re-export shims, no second threshold/error source, no fresh distance closures
@@ -536,8 +669,16 @@ health: ## Run cargo tarpaulin and verify 85% coverage
 	$(Q)cargo tarpaulin --workspace --fail-under 85
 
 .PHONY: format
-format: ## Run rustfmt across the Rust source in src on all .rs files
-	$(Q)cargo fmt --all
+format: ## rustfmt the whole workspace (write)
+	$(Q)bin/gate-run.sh format fmt -- cargo fmt --all
+
+.PHONY: format-check
+format-check: ## rustfmt --check the whole workspace (verify, no write)
+	$(Q)bin/gate-run.sh format-check fmt -- cargo fmt --all -- --check
+
+.PHONY: fmt fmt-check
+fmt: format ## Alias for `format` (cargo fmt muscle memory)
+fmt-check: format-check ## Alias for `format-check`
 
 # ── STRUCTURE.md ─────────────────────────────────────────────────────────────
 # Generated by guidance structure after sync.

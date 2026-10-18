@@ -13,17 +13,15 @@
 #![allow(clippy::float_cmp)]
 
 use super::*;
-use protopyne_types::Timeframe;
 use protopyne_types::Bar;
+use protopyne_types::Timeframe;
 
 /// One closed bar from decimal legs and a whole-second timestamp.
 fn bar(open: &str, high: &str, low: &str, close: &str, volume: u64, ts_secs: i64) -> Bar {
     Bar::new()
-        .ts(
-            chrono::TimeZone::timestamp_opt(&chrono::Utc, ts_secs, 0)
-                .single()
-                .expect("valid test timestamp"),
-        )
+        .ts(chrono::TimeZone::timestamp_opt(&chrono::Utc, ts_secs, 0)
+            .single()
+            .expect("valid test timestamp"))
         .o(open.parse().expect("decimal"))
         .h(high.parse().expect("decimal"))
         .l(low.parse().expect("decimal"))
@@ -58,7 +56,9 @@ fn wobble(base: f64, volume_spike: Option<(u32, u64)>, truncate_to: Option<usize
         .map(|i| {
             let wobble = if i % 2 == 0 { 0.0 } else { 0.4 };
             let close = base + wobble;
-            let volume = volume_spike.filter(|(at, _)| *at == i).map_or(1_000, |(_, v)| v);
+            let volume = volume_spike
+                .filter(|(at, _)| *at == i)
+                .map_or(1_000, |(_, v)| v);
             bar(
                 &format!("{:.2}", close - 0.2),
                 &format!("{:.2}", close + 0.4),
@@ -91,7 +91,10 @@ fn native_regime(bars: &[Bar], at: usize) -> MarketContext {
     )
     .expect("fetch fills");
     let frame_len = store.frame_stamps(key.tf_ms()).expect("frame").len();
-    assert!(at < frame_len, "probe bar {at} inside {frame_len} confirmed buckets");
+    assert!(
+        at < frame_len,
+        "probe bar {at} inside {frame_len} confirmed buckets"
+    );
     update(&store, &key, at, None).expect("context reads")
 }
 
@@ -116,7 +119,10 @@ fn last_regime(bars: &[Bar]) -> MarketRegime {
 }
 
 fn is_trending(regime: MarketRegime) -> bool {
-    matches!(regime, MarketRegime::TrendingBull | MarketRegime::TrendingBear)
+    matches!(
+        regime,
+        MarketRegime::TrendingBull | MarketRegime::TrendingBear
+    )
 }
 
 #[test]
@@ -159,7 +165,10 @@ fn regime_precision_recall_at_unit() {
         }
     }
     assert_eq!(correct, cases.len(), "recall 1.0 over labeled regimes");
-    assert_eq!(trend_right, trend_predicted, "trend-call precision 1.0 (no false trends)");
+    assert_eq!(
+        trend_right, trend_predicted,
+        "trend-call precision 1.0 (no false trends)"
+    );
     assert_eq!(trend_predicted, 2, "both trend labels predicted trending");
 }
 
@@ -183,10 +192,21 @@ fn guards_are_confidence_not_correctness() {
         })
         .collect();
     let ctx = native_regime(&zeros, 39);
-    assert_eq!(ctx.vol_ratio, Some(0.0), "blocked guard carries the default, never na");
+    assert_eq!(
+        ctx.vol_ratio,
+        Some(0.0),
+        "blocked guard carries the default, never na"
+    );
     assert_eq!(ctx.vol, Some(0.0), "zero volume still reports present");
-    assert_eq!(ctx.vol_sma, Some(0.0), "sma over zeros computes zero (guard reads it, not na)");
-    assert!(ctx.ma_health.is_some(), "trend inputs stay computable without volume");
+    assert_eq!(
+        ctx.vol_sma,
+        Some(0.0),
+        "sma over zeros computes zero (guard reads it, not na)"
+    );
+    assert!(
+        ctx.ma_health.is_some(),
+        "trend inputs stay computable without volume"
+    );
 }
 
 #[test]
@@ -215,9 +235,19 @@ fn single_bar_spikes_never_latch() {
     let pre = native_regime(&bars, 29).regime;
     let spike = native_regime(&bars, 30).regime;
     let washout = native_regime(&bars, 39).regime;
-    assert!(!is_trending(pre), "pre-spike flat stays untrending: {pre:?}");
-    assert_eq!(spike, MarketRegime::LowVolume, "absent sibling voids the volume tie");
-    assert_eq!(washout, pre, "washout returns to the pre-spike label (no latch)");
+    assert!(
+        !is_trending(pre),
+        "pre-spike flat stays untrending: {pre:?}"
+    );
+    assert_eq!(
+        spike,
+        MarketRegime::LowVolume,
+        "absent sibling voids the volume tie"
+    );
+    assert_eq!(
+        washout, pre,
+        "washout returns to the pre-spike label (no latch)"
+    );
     // Price spike without volume change: recursive kernels (EMA-21,
     // ATR-14) retain ghosts for dozens of bars, and the ghost *ratio* can
     // still tie at the washout horizon — the same arithmetic in Pine reads
@@ -230,16 +260,35 @@ fn single_bar_spikes_never_latch() {
         .map(|i| {
             let close = if i == 30 { "120.00" } else { "100.00" };
             let high = if i == 30 { "121.00" } else { "100.00" };
-            bar("100.00", high, "100.00", close, 1_000, 1_700_000_000 + i64::from(i) * 300)
+            bar(
+                "100.00",
+                high,
+                "100.00",
+                close,
+                1_000,
+                1_700_000_000 + i64::from(i) * 300,
+            )
         })
         .collect();
     let pre_price = native_regime(&jabbed, 29);
     let spike_price = native_regime(&jabbed, 30);
     let washout_price = native_regime(&jabbed, 89);
-    for (label, ctx) in [("pre", &pre_price), ("spike", &spike_price), ("washout", &washout_price)] {
-        assert_eq!(ctx.vol_ratio, Some(1.0), "{label}: volume surface untouched by a price spike");
+    for (label, ctx) in [
+        ("pre", &pre_price),
+        ("spike", &spike_price),
+        ("washout", &washout_price),
+    ] {
+        assert_eq!(
+            ctx.vol_ratio,
+            Some(1.0),
+            "{label}: volume surface untouched by a price spike"
+        );
     }
-    assert_eq!(spike_price.regime, MarketRegime::TrendingBear, "spike bar registers");
+    assert_eq!(
+        spike_price.regime,
+        MarketRegime::TrendingBear,
+        "spike bar registers"
+    );
     // Oracle-pinned spike-bar health (-70.168…): the lagging fast average
     // stacks bearish under the print while dispersion trails — verified
     // against the engine on this exact tape, frozen here.
@@ -267,12 +316,27 @@ fn quiet_shapes_stay_untrending() {
     // health-threshold rewrite.
     let calm = wobble(100.0, Some((38, 1_500)), Some(39));
     let calm_regime = last_regime(&calm);
-    assert!(!is_trending(calm_regime), "calm wobble stays untrending: {calm_regime:?}");
+    assert!(
+        !is_trending(calm_regime),
+        "calm wobble stays untrending: {calm_regime:?}"
+    );
     let flat: Vec<Bar> = (0u32..30)
-        .map(|i| bar("100", "100", "100", "100", 1_000, 1_700_000_000 + i64::from(i) * 300))
+        .map(|i| {
+            bar(
+                "100",
+                "100",
+                "100",
+                "100",
+                1_000,
+                1_700_000_000 + i64::from(i) * 300,
+            )
+        })
         .collect();
     let flat_regime = last_regime(&flat);
-    assert!(!is_trending(flat_regime), "flat tape stays untrending: {flat_regime:?}");
+    assert!(
+        !is_trending(flat_regime),
+        "flat tape stays untrending: {flat_regime:?}"
+    );
 }
 
 #[test]
@@ -281,9 +345,24 @@ fn flat_tape_zeroes_the_atr_guarded_ratios() {
     // both ratios instead of dividing — the exact arms the `div_or_none`
     // migration must preserve bit-for-bit.
     let flat: Vec<Bar> = (0u32..40)
-        .map(|i| bar("100", "100", "100", "100", 1_000, 1_700_000_000 + i64::from(i) * 300))
+        .map(|i| {
+            bar(
+                "100",
+                "100",
+                "100",
+                "100",
+                1_000,
+                1_700_000_000 + i64::from(i) * 300,
+            )
+        })
         .collect();
     let ctx = native_regime(&flat, 39);
-    assert_eq!(ctx.atr_distance, None, "zero ATR refuses the distance ratio");
-    assert_eq!(ctx.volatility_ratio, None, "zero ATR refuses the volatility ratio");
+    assert_eq!(
+        ctx.atr_distance, None,
+        "zero ATR refuses the distance ratio"
+    );
+    assert_eq!(
+        ctx.volatility_ratio, None,
+        "zero ATR refuses the volatility ratio"
+    );
 }

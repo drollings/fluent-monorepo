@@ -153,11 +153,15 @@ impl AppendRecord for JournalRecord {
         // once so the owned conversions below read plainly.
         let (seq, client_id, kind, detail, at_ms): (&str, &str, &str, &str, &str) =
             (*seq, *client_id, *kind, *detail, *at_ms);
-        let seq: i64 = seq.parse().map_err(|_| format!("seq {seq:?} is not an integer"))?;
+        let seq: i64 = seq
+            .parse()
+            .map_err(|_| format!("seq {seq:?} is not an integer"))?;
         if seq < 1 {
             return Err(format!("seq {seq} is not positive"));
         }
-        let at_ms: i64 = at_ms.parse().map_err(|_| format!("at_ms {at_ms:?} is not an integer"))?;
+        let at_ms: i64 = at_ms
+            .parse()
+            .map_err(|_| format!("at_ms {at_ms:?} is not an integer"))?;
         Ok(Self {
             seq,
             client_id: client_id.to_owned(),
@@ -297,7 +301,9 @@ impl Journal {
     pub fn open(path: &Path) -> Result<Self, VenueError> {
         let log = AppendLog::<JournalRecord>::open(path)
             .map_err(|e| VenueError::Journal(e.to_string()))?;
-        let rows = log.read_all().map_err(|e| VenueError::Journal(e.to_string()))?;
+        let rows = log
+            .read_all()
+            .map_err(|e| VenueError::Journal(e.to_string()))?;
         let next_seq = rows.iter().map(|record| record.seq).max().unwrap_or(0) + 1;
         let mut inner = JournalInner {
             sink: JournalSink::Durable(log),
@@ -449,8 +455,7 @@ impl Journal {
         now: DateTime<Utc>,
     ) -> Result<(), VenueError> {
         self.gate(permit)?;
-        let detail =
-            serde_json::to_string(leg).map_err(|e| VenueError::Journal(e.to_string()))?;
+        let detail = serde_json::to_string(leg).map_err(|e| VenueError::Journal(e.to_string()))?;
         self.append(client_id, LEG_FILL_KIND, &detail, now)
     }
 
@@ -490,7 +495,10 @@ impl Journal {
             .fold_statuses(permit)?
             .into_iter()
             .filter(|(_, status)| {
-                matches!(status.as_str(), "pending" | "submitted" | "acknowledged" | "partial")
+                matches!(
+                    status.as_str(),
+                    "pending" | "submitted" | "acknowledged" | "partial"
+                )
             })
             .map(|(intent, _)| intent)
             .collect())

@@ -142,7 +142,10 @@ impl Timeframe {
         let origin = self.fold_origin_ms();
         let step = self.duration_ms();
         origin.saturating_add(
-            ts_ms.saturating_sub(origin).div_euclid(step).saturating_mul(step),
+            ts_ms
+                .saturating_sub(origin)
+                .div_euclid(step)
+                .saturating_mul(step),
         )
     }
 
