@@ -76,6 +76,7 @@ fn session() -> TradingSession {
         &SessionConfig::new().build(),
         Arc::new(VenueRegistry::single(venue)),
         VenueStorage::new("test.db".into()),
+        None,
     )
     .expect("boot")
 }

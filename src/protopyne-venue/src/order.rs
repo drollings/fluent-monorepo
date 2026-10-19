@@ -11,7 +11,10 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+use protopyne_strategy::OrderShape;
 use protopyne_types::{Money, Qty, SpreadLegs};
+
+use crate::venue::LegExecution;
 
 /// Deterministic client ID for an order attempt: the proposal id plus the
 /// attempt counter. Attempt 0 is the first try; any retry reuses its own ID
@@ -89,6 +92,24 @@ pub struct OrderIntent {
     #[builder(default)]
     #[serde(default)]
     pub time_in_force: TimeInForce,
+    /// Worst-case capital the package requires, when the caller priced it
+    /// from a chain. `None` keeps the legacy `limit × quantity` dry-run
+    /// check and serializes exactly as before.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capital_requirement: Option<Money>,
+}
+
+/// Derive the risk shape from the intent that will actually be submitted:
+/// a spread when legs are attached, and a limit order unless the working
+/// style is the immediate (market-style) arm. The runner builds the intent
+/// before the risk check, so the checked shape is the submitted shape.
+impl From<&OrderIntent> for OrderShape {
+    fn from(intent: &OrderIntent) -> Self {
+        Self {
+            is_spread: intent.legs.is_some(),
+            is_limit: !matches!(intent.time_in_force, TimeInForce::ImmediateOrCancel),
+        }
+    }
 }
 
 /// Lifecycle of one order, from journaled intent to terminal state.
@@ -277,22 +298,89 @@ impl Position {
     }
 }
 
-/// Explicit corporate-action and expiry events. The prototype applies them as
-/// whole-position adjustments with journaled reasons — never silent.
+/// Explicit corporate-action and expiry kinds. The venue applies them to its
+/// books with journaled outcomes — never silently, and never by deleting a net
+/// position. Cash amount and the affected option contract live on
+/// [`CorporateEventArgs`], so the kind stays a pure discriminant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CorporateEvent {
-    /// Contracts expired worthless; position closes at zero.
+    /// Listed options at or past expiry close at intrinsic.
     Expiry,
-    /// Short legs assigned; prototype closes the position at intrinsic zero
-    /// and journals the assignment for human review.
+    /// A short option leg was assigned: close it and generate the stock leg.
     Assignment,
-    /// Cash dividend per contract/share.
-    Dividend(Money),
+    /// A long option leg was exercised: close it and generate the stock leg.
+    Exercise,
+    /// Cash dividend per share.
+    Dividend,
     /// Forward split factor as new shares per old share (e.g. 2 for a
     /// 2-for-1 split). A zero factor is malformed and must be refused by the
     /// venue, never reinterpreted as a no-op; reverse splits have no
     /// representation here and are likewise a typed refusal, not arithmetic.
     Split(u32),
+}
+
+impl CorporateEvent {
+    /// Stable label for journal notes and report lines.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Expiry => "expiry",
+            Self::Assignment => "assignment",
+            Self::Exercise => "exercise",
+            Self::Dividend => "dividend",
+            Self::Split(_) => "split",
+        }
+    }
+}
+
+/// One corporate action as a replay input: which instrument, which option
+/// contract when the action is option-specific, when it takes effect, and the
+/// cash amount the venue books (dividend per share, or expiry/assignment
+/// intrinsic per share).
+#[derive(Debug, Clone, Builder, PartialEq, Serialize, Deserialize)]
+#[builder(start_fn = new)]
+pub struct CorporateEventArgs {
+    /// Underlying symbol the action applies to.
+    pub underlying: String,
+    /// Affected option contract when the action is option-specific.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contract: Option<protopyne_types::OptionContract>,
+    /// Instant the action takes effect.
+    pub at: DateTime<Utc>,
+    /// What happened.
+    pub event: CorporateEvent,
+    /// Cash the venue books: dividend per share, or the intrinsic per share
+    /// an expiry/assignment closes at. `None` means zero intrinsic.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub amount: Option<Money>,
+}
+
+/// What the venue booked for one corporate action: the option legs it closed,
+/// the stock leg it generated (assignment/exercise), cash it credited
+/// (dividend), every contract the action touched, and whether the book now
+/// needs broker reconciliation. Never a string-only outcome.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct CorporateOutcome {
+    /// Human-readable note for the journal row.
+    pub note: String,
+    /// Option-leg closes booked by the action, in booking order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub legs: Vec<LegExecution>,
+    /// Stock leg generated by an assignment or exercise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stock_leg: Option<LegExecution>,
+    /// Cash credited to the instrument (dividend).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cash: Option<Money>,
+    /// Contracts whose book the action changed or exposed, for review.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub affected: Vec<protopyne_types::ContractId>,
+    /// Realized P&L booked by the closed legs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub realised: Option<Money>,
+    /// `true` when the book needs broker reconciliation (assignment/exercise).
+    #[serde(default)]
+    pub reconcile: bool,
 }
 
 /// Quantity held as [`Qty`] for strategy-facing math.

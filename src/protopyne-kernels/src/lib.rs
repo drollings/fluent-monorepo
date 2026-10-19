@@ -48,6 +48,7 @@ pub mod price_source;
 pub mod research;
 #[cfg(feature = "pine")]
 pub mod runtime;
+pub mod scores;
 pub mod series;
 pub mod sma;
 pub mod smoothing;

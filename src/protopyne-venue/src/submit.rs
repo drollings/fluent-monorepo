@@ -198,7 +198,7 @@ pub async fn submit_guarded<R: SubmissionRecorder, V: Venue>(
             return Ok(known);
         }
     }
-    let dry = venue.dry_run(&intent, quote)?;
+    let dry = venue.dry_run_async(&intent, quote).await?;
     if !dry.allowed {
         recorder.mark_status(&intent.client_id, OrderStatus::Rejected, now)?;
         return Err(VenueError::Refused("dry run refused".to_owned()));
@@ -277,3 +277,11 @@ mod tests;
 #[cfg(test)]
 #[path = "../tests/submit_recorder.rs"]
 mod submit_recorder_tests;
+
+#[cfg(test)]
+#[path = "../tests/submission_guard.rs"]
+mod submission_guard_tests;
+
+#[cfg(test)]
+#[path = "../tests/async_bridge_guard.rs"]
+mod async_bridge_guard_tests;

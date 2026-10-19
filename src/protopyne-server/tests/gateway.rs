@@ -717,3 +717,349 @@ fn resampled_fallback_limit_reads_the_trailing_bars() {
         "resample and limit compose: the newest hourly bar"
     );
 }
+
+/// A proposal waiting on a human: risk passed, no grant covers it. Ready to be
+/// journaled as a body and decided.
+fn pending_body(id: &str) -> protopyne_strategy::Proposal {
+    use protopyne_strategy::{Proposal, ProposalEvent, ProposalSide};
+    let mut proposal = Proposal::new()
+        .id(id.to_owned())
+        .strategy("ribbon".to_owned())
+        .underlying("SPY".to_owned())
+        .direction(Direction::Long)
+        .side(ProposalSide::Entry)
+        .structure(StructureKind::Vertical)
+        .quantity(protopyne_types::Qty::new(rust_decimal::Decimal::from(2)))
+        .limit_price(Money::from(600))
+        .max_loss(Money::from(300))
+        .notional(Money::from(1_000))
+        .dte_days(30)
+        .conviction(0.8)
+        .activity_score(0.7)
+        .created_at(Utc::now())
+        .build();
+    proposal
+        .apply(ProposalEvent::PassRisk, "risk approved", Utc::now())
+        .expect("pass risk");
+    proposal
+        .apply(
+            ProposalEvent::RequireHuman,
+            "no grant covers entry",
+            Utc::now(),
+        )
+        .expect("ask human");
+    proposal
+}
+
+/// Journal a pending proposal the way the run path does: the body, then the
+/// `PendingHuman` transition the inbox fold reads. The body's own `state` is
+/// `PendingHuman`; the transition row is what `replay_proposals` joins it to.
+fn journal_pending(handle: &ServerHandle, id: &str) {
+    let proposal = pending_body(id);
+    handle
+        .state
+        .journal
+        .record_proposal_body(&handle.state.journal_permit, &proposal, Utc::now())
+        .expect("body");
+    let entry = protopyne_strategy::JournaledTransition {
+        proposal_id: id.to_owned(),
+        from: protopyne_strategy::ProposalState::RiskChecked,
+        to: protopyne_strategy::ProposalState::PendingHuman,
+        reason: "no grant covers entry".to_owned(),
+        at: Utc::now(),
+    };
+    let detail = serde_json::to_string(&entry).expect("transition encodes");
+    handle
+        .state
+        .journal
+        .record_transition(
+            &handle.state.journal_permit,
+            id,
+            protopyne_venue::PROPOSAL_TRANSITION_KIND,
+            &detail,
+            Utc::now(),
+        )
+        .expect("transition");
+}
+
+/// Fold the journal's transition rows into per-proposal states.
+fn journaled_states(
+    handle: &ServerHandle,
+) -> std::collections::BTreeMap<String, protopyne_strategy::ProposalState> {
+    let replayed = handle
+        .state
+        .journal
+        .replay(&handle.state.journal_permit)
+        .expect("replay");
+    protopyne_venue::replay_proposal_states(&replayed.events)
+}
+
+#[tokio::test]
+async fn gateway_and_route_decide_a_journaled_proposal_the_same_way() {
+    use protopyne_strategy::ProposalState;
+    let handle = boot().await;
+    let base = format!("http://{}", handle.addr);
+    let client = reqwest::Client::new();
+
+    // Gateway path.
+    journal_pending(&handle, "gateway-p");
+    handle
+        .gateway()
+        .approve("gateway-p")
+        .expect("gateway approves");
+    assert_eq!(
+        journaled_states(&handle).get("gateway-p"),
+        Some(&ProposalState::Approved)
+    );
+
+    // Route path: the same decision through HTTP lands the same state.
+    journal_pending(&handle, "route-p");
+    let path = format!("{base}/proposals/route-p/approve");
+    let status = client.post(&path).send().await.expect("reachable").status();
+    assert_eq!(status, reqwest::StatusCode::OK);
+    assert_eq!(
+        journaled_states(&handle).get("route-p"),
+        Some(&ProposalState::Approved)
+    );
+
+    handle.shutdown().await;
+}
+
+#[tokio::test]
+async fn route_rejects_with_the_reason_journaled() {
+    use protopyne_strategy::ProposalState;
+    let handle = boot().await;
+    let base = format!("http://{}", handle.addr);
+    let client = reqwest::Client::new();
+    journal_pending(&handle, "reject-p");
+    let path = format!("{base}/proposals/reject-p/reject");
+    let status = client
+        .post(&path)
+        .json(&serde_json::json!({"reason": "too much size"}))
+        .send()
+        .await
+        .expect("reachable")
+        .status();
+    assert_eq!(status, reqwest::StatusCode::OK);
+    assert_eq!(
+        journaled_states(&handle).get("reject-p"),
+        Some(&ProposalState::Rejected)
+    );
+
+    // An unknown id refuses with NotFound, journaling nothing.
+    let missing = client
+        .post(format!("{base}/proposals/nope/approve"))
+        .send()
+        .await
+        .expect("reachable")
+        .status();
+    assert_eq!(missing, reqwest::StatusCode::NOT_FOUND);
+    handle.shutdown().await;
+}
+
+#[tokio::test]
+async fn pending_route_reads_the_journaled_fold() {
+    let handle = boot().await;
+    let base = format!("http://{}", handle.addr);
+    let client = reqwest::Client::new();
+    let empty: Vec<protopyne_view::ProposalView> = client
+        .get(format!("{base}/proposals/pending"))
+        .send()
+        .await
+        .expect("reachable")
+        .json()
+        .await
+        .expect("json");
+    assert!(empty.is_empty(), "no journaled proposal is pending yet");
+
+    journal_pending(&handle, "pending-p");
+    let rows: Vec<protopyne_view::ProposalView> = client
+        .get(format!("{base}/proposals/pending"))
+        .send()
+        .await
+        .expect("reachable")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].id, "pending-p");
+    assert_eq!(rows[0].state, "PendingHuman");
+    handle.shutdown().await;
+}
+
+#[tokio::test]
+async fn journal_route_and_gateway_read_the_same_rows() {
+    let handle = boot().await;
+    let base = format!("http://{}", handle.addr);
+    let client = reqwest::Client::new();
+
+    // Empty journal: an empty list, not an error, on both sides.
+    assert!(handle
+        .gateway()
+        .journal()
+        .expect("gateway journal")
+        .is_empty());
+    let empty: Vec<protopyne_view::JournalRowView> = client
+        .get(format!("{base}/journal"))
+        .send()
+        .await
+        .expect("reachable")
+        .json()
+        .await
+        .expect("json");
+    assert!(empty.is_empty());
+
+    // Journal a body: both sides read the same rows.
+    handle
+        .state
+        .journal
+        .record_proposal_body(
+            &handle.state.journal_permit,
+            &pending_body("j-p"),
+            Utc::now(),
+        )
+        .expect("body");
+    let via_gateway = handle.gateway().journal().expect("gateway journal");
+    let routed: Vec<protopyne_view::JournalRowView> = client
+        .get(format!("{base}/journal"))
+        .send()
+        .await
+        .expect("reachable")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(via_gateway, routed);
+    assert!(!routed.is_empty());
+    handle.shutdown().await;
+}
+
+#[tokio::test]
+async fn revoke_through_the_gateway_equals_the_route() {
+    let handle = boot().await;
+    let base = format!("http://{}", handle.addr);
+    let client = reqwest::Client::new();
+    let grant = arming_grant();
+    let grant_id = grant.id.clone();
+    let document = serde_json::to_value(&grant).expect("grant serializes");
+
+    handle
+        .gateway()
+        .arm(document.clone())
+        .expect("first arm succeeds");
+    handle
+        .gateway()
+        .revoke_grant(&grant_id)
+        .expect("gateway revokes");
+    assert!(
+        handle.gateway().grant_tiers().expect("tiers").is_empty(),
+        "gateway revoke ends the live grant"
+    );
+
+    handle.gateway().arm(document).expect("re-arm succeeds");
+    let status = client
+        .post(format!("{base}/grants/revoke"))
+        .json(&serde_json::json!({ "grant_id": grant_id }))
+        .send()
+        .await
+        .expect("reachable")
+        .status();
+    assert_eq!(status, reqwest::StatusCode::OK);
+    assert!(
+        handle.gateway().grant_tiers().expect("tiers").is_empty(),
+        "route revoke ends the live grant"
+    );
+    handle.shutdown().await;
+}
+
+#[tokio::test]
+async fn proposals_route_serves_the_journaled_fold_not_the_rehearsal_cache() {
+    let handle = boot().await;
+    let base = format!("http://{}", handle.addr);
+    let client = reqwest::Client::new();
+
+    // No journaled proposal and no preview published: both inboxes are empty.
+    let journaled: Vec<protopyne_view::ProposalView> = client
+        .get(format!("{base}/proposals"))
+        .send()
+        .await
+        .expect("reachable")
+        .json()
+        .await
+        .expect("json");
+    assert!(journaled.is_empty());
+
+    // Journal a pending body: the authoritative inbox serves it, the
+    // rehearsal cache stays untouched.
+    journal_pending(&handle, "fold-p");
+    let journaled: Vec<protopyne_view::ProposalView> = client
+        .get(format!("{base}/proposals"))
+        .send()
+        .await
+        .expect("reachable")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(journaled.len(), 1);
+    assert_eq!(journaled[0].id, "fold-p");
+    assert_eq!(journaled[0].state, "PendingHuman");
+    let rehearsal: Vec<protopyne_view::ProposalView> = client
+        .get(format!("{base}/proposals/rehearsal"))
+        .send()
+        .await
+        .expect("reachable")
+        .json()
+        .await
+        .expect("json");
+    assert!(
+        rehearsal.is_empty(),
+        "the rehearsal cache is a separate source"
+    );
+    handle.shutdown().await;
+}
+
+#[test]
+fn booked_portfolio_folds_two_buckets_and_weights_the_entry_price() {
+    use crate::portfolio::{BookedFill, PAPER_PORTFOLIO};
+    use protopyne_venue::OrderSide;
+    let at = Utc.with_ymd_and_hms(2026, 1, 9, 22, 0, 0).unwrap();
+    let mut fills = Vec::new();
+    for (index, (grant, quantity, price, fee)) in
+        [("g-a", 1u32, 100i64, 1i64), ("g-b", 3u32, 120i64, 2i64)]
+            .into_iter()
+            .enumerate()
+    {
+        fills.push(
+            BookedFill::new()
+                .portfolio(PAPER_PORTFOLIO.to_owned())
+                .underlying("SPY".to_owned())
+                .structure("Vertical".to_owned())
+                .strategy("ribbon".to_owned())
+                .grant(grant.to_owned())
+                .side(OrderSide::Buy)
+                .quantity(quantity)
+                .price(Money::from(price))
+                .fee(Money::from(fee))
+                .trade_id(format!("trade-{index}"))
+                .at(at)
+                .build(),
+        );
+    }
+    let view =
+        crate::service::portfolio_of_booked(&fills, "Enabled").expect("booked fills aggregate");
+    assert_eq!(view.source, "booked");
+    assert_eq!(
+        view.positions.len(),
+        1,
+        "two attributed books on one underlying merge to one net position"
+    );
+    assert_eq!(view.positions[0].underlying, "SPY");
+    assert_eq!(view.positions[0].quantity, 4);
+    assert_eq!(
+        view.positions[0].avg_price,
+        Money::from(115),
+        "the merge is volume-weighted, not the two-price arithmetic mean"
+    );
+    assert_eq!(view.filled_orders, 2);
+    assert_eq!(view.total_fees, Money::from(3));
+    assert_eq!(view.open_contracts, 4);
+}

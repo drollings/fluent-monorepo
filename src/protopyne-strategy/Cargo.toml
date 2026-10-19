@@ -5,9 +5,15 @@ edition.workspace = true
 autotests = false
 autobenches = false
 
+[features]
+default = []
+# `pine` enables the Pine-backed signal. Default-off: the decision closure
+# carries no language runtime unless a consumer asks for one.
+pine = ["protopyne-kernels/pine"]
+
 [dependencies]
 protopyne-types = { path = "../protopyne-types" }
-protopyne-kernels = { path = "../protopyne-kernels", default-features = false, features = ["research"] }
+protopyne-kernels = { path = "../protopyne-kernels", default-features = false }
 common-core = { path = "../common-core" }
 fluent-wvr = { path = "../fluent-wvr" }
 bon = { workspace = true }

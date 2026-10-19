@@ -490,11 +490,30 @@ impl InteractionState {
             }
             // A wheel zoom is cursor-anchored: the wall may clamp the span, but
             // it must not translate the window. Re-apply the cursor anchor over
-            // the clamped span so up and down notches stay symmetric.
+            // the clamped span so up and down notches stay symmetric — then
+            // translate back inside, because the re-anchor can rebuild past
+            // the wall that just clamped it. The bounded pane wins over the
+            // cursor: the floor raises the lower wall, the span survives
+            // whenever it fits, and an oversize span pins at the lower wall.
             if let Some((anchor, frac)) = wheel_anchor {
                 let span = fitted.1 - fitted.0;
                 if let Some(reanchored) = anchor_window(anchor, frac, span) {
                     fitted = (reanchored.min, reanchored.max);
+                    let lo_wall = self.value_floor.map_or(lo_lim, |floor| floor.max(lo_lim));
+                    if fitted.0 < lo_wall || fitted.1 > hi_lim {
+                        if fitted.1 - fitted.0 <= hi_lim - lo_wall {
+                            let mut shift = 0.0;
+                            if fitted.0 < lo_wall {
+                                shift += lo_wall - fitted.0;
+                            }
+                            if fitted.1 + shift > hi_lim {
+                                shift -= fitted.1 + shift - hi_lim;
+                            }
+                            fitted = (fitted.0 + shift, fitted.1 + shift);
+                        } else {
+                            fitted.0 = lo_wall;
+                        }
+                    }
                 }
             }
         }

@@ -1,0 +1,26 @@
+{
+  "operator_accepted": false,
+  "ship_state": "unshipped",
+  "stop_path": {
+    "profit-target": [],
+    "stop": [
+      3
+    ],
+    "time-stop": []
+  },
+  "target_path": {
+    "profit-target": [
+      3
+    ],
+    "stop": [],
+    "time-stop": []
+  },
+  "thresholds": "stop_max_loss=200;target_gain=400;time_floor_dte=7",
+  "time_path": {
+    "profit-target": [],
+    "stop": [],
+    "time-stop": [
+      3
+    ]
+  }
+}

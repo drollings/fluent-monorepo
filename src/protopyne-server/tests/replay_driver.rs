@@ -139,6 +139,7 @@ async fn driver_and_session_agree_bar_for_bar() {
         venue_config(),
         runner_config(),
         ChainPolicy::RequireChains,
+        None,
         &bars,
         5,
     )
@@ -186,6 +187,7 @@ async fn start_bar_prefills_context_without_deciding_it() {
         venue_config(),
         runner_config(),
         ChainPolicy::RequireChains,
+        None,
         &bars,
         5,
     )
@@ -407,10 +409,12 @@ fn vertical_grant() -> Grant {
     grant
 }
 
-/// Covered bars flow: with an installed source the screen admits each bar
-/// and the shared path books two-leg fills — never single-leg stock.
+/// Covered bars flow: an installed source selects the chain-derived arm, the
+/// screen admits each bar, and the shared path books two-leg fills — never
+/// single-leg stock, and never legs the config arm never priced.
 #[tokio::test]
 async fn covered_bars_flow_into_two_leg_fills() {
+    use protopyne_strategy::LegSelector;
     use protopyne_types::{ChainQuote, OptionContract, OptionKind};
 
     let bars = synthetic_bars(8);
@@ -418,9 +422,7 @@ async fn covered_bars_flow_into_two_leg_fills() {
         Strategy::with_signal(Arc::new(
             FixedSignal::new(Direction::Long, 0.8, 0.8).expect("valid signal"),
         ))
-        .with_structure(Arc::new(ExplicitStructure {
-            structure: StructureKind::Vertical,
-        })),
+        .with_structure(Arc::new(LegSelector::new().build())),
         risk_engine(),
         vertical_grant(),
         venue_config(),
@@ -437,12 +439,18 @@ async fn covered_bars_flow_into_two_leg_fills() {
         0,
     )
     .expect("driver starts");
-    // Ladder around the ~100 touch, quoted tight at each bar's own
-    // timestamp so fills pass the age gate.
+    // Ladder around the ~100 touch on the grant's DTE window, quoted one
+    // tick wide at each bar's own timestamp so fills pass the age gate and
+    // the package clears its tolerance.
     let expiry = chrono::NaiveDate::from_ymd_opt(2026, 7, 17).expect("valid expiry");
     let mut quotes = Vec::new();
     for bar in &bars {
-        for (strike, bid, ask) in [(95, 3, 4), (100, 2, 3), (105, 1, 2), (110, 1, 2)] {
+        for (strike, (bid, ask)) in [
+            (95, ("4.499", "4.501")),
+            (100, ("2.499", "2.501")),
+            (105, ("1.499", "1.501")),
+            (110, ("0.499", "0.501")),
+        ] {
             quotes.push(
                 ChainQuote::new()
                     .contract(
@@ -453,8 +461,8 @@ async fn covered_bars_flow_into_two_leg_fills() {
                             .kind(OptionKind::Call)
                             .build(),
                     )
-                    .bid(Money::from(bid))
-                    .ask(Money::from(ask))
+                    .bid(bid.parse().expect("bid"))
+                    .ask(ask.parse().expect("ask"))
                     .bid_size(50)
                     .ask_size(50)
                     .timestamp(bar.ts)
@@ -473,6 +481,134 @@ async fn covered_bars_flow_into_two_leg_fills() {
             "covered bar submits: {:?}",
             decision.skipped
         );
-        assert_eq!(decision.filled_quantity, 2, "one unit times two legs");
+        assert_eq!(decision.filled_quantity, 1, "the package is one unit");
+        assert_eq!(decision.legs.len(), 2, "both legs are recorded");
     }
+}
+
+/// A chain source that counts full-window clones: the coverage screen must
+/// never cost one. `covers` delegates to the inner cheap predicate — the
+/// production composition — so only `chain_snapshot` clones.
+struct CountingChain {
+    inner: crate::chain_history::HistoricalChainSource,
+    snapshots: std::sync::atomic::AtomicUsize,
+    screens: std::sync::atomic::AtomicUsize,
+}
+
+impl protopyne_venue::LegQuoteSource for CountingChain {
+    fn leg_quote(
+        &self,
+        contract: &protopyne_types::OptionContract,
+    ) -> Option<protopyne_venue::Quote> {
+        self.inner.leg_quote(contract)
+    }
+
+    fn leg_quote_at(
+        &self,
+        contract: &protopyne_types::OptionContract,
+        at: chrono::DateTime<chrono::Utc>,
+    ) -> Option<protopyne_venue::Quote> {
+        self.inner.leg_quote_at(contract, at)
+    }
+
+    fn covers(&self, underlying: &str, at: chrono::DateTime<chrono::Utc>) -> bool {
+        self.screens
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.inner.covers(underlying, at)
+    }
+
+    fn chain_snapshot(
+        &self,
+        underlying: &str,
+        at: chrono::DateTime<chrono::Utc>,
+    ) -> Vec<protopyne_types::ChainQuote> {
+        self.snapshots
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.inner.chain_snapshot(underlying, at)
+    }
+}
+
+/// The coverage screen costs no snapshot clone: one snapshot per bar feeds
+/// the view, and the screen answers its own question cheaply. A bounded
+/// allocation budget, not a wall-clock benchmark — counts, never timing.
+#[tokio::test]
+async fn the_screen_costs_no_snapshot_clone_per_bar() {
+    use protopyne_strategy::LegSelector;
+    use protopyne_types::{ChainQuote, OptionContract, OptionKind};
+
+    let bars = synthetic_bars(8);
+    let mut driver = ReplayDriver::start(
+        Strategy::with_signal(Arc::new(
+            FixedSignal::new(Direction::Long, 0.8, 0.8).expect("valid signal"),
+        ))
+        .with_structure(Arc::new(LegSelector::new().build())),
+        risk_engine(),
+        vertical_grant(),
+        venue_config(),
+        RunnerConfig::new(
+            "SPY".to_owned(),
+            "ribbon".to_owned(),
+            Money::from(400),
+            Money::from(2_000),
+            30,
+            0,
+        ),
+        bars.clone(),
+        5,
+        0,
+    )
+    .expect("driver starts");
+    let expiry = chrono::NaiveDate::from_ymd_opt(2026, 7, 17).expect("valid expiry");
+    let mut quotes = Vec::new();
+    for bar in &bars {
+        for (strike, (bid, ask)) in [
+            (95, ("4.499", "4.501")),
+            (100, ("2.499", "2.501")),
+            (105, ("1.499", "1.501")),
+            (110, ("0.499", "0.501")),
+        ] {
+            quotes.push(
+                ChainQuote::new()
+                    .contract(
+                        OptionContract::new()
+                            .underlying("SPY".to_owned())
+                            .expiry(expiry)
+                            .strike(Money::from(strike))
+                            .kind(OptionKind::Call)
+                            .build(),
+                    )
+                    .bid(bid.parse().expect("bid"))
+                    .ask(ask.parse().expect("ask"))
+                    .bid_size(50)
+                    .ask_size(50)
+                    .timestamp(bar.ts)
+                    .build(),
+            );
+        }
+    }
+    let counting = Arc::new(CountingChain {
+        inner: crate::chain_history::HistoricalChainSource::new(quotes),
+        snapshots: std::sync::atomic::AtomicUsize::new(0),
+        screens: std::sync::atomic::AtomicUsize::new(0),
+    });
+    let installed: Arc<dyn protopyne_venue::LegQuoteSource> = counting.clone();
+    driver.set_leg_quotes(installed);
+    let decided = driver.step_n(8).await;
+    assert_eq!(decided.len(), 8, "every bar decides");
+    assert!(
+        decided.iter().all(|decision| decision.submitted),
+        "covered bars submit"
+    );
+    assert_eq!(
+        counting
+            .snapshots
+            .load(std::sync::atomic::Ordering::Relaxed),
+        8,
+        "one snapshot per bar feeds the view, never a second for the screen"
+    );
+    assert_eq!(
+        counting.screens.load(std::sync::atomic::Ordering::Relaxed),
+        8,
+        "the screen still answers once per bar, cheaply"
+    );
 }

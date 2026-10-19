@@ -54,11 +54,51 @@ fn record_for(intent: OrderIntent, status: OrderStatus) -> OrderRecord {
         .build()
 }
 
+/// The venue's status spelling for a record status.
+fn status_wire(status: OrderStatus) -> &'static str {
+    match status {
+        OrderStatus::Pending | OrderStatus::Submitted => "Received",
+        OrderStatus::Acknowledged | OrderStatus::Partial => "Live",
+        OrderStatus::Filled => "Filled",
+        OrderStatus::Cancelled => "Cancelled",
+        OrderStatus::Rejected | OrderStatus::OpenFailed => "Rejected",
+        OrderStatus::Expired => "Expired",
+    }
+}
+
+/// Echo the stored request wire as the venue's order envelope, with the
+/// record's lifecycle facts added.
+fn order_envelope(record: &OrderRecord, wire: &serde_json::Value) -> String {
+    let mut order = wire.clone();
+    if let Some(object) = order.as_object_mut() {
+        object.insert(
+            "status".to_owned(),
+            serde_json::json!(status_wire(record.status)),
+        );
+        object.insert(
+            "filled-quantity".to_owned(),
+            serde_json::json!(record.filled_quantity),
+        );
+        object.insert(
+            "updated-at".to_owned(),
+            serde_json::json!(record.updated_at.to_rfc3339()),
+        );
+        if let Some(price) = record.avg_price {
+            object.insert(
+                "average-price".to_owned(),
+                serde_json::json!(price.as_decimal().to_string()),
+            );
+        }
+    }
+    serde_json::json!({ "data": { "order": order } }).to_string()
+}
+
 /// One request the fake observed.
 struct Seen {
     method: String,
     path: String,
     authorized: bool,
+    versioned: bool,
     body: String,
 }
 
@@ -66,7 +106,7 @@ struct Seen {
 /// cancel — with per-route counters so tests prove call counts.
 struct Fake {
     seen: std::sync::Mutex<Vec<Seen>>,
-    orders: std::sync::Mutex<HashMap<String, OrderRecord>>,
+    orders: std::sync::Mutex<HashMap<String, (OrderRecord, serde_json::Value)>>,
     token: String,
     drop_next_order_post: AtomicUsize,
     posts_to_orders: AtomicUsize,
@@ -92,10 +132,15 @@ impl Fake {
         let authorized = lines.any(|line| {
             line.to_ascii_lowercase() == format!("authorization: {}", self.token).to_lowercase()
         });
+        let versioned = head.to_ascii_lowercase().contains(&format!(
+            "accept-version: {}",
+            crate::tastytrade::ORDER_WIRE_VERSION
+        ));
         self.seen.lock().expect("seen").push(Seen {
             method: method.clone(),
             path: path.clone(),
             authorized,
+            versioned,
             body: body.to_owned(),
         });
         let ok = |payload: &str| http_response(payload);
@@ -113,39 +158,36 @@ impl Fake {
         }
         if method == "POST" && path.ends_with("/orders") {
             self.posts_to_orders.fetch_add(1, Ordering::SeqCst);
-            let wire: serde_json::Value = serde_json::from_str(body).expect("intent json");
+            let wire: serde_json::Value = serde_json::from_str(body).expect("order wire json");
             let client_id = wire
-                .get("client_id")
+                .get("client-order-id")
                 .and_then(|v| v.as_str())
-                .expect("client_id")
+                .expect("client-order-id")
                 .to_owned();
-            let intent: OrderIntent = serde_json::from_str(body).expect("intent");
+            let intent =
+                crate::tastytrade::order_intent_of(&wire).expect("order wire rebuilds an intent");
             let record = record_for(intent, OrderStatus::Acknowledged);
             self.orders
                 .lock()
                 .expect("orders")
-                .insert(client_id, record.clone());
+                .insert(client_id, (record.clone(), wire.clone()));
             // Ack loss is accept-then-silence: the order stands, only the
             // reply is dropped — so the retry must resolve by query.
             if self.drop_next_order_post.fetch_sub(1, Ordering::SeqCst) > 0 {
                 return "drop".to_owned();
             }
-            return ok(
-                &serde_json::to_string(&serde_json::json!({ "order": record })).expect("json"),
-            );
+            return ok(&order_envelope(&record, &wire));
         }
         if method == "GET" && path.contains("/orders/") {
             let id = decode_segment(path.rsplit('/').next().unwrap_or_default());
-            if let Some(record) = self
+            if let Some((record, wire)) = self
                 .orders
                 .lock()
                 .expect("orders")
                 .get(id.as_str())
                 .cloned()
             {
-                return ok(
-                    &serde_json::to_string(&serde_json::json!({ "order": record })).expect("json"),
-                );
+                return ok(&order_envelope(&record, &wire));
             }
             return ok(r#"{"error":{"code":"not_found","message":"unknown order"}}"#);
         }
@@ -154,17 +196,15 @@ impl Fake {
             let mut orders = self.orders.lock().expect("orders");
             match orders.get_mut(id.as_str()) {
                 None => return ok(r#"{"error":{"code":"not_found","message":"unknown order"}}"#),
-                Some(record) if !record.status.is_active() => {
+                Some((record, _)) if !record.status.is_active() => {
                     return ok(r#"{"error":{"code":"terminal","message":"already terminal"}}"#);
                 }
-                Some(record) => {
+                Some((record, wire)) => {
                     record.status = OrderStatus::Cancelled;
                     record.updated_at = now();
                     let record = record.clone();
-                    return ok(
-                        &serde_json::to_string(&serde_json::json!({ "order": record }))
-                            .expect("json"),
-                    );
+                    let wire = wire.clone();
+                    return ok(&order_envelope(&record, &wire));
                 }
             }
         }
@@ -377,8 +417,12 @@ async fn dry_run_submit_and_query_round_trip() {
                 .expect("dry call");
             assert!(dry_call.authorized, "the token rides the header");
             assert!(
-                dry_call.body.contains("\"client_id\":\"b#0\""),
-                "the intent rides the body"
+                dry_call.versioned,
+                "the order-wire version header rides along"
+            );
+            assert!(
+                dry_call.body.contains("\"client-order-id\":\"b#0\""),
+                "the venue order body rides the request"
             );
         }
         let record = venue
@@ -470,10 +514,15 @@ async fn lost_ack_resolves_through_query_with_no_second_order() {
             quote_age_secs: 5,
             clock_skew_secs: 1,
             reconciliation_healthy: true,
-            is_limit_order: true,
-            is_spread: true,
+            facts: protopyne_strategy::PortfolioFacts::unobserved(),
         };
-        let approved: RiskApproved = engine.check(&proposal, &state).expect("healthy");
+        let approved: RiskApproved = engine
+            .check(
+                &proposal,
+                protopyne_strategy::OrderShape::new(true, true),
+                &state,
+            )
+            .expect("healthy");
         let journal = Journal::ephemeral();
         let recorder = Recorder::ephemeral(&journal);
         let record = submit_guarded(&recorder, &venue, &approved, intent("d#0"), &quote, now())
@@ -525,17 +574,18 @@ async fn cancel_unknown_and_terminal_refuse() {
 fn order_record_wire_refuses_without_panicking() {
     let reason = TastytradeVenue::parse_order_record("not json").expect_err("non-JSON refuses");
     assert!(reason.contains("JSON"), "got: {reason}");
-    let reason = TastytradeVenue::parse_order_record(r#"{"order":{"nope":1}}"#)
-        .expect_err("non-record refuses");
-    assert!(reason.contains("order"), "got: {reason}");
-    let record = TastytradeVenue::parse_order_record(
-        &serde_json::to_string(
-            &serde_json::json!({ "order": record_for(intent("f#0"), OrderStatus::Acknowledged) }),
-        )
-        .expect("json"),
-    )
-    .expect("envelope parses");
+    let reason = TastytradeVenue::parse_order_record(r#"{"data":{"order":{"status":"Live"}}}"#)
+        .expect_err("a wire without an identifier refuses");
+    assert!(reason.contains("client-order-id"), "got: {reason}");
+    let intent = intent("f#0");
+    let wire = crate::tastytrade::order_wire_of(&intent).expect("wire builds");
+    let record = TastytradeVenue::parse_order_record(&order_envelope(
+        &record_for(intent, OrderStatus::Acknowledged),
+        &wire,
+    ))
+    .expect("venue envelope parses");
     assert_eq!(record.intent.client_id, "f#0");
+    assert_eq!(record.status, OrderStatus::Acknowledged);
 }
 
 #[test]
@@ -568,7 +618,15 @@ async fn boot_live_refuses_without_config_or_credentials() {
         .build();
     let net = Arc::new(NetCapability::new());
     scoped(async {
-        let refused = boot_live(&boot, Arc::clone(&net), "", "").await;
+        let refused = boot_live(
+            &boot,
+            Arc::clone(&net),
+            "",
+            "",
+            crate::live::LiveAttachments::none(),
+            None,
+        )
+        .await;
         assert!(refused.is_err(), "empty everything refuses");
     })
     .await;
@@ -588,11 +646,27 @@ async fn boot_live_constructs_session_registry_and_journal() {
         .build();
     let net = Arc::new(NetCapability::new());
     scoped(async {
-        let live = boot_live(&boot, Arc::clone(&net), "user", "right")
-            .await
-            .expect("boot");
+        let live = boot_live(
+            &boot,
+            Arc::clone(&net),
+            "user",
+            "right",
+            crate::live::LiveAttachments::none(),
+            None,
+        )
+        .await
+        .expect("boot");
         assert!(live.venue.is_authenticated(), "logged in during boot");
         assert!(journal_path.exists(), "durable journal file exists");
+        assert!(
+            !live.producers().is_empty() || !live.missing_producers().is_empty(),
+            "a bare boot reports its producer set honestly"
+        );
+        assert_eq!(
+            live.missing_producers(),
+            vec!["stream", "reconcile", "backfill"],
+            "a bare boot attaches no supervised producer"
+        );
         let quote = crate::quote::Quote::new()
             .bid(money("600.00"))
             .ask(money("600.10"))
@@ -617,6 +691,343 @@ async fn boot_live_constructs_session_registry_and_journal() {
             )
             .await;
         let _ = replayed;
+        live.session.shutdown().await;
+    })
+    .await;
+}
+
+/// A stream config that fails validation (zero consecutive-error budget):
+/// the boot must refuse before anything dials.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn boot_with_invalid_stream_config_refuses_before_dialing() {
+    use crate::live::{LiveAttachments, LiveBackfillSpec};
+    use crate::stream::StreamConfig;
+    use protopyne_types::{GapPolicy, SeriesContext, Timeframe};
+
+    let fake = Fake::new();
+    let base = serve(Arc::clone(&fake)).await;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let journal_path = dir.path().join("live.db");
+    let boot = LiveBoot::new()
+        .session(SessionConfig::default())
+        .transport(TastytradeConfig::new().base_url(base.clone()).build())
+        .account("ACC-1".to_owned())
+        .journal_path(journal_path)
+        .build();
+    let bad_stream = StreamConfig::new().max_consecutive_errors(0).build();
+    let attachments = LiveAttachments::none()
+        .with_stream(bad_stream)
+        .with_backfill(LiveBackfillSpec::new(
+            SeriesContext::new("SPY", Timeframe::D1, GapPolicy::Sparse),
+            Vec::new(),
+            0,
+        ));
+    let net = Arc::new(NetCapability::new());
+    scoped(async {
+        let refused = boot_live(&boot, Arc::clone(&net), "user", "right", attachments, None).await;
+        assert!(refused.is_err(), "an invalid producer refuses the boot");
+        assert_eq!(
+            fake.paths("POST", "/sessions"),
+            0,
+            "refusal lands before the first dial"
+        );
+    })
+    .await;
+}
+
+/// A backfill spec with no underlying cannot be attached: the boot refuses
+/// rather than supervising a series it cannot name.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn boot_with_nameless_backfill_refuses() {
+    use crate::live::{LiveAttachments, LiveBackfillSpec};
+    use protopyne_types::{GapPolicy, SeriesContext, Timeframe};
+
+    let fake = Fake::new();
+    let base = serve(Arc::clone(&fake)).await;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let journal_path = dir.path().join("live.db");
+    let boot = LiveBoot::new()
+        .session(SessionConfig::default())
+        .transport(TastytradeConfig::new().base_url(base.clone()).build())
+        .account("ACC-1".to_owned())
+        .journal_path(journal_path)
+        .build();
+    let attachments = LiveAttachments::none().with_backfill(LiveBackfillSpec::new(
+        SeriesContext::new("", Timeframe::D1, GapPolicy::Sparse),
+        Vec::new(),
+        0,
+    ));
+    let net = Arc::new(NetCapability::new());
+    scoped(async {
+        let refused = boot_live(&boot, Arc::clone(&net), "user", "right", attachments, None).await;
+        assert!(refused.is_err(), "a nameless series refuses the boot");
+    })
+    .await;
+}
+
+/// A stream driver without an outbox cannot be attached: the boot refuses
+/// rather than spawning a pump that reports nowhere.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn boot_with_driver_but_no_outbox_refuses() {
+    use crate::live::{LiveAttachments, StreamDriver};
+    use crate::stream::StreamConfig;
+    use fluent_concurrency::stream::StreamAbort;
+
+    let fake = Fake::new();
+    let base = serve(Arc::clone(&fake)).await;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let journal_path = dir.path().join("live.db");
+    let boot = LiveBoot::new()
+        .session(SessionConfig::default())
+        .transport(TastytradeConfig::new().base_url(base.clone()).build())
+        .account("ACC-1".to_owned())
+        .journal_path(journal_path)
+        .build();
+    let attachments = LiveAttachments::none().with_stream(StreamConfig::new().build());
+    let connect: crate::live::StreamConnect = Box::new(|| {
+        Box::pin(async {
+            Err::<tokio::sync::mpsc::Receiver<String>, crate::tastytrade::TransportError>(
+                crate::tastytrade::TransportError::Terminal("no dial".to_owned()),
+            )
+        })
+    });
+    let driver = StreamDriver {
+        connect,
+        abort: StreamAbort::new(),
+        out: None,
+    };
+    let net = Arc::new(NetCapability::new());
+    scoped(async {
+        let refused = boot_live(
+            &boot,
+            Arc::clone(&net),
+            "user",
+            "right",
+            attachments,
+            Some(driver),
+        )
+        .await;
+        assert!(refused.is_err(), "a driver without an outbox refuses");
+    })
+    .await;
+}
+
+/// A driver without a stream breaker cannot be attached either: the pump
+/// would report trips nowhere.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn boot_with_driver_but_no_stream_refuses() {
+    use crate::live::StreamDriver;
+    use fluent_concurrency::stream::StreamAbort;
+
+    let fake = Fake::new();
+    let base = serve(Arc::clone(&fake)).await;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let journal_path = dir.path().join("live.db");
+    let boot = LiveBoot::new()
+        .session(SessionConfig::default())
+        .transport(TastytradeConfig::new().base_url(base.clone()).build())
+        .account("ACC-1".to_owned())
+        .journal_path(journal_path)
+        .build();
+    let (out, _dropped) = tokio::sync::mpsc::channel(8);
+    let connect: crate::live::StreamConnect = Box::new(|| {
+        Box::pin(async {
+            Err::<tokio::sync::mpsc::Receiver<String>, crate::tastytrade::TransportError>(
+                crate::tastytrade::TransportError::Terminal("no dial".to_owned()),
+            )
+        })
+    });
+    let driver = StreamDriver {
+        connect,
+        abort: StreamAbort::new(),
+        out: Some(out),
+    };
+    let net = Arc::new(NetCapability::new());
+    scoped(async {
+        let refused = boot_live(
+            &boot,
+            Arc::clone(&net),
+            "user",
+            "right",
+            crate::live::LiveAttachments::none(),
+            Some(driver),
+        )
+        .await;
+        assert!(refused.is_err(), "a driver without a stream refuses");
+    })
+    .await;
+}
+
+/// A full boot attaches every supervised producer and names them: the bar
+/// sensors observe clean on an empty book, so the reading allows.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn boot_with_all_producers_names_them_and_observes_clean() {
+    use crate::live::{LiveAttachments, LiveBackfillSpec};
+    use crate::stream::StreamConfig;
+    use protopyne_types::{GapPolicy, SeriesContext, Timeframe};
+
+    let fake = Fake::new();
+    let base = serve(Arc::clone(&fake)).await;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let journal_path = dir.path().join("live.db");
+    let boot = LiveBoot::new()
+        .session(SessionConfig::default())
+        .transport(TastytradeConfig::new().base_url(base.clone()).build())
+        .account("ACC-1".to_owned())
+        .journal_path(journal_path)
+        .build();
+    let attachments = LiveAttachments::none()
+        .with_stream(StreamConfig::new().build())
+        .with_reconcile()
+        .with_backfill(LiveBackfillSpec::new(
+            SeriesContext::new("SPY", Timeframe::D1, GapPolicy::Sparse),
+            Vec::new(),
+            0,
+        ));
+    let net = Arc::new(NetCapability::new());
+    scoped(async {
+        let live = boot_live(&boot, Arc::clone(&net), "user", "right", attachments, None)
+            .await
+            .expect("a full producer set boots");
+        assert_eq!(
+            live.producers(),
+            vec!["stream", "reconcile", "backfill"],
+            "the boot names every live producer"
+        );
+        assert!(
+            live.missing_producers().is_empty(),
+            "nothing is missing on a full boot"
+        );
+        // Attached but unread refuses first: no sensor has answered yet.
+        assert!(
+            !live.session.gate_reading().allows_entries(),
+            "unread sensors fail closed before the first bar"
+        );
+        live.session.run_bar(Vec::new()).await;
+        assert!(
+            live.session.gate_reading().allows_entries(),
+            "an empty book observes clean through the bar sensors"
+        );
+        assert!(live.session.shutdown().await, "a clean boot drains clean");
+    })
+    .await;
+}
+
+/// The async dry-run read matches the sync verdict: same allowance, same
+/// reservation, one dial each. Defaults on the trait keep every other venue
+/// compiling; the live venue answers natively.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn async_dry_run_matches_the_sync_verdict() {
+    let fake = Fake::new();
+    let base = serve(Arc::clone(&fake)).await;
+    let (_transport, _net, venue) = venue_for(&base);
+    scoped(async {
+        venue.login("user", "right").await.expect("login");
+        let quote = crate::quote::Quote::new()
+            .bid(money("600.00"))
+            .ask(money("600.10"))
+            .bid_size(50)
+            .ask_size(50)
+            .ts(now())
+            .build();
+        let sync = venue.dry_run(&intent("i#0"), &quote).expect("dry run");
+        let async_read = venue
+            .dry_run_async(&intent("i#0"), &quote)
+            .await
+            .expect("async dry run");
+        assert_eq!(sync, async_read, "the two reads answer alike");
+        assert!(async_read.allowed);
+        assert_eq!(async_read.reserved_notional, money("1201.00"));
+        let async_balances = venue.fetch_balances_async().await;
+        assert_eq!(
+            async_balances,
+            venue.fetch_balances(),
+            "the async balance read delegates to the mirror"
+        );
+    })
+    .await;
+}
+
+/// The async dry-run read runs on a current-thread runtime: no bridge on
+/// the path means no nested-runtime panic where the old bridge refused.
+#[tokio::test(flavor = "current_thread")]
+async fn async_dry_run_runs_on_a_current_thread_runtime() {
+    let fake = Fake::new();
+    let base = serve(Arc::clone(&fake)).await;
+    let (_transport, _net, venue) = venue_for(&base);
+    scoped(async {
+        venue.login("user", "right").await.expect("login");
+        let quote = crate::quote::Quote::new()
+            .bid(money("600.00"))
+            .ask(money("600.10"))
+            .bid_size(50)
+            .ask_size(50)
+            .ts(now())
+            .build();
+        let read = venue
+            .dry_run_async(&intent("j#0"), &quote)
+            .await
+            .expect("no bridge, no panic");
+        assert!(read.allowed);
+    })
+    .await;
+}
+
+/// A boot naming an alert file runs the out-of-band poller on the live
+/// session: a tripped breaker lands exactly one JSON line in the file, and
+/// a held trip never appends a second.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn boot_with_alerts_path_pages_a_breaker_trip_exactly_once() {
+    use crate::stream::StreamConfig;
+
+    let fake = Fake::new();
+    let base = serve(Arc::clone(&fake)).await;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let journal_path = dir.path().join("live.db");
+    let alerts_path = dir.path().join("alerts.jsonl");
+    let boot = LiveBoot::new()
+        .session(SessionConfig::default())
+        .transport(TastytradeConfig::new().base_url(base.clone()).build())
+        .account("ACC-1".to_owned())
+        .journal_path(journal_path)
+        .alerts_path(alerts_path.clone())
+        .build();
+    let net = Arc::new(NetCapability::new());
+    scoped(async {
+        let live = boot_live(
+            &boot,
+            Arc::clone(&net),
+            "user",
+            "right",
+            crate::live::LiveAttachments::none().with_stream(StreamConfig::new().build()),
+            None,
+        )
+        .await
+        .expect("boot");
+        live.session
+            .stream_breaker()
+            .expect("stream attaches a breaker")
+            .record_error(&crate::tastytrade::TransportError::Terminal(
+                "gone: scripted".to_owned(),
+            ));
+        // The poller pages on its own cadence, outside the loop: one
+        // interval delivers the trip, a second observes only the level.
+        tokio::time::sleep(crate::live::ALERT_POLL_INTERVAL + std::time::Duration::from_secs(2))
+            .await;
+        let first = std::fs::read_to_string(&alerts_path).expect("alert file");
+        assert_eq!(
+            first.lines().count(),
+            1,
+            "one trip, one line, got: {first:?}"
+        );
+        assert!(first.contains("BreakerTrip"), "got: {first:?}");
+        tokio::time::sleep(crate::live::ALERT_POLL_INTERVAL).await;
+        let second = std::fs::read_to_string(&alerts_path).expect("alert file");
+        assert_eq!(
+            second.lines().count(),
+            1,
+            "a held trip never re-pages, got: {second:?}"
+        );
         live.session.shutdown().await;
     })
     .await;

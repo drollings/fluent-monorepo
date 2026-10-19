@@ -428,3 +428,187 @@ fn paint_tabbed_schema_fields_switches_tabs_and_writes_through_field_access() {
     assert_eq!(control.line_color, "#B42020");
     assert!(!control.show_line);
 }
+
+/// A whole number with both bounds declared, holding a value outside them.
+#[derive(Debug, Clone, PartialEq, FieldAccess, Describable)]
+struct BothBoundedProbe {
+    #[field(desc = "Whole number", min = 0, max = 10)]
+    count: i64,
+}
+
+/// Every text the frame painted, so a test can assert what the operator
+/// actually sees rather than what the model holds.
+fn painted_texts(output: &egui::FullOutput) -> Vec<String> {
+    output
+        .shapes
+        .iter()
+        .filter_map(|clipped| match &clipped.shape {
+            egui::Shape::Text(text) => Some(text.galley.text().to_owned()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_both_bounded_field_renders_its_out_of_band_value_without_writing() {
+    // An out-of-band stored value is real data the operator must see: the
+    // editor renders it as held and writes nothing on an untouched frame,
+    // instead of parking the field on its bound. The write itself stays
+    // refused by the field's own contract.
+    let mut control = BothBoundedProbe { count: 999 };
+    assert!(
+        control.set_field("count", "999").is_err(),
+        "the field's own contract refuses the out-of-band write"
+    );
+    let fields = schema_fields(&control.describe());
+    let ctx = egui::Context::default();
+    let edits_cell = std::cell::RefCell::new(FieldEdits::default());
+    let mut output = ctx.run_ui(egui::RawInput::default(), |root| {
+        egui::CentralPanel::default().show(root, |ui| {
+            *edits_cell.borrow_mut() = paint_schema_fields(ui, &fields, &mut control);
+        });
+    });
+    output.textures_delta.clear();
+    let edits = edits_cell.into_inner();
+    assert!(
+        edits.written.is_empty(),
+        "an untouched frame writes nothing, even out of band: {:?}",
+        edits.written
+    );
+    assert!(
+        edits.refusals.is_empty(),
+        "rendering a held value refuses nothing: {:?}",
+        edits.refusals
+    );
+    let texts = painted_texts(&output);
+    assert!(
+        texts.iter().any(|text| text.contains("999")),
+        "the stored value is what renders: {texts:?}"
+    );
+    assert_eq!(
+        control.count, 999,
+        "the stored value survives the render unclamped"
+    );
+}
+
+#[test]
+fn an_infinite_bound_falls_back_to_the_unbounded_editor() {
+    // A bound the widget range cannot hold ("1e400" decodes to infinity)
+    // must not become a saturated integer-wide slider: the editor treats
+    // the field as unbounded and the value stays editable through the
+    // field's own contract.
+    let lifted = vec![SchemaField {
+        name: "count".to_owned(),
+        kind: FieldKind::Integer,
+        format: None,
+        description: "Whole number".to_owned(),
+        minimum: Some(0.0),
+        maximum: Some(f64::INFINITY),
+        max_len: None,
+        options: Vec::new(),
+    }];
+    let mut control = BothBoundedProbe { count: 4 };
+    egui::__run_test_ui(|ui| {
+        let edits = paint_schema_fields(ui, &lifted, &mut control);
+        assert!(
+            edits.written.is_empty(),
+            "an untouched frame writes nothing: {:?}",
+            edits.written
+        );
+        assert!(
+            edits.refusals.is_empty(),
+            "a finite value under an infinite bound refuses nothing: {:?}",
+            edits.refusals
+        );
+    });
+    assert_eq!(control.count, 4);
+}
+
+/// A text-held tint the color editor reads; the contract accepts any text
+/// so the test observes the editor, never the field.
+struct TintTarget {
+    tint: String,
+}
+
+impl fluent_wvr::FieldAccess for TintTarget {
+    fn set_field(&mut self, name: &str, value: &str) -> Result<(), fluent_wvr::FieldError> {
+        assert_eq!(name, "tint");
+        self.tint = value.to_owned();
+        Ok(())
+    }
+
+    fn get_field(&self, name: &str) -> Result<String, fluent_wvr::FieldError> {
+        assert_eq!(name, "tint");
+        Ok(self.tint.clone())
+    }
+
+    fn field_names(&self) -> &'static [&'static str] {
+        &[]
+    }
+}
+
+fn tint_field() -> SchemaField {
+    SchemaField {
+        name: "tint".to_owned(),
+        kind: FieldKind::Color,
+        format: None,
+        description: "Line tint".to_owned(),
+        minimum: None,
+        maximum: None,
+        max_len: None,
+        options: Vec::new(),
+    }
+}
+
+/// Every solid fill the frame painted.
+fn painted_fills(output: &egui::FullOutput) -> Vec<egui::Color32> {
+    output
+        .shapes
+        .iter()
+        .filter_map(|clipped| match &clipped.shape {
+            egui::Shape::Rect(rect) => Some(rect.fill),
+            _ => None,
+        })
+        .collect()
+}
+
+fn paint_tint(tint: &str) -> (FieldEdits, Vec<egui::Color32>) {
+    let mut target = TintTarget {
+        tint: tint.to_owned(),
+    };
+    let fields = vec![tint_field()];
+    let ctx = egui::Context::default();
+    ctx.set_fonts(egui::FontDefinitions::empty());
+    let edits_cell = std::cell::RefCell::new(FieldEdits::default());
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+        egui::CentralPanel::default().show(ui, |ui| {
+            *edits_cell.borrow_mut() = paint_schema_fields(ui, &fields, &mut target);
+        });
+    });
+    output.textures_delta.clear();
+    (edits_cell.into_inner(), painted_fills(&output))
+}
+
+#[test]
+fn an_unreadable_tint_paints_no_stand_in_color() {
+    // The neutral cyan seeds the picker only for the empty ("inherit")
+    // case. Unreadable text paints no swatch and no seeded picker — the hex
+    // text remains the recovery path — so the frame holds no stand-in for
+    // a value the field does not hold.
+    let neutral = egui::Color32::from_rgb(32, 200, 240);
+    let (edits, fills) = paint_tint("#zzz");
+    assert!(
+        !fills.contains(&neutral),
+        "unreadable input seeds no neutral: {fills:?}"
+    );
+    assert!(
+        edits.written.is_empty(),
+        "an untouched frame writes nothing: {:?}",
+        edits.written
+    );
+    let (_, inherit_fills) = paint_tint("");
+    assert!(
+        inherit_fills.contains(&neutral),
+        "the empty inherit case keeps its neutral start: {inherit_fills:?}"
+    );
+}

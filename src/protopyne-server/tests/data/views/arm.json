@@ -1,1 +1,1 @@
-{"grant_id":"golden-grant","worst_case":{"max_trades":5,"max_contracts":10000,"max_loss":"1000000","max_notional":"100000000"},"armed":true}
+{"grant_id":"golden-grant","worst_case":{"max_trades":5,"max_contracts":10000,"max_loss":"1000000","max_notional":"100000000","basis":"BudgetEcho"},"armed":true}

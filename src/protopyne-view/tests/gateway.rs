@@ -229,6 +229,47 @@ fn mock_gateway_limit_reads_the_trailing_bars() {
 }
 
 #[test]
+fn mock_gateway_serves_canned_tickets_and_refuses_writes() {
+    // Reads are canned like every other mock read; writes stay
+    // default-refused — the mock holds no journal, so an issue through it
+    // refuses instead of pretending to track.
+    let gateway = MockGateway::new();
+    let waiting = gateway.tickets_waiting().expect("mock serves waiting");
+    assert_eq!(waiting.len(), 1, "mock holds one canned ticket");
+    assert_eq!(waiting[0].ticket_id, "mock-ticket-1");
+    assert_eq!(waiting[0].underlying, "MOCK");
+    assert!(
+        waiting[0].rendered.contains("mock-ticket-1"),
+        "the canned ticket renders its id: {}",
+        waiting[0].rendered
+    );
+    let drifts = gateway.ticket_drifts().expect("mock serves drifts");
+    assert!(drifts.is_empty(), "the canned book agrees with itself");
+    let issue = serde_json::json!({"client_id": "mock-ticket-2"});
+    assert!(
+        matches!(
+            gateway.issue_ticket(issue),
+            Err(GatewayError::Unavailable(_))
+        ),
+        "an issue with no journal behind it refuses"
+    );
+    assert!(
+        matches!(
+            gateway.confirm_ticket("mock-ticket-1", serde_json::json!({})),
+            Err(GatewayError::Unavailable(_))
+        ),
+        "a confirm with no journal behind it refuses"
+    );
+    assert!(
+        matches!(
+            gateway.import_tickets(serde_json::json!([])),
+            Err(GatewayError::Unavailable(_))
+        ),
+        "an import with no journal behind it refuses"
+    );
+}
+
+#[test]
 fn symbol_scoped_reads_refuse_blank_identifiers() {
     let gateway = MockGateway::new();
     assert!(
@@ -287,4 +328,38 @@ fn interactive_replay_defaults_refuse_without_a_session_registry() {
             "a registry-less gateway refuses every interactive verb"
         );
     }
+}
+
+#[test]
+fn command_plane_verbs_refuse_without_a_journal() {
+    // The mock serves no journal-backed command plane: the new decision and
+    // revoke verbs refuse as Unavailable, so a terminal against the mock
+    // shows a refusal line, never a silent success.
+    let gateway = MockGateway::new();
+    for outcome in [
+        gateway.approve("mock-prop-1"),
+        gateway.reject("mock-prop-1", "too much size"),
+        gateway.revoke_grant("mock-grant"),
+        gateway.close_all("paper").map(|_| ()),
+        gateway.cancel_all("paper").map(|_| ()),
+    ] {
+        assert!(
+            matches!(outcome, Err(GatewayError::Unavailable(_))),
+            "a command-plane-less gateway refuses every decision verb: {outcome:?}"
+        );
+    }
+}
+
+#[test]
+fn booked_portfolio_read_refuses_without_a_venue_book() {
+    // The mock holds no venue book: the booked read refuses as Unavailable,
+    // so a terminal falls back to the gateway's own portfolio read.
+    let gateway = MockGateway::new();
+    assert!(
+        matches!(
+            gateway.portfolio_booked(),
+            Err(GatewayError::Unavailable(_))
+        ),
+        "a book-less gateway refuses the booked portfolio read"
+    );
 }

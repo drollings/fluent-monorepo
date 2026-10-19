@@ -85,6 +85,12 @@ impl LegQuoteSource for MapLegQuotes {
     fn leg_quote(&self, contract: &OptionContract) -> Option<Quote> {
         self.map.get(&contract.occ_symbol()).copied()
     }
+
+    /// These stubs model a newest-only feed: the opt-in is explicit, so the
+    /// fill prices newest by declaration rather than by a silent default.
+    fn newest_ok(&self) -> bool {
+        true
+    }
 }
 
 fn liquid_book() -> MapLegQuotes {

@@ -13,6 +13,22 @@ use protopyne_view::{ReplayStartParams, TerminalGateway};
 
 use crate::service::{serve, ServerConfig};
 
+/// Step a replay session the way the terminal does: the gateway is sync,
+/// so the step runs on a blocking thread with no runtime — the shared
+/// bridge drives the async driver there. Calling the sync seam straight
+/// from an async test would nest runtimes and refuse.
+async fn step(
+    gateway: &crate::gateway::ServerGateway,
+    session: &str,
+    bars: u64,
+) -> Result<protopyne_view::ReplayStateView, protopyne_view::GatewayError> {
+    let gateway = gateway.clone();
+    let session = session.to_owned();
+    tokio::task::spawn_blocking(move || gateway.replay_step(&session, bars))
+        .await
+        .expect("blocking step joins")
+}
+
 fn history() -> Vec<Bar> {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
@@ -53,7 +69,9 @@ async fn replay_opens_steps_reads_and_closes() {
     assert_eq!(opened.total_bars, total);
     assert!(opened.decisions.is_empty(), "opening decides nothing");
 
-    let stepped = gateway.replay_step("terminal", 3).expect("three bars step");
+    let stepped = step(&gateway, "terminal", 3)
+        .await
+        .expect("three bars step");
     assert_eq!(stepped.cursor, 3);
     assert_eq!(stepped.decisions.len(), 3, "one verdict per decided bar");
     assert!(
@@ -93,12 +111,12 @@ async fn replay_steps_to_completion_from_a_start_bar() {
     // Step in chunks to the end: the last call decides the tail and holds.
     let mut state = opened;
     while state.cursor < total {
-        state = gateway.replay_step("from-ten", 64).expect("a chunk steps");
+        state = step(&gateway, "from-ten", 64).await.expect("a chunk steps");
     }
     assert_eq!(state.cursor, total, "stepping reaches the last bar");
     assert_eq!(state.decisions.len() as u64, total - 10);
-    let tail = gateway
-        .replay_step("from-ten", 64)
+    let tail = step(&gateway, "from-ten", 64)
+        .await
         .expect("stepping past the end holds");
     assert_eq!(tail.cursor, total);
     assert_eq!(tail.decisions.len(), state.decisions.len());
@@ -143,7 +161,7 @@ async fn replay_start_replaces_the_slot() {
     gateway
         .replay_start(params("terminal"))
         .expect("replay opens");
-    gateway.replay_step("terminal", 5).expect("five bars step");
+    step(&gateway, "terminal", 5).await.expect("five bars step");
     let reopened = gateway
         .replay_start(params("terminal"))
         .expect("reopen replaces");
@@ -210,19 +228,19 @@ async fn replay_verbs_fail_closed() {
         .replay_start(params("live"))
         .expect("a session opens");
     assert!(
-        gateway.replay_step("live", 0).is_err(),
+        step(&gateway, "live", 0).await.is_err(),
         "a zero step refuses"
     );
     assert!(
-        gateway.replay_step("live", 257).is_err(),
+        step(&gateway, "live", 257).await.is_err(),
         "an oversize step refuses"
     );
     assert!(
-        gateway.replay_step("live", u64::MAX).is_err(),
+        step(&gateway, "live", u64::MAX).await.is_err(),
         "an unaddressable step refuses"
     );
     assert!(
-        gateway.replay_step("ghost", 1).is_err(),
+        step(&gateway, "ghost", 1).await.is_err(),
         "an unknown session refuses"
     );
     assert!(
@@ -234,62 +252,56 @@ async fn replay_verbs_fail_closed() {
         "stopping a ghost refuses"
     );
     assert!(
-        gateway.replay_step("  ", 1).is_err(),
+        step(&gateway, "  ", 1).await.is_err(),
         "a blank slot refuses on step too"
     );
     handle.shutdown().await;
 }
 
 /// Boot with a chain feed config: the chain slice installs at open and the
-/// run proceeds — while the screen stays up (legs are still inexpressible).
+/// gate screens every bar — covered bars book two-leg fills with no gate
+/// note while uncovered bars refuse with the verbatim note, under one
+/// Vertical session.
 #[tokio::test(flavor = "multi_thread")]
 async fn replay_boot_with_chain_feed_opens_and_keeps_the_gate() {
     let bars = history();
-    let first = bars.first().expect("history loads").ts.timestamp();
-    let last = bars.last().expect("history loads").ts.timestamp();
-    let dir = tempfile::tempdir().expect("tempdir");
-    let chain_path = dir.path().join("chain.csv");
-    // One contract quoted at the first and last bar: the window is non-empty
-    // across the whole replay range.
-    std::fs::write(
-        &chain_path,
-        format!(
-            "ts,underlying,expiry,strike,kind,bid,ask,bid_size,ask_size,open_interest,iv\n\
-             {first},SPY,2026-07-17,600,call,3,4,10,12,500,0.25\n\
-             {last},SPY,2026-07-17,600,call,3,5,10,12,600,0.26\n"
-        ),
-    )
-    .expect("chain csv writes");
-    let feed_path = dir.path().join("chain-feed.json");
-    std::fs::write(
-        &feed_path,
-        format!(
-            "{{\"chain_data_path\": {}}}",
-            serde_json::to_string(&chain_path.to_string_lossy()).expect("path encodes")
-        ),
-    )
-    .expect("feed config writes");
-    let config = ServerConfig::new()
-        .bind("127.0.0.1:0".to_owned())
-        .maybe_chain_feed_path(Some(feed_path.to_string_lossy().into_owned()))
-        .build();
-    let handle = serve(config, bars)
-        .await
-        .expect("chain-configured server boots");
+    // Two covered bars amid an uncovered history: the split below exercises
+    // both arms of the screen in one session.
+    let (handle, _dir) = chained_server(bars.clone(), &covering_rows(&bars, 4..6));
     let gateway = handle.gateway();
     let opened = gateway
-        .replay_start(params("chained"))
+        .replay_start(vertical_params("chained"))
         .expect("replay opens with chains");
     assert_eq!(opened.total_bars, history().len() as u64);
-    let stepped = gateway.replay_step("chained", 5).expect("steps proceed");
-    assert_eq!(stepped.cursor, 5);
-    assert!(
-        stepped
-            .decisions
-            .iter()
-            .all(|decision| !decision.chain_gated || decision.skipped.is_some()),
-        "gated verdicts still carry their skip reasons"
-    );
+    let stepped = step(&gateway, "chained", 6).await.expect("steps proceed");
+    assert_eq!(stepped.cursor, 6);
+    assert_eq!(stepped.decisions.len(), 6);
+    for decision in &stepped.decisions {
+        if decision.bar_index < 4 {
+            assert!(
+                !decision.submitted,
+                "an uncovered bar submits nothing: {decision:?}"
+            );
+            assert_eq!(
+                decision.skipped.as_deref(),
+                Some(crate::replay_session::CHAIN_GATE_NOTE),
+                "the refusal names the missing feed verbatim"
+            );
+            assert!(decision.chain_gated, "the uncovered bar is gate-noted");
+        } else {
+            assert!(
+                decision.submitted,
+                "a covered bar submits: {:?}",
+                decision.skipped
+            );
+            assert_eq!(
+                decision.legs.len(),
+                2,
+                "the covered fill is a two-leg package"
+            );
+            assert!(!decision.chain_gated, "no gate note on a covered bar");
+        }
+    }
     handle.shutdown().await;
 }
 
@@ -337,15 +349,16 @@ async fn replay_boot_with_unreadable_chains_refuses_to_bind() {
 }
 
 /// Chain CSV rows for `bars` at the given indices: the 690/695 call pair
-/// around the ~694 close, quoted tight at each bar's own timestamp so leg
-/// fills pass the age gate.
+/// around the ~694 close on one expiry inside the replay grant's DTE
+/// window, quoted one tick wide at each bar's own timestamp so leg fills
+/// pass the age gate and the package clears its tolerance.
 fn covering_rows(bars: &[Bar], indices: std::ops::Range<usize>) -> String {
     let mut csv = "ts,underlying,expiry,strike,kind,bid,ask,bid_size,ask_size\n".to_owned();
     for bar in &bars[indices] {
         let ts = bar.ts.timestamp();
         use std::fmt::Write as _;
-        let _ = writeln!(csv, "{ts},SPY,2026-07-17,690,call,3,4,50,50");
-        let _ = writeln!(csv, "{ts},SPY,2026-07-17,695,call,2,3,50,50");
+        let _ = writeln!(csv, "{ts},SPY,2026-02-20,690,call,2.499,2.501,50,50");
+        let _ = writeln!(csv, "{ts},SPY,2026-02-20,695,call,1.499,1.501,50,50");
     }
     csv
 }
@@ -393,7 +406,7 @@ async fn vertical_replay_with_covering_chains_fills_spreads() {
     gateway
         .replay_start(vertical_params("vert"))
         .expect("vertical opens");
-    let stepped = gateway.replay_step("vert", 6).expect("steps proceed");
+    let stepped = step(&gateway, "vert", 6).await.expect("steps proceed");
     assert_eq!(stepped.cursor, 6);
     assert_eq!(stepped.decisions.len(), 6);
     for decision in &stepped.decisions {
@@ -402,7 +415,8 @@ async fn vertical_replay_with_covering_chains_fills_spreads() {
             "covered bar submits: {:?}",
             decision.skipped
         );
-        assert_eq!(decision.filled_quantity, 2, "one unit times two legs");
+        assert_eq!(decision.filled_quantity, 1, "the package is one unit");
+        assert_eq!(decision.legs.len(), 2, "both legs are recorded");
         assert!(!decision.chain_gated, "no gate note on a covered bar");
     }
     assert!(
@@ -432,7 +446,9 @@ async fn gap_bars_refuse_with_the_unchanged_note_and_continue() {
     gateway
         .replay_start(vertical_params("gaps"))
         .expect("vertical opens");
-    let early = gateway.replay_step("gaps", 2).expect("early steps proceed");
+    let early = step(&gateway, "gaps", 2)
+        .await
+        .expect("early steps proceed");
     assert_eq!(early.decisions.len(), 2);
     for decision in &early.decisions {
         assert!(!decision.submitted, "an uncovered bar submits nothing");
@@ -443,7 +459,9 @@ async fn gap_bars_refuse_with_the_unchanged_note_and_continue() {
         );
         assert!(decision.chain_gated);
     }
-    let late = gateway.replay_step("gaps", 4).expect("later steps proceed");
+    let late = step(&gateway, "gaps", 4)
+        .await
+        .expect("later steps proceed");
     assert_eq!(late.cursor, 6);
     let filled = late
         .decisions
@@ -515,8 +533,8 @@ async fn vertical_replay_economics_are_frozen() {
     gateway
         .replay_start(vertical_params("frozen"))
         .expect("vertical opens");
-    let done = gateway
-        .replay_step("frozen", 256)
+    let done = step(&gateway, "frozen", 256)
+        .await
         .expect("steps to completion");
     assert_eq!(done.cursor, done.total_bars);
     assert_eq!(done.decisions.len(), done.total_bars as usize);
@@ -527,16 +545,17 @@ async fn vertical_replay_economics_are_frozen() {
         "eleven fills at 1.30 per two-leg unit"
     );
     assert_eq!(done.journal.len(), 55, "five lifecycle rows per fill");
-    // Net debit 2.006, bar after bar: long 690 at 4.000 plus 10 bps
-    // (4.004) minus short 695 at 2.000 less 10 bps (1.998).
-    let net = Money::new(rust_decimal::Decimal::new(2006, 3));
+    // Net debit 1.006, bar after bar: long 690 at 2.501 plus 10 bps
+    // (2.504) minus short 695 at 1.499 less 10 bps (1.498).
+    let net = Money::new(rust_decimal::Decimal::new(1006, 3));
     for (index, decision) in done.decisions.iter().enumerate() {
         assert_eq!(
             decision.bar_index, index as u64,
             "verdicts stay in replay order"
         );
         assert!(decision.submitted);
-        assert_eq!(decision.filled_quantity, 2, "one unit times two legs");
+        assert_eq!(decision.filled_quantity, 1, "the package is one unit");
+        assert_eq!(decision.legs.len(), 2, "both legs are recorded");
         assert_eq!(decision.fill_price, Some(net), "frozen net debit");
         assert_eq!(decision.skipped, None);
         assert!(!decision.chain_gated);
@@ -558,8 +577,8 @@ async fn chains_absent_replay_reproduces_the_all_refused_tape() {
     gateway
         .replay_start(vertical_params("refused"))
         .expect("vertical opens");
-    let done = gateway
-        .replay_step("refused", 256)
+    let done = step(&gateway, "refused", 256)
+        .await
         .expect("steps to completion");
     assert_eq!(done.decisions.len(), total);
     for decision in &done.decisions {
@@ -593,9 +612,9 @@ async fn fetched_fixture_reproduces_the_frozen_tape() {
         let ts = chrono::DateTime::<chrono::Utc>::from_timestamp(bar.ts.timestamp(), 0)
             .expect("bar ts valid")
             .to_rfc3339();
-        for (strike, bid, ask) in [("690", "3", "4"), ("695", "2", "3")] {
+        for (strike, bid, ask) in [("690", "2.499", "2.501"), ("695", "1.499", "1.501")] {
             wires.push(format!(
-                r#"{{"underlying":"SPY","expiry":"2026-07-17","strike":"{strike}","kind":"call","bid":"{bid}","ask":"{ask}","bid_size":50,"ask_size":50,"open_interest":500,"iv":0.25,"ts":"{ts}"}}"#
+                r#"{{"underlying":"SPY","expiry":"2026-02-20","strike":"{strike}","kind":"call","bid":"{bid}","ask":"{ask}","bid_size":50,"ask_size":50,"open_interest":500,"iv":0.25,"ts":"{ts}"}}"#
             ));
         }
     }
@@ -673,8 +692,8 @@ async fn fetched_fixture_reproduces_the_frozen_tape() {
     gateway
         .replay_start(vertical_params("fetched"))
         .expect("vertical opens");
-    let done = gateway
-        .replay_step("fetched", 256)
+    let done = step(&gateway, "fetched", 256)
+        .await
         .expect("steps to completion");
     assert_eq!(done.cursor, done.total_bars);
     assert_eq!(done.filled_orders, 11, "the fetched tape fills every bar");
@@ -688,7 +707,7 @@ async fn fetched_fixture_reproduces_the_frozen_tape() {
         55,
         "the fetched tape journals the frozen lifecycle"
     );
-    let net = Money::new(rust_decimal::Decimal::new(2006, 3));
+    let net = Money::new(rust_decimal::Decimal::new(1006, 3));
     for decision in &done.decisions {
         assert!(decision.submitted);
         assert_eq!(
@@ -712,28 +731,28 @@ async fn vertical_decisions_carry_per_leg_execution_rows() {
     gateway
         .replay_start(vertical_params("legs"))
         .expect("vertical opens");
-    let stepped = gateway.replay_step("legs", 2).expect("steps proceed");
+    let stepped = step(&gateway, "legs", 2).await.expect("steps proceed");
     assert_eq!(stepped.decisions.len(), 2);
     for decision in &stepped.decisions {
         assert!(decision.submitted);
         assert_eq!(decision.legs.len(), 2, "one row per executed leg");
-        assert_eq!(decision.legs[0].contract, "SPY   260717C00690000");
+        assert_eq!(decision.legs[0].contract, "SPY   260220C00690000");
         assert_eq!(decision.legs[0].side, "buy");
-        assert_eq!(decision.legs[1].contract, "SPY   260717C00695000");
+        assert_eq!(decision.legs[1].contract, "SPY   260220C00695000");
         assert_eq!(decision.legs[1].side, "sell");
         assert_eq!(
             (decision.legs[0].quantity, decision.legs[1].quantity),
             (1, 1)
         );
-        // Slipped per-leg prices behind the frozen 2.006 net debit (4.004
-        // long minus 1.998 short), 0.65 commission per leg.
+        // Slipped per-leg prices behind the frozen 1.006 net debit (2.503501
+        // long minus 1.497501 short), 0.65 commission per leg.
         assert_eq!(
             decision.legs[0].price,
-            Money::new(rust_decimal::Decimal::new(4004, 3))
+            Money::new(rust_decimal::Decimal::new(2503501, 6))
         );
         assert_eq!(
             decision.legs[1].price,
-            Money::new(rust_decimal::Decimal::new(1998, 3))
+            Money::new(rust_decimal::Decimal::new(1497501, 6))
         );
         assert_eq!(
             (decision.legs[0].fee, decision.legs[1].fee),

@@ -842,6 +842,7 @@ async fn attached_stream_sensor_reports_trip_per_bar() {
             &SessionConfig::new().build(),
             Arc::new(VenueRegistry::single(venue)),
             VenueStorage::new("test.db".into()),
+            None,
         )
         .expect("boot")
     }
@@ -903,6 +904,7 @@ async fn spawned_stream_attaches_serves_and_drains() {
         &SessionConfig::new().build(),
         Arc::new(VenueRegistry::single(venue)),
         VenueStorage::new("test.db".into()),
+        None,
     )
     .expect("boot");
     let vehicle = transport();

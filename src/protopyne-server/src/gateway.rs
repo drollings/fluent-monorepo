@@ -9,8 +9,7 @@
 //! `apply_arm`, including its refusal messages.
 
 use protopyne_store::{fold_bars_edges, FoldEdges};
-use protopyne_strategy::elements::ExplicitStructure;
-use protopyne_strategy::{Direction, FixedSignal, Grant, RiskEngine, RiskLimits};
+use protopyne_strategy::{Grant, ProposalEvent, RiskEngine, RiskLimits};
 use protopyne_types::{Bar, Timeframe};
 use protopyne_view::{
     validate_symbol_timeframe, ArmResponse, ChartBars, GatewayError, HealthView, JournalRowView,
@@ -29,6 +28,11 @@ use crate::service::{
     overlay_series_of, parse_patch, portfolio_of_decisions, preview_arm_of, proposal_state_tag,
     replay_grant_for, replay_view_of, structure_tag, tape_serve, TapeMiss, TapeMissKind, TapeServe,
     DEFAULT_REPLAY_CHECKPOINT_EVERY,
+};
+use crate::views::{
+    booked_portfolio_of, confirm_ticket, decide_journaled, import_tickets, issue_ticket,
+    journal_cancel_all, journal_close_all, journal_rows_of, journaled_proposals_of, revoke_grant,
+    ticket_drifts_of, waiting_tickets,
 };
 
 /// The fallback latch: edge-triggered, so a sustained fallback warns once and
@@ -147,20 +151,17 @@ fn resampled_history(
     })
 }
 
-/// The interactive replay strategy: a fixed long signal under the preview's
-/// own conviction and activity constants, with the caller-requested
-/// structure. Singles behave exactly as before; a multi-leg shape flows to
-/// the venue only when the window's chains cover the bar (the session's
-/// coverage screen still refuses uncovered bars first).
+/// The interactive replay strategy: the shared rehearsal signal under the
+/// caller-requested structure (see [`crate::rehearsal`]). Singles behave
+/// exactly as before; a multi-leg shape flows to the venue only when the
+/// window's chains cover the bar (the session's coverage screen still refuses
+/// uncovered bars first).
 fn replay_strategy(
     structure: protopyne_strategy::StructureKind,
 ) -> Result<protopyne_strategy::Strategy, GatewayError> {
-    let signal = FixedSignal::new(Direction::Long, 0.8, 0.8)
-        .map_err(|error| GatewayError::Unavailable(format!("bundled signal refused: {error}")))?;
-    Ok(
-        protopyne_strategy::Strategy::with_signal(std::sync::Arc::new(signal))
-            .with_structure(std::sync::Arc::new(ExplicitStructure { structure })),
-    )
+    crate::rehearsal::rehearsal_strategy(Some(structure))
+        .map(|strategy| (*strategy).clone())
+        .map_err(|error| GatewayError::Unavailable(error.to_string()))
 }
 
 /// Parse the terminal's structure tag into the core vocabulary. Only
@@ -217,11 +218,11 @@ fn replay_state_view_of(session_id: &str, driver: &ReplayDriver) -> ReplayStateV
             skipped: decision.skipped.clone(),
             chain_gated: decision.skipped.as_deref()
                 == Some(crate::replay_session::CHAIN_GATE_NOTE),
-            // Per-leg truth off the venue's own executions, in fill order:
-            // display rows for the terminal, never authority.
-            legs: driver
-                .executed_legs(&protopyne_venue::client_id_for(&decision.proposal_id, 0))
-                .into_iter()
+            // Per-leg truth off the decision's own recorded executions, in
+            // fill order: display rows for the terminal, never authority.
+            legs: decision
+                .legs
+                .iter()
                 .map(|leg| ReplayLegView {
                     contract: leg.contract.as_str().to_owned(),
                     side: leg.side.to_string(),
@@ -307,18 +308,38 @@ impl TerminalGateway for ServerGateway {
     }
 
     fn proposals(&self) -> Result<Vec<ProposalView>, GatewayError> {
-        Ok(common_core::sync::lock(&self.state.inbox).clone())
+        // The authoritative inbox is the journaled fold, never the rehearsal
+        // cache the preview route publishes.
+        let replayed = self
+            .state
+            .journal
+            .replay(&self.state.journal_permit)
+            .map_err(|error| GatewayError::Unavailable(error.to_string()))?;
+        Ok(journaled_proposals_of(&replayed.events))
     }
 
     fn portfolio(&self) -> Result<PortfolioView, GatewayError> {
-        Ok(common_core::sync::lock(&self.state.portfolio).clone())
+        // The authoritative portfolio is the venue book, never the rehearsal
+        // projection.
+        booked_portfolio_of(&self.state)
+            .map_err(|error| GatewayError::Unavailable(error.to_string()))
+    }
+
+    fn portfolio_booked(&self) -> Result<PortfolioView, GatewayError> {
+        booked_portfolio_of(&self.state)
+            .map_err(|error| GatewayError::Unavailable(error.to_string()))
     }
 
     fn journal(&self) -> Result<Vec<JournalRowView>, GatewayError> {
-        // No journal route exists yet: the gateway returns the same empty
-        // read the routes would serve, until the route lands and both sides
-        // share its builder like every other view here.
-        Ok(Vec::new())
+        // The tail of the live command journal, folded through the same
+        // builder the `/journal` route calls: a read of the journaled state,
+        // never a second in-memory log.
+        let replayed = self
+            .state
+            .journal
+            .replay(&self.state.journal_permit)
+            .map_err(|error| GatewayError::Unavailable(error.to_string()))?;
+        Ok(journal_rows_of(&replayed.events))
     }
 
     fn chart_bars(&self) -> Result<ChartBars, GatewayError> {
@@ -459,7 +480,11 @@ impl TerminalGateway for ServerGateway {
             params.notional,
             params.dte_days,
             params.warmup_bars,
-        );
+        )
+        // The run names the shape it was opened for, so the shared body can
+        // tell a multi-leg proposal (which needs a chain feed) from a legless
+        // one before anything is decided.
+        .with_structure(structure);
         runner
             .validate()
             .map_err(|error| GatewayError::Malformed(error.to_string()))?;
@@ -539,12 +564,14 @@ impl TerminalGateway for ServerGateway {
             )));
         };
         // Bridge the async step onto the caller's context: the gateway is sync
-        // (the terminal calls from a paint thread with no runtime, where the
-        // single-threaded fallback drives the future), and a caller inside a
-        // multi-thread runtime parks its worker via `block_in_place` while
-        // the future runs. Callers on a current-thread runtime must step
-        // from `spawn_blocking` instead — nested `block_on` cannot enter.
-        common_core::runtime::block_on(driver.step_n(count));
+        // (the terminal calls from a paint thread with no runtime), and a
+        // caller inside a multi-thread runtime parks its worker via
+        // `block_in_place` while the future runs. The shared bridge outlives
+        // the call and runs concurrent callers in parallel, so a pooled
+        // resource the step touches is never stranded on a dropped
+        // per-call runtime. Callers on a current-thread runtime must step
+        // from `spawn_blocking` instead — nested bridging cannot enter.
+        common_core::runtime::block_on_shared(driver.step_n(count));
         Ok(replay_state_view_of(session_id, driver))
     }
 
@@ -616,12 +643,78 @@ impl TerminalGateway for ServerGateway {
             let next = current
                 .tighten(patch)
                 .map_err(|e| GatewayError::InvalidGrant(e.to_string()))?;
-            return apply_arm(&self.state, next)
+            return apply_arm(&self.state, &next)
                 .map_err(|(_, reason)| GatewayError::InvalidGrant(reason));
         }
         let grant: Grant = serde_json::from_value(grant)
             .map_err(|e| GatewayError::Malformed(format!("grant document malformed: {e}")))?;
-        apply_arm(&self.state, grant).map_err(|(_, reason)| GatewayError::InvalidGrant(reason))
+        apply_arm(&self.state, &grant).map_err(|(_, reason)| GatewayError::InvalidGrant(reason))
+    }
+
+    fn approve(&self, proposal_id: &str) -> Result<(), GatewayError> {
+        decide_journaled(
+            &self.state,
+            proposal_id,
+            ProposalEvent::Approve,
+            "operator approved",
+        )
+        .map_err(decision_error)
+    }
+
+    fn reject(&self, proposal_id: &str, reason: &str) -> Result<(), GatewayError> {
+        decide_journaled(&self.state, proposal_id, ProposalEvent::Reject, reason)
+            .map_err(decision_error)
+    }
+
+    fn revoke_grant(&self, grant_id: &str) -> Result<(), GatewayError> {
+        revoke_grant(&self.state, grant_id).map_err(|(status, reason)| {
+            if status.is_server_error() {
+                GatewayError::Unavailable(reason)
+            } else {
+                GatewayError::Malformed(reason)
+            }
+        })
+    }
+
+    fn close_all(&self, portfolio: &str) -> Result<(), GatewayError> {
+        journal_close_all(&self.state, portfolio).map_err(decision_error)
+    }
+
+    fn cancel_all(&self, portfolio: &str) -> Result<(), GatewayError> {
+        journal_cancel_all(&self.state, portfolio).map_err(decision_error)
+    }
+
+    fn tickets_waiting(&self) -> Result<Vec<protopyne_view::TicketView>, GatewayError> {
+        Ok(waiting_tickets(&self.state))
+    }
+
+    fn ticket_drifts(&self) -> Result<Vec<protopyne_view::TicketDriftView>, GatewayError> {
+        Ok(ticket_drifts_of(&self.state))
+    }
+
+    fn issue_ticket(&self, ticket: serde_json::Value) -> Result<(), GatewayError> {
+        issue_ticket(&self.state, &ticket).map_err(decision_error)
+    }
+
+    fn confirm_ticket(&self, ticket_id: &str, fill: serde_json::Value) -> Result<(), GatewayError> {
+        confirm_ticket(&self.state, ticket_id, &fill).map_err(decision_error)
+    }
+
+    fn import_tickets(&self, snapshot: serde_json::Value) -> Result<(), GatewayError> {
+        import_tickets(&self.state, &snapshot)
+            .map(|_| ())
+            .map_err(decision_error)
+    }
+}
+
+/// Map a decision's `(status, reason)` refusal onto the gateway vocabulary: a
+/// server error is a transport-shaped outage, anything else is a malformed
+/// request (unknown proposal, a move its lifecycle refuses).
+fn decision_error((status, reason): (axum::http::StatusCode, String)) -> GatewayError {
+    if status.is_server_error() {
+        GatewayError::Unavailable(reason)
+    } else {
+        GatewayError::Malformed(reason)
     }
 }
 
@@ -640,3 +733,11 @@ mod gateway_replay_tests;
 #[cfg(test)]
 #[path = "../tests/fallback_latch.rs"]
 mod fallback_latch_tests;
+
+#[cfg(test)]
+#[path = "../tests/operator_close.rs"]
+mod operator_close_tests;
+
+#[cfg(test)]
+#[path = "../tests/tickets.rs"]
+mod ticket_tests;

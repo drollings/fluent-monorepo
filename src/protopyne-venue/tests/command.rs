@@ -90,6 +90,12 @@ impl LegQuoteSource for MapLegQuotes {
     fn leg_quote(&self, contract: &OptionContract) -> Option<Quote> {
         self.map.get(&contract.occ_symbol()).copied()
     }
+
+    /// These stubs model a newest-only feed: the opt-in is explicit, so the
+    /// fill prices newest by declaration rather than by a silent default.
+    fn newest_ok(&self) -> bool {
+        true
+    }
 }
 
 fn spread_intent(id: &str) -> OrderIntent {
@@ -206,12 +212,14 @@ fn close_all_emits_one_atomic_intent_per_leg_group() {
             side: PositionSide::Long,
             quantity: 1,
             legs: Some(vertical()),
+            basis: money("1.30"),
         },
         LegGroup {
             underlying: "SPY".to_owned(),
             side: PositionSide::Short,
             quantity: 2,
             legs: None,
+            basis: money("600.50"),
         },
     ];
     let intents = close_all_intents(&groups, money("1.00"), "prop-9", "ribbon").expect("closable");
@@ -261,6 +269,7 @@ fn close_all_refuses_a_flip_into_naked_short() {
         side: PositionSide::Long,
         quantity: 1,
         legs: Some(lone_long),
+        basis: money("2.50"),
     }];
     assert!(
         close_all_intents(&groups, money("1.00"), "prop-9", "ribbon").is_err(),

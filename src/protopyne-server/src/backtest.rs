@@ -16,14 +16,20 @@ use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 
 use protopyne_store::{CandleStore, ReadRequest as TapeReadRequest, SpanPlan, TapeKey};
-use protopyne_types::{Bar, Money};
+use protopyne_types::{Bar, ChainQuote, Money};
 use protopyne_venue::{
-    AccountEvent, AccountSnapshot, BalanceEntry, CorporateEvent, DryRunOutcome, Fill, LegExecution,
-    LegQuoteSource, OrderIntent, OrderRecord, PaperConfig, PaperVenue, Position, Quote, Venue,
-    VenueError,
+    AccountEvent, AccountSnapshot, BalanceEntry, CorporateEvent, CorporateEventArgs,
+    CorporateOutcome, DryRunOutcome, Fill, LegExecution, LegQuoteSource, OrderIntent, OrderRecord,
+    PaperConfig, PaperVenue, Position, Quote, Venue, VenueError,
 };
 
 use crate::error::ServerError;
+
+/// `skip_serializing_if` requires a `&bool` predicate; the type is `Copy`.
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn is_false(value: &bool) -> bool {
+    !*value
+}
 
 /// How quotes are derived from closed-bar closes in the prototype.
 ///
@@ -44,6 +50,29 @@ pub struct BacktestConfig {
     /// Quoted size on each side of the synthetic touch.
     #[builder(default = 100)]
     pub quote_size: u64,
+    /// Corporate-action tape consumed at the bar whose timestamp first
+    /// reaches each event's effective instant. Empty keeps configs (and
+    /// manifests) byte-identical; non-empty is pinned in the run config.
+    #[builder(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub corporate_actions: Vec<CorporateEventArgs>,
+    /// Point-in-time option-chain history the run prices legs off. Empty
+    /// keeps configs (and manifests) byte-identical; non-empty installs a
+    /// [`HistoricalChainSource`](crate::chain_history::HistoricalChainSource)
+    /// on the venue for fills and threads it into the session for
+    /// point-in-time selection, and the report pins its coverage.
+    #[builder(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub chain_history: Vec<ChainQuote>,
+    /// Screen multi-leg proposals on chain coverage in batch: covered bars
+    /// flow, uncovered bars refuse naming the missing feed. Unset keeps the
+    /// historical unscreened legacy byte-identical. Set without
+    /// [`chain_history`](Self::chain_history) refuses the run before the
+    /// first bar — a screen that cannot screen is a misconfiguration,
+    /// never a quiet all-skip run.
+    #[builder(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub require_chains: bool,
 }
 
 impl protopyne_types::Validate for BacktestConfig {
@@ -68,6 +97,44 @@ impl BacktestConfig {
             return Err(ServerError::Backtest(
                 "quote_spread_bps must not exceed 10_000 (100% of close)".to_owned(),
             ));
+        }
+        for action in &self.corporate_actions {
+            if action.underlying.trim().is_empty() {
+                return Err(ServerError::Backtest(
+                    "corporate action must name its underlying".to_owned(),
+                ));
+            }
+            if let Some(contract) = &action.contract {
+                if contract.underlying != action.underlying {
+                    return Err(ServerError::Backtest(format!(
+                        "corporate action contract {} belongs to {}, not {}",
+                        contract.occ_symbol(),
+                        contract.underlying,
+                        action.underlying
+                    )));
+                }
+            }
+            match action.event {
+                CorporateEvent::Split(0) => {
+                    return Err(ServerError::Backtest(
+                        "split factor must be new shares per old share, got 0".to_owned(),
+                    ));
+                }
+                CorporateEvent::Assignment | CorporateEvent::Exercise
+                    if action.contract.is_none() =>
+                {
+                    return Err(ServerError::Backtest(format!(
+                        "{} needs the identified option contract",
+                        action.event.label()
+                    )));
+                }
+                CorporateEvent::Dividend if action.amount.is_none() => {
+                    return Err(ServerError::Backtest(
+                        "dividend needs the cash amount per share".to_owned(),
+                    ));
+                }
+                _ => {}
+            }
         }
         Ok(())
     }
@@ -237,10 +304,19 @@ impl BacktestVenue {
                 "history must not be empty".to_owned(),
             ));
         }
+        let mut inner = PaperVenue::new(paper);
+        // The run's own chain facts become its fill source: legs price
+        // through the time-parameterized read as of each submission's bar,
+        // exactly as an installed replay source would.
+        if !config.chain_history.is_empty() {
+            inner.set_leg_quotes(Arc::new(crate::chain_history::HistoricalChainSource::new(
+                config.chain_history.clone(),
+            )));
+        }
         Ok(Self {
             config,
             bars,
-            inner: PaperVenue::new(paper),
+            inner,
         })
     }
 
@@ -260,6 +336,12 @@ impl BacktestVenue {
     #[must_use]
     pub fn bars(&self) -> &[Bar] {
         &self.bars
+    }
+
+    /// Dividend cash booked per underlying by the inner paper book.
+    #[must_use]
+    pub fn booked_dividends(&self) -> std::collections::HashMap<String, Money> {
+        self.inner.booked_dividends()
     }
 
     /// First bar timestamp, for the manifest range.
@@ -286,6 +368,10 @@ impl BacktestVenue {
 impl Venue for BacktestVenue {
     fn dry_run(&self, intent: &OrderIntent, quote: &Quote) -> Result<DryRunOutcome, VenueError> {
         self.inner.dry_run(intent, quote)
+    }
+
+    fn fee_schedule(&self) -> protopyne_venue::FeeSchedule {
+        self.inner.fee_schedule()
     }
 
     fn submit<'a>(
@@ -316,17 +402,22 @@ impl Venue for BacktestVenue {
         self.inner.positions()
     }
 
+    fn open_spread_positions(&self) -> Option<Vec<protopyne_venue::SpreadPosition>> {
+        self.inner.open_spread_positions()
+    }
+
+    fn chain_source(&self) -> Option<Arc<dyn protopyne_venue::LegQuoteSource>> {
+        self.inner.chain_source()
+    }
+
     fn orders(&self) -> Vec<OrderRecord> {
         self.inner.orders()
     }
-
     fn apply_corporate_event(
         &self,
-        underlying: &str,
-        event: CorporateEvent,
-        now: DateTime<Utc>,
-    ) -> Result<String, VenueError> {
-        self.inner.apply_corporate_event(underlying, event, now)
+        action: &CorporateEventArgs,
+    ) -> Result<CorporateOutcome, VenueError> {
+        self.inner.apply_corporate_event(action)
     }
 
     fn account_snapshot(&self) -> AccountSnapshot {

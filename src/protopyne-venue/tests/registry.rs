@@ -13,7 +13,10 @@
 //! venue, so existing callers move without behavior change.
 
 use super::*;
-use crate::order::{CorporateEvent, OrderIntent, OrderRecord, OrderSide, OrderStatus, Position};
+use crate::order::{
+    CorporateEventArgs, CorporateOutcome, OrderIntent, OrderRecord, OrderSide, OrderStatus,
+    Position,
+};
 use crate::paper::{PaperConfig, PaperVenue};
 use crate::quote::Quote;
 use crate::venue::DryRunOutcome;
@@ -169,11 +172,9 @@ impl Venue for StubVenue {
 
     fn apply_corporate_event(
         &self,
-        _underlying: &str,
-        _event: CorporateEvent,
-        _now: chrono::DateTime<Utc>,
-    ) -> Result<String, VenueError> {
-        Ok("stub".to_owned())
+        _action: &CorporateEventArgs,
+    ) -> Result<CorporateOutcome, VenueError> {
+        Ok(CorporateOutcome::default())
     }
 }
 
@@ -259,7 +260,13 @@ async fn unknown_symbol_refuses_with_reason() {
     );
     assert!(
         registry
-            .apply_corporate_event("TSLA", CorporateEvent::Expiry, now())
+            .apply_corporate_event(
+                &CorporateEventArgs::new()
+                    .underlying("TSLA".to_owned())
+                    .at(now())
+                    .event(crate::order::CorporateEvent::Expiry)
+                    .build(),
+            )
             .expect_err("corporate events refuse too")
             .to_string()
             .contains("TSLA"),

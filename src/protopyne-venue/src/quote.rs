@@ -5,6 +5,13 @@
 //! width/size, **(correctness)** for age); [`Slippage`] then moves the touch
 //! price adversely within the caller's tolerance. The default tolerance is
 //! frozen by the slippage-sweep calibration, not by intuition.
+//!
+//! Slippage is a **fill-model assumption, not a gate**: it prices adverse
+//! selection in the rehearsal's declared model and must never appear in a
+//! refusal reason as though it measured the trade's merit or the producer's
+//! health. The package tolerance below is the same axis — the operator's
+//! worst acceptable price for a signed package — frozen by the package
+//! calibration beside it.
 
 use bon::Builder;
 use chrono::{DateTime, Utc};
@@ -17,6 +24,13 @@ use protopyne_types::Money;
 /// the sweep shows 10 bps keeps adverse cost under a tenth of a typical
 /// spread while filling every liquid marketable order.
 pub const DEFAULT_SLIPPAGE_BPS: u32 = 10;
+
+/// Package-price tolerance in basis points, frozen by the package
+/// calibration: the smallest widening of a signed mid that fills a liquid
+/// one-tick package while every control package stays unfilled. It is the
+/// operator's worst acceptable package price, declared as a fill-model
+/// assumption, never a refusal reason about merit or health.
+pub const PACKAGE_TOLERANCE_BPS: u32 = 200;
 
 /// A two-sided quote at one instant.
 #[derive(Debug, Clone, Copy, Builder, PartialEq, Eq, Serialize, Deserialize)]
@@ -172,3 +186,7 @@ impl FeeSchedule {
 #[cfg(test)]
 #[path = "../tests/quote.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/package_tolerance.rs"]
+mod package_tolerance_tests;

@@ -72,7 +72,7 @@ pub fn rsrs_score(bars: &[Bar], slope_lookback: usize, score_window: usize) -> O
         .iter()
         .map(|bar| bar.l.to_f64().unwrap_or(f64::NAN))
         .collect();
-    protopyne_kernels::research::rsrs(&highs, &lows, slope_lookback, score_window)
+    protopyne_kernels::scores::rsrs(&highs, &lows, slope_lookback, score_window)
         .into_iter()
         .flatten()
         .next_back()

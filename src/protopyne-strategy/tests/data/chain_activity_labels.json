@@ -1,0 +1,4 @@
+{
+  "note": "Candidate activity labels for the six-row near-the-money treatment window. Authored against the documented proxy definition (book imbalance plus open-interest concentration); no external label exists. Operator acceptance is pending, so the score stays uninstalled.",
+  "labels": [0.0, 0.2, 0.2, 0.6, 0.6, 1.0]
+}

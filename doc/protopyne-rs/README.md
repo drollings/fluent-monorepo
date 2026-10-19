@@ -1,15 +1,17 @@
 # protopyne-rs
 
-A Rust paper-trading framework: versioned market history in, supervised
-decisions out, with an HTTP surface for review and a Python-free container
-for deployment. No live brokerage is connected — everything below trades
-against a simulated venue over pinned history, which is the point: what you
-test is what you would trade.
+A Rust trading framework: versioned market history in, supervised decisions
+out, with an HTTP surface for review, a native desktop terminal, and a
+Python-free container for deployment. Automated live trading is gated behind
+explicit journaled arming (`--live`); everything else trades against a
+simulated venue over pinned history — what you test is what you would trade.
 
 Rust-only, end to end: there is no browser, JavaScript, or Node.js in the
-build, test, or run loop. Charts and the future desktop terminal are native
-views over this core. The GUI toolkit (`egui`) is an approved dependency
-for that terminal; the `egui-charts` application is studied as reference
+build, test, or run loop. Charts and the native desktop terminal are views
+over this core (`protopyne-chart-model`/`protopyne-chart-scale` are headless;
+`protopyne-egui` is the terminal; `fluent-egui` is the paint-edge scaffolding
+beneath it). The GUI toolkit (`egui`) is an approved dependency for those two
+paint-edge crates only; the `egui-charts` application is studied as reference
 and re-expressed in this codebase's idioms, never taken as a dependency.
 
 ## What it can do
@@ -32,8 +34,9 @@ and re-expressed in this codebase's idioms, never taken as a dependency.
   arming shows the worst case before confirmation.
 - **Paper venue with calibrated fills.** Spread-aware fill model, liquidity
   filter with refusal reasons, slippage, and per-contract fees, journaled in
-  SQLite with a transactional outbox: kill the process mid-submit and replay
-  plus query-by-ID leaves no unknown position and no duplicate order.
+  a durable CSV `AppendLog` with intent-before-venue ordering: kill the
+  process mid-submit and replay plus query-by-ID leaves no unknown position
+  and no duplicate order.
 - **Backtests that run the real path.** The runner executes
   signal → risk → grant → venue per bar over pinned history and records a
   manifest (data/code/config versions) plus an honest report (assumptions,
@@ -48,30 +51,41 @@ and re-expressed in this codebase's idioms, never taken as a dependency.
   `ta.sma`/`ta.ema` Pine v6 scripts to HIR and kernel-calling Rust, and
   refuses everything else (switch, ternaries, `request.*`, loops) with
   reasons instead of miscompiling.
+- **Durable price store.** `protopyne-store` is a file-backed tape: a
+  versioned CSV `AppendLog` (batch write + fsync, torn-tail repair), a market
+  registry, coverage/planning, seals, windowed reads, and Parquet ingest —
+  the substrate symbol-scoped chart reads plan through.
+- **Pine v6 engine.** `protopyne-kernels` ships a linked-source Pine runtime
+  (lexer, modules, `request.security`/lower-timeframe injection from
+  datasets only, tick emulation) with a compatibility matrix and a parity
+  freeze; unsupported constructs refuse with a reason.
 
 ## Crates and dependencies
 
 | Crate | Role |
 |---|---|
-| `protopyne-types` | Money/time foundations: `Decimal` money and quantity types, timeframes, closed bars, warmup math |
-| `protopyne-kernels` | Indicator kernels, registry, batch/streaming runtimes, Polars research frames |
-| `protopyne-strategy` | Proposals, strategy elements, risk engine, arming grants |
-| `protopyne-venue` | Venue trait, paper venue, journal, safe submission, reconciliation, sessions |
-| `protopyne-server` | CSV ingest, backtest runner, HTTP service, transpile spike, server binary |
+| `protopyne-types` | Money/time foundations: `Decimal` money and quantity types, timeframes, closed bars, warmup math, option-chain vocabulary |
+| `protopyne-kernels` | Indicator kernels, registry, batch/streaming runtimes, the Pine engine, Polars research frames (feature-gated) |
+| `protopyne-strategy` | Proposals, strategy elements, risk engine, arming grants, the grant ledger |
+| `protopyne-venue` | Venue trait, paper and live venues, journal, safe submission, reconciliation, sessions, the command plane |
+| `protopyne-store` | Durable price tape: `AppendLog`, registry, coverage/planning, seals, windowed reads, Parquet ingest |
+| `protopyne-view` | Neutral read-model DTOs and the terminal gateway trait |
+| `protopyne-chart-model` / `protopyne-chart-scale` | Headless chart data and the scale engine |
+| `protopyne-server` | History ingest, backtest runner, HTTP service, live loop, transpile spike, server binary |
+| `fluent-egui` / `protopyne-egui` | Paint-edge scaffolding and the native trading terminal (`egui`-only crates) |
 
 Shared monorepo libraries do the heavy lifting: `fluent-wvr`
 (components, configuration surfaces, capabilities), `fluent-concurrency`
 (`Limiter`, `Scope`, `SupervisedBatch`, `ResultPool`, fallback combinators),
-`fluent-dag` (indicator ordering, research replay graphs), `db` (WAL store,
-pool, transactions, migrations), and `common-core`
+`fluent-dag` (indicator ordering, research replay graphs), and `common-core`
 (retries, config loading, error types, calibration, metrics, registries).
 External dependencies include `axum`
-(HTTP + WebSocket), `rusqlite` (journal), `csv` (history ingest), `chrono`
-and `rust_decimal` (time and money), `bon`/`serde`/`thiserror`/`tokio`
-(plumbing), and `polars` (offline research frames only — never the hot
-loop). Barter-rs is a studied reference (order-state modeling), not a
-dependency. `egui`/`eframe` are approved future dependencies for the native
-terminal (confined to paint-edge crates); `egui-charts` is reference only.
+(HTTP + WebSocket), `csv` (history ingest and the durable journal log),
+`chrono` and `rust_decimal` (time and money), `bon`/`serde`/`thiserror`/
+`tokio` (plumbing), and `polars` (offline research frames only — never the
+hot loop). Barter-rs is a studied reference (order-state modeling), not a
+dependency. `egui`/`eframe` are dependencies of the two paint-edge crates
+only (`fluent-egui`, `protopyne-egui`); `egui-charts` is reference only.
 
 ## Build
 
@@ -115,6 +129,10 @@ make protopyne-trading-suite
 
 # Chart crates ride the workspace gate, not protopyne-trading-suite
 cargo test -p protopyne-chart-model -p protopyne-chart-scale
+
+# Native desktop terminal (needs a display) and its headless contract
+make protopyne-demo          # interactive terminal
+make protopyne-demo-check    # headless terminal + chart-shell contract
 ```
 
 Direct CLI (see `protopyne-server --help`):
@@ -140,11 +158,21 @@ curl -s http://127.0.0.1:9060/health
 curl -s -X POST http://127.0.0.1:9060/proposals/preview \
   -H 'Content-Type: application/json' -d '{"seed":7}' | head -c 300
 
-# Read the resulting proposal inbox
-curl -s http://127.0.0.1:9060/proposals | head -c 300
+# Read the rehearsal inbox the preview published (its own named route)
+curl -s http://127.0.0.1:9060/proposals/rehearsal | head -c 300
 
-# Portfolio from the latest preview
+# The authoritative inbox (journaled proposals) and the journal tail
+curl -s http://127.0.0.1:9060/proposals | head -c 300
+curl -s http://127.0.0.1:9060/journal | head -c 300
+
+# Portfolio: the venue book (source=booked); the rehearsal projection is named
 curl -s http://127.0.0.1:9060/portfolio
+curl -s http://127.0.0.1:9060/portfolio/rehearsal
+
+# Approve or reject a journaled proposal awaiting a human
+curl -s -X POST http://127.0.0.1:9060/proposals/<id>/approve
+curl -s -X POST http://127.0.0.1:9060/proposals/<id>/reject \
+  -H 'Content-Type: application/json' -d '{"reason":"too much size"}'
 
 # Arm a grant (POST a Grant JSON; loosening an armed grant is 409)
 curl -s http://127.0.0.1:9060/grants/current
@@ -185,14 +213,10 @@ and `src/protopyne-server/smoke-container.sh` for the exact probes.
 - `VISION.md` — the full design vision, economics, and platform direction
   (aspirational goals and capabilities, no implementation details).
 - `ARCHITECTURE.md` — the implementation architecture map: crates,
-  capabilities, orchestration, reuse findings, drill-down queue.
-- `../../ROADMAP_20261016_FIXES.md` — the active correctness, efficiency,
-  and DRY roadmap (milestones M1–M24 in dependency order).
-- `../../ROADMAP_20261016_FIXES_CHECKLIST.md` — per-item completion state.
-- `PRIMITIVES_INVENTORY.md` — the point-in-time file inventory behind the
-  shared/domain primitive extraction (symbol names authoritative; the
-  `M1..M7` IDs there are that program's, not the fix roadmap's).
+  capabilities (with a `status` column), orchestration, reuse findings,
+  drill-down queue. This is the authoritative map; there is no separate
+  roadmap document.
 - `DIVERGENCE_LOG.md` — staged reference-expression divergences still open.
 - `RUNBOOKS.md` — operator runbooks: breaker trips, reconcile mismatches,
-  kill-mid-submit recovery, backfill holes, ticket drift, and the
-  cert-sandbox soak procedure.
+  kill-mid-submit recovery, backfill holes, ticket drift, live-loop
+  start/halt, and the cert-sandbox soak procedure.

@@ -774,7 +774,7 @@ fn pine_occurrence(method: &str, value: Option<&PineValue>) -> Result<usize, Ker
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "research"))]
 #[path = "../../tests/pine_builtins_ta.rs"]
 mod tests;
 

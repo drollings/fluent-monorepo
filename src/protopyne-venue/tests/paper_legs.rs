@@ -88,6 +88,12 @@ impl LegQuoteSource for MapLegQuotes {
     fn leg_quote(&self, contract: &OptionContract) -> Option<Quote> {
         self.map.get(&contract.occ_symbol()).copied()
     }
+
+    /// These stubs model a newest-only feed: the opt-in is explicit, so the
+    /// fill prices newest by declaration rather than by a silent default.
+    fn newest_ok(&self) -> bool {
+        true
+    }
 }
 
 fn liquid_vertical_quotes() -> MapLegQuotes {
@@ -153,12 +159,18 @@ async fn vertical_fills_atomically_per_leg() {
         .expect("liquid vertical fills");
     // Long 2.70 ask slipped up (2.7027), short 1.20 bid slipped down (1.1988).
     assert_eq!(record.status, OrderStatus::Filled);
-    assert_eq!(record.filled_quantity, 2);
+    assert_eq!(
+        record.filled_quantity, 1,
+        "the record counts one package unit, not its two leg contracts"
+    );
     assert_eq!(record.avg_price, Some(money("1.5039")));
     assert_eq!(record.fees_paid, money("1.30"));
 
     let executions = venue.executed_legs("v#0");
     assert_eq!(executions.len(), 2);
+    // Leg-contract accounting: the package's two legs sum to two contracts
+    // while the record still counts one unit.
+    assert_eq!(executions.iter().map(|leg| leg.quantity).sum::<u32>(), 2);
     assert_eq!(
         executions
             .iter()
@@ -236,7 +248,7 @@ async fn spread_lose_ack_resolves_through_query_by_id() {
     assert!(matches!(err, VenueError::Transport(_)));
     let record = venue.query("l#0").await.expect("query finds the fill");
     assert_eq!(record.status, OrderStatus::Filled);
-    assert_eq!(record.filled_quantity, 2);
+    assert_eq!(record.filled_quantity, 1);
     assert_eq!(venue.executed_legs("l#0").len(), 2);
     assert_eq!(venue.spread_positions().len(), 2);
     // Retry after the lost ack dedups: still exactly one order, one leg set.
@@ -248,7 +260,7 @@ async fn spread_lose_ack_resolves_through_query_by_id() {
         )
         .await
         .expect("idempotent resubmit");
-    assert_eq!(again.filled_quantity, 2);
+    assert_eq!(again.filled_quantity, 1);
     assert_eq!(venue.orders().len(), 1);
     assert_eq!(venue.executed_legs("l#0").len(), 2);
 }
@@ -275,10 +287,15 @@ fn approved(token_proposal: &str) -> protopyne_strategy::RiskApproved {
         quote_age_secs: 5,
         clock_skew_secs: 1,
         reconciliation_healthy: true,
-        is_limit_order: true,
-        is_spread: true,
+        facts: protopyne_strategy::PortfolioFacts::unobserved(),
     };
-    engine.check(&proposal, &state).expect("healthy")
+    engine
+        .check(
+            &proposal,
+            protopyne_strategy::OrderShape::new(true, true),
+            &state,
+        )
+        .expect("healthy")
 }
 
 #[tokio::test]
@@ -472,9 +489,9 @@ async fn spread_prices_legs_as_of_submission_time() {
 
 #[tokio::test]
 async fn timeless_stubs_keep_newest_only_behavior() {
-    // A stub implementing only `leg_quote` (the pre-time default) serves the
-    // same quote at every instant: backward compatibility is behavior, not
-    // just compilation.
+    // A stub implementing `leg_quote` with the explicit newest opt-in serves
+    // the same quote at every instant: backward compatibility is behavior,
+    // not just compilation — by declaration, never by a silent default.
     let venue = venue_with(liquid_vertical_quotes());
     let legs = vertical();
     let past = Utc.with_ymd_and_hms(2020, 1, 1, 0, 0, 0).unwrap();
@@ -485,10 +502,100 @@ async fn timeless_stubs_keep_newest_only_behavior() {
             past,
         )
         .await
-        .expect("timeless stub still fills");
+        .expect("newest opt-in still fills");
     assert_eq!(
         record.avg_price,
         Some(money("1.5039")),
-        "the default leg_quote_at delegates to leg_quote at any instant"
+        "the opted-in stub answers newest at any instant"
     );
+}
+
+/// A partial history source: serves newest reads and snapshots, but no
+/// time-parameterized leg read. Without an explicit newest opt-in it has no
+/// honest price for a fill as of the submission's bar.
+struct SnapshotOnlyChain {
+    quotes: Vec<protopyne_types::ChainQuote>,
+    newest_ok: bool,
+}
+
+impl LegQuoteSource for SnapshotOnlyChain {
+    fn leg_quote(&self, contract: &OptionContract) -> Option<Quote> {
+        self.quotes
+            .iter()
+            .rfind(|quote| quote.contract == *contract)
+            .map(|quote| {
+                Quote::new()
+                    .bid(quote.bid)
+                    .ask(quote.ask)
+                    .bid_size(50)
+                    .ask_size(50)
+                    .ts(quote.timestamp)
+                    .build()
+            })
+    }
+
+    fn newest_ok(&self) -> bool {
+        self.newest_ok
+    }
+
+    fn chain_snapshot(
+        &self,
+        underlying: &str,
+        at: chrono::DateTime<Utc>,
+    ) -> Vec<protopyne_types::ChainQuote> {
+        self.quotes
+            .iter()
+            .filter(|quote| quote.contract.underlying == underlying && quote.timestamp <= at)
+            .cloned()
+            .collect()
+    }
+}
+
+fn snapshot_only_chain(newest_ok: bool) -> SnapshotOnlyChain {
+    let legs = vertical();
+    let row = |leg: usize, bid: &str, ask: &str| {
+        protopyne_types::ChainQuote::new()
+            .contract(legs.legs()[leg].contract.clone())
+            .bid(money(bid))
+            .ask(money(ask))
+            .timestamp(now())
+            .build()
+    };
+    SnapshotOnlyChain {
+        quotes: vec![row(0, "2.50", "2.70"), row(1, "1.20", "1.40")],
+        newest_ok,
+    }
+}
+
+#[tokio::test]
+async fn a_snapshot_only_source_refuses_the_spread_fill() {
+    let mut venue = PaperVenue::new(PaperConfig::new().build());
+    venue.set_leg_quotes(Arc::new(snapshot_only_chain(false)));
+    let err = venue
+        .submit(
+            spread_intent("s#0", vertical()),
+            &quote("600.00", "600.10"),
+            now(),
+        )
+        .await
+        .expect_err("no time-parameterized read means no honest fill price");
+    assert!(
+        err.to_string().contains("no quote"),
+        "the refusal names the missing quote, got {err:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_newest_only_source_opts_in_explicitly_and_fills() {
+    let mut venue = PaperVenue::new(PaperConfig::new().build());
+    venue.set_leg_quotes(Arc::new(snapshot_only_chain(true)));
+    let record = venue
+        .submit(
+            spread_intent("n#0", vertical()),
+            &quote("600.00", "600.10"),
+            now(),
+        )
+        .await
+        .expect("an explicit newest opt-in fills");
+    assert_eq!(record.status, OrderStatus::Filled);
 }

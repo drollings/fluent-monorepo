@@ -54,14 +54,20 @@ pub trait BackfillSource: Send + Sync {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct BackfillGate {
     suspended: bool,
+    /// Whether the gate has answered at least once. The gate itself stays
+    /// permissive until it reads (every existing caller is preserved); the
+    /// per-bar reading fails closed on no reading instead.
+    observed: bool,
     reason: Option<String>,
     alerts: Vec<String>,
 }
 
 impl BackfillGate {
     /// Observe one resync report. A complete report clears the suspension;
-    /// any incomplete one sets it and banks the alerts.
+    /// any incomplete one sets it and banks the alerts. Either way the gate
+    /// has now answered.
     pub fn observe(&mut self, report: &BackfillReport) {
+        self.observed = true;
         if report.complete {
             self.suspended = false;
             self.reason = None;
@@ -73,7 +79,9 @@ impl BackfillGate {
     }
 
     /// Suspend entries with a reason (the reconnect path, before any fetch).
+    /// A suspension is an answer, so the gate counts as observed.
     pub fn suspend(&mut self, reason: String) {
+        self.observed = true;
         self.suspended = true;
         self.reason = Some(reason.clone());
         self.alerts.push(reason);
@@ -83,6 +91,14 @@ impl BackfillGate {
     #[must_use]
     pub fn entries_suspended(&self) -> bool {
         self.suspended
+    }
+
+    /// Whether the gate has answered at least once (a resync report or a
+    /// suspend). The gate itself stays permissive until it reads; the
+    /// per-bar reading fails closed on no reading instead.
+    #[must_use]
+    pub fn is_observed(&self) -> bool {
+        self.observed
     }
 
     /// Whether the series is contiguous (the health gate's backfill fact).
@@ -127,10 +143,18 @@ pub struct BackfillHandle {
 }
 
 impl BackfillHandle {
-    /// A handle over an open gate: nothing observed yet, entries allowed.
+    /// A handle over an open gate: nothing observed yet. The gate itself
+    /// stays permissive until it reads; the per-bar reading fails closed on
+    /// no reading.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Whether the gate has answered at least once.
+    #[must_use]
+    pub fn is_observed(&self) -> bool {
+        common_core::sync::lock(&self.inner).is_observed()
     }
 
     /// Observe one resync report.

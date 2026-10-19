@@ -72,10 +72,15 @@ fn approved() -> RiskApproved {
         quote_age_secs: 5,
         clock_skew_secs: 1,
         reconciliation_healthy: true,
-        is_limit_order: true,
-        is_spread: true,
+        facts: protopyne_strategy::PortfolioFacts::unobserved(),
     };
-    engine.check(&proposal, &state).expect("healthy")
+    engine
+        .check(
+            &proposal,
+            protopyne_strategy::OrderShape::new(true, true),
+            &state,
+        )
+        .expect("healthy")
 }
 
 async fn scoped<F, T>(permit: VenueStorage, f: F) -> T

@@ -237,6 +237,10 @@ pub struct GateWatch<'a> {
     pub state: Option<&'a StateHandle>,
 }
 
+/// The session-owned poller ([`TradingSession::poll_alerts`](crate::session::TradingSession::poll_alerts)
+/// on its own cadence) drives this on the live loop into the operator's
+/// file; tests and the soak harness drive the same function directly.
+///
 /// Collect newly tripped or halted alerts and deliver them through `sink`.
 /// Returns the count delivered. Banks drain as alerts are built, so each
 /// line delivers exactly once; the cursor keeps level triggers to their

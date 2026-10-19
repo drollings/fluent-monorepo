@@ -93,6 +93,15 @@ impl fmt::Display for OptionKind {
     }
 }
 
+/// Shares one standard listed contract delivers. OCC-adjusted contracts keep
+/// this value when an adjustment is expressed as `f` new contracts at `1/f`
+/// the strike (the 2-for-1 representation used by [`SpreadPosition`]).
+pub const DEFAULT_CONTRACT_MULTIPLIER: u32 = 100;
+
+const fn default_contract_multiplier() -> u32 {
+    DEFAULT_CONTRACT_MULTIPLIER
+}
+
 /// One listed option contract: underlying, expiry, strike, call-or-put.
 #[derive(Debug, Clone, Builder, PartialEq, Eq, Serialize, Deserialize)]
 #[builder(start_fn = new)]
@@ -105,6 +114,12 @@ pub struct OptionContract {
     pub strike: Money,
     /// Call or put.
     pub kind: OptionKind,
+    /// Shares delivered per contract. Standard listings deliver 100; a
+    /// split-adjusted contract keeps that deliverable because the adjustment
+    /// doubles the contract count instead (see [`SpreadLegs::adjusted_for_split`]).
+    #[builder(default = DEFAULT_CONTRACT_MULTIPLIER)]
+    #[serde(default = "default_contract_multiplier")]
+    pub multiplier: u32,
 }
 
 impl crate::validate::Validate for OptionContract {
@@ -116,9 +131,9 @@ impl crate::validate::Validate for OptionContract {
 
 impl OptionContract {
     /// Fail-closed structural check: nonempty underlying of at most 6
-    /// characters (the OCC root width) and a strictly positive strike.
-    /// Expiry is not compared against the clock — historical chains must
-    /// validate identically to live ones.
+    /// characters (the OCC root width), a strictly positive strike, and a
+    /// positive deliverable. Expiry is not compared against the clock —
+    /// historical chains must validate identically to live ones.
     pub fn validate(&self) -> Result<(), TypesError> {
         if self.underlying.is_empty() || self.underlying.len() > 6 {
             return Err(TypesError::InvalidContract(format!(
@@ -132,7 +147,37 @@ impl OptionContract {
                 self.strike
             )));
         }
+        if self.multiplier == 0 {
+            return Err(TypesError::InvalidContract(
+                "contract multiplier must be positive, got 0".to_owned(),
+            ));
+        }
         Ok(())
+    }
+
+    /// The OCC adjustment for a forward `factor`-for-1 split: strike divided
+    /// by the factor, expiry and kind unchanged. The caller books `factor`
+    /// contracts at `1/factor` the per-share basis, so each adjusted contract
+    /// still delivers [`multiplier`](Self::multiplier) shares.
+    pub fn adjusted_for_split(&self, factor: u32) -> Result<Self, TypesError> {
+        if factor == 0 {
+            return Err(TypesError::InvalidContract(
+                "split factor must be new shares per old share, got 0".to_owned(),
+            ));
+        }
+        let strike = self.strike.as_decimal() / Decimal::from(factor);
+        if strike <= Decimal::ZERO {
+            return Err(TypesError::InvalidContract(format!(
+                "split {factor}-for-1 leaves a non-positive strike"
+            )));
+        }
+        Ok(Self {
+            underlying: self.underlying.clone(),
+            expiry: self.expiry,
+            strike: Money::new(strike),
+            kind: self.kind,
+            multiplier: self.multiplier,
+        })
     }
 
     /// OCC-style option symbol: root left-justified to 6 characters, then
@@ -156,6 +201,53 @@ impl OptionContract {
     #[must_use]
     pub fn contract_id(&self) -> ContractId {
         ContractId::new(self.occ_symbol())
+    }
+
+    /// Parse an OCC-style option symbol back into a contract: the inverse of
+    /// [`occ_symbol`](Self::occ_symbol). Accepts the 21-character padded root
+    /// and the trimmed form; refuses anything whose tail is not
+    /// `YYMMDD` + `C`/`P` + an 8-digit mill strike with a reason. The
+    /// multiplier is not encoded in an OCC symbol, so the standard deliverable
+    /// is assumed.
+    pub fn parse_occ_symbol(symbol: &str) -> Result<Self, TypesError> {
+        let trimmed = symbol.trim();
+        if trimmed.len() < 15 {
+            return Err(TypesError::InvalidContract(format!(
+                "OCC symbol {symbol:?} is too short"
+            )));
+        }
+        let (root, tail) = trimmed.split_at(trimmed.len() - 15);
+        let underlying = root.trim();
+        if underlying.is_empty() || underlying.len() > 6 {
+            return Err(TypesError::InvalidContract(format!(
+                "OCC symbol {symbol:?} has no 1-6 character root"
+            )));
+        }
+        let expiry = NaiveDate::parse_from_str(&tail[..6], "%y%m%d").map_err(|_| {
+            TypesError::InvalidContract(format!("OCC symbol {symbol:?} has a bad expiry"))
+        })?;
+        let kind = match tail.as_bytes()[6] {
+            b'C' | b'c' => OptionKind::Call,
+            b'P' | b'p' => OptionKind::Put,
+            other => {
+                return Err(TypesError::InvalidContract(format!(
+                    "OCC symbol {symbol:?} names kind {:?}, not C or P",
+                    other as char
+                )))
+            }
+        };
+        let mills: u64 = tail[7..15].parse().map_err(|_| {
+            TypesError::InvalidContract(format!("OCC symbol {symbol:?} has a bad strike"))
+        })?;
+        let contract = Self {
+            underlying: underlying.to_owned(),
+            expiry,
+            strike: Money::new(Decimal::from(mills) / Decimal::from(1_000)),
+            kind,
+            multiplier: DEFAULT_CONTRACT_MULTIPLIER,
+        };
+        contract.validate()?;
+        Ok(contract)
     }
 }
 
@@ -365,6 +457,26 @@ impl SpreadLegs {
             ));
         }
         Ok(())
+    }
+
+    /// Re-price every leg of `underlying` for a forward `factor`-for-1 split.
+    /// Legs of other underlyings are copied unchanged; the structure keeps its
+    /// ratios and sides. Returns the same structure when no leg matches.
+    pub fn adjusted_for_split(&self, underlying: &str, factor: u32) -> Result<Self, TypesError> {
+        let mut legs = Vec::with_capacity(self.legs.len());
+        for leg in &self.legs {
+            let contract = if leg.contract.underlying == underlying {
+                leg.contract.adjusted_for_split(factor)?
+            } else {
+                leg.contract.clone()
+            };
+            legs.push(SpreadLeg {
+                contract,
+                side: leg.side,
+                ratio: leg.ratio,
+            });
+        }
+        Self::try_new(legs)
     }
 
     /// Borrow the legs in order.

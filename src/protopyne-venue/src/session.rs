@@ -1,23 +1,18 @@
-//! Supervised trading session: feeds, per-bar supervision, bounded fan-out.
+//! Supervised trading session: feeds, per-bar supervision, operator closes.
 //!
 //! All concurrency composes monorepo primitives — never raw `tokio::spawn`
-//! outside scope/batch/pool, never ambient I/O outside capability-gated
+//! outside scope/batch, never ambient I/O outside capability-gated
 //! entry points:
 //!
 //! - [`Scope`] owns feed tasks; dropping without close panics by design.
 //! - [`SupervisedBatch`] runs each bar's units with containment-only
 //!   supervision (a failing freshness check cancels its dependents; nothing
 //!   restarts).
-//! - [`ResultPool`] fans out venue submissions and returns each verdict.
-//! - Credit flow bounds the producer: at most `credit_limit` submits are
-//!   in flight before backpressure bites (**(correctness-as-boundedness)**).
 //! - [`first_accept_in_order`] resolves quotes through the source ladder:
 //!   primary first, stale-quote fallback last, trading blind never.
 
 use chrono::{DateTime, Utc};
-use fluent_concurrency::flow::{self, CreditReceiver, CreditSender, CreditSpec};
 use fluent_concurrency::ladder::first_accept_in_order;
-use fluent_concurrency::pool::{ResultPool, ResultPoolError};
 use fluent_concurrency::scope::Scope;
 use fluent_concurrency::stream::StreamAbort;
 use fluent_wvr::prelude::*;
@@ -28,15 +23,17 @@ use tokio::sync::{broadcast, mpsc};
 use protopyne_types::Bar;
 use protopyne_types::SeriesContext;
 
-use protopyne_strategy::RiskApproved;
+use protopyne_strategy::{PortfolioFactsSource, RiskLimits};
 
 use crate::backfill::{BackfillHandle, BackfillSource, BackfillUnit};
 use crate::command::{StateHandle, TradingState, TradingStateUnit};
 use crate::error::VenueError;
+
 use crate::journal::{Journal, VenueStorage};
 use crate::market::MarketEvent;
 use crate::order::{OrderIntent, OrderRecord};
 use crate::quote::Quote;
+use crate::reading::GateReading;
 use crate::reconcile::{ReconcileHandle, ReconcileSource, ReconcileUnit};
 use crate::registry::VenueRegistry;
 use crate::stream::{StreamBreaker, StreamHealthUnit, SupervisedStream};
@@ -44,26 +41,24 @@ use crate::submit::safe_submit;
 use crate::tastytrade::TastytradeTransport;
 use crate::venue::{AccountEvent, QuoteSource, Venue};
 
-/// Session tunables. The credit bound is **(correctness-as-boundedness)**:
-/// queues stay finite under bursty chains; everything else sizes pools.
+/// Session tunables: risk caps plus the shutdown drain bound.
 #[derive(
     Debug, Clone, bon::Builder, serde::Serialize, serde::Deserialize, FieldAccess, Describable,
 )]
 #[builder(start_fn = new)]
 pub struct SessionConfig {
-    /// Submission workers draining the fan-out pool.
-    #[field(desc = "Submission workers", min = 1, max = 64)]
-    #[builder(default = 4)]
-    pub workers: u64,
-    /// Queue depth before submitters wait.
-    #[field(desc = "Fan-out queue capacity", min = 1, max = 10_000)]
-    #[builder(default = 64)]
-    pub queue_capacity: u64,
-    /// Max submits in flight before the producer blocks
-    /// **(correctness-as-boundedness)**.
-    #[field(desc = "Max submits in flight", min = 1, max = 10_000)]
-    #[builder(default = 16)]
-    pub credit_limit: u64,
+    /// Risk caps the session boots against. Aggregate caps require an
+    /// attached [`PortfolioFactsSource`], so a session that configures one
+    /// with no producer refuses at construction.
+    #[field(skip)]
+    #[serde(default)]
+    #[builder(default)]
+    pub risk_limits: RiskLimits,
+    /// Shutdown drain bound in seconds: closing the feed scope must complete
+    /// inside it, so a kill mid-loop never hangs shutdown behind a slow pump.
+    #[field(desc = "Shutdown drain timeout in seconds", min = 1, max = 3600)]
+    #[builder(default = 30)]
+    pub shutdown_timeout_secs: u64,
 }
 
 impl protopyne_types::Validate for SessionConfig {
@@ -82,11 +77,8 @@ impl Default for SessionConfig {
 impl SessionConfig {
     /// Fail-closed self-consistency check.
     pub fn validate(&self) -> Result<(), String> {
-        if self.workers < 1 {
-            return Err("workers must be at least 1".to_owned());
-        }
-        if self.credit_limit < 1 {
-            return Err("credit_limit must be at least 1".to_owned());
+        if self.shutdown_timeout_secs < 1 {
+            return Err("shutdown_timeout_secs must be at least 1".to_owned());
         }
         Ok(())
     }
@@ -113,36 +105,13 @@ impl WorkUnit for SessionConfig {
 
 impl_component!(SessionConfig);
 
-/// One fan-out job: an intent plus the quote it was priced against.
+/// The supervised session: feed scope plus the venue registry.
 ///
-/// The job carries its own risk token and journal: pool workers submit
-/// through the safe protocol (journal intent → dry-run → submit →
-/// query-by-ID), so the risk approval binds this submission path exactly as
-/// it binds the backtest runner — there is no token-free order path left in
-/// the session.
-//
-// `Clone` only: the journal has no `Debug` shape worth printing (a path
-// plus a locked fold), so jobs clone into the pool without one.
-#[derive(Clone)]
-pub struct SubmitJob {
-    /// What to submit.
-    pub intent: OrderIntent,
-    /// Quote the fill prices against.
-    pub quote: Quote,
-    /// Decision time.
-    pub at: DateTime<Utc>,
-    /// Whether this job closes or reduces exposure (exits always route,
-    /// even while halted); entries need [`TradingState::Enabled`].
-    pub is_exit: bool,
-    /// Risk approval minted for this intent's proposal: a token for another
-    /// proposal refuses before anything journals.
-    pub approved: RiskApproved,
-    /// Journal the intent lands in before any venue call.
-    pub journal: Arc<Journal>,
-}
-
-/// The supervised session: feed scope, credit pair, fan-out pool, venue
-/// registry.
+/// Orders reach the venue through exactly one path — the safe protocol
+/// ([`safe_submit`], journal intent → dry-run → submit → query-by-ID),
+/// driven either by the runner's pipeline verdict or by the operator close
+/// path below. Both demand the risk token; there is no token-free order
+/// path left in the session.
 ///
 /// **Explicit behavior change (execution routing):** construction takes a
 /// [`VenueRegistry`] instead of an `Arc<PaperVenue>`. Single-venue callers
@@ -150,15 +119,15 @@ pub struct SubmitJob {
 /// second venue is otherwise impossible without forking the session.
 pub struct TradingSession {
     scope: Scope,
-    credit_tx: CreditSender,
-    credit_rx: CreditReceiver,
-    pool: ResultPool<SubmitJob, OrderRecord, VenueError>,
     registry: Arc<VenueRegistry>,
     storage: VenueStorage,
     stream_breaker: Option<Arc<StreamBreaker>>,
     reconcile: Option<ReconcileSensor>,
     backfill: Option<BackfillSensor>,
     state: StateHandle,
+    portfolio_facts: Option<Arc<dyn PortfolioFactsSource>>,
+    /// Shutdown drain bound: closing the feed scope must complete inside it.
+    shutdown_timeout_secs: u64,
 }
 
 /// The session-owned reconciliation sensor and its shared gate. Attached
@@ -181,79 +150,37 @@ struct BackfillSensor {
 }
 
 impl TradingSession {
-    /// Boot a session: config validation, credit pair, and a result pool
-    /// whose workers submit through the registry (which routes each intent
-    /// to its venue). No task spawns here; feeds spawn under the owned
-    /// [`Scope`] on demand.
+    /// Boot a session: config validation plus the owned feed scope. No task
+    /// spawns here; feeds spawn under the owned [`Scope`] on demand.
     pub fn boot(
         config: &SessionConfig,
         registry: Arc<VenueRegistry>,
         storage: VenueStorage,
+        portfolio_facts: Option<Arc<dyn PortfolioFactsSource>>,
     ) -> Result<Self, VenueError> {
         config.validate().map_err(VenueError::Invalid)?;
-        // Bounded intake, two interlocking caps (both validated 1..=10_000):
-        // the credit pair admits at most `credit_limit` submits in flight
-        // (the producer waits for a bump instead of queueing), and the pool
-        // queue holds at most `queue_capacity` jobs (overflow refuses `Full`
-        // instead of growing). Keep `credit_limit` at or under
-        // `queue_capacity` and `Full` stays unreachable.
-        let (credit_tx, credit_rx) = flow::new(CreditSpec {
-            initial: config.credit_limit as usize,
-            more_after: 1,
-        });
-        let worker_registry = Arc::clone(&registry);
-        let worker_storage = storage.clone();
-        let pool = ResultPool::new(
-            fluent_concurrency::tokio_runtime(),
-            config.workers as usize,
-            config.queue_capacity as usize,
-            move |job: SubmitJob| {
-                let registry = Arc::clone(&worker_registry);
-                let storage = worker_storage.clone();
-                async move {
-                    // The journal gate reads the task-local capability
-                    // scope: install this session's storage permit around
-                    // the protocol, the same channel `run_bar` uses, so
-                    // pool workers journal under the session's authority.
-                    let caps = fluent_wvr::CapabilitySet::new().with(storage.clone());
-                    fluent_wvr::CURRENT_CAPS
-                        .scope(
-                            caps,
-                            safe_submit(
-                                &storage,
-                                &job.journal,
-                                registry.as_ref(),
-                                &job.approved,
-                                job.intent,
-                                &job.quote,
-                                job.at,
-                            ),
-                        )
-                        .await
-                }
-            },
-        );
+        // Construction-time fail-closed: an aggregate cap with no facts
+        // producer could only fail open at the first check, so the session
+        // refuses to exist instead.
+        if config.risk_limits.has_aggregate_caps() && portfolio_facts.is_none() {
+            return Err(VenueError::Invalid(
+                "aggregate risk caps need a portfolio facts producer".to_owned(),
+            ));
+        }
         Ok(Self {
             scope: Scope::new(),
-            credit_tx,
-            credit_rx,
-            pool,
             registry,
             storage,
             stream_breaker: None,
             reconcile: None,
             backfill: None,
+            portfolio_facts,
+            shutdown_timeout_secs: config.shutdown_timeout_secs,
             // Sessions boot allowing everything they allowed before the
             // command plane was wired: the gate is a no-op until the first
             // operator command is journaled.
             state: StateHandle::new(TradingState::Enabled),
         })
-    }
-
-    /// Whether the producer is currently credit-blocked.
-    #[must_use]
-    pub fn is_blocked(&self) -> bool {
-        self.credit_tx.is_blocked()
     }
 
     /// Publish one event sequence to N receivers through a single
@@ -301,11 +228,31 @@ impl TradingSession {
         &self.state
     }
 
+    /// The attached account-stream breaker, when one is installed. The live
+    /// boot reports its producer set through here.
+    #[must_use]
+    pub fn stream_breaker(&self) -> Option<&Arc<StreamBreaker>> {
+        self.stream_breaker.as_ref()
+    }
+
     /// Share a trading-state handle (e.g. one already driven by an operator
     /// command plane): later bars and submissions gate on it instead of the
     /// boot default.
     pub fn attach_trading_state(&mut self, state: StateHandle) {
         self.state = state;
+    }
+
+    /// Attach the portfolio facts producer the aggregate risk caps read.
+    /// A session booted with aggregate caps must have one; attaching one
+    /// later satisfies a session that booted without caps.
+    pub fn attach_portfolio_facts(&mut self, facts: Arc<dyn PortfolioFactsSource>) {
+        self.portfolio_facts = Some(facts);
+    }
+
+    /// The attached portfolio facts producer, when one is installed.
+    #[must_use]
+    pub fn portfolio_facts(&self) -> Option<&Arc<dyn PortfolioFactsSource>> {
+        self.portfolio_facts.as_ref()
     }
 
     /// Attach the reconciliation sensor: every later [`TradingSession::run_bar`]
@@ -362,6 +309,21 @@ impl TradingSession {
     #[must_use]
     pub fn backfill_handle(&self) -> Option<&BackfillHandle> {
         self.backfill.as_ref().map(|sensor| &sensor.handle)
+    }
+
+    /// One bar's producer-confidence reading over this session's attached
+    /// gates: the trading state plus whichever reconcile, backfill, and
+    /// stream gates are attached. Detached gates are declared at
+    /// construction (allowed); an attached gate that never answered refuses
+    /// entries. The loop consumes this every bar; exits always route.
+    #[must_use]
+    pub fn gate_reading(&self) -> GateReading {
+        GateReading::assemble(
+            self.state.get(),
+            self.reconcile.as_ref().map(|sensor| &sensor.handle),
+            self.backfill.as_ref().map(|sensor| &sensor.handle),
+            self.stream_breaker.as_deref(),
+        )
     }
 
     /// Spawn a supervised reconnect driver under the owned scope and attach
@@ -422,43 +384,6 @@ impl TradingSession {
         rx
     }
 
-    /// Credit-bounded submission: at most `credit_limit` submits stay in
-    /// flight; the producer waits for a bump instead of growing a queue.
-    /// The trading state gates first (before any credit is touched):
-    /// halted entries refuse with reason, exits always route. Attached
-    /// reconciliation and backfill gates gate entries next, through the
-    /// same halt-entries/route-exits shape: a mismatched book or an
-    /// unspliced hole refuses entries while exits still flow.
-    pub async fn submit_order(
-        &self,
-        job: SubmitJob,
-    ) -> Result<OrderRecord, ResultPoolError<VenueError>> {
-        self.state
-            .get()
-            .check(job.is_exit)
-            .map_err(ResultPoolError::Inner)?;
-        if !job.is_exit {
-            if let Some(sensor) = &self.reconcile {
-                sensor
-                    .handle
-                    .check_entries()
-                    .map_err(ResultPoolError::Inner)?;
-            }
-            if let Some(sensor) = &self.backfill {
-                sensor
-                    .handle
-                    .check_entries()
-                    .map_err(ResultPoolError::Inner)?;
-            }
-        }
-        let outcome = self
-            .credit_tx
-            .send(|| async { self.pool.submit(job).await })
-            .await;
-        self.credit_rx.recv();
-        outcome
-    }
-
     /// Collect newly tripped or halted alerts from the attached gates into
     /// `sink`: the breaker trip and the kill-switch transition alert on the
     /// edge through `cursor`, banked reconciliation and backfill lines drain
@@ -477,6 +402,42 @@ impl TradingSession {
             state: Some(&self.state),
         };
         crate::alert::poll_alerts(cursor, &watch, sink, now)
+    }
+
+    /// Spawn the out-of-band alert poller under the owned scope: every
+    /// `interval` it collects newly tripped or halted gates through
+    /// [`poll_alerts`](Self::poll_alerts) and delivers them through `sink`
+    /// (usually a [`FileSink`](crate::alert::FileSink) the operator tails).
+    /// The cursor lives in the task, so edges alert once no matter how many
+    /// polls observe the level. A failing sink reports loudly to stderr and
+    /// the cadence continues — never a retry of the failed send, never a
+    /// gate on a trade. `shutdown` drains the task with the feed scope.
+    pub fn spawn_alert_poller(
+        &mut self,
+        sink: Arc<dyn crate::alert::AlertSink>,
+        interval: std::time::Duration,
+    ) {
+        let breaker = self.stream_breaker.clone();
+        let reconcile = self.reconcile.as_ref().map(|sensor| sensor.handle.clone());
+        let backfill = self.backfill.as_ref().map(|sensor| sensor.handle.clone());
+        let state = self.state.clone();
+        self.scope.spawn(async move {
+            let mut cursor = crate::alert::AlertCursor::new();
+            loop {
+                tokio::time::sleep(interval).await;
+                let watch = crate::alert::GateWatch {
+                    breaker: breaker.as_deref(),
+                    reconcile: reconcile.as_ref(),
+                    backfill: backfill.as_ref(),
+                    state: Some(&state),
+                };
+                if let Err(error) =
+                    crate::alert::poll_alerts(&mut cursor, &watch, sink.as_ref(), Utc::now())
+                {
+                    eprintln!("alert delivery refused: {error}");
+                }
+            }
+        });
     }
 
     /// Submit operator close intents through the safe path: journal intent,
@@ -622,11 +583,20 @@ impl TradingSession {
         &self.registry
     }
 
-    /// Shut down: close the feed scope, then drain the pool.
-    pub async fn shutdown(self) {
-        let mut scope = self.scope;
-        scope.close().await;
-        self.pool.shutdown().await;
+    /// Shut down: close the feed scope inside the configured timeout. A kill
+    /// mid-loop must not hang shutdown behind a slow pump, so the timeout
+    /// bounds the wait and the return says which it was: `true` drained
+    /// clean (no task outlives the call), `false` timed out (stragglers
+    /// finish or die with the runtime — the caller reports loudly, the
+    /// session never swallows it).
+    pub async fn shutdown(self) -> bool {
+        let bound = std::time::Duration::from_secs(self.shutdown_timeout_secs);
+        tokio::time::timeout(bound, async {
+            let mut scope = self.scope;
+            scope.close().await;
+        })
+        .await
+        .is_ok()
     }
 }
 

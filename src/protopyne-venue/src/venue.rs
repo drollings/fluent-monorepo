@@ -6,13 +6,17 @@
 //! order path.
 
 use crate::error::VenueError;
-use crate::order::{CorporateEvent, Fill, OrderIntent, OrderRecord, OrderSide, Position};
-use crate::quote::Quote;
+use crate::order::{
+    CorporateEventArgs, CorporateOutcome, Fill, OrderIntent, OrderRecord, OrderSide, Position,
+};
+use crate::position::SpreadPosition;
+use crate::quote::{FeeSchedule, Quote};
 use chrono::{DateTime, Utc};
 use protopyne_types::{ChainQuote, ContractId, OptionContract};
 use serde::{Deserialize, Serialize};
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::Arc;
 
 /// Outcome of a pre-submission dry run: margin and sanity checks against
 /// current buying power, before anything is journaled as submitted.
@@ -104,18 +108,42 @@ pub struct LegExecution {
 /// The time-parameterized [`leg_quote_at`](Self::leg_quote_at) is the
 /// history-capable read: a source over point-in-time chains answers the
 /// newest quote at-or-before `at`, so a replay prices legs as of the bar it
-/// decides. The default delegates to [`leg_quote`](Self::leg_quote), so
-/// live (newest-only) sources keep compiling and behaving exactly as before.
+/// decides. The default refuses (`None`): a partial history source that
+/// serves [`chain_snapshot`](Self::chain_snapshot) but no leg read must not
+/// silently price the newest quote as if it were the bar's. A newest-only
+/// source opts into the newest read explicitly through
+/// [`newest_ok`](Self::newest_ok) — the opt-in, not the silence, is what a
+/// live fill prices.
 pub trait LegQuoteSource: Send + Sync {
     /// Newest quote for `contract`, or `None` when this source has none.
     fn leg_quote(&self, contract: &OptionContract) -> Option<Quote>;
 
+    /// Whether the newest quote may stand in for the bar's quote. `false`
+    /// unless the source declares otherwise: history-shaped sources answer
+    /// time-parameterized reads instead.
+    fn newest_ok(&self) -> bool {
+        false
+    }
+
     /// Newest quote for `contract` at-or-before `at`, or `None` when this
-    /// source holds none. Historical sources override this; live sources
-    /// inherit the newest-only read.
+    /// source holds none. Historical sources override this; a source that
+    /// leaves the default answers newest only when it opted in through
+    /// [`newest_ok`](Self::newest_ok), and refuses otherwise.
     fn leg_quote_at(&self, contract: &OptionContract, at: DateTime<Utc>) -> Option<Quote> {
-        let _ = at;
-        self.leg_quote(contract)
+        if self.newest_ok() {
+            self.leg_quote(contract)
+        } else {
+            let _ = at;
+            None
+        }
+    }
+
+    /// Whether this source holds any quote for `underlying` at-or-before
+    /// `at`: the cheap coverage predicate behind the chain screen. Sources
+    /// answer without cloning the window; the default reads the snapshot,
+    /// so every existing source keeps its answer.
+    fn covers(&self, underlying: &str, at: DateTime<Utc>) -> bool {
+        !self.chain_snapshot(underlying, at).is_empty()
     }
 
     /// Point-in-time snapshot for `underlying`: every held quote stamped
@@ -136,10 +164,37 @@ pub trait LegQuoteSource: Send + Sync {
 /// The async methods return boxed futures (not `impl Future`) so the trait
 /// is object-safe: routing holds `Arc<dyn Venue>` handles without a
 /// per-venue `match`. Callers still `.await` them exactly as before.
+///
+/// The read methods come in sync/async pairs: the sync method is the
+/// contract (tests, mirrors, sync callers), the async method is the
+/// production path. Async defaults delegate to the sync method, so every
+/// implementor and test double compiles unchanged; venues whose reads dial
+/// override the async method and answer natively, so the async submission
+/// protocol never bridges runtimes.
 pub trait Venue: Send + Sync {
     /// Check buying power and order sanity without touching the market.
     /// Pure against the venue's current books; never mutates.
     fn dry_run(&self, intent: &OrderIntent, quote: &Quote) -> Result<DryRunOutcome, VenueError>;
+
+    /// Async dry-run read: the submission protocol's path. Defaults to the
+    /// sync method; venues over network truth override and dial directly.
+    fn dry_run_async<'a>(
+        &'a self,
+        intent: &'a OrderIntent,
+        quote: &'a Quote,
+    ) -> Pin<Box<dyn Future<Output = Result<DryRunOutcome, VenueError>> + Send + 'a>> {
+        let outcome = self.dry_run(intent, quote);
+        Box::pin(std::future::ready(outcome))
+    }
+
+    /// Commission schedule this venue applies. Defaults to zero so a venue
+    /// without a fee model stays honest rather than inventing a charge;
+    /// paper and backtest return their configured schedule.
+    fn fee_schedule(&self) -> FeeSchedule {
+        FeeSchedule::new()
+            .per_contract(protopyne_types::Money::zero())
+            .build()
+    }
 
     /// Submit an intent. Idempotent per client ID: resubmitting a known ID
     /// returns the existing record, never a second order.
@@ -166,17 +221,32 @@ pub trait Venue: Send + Sync {
     /// Current venue-truth positions.
     fn positions(&self) -> Vec<Position>;
 
+    /// Open per-contract spread positions, when the venue tracks them.
+    /// `None` (the default) means the venue cannot report them, so an
+    /// aggregate open-risk cap fails closed rather than reading an invented
+    /// zero.
+    fn open_spread_positions(&self) -> Option<Vec<SpreadPosition>> {
+        None
+    }
+
+    /// The option-chain quote source attached to this venue, when one
+    /// exists. Aggregate greek caps read their point-in-time greeks here;
+    /// without a source those caps report unobserved.
+    fn chain_source(&self) -> Option<Arc<dyn LegQuoteSource>> {
+        None
+    }
+
     /// Current venue-truth orders.
     fn orders(&self) -> Vec<OrderRecord>;
 
-    /// Apply an explicit corporate-action or expiry event to venue truth.
-    /// Journaled by the caller with the returned description.
+    /// Apply one explicit corporate action to venue truth. Returns what the
+    /// venue booked (closed option legs, generated stock leg, dividend cash,
+    /// affected contracts, and whether reconciliation is due); the caller
+    /// journals it. Assignment/exercise never delete the net position.
     fn apply_corporate_event(
         &self,
-        underlying: &str,
-        event: CorporateEvent,
-        now: chrono::DateTime<chrono::Utc>,
-    ) -> Result<String, VenueError>;
+        action: &CorporateEventArgs,
+    ) -> Result<CorporateOutcome, VenueError>;
 
     /// Whole account view assembled from the fetch methods below. The
     /// default composes the three fetches, so an implementor that overrides
@@ -188,6 +258,15 @@ pub trait Venue: Send + Sync {
             open_orders: self.fetch_open_orders(),
             recent_trades: self.fetch_trades(),
         }
+    }
+
+    /// Async whole-account read: the async path. Defaults to the sync
+    /// snapshot; venues over network truth override and dial directly.
+    fn account_snapshot_async<'a>(
+        &'a self,
+    ) -> Pin<Box<dyn Future<Output = AccountSnapshot> + Send + 'a>> {
+        let snapshot = self.account_snapshot();
+        Box::pin(std::future::ready(snapshot))
     }
 
     /// Pending incremental account events, drained by the caller. Empty by
@@ -203,14 +282,37 @@ pub trait Venue: Send + Sync {
         Vec::new()
     }
 
+    /// Async cash-balance read. Defaults to the mirror; venues over network
+    /// truth override and dial directly.
+    fn fetch_balances_async<'a>(
+        &'a self,
+    ) -> Pin<Box<dyn Future<Output = Vec<BalanceEntry>> + Send + 'a>> {
+        let balances = self.fetch_balances();
+        Box::pin(std::future::ready(balances))
+    }
+
     /// Working orders as the account reports them. Empty by default.
     fn fetch_open_orders(&self) -> Vec<OrderRecord> {
         Vec::new()
     }
 
+    /// Async working-order read. Defaults to the mirror.
+    fn fetch_open_orders_async<'a>(
+        &'a self,
+    ) -> Pin<Box<dyn Future<Output = Vec<OrderRecord>> + Send + 'a>> {
+        let orders = self.fetch_open_orders();
+        Box::pin(std::future::ready(orders))
+    }
+
     /// Recent fills as the account reports them. Empty by default.
     fn fetch_trades(&self) -> Vec<Fill> {
         Vec::new()
+    }
+
+    /// Async recent-fill read. Defaults to the mirror.
+    fn fetch_trades_async<'a>(&'a self) -> Pin<Box<dyn Future<Output = Vec<Fill>> + Send + 'a>> {
+        let trades = self.fetch_trades();
+        Box::pin(std::future::ready(trades))
     }
 
     /// Legs executed for `client_id` by the most recent spread fill, in leg

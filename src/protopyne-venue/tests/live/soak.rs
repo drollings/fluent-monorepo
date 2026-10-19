@@ -11,7 +11,9 @@ use std::time::Instant;
 
 use fluent_concurrency::io::net::NetCapability;
 use fluent_wvr::{CapabilitySet, CURRENT_CAPS};
-use protopyne_venue::{boot_live, LiveBoot, SessionConfig, TastytradeConfig, Venue};
+use protopyne_venue::{
+    boot_live, LiveAttachments, LiveBoot, SessionConfig, TastytradeConfig, Venue,
+};
 
 fn env(name: &str) -> Option<String> {
     std::env::var(name).ok().filter(|value| !value.is_empty())
@@ -44,7 +46,17 @@ async fn cert_sandbox_read_storm() {
     let caps = CapabilitySet::new().with(NetCapability::new());
     const ROUNDS: usize = 50;
     let live = CURRENT_CAPS
-        .scope(caps, boot_live(&boot, net, &username, &password))
+        .scope(
+            caps,
+            boot_live(
+                &boot,
+                net,
+                &username,
+                &password,
+                LiveAttachments::none(),
+                None,
+            ),
+        )
         .await
         .expect("cert-sandbox boot");
     let mut worst_ms = 0;

@@ -23,12 +23,15 @@ use common_core::registry::ConcurrentRegistry;
 use fluent_wvr::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use protopyne_strategy::{transition, JournaledTransition, Proposal, ProposalEvent, ProposalState};
+use protopyne_strategy::{
+    transition, Grant, JournaledTransition, Proposal, ProposalEvent, ProposalState,
+};
 use protopyne_types::{LegSide, Money, SpreadLeg, SpreadLegs, SymKey, SymbolIndex};
+use rust_decimal::Decimal;
 
 use crate::error::VenueError;
 use crate::journal::{Journal, JournalEvent, VenueStorage, LEG_FILL_KIND};
-use crate::order::{OrderIntent, OrderRecord, OrderSide};
+use crate::order::{OrderIntent, OrderRecord, OrderSide, Position};
 use crate::paper::PaperVenue;
 use crate::position::{PositionSide, SpreadPosition};
 use crate::venue::{LegExecution, Venue};
@@ -173,6 +176,49 @@ impl StateHandle {
     }
 }
 
+/// Shared handle to the live armed grant: the command plane transitions it,
+/// readers (service/gateway) read it. The journal is the authority; this is a
+/// derived handle the fold refreshes, never a second source of truth.
+#[derive(Debug, Clone, Default)]
+pub struct GrantHandle {
+    inner: Arc<Mutex<Option<Grant>>>,
+}
+
+impl GrantHandle {
+    /// Share ownership of `grant`.
+    #[must_use]
+    pub fn new(grant: Option<Grant>) -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(grant)),
+        }
+    }
+
+    /// Read the current grant, if any.
+    #[must_use]
+    pub fn get(&self) -> Option<Grant> {
+        common_core::sync::lock(&self.inner).clone()
+    }
+
+    /// Install `grant` as the live grant (`None` clears it).
+    pub fn set(&self, grant: Option<Grant>) {
+        *common_core::sync::lock(&self.inner) = grant;
+    }
+
+    /// Revoke the live grant when its id matches, marking the stored copy
+    /// revoked so the state stays representable. Returns whether a grant was
+    /// revoked; an id that names nothing refuses, never silently succeeds.
+    pub fn revoke(&self, grant_id: &str) -> bool {
+        let mut inner = common_core::sync::lock(&self.inner);
+        match inner.as_ref() {
+            Some(grant) if grant.id == grant_id => {
+                *inner = Some(grant.revoked_copy());
+                true
+            }
+            _ => false,
+        }
+    }
+}
+
 /// Client ID every journaled operator command carries: commands are
 /// authority rows, not orders, so they share one synthetic id while their
 /// kinds (`command.*`) keep them distinct from lifecycle rows.
@@ -186,6 +232,14 @@ pub const COMMAND_RESUME_KIND: &str = "command.resume";
 pub const COMMAND_CLOSE_ALL_KIND: &str = "command.close_all";
 /// Journaled kind for a cancel-all audit row.
 pub const COMMAND_CANCEL_ALL_KIND: &str = "command.cancel_all";
+/// Journaled kind for an arm-grant command. Its detail is the [`Grant`] JSON.
+pub const COMMAND_ARM_GRANT_KIND: &str = "command.arm_grant";
+/// Journaled kind for a revoke-grant command. Its detail is `{"grant_id": …}`.
+pub const COMMAND_REVOKE_GRANT_KIND: &str = "command.revoke_grant";
+/// Journaled kind for an operator loop-start command: the explicit second
+/// half of live authority (an armed grant is the first). Audit-only for the
+/// trading-state fold.
+pub const COMMAND_START_LOOP_KIND: &str = "command.start_loop";
 
 /// Rebuild the trading state from journaled command rows: last command
 /// wins; disarm halts, resume restores; close/cancel rows are audit-only.
@@ -203,6 +257,52 @@ pub fn replay_trading_state(events: &[JournalEvent]) -> TradingState {
         }
     }
     state
+}
+
+/// Whether the operator journaled an explicit loop-start command. The live
+/// loop starts only when this is true *and* a live grant is armed.
+#[must_use]
+pub fn loop_started(events: &[JournalEvent]) -> bool {
+    events
+        .iter()
+        .any(|event| event.kind == COMMAND_START_LOOP_KIND)
+}
+
+/// The detail body of a revoke row.
+#[derive(Deserialize)]
+struct RevokeGrantBody {
+    grant_id: String,
+}
+
+/// Rebuild the live grant from journaled arm/revoke rows: last arm wins, and a
+/// revoke marks the matching live grant revoked so the state stays
+/// representable; an unmatched revoke leaves the live grant alone. No rows
+/// means nothing is armed. The server's `live_grant` filters the revoked copy
+/// out, so after a revoke nothing routes.
+#[must_use]
+pub fn replay_grant(events: &[JournalEvent]) -> Option<Grant> {
+    let mut live: Option<Grant> = None;
+    for event in events {
+        match event.kind.as_str() {
+            COMMAND_ARM_GRANT_KIND => {
+                if let Ok(grant) = serde_json::from_str::<Grant>(&event.detail) {
+                    live = Some(grant);
+                }
+            }
+            COMMAND_REVOKE_GRANT_KIND => {
+                let Ok(body) = serde_json::from_str::<RevokeGrantBody>(&event.detail) else {
+                    continue;
+                };
+                if let Some(grant) = live.as_ref() {
+                    if grant.id == body.grant_id {
+                        live = Some(grant.revoked_copy());
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    live
 }
 
 /// Journaled kind for a proposal lifecycle row. The single home: the run
@@ -270,12 +370,62 @@ pub fn replay_proposal_states(
 /// halted book stays manageable.
 pub const TRADING_ENABLED_ASSET: &str = "trading.enabled";
 
+/// Journaled kind for a proposal *body* row: the [`Proposal`] itself, keyed by
+/// its id. Recorded when a proposal is handed to the human (nothing covers its
+/// entry), so a restart rebuilds the approval inbox and a later decision acts
+/// on the exact proposal that was proposed — never a reconstruction.
+pub const PROPOSAL_BODY_KIND: &str = "proposal_body";
+
+/// Project journaled proposal bodies into a map `id`→proposal: last body per
+/// id wins; unparseable rows and every other kind never project. The inbox
+/// joins this with [`replay_proposal_states`] so the served rows are the
+/// journaled bodies beside their journaled states.
+#[must_use]
+pub fn proposal_bodies(events: &[JournalEvent]) -> std::collections::BTreeMap<String, Proposal> {
+    let mut bodies = std::collections::BTreeMap::new();
+    for event in events {
+        if event.kind != PROPOSAL_BODY_KIND {
+            continue;
+        }
+        if let Ok(proposal) = serde_json::from_str::<Proposal>(&event.detail) {
+            bodies.insert(proposal.id.clone(), proposal);
+        }
+    }
+    bodies
+}
+
+/// One inbox row rebuilt from the journal: the proposal body beside its
+/// journaled lifecycle state. A body with no transition row reads `Proposed`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct JournaledProposal {
+    /// The proposal as proposed.
+    pub proposal: Proposal,
+    /// Its last journaled lifecycle state.
+    pub state: ProposalState,
+}
+
+/// The approval inbox from journaled rows alone: bodies joined with their
+/// latest states, in stable id order. This is what a restart serves — never a
+/// second in-memory authority.
+#[must_use]
+pub fn replay_proposals(events: &[JournalEvent]) -> Vec<JournaledProposal> {
+    let states = replay_proposal_states(events);
+    proposal_bodies(events)
+        .into_iter()
+        .map(|(id, proposal)| {
+            let state = states.get(&id).copied().unwrap_or(ProposalState::Proposed);
+            JournaledProposal { proposal, state }
+        })
+        .collect()
+}
+
 /// One command-plane directive. `CloseAll` flattens every open group in the
 /// venue book (one atomic intent per leg-group, never leg-by-leg);
 /// `CancelAll` lists active orders for cancellation; `Disarm` transitions
 /// the shared state to [`TradingState::Disabled`]; `Resume` transitions it
-/// back to [`TradingState::Enabled`].
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// back to [`TradingState::Enabled`]; `ArmGrant`/`RevokeGrant` transition the
+/// live grant, journaled first like every other command.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum CommandKind {
     /// Flatten every open group, scoped to a registered portfolio name.
     CloseAll {
@@ -291,6 +441,35 @@ pub enum CommandKind {
     Disarm,
     /// Route entries again after a halt.
     Resume,
+    /// Install an armed grant. The journal row is the authority; a refused
+    /// grant (revoked, or structurally invalid) journals nothing.
+    ArmGrant {
+        /// The grant to arm. Boxed: a grant is large and the enum is not.
+        grant: Box<Grant>,
+    },
+    /// Revoke the live grant by id. A mismatched or absent id refuses.
+    RevokeGrant {
+        /// Id of the grant to revoke.
+        grant_id: String,
+    },
+    /// Approve a journaled proposal: validate the move against its lifecycle,
+    /// journal the transition, and emit the approved proposal for the caller's
+    /// ledger + submit path. A proposal not awaiting a human refuses.
+    Approve {
+        /// Id of the proposal to approve.
+        proposal_id: String,
+    },
+    /// Reject a journaled proposal, journaling the human's reason. Never
+    /// emits an order.
+    Reject {
+        /// Id of the proposal to reject.
+        proposal_id: String,
+        /// Why the human rejected it.
+        reason: String,
+    },
+    /// Start the live trading loop. Audit-only for trading state: it records
+    /// the operator's explicit start beside the arm that authorizes it.
+    StartLoop,
 }
 
 /// One closable unit: an exposure side, an absolute quantity, and the
@@ -305,12 +484,134 @@ pub struct LegGroup {
     pub quantity: u32,
     /// Structure traveling on the closing intent, if any.
     pub legs: Option<SpreadLegs>,
+    /// Per-unit package value at entry, signed in holder convention (long
+    /// legs add, short legs subtract). Capital accounting for the closing
+    /// intent's requirement (a flattening close authorizes at market but
+    /// must still pass the venue's buying-power check on a sane number,
+    /// never on the marketable extreme it rests).
+    pub basis: Money,
 }
 
+/// The journaled detail for a close-all command over `portfolio`: the one
+/// row shape the route, the gateway, and the loop executor all write and
+/// read, so the three never disagree about what was ordered.
+#[must_use]
+pub fn close_all_detail(portfolio: &str) -> String {
+    serde_json::json!({ "portfolio": portfolio }).to_string()
+}
+
+/// The journaled detail for a cancel-all command over `portfolio`: same one
+/// shape as [`close_all_detail`].
+#[must_use]
+pub fn cancel_all_detail(portfolio: &str) -> String {
+    serde_json::json!({ "portfolio": portfolio }).to_string()
+}
+
+/// Read venue books as closable groups: one single-leg group per nonzero net
+/// position, one spread group per execution prefix (legs of one fill share a
+/// client-ID prefix and therefore close as one package). Prototype grouping,
+/// documented as such: mixed-ratio books close the minimum whole-unit count,
+/// and exact ties on dominant side break toward the first leg in OCC order.
+///
+/// The one grouping implementation: the command unit reads its paper book
+/// through here, and the live loop reads its registry book through here —
+/// never a second grouping.
+#[must_use]
+pub fn open_groups_of<S: std::hash::BuildHasher>(
+    positions: Vec<Position>,
+    spread: &HashMap<String, SpreadPosition, S>,
+) -> Vec<LegGroup> {
+    let mut groups = Vec::new();
+    let mut singles = positions;
+    singles.sort_by(|left, right| left.underlying.cmp(&right.underlying));
+    for position in singles {
+        // Prototype positions are `u32`-born (fills carry `u32`
+        // quantities); anything wider cannot be expressed downstream, so
+        // it is skipped rather than clamped into a wrong close.
+        let Ok(magnitude) = u32::try_from(position.quantity.unsigned_abs()) else {
+            continue;
+        };
+        if magnitude == 0 {
+            continue;
+        }
+        groups.push(LegGroup {
+            underlying: position.underlying,
+            side: if position.quantity > 0 {
+                PositionSide::Long
+            } else {
+                PositionSide::Short
+            },
+            quantity: magnitude,
+            legs: None,
+            basis: position.avg_price,
+        });
+    }
+    let mut executions: HashMap<String, Vec<(String, SpreadPosition)>> = HashMap::new();
+    let mut keys: Vec<&String> = spread.keys().collect();
+    keys.sort();
+    for key in keys {
+        let position = spread.get(key).expect("sorted keys come from the map");
+        let prefix = position
+            .trade_ids
+            .first()
+            .and_then(|id| id.split('#').next())
+            .unwrap_or(key)
+            .to_owned();
+        executions
+            .entry(prefix)
+            .or_default()
+            .push((key.clone(), position.clone()));
+    }
+    let mut prefixes: Vec<String> = executions.keys().cloned().collect();
+    prefixes.sort();
+    for prefix in prefixes {
+        let legs = executions
+            .remove(&prefix)
+            .expect("sorted prefixes come from the map");
+        let structure = legs.iter().find_map(|(_, position)| position.legs.clone());
+        let dominant = legs
+            .iter()
+            .max_by_key(|(_, position)| position.quantity_abs)
+            .expect("execution groups are nonempty");
+        let units = legs
+            .iter()
+            .map(|(_, position)| position.quantity_abs)
+            .min()
+            .expect("execution groups are nonempty");
+        if units == 0 {
+            continue;
+        }
+        let basis = legs.iter().fold(Decimal::ZERO, |sum, (_, member)| {
+            sum + match member.side {
+                PositionSide::Long => member.price_entry_average.as_decimal(),
+                PositionSide::Short => -member.price_entry_average.as_decimal(),
+            }
+        });
+        groups.push(LegGroup {
+            underlying: dominant.1.underlying.clone(),
+            side: dominant.1.side,
+            quantity: units,
+            legs: structure,
+            basis: Money::new(basis),
+        });
+    }
+    groups
+}
+
+/// Operator close emission: the loop's per-bar fold groups the registry
+/// book through [`open_groups_of`] and submits the emitted intents as
+/// exits through the safe path; the route and the gateway journal the
+/// command row that fold consumes.
+///
 /// Emit one atomic closing intent per leg-group: the intent side flips the
 /// exposure, and spread legs travel with flipped sides on the same intent —
 /// never as one intent per leg. Deterministic client IDs (`close-{index}-…
 /// …-{underlying}`) keep retries lookups, never second orders.
+///
+/// The intent carries the group's entry basis as its requirement: the
+/// caller-priced limit may rest marketable-by-construction (a package has
+/// no single price), but the venue's buying-power check still runs on the
+/// sane entry number, never on the extreme.
 ///
 /// Refuses (fail-closed) when a group would close into undefined risk — a
 /// lone long leg flips into a naked short — or carries zero quantity.
@@ -352,6 +653,9 @@ pub fn close_all_intents(
                 .side(side)
                 .quantity(group.quantity)
                 .limit_price(limit)
+                .capital_requirement(Money::new(
+                    group.basis.as_decimal().abs() * Decimal::from(group.quantity),
+                ))
                 .maybe_legs(legs)
                 .build(),
         );
@@ -379,7 +683,12 @@ fn flip_legs(legs: &SpreadLegs) -> Result<SpreadLegs, String> {
     SpreadLegs::try_new(flipped).map_err(|e| e.to_string())
 }
 
-/// Client IDs of orders still working: active only, so cancel sweeps never
+/// Operator cancel listing: the loop's per-bar fold sweeps the registry's
+/// active orders through [`cancel_all_ids`] and cancels them through the
+/// registry; the route and the gateway journal the command row that fold
+/// consumes. Cancels hold no budget — there is no claim to settle or
+/// release, so usage and pending read unchanged across the sweep.
+////// Client IDs of orders still working: active only, so cancel sweeps never
 /// chase terminal orders.
 #[must_use]
 pub fn cancel_all_ids(orders: &[OrderRecord]) -> Vec<String> {
@@ -429,6 +738,10 @@ pub struct CommandUnit {
     /// `Some` makes journal-first structural — no row, no state change.
     /// (Optional fields default to `None`; no attribute needed.)
     pub journal: Option<Arc<Journal>>,
+    /// Live-grant handle the arm/revoke commands transition. Defaults to an
+    /// empty handle so callers that never arm need not wire one.
+    #[builder(default)]
+    pub grants: GrantHandle,
 }
 
 impl CommandUnit {
@@ -441,81 +754,10 @@ impl CommandUnit {
         Ok(())
     }
 
-    /// Read the venue books as closable groups: one single-leg group per
-    /// nonzero net position, one spread group per execution prefix (legs of
-    /// one fill share a client-ID prefix and therefore close as one
-    /// package). Prototype grouping, documented as such: mixed-ratio books
-    /// close the minimum whole-unit count, and exact ties on dominant side
-    /// break toward the first leg in OCC order.
+    /// Read the venue books as closable groups through the one grouping
+    /// implementation ([`open_groups_of`]).
     fn open_groups(&self) -> Vec<LegGroup> {
-        let mut groups = Vec::new();
-        let mut singles: Vec<_> = self.venue.positions();
-        singles.sort_by(|left, right| left.underlying.cmp(&right.underlying));
-        for position in singles {
-            // Prototype positions are `u32`-born (fills carry `u32`
-            // quantities); anything wider cannot be expressed downstream, so
-            // it is skipped rather than clamped into a wrong close.
-            let Ok(magnitude) = u32::try_from(position.quantity.unsigned_abs()) else {
-                continue;
-            };
-            if magnitude == 0 {
-                continue;
-            }
-            groups.push(LegGroup {
-                underlying: position.underlying,
-                side: if position.quantity > 0 {
-                    PositionSide::Long
-                } else {
-                    PositionSide::Short
-                },
-                quantity: magnitude,
-                legs: None,
-            });
-        }
-        let spread = self.venue.spread_positions();
-        let mut executions: HashMap<String, Vec<(String, SpreadPosition)>> = HashMap::new();
-        let mut keys: Vec<&String> = spread.keys().collect();
-        keys.sort();
-        for key in keys {
-            let position = spread.get(key).expect("sorted keys come from the map");
-            let prefix = position
-                .trade_ids
-                .first()
-                .and_then(|id| id.split('#').next())
-                .unwrap_or(key)
-                .to_owned();
-            executions
-                .entry(prefix)
-                .or_default()
-                .push((key.clone(), position.clone()));
-        }
-        let mut prefixes: Vec<String> = executions.keys().cloned().collect();
-        prefixes.sort();
-        for prefix in prefixes {
-            let legs = executions
-                .remove(&prefix)
-                .expect("sorted prefixes come from the map");
-            let structure = legs.iter().find_map(|(_, position)| position.legs.clone());
-            let dominant = legs
-                .iter()
-                .max_by_key(|(_, position)| position.quantity_abs)
-                .expect("execution groups are nonempty");
-            let units = legs
-                .iter()
-                .map(|(_, position)| position.quantity_abs)
-                .min()
-                .expect("execution groups are nonempty");
-            if units == 0 {
-                continue;
-            }
-            groups.push(LegGroup {
-                underlying: dominant.1.underlying.clone(),
-                side: dominant.1.side,
-                quantity: units,
-                legs: structure,
-            });
-        }
-        groups
+        open_groups_of(self.venue.positions(), &self.venue.spread_positions())
     }
 }
 
@@ -542,6 +784,37 @@ impl CommandUnit {
         journal
             .record_transition(&permit, OPERATOR_CLIENT_ID, kind, detail, Utc::now())
             .map_err(|e| WorkError::Execution(e.to_string()))
+    }
+
+    /// Rebuild one journaled proposal, validate the human decision against its
+    /// lifecycle, and journal the transition through `decide_proposal`. Returns
+    /// the advanced proposal. A decision command needs the journal bound (no
+    /// row, no decision) and refuses an unknown or already-terminal proposal.
+    fn decide(
+        &self,
+        ctx: &WorkContext,
+        proposal_id: &str,
+        event: ProposalEvent,
+        reason: &str,
+    ) -> Result<Proposal, WorkError> {
+        let Some(journal) = &self.journal else {
+            return Err(WorkError::Execution(
+                "decision commands need the journal bound".to_owned(),
+            ));
+        };
+        let Some(permit) = ctx.caps.get::<VenueStorage>().cloned() else {
+            return Err(WorkError::Execution(
+                "decision journal bound but venue-storage capability missing".to_owned(),
+            ));
+        };
+        let mut proposal = journal
+            .replay_proposals(&permit)
+            .map_err(|e| WorkError::Execution(e.to_string()))?
+            .remove(proposal_id)
+            .ok_or_else(|| WorkError::Execution(format!("no journaled proposal {proposal_id}")))?;
+        decide_proposal(journal, &permit, &mut proposal, event, reason, Utc::now())
+            .map_err(|e| WorkError::Execution(e.to_string()))?;
+        Ok(proposal)
     }
 }
 
@@ -572,13 +845,56 @@ impl WorkUnit for CommandUnit {
                 self.state.set(TradingState::Enabled);
                 Ok(WorkOutput::ok("resumed: entries route again"))
             }
+            CommandKind::ArmGrant { grant } => {
+                // Refuse before journaling: a rejected arm must leave no row,
+                // so the fold never rebuilds an authority nobody granted.
+                grant.validate_armable().map_err(WorkError::Execution)?;
+                let detail = serde_json::to_string(grant)
+                    .map_err(|e| WorkError::Execution(e.to_string()))?;
+                self.journal_command(ctx, COMMAND_ARM_GRANT_KIND, &detail)?;
+                self.grants.set(Some((**grant).clone()));
+                Ok(WorkOutput::ok("grant armed: authority journaled"))
+            }
+            CommandKind::RevokeGrant { grant_id } => {
+                let matches_live = self
+                    .grants
+                    .get()
+                    .is_some_and(|grant| grant.id.as_str() == grant_id.as_str() && !grant.revoked);
+                if !matches_live {
+                    return Err(WorkError::Execution(format!(
+                        "no live grant {grant_id} to revoke"
+                    )));
+                }
+                let detail = serde_json::json!({ "grant_id": grant_id }).to_string();
+                self.journal_command(ctx, COMMAND_REVOKE_GRANT_KIND, &detail)?;
+                self.grants.revoke(grant_id);
+                Ok(WorkOutput::ok("grant revoked: nothing routes"))
+            }
+            CommandKind::Approve { proposal_id } => {
+                // The decision plane journals authority; the unit holds no risk
+                // token and no ledger, so the approved proposal is emitted for
+                // the caller's ledger + submit path.
+                let proposal = self.decide(
+                    ctx,
+                    proposal_id,
+                    ProposalEvent::Approve,
+                    "operator approved",
+                )?;
+                WorkOutput::typed("approved proposal emitted for submission", &proposal)
+            }
+            CommandKind::Reject {
+                proposal_id,
+                reason,
+            } => {
+                let proposal = self.decide(ctx, proposal_id, ProposalEvent::Reject, reason)?;
+                Ok(WorkOutput::ok(format!(
+                    "rejected {}: {reason}",
+                    proposal.id
+                )))
+            }
             CommandKind::CloseAll { portfolio } => {
                 self.require_portfolio(portfolio)?;
-                self.journal_command(
-                    ctx,
-                    COMMAND_CLOSE_ALL_KIND,
-                    &serde_json::json!({ "portfolio": portfolio }).to_string(),
-                )?;
+                self.journal_command(ctx, COMMAND_CLOSE_ALL_KIND, &close_all_detail(portfolio))?;
                 let groups = self.open_groups();
                 let intents =
                     close_all_intents(&groups, self.limit, &self.proposal_id, &self.strategy)
@@ -587,13 +903,13 @@ impl WorkUnit for CommandUnit {
             }
             CommandKind::CancelAll { portfolio } => {
                 self.require_portfolio(portfolio)?;
-                self.journal_command(
-                    ctx,
-                    COMMAND_CANCEL_ALL_KIND,
-                    &serde_json::json!({ "portfolio": portfolio }).to_string(),
-                )?;
+                self.journal_command(ctx, COMMAND_CANCEL_ALL_KIND, &cancel_all_detail(portfolio))?;
                 let ids = cancel_all_ids(&self.venue.orders());
                 WorkOutput::typed("cancel-all order IDs listed", &ids)
+            }
+            CommandKind::StartLoop => {
+                self.journal_command(ctx, COMMAND_START_LOOP_KIND, "{}")?;
+                Ok(WorkOutput::ok("loop start journaled"))
             }
         }
     }
@@ -759,3 +1075,7 @@ mod tests;
 #[cfg(test)]
 #[path = "../tests/command_plane.rs"]
 mod command_plane_tests;
+
+#[cfg(test)]
+#[path = "../tests/command_arm.rs"]
+mod command_arm_tests;

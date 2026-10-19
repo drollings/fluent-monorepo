@@ -10,6 +10,7 @@ pub mod bar;
 pub mod chain;
 pub mod error;
 pub mod fold;
+pub mod mark;
 pub mod money;
 pub mod series;
 pub mod session;
@@ -22,10 +23,11 @@ pub mod window;
 pub use bar::{validate_new_bar, Adjustment, Bar};
 pub use chain::{
     ChainQuote, ContractId, Greeks, LegSide, OptionContract, OptionKind, Portfolio, PortfolioId,
-    SpreadLeg, SpreadLegs, MAX_SPREAD_LEGS,
+    SpreadLeg, SpreadLegs, DEFAULT_CONTRACT_MULTIPLIER, MAX_SPREAD_LEGS,
 };
 pub use error::TypesError;
 pub use fold::{BucketAccum, FoldEdges};
+pub use mark::MarkBasis;
 pub use money::{parse_scale_guarded, DecimalScaleError, Money, Qty, MAX_DECIMAL_SCALE};
 pub use series::{GapPolicy, LtfView, PriceSource, SeriesContext};
 pub use session::{et_offset_ms, is_dst_et, TradingSession};

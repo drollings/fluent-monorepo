@@ -15,7 +15,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use common_core::hash::fingerprint_framed;
+use common_core::hash::{fingerprint_framed, fnv1a64};
 use fluent_egui::{
     anchor_window, auto_height_range, axis_ticks, candle_body_width, column_candle_geoms,
     column_delta_geoms, crosshair_data, crosshair_lines, needs_column_aggregation,
@@ -54,7 +54,7 @@ use crate::integration_lite::{
 use crate::prefs::{Favorites, SlotPrefs, TerminalPrefs};
 use crate::session::{fmt_boundary_time, time_grid_lines, time_major_unit, SessionBreakCache};
 use crate::topology::SeriesCatalog;
-use crate::views::{load_bundle, ViewsBundle};
+use crate::views::{load_bundle, InboxAction, InboxModel, TicketAction, TicketModel, ViewsBundle};
 use crate::widgets::{
     paint_range_dialog, paint_top_bar, CalendarState, RangeChoice, TopBarAction, TopBarMenuState,
 };
@@ -857,6 +857,8 @@ pub struct ChartWorkspace {
     last_plan_fingerprint: u64,
     /// Last built rows shape: length plus first/last bar times.
     last_rows_shape: (usize, Option<i64>, Option<i64>),
+    /// Content hash of the evaluated prefix at the last build.
+    last_rows_content: u64,
     rows: Vec<ChartRow>,
     histories: HashMap<TimeframeKey, Vec<ChartRow>>,
     /// Full-history Heikin-Ashi rows, transformed once per rows shape at
@@ -960,6 +962,36 @@ pub struct ChartWorkspace {
     /// Bar index under the pointer at the last painted frame, for the
     /// replay's start-at-crosshair control.
     last_hover_bar: Option<usize>,
+    /// Manual-ticket issue drafts: the operator's exact ticket fields. The
+    /// core alone parses what is sent — drafts stay plain strings until the
+    /// issue click builds the intent document.
+    ticket_underlying: String,
+    /// Ticket side draft (`Buy`/`Sell`).
+    ticket_side: String,
+    /// Ticket quantity draft (whole contracts).
+    ticket_quantity: String,
+    /// Ticket limit-price draft (decimal text).
+    ticket_limit: String,
+    /// Ticket client-id sequence: each issue click mints `manual-{seq}`.
+    ticket_seq: u64,
+    /// Ticket refusal, when the last ticket action failed.
+    ticket_error: Option<String>,
+}
+
+/// Content hash of the evaluated prefix: time plus each OHLCV field as raw
+/// bits, so a revised forming bar or an identical-shape symbol switch moves
+/// the skip key while a pure re-render holds it.
+fn rows_content_of(rows: &[ChartRow]) -> u64 {
+    let mut bytes = Vec::with_capacity(rows.len() * 44);
+    for row in rows {
+        bytes.extend_from_slice(&row.time.to_le_bytes());
+        bytes.extend_from_slice(&row.open.to_bits().to_le_bytes());
+        bytes.extend_from_slice(&row.high.to_bits().to_le_bytes());
+        bytes.extend_from_slice(&row.low.to_bits().to_le_bytes());
+        bytes.extend_from_slice(&row.close.to_bits().to_le_bytes());
+        bytes.extend_from_slice(&row.volume.to_le_bytes());
+    }
+    fnv1a64(&bytes)
 }
 
 impl ChartWorkspace {
@@ -998,6 +1030,7 @@ impl ChartWorkspace {
             last_series_revisions: Vec::new(),
             last_plan_fingerprint: 0,
             last_rows_shape: (0, None, None),
+            last_rows_content: 0,
             rows: Vec::new(),
             histories: HashMap::new(),
             heikin: Vec::new(),
@@ -1030,6 +1063,12 @@ impl ChartWorkspace {
             replay_grant_draft: String::new(),
             replay_structure_draft: "Single".to_owned(),
             last_hover_bar: None,
+            ticket_underlying: "SPY".to_owned(),
+            ticket_side: "Buy".to_owned(),
+            ticket_quantity: "1".to_owned(),
+            ticket_limit: String::new(),
+            ticket_seq: 0,
+            ticket_error: None,
         };
         workspace.slot_indicator(INTEGRATION_LITE_ID)?;
         workspace.slot_indicator("fast_mas")?;
@@ -1507,6 +1546,39 @@ impl ChartWorkspace {
         }
         self.apply_auto_height(self.last_plot_width);
         Ok(())
+    }
+
+    /// Build the issue-click intent document from the ticket drafts. Drafts
+    /// stay plain strings; the core alone parses them, so a bad draft
+    /// refuses here with the field named and never reaches the gateway.
+    fn ticket_draft(&self) -> Result<serde_json::Value, String> {
+        let underlying = self.ticket_underlying.trim();
+        if underlying.is_empty() {
+            return Err("ticket needs an underlying".to_owned());
+        }
+        if self.ticket_side != "Buy" && self.ticket_side != "Sell" {
+            return Err("ticket side is Buy or Sell".to_owned());
+        }
+        let quantity: u32 = self
+            .ticket_quantity
+            .trim()
+            .parse()
+            .map_err(|_| "ticket quantity must be whole contracts".to_owned())?;
+        if quantity == 0 {
+            return Err("ticket quantity must be whole contracts".to_owned());
+        }
+        if self.ticket_limit.trim().is_empty() {
+            return Err("ticket needs a limit price".to_owned());
+        }
+        Ok(serde_json::json!({
+            "client_id": format!("manual-{}", self.ticket_seq),
+            "proposal_id": "manual",
+            "strategy": "manual",
+            "underlying": underlying,
+            "side": self.ticket_side,
+            "quantity": quantity,
+            "limit_price": self.ticket_limit.trim(),
+        }))
     }
 
     /// Refresh the dock's cached bundle (health/portfolio/proposals/journal)
@@ -2688,9 +2760,9 @@ impl ChartWorkspace {
     /// builder (names sort, hashes are fixed-width words). Each hash is the
     /// same fingerprint `evaluate` folds into its series keys, so the gate
     /// moves exactly when the evaluations would. This is not a confidence
-    /// threshold — every skip needs a byte-exact match on both this and the
-    /// rows shape, so a skip can never serve stale evaluations. Style edits
-    /// ride a separate component and never touch this key.
+    /// threshold — every skip needs a byte-exact match on this, the rows
+    /// shape, and the evaluated prefix's content hash. Style edits ride a
+    /// separate component and never touch this key.
     fn plan_fingerprint(&self) -> Result<u64, EguiError> {
         let mut hashes = Vec::with_capacity(self.plugins.len());
         for plugin in &self.plugins {
@@ -2716,11 +2788,12 @@ impl ChartWorkspace {
     /// Evaluate every active indicator into the pane cache and readouts, then
     /// rebuild the IntegrationLite delta histogram and the candle/delta tint
     /// for the canvas — unless the exact-equality gate holds. The gate key
-    /// is `(rows_shape, plan_fingerprint)`; a match returns before any
-    /// plugin `evaluate`, and the stored evaluations (which the key proves
-    /// `evaluate` would reproduce deterministically) stay live, so the
-    /// legend never goes stale on a skip. A miss rebuilds everything and
-    /// the revision backdate still guards the derived vectors.
+    /// is `(rows_shape, rows_content, plan_fingerprint)` over the evaluated
+    /// prefix; a match returns before any plugin `evaluate`, and the stored
+    /// evaluations (which the key proves `evaluate` would reproduce
+    /// deterministically) stay live, so the legend never goes stale on a
+    /// skip. A miss rebuilds everything and the revision backdate still
+    /// guards the derived vectors.
     fn recompute(&mut self) -> Result<(), EguiError> {
         self.rebuild_series_plan()?;
         // A live replay evaluates over the decided prefix only: bars past
@@ -2741,6 +2814,7 @@ impl ChartWorkspace {
             self.last_series_revisions.clear();
             self.last_plan_fingerprint = 0;
             self.last_rows_shape = (0, None, None);
+            self.last_rows_content = 0;
             return Ok(());
         }
         let rows_shape = (
@@ -2748,11 +2822,15 @@ impl ChartWorkspace {
             eval_rows.first().map(|row| row.time),
             eval_rows.last().map(|row| row.time),
         );
+        let rows_content = rows_content_of(eval_rows);
         let plan_fingerprint = self.plan_fingerprint()?;
-        if rows_shape == self.last_rows_shape && plan_fingerprint == self.last_plan_fingerprint {
+        if rows_shape == self.last_rows_shape
+            && rows_content == self.last_rows_content
+            && plan_fingerprint == self.last_plan_fingerprint
+        {
             return Ok(());
         }
-        if rows_shape != self.last_rows_shape {
+        if rows_shape != self.last_rows_shape || rows_content != self.last_rows_content {
             self.heikin = heikin_rows_of(&self.rows);
         }
         let order = self.eval_order()?;
@@ -2793,12 +2871,16 @@ impl ChartWorkspace {
             self.evaluations.insert(id, stored);
         }
         revisions.sort_unstable();
-        if revisions == self.last_series_revisions && rows_shape == self.last_rows_shape {
+        if revisions == self.last_series_revisions
+            && rows_shape == self.last_rows_shape
+            && rows_content == self.last_rows_content
+        {
             self.last_plan_fingerprint = plan_fingerprint;
             return Ok(());
         }
         self.last_series_revisions = revisions;
         self.last_rows_shape = rows_shape;
+        self.last_rows_content = rows_content;
         self.last_plan_fingerprint = plan_fingerprint;
         self.sub_pane = self.compute_sub_pane()?;
         self.recompute_tint()?;
@@ -3798,7 +3880,8 @@ impl ChartWorkspace {
             self.ensure_dock_bundle(gateway);
             if let Some(bundle) = &self.dock_bundle {
                 body.label(format!(
-                    "positions={} filled={} fees={} open={}",
+                    "source={} positions={} filled={} fees={} open={}",
+                    bundle.portfolio.source,
                     bundle.portfolio.positions.len(),
                     bundle.portfolio.filled_orders,
                     bundle.portfolio.total_fees,
@@ -3867,13 +3950,54 @@ impl ChartWorkspace {
                 return;
             }
             self.ensure_dock_bundle(gateway);
+            let mut decided = false;
             if let Some(bundle) = &self.dock_bundle {
-                body.label(format!("{} proposals", bundle.proposals.len()));
-                for proposal in bundle.proposals.iter().take(20) {
+                let inbox = InboxModel::of(bundle.proposals.clone());
+                body.label(format!(
+                    "{} actionable · {} settled",
+                    inbox.actionable().len(),
+                    inbox.settled().len()
+                ));
+                let mut actions = Vec::new();
+                for proposal in inbox.actionable() {
+                    body.horizontal(|ui| {
+                        ui.label(format!(
+                            "{} {} {} {}",
+                            proposal.id, proposal.underlying, proposal.direction, proposal.state
+                        ));
+                        if ui.button("approve").clicked() {
+                            actions.push(InboxAction::approve(&proposal.id));
+                        }
+                        if ui.button("reject").clicked() {
+                            actions
+                                .push(InboxAction::reject(&proposal.id, "rejected from terminal"));
+                        }
+                    });
+                }
+                for proposal in inbox.settled().iter().take(20) {
                     body.label(format!(
                         "{} {} {} {}",
                         proposal.id, proposal.underlying, proposal.direction, proposal.state
                     ));
+                }
+                if !actions.is_empty() {
+                    if let Some(gateway) = gateway {
+                        let mut refused = None;
+                        for action in &actions {
+                            if let Err(error) = action.apply(gateway) {
+                                refused = Some(error.to_string());
+                            }
+                        }
+                        match refused {
+                            Some(reason) => {
+                                self.dock_bundle_error =
+                                    Some(format!("decision refused: {reason}"));
+                            }
+                            None => decided = true,
+                        }
+                    } else {
+                        body.label("Connect a gateway to decide");
+                    }
                 }
             } else if let Some(error) = &self.dock_bundle_error {
                 body.colored_label(egui::Color32::RED, error.clone());
@@ -3882,6 +4006,91 @@ impl ChartWorkspace {
                 }
             } else {
                 body.label("No proposals pull yet");
+            }
+            if decided {
+                if let Some(gateway) = gateway {
+                    self.refresh_dock_bundle(gateway);
+                }
+            }
+        });
+        // Manual tickets. The platform never submits these — the operator
+        // places the exact ticket by hand; the panel issues it, records the
+        // human's fill at the ticket price, and reads drift. Import snapshots
+        // ride the route/gateway only (a posted position list, no panel
+        // input), through the same read-only seam.
+        ui.collapsing("tickets", |body| {
+            let Some(gateway) = gateway else {
+                body.label("Connect a gateway to ticket");
+                return;
+            };
+            let model = match TicketModel::pull(gateway) {
+                Ok(model) => model,
+                Err(error) => {
+                    body.colored_label(egui::Color32::RED, error.to_string());
+                    return;
+                }
+            };
+            body.label(format!(
+                "{} waiting · {} drifted",
+                model.waiting().len(),
+                model.drifts().len()
+            ));
+            let mut actions = Vec::new();
+            for ticket in model.waiting() {
+                body.horizontal(|row| {
+                    row.label(&ticket.rendered);
+                    if row.button("confirm at ticket").clicked() {
+                        actions.push(TicketAction::confirm(
+                            &ticket.ticket_id,
+                            serde_json::json!({
+                                "quantity": ticket.quantity,
+                                "price": ticket.limit_price,
+                            }),
+                        ));
+                    }
+                });
+            }
+            for drift in model.drifts() {
+                body.label(format!(
+                    "drift {} {}: {}",
+                    drift.ticket_id, drift.kind, drift.detail
+                ));
+            }
+            body.horizontal(|row| {
+                row.label("issue");
+                row.text_edit_singleline(&mut self.ticket_underlying);
+                row.text_edit_singleline(&mut self.ticket_side);
+                row.text_edit_singleline(&mut self.ticket_quantity);
+                row.text_edit_singleline(&mut self.ticket_limit);
+                if row.button("issue").clicked() {
+                    match self.ticket_draft() {
+                        Ok(ticket) => {
+                            self.ticket_seq += 1;
+                            actions.push(TicketAction::issue(ticket));
+                        }
+                        Err(reason) => self.ticket_error = Some(reason),
+                    }
+                }
+            });
+            if !actions.is_empty() {
+                let mut refused = None;
+                for action in &actions {
+                    if let Err(error) = action.apply(gateway) {
+                        refused = Some(error.to_string());
+                    }
+                }
+                match refused {
+                    Some(reason) => {
+                        self.ticket_error = Some(format!("ticket refused: {reason}"));
+                    }
+                    None => self.ticket_error = None,
+                }
+            }
+            if let Some(error) = &self.ticket_error {
+                body.colored_label(egui::Color32::RED, error.clone());
+                if body.button("dismiss").clicked() {
+                    self.ticket_error = None;
+                }
             }
         });
         // Journals. A live replay serves its own lifecycle rows; the bundle

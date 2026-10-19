@@ -11,12 +11,16 @@
 //! functions returning reasons, and [`BookManager::scan`] collects them as
 //! [`DarkFinding`] records for the journal/telemetry. Nothing here gates a
 //! fill — wiring detectors into the fill path is explicitly out of scope
-//! until the M5 calibration suite is green at 1.0 on controls.
+//! until the depth calibration suite is green at 1.0 on controls.
 //!
 //! Axis labels: [`is_crossed`] and sequence-gap refusal are
 //! **(correctness)**; no depth-imbalance scoring is offered (had it been,
 //! it would be **(task-value)** and must never feed a health gate);
 //! nothing in this module is **(producer-confidence)**.
+//!
+//! **Library-only.** No production caller consumes a depth book today: the
+//! manager and its dark detectors are exercised by tests and the calibration
+//! suite only, and nothing wires them into the fill or health path.
 //!
 //! Mid/width math is never duplicated: top-of-book verdicts delegate to
 //! [`Quote::spread_width`](crate::quote::Quote::spread_width) (and

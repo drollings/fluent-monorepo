@@ -1,8 +1,11 @@
 use super::*;
+use crate::economics::spread_economics;
 use crate::proposal::{Direction, Proposal, ProposalSide, StructureKind};
-use chrono::{TimeZone, Utc};
+use chrono::{NaiveDate, TimeZone, Utc};
 use fluent_wvr::{Describable, FieldAccess};
-use protopyne_types::{Money, Qty};
+use protopyne_types::{
+    ChainQuote, LegSide, Money, OptionContract, OptionKind, Qty, SpreadLeg, SpreadLegs,
+};
 use rust_decimal::Decimal;
 use std::str::FromStr;
 
@@ -211,6 +214,103 @@ fn exhausted_budgets_deny() {
         now(),
     ));
     assert!(reasons.iter().any(|r| r.contains("notional budget")));
+}
+
+#[test]
+fn open_risk_reading_replaces_cumulative_loss_in_the_open_risk_gate() {
+    // Ten closed books leave a lifetime-cumulative tally past the cap
+    // while the flat book holds no open risk: the gate reads the book,
+    // not the ledger's lifetime tally (which stays a budget concern only).
+    let mut grant = grant();
+    grant.budgets.max_loss = money(1_000_000);
+    let usage = GrantUsage::new().used_loss(money(50_000)).build();
+    let (_, market, breakers) = context();
+    // No reading: the caller declared the producer gates irrelevant, so
+    // the lifetime tally alone never trips the open-risk cap.
+    assert!(
+        evaluate_grant(&proposal(), &grant, &usage, &market, &breakers, now()).is_allow(),
+        "no reading is inert, not a denial"
+    );
+    // An observed flat book passes under the cap despite the tally.
+    let flat = GrantMarket::new()
+        .quote_age_secs(5)
+        .spread_width(money(10))
+        .open_risk(money(0))
+        .build();
+    assert!(
+        evaluate_grant(&proposal(), &grant, &usage, &flat, &breakers, now()).is_allow(),
+        "a flat book passes the open-risk cap"
+    );
+    // An observed book over the cap denies even with no consumed history.
+    let full = GrantMarket::new()
+        .quote_age_secs(5)
+        .spread_width(money(10))
+        .open_risk(money(9_900))
+        .build();
+    let reasons = deny_reasons(evaluate_grant(
+        &proposal(),
+        &grant,
+        &GrantUsage::new().build(),
+        &full,
+        &breakers,
+        now(),
+    ));
+    assert!(
+        reasons
+            .iter()
+            .any(|r| r.contains("portfolio open-risk cap exceeded")),
+        "the reading, not the tally, trips the cap, got: {reasons:?}"
+    );
+}
+
+#[test]
+fn contract_budget_counts_leg_contracts() {
+    // The budget axis counts leg contracts: one package unit of a two-leg
+    // vertical demands two, so a grant covering one denies it and one covering
+    // two admits it.
+    let two_leg = Proposal::new()
+        .id("p2".to_owned())
+        .strategy("ribbon".to_owned())
+        .underlying("SPY".to_owned())
+        .direction(Direction::Long)
+        .side(ProposalSide::Entry)
+        .structure(StructureKind::Vertical)
+        .quantity(Qty::new(Decimal::from(1)))
+        .limit_price(money(250))
+        .max_loss(money(300))
+        .notional(money(1_000))
+        .dte_days(30)
+        .conviction(0.8)
+        .activity_score(0.7)
+        .state(crate::proposal::ProposalState::Proposed)
+        .created_at(Utc::now())
+        .legs(spread(vec![
+            leg(call("600"), LegSide::Long),
+            leg(call("610"), LegSide::Short),
+        ]))
+        .build();
+    assert_eq!(two_leg.contracts(), Some(1), "one package unit");
+    assert_eq!(two_leg.leg_contracts(), Some(2), "two leg contracts");
+
+    let (usage, market, breakers) = context();
+    let mut one = grant();
+    one.budgets.max_contracts = 1;
+    let reasons = deny_reasons(evaluate_grant(
+        &two_leg,
+        &one,
+        &usage,
+        &market,
+        &breakers,
+        now(),
+    ));
+    assert!(reasons.iter().any(|r| r.contains("contract budget")));
+
+    let mut two = grant();
+    two.budgets.max_contracts = 2;
+    assert!(
+        evaluate_grant(&two_leg, &two, &usage, &market, &breakers, now()).is_allow(),
+        "a two-contract budget covers the two-leg unit"
+    );
 }
 
 #[test]
@@ -912,4 +1012,206 @@ fn excess_decimal_scale_refuses_on_both_money_paths() {
         patch.set_field("budgets", &tier).is_err(),
         "the tier codec refuses 29-place decimal text"
     );
+}
+
+fn unit(max_loss: i64, notional: i64) -> WorstCaseUnit {
+    WorstCaseUnit {
+        max_loss: money(max_loss),
+        notional: money(notional),
+    }
+}
+
+fn worst_of(grant: &Grant, structures: &[StructureKind]) -> ComputedWorstCase {
+    worst_case_for(
+        grant,
+        structures,
+        |structure| match structure {
+            StructureKind::Vertical => Some(unit(300, 900)),
+            StructureKind::Condor => Some(unit(660, 2_000)),
+            _ => None,
+        },
+        |structure| match structure {
+            StructureKind::Condor => 4,
+            StructureKind::Single => 1,
+            _ => 2,
+        },
+    )
+}
+
+#[test]
+fn a_two_leg_structure_halves_the_contract_implied_trade_cap() {
+    let mut grant = grant();
+    grant.budgets.max_trades = 1_000;
+    grant.budgets.max_contracts = 100;
+    grant.budgets.max_loss = money(1_000_000);
+    grant.budgets.max_notional = money(1_000_000);
+
+    let vertical = worst_case_for(
+        &grant,
+        &[StructureKind::Vertical],
+        |_| Some(unit(300, 900)),
+        |_| 2,
+    );
+    assert_eq!(vertical.max_trades, 50, "100 contracts / 2 legs = 50 units");
+    assert_eq!(vertical.max_contracts, 100);
+    assert_eq!(vertical.max_loss, money(15_000));
+    assert_eq!(vertical.max_notional, money(45_000));
+    assert_eq!(vertical.basis, WorstCaseBasis::ChainDerived);
+
+    // The same unit at one leg per structure keeps the full contract cap.
+    let single = worst_case_for(
+        &grant,
+        &[StructureKind::Vertical],
+        |_| Some(unit(300, 900)),
+        |_| 1,
+    );
+    assert_eq!(single.max_trades, 100);
+}
+
+#[test]
+fn the_worst_structure_bounds_the_exposure() {
+    let mut grant = grant();
+    grant.budgets.max_trades = 10;
+    grant.budgets.max_contracts = 40;
+    grant.budgets.max_loss = money(1_000_000);
+    grant.budgets.max_notional = money(1_000_000);
+
+    // Both structures cap at 10 units; the condor's larger per-unit loss wins.
+    let computed = worst_of(&grant, &[StructureKind::Vertical, StructureKind::Condor]);
+    assert_eq!(computed.max_trades, 10);
+    assert_eq!(computed.max_contracts, 40, "the condor's four legs bind");
+    assert_eq!(computed.max_loss, money(6_600));
+    assert_eq!(computed.basis, WorstCaseBasis::ChainDerived);
+}
+
+#[test]
+fn a_condor_worst_case_uses_the_priced_wider_wing() {
+    let (p90, p95) = (put("90"), put("95"));
+    let (c105, c115) = (call("105"), call("115"));
+    let legs = spread(vec![
+        leg(p90.clone(), LegSide::Long),
+        leg(p95.clone(), LegSide::Short),
+        leg(c105.clone(), LegSide::Short),
+        leg(c115.clone(), LegSide::Long),
+    ]);
+    // 5-wide put wing, 10-wide call wing: the wider wing bounds the package.
+    let quotes = vec![
+        chain_quote(p90, "0.50"),
+        chain_quote(p95, "1.00"),
+        chain_quote(c105, "1.00"),
+        chain_quote(c115, "0.50"),
+    ];
+    let priced = spread_economics(&legs, &quotes, Qty::new(Decimal::ONE), Money::zero())
+        .expect("condor prices");
+    assert_eq!(priced.package_width, Some(money(10)));
+    assert_eq!(priced.max_loss_per_unit, money(9));
+
+    let mut grant = grant();
+    grant.budgets.max_trades = 10;
+    grant.budgets.max_contracts = 40;
+    grant.budgets.max_loss = money(1_000_000);
+    grant.budgets.max_notional = money(1_000_000);
+    let unit = WorstCaseUnit {
+        max_loss: priced.max_loss_per_unit,
+        notional: priced.capital_requirement,
+    };
+    let computed = worst_case_for(&grant, &[StructureKind::Condor], |_| Some(unit), |_| 4);
+    assert_eq!(computed.max_trades, 10);
+    assert_eq!(computed.max_loss, money(90), "10 units of the 9 loss bound");
+}
+
+#[test]
+fn no_chain_echoes_the_budget_fields() {
+    let grant = grant();
+    let computed = worst_case_for(&grant, &[StructureKind::Vertical], |_| None, |_| 2);
+    assert_eq!(computed.basis, WorstCaseBasis::BudgetEcho);
+    assert_eq!(computed.max_trades, grant.budgets.max_trades);
+    assert_eq!(computed.max_contracts, grant.budgets.max_contracts);
+    assert_eq!(computed.max_loss, grant.budgets.max_loss);
+    assert_eq!(computed.max_notional, grant.budgets.max_notional);
+}
+
+#[test]
+fn one_unpriced_structure_forces_the_echo() {
+    let grant = grant();
+    // Vertical prices, Condor does not: the whole bound falls back.
+    let computed = worst_case_for(
+        &grant,
+        &[StructureKind::Vertical, StructureKind::Condor],
+        |structure| (structure == StructureKind::Vertical).then(|| unit(300, 900)),
+        |_| 2,
+    );
+    assert_eq!(computed.basis, WorstCaseBasis::BudgetEcho);
+    assert_eq!(computed.max_loss, grant.budgets.max_loss);
+}
+
+#[test]
+fn the_loss_budget_caps_a_computed_bound() {
+    let mut grant = grant();
+    grant.budgets.max_trades = 1_000;
+    grant.budgets.max_contracts = 100;
+    grant.budgets.max_loss = money(1_000);
+    grant.budgets.max_notional = money(100_000);
+    let computed = worst_case_for(
+        &grant,
+        &[StructureKind::Vertical],
+        |_| Some(unit(300, 900)),
+        |_| 2,
+    );
+    // 50 units × 300 = 15 000, but the loss budget is the hard ceiling.
+    assert_eq!(computed.max_trades, 50);
+    assert_eq!(computed.max_loss, money(1_000));
+}
+
+#[test]
+fn lowering_a_budget_never_raises_the_worst_case() {
+    let base = worst_of(&grant(), &[StructureKind::Vertical]);
+    let tightenings: [fn(&mut Grant); 3] = [
+        |grant| grant.budgets.max_trades -= 1,
+        |grant| grant.budgets.max_contracts /= 2,
+        |grant| grant.budgets.max_loss = money(1),
+    ];
+    for tighten in tightenings {
+        let mut tighter = grant();
+        tighten(&mut tighter);
+        let computed = worst_of(&tighter, &[StructureKind::Vertical]);
+        assert!(computed.max_trades <= base.max_trades);
+        assert!(computed.max_contracts <= base.max_contracts);
+        assert!(computed.max_loss.as_decimal() <= base.max_loss.as_decimal());
+        assert!(computed.max_notional.as_decimal() <= base.max_notional.as_decimal());
+    }
+}
+
+fn put(strike: &str) -> OptionContract {
+    option(OptionKind::Put, strike)
+}
+
+fn call(strike: &str) -> OptionContract {
+    option(OptionKind::Call, strike)
+}
+
+fn option(kind: OptionKind, strike: &str) -> OptionContract {
+    OptionContract::new()
+        .underlying("SPY".to_owned())
+        .expiry(NaiveDate::from_ymd_opt(2026, 7, 17).expect("valid expiry"))
+        .strike(strike.parse().expect("strike"))
+        .kind(kind)
+        .build()
+}
+
+fn leg(contract: OptionContract, side: LegSide) -> SpreadLeg {
+    SpreadLeg::new().contract(contract).side(side).build()
+}
+
+fn spread(legs: Vec<SpreadLeg>) -> SpreadLegs {
+    SpreadLegs::try_new(legs).expect("a defined-risk leg set")
+}
+
+fn chain_quote(contract: OptionContract, price: &str) -> ChainQuote {
+    ChainQuote::new()
+        .contract(contract)
+        .bid(price.parse().expect("bid"))
+        .ask(price.parse().expect("ask"))
+        .timestamp(Utc.with_ymd_and_hms(2026, 7, 1, 14, 30, 0).unwrap())
+        .build()
 }

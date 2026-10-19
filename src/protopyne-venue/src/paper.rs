@@ -15,13 +15,16 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use protopyne_types::{LegSide, Money, SpreadLegs, SymKey, SymbolIndex};
+use protopyne_types::{
+    ContractId, LegSide, Money, OptionContract, OptionKind, SpreadLegs, SymKey, SymbolIndex,
+};
 
 use crate::error::VenueError;
 use crate::order::{
-    CorporateEvent, Fill, OrderIntent, OrderRecord, OrderSide, OrderStatus, Position,
+    CorporateEvent, CorporateEventArgs, CorporateOutcome, Fill, OrderIntent, OrderRecord,
+    OrderSide, OrderStatus, Position,
 };
-use crate::position::{update_from_fill, PositionFill, SpreadPosition};
+use crate::position::{update_from_fill, PositionFill, PositionSide, SpreadPosition};
 use crate::quote::{FeeSchedule, LiquidityFilter, Quote, Slippage, DEFAULT_SLIPPAGE_BPS};
 use crate::venue::{DryRunOutcome, LegExecution, LegQuoteSource, Venue};
 
@@ -52,6 +55,9 @@ struct Book {
     positions: HashMap<SymKey, Position>,
     spread: HashMap<String, SpreadPosition>,
     executions: HashMap<String, Vec<LegExecution>>,
+    /// Cash credited by dividends, per underlying. Dividends are an
+    /// instrument-level credit, not a position mutation.
+    dividends: HashMap<String, Money>,
 }
 
 /// Configuration for one paper venue.
@@ -124,6 +130,12 @@ impl PaperVenue {
     #[must_use]
     pub fn spread_positions(&self) -> HashMap<String, SpreadPosition> {
         common_core::sync::lock(&self.book).spread.clone()
+    }
+
+    /// Dividend cash booked per underlying, for audit and tests.
+    #[must_use]
+    pub fn booked_dividends(&self) -> HashMap<String, Money> {
+        common_core::sync::lock(&self.book).dividends.clone()
     }
 
     fn leg_source(&self) -> Option<Arc<dyn LegQuoteSource>> {
@@ -242,8 +254,9 @@ impl PaperVenue {
         for (index, leg) in spread.legs().iter().enumerate() {
             let occ = leg.contract.occ_symbol();
             // Time-parameterized read: a historical source prices the leg as
-            // of this submission's bar, a live source answers newest — the
-            // same call serves both, so replay and live cannot diverge here.
+            // of this submission's bar, a newest-only source answers newest
+            // only through its explicit opt-in — the same call serves both,
+            // so replay and live cannot diverge here.
             let quote = source
                 .leg_quote_at(&leg.contract, now)
                 .ok_or_else(|| VenueError::Refused(format!("leg {index} ({occ}): no quote")))?;
@@ -295,14 +308,11 @@ impl PaperVenue {
                 intent.side
             )));
         }
-        let filled_quantity: u32 =
-            legs.iter()
-                .map(|leg| leg.quantity)
-                .try_fold(0_u32, |total, qty| {
-                    total
-                        .checked_add(qty)
-                        .ok_or_else(|| VenueError::Refused("filled quantity overflow".to_owned()))
-                })?;
+        // The record's `filled_quantity` counts package units — the order the
+        // venue received. Leg contracts live in the executed leg set, which
+        // `executed_legs` returns and the journal rows carry; budgets count
+        // leg contracts off that set, never off this field.
+        let filled_quantity = intent.quantity;
         let fees_paid = Money::new(legs.iter().map(|leg| leg.fee.as_decimal()).sum());
         let mut record = OrderRecord::pending(intent.clone(), now);
         record.status = OrderStatus::Acknowledged;
@@ -384,12 +394,353 @@ impl PaperVenue {
     }
 }
 
+/// The listed contract behind one per-OCC book entry, when the structure tag
+/// carries it. Positions booked before legs were tagged simply have none.
+fn contract_of(position: &SpreadPosition, occ: &str) -> Option<OptionContract> {
+    position
+        .legs
+        .as_ref()?
+        .legs()
+        .iter()
+        .find(|leg| leg.contract.occ_symbol() == occ)
+        .map(|leg| leg.contract.clone())
+}
+
+/// Close one per-OCC option book at `price`; answer the booked leg and its
+/// realized P&L. A missing book is `None` (expiry covers whatever is open).
+fn close_option_leg(
+    book: &mut Book,
+    occ: &str,
+    price: Money,
+    at: DateTime<Utc>,
+    tag: &str,
+) -> Result<Option<(LegExecution, Money)>, VenueError> {
+    let Some(position) = book.spread.remove(occ) else {
+        return Ok(None);
+    };
+    let side = match position.side {
+        PositionSide::Long => OrderSide::Sell,
+        PositionSide::Short => OrderSide::Buy,
+    };
+    let quantity = position.quantity_abs;
+    let fill = PositionFill::new()
+        .underlying(position.underlying.clone())
+        .side(side)
+        .quantity(quantity)
+        .price(price)
+        .fee(Money::zero())
+        .trade_id(format!("{tag}:{occ}"))
+        .at(at)
+        .build();
+    let (next, exited) = update_from_fill(Some(position), &fill)
+        .map_err(|e| VenueError::Invalid(format!("{tag} close refused for {occ}: {e}")))?;
+    if let Some(remaining) = next {
+        // Never lose a book: restore the remainder, then refuse.
+        book.spread.insert(occ.to_owned(), remaining);
+        return Err(VenueError::Invalid(format!(
+            "{tag} left {occ} open after a full close"
+        )));
+    }
+    let realised = exited.map_or_else(Money::zero, |closed| closed.pnl_realised);
+    Ok(Some((
+        LegExecution {
+            contract: ContractId::new(occ),
+            side,
+            quantity,
+            price,
+            fee: Money::zero(),
+        },
+        realised,
+    )))
+}
+
+/// `Expiry`: close every due option book of the instrument at intrinsic.
+fn expire_at_intrinsic(
+    book: &mut Book,
+    action: &CorporateEventArgs,
+) -> Result<CorporateOutcome, VenueError> {
+    let today = action.at.date_naive();
+    let intrinsic = action.amount.unwrap_or_else(Money::zero);
+    if let Some(named) = &action.contract {
+        if named.expiry > today {
+            return Err(VenueError::Invalid(format!(
+                "expiry at {today} is before contract expiry {}",
+                named.expiry
+            )));
+        }
+    }
+    let due: Vec<String> = book
+        .spread
+        .iter()
+        .filter_map(|(occ, position)| contract_of(position, occ))
+        .filter(|contract| contract.underlying == action.underlying)
+        .filter(|contract| match &action.contract {
+            Some(named) => contract.occ_symbol() == named.occ_symbol(),
+            None => contract.expiry <= today,
+        })
+        .map(|contract| contract.occ_symbol())
+        .collect();
+    if due.is_empty() {
+        if let Some(named) = &action.contract {
+            return Err(VenueError::Invalid(format!(
+                "no position in {}",
+                named.occ_symbol()
+            )));
+        }
+        return Ok(CorporateOutcome {
+            note: format!("expiry on {}: no due option legs", action.underlying),
+            ..CorporateOutcome::default()
+        });
+    }
+    let mut legs = Vec::with_capacity(due.len());
+    let mut affected = Vec::with_capacity(due.len());
+    let mut realised = Decimal::ZERO;
+    for occ in due {
+        if let Some((leg, pnl)) = close_option_leg(book, &occ, intrinsic, action.at, "expiry")? {
+            affected.push(leg.contract.clone());
+            realised += pnl.as_decimal();
+            legs.push(leg);
+        }
+    }
+    Ok(CorporateOutcome {
+        note: format!(
+            "expiry on {}: {} option leg(s) closed at intrinsic {intrinsic}",
+            action.underlying,
+            legs.len()
+        ),
+        legs,
+        stock_leg: None,
+        cash: None,
+        affected,
+        realised: Some(Money::new(realised)),
+        reconcile: false,
+    })
+}
+
+/// `Assignment`/`Exercise`: close the identified option leg at intrinsic and
+/// add the generated stock leg to the net book. The net position is never
+/// deleted; the book is flagged for broker reconciliation.
+fn assign_option(
+    book: &mut Book,
+    action: &CorporateEventArgs,
+    stock_key: SymKey,
+) -> Result<CorporateOutcome, VenueError> {
+    let contract = action.contract.as_ref().ok_or_else(|| {
+        VenueError::Invalid(format!(
+            "{} needs the identified option contract",
+            action.event.label()
+        ))
+    })?;
+    if contract.multiplier == 0 {
+        return Err(VenueError::Invalid(
+            "contract multiplier must be positive, got 0".to_owned(),
+        ));
+    }
+    let occ = contract.occ_symbol();
+    let (option_side, contracts) = {
+        let position = book
+            .spread
+            .get(&occ)
+            .ok_or_else(|| VenueError::Invalid(format!("no position in {occ}")))?;
+        (position.side, position.quantity_abs)
+    };
+    let shares = contracts
+        .checked_mul(contract.multiplier)
+        .ok_or_else(|| VenueError::Invalid(format!("assignment of {occ} overflows shares")))?;
+    let stock_side = match (option_side, contract.kind) {
+        // Short calls and long puts deliver shares to the counterparty;
+        // short puts and long calls take delivery.
+        (PositionSide::Short, OptionKind::Call) | (PositionSide::Long, OptionKind::Put) => {
+            OrderSide::Sell
+        }
+        (PositionSide::Short, OptionKind::Put) | (PositionSide::Long, OptionKind::Call) => {
+            OrderSide::Buy
+        }
+    };
+    let intrinsic = action.amount.unwrap_or_else(Money::zero);
+    let (leg, realised) = close_option_leg(book, &occ, intrinsic, action.at, "assignment")?
+        .ok_or_else(|| VenueError::Invalid(format!("no position in {occ}")))?;
+    let signed = match stock_side {
+        OrderSide::Buy => i64::from(shares),
+        OrderSide::Sell => -i64::from(shares),
+    };
+    let position = book.positions.entry(stock_key).or_insert_with(|| {
+        Position::new()
+            .underlying(action.underlying.clone())
+            .quantity(0)
+            .avg_price(Money::zero())
+            .build()
+    });
+    position.apply(signed, contract.strike);
+    let stock_leg = LegExecution {
+        contract: ContractId::new(action.underlying.clone()),
+        side: stock_side,
+        quantity: shares,
+        price: contract.strike,
+        fee: Money::zero(),
+    };
+    let affected = vec![
+        leg.contract.clone(),
+        ContractId::new(action.underlying.clone()),
+    ];
+    Ok(CorporateOutcome {
+        note: format!(
+            "{} {occ}: option leg closed at {intrinsic}, {stock_side} {shares} shares at {}",
+            action.event.label(),
+            contract.strike
+        ),
+        legs: vec![leg],
+        stock_leg: Some(stock_leg),
+        cash: None,
+        affected,
+        realised: Some(realised),
+        reconcile: true,
+    })
+}
+
+/// `Dividend`: book cash per held share against the instrument and name the
+/// option legs the ex-dividend mark exposes. No position is mutated.
+fn book_dividend(
+    book: &mut Book,
+    action: &CorporateEventArgs,
+    stock_key: Option<SymKey>,
+) -> Result<CorporateOutcome, VenueError> {
+    let per_share = action.amount.ok_or_else(|| {
+        VenueError::Invalid("dividend needs the cash amount per share".to_owned())
+    })?;
+    let shares = stock_key
+        .and_then(|key| book.positions.get(&key))
+        .map_or(0_i64, |position| position.quantity);
+    let cash = Money::new(per_share.as_decimal() * Decimal::from(shares.abs()));
+    if shares != 0 {
+        let booked = book
+            .dividends
+            .entry(action.underlying.clone())
+            .or_insert_with(Money::zero);
+        *booked = Money::new(booked.as_decimal() + cash.as_decimal());
+    }
+    let affected: Vec<ContractId> = book
+        .spread
+        .iter()
+        .filter_map(|(occ, position)| {
+            let contract = contract_of(position, occ)?;
+            (contract.underlying == action.underlying).then(|| ContractId::new(occ.clone()))
+        })
+        .collect();
+    Ok(CorporateOutcome {
+        note: format!(
+            "dividend {per_share}/share on {}: {cash} booked across {} shares, {} option leg(s) marked",
+            action.underlying,
+            shares.abs(),
+            affected.len()
+        ),
+        legs: Vec::new(),
+        stock_leg: None,
+        cash: Some(cash),
+        affected,
+        realised: None,
+        reconcile: false,
+    })
+}
+
+/// `Split`: adjust the net stock position and every option book of the
+/// instrument. Options are re-based as `factor` contracts at `1/factor` the
+/// per-share basis (the 2-for-1 OCC representation), so the strike and the
+/// contract count move while each adjusted contract still delivers the
+/// standard multiplier.
+fn split_instrument(
+    book: &mut Book,
+    action: &CorporateEventArgs,
+    stock_key: Option<SymKey>,
+    factor: u32,
+) -> Result<CorporateOutcome, VenueError> {
+    if factor == 0 {
+        return Err(VenueError::Invalid(
+            "split factor must be new shares per old share (forward splits only); got 0".to_owned(),
+        ));
+    }
+    let divisor = Decimal::from(factor);
+    let mut remap: Vec<(String, String)> = Vec::new();
+    let mut affected = Vec::new();
+    for (occ, position) in &book.spread {
+        let Some(contract) = contract_of(position, occ) else {
+            continue;
+        };
+        if contract.underlying != action.underlying {
+            continue;
+        }
+        let next = contract
+            .adjusted_for_split(factor)
+            .map_err(|e| VenueError::Invalid(e.to_string()))?;
+        affected.push(ContractId::new(occ.clone()));
+        affected.push(ContractId::new(next.occ_symbol()));
+        remap.push((occ.clone(), next.occ_symbol()));
+    }
+    let mut stock_note = String::new();
+    if let Some(position) = stock_key.and_then(|key| book.positions.get_mut(&key)) {
+        position.quantity = position
+            .quantity
+            .checked_mul(i64::from(factor))
+            .ok_or_else(|| {
+                VenueError::Invalid(format!(
+                    "split {factor}-for-1 overflows position in {}",
+                    action.underlying
+                ))
+            })?;
+        position.avg_price = Money::new(position.avg_price.as_decimal() / divisor);
+        stock_note = format!(", stock {} shares", position.quantity);
+    }
+    if remap.is_empty() && stock_note.is_empty() {
+        return Err(VenueError::Invalid(format!(
+            "no position in {}",
+            action.underlying
+        )));
+    }
+    for (old, new) in remap {
+        let Some(mut position) = book.spread.remove(&old) else {
+            continue;
+        };
+        position.quantity_abs = position
+            .quantity_abs
+            .checked_mul(factor)
+            .ok_or_else(|| VenueError::Invalid(format!("split {factor}-for-1 overflows {old}")))?;
+        position.quantity_abs_max = position
+            .quantity_abs_max
+            .checked_mul(factor)
+            .ok_or_else(|| VenueError::Invalid(format!("split {factor}-for-1 overflows {old}")))?;
+        position.price_entry_average =
+            Money::new(position.price_entry_average.as_decimal() / divisor);
+        if let Some(legs) = &position.legs {
+            position.legs = Some(
+                legs.adjusted_for_split(&action.underlying, factor)
+                    .map_err(|e| VenueError::Invalid(e.to_string()))?,
+            );
+        }
+        book.spread.insert(new, position);
+    }
+    Ok(CorporateOutcome {
+        note: format!(
+            "split {factor}-for-1 on {}: option strike /{factor}, contracts ×{factor}{stock_note}",
+            action.underlying
+        ),
+        legs: Vec::new(),
+        stock_leg: None,
+        cash: None,
+        affected,
+        realised: None,
+        reconcile: false,
+    })
+}
+
 impl Venue for PaperVenue {
     fn dry_run(&self, intent: &OrderIntent, _quote: &Quote) -> Result<DryRunOutcome, VenueError> {
-        let notional = intent.limit_price.as_decimal() * Decimal::from(intent.quantity);
         if intent.quantity == 0 {
             return Err(VenueError::Invalid("quantity must be positive".to_owned()));
         }
+        let notional = intent.capital_requirement.map_or_else(
+            || intent.limit_price.as_decimal() * Decimal::from(intent.quantity),
+            Money::as_decimal,
+        );
         if notional > self.config.buying_power.as_decimal() {
             return Err(VenueError::Refused(format!(
                 "notional {notional} exceeds buying power {}",
@@ -400,6 +751,10 @@ impl Venue for PaperVenue {
             allowed: true,
             reserved_notional: Money::new(notional),
         })
+    }
+
+    fn fee_schedule(&self) -> FeeSchedule {
+        self.config.fees
     }
 
     fn submit<'a>(
@@ -478,6 +833,14 @@ impl Venue for PaperVenue {
             .collect()
     }
 
+    fn open_spread_positions(&self) -> Option<Vec<SpreadPosition>> {
+        Some(self.spread_positions().into_values().collect())
+    }
+
+    fn chain_source(&self) -> Option<Arc<dyn LegQuoteSource>> {
+        self.leg_source()
+    }
+
     fn orders(&self) -> Vec<OrderRecord> {
         common_core::sync::lock(&self.book)
             .orders
@@ -496,51 +859,33 @@ impl Venue for PaperVenue {
 
     fn apply_corporate_event(
         &self,
-        underlying: &str,
-        event: CorporateEvent,
-        _now: DateTime<Utc>,
-    ) -> Result<String, VenueError> {
-        // Reads resolve without inserting: an unknown underlying is absence,
-        // and absence closes (expiry) or refuses (split) exactly as before.
-        let key = common_core::sync::lock(&self.symbols).lookup(underlying);
+        action: &CorporateEventArgs,
+    ) -> Result<CorporateOutcome, VenueError> {
+        // Resolve the net-book key before the book lock, in `commit`'s order
+        // (symbols then book). Reads never insert; an assignment must intern
+        // because it always lands a stock leg.
+        let stock_key = match action.event {
+            CorporateEvent::Expiry => None,
+            CorporateEvent::Assignment | CorporateEvent::Exercise => Some(
+                common_core::sync::lock(&self.symbols)
+                    .intern(&action.underlying)
+                    .map_err(|e| VenueError::Invalid(e.to_string()))?,
+            ),
+            CorporateEvent::Dividend | CorporateEvent::Split(_) => {
+                common_core::sync::lock(&self.symbols).lookup(&action.underlying)
+            }
+        };
         let mut book = common_core::sync::lock(&self.book);
-        match event {
-            CorporateEvent::Expiry | CorporateEvent::Assignment => {
-                if let Some(key) = key {
-                    book.positions.remove(&key);
-                }
-                Ok(format!(
-                    "{event:?} on {underlying}: position closed for review"
-                ))
+        match action.event {
+            CorporateEvent::Expiry => expire_at_intrinsic(&mut book, action),
+            CorporateEvent::Assignment | CorporateEvent::Exercise => {
+                let key = stock_key.ok_or_else(|| {
+                    VenueError::Invalid(format!("no symbol table entry for {}", action.underlying))
+                })?;
+                assign_option(&mut book, action, key)
             }
-            CorporateEvent::Dividend(amount) => Ok(format!(
-                "dividend {amount} on {underlying}: cash booked outside position"
-            )),
-            CorporateEvent::Split(factor) => {
-                if factor == 0 {
-                    return Err(VenueError::Invalid(
-                        "split factor must be new shares per old share (forward splits only); got 0".to_owned(),
-                    ));
-                }
-                let Some(key) = key else {
-                    return Err(VenueError::Invalid(format!("no position in {underlying}")));
-                };
-                let position = book
-                    .positions
-                    .get_mut(&key)
-                    .ok_or_else(|| VenueError::Invalid(format!("no position in {underlying}")))?;
-                position.quantity = position
-                    .quantity
-                    .checked_mul(i64::from(factor))
-                    .ok_or_else(|| {
-                        VenueError::Invalid(format!(
-                            "split {factor}-for-1 overflows position in {underlying}"
-                        ))
-                    })?;
-                let price = position.avg_price.as_decimal() / Decimal::from(factor);
-                position.avg_price = Money::new(price);
-                Ok(format!("split {factor}-for-1 on {underlying}"))
-            }
+            CorporateEvent::Dividend => book_dividend(&mut book, action, stock_key),
+            CorporateEvent::Split(factor) => split_instrument(&mut book, action, stock_key, factor),
         }
     }
 }
@@ -552,3 +897,7 @@ mod tests;
 #[cfg(test)]
 #[path = "../tests/paper_legs.rs"]
 mod leg_tests;
+
+#[cfg(test)]
+#[path = "../tests/corporate_actions.rs"]
+mod corporate_action_tests;

@@ -33,7 +33,9 @@ use fluent_concurrency::ladder::first_accept_in_order;
 use protopyne_types::{SymKey, SymbolIndex};
 
 use crate::error::VenueError;
-use crate::order::{CorporateEvent, Fill, OrderIntent, OrderRecord, Position};
+use crate::order::{
+    CorporateEventArgs, CorporateOutcome, Fill, OrderIntent, OrderRecord, Position,
+};
 use crate::quote::Quote;
 use crate::venue::{AccountEvent, BalanceEntry, DryRunOutcome, LegExecution, Venue};
 
@@ -156,6 +158,24 @@ impl Venue for VenueRegistry {
             .dry_run(intent, quote)
     }
 
+    /// Async dry-run read: routes to the venue's async read, so a live
+    /// venue behind the registry still answers natively on the async path.
+    fn dry_run_async<'a>(
+        &'a self,
+        intent: &'a OrderIntent,
+        quote: &'a Quote,
+    ) -> Pin<Box<dyn Future<Output = Result<DryRunOutcome, VenueError>> + Send + 'a>> {
+        Box::pin(async move {
+            let chain = Self::chain_for(self, &intent.underlying)
+                .ok_or_else(|| Self::unrouted(&intent.underlying))?;
+            chain
+                .first()
+                .expect("chain never empty")
+                .dry_run_async(intent, quote)
+                .await
+        })
+    }
+
     fn submit<'a>(
         &'a self,
         intent: OrderIntent,
@@ -234,6 +254,20 @@ impl Venue for VenueRegistry {
         truth
     }
 
+    fn open_spread_positions(&self) -> Option<Vec<crate::position::SpreadPosition>> {
+        let mut truth = Vec::new();
+        for venue in self.chain_all() {
+            truth.extend(venue.open_spread_positions()?);
+        }
+        Some(truth)
+    }
+
+    fn chain_source(&self) -> Option<Arc<dyn crate::venue::LegQuoteSource>> {
+        self.chain_all()
+            .into_iter()
+            .find_map(|venue| venue.chain_source())
+    }
+
     fn orders(&self) -> Vec<OrderRecord> {
         let mut truth = Vec::new();
         for venue in self.chain_all() {
@@ -244,15 +278,14 @@ impl Venue for VenueRegistry {
 
     fn apply_corporate_event(
         &self,
-        underlying: &str,
-        event: CorporateEvent,
-        now: chrono::DateTime<chrono::Utc>,
-    ) -> Result<String, VenueError> {
-        let chain = Self::chain_for(self, underlying).ok_or_else(|| Self::unrouted(underlying))?;
+        action: &CorporateEventArgs,
+    ) -> Result<CorporateOutcome, VenueError> {
+        let chain = Self::chain_for(self, &action.underlying)
+            .ok_or_else(|| Self::unrouted(&action.underlying))?;
         chain
             .first()
             .expect("chain never empty")
-            .apply_corporate_event(underlying, event, now)
+            .apply_corporate_event(action)
     }
 
     fn fetch_balances(&self) -> Vec<BalanceEntry> {

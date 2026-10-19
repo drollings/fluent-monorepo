@@ -229,3 +229,53 @@ fn defaulted_intent_keeps_single_leg_shape() {
     assert_eq!(legged.underlying, built.underlying);
     assert_eq!(legged.quantity, built.quantity);
 }
+
+#[test]
+fn order_shape_derives_from_the_intent() {
+    let flat = OrderIntent::new()
+        .client_id(client_id_for("flat", 0))
+        .proposal_id("flat".to_owned())
+        .strategy("ribbon".to_owned())
+        .underlying("SPY".to_owned())
+        .side(OrderSide::Buy)
+        .quantity(1)
+        .limit_price(money("600.50"))
+        .build();
+    assert_eq!(
+        protopyne_strategy::OrderShape::of(&flat),
+        protopyne_strategy::OrderShape::new(false, true),
+        "a legless day intent is a flat limit order"
+    );
+
+    let legged = OrderIntent::new()
+        .client_id(client_id_for("legged", 0))
+        .proposal_id("legged".to_owned())
+        .strategy("ribbon".to_owned())
+        .underlying("SPY".to_owned())
+        .side(OrderSide::Buy)
+        .quantity(1)
+        .limit_price(money("600.50"))
+        .maybe_legs(Some(vertical_legs()))
+        .build();
+    assert_eq!(
+        protopyne_strategy::OrderShape::of(&legged),
+        protopyne_strategy::OrderShape::new(true, true),
+        "legs make it a spread"
+    );
+
+    let immediate = OrderIntent::new()
+        .client_id(client_id_for("immediate", 0))
+        .proposal_id("immediate".to_owned())
+        .strategy("ribbon".to_owned())
+        .underlying("SPY".to_owned())
+        .side(OrderSide::Buy)
+        .quantity(1)
+        .limit_price(money("600.50"))
+        .time_in_force(TimeInForce::ImmediateOrCancel)
+        .build();
+    assert_eq!(
+        protopyne_strategy::OrderShape::of(&immediate),
+        protopyne_strategy::OrderShape::new(false, false),
+        "the immediate arm is not a resting limit order"
+    );
+}

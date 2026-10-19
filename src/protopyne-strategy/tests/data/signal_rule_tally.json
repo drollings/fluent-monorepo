@@ -1,0 +1,17 @@
+{
+  "cross": {
+    "bars": 30,
+    "firings": 1,
+    "max_conviction": 1.0,
+    "max_conviction_step": 0.0,
+    "rate_per_1000": 33.333333333333336
+  },
+  "thresholds": "mom_length=10;sign_scale=5;fast=3;slow=8;zero_band=(-0.5, 0.5);osc_ceiling=100;state_level=100",
+  "trend": {
+    "bars": 200,
+    "firings": 190,
+    "max_conviction": 1.0,
+    "max_conviction_step": 0.2886739337920232,
+    "rate_per_1000": 950.0
+  }
+}

@@ -1,5 +1,5 @@
 use super::*;
-use crate::order::{CorporateEvent, OrderIntent, OrderSide};
+use crate::order::{CorporateEvent, CorporateEventArgs, OrderIntent, OrderSide};
 use crate::venue::Venue;
 use chrono::{TimeZone, Utc};
 use protopyne_types::Money;
@@ -7,6 +7,14 @@ use rust_decimal::Decimal;
 
 fn money(value: &str) -> Money {
     Money::new(value.parse::<Decimal>().expect("decimal"))
+}
+
+fn action(underlying: &str, event: CorporateEvent) -> CorporateEventArgs {
+    CorporateEventArgs::new()
+        .underlying(underlying.to_owned())
+        .at(now())
+        .event(event)
+        .build()
 }
 
 fn quote() -> Quote {
@@ -113,20 +121,21 @@ async fn corporate_events_resolve_through_keys() {
         .await
         .expect("buy fills");
     venue
-        .apply_corporate_event("SPY", CorporateEvent::Split(2), now())
+        .apply_corporate_event(&action("SPY", CorporateEvent::Split(2)))
         .expect("split applies");
     assert_eq!(sorted_positions(&venue), vec![("SPY".to_owned(), 4)]);
+    // Expiry is option-specific: a stock-only book has nothing due and stays.
     venue
-        .apply_corporate_event("SPY", CorporateEvent::Expiry, now())
-        .expect("expiry applies");
-    assert!(venue.positions().is_empty());
+        .apply_corporate_event(&action("SPY", CorporateEvent::Expiry))
+        .expect("expiry with no option legs is a no-op");
+    assert_eq!(sorted_positions(&venue), vec![("SPY".to_owned(), 4)]);
     // Unknown underlyings behave as before: expiry closes nothing, split
     // refuses with a reason.
     venue
-        .apply_corporate_event("MSFT", CorporateEvent::Expiry, now())
+        .apply_corporate_event(&action("MSFT", CorporateEvent::Expiry))
         .expect("unknown expiry is a no-op");
     assert!(venue
-        .apply_corporate_event("MSFT", CorporateEvent::Split(2), now())
+        .apply_corporate_event(&action("MSFT", CorporateEvent::Split(2)))
         .is_err());
 }
 

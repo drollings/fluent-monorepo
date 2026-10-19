@@ -154,18 +154,30 @@ fn compare_nets<S: std::hash::BuildHasher, T: std::hash::BuildHasher>(
 pub struct ReconcileGate {
     halted: bool,
     alerts: Vec<String>,
+    /// Whether a report was ever observed. The gate itself stays permissive
+    /// until it reads (every existing caller is preserved); the per-bar
+    /// reading fails closed on no reading instead.
+    observed: bool,
 }
 
 impl ReconcileGate {
     /// Observe one reconciliation report. A clean report clears the halt;
-    /// any mismatch sets it and banks the alerts.
+    /// any mismatch sets it and banks the alerts. Either way the gate has
+    /// now answered.
     pub fn observe(&mut self, report: &ReconcileReport) {
+        self.observed = true;
         if report.matched {
             self.halted = false;
         } else {
             self.halted = true;
             self.alerts.extend(report.alerts.iter().cloned());
         }
+    }
+
+    /// Whether the gate has answered at least once.
+    #[must_use]
+    pub fn is_observed(&self) -> bool {
+        self.observed
     }
 
     /// Whether new entries must be refused.
@@ -258,10 +270,18 @@ pub struct ReconcileHandle {
 }
 
 impl ReconcileHandle {
-    /// A handle over an empty gate: nothing observed yet, entries allowed.
+    /// A handle over an empty gate: nothing observed yet. The gate itself
+    /// stays permissive until it reads; the per-bar reading fails closed on
+    /// no reading.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Whether the gate has answered at least once.
+    #[must_use]
+    pub fn is_observed(&self) -> bool {
+        common_core::sync::lock(&self.inner).is_observed()
     }
 
     /// Observe one report: a clean report clears the halt, any mismatch sets

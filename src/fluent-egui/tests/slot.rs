@@ -971,3 +971,97 @@ fn commit_writes_the_style_overrides_and_the_config_together() {
         "the refused color did not"
     );
 }
+
+/// Paint one frame with `input`, returning the actions raised and the
+/// non-text shape count (text needs no fonts; geometry is the signal).
+fn paint_frame(
+    ctx: &egui::Context,
+    input: egui::RawInput,
+    stack: &mut HotSlotStack,
+    theme: &ThemeConfig,
+) -> (Vec<HotSlotAction>, usize) {
+    let actions_cell = std::cell::RefCell::new(Vec::new());
+    let mut output = ctx.run_ui(input, |ui| {
+        let actions = paint_hot_slot_stack(ui, stack, theme).expect("the stack paints");
+        *actions_cell.borrow_mut() = actions;
+    });
+    output.textures_delta.clear();
+    let solids = output
+        .shapes
+        .iter()
+        .filter(|clipped| !matches!(clipped.shape, egui::Shape::Text(_)))
+        .count();
+    (actions_cell.into_inner(), solids)
+}
+
+fn screen() -> Option<egui::Rect> {
+    Some(egui::Rect::from_min_size(
+        egui::Pos2::ZERO,
+        egui::vec2(800.0, 600.0),
+    ))
+}
+
+fn hover_at(pos: egui::Pos2) -> egui::RawInput {
+    egui::RawInput {
+        screen_rect: screen(),
+        events: vec![egui::Event::PointerMoved(pos)],
+        ..Default::default()
+    }
+}
+
+fn press_at(pos: egui::Pos2, pressed: bool) -> egui::RawInput {
+    egui::RawInput {
+        screen_rect: screen(),
+        events: vec![
+            egui::Event::PointerMoved(pos),
+            egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::default(),
+            },
+        ],
+        ..Default::default()
+    }
+}
+
+#[test]
+fn the_eye_paints_the_post_toggle_state_in_the_handling_frame() {
+    let theme = ThemeConfig::default();
+    let (mut stack, _) = stacked();
+    let slot = stack.control_rects()[0].slot_id.clone();
+    assert!(stack.visible(&slot).expect("slot reads"));
+    let eye = stack.control_rects()[0].eye.center();
+    let ctx = egui::Context::default();
+    ctx.set_fonts(egui::FontDefinitions::empty());
+    // Hover, press, and release on the eye: the handling frame both flips
+    // the state and raises the action.
+    let _ = paint_frame(&ctx, hover_at(eye), &mut stack, &theme);
+    let (press_actions, _) = paint_frame(&ctx, press_at(eye, true), &mut stack, &theme);
+    assert!(
+        press_actions.is_empty(),
+        "press alone raises nothing: {press_actions:?}"
+    );
+    let (release_actions, clicked_solids) =
+        paint_frame(&ctx, press_at(eye, false), &mut stack, &theme);
+    assert!(
+        release_actions.contains(&HotSlotAction::ToggledVisibility(slot.clone())),
+        "the release on the eye toggles: {release_actions:?}"
+    );
+    assert!(
+        !stack.visible(&slot).expect("slot reads"),
+        "the state flipped in the handling frame"
+    );
+    // Reference: the same stack flipped through the state API, painted
+    // untouched — the handling frame must paint exactly this.
+    let (mut reference, _) = stacked();
+    reference
+        .toggle_visibility(&slot)
+        .expect("the flip applies");
+    let (_, reference_solids) =
+        paint_frame(&ctx, egui::RawInput::default(), &mut reference, &theme);
+    assert_eq!(
+        clicked_solids, reference_solids,
+        "the handling frame paints the new eye state, not the old one"
+    );
+}

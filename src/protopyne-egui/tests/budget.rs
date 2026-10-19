@@ -178,6 +178,7 @@ fn bloat_ledger_pins_source_files() {
             "views/journal.rs",
             "views/mod.rs",
             "views/portfolio.rs",
+            "views/tickets.rs",
             "widgets.rs",
             "workspace.rs",
         ],

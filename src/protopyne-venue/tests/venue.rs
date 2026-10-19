@@ -94,11 +94,9 @@ impl Venue for OrdersOnly {
 
     fn apply_corporate_event(
         &self,
-        _underlying: &str,
-        _event: crate::order::CorporateEvent,
-        _now: chrono::DateTime<chrono::Utc>,
-    ) -> Result<String, VenueError> {
-        Ok("stub".to_owned())
+        _action: &crate::order::CorporateEventArgs,
+    ) -> Result<crate::order::CorporateOutcome, VenueError> {
+        Ok(crate::order::CorporateOutcome::default())
     }
 
     fn fetch_open_orders(&self) -> Vec<OrderRecord> {

@@ -7,7 +7,10 @@
 //! are uncached reads of fresh gateway state (a repeat pull rebuilds an
 //! equal bundle; a changed journal rebuilds a changed one).
 
-use crate::views::{load_bundle, HealthModel, InboxModel, PortfolioModel, Provenance, ViewsBundle};
+use crate::views::{
+    load_bundle, HealthModel, InboxAction, InboxModel, PortfolioModel, Provenance, TicketAction,
+    TicketModel, ViewsBundle,
+};
 use protopyne_view::{HealthView, MockGateway, PortfolioView, ProposalView, TerminalGateway};
 
 fn mock_gateway() -> MockGateway {
@@ -178,8 +181,10 @@ fn portfolio_model_mirrors_the_dto() {
     let model = PortfolioModel::of(&dto);
     assert_eq!(model.positions, dto.positions);
     assert_eq!(model.filled_orders, dto.filled_orders);
+    assert_eq!(model.total_fees, dto.total_fees);
     assert_eq!(model.open_contracts, dto.open_contracts);
     assert_eq!(model.trading_state, dto.trading_state);
+    assert_eq!(model.source, dto.source, "the source tag echoes the DTO");
     assert!(!model.is_empty(), "the canned position is not empty");
 
     let empty = PortfolioModel::of(&PortfolioView::default());
@@ -370,4 +375,272 @@ fn decided_states_survive_the_bundle_round_trip() {
     assert_eq!(inbox.actionable()[0].state, "PendingHuman");
     assert_eq!(inbox.settled().len(), 1, "the decided row still settles");
     assert_eq!(inbox.settled()[0].state, "Approved");
+}
+
+/// A gateway whose booked read differs from its plain portfolio read.
+struct SourceGateway;
+
+impl TerminalGateway for SourceGateway {
+    fn health(&self) -> Result<HealthView, protopyne_view::GatewayError> {
+        mock_gateway().health()
+    }
+
+    fn proposals(&self) -> Result<Vec<protopyne_view::ProposalView>, protopyne_view::GatewayError> {
+        mock_gateway().proposals()
+    }
+
+    fn portfolio(&self) -> Result<PortfolioView, protopyne_view::GatewayError> {
+        Ok(source_portfolio("rehearsal", 1))
+    }
+
+    fn portfolio_booked(&self) -> Result<PortfolioView, protopyne_view::GatewayError> {
+        Ok(source_portfolio("booked", 2))
+    }
+
+    fn journal(&self) -> Result<Vec<protopyne_view::JournalRowView>, protopyne_view::GatewayError> {
+        mock_gateway().journal()
+    }
+
+    fn chart_bars(&self) -> Result<protopyne_view::ChartBars, protopyne_view::GatewayError> {
+        mock_gateway().chart_bars()
+    }
+
+    fn chart_overlays(
+        &self,
+        kind: &str,
+        period: i64,
+    ) -> Result<protopyne_view::OverlaySeries, protopyne_view::GatewayError> {
+        mock_gateway().chart_overlays(kind, period)
+    }
+
+    fn replay(&self) -> Result<protopyne_view::ReplayView, protopyne_view::GatewayError> {
+        mock_gateway().replay()
+    }
+
+    fn preview_arm(
+        &self,
+        patch: serde_json::Value,
+    ) -> Result<protopyne_view::WorstCase, protopyne_view::GatewayError> {
+        mock_gateway().preview_arm(patch)
+    }
+
+    fn grant_tiers(
+        &self,
+    ) -> Result<std::collections::BTreeMap<String, String>, protopyne_view::GatewayError> {
+        mock_gateway().grant_tiers()
+    }
+
+    fn arm(
+        &self,
+        grant: serde_json::Value,
+    ) -> Result<protopyne_view::ArmResponse, protopyne_view::GatewayError> {
+        mock_gateway().arm(grant)
+    }
+}
+
+fn source_portfolio(source: &str, filled: u64) -> PortfolioView {
+    PortfolioView {
+        positions: Vec::new(),
+        filled_orders: filled,
+        total_fees: protopyne_types::Money::from(0),
+        open_contracts: 0,
+        trading_state: "Enabled".to_owned(),
+        source: source.to_owned(),
+    }
+}
+
+#[test]
+fn load_bundle_prefers_the_booked_portfolio() {
+    let bundle = load_bundle(&SourceGateway).expect("bundle builds");
+    assert_eq!(
+        bundle.portfolio.source, "booked",
+        "the booked read wins over the plain portfolio read"
+    );
+    assert_eq!(bundle.portfolio.filled_orders, 2);
+}
+
+/// A gateway counting every write verb it serves.
+#[derive(Default)]
+struct CountingGateway {
+    approvals: std::sync::atomic::AtomicUsize,
+    rejections: std::sync::atomic::AtomicUsize,
+    issues: std::sync::atomic::AtomicUsize,
+    confirms: std::sync::atomic::AtomicUsize,
+    imports: std::sync::atomic::AtomicUsize,
+}
+
+impl TerminalGateway for CountingGateway {
+    fn health(&self) -> Result<HealthView, protopyne_view::GatewayError> {
+        mock_gateway().health()
+    }
+
+    fn proposals(&self) -> Result<Vec<protopyne_view::ProposalView>, protopyne_view::GatewayError> {
+        mock_gateway().proposals()
+    }
+
+    fn portfolio(&self) -> Result<PortfolioView, protopyne_view::GatewayError> {
+        mock_gateway().portfolio()
+    }
+
+    fn journal(&self) -> Result<Vec<protopyne_view::JournalRowView>, protopyne_view::GatewayError> {
+        mock_gateway().journal()
+    }
+
+    fn chart_bars(&self) -> Result<protopyne_view::ChartBars, protopyne_view::GatewayError> {
+        mock_gateway().chart_bars()
+    }
+
+    fn chart_overlays(
+        &self,
+        kind: &str,
+        period: i64,
+    ) -> Result<protopyne_view::OverlaySeries, protopyne_view::GatewayError> {
+        mock_gateway().chart_overlays(kind, period)
+    }
+
+    fn replay(&self) -> Result<protopyne_view::ReplayView, protopyne_view::GatewayError> {
+        mock_gateway().replay()
+    }
+
+    fn preview_arm(
+        &self,
+        patch: serde_json::Value,
+    ) -> Result<protopyne_view::WorstCase, protopyne_view::GatewayError> {
+        mock_gateway().preview_arm(patch)
+    }
+
+    fn grant_tiers(
+        &self,
+    ) -> Result<std::collections::BTreeMap<String, String>, protopyne_view::GatewayError> {
+        mock_gateway().grant_tiers()
+    }
+
+    fn arm(
+        &self,
+        grant: serde_json::Value,
+    ) -> Result<protopyne_view::ArmResponse, protopyne_view::GatewayError> {
+        mock_gateway().arm(grant)
+    }
+
+    fn approve(&self, _proposal_id: &str) -> Result<(), protopyne_view::GatewayError> {
+        self.approvals
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Ok(())
+    }
+
+    fn reject(
+        &self,
+        _proposal_id: &str,
+        _reason: &str,
+    ) -> Result<(), protopyne_view::GatewayError> {
+        self.rejections
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Ok(())
+    }
+
+    fn issue_ticket(&self, _ticket: serde_json::Value) -> Result<(), protopyne_view::GatewayError> {
+        self.issues
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Ok(())
+    }
+
+    fn confirm_ticket(
+        &self,
+        _ticket_id: &str,
+        _fill: serde_json::Value,
+    ) -> Result<(), protopyne_view::GatewayError> {
+        self.confirms
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Ok(())
+    }
+
+    fn import_tickets(
+        &self,
+        _snapshot: serde_json::Value,
+    ) -> Result<(), protopyne_view::GatewayError> {
+        self.imports
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Ok(())
+    }
+}
+
+#[test]
+fn inbox_action_invokes_exactly_one_gateway_write() {
+    let gateway = CountingGateway::default();
+    InboxAction::approve("waiting")
+        .apply(&gateway)
+        .expect("approve served");
+    assert_eq!(
+        gateway.approvals.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "one approve click is one write"
+    );
+    assert_eq!(
+        gateway.rejections.load(std::sync::atomic::Ordering::SeqCst),
+        0
+    );
+
+    InboxAction::reject("waiting", "too much size")
+        .apply(&gateway)
+        .expect("reject served");
+    assert_eq!(
+        gateway.rejections.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "one reject click is one write"
+    );
+    assert_eq!(
+        gateway.approvals.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "a reject never also approves"
+    );
+}
+
+#[test]
+fn ticket_action_invokes_exactly_one_gateway_write() {
+    let gateway = CountingGateway::default();
+    TicketAction::issue(serde_json::json!({"client_id": "rh-1"}))
+        .apply(&gateway)
+        .expect("issue served");
+    assert_eq!(
+        gateway.issues.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "one issue click is one write"
+    );
+    TicketAction::confirm("rh-1", serde_json::json!({"quantity": 2}))
+        .apply(&gateway)
+        .expect("confirm served");
+    assert_eq!(
+        gateway.confirms.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "one confirm click is one write"
+    );
+    TicketAction::import(serde_json::json!([]))
+        .apply(&gateway)
+        .expect("import served");
+    assert_eq!(
+        gateway.imports.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "one import click is one write"
+    );
+    for (name, count) in [
+        ("approvals", &gateway.approvals),
+        ("rejections", &gateway.rejections),
+    ] {
+        assert_eq!(
+            count.load(std::sync::atomic::Ordering::SeqCst),
+            0,
+            "a ticket action never touches {name}"
+        );
+    }
+}
+
+#[test]
+fn ticket_model_pulls_waiting_and_drifts_from_the_mock() {
+    // The mock's canned wait is the panel's empty-or-one shape: one row
+    // waiting, no drift on record.
+    let model = TicketModel::pull(&mock_gateway()).expect("mock pulls");
+    assert_eq!(model.waiting().len(), 1);
+    assert_eq!(model.waiting()[0].ticket_id, "mock-ticket-1");
+    assert!(model.drifts().is_empty());
+    assert!(!model.is_empty());
 }

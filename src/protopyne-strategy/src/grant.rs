@@ -169,10 +169,12 @@ pub struct TradeThresholds {
         format = "decimal"
     )]
     pub max_spread_width: Money,
-    /// Minimum days to expiry **(task-value)**.
+    /// Minimum days to expiry **(task-value)**, judged against the proposal's
+    /// own instrument.
     #[field(desc = "Minimum days to expiry (tightening raises it)")]
     pub min_dte_days: u32,
-    /// Maximum days to expiry **(task-value)**.
+    /// Maximum days to expiry **(task-value)**, judged against the
+    /// proposal's own instrument.
     #[field(desc = "Maximum days to expiry (tightening lowers it)")]
     pub max_dte_days: u32,
 }
@@ -232,6 +234,126 @@ pub struct GrantBudgets {
 
 json_boundary!(GrantBudgets, "grant budgets");
 
+/// Where a [`ComputedWorstCase`] number came from. Producer-confidence about
+/// the number's provenance, never a verdict on exposure: the screen shows
+/// [`BudgetEcho`](Self::BudgetEcho) as an upper bound, never as a computed
+/// exposure.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum WorstCaseBasis {
+    /// Every permitted structure was priced from a chain: the numbers are
+    /// computed exposures.
+    ChainDerived,
+    /// At least one permitted structure could not be priced: the numbers are
+    /// the grant's own budget fields, an upper bound on exposure.
+    BudgetEcho,
+}
+
+impl WorstCaseBasis {
+    /// The stable wire tag the view layer carries.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::ChainDerived => "ChainDerived",
+            Self::BudgetEcho => "BudgetEcho",
+        }
+    }
+}
+
+/// Worst case for one package unit of a structure, priced from a chain.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorstCaseUnit {
+    /// Worst-case loss for one package unit.
+    pub max_loss: Money,
+    /// Committed notional for one package unit.
+    pub notional: Money,
+}
+
+/// Bounded worst-case exposure of an armed grant: at most the grant's budgets,
+/// tightened by per-structure unit economics when a chain answers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ComputedWorstCase {
+    /// Package units (trades) the binding structure allows.
+    pub max_trades: u32,
+    /// Leg contracts in those units.
+    pub max_contracts: u32,
+    /// Worst-case committed loss.
+    pub max_loss: Money,
+    /// Worst-case committed notional.
+    pub max_notional: Money,
+    /// Provenance of the numbers.
+    pub basis: WorstCaseBasis,
+}
+
+/// Bound an armed grant's exposure from per-structure unit economics.
+///
+/// For every permitted structure the caller prices, the implied package
+/// units are `min(max_trades, max_contracts / legs_per_unit)`, and the worst
+/// case is the largest `units × per-unit` over those structures. Both numbers
+/// are capped by the grant's own loss and notional budgets — a budget is a
+/// hard limit, so [`WorstCaseBasis::BudgetEcho`] is always an upper bound on
+/// what [`WorstCaseBasis::ChainDerived`] can compute. When any permitted
+/// structure cannot be priced (`per_unit` answers `None`) or the structure
+/// list is empty, the numbers fall back to the budget fields.
+#[must_use]
+pub fn worst_case_for(
+    grant: &Grant,
+    structures: &[StructureKind],
+    per_unit: impl Fn(StructureKind) -> Option<WorstCaseUnit>,
+    legs_per_unit: impl Fn(StructureKind) -> u32,
+) -> ComputedWorstCase {
+    let budgets = grant.budgets;
+    let mut worst: Option<(u32, u32, Money, Money)> = None;
+    let mut every_priced = !structures.is_empty();
+    for &structure in structures {
+        let Some(unit) = per_unit(structure) else {
+            every_priced = false;
+            continue;
+        };
+        let legs = legs_per_unit(structure).max(1);
+        let units = budgets.max_trades.min(budgets.max_contracts / legs);
+        let candidate = (
+            units,
+            units * legs,
+            Money::new(unit.max_loss.as_decimal() * Decimal::from(units)),
+            Money::new(unit.notional.as_decimal() * Decimal::from(units)),
+        );
+        if worst.is_none_or(|best| candidate.2.as_decimal() > best.2.as_decimal()) {
+            worst = Some(candidate);
+        }
+    }
+    let Some((max_trades, max_contracts, loss, notional)) = worst.filter(|_| every_priced) else {
+        return exercise_budget_echo(budgets);
+    };
+    ComputedWorstCase {
+        max_trades,
+        max_contracts,
+        max_loss: cheaper(loss, budgets.max_loss),
+        max_notional: cheaper(notional, budgets.max_notional),
+        basis: WorstCaseBasis::ChainDerived,
+    }
+}
+
+/// The budget fields as the worst case: an upper bound on exposure, never a
+/// computed one.
+fn exercise_budget_echo(budgets: GrantBudgets) -> ComputedWorstCase {
+    ComputedWorstCase {
+        max_trades: budgets.max_trades,
+        max_contracts: budgets.max_contracts,
+        max_loss: budgets.max_loss,
+        max_notional: budgets.max_notional,
+        basis: WorstCaseBasis::BudgetEcho,
+    }
+}
+
+/// The smaller of two amounts: a budget is a hard ceiling.
+fn cheaper(left: Money, right: Money) -> Money {
+    if left.as_decimal() <= right.as_decimal() {
+        left
+    } else {
+        right
+    }
+}
+
 /// Budget already consumed. Kept separate from the immutable [`Grant`] so
 /// the evaluator stays a pure function of `(proposal, grant, usage, ...)`.
 #[derive(Debug, Clone, Copy, Builder, PartialEq, Eq, Serialize, Deserialize)]
@@ -288,8 +410,18 @@ pub struct BreakerState {
 pub struct GrantMarket {
     /// Age of the quote in seconds **(correctness)**.
     pub quote_age_secs: u64,
-    /// Current bid/ask spread width **(task-value)**.
+    /// Bid/ask spread width the trade would cross **(task-value)**: the
+    /// package's own width on a leg-attached proposal, the underlying's bar
+    /// spread where no package is priced.
     pub spread_width: Money,
+    /// Observed open committed risk over the book, when the caller owns a
+    /// reading **(task-value)**. `None` skips the open-risk cap: the caller
+    /// declared the producer gates irrelevant at construction (rehearsal).
+    /// A live caller supplies the session producer's reading — observed or
+    /// not — and an unobserved book refuses through the risk gate's
+    /// aggregate caps, never by inventing a zero here.
+    #[serde(default)]
+    pub open_risk: Option<Money>,
 }
 
 /// An immutable arming grant: scope, budgets, three threshold tiers, and
@@ -329,12 +461,10 @@ impl protopyne_types::Validate for Grant {
 
 impl Grant {
     /// Fail-closed structural check: live window, nonzero budgets, and a
-    /// fully named scope. Shared by arming paths; the HTTP route delegates
-    /// here so the rule lives in exactly one place.
+    /// fully named scope. A *revoked* grant is structurally sound and stays
+    /// representable (serde, storage, folds); whether it may be armed is a
+    /// separate arm-time rule in [`Grant::validate_armable`].
     pub fn validate(&self) -> Result<(), String> {
-        if self.revoked {
-            return Err("grant is revoked".to_owned());
-        }
         if self.valid_from >= self.valid_until {
             return Err("grant window is empty".to_owned());
         }
@@ -350,6 +480,18 @@ impl Grant {
                 "grant scope must name strategies, underlyings, structures, and directions"
                     .to_owned(),
             );
+        }
+        Ok(())
+    }
+
+    /// Structural check plus the arm-time rule: a revoked grant authorizes
+    /// nothing, so arming it is refused. Every arming path (the HTTP route and
+    /// the journaled command plane) calls this instead of `validate`, keeping
+    /// the refusal in exactly one place.
+    pub fn validate_armable(&self) -> Result<(), String> {
+        self.validate()?;
+        if self.revoked {
+            return Err("grant is revoked".to_owned());
         }
         Ok(())
     }
@@ -710,7 +852,7 @@ pub fn evaluate_grant(
     if usage.used_trades.saturating_add(1) > grant.budgets.max_trades {
         reasons.push("trade budget exhausted".to_owned());
     }
-    match proposal.contracts() {
+    match proposal.leg_contracts() {
         Some(contracts) => {
             if usage.used_contracts.saturating_add(contracts) > grant.budgets.max_contracts {
                 reasons.push("contract budget exhausted".to_owned());
@@ -771,13 +913,20 @@ pub fn evaluate_grant(
         reasons.push("structure outside grant scope".to_owned());
     }
 
-    budget_exceeded(
-        usage.used_loss.as_decimal(),
-        proposal.max_loss.as_decimal(),
-        grant.portfolio.max_open_risk.as_decimal(),
-        &mut reasons,
-        "portfolio open-risk cap exceeded",
-    );
+    // Open committed risk is a reading from the venue's own book, not the
+    // ledger's lifetime tally: consumed budgets stay monotonic (a closed
+    // book never unspends them), while this cap binds at-rest exposure.
+    // No reading means the caller declared the producer gates irrelevant
+    // (rehearsal) — the cap is inert, never failed open or closed.
+    if let Some(reading) = market.open_risk {
+        budget_exceeded(
+            reading.as_decimal(),
+            proposal.max_loss.as_decimal(),
+            grant.portfolio.max_open_risk.as_decimal(),
+            &mut reasons,
+            "portfolio open-risk cap exceeded",
+        );
+    }
     if market.quote_age_secs > grant.portfolio.quote_max_age_secs {
         reasons.push("quote stale for grant evaluation".to_owned());
     }

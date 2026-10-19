@@ -13,7 +13,7 @@ use protopyne_types::Money;
 use crate::views::{
     ArmResponse, ChartBar, ChartBars, HealthView, JournalRowView, OverlaySeries, PortfolioView,
     PositionView, ProposalView, ReplayStartParams, ReplayStateView, ReplayStepView, ReplayView,
-    SymbolInfoView, WorstCase,
+    SymbolInfoView, TicketDriftView, TicketView, WorstCase,
 };
 
 /// Terminal-gateway failure: transport, shape, or refused submit.
@@ -62,8 +62,8 @@ pub fn validate_symbol_timeframe(symbol: &str, timeframe: &str) -> Result<(), Ga
     Ok(())
 }
 
-/// Neutral read contract: every view the terminal renders, plus the one
-/// core-forwarded submit.
+/// Neutral read contract: every view the terminal renders, plus the
+/// core-forwarded submits.
 ///
 /// Read methods mirror the server routes (`health`, `proposals`,
 /// `portfolio`, `journal`, `chart_bars`, `chart_overlays`, `replay`);
@@ -82,6 +82,15 @@ pub trait TerminalGateway: Send + Sync {
     fn proposals(&self) -> Result<Vec<ProposalView>, GatewayError>;
     /// Aggregate portfolio over the latest run.
     fn portfolio(&self) -> Result<PortfolioView, GatewayError>;
+    /// The venue-booked portfolio: what actually filled on the book, folded
+    /// through the same aggregate the rehearsal projection uses. Additive and
+    /// default-refused — a gateway with no venue book serves [`portfolio`]
+    /// instead.
+    fn portfolio_booked(&self) -> Result<PortfolioView, GatewayError> {
+        Err(GatewayError::Unavailable(
+            "booked portfolio is not served by this gateway".to_owned(),
+        ))
+    }
     /// Journaled lifecycle events in sequence order.
     fn journal(&self) -> Result<Vec<JournalRowView>, GatewayError>;
     /// Chartable bars plus the drop count.
@@ -108,6 +117,111 @@ pub trait TerminalGateway: Send + Sync {
     fn grant_tiers(&self) -> Result<BTreeMap<String, String>, GatewayError>;
     /// Forward a grant document to the core for arming.
     fn arm(&self, grant: serde_json::Value) -> Result<ArmResponse, GatewayError>;
+
+    /// Approve a pending proposal by id: journal the human decision through
+    /// the core's command plane. Additive and default-refused — only a gateway
+    /// backed by a journal over the approval inbox serves it, and the refusal
+    /// names that.
+    fn approve(&self, proposal_id: &str) -> Result<(), GatewayError> {
+        let _ = proposal_id;
+        Err(GatewayError::Unavailable(
+            "proposal decisions are not served by this gateway".to_owned(),
+        ))
+    }
+
+    /// Reject a pending proposal, journaling the human's reason. Additive and
+    /// default-refused beside [`approve`](Self::approve).
+    fn reject(&self, proposal_id: &str, reason: &str) -> Result<(), GatewayError> {
+        let _ = (proposal_id, reason);
+        Err(GatewayError::Unavailable(
+            "proposal decisions are not served by this gateway".to_owned(),
+        ))
+    }
+
+    /// Revoke the live grant by id: journal the revoke row, then re-fold. A
+    /// wrong or absent id refuses. Additive and default-refused — only a
+    /// gateway backed by a journal serves it.
+    fn revoke_grant(&self, grant_id: &str) -> Result<(), GatewayError> {
+        let _ = grant_id;
+        Err(GatewayError::Unavailable(
+            "grant revocation is not served by this gateway".to_owned(),
+        ))
+    }
+
+    /// Close every open group in one portfolio: journal the close-all command
+    /// row for the loop to execute. Additive and default-refused — only a
+    /// gateway backed by the command journal serves it, and execution belongs
+    /// to the loop (exits route even while entries halt), never to the read
+    /// path.
+    fn close_all(&self, portfolio: &str) -> Result<(), GatewayError> {
+        let _ = portfolio;
+        Err(GatewayError::Unavailable(
+            "operator close is not served by this gateway".to_owned(),
+        ))
+    }
+
+    /// Cancel every working order in one portfolio: journal the cancel-all
+    /// command row for the loop to execute. Additive and default-refused
+    /// beside [`close_all`](Self::close_all).
+    fn cancel_all(&self, portfolio: &str) -> Result<(), GatewayError> {
+        let _ = portfolio;
+        Err(GatewayError::Unavailable(
+            "operator cancel is not served by this gateway".to_owned(),
+        ))
+    }
+
+    /// Tickets still waiting for the human's fill report, in ticket order.
+    /// Additive and default-refused — only a gateway backed by the ticket
+    /// journal serves it.
+    fn tickets_waiting(&self) -> Result<Vec<TicketView>, GatewayError> {
+        Err(GatewayError::Unavailable(
+            "manual tickets are not served by this gateway".to_owned(),
+        ))
+    }
+
+    /// Flagged disagreements between tickets, fills, and the import, oldest
+    /// first. Additive and default-refused beside
+    /// [`tickets_waiting`](Self::tickets_waiting).
+    fn ticket_drifts(&self) -> Result<Vec<TicketDriftView>, GatewayError> {
+        Err(GatewayError::Unavailable(
+            "manual tickets are not served by this gateway".to_owned(),
+        ))
+    }
+
+    /// Issue a manual ticket: journal the issued row so the ticket waits as
+    /// unconfirmed. The ticket rides an opaque intent document (the core
+    /// alone parses it); a duplicate wait refuses. Additive and
+    /// default-refused — only a gateway backed by the ticket journal serves
+    /// it.
+    fn issue_ticket(&self, ticket: serde_json::Value) -> Result<(), GatewayError> {
+        let _ = ticket;
+        Err(GatewayError::Unavailable(
+            "manual tickets are not served by this gateway".to_owned(),
+        ))
+    }
+
+    /// Confirm a ticket against the human's fill report: journal the confirm
+    /// row, clear the wait, and flag any drift. The fill rides an opaque
+    /// document (quantity plus average price); an unknown ticket refuses.
+    /// Additive and default-refused beside
+    /// [`issue_ticket`](Self::issue_ticket).
+    fn confirm_ticket(&self, ticket_id: &str, fill: serde_json::Value) -> Result<(), GatewayError> {
+        let _ = (ticket_id, fill);
+        Err(GatewayError::Unavailable(
+            "manual tickets are not served by this gateway".to_owned(),
+        ))
+    }
+
+    /// Apply one read-only import snapshot over the human-executed account:
+    /// the snapshot rides an opaque position list, and a failing read
+    /// reports without touching ticket state. Additive and default-refused
+    /// beside [`issue_ticket`](Self::issue_ticket).
+    fn import_tickets(&self, snapshot: serde_json::Value) -> Result<(), GatewayError> {
+        let _ = snapshot;
+        Err(GatewayError::Unavailable(
+            "manual tickets are not served by this gateway".to_owned(),
+        ))
+    }
 
     /// Selectable instruments, in deterministic order.
     ///
@@ -273,6 +387,7 @@ impl TerminalGateway for MockGateway {
             total_fees: Money::from(2),
             open_contracts: 1,
             trading_state: "Enabled".to_owned(),
+            source: crate::views::PORTFOLIO_SOURCE_BOOKED.to_owned(),
         })
     }
 
@@ -401,6 +516,7 @@ impl TerminalGateway for MockGateway {
             max_contracts: 1,
             max_loss: Money::from(100),
             max_notional: Money::from(1_000),
+            basis: "BudgetEcho".to_owned(),
         })
     }
 
@@ -448,9 +564,28 @@ impl TerminalGateway for MockGateway {
                 max_contracts: 1,
                 max_loss: Money::from(100),
                 max_notional: Money::from(1_000),
+                basis: "BudgetEcho".to_owned(),
             },
             armed: true,
         })
+    }
+
+    fn tickets_waiting(&self) -> Result<Vec<TicketView>, GatewayError> {
+        // One canned wait, consistent with the canned worst case above: the
+        // form's confirm path has a row to act on.
+        Ok(vec![TicketView {
+            ticket_id: "mock-ticket-1".to_owned(),
+            rendered: "buy 1 MOCK @ 100 day [mock-ticket-1]".to_owned(),
+            underlying: "MOCK".to_owned(),
+            side: "Buy".to_owned(),
+            quantity: 1,
+            limit_price: Money::from(100),
+        }])
+    }
+
+    fn ticket_drifts(&self) -> Result<Vec<TicketDriftView>, GatewayError> {
+        // The canned book agrees with itself: no drift on record.
+        Ok(Vec::new())
     }
 }
 

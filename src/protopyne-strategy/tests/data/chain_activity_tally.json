@@ -1,0 +1,37 @@
+{
+  "controls": {
+    "constant": {
+      "bars": 8,
+      "max_score": 0.0,
+      "quiet": true,
+      "scored_bars": 8
+    },
+    "single_strike": {
+      "bars": 8,
+      "max_score": null,
+      "quiet": true,
+      "scored_bars": 0
+    },
+    "stuck_timestamps": {
+      "bars": 8,
+      "max_score": null,
+      "quiet": true,
+      "scored_bars": 0
+    },
+    "zero_size": {
+      "bars": 8,
+      "max_score": null,
+      "quiet": true,
+      "scored_bars": 0
+    }
+  },
+  "floor": 0.2,
+  "operator_accepted": false,
+  "ship_state": "disabled",
+  "thresholds": "band=0.1;max_quote_age_secs=900;floor=0.2",
+  "treatment": {
+    "bars": 6,
+    "min_spearman": 0.5,
+    "spearman": 0.9710083124552245
+  }
+}

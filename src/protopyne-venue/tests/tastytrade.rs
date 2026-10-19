@@ -517,15 +517,13 @@ async fn chain_snapshot_malformed_entry_refuses_the_whole_snapshot() {
         chain_wire(ts, "690", "call", "3", "4"),
         chain_wire(ts, "690", "sideways", "3", "4"),
     ];
-    // One malformed snapshot per attempt: every retry meets the same bad
-    // entry, so the terminal reason names the entry, never a fallback.
+    // Served once: a deterministic entry fault is terminal, so one body
+    // suffices — no retry would ever meet a different entry.
     let bad = snapshot_body(&wires);
-    let (base, count, _) =
-        serve_chain_script(vec![bad.clone(), bad.clone(), bad.clone(), bad]).await;
+    let (base, count, _) = serve_chain_script(vec![bad]).await;
     let transport = transport_for(&base);
     let net = NetCapability::new();
-    // Served repeatedly so a retry would succeed past a transient; the
-    // refusal must be the entry itself, never a partial snapshot.
+    // The refusal is the entry itself, never a partial snapshot.
     let outcome = CURRENT_CAPS
         .scope(
             net_caps(),
@@ -534,15 +532,23 @@ async fn chain_snapshot_malformed_entry_refuses_the_whole_snapshot() {
         .await;
     let reason = outcome.expect_err("a bad entry refuses the snapshot");
     assert!(
+        matches!(reason, TransportError::Terminal(_)),
+        "a deterministic fault is terminal, got: {reason:?}"
+    );
+    assert!(
         reason.to_string().contains("kind"),
         "names the entry fault, got: {reason}"
     );
-    assert!(count.load(Ordering::SeqCst) >= 1);
+    assert_eq!(
+        count.load(Ordering::SeqCst),
+        1,
+        "a terminal fault attempts once"
+    );
 }
 
 #[tokio::test]
 async fn chain_snapshot_empty_quotes_refuse_as_partial_window() {
-    let (base, _, _) = serve_chain_script(vec![r#"{"quotes":[]}"#.to_owned()]).await;
+    let (base, count, _) = serve_chain_script(vec![r#"{"quotes":[]}"#.to_owned()]).await;
     let transport = transport_for(&base);
     let net = NetCapability::new();
     let outcome = CURRENT_CAPS
@@ -552,8 +558,13 @@ async fn chain_snapshot_empty_quotes_refuse_as_partial_window() {
         )
         .await;
     assert!(
-        outcome.is_err(),
-        "an empty snapshot refuses, never an empty file"
+        matches!(outcome, Err(TransportError::Terminal(_))),
+        "an empty window is terminal, never an empty file, got: {outcome:?}"
+    );
+    assert_eq!(
+        count.load(Ordering::SeqCst),
+        1,
+        "an empty snapshot attempts once"
     );
 }
 
@@ -590,4 +601,278 @@ async fn chain_snapshot_missing_auth_or_config_refuses_before_dial() {
         "an unconfigured base refuses without dialing"
     );
     assert_eq!(count.load(Ordering::SeqCst), 0, "still no request");
+}
+
+// ── Order-wire transform ────────────────────────────────────────────────
+
+use chrono::NaiveDate;
+use protopyne_types::{LegSide, OptionContract, OptionKind, SpreadLeg, SpreadLegs};
+
+fn contract(strike: &str, kind: OptionKind) -> OptionContract {
+    OptionContract::new()
+        .underlying("SPY".to_owned())
+        .expiry(NaiveDate::from_ymd_opt(2026, 1, 16).unwrap())
+        .strike(money(strike))
+        .kind(kind)
+        .build()
+}
+
+fn vertical() -> OrderIntent {
+    let legs = SpreadLegs::try_new(vec![
+        SpreadLeg::new()
+            .contract(contract("600", OptionKind::Call))
+            .side(LegSide::Long)
+            .build(),
+        SpreadLeg::new()
+            .contract(contract("605", OptionKind::Call))
+            .side(LegSide::Short)
+            .build(),
+    ])
+    .expect("vertical legs");
+    OrderIntent::new()
+        .client_id("run-7-0#0".to_owned())
+        .proposal_id("run-7-0".to_owned())
+        .strategy("ribbon".to_owned())
+        .underlying("SPY".to_owned())
+        .side(OrderSide::Buy)
+        .quantity(2)
+        .limit_price(money("1.50"))
+        .maybe_legs(Some(legs))
+        .build()
+}
+
+fn condor() -> OrderIntent {
+    let legs = SpreadLegs::try_new(vec![
+        SpreadLeg::new()
+            .contract(contract("590", OptionKind::Put))
+            .side(LegSide::Long)
+            .build(),
+        SpreadLeg::new()
+            .contract(contract("595", OptionKind::Put))
+            .side(LegSide::Short)
+            .build(),
+        SpreadLeg::new()
+            .contract(contract("605", OptionKind::Call))
+            .side(LegSide::Short)
+            .build(),
+        SpreadLeg::new()
+            .contract(contract("610", OptionKind::Call))
+            .side(LegSide::Long)
+            .build(),
+    ])
+    .expect("condor legs");
+    OrderIntent::new()
+        .client_id("run-7-1#0".to_owned())
+        .proposal_id("run-7-1".to_owned())
+        .strategy("ribbon".to_owned())
+        .underlying("SPY".to_owned())
+        .side(OrderSide::Sell)
+        .quantity(1)
+        .limit_price(money("-1.20"))
+        .maybe_legs(Some(legs))
+        .build()
+}
+
+#[test]
+fn order_wire_round_trips_a_vertical_and_a_condor() {
+    for intent in [vertical(), condor()] {
+        let wire = order_wire_of(&intent).expect("wire builds");
+        let back = order_intent_of(&wire).expect("wire rebuilds the intent");
+        assert_eq!(back.client_id, intent.client_id);
+        assert_eq!(back.side, intent.side);
+        assert_eq!(back.quantity, intent.quantity);
+        assert_eq!(back.limit_price, intent.limit_price);
+        assert_eq!(back.time_in_force, intent.time_in_force);
+        assert_eq!(back.underlying, intent.underlying);
+        assert_eq!(back.legs, intent.legs, "legs round-trip by OCC symbol");
+    }
+}
+
+#[test]
+fn signed_package_limit_sets_the_price_effect_and_order_type() {
+    let debit = order_wire_of(&vertical()).expect("debit wire");
+    assert_eq!(debit["price-effect"], "Debit");
+    assert_eq!(debit["price"], "1.50");
+    assert_eq!(debit["order-type"], "Limit");
+    assert_eq!(debit["instrument-type"], "Equity Option");
+    assert_eq!(debit["legs"][0]["action"], "Buy to Open");
+    assert_eq!(debit["legs"][1]["action"], "Sell to Open");
+    assert_eq!(debit["legs"][0]["quantity"], 2);
+
+    let credit = order_wire_of(&condor()).expect("credit wire");
+    assert_eq!(credit["price-effect"], "Credit");
+    assert_eq!(credit["price"], "1.20");
+    assert_eq!(credit["legs"].as_array().expect("legs").len(), 4);
+}
+
+#[test]
+fn a_side_that_disagrees_with_the_signed_limit_refuses() {
+    let mut bad = vertical();
+    bad.side = OrderSide::Sell;
+    assert!(matches!(
+        order_wire_of(&bad),
+        Err(TransportError::Terminal(_))
+    ));
+}
+
+#[test]
+fn venue_statuses_map_to_the_lifecycle() {
+    for (wire, expected) in [
+        ("Live", OrderStatus::Acknowledged),
+        ("Filled", OrderStatus::Filled),
+        ("Cancelled", OrderStatus::Cancelled),
+        ("Rejected", OrderStatus::Rejected),
+        ("Expired", OrderStatus::Expired),
+        ("Received", OrderStatus::Submitted),
+    ] {
+        let wire = serde_json::json!({
+            "data": {"order": {
+                "status": wire,
+                "client-order-id": "run-7-0#0",
+                "price": "1.50",
+                "price-effect": "Debit",
+                "time-in-force": "Day",
+                "instrument-type": "Equity Option",
+                "legs": [
+                    {"action": "Buy to Open", "symbol": "SPY   260116C00600000", "quantity": 2},
+                    {"action": "Sell to Open", "symbol": "SPY   260116C00605000", "quantity": 2}
+                ]
+            }}
+        });
+        let record = order_record_of(&wire, vertical()).expect("record maps");
+        assert_eq!(record.status, expected);
+    }
+}
+
+#[test]
+fn venue_error_envelopes_keep_their_retry_class() {
+    let terminal = envelope_error(&serde_json::json!({
+        "error": {"code": "bad_request", "message": "no"}
+    }))
+    .expect("terminal envelope");
+    assert!(matches!(terminal, TransportError::Terminal(_)));
+    assert!(!terminal.is_retryable());
+
+    let transient = envelope_error(&serde_json::json!({
+        "error": {"code": "rate_limited", "message": "slow"}
+    }))
+    .expect("transient envelope");
+    assert!(matches!(transient, TransportError::Transient(_)));
+    assert!(transient.is_retryable());
+}
+
+#[test]
+fn occ_symbols_parse_back_to_contracts() {
+    let expected = contract("600", OptionKind::Call);
+    let symbol = expected.occ_symbol();
+    assert_eq!(
+        OptionContract::parse_occ_symbol(&symbol).expect("padded root parses"),
+        expected
+    );
+    assert_eq!(
+        OptionContract::parse_occ_symbol(symbol.trim()).expect("trimmed root parses"),
+        expected
+    );
+    assert!(OptionContract::parse_occ_symbol("not-an-occ").is_err());
+}
+
+/// A newest-only stub over fetched quotes: the fetch carries whatever the
+/// wire printed (crossed included); the stub prices newest by declaration.
+struct FetchedChain {
+    quotes: Vec<protopyne_types::ChainQuote>,
+}
+
+impl crate::venue::LegQuoteSource for FetchedChain {
+    fn leg_quote(&self, contract: &protopyne_types::OptionContract) -> Option<crate::quote::Quote> {
+        self.quotes
+            .iter()
+            .rfind(|quote| quote.contract == *contract)
+            .map(|quote| {
+                crate::quote::Quote::new()
+                    .bid(quote.bid)
+                    .ask(quote.ask)
+                    .bid_size(u64::from(quote.bid_size))
+                    .ask_size(u64::from(quote.ask_size))
+                    .ts(quote.timestamp)
+                    .build()
+            })
+    }
+
+    fn newest_ok(&self) -> bool {
+        true
+    }
+}
+
+#[tokio::test]
+async fn chain_snapshot_carries_a_crossed_print_to_the_fill_policy() {
+    use crate::order::OrderSide;
+    use crate::paper::{PaperConfig, PaperVenue};
+    use crate::venue::Venue;
+    use protopyne_types::{LegSide, SpreadLeg, SpreadLegs};
+
+    // The 690 leg prints crossed (bid above ask); the 695 leg is liquid.
+    let ts = "2026-01-09T22:00:00Z";
+    let wires = vec![
+        chain_wire(ts, "690", "call", "4", "3"),
+        chain_wire(ts, "695", "call", "2", "3"),
+    ];
+    let (base, count, _) = serve_chain_script(vec![snapshot_body(&wires)]).await;
+    let transport = transport_for(&base);
+    let net = NetCapability::new();
+    let quotes = CURRENT_CAPS
+        .scope(
+            net_caps(),
+            transport.fetch_chain_snapshot(&net, "SPY", "tok-1"),
+        )
+        .await
+        .expect("a crossed print must not refuse the fetch");
+    assert_eq!(quotes.len(), 2, "the snapshot carries every entry");
+    assert!(
+        quotes[0].is_crossed(),
+        "the crossed print arrives crossed, not repaired"
+    );
+    assert_eq!(count.load(Ordering::SeqCst), 1);
+
+    // The carried print reaches the per-leg fill policy, which refuses the
+    // crossed leg with its own reason instead of the fetch refusing it.
+    let legs = SpreadLegs::try_new(vec![
+        SpreadLeg::new()
+            .contract(quotes[0].contract.clone())
+            .side(LegSide::Long)
+            .ratio(1)
+            .build(),
+        SpreadLeg::new()
+            .contract(quotes[1].contract.clone())
+            .side(LegSide::Short)
+            .ratio(1)
+            .build(),
+    ])
+    .expect("vertical builds");
+    let intent = OrderIntent::new()
+        .client_id("x#0".to_owned())
+        .proposal_id("prop-1".to_owned())
+        .strategy("ribbon".to_owned())
+        .underlying("SPY".to_owned())
+        .side(OrderSide::Buy)
+        .quantity(1)
+        .limit_price(money("5.00"))
+        .maybe_legs(Some(legs))
+        .build();
+    let mut venue = PaperVenue::new(PaperConfig::new().build());
+    venue.set_leg_quotes(std::sync::Arc::new(FetchedChain { quotes }));
+    let single = crate::quote::Quote::new()
+        .bid(money("600.00"))
+        .ask(money("600.10"))
+        .bid_size(50)
+        .ask_size(50)
+        .ts(now())
+        .build();
+    let err = venue
+        .submit(intent, &single, now())
+        .await
+        .expect_err("the crossed leg refuses at the fill policy");
+    assert!(
+        err.to_string().contains("crossed"),
+        "the refusal names the crossed leg, got {err:?}"
+    );
 }

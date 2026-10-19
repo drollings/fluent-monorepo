@@ -44,6 +44,7 @@ fn session() -> TradingSession {
         &SessionConfig::new().build(),
         Arc::new(VenueRegistry::single(venue)),
         VenueStorage::new("test.db".into()),
+        None,
     )
     .expect("boot")
 }
@@ -58,55 +59,9 @@ fn session_with_journal(
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("journal.db");
     let journal = Arc::new(Journal::open(&path).expect("open"));
-    let session = TradingSession::boot(config, registry, VenueStorage::new(path)).expect("boot");
+    let session =
+        TradingSession::boot(config, registry, VenueStorage::new(path), None).expect("boot");
     (session, dir, journal)
-}
-
-fn job(journal: &Arc<Journal>, id: &str) -> SubmitJob {
-    job_for(journal, id, "SPY")
-}
-
-#[tokio::test]
-async fn bounded_intake_drains_without_growing() {
-    // The tightest bound the config allows (one worker, one queue slot, one
-    // credit): sequential submits must all complete — intake credit throttles
-    // the producer and the queue never needs to grow past its single slot.
-    let venue: Arc<dyn Venue> = Arc::new(PaperVenue::new(PaperConfig::new().build()));
-    let config = SessionConfig::new()
-        .workers(1)
-        .queue_capacity(1)
-        .credit_limit(1)
-        .build();
-    let (session, _dir, journal) =
-        session_with_journal(&config, Arc::new(VenueRegistry::single(venue)));
-    for index in 0..3 {
-        let record = session
-            .submit_order(job(&journal, &format!("bound#{index}")))
-            .await
-            .expect("bounded intake drains");
-        assert_eq!(record.filled_quantity, 2);
-    }
-    session.shutdown().await;
-}
-
-fn job_for(journal: &Arc<Journal>, id: &str, underlying: &str) -> SubmitJob {
-    let proposal_id = format!("prop-{id}");
-    SubmitJob {
-        intent: OrderIntent::new()
-            .client_id(id.to_owned())
-            .proposal_id(proposal_id.clone())
-            .strategy("ribbon".to_owned())
-            .underlying(underlying.to_owned())
-            .side(OrderSide::Buy)
-            .quantity(2)
-            .limit_price(money("600.50"))
-            .build(),
-        quote: quote(),
-        at: now(),
-        is_exit: false,
-        approved: approved_for(&proposal_id),
-        journal: Arc::clone(journal),
-    }
 }
 
 /// Risk approval minted for the job's proposal: a healthy entry under
@@ -135,11 +90,14 @@ fn approved_for(proposal_id: &str) -> protopyne_strategy::RiskApproved {
         quote_age_secs: 0,
         clock_skew_secs: 0,
         reconciliation_healthy: true,
-        is_limit_order: true,
-        is_spread: true,
+        facts: protopyne_strategy::PortfolioFacts::unobserved(),
     };
     RiskEngine::new(RiskLimits::default())
-        .check(&proposal, &state)
+        .check(
+            &proposal,
+            protopyne_strategy::OrderShape::new(true, true),
+            &state,
+        )
         .expect("test proposal is healthy")
 }
 
@@ -241,11 +199,9 @@ impl Venue for StubVenue {
 
     fn apply_corporate_event(
         &self,
-        _underlying: &str,
-        _event: crate::order::CorporateEvent,
-        _now: chrono::DateTime<Utc>,
-    ) -> Result<String, crate::error::VenueError> {
-        Ok("stub".to_owned())
+        _action: &crate::order::CorporateEventArgs,
+    ) -> Result<crate::order::CorporateOutcome, crate::error::VenueError> {
+        Ok(crate::order::CorporateOutcome::default())
     }
 }
 
@@ -333,31 +289,34 @@ async fn feed_scope_delivers_closed_bars() {
         count += 1;
     }
     assert_eq!(count, 3);
-    assert!(!session.is_blocked());
     session.shutdown().await;
 }
 
-#[tokio::test]
-async fn pool_fanout_returns_each_verdict() {
-    let venue: Arc<dyn Venue> = Arc::new(PaperVenue::new(PaperConfig::new().build()));
-    let (session, _dir, journal) = session_with_journal(
-        &SessionConfig::new().build(),
-        Arc::new(VenueRegistry::single(venue)),
-    );
-    let record = session
-        .submit_order(job(&journal, "p#0"))
-        .await
-        .expect("fills");
-    assert_eq!(record.filled_quantity, 2);
-    assert_eq!(session.registry().orders().len(), 1);
-    session.shutdown().await;
+/// One entry intent plus its risk token, bound by proposal id: the token
+/// the protocol demands, minted for a healthy entry under default limits.
+fn entry_intent(id: &str, underlying: &str) -> (OrderIntent, protopyne_strategy::RiskApproved) {
+    let proposal_id = format!("prop-{id}");
+    let intent = OrderIntent::new()
+        .client_id(id.to_owned())
+        .proposal_id(proposal_id.clone())
+        .strategy("ribbon".to_owned())
+        .underlying(underlying.to_owned())
+        .side(OrderSide::Buy)
+        .quantity(2)
+        .limit_price(money("600.50"))
+        .build();
+    (intent, approved_for(&proposal_id))
 }
 
-/// A session over a two-venue registry routes each job to its venue: the
-/// stub serves its symbol behind `dyn Venue` while the paper path stays
-/// byte-identical to the bare venue through the whole session stack.
+/// A two-venue registry routes each intent to its venue through the one
+/// order path: the stub serves its symbol behind `dyn Venue` while the
+/// paper path stays byte-identical to the bare venue. The session owns the
+/// registry the protocol routes through — submission itself is the safe
+/// protocol, never a session pool.
 #[tokio::test]
 async fn session_routes_across_two_venues_with_paper_equality() {
+    use crate::submit::safe_submit;
+
     let paper: Arc<dyn Venue> = Arc::new(PaperVenue::new(PaperConfig::new().build()));
     let stub: Arc<dyn Venue> = Arc::new(StubVenue::new());
     let registry = Arc::new(VenueRegistry::single(Arc::clone(&paper)));
@@ -367,27 +326,46 @@ async fn session_routes_across_two_venues_with_paper_equality() {
     registry
         .add_route("SPY", Arc::clone(&paper))
         .expect("route");
-    let (session, _dir, journal) = session_with_journal(&SessionConfig::new().build(), registry);
-    let routed = session
-        .submit_order(job_for(&journal, "x#aapl", "AAPL"))
-        .await
-        .expect("stub serves");
+    let (session, dir, journal) = session_with_journal(&SessionConfig::new().build(), registry);
+    let submit = |intent: OrderIntent, approved: protopyne_strategy::RiskApproved| {
+        let journal = Arc::clone(&journal);
+        let registry = Arc::clone(session.registry());
+        let quote = quote();
+        let at = now();
+        let permit = VenueStorage::new(dir.path().join("journal.db"));
+        async move {
+            let caps = fluent_wvr::CapabilitySet::new().with(permit.clone());
+            fluent_wvr::CURRENT_CAPS
+                .scope(
+                    caps,
+                    safe_submit(
+                        &permit,
+                        &journal,
+                        registry.as_ref(),
+                        &approved,
+                        intent,
+                        &quote,
+                        at,
+                    ),
+                )
+                .await
+        }
+    };
+    let (aapl, aapl_token) = entry_intent("x#aapl", "AAPL");
+    let routed = submit(aapl, aapl_token).await.expect("stub serves");
     assert_eq!(routed.intent.underlying, "AAPL");
     assert_eq!(routed.filled_quantity, 2);
 
-    let paper_job = job_for(&journal, "x#spy", "SPY");
-    let through_session = session
-        .submit_order(paper_job.clone())
-        .await
-        .expect("fills");
+    let (spy, spy_token) = entry_intent("x#spy", "SPY");
+    let through_registry = submit(spy.clone(), spy_token).await.expect("fills");
     let bare_paper = PaperVenue::new(PaperConfig::new().build());
     let direct = bare_paper
-        .submit(paper_job.intent, &paper_job.quote, paper_job.at)
+        .submit(spy, &quote(), now())
         .await
         .expect("paper serves");
     assert_eq!(
-        through_session, direct,
-        "paper path is byte-identical through session + registry"
+        through_registry, direct,
+        "paper path is byte-identical through registry routing"
     );
     assert_eq!(session.registry().orders().len(), 2);
     session.shutdown().await;
@@ -475,18 +453,35 @@ async fn duplicate_registration_fails_the_bar_summary() {
 
 /// A token minted for another proposal refuses before anything journals:
 /// the protocol checks the token first, so a mismatched approval leaves
-/// neither an intent row nor a venue order.
+/// neither an intent row nor a venue order. The session owns the registry
+/// the protocol routes through — the token binds here exactly as it binds
+/// the runner.
 #[tokio::test]
 async fn mismatched_risk_token_refuses_before_any_journal_row() {
+    use crate::submit::safe_submit;
+
     let venue: Arc<dyn Venue> = Arc::new(PaperVenue::new(PaperConfig::new().build()));
     let (session, dir, journal) = session_with_journal(
         &SessionConfig::new().build(),
         Arc::new(VenueRegistry::single(venue)),
     );
-    let mut bad = job_for(&journal, "x#bad", "SPY");
-    bad.approved = approved_for("prop-someone-else");
-    let refusal = session
-        .submit_order(bad)
+    let (intent, _) = entry_intent("x#bad", "SPY");
+    let wrong = approved_for("prop-someone-else");
+    let permit = VenueStorage::new(dir.path().join("journal.db"));
+    let caps = fluent_wvr::CapabilitySet::new().with(permit.clone());
+    let refusal = fluent_wvr::CURRENT_CAPS
+        .scope(
+            caps,
+            safe_submit(
+                &permit,
+                &journal,
+                session.registry().as_ref(),
+                &wrong,
+                intent,
+                &quote(),
+                now(),
+            ),
+        )
         .await
         .expect_err("token must bind");
     assert!(
@@ -505,86 +500,6 @@ async fn mismatched_risk_token_refuses_before_any_journal_row() {
         "the token check precedes the first journal row"
     );
     assert!(session.registry().orders().is_empty());
-    session.shutdown().await;
-}
-
-/// A reconciliation mismatch halts session entries while exits route: the
-/// attached gate binds the submission path, not just the bar graph.
-#[tokio::test]
-async fn reconcile_mismatch_halts_entries_while_exits_route() {
-    use crate::order::Position;
-    use crate::reconcile::{JournalBook, ReconcileMismatch, ReconcileReport, ReconcileSource};
-    use std::collections::HashMap;
-    struct StillBook;
-    impl ReconcileSource for StillBook {
-        fn journal(&self) -> JournalBook {
-            JournalBook::default()
-        }
-        fn venue_positions(&self) -> Vec<Position> {
-            Vec::new()
-        }
-        fn venue_legs(&self) -> HashMap<String, i64> {
-            HashMap::new()
-        }
-    }
-    let venue: Arc<dyn Venue> = Arc::new(PaperVenue::new(PaperConfig::new().build()));
-    let (mut session, _dir, journal) = session_with_journal(
-        &SessionConfig::new().build(),
-        Arc::new(VenueRegistry::single(venue)),
-    );
-    let gate = session.attach_reconcile(Arc::new(StillBook));
-    gate.observe(&ReconcileReport {
-        matched: false,
-        mismatches: vec![ReconcileMismatch {
-            underlying: "SPY".to_owned(),
-            journal_qty: 2,
-            venue_qty: 0,
-            reason: "test drift".to_owned(),
-        }],
-        alerts: vec!["RECONCILE HALT: test drift".to_owned()],
-    });
-    let refusal = session
-        .submit_order(job_for(&journal, "r#entry", "SPY"))
-        .await
-        .expect_err("mismatched books halt entries");
-    assert!(
-        refusal.to_string().contains("disagree") || refusal.to_string().contains("halt"),
-        "refusal names the cause, got: {refusal}"
-    );
-    let mut exit = job_for(&journal, "r#exit", "SPY");
-    exit.is_exit = true;
-    let record = session.submit_order(exit).await.expect("exits route");
-    assert_eq!(record.filled_quantity, 2);
-    session.shutdown().await;
-}
-
-/// An unspliced backfill hole suspends session entries while exits route.
-#[tokio::test]
-async fn backfill_hole_suspends_entries_while_exits_route() {
-    use protopyne_types::{GapPolicy, SeriesContext, Timeframe};
-    let venue: Arc<dyn Venue> = Arc::new(PaperVenue::new(PaperConfig::new().build()));
-    let (mut session, _dir, journal) = session_with_journal(
-        &SessionConfig::new().build(),
-        Arc::new(VenueRegistry::single(venue)),
-    );
-    let gate = session.attach_backfill(
-        SeriesContext::new("SPY", Timeframe::M1, GapPolicy::Dense),
-        Vec::new(),
-        0,
-    );
-    gate.suspend("test hole".to_owned());
-    let refusal = session
-        .submit_order(job_for(&journal, "b#entry", "SPY"))
-        .await
-        .expect_err("unspliced holes suspend entries");
-    assert!(
-        refusal.to_string().contains("suspend") || refusal.to_string().contains("hole"),
-        "refusal names the cause, got: {refusal}"
-    );
-    let mut exit = job_for(&journal, "b#exit", "SPY");
-    exit.is_exit = true;
-    let record = session.submit_order(exit).await.expect("exits route");
-    assert_eq!(record.filled_quantity, 2);
     session.shutdown().await;
 }
 
@@ -685,5 +600,209 @@ async fn session_poll_alerts_delivers_banked_lines_exactly_once() {
         .expect("second poll");
     assert_eq!(replay, 0, "delivery drains: no duplicate pages");
     assert_eq!(sink.alerts().len(), 1);
+    session.shutdown().await;
+}
+
+/// A stub facts producer: observed-unavailable is enough to satisfy boot.
+struct StubFacts;
+
+impl protopyne_strategy::PortfolioFactsSource for StubFacts {
+    fn facts(&self) -> protopyne_strategy::PortfolioFacts {
+        protopyne_strategy::PortfolioFacts::unobserved()
+    }
+}
+
+#[tokio::test]
+async fn boot_refuses_aggregate_caps_without_a_facts_producer() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let storage = VenueStorage::new(dir.path().join("journal.db"));
+    let venue: Arc<dyn Venue> = Arc::new(PaperVenue::new(PaperConfig::new().build()));
+    let registry = Arc::new(VenueRegistry::single(venue));
+    let limits = RiskLimits::new().max_open_risk(1_000.0).build();
+    let config = SessionConfig::new().risk_limits(limits).build();
+
+    let Err(refused) = TradingSession::boot(&config, Arc::clone(&registry), storage.clone(), None)
+    else {
+        panic!("no producer must refuse");
+    };
+    assert!(matches!(refused, VenueError::Invalid(_)));
+
+    let mut session = TradingSession::boot(
+        &config,
+        Arc::clone(&registry),
+        storage.clone(),
+        Some(Arc::new(StubFacts)),
+    )
+    .expect("a producer satisfies the caps");
+    assert!(session.portfolio_facts().is_some());
+    session.attach_portfolio_facts(Arc::new(StubFacts));
+    session.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_session_without_aggregate_caps_boots_without_a_producer() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let storage = VenueStorage::new(dir.path().join("journal.db"));
+    let venue: Arc<dyn Venue> = Arc::new(PaperVenue::new(PaperConfig::new().build()));
+    let registry = Arc::new(VenueRegistry::single(venue));
+    let session = TradingSession::boot(&SessionConfig::new().build(), registry, storage, None)
+        .expect("inert caps need no producer");
+    assert!(session.portfolio_facts().is_none());
+    session.shutdown().await;
+}
+
+/// The session-owned alert poller delivers a breaker trip exactly once on
+/// the edge and never on the level, through the file the operator tails.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn alert_poller_delivers_breaker_trip_once_to_its_file() {
+    use crate::alert::{AlertSink, FileSink};
+    use crate::stream::{StreamBreaker, StreamConfig};
+    use crate::tastytrade::TransportError;
+
+    let venue: Arc<dyn Venue> = Arc::new(PaperVenue::new(PaperConfig::new().build()));
+    let registry = Arc::new(VenueRegistry::single(venue));
+    let mut session = TradingSession::boot(
+        &SessionConfig::new().build(),
+        registry,
+        VenueStorage::new("alert-poller.db".into()),
+        None,
+    )
+    .expect("boot");
+    let breaker = Arc::new(StreamBreaker::new(StreamConfig::new().build()));
+    breaker.record_error(&TransportError::Terminal("gone: scripted".to_owned()));
+    session.attach_stream_breaker(Arc::clone(&breaker));
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("alerts.jsonl");
+    let sink: Arc<dyn AlertSink> = Arc::new(FileSink::new(path.clone()));
+    session.spawn_alert_poller(sink, std::time::Duration::from_millis(10));
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    let first = std::fs::read_to_string(&path).expect("alert file");
+    assert_eq!(
+        first.lines().count(),
+        1,
+        "one trip, one line, got: {first:?}"
+    );
+    assert!(first.contains("BreakerTrip"), "got: {first:?}");
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    let second = std::fs::read_to_string(&path).expect("alert file");
+    assert_eq!(
+        second.lines().count(),
+        1,
+        "a held trip never re-alerts, got: {second:?}"
+    );
+    session.shutdown().await;
+}
+
+/// The poller drains a banked reconcile line exactly once: delivery never
+/// clears the halt, and the drained bank never re-alerts.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn alert_poller_drains_a_reconcile_bank_exactly_once() {
+    use crate::alert::{AlertSink, MemorySink};
+    use crate::order::Position;
+    use crate::reconcile::{JournalBook, ReconcileMismatch, ReconcileReport, ReconcileSource};
+    use std::collections::HashMap;
+
+    struct ScriptedBook;
+    impl ReconcileSource for ScriptedBook {
+        fn journal(&self) -> JournalBook {
+            JournalBook::default()
+        }
+        fn venue_positions(&self) -> Vec<Position> {
+            Vec::new()
+        }
+        fn venue_legs(&self) -> HashMap<String, i64> {
+            HashMap::new()
+        }
+    }
+
+    let venue: Arc<dyn Venue> = Arc::new(PaperVenue::new(PaperConfig::new().build()));
+    let registry = Arc::new(VenueRegistry::single(venue));
+    let mut session = TradingSession::boot(
+        &SessionConfig::new().build(),
+        registry,
+        VenueStorage::new("alert-bank.db".into()),
+        None,
+    )
+    .expect("boot");
+    let gate = session.attach_reconcile(Arc::new(ScriptedBook));
+    gate.observe(&ReconcileReport {
+        matched: false,
+        mismatches: vec![ReconcileMismatch {
+            underlying: "SPY".to_owned(),
+            journal_qty: 2,
+            venue_qty: 0,
+            reason: "scripted drift".to_owned(),
+        }],
+        alerts: vec!["RECONCILE HALT: scripted".to_owned()],
+    });
+    assert!(gate.entries_halted());
+    let sink = MemorySink::new();
+    let serving: Arc<dyn AlertSink> = Arc::new(sink.clone());
+    session.spawn_alert_poller(serving, std::time::Duration::from_millis(10));
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    assert_eq!(sink.alerts().len(), 1, "the bank drains exactly once");
+    assert!(gate.entries_halted(), "delivery never clears the halt");
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    assert_eq!(sink.alerts().len(), 1, "the drained bank never re-alerts");
+    session.shutdown().await;
+}
+
+/// A failing sink reports loudly and delivers nothing twice: the first poll
+/// returns the error, and the drained bank is gone on the second poll —
+/// never redelivered, never retried.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn failing_sink_reports_loudly_and_delivers_nothing_twice() {
+    use crate::alert::{Alert, AlertCursor};
+    use crate::order::Position;
+    use crate::reconcile::{JournalBook, ReconcileMismatch, ReconcileReport, ReconcileSource};
+    use std::collections::HashMap;
+
+    struct Dark;
+    impl crate::alert::AlertSink for Dark {
+        fn send(&self, _alert: &Alert) -> Result<(), crate::VenueError> {
+            Err(crate::VenueError::Alert("dark sink: scripted".to_owned()))
+        }
+    }
+
+    struct ScriptedBook;
+    impl ReconcileSource for ScriptedBook {
+        fn journal(&self) -> JournalBook {
+            JournalBook::default()
+        }
+        fn venue_positions(&self) -> Vec<Position> {
+            Vec::new()
+        }
+        fn venue_legs(&self) -> HashMap<String, i64> {
+            HashMap::new()
+        }
+    }
+
+    let venue: Arc<dyn Venue> = Arc::new(PaperVenue::new(PaperConfig::new().build()));
+    let registry = Arc::new(VenueRegistry::single(venue));
+    let mut session = TradingSession::boot(
+        &SessionConfig::new().build(),
+        registry,
+        VenueStorage::new("alert-dark.db".into()),
+        None,
+    )
+    .expect("boot");
+    let gate = session.attach_reconcile(Arc::new(ScriptedBook));
+    gate.observe(&ReconcileReport {
+        matched: false,
+        mismatches: vec![ReconcileMismatch {
+            underlying: "SPY".to_owned(),
+            journal_qty: 2,
+            venue_qty: 0,
+            reason: "scripted drift".to_owned(),
+        }],
+        alerts: vec!["RECONCILE HALT: scripted".to_owned()],
+    });
+    let mut cursor = AlertCursor::new();
+    let refused = session.poll_alerts(&mut cursor, &Dark, now());
+    assert!(refused.is_err(), "a dark sink reports loudly");
+    let redelivered = session
+        .poll_alerts(&mut cursor, &Dark, now())
+        .expect("an empty poll delivers cleanly");
+    assert_eq!(redelivered, 0, "the drained bank is never redelivered");
     session.shutdown().await;
 }

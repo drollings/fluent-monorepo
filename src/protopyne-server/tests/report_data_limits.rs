@@ -59,6 +59,7 @@ fn bare_report() -> BacktestReport {
         Vec::new(),
         None,
         None,
+        MarkBasis::FillPrice,
     )
 }
 
@@ -118,6 +119,7 @@ fn manifest_without_tape_adds_no_line() {
         Vec::new(),
         None,
         None,
+        MarkBasis::FillPrice,
     );
     assert_eq!(
         report.data_limits,
@@ -151,6 +153,7 @@ fn chained_report() -> BacktestReport {
         Vec::new(),
         None,
         Some(&chain_quotes()),
+        MarkBasis::FillPrice,
     )
 }
 
@@ -201,6 +204,7 @@ fn build_report_without_chains_keeps_the_absence_line_verbatim() {
         Vec::new(),
         None,
         None,
+        MarkBasis::FillPrice,
     );
     assert!(
         report

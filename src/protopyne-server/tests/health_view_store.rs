@@ -92,7 +92,10 @@ fn shared_with(store_health: StoreHealth) -> Shared {
         history_timeframe: Timeframe::M15,
         inbox: Mutex::new(Vec::new()),
         armed: Mutex::new(None),
+        journal: Arc::new(Journal::ephemeral()),
+        journal_permit: VenueStorage::new(std::path::PathBuf::from("test-command-journal")),
         portfolio: Mutex::new(PortfolioView::default()),
+        booked: Mutex::new(Vec::new()),
         feed: tokio::sync::broadcast::channel(16).0,
         trading_state: StateHandle::new(TradingState::Enabled),
         last_command: Mutex::new(None),
@@ -103,6 +106,7 @@ fn shared_with(store_health: StoreHealth) -> Shared {
         replay: Mutex::new(ReplayRegistry::new()),
         chain_history: None,
         history_root: None,
+        tickets: Mutex::new(protopyne_venue::TicketTracker::new()),
     })
 }
 

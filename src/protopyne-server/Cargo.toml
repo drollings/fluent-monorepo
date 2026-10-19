@@ -9,13 +9,13 @@ autobenches = false
 default = []
 # `pine` passes through the kernels Pine runtime for the headless
 # integration proofs and the native-vs-Pine bench. Default-off: the shipped
-# server serves kernels + research only, so the release closure carries no
-# language runtime.
+# server serves the lean kernels closure, so the release carries neither a
+# language runtime nor a dataframe.
 pine = ["protopyne-kernels/pine"]
 
 [dependencies]
 protopyne-types = { path = "../protopyne-types" }
-protopyne-kernels = { path = "../protopyne-kernels", default-features = false, features = ["research"] }
+protopyne-kernels = { path = "../protopyne-kernels", default-features = false }
 protopyne-strategy = { path = "../protopyne-strategy" }
 # The store's `parquet` surface is on the server's data path: the Parquet
 # history arm ingests market OHLCV files through the store's reader, so the

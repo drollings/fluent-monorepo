@@ -664,6 +664,10 @@ lint-no-dup: ## Guardrail: no bespoke ladder/retry/eviction duplicates outside c
 	@! grep -R "tokio::time::sleep.*retry" src/guidance src/coral --include="*.rs" | grep -v "retry_async" | grep -v "retry::" || (echo "FAIL: raw sleep retry loop found"; exit 1)
 	@echo "ok: no bespoke ladder/retry duplicates"
 
+.PHONY: lint-unwired
+lint-unwired: ## Advisory: list public protopyne symbols with no non-test reference outside their file (always exits 0)
+	$(Q)bin/protopyne-unwired-symbols.sh
+
 .PHONY: health
 health: ## Run cargo tarpaulin and verify 85% coverage
 	$(Q)cargo tarpaulin --workspace --fail-under 85

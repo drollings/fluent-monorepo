@@ -6,20 +6,29 @@
 //! suite, the `axum` surface, and a store-backed history arm.
 
 pub mod backtest;
+pub mod boot;
 pub mod chain_history;
 pub mod csv;
 pub mod error;
 pub mod gateway;
 pub mod history;
 pub mod history_root;
+pub mod live;
+pub mod marks;
 pub mod metrics;
+pub(crate) mod operator;
 pub mod parquet;
 pub mod portfolio;
+pub mod rehearsal;
 pub mod replay_session;
 pub mod report;
+pub mod routes;
 pub mod runner;
 pub mod service;
+pub mod trading_loop;
 pub mod transpile;
+pub mod views;
+pub mod walk_forward;
 
 pub use backtest::{
     load_history, quote_for_bar, BacktestConfig, BacktestVenue, HistorySource, LoadedHistory,
@@ -32,6 +41,8 @@ pub use history_root::{
     load_history_path, HistoryCache, HistoryRoot, SkippedFile, TickerLoad, DEFAULT_TICKER,
     HISTORY_ROOT_BASE,
 };
+pub use live::{gate_of, loop_gate, run_live_loop, LiveLoop, LiveLoopOutcome, LoopGate};
+pub use marks::{mark_basis_note, mark_per_unit, mark_position, MarkBasis, MarkPoint};
 pub use metrics::{
     calmar, drawdown_fraction, mean, population_std, profit_factor, sharpe, sortino, step_returns,
     win_rate, TRADING_DAYS_PER_YEAR,
@@ -51,18 +62,23 @@ pub use report::{
 pub use runner::{
     build_replay, checked_order_for, complete_replay, decide_and_submit, equity_curve_for,
     expire_position, report_rsrs, run_backtest, run_backtest_from_source, run_multi_backtest,
-    run_paper_decisions, run_sweep, side_for_direction, snapshot_positions, triple_barrier,
-    walk_forward_split, BacktestRun, BarDecision, BarHealth, CheckedOrder, MultiBacktestRun,
-    MultiRunManifest, MultiSymbolInput, ReplayStep, RunnerConfig, SweepOutcome,
+    run_paper_decisions, run_sweep, side_for_direction, snapshot_positions, submit_approved,
+    triple_barrier, walk_forward_split, BacktestRun, BarDecision, BarHealth, CheckedOrder,
+    MultiBacktestRun, MultiRunManifest, MultiSymbolInput, ReplayStep, RunnerConfig, SweepOutcome,
 };
 pub use service::{
     open_tape_reader, serve, serve_with_tape, tape_serve, timeframe_of_label, AppState, ErrorBody,
     PreviewParams, PreviewResponse, ServerConfig, ServerHandle, TapeMiss, TapeMissKind, TapeReader,
     TapeServe, TapeServeSnapshot, DEFAULT_REPLAY_CHECKPOINT_EVERY, DEFAULT_TAPE_LIMIT,
 };
+pub use trading_loop::TradingLoopExt;
 pub use transpile::{
     calibrate, compile_spike, evaluate_lowered, Binding, CalibrationTally, Hair, Length, Lowered,
     Refusal, SpikeOutcome,
+};
+pub use walk_forward::{
+    run_walk_forward, walk_forward_folds, FoldComparison, WalkForwardFold, WalkForwardFoldRun,
+    WalkForwardManifest, WalkForwardReport, WalkForwardRun, WalkMetrics,
 };
 
 #[cfg(test)]
@@ -72,3 +88,7 @@ mod validate_tests;
 #[cfg(test)]
 #[path = "../tests/common/tape.rs"]
 pub(crate) mod common_tape;
+
+#[cfg(test)]
+#[path = "../tests/doc_claims.rs"]
+mod doc_claims_tests;

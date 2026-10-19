@@ -11,6 +11,7 @@
 //! GO/NO-GO decision recorded in the roadmap.
 
 use super::*;
+use crate::marks::MarkBasis;
 use protopyne_kernels::math::{std_pop, variance_pop, window_mean};
 
 /// The unification hypothesis: one fold skeleton over an abstract scalar.
@@ -336,6 +337,7 @@ fn report_for(curve: &[&str]) -> crate::report::BacktestReport {
         curve.iter().map(|value| money(value)).collect(),
         None,
         None,
+        MarkBasis::FillPrice,
     )
 }
 

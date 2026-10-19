@@ -2,21 +2,34 @@ use super::*;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use chrono::{TimeZone, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 use rust_decimal::prelude::ToPrimitive as _;
 use rust_decimal::Decimal;
 
 use protopyne_strategy::{
     elements::{ExplicitStructure, FixedContracts},
-    BreakerLimits, BreakerState, Direction, FixedSignal, Grant, GrantBudgets, GrantMarket,
-    GrantPermission, GrantScope, GrantUsage, PortfolioThresholds, ProposalSide, ProposalState,
-    RiskEngine, RiskLimits, SignalThresholds, Strategy, StructureKind, TradeThresholds,
+    BreakerLimits, BreakerState, Direction, FixedSignal, Grant, GrantBudgets, GrantLedger,
+    GrantMarket, GrantPermission, GrantScope, MarketData, MarketView, PortfolioThresholds,
+    Proposal, ProposalSide, ProposalState, RiskEngine, RiskLimits, SignalThresholds, Strategy,
+    StructureKind, TradeThresholds,
 };
-use protopyne_types::{Bar, Money};
+use protopyne_types::{Bar, Money, Qty};
 use protopyne_venue::{
     Fault, Journal, PaperConfig, PaperVenue, Recorder, StreamConfig, SupervisedStream,
     TransportError, VenueStorage, SUBMIT_RETRIES,
 };
+
+/// A minimal decision view for direct `decide_and_submit` tests: no bars and
+/// no chain, exactly the economics-only shape those tests exercise.
+const BARE_DATA: MarketData<'static> = MarketData::empty(30);
+
+fn bare_view(closes: &[f64], at: DateTime<Utc>) -> MarketView<'_> {
+    MarketView {
+        data: &BARE_DATA,
+        closes,
+        as_of: at,
+    }
+}
 
 fn money(value: i64) -> Money {
     Money::new(Decimal::from(value))
@@ -123,7 +136,7 @@ fn signature(decision: &BarDecision) -> (Option<Direction>, bool, bool, bool) {
     (
         decision.direction,
         decision.risk_pass,
-        decision.grant_allow,
+        decision.grant_merit,
         decision.submitted,
     )
 }
@@ -254,7 +267,8 @@ async fn backtest_and_paper_reach_identical_decisions() {
         &bars,
         11,
     )
-    .await;
+    .await
+    .expect("the paper run decides");
     assert_eq!(run.decisions.len(), bars.len());
     assert_eq!(paper_decisions.len(), bars.len());
     let backtest_json = serde_json::to_string(&run.decisions).expect("serializable");
@@ -275,6 +289,13 @@ async fn backtest_and_paper_reach_identical_decisions() {
         .fill_assumptions
         .iter()
         .any(|line| line.contains("touch")));
+    assert!(
+        run.report
+            .fill_assumptions
+            .iter()
+            .any(|line| line.contains("fill-model assumption")),
+        "fills must declare slippage as a fill-model assumption"
+    );
     assert!(run.report.greeks_note.contains("unavailable"));
 }
 
@@ -413,6 +434,37 @@ async fn sweep_separates_loose_from_strict_grants() {
     .is_err());
 }
 
+/// The strategy crosses `run_sweep`'s worker pool behind an `Arc`; a
+/// stateless signal must decide identically in every worker, so identical
+/// grants yield identical decisions. A signal that stored per-bar state
+/// behind `&self` would diverge under the pool.
+#[tokio::test]
+async fn sweep_workers_share_a_stateless_strategy_without_leak() {
+    let bars = history();
+    let outcomes = run_sweep(
+        strategy(),
+        RiskLimits::new().build(),
+        &venue_config(),
+        &runner_config(),
+        &bars,
+        vec![grant_with(0.5); 8],
+        11,
+    )
+    .await
+    .expect("sweep runs");
+    assert_eq!(outcomes.len(), 8);
+    let first = &outcomes[0];
+    for outcome in &outcomes {
+        assert_eq!(
+            outcome.decisions, first.decisions,
+            "worker {} must decide like worker 0",
+            outcome.index
+        );
+        assert_eq!(outcome.manifest, first.manifest);
+    }
+    assert!(first.fills > 0, "the shared strategy must fill");
+}
+
 #[tokio::test]
 async fn runner_rejects_empty_history() {
     let strategy = strategy();
@@ -455,8 +507,8 @@ fn runner_helpers_stay_on_the_venue_trait() {
     let venue = PaperVenue::new(PaperConfig::new().build());
     assert!(snapshot_positions(&venue).is_empty());
     let now = Utc.with_ymd_and_hms(2026, 6, 1, 12, 0, 0).unwrap();
-    let note = expire_position(&venue, "SPY", now).expect("expiry journals");
-    assert!(note.contains("SPY"));
+    let outcome = expire_position(&venue, "SPY", now).expect("expiry journals");
+    assert!(outcome.note.contains("SPY"));
     let quote = quote_for_bar(&history()[0], &venue_config()).expect("quotable");
     assert!([None, Some(&quote)]
         .into_iter()
@@ -505,8 +557,10 @@ fn filled_decision(
         conviction: 0.8,
         risk_pass: true,
         risk_reasons: Vec::new(),
-        grant_allow: true,
-        grant_reasons: Vec::new(),
+        grant_merit: true,
+        grant_merit_reasons: Vec::new(),
+        grant_authorized: true,
+        grant_authorization_reasons: Vec::new(),
         submitted: true,
         limit_price: decimal_money(price),
         checked_limit: decimal_money(price),
@@ -514,6 +568,7 @@ fn filled_decision(
         filled_quantity: quantity,
         fill_price: Some(decimal_money(price)),
         fee: Some(decimal_money(fee)),
+        legs: Vec::new(),
         transitions: Vec::new(),
         lifecycle_error: None,
         skipped: None,
@@ -532,8 +587,10 @@ fn flat_decision(bar_index: usize, ts: String) -> BarDecision {
         conviction: 0.0,
         risk_pass: false,
         risk_reasons: Vec::new(),
-        grant_allow: false,
-        grant_reasons: Vec::new(),
+        grant_merit: false,
+        grant_merit_reasons: Vec::new(),
+        grant_authorized: false,
+        grant_authorization_reasons: Vec::new(),
         submitted: false,
         limit_price: Money::new(Decimal::ZERO),
         checked_limit: Money::new(Decimal::ZERO),
@@ -541,6 +598,7 @@ fn flat_decision(bar_index: usize, ts: String) -> BarDecision {
         filled_quantity: 0,
         fill_price: None,
         fee: None,
+        legs: Vec::new(),
         transitions: Vec::new(),
         lifecycle_error: None,
         skipped: Some("warmup".to_owned()),
@@ -688,6 +746,108 @@ fn equity_curve_with_no_decisions_stays_flat() {
     assert!(curve.iter().all(|mark| mark.as_decimal() == Decimal::ZERO));
 }
 
+#[test]
+fn equity_curve_prices_a_package_from_its_legs_once() {
+    let bars = vec![synthetic_bar("100.00", 0)];
+    let mut decision = filled_decision(
+        0,
+        bars[0].ts.to_rfc3339(),
+        Direction::Long,
+        1,
+        "1.5039",
+        "1.30",
+    );
+    // A debit vertical's executed legs back the package: the curve prices the
+    // legs once (buy legs pay, sell legs receive) and marks no share position.
+    // `fill_price` (the package net) and `filled_quantity` (package units) are
+    // never multiplied together — that product was the double count.
+    decision.legs = vec![
+        LegExecution {
+            contract: protopyne_types::ContractId::new("SPY   260717C00600000".to_owned()),
+            side: OrderSide::Buy,
+            quantity: 1,
+            price: decimal_money("2.7027"),
+            fee: decimal_money("0.65"),
+        },
+        LegExecution {
+            contract: protopyne_types::ContractId::new("SPY   260717C00610000".to_owned()),
+            side: OrderSide::Sell,
+            quantity: 1,
+            price: decimal_money("1.1988"),
+            fee: decimal_money("0.65"),
+        },
+    ];
+    let curve = equity_curve_for(&bars, &[decision]);
+    let expected = -(decimal_money("2.7027").as_decimal() - decimal_money("1.1988").as_decimal())
+        - decimal_money("1.30").as_decimal();
+    assert_eq!(curve.len(), 1);
+    assert_eq!(curve[0].as_decimal(), expected);
+}
+
+#[tokio::test]
+async fn the_report_carries_and_names_its_mark_basis() {
+    let bars = history();
+    let run = run_backtest(
+        &strategy(),
+        &risk(),
+        &grant_with(0.5),
+        &venue_config(),
+        &runner_config(),
+        &bars,
+        11,
+    )
+    .await
+    .expect("run");
+    // A config-supplied batch run installs no chain, so the book keeps the
+    // fill-price basis; the report states it rather than leaving it implicit.
+    assert_eq!(run.report.mark_basis, MarkBasis::FillPrice);
+    assert!(
+        run.report
+            .fill_assumptions
+            .iter()
+            .any(|line| line.contains("fill price")),
+        "the report names its mark basis: {:?}",
+        run.report.fill_assumptions
+    );
+}
+
+#[tokio::test]
+async fn a_corporate_action_tape_is_named_in_data_limits() {
+    let bars = history();
+    let tape = vec![protopyne_venue::CorporateEventArgs::new()
+        .underlying("SPY".to_owned())
+        .at(bars[2].ts)
+        .event(protopyne_venue::CorporateEvent::Dividend)
+        .amount(Money::from(1))
+        .build()];
+    let config = BacktestConfig::new()
+        .underlying("SPY".to_owned())
+        .data_version("spy-15m-v1".to_owned())
+        .corporate_actions(tape)
+        .build();
+    let run = run_backtest(
+        &strategy(),
+        &risk(),
+        &grant_with(0.5),
+        &config,
+        &runner_config(),
+        &bars,
+        11,
+    )
+    .await
+    .expect("taped run");
+    assert!(
+        run.report.data_limits.iter().any(|line| {
+            line.contains(
+                "corporate-action tape: 1 event(s) (expiry 0, assignment 0, \
+                 exercise 0, dividend 1, split 0)",
+            )
+        }),
+        "the report names its tape: {:?}",
+        run.report.data_limits
+    );
+}
+
 #[tokio::test]
 async fn quote_config_flows_into_submitted_touch() {
     let bars = history();
@@ -737,6 +897,84 @@ async fn quote_config_flows_into_submitted_touch() {
     );
 }
 
+/// A misconfigured paper run reports the refusal instead of unwinding: the
+/// public entry never panics, and the refusal names the config that failed.
+#[tokio::test]
+async fn a_misconfigured_paper_run_reports_its_refusal_never_a_panic() {
+    let paper = PaperVenue::new(PaperConfig::new().build());
+    let bars = vec![synthetic_bar("690", 0)];
+    for (label, config) in [
+        (
+            "underlying must be named",
+            RunnerConfig::new(
+                " ".to_owned(),
+                "ribbon".to_owned(),
+                money(400),
+                money(2_000),
+                30,
+                0,
+            ),
+        ),
+        (
+            "strategy_name must be named",
+            RunnerConfig::new(
+                "SPY".to_owned(),
+                " ".to_owned(),
+                money(400),
+                money(2_000),
+                30,
+                0,
+            ),
+        ),
+    ] {
+        let outcome = run_paper_decisions(
+            &strategy(),
+            &risk(),
+            &grant_with(0.5),
+            &paper,
+            &config,
+            &bars,
+            11,
+        )
+        .await;
+        assert!(
+            matches!(&outcome, Err(ServerError::Backtest(reason)) if reason == label),
+            "{label} must refuse with its own reason, got {outcome:?}"
+        );
+    }
+    // The valid config on the same venue and bars decides, so the refusal
+    // above is the config's and not the paper path's.
+    assert_eq!(
+        run_paper_decisions(
+            &strategy(),
+            &risk(),
+            &grant_with(0.5),
+            &paper,
+            &runner_config(),
+            &bars,
+            11,
+        )
+        .await
+        .expect("a valid config decides")
+        .len(),
+        bars.len(),
+        "the same call decides every bar once the config is valid"
+    );
+    // Empty history still reads as an empty run, not a refusal.
+    assert!(run_paper_decisions(
+        &strategy(),
+        &risk(),
+        &grant_with(0.5),
+        &paper,
+        &runner_config(),
+        &[],
+        11,
+    )
+    .await
+    .expect("empty history decides nothing")
+    .is_empty());
+}
+
 #[tokio::test]
 async fn paper_path_prices_at_its_labeled_default_spread() {
     let bars = history();
@@ -750,7 +988,8 @@ async fn paper_path_prices_at_its_labeled_default_spread() {
         &bars,
         11,
     )
-    .await;
+    .await
+    .expect("the paper run decides");
     let labeled = BacktestConfig::new()
         .underlying("SPY".to_owned())
         .data_version("paper-synthetic".to_owned())
@@ -799,7 +1038,8 @@ async fn breaker_trips_past_the_configured_max_and_disarms_entries() {
         &bars,
         11,
     )
-    .await;
+    .await
+    .expect("the paper run decides");
     for (index, decision) in decisions.iter().enumerate().take(4) {
         assert!(
             !decision.submitted,
@@ -816,7 +1056,7 @@ async fn breaker_trips_past_the_configured_max_and_disarms_entries() {
             index + 1
         );
         assert!(
-            decision.risk_pass && decision.grant_allow,
+            decision.risk_pass && decision.grant_merit,
             "merit still allows on bar {index}"
         );
     }
@@ -831,7 +1071,7 @@ async fn breaker_trips_past_the_configured_max_and_disarms_entries() {
             decision.skipped
         );
         assert!(
-            decision.risk_pass && decision.grant_allow,
+            decision.risk_pass && decision.grant_merit,
             "bar {index}: disarm must not rewrite the merit verdict"
         );
     }
@@ -860,7 +1100,8 @@ async fn errors_capped_at_the_max_still_arm_and_reset_on_success() {
         &bars,
         11,
     )
-    .await;
+    .await
+    .expect("the paper run decides");
     for decision in decisions.iter().take(3) {
         assert!(transport_skipped(decision).contains("connection dropped"));
         assert!(
@@ -881,6 +1122,49 @@ async fn errors_capped_at_the_max_still_arm_and_reset_on_success() {
 }
 
 #[tokio::test]
+async fn a_retryable_submission_failure_retains_its_budget_reservation() {
+    let bars = history();
+    let bar = &bars[0];
+    let venue = PaperVenue::new(PaperConfig::new().build());
+    // Burn the protocol's whole retry budget so the verdict is unknown.
+    for _ in 0..SUBMIT_RETRIES {
+        venue.inject(Fault::DropConnection);
+    }
+    let ledger = GrantLedger::new(grant_with(0.5));
+    let closes = vec![bar.c.to_f64().expect("representable close")];
+    let view = bare_view(&closes, bar.ts);
+    let journal = Journal::ephemeral();
+    let recorder = Recorder::ephemeral(&journal);
+    let decision = decide_and_submit(
+        &strategy(),
+        &risk(),
+        &ledger,
+        &venue,
+        &recorder,
+        &venue_config(),
+        BarHealth::rehearsed(),
+        0,
+        bar,
+        &view,
+        &runner_config(),
+        11,
+    )
+    .await;
+    assert!(!decision.submitted);
+    assert!(transport_skipped(&decision).contains("connection dropped"));
+    assert_eq!(
+        ledger.usage().used_trades,
+        0,
+        "an unresolved verdict consumes no budget"
+    );
+    assert_eq!(
+        ledger.pending().used_trades,
+        1,
+        "the reservation stays pending until query-by-ID resolves it"
+    );
+}
+
+#[tokio::test]
 async fn merit_denials_never_feed_the_breaker() {
     let bars = history();
     let venue = PaperVenue::new(PaperConfig::new().build());
@@ -896,7 +1180,8 @@ async fn merit_denials_never_feed_the_breaker() {
         &bars,
         11,
     )
-    .await;
+    .await
+    .expect("the paper run decides");
     assert!(decisions.iter().all(|decision| !decision.submitted));
     assert_eq!(
         venue.pending_faults(),
@@ -920,27 +1205,24 @@ async fn runner_records_in_memory_intents_for_submitted_proposals() {
     let bar = &bars[0];
     let venue = PaperVenue::new(PaperConfig::new().build());
     let strategy = strategy();
-    let mut usage = GrantUsage::new().build();
-    let mut breakers = BreakerState::new().build();
+    let ledger = GrantLedger::new(grant_with(0.5));
     let closes = vec![bar.c.to_f64().expect("representable close")];
+    let view = bare_view(&closes, bar.ts);
     let journal = Journal::ephemeral();
     let recorder = Recorder::ephemeral(&journal);
     let decision = decide_and_submit(
         &strategy,
         &risk(),
-        &grant_with(0.5),
-        &mut usage,
+        &ledger,
         &venue,
         &recorder,
         &venue_config(),
-        &mut breakers,
         BarHealth::rehearsed(),
         0,
         bar,
-        &closes,
+        &view,
         &runner_config(),
         11,
-        None,
     )
     .await;
     assert!(decision.submitted, "liquid first bar must submit");
@@ -1039,7 +1321,7 @@ async fn uncovered_grant_requires_human_in_the_chain() {
             continue;
         }
         assert!(decision.risk_pass, "the risk engine approves");
-        assert!(!decision.grant_allow, "the strict grant denies");
+        assert!(!decision.grant_merit, "the strict grant denies");
         assert!(!decision.submitted, "no uncovered entry is submitted");
         let last = decision.transitions.last().expect("chain");
         assert_eq!(last.to, ProposalState::PendingHuman);
@@ -1062,32 +1344,29 @@ async fn risk_refusal_terminalizes_the_chain() {
     let bars = history();
     let bar = &bars[0];
     let venue = PaperVenue::new(PaperConfig::new().build());
-    let mut usage = GrantUsage::new().build();
-    let mut breakers = BreakerState::new().build();
+    let ledger = GrantLedger::new(grant_with(0.5));
     let health = BarHealth {
         quote_age_secs: 3_600,
         clock_skew_secs: 0,
         reconciliation_healthy: true,
     };
     let closes = vec![bar.c.to_f64().expect("representable close")];
+    let view = bare_view(&closes, bar.ts);
     let journal = Journal::ephemeral();
     let recorder = Recorder::ephemeral(&journal);
     let decision = decide_and_submit(
         &strategy(),
         &risk(),
-        &grant_with(0.5),
-        &mut usage,
+        &ledger,
         &venue,
         &recorder,
         &venue_config(),
-        &mut breakers,
         health,
         0,
         bar,
-        &closes,
+        &view,
         &runner_config(),
         11,
-        None,
     )
     .await;
     assert!(!decision.risk_pass);
@@ -1105,27 +1384,24 @@ async fn submitted_chain_walks_to_filled_without_tripping_the_breaker() {
     let bars = history();
     let bar = &bars[0];
     let venue = PaperVenue::new(PaperConfig::new().build());
-    let mut usage = GrantUsage::new().build();
-    let mut breakers = BreakerState::new().build();
+    let ledger = GrantLedger::new(grant_with(0.5));
     let closes = vec![bar.c.to_f64().expect("representable close")];
+    let view = bare_view(&closes, bar.ts);
     let journal = Journal::ephemeral();
     let recorder = Recorder::ephemeral(&journal);
     let decision = decide_and_submit(
         &strategy(),
         &risk(),
-        &grant_with(0.5),
-        &mut usage,
+        &ledger,
         &venue,
         &recorder,
         &venue_config(),
-        &mut breakers,
         BarHealth::rehearsed(),
         0,
         bar,
-        &closes,
+        &view,
         &runner_config(),
         11,
-        None,
     )
     .await;
     assert!(decision.submitted, "the liquid first bar fills");
@@ -1148,7 +1424,10 @@ async fn submitted_chain_walks_to_filled_without_tripping_the_breaker() {
             .all(|entry| entry.proposal_id == decision.proposal_id),
         "every transition names this bar's proposal"
     );
-    assert!(!breakers.tripped, "a merit outcome never trips the breaker");
+    assert!(
+        !ledger.breakers().tripped,
+        "a merit outcome never trips the breaker"
+    );
 }
 
 #[tokio::test]
@@ -1157,32 +1436,29 @@ async fn stale_quote_refuses_on_risk_and_grant_paths() {
     let bar = &bars[0];
     let venue = PaperVenue::new(PaperConfig::new().build());
     let strategy = strategy();
-    let mut usage = GrantUsage::new().build();
-    let mut breakers = BreakerState::new().build();
+    let ledger = GrantLedger::new(grant_with(0.5));
     let health = BarHealth {
         quote_age_secs: 3_600,
         clock_skew_secs: 0,
         reconciliation_healthy: true,
     };
     let closes = vec![bar.c.to_f64().expect("representable close")];
+    let view = bare_view(&closes, bar.ts);
     let journal = Journal::ephemeral();
     let recorder = Recorder::ephemeral(&journal);
     let decision = decide_and_submit(
         &strategy,
         &risk(),
-        &grant_with(0.5),
-        &mut usage,
+        &ledger,
         &venue,
         &recorder,
         &venue_config(),
-        &mut breakers,
         health,
         0,
         bar,
-        &closes,
+        &view,
         &runner_config(),
         11,
-        None,
     )
     .await;
     assert!(!decision.risk_pass, "stale data must fail the risk gate");
@@ -1194,14 +1470,14 @@ async fn stale_quote_refuses_on_risk_and_grant_paths() {
         "risk refusal names the gate, got: {:?}",
         decision.risk_reasons
     );
-    assert!(!decision.grant_allow, "stale data must fail the grant gate");
+    assert!(!decision.grant_merit, "stale data must fail the grant gate");
     assert!(
         decision
-            .grant_reasons
+            .grant_merit_reasons
             .iter()
             .any(|reason| reason.contains("stale")),
         "grant refusal names the gate, got: {:?}",
-        decision.grant_reasons
+        decision.grant_merit_reasons
     );
     assert!(!decision.submitted);
     assert!(
@@ -1216,30 +1492,30 @@ async fn tripped_breaker_disarms_entries_without_touching_merit_verdicts() {
     let bar = &bars[0];
     let venue = PaperVenue::new(PaperConfig::new().build());
     let strategy = strategy();
-    let mut usage = GrantUsage::new().build();
-    let mut breakers = BreakerState::new()
-        .tripped(true)
-        .trip_reason("test trip".to_owned())
-        .build();
+    let ledger = GrantLedger::with_breakers(
+        grant_with(0.5),
+        BreakerState::new()
+            .tripped(true)
+            .trip_reason("test trip".to_owned())
+            .build(),
+    );
     let closes = vec![bar.c.to_f64().expect("representable close")];
+    let view = bare_view(&closes, bar.ts);
     let journal = Journal::ephemeral();
     let recorder = Recorder::ephemeral(&journal);
     let decision = decide_and_submit(
         &strategy,
         &risk(),
-        &grant_with(0.5),
-        &mut usage,
+        &ledger,
         &venue,
         &recorder,
         &venue_config(),
-        &mut breakers,
         BarHealth::rehearsed(),
         0,
         bar,
-        &closes,
+        &view,
         &runner_config(),
         11,
-        None,
     )
     .await;
     assert!(
@@ -1247,10 +1523,10 @@ async fn tripped_breaker_disarms_entries_without_touching_merit_verdicts() {
         "merit verdict must stay Allow while tripped"
     );
     assert!(
-        decision.grant_allow,
+        decision.grant_merit,
         "merit verdict must stay Allow while tripped"
     );
-    assert!(decision.risk_reasons.is_empty() && decision.grant_reasons.is_empty());
+    assert!(decision.risk_reasons.is_empty() && decision.grant_merit_reasons.is_empty());
     assert!(!decision.submitted, "tripped entries disarm");
     assert!(
         transport_skipped(&decision).contains("breaker tripped"),
@@ -1261,6 +1537,136 @@ async fn tripped_breaker_disarms_entries_without_touching_merit_verdicts() {
         venue.orders().is_empty(),
         "disarmed bars never reach the venue"
     );
+}
+
+/// A hand-built proposal for exercising one side of the lifecycle directly.
+fn manual_proposal(side: ProposalSide, bar: &Bar) -> Proposal {
+    Proposal::new()
+        .id("manual-1".to_owned())
+        .strategy("ribbon".to_owned())
+        .underlying("SPY".to_owned())
+        .direction(Direction::Long)
+        .side(side)
+        .structure(StructureKind::Vertical)
+        .quantity(Qty::new(Decimal::from(1)))
+        .limit_price(money(694))
+        .max_loss(money(300))
+        .notional(money(1_000))
+        .dte_days(30)
+        .conviction(0.8)
+        .activity_score(0.7)
+        .created_at(bar.ts)
+        .build()
+}
+
+fn tripped_breaker() -> BreakerState {
+    BreakerState::new()
+        .tripped(true)
+        .trip_reason("test trip".to_owned())
+        .build()
+}
+
+#[tokio::test]
+async fn a_tripped_breaker_denies_entries_but_routes_exits() {
+    let bars = history();
+    let bar = &bars[0];
+    let venue = PaperVenue::new(PaperConfig::new().build());
+    let quote = bar_quote(bar, &venue_config()).expect("quoted bar");
+
+    let entry_ledger = GrantLedger::with_breakers(grant_with(0.5), tripped_breaker());
+    let journal = Journal::ephemeral();
+    let recorder = Recorder::ephemeral(&journal);
+    let entry = submit_decided(
+        manual_proposal(ProposalSide::Entry, bar),
+        quote,
+        &risk(),
+        &entry_ledger,
+        &venue,
+        &recorder,
+        BarHealth::rehearsed(),
+        None,
+        0,
+        bar,
+        &runner_config(),
+    )
+    .await;
+    assert!(entry.grant_merit, "a trip never rewrites merit");
+    assert!(!entry.grant_authorized, "a trip denies entry authorization");
+    assert!(!entry.submitted);
+    assert!(
+        entry
+            .grant_authorization_reasons
+            .iter()
+            .any(|reason| reason.contains("disarmed")),
+        "authorization names the trip, got: {:?}",
+        entry.grant_authorization_reasons
+    );
+
+    let exit_ledger = GrantLedger::with_breakers(grant_with(0.5), tripped_breaker());
+    let journal = Journal::ephemeral();
+    let recorder = Recorder::ephemeral(&journal);
+    let exit = submit_decided(
+        manual_proposal(ProposalSide::Exit, bar),
+        quote,
+        &risk(),
+        &exit_ledger,
+        &venue,
+        &recorder,
+        BarHealth::rehearsed(),
+        None,
+        0,
+        bar,
+        &runner_config(),
+    )
+    .await;
+    assert!(exit.grant_merit, "an exit keeps its merit");
+    assert!(exit.grant_authorized, "exits route through a trip");
+    assert!(exit.submitted, "the exit reaches the venue");
+}
+
+#[tokio::test]
+async fn an_exhausted_budget_denies_merit_and_authorization() {
+    let bars = history();
+    let bar = &bars[0];
+    let venue = PaperVenue::new(PaperConfig::new().build());
+    let quote = bar_quote(bar, &venue_config()).expect("quoted bar");
+    let market = GrantMarket::new()
+        .quote_age_secs(1)
+        .spread_width(money(10))
+        .build();
+    let mut grant = grant_with(0.5);
+    grant.budgets.max_trades = 1;
+    let ledger = GrantLedger::new(grant);
+    // Hold the grant's only trade reserved across the decision.
+    let held = ledger
+        .reserve(&manual_proposal(ProposalSide::Entry, bar), &market, bar.ts)
+        .expect("the last trade reserves");
+
+    let journal = Journal::ephemeral();
+    let recorder = Recorder::ephemeral(&journal);
+    let decision = submit_decided(
+        manual_proposal(ProposalSide::Entry, bar),
+        quote,
+        &risk(),
+        &ledger,
+        &venue,
+        &recorder,
+        BarHealth::rehearsed(),
+        None,
+        0,
+        bar,
+        &runner_config(),
+    )
+    .await;
+    assert!(!decision.grant_merit, "the budget binds merit");
+    assert!(!decision.grant_authorized, "and authorization");
+    assert!(decision
+        .grant_merit_reasons
+        .iter()
+        .any(|reason| reason.contains("trade budget exhausted")));
+    assert!(!decision.submitted);
+    assert!(venue.orders().is_empty());
+    drop(held);
 }
 
 struct TripCase {
@@ -1361,7 +1767,8 @@ async fn soak_breaker_trip_precision_recall_with_clean_control() {
             &bars,
             case.seed,
         )
-        .await;
+        .await
+        .expect("the paper run decides");
         let tripped = trip_observed(&decisions);
         assert_eq!(
             tripped,
@@ -1372,7 +1779,7 @@ async fn soak_breaker_trip_precision_recall_with_clean_control() {
         );
         if case.should_trip {
             assert!(
-                decisions.iter().all(|d| d.risk_pass && d.grant_allow),
+                decisions.iter().all(|d| d.risk_pass && d.grant_merit),
                 "case {}: disarm must never rewrite a merit verdict",
                 case.label
             );
@@ -1619,26 +2026,24 @@ async fn stream_breaker_trip_disarms_entries_through_breaker_state() {
     let bar = &bars[0];
     let venue = PaperVenue::new(PaperConfig::new().build());
     let strategy = strategy();
-    let mut usage = GrantUsage::new().build();
+    let ledger = GrantLedger::with_breakers(grant_with(0.5), breakers);
     let closes = vec![bar.c.to_f64().expect("representable close")];
+    let view = bare_view(&closes, bar.ts);
     let journal = Journal::ephemeral();
     let recorder = Recorder::ephemeral(&journal);
     let decision = decide_and_submit(
         &strategy,
         &risk(),
-        &grant_with(0.5),
-        &mut usage,
+        &ledger,
         &venue,
         &recorder,
         &venue_config(),
-        &mut breakers,
         BarHealth::rehearsed(),
         0,
         bar,
-        &closes,
+        &view,
         &runner_config(),
         11,
-        None,
     )
     .await;
     assert!(
@@ -1646,7 +2051,7 @@ async fn stream_breaker_trip_disarms_entries_through_breaker_state() {
         "merit verdict must stay Allow while tripped"
     );
     assert!(
-        decision.grant_allow,
+        decision.grant_merit,
         "merit verdict must stay Allow while tripped"
     );
     assert!(!decision.submitted, "stream-tripped entries disarm");
@@ -2157,30 +2562,30 @@ async fn disarmed_entries_terminalize_as_cancelled() {
     let bars = history();
     let bar = &bars[0];
     let venue = PaperVenue::new(PaperConfig::new().build());
-    let mut usage = GrantUsage::new().build();
-    let mut breakers = BreakerState::new()
-        .tripped(true)
-        .trip_reason("test trip".to_owned())
-        .build();
+    let ledger = GrantLedger::with_breakers(
+        grant_with(0.5),
+        BreakerState::new()
+            .tripped(true)
+            .trip_reason("test trip".to_owned())
+            .build(),
+    );
     let closes = vec![bar.c.to_f64().expect("representable close")];
+    let view = bare_view(&closes, bar.ts);
     let journal = Journal::ephemeral();
     let recorder = Recorder::ephemeral(&journal);
     let decision = decide_and_submit(
         &strategy(),
         &risk(),
-        &grant_with(0.5),
-        &mut usage,
+        &ledger,
         &venue,
         &recorder,
         &venue_config(),
-        &mut breakers,
         BarHealth::rehearsed(),
         0,
         bar,
-        &closes,
+        &view,
         &runner_config(),
         11,
-        None,
     )
     .await;
     assert!(!decision.submitted, "disarmed bars never submit");
@@ -2213,11 +2618,15 @@ async fn disarmed_entries_terminalize_as_cancelled() {
 /// for a path that cannot be reached through the checked proposal.)
 #[tokio::test]
 async fn unrepresentable_quantity_refuses_terminal() {
-    use protopyne_strategy::{elements::Sizing, SignalOutput};
+    use protopyne_strategy::{elements::Sizing, PortfolioFacts, SignalOutput};
     use protopyne_types::Qty;
     struct FractionalSizing;
     impl Sizing for FractionalSizing {
-        fn size(&self, _signal: &SignalOutput) -> Qty {
+        fn name(&self) -> &str {
+            "fractional"
+        }
+
+        fn size(&self, _signal: &SignalOutput, _facts: &PortfolioFacts) -> Qty {
             Qty::new(Decimal::new(15, 1))
         }
     }
@@ -2230,27 +2639,24 @@ async fn unrepresentable_quantity_refuses_terminal() {
         ))
         .with_sizing(Arc::new(FractionalSizing)),
     );
-    let mut usage = GrantUsage::new().build();
-    let mut breakers = BreakerState::new().build();
+    let ledger = GrantLedger::new(grant_with(0.5));
     let closes = vec![bar.c.to_f64().expect("representable close")];
+    let view = bare_view(&closes, bar.ts);
     let journal = Journal::ephemeral();
     let recorder = Recorder::ephemeral(&journal);
     let decision = decide_and_submit(
         &fractional,
         &risk(),
-        &grant_with(0.5),
-        &mut usage,
+        &ledger,
         &venue,
         &recorder,
         &venue_config(),
-        &mut breakers,
         BarHealth::rehearsed(),
         0,
         bar,
-        &closes,
+        &view,
         &runner_config(),
         11,
-        None,
     )
     .await;
     assert!(!decision.submitted, "fractional quantities never submit");
@@ -2330,9 +2736,9 @@ async fn verdict_journal_failure_surfaces_without_losing_the_fill() {
     let bars = history();
     let bar = &bars[0];
     let venue = PaperVenue::new(PaperConfig::new().build());
-    let mut usage = GrantUsage::new().build();
-    let mut breakers = BreakerState::new().build();
+    let ledger = GrantLedger::new(grant_with(0.5));
     let closes = vec![bar.c.to_f64().expect("representable close")];
+    let view = bare_view(&closes, bar.ts);
     let recorder = FailLate {
         journal: Journal::ephemeral(),
         lifecycle_transitions: AtomicUsize::new(0),
@@ -2340,19 +2746,16 @@ async fn verdict_journal_failure_surfaces_without_losing_the_fill() {
     let decision = decide_and_submit(
         &strategy(),
         &risk(),
-        &grant_with(0.5),
-        &mut usage,
+        &ledger,
         &venue,
         &recorder,
         &venue_config(),
-        &mut breakers,
         BarHealth::rehearsed(),
         0,
         bar,
-        &closes,
+        &view,
         &runner_config(),
         11,
-        None,
     )
     .await;
     assert!(decision.submitted, "the venue verdict still books");
@@ -2364,6 +2767,178 @@ async fn verdict_journal_failure_surfaces_without_losing_the_fill() {
     assert!(
         error.contains("injected verdict journal failure"),
         "the cause rides along: {error}"
+    );
+}
+
+/// An approved proposal routes into the ledger + submit path: the grant's
+/// budgets are reserved and consumed, and the venue books the order.
+#[tokio::test]
+async fn approving_submits_through_the_ledger() {
+    use protopyne_strategy::{ProposalEvent, ProposalState};
+    use protopyne_venue::Quote;
+    let at = Utc.with_ymd_and_hms(2026, 6, 1, 12, 0, 0).unwrap();
+    let mut proposal = Proposal::new()
+        .id("approved-1".to_owned())
+        .strategy("ribbon".to_owned())
+        .underlying("SPY".to_owned())
+        .direction(Direction::Long)
+        .side(ProposalSide::Entry)
+        .structure(StructureKind::Vertical)
+        .quantity(Qty::new(Decimal::from(2)))
+        .limit_price(money(600))
+        .max_loss(money(300))
+        .notional(money(1_000))
+        .dte_days(30)
+        .conviction(0.8)
+        .activity_score(0.7)
+        .created_at(at)
+        .build();
+    proposal
+        .apply(ProposalEvent::PassRisk, "risk approved", at)
+        .expect("pass risk");
+    proposal
+        .apply(ProposalEvent::RequireHuman, "no grant covers entry", at)
+        .expect("ask human");
+    proposal
+        .apply(ProposalEvent::Approve, "operator approved", at)
+        .expect("human approve");
+    assert_eq!(proposal.state, ProposalState::Approved);
+
+    let venue = PaperVenue::new(PaperConfig::new().build());
+    let journal = Journal::ephemeral();
+    let recorder = Recorder::ephemeral(&journal);
+    let ledger = GrantLedger::new(grant_with(0.5));
+    let quote = Quote::new()
+        .bid(money(600))
+        .ask(money(601))
+        .bid_size(50)
+        .ask_size(50)
+        .ts(at)
+        .build();
+    let risk_state = RiskState {
+        quote_age_secs: 0,
+        clock_skew_secs: 0,
+        reconciliation_healthy: true,
+        facts: PortfolioFacts::unobserved(),
+    };
+    let market = GrantMarket::new()
+        .quote_age_secs(0)
+        .spread_width(money(1))
+        .build();
+    let record = submit_approved(
+        &mut proposal,
+        &risk(),
+        &risk_state,
+        &ledger,
+        &market,
+        &venue,
+        &recorder,
+        &quote,
+        &runner_config(),
+        at,
+    )
+    .await
+    .expect("an approved proposal submits");
+    assert_eq!(record.filled_quantity, 2);
+    assert_eq!(proposal.state, ProposalState::Filled);
+    assert_eq!(
+        ledger.usage().used_trades,
+        1,
+        "the ledger consumed the trade"
+    );
+    assert_eq!(venue.orders().len(), 1, "the venue booked the order");
+}
+
+/// A proposal the grant does not cover is journaled as a body and the bar
+/// continues: a pending proposal never blocks the loop's next bar.
+#[tokio::test]
+async fn a_pending_proposal_does_not_block_the_next_bar() {
+    use protopyne_venue::{
+        LegExecution, OrderStatus, SubmissionRecorder, VenueError, PROPOSAL_BODY_KIND,
+    };
+    use std::sync::Mutex;
+
+    struct BodyCapture {
+        journal: Journal,
+        bodies: Mutex<Vec<String>>,
+    }
+
+    impl SubmissionRecorder for BodyCapture {
+        fn record_intent(
+            &self,
+            intent: &protopyne_venue::OrderIntent,
+            now: DateTime<Utc>,
+        ) -> Result<bool, VenueError> {
+            Recorder::ephemeral(&self.journal).record_intent(intent, now)
+        }
+        fn mark_status(
+            &self,
+            client_id: &str,
+            status: OrderStatus,
+            now: DateTime<Utc>,
+        ) -> Result<(), VenueError> {
+            Recorder::ephemeral(&self.journal).mark_status(client_id, status, now)
+        }
+        fn record_leg_fill(
+            &self,
+            client_id: &str,
+            leg: &LegExecution,
+            now: DateTime<Utc>,
+        ) -> Result<(), VenueError> {
+            Recorder::ephemeral(&self.journal).record_leg_fill(client_id, leg, now)
+        }
+        fn record_transition(
+            &self,
+            client_id: &str,
+            kind: &str,
+            detail: &str,
+            now: DateTime<Utc>,
+        ) -> Result<(), VenueError> {
+            if kind == PROPOSAL_BODY_KIND {
+                self.bodies
+                    .lock()
+                    .expect("bodies lock")
+                    .push(detail.to_owned());
+            }
+            Recorder::ephemeral(&self.journal).record_transition(client_id, kind, detail, now)
+        }
+    }
+
+    let bars = history();
+    let venue = PaperVenue::new(PaperConfig::new().build());
+    // A strict grant: no bar's proposal is covered, so each is handed to the
+    // human.
+    let ledger = GrantLedger::new(grant_with(0.95));
+    let recorder = BodyCapture {
+        journal: Journal::ephemeral(),
+        bodies: Mutex::new(Vec::new()),
+    };
+    let config = runner_config();
+    for (index, bar) in bars.iter().take(2).enumerate() {
+        let closes: Vec<f64> = bars[..=index].iter().filter_map(|b| b.c.to_f64()).collect();
+        let view = bare_view(&closes, bar.ts);
+        let decision = decide_and_submit(
+            &strategy(),
+            &risk(),
+            &ledger,
+            &venue,
+            &recorder,
+            &venue_config(),
+            BarHealth::rehearsed(),
+            index,
+            bar,
+            &view,
+            &config,
+            11,
+        )
+        .await;
+        assert!(!decision.grant_merit, "a strict grant asks the human");
+        assert!(!decision.submitted, "a pending proposal never submits");
+    }
+    assert_eq!(
+        recorder.bodies.lock().expect("bodies lock").len(),
+        2,
+        "each bar journals its pending proposal; the next bar is not blocked"
     );
 }
 
@@ -2424,7 +2999,7 @@ fn fill_quote_of(chain: &protopyne_types::ChainQuote) -> protopyne_venue::Quote 
 fn chain_contract(strike: i64) -> protopyne_types::OptionContract {
     protopyne_types::OptionContract::new()
         .underlying("SPY".to_owned())
-        .expiry(chrono::NaiveDate::from_ymd_opt(2026, 7, 17).expect("valid expiry"))
+        .expiry(chrono::NaiveDate::from_ymd_opt(2026, 2, 20).expect("valid expiry"))
         .strike(Money::new(Decimal::from(strike)))
         .kind(protopyne_types::OptionKind::Call)
         .build()
@@ -2452,89 +3027,60 @@ fn covering_chain(bar: &Bar) -> Vec<protopyne_types::ChainQuote> {
     ]
 }
 
-async fn submit_with_chain(
-    chain: Option<&SnapshotChain>,
-    venue: &PaperVenue,
-    bar: &Bar,
-    seed: u64,
-) -> BarDecision {
-    let mut usage = GrantUsage::new().build();
-    let mut breakers = BreakerState::new().build();
+async fn submit_with_chain(venue: &PaperVenue, bar: &Bar, seed: u64) -> BarDecision {
+    let ledger = GrantLedger::new(grant_with(0.5));
     let closes = vec![bar.c.to_f64().expect("representable close")];
+    let view = bare_view(&closes, bar.ts);
     let journal = Journal::ephemeral();
     let recorder = Recorder::ephemeral(&journal);
     decide_and_submit(
         &strategy(),
         &risk(),
-        &grant_with(0.5),
-        &mut usage,
+        &ledger,
         venue,
         &recorder,
         &venue_config(),
-        &mut breakers,
         BarHealth::rehearsed(),
         0,
         bar,
-        &closes,
+        &view,
         &runner_config(),
         seed,
-        chain.map(|source| source as &dyn protopyne_venue::LegQuoteSource),
     )
     .await
 }
 
+/// The config arm never reads the chain: an installed source whose quotes
+/// all post-date the bar changes nothing, because only the chain-derived arm
+/// prices a package. Two legs reach the venue only through that arm (pinned
+/// by the `chain_derived_*` cases).
 #[tokio::test]
-async fn covered_multileg_books_legs_on_the_intent() {
+async fn the_config_arm_never_reads_the_chain() {
     let bars = history();
     let bar = &bars[0];
-    let chain = SnapshotChain {
-        quotes: covering_chain(bar),
-    };
     let mut venue = PaperVenue::new(PaperConfig::new().build());
     venue.set_leg_quotes(Arc::new(SnapshotChain {
         quotes: covering_chain(bar),
     }));
-    let decision = submit_with_chain(Some(&chain), &venue, bar, 11).await;
+    let decision = submit_with_chain(&venue, bar, 11).await;
     assert!(
         decision.submitted,
-        "covered vertical submits: {:?}",
+        "the config arm submits on its own numbers: {:?}",
         decision.skipped
     );
-    assert_eq!(decision.filled_quantity, 2, "one unit times two legs");
-    let executions = venue.executed_legs(&protopyne_venue::client_id_for("run-11-0", 0));
-    assert_eq!(
-        executions.len(),
-        2,
-        "both legs fill through the one spread path"
+    assert!(
+        decision.legs.is_empty(),
+        "no unpriced legs attach under the config arm"
+    );
+    assert!(
+        venue
+            .executed_legs(&protopyne_venue::client_id_for("run-11-0", 0))
+            .is_empty(),
+        "the venue fills one legless order"
     );
     assert!(
         !decision.transitions.is_empty(),
         "the lifecycle journals the fill"
-    );
-}
-
-#[tokio::test]
-async fn uncovered_multileg_skips_without_touching_lifecycle() {
-    let bars = history();
-    let bar = &bars[0];
-    // Quotes stamped after the bar: the snapshot at-or-before it is empty.
-    let late = bar.ts + chrono::Duration::days(30);
-    let chain = SnapshotChain {
-        quotes: vec![
-            chain_quote_for(690, 3, 4, late),
-            chain_quote_for(695, 2, 3, late),
-        ],
-    };
-    let venue = PaperVenue::new(PaperConfig::new().build());
-    let decision = submit_with_chain(Some(&chain), &venue, bar, 12).await;
-    assert!(!decision.submitted, "no coverage means no submission");
-    assert!(
-        decision.skipped.is_some(),
-        "the skip names the missing coverage"
-    );
-    assert!(
-        decision.transitions.is_empty(),
-        "refused selection journals nothing"
     );
 }
 
@@ -2545,12 +3091,514 @@ async fn chainless_multileg_keeps_legacy_single_leg_booking() {
     let bars = history();
     let bar = &bars[0];
     let venue = PaperVenue::new(PaperConfig::new().build());
-    let decision = submit_with_chain(None, &venue, bar, 13).await;
+    let decision = submit_with_chain(&venue, bar, 13).await;
     assert!(decision.submitted, "legacy path still submits");
     assert!(
         venue
             .executed_legs(&protopyne_venue::client_id_for("run-13-0", 0))
             .is_empty(),
         "no legs attach without a chain handle"
+    );
+    assert!(
+        decision.legs.is_empty(),
+        "a legless decision keeps its empty leg shape"
+    );
+}
+
+/// A signal whose verdict alternates with its own per-run call count. If a
+/// sweep variant shared another variant's instance, the alternation phase
+/// would shift and its decisions would drift.
+struct AlternatingSignal;
+
+struct Alternation {
+    calls: u64,
+}
+
+impl protopyne_strategy::Signal for AlternatingSignal {
+    fn name(&self) -> &str {
+        "alternating"
+    }
+
+    fn bind(
+        &self,
+        _cfg: &protopyne_strategy::SignalConfig,
+    ) -> Result<Box<dyn protopyne_strategy::SignalInstance>, protopyne_strategy::StrategyError>
+    {
+        Ok(Box::new(Alternation { calls: 0 }))
+    }
+
+    fn evaluate(
+        &self,
+        _view: &MarketView<'_>,
+    ) -> Result<protopyne_strategy::SignalOutput, protopyne_strategy::StrategyError> {
+        Ok(protopyne_strategy::SignalOutput {
+            direction: Direction::Long,
+            conviction: 0.8,
+            activity_score: 1.0,
+        })
+    }
+}
+
+impl protopyne_strategy::SignalInstance for Alternation {
+    fn evaluate(
+        &mut self,
+        _view: &MarketView<'_>,
+    ) -> Result<protopyne_strategy::SignalOutput, protopyne_strategy::StrategyError> {
+        self.calls += 1;
+        let odd = self.calls % 2 == 1;
+        Ok(protopyne_strategy::SignalOutput {
+            direction: if odd {
+                Direction::Long
+            } else {
+                Direction::Short
+            },
+            conviction: if odd { 0.8 } else { 0.4 },
+            activity_score: 1.0,
+        })
+    }
+
+    fn warmup(&self) -> usize {
+        0
+    }
+}
+
+fn alternating_strategy() -> Arc<Strategy> {
+    Arc::new(
+        Strategy::with_signal(Arc::new(AlternatingSignal)).with_structure(Arc::new(
+            ExplicitStructure {
+                structure: StructureKind::Vertical,
+            },
+        )),
+    )
+}
+
+#[tokio::test]
+async fn sweep_variants_never_share_stateful_signal_state() {
+    let bars = history();
+    let grants = vec![grant_with(0.5); 8];
+    let concurrent = run_sweep(
+        alternating_strategy(),
+        RiskLimits::new().build(),
+        &venue_config(),
+        &runner_config(),
+        &bars,
+        grants.clone(),
+        11,
+    )
+    .await
+    .expect("sweep runs");
+    let strategy = alternating_strategy();
+    let sequential = run_backtest(
+        &strategy,
+        &risk(),
+        &grants[0],
+        &venue_config(),
+        &runner_config(),
+        &bars,
+        11,
+    )
+    .await
+    .expect("sequential run");
+    for outcome in &concurrent {
+        assert_eq!(
+            outcome.decisions, sequential.decisions,
+            "variant {} diverged from the sequential run",
+            outcome.index
+        );
+    }
+    assert!(
+        concurrent.iter().any(|outcome| outcome.fills > 0),
+        "the alternation must still fire on its strong bars"
+    );
+}
+
+/// Chain-derived economics: selection prices the package, and the proposal,
+/// intent, and dry run all read the same numbers.
+use protopyne_strategy::{ChainSlice, EconomicsPolicy, LegSelector};
+use protopyne_types::{ChainQuote, OptionContract, OptionKind, Timeframe};
+
+fn kind_quote(
+    kind: OptionKind,
+    strike: i64,
+    bid: &str,
+    ask: &str,
+    ts: chrono::DateTime<Utc>,
+) -> ChainQuote {
+    ChainQuote::new()
+        .contract(
+            OptionContract::new()
+                .underlying("SPY".to_owned())
+                // Inside the fixture grant's DTE window (1..90 days after the
+                // pinned January bars).
+                .expiry(chrono::NaiveDate::from_ymd_opt(2026, 2, 20).expect("expiry"))
+                .strike(Money::new(Decimal::from(strike)))
+                .kind(kind)
+                .build(),
+        )
+        .bid(bid.parse().expect("bid"))
+        .ask(ask.parse().expect("ask"))
+        .timestamp(ts)
+        .build()
+}
+
+fn chain_strategy() -> Arc<Strategy> {
+    Arc::new(
+        Strategy::with_signal(Arc::new(
+            FixedSignal::new(Direction::Long, 0.8, 0.8).expect("valid signal"),
+        ))
+        .with_structure(Arc::new(LegSelector::new().build())),
+    )
+}
+
+fn grant_for_structure(structure: StructureKind) -> Grant {
+    Grant::new()
+        .id("chain-derived".to_owned())
+        .scope(
+            GrantScope::new()
+                .strategies(vec!["ribbon".to_owned()])
+                .underlyings(vec!["SPY".to_owned()])
+                .structures(vec![structure])
+                .directions(vec![Direction::Long, Direction::Short])
+                .permissions(GrantPermission {
+                    entries: true,
+                    exits: true,
+                    rolls: false,
+                })
+                .build(),
+        )
+        .budgets(
+            GrantBudgets::new()
+                .max_trades(1_000)
+                .max_contracts(10_000)
+                .max_loss(money(1_000_000))
+                .max_notional(money(100_000_000))
+                .build(),
+        )
+        .signal(
+            SignalThresholds::new()
+                .min_conviction(0.5)
+                .min_activity_score(0.5)
+                .build(),
+        )
+        .trade(
+            TradeThresholds::new()
+                .max_loss_per_trade(money(1_000))
+                .max_spread_width(money(50))
+                .min_dte_days(1)
+                .max_dte_days(90)
+                .build(),
+        )
+        .portfolio(
+            PortfolioThresholds::new()
+                .max_open_risk(money(10_000_000))
+                .quote_max_age_secs(60)
+                .build(),
+        )
+        .breakers(BreakerLimits::new().max_consecutive_errors(3).build())
+        .valid_from(Utc.with_ymd_and_hms(2025, 1, 1, 0, 0, 0).unwrap())
+        .valid_until(Utc.with_ymd_and_hms(2027, 1, 1, 0, 0, 0).unwrap())
+        .build()
+}
+
+async fn chain_derived_decision(
+    structure: StructureKind,
+    quotes: &[ChainQuote],
+    grant_structure: StructureKind,
+) -> (BarDecision, PaperVenue) {
+    chain_derived_decision_with(grant_for_structure(grant_structure), structure, quotes).await
+}
+
+async fn chain_derived_decision_with(
+    grant: Grant,
+    structure: StructureKind,
+    quotes: &[ChainQuote],
+) -> (BarDecision, PaperVenue) {
+    let bars = history();
+    let bar = &bars[0];
+    let mut venue = PaperVenue::new(PaperConfig::new().build());
+    let source = Arc::new(SnapshotChain {
+        quotes: quotes.to_vec(),
+    });
+    venue.set_leg_quotes(Arc::clone(&source) as Arc<dyn protopyne_venue::LegQuoteSource>);
+    let chain = ChainSlice::new(quotes, bar.ts, "SPY").expect("quotes bind");
+    let closes = vec![bar.c.to_f64().expect("representable close")];
+    let data = MarketData {
+        bars: &[],
+        chain: Some(chain),
+        dte_days: 30,
+        timeframe: Timeframe::D1,
+    };
+    let view = MarketView {
+        data: &data,
+        closes: &closes,
+        as_of: bar.ts,
+    };
+    let ledger = GrantLedger::new(grant);
+    let journal = Journal::ephemeral();
+    let recorder = Recorder::ephemeral(&journal);
+    let config = runner_config()
+        .with_economics(EconomicsPolicy::ChainDerived)
+        .with_structure(structure);
+    let decision = decide_and_submit(
+        &chain_strategy(),
+        &risk(),
+        &ledger,
+        &venue,
+        &recorder,
+        &venue_config(),
+        BarHealth::rehearsed(),
+        0,
+        bar,
+        &view,
+        &config,
+        21,
+    )
+    .await;
+    (decision, venue)
+}
+
+/// The spread threshold judges the package, not the underlying's bar: a
+/// vertical whose own bid/ask width is a dollar is refused under a $0.50
+/// threshold even though the synthesized bar quote is a third of a dollar
+/// wide.
+#[tokio::test]
+async fn a_wide_package_is_refused_by_the_spread_threshold() {
+    let bars = history();
+    let bar = &bars[0];
+    // Wide books on a deep debit package: crossing costs a dollar against a
+    // 99.40 mid, well inside the 200 bps tolerance, so the package is
+    // marketable and the spread threshold alone refuses it.
+    let quotes = vec![
+        kind_quote(OptionKind::Call, 690, "99.30", "100.70", bar.ts),
+        kind_quote(OptionKind::Call, 695, "0.40", "0.80", bar.ts),
+    ];
+    let mut grant = grant_for_structure(StructureKind::Vertical);
+    // Above the 0.347-wide synthesized bar touch, below the package's 1.00.
+    grant.trade.max_spread_width = Money::new(Decimal::new(50, 2));
+    let (decision, venue) =
+        chain_derived_decision_with(grant, StructureKind::Vertical, &quotes).await;
+    assert!(
+        !decision.submitted,
+        "the package width refuses: {:?}",
+        decision.skipped
+    );
+    assert!(venue.orders().is_empty(), "a refused package books nothing");
+    assert!(
+        decision
+            .grant_merit_reasons
+            .iter()
+            .any(|reason| reason.contains("spread width")),
+        "the refusal names the spread threshold: {:?}",
+        decision.grant_merit_reasons
+    );
+}
+
+#[tokio::test]
+async fn chain_derived_vertical_books_the_debit_package() {
+    let bars = history();
+    let bar = &bars[0];
+    // One-tick quotes: mid equals touch, so the fill clears the tolerance.
+    let quotes = vec![
+        kind_quote(OptionKind::Call, 690, "3.499", "3.501", bar.ts),
+        kind_quote(OptionKind::Call, 695, "2.499", "2.501", bar.ts),
+    ];
+    let (decision, venue) =
+        chain_derived_decision(StructureKind::Vertical, &quotes, StructureKind::Vertical).await;
+    assert!(
+        decision.submitted,
+        "a marketable package submits: {:?}",
+        decision.skipped
+    );
+    assert_eq!(decision.structure, Some(StructureKind::Vertical));
+    // Mid debit 1.00 plus the 200 bps package tolerance.
+    assert_eq!(decision.checked_limit, Money::new(Decimal::new(102, 2)));
+    assert_eq!(decision.filled_quantity, 1, "the package is one unit");
+    assert_eq!(decision.legs.len(), 2, "both legs are recorded");
+    let orders = venue.orders();
+    assert_eq!(orders.len(), 1);
+    let intent = &orders[0].intent;
+    assert_eq!(intent.side, OrderSide::Buy, "a debit package buys");
+    assert_eq!(intent.limit_price, Money::new(Decimal::new(102, 2)));
+    assert_eq!(
+        intent.legs.as_ref().map(protopyne_types::SpreadLegs::len),
+        Some(2)
+    );
+    // The intent the venue received is the one the engine judged: the
+    // checked limit and the derived shape match the submitted intent.
+    assert_eq!(intent.limit_price, decision.checked_limit);
+    assert_eq!(
+        OrderShape::of(intent),
+        OrderShape::new(true, true),
+        "the submitted spread is a limit spread"
+    );
+    // Debit 1.00 plus two 0.65 fees.
+    assert_eq!(
+        intent.capital_requirement,
+        Some(Money::new(Decimal::new(230, 2)))
+    );
+}
+
+#[tokio::test]
+async fn chain_derived_condor_flips_the_intent_to_sell() {
+    let bars = history();
+    let bar = &bars[0];
+    let quotes = vec![
+        kind_quote(OptionKind::Put, 685, "0.999", "1.001", bar.ts),
+        kind_quote(OptionKind::Put, 690, "1.999", "2.001", bar.ts),
+        kind_quote(OptionKind::Call, 700, "0.999", "1.001", bar.ts),
+        kind_quote(OptionKind::Call, 705, "0.499", "0.501", bar.ts),
+    ];
+    let (decision, venue) =
+        chain_derived_decision(StructureKind::Condor, &quotes, StructureKind::Condor).await;
+    assert_eq!(decision.structure, Some(StructureKind::Condor));
+    let orders = venue.orders();
+    assert_eq!(
+        orders.len(),
+        1,
+        "a covered condor reaches the venue: {:?}",
+        decision.skipped
+    );
+    let intent = &orders[0].intent;
+    assert_eq!(intent.side, OrderSide::Sell, "a credit package sells");
+    assert!(
+        intent.limit_price.as_decimal().is_sign_negative(),
+        "the credit limit is signed"
+    );
+    assert_eq!(
+        intent.legs.as_ref().map(protopyne_types::SpreadLegs::len),
+        Some(4)
+    );
+}
+
+#[tokio::test]
+async fn chain_derived_package_outside_tolerance_names_the_limit() {
+    let bars = history();
+    let bar = &bars[0];
+    let quotes = covering_chain(bar);
+    let (decision, venue) =
+        chain_derived_decision(StructureKind::Vertical, &quotes, StructureKind::Vertical).await;
+    assert!(!decision.submitted, "the touch is far above the mid limit");
+    assert!(venue.orders().is_empty(), "a refused package books nothing");
+    let skipped = decision.skipped.as_deref().expect("a reason");
+    assert!(
+        skipped.contains("outside limit"),
+        "the refusal names the limit: {skipped}"
+    );
+}
+
+/// One vertical package proposal: the shape a caller would hand over with
+/// legs attached under the config arm.
+fn legged_proposal(bar: &Bar, legs: Option<protopyne_types::SpreadLegs>) -> Proposal {
+    Proposal::new()
+        .id("run-11-0".to_owned())
+        .strategy("ribbon".to_owned())
+        .underlying("SPY".to_owned())
+        .direction(Direction::Long)
+        .side(ProposalSide::Entry)
+        .structure(StructureKind::Vertical)
+        .quantity(Qty::new(Decimal::ONE))
+        .limit_price(Money::new(bar.c))
+        .max_loss(money(400))
+        .notional(money(2_000))
+        .dte_days(30)
+        .conviction(0.8)
+        .activity_score(0.8)
+        .maybe_legs(legs)
+        .state(ProposalState::Proposed)
+        .created_at(bar.ts)
+        .build()
+}
+
+/// A 690/695 call package around the bar's close, quoted tight.
+fn package_legs(bar: &Bar) -> protopyne_types::SpreadLegs {
+    use protopyne_types::{LegSide, OptionContract, OptionKind, SpreadLeg};
+
+    let contract = |strike: i64| {
+        OptionContract::new()
+            .underlying("SPY".to_owned())
+            .expiry(bar.ts.date_naive() + chrono::Duration::days(30))
+            .strike(money(strike))
+            .kind(OptionKind::Call)
+            .build()
+    };
+    protopyne_types::SpreadLegs::try_new(vec![
+        SpreadLeg::new()
+            .contract(contract(690))
+            .side(LegSide::Long)
+            .build(),
+        SpreadLeg::new()
+            .contract(contract(695))
+            .side(LegSide::Short)
+            .build(),
+    ])
+    .expect("a defined-risk package")
+}
+
+/// Config-supplied economics are the caller's constants: they cannot check a
+/// structure's own numbers, so a proposal carrying legs refuses naming the
+/// arm instead of booking legs the gates never priced. The same proposal
+/// without legs is the only config-supplied shape, and it flows unchanged.
+#[tokio::test]
+async fn a_config_supplied_proposal_with_legs_refuses_naming_the_arm() {
+    let bars = history();
+    let bar = &bars[0];
+    let venue = PaperVenue::new(PaperConfig::new().build());
+    let journal = Journal::ephemeral();
+    let recorder = Recorder::ephemeral(&journal);
+    let ledger = GrantLedger::new(grant_with(0.5));
+    let quote = bar_quote(bar, &venue_config()).expect("the bar quotes");
+    let refused = submit_decided(
+        legged_proposal(bar, Some(package_legs(bar))),
+        quote,
+        &risk(),
+        &ledger,
+        &venue,
+        &recorder,
+        BarHealth::rehearsed(),
+        None,
+        0,
+        bar,
+        &runner_config(),
+    )
+    .await;
+    assert!(
+        !refused.submitted,
+        "a priced package needs the chain-derived arm: {:?}",
+        refused.skipped
+    );
+    let reason = refused.skipped.as_deref().expect("a named refusal");
+    assert!(
+        reason.contains("ChainDerived"),
+        "the refusal names the arm that can price it: {reason}"
+    );
+    assert!(
+        venue.orders().is_empty(),
+        "a refused proposal books nothing"
+    );
+
+    let flowed = submit_decided(
+        legged_proposal(bar, None),
+        quote,
+        &risk(),
+        &ledger,
+        &venue,
+        &recorder,
+        BarHealth::rehearsed(),
+        None,
+        0,
+        bar,
+        &runner_config(),
+    )
+    .await;
+    assert!(
+        flowed.submitted,
+        "the legless config-supplied shape is unchanged: {:?}",
+        flowed.skipped
+    );
+    let orders = venue.orders();
+    assert_eq!(orders.len(), 1, "the refused bar booked nothing");
+    assert!(
+        orders[0].intent.legs.is_none(),
+        "the legless path still books one legless order"
     );
 }

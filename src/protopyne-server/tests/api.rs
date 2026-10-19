@@ -4,7 +4,13 @@ use std::time::Duration;
 
 use chrono::{TimeZone, Utc};
 use protopyne_strategy::elements::ExplicitStructure;
+use protopyne_strategy::{
+    BreakerLimits, FixedSignal, GrantBudgets, GrantPermission, GrantScope, PortfolioThresholds,
+    SignalThresholds, Strategy, TradeThresholds,
+};
 use protopyne_venue::calculate_price_entry_average;
+
+use crate::rehearsal::StrategyKind;
 
 fn history() -> Vec<Bar> {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -155,6 +161,7 @@ async fn preview_populates_inbox_and_portfolio() {
         .json(&PreviewParams {
             seed: 3,
             grant: None,
+            strategy: StrategyKind::Rehearsal,
         })
         .send()
         .await
@@ -172,6 +179,20 @@ async fn preview_populates_inbox_and_portfolio() {
     let tallied: u64 = response.deny_histogram.iter().map(|entry| entry.bars).sum();
     assert!(tallied <= 3 * run.decisions.len() as u64);
 
+    let rehearsal: Vec<ProposalView> = client
+        .get(format!("{}/proposals/rehearsal", base(&handle)))
+        .send()
+        .await
+        .expect("rehearsal inbox reachable")
+        .json()
+        .await
+        .expect("rehearsal inbox is JSON");
+    assert!(!rehearsal.is_empty());
+    assert!(rehearsal.iter().all(|row| row.strategy == "ribbon"));
+    assert!(rehearsal.iter().any(|row| row.state == "Filled"));
+
+    // The authoritative inbox is the journaled fold: a rehearsal preview
+    // journals no proposal body, so nothing awaits a human yet.
     let inbox: Vec<ProposalView> = client
         .get(format!("{}/proposals", base(&handle)))
         .send()
@@ -180,9 +201,7 @@ async fn preview_populates_inbox_and_portfolio() {
         .json()
         .await
         .expect("inbox is JSON");
-    assert!(!inbox.is_empty());
-    assert!(inbox.iter().all(|row| row.strategy == "ribbon"));
-    assert!(inbox.iter().any(|row| row.state == "Filled"));
+    assert!(inbox.is_empty(), "no journaled proposal has been made yet");
 
     let portfolio: PortfolioView = client
         .get(format!("{}/portfolio", base(&handle)))
@@ -192,8 +211,18 @@ async fn preview_populates_inbox_and_portfolio() {
         .json()
         .await
         .expect("portfolio is JSON");
+    assert_eq!(portfolio.source, "booked");
     assert_eq!(portfolio.filled_orders, run.report.fills);
     assert!(!portfolio.positions.is_empty());
+    let booked: PortfolioView = client
+        .get(format!("{}/portfolio/booked", base(&handle)))
+        .send()
+        .await
+        .expect("booked portfolio reachable")
+        .json()
+        .await
+        .expect("booked portfolio is JSON");
+    assert_eq!(booked, portfolio, "the booked route is the same read");
     handle.shutdown().await;
 }
 
@@ -221,6 +250,7 @@ async fn preview_manifest_is_a_pure_function_of_its_inputs() {
     let params = PreviewParams {
         seed: 5,
         grant: None,
+        strategy: StrategyKind::Rehearsal,
     };
     // Two previews land at different wall-clock instants; the same inputs pin
     // the same manifest because the clock is not an input.
@@ -255,6 +285,7 @@ async fn preview_manifest_is_a_pure_function_of_its_inputs() {
         &PreviewParams {
             seed: 5,
             grant: Some(strict),
+            strategy: StrategyKind::Rehearsal,
         },
     )
     .await;
@@ -280,19 +311,20 @@ async fn unfilled_inbox_rows_carry_bar_close_limits() {
         .json(&PreviewParams {
             seed: 3,
             grant: Some(strict),
+            strategy: StrategyKind::Rehearsal,
         })
         .send()
         .await
         .expect("preview reachable");
     assert!(preview.status().is_success());
     let inbox: Vec<ProposalView> = client
-        .get(format!("{}/proposals", base(&handle)))
+        .get(format!("{}/proposals/rehearsal", base(&handle)))
         .send()
         .await
-        .expect("inbox reachable")
+        .expect("rehearsal inbox reachable")
         .json()
         .await
-        .expect("inbox is JSON");
+        .expect("rehearsal inbox is JSON");
     assert!(!inbox.is_empty());
     let bars = history();
     let mut saw_pending = false;
@@ -368,7 +400,7 @@ async fn inbox_projects_the_decisions_real_attribution() {
     .await
     .expect("gamma/QQQ run");
     assert!(run.report.fills > 0, "the permissive grant must fill");
-    publish_run(&handle.state, &run);
+    publish_run(&handle.state, &run, "test-grant", &[]);
     let inbox = common_core::sync::lock(&handle.state.inbox).clone();
     assert!(!inbox.is_empty());
     for row in &inbox {
@@ -432,7 +464,7 @@ async fn portfolio_average_is_the_canonical_entry_formula() {
         decision.fill_price = Some(Money::from(price));
         decision.fee = Some(Money::from(fee));
     }
-    publish_run(&handle.state, &run);
+    publish_run(&handle.state, &run, "test-grant", &[]);
     let portfolio = common_core::sync::lock(&handle.state.portfolio).clone();
     assert_eq!(portfolio.positions.len(), 1);
     let position = &portfolio.positions[0];
@@ -517,6 +549,7 @@ async fn portfolio_positions_are_stable_across_previews() {
             .json(&PreviewParams {
                 seed: 3,
                 grant: None,
+                strategy: StrategyKind::Rehearsal,
             })
             .send()
             .await
@@ -553,6 +586,7 @@ async fn out_of_window_grant_preview_explains_empty_fills() {
         .json(&PreviewParams {
             seed: 3,
             grant: Some(grant),
+            strategy: StrategyKind::Rehearsal,
         })
         .send()
         .await
@@ -1065,7 +1099,7 @@ async fn portfolio_fold_reduces_opposite_direction_fills_like_the_venue() {
         decision.fill_price = Some(Money::from(price));
         decision.fee = Some(Money::from(0));
     }
-    publish_run(&handle.state, &run);
+    publish_run(&handle.state, &run, "test-grant", &[]);
     let portfolio = common_core::sync::lock(&handle.state.portfolio).clone();
     assert_eq!(portfolio.positions.len(), 1);
     let position = &portfolio.positions[0];

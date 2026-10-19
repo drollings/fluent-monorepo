@@ -86,6 +86,7 @@ fn report_states_limits_and_unavailable_greeks() {
         curve,
         None,
         None,
+        MarkBasis::FillPrice,
     );
     assert_eq!(report.bars, 4);
     assert_eq!(report.fill_rate, Some(0.5));
@@ -114,6 +115,7 @@ fn report_with_no_proposals_has_no_fill_rate() {
         Vec::new(),
         None,
         None,
+        MarkBasis::FillPrice,
     );
     assert_eq!(report.fill_rate, None);
     assert_eq!(report.drawdown, money("0"));
@@ -148,6 +150,7 @@ fn fill_rate_survives_counts_past_u32() {
         Vec::new(),
         None,
         None,
+        MarkBasis::FillPrice,
     );
     assert_eq!(even.fill_rate, Some(1.0));
     let half = build_report(
@@ -162,6 +165,7 @@ fn fill_rate_survives_counts_past_u32() {
         Vec::new(),
         None,
         None,
+        MarkBasis::FillPrice,
     );
     assert_eq!(half.fill_rate, Some(0.5));
 }
@@ -241,6 +245,7 @@ fn report_carries_cum_return_and_rsrs_as_json_keys() {
         curve,
         Some(2.5),
         None,
+        MarkBasis::FillPrice,
     );
     assert!((report.cum_return.expect("cum_return") - -0.1).abs() < 1e-12);
     assert_eq!(report.rsrs, Some(2.5));
@@ -266,6 +271,7 @@ fn report_carries_cum_return_and_rsrs_as_json_keys() {
         Vec::new(),
         None,
         None,
+        MarkBasis::FillPrice,
     );
     assert_eq!(empty.cum_return, None);
     assert_eq!(empty.rsrs, None);

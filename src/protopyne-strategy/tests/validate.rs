@@ -113,8 +113,11 @@ fn grant_validate_covers_service_cases() {
     assert!(Validate::validate(&good).is_ok());
     let mut revoked = valid_grant();
     revoked.revoked = true;
-    assert!(revoked.validate().is_err());
-    assert!(Validate::validate(&revoked).is_err());
+    // A revoked grant stays representable (structural validation passes) but
+    // is refused at arm time.
+    assert!(revoked.validate().is_ok());
+    assert!(Validate::validate(&revoked).is_ok());
+    assert!(revoked.validate_armable().is_err());
     // Empty window.
     let mut empty_window = valid_grant();
     empty_window.valid_until = empty_window.valid_from;

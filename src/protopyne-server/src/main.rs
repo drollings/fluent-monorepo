@@ -2,8 +2,16 @@
 #![forbid(unsafe_code)]
 
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Duration;
 
-use protopyne_server::{load_history_path, open_tape_reader, serve_with_tape, ServerConfig};
+use protopyne_server::{
+    load_history_path, open_tape_reader, run_live_loop, serve_with_tape, BacktestConfig,
+    ChainPolicy, LiveLoop, LiveLoopOutcome, LoopGate, RunnerConfig, ServerConfig,
+};
+use protopyne_strategy::{RiskEngine, RiskLimits};
+use protopyne_types::{GapPolicy, Money, SeriesContext, Timeframe};
+use protopyne_venue::{LiveAttachments, LiveBackfillSpec, QuoteSource, StreamConfig};
 
 /// Startup arguments. Parsing lives here (never in library code): malformed
 /// flags exit loudly instead of binding half-configured.
@@ -14,6 +22,7 @@ struct Args {
     tape: Option<PathBuf>,
     live: bool,
     live_journal: Option<PathBuf>,
+    live_alerts: Option<PathBuf>,
 }
 
 fn parse_args(raw: &[String]) -> Result<Args, String> {
@@ -24,6 +33,7 @@ fn parse_args(raw: &[String]) -> Result<Args, String> {
         tape: None,
         live: false,
         live_journal: None,
+        live_alerts: None,
     };
     let mut rest = raw.iter().skip(1);
     while let Some(flag) = rest.next() {
@@ -48,6 +58,11 @@ fn parse_args(raw: &[String]) -> Result<Args, String> {
             "--live-journal" => {
                 args.live_journal = Some(PathBuf::from(
                     rest.next().ok_or("--live-journal needs a path")?,
+                ));
+            }
+            "--live-alerts" => {
+                args.live_alerts = Some(PathBuf::from(
+                    rest.next().ok_or("--live-alerts needs a path")?,
                 ));
             }
             unknown => return Err(format!("unknown flag {unknown}")),
@@ -94,12 +109,15 @@ Flags:
                    symbol-scoped chart reads plan through the tape, falling back
                    to the boot history per read
   --live               boot the production trading session against the live
-                   venue and exit (no serving): reads TASTYTRADE_BASE_URL,
-                   TASTYTRADE_ACCOUNT, TASTYTRADE_LOGIN, TASTYTRADE_PASSWORD
-                   from the environment plus --live-journal PATH; refuses
-                   without all five. Live decision serving stays gated on the
-                   approval inbox and the cert-sandbox soak.
+                   venue and run the trading loop only when the journaled
+                   authority permits it (an armed grant plus a loop-start
+                   command). Boot alone places nothing. Reads
+                   TASTYTRADE_BASE_URL, TASTYTRADE_ACCOUNT, TASTYTRADE_LOGIN,
+                   TASTYTRADE_PASSWORD, optional TASTYTRADE_UNDERLYING (SPY),
+                   --live-journal PATH, and --history for the bar feed.
   --live-journal PATH  durable journal file for --live (required with it)
+  --live-alerts PATH   out-of-band alert file for --live (optional; breaker
+                   trips and gate halts append one JSON object per line)
   --help, -h       print this message
   --version, -V    print the version
 
@@ -188,6 +206,17 @@ async fn run_live(args: &Args) -> Result<(), String> {
         .live_journal
         .clone()
         .ok_or("--live needs --live-journal PATH for the durable journal")?;
+    // The bar feed shapes the backfill sensor's series, so history loads
+    // before the boot attaches it: a gap is judged against the feed it
+    // guards, never a placeholder timeframe.
+    let history_path = args
+        .history
+        .clone()
+        .ok_or("--live needs --history for the bar feed")?;
+    let history_bars = load_history_path(&history_path, None)
+        .map_err(|e| format!("live history failed to load: {e}"))?;
+    let timeframe = Timeframe::infer(&history_bars).unwrap_or(Timeframe::D1);
+    let underlying = std::env::var("TASTYTRADE_UNDERLYING").unwrap_or_else(|_| "SPY".to_owned());
     let boot = protopyne_venue::LiveBoot::new()
         .session(protopyne_venue::SessionConfig::default())
         .transport(
@@ -197,21 +226,114 @@ async fn run_live(args: &Args) -> Result<(), String> {
         )
         .account(account.clone())
         .journal_path(journal_path.clone())
+        .maybe_alerts_path(args.live_alerts.clone())
         .build();
+    // The supervised producer set: a stream breaker, journal-vs-venue
+    // reconciliation, and reconnect backfill over the feed's series. A
+    // requested producer that cannot attach refuses the boot itself.
+    let attachments = LiveAttachments::none()
+        .with_stream(StreamConfig::new().build())
+        .with_reconcile()
+        .with_backfill(LiveBackfillSpec::new(
+            SeriesContext::new(underlying.clone(), timeframe, GapPolicy::Sparse),
+            Vec::new(),
+            0,
+        ));
     let net = std::sync::Arc::new(fluent_concurrency::io::net::NetCapability::new());
     let caps =
         fluent_wvr::CapabilitySet::new().with(fluent_concurrency::io::net::NetCapability::new());
     let live = fluent_wvr::CURRENT_CAPS
         .scope(
             caps,
-            protopyne_venue::boot_live(&boot, net, &username, &password),
+            protopyne_venue::boot_live(&boot, net, &username, &password, attachments, None),
         )
         .await
         .map_err(|e| format!("live boot refused: {e}"))?;
     println!(
-        "live session ready: account {account}, journal {}",
-        journal_path.display()
+        "live session ready: account {account}, journal {}, producers {:?}",
+        journal_path.display(),
+        live.producers(),
     );
+    let mut live = live;
+    // Journaled authority first: an arm alone is not a start. Nothing moves
+    // unless the operator also journaled the loop-start command.
+    let gate =
+        protopyne_server::loop_gate(&live.journal, &live.storage).map_err(|e| e.to_string())?;
+    if let LoopGate::Ready(_) = gate {
+        // The arm and the start are both journaled: run the one bar body.
+    } else {
+        let reason = match gate {
+            LoopGate::Unarmed => "no armed grant is journaled",
+            LoopGate::NotStarted => "a grant is armed but no loop-start command is journaled",
+            LoopGate::Ready(_) => unreachable!(),
+        };
+        println!("live loop not started: {reason}; boot placed nothing");
+        live.session.shutdown().await;
+        return Ok(());
+    }
+    // Authority without the producer set is the same refusal: the loop runs
+    // only when every supervised producer is attached.
+    let missing = live.missing_producers();
+    if !missing.is_empty() {
+        println!(
+            "live loop not started: missing supervised producers: {}; boot placed nothing",
+            missing.join(", ")
+        );
+        live.session.shutdown().await;
+        return Ok(());
+    }
+    let bars = history_bars;
+    let strategy =
+        protopyne_server::rehearsal::rehearsal_strategy(None).map_err(|e| e.to_string())?;
+    let risk = RiskEngine::new(RiskLimits::new().build());
+    let quote_config = BacktestConfig::new()
+        .underlying(underlying.clone())
+        .data_version("live".to_owned())
+        .build();
+    let runner = RunnerConfig::new(
+        underlying.clone(),
+        "ribbon".to_owned(),
+        Money::from(400),
+        Money::from(2_000),
+        30,
+        0,
+    );
+    // The authenticated transport is the quote ladder; a dark ladder halts
+    // entries fail-closed rather than inventing a price.
+    let sources: Vec<Arc<dyn QuoteSource>> =
+        vec![Arc::clone(live.venue.transport()) as Arc<dyn QuoteSource>];
+    let outcome = run_live_loop(
+        &mut live,
+        LiveLoop {
+            bars,
+            sources,
+            strategy: strategy.as_ref(),
+            risk: &risk,
+            quote_config: &quote_config,
+            runner_config: &runner,
+            timeframe,
+            chains: ChainPolicy::Unscreened,
+            cadence: Duration::ZERO,
+            seed: 0,
+        },
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    match outcome {
+        LiveLoopOutcome::Ran(decisions) => println!(
+            "live loop complete: {} bars decided, {} submitted",
+            decisions.len(),
+            decisions
+                .iter()
+                .filter(|decision| decision.submitted)
+                .count()
+        ),
+        LiveLoopOutcome::Refused(gate) => println!("live loop not started: {gate:?}"),
+        LiveLoopOutcome::MissingProducers(missing) => println!(
+            "live loop not started: missing supervised producers: {}; boot placed nothing",
+            missing.join(", ")
+        ),
+    }
     live.session.shutdown().await;
     Ok(())
 }

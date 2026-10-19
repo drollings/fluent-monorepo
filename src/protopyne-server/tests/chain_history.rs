@@ -435,3 +435,95 @@ async fn fetch_snapshot_lands_csv_the_reader_accepts() {
     assert_eq!(back.len(), 2);
     assert_eq!(back[0].contract.strike, Money::from(690));
 }
+
+#[test]
+fn greeks_parse_as_a_unit_never_a_partial_set() {
+    // A header naming only three of the four greek columns carries no greeks
+    // at all: a missing column is absence, never a silently dropped set.
+    let content = "ts,underlying,expiry,strike,kind,bid,ask,delta,gamma,theta\n\
+         1750000000,SPY,2026-07-17,600,call,3,4,0.6,0.05,-0.02\n";
+    let quotes = parse_chain_csv(content).expect("partial greek headers parse");
+    assert_eq!(quotes.len(), 1);
+    assert!(
+        quotes[0].greeks.is_none(),
+        "three of four greeks is no greeks, not a partial set"
+    );
+}
+
+#[test]
+fn a_blank_greek_cell_refuses_instead_of_inventing_zero() {
+    // All four columns present, one cell blank: the row refuses as `BadRow`
+    // on its own line rather than inventing 0.0 for the missing greek.
+    let content = "ts,underlying,expiry,strike,kind,bid,ask,delta,gamma,theta,vega\n\
+         1750000000,SPY,2026-07-17,600,call,3,4,0.6,,-0.02,0.1\n";
+    let Err(crate::error::ServerError::BadRow { line, reason }) = parse_chain_csv(content) else {
+        panic!("a blank greek cell refuses as BadRow");
+    };
+    assert_eq!(line, 2, "the refusal names the row, got {reason}");
+}
+
+#[test]
+fn a_malformed_greek_cell_refuses() {
+    let content = "ts,underlying,expiry,strike,kind,bid,ask,delta,gamma,theta,vega\n\
+         1750000000,SPY,2026-07-17,600,call,3,4,0.6,notanumber,-0.02,0.1\n";
+    let Err(crate::error::ServerError::BadRow { line, .. }) = parse_chain_csv(content) else {
+        panic!("a malformed greek cell refuses as BadRow");
+    };
+    assert_eq!(line, 2);
+}
+
+#[test]
+fn greeks_survive_the_landed_csv_shape() {
+    use crate::chain_history::chain_quotes_to_csv;
+
+    // A quote carrying greeks round-trips through the landed shape with the
+    // set intact; a quote without greeks round-trips as absent.
+    let with = crate::chain_history::parse_chain_csv(
+        "ts,underlying,expiry,strike,kind,bid,ask,delta,gamma,theta,vega\n\
+         1750000000,SPY,2026-07-17,600,call,3,4,0.6,0.05,-0.02,0.1\n",
+    )
+    .expect("greek rows parse")[0]
+        .clone();
+    let without = parse_chain_csv(&headed(&[row(1_750_000_900, 3, 5)]))
+        .expect("minimal rows parse")[0]
+        .clone();
+    let back = parse_chain_csv(&chain_quotes_to_csv(&[with.clone(), without]))
+        .expect("landed shape parses");
+    assert_eq!(back.len(), 2);
+    assert_eq!(
+        back[0].greeks, with.greeks,
+        "a present set is never dropped"
+    );
+    assert!(back[1].greeks.is_none(), "absence round-trips as absence");
+}
+
+#[test]
+fn covers_agrees_with_the_snapshot_on_a_fixture() {
+    // The cheap coverage predicate answers the screen's question without
+    // cloning the window: covered, uncovered, and wrong-underlying instants
+    // agree with `!snapshot.is_empty()` on the same source.
+    let quotes = parse_chain_csv(&headed(&[
+        row(1_750_000_000, 3, 4),
+        row(1_750_000_900, 3, 5),
+    ]))
+    .expect("fixture parses");
+    let source = HistoricalChainSource::new(quotes);
+    let at = |secs: i64| Utc.timestamp_opt(secs, 0).unwrap();
+    for (instant, underlying, covered) in [
+        (at(1_750_000_000), "SPY", true),
+        (at(1_750_000_900), "SPY", true),
+        (at(9_999), "SPY", false),
+        (at(1_750_000_900), "QQQ", false),
+    ] {
+        assert_eq!(
+            source.covers(underlying, instant),
+            covered,
+            "covers names the fixture's coverage at {instant} for {underlying}"
+        );
+        assert_eq!(
+            source.covers(underlying, instant),
+            !source.chain_snapshot(underlying, instant).is_empty(),
+            "the predicate and the snapshot never disagree"
+        );
+    }
+}

@@ -7,6 +7,7 @@
 //! profit-factor count only decisive steps (flat steps excluded).
 
 use super::*;
+use crate::marks::MarkBasis;
 use rust_decimal::prelude::ToPrimitive as _;
 use rust_decimal::Decimal;
 
@@ -143,6 +144,7 @@ fn report_for(curve: &[&str]) -> crate::report::BacktestReport {
         curve.iter().map(|value| money(value)).collect(),
         None,
         None,
+        MarkBasis::FillPrice,
     )
 }
 

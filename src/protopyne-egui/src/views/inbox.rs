@@ -5,7 +5,7 @@
 //! Only `PendingHuman` rows carry an approve/reject affordance; every other
 //! tag (including unknown future ones) settles fail-closed with none.
 
-use protopyne_view::ProposalView;
+use protopyne_view::{GatewayError, ProposalView, TerminalGateway};
 
 /// Read-only inbox split: rows awaiting a human act versus settled rows.
 #[derive(Debug, Clone, PartialEq)]
@@ -62,5 +62,56 @@ impl InboxModel {
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.actionable.is_empty()
+    }
+}
+
+/// One operator decision on an actionable inbox row.
+///
+/// The action carries only the id and (for a reject) the reason; applying it
+/// invokes exactly one gateway verb, so a rendered click can never fan out
+/// into a second write.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InboxAction {
+    /// Approve the pending proposal.
+    Approve {
+        /// Proposal to approve.
+        proposal_id: String,
+    },
+    /// Reject the pending proposal with a reason.
+    Reject {
+        /// Proposal to reject.
+        proposal_id: String,
+        /// Why the human rejected it.
+        reason: String,
+    },
+}
+
+impl InboxAction {
+    /// An approve click for `proposal_id`.
+    #[must_use]
+    pub fn approve(proposal_id: &str) -> Self {
+        Self::Approve {
+            proposal_id: proposal_id.to_owned(),
+        }
+    }
+
+    /// A reject click for `proposal_id`.
+    #[must_use]
+    pub fn reject(proposal_id: &str, reason: &str) -> Self {
+        Self::Reject {
+            proposal_id: proposal_id.to_owned(),
+            reason: reason.to_owned(),
+        }
+    }
+
+    /// Invoke the one gateway verb this action names.
+    pub fn apply(&self, gateway: &dyn TerminalGateway) -> Result<(), GatewayError> {
+        match self {
+            Self::Approve { proposal_id } => gateway.approve(proposal_id),
+            Self::Reject {
+                proposal_id,
+                reason,
+            } => gateway.reject(proposal_id, reason),
+        }
     }
 }

@@ -34,22 +34,29 @@ fn healthy() -> RiskState {
         quote_age_secs: 5,
         clock_skew_secs: 1,
         reconciliation_healthy: true,
-        is_limit_order: true,
-        is_spread: true,
+        facts: PortfolioFacts::unobserved(),
     }
+}
+
+fn limit_spread() -> OrderShape {
+    OrderShape::new(true, true)
 }
 
 #[test]
 fn healthy_proposal_mints_a_bound_token() {
     let engine = RiskEngine::new(RiskLimits::default());
-    let approved = engine.check(&proposal(), &healthy()).expect("healthy");
+    let approved = engine
+        .check(&proposal(), limit_spread(), &healthy())
+        .expect("healthy");
     assert_eq!(approved.proposal_id(), "p1");
 }
 
 #[test]
 fn kill_switch_and_reconciliation_halt_everything() {
     let engine = RiskEngine::new(RiskLimits::new().kill_switch(true).build());
-    let refused = engine.check(&proposal(), &healthy()).expect_err("killed");
+    let refused = engine
+        .check(&proposal(), limit_spread(), &healthy())
+        .expect_err("killed");
     assert!(refused.reasons.contains(&RiskReason::KillSwitch));
 
     let engine = RiskEngine::new(RiskLimits::default());
@@ -57,7 +64,9 @@ fn kill_switch_and_reconciliation_halt_everything() {
         reconciliation_healthy: false,
         ..healthy()
     };
-    let refused = engine.check(&proposal(), &halted).expect_err("halted");
+    let refused = engine
+        .check(&proposal(), limit_spread(), &halted)
+        .expect_err("halted");
     assert!(refused.reasons.contains(&RiskReason::ReconciliationHalt));
 }
 
@@ -67,17 +76,23 @@ fn caps_refuse_oversize_proposals() {
 
     let mut p = proposal();
     p.quantity = Qty::new(Decimal::from(500));
-    let refused = engine.check(&p, &healthy()).expect_err("too many");
+    let refused = engine
+        .check(&p, limit_spread(), &healthy())
+        .expect_err("too many");
     assert!(refused.reasons.contains(&RiskReason::OverContractCap));
 
     let mut p = proposal();
     p.max_loss = money(50_000);
-    let refused = engine.check(&p, &healthy()).expect_err("too much loss");
+    let refused = engine
+        .check(&p, limit_spread(), &healthy())
+        .expect_err("too much loss");
     assert!(refused.reasons.contains(&RiskReason::OverLossCap));
 
     let mut p = proposal();
     p.notional = money(5_000_000);
-    let refused = engine.check(&p, &healthy()).expect_err("too much notional");
+    let refused = engine
+        .check(&p, limit_spread(), &healthy())
+        .expect_err("too much notional");
     assert!(refused.reasons.contains(&RiskReason::OverNotionalCap));
 }
 
@@ -88,36 +103,32 @@ fn staleness_and_skew_refuse() {
         quote_age_secs: 5_000,
         ..healthy()
     };
-    let refused = engine.check(&proposal(), &stale).expect_err("stale");
+    let refused = engine
+        .check(&proposal(), limit_spread(), &stale)
+        .expect_err("stale");
     assert!(refused.reasons.contains(&RiskReason::StaleQuote));
 
     let skewed = RiskState {
         clock_skew_secs: 500,
         ..healthy()
     };
-    let refused = engine.check(&proposal(), &skewed).expect_err("skewed");
+    let refused = engine
+        .check(&proposal(), limit_spread(), &skewed)
+        .expect_err("skewed");
     assert!(refused.reasons.contains(&RiskReason::ClockSkew));
 }
 
 #[test]
 fn spreads_require_limit_orders_but_stock_may_use_market() {
     let engine = RiskEngine::new(RiskLimits::default());
-    let market_spread = RiskState {
-        is_limit_order: false,
-        is_spread: true,
-        ..healthy()
-    };
+    let market_spread = OrderShape::new(true, false);
     let refused = engine
-        .check(&proposal(), &market_spread)
+        .check(&proposal(), market_spread, &healthy())
         .expect_err("market spread");
     assert!(refused.reasons.contains(&RiskReason::MarketOrderForSpread));
 
-    let market_single = RiskState {
-        is_limit_order: false,
-        is_spread: false,
-        ..healthy()
-    };
-    assert!(engine.check(&proposal(), &market_single).is_ok());
+    let market_single = OrderShape::new(false, false);
+    assert!(engine.check(&proposal(), market_single, &healthy()).is_ok());
 }
 
 #[test]
@@ -125,7 +136,9 @@ fn fractional_quantities_fail_closed() {
     let engine = RiskEngine::new(RiskLimits::default());
     let mut p = proposal();
     p.quantity = Qty::new(Decimal::new(25, 1));
-    let refused = engine.check(&p, &healthy()).expect_err("fractional");
+    let refused = engine
+        .check(&p, limit_spread(), &healthy())
+        .expect_err("fractional");
     assert!(refused.reasons.contains(&RiskReason::Unrepresentable));
 }
 
@@ -140,9 +153,13 @@ fn every_refusal_reason_is_reachable() {
         RiskReason::StaleQuote,
         RiskReason::ClockSkew,
         RiskReason::MarketOrderForSpread,
+        RiskReason::OverOpenRisk,
+        RiskReason::OverNetDelta,
+        RiskReason::InsufficientBuyingPower,
+        RiskReason::PortfolioFactsUnavailable,
         RiskReason::Unrepresentable,
     ];
-    assert_eq!(reasons.len(), 9);
+    assert_eq!(reasons.len(), 13);
     for reason in &reasons {
         let refused = RiskRefused {
             reasons: vec![reason.clone()],
@@ -186,14 +203,14 @@ fn caps_read_exact_decimals() {
     at_cap.max_loss = Money::new(exact);
     at_cap.notional = Money::new(exact);
     assert!(
-        engine.check(&at_cap, &healthy()).is_ok(),
+        engine.check(&at_cap, limit_spread(), &healthy()).is_ok(),
         "at-cap proposals pass"
     );
 
     let mut over_cap = proposal();
     over_cap.max_loss = Money::new(exact + Decimal::from(1));
     let refused = engine
-        .check(&over_cap, &healthy())
+        .check(&over_cap, limit_spread(), &healthy())
         .expect_err("over-cap refuses");
     assert!(refused.reasons.contains(&RiskReason::OverLossCap));
 }
@@ -217,7 +234,7 @@ fn over_bound_quote_age_and_clock_skew_refuse_at_construction() {
         );
         let engine = RiskEngine::new(limits);
         let refused = engine
-            .check(&proposal(), &healthy())
+            .check(&proposal(), limit_spread(), &healthy())
             .expect_err("an invalid engine fails closed");
         assert!(refused.reasons.contains(&RiskReason::Unrepresentable));
     }
@@ -238,7 +255,7 @@ fn unrepresentable_cap_fails_closed_at_construction() {
         assert_eq!(limits.loss_cap(), None, "the cap has no decimal reading");
         let engine = RiskEngine::new(limits);
         let refused = engine
-            .check(&proposal(), &healthy())
+            .check(&proposal(), limit_spread(), &healthy())
             .expect_err("no reading fails closed");
         assert!(refused.reasons.contains(&RiskReason::Unrepresentable));
     }
@@ -250,7 +267,7 @@ fn unrepresentable_cap_fails_closed_at_construction() {
     );
     let engine = RiskEngine::new(limits);
     let refused = engine
-        .check(&proposal(), &healthy())
+        .check(&proposal(), limit_spread(), &healthy())
         .expect_err("no reading fails closed");
     assert!(refused.reasons.contains(&RiskReason::Unrepresentable));
 }
@@ -259,12 +276,14 @@ fn unrepresentable_cap_fails_closed_at_construction() {
 fn engine_field_edits_reparse_the_stored_caps() {
     use fluent_wvr::FieldAccess as _;
     let mut engine = RiskEngine::new(RiskLimits::default());
-    assert!(engine.check(&proposal(), &healthy()).is_ok());
+    assert!(engine
+        .check(&proposal(), limit_spread(), &healthy())
+        .is_ok());
     engine
         .set_field("max_loss_per_trade", "100")
         .expect("cap edits");
     let refused = engine
-        .check(&proposal(), &healthy())
+        .check(&proposal(), limit_spread(), &healthy())
         .expect_err("the edited cap binds");
     assert!(refused.reasons.contains(&RiskReason::OverLossCap));
 }
@@ -301,7 +320,9 @@ fn try_new_refuses_out_of_bound_configuration_up_front() {
 fn engine_field_edits_cannot_widen_into_unchecked_bounds() {
     use fluent_wvr::FieldAccess as _;
     let mut engine = RiskEngine::new(RiskLimits::default());
-    assert!(engine.check(&proposal(), &healthy()).is_ok());
+    assert!(engine
+        .check(&proposal(), limit_spread(), &healthy())
+        .is_ok());
     // The schema path enforces the declared bounds on the edit itself, so an
     // over-bound age never lands in the engine to be caught later.
     let refused = engine
@@ -312,7 +333,9 @@ fn engine_field_edits_cannot_widen_into_unchecked_bounds() {
         "the refusal names the bound: {refused:?}"
     );
     assert!(
-        engine.check(&proposal(), &healthy()).is_ok(),
+        engine
+            .check(&proposal(), limit_spread(), &healthy())
+            .is_ok(),
         "the refused edit changed nothing"
     );
     let refused = engine
@@ -322,4 +345,88 @@ fn engine_field_edits_cannot_widen_into_unchecked_bounds() {
         format!("{refused:?}").contains("minimum 1"),
         "the refusal names the bound: {refused:?}"
     );
+}
+
+#[test]
+fn aggregate_caps_are_inert_when_unconfigured() {
+    let engine = RiskEngine::new(RiskLimits::default());
+    assert!(!engine.limits().has_aggregate_caps());
+    assert!(engine
+        .check(&proposal(), limit_spread(), &healthy())
+        .is_ok());
+}
+
+#[test]
+fn a_configured_aggregate_cap_refuses_unobserved_facts() {
+    let engine = RiskEngine::new(RiskLimits::new().max_open_risk(1_000.0).build());
+    let refused = engine
+        .check(&proposal(), limit_spread(), &healthy())
+        .expect_err("unobserved");
+    assert!(
+        refused
+            .reasons
+            .contains(&RiskReason::PortfolioFactsUnavailable),
+        "an unobserved cap must fail closed: {:?}",
+        refused.reasons
+    );
+}
+
+#[test]
+fn observed_open_risk_over_the_cap_refuses_and_under_it_passes() {
+    let engine = RiskEngine::new(RiskLimits::new().max_open_risk(100.0).build());
+    let over = RiskState {
+        facts: PortfolioFacts::observed(money(150), None, None, None),
+        ..healthy()
+    };
+    assert!(engine
+        .check(&proposal(), limit_spread(), &over)
+        .expect_err("over cap")
+        .reasons
+        .contains(&RiskReason::OverOpenRisk));
+
+    let under = RiskState {
+        facts: PortfolioFacts::observed(money(40), None, None, None),
+        ..healthy()
+    };
+    assert!(engine.check(&proposal(), limit_spread(), &under).is_ok());
+}
+
+#[test]
+fn a_nan_net_delta_denies() {
+    let engine = RiskEngine::new(RiskLimits::new().max_abs_net_delta(5.0).build());
+    let state = RiskState {
+        facts: PortfolioFacts::observed(money(0), Some(f64::NAN), None, None),
+        ..healthy()
+    };
+    assert!(engine
+        .check(&proposal(), limit_spread(), &state)
+        .is_err_and(|refused| refused
+            .reasons
+            .contains(&RiskReason::PortfolioFactsUnavailable)));
+}
+
+#[test]
+fn a_buying_power_floor_refuses_when_unmet() {
+    let engine = RiskEngine::new(RiskLimits::new().min_buying_power(500.0).build());
+    let short = RiskState {
+        facts: PortfolioFacts::observed(money(0), None, Some(money(100)), None),
+        ..healthy()
+    };
+    assert!(engine
+        .check(&proposal(), limit_spread(), &short)
+        .expect_err("under floor")
+        .reasons
+        .contains(&RiskReason::InsufficientBuyingPower));
+
+    let covered = RiskState {
+        facts: PortfolioFacts::observed(money(0), None, Some(money(5_000)), None),
+        ..healthy()
+    };
+    assert!(engine.check(&proposal(), limit_spread(), &covered).is_ok());
+}
+
+#[test]
+fn try_new_refuses_aggregate_caps_without_a_producer() {
+    assert!(RiskEngine::try_new(RiskLimits::default()).is_ok());
+    assert!(RiskEngine::try_new(RiskLimits::new().max_open_risk(100.0).build()).is_err());
 }

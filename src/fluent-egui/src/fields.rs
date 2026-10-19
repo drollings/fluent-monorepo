@@ -476,10 +476,11 @@ fn paint_one(
 }
 
 /// A whole-number editor. A value this editor cannot hold is reported, not
-/// rounded or wrapped into the widget. When the schema declares both bounds,
-/// a Material slider is offered alongside the drag value so workstation and
-/// touch operators choose precisely; the write still goes through the field's
-/// own contract, never a clamp.
+/// rounded or wrapped into the widget. The control is always the unbounded
+/// drag value — never a slider bound to the schema range, which would hide
+/// an out-of-band stored value and clamp an operator edit onto the bound;
+/// the write still goes through the field's own contract, never a clamp.
+/// Infinite bounds need no special case: no bound ever reaches the widget.
 fn edit_integer(
     row: &mut egui::Ui,
     field: &SchemaField,
@@ -494,27 +495,15 @@ fn edit_integer(
         return None;
     };
     let mut value = value;
-    // Material: bounded integers get a slider (touch-friendly), unbounded
-    // keep the compact drag value.
-    let changed = match (field.minimum, field.maximum) {
-        (Some(min), Some(max)) if max > min => {
-            let min_i = min.ceil() as i64;
-            let max_i = max.floor() as i64;
-            if max_i > min_i {
-                row.add(egui::Slider::new(&mut value, min_i..=max_i))
-                    .changed()
-            } else {
-                row.add(egui::DragValue::new(&mut value).speed(1)).changed()
-            }
-        }
-        _ => row.add(egui::DragValue::new(&mut value).speed(1)).changed(),
-    };
+    let changed = row.add(egui::DragValue::new(&mut value).speed(1)).changed();
     changed.then(|| value.to_string())
 }
 
 /// A real-number editor. `NaN` and the infinities are never written: a
-/// control holding one would render it as a value it does not have. Bounded
-/// numbers render as Material sliders; unbounded keep the drag value.
+/// control holding one would render it as a value it does not have. The
+/// control is always the unbounded drag value, for the same reason as the
+/// integer editor: bounds are display-only hints, enforced by the field's
+/// own contract on write.
 fn edit_number(
     row: &mut egui::Ui,
     field: &SchemaField,
@@ -529,14 +518,9 @@ fn edit_number(
         return None;
     };
     let mut value = value;
-    let changed = match (field.minimum, field.maximum) {
-        (Some(min), Some(max)) if max > min && min.is_finite() && max.is_finite() => {
-            row.add(egui::Slider::new(&mut value, min..=max)).changed()
-        }
-        _ => row
-            .add(egui::DragValue::new(&mut value).speed(0.01))
-            .changed(),
-    };
+    let changed = row
+        .add(egui::DragValue::new(&mut value).speed(0.01))
+        .changed();
     if !changed {
         return None;
     }
@@ -592,11 +576,11 @@ const COLOR_SWATCH_PX: f32 = 16.0;
 /// The swatch button opens the platform color picker (touch-friendly) and the
 /// hex text remains the precise path: both write through the field's own
 /// contract. The picker shows exactly what the text spells, and text this
-/// crate cannot read paints no swatch rather than a stand-in color. An empty
-/// value (a field whose contract treats empty as "inherit") paints the swatch
-/// hollow and the picker starts from a neutral, so "unset" is visibly
-/// different from "set to black". A malformed value the field refuses is
-/// reported, not repaired.
+/// crate cannot read paints no swatch and no picker rather than a stand-in
+/// color. An empty value (a field whose contract treats empty as "inherit")
+/// paints the swatch hollow and the picker starts from a neutral, so "unset"
+/// is visibly different from "set to black". A malformed value the field
+/// refuses is reported, not repaired; the hex text stays the recovery path.
 fn edit_color(
     row: &mut egui::Ui,
     field: &SchemaField,
@@ -604,35 +588,39 @@ fn edit_color(
     edits: &mut FieldEdits,
 ) -> Option<String> {
     let trimmed = current.trim();
-    let parsed: Option<egui::Color32> = if trimmed.is_empty() {
-        None
+    let (parsed, readable) = if trimmed.is_empty() {
+        (None, true)
     } else {
         match crate::paint::parse_hex_color(&field.name, trimmed) {
-            Ok(color) => Some(color),
+            Ok(color) => (Some(color), true),
             Err(error) => {
                 edits.refusals.push(refusal(field, error.to_string()));
-                None
+                (None, false)
             }
         }
     };
     let outline = row.visuals().widgets.noninteractive.bg_stroke.color;
     // Material picker: a swatch button that opens the color popup. Hollow
-    // when unset (inherit), absent readout when unreadable. egui 0.36 edits
-    // sRGB bytes, so the wire hex is derived from those bytes.
-    let mut picker_srgb: [u8; 3] = match parsed {
-        Some(color) => [color.r(), color.g(), color.b()],
-        None => [32, 200, 240],
-    };
-    let picker_response = row.color_edit_button_srgb(&mut picker_srgb);
-    if picker_response.changed() {
-        // Picker edits resolve to opaque #RRGGBB on the wire (alpha rides the
-        // theme/transparency path, never the hex text).
-        let hex = format!(
-            "#{:02X}{:02X}{:02X}",
-            picker_srgb[0], picker_srgb[1], picker_srgb[2]
-        );
-        if hex != current {
-            return Some(hex);
+    // when unset (inherit); unreadable text paints no picker at all, so the
+    // frame holds no seeded color for a value the field does not hold — the
+    // hex text below stays the recovery path. egui 0.36 edits sRGB bytes,
+    // so the wire hex is derived from those bytes.
+    if readable {
+        let mut picker_srgb: [u8; 3] = match parsed {
+            Some(color) => [color.r(), color.g(), color.b()],
+            None => [32, 200, 240],
+        };
+        let picker_response = row.color_edit_button_srgb(&mut picker_srgb);
+        if picker_response.changed() {
+            // Picker edits resolve to opaque #RRGGBB on the wire (alpha rides the
+            // theme/transparency path, never the hex text).
+            let hex = format!(
+                "#{:02X}{:02X}{:02X}",
+                picker_srgb[0], picker_srgb[1], picker_srgb[2]
+            );
+            if hex != current {
+                return Some(hex);
+            }
         }
     }
     let (rect, _) = row.allocate_exact_size(

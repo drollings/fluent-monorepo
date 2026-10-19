@@ -43,19 +43,35 @@ pub struct PositionView {
     pub avg_price: Money,
 }
 
-/// Aggregate portfolio over the latest preview run.
+/// Portfolio source tag for the venue's booked fills: what actually filled.
+pub const PORTFOLIO_SOURCE_BOOKED: &str = "booked";
+
+/// Portfolio source tag for the rehearsal projection over a preview run.
+pub const PORTFOLIO_SOURCE_REHEARSAL: &str = "rehearsal";
+
+/// Aggregate portfolio over one source: the venue book or a preview run.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PortfolioView {
     /// Net positions by underlying.
     pub positions: Vec<PositionView>,
-    /// Orders filled in the latest run.
+    /// Orders filled in the folded source.
     pub filled_orders: u64,
-    /// Commission paid in the latest run.
+    /// Commission paid in the folded source.
     pub total_fees: Money,
     /// Net signed contracts across positions.
     pub open_contracts: i64,
     /// Trading state when the view was published, as a stable string tag.
     pub trading_state: String,
+    /// Which source produced the view, as a stable string tag
+    /// ([`PORTFOLIO_SOURCE_BOOKED`] or [`PORTFOLIO_SOURCE_REHEARSAL`]).
+    #[serde(default = "default_portfolio_source")]
+    pub source: String,
+}
+
+/// Rows written before the source tag existed read as the rehearsal
+/// projection they were.
+fn default_portfolio_source() -> String {
+    PORTFOLIO_SOURCE_REHEARSAL.to_owned()
 }
 
 impl Default for PortfolioView {
@@ -67,6 +83,8 @@ impl Default for PortfolioView {
             open_contracts: 0,
             // Views boot allowing everything, matching a fresh session.
             trading_state: "Enabled".to_owned(),
+            // An empty portfolio carries no booked fills yet.
+            source: PORTFOLIO_SOURCE_BOOKED.to_owned(),
         }
     }
 }
@@ -153,6 +171,12 @@ pub struct WorstCase {
     pub max_loss: Money,
     /// Maximum committed notional authorized.
     pub max_notional: Money,
+    /// Where the numbers came from (`ChainDerived` when priced from a chain,
+    /// else `BudgetEcho`, the budget fields as an upper bound). An absent
+    /// value reads as empty — unknown provenance, never as a computed
+    /// exposure.
+    #[serde(default)]
+    pub basis: String,
 }
 
 /// Response to a successful arming.
@@ -226,7 +250,9 @@ pub struct ChartBar {
 pub struct ChartBars {
     /// Chartable bars in history order.
     pub rows: Vec<ChartBar>,
-    /// Bars skipped for non-finite or unrepresentable floats.
+    /// Bars skipped for non-finite or unrepresentable floats. Absent on the
+    /// wire means none were dropped.
+    #[serde(default)]
     pub dropped: u64,
 }
 
@@ -256,7 +282,9 @@ pub struct OverlaySeries {
     /// indices — values are never dropped, so rows and overlays agree
     /// positionally.
     pub values: Vec<Option<f64>>,
-    /// Bars without a value, mirroring `ChartBars.dropped`.
+    /// Bars without a value, mirroring `ChartBars.dropped`. Absent on the
+    /// wire means none were dropped.
+    #[serde(default)]
     pub dropped: u64,
 }
 
@@ -437,6 +465,41 @@ pub struct ReplayStateView {
     pub total_fees: Money,
     /// Journaled lifecycle transitions in emission order.
     pub journal: Vec<JournalRowView>,
+}
+
+/// One manual ticket awaiting the human's fill report: the exact ticket text
+/// the operator places by hand, plus the structured fields the confirm form
+/// echoes back. Display vocabulary only — the core alone parses intents
+/// (the crate never links `venue` enums; side rides a stable string tag).
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TicketView {
+    /// Ticket identifier (the intent's client id).
+    pub ticket_id: String,
+    /// Exact human ticket text (side, quantity, underlying, limit,
+    /// good-until, legs by OCC symbol).
+    pub rendered: String,
+    /// Underlying symbol.
+    pub underlying: String,
+    /// Order side, as a stable string tag (`"Buy"`, `"Sell"`).
+    pub side: String,
+    /// Contracts (or shares) the human was asked to place.
+    pub quantity: u32,
+    /// Limit price the human was asked to place at.
+    pub limit_price: Money,
+}
+
+/// One flagged disagreement between tickets, fills, and the read-only
+/// import: which ticket (or underlying) disagrees, how, and why. The kind
+/// rides the core's variant name verbatim (`"QuantityMismatch"`,
+/// `"PriceOutsideLimit"`, `"ImportMismatch"`).
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TicketDriftView {
+    /// Ticket (or underlying, for import drift) that disagrees.
+    pub ticket_id: String,
+    /// How it disagrees, as a stable string tag.
+    pub kind: String,
+    /// Human-readable reason.
+    pub detail: String,
 }
 
 #[cfg(test)]

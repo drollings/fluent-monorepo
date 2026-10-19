@@ -40,12 +40,14 @@
 
 use chrono::{DateTime, Utc};
 use fluent_wvr::capability::check_capability;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use protopyne_store::{AppendLog, AppendRecord};
+use protopyne_strategy::Proposal;
 
+use crate::command::{proposal_bodies, PROPOSAL_BODY_KIND};
 use crate::error::VenueError;
 use crate::order::{OrderIntent, OrderRecord, OrderStatus};
 use crate::venue::LegExecution;
@@ -58,6 +60,13 @@ pub const INTENT_KIND: &str = "intent";
 /// [`LegExecution`] as JSON. Additive: rows written before legs existed
 /// carry no such events and replay exactly as before.
 pub const LEG_FILL_KIND: &str = "leg_fill";
+
+/// Event kind for one corporate action the replay consumed. The detail is the
+/// [`CorporateEventArgs`](crate::order::CorporateEventArgs) plus its
+/// [`CorporateOutcome`](crate::order::CorporateOutcome) as JSON: the closed
+/// option legs, the generated stock leg, cash credited, and affected
+/// contracts. Additive: runs without a corporate-action tape write none.
+pub const CORPORATE_KIND: &str = "corporate";
 
 /// Capability token binding journal access to one supervised session.
 /// The session mints exactly one per journal file and installs it in the
@@ -428,6 +437,21 @@ impl Journal {
         self.append(client_id, kind, detail, now)
     }
 
+    /// Durably record one proposal body so a restart rebuilds the approval
+    /// inbox and a later human decision acts on the exact proposal proposed.
+    /// Keyed by the proposal's own id; the body is the [`Proposal`] JSON.
+    pub fn record_proposal_body(
+        &self,
+        permit: &VenueStorage,
+        proposal: &Proposal,
+        now: DateTime<Utc>,
+    ) -> Result<(), VenueError> {
+        self.gate(permit)?;
+        let detail =
+            serde_json::to_string(proposal).map_err(|e| VenueError::Journal(e.to_string()))?;
+        self.append(&proposal.id, PROPOSAL_BODY_KIND, &detail, now)
+    }
+
     /// Mark an intent's send state (`submitted`, `acknowledged`, `filled`,
     /// `cancelled`, `rejected`). One row lands; the stored status and the
     /// replayed events agree because they fold the same row.
@@ -536,6 +560,18 @@ impl Journal {
         }
         let events = inner.records.iter().map(JournalEvent::from).collect();
         Ok(ReplayedState { intents, events })
+    }
+
+    /// Rebuild journaled proposal bodies by replay: last body per id wins.
+    /// The approval inbox reads this beside [`replay`](Self::replay), so a
+    /// restart acts on the proposals that were proposed, never a
+    /// reconstruction.
+    pub fn replay_proposals(
+        &self,
+        permit: &VenueStorage,
+    ) -> Result<BTreeMap<String, Proposal>, VenueError> {
+        let state = self.replay(permit)?;
+        Ok(proposal_bodies(&state.events))
     }
 
     /// Latest known record for `client_id` from journal rows alone.

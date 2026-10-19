@@ -17,11 +17,13 @@ pub mod health;
 pub mod inbox;
 pub mod journal;
 pub mod portfolio;
+pub mod tickets;
 
 pub use health::HealthModel;
-pub use inbox::InboxModel;
+pub use inbox::{InboxAction, InboxModel};
 pub use journal::Provenance;
 pub use portfolio::PortfolioModel;
+pub use tickets::{TicketAction, TicketModel};
 
 use protopyne_view::{
     GatewayError, HealthView, JournalRowView, PortfolioView, ProposalView, TerminalGateway,
@@ -68,11 +70,16 @@ impl ViewsBundle {
     }
 }
 
-/// Pull every gateway read and shape the bundle.
+/// Pull every gateway read and shape the bundle. The booked portfolio is the
+/// preferred source; a gateway with no venue book falls back to its own
+/// portfolio read.
 pub fn load_bundle(gateway: &dyn TerminalGateway) -> Result<ViewsBundle, GatewayError> {
+    let portfolio = gateway
+        .portfolio_booked()
+        .or_else(|_| gateway.portfolio())?;
     ViewsBundle::of(
         &gateway.health()?,
-        &gateway.portfolio()?,
+        &portfolio,
         gateway.proposals()?,
         gateway.journal()?,
     )

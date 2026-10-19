@@ -11,8 +11,10 @@ use super::*;
 use chrono::{DateTime, TimeZone, Utc};
 use rust_decimal::Decimal;
 
+use chrono::NaiveDate;
 use protopyne_types::Money;
-use protopyne_venue::{OrderSide, Position, PositionSide};
+use protopyne_types::{ChainQuote, ContractId, OptionContract, OptionKind};
+use protopyne_venue::{LegExecution, OrderSide, Position, PositionSide};
 
 /// Frozen comparison tolerance for portfolio stats: hand-computed
 /// Sharpe/Sortino/Calmar must reproduce within this eps.
@@ -59,6 +61,81 @@ fn key() -> BucketKey {
     }
 }
 
+/// One long package unit booked at 1.50 with an explicit mark basis and the
+/// executed legs a package carries.
+fn booked_marked(basis: MarkBasis) -> BookedFill {
+    BookedFill::new()
+        .portfolio("paper".to_owned())
+        .underlying("SPY".to_owned())
+        .structure("Vertical".to_owned())
+        .strategy("ribbon".to_owned())
+        .grant("grant-1".to_owned())
+        .side(OrderSide::Buy)
+        .quantity(1)
+        .price(money("1.50"))
+        .fee(money("0"))
+        .trade_id("m1".to_owned())
+        .at(ts(100))
+        .mark_basis(basis)
+        .legs(vec![
+            LegExecution {
+                contract: ContractId::new("SPY   260220C00690000"),
+                side: OrderSide::Buy,
+                quantity: 1,
+                price: money("1.50"),
+                fee: money("0"),
+            },
+            LegExecution {
+                contract: ContractId::new("SPY   260220C00695000"),
+                side: OrderSide::Sell,
+                quantity: 1,
+                price: money("0"),
+                fee: money("0"),
+            },
+        ])
+        .build()
+}
+
+/// The same two legs quoted at a 2.00 package mid (2.50 long less 0.50
+/// short) at the mark's instant.
+fn covering_chain() -> Vec<ChainQuote> {
+    let contract = |occ: &str| {
+        OptionContract::new()
+            .underlying("SPY".to_owned())
+            .expiry(NaiveDate::from_ymd_opt(2026, 2, 20).expect("valid expiry"))
+            .strike(money(match occ {
+                "SPY   260220C00690000" => "690",
+                _ => "695",
+            }))
+            .kind(OptionKind::Call)
+            .build()
+    };
+    vec![
+        ChainQuote::new()
+            .contract(contract("SPY   260220C00690000"))
+            .bid(money("2.49"))
+            .ask(money("2.51"))
+            .timestamp(ts(150))
+            .build(),
+        ChainQuote::new()
+            .contract(contract("SPY   260220C00695000"))
+            .bid(money("0.49"))
+            .ask(money("0.51"))
+            .timestamp(ts(150))
+            .build(),
+    ]
+}
+
+/// One mark over the tape price legless books mark against, with the run's
+/// chain for legged ones.
+fn mark<'a>(at_secs: i64, price: &str, chain: &'a [ChainQuote]) -> MarkPoint<'a> {
+    MarkPoint {
+        at: ts(at_secs),
+        price: money(price),
+        chain,
+    }
+}
+
 fn bucket_of(aggregation: &Aggregation) -> BucketSummary {
     let buckets = aggregation.buckets();
     assert_eq!(buckets.len(), 1, "fixtures book one bucket");
@@ -90,7 +167,7 @@ fn round_trip_fills_book_known_realized_pnl() {
     assert_eq!(bucket.fees, money("2.00"));
     assert_eq!(bucket.open_quantity, 0);
     assert_eq!(bucket.open_side, None);
-    assert_eq!(bucket.pnl_unrealised, money("0"));
+    assert_eq!(bucket.pnl_unrealised, Some(money("0")));
 }
 
 #[test]
@@ -121,6 +198,45 @@ fn flip_through_zero_reanchors_like_position_apply() {
         simple.avg_price,
         money("110"),
         "flip re-anchors at the fill"
+    );
+}
+
+#[test]
+fn an_unmarked_book_reports_absent_unrealized_never_zero() {
+    // A book with no mark source reports `None`, not a zero that never
+    // existed; a portfolio total goes absent with it.
+    let aggregation =
+        aggregate(&[booked_marked(MarkBasis::Absent)]).expect("clean fill aggregates");
+    let bucket = bucket_of(&aggregation);
+    assert_eq!(bucket.mark_basis, MarkBasis::Absent);
+    assert_eq!(bucket.pnl_unrealised, None, "absence is not zero");
+    let report = aggregation
+        .summarize(&[MarkPoint::tape(ts(200), money("2.00"))])
+        .expect("marks summarize");
+    assert_eq!(report.portfolios[0].pnl_unrealised, None);
+}
+
+#[test]
+fn a_chain_mark_differs_from_the_underlying_close_proxy_by_the_frozen_delta() {
+    // One long package unit booked at 1.50, marked at the same instant twice:
+    // once with the run's chain covering both legs (mid 2.00, so 0.50
+    // unrealized) and once without it, where the book's own fill price stands
+    // in (1.50, so 0.00). The tape price never moves — a package has no share
+    // price to ride it on — so the two arms differ by the chain alone, and the
+    // delta is frozen so a silent mark swap names itself.
+    let chain = covering_chain();
+    let aggregation = aggregate(&[booked_marked(MarkBasis::ChainMid)]).expect("clean fills");
+    let marked = aggregation
+        .summarize(&[mark(200, "100.00", &chain)])
+        .expect("chain marks");
+    let unmarkable = aggregation
+        .summarize(&[mark(200, "100.00", &[])])
+        .expect("no chain marks");
+    assert_eq!(marked.portfolios[0].pnl_unrealised, Some(money("0.50")));
+    assert_eq!(
+        unmarkable.portfolios[0].pnl_unrealised,
+        Some(money("0")),
+        "an unanswered leg falls back to the package's own fill prices"
     );
 }
 
@@ -172,9 +288,9 @@ fn mtm_curve_stats_match_hand_computation() {
     // same convention `build_report` uses.
     let fills = vec![booked(OrderSide::Buy, 10, "100", "0", "d1", 100)];
     let marks = vec![
-        (ts(150), money("110")),
-        (ts(250), money("111")),
-        (ts(350), money("110")),
+        MarkPoint::tape(ts(150), money("110")),
+        MarkPoint::tape(ts(250), money("111")),
+        MarkPoint::tape(ts(350), money("110")),
     ];
     let aggregation = aggregate(&fills).expect("clean fill aggregates");
     let report = aggregation.summarize(&marks).expect("marks summarize");
@@ -185,7 +301,7 @@ fn mtm_curve_stats_match_hand_computation() {
         .collect();
     assert_eq!(curve, vec![100.0, 110.0, 100.0]);
     let totals = &report.portfolios[0];
-    assert_eq!(totals.pnl_unrealised, money("100"));
+    assert_eq!(totals.pnl_unrealised, Some(money("100")));
     close_enough(
         totals.sharpe.expect("variance exists"),
         (252.0_f64).sqrt() / 21.0,
@@ -202,8 +318,8 @@ fn mtm_curve_stats_match_hand_computation() {
     assert!(totals.profit_factor.is_none());
     assert_eq!(
         report.greeks_note,
-        crate::report::BacktestReport::unavailable_greeks_note(),
-        "greeks stay explicitly unavailable until chain history exists",
+        crate::report::BacktestReport::unavailable_greeks_note(false),
+        "greeks stay explicitly unavailable, and a chainless fold says so",
     );
 }
 
@@ -220,7 +336,7 @@ fn tearsheet_golden() {
     ];
     let portfolio = aggregate(&fills)
         .expect("clean fills aggregate")
-        .summarize(&[(ts(200), money("110.00"))])
+        .summarize(&[MarkPoint::tape(ts(200), money("110.00"))])
         .expect("mark summarizes");
     let manifest = RunManifest {
         data_version: "spy-15m-v1".to_owned(),
@@ -248,6 +364,7 @@ fn tearsheet_golden() {
         vec![money("0"), money("98.00")],
         None,
         None,
+        MarkBasis::FillPrice,
     );
     report.portfolio = Some(portfolio);
     let version = env!("CARGO_PKG_VERSION");

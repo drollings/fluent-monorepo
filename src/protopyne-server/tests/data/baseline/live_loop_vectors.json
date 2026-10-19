@@ -1,0 +1,123 @@
+[
+  {
+    "bar_index": 0,
+    "checked_limit": "694.14349250",
+    "direction": "Long",
+    "equity_contribution": "-0.82349250",
+    "fee": "0.65",
+    "fill_price": "694.14349250",
+    "filled_quantity": 1,
+    "legs": [],
+    "submitted": true
+  },
+  {
+    "bar_index": 1,
+    "checked_limit": "694.16349750",
+    "direction": "Long",
+    "equity_contribution": "-0.80349750",
+    "fee": "0.65",
+    "fill_price": "694.16349750",
+    "filled_quantity": 1,
+    "legs": [],
+    "submitted": true
+  },
+  {
+    "bar_index": 2,
+    "checked_limit": "694.21351",
+    "direction": "Long",
+    "equity_contribution": "-0.72351000",
+    "fee": "0.65",
+    "fill_price": "694.21351",
+    "filled_quantity": 1,
+    "legs": [],
+    "submitted": true
+  },
+  {
+    "bar_index": 3,
+    "checked_limit": "694.3135350",
+    "direction": "Long",
+    "equity_contribution": "-0.52353500",
+    "fee": "0.65",
+    "fill_price": "694.3135350",
+    "filled_quantity": 1,
+    "legs": [],
+    "submitted": true
+  },
+  {
+    "bar_index": 4,
+    "checked_limit": "694.36354750",
+    "direction": "Long",
+    "equity_contribution": "-0.62354750",
+    "fee": "0.65",
+    "fill_price": "694.36354750",
+    "filled_quantity": 1,
+    "legs": [],
+    "submitted": true
+  },
+  {
+    "bar_index": 5,
+    "checked_limit": "694.5535950",
+    "direction": "Long",
+    "equity_contribution": "0.12640500",
+    "fee": "0.65",
+    "fill_price": "694.5535950",
+    "filled_quantity": 1,
+    "legs": [],
+    "submitted": true
+  },
+  {
+    "bar_index": 6,
+    "checked_limit": "694.69363",
+    "direction": "Long",
+    "equity_contribution": "0.01637000",
+    "fee": "0.65",
+    "fill_price": "694.69363",
+    "filled_quantity": 1,
+    "legs": [],
+    "submitted": true
+  },
+  {
+    "bar_index": 7,
+    "checked_limit": "694.5135850",
+    "direction": "Long",
+    "equity_contribution": "-2.08358500",
+    "fee": "0.65",
+    "fill_price": "694.5135850",
+    "filled_quantity": 1,
+    "legs": [],
+    "submitted": true
+  },
+  {
+    "bar_index": 8,
+    "checked_limit": "694.3535450",
+    "direction": "Long",
+    "equity_contribution": "-2.10354500",
+    "fee": "0.65",
+    "fill_price": "694.3535450",
+    "filled_quantity": 1,
+    "legs": [],
+    "submitted": true
+  },
+  {
+    "bar_index": 9,
+    "checked_limit": "694.41356",
+    "direction": "Long",
+    "equity_contribution": "-0.28356000",
+    "fee": "0.65",
+    "fill_price": "694.41356",
+    "filled_quantity": 1,
+    "legs": [],
+    "submitted": true
+  },
+  {
+    "bar_index": 10,
+    "checked_limit": "694.5535950",
+    "direction": "Long",
+    "equity_contribution": "0.57640500",
+    "fee": "0.65",
+    "fill_price": "694.5535950",
+    "filled_quantity": 1,
+    "legs": [],
+    "submitted": true
+  }
+]

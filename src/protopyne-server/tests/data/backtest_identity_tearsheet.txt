@@ -10,8 +10,10 @@ portfolio stats: win_rate n/a profit_factor n/a sharpe 16.372990761626422 sortin
 assumptions:
 - quotes synthesized from closed-bar close with spread 5 bps, size 100
 - fills share paper's spread-aware fill code (liquidity filter, slippage, fees)
+- slippage is a fill-model assumption, not a gate: it never appears in a refusal reason
 - orders rest at the touch (buy ask, sell bid); proposal limits mark the bar close
-- max loss 400 per proposal
+- economics arm config-supplied: price, max loss (400), and notional are the run's configured constants
+- unrealized marks from the position's own fill price where no chain mid is available (legless runs keep the underlying-close proxy)
 limits:
 - in-memory history 'spy-15m-v1', 11 bars
 - 0 unquotable bars skipped; 0 warmup bars skipped

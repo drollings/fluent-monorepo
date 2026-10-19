@@ -24,11 +24,12 @@ use std::collections::BTreeMap;
 
 use protopyne_types::Money;
 use protopyne_venue::{
-    calculate_pnl_unrealised, update_from_fill, OrderSide, PositionFill, PositionSide,
-    SpreadPosition,
+    calculate_pnl_unrealised, update_from_fill, LegExecution, OrderSide, PositionFill,
+    PositionSide, SpreadPosition,
 };
 
 use crate::error::ServerError;
+use crate::marks::{mark_position, MarkBasis, MarkPoint};
 use crate::metrics;
 
 /// Run-level portfolio label for fills executed on the paper book — backtest
@@ -55,7 +56,8 @@ pub struct BookedFill {
     pub grant: String,
     /// Fill direction.
     pub side: OrderSide,
-    /// Whole contracts filled; must be positive.
+    /// Whole units filled; must be positive. A spread fill books its package
+    /// units (one instrument of N units), never the leg-contract sum.
     pub quantity: u32,
     /// Execution price per contract.
     pub price: Money,
@@ -65,6 +67,18 @@ pub struct BookedFill {
     pub trade_id: String,
     /// Execution time.
     pub at: DateTime<Utc>,
+    /// How this fill's position is marked for unrealized P&L. Defaults to the
+    /// fill-price basis so pre-existing fills (and JSON rows) read exactly as
+    /// before.
+    #[builder(default = MarkBasis::FillPrice)]
+    #[serde(default)]
+    pub mark_basis: MarkBasis,
+    /// The package's executed legs, when the fill was one. Empty for a
+    /// legless fill. They carry no economics of their own — they are how the
+    /// book marks a package from the chain instead of from a share price.
+    #[builder(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub legs: Vec<LegExecution>,
 }
 
 /// Grouping key: one attributed book. Plain strings — these are names that
@@ -110,14 +124,17 @@ pub struct BucketSummary {
     pub closed_trades: u64,
     /// Cumulative fee-inclusive realized PnL.
     pub pnl_realised: Money,
-    /// Unrealized PnL at the last mark (or the last fill price unmarked).
-    pub pnl_unrealised: Money,
+    /// Unrealized PnL at the last mark (or the last fill price unmarked);
+    /// `None` — never zero — when no mark exists for this book.
+    pub pnl_unrealised: Option<Money>,
     /// Cumulative entry plus exit fees.
     pub fees: Money,
     /// Open absolute quantity (0 when flat).
     pub open_quantity: u32,
     /// Open side (`None` when flat).
     pub open_side: Option<PositionSide>,
+    /// How this book's open position is marked for unrealized P&L.
+    pub mark_basis: MarkBasis,
 }
 
 /// One portfolio's rolled-up economics plus its attribution stats.
@@ -131,8 +148,9 @@ pub struct PortfolioTotals {
     pub closed_trades: u64,
     /// Fee-inclusive realized PnL across its books.
     pub pnl_realised: Money,
-    /// Unrealized PnL across its books at the last mark.
-    pub pnl_unrealised: Money,
+    /// Unrealized PnL across its books at the last mark; `None` — never zero —
+    /// when any open book has no mark.
+    pub pnl_unrealised: Option<Money>,
     /// Entry plus exit fees across its books.
     pub fees: Money,
     /// Sum of absolute open quantities across its books.
@@ -175,6 +193,11 @@ struct BookState {
     closed_realised: Vec<Decimal>,
     settled_realised: Decimal,
     settled_fees: Decimal,
+    /// How this book's open position is marked (the newest fill's basis).
+    mark_basis: MarkBasis,
+    /// The newest fill's executed legs, so a package book marks from the
+    /// chain. Empty for a legless book, which marks off the tape price.
+    legs: Vec<LegExecution>,
 }
 
 impl BookState {
@@ -186,6 +209,8 @@ impl BookState {
             closed_realised: Vec::new(),
             settled_realised: Decimal::ZERO,
             settled_fees: Decimal::ZERO,
+            mark_basis: MarkBasis::FillPrice,
+            legs: Vec::new(),
         }
     }
 
@@ -204,6 +229,11 @@ impl BookState {
             .map_err(|refused| ServerError::Backtest(refused.to_string()))?;
         self.position = position;
         self.fills += 1;
+        // The newest fill carries the book's mark basis and legs; a book
+        // folded from marked fills marks, one folded from absent fills stays
+        // absent.
+        self.mark_basis = fill.mark_basis;
+        self.legs.clone_from(&fill.legs);
         if let Some(closed) = exited {
             self.closed_trades += 1;
             self.closed_realised.push(closed.pnl_realised.as_decimal());
@@ -231,37 +261,77 @@ impl BookState {
     }
 
     /// Unrealized at `mark` when open and marked, else the engine's own
-    /// last-fill refresh (or zero flat). A closed book holds no exposure,
-    /// so its unrealized is always zero — never a stale print.
-    fn unrealised(&self, mark: Option<Money>) -> Decimal {
-        match (&self.position, mark) {
-            (Some(open), Some(price)) => calculate_pnl_unrealised(
+    /// last-fill refresh (or zero flat). `None` when the book has no mark
+    /// basis at all: absence is reported, never zero. A closed book holds no
+    /// exposure, so its unrealized is always some zero — never a stale print.
+    ///
+    /// A package has no share price to ride the tape on, so a legged book
+    /// marks off its own legs through [`mark_position`] at the mark's
+    /// instant; a leg the chain cannot answer falls back to the book's own
+    /// fill-price refresh, which is the fallback its basis names.
+    fn unrealised(&self, mark: Option<MarkPoint<'_>>) -> Option<Decimal> {
+        if self.mark_basis.is_absent() {
+            return None;
+        }
+        Some(match (&self.position, mark) {
+            (Some(open), Some(mark)) if !self.legs.is_empty() => {
+                let (per_unit, _) =
+                    mark_position(&self.legs, open.quantity_abs, mark.chain, mark.at);
+                per_unit.map_or(open.pnl_unrealised.as_decimal(), |price| {
+                    calculate_pnl_unrealised(
+                        open.side,
+                        open.price_entry_average,
+                        open.quantity_abs,
+                        open.quantity_abs_max,
+                        open.fees_enter,
+                        price,
+                    )
+                    .as_decimal()
+                })
+            }
+            (Some(open), Some(mark)) => calculate_pnl_unrealised(
                 open.side,
                 open.price_entry_average,
                 open.quantity_abs,
                 open.quantity_abs_max,
                 open.fees_enter,
-                price,
+                mark.price,
             )
             .as_decimal(),
             (Some(open), None) => open.pnl_unrealised.as_decimal(),
             (None, _) => Decimal::ZERO,
-        }
+        })
     }
 
-    /// Point-in-time summary: unrealized re-marks when a price is given.
-    fn snapshot(&self, key: &BucketKey, mark: Option<Money>) -> BucketSummary {
+    /// Point-in-time summary: unrealized re-marks when a mark is given.
+    fn snapshot(&self, key: &BucketKey, mark: Option<MarkPoint<'_>>) -> BucketSummary {
         BucketSummary {
             key: key.clone(),
             fills: self.fills,
             closed_trades: self.closed_trades,
             pnl_realised: Money::new(self.realised()),
-            pnl_unrealised: Money::new(self.unrealised(mark)),
+            pnl_unrealised: self.unrealised(mark).map(Money::new),
             fees: Money::new(self.fees()),
             open_quantity: self.position.as_ref().map_or(0, |open| open.quantity_abs),
             open_side: self.position.as_ref().map(|open| open.side),
+            mark_basis: self.mark_basis,
         }
     }
+}
+
+/// One open book position as the aggregate sees it: which underlying, which
+/// side, how many whole units, and the engine's volume-weighted entry price.
+/// Flat books are omitted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpenPosition {
+    /// Underlying this book trades.
+    pub underlying: String,
+    /// Open direction.
+    pub side: PositionSide,
+    /// Open absolute quantity.
+    pub quantity: u32,
+    /// Volume-weighted entry price.
+    pub price_entry_average: Money,
 }
 
 /// Fills folded per attributed book, retaining input order independence.
@@ -294,6 +364,25 @@ pub fn aggregate(fills: &[BookedFill]) -> Result<Aggregation, ServerError> {
 }
 
 impl Aggregation {
+    /// Open positions across the fold's books, in bucket-key order. Flat
+    /// books are omitted; each entry carries the engine's volume-weighted
+    /// entry average so a caller never re-derives it.
+    #[must_use]
+    pub fn open_positions(&self) -> Vec<OpenPosition> {
+        self.books
+            .iter()
+            .filter_map(|(key, book)| {
+                let open = book.position.as_ref()?;
+                Some(OpenPosition {
+                    underlying: key.underlying.clone(),
+                    side: open.side,
+                    quantity: open.quantity_abs,
+                    price_entry_average: open.price_entry_average,
+                })
+            })
+            .collect()
+    }
+
     /// Per-book summaries with unrealized at the last fill price (no marks).
     /// Buckets sort by key, so output order is deterministic.
     #[must_use]
@@ -304,19 +393,18 @@ impl Aggregation {
             .collect()
     }
 
-    /// Price the fold at `marks` (`(time, price)` per mark, in any order):
+    /// Price the fold at `marks` ([`MarkPoint`] per mark, in any order):
     /// per-bucket unrealized re-marks at the last mark, the unrealized curve
     /// values each mark over fills at or before it, and the per-mark MTM
     /// equity (realized-so-far plus unrealized) feeds the return-based stats
-    /// with the same annualization convention `build_report` uses.
+    /// with the same annualization convention `build_report` uses. Each mark
+    /// carries the run's chain, so a legged book marks from it and a legless
+    /// one off the tape price.
     ///
     /// Refuses fail-closed when the fold spans more than one underlying: one
     /// price series cannot mark two instruments, and guessing is worse than
     /// refusing.
-    pub fn summarize(
-        &self,
-        marks: &[(DateTime<Utc>, Money)],
-    ) -> Result<PortfolioReport, ServerError> {
+    pub fn summarize(&self, marks: &[MarkPoint<'_>]) -> Result<PortfolioReport, ServerError> {
         let mut underlyings: Vec<&str> = self
             .fills
             .iter()
@@ -330,8 +418,8 @@ impl Aggregation {
                 underlyings.len()
             )));
         }
-        let mut ordered: Vec<(DateTime<Utc>, Money)> = marks.to_vec();
-        ordered.sort_by_key(|mark| mark.0);
+        let mut ordered: Vec<MarkPoint<'_>> = marks.to_vec();
+        ordered.sort_by_key(|mark| mark.at);
 
         // One incremental walk: fills drain into live books as each mark's
         // time passes them, so the whole curve costs one fold, not one per
@@ -340,8 +428,8 @@ impl Aggregation {
         let mut cursor = 0;
         let mut curve = Vec::with_capacity(ordered.len());
         let mut equity: BTreeMap<String, Vec<Decimal>> = BTreeMap::new();
-        for (at, price) in &ordered {
-            while cursor < self.fills.len() && self.fills[cursor].at <= *at {
+        for mark in &ordered {
+            while cursor < self.fills.len() && self.fills[cursor].at <= mark.at {
                 let fill = &self.fills[cursor];
                 live.entry(fill.key())
                     .or_insert_with(BookState::new)
@@ -351,8 +439,13 @@ impl Aggregation {
             let mut mark_total = Decimal::ZERO;
             let mut by_portfolio: BTreeMap<&str, Decimal> = BTreeMap::new();
             for (key, book) in &live {
-                let point = book.realised() + book.unrealised(Some(*price));
-                mark_total += book.unrealised(Some(*price));
+                // An absent mark contributes nothing to the curve and its
+                // bucket reports `None` (totals go absent); this is a
+                // fail-honest guard, never a silent zero. No production book
+                // is absent today.
+                let unrealized = book.unrealised(Some(*mark)).unwrap_or(Decimal::ZERO);
+                mark_total += unrealized;
+                let point = book.realised() + unrealized;
                 *by_portfolio.entry(key.portfolio.as_str()).or_default() += point;
             }
             curve.push(Money::new(mark_total));
@@ -363,7 +456,7 @@ impl Aggregation {
 
         // Totals read the full fold, not the mark walk: with no marks the
         // walk never runs, but the books still closed and settled.
-        let last_mark = ordered.last().map(|(_, price)| *price);
+        let last_mark = ordered.last().copied();
         let mut totals: BTreeMap<&str, PortfolioTotals> = BTreeMap::new();
         for (key, book) in &self.books {
             let entry = totals
@@ -373,7 +466,7 @@ impl Aggregation {
                     fills: 0,
                     closed_trades: 0,
                     pnl_realised: Money::zero(),
-                    pnl_unrealised: Money::zero(),
+                    pnl_unrealised: Some(Money::zero()),
                     fees: Money::zero(),
                     open_quantity: 0,
                     win_rate: None,
@@ -388,9 +481,14 @@ impl Aggregation {
             entry.closed_trades += snapshot.closed_trades;
             entry.pnl_realised =
                 Money::new(entry.pnl_realised.as_decimal() + snapshot.pnl_realised.as_decimal());
-            entry.pnl_unrealised = Money::new(
-                entry.pnl_unrealised.as_decimal() + snapshot.pnl_unrealised.as_decimal(),
-            );
+            entry.pnl_unrealised = match (entry.pnl_unrealised, snapshot.pnl_unrealised) {
+                (Some(total), Some(part)) => {
+                    Some(Money::new(total.as_decimal() + part.as_decimal()))
+                }
+                // Any unmarked bucket makes the total absent: a partial sum
+                // would read as a smaller loss than reality.
+                _ => None,
+            };
             entry.fees = Money::new(entry.fees.as_decimal() + snapshot.fees.as_decimal());
             entry.open_quantity += snapshot.open_quantity;
             entry.buckets.push(snapshot);
@@ -418,7 +516,9 @@ impl Aggregation {
         Ok(PortfolioReport {
             portfolios: totals.into_values().collect(),
             unrealized_curve: curve,
-            greeks_note: crate::report::BacktestReport::unavailable_greeks_note(),
+            greeks_note: crate::report::BacktestReport::unavailable_greeks_note(
+                ordered.iter().any(|mark| !mark.chain.is_empty()),
+            ),
         })
     }
 }

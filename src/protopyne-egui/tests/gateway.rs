@@ -135,26 +135,11 @@ async fn server_gateway_matches_http_routes() {
         portfolio
     );
 
-    // No journal route exists yet, so there is no parity to assert — but
-    // the placeholder is a contract with two halves, and both are pinned so
-    // a half-landed journal fails loudly instead of reading as agreement.
-    // The day the route lands, the 404 half fails and this block becomes
-    // the same gateway-equals-route assertion every other view has above.
-    assert!(
-        gateway.journal().expect("gateway journal reads").is_empty(),
-        "until the route lands, the gateway serves the same empty read the missing route would"
-    );
-    let journal_status = client
-        .get(format!("{base}/journal"))
-        .send()
-        .await
-        .expect("server answers")
-        .status();
-    assert_eq!(
-        journal_status,
-        reqwest::StatusCode::NOT_FOUND,
-        "no journal route is registered yet"
-    );
+    // The journal route answers now: the same rows through the gateway and
+    // through the route.
+    let journal: Vec<protopyne_view::JournalRowView> =
+        route(&client, format!("{base}/journal")).await;
+    assert_eq!(gateway.journal().expect("gateway journal reads"), journal);
 
     let bars: protopyne_view::ChartBars = route(&client, format!("{base}/chart/bars")).await;
     assert_eq!(gateway.chart_bars().expect("gateway bars read"), bars);

@@ -162,11 +162,13 @@ fn parse_chain_f64(field: &str, line: usize, column: &str) -> Result<f64, Server
 }
 
 /// Parse chain CSV content into point-in-time contract quotes, in file order.
-/// Empty trailing fields read as absent (sizes/OI default to zero, IV/greeks
-/// to `None`); a non-empty field that will not parse refuses with the line
-/// number. Contract and quote validation run per row through the types'
-/// own validators — ingest never invents a quote the vocabulary would
-/// refuse.
+/// Empty trailing fields read as absent (sizes/OI default to zero, IV and a
+/// missing greek column to `None`); a non-empty field that will not parse
+/// refuses with the line number. Greeks parse as a unit: all four columns
+/// present means all four cells must parse — a blank or malformed cell
+/// refuses rather than inventing `0.0` for one leg of the set. Contract and
+/// quote validation run per row through the types' own validators — ingest
+/// never invents a quote the vocabulary would refuse.
 pub fn parse_chain_csv(content: &str) -> Result<Vec<ChainQuote>, ServerError> {
     let mut reader = csv::ReaderBuilder::new()
         .has_headers(true)
@@ -265,28 +267,15 @@ pub fn parse_chain_csv(content: &str) -> Result<Vec<ChainQuote>, ServerError> {
                 if rd.is_empty() && rg.is_empty() && rt.is_empty() && rv.is_empty() {
                     None
                 } else {
+                    // A present set parses whole: any blank or malformed cell
+                    // refuses with its column named, so no leg of the set is
+                    // ever an invented zero.
                     Some(
                         Greeks::new()
-                            .delta(if rd.is_empty() {
-                                0.0
-                            } else {
-                                parse_chain_f64(rd, line, "delta")?
-                            })
-                            .gamma(if rg.is_empty() {
-                                0.0
-                            } else {
-                                parse_chain_f64(rg, line, "gamma")?
-                            })
-                            .theta(if rt.is_empty() {
-                                0.0
-                            } else {
-                                parse_chain_f64(rt, line, "theta")?
-                            })
-                            .vega(if rv.is_empty() {
-                                0.0
-                            } else {
-                                parse_chain_f64(rv, line, "vega")?
-                            })
+                            .delta(parse_chain_f64(rd, line, "delta")?)
+                            .gamma(parse_chain_f64(rg, line, "gamma")?)
+                            .theta(parse_chain_f64(rt, line, "theta")?)
+                            .vega(parse_chain_f64(rv, line, "vega")?)
                             .build(),
                     )
                 }
@@ -405,6 +394,14 @@ impl LegQuoteSource for HistoricalChainSource {
 
     fn leg_quote_at(&self, contract: &OptionContract, at: DateTime<Utc>) -> Option<Quote> {
         self.newest_at_or_before(contract, at).map(quote_of)
+    }
+
+    /// The screen's question without the window's clone: a short-circuiting
+    /// scan over the indexed quotes.
+    fn covers(&self, underlying: &str, at: DateTime<Utc>) -> bool {
+        self.quotes
+            .iter()
+            .any(|quote| quote.contract.underlying == underlying && quote.timestamp <= at)
     }
 
     fn chain_snapshot(&self, underlying: &str, at: DateTime<Utc>) -> Vec<ChainQuote> {

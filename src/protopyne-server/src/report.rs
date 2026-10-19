@@ -19,8 +19,10 @@ use protopyne_store::plan::{SpanOrigin, SpanPlan};
 use protopyne_types::{Bar, ChainQuote, Money};
 
 use crate::backtest::HistorySource;
+use crate::marks::MarkBasis;
 use crate::metrics::{self, TRADING_DAYS_PER_YEAR};
 use crate::portfolio::PortfolioReport;
+use protopyne_venue::{CorporateEvent, CorporateEventArgs};
 
 /// What was run, pinned for replay. Deterministic serialization order makes
 /// reruns byte-identical: the same inputs always produce the same JSON.
@@ -408,14 +410,26 @@ pub struct BacktestReport {
     /// since the pin covers manifest plus decisions, never this).
     #[serde(default)]
     pub portfolio: Option<PortfolioReport>,
+    /// How the run's option positions are marked for unrealized P&L. Additive:
+    /// reports serialized before marks existed decode with the fill-price
+    /// default.
+    #[serde(default)]
+    pub mark_basis: MarkBasis,
 }
 
 impl BacktestReport {
-    /// Greeks are unavailable without chain data; this is the single note
-    /// every report carries so no consumer mistakes absence for zero.
+    /// Greeks-over-time is unavailable either way; the note says which
+    /// absence it is, so a chained run never claims it held no chain feed.
+    /// `chained` is the run's own source presence.
     #[must_use]
-    pub fn unavailable_greeks_note() -> String {
-        "greeks-over-time unavailable: prototype has no option-chain feed".to_owned()
+    pub fn unavailable_greeks_note(chained: bool) -> String {
+        if chained {
+            "greeks-over-time unavailable: the run holds option-chain data, but no greeks \
+             time series is computed from it yet"
+                .to_owned()
+        } else {
+            "greeks-over-time unavailable: prototype has no option-chain feed".to_owned()
+        }
     }
 
     /// Deterministic JSON encoding of this report. Same inputs always
@@ -524,6 +538,31 @@ pub fn history_source_limit(kind: HistoryKind, data_version: &str, bar_count: us
     )
 }
 
+/// The corporate-action tape line for `data_limits`: the event count and its
+/// mix. `None` when the run consumed no tape, so untaped reports read exactly
+/// as before.
+#[must_use]
+pub fn corporate_action_limit_line(actions: &[CorporateEventArgs]) -> Option<String> {
+    if actions.is_empty() {
+        return None;
+    }
+    let (mut expiry, mut assignment, mut exercise, mut dividend, mut split) = (0, 0, 0, 0, 0);
+    for action in actions {
+        match action.event {
+            CorporateEvent::Expiry => expiry += 1,
+            CorporateEvent::Assignment => assignment += 1,
+            CorporateEvent::Exercise => exercise += 1,
+            CorporateEvent::Dividend => dividend += 1,
+            CorporateEvent::Split(_) => split += 1,
+        }
+    }
+    Some(format!(
+        "corporate-action tape: {} event(s) (expiry {expiry}, assignment {assignment}, \
+         exercise {exercise}, dividend {dividend}, split {split})",
+        actions.len()
+    ))
+}
+
 /// The coverage-omission line: a source with no planner provenance has an
 /// uncertified coverage the report must name, never let read as certified.
 /// `None` when the source is planner-backed — the tape line off the manifest
@@ -568,9 +607,11 @@ pub fn tape_data_limit_line(manifest: &RunManifest) -> Option<String> {
 
 /// Assemble a report from run facts. Pure function: same inputs, same
 /// report. `chain_quotes` carries the run's chain source facts (`None` when
-/// the run held none): a chained run names its coverage in `data_limits`
-/// and drops the no-chains clause from the absence line, while a chainless
-/// run reads exactly as before — absence line verbatim, no chain line.
+/// the run held none): a chained run names its coverage in `data_limits`,
+/// drops the no-chains clause from the absence line, and says which greeks
+/// absence it has, while a chainless run reads exactly as before — absence
+/// line verbatim, no chain line. `mark_basis` is the run's own mark basis,
+/// read from the same facts.
 #[must_use]
 pub fn build_report(
     manifest: RunManifest,
@@ -584,6 +625,7 @@ pub fn build_report(
     equity_curve: Vec<Money>,
     rsrs: Option<f64>,
     chain_quotes: Option<&[ChainQuote]>,
+    mark_basis: MarkBasis,
 ) -> BacktestReport {
     let equity_decimals: Vec<Decimal> = equity_curve
         .iter()
@@ -642,9 +684,10 @@ pub fn build_report(
         calmar: metrics::calmar(&equity_decimals, Decimal::ZERO, annual).and_then(as_f64),
         win_rate: metrics::win_rate(&step_moves).and_then(as_f64),
         profit_factor: metrics::profit_factor(&step_moves).and_then(as_f64),
-        greeks_note: BacktestReport::unavailable_greeks_note(),
+        greeks_note: BacktestReport::unavailable_greeks_note(chain_quotes.is_some()),
         equity_curve,
         portfolio: None,
+        mark_basis,
     }
 }
 
@@ -657,6 +700,10 @@ pub fn build_report(
 pub fn render_tearsheet(report: &BacktestReport) -> String {
     fn stat(value: Option<f64>) -> String {
         value.map_or_else(|| "n/a".to_owned(), |number| number.to_string())
+    }
+    // An absent mark prints `n/a`, never a zero that never existed.
+    fn money_opt(value: Option<Money>) -> String {
+        value.map_or_else(|| "n/a".to_owned(), |money| money.to_string())
     }
     let mut rows = vec![
         "backtest tearsheet".to_owned(),
@@ -703,7 +750,7 @@ pub fn render_tearsheet(report: &BacktestReport) -> String {
                     "portfolio {}: realized {} unrealized {} fees {} fills {} closed {} open {}",
                     totals.portfolio,
                     totals.pnl_realised,
-                    totals.pnl_unrealised,
+                    money_opt(totals.pnl_unrealised),
                     totals.fees,
                     totals.fills,
                     totals.closed_trades,
@@ -721,7 +768,7 @@ pub fn render_tearsheet(report: &BacktestReport) -> String {
                         bucket.key.strategy,
                         bucket.key.grant,
                         bucket.pnl_realised,
-                        bucket.pnl_unrealised,
+                        money_opt(bucket.pnl_unrealised),
                         bucket.fees,
                         bucket.fills,
                         bucket.closed_trades,

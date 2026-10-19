@@ -5645,7 +5645,7 @@ mod dvp_security_tests;
 /// Task-indicator cross-checks: indicator outputs that reduce to kernel
 /// expressions assert against `polars::Expr` references; the rest are
 /// named golden-only with reasons.
-#[cfg(test)]
+#[cfg(all(test, feature = "research"))]
 #[path = "../../tests/pine_task_parity.rs"]
 mod task_parity_tests;
 /// v6 surface suite: switch, enums, user functions/methods, tuples, plots.
@@ -5659,7 +5659,7 @@ mod v6_tests;
 mod fastmas_tests;
 
 /// Calibration gate: bridge coverage, accept/reject tallies, controls.
-#[cfg(test)]
+#[cfg(all(test, feature = "research"))]
 #[path = "../../tests/pine_calibration.rs"]
 mod calibration_tests;
 
@@ -5676,7 +5676,7 @@ mod libutil_tests;
 
 /// Real-library suite: the shipped moving-average library linked with
 /// drivers, pinned against kernel twins and hand steps.
-#[cfg(test)]
+#[cfg(all(test, feature = "research"))]
 #[path = "../../tests/pine_libmas.rs"]
 mod libmas_tests;
 

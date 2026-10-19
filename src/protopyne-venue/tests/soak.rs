@@ -11,7 +11,10 @@
 
 use super::*;
 use crate::journal::{Journal, VenueStorage};
-use crate::order::{OrderIntent, OrderRecord, OrderSide, OrderStatus, Position};
+use crate::order::{
+    CorporateEventArgs, CorporateOutcome, OrderIntent, OrderRecord, OrderSide, OrderStatus,
+    Position,
+};
 use crate::reconcile::{JournalBook, ReconcileHandle, ReconcileSource, ReconcileUnit};
 use crate::stream::{StreamOutcome, SupervisedStream};
 use crate::submit::Recorder;
@@ -229,10 +232,8 @@ impl Venue for FlakyOnce {
 
     fn apply_corporate_event(
         &self,
-        _underlying: &str,
-        _event: CorporateEvent,
-        _now: chrono::DateTime<Utc>,
-    ) -> Result<String, VenueError> {
+        _action: &CorporateEventArgs,
+    ) -> Result<CorporateOutcome, VenueError> {
         Err(VenueError::Invalid(
             "no corporate surface on the stub".to_owned(),
         ))
@@ -261,12 +262,12 @@ fn approved_for(intent: &OrderIntent) -> protopyne_strategy::RiskApproved {
     engine
         .check(
             &proposal,
+            protopyne_strategy::OrderShape::new(true, true),
             &protopyne_strategy::RiskState {
                 quote_age_secs: 5,
                 clock_skew_secs: 1,
                 reconciliation_healthy: true,
-                is_limit_order: true,
-                is_spread: true,
+                facts: protopyne_strategy::PortfolioFacts::unobserved(),
             },
         )
         .expect("healthy entry")

@@ -19,7 +19,7 @@ use crate::order::{OrderIntent, OrderSide};
 use crate::paper::{PaperConfig, PaperVenue};
 use crate::quote::Quote;
 use crate::registry::VenueRegistry;
-use crate::session::{SessionConfig, SubmitJob, TradingSession};
+use crate::session::{SessionConfig, TradingSession};
 use crate::venue::Venue;
 use chrono::{TimeZone, Utc};
 use protopyne_types::Money;
@@ -56,50 +56,6 @@ fn intent(id: &str, underlying: &str) -> OrderIntent {
         .build()
 }
 
-fn job(journal: &Arc<Journal>, id: &str, underlying: &str, is_exit: bool) -> SubmitJob {
-    let proposal_id = format!("prop-{id}");
-    let mut order = intent(id, underlying);
-    order.proposal_id = proposal_id.clone();
-    SubmitJob {
-        intent: order,
-        quote: quote(),
-        at: now(),
-        is_exit,
-        approved: approved_for_entry(&proposal_id),
-        journal: Arc::clone(journal),
-    }
-}
-
-/// Risk approval minted for the job's entry proposal, matching its intent —
-/// mirroring the close-all helper below for the exit-free submission tests.
-fn approved_for_entry(proposal_id: &str) -> protopyne_strategy::RiskApproved {
-    let engine = protopyne_strategy::RiskEngine::new(protopyne_strategy::RiskLimits::default());
-    let proposal = protopyne_strategy::Proposal::new()
-        .id(proposal_id.to_owned())
-        .strategy("ribbon".to_owned())
-        .underlying("SPY".to_owned())
-        .direction(protopyne_strategy::Direction::Long)
-        .side(protopyne_strategy::ProposalSide::Entry)
-        .structure(protopyne_strategy::StructureKind::Vertical)
-        .quantity(protopyne_types::Qty::new(Decimal::from(2)))
-        .limit_price(money("600.50"))
-        .max_loss(money("300"))
-        .notional(money("1_000"))
-        .dte_days(30)
-        .conviction(0.8)
-        .activity_score(0.7)
-        .created_at(now())
-        .build();
-    let state = protopyne_strategy::RiskState {
-        quote_age_secs: 5,
-        clock_skew_secs: 1,
-        reconciliation_healthy: true,
-        is_limit_order: true,
-        is_spread: true,
-    };
-    engine.check(&proposal, &state).expect("healthy entry")
-}
-
 fn paper() -> Arc<PaperVenue> {
     Arc::new(PaperVenue::new(PaperConfig::new().build()))
 }
@@ -114,7 +70,7 @@ fn session_over(registry: Arc<VenueRegistry>) -> TradingSession {
 }
 
 fn session_over_with(registry: Arc<VenueRegistry>, storage: VenueStorage) -> TradingSession {
-    TradingSession::boot(&SessionConfig::new().build(), registry, storage).expect("boot")
+    TradingSession::boot(&SessionConfig::new().build(), registry, storage, None).expect("boot")
 }
 
 /// `WorkContext` carrying the storage permit: `CommandUnit::execute` reads
@@ -165,10 +121,15 @@ fn approved_for_close() -> protopyne_strategy::RiskApproved {
         quote_age_secs: 5,
         clock_skew_secs: 1,
         reconciliation_healthy: true,
-        is_limit_order: true,
-        is_spread: true,
+        facts: protopyne_strategy::PortfolioFacts::unobserved(),
     };
-    engine.check(&proposal, &state).expect("healthy exit")
+    engine
+        .check(
+            &proposal,
+            protopyne_strategy::OrderShape::new(true, true),
+            &state,
+        )
+        .expect("healthy exit")
 }
 
 // ── journal-replay: command rows rebuild state ──────────────────────
@@ -294,16 +255,15 @@ async fn unpermitted_command_refuses_without_mutating() {
 
 // ── halt: entries refused, exits fill, resume restores ───────────────
 
-/// Halted sessions refuse entries with a reason while exits still fill;
-/// resume restores entries. The gate is the shared handle the bars also
-/// read — one authority, two enforcement points.
+/// Halted entries refuse with a reason while exits still route; resume
+/// restores entries. One authority (the shared handle), two enforcement
+/// points: the bar sensor below and the pipeline route here.
 #[tokio::test]
 async fn halted_entries_refuse_while_exits_fill() {
+    use crate::pipeline::DecisionPipeline;
+
     let venue = paper();
-    let dir = tempfile::tempdir().expect("tempdir");
-    let path = dir.path().join("session.db");
-    let journal = Arc::new(Journal::open(&path).expect("open"));
-    let session = session_over_with(registry_over(&venue), VenueStorage::new(path));
+    let session = session_over(registry_over(&venue));
     let state = session.state_handle().clone();
     assert!(
         state.get().allows(false),
@@ -311,32 +271,19 @@ async fn halted_entries_refuse_while_exits_fill() {
     );
 
     state.set(TradingState::Disabled);
-    let refusal = session
-        .submit_order(job(&journal, "h#entry", "SPY", false))
-        .await
-        .expect_err("halted entries must refuse");
+    let halted = DecisionPipeline::new(state.clone());
+    let refusal = halted.route(false).expect_err("halted entries must refuse");
     let reason = refusal.to_string();
     assert!(
         reason.contains("halt") || reason.contains("Disabled"),
         "refusal names its cause, got: {reason}"
     );
-    assert!(
-        venue.orders().is_empty(),
-        "refused entries never reach the venue"
-    );
-
-    let exit = session
-        .submit_order(job(&journal, "h#exit", "SPY", true))
-        .await
-        .expect("exits still flow while halted");
-    assert_eq!(exit.filled_quantity, 2);
+    halted.route(true).expect("exits still flow while halted");
 
     state.set(TradingState::Enabled);
-    let restored = session
-        .submit_order(job(&journal, "h#entry2", "SPY", false))
-        .await
+    DecisionPipeline::new(state)
+        .route(false)
         .expect("resume restores entries");
-    assert_eq!(restored.filled_quantity, 2);
     session.shutdown().await;
 }
 
@@ -763,6 +710,158 @@ async fn machine_events_refuse_on_the_decision_path() {
         assert!(
             transition_rows(&replayed).is_empty(),
             "no row for a refused event"
+        );
+    })
+    .await;
+}
+
+/// A proposal body row survives a restart: the body folds back by id, and the
+/// inbox joins it with its journaled lifecycle state.
+#[test]
+fn proposal_body_survives_replay_and_joins_its_state() {
+    use protopyne_strategy::{JournaledTransition, ProposalState as S};
+    let body = pending_proposal("prop-body-1");
+    let events = vec![
+        crate::journal::JournalEvent {
+            seq: 1,
+            client_id: body.id.clone(),
+            kind: PROPOSAL_BODY_KIND.to_owned(),
+            detail: serde_json::to_string(&body).expect("body encodes"),
+            at_ms: 1,
+        },
+        crate::journal::JournalEvent {
+            seq: 2,
+            client_id: body.id.clone(),
+            kind: PROPOSAL_TRANSITION_KIND.to_owned(),
+            detail: serde_json::to_string(&JournaledTransition {
+                proposal_id: body.id.clone(),
+                from: S::PendingHuman,
+                to: S::Approved,
+                reason: "operator approved".to_owned(),
+                at: now(),
+            })
+            .expect("transition encodes"),
+            at_ms: 2,
+        },
+    ];
+    assert_eq!(
+        proposal_bodies(&events).get("prop-body-1"),
+        Some(&body),
+        "the body folds back by id"
+    );
+    let inbox = replay_proposals(&events);
+    assert_eq!(inbox.len(), 1);
+    assert_eq!(inbox[0].proposal, body);
+    assert_eq!(
+        inbox[0].state,
+        S::Approved,
+        "the inbox joins the body with its journaled state"
+    );
+}
+
+/// The approval command decides through the journaled body: approve emits the
+/// advanced proposal for the ledger + submit path, reject journals the reason
+/// and emits nothing.
+#[tokio::test]
+async fn approve_command_emits_for_submission_and_reject_never_does() {
+    use protopyne_strategy::ProposalState as S;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("journal.db");
+    let (journal, permit) = journal_at(&path);
+    let journal = Arc::new(journal);
+    let venue = paper();
+    let state = StateHandle::new(TradingState::Enabled);
+    let portfolios = Arc::new(PortfolioRegistry::new());
+    scoped(permit.clone(), async {
+        let ctx = ctx_with(&permit);
+        journal
+            .record_proposal_body(&permit, &pending_proposal("prop-approve-cmd"), now())
+            .expect("body rows");
+        journal
+            .record_proposal_body(&permit, &pending_proposal("prop-reject-cmd"), now())
+            .expect("body rows");
+
+        let approve = CommandUnit::new()
+            .name("cmd.approve".to_owned())
+            .command(CommandKind::Approve {
+                proposal_id: "prop-approve-cmd".to_owned(),
+            })
+            .venue(Arc::clone(&venue))
+            .state(state.clone())
+            .registry(Arc::clone(&portfolios))
+            .journal(Arc::clone(&journal))
+            .build();
+        let output = approve.execute(&ctx).expect("approve executes");
+        let emitted: protopyne_strategy::Proposal =
+            serde_json::from_value(output.data).expect("approved proposal is emitted");
+        assert_eq!(emitted.id, "prop-approve-cmd");
+        assert_eq!(emitted.state, S::Approved);
+
+        let reject = CommandUnit::new()
+            .name("cmd.reject".to_owned())
+            .command(CommandKind::Reject {
+                proposal_id: "prop-reject-cmd".to_owned(),
+                reason: "too much size".to_owned(),
+            })
+            .venue(Arc::clone(&venue))
+            .state(state.clone())
+            .registry(Arc::clone(&portfolios))
+            .journal(Arc::clone(&journal))
+            .build();
+        let rejected = reject.execute(&ctx).expect("reject executes");
+        assert_eq!(
+            rejected.data,
+            serde_json::Value::Null,
+            "reject emits no order payload"
+        );
+        assert!(rejected.message.contains("too much size"));
+
+        let states = replay_proposal_states(&journal.replay(&permit).expect("replay").events);
+        assert_eq!(states.get("prop-approve-cmd"), Some(&S::Approved));
+        assert_eq!(states.get("prop-reject-cmd"), Some(&S::Rejected));
+    })
+    .await;
+}
+
+/// An approval for an already-terminal proposal refuses through the command
+/// path, journaling nothing beyond the body it read.
+#[tokio::test]
+async fn approve_of_a_terminal_proposal_refuses() {
+    use protopyne_strategy::ProposalState as S;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("journal.db");
+    let (journal, permit) = journal_at(&path);
+    let journal = Arc::new(journal);
+    let venue = paper();
+    let state = StateHandle::new(TradingState::Enabled);
+    let portfolios = Arc::new(PortfolioRegistry::new());
+    scoped(permit.clone(), async {
+        let ctx = ctx_with(&permit);
+        let mut body = pending_proposal("prop-terminal");
+        body.state = S::Rejected;
+        journal
+            .record_proposal_body(&permit, &body, now())
+            .expect("body row");
+        let approve = CommandUnit::new()
+            .name("cmd.approve".to_owned())
+            .command(CommandKind::Approve {
+                proposal_id: "prop-terminal".to_owned(),
+            })
+            .venue(Arc::clone(&venue))
+            .state(state.clone())
+            .registry(Arc::clone(&portfolios))
+            .journal(Arc::clone(&journal))
+            .build();
+        let refusal = approve
+            .execute(&ctx)
+            .expect_err("a terminal proposal refuses");
+        assert!(
+            refusal.to_string().contains("Rejected"),
+            "refusal names the state, got: {refusal}"
+        );
+        assert!(
+            replay_proposal_states(&journal.replay(&permit).expect("replay").events).is_empty(),
+            "a refused approval journals no transition"
         );
     })
     .await;

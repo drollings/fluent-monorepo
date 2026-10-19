@@ -18,23 +18,25 @@ use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 
-use crate::replay_session::needs_chain_data;
 use fluent_dag::checkpointed::CheckpointedStepGraph;
 use protopyne_store::{CandleStore, SpanPlan};
 use protopyne_strategy::{
-    evaluate_grant, BreakerState, Direction, Grant, GrantDecision, GrantMarket, GrantUsage,
-    JournaledTransition, LegSelector, Proposal, ProposalEvent, ProposalSide, ProposeInput,
-    RiskEngine, RiskState, Strategy, StructureKind,
+    Direction, EconomicsPolicy, FillOutcome, FillStatus, Grant, GrantLedger, GrantMarket,
+    JournaledTransition, MarketView, OrderShape, PackageSide, PortfolioFacts, Proposal,
+    ProposalEvent, ProposalSide, ProposeInput, RiskEngine, RiskState, SignalConfig, SignalInstance,
+    SizingCaps, Strategy, StrategyError, StructureKind,
 };
-use protopyne_types::{Bar, Money};
+use protopyne_types::{Bar, ChainQuote, Money};
 use protopyne_venue::{
-    submit_guarded, CorporateEvent, LegQuoteSource, OrderIntent, OrderSide, OrderStatus,
-    PaperConfig, PaperVenue, Position, Quote, SubmissionRecorder, Venue, VenueError,
-    PROPOSAL_TRANSITION_KIND,
+    submit_guarded, CorporateEvent, DecisionPipeline, LegExecution, OrderIntent, OrderRecord,
+    OrderSide, OrderStatus, PaperConfig, PaperVenue, PipelineRequest, PipelineVerdict, Position,
+    Quote, StateHandle, SubmissionRecorder, TradingState, Venue, VenueError, PACKAGE_TOLERANCE_BPS,
+    PROPOSAL_BODY_KIND, PROPOSAL_TRANSITION_KIND,
 };
 
 use crate::backtest::{load_history, quote_for_bar, BacktestConfig, BacktestVenue, HistorySource};
 use crate::error::ServerError;
+use crate::marks::{mark_basis_note, mark_per_unit, MarkBasis, MarkPoint};
 use crate::portfolio::{aggregate, BookedFill, PAPER_PORTFOLIO};
 use crate::report::{
     build_report, count_unquotable_bars, history_source_limit, uncertified_coverage_limit,
@@ -52,10 +54,39 @@ pub struct RunnerConfig {
     pub max_loss: Money,
     /// Committed notional booked per proposal.
     pub notional: Money,
-    /// Days to expiry booked per proposal.
+    /// Minimum days to expiry requested per proposal; a chain-aware selection
+    /// names the expiry it actually chose, bounded by the armed grant's
+    /// window.
     pub dte_days: u32,
     /// Bars skipped before the first proposal (warmup honesty).
     pub warmup_bars: usize,
+    /// Where price, loss, and notional come from. The default keeps the
+    /// caller's configured values and is skipped from the manifest so a
+    /// config-supplied run serializes exactly as before.
+    #[serde(default, skip_serializing_if = "EconomicsPolicy::is_config_supplied")]
+    pub economics: EconomicsPolicy,
+    /// Structure this run proposes. It names the shape to the shared body
+    /// (which of its bars need a chain feed) and to the selector.
+    #[serde(default = "default_structure", skip_serializing_if = "is_vertical")]
+    pub structure: StructureKind,
+    /// Credit intent under the chain-derived arm.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub credit: bool,
+}
+
+fn default_structure() -> StructureKind {
+    StructureKind::Vertical
+}
+
+// `skip_serializing_if` requires a `&T` predicate; the types are `Copy`.
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn is_vertical(structure: &StructureKind) -> bool {
+    *structure == StructureKind::Vertical
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 impl protopyne_types::Validate for RunnerConfig {
@@ -83,7 +114,32 @@ impl RunnerConfig {
             notional,
             dte_days,
             warmup_bars,
+            economics: EconomicsPolicy::ConfigSupplied,
+            structure: StructureKind::Vertical,
+            credit: false,
         }
+    }
+
+    /// Take package economics from the chain instead of the configured
+    /// values.
+    #[must_use]
+    pub fn with_economics(mut self, economics: EconomicsPolicy) -> Self {
+        self.economics = economics;
+        self
+    }
+
+    /// Select this structure under the chain-derived arm.
+    #[must_use]
+    pub fn with_structure(mut self, structure: StructureKind) -> Self {
+        self.structure = structure;
+        self
+    }
+
+    /// Select the credit variant under the chain-derived arm.
+    #[must_use]
+    pub fn with_credit(mut self, credit: bool) -> Self {
+        self.credit = credit;
+        self
     }
 
     /// Fail-closed self-consistency check.
@@ -105,6 +161,7 @@ impl RunnerConfig {
 /// `skipped` carries the reason whenever no proposal reached the venue
 /// (warmup, unquotable bar, refused quote, denied gate, venue refusal).
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[allow(clippy::struct_excessive_bools)] // recorded verdicts, not a state machine
 pub struct BarDecision {
     /// Index into the replayed history.
     pub bar_index: usize,
@@ -135,10 +192,20 @@ pub struct BarDecision {
     pub risk_pass: bool,
     /// Risk refusal reasons (empty on approval).
     pub risk_reasons: Vec<String>,
-    /// Whether the grant covered the proposal.
-    pub grant_allow: bool,
-    /// Grant denial reasons (empty on allow).
-    pub grant_reasons: Vec<String>,
+    /// Whether the grant covers the proposal on pure merit (breaker input
+    /// excluded): the pre-authorization evaluation.
+    pub grant_merit: bool,
+    /// Grant merit-denial reasons (empty when merit allows).
+    #[serde(default)]
+    pub grant_merit_reasons: Vec<String>,
+    /// Whether the grant authorized submission: merit, the ledger's live
+    /// breaker state, and a successful budget reservation. A producer trip
+    /// changes this, never `grant_merit`.
+    #[serde(default)]
+    pub grant_authorized: bool,
+    /// Authorization-denial reasons (empty when authorized).
+    #[serde(default)]
+    pub grant_authorization_reasons: Vec<String>,
     /// Whether an order reached the venue.
     pub submitted: bool,
     /// Proposal limit (bar close); zero when no proposal existed.
@@ -158,6 +225,12 @@ pub struct BarDecision {
     pub fill_price: Option<Money>,
     /// Commission paid, when filled.
     pub fee: Option<Money>,
+    /// Executed spread legs, in fill order, when the venue filled a multi-leg
+    /// package — the leg truth the venue itself reports. Empty for single-leg
+    /// fills (the intent carried no legs) and refusals, and omitted from the
+    /// wire in that case, so those decisions keep their byte-identical shape.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub legs: Vec<LegExecution>,
     /// Journaled lifecycle transitions for this bar's proposal, in emission
     /// order — the real state machine driven by the risk, grant, and venue
     /// verdicts, never a post-hoc reconstruction. Empty when no proposal was
@@ -195,8 +268,10 @@ pub(crate) fn skipped_decision(
         conviction: 0.0,
         risk_pass: false,
         risk_reasons: Vec::new(),
-        grant_allow: false,
-        grant_reasons: Vec::new(),
+        grant_merit: false,
+        grant_merit_reasons: Vec::new(),
+        grant_authorized: false,
+        grant_authorization_reasons: Vec::new(),
         submitted: false,
         limit_price: Money::zero(),
         checked_limit: Money::zero(),
@@ -204,6 +279,7 @@ pub(crate) fn skipped_decision(
         filled_quantity: 0,
         fill_price: None,
         fee: None,
+        legs: Vec::new(),
         transitions: Vec::new(),
         lifecycle_error: None,
         skipped: Some(reason.to_owned()),
@@ -323,7 +399,7 @@ fn advance_gates<R: SubmissionRecorder>(
     recorder: &R,
     client_id: &str,
     risk_pass: bool,
-    grant_allow: bool,
+    grant_merit: bool,
     now: DateTime<Utc>,
     emitted: &mut Vec<JournaledTransition>,
 ) -> Result<(), VenueError> {
@@ -346,9 +422,15 @@ fn advance_gates<R: SubmissionRecorder>(
         "risk approved",
         now,
     )?);
-    let (event, reason) = if grant_allow {
+    let (event, reason) = if grant_merit {
         (ProposalEvent::AutoApprove, "grant covers entry")
     } else {
+        // A proposal no grant covers is handed to the human: journal its body
+        // so a restart rebuilds the inbox and a later approval acts on the
+        // exact proposal. The bar continues — a pending proposal never blocks.
+        let body = serde_json::to_string(&*proposal)
+            .map_err(|e| VenueError::Journal(format!("proposal body not encodable: {e}")))?;
+        recorder.record_transition(&proposal.id, PROPOSAL_BODY_KIND, &body, now)?;
         (ProposalEvent::RequireHuman, "no grant covers entry")
     };
     emitted.push(advance(proposal, recorder, client_id, event, reason, now)?);
@@ -402,8 +484,10 @@ fn proposed_decision(
     checked: CheckedOrder,
     risk_pass: bool,
     risk_reasons: Vec<String>,
-    grant_allow: bool,
-    grant_reasons: Vec<String>,
+    grant_merit: bool,
+    grant_merit_reasons: Vec<String>,
+    grant_authorized: bool,
+    grant_authorization_reasons: Vec<String>,
 ) -> BarDecision {
     BarDecision {
         bar_index,
@@ -416,8 +500,10 @@ fn proposed_decision(
         conviction: proposal.conviction,
         risk_pass,
         risk_reasons,
-        grant_allow,
-        grant_reasons,
+        grant_merit,
+        grant_merit_reasons,
+        grant_authorized,
+        grant_authorization_reasons,
         submitted: false,
         limit_price: proposal.limit_price,
         checked_limit: checked.limit,
@@ -425,6 +511,7 @@ fn proposed_decision(
         filled_quantity: 0,
         fill_price: None,
         fee: None,
+        legs: Vec::new(),
         transitions: Vec::new(),
         lifecycle_error: None,
         skipped: None,
@@ -452,140 +539,276 @@ fn proposed_decision(
 /// [`evaluate_grant`]: with `max_consecutive_errors = N`, the Nth consecutive
 /// error still arms, and the N+1th trips (`consecutive_errors > max`).
 ///
-/// `chain` carries per-leg market data for selection, when installed: `None`
-/// preserves the pinned batch legacy byte-identically (spread labels book as
-/// single legs); `Some` with a multi-leg proposal selects legs as of this
-/// bar through the frozen selector and attaches them to the intent, so the
-/// existing spread fill path prices them.
+/// The economics arm decides whether a proposal may carry legs: the
+/// chain-derived arm priced its package when it composed the proposal, and
+/// the config arm refuses a leg-attached one rather than check the caller's
+/// constants against a structure it never priced.
+/// The bar's synthesized quote, or the skip reason that prevents deciding on
+/// it. One check shared by the direct path and the session step.
+pub(crate) fn bar_quote(bar: &Bar, quote_config: &BacktestConfig) -> Result<Quote, &'static str> {
+    let Some(quote) = quote_for_bar(bar, quote_config) else {
+        return Err("unquotable bar: non-positive close");
+    };
+    if quote.spread_width().is_none() {
+        return Err("crossed quote");
+    }
+    Ok(quote)
+}
+
+/// Build one proposal from the run's own signal instance.
+///
+/// `max_dte_days` is the armed authority's window: structure selection
+/// refuses an expiry it cannot trade instead of proposing one the grant gate
+/// would reject anyway.
+pub(crate) fn decide_proposal(
+    strategy: &Strategy,
+    signal: &mut dyn SignalInstance,
+    proposal_id: &str,
+    bar: &Bar,
+    market: &MarketView<'_>,
+    config: &RunnerConfig,
+    fee_per_contract: Money,
+    max_dte_days: Option<u32>,
+    caps: SizingCaps<'_>,
+) -> Result<Proposal, StrategyError> {
+    strategy.propose_with(
+        proposal_id,
+        ProposeInput {
+            strategy: &config.strategy_name,
+            underlying: &config.underlying,
+            side: ProposalSide::Entry,
+            closes: market.closes,
+            limit_price: Money::new(bar.c),
+            max_loss: config.max_loss,
+            notional: config.notional,
+            dte_days: config.dte_days,
+            max_dte_days,
+            economics: config.economics,
+            structure: config.structure,
+            credit: config.credit,
+            fee_per_contract,
+            caps,
+            created_at: bar.ts,
+        },
+        market,
+        signal,
+    )
+}
+
+/// Evaluate one bar and submit its proposal through the shared gate stack.
+///
+/// Direct callers own a single bar, so one instance is bound for the call.
+/// Runners hold their instance across bars and compose
+/// [`decide_proposal`](decide_proposal) with
+/// [`submit_decided`](submit_decided) instead, so a stateful signal advances
+/// exactly once per bar.
 #[allow(clippy::too_many_arguments)]
 pub async fn decide_and_submit<R: SubmissionRecorder, V: Venue>(
     strategy: &Strategy,
     risk: &RiskEngine,
-    grant: &Grant,
-    usage: &mut GrantUsage,
+    ledger: &GrantLedger,
     venue: &V,
     recorder: &R,
     quote_config: &BacktestConfig,
-    breakers: &mut BreakerState,
     health: BarHealth,
     bar_index: usize,
     bar: &Bar,
-    closes: &[f64],
+    market: &MarketView<'_>,
     config: &RunnerConfig,
     seed: u64,
-    chain: Option<&dyn LegQuoteSource>,
 ) -> BarDecision {
     let proposal_id = format!("run-{seed}-{bar_index}");
     let ts = bar.ts.to_rfc3339();
-    let Some(quote) = quote_for_bar(bar, quote_config) else {
-        return skipped_decision(
-            bar_index,
-            ts,
-            proposal_id,
-            "unquotable bar: non-positive close",
-        );
+    let mut signal = match strategy.bind(&SignalConfig::new(market.data.timeframe)) {
+        Ok(signal) => signal,
+        Err(e) => {
+            return skipped_decision(
+                bar_index,
+                ts,
+                proposal_id,
+                &format!("signal bind refused: {e}"),
+            );
+        }
     };
-    let Some(spread_width) = quote.spread_width() else {
-        return skipped_decision(bar_index, ts, proposal_id, "crossed quote");
-    };
-    let limit_price = Money::new(bar.c);
-    let input = ProposeInput {
-        strategy: &config.strategy_name,
-        underlying: &config.underlying,
-        side: ProposalSide::Entry,
-        closes,
-        limit_price,
-        max_loss: config.max_loss,
-        notional: config.notional,
-        dte_days: config.dte_days,
-        created_at: bar.ts,
-    };
-    let mut proposal = match strategy.propose(&proposal_id, input) {
+    // A stateful signal tracks every closed bar, so evaluation precedes the
+    // quote screen: an awkward quote must not desynchronise its state.
+    // Containment threads the risk engine's per-trade cap; the direct path
+    // holds no observed facts, so buying power is not bound here.
+    let proposal = match decide_proposal(
+        strategy,
+        signal.as_mut(),
+        &proposal_id,
+        bar,
+        market,
+        config,
+        venue.fee_schedule().per_contract,
+        Some(ledger.grant().trade.max_dte_days),
+        SizingCaps {
+            risk: Some(risk.limits()),
+            facts: None,
+        },
+    ) {
         Ok(proposal) => proposal,
         Err(e) => {
             return skipped_decision(bar_index, ts, proposal_id, &format!("signal refused: {e}"));
         }
     };
-    // Leg selection runs before any gate journals: a multi-leg proposal with
-    // an installed chain source resolves to concrete legs as of this bar
-    // (the bar-derived touch is the quote mid by construction), and any
-    // refusal skips with the lifecycle untouched. Without a source the
-    // pinned legacy flows unchanged — that divergence is preserved here,
-    // never fixed.
-    let selected_legs = if needs_chain_data(proposal.structure) {
-        match chain {
-            None => None,
-            Some(source) => {
-                let snapshot = source.chain_snapshot(&config.underlying, bar.ts);
-                if snapshot.is_empty() {
-                    return skipped_decision(
-                        bar_index,
-                        ts,
-                        proposal_id,
-                        "no chain quotes at-or-before this bar",
-                    );
-                }
-                match LegSelector::new().build().select_legs(
-                    proposal.structure,
-                    config.dte_days,
-                    &config.underlying,
-                    Money::new(bar.c),
-                    bar.ts.date_naive(),
-                    &snapshot,
-                ) {
-                    Ok(legs) => Some(legs),
-                    Err(refusal) => {
-                        return skipped_decision(bar_index, ts, proposal_id, &refusal.to_string());
-                    }
-                }
+    let quote = match bar_quote(bar, quote_config) {
+        Ok(quote) => quote,
+        Err(reason) => return skipped_decision(bar_index, ts, proposal_id, reason),
+    };
+    submit_decided(
+        proposal, quote, risk, ledger, venue, recorder, health, None, bar_index, bar, config,
+    )
+    .await
+}
+
+/// Submit a proposal the caller already decided, after the quote check.
+///
+/// The body every decision path shares: leg selection, risk, grant, lifecycle,
+/// and the venue protocol. It never evaluates a signal, so a run's instance
+/// cannot be advanced twice on one bar.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn submit_decided<R: SubmissionRecorder, V: Venue>(
+    mut proposal: Proposal,
+    quote: Quote,
+    risk: &RiskEngine,
+    ledger: &GrantLedger,
+    venue: &V,
+    recorder: &R,
+    health: BarHealth,
+    facts: Option<PortfolioFacts>,
+    bar_index: usize,
+    bar: &Bar,
+    config: &RunnerConfig,
+) -> BarDecision {
+    let proposal_id = proposal.id.clone();
+    let ts = bar.ts.to_rfc3339();
+    let Some(spread_width) = quote.spread_width() else {
+        return skipped_decision(bar_index, ts, proposal_id, "crossed quote");
+    };
+    // Legs run before any gate journals, and the economics arm decides which
+    // proposal can carry them. The chain-derived arm priced the package when
+    // it composed the proposal; the config arm holds the caller's constants
+    // for price, max loss, and notional, and a structure's own numbers are
+    // not those constants — so a leg-attached proposal there refuses
+    // instead of booking a package the gates never priced. The legless
+    // config-supplied shape flows exactly as before.
+    let chain_derived = !config.economics.is_config_supplied();
+    let selected_legs = if chain_derived {
+        match proposal.legs.clone() {
+            Some(legs) => Some(legs),
+            None => {
+                return skipped_decision(
+                    bar_index,
+                    ts,
+                    proposal_id,
+                    "chain-derived proposal has no package legs",
+                );
             }
         }
+    } else if proposal.legs.is_some() {
+        return skipped_decision(
+            bar_index,
+            ts,
+            proposal_id,
+            "config-supplied economics carry no package: price the structure \
+             from the chain (ChainDerived) or propose it legless",
+        );
     } else {
         None
     };
-    // Orders rest at the touch so backtest flow is marketable under the same
-    // liquidity filter paper enforces; the proposal limit marks the bar close
-    // and the checked limit is the submitted price.
-    let checked = checked_order_for(proposal.direction, &quote);
+    // Config-supplied orders rest at the touch so backtest flow is marketable
+    // under the same liquidity filter paper enforces. Chain-derived orders
+    // carry the package limit at mid, widened by the slippage tolerance.
+    let checked = if chain_derived {
+        let Some(economics) = proposal.economics else {
+            return skipped_decision(
+                bar_index,
+                ts,
+                proposal_id,
+                "chain-derived proposal has no package economics",
+            );
+        };
+        let side = match economics.side {
+            PackageSide::Buy => OrderSide::Buy,
+            PackageSide::Sell => OrderSide::Sell,
+        };
+        CheckedOrder {
+            side,
+            limit: economics.limit_with_tolerance(PACKAGE_TOLERANCE_BPS),
+        }
+    } else {
+        checked_order_for(proposal.direction, &quote)
+    };
     // The order's client key: the proposal id plus its single attempt. The
     // same key names the intent and every lifecycle transition, so replay
     // rebuilds one proposal history.
     let client_id = protopyne_venue::client_id_for(&proposal.id, 0);
+    let had_legs = selected_legs.is_some();
+    // Build the intent skeleton before the check, so the shape the engine
+    // judges is the shape that will actually be submitted. A proposal with
+    // no representable quantity builds none; the engine still refuses it as
+    // unrepresentable and the lifecycle cancels below.
+    let intent = intent_for(&proposal, &client_id, checked, selected_legs, chain_derived);
+    // The book reading rides both gates: the risk gate refuses an
+    // unobserved bundle when aggregate caps are configured, and the grant
+    // gate compares observed open risk to its cap. No producer means no
+    // reading — rehearsal declares that irrelevant at construction.
+    let observed = facts.filter(|found| found.observed);
     let state = RiskState {
         quote_age_secs: health.quote_age_secs,
         clock_skew_secs: health.clock_skew_secs,
         reconciliation_healthy: health.reconciliation_healthy,
-        is_limit_order: true,
-        is_spread: true,
+        facts: facts.unwrap_or_else(PortfolioFacts::unobserved),
     };
-    // Retain the token the engine mints on approval: the submission protocol
-    // demands it, so the runner cannot reach the venue without it.
-    let risk_check = risk.check(&proposal, &state);
-    let (risk_pass, risk_reasons) = match &risk_check {
-        Ok(_) => (true, Vec::new()),
-        Err(refused) => (
-            false,
-            refused
-                .reasons
-                .iter()
-                .map(|reason| format!("{reason:?}"))
-                .collect(),
-        ),
-    };
+    let shape = intent
+        .as_ref()
+        .map_or_else(|| OrderShape::new(had_legs, true), OrderShape::of);
+    // One gate order: the pipeline composes correctness, producer-confidence,
+    // and task-value through the same types the session path uses, replacing
+    // the inline risk/grant block that used to live here. The rehearsal run
+    // declares its producer gates irrelevant at construction — an enabled
+    // trading state with no attached sensors, no health gate — so the
+    // verdict records exactly what the block recorded before it.
+    //
+    // The spread threshold judges what the trade would cross: the package's
+    // own bid/ask width where chain data priced the legs, the underlying's
+    // bar spread where there is no package to price (the legless and
+    // config-supplied paths, unchanged).
     let market = GrantMarket::new()
         .quote_age_secs(health.quote_age_secs)
-        .spread_width(spread_width)
+        .spread_width(
+            proposal
+                .economics
+                .map_or(spread_width, |economics| economics.bid_ask_width),
+        )
+        .maybe_open_risk(observed.map(|found| found.open_risk))
         .build();
-    // Merit verdicts are computed without breaker input: a tripped breaker
-    // must never turn an Allow into a Deny. The disarm below enforces the
-    // trip at submission instead, so the recorded verdict stays honest about
-    // the trade while the run stops opening exposure.
-    let clean_breakers = BreakerState::new().build();
-    let (grant_allow, grant_reasons) =
-        match evaluate_grant(&proposal, grant, usage, &market, &clean_breakers, bar.ts) {
-            GrantDecision::Allow => (true, Vec::new()),
-            GrantDecision::Deny { reasons } => (false, reasons),
-        };
+    let pipeline = DecisionPipeline::new(StateHandle::new(TradingState::Enabled));
+    let PipelineVerdict {
+        risk_pass,
+        risk_reasons,
+        approval,
+        grant_merit,
+        grant_merit_reasons,
+        grant_authorized,
+        grant_authorization_reasons,
+        reservation: held,
+        ..
+    } = pipeline.evaluate(&PipelineRequest {
+        proposal: &proposal,
+        shape,
+        is_exit: proposal.side != ProposalSide::Entry,
+        health: None,
+        risk_state: &state,
+        market: &market,
+        now: bar.ts,
+        risk,
+        ledger,
+    });
+    let grant_merit = grant_merit.is_some_and(|decision| decision.is_allow());
+    let reservation = held;
     // The decision skeleton carries the proposal's own attribution and the
     // checked limit; the gates and the lifecycle below fill it in.
     let mut decision = proposed_decision(
@@ -595,8 +818,10 @@ pub async fn decide_and_submit<R: SubmissionRecorder, V: Venue>(
         checked,
         risk_pass,
         risk_reasons,
-        grant_allow,
-        grant_reasons,
+        grant_merit,
+        grant_merit_reasons,
+        grant_authorized,
+        grant_authorization_reasons,
     );
     // Drive the real proposal lifecycle through the risk and grant verdicts,
     // journaling each move before the decision acts on the new state. A move
@@ -607,28 +832,31 @@ pub async fn decide_and_submit<R: SubmissionRecorder, V: Venue>(
         recorder,
         &client_id,
         risk_pass,
-        grant_allow,
+        grant_merit,
         bar.ts,
         &mut decision.transitions,
     ) {
         decision.skipped = Some(e.to_string());
         return decision;
     }
-    if !(decision.risk_pass && decision.grant_allow) {
+    if !(decision.risk_pass && decision.grant_merit) {
         return decision;
     }
-    if (breakers.tripped || breakers.consecutive_errors > grant.breakers.max_consecutive_errors)
-        && proposal.side == ProposalSide::Entry
-    {
-        // Entries are disarmed for this run: withdraw approval rather than
+    if !decision.grant_authorized {
+        // Merely approved is not authorized: withdraw approval rather than
         // parking the proposal at `AutoApproved`, so the served state is
         // terminal and the journal shows why nothing was submitted.
+        let reason = decision
+            .grant_authorization_reasons
+            .first()
+            .cloned()
+            .unwrap_or_else(|| "grant did not authorize submission".to_owned());
         match advance(
             &mut proposal,
             recorder,
             &client_id,
             ProposalEvent::Cancel,
-            "entries disarmed: breaker tripped",
+            &reason,
             bar.ts,
         ) {
             Ok(entry) => decision.transitions.push(entry),
@@ -637,13 +865,10 @@ pub async fn decide_and_submit<R: SubmissionRecorder, V: Venue>(
                 return decision;
             }
         }
-        decision.skipped = Some(format!(
-            "breaker tripped: entries disarmed after {} consecutive venue errors (max {})",
-            breakers.consecutive_errors, grant.breakers.max_consecutive_errors,
-        ));
+        decision.skipped = Some(format!("grant denied submission: {reason}"));
         return decision;
     }
-    let Some(contracts) = proposal.contracts() else {
+    let Some(intent) = intent else {
         // A fractional or out-of-range quantity can never be submitted:
         // withdraw approval for the same reason as above.
         match advance(
@@ -663,16 +888,6 @@ pub async fn decide_and_submit<R: SubmissionRecorder, V: Venue>(
         decision.skipped = Some("unrepresentable quantity".to_owned());
         return decision;
     };
-    let intent = OrderIntent::new()
-        .client_id(client_id.clone())
-        .proposal_id(proposal.id.clone())
-        .strategy(proposal.strategy.clone())
-        .underlying(proposal.underlying.clone())
-        .side(checked.side)
-        .quantity(contracts)
-        .limit_price(checked.limit)
-        .maybe_legs(selected_legs)
-        .build();
     debug_assert_eq!(
         intent.limit_price, checked.limit,
         "the submitted limit must be the checked limit"
@@ -680,7 +895,7 @@ pub async fn decide_and_submit<R: SubmissionRecorder, V: Venue>(
     decision.submitted_quantity = intent.quantity;
     // Risk passed (guarded above), so the engine's token is present; the
     // protocol demands it, and a missing token can never reach the venue.
-    let Ok(approved) = &risk_check else {
+    let Some(approved) = approval.as_ref() else {
         decision.skipped = Some("risk approval missing for an approved proposal".to_owned());
         return decision;
     };
@@ -701,53 +916,83 @@ pub async fn decide_and_submit<R: SubmissionRecorder, V: Venue>(
             return decision;
         }
     }
+    // Reserve before handing the intent over: the pending claim is what
+    // bounds concurrent submissions. An unauthorized grant never reaches here.
+    let Some(reservation) = reservation else {
+        decision.skipped =
+            Some("grant authorization missing for an authorized proposal".to_owned());
+        return decision;
+    };
     // Only producer-health failures feed the confidence-axis counter: a
     // refused order speaks to the trade's merit, never to the venue's health,
     // so refusals leave the breaker alone. Success clears a cooling streak;
     // once tripped, the flag and its banked reason stay put for the run.
-    let record = match submit_guarded(recorder, venue, approved, intent, &quote, bar.ts).await {
-        Ok(record) => {
-            if !breakers.tripped {
-                breakers.consecutive_errors = 0;
+    let (record, legs) =
+        match submit_guarded(recorder, venue, approved, intent, &quote, bar.ts).await {
+            Ok(record) => {
+                ledger.observe_success();
+                // The venue's own executed legs: the decision's leg record and
+                // the leg-contract budget source, read once.
+                let legs = venue.executed_legs(&client_id);
+                // Filled and partial fills consume the committed budgets. Budgets
+                // count leg contracts, so a two-leg package consumes two per unit;
+                // the legless path stays one contract per filled unit.
+                let status = if record.status == OrderStatus::Partial {
+                    FillStatus::Partial
+                } else {
+                    FillStatus::Filled
+                };
+                reservation.settle(&FillOutcome {
+                    status,
+                    contracts: budget_contracts(&legs, record.filled_quantity),
+                    loss: proposal.max_loss,
+                    notional: proposal.notional,
+                });
+                (record, legs)
             }
-            record
-        }
-        Err(e) => {
-            if e.is_retryable() {
-                breakers.consecutive_errors = breakers.consecutive_errors.saturating_add(1);
-                if !breakers.tripped
-                    && breakers.consecutive_errors > grant.breakers.max_consecutive_errors
-                {
-                    breakers.tripped = true;
-                    breakers.trip_reason = Some(format!(
-                        "{} consecutive venue errors exceed max {}",
-                        breakers.consecutive_errors, grant.breakers.max_consecutive_errors,
-                    ));
-                }
-            } else {
-                // A permanent refusal terminalizes the proposal. A retryable
-                // failure leaves it `Submitted`: the intent is in the outbox
-                // and query-by-ID resolves the unknown verdict, so the served
-                // state never claims a rejection the venue did not make.
-                match advance(
-                    &mut proposal,
-                    recorder,
-                    &client_id,
-                    ProposalEvent::Reject,
-                    "venue refused",
-                    bar.ts,
-                ) {
-                    Ok(entry) => decision.transitions.push(entry),
-                    Err(advance_error) => {
-                        decision.skipped = Some(advance_error.to_string());
-                        return decision;
+            Err(e) => {
+                ledger.observe_error(e.is_retryable());
+                if e.is_retryable() {
+                    // The intent is journaled and the verdict unknown: retain the
+                    // reservation until query-by-ID resolves it, so its budget is
+                    // never freed for an order that may still fill.
+                    reservation.settle(&FillOutcome {
+                        status: FillStatus::Retryable,
+                        contracts: 0,
+                        loss: Money::zero(),
+                        notional: Money::zero(),
+                    });
+                } else {
+                    // A permanent refusal consumed an attempted, journaled trade.
+                    reservation.settle(&FillOutcome {
+                        status: FillStatus::Refused,
+                        contracts: 0,
+                        loss: Money::zero(),
+                        notional: Money::zero(),
+                    });
+                    // A permanent refusal terminalizes the proposal. A retryable
+                    // failure leaves it `Submitted`: the intent is in the outbox
+                    // and query-by-ID resolves the unknown verdict, so the served
+                    // state never claims a rejection the venue did not make.
+                    match advance(
+                        &mut proposal,
+                        recorder,
+                        &client_id,
+                        ProposalEvent::Reject,
+                        "venue refused",
+                        bar.ts,
+                    ) {
+                        Ok(entry) => decision.transitions.push(entry),
+                        Err(advance_error) => {
+                            decision.skipped = Some(advance_error.to_string());
+                            return decision;
+                        }
                     }
                 }
+                decision.skipped = Some(e.to_string());
+                return decision;
             }
-            decision.skipped = Some(e.to_string());
-            return decision;
-        }
-    };
+        };
     // Map the venue verdict onto the remaining lifecycle events. The
     // sequence is legal by construction and the runner's recorder is
     // in-memory/infallible; if the recorder itself fails mid-way, the fill
@@ -765,17 +1010,202 @@ pub async fn decide_and_submit<R: SubmissionRecorder, V: Venue>(
     }
     let filled = record.filled_quantity;
     let submitted = record.intent.quantity;
-    usage.used_trades = usage.used_trades.saturating_add(1);
-    usage.used_contracts = usage.used_contracts.saturating_add(filled);
-    usage.used_loss = Money::new(usage.used_loss.as_decimal() + proposal.max_loss.as_decimal());
-    usage.used_notional =
-        Money::new(usage.used_notional.as_decimal() + proposal.notional.as_decimal());
     decision.submitted = true;
     decision.submitted_quantity = submitted;
     decision.filled_quantity = filled;
     decision.fill_price = record.avg_price;
     decision.fee = Some(record.fees_paid);
+    decision.legs = legs;
     decision
+}
+
+/// The intent a proposal submits: the package count, the checked limit, the
+/// proposal's own legs and economics. `None` when the quantity is a fractional
+/// or out-of-range count — a data error, never truncated.
+fn intent_for(
+    proposal: &Proposal,
+    client_id: &str,
+    checked: CheckedOrder,
+    legs: Option<protopyne_types::SpreadLegs>,
+    chain_derived: bool,
+) -> Option<OrderIntent> {
+    proposal.contracts().map(|contracts| {
+        OrderIntent::new()
+            .client_id(client_id.to_owned())
+            .proposal_id(proposal.id.clone())
+            .strategy(proposal.strategy.clone())
+            .underlying(proposal.underlying.clone())
+            .side(checked.side)
+            .quantity(contracts)
+            .limit_price(checked.limit)
+            .maybe_legs(legs)
+            .maybe_capital_requirement(if chain_derived {
+                proposal
+                    .economics
+                    .map(|economics| economics.capital_requirement)
+            } else {
+                None
+            })
+            .build()
+    })
+}
+
+/// Route a human-approved proposal into the ledger + submit path.
+///
+/// The approval itself is journaled by `decide_proposal` on the command plane;
+/// this re-checks the risk gate against fresh facts, reserves the grant's
+/// budgets atomically, advances the lifecycle to `Submitted`, and submits
+/// through the same guarded protocol every other path uses. The proposal
+/// carries its own direction, legs, and economics, so entries and exits share
+/// it.
+#[allow(clippy::too_many_arguments)]
+pub async fn submit_approved<R: SubmissionRecorder, V: Venue>(
+    proposal: &mut Proposal,
+    risk: &RiskEngine,
+    risk_state: &RiskState,
+    ledger: &GrantLedger,
+    market: &GrantMarket,
+    venue: &V,
+    recorder: &R,
+    quote: &Quote,
+    runner_config: &RunnerConfig,
+    now: DateTime<Utc>,
+) -> Result<OrderRecord, VenueError> {
+    let client_id = protopyne_venue::client_id_for(&proposal.id, 0);
+    let chain_derived = !runner_config.economics.is_config_supplied();
+    // A chain-derived approval carries its package limit at mid, widened by
+    // the slippage tolerance; a config-supplied one rests at the touch.
+    let checked = if chain_derived {
+        let economics = proposal.economics.ok_or_else(|| {
+            VenueError::Invalid("chain-derived proposal has no economics".to_owned())
+        })?;
+        let side = match economics.side {
+            PackageSide::Buy => OrderSide::Buy,
+            PackageSide::Sell => OrderSide::Sell,
+        };
+        CheckedOrder {
+            side,
+            limit: economics.limit_with_tolerance(PACKAGE_TOLERANCE_BPS),
+        }
+    } else {
+        checked_order_for(proposal.direction, quote)
+    };
+    // Fresh risk check immediately before submission: a stale quote or an
+    // engaged kill switch refuses here, and the token binds this intent.
+    let shape = OrderShape::new(proposal.legs.is_some(), true);
+    let approved = risk.check(proposal, shape, risk_state).map_err(|refused| {
+        VenueError::Refused(format!("risk refused approval: {}", refused.detail))
+    })?;
+    // Reserve the grant's worst-case budgets before the venue call; a grant
+    // that cannot cover the approval refuses and takes no budget.
+    let reservation = ledger
+        .reserve(proposal, market, now)
+        .map_err(|decision| VenueError::Refused(format!("grant refused approval: {decision:?}")))?;
+    let Some(intent) = intent_for(
+        proposal,
+        &client_id,
+        checked,
+        proposal.legs.clone(),
+        chain_derived,
+    ) else {
+        // Dropping the reservation releases it; an unrepresentable quantity
+        // never reaches the venue.
+        return Err(VenueError::Invalid(
+            "approved quantity unrepresentable".to_owned(),
+        ));
+    };
+    // Journal the intent to trade before the venue call, exactly as the run
+    // path does.
+    advance(
+        proposal,
+        recorder,
+        &client_id,
+        ProposalEvent::Submit,
+        "operator approved",
+        now,
+    )?;
+    match submit_guarded(recorder, venue, &approved, intent, quote, now).await {
+        Ok(record) => {
+            let legs = venue.executed_legs(&client_id);
+            let status = if record.status == OrderStatus::Partial {
+                FillStatus::Partial
+            } else {
+                FillStatus::Filled
+            };
+            reservation.settle(&FillOutcome {
+                status,
+                contracts: budget_contracts(&legs, record.filled_quantity),
+                loss: proposal.max_loss,
+                notional: proposal.notional,
+            });
+            let _ = advance_verdict(
+                proposal,
+                recorder,
+                &client_id,
+                record.status,
+                now,
+                &mut Vec::new(),
+            );
+            Ok(record)
+        }
+        Err(error) => {
+            let status = if error.is_retryable() {
+                FillStatus::Retryable
+            } else {
+                FillStatus::Refused
+            };
+            reservation.settle(&FillOutcome {
+                status,
+                contracts: 0,
+                loss: Money::zero(),
+                notional: Money::zero(),
+            });
+            Err(error)
+        }
+    }
+}
+
+/// Leg contracts a fill consumed: the executed legs' sum, or the filled
+/// package units when the venue reported no legs (the legacy single-leg path,
+/// where one unit is one contract). The one place the two counts meet.
+fn budget_contracts(legs: &[LegExecution], filled_package_units: u32) -> u32 {
+    if legs.is_empty() {
+        return filled_package_units;
+    }
+    legs.iter()
+        .map(|leg| leg.quantity)
+        .fold(0_u32, u32::saturating_add)
+}
+
+/// How one decision's position is marked for unrealized P&L, given the run's
+/// chain (empty when the batch runner installs none).
+fn decision_mark_basis(decision: &BarDecision, chain: &[ChainQuote]) -> MarkBasis {
+    if decision.legs.is_empty() {
+        // A legless position keeps the fill-price book basis; the run's
+        // assumption line names the underlying-close proxy the equity curve
+        // rides.
+        return MarkBasis::FillPrice;
+    }
+    let Ok(at) = chrono::DateTime::parse_from_rfc3339(&decision.ts) else {
+        return MarkBasis::FillPrice;
+    };
+    mark_per_unit(
+        &decision.legs,
+        decision.filled_quantity,
+        chain,
+        at.with_timezone(&Utc),
+    )
+    .1
+}
+
+/// The run's option-mark basis: the most preferred basis any legged decision
+/// resolved to, falling back to the fill-price book basis for a legless run.
+fn run_mark_basis(decisions: &[BarDecision], chain: &[ChainQuote]) -> MarkBasis {
+    decisions
+        .iter()
+        .filter(|decision| !decision.legs.is_empty())
+        .map(|decision| decision_mark_basis(decision, chain))
+        .fold(MarkBasis::FillPrice, MarkBasis::preferred)
 }
 
 /// One completed backtest run: pin, per-bar verdicts, and honest report.
@@ -823,7 +1253,24 @@ pub fn equity_curve_for(bars: &[Bar], decisions: &[BarDecision]) -> Vec<Money> {
         if !decision.submitted {
             return;
         }
-        let (Some(price), Some(fee)) = (decision.fill_price, decision.fee) else {
+        let Some(fee) = decision.fee else {
+            return;
+        };
+        // A multi-leg package is one instrument priced once from its own
+        // executed legs: buy legs pay, sell legs receive, and the package
+        // carries no share position to mark against the underlying close.
+        if !decision.legs.is_empty() {
+            for leg in &decision.legs {
+                let flow = leg.price.as_decimal() * Decimal::from(leg.quantity);
+                match leg.side {
+                    OrderSide::Buy => *cash -= flow,
+                    OrderSide::Sell => *cash += flow,
+                }
+            }
+            *cash -= fee.as_decimal();
+            return;
+        }
+        let Some(price) = decision.fill_price else {
             return;
         };
         let qty = decision.filled_quantity;
@@ -886,6 +1333,23 @@ fn config_json_of(
 ) -> Result<String, ServerError> {
     serde_json::to_string(&(runner_config, venue_config, risk.limits(), grant))
         .map_err(|e| ServerError::Backtest(format!("config not serializable: {e}")))
+}
+
+/// The fill assumption naming which economics arm ran, and what each one
+/// means for the numbers the gates checked: the config arm books the run's
+/// configured constants, the chain-derived arm books the structure's own
+/// priced package (and never books `configured`, which is then unused).
+fn economics_arm_note(economics: EconomicsPolicy, configured: Money) -> String {
+    match economics {
+        EconomicsPolicy::ConfigSupplied => format!(
+            "economics arm config-supplied: price, max loss ({configured}), and notional are \
+             the run's configured constants"
+        ),
+        EconomicsPolicy::ChainDerived => format!(
+            "economics arm chain-derived: package price, max loss, and notional priced from the \
+             chain (the run's configured max loss {configured} is unused)"
+        ),
+    }
 }
 
 /// Run the full decision stack over `bars` through a versioned venue.
@@ -1016,6 +1480,26 @@ async fn run_backtest_on_venue<V: Venue>(
     // usage, breaker, closes prefix, and ephemeral journal, and steps each
     // bar through the shared decision stack. Driving it to completion here
     // reproduces the historical inline loop decision-for-decision.
+    //
+    // The batch coverage policy rides the venue config: a run carrying
+    // chain history screens under `RequireChains` through the venue's own
+    // installed source (one code path with interactive replay, no fork);
+    // a sourceless run keeps the unscreened legacy byte-identical. A
+    // demanded screen with no history refuses before the first bar — the
+    // screen cannot operate, so the run must not read as quiet.
+    let chains = if venue_config.require_chains {
+        crate::replay_session::ChainPolicy::RequireChains
+    } else {
+        crate::replay_session::ChainPolicy::Unscreened
+    };
+    if chains == crate::replay_session::ChainPolicy::RequireChains
+        && venue_config.chain_history.is_empty()
+    {
+        return Err(ServerError::Backtest(
+            "chain screen requires chain history: set chain_history or clear require_chains"
+                .to_owned(),
+        ));
+    }
     let mut session = crate::replay_session::ReplaySession::start(
         strategy,
         risk,
@@ -1023,7 +1507,8 @@ async fn run_backtest_on_venue<V: Venue>(
         venue,
         venue_config.clone(),
         runner_config.clone(),
-        crate::replay_session::ChainPolicy::Unscreened,
+        chains,
+        venue.chain_source(),
         bars,
         seed,
     )?;
@@ -1053,15 +1538,22 @@ async fn run_backtest_on_venue<V: Venue>(
         .fold(Decimal::ZERO, |sum, leg| sum + leg);
     let reserved_notional = runner_config.notional.as_decimal() * Decimal::from(proposals);
     let unquotable = count_unquotable_bars(bars);
+    // The run's own chain facts decide the mark basis: a legged decision
+    // marks from the chain when the run installed one, a legless run keeps
+    // the fill-price book basis. The chosen basis is stated, never assumed.
+    let mark_basis = run_mark_basis(&decisions, &venue_config.chain_history);
     let assumptions = vec![
         format!(
             "quotes synthesized from closed-bar close with spread {} bps, size {}",
             venue_config.quote_spread_bps, venue_config.quote_size
         ),
         "fills share paper's spread-aware fill code (liquidity filter, slippage, fees)".to_owned(),
+        "slippage is a fill-model assumption, not a gate: it never appears in a refusal reason"
+            .to_owned(),
         "orders rest at the touch (buy ask, sell bid); proposal limits mark the bar close"
             .to_owned(),
-        format!("max loss {} per proposal", runner_config.max_loss),
+        economics_arm_note(runner_config.economics, runner_config.max_loss),
+        mark_basis_note(mark_basis),
     ];
     // Limits are the source's facts, never asserted: the arm names itself, the
     // declared capability set names the prototype's absences, and an uncertified
@@ -1074,6 +1566,18 @@ async fn run_backtest_on_venue<V: Venue>(
     if let Some(omission) = uncertified_coverage_limit(planner_certified) {
         limits.push(omission);
     }
+    if let Some(line) = crate::report::corporate_action_limit_line(&venue_config.corporate_actions)
+    {
+        limits.push(line);
+    }
+    // The run's own chain facts ride the report beside the metrics: a
+    // chained run names its coverage and drops the no-chains absence
+    // clause, while a chainless run reads exactly as before.
+    let chain_quotes = if venue_config.chain_history.is_empty() {
+        None
+    } else {
+        Some(venue_config.chain_history.as_slice())
+    };
     let mut report = build_report(
         manifest.clone(),
         assumptions,
@@ -1085,59 +1589,88 @@ async fn run_backtest_on_venue<V: Venue>(
         Money::new(reserved_notional),
         equity,
         report_rsrs(bars),
-        // Batch installs no chain source: the run's chain facts are absent,
-        // so the absence line stays verbatim and no chain line joins.
-        None,
+        // The run's own chain facts: present or absent decides the coverage
+        // line, the absence clause, the greeks note, and the mark basis.
+        chain_quotes,
+        mark_basis,
     );
     // Portfolio aggregation over the run's fills: decisions are the runner's
     // fill record, keyed back to bars by replay index (built in lockstep
     // above, so the lookup cannot miss — a miss fails the run, never drops
     // a fill). Only priced fills book: a fill without a price has no
-    // economics to attribute. Marks are bar closes, the same tape the equity
-    // curve marks.
-    let mut booked: Vec<BookedFill> = Vec::new();
-    for decision in &decisions {
-        let (Some(direction), Some(price)) = (decision.direction, decision.fill_price) else {
-            continue;
-        };
-        if !decision.submitted || decision.filled_quantity == 0 {
-            continue;
-        }
-        let Some(bar) = bars.get(decision.bar_index) else {
-            return Err(ServerError::Backtest(format!(
-                "decision {} indexes bar {} of {}",
-                decision.proposal_id,
-                decision.bar_index,
-                bars.len()
-            )));
-        };
-        booked.push(
-            BookedFill::new()
-                .portfolio(PAPER_PORTFOLIO.to_owned())
-                .underlying(runner_config.underlying.clone())
-                .structure(decision.structure.map_or_else(
-                    || "unrecorded".to_owned(),
-                    |structure| format!("{structure:?}"),
-                ))
-                .strategy(runner_config.strategy_name.clone())
-                .grant(grant.id.clone())
-                .side(side_for_direction(direction))
-                .quantity(decision.filled_quantity)
-                .price(price)
-                .fee(decision.fee.unwrap_or_else(Money::zero))
-                .trade_id(protopyne_venue::client_id_for(&decision.proposal_id, 0))
-                .at(bar.ts)
-                .build(),
-        );
-    }
-    let marks: Vec<(chrono::DateTime<chrono::Utc>, Money)> =
-        bars.iter().map(|bar| (bar.ts, Money::new(bar.c))).collect();
+    // economics to attribute.
+    let booked = booked_fills_of(
+        &decisions,
+        PAPER_PORTFOLIO,
+        &grant.id,
+        &venue_config.chain_history,
+    )?;
+    // Marks are bar closes, the same tape the equity curve marks; each one
+    // carries the run's chain so a package book marks off its own legs.
+    let marks: Vec<MarkPoint<'_>> = bars
+        .iter()
+        .map(|bar| MarkPoint {
+            at: bar.ts,
+            price: Money::new(bar.c),
+            chain: &venue_config.chain_history,
+        })
+        .collect();
     report.portfolio = Some(aggregate(&booked)?.summarize(&marks)?);
     Ok(BacktestRun {
         manifest,
         decisions,
         report,
     })
+}
+
+/// The venue-booked fills a decision run produced: one per submitted, filled,
+/// priced decision, in decision order. The single mapping from decisions to
+/// booked fills — the backtest report and the terminal's booked portfolio
+/// both fold it.
+pub(crate) fn booked_fills_of(
+    decisions: &[BarDecision],
+    portfolio: &str,
+    grant: &str,
+    chain: &[ChainQuote],
+) -> Result<Vec<BookedFill>, ServerError> {
+    let mut booked = Vec::new();
+    for decision in decisions {
+        let (Some(direction), Some(price)) = (decision.direction, decision.fill_price) else {
+            continue;
+        };
+        if !decision.submitted || decision.filled_quantity == 0 {
+            continue;
+        }
+        let at = chrono::DateTime::parse_from_rfc3339(&decision.ts)
+            .map(|at| at.with_timezone(&chrono::Utc))
+            .map_err(|error| {
+                ServerError::Backtest(format!(
+                    "decision {} has an unparseable timestamp {:?}: {error}",
+                    decision.proposal_id, decision.ts
+                ))
+            })?;
+        booked.push(
+            BookedFill::new()
+                .portfolio(portfolio.to_owned())
+                .underlying(decision.underlying.clone())
+                .structure(decision.structure.map_or_else(
+                    || "unrecorded".to_owned(),
+                    |structure| format!("{structure:?}"),
+                ))
+                .strategy(decision.strategy.clone())
+                .grant(grant.to_owned())
+                .side(side_for_direction(direction))
+                .quantity(decision.filled_quantity)
+                .price(price)
+                .fee(decision.fee.unwrap_or_else(Money::zero))
+                .trade_id(protopyne_venue::client_id_for(&decision.proposal_id, 0))
+                .at(at)
+                .mark_basis(decision_mark_basis(decision, chain))
+                .legs(decision.legs.clone())
+                .build(),
+        );
+    }
+    Ok(booked)
 }
 
 /// One symbol's leg of a multi-symbol run: its configs plus its bar source.
@@ -1358,6 +1891,10 @@ pub async fn run_multi_backtest(
 ///
 /// Used by the parity test: identical inputs must produce identical
 /// decisions whether the venue is versioned history or paper.
+///
+/// A config that cannot start reports the refusal instead of unwinding: this
+/// is a public entry on a trading path, so every failure is a value. Empty
+/// history decides nothing and stays `Ok(Vec::new())`, as before.
 pub async fn run_paper_decisions(
     strategy: &Strategy,
     risk: &RiskEngine,
@@ -1366,7 +1903,7 @@ pub async fn run_paper_decisions(
     runner_config: &RunnerConfig,
     bars: &[Bar],
     seed: u64,
-) -> Vec<BarDecision> {
+) -> Result<Vec<BarDecision>, ServerError> {
     // The paper feed has no pinned history, so it states its own synthesis
     // assumptions under an explicit paper label (default spread/size, same
     // values the shared path always used — now named instead of hidden).
@@ -1377,7 +1914,7 @@ pub async fn run_paper_decisions(
     // Same session, paper venue: identical inputs produce identical decisions
     // whether the venue is versioned history or paper.
     if bars.is_empty() {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let mut session = crate::replay_session::ReplaySession::start(
         strategy,
@@ -1387,12 +1924,12 @@ pub async fn run_paper_decisions(
         quote_config,
         runner_config.clone(),
         crate::replay_session::ChainPolicy::Unscreened,
+        None,
         bars,
         seed,
-    )
-    .expect("paper replay validates: configs are built, bars are lent");
+    )?;
     while session.step().await.is_some() {}
-    session.decisions().to_vec()
+    Ok(session.decisions().to_vec())
 }
 
 /// One sweep outcome: which variant ran and what it filled.
@@ -1670,7 +2207,7 @@ pub fn report_rsrs(bars: &[Bar]) -> Option<f64> {
         .iter()
         .map(|bar| bar.l.to_f64().unwrap_or(f64::NAN))
         .collect();
-    protopyne_kernels::research::rsrs(&highs, &lows, 18, 600)
+    protopyne_kernels::scores::rsrs(&highs, &lows, 18, 600)
         .into_iter()
         .flatten()
         .next_back()
@@ -1701,8 +2238,14 @@ pub fn expire_position<V: Venue>(
     venue: &V,
     underlying: &str,
     now: DateTime<Utc>,
-) -> Result<String, protopyne_venue::VenueError> {
-    venue.apply_corporate_event(underlying, CorporateEvent::Expiry, now)
+) -> Result<protopyne_venue::CorporateOutcome, protopyne_venue::VenueError> {
+    venue.apply_corporate_event(
+        &protopyne_venue::CorporateEventArgs::new()
+            .underlying(underlying.to_owned())
+            .at(now)
+            .event(CorporateEvent::Expiry)
+            .build(),
+    )
 }
 
 #[cfg(test)]
@@ -1712,3 +2255,11 @@ mod tests;
 #[cfg(test)]
 #[path = "../tests/multi_symbol_tape.rs"]
 mod multi_symbol_tape_tests;
+
+#[cfg(test)]
+#[path = "../tests/rehearsal_baseline.rs"]
+mod rehearsal_baseline_tests;
+
+#[cfg(test)]
+#[path = "../tests/submit_gates.rs"]
+mod submit_gates_tests;

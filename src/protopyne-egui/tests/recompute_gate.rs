@@ -232,3 +232,56 @@ fn fuzz_skip_iff_exact_key_match() {
         }
     }
 }
+
+#[test]
+fn revised_forming_bar_recomputes_without_a_shape_change() {
+    let mut workspace = ChartWorkspace::with_rows(gate_rows(40)).expect("workspace boots");
+    let builds = workspace.derived_builds();
+    let before = workspace.evaluations.clone();
+    let mut revised = workspace.rows.clone();
+    let tail = revised.last_mut().expect("rows hold");
+    tail.close += 5.0;
+    tail.high += 5.0;
+    workspace.rows = revised;
+    workspace.recompute().expect("recompute runs");
+    assert_eq!(
+        workspace.derived_builds(),
+        builds + 1,
+        "a revised forming bar re-evaluates at the same shape"
+    );
+    assert_ne!(
+        workspace.evaluations, before,
+        "the overlay reflects the revised content"
+    );
+}
+
+#[test]
+fn identical_shape_symbol_switch_recomputes() {
+    let mut workspace = ChartWorkspace::with_rows(gate_rows(40)).expect("workspace boots");
+    let builds = workspace.derived_builds();
+    let other: Vec<ChartRow> = (0..40)
+        .map(|i| {
+            let close = 200.0 + (i as f64);
+            ChartRow {
+                time: 1_700_000_000 + i * 900,
+                open: close - 1.0,
+                high: close + 1.0,
+                low: close - 2.0,
+                close,
+                volume: 10,
+            }
+        })
+        .collect();
+    assert_eq!(
+        rows_shape_of(&other),
+        rows_shape_of(&workspace.rows),
+        "the switch fixture keeps the shape identical"
+    );
+    workspace.rows = other;
+    workspace.recompute().expect("recompute runs");
+    assert_eq!(
+        workspace.derived_builds(),
+        builds + 1,
+        "identical-shape content still re-evaluates"
+    );
+}

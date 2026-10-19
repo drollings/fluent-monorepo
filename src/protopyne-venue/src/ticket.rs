@@ -14,6 +14,10 @@
 //! confirmed book the read-only import checks against. That import stays
 //! behind [`TicketRead`]: a dark adapter reports its failure and changes
 //! nothing, so a fragile read never touches ticket state.
+//!
+//! The tracker and journal kinds are wired: the server's ticket routes and
+//! gateway verbs journal through them, and the terminal's ticket panel
+//! renders and acts over the gateway.
 
 use std::collections::BTreeMap;
 

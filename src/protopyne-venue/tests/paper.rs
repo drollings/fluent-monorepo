@@ -1,5 +1,5 @@
 use super::*;
-use crate::order::{CorporateEvent, OrderIntent, OrderSide, OrderStatus};
+use crate::order::{CorporateEvent, CorporateEventArgs, OrderIntent, OrderSide, OrderStatus};
 use crate::venue::Venue;
 use chrono::{TimeZone, Utc};
 use protopyne_types::Money;
@@ -7,6 +7,15 @@ use rust_decimal::Decimal;
 
 fn money(value: &str) -> Money {
     Money::new(value.parse::<Decimal>().expect("decimal"))
+}
+
+/// One SPY action effective at the fixture clock.
+fn action(event: CorporateEvent) -> CorporateEventArgs {
+    CorporateEventArgs::new()
+        .underlying("SPY".to_owned())
+        .at(now())
+        .event(event)
+        .build()
 }
 
 fn quote() -> Quote {
@@ -167,6 +176,20 @@ async fn dry_run_checks_buying_power() {
 }
 
 #[tokio::test]
+async fn dry_run_reserves_the_package_capital_when_supplied() {
+    let venue = venue();
+    let mut intent = intent("c#0", OrderSide::Buy, "600.50", 2);
+    intent.capital_requirement = Some(money("250.00"));
+    let ok = venue.dry_run(&intent, &quote()).expect("affordable");
+    assert_eq!(ok.reserved_notional, money("250.00"));
+    intent.capital_requirement = Some(money("200000.00"));
+    assert!(matches!(
+        venue.dry_run(&intent, &quote()),
+        Err(VenueError::Refused(_))
+    ));
+}
+
+#[tokio::test]
 async fn cancel_and_corporate_events() {
     let venue = venue();
     let err = venue.cancel("nope", now()).await.expect_err("unknown");
@@ -177,16 +200,19 @@ async fn cancel_and_corporate_events() {
         .await
         .expect("buy");
     let note = venue
-        .apply_corporate_event("SPY", CorporateEvent::Split(2), now())
+        .apply_corporate_event(&action(CorporateEvent::Split(2)))
         .expect("split");
-    assert!(note.contains('2'));
+    assert!(note.note.contains('2'));
     let positions = venue.positions();
     assert_eq!(positions[0].quantity, 8);
 
-    venue
-        .apply_corporate_event("SPY", CorporateEvent::Expiry, now())
-        .expect("expiry");
-    assert!(venue.positions().is_empty());
+    // Expiry is option-specific: a stock-only book has no due option legs
+    // and is left untouched (assignment/expiry never delete net stock).
+    let outcome = venue
+        .apply_corporate_event(&action(CorporateEvent::Expiry))
+        .expect("expiry with no option legs is a no-op");
+    assert!(outcome.legs.is_empty());
+    assert_eq!(venue.positions()[0].quantity, 8);
 }
 
 #[tokio::test]
@@ -218,7 +244,7 @@ async fn split_zero_is_refused() {
         .await
         .expect("buy");
     let err = venue
-        .apply_corporate_event("SPY", CorporateEvent::Split(0), now())
+        .apply_corporate_event(&action(CorporateEvent::Split(0)))
         .expect_err("zero split factor must refuse, never panic or mistreat as no-op");
     assert!(matches!(err, VenueError::Invalid(_)));
     let positions = venue.positions();

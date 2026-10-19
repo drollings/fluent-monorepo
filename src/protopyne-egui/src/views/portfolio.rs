@@ -22,6 +22,8 @@ pub struct PortfolioModel {
     pub open_contracts: i64,
     /// Trading state when the view was published, as the stable tag.
     pub trading_state: String,
+    /// Which source produced the view (`booked` or `rehearsal`).
+    pub source: String,
 }
 
 impl PortfolioModel {
@@ -34,6 +36,7 @@ impl PortfolioModel {
             total_fees: view.total_fees,
             open_contracts: view.open_contracts,
             trading_state: view.trading_state.clone(),
+            source: view.source.clone(),
         }
     }
 

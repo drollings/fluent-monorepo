@@ -10,7 +10,9 @@ use protopyne_strategy::{
     StructureKind, TradeThresholds,
 };
 use protopyne_types::{Bar, Money};
-use protopyne_venue::{PaperConfig, PaperVenue};
+use protopyne_venue::{
+    CorporateEvent, CorporateEventArgs, OrderIntent, OrderSide, PaperConfig, PaperVenue, Venue,
+};
 
 use crate::backtest::{BacktestConfig, BacktestVenue};
 use crate::replay_session::ChainPolicy;
@@ -150,6 +152,7 @@ async fn stepping_to_completion_reproduces_the_batch_run() {
         venue_config(),
         runner_config(),
         ChainPolicy::RequireChains,
+        None,
         &bars,
         7,
     )
@@ -168,6 +171,75 @@ async fn stepping_to_completion_reproduces_the_batch_run() {
     assert!(
         session.step().await.is_none(),
         "stepping past the end holds"
+    );
+}
+
+/// A corporate-action tape lands on the bar whose timestamp first reaches the
+/// event, never earlier: the book a proposal sees is the post-action book.
+#[tokio::test]
+async fn a_corporate_action_tape_applies_at_its_effective_bar() {
+    let bars = synthetic_bars(6);
+    let tape = vec![CorporateEventArgs::new()
+        .underlying("SPY".to_owned())
+        .at(bars[2].ts)
+        .event(CorporateEvent::Dividend)
+        .amount(money(10))
+        .build()];
+    let config = BacktestConfig::new()
+        .underlying("SPY".to_owned())
+        .data_version("replay-test-v1".to_owned())
+        .corporate_actions(tape)
+        .build();
+    let venue = BacktestVenue::new(config.clone(), bars.clone(), PaperConfig::new().build())
+        .expect("venue pins");
+    // Seed a stock position so the dividend has shares to credit.
+    let seed_quote = crate::backtest::quote_for_bar(&bars[0], &config).expect("quotable");
+    let seed = OrderIntent::new()
+        .client_id("seed#0".to_owned())
+        .proposal_id("seed".to_owned())
+        .strategy("ribbon".to_owned())
+        .underlying("SPY".to_owned())
+        .side(OrderSide::Buy)
+        .quantity(2)
+        .limit_price(seed_quote.ask)
+        .build();
+    venue
+        .submit(seed, &seed_quote, bars[0].ts)
+        .await
+        .expect("seed fills");
+    let strategy = strategy_with(StructureKind::Single);
+    let risk = risk();
+    let grant = grant_for(vec![StructureKind::Single]);
+    let mut session = ReplaySession::start(
+        &strategy,
+        &risk,
+        &grant,
+        &venue,
+        config,
+        runner_config(),
+        ChainPolicy::RequireChains,
+        None,
+        &bars,
+        7,
+    )
+    .expect("session starts");
+    session.step().await.expect("bar 0");
+    session.step().await.expect("bar 1");
+    assert!(
+        venue.booked_dividends().is_empty(),
+        "the tape event is not due before its effective bar"
+    );
+    let shares = venue
+        .positions()
+        .iter()
+        .find(|position| position.underlying == "SPY")
+        .map_or(0, |position| position.quantity);
+    assert!(shares > 0, "the seeded book holds shares");
+    session.step().await.expect("bar 2");
+    assert_eq!(
+        venue.booked_dividends().get("SPY"),
+        Some(&money(10 * shares)),
+        "10 per share on the held shares"
     );
 }
 
@@ -191,6 +263,7 @@ async fn two_sessions_over_the_same_bars_agree() {
         venue_config(),
         runner_config(),
         ChainPolicy::RequireChains,
+        None,
         &bars,
         3,
     )
@@ -203,6 +276,7 @@ async fn two_sessions_over_the_same_bars_agree() {
         venue_config(),
         runner_config(),
         ChainPolicy::RequireChains,
+        None,
         &bars,
         3,
     )
@@ -236,6 +310,7 @@ async fn spreads_refuse_without_a_chain_feed() {
         venue_config(),
         runner_config(),
         ChainPolicy::RequireChains,
+        None,
         &bars,
         11,
     )
@@ -280,6 +355,7 @@ async fn single_stock_legs_fill_honestly() {
         venue_config(),
         runner_config(),
         ChainPolicy::RequireChains,
+        None,
         &bars,
         11,
     )
@@ -318,13 +394,14 @@ async fn gate_denials_carry_no_chain_note() {
         venue_config(),
         runner_config(),
         ChainPolicy::RequireChains,
+        None,
         &bars,
         11,
     )
     .expect("session starts");
     let mut denied = 0;
     while let Some(decision) = session.step().await {
-        if decision.direction.is_none() || decision.grant_allow {
+        if decision.direction.is_none() || decision.grant_merit {
             continue;
         }
         denied += 1;
@@ -368,6 +445,7 @@ async fn unscreened_session_matches_batch_on_spreads() {
         venue_config(),
         runner_config(),
         ChainPolicy::Unscreened,
+        None,
         &bars,
         11,
     )
@@ -405,6 +483,7 @@ fn start_refuses_empty_history_and_bad_configs() {
             venue_config(),
             runner_config(),
             ChainPolicy::RequireChains,
+            None,
             &empty,
             1,
         )
@@ -428,6 +507,7 @@ fn start_refuses_empty_history_and_bad_configs() {
                 0,
             ),
             ChainPolicy::RequireChains,
+            None,
             &bars,
             1,
         )

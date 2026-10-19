@@ -1,6 +1,56 @@
 use super::*;
+use crate::bar::Bar;
 use crate::error::TypesError;
 
+fn bar_at(ms: i64) -> Bar {
+    use chrono::TimeZone as _;
+    use rust_decimal::Decimal;
+    let price = Decimal::from(100);
+    Bar::new()
+        .ts(chrono::Utc.timestamp_millis_opt(ms).unwrap())
+        .o(price)
+        .h(price)
+        .l(price)
+        .c(price)
+        .volume(1_000)
+        .maybe_adj(None)
+        .build()
+}
+
+#[test]
+fn a_duration_maps_to_its_spacing_or_refuses() {
+    for (variant, _) in all_variants() {
+        assert_eq!(
+            Timeframe::from_duration_ms(variant.duration_ms()),
+            Some(variant),
+            "{variant:?} round-trips through its span"
+        );
+    }
+    assert_eq!(Timeframe::from_duration_ms(0), None);
+    assert_eq!(Timeframe::from_duration_ms(7_000), None);
+}
+
+#[test]
+fn infer_names_the_smallest_positive_gap() {
+    let step = Timeframe::M15.duration_ms();
+    assert_eq!(Timeframe::infer(&[]), None, "no bars, no spacing");
+    assert_eq!(Timeframe::infer(&[bar_at(0)]), None, "one bar, no gap");
+    assert_eq!(
+        Timeframe::infer(&[bar_at(0), bar_at(step)]),
+        Some(Timeframe::M15)
+    );
+    // An overnight jump is a whole multiple of the base, so the small gap
+    // still names the spacing.
+    assert_eq!(
+        Timeframe::infer(&[bar_at(0), bar_at(step), bar_at(step + 86_400_000)]),
+        Some(Timeframe::M15)
+    );
+    assert_eq!(
+        Timeframe::infer(&[bar_at(0), bar_at(7_000)]),
+        None,
+        "off-grid spacing is not approximated"
+    );
+}
 /// Every fixed-ms variant with its canonical code. Calendar timeframes
 /// (`MO1`/`MO3`/`Y`) have no row here by design: they stay refused.
 fn all_variants() -> [(Timeframe, &'static str); 15] {
@@ -331,5 +381,19 @@ fn bucket_math_is_idempotent() {
                 "{variant:?} bucket floor idempotent at {ts}"
             );
         }
+    }
+}
+
+/// The Pine abbreviation round-trips for every fixed spacing: one map, no
+/// second table that could drift from `from_pine_abbrev`.
+#[test]
+fn pine_abbreviations_round_trip() {
+    for variant in Timeframe::ALL {
+        let abbrev = variant.to_pine_abbrev();
+        assert_eq!(
+            Timeframe::from_pine_abbrev(abbrev).expect("the emitted abbreviation parses"),
+            variant,
+            "{variant:?} round-trips through {abbrev}"
+        );
     }
 }

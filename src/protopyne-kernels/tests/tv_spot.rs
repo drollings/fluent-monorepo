@@ -273,7 +273,7 @@ fn assert_series_match(got: &[Option<f64>], want: &[Option<f64>], what: &str) {
         match (g, w) {
             (None, None) => {}
             (Some(g), Some(w)) => {
-                assert!((g - w).abs() <= EPS, "{what}[{i}]: {g} vs {w} (eps {EPS})")
+                assert!((g - w).abs() <= EPS, "{what}[{i}]: {g} vs {w} (eps {EPS})");
             }
             _ => panic!("{what}[{i}]: na drift: {g:?} vs {w:?}"),
         }

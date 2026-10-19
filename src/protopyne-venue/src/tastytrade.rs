@@ -36,9 +36,11 @@ use fluent_wvr::{Describable, FieldAccess};
 use rust_decimal::Decimal;
 use tokio::sync::mpsc;
 
-use protopyne_types::{ChainQuote, Greeks, Money, OptionContract, OptionKind};
+use protopyne_types::{
+    ChainQuote, Greeks, LegSide, Money, OptionContract, OptionKind, SpreadLeg, SpreadLegs,
+};
 
-use crate::order::Fill;
+use crate::order::{Fill, OrderIntent, OrderRecord, OrderSide, OrderStatus, TimeInForce};
 use crate::quote::Quote;
 use crate::venue::{AccountEvent, BalanceEntry, QuoteSource};
 
@@ -256,9 +258,10 @@ pub fn transform_chain_quote(body: &str) -> Result<ChainQuote, String> {
     if bid.is_sign_negative() {
         return Err(format!("chain bid {bid} is negative"));
     }
-    if ask <= bid {
-        return Err(format!("chain crossed or invalid: bid {bid} ask {ask}"));
-    }
+    // A crossed or locked book rides along as data (see `is_crossed`): the
+    // fetch never judges a book the per-leg fill policy is designed to
+    // refuse with its own reason. Only a structurally impossible price —
+    // never a tight or inverted book — refuses here.
     let bid_size = u32::try_from(as_u64(field(&wire, "bid_size")?, "bid_size")?)
         .map_err(|_| "chain bid_size exceeds u32".to_owned())?;
     let ask_size = u32::try_from(as_u64(field(&wire, "ask_size")?, "ask_size")?)
@@ -523,11 +526,14 @@ impl TastytradeTransport {
     /// the quotes. The wire speaks `{"quotes":[<chain-wire>, ...]}` with
     /// each entry in the documented chain-wire shape; errors ride the same
     /// `error.code` envelope as the quote path, so the terminal/transient
-    /// taxonomy is shared, never reimplemented. Any entry that will not
-    /// transform — or an empty snapshot — refuses the whole fetch: a
-    /// partial window never becomes half a file downstream. The bearer
-    /// token travels one call (never stored, never logged); an empty token
-    /// or an unconfigured base refuses before anything dials.
+    /// taxonomy is shared, never reimplemented. A deterministic fault — an
+    /// entry that will not transform, a missing quotes array, or an empty
+    /// snapshot — is terminal and never retried: no retry would meet a
+    /// different entry. A crossed or locked print is not a fault at all: it
+    /// rides to the per-leg fill policy, which refuses it with its own
+    /// reason. The bearer token travels one call (never stored, never
+    /// logged); an empty token or an unconfigured base refuses before
+    /// anything dials.
     pub async fn fetch_chain_snapshot(
         &self,
         net: &NetCapability,
@@ -567,10 +573,10 @@ impl TastytradeTransport {
                     .get("quotes")
                     .and_then(serde_json::Value::as_array)
                     .ok_or_else(|| {
-                        TransportError::Transient("chain snapshot names no quotes array".to_owned())
+                        TransportError::Terminal("chain snapshot names no quotes array".to_owned())
                     })?;
                 if entries.is_empty() {
-                    return Err(TransportError::Transient(
+                    return Err(TransportError::Terminal(
                         "chain snapshot holds no quotes".to_owned(),
                     ));
                 }
@@ -579,7 +585,7 @@ impl TastytradeTransport {
                     .map(|entry| transform_chain_quote(&entry.to_string()))
                     .map(|parsed| {
                         parsed.map_err(|reason| {
-                            TransportError::Transient(format!("chain entry refused: {reason}"))
+                            TransportError::Terminal(format!("chain entry refused: {reason}"))
                         })
                     })
                     .collect()
@@ -676,6 +682,314 @@ impl QuoteSource for TastytradeTransport {
     fn name(&self) -> &str {
         "tastytrade"
     }
+}
+
+/// tastytrade order-wire version every order call declares.
+pub const ORDER_WIRE_VERSION: &str = "2024-06-10";
+
+/// Header carrying [`ORDER_WIRE_VERSION`].
+pub const ORDER_WIRE_VERSION_HEADER: &str = "Accept-Version";
+
+fn transient(reason: impl Into<String>) -> TransportError {
+    TransportError::Transient(reason.into())
+}
+
+fn terminal(reason: impl Into<String>) -> TransportError {
+    TransportError::Terminal(reason.into())
+}
+
+/// The venue's order body (request). Maps the intent's side and signed package
+/// limit onto the venue's order-type/price-effect/price, its legs onto
+/// per-OCC symbols with buy/sell-to-open actions, and its time-in-force onto
+/// the venue's code; the deterministic client ID rides as the venue's own
+/// idempotency field. A legless intent submits one equity leg. Pure: no I/O.
+///
+/// The open/close suffix assumes an opening package (the intent carries no
+/// entry/exit flag); close-side encoding is a declared follow-up.
+pub fn order_wire_of(intent: &OrderIntent) -> Result<serde_json::Value, TransportError> {
+    let signed = intent.limit_price.as_decimal();
+    let debit = !signed.is_sign_negative();
+    let agrees = match intent.side {
+        OrderSide::Buy => debit,
+        OrderSide::Sell => !debit,
+    };
+    if !agrees {
+        return Err(terminal(format!(
+            "order side {} disagrees with the signed package limit {signed}",
+            intent.side
+        )));
+    }
+    let legs = match &intent.legs {
+        Some(spread) => spread
+            .legs()
+            .iter()
+            .map(|leg| {
+                serde_json::json!({
+                    "action": leg_action(leg.side),
+                    "symbol": leg.contract.occ_symbol(),
+                    "quantity": intent.quantity.saturating_mul(leg.ratio),
+                })
+            })
+            .collect::<Vec<_>>(),
+        None => vec![serde_json::json!({
+            "action": leg_action(match intent.side {
+                OrderSide::Buy => LegSide::Long,
+                OrderSide::Sell => LegSide::Short,
+            }),
+            "symbol": intent.underlying,
+            "quantity": intent.quantity,
+        })],
+    };
+    Ok(serde_json::json!({
+        "time-in-force": venue_tif_of(intent.time_in_force),
+        "order-type": order_type_of(intent.time_in_force),
+        "price": signed.abs().to_string(),
+        "price-effect": if debit { "Debit" } else { "Credit" },
+        "instrument-type": if intent.legs.is_some() { "Equity Option" } else { "Equity" },
+        "client-order-id": intent.client_id,
+        "legs": legs,
+    }))
+}
+
+/// The inverse of [`order_wire_of`]: the intent the venue body describes. The
+/// venue schema carries no proposal/strategy attribution, so those read empty
+/// — callers with the journaled intent keep their own attribution and use this
+/// only to re-judge the transported shape. Pure: no I/O.
+pub fn order_intent_of(wire: &serde_json::Value) -> Result<OrderIntent, TransportError> {
+    let order = unwrap_order(wire);
+    let client_id = as_str(
+        order
+            .get("client-order-id")
+            .ok_or_else(|| transient("order wire names no client-order-id"))?,
+        "client-order-id",
+    )
+    .map_err(transient)?
+    .to_owned();
+    let price_effect = order
+        .get("price-effect")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("Debit");
+    let debit = match price_effect {
+        "Debit" => true,
+        "Credit" => false,
+        other => {
+            return Err(transient(format!(
+                "price-effect {other} is neither Debit nor Credit"
+            )))
+        }
+    };
+    let price = as_decimal(
+        order
+            .get("price")
+            .ok_or_else(|| transient("order wire carries no price"))?,
+    )
+    .map_err(transient)?;
+    let limit_price = Money::new(if debit { price } else { -price });
+    let side = if debit {
+        OrderSide::Buy
+    } else {
+        OrderSide::Sell
+    };
+    let time_in_force = intent_tif(
+        order
+            .get("time-in-force")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("Day"),
+    )?;
+    let legs_wire = order
+        .get("legs")
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| transient("order wire names no legs"))?;
+    let instrument = order
+        .get("instrument-type")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("Equity Option");
+    let builder = OrderIntent::new()
+        .client_id(client_id)
+        .proposal_id(String::new())
+        .strategy(String::new())
+        .side(side)
+        .limit_price(limit_price)
+        .time_in_force(time_in_force);
+    if instrument == "Equity" {
+        let leg = legs_wire
+            .first()
+            .ok_or_else(|| transient("equity order wire holds no leg"))?;
+        let underlying = as_str(
+            leg.get("symbol")
+                .ok_or_else(|| transient("equity leg names no symbol"))?,
+            "symbol",
+        )
+        .map_err(transient)?
+        .to_owned();
+        let quantity = leg_quantity(leg)?;
+        return Ok(builder.underlying(underlying).quantity(quantity).build());
+    }
+    let mut parsed = Vec::with_capacity(legs_wire.len());
+    let mut package_quantity = u32::MAX;
+    for leg in legs_wire {
+        let action = as_str(
+            leg.get("action")
+                .ok_or_else(|| transient("option leg names no action"))?,
+            "action",
+        )
+        .map_err(transient)?;
+        let symbol = as_str(
+            leg.get("symbol")
+                .ok_or_else(|| transient("option leg names no symbol"))?,
+            "symbol",
+        )
+        .map_err(transient)?;
+        let contract = OptionContract::parse_occ_symbol(symbol)
+            .map_err(|error| transient(format!("option leg symbol refused: {error}")))?;
+        let quantity = leg_quantity(leg)?;
+        package_quantity = package_quantity.min(quantity);
+        parsed.push((contract, action_side(action)?, quantity));
+    }
+    if parsed.is_empty() {
+        return Err(transient("option order wire holds no legs"));
+    }
+    let underlying = parsed[0].0.underlying.clone();
+    let legs = parsed
+        .into_iter()
+        .map(|(contract, side, quantity)| {
+            SpreadLeg::new()
+                .contract(contract)
+                .side(side)
+                .ratio((quantity / package_quantity).max(1))
+                .build()
+        })
+        .collect();
+    let legs = SpreadLegs::try_new(legs)
+        .map_err(|error| transient(format!("order legs refused: {error}")))?;
+    Ok(builder
+        .underlying(underlying)
+        .quantity(package_quantity)
+        .maybe_legs(Some(legs))
+        .build())
+}
+
+/// The venue order envelope as an [`OrderRecord`] against the known `intent`:
+/// maps the venue status, filled quantity, average price, and update time onto
+/// the record; fees stay zero here (they arrive over the trades stream, never
+/// invented from an order read). Pure: no I/O.
+pub fn order_record_of(
+    wire: &serde_json::Value,
+    intent: OrderIntent,
+) -> Result<OrderRecord, TransportError> {
+    let order = unwrap_order(wire);
+    let status = order_status_of(
+        order
+            .get("status")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| transient("order wire names no status"))?,
+    )?;
+    let filled_quantity = match order.get("filled-quantity") {
+        None => 0,
+        Some(value) => u32::try_from(
+            value
+                .as_u64()
+                .ok_or_else(|| transient("filled-quantity is not an integer"))?,
+        )
+        .map_err(|_| transient("filled-quantity exceeds u32"))?,
+    };
+    let avg_price = match order.get("average-price") {
+        None | Some(serde_json::Value::Null) => None,
+        Some(value) => Some(Money::new(as_decimal(value).map_err(transient)?)),
+    };
+    let updated_at = order
+        .get("updated-at")
+        .and_then(serde_json::Value::as_str)
+        .map(parse_time)
+        .transpose()
+        .map_err(transient)?
+        .unwrap_or_else(Utc::now);
+    Ok(OrderRecord::new()
+        .intent(intent)
+        .status(status)
+        .filled_quantity(filled_quantity)
+        .maybe_avg_price(avg_price)
+        .fees_paid(Money::zero())
+        .updated_at(updated_at)
+        .build())
+}
+
+/// The order node of a venue envelope: `{data:{order:…}}`, `{order:…}`, or a
+/// bare order (the loopback fixtures speak each).
+fn unwrap_order(wire: &serde_json::Value) -> &serde_json::Value {
+    wire.get("data")
+        .and_then(|data| data.get("order"))
+        .or_else(|| wire.get("order"))
+        .unwrap_or(wire)
+}
+
+fn leg_quantity(leg: &serde_json::Value) -> Result<u32, TransportError> {
+    let quantity = leg
+        .get("quantity")
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| transient("order leg names no quantity"))?;
+    let quantity = u32::try_from(quantity).map_err(|_| transient("leg quantity exceeds u32"))?;
+    if quantity == 0 {
+        return Err(transient("order leg quantity is zero"));
+    }
+    Ok(quantity)
+}
+
+fn leg_action(side: LegSide) -> &'static str {
+    match side {
+        LegSide::Long => "Buy to Open",
+        LegSide::Short => "Sell to Open",
+    }
+}
+
+fn action_side(action: &str) -> Result<LegSide, TransportError> {
+    if action.starts_with("Buy") {
+        Ok(LegSide::Long)
+    } else if action.starts_with("Sell") {
+        Ok(LegSide::Short)
+    } else {
+        Err(transient(format!(
+            "leg action {action:?} names neither buy nor sell"
+        )))
+    }
+}
+
+fn order_type_of(time_in_force: TimeInForce) -> &'static str {
+    match time_in_force {
+        TimeInForce::ImmediateOrCancel => "Market",
+        TimeInForce::Day | TimeInForce::GoodTilCancelled => "Limit",
+    }
+}
+
+fn venue_tif_of(time_in_force: TimeInForce) -> &'static str {
+    match time_in_force {
+        TimeInForce::Day => "Day",
+        TimeInForce::GoodTilCancelled => "GTC",
+        TimeInForce::ImmediateOrCancel => "IOC",
+    }
+}
+
+fn intent_tif(text: &str) -> Result<TimeInForce, TransportError> {
+    match text {
+        "Day" => Ok(TimeInForce::Day),
+        "GTC" => Ok(TimeInForce::GoodTilCancelled),
+        "IOC" => Ok(TimeInForce::ImmediateOrCancel),
+        other => Err(transient(format!(
+            "time-in-force {other} is not Day, GTC, or IOC"
+        ))),
+    }
+}
+
+fn order_status_of(text: &str) -> Result<OrderStatus, TransportError> {
+    Ok(match text {
+        "Received" | "Routed" | "In Flight" | "Contingent" => OrderStatus::Submitted,
+        "Live" | "Cancel Requested" | "Replace Requested" => OrderStatus::Acknowledged,
+        "Filled" => OrderStatus::Filled,
+        "Cancelled" | "Canceled" | "Removed" | "Partially Removed" => OrderStatus::Cancelled,
+        "Rejected" => OrderStatus::Rejected,
+        "Expired" => OrderStatus::Expired,
+        other => return Err(transient(format!("order status {other} is unknown"))),
+    })
 }
 
 #[cfg(test)]

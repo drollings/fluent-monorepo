@@ -1,0 +1,44 @@
+{
+  "buying_power": {
+    "four_k": {
+      "committed": 2000,
+      "identity_holds": true,
+      "size": 8
+    },
+    "one_k": {
+      "committed": 500,
+      "identity_holds": true,
+      "size": 2
+    },
+    "ten_k": {
+      "committed": 5000,
+      "identity_holds": true,
+      "size": 20
+    }
+  },
+  "operator_accepted": false,
+  "percent_net_liq": {
+    "fifty_k": {
+      "committed": 5000,
+      "identity_holds": true,
+      "size": 10
+    },
+    "hundred_k": {
+      "committed": 10000,
+      "identity_holds": true,
+      "size": 20
+    },
+    "ten_k": {
+      "committed": 1000,
+      "identity_holds": true,
+      "size": 2
+    },
+    "two_fifty_k": {
+      "committed": 25000,
+      "identity_holds": true,
+      "size": 50
+    }
+  },
+  "ship_state": "unshipped",
+  "thresholds": "percent_fraction=0.1;per_unit_max_loss=500;bp_fraction=0.5;per_unit_price=250;risk_value_cap=30000;risk_contract_cap=1000;treatment_buying_power=100000"
+}

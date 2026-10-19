@@ -49,6 +49,7 @@ fn sample_portfolio() -> PortfolioView {
         total_fees: money(6),
         open_contracts: -2,
         trading_state: "ExitOnly".to_owned(),
+        source: "rehearsal".to_owned(),
     }
 }
 
@@ -87,6 +88,7 @@ fn sample_worst_case() -> WorstCase {
         max_contracts: 20,
         max_loss: money(2_000),
         max_notional: money(50_000),
+        basis: "BudgetEcho".to_owned(),
     }
 }
 
@@ -285,10 +287,6 @@ fn decimals_and_negative_display_floats_survive_the_boundary() {
 }
 
 #[test]
-#[ignore = "defect: ChartBars::dropped and OverlaySeries::dropped carry no \
-#[serde(default)], so a payload emitted before those fields existed no longer \
-decodes. The wire goldens pin serialization only, so nothing else catches it; \
-backward compatibility requires the attribute to be restored"]
 fn payload_missing_dropped_still_deserializes() {
     for body in [
         serde_json::json!({"rows": [sample_bar()]}),
@@ -349,6 +347,7 @@ fn portfolio_view_round_trips_with_positions() {
         total_fees: money(6),
         open_contracts: 2,
         trading_state: "Enabled".to_owned(),
+        source: "booked".to_owned(),
     };
     let json = serde_json::to_string(&view).expect("portfolio serializes");
     assert!(
@@ -502,12 +501,22 @@ fn arm_response_round_trips_with_worst_case() {
             max_contracts: 20,
             max_loss: money(2_000),
             max_notional: money(50_000),
+            basis: "BudgetEcho".to_owned(),
         },
         armed: true,
     };
     let json = serde_json::to_string(&response).expect("arm response serializes");
     let back: ArmResponse = serde_json::from_str(&json).expect("arm response deserializes");
     assert_eq!(back, response);
+}
+
+#[test]
+fn a_worst_case_without_a_basis_reads_as_unknown_provenance() {
+    // The field is additive: an older arm payload still loads, and an absent
+    // basis never reads as a computed exposure.
+    let older = r#"{"max_trades":1,"max_contracts":2,"max_loss":"100","max_notional":"1000"}"#;
+    let worst: WorstCase = serde_json::from_str(older).expect("older payload reads");
+    assert_eq!(worst.basis, "");
 }
 
 #[test]

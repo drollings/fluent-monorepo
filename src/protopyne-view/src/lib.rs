@@ -6,9 +6,9 @@
 //! never links the terminal — so both sides meet here, in display vocabulary
 //! only. Read DTOs mirror the server's wire shapes with display-enum fields
 //! carried as stable string tags (never linked `strategy`/`venue` enums),
-//! and [`TerminalGateway`] is the object-safe read abstraction (plus one
-//! `arm` submit that forwards to the core) with a [`MockGateway`] for
-//! headless terminal tests. Depends only on `protopyne-types` plus
+//! and [`TerminalGateway`] is the object-safe read abstraction (plus the
+//! core-forwarded submits) with a [`MockGateway`] for headless terminal
+//! tests. Depends only on `protopyne-types` plus
 //! `serde`/`serde_json`: no `egui`, no `strategy`/`venue`/`server`.
 
 pub mod gateway;
@@ -24,5 +24,6 @@ pub use views::{
     ArmResponse, ChartBar, ChartBars, CommandStatus, DenyCount, HealthView, JournalRowView,
     OverlaySeries, PortfolioView, PositionView, PreviewResponse, ProposalView, ReplayDecisionView,
     ReplayLegView, ReplayPositionView, ReplayStartParams, ReplayStateView, ReplayStepView,
-    ReplayView, SymbolInfoView, WorstCase,
+    ReplayView, SymbolInfoView, TicketDriftView, TicketView, WorstCase, PORTFOLIO_SOURCE_BOOKED,
+    PORTFOLIO_SOURCE_REHEARSAL,
 };

@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
 
+use crate::bar::Bar;
 use crate::error::TypesError;
 
 /// Fold anchor for every sub-weekly spacing: the Unix epoch itself.
@@ -208,6 +209,53 @@ impl Timeframe {
         self.duration_ms() % base.duration_ms() == 0
     }
 
+    /// Every fixed-ms spacing, shortest first. The one list
+    /// [`from_duration_ms`](Self::from_duration_ms) scans.
+    pub const ALL: [Self; 15] = [
+        Self::S5,
+        Self::S10,
+        Self::S15,
+        Self::S30,
+        Self::M1,
+        Self::M3,
+        Self::M5,
+        Self::M10,
+        Self::M15,
+        Self::M30,
+        Self::H1,
+        Self::H2,
+        Self::H4,
+        Self::D1,
+        Self::W1,
+    ];
+
+    /// The spacing whose span is exactly `ms`. `None` for any duration off
+    /// the fixed grid — an unrepresentable span is named, never approximated.
+    #[must_use]
+    pub fn from_duration_ms(ms: i64) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|spacing| spacing.duration_ms() == ms)
+    }
+
+    /// Base spacing of an ordered bar series: the smallest positive gap
+    /// between consecutive bars. Session and overnight gaps are whole
+    /// multiples of the base, so the smallest gap is the spacing; an
+    /// irregular series reports its finest observed gap, and `None` means the
+    /// window is too short or off the grid to name. Descriptive metadata
+    /// only — never a decision trigger.
+    #[must_use]
+    pub fn infer(bars: &[Bar]) -> Option<Self> {
+        let mut smallest: Option<i64> = None;
+        for pair in bars.windows(2) {
+            let delta = (pair[1].ts - pair[0].ts).num_milliseconds();
+            if delta > 0 && smallest.is_none_or(|current| delta < current) {
+                smallest = Some(delta);
+            }
+        }
+        smallest.and_then(Self::from_duration_ms)
+    }
+
     /// Parse a toolbar label (`1M`/`5M`/`15M`/`1H`/`4H`/`1D`): the one
     /// toolbar-label bridge. Other chart spellings ride
     /// [`from_resolution`](Self::from_resolution); anything else is an
@@ -251,6 +299,29 @@ impl Timeframe {
             "D" => Ok(Self::D1),
             "W" => Ok(Self::W1),
             _ => Err(TypesError::UnknownTimeframe(abbrev.to_owned())),
+        }
+    }
+
+    /// The Pine `getTimeframeAbbrev` string for this spacing: the exact
+    /// inverse of [`from_pine_abbrev`](Self::from_pine_abbrev).
+    #[must_use]
+    pub fn to_pine_abbrev(self) -> &'static str {
+        match self {
+            Self::S5 => "5S",
+            Self::S10 => "10S",
+            Self::S15 => "15S",
+            Self::S30 => "30S",
+            Self::M1 => "1",
+            Self::M3 => "3",
+            Self::M5 => "5",
+            Self::M10 => "10",
+            Self::M15 => "15",
+            Self::M30 => "30",
+            Self::H1 => "60",
+            Self::H2 => "120",
+            Self::H4 => "240",
+            Self::D1 => "D",
+            Self::W1 => "W",
         }
     }
 

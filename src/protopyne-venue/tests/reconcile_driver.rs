@@ -275,7 +275,7 @@ fn unit_fails_on_mismatch_and_completes_on_agreement() {
         .expect_err("a mismatch fails the unit");
     match err {
         WorkError::Execution(reason) => {
-            assert!(reason.contains("RECONCILE"), "names the alert: {reason}")
+            assert!(reason.contains("RECONCILE"), "names the alert: {reason}");
         }
         other => panic!("a mismatch is an execution failure, got: {other:?}"),
     }
@@ -334,7 +334,7 @@ fn session_with(source: Scripted) -> (TradingSession, ReconcileHandle, tempfile:
     let venue: Arc<dyn Venue> = Arc::new(PaperVenue::new(PaperConfig::new().build()));
     let registry = Arc::new(VenueRegistry::single(venue));
     let mut session =
-        TradingSession::boot(&SessionConfig::new().build(), registry, permit).expect("boot");
+        TradingSession::boot(&SessionConfig::new().build(), registry, permit, None).expect("boot");
     let handle = session.attach_reconcile(Arc::new(source));
     (session, handle, dir)
 }

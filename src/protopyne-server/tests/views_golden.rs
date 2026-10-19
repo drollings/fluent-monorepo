@@ -11,6 +11,10 @@ use super::*;
 use std::path::PathBuf;
 
 use chrono::{TimeZone, Utc};
+use protopyne_strategy::{
+    BreakerLimits, GrantBudgets, GrantPermission, GrantScope, PortfolioThresholds,
+    SignalThresholds, TradeThresholds,
+};
 
 fn history() -> Vec<Bar> {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -129,8 +133,27 @@ async fn route_payloads_match_checked_in_goldens() {
         .await
         .expect("preview reads");
     check_golden("preview.json", &preview);
-    check_golden("proposals.json", &get(&client, &base, "/proposals").await);
-    check_golden("portfolio.json", &get(&client, &base, "/portfolio").await);
+    // The rehearsal inbox the preview published, under its own name.
+    check_golden(
+        "proposals.json",
+        &get(&client, &base, "/proposals/rehearsal").await,
+    );
+    // The authoritative inbox: the journaled fold (empty until a proposal is
+    // journaled for approval).
+    check_golden(
+        "proposals_journaled.json",
+        &get(&client, &base, "/proposals").await,
+    );
+    let booked = get(&client, &base, "/portfolio").await;
+    check_golden("portfolio.json", &booked);
+    check_golden(
+        "portfolio_booked.json",
+        &get(&client, &base, "/portfolio/booked").await,
+    );
+    check_golden(
+        "portfolio_rehearsal.json",
+        &get(&client, &base, "/portfolio/rehearsal").await,
+    );
     check_golden("chart_bars.json", &get(&client, &base, "/chart/bars").await);
     check_golden(
         "overlay_sma_14.json",

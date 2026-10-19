@@ -167,12 +167,11 @@ fn wheel_zooms_around_anchor() {
 /// elastic wall fires: up and down notches are symmetric and the window never
 /// pans out from under the pointer.
 #[test]
-fn wheel_zoom_stays_cursor_anchored_at_the_wall() {
+fn wheel_zoom_prefers_the_envelope_over_the_cursor_anchor() {
     let mut state = free_state();
     // Anchor near the top of the pane: price ~107.5 at y = 50.
     let anchor_y = 50.0;
     let mut viewport = pane();
-    let start_price = viewport.y_to_price(anchor_y).expect("anchor maps");
     // Zoom out far enough to exceed the envelope span (data [0, 200], margin
     // 15% per side -> 260) so the wall clamps the span on later notches.
     for _ in 0..24 {
@@ -185,11 +184,6 @@ fn wheel_zoom_stays_cursor_anchored_at_the_wall() {
             }],
         );
     }
-    let anchored = viewport.y_to_price(anchor_y).expect("anchor stays mapped");
-    assert!(
-        close(anchored, start_price),
-        "the clamped zoom keeps the cursor price fixed: {start_price} -> {anchored}"
-    );
     let (min, max) = range_of(&viewport);
     let envelope_span = (200.0 - 0.0) * (1.0 + 2.0 * ELASTIC_FRACTION);
     assert!(
@@ -197,8 +191,15 @@ fn wheel_zoom_stays_cursor_anchored_at_the_wall() {
         "zoom-out stops at the envelope span: {}",
         max - min
     );
-    // Symmetric: zooming back in the same number of notches returns the span
-    // toward the start and keeps the anchor fixed throughout.
+    // Containment wins: the pinned window sits exactly on the envelope walls
+    // instead of following the cursor past them.
+    assert!(
+        close(min, -30.0) && close(max, 230.0),
+        "the pinned zoom fills the envelope exactly: [{min}, {max}]"
+    );
+    // Symmetric: zooming back in from the pinned window keeps the cursor
+    // price fixed again, now from wherever the pin left it.
+    let pinned_price = viewport.y_to_price(anchor_y).expect("anchor stays mapped");
     for _ in 0..24 {
         viewport = state.step(
             1.0 / 60.0,
@@ -211,7 +212,7 @@ fn wheel_zoom_stays_cursor_anchored_at_the_wall() {
     }
     let back = viewport.y_to_price(anchor_y).expect("anchor stays mapped");
     assert!(
-        close(back, start_price),
+        close(back, pinned_price),
         "zoom-in keeps the cursor price fixed: {back}"
     );
 }
@@ -1079,4 +1080,51 @@ fn scripted_auto_height_replays_deterministically() {
         "the re-anchor lands exactly"
     );
     assert_ne!(sequence[3], sequence[2], "the trailing wheel still acts");
+}
+
+/// A bounded price pane with the production floor: data `[100, 200]` over a
+/// `[90, 110]` window, zero as the absolute floor.
+fn bounded_state() -> InteractionState {
+    InteractionState::new(100.0, 200.0)
+        .expect("valid bounds")
+        .with_value_floor(0.0)
+        .expect("finite floor")
+}
+
+#[test]
+fn an_off_centre_wheel_zoom_stays_inside_the_envelope_and_floor() {
+    // Window pressed against the lower wall, anchor near the top: the zoom
+    // widens the span, the wall clamps it, and the re-anchor must not undo
+    // the clamp by rebuilding past the wall.
+    let mut state = bounded_state();
+    let start = Viewport::new(PriceScaleMode::Normal, 86.0, 106.0, 400.0, 8.0, 86.0, false)
+        .expect("valid price pane");
+    let anchor_price = start.y_to_price(40.0).expect("the anchor names a price");
+    assert!(
+        (anchor_price - 104.0).abs() < 1e-9,
+        "the anchor sits off-centre near the top: {anchor_price}"
+    );
+    let next = state.step(
+        1.0 / 60.0,
+        &start,
+        &[PointerInput::Wheel {
+            delta_px: -300.0,
+            anchor_y: 40.0,
+        }],
+    );
+    let (min, max) = range_of(&next);
+    // Envelope `[85, 215]` (data plus margin) with the zero floor: the
+    // bounded pane wins over the cursor anchor.
+    assert!(
+        min >= 85.0,
+        "the re-anchored window holds the lower wall: [{min}, {max}]"
+    );
+    assert!(
+        max <= 215.0,
+        "the re-anchored window holds the upper wall: [{min}, {max}]"
+    );
+    assert!(
+        max - min > 20.0,
+        "the zoom still widens the span instead of collapsing: [{min}, {max}]"
+    );
 }

@@ -227,12 +227,22 @@ pub struct Proposal {
     pub max_loss: Money,
     /// Committed notional for budget accounting.
     pub notional: Money,
-    /// Days to expiry of the structure's front leg.
+    /// Days to expiry of the structure's front leg: the selected expiry's own
+    /// distance where a chain-aware selector chose the instrument, the
+    /// requested minimum otherwise.
     pub dte_days: u32,
     /// Signal conviction in `[0, 1]`.
     pub conviction: f64,
     /// Options-activity score in `[0, 1]`.
     pub activity_score: f64,
+    /// Concrete package legs, when structure selection produced them.
+    /// Absent on the config-supplied path so serialized proposals stay
+    /// byte-identical.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub legs: Option<protopyne_types::SpreadLegs>,
+    /// Package economics, when the legs were priced from a chain.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub economics: Option<crate::economics::SpreadEconomics>,
     /// Current lifecycle state.
     #[builder(default = ProposalState::Proposed)]
     pub state: ProposalState,
@@ -244,7 +254,7 @@ impl Proposal {
     /// Whole contracts requested, or `None` when the quantity is fractional
     /// or out of range. Budget and risk checks fail closed on `None` rather
     /// than truncating: a fractional quantity is a data error, not one
-    /// contract.
+    /// contract. This is the **package** count the order submits.
     #[must_use]
     pub fn contracts(&self) -> Option<u32> {
         use rust_decimal::prelude::ToPrimitive as _;
@@ -253,6 +263,25 @@ impl Proposal {
             return None;
         }
         amount.to_u32()
+    }
+
+    /// Leg contracts this package demands: whole package units times the sum
+    /// of leg ratios. The grant budget axis counts leg contracts, so a
+    /// two-leg unit demands two. Equals [`contracts`](Self::contracts) when no
+    /// legs are attached (the legacy path, where one unit is one contract).
+    /// `None` when the package quantity is unrepresentable or the ratio sum
+    /// overflows.
+    #[must_use]
+    pub fn leg_contracts(&self) -> Option<u32> {
+        let units = self.contracts()?;
+        let Some(legs) = &self.legs else {
+            return Some(units);
+        };
+        let ratio = legs
+            .legs()
+            .iter()
+            .try_fold(0_u32, |total, leg| total.checked_add(leg.ratio))?;
+        units.checked_mul(ratio)
     }
 
     /// Apply `event` to this proposal and return the journal entry the

@@ -143,6 +143,7 @@ impl TerminalGateway for RecordGateway {
                 max_contracts: 1,
                 max_loss: Money::from(100),
                 max_notional: Money::from(1_000),
+                basis: "BudgetEcho".to_owned(),
             },
             armed: true,
         })

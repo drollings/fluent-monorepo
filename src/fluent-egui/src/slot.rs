@@ -970,6 +970,9 @@ pub fn paint_hot_slot_stack(
             }
             actions.push(HotSlotAction::ToggledVisibility(slot_id.clone()));
         }
+        // Read the eye after the toggle, not from the pre-click snapshot:
+        // the handling frame paints the state it just installed.
+        let visible = stack.visible(&slot_id).unwrap_or(visible);
         if let Some(eye) = eye_icon_geom(eye_center(&rect.eye), eye_radius(), visible) {
             paint_eye_icon(ui.painter(), &eye, "fast", theme)?;
         }
