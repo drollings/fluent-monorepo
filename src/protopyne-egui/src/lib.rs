@@ -95,7 +95,9 @@ pub use widgets::{
     timeframe_labels, toolbar_labels, MtfRow, TopBarAction, TopBarMenuState,
     INDICATOR_SEARCH_LABEL, SYMBOL_SEARCH_LABEL, TOP_BAR_CHART_TYPES,
 };
-pub use workspace::{build_symbol_catalog, paint_workspace, symbol_modal_for, ChartWorkspace};
+pub use workspace::{
+    build_symbol_catalog, live_update_of_frame, paint_workspace, symbol_modal_for, ChartWorkspace,
+};
 
 /// Terminal marker; touches the linked paint dependency so wiring breaks
 /// loudly if the dependency stops resolving.

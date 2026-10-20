@@ -12,7 +12,8 @@ use protopyne_store::{fold_bars_edges, FoldEdges};
 use protopyne_strategy::{Grant, ProposalEvent, RiskEngine, RiskLimits};
 use protopyne_types::{Bar, Timeframe};
 use protopyne_view::{
-    validate_symbol_timeframe, ArmResponse, ChartBars, GatewayError, HealthView, JournalRowView,
+    validate_symbol_timeframe, ArmResponse, BrokerAccountView, BrokerCapabilityView,
+    BrokerDealView, BrokerOrderView, ChartBars, GatewayError, HealthView, JournalRowView,
     OverlaySeries, PortfolioView, ProposalView, ReplayDecisionView, ReplayLegView,
     ReplayPositionView, ReplayStartParams, ReplayStateView, ReplayView, SymbolInfoView,
     TerminalGateway, WorstCase,
@@ -30,7 +31,8 @@ use crate::service::{
     DEFAULT_REPLAY_CHECKPOINT_EVERY,
 };
 use crate::views::{
-    booked_portfolio_of, confirm_ticket, decide_journaled, import_tickets, issue_ticket,
+    booked_portfolio_of, broker_account_of, broker_capabilities_of, broker_deal_of,
+    broker_order_of, confirm_ticket, decide_journaled, import_tickets, issue_ticket,
     journal_cancel_all, journal_close_all, journal_rows_of, journaled_proposals_of, revoke_grant,
     ticket_drifts_of, waiting_tickets,
 };
@@ -705,6 +707,128 @@ impl TerminalGateway for ServerGateway {
             .map(|_| ())
             .map_err(decision_error)
     }
+
+    fn broker_venues(&self) -> Result<Vec<BrokerCapabilityView>, GatewayError> {
+        let bundles = self.state.broker.bundles();
+        if bundles.is_empty() {
+            return Err(GatewayError::Unavailable(
+                "no broker is registered: broker reads are unsupported on this server".to_owned(),
+            ));
+        }
+        Ok(bundles.iter().map(broker_capabilities_of).collect())
+    }
+
+    fn broker_accounts(&self) -> Result<Vec<BrokerAccountView>, GatewayError> {
+        let state = self.state.clone();
+        common_core::runtime::block_on_shared(async move {
+            let bundles = state.broker.bundles();
+            if bundles.is_empty() {
+                return Err(GatewayError::Unavailable(
+                    "no broker is registered: broker reads are unsupported on this server"
+                        .to_owned(),
+                ));
+            }
+            let mut rows = Vec::new();
+            for bundle in bundles {
+                let Some(reader) = bundle.account.clone() else {
+                    continue;
+                };
+                let ids = reader.accounts().await.map_err(account_gateway_error)?;
+                for id in ids {
+                    let summary = reader.summary(&id).await.map_err(account_gateway_error)?;
+                    rows.push(broker_account_of(bundle.id.as_str(), &summary));
+                }
+            }
+            Ok(rows)
+        })
+    }
+
+    fn broker_account(&self, account: &str) -> Result<BrokerAccountView, GatewayError> {
+        let state = self.state.clone();
+        let account = account.to_owned();
+        common_core::runtime::block_on_shared(async move {
+            for bundle in state.broker.bundles() {
+                let Some(reader) = bundle.account.clone() else {
+                    continue;
+                };
+                let ids = reader.accounts().await.map_err(account_gateway_error)?;
+                if !ids.iter().any(|id| id == &account) {
+                    continue;
+                }
+                let summary = reader
+                    .summary(&account)
+                    .await
+                    .map_err(account_gateway_error)?;
+                return Ok(broker_account_of(bundle.id.as_str(), &summary));
+            }
+            Err(GatewayError::Unavailable(format!(
+                "no broker serves account {account:?}"
+            )))
+        })
+    }
+
+    fn broker_orders(&self, account: &str) -> Result<Vec<BrokerOrderView>, GatewayError> {
+        let state = self.state.clone();
+        let account = account.to_owned();
+        common_core::runtime::block_on_shared(async move {
+            for bundle in state.broker.bundles() {
+                let Some(reader) = bundle.account.clone() else {
+                    continue;
+                };
+                let ids = reader.accounts().await.map_err(account_gateway_error)?;
+                if !ids.iter().any(|id| id == &account) {
+                    continue;
+                }
+                let orders = reader
+                    .orders(&account, protopyne_venue::AccountRange::all())
+                    .await
+                    .map_err(account_gateway_error)?;
+                return Ok(orders
+                    .iter()
+                    .map(|order| broker_order_of(bundle.id.as_str(), &account, order))
+                    .collect());
+            }
+            Err(GatewayError::Unavailable(format!(
+                "no broker serves account {account:?}"
+            )))
+        })
+    }
+
+    fn broker_deals(&self, account: &str) -> Result<Vec<BrokerDealView>, GatewayError> {
+        let state = self.state.clone();
+        let account = account.to_owned();
+        common_core::runtime::block_on_shared(async move {
+            for bundle in state.broker.bundles() {
+                let Some(reader) = bundle.account.clone() else {
+                    continue;
+                };
+                let ids = reader.accounts().await.map_err(account_gateway_error)?;
+                if !ids.iter().any(|id| id == &account) {
+                    continue;
+                }
+                let deals = reader
+                    .deals(&account, protopyne_venue::AccountRange::all())
+                    .await
+                    .map_err(account_gateway_error)?;
+                return Ok(deals
+                    .iter()
+                    .map(|deal| broker_deal_of(bundle.id.as_str(), &account, deal))
+                    .collect());
+            }
+            Err(GatewayError::Unavailable(format!(
+                "no broker serves account {account:?}"
+            )))
+        })
+    }
+}
+
+fn account_gateway_error(error: protopyne_venue::AccountError) -> GatewayError {
+    match error {
+        protopyne_venue::AccountError::Unsupported(reason) => {
+            GatewayError::Unavailable(format!("unsupported broker read: {reason}"))
+        }
+        other => GatewayError::Unavailable(other.to_string()),
+    }
 }
 
 /// Map a decision's `(status, reason)` refusal onto the gateway vocabulary: a
@@ -729,6 +853,10 @@ mod gateway_tape_parity_tests;
 #[cfg(test)]
 #[path = "../tests/gateway_replay.rs"]
 mod gateway_replay_tests;
+
+#[cfg(test)]
+#[path = "../tests/broker.rs"]
+mod broker_tests;
 
 #[cfg(test)]
 #[path = "../tests/fallback_latch.rs"]

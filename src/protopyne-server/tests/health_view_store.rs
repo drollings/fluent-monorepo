@@ -106,6 +106,8 @@ fn shared_with(store_health: StoreHealth) -> Shared {
         replay: Mutex::new(ReplayRegistry::new()),
         chain_history: None,
         history_root: None,
+        broker: protopyne_venue::BrokerRegistry::new(),
+        ingest_health: Mutex::new(None),
         tickets: Mutex::new(protopyne_venue::TicketTracker::new()),
     })
 }
@@ -154,7 +156,7 @@ async fn tape_counters_surface_on_the_route_and_the_gateway() {
     tape::seed_file(&root, &bars, "SPY", Timeframe::M15, tape::VENUE);
     let reader = crate::service::open_tape_reader(&root).expect("boot opens the store");
     let config = ServerConfig::new().bind("127.0.0.1:0".to_owned()).build();
-    let handle = serve_with_tape(config, bars, Some(reader))
+    let handle = serve_with_tape(config, bars, Some(reader), None)
         .await
         .expect("server boots with a tape");
     handle
@@ -196,7 +198,7 @@ async fn unobserved_tape_stats_report_no_fields() {
     tape::seed_file(&root, &bars, "SPY", Timeframe::M15, tape::VENUE);
     let reader = crate::service::open_tape_reader(&root).expect("boot opens the store");
     let config = ServerConfig::new().bind("127.0.0.1:0".to_owned()).build();
-    let handle = serve_with_tape(config, bars, Some(reader))
+    let handle = serve_with_tape(config, bars, Some(reader), None)
         .await
         .expect("server boots with a tape");
     let base = format!("http://{}", handle.addr);

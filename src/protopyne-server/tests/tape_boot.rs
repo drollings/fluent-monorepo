@@ -57,7 +57,7 @@ async fn boot_with_tape_serves_the_tape_series() {
     tape::seed_file(&root, &tape_bars, "SPY", Timeframe::M15, tape::VENUE);
     let reader = open_tape_reader(&root).expect("boot opens the seeded store");
     let config = ServerConfig::new().bind("127.0.0.1:0".to_owned()).build();
-    let handle = serve_with_tape(config, boot_history(), Some(reader))
+    let handle = serve_with_tape(config, boot_history(), Some(reader), None)
         .await
         .expect("server boots with a tape");
     let served = handle
@@ -102,7 +102,7 @@ async fn wrong_root_permit_falls_back_and_counts_denied() {
     };
     let boot = boot_history();
     let config = ServerConfig::new().bind("127.0.0.1:0".to_owned()).build();
-    let handle = serve_with_tape(config, boot.clone(), Some(reader))
+    let handle = serve_with_tape(config, boot.clone(), Some(reader), None)
         .await
         .expect("server boots with a tape");
     let served = handle

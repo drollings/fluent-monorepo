@@ -21,22 +21,63 @@
 
 use serde::{Deserialize, Serialize};
 
-use protopyne_types::{Bar, SymKey, SymbolIndex, TypesError};
+use chrono::{DateTime, Utc};
+use protopyne_types::{Bar, Money, SymKey, SymbolIndex, TypesError};
 
 use crate::order::Fill;
 use crate::quote::Quote;
+
+/// Which side initiated a trade print, when the venue reports it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Aggressor {
+    /// Buyer-initiated.
+    Buy,
+    /// Seller-initiated.
+    Sell,
+}
+
+/// One public trade print. Unlike [`Fill`](crate::order::Fill), this is a
+/// market fact: it carries the print's own timestamp and no account state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TradePrint {
+    /// Print timestamp.
+    pub ts: DateTime<Utc>,
+    /// Print price.
+    pub price: Money,
+    /// Print size (shares/contracts).
+    pub size: u64,
+    /// Initiating side, when the venue reports one.
+    #[serde(default)]
+    pub aggressor: Option<Aggressor>,
+}
+
+/// One forming or closed chart bar update. Forming updates are display-only
+/// and never enter [`MarketEvent::Candle`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BarUpdate {
+    /// Symbol this bar belongs to.
+    pub underlying: String,
+    /// The bar as it stands.
+    pub bar: Bar,
+    /// Whether the bar is final.
+    pub closed: bool,
+}
 
 /// Subscription kind of one [`MarketEvent`]: what the receiver asked for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum MarketEventKind {
     /// Top-of-book quote.
     Quote,
-    /// One executed trade print.
+    /// One executed account trade (a fill).
     Trade,
+    /// One public market trade print.
+    TradePrint,
     /// One order-book delta (sequence carrier until the depth book lands).
     BookDelta,
     /// One closed bar.
     Candle,
+    /// One forming or closed chart-bar update.
+    BarUpdate,
 }
 
 /// One market fact for one symbol, published by the session pump and
@@ -58,6 +99,13 @@ pub enum MarketEvent {
         /// The print itself.
         fill: Fill,
     },
+    /// One public trade print for `underlying`.
+    TradePrint {
+        /// Symbol this print is for.
+        underlying: String,
+        /// The market print.
+        print: TradePrint,
+    },
     /// One order-book delta marker for `underlying`. Carries the sequence
     /// number only; full depth application arrives with the depth book and
     /// must not be read as book state today.
@@ -74,6 +122,11 @@ pub enum MarketEvent {
         /// The closed bar itself.
         bar: Bar,
     },
+    /// One forming or closed chart-bar update.
+    BarUpdate {
+        /// The update, including its symbol.
+        update: BarUpdate,
+    },
 }
 
 impl MarketEvent {
@@ -83,8 +136,10 @@ impl MarketEvent {
         match self {
             Self::Quote { underlying, .. }
             | Self::Trade { underlying, .. }
+            | Self::TradePrint { underlying, .. }
             | Self::BookDelta { underlying, .. }
             | Self::Candle { underlying, .. } => underlying,
+            Self::BarUpdate { update } => &update.underlying,
         }
     }
 
@@ -94,8 +149,10 @@ impl MarketEvent {
         match self {
             Self::Quote { .. } => MarketEventKind::Quote,
             Self::Trade { .. } => MarketEventKind::Trade,
+            Self::TradePrint { .. } => MarketEventKind::TradePrint,
             Self::BookDelta { .. } => MarketEventKind::BookDelta,
             Self::Candle { .. } => MarketEventKind::Candle,
+            Self::BarUpdate { .. } => MarketEventKind::BarUpdate,
         }
     }
 

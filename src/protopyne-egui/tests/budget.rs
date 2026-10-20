@@ -173,6 +173,7 @@ fn bloat_ledger_pins_source_files() {
             "replay.rs",
             "session.rs",
             "topology.rs",
+            "views/broker.rs",
             "views/health.rs",
             "views/inbox.rs",
             "views/journal.rs",

@@ -494,7 +494,16 @@ pub fn params_for_kernel(kernel: &str, length: i64) -> Result<ParamSet, KernelEr
                     "{kernel}: kernel length must be positive, got {length}"
                 )));
             }
-            Ok(ParamSet::new().with_int("length", length))
+            let registry = crate::indicator::builtin_registry()?;
+            let indicator = registry.get(kernel).ok_or_else(|| {
+                KernelError::InvalidParam(format!("{kernel}: kernel is not registered"))
+            })?;
+            let spec = indicator.spec();
+            let mut params = spec.default_params();
+            // Legacy callers only name a length; declared defaults supply
+            // every other parameter the kernel actually reads.
+            params = params.with_int("length", length);
+            Ok(params)
         }
     }
 }

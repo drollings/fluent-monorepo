@@ -60,7 +60,7 @@ async fn store_backed_read_matches_the_route_over_the_same_bars() {
         limit: crate::DEFAULT_TAPE_LIMIT,
     };
     let config = ServerConfig::new().bind("127.0.0.1:0".to_owned()).build();
-    let handle = serve_with_tape(config, bars.clone(), Some(reader))
+    let handle = serve_with_tape(config, bars.clone(), Some(reader), None)
         .await
         .expect("server boots with a tape");
 
@@ -95,7 +95,7 @@ async fn a_store_less_gateway_serves_the_boot_history() {
     // is counted as `NoTape` (which never warns).
     let bars = boot_history();
     let config = ServerConfig::new().bind("127.0.0.1:0".to_owned()).build();
-    let handle = serve_with_tape(config, bars.clone(), None)
+    let handle = serve_with_tape(config, bars.clone(), None, None)
         .await
         .expect("server boots without a tape");
     let via_gateway = handle
@@ -130,7 +130,7 @@ async fn a_divergent_tape_serves_the_tape_series() {
         limit: crate::DEFAULT_TAPE_LIMIT,
     };
     let config = ServerConfig::new().bind("127.0.0.1:0".to_owned()).build();
-    let handle = serve_with_tape(config, boot.clone(), Some(reader))
+    let handle = serve_with_tape(config, boot.clone(), Some(reader), None)
         .await
         .expect("server boots with a tape");
 
@@ -173,7 +173,7 @@ async fn a_denied_permit_falls_back_and_counts_denied() {
         limit: crate::DEFAULT_TAPE_LIMIT,
     };
     let config = ServerConfig::new().bind("127.0.0.1:0".to_owned()).build();
-    let handle = serve_with_tape(config, boot.clone(), Some(reader))
+    let handle = serve_with_tape(config, boot.clone(), Some(reader), None)
         .await
         .expect("server boots with a tape");
 
@@ -211,7 +211,7 @@ async fn miss_serve_miss_tallies_each_counter() {
         limit: crate::DEFAULT_TAPE_LIMIT,
     };
     let config = ServerConfig::new().bind("127.0.0.1:0".to_owned()).build();
-    let handle = serve_with_tape(config, bars.clone(), Some(reader))
+    let handle = serve_with_tape(config, bars.clone(), Some(reader), None)
         .await
         .expect("server boots with a tape");
     let gateway = handle.gateway();

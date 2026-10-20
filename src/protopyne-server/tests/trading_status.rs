@@ -33,6 +33,8 @@ fn shared_with(trading: TradingState, reading: StoreHealth) -> Shared {
         replay: Mutex::new(ReplayRegistry::new()),
         chain_history: None,
         history_root: None,
+        broker: protopyne_venue::BrokerRegistry::new(),
+        ingest_health: Mutex::new(None),
         tickets: Mutex::new(protopyne_venue::TicketTracker::new()),
     })
 }

@@ -15,6 +15,7 @@ use fluent_wvr::{CapabilitySet, CURRENT_CAPS};
 use rust_decimal::Decimal;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
+use crate::error::VenueError;
 use crate::journal::VenueStorage;
 use crate::live::{boot_live, positions_of, LiveBoot, TastytradeVenue};
 use crate::order::{OrderIntent, OrderRecord, OrderSide, OrderStatus};
@@ -340,6 +341,36 @@ fn venue_for(
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn login_error_strings_are_pinned() {
+    let fake = Fake::new();
+    let base = serve(Arc::clone(&fake)).await;
+    let (_transport, _net, venue) = venue_for(&base);
+    scoped(async {
+        let empty = venue.login("", "").await.expect_err("empty refuses");
+        assert_eq!(
+            empty,
+            VenueError::Invalid("tastytrade credentials are empty".to_owned()),
+            "empty-credential spelling is pinned"
+        );
+        assert_eq!(
+            fake.paths("POST", "/sessions"),
+            0,
+            "empty credentials never dial"
+        );
+        let bad = venue
+            .login("user", "wrong")
+            .await
+            .expect_err("bad creds refuse");
+        assert_eq!(
+            bad,
+            VenueError::Refused("unauthorized: bad login".to_owned()),
+            "venue refusal spelling is pinned"
+        );
+    })
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn login_stores_token_and_bad_creds_stop_without_retry() {
     let fake = Fake::new();
     let base = serve(Arc::clone(&fake)).await;
@@ -375,17 +406,25 @@ async fn unauthenticated_order_calls_refuse_without_dialing() {
             .ask_size(50)
             .ts(now())
             .build();
-        venue
-            .dry_run(&intent("a#0"), &quote)
-            .expect_err("no token refuses");
-        venue
-            .submit(intent("a#0"), &quote, now())
-            .await
-            .expect_err("no token refuses");
-        venue
-            .cancel("a#0", now())
-            .await
-            .expect_err("no token refuses");
+        let unauthenticated =
+            VenueError::Invalid("tastytrade venue is not authenticated".to_owned());
+        // The bearer refusal spelling is pinned: sync order reads fail closed
+        // with the same refusal before touching the network.
+        assert_eq!(
+            venue.dry_run(&intent("a#0"), &quote),
+            Err(unauthenticated.clone()),
+            "dry-run bearer refusal is pinned"
+        );
+        assert_eq!(
+            venue.submit(intent("a#0"), &quote, now()).await,
+            Err(unauthenticated.clone()),
+            "submit bearer refusal is pinned"
+        );
+        assert_eq!(
+            venue.cancel("a#0", now()).await,
+            Err(unauthenticated),
+            "cancel bearer refusal is pinned"
+        );
         assert!(venue.query("a#0").await.is_none(), "query fails closed");
         assert_eq!(fake.seen.lock().expect("seen").len(), 0, "nothing dialed");
     })
@@ -664,7 +703,7 @@ async fn boot_live_constructs_session_registry_and_journal() {
         );
         assert_eq!(
             live.missing_producers(),
-            vec!["stream", "reconcile", "backfill"],
+            vec!["stream", "reconcile", "backfill", "feed"],
             "a bare boot attaches no supervised producer"
         );
         let quote = crate::quote::Quote::new()
@@ -883,7 +922,11 @@ async fn boot_with_all_producers_names_them_and_observes_clean() {
             SeriesContext::new("SPY", Timeframe::D1, GapPolicy::Sparse),
             Vec::new(),
             0,
-        ));
+        ))
+        .with_feed(Arc::new(crate::feed::ChannelFeed::new(
+            crate::feed::FeedCapabilities::default(),
+            8,
+        )));
     let net = Arc::new(NetCapability::new());
     scoped(async {
         let live = boot_live(&boot, Arc::clone(&net), "user", "right", attachments, None)
@@ -891,7 +934,7 @@ async fn boot_with_all_producers_names_them_and_observes_clean() {
             .expect("a full producer set boots");
         assert_eq!(
             live.producers(),
-            vec!["stream", "reconcile", "backfill"],
+            vec!["stream", "reconcile", "backfill", "feed"],
             "the boot names every live producer"
         );
         assert!(
@@ -907,6 +950,87 @@ async fn boot_with_all_producers_names_them_and_observes_clean() {
         assert!(
             live.session.gate_reading().allows_entries(),
             "an empty book observes clean through the bar sensors"
+        );
+        assert!(live.session.shutdown().await, "a clean boot drains clean");
+    })
+    .await;
+}
+
+/// The booted venue registers as a broker bundle — account, feed, and
+/// credential handles included — while `VenueRegistry` keeps routing
+/// execution to the same venue object. Registration is additive: execution
+/// reads flow exactly as before the directory entry exists.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tastytrade_bundle_registers_at_boot_without_changing_venue_routing() {
+    use crate::broker::{BrokerError, BrokerRegistry};
+    use crate::live::{LiveAttachments, LiveBackfillSpec};
+    use crate::stream::StreamConfig;
+    use crate::venue::Venue;
+    use protopyne_types::{GapPolicy, SeriesContext, Timeframe};
+
+    let fake = Fake::new();
+    let base = serve(Arc::clone(&fake)).await;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let journal_path = dir.path().join("live.db");
+    let boot = LiveBoot::new()
+        .session(SessionConfig::default())
+        .transport(TastytradeConfig::new().base_url(base.clone()).build())
+        .account("ACC-1".to_owned())
+        .journal_path(journal_path)
+        .build();
+    let attachments = LiveAttachments::none()
+        .with_stream(StreamConfig::new().build())
+        .with_reconcile()
+        .with_backfill(LiveBackfillSpec::new(
+            SeriesContext::new("SPY", Timeframe::D1, GapPolicy::Sparse),
+            Vec::new(),
+            0,
+        ))
+        .with_feed(Arc::new(crate::feed::ChannelFeed::new(
+            crate::feed::FeedCapabilities::default(),
+            8,
+        )));
+    let net = Arc::new(NetCapability::new());
+    scoped(async {
+        let live = boot_live(&boot, Arc::clone(&net), "user", "right", attachments, None)
+            .await
+            .expect("a full producer set boots");
+        let bundle = live.broker_bundle().expect("bundle assembles");
+        assert_eq!(bundle.id.as_str(), "tastytrade");
+        assert!(
+            bundle.capabilities.accounts
+                && bundle.capabilities.orders
+                && bundle.capabilities.deals
+                && bundle.capabilities.auth_refresh,
+            "the bundle declares its implemented surfaces"
+        );
+        assert!(
+            bundle.account.is_some() && bundle.credentials.is_some(),
+            "account and credential handles attach"
+        );
+        assert!(bundle.feed.is_some(), "the attached feed rides along");
+        assert!(
+            Arc::ptr_eq(&bundle.venue, &(Arc::clone(&live.venue) as Arc<dyn Venue>)),
+            "the bundle holds the same venue object the registry routes"
+        );
+        let directory = BrokerRegistry::new();
+        live.register_broker_bundle(&directory)
+            .expect("registers once");
+        let found = directory.get_str("tastytrade").expect("reachable");
+        assert_eq!(found.id, bundle.id, "the directory serves the bundle");
+        assert!(
+            matches!(
+                live.register_broker_bundle(&directory),
+                Err(BrokerError::Duplicate(_))
+            ),
+            "a second registration refuses instead of replacing the route"
+        );
+        // Execution routing is untouched: the session registry still reads
+        // the live venue's own mirrors through the same object.
+        assert_eq!(
+            live.session.registry().positions(),
+            live.venue.positions(),
+            "registry execution reads are unchanged by the directory entry"
         );
         assert!(live.session.shutdown().await, "a clean boot drains clean");
     })

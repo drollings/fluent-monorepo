@@ -315,17 +315,17 @@ pub enum StreamOutcome {
     },
 }
 
-/// One supervised stream: configuration plus its shared breaker. Clone is
-/// cheap (config plus one `Arc` bump) so the driver task and the consumer
-/// observe the same trip.
+/// One generic reconnect policy: schedule, breaker, and the abortable
+/// connect/pump/backoff loop. Both the account-event stream and the market
+/// feed use this one core.
 #[derive(Debug, Clone)]
-pub struct SupervisedStream {
+pub struct ReconnectPolicy {
     config: StreamConfig,
     breaker: Arc<StreamBreaker>,
 }
 
-impl SupervisedStream {
-    /// Open a stream over `config` with a cold breaker.
+impl ReconnectPolicy {
+    /// Build a policy with a cold breaker.
     #[must_use]
     pub fn new(config: StreamConfig) -> Self {
         Self {
@@ -334,42 +334,42 @@ impl SupervisedStream {
         }
     }
 
-    /// Borrow the shared breaker: the consumer merges trips into its
-    /// `BreakerState` and attaches it to bar batches from here.
+    /// Borrow the configuration.
+    #[must_use]
+    pub fn config(&self) -> &StreamConfig {
+        &self.config
+    }
+
+    /// Borrow the shared breaker.
     #[must_use]
     pub fn breaker(&self) -> &Arc<StreamBreaker> {
         &self.breaker
     }
 
-    /// Run the reconnect loop until the abort fires, the consumer leaves, a
-    /// terminal error lands, or the breaker trips. `connect` establishes one
-    /// generation (a wire-message inbox); each generation pumps through the
-    /// transport's message loop, so parsing behavior is identical to the
-    /// unsupervised stream — only supervision changes. The `out` outbox and
-    /// every inbox stay caller-bounded (this loop constructs no channels); a
-    /// full outbox skips by counted policy, never blocks.
-    pub async fn run<C, Fut>(
+    /// Run one connect/pump/abort/backoff loop. `connect` establishes one
+    /// source generation; `pump` consumes it to a clean end. The loop owns no
+    /// channels and never blocks on a consumer.
+    pub async fn run<T, C, Fut, P, PFut>(
         &self,
         mut connect: C,
         abort: &StreamAbort,
-        out: mpsc::Sender<AccountEvent>,
-        transport: &Arc<TastytradeTransport>,
+        mut pump: P,
     ) -> StreamOutcome
     where
         C: FnMut() -> Fut + Send,
-        Fut: Future<Output = Result<mpsc::Receiver<String>, TransportError>> + Send,
+        Fut: Future<Output = Result<T, TransportError>> + Send,
+        P: FnMut(T) -> PFut + Send,
+        PFut: Future<Output = PumpEnd> + Send,
     {
-        transport.note_stream_started();
-        let _guard = StreamRunGuard { transport };
         loop {
             if abort.is_cancelled() {
                 return StreamOutcome::Aborted;
             }
-            let inbox = tokio::select! {
+            let connected = tokio::select! {
                 connected = connect() => Some(connected),
                 () = abort.cancelled() => None,
             };
-            let Some(connected) = inbox else {
+            let Some(connected) = connected else {
                 return StreamOutcome::Aborted;
             };
             match connected {
@@ -389,8 +389,6 @@ impl SupervisedStream {
                                 .unwrap_or_else(|| "stream breaker tripped".to_owned()),
                         };
                     }
-                    // Just incremented above and still untripped, so the
-                    // streak is at least one: the schedule's 1-based attempt.
                     let delay = backoff_ms(
                         self.config.backoff_base_ms,
                         self.breaker.consecutive_errors(),
@@ -401,12 +399,9 @@ impl SupervisedStream {
                         () = abort.cancelled() => return StreamOutcome::Aborted,
                     }
                 }
-                Ok(inbox) => {
+                Ok(source) => {
                     self.breaker.record_success();
-                    match transport
-                        .pump_account_events(inbox, out.clone(), abort)
-                        .await
-                    {
+                    match pump(source).await {
                         PumpEnd::InboxClosed => {
                             self.breaker.record_restart();
                             if self.breaker.tripped() {
@@ -424,6 +419,101 @@ impl SupervisedStream {
                 }
             }
         }
+    }
+}
+
+/// One supervised source of `T`: the generic form of the reconnect core.
+/// The type parameter names the connected generation (an inbox, a feed
+/// connection, …); the loop itself is [`ReconnectPolicy`].
+#[derive(Debug, Clone)]
+pub struct SupervisedSource<T> {
+    policy: ReconnectPolicy,
+    _source: std::marker::PhantomData<fn() -> T>,
+}
+
+impl<T> SupervisedSource<T> {
+    /// Build a source over `config` with a cold breaker.
+    #[must_use]
+    pub fn new(config: StreamConfig) -> Self {
+        Self {
+            policy: ReconnectPolicy::new(config),
+            _source: std::marker::PhantomData,
+        }
+    }
+
+    /// Borrow the shared breaker.
+    #[must_use]
+    pub fn breaker(&self) -> &Arc<StreamBreaker> {
+        self.policy.breaker()
+    }
+
+    /// Run the connect/pump/backoff loop.
+    pub async fn run<C, Fut, P, PFut>(
+        &self,
+        connect: C,
+        abort: &StreamAbort,
+        pump: P,
+    ) -> StreamOutcome
+    where
+        C: FnMut() -> Fut + Send,
+        Fut: Future<Output = Result<T, TransportError>> + Send,
+        P: FnMut(T) -> PFut + Send,
+        PFut: Future<Output = PumpEnd> + Send,
+    {
+        self.policy.run(connect, abort, pump).await
+    }
+}
+
+/// One supervised stream: configuration plus its shared breaker. Clone is
+/// cheap (config plus one `Arc` bump) so the driver task and the consumer
+/// observe the same trip.
+#[derive(Debug, Clone)]
+pub struct SupervisedStream {
+    policy: ReconnectPolicy,
+}
+
+impl SupervisedStream {
+    /// Open a stream over `config` with a cold breaker.
+    #[must_use]
+    pub fn new(config: StreamConfig) -> Self {
+        Self {
+            policy: ReconnectPolicy::new(config),
+        }
+    }
+
+    /// Borrow the shared breaker: the consumer merges trips into its
+    /// `BreakerState` and attaches it to bar batches from here.
+    #[must_use]
+    pub fn breaker(&self) -> &Arc<StreamBreaker> {
+        self.policy.breaker()
+    }
+
+    /// Borrow the reconnect policy.
+    #[must_use]
+    pub fn policy(&self) -> &ReconnectPolicy {
+        &self.policy
+    }
+
+    /// Run the reconnect loop until the abort fires, the consumer leaves, a
+    /// terminal error lands, or the breaker trips.
+    pub async fn run<C, Fut>(
+        &self,
+        connect: C,
+        abort: &StreamAbort,
+        out: mpsc::Sender<AccountEvent>,
+        transport: &Arc<TastytradeTransport>,
+    ) -> StreamOutcome
+    where
+        C: FnMut() -> Fut + Send,
+        Fut: Future<Output = Result<mpsc::Receiver<String>, TransportError>> + Send,
+    {
+        transport.note_stream_started();
+        let _guard = StreamRunGuard { transport };
+        self.policy
+            .run(connect, abort, |inbox| {
+                transport.pump_account_events(inbox, out.clone(), abort)
+            })
+            .await
     }
 }
 

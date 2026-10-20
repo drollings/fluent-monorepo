@@ -11,7 +11,9 @@ use crate::order::{
 };
 use crate::position::SpreadPosition;
 use crate::quote::{FeeSchedule, Quote};
+use crate::tastytrade::TransportError;
 use chrono::{DateTime, Utc};
+use fluent_concurrency::io::net::NetCapability;
 use protopyne_types::{ChainQuote, ContractId, OptionContract};
 use serde::{Deserialize, Serialize};
 use std::future::Future;
@@ -157,6 +159,26 @@ pub trait LegQuoteSource: Send + Sync {
         Vec::new()
     }
 }
+
+/// One authenticated chain-snapshot fetch over a venue transport. The only
+/// thing the server's chain fetcher needs from a venue: given credentials,
+/// return the chain window. Transports implement this; callers stay generic,
+/// so no server, view, or terminal code names a venue's concrete transport.
+/// A future `IbAdapter` implements this same surface over `EClientSocket`.
+pub trait ChainSnapshotSource: Send + Sync {
+    /// Fetch one chain snapshot for `underlying`.
+    fn fetch_chain_snapshot<'a>(
+        &'a self,
+        net: &'a NetCapability,
+        underlying: &'a str,
+        token: &'a str,
+    ) -> ChainSnapshotFuture<'a>;
+}
+
+/// Boxed future for [`ChainSnapshotSource`]: object-safe like the rest of
+/// the venue boundary.
+pub type ChainSnapshotFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<Vec<ChainQuote>, TransportError>> + Send + 'a>>;
 
 /// One code path for every venue. Implementations are `Send + Sync` so fan-out
 /// pools can share them; interior mutability lives inside each venue.

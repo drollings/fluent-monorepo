@@ -181,6 +181,10 @@ fn live_session(venue: Arc<dyn Venue>) -> LiveSession {
         journal,
         storage,
         venue: broker,
+        feed: Some(Arc::new(protopyne_venue::ChannelFeed::new(
+            protopyne_venue::FeedCapabilities::default(),
+            8,
+        ))),
     }
 }
 

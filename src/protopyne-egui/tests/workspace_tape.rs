@@ -109,7 +109,7 @@ async fn a_store_backed_switch_replans_and_paints_headlessly() {
         limit: DEFAULT_TAPE_LIMIT,
     };
     let config = ServerConfig::new().bind("127.0.0.1:0".to_owned()).build();
-    let handle = serve_with_tape(config, boot, Some(reader))
+    let handle = serve_with_tape(config, boot, Some(reader), None)
         .await
         .expect("server boots with a tape");
     let gateway = handle.gateway();

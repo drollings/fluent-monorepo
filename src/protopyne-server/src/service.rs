@@ -9,7 +9,7 @@
 //! unchanged. New code should reach for the owning module directly.
 
 pub use crate::boot::{
-    open_tape_reader, serve, serve_with_tape, tape_serve, timeframe_of_label, AppState,
+    open_tape_reader, serve, serve_with_tape, tape_serve, timeframe_of_label, AppState, IngestBoot,
     ServerConfig, ServerHandle, TapeMiss, TapeMissKind, TapeReader, TapeServe, TapeServeSnapshot,
     DEFAULT_TAPE_LIMIT,
 };

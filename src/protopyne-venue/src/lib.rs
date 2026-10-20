@@ -11,12 +11,16 @@
 //! [`ResultPool`](fluent_concurrency::pool::ResultPool), credit flow, and
 //! [`first_accept_in_order`](fluent_concurrency::ladder::first_accept_in_order).
 
+pub mod account;
 pub mod alert;
+pub mod auth;
 pub mod backfill;
+pub mod broker;
 pub mod command;
 pub mod depth;
 pub mod error;
 pub mod facts;
+pub mod feed;
 pub mod health;
 pub mod journal;
 pub mod live;
@@ -33,8 +37,25 @@ pub mod session;
 pub mod stream;
 pub mod submit;
 pub mod tastytrade;
+pub mod tastytrade_account;
+pub mod tastytrade_feed;
 pub mod ticket;
 pub mod venue;
+
+pub use account::{
+    AccountError, AccountFuture, AccountRange, AccountReader, AccountSummary, BrokerDeal,
+};
+pub use auth::{
+    AuthConfig, AuthDriver, AuthError, AuthFuture, AuthHandle, AuthHealth, AuthMethod, Credential,
+    CredentialLease, CredentialSource, CredentialState, CredentialStore, FileCredentialStore,
+    MemoryCredentialStore, TastytradeSessionDriver, TokenManager,
+};
+pub use broker::{BrokerBundle, BrokerCapabilities, BrokerError, BrokerId, BrokerRegistry};
+pub use feed::{
+    bar_update, AdapterOutcome, ChannelFeed, FeedCapabilities, FeedError, FeedFuture, FeedHealth,
+    FeedSession, FeedStats, FeedStatsSnapshot, FeedSubscription, MarketDataFeed, TradeBarAdapter,
+};
+pub use market::{Aggressor, BarUpdate, TradePrint};
 
 pub use alert::{
     poll_alerts, Alert, AlertClass, AlertCursor, AlertSink, AlertSource, FanoutSink, FileSink,
@@ -91,8 +112,8 @@ pub use reconcile::{
 pub use registry::VenueRegistry;
 pub use session::{check_unit, SessionConfig, TradingSession};
 pub use stream::{
-    terminal_reason, StreamBreaker, StreamConfig, StreamHealthUnit, StreamOutcome,
-    SupervisedStream, STREAM_HEALTH_ASSET,
+    terminal_reason, ReconnectPolicy, StreamBreaker, StreamConfig, StreamHealthUnit, StreamOutcome,
+    SupervisedSource, SupervisedStream, STREAM_HEALTH_ASSET,
 };
 pub use submit::{
     safe_submit, submit_guarded, Recorder, SubmissionRecorder, SUBMIT_RETRIES, SUBMIT_TIMEOUT,
@@ -107,8 +128,8 @@ pub use ticket::{
     TicketTracker, TICKET_CONFIRMED_KIND, TICKET_ISSUED_KIND,
 };
 pub use venue::{
-    AccountEvent, AccountSnapshot, BalanceEntry, DryRunOutcome, LegExecution, LegQuoteSource,
-    QuoteSource, Venue,
+    AccountEvent, AccountSnapshot, BalanceEntry, ChainSnapshotFuture, ChainSnapshotSource,
+    DryRunOutcome, LegExecution, LegQuoteSource, QuoteSource, Venue,
 };
 
 #[cfg(test)]
@@ -134,3 +155,7 @@ mod symbol_index_tests;
 #[cfg(test)]
 #[path = "../tests/library_only.rs"]
 mod library_only_tests;
+
+#[cfg(test)]
+#[path = "../tests/ib_conformance.rs"]
+mod ib_conformance_tests;

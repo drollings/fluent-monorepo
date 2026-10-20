@@ -171,7 +171,7 @@ async fn run(raw: &[String]) -> Result<(), String> {
         .map(|root| open_tape_reader(std::path::Path::new(root)))
         .transpose()
         .map_err(|e| e.to_string())?;
-    let handle = serve_with_tape(config, history, reader)
+    let handle = serve_with_tape(config, history, reader, None)
         .await
         .map_err(|e| e.to_string())?;
     println!("protopyne-server listening on {}", handle.addr);
@@ -253,6 +253,19 @@ async fn run_live(args: &Args) -> Result<(), String> {
         "live session ready: account {account}, journal {}, producers {:?}",
         journal_path.display(),
         live.producers(),
+    );
+    // The broker directory names what the boot already owns: the same venue
+    // object the session registry routes, plus its account, feed, and
+    // credential handles. Registration is additive — execution routing is
+    // untouched.
+    let directory = protopyne_venue::BrokerRegistry::new();
+    let bundle = live
+        .register_broker_bundle(&directory)
+        .map_err(|e| format!("live broker directory refused: {e}"))?;
+    println!(
+        "live broker directory: {:?} (streams={})",
+        directory.ids(),
+        bundle.capabilities.streams,
     );
     let mut live = live;
     // Journaled authority first: an arm alone is not a start. Nothing moves

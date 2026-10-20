@@ -11,9 +11,10 @@ use std::fmt::{Display, Formatter};
 use protopyne_types::Money;
 
 use crate::views::{
-    ArmResponse, ChartBar, ChartBars, HealthView, JournalRowView, OverlaySeries, PortfolioView,
-    PositionView, ProposalView, ReplayStartParams, ReplayStateView, ReplayStepView, ReplayView,
-    SymbolInfoView, TicketDriftView, TicketView, WorstCase,
+    ArmResponse, BrokerAccountView, BrokerCapabilityView, BrokerDealView, BrokerOrderView,
+    ChartBar, ChartBars, HealthView, JournalRowView, OverlaySeries, PortfolioView, PositionView,
+    ProposalView, ReplayStartParams, ReplayStateView, ReplayStepView, ReplayView, SymbolInfoView,
+    TicketDriftView, TicketView, WorstCase,
 };
 
 /// Terminal-gateway failure: transport, shape, or refused submit.
@@ -117,6 +118,45 @@ pub trait TerminalGateway: Send + Sync {
     fn grant_tiers(&self) -> Result<BTreeMap<String, String>, GatewayError>;
     /// Forward a grant document to the core for arming.
     fn arm(&self, grant: serde_json::Value) -> Result<ArmResponse, GatewayError>;
+
+    /// Broker venues and their capabilities. Additive and default-refused:
+    /// a gateway with no broker directory names the absence.
+    fn broker_venues(&self) -> Result<Vec<BrokerCapabilityView>, GatewayError> {
+        Err(GatewayError::Unavailable(
+            "broker reads are not served by this gateway".to_owned(),
+        ))
+    }
+
+    /// Broker accounts across every registered venue.
+    fn broker_accounts(&self) -> Result<Vec<BrokerAccountView>, GatewayError> {
+        Err(GatewayError::Unavailable(
+            "broker reads are not served by this gateway".to_owned(),
+        ))
+    }
+
+    /// One broker account summary.
+    fn broker_account(&self, account: &str) -> Result<BrokerAccountView, GatewayError> {
+        let _ = account;
+        Err(GatewayError::Unavailable(
+            "broker reads are not served by this gateway".to_owned(),
+        ))
+    }
+
+    /// Orders for one broker account.
+    fn broker_orders(&self, account: &str) -> Result<Vec<BrokerOrderView>, GatewayError> {
+        let _ = account;
+        Err(GatewayError::Unavailable(
+            "broker reads are not served by this gateway".to_owned(),
+        ))
+    }
+
+    /// Deals for one broker account.
+    fn broker_deals(&self, account: &str) -> Result<Vec<BrokerDealView>, GatewayError> {
+        let _ = account;
+        Err(GatewayError::Unavailable(
+            "broker reads are not served by this gateway".to_owned(),
+        ))
+    }
 
     /// Approve a pending proposal by id: journal the human decision through
     /// the core's command plane. Additive and default-refused — only a gateway
@@ -360,6 +400,9 @@ impl TerminalGateway for MockGateway {
             tape_unknown_symbol: None,
             tape_unsupported_timeframe: None,
             last_command: None,
+            ingest_open_gaps: None,
+            ingest_watermark_age_secs: None,
+            ingest_last_repair: None,
         })
     }
 

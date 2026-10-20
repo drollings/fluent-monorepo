@@ -13,11 +13,13 @@ pub mod error;
 pub mod gateway;
 pub mod history;
 pub mod history_root;
+pub mod ingest;
 pub mod live;
 pub mod marks;
 pub mod metrics;
 pub(crate) mod operator;
 pub mod parquet;
+pub mod parquet_history;
 pub mod portfolio;
 pub mod rehearsal;
 pub mod replay_session;
@@ -68,8 +70,8 @@ pub use runner::{
 };
 pub use service::{
     open_tape_reader, serve, serve_with_tape, tape_serve, timeframe_of_label, AppState, ErrorBody,
-    PreviewParams, PreviewResponse, ServerConfig, ServerHandle, TapeMiss, TapeMissKind, TapeReader,
-    TapeServe, TapeServeSnapshot, DEFAULT_REPLAY_CHECKPOINT_EVERY, DEFAULT_TAPE_LIMIT,
+    IngestBoot, PreviewParams, PreviewResponse, ServerConfig, ServerHandle, TapeMiss, TapeMissKind,
+    TapeReader, TapeServe, TapeServeSnapshot, DEFAULT_REPLAY_CHECKPOINT_EVERY, DEFAULT_TAPE_LIMIT,
 };
 pub use trading_loop::TradingLoopExt;
 pub use transpile::{
@@ -88,6 +90,10 @@ mod validate_tests;
 #[cfg(test)]
 #[path = "../tests/common/tape.rs"]
 pub(crate) mod common_tape;
+
+#[cfg(test)]
+#[path = "../tests/neutrality.rs"]
+mod neutrality_tests;
 
 #[cfg(test)]
 #[path = "../tests/doc_claims.rs"]

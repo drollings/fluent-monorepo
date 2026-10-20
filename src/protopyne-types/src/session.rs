@@ -83,6 +83,133 @@ impl Validate for TradingSession {
     }
 }
 
+/// ET weekday of the stamp: Monday = 1 through Sunday = 7. The shared
+/// calendar reads this instead of keeping its own day math.
+#[must_use]
+pub fn et_weekday(ts_ms: i64) -> u32 {
+    weekday_of((ts_ms + et_offset_ms(ts_ms)).div_euclid(86_400_000)) as u32
+}
+
+/// ET calendar date key.
+type EtDate = (i32, u32, u32);
+
+/// Weekend/holiday-aware session calendar: regular hours on weekdays, full
+/// closes on listed dates, early closes on half days. Weekends never trade.
+/// Dates are ET calendar dates; daylight flips ride the shared ET clock, so
+/// a session day never contains a transition (transitions fall on Sundays).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionCalendar {
+    regular: TradingSession,
+    holidays: std::collections::BTreeSet<EtDate>,
+    half_days: std::collections::BTreeMap<EtDate, TradingSession>,
+}
+
+impl SessionCalendar {
+    /// US equity regular hours with no dated exceptions. Weekends are closed
+    /// by construction; holidays and half days join per fixture.
+    #[must_use]
+    pub fn us_equities() -> Self {
+        Self {
+            regular: TradingSession {
+                open_min: 9 * 60 + 30,
+                close_min: 16 * 60,
+            },
+            holidays: std::collections::BTreeSet::new(),
+            half_days: std::collections::BTreeMap::new(),
+        }
+    }
+
+    /// Close the whole ET date.
+    #[must_use]
+    pub fn with_holiday(mut self, date: EtDate) -> Self {
+        self.holidays.insert(date);
+        self
+    }
+
+    /// Replace the ET date's session with an early close.
+    #[must_use]
+    pub fn with_half_day(mut self, date: EtDate, session: TradingSession) -> Self {
+        self.holidays.remove(&date);
+        self.half_days.insert(date, session);
+        self
+    }
+
+    /// Whether the ET date trades at all.
+    #[must_use]
+    pub fn is_trading_day(&self, date: EtDate) -> bool {
+        self.session_for(date).is_some()
+    }
+
+    /// The session owning the ET date, if it trades.
+    #[must_use]
+    pub fn session_for(&self, date: EtDate) -> Option<TradingSession> {
+        if self.holidays.contains(&date) {
+            return None;
+        }
+        if let Some(session) = self.half_days.get(&date) {
+            return Some(*session);
+        }
+        let (year, month, day) = date;
+        let weekday = weekday_of(days_from_civil(year, month, day));
+        if weekday >= 6 {
+            return None;
+        }
+        Some(self.regular)
+    }
+
+    /// Whether the stamp falls inside a trading session.
+    #[must_use]
+    pub fn contains(&self, ts_ms: i64) -> bool {
+        let date = et_civil_date(ts_ms);
+        self.session_for(date)
+            .is_some_and(|session| session.contains(ts_ms))
+    }
+
+    /// In-session bucket starts strictly between two stamps: the trading
+    /// gap a bar sequence with those endpoints skips. Zero means contiguous
+    /// (or a non-trading span such as a weekend); a positive count names
+    /// missing trading bars. Degenerate inputs return zero.
+    #[must_use]
+    pub fn trading_buckets_between(&self, prev_ms: i64, next_ms: i64, timeframe_ms: i64) -> u64 {
+        if timeframe_ms <= 0 || next_ms <= prev_ms {
+            return 0;
+        }
+        let mut total = 0u64;
+        let mut day = et_civil_date(prev_ms);
+        let end = et_civil_date(next_ms);
+        loop {
+            if let Some(session) = self.session_for(day) {
+                // Session days never contain a DST transition, so one offset
+                // prices the whole day; ET midnight in UTC anchors the window.
+                let day_noon_utc = days_from_civil(day.0, day.1, day.2) * 86_400_000 + 43_200_000;
+                let midnight_utc =
+                    days_from_civil(day.0, day.1, day.2) * 86_400_000 - et_offset_ms(day_noon_utc);
+                let open_ms = midnight_utc + i64::from(session.open_min) * 60_000;
+                let close_ms = midnight_utc + i64::from(session.close_min) * 60_000;
+                // Bucket starts B with prev < B < next inside [open, close).
+                let lo = open_ms.max(prev_ms.saturating_add(1));
+                let hi = close_ms.min(next_ms);
+                if lo < hi {
+                    let first = lo.div_euclid(timeframe_ms) * timeframe_ms;
+                    let first = if first < lo {
+                        first.saturating_add(timeframe_ms)
+                    } else {
+                        first
+                    };
+                    if first < hi {
+                        total = total.saturating_add(((hi - 1 - first) / timeframe_ms + 1) as u64);
+                    }
+                }
+            }
+            if day == end {
+                break;
+            }
+            day = civil_from_days(days_from_civil(day.0, day.1, day.2) + 1);
+        }
+        total
+    }
+}
+
 /// Whether America/New_York observes daylight saving at the stamp: from the
 /// second Sunday of March 07:00 UTC up to the first Sunday of November
 /// 06:00 UTC (02:00 local both ends).

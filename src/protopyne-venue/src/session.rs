@@ -122,6 +122,7 @@ pub struct TradingSession {
     registry: Arc<VenueRegistry>,
     storage: VenueStorage,
     stream_breaker: Option<Arc<StreamBreaker>>,
+    credential: Option<crate::auth::AuthHandle>,
     reconcile: Option<ReconcileSensor>,
     backfill: Option<BackfillSensor>,
     state: StateHandle,
@@ -172,6 +173,7 @@ impl TradingSession {
             registry,
             storage,
             stream_breaker: None,
+            credential: None,
             reconcile: None,
             backfill: None,
             portfolio_facts,
@@ -318,12 +320,18 @@ impl TradingSession {
     /// entries. The loop consumes this every bar; exits always route.
     #[must_use]
     pub fn gate_reading(&self) -> GateReading {
-        GateReading::assemble(
+        GateReading::assemble_with_credential(
             self.state.get(),
             self.reconcile.as_ref().map(|sensor| &sensor.handle),
             self.backfill.as_ref().map(|sensor| &sensor.handle),
             self.stream_breaker.as_deref(),
+            self.credential.as_ref(),
         )
+    }
+
+    /// Attach a credential publication: bars read its validity as a gate.
+    pub fn attach_credential(&mut self, handle: crate::auth::AuthHandle) {
+        self.credential = Some(handle);
     }
 
     /// Spawn a supervised reconnect driver under the owned scope and attach

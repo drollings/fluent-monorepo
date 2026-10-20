@@ -605,8 +605,10 @@ fn current_value_matches(def: &InputDef, current: &PineValue) -> Result<(), Kern
         | (InputDef::Bool { .. }, PineValue::Bool(_))
         | (InputDef::Text { .. } | InputDef::Session { .. }, PineValue::Str(_))
         | (InputDef::Enum { .. }, PineValue::EnumHandle(_))
-        | (InputDef::Color { .. }, PineValue::ColorHandle(_)) => Ok(()),
-        (InputDef::Source, PineValue::Float(_) | PineValue::Int(_) | PineValue::Bool(_)) => Ok(()),
+        | (InputDef::Color { .. }, PineValue::ColorHandle(_))
+        | (InputDef::Source, PineValue::Float(_) | PineValue::Int(_) | PineValue::Bool(_)) => {
+            Ok(())
+        }
         (InputDef::PriceSource { .. }, PineValue::Str(name))
             if crate::price_source::PriceSource::parse(name).is_some() =>
         {

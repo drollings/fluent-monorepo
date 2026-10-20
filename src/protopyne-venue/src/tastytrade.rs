@@ -42,7 +42,7 @@ use protopyne_types::{
 
 use crate::order::{Fill, OrderIntent, OrderRecord, OrderSide, OrderStatus, TimeInForce};
 use crate::quote::Quote;
-use crate::venue::{AccountEvent, BalanceEntry, QuoteSource};
+use crate::venue::{AccountEvent, BalanceEntry, ChainSnapshotSource, QuoteSource};
 
 /// Retry schedule frozen by the transport calibration: attempts total per
 /// refresh (first try plus retries). The freeze test pins the value; any
@@ -381,7 +381,7 @@ pub(crate) fn envelope_error(body: &serde_json::Value) -> Option<TransportError>
 /// How one message-pump generation ended. The pump reports; the caller
 /// (scope task or supervised driver) decides.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum PumpEnd {
+pub enum PumpEnd {
     /// The feed republic ended (inbox closed): reconnect to resume.
     InboxClosed,
     /// The consumer is gone (outbox closed): stop rather than wedge.
@@ -403,6 +403,23 @@ pub struct TastytradeTransport {
     skipped: AtomicUsize,
     rejections: Mutex<VecDeque<String>>,
     live: AtomicUsize,
+}
+
+impl ChainSnapshotSource for TastytradeTransport {
+    /// Fetch one chain snapshot over the venue's chains endpoint: wire
+    /// `{"quotes":[<chain-wire>, ...]}`, the shared error envelope, terminal
+    /// deterministic faults, and a bearer token that travels one call.
+    fn fetch_chain_snapshot<'a>(
+        &'a self,
+        net: &'a NetCapability,
+        underlying: &'a str,
+        token: &'a str,
+    ) -> crate::venue::ChainSnapshotFuture<'a> {
+        Box::pin(async move {
+            self.fetch_chain_snapshot_inner(net, underlying, token)
+                .await
+        })
+    }
 }
 
 impl TastytradeTransport {
@@ -534,7 +551,9 @@ impl TastytradeTransport {
     /// reason. The bearer token travels one call (never stored, never
     /// logged); an empty token or an unconfigured base refuses before
     /// anything dials.
-    pub async fn fetch_chain_snapshot(
+    /// Inner fetch behind the [`ChainSnapshotSource`] impl: same wire,
+    /// same envelope, same fault taxonomy.
+    async fn fetch_chain_snapshot_inner(
         &self,
         net: &NetCapability,
         underlying: &str,

@@ -13,12 +13,14 @@
 //! content key costs a full serialization per pull to save only trivial
 //! shaping. Fresh locks on every pull is the honest price of fresh data.
 
+pub mod broker;
 pub mod health;
 pub mod inbox;
 pub mod journal;
 pub mod portfolio;
 pub mod tickets;
 
+pub use broker::{paint_broker_panel, BrokerModel};
 pub use health::HealthModel;
 pub use inbox::{InboxAction, InboxModel};
 pub use journal::Provenance;

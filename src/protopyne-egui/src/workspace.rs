@@ -54,7 +54,10 @@ use crate::integration_lite::{
 use crate::prefs::{Favorites, SlotPrefs, TerminalPrefs};
 use crate::session::{fmt_boundary_time, time_grid_lines, time_major_unit, SessionBreakCache};
 use crate::topology::SeriesCatalog;
-use crate::views::{load_bundle, InboxAction, InboxModel, TicketAction, TicketModel, ViewsBundle};
+use crate::views::{
+    load_bundle, paint_broker_panel, BrokerModel, InboxAction, InboxModel, TicketAction,
+    TicketModel, ViewsBundle,
+};
 use crate::widgets::{
     paint_range_dialog, paint_top_bar, CalendarState, RangeChoice, TopBarAction, TopBarMenuState,
 };
@@ -334,6 +337,24 @@ fn tint_color(tint: MomentumTint) -> egui::Color32 {
     )
 }
 
+fn series_for_pane(evaluation: &IndicatorEvaluation, pane: &str) -> IndicatorEvaluation {
+    IndicatorEvaluation {
+        series: evaluation
+            .series
+            .iter()
+            .filter(|series| series.pane_id("sub") == pane)
+            .cloned()
+            .collect(),
+    }
+}
+
+/// One sub-pane's identity and viewport.
+#[derive(Debug, Clone)]
+struct SubPaneView {
+    id: String,
+    viewport: Viewport,
+}
+
 /// One pane's layout: the data plot, the right price-axis strip, and the
 /// optional bottom time strip.
 #[derive(Debug, Clone, Copy)]
@@ -389,6 +410,34 @@ fn split_canvas(canvas: egui::Rect, share: f32) -> [egui::Rect; 2] {
         egui::Rect::from_min_max(canvas.min, egui::pos2(canvas.right(), split_y)),
         egui::Rect::from_min_max(egui::pos2(canvas.left(), split_y), canvas.max),
     ]
+}
+
+/// Split the canvas into the price pane and `pane_count` equal sub-panes.
+fn split_canvas_many(canvas: egui::Rect, share: f32, pane_count: usize) -> Vec<egui::Rect> {
+    if pane_count <= 1 {
+        return split_canvas(canvas, share).to_vec();
+    }
+    let share = share.clamp(MIN_PANE_SHARE, MAX_PANE_SHARE);
+    let split_y = (canvas.top() + canvas.height() * share).clamp(canvas.top(), canvas.bottom());
+    let mut rects = Vec::with_capacity(pane_count + 1);
+    rects.push(egui::Rect::from_min_max(
+        canvas.min,
+        egui::pos2(canvas.right(), split_y),
+    ));
+    let sub_height = (canvas.bottom() - split_y) / pane_count as f32;
+    for index in 0..pane_count {
+        let top = split_y + sub_height * index as f32;
+        let bottom = if index + 1 == pane_count {
+            canvas.bottom()
+        } else {
+            top + sub_height
+        };
+        rects.push(egui::Rect::from_min_max(
+            egui::pos2(canvas.left(), top),
+            egui::pos2(canvas.right(), bottom),
+        ));
+    }
+    rects
 }
 
 /// The draggable strip over the pane seam: centered on the split at `share`,
@@ -873,6 +922,8 @@ pub struct ChartWorkspace {
     interaction: Option<InteractionState>,
     main: Option<Viewport>,
     sub: Option<Viewport>,
+    /// Custom sub-panes after the default shared `sub` pane.
+    sub_panes: Vec<SubPaneView>,
     symbol_modal: Option<CatalogModal<AssetClass>>,
     indicator_modal: Option<CatalogModal<IndicatorCategory>>,
     /// Starred ticker symbols, owned here (not in the on-demand modal) so the
@@ -927,6 +978,8 @@ pub struct ChartWorkspace {
     dock_bundle: Option<ViewsBundle>,
     /// Dock bundle refusal, when the last pull failed.
     dock_bundle_error: Option<String>,
+    /// Cached broker panel pull; loaded on first open, then held.
+    broker_model: Option<BrokerModel>,
     /// Journal lines pre-rendered in provenance order at refresh time.
     dock_journal_lines: Vec<String>,
     /// Arming form over the patch descriptor: drafts, preview, submit all
@@ -976,6 +1029,52 @@ pub struct ChartWorkspace {
     ticket_seq: u64,
     /// Ticket refusal, when the last ticket action failed.
     ticket_error: Option<String>,
+}
+
+/// One live chart update handed to [`ChartWorkspace`].
+#[derive(Debug, Clone, PartialEq)]
+pub enum LiveChartUpdate {
+    /// A still-forming bar: display only.
+    Forming(ChartRow),
+    /// A final bar: append/replace and recompute.
+    Closed(ChartRow),
+}
+
+/// Parse one rehearsal feed frame into the live update it carries. Only
+/// closed-bar frames exist today; anything else refuses by name so a future
+/// frame kind cannot silently paint as a bar.
+pub fn live_update_of_frame(frame: &str) -> Result<LiveChartUpdate, EguiError> {
+    let refused = |reason: String| EguiError::InvalidParam {
+        what: "frame".to_owned(),
+        reason,
+    };
+    let value: serde_json::Value =
+        serde_json::from_str(frame).map_err(|error| refused(format!("live frame is not JSON: {error}")))?;
+    if value.get("type").and_then(serde_json::Value::as_str) != Some("bar") {
+        let kind = value.get("type").cloned().unwrap_or(serde_json::Value::Null);
+        return Err(refused(format!("live frame type {kind} is not a bar")));
+    }
+    let number = |name: &str| {
+        value.get(name).and_then(serde_json::Value::as_f64).ok_or_else(|| {
+            refused(format!("live bar frame has no numeric {name:?}"))
+        })
+    };
+    let time = value
+        .get("time")
+        .and_then(serde_json::Value::as_i64)
+        .ok_or_else(|| refused("live bar frame has no integer \"time\"".to_owned()))?;
+    let volume = value
+        .get("volume")
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| refused("live bar frame has no integer \"volume\"".to_owned()))?;
+    Ok(LiveChartUpdate::Closed(ChartRow {
+        time,
+        open: number("open")?,
+        high: number("high")?,
+        low: number("low")?,
+        close: number("close")?,
+        volume,
+    }))
 }
 
 /// Content hash of the evaluated prefix: time plus each OHLCV field as raw
@@ -1038,6 +1137,7 @@ impl ChartWorkspace {
             interaction: None,
             main: None,
             sub: None,
+            sub_panes: Vec::new(),
             symbol_modal: None,
             indicator_modal: None,
             favorite_symbols: BTreeSet::new(),
@@ -1053,6 +1153,7 @@ impl ChartWorkspace {
             last_plot_width: PANE_WIDTH_PX,
             dock_bundle: None,
             dock_bundle_error: None,
+            broker_model: None,
             dock_journal_lines: Vec::new(),
             grant_form: GrantFormState::default(),
             replay: ReplayScrub::standard().ok(),
@@ -1507,6 +1608,29 @@ impl ChartWorkspace {
         self.histories.insert(timeframe, rows);
         self.rebind_viewports()?;
         self.recompute()
+    }
+
+    /// One live chart update. Forming bars repaint only (no indicator
+    /// recompute); closed bars upsert the row and recompute through the
+    /// existing pane plan/cache. Neither path reaches strategy or risk.
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn apply_live_update(&mut self, update: LiveChartUpdate) -> Result<(), EguiError> {
+        match update {
+            LiveChartUpdate::Forming(row) => {
+                match self.rows.last_mut() {
+                    Some(last) if last.time == row.time => *last = row,
+                    _ => self.rows.push(row),
+                }
+                Ok(())
+            }
+            LiveChartUpdate::Closed(row) => {
+                match self.rows.last_mut() {
+                    Some(last) if last.time == row.time => *last = row,
+                    _ => self.rows.push(row),
+                }
+                self.recompute()
+            }
+        }
     }
 
     /// Pull fresh bars for the active symbol and timeframe through `gateway`,
@@ -2675,6 +2799,73 @@ impl ChartWorkspace {
         Ok(indices)
     }
 
+    /// Custom pane ids published by multi-output kernel plugins, sorted.
+    fn custom_pane_ids(&self) -> Vec<String> {
+        let mut ids = BTreeSet::new();
+        for evaluation in self.evaluations.values() {
+            for series in &evaluation.series {
+                if let Some(pane) = &series.pane {
+                    if pane != "sub" {
+                        ids.insert(pane.clone());
+                    }
+                }
+            }
+        }
+        ids.into_iter().collect()
+    }
+
+    /// Declared bounded policy union for one custom pane, when every
+    /// declared output is bounded.
+    fn declared_pane_bounds(&self, pane_id: &str) -> Option<(f64, f64)> {
+        use protopyne_kernels::indicator::ScalePolicy;
+        let plugin_id = pane_id.strip_prefix("kernel:")?;
+        let config = self.stack.config(plugin_id)?;
+        let config = component_downcast_ref::<crate::indicators::KernelIndicatorConfig>(config)?;
+        let (_, outputs) = config.schema().ok()?;
+        let mut bounds: Option<(f64, f64)> = None;
+        for output in outputs {
+            match output.policy {
+                ScalePolicy::Bounded { min, max } => {
+                    bounds = Some(match bounds {
+                        Some((lo, hi)) => (lo.min(min), hi.max(max)),
+                        None => (min, max),
+                    });
+                }
+                ScalePolicy::Auto => return None,
+            }
+        }
+        bounds
+    }
+
+    /// The display range for one custom pane: declared bounds plus a small
+    /// pad, or the visible values' extent. Values are never clamped.
+    fn custom_pane_range(&self, pane_id: &str) -> (f64, f64) {
+        let mut lo = f64::INFINITY;
+        let mut hi = f64::NEG_INFINITY;
+        for evaluation in self.evaluations.values() {
+            for series in &evaluation.series {
+                if series.pane_id("sub") != pane_id {
+                    continue;
+                }
+                for value in series.values.iter().flatten() {
+                    if value.is_finite() {
+                        lo = lo.min(*value);
+                        hi = hi.max(*value);
+                    }
+                }
+            }
+        }
+        if let Some((declared_lo, declared_hi)) = self.declared_pane_bounds(pane_id) {
+            lo = lo.min(declared_lo);
+            hi = hi.max(declared_hi);
+        }
+        if !lo.is_finite() || !hi.is_finite() || lo >= hi {
+            return (SUB_MIN, SUB_MAX);
+        }
+        let pad = (hi - lo) * AUTO_HEIGHT_PAD_FRACTION;
+        (lo - pad, hi + pad)
+    }
+
     /// Rebind the main and sub-pane viewports (and the interaction bounds) to
     /// the current rows and range. Heights follow the pane share over the
     /// nominal canvas (the price plot minus its time strip); the first
@@ -2706,17 +2897,37 @@ impl ChartWorkspace {
             PRICE_BASE,
             false,
         )?;
+        let custom_ids = self.custom_pane_ids();
+        let pane_count = custom_ids.len() + 1;
+        let pane_height = sub_plot / pane_count as f32;
         let sub = Viewport::new(
             PriceScaleMode::Normal,
             SUB_MIN,
             SUB_MAX,
-            sub_plot,
+            pane_height,
             spacing,
             0.0,
             false,
         )?;
+        let mut sub_panes = Vec::with_capacity(custom_ids.len());
+        for id in custom_ids {
+            let (pane_lo, pane_hi) = self.custom_pane_range(&id);
+            sub_panes.push(SubPaneView {
+                id,
+                viewport: Viewport::new(
+                    PriceScaleMode::Normal,
+                    pane_lo,
+                    pane_hi,
+                    pane_height,
+                    spacing,
+                    0.0,
+                    false,
+                )?,
+            });
+        }
         self.main = Some(main);
         self.sub = Some(sub);
+        self.sub_panes = sub_panes;
         // Trailing-edge anchor when history overflows the window: a zero
         // offset would open on the oldest bars while every anchor read
         // addresses the full history. When the window covers the whole
@@ -2735,6 +2946,11 @@ impl ChartWorkspace {
                 if let Some(sub) = self.sub {
                     if let Ok(synced) = sub.sync_time_axis(&main) {
                         self.sub = Some(synced);
+                    }
+                }
+                for pane in &mut self.sub_panes {
+                    if let Ok(synced) = pane.viewport.sync_time_axis(&main) {
+                        pane.viewport = synced;
                     }
                 }
             }
@@ -2885,6 +3101,7 @@ impl ChartWorkspace {
         self.sub_pane = self.compute_sub_pane()?;
         self.recompute_tint()?;
         self.derived_builds += 1;
+        self.rebind_viewports()?;
         Ok(())
     }
 
@@ -3143,7 +3360,8 @@ impl ChartWorkspace {
         let (canvas, response) =
             ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::drag());
         let mut share = self.pane_share;
-        let mut panes = split_canvas(canvas, share);
+        let mut pane_count = self.sub_panes.len() + 1;
+        let mut panes = split_canvas_many(canvas, share, pane_count);
         // The divider floats over the seam with its own drag sense: a grab
         // resizes the panes' share of the canvas. While it is dragged the
         // canvas pan stays out, so one gesture never pans and resizes at once.
@@ -3157,12 +3375,21 @@ impl ChartWorkspace {
         if divider_dy != 0.0 && canvas.height() > 0.0 {
             self.set_pane_share(share + divider_dy / canvas.height());
             share = self.pane_share;
-            panes = split_canvas(canvas, share);
+            pane_count = self.sub_panes.len() + 1;
+            panes = split_canvas_many(canvas, share, pane_count);
             divider = divider_rect(canvas, share);
         }
-        let [main_rect, sub_rect] = panes;
+        let main_rect = panes[0];
+        let sub_rects: Vec<egui::Rect> = panes[1..].to_vec();
         let layout = PaneLayout::split(main_rect, true);
-        let sub_layout = PaneLayout::split(sub_rect, false);
+        let sub_layouts: Vec<PaneLayout> = sub_rects
+            .iter()
+            .map(|rect| PaneLayout::split(*rect, false))
+            .collect();
+        let sub_layout = sub_layouts[0];
+        let mut layouts = Vec::with_capacity(1 + sub_layouts.len());
+        layouts.push(layout);
+        layouts.extend(sub_layouts.iter().copied());
         // Resync both mappings to the measured plots, so grid, candles, and
         // axis labels agree with the rects they paint into at any window size.
         if let Some(main) = self.main {
@@ -3173,6 +3400,13 @@ impl ChartWorkspace {
         if let Some(sub) = self.sub {
             if let Some(resized) = viewport_with_plot_height(sub, sub_layout.plot.height()) {
                 self.sub = Some(resized);
+            }
+        }
+        for (pane, pane_layout) in self.sub_panes.iter_mut().zip(sub_layouts.iter().skip(1)) {
+            if let Some(resized) =
+                viewport_with_plot_height(pane.viewport, pane_layout.plot.height())
+            {
+                pane.viewport = resized;
             }
         }
         // Record the measured plot width for view buttons (refresh, the
@@ -3192,12 +3426,7 @@ impl ChartWorkspace {
         // wheel already sitting over it scrolls the list this frame.
         let legend = legend_origin(main_rect, self.stack.card_width());
         self.stack.set_origin(legend);
-        self.step_from_response(
-            ui,
-            &response,
-            &[layout, sub_layout],
-            divider_response.dragged(),
-        );
+        self.step_from_response(ui, &response, &layouts, divider_response.dragged());
         let bar_seconds = self.timeframe.seconds();
 
         let theme = self.theme.clone();
@@ -3431,8 +3660,8 @@ impl ChartWorkspace {
 
         // The sub-pane rect and layout were allocated at the top of the frame;
         // reuse them so the oscillator paints into the region routing knows.
-        let sub_chrome = ui.painter_at(sub_rect);
-        sub_chrome.rect_filled(sub_rect, 0.0, background);
+        let sub_chrome = ui.painter_at(sub_rects[0]);
+        sub_chrome.rect_filled(sub_rects[0], 0.0, background);
         let sub_plot = ui.painter_at(sub_layout.plot);
         if let Some(sub) = self.sub {
             paint_price_grid(&sub_plot, sub, sub_layout, &theme)?;
@@ -3447,6 +3676,10 @@ impl ChartWorkspace {
                     let Some(config) = self.stack.config(plugin.id()) else {
                         continue;
                     };
+                    let evaluation = series_for_pane(evaluation, "sub");
+                    if evaluation.series.is_empty() {
+                        continue;
+                    }
                     // Full-history evaluations paint through the global slot
                     // space, so the base is zero: each painter culls its own
                     // visible tail through the shared samplers — no per-frame,
@@ -3454,7 +3687,7 @@ impl ChartWorkspace {
                     // the twice-visible borrow (display-only).
                     plugin.paint_sub_pane(
                         &sub_plot,
-                        evaluation,
+                        &evaluation,
                         &sub,
                         sub_layout.plot.left_top(),
                         0,
@@ -3523,6 +3756,52 @@ impl ChartWorkspace {
             }
             paint_price_axis(&sub_chrome, sub, sub_layout, None, &theme)?;
         }
+        // Custom sub-panes: one region per kernel pane identity, each with its
+        // own viewport and scale policy.
+        for (index, pane) in self.sub_panes.iter().enumerate() {
+            let pane_layout = sub_layouts[index + 1];
+            let chrome = ui.painter_at(sub_rects[index + 1]);
+            chrome.rect_filled(sub_rects[index + 1], 0.0, background);
+            let plot = ui.painter_at(pane_layout.plot);
+            paint_price_grid(&plot, pane.viewport, pane_layout, &theme)?;
+            paint_time_grid(
+                &plot,
+                pane.viewport,
+                view_rows,
+                bar_seconds,
+                pane_layout,
+                &theme,
+            )?;
+            for plugin in &self.plugins {
+                if plugin.attachment() != SlotAttachment::SubPane
+                    || self.stack.visible(plugin.id()) != Some(true)
+                {
+                    continue;
+                }
+                let Some(evaluation) = self.evaluations.get(plugin.id()) else {
+                    continue;
+                };
+                let Some(config) = self.stack.config(plugin.id()) else {
+                    continue;
+                };
+                let evaluation = series_for_pane(evaluation, &pane.id);
+                if evaluation.series.is_empty() {
+                    continue;
+                }
+                plugin.paint_sub_pane(
+                    &plot,
+                    &evaluation,
+                    &pane.viewport,
+                    pane_layout.plot.left_top(),
+                    0,
+                    pane_layout.plot.width(),
+                    &theme,
+                    config,
+                    &self.stack.indicator_style(plugin.id()),
+                )?;
+            }
+            paint_price_axis(&chrome, pane.viewport, pane_layout, None, &theme)?;
+        }
         // The divider seam on top: a dimmed strip with a grip line, so the
         // grab handle reads without taking layout pixels from either pane.
         let seam = ui.painter_at(divider);
@@ -3575,7 +3854,7 @@ impl ChartWorkspace {
         &mut self,
         ui: &egui::Ui,
         response: &egui::Response,
-        layouts: &[PaneLayout; 2],
+        layouts: &[PaneLayout],
         divider_dragged: bool,
     ) {
         let dt = f64::from(ui.input(|input| input.stable_dt));
@@ -3666,12 +3945,16 @@ impl ChartWorkspace {
     /// below. A pane the workspace does not hold, an anchor off the pane, or a
     /// rescale the scale refuses holds the window.
     fn zoom_pane_price(&mut self, pane: usize, delta_px: f32, anchor_y: f32) {
-        let Some(sub) = self.sub else {
+        let viewport = if pane == SUB_PANE_ZONE {
+            self.sub
+        } else {
+            self.sub_panes
+                .get(pane.saturating_sub(2))
+                .map(|pane| pane.viewport)
+        };
+        let Some(sub) = viewport else {
             return;
         };
-        if pane != SUB_PANE_ZONE {
-            return;
-        }
         let Some(anchor) = sub.y_to_price(anchor_y) else {
             return;
         };
@@ -3710,7 +3993,14 @@ impl ChartWorkspace {
             sub.x_offset_px(),
         );
         if let Ok(view) = rebuilt.and_then(|view| view.with_x_offset(offset)) {
-            self.sub = Some(view);
+            if pane == SUB_PANE_ZONE {
+                self.sub = Some(view);
+            } else if let Some(slot) = pane
+                .checked_sub(2)
+                .and_then(|index| self.sub_panes.get_mut(index))
+            {
+                slot.viewport = view;
+            }
         }
     }
 
@@ -3849,6 +4139,20 @@ impl ChartWorkspace {
                 }
             } else if gateway.is_some() {
                 body.label("No health pull yet");
+            } else {
+                body.label("No gateway");
+            }
+        });
+        // Portfolio. A live replay serves its own fills; the bundle is the
+        // preview/live book.
+        ui.collapsing("broker", |body| {
+            if let Some(gateway) = gateway {
+                if self.broker_model.is_none() {
+                    self.broker_model = Some(BrokerModel::load_full(gateway));
+                }
+                if let Some(model) = &self.broker_model {
+                    paint_broker_panel(body, model);
+                }
             } else {
                 body.label("No gateway");
             }
@@ -4701,3 +5005,7 @@ mod switch_order_tests;
 #[cfg(test)]
 #[path = "../tests/prefs.rs"]
 mod prefs_tests;
+
+#[cfg(test)]
+#[path = "../tests/live_chart.rs"]
+mod live_chart_tests;

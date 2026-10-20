@@ -155,6 +155,9 @@ async fn route_payloads_match_checked_in_goldens() {
         &get(&client, &base, "/portfolio/rehearsal").await,
     );
     check_golden("chart_bars.json", &get(&client, &base, "/chart/bars").await);
+    // The journaled event log: empty on a fresh boot, but its envelope bytes
+    // are part of the characterized surface.
+    check_golden("journal.json", &get(&client, &base, "/journal").await);
     check_golden(
         "overlay_sma_14.json",
         &get(&client, &base, "/chart/overlays?kind=sma&period=14").await,

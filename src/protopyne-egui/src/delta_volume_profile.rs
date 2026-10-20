@@ -815,6 +815,7 @@ impl crate::indicators::ChartIndicator for DeltaVolumeProfileIndicator {
                 style: "fast".to_owned(),
                 attachment: SlotAttachment::MainOverlay,
                 key: fluent_egui::cache_key(node, fingerprint),
+                pane: None,
             })
             .collect();
         Ok(crate::indicators::IndicatorEvaluation { series: built })

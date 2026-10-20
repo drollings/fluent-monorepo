@@ -52,3 +52,141 @@ fn sessions_gate_rth_and_dst() {
         );
     }
 }
+
+/// Weekend/holiday-aware session calendar: regular hours on weekdays,
+/// full closes on listed dates, early closes on half days. Weekends never
+/// trade however the dates fall; daylight flips ride the shared ET clock.
+fn equities_calendar() -> SessionCalendar {
+    SessionCalendar::us_equities()
+        .with_holiday((2026, 11, 26))
+        .with_half_day(
+            (2026, 11, 27),
+            TradingSession::parse("0930-1300").expect("half parses"),
+        )
+}
+
+#[test]
+fn calendar_gates_weekends_holidays_and_half_days() {
+    use chrono::TimeZone as _;
+    let stamp = |y: i32, mo: u32, d: u32, h: u32, mi: u32| {
+        chrono::Utc
+            .with_ymd_and_hms(y, mo, d, h, mi, 0)
+            .single()
+            .expect("valid stamp")
+            .timestamp_millis()
+    };
+    let calendar = equities_calendar();
+    // A regular Friday session: 09:30–16:00 ET == 13:30–20:00 UTC (EDT).
+    assert!(calendar.contains(stamp(2026, 6, 5, 13, 30)));
+    assert!(calendar.contains(stamp(2026, 6, 5, 19, 59)));
+    assert!(!calendar.contains(stamp(2026, 6, 5, 20, 0)));
+    // Weekends never trade.
+    assert!(!calendar.contains(stamp(2026, 6, 6, 15, 0)));
+    assert!(!calendar.contains(stamp(2026, 6, 7, 15, 0)));
+    // Thanksgiving full close.
+    assert!(!calendar.contains(stamp(2026, 11, 26, 15, 0)));
+    // Half day: open 09:30, closed from 13:00 ET == 18:00 UTC (EST).
+    assert!(calendar.contains(stamp(2026, 11, 27, 17, 59)));
+    assert!(!calendar.contains(stamp(2026, 11, 27, 18, 0)));
+    // DST flip mid-fixture: Friday EST, Monday EDT, both full sessions.
+    assert!(calendar.contains(stamp(2026, 3, 6, 19, 59)));
+    assert!(calendar.contains(stamp(2026, 3, 9, 13, 30)));
+    assert_eq!(et_weekday(stamp(2026, 6, 5, 12, 0)), 5, "Friday is 5");
+    assert_eq!(et_weekday(stamp(2026, 6, 7, 12, 0)), 7, "Sunday is 7");
+}
+
+#[test]
+fn calendar_counts_only_trading_buckets_between_stamps() {
+    use chrono::TimeZone as _;
+    let stamp = |y: i32, mo: u32, d: u32, h: u32, mi: u32, s: u32| {
+        chrono::Utc
+            .with_ymd_and_hms(y, mo, d, h, mi, s)
+            .single()
+            .expect("valid stamp")
+            .timestamp_millis()
+    };
+    let calendar = equities_calendar();
+    let m1 = 60_000;
+    // Contiguous minute bars: nothing between.
+    assert_eq!(
+        calendar.trading_buckets_between(
+            stamp(2026, 6, 3, 14, 0, 0),
+            stamp(2026, 6, 3, 14, 1, 0),
+            m1
+        ),
+        0
+    );
+    // One dropped minute bucket intraday: exactly one trading gap.
+    assert_eq!(
+        calendar.trading_buckets_between(
+            stamp(2026, 6, 3, 14, 0, 0),
+            stamp(2026, 6, 3, 14, 2, 0),
+            m1
+        ),
+        1
+    );
+    // Overnight Friday close to Monday open: the weekend counts nothing.
+    assert_eq!(
+        calendar.trading_buckets_between(
+            stamp(2026, 6, 5, 19, 59, 0),
+            stamp(2026, 6, 8, 13, 30, 0),
+            m1
+        ),
+        0
+    );
+    // DST weekend: Friday EST close to Monday EDT open counts nothing.
+    assert_eq!(
+        calendar.trading_buckets_between(
+            stamp(2026, 3, 6, 20, 59, 0),
+            stamp(2026, 3, 9, 13, 30, 0),
+            m1
+        ),
+        0
+    );
+    // Half-day close to Monday open: Friday afternoon and the weekend count
+    // nothing.
+    assert_eq!(
+        calendar.trading_buckets_between(
+            stamp(2026, 11, 27, 17, 59, 0),
+            stamp(2026, 11, 30, 14, 30, 0),
+            m1
+        ),
+        0
+    );
+    // Thanksgiving full close inside the span counts nothing either:
+    // Wednesday's 15:59 ET bar to Friday's 09:30 ET open skips only the
+    // Wednesday close, the Thursday holiday, and Friday pre-open.
+    assert_eq!(
+        calendar.trading_buckets_between(
+            stamp(2026, 11, 25, 20, 59, 0),
+            stamp(2026, 11, 27, 14, 30, 0),
+            m1
+        ),
+        0
+    );
+    // Degenerate inputs refuse by returning zero, never a span.
+    assert_eq!(calendar.trading_buckets_between(100, 100, m1), 0);
+    assert_eq!(calendar.trading_buckets_between(200, 100, m1), 0);
+    assert_eq!(calendar.trading_buckets_between(100, 200, 0), 0);
+}
+
+#[test]
+fn calendar_freeze_pins_regular_hours_and_dst_offsets() {
+    use chrono::TimeZone as _;
+    let stamp = |y: i32, mo: u32, d: u32, h: u32, mi: u32| {
+        chrono::Utc
+            .with_ymd_and_hms(y, mo, d, h, mi, 0)
+            .single()
+            .expect("valid stamp")
+            .timestamp_millis()
+    };
+    let calendar = SessionCalendar::us_equities();
+    // Regular US equity hours are frozen: 09:30–16:00 ET.
+    assert!(calendar.contains(stamp(2026, 6, 3, 13, 30)));
+    assert!(!calendar.contains(stamp(2026, 6, 3, 13, 29)));
+    assert!(calendar.contains(stamp(2026, 6, 3, 19, 59)));
+    assert!(!calendar.contains(stamp(2026, 6, 3, 20, 0)));
+    // Winter offset is UTC-5, summer UTC-4: the clock both crates read.
+    assert_eq!(et_offset_ms(stamp(2026, 1, 15, 12, 0)), -5 * 3_600_000);
+    assert_eq!(et_offset_ms(stamp(2026, 6, 15, 12, 0)), -4 * 3_600_000);
+}

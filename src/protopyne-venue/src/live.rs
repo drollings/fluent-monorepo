@@ -33,7 +33,12 @@ use fluent_concurrency::io::net::NetCapability;
 use fluent_concurrency::stream::StreamAbort;
 use tokio::sync::mpsc;
 
+use crate::auth::{
+    AuthConfig, AuthError, AuthHandle, CredentialSource, CredentialStore, FileCredentialStore,
+    TastytradeSessionDriver, TokenManager,
+};
 use crate::backfill::BackfillSource;
+use crate::broker::{BrokerBundle, BrokerError, BrokerId, BrokerRegistry};
 use crate::error::VenueError;
 use crate::facts::VenueBookFacts;
 use crate::journal::{Journal, VenueStorage};
@@ -49,6 +54,7 @@ use crate::tastytrade::{
     order_intent_of, order_record_of, order_wire_of, TastytradeConfig, TastytradeTransport,
     TransportError, ORDER_WIRE_VERSION, ORDER_WIRE_VERSION_HEADER,
 };
+use crate::tastytrade_account::TastytradeAccountReader;
 use crate::venue::{AccountEvent, BalanceEntry, DryRunOutcome, Venue};
 use protopyne_strategy::PortfolioFactsSource;
 use protopyne_types::{Money, SeriesContext};
@@ -60,7 +66,8 @@ pub struct TastytradeVenue {
     transport: Arc<TastytradeTransport>,
     net: Arc<NetCapability>,
     account: String,
-    token: Mutex<Option<String>>,
+    token: Arc<TokenManager>,
+    driver: Arc<TastytradeSessionDriver>,
     book: Mutex<HashMap<String, OrderRecord>>,
     positions: Mutex<HashMap<String, Position>>,
     balances: Mutex<Vec<BalanceEntry>>,
@@ -92,6 +99,17 @@ impl TastytradeVenue {
         net: Arc<NetCapability>,
         account: String,
     ) -> Result<Self, VenueError> {
+        Self::with_auth(transport, net, account, AuthConfig::default(), None)
+    }
+
+    /// Bind a venue with an explicit credential policy and optional store.
+    pub fn with_auth(
+        transport: Arc<TastytradeTransport>,
+        net: Arc<NetCapability>,
+        account: String,
+        auth: AuthConfig,
+        store: Option<Arc<dyn CredentialStore>>,
+    ) -> Result<Self, VenueError> {
         if transport.config().base_url.is_empty() {
             return Err(VenueError::Invalid(
                 "tastytrade base URL unconfigured: refusing to dial".to_owned(),
@@ -102,26 +120,53 @@ impl TastytradeVenue {
                 "tastytrade account is empty".to_owned(),
             ));
         }
+        let credentials = Arc::new(Mutex::new(None));
+        let driver = Arc::new(TastytradeSessionDriver::new(
+            transport.config().base_url.clone(),
+            Arc::clone(&net),
+            Arc::clone(&credentials),
+            auth.ttl_secs,
+        ));
+        let token = Arc::new(
+            TokenManager::new(auth, driver.clone(), store)
+                .map_err(|error| VenueError::Invalid(format!("auth manager refused: {error}")))?,
+        );
         Ok(Self {
             transport,
             net,
             account,
-            token: Mutex::new(None),
+            token,
+            driver,
             book: Mutex::new(HashMap::new()),
             positions: Mutex::new(HashMap::new()),
             balances: Mutex::new(Vec::new()),
         })
     }
 
-    /// Whether a session token is banked.
+    /// Borrow the credential authority.
+    #[must_use]
+    pub fn token_manager(&self) -> &Arc<TokenManager> {
+        &self.token
+    }
+
+    /// Read-only account surface over this venue's transport and mirrors.
+    /// The reader borrows the same authenticated venue object — no second
+    /// credential owner, no second transport.
+    #[must_use]
+    pub fn account_reader(self: &Arc<Self>) -> TastytradeAccountReader {
+        TastytradeAccountReader::new(Arc::clone(self), self.account.clone())
+    }
+
+    /// Whether a usable session credential is held.
     #[must_use]
     pub fn is_authenticated(&self) -> bool {
-        common_core::sync::lock(&self.token).is_some()
+        self.token.is_authenticated()
     }
 
     /// Drop the banked token. Later order calls refuse until [`TastytradeVenue::login`].
     pub fn logout(&self) {
-        *common_core::sync::lock(&self.token) = None;
+        self.driver.clear_credentials();
+        let _ = self.token.clear();
     }
 
     /// Borrow the quote transport (ladder rung + refresh).
@@ -130,37 +175,34 @@ impl TastytradeVenue {
         &self.transport
     }
 
-    /// Authenticate: one POST, token banked on success. Empty credentials
-    /// refuse without dialing; a venue refusal (bad login) is terminal and
-    /// never retried; transient failures retry bounded by the transport
-    /// config. At most one token is ever banked.
+    /// Borrow the network capability.
+    #[must_use]
+    pub fn net(&self) -> &Arc<NetCapability> {
+        &self.net
+    }
+
+    /// The venue account identifier.
+    #[must_use]
+    pub fn account_id(&self) -> &str {
+        &self.account
+    }
+
+    /// Authenticate: one driver acquisition, credential banked on success.
+    /// Empty credentials refuse without dialing; a venue refusal (bad login)
+    /// is terminal and never retried; transient failures retry bounded by
+    /// [`AuthConfig`]. At most one credential is ever banked.
     pub async fn login(&self, username: &str, password: &str) -> Result<(), VenueError> {
         if username.is_empty() || password.is_empty() {
             return Err(VenueError::Invalid(
                 "tastytrade credentials are empty".to_owned(),
             ));
         }
-        let url = format!("{}/sessions", self.base());
-        let body = serde_json::json!({ "login": username, "password": password }).to_string();
-        let attempts = self.transport.config().max_attempts.max(1);
-        let token = common_core::retry::retry_async(
-            attempts,
-            self.transport.config().backoff_base_ms,
-            crate::tastytrade::RETRY_JITTER_PCT,
-            TransportError::is_retryable,
-            || async {
-                let raw = self
-                    .net
-                    .http_post(&url, &body)
-                    .await
-                    .map_err(|e| TransportError::Rest(e.to_string()))?;
-                parse_token(&raw)
-            },
-        )
-        .await
-        .map_err(into_venue)?;
-        *common_core::sync::lock(&self.token) = Some(token);
-        Ok(())
+        self.driver.set_credentials(username, password);
+        self.token
+            .refresh()
+            .await
+            .map(|_| ())
+            .map_err(auth_into_venue)
     }
 
     /// Fold one account-stream event into the mirrors. Orders upsert (then
@@ -218,7 +260,7 @@ impl TastytradeVenue {
         if intent.quantity == 0 {
             return Err(VenueError::Invalid("quantity must be positive".to_owned()));
         }
-        let token = self.bearer()?;
+        let token = self.bearer_async().await?;
         let headers = [
             ("Authorization", token.as_str()),
             (ORDER_WIRE_VERSION_HEADER, ORDER_WIRE_VERSION),
@@ -241,14 +283,16 @@ impl TastytradeVenue {
         format!("{}/accounts/{}/orders", self.base(), self.account)
     }
 
-    fn bearer(&self) -> Result<String, VenueError> {
-        common_core::sync::lock(&self.token)
-            .clone()
-            .ok_or_else(|| VenueError::Invalid("tastytrade venue is not authenticated".to_owned()))
+    async fn bearer_async(&self) -> Result<String, VenueError> {
+        self.token
+            .lease()
+            .await
+            .map(|lease| lease.credential().expose().to_owned())
+            .map_err(auth_into_venue)
     }
 
     async fn get_record(&self, client_id: &str) -> Result<Option<OrderRecord>, VenueError> {
-        let token = self.bearer()?;
+        let token = self.bearer_async().await?;
         let headers = [
             ("Authorization", token.as_str()),
             (ORDER_WIRE_VERSION_HEADER, ORDER_WIRE_VERSION),
@@ -291,7 +335,7 @@ impl TastytradeVenue {
         body: &str,
         intent: &OrderIntent,
     ) -> Result<OrderRecord, VenueError> {
-        let token = self.bearer()?;
+        let token = self.bearer_async().await?;
         let headers = [
             ("Authorization", token.as_str()),
             (ORDER_WIRE_VERSION_HEADER, ORDER_WIRE_VERSION),
@@ -316,16 +360,15 @@ impl TastytradeVenue {
     }
 }
 
-fn parse_token(raw: &str) -> Result<String, TransportError> {
-    let wire: serde_json::Value = serde_json::from_str(raw)
-        .map_err(|e| TransportError::Transient(format!("response is not JSON: {e}")))?;
-    if let Some(failure) = crate::tastytrade::envelope_error(&wire) {
-        return Err(failure);
+fn auth_into_venue(error: AuthError) -> VenueError {
+    match error {
+        AuthError::Terminal(reason) => VenueError::Refused(reason),
+        AuthError::Transient(reason) => VenueError::Transport(reason),
+        AuthError::Malformed(reason) => VenueError::Server(reason),
+        AuthError::Missing | AuthError::Expired => {
+            VenueError::Invalid("tastytrade venue is not authenticated".to_owned())
+        }
     }
-    wire.get("token")
-        .and_then(serde_json::Value::as_str)
-        .map(str::to_owned)
-        .ok_or_else(|| TransportError::Transient("session wire carries no token".to_owned()))
 }
 
 fn is_not_found(wire: &serde_json::Value) -> bool {
@@ -403,6 +446,12 @@ pub fn positions_of(records: impl IntoIterator<Item = OrderRecord>) -> HashMap<S
     }
     positions.retain(|_, position| position.quantity != 0);
     positions
+}
+
+impl CredentialSource for TastytradeVenue {
+    fn auth_handle(&self) -> AuthHandle {
+        AuthHandle::new(Arc::clone(&self.token))
+    }
 }
 
 impl Venue for TastytradeVenue {
@@ -543,10 +592,15 @@ pub struct LiveBoot {
     pub session: SessionConfig,
     /// Transport endpoints and retry policy.
     pub transport: TastytradeConfig,
+    /// Credential lifecycle policy.
+    #[builder(default)]
+    pub auth: AuthConfig,
     /// Venue account number (path segment of every order call).
     pub account: String,
     /// Durable journal file the submission path records through.
     pub journal_path: PathBuf,
+    /// Optional durable credential store path.
+    pub credential_store_path: Option<PathBuf>,
     /// Out-of-band alert file the session poller appends to: one JSON
     /// object per line for every breaker trip and gate halt, tailed
     /// outside the terminal. `None` runs no poller — the gates still gate,
@@ -618,6 +672,8 @@ pub struct LiveAttachments {
     pub reconcile: bool,
     /// Reconnect backfill over the named series.
     pub backfill: Option<LiveBackfillSpec>,
+    /// Market-data feed attached to the session.
+    pub feed: Option<Arc<dyn crate::feed::MarketDataFeed>>,
 }
 
 impl LiveAttachments {
@@ -628,6 +684,7 @@ impl LiveAttachments {
             stream: None,
             reconcile: false,
             backfill: None,
+            feed: None,
         }
     }
 
@@ -651,10 +708,17 @@ impl LiveAttachments {
         self.backfill = Some(spec);
         self
     }
+
+    /// Attach a market-data feed.
+    #[must_use]
+    pub fn with_feed(mut self, feed: Arc<dyn crate::feed::MarketDataFeed>) -> Self {
+        self.feed = Some(feed);
+        self
+    }
 }
 
 /// The supervised producers a boot carries, in pipeline order.
-const PRODUCER_NAMES: [&str; 3] = ["stream", "reconcile", "backfill"];
+const PRODUCER_NAMES: [&str; 4] = ["stream", "reconcile", "backfill", "feed"];
 
 /// A booted production session: the supervised session, its durable
 /// journal, and the authenticated venue behind the shared registry.
@@ -671,6 +735,8 @@ pub struct LiveSession {
     pub storage: VenueStorage,
     /// The authenticated venue (also reachable via `session.registry()`).
     pub venue: Arc<TastytradeVenue>,
+    /// The attached market-data feed, when one exists.
+    pub feed: Option<Arc<dyn crate::feed::MarketDataFeed>>,
 }
 
 impl LiveSession {
@@ -687,6 +753,9 @@ impl LiveSession {
         if self.session.backfill_handle().is_some() {
             attached.push("backfill");
         }
+        if self.feed.is_some() {
+            attached.push("feed");
+        }
         attached
     }
 
@@ -699,6 +768,36 @@ impl LiveSession {
             .filter(|name| !attached.contains(name))
             .map(str::to_owned)
             .collect()
+    }
+
+    /// Assemble the booted venue as a broker bundle: the same venue object
+    /// the session registry routes, plus the account reader, the attached
+    /// feed when one exists, and the venue's credential handle. Pure
+    /// assembly — the `VenueRegistry` keeps routing execution exactly as
+    /// before; the directory only names what the boot already owns.
+    pub fn broker_bundle(&self) -> Result<BrokerBundle, BrokerError> {
+        let venue = Arc::clone(&self.venue);
+        let mut bundle = BrokerBundle::new(
+            BrokerId::new("tastytrade")?,
+            Arc::clone(&venue) as Arc<dyn Venue>,
+        )
+        .with_account(Arc::new(venue.account_reader()))
+        .with_credentials(venue as Arc<dyn CredentialSource>);
+        if let Some(feed) = &self.feed {
+            bundle = bundle.with_feed(Arc::clone(feed));
+        }
+        Ok(bundle)
+    }
+
+    /// Register the booted bundle in `directory`. A second registration
+    /// refuses (`Duplicate`) instead of replacing the execution route.
+    pub fn register_broker_bundle(
+        &self,
+        directory: &BrokerRegistry,
+    ) -> Result<BrokerBundle, BrokerError> {
+        let bundle = self.broker_bundle()?;
+        directory.register(bundle.clone())?;
+        Ok(bundle)
     }
 }
 
@@ -821,7 +920,17 @@ pub async fn boot_live(
         }
     }
     let transport = Arc::new(TastytradeTransport::new(boot.transport.clone()));
-    let venue = Arc::new(TastytradeVenue::new(transport, net, boot.account.clone())?);
+    let store: Option<Arc<dyn CredentialStore>> = boot
+        .credential_store_path
+        .clone()
+        .map(|path| Arc::new(FileCredentialStore::new(path)) as Arc<dyn CredentialStore>);
+    let venue = Arc::new(TastytradeVenue::with_auth(
+        transport,
+        net,
+        boot.account.clone(),
+        boot.auth.clone(),
+        store,
+    )?);
     venue.login(username, password).await?;
     let storage = VenueStorage::new(boot.journal_path.clone());
     let journal = Arc::new(Journal::open(&boot.journal_path)?);
@@ -832,6 +941,7 @@ pub async fn boot_live(
     });
     let mut session =
         TradingSession::boot(&boot.session, registry.clone(), storage.clone(), facts)?;
+    session.attach_credential(venue.auth_handle());
     if let Some(config) = attachments.stream {
         let supervised = SupervisedStream::new(config);
         session.attach_stream_breaker(Arc::clone(supervised.breaker()));
@@ -862,6 +972,7 @@ pub async fn boot_live(
     if let Some(spec) = attachments.backfill {
         session.attach_backfill(spec.ctx, spec.sources, spec.warmup);
     }
+    let feed = attachments.feed;
     // The out-of-band page: a Scope-owned poller over the attached gates
     // into the operator's file. Reporting only — the poller never gates a
     // trade, and a dark file reports loudly without retrying.
@@ -876,6 +987,7 @@ pub async fn boot_live(
         journal,
         storage,
         venue,
+        feed,
     })
 }
 

@@ -24,14 +24,16 @@ use protopyne_strategy::{
 use protopyne_types::{Bar, ChainQuote, Money, Qty};
 use protopyne_venue::{
     cancel_all_detail, close_all_detail, decide_proposal, replay_grant, replay_proposals,
-    serving_allows_entries, update_from_fill, ConfirmedFill, DriftKind, ImportedPosition,
-    JournalEvent, ManualTicket, OrderIntent, OrderSide, Position, PositionFill, PositionSide,
-    SpreadPosition, TicketDrift, TicketRead, TradingState, COMMAND_ARM_GRANT_KIND,
-    COMMAND_CANCEL_ALL_KIND, COMMAND_CLOSE_ALL_KIND, COMMAND_REVOKE_GRANT_KIND, OPERATOR_CLIENT_ID,
+    serving_allows_entries, update_from_fill, AccountSummary, BrokerBundle, BrokerDeal,
+    ConfirmedFill, DriftKind, ImportedPosition, JournalEvent, ManualTicket, OrderIntent,
+    OrderRecord, OrderSide, Position, PositionFill, PositionSide, SpreadPosition, TicketDrift,
+    TicketRead, TradingState, COMMAND_ARM_GRANT_KIND, COMMAND_CANCEL_ALL_KIND,
+    COMMAND_CLOSE_ALL_KIND, COMMAND_REVOKE_GRANT_KIND, OPERATOR_CLIENT_ID,
 };
 use protopyne_view::{
-    ArmResponse, ChartBars, HealthView, JournalRowView, OverlaySeries, PortfolioView, PositionView,
-    ProposalView, ReplayStepView, ReplayView, TicketDriftView, TicketView, WorstCase,
+    ArmResponse, BrokerAccountView, BrokerCapabilityView, BrokerDealView, BrokerLegView,
+    BrokerOrderView, ChartBars, HealthView, JournalRowView, OverlaySeries, PortfolioView,
+    PositionView, ProposalView, ReplayStepView, ReplayView, TicketDriftView, TicketView, WorstCase,
     PORTFOLIO_SOURCE_BOOKED, PORTFOLIO_SOURCE_REHEARSAL,
 };
 
@@ -186,6 +188,7 @@ pub(crate) fn health_view(state: &Shared) -> HealthView {
     let reading: StoreHealth = *common_core::sync::lock(&state.store_health);
     let (store_reachable, store_open_gaps, store_watermark_age_secs) = store_fields(reading);
     let tape = tape_fields(state.tape_serve_stats.snapshot());
+    let ingest = state.ingest_health();
     HealthView {
         allows_entries: serving_allows_entries(trading, reading),
         allows_exits: trading.allows(true),
@@ -203,6 +206,12 @@ pub(crate) fn health_view(state: &Shared) -> HealthView {
         tape_unsupported_timeframe: tape.unsupported_timeframe,
         trading_state: trading_state_tag(trading).to_owned(),
         version: env!("CARGO_PKG_VERSION").to_owned(),
+        ingest_open_gaps: ingest.as_ref().map(|health| health.open_gaps as u64),
+        ingest_watermark_age_secs: ingest
+            .as_ref()
+            .and_then(|health| health.watermark_age_ms)
+            .map(|ms| ms / 1_000),
+        ingest_last_repair: ingest.and_then(|health| health.last_repair),
     }
 }
 
@@ -1198,6 +1207,99 @@ pub(crate) fn decide_journaled(
     )
     .map_err(|error| (StatusCode::CONFLICT, error.to_string()))?;
     Ok(())
+}
+
+/// One broker's capability view.
+#[must_use]
+pub fn broker_capabilities_of(bundle: &BrokerBundle) -> BrokerCapabilityView {
+    BrokerCapabilityView {
+        venue: bundle.id.to_string(),
+        streams: bundle.capabilities.streams,
+        accounts: bundle.capabilities.accounts,
+        orders: bundle.capabilities.orders,
+        deals: bundle.capabilities.deals,
+        auth_refresh: bundle.capabilities.auth_refresh,
+        native_bars: bundle.capabilities.native_bars,
+    }
+}
+
+/// One account summary view.
+#[must_use]
+pub fn broker_account_of(venue: &str, summary: &AccountSummary) -> BrokerAccountView {
+    BrokerAccountView {
+        venue: venue.to_owned(),
+        account: summary.account.clone(),
+        currency: summary.currency.clone(),
+        net_liquid: summary.net_liquid,
+        buying_power: summary.buying_power,
+        margin_used: summary.margin_used,
+        observed_at: summary.observed_at,
+    }
+}
+
+/// One order view, reusing the venue order record.
+#[must_use]
+pub fn broker_order_of(venue: &str, account: &str, record: &OrderRecord) -> BrokerOrderView {
+    let legs = record
+        .intent
+        .legs
+        .as_ref()
+        .map(|legs| {
+            legs.legs()
+                .iter()
+                .map(|leg| BrokerLegView {
+                    contract: leg.contract.occ_symbol(),
+                    side: match leg.side {
+                        protopyne_types::LegSide::Long => "Long",
+                        protopyne_types::LegSide::Short => "Short",
+                    }
+                    .to_owned(),
+                    quantity: leg.ratio,
+                    price: record.intent.limit_price,
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    BrokerOrderView {
+        venue: venue.to_owned(),
+        account: account.to_owned(),
+        client_id: record.intent.client_id.clone(),
+        proposal_id: record.intent.proposal_id.clone(),
+        strategy: record.intent.strategy.clone(),
+        underlying: record.intent.underlying.clone(),
+        side: format!("{:?}", record.intent.side),
+        status: format!("{:?}", record.status),
+        quantity: record.intent.quantity,
+        filled_quantity: record.filled_quantity,
+        limit_price: record.intent.limit_price,
+        avg_price: record.avg_price,
+        fees_paid: record.fees_paid,
+        updated_at: record.updated_at,
+        legs,
+    }
+}
+
+/// One deal view, reusing the deal's own [`Fill`](protopyne_venue::Fill).
+#[must_use]
+pub fn broker_deal_of(venue: &str, account: &str, deal: &BrokerDeal) -> BrokerDealView {
+    BrokerDealView {
+        venue: venue.to_owned(),
+        account: account.to_owned(),
+        deal_id: deal.deal_id.clone(),
+        client_id: deal.client_id.clone(),
+        order_id: deal.order_id.clone(),
+        contract: deal
+            .contract
+            .as_ref()
+            .map(|contract| contract.as_str().to_owned()),
+        underlying: deal.underlying.clone(),
+        side: format!("{:?}", deal.side),
+        quantity: deal.fill.quantity,
+        price: deal.fill.price,
+        fee: deal.fill.fee,
+        executed_at: deal.executed_at,
+        observed_at: deal.observed_at,
+    }
 }
 
 #[cfg(test)]

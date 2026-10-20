@@ -7,6 +7,7 @@
 //! verdicts are never touched here: the reading names the axis, it does not
 //! judge the trade.
 
+use crate::auth::AuthHandle;
 use crate::backfill::BackfillHandle;
 use crate::command::TradingState;
 use crate::reconcile::ReconcileHandle;
@@ -58,6 +59,8 @@ pub struct GateReading {
     pub backfill: GateVerdict,
     /// The account-stream breaker, when one is attached.
     pub stream: GateVerdict,
+    /// The credential authority, when one is attached.
+    pub credential: GateVerdict,
 }
 
 impl GateReading {
@@ -71,6 +74,20 @@ impl GateReading {
         reconcile: Option<&ReconcileHandle>,
         backfill: Option<&BackfillHandle>,
         stream: Option<&StreamBreaker>,
+    ) -> Self {
+        Self::assemble_with_credential(trading, reconcile, backfill, stream, None)
+    }
+
+    /// Assemble with an explicit credential publication. Attached credentials
+    /// refuse entries when the lease is invalid; a missing credential source
+    /// is detached and gates exactly as the call above.
+    #[must_use]
+    pub fn assemble_with_credential(
+        trading: TradingState,
+        reconcile: Option<&ReconcileHandle>,
+        backfill: Option<&BackfillHandle>,
+        stream: Option<&StreamBreaker>,
+        credential: Option<&AuthHandle>,
     ) -> Self {
         Self {
             trading: match trading.check(false) {
@@ -112,6 +129,17 @@ impl GateReading {
                     GateVerdict::allows()
                 }
             }),
+            credential: credential.map_or_else(GateVerdict::allows, |handle| {
+                if handle.allows_entries() {
+                    GateVerdict::allows()
+                } else {
+                    GateVerdict::refuse_entries(
+                        handle.refusal().unwrap_or_else(|| {
+                            "credential unavailable: entries disarmed".to_owned()
+                        }),
+                    )
+                }
+            }),
         }
     }
 
@@ -122,20 +150,27 @@ impl GateReading {
             && self.reconcile.allows_entry
             && self.backfill.allows_entry
             && self.stream.allows_entry
+            && self.credential.allows_entry
     }
 
     /// The first entry refusal in pipeline order (trading, reconcile,
-    /// backfill, stream), tagged with its axis so the refusal names what it
-    /// is about.
+    /// backfill, stream, credential), tagged with its axis so the refusal
+    /// names what it is about.
     #[must_use]
     pub fn entry_refusal_reason(&self) -> Option<String> {
-        [&self.trading, &self.reconcile, &self.backfill, &self.stream]
-            .into_iter()
-            .find_map(|gate| {
-                gate.reason
-                    .as_ref()
-                    .map(|reason| format!("entry refused (producer-confidence): {reason}"))
-            })
+        [
+            &self.trading,
+            &self.reconcile,
+            &self.backfill,
+            &self.stream,
+            &self.credential,
+        ]
+        .into_iter()
+        .find_map(|gate| {
+            gate.reason
+                .as_ref()
+                .map(|reason| format!("entry refused (producer-confidence): {reason}"))
+        })
     }
 }
 

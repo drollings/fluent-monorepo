@@ -30,7 +30,7 @@ use fluent_concurrency::io::net::NetCapability;
 use rust_decimal::Decimal;
 
 use protopyne_types::{ChainQuote, Greeks, Money, OptionContract, OptionKind};
-use protopyne_venue::{LegQuoteSource, Quote, TastytradeTransport};
+use protopyne_venue::{ChainSnapshotSource, LegQuoteSource, Quote};
 
 use crate::error::ServerError;
 
@@ -46,9 +46,9 @@ pub struct ChainFeedConfig {
     /// missing feed named.
     #[serde(default)]
     pub chain_data_path: Option<String>,
-    /// Tastytrade credentials file path for the fetch path.
-    /// `None` until the operator provisions one; a named-but-missing file
-    /// refuses at load time rather than failing mid-fetch.
+    /// Credentials file path for the fetch path. `None` until the operator
+    /// provisions one; a named-but-missing file refuses at load time rather
+    /// than failing mid-fetch.
     #[serde(default)]
     pub credentials_path: Option<String>,
 }
@@ -507,7 +507,7 @@ pub fn chain_quotes_to_csv(quotes: &[ChainQuote]) -> String {
 /// with no file left behind.
 pub async fn fetch_and_write_chain_history(
     net: &NetCapability,
-    transport: &TastytradeTransport,
+    transport: &dyn ChainSnapshotSource,
     credentials_path: &str,
     underlying: &str,
     out_path: &Path,

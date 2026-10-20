@@ -190,6 +190,481 @@ pub fn nan_hole(value: Option<f64>) -> f64 {
     value.unwrap_or(f64::NAN)
 }
 
+/// One declared kernel parameter.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct IndicatorParam {
+    /// Parameter name as the kernel reads it.
+    pub name: &'static str,
+    /// Value kind.
+    pub kind: ParamKind,
+    /// Declared default.
+    pub default: ParamValue,
+    /// Optional lower bound.
+    pub min: Option<f64>,
+    /// Optional upper bound.
+    pub max: Option<f64>,
+    /// Editor step.
+    pub step: f64,
+    /// Human description.
+    pub description: &'static str,
+}
+
+/// Parameter kinds the schema editor understands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ParamKind {
+    /// Whole number.
+    Int,
+    /// Decimal number.
+    Float,
+    /// Boolean.
+    Bool,
+}
+
+/// One declared default.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum ParamValue {
+    /// Integer default.
+    Int(i64),
+    /// Float default.
+    Float(f64),
+    /// Boolean default.
+    Bool(bool),
+}
+
+/// Role of one output series.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum OutputRole {
+    /// Main output, carried by `IndicatorResult::values`.
+    Primary,
+    /// Named output in `IndicatorResult::secondary`.
+    Secondary,
+}
+
+/// Display scale policy for one output. This is a display value, never a
+/// trading threshold.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum ScalePolicy {
+    /// Declared display bounds.
+    Bounded {
+        /// Lower display bound.
+        min: f64,
+        /// Upper display bound.
+        max: f64,
+    },
+    /// Fit the visible values.
+    Auto,
+}
+
+/// One declared output series.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct OutputSpec {
+    /// Output name (`"value"` for the primary).
+    pub name: &'static str,
+    /// Primary or secondary.
+    pub role: OutputRole,
+    /// Display scale policy.
+    pub policy: ScalePolicy,
+}
+
+/// Complete parameter/output declaration for one kernel.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct IndicatorSchema {
+    /// Declared parameters.
+    pub params: &'static [IndicatorParam],
+    /// Declared outputs, primary first.
+    pub outputs: &'static [OutputSpec],
+}
+
+const fn int_param(
+    name: &'static str,
+    default: i64,
+    min: f64,
+    max: f64,
+    description: &'static str,
+) -> IndicatorParam {
+    IndicatorParam {
+        name,
+        kind: ParamKind::Int,
+        default: ParamValue::Int(default),
+        min: Some(min),
+        max: Some(max),
+        step: 1.0,
+        description,
+    }
+}
+
+const fn float_param(
+    name: &'static str,
+    default: f64,
+    min: f64,
+    max: f64,
+    step: f64,
+    description: &'static str,
+) -> IndicatorParam {
+    IndicatorParam {
+        name,
+        kind: ParamKind::Float,
+        default: ParamValue::Float(default),
+        min: Some(min),
+        max: Some(max),
+        step,
+        description,
+    }
+}
+
+const fn bool_param(
+    name: &'static str,
+    default: bool,
+    description: &'static str,
+) -> IndicatorParam {
+    IndicatorParam {
+        name,
+        kind: ParamKind::Bool,
+        default: ParamValue::Bool(default),
+        min: None,
+        max: None,
+        step: 0.0,
+        description,
+    }
+}
+
+const fn output(name: &'static str, role: OutputRole, policy: ScalePolicy) -> OutputSpec {
+    OutputSpec { name, role, policy }
+}
+
+const PRIMARY: OutputSpec = output("value", OutputRole::Primary, ScalePolicy::Auto);
+const PRIMARY_BOUNDED: OutputSpec = output(
+    "value",
+    OutputRole::Primary,
+    ScalePolicy::Bounded {
+        min: 0.0,
+        max: 100.0,
+    },
+);
+
+const NO_PARAMS: &[IndicatorParam] = &[];
+const LENGTH: &[IndicatorParam] = &[int_param("length", 14, 1.0, 100_000.0, "Lookback length")];
+const ONE: &[OutputSpec] = &[PRIMARY];
+const UPPER_LOWER: &[OutputSpec] = &[
+    PRIMARY,
+    output("upper", OutputRole::Secondary, ScalePolicy::Auto),
+    output("lower", OutputRole::Secondary, ScalePolicy::Auto),
+];
+
+const STOCH_OUT: &[OutputSpec] = &[
+    PRIMARY_BOUNDED,
+    output(
+        "d",
+        OutputRole::Secondary,
+        ScalePolicy::Bounded {
+            min: 0.0,
+            max: 100.0,
+        },
+    ),
+];
+const STOCHF_PARAMS: &[IndicatorParam] = &[
+    int_param("fastk_length", 14, 1.0, 100_000.0, "Fast %K lookback"),
+    int_param("fastd_length", 3, 1.0, 100_000.0, "Fast %D smoothing"),
+];
+const STOCHF_OUT: &[OutputSpec] = &[
+    PRIMARY_BOUNDED,
+    output(
+        "fastd",
+        OutputRole::Secondary,
+        ScalePolicy::Bounded {
+            min: 0.0,
+            max: 100.0,
+        },
+    ),
+];
+const MACD_PARAMS: &[IndicatorParam] = &[
+    int_param("fast_length", 12, 1.0, 100_000.0, "Fast EMA length"),
+    int_param("slow_length", 26, 1.0, 100_000.0, "Slow EMA length"),
+    int_param("signal_length", 9, 1.0, 100_000.0, "Signal EMA length"),
+];
+const MACD_OUT: &[OutputSpec] = &[
+    PRIMARY,
+    output("signal", OutputRole::Secondary, ScalePolicy::Auto),
+    output("hist", OutputRole::Secondary, ScalePolicy::Auto),
+];
+const BB_PARAMS: &[IndicatorParam] = &[
+    int_param("length", 20, 1.0, 100_000.0, "Lookback length"),
+    float_param("mult", 2.0, 0.0, 100.0, 0.1, "Band deviation multiplier"),
+];
+const BBANDS_PARAMS: &[IndicatorParam] = &[
+    int_param("length", 20, 1.0, 100_000.0, "Lookback length"),
+    float_param(
+        "nbdevup",
+        2.0,
+        0.0,
+        100.0,
+        0.1,
+        "Upper deviation multiplier",
+    ),
+    float_param(
+        "nbdevdn",
+        2.0,
+        0.0,
+        100.0,
+        0.1,
+        "Lower deviation multiplier",
+    ),
+    float_param(
+        "matype",
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        "Smoothing type (0 SMA, 1 EMA)",
+    ),
+];
+const KC_PARAMS: &[IndicatorParam] = &[
+    int_param("length", 20, 1.0, 100_000.0, "Lookback length"),
+    float_param("mult", 2.0, 0.0, 100.0, 0.1, "Band deviation multiplier"),
+    bool_param("use_true_range", true, "Use true range for the span"),
+];
+const SUPERTREND_PARAMS: &[IndicatorParam] = &[
+    int_param("atr_length", 14, 1.0, 100_000.0, "ATR length"),
+    float_param("multiplier", 3.0, 0.0, 100.0, 0.1, "ATR multiplier"),
+];
+const SUPERTREND_OUT: &[OutputSpec] = &[
+    PRIMARY,
+    output("direction", OutputRole::Secondary, ScalePolicy::Auto),
+];
+const DONCHIAN_PARAMS: &[IndicatorParam] =
+    &[int_param("length", 20, 1.0, 100_000.0, "Channel lookback")];
+const ICHIMOKU_PARAMS: &[IndicatorParam] = &[
+    int_param("tenkan_length", 9, 1.0, 100_000.0, "Tenkan-sen lookback"),
+    int_param("kijun_length", 26, 1.0, 100_000.0, "Kijun-sen lookback"),
+    int_param(
+        "senkou_b_length",
+        52,
+        1.0,
+        100_000.0,
+        "Senkou span B lookback",
+    ),
+];
+const ICHIMOKU_OUT: &[OutputSpec] = &[
+    PRIMARY,
+    output("kijun", OutputRole::Secondary, ScalePolicy::Auto),
+    output("senkou_a", OutputRole::Secondary, ScalePolicy::Auto),
+    output("senkou_b", OutputRole::Secondary, ScalePolicy::Auto),
+    output("chikou", OutputRole::Secondary, ScalePolicy::Auto),
+];
+const SAR_OUT: &[OutputSpec] = &[
+    PRIMARY,
+    output("trend", OutputRole::Secondary, ScalePolicy::Auto),
+];
+const AROON_OUT: &[OutputSpec] = &[
+    output(
+        "value",
+        OutputRole::Primary,
+        ScalePolicy::Bounded { min: 0.0, max: 1.0 },
+    ),
+    output(
+        "down",
+        OutputRole::Secondary,
+        ScalePolicy::Bounded { min: 0.0, max: 1.0 },
+    ),
+];
+const ADX_OUT: &[OutputSpec] = &[
+    output(
+        "value",
+        OutputRole::Primary,
+        ScalePolicy::Bounded {
+            min: 0.0,
+            max: 100.0,
+        },
+    ),
+    output(
+        "plus_di",
+        OutputRole::Secondary,
+        ScalePolicy::Bounded {
+            min: 0.0,
+            max: 100.0,
+        },
+    ),
+    output(
+        "minus_di",
+        OutputRole::Secondary,
+        ScalePolicy::Bounded {
+            min: 0.0,
+            max: 100.0,
+        },
+    ),
+];
+const VOSS_OUT: &[OutputSpec] = &[
+    PRIMARY,
+    output("filter", OutputRole::Secondary, ScalePolicy::Auto),
+];
+const SAR_PARAMS: &[IndicatorParam] = &[
+    float_param("start", 0.02, 0.0, 1.0, 0.01, "Initial acceleration"),
+    float_param("increment", 0.02, 0.0, 1.0, 0.01, "Acceleration increment"),
+    float_param("maximum", 0.2, 0.0, 1.0, 0.01, "Maximum acceleration"),
+];
+const APO_PARAMS: &[IndicatorParam] = &[
+    int_param("fast_length", 12, 1.0, 100_000.0, "Fast smoothing length"),
+    int_param("slow_length", 26, 1.0, 100_000.0, "Slow smoothing length"),
+    float_param(
+        "matype",
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        "Smoothing type (0 SMA, 1 EMA)",
+    ),
+];
+const ALMA_PARAMS: &[IndicatorParam] = &[
+    int_param("length", 14, 1.0, 100_000.0, "Lookback length"),
+    float_param("offset", 0.85, 0.0, 1.0, 0.01, "ALMA offset"),
+    float_param("sigma", 6.0, 0.0, 100.0, 0.1, "ALMA sigma"),
+];
+const ADOSC_PARAMS: &[IndicatorParam] = &[
+    int_param("fast_length", 3, 1.0, 100_000.0, "Fast EMA length"),
+    int_param("slow_length", 10, 1.0, 100_000.0, "Slow EMA length"),
+];
+const EIT_PARAMS: &[IndicatorParam] = &[float_param(
+    "alpha",
+    0.14,
+    0.0,
+    1.0,
+    0.01,
+    "Smoothing alpha",
+)];
+const KALMAN_PARAMS: &[IndicatorParam] = &[
+    int_param("length", 14, 1.0, 100_000.0, "Lookback length"),
+    float_param("alpha", 0.012, 0.0, 1.0, 0.001, "Process coupling"),
+    float_param("beta", 0.1, 0.0, 1.0, 0.001, "Measurement coupling"),
+];
+const VOSS_PARAMS: &[IndicatorParam] = &[
+    int_param("length", 14, 1.0, 100_000.0, "Lookback length"),
+    int_param("predict", 3, 1.0, 1_000.0, "Prediction order"),
+    float_param("band", 0.25, 0.0, 100.0, 0.01, "Bandwidth"),
+];
+const STDDEV_PARAMS: &[IndicatorParam] = &[
+    int_param("length", 20, 1.0, 100_000.0, "Lookback length"),
+    float_param("nbdev", 2.0, 0.0, 100.0, 0.1, "Deviation multiplier"),
+];
+
+/// The one schema table every kernel and the terminal read.
+#[must_use]
+pub fn indicator_schema(id: &str) -> Option<IndicatorSchema> {
+    let (params, outputs): (&'static [IndicatorParam], &'static [OutputSpec]) = match id {
+        "sma" | "ema" | "rma" | "wma" | "hma" | "vwma" | "dema" | "tema" | "rsi" | "cci"
+        | "cmo" | "tr" | "atr" | "natr" | "midpoint" | "midprice" | "trima" | "mom" | "roc"
+        | "rocp" | "rocr" | "rocr100" | "rsv" | "willr" | "trix" | "correl" | "mfi" | "cmf" => {
+            (LENGTH, ONE)
+        }
+        "aroon" => (LENGTH, AROON_OUT),
+        "adx" => (LENGTH, ADX_OUT),
+        "stoch" => (LENGTH, STOCH_OUT),
+        "stochf" => (STOCHF_PARAMS, STOCHF_OUT),
+        "macd" => (MACD_PARAMS, MACD_OUT),
+        "bb" => (BB_PARAMS, UPPER_LOWER),
+        "bbands" => (BBANDS_PARAMS, UPPER_LOWER),
+        "kc" => (KC_PARAMS, UPPER_LOWER),
+        "supertrend" => (SUPERTREND_PARAMS, SUPERTREND_OUT),
+        "donchian" => (DONCHIAN_PARAMS, UPPER_LOWER),
+        "ichimoku" => (ICHIMOKU_PARAMS, ICHIMOKU_OUT),
+        "sar" => (SAR_PARAMS, SAR_OUT),
+        "apo" | "ppo" => (APO_PARAMS, ONE),
+        "alma" => (ALMA_PARAMS, ONE),
+        "adosc" => (ADOSC_PARAMS, ONE),
+        "eit" => (EIT_PARAMS, ONE),
+        "kalman" => (KALMAN_PARAMS, ONE),
+        "voss" => (VOSS_PARAMS, VOSS_OUT),
+        "stddev" | "var" => (STDDEV_PARAMS, ONE),
+        "ad" | "obv" | "vwap" | "avgprice" | "medprice" | "typprice" | "wclprice" => {
+            (NO_PARAMS, ONE)
+        }
+        _ => return None,
+    };
+    Some(IndicatorSchema { params, outputs })
+}
+
+impl IndicatorSpec {
+    /// Declared parameters: the per-kernel field when populated, else the
+    /// central schema table.
+    #[must_use]
+    pub fn params(&self) -> &'static [IndicatorParam] {
+        if self.params.is_empty() {
+            indicator_schema(&self.id).map_or(&[], |schema| schema.params)
+        } else {
+            self.params
+        }
+    }
+
+    /// Declared outputs: the per-kernel field when populated, else the
+    /// central schema table.
+    #[must_use]
+    pub fn outputs(&self) -> &'static [OutputSpec] {
+        if self.outputs.is_empty() {
+            indicator_schema(&self.id).map_or(&[], |schema| schema.outputs)
+        } else {
+            self.outputs
+        }
+    }
+
+    /// Build the declared defaults for one invocation.
+    #[must_use]
+    pub fn default_params(&self) -> ParamSet {
+        let mut params = ParamSet::new();
+        for param in self.params() {
+            match param.default {
+                ParamValue::Int(value) => params = params.with_int(param.name, value),
+                ParamValue::Float(value) => params = params.with_float(param.name, value),
+                ParamValue::Bool(value) => params = params.with_bool(param.name, value),
+            }
+        }
+        params
+    }
+
+    /// Validate a parameter set against the declared schema: unknown names
+    /// refuse, declared ints/floats respect their bounds.
+    pub fn validate_params(&self, params: &ParamSet) -> Result<(), KernelError> {
+        for name in params.names() {
+            let declared = self
+                .params()
+                .iter()
+                .find(|param| param.name == name)
+                .ok_or_else(|| {
+                    KernelError::InvalidParam(format!("{}: unknown parameter {name:?}", self.id))
+                })?;
+            let value = match (declared.kind, params.get(name)) {
+                (ParamKind::Int, Some(PineValue::Int(value))) => Some(*value as f64),
+                (ParamKind::Float, Some(value)) => value.as_float(),
+                (ParamKind::Bool, Some(PineValue::Bool(_))) | (_, None) => None,
+                (kind, Some(got)) => {
+                    return Err(KernelError::InvalidParam(format!(
+                        "{}: parameter {name:?} expects {kind:?}, got {got}",
+                        self.id
+                    )));
+                }
+            };
+            if let Some(value) = value {
+                if !value.is_finite()
+                    || declared.min.is_some_and(|min| value < min)
+                    || declared.max.is_some_and(|max| value > max)
+                {
+                    return Err(KernelError::InvalidParam(format!(
+                        "{}: parameter {name:?} is out of bounds: {value}",
+                        self.id
+                    )));
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+fn empty_param_slice() -> &'static [IndicatorParam] {
+    &[]
+}
+
+fn empty_output_slice() -> &'static [OutputSpec] {
+    &[]
+}
+
 /// Static description of one indicator: identity, warmup floor, and
 /// dependencies. The per-invocation refinement lives in
 /// [`Indicator::warmup`], which sees the actual parameters.
@@ -205,6 +680,14 @@ pub struct IndicatorSpec {
     /// Ids that must execute before this indicator.
     #[builder(default)]
     pub depends: Vec<IndicatorId>,
+    /// Declared parameters; empty falls back to the central schema table.
+    #[builder(default)]
+    #[serde(skip, default = "empty_param_slice")]
+    pub params: &'static [IndicatorParam],
+    /// Declared outputs; empty falls back to the central schema table.
+    #[builder(default)]
+    #[serde(skip, default = "empty_output_slice")]
+    pub outputs: &'static [OutputSpec],
 }
 
 impl IndicatorSpec {
@@ -248,6 +731,20 @@ impl ParamSet {
     pub fn with_bool(mut self, name: impl Into<String>, value: bool) -> Self {
         self.values.insert(name.into(), PineValue::Bool(value));
         self
+    }
+
+    /// Read one raw parameter value.
+    #[must_use]
+    pub fn get(&self, name: &str) -> Option<&PineValue> {
+        self.values.get(name)
+    }
+
+    /// Parameter names in sorted order.
+    #[must_use]
+    pub fn names(&self) -> Vec<&str> {
+        let mut names: Vec<&str> = self.values.keys().map(String::as_str).collect();
+        names.sort_unstable();
+        names
     }
 
     /// Read a required int parameter.
@@ -930,6 +1427,10 @@ pub fn execution_order(
 #[cfg(test)]
 #[path = "../tests/indicator.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/schema.rs"]
+mod schema_tests;
 
 #[cfg(test)]
 #[path = "../tests/param_fingerprint.rs"]

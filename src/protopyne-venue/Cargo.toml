@@ -10,6 +10,7 @@ live-ai = []
 
 [dependencies]
 protopyne-types = { path = "../protopyne-types" }
+protopyne-kernels = { path = "../protopyne-kernels", default-features = false }
 # Venue uses only the store's health reading, never the optional sealed
 # snapshot surface, so it consumes the store with default features off. This
 # keeps the store's lean feature-off closure honest through the venue→store
@@ -20,9 +21,11 @@ common-core = { path = "../common-core" }
 fluent-wvr = { path = "../fluent-wvr" }
 fluent-concurrency = { path = "../fluent-concurrency" }
 bon = { workspace = true }
+bytes = { workspace = true }
 chrono = { workspace = true }
 csv = { workspace = true }
 rust_decimal = { workspace = true }
+futures-util = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

@@ -21,9 +21,10 @@ pub use symbols::{
     SYMBOL_CATALOG,
 };
 pub use views::{
-    ArmResponse, ChartBar, ChartBars, CommandStatus, DenyCount, HealthView, JournalRowView,
-    OverlaySeries, PortfolioView, PositionView, PreviewResponse, ProposalView, ReplayDecisionView,
-    ReplayLegView, ReplayPositionView, ReplayStartParams, ReplayStateView, ReplayStepView,
-    ReplayView, SymbolInfoView, TicketDriftView, TicketView, WorstCase, PORTFOLIO_SOURCE_BOOKED,
-    PORTFOLIO_SOURCE_REHEARSAL,
+    ArmResponse, BrokerAccountView, BrokerCapabilityView, BrokerDealView, BrokerLegView,
+    BrokerOrderView, BrokerRefusal, ChartBar, ChartBars, CommandStatus, DenyCount, HealthView,
+    JournalRowView, OverlaySeries, PortfolioView, PositionView, PreviewResponse, ProposalView,
+    ReplayDecisionView, ReplayLegView, ReplayPositionView, ReplayStartParams, ReplayStateView,
+    ReplayStepView, ReplayView, SymbolInfoView, TicketDriftView, TicketView, WorstCase,
+    PORTFOLIO_SOURCE_BOOKED, PORTFOLIO_SOURCE_REHEARSAL,
 };

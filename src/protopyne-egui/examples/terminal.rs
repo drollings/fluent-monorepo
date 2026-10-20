@@ -30,7 +30,9 @@ use common_core::config::load_json_or_default;
 use common_core::io::write_atomic;
 use fluent_wvr::Describable;
 use protopyne_egui::views::{load_bundle, HealthModel, PortfolioModel, ViewsBundle};
-use protopyne_egui::{paint_workspace, prefs_path, ChartWorkspace, ReplayScrub, TerminalPrefs};
+use protopyne_egui::{
+    live_update_of_frame, paint_workspace, prefs_path, ChartWorkspace, ReplayScrub, TerminalPrefs,
+};
 use protopyne_server::{serve, ServerConfig, ServerHandle};
 use protopyne_view::{ChartBars, GatewayError, MockGateway, OverlaySeries, TerminalGateway};
 
@@ -149,6 +151,10 @@ async fn boot(path: PathBuf, base: Option<String>) -> Result<ServerHandle, Strin
 
 struct TerminalApp {
     gateway: Box<dyn TerminalGateway>,
+    /// The rehearsal feed, drained once per frame into the workspace: the
+    /// pump ticks behind the window, so the drain never blocks and a lagged
+    /// channel just repaints. Absent on `--mock`, which has no server.
+    feed: Option<tokio::sync::broadcast::Receiver<String>>,
     /// The shared chart workspace, booted over the same gateway: Material top
     /// bar, floating left-boundary dock drawer (gateway terminal, health,
     /// portfolio, proposals, chart, journals, arm-grant, replay), canvas with
@@ -161,7 +167,11 @@ struct TerminalApp {
 }
 
 impl TerminalApp {
-    fn new(gateway: Box<dyn TerminalGateway>, history: &std::path::Path) -> Self {
+    fn new(
+        gateway: Box<dyn TerminalGateway>,
+        feed: Option<tokio::sync::broadcast::Receiver<String>>,
+        history: &std::path::Path,
+    ) -> Self {
         let path = prefs_path(history);
         let prefs = load_json_or_default::<TerminalPrefs>(&path);
         let workspace = ChartWorkspace::with_gateway(&*gateway)
@@ -192,6 +202,7 @@ impl TerminalApp {
             .map_err(|e| e.to_string());
         Self {
             gateway,
+            feed,
             workspace,
             prefs_path: path,
             saved: prefs,
@@ -201,6 +212,21 @@ impl TerminalApp {
 
 impl eframe::App for TerminalApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        // One live drain per frame: the rehearsal frames the server already
+        // pumps become closed-bar updates through the workspace's own live
+        // path, so the window chart advances exactly like a fed terminal.
+        if let (Ok(workspace), Some(rx)) = (&mut self.workspace, &mut self.feed) {
+            while let Ok(frame) = rx.try_recv() {
+                match live_update_of_frame(&frame) {
+                    Ok(update) => {
+                        if workspace.apply_live_update(update).is_err() {
+                            break;
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+        }
         // The dock owns every gateway view now: terminal, health, portfolio,
         // proposals, chart, journals, arm-grant, replay. No second panel tree
         // lives here — the workspace is the single terminal truth.
@@ -308,7 +334,8 @@ async fn main() {
             }
         }
     } else {
-        let app = TerminalApp::new(gateway, &prefs_source);
+        let feed = handle.as_ref().map(ServerHandle::feed_receiver);
+        let app = TerminalApp::new(gateway, feed, &prefs_source);
         let run = eframe::run_native(
             "protopyne gateway terminal",
             eframe::NativeOptions::default(),

@@ -14,9 +14,10 @@ use tokio::sync::broadcast;
 use protopyne_store::StoreHealth;
 use protopyne_strategy::{Grant, ProposalEvent, RiskEngine, RiskLimits};
 use protopyne_types::Money;
-use protopyne_venue::{serving_verdict, HealthVerdict};
+use protopyne_venue::{serving_verdict, AccountRange, HealthVerdict};
 use protopyne_view::{
-    ChartBars, HealthView, JournalRowView, OverlaySeries, PortfolioView, ProposalView, ReplayView,
+    BrokerAccountView, BrokerCapabilityView, BrokerDealView, BrokerOrderView, ChartBars,
+    HealthView, JournalRowView, OverlaySeries, PortfolioView, ProposalView, ReplayView,
     TicketDriftView, TicketView,
 };
 
@@ -26,11 +27,12 @@ use crate::error::ServerError;
 use crate::rehearsal::{preview_grant, select_strategy, StrategyKind};
 use crate::runner::{run_backtest, BacktestRun, RunnerConfig};
 use crate::views::{
-    apply_arm, booked_portfolio_of, chart_bars_of, confirm_ticket, decide_journaled,
-    deny_histogram_of, health_view, import_tickets, issue_ticket, journal_cancel_all,
-    journal_close_all, journal_rows_of, journaled_proposals_of, live_grant, overlay_series_of,
-    pending_proposals_of, publish_run, replay_view_of, revoke_grant, ticket_drifts_of,
-    waiting_tickets, DEFAULT_REPLAY_CHECKPOINT_EVERY,
+    apply_arm, booked_portfolio_of, broker_account_of, broker_capabilities_of, broker_deal_of,
+    broker_order_of, chart_bars_of, confirm_ticket, decide_journaled, deny_histogram_of,
+    health_view, import_tickets, issue_ticket, journal_cancel_all, journal_close_all,
+    journal_rows_of, journaled_proposals_of, live_grant, overlay_series_of, pending_proposals_of,
+    publish_run, replay_view_of, revoke_grant, ticket_drifts_of, waiting_tickets,
+    DEFAULT_REPLAY_CHECKPOINT_EVERY,
 };
 use protopyne_view::{ArmResponse, DenyCount};
 
@@ -428,6 +430,149 @@ async fn feed(State(state): State<Shared>, upgrade: WebSocketUpgrade) -> impl In
 
 /// The one router: every route is a thin wrapper over a shared builder, so the
 /// HTTP body and the in-process gateway read the same view.
+pub(crate) fn account_error(
+    error: &protopyne_venue::AccountError,
+) -> (StatusCode, Json<ErrorBody>) {
+    let status = match error {
+        protopyne_venue::AccountError::Unsupported(_) => StatusCode::NOT_IMPLEMENTED,
+        protopyne_venue::AccountError::Terminal(_)
+        | protopyne_venue::AccountError::Malformed(_) => StatusCode::BAD_GATEWAY,
+        protopyne_venue::AccountError::Transient(_) => StatusCode::SERVICE_UNAVAILABLE,
+    };
+    api_error(status, error.to_string())
+}
+
+fn no_brokers() -> (StatusCode, Json<ErrorBody>) {
+    api_error(
+        StatusCode::SERVICE_UNAVAILABLE,
+        "no broker is registered: broker reads are unsupported on this server",
+    )
+}
+
+async fn broker_venues(State(state): State<Shared>) -> ApiResult<Vec<BrokerCapabilityView>> {
+    let bundles = state.broker.bundles();
+    if bundles.is_empty() {
+        return Err(no_brokers());
+    }
+    Ok(Json(bundles.iter().map(broker_capabilities_of).collect()))
+}
+
+async fn broker_accounts(State(state): State<Shared>) -> ApiResult<Vec<BrokerAccountView>> {
+    let bundles = state.broker.bundles();
+    if bundles.is_empty() {
+        return Err(no_brokers());
+    }
+    let mut rows = Vec::new();
+    for bundle in bundles {
+        let Some(account) = bundle.account.clone() else {
+            continue;
+        };
+        let ids = account
+            .accounts()
+            .await
+            .map_err(|error| account_error(&error))?;
+        for id in ids {
+            let summary = account
+                .summary(&id)
+                .await
+                .map_err(|error| account_error(&error))?;
+            rows.push(broker_account_of(bundle.id.as_str(), &summary));
+        }
+    }
+    Ok(Json(rows))
+}
+
+async fn broker_account(
+    State(state): State<Shared>,
+    Path(account): Path<String>,
+) -> ApiResult<BrokerAccountView> {
+    for bundle in state.broker.bundles() {
+        let Some(reader) = bundle.account.clone() else {
+            continue;
+        };
+        let ids = reader
+            .accounts()
+            .await
+            .map_err(|error| account_error(&error))?;
+        if !ids.iter().any(|id| id == &account) {
+            continue;
+        }
+        let summary = reader
+            .summary(&account)
+            .await
+            .map_err(|error| account_error(&error))?;
+        return Ok(Json(broker_account_of(bundle.id.as_str(), &summary)));
+    }
+    Err(api_error(
+        StatusCode::NOT_FOUND,
+        format!("no broker serves account {account:?}"),
+    ))
+}
+
+async fn broker_orders(
+    State(state): State<Shared>,
+    Path(account): Path<String>,
+) -> ApiResult<Vec<BrokerOrderView>> {
+    for bundle in state.broker.bundles() {
+        let Some(reader) = bundle.account.clone() else {
+            continue;
+        };
+        let ids = reader
+            .accounts()
+            .await
+            .map_err(|error| account_error(&error))?;
+        if !ids.iter().any(|id| id == &account) {
+            continue;
+        }
+        let orders = reader
+            .orders(&account, AccountRange::all())
+            .await
+            .map_err(|error| account_error(&error))?;
+        return Ok(Json(
+            orders
+                .iter()
+                .map(|order| broker_order_of(bundle.id.as_str(), &account, order))
+                .collect(),
+        ));
+    }
+    Err(api_error(
+        StatusCode::NOT_FOUND,
+        format!("no broker serves account {account:?}"),
+    ))
+}
+
+async fn broker_deals(
+    State(state): State<Shared>,
+    Path(account): Path<String>,
+) -> ApiResult<Vec<BrokerDealView>> {
+    for bundle in state.broker.bundles() {
+        let Some(reader) = bundle.account.clone() else {
+            continue;
+        };
+        let ids = reader
+            .accounts()
+            .await
+            .map_err(|error| account_error(&error))?;
+        if !ids.iter().any(|id| id == &account) {
+            continue;
+        }
+        let deals = reader
+            .deals(&account, AccountRange::all())
+            .await
+            .map_err(|error| account_error(&error))?;
+        return Ok(Json(
+            deals
+                .iter()
+                .map(|deal| broker_deal_of(bundle.id.as_str(), &account, deal))
+                .collect(),
+        ));
+    }
+    Err(api_error(
+        StatusCode::NOT_FOUND,
+        format!("no broker serves account {account:?}"),
+    ))
+}
+
 pub(crate) fn router(state: Shared) -> Router {
     Router::new()
         .route("/health", get(health))
@@ -455,5 +600,10 @@ pub(crate) fn router(state: Shared) -> Router {
         .route("/replay", get(replay))
         .route("/journal", get(journal))
         .route("/feed", get(feed))
+        .route("/broker/venues", get(broker_venues))
+        .route("/broker/accounts", get(broker_accounts))
+        .route("/broker/accounts/{account}", get(broker_account))
+        .route("/broker/accounts/{account}/orders", get(broker_orders))
+        .route("/broker/accounts/{account}/deals", get(broker_deals))
         .with_state(state)
 }

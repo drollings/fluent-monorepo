@@ -7,7 +7,136 @@
 
 use protopyne_types::Money;
 
-/// One inbox row: what the strategy proposed and where it stands.
+/// One broker's declared capability flags.
+#[allow(clippy::struct_excessive_bools)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct BrokerCapabilityView {
+    /// Broker id.
+    pub venue: String,
+    /// Market-data streams.
+    pub streams: bool,
+    /// Account summaries.
+    pub accounts: bool,
+    /// Order reads.
+    pub orders: bool,
+    /// Execution/deal reads.
+    pub deals: bool,
+    /// Credential refresh.
+    pub auth_refresh: bool,
+    /// Native broker bars.
+    pub native_bars: bool,
+}
+
+/// One broker account summary.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct BrokerAccountView {
+    /// Broker id.
+    pub venue: String,
+    /// Account identifier.
+    pub account: String,
+    /// Account currency.
+    pub currency: String,
+    /// Net liquidation.
+    pub net_liquid: Money,
+    /// Buying power.
+    pub buying_power: Money,
+    /// Margin used.
+    pub margin_used: Money,
+    /// When the broker read was observed.
+    pub observed_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// One order leg.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct BrokerLegView {
+    /// Contract identifier.
+    pub contract: String,
+    /// Side tag (`Buy`/`Sell`).
+    pub side: String,
+    /// Quantity.
+    pub quantity: u32,
+    /// Limit price per contract.
+    pub price: Money,
+}
+
+/// One broker order.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct BrokerOrderView {
+    /// Broker id.
+    pub venue: String,
+    /// Account identifier.
+    pub account: String,
+    /// Deterministic client id.
+    pub client_id: String,
+    /// Proposal attribution.
+    pub proposal_id: String,
+    /// Strategy attribution.
+    pub strategy: String,
+    /// Underlying.
+    pub underlying: String,
+    /// Side tag.
+    pub side: String,
+    /// Lifecycle status tag.
+    pub status: String,
+    /// Requested quantity.
+    pub quantity: u32,
+    /// Filled quantity.
+    pub filled_quantity: u32,
+    /// Limit price.
+    pub limit_price: Money,
+    /// Average fill price, when any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub avg_price: Option<Money>,
+    /// Fees paid.
+    pub fees_paid: Money,
+    /// Last update.
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+    /// Legs, when the order is a package.
+    #[serde(default)]
+    pub legs: Vec<BrokerLegView>,
+}
+
+/// One broker execution.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct BrokerDealView {
+    /// Broker id.
+    pub venue: String,
+    /// Account identifier.
+    pub account: String,
+    /// Deal identifier.
+    pub deal_id: String,
+    /// Client id, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client_id: Option<String>,
+    /// Broker order id, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub order_id: Option<String>,
+    /// Contract, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contract: Option<String>,
+    /// Underlying.
+    pub underlying: String,
+    /// Side tag.
+    pub side: String,
+    /// Executed quantity.
+    pub quantity: u32,
+    /// Execution price.
+    pub price: Money,
+    /// Commission.
+    pub fee: Money,
+    /// Execution timestamp.
+    pub executed_at: chrono::DateTime<chrono::Utc>,
+    /// Observation timestamp.
+    pub observed_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// Response envelope for a broker read refusal.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct BrokerRefusal {
+    /// Refusal reason.
+    pub error: String,
+}
+
 ///
 /// Mirrors the proposals route payload field-for-field; `direction`,
 /// `structure`, and `state` carry the wire's variant names verbatim
@@ -158,6 +287,15 @@ pub struct HealthView {
     pub trading_state: String,
     /// Serving crate version.
     pub version: String,
+    /// Open ingest gaps, when an ingest service is attached.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ingest_open_gaps: Option<u64>,
+    /// Ingest watermark age in seconds, when observed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ingest_watermark_age_secs: Option<u64>,
+    /// Last ingest repair status, when observed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ingest_last_repair: Option<String>,
 }
 
 /// Worst-case exposure of an armed grant, shown before confirmation.

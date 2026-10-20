@@ -7,6 +7,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
+use chrono::Utc;
 use fluent_concurrency::batch::SupervisedBatch;
 use fluent_concurrency::pool::Limiter;
 use fluent_concurrency::scope::Scope;
@@ -14,18 +15,22 @@ use fluent_wvr::prelude::*;
 use tokio::sync::broadcast;
 
 use protopyne_store::{
-    FoldPolicy, MarketTape, PlanError, ReadRequest as TapeReadRequest, StoreError, StoreHealth,
-    StoreStorage, TimeRange,
+    FoldPolicy, HistoryProvider, MarketTape, PlanError, ReadRequest as TapeReadRequest, StoreError,
+    StoreHealth, StoreStorage, SymbolId, TimeRange,
 };
 use protopyne_strategy::{Grant, RiskLimits};
+use protopyne_types::session::SessionCalendar;
 use protopyne_types::{Bar, Timeframe};
-use protopyne_venue::{Journal, StateHandle, TicketTracker, TradingState, VenueStorage};
+use protopyne_venue::{
+    BrokerRegistry, Journal, MarketDataFeed, StateHandle, TicketTracker, TradingState, VenueStorage,
+};
 use protopyne_view::{CommandStatus, PortfolioView, ProposalView};
 
 use crate::chain_history::{ChainFeedConfig, HistoricalChainSource};
 use crate::error::ServerError;
 use crate::gateway::FallbackLatch;
 use crate::history_root::HistoryRoot;
+use crate::ingest::IngestService;
 use crate::replay_session::ReplayRegistry;
 use crate::views::{bar_frame, live_grant};
 
@@ -94,6 +99,13 @@ pub struct ServerConfig {
     #[builder(default)]
     #[serde(default)]
     pub store_health: StoreHealth,
+    /// Optional always-on candle ingestion configuration. Absent keeps the
+    /// server path byte-identical; a boot that attaches an
+    /// [`IngestService`](crate::ingest::IngestService) publishes its health
+    /// through [`AppState::publish_ingest`].
+    #[field(skip)]
+    #[serde(default)]
+    pub ingest: Option<crate::ingest::IngestConfig>,
 }
 
 impl protopyne_types::Validate for ServerConfig {
@@ -137,6 +149,9 @@ impl ServerConfig {
             if path.trim().is_empty() {
                 return Err("chain_feed_path must not be blank".to_owned());
             }
+        }
+        if let Some(ingest) = &self.ingest {
+            ingest.validate()?;
         }
         Ok(())
     }
@@ -222,9 +237,27 @@ pub struct AppState {
     /// replay window out of this at open; `None` (or an empty load) keeps
     /// the chain gate exactly where it was.
     pub(crate) chain_history: Option<HistoricalChainSource>,
+    /// Broker read/feed/auth directory. Empty until a boot or integration
+    /// registers a bundle; an empty directory refuses reads honestly.
+    pub(crate) broker: BrokerRegistry,
+    /// Last ingest health reading, when an ingest service is attached.
+    pub(crate) ingest_health: Mutex<Option<crate::ingest::IngestHealth>>,
 }
 
 pub(crate) type Shared = Arc<AppState>;
+
+impl AppState {
+    /// Publish the latest ingest health reading. Observation only.
+    pub fn publish_ingest(&self, health: crate::ingest::IngestHealth) {
+        *common_core::sync::lock(&self.ingest_health) = Some(health);
+    }
+
+    /// The latest ingest reading, when one was published.
+    #[must_use]
+    pub fn ingest_health(&self) -> Option<crate::ingest::IngestHealth> {
+        common_core::sync::lock(&self.ingest_health).clone()
+    }
+}
 
 /// The store a serving gateway plans its chart reads through, threadbare by
 /// design: the durable tape plus the capability set and permit its effects
@@ -533,6 +566,22 @@ fn gate_unit(
     Arc::new(adapter)
 }
 
+/// How often the supervised ingest publisher mirrors the service health
+/// into shared state, in milliseconds. The run loop observes every event;
+/// the mirror only feeds the health view.
+const INGEST_HEALTH_PUBLISH_MS: u64 = 250;
+
+/// Optional ingest attachment: the live feed to drain plus one repair
+/// provider per registered symbol id. The tunables (symbols, spacing, lag)
+/// ride `ServerConfig.ingest`; this carries the two live ends the config
+/// cannot name. `None` keeps the boot byte-identical.
+pub struct IngestBoot {
+    /// The feed the service subscribes to.
+    pub feed: Arc<dyn MarketDataFeed>,
+    /// Repair providers keyed by registered symbol id.
+    pub providers: Vec<(SymbolId, Arc<dyn HistoryProvider>)>,
+}
+
 /// Owned server: listener task plus the feed supervision scope.
 pub struct ServerHandle {
     /// Bound address.
@@ -548,6 +597,13 @@ impl ServerHandle {
     #[must_use]
     pub fn gateway(&self) -> crate::gateway::ServerGateway {
         crate::gateway::ServerGateway::new(Arc::clone(&self.state))
+    }
+
+    /// Subscribe to the rehearsal feed: one JSON bar frame per tick. The
+    /// terminal drains it once per frame; a lagged channel just repaints.
+    #[must_use]
+    pub fn feed_receiver(&self) -> tokio::sync::broadcast::Receiver<String> {
+        self.state.feed.subscribe()
     }
 
     /// A snapshot of the tape-serve outcome counters the gateway records as
@@ -567,7 +623,7 @@ impl ServerHandle {
 
 /// Boot the HTTP surface over `history`, with no durable tape behind it.
 pub async fn serve(config: ServerConfig, history: Vec<Bar>) -> Result<ServerHandle, ServerError> {
-    serve_with_tape(config, history, None).await
+    serve_with_tape(config, history, None, None).await
 }
 
 /// Boot-load option-chain history from the chain feed config, when one is
@@ -595,7 +651,8 @@ fn load_chain_history_at_boot(
 }
 
 /// Boot the HTTP surface over `history`, optionally with a durable tape the
-/// symbol-scoped chart reads plan and read through.
+/// symbol-scoped chart reads plan and read through, and optionally with an
+/// always-on ingest service draining `ingest.feed` into that tape.
 ///
 /// Boot gates (config validity, non-empty history) run under
 /// containment-only supervision; any failure refuses to bind. The rehearsal
@@ -603,14 +660,27 @@ fn load_chain_history_at_boot(
 /// When `tape` is supplied, the gateway's `chart_bars_for` plans through it
 /// and falls back to the boot history when the tape cannot serve a read; a
 /// `None` tape serves the boot history exactly as before.
+///
+/// Ingest is fail-closed on shape: config without a feed, a feed without
+/// config, ingest without a tape, or an unknown ingest symbol all refuse
+/// before binding. The disabled path returns before touching anything, so a
+/// boot without ingest is byte-identical. The enabled path bootstraps
+/// (resolve markets, one repair pass, seed stamps), subscribes, and spawns
+/// the run loop plus a health publisher under the server scope — both
+/// re-enter the tape's capability scope, since tokio does not propagate
+/// task-locals — so shutdown closes them with the server.
 pub async fn serve_with_tape(
     config: ServerConfig,
     history: Vec<Bar>,
     tape: Option<TapeReader>,
+    ingest: Option<IngestBoot>,
 ) -> Result<ServerHandle, ServerError> {
     config.validate().map_err(ServerError::Service)?;
     if history.is_empty() {
         return Err(ServerError::Service("history must not be empty".to_owned()));
+    }
+    if let Some(error) = ingest_shape_error(&config, tape.as_ref(), ingest.as_ref()) {
+        return Err(error);
     }
     let history_timeframe = timeframe_of_label(&config.history_timeframe).ok_or_else(|| {
         ServerError::Service(format!(
@@ -678,6 +748,8 @@ pub async fn serve_with_tape(
         replay: Mutex::new(ReplayRegistry::new()),
         chain_history,
         history_root,
+        broker: BrokerRegistry::new(),
+        ingest_health: Mutex::new(None),
     });
     live_grant(&state);
     let mut scope = Scope::new();
@@ -697,6 +769,10 @@ pub async fn serve_with_tape(
             }
         });
     }
+    if let Err(error) = boot_ingest(&config, &state, ingest, &mut scope).await {
+        scope.close().await;
+        return Err(error);
+    }
     let app = crate::routes::router(Arc::clone(&state));
     let listener = tokio::net::TcpListener::bind(&config.bind)
         .await
@@ -713,4 +789,101 @@ pub async fn serve_with_tape(
         scope,
         state,
     })
+}
+
+/// The wiring-shape matrix, fail-closed before anything binds: config
+/// without a feed, a feed without config, or ingest without a tape all
+/// refuse. The disabled path is `None` here.
+fn ingest_shape_error(
+    config: &ServerConfig,
+    tape: Option<&TapeReader>,
+    boot: Option<&IngestBoot>,
+) -> Option<ServerError> {
+    if config.ingest.is_none() {
+        return boot.map(|_| {
+            ServerError::Service(
+                "ingest feed supplied without ingest config: set `ingest` or drop the feed"
+                    .to_owned(),
+            )
+        });
+    }
+    if boot.is_none() {
+        return Some(ServerError::Service(
+            "ingest configured but no feed attached: the served boot cannot ingest without a feed"
+                .to_owned(),
+        ));
+    }
+    if tape.is_none() {
+        return Some(ServerError::Service(
+            "ingest configured but the server booted without a durable tape".to_owned(),
+        ));
+    }
+    None
+}
+
+/// Build, bootstrap, and supervise the optional ingest service. The shape
+/// matrix above already refused every half-wired combination before the
+/// scope existed, so only the fully-wired path arrives here; a build failure
+/// (unknown symbol, failed bootstrap, refused subscribe) still closes the
+/// scope on the way out. Construction, bootstrap, and both spawned tasks run
+/// inside the tape's capability scope — the store gates on it, and the
+/// scope spawn only inherits what is ambient at spawn time.
+async fn boot_ingest(
+    config: &ServerConfig,
+    state: &Shared,
+    boot: Option<IngestBoot>,
+    scope: &mut Scope,
+) -> Result<(), ServerError> {
+    let (Some(ingest_config), Some(boot), Some(tape)) =
+        (config.ingest.clone(), boot, state.tape.as_ref())
+    else {
+        return Ok(());
+    };
+    let service = Arc::new(
+        fluent_wvr::CURRENT_CAPS
+            .scope(tape.caps.clone(), async {
+                let service = IngestService::new(
+                    ingest_config,
+                    Arc::clone(&tape.store),
+                    tape.permit.clone(),
+                    boot.feed,
+                    boot.providers,
+                    // Production default: regular US equity hours, weekends
+                    // closed, no dated exceptions. Dated holiday and half-day
+                    // lists ride a future config surface; until then a holiday
+                    // reads as an unfillable gap rather than a silent skip.
+                    SessionCalendar::us_equities(),
+                )?;
+                service.bootstrap(Utc::now().timestamp_millis()).await?;
+                Ok::<_, ServerError>(service)
+            })
+            .await?,
+    );
+    let session = service
+        .subscribe()
+        .await
+        .map_err(|error| ServerError::Service(format!("ingest subscribe refused: {error}")))?;
+    let run_service = Arc::clone(&service);
+    let publish_service = Arc::clone(&service);
+    let publish_state = Arc::clone(state);
+    fluent_wvr::CURRENT_CAPS
+        .scope(tape.caps.clone(), async {
+            scope.spawn(async move {
+                // The loop only exits on abort or channel close; either way
+                // the publisher keeps mirroring the last reading, whose
+                // growing watermark age names the stall.
+                let _ = run_service.run(session).await;
+            });
+            scope.spawn(async move {
+                let mut interval = tokio::time::interval(std::time::Duration::from_millis(
+                    INGEST_HEALTH_PUBLISH_MS,
+                ));
+                loop {
+                    publish_state.publish_ingest(publish_service.health());
+                    interval.tick().await;
+                }
+            });
+        })
+        .await;
+    Ok(())
 }

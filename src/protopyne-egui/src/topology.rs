@@ -361,12 +361,11 @@ pub fn source_frame(rows: &[ChartRow], source: PriceSource) -> OwnedOhlcv {
     }
 }
 
-/// Run one kernel batch over a frame, or refuse a missing kernel.
-pub(crate) fn kernel_series(
+pub(crate) fn kernel_result(
     kernel_id: &str,
     params: &ParamSet,
     frame: &OwnedOhlcv,
-) -> Result<Vec<Option<f64>>, EguiError> {
+) -> Result<protopyne_kernels::IndicatorResult, EguiError> {
     let registry = builtin_registry().map_err(|e| describe_kernel(&e))?;
     let kernel = registry
         .get(kernel_id)
@@ -375,8 +374,16 @@ pub(crate) fn kernel_series(
         })?;
     kernel
         .batch(&frame.views(), params)
-        .map(|result| result.values)
         .map_err(|e| describe_kernel(&e))
+}
+
+/// Run one kernel batch over a frame, or refuse a missing kernel.
+pub(crate) fn kernel_series(
+    kernel_id: &str,
+    params: &ParamSet,
+    frame: &OwnedOhlcv,
+) -> Result<Vec<Option<f64>>, EguiError> {
+    kernel_result(kernel_id, params, frame).map(|result| result.values)
 }
 
 /// A kernel's declared warmup for parameters: bars needed before the first

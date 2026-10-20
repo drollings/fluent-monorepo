@@ -17,6 +17,8 @@
 //! pane-plan node namespace, so two plugins never share a field, a
 //! fingerprint, or a cache key.
 
+use std::collections::BTreeMap;
+
 use fluent_wvr::component_downcast_ref;
 use fluent_wvr::prelude::*;
 use protopyne_chart_model::ChartRow;
@@ -35,7 +37,7 @@ use crate::delta_volume_profile::{DeltaVolumeProfileIndicator, DELTA_VOLUME_PROF
 use crate::fast_mas::{evaluate_fast_mas, FastMasConfig};
 use crate::integration_lite::{integration_lite_sub_pane, IntegrationLiteConfig};
 use crate::topology::{
-    consumer_cache_key, kernel_series, kernel_warmup, resolve_input_column, series_frame,
+    consumer_cache_key, kernel_result, kernel_warmup, resolve_input_column, series_frame,
     SeriesCatalog, SeriesSource,
 };
 
@@ -125,9 +127,17 @@ pub struct IndicatorSeries {
     pub attachment: SlotAttachment,
     /// Cache key binding the node to its parameter fingerprint.
     pub key: u64,
+    /// Pane identity; `None` keeps the shared default sub-pane.
+    pub pane: Option<String>,
 }
 
 impl IndicatorSeries {
+    /// Pane identity, falling back to `default`.
+    #[must_use]
+    pub fn pane_id<'a>(&'a self, default: &'a str) -> &'a str {
+        self.pane.as_deref().unwrap_or(default)
+    }
+
     /// The most recent resolved value, holes skipped.
     #[must_use]
     pub fn last_value(&self) -> Option<f64> {
@@ -393,6 +403,7 @@ impl ChartIndicator for IntegrationLiteIndicator {
                 style: style.to_owned(),
                 attachment: SlotAttachment::SubPane,
                 key: cache_key(node, fingerprint),
+                pane: None,
             })
             .collect();
         Ok(IndicatorEvaluation { series })
@@ -499,6 +510,7 @@ impl ChartIndicator for FastMasIndicator {
                 style: line.style,
                 attachment: SlotAttachment::MainOverlay,
                 key: series_key_for(node, fingerprint, producer_key),
+                pane: None,
             })
             .collect();
         Ok(IndicatorEvaluation { series })
@@ -541,42 +553,134 @@ fn default_kernel_source() -> String {
     crate::topology::default_source_spelling()
 }
 
-/// One kernel plugin's configuration: which kernel, its length, and its
-/// paint style.
-#[derive(
-    Debug, Clone, bon::Builder, serde::Serialize, serde::Deserialize, FieldAccess, Describable,
-)]
+/// One kernel plugin's configuration: which kernel, its declared parameters,
+/// its paint style, and its input source. `length` remains a legacy alias
+/// that old preferences migrate through.
+#[derive(Debug, Clone, bon::Builder, serde::Serialize, serde::Deserialize)]
 #[builder(start_fn = new)]
 pub struct KernelIndicatorConfig {
     /// Kernel id resolved against the builtin registry.
-    #[field(desc = "Kernel id", variants = "crate::kernel_ids")]
     #[builder(default = default_kernel())]
     pub kernel: String,
-    /// Kernel length parameter.
-    #[field(desc = "Kernel length")]
+    /// Legacy length alias; declared `length` wins when the kernel has one.
     #[builder(default = default_kernel_length())]
+    #[serde(default = "default_kernel_length")]
     pub length: i64,
     /// Line theme style key: a catalogue pick, never free text.
-    #[field(
-        desc = "Line theme style key",
-        variants = "crate::topology::theme_style_keys"
-    )]
     #[builder(default = default_kernel_style())]
     pub style: String,
-    /// Input series: a price-source catalogue pick (`close`, `hl2`, ...) or
-    /// `series:<node>` naming a published line (`fast_mas:first`, ...). The
-    /// series picker beside the settings pane offers the live producer nodes.
-    #[field(
-        desc = "Input series (price source or series:<node>)",
-        variants = "crate::topology::price_source_ids"
-    )]
+    /// Input series: a price-source catalogue pick or `series:<node>`.
     #[builder(default = default_kernel_source())]
     pub source: String,
+    /// Declared parameter values by name, encoded by kind. Missing entries
+    /// read the kernel's declared default.
+    #[builder(default)]
+    #[serde(default)]
+    pub params: BTreeMap<String, String>,
 }
 
+const FIXED_FIELDS: &[&str] = &["kernel", "length", "style", "source"];
+
 impl KernelIndicatorConfig {
+    /// The registered kernel's declared parameter and output schema.
+    pub fn schema(
+        &self,
+    ) -> Result<
+        (
+            &'static [protopyne_kernels::indicator::IndicatorParam],
+            &'static [protopyne_kernels::indicator::OutputSpec],
+        ),
+        EguiError,
+    > {
+        let registry = builtin_registry().map_err(|error| EguiError::Dependency {
+            reason: error.to_string(),
+        })?;
+        let indicator = registry
+            .get(&self.kernel)
+            .ok_or_else(|| EguiError::InvalidParam {
+                what: "kernel".to_owned(),
+                reason: format!("kernel {:?} is not in the kernel catalog", self.kernel),
+            })?;
+        let spec = indicator.spec();
+        Ok((spec.params(), spec.outputs()))
+    }
+
+    /// The effective parameter set: declared stored values, legacy length
+    /// migration, and declared defaults.
+    pub fn effective_params(&self) -> Result<protopyne_kernels::ParamSet, EguiError> {
+        use protopyne_kernels::indicator::{ParamKind, ParamValue};
+        let (declared, _) = self.schema()?;
+        for name in self.params.keys() {
+            if !declared.iter().any(|param| param.name == name) {
+                return Err(EguiError::InvalidParam {
+                    what: "params".to_owned(),
+                    reason: format!("kernel {:?} declares no parameter {name:?}", self.kernel),
+                });
+            }
+        }
+        let mut params = protopyne_kernels::ParamSet::new();
+        for param in declared {
+            let stored = self.params.get(param.name);
+            let value = match (param.kind, stored) {
+                (ParamKind::Int, Some(text)) => {
+                    let value = text.parse::<i64>().map_err(|_| EguiError::InvalidParam {
+                        what: param.name.to_owned(),
+                        reason: format!("expected an integer, got {text:?}"),
+                    })?;
+                    ParamValue::Int(value)
+                }
+                (ParamKind::Float, Some(text)) => {
+                    let value = text.parse::<f64>().map_err(|_| EguiError::InvalidParam {
+                        what: param.name.to_owned(),
+                        reason: format!("expected a number, got {text:?}"),
+                    })?;
+                    ParamValue::Float(value)
+                }
+                (ParamKind::Bool, Some(text)) => {
+                    ParamValue::Bool(text.parse::<bool>().map_err(|_| EguiError::InvalidParam {
+                        what: param.name.to_owned(),
+                        reason: format!("expected true/false, got {text:?}"),
+                    })?)
+                }
+                (_, None) if param.name == "length" => ParamValue::Int(self.length),
+                (_, None) => param.default,
+            };
+            let numeric = match value {
+                ParamValue::Int(value) => Some(value as f64),
+                ParamValue::Float(value) => Some(value),
+                ParamValue::Bool(_) => None,
+            };
+            if let Some(value) = numeric {
+                if !value.is_finite()
+                    || param.min.is_some_and(|min| value < min)
+                    || param.max.is_some_and(|max| value > max)
+                {
+                    return Err(EguiError::InvalidParam {
+                        what: param.name.to_owned(),
+                        reason: format!(
+                            "{value} is outside [{}, {}]",
+                            param.min.unwrap_or(f64::NEG_INFINITY),
+                            param.max.unwrap_or(f64::INFINITY)
+                        ),
+                    });
+                }
+            }
+            params = match value {
+                ParamValue::Int(value) => params.with_int(param.name, value),
+                ParamValue::Float(value) => params.with_float(param.name, value),
+                ParamValue::Bool(value) => params.with_bool(param.name, value),
+            };
+        }
+        if declared.iter().any(|param| param.name == "length")
+            && !self.params.contains_key("length")
+        {
+            params = params.with_int("length", self.length);
+        }
+        Ok(params)
+    }
+
     /// Fail-closed self-consistency check: a registered kernel, a positive
-    /// length, and a non-empty style key.
+    /// legacy length, a non-empty style key, and a valid declared schema.
     pub fn validate(&self) -> Result<(), EguiError> {
         if self.kernel.trim().is_empty() {
             return Err(EguiError::InvalidParam {
@@ -584,18 +688,7 @@ impl KernelIndicatorConfig {
                 reason: "kernel id must not be empty".to_owned(),
             });
         }
-        let registry = builtin_registry().map_err(|error| EguiError::Dependency {
-            reason: error.to_string(),
-        })?;
-        if registry.get(&self.kernel).is_none() {
-            return Err(EguiError::InvalidParam {
-                what: "kernel".to_owned(),
-                reason: format!(
-                    "kernel {:?} is not in the kernel catalog (free-text names outside the catalog no longer validate)",
-                    self.kernel
-                ),
-            });
-        }
+        self.schema()?;
         if self.length <= 0 {
             return Err(EguiError::InvalidParam {
                 what: "length".to_owned(),
@@ -617,13 +710,197 @@ impl KernelIndicatorConfig {
                 ),
             });
         }
+        self.effective_params()?;
         Ok(())
+    }
+
+    fn default_param_text(param: &protopyne_kernels::indicator::IndicatorParam) -> String {
+        use protopyne_kernels::indicator::ParamValue;
+        match param.default {
+            ParamValue::Int(value) => value.to_string(),
+            ParamValue::Float(value) => value.to_string(),
+            ParamValue::Bool(value) => value.to_string(),
+        }
+    }
+
+    /// A default config for one kernel with every declared default filled.
+    #[must_use]
+    pub fn defaults_for(kernel: &str) -> Self {
+        let mut config = Self::new().kernel(kernel.to_owned()).build();
+        if let Ok((declared, _)) = config.schema() {
+            for param in declared {
+                config
+                    .params
+                    .insert(param.name.to_owned(), Self::default_param_text(param));
+            }
+        }
+        config
     }
 }
 
 impl Default for KernelIndicatorConfig {
     fn default() -> Self {
         Self::new().build()
+    }
+}
+
+impl FieldAccess for KernelIndicatorConfig {
+    fn set_field(&mut self, name: &str, value: &str) -> Result<(), FieldError> {
+        match name {
+            "kernel" => {
+                if value.trim().is_empty() {
+                    return Err(FieldError::Parse(value.to_owned()));
+                }
+                value.clone_into(&mut self.kernel);
+                self.params.clear();
+                if let Ok((declared, _)) = self.schema() {
+                    for param in declared {
+                        self.params
+                            .insert(param.name.to_owned(), Self::default_param_text(param));
+                    }
+                }
+                Ok(())
+            }
+            "length" => {
+                self.length = value
+                    .parse()
+                    .map_err(|_| FieldError::Parse(value.to_owned()))?;
+                if self
+                    .schema()
+                    .is_ok_and(|(declared, _)| declared.iter().any(|p| p.name == "length"))
+                {
+                    self.params.insert("length".to_owned(), value.to_owned());
+                }
+                Ok(())
+            }
+            "style" => {
+                value.clone_into(&mut self.style);
+                Ok(())
+            }
+            "source" => {
+                value.clone_into(&mut self.source);
+                Ok(())
+            }
+            other => {
+                let (declared, _) = self
+                    .schema()
+                    .map_err(|error| FieldError::NotFound(format!("{other}: {error}")))?;
+                let Some(param) = declared.iter().find(|param| param.name == other) else {
+                    return Err(FieldError::NotFound(other.to_owned()));
+                };
+                use protopyne_kernels::indicator::ParamKind;
+                let valid = match param.kind {
+                    ParamKind::Int => value.parse::<i64>().is_ok(),
+                    ParamKind::Float => value.parse::<f64>().is_ok(),
+                    ParamKind::Bool => value.parse::<bool>().is_ok(),
+                };
+                if !valid {
+                    return Err(FieldError::Parse(value.to_owned()));
+                }
+                self.params.insert(other.to_owned(), value.to_owned());
+                Ok(())
+            }
+        }
+    }
+
+    fn get_field(&self, name: &str) -> Result<String, FieldError> {
+        match name {
+            "kernel" => Ok(self.kernel.clone()),
+            // A declared length reads the schema value, like `set_field`
+            // writes it; the legacy alias only shows when the kernel
+            // declares no length of its own.
+            "length" => {
+                if self
+                    .schema()
+                    .is_ok_and(|(declared, _)| declared.iter().any(|p| p.name == "length"))
+                {
+                    Ok(self
+                        .params
+                        .get("length")
+                        .cloned()
+                        .unwrap_or_else(|| self.length.to_string()))
+                } else {
+                    Ok(self.length.to_string())
+                }
+            }
+            "style" => Ok(self.style.clone()),
+            "source" => Ok(self.source.clone()),
+            other => {
+                let (declared, _) = self
+                    .schema()
+                    .map_err(|error| FieldError::NotFound(format!("{other}: {error}")))?;
+                let param = declared
+                    .iter()
+                    .find(|param| param.name == other)
+                    .ok_or_else(|| FieldError::NotFound(other.to_owned()))?;
+                Ok(self
+                    .params
+                    .get(other)
+                    .cloned()
+                    .unwrap_or_else(|| Self::default_param_text(param)))
+            }
+        }
+    }
+
+    fn field_names(&self) -> &'static [&'static str] {
+        FIXED_FIELDS
+    }
+}
+
+impl Describable for KernelIndicatorConfig {
+    fn describe(&self) -> serde_json::Value {
+        use protopyne_kernels::indicator::ParamKind;
+        let mut properties = serde_json::Map::new();
+        properties.insert(
+            "kernel".to_owned(),
+            serde_json::json!({
+                "type": "string",
+                "description": "Kernel id",
+                "enum": crate::kernel_ids(),
+            }),
+        );
+        properties.insert(
+            "style".to_owned(),
+            serde_json::json!({
+                "type": "string",
+                "description": "Line theme style key",
+                "enum": crate::topology::theme_style_keys(),
+            }),
+        );
+        properties.insert(
+            "source".to_owned(),
+            serde_json::json!({
+                "type": "string",
+                "description": "Input series (price source or series:<node>)",
+                "enum": crate::topology::price_source_ids(),
+            }),
+        );
+        if let Ok((declared, _)) = self.schema() {
+            for param in declared {
+                let mut hint = serde_json::json!({
+                    "description": param.description,
+                });
+                hint["type"] = serde_json::json!(match param.kind {
+                    ParamKind::Int => "integer",
+                    ParamKind::Float => "number",
+                    ParamKind::Bool => "boolean",
+                });
+                if let Some(min) = param.min {
+                    hint["minimum"] = serde_json::json!(min);
+                }
+                if let Some(max) = param.max {
+                    hint["maximum"] = serde_json::json!(max);
+                }
+                if param.step > 0.0 {
+                    hint["multipleOf"] = serde_json::json!(param.step);
+                }
+                properties.insert(param.name.to_owned(), hint);
+            }
+        }
+        serde_json::Value::Object(serde_json::Map::from_iter([(
+            "properties".to_owned(),
+            serde_json::Value::Object(properties),
+        )]))
     }
 }
 
@@ -759,15 +1036,26 @@ impl ChartIndicator for KernelIndicator {
     }
 
     fn default_config(&self) -> Box<dyn Component> {
-        Box::new(
-            KernelIndicatorConfig::new()
-                .kernel(self.kernel.clone())
-                .build(),
-        )
+        Box::new(KernelIndicatorConfig::defaults_for(&self.kernel))
     }
 
-    fn plan_nodes(&self, _config: &dyn Component) -> Result<Vec<String>, EguiError> {
-        Ok(vec![format!("kernel:{}", self.id)])
+    fn plan_nodes(&self, config: &dyn Component) -> Result<Vec<String>, EguiError> {
+        let config = component_downcast_ref::<KernelIndicatorConfig>(config)
+            .ok_or_else(|| wrong_config(self.id(), "KernelIndicator"))?;
+        let (_, outputs) = config.schema()?;
+        let mut nodes = Vec::with_capacity(outputs.len().max(1));
+        if outputs.is_empty() {
+            nodes.push(format!("kernel:{}", self.id));
+        } else {
+            for (index, output) in outputs.iter().enumerate() {
+                nodes.push(if index == 0 {
+                    format!("kernel:{}", self.id)
+                } else {
+                    format!("kernel:{}:{}", self.id, output.name)
+                });
+            }
+        }
+        Ok(nodes)
     }
 
     fn config_key(&self, config: &dyn Component) -> Result<u64, EguiError> {
@@ -798,38 +1086,74 @@ impl ChartIndicator for KernelIndicator {
             })?;
         let (column, producer) = resolve_input_column(&source, rows, series)?;
         let frame = series_frame(rows, &column)?;
-        let params = protopyne_kernels::smoothing::params_for_kernel(&config.kernel, config.length)
-            .map_err(|error| EguiError::Dependency {
-                reason: error.to_string(),
-            })?;
-        let mut values = kernel_series(&config.kernel, &params, &frame)?;
-        // Warmup composes along the path: with a producer, holes cover the
-        // producer's leading holes plus the kernel's own warmup. Without
-        // one the kernel's native holes stand (the default-source pin).
-        if producer > 0 {
+        let params = config.effective_params()?;
+        let result = kernel_result(&config.kernel, &params, &frame)?;
+        let (_, outputs) = config.schema()?;
+        let fingerprint = config_fingerprint(config);
+        let producer_key = producer_series_key(&config.source, series);
+        let holes = if producer > 0 {
             let own = kernel_warmup(&config.kernel, &params)?;
-            let holes = (producer + own).min(values.len());
-            for value in values.iter_mut().take(holes) {
-                *value = None;
-            }
-        }
-        let node = format!("kernel:{}", self.id);
-        let key = series_key_for(
-            &node,
-            config_fingerprint(config),
-            producer_series_key(&config.source, series),
-        );
-        let attachment = self.attachment;
-        Ok(IndicatorEvaluation {
-            series: vec![IndicatorSeries {
-                node,
+            producer.saturating_add(own).min(result.len())
+        } else {
+            0
+        };
+        let primary_node = format!("kernel:{}", self.id);
+        let mut series_out = Vec::with_capacity(outputs.len().max(1));
+        if outputs.is_empty() {
+            let mut values = result.values.clone();
+            mask_leading(&mut values, holes);
+            series_out.push(IndicatorSeries {
+                node: primary_node.clone(),
                 name: config.kernel.clone(),
                 values,
                 style: config.style.clone(),
-                attachment,
-                key,
-            }],
-        })
+                attachment: self.attachment,
+                key: series_key_for(&primary_node, fingerprint, producer_key),
+                pane: None,
+            });
+        } else {
+            for (index, output) in outputs.iter().enumerate() {
+                let node = if index == 0 {
+                    primary_node.clone()
+                } else {
+                    format!("kernel:{}:{}", self.id, output.name)
+                };
+                let mut values = if index == 0 {
+                    result.values.clone()
+                } else {
+                    result
+                        .secondary(output.name)
+                        .ok_or_else(|| EguiError::Dependency {
+                            reason: format!(
+                                "kernel {} declared output {:?} but produced none",
+                                config.kernel, output.name
+                            ),
+                        })?
+                        .to_vec()
+                };
+                mask_leading(&mut values, holes);
+                series_out.push(IndicatorSeries {
+                    node: node.clone(),
+                    name: if index == 0 {
+                        config.kernel.clone()
+                    } else {
+                        format!("{} {}", config.kernel, output.name)
+                    },
+                    values,
+                    style: config.style.clone(),
+                    attachment: self.attachment,
+                    key: series_key_for(&node, fingerprint, producer_key),
+                    pane: Some(format!("kernel:{}", self.id)),
+                });
+            }
+        }
+        Ok(IndicatorEvaluation { series: series_out })
+    }
+}
+
+fn mask_leading(values: &mut [Option<f64>], holes: usize) {
+    for value in values.iter_mut().take(holes) {
+        *value = None;
     }
 }
 
@@ -967,3 +1291,7 @@ mod picker_tests;
 #[cfg(test)]
 #[path = "../tests/indicator_manifest.rs"]
 mod indicator_manifest_tests;
+
+#[cfg(test)]
+#[path = "../tests/kernel_plugins.rs"]
+mod kernel_plugin_tests;
