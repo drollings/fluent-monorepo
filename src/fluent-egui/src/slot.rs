@@ -230,6 +230,8 @@ const STACK_ORIGIN: (f32, f32) = (8.0, 36.0);
 /// agree on where the controls are — there is exactly one layout truth.
 /// Scrolling (a wheel over the legend) moves every card together and clamps
 /// to the content, so the list can never be dragged off its own cards.
+/// NOT-A-REGISTRY (M13): `order` is layout truth (paint + hit-test follow
+/// insertion order); sorting would repaint cards in the wrong order.
 pub struct HotSlotStack {
     order: Vec<String>,
     slots: HashMap<String, HotSlot>,

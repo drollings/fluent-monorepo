@@ -34,7 +34,6 @@ use fluent_concurrency::pool::ResultPool;
 use fluent_concurrency::stream::StreamAbort;
 use fluent_wvr::prelude::*;
 use fluent_wvr::CURRENT_CAPS;
-use protopyne_types::Validate as _;
 
 use crate::capability::{check_binding, check_present, StoreStorage};
 use crate::coverage::{Coverage, FreshnessPolicy, GapClass};
@@ -185,7 +184,7 @@ pub struct RepairConfig {
     pub backoff_ceiling_ms: u64,
 }
 
-impl protopyne_types::Validate for RepairConfig {
+impl fluent_wvr::validate::Validate for RepairConfig {
     type Err = String;
 
     fn validate(&self) -> Result<(), Self::Err> {
@@ -219,8 +218,8 @@ impl WorkUnit for RepairConfig {
     }
 
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
-        protopyne_types::check_for_execute(self, "repair config invalid")?;
-        Ok(protopyne_types::valid_output("repair config valid"))
+        fluent_wvr::validate::check_for_execute(self, "repair config invalid")?;
+        Ok(fluent_wvr::validate::valid_output("repair config valid"))
     }
 }
 
@@ -641,7 +640,7 @@ impl WorkUnit for RepairWorker {
     }
 
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
-        protopyne_types::check_for_execute(&self.config, "repair config invalid")?;
+        fluent_wvr::validate::check_for_execute(&self.config, "repair config invalid")?;
         check_binding(&self.permit, self.store.root()).map_err(WorkError::from)?;
         check_present(self.store.permit()).map_err(WorkError::from)?;
         let repair = common_core::runtime::block_on(self.repair_attempt());

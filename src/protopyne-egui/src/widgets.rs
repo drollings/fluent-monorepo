@@ -4,11 +4,14 @@
 //! the paint edge). The top bar is the terminal's Material app bar
 //! (workstation + touch): a dock toggle, a ticker button opening the symbol
 //! catalogue, an indicator selector, the timeframe selector, a display-mode
-//! pulldown, a `Range` button opening the interactive range dialog (presets
-//! atop a Beginning calendar, applied with OK), a refresh button, and a
-//! label-free pan cluster (rewind-to-beginning, rewind, forward,
-//! forward-to-last). Every control draws one height and one bold type style,
-//! so the bar reads as one Material row.
+//! pulldown, a refresh button, and a label-free pan cluster
+//! (rewind-to-beginning, rewind, play/pause, forward, forward-to-last).
+//! Chart-range picking (presets atop a Beginning calendar) lives as an
+//! expansion of the dock drawer, not as a menu dialog, so the bar stays one
+//! row. The replay window is the chart's own visible window at the moment
+//! play is pressed — no picker — with its edges marked on the pane divider.
+//! Every control draws one height and one bold type style, so the bar reads
+//! as one Material row.
 //! Selecting a range grows, prunes, or unloads the loaded history to that span
 //! on demand; the chart never pre-fetches a range it is not showing.
 
@@ -16,7 +19,8 @@ use chrono::{Datelike as _, NaiveDate};
 use fluent_wvr::prelude::*;
 use fluent_wvr::{Describable, FieldAccess};
 use protopyne_chart_model::{ChartType, DateRange};
-use protopyne_types::{check_for_execute, valid_output, Validate};
+
+use fluent_wvr::validate::{check_for_execute, valid_output, Validate};
 
 use crate::chart::TimeframeKey;
 
@@ -31,11 +35,180 @@ pub const TOP_BAR_CHART_TYPES: [ChartType; 4] = [
     ChartType::Heikin,
 ];
 
+/// How long the pointer must stay down on the play button before the press
+/// becomes a long-press and opens the speed popup instead of toggling play
+/// on release, in egui UI seconds.
+pub const PLAY_LONG_PRESS_SECS: f64 = 0.5;
+
+/// Long-press state of the menu-bar play button: while the pointer stays
+/// down on the button past [`PLAY_LONG_PRESS_SECS`], the speed popup opens
+/// instead of toggling play on release. Owned by the workspace; the top bar
+/// only feeds it pointer state. Times are egui UI seconds
+/// (`ui.input(|input| input.time)`), so the machine is pure arithmetic with
+/// no clock of its own.
+#[derive(Debug, Default)]
+pub struct PlayPressState {
+    /// UI seconds when the current button hold started, if the pointer is
+    /// down on it.
+    pub down_since_sec: Option<f64>,
+    /// Whether this hold already opened the popup: the release click is then
+    /// consumed instead of toggling play.
+    pub long_fired: bool,
+    /// Whether the speed popup is open.
+    pub popup_open: bool,
+}
+
+impl PlayPressState {
+    /// A press started at UI time `now_sec`.
+    pub fn press_started(&mut self, now_sec: f64) {
+        self.down_since_sec = Some(now_sec);
+    }
+
+    /// Poll a hold at UI time `now_sec`: true exactly once per hold when it
+    /// crosses the long-press threshold while the popup is still closed —
+    /// the caller opens the popup and records the long-press.
+    pub fn poll_hold(&mut self, now_sec: f64) -> bool {
+        let Some(since) = self.down_since_sec else {
+            return false;
+        };
+        if self.popup_open {
+            return false;
+        }
+        if now_sec - since >= PLAY_LONG_PRESS_SECS {
+            self.popup_open = true;
+            self.long_fired = true;
+            return true;
+        }
+        false
+    }
+
+    /// A pointer release: `clicked` names a release on the button. Returns
+    /// whether the release toggles play — never after a long-press, whose
+    /// release click is consumed instead.
+    pub fn release(&mut self, clicked: bool) -> bool {
+        self.down_since_sec = None;
+        if clicked {
+            // A consumed long-press release toggles nothing; anything else
+            // toggles, and a release anywhere else leaves no armed consume
+            // behind to eat the next tap.
+            !std::mem::replace(&mut self.long_fired, false)
+        } else {
+            self.long_fired = false;
+            false
+        }
+    }
+}
+
+/// Replay transport speed in candles at the selected timeframe: Slow shows
+/// one candle every three seconds, Normal paces one candle per second, Fast
+/// steps five candles per second, and Full advances as fast as the core
+/// calculates (bounded only by the gateway's per-step cap). Rates name chart
+/// candles — one 5M candle per second at Normal on a 5M chart replays five
+/// 1M candles per second, appearing as one candle per second — never base
+/// bars, so the selected speed feels the same on every timeframe. Two
+/// detents sit between Slow and Normal, and two more between Normal and
+/// Fast, so the slider moves in small loudness-like steps at both ends.
+/// Slider levels run `0..=7` in pedigree order (Full last).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ReplaySpeed {
+    /// One candle every three seconds.
+    Slow,
+    /// One candle every two seconds.
+    Unhurried,
+    /// Two candles every three seconds.
+    Steady,
+    /// One candle per second.
+    #[default]
+    Normal,
+    /// Two candles per second.
+    Brisk,
+    /// Three candles per second.
+    Swift,
+    /// Five candles per second.
+    Fast,
+    /// As fast as calculated: every frame steps the gateway maximum.
+    Full,
+}
+
+impl ReplaySpeed {
+    /// Slider position for this speed, in pedigree order.
+    pub fn level(self) -> u8 {
+        match self {
+            Self::Slow => 0,
+            Self::Unhurried => 1,
+            Self::Steady => 2,
+            Self::Normal => 3,
+            Self::Brisk => 4,
+            Self::Swift => 5,
+            Self::Fast => 6,
+            Self::Full => 7,
+        }
+    }
+
+    /// Speed for a slider position, clamped into range.
+    pub fn from_level(level: u8) -> Self {
+        match level {
+            0 => Self::Slow,
+            1 => Self::Unhurried,
+            2 => Self::Steady,
+            3 => Self::Normal,
+            4 => Self::Brisk,
+            5 => Self::Swift,
+            6 => Self::Fast,
+            _ => Self::Full,
+        }
+    }
+
+    /// Short label for the speed control.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Slow => "slow · 1 candle / 3s",
+            Self::Unhurried => "1 candle / 2s",
+            Self::Steady => "2 candles / 3s",
+            Self::Normal => "1 candle / s",
+            Self::Brisk => "2 candles / s",
+            Self::Swift => "3 candles / s",
+            Self::Fast => "fast · 5 candles / s",
+            Self::Full => "full speed",
+        }
+    }
+
+    /// Paced steps per second in display candles, or `None` when uncapped.
+    pub fn candles_per_sec(self) -> Option<f64> {
+        match self {
+            Self::Slow => Some(1.0 / 3.0),
+            Self::Unhurried => Some(1.0 / 2.0),
+            Self::Steady => Some(2.0 / 3.0),
+            Self::Normal => Some(1.0),
+            Self::Brisk => Some(2.0),
+            Self::Swift => Some(3.0),
+            Self::Fast => Some(5.0),
+            Self::Full => None,
+        }
+    }
+
+    /// Paced steps per second in display candles, or `None` when uncapped.
+    /// Kept as the bar-denominated alias: bars and candles are the same
+    /// display unit, renamed for the terminal.
+    pub fn bars_per_sec(self) -> Option<f64> {
+        self.candles_per_sec()
+    }
+}
+
 /// Label of the top-bar indicator selector.
 pub const INDICATOR_SEARCH_LABEL: &str = "Indicators";
+/// Label of the top-bar bookmark picker.
+pub const BOOKMARK_SEARCH_LABEL: &str = "Bookmarks";
 /// Legacy label kept for the golden pin (the ticker button now shows the
 /// symbol itself; this names the catalogue it opens).
 pub const SYMBOL_SEARCH_LABEL: &str = "Symbols";
+/// Pulldown chevron painted after every catalogue button label.
+///
+/// U+25BE (▾): the conventional small down triangle, carried by the
+/// monospace bundle's proportional-fallback leg (and by Hack). The previous
+/// U+2BC6 (⯆) is in no chain font — not the bundles, not the egui
+/// defaults, not even DejaVu — so it painted as tofu everywhere.
+pub const PULLDOWN_CHEVRON: &str = "▾";
 
 /// Ephemeral top-bar menu drafts: the Beginning and Jump-To-Time text fields
 /// inside the data-range menu. A `Component` so the menu edits through the
@@ -164,8 +337,14 @@ fn days_in_month(year: i32, month: u32) -> u32 {
 /// Clicking a day returns its `YYYY-MM-DD` text (the Beginning draft's
 /// spelling) and highlights `selected` when the day matches. Pure paint: the
 /// caller owns the cursor and the text.
+///
+/// `salt` names this calendar instance: every calendar painted in the same
+/// UI needs a distinct salt, or their day grids share an egui id and the
+/// second use mispaints (two replay calendars on the same month collide
+/// without it).
 pub fn paint_calendar(
     ui: &mut egui::Ui,
+    salt: &str,
     state: &mut CalendarState,
     selected: Option<NaiveDate>,
 ) -> Option<String> {
@@ -188,7 +367,7 @@ pub fn paint_calendar(
         ui.label("unavailable month");
         return None;
     }
-    egui::Grid::new(("calendar_grid", state.year, state.month))
+    egui::Grid::new((salt, state.year, state.month))
         .num_columns(7)
         .show(ui, |grid| {
             for (index, day) in ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"]
@@ -227,30 +406,36 @@ pub fn paint_calendar(
     picked
 }
 
-/// What the top bar raised this frame: a selection, a modal opener, a
-/// refresh request, a view fit/scroll, or a dock/menu draft commit.
+/// What the top bar raised this frame: a selection, a picker opener, a
+/// refresh request, a view fit/scroll, or the replay transport toggle.
 #[derive(Debug, Clone, PartialEq)]
 pub enum TopBarAction {
     /// The dock toggle (far left of the bar) flipped the left drawer.
     ToggleDock,
     /// The symbol selector picked a ticker.
     PickedSymbol(String),
-    /// The ticker button opened the Symbol Selection Modal.
+    /// The ticker button opened the symbol picker.
     OpenSymbolSearch,
     /// A timeframe selector picked a key.
     PickedTimeframe(TimeframeKey),
-    /// The Range button opened (or closed) the interactive range dialog.
-    ToggleRangeMenu,
     /// The chart-type selector picked a type.
     PickedChartType(ChartType),
-    /// The indicator search trigger opened the Indicator Search modal.
+    /// The indicator search trigger opened the indicator picker.
     OpenIndicatorSearch,
+    /// The bookmark button opened the bookmark picker for the active ticker.
+    OpenBookmarkSearch,
+    /// The magnifier button toggled the Jump To Time popup.
+    OpenJumpSearch,
+    /// The Save Layout button asked to persist the active ticker's layout.
+    SaveLayout,
     /// The refresh button asked for fresh gateway reads.
     Refresh,
     /// The rewind-to-beginning button asked to show the earliest loaded bar.
     RewindToBeginning,
     /// The rewind button asked to step back one pan unit.
     Rewind,
+    /// The replay play/pause button toggled the backtest transport.
+    ToggleReplayPlay,
     /// The forward button asked to step ahead one pan unit.
     Forward,
     /// The forward-to-last button asked to show the latest loaded bar.
@@ -287,21 +472,38 @@ fn bar_menu_button(ui: &mut egui::Ui, label: &str, add_contents: impl FnOnce(&mu
 /// Paint the terminal Material top bar; returns the one action this frame
 /// raised, if any.
 ///
-/// Left to right: dock toggle, ticker, indicator selector, the timeframe
-/// selector, display-mode pulldown, the `Range` button (opens the interactive
-/// range dialog), refresh button, and the label-free pan cluster
-/// (rewind-to-beginning, rewind, forward, forward-to-last). Every control
-/// draws at [`TOP_BAR_BUTTON_HEIGHT`] with the shared bold [`bar_text`]
-/// style, so the app bar reads as one material row.
+/// Left to right: dock toggle, ticker, save layout, the timeframe selector,
+/// display-mode pulldown, refresh button, and the label-free pan cluster
+/// (rewind-to-beginning, rewind, play/pause, forward, forward-to-last),
+/// jump-to-time, bookmarks, indicator selector. A short tap on play toggles
+/// the backtest transport; a long-press (holding past
+/// [`PLAY_LONG_PRESS_SECS`]) opens the replay speed popup instead, anchored
+/// at the button. Every control draws at [`TOP_BAR_BUTTON_HEIGHT`] with the
+/// shared bold [`bar_text`] style, so the app bar reads as one material row.
 /// An untouched frame raises nothing.
+///
+/// The picker buttons (ticker, bookmarks, indicators, jump) record their
+/// button rects into the anchor outs on click: the workspace paints the
+/// corresponding titlebar-less popup anchored below the button, like the
+/// Candles pulldown, so no picker needs its own window chrome.
+///
+/// Range picking lives in the dock drawer, not here: the bar carries no
+/// dialog state, so a preset or calendar day can never blank the pane
+/// mid-gesture.
 #[allow(clippy::too_many_arguments)]
 pub fn paint_top_bar(
     ui: &mut egui::Ui,
     symbol: &str,
     timeframe: TimeframeKey,
-    range_label: &str,
     chart_type: ChartType,
     dock_open: bool,
+    replay_playing: bool,
+    play_press: &mut PlayPressState,
+    replay_speed: &mut ReplaySpeed,
+    symbol_anchor: &mut Option<egui::Rect>,
+    indicator_anchor: &mut Option<egui::Rect>,
+    bookmark_anchor: &mut Option<egui::Rect>,
+    jump_anchor: &mut Option<egui::Rect>,
 ) -> Option<TopBarAction> {
     let mut action = None;
     ui.horizontal(|bar| {
@@ -320,21 +522,16 @@ pub fn paint_top_bar(
             action = Some(TopBarAction::ToggleDock);
         }
         bar.separator();
-        // 2. Ticker button — current symbol, opens the catalogue.
-        if bar_button(bar, 110.0, &format!("📈 {symbol} ▾"))
-            .on_hover_text("Symbol catalogue")
-            .clicked()
-        {
+        // 2. Ticker button — current symbol, opens the catalogue. The rect
+        // is stored so the popup hangs below this button.
+        let ticker_response = bar_button(bar, 110.0, &format!("📈 {symbol} {PULLDOWN_CHEVRON}"))
+            .on_hover_text("Symbol catalogue");
+        if ticker_response.clicked() {
+            *symbol_anchor = Some(ticker_response.rect);
             action = Some(TopBarAction::OpenSymbolSearch);
         }
         bar.separator();
-        // 3. Timeframe selector — right of the indicators button, per the
-        // app-bar grouping of chart controls.
-        if let Some(key) = paint_timeframe_toolbar(bar, timeframe) {
-            action = Some(TopBarAction::PickedTimeframe(key));
-        }
-        bar.separator();
-        // 4. Refresh button: fresh gateway reads (replaces the dock's old
+        // 3. Refresh button: fresh gateway reads (replaces the dock's old
         // gateway-terminal refresh affordance).
         if bar_button(bar, 32.0, "⟳")
             .on_hover_text("Refresh gateway reads")
@@ -342,12 +539,63 @@ pub fn paint_top_bar(
         {
             action = Some(TopBarAction::Refresh);
         }
+        // 4. Jump To Time — magnifier toggling the jump popup below this
+        // button, like the Candles pulldown. The popup carries the time
+        // input, Go, and a calendar that sets the date part.
+        let jump_response = bar
+            .add_sized(
+                [TOP_BAR_BUTTON_HEIGHT, TOP_BAR_BUTTON_HEIGHT],
+                egui::Button::new(bar_text("🔍")),
+            )
+            .on_hover_text("Jump to time");
+        if jump_response.clicked() {
+            *jump_anchor = Some(jump_response.rect);
+            action = Some(TopBarAction::OpenJumpSearch);
+        }
+        // 5. Bookmarks — the active ticker's bookmarked candles. The rect
+        // is stored so the picker hangs below this button.
+        let bookmark_response = bar_button(bar, 60.0, &format!("🔖 {PULLDOWN_CHEVRON}"))
+            .on_hover_text("Bookmarked candles for this ticker");
+        if bookmark_response.clicked() {
+            *bookmark_anchor = Some(bookmark_response.rect);
+            action = Some(TopBarAction::OpenBookmarkSearch);
+        }
         bar.separator();
-        // 5. Pan buttons: jump to the beginning, step back one pan unit,
-        // step forward one pan unit, jump to the last bar. Each pan refits
-        // the visible window's Y axis to the pane height. These used to live
-        // on the price-axis right-click menu; they ride the bar now so the
-        // eyes stay on the data.
+        // 6. Indicator selector. The rect is stored so the picker hangs
+        // below this button.
+        let indicator_response = bar_button(bar, 60.0, &format!("📊 {PULLDOWN_CHEVRON}"))
+            .on_hover_text("Indicator catalogue");
+        if indicator_response.clicked() {
+            *indicator_anchor = Some(indicator_response.rect);
+            action = Some(TopBarAction::OpenIndicatorSearch);
+        }
+        // 7. Display-mode pulldown.
+        let current_symbol = chart_type_symbol(chart_type);
+        bar_menu_button(
+            bar,
+            &format!("{current_symbol} {PULLDOWN_CHEVRON}"),
+            |menu_ui| {
+                for kind in TOP_BAR_CHART_TYPES {
+                    if menu_ui
+                        // .selectable_label(kind == chart_type, &format!("{current_symbol}"))
+                        .selectable_label(kind == chart_type, chart_type_symbol(kind))
+                        .clicked()
+                    {
+                        action = Some(TopBarAction::PickedChartType(kind));
+                        menu_ui.close();
+                    }
+                }
+            },
+        );
+        bar.separator();
+        // 8. Pan buttons: jump to the beginning, step back one pan unit,
+        // the replay play/pause transport, step forward one pan unit, jump
+        // to the last bar. Each pan refits the visible window's Y axis to
+        // the pane height. These used to live on the price-axis right-click
+        // menu; they ride the bar now so the eyes stay on the data. The
+        // play/pause button sits between rewind and forward: with no replay
+        // window picked it backtests the full loaded history from its first
+        // bar, else it replays the picked start..end window.
         if bar
             .add_sized(
                 [TOP_BAR_BUTTON_HEIGHT, TOP_BAR_BUTTON_HEIGHT],
@@ -367,6 +615,56 @@ pub fn paint_top_bar(
             .clicked()
         {
             action = Some(TopBarAction::Rewind);
+        }
+        // The play button answers two gestures: a short tap toggles the
+        // backtest transport, while holding past PLAY_LONG_PRESS_SECS opens
+        // the replay speed popup anchored at the button instead — the
+        // release after a long-press is consumed, never a toggle.
+        let now_sec = bar.ctx().input(|input| input.time);
+        let play_response = bar
+            .add_sized(
+                [TOP_BAR_BUTTON_HEIGHT, TOP_BAR_BUTTON_HEIGHT],
+                egui::Button::new(bar_text(if replay_playing { "⏸" } else { "▶" })),
+            )
+            .on_hover_text(if replay_playing {
+                "Pause the backtest replay (long-press for speed)"
+            } else {
+                "Play the backtest replay (long-press for speed)"
+            });
+        if play_response.clicked() && play_press.release(true) {
+            action = Some(TopBarAction::ToggleReplayPlay);
+        }
+        if play_response.is_pointer_button_down_on() {
+            if play_press.down_since_sec.is_none() {
+                play_press.press_started(now_sec);
+            } else if play_press.poll_hold(now_sec) {
+                // Popup opens; the release click is consumed by long_fired.
+            }
+        } else {
+            play_press.down_since_sec = None;
+            if !play_response.clicked() {
+                play_press.long_fired = false;
+            }
+        }
+        if play_press.popup_open {
+            egui::Popup::menu(&play_response)
+                .open_bool(&mut play_press.popup_open)
+                .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+                .show(|popup_ui| {
+                    popup_ui.label(bar_text("Replay speed"));
+                    let mut level = replay_speed.level();
+                    if popup_ui
+                        .add(
+                            egui::Slider::new(&mut level, 0..=7)
+                                .step_by(1.0)
+                                .show_value(false),
+                        )
+                        .changed()
+                    {
+                        *replay_speed = ReplaySpeed::from_level(level);
+                    }
+                    popup_ui.label(replay_speed.label());
+                });
         }
         if bar
             .add_sized(
@@ -389,61 +687,46 @@ pub fn paint_top_bar(
             action = Some(TopBarAction::ForwardToEnd);
         }
         bar.separator();
-        // 6. Indicator selector.
-        if bar_button(bar, 140.0, &format!("📊 {INDICATOR_SEARCH_LABEL} ▾"))
-            .on_hover_text("Indicator catalogue")
-            .clicked()
-        {
-            action = Some(TopBarAction::OpenIndicatorSearch);
+        // 9. Timeframe selector — right of the indicators button, per the
+        // app-bar grouping of chart controls.
+        if let Some(key) = paint_timeframe_toolbar(bar, timeframe) {
+            action = Some(TopBarAction::PickedTimeframe(key));
         }
         bar.separator();
-        // 7. Display-mode pulldown.
-        let current_label = chart_type_label(chart_type);
-        bar_menu_button(bar, &format!("🕯 {current_label} ▾"), |menu_ui| {
-            for kind in TOP_BAR_CHART_TYPES {
-                if menu_ui
-                    .selectable_label(kind == chart_type, bar_text(chart_type_label(kind)))
-                    .clicked()
-                {
-                    action = Some(TopBarAction::PickedChartType(kind));
-                    menu_ui.close();
-                }
-            }
-        });
-        bar.separator();
-        // 8. Range button: opens the interactive range dialog (presets atop a
-        // Beginning calendar, applied with OK). The dialog, not this button,
-        // raises the range/beginning actions, so a preset never disappears the
-        // chart mid-click.
-        if bar_button(bar, 150.0, &format!("📅 Range: {range_label} ▾"))
-            .on_hover_text("Chart range and Beginning")
+        // 10. Save Layout — persists the active ticker's chart and indicator
+        // settings, overwriting that ticker's previous entry. Nothing else
+        // writes `protopyne.json`.
+        if bar_button(bar, 50.0, "💾")
+            .on_hover_text("Save the current ticker's layout")
             .clicked()
         {
-            action = Some(TopBarAction::ToggleRangeMenu);
+            action = Some(TopBarAction::SaveLayout);
         }
     });
     action
 }
 
-/// Paint the interactive range dialog: preset spans and an interactive
-/// Beginning calendar over the workspace drafts, applied only when the
-/// operator presses OK (Cancel discards).
+/// Paint the range picker: preset spans and an interactive Beginning
+/// calendar over the workspace drafts. The caller owns the
+/// drafts and applies the returned choice; nothing on the chart moves until
+/// the caller applies, so a preset click or a calendar day never blanks the
+/// pane mid-gesture.
 ///
-/// Returns the chosen range on OK, or `None` while the dialog is untouched.
-/// The caller owns the open flag, the draft preset, and the calendar cursor,
-/// so the dialog is pure paint over one truth.
+/// Dock-embedded (no window of its own): the caller renders this inside its
+/// own surface, which grows on the Y axis to fit it, and the choice (if any)
+/// applies immediately. Wraps the preset chips so narrow drawers still show
+/// every span.
 pub fn paint_range_dialog(
     ui: &mut egui::Ui,
     draft_range: &mut Option<DateRange>,
     beginning_text: &mut String,
-    jump_text: &mut String,
     calendar: &mut CalendarState,
     active_range: Option<DateRange>,
 ) -> Option<RangeChoice> {
     let mut choice = None;
-    // One Material row of slim preset chips: the widened dialog holds all six
-    // without wrapping.
-    ui.horizontal(|row| {
+    // Slim preset chips in a wrapping row: narrow drawers stack them instead
+    // of clipping them.
+    ui.horizontal_wrapped(|row| {
         row.spacing_mut().item_spacing.x = 8.0;
         for preset in DateRange::chart_presets() {
             let selected = (*draft_range == Some(preset))
@@ -466,7 +749,7 @@ pub fn paint_range_dialog(
     ui.separator();
     ui.label(bar_text("Beginning (from date to the current data)"));
     let selected = NaiveDate::parse_from_str(beginning_text.trim(), "%Y-%m-%d").ok();
-    if let Some(date) = paint_calendar(ui, calendar, selected) {
+    if let Some(date) = paint_calendar(ui, "range-beginning", calendar, selected) {
         beginning_text.clone_from(&date);
         *draft_range = None;
     }
@@ -482,42 +765,20 @@ pub fn paint_range_dialog(
         }
     });
     ui.separator();
-    ui.label(bar_text("Jump To Time"));
-    let mut close = false;
-    ui.horizontal(|row| {
-        row.add(
-            egui::TextEdit::singleline(jump_text)
-                .hint_text("2026-03-02 09:30")
-                .desired_width(150.0),
-        );
-        if row.button(bar_text("Go")).clicked() {
-            choice = Some(RangeChoice::Jump);
-            close = true;
-        }
-    });
-    ui.separator();
     ui.horizontal(|row| {
         if row.button(bar_text("OK")).clicked() {
             choice = Some(RangeChoice::Apply);
-            close = true;
         }
         if row.button(bar_text("Cancel")).clicked() {
             choice = Some(RangeChoice::Cancel);
-            close = true;
         }
     });
-    if close {
-        ui.close();
-    }
     choice
 }
 
-/// Slim preset chip width: the six short labels (`1M`–`All`) fit one row in
-/// a widened dialog without crowding.
+/// Slim preset chip width: the six short labels (`1M`–`All`) share one
+/// Material row height with every other top-bar control.
 pub const RANGE_PRESET_BUTTON_WIDTH: f32 = 48.0;
-/// Range dialog width: wide enough that the six slim preset chips sit on one
-/// Material row with the shared 8dp spacing.
-pub const RANGE_DIALOG_WIDTH: f32 = 560.0;
 
 /// What the range dialog's action row raised.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -526,8 +787,18 @@ pub enum RangeChoice {
     Apply,
     /// Discard the draft and close.
     Cancel,
-    /// Jump the time axis to the drafted target.
-    Jump,
+}
+
+/// Short top-bar label for one wired chart type.
+#[must_use]
+pub fn chart_type_symbol(kind: ChartType) -> &'static str {
+    match kind {
+        ChartType::Candles => "┿",
+        ChartType::Heikin => "┿",
+        ChartType::Line => "🗠",
+        ChartType::Area => "📊",
+        other => other.name(),
+    }
 }
 
 /// Short top-bar label for one wired chart type.

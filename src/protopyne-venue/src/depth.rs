@@ -100,7 +100,7 @@ impl DepthBook {
         })
     }
 
-    /// Cap levels per side (bounds the book; see [`Validate`](protopyne_types::Validate)).
+    /// Cap levels per side (bounds the book; see [`Validate`](fluent_wvr::validate::Validate)).
     #[must_use]
     pub fn with_max_levels(mut self, max_levels: usize) -> Self {
         self.max_levels = max_levels;
@@ -274,7 +274,7 @@ fn upsert(
     Ok(())
 }
 
-impl protopyne_types::Validate for DepthBook {
+impl fluent_wvr::validate::Validate for DepthBook {
     type Err = String;
     fn validate(&self) -> Result<(), Self::Err> {
         if self.max_levels < 1 {
@@ -483,13 +483,13 @@ impl Default for BookManager {
     }
 }
 
-impl protopyne_types::Validate for BookManager {
+impl fluent_wvr::validate::Validate for BookManager {
     type Err = String;
     fn validate(&self) -> Result<(), Self::Err> {
-        protopyne_types::Validate::validate(&self.index)
+        fluent_wvr::validate::Validate::validate(&self.index)
             .map_err(|e| format!("book manager index invalid: {e}"))?;
         for book in self.books.values() {
-            protopyne_types::Validate::validate(book)
+            fluent_wvr::validate::Validate::validate(book)
                 .map_err(|e| format!("book manager book invalid: {e}"))?;
         }
         Ok(())

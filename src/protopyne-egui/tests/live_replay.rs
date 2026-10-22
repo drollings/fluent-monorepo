@@ -53,26 +53,64 @@ fn seat_live(workspace: &mut ChartWorkspace, cursor: usize) {
 }
 
 /// A script replay gateway: opens at the requested start bar over a fixed
-/// window, steps the cursor, and records every verb.
+/// window, steps the cursor, and records every verb. With no history it
+/// serves no chart or replay time axis (the legacy identity mapping); with
+/// history it serves the full series and a matching replay time axis, so the
+/// terminal maps display indices to server indices by timestamp.
 struct ScriptReplay {
     total: u64,
     cursor: Mutex<u64>,
     calls: Mutex<Vec<String>>,
     structures: Mutex<Vec<String>>,
+    history: Vec<ChartRow>,
 }
 
 impl ScriptReplay {
-    fn new(total: u64) -> Self {
+    /// A script gateway over `total` ladder bars: chart reads serve the
+    /// fixture series and the replay time axis stamps every bar, so opens
+    /// map display indices to server indices by timestamp.
+    fn new(total: usize) -> Self {
+        Self::with_history(ladder_rows(total))
+    }
+
+    /// A script gateway over a full server history: chart reads serve the
+    /// trailing take of it, and the replay time axis stamps every bar.
+    fn with_history(history: Vec<ChartRow>) -> Self {
+        let total = history.len() as u64;
         Self {
             total,
             cursor: Mutex::new(0),
             calls: Mutex::new(Vec::new()),
             structures: Mutex::new(Vec::new()),
+            history,
         }
     }
 
     fn state_of(&self, session: &str) -> ReplayStateView {
         idle_state(*self.cursor.lock().expect("cursor locks"), self.total).with_session(session)
+    }
+
+    fn bars_of(rows: &[ChartRow]) -> protopyne_view::ChartBars {
+        protopyne_view::ChartBars {
+            rows: rows
+                .iter()
+                .map(|row| protopyne_view::ChartBar {
+                    time: row.time,
+                    open: row.open,
+                    high: row.high,
+                    low: row.low,
+                    close: row.close,
+                    volume: row.volume,
+                })
+                .collect(),
+            dropped: 0,
+        }
+    }
+
+    fn stamp_of(time: i64) -> String {
+        chrono::DateTime::from_timestamp(time, 0)
+            .expect("fixture stamps are valid")
+            .to_rfc3339()
     }
 }
 
@@ -105,7 +143,24 @@ impl TerminalGateway for ScriptReplay {
     }
 
     fn chart_bars(&self) -> Result<protopyne_view::ChartBars, GatewayError> {
-        Err(GatewayError::Unavailable("script replay".to_owned()))
+        if self.history.is_empty() {
+            return Err(GatewayError::Unavailable("script replay".to_owned()));
+        }
+        Ok(Self::bars_of(&self.history))
+    }
+
+    fn chart_bars_for_limit(
+        &self,
+        symbol: &str,
+        timeframe: &str,
+        limit: Option<usize>,
+    ) -> Result<protopyne_view::ChartBars, GatewayError> {
+        protopyne_view::validate_symbol_timeframe(symbol, timeframe)?;
+        if self.history.is_empty() {
+            return Err(GatewayError::Unavailable("script replay".to_owned()));
+        }
+        let take = limit.unwrap_or(self.history.len()).min(self.history.len());
+        Ok(Self::bars_of(&self.history[self.history.len() - take..]))
     }
 
     fn chart_overlays(
@@ -117,7 +172,26 @@ impl TerminalGateway for ScriptReplay {
     }
 
     fn replay(&self) -> Result<protopyne_view::ReplayView, GatewayError> {
-        Err(GatewayError::Unavailable("script replay".to_owned()))
+        if self.history.is_empty() {
+            return Err(GatewayError::Unavailable("script replay".to_owned()));
+        }
+        let steps = self
+            .history
+            .iter()
+            .enumerate()
+            .map(|(bar_index, row)| protopyne_view::ReplayStepView {
+                bar_index: bar_index as u64,
+                ts: Self::stamp_of(row.time),
+                done: true,
+                checkpoint: bar_index == 0,
+            })
+            .collect::<Vec<_>>();
+        let total_bars = steps.len() as u64;
+        Ok(protopyne_view::ReplayView {
+            cursor: total_bars,
+            total_bars,
+            steps,
+        })
     }
 
     fn preview_arm(
@@ -176,44 +250,51 @@ impl TerminalGateway for ScriptReplay {
 }
 
 #[test]
-fn replay_start_resolves_index_date_and_refusals() {
-    let workspace = ChartWorkspace::with_rows(ladder_rows(40)).expect("seeded workspace builds");
+fn capture_visible_replay_window_uses_the_displayed_bars() {
+    let mut workspace =
+        ChartWorkspace::with_rows(ladder_rows(40)).expect("seeded workspace builds");
     assert_eq!(
-        workspace
-            .resolve_replay_start("")
-            .expect("empty is the head"),
-        0
+        workspace.replay_epochs().1,
+        None,
+        "no capture is the full loaded history"
+    );
+    assert_eq!(workspace.replay_range_label(), "Full");
+    // The window is the chart's own visible bars at the moment of capture:
+    // stored as epochs, resolved to indices for the divider markers.
+    workspace
+        .capture_visible_replay_window()
+        .expect("a bound chart captures its visible window");
+    let main = workspace.main_viewport().expect("a viewport binds");
+    let width = crate::workspace::PANE_WIDTH_PX;
+    let (start, end) = main.visible_bar_range(width, 40);
+    assert!(start < end, "the seeded chart shows bars");
+    let rows = ladder_rows(40);
+    assert_eq!(
+        workspace.replay_range,
+        Some((rows[start].time, rows[end - 1].time)),
+        "a captured window stores its edge epochs"
     );
     assert_eq!(
-        workspace
-            .resolve_replay_start("7")
-            .expect("an index resolves"),
-        7
-    );
-    assert_eq!(
-        workspace
-            .resolve_replay_start("40")
-            .expect("the end resolves"),
-        40
+        workspace.replay_marker_indices(),
+        Some((start, end - 1)),
+        "the divider markers ride the captured edges"
     );
     assert!(
-        workspace.resolve_replay_start("41").is_err(),
-        "an index past the last bar refuses"
+        workspace.replay_range_label().contains('→'),
+        "a captured window labels its dates"
     );
-    assert!(
-        workspace.resolve_replay_start("someday").is_err(),
-        "garbage refuses with the accepted shapes named"
-    );
-    // Row 0 sits at 2023-11-14T22:13:20Z; a date before it clamps to the head.
+    // Panning the display moves the markers with the time axis, never the
+    // window: the epochs stay fixed while the view roams.
+    let before = workspace.replay_range;
+    workspace.rewind_view().expect("the view pans");
     assert_eq!(
-        workspace
-            .resolve_replay_start("2023-01-01")
-            .expect("an early date clamps"),
-        0
+        workspace.replay_range, before,
+        "panning never moves the captured window"
     );
-    assert!(
-        workspace.resolve_replay_start("2030-01-01").is_err(),
-        "a date past the last bar refuses"
+    assert_eq!(
+        workspace.replay_marker_indices(),
+        Some((start, end - 1)),
+        "the markers keep their time setting after a pan"
     );
 }
 
@@ -289,7 +370,8 @@ fn open_step_and_stop_drive_the_cached_session() {
     let mut workspace =
         ChartWorkspace::with_rows(ladder_rows(40)).expect("seeded workspace builds");
     let gateway = ScriptReplay::new(40);
-    workspace.open_live_replay(&gateway, 5, 7, None, "Single".to_owned());
+    let rows = ladder_rows(40);
+    workspace.open_live_replay(&gateway, rows[5].time, None, 7, None, "Single".to_owned());
     let live = workspace.live_replay.as_ref().expect("open seats a run");
     assert_eq!(live.state.cursor, 5, "the run opens at the requested bar");
     assert_eq!(live.state.total_bars, 40);
@@ -333,7 +415,7 @@ fn a_refused_step_stops_play_with_the_reason_kept() {
         }
 
         fn chart_bars(&self) -> Result<protopyne_view::ChartBars, GatewayError> {
-            Err(GatewayError::Unavailable("refusing".to_owned()))
+            self.0.chart_bars()
         }
 
         fn chart_overlays(
@@ -390,7 +472,8 @@ fn a_refused_step_stops_play_with_the_reason_kept() {
     let mut workspace =
         ChartWorkspace::with_rows(ladder_rows(40)).expect("seeded workspace builds");
     let gateway = RefusingStart(ScriptReplay::new(40));
-    workspace.open_live_replay(&gateway, 0, 7, None, "Single".to_owned());
+    let rows = ladder_rows(40);
+    workspace.open_live_replay(&gateway, rows[0].time, None, 7, None, "Single".to_owned());
     let live = workspace.live_replay.as_mut().expect("open seats a run");
     live.playing = true;
     workspace.step_live_replay(&gateway, 1);
@@ -471,29 +554,6 @@ fn chain_gated_verdicts_stay_distinct_from_proposals() {
 }
 
 #[test]
-fn replay_grant_draft_resolves_empty_json_and_refusals() {
-    assert_eq!(
-        ChartWorkspace::resolve_replay_grant("").expect("empty is the rehearsal grant"),
-        None
-    );
-    assert_eq!(
-        ChartWorkspace::resolve_replay_grant("   ").expect("whitespace is the rehearsal grant"),
-        None
-    );
-    let document =
-        ChartWorkspace::resolve_replay_grant(r#"{"grant_id": "desk-1"}"#).expect("JSON parses");
-    assert_eq!(
-        document,
-        Some(serde_json::json!({"grant_id": "desk-1"})),
-        "a document forwards to the core unparsed-beyond-JSON"
-    );
-    assert!(
-        ChartWorkspace::resolve_replay_grant("not json {").is_err(),
-        "garbage refuses with the reason on the section"
-    );
-}
-
-#[test]
 fn open_forwards_an_explicit_grant_document() {
     struct GrantRecording(ScriptReplay);
     impl TerminalGateway for GrantRecording {
@@ -510,7 +570,7 @@ fn open_forwards_an_explicit_grant_document() {
             Err(GatewayError::Unavailable("recording".to_owned()))
         }
         fn chart_bars(&self) -> Result<protopyne_view::ChartBars, GatewayError> {
-            Err(GatewayError::Unavailable("recording".to_owned()))
+            self.0.chart_bars()
         }
         fn chart_overlays(
             &self,
@@ -562,9 +622,11 @@ fn open_forwards_an_explicit_grant_document() {
     let mut workspace =
         ChartWorkspace::with_rows(ladder_rows(20)).expect("seeded workspace builds");
     let gateway = GrantRecording(ScriptReplay::new(20));
+    let rows = ladder_rows(20);
     workspace.open_live_replay(
         &gateway,
-        2,
+        rows[2].time,
+        None,
         7,
         Some(serde_json::json!({"grant_id": "desk-1"})),
         "Single".to_owned(),
@@ -580,21 +642,14 @@ fn open_forwards_an_explicit_grant_document() {
 }
 
 #[test]
-fn structure_picker_defaults_single_and_forwards_the_tag() {
+fn picked_replay_opens_rehearsal_singles() {
+    // The dock offers no structure picker: every transport open rehearses
+    // the single-leg strategy under the rehearsal grant, the same economics
+    // the preview agrees on.
     let mut workspace =
         ChartWorkspace::with_rows(ladder_rows(40)).expect("seeded workspace builds");
-    assert_eq!(
-        workspace.replay_structure_draft, "Single",
-        "the picker opens on the legacy shape"
-    );
     let gateway = ScriptReplay::new(40);
-    workspace.open_live_replay(
-        &gateway,
-        5,
-        7,
-        None,
-        workspace.replay_structure_draft.clone(),
-    );
+    workspace.open_captured_replay(&gateway);
     assert_eq!(
         gateway
             .structures
@@ -602,25 +657,9 @@ fn structure_picker_defaults_single_and_forwards_the_tag() {
             .expect("structure log locks")
             .as_slice(),
         ["Single"],
-        "the default open forwards singles"
+        "the transport open rehearses singles"
     );
-    workspace.replay_structure_draft = "Vertical".to_owned();
-    workspace.open_live_replay(
-        &gateway,
-        5,
-        7,
-        None,
-        workspace.replay_structure_draft.clone(),
-    );
-    assert_eq!(
-        gateway
-            .structures
-            .lock()
-            .expect("structure log locks")
-            .as_slice(),
-        ["Single", "Vertical"],
-        "the picker tag reaches the core as a plain string"
-    );
+    assert!(workspace.live_replay.is_some(), "open seats a run");
 }
 
 #[test]
@@ -672,4 +711,781 @@ fn spread_decision_formats_one_row_per_leg_and_singles_format_none() {
         ChartWorkspace::replay_leg_lines(&single).is_empty(),
         "a fill with no leg detail adds no rows"
     );
+}
+
+#[test]
+fn replay_epochs_default_to_full_history_and_apply_a_captured_window() {
+    let mut workspace =
+        ChartWorkspace::with_rows(ladder_rows(40)).expect("seeded workspace builds");
+    let rows = ladder_rows(40);
+    assert_eq!(
+        workspace.replay_epochs(),
+        (rows[0].time, None),
+        "no captured window replays the full loaded history"
+    );
+    assert_eq!(workspace.replay_range_label(), "Full");
+    // The window is captured from the visible chart, stored as epochs;
+    // setting it directly is the headless equivalent of a capture.
+    workspace.replay_range = Some((rows[10].time, rows[19].time));
+    assert_eq!(
+        workspace.replay_epochs(),
+        (rows[10].time, Some(rows[20].time)),
+        "epochs resolve back to the captured display window"
+    );
+    assert!(
+        workspace.replay_range_label().contains('→'),
+        "a captured window labels its dates"
+    );
+    assert_eq!(
+        workspace.replay_marker_indices(),
+        Some((10, 19)),
+        "the divider markers ride the captured edges"
+    );
+    workspace.replay_range = None;
+    assert_eq!(workspace.replay_epochs(), (rows[0].time, None));
+    assert_eq!(workspace.replay_marker_indices(), None);
+}
+
+#[test]
+fn exiting_to_live_keeps_the_captured_window_markers() {
+    let mut workspace =
+        ChartWorkspace::with_rows(ladder_rows(40)).expect("seeded workspace builds");
+    let rows = ladder_rows(40);
+    // The markers name times, not the run: exiting to live keeps them so the
+    // divider still shows where the backtest ran.
+    workspace.replay_range = Some((rows[5].time, rows[15].time));
+    let gateway = ScriptReplay::new(40);
+    workspace.open_captured_replay(&gateway);
+    assert!(
+        workspace.live_replay.is_some(),
+        "a run opens over the captured window"
+    );
+    workspace.stop_live_replay(&gateway);
+    assert!(workspace.live_replay.is_none(), "exit closes the run");
+    assert_eq!(
+        workspace.replay_range,
+        Some((rows[5].time, rows[15].time)),
+        "exit keeps the captured window — only a symbol switch clears it"
+    );
+    assert_eq!(
+        workspace.replay_marker_indices(),
+        Some((5, 15)),
+        "the divider markers outlive the run"
+    );
+}
+
+#[test]
+fn menu_play_opens_bounded_and_steps_stop_at_the_end() {
+    let mut workspace =
+        ChartWorkspace::with_rows(ladder_rows(40)).expect("seeded workspace builds");
+    let gateway = ScriptReplay::new(40);
+    assert!(
+        workspace.live_replay.is_none(),
+        "nothing auto-plays on boot"
+    );
+    workspace.toggle_replay_play(Some(&gateway));
+    let live = workspace.live_replay.as_ref().expect("play opens a run");
+    assert!(live.playing, "play starts the loop");
+    assert_eq!(live.state.cursor, 0, "full-history play starts at the head");
+    assert_eq!(live.end(), 40);
+    // Step to the end: the clamp stops play exactly there.
+    workspace.step_live_replay(&gateway, 100);
+    let live = workspace.live_replay.as_ref().expect("the run stays live");
+    assert_eq!(live.state.cursor, 40);
+    assert!(!live.playing, "arriving at the end stops play");
+    // Toggling again restarts at the head and plays.
+    workspace.toggle_replay_play(Some(&gateway));
+    let live = workspace.live_replay.as_ref().expect("replay restarts");
+    assert!(live.playing);
+    assert_eq!(live.state.cursor, 0);
+}
+
+/// Play replays a set boundary window instead of recapturing the visible
+/// chart: context-menu boundaries arm the replay button until cleared.
+#[test]
+fn menu_play_reuses_set_boundaries_instead_of_recapturing() {
+    let mut workspace =
+        ChartWorkspace::with_rows(ladder_rows(40)).expect("seeded workspace builds");
+    let gateway = ScriptReplay::new(40);
+    let rows = workspace.rows().to_vec();
+    workspace.set_replay_boundary(rows[10].time);
+    workspace.set_replay_boundary(rows[20].time);
+    assert_eq!(
+        workspace.replay_range,
+        Some((rows[10].time, rows[20].time)),
+        "two boundary picks arm a window"
+    );
+    workspace.toggle_replay_play(Some(&gateway));
+    let live = workspace.live_replay.as_ref().expect("play opens a run");
+    assert!(live.playing, "play starts the loop");
+    assert_eq!(
+        live.state.cursor, 10,
+        "a bounded play starts at the boundary, not the head"
+    );
+    assert_eq!(live.end(), 21, "a bounded play ends past the boundary bar");
+}
+
+#[test]
+fn open_maps_a_trailing_window_to_server_history_by_timestamp() {
+    // The terminal holds the trailing 20 of a 60-bar server history. Opening
+    // a replay over display bars 5..15 must start the core session at server
+    // bar 45, not display bar 5 — and the in-fill fetch grows the loaded
+    // rows back to the full 60 first.
+    let full = ladder_rows(60);
+    let gateway = ScriptReplay::with_history(full.clone());
+    let mut workspace =
+        ChartWorkspace::with_rows(full[40..].to_vec()).expect("seeded workspace builds");
+    assert_eq!(workspace.rows().len(), 20);
+    let rows = workspace.rows().to_vec();
+    workspace.replay_range = Some((rows[5].time, rows[14].time));
+    workspace.open_captured_replay(&gateway);
+    assert!(
+        workspace.replay_error.is_none(),
+        "open over a trailing window succeeds: {:?}",
+        workspace.replay_error
+    );
+    assert_eq!(
+        workspace.rows().len(),
+        60,
+        "the in-fill fetch grows the loaded rows to the full history"
+    );
+    let live = workspace.live_replay.as_ref().expect("open seats a run");
+    assert_eq!(
+        live.state.cursor, 45,
+        "the session opens at the server bar stamping the display start"
+    );
+    assert_eq!(live.end(), 55, "the server end stamps the display end");
+    assert!(
+        !live.server_times.is_empty(),
+        "a served time axis maps cursors by timestamp"
+    );
+    assert_eq!(
+        workspace.replay_prefix_len(),
+        Some(45),
+        "the decided prefix covers the in-filled context before the start"
+    );
+    assert!(
+        workspace
+            .evaluations
+            .values()
+            .any(|evaluation| !evaluation.series.is_empty()),
+        "indicators evaluate over the decided prefix"
+    );
+    // Stepping three server bars reveals three display bars.
+    workspace.step_live_replay(&gateway, 3);
+    let live = workspace.live_replay.as_ref().expect("the run stays live");
+    assert_eq!(live.state.cursor, 48);
+    assert_eq!(
+        workspace.replay_prefix_len(),
+        Some(48),
+        "future bars stay hidden until the run decides them"
+    );
+    let calls = gateway.calls.lock().expect("call log locks").clone();
+    assert_eq!(
+        calls.first().map(String::as_str),
+        Some("start:45"),
+        "the session opens in server coordinates: {calls:?}"
+    );
+}
+
+#[test]
+fn open_refuses_an_empty_window() {
+    let mut workspace =
+        ChartWorkspace::with_rows(ladder_rows(40)).expect("seeded workspace builds");
+    let gateway = ScriptReplay::new(40);
+    let rows = ladder_rows(40);
+    workspace.open_live_replay(
+        &gateway,
+        rows[20].time,
+        Some(rows[20].time),
+        7,
+        None,
+        "Single".to_owned(),
+    );
+    assert!(
+        workspace.live_replay.is_none(),
+        "an empty window seats no run"
+    );
+    assert!(
+        workspace
+            .replay_error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("empty"),
+        "the refusal names the empty window: {:?}",
+        workspace.replay_error
+    );
+}
+
+#[test]
+fn open_refuses_when_the_in_fill_fetch_fails() {
+    struct NoCharts(ScriptReplay);
+    impl TerminalGateway for NoCharts {
+        fn health(&self) -> Result<protopyne_view::HealthView, GatewayError> {
+            Err(GatewayError::Unavailable("no charts".to_owned()))
+        }
+        fn proposals(&self) -> Result<Vec<protopyne_view::ProposalView>, GatewayError> {
+            Err(GatewayError::Unavailable("no charts".to_owned()))
+        }
+        fn portfolio(&self) -> Result<protopyne_view::PortfolioView, GatewayError> {
+            Err(GatewayError::Unavailable("no charts".to_owned()))
+        }
+        fn journal(&self) -> Result<Vec<protopyne_view::JournalRowView>, GatewayError> {
+            Err(GatewayError::Unavailable("no charts".to_owned()))
+        }
+        fn chart_bars(&self) -> Result<protopyne_view::ChartBars, GatewayError> {
+            Err(GatewayError::Unavailable("no charts".to_owned()))
+        }
+        fn chart_overlays(
+            &self,
+            _kind: &str,
+            _period: i64,
+        ) -> Result<protopyne_view::OverlaySeries, GatewayError> {
+            Err(GatewayError::Unavailable("no charts".to_owned()))
+        }
+        fn replay(&self) -> Result<protopyne_view::ReplayView, GatewayError> {
+            Err(GatewayError::Unavailable("no charts".to_owned()))
+        }
+        fn preview_arm(
+            &self,
+            _patch: serde_json::Value,
+        ) -> Result<protopyne_view::WorstCase, GatewayError> {
+            Err(GatewayError::Unavailable("no charts".to_owned()))
+        }
+        fn grant_tiers(&self) -> Result<std::collections::BTreeMap<String, String>, GatewayError> {
+            Err(GatewayError::Unavailable("no charts".to_owned()))
+        }
+        fn arm(
+            &self,
+            _grant: serde_json::Value,
+        ) -> Result<protopyne_view::ArmResponse, GatewayError> {
+            Err(GatewayError::Unavailable("no charts".to_owned()))
+        }
+        fn replay_start(&self, params: ReplayStartParams) -> Result<ReplayStateView, GatewayError> {
+            self.0.replay_start(params)
+        }
+        fn replay_step(
+            &self,
+            session_id: &str,
+            bars: u64,
+        ) -> Result<ReplayStateView, GatewayError> {
+            self.0.replay_step(session_id, bars)
+        }
+        fn replay_state(&self, session_id: &str) -> Result<ReplayStateView, GatewayError> {
+            self.0.replay_state(session_id)
+        }
+        fn replay_stop(&self, session_id: &str) -> Result<(), GatewayError> {
+            self.0.replay_stop(session_id)
+        }
+    }
+
+    // Ten loaded bars can never carry the warmup context, and the gateway
+    // serves no in-fill: the open refuses instead of replaying over a gapped
+    // context.
+    let mut workspace =
+        ChartWorkspace::with_rows(ladder_rows(10)).expect("seeded workspace builds");
+    let gateway = NoCharts(ScriptReplay::new(40));
+    let rows = ladder_rows(10);
+    workspace.open_live_replay(&gateway, rows[5].time, None, 7, None, "Single".to_owned());
+    assert!(
+        workspace.live_replay.is_none(),
+        "a refused in-fill seats no run"
+    );
+    assert!(
+        workspace.replay_error.is_some(),
+        "the refusal names the failed in-fill"
+    );
+}
+
+#[test]
+fn failed_capture_leaves_the_applied_window() {
+    let mut workspace =
+        ChartWorkspace::with_rows(ladder_rows(40)).expect("seeded workspace builds");
+    let rows = ladder_rows(40);
+    workspace.replay_range = Some((rows[10].time, rows[19].time));
+    // Shove the viewport far off the data so nothing is visible: the capture
+    // refuses instead of applying an empty window, and the applied window —
+    // and any open run — stays exactly as it was.
+    let main = workspace.main_viewport().expect("a viewport binds");
+    workspace.main = Some(
+        main.with_x_offset(1_000_000.0)
+            .expect("an off-window offset sets"),
+    );
+    assert!(
+        workspace.capture_visible_replay_window().is_err(),
+        "nothing visible refuses the capture"
+    );
+    assert_eq!(
+        workspace.replay_range,
+        Some((rows[10].time, rows[19].time)),
+        "a refused capture leaves the applied window untouched"
+    );
+}
+
+#[test]
+fn symbol_switch_closes_the_run_and_clears_its_window() {
+    use crate::chart::TimeframeKey;
+    let full = ladder_rows(60);
+    let gateway = ScriptReplay::with_history(full.clone());
+    let mut workspace =
+        ChartWorkspace::with_rows(full[full.len() - 20..].to_vec()).expect("workspace boots");
+    let rows = workspace.rows().to_vec();
+    workspace.replay_range = Some((rows[5].time, rows[14].time));
+    workspace.open_captured_replay(&gateway);
+    assert!(
+        workspace.live_replay.is_some(),
+        "a run opens over the captured window"
+    );
+    // A timeframe switch keeps the run: epochs re-resolve and the timestamp
+    // mapping is timeframe-agnostic.
+    workspace
+        .select_timeframe(TimeframeKey::M5)
+        .expect("timeframe selects");
+    assert!(
+        workspace.live_replay.is_some(),
+        "a timeframe switch keeps the run"
+    );
+    // A symbol switch closes it and clears the window, so the next chart can
+    // never paint another ticker's decided prefix.
+    workspace
+        .switch_symbol("GLD", &gateway)
+        .expect("symbol switches");
+    assert!(
+        workspace.live_replay.is_none(),
+        "a symbol switch closes the run"
+    );
+    assert_eq!(
+        workspace.replay_range, None,
+        "a symbol switch clears the picked window"
+    );
+    assert!(
+        workspace.replay_error.is_some(),
+        "the close names itself on the replay section"
+    );
+}
+
+/// End-to-end replay through a real server gateway on a runtime-free thread
+/// — the way the terminal drives it after boot: chart reads resample the
+/// 1M base history to the 5M chart, the open maps the display window back to
+/// base-history indices by timestamp, and steps bridge onto the shared
+/// runtime from outside any runtime (nesting would refuse).
+#[cfg(feature = "server-gateway")]
+#[test]
+fn replay_over_a_real_server_maps_display_bars_to_base_history() {
+    use protopyne_types::Bar;
+
+    fn decimal(value: i64) -> rust_decimal::Decimal {
+        rust_decimal::Decimal::from(value)
+    }
+    // Sixty 1M bars opening on a 5M grid line, so the CompleteOnly resample
+    // to 5M yields twelve whole buckets (a real 1M tape sits on minute
+    // marks; an off-grid fixture would fold to nothing by construction).
+    let base = 1_700_000_100_i64;
+    let bars: Vec<Bar> = (0..60_i64)
+        .map(|index| {
+            Bar::new()
+                .ts(chrono::DateTime::from_timestamp(base + index * 60, 0).expect("fixture stamp"))
+                .o(decimal(100 + index))
+                .h(decimal(101 + index))
+                .l(decimal(99 + index))
+                .c(decimal(100 + index))
+                .volume(1_000)
+                .maybe_adj(None)
+                .build()
+        })
+        .collect();
+    let config = protopyne_server::ServerConfig::new()
+        .bind("127.0.0.1:0".to_owned())
+        .history_timeframe("1M".to_owned())
+        .build();
+    let handle = common_core::runtime::block_on(protopyne_server::serve(config, bars))
+        .expect("server boots");
+    let gateway = handle.gateway();
+    let mut workspace = ChartWorkspace::with_gateway(&gateway).expect("workspace boots");
+    assert!(
+        workspace.rows().len() >= 8,
+        "the resampled chart holds several display bars"
+    );
+    let end = workspace.rows().len() - 2;
+    let rows = workspace.rows().to_vec();
+    workspace.replay_range = Some((rows[2].time, rows[end - 1].time));
+    workspace.open_captured_replay(&gateway);
+    assert!(
+        workspace.replay_error.is_none(),
+        "open over the real gateway succeeds: {:?}",
+        workspace.replay_error
+    );
+    let live = workspace.live_replay.as_ref().expect("open seats a run");
+    assert!(
+        !live.server_times.is_empty(),
+        "the served time axis maps display candles to base history"
+    );
+    let server_times = live.server_times.clone();
+    let rows = workspace.rows().to_vec();
+    let expected_start = server_times.partition_point(|time| *time < rows[2].time) as u64;
+    assert_eq!(
+        live.state.cursor, expected_start,
+        "the session opens at the base bar stamping the display start"
+    );
+    let expected_end = server_times.partition_point(|time| *time < rows[end].time) as u64;
+    assert_eq!(live.end(), expected_end);
+    assert_eq!(
+        workspace.replay_prefix_len(),
+        Some(2),
+        "only the decided context shows at open"
+    );
+
+    // Step three base bars through the terminal path: no runtime on this
+    // thread, so the shared bridge drives the driver without nesting. The
+    // third bar still sits inside display candle 2's bucket, so the decided
+    // prefix holds until the bucket completes — no half-decided candles.
+    workspace.step_live_replay(&gateway, 3);
+    let live = workspace.live_replay.as_ref().expect("the run stays live");
+    assert_eq!(live.state.cursor, expected_start + 3);
+    let decided_through = server_times[live.state.cursor as usize];
+    let expected_prefix = rows
+        .iter()
+        .enumerate()
+        .filter(|(index, row)| *index >= 1 && row.time <= decided_through)
+        .count();
+    assert_eq!(
+        expected_prefix, 2,
+        "a half-decided bucket reveals nothing new"
+    );
+    assert_eq!(
+        workspace.replay_prefix_len(),
+        Some(expected_prefix),
+        "future candles stay hidden until the run decides them"
+    );
+    // Stepping through the bucket's last two bars completes display candle 2.
+    workspace.step_live_replay(&gateway, 2);
+    assert_eq!(
+        workspace.replay_prefix_len(),
+        Some(3),
+        "a completed bucket reveals its display candle"
+    );
+    for evaluation in workspace.evaluations.values() {
+        for series in &evaluation.series {
+            assert!(
+                series.values[3..].iter().all(Option::is_none),
+                "no indicator reads past the decided prefix"
+            );
+        }
+    }
+
+    // Stepping past the captured end clamps there and stops play.
+    workspace.step_live_replay(&gateway, 1_000);
+    let live = workspace.live_replay.as_ref().expect("the run stays live");
+    assert_eq!(live.state.cursor, expected_end);
+    assert!(!live.playing, "arriving at the captured end stops play");
+
+    common_core::runtime::block_on(handle.shutdown());
+}
+
+#[test]
+fn replay_speed_slider_positions_map_to_the_documented_candle_rates() {
+    assert_eq!(
+        [0_u8, 1, 2, 3, 4, 5, 6, 7, 9]
+            .iter()
+            .map(|level| ReplaySpeed::from_level(*level).level())
+            .collect::<Vec<_>>(),
+        vec![0, 1, 2, 3, 4, 5, 6, 7, 7],
+        "levels clamp into the eight detents"
+    );
+    assert_eq!(ReplaySpeed::default(), ReplaySpeed::Normal);
+    assert_eq!(ReplaySpeed::Slow.candles_per_sec(), Some(1.0 / 3.0));
+    // Two detents sit between Slow and Normal, and two more between Normal
+    // and Fast, so the slider moves in small steps at both ends.
+    assert!(
+        ReplaySpeed::Unhurried.candles_per_sec() > ReplaySpeed::Slow.candles_per_sec()
+            && ReplaySpeed::Steady.candles_per_sec() > ReplaySpeed::Unhurried.candles_per_sec()
+            && ReplaySpeed::Normal.candles_per_sec() > ReplaySpeed::Steady.candles_per_sec(),
+        "Slow..Normal paces strictly upward"
+    );
+    assert!(
+        ReplaySpeed::Brisk.candles_per_sec() > ReplaySpeed::Normal.candles_per_sec()
+            && ReplaySpeed::Swift.candles_per_sec() > ReplaySpeed::Brisk.candles_per_sec()
+            && ReplaySpeed::Fast.candles_per_sec() > ReplaySpeed::Swift.candles_per_sec(),
+        "Normal..Fast paces strictly upward"
+    );
+    assert_eq!(ReplaySpeed::Normal.candles_per_sec(), Some(1.0));
+    assert_eq!(ReplaySpeed::Fast.candles_per_sec(), Some(5.0));
+    assert_eq!(ReplaySpeed::Full.candles_per_sec(), None);
+    for speed in [
+        ReplaySpeed::Slow,
+        ReplaySpeed::Unhurried,
+        ReplaySpeed::Steady,
+        ReplaySpeed::Normal,
+        ReplaySpeed::Brisk,
+        ReplaySpeed::Swift,
+        ReplaySpeed::Fast,
+        ReplaySpeed::Full,
+    ] {
+        assert!(
+            !ReplaySpeed::from_level(speed.level()).label().is_empty(),
+            "every detent labels itself"
+        );
+    }
+}
+
+#[test]
+fn stepping_never_moves_x_except_to_follow_the_head() {
+    use crate::workspace::PANE_WIDTH_PX;
+    // A wide history with a mid-history window: the replay head starts far
+    // from the trailing edge, so X moves only when the head actually leaves
+    // the view — advancing bars never re-zooms or re-anchors the axis.
+    let full = ladder_rows(200);
+    let gateway = ScriptReplay::with_history(full.clone());
+    let mut workspace = ChartWorkspace::with_rows(full.clone()).expect("workspace boots");
+    let rows = workspace.rows().to_vec();
+    workspace.replay_range = Some((rows[150].time, rows[179].time));
+    workspace.open_captured_replay(&gateway);
+    assert!(workspace.live_replay.is_some(), "open seats a run");
+    assert_eq!(workspace.replay_prefix_len(), Some(150));
+
+    let width = PANE_WIDTH_PX;
+    let spacing = workspace
+        .main_viewport()
+        .expect("a viewport binds")
+        .scale()
+        .bar_spacing();
+    // Step one bar at a time: the offset moves if and only if the new head
+    // left the culled view, landing exactly on the place-at-right target;
+    // the spacing never changes.
+    for _ in 0..10 {
+        let main = workspace.main_viewport().expect("a viewport binds");
+        let offset = main.x_offset_px();
+        assert_eq!(
+            main.scale().bar_spacing().to_bits(),
+            spacing.to_bits(),
+            "advancing a bar never alters the X axis zoom"
+        );
+        let prefix = workspace.replay_prefix_len().expect("a run is live");
+        workspace.step_live_replay(&gateway, 1);
+        let next = workspace.main_viewport().expect("a viewport binds");
+        assert_eq!(
+            next.scale().bar_spacing().to_bits(),
+            spacing.to_bits(),
+            "advancing a bar never alters the X axis zoom"
+        );
+        let next_prefix = workspace.replay_prefix_len().expect("a run is live");
+        let next_head = next_prefix.saturating_sub(1);
+        let (start, end) = main.culled_bar_range(width, prefix + 1);
+        let expected = if next_head >= start && next_head < end {
+            offset
+        } else {
+            width - (next_head as f32 + 1.0) * spacing
+        };
+        assert!(
+            (next.x_offset_px() - expected).abs() < 1e-3,
+            "X moves only to follow the head out of view"
+        );
+        // The Y window always contains the full decided candles in view.
+        let (cstart, cend) = next.culled_bar_range(width, next_prefix);
+        let visible = &workspace.rows()[cstart.min(next_prefix)..cend.min(next_prefix)];
+        let lo = visible
+            .iter()
+            .map(|row| row.low)
+            .fold(f64::INFINITY, f64::min);
+        let hi = visible
+            .iter()
+            .map(|row| row.high)
+            .fold(f64::NEG_INFINITY, f64::max);
+        let range = next.scale().range();
+        assert!(
+            !visible.is_empty() && range.min <= lo && range.max >= hi,
+            "the Y fit contains every decided candle in view"
+        );
+    }
+}
+
+/// The play pump paces in display candles at the selected timeframe: at Fast
+/// (5 candles/s) over a 5M chart, one second of play advances five display
+/// candles — twenty-five base bars — never five base bars. Slow
+/// (1 candle / 3s) holds still over a two-second window. Driven through the
+/// terminal's own pump on a runtime-free thread, the way the menu button
+/// plays.
+#[cfg(feature = "server-gateway")]
+#[test]
+fn pump_advances_display_bars_not_base_bars() {
+    use std::time::Duration;
+
+    use protopyne_types::Bar;
+    fn decimal(value: i64) -> rust_decimal::Decimal {
+        rust_decimal::Decimal::from(value)
+    }
+    let base = 1_700_000_100_i64;
+    let bars: Vec<Bar> = (0..60_i64)
+        .map(|index| {
+            Bar::new()
+                .ts(chrono::DateTime::from_timestamp(base + index * 60, 0).expect("fixture stamp"))
+                .o(decimal(100 + index))
+                .h(decimal(101 + index))
+                .l(decimal(99 + index))
+                .c(decimal(100 + index))
+                .volume(1_000)
+                .maybe_adj(None)
+                .build()
+        })
+        .collect();
+    let config = protopyne_server::ServerConfig::new()
+        .bind("127.0.0.1:0".to_owned())
+        .history_timeframe("1M".to_owned())
+        .build();
+    let handle = common_core::runtime::block_on(protopyne_server::serve(config, bars))
+        .expect("server boots");
+    let gateway = handle.gateway();
+    let mut workspace = ChartWorkspace::with_gateway(&gateway).expect("workspace boots");
+    let rows = workspace.rows().to_vec();
+    assert!(
+        rows.len() >= 8,
+        "the resampled chart has several display candles"
+    );
+    let end = rows.len() - 2;
+    workspace.replay_range = Some((rows[2].time, rows[end - 1].time));
+    workspace.open_captured_replay(&gateway);
+    assert!(
+        workspace.live_replay.is_none() || workspace.replay_error.is_none(),
+        "open succeeds: {:?}",
+        workspace.replay_error
+    );
+    let live = workspace.live_replay.as_ref().expect("open seats a run");
+    assert!(!live.server_times.is_empty(), "the time axis maps");
+    let opened = live.state.cursor;
+
+    // Fast for one second, frame by frame: five display candles =
+    // twenty-five base bars, delivered steadily — one candle every 0.2 s,
+    // never five at once. The frame delta is explicit, so the test owns the
+    // clock.
+    workspace.replay_speed = ReplaySpeed::Fast;
+    workspace
+        .live_replay
+        .as_mut()
+        .expect("run stays live")
+        .playing = true;
+    let mut seen = Vec::new();
+    for _ in 0..10 {
+        egui::__run_test_ui(|ui| {
+            workspace.pump_replay_play(Some(&gateway), ui, Duration::from_millis(100));
+        });
+        seen.push(workspace.replay_prefix_len().expect("a run is live"));
+    }
+    for pair in seen.windows(2) {
+        assert!(
+            pair[1] - pair[0] <= 1,
+            "no frame decides more than one candle: {seen:?}"
+        );
+    }
+    assert_eq!(
+        seen[9],
+        2 + 5,
+        "ten 100 ms frames at Fast decide five 5M candles"
+    );
+    let live = workspace.live_replay.as_ref().expect("run stays live");
+    assert_eq!(
+        live.state.cursor,
+        opened + 25,
+        "one second at Fast decides five 5M candles (25 base bars)"
+    );
+    assert_eq!(
+        workspace.replay_prefix_len(),
+        Some(2 + 5),
+        "the decided prefix grows in display candles"
+    );
+    assert!(
+        live.playing,
+        "the run keeps playing inside its captured window"
+    );
+
+    // A one-second stall steps exactly one candle, then the cadence resumes:
+    // banked time is dropped, never dumped as a burst.
+    let stalled = workspace.replay_prefix_len().expect("a run is live");
+    egui::__run_test_ui(|ui| {
+        workspace.pump_replay_play(Some(&gateway), ui, Duration::from_secs(1));
+    });
+    assert_eq!(
+        workspace.replay_prefix_len(),
+        Some(stalled + 1),
+        "a stalled second delivers one candle, not five"
+    );
+    egui::__run_test_ui(|ui| {
+        workspace.pump_replay_play(Some(&gateway), ui, Duration::from_millis(200));
+    });
+    assert_eq!(
+        workspace.replay_prefix_len(),
+        Some(stalled + 2),
+        "the next interval resumes the cadence"
+    );
+
+    common_core::runtime::block_on(handle.shutdown());
+}
+
+#[cfg(feature = "server-gateway")]
+#[test]
+fn pump_holds_slow_speeds_until_a_bar_is_due() {
+    use std::time::Duration;
+
+    use protopyne_types::Bar;
+    fn decimal(value: i64) -> rust_decimal::Decimal {
+        rust_decimal::Decimal::from(value)
+    }
+    let base = 1_700_000_100_i64;
+    let bars: Vec<Bar> = (0..60_i64)
+        .map(|index| {
+            Bar::new()
+                .ts(chrono::DateTime::from_timestamp(base + index * 60, 0).expect("fixture stamp"))
+                .o(decimal(100 + index))
+                .h(decimal(101 + index))
+                .l(decimal(99 + index))
+                .c(decimal(100 + index))
+                .volume(1_000)
+                .maybe_adj(None)
+                .build()
+        })
+        .collect();
+    let config = protopyne_server::ServerConfig::new()
+        .bind("127.0.0.1:0".to_owned())
+        .history_timeframe("1M".to_owned())
+        .build();
+    let handle = common_core::runtime::block_on(protopyne_server::serve(config, bars))
+        .expect("server boots");
+    let gateway = handle.gateway();
+    let mut workspace = ChartWorkspace::with_gateway(&gateway).expect("workspace boots");
+    // No captured window: the run replays the full loaded history, the old
+    // empty-draft default.
+    workspace.replay_range = None;
+    workspace.open_captured_replay(&gateway);
+    assert!(
+        workspace.replay_error.is_none(),
+        "open succeeds: {:?}",
+        workspace.replay_error
+    );
+
+    // Slow (1 candle / 3s) holds still over a two-second frame: nothing is due.
+    workspace.replay_speed = ReplaySpeed::Slow;
+    workspace
+        .live_replay
+        .as_mut()
+        .expect("run stays live")
+        .playing = true;
+    let held = workspace.live_replay.as_ref().expect("run").state.cursor;
+    egui::__run_test_ui(|ui| {
+        workspace.pump_replay_play(Some(&gateway), ui, Duration::from_secs(2));
+    });
+    assert_eq!(
+        workspace.live_replay.as_ref().expect("run").state.cursor,
+        held,
+        "Slow (1 candle / 3s) decides nothing in two seconds"
+    );
+    // ...but three seconds decide exactly one display candle.
+    egui::__run_test_ui(|ui| {
+        workspace.pump_replay_play(Some(&gateway), ui, Duration::from_secs(1));
+    });
+    assert_eq!(
+        workspace.live_replay.as_ref().expect("run").state.cursor,
+        held + 5,
+        "the third second decides one 5M candle"
+    );
+
+    common_core::runtime::block_on(handle.shutdown());
 }

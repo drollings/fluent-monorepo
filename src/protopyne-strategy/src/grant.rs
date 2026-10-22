@@ -452,7 +452,7 @@ pub struct Grant {
     pub revoked: bool,
 }
 
-impl protopyne_types::Validate for Grant {
+impl fluent_wvr::validate::Validate for Grant {
     type Err = String;
     fn validate(&self) -> Result<(), Self::Err> {
         Grant::validate(self)

@@ -50,6 +50,9 @@ fn first_symbol_id() -> u32 {
 /// `register`. It is a cache over the document, not a second truth: a
 /// single-writer discipline keeps the cache coherent, and every registration
 /// persists before returning.
+/// Duplicate policy: refuse `Duplicate` (durable); catalog order preserved.
+/// In-memory index stays a document cache (no `KeyedRegistry` swap;
+/// persistence + `StoreStorage` gating stay untouched).
 pub struct MarketRegistry {
     root: PathBuf,
     state: Mutex<CatalogDoc>,
@@ -81,6 +84,7 @@ impl MarketRegistry {
         Self::open_with(Path::new(":memory:"), max_markets, true)
     }
 
+    /// Bound stored verbatim. Zero refuses the first registration, never at open.
     fn open_with(root: &Path, max_markets: usize, memory: bool) -> Result<Self, StoreError> {
         let doc = if memory {
             CatalogDoc::default()

@@ -54,12 +54,14 @@ impl SessionBreakCache {
         provider: &dyn SessionProvider,
     ) -> u64 {
         let fingerprint = fingerprint_times(times, provider);
-        if self.fingerprint == Some(fingerprint) {
+        let (revision, dirty) =
+            fluent_egui::plan::content_revision(fingerprint, self.fingerprint, self.revision);
+        if !dirty {
             return self.revision;
         }
         self.breaks = session_breaks_between(times, provider);
         self.fingerprint = Some(fingerprint);
-        self.revision += 1;
+        self.revision = revision;
         self.rebuilds += 1;
         self.revision
     }

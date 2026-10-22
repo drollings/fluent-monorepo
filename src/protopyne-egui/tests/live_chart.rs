@@ -4,6 +4,7 @@
 //!
 //! All assertions read headless state (no paint): the live path is data in,
 //! rows and recompute out.
+#![allow(clippy::float_cmp)]
 
 use super::*;
 
@@ -80,11 +81,12 @@ fn live_sequence_repaints_forming_and_recomputes_closed() {
     let mut forming = ladder(60);
     forming[59].close = 159.5;
     workspace
-        .apply_live_update(LiveChartUpdate::Forming(forming[59].clone()))
+        .apply_live_update(LiveChartUpdate::Forming(forming[59]))
         .expect("forming applies");
     assert_eq!(workspace.rows().len(), 60, "forming never grows the rows");
     assert_eq!(
-        workspace.rows()[59].close, 159.5,
+        workspace.rows()[59].close,
+        159.5,
         "forming revises the open bar"
     );
     assert_eq!(
@@ -97,7 +99,7 @@ fn live_sequence_repaints_forming_and_recomputes_closed() {
     let mut next = ladder(61);
     next[60].close = 160.5;
     workspace
-        .apply_live_update(LiveChartUpdate::Forming(next[60].clone()))
+        .apply_live_update(LiveChartUpdate::Forming(next[60]))
         .expect("forming applies");
     assert_eq!(workspace.rows().len(), 61, "a new forming bar shows");
     assert_eq!(
@@ -108,7 +110,7 @@ fn live_sequence_repaints_forming_and_recomputes_closed() {
 
     // Closing that bar recomputes exactly once.
     workspace
-        .apply_live_update(LiveChartUpdate::Closed(next[60].clone()))
+        .apply_live_update(LiveChartUpdate::Closed(next[60]))
         .expect("close applies");
     assert_eq!(workspace.rows().len(), 61, "closing keeps the row");
     assert_eq!(
@@ -118,7 +120,7 @@ fn live_sequence_repaints_forming_and_recomputes_closed() {
     );
 
     // A revision of the same close recomputes again (content moved).
-    let mut revised = next[60].clone();
+    let mut revised = next[60];
     revised.close = 161.5;
     workspace
         .apply_live_update(LiveChartUpdate::Closed(revised))
@@ -162,7 +164,7 @@ fn replay_prefix_hides_every_bar_past_the_cursor() {
     let mut revised = ladder(60);
     revised[59].close = 200.0;
     workspace
-        .apply_live_update(LiveChartUpdate::Closed(revised[59].clone()))
+        .apply_live_update(LiveChartUpdate::Closed(revised[59]))
         .expect("revision applies");
     assert_eq!(
         workspace.derived_builds(),
@@ -212,7 +214,7 @@ fn three_panes_tile_the_canvas_with_equal_sub_heights() {
         "panes share both seams exactly"
     );
     let layouts: Vec<PaneLayout> = std::iter::once(true)
-        .chain(std::iter::repeat(false).take(2))
+        .chain(std::iter::repeat_n(false, 2))
         .zip(rects.iter())
         .map(|(time_strip, rect)| PaneLayout::split(*rect, time_strip))
         .collect();
@@ -241,7 +243,7 @@ fn wheel_routing_indexes_the_third_pane() {
     );
     let rects = split_canvas_many(canvas, DEFAULT_PANE_SHARE, 2);
     let layouts: Vec<PaneLayout> = std::iter::once(true)
-        .chain(std::iter::repeat(false).take(2))
+        .chain(std::iter::repeat_n(false, 2))
         .zip(rects.iter())
         .map(|(time_strip, rect)| PaneLayout::split(*rect, time_strip))
         .collect();
@@ -304,7 +306,10 @@ fn pane_scales_pad_declared_bounds_without_clipping_or_dead_space() {
     // interior, widened by exactly the pad.
     let (lo, hi) = workspace.custom_pane_range("kernel:stoch");
     assert!(lo <= 0.0, "the pad reaches past the declared floor: {lo}");
-    assert!(hi >= 100.0, "the pad reaches past the declared ceiling: {hi}");
+    assert!(
+        hi >= 100.0,
+        "the pad reaches past the declared ceiling: {hi}"
+    );
     let span = hi - lo;
     let pad = span * AUTO_HEIGHT_PAD_FRACTION / (1.0 + 2.0 * AUTO_HEIGHT_PAD_FRACTION);
     assert!(
@@ -375,107 +380,166 @@ fn default_workspace_is_byte_pinned() {
 /// The exact default prefs document: any added, removed, renamed, or
 /// re-defaulted field fails this pin on purpose.
 const DEFAULT_PREFS_JSON: &str = r#"{
-  "symbol": "SPY",
-  "timeframe": "5M",
-  "range": "1M",
-  "chart_type": "Candles",
-  "theme": "default",
-  "pane_share": 0.75,
-  "dock_open": false,
+  "active_symbol": "SPY",
+  "tickers": {
+    "SPY": {
+      "timeframe": "5M",
+      "range": "1M",
+      "custom_start": null,
+      "chart_type": "Candles",
+      "pane_share": 0.75,
+      "slots": [
+        {
+          "id": "integration_lite",
+          "visible": true,
+          "config": {
+            "delta_unit": "80",
+            "eit_alpha": "0.14",
+            "fill_alpha": "0.5",
+            "ma_health_k": "1.2",
+            "ribbon_health_k": "1.8",
+            "show_ribbon": "true"
+          },
+          "style": {
+            "color_bear": "",
+            "color_bear_up": "",
+            "color_bull": "",
+            "color_bull_down": "",
+            "color_fast": "",
+            "color_ribbon_bear": "",
+            "color_ribbon_bull": "",
+            "color_slow": "",
+            "line_width": "1"
+          }
+        },
+        {
+          "id": "fast_mas",
+          "visible": true,
+          "config": {
+            "base_ma_length": "55",
+            "base_ma_style": "slow",
+            "base_ma_type": "ema",
+            "first_ma_length": "3",
+            "first_ma_style": "slow",
+            "first_ma_type": "wma",
+            "mean_ma_length": "21",
+            "mean_ma_style": "slow",
+            "mean_ma_type": "ema",
+            "second_ma_length": "8",
+            "second_ma_style": "fast",
+            "second_ma_type": "alma",
+            "show_extra_mas": "true",
+            "show_first_ma": "true",
+            "show_second_ma": "false",
+            "show_smas": "false",
+            "signal_ma_length": "8",
+            "signal_ma_style": "fast",
+            "signal_ma_type": "ema",
+            "sma_style": "bull_down",
+            "source": "close",
+            "trend_ma_length": "34",
+            "trend_ma_style": "slow",
+            "trend_ma_type": "ema"
+          },
+          "style": {
+            "color_bear": "",
+            "color_bear_up": "",
+            "color_bull": "",
+            "color_bull_down": "",
+            "color_fast": "",
+            "color_ribbon_bear": "",
+            "color_ribbon_bull": "",
+            "color_slow": "",
+            "line_width": "1"
+          }
+        },
+        {
+          "id": "delta_volume_profile",
+          "visible": true,
+          "config": {
+            "bins": "60",
+            "lookback": "100",
+            "offset": "5",
+            "show_poc": "true",
+            "show_profile": "true",
+            "show_value_area": "true",
+            "show_vwap": "true",
+            "value_area_pct": "0.7",
+            "width": "30"
+          },
+          "style": {
+            "color_bear": "",
+            "color_bear_up": "",
+            "color_bull": "",
+            "color_bull_down": "",
+            "color_fast": "",
+            "color_ribbon_bear": "",
+            "color_ribbon_bull": "",
+            "color_slow": "",
+            "line_width": "1"
+          }
+        }
+      ]
+    }
+  },
   "favorites": {
     "symbols": [],
-    "indicators": []
+    "indicators": [],
+    "bookmarks": []
   },
-  "slots": [
-    {
-      "id": "integration_lite",
-      "visible": true,
-      "config": {
-        "delta_unit": "80",
-        "eit_alpha": "0.14",
-        "fill_alpha": "0.5",
-        "ma_health_k": "1.2",
-        "ribbon_health_k": "1.8",
-        "show_ribbon": "true"
-      },
-      "style": {
-        "color_bear": "",
-        "color_bear_up": "",
-        "color_bull": "",
-        "color_bull_down": "",
-        "color_fast": "",
-        "color_ribbon_bear": "",
-        "color_ribbon_bull": "",
-        "color_slow": "",
-        "line_width": "1"
-      }
-    },
-    {
-      "id": "fast_mas",
-      "visible": true,
-      "config": {
-        "base_ma_length": "55",
-        "base_ma_style": "slow",
-        "base_ma_type": "ema",
-        "first_ma_length": "3",
-        "first_ma_style": "slow",
-        "first_ma_type": "wma",
-        "mean_ma_length": "21",
-        "mean_ma_style": "slow",
-        "mean_ma_type": "ema",
-        "second_ma_length": "8",
-        "second_ma_style": "fast",
-        "second_ma_type": "alma",
-        "show_extra_mas": "true",
-        "show_first_ma": "true",
-        "show_second_ma": "false",
-        "show_smas": "false",
-        "signal_ma_length": "8",
-        "signal_ma_style": "fast",
-        "signal_ma_type": "ema",
-        "sma_style": "bull_down",
-        "source": "close",
-        "trend_ma_length": "34",
-        "trend_ma_style": "slow",
-        "trend_ma_type": "ema"
-      },
-      "style": {
-        "color_bear": "",
-        "color_bear_up": "",
-        "color_bull": "",
-        "color_bull_down": "",
-        "color_fast": "",
-        "color_ribbon_bear": "",
-        "color_ribbon_bull": "",
-        "color_slow": "",
-        "line_width": "1"
-      }
-    },
-    {
-      "id": "delta_volume_profile",
-      "visible": true,
-      "config": {
-        "bins": "60",
-        "lookback": "100",
-        "offset": "5",
-        "show_poc": "true",
-        "show_profile": "true",
-        "show_value_area": "true",
-        "show_vwap": "true",
-        "value_area_pct": "0.7",
-        "width": "30"
-      },
-      "style": {
-        "color_bear": "",
-        "color_bear_up": "",
-        "color_bull": "",
-        "color_bull_down": "",
-        "color_fast": "",
-        "color_ribbon_bear": "",
-        "color_ribbon_bull": "",
-        "color_slow": "",
-        "line_width": "1"
-      }
-    }
-  ]
+  "bookmarks": {},
+  "dock_open": false,
+  "theme": "default"
 }"#;
+
+/// A wrapped or reordered feed never splices non-consecutive history onto
+/// the tail: an older bar refuses (fail closed), the same stamp revises,
+/// and only a newer stamp appends. This is the January-after-March
+/// regression pin — the rehearsal pump cycling back to its first month must
+/// refuse instead of appending.
+#[test]
+fn live_updates_refuse_older_bars_and_only_newer_appends() {
+    let mut workspace = ChartWorkspace::with_rows(ladder(60)).expect("workspace boots");
+    assert_eq!(workspace.rows().len(), 60);
+    let last_time = workspace.rows().last().map(|row| row.time).expect("rows");
+    let built = workspace.derived_builds();
+
+    // Older than the tail refuses for both forming and closed, with no growth.
+    let mut older = ladder(61);
+    older[10].time = last_time - 1_000;
+    assert!(
+        workspace
+            .apply_live_update(LiveChartUpdate::Forming(older[10]))
+            .is_err(),
+        "a forming bar older than the tail refuses"
+    );
+    assert!(
+        workspace
+            .apply_live_update(LiveChartUpdate::Closed(older[10]))
+            .is_err(),
+        "a closed bar older than the tail refuses"
+    );
+    assert_eq!(workspace.rows().len(), 60, "no refusal grows the rows");
+    assert_eq!(
+        workspace.derived_builds(),
+        built,
+        "refusals recompute nothing"
+    );
+
+    // Same stamp revises in place.
+    let mut revised = ladder(60);
+    revised[59].close = 999.0;
+    workspace
+        .apply_live_update(LiveChartUpdate::Closed(revised[59]))
+        .expect("same-stamp revision applies");
+    assert_eq!(workspace.rows().len(), 60);
+    assert_eq!(workspace.rows()[59].close, 999.0);
+
+    // Newer appends.
+    let mut next = ladder(61);
+    next[60].time = last_time + 1;
+    workspace
+        .apply_live_update(LiveChartUpdate::Closed(next[60]))
+        .expect("a newer bar appends");
+    assert_eq!(workspace.rows().len(), 61);
+}

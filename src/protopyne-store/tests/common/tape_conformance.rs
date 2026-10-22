@@ -183,7 +183,7 @@ pub fn assert_no_partial_on_refusal(covered: bool, what: &str) {
 /// tape lookup refuses it as unknown first); the shape refusal is pinned at
 /// the request-validation boundary, which is what the planner consumes.
 pub fn check_request_shape(store: &dyn CandleStore, venue: &str) {
-    use protopyne_types::Validate as _;
+    use fluent_wvr::validate::Validate as _;
     let blank = ReadRequest {
         symbol: String::new(),
         venue: venue.to_owned(),

@@ -149,3 +149,41 @@ fn impl_component_generic_expands_for_wrapper() {
     assert!(component_downcast_ref::<Wrap<Arc<dyn Component>>>(&*comp).is_some());
     assert_eq!(comp.name(), "inner");
 }
+
+struct Inner {
+    val: String,
+}
+impl FieldAccess for Inner {
+    fn set_field(&mut self, n: &str, v: &str) -> Result<(), FieldError> {
+        assert_eq!(n, "k");
+        v.clone_into(&mut self.val);
+        Ok(())
+    }
+    fn get_field(&self, n: &str) -> Result<String, FieldError> {
+        assert_eq!(n, "k");
+        Ok(self.val.clone())
+    }
+    fn field_names(&self) -> &'static [&'static str] {
+        &["k"]
+    }
+}
+impl Describable for Inner {
+    fn describe(&self) -> serde_json::Value {
+        serde_json::json!({"inner": true})
+    }
+}
+struct Outer {
+    config: Inner,
+}
+fluent_wvr::delegate_component_fields!(Outer, config);
+
+#[test]
+fn delegate_component_fields_forwards_verbatim() {
+    let mut o = Outer {
+        config: Inner { val: "a".into() },
+    };
+    o.set_field("k", "b").expect("forwards");
+    assert_eq!(o.get_field("k").expect("forwards"), "b");
+    assert_eq!(o.field_names(), &["k"]);
+    assert_eq!(o.describe(), serde_json::json!({"inner": true}));
+}

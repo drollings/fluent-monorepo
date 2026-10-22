@@ -12,11 +12,11 @@
 //! boundary via [`fin_or_none`]. Kernels read only the legs they need from
 //! [`Ohlcv`]; [`BarTick`] is the matching per-bar input for [`update`](Indicator::update).
 
-use std::collections::HashMap;
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 
 use bon::Builder;
+use common_core::registry::KeyedRegistry;
 use fluent_dag::dep_graph::{DependencyGraph, GraphError};
 use serde::{Deserialize, Serialize};
 
@@ -1282,9 +1282,11 @@ pub trait Indicator: Send + Sync {
 /// Instance registry of indicators keyed by spec id. Deliberately an owned
 /// value rather than a process-global, so tests and parallel runs each hold
 /// their own registry.
+/// Duplicate policy: first-wins, duplicates refuse `Err(DuplicateIndicator)`.
+/// `ids()` returns sorted order via [`KeyedRegistry`].
 #[derive(Default)]
 pub struct IndicatorRegistry {
-    indicators: HashMap<IndicatorId, Arc<dyn Indicator>>,
+    indicators: KeyedRegistry<IndicatorId, Arc<dyn Indicator>>,
 }
 
 impl IndicatorRegistry {
@@ -1297,7 +1299,7 @@ impl IndicatorRegistry {
     /// Register an indicator. Duplicate ids are refused.
     pub fn register(&mut self, indicator: Arc<dyn Indicator>) -> Result<(), KernelError> {
         let id = indicator.spec().id.clone();
-        if self.indicators.contains_key(&id) {
+        if self.indicators.contains(&id) {
             return Err(KernelError::DuplicateIndicator(id));
         }
         self.indicators.insert(id, indicator);
@@ -1318,9 +1320,7 @@ impl IndicatorRegistry {
     /// Registered ids in sorted order.
     #[must_use]
     pub fn ids(&self) -> Vec<IndicatorId> {
-        let mut ids: Vec<IndicatorId> = self.indicators.keys().cloned().collect();
-        ids.sort();
-        ids
+        self.indicators.keys().cloned().collect()
     }
 
     /// Number of registered indicators.

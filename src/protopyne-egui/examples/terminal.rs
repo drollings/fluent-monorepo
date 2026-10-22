@@ -180,20 +180,13 @@ impl TerminalApp {
                 // the form. Until set, the dock's arm-grant subpane shows
                 // read-only tier texts.
                 workspace.set_grant_schema(&protopyne_strategy::GrantPatch::default().describe());
-                // Restore the persisted selection over the boot history; a
-                // persisted timeframe switches the live read.
-                let symbol = prefs.symbol.clone();
+                // Restore the persisted selection and per-ticker layouts over
+                // the boot history; the active ticker's layout (timeframe,
+                // range, chart type, loadout) applies on the switch below.
+                let symbol = prefs.active_symbol.clone().or_else(|| prefs.symbol.clone());
                 workspace.apply_prefs(&prefs).ok();
                 if let Some(symbol) = symbol.filter(|s| !s.trim().is_empty()) {
                     let _ = workspace.switch_symbol(&symbol, &*gateway);
-                }
-                if let Some(label) = prefs.timeframe.as_deref() {
-                    if let Some(key) = protopyne_egui::TimeframeKey::all()
-                        .into_iter()
-                        .find(|key| key.label() == label)
-                    {
-                        let _ = workspace.switch_timeframe(key, &*gateway);
-                    }
                 }
                 // Dock data (journal/portfolio) and the replay window stream on
                 // demand when the dock opens; boot pays for the chart alone.
@@ -235,12 +228,18 @@ impl eframe::App for TerminalApp {
                 if let Err(error) = paint_workspace(ui, workspace, Some(&*self.gateway)) {
                     ui.colored_label(egui::Color32::RED, format!("workspace refused: {error}"));
                 }
-                let prefs = workspace.prefs();
-                if prefs != self.saved {
-                    if let Ok(bytes) = serde_json::to_vec_pretty(&prefs) {
-                        let _ = write_atomic(&self.prefs_path, &bytes);
+                // Gated persistence: nothing writes `protopyne.json` unless
+                // the operator pressed the menu-bar Save Layout button, which
+                // snapshots the active ticker's chart and indicator settings
+                // over that ticker's previous entry.
+                if workspace.take_save_request() {
+                    let prefs = workspace.prefs();
+                    if prefs != self.saved {
+                        if let Ok(bytes) = serde_json::to_vec_pretty(&prefs) {
+                            let _ = write_atomic(&self.prefs_path, &bytes);
+                        }
+                        self.saved = prefs;
                     }
-                    self.saved = prefs;
                 }
             }
             Err(reason) => {
@@ -250,8 +249,7 @@ impl eframe::App for TerminalApp {
     }
 }
 
-#[tokio::main]
-async fn main() {
+fn main() {
     let mut path: Option<PathBuf> = None;
     let mut check = false;
     let mut mock = false;
@@ -278,16 +276,36 @@ async fn main() {
     };
     let base = base.or(default_base);
     let prefs_source = history_path.clone();
-    let handle: Option<ServerHandle> = if mock {
+    // The UI thread must stay outside any tokio runtime: the gateway bridges
+    // synchronous paint calls onto runtimes (the shared bridge and scoped
+    // blocking workers), and bridging from inside a runtime worker panics
+    // ("Cannot start a runtime from within a runtime"). Boot the server on
+    // an explicit runtime that outlives the window, and run eframe on the
+    // runtime-free main thread. A `#[tokio::main]` here would park the paint
+    // thread on a runtime worker and crash the first replay step or broker
+    // read.
+    let runtime: Option<tokio::runtime::Runtime> = if mock {
         None
     } else {
-        match boot(history_path, base).await {
+        Some(
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .unwrap_or_else(|error| {
+                    eprintln!("protopyne-terminal: runtime refused: {error}");
+                    std::process::exit(1);
+                }),
+        )
+    };
+    let handle: Option<ServerHandle> = match &runtime {
+        Some(runtime) => match runtime.block_on(boot(history_path, base)) {
             Ok(handle) => Some(handle),
             Err(e) => {
                 eprintln!("protopyne-terminal: {e}");
                 std::process::exit(1);
             }
-        }
+        },
+        None => None,
     };
     let gateway: Box<dyn TerminalGateway> = match &handle {
         Some(handle) => Box::new(handle.gateway()),
@@ -339,14 +357,21 @@ async fn main() {
         let run = eframe::run_native(
             "protopyne gateway terminal",
             eframe::NativeOptions::default(),
-            Box::new(|_cc| Ok::<_, Box<dyn std::error::Error + Send + Sync>>(Box::new(app))),
+            Box::new(|cc| {
+                protopyne_egui::install_noto_sans(
+                    &cc.egui_ctx,
+                    include_bytes!("../fonts/NotoSans-Regular.ttf"),
+                    include_bytes!("../fonts/NotoSansMono-Regular.ttf"),
+                )?;
+                Ok::<_, Box<dyn std::error::Error + Send + Sync>>(Box::new(app))
+            }),
         );
         if let Err(e) = run {
             eprintln!("protopyne-terminal: window refused: {e}");
             std::process::exit(1);
         }
     }
-    if let Some(handle) = handle {
-        handle.shutdown().await;
+    if let (Some(handle), Some(runtime)) = (handle, &runtime) {
+        runtime.block_on(handle.shutdown());
     }
 }

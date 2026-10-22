@@ -111,3 +111,29 @@ macro_rules! impl_fieldless {
         }
     };
 }
+
+/// Transparent field delegation for wrapper components: forwards
+/// `set_field`/`get_field`/`field_names`/`describe` to one inner field.
+/// `Instrumented<U>` stays hand-written (generic `U: Component` bound);
+/// this macro covers concrete wrappers like `PineRuntime`.
+#[macro_export]
+macro_rules! delegate_component_fields {
+    ($type:ty, $field:ident) => {
+        impl $crate::FieldAccess for $type {
+            fn set_field(&mut self, name: &str, value: &str) -> Result<(), $crate::FieldError> {
+                $crate::FieldAccess::set_field(&mut self.$field, name, value)
+            }
+            fn get_field(&self, name: &str) -> Result<String, $crate::FieldError> {
+                $crate::FieldAccess::get_field(&self.$field, name)
+            }
+            fn field_names(&self) -> &'static [&'static str] {
+                $crate::FieldAccess::field_names(&self.$field)
+            }
+        }
+        impl $crate::Describable for $type {
+            fn describe(&self) -> serde_json::Value {
+                $crate::Describable::describe(&self.$field)
+            }
+        }
+    };
+}

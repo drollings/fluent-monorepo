@@ -374,7 +374,7 @@ impl WorkUnit for ReconcileUnit {
         if report.matched {
             Ok(WorkOutput::ok("book agrees with venue"))
         } else {
-            Err(WorkError::Execution(report.alerts.join("; ")))
+            Err(WorkError::execution_display(report.alerts.join("; ")))
         }
     }
 }
@@ -383,10 +383,7 @@ impl_fieldless!(ReconcileUnit);
 
 impl Describable for ReconcileUnit {
     fn describe(&self) -> serde_json::Value {
-        serde_json::json!({
-            "type": "object",
-            "description": "Reconciliation sensor: fails while the journal book disagrees with the venue",
-        })
+        fluent_wvr::describe_work_unit(self.name(), self.depends(), self.provides(), None)
     }
 }
 

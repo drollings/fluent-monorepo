@@ -75,7 +75,7 @@ pub struct BacktestConfig {
     pub require_chains: bool,
 }
 
-impl protopyne_types::Validate for BacktestConfig {
+impl fluent_wvr::validate::Validate for BacktestConfig {
     type Err = ServerError;
     fn validate(&self) -> Result<(), Self::Err> {
         BacktestConfig::validate(self)

@@ -18,7 +18,8 @@
 //! spelling of that boundary: every served read proves its output through
 //! it, before and after the fold.
 
-use protopyne_types::{validate_new_bar, Bar, Timeframe, Validate};
+use fluent_wvr::validate::Validate;
+use protopyne_types::{validate_new_bar, Bar, Timeframe};
 
 use crate::catalog::Market;
 

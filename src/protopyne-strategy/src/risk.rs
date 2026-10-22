@@ -79,7 +79,7 @@ pub struct RiskLimits {
     pub min_buying_power: Option<f64>,
 }
 
-impl protopyne_types::Validate for RiskLimits {
+impl fluent_wvr::validate::Validate for RiskLimits {
     type Err = String;
     fn validate(&self) -> Result<(), Self::Err> {
         RiskLimits::validate(self)
@@ -106,8 +106,8 @@ impl WorkUnit for RiskLimits {
     }
 
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
-        protopyne_types::check_for_execute(self, "risk limits invalid")?;
-        Ok(protopyne_types::valid_output("risk limits valid"))
+        fluent_wvr::validate::check_for_execute(self, "risk limits invalid")?;
+        Ok(fluent_wvr::validate::valid_output("risk limits valid"))
     }
 }
 
@@ -535,7 +535,7 @@ impl WorkUnit for RiskEngine {
     }
 
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
-        protopyne_types::check_for_execute(&self.limits, "risk limits invalid")?;
+        fluent_wvr::validate::check_for_execute(&self.limits, "risk limits invalid")?;
         Ok(WorkOutput::ok(format!(
             "risk engine ready (max_contracts_per_trade={})",
             self.limits.max_contracts_per_trade

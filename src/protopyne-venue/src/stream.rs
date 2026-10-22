@@ -110,7 +110,7 @@ pub struct StreamConfig {
     pub max_restarts_per_window: u32,
 }
 
-impl protopyne_types::Validate for StreamConfig {
+impl fluent_wvr::validate::Validate for StreamConfig {
     type Err = String;
     fn validate(&self) -> Result<(), Self::Err> {
         StreamConfig::validate(self)
@@ -159,8 +159,8 @@ impl WorkUnit for StreamConfig {
     }
 
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
-        protopyne_types::check_for_execute(self, "stream config invalid")?;
-        Ok(protopyne_types::valid_output("stream config valid"))
+        fluent_wvr::validate::check_for_execute(self, "stream config invalid")?;
+        Ok(fluent_wvr::validate::valid_output("stream config valid"))
     }
 }
 
@@ -567,7 +567,7 @@ impl WorkUnit for StreamHealthUnit {
 
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         if self.breaker.tripped() {
-            Err(WorkError::Execution(
+            Err(WorkError::execution_display(
                 self.breaker
                     .trip_reason()
                     .unwrap_or_else(|| "stream breaker tripped".to_owned()),
@@ -582,10 +582,7 @@ impl_fieldless!(StreamHealthUnit);
 
 impl Describable for StreamHealthUnit {
     fn describe(&self) -> serde_json::Value {
-        serde_json::json!({
-            "type": "object",
-            "description": "Stream breaker supervision sensor: fails while the attached stream breaker is tripped",
-        })
+        fluent_wvr::describe_work_unit(self.name(), self.depends(), self.provides(), None)
     }
 }
 

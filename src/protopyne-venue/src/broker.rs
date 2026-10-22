@@ -223,8 +223,9 @@ impl BrokerBundle {
     }
 }
 
-/// Read/feed/auth directory. Composes the workspace's keyed registry rather
-/// than adding a third registry implementation.
+/// Read/feed/auth directory. Sorted `BTreeMap` under `RwLock` (M4: stays;
+/// `KeyedRegistry` is single-threaded, `ConcurrentRegistry` is hashed `Arc`
+/// values — neither fits shared `&self` + sorted `Result` reads).
 #[derive(Default)]
 pub struct BrokerRegistry {
     entries: RwLock<BTreeMap<BrokerId, BrokerBundle>>,
@@ -282,6 +283,12 @@ impl BrokerRegistry {
             .keys()
             .cloned()
             .collect()
+    }
+
+    /// Number of registered bundles.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        common_core::sync::lock_read(&self.entries).len()
     }
 
     /// Whether the directory is empty.

@@ -127,3 +127,72 @@ fn duplicate_unknown_and_unsupported_refuse() {
     assert!(matches!(err, BrokerError::Unsupported { .. }));
     assert!(err.to_string().contains("account reads"));
 }
+
+#[test]
+fn ids_sorted_upsert_replaces_len_tracks() {
+    let registry = BrokerRegistry::new();
+    assert!(registry.is_empty());
+    assert_eq!(registry.len(), 0);
+    for name in ["b", "a", "c"] {
+        let id = BrokerId::new(name).expect("id");
+        registry
+            .register(BrokerBundle::new(
+                id,
+                paper() as Arc<dyn crate::venue::Venue>,
+            ))
+            .expect("registered");
+    }
+    assert_eq!(registry.len(), 3);
+    let ids: Vec<String> = registry
+        .ids()
+        .iter()
+        .map(|id| id.as_str().to_owned())
+        .collect();
+    assert_eq!(ids, vec!["a", "b", "c"]);
+    let id = BrokerId::new("a").expect("id");
+    registry.upsert(BrokerBundle::new(
+        id.clone(),
+        paper() as Arc<dyn crate::venue::Venue>,
+    ));
+    assert_eq!(registry.len(), 3);
+    assert!(registry.get(&id).is_ok());
+}
+
+#[test]
+fn account_range_contains_window_edges() {
+    use chrono::{TimeZone, Utc};
+    let at = |h: u32| Utc.with_ymd_and_hms(2026, 1, 2, h, 0, 0).unwrap();
+    assert!(AccountRange::all().contains(at(9)));
+    let bounded = AccountRange {
+        start: Some(at(9)),
+        end: Some(at(10)),
+        limit: None,
+    };
+    assert!(bounded.contains(at(9)), "start inclusive");
+    assert!(
+        !bounded.contains(at(10)),
+        "end exclusive: touching not inside"
+    );
+    assert!(!bounded.contains(at(8)));
+    let inverted = AccountRange {
+        start: Some(at(10)),
+        end: Some(at(9)),
+        limit: None,
+    };
+    assert!(!inverted.contains(at(9)));
+    assert!(!inverted.contains(at(10)));
+    let empty = AccountRange {
+        start: Some(at(9)),
+        end: Some(at(9)),
+        limit: None,
+    };
+    assert!(!empty.contains(at(9)), "empty window contains nothing");
+    let rows = vec![(at(9), "a"), (at(10), "b"), (at(11), "c")];
+    let kept = AccountRange {
+        start: None,
+        end: None,
+        limit: Some(2),
+    }
+    .window(rows);
+    assert_eq!(kept, vec!["a", "b"], "limit truncates, never grows");
+}

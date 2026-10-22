@@ -31,7 +31,7 @@ use fluent_egui::{
 };
 use fluent_wvr::{component_downcast_ref, Component, FieldAccess};
 use protopyne_chart_model::{heikin_rows_of, ChartRow, ChartType, DateRange};
-use protopyne_chart_scale::PriceScaleMode;
+use protopyne_chart_scale::{PriceRange, PriceScaleMode};
 use protopyne_types::{BucketAccum, Money, SymKey, SymbolIndex, Timeframe};
 use protopyne_view::{
     pick_default_symbol, symbol_catalog, AssetClass, ReplayDecisionView, ReplayStartParams,
@@ -51,7 +51,7 @@ use crate::integration_lite::{
     momentum_tints, ribbon_fill_transparency, IntegrationLiteConfig, IntegrationLiteSubPane,
     MomentumPalette, MomentumTint,
 };
-use crate::prefs::{Favorites, SlotPrefs, TerminalPrefs};
+use crate::prefs::{BookmarkEntry, Favorites, SlotPrefs, TerminalPrefs, TickerLayout};
 use crate::session::{fmt_boundary_time, time_grid_lines, time_major_unit, SessionBreakCache};
 use crate::topology::SeriesCatalog;
 use crate::views::{
@@ -59,9 +59,10 @@ use crate::views::{
     TicketModel, ViewsBundle,
 };
 use crate::widgets::{
-    paint_range_dialog, paint_top_bar, CalendarState, RangeChoice, TopBarAction, TopBarMenuState,
+    bar_text, paint_calendar, paint_range_dialog, paint_top_bar, CalendarState, PlayPressState,
+    RangeChoice, ReplaySpeed, TopBarAction, TopBarMenuState, PLAY_LONG_PRESS_SECS,
 };
-use crate::{paint_grant_form, GrantFormState, ReplayScrub};
+use crate::{paint_grant_form, GrantFormState};
 
 /// Stable id of the IntegrationLite slot whose richer sub-pane geometry
 /// (delta histogram) the canvas paints alongside the plugin's series.
@@ -788,6 +789,7 @@ fn paint_crosshair_overlay(
     hover: egui::Pos2,
     theme: &ThemeConfig,
 ) -> Result<Option<(f32, usize)>, EguiError> {
+    // NOT-A-LADDER: hover-absence reads as none, not a candidate walk.
     let local = (hover.x - layout.plot.left(), hover.y - layout.plot.top());
     let Some(data) = crosshair_data(local, &viewport, rows.len()) else {
         return Ok(None);
@@ -824,6 +826,21 @@ fn paint_crosshair_overlay(
     Ok(Some((span.x, data.index)))
 }
 
+/// One canvas context-menu row, raised near the pointer on right-click or
+/// long-press: Auto Zoom refits the Y axis to the displayed candles,
+/// Bookmark captures the trigger candle for the active ticker, and Set
+/// Replay Boundary arms the replay button's window at the trigger candle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ChartContextAction {
+    /// Refit Y to the displayed candles, preserving X (Refresh's Y-fit).
+    AutoZoom,
+    /// Capture the trigger candle plus timeframe into this ticker's list.
+    Bookmark,
+    /// Set a replay boundary at the trigger candle (beginning by default,
+    /// the end when a beginning already precedes it).
+    SetReplayBoundary,
+}
+
 /// An interactive replay run driven from the dock: the gateway owns the
 /// session (decisions, fills, journal), this owns the controls and the
 /// cached state the panes render. Chart and indicators truncate to the
@@ -834,15 +851,21 @@ struct LiveReplay {
     /// Registry slot opened core-side.
     session_id: String,
     /// Last state the gateway served (cursor, verdicts, fills, journal).
+    /// The cursor runs in the server history's coordinates.
     state: ReplayStateView,
     /// Whether the play loop steps while the section paints.
     playing: bool,
-    /// Play rate in bars per second.
-    rate_bars_per_sec: u64,
     /// Last control refusal, cleared on the next success.
     error: Option<String>,
-    /// Last play tick, for rate pacing.
-    last_tick: Option<std::time::Instant>,
+    /// Exclusive end of the replay window in server coordinates: steps clamp
+    /// here and play stops on arrival. `None` replays to the last server bar.
+    server_end: Option<u64>,
+    /// Server history timestamps by bar, in order: maps the server cursor to
+    /// the display prefix (bars with an earlier time are decided, the rest
+    /// stay hidden). Empty means the legacy identity mapping — the server
+    /// cursor is read as a display index — kept for gateways that serve no
+    /// replay time axis.
+    server_times: Vec<i64>,
 }
 
 impl LiveReplay {
@@ -859,10 +882,17 @@ impl LiveReplay {
             session_id,
             state,
             playing: false,
-            rate_bars_per_sec: 5,
             error: None,
-            last_tick: None,
+            server_end: None,
+            server_times: Vec::new(),
         }
+    }
+
+    /// Exclusive end of the window this run may decide, in server
+    /// coordinates, defaulting to the session's own bar count when no
+    /// explicit end was picked.
+    fn end(&self) -> u64 {
+        self.server_end.unwrap_or(self.state.total_bars)
     }
 }
 
@@ -873,6 +903,7 @@ impl LiveReplay {
 /// One place owns all terminal state so the Material top bar, the symbol and
 /// indicator modals, the upper-left hot-slot legend, the multi-pane canvas,
 /// and the dock's collapsible subpanes read and write the same truth.
+#[allow(clippy::struct_excessive_bools)]
 pub struct ChartWorkspace {
     symbol_index: SymbolIndex,
     active_symbol: SymKey,
@@ -889,6 +920,9 @@ pub struct ChartWorkspace {
     series_catalog: SeriesCatalog,
     stack: HotSlotStack,
     plugins: Vec<Box<dyn ChartIndicator>>,
+    // Catalog stays `HashMap`: consumers read `values()` order-insensitively,
+    // replace-on-duplicate matches `KeyedRegistry` but sorting would add
+    // churn with no reader benefit.
     evaluations: HashMap<String, IndicatorEvaluation>,
     sub_pane: Option<IntegrationLiteSubPane>,
     momentum_keys: Vec<&'static str>,
@@ -926,6 +960,45 @@ pub struct ChartWorkspace {
     sub_panes: Vec<SubPaneView>,
     symbol_modal: Option<CatalogModal<AssetClass>>,
     indicator_modal: Option<CatalogModal<IndicatorCategory>>,
+    /// Bookmark picker over the active ticker's entries, rebuilt on every
+    /// open; `None` is a closed picker. Painted as a titlebar-less popup
+    /// below the menu-bar button, like the ticker and indicator pickers.
+    bookmark_modal: Option<CatalogModal<TimeframeKey>>,
+    /// Menu-bar button rects the titlebar-less pickers hang below: the popup
+    /// anchors at the stored rect, so the ticker, indicator, bookmark, and
+    /// jump UIs open centered below their buttons above the dock or chart.
+    /// Set on every opener click beside the modal state they anchor.
+    symbol_anchor: Option<egui::Rect>,
+    /// See [`symbol_anchor`](Self::symbol_anchor).
+    indicator_anchor: Option<egui::Rect>,
+    /// See [`symbol_anchor`](Self::symbol_anchor).
+    bookmark_anchor: Option<egui::Rect>,
+    /// See [`symbol_anchor`](Self::symbol_anchor).
+    jump_anchor: Option<egui::Rect>,
+    /// Whether the Jump To Time popup (menu-bar magnifier) is open.
+    jump_open: bool,
+    /// Month the Jump calendar is showing; picking a day sets the jump
+    /// text's date part and preserves its clock part.
+    jump_calendar: CalendarState,
+    /// Jump refusal, when the last Go failed. Shown inside the popup;
+    /// another Go overwrites it.
+    jump_error: Option<String>,
+    /// Bookmark refusal, when the last bookmark jump failed. Shown inside
+    /// the bookmark picker; another pick overwrites it.
+    bookmark_error: Option<String>,
+    /// Whether the canvas context menu (right-click / long-press) is open.
+    context_open: bool,
+    /// Pointer position the context menu opened at, in global pixels.
+    context_at: egui::Pos2,
+    /// Bar time the context menu opened over, resolved through the main
+    /// viewport at trigger time so later pans cannot move the actions.
+    context_time: Option<i64>,
+    /// Long-press tracking on the canvas: pointer position and UI seconds
+    /// when the current primary hold started, if the pointer is down on it.
+    context_press: Option<(f32, f32, f32)>,
+    /// Whether the current hold already opened the context menu: the release
+    /// is then consumed instead of starting a second menu.
+    context_fired: bool,
     /// Starred ticker symbols, owned here (not in the on-demand modal) so the
     /// Favorites filter survives the modal closing and serializes to
     /// `protopyne.json`.
@@ -933,6 +1006,27 @@ pub struct ChartWorkspace {
     /// Starred indicator ids; the indicator-catalog twin of
     /// [`favorite_symbols`](Self::favorite_symbols).
     favorite_indicators: BTreeSet<String>,
+    /// Starred bookmark ids (`{symbol}|{timeframe}|{time}`); the bookmark
+    /// picker's Favorites filter keys on this set, like the other catalogs.
+    favorite_bookmarks: BTreeSet<String>,
+    /// Bookmarked candles by ticker symbol, in capture order. Set from the
+    /// canvas context menu; picked from the menu-bar bookmark picker, which
+    /// jumps the chart to the bookmarked candle.
+    bookmarks: BTreeMap<String, Vec<BookmarkEntry>>,
+    /// Saved per-ticker layouts, stashed on every ticker switch and applied
+    /// to the incoming ticker: the Save Layout button overwrites exactly the
+    /// active ticker's entry, and [`prefs`](Self::prefs) merges the stash
+    /// with the live layout. Never written except through an explicit save.
+    saved_layouts: BTreeMap<String, TickerLayout>,
+    /// Session-only layout stash, separate from the saved map: switching
+    /// tickers parks the live layout here so an unsaved session keeps its
+    /// edits while roaming, without overwriting any ticker's saved entry.
+    /// A saved entry always wins over a stashed one on the way in.
+    stashed_layouts: BTreeMap<String, TickerLayout>,
+    /// Save requested by the menu-bar Save Layout button and not yet
+    /// consumed: the composition root writes `protopyne.json` only when
+    /// [`take_save_request`](Self::take_save_request) answers true.
+    save_requested: bool,
     /// Session-break memo over the window's bar times. The loader refreshes
     /// it when the window's contents move (see
     /// [`refresh_session_breaks`](Self::refresh_session_breaks)); the paint
@@ -947,17 +1041,18 @@ pub struct ChartWorkspace {
     /// drawer is closed or overlaid. Defaults closed so first paint is
     /// full-bleed. Persists across frames in memory.
     dock_open: bool,
-    /// Top-bar menu drafts (Beginning + Jump texts) behind the data-range
-    /// dialog. Owned here so the Range button and its dialog share one truth.
+    /// Top-bar menu drafts (Beginning + Jump texts) behind the dock's range
+    /// section. Owned here so the section's pickers share one truth.
     top_menu: TopBarMenuState,
-    /// Whether the interactive range dialog is open.
-    range_menu_open: bool,
-    /// Draft preset in the range dialog; `None` when a Beginning is drafted.
+    /// Draft preset in the dock range section; `None` when a Beginning is drafted.
     range_draft: Option<DateRange>,
     /// Month the Beginning calendar is showing. Owned here (not in the
     /// reflection-backed menu component) so the picker navigates months
     /// without a schema field per cursor.
     calendar: CalendarState,
+    /// Range section refusal, when the last apply/jump failed. Shown inline
+    /// with a dismiss control; applying again overwrites it.
+    range_error: Option<String>,
     /// Custom window start (epoch seconds) from the Beginning picker. `None`
     /// means the preset range rules; `Some(t)` filters the trailing window
     /// to bars at or after `t`. Clamped to loaded history; a fetch is
@@ -988,33 +1083,41 @@ pub struct ChartWorkspace {
     /// [`set_grant_schema`](Self::set_grant_schema) when a descriptor is
     /// available, else the form stays empty and read-only tier texts show.
     grant_form: GrantFormState,
-    /// Replay scrub over the standard topology; the gateway supplies the
-    /// window, this owns where the cursor stands. Lives in the dock.
-    replay: Option<ReplayScrub>,
-    /// Replay refusal, when ingest failed.
+    /// Replay refusal, when the last replay control failed. Shown inline in
+    /// the replay section; applying again or opening overwrites it.
     replay_error: Option<String>,
     /// Interactive replay run (proposals + paper fills) when one is live:
     /// the controls and the cached core-side state the chart and panes
     /// truncate to. `None` is the live chart.
     live_replay: Option<LiveReplay>,
-    /// Replay start draft: a bar index or a `YYYY-MM-DD` date. Lives outside
-    /// the run so the operator can draft the next open while one is live.
-    replay_start_draft: String,
-    /// Replay seed draft: a bare integer naming deterministic proposal ids.
-    replay_seed_draft: String,
-    /// Replay grant draft: an explicit grant document as JSON, or empty for
-    /// the replay rehearsal grant. Lives outside the run so the operator can
-    /// draft the next open while one is live; the core alone parses what is
-    /// sent, exactly like `arm` (never armed here, only replayed under).
-    replay_grant_draft: String,
-    /// Replay structure draft: the `"Single"`/`"Vertical"` tag the next open
-    /// forwards to the core, which builds the replay strategy and grant
-    /// scope from it. A plain string, never the core vocabulary — the paint
-    /// edge links no strategy types.
-    replay_structure_draft: String,
-    /// Bar index under the pointer at the last painted frame, for the
-    /// replay's start-at-crosshair control.
-    last_hover_bar: Option<usize>,
+    /// Transport speed in candles at the selected timeframe, shared by the
+    /// menu-bar play button and its long-press popup: Slow shows one candle
+    /// every three seconds, Normal paces one candle per second, Fast steps
+    /// five candles per second, and Full advances as fast as the core
+    /// calculates. Applies to the next opened run and live-adjusts a running
+    /// one.
+    replay_speed: ReplaySpeed,
+    /// Paced-play clock, in seconds on the pump's own time base: advanced by
+    /// each pump frame's elapsed `dt`, so headless tests drive the same
+    /// cadence with explicit durations. Reset on open and stop.
+    replay_clock: f64,
+    /// UI-clock time the next paced candle is due, on [`replay_clock`](Self::replay_clock)'s
+    /// base: `None` until the first pump after play starts, which waits one
+    /// full interval so a fresh press never bursts. Cleared on pause, open,
+    /// and stop, so resuming restarts the cadence instead of dumping a
+    /// banked backlog.
+    replay_next_due: Option<f64>,
+    /// Long-press state of the menu-bar play button (tap toggles, hold opens
+    /// the speed popup).
+    play_press: PlayPressState,
+    /// Applied replay window as epoch seconds: `(start, end)` with
+    /// `start <= end`, captured from the chart's own visible window at the
+    /// moment play is pressed. Times are fixed — panning the display moves
+    /// the markers with the time axis, never the window itself. `None` is
+    /// the live chart over the full loaded history; the transport captures
+    /// a fresh window on every play from no run, so a replay never starts
+    /// without an explicit window.
+    replay_range: Option<(i64, i64)>,
     /// Manual-ticket issue drafts: the operator's exact ticket fields. The
     /// core alone parses what is sent — drafts stay plain strings until the
     /// issue click builds the intent document.
@@ -1048,16 +1151,20 @@ pub fn live_update_of_frame(frame: &str) -> Result<LiveChartUpdate, EguiError> {
         what: "frame".to_owned(),
         reason,
     };
-    let value: serde_json::Value =
-        serde_json::from_str(frame).map_err(|error| refused(format!("live frame is not JSON: {error}")))?;
+    let value: serde_json::Value = serde_json::from_str(frame)
+        .map_err(|error| refused(format!("live frame is not JSON: {error}")))?;
     if value.get("type").and_then(serde_json::Value::as_str) != Some("bar") {
-        let kind = value.get("type").cloned().unwrap_or(serde_json::Value::Null);
+        let kind = value
+            .get("type")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
         return Err(refused(format!("live frame type {kind} is not a bar")));
     }
     let number = |name: &str| {
-        value.get(name).and_then(serde_json::Value::as_f64).ok_or_else(|| {
-            refused(format!("live bar frame has no numeric {name:?}"))
-        })
+        value
+            .get(name)
+            .and_then(serde_json::Value::as_f64)
+            .ok_or_else(|| refused(format!("live bar frame has no numeric {name:?}")))
     };
     let time = value
         .get("time")
@@ -1140,14 +1247,33 @@ impl ChartWorkspace {
             sub_panes: Vec::new(),
             symbol_modal: None,
             indicator_modal: None,
+            bookmark_modal: None,
+            symbol_anchor: None,
+            indicator_anchor: None,
+            bookmark_anchor: None,
+            jump_anchor: None,
+            jump_open: false,
+            jump_calendar: CalendarState::default(),
+            jump_error: None,
+            bookmark_error: None,
+            context_open: false,
+            context_at: egui::Pos2::ZERO,
+            context_time: None,
+            context_press: None,
+            context_fired: false,
             favorite_symbols: BTreeSet::new(),
             favorite_indicators: BTreeSet::new(),
+            favorite_bookmarks: BTreeSet::new(),
+            bookmarks: BTreeMap::new(),
+            saved_layouts: BTreeMap::new(),
+            stashed_layouts: BTreeMap::new(),
+            save_requested: false,
             session_breaks: SessionBreakCache::new(),
             dock_open: false,
             top_menu: TopBarMenuState::new().build(),
-            range_menu_open: false,
             range_draft: None,
             calendar: CalendarState::default(),
+            range_error: None,
             custom_start: None,
             pending_auto_height: false,
             last_plot_width: PANE_WIDTH_PX,
@@ -1156,14 +1282,13 @@ impl ChartWorkspace {
             broker_model: None,
             dock_journal_lines: Vec::new(),
             grant_form: GrantFormState::default(),
-            replay: ReplayScrub::standard().ok(),
             replay_error: None,
             live_replay: None,
-            replay_start_draft: String::new(),
-            replay_seed_draft: "7".to_owned(),
-            replay_grant_draft: String::new(),
-            replay_structure_draft: "Single".to_owned(),
-            last_hover_bar: None,
+            replay_speed: ReplaySpeed::default(),
+            replay_clock: 0.0,
+            replay_next_due: None,
+            play_press: PlayPressState::default(),
+            replay_range: None,
             ticket_underlying: "SPY".to_owned(),
             ticket_side: "Buy".to_owned(),
             ticket_quantity: "1".to_owned(),
@@ -1613,20 +1738,37 @@ impl ChartWorkspace {
     /// One live chart update. Forming bars repaint only (no indicator
     /// recompute); closed bars upsert the row and recompute through the
     /// existing pane plan/cache. Neither path reaches strategy or risk.
+    ///
+    /// Fail-closed on time: a bar stamped at the last bar's time revises it,
+    /// a bar stamped later appends it, and a bar stamped earlier refuses —
+    /// a wrapped or reordered feed (for example the rehearsal pump cycling
+    /// back to its first month) never splices non-consecutive history onto
+    /// the tail. The refusal names the offending stamp so the caller can
+    /// break the drain instead of painting January after March.
     #[allow(clippy::needless_pass_by_value)]
     pub fn apply_live_update(&mut self, update: LiveChartUpdate) -> Result<(), EguiError> {
+        fn refuse_older(what: &str, time: i64, last: i64) -> EguiError {
+            EguiError::InvalidParam {
+                what: what.to_owned(),
+                reason: format!("live bar at {time} is older than the last loaded bar at {last}"),
+            }
+        }
         match update {
             LiveChartUpdate::Forming(row) => {
                 match self.rows.last_mut() {
                     Some(last) if last.time == row.time => *last = row,
-                    _ => self.rows.push(row),
+                    Some(last) if row.time > last.time => self.rows.push(row),
+                    Some(last) => return Err(refuse_older("forming", row.time, last.time)),
+                    None => self.rows.push(row),
                 }
                 Ok(())
             }
             LiveChartUpdate::Closed(row) => {
                 match self.rows.last_mut() {
                     Some(last) if last.time == row.time => *last = row,
-                    _ => self.rows.push(row),
+                    Some(last) if row.time > last.time => self.rows.push(row),
+                    Some(last) => return Err(refuse_older("closed", row.time, last.time)),
+                    None => self.rows.push(row),
                 }
                 self.recompute()
             }
@@ -1635,16 +1777,14 @@ impl ChartWorkspace {
 
     /// Pull fresh bars for the active symbol and timeframe through `gateway`,
     /// rebind the viewports, recompute every active indicator, and refresh
-    /// the dock's cached gateway views (health/portfolio/proposals/journal)
-    /// plus the replay window. This is the full refresh a **live feed** drives
-    /// (new bars keep arriving, so the dock and replay move too); with no live
-    /// feed the menu-bar button calls
-    /// [`verify_chart_range`](Self::verify_chart_range) instead, which touches
-    /// the chart alone.
+    /// the dock's cached gateway views (health/portfolio/proposals/journal).
+    /// This is the full refresh a **live feed** drives (new bars keep
+    /// arriving, so the dock moves too); with no live feed the menu-bar
+    /// button calls [`verify_chart_range`](Self::verify_chart_range) instead,
+    /// which touches the chart alone.
     pub fn refresh(&mut self, gateway: &dyn TerminalGateway) -> Result<(), EguiError> {
         self.refresh_chart(gateway, None)?;
         self.refresh_dock_bundle(gateway);
-        self.refresh_replay(gateway);
         Ok(())
     }
 
@@ -1653,11 +1793,18 @@ impl ChartWorkspace {
     /// covers the active range and reads the missing trailing delta through
     /// `gateway` when it does not; an already-covered range only rebinds and
     /// recomputes. Either way the indicators redraw and the visible window
-    /// refits, exactly like a rewind/forward landing. The dock bundle and
+    /// refits its Y axis in place: the X position and zoom the operator is
+    /// looking at never move (trailing to the newest bar is the
+    /// forward-to-end button's job, not refresh's). The dock bundle and
     /// replay are left untouched: with no live feed they cannot have
     /// changed, so their serialization cost is not paid by a chart verify
     /// (the dock still loads on first open).
     pub fn verify_chart_range(&mut self, gateway: &dyn TerminalGateway) -> Result<(), EguiError> {
+        // Snapshot the X axis before any rebind: rebinding rebuilds the
+        // viewports onto the trailing edge, so the offsets are restored
+        // afterwards, shifted by the bars the read prepended.
+        let saved_offset = self.main.map(Viewport::x_offset_px);
+        let saved_first = self.rows.first().map(|row| row.time);
         let needed = self.trailing_keep(self.timeframe, None);
         if needed > self.rows.len() {
             let symbol = self.active_symbol().to_owned();
@@ -1668,8 +1815,46 @@ impl ChartWorkspace {
             self.rebind_viewports()?;
             self.recompute()?;
         }
+        if let (Some(offset), Some(first)) = (saved_offset, saved_first) {
+            self.restore_x_offset(offset, first);
+        }
         self.apply_auto_height(self.last_plot_width);
         Ok(())
+    }
+
+    /// Restore the X position saved before a rebind: bars prepended by the
+    /// read shift every old index right, so the offset moves left by the
+    /// shift to keep the same bars under the same pixels. Tail appends keep
+    /// old indices, so they need no compensation and the same math covers a
+    /// pure tail advance (zero shift). A non-positive or non-finite spacing,
+    /// or an empty store, holds the rebound viewport instead of refusing the
+    /// whole refresh.
+    fn restore_x_offset(&mut self, offset_px: f32, old_first_time: i64) {
+        let Some(main) = self.main else {
+            return;
+        };
+        let spacing = main.scale().bar_spacing();
+        if !spacing.is_finite() || spacing <= 0.0 || self.rows.is_empty() {
+            return;
+        }
+        let shift = self.rows.partition_point(|row| row.time < old_first_time) as f32;
+        let next = offset_px - shift * spacing;
+        if !next.is_finite() {
+            return;
+        }
+        if let Ok(view) = main.with_x_offset(next) {
+            self.main = Some(view);
+            if let Some(sub) = self.sub {
+                if let Ok(synced) = sub.sync_time_axis(&view) {
+                    self.sub = Some(synced);
+                }
+            }
+            for pane in &mut self.sub_panes {
+                if let Ok(synced) = pane.viewport.sync_time_axis(&view) {
+                    pane.viewport = synced;
+                }
+            }
+        }
     }
 
     /// Build the issue-click intent document from the ticket drafts. Drafts
@@ -1736,23 +1921,35 @@ impl ChartWorkspace {
         }
     }
 
-    /// Refresh the replay window from the gateway without moving the
-    /// operator's cursor: a repeated read widens the window, never yanks a
-    /// scrub.
-    pub fn refresh_replay(&mut self, gateway: &dyn TerminalGateway) {
-        if let Some(scrub) = self.replay.as_mut() {
-            self.replay_error = scrub.ingest(gateway).err().map(|error| error.to_string());
-        }
-    }
-
     /// Bars the chart and indicators may read while a replay is live: the
-    /// history prefix ending at the cursor. `None` is the live chart (the
+    /// decided prefix of the loaded history. `None` is the live chart (the
     /// full store). A prefix never renumbers — indices ride untouched — so
     /// every viewport mapping and slot space stays valid.
+    ///
+    /// The server cursor runs in server-history coordinates; the display
+    /// prefix counts loaded bars whose window is fully decided — a display
+    /// bar appears only once the server has decided through its bucket, so
+    /// no painter ever reads a bar the run has only half decided. Without a
+    /// mapped server time axis the cursor is read as a display index, the
+    /// legacy contract for gateways that serve no replay window.
     fn replay_prefix_len(&self) -> Option<usize> {
-        self.live_replay
-            .as_ref()
-            .map(|live| (live.state.cursor as usize).min(self.rows.len()))
+        let live = self.live_replay.as_ref()?;
+        if live.server_times.is_empty() {
+            return Some((live.state.cursor as usize).min(self.rows.len()));
+        }
+        let cursor = live.state.cursor as usize;
+        if cursor >= live.server_times.len() {
+            return Some(self.rows.len());
+        }
+        let time = live.server_times[cursor];
+        // Bars stamped at or before the bar under the cursor are decided;
+        // the leading bar itself never counts, so a run opened at the head
+        // (or an empty store) still reads an empty prefix.
+        Some(
+            self.rows
+                .partition_point(|row| row.time <= time)
+                .saturating_sub(1),
+        )
     }
 
     /// Truncate a full-store row slice to the replay view. The store is
@@ -1763,59 +1960,6 @@ impl ChartWorkspace {
             Some(prefix) => &rows[..prefix.min(rows.len())],
             None => rows,
         }
-    }
-
-    /// Resolve the replay start draft: empty is the head, a bare integer is
-    /// a bar index, else a `YYYY-MM-DD` date naming the first bar at or
-    /// after midnight UTC. Refuses garbage, indices past the last bar, and
-    /// dates past the last bar — the same refusal shape as Beginning.
-    fn resolve_replay_start(&self, text: &str) -> Result<usize, EguiError> {
-        let trimmed = text.trim();
-        if trimmed.is_empty() {
-            return Ok(0);
-        }
-        if let Ok(index) = trimmed.parse::<usize>() {
-            if index > self.rows.len() {
-                return Err(EguiError::InvalidParam {
-                    what: "replay start".to_owned(),
-                    reason: format!("bar {index} is past {} bars", self.rows.len()),
-                });
-            }
-            return Ok(index);
-        }
-        let date = chrono::NaiveDate::parse_from_str(trimmed, "%Y-%m-%d").map_err(|_| {
-            EguiError::InvalidParam {
-                what: "replay start".to_owned(),
-                reason: format!("{trimmed:?} is a bar index or YYYY-MM-DD"),
-            }
-        })?;
-        let start = date
-            .and_hms_opt(0, 0, 0)
-            .map_or(0, |dt| dt.and_utc().timestamp());
-        if self.rows.last().is_some_and(|last| start > last.time) {
-            return Err(EguiError::InvalidParam {
-                what: "replay start".to_owned(),
-                reason: "replay start is past the last bar".to_owned(),
-            });
-        }
-        Ok(self.rows.partition_point(|row| row.time < start))
-    }
-
-    /// Resolve the replay grant draft: empty is the rehearsal grant (`None`
-    /// core-side); anything else must parse as a JSON grant document the core
-    /// alone validates — the same shape as the `arm` refusal, without arming.
-    /// Garbage refuses here with the reason on the section, never core-side.
-    fn resolve_replay_grant(text: &str) -> Result<Option<serde_json::Value>, EguiError> {
-        let trimmed = text.trim();
-        if trimmed.is_empty() {
-            return Ok(None);
-        }
-        serde_json::from_str(trimmed)
-            .map(Some)
-            .map_err(|error| EguiError::InvalidParam {
-                what: "replay grant".to_owned(),
-                reason: format!("grant document is not JSON: {error}"),
-            })
     }
 
     /// One display row per executed spread leg on a filled verdict, in fill
@@ -1834,21 +1978,72 @@ impl ChartWorkspace {
             .collect()
     }
 
-    /// Open (or replace) the interactive replay session core-side, then land
-    /// the chart on it: indicators recompute over the start prefix and the
-    /// cursor jumps into view with the Y fit to the prefix. Rehearsal
-    /// economics match the preview's own booking; an explicit grant document
-    /// replays under that grant instead (parsed core-side, never armed).
-    /// `structure` is the picker tag (`"Single"`/`"Vertical"`); the core
-    /// alone maps it onto strategy and grant scope.
+    /// Open (or replace) the interactive replay session over an epoch window,
+    /// then land the chart on it: indicators recompute over the decided
+    /// prefix and the cursor jumps into view with the Y fit to the prefix.
+    /// `start_epoch` is the first bar the run decides; `end_excl_epoch` the
+    /// first bar it never decides (`None` replays to the last loaded bar).
+    /// Rehearsal economics match the preview's own booking; an explicit grant
+    /// document replays under that grant instead (parsed core-side, never
+    /// armed). `structure` is the picker tag (`"Single"`/`"Vertical"`); the
+    /// core alone maps it onto strategy and grant scope. Opening never
+    /// auto-plays: the transport starts the loop explicitly, so a fresh open
+    /// lands paused on its first bar.
+    ///
+    /// The window is resolved against the loaded chart data, which is
+    /// in-filled first: when fewer than the indicators' warmup bars precede
+    /// the start, earlier history is pulled through the gateway so the start
+    /// carries valid indicator values; a refused pull refuses the open
+    /// fail-closed rather than replaying over a gapped context. The session
+    /// itself runs over the server history, so display indices are translated
+    /// to server indices by timestamp (the loaded rows are the server's own
+    /// trailing window); a gateway that serves no replay time axis falls back
+    /// to the legacy identity mapping.
+    #[allow(clippy::too_many_arguments)]
     fn open_live_replay(
         &mut self,
         gateway: &dyn TerminalGateway,
-        start_bar: usize,
+        start_epoch: i64,
+        end_excl_epoch: Option<i64>,
         seed: u64,
         grant: Option<serde_json::Value>,
         structure: String,
     ) {
+        if self.rows.is_empty() {
+            self.replay_error = Some("replay needs loaded bars".to_owned());
+            return;
+        }
+        // A fresh open clears the last refusal, like every other replay
+        // control path: a stale reason never outlives the retry it names.
+        self.replay_error = None;
+        let mut start = self.rows.partition_point(|row| row.time < start_epoch);
+        let mut end = match end_excl_epoch {
+            Some(time) => self.rows.partition_point(|row| row.time < time),
+            None => self.rows.len(),
+        };
+        if start > end {
+            self.replay_error = Some(format!("replay start {start_epoch} is past the replay end"));
+            return;
+        }
+        // In-fill the warmup context before resolving the window: the fetch
+        // prepends earlier bars, so resolve again from the stable epochs.
+        if let Err(error) = self.ensure_replay_coverage(start, gateway) {
+            self.replay_error = Some(error.to_string());
+            return;
+        }
+        start = self.rows.partition_point(|row| row.time < start_epoch);
+        end = match end_excl_epoch {
+            Some(time) => self.rows.partition_point(|row| row.time < time),
+            None => self.rows.len(),
+        }
+        .min(self.rows.len());
+        start = start.min(end);
+        if start >= end {
+            self.replay_error = Some("replay window is empty".to_owned());
+            return;
+        }
+        let (server_start, server_end, server_times) =
+            self.map_window_to_server(gateway, start, end);
         let params = ReplayStartParams {
             session_id: "terminal".to_owned(),
             underlying: self.active_symbol().to_owned(),
@@ -1858,13 +2053,22 @@ impl ChartWorkspace {
             dte_days: LiveReplay::DTE_DAYS,
             warmup_bars: 0,
             seed,
-            start_bar: start_bar as u64,
+            start_bar: server_start,
             structure,
             grant,
         };
         match gateway.replay_start(params) {
             Ok(state) => {
-                self.live_replay = Some(LiveReplay::new("terminal".to_owned(), state));
+                let mut live = LiveReplay::new("terminal".to_owned(), state);
+                live.server_end = Some(server_end);
+                live.server_times = server_times;
+                // Opening never auto-plays: the transport (menu-bar play or
+                // the dock's play toggle) starts the loop explicitly, so a
+                // fresh open lands paused on its first bar.
+                live.playing = false;
+                self.live_replay = Some(live);
+                self.replay_clock = 0.0;
+                self.replay_next_due = None;
                 let _ = self.recompute();
                 self.jump_to_replay_cursor();
                 self.apply_auto_height_now();
@@ -1875,11 +2079,362 @@ impl ChartWorkspace {
         }
     }
 
-    /// Step the live session, then recompute indicators over the new prefix
-    /// and follow the cursor when it leaves the view. A refused step stops
-    /// the play loop with the reason on the section; the session stays live
-    /// so the operator can retry.
+    /// Warmup bars the active indicators need before the replay start: the
+    /// deepest leading-hole run across the current evaluations (each kernel's
+    /// own warmup for its live config), floored at the fetch headroom that
+    /// covers the longest shipped default lookback. Zero when nothing is
+    /// evaluated yet — the open then pads with the floor alone.
+    fn replay_warmup_need(&self) -> usize {
+        let mut need = FETCH_WARMUP_BARS;
+        for evaluation in self.evaluations.values() {
+            for series in &evaluation.series {
+                let holes = series
+                    .values
+                    .iter()
+                    .take_while(|value| value.is_none())
+                    .count();
+                need = need.max(holes);
+            }
+        }
+        need
+    }
+
+    /// In-fill the loaded history so the replay start carries valid
+    /// indicators: when fewer than [`replay_warmup_need`](Self::replay_warmup_need)
+    /// bars precede display index `start`, pull a wider trailing window
+    /// through the gateway and rebind over it. The full store stays loaded,
+    /// so exiting the replay returns without a re-pull; a refused pull
+    /// propagates, and the caller refuses the open rather than replaying over
+    /// a gapped context. Without a gateway there is nothing to pull through,
+    /// so the loaded rows stand as they are.
+    fn ensure_replay_coverage(
+        &mut self,
+        start: usize,
+        gateway: &dyn TerminalGateway,
+    ) -> Result<(), EguiError> {
+        let pad = self.replay_warmup_need();
+        if start >= pad {
+            return Ok(());
+        }
+        let symbol = self.active_symbol().to_owned();
+        let timeframe = self.timeframe;
+        let size = self.rows.len() + (pad - start);
+        let rows = Self::fetch_rows(gateway, &symbol, timeframe, size)?;
+        self.apply_fetched(&symbol, timeframe, rows)
+    }
+
+    /// Translate a display window to server coordinates by timestamp: the
+    /// first server bar at or after the display start opens the session, the
+    /// first server bar at or after the display end bounds it, and the full
+    /// server time axis rides along so later cursors map back to display
+    /// prefixes. Display times are the server's own trailing window stamped
+    /// through the same fold, so every display stamp names a server bar. A
+    /// gateway that serves no (or no parseable) replay time axis falls back
+    /// to the identity mapping — the legacy contract, correct whenever the
+    /// loaded rows already are the session history.
+    fn map_window_to_server(
+        &self,
+        gateway: &dyn TerminalGateway,
+        start: usize,
+        end: usize,
+    ) -> (u64, u64, Vec<i64>) {
+        let identity = || (start as u64, end as u64, Vec::new());
+        let Ok(view) = gateway.replay() else {
+            return identity();
+        };
+        if view.steps.is_empty() {
+            return identity();
+        }
+        let mut times = Vec::with_capacity(view.steps.len());
+        for step in &view.steps {
+            let Ok(stamp) = chrono::DateTime::parse_from_rfc3339(&step.ts) else {
+                return identity();
+            };
+            times.push(stamp.timestamp());
+        }
+        let Some(first) = self.rows.get(start).map(|row| row.time) else {
+            return identity();
+        };
+        let server_start = times.partition_point(|time| *time < first) as u64;
+        let server_end = match self.rows.get(end).map(|row| row.time) {
+            Some(first_excluded) => times.partition_point(|time| *time < first_excluded) as u64,
+            None => times.len() as u64,
+        };
+        (server_start, server_end, times)
+    }
+
+    /// Window the transport replays, in display epochs: the visible chart
+    /// window captured at the moment play was pressed, defaulting to the
+    /// full loaded history. The end rides `None` when it is the last loaded
+    /// bar, so a later in-fill still ends at the newest bar.
+    fn replay_epochs(&self) -> (i64, Option<i64>) {
+        match self.replay_range {
+            Some((start_epoch, end_epoch)) => {
+                let end = self.rows.partition_point(|row| row.time <= end_epoch);
+                let end_excl = self.rows.get(end).map(|row| row.time);
+                (start_epoch, end_excl)
+            }
+            None => (self.rows.first().map_or(0, |row| row.time), None),
+        }
+    }
+
+    /// Label for the dock replay section: the captured `start→end` dates, or
+    /// `Full` when no window is captured (the transport then replays the
+    /// whole loaded history).
+    fn replay_range_label(&self) -> String {
+        match self.replay_range {
+            Some((start, end)) => format!("{}→{}", format_date_text(start), format_date_text(end)),
+            None => "Full".to_owned(),
+        }
+    }
+
+    /// Whether the play loop is currently stepping.
+    fn replay_playing(&self) -> bool {
+        self.live_replay.as_ref().is_some_and(|live| live.playing)
+    }
+
+    /// Capture the chart's own visible window as the replay window: the
+    /// displayed beginning and end at the moment play is pressed. Stored as
+    /// epochs, so panning the display afterwards moves the markers with the
+    /// time axis without moving the window itself. An empty visible window
+    /// (nothing on screen) refuses with a reason instead of opening; with
+    /// no bound viewport yet, the window stays full history.
+    fn capture_visible_replay_window(&mut self) -> Result<(), EguiError> {
+        let Some(main) = self.main else {
+            self.replay_range = None;
+            return Ok(());
+        };
+        let width = self.last_plot_width;
+        if !width.is_finite() || width <= 0.0 || self.rows.is_empty() {
+            self.replay_range = None;
+            return Ok(());
+        }
+        let (start, end) = main.visible_bar_range(width, self.rows.len());
+        if start >= end {
+            return Err(EguiError::InvalidParam {
+                what: "replay window".to_owned(),
+                reason: "nothing visible to replay".to_owned(),
+            });
+        }
+        let start_epoch = self.rows[start].time;
+        let end_epoch = self.rows[end.saturating_sub(1).max(start)].time;
+        self.replay_range = Some((start_epoch, end_epoch));
+        Ok(())
+    }
+
+    /// Display indices of the captured replay window's edges, for the pane
+    /// divider markers: the first visible-window bar and the last one. Times
+    /// are fixed at capture; indices re-resolve every frame so panning moves
+    /// the markers with the time axis.
+    fn replay_marker_indices(&self) -> Option<(usize, usize)> {
+        let (start_epoch, end_epoch) = self.replay_range?;
+        if self.rows.is_empty() {
+            return None;
+        }
+        let start = self.rows.partition_point(|row| row.time < start_epoch);
+        let end = self.rows.partition_point(|row| row.time <= end_epoch);
+        if start >= self.rows.len() || end == 0 || start >= end {
+            return None;
+        }
+        Some((start, end - 1))
+    }
+
+    /// Transport play/pause: pause when playing, resume when paused, and open
+    /// then play when no run is live. Opening replays the boundary window
+    /// when one is set (context-menu boundaries or a previous capture), else
+    /// captures the chart's own visible window as the replay area — the
+    /// displayed beginning and end at the moment play is pressed — so play
+    /// without a visible window refuses instead of guessing. A finished run
+    /// re-opens fresh on the next play instead of resuming past its end
+    /// (the core-side session is single-cursor; rewinding the display alone
+    /// would desync it). With no gateway the chart stays live and the
+    /// refusal names the missing gateway.
+    fn toggle_replay_play(&mut self, gateway: Option<&dyn TerminalGateway>) {
+        let finished = self
+            .live_replay
+            .as_ref()
+            .is_some_and(|live| !live.playing && live.state.cursor >= live.end());
+        if self.live_replay.is_some() && !finished {
+            if let Some(live) = self.live_replay.as_mut() {
+                live.playing = !live.playing;
+            }
+            // Pausing or resuming restarts the cadence from the press: a
+            // resumed run waits one full interval instead of dumping whatever
+            // banked while paused.
+            self.replay_next_due = None;
+            return;
+        }
+        // No run, or a finished one: open over the boundary window when one
+        // is set, else capture the visible window first. Stopping first
+        // closes the spent core-side session. A refusal to capture (nothing
+        // visible) names itself and opens nothing.
+        if self.replay_range.is_none() {
+            if let Err(error) = self.capture_visible_replay_window() {
+                self.replay_error = Some(error.to_string());
+                return;
+            }
+        }
+        if let Some(gateway) = gateway {
+            if self.live_replay.is_some() {
+                self.stop_live_replay(gateway);
+            }
+        }
+        let Some(gateway) = gateway else {
+            self.replay_error = Some("replay needs a gateway".to_owned());
+            return;
+        };
+        self.open_captured_replay(gateway);
+        if let Some(live) = self.live_replay.as_mut() {
+            live.playing = true;
+        }
+    }
+
+    /// Open a replay run over the boundary window (full history when none is
+    /// set, e.g. no viewport bound yet). The run always rehearses: fixed deterministic ids,
+    /// the preview's own per-trade booking, and the single-leg strategy —
+    /// the same economics the preview agrees on. Structure and grant choice
+    /// stay core-side (the core builds the replay strategy and grant scope
+    /// from the `"Single"` shape and the rehearsal grant); the dock offers no
+    /// run-configuration knobs beyond the window and the transport.
+    fn open_captured_replay(&mut self, gateway: &dyn TerminalGateway) {
+        let (start_epoch, end_excl_epoch) = self.replay_epochs();
+        self.open_live_replay(
+            gateway,
+            start_epoch,
+            end_excl_epoch,
+            7,
+            None,
+            "Single".to_owned(),
+        );
+    }
+
+    /// Display index one past the last candle the run may decide: the loaded
+    /// candles whose window the captured end covers. Identity-mapped runs
+    /// read the server end straight as a display index.
+    fn replay_display_end(&self) -> Option<usize> {
+        let live = self.live_replay.as_ref()?;
+        let end = live.end() as usize;
+        if live.server_times.is_empty() {
+            return Some(end.min(self.rows.len()));
+        }
+        if end >= live.server_times.len() {
+            return Some(self.rows.len());
+        }
+        // Bars whose window closes at or before the end bar: the bar
+        // straddling the end stays hidden with it. (Index 0 never counts
+        // itself, mirroring the prefix rule.)
+        let edge = live.server_times[end];
+        Some(
+            self.rows
+                .partition_point(|row| row.time <= edge)
+                .saturating_sub(1),
+        )
+    }
+
+    /// Server cursor whose decision first reveals display candle `target`:
+    /// the first server bar at or after that candle's own stamp, so deciding
+    /// it completes the candle's window. Without a mapped time axis the
+    /// target already addresses the server.
+    fn server_cursor_for_display(&self, target: usize) -> Option<u64> {
+        let live = self.live_replay.as_ref()?;
+        if live.server_times.is_empty() {
+            return Some((target as u64).min(live.end()));
+        }
+        if target >= self.rows.len() {
+            return Some(live.end());
+        }
+        if target == 0 {
+            return Some(live.state.cursor.min(live.end()));
+        }
+        let stamp = self.rows[target].time;
+        Some((live.server_times.partition_point(|time| *time < stamp) as u64).min(live.end()))
+    }
+
+    /// Advance the run by up to `display_candles` chart candles at the
+    /// selected timeframe, mapping through the server time axis, and bound
+    /// the core work to `max_server_bars` per call. Returns the display
+    /// candles actually decided. Reaching the captured end stops the loop
+    /// like a zero step does.
+    fn step_display_bars(
+        &mut self,
+        gateway: &dyn TerminalGateway,
+        display_bars: u64,
+        max_server_bars: u64,
+    ) -> u64 {
+        let Some(prefix) = self.replay_prefix_len() else {
+            return 0;
+        };
+        let Some(display_end) = self.replay_display_end() else {
+            return 0;
+        };
+        let target = prefix
+            .saturating_add(usize::try_from(display_bars).unwrap_or(usize::MAX))
+            .min(display_end);
+        if target <= prefix {
+            if let Some(live) = self.live_replay.as_mut() {
+                live.playing = false;
+            }
+            return 0;
+        }
+        let Some(mut server_target) = self.server_cursor_for_display(target) else {
+            return 0;
+        };
+        server_target =
+            server_target.min(self.live_replay.as_ref().map_or(u64::MAX, LiveReplay::end));
+        let mut remaining = max_server_bars;
+        for _ in 0..4096 {
+            let cursor = self
+                .live_replay
+                .as_ref()
+                .map_or(server_target, |live| live.state.cursor);
+            if cursor >= server_target {
+                break;
+            }
+            let step = (server_target - cursor).min(256).min(remaining);
+            if step == 0 {
+                break;
+            }
+            self.step_live_replay(gateway, step);
+            remaining = remaining.saturating_sub(step);
+            let advanced = self
+                .live_replay
+                .as_ref()
+                .map_or(cursor, |live| live.state.cursor);
+            if advanced <= cursor || remaining == 0 {
+                break;
+            }
+        }
+        self.replay_prefix_len()
+            .unwrap_or(prefix)
+            .saturating_sub(prefix) as u64
+    }
+
+    /// Step the live session, then recompute indicators over the new prefix,
+    /// follow the cursor when it leaves the view, and refit the Y axis to
+    /// the decided window so every newly revealed candle paints in full. A
+    /// refused step stops the play loop with the reason on the section; the
+    /// session stays live so the operator can retry. Steps clamp to the run's
+    /// server end (the captured window's end, or the last server bar):
+    /// arriving stops play, so a backtest never steps past what the operator
+    /// asked for.
     fn step_live_replay(&mut self, gateway: &dyn TerminalGateway, bars: u64) {
+        let end = self.live_replay.as_ref().map(LiveReplay::end);
+        let bars = match end {
+            Some(end) => {
+                let cursor = self
+                    .live_replay
+                    .as_ref()
+                    .map_or(0, |live| live.state.cursor);
+                bars.min(end.saturating_sub(cursor))
+            }
+            None => bars,
+        };
+        if bars == 0 {
+            if let Some(live) = self.live_replay.as_mut() {
+                live.playing = false;
+            }
+            return;
+        }
         let Some(live) = self.live_replay.as_mut() else {
             return;
         };
@@ -1887,7 +2442,7 @@ impl ChartWorkspace {
             Ok(state) => {
                 live.state = state;
                 live.error = None;
-                if live.state.cursor >= live.state.total_bars {
+                if live.state.cursor >= live.end() || live.state.cursor >= live.state.total_bars {
                     live.playing = false;
                 }
             }
@@ -1899,6 +2454,9 @@ impl ChartWorkspace {
         }
         let _ = self.recompute();
         self.follow_replay_cursor();
+        // Refit the visible window's Y axis to the newly revealed bars, so
+        // the full candles stay painted as the run advances through them.
+        self.apply_auto_height(self.last_plot_width);
     }
 
     /// Close the live session core-side and return to the live chart: the
@@ -1912,7 +2470,91 @@ impl ChartWorkspace {
             }
         }
         self.live_replay = None;
+        self.replay_clock = 0.0;
+        self.replay_next_due = None;
         let _ = self.recompute();
+    }
+
+    /// Play pump: pace steps to the selected speed — counted in display
+    /// candles at the selected timeframe, so 1 candle/s advances one chart
+    /// candle per second on any timeframe — and keep frames coming until
+    /// paused or the head is reached. Frame-level (not section-level), so
+    /// menu-bar play advances with the drawer closed; the run's end clamp
+    /// still bounds every step.
+    ///
+    /// Steady, never bursty: each paced candle has a wall-clock deadline one
+    /// interval after the previous (`1/rate`: 0.2 s at Fast), and a frame
+    /// steps at most one candle — the one whose deadline crossed — no matter
+    /// how much time banked up. A stall longer than one interval drops the
+    /// missed candles instead of dumping them as a burst, and pausing or
+    /// reopening restarts the cadence from the press. The wake-up is
+    /// scheduled for the next deadline (capped at 100 ms), so at Fast frames
+    /// land one candle apart instead of idling. Full speed steps the gateway
+    /// maximum every frame instead.
+    fn pump_replay_play(
+        &mut self,
+        gateway: Option<&dyn TerminalGateway>,
+        ui: &mut egui::Ui,
+        dt: std::time::Duration,
+    ) {
+        if !self.live_replay.as_ref().is_some_and(|live| live.playing) {
+            return;
+        }
+        self.replay_clock += dt.as_secs_f64();
+        let clock = self.replay_clock;
+        // The frame started one `dt` ago: a deadline initialized now counts
+        // from the press, not from after the first frame's time.
+        let frame_start = clock - dt.as_secs_f64();
+        // Deadline slop: frame deltas like 0.1 s are not exact in binary, so
+        // ten of them can land a rounding step short of the tenth deadline.
+        // A nanosecond of grace keeps the cadence without ever stepping two.
+        const DEADLINE_EPS: f64 = 1e-9;
+        // How long to sleep before the next frame: paced play wakes for its
+        // next deadline, Full speed polls at the idle cadence.
+        let mut wait = std::time::Duration::from_millis(100);
+        match self.replay_speed.candles_per_sec() {
+            Some(rate) => {
+                let interval = 1.0 / rate;
+                let mut due_at = if let Some(due_at) = self.replay_next_due {
+                    due_at
+                } else {
+                    // The first pump after a press waits one full interval:
+                    // a fresh press never opens with a burst.
+                    let due_at = frame_start + interval;
+                    self.replay_next_due = Some(due_at);
+                    due_at
+                };
+                if due_at <= clock + DEADLINE_EPS {
+                    if let Some(gateway) = gateway {
+                        // At most one candle per frame: the deadline that
+                        // crossed. A zero step means the end clamp stopped
+                        // the run, so there is nothing more to schedule.
+                        if self.step_display_bars(gateway, 1, 256) == 0 {
+                            self.replay_next_due = None;
+                            return;
+                        }
+                    }
+                    due_at += interval;
+                }
+                // A stall banked more than one interval: drop the backlog
+                // instead of dumping it — steadiness over exactness.
+                if due_at <= clock + DEADLINE_EPS {
+                    due_at = clock + interval;
+                }
+                self.replay_next_due = Some(due_at);
+                wait = std::time::Duration::from_secs_f64((due_at - clock).clamp(0.0, 0.1));
+            }
+            // Uncapped: as fast as the core calculates, one gateway maximum
+            // per frame.
+            None => {
+                if let Some(gateway) = gateway {
+                    self.step_display_bars(gateway, u64::MAX, 256);
+                }
+            }
+        }
+        if self.live_replay.as_ref().is_some_and(|live| live.playing) {
+            ui.ctx().request_repaint_after(wait);
+        }
     }
 
     /// Land the replay head at the pane's right edge, preserving zoom and
@@ -2193,6 +2835,23 @@ impl ChartWorkspace {
         Ok(())
     }
 
+    /// Set the Jump text's date part from a calendar pick, preserving the
+    /// clock part: a picked day never clobbers a typed `HH:MM`.
+    fn apply_jump_date(&mut self, date: &str) {
+        let time = self
+            .top_menu
+            .jump_text
+            .split_whitespace()
+            .nth(1)
+            .unwrap_or("")
+            .to_owned();
+        self.top_menu.jump_text = if time.is_empty() {
+            date.to_owned()
+        } else {
+            format!("{date} {time}")
+        };
+    }
+
     /// Whether the chart is panned to the earliest loaded bar: the culled
     /// window starts at bar zero over the last measured plot width. Empty
     /// stores and unbound viewports answer false so the affordance never
@@ -2433,15 +3092,33 @@ impl ChartWorkspace {
     /// The window and range carry over (the new ticker loads on demand for the
     /// range already selected). The fetch lands before any assignment, so a
     /// refused fetch leaves the `(symbol, timeframe, rows)` triple untouched.
+    /// A live replay run never survives the switch: its window epochs and
+    /// server coordinates belong to the previous ticker, so the run closes
+    /// and the captured window clears rather than deciding one history while
+    /// painting another. (Timeframe switches keep both: epochs re-resolve
+    /// and the timestamp mapping is timeframe-agnostic.)
     pub fn switch_symbol(
         &mut self,
         symbol: &str,
         gateway: &dyn TerminalGateway,
     ) -> Result<(), EguiError> {
+        self.stash_current_layout();
         let timeframe = self.timeframe;
         let size = self.target_fetch(timeframe);
         let rows = Self::fetch_rows(gateway, symbol, timeframe, size)?;
-        self.apply_fetched(symbol, timeframe, rows)
+        self.apply_fetched(symbol, timeframe, rows)?;
+        self.clear_replay_for_symbol_switch(Some(gateway));
+        // The incoming ticker restores its own layout: a saved entry wins,
+        // else the session's stashed one keeps unsaved edits while roaming.
+        let layout = self
+            .saved_layouts
+            .get(symbol)
+            .or_else(|| self.stashed_layouts.get(symbol))
+            .cloned();
+        if let Some(layout) = layout {
+            self.apply_ticker_layout(&layout, Some(gateway))?;
+        }
+        Ok(())
     }
 
     /// Switch the active timeframe and pull its history through `gateway`.
@@ -2566,6 +3243,28 @@ impl ChartWorkspace {
         self.pending_auto_height = true;
     }
 
+    /// Drop any live replay run and its captured window on a ticker switch:
+    /// the window's epochs and the session's server coordinates belong to
+    /// the previous ticker, so carrying them on would decide one history
+    /// while painting another. A refused close still clears the local run;
+    /// the reason rides the replay section, and the chart keeps the freshly
+    /// loaded rows either way.
+    fn clear_replay_for_symbol_switch(&mut self, gateway: Option<&dyn TerminalGateway>) {
+        if self.live_replay.is_none() && self.replay_range.is_none() {
+            return;
+        }
+        if let Some(gateway) = gateway {
+            if self.live_replay.is_some() {
+                self.stop_live_replay(gateway);
+            }
+        } else if self.live_replay.is_some() {
+            self.live_replay = None;
+            let _ = self.recompute();
+        }
+        self.replay_range = None;
+        self.replay_error = Some("replay closed: the symbol switched".to_owned());
+    }
+
     /// Switch the active ticker over caller-seeded histories, without a
     /// gateway: records `symbol`, replaces every timeframe slot with
     /// `frames`, and binds the active timeframe's rows. The demo shell owns
@@ -2580,6 +3279,7 @@ impl ChartWorkspace {
         symbol: &str,
         frames: Vec<(TimeframeKey, Vec<ChartRow>)>,
     ) -> Result<(), EguiError> {
+        self.stash_current_layout();
         self.set_symbol(symbol)?;
         self.histories.clear();
         for (timeframe, rows) in frames {
@@ -2593,6 +3293,17 @@ impl ChartWorkspace {
             self.rebind_viewports()?;
             self.recompute()?;
             return Err(error);
+        }
+        self.clear_replay_for_symbol_switch(None);
+        // Best-effort seeded restore: a held frame missing the saved
+        // timeframe keeps the live rows instead of failing the switch.
+        let layout = self
+            .saved_layouts
+            .get(symbol)
+            .or_else(|| self.stashed_layouts.get(symbol))
+            .cloned();
+        if let Some(layout) = layout {
+            let _ = self.apply_ticker_layout(&layout, None);
         }
         Ok(())
     }
@@ -2773,7 +3484,8 @@ impl ChartWorkspace {
 
     /// Slot indices in evaluation order: plan order mapped back to plugins
     /// (a plugin runs at its earliest node's position), stable by slot order
-    /// so edge-free panes evaluate exactly as slotted.
+    /// so edge-free panes evaluate exactly as slotted. Plan-derived, not a
+    /// residual sorter.
     fn eval_order(&self) -> Result<Vec<usize>, EguiError> {
         let node_order = self.plan.order()?;
         let position: HashMap<&str, usize> = node_order
@@ -2866,6 +3578,18 @@ impl ChartWorkspace {
         (lo - pad, hi + pad)
     }
 
+    /// Nominal plot heights for the current pane share: the price plot (minus
+    /// its time strip) and one sub-pane's share for `pane_count` sub-panes.
+    /// The frame resyncs both to the measured window; these only bind
+    /// viewports before first paint. Shared by the full and soft rebinds so
+    /// geometry cannot drift between them.
+    fn pane_heights(&self, pane_count: usize) -> (f32, f32) {
+        let share = self.pane_share.clamp(MIN_PANE_SHARE, MAX_PANE_SHARE);
+        let price_plot = NOMINAL_CANVAS_HEIGHT * share - TIME_STRIP;
+        let sub_plot = NOMINAL_CANVAS_HEIGHT * (1.0 - share);
+        (price_plot, sub_plot / pane_count.max(1) as f32)
+    }
+
     /// Rebind the main and sub-pane viewports (and the interaction bounds) to
     /// the current rows and range. Heights follow the pane share over the
     /// nominal canvas (the price plot minus its time strip); the first
@@ -2885,9 +3609,8 @@ impl ChartWorkspace {
         } else {
             DEFAULT_BAR_SPACING
         };
-        let share = self.pane_share.clamp(MIN_PANE_SHARE, MAX_PANE_SHARE);
-        let price_plot = NOMINAL_CANVAS_HEIGHT * share - TIME_STRIP;
-        let sub_plot = NOMINAL_CANVAS_HEIGHT * (1.0 - share);
+        let custom_ids = self.custom_pane_ids();
+        let (price_plot, pane_height) = self.pane_heights(custom_ids.len() + 1);
         let main = Viewport::new(
             PriceScaleMode::Normal,
             lo,
@@ -2897,9 +3620,6 @@ impl ChartWorkspace {
             PRICE_BASE,
             false,
         )?;
-        let custom_ids = self.custom_pane_ids();
-        let pane_count = custom_ids.len() + 1;
-        let pane_height = sub_plot / pane_count as f32;
         let sub = Viewport::new(
             PriceScaleMode::Normal,
             SUB_MIN,
@@ -2964,6 +3684,93 @@ impl ChartWorkspace {
                     // The Y axis roams free above: the data extent bound
                     // `lo, hi` frames the initial fit only, never a ceiling.
                     // Zero stays the absolute floor for every zoom and pan.
+                    .without_vertical_bounds()
+                    .with_value_floor(0.0)?,
+            )
+        };
+        Ok(())
+    }
+
+    /// Rebind viewports without moving the chart: rebuilds the mappings at
+    /// the current heights and spacing, but keeps every pane's X offset and
+    /// price range. Used by recompute while a replay run is live, so
+    /// advancing a bar never alters the X position or zoom behind the
+    /// transport's back — the cursor jump (open) and the head follow (steps)
+    /// own placement, and the per-step auto-height owns the Y fit. Falls back
+    /// to the full rebind when no viewport is bound yet. The interaction
+    /// envelope still re-keys to the loaded length, so an in-fill growth at
+    /// open widens the pan bounds without moving the view.
+    fn soft_rebind_viewports(&mut self) -> Result<(), EguiError> {
+        let (Some(main), Some(sub)) = (self.main, self.sub) else {
+            return self.rebind_viewports();
+        };
+        let offset = main.x_offset_px();
+        let main_range: PriceRange = main.scale().range();
+        let sub_range: PriceRange = sub.scale().range();
+        let old_subs: Vec<(String, PriceRange)> = self
+            .sub_panes
+            .iter()
+            .map(|pane| (pane.id.clone(), pane.viewport.scale().range()))
+            .collect();
+        let spacing = if self.config.bar_spacing > 0.0 {
+            self.config.bar_spacing as f32
+        } else {
+            DEFAULT_BAR_SPACING
+        };
+        let custom_ids = self.custom_pane_ids();
+        let (price_plot, pane_height) = self.pane_heights(custom_ids.len() + 1);
+        let next = Viewport::new(
+            PriceScaleMode::Normal,
+            main_range.min,
+            main_range.max,
+            price_plot,
+            spacing,
+            PRICE_BASE,
+            false,
+        )?
+        .with_x_offset(offset)?;
+        self.main = Some(next);
+        if let Ok(synced) = Viewport::new(
+            PriceScaleMode::Normal,
+            sub_range.min,
+            sub_range.max,
+            pane_height,
+            spacing,
+            0.0,
+            false,
+        )?
+        .sync_time_axis(&next)
+        {
+            self.sub = Some(synced);
+        }
+        let mut sub_panes = Vec::with_capacity(custom_ids.len());
+        for id in custom_ids {
+            let (pane_lo, pane_hi) = match old_subs.iter().find(|(held, _)| held == &id) {
+                Some((_, range)) => (range.min, range.max),
+                None => self.custom_pane_range(&id),
+            };
+            let viewport = Viewport::new(
+                PriceScaleMode::Normal,
+                pane_lo,
+                pane_hi,
+                pane_height,
+                spacing,
+                0.0,
+                false,
+            )?;
+            sub_panes.push(SubPaneView {
+                id,
+                viewport: viewport.sync_time_axis(&next).unwrap_or(viewport),
+            });
+        }
+        self.sub_panes = sub_panes;
+        let (lo, hi) = (main_range.min, main_range.max);
+        self.interaction = if self.rows.is_empty() {
+            None
+        } else {
+            Some(
+                InteractionState::new(lo, hi)?
+                    .with_horizontal_bounds(self.rows.len(), PANE_WIDTH_PX)?
                     .without_vertical_bounds()
                     .with_value_floor(0.0)?,
             )
@@ -3086,6 +3893,7 @@ impl ChartWorkspace {
             }
             self.evaluations.insert(id, stored);
         }
+        // Picker-independent canonicalization for change detection, not pane ordering.
         revisions.sort_unstable();
         if revisions == self.last_series_revisions
             && rows_shape == self.last_rows_shape
@@ -3101,7 +3909,15 @@ impl ChartWorkspace {
         self.sub_pane = self.compute_sub_pane()?;
         self.recompute_tint()?;
         self.derived_builds += 1;
-        self.rebind_viewports()?;
+        // While a replay run is live the transport owns placement: a soft
+        // rebind keeps the X offset and zoom, so advancing a bar never moves
+        // the chart behind the cursor jump and head follow. The Y fit still
+        // lands through the per-step auto-height.
+        if self.live_replay.is_some() {
+            self.soft_rebind_viewports()?;
+        } else {
+            self.rebind_viewports()?;
+        }
         Ok(())
     }
 
@@ -3153,6 +3969,7 @@ impl ChartWorkspace {
     /// is present and its config downcasts. Reads the replay view, so a live
     /// replay folds volume over decided bars only.
     fn compute_sub_pane(&self) -> Result<Option<IntegrationLiteSubPane>, EguiError> {
+        // NOT-A-LADDER: missing slot/config reads as none, not a walk.
         if !self.stack.contains(INTEGRATION_LITE_ID) {
             return Ok(None);
         }
@@ -3196,39 +4013,72 @@ impl ChartWorkspace {
                 self.toggle_dock();
             }
             TopBarAction::OpenSymbolSearch => {
-                self.symbol_modal = Some(symbol_modal_for(gateway)?);
-                self.seed_favorites();
+                // Toggled expansion below the button: a second click while
+                // open closes instead of rebuilding (keeping the query).
+                if self.symbol_modal.is_some() {
+                    self.symbol_modal = None;
+                    self.symbol_anchor = None;
+                } else {
+                    self.symbol_modal = Some(symbol_modal_for(gateway)?);
+                    self.seed_favorites();
+                }
             }
             TopBarAction::OpenIndicatorSearch => {
-                self.indicator_modal = Some(build_indicator_catalog()?);
-                self.seed_favorites();
+                if self.indicator_modal.is_some() {
+                    self.indicator_modal = None;
+                    self.indicator_anchor = None;
+                } else {
+                    self.indicator_modal = Some(build_indicator_catalog()?);
+                    self.seed_favorites();
+                }
+            }
+            TopBarAction::OpenBookmarkSearch => {
+                if self.bookmark_modal.is_some() {
+                    self.bookmark_modal = None;
+                    self.bookmark_anchor = None;
+                } else {
+                    self.bookmark_modal = Some(self.build_bookmark_catalog());
+                    self.seed_favorites();
+                }
+            }
+            TopBarAction::OpenJumpSearch => {
+                // Toggled expansion like the other pickers; the anchor was
+                // stored by the button click beside this action.
+                self.jump_open = !self.jump_open;
+                if !self.jump_open {
+                    self.jump_anchor = None;
+                    self.jump_error = None;
+                }
+            }
+            TopBarAction::SaveLayout => {
+                // The only writer: the composition root persists on this
+                // flag. Saving snapshots the active ticker's chart and
+                // indicator settings, overwriting that ticker's entry.
+                self.save_requested = true;
             }
             TopBarAction::PickedSymbol(symbol) => self.apply_symbol_pick(&symbol, gateway)?,
             TopBarAction::PickedTimeframe(timeframe) => match gateway {
                 Some(gateway) => self.switch_timeframe(timeframe, gateway)?,
                 None => self.select_timeframe(timeframe)?,
             },
-            TopBarAction::ToggleRangeMenu => {
-                self.range_menu_open = !self.range_menu_open;
-                if self.range_menu_open {
-                    // Seed the draft from the live window: the highlighted
-                    // preset, or a Beginning text carrying the custom start.
-                    self.range_draft = self.active_range();
-                    self.top_menu.beginning_text =
-                        self.custom_start.map(format_date_text).unwrap_or_default();
-                }
-            }
             TopBarAction::PickedChartType(chart_type) => self.chart_type = chart_type,
             TopBarAction::Refresh => {
                 // No live feed is wired, so refresh verifies the chart range
                 // only: the dock bundle and replay cannot have changed and are
                 // not re-serialized here. Either way the indicators redraw and
-                // the visible window refits like a rewind/forward landing.
+                // the visible window refits its Y axis in place — the X
+                // position never trails to the newest bar (that is the
+                // forward-to-end button's job).
                 if let Some(gateway) = gateway {
                     self.verify_chart_range(gateway)?;
                 } else {
+                    let saved_offset = self.main.map(Viewport::x_offset_px);
+                    let saved_first = self.rows.first().map(|row| row.time);
                     self.rebind_viewports()?;
                     self.recompute()?;
+                    if let (Some(offset), Some(first)) = (saved_offset, saved_first) {
+                        self.restore_x_offset(offset, first);
+                    }
                     self.apply_auto_height(self.last_plot_width);
                 }
             }
@@ -3237,6 +4087,9 @@ impl ChartWorkspace {
             }
             TopBarAction::Rewind => {
                 self.rewind_view()?;
+            }
+            TopBarAction::ToggleReplayPlay => {
+                self.toggle_replay_play(gateway);
             }
             TopBarAction::Forward => {
                 self.forward_view()?;
@@ -3248,76 +4101,77 @@ impl ChartWorkspace {
         Ok(())
     }
 
-    /// Paint the interactive range dialog and apply its choice on OK. The
-    /// dialog edits this workspace's drafts (preset, Beginning text, calendar
-    /// cursor, jump target); nothing on the chart moves until OK, so a preset
-    /// click or a calendar day never blanks the pane mid-gesture.
-    fn paint_range_window(
-        &mut self,
-        ui: &mut egui::Ui,
-        gateway: Option<&dyn TerminalGateway>,
-    ) -> Result<(), EguiError> {
-        if !self.range_menu_open {
-            return Ok(());
-        }
-        let active_range = self.active_range();
-        let mut open = true;
-        let mut outcome = None;
-        egui::Window::new("Chart range")
-            .open(&mut open)
-            .collapsible(false)
-            .resizable(false)
-            .default_width(crate::widgets::RANGE_DIALOG_WIDTH)
-            .anchor(egui::Align2::LEFT_TOP, egui::vec2(120.0, 48.0))
-            .show(ui.ctx(), |win| {
-                outcome = paint_range_dialog(
-                    win,
-                    &mut self.range_draft,
-                    &mut self.top_menu.beginning_text,
-                    &mut self.top_menu.jump_text,
-                    &mut self.calendar,
-                    active_range,
-                );
-            });
-        match outcome {
-            Some(RangeChoice::Apply) => {
-                self.range_menu_open = false;
+    /// Apply one dock range-section choice: a preset or Beginning pick grows,
+    /// prunes, or unloads the loaded history with indicator warmup, and
+    /// only the picked range stays displayed; anything else leaves the chart
+    /// alone. A refusal is stored on [`range_error`](Self::range_error) for
+    /// the section to echo, never a frame-stopping error.
+    fn apply_range_choice(&mut self, choice: RangeChoice, gateway: Option<&dyn TerminalGateway>) {
+        self.range_error = None;
+        let outcome = match choice {
+            RangeChoice::Apply => {
                 if self.top_menu.beginning_text.trim().is_empty() {
-                    if let Some(range) = self.range_draft {
-                        self.select_range(range, gateway)?;
+                    match self.range_draft {
+                        Some(range) => self.select_range(range, gateway).map(|()| {
+                            self.range_draft = None;
+                        }),
+                        None => Ok(()),
                     }
                 } else {
                     let text = self.top_menu.beginning_text.clone();
-                    self.set_beginning(&text, gateway)?;
+                    self.set_beginning(&text, gateway)
                 }
             }
-            Some(RangeChoice::Cancel) => {
-                self.range_menu_open = false;
+            RangeChoice::Cancel => {
+                // Discard the drafts: reseed from the live window so the next
+                // paint shows the applied state, not the abandoned edits.
+                self.range_draft = self.active_range();
+                self.top_menu.beginning_text =
+                    self.custom_start.map(format_date_text).unwrap_or_default();
+                Ok(())
             }
-            Some(RangeChoice::Jump) => {
-                self.range_menu_open = false;
-                let text = self.top_menu.jump_text.clone();
-                let width = self.last_plot_width;
-                self.jump_to_time(&text, width, gateway)?;
-            }
-            None => {}
+        };
+        if let Err(error) = outcome {
+            self.range_error = Some(error.to_string());
         }
-        if !open {
-            self.range_menu_open = false;
-        }
-        Ok(())
     }
 
-    /// Apply a symbol pick with or without a gateway to pull through.
+    /// Seed the dock range drafts from the live window when they carry no
+    /// edits: the highlighted preset, or a Beginning text carrying the custom
+    /// start. Typed drafts are never overwritten, so seeding only fills what
+    /// the operator has not touched.
+    fn seed_range_drafts(&mut self) {
+        if self.range_draft.is_none() && self.top_menu.beginning_text.trim().is_empty() {
+            self.range_draft = self.active_range();
+            if self.custom_start.is_some() {
+                self.top_menu.beginning_text =
+                    self.custom_start.map(format_date_text).unwrap_or_default();
+            }
+        }
+    }
+
+    /// Apply a symbol pick with or without a gateway to pull through. The
+    /// incoming ticker restores its own layout: a saved entry wins, else the
+    /// session's stashed one keeps unsaved edits while roaming.
     fn apply_symbol_pick(
         &mut self,
         symbol: &str,
         gateway: Option<&dyn TerminalGateway>,
     ) -> Result<(), EguiError> {
-        match gateway {
-            Some(gateway) => self.switch_symbol(symbol, gateway),
-            None => self.set_symbol(symbol),
+        if let Some(gateway) = gateway {
+            return self.switch_symbol(symbol, gateway);
         }
+        self.stash_current_layout();
+        self.set_symbol(symbol)?;
+        let layout = self
+            .saved_layouts
+            .get(symbol)
+            .or_else(|| self.stashed_layouts.get(symbol))
+            .cloned();
+        if let Some(layout) = layout {
+            let _ = self.apply_ticker_layout(&layout, None);
+        }
+        Ok(())
     }
 
     /// Apply one hot-slot action. The painter already flipped visibility and
@@ -3427,6 +4281,9 @@ impl ChartWorkspace {
         let legend = legend_origin(main_rect, self.stack.card_width());
         self.stack.set_origin(legend);
         self.step_from_response(ui, &response, &layouts, divider_response.dragged());
+        // Right-click or long-press on either pane arms the canvas context
+        // menu at the pointer, resolved against the decided view.
+        self.poll_chart_context_menu(ui, &response, &layouts);
         let bar_seconds = self.timeframe.seconds();
 
         let theme = self.theme.clone();
@@ -3472,6 +4329,8 @@ impl ChartWorkspace {
                     pane.show_ribbon,
                 )
             });
+            // NOT-A-LADDER (M5): default allocation when no ribbon exists,
+            // not an ordered first-Ok candidate walk.
             // Candles need a trend key per bar; the ribbon supplies it, and
             // a ribbon-less workspace reads every bar as bearish. The
             // fallback allocates only when no ribbon exists (the default
@@ -3621,17 +4480,12 @@ impl ChartWorkspace {
             // the oscillator band; a hover over the oscillator snaps through
             // the same time mapping and paints the vertical band plus the
             // time tag, so the band reads as one readout across both panes.
-            // The hovered bar feeds the replay's start-at-crosshair control.
-            self.last_hover_bar = None;
             if let Some(hover) = response.hover_pos() {
                 if layout.plot.contains(hover) {
                     cross_x = paint_crosshair_overlay(
                         &plot, &chrome, main, view_rows, layout, hover, &theme,
                     )?
-                    .map(|(x, index)| {
-                        self.last_hover_bar = Some(index);
-                        x
-                    });
+                    .map(|(x, _index)| x);
                 } else if sub_layout.plot.contains(hover) {
                     // Mid-plot height always maps to a price, so the readout
                     // resolves the bar under the pointer through the exact
@@ -3651,7 +4505,6 @@ impl ChartWorkspace {
                             )?;
                             paint_time_tag(&chrome, layout, x, row.time, &theme)?;
                             cross_x = Some(x);
-                            self.last_hover_bar = Some(data.index);
                         }
                     }
                 }
@@ -3814,6 +4667,68 @@ impl ChartWorkspace {
             ],
             grid_stroke(&theme)?,
         );
+        // Replay window edges ride the divider as two time-fixed ticks: the
+        // captured window's first and last candle, re-resolved every frame
+        // so panning moves the ticks with the time axis while the window
+        // itself stays put. Off-screen edges clip with the seam painter.
+        if let (Some(main), Some((first, last))) = (self.main, self.replay_marker_indices()) {
+            let marker = egui::Stroke::new(2.0, resolve_color(&theme, "fast")?);
+            for index in [first, last] {
+                let x = main.index_to_x(index) + layout.plot.left();
+                seam.line_segment(
+                    [
+                        egui::pos2(x, divider.top() + 1.0),
+                        egui::pos2(x, divider.bottom() - 1.0),
+                    ],
+                    marker,
+                );
+            }
+        }
+        // Canvas context menu (right-click / long-press): Auto Zoom refits
+        // the Y axis to the displayed candles, Bookmark captures the trigger
+        // candle, and Set Replay Boundary arms the replay button. Anchored
+        // at the trigger point, like a Material context menu; an outside
+        // click or Escape closes without acting.
+        if self.context_open {
+            let mut open = true;
+            let mut picked = None;
+            Self::picker_popup(
+                ui,
+                "chart-context",
+                egui::PopupAnchor::Position(self.context_at),
+                &mut open,
+                |menu| {
+                    if menu.button("Auto Zoom").clicked() {
+                        picked = Some(ChartContextAction::AutoZoom);
+                    }
+                    if menu.button("Bookmark").clicked() {
+                        picked = Some(ChartContextAction::Bookmark);
+                    }
+                    if menu.button("Set Replay Boundary").clicked() {
+                        picked = Some(ChartContextAction::SetReplayBoundary);
+                    }
+                },
+            );
+            if !open {
+                self.context_open = false;
+            }
+            if let Some(action) = picked {
+                self.context_open = false;
+                match action {
+                    ChartContextAction::AutoZoom => self.auto_zoom(),
+                    ChartContextAction::Bookmark => {
+                        if let Some(time) = self.context_time {
+                            self.add_bookmark(time);
+                        }
+                    }
+                    ChartContextAction::SetReplayBoundary => {
+                        if let Some(time) = self.context_time {
+                            self.set_replay_boundary(time);
+                        }
+                    }
+                }
+            }
+        }
         // Load-more affordance: when panned to the earliest loaded bar, fade
         // a button into the chart pane's lower-left corner. Clicking loads
         // and prepends the previous month, keeping the current rightmost bar
@@ -3832,6 +4747,82 @@ impl ChartWorkspace {
             }
         }
         Ok(())
+    }
+
+    /// Poll the canvas pointer for a context-menu trigger: a secondary
+    /// click, or a primary hold past the long-press threshold with the
+    /// pointer nearly still (touch long-press). Detection is headless — the
+    /// canvas keeps its single `Sense::drag` allocation, so no click-sensing
+    /// widget adds drag latency — and strictly canvas-bound: a secondary
+    /// click over the dock or a picker never arms the chart menu. The trigger
+    /// resolves the bar under the pointer through the main viewport, clamped
+    /// into the decided view, so later pans cannot move the armed actions.
+    fn poll_chart_context_menu(
+        &mut self,
+        ui: &mut egui::Ui,
+        response: &egui::Response,
+        layouts: &[PaneLayout],
+    ) {
+        let Some(plot) = layouts.first().map(|layout| layout.plot) else {
+            return;
+        };
+        let now = ui.input(|input| input.time) as f32;
+        if ui.input(|input| input.pointer.secondary_clicked()) {
+            if let Some(pos) = response
+                .hover_pos()
+                .filter(|pos| response.rect.contains(*pos))
+            {
+                self.open_chart_context(plot, pos);
+            }
+            self.context_press = None;
+            self.context_fired = false;
+            return;
+        }
+        if response.is_pointer_button_down_on() {
+            if let Some(pos) = response.hover_pos() {
+                match self.context_press {
+                    None => self.context_press = Some((pos.x, pos.y, now)),
+                    Some((x, y, start)) => {
+                        if (pos.x - x).hypot(pos.y - y) >= 8.0 {
+                            // A drag is a pan, never a hold: cancel.
+                            self.context_press = None;
+                        } else if !self.context_fired && now - start >= PLAY_LONG_PRESS_SECS as f32
+                        {
+                            self.context_fired = true;
+                            self.open_chart_context(plot, pos);
+                        }
+                    }
+                }
+            }
+        } else {
+            self.context_press = None;
+            self.context_fired = false;
+        }
+    }
+
+    /// Arm the canvas context menu at `pos` (global pixels), resolving the
+    /// bar beneath through the main viewport clamped into the decided view.
+    /// A trigger with no resolvable bar still opens the menu — Auto Zoom
+    /// needs no candle — with the candle actions refusing on their own.
+    fn open_chart_context(&mut self, plot: egui::Rect, pos: egui::Pos2) {
+        self.context_at = pos;
+        self.context_time = self.main.and_then(|main| {
+            if !plot.width().is_finite() || plot.width() <= 0.0 {
+                return None;
+            }
+            let local = (pos.x - plot.left()).clamp(0.0, plot.width());
+            let slot = main.x_to_index(local)?;
+            if !slot.is_finite() {
+                return None;
+            }
+            let view_len = self.replay_prefix_len().unwrap_or(self.rows.len());
+            if view_len == 0 {
+                return None;
+            }
+            let index = (slot + 0.5).floor().max(0.0) as usize;
+            self.rows.get(index.min(view_len - 1)).map(|row| row.time)
+        });
+        self.context_open = true;
     }
 
     /// Translate this frame's pointer gestures into typed interaction inputs.
@@ -4068,6 +5059,7 @@ impl ChartWorkspace {
                 .into_iter()
                 .map(|node| format!("series:{node}"))
                 .collect();
+            // Picker canonicalization, not pane ordering (ordering is `PanePlan`).
             series.sort();
             nodes.extend(series);
             nodes
@@ -4103,44 +5095,29 @@ impl ChartWorkspace {
         }
     }
 
-    /// Ensure the replay window is ingested when a gateway can serve it: loads
-    /// once, then holds (a refusal needs the retry button). Called inside the
-    /// replay body, so the graph build never runs until that header opens.
-    fn ensure_replay(&mut self, gateway: Option<&dyn TerminalGateway>) {
-        let needs = self
-            .replay
-            .as_ref()
-            .is_some_and(|scrub| scrub.window().is_none())
-            && self.replay_error.is_none();
-        if needs {
-            if let Some(gateway) = gateway {
-                self.refresh_replay(gateway);
-            }
-        }
-    }
-
     fn paint_dock_contents(&mut self, ui: &mut egui::Ui, gateway: Option<&dyn TerminalGateway>) {
-        // Health.
-        ui.collapsing("health", |body| {
-            self.ensure_dock_bundle(gateway);
-            if let Some(bundle) = &self.dock_bundle {
-                let health = &bundle.health;
-                body.label(format!(
-                    "status={} trading={} entries={} exits={}",
-                    health.status, health.trading_state, health.allows_entries, health.allows_exits
-                ));
-                if health.halted() {
-                    body.colored_label(egui::Color32::RED, "HALTED");
+        // Range: chart-window presets plus the Beginning calendar, applied
+        // from the dock instead of a menu dialog. The drawer grows on the Y
+        // axis to fit the calendars, so every control displays in full.
+        ui.collapsing("range", |body| {
+            body.label(format!("window: {}", self.range_label()));
+            self.seed_range_drafts();
+            let active_range = self.active_range();
+            let choice = paint_range_dialog(
+                body,
+                &mut self.range_draft,
+                &mut self.top_menu.beginning_text,
+                &mut self.calendar,
+                active_range,
+            );
+            if let Some(choice) = choice {
+                self.apply_range_choice(choice, gateway);
+            }
+            if let Some(error) = self.range_error.clone() {
+                body.colored_label(egui::Color32::RED, error);
+                if body.button("dismiss").clicked() {
+                    self.range_error = None;
                 }
-            } else if let Some(error) = &self.dock_bundle_error {
-                body.colored_label(egui::Color32::RED, error.clone());
-                if body.button("retry").clicked() {
-                    self.dock_bundle_error = None;
-                }
-            } else if gateway.is_some() {
-                body.label("No health pull yet");
-            } else {
-                body.label("No gateway");
             }
         });
         // Portfolio. A live replay serves its own fills; the bundle is the
@@ -4437,11 +5414,13 @@ impl ChartWorkspace {
         });
         // Replay: an interactive backtest over the shared decide path. The
         // gateway owns the session (decisions, fills, journal); this owns
-        // the controls and the cached state the chart and panes truncate
-        // to. Singles fill honestly; spreads fill when the window's chains
-        // cover the bar and refuse with the feed named otherwise.
+        // the captured window plus the transport, and the chart and panes
+        // truncate to the decided prefix. Singles fill honestly; spreads
+        // fill when the window's chains cover the bar and refuse with the
+        // feed named otherwise. Future bars stay hidden until the run
+        // decides them; stepping reveals them with the Y axis refit to the
+        // decided window.
         ui.collapsing("replay", |body| {
-            self.ensure_replay(gateway);
             if let Some(reason) = self.replay_error.clone() {
                 body.colored_label(egui::Color32::RED, format!("replay refused: {reason}"));
             }
@@ -4467,100 +5446,32 @@ impl ChartWorkspace {
             } else {
                 body.label("No live replay — the chart is live.");
             }
-            body.horizontal(|row| {
-                row.label("start");
-                row.text_edit_singleline(&mut self.replay_start_draft);
-                row.label("seed");
-                row.text_edit_singleline(&mut self.replay_seed_draft);
-                for tag in ["Single", "Vertical"] {
-                    if row
-                        .selectable_label(self.replay_structure_draft == tag, tag)
-                        .clicked()
-                    {
-                        tag.clone_into(&mut self.replay_structure_draft);
-                    }
-                }
-                if row.button("at crosshair").clicked() {
-                    if let Some(index) = self.last_hover_bar {
-                        self.replay_start_draft = index.to_string();
-                    }
-                }
-                if row.button("start").clicked() {
-                    if let Some(gateway) = gateway {
-                        let draft = self.replay_start_draft.clone();
-                        let seed_draft = self.replay_seed_draft.clone();
-                        let grant_draft = self.replay_grant_draft.clone();
-                        let structure = self.replay_structure_draft.clone();
-                        let parsed = self.resolve_replay_start(&draft).and_then(|start| {
-                            seed_draft.trim().parse::<u64>().map_or_else(
-                                |_| {
-                                    Err(EguiError::InvalidParam {
-                                        what: "replay seed".to_owned(),
-                                        reason: format!(
-                                            "{:?} is a bare integer",
-                                            seed_draft.trim()
-                                        ),
-                                    })
-                                },
-                                |seed| Ok((start, seed)),
-                            )
-                        });
-                        let parsed = parsed.and_then(|(start, seed)| {
-                            Self::resolve_replay_grant(&grant_draft)
-                                .map(|grant| (start, seed, grant))
-                        });
-                        match parsed {
-                            Ok((start, seed, grant)) => {
-                                self.open_live_replay(gateway, start, seed, grant, structure);
-                            }
-                            Err(error) => {
-                                self.replay_error = Some(error.to_string());
-                            }
-                        }
-                    }
-                }
-            });
-            body.horizontal(|row| {
-                row.label("grant JSON (empty = rehearsal)");
-                row.text_edit_singleline(&mut self.replay_grant_draft);
-                if row.button("clear").clicked() {
-                    self.replay_grant_draft.clear();
-                }
-            });
+            body.label(format!("window: {}", self.replay_range_label()));
+            body.label("Play replays the boundary window when set, else captures the chart's own visible window; edges stay marked on the pane divider. Right-click the chart to set boundaries.");
+            if self.replay_range.is_some()
+                && body.button("clear boundaries").clicked()
+            {
+                self.replay_range = None;
+                self.replay_error = None;
+            }
             if self.live_replay.is_some() {
-                let (playing, rate) = self
+                let playing = self
                     .live_replay
                     .as_ref()
-                    .map_or((false, 5), |live| (live.playing, live.rate_bars_per_sec));
+                    .is_some_and(|live| live.playing);
                 body.horizontal(|row| {
                     if row.button("step 1").clicked() {
                         if let Some(gateway) = gateway {
-                            self.step_live_replay(gateway, 1);
+                            self.step_display_bars(gateway, 1, u64::MAX);
                         }
                     }
                     if row.button("step 10").clicked() {
                         if let Some(gateway) = gateway {
-                            self.step_live_replay(gateway, 10);
+                            self.step_display_bars(gateway, 10, u64::MAX);
                         }
                     }
                     if row.button(if playing { "pause" } else { "play" }).clicked() {
-                        if let Some(live) = self.live_replay.as_mut() {
-                            live.playing = !live.playing;
-                            live.last_tick = Some(std::time::Instant::now());
-                        }
-                    }
-                    for candidate in [1_u64, 5, 20] {
-                        if row
-                            .selectable_label(
-                                rate == candidate,
-                                format!("{candidate}/s"),
-                            )
-                            .clicked()
-                        {
-                            if let Some(live) = self.live_replay.as_mut() {
-                                live.rate_bars_per_sec = candidate;
-                            }
-                        }
+                        self.toggle_replay_play(gateway);
                     }
                     if row.button("exit to live").clicked() {
                         if let Some(gateway) = gateway {
@@ -4571,126 +5482,89 @@ impl ChartWorkspace {
                         }
                     }
                 });
-                body.label("rehearsal economics (400/2000/30d) unless a grant document is supplied; singles fill, spreads refuse.");
-                // Play loop: pace steps to the selected rate while the
-                // section paints, and keep frames coming until paused or the
-                // head is reached. Closed sections never advance.
-                let advance = self.live_replay.as_ref().and_then(|live| {
-                    if !live.playing {
-                        return None;
-                    }
-                    let elapsed = live.last_tick.map_or(0.0, |tick| {
-                        std::time::Instant::now().duration_since(tick).as_secs_f64()
-                    });
-                    let due = (elapsed * live.rate_bars_per_sec as f64).floor() as u64;
-                    (due >= 1).then(|| due.min(256))
-                });
-                if let Some(bars) = advance {
-                    if let Some(gateway) = gateway {
-                        if let Some(live) = self.live_replay.as_mut() {
-                            live.last_tick = Some(std::time::Instant::now());
-                        }
-                        self.step_live_replay(gateway, bars);
-                    }
-                }
-                if self.live_replay.as_ref().is_some_and(|live| live.playing) {
-                    body.ctx().request_repaint_after(std::time::Duration::from_millis(100));
-                }
+                body.label(format!(
+                    "speed: {} (long-press the menu ▶ button to change)",
+                    self.replay_speed.label()
+                ));
+                body.label("rehearsal economics (400/2000/30d, single-leg); spreads refuse without an option-chain feed.");
             }
-            if let Some(scrub) = self.replay.as_ref() {
-                match scrub.window() {
-                    Some(window) => {
-                        body.label(format!(
-                            "window: {} bars, head at {}",
-                            window.total_bars, window.cursor
-                        ));
-                    }
-                    None => {
-                        body.label("No replay window yet");
-                    }
+        });
+        // Health.
+        ui.collapsing("health", |body| {
+            self.ensure_dock_bundle(gateway);
+            if let Some(bundle) = &self.dock_bundle {
+                let health = &bundle.health;
+                body.label(format!(
+                    "status={} trading={} entries={} exits={}",
+                    health.status, health.trading_state, health.allows_entries, health.allows_exits
+                ));
+                if health.halted() {
+                    body.colored_label(egui::Color32::RED, "HALTED");
                 }
+            } else if let Some(error) = &self.dock_bundle_error {
+                body.colored_label(egui::Color32::RED, error.clone());
+                if body.button("retry").clicked() {
+                    self.dock_bundle_error = None;
+                }
+            } else if gateway.is_some() {
+                body.label("No health pull yet");
             } else {
-                body.label("No replay window yet");
-            }
-            if gateway.is_some() && body.button("refresh replay").clicked() {
-                if let Some(gateway) = gateway {
-                    self.refresh_replay(gateway);
-                }
+                body.label("No gateway");
             }
         });
     }
 
-    /// Snapshot the persisted terminal state: the session selection, the
-    /// chart's non-default settings, the starred entries, and the indicator
-    /// loadout. The composition root writes it to `protopyne.json`.
+    /// Snapshot the persisted terminal state: the active ticker's layout
+    /// merged over the saved per-ticker layouts, the session selection, the
+    /// starred entries, and the per-ticker bookmarks. The composition root
+    /// writes it to `protopyne.json`, but only when the operator presses the
+    /// menu-bar Save Layout button (see [`take_save_request`](Self::take_save_request)).
     #[must_use]
     pub fn prefs(&self) -> TerminalPrefs {
-        let slots = self
-            .stack
-            .slot_ids()
-            .into_iter()
-            .map(|id| SlotPrefs {
-                visible: self.stack.visible(&id).unwrap_or(true),
-                config: fields_of(self.stack.config(&id)),
-                style: fields_of(self.stack.style(&id)),
-                id,
-            })
-            .collect();
+        let mut tickers = self.saved_layouts.clone();
+        tickers.insert(self.active_symbol().to_owned(), self.current_layout());
         TerminalPrefs {
-            symbol: Some(self.active_symbol().to_owned()),
-            timeframe: Some(self.timeframe.label().to_owned()),
-            range: self
-                .custom_start
-                .is_none()
-                .then(|| self.range.label().to_owned()),
-            chart_type: Some(self.chart_type.name().to_owned()),
-            theme: Some(self.config.theme.clone()),
-            pane_share: Some(self.pane_share),
-            dock_open: Some(self.dock_open),
+            active_symbol: Some(self.active_symbol().to_owned()),
+            tickers,
             favorites: Favorites {
                 symbols: self.favorite_symbols.iter().cloned().collect(),
                 indicators: self.favorite_indicators.iter().cloned().collect(),
+                bookmarks: self.favorite_bookmarks.iter().cloned().collect(),
             },
-            slots,
+            bookmarks: self.bookmarks.clone(),
+            dock_open: Some(self.dock_open),
+            theme: Some(self.config.theme.clone()),
+            ..TerminalPrefs::default()
         }
     }
 
     /// Apply a loaded [`TerminalPrefs`]: restore the session selection, the
-    /// chart settings, the starred entries, and the indicator loadout. Every
-    /// field is best-effort — an unknown timeframe or indicator id is skipped
-    /// rather than refusing the whole document — so a partial or older file
-    /// never strands the terminal. Favorites and loadout then rebind and
-    /// recompute once.
+    /// global settings, the starred entries, and the bookmarks; stash the
+    /// per-ticker layouts and apply the active ticker's own (best-effort,
+    /// seeded: a held frame missing the saved timeframe keeps the live rows
+    /// instead of failing the boot — the next gateway switch repairs it).
+    /// Every field is best-effort — an unknown timeframe or indicator id is
+    /// skipped rather than refusing the whole document — so a partial or
+    /// older file never strands the terminal.
     pub fn apply_prefs(&mut self, prefs: &TerminalPrefs) -> Result<(), EguiError> {
         if let Some(symbol) = prefs
-            .symbol
+            .active_symbol
             .as_deref()
             .filter(|symbol| !symbol.trim().is_empty())
+            .or_else(|| {
+                prefs
+                    .symbol
+                    .as_deref()
+                    .filter(|symbol| !symbol.trim().is_empty())
+            })
         {
             self.set_symbol(symbol)?;
         }
-        if let Some(label) = prefs.timeframe.as_deref() {
-            if let Some(key) = TimeframeKey::all()
-                .into_iter()
-                .find(|key| key.label() == label)
-            {
-                self.timeframe = key;
-            }
-        }
-        if let Some(label) = prefs.range.as_deref() {
-            if let Some(range) = DateRange::from_label(label) {
-                self.range = range;
-                self.custom_start = None;
-            }
-        }
-        if let Some(name) = prefs.chart_type.as_deref() {
-            if let Some(kind) = ChartType::all()
-                .iter()
-                .copied()
-                .find(|kind| kind.name() == name)
-            {
-                self.chart_type = kind;
-            }
+        self.saved_layouts = prefs.tickers.clone();
+        self.stashed_layouts.clear();
+        let symbol = self.active_symbol().to_owned();
+        if let Some(layout) = prefs.ticker_layout(&symbol) {
+            let _ = self.apply_ticker_layout(&layout, None);
         }
         if let Some(theme) = prefs
             .theme
@@ -4699,15 +5573,13 @@ impl ChartWorkspace {
         {
             self.config.theme.clone_from(&theme.to_owned());
         }
-        if let Some(share) = prefs.pane_share {
-            self.set_pane_share(share);
-        }
         if let Some(dock) = prefs.dock_open {
             self.dock_open = dock;
         }
         self.favorite_symbols = prefs.favorites.symbols.iter().cloned().collect();
         self.favorite_indicators = prefs.favorites.indicators.iter().cloned().collect();
-        self.apply_slot_prefs(&prefs.slots)?;
+        self.favorite_bookmarks = prefs.favorites.bookmarks.iter().cloned().collect();
+        self.bookmarks = prefs.bookmarks.clone();
         self.rebind_viewports()?;
         self.recompute()
     }
@@ -4743,8 +5615,8 @@ impl ChartWorkspace {
         Ok(())
     }
 
-    /// Seed each open catalog's favorite flags from this workspace's starred
-    /// sets, so a reopened modal shows the persisted favorites, not a blank
+    /// Seed each open picker's favorite flags from this workspace's starred
+    /// sets, so a reopened picker shows the persisted favorites, not a blank
     /// slate.
     fn seed_favorites(&mut self) {
         if let Some(modal) = self.symbol_modal.as_mut() {
@@ -4763,51 +5635,291 @@ impl ChartWorkspace {
                 }
             }
         }
+        if let Some(modal) = self.bookmark_modal.as_mut() {
+            for id in modal.ids() {
+                let starred = self.favorite_bookmarks.contains(&id);
+                if modal.is_favorite(&id) != Some(starred) {
+                    let _ = modal.toggle_favorite(&id);
+                }
+            }
+        }
     }
 
-    /// Paint the symbol and indicator modals, dispatching their picks.
+    /// Build the bookmark picker over the active ticker's entries: one row
+    /// per bookmarked candle, tabbed by timeframe. Stars seed from the
+    /// bookmark favorites set, so search and the Favorites filter behave
+    /// like the ticker and indicator pickers.
+    fn build_bookmark_catalog(&self) -> CatalogModal<TimeframeKey> {
+        let symbol = self.active_symbol().to_owned();
+        let mut catalog = CatalogModal::new("Bookmarks");
+        let bookmarks = self.bookmarks.get(&symbol);
+        for entry in bookmarks.into_iter().flatten() {
+            let timeframe = TimeframeKey::all()
+                .into_iter()
+                .find(|key| key.label() == entry.timeframe)
+                .unwrap_or(self.timeframe);
+            let _ = catalog.register(&entry.id(&symbol), &entry.title(), timeframe);
+        }
+        catalog
+    }
+
+    /// Timeframe tabs for the bookmark picker, in toolbar order.
+    fn bookmark_categories() -> Vec<(TimeframeKey, &'static str)> {
+        TimeframeKey::all()
+            .into_iter()
+            .map(|key| (key, key.label()))
+            .collect()
+    }
+
+    /// Bookmark the bar at `time` on the active timeframe for the active
+    /// ticker. Duplicates (the same candle on the same timeframe) are
+    /// ignored, so a double right-click never lists a candle twice.
+    fn add_bookmark(&mut self, time: i64) {
+        let symbol = self.active_symbol().to_owned();
+        let timeframe = self.timeframe.label().to_owned();
+        let list = self.bookmarks.entry(symbol).or_default();
+        if !list
+            .iter()
+            .any(|entry| entry.time == time && entry.timeframe == timeframe)
+        {
+            list.push(BookmarkEntry { time, timeframe });
+        }
+    }
+
+    /// Set a replay boundary at `time` for the replay button: with no window
+    /// yet it becomes the beginning and the latest loaded candle the end; a
+    /// candle before the beginning becomes the new beginning (the end stays);
+    /// a candle at or after the beginning becomes the new end. Times are
+    /// fixed — later pans never move the window.
+    fn set_replay_boundary(&mut self, time: i64) {
+        let last = self.rows.last().map_or(time, |row| row.time);
+        match self.replay_range {
+            None => self.replay_range = Some((time.min(last), time.max(last))),
+            Some((start, end)) if time < start => self.replay_range = Some((time, end)),
+            Some((start, end)) if time == start => self.replay_range = Some((start, end)),
+            Some((start, _)) => self.replay_range = Some((start, time)),
+        }
+    }
+
+    /// Fit the Y axis to the currently displayed candles, preserving the X
+    /// position and zoom: the Refresh button's Y-fit step on its own, and the
+    /// canvas context menu's Auto Zoom. Guards the unmeasured or empty chart
+    /// like every other fit.
+    fn auto_zoom(&mut self) {
+        self.apply_auto_height(self.last_plot_width);
+    }
+
+    /// Consume a pending Save Layout request: true once per menu-bar Save
+    /// click. The composition root writes `protopyne.json` only on true.
+    pub fn take_save_request(&mut self) -> bool {
+        std::mem::take(&mut self.save_requested)
+    }
+
+    /// Snapshot the live chart and indicator settings as this ticker's
+    /// layout: the Save Layout button writes exactly this entry.
+    fn current_layout(&self) -> TickerLayout {
+        let slots = self
+            .stack
+            .slot_ids()
+            .into_iter()
+            .map(|id| SlotPrefs {
+                visible: self.stack.visible(&id).unwrap_or(true),
+                config: fields_of(self.stack.config(&id)),
+                style: fields_of(self.stack.style(&id)),
+                id,
+            })
+            .collect();
+        TickerLayout {
+            timeframe: Some(self.timeframe.label().to_owned()),
+            range: self
+                .custom_start
+                .is_none()
+                .then(|| self.range.label().to_owned()),
+            custom_start: self.custom_start,
+            chart_type: Some(self.chart_type.name().to_owned()),
+            pane_share: Some(self.pane_share),
+            slots,
+        }
+    }
+
+    /// Stash the live layout under the active ticker for session continuity
+    /// across ticker switches. The stash never reaches disk on its own —
+    /// only an explicit Save writes — so visiting a ticker never overwrites
+    /// its saved entry.
+    fn stash_current_layout(&mut self) {
+        let symbol = self.active_symbol().to_owned();
+        let layout = self.current_layout();
+        self.stashed_layouts.insert(symbol, layout);
+    }
+
+    /// Apply a ticker's saved layout: timeframe (with a gateway fetch, or a
+    /// best-effort seeded reselect), the range or Beginning window (loaded
+    /// with indicator warmup like every range change), the chart type, the
+    /// pane share, and the indicator loadout. Unknown labels and ids are
+    /// skipped like every other prefs apply, never fatal.
+    fn apply_ticker_layout(
+        &mut self,
+        layout: &TickerLayout,
+        gateway: Option<&dyn TerminalGateway>,
+    ) -> Result<(), EguiError> {
+        if let Some(label) = layout.timeframe.as_deref() {
+            if let Some(key) = TimeframeKey::all()
+                .into_iter()
+                .find(|key| key.label() == label)
+            {
+                if key != self.timeframe {
+                    match gateway {
+                        Some(gateway) => self.switch_timeframe(key, gateway)?,
+                        None => {
+                            let _ = self.select_timeframe(key);
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(start) = layout.custom_start {
+            self.custom_start = Some(start);
+            self.range = DateRange::All;
+            match gateway {
+                Some(gateway) => {
+                    let _ = self.refresh_chart(gateway, None);
+                }
+                None => self.rebound_from_history(),
+            }
+            self.rebind_viewports()?;
+            let _ = self.jump_to_current_plot(self.last_plot_width);
+        } else if let Some(label) = layout.range.as_deref() {
+            if let Some(range) = DateRange::from_label(label) {
+                if range != self.range || self.custom_start.is_some() {
+                    self.select_range(range, gateway)?;
+                }
+            }
+        }
+        if let Some(name) = layout.chart_type.as_deref() {
+            if let Some(kind) = ChartType::all()
+                .iter()
+                .copied()
+                .find(|kind| kind.name() == name)
+            {
+                self.chart_type = kind;
+            }
+        }
+        if let Some(share) = layout.pane_share {
+            self.set_pane_share(share);
+        }
+        self.apply_slot_prefs(&layout.slots)?;
+        self.rebind_viewports()?;
+        self.recompute()
+    }
+
+    /// Jump the chart to a bookmarked candle: the nearest loaded bar at or
+    /// before the bookmark becomes the rightmost visible bar, loading more
+    /// history first when the bookmark predates the window. Unknown ids
+    /// refuse by name instead of moving the chart.
+    fn jump_to_bookmark(
+        &mut self,
+        id: &str,
+        gateway: Option<&dyn TerminalGateway>,
+    ) -> Result<(), EguiError> {
+        let symbol = self.active_symbol().to_owned();
+        let time = self
+            .bookmarks
+            .get(&symbol)
+            .into_iter()
+            .flatten()
+            .find(|entry| entry.id(&symbol) == id)
+            .map(|entry| entry.time)
+            .ok_or_else(|| EguiError::InvalidParam {
+                what: "bookmark".to_owned(),
+                reason: format!("{id:?} is not a bookmark of {symbol}"),
+            })?;
+        let text = chrono::DateTime::from_timestamp(time, 0)
+            .map(|moment| moment.format("%Y-%m-%d %H:%M").to_string())
+            .unwrap_or_default();
+        self.jump_to_time(&text, self.last_plot_width, gateway)
+    }
+
+    /// Paint one titlebar-less picker popup below its menu-bar button: no
+    /// window chrome and no X — an outside click or Escape closes through
+    /// `open`, like the Candles pulldown it hangs beside.
+    fn picker_popup(
+        ui: &mut egui::Ui,
+        id: &str,
+        anchor: impl Into<egui::PopupAnchor>,
+        open: &mut bool,
+        contents: impl FnOnce(&mut egui::Ui),
+    ) {
+        egui::Popup::new(
+            egui::Id::new(id),
+            ui.ctx().clone(),
+            anchor,
+            egui::LayerId::new(egui::Order::Foreground, egui::Id::new(id)),
+        )
+        .open_bool(open)
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+        .show(contents);
+    }
+
+    /// Paint the symbol, indicator, and bookmark pickers plus the Jump To
+    /// Time popup, each as a titlebar-less popup anchored below its menu-bar
+    /// button — never a window, so no picker carries a titlebar or an X
+    /// close button. Picks dispatch inline (symbol jumps tickers, indicator
+    /// slots loadout, bookmark jumps its candle, Go jumps the typed time);
+    /// star toggles write back to the workspace sets so the Favorites filter
+    /// survives the popup closing.
     fn paint_modals(
         &mut self,
         ui: &mut egui::Ui,
         gateway: Option<&dyn TerminalGateway>,
     ) -> Result<(), EguiError> {
         let theme = self.theme.clone();
-        // A dismissable modal: Escape clears whichever catalog is open, and
-        // the window close button clears it through `open` (an untouched
-        // frame keeps both as they are).
+        // Dismissable pickers: Escape clears every open popup (an untouched
+        // frame keeps them as they are).
         if ui.input(|input| input.key_pressed(egui::Key::Escape)) {
             self.symbol_modal = None;
+            self.symbol_anchor = None;
             self.indicator_modal = None;
+            self.indicator_anchor = None;
+            self.bookmark_modal = None;
+            self.bookmark_anchor = None;
+            self.bookmark_error = None;
+            self.jump_open = false;
+            self.jump_anchor = None;
+            self.jump_error = None;
         }
         let mut picked_symbol = None;
-        if let Some(modal) = self.symbol_modal.as_mut() {
+        if self.symbol_modal.is_some() {
             let mut open = true;
-            egui::Window::new("Symbols")
-                .open(&mut open)
-                .collapsible(false)
-                .resizable(false)
-                .show(ui.ctx(), |ui| {
-                    match paint_catalog_modal(ui, modal, &symbol_categories(), &theme) {
-                        Ok(actions) => {
-                            for action in actions {
-                                match action {
-                                    CatalogAction::Picked(id) => picked_symbol = Some(id),
-                                    // The star toggles the entry itself; the
-                                    // modal owns the filter, the workspace
-                                    // owns the persisted set.
-                                    CatalogAction::ToggledFavorite(id) => {
-                                        let _ = modal.toggle_favorite(&id);
+            match self.symbol_anchor {
+                Some(anchor) => {
+                    if let Some(modal) = self.symbol_modal.as_mut() {
+                        Self::picker_popup(ui, "symbol-picker", anchor, &mut open, |picker| {
+                            match paint_catalog_modal(picker, modal, &symbol_categories(), &theme) {
+                                Ok(actions) => {
+                                    for action in actions {
+                                        match action {
+                                            CatalogAction::Picked(id) => picked_symbol = Some(id),
+                                            CatalogAction::ToggledFavorite(id) => {
+                                                let _ = modal.toggle_favorite(&id);
+                                            }
+                                        }
                                     }
                                 }
+                                Err(error) => {
+                                    picker.colored_label(egui::Color32::RED, error.to_string());
+                                }
                             }
-                        }
-                        Err(error) => {
-                            ui.colored_label(egui::Color32::RED, error.to_string());
-                        }
+                        });
                     }
-                });
+                }
+                // An opener always stores its anchor beside the modal; a
+                // missing one closes fail-closed instead of stranding a
+                // rect-less popup.
+                None => open = false,
+            }
             if !open {
                 self.symbol_modal = None;
+                self.symbol_anchor = None;
             }
         }
         if let Some(modal) = self.symbol_modal.as_ref() {
@@ -4819,35 +5931,47 @@ impl ChartWorkspace {
         }
         if let Some(symbol) = picked_symbol {
             self.symbol_modal = None;
+            self.symbol_anchor = None;
             self.apply_symbol_pick(&symbol, gateway)?;
         }
 
         let mut picked_indicator = None;
-        if let Some(modal) = self.indicator_modal.as_mut() {
+        if self.indicator_modal.is_some() {
             let mut open = true;
-            egui::Window::new("Indicators")
-                .open(&mut open)
-                .collapsible(false)
-                .resizable(false)
-                .show(ui.ctx(), |ui| {
-                    match paint_catalog_modal(ui, modal, &indicator_categories(), &theme) {
-                        Ok(actions) => {
-                            for action in actions {
-                                match action {
-                                    CatalogAction::Picked(id) => picked_indicator = Some(id),
-                                    CatalogAction::ToggledFavorite(id) => {
-                                        let _ = modal.toggle_favorite(&id);
+            match self.indicator_anchor {
+                Some(anchor) => {
+                    if let Some(modal) = self.indicator_modal.as_mut() {
+                        Self::picker_popup(ui, "indicator-picker", anchor, &mut open, |picker| {
+                            match paint_catalog_modal(
+                                picker,
+                                modal,
+                                &indicator_categories(),
+                                &theme,
+                            ) {
+                                Ok(actions) => {
+                                    for action in actions {
+                                        match action {
+                                            CatalogAction::Picked(id) => {
+                                                picked_indicator = Some(id);
+                                            }
+                                            CatalogAction::ToggledFavorite(id) => {
+                                                let _ = modal.toggle_favorite(&id);
+                                            }
+                                        }
                                     }
                                 }
+                                Err(error) => {
+                                    picker.colored_label(egui::Color32::RED, error.to_string());
+                                }
                             }
-                        }
-                        Err(error) => {
-                            ui.colored_label(egui::Color32::RED, error.to_string());
-                        }
+                        });
                     }
-                });
+                }
+                None => open = false,
+            }
             if !open {
                 self.indicator_modal = None;
+                self.indicator_anchor = None;
             }
         }
         if let Some(modal) = self.indicator_modal.as_ref() {
@@ -4859,8 +5983,131 @@ impl ChartWorkspace {
         }
         if let Some(id) = picked_indicator {
             self.indicator_modal = None;
+            self.indicator_anchor = None;
             self.slot_indicator(&id)?;
             self.recompute()?;
+        }
+
+        let mut picked_bookmark = None;
+        if self.bookmark_modal.is_some() {
+            let mut open = true;
+            match self.bookmark_anchor {
+                Some(anchor) => {
+                    if let Some(modal) = self.bookmark_modal.as_mut() {
+                        let bookmark_error = self.bookmark_error.clone();
+                        Self::picker_popup(ui, "bookmark-picker", anchor, &mut open, |picker| {
+                            if modal.is_empty() {
+                                picker.label("No bookmarks available");
+                            } else {
+                                match paint_catalog_modal(
+                                    picker,
+                                    modal,
+                                    &Self::bookmark_categories(),
+                                    &theme,
+                                ) {
+                                    Ok(actions) => {
+                                        for action in actions {
+                                            match action {
+                                                CatalogAction::Picked(id) => {
+                                                    picked_bookmark = Some(id);
+                                                }
+                                                CatalogAction::ToggledFavorite(id) => {
+                                                    let _ = modal.toggle_favorite(&id);
+                                                }
+                                            }
+                                        }
+                                    }
+                                    Err(error) => {
+                                        picker.colored_label(egui::Color32::RED, error.to_string());
+                                    }
+                                }
+                            }
+                            if let Some(error) = bookmark_error {
+                                picker.colored_label(egui::Color32::RED, error);
+                            }
+                        });
+                    }
+                }
+                None => open = false,
+            }
+            if !open {
+                self.bookmark_modal = None;
+                self.bookmark_anchor = None;
+                self.bookmark_error = None;
+            }
+        }
+        if let Some(modal) = self.bookmark_modal.as_ref() {
+            self.favorite_bookmarks = modal
+                .ids()
+                .into_iter()
+                .filter(|id| modal.is_favorite(id) == Some(true))
+                .collect();
+        }
+        if let Some(id) = picked_bookmark {
+            match self.jump_to_bookmark(&id, gateway) {
+                Ok(()) => {
+                    self.bookmark_modal = None;
+                    self.bookmark_anchor = None;
+                    self.bookmark_error = None;
+                }
+                Err(error) => self.bookmark_error = Some(error.to_string()),
+            }
+        }
+
+        if self.jump_open {
+            let mut open = true;
+            match self.jump_anchor {
+                Some(anchor) => {
+                    let text = &mut self.top_menu.jump_text;
+                    let calendar = &mut self.jump_calendar;
+                    let jump_error = self.jump_error.clone();
+                    let mut go = false;
+                    let mut picked_date = None;
+                    Self::picker_popup(ui, "jump-picker", anchor, &mut open, |jump_ui| {
+                        jump_ui.label(bar_text("Jump To Time"));
+                        jump_ui.add(
+                            egui::TextEdit::singleline(text)
+                                .hint_text("2026-03-02 09:30")
+                                .desired_width(180.0),
+                        );
+                        if jump_ui.button(bar_text("Go")).clicked() {
+                            go = true;
+                        }
+                        if let Some(error) = jump_error {
+                            jump_ui.colored_label(egui::Color32::RED, error);
+                        }
+                        jump_ui.separator();
+                        // The calendar sets the date part and preserves the
+                        // clock part: a picked day never clobbers `HH:MM`.
+                        let selected = text.split_whitespace().next().and_then(|date| {
+                            chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").ok()
+                        });
+                        if let Some(date) = paint_calendar(jump_ui, "jump", calendar, selected) {
+                            picked_date = Some(date);
+                        }
+                    });
+                    if let Some(date) = picked_date {
+                        self.apply_jump_date(&date);
+                    }
+                    if go {
+                        let target = self.top_menu.jump_text.clone();
+                        match self.jump_to_time(&target, self.last_plot_width, gateway) {
+                            Ok(()) => {
+                                self.jump_open = false;
+                                self.jump_anchor = None;
+                                self.jump_error = None;
+                            }
+                            Err(error) => self.jump_error = Some(error.to_string()),
+                        }
+                    }
+                }
+                None => open = false,
+            }
+            if !open {
+                self.jump_open = false;
+                self.jump_anchor = None;
+                self.jump_error = None;
+            }
         }
         Ok(())
     }
@@ -4874,28 +6121,31 @@ impl Default for ChartWorkspace {
 
 /// Paint the full terminal: Material top bar, full-window multi-pane canvas
 /// with the upper-left hot-slot legend, inline settings pane with series
-/// pickers, floating left-boundary dock drawer, and the symbol and indicator
-/// modals.
+/// pickers, floating full-height drawer, and the titlebar-less picker popups.
 ///
 /// Layout (Material, workstation + touch):
-/// - topmost app bar spans the full width (dock toggle far left, ticker,
-///   indicator selector, timeframe selector, display-mode pulldown, the
-///   `Range` button that opens the interactive range dialog, refresh button,
-///   and the label-free pan cluster (rewind-to-beginning, rewind, forward,
-///   forward-to-last));
+/// - topmost app bar spans the full width (dock toggle, ticker, save layout,
+///   timeframe selector, display-mode pulldown, refresh button, the label-free
+///   pan cluster with the replay play/pause transport between rewind and
+///   forward, jump-to-time, bookmarks, indicator selector);
 /// - below it, the chart canvas takes the whole window: price pane plus
 ///   oscillator pane with their divider, full remaining width and height;
 /// - the indicator hotlist floats upper-left over the chart pane with eye /
 ///   bolt / X controls (X unloads immediately);
-/// - the dock, when toggled, floats as a left-boundary drawer window below
-///   the app bar over the chart — never a side pane, so the panes never
-///   shrink.
+/// - the dock, when toggled, floats as a full-height drawer along the entire
+///   left side below the app bar over the chart — never a side pane, so the
+///   panes never shrink. It carries no titlebar and no close button; the
+///   hamburger button alone toggles it. Sections scroll inside when their
+///   content exceeds the height;
+/// - chart-range picking lives as a dock expansion; the ticker, indicator,
+///   bookmark, and jump pickers hang as titlebar-less popups below their
+///   menu-bar buttons, like the Candles pulldown; refresh lives on the menu
+///   bar.
 ///
 /// The gateway is optional: a workspace seeded with rows (the demo shell)
 /// paints without one, and a symbol or timeframe pick can only pull fresh
 /// history when a gateway is supplied. The dock shows cached health,
-/// portfolio, proposals, journals, arm-grant, and replay sections; refresh
-/// lives on the menu bar.
+/// portfolio, proposals, journals, range, replay, and arm-grant sections.
 pub fn paint_workspace(
     ui: &mut egui::Ui,
     workspace: &mut ChartWorkspace,
@@ -4905,24 +6155,35 @@ pub fn paint_workspace(
     let top_action = {
         let symbol = workspace.active_symbol().to_owned();
         let timeframe = workspace.timeframe;
-        let range_label = workspace.range_label();
         let chart_type = workspace.chart_type;
         let dock_open = workspace.dock_open;
+        let replay_playing = workspace.replay_playing();
         // Material app-bar frame: subtle elevation via stroke + rounding.
         egui::Frame::new()
             .fill(ui.visuals().panel_fill)
             .inner_margin(4.0)
             .outer_margin(0.0)
             .show(ui, |bar| {
-                paint_top_bar(bar, &symbol, timeframe, &range_label, chart_type, dock_open)
+                paint_top_bar(
+                    bar,
+                    &symbol,
+                    timeframe,
+                    chart_type,
+                    dock_open,
+                    replay_playing,
+                    &mut workspace.play_press,
+                    &mut workspace.replay_speed,
+                    &mut workspace.symbol_anchor,
+                    &mut workspace.indicator_anchor,
+                    &mut workspace.bookmark_anchor,
+                    &mut workspace.jump_anchor,
+                )
             })
             .inner
     };
     if let Some(action) = top_action {
         workspace.apply_top_bar_action(action, gateway)?;
     }
-    // 1b. Interactive range dialog (opened by the Range button), applied on OK.
-    workspace.paint_range_window(ui, gateway)?;
     ui.separator();
     // 2. Chart canvas takes the whole window below the menu bar: full
     // remaining width and height, price pane plus oscillator pane with their
@@ -4930,26 +6191,40 @@ pub fn paint_workspace(
     {
         let _ = workspace.paint_main_column(ui, gateway);
     }
-    // 3. Floating dock drawer along the left boundary below the app bar.
+    // 3. Floating dock drawer along the entire left side below the app bar.
     // Overlay only: it draws over the chart via the context, so the panes
-    // keep the full window whether it is open or closed. Full-height
-    // drawer styling — narrow, left-anchored, movable/resizable.
+    // keep the full window whether it is open or closed. No titlebar and no
+    // close button — the hamburger button alone toggles it. The drawer spans
+    // the full height below the bar (Material navigation drawer); sections
+    // scroll inside when their content exceeds the height.
     if workspace.dock_open {
-        let mut open = true;
+        let top = 48.0;
+        let height = (ui.ctx().viewport_rect().height() - top).max(200.0);
         egui::Window::new("Dock")
-            .open(&mut open)
-            .anchor(egui::Align2::LEFT_TOP, egui::vec2(8.0, 48.0))
-            .default_size(egui::vec2(300.0, 480.0))
+            .title_bar(false)
+            .anchor(egui::Align2::LEFT_TOP, egui::vec2(0.0, top))
+            .default_size(egui::vec2(300.0, height))
             .min_size(egui::vec2(260.0, 200.0))
-            .collapsible(false)
-            .resizable(true)
+            .resizable([true, false])
             .show(ui.ctx(), |dock_ui| {
-                workspace.paint_dock_contents(dock_ui, gateway);
+                dock_ui.set_min_size(egui::vec2(0.0, height));
+                egui::ScrollArea::vertical().show(dock_ui, |scroll| {
+                    workspace.paint_dock_contents(scroll, gateway);
+                });
             });
-        if !open {
-            workspace.dock_open = false;
-        }
     }
+    // 4. Replay play pump: pace steps to the selected speed while a run plays,
+    // and keep frames coming until paused or the head is reached. Independent
+    // of the dock (menu-bar play works with the drawer closed); the run's
+    // own end clamp still bounds every step. The frame delta comes from
+    // egui's own clock, so headless tests drive the same path with explicit
+    // durations.
+    // The frame delta is actual elapsed time, not the predicted next-frame
+    // gap: the pump schedules candles against wall-clock deadlines, and a
+    // prediction would accrue time that has not elapsed yet. A sleep-sized
+    // gap is safe — the pump drops banked backlog instead of dumping it.
+    let dt = std::time::Duration::from_secs_f32(ui.ctx().input(|input| input.unstable_dt).max(0.0));
+    workspace.pump_replay_play(gateway, ui, dt);
     workspace.paint_modals(ui, gateway)?;
     Ok(())
 }

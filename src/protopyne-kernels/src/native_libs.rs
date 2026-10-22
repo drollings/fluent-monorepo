@@ -359,7 +359,7 @@ pub struct LeasedRing {
     pub version: u64,
 }
 
-/// Commit-vs-fallback telemetry for the leased `fetch` seam: `commits`
+/// NOT-A-LADDER: commit-vs-fallback telemetry for the leased `fetch` seam: `commits`
 /// counts resident-ring serves with zero hydrate (the `Commit` signal
 /// carried through to a served call value); `fallbacks` counts every fetch
 /// through the seam that did not commit — lease misses (provider bridge

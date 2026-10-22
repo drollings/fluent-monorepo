@@ -315,6 +315,8 @@ impl Indicator for MomIndicator {
         let period = Self::period(params)?;
         let mut values = crate::math::warmup_none(closes.len());
         if period < closes.len() {
+            // DIVERGENCE (see compat.rs:11): lagged difference per bar is load-bearing;
+            // a shifted-window mean would smooth what must stay a point difference.
             for (i, slot) in values.iter_mut().enumerate().skip(period) {
                 *slot = fin_or_none(closes[i] - closes[i - period]);
             }

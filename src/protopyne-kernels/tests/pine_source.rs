@@ -1,5 +1,5 @@
 use super::*;
-use protopyne_types::Validate;
+use fluent_wvr::validate::Validate;
 use std::path::PathBuf;
 
 fn data_root() -> PathBuf {

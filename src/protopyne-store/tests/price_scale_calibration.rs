@@ -260,7 +260,7 @@ async fn scale_construction_is_validated_at_both_entries() {
     // The builder form is infallible, so validation is a separate,
     // enforced step: an unvalidated builder value cannot register.
     let unvalidated = PriceScale::new().digits(29).build();
-    assert!(protopyne_types::Validate::validate(&unvalidated).is_err());
+    assert!(fluent_wvr::validate::Validate::validate(&unvalidated).is_err());
     with_registry_caps(async {
         let tape = memory_tape();
         match tape.register(

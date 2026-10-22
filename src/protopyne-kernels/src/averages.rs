@@ -70,6 +70,8 @@ impl Indicator for RmaIndicator {
         let mut values = crate::math::warmup_none(closes.len());
         if period <= closes.len() {
             let mut prev = f64::NAN;
+            // DIVERGENCE (see compat.rs:11): seed-then-recurse order is load-bearing;
+            // seeding from the first full window before recursing preserves Expr parity.
             for (i, value) in values.iter_mut().enumerate().skip(period - 1) {
                 let window = &closes[i + 1 - period..=i];
                 let next = if prev.is_nan() {

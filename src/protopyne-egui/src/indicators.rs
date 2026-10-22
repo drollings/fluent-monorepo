@@ -25,7 +25,8 @@ use protopyne_chart_model::ChartRow;
 use protopyne_kernels::builtin_registry;
 use protopyne_kernels::pine::manifest::{IndicatorManifestEntry, ManifestParity};
 use protopyne_kernels::smoothing::SmoothingFamily;
-use protopyne_types::{check_for_execute, valid_output, Validate};
+
+use fluent_wvr::validate::{check_for_execute, valid_output, Validate};
 
 use fluent_egui::{
     cache_key, needs_column_aggregation, paint_oscillator_styled, proportional_line_points,
@@ -573,7 +574,8 @@ pub struct KernelIndicatorConfig {
     #[builder(default = default_kernel_source())]
     pub source: String,
     /// Declared parameter values by name, encoded by kind. Missing entries
-    /// read the kernel's declared default.
+    /// read the kernel's declared default. Stays `BTreeMap`: already sorted
+    /// with replace-on-duplicate, matching `KeyedRegistry` guarantees.
     #[builder(default)]
     #[serde(default)]
     pub params: BTreeMap<String, String>,

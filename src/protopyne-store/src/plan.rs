@@ -15,7 +15,8 @@
 //! rebuilds coverage from the stamps inside that window — O(window), never
 //! O(tape).
 
-use protopyne_types::{Timeframe, Validate};
+use fluent_wvr::validate::Validate;
+use protopyne_types::Timeframe;
 
 use crate::coverage::Coverage;
 use crate::error::{PlanError, StoreError};

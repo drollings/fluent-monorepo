@@ -13,7 +13,7 @@
 //! providers delegate their ET date math to it (no second DST copy).
 
 use crate::error::TypesError;
-use crate::validate::Validate;
+use fluent_wvr::validate::Validate;
 
 /// Daylight-aware regular-hours clock over millisecond stamps.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

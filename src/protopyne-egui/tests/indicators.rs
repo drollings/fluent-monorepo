@@ -360,3 +360,20 @@ fn script_indicators_keep_distinct_component_schemas() {
     assert_eq!(IndicatorCategory::All.label(), "All");
     assert_eq!(IndicatorCategory::Favorites.label(), "Favorites");
 }
+
+#[test]
+fn indicator_params_replace_sorted_len_tracks() {
+    use std::collections::BTreeMap;
+    let mut params: BTreeMap<String, String> = BTreeMap::new();
+    assert!(params.is_empty());
+    assert_eq!(params.len(), 0);
+    for (k, v) in [("c", "3"), ("a", "1"), ("b", "2")] {
+        params.insert(k.to_owned(), v.to_owned());
+    }
+    assert_eq!(params.len(), 3);
+    let keys: Vec<&String> = params.keys().collect();
+    assert_eq!(keys, vec!["a", "b", "c"]);
+    params.insert("a".to_owned(), "9".to_owned());
+    assert_eq!(params.len(), 3, "duplicate replaces, never dupes");
+    assert_eq!(params.get("a").map(String::as_str), Some("9"));
+}

@@ -620,3 +620,13 @@ async fn submit_past_preview_meets_the_core_when_the_grant_moves() {
 
     handle.shutdown().await;
 }
+
+#[test]
+fn last_error_holds_text_not_a_walk() {
+    let mut form = GrantFormState::from_schema(&descriptor());
+    assert_eq!(form.last_error(), None);
+    let gateway = MockGateway::new();
+    let _ = form.submit(&gateway);
+    let held = form.last_error().expect("refusal held").to_owned();
+    assert!(!held.is_empty());
+}

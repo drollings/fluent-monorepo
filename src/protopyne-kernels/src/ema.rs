@@ -68,6 +68,8 @@ impl Indicator for EmaIndicator {
         if period <= closes.len() {
             let factor = Self::factor(period);
             let mut prev = f64::NAN;
+            // DIVERGENCE (see compat.rs:11): SMA seed before EMA recursion is load-bearing;
+            // recursing from zero would under-read the Expr reference.
             for (i, value) in values.iter_mut().enumerate().skip(period - 1) {
                 let window = &closes[i + 1 - period..=i];
                 let next = if prev.is_nan() {

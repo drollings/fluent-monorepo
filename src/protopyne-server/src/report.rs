@@ -147,13 +147,7 @@ impl RunManifest {
     /// inside the payload instead of emitting an empty object.
     #[must_use]
     pub fn to_canonical_json(&self) -> String {
-        serde_json::to_string(self).unwrap_or_else(|e| {
-            format!(
-                "{{\"serialization_error\":{}}}",
-                serde_json::to_string(&e.to_string())
-                    .unwrap_or_else(|_| "\"unencodable\"".to_owned())
-            )
-        })
+        common_core::hash::canonical_json(self)
     }
 }
 
@@ -439,13 +433,7 @@ impl BacktestReport {
     /// object.
     #[must_use]
     pub fn to_canonical_json(&self) -> String {
-        serde_json::to_string(self).unwrap_or_else(|e| {
-            format!(
-                "{{\"serialization_error\":{}}}",
-                serde_json::to_string(&e.to_string())
-                    .unwrap_or_else(|_| "\"unencodable\"".to_owned())
-            )
-        })
+        common_core::hash::canonical_json(self)
     }
 }
 

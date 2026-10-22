@@ -1115,3 +1115,13 @@ async fn portfolio_fold_reduces_opposite_direction_fills_like_the_venue() {
     );
     handle.shutdown().await;
 }
+
+#[tokio::test]
+async fn shutdown_closes_scope_then_stops_serve() {
+    let handle = boot().await;
+    let addr = handle.addr;
+    assert!(tokio::net::TcpStream::connect(addr).await.is_ok());
+    tokio::time::timeout(std::time::Duration::from_secs(5), handle.shutdown())
+        .await
+        .expect("shutdown closes scope then aborts serve, never hangs");
+}

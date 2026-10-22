@@ -301,7 +301,7 @@ impl AuthConfig {
     }
 }
 
-impl protopyne_types::Validate for AuthConfig {
+impl fluent_wvr::validate::Validate for AuthConfig {
     type Err = String;
     fn validate(&self) -> Result<(), Self::Err> {
         AuthConfig::validate(self)
@@ -319,8 +319,8 @@ impl WorkUnit for AuthConfig {
         &[]
     }
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
-        protopyne_types::check_for_execute(self, "auth config invalid")?;
-        Ok(protopyne_types::valid_output("auth config valid"))
+        fluent_wvr::validate::check_for_execute(self, "auth config invalid")?;
+        Ok(fluent_wvr::validate::valid_output("auth config valid"))
     }
 }
 

@@ -162,6 +162,7 @@ fn bloat_ledger_pins_source_files() {
             "export.rs",
             "fast_mas.rs",
             "feed.rs",
+            "fonts.rs",
             "grant_form.rs",
             "indicators.rs",
             "integration_lite.rs",

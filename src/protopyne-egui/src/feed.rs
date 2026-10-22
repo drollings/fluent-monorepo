@@ -41,6 +41,7 @@ impl RecomputePool {
                 reason: "recompute queue must hold at least one job".to_owned(),
             });
         }
+
         let pool = ResultPool::new(
             tokio_runtime(),
             cap,

@@ -10,7 +10,7 @@
 
 use super::*;
 use crate::indicator::BarTick;
-use protopyne_types::Validate;
+use fluent_wvr::validate::Validate;
 
 /// Frozen agreement tolerance shared with the Pine goldens.
 const EPS: f64 = 1e-9;

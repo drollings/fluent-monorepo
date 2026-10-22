@@ -287,10 +287,10 @@ impl DemoApp {
     }
 
     /// Apply the persisted document over the seeded workspace: restore the
-    /// favorites, loadout, session selection, and chart settings, then
-    /// re-select the persisted timeframe over the seeded frames so the label
-    /// and the rows agree. Recorded as the baseline so the first write only
-    /// lands on a real change.
+    /// favorites, bookmarks, session selection, and the active ticker's
+    /// layout, then re-select the active timeframe over the seeded frames so
+    /// the label and the rows agree. Recorded as the baseline so a Save
+    /// Layout write only lands on a real change.
     fn load_prefs(&mut self, path: &Path) {
         let prefs = load_json_or_default::<TerminalPrefs>(&prefs_path(path));
         if let Err(error) = self.workspace.apply_prefs(&prefs) {
@@ -341,10 +341,14 @@ impl DemoApp {
 }
 
 impl DemoApp {
-    /// Persist the favorites, loadout, and settings when they change: the
-    /// snapshot is compared against the last write so the file is touched only
-    /// on a real edit.
+    /// Persist the active ticker's layout on Save Layout only: nothing
+    /// writes `protopyne.json` unless the menu-bar button requested it. The
+    /// snapshot is compared against the last write so the file is touched
+    /// only on a real change.
     fn persist_prefs(&mut self) {
+        if !self.workspace.take_save_request() {
+            return;
+        }
         let prefs = self.workspace.prefs();
         if prefs == self.saved {
             return;
@@ -442,7 +446,14 @@ fn main() {
     let run = eframe::run_native(
         "protopyne chart shell",
         options,
-        Box::new(|_cc| Ok::<_, Box<dyn std::error::Error + Send + Sync>>(Box::new(app))),
+        Box::new(|cc| {
+            protopyne_egui::install_noto_sans(
+                &cc.egui_ctx,
+                include_bytes!("../fonts/NotoSans-Regular.ttf"),
+                include_bytes!("../fonts/NotoSansMono-Regular.ttf"),
+            )?;
+            Ok::<_, Box<dyn std::error::Error + Send + Sync>>(Box::new(app))
+        }),
     );
     if let Err(e) = run {
         eprintln!("protopyne-gui: window refused: {e}");

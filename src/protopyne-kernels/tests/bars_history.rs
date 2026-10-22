@@ -10,7 +10,8 @@
 
 use super::*;
 use chrono::DateTime;
-use protopyne_types::{Bar, Timeframe, Validate};
+use fluent_wvr::validate::Validate;
+use protopyne_types::{Bar, Timeframe};
 use rust_decimal::Decimal;
 use std::path::PathBuf;
 

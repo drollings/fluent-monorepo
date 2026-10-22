@@ -21,6 +21,16 @@ pub enum WorkError {
 }
 
 impl WorkError {
+    /// Bridge any displayable error into [`WorkError::Execution`] verbatim.
+    pub fn execution_display(e: impl core::fmt::Display) -> Self {
+        Self::Execution(e.to_string())
+    }
+
+    /// Context-prefixed [`WorkError::Execution`]: `"{context}: {e}"`.
+    pub fn execution_context(context: &str, e: impl core::fmt::Display) -> Self {
+        Self::Execution(format!("{context}: {e}"))
+    }
+
     /// Whether the error represents a transient condition worth retrying.
     ///
     /// `Execution` is a *permanent* failure — the unit ran and failed, so a

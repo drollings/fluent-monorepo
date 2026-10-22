@@ -167,7 +167,7 @@ impl WorkUnit for PaneWaveUnit {
 
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         if let Some(reason) = &self.fault {
-            return Err(WorkError::Execution(reason.clone()));
+            return Err(WorkError::execution_display(reason.clone()));
         }
         let kept = self
             .values

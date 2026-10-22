@@ -2,8 +2,8 @@ use super::*;
 #[cfg(feature = "pine")]
 use fluent_wvr::prelude::*;
 #[cfg(feature = "pine")]
-use protopyne_types::check_for_execute;
-use protopyne_types::Validate;
+use fluent_wvr::validate::check_for_execute;
+use fluent_wvr::validate::Validate;
 
 #[cfg(feature = "pine")]
 #[test]

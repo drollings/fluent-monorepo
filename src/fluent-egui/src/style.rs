@@ -25,8 +25,8 @@
 use std::collections::BTreeMap;
 
 use fluent_wvr::prelude::*;
+use fluent_wvr::validate::{check_for_execute, valid_output, Validate};
 use fluent_wvr::{Describable, FieldAccess};
-use protopyne_types::{check_for_execute, valid_output, Validate};
 
 use crate::config::ThemeConfig;
 use crate::error::EguiError;

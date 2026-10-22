@@ -25,6 +25,7 @@
 pub mod blob_spec;
 pub mod cache;
 pub mod calibration;
+pub mod capacity;
 pub mod checksum;
 pub mod cite;
 pub mod score;

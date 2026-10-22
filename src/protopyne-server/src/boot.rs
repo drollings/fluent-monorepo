@@ -108,7 +108,7 @@ pub struct ServerConfig {
     pub ingest: Option<crate::ingest::IngestConfig>,
 }
 
-impl protopyne_types::Validate for ServerConfig {
+impl fluent_wvr::validate::Validate for ServerConfig {
     type Err = String;
     fn validate(&self) -> Result<(), Self::Err> {
         ServerConfig::validate(self)
@@ -171,8 +171,8 @@ impl WorkUnit for ServerConfig {
     }
 
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
-        protopyne_types::check_for_execute(self, "server config invalid")?;
-        Ok(protopyne_types::valid_output("server config valid"))
+        fluent_wvr::validate::check_for_execute(self, "server config invalid")?;
+        Ok(fluent_wvr::validate::valid_output("server config valid"))
     }
 }
 
@@ -561,7 +561,7 @@ fn gate_unit(
         .with_name_override(name.to_owned())
         .with_execute_override(Arc::new(move |_ctx: &WorkContext| match check() {
             Ok(message) => Ok(WorkOutput::ok(message)),
-            Err(reason) => Err(WorkError::Execution(reason)),
+            Err(reason) => Err(WorkError::execution_display(reason)),
         }));
     Arc::new(adapter)
 }
@@ -728,6 +728,7 @@ pub async fn serve_with_tape(
     let journal = Arc::new(Journal::ephemeral());
     let journal_permit = VenueStorage::new(std::path::PathBuf::from("server-command-journal"));
     let state = Arc::new(AppState {
+        // M6.7: composes fluent_concurrency::Limiter directly (no fork).
         limiter: Limiter::new(config.max_concurrent_requests as usize),
         history,
         history_timeframe,
@@ -780,6 +781,8 @@ pub async fn serve_with_tape(
     let addr = listener
         .local_addr()
         .map_err(|e| ServerError::Service(format!("bound address unknown: {e}")))?;
+    // `serve` stays a separate JoinHandle (serve lifetime vs scope-drain
+    // semantics); the pump loop above is Scope-owned and aborts on close.
     let serve = tokio::spawn(async move {
         let _ = axum::serve(listener, app).await;
     });

@@ -254,3 +254,24 @@ fn mode_parses_common_spellings() {
     );
     assert!(PriceScaleMode::from_str("exponential").is_err());
 }
+
+#[test]
+fn price_range_contains_closed_touching_nan_saturation() {
+    let range = PriceRange::new(90.0, 110.0).expect("valid range");
+    assert!(range.contains(90.0), "closed: min inside");
+    assert!(range.contains(110.0), "closed: max inside");
+    assert!(range.contains(100.0));
+    assert!(!range.contains(89.999), "just below min outside");
+    assert!(!range.contains(110.001), "just above max outside");
+    assert!(!range.contains(f64::NAN), "NaN never inside");
+    assert!(!range.contains(f64::INFINITY));
+    assert!(PriceRange::new(110.0, 90.0).is_err(), "inverted refuses");
+    assert!(PriceRange::new(90.0, 90.0).is_err(), "empty refuses");
+    assert!(PriceRange::new(f64::NAN, 110.0).is_err());
+    let tiny = PriceRange::new(1.0, 1.0 + 1e-13).expect("tiny builds");
+    assert_eq!(
+        tiny.length(),
+        1e-12,
+        "span saturates, never divides by zero"
+    );
+}

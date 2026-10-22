@@ -416,6 +416,7 @@ fn close_option_leg(
     tag: &str,
 ) -> Result<Option<(LegExecution, Money)>, VenueError> {
     let Some(position) = book.spread.remove(occ) else {
+        // NOT-A-LADDER: no open spread reads as none, not a candidate walk.
         return Ok(None);
     };
     let side = match position.side {
@@ -775,6 +776,7 @@ impl Venue for PaperVenue {
                     return Err(VenueError::Server("status 500".to_owned()));
                 }
                 Some(Fault::DelayFill(delay)) => {
+                    // NOT-A-BACKOFF (M15): fault-injection delay only.
                     tokio::time::sleep(delay).await;
                 }
                 Some(Fault::LoseAck) => {

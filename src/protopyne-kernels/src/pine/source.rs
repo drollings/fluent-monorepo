@@ -78,7 +78,7 @@ pub struct VersionWarn {
 
 /// One loaded `.pine` file: byte-identical text plus its scanned identity.
 /// Version findings ride along as [`warnings`](Self::warnings); only an
-/// empty text fails [`validation`](protopyne_types::Validate).
+/// empty text fails [`validation`](fluent_wvr::validate::Validate).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PineSource {
     /// Source path as loaded, for audit and error context.
@@ -238,7 +238,7 @@ fn parse_import_line(trimmed: &str) -> Option<ImportDecl> {
     })
 }
 
-impl protopyne_types::Validate for PineSource {
+impl fluent_wvr::validate::Validate for PineSource {
     type Err = KernelError;
 
     fn validate(&self) -> Result<(), Self::Err> {
@@ -301,7 +301,7 @@ impl WorkUnit for PineSource {
     }
 
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
-        protopyne_types::check_for_execute(self, "pine source invalid")?;
+        fluent_wvr::validate::check_for_execute(self, "pine source invalid")?;
         Ok(WorkOutput::ok(format!(
             "pine source ready ({} imports, {} warnings): {}",
             self.imports.len(),

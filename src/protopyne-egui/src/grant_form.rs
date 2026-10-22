@@ -136,6 +136,8 @@ pub struct GrantFormState {
     tier_texts: BTreeMap<String, String>,
     previewed: BTreeMap<String, String>,
     preview: Option<Result<WorstCase, String>>,
+    // NOT-A-LADDER (M5): form field holding the last refusal text,
+    // not an ordered candidate walk.
     last_error: Option<String>,
     last_response: Option<ArmResponse>,
 }
@@ -395,7 +397,7 @@ impl GrantFormState {
                 });
             }
             if !document.is_empty() {
-                // Construction from typed legs cannot fail; the fallback
+                // NOT-A-LADDER: construction from typed legs cannot fail; the fallback
                 // keeps a display path panic-free if the shape ever did.
                 tiers.insert(
                     tier.name.clone(),

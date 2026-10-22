@@ -16,9 +16,9 @@ fn ramp(count: i64) -> Vec<ChartRow> {
         .collect()
 }
 
-/// The persisted document round-trips: favorites, the session selection, the
-/// chart's non-default settings, and a loadout field all restore onto a fresh
-/// workspace, and a second snapshot equals the first.
+/// The persisted document round-trips: favorites, bookmarks, the session
+/// selection, the active ticker's layout, and a loadout field all restore
+/// onto a fresh workspace, and a second snapshot equals the first.
 #[test]
 fn prefs_round_trip_restores_favorites_loadout_and_settings() {
     let mut source = ChartWorkspace::with_rows(ramp(120)).expect("workspace boots");
@@ -31,7 +31,18 @@ fn prefs_round_trip_restores_favorites_loadout_and_settings() {
     source
         .set_slot_style_field("fast_mas", "line_width", "3")
         .expect("a style field accepts");
+    source.add_bookmark(1_700_000_000);
+    source.favorite_bookmarks.insert(
+        source.bookmarks["SPY"]
+            .first()
+            .expect("a bookmark seats")
+            .id("SPY"),
+    );
     let prefs = source.prefs();
+    assert!(
+        prefs.tickers.contains_key("SPY"),
+        "the snapshot carries the active ticker's layout"
+    );
 
     let mut restored = ChartWorkspace::with_rows(ramp(120)).expect("workspace boots");
     restored.apply_prefs(&prefs).expect("prefs apply");
@@ -40,6 +51,11 @@ fn prefs_round_trip_restores_favorites_loadout_and_settings() {
         "favorites restore"
     );
     assert_eq!(restored.favorite_indicators, source.favorite_indicators);
+    assert_eq!(
+        restored.favorite_bookmarks, source.favorite_bookmarks,
+        "starred bookmarks restore"
+    );
+    assert_eq!(restored.bookmarks, source.bookmarks, "bookmarks restore");
     assert_eq!(
         restored.chart_type,
         ChartType::Line,
@@ -65,11 +81,19 @@ fn prefs_round_trip_restores_favorites_loadout_and_settings() {
 #[test]
 fn prefs_apply_skips_unknown_fields_instead_of_failing() {
     let mut workspace = ChartWorkspace::with_rows(ramp(60)).expect("workspace boots");
+    let mut tickers = std::collections::BTreeMap::new();
+    tickers.insert(
+        "SPY".to_owned(),
+        TickerLayout {
+            timeframe: Some("9X".to_owned()),
+            chart_type: Some("Not A Type".to_owned()),
+            range: Some("1Y".to_owned()),
+            ..TickerLayout::default()
+        },
+    );
     let prefs = TerminalPrefs {
-        symbol: Some("SPY".to_owned()),
-        timeframe: Some("9X".to_owned()),
-        chart_type: Some("Not A Type".to_owned()),
-        range: Some("1Y".to_owned()),
+        active_symbol: Some("SPY".to_owned()),
+        tickers,
         ..TerminalPrefs::default()
     };
     workspace
@@ -81,6 +105,77 @@ fn prefs_apply_skips_unknown_fields_instead_of_failing() {
         "unknown timeframe skipped"
     );
     assert_eq!(workspace.range(), DateRange::Year1, "a known range applies");
+}
+
+/// A pre-layouts document folds into the named ticker's layout, so an older
+/// file still restores instead of stranding the terminal on defaults.
+#[test]
+fn prefs_apply_migrates_a_legacy_flat_document() {
+    let mut workspace = ChartWorkspace::with_rows(ramp(60)).expect("workspace boots");
+    let json = serde_json::json!({
+        "symbol": "SPY",
+        "timeframe": "5M",
+        "chart_type": "Line",
+        "slots": [],
+    });
+    let prefs: TerminalPrefs = serde_json::from_value(json).expect("a legacy document parses");
+    assert!(
+        prefs.tickers.is_empty(),
+        "legacy fields never populate the map"
+    );
+    workspace
+        .apply_prefs(&prefs)
+        .expect("a legacy file applies");
+    assert_eq!(
+        workspace.chart_type,
+        ChartType::Line,
+        "the legacy chart type folds into the ticker layout"
+    );
+    let saved: TerminalPrefs =
+        serde_json::from_str(&serde_json::to_string(&workspace.prefs()).expect("snapshot"))
+            .expect("the snapshot parses");
+    assert!(
+        saved.tickers.contains_key("SPY"),
+        "saving upgrades the legacy shape to the layouts map"
+    );
+    assert!(
+        saved.symbol.is_none(),
+        "legacy fields never serialize back out"
+    );
+}
+
+/// Layouts never leak across tickers: switching away stashes the live layout
+/// and the incoming ticker restores its own stashed (or saved) one, so each
+/// ticker keeps its chart while roaming without a save.
+#[test]
+fn switching_tickers_restores_each_tickers_own_layout() {
+    let mut workspace = ChartWorkspace::with_rows(ramp(60)).expect("workspace boots");
+    workspace.chart_type = ChartType::Line;
+    workspace
+        .switch_symbol_seeded("GLD", vec![(TimeframeKey::M5, ramp(60))])
+        .expect("the switch seeds");
+    assert_eq!(
+        workspace.chart_type,
+        ChartType::Line,
+        "live settings carry until the new ticker restores its own"
+    );
+    workspace.chart_type = ChartType::Area;
+    workspace
+        .switch_symbol_seeded("SPY", vec![(TimeframeKey::M5, ramp(60))])
+        .expect("the switch back seeds");
+    assert_eq!(
+        workspace.chart_type,
+        ChartType::Line,
+        "the session stash restores the first ticker's layout"
+    );
+    workspace
+        .switch_symbol_seeded("GLD", vec![(TimeframeKey::M5, ramp(60))])
+        .expect("the roam seeds");
+    assert_eq!(
+        workspace.chart_type,
+        ChartType::Area,
+        "each ticker keeps its own stashed layout"
+    );
 }
 
 /// The prefs path anchors beside the historical root, so the file lands next

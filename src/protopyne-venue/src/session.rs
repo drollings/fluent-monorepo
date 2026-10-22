@@ -61,7 +61,7 @@ pub struct SessionConfig {
     pub shutdown_timeout_secs: u64,
 }
 
-impl protopyne_types::Validate for SessionConfig {
+impl fluent_wvr::validate::Validate for SessionConfig {
     type Err = String;
     fn validate(&self) -> Result<(), Self::Err> {
         SessionConfig::validate(self)
@@ -98,8 +98,8 @@ impl WorkUnit for SessionConfig {
     }
 
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
-        protopyne_types::check_for_execute(self, "session config invalid")?;
-        Ok(protopyne_types::valid_output("session config valid"))
+        fluent_wvr::validate::check_for_execute(self, "session config invalid")?;
+        Ok(fluent_wvr::validate::valid_output("session config valid"))
     }
 }
 
@@ -557,7 +557,7 @@ impl TradingSession {
         if let Some(SupervisedBatchError::DuplicateName(name)) = registration_failure {
             summary.failed.push(SupervisedBatchEvent::Failed {
                 name,
-                error: WorkError::Execution(
+                error: WorkError::execution_display(
                     "bar registration rejected a duplicate unit name".to_owned(),
                 ),
             });
@@ -627,7 +627,7 @@ pub fn check_unit(
                     ctx.set("check.message", message.clone());
                     Ok(WorkOutput::ok(message))
                 }
-                Err(reason) => Err(WorkError::Execution(reason)),
+                Err(reason) => Err(WorkError::execution_display(reason)),
             }
         }));
     Arc::new(adapter)

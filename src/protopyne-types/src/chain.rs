@@ -122,7 +122,7 @@ pub struct OptionContract {
     pub multiplier: u32,
 }
 
-impl crate::validate::Validate for OptionContract {
+impl fluent_wvr::validate::Validate for OptionContract {
     type Err = TypesError;
     fn validate(&self) -> Result<(), Self::Err> {
         OptionContract::validate(self)
@@ -297,7 +297,7 @@ pub struct ChainQuote {
     pub timestamp: DateTime<Utc>,
 }
 
-impl crate::validate::Validate for ChainQuote {
+impl fluent_wvr::validate::Validate for ChainQuote {
     type Err = TypesError;
     fn validate(&self) -> Result<(), Self::Err> {
         ChainQuote::validate(self)
@@ -384,7 +384,7 @@ pub struct SpreadLeg {
     pub ratio: u32,
 }
 
-impl crate::validate::Validate for SpreadLeg {
+impl fluent_wvr::validate::Validate for SpreadLeg {
     type Err = TypesError;
     fn validate(&self) -> Result<(), Self::Err> {
         SpreadLeg::validate(self)
@@ -534,14 +534,14 @@ pub struct Portfolio {
     pub accounts: Vec<String>,
 }
 
-impl crate::validate::Validate for SpreadLegs {
+impl fluent_wvr::validate::Validate for SpreadLegs {
     type Err = TypesError;
     fn validate(&self) -> Result<(), Self::Err> {
         SpreadLegs::validate(self)
     }
 }
 
-impl crate::validate::Validate for Portfolio {
+impl fluent_wvr::validate::Validate for Portfolio {
     type Err = TypesError;
     fn validate(&self) -> Result<(), Self::Err> {
         Portfolio::validate(self)

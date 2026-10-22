@@ -526,3 +526,26 @@ fn breaker_trip_records_merit_but_disarms_authorization() {
         split.authorization_reasons
     );
 }
+
+/// Simultaneous refusals: the first axis wins, later stages still run, and
+/// the verdict carries the full split.
+#[test]
+fn multiple_refusals_first_axis_wins_but_split_stays_full() {
+    let case = Case {
+        quantity: "1.5",
+        stale_health: true,
+        kill_switch: true,
+        ..Case::default()
+    };
+    let split = evaluate_split(&case);
+    assert!(!split.allowed);
+    assert_eq!(split.axis, Some(GateAxis::Correctness));
+    assert!(
+        split.reasons.iter().any(|reason| reason.contains("whole")),
+        "{:?}",
+        split.reasons
+    );
+    assert!(!split.risk_pass, "task-value stage still evaluated");
+    assert!(!split.risk_reasons.is_empty(), "{:?}", split.risk_reasons);
+    assert!(split.merit.is_some(), "merit evaluated, never defaulted");
+}

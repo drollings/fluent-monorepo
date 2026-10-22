@@ -607,7 +607,7 @@ impl BarsConfig {
     }
 }
 
-impl protopyne_types::Validate for BarsConfig {
+impl fluent_wvr::validate::Validate for BarsConfig {
     type Err = KernelError;
 
     fn validate(&self) -> Result<(), Self::Err> {
@@ -700,7 +700,7 @@ impl WorkUnit for BarsConfig {
     }
 
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
-        protopyne_types::check_for_execute(self, "bars config invalid")?;
+        fluent_wvr::validate::check_for_execute(self, "bars config invalid")?;
         Ok(WorkOutput::ok(format!(
             "bars config ready (ltf {}ms, ctf {}ms, capacity {})",
             self.ltf_ms,
@@ -778,7 +778,7 @@ pub struct BarRing {
 impl BarRing {
     /// Build an empty ring over `config` (validated first).
     pub fn new(config: &BarsConfig) -> Result<Self, KernelError> {
-        use protopyne_types::Validate as _;
+        use fluent_wvr::validate::Validate as _;
         config.validate()?;
         Ok(Self {
             config: *config,
@@ -1294,6 +1294,8 @@ impl BarRing {
     /// Without a print tape every split is shape-estimated; pass ticks
     /// through [`reconcile_with_ticks`](Self::reconcile_with_ticks) to prefer
     /// tick-signed splits where the tape covers the bucket.
+    /// NOT-A-LADDER (M5): `fallback_open` is a default value substitution,
+    /// not an ordered first-Ok candidate walk.
     pub fn reconcile(
         &mut self,
         rows: &[LtfRow],
@@ -1644,11 +1646,11 @@ impl BarRing {
     }
 }
 
-impl protopyne_types::Validate for BarRing {
+impl fluent_wvr::validate::Validate for BarRing {
     type Err = KernelError;
 
     fn validate(&self) -> Result<(), Self::Err> {
-        protopyne_types::Validate::validate(&self.config)?;
+        fluent_wvr::validate::Validate::validate(&self.config)?;
         if self.candles.len() > self.config.max_candles() {
             return Err(KernelError::InvalidInput(format!(
                 "ring holds {} candles over capacity {}",
@@ -1770,6 +1772,7 @@ fn bridge_invalid(field: &str, detail: &str) -> KernelError {
 }
 
 fn field_opt_f64(fields: &FieldTable, name: &str) -> Result<Option<f64>, KernelError> {
+    // NOT-A-LADDER: absent field reads as none (present-but-null), missing errors; no walk.
     match fields.get(name) {
         None => Err(bridge_invalid(name, "is missing")),
         Some(None) => Ok(None),
@@ -1927,7 +1930,7 @@ impl BarRing {
             drift_threshold: field_req_f64(fields, "drift_threshold")?,
             fill_gaps: field_req_bool(fields, "fill_gaps")?,
         };
-        use protopyne_types::Validate as _;
+        use fluent_wvr::validate::Validate as _;
         config
             .validate()
             .map_err(|err| bridge_invalid("config", &format!("spans invalid ({err})")))?;
@@ -2682,7 +2685,7 @@ impl BarsHistory {
     }
 }
 
-impl protopyne_types::Validate for BarsHistory {
+impl fluent_wvr::validate::Validate for BarsHistory {
     type Err = KernelError;
 
     fn validate(&self) -> Result<(), Self::Err> {

@@ -13,9 +13,12 @@ pub use crate::{
         decode_boundary, decode_boundary_typed, extract_members, repair_boundary, BoundaryError,
         BoundaryOptions,
     },
-    describe_work_unit, Capability, CapabilitySet, Component, Describable, DynamicComponent,
-    DynamicExecutor, FieldAccess, FieldError, MetadataValue, OutputStore, WorkContext, WorkError,
-    WorkOutput, WorkUnit,
+    describe_work_unit,
+    validate::Validate,
+    Capability, CapabilitySet, Component, Describable, DynamicComponent, DynamicExecutor,
+    FieldAccess, FieldError, MetadataValue, OutputStore, WorkContext, WorkError, WorkOutput,
+    WorkUnit,
 };
-pub use crate::{impl_component, impl_fieldless};
+pub use crate::{check_for_execute, valid_output};
+pub use crate::{delegate_component_fields, impl_component, impl_fieldless};
 pub use internment::ArcIntern;

@@ -57,3 +57,30 @@ fn rejects_out_of_order_push() {
     assert!(matches!(dup, TypesError::InvalidBar(_)));
     assert_eq!(window.len(), 1);
 }
+
+#[test]
+fn window_edges_empty_single_touching_saturation() {
+    let empty = BarWindow::new(Timeframe::M15);
+    assert!(empty.is_empty());
+    assert_eq!(empty.len(), 0);
+    assert!(!empty.has_gaps());
+    assert!(empty.gaps().is_empty());
+    let mut single = BarWindow::new(Timeframe::M15);
+    single.push(bar_at_15m(0)).expect("single push");
+    assert!(!single.has_gaps(), "one bar cannot gap");
+    let mut touching = BarWindow::new(Timeframe::M15);
+    for step in [0, 1, 2] {
+        touching.push(bar_at_15m(step)).expect("contiguous");
+    }
+    assert!(!touching.has_gaps(), "touching bars share no hole");
+    let mut gapped = BarWindow::new(Timeframe::M15);
+    for step in [0, 5] {
+        gapped.push(bar_at_15m(step)).expect("gapped push");
+    }
+    let gaps = gapped.gaps();
+    assert_eq!(gaps.len(), 1);
+    assert_eq!(
+        gaps[0].missing_bars, 4,
+        "tail saturates to the count missed"
+    );
+}

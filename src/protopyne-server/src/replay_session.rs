@@ -29,6 +29,7 @@
 //! `stepping_to_completion_reproduces_the_batch_run`).
 
 use chrono::{DateTime, Utc};
+use common_core::registry::KeyedRegistry;
 use rust_decimal::prelude::ToPrimitive as _;
 
 use protopyne_strategy::{
@@ -756,9 +757,11 @@ impl ReplayDriver {
 /// a slot holds (an explicit restart, never a merge), `remove` releases the
 /// slot, and stepping borrows the driver in place so usage, breakers, and
 /// the closes prefix persist across gateway calls.
+/// Duplicate policy: replace on `start` (explicit restart, never merge).
+/// `ids()` returns sorted order via [`KeyedRegistry`].
 #[derive(Default)]
 pub struct ReplayRegistry {
-    sessions: std::collections::HashMap<String, ReplayDriver>,
+    sessions: KeyedRegistry<String, ReplayDriver>,
 }
 
 impl ReplayRegistry {
@@ -787,5 +790,23 @@ impl ReplayRegistry {
     /// Release a slot; answers whether one was occupied.
     pub fn remove(&mut self, session_id: &str) -> bool {
         self.sessions.remove(session_id).is_some()
+    }
+
+    /// Slot ids in sorted order.
+    #[must_use]
+    pub fn ids(&self) -> Vec<String> {
+        self.sessions.keys().cloned().collect()
+    }
+
+    /// Number of occupied slots.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.sessions.len()
+    }
+
+    /// Whether no slot is occupied.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.sessions.is_empty()
     }
 }

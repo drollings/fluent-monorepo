@@ -16,7 +16,7 @@ use crate::{
     resolve_imports, KernelError, LibraryId, ModuleGraph, ModuleId, ModuleInput, SourceKind,
     SUPPORTED_PINE_VERSION,
 };
-use protopyne_types::Validate;
+use fluent_wvr::validate::Validate;
 use std::path::PathBuf;
 
 fn data_root() -> PathBuf {

@@ -16,7 +16,8 @@ use fluent_wvr::{Describable, FieldAccess};
 use protopyne_chart_model::ChartRow;
 use protopyne_kernels::indicator::OwnedOhlcv;
 use protopyne_kernels::smoothing::{SmoothingArgs, SmoothingFamily};
-use protopyne_types::{check_for_execute, valid_output, Validate};
+
+use fluent_wvr::validate::{check_for_execute, valid_output, Validate};
 
 use fluent_egui::{
     needs_column_aggregation, paint_oscillator_styled, proportional_line_points,

@@ -25,6 +25,7 @@ pub mod delta_volume_profile;
 pub mod export;
 pub mod fast_mas;
 pub mod feed;
+pub mod fonts;
 pub mod grant_form;
 pub mod indicators;
 pub mod integration_lite;
@@ -50,6 +51,7 @@ pub use chart::{
 pub use export::{export_overlay_json, export_rows_csv, export_rows_json, EXPORT_CSV_HEADER};
 pub use fast_mas::{evaluate_fast_mas, paint_fast_mas, FastMasConfig, FastMasLine, FastMasView};
 pub use feed::{RecomputeJob, RecomputePool};
+pub use fonts::{install_noto_sans, NOTO_SANS_MONO_NAME, NOTO_SANS_NAME};
 pub use grant_form::{paint_grant_form, GrantFormError, GrantFormField, GrantFormState};
 pub use indicators::{
     build_indicator_catalog, build_indicator_catalog_with_manifest, instantiate_indicator,
@@ -77,7 +79,9 @@ pub use pine_overlay::{
     overlay_geoms, paint_overlay, paint_unsupported_chip, translate_overlay, OverlayGeoms,
     PlacedLabel, SeriesGeom,
 };
-pub use prefs::{prefs_path, Favorites, SlotPrefs, TerminalPrefs, PREFS_FILE};
+pub use prefs::{
+    prefs_path, BookmarkEntry, Favorites, SlotPrefs, TerminalPrefs, TickerLayout, PREFS_FILE,
+};
 pub use protopyne_view::AssetClass;
 pub use regime_labels::{
     display_label, label_series, parity_label, regime_style_key, stability_band, QuietLabel,
@@ -91,9 +95,11 @@ pub use topology::{
     RIBBON_NODE, SIGNAL_NODE, VOLUME_NODE,
 };
 pub use widgets::{
-    chart_type_label, mtf_table_shape, paint_mtf_table, paint_timeframe_toolbar, paint_top_bar,
-    timeframe_labels, toolbar_labels, MtfRow, TopBarAction, TopBarMenuState,
-    INDICATOR_SEARCH_LABEL, SYMBOL_SEARCH_LABEL, TOP_BAR_CHART_TYPES,
+    chart_type_label, mtf_table_shape, paint_mtf_table, paint_range_dialog,
+    paint_timeframe_toolbar, paint_top_bar, timeframe_labels, toolbar_labels, CalendarState,
+    MtfRow, PlayPressState, RangeChoice, ReplaySpeed, TopBarAction, TopBarMenuState,
+    BOOKMARK_SEARCH_LABEL, INDICATOR_SEARCH_LABEL, PLAY_LONG_PRESS_SECS, PULLDOWN_CHEVRON,
+    SYMBOL_SEARCH_LABEL, TOP_BAR_CHART_TYPES,
 };
 pub use workspace::{
     build_symbol_catalog, live_update_of_frame, paint_workspace, symbol_modal_for, ChartWorkspace,

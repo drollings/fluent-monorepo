@@ -1,8 +1,6 @@
-use super::{check_for_execute, valid_output};
-use crate::{
-    validate::Validate, Adjustment, Bar, Money, OptionContract, OptionKind, Portfolio, PortfolioId,
-};
+use crate::{Adjustment, Bar, Money, OptionContract, OptionKind, Portfolio, PortfolioId};
 use chrono::TimeZone as _;
+use fluent_wvr::validate::{check_for_execute, valid_output, Validate};
 
 fn sample_ts() -> chrono::DateTime<chrono::Utc> {
     chrono::Utc

@@ -105,6 +105,18 @@ pub fn fingerprint_json<T: serde::Serialize>(value: &T) -> u64 {
     fnv1a64(&serde_json::to_vec(value).unwrap_or_default())
 }
 
+/// Canonical JSON for a serializable value: `serde_json::to_string` with a
+/// loud in-payload refusal on serialization failure (never an empty object).
+#[must_use]
+pub fn canonical_json<T: serde::Serialize>(value: &T) -> String {
+    serde_json::to_string(value).unwrap_or_else(|e| {
+        format!(
+            "{{\"serialization_error\":{}}}",
+            serde_json::to_string(&e.to_string()).unwrap_or_else(|_| "\"unencodable\"".to_owned())
+        )
+    })
+}
+
 /// Fingerprint of sorted length-framed `(name, payload)` pairs: names sort
 /// ascending, each frame is `u64 little-endian name length + name bytes +
 /// raw payload bytes`, hashed once through [`fnv1a64`]. This is the exact

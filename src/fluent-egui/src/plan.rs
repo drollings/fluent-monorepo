@@ -132,6 +132,8 @@ impl PanePlan {
                 .collect();
         }
         let mut fallback: Vec<String> = dirty.into_iter().collect();
+        // Deterministic fallback when the graph is broken; plan order
+        // stays the topo path above.
         fallback.sort();
         fallback
     }
@@ -301,7 +303,9 @@ impl PaneCache {
 
     /// Publish one pane's series, returning its revision. Bit-identical
     /// content backdates (revision unchanged); changed content bumps the
-    /// store revision and records it on the entry. The existence probe
+    /// store revision and records it on the entry. Fork from
+    /// `content_revision`: a hit returns the entry revision, not the store
+    /// revision, so the helper cannot substitute here. The existence probe
     /// reads through the shared `Arc`, so an unchanged republish clones no
     /// series either.
     pub fn publish(&mut self, key: u64, values: Vec<Option<f64>>) -> u64 {
@@ -351,6 +355,17 @@ impl PaneCache {
 #[allow(clippy::trivially_copy_pass_by_ref)]
 fn never_load(_key: &u64) -> Result<Arc<CachedSeries>, String> {
     Err("pane cache is write-through; load is never called".to_owned())
+}
+
+/// Shared content-memo revision rule: identical fingerprints keep the
+/// revision, changed content bumps. Returns `(revision, dirty)`.
+#[must_use]
+pub fn content_revision(fingerprint: u64, current: Option<u64>, revision: u64) -> (u64, bool) {
+    if current == Some(fingerprint) {
+        (revision, false)
+    } else {
+        (revision + 1, true)
+    }
 }
 
 impl Default for PaneCache {

@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 /// The overlay's starred entries, split by catalog: the Favorites filter in
-/// each modal keys on the matching set.
+/// each picker keys on the matching set.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Favorites {
     /// Starred ticker symbols.
@@ -23,8 +23,40 @@ pub struct Favorites {
     /// Starred indicator ids.
     #[serde(default)]
     pub indicators: Vec<String>,
+    /// Starred bookmark ids (`{symbol}|{timeframe}|{time}`).
+    #[serde(default)]
+    pub bookmarks: Vec<String>,
 }
 
+/// One bookmarked candle: the bar time plus the timeframe it was captured
+/// on, so a 5M bookmark restores its own grid even when the chart has moved
+/// on. The id is `{symbol}|{timeframe}|{time}`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BookmarkEntry {
+    /// Bar epoch seconds.
+    pub time: i64,
+    /// Timeframe label the bookmark was captured on (`5M`, …).
+    #[serde(default)]
+    pub timeframe: String,
+}
+
+impl BookmarkEntry {
+    /// Stable catalog id under `symbol`.
+    #[must_use]
+    pub fn id(&self, symbol: &str) -> String {
+        format!("{symbol}|{}|{}", self.timeframe, self.time)
+    }
+
+    /// Picker row title: calendar date, clock time, and timeframe.
+    #[must_use]
+    pub fn title(&self) -> String {
+        let when = chrono::DateTime::from_timestamp(self.time, 0).map_or_else(
+            || self.time.to_string(),
+            |moment| moment.format("%Y-%m-%d %H:%M").to_string(),
+        );
+        format!("{when} · {}", self.timeframe)
+    }
+}
 /// One hot-slotted indicator's persisted state: its stable id, its visibility,
 /// and every declared config/style field as a string (the `FieldAccess`
 /// contract's own spelling).
@@ -48,39 +80,82 @@ fn default_true() -> bool {
     true
 }
 
-/// The persisted terminal state: the session selection, the chart's
-/// non-default settings, the starred entries, and the indicator loadout.
+/// One ticker's saved layout: the chart settings the Save Layout button
+/// snapshots for exactly one ticker, overwriting that ticker's previous
+/// entry. Layouts never leak across tickers — switching tickers stashes the
+/// current layout and applies the incoming ticker's own.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct TickerLayout {
+    /// Timeframe key label (`1M`/`5M`/…).
+    #[serde(default)]
+    pub timeframe: Option<String>,
+    /// Range preset label (`1M`/`3M`/`YTD`/…). Absent when a custom
+    /// Beginning start rules instead.
+    #[serde(default)]
+    pub range: Option<String>,
+    /// Custom window start (epoch seconds) from the Beginning picker.
+    #[serde(default)]
+    pub custom_start: Option<i64>,
+    /// Chart type name (`Candles`/`Line`/…).
+    #[serde(default)]
+    pub chart_type: Option<String>,
+    /// Price-pane share of the canvas height.
+    #[serde(default)]
+    pub pane_share: Option<f32>,
+    /// Indicator loadout, in stack (paint) order.
+    #[serde(default)]
+    pub slots: Vec<SlotPrefs>,
+}
+
+/// The persisted terminal state: per-ticker layouts (written only by the Save
+/// Layout button), the session selection, the starred entries, and the
+/// per-ticker bookmarks.
 ///
 /// Every field is optional so an absent or partial file leaves the live
-/// defaults in place; a present field wins.
+/// defaults in place; a present field wins. Nothing is written unless the
+/// operator presses Save Layout — the composition root gates the write on
+/// [`ChartWorkspace::take_save_request`](crate::workspace::ChartWorkspace::take_save_request).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct TerminalPrefs {
     /// Active ticker.
     #[serde(default)]
-    pub symbol: Option<String>,
-    /// Active timeframe key label (`1M`/`5M`/…).
+    pub active_symbol: Option<String>,
+    /// Saved layouts by ticker: the Save Layout button overwrites exactly
+    /// the active ticker's entry.
     #[serde(default)]
-    pub timeframe: Option<String>,
-    /// Active range preset label (`1M`/`3M`/`YTD`/…).
+    pub tickers: BTreeMap<String, TickerLayout>,
+    /// Starred catalog entries (symbols, indicators, bookmarks).
     #[serde(default)]
-    pub range: Option<String>,
-    /// Active chart type name (`Candles`/`Line`/…).
+    pub favorites: Favorites,
+    /// Bookmarked candles by ticker, in capture order.
     #[serde(default)]
-    pub chart_type: Option<String>,
-    /// Theme key.
-    #[serde(default)]
-    pub theme: Option<String>,
-    /// Price-pane share of the canvas height.
-    #[serde(default)]
-    pub pane_share: Option<f32>,
+    pub bookmarks: BTreeMap<String, Vec<BookmarkEntry>>,
     /// Dock drawer open state.
     #[serde(default)]
     pub dock_open: Option<bool>,
-    /// Starred catalog entries.
+    /// Theme key.
     #[serde(default)]
-    pub favorites: Favorites,
-    /// Indicator loadout, in stack (paint) order.
-    #[serde(default)]
+    pub theme: Option<String>,
+    // Legacy flat layout (pre-ticker documents): read-only migration source,
+    // never serialized. When `tickers` is empty and these name a ticker, they
+    // fold into that ticker's layout once (see `ticker_layout`).
+    /// Legacy active ticker.
+    #[serde(default, skip_serializing)]
+    pub symbol: Option<String>,
+    /// Legacy timeframe key label.
+    #[serde(default, skip_serializing)]
+    pub timeframe: Option<String>,
+    /// Legacy range preset label.
+    #[serde(default, skip_serializing)]
+    pub range: Option<String>,
+    /// Legacy chart type name.
+    #[serde(default, skip_serializing)]
+    pub chart_type: Option<String>,
+    /// Legacy price-pane share.
+    #[serde(default, skip_serializing)]
+    pub pane_share: Option<f32>,
+    /// Legacy indicator loadout.
+    #[serde(default, skip_serializing)]
     pub slots: Vec<SlotPrefs>,
 }
 
@@ -89,6 +164,28 @@ impl TerminalPrefs {
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self == &Self::default()
+    }
+
+    /// The saved layout for `symbol`: the tickers map wins; a legacy flat
+    /// document (no map, old fields naming this ticker) folds into an
+    /// equivalent layout so an older file still restores.
+    #[must_use]
+    pub fn ticker_layout(&self, symbol: &str) -> Option<TickerLayout> {
+        if let Some(layout) = self.tickers.get(symbol) {
+            return Some(layout.clone());
+        }
+        let legacy_symbol = self.symbol.as_deref().filter(|s| !s.trim().is_empty())?;
+        if legacy_symbol != symbol {
+            return None;
+        }
+        Some(TickerLayout {
+            timeframe: self.timeframe.clone(),
+            range: self.range.clone(),
+            custom_start: None,
+            chart_type: self.chart_type.clone(),
+            pane_share: self.pane_share,
+            slots: self.slots.clone(),
+        })
     }
 }
 

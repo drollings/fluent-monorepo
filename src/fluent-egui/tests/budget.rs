@@ -129,6 +129,11 @@ fn bloat_ledger_pins_source_files() {
     // Folding detection into `hittest.rs` would make a gesture-routing
     // question look like a readout question; folding the popup into `slot.rs`
     // would tie a chart-wide menu to the legend stack.
+    // `fonts.rs` earns its line by isolating the fallback-chain policy
+    // (bundled-primary inserts plus the optional system-provider composer)
+    // from every pane that renders text. Folding it into `config.rs` would
+    // make theme truth own font bytes, and inlining it per example would
+    // fork the chain order the terminal depends on.
     assert_eq!(
         src_file_names(),
         vec![
@@ -138,6 +143,7 @@ fn bloat_ledger_pins_source_files() {
             "error.rs",
             "feed.rs",
             "fields.rs",
+            "fonts.rs",
             "hittest.rs",
             "interaction.rs",
             "lib.rs",

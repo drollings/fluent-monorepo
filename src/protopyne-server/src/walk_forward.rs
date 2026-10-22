@@ -258,13 +258,7 @@ impl WalkForwardManifest {
     /// payload instead of emitting an empty object.
     #[must_use]
     pub fn to_canonical_json(&self) -> String {
-        serde_json::to_string(self).unwrap_or_else(|e| {
-            format!(
-                "{{\"serialization_error\":{}}}",
-                serde_json::to_string(&e.to_string())
-                    .unwrap_or_else(|_| "\"unencodable\"".to_owned())
-            )
-        })
+        common_core::hash::canonical_json(self)
     }
 }
 
@@ -282,7 +276,7 @@ pub struct WalkForwardRun {
 
 impl WalkForwardRun {
     /// Deterministic JSON over the pin plus every fold's runs, for rerun
-    /// comparison.
+    /// comparison. M8: composite shape, not `canonical_json` alone.
     #[must_use]
     pub fn to_canonical_json(&self) -> String {
         let folds = serde_json::to_string(&self.folds).unwrap_or_else(|e| {

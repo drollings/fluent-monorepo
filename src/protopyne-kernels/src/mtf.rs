@@ -234,8 +234,8 @@ impl Lookahead {
 
 /// Validated bucket-grid handle for supervised assembly: the boundary form
 /// of a raw millisecond grid. Construction is plain (validation lives in
-/// [`Validate`](protopyne_types::Validate), bridged through
-/// [`check_for_execute`](protopyne_types::check_for_execute) at execution),
+/// [`Validate`](fluent_wvr::validate::Validate), bridged through
+/// [`check_for_execute`](fluent_wvr::validate::check_for_execute) at execution),
 /// so invalid specs exist just long enough to refuse loudly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BucketSpec {
@@ -263,7 +263,7 @@ impl BucketSpec {
     }
 }
 
-impl protopyne_types::Validate for BucketSpec {
+impl fluent_wvr::validate::Validate for BucketSpec {
     type Err = KernelError;
 
     fn validate(&self) -> Result<(), Self::Err> {
@@ -329,7 +329,7 @@ impl WorkUnit for BucketSpec {
     }
 
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
-        protopyne_types::check_for_execute(self, "bucket spec invalid")?;
+        fluent_wvr::validate::check_for_execute(self, "bucket spec invalid")?;
         Ok(WorkOutput::ok(format!(
             "bucket spec ready (grid {}ms)",
             self.grid_ms
@@ -696,7 +696,7 @@ impl MtfStore {
                 let kernel = registry.get(&node.kernel).ok_or_else(|| {
                     KernelError::UnknownIndicator(format!("unknown kernel '{}'", node.kernel))
                 })?;
-                // Every ordered node carries resolved params (requests
+                // NOT-A-LADDER: every ordered node carries resolved params (requests
                 // first-wins, then dep-discovered); the default below is an
                 // unreachable fail-safe, never a silently resolved default.
                 let params = resolved.get(node).unwrap_or(&default_params);
@@ -943,7 +943,7 @@ impl Default for MtfStore {
     }
 }
 
-impl protopyne_types::Validate for MtfStore {
+impl fluent_wvr::validate::Validate for MtfStore {
     type Err = KernelError;
 
     fn validate(&self) -> Result<(), Self::Err> {
@@ -998,7 +998,7 @@ pub fn build_graph(
         let kernel = registry.get(&key.kernel).ok_or_else(|| {
             KernelError::UnknownIndicator(format!("unknown kernel '{}'", key.kernel))
         })?;
-        // Every node enters the stack with its params seeded above (requests)
+        // NOT-A-LADDER: every node enters the stack with its params seeded above (requests)
         // or inserted at discovery below (deps); the empty fallback is an
         // unreachable fail-safe, never a silently resolved default.
         let node_params = params_of.get(&key).cloned().unwrap_or_else(ParamSet::new);

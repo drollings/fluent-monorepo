@@ -253,6 +253,8 @@ pub fn parse_chain_csv(content: &str) -> Result<Vec<ChainQuote>, ServerError> {
                 parse_chain_u64(raw, line, "open_interest")
             }
         })?;
+        // NOT-A-LADDER: optional-column parse — absent/empty reads as none,
+        // malformed refuses; no candidate walk, no skip/stop verdicts.
         let iv = opt("iv").map_or(Ok(None), |c| {
             let raw = field(c);
             if raw.is_empty() {

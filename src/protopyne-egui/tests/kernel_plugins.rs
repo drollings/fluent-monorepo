@@ -58,7 +58,11 @@ fn multi_output_goldens() -> Vec<MultiOutputGolden> {
         },
         MultiOutputGolden {
             id: "bbands",
-            nodes: vec!["kernel:bbands", "kernel:bbands:upper", "kernel:bbands:lower"],
+            nodes: vec![
+                "kernel:bbands",
+                "kernel:bbands:upper",
+                "kernel:bbands:lower",
+            ],
             first: vec![19, 19, 19],
             last: vec![209.5, 221.0325625946708, 197.9674374053292],
             attachment: SlotAttachment::SubPane,
@@ -114,8 +118,7 @@ fn multi_output_goldens_emit_one_series_per_declared_output() {
         let config = plugin.default_config();
         let nodes = plugin.plan_nodes(&*config).expect("nodes list");
         assert_eq!(
-            nodes,
-            golden.nodes,
+            nodes, golden.nodes,
             "{} plans one node per declared output",
             golden.id
         );
@@ -155,7 +158,7 @@ fn multi_output_goldens_emit_one_series_per_declared_output() {
             let observed = series
                 .values
                 .iter()
-                .position(|value| value.is_some())
+                .position(Option::is_some)
                 .expect("some finite value");
             assert_eq!(observed, *first, "{} warms up as recorded", series.node);
             assert_eq!(
@@ -229,7 +232,11 @@ fn legacy_length_migration_is_pinned() {
         .set_field("length", "20")
         .expect("declared length edits");
     assert_eq!(
-        effective_int(&declared.effective_params().expect("effective"), "sma", "length"),
+        effective_int(
+            &declared.effective_params().expect("effective"),
+            "sma",
+            "length"
+        ),
         Some(20),
         "the declared value wins"
     );
@@ -277,15 +284,8 @@ fn unknown_kernel_and_parameter_refuse_at_every_surface() {
         "unknown kernels have no effective params"
     );
     let plugin = KernelIndicator::new("sma").expect("builds");
-    let evaluation = plugin.evaluate(
-        &golden_rows(),
-        &unknown,
-        &SeriesCatalog::empty(),
-    );
-    assert!(
-        evaluation.is_err(),
-        "evaluation refuses the unknown kernel"
-    );
+    let evaluation = plugin.evaluate(&golden_rows(), &unknown, &SeriesCatalog::empty());
+    assert!(evaluation.is_err(), "evaluation refuses the unknown kernel");
 
     // Unknown parameters refuse on a known kernel.
     let mut sma = KernelIndicatorConfig::defaults_for("sma");

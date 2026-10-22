@@ -267,3 +267,63 @@ fn load_more_grows_against_a_limit_honoring_gateway() {
         .expect("rows load");
     assert!(first_after < first_before, "growth reaches earlier bars");
 }
+
+/// Refresh (no live feed) refits the Y axis in place: it never trails to the
+/// newest bar — that is the forward-to-end button's job. The bars under the
+/// viewport stay the same bars, whether the range was already covered or the
+/// read grew the window.
+#[test]
+fn refresh_refits_y_in_place_without_trailing_to_the_end() {
+    use crate::workspace::PANE_WIDTH_PX;
+    let full = m1_rows(100_000);
+    let gateway = LimitGateway::new(full.clone());
+    // Seed the trailing 1,000 bars directly so the test controls the window;
+    // the gateway holds the full 100k behind it.
+    let mut workspace =
+        ChartWorkspace::with_rows(full[full.len() - 1_000..].to_vec()).expect("workspace boots");
+    assert_eq!(workspace.rows().len(), 1_000);
+    // Pan away from the trailing edge: bar 100 sits at the right edge.
+    workspace
+        .place_bar_at_right(100, PANE_WIDTH_PX)
+        .expect("pan places the bar");
+    let main = workspace.main_viewport().expect("a viewport binds");
+    let (old_start, old_end) = main.visible_bar_range(PANE_WIDTH_PX, workspace.rows().len());
+    assert!(
+        old_end < 500,
+        "the view sits away from the tail: {old_start}..{old_end}"
+    );
+    let old_first_time = workspace.rows()[old_start].time;
+
+    workspace
+        .verify_chart_range(&gateway)
+        .expect("refresh verifies");
+    assert!(
+        workspace.rows().len() > 1_000,
+        "the short window is re-read against the full store"
+    );
+    let main = workspace.main_viewport().expect("a viewport binds");
+    let (new_start, _) = main.visible_bar_range(PANE_WIDTH_PX, workspace.rows().len());
+    assert_eq!(
+        workspace.rows()[new_start].time,
+        old_first_time,
+        "the same bar opens the view after the re-read"
+    );
+
+    // A covered range re-reads nothing and moves nothing at all.
+    let offset = main.x_offset_px();
+    let calls = gateway.limits_for("5M").len();
+    workspace
+        .verify_chart_range(&gateway)
+        .expect("verify applies");
+    assert_eq!(
+        gateway.limits_for("5M").len(),
+        calls,
+        "a covered range re-reads nothing"
+    );
+    let main = workspace.main_viewport().expect("a viewport binds");
+    assert_eq!(
+        main.x_offset_px().to_bits(),
+        offset.to_bits(),
+        "a covered refresh holds the X position exactly"
+    );
+}

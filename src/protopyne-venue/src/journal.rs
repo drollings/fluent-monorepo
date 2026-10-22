@@ -582,6 +582,7 @@ impl Journal {
     ) -> Result<Option<OrderRecord>, VenueError> {
         self.gate(permit)?;
         let inner = common_core::sync::lock(&self.inner);
+        // NOT-A-LADDER: unknown client reads as none, not a candidate walk.
         let Some(&at) = inner.intent_at.get(client_id) else {
             return Ok(None);
         };

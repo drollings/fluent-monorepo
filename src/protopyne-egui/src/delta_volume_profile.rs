@@ -19,7 +19,8 @@ use fluent_wvr::prelude::*;
 use fluent_wvr::{Describable, FieldAccess};
 use protopyne_chart_model::ChartRow;
 use protopyne_kernels::bars::estimate_delta_volume_estimated;
-use protopyne_types::{check_for_execute, valid_output, Validate};
+
+use fluent_wvr::validate::{check_for_execute, valid_output, Validate};
 
 use fluent_egui::{
     needs_column_aggregation, opacity_from_transparency, paint_oscillator_styled,

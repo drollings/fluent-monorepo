@@ -235,7 +235,7 @@ fn lookahead_stays_refused() {
 #[test]
 fn bucket_spec_validates_through_execute() {
     use fluent_wvr::prelude::{Component, WorkUnit};
-    use protopyne_types::Validate;
+    use fluent_wvr::validate::Validate;
     let spec = BucketSpec::new(60_000);
     assert_eq!(spec.grid_ms(), 60_000);
     spec.validate().expect("valid spec validates");
@@ -252,4 +252,30 @@ fn bucket_spec_validates_through_execute() {
     // Sub-second grids refuse: bucket math assumes whole seconds.
     assert!(BucketSpec::new(1_500).validate().is_err());
     assert!(BucketSpec::new(-60_000).validate().is_err());
+}
+
+#[test]
+fn build_graph_resolves_request_params_without_defaulting() {
+    use crate::{IndicatorRegistry, ParamSet, SmaIndicator};
+    use std::sync::Arc;
+    let mut registry = IndicatorRegistry::new();
+    registry
+        .register(Arc::new(SmaIndicator::new()))
+        .expect("sma registers");
+    let params = ParamSet::new().with_int("length", 3);
+    let key = SeriesKey::new(60_000, SmaIndicator::ID, &params).expect("valid key");
+    let requests = vec![(key.clone(), params.clone())];
+    let (graph, resolved) = build_graph(&registry, &requests).expect("graphs");
+    assert!(
+        resolved.contains_key(&key),
+        "request params resolve, never defaulted"
+    );
+    let dup_requests = vec![(key.clone(), params.clone()), (key.clone(), params)];
+    let (_, resolved_dup) = build_graph(&registry, &dup_requests).expect("dups graph");
+    assert_eq!(
+        resolved_dup.len(),
+        resolved.len(),
+        "duplicate requests dedupe"
+    );
+    let _ = graph;
 }

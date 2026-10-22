@@ -42,7 +42,7 @@ pub struct Bar {
     pub adj: Option<Adjustment>,
 }
 
-impl crate::validate::Validate for Bar {
+impl fluent_wvr::validate::Validate for Bar {
     type Err = TypesError;
     fn validate(&self) -> Result<(), Self::Err> {
         Bar::validate(self)

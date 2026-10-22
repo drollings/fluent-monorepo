@@ -210,3 +210,29 @@ fn evaluation_window_covers_visible_plus_warmup_and_clamps() {
         "a visible window past the data evaluates nothing"
     );
 }
+
+#[test]
+fn series_catalog_replace_sorted_len_tracks() {
+    let mut catalog = SeriesCatalog::empty();
+    assert_eq!(catalog.node_names(), Vec::<String>::new());
+    for node in ["c", "a", "b"] {
+        catalog.publish(node, 1, vec![Some(1.0)]);
+    }
+    assert_eq!(catalog.node_names(), vec!["a", "b", "c"]);
+    assert!(catalog.resolve("a").is_some());
+    assert!(catalog.resolve("missing").is_none());
+    catalog.publish("a", 2, vec![Some(2.0)]);
+    assert_eq!(catalog.node_names(), vec!["a", "b", "c"]);
+    assert_eq!(catalog.series_key("a"), Some(2));
+    assert!(catalog.resolve("a").is_some());
+}
+
+#[test]
+fn kernel_ids_sorted_len_tracks() {
+    let ids = crate::indicators::kernel_ids();
+    assert!(!ids.is_empty(), "builtins register");
+    let mut sorted = ids.clone();
+    sorted.sort();
+    assert_eq!(ids, sorted, "picker lists sorted");
+    assert_eq!(ids.len(), sorted.len());
+}

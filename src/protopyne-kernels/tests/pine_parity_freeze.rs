@@ -606,7 +606,7 @@ fn freeze_match_captures_recorded() {
         assert!(bars > 0, "{construct} evaluates bars");
         match construct {
             "plotcandle" => {
-                assert_eq!(outcome.plotcandles.len(), 1, "one plotcandle site captured")
+                assert_eq!(outcome.plotcandles.len(), 1, "one plotcandle site captured");
             }
             "barcolor" => {
                 assert_eq!(outcome.barcolors.len(), 1, "one barcolor site captured");

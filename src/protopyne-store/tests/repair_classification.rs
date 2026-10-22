@@ -20,8 +20,8 @@ use crate::repair::{
     classify_history_error, classify_store_error, RecoveryCoordinator, RepairConfig, RepairReason,
     RepairStatus, RepairWorker,
 };
+use fluent_wvr::validate::Validate as _;
 use fluent_wvr::WorkUnit as _;
-use protopyne_types::Validate as _;
 
 #[test]
 fn locked_store_classifies_deferred() {

@@ -5,7 +5,6 @@ use std::borrow::Borrow;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::hash::Hash;
-use std::num::NonZeroUsize;
 use std::sync::{Arc, Condvar, Mutex};
 
 use crate::sync::lock;
@@ -107,8 +106,7 @@ where
         capacity: usize,
         load: impl Fn(&K) -> Result<V, E> + Send + Sync + 'static,
     ) -> Result<Self, String> {
-        let cap = NonZeroUsize::new(capacity)
-            .ok_or_else(|| format!("cache capacity must be non-zero, got {capacity}"))?;
+        let cap = crate::capacity::nonzero_capacity(capacity, "cache")?;
         Ok(Self {
             inner: Mutex::new(LruCache::new(cap)),
             inflight: Mutex::new(HashMap::new()),

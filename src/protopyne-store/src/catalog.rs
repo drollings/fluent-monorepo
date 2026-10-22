@@ -14,7 +14,8 @@
 //! holds the persisted table. Nothing here touches a database.
 
 use fluent_wvr::prelude::*;
-use protopyne_types::{Bar, Timeframe, Validate};
+use fluent_wvr::validate::Validate;
+use protopyne_types::{Bar, Timeframe};
 use rust_decimal::Decimal;
 
 use crate::error::{PlanError, StoreError};
@@ -157,7 +158,7 @@ pub struct Market {
     pub time_zone: String,
 }
 
-impl protopyne_types::Validate for Market {
+impl fluent_wvr::validate::Validate for Market {
     type Err = String;
 
     fn validate(&self) -> Result<(), Self::Err> {

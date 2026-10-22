@@ -58,7 +58,7 @@ pub struct PineRuntimeConfig {
     pub warmup_bars: u64,
 }
 
-impl protopyne_types::Validate for PineRuntimeConfig {
+impl fluent_wvr::validate::Validate for PineRuntimeConfig {
     type Err = crate::error::KernelError;
     fn validate(&self) -> Result<(), Self::Err> {
         PineRuntimeConfig::validate(self)
@@ -113,7 +113,7 @@ impl WorkUnit for PineRuntimeConfig {
     }
 
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
-        protopyne_types::check_for_execute(self, "pine runtime invalid")?;
+        fluent_wvr::validate::check_for_execute(self, "pine runtime invalid")?;
         Ok(WorkOutput::ok(format!(
             "pine runtime ready (max_bars={}, warmup_bars={})",
             self.max_bars, self.warmup_bars
@@ -201,25 +201,7 @@ impl WorkUnit for PineRuntime {
     }
 }
 
-impl FieldAccess for PineRuntime {
-    fn set_field(&mut self, name: &str, value: &str) -> Result<(), FieldError> {
-        self.config.set_field(name, value)
-    }
-
-    fn get_field(&self, name: &str) -> Result<String, FieldError> {
-        self.config.get_field(name)
-    }
-
-    fn field_names(&self) -> &'static [&'static str] {
-        self.config.field_names()
-    }
-}
-
-impl Describable for PineRuntime {
-    fn describe(&self) -> serde_json::Value {
-        self.config.describe()
-    }
-}
+fluent_wvr::delegate_component_fields!(PineRuntime, config);
 
 impl_component!(PineRuntime);
 

@@ -9,7 +9,7 @@
 
 use super::*;
 use crate::{load_pine_source, parse_pine_source, PineSource, SourceKind};
-use protopyne_types::Validate;
+use fluent_wvr::validate::Validate;
 use std::path::PathBuf;
 
 fn data_root() -> PathBuf {

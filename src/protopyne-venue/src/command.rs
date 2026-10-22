@@ -747,7 +747,7 @@ pub struct CommandUnit {
 impl CommandUnit {
     fn require_portfolio(&self, portfolio: &str) -> Result<(), WorkError> {
         if self.registry.get(portfolio).is_none() {
-            return Err(WorkError::Execution(format!(
+            return Err(WorkError::execution_display(format!(
                 "unknown portfolio {portfolio}: refusing to act on an ungrouped book"
             )));
         }
@@ -776,14 +776,14 @@ impl CommandUnit {
             return Ok(());
         };
         let Some(permit) = ctx.caps.get::<VenueStorage>().cloned() else {
-            return Err(WorkError::Execution(
+            return Err(WorkError::execution_display(
                 "command journal bound but venue-storage capability missing: refusing to mutate unjournaled"
                     .to_owned(),
             ));
         };
         journal
             .record_transition(&permit, OPERATOR_CLIENT_ID, kind, detail, Utc::now())
-            .map_err(|e| WorkError::Execution(e.to_string()))
+            .map_err(WorkError::execution_display)
     }
 
     /// Rebuild one journaled proposal, validate the human decision against its
@@ -798,22 +798,24 @@ impl CommandUnit {
         reason: &str,
     ) -> Result<Proposal, WorkError> {
         let Some(journal) = &self.journal else {
-            return Err(WorkError::Execution(
+            return Err(WorkError::execution_display(
                 "decision commands need the journal bound".to_owned(),
             ));
         };
         let Some(permit) = ctx.caps.get::<VenueStorage>().cloned() else {
-            return Err(WorkError::Execution(
+            return Err(WorkError::execution_display(
                 "decision journal bound but venue-storage capability missing".to_owned(),
             ));
         };
         let mut proposal = journal
             .replay_proposals(&permit)
-            .map_err(|e| WorkError::Execution(e.to_string()))?
+            .map_err(WorkError::execution_display)?
             .remove(proposal_id)
-            .ok_or_else(|| WorkError::Execution(format!("no journaled proposal {proposal_id}")))?;
+            .ok_or_else(|| {
+                WorkError::execution_display(format!("no journaled proposal {proposal_id}"))
+            })?;
         decide_proposal(journal, &permit, &mut proposal, event, reason, Utc::now())
-            .map_err(|e| WorkError::Execution(e.to_string()))?;
+            .map_err(WorkError::execution_display)?;
         Ok(proposal)
     }
 }
@@ -848,9 +850,10 @@ impl WorkUnit for CommandUnit {
             CommandKind::ArmGrant { grant } => {
                 // Refuse before journaling: a rejected arm must leave no row,
                 // so the fold never rebuilds an authority nobody granted.
-                grant.validate_armable().map_err(WorkError::Execution)?;
-                let detail = serde_json::to_string(grant)
-                    .map_err(|e| WorkError::Execution(e.to_string()))?;
+                grant
+                    .validate_armable()
+                    .map_err(WorkError::execution_display)?;
+                let detail = serde_json::to_string(grant).map_err(WorkError::execution_display)?;
                 self.journal_command(ctx, COMMAND_ARM_GRANT_KIND, &detail)?;
                 self.grants.set(Some((**grant).clone()));
                 Ok(WorkOutput::ok("grant armed: authority journaled"))
@@ -861,7 +864,7 @@ impl WorkUnit for CommandUnit {
                     .get()
                     .is_some_and(|grant| grant.id.as_str() == grant_id.as_str() && !grant.revoked);
                 if !matches_live {
-                    return Err(WorkError::Execution(format!(
+                    return Err(WorkError::execution_display(format!(
                         "no live grant {grant_id} to revoke"
                     )));
                 }
@@ -898,7 +901,7 @@ impl WorkUnit for CommandUnit {
                 let groups = self.open_groups();
                 let intents =
                     close_all_intents(&groups, self.limit, &self.proposal_id, &self.strategy)
-                        .map_err(|e| WorkError::Execution(e.to_string()))?;
+                        .map_err(WorkError::execution_display)?;
                 WorkOutput::typed("close-all intents emitted", &intents)
             }
             CommandKind::CancelAll { portfolio } => {
@@ -972,7 +975,7 @@ impl WorkUnit for TradingStateUnit {
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
         match self.state.get().check(false) {
             Ok(()) => Ok(WorkOutput::ok("trading enabled")),
-            Err(reason) => Err(WorkError::Execution(reason.to_string())),
+            Err(reason) => Err(WorkError::execution_display(reason)),
         }
     }
 }
@@ -981,10 +984,7 @@ impl_fieldless!(TradingStateUnit);
 
 impl Describable for TradingStateUnit {
     fn describe(&self) -> serde_json::Value {
-        serde_json::json!({
-            "type": "object",
-            "description": "Trading-state supervision sensor: fails while entries are halted",
-        })
+        fluent_wvr::describe_work_unit(self.name(), self.depends(), self.provides(), None)
     }
 }
 

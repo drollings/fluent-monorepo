@@ -201,3 +201,35 @@ fn hash_file_engine_matches_oneshot_digest() {
     }
     std::fs::remove_dir_all(&dir).ok();
 }
+
+#[test]
+fn canonical_json_is_compact_and_field_ordered() {
+    #[derive(serde::Serialize)]
+    struct Fixed {
+        b: u32,
+        a: u32,
+    }
+    assert_eq!(canonical_json(&Fixed { b: 2, a: 1 }), r#"{"b":2,"a":1}"#);
+    let mut sorted = std::collections::BTreeMap::new();
+    sorted.insert("b", 2);
+    sorted.insert("a", 1);
+    assert_eq!(canonical_json(&sorted), r#"{"a":1,"b":2}"#);
+}
+
+#[test]
+fn canonical_json_renders_floats_plainly() {
+    assert_eq!(canonical_json(&1.0_f64), "1.0");
+    assert_eq!(canonical_json(&0.5_f64), "0.5");
+    assert_eq!(canonical_json(&100_u32), "100");
+}
+
+#[test]
+fn canonical_json_reports_serialization_failure_loudly() {
+    struct Fail;
+    impl serde::Serialize for Fail {
+        fn serialize<S: serde::Serializer>(&self, _s: S) -> Result<S::Ok, S::Error> {
+            Err(serde::ser::Error::custom("boom"))
+        }
+    }
+    assert_eq!(canonical_json(&Fail), r#"{"serialization_error":"boom"}"#);
+}

@@ -14,9 +14,10 @@ use std::sync::Arc;
 use common_core::metrics::LatencyHistogram;
 use fluent_egui::{EguiError, PaneConfig};
 use fluent_wvr::prelude::*;
+use fluent_wvr::validate::{check_for_execute, valid_output, Validate};
 use fluent_wvr::{Describable, FieldAccess};
 use protopyne_chart_model::{heikin_ashi, rows_of, ChartRow, ChartType, DateRange};
-use protopyne_types::{check_for_execute, valid_output, Bar, Validate};
+use protopyne_types::Bar;
 
 use crate::oscillators::parse_oscillator_kind;
 use crate::topology::standard_plan;
@@ -46,7 +47,7 @@ pub const DEFAULT_RANGE: DateRange = DateRange::Month1;
 /// to a history slot in the shell. Higher keys (`H1`, `H4`, `D1`) resample
 /// the `M15` slot upward in the shell when no native slot was seeded — the
 /// kernels always see plain closed bars, never a timeframe concept.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
 pub enum TimeframeKey {
     /// One-minute bars.
     M1,
@@ -463,12 +464,12 @@ impl WorkUnit for ChartConfig {
             ("slow_oscillator", &self.slow_oscillator),
         ] {
             check_oscillator_selection(what, kind)
-                .map_err(|err| WorkError::Execution(format!("chart config invalid: {err}")))?;
+                .map_err(|err| WorkError::execution_context("chart config invalid", err))?;
         }
         let panes = standard_plan()
-            .map_err(|e| WorkError::Execution(format!("chart config invalid: {e}")))?
+            .map_err(|e| WorkError::execution_context("chart config invalid", e))?
             .order()
-            .map_err(|e| WorkError::Execution(format!("chart config invalid: {e}")))?;
+            .map_err(|e| WorkError::execution_context("chart config invalid", e))?;
         Ok(valid_output(format!("plan ready ({} panes)", panes.len())))
     }
 }

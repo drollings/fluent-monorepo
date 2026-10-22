@@ -1,3 +1,7 @@
+//! NOT-A-PIPELINE (M16): full-record gate, not `fluent_wvr::Pipeline`
+//! (fail-fast). First refusal sets `allowed`/`axis` while later stages still
+//! run; mapping onto `Pipeline::run` would drop the split.
+//!
 //! One gate order for every enabled order path.
 //!
 //! [`DecisionPipeline`] composes the existing gates in the documented order —

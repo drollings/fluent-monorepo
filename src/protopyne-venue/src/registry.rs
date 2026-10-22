@@ -55,6 +55,9 @@ struct RegistryInner {
 /// Which venue handle serves each symbol. Shared by `Arc`; routes are added
 /// through `&self` so the session can own one registry while tests re-route
 /// it.
+/// Duplicate policy: replace route, fallback chain dedupes by `Arc::ptr_eq`.
+/// Registration order is routing truth (M4: stays `Vec`; a sorted registry
+/// would reorder routing).
 pub struct VenueRegistry {
     inner: Mutex<RegistryInner>,
 }

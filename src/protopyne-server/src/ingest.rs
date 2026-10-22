@@ -157,7 +157,7 @@ impl IngestConfig {
     }
 }
 
-impl protopyne_types::Validate for IngestConfig {
+impl fluent_wvr::validate::Validate for IngestConfig {
     type Err = String;
     fn validate(&self) -> Result<(), Self::Err> {
         IngestConfig::validate(self)
@@ -175,8 +175,8 @@ impl WorkUnit for IngestConfig {
         &[]
     }
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
-        protopyne_types::check_for_execute(self, "ingest config invalid")?;
-        Ok(protopyne_types::valid_output("ingest config valid"))
+        fluent_wvr::validate::check_for_execute(self, "ingest config invalid")?;
+        Ok(fluent_wvr::validate::valid_output("ingest config valid"))
     }
 }
 

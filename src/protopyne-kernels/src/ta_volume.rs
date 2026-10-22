@@ -120,6 +120,7 @@ impl Indicator for AdIndicator {
         _params: &ParamSet,
     ) -> Result<Option<f64>, KernelError> {
         let Some(flow) = Self::flow(bar) else {
+            // NOT-A-LADDER: missing bar reads as none, stream resumes; no walk.
             // Missing bar: report `None` and leave the running total alone
             // so the stream resumes exactly where it paused.
             return Ok(None);
@@ -622,6 +623,8 @@ impl Indicator for CmfIndicator {
             .map(|i| Self::flow(high[i], low[i], data.close[i], volume[i]))
             .collect();
         let mut values = crate::math::warmup_none(n);
+        // DIVERGENCE (see compat.rs:11): flow-then-ratio per window is load-bearing;
+        // accumulating ratios instead of flows would weight bars differently.
         for (i, slot) in values.iter_mut().enumerate() {
             if i + 1 < period {
                 continue;

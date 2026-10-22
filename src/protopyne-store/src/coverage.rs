@@ -26,7 +26,8 @@
 //! on this type.
 
 use fluent_wvr::prelude::*;
-use protopyne_types::{Bar, Timeframe, Validate};
+use fluent_wvr::validate::Validate;
+use protopyne_types::{Bar, Timeframe};
 
 use crate::range::TimeRange;
 
@@ -349,8 +350,8 @@ impl WorkUnit for FreshnessPolicy {
     }
 
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
-        protopyne_types::check_for_execute(self, "freshness policy invalid")?;
-        Ok(protopyne_types::valid_output("freshness policy valid"))
+        fluent_wvr::validate::check_for_execute(self, "freshness policy invalid")?;
+        Ok(fluent_wvr::validate::valid_output("freshness policy valid"))
     }
 }
 

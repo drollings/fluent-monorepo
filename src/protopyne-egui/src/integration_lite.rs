@@ -22,7 +22,8 @@ use protopyne_kernels::indicator::{nan_hole, OwnedOhlcv, ParamSet};
 
 use crate::topology::{kernel_preview_frame, kernel_series};
 use protopyne_kernels::market_context::{health_mas, HEALTH_K};
-use protopyne_types::{check_for_execute, valid_output, Validate};
+
+use fluent_wvr::validate::{check_for_execute, valid_output, Validate};
 
 use fluent_egui::EguiError;
 use fluent_egui::{

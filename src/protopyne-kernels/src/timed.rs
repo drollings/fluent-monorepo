@@ -33,13 +33,8 @@ impl KernelUnit {
     /// adapters order through one rule.
     #[must_use]
     pub fn new(indicator: Arc<dyn Indicator>, params: ParamSet, input: Arc<OwnedOhlcv>) -> Self {
-        let depends: Vec<ArcIntern<str>> = indicator
-            .spec()
-            .depends
-            .iter()
-            .map(|d| ArcIntern::from(d.as_str()))
-            .collect();
-        let provides: Vec<ArcIntern<str>> = vec![ArcIntern::from(indicator.spec().id.as_str())];
+        let depends = crate::kernel_eval::kernel_depends(&indicator);
+        let provides = crate::kernel_eval::kernel_provides(&indicator);
         Self {
             indicator,
             params,
@@ -69,25 +64,18 @@ impl WorkUnit for KernelUnit {
     }
 
     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
-        let result = self
-            .run()
-            .map_err(|e| WorkError::Execution(e.to_string()))?;
-        let warmed = result.values.iter().flatten().count();
+        let result = self.run().map_err(WorkError::execution_display)?;
+        let warmed = crate::kernel_eval::warmed_count(&result);
         // A serialization failure fails the unit loudly: succeeding with a
         // null payload would let a broken result read as an empty one.
         let data = serde_json::to_value(&result).map_err(|e| {
-            WorkError::Execution(format!(
+            WorkError::execution_display(format!(
                 "{} result failed to serialize: {e}",
                 self.indicator.spec().id
             ))
         })?;
         Ok(WorkOutput::ok_with_data(
-            format!(
-                "{} evaluated {} bars ({} warmed)",
-                self.indicator.spec().id,
-                result.len(),
-                warmed
-            ),
+            crate::kernel_eval::kernel_message(&self.indicator.spec().id, result.len(), warmed),
             data,
         ))
     }

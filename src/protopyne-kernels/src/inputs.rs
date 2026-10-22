@@ -226,7 +226,7 @@ impl InputDef {
     }
 }
 
-impl protopyne_types::Validate for InputDef {
+impl fluent_wvr::validate::Validate for InputDef {
     type Err = KernelError;
     fn validate(&self) -> Result<(), Self::Err> {
         InputDef::validate(self)

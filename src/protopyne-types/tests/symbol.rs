@@ -1,5 +1,5 @@
 use super::*;
-use crate::validate::Validate;
+use fluent_wvr::validate::Validate;
 
 #[test]
 fn round_trip_intern_resolve() {

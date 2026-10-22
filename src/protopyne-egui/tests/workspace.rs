@@ -536,25 +536,39 @@ fn ramp_rows(count: usize) -> Vec<ChartRow> {
 
 /// Rows on the quarter-hour grid from an hour boundary, so resampling pins
 /// the bucket anchor instead of the fixture's layout.
-/// The Range button opens the interactive dialog and seeds its draft from the
-/// live window; a second press closes it. Nothing on the chart moves until OK.
+/// The dock range section seeds its drafts from the live window: the active
+/// preset highlights, and a Beginning text carries the custom start. Nothing
+/// on the chart moves until an explicit choice applies.
 #[test]
-fn range_menu_toggle_seeds_and_closes_the_dialog() {
+fn range_section_seeds_drafts_from_the_live_window() {
     let mut workspace = ChartWorkspace::with_rows(ramp_rows(200)).expect("workspace boots");
-    assert!(!workspace.range_menu_open, "the dialog starts closed");
-    workspace
-        .apply_top_bar_action(TopBarAction::ToggleRangeMenu, None)
-        .expect("range toggle applies");
-    assert!(workspace.range_menu_open, "the button opens the dialog");
+    assert!(workspace.range_draft.is_none(), "no draft until seeded");
+    assert!(
+        workspace.top_menu.beginning_text.is_empty(),
+        "no Beginning until seeded"
+    );
+    workspace.seed_range_drafts();
     assert_eq!(
         workspace.range_draft,
         Some(DEFAULT_RANGE),
         "the live range is drafted"
     );
-    workspace
-        .apply_top_bar_action(TopBarAction::ToggleRangeMenu, None)
-        .expect("range toggle applies");
-    assert!(!workspace.range_menu_open, "a second press closes it");
+    // A typed draft is never overwritten by a reseed.
+    workspace.range_draft = Some(DateRange::Month3);
+    workspace.seed_range_drafts();
+    assert_eq!(
+        workspace.range_draft,
+        Some(DateRange::Month3),
+        "the operator's draft survives a reseed"
+    );
+    // Cancel discards edits back to the live window.
+    workspace.range_draft = Some(DateRange::Year1);
+    workspace.apply_range_choice(RangeChoice::Cancel, None);
+    assert_eq!(
+        workspace.range_draft,
+        Some(DEFAULT_RANGE),
+        "cancel reseeds from the live window"
+    );
 }
 
 fn grid_rows(start_sec: i64, count: usize) -> Vec<ChartRow> {
@@ -1636,4 +1650,350 @@ fn workspace_session_breaks_skip_identical_republishes() {
     for (line, (index, _)) in lines.iter().zip(scanned.iter()) {
         assert_eq!(line.index, *index);
     }
+}
+
+#[test]
+fn evaluations_replace_len_tracks_order_unordered() {
+    use std::collections::HashMap;
+    let mut evaluations: HashMap<String, u64> = HashMap::new();
+    assert!(evaluations.is_empty());
+    assert_eq!(evaluations.len(), 0);
+    for id in ["c", "a", "b"] {
+        evaluations.insert(id.to_owned(), 1);
+    }
+    assert_eq!(evaluations.len(), 3);
+    evaluations.insert("a".to_owned(), 2);
+    assert_eq!(evaluations.len(), 3, "duplicate replaces, never dupes");
+    assert_eq!(evaluations.get("a"), Some(&2));
+}
+
+/// Presets load or truncate to exactly the range span plus indicator warmup —
+/// never more — and a Beginning pick behaves the same: earlier bars stay
+/// loaded as warmup context while only the range shows.
+#[test]
+fn presets_truncate_to_span_plus_warmup_and_beginning_keeps_headroom() {
+    let mut workspace =
+        ChartWorkspace::with_rows(grid_rows(1_700_000_000, 9_000)).expect("workspace boots");
+    // The boot Month1 window trails the seeded frame; All loads it whole.
+    workspace
+        .select_range(DateRange::All, None)
+        .expect("All loads the held frame");
+    assert_eq!(
+        workspace.rows().len(),
+        9_000,
+        "the seeded frame loads whole"
+    );
+    workspace
+        .select_range(DateRange::Day1, None)
+        .expect("a smaller preset applies");
+    let need = fetch_for_span(
+        DateRange::Day1.span_seconds(),
+        TimeframeKey::M5.seconds(),
+        200,
+    );
+    assert_eq!(
+        workspace.rows().len(),
+        need,
+        "a smaller preset truncates to span plus warmup, never more"
+    );
+
+    let mut workspace =
+        ChartWorkspace::with_rows(grid_rows(1_700_000_000, 9_000)).expect("workspace boots");
+    let start = workspace.rows()[7_000].time;
+    let last = workspace.rows().last().expect("rows load").time;
+    // Midnight UTC bounds the Beginning day; the need is that span plus
+    // the indicator warmup headroom.
+    let midnight = start - start.rem_euclid(86_400);
+    let need = fetch_for_span(
+        (last - midnight).max(0) as u64,
+        TimeframeKey::M5.seconds(),
+        200,
+    );
+    let beginning = format_date_text(start);
+    workspace
+        .set_beginning(&beginning, None)
+        .expect("a Beginning pick applies");
+    assert_eq!(
+        workspace.rows().len(),
+        need,
+        "a Beginning pick loads exactly its span plus warmup"
+    );
+    assert!(
+        workspace
+            .rows()
+            .first()
+            .is_some_and(|row| row.time <= start),
+        "warmup bars stay loaded prior to the Beginning"
+    );
+    assert!(
+        workspace
+            .effective_window()
+            .first()
+            .is_some_and(|row| row.time >= midnight),
+        "only the picked range shows"
+    );
+}
+
+/// The canvas context menu captures the trigger candle as a bookmark with
+/// its timeframe, ignoring exact duplicates.
+#[test]
+fn context_bookmark_captures_candle_and_timeframe_once() {
+    let mut workspace = ChartWorkspace::with_rows(ramp_rows(60)).expect("workspace boots");
+    let time = workspace.rows()[10].time;
+    workspace.add_bookmark(time);
+    workspace.add_bookmark(time);
+    let symbol = workspace.active_symbol().to_owned();
+    let entries = workspace.bookmarks.get(&symbol).expect("a list seats");
+    assert_eq!(entries.len(), 1, "an exact duplicate never lists twice");
+    assert_eq!(
+        entries[0],
+        BookmarkEntry {
+            time,
+            timeframe: "5M".to_owned(),
+        },
+        "the entry carries the candle and the active timeframe"
+    );
+    assert_eq!(
+        entries[0].id(&symbol),
+        format!("{symbol}|5M|{time}"),
+        "the catalog id names symbol, timeframe, and time"
+    );
+    assert!(
+        !entries[0].title().is_empty(),
+        "the picker row renders a date and timeframe"
+    );
+}
+
+/// Set Replay Boundary defaults the beginning (latest candle as end), moves
+/// the end when a beginning already precedes the candle, moves the beginning
+/// when the candle precedes it, and holds on an exact repeat.
+#[test]
+fn context_boundary_sets_beginning_then_end() {
+    let mut workspace = ChartWorkspace::with_rows(ramp_rows(60)).expect("workspace boots");
+    let rows = workspace.rows().to_vec();
+    let last = rows.last().expect("rows load").time;
+    assert_eq!(workspace.replay_range, None);
+    workspace.set_replay_boundary(rows[10].time);
+    assert_eq!(
+        workspace.replay_range,
+        Some((rows[10].time, last)),
+        "the first boundary becomes the beginning; the latest candle the end"
+    );
+    workspace.set_replay_boundary(rows[20].time);
+    assert_eq!(
+        workspace.replay_range,
+        Some((rows[10].time, rows[20].time)),
+        "a candle after the beginning becomes the new end"
+    );
+    workspace.set_replay_boundary(rows[10].time);
+    assert_eq!(
+        workspace.replay_range,
+        Some((rows[10].time, rows[20].time)),
+        "an exact repeat holds the window instead of emptying it"
+    );
+    workspace.set_replay_boundary(rows[5].time);
+    assert_eq!(
+        workspace.replay_range,
+        Some((rows[5].time, rows[20].time)),
+        "a candle before the beginning becomes the new beginning"
+    );
+}
+
+/// Auto Zoom refits Y to the displayed candles without moving X in the
+/// machine's envelope: the Refresh button's Y-fit step on its own.
+#[test]
+fn auto_zoom_refits_y_without_moving_x() {
+    let mut workspace = ChartWorkspace::with_rows(ramp_rows(60)).expect("workspace boots");
+    // Settle X into the machine's elastic envelope the way any gesture
+    // would: the envelope (not the fit) owns out-of-range offsets.
+    workspace.step_interaction(1.0 / 60.0, &[]);
+    let main = workspace.main_viewport().expect("a viewport binds");
+    let offset = main.x_offset_px();
+    let scale = main.scale();
+    // Blow the price window wide open while the X axis stays untouched.
+    let wide = Viewport::new(
+        PriceScaleMode::Normal,
+        0.0,
+        100_000.0,
+        scale.height(),
+        scale.bar_spacing(),
+        scale.base_value(),
+        scale.inverted(),
+    )
+    .expect("a wide viewport binds")
+    .with_x_offset(offset)
+    .expect("the offset restores");
+    workspace.main = Some(wide);
+    workspace.auto_zoom();
+    let next = workspace.main_viewport().expect("a viewport binds");
+    assert!(
+        (next.x_offset_px() - offset).abs() < 1e-6,
+        "auto zoom never moves the X position or zoom"
+    );
+    let range = next.scale().range();
+    assert!(
+        range.min > 0.0 && range.max < 100_000.0,
+        "the Y window refits to the displayed candles"
+    );
+}
+
+/// The Jump calendar sets the date part and preserves the clock part: a
+/// picked day never clobbers a typed `HH:MM`.
+#[test]
+fn jump_calendar_preserves_the_clock_part() {
+    let mut workspace = ChartWorkspace::with_rows(ramp_rows(60)).expect("workspace boots");
+    workspace.top_menu.jump_text = "2026-03-02 09:30".to_owned();
+    workspace.apply_jump_date("2026-04-01");
+    assert_eq!(
+        workspace.top_menu.jump_text, "2026-04-01 09:30",
+        "the day moves, the clock stays"
+    );
+    workspace.top_menu.jump_text = String::new();
+    workspace.apply_jump_date("2026-04-01");
+    assert_eq!(
+        workspace.top_menu.jump_text, "2026-04-01",
+        "a dateless draft takes the day alone"
+    );
+}
+
+/// Nothing persists unless the menu-bar Save Layout button asks: the request
+/// flag is the composition root's only write gate, and the snapshot carries
+/// exactly the active ticker's layout over the saved map.
+#[test]
+fn save_layout_gates_persistence_and_scopes_to_the_ticker() {
+    let mut workspace = ChartWorkspace::with_rows(ramp_rows(60)).expect("workspace boots");
+    assert!(!workspace.take_save_request(), "no save is pending on boot");
+    workspace
+        .apply_top_bar_action(TopBarAction::SaveLayout, None)
+        .expect("the save action applies");
+    assert!(workspace.take_save_request(), "Save Layout raises the flag");
+    assert!(
+        !workspace.take_save_request(),
+        "taking consumes the one-shot flag"
+    );
+    workspace.chart_type = ChartType::Line;
+    let prefs = workspace.prefs();
+    assert_eq!(
+        prefs.active_symbol.as_deref(),
+        Some("SPY"),
+        "the snapshot names the active ticker"
+    );
+    assert_eq!(
+        prefs
+            .tickers
+            .get("SPY")
+            .and_then(|layout| layout.chart_type.clone()),
+        Some("Line".to_owned()),
+        "the active ticker's live settings ride the snapshot"
+    );
+}
+
+/// The dock drawer, the titlebar-less pickers, the jump popup, and the canvas
+/// context menu all paint headlessly in one frame: no window chrome is
+/// needed for any of them.
+#[test]
+fn drawer_pickers_and_context_menu_paint_headlessly() {
+    let mut workspace = ChartWorkspace::with_rows(ramp_rows(60)).expect("workspace boots");
+    workspace.dock_open = true;
+    workspace.symbol_modal = Some(symbol_modal_for(None).expect("a symbol catalog builds"));
+    workspace.symbol_anchor = Some(egui::Rect::from_min_size(
+        egui::pos2(100.0, 40.0),
+        egui::vec2(110.0, 30.0),
+    ));
+    workspace.indicator_modal =
+        Some(build_indicator_catalog().expect("an indicator catalog builds"));
+    workspace.indicator_anchor = Some(egui::Rect::from_min_size(
+        egui::pos2(300.0, 40.0),
+        egui::vec2(140.0, 30.0),
+    ));
+    let symbol = workspace.active_symbol().to_owned();
+    workspace.add_bookmark(workspace.rows()[5].time);
+    workspace.bookmark_modal = Some(workspace.build_bookmark_catalog());
+    workspace.bookmark_anchor = Some(egui::Rect::from_min_size(
+        egui::pos2(450.0, 40.0),
+        egui::vec2(150.0, 30.0),
+    ));
+    assert!(
+        workspace
+            .bookmark_modal
+            .as_ref()
+            .is_some_and(|modal| !modal.is_empty()),
+        "the picker lists the ticker's bookmark"
+    );
+    workspace.jump_open = true;
+    workspace.jump_anchor = Some(egui::Rect::from_min_size(
+        egui::pos2(600.0, 40.0),
+        egui::vec2(30.0, 30.0),
+    ));
+    workspace.top_menu.jump_text = "2026-03-02 09:30".to_owned();
+    workspace.context_open = true;
+    workspace.context_at = egui::pos2(320.0, 200.0);
+    workspace.context_time = Some(workspace.rows()[5].time);
+    let _ = symbol;
+    egui::__run_test_ui(|ui| {
+        paint_workspace(ui, &mut workspace, None).expect("the workspace paints");
+    });
+    assert!(
+        workspace.dock_open,
+        "the drawer stays open without an X to close it"
+    );
+}
+
+/// Picker buttons toggle their popups: a second click while open closes
+/// instead of rebuilding, keeping the typed query.
+#[test]
+fn picker_buttons_toggle_their_popups() {
+    let mut workspace = ChartWorkspace::with_rows(ramp_rows(60)).expect("workspace boots");
+    let anchor = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(10.0, 10.0));
+    workspace.symbol_anchor = Some(anchor);
+    workspace
+        .apply_top_bar_action(TopBarAction::OpenSymbolSearch, None)
+        .expect("the picker opens");
+    assert!(workspace.symbol_modal.is_some(), "the first click opens");
+    workspace
+        .apply_top_bar_action(TopBarAction::OpenSymbolSearch, None)
+        .expect("the toggle applies");
+    assert!(
+        workspace.symbol_modal.is_none() && workspace.symbol_anchor.is_none(),
+        "the second click closes"
+    );
+
+    workspace.indicator_anchor = Some(anchor);
+    workspace
+        .apply_top_bar_action(TopBarAction::OpenIndicatorSearch, None)
+        .expect("the picker opens");
+    assert!(workspace.indicator_modal.is_some(), "the first click opens");
+    workspace
+        .apply_top_bar_action(TopBarAction::OpenIndicatorSearch, None)
+        .expect("the toggle applies");
+    assert!(
+        workspace.indicator_modal.is_none() && workspace.indicator_anchor.is_none(),
+        "the second click closes"
+    );
+
+    workspace.bookmark_anchor = Some(anchor);
+    workspace
+        .apply_top_bar_action(TopBarAction::OpenBookmarkSearch, None)
+        .expect("the picker opens");
+    assert!(workspace.bookmark_modal.is_some(), "the first click opens");
+    workspace
+        .apply_top_bar_action(TopBarAction::OpenBookmarkSearch, None)
+        .expect("the toggle applies");
+    assert!(
+        workspace.bookmark_modal.is_none() && workspace.bookmark_anchor.is_none(),
+        "the second click closes"
+    );
+
+    workspace.jump_anchor = Some(anchor);
+    workspace
+        .apply_top_bar_action(TopBarAction::OpenJumpSearch, None)
+        .expect("the popup opens");
+    assert!(workspace.jump_open, "the first click opens");
+    workspace
+        .apply_top_bar_action(TopBarAction::OpenJumpSearch, None)
+        .expect("the toggle applies");
+    assert!(
+        !workspace.jump_open && workspace.jump_anchor.is_none(),
+        "the second click closes"
+    );
 }

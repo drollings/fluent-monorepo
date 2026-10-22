@@ -46,6 +46,7 @@ before `Arc`-sharing, override at runtime via `ComponentAdapter`.
 | `src/style.rs` | Per-indicator paint overrides (the Style tab's component) | `IndicatorStyle` (`color`, `stroke`, `line_width`, `override_color`), `STYLE_FIELDS`, `style_key`, `LINE_WIDTH_FIELD`, `MIN_LINE_WIDTH`, `MAX_LINE_WIDTH` |
 | `src/modal.rs` | Generic searchable, categorized catalog modal | `CatalogEntry`, `CatalogModal`, `paint_catalog_modal` |
 | `src/feed.rs` | Feeds, waves, caps, aborts, backpressure | `ChartFeed`, `PaneWaveUnit`, `run_wave`, `RefreshGate`, `PaneHandle`, `CreditIntake`, `load_history`, `TransportRetry` |
+| `src/fonts.rs` | Bundled-font fallback-chain policy (builders + thin `Context` installers; byte-free, no new deps) | `font_insert`, `proportional_font_insert`, `monospace_font_insert`, `bundled_font_insert`, `primary_with_fallback_insert`, `with_bundled_font`, `install_bundled_font` |
 | `src/replay.rs` | Scrub-back controller + toolbar cursor | `ReplayController`, `ReplayState` |
 | `src/error.rs` | Fail-closed refusals | `EguiError :: InvalidParam/Dependency` |
 

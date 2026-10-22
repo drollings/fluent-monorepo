@@ -75,6 +75,8 @@ impl Indicator for StddevIndicator {
         let (period, nbdev) = Self::shape(params)?;
         let mut values = crate::math::warmup_none(closes.len());
         if period <= closes.len() {
+            // DIVERGENCE (see compat.rs:11): full-window deviation per bar is load-bearing;
+            // an incremental variance would round differently than the Expr reference.
             for (i, slot) in values.iter_mut().enumerate().skip(period - 1) {
                 let window = &closes[i + 1 - period..=i];
                 // NaN poisons the deviation through plain arithmetic, matching

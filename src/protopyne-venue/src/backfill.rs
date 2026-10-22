@@ -494,7 +494,7 @@ impl WorkUnit for BackfillUnit {
         if report.complete {
             Ok(WorkOutput::ok("series contiguous: backfill complete"))
         } else {
-            Err(WorkError::Execution(report.alerts.join("; ")))
+            Err(WorkError::execution_display(report.alerts.join("; ")))
         }
     }
 }
@@ -503,10 +503,7 @@ impl_fieldless!(BackfillUnit);
 
 impl Describable for BackfillUnit {
     fn describe(&self) -> serde_json::Value {
-        serde_json::json!({
-            "type": "object",
-            "description": "Reconnect backfill sensor: fails while a series hole is unspliced",
-        })
+        fluent_wvr::describe_work_unit(self.name(), self.depends(), self.provides(), None)
     }
 }
 
@@ -515,3 +512,7 @@ impl_component!(BackfillUnit);
 #[cfg(test)]
 #[path = "../tests/backfill.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/sensor_describe.rs"]
+mod sensor_describe_tests;

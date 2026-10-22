@@ -11,7 +11,7 @@
 //! three chart-domain dependencies, stated explicitly: `protopyne-chart-model`
 //! (`ChartRow`/`ChartBars` rows, `Annotation` overlays, `to_display_float`),
 //! `protopyne-chart-scale` (`PriceRange`/`PriceScale` geometry, `nice_ticks`),
-//! and `protopyne-types` (`Validate`/`check_for_execute`/`valid_output`).
+//! and `protopyne-types` (bars, money, session clock).
 //! "Domain-blind" means blind to indicator, regime, Pine, and trading-path
 //! logic — never dependency-free of chart display types. Trading-domain
 //! display truth lives in the terminal crate built on top.
@@ -32,6 +32,7 @@ pub mod context_menu;
 pub mod error;
 pub mod feed;
 pub mod fields;
+pub mod fonts;
 pub mod hittest;
 pub mod interaction;
 pub mod modal;
@@ -56,6 +57,10 @@ pub use fields::{
     classify_schema_field, fields_for_tab, paint_schema_fields, paint_tabbed_schema_fields,
     paint_tabbed_schema_fields_compact, schema_fields, tab_fields, FieldEdits, FieldKind,
     SchemaField, SettingsTab, COLOR_FORMAT,
+};
+pub use fonts::{
+    bundled_font_insert, font_insert, install_bundled_font, monospace_font_insert,
+    primary_with_fallback_insert, proportional_font_insert, with_bundled_font,
 };
 pub use hittest::{
     crosshair_data, crosshair_pixel, hit_test, point_to_segment_distance, Crosshair, Hit,

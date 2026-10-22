@@ -187,6 +187,7 @@ impl TradingLoopExt for TradingSession {
             .await;
             decisions.push(decision);
             if !cadence.is_zero() {
+                // NOT-A-BACKOFF (M15): pacing cadence, not retry backoff.
                 tokio::time::sleep(cadence).await;
             }
         }

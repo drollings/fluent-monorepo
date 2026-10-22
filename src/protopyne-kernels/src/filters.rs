@@ -370,6 +370,8 @@ impl Indicator for VossIndicator {
         };
         let mut filters = vec![0.0; closes.len()];
         let mut predictions = vec![0.0; closes.len()];
+        // DIVERGENCE (see compat.rs:11): predict-then-update per bar is load-bearing;
+        // batching updates after the pass would leak future corrections.
         for i in 0..closes.len() {
             if i <= order {
                 continue;

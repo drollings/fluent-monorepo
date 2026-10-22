@@ -5,7 +5,7 @@
 
 use super::*;
 use crate::indicator::BarTick;
-use protopyne_types::Validate;
+use fluent_wvr::validate::Validate;
 use std::path::PathBuf;
 
 /// Frozen agreement tolerance shared with the Pine goldens.
@@ -766,7 +766,7 @@ fn source_choice_and_volume_deltas() {
 #[test]
 fn component_surface_validates_through_execute() {
     use fluent_wvr::prelude::{Component, WorkUnit};
-    use protopyne_types::Validate;
+    use fluent_wvr::validate::Validate;
     let mut config = test_config();
     assert_eq!(
         config.field_names(),
@@ -838,4 +838,16 @@ fn shape_fallback_never_reports_above_low() {
             "trial {trial}: shape never exceeds Low"
         );
     }
+}
+
+#[test]
+fn empty_reconcile_is_default_substitution_not_a_walk() {
+    let mut ring = BarRing::new(&test_config()).expect("ring builds");
+    let empty: Vec<LtfRow> = Vec::new();
+    let first = ring.reconcile(&empty, 0.0, 100.0);
+    assert_eq!(first.rebuilt, 0);
+    assert!(ring.is_empty());
+    let second = ring.reconcile(&empty, 0.0, 999.0);
+    assert_eq!(second.rebuilt, 0);
+    assert!(ring.is_empty());
 }

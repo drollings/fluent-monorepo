@@ -4,6 +4,10 @@
 //! candidate and stops on every parse or structural refusal: a bad header, a
 //! bad row, or a corrupt Parquet artifact. A corrupt artifact is
 //! investigated, not skipped over.
+//!
+//! Audit tail: `history_root`, `parquet_history`, `tape`, and `repair` carry
+//! no fallback walk (zero `fallback`/`last_error`/`Ok(None)`-walk hits), so
+//! they stay unmigrated by design — no walk to pin.
 
 use super::*;
 use std::path::PathBuf;

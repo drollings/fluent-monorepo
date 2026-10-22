@@ -365,3 +365,11 @@ fn fingerprints_round_trip_per_pane() {
     assert_eq!(plan.fingerprint("join"), Some(99));
     assert_eq!(plan.fingerprint("no-such-pane"), None);
 }
+
+#[test]
+fn content_revision_keeps_on_identical_bumps_on_change() {
+    assert_eq!(content_revision(42, None, 0), (1, true));
+    assert_eq!(content_revision(42, Some(42), 5), (5, false));
+    assert_eq!(content_revision(43, Some(42), 5), (6, true));
+    assert_eq!(content_revision(99, Some(42), 5), (6, true));
+}

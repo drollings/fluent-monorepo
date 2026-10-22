@@ -227,6 +227,8 @@ impl Indicator for BbIndicator {
         let mut upper = vec![None; closes.len()];
         let mut lower = vec![None; closes.len()];
         if period <= closes.len() {
+            // DIVERGENCE (see compat.rs:11): mean-then-deviation per window is load-bearing;
+            // reusing a running variance would round differently than the Expr population std.
             for i in (period - 1)..closes.len() {
                 let window = &closes[i + 1 - period..=i];
                 let mean = window.iter().sum::<f64>() / period as f64;

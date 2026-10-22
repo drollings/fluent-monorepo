@@ -24,6 +24,7 @@ pub mod error;
 pub mod filters;
 pub mod indicator;
 pub mod inputs;
+pub(crate) mod kernel_eval;
 pub mod market_context;
 pub mod math;
 pub mod mtf;

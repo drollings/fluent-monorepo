@@ -197,6 +197,7 @@ impl SeriesCatalog {
 
     /// Published node names, sorted: the series picker lists these as
     /// `series:<node>` options beside the price-source catalogue.
+    /// Picker canonicalization, not pane ordering (ordering is `PanePlan`).
     #[must_use]
     pub fn node_names(&self) -> Vec<String> {
         let mut names: Vec<String> = self.series.keys().cloned().collect();

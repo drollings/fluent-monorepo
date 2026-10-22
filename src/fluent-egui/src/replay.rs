@@ -17,7 +17,7 @@
 //! [`ready`]: ReplayController::ready
 
 use fluent_wvr::prelude::*;
-use protopyne_types::{check_for_execute, valid_output, Validate};
+use fluent_wvr::validate::{check_for_execute, valid_output, Validate};
 
 use crate::error::EguiError;
 use crate::plan::{PaneCache, PanePlan};

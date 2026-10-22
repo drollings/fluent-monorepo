@@ -55,7 +55,8 @@ impl SymbolIndex {
         }
     }
 
-    /// Open an empty index with an explicit capacity bound.
+    /// Open with an explicit bound, stored verbatim. Zero refuses at
+    /// `validate`/register time, never at construction.
     #[must_use]
     pub fn with_max_symbols(max_symbols: usize) -> Self {
         Self {
@@ -131,7 +132,7 @@ impl Default for SymbolIndex {
     }
 }
 
-impl crate::validate::Validate for SymbolIndex {
+impl fluent_wvr::validate::Validate for SymbolIndex {
     type Err = String;
     fn validate(&self) -> Result<(), Self::Err> {
         if self.max_symbols < 1 {

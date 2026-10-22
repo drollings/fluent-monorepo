@@ -16,7 +16,6 @@ pub mod series;
 pub mod session;
 pub mod symbol;
 pub mod timeframe;
-pub mod validate;
 pub mod warmup;
 pub mod window;
 
@@ -33,6 +32,9 @@ pub use series::{GapPolicy, LtfView, PriceSource, SeriesContext};
 pub use session::{et_offset_ms, is_dst_et, TradingSession};
 pub use symbol::{SymKey, SymbolIndex, DEFAULT_MAX_SYMBOLS};
 pub use timeframe::{Timeframe, FOLD_ORIGIN_MS, WEEK_FOLD_ORIGIN_MS};
-pub use validate::{check_for_execute, valid_output, Validate};
 pub use warmup::{adjust_fetch_bounds, trim_indicator_output, warmup_headroom, AdjustedBounds};
 pub use window::{BarGap, BarWindow};
+
+#[cfg(test)]
+#[path = "../tests/validate.rs"]
+mod validate_tests;

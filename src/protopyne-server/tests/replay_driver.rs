@@ -612,3 +612,45 @@ async fn the_screen_costs_no_snapshot_clone_per_bar() {
         "the screen still answers once per bar, cheaply"
     );
 }
+
+#[test]
+fn registry_ids_sorted_len_tracks() {
+    let mut registry = ReplayRegistry::new();
+    assert!(registry.is_empty());
+    assert_eq!(registry.len(), 0);
+    for id in ["c", "a", "b"] {
+        registry.start(
+            id.to_owned(),
+            ReplayDriver::start(
+                single_strategy(),
+                risk_engine(),
+                single_grant(),
+                venue_config(),
+                runner_config(),
+                synthetic_bars(6),
+                1,
+                0,
+            )
+            .expect("driver starts"),
+        );
+    }
+    assert!(!registry.is_empty());
+    assert_eq!(registry.len(), 3);
+    assert_eq!(registry.ids(), vec!["a", "b", "c"]);
+    registry.start(
+        "a".to_owned(),
+        ReplayDriver::start(
+            single_strategy(),
+            risk_engine(),
+            single_grant(),
+            venue_config(),
+            runner_config(),
+            synthetic_bars(6),
+            1,
+            0,
+        )
+        .expect("restart starts"),
+    );
+    assert_eq!(registry.len(), 3);
+    assert_eq!(registry.ids(), vec!["a", "b", "c"]);
+}

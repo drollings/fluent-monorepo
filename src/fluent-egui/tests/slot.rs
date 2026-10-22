@@ -994,16 +994,13 @@ fn paint_frame(
     (actions_cell.into_inner(), solids)
 }
 
-fn screen() -> Option<egui::Rect> {
-    Some(egui::Rect::from_min_size(
-        egui::Pos2::ZERO,
-        egui::vec2(800.0, 600.0),
-    ))
+fn screen() -> egui::Rect {
+    egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0))
 }
 
 fn hover_at(pos: egui::Pos2) -> egui::RawInput {
     egui::RawInput {
-        screen_rect: screen(),
+        screen_rect: Some(screen()),
         events: vec![egui::Event::PointerMoved(pos)],
         ..Default::default()
     }
@@ -1011,7 +1008,7 @@ fn hover_at(pos: egui::Pos2) -> egui::RawInput {
 
 fn press_at(pos: egui::Pos2, pressed: bool) -> egui::RawInput {
     egui::RawInput {
-        screen_rect: screen(),
+        screen_rect: Some(screen()),
         events: vec![
             egui::Event::PointerMoved(pos),
             egui::Event::PointerButton {

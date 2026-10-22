@@ -89,7 +89,7 @@ fn is_false(value: &bool) -> bool {
     !*value
 }
 
-impl protopyne_types::Validate for RunnerConfig {
+impl fluent_wvr::validate::Validate for RunnerConfig {
     type Err = ServerError;
     fn validate(&self) -> Result<(), Self::Err> {
         RunnerConfig::validate(self)
@@ -1221,6 +1221,7 @@ pub struct BacktestRun {
 
 impl BacktestRun {
     /// Deterministic JSON over manifest plus decisions for rerun comparison.
+    /// M8: composite shape (manifest line + payload line), not `canonical_json` alone.
     /// Decision serialization cannot fail in practice; a failure still
     /// reports loudly instead of emitting an empty body.
     #[must_use]
@@ -1714,13 +1715,7 @@ impl MultiRunManifest {
     /// payload instead of emitting an empty object.
     #[must_use]
     pub fn to_canonical_json(&self) -> String {
-        serde_json::to_string(self).unwrap_or_else(|e| {
-            format!(
-                "{{\"serialization_error\":{}}}",
-                serde_json::to_string(&e.to_string())
-                    .unwrap_or_else(|_| "\"unencodable\"".to_owned())
-            )
-        })
+        common_core::hash::canonical_json(self)
     }
 }
 

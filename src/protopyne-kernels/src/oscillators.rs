@@ -345,6 +345,8 @@ impl Indicator for StochIndicator {
         );
         let mut k = vec![f64::NAN; data.len()];
         if period <= data.len() {
+            // DIVERGENCE (see compat.rs:11): highest/lowest fold per window is load-bearing;
+            // a running extremum would carry stale bars across the lookback edge.
             for (i, slot) in k.iter_mut().enumerate().skip(period - 1) {
                 let window_h = &high[i + 1 - period..=i];
                 let window_l = &low[i + 1 - period..=i];
