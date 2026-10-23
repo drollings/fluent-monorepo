@@ -58,6 +58,7 @@ fn key() -> BucketKey {
         structure: "Vertical".to_owned(),
         strategy: "ribbon".to_owned(),
         grant: "grant-1".to_owned(),
+        expiry: None,
     }
 }
 
@@ -137,11 +138,22 @@ fn mark<'a>(at_secs: i64, price: &str, chain: &'a [ChainQuote]) -> MarkPoint<'a>
 }
 
 fn bucket_of(aggregation: &Aggregation) -> BucketSummary {
+    bucket_keyed_of(aggregation, &key())
+}
+
+fn bucket_keyed_of(aggregation: &Aggregation, expected: &BucketKey) -> BucketSummary {
     let buckets = aggregation.buckets();
     assert_eq!(buckets.len(), 1, "fixtures book one bucket");
     let bucket = buckets.into_iter().next().expect("one bucket");
-    assert_eq!(bucket.key, key());
+    assert_eq!(bucket.key, *expected);
     bucket
+}
+
+fn february_key() -> BucketKey {
+    BucketKey {
+        expiry: Some(NaiveDate::from_ymd_opt(2026, 2, 20).expect("valid test date")),
+        ..key()
+    }
 }
 
 fn close_enough(actual: f64, expected: f64, what: &str) {
@@ -207,7 +219,7 @@ fn an_unmarked_book_reports_absent_unrealized_never_zero() {
     // existed; a portfolio total goes absent with it.
     let aggregation =
         aggregate(&[booked_marked(MarkBasis::Absent)]).expect("clean fill aggregates");
-    let bucket = bucket_of(&aggregation);
+    let bucket = bucket_keyed_of(&aggregation, &february_key());
     assert_eq!(bucket.mark_basis, MarkBasis::Absent);
     assert_eq!(bucket.pnl_unrealised, None, "absence is not zero");
     let report = aggregation
@@ -385,4 +397,202 @@ fn tearsheet_golden() {
          greeks: greeks-over-time unavailable: prototype has no option-chain feed\n"
     );
     assert_eq!(render_tearsheet(&report), expected);
+}
+
+// ── Concentration: one fold, three partitions ──────────────────────────────
+
+fn at(day: u32) -> DateTime<Utc> {
+    NaiveDate::from_ymd_opt(2026, 2, day)
+        .expect("valid test date")
+        .and_hms_opt(14, 30, 0)
+        .expect("valid test time")
+        .and_utc()
+}
+
+fn legged(
+    underlying: &str,
+    occ_long: &str,
+    occ_short: &str,
+    quantity: u32,
+    price: &str,
+    trade_id: &str,
+    at: DateTime<Utc>,
+) -> BookedFill {
+    BookedFill::new()
+        .portfolio("paper".to_owned())
+        .underlying(underlying.to_owned())
+        .structure("Vertical".to_owned())
+        .strategy("ribbon".to_owned())
+        .grant("grant-1".to_owned())
+        .side(OrderSide::Buy)
+        .quantity(quantity)
+        .price(money(price))
+        .fee(money("0"))
+        .trade_id(trade_id.to_owned())
+        .at(at)
+        .legs(vec![
+            LegExecution {
+                contract: ContractId::new(occ_long),
+                side: OrderSide::Buy,
+                quantity: 1,
+                price: money(price),
+                fee: money("0"),
+            },
+            LegExecution {
+                contract: ContractId::new(occ_short),
+                side: OrderSide::Sell,
+                quantity: 1,
+                price: money("0"),
+                fee: money("0"),
+            },
+        ])
+        .build()
+}
+
+/// Hand-built book: SPY February vertical 2 @ 1.50, SPY March vertical
+/// 1 @ 2.00, QQQ legless 1 @ 500 — all filled 2026-02-18, so the February
+/// expiry sits two days out (inside the event window) and March sits
+/// thirty days out (outside it).
+fn concentrated_fills() -> Vec<BookedFill> {
+    vec![
+        legged(
+            "SPY",
+            "SPY   260220C00690000",
+            "SPY   260220C00695000",
+            2,
+            "1.50",
+            "e1",
+            at(18),
+        ),
+        legged(
+            "SPY",
+            "SPY   260320C00690000",
+            "SPY   260320C00695000",
+            1,
+            "2.00",
+            "e2",
+            at(18),
+        ),
+        BookedFill::new()
+            .portfolio("paper".to_owned())
+            .underlying("QQQ".to_owned())
+            .structure("Shares".to_owned())
+            .strategy("ribbon".to_owned())
+            .grant("grant-1".to_owned())
+            .side(OrderSide::Buy)
+            .quantity(1)
+            .price(money("500.00"))
+            .fee(money("0"))
+            .trade_id("e3".to_owned())
+            .at(at(18))
+            .build(),
+    ]
+}
+
+fn shares_sum_to_one(shares: &[protopyne_view::ConcentrationShare], what: &str) {
+    let total: f64 = shares.iter().map(|share| share.share).sum();
+    assert!(
+        (total - 1.0).abs() < 1e-9,
+        "{what} shares sum to {total}, not 1.0"
+    );
+}
+
+#[test]
+fn concentration_partitions_one_fold_three_ways() {
+    let aggregation = aggregate(&concentrated_fills()).expect("clean fills aggregate");
+    let report = aggregation.concentration();
+    // 2 × 1.50 + 1 × 2.00 + 1 × 500.00 = 505.00 of open notional.
+    assert_eq!(report.total_notional, money("505.00"));
+    // By underlying: SPY holds the two verticals, QQQ the shares.
+    assert_eq!(report.by_underlying.len(), 2);
+    assert_eq!(report.by_underlying[0].key, "QQQ");
+    assert_eq!(report.by_underlying[0].notional, money("500.00"));
+    assert_eq!(report.by_underlying[1].key, "SPY");
+    assert_eq!(report.by_underlying[1].notional, money("5.00"));
+    shares_sum_to_one(&report.by_underlying, "underlying");
+    // By expiry: dated ascending, dateless last.
+    assert_eq!(report.by_expiry.len(), 3);
+    assert_eq!(report.by_expiry[0].key, "2026-02-20");
+    assert_eq!(report.by_expiry[0].notional, money("3.00"));
+    assert_eq!(report.by_expiry[1].key, "2026-03-20");
+    assert_eq!(report.by_expiry[1].notional, money("2.00"));
+    assert_eq!(report.by_expiry[2].key, "no-expiry");
+    assert_eq!(report.by_expiry[2].notional, money("500.00"));
+    shares_sum_to_one(&report.by_expiry, "expiry");
+    // By event: the February expiry sits two days out (inside the week),
+    // March and the dateless shares do not.
+    assert_eq!(report.by_event.len(), 2);
+    assert_eq!(report.by_event[0].key, "expiry-week");
+    assert_eq!(report.by_event[0].notional, money("3.00"));
+    assert_eq!(report.by_event[1].key, "unexposed");
+    assert_eq!(report.by_event[1].notional, money("502.00"));
+    shares_sum_to_one(&report.by_event, "event");
+}
+
+#[test]
+fn concentration_reconciles_to_the_folds_own_positions() {
+    // Two projections of the same fold must agree: the concentration total
+    // equals the open positions' quantity × entry average, summed directly.
+    let fills = concentrated_fills();
+    let aggregation = aggregate(&fills).expect("clean fills aggregate");
+    let report = aggregation.concentration();
+    let mut direct = Decimal::ZERO;
+    for open in aggregation.open_positions() {
+        direct += Decimal::from(open.quantity) * open.price_entry_average.as_decimal();
+    }
+    assert_eq!(Money::new(direct), report.total_notional);
+    // Mutating the fold's input moves the projection consistently: one more
+    // February unit adds exactly its notional, and every dimension re-sums
+    // to one.
+    let mut more = fills;
+    more.push(legged(
+        "SPY",
+        "SPY   260220C00690000",
+        "SPY   260220C00695000",
+        1,
+        "1.50",
+        "e4",
+        at(18),
+    ));
+    let grown = aggregate(&more).expect("clean fills aggregate");
+    let grown_report = grown.concentration();
+    assert_eq!(
+        grown_report.total_notional,
+        Money::new(report.total_notional.as_decimal() + Decimal::from(150) / Decimal::from(100))
+    );
+    shares_sum_to_one(&grown_report.by_underlying, "grown underlying");
+    shares_sum_to_one(&grown_report.by_expiry, "grown expiry");
+    shares_sum_to_one(&grown_report.by_event, "grown event");
+}
+
+#[test]
+fn a_report_json_from_before_concentration_still_decodes() {
+    // The pre-change shape (greeks note, no concentration field) decodes
+    // with an empty concentration — never a failure, never invented shares.
+    let old = serde_json::json!({
+        "portfolios": [],
+        "unrealized_curve": [],
+        "greeks_note": "greeks-over-time unavailable: prototype has no option-chain feed",
+        "greeks_curve": null,
+    });
+    let report: PortfolioReport = serde_json::from_value(old).expect("older payloads still decode");
+    assert_eq!(
+        report.greeks_note,
+        "greeks-over-time unavailable: prototype has no option-chain feed"
+    );
+    assert!(report.greeks_curve.is_none());
+    assert!(report.concentration.by_underlying.is_empty());
+    assert!(report.concentration.by_expiry.is_empty());
+    assert!(report.concentration.by_event.is_empty());
+    assert_eq!(report.concentration.total_notional, money("0"));
+    // And a new report round-trips with its concentration intact.
+    let mut spy_only = concentrated_fills();
+    spy_only.pop();
+    let aggregation = aggregate(&spy_only).expect("clean fills aggregate");
+    let full = aggregation.summarize(&[]).expect("empty marks summarize");
+    let round: PortfolioReport =
+        serde_json::from_str(&serde_json::to_string(&full).expect("serializes"))
+            .expect("a new payload decodes");
+    assert_eq!(round.concentration.total_notional, money("5.00"));
+    assert_eq!(round.concentration.by_event.len(), 2);
 }

@@ -146,6 +146,10 @@ pub fn step_returns(equity: &[Decimal]) -> Vec<Decimal> {
 /// all-zero, or all-negative curves): there is no peak to fall from. A flat
 /// positive curve reports zero, which is defined — callers map it to
 /// [`None`] where a ratio needs it.
+///
+/// The per-step division lives in `protopyne_kernels::drawdown_of_peak` —
+/// the one home for peak-to-trough arithmetic — so this fold and the
+/// portfolio-drawdown breaker divide identically.
 #[must_use]
 pub fn drawdown_fraction(equity: &[Decimal]) -> Option<Decimal> {
     let mut peak = Decimal::ZERO;
@@ -154,7 +158,7 @@ pub fn drawdown_fraction(equity: &[Decimal]) -> Option<Decimal> {
         if *value > peak {
             peak = *value;
         } else if !peak.is_zero() {
-            let fraction = peak.checked_sub(*value)?.checked_div(peak)?;
+            let fraction = protopyne_kernels::drawdown_of_peak(peak, *value)?;
             worst = Some(worst.map_or(fraction, |held| held.max(fraction)));
         }
     }

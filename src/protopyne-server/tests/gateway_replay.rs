@@ -8,8 +8,9 @@
 
 use std::path::PathBuf;
 
+use protopyne_strategy::StructureKind;
 use protopyne_types::{Bar, Money};
-use protopyne_view::{ReplayStartParams, TerminalGateway};
+use protopyne_view::{ReplayStartParams, StructureKindHint, TerminalGateway};
 
 use crate::service::{serve, ServerConfig};
 
@@ -35,6 +36,81 @@ fn history() -> Vec<Bar> {
         .join("data")
         .join("SPY_15M.csv");
     crate::csv::load_bars_csv(&path).expect("vendored history loads")
+}
+
+/// The terminal books what the core declares. For every structure the
+/// rehearsal grant admits, the read equals the grant's own numbers — the pin
+/// that would have caught the terminal's 400/2000/30 literals drifting from
+/// the grant's 1000/1-per-100-trades/1-day authorities.
+#[tokio::test(flavor = "multi_thread")]
+async fn rehearsal_economics_equals_the_grant_it_names() {
+    let config = ServerConfig::new().bind("127.0.0.1:0".to_owned()).build();
+    let handle = serve(config, history()).await.expect("test server boots");
+    let gateway = handle.gateway();
+    for (hint, structure) in [
+        (StructureKindHint::Single, StructureKind::Single),
+        (StructureKindHint::Vertical, StructureKind::Vertical),
+        (StructureKindHint::Calendar, StructureKind::Calendar),
+        (StructureKindHint::Condor, StructureKind::Condor),
+        (StructureKindHint::NakedShort, StructureKind::NakedShort),
+    ] {
+        let economics = gateway
+            .rehearsal_economics("SPY", hint)
+            .unwrap_or_else(|error| panic!("{hint:?} economics served: {error}"));
+        let grant = crate::rehearsal::rehearsal_grant("replay-permissive", vec![structure]);
+        assert_eq!(
+            economics.strategy, grant.scope.strategies[0],
+            "{hint:?} books the grant's strategy"
+        );
+        assert_eq!(
+            economics.max_loss.parse::<Money>().expect("decimal text"),
+            grant.trade.max_loss_per_trade,
+            "{hint:?} books the per-trade loss the grant authorizes"
+        );
+        assert_eq!(
+            economics.notional.parse::<Money>().expect("decimal text"),
+            Money::new(
+                grant.budgets.max_notional.as_decimal()
+                    / rust_decimal::Decimal::from(grant.budgets.max_trades)
+            ),
+            "{hint:?} books the grant's notional share"
+        );
+        assert_eq!(
+            economics.dte_days, grant.trade.min_dte_days,
+            "{hint:?} requests the nearest expiry the trade tier admits"
+        );
+        assert_eq!(economics.grant_id, grant.id, "{hint:?} names its grant");
+        // Every booked number sits inside the grant that names it: a replay
+        // cannot open under economics its own authority would refuse.
+        assert!(
+            economics
+                .max_loss
+                .parse::<Money>()
+                .expect("decimal text")
+                .as_decimal()
+                <= grant.trade.max_loss_per_trade.as_decimal()
+        );
+        assert!(
+            economics
+                .notional
+                .parse::<Money>()
+                .expect("decimal text")
+                .as_decimal()
+                <= grant.budgets.max_notional.as_decimal()
+        );
+        assert!(economics.dte_days >= grant.trade.min_dte_days);
+        assert!(economics.dte_days <= grant.trade.max_dte_days);
+    }
+    // An underlying the grant does not cover refuses here, before a session
+    // is built around numbers every bar would then be denied against.
+    let refused = gateway
+        .rehearsal_economics("AAPL", StructureKindHint::Single)
+        .expect_err("the rehearsal grant covers SPY only");
+    assert!(
+        refused.to_string().contains("SPY"),
+        "the refusal names the covered underlying: {refused}"
+    );
+    handle.shutdown().await;
 }
 
 fn params(session: &str) -> ReplayStartParams {

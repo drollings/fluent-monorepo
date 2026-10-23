@@ -17,8 +17,9 @@ use protopyne_strategy::{
 };
 use protopyne_types::{Money, Qty};
 use protopyne_venue::{
-    cancel_all_ids, close_all_intents, open_groups_of, Journal, TradingSession, Venue,
-    VenueStorage, COMMAND_CANCEL_ALL_KIND, COMMAND_CLOSE_ALL_KIND, OPERATOR_CLIENT_ID,
+    cancel_all_ids, close_all_intents, open_groups_of, Journal, JournalEvent, TradingSession,
+    Venue, VenueStorage, COMMAND_ATTEST_KIND, COMMAND_CANCEL_ALL_KIND, COMMAND_CLOSE_ALL_KIND,
+    OPERATOR_CLIENT_ID,
 };
 use rust_decimal::Decimal;
 
@@ -87,7 +88,9 @@ async fn execute_scoped(
         .iter()
         .filter(|event| {
             event.seq > done_through
-                && (event.kind == COMMAND_CLOSE_ALL_KIND || event.kind == COMMAND_CANCEL_ALL_KIND)
+                && (event.kind == COMMAND_CLOSE_ALL_KIND
+                    || event.kind == COMMAND_CANCEL_ALL_KIND
+                    || event.kind == COMMAND_ATTEST_KIND)
                 && !is_audit(&event.detail)
         })
         .collect();
@@ -109,11 +112,34 @@ async fn execute_scoped(
                 portfolio,
             )
             .await?;
+        } else if command.kind == COMMAND_ATTEST_KIND {
+            cursor = execute_attest(ledger, command, command.seq);
         } else {
             cursor = execute_cancel(session, journal, permit, now, command.seq, portfolio).await?;
         }
     }
     Ok(cursor)
+}
+
+/// Fold one journaled attest row into the ledger: the row's own time becomes
+/// the usage's last attestation (last-wins through [`observe_attested`](GrantLedger::observe_attested),
+/// so a restart replays to the same instant), and only rows naming the
+/// ledger's current grant apply — a stale row for a retired grant generation
+/// is skipped, never misattributed.
+pub(crate) fn execute_attest(ledger: &GrantLedger, command: &JournalEvent, seq: i64) -> i64 {
+    #[derive(serde::Deserialize)]
+    struct AttestDetail {
+        grant_id: String,
+    }
+    let matches_live = serde_json::from_str::<AttestDetail>(&command.detail)
+        .ok()
+        .is_some_and(|body| body.grant_id == ledger.grant().id);
+    if matches_live {
+        if let Some(at) = DateTime::from_timestamp_millis(command.at_ms) {
+            ledger.observe_attested(at);
+        }
+    }
+    seq
 }
 
 /// An audit row carries its command's seq; command rows never do.

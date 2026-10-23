@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use protopyne_strategy::{spread_economics, PortfolioFacts, PortfolioFactsSource, RiskLimits};
-use protopyne_types::{ChainQuote, LegSide, Money, Qty};
+use protopyne_types::{ChainQuote, Greeks, LegSide, Money, Qty};
 use rust_decimal::Decimal;
 
 use crate::position::{PositionSide, SpreadPosition};
@@ -47,23 +47,27 @@ impl VenueBookFacts {
         let open_risk = packages
             .as_ref()
             .and_then(|packages| open_risk_of(packages));
-        let net_delta = packages
+        let net_greeks = packages
             .as_ref()
-            .and_then(|packages| net_delta_of(packages, self.venue.chain_source().as_deref(), at));
+            .and_then(|packages| net_greeks_of(packages, self.venue.chain_source().as_deref(), at));
         let buying_power = self.buying_power();
 
         let observed = (self.limits.max_open_risk.is_none() || open_risk.is_some())
-            && (self.limits.max_abs_net_delta.is_none() || net_delta.is_some())
+            && (self.limits.max_abs_net_delta.is_none() || net_greeks.is_some())
             && (self.limits.min_buying_power.is_none() || buying_power.is_some());
 
         PortfolioFacts {
             observed,
             open_risk: open_risk.unwrap_or_else(Money::zero),
-            net_delta,
+            net_greeks,
             buying_power,
             // The venue book reports no equity line: a fraction-of-net-liq
             // policy sizes zero until an equity source is attached.
             net_liq: None,
+            // Nor an equity peak or current reading: a configured drawdown
+            // cap refuses as unobserved until one is attached.
+            equity_peak: None,
+            equity_now: None,
         }
     }
 
@@ -177,14 +181,22 @@ fn open_risk_of(packages: &[OpenPackage<'_>]) -> Option<Money> {
 /// Net portfolio delta from the chain source's point-in-time greeks. `None`
 /// when there is no chain source or any open leg lacks greeks for its
 /// contract.
-fn net_delta_of(
+/// Net book greeks: the signed, ratio- and unit-scaled sum of every leg's
+/// Greeks. Portfolio sensitivities aggregate linearly, so the book's delta
+/// is the signed sum of the legs' deltas — and likewise for gamma, theta,
+/// and vega. Any leg without supplied greeks unobserves the whole book:
+/// absence is not a zero.
+fn net_greeks_of(
     packages: &[OpenPackage<'_>],
     chain: Option<&dyn LegQuoteSource>,
     at: DateTime<Utc>,
-) -> Option<f64> {
+) -> Option<Greeks> {
     let chain = chain?;
     let mut snapshots: HashMap<String, Vec<ChainQuote>> = HashMap::new();
-    let mut total = 0.0_f64;
+    let mut delta = 0.0_f64;
+    let mut gamma = 0.0_f64;
+    let mut theta = 0.0_f64;
+    let mut vega = 0.0_f64;
     for package in packages {
         for (leg, _) in &package.pairs {
             let underlying = &leg.contract.underlying;
@@ -195,12 +207,26 @@ fn net_delta_of(
                 .iter()
                 .filter(|quote| quote.contract == leg.contract)
                 .max_by_key(|quote| quote.timestamp)?;
-            let delta = newest.greeks.as_ref()?.delta;
+            let leg_greeks = newest.greeks.as_ref()?;
             let sign = if leg.side == LegSide::Long { 1.0 } else { -1.0 };
-            total += sign * f64::from(leg.ratio) * f64::from(package.units) * delta;
+            let scale = sign * f64::from(leg.ratio) * f64::from(package.units);
+            delta += scale * leg_greeks.delta;
+            gamma += scale * leg_greeks.gamma;
+            theta += scale * leg_greeks.theta;
+            vega += scale * leg_greeks.vega;
         }
     }
-    total.is_finite().then_some(total)
+    [delta, gamma, theta, vega]
+        .iter()
+        .all(|value| value.is_finite())
+        .then(|| {
+            Greeks::new()
+                .delta(delta)
+                .gamma(gamma)
+                .theta(theta)
+                .vega(vega)
+                .build()
+        })
 }
 
 #[cfg(test)]

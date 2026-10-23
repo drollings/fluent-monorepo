@@ -565,6 +565,20 @@ $(1)-soak: ## SLOW gate for $(1): ignored heavy tests
 endef
 $(foreach c,$(COMPONENT_NAMES),$(eval $(call component-gates,$(c))))
 
+# ── Regular-gate probe leg ──────────────────────────────────────────────────
+# The component matrix builds the trading crates with no optional features,
+# which leaves every `pine`- and `research`-gated correctness probe uncompiled
+# and therefore unpoliced. This leg compiles the kernels crate with both so a
+# probe cannot exist only in the soak tier. It is a prerequisite of
+# `protopyne-test`, never of `protopyne-smoke`.
+.PHONY: protopyne-probes
+protopyne-probes: ## REGULAR-gate probe leg: pine + research probes on every crate that gates them
+	$(Q)bin/gate-run.sh protopyne-probes test kernels -- cargo test --quiet -p protopyne-kernels --lib --features pine,research
+	$(Q)bin/gate-run.sh protopyne-probes test server -- cargo test --quiet -p protopyne-server --lib --features pine
+	$(Q)bin/gate-run.sh protopyne-probes test strategy -- cargo test --quiet -p protopyne-strategy --lib --features pine
+
+protopyne-test: protopyne-probes
+
 # ── Live-AI Test Pathway ────────────────────────────────────────────────────
 # THE ONLY pathway that runs real inference. Every live test is `#[ignore]` +
 # `live-ai`-gated (in `tests/live/`); these targets enable the feature and run

@@ -5,14 +5,12 @@
 //! implementation of the order would drift from these rows.
 
 use super::*;
+use protopyne_strategy::fixtures::grant_with;
 
 use chrono::{TimeZone, Utc};
 use rust_decimal::Decimal;
 
-use protopyne_strategy::{
-    BreakerLimits, Direction, Grant, GrantBudgets, GrantLedger, GrantPermission, GrantScope,
-    PortfolioThresholds, RiskEngine, RiskLimits, SignalThresholds, StructureKind, TradeThresholds,
-};
+use protopyne_strategy::{Direction, Grant, GrantLedger, RiskEngine, RiskLimits, StructureKind};
 use protopyne_types::{Money, Qty};
 use protopyne_venue::{Journal, PaperConfig, PaperVenue};
 
@@ -44,57 +42,13 @@ fn proposal(quantity: &str) -> Proposal {
 }
 
 fn grant(min_conviction: f64, max_errors: u32) -> Grant {
-    Grant::new()
-        .id("gate-grant".to_owned())
-        .scope(
-            GrantScope::new()
-                .strategies(vec!["ribbon".to_owned()])
-                .underlyings(vec!["SPY".to_owned()])
-                .structures(vec![StructureKind::Vertical])
-                .directions(vec![Direction::Long, Direction::Short])
-                .permissions(GrantPermission {
-                    entries: true,
-                    exits: true,
-                    rolls: false,
-                })
-                .build(),
-        )
-        .budgets(
-            GrantBudgets::new()
-                .max_trades(1_000)
-                .max_contracts(10_000)
-                .max_loss(money("1000000"))
-                .max_notional(money("100000000"))
-                .build(),
-        )
-        .signal(
-            SignalThresholds::new()
-                .min_conviction(min_conviction)
-                .min_activity_score(0.5)
-                .build(),
-        )
-        .trade(
-            TradeThresholds::new()
-                .max_loss_per_trade(money("1000"))
-                .max_spread_width(money("50"))
-                .min_dte_days(1)
-                .max_dte_days(90)
-                .build(),
-        )
-        .portfolio(
-            PortfolioThresholds::new()
-                .max_open_risk(money("10000000"))
-                .quote_max_age_secs(60)
-                .build(),
-        )
-        .breakers(
-            BreakerLimits::new()
-                .max_consecutive_errors(max_errors)
-                .build(),
-        )
-        .valid_from(Utc.with_ymd_and_hms(2025, 1, 1, 0, 0, 0).unwrap())
-        .valid_until(Utc.with_ymd_and_hms(2027, 1, 1, 0, 0, 0).unwrap())
-        .build()
+    // The shared fixture's shape with the two knobs this suite sweeps.
+    grant_with(|grant| {
+        grant.id = "gate-grant".to_owned();
+        grant.signal.min_conviction = min_conviction;
+        grant.signal.min_activity_score = 0.5;
+        grant.breakers.max_consecutive_errors = max_errors;
+    })
 }
 
 fn config() -> RunnerConfig {

@@ -277,7 +277,10 @@ fn timeframe_keys_cover_intraday_to_daily_in_toolbar_order() {
     );
     let labels: Vec<&str> = keys.iter().map(|key| key.label()).collect();
     assert_eq!(labels, vec!["1M", "5M", "15M", "1H", "4H", "1D"]);
-    let seconds: Vec<u64> = keys.iter().map(|key| key.seconds()).collect();
+    let seconds: Vec<u64> = keys
+        .iter()
+        .map(|key| key.timeframe().total_seconds())
+        .collect();
     assert_eq!(seconds, vec![60, 300, 900, 3_600, 14_400, 86_400]);
     assert_eq!(
         TimeframeKey::H1.timeframe().duration_ms(),
@@ -316,7 +319,7 @@ fn timeframe_keys_cover_intraday_to_daily_in_toolbar_order() {
     for key in keys {
         assert_eq!(
             key.timeframe().duration_ms(),
-            key.seconds() as i64 * 1_000,
+            key.timeframe().total_seconds() as i64 * 1_000,
             "{key:?} seconds agree with the store grid"
         );
     }
@@ -610,5 +613,33 @@ fn default_off_resolves_the_base_level_at_every_zoom() {
     assert_eq!(
         resolve_prefold_level(true, TimeframeKey::H1, f64::NAN, TimeframeKey::M1),
         TimeframeKey::H1
+    );
+}
+
+/// The toolbar keys carry no seconds table of their own: each one's seconds are
+/// the shared `Timeframe` table's, and the values still match the retired local
+/// table (`1M` 60 … `1D` 86_400), so the bridge is a rename, never a
+/// renumbering.
+#[test]
+fn every_timeframe_key_seconds_come_from_the_one_table() {
+    let expected = [
+        (TimeframeKey::M1, 60_u64),
+        (TimeframeKey::M5, 300),
+        (TimeframeKey::M15, 900),
+        (TimeframeKey::H1, 3_600),
+        (TimeframeKey::H4, 14_400),
+        (TimeframeKey::D1, 86_400),
+    ];
+    for (key, seconds) in expected {
+        assert_eq!(
+            key.timeframe().total_seconds(),
+            seconds,
+            "{key:?}: seconds come from Timeframe::total_seconds"
+        );
+    }
+    assert_eq!(
+        expected.len(),
+        TimeframeKey::all().len(),
+        "every toolbar key is pinned"
     );
 }

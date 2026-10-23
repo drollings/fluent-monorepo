@@ -8,8 +8,8 @@
 //! equal bundle; a changed journal rebuilds a changed one).
 
 use crate::views::{
-    load_bundle, HealthModel, InboxAction, InboxModel, PortfolioModel, Provenance, TicketAction,
-    TicketModel, ViewsBundle,
+    load_bundle, ConcentrationModel, HealthModel, InboxAction, InboxModel, PortfolioModel,
+    Provenance, TicketAction, TicketModel, ViewsBundle,
 };
 use protopyne_view::{HealthView, MockGateway, PortfolioView, ProposalView, TerminalGateway};
 
@@ -538,7 +538,10 @@ impl TerminalGateway for CountingGateway {
         Ok(())
     }
 
-    fn issue_ticket(&self, _ticket: serde_json::Value) -> Result<(), protopyne_view::GatewayError> {
+    fn issue_ticket(
+        &self,
+        _ticket: protopyne_view::TicketDraft,
+    ) -> Result<(), protopyne_view::GatewayError> {
         self.issues
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         Ok(())
@@ -598,9 +601,14 @@ fn inbox_action_invokes_exactly_one_gateway_write() {
 #[test]
 fn ticket_action_invokes_exactly_one_gateway_write() {
     let gateway = CountingGateway::default();
-    TicketAction::issue(serde_json::json!({"client_id": "rh-1"}))
-        .apply(&gateway)
-        .expect("issue served");
+    TicketAction::issue(protopyne_view::TicketDraft {
+        side: protopyne_view::TicketSide::Buy,
+        quantity: 2,
+        limit_price: "600.50".to_owned(),
+        symbol: "SPY".to_owned(),
+    })
+    .apply(&gateway)
+    .expect("issue served");
     assert_eq!(
         gateway.issues.load(std::sync::atomic::Ordering::SeqCst),
         1,
@@ -643,4 +651,32 @@ fn ticket_model_pulls_waiting_and_drifts_from_the_mock() {
     assert_eq!(model.waiting()[0].ticket_id, "mock-ticket-1");
     assert!(model.drifts().is_empty());
     assert!(!model.is_empty());
+}
+
+#[test]
+fn concentration_model_mirrors_the_dto() {
+    use protopyne_types::Money;
+    use protopyne_view::{ConcentrationReport, ConcentrationShare};
+    use rust_decimal::Decimal;
+
+    let share = |key: &str, notional: &str, share: f64| ConcentrationShare {
+        key: key.to_owned(),
+        notional: Money::new(notional.parse::<Decimal>().expect("decimal")),
+        share,
+    };
+    let dto = ConcentrationReport {
+        by_underlying: vec![share("SPY", "5.00", 0.01), share("QQQ", "495.00", 0.99)],
+        by_expiry: vec![share("2026-02-20", "3.00", 0.006)],
+        by_event: vec![share("expiry-week", "3.00", 0.006)],
+        total_notional: Money::new("500.00".parse::<Decimal>().expect("decimal")),
+    };
+    let model = ConcentrationModel::of(&dto);
+    assert_eq!(model.by_underlying, dto.by_underlying);
+    assert_eq!(model.by_expiry, dto.by_expiry);
+    assert_eq!(model.by_event, dto.by_event);
+    assert_eq!(model.total_notional, dto.total_notional);
+    assert!(!model.is_empty(), "a reported book is not empty");
+
+    let empty = ConcentrationModel::of(&ConcentrationReport::default());
+    assert!(empty.is_empty(), "no buckets in any dimension is empty");
 }

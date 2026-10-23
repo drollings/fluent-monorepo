@@ -1,13 +1,11 @@
 use super::*;
+use protopyne_strategy::fixtures::grant_with;
 use std::path::PathBuf;
 use std::time::Duration;
 
 use chrono::{TimeZone, Utc};
 use protopyne_strategy::elements::ExplicitStructure;
-use protopyne_strategy::{
-    BreakerLimits, FixedSignal, GrantBudgets, GrantPermission, GrantScope, PortfolioThresholds,
-    SignalThresholds, Strategy, TradeThresholds,
-};
+use protopyne_strategy::{FixedSignal, GrantBudgets, Strategy};
 use protopyne_venue::calculate_price_entry_average;
 
 use crate::rehearsal::StrategyKind;
@@ -21,53 +19,11 @@ fn history() -> Vec<Bar> {
 }
 
 fn test_grant(id: &str, max_trades: u32) -> Grant {
-    Grant::new()
-        .id(id.to_owned())
-        .scope(
-            GrantScope::new()
-                .strategies(vec!["ribbon".to_owned()])
-                .underlyings(vec!["SPY".to_owned()])
-                .structures(vec![StructureKind::Vertical])
-                .directions(vec![Direction::Long, Direction::Short])
-                .permissions(GrantPermission {
-                    entries: true,
-                    exits: true,
-                    rolls: false,
-                })
-                .build(),
-        )
-        .budgets(
-            GrantBudgets::new()
-                .max_trades(max_trades)
-                .max_contracts(10_000)
-                .max_loss(Money::from(1_000_000))
-                .max_notional(Money::from(100_000_000))
-                .build(),
-        )
-        .signal(
-            SignalThresholds::new()
-                .min_conviction(0.0)
-                .min_activity_score(0.0)
-                .build(),
-        )
-        .trade(
-            TradeThresholds::new()
-                .max_loss_per_trade(Money::from(1_000))
-                .max_spread_width(Money::from(50))
-                .min_dte_days(1)
-                .max_dte_days(90)
-                .build(),
-        )
-        .portfolio(
-            PortfolioThresholds::new()
-                .max_open_risk(Money::from(10_000_000))
-                .quote_max_age_secs(60)
-                .build(),
-        )
-        .breakers(BreakerLimits::new().max_consecutive_errors(3).build())
-        .valid_from(Utc.with_ymd_and_hms(2025, 1, 1, 0, 0, 0).unwrap())
-        .valid_until(Utc.with_ymd_and_hms(2027, 1, 1, 0, 0, 0).unwrap())
-        .build()
+    // The shared fixture's shape; only the id and the trade budget differ.
+    grant_with(|grant| {
+        grant.id = id.to_owned();
+        grant.budgets.max_trades = max_trades;
+    })
 }
 
 async fn boot() -> ServerHandle {
@@ -489,53 +445,14 @@ async fn portfolio_average_is_the_canonical_entry_formula() {
 /// A permissive grant scoped to the projection test's gamma/QQQ/Calendar
 /// proposals, so every proposal reaches the venue.
 fn projection_grant() -> Grant {
-    Grant::new()
-        .id("projection".to_owned())
-        .scope(
-            GrantScope::new()
-                .strategies(vec!["gamma".to_owned()])
-                .underlyings(vec!["QQQ".to_owned()])
-                .structures(vec![StructureKind::Calendar])
-                .directions(vec![Direction::Long, Direction::Short])
-                .permissions(GrantPermission {
-                    entries: true,
-                    exits: true,
-                    rolls: false,
-                })
-                .build(),
-        )
-        .budgets(
-            GrantBudgets::new()
-                .max_trades(1_000)
-                .max_contracts(10_000)
-                .max_loss(Money::from(1_000_000))
-                .max_notional(Money::from(100_000_000))
-                .build(),
-        )
-        .signal(
-            SignalThresholds::new()
-                .min_conviction(0.0)
-                .min_activity_score(0.0)
-                .build(),
-        )
-        .trade(
-            TradeThresholds::new()
-                .max_loss_per_trade(Money::from(1_000))
-                .max_spread_width(Money::from(50))
-                .min_dte_days(1)
-                .max_dte_days(90)
-                .build(),
-        )
-        .portfolio(
-            PortfolioThresholds::new()
-                .max_open_risk(Money::from(10_000_000))
-                .quote_max_age_secs(60)
-                .build(),
-        )
-        .breakers(BreakerLimits::new().max_consecutive_errors(3).build())
-        .valid_from(Utc.with_ymd_and_hms(2025, 1, 1, 0, 0, 0).unwrap())
-        .valid_until(Utc.with_ymd_and_hms(2027, 1, 1, 0, 0, 0).unwrap())
-        .build()
+    // The shared fixture's shape scoped to the projection test's gamma/QQQ/
+    // Calendar package.
+    grant_with(|grant| {
+        grant.id = "projection".to_owned();
+        grant.scope.strategies = vec!["gamma".to_owned()];
+        grant.scope.underlyings = vec!["QQQ".to_owned()];
+        grant.scope.structures = vec![StructureKind::Calendar];
+    })
 }
 
 #[tokio::test]
@@ -663,54 +580,27 @@ async fn arming_rejects_empty_window() {
 }
 
 fn mid_grant(id: &str) -> Grant {
-    // Interior values on every tier so each tier can move either way.
-    Grant::new()
-        .id(id.to_owned())
-        .scope(
-            GrantScope::new()
-                .strategies(vec!["ribbon".to_owned()])
-                .underlyings(vec!["SPY".to_owned()])
-                .structures(vec![StructureKind::Vertical])
-                .directions(vec![Direction::Long])
-                .permissions(GrantPermission {
-                    entries: true,
-                    exits: true,
-                    rolls: false,
-                })
-                .build(),
-        )
-        .budgets(
-            GrantBudgets::new()
-                .max_trades(10)
-                .max_contracts(100)
-                .max_loss(Money::from(1_000))
-                .max_notional(Money::from(10_000))
-                .build(),
-        )
-        .signal(
-            SignalThresholds::new()
-                .min_conviction(0.5)
-                .min_activity_score(0.5)
-                .build(),
-        )
-        .trade(
-            TradeThresholds::new()
-                .max_loss_per_trade(Money::from(500))
-                .max_spread_width(Money::from(25))
-                .min_dte_days(7)
-                .max_dte_days(60)
-                .build(),
-        )
-        .portfolio(
-            PortfolioThresholds::new()
-                .max_open_risk(Money::from(1_000_000))
-                .quote_max_age_secs(30)
-                .build(),
-        )
-        .breakers(BreakerLimits::new().max_consecutive_errors(2).build())
-        .valid_from(Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap())
-        .valid_until(Utc.with_ymd_and_hms(2027, 1, 1, 0, 0, 0).unwrap())
-        .build()
+    // The shared fixture's shape with the API suite's tighter tiers.
+    grant_with(|grant| {
+        grant.id = id.to_owned();
+        grant.scope.directions = vec![Direction::Long];
+        grant.budgets = GrantBudgets::new()
+            .max_trades(10)
+            .max_contracts(100)
+            .max_loss(Money::from(1_000))
+            .max_notional(Money::from(10_000))
+            .build();
+        grant.signal.min_conviction = 0.5;
+        grant.signal.min_activity_score = 0.5;
+        grant.trade.max_loss_per_trade = Money::from(500);
+        grant.trade.max_spread_width = Money::from(25);
+        grant.trade.min_dte_days = 7;
+        grant.trade.max_dte_days = 60;
+        grant.portfolio.max_open_risk = Money::from(1_000_000);
+        grant.portfolio.quote_max_age_secs = 30;
+        grant.breakers.max_consecutive_errors = 2;
+        grant.valid_from = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
+    })
 }
 
 #[tokio::test]
@@ -1124,4 +1014,34 @@ async fn shutdown_closes_scope_then_stops_serve() {
     tokio::time::timeout(std::time::Duration::from_secs(5), handle.shutdown())
         .await
         .expect("shutdown closes scope then aborts serve, never hangs");
+}
+
+#[tokio::test]
+async fn attesting_names_its_grant_and_journals_exactly_once() {
+    let handle = boot().await;
+    let client = reqwest::Client::new();
+    client
+        .post(format!("{}/grants/arm", base(&handle)))
+        .json(&test_grant("attest-1", 10))
+        .send()
+        .await
+        .expect("arm reachable");
+
+    // A wrong id refuses before journaling anything.
+    let wrong = client
+        .post(format!("{}/grants/attest", base(&handle)))
+        .json(&serde_json::json!({ "grant_id": "nope" }))
+        .send()
+        .await
+        .expect("attest reachable");
+    assert_eq!(wrong.status(), reqwest::StatusCode::CONFLICT);
+
+    let ok = client
+        .post(format!("{}/grants/attest", base(&handle)))
+        .json(&serde_json::json!({ "grant_id": "attest-1" }))
+        .send()
+        .await
+        .expect("attest reachable");
+    assert_eq!(ok.status(), reqwest::StatusCode::OK);
+    handle.shutdown().await;
 }

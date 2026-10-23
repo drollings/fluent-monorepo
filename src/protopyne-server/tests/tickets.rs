@@ -13,7 +13,7 @@ use protopyne_venue::{
     ConfirmedFill, ImportedPosition, ManualTicket, OrderIntent, OrderSide, TicketRead,
     TicketTracker, TICKET_CONFIRMED_KIND, TICKET_ISSUED_KIND,
 };
-use protopyne_view::TerminalGateway;
+use protopyne_view::{TerminalGateway, TicketDraft, TicketSide};
 
 use crate::service::{serve, ServerConfig};
 
@@ -45,8 +45,28 @@ fn intent(id: &str) -> OrderIntent {
         .build()
 }
 
-fn intent_value(id: &str) -> serde_json::Value {
-    serde_json::to_value(intent(id)).expect("intent serializes")
+/// One draft, as the terminal's form fills it.
+fn draft() -> TicketDraft {
+    TicketDraft {
+        side: TicketSide::Buy,
+        quantity: 2,
+        limit_price: "600.50".to_owned(),
+        symbol: "SPY".to_owned(),
+    }
+}
+
+/// The manual-ticket intent that same draft describes on the wire: the shape
+/// the HTTP route's parser accepts.
+fn manual_intent(id: &str) -> OrderIntent {
+    OrderIntent::new()
+        .client_id(id.to_owned())
+        .proposal_id("manual".to_owned())
+        .strategy("manual".to_owned())
+        .underlying("SPY".to_owned())
+        .side(OrderSide::Buy)
+        .quantity(2)
+        .limit_price(money("600.50"))
+        .build()
 }
 
 fn fill_value(quantity: u32, price: &str) -> serde_json::Value {
@@ -57,40 +77,111 @@ fn fill_value(quantity: u32, price: &str) -> serde_json::Value {
     .expect("fill serializes")
 }
 
-/// An issue through the gateway equals an issue through the route: both
-/// journal the identical issued row (same ticket client id and kind), so the
-/// waiting read cannot tell which surface ordered it.
+/// The draft conversion and the route's wire parse are one schema: the same
+/// draft and id produce the same intent, so the rendered ticket cannot differ
+/// by entry point.
+#[test]
+fn draft_intent_equals_the_route_document() {
+    let converted = crate::views::intent_of_draft(&draft(), "manual-1".to_owned())
+        .expect("a well-formed draft converts");
+    let parsed: OrderIntent = serde_json::from_value(
+        serde_json::to_value(manual_intent("manual-1")).expect("document serializes"),
+    )
+    .expect("the wire document parses");
+    assert_eq!(converted, parsed, "one schema, two entry points");
+    let at = Utc.with_ymd_and_hms(2026, 6, 1, 12, 0, 5).unwrap();
+    assert_eq!(
+        ManualTicket::from_intent(converted, at).render(),
+        ManualTicket::from_intent(parsed, at).render(),
+        "the human places the identical ticket from either surface"
+    );
+}
+
+/// An issue through the gateway equals an issue through the route: the draft
+/// path mints the identity, and a route issue of the same document reads back
+/// as the identical waiting ticket, so the dock cannot tell which surface
+/// ordered it.
 #[tokio::test(flavor = "multi_thread")]
-async fn gateway_issue_equals_route_issue() {
-    let config = ServerConfig::new().bind("127.0.0.1:0".to_owned()).build();
-    let handle = serve(config, bars()).await.expect("test server boots");
-    let gateway = handle.gateway();
-    gateway
-        .issue_ticket(intent_value("rh-1"))
-        .expect("gateway issues");
-    let client = reqwest::Client::new();
-    let response = client
-        .post(format!("{}/tickets/issue", base(&handle)))
-        .json(&intent_value("rh-2"))
+async fn gateway_issue_of_a_draft_equals_the_route_issue() {
+    let boot = || ServerConfig::new().bind("127.0.0.1:0".to_owned()).build();
+    let drafts = serve(boot(), bars()).await.expect("draft server boots");
+    let route = serve(boot(), bars()).await.expect("route server boots");
+    drafts
+        .gateway()
+        .issue_ticket(draft())
+        .expect("the draft issues");
+    let waiting = drafts.gateway().tickets_waiting().expect("draft waits");
+    assert_eq!(waiting.len(), 1, "one ticket waits");
+    let minted = waiting[0].ticket_id.clone();
+    let response = reqwest::Client::new()
+        .post(format!("{}/tickets/issue", base(&route)))
+        .json(&serde_json::to_value(manual_intent(&minted)).expect("document serializes"))
         .send()
         .await
         .expect("route posts");
     assert_eq!(response.status(), reqwest::StatusCode::OK);
-    let rows = gateway.journal().expect("journal reads");
-    let issued: Vec<_> = rows
-        .iter()
+    assert_eq!(
+        waiting,
+        route.gateway().tickets_waiting().expect("route waits"),
+        "the same draft waits identically on both surfaces"
+    );
+    let issued: Vec<_> = drafts
+        .gateway()
+        .journal()
+        .expect("journal reads")
+        .into_iter()
         .filter(|row| row.kind == TICKET_ISSUED_KIND)
         .collect();
-    assert_eq!(issued.len(), 2, "one row per surface: {rows:?}");
-    let waiting = gateway.tickets_waiting().expect("waiting reads");
-    assert_eq!(waiting.len(), 2, "both tickets wait: {waiting:?}");
-    assert_eq!(waiting[0].ticket_id, "rh-1");
-    assert_eq!(waiting[1].ticket_id, "rh-2");
-    for row in &issued {
-        let ticket: ManualTicket =
-            serde_json::from_str(&row.detail).expect("issued detail is a ticket");
-        assert_eq!(row.client_id, ticket.ticket_id());
-    }
+    assert_eq!(issued.len(), 1, "the draft journals one issued row");
+    let ticket: ManualTicket =
+        serde_json::from_str(&issued[0].detail).expect("issued detail is a ticket");
+    assert_eq!(issued[0].client_id, ticket.ticket_id());
+    drafts.shutdown().await;
+    route.shutdown().await;
+}
+
+/// A draft the core cannot parse refuses there, naming the field, and
+/// journals nothing: the terminal runs no second validator, so a malformed
+/// price or a blank symbol has exactly one authority and one message.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_invalid_draft_is_refused_by_the_core_and_journals_nothing() {
+    let config = ServerConfig::new().bind("127.0.0.1:0".to_owned()).build();
+    let handle = serve(config, bars()).await.expect("test server boots");
+    let gateway = handle.gateway();
+    let malformed = TicketDraft {
+        limit_price: "not-a-price".to_owned(),
+        ..draft()
+    };
+    let refused = gateway
+        .issue_ticket(malformed)
+        .expect_err("a malformed price refuses");
+    assert!(
+        refused.to_string().contains("limit_price"),
+        "the refusal names the field: {refused}"
+    );
+    let blank = TicketDraft {
+        symbol: "   ".to_owned(),
+        ..draft()
+    };
+    let refused = gateway
+        .issue_ticket(blank)
+        .expect_err("a blank symbol refuses");
+    assert!(
+        refused.to_string().contains("symbol"),
+        "the refusal names the field: {refused}"
+    );
+    assert!(
+        gateway.tickets_waiting().expect("waiting reads").is_empty(),
+        "a refused draft leaves no wait"
+    );
+    assert!(
+        !gateway
+            .journal()
+            .expect("journal reads")
+            .iter()
+            .any(|row| row.kind == TICKET_ISSUED_KIND),
+        "a refused draft journals nothing"
+    );
     handle.shutdown().await;
 }
 
@@ -101,32 +192,28 @@ async fn confirm_clears_wait_and_flags_drift() {
     let config = ServerConfig::new().bind("127.0.0.1:0".to_owned()).build();
     let handle = serve(config, bars()).await.expect("test server boots");
     let gateway = handle.gateway();
+    gateway.issue_ticket(draft()).expect("first ticket issues");
+    gateway.issue_ticket(draft()).expect("second ticket issues");
     gateway
-        .issue_ticket(intent_value("rh-1"))
-        .expect("first ticket issues");
-    gateway
-        .issue_ticket(intent_value("rh-2"))
-        .expect("second ticket issues");
-    gateway
-        .confirm_ticket("rh-1", fill_value(2, "600.40"))
+        .confirm_ticket("manual-1", fill_value(2, "600.40"))
         .expect("matching fill confirms");
     let waiting = gateway.tickets_waiting().expect("waiting reads");
     assert_eq!(waiting.len(), 1, "one ticket still waits");
-    assert_eq!(waiting[0].ticket_id, "rh-2");
+    assert_eq!(waiting[0].ticket_id, "manual-2");
     assert!(gateway.ticket_drifts().expect("drifts read").is_empty());
     gateway
-        .confirm_ticket("rh-2", fill_value(1, "600.40"))
+        .confirm_ticket("manual-2", fill_value(1, "600.40"))
         .expect("short fill still confirms");
     let waiting = gateway.tickets_waiting().expect("waiting reads");
     assert!(waiting.is_empty(), "nothing waits after both confirms");
     let drifts = gateway.ticket_drifts().expect("drifts read");
     assert_eq!(drifts.len(), 1, "the short fill flags drift: {drifts:?}");
-    assert_eq!(drifts[0].ticket_id, "rh-2");
+    assert_eq!(drifts[0].ticket_id, "manual-2");
     assert_eq!(drifts[0].kind, "QuantityMismatch");
     let rows = gateway.journal().expect("journal reads");
     assert!(
         rows.iter()
-            .any(|row| row.kind == TICKET_CONFIRMED_KIND && row.client_id == "rh-2"),
+            .any(|row| row.kind == TICKET_CONFIRMED_KIND && row.client_id == "manual-2"),
         "the confirm journals its row: {rows:?}"
     );
     handle.shutdown().await;
@@ -140,9 +227,7 @@ async fn restart_replays_waiting_set_and_unknown_confirm_refuses() {
     let config = ServerConfig::new().bind("127.0.0.1:0".to_owned()).build();
     let handle = serve(config, bars()).await.expect("test server boots");
     let gateway = handle.gateway();
-    gateway
-        .issue_ticket(intent_value("rh-1"))
-        .expect("ticket issues");
+    gateway.issue_ticket(draft()).expect("ticket issues");
     let rows = gateway.journal().expect("journal reads");
     let events: Vec<protopyne_venue::JournalEvent> = rows
         .iter()
@@ -208,11 +293,9 @@ async fn import_flags_drift_and_a_corrected_import_clears_it() {
     let config = ServerConfig::new().bind("127.0.0.1:0".to_owned()).build();
     let handle = serve(config, bars()).await.expect("test server boots");
     let gateway = handle.gateway();
+    gateway.issue_ticket(draft()).expect("ticket issues");
     gateway
-        .issue_ticket(intent_value("rh-1"))
-        .expect("ticket issues");
-    gateway
-        .confirm_ticket("rh-1", fill_value(2, "600.40"))
+        .confirm_ticket("manual-1", fill_value(2, "600.40"))
         .expect("fill confirms");
     let client = reqwest::Client::new();
     let response = client

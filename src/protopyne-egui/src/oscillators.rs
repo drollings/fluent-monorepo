@@ -443,6 +443,20 @@ pub fn normalize_series_bounded(
     }))
 }
 
+/// One kernel to its display mapping: the catalog kind plus the leg whose
+/// window the kernel's length matches. Single-output catalog kinds only;
+/// multi-leg families stay unmapped until their own follow-up.
+#[must_use]
+pub fn oscillator_mapping_for_kernel(kernel: &str) -> Option<(OscillatorKind, WhichLeg)> {
+    match kernel {
+        "rsi" => Some((OscillatorKind::Rsi, WhichLeg::Slow)),
+        "cci" => Some((OscillatorKind::Cci, WhichLeg::Slow)),
+        "cmo" => Some((OscillatorKind::Cmo, WhichLeg::Slow)),
+        "mfi" => Some((OscillatorKind::Mfi, WhichLeg::Slow)),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 #[path = "../tests/oscillators.rs"]
 mod tests;

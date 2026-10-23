@@ -3,65 +3,25 @@
 
 use super::*;
 use crate::paper::PaperConfig;
-use chrono::TimeZone;
-use protopyne_strategy::{
-    BreakerLimits, Direction, GrantBudgets, GrantPermission, GrantScope, PortfolioThresholds,
-    SignalThresholds, StructureKind, TradeThresholds,
-};
-use rust_decimal::Decimal;
-
-fn money(value: &str) -> Money {
-    Money::new(value.parse::<Decimal>().expect("decimal"))
-}
-
+use protopyne_strategy::fixtures::grant_with;
+use protopyne_strategy::GrantBudgets;
 fn grant(id: &str) -> Grant {
-    Grant::new()
-        .id(id.to_owned())
-        .scope(
-            GrantScope::new()
-                .strategies(vec!["ribbon".to_owned()])
-                .underlyings(vec!["SPY".to_owned()])
-                .structures(vec![StructureKind::Vertical])
-                .directions(vec![Direction::Long, Direction::Short])
-                .permissions(GrantPermission {
-                    entries: true,
-                    exits: true,
-                    rolls: false,
-                })
-                .build(),
-        )
-        .budgets(
-            GrantBudgets::new()
-                .max_trades(10)
-                .max_contracts(100)
-                .max_loss(money("5000"))
-                .max_notional(money("100000"))
-                .build(),
-        )
-        .signal(
-            SignalThresholds::new()
-                .min_conviction(0.5)
-                .min_activity_score(0.5)
-                .build(),
-        )
-        .trade(
-            TradeThresholds::new()
-                .max_loss_per_trade(money("1000"))
-                .max_spread_width(money("50"))
-                .min_dte_days(7)
-                .max_dte_days(60)
-                .build(),
-        )
-        .portfolio(
-            PortfolioThresholds::new()
-                .max_open_risk(money("10000"))
-                .quote_max_age_secs(60)
-                .build(),
-        )
-        .breakers(BreakerLimits::new().max_consecutive_errors(3).build())
-        .valid_from(Utc.with_ymd_and_hms(2025, 1, 1, 0, 0, 0).unwrap())
-        .valid_until(Utc.with_ymd_and_hms(2027, 1, 1, 0, 0, 0).unwrap())
-        .build()
+    // The shared fixture's shape with the arm suite's tighter budgets and DTE
+    // window; the id is what tells two arms apart.
+    grant_with(|grant| {
+        grant.id = id.to_owned();
+        grant.budgets = GrantBudgets::new()
+            .max_trades(10)
+            .max_contracts(100)
+            .max_loss(Money::from(5_000))
+            .max_notional(Money::from(100_000))
+            .build();
+        grant.signal.min_conviction = 0.5;
+        grant.signal.min_activity_score = 0.5;
+        grant.trade.min_dte_days = 7;
+        grant.trade.max_dte_days = 60;
+        grant.portfolio.max_open_risk = Money::from(10_000);
+    })
 }
 
 fn ctx_with(permit: &VenueStorage) -> WorkContext {
@@ -278,4 +238,88 @@ async fn an_unmatched_revoke_refuses_without_a_revoke_row() {
     assert!(events
         .iter()
         .all(|event| event.client_id == OPERATOR_CLIENT_ID));
+}
+
+// ── Attest rows re-arm entries without consuming anything ───────────────────
+
+fn attest_event(seq: i64, grant_id: &str, at_ms: i64) -> JournalEvent {
+    JournalEvent {
+        seq,
+        client_id: OPERATOR_CLIENT_ID.to_owned(),
+        kind: COMMAND_ATTEST_KIND.to_owned(),
+        detail: serde_json::json!({ "grant_id": grant_id }).to_string(),
+        at_ms,
+    }
+}
+
+#[test]
+fn attest_rows_fold_last_wins_and_consume_nothing() {
+    let first = attest_event(1, "g1", 1_000);
+    let second = attest_event(2, "g1", 2_000);
+    let folded = replay_attestation(&[first, second]).expect("attest rows fold");
+    assert_eq!(
+        folded,
+        DateTime::from_timestamp_millis(2_000).expect("valid instant"),
+        "last row wins"
+    );
+    assert!(
+        replay_attestation(&[]).is_none(),
+        "no rows means never attested"
+    );
+}
+
+#[tokio::test]
+async fn an_attest_row_journals_and_replays() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("journal.db");
+    let (journal, permit) = journal_at(&path);
+    let journal = Arc::new(journal);
+    let grants = GrantHandle::default();
+
+    scoped(permit.clone(), async {
+        let ctx = ctx_with(&permit);
+        unit(
+            &grants,
+            &journal,
+            CommandKind::ArmGrant {
+                grant: Box::new(grant("g1")),
+            },
+        )
+        .execute(&ctx)
+        .expect("arm executes");
+        // A wrong id refuses before journaling: attestation names its grant.
+        unit(
+            &grants,
+            &journal,
+            CommandKind::Attest {
+                grant_id: "nope".to_owned(),
+            },
+        )
+        .execute(&ctx)
+        .expect_err("a mismatched attest refuses");
+        unit(
+            &grants,
+            &journal,
+            CommandKind::Attest {
+                grant_id: "g1".to_owned(),
+            },
+        )
+        .execute(&ctx)
+        .expect("attest executes");
+    })
+    .await;
+
+    let events = events_of(&journal, &permit).await;
+    let attests: Vec<_> = events
+        .iter()
+        .filter(|event| event.kind == COMMAND_ATTEST_KIND)
+        .collect();
+    assert_eq!(attests.len(), 1, "only the matching attest journaled");
+    // The folded instant is the row's own time: replay carries authority.
+    let folded = replay_attestation(&events).expect("the attest row folds");
+    assert_eq!(
+        folded.timestamp_millis(),
+        attests[0].at_ms,
+        "replay carries the journaled instant"
+    );
 }

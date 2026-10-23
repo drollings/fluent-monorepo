@@ -40,6 +40,12 @@ pub enum KernelError {
     /// type mismatch, loop bound, unsupported node) instead of miscomputing.
     #[error("pine evaluation refused: {0}")]
     Eval(String),
+    /// Bisection exhausted its iteration cap without bracketing the price.
+    #[error("implied volatility did not converge after {tried} iterations")]
+    VolNotConverged {
+        /// Iterations attempted (the documented cap).
+        tried: u32,
+    },
 }
 
 impl From<GraphError> for KernelError {

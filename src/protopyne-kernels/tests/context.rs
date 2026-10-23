@@ -41,6 +41,15 @@ fn cursor_starts_at_first_closed_bar_and_advances() {
     assert_eq!(ctx.bars_series().at(2), None);
 }
 
+/// One cell identity for the store-level assertions below.
+fn cell(decl: u32) -> crate::vars::ScopeKey {
+    crate::vars::ScopeKey::new(
+        Some("local".to_owned()),
+        Vec::new(),
+        crate::vars::NodeId::new(decl),
+    )
+}
+
 #[test]
 fn two_concurrent_contexts_are_isolated() {
     let bars = three_bars();
@@ -48,7 +57,9 @@ fn two_concurrent_contexts_are_isolated() {
     let second = RunCtx::new(&bars, InputSet::new());
 
     first.advance();
-    first.vars_mut().set_var("trend", PineValue::Float(1.5));
+    first
+        .vars_mut()
+        .set_var(cell(1), "trend", PineValue::Float(1.5));
     first.draw(
         Drawing::new()
             .kind(DrawingKind::Label)
@@ -59,9 +70,9 @@ fn two_concurrent_contexts_are_isolated() {
     );
 
     assert_eq!(second.cursor(), 0);
-    assert_eq!(second.vars().get_var("trend"), None);
+    assert_eq!(second.vars().get_var(&cell(1)), None);
     assert!(second.drawings().is_empty());
-    assert_eq!(first.vars().get_var("trend"), Some(PineValue::Float(1.5)));
+    assert_eq!(first.vars().get_var(&cell(1)), Some(PineValue::Float(1.5)));
     assert_eq!(first.drawings().len(), 1);
 }
 
@@ -69,11 +80,11 @@ fn two_concurrent_contexts_are_isolated() {
 fn advance_resets_intrabar_state_only() {
     let bars = three_bars();
     let mut ctx = RunCtx::new(&bars, InputSet::new());
-    ctx.vars_mut().set_var("v", PineValue::Int(1));
-    ctx.vars_mut().set_varip("w", PineValue::Int(2));
+    ctx.vars_mut().set_var(cell(1), "v", PineValue::Int(1));
+    ctx.vars_mut().set_varip(cell(2), "w", PineValue::Int(2));
     ctx.advance();
-    assert_eq!(ctx.vars().get_var("v"), Some(PineValue::Int(1)));
-    assert_eq!(ctx.vars().get_varip("w"), None);
+    assert_eq!(ctx.vars().get_var(&cell(1)), Some(PineValue::Int(1)));
+    assert_eq!(ctx.vars().get_varip(&cell(2)), None);
 }
 
 #[test]

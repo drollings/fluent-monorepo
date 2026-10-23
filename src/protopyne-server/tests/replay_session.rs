@@ -1,13 +1,13 @@
 use super::*;
+use protopyne_strategy::fixtures::grant_with;
 use std::sync::Arc;
 
 use chrono::{TimeZone, Utc};
 use rust_decimal::Decimal;
 
 use protopyne_strategy::{
-    elements::ExplicitStructure, Direction, FixedSignal, Grant, GrantBudgets, GrantPermission,
-    GrantScope, PortfolioThresholds, RiskEngine, RiskLimits, SignalThresholds, Strategy,
-    StructureKind, TradeThresholds,
+    elements::ExplicitStructure, Direction, FixedSignal, Grant, RiskEngine, RiskLimits, Strategy,
+    StructureKind,
 };
 use protopyne_types::{Bar, Money};
 use protopyne_venue::{
@@ -52,57 +52,13 @@ fn risk() -> RiskEngine {
 }
 
 fn grant_for(structures: Vec<StructureKind>) -> Grant {
-    Grant::new()
-        .id("replay-test".to_owned())
-        .scope(
-            GrantScope::new()
-                .strategies(vec!["ribbon".to_owned()])
-                .underlyings(vec!["SPY".to_owned()])
-                .structures(structures)
-                .directions(vec![Direction::Long, Direction::Short])
-                .permissions(GrantPermission {
-                    entries: true,
-                    exits: true,
-                    rolls: false,
-                })
-                .build(),
-        )
-        .budgets(
-            GrantBudgets::new()
-                .max_trades(1_000)
-                .max_contracts(10_000)
-                .max_loss(money(1_000_000))
-                .max_notional(money(100_000_000))
-                .build(),
-        )
-        .signal(
-            SignalThresholds::new()
-                .min_conviction(0.0)
-                .min_activity_score(0.5)
-                .build(),
-        )
-        .trade(
-            TradeThresholds::new()
-                .max_loss_per_trade(money(1_000))
-                .max_spread_width(money(50))
-                .min_dte_days(1)
-                .max_dte_days(90)
-                .build(),
-        )
-        .portfolio(
-            PortfolioThresholds::new()
-                .max_open_risk(money(10_000_000))
-                .quote_max_age_secs(60)
-                .build(),
-        )
-        .breakers(
-            protopyne_strategy::BreakerLimits::new()
-                .max_consecutive_errors(3)
-                .build(),
-        )
-        .valid_from(Utc.with_ymd_and_hms(2025, 1, 1, 0, 0, 0).unwrap())
-        .valid_until(Utc.with_ymd_and_hms(2027, 1, 1, 0, 0, 0).unwrap())
-        .build()
+    // The shared fixture's shape; only the id, the structures under test, and
+    // the activity floor differ.
+    grant_with(|grant| {
+        grant.id = "replay-test".to_owned();
+        grant.scope.structures = structures;
+        grant.signal.min_activity_score = 0.5;
+    })
 }
 
 fn venue_config() -> BacktestConfig {

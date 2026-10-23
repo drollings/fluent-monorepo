@@ -25,6 +25,15 @@
 //! core's own number — and a caller that bypasses the painter still meets
 //! the same freshness gate inside [`GrantFormState::submit`].
 //!
+//! The tier text beside the editors is a *display* read, and it is gated: the
+//! painter refreshes at most once per
+//! [`DEFAULT_TIER_READ_INTERVAL_FRAMES`] frames (or sooner when the grant's
+//! content fingerprint changes), then paints how old the text is. A failed
+//! read keeps the last good text and adds an "unavailable" chip — the form
+//! never presents stale bytes as live. Paint code awaits nothing: this is a
+//! frame-count gate, not [`fluent_egui::RefreshGate`], whose `Limiter` is
+//! async and cannot be driven from a frame.
+//!
 //! Paint-edge direction holds: this module names the gateway abstraction
 //! only (pinned by the ledger tests), never the trading concretion, and
 //! money crosses only as validated decimal text — the decimal boundary
@@ -33,6 +42,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::{Display, Formatter};
 
+use common_core::hash::fingerprint_json;
 use fluent_egui::FieldKind;
 use protopyne_chart_model::DisplayOnly;
 use protopyne_view::{ArmResponse, GatewayError, TerminalGateway, WorstCase};
@@ -125,10 +135,18 @@ struct GrantTier {
     description: String,
 }
 
+/// Frames between grant-tier reads unless a content change forces one sooner.
+///
+/// A display read, so the interval trades freshness for bytes: half a second
+/// at sixty frames, and the painter prints the age it actually is. The form
+/// exposes [`GrantFormState::set_tier_interval`] for a host that wants a
+/// different cadence (a slow gateway, a headless harness).
+pub const DEFAULT_TIER_READ_INTERVAL_FRAMES: u64 = 30;
+
 /// The form: descriptor-derived tiers and leaves, per-leaf draft text, the
 /// live tier texts for display, the preview covering the drafts, and the
 /// last outcome for the painter to echo.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct GrantFormState {
     tiers: Vec<GrantTier>,
     fields: Vec<GrantFormField>,
@@ -140,6 +158,51 @@ pub struct GrantFormState {
     // not an ordered candidate walk.
     last_error: Option<String>,
     last_response: Option<ArmResponse>,
+    /// Outcome of the most recent attest click, for the painter to echo.
+    attest_note: Option<String>,
+    /// Refresh ticks: one per [`refresh_preview`](Self::refresh_preview) call,
+    /// which the painter makes once per painted frame while the form is open.
+    frame: u64,
+    /// Frames between tier reads unless a change forces one sooner.
+    tier_interval: u64,
+    /// Frame of the last tier read *attempt*, successful or not: the interval
+    /// is measured from here, so a failing gateway is not hammered per frame.
+    tier_attempt_frame: Option<u64>,
+    /// Frame of the last **successful** tier read: the age of the text on
+    /// display. `None` when nothing good has been read yet.
+    tier_read_frame: Option<u64>,
+    /// Fingerprint of the newest grant content this form knows about: the
+    /// last read's tier document, or a document a submit armed.
+    grant_fingerprint: Option<u64>,
+    /// The grant's content changed and no read has covered it yet: the next
+    /// frame reads immediately instead of waiting for the interval.
+    tier_change_pending: bool,
+    /// Why the most recent tier read failed, if it did. Cleared by the next
+    /// successful read.
+    tier_failure: Option<String>,
+}
+
+impl Default for GrantFormState {
+    fn default() -> Self {
+        Self {
+            tiers: Vec::new(),
+            fields: Vec::new(),
+            drafts: HashMap::new(),
+            tier_texts: BTreeMap::new(),
+            previewed: BTreeMap::new(),
+            preview: None,
+            last_error: None,
+            last_response: None,
+            attest_note: None,
+            frame: 0,
+            tier_interval: DEFAULT_TIER_READ_INTERVAL_FRAMES,
+            tier_attempt_frame: None,
+            tier_read_frame: None,
+            grant_fingerprint: None,
+            tier_change_pending: false,
+            tier_failure: None,
+        }
+    }
 }
 
 impl GrantFormState {
@@ -224,6 +287,7 @@ impl GrantFormState {
             preview: None,
             last_error: None,
             last_response: None,
+            ..Self::default()
         }
     }
 
@@ -272,6 +336,74 @@ impl GrantFormState {
         self.tier_texts.get(tier).map_or("", String::as_str)
     }
 
+    /// Frame of the last **successful** tier read (see the type's `frame`
+    /// note): the age of the text on display, `None` before the first good one.
+    #[must_use]
+    pub fn tier_read_frame(&self) -> Option<u64> {
+        self.tier_read_frame
+    }
+
+    /// Frames between tier reads; at least one, so the form never becomes a
+    /// per-frame read by accident.
+    #[must_use]
+    pub fn tier_interval(&self) -> u64 {
+        self.tier_interval
+    }
+
+    /// Set the tier-read interval in frames. Zero is clamped to one — "read
+    /// every frame" is expressible, "read negative" is not a thing.
+    pub fn set_tier_interval(&mut self, frames: u64) {
+        self.tier_interval = frames.max(1);
+    }
+
+    /// Declare what the grant now holds, so a change forces the next frame's
+    /// read instead of waiting out the interval: a successful arm passes the
+    /// document it sent, and any host that learns of an arm elsewhere passes
+    /// the grant content it saw. Content equal to what is already on display
+    /// (by [`fingerprint_json`]) forces nothing — a no-op never costs a read.
+    pub fn note_grant_content(&mut self, document: &impl serde::Serialize) {
+        let fingerprint = fingerprint_json(document);
+        if self.grant_fingerprint != Some(fingerprint) {
+            self.tier_change_pending = true;
+        }
+        self.grant_fingerprint = Some(fingerprint);
+    }
+
+    /// The staleness line painted beside the tiers: which frame the text on
+    /// display was read at, and how many frames ago that was. One home for the
+    /// sentence, so the painter and the pins cannot disagree about it.
+    #[must_use]
+    pub fn tier_age_line(&self) -> String {
+        match self.tier_read_frame {
+            Some(read) => format!(
+                "tiers as of frame {read} ({} frames old)",
+                self.frame.saturating_sub(read)
+            ),
+            None => "tiers not read yet".to_owned(),
+        }
+    }
+
+    /// The "unavailable" chip, when the most recent tier read failed: the text
+    /// on screen is the previous read's (or nothing at all), and saying so is
+    /// the whole point — a stale tier is never painted as live bytes.
+    #[must_use]
+    pub fn tier_unavailable_chip(&self) -> Option<String> {
+        let reason = self.tier_failure.as_deref()?;
+        Some(match self.tier_read_frame {
+            Some(_) => format!("unavailable — showing last good ({reason})"),
+            None => format!("unavailable — nothing read yet ({reason})"),
+        })
+    }
+
+    /// Whether this frame must read the tiers: a pending content change, or
+    /// the interval having elapsed since the last attempt.
+    fn tier_read_due(&self) -> bool {
+        self.tier_change_pending
+            || self
+                .tier_attempt_frame
+                .is_none_or(|attempt| self.frame.saturating_sub(attempt) >= self.tier_interval)
+    }
+
     /// The preview covering the drafts, when one ran: the core's computed
     /// worst case, or the reason it refused.
     #[must_use]
@@ -306,6 +438,39 @@ impl GrantFormState {
     #[must_use]
     pub fn last_response(&self) -> Option<&ArmResponse> {
         self.last_response.as_ref()
+    }
+
+    /// Outcome of the most recent attest click, if any, for the painter.
+    #[must_use]
+    pub fn attest_note(&self) -> Option<&str> {
+        self.attest_note.as_deref()
+    }
+
+    /// Re-attest the armed grant through the gateway, recording the outcome
+    /// for the painter. Refuses without an armed grant id rather than
+    /// attesting a name this form never armed.
+    pub fn attest(&mut self, gateway: &dyn TerminalGateway) -> Result<(), String> {
+        let Some(grant_id) = self
+            .last_response
+            .as_ref()
+            .map(|response| response.grant_id.clone())
+        else {
+            let note = "nothing armed to attest".to_owned();
+            self.attest_note = Some(note.clone());
+            return Err(note);
+        };
+        match GrantAction::attest(&grant_id).apply(gateway) {
+            Ok(()) => {
+                let note = format!("attested {grant_id}: entries re-arm for a cadence");
+                self.attest_note = Some(note);
+                Ok(())
+            }
+            Err(error) => {
+                let note = format!("attest refused: {error}");
+                self.attest_note = Some(note.clone());
+                Err(note)
+            }
+        }
     }
 
     /// Convert one drafted leaf to its JSON leg. Integers and numbers parse
@@ -420,16 +585,31 @@ impl GrantFormState {
     /// through the gateway. An unchanged patch keeps its preview (a repeat
     /// read re-renders, never re-asks); an empty patch clears it; a patch
     /// the leaves refuse records the local reason, so the painter shows why
-    /// there is nothing to confirm. Called once per frame from the painter:
-    /// the preview re-ask is change-gated, but the tier-text read is not —
-    /// callers on a slow gateway throttle the painter (e.g. through a
-    /// `RefreshGate`) rather than paying a round-trip per frame.
+    /// there is nothing to confirm.
+    ///
+    /// Called once per painted frame: the preview re-ask is change-gated, and
+    /// so is the tier-text read this frame — at most once per
+    /// [`tier_interval`](Self::tier_interval) frames, or immediately when
+    /// [`note_grant_content`](Self::note_grant_content) reports a change. A
+    /// failed read keeps the previous texts, clears any pending change (a
+    /// failing gateway must not be re-asked every frame) and records the
+    /// reason for [`tier_unavailable_chip`](Self::tier_unavailable_chip): a
+    /// transport failure is display-stale, never an empty grant, and an empty
+    /// grant still reads as empty only when the gateway says so.
     pub fn refresh_preview(&mut self, gateway: &dyn TerminalGateway) {
-        // A failed tier read keeps the previous texts: a transport failure
-        // is display-stale, never an empty grant, and an empty grant still
-        // reads as empty only when the gateway says so.
-        if let Ok(tiers) = gateway.grant_tiers() {
-            self.tier_texts = tiers;
+        self.frame = self.frame.saturating_add(1);
+        if self.tier_read_due() {
+            self.tier_attempt_frame = Some(self.frame);
+            match gateway.grant_tiers() {
+                Ok(tiers) => {
+                    self.tier_texts = tiers;
+                    self.grant_fingerprint = Some(fingerprint_json(&self.tier_texts));
+                    self.tier_read_frame = Some(self.frame);
+                    self.tier_failure = None;
+                }
+                Err(error) => self.tier_failure = Some(error.to_string()),
+            }
+            self.tier_change_pending = false;
         }
         let tiers = match self.assemble_tiers() {
             Ok(tiers) => tiers,
@@ -471,9 +651,14 @@ impl GrantFormState {
         if !matches!(&self.preview, Some(Ok(_))) || self.previewed != tiers {
             return Err(self.record(GrantFormError::PreviewStale));
         }
-        match gateway.arm(Self::envelope(&tiers)) {
+        let envelope = Self::envelope(&tiers);
+        match gateway.arm(envelope.clone()) {
             Ok(response) => {
                 self.last_response = Some(response.clone());
+                // The armed document is the grant's newest content, and the
+                // tiers on screen describe the grant it replaced: the next
+                // frame reads them again instead of waiting out the interval.
+                self.note_grant_content(&envelope);
                 Ok(response)
             }
             Err(error) => Err(self.record(GrantFormError::Gateway(error))),
@@ -481,6 +666,35 @@ impl GrantFormState {
     }
 }
 
+/// One operator grant action: re-attest the live grant.
+///
+/// The action carries only the id; applying it invokes exactly one gateway
+/// verb, so a rendered click can never fan out into a second write.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GrantAction {
+    /// Re-attest the live grant for another cadence.
+    Attest {
+        /// Grant to attest.
+        grant_id: String,
+    },
+}
+
+impl GrantAction {
+    /// An attest click for `grant_id`.
+    #[must_use]
+    pub fn attest(grant_id: &str) -> Self {
+        Self::Attest {
+            grant_id: grant_id.to_owned(),
+        }
+    }
+
+    /// Invoke the one gateway verb this action names.
+    pub fn apply(&self, gateway: &dyn TerminalGateway) -> Result<(), GatewayError> {
+        match self {
+            Self::Attest { grant_id } => gateway.attest_grant(grant_id),
+        }
+    }
+}
 /// Thin painter over the form state: one typed editor per descriptor leaf
 /// grouped under its tier, the live tier text as its hover, the previewed
 /// worst case, and a submit button that stays unactionable until a
@@ -495,6 +709,12 @@ pub fn paint_grant_form(
 ) {
     ui.heading("Arm grant (tighten only)");
     form.refresh_preview(gateway);
+    // The read is gated, so the text has an age: print it, and never let a
+    // failed refresh read as live bytes.
+    ui.label(form.tier_age_line());
+    if let Some(chip) = form.tier_unavailable_chip() {
+        ui.colored_label(egui::Color32::YELLOW, chip);
+    }
     let mut current_tier = String::new();
     for field in form.fields().to_vec() {
         if field.tier != current_tier {
@@ -562,6 +782,12 @@ pub fn paint_grant_form(
             response.worst_case.max_loss,
             response.worst_case.max_notional
         ));
+    }
+    if form.last_response().is_some() && ui.button("attest grant").clicked() {
+        let _ = form.attest(gateway);
+    }
+    if let Some(note) = form.attest_note() {
+        ui.label(note.to_owned());
     }
 }
 

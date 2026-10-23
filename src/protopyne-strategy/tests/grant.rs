@@ -34,53 +34,24 @@ fn proposal() -> Proposal {
 }
 
 fn grant() -> Grant {
-    Grant::new()
-        .id("g1".to_owned())
-        .scope(
-            GrantScope::new()
-                .strategies(vec!["ribbon".to_owned()])
-                .underlyings(vec!["SPY".to_owned()])
-                .structures(vec![StructureKind::Vertical, StructureKind::NakedShort])
-                .directions(vec![Direction::Long, Direction::Short])
-                .permissions(GrantPermission {
-                    entries: true,
-                    exits: true,
-                    rolls: false,
-                })
-                .build(),
-        )
-        .budgets(
-            GrantBudgets::new()
-                .max_trades(10)
-                .max_contracts(100)
-                .max_loss(money(5_000))
-                .max_notional(money(100_000))
-                .build(),
-        )
-        .signal(
-            SignalThresholds::new()
-                .min_conviction(0.5)
-                .min_activity_score(0.5)
-                .build(),
-        )
-        .trade(
-            TradeThresholds::new()
-                .max_loss_per_trade(money(1_000))
-                .max_spread_width(money(50))
-                .min_dte_days(7)
-                .max_dte_days(60)
-                .build(),
-        )
-        .portfolio(
-            PortfolioThresholds::new()
-                .max_open_risk(money(10_000))
-                .quote_max_age_secs(60)
-                .build(),
-        )
-        .breakers(BreakerLimits::new().max_consecutive_errors(3).build())
-        .valid_from(Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap())
-        .valid_until(Utc.with_ymd_and_hms(2027, 1, 1, 0, 0, 0).unwrap())
-        .build()
+    // The shared fixture's shape with the deny suite's tiers: the thresholds
+    // these assertions sit just inside or outside of.
+    crate::fixtures::grant_with(|grant| {
+        grant.id = "g1".to_owned();
+        grant.scope.structures = vec![StructureKind::Vertical, StructureKind::NakedShort];
+        grant.budgets = GrantBudgets::new()
+            .max_trades(10)
+            .max_contracts(100)
+            .max_loss(money(5_000))
+            .max_notional(money(100_000))
+            .build();
+        grant.signal.min_conviction = 0.5;
+        grant.signal.min_activity_score = 0.5;
+        grant.trade.min_dte_days = 7;
+        grant.trade.max_dte_days = 60;
+        grant.portfolio.max_open_risk = money(10_000);
+        grant.valid_from = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
+    })
 }
 
 fn context() -> (GrantUsage, GrantMarket, BreakerState) {
@@ -771,7 +742,10 @@ fn leaf_descriptors_name_their_fields() {
         live.portfolio.field_names(),
         &["max_open_risk", "quote_max_age_secs"]
     );
-    assert_eq!(live.breakers.field_names(), &["max_consecutive_errors"]);
+    assert_eq!(
+        live.breakers.field_names(),
+        &["max_consecutive_errors", "max_portfolio_drawdown_fraction"]
+    );
     assert_eq!(permissions().field_names(), &["entries", "exits", "rolls"]);
     assert_eq!(
         live.scope.field_names(),
@@ -1214,4 +1188,244 @@ fn chain_quote(contract: OptionContract, price: &str) -> ChainQuote {
         .ask(price.parse().expect("ask"))
         .timestamp(Utc.with_ymd_and_hms(2026, 7, 1, 14, 30, 0).unwrap())
         .build()
+}
+
+// ── Drawdown-cap validation and tightening ─────────────────────────────────
+
+#[test]
+fn arming_refuses_a_drawdown_cap_outside_zero_to_one() {
+    for cap in [0.0, -0.1, 1.5, f64::NAN, f64::INFINITY] {
+        let mut armed = grant();
+        armed.breakers.max_portfolio_drawdown_fraction = Some(cap);
+        assert!(
+            armed.validate().is_err(),
+            "cap {cap} must not arm: it can never be a threshold"
+        );
+    }
+    for cap in [None, Some(0.05), Some(1.0)] {
+        let mut armed = grant();
+        armed.breakers.max_portfolio_drawdown_fraction = cap;
+        assert!(
+            armed.validate().is_ok(),
+            "cap {cap:?} must arm: unset or within (0, 1]"
+        );
+    }
+}
+
+#[test]
+fn tightening_a_drawdown_cap_only_moves_down() {
+    let mut capped = grant();
+    capped.breakers.max_portfolio_drawdown_fraction = Some(0.10);
+    // Lowering the cap (tripping sooner) is tighter — allowed.
+    let mut lower = capped.clone();
+    lower.breakers.max_portfolio_drawdown_fraction = Some(0.05);
+    assert!(lower.tightens(&capped));
+    lower
+        .tighten(
+            GrantPatch::new()
+                .breakers(BreakerLimits {
+                    max_portfolio_drawdown_fraction: Some(0.05),
+                    ..capped.breakers
+                })
+                .build(),
+        )
+        .expect("lowering the drawdown cap is a tightening");
+    // Raising the cap, or dropping it, is looser — refused.
+    let mut higher = capped.clone();
+    higher.breakers.max_portfolio_drawdown_fraction = Some(0.20);
+    assert!(!higher.tightens(&capped));
+    assert!(
+        capped
+            .tighten(
+                GrantPatch::new()
+                    .breakers(BreakerLimits {
+                        max_portfolio_drawdown_fraction: Some(0.20),
+                        ..capped.breakers
+                    })
+                    .build(),
+            )
+            .is_err(),
+        "raising the drawdown cap must need a new grant"
+    );
+    let mut dropped = capped.clone();
+    dropped.breakers.max_portfolio_drawdown_fraction = None;
+    assert!(!dropped.tightens(&capped));
+    // Setting the first cap on an uncapped grant is tighter — allowed.
+    let mut fresh = grant();
+    assert!(capped.tightens(&fresh));
+    fresh.breakers.max_portfolio_drawdown_fraction = Some(0.10);
+    assert!(fresh.tightens(&grant()));
+}
+
+// ── Re-attestation: the operator's authority lapses, not the trade ─────────
+
+use std::time::Duration;
+
+fn attested_grant(cadence_secs: u64, grace_secs: u64) -> Grant {
+    crate::fixtures::grant_with(|grant| {
+        grant.id = "attested-grant".to_owned();
+        grant.re_attestation = Some(ReAttestationWindow {
+            cadence: Duration::from_secs(cadence_secs),
+            grace: Duration::from_secs(grace_secs),
+        });
+    })
+}
+
+fn usage_attested_at(at: chrono::DateTime<Utc>) -> GrantUsage {
+    let mut usage = GrantUsage::new().build();
+    usage.last_attested = Some(at);
+    usage
+}
+
+fn entry() -> Proposal {
+    proposal()
+}
+
+fn exit_of(entry: &Proposal) -> Proposal {
+    let mut exit = entry.clone();
+    exit.side = ProposalSide::Exit;
+    exit
+}
+
+// Control: no window, no check — even an ancient attestation passes.
+#[test]
+fn no_window_means_no_attestation_check_ever() {
+    let (usage, market, breakers) = context();
+    let mut stale = usage;
+    stale.last_attested = Some(Utc.with_ymd_and_hms(2020, 1, 1, 0, 0, 0).unwrap());
+    assert!(
+        evaluate_grant(&entry(), &grant(), &stale, &market, &breakers, now()).is_allow(),
+        "without a window there is no attestation to lapse"
+    );
+}
+
+// Control: attested within cadence + grace ⇒ entries allowed.
+#[test]
+fn attested_within_cadence_allows_entries() {
+    let (_, market, breakers) = context();
+    let at = now() - chrono::Duration::hours(1);
+    let usage = usage_attested_at(at);
+    assert!(
+        evaluate_grant(
+            &entry(),
+            &attested_grant(24 * 3600, 3600),
+            &usage,
+            &market,
+            &breakers,
+            now()
+        )
+        .is_allow(),
+        "an hour-old attestation is inside a daily cadence"
+    );
+}
+
+// Trigger: one instant past cadence + grace ⇒ entries denied; exits allowed.
+#[test]
+fn one_instant_past_cadence_plus_grace_denies_entries_not_exits() {
+    let (_, market, breakers) = context();
+    // Cadence 24 h + grace 1 h = 25 h; attested 25 h and one second ago.
+    let at = now() - chrono::Duration::seconds(25 * 3600 + 1);
+    let usage = usage_attested_at(at);
+    let grant = attested_grant(24 * 3600, 3600);
+    let reasons = deny_reasons(evaluate_grant(
+        &entry(),
+        &grant,
+        &usage,
+        &market,
+        &breakers,
+        now(),
+    ));
+    assert!(
+        reasons.iter().any(|reason| reason.contains("attestation")),
+        "a lapsed attestation denies with its own reason: {reasons:?}"
+    );
+    let exit = exit_of(&entry());
+    assert!(
+        evaluate_grant(&exit, &grant, &usage, &market, &breakers, now()).is_allow(),
+        "exits route even when entries disarm — positions stay manageable"
+    );
+}
+
+// Calibration: longer windows get tighter (or equal) re-attestation.
+#[test]
+fn window_lengths_map_to_exactly_one_monotone_cadence() {
+    use std::time::Duration;
+    // Boundaries and midpoints: nothing unmapped, nothing mapped twice.
+    let windows = [
+        Duration::ZERO,
+        Duration::from_hours(1),
+        Duration::from_secs(3601),
+        Duration::from_hours(24),
+        Duration::from_hours(24) + Duration::from_secs(1),
+        Duration::from_hours(72),
+        Duration::from_hours(72) + Duration::from_secs(1),
+        Duration::from_hours(24) * 30,
+    ];
+    let mut last_tightness: Option<Duration> = None;
+    for window in windows {
+        let mapped = re_attestation_for_window(window);
+        // Exactly one mapping per window length (None counts as mapped).
+        let tightness = mapped.map(|w| w.cadence.saturating_add(w.grace));
+        if let (Some(previous), Some(current)) = (last_tightness, tightness) {
+            assert!(
+                current <= previous,
+                "a longer window must not loosen re-attestation: {window:?} maps looser than before"
+            );
+        }
+        if tightness.is_some() {
+            last_tightness = tightness;
+        } else {
+            // None is the loosest possible mapping: it may only lead.
+            assert!(
+                last_tightness.is_none(),
+                "an unattested window after an attested one breaks monotonicity: {window:?}"
+            );
+        }
+    }
+    // The documented table corners.
+    assert_eq!(re_attestation_for_window(Duration::from_hours(1)), None);
+    assert_eq!(re_attestation_for_window(Duration::from_hours(24)), None);
+    assert_eq!(
+        re_attestation_for_window(Duration::from_hours(72)),
+        Some(ReAttestationWindow {
+            cadence: Duration::from_hours(24),
+            grace: Duration::from_hours(1),
+        })
+    );
+    assert_eq!(
+        re_attestation_for_window(Duration::from_hours(72) + Duration::from_secs(1)),
+        Some(ReAttestationWindow {
+            cadence: Duration::from_hours(24),
+            grace: Duration::ZERO,
+        })
+    );
+}
+
+#[test]
+fn tightening_an_attestation_window_only_moves_down() {
+    use std::time::Duration;
+    let mut capped = grant();
+    capped.re_attestation = Some(ReAttestationWindow {
+        cadence: Duration::from_hours(24),
+        grace: Duration::from_hours(1),
+    });
+    // Shortening the cadence (tripping sooner) is tighter — allowed.
+    let mut lower = capped.clone();
+    lower.re_attestation = Some(ReAttestationWindow {
+        cadence: Duration::from_hours(12),
+        grace: Duration::from_hours(1),
+    });
+    assert!(lower.tightens(&capped));
+    // Raising the cadence, or dropping the window, is looser — refused.
+    let mut higher = capped.clone();
+    higher.re_attestation = Some(ReAttestationWindow {
+        cadence: Duration::from_hours(48),
+        grace: Duration::from_hours(1),
+    });
+    assert!(!higher.tightens(&capped));
+    let mut dropped = capped.clone();
+    dropped.re_attestation = None;
+    assert!(!dropped.tightens(&capped));
+    // Setting the first window on an unattested grant is tighter — allowed.
+    assert!(capped.tightens(&grant()));
 }

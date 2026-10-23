@@ -51,7 +51,7 @@ use crate::{
     PineEngine, PineRuntimeConfig,
 };
 use chrono::TimeZone as _;
-use protopyne_types::Bar;
+use protopyne_types::{Bar, EpochMs};
 
 /// Frozen agreement tolerance shared with the kernel-vs-Pine matrix.
 const EPS: f64 = 1e-9;
@@ -392,10 +392,10 @@ const LINKED_ROWS: &[&str] = &[
 ];
 
 #[test]
-fn freeze_match_rows_carry_probes() {
+fn freeze_inspected_rows_carry_probes() {
     let mut probeless = Vec::new();
     for row in EGUI_PARITY {
-        if row.verdict != ParityVerdict::Match {
+        if row.verdict != ParityVerdict::MatchByInspection {
             continue;
         }
         if row.probe.is_none() {
@@ -404,7 +404,7 @@ fn freeze_match_rows_carry_probes() {
     }
     assert_eq!(
         probeless, LINKED_ROWS,
-        "every Match row carries a probe except the linked rows"
+        "every inspected row carries a probe except the linked rows"
     );
 }
 
@@ -423,11 +423,15 @@ fn freeze_correct_rows_carry_probes() {
 }
 
 #[test]
-fn freeze_match_ta_bridge_agrees_with_kernels() {
+fn freeze_inspected_ta_bridge_agrees_with_kernels() {
     assert_eq!(TA_PROBES.len(), 38, "one probe per bridged method");
     for (construct, probe) in TA_PROBES {
         let row = parity_for(construct).expect("bridged row known");
-        assert_eq!(row.verdict, ParityVerdict::Match, "{construct} stands");
+        assert_eq!(
+            row.verdict,
+            ParityVerdict::MatchByInspection,
+            "{construct} stands"
+        );
         assert_eq!(
             row.probe,
             Some(*probe),
@@ -576,7 +580,11 @@ const SCALAR_PINS: &[(&str, &str, Pin)] = &[
 fn freeze_match_scalars_pin_values() {
     for (construct, var, pin) in SCALAR_PINS {
         let row = parity_for(construct).expect("scalar row known");
-        assert_eq!(row.verdict, ParityVerdict::Match, "{construct} stands");
+        assert_eq!(
+            row.verdict,
+            ParityVerdict::MatchByInspection,
+            "{construct} stands"
+        );
         let probe = row.probe.expect("scalar row carries a probe");
         let outcome = run_probe(probe).expect("scalar probe runs");
         assert_pin(&outcome, var, *pin, construct);
@@ -599,7 +607,11 @@ fn freeze_match_captures_recorded() {
         "line.new",
     ] {
         let row = parity_for(construct).expect("capture row known");
-        assert_eq!(row.verdict, ParityVerdict::Match, "{construct} stands");
+        assert_eq!(
+            row.verdict,
+            ParityVerdict::MatchByInspection,
+            "{construct} stands"
+        );
         let probe = row.probe.expect("capture row carries a probe");
         let outcome = run_probe(probe).expect("capture probe runs");
         let bars = outcome.snapshots.len();
@@ -660,7 +672,7 @@ fn freeze_match_captures_recorded() {
 fn freeze_match_input_handles() {
     // `input.enum` answers the declared member as an opaque handle.
     let row = parity_for("input.enum").expect("enum row known");
-    assert_eq!(row.verdict, ParityVerdict::Match, "enum stands");
+    assert_eq!(row.verdict, ParityVerdict::MatchByInspection, "enum stands");
     let outcome = run_probe(row.probe.expect("enum carries a probe")).expect("enum runs");
     let at = outcome.snapshots.len() - 1;
     assert_eq!(
@@ -672,7 +684,11 @@ fn freeze_match_input_handles() {
     );
     // `input.color` answers an opaque color handle.
     let row = parity_for("input.color").expect("color row known");
-    assert_eq!(row.verdict, ParityVerdict::Match, "color stands");
+    assert_eq!(
+        row.verdict,
+        ParityVerdict::MatchByInspection,
+        "color stands"
+    );
     let outcome = run_probe(row.probe.expect("color carries a probe")).expect("color runs");
     let at = outcome.snapshots.len() - 1;
     assert!(
@@ -717,7 +733,8 @@ fn freeze_match_array_basics() {
     for (construct, var, pin) in ARRAY_PINS {
         let row = parity_for(construct).expect("array row known");
         assert!(
-            row.verdict == ParityVerdict::Match || row.verdict == ParityVerdict::Correct,
+            row.verdict == ParityVerdict::MatchByInspection
+                || row.verdict == ParityVerdict::Correct,
             "{construct} stands as Match or Correct"
         );
         let probe = row.probe.expect("array row carries a probe");
@@ -943,11 +960,11 @@ fn freeze_tally_full_accept_full_refuse() {
     let mut refuse_names = Vec::new();
     for row in EGUI_PARITY {
         match row.verdict {
-            ParityVerdict::Match => {
+            ParityVerdict::Match | ParityVerdict::MatchByInspection => {
                 let Some(probe) = row.probe else {
                     assert!(
                         LINKED_ROWS.contains(&row.construct),
-                        "unprobed Match row is declared linked"
+                        "unprobed inspected row is declared linked"
                     );
                     continue;
                 };
@@ -1093,7 +1110,11 @@ fn freeze_imported_rows_run_linked() {
 #[test]
 fn freeze_lower_tf_serves_injected_columns() {
     let row = parity_for("request.security_lower_tf (injected)").expect("lower-tf row known");
-    assert_eq!(row.verdict, ParityVerdict::Match, "lower-tf stands");
+    assert_eq!(
+        row.verdict,
+        ParityVerdict::MatchByInspection,
+        "lower-tf stands"
+    );
     let program = parse_program(
         "x = request.security_lower_tf(\"SYM\", \"5\", [close], calc_bars_count = 3)",
     )
@@ -1104,7 +1125,11 @@ fn freeze_lower_tf_serves_injected_columns() {
             "SYM",
             "5",
             LtfDataset {
-                times: vec![1, 2, 3, 4, 5],
+                times: vec![1, 2, 3, 4, 5].into_iter().map(EpochMs::from).collect(),
+                closes_at: vec![2, 3, 4, 5, 6]
+                    .into_iter()
+                    .map(|close| Some(EpochMs::from(close)))
+                    .collect(),
                 opens: vec![1.0; 5],
                 highs: vec![1.0; 5],
                 lows: vec![1.0; 5],
@@ -1145,10 +1170,17 @@ fn freeze_lower_tf_serves_injected_columns() {
 #[test]
 fn freeze_security_serves_injected_bars() {
     // The injected `request.security` row serves confirmed bars from the
-    // registered pair: a two-row daily dataset preceding the whole chart
-    // reads its last confirmed close on every bar.
+    // registered pair: a two-row daily dataset whose buckets all close before
+    // the chart opens reads its last confirmed close on every bar. The rows
+    // start one day before the chart window for exactly that reason — a bucket
+    // still forming during the chart is not yet visible, so it could not be
+    // served here.
     let row = parity_for("request.security (injected)").expect("security row known");
-    assert_eq!(row.verdict, ParityVerdict::Match, "security stands");
+    assert_eq!(
+        row.verdict,
+        ParityVerdict::MatchByInspection,
+        "security stands"
+    );
     let program = parse_program(
         "x = request.security(\"SYM\", \"D\", close, barmerge.gaps_off, barmerge.lookahead_off)",
     )
@@ -1159,7 +1191,17 @@ fn freeze_security_serves_injected_bars() {
             "SYM",
             "D",
             LtfDataset {
-                times: vec![1_699_848_000_000, 1_699_934_400_000],
+                times: vec![1_699_761_600_000_i64, 1_699_848_000_000]
+                    .into_iter()
+                    .map(EpochMs::from)
+                    .collect(),
+                closes_at: vec![
+                    1_699_761_600_000_i64 + 86_400_000,
+                    1_699_848_000_000 + 86_400_000,
+                ]
+                .into_iter()
+                .map(|close| Some(EpochMs::from(close)))
+                .collect(),
                 opens: vec![89.0, 90.0],
                 highs: vec![92.0, 93.0],
                 lows: vec![88.0, 89.0],
@@ -1179,7 +1221,11 @@ fn freeze_primitive_head_runs_linked() {
     // A method whose head parameter is a primitive binds as a plain
     // namespaced function: no receiver slot, no object needed.
     let row = parity_for("primitive-head method call").expect("primitive row known");
-    assert_eq!(row.verdict, ParityVerdict::Match, "primitive-head stands");
+    assert_eq!(
+        row.verdict,
+        ParityVerdict::MatchByInspection,
+        "primitive-head stands"
+    );
     let library = synthetic_module(
         "test",
         "Prim",
@@ -1205,7 +1251,11 @@ fn freeze_match_color_cast() {
     // absence stays absence; `color.new` with an absent transparency
     // propagates absence instead of refusing.
     let row = parity_for("color() identity cast").expect("color row known");
-    assert_eq!(row.verdict, ParityVerdict::Match, "color stands");
+    assert_eq!(
+        row.verdict,
+        ParityVerdict::MatchByInspection,
+        "color stands"
+    );
     let outcome = run_probe(row.probe.expect("color carries a probe")).expect("color runs");
     let at = outcome.snapshots.len() - 1;
     assert!(
@@ -1217,7 +1267,11 @@ fn freeze_match_color_cast() {
     );
     assert_absent(&outcome, "gone", "color() identity cast");
     let row = parity_for("color.new with na transparency").expect("new row known");
-    assert_eq!(row.verdict, ParityVerdict::Match, "color.new stands");
+    assert_eq!(
+        row.verdict,
+        ParityVerdict::MatchByInspection,
+        "color.new stands"
+    );
     let outcome = run_probe(row.probe.expect("new carries a probe")).expect("runs");
     assert_absent(&outcome, "x", "color.new with na transparency");
 }
@@ -1227,7 +1281,11 @@ fn freeze_match_plot_variable_pairing() {
     // Variables bound from `plot()` calls pair through their recorded
     // site tags: the same captures as the inline form, titles included.
     let row = parity_for("plot variable site tag").expect("plot-var row known");
-    assert_eq!(row.verdict, ParityVerdict::Match, "plot-var stands");
+    assert_eq!(
+        row.verdict,
+        ParityVerdict::MatchByInspection,
+        "plot-var stands"
+    );
     let outcome = run_probe(row.probe.expect("plot-var carries a probe")).expect("runs");
     assert_eq!(outcome.plots.len(), 2, "both plots capture");
     assert_eq!(outcome.fills.len(), 1, "one fill per call site");
@@ -1241,7 +1299,11 @@ fn freeze_match_gradient_fill() {
     // The six-positional gradient overload spans the same two plots while
     // the capture keeps the call title and both leg titles.
     let row = parity_for("gradient fill (six-positional)").expect("gradient row known");
-    assert_eq!(row.verdict, ParityVerdict::Match, "gradient stands");
+    assert_eq!(
+        row.verdict,
+        ParityVerdict::MatchByInspection,
+        "gradient stands"
+    );
     let outcome = run_probe(row.probe.expect("gradient carries a probe")).expect("runs");
     assert_eq!(outcome.fills.len(), 1, "one fill per call site");
     let fill = &outcome.fills[0];
@@ -1255,7 +1317,11 @@ fn freeze_match_alertcondition_records_nothing() {
     // `alertcondition()` evaluates its condition and records nothing:
     // alerts cannot fire headlessly, and no capture vector grows.
     let row = parity_for("alertcondition()").expect("alert row known");
-    assert_eq!(row.verdict, ParityVerdict::Match, "alertcondition stands");
+    assert_eq!(
+        row.verdict,
+        ParityVerdict::MatchByInspection,
+        "alertcondition stands"
+    );
     let outcome = run_probe(row.probe.expect("alert carries a probe")).expect("runs");
     assert!(outcome.plots.is_empty(), "no plots recorded");
     assert!(outcome.plotshapes.is_empty(), "no shapes recorded");

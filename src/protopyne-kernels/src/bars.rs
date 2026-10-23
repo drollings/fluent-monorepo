@@ -2409,21 +2409,64 @@ pub(crate) fn bucket_bar_ranges(
     bars: &[ClosedBar],
     target_ms: i64,
 ) -> Result<Vec<(i64, usize, usize)>, KernelError> {
-    if target_ms <= 0 {
+    let times: Vec<i64> = bars.iter().map(|bar| bar.ts_ms).collect();
+    bucket_ranges_of(&times, target_ms)
+}
+
+/// The one bucketing rule, over bare millisecond stamps: callers that hold
+/// columns rather than [`ClosedBar`]s bucket here instead of re-deriving the
+/// floor. Returns `(bucket index, first row, last row)` exactly as
+/// [`bucket_bar_ranges`] does.
+pub(crate) fn bucket_ranges_of(
+    times: &[i64],
+    span_ms: i64,
+) -> Result<Vec<(i64, usize, usize)>, KernelError> {
+    if span_ms <= 0 {
         return Err(KernelError::InvalidInput(format!(
-            "projection span must be positive, got {target_ms}"
+            "projection span must be positive, got {span_ms}"
         )));
     }
-    let grid = std::num::NonZeroI64::new(target_ms).expect("positive span checked");
+    let grid = std::num::NonZeroI64::new(span_ms).expect("positive span checked");
     let mut buckets: BTreeMap<i64, (usize, usize)> = BTreeMap::new();
-    for (at, bar) in bars.iter().enumerate() {
-        let idx = floor_to_grid(bar.ts_ms, grid).div_euclid(target_ms);
+    for (at, ts) in times.iter().enumerate() {
+        let idx = floor_to_grid(*ts, grid).div_euclid(span_ms);
         buckets.entry(idx).or_insert((at, at)).1 = at;
     }
     Ok(buckets
         .into_iter()
         .map(|(idx, (first, last))| (idx, first, last))
         .collect())
+}
+
+/// Close instant of each row's bucket at `span_ms`: the end of the bucket's
+/// own span, pulled back to the exchange session close when the span would
+/// cross one.
+///
+/// A bucket that stays inside a session closes after its own span; the final
+/// bucket of a session closes at the bell; and a daily bucket stamped at UTC
+/// midnight closes at that trading day's bell rather than at the next bucket's
+/// open. Weekend gaps and daylight transitions are the calendar's business, so
+/// no duration is assumed here. A row whose bucket cannot be bucketed — an
+/// unusable span — reports [`None`], which no visibility predicate may treat as
+/// confirmed.
+#[cfg(feature = "pine")]
+pub(crate) fn bucket_closes(times: &[i64], span_ms: i64) -> Vec<Option<i64>> {
+    let calendar = SessionCalendar::us_equities();
+    let mut out = vec![None; times.len()];
+    let Ok(ranges) = bucket_ranges_of(times, span_ms) else {
+        return out;
+    };
+    for (idx, first, last) in ranges {
+        let open = idx.saturating_mul(span_ms);
+        let span_end = open.saturating_add(span_ms);
+        let close = calendar
+            .next_close_after(open, span_ms)
+            .map_or(span_end, |bell| bell.min(span_end));
+        for slot in &mut out[first..=last] {
+            *slot = Some(close);
+        }
+    }
+    out
 }
 
 /// Finalize one bucket range into its closed bar: first open, high/low
@@ -2709,7 +2752,7 @@ impl fluent_wvr::validate::Validate for BarsHistory {
 // The wall-clock predicate lives in the foundation crate so chart-model
 // session providers delegate to the same clock instead of copying its
 // daylight math; this re-export keeps every existing `bars::` path working.
-pub use protopyne_types::{et_offset_ms, is_dst_et, TradingSession};
+pub use protopyne_types::{et_offset_ms, is_dst_et, SessionCalendar, TradingSession};
 
 #[cfg(test)]
 #[path = "../tests/bars.rs"]

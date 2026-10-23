@@ -527,6 +527,56 @@ fn compute_truth_is_reused_never_forked() {
     forbid_in_src("struct ThemeConfig", "the theme lives in the scaffolding");
 }
 
+/// Venue-owned order and ticket types the terminal must never name: the
+/// paint edge fills a neutral `TicketDraft`, and the core maps it to an intent.
+/// Mirrors `fluent-egui/tests/budget.rs`, which denies `OrderIntent` to the
+/// scaffolding edge for the same reason — one paint edge is not enough.
+const TICKET_TYPES_DENIED: &[(&str, &str)] = &[
+    (
+        "OrderIntent",
+        "venue — the core builds it from a TicketDraft",
+    ),
+    ("ManualTicket", "venue — the core journals it"),
+    ("TicketTracker", "venue — the core owns the waiting set"),
+    (
+        "OrderSide",
+        "venue — the draft's TicketSide is the neutral tag",
+    ),
+    ("client_id_for", "venue — the core mints ticket identity"),
+];
+
+#[test]
+fn the_terminal_names_no_venue_order_or_ticket_types() {
+    let mut hits = Vec::new();
+    for name in src_file_names() {
+        let text = read_src(&name);
+        for (token, owner) in TICKET_TYPES_DENIED {
+            for line in lines_naming(&text, token) {
+                hits.push(format!("{name} names {token} (belongs to {owner}): {line}"));
+            }
+        }
+    }
+    assert!(
+        hits.is_empty(),
+        "the intent schema stays core-side; the terminal fills a TicketDraft. Offenders: {hits:?}"
+    );
+}
+
+#[test]
+fn the_terminal_never_authors_money_or_quantities() {
+    // The core owns every economic value a replay books: the terminal reads
+    // them through the gateway and parses the core's own decimal text, so a
+    // constructed `Money` or `Qty` here would be a second authority. Values
+    // still *flow* (typed fields, parses); only construction is forbidden —
+    // the rule the `Decimal::` fence could not see.
+    for token in ["Money::", "Qty::"] {
+        forbid_in_src(
+            token,
+            "money and quantity are read from the core, never minted at the paint edge",
+        );
+    }
+}
+
 #[test]
 fn display_floats_never_parse_back_into_money() {
     for token in ["rust_decimal", "Decimal::", "parse::<Decimal>", "Decimal>"] {

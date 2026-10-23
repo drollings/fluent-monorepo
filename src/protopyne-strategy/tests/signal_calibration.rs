@@ -364,3 +364,48 @@ fn the_threshold_fingerprint_matches_the_golden() {
         "a threshold changed without re-freezing the tally"
     );
 }
+
+// ── Realised volatility: measured by the signal, through a kernel ──────────
+
+/// The signal reports realised σ from the registered `stddev` kernel over the
+/// tape's own returns: a real measurement, in the same per-bar unit the
+/// volatility sizer compares against its target.
+#[test]
+fn a_kernel_signal_reports_realised_volatility_from_its_registry() {
+    let closes = trend_closes(80);
+    let tape = bars(&closes);
+    let signal = KernelSignal::new(
+        vec![SeriesRef::indicator(
+            "sma",
+            length_params(5),
+            PriceSource::Close,
+        )],
+        DirectionRule::Above {
+            line: 0,
+            level: 0.0,
+            polarity: Polarity::Momentum,
+        },
+    )
+    .expect("sma is registered");
+    let output = evaluate_last(&signal, &tape, &closes);
+    let volatility = output.volatility.expect("enough bars to measure σ");
+    assert!(
+        volatility.is_finite() && volatility > 0.0,
+        "a trending tape has a positive realised σ: {volatility}"
+    );
+    // A per-bar figure: the fixture's own step is ~0.4 on ~100, so σ sits far
+    // below 1.0 and far above 1e-9.
+    assert!(
+        volatility < 0.1 && volatility > 1e-9,
+        "realised σ must be a per-bar return scale, got {volatility}"
+    );
+
+    // Too few bars is absence, never a zero.
+    let short = trend_closes(crate::signals_kernel::VOLATILITY_WINDOW);
+    let short_bars = bars(&short);
+    let short_output = evaluate_last(&signal, &short_bars, &short);
+    assert_eq!(
+        short_output.volatility, None,
+        "a window that cannot be filled reports absence, never a zero"
+    );
+}

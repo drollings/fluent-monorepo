@@ -165,6 +165,36 @@ impl SessionCalendar {
             .is_some_and(|session| session.contains(ts_ms))
     }
 
+    /// The first session close strictly after `stamp_ms`, searching forward no
+    /// further than `horizon_ms`.
+    ///
+    /// This is how a bucket that stays inside one session learns its own close
+    /// without assuming a duration: a span that crosses no close has [`None`],
+    /// and a span that does cross one is clipped to it. Weekend gaps and
+    /// daylight transitions fall out of the calendar rather than being special
+    /// cases.
+    #[must_use]
+    pub fn next_close_after(&self, stamp_ms: i64, horizon_ms: i64) -> Option<i64> {
+        if horizon_ms <= 0 {
+            return None;
+        }
+        let limit = stamp_ms.checked_add(horizon_ms)?;
+        let mut day = et_civil_date(stamp_ms);
+        loop {
+            let day_start = days_from_civil(day.0, day.1, day.2) * 86_400_000;
+            if day_start > limit {
+                return None;
+            }
+            if let Some(session) = self.session_for(day) {
+                let (_, close_ms) = session_bounds_ms(day, session);
+                if close_ms > stamp_ms && close_ms <= limit {
+                    return Some(close_ms);
+                }
+            }
+            day = civil_from_days(day_start.div_euclid(86_400_000) + 1);
+        }
+    }
+
     /// In-session bucket starts strictly between two stamps: the trading
     /// gap a bar sequence with those endpoints skips. Zero means contiguous
     /// (or a non-trading span such as a weekend); a positive count names
@@ -179,13 +209,7 @@ impl SessionCalendar {
         let end = et_civil_date(next_ms);
         loop {
             if let Some(session) = self.session_for(day) {
-                // Session days never contain a DST transition, so one offset
-                // prices the whole day; ET midnight in UTC anchors the window.
-                let day_noon_utc = days_from_civil(day.0, day.1, day.2) * 86_400_000 + 43_200_000;
-                let midnight_utc =
-                    days_from_civil(day.0, day.1, day.2) * 86_400_000 - et_offset_ms(day_noon_utc);
-                let open_ms = midnight_utc + i64::from(session.open_min) * 60_000;
-                let close_ms = midnight_utc + i64::from(session.close_min) * 60_000;
+                let (open_ms, close_ms) = session_bounds_ms(day, session);
                 // Bucket starts B with prev < B < next inside [open, close).
                 let lo = open_ms.max(prev_ms.saturating_add(1));
                 let hi = close_ms.min(next_ms);
@@ -208,6 +232,18 @@ impl SessionCalendar {
         }
         total
     }
+}
+
+/// UTC millisecond bounds of one ET session day. Session days never contain a
+/// daylight transition (transitions fall on Sundays), so one offset prices the
+/// whole day.
+fn session_bounds_ms(day: EtDate, session: TradingSession) -> (i64, i64) {
+    let day_start = days_from_civil(day.0, day.1, day.2) * 86_400_000;
+    let midnight_utc = day_start - et_offset_ms(day_start + 43_200_000);
+    (
+        midnight_utc + i64::from(session.open_min) * 60_000,
+        midnight_utc + i64::from(session.close_min) * 60_000,
+    )
 }
 
 /// Whether America/New_York observes daylight saving at the stamp: from the

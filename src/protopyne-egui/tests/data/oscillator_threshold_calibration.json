@@ -1,0 +1,34 @@
+{
+  "date": "2026-10-23",
+  "frozen_threshold": 100.0,
+  "method": "Candidate sweep over flat/chop controls and rise/fall swings per mapped kind (rsi, cci, cmo, mfi). Crossings count bars with |display| >= threshold. Floors pin only the frozen threshold in tests/threshold_calibration.rs; every other number below is evidence, not code.",
+  "candidates": [50.0, 100.0, 2000.0],
+  "controls": {
+    "flat_40": {
+      "shape": "40 bars at close 100.0",
+      "verdict": "quiet at the frozen threshold for every mapped kind"
+    },
+    "chop_40": {
+      "shape": "40 bars alternating close 100.0/101.0",
+      "verdict": "quiet at the frozen threshold; fires at 50, which is why 50 cannot be trusted for alerts"
+    }
+  },
+  "windows": {
+    "rise_60": {
+      "shape": "60 bars climbing 100..159",
+      "verdict": "crosses at 100 for every mapped kind; sleeps at 2000"
+    },
+    "fall_60": {
+      "shape": "60 bars sliding 160..101",
+      "verdict": "crosses at 100 for every mapped kind; sleeps at 2000"
+    }
+  },
+  "floors": {
+    "controls_at_100": "0 marks on flat and chop for every mapped kind",
+    "windows_at_100": "at least one mark on rise and fall for every mapped kind"
+  },
+  "gain_sweep": {
+    "gains": [0.5, 1.0, 1.5, 2.0],
+    "verdict": "crossing counts are non-decreasing in gain on every fixture, so raising gain never removes a crossing"
+  }
+}

@@ -18,7 +18,7 @@
 //!   `tests/data/golden/native_freeze_spy_*.json` and compared exactly.
 //! - Matrix coverage: every `native-*` matrix row names a native-table
 //!   library and vice versa; statuses stay `FormulaVerified` with reason
-//!   until this suite is green, then promote to `ParityVerified`.
+//!   until this suite is green, then promote to `ExprParityVerified`.
 //! - Cutover default: `NativeOptions::default()` serves `libBars`
 //!   natively (audit row reads rust) while unserved symbols fall through
 //!   to Pine and unknown references still refuse.
@@ -297,8 +297,9 @@ fn window_legs(rows: &[(i64, f64, f64)], open_of: &dyn Fn(i64) -> i64) -> Vec<(B
     updates
 }
 
-/// One real `SPY_1M.csv` row at or before `open_ms` (cited from the
-/// `pine_libbars` pull windows: the injection must stay hand-summable).
+/// The last real `SPY_1M.csv` row whose bucket has closed by `open_ms`
+/// (cited from the `pine_libbars` pull windows: the injection must stay
+/// hand-summable, and a bucket still forming at the pull is never visible).
 fn minute_row(open_ms: i64) -> LtfRow {
     let path = data_root().join("historical/SPY_1M.csv");
     let content = std::fs::read_to_string(&path).expect("minute history loads");
@@ -310,7 +311,7 @@ fn minute_row(open_ms: i64) -> LtfRow {
             .expect("time")
             .parse::<i64>()
             .expect("int time");
-        if secs * 1000 > open_ms {
+        if secs * 1000 + 60_000 > open_ms {
             break;
         }
         picked = Some(LtfRow {
@@ -473,7 +474,8 @@ fn assert_window_agrees_inner(
                 "SPY",
                 "1",
                 crate::LtfDataset {
-                    times: vec![row.ts_ms],
+                    times: vec![protopyne_types::EpochMs::from(row.ts_ms)],
+                    closes_at: vec![Some(protopyne_types::EpochMs::from(row.ts_ms + 60_000))],
                     opens: vec![row.o],
                     highs: vec![row.h],
                     lows: vec![row.l],
@@ -592,7 +594,6 @@ fn freeze_tick_window_quiet() {
 }
 
 #[test]
-#[ignore = "requires trimmed CSV history fixtures no longer shipped in the tree"]
 fn freeze_tick_window_pull() {
     let rows = load_tick_window("window_pull.csv");
     assert_eq!(rows.len(), 20, "pull window row count pinned");
@@ -613,7 +614,6 @@ fn freeze_tick_window_pull() {
 }
 
 #[test]
-#[ignore = "requires trimmed CSV history fixtures no longer shipped in the tree"]
 fn freeze_tick_window_pull_remainder() {
     // REGENERATED with the signed-remainder rule: this window overshoots,
     // so Pine appends the abs top-up while native trims to the reference
@@ -1065,7 +1065,7 @@ fn freeze_spy_15m_golden() {
 ///
 /// Reason for `ignore`: writes fixture files; the hermetic gate only reads.
 #[test]
-#[ignore = "golden generator: writes tests/data/golden/native_freeze_spy_*.json"]
+#[ignore = "generator: writes tests/data/golden/native_freeze_spy_*.json"]
 fn generate_spy_goldens() {
     for (display, tf, csv) in [
         ("1M", Timeframe::M1, "SPY_1M.csv"),
@@ -1100,7 +1100,7 @@ fn freeze_native_matrix_covers_table() {
         assert_eq!(row.eps, EPS, "{id} eps frozen at 1e-9");
         assert_eq!(
             row.status,
-            crate::CompatStatus::ParityVerified,
+            crate::CompatStatus::ExprParityVerified,
             "{id} verified by this suite"
         );
     }

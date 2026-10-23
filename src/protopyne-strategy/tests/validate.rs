@@ -1,62 +1,14 @@
 use super::*;
-use chrono::{TimeZone, Utc};
 use fluent_wvr::prelude::*;
 use fluent_wvr::validate::{check_for_execute, Validate};
-use protopyne_types::Money;
-use rust_decimal::Decimal;
-
-fn money(value: i64) -> Money {
-    Money::new(Decimal::from(value))
-}
 
 fn valid_grant() -> Grant {
-    Grant::new()
-        .id("validate-fixture".to_owned())
-        .scope(
-            GrantScope::new()
-                .strategies(vec!["ribbon".to_owned()])
-                .underlyings(vec!["SPY".to_owned()])
-                .structures(vec![StructureKind::Vertical])
-                .directions(vec![Direction::Long, Direction::Short])
-                .permissions(GrantPermission {
-                    entries: true,
-                    exits: true,
-                    rolls: false,
-                })
-                .build(),
-        )
-        .budgets(
-            GrantBudgets::new()
-                .max_trades(1_000)
-                .max_contracts(10_000)
-                .max_loss(money(1_000_000))
-                .max_notional(money(100_000_000))
-                .build(),
-        )
-        .signal(
-            SignalThresholds::new()
-                .min_conviction(0.5)
-                .min_activity_score(0.5)
-                .build(),
-        )
-        .trade(
-            TradeThresholds::new()
-                .max_loss_per_trade(money(1_000))
-                .max_spread_width(money(50))
-                .min_dte_days(1)
-                .max_dte_days(90)
-                .build(),
-        )
-        .portfolio(
-            PortfolioThresholds::new()
-                .max_open_risk(money(10_000_000))
-                .quote_max_age_secs(60)
-                .build(),
-        )
-        .breakers(BreakerLimits::new().max_consecutive_errors(3).build())
-        .valid_from(Utc.with_ymd_and_hms(2025, 1, 1, 0, 0, 0).unwrap())
-        .valid_until(Utc.with_ymd_and_hms(2027, 1, 1, 0, 0, 0).unwrap())
-        .build()
+    // The shared fixture's shape with a named id and a signal floor above zero.
+    crate::fixtures::grant_with(|grant| {
+        grant.id = "validate-fixture".to_owned();
+        grant.signal.min_conviction = 0.5;
+        grant.signal.min_activity_score = 0.5;
+    })
 }
 
 #[test]

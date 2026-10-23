@@ -25,7 +25,13 @@ pub struct Adjustment {
 #[derive(Debug, Clone, PartialEq, Builder, Serialize, Deserialize)]
 #[builder(start_fn = new)]
 pub struct Bar {
-    /// Close timestamp of the bar.
+    /// Bucket-open timestamp: the instant the bar's interval begins.
+    ///
+    /// The interval a bar summarizes ends at
+    /// [`confirmed_at`](Self::confirmed_at) when its producer knows the close.
+    /// Read this through [`open_time`](Self::open_time) when the distinction
+    /// matters — every visibility predicate in the kernel layer compares
+    /// against the open, never against a presumed close.
     pub ts: DateTime<Utc>,
     /// Open price.
     pub o: Decimal,
@@ -40,6 +46,13 @@ pub struct Bar {
     /// Corporate-action adjustment, if any.
     #[serde(default)]
     pub adj: Option<Adjustment>,
+    /// The instant this bar's bucket closed, when its producer knows it.
+    ///
+    /// [`None`] means the bar is not known to be closed — either the producer
+    /// did not record the close or the bucket is still forming. Never part of
+    /// the wire shape: a serialized bar carries its open stamp and OHLC only.
+    #[serde(skip)]
+    pub confirmed_at: Option<DateTime<Utc>>,
 }
 
 impl fluent_wvr::validate::Validate for Bar {
@@ -50,6 +63,21 @@ impl fluent_wvr::validate::Validate for Bar {
 }
 
 impl Bar {
+    /// The instant this bar's bucket opens.
+    #[must_use]
+    pub fn open_time(&self) -> DateTime<Utc> {
+        self.ts
+    }
+
+    /// The instant this bar's bucket closed, when its producer knows it.
+    ///
+    /// A consumer that must not act on a still-forming bucket treats [`None`]
+    /// as "not closed" rather than assuming a duration.
+    #[must_use]
+    pub fn confirmed_at(&self) -> Option<DateTime<Utc>> {
+        self.confirmed_at
+    }
+
     /// Check the OHLC structural invariants: `high` covers open, close, and
     /// low; `low` sits under open, close, and high. Volume needs no check —
     /// it is a `u64`, so negative volume is unrepresentable by construction.

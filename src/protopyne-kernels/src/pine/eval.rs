@@ -31,8 +31,10 @@
 //! The per-bar hot path stays on concrete `&[f64]` legs; no `dyn` per bar.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use protopyne_types::Bar;
+use protopyne_types::EpochMs;
 use protopyne_types::Timeframe;
 
 use super::syntax::{
@@ -53,6 +55,7 @@ use crate::value::{
     nz, ColorHandle, DrawingHandle, DrawingKind, EnumHandle, FieldTable, NativeCall, PineValue,
     UserInstance,
 };
+use crate::vars::{CallSite, ModuleKey, NodeId, ScopeKey};
 
 /// Fail-closed bound for `for` total iterations and `while` iterations.
 /// Breaching loops refuse instead of hanging the run.
@@ -61,6 +64,12 @@ pub const MAX_LOOP_ITERATIONS: usize = 10_000;
 /// Fail-closed bound for nested user-function/method calls. The language
 /// forbids recursion; the bound turns accidental cycles into reasons.
 pub const MAX_CALL_DEPTH: usize = 64;
+
+/// Module identity for a scope key: the linked module key, or `None` for an
+/// unlinked program.
+fn module_key(module: &str) -> Option<ModuleKey> {
+    (!module.is_empty()).then(|| module.to_owned())
+}
 
 /// Float equality tolerance, mirroring the reference comparator exactly.
 const EPSILON: f64 = f64::EPSILON;
@@ -371,13 +380,37 @@ type MethodDef = (String, Vec<Param>, std::sync::Arc<Vec<PineStmt>>);
 /// ride `Arc` so per-call dispatch clones a pointer, never the AST.
 type FuncDef = (Vec<Param>, std::sync::Arc<Vec<PineStmt>>);
 
-/// site stack (which qualifies stateful bridge sites per call path), per-bar
+/// One spelling in one body instance: the module whose body declares it, the
+/// call expressions enclosing that body, and the declared name.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct VarScope {
+    module: Option<ModuleKey>,
+    call_sites: Vec<CallSite>,
+    name: String,
+}
+
+/// Where a `var`/`varip` spelling is bound here: the declaration node that
+/// owns its cell, and the lifetime flag.
+#[derive(Debug, Clone, Copy)]
+struct VarBinding {
+    decl: NodeId,
+    is_varip: bool,
+}
+
+/// site stack (which qualifies stateful bridge sites and persistent
+/// declarations per call path), per-bar
 /// function-local values for history reads, snapshots, plot captures, and
 /// the first error.
 struct EngineState {
     variables: HashMap<String, Option<PineValue>>,
     history: HashMap<String, Vec<Option<PineValue>>>,
-    var_kind: HashMap<String, bool>,
+    /// Persistent `var`/`varip` declarations by the body instance that
+    /// declares them: reads and writes resolve a spelling to the innermost
+    /// declaring body, so two declarations never share a cell.
+    var_decls: HashMap<VarScope, VarBinding>,
+    /// Call expressions enclosing the statement under execution, outermost
+    /// first: the body instance a declaration belongs to.
+    sites: Vec<CallSite>,
     fixnan_memory: HashMap<String, Option<PineValue>>,
     ta_bridge: Option<super::builtins_ta::TaBridge>,
     chart_symbol: String,
@@ -397,6 +430,10 @@ struct EngineState {
     module_aliases: HashMap<(String, String), String>,
     receiver: Vec<ReceiverSlot>,
     call_stack: Vec<String>,
+    /// Per-bar values of every persistent cell, keyed by the declaration
+    /// instance that owns it: `x[1]` inside one call instance reads that
+    /// instance's past, never a same-named cell's.
+    var_history: HashMap<ScopeKey, Vec<Option<PineValue>>>,
     /// Per-bar function-local values for history reads, keyed by call site
     /// (`site#name`) inside a call and by bare name at the top level, so a
     /// helper's locals never read the caller's past for a same-named
@@ -495,7 +532,9 @@ impl EngineState {
         Self {
             variables: HashMap::new(),
             history: HashMap::new(),
-            var_kind: HashMap::new(),
+            var_decls: HashMap::new(),
+            var_history: HashMap::new(),
+            sites: Vec::new(),
             fixnan_memory: HashMap::new(),
             ta_bridge: None,
             chart_symbol: crate::runtime::default_chart_symbol(),
@@ -581,8 +620,12 @@ impl LinkedModule {
 /// `calc_bars_count` tail-takes from it.
 #[derive(Debug, Clone)]
 pub struct LtfDataset {
-    /// Row timestamps, epoch milliseconds.
-    pub times: Vec<i64>,
+    /// Row bucket-open timestamps.
+    pub times: Vec<EpochMs>,
+    /// Row bucket-close timestamps, one per row: the instant the row's bucket
+    /// finished. [`None`] means the close is unknown, and no visibility
+    /// predicate may treat such a row as confirmed.
+    pub closes_at: Vec<Option<EpochMs>>,
     /// Row opens.
     pub opens: Vec<f64>,
     /// Row highs.
@@ -596,7 +639,7 @@ pub struct LtfDataset {
 }
 
 impl LtfDataset {
-    /// Row count; all six columns always agree (enforced at injection).
+    /// Row count; every column always agrees with it (enforced at injection).
     #[must_use]
     pub fn len(&self) -> usize {
         self.times.len()
@@ -608,18 +651,34 @@ impl LtfDataset {
         self.times.is_empty()
     }
 
-    /// Build an injection dataset from closed bars: millisecond timestamps
-    /// plus float legs converted exactly like kernel windows
+    /// Build an injection dataset from closed bars of one timeframe: bucket
+    /// opens, one session-aware close per bar, and float legs converted exactly
+    /// like kernel windows
     /// ([`OwnedOhlcv::from_bars`](crate::indicator::OwnedOhlcv::from_bars)),
     /// so injected security columns agree with chart legs bit-for-bit. The
     /// harness constructor for [`inject_security`](PineEngine::inject_security)
     /// and [`inject_lower_tf`](PineEngine::inject_lower_tf) datasets;
     /// headless suites share it instead of copying the conversion.
+    ///
+    /// The close of each bar is the end of its own bucket, clipped to the
+    /// exchange session close — the shared bucketing rule, never a duration
+    /// guess.
     #[must_use]
-    pub fn of_bars(bars: &[Bar]) -> Self {
+    pub fn of_bars(bars: &[Bar], timeframe: Timeframe) -> Self {
         let legs = crate::indicator::OwnedOhlcv::from_bars(bars);
+        let times: Vec<EpochMs> = bars
+            .iter()
+            .map(|bar| EpochMs::from(bar.open_time()))
+            .collect();
+        let stamps: Vec<i64> = times.iter().map(|stamp| stamp.get()).collect();
+        let closes_at: Vec<Option<EpochMs>> =
+            crate::bars::bucket_closes(&stamps, timeframe.duration_ms())
+                .into_iter()
+                .map(|close| close.map(EpochMs::from))
+                .collect();
         Self {
-            times: bars.iter().map(|bar| bar.ts.timestamp_millis()).collect(),
+            times,
+            closes_at,
             opens: legs.open,
             highs: legs.high,
             lows: legs.low,
@@ -636,7 +695,10 @@ impl LtfDataset {
 pub struct InjectedDataset {
     symbol: String,
     timeframe: String,
-    dataset: LtfDataset,
+    /// Shared so serving one window never copies the tape: a lookup hands out
+    /// a handle, and the borrow it grants outlives the mutable evaluation it
+    /// is read during.
+    dataset: Arc<LtfDataset>,
 }
 
 /// The executor. Owns its runtime config; all per-run state resets on
@@ -695,6 +757,7 @@ impl PineEngine {
     ) -> Result<(), KernelError> {
         let len = dataset.len();
         for (column, column_len) in [
+            ("closes_at", dataset.closes_at.len()),
             ("opens", dataset.opens.len()),
             ("highs", dataset.highs.len()),
             ("lows", dataset.lows.len()),
@@ -727,12 +790,12 @@ impl PineEngine {
             .iter_mut()
             .find(|slot| slot.symbol == symbol && slot.timeframe == timeframe)
         {
-            slot.dataset = dataset;
+            slot.dataset = Arc::new(dataset);
         } else {
             self.ltf_injections.push(InjectedDataset {
                 symbol: symbol.to_owned(),
                 timeframe: timeframe.to_owned(),
-                dataset,
+                dataset: Arc::new(dataset),
             });
         }
         Ok(())
@@ -740,8 +803,8 @@ impl PineEngine {
 
     /// Register one per-timeframe dataset for `(symbol, timeframe)`:
     /// later `request.security` calls with that pair are served from the
-    /// confirmed prefix (timestamps at or before the current chart bar)
-    /// instead of refusing. Unregistered pairs keep the live-fetch
+    /// confirmed prefix (buckets closed at or before the current chart
+    /// instant) instead of refusing. Unregistered pairs keep the live-fetch
     /// refusal. Same column contract as [`inject_lower_tf`](Self::inject_lower_tf).
     pub fn inject_security(
         &mut self,
@@ -755,12 +818,12 @@ impl PineEngine {
             .iter_mut()
             .find(|slot| slot.symbol == symbol && slot.timeframe == timeframe)
         {
-            slot.dataset = dataset;
+            slot.dataset = Arc::new(dataset);
         } else {
             self.security_injections.push(InjectedDataset {
                 symbol: symbol.to_owned(),
                 timeframe: timeframe.to_owned(),
-                dataset,
+                dataset: Arc::new(dataset),
             });
         }
         Ok(())
@@ -1072,6 +1135,17 @@ impl EngineState {
                 .unwrap_or(None);
             slot.push(pushed);
         }
+        // Persistent cells also advance a series of their own, so a `var`
+        // read with an offset inside one call instance observes that
+        // instance's past even when another declaration spells the name the
+        // same way.
+        for (scope, value) in ctx.vars().occupied() {
+            let slot = self.var_history.entry(scope).or_default();
+            while slot.len() < completed {
+                slot.push(None);
+            }
+            slot.push(value);
+        }
         self.snapshots.push(BarSnapshot {
             bar: ctx.cursor(),
             values: merged,
@@ -1126,28 +1200,46 @@ impl EngineState {
     ) -> Result<(), KernelError> {
         match stmt {
             PineStmt::VarDeclaration {
+                id,
                 name,
                 value,
                 is_varip,
                 ..
             } => {
                 // Initializer runs exactly once per run, on the first
-                // evaluated bar — warmup bars never seed it.
-                if !self.var_kind.contains_key(name) {
+                // evaluated bar — warmup bars never seed it. The
+                // declaration's own body instance is the scope: a second
+                // declaration of the same spelling elsewhere is a second
+                // cell with its own initializer.
+                let module = self.scope_module();
+                let call_sites = self.sites.clone();
+                let key = VarScope {
+                    module: module.clone(),
+                    call_sites: call_sites.clone(),
+                    name: name.clone(),
+                };
+                if !self.var_decls.contains_key(&key) {
                     let init = self.eval_expr(value, ctx, legs)?;
-                    self.var_kind.insert(name.clone(), *is_varip);
+                    self.var_decls.insert(
+                        key,
+                        VarBinding {
+                            decl: *id,
+                            is_varip: *is_varip,
+                        },
+                    );
                     if let Some(present) = init {
+                        let scope = ScopeKey::new(module, call_sites, *id);
                         // A fresh object at this home invalidates any lease
                         // the slot may hold (defensive: tables start empty
                         // per run, but declarations also evaluate in the
                         // predeclare pass).
                         if matches!(present, PineValue::Object(_)) {
-                            self.bump_lease_key(LeaseKey::var_store(name, *is_varip));
+                            self.bump_lease_key(LeaseKey::var_store(scope.clone()));
                         }
                         if *is_varip {
-                            ctx.vars_mut().set_varip(name, present);
+                            ctx.vars_mut().set_varip(scope, name, present);
                         } else {
-                            ctx.vars_mut().set_var(name, present);
+                            ctx.vars_mut().set_var(scope, name, present);
                         }
                     }
                 }
@@ -1232,7 +1324,7 @@ impl EngineState {
                         }
                     }
                 }
-                if self.var_kind.contains_key(name) || self.variables.contains_key(name) {
+                if self.var_binding(name).is_some() || self.variables.contains_key(name) {
                     let assigned = self.eval_expr(value, ctx, legs)?;
                     self.assign(ctx, name, assigned.clone());
                     self.refresh_prov(ctx, legs, name, value, assigned.as_ref())?;
@@ -1478,6 +1570,82 @@ impl EngineState {
         }
     }
 
+    /// The module owning the body under execution, as a scope key. `None`
+    /// means an unlinked program (no module identity to qualify cells).
+    fn scope_module(&self) -> Option<ModuleKey> {
+        module_key(&self.current_module)
+    }
+
+    /// Resolve the persistent declaration a spelling names here: the body
+    /// under execution first, then each caller's body, then the module's top
+    /// level, then the caller's top level. The returned key is the cell's
+    /// identity, so two declarations of one spelling in different bodies
+    /// never share it, while a callee still reads an enclosing body's binding
+    /// exactly as before.
+    fn var_binding(&self, name: &str) -> Option<(ScopeKey, bool)> {
+        if self.var_decls.is_empty() {
+            return None;
+        }
+        let module = self.scope_module();
+        let outer = self.sites.len();
+        for depth in (1..=outer).rev() {
+            let body = if depth == outer {
+                module.clone()
+            } else {
+                self.sites[depth].module.clone()
+            };
+            if let Some(found) = self.lookup_var(body.as_ref(), &self.sites[..depth], name) {
+                return Some(found);
+            }
+        }
+        // The running module's top level is lexically visible inside its own
+        // bodies even when the call arrived from another module.
+        if let Some(found) = self.lookup_var(module.as_ref(), &[], name) {
+            return Some(found);
+        }
+        // The outer body stays live under the call, so its top level still
+        // resolves names the callee does not declare.
+        if outer > 0 {
+            if let Some(found) = self.lookup_var(self.sites[0].module.as_ref(), &[], name) {
+                return Some(found);
+            }
+        }
+        None
+    }
+
+    /// One scope lookup: the body instance named by `module` plus the calls
+    /// that reached it, resolved to the declaration a spelling binds.
+    fn lookup_var(
+        &self,
+        module: Option<&ModuleKey>,
+        call_sites: &[CallSite],
+        name: &str,
+    ) -> Option<(ScopeKey, bool)> {
+        let slot = VarScope {
+            module: module.cloned(),
+            call_sites: call_sites.to_vec(),
+            name: name.to_owned(),
+        };
+        let binding = self.var_decls.get(&slot)?;
+        Some((
+            ScopeKey::new(slot.module, slot.call_sites, binding.decl),
+            binding.is_varip,
+        ))
+    }
+
+    /// The live value of a spelling's persistent cell, resolved in the
+    /// running scope. The outer `None` means the spelling is not `var`/
+    /// `varip` here; the inner one is Pine `na`.
+    #[allow(clippy::option_option)]
+    fn persistent_binding(&self, name: &str, ctx: &RunCtx<'_>) -> Option<Option<PineValue>> {
+        let (scope, is_varip) = self.var_binding(name)?;
+        Some(if is_varip {
+            ctx.vars().get_varip(&scope)
+        } else {
+            ctx.vars().get_var(&scope)
+        })
+    }
+
     /// Route an assignment: persistent stores for `var`/`varip`, series
     /// variables otherwise. Assigning `na` to a persistent binding clears
     /// it (the initialization mark stays, so it is not re-seeded). Plain
@@ -1485,26 +1653,27 @@ impl EngineState {
     /// teardown reverts exactly what the body touched instead of cloning
     /// the whole frame up front.
     fn assign(&mut self, ctx: &mut RunCtx<'_>, name: &str, value: Option<PineValue>) {
+        let binding = self.var_binding(name);
         // Any object write (or any write to a leased name, including
         // clearing it) invalidates the slot's ring lease — see bump_lease.
-        let key = match self.var_kind.get(name) {
-            Some(&is_varip) => LeaseKey::var_store(name, is_varip),
+        let key = match &binding {
+            Some((scope, _)) => LeaseKey::var_store(scope.clone()),
             None => LeaseKey::variables(name),
         };
         if matches!(value, Some(PineValue::Object(_))) || self.lease_versions.contains_key(&key) {
             self.bump_lease_key(key);
         }
-        if let Some(&is_varip) = self.var_kind.get(name) {
+        if let Some((scope, is_varip)) = binding {
             if let Some(present) = value {
                 if is_varip {
-                    ctx.vars_mut().set_varip(name, present);
+                    ctx.vars_mut().set_varip(scope, name, present);
                 } else {
-                    ctx.vars_mut().set_var(name, present);
+                    ctx.vars_mut().set_var(scope, name, present);
                 }
             } else if is_varip {
-                ctx.vars_mut().clear_varip(name);
+                ctx.vars_mut().clear_varip(&scope);
             } else {
-                ctx.vars_mut().clear_var(name);
+                ctx.vars_mut().clear_var(&scope);
             }
         } else {
             self.journal_frame(name);
@@ -1615,7 +1784,7 @@ impl EngineState {
     fn lease_key_for(home: &ObjectHome) -> Option<LeaseKey> {
         match home {
             ObjectHome::Variables(name) => Some(LeaseKey::variables(name)),
-            ObjectHome::VarStore(name, is_varip) => Some(LeaseKey::var_store(name, *is_varip)),
+            ObjectHome::VarStore { scope, .. } => Some(LeaseKey::var_store(scope.clone())),
             ObjectHome::ThisField(_)
             | ObjectHome::NestedField { .. }
             | ObjectHome::MapEntry { .. } => None,
@@ -1642,8 +1811,8 @@ impl EngineState {
             ObjectHome::Variables(name) => {
                 self.bump_lease_key(LeaseKey::variables(name));
             }
-            ObjectHome::VarStore(name, is_varip) => {
-                self.bump_lease_key(LeaseKey::var_store(name, *is_varip));
+            ObjectHome::VarStore { scope, .. } => {
+                self.bump_lease_key(LeaseKey::var_store(scope.clone()));
             }
             ObjectHome::NestedField { home, .. } => self.bump_lease(home),
             ObjectHome::MapEntry { inner, .. } => self.bump_lease(inner),
@@ -1691,15 +1860,28 @@ impl EngineState {
                 }
             };
         }
-        if let Some(PineValue::Object(instance)) = ctx.vars().get_var(name) {
-            ctx.vars_mut().clear_var(name);
-            let home = self.prov_home(name, ObjectHome::VarStore(name.to_owned(), false));
-            return Ok(Some((instance, home)));
-        }
-        if let Some(PineValue::Object(instance)) = ctx.vars().get_varip(name) {
-            ctx.vars_mut().clear_varip(name);
-            let home = self.prov_home(name, ObjectHome::VarStore(name.to_owned(), true));
-            return Ok(Some((instance, home)));
+        if let Some((scope, is_varip)) = self.var_binding(name) {
+            let cell = if is_varip {
+                ctx.vars().get_varip(&scope)
+            } else {
+                ctx.vars().get_var(&scope)
+            };
+            if let Some(PineValue::Object(instance)) = cell {
+                if is_varip {
+                    ctx.vars_mut().clear_varip(&scope);
+                } else {
+                    ctx.vars_mut().clear_var(&scope);
+                }
+                let home = self.prov_home(
+                    name,
+                    ObjectHome::VarStore {
+                        scope,
+                        name: name.to_owned(),
+                        is_varip,
+                    },
+                );
+                return Ok(Some((instance, home)));
+            }
         }
         Ok(None)
     }
@@ -1784,11 +1966,15 @@ impl EngineState {
             ObjectHome::Variables(name) => {
                 self.variables.insert(name, Some(value));
             }
-            ObjectHome::VarStore(name, is_varip) => {
+            ObjectHome::VarStore {
+                scope,
+                name,
+                is_varip,
+            } => {
                 if is_varip {
-                    ctx.vars_mut().set_varip(&name, value);
+                    ctx.vars_mut().set_varip(scope, &name, value);
                 } else {
-                    ctx.vars_mut().set_var(&name, value);
+                    ctx.vars_mut().set_var(scope, &name, value);
                 }
             }
             ObjectHome::ThisField(field) => {
@@ -1843,8 +2029,7 @@ impl EngineState {
             .get(map_var)
             .cloned()
             .flatten()
-            .or_else(|| ctx.vars().get_var(map_var))
-            .or_else(|| ctx.vars().get_varip(map_var));
+            .or_else(|| self.persistent_binding(map_var, ctx).flatten());
         if let Some(PineValue::Map(entries)) = current {
             let mut stored = entries;
             stored.insert(key.to_owned(), (key_value.clone(), Some(value)));
@@ -1931,14 +2116,16 @@ impl EngineState {
                 let value = self.eval_expr(expr, ctx, legs)?;
                 unary(*op, value.as_ref())
             }
-            PineExpr::FunctionCall { name, args, .. } => self.call(name, args, ctx, legs),
+            PineExpr::FunctionCall { id, name, args, .. } => self.call(*id, name, args, ctx, legs),
             PineExpr::MethodCall {
+                id,
                 namespace,
                 method,
                 args,
                 type_args,
-            } => self.call_method(namespace, method, args, type_args, ctx, legs),
+            } => self.call_method(*id, namespace, method, args, type_args, ctx, legs),
             PineExpr::InstanceCall {
+                id,
                 receiver,
                 method,
                 args,
@@ -1949,7 +2136,8 @@ impl EngineState {
                 // only the returned value flows on.
                 match self.eval_expr(receiver, ctx, legs)? {
                     Some(PineValue::Object(instance)) => {
-                        let outcome = self.run_method(instance, method, args, ctx, legs, None)?;
+                        let outcome =
+                            self.run_method(*id, instance, method, args, ctx, legs, None)?;
                         outcome.value
                     }
                     Some(other) => Err(refused(format!(
@@ -2074,11 +2262,8 @@ impl EngineState {
         if let Some(bound) = self.variables.get(name) {
             return Ok(bound.clone());
         }
-        if let Some(present) = ctx.vars().get_var(name) {
-            return Ok(Some(present));
-        }
-        if let Some(present) = ctx.vars().get_varip(name) {
-            return Ok(Some(present));
+        if let Some(present) = self.persistent_binding(name, ctx) {
+            return Ok(present);
         }
         if name == "this" {
             return self
@@ -2150,10 +2335,7 @@ impl EngineState {
             if !rest.contains('.') {
                 let home = match self.variables.get(head) {
                     Some(slot) => slot.clone(),
-                    None => ctx
-                        .vars()
-                        .get_var(head)
-                        .or_else(|| ctx.vars().get_varip(head)),
+                    None => self.persistent_binding(head, ctx).flatten(),
                 };
                 if let Some(PineValue::Object(instance)) = home {
                     return match instance.fields.get(rest) {
@@ -2175,7 +2357,7 @@ impl EngineState {
         // A declared persistent (`var`/`varip`) reads as absence until its
         // first assignment: `var float eit = na` binds `na`, it does not
         // leave the name undeclared. Only truly undeclared names refuse.
-        if self.var_kind.contains_key(name) {
+        if self.var_binding(name).is_some() {
             return Ok(None);
         }
         Err(refused(format!("undefined variable '{name}'")))
@@ -2233,7 +2415,7 @@ impl EngineState {
         }
         let bound = self.current_binding(name, ctx);
         let recorded = self.history.contains_key(name)
-            || self.var_kind.contains_key(name)
+            || self.var_binding(name).is_some()
             || self
                 .call_stack
                 .last()
@@ -2245,10 +2427,22 @@ impl EngineState {
             return Ok(bound.flatten());
         }
         let position = self.snapshots.len().checked_sub(back);
+        // A persistent cell reads its own past: the same declaration reached
+        // by a different call instance is a different series, so the offset
+        // never crosses instances.
+        if !self.variables.contains_key(name) {
+            if let Some((scope, _)) = self.var_binding(name) {
+                if let Some(slot) = self.var_history.get(&scope) {
+                    return Ok(position
+                        .and_then(|index| slot.get(index).cloned())
+                        .flatten());
+                }
+            }
+        }
         // The innermost scope's past wins; the bare name stays as the
-        // fallback for top-level series and persistent vars shared across
-        // scopes. A scope that never recorded the name contributes no
-        // value rather than another scope's past.
+        // fallback for top-level series and frame bindings. A scope that
+        // never recorded the name contributes no value rather than another
+        // scope's past.
         if let Some(top) = self.call_stack.last() {
             let qualified = format!("{top}#{name}");
             if self.history.contains_key(&qualified) {
@@ -2278,16 +2472,14 @@ impl EngineState {
         if let Some(bound) = self.variables.get(name) {
             return Some(bound.clone());
         }
-        if let Some(present) = ctx.vars().get_var(name) {
-            return Some(Some(present));
-        }
-        ctx.vars().get_varip(name).map(Some)
+        self.persistent_binding(name, ctx)
     }
 
     /// Calls: the `na`/`nz`/`fixnan` specials, `plot` capture, registered
     /// user functions, else a refusal naming the callee.
     fn call(
         &mut self,
+        id: NodeId,
         name: &str,
         args: &[CallArg],
         ctx: &mut RunCtx<'_>,
@@ -2492,7 +2684,7 @@ impl EngineState {
                 let (params, body) = select_function(name, &overloads, args, &values)?;
                 let site = format!("{}::{name}@{args:?}", self.current_module);
                 let module = self.current_module.clone();
-                self.exec_call(site, &module, &params, args, &values, &body, ctx, legs)
+                self.exec_call(site, id, &module, &params, args, &values, &body, ctx, legs)
             }
             _ => Err(refused(format!("unknown function '{name}'"))),
         }
@@ -2830,87 +3022,33 @@ impl EngineState {
             .ltf_injections
             .iter()
             .find(|slot| slot.symbol == symbol && slot.timeframe == timeframe)
-            .map(|slot| slot.dataset.clone())
+            .map(|slot| Arc::clone(&slot.dataset))
             .ok_or_else(|| {
                 refused(format!(
                     "live request.security_lower_tf {LIVE_REQUEST_TAIL}"
                 ))
             })?;
-        // Tick emulation replays a tape position inside a larger history,
-        // so only rows confirmed at the current bar-open stay visible
-        // (the confirmed-bar rule — serving the whole tail would leak
-        // future bars). Closed-bar runs keep the curated tail: their
-        // fixtures pin the window exactly, and the seconds-domain chart
-        // clock carries no millisecond comparison there.
-        let mut visible = dataset.len();
-        if self.tick_mode() {
-            visible = dataset
-                .times
-                .partition_point(|t| *t <= chart_ms(legs, ctx.cursor(), true));
-        }
-        let mut rows = visible;
-        if let Some(count) = bar_count {
-            let count = usize::try_from(count).unwrap_or(usize::MAX);
-            rows = rows.min(count);
-        }
-        let skip = visible.saturating_sub(rows);
-        let take = rows;
-        let mut columns = Vec::with_capacity(legs_wanted.len());
-        for leg in &legs_wanted {
-            let column: Vec<Option<PineValue>> = match leg.as_str() {
-                "time" => dataset
-                    .times
-                    .iter()
-                    .skip(skip)
-                    .take(take)
-                    .map(|t| Some(PineValue::Int(*t)))
-                    .collect(),
-                "open" => dataset
-                    .opens
-                    .iter()
-                    .skip(skip)
-                    .take(take)
-                    .map(|v| crate::indicator::fin_or_none(*v).map(PineValue::Float))
-                    .collect(),
-                "high" => dataset
-                    .highs
-                    .iter()
-                    .skip(skip)
-                    .take(take)
-                    .map(|v| crate::indicator::fin_or_none(*v).map(PineValue::Float))
-                    .collect(),
-                "low" => dataset
-                    .lows
-                    .iter()
-                    .skip(skip)
-                    .take(take)
-                    .map(|v| crate::indicator::fin_or_none(*v).map(PineValue::Float))
-                    .collect(),
-                "close" => dataset
-                    .closes
-                    .iter()
-                    .skip(skip)
-                    .take(take)
-                    .map(|v| crate::indicator::fin_or_none(*v).map(PineValue::Float))
-                    .collect(),
-                _ => dataset
-                    .volumes
-                    .iter()
-                    .skip(skip)
-                    .take(take)
-                    .map(|v| crate::indicator::fin_or_none(*v).map(PineValue::Float))
-                    .collect(),
-            };
-            columns.push(Some(PineValue::Array(column)));
-        }
+        // The same window rule as `request.security` in both modes: only rows
+        // whose own bucket has closed at the current chart instant, then the
+        // last `calc_bars_count` of those.
+        let count = bar_count.map(|count| usize::try_from(count).unwrap_or(usize::MAX));
+        let window = serve_security(
+            &dataset,
+            chart_ms(legs, ctx.cursor(), self.tick_mode()),
+            count,
+        );
+        let columns = legs_wanted
+            .iter()
+            .map(|leg| Some(PineValue::Array(security_column(&dataset, leg, window))))
+            .collect();
         Ok(Some(PineValue::Array(columns)))
     }
 
     /// Serve one `request.security(symbol, timeframe, exprs, gaps?,
     /// lookahead?, calc_bars_count?)` call from a registered per-timeframe
-    /// dataset: only confirmed bars count (timestamps at or before the
-    /// current chart bar), and the last confirmed value carries forward —
-    /// the headless reading of `barmerge.gaps_off` with
+    /// dataset: only closed buckets count (each bucket's close at or before
+    /// the current chart instant), and the last confirmed value carries
+    /// forward — the headless reading of `barmerge.gaps_off` with
     /// `barmerge.lookahead_off`. Omitted merge modes default to that
     /// servable pair; any other mode refuses with a reason. A single
     /// expression returns its series; a list returns one value per
@@ -3031,32 +3169,21 @@ impl EngineState {
             .security_injections
             .iter()
             .find(|slot| slot.symbol == symbol && slot.timeframe == timeframe)
-            .map(|slot| slot.dataset.clone())
+            .map(|slot| Arc::clone(&slot.dataset))
             .ok_or_else(|| refused(format!("live request.security {LIVE_REQUEST_TAIL}")))?;
-        // Confirmed prefix: rows at or before the current chart bar
-        // (`lookahead_off` never observes the forming bar).
-        let chart_ms = chart_ms(legs, ctx.cursor(), self.tick_mode());
-        let confirmed = dataset.times.partition_point(|t| *t <= chart_ms);
-        let mut rows = confirmed;
-        if let Some(count) = bar_count {
-            let count = usize::try_from(count).unwrap_or(usize::MAX);
-            rows = rows.min(count);
-        }
-        let skip = confirmed.saturating_sub(rows);
-        if rows == 0 {
+        let count = bar_count.map(|count| usize::try_from(count).unwrap_or(usize::MAX));
+        let window = serve_security(
+            &dataset,
+            chart_ms(legs, ctx.cursor(), self.tick_mode()),
+            count,
+        );
+        if window.0 == window.1 {
             if single {
                 return Ok(None);
             }
             return Ok(Some(PineValue::Array(vec![None; items.len()])));
         }
-        let tail = SecurityTail {
-            times: &dataset.times[skip..confirmed],
-            opens: &dataset.opens[skip..confirmed],
-            highs: &dataset.highs[skip..confirmed],
-            lows: &dataset.lows[skip..confirmed],
-            closes: &dataset.closes[skip..confirmed],
-            volumes: &dataset.volumes[skip..confirmed],
-        };
+        let tail = SecurityTail::of(&dataset, window, count);
         let mut out = Vec::with_capacity(items.len());
         for item in items {
             out.push(self.security_expr(item, &tail, ctx, legs)?);
@@ -3105,8 +3232,16 @@ impl EngineState {
                         values.push(self.eval_expr(&arg.value, ctx, legs)?);
                     }
                     self.ensure_ta_bridge()?;
+                    let history = tail.history();
                     let bridge = self.ta_bridge.as_ref().expect("bridge ensured above");
-                    return bridge.batch_security(method, tail.closes, &values, &tail.ohlcv());
+                    let closes = history.column("close").expect("served window has close");
+                    return bridge.batch_security(
+                        method,
+                        closes,
+                        &values,
+                        &history.ohlcv(),
+                        history.display_count,
+                    );
                 }
                 let Some(source_arg) = args.first() else {
                     return Err(refused(format!("ta.{method} takes a source leg here")));
@@ -3121,7 +3256,8 @@ impl EngineState {
                         )));
                     }
                 };
-                let column = tail.column(&source_name).expect("leg checked above");
+                let history = tail.history();
+                let column = history.column(&source_name).expect("leg checked above");
                 let mut values = Vec::with_capacity(args.len());
                 values.push(security_leg(tail, &source_name));
                 for arg in &args[1..] {
@@ -3129,7 +3265,13 @@ impl EngineState {
                 }
                 self.ensure_ta_bridge()?;
                 let bridge = self.ta_bridge.as_ref().expect("bridge ensured above");
-                bridge.batch_security(method, column, &values, &tail.ohlcv())
+                bridge.batch_security(
+                    method,
+                    column,
+                    &values,
+                    &history.ohlcv(),
+                    history.display_count,
+                )
             }
             PineExpr::Binary { left, op, right } => {
                 let first = self.security_expr(left, tail, ctx, legs)?;
@@ -3525,6 +3667,7 @@ impl EngineState {
     /// `ta.*` call inside a shared helper keeps one state per caller.
     fn call_method(
         &mut self,
+        id: NodeId,
         namespace: &str,
         method: &str,
         args: &[CallArg],
@@ -3577,7 +3720,7 @@ impl EngineState {
             )
         {
             if namespace == "this" || (method == "new" && self.types.contains_key(namespace)) {
-                return self.call_instance_method(namespace, method, args, ctx, legs);
+                return self.call_instance_method(id, namespace, method, args, ctx, legs);
             }
             // Imported-type construction (`ALIAS.Type.new()`) resolves the
             // alias through the caller's table, then constructs the
@@ -3588,7 +3731,7 @@ impl EngineState {
                     if self.module_aliases.contains_key(&(owner, alias.to_owned()))
                         && self.types.contains_key(type_name)
                     {
-                        return self.call_instance_method(type_name, method, args, ctx, legs);
+                        return self.call_instance_method(id, type_name, method, args, ctx, legs);
                     }
                 }
             }
@@ -3597,7 +3740,7 @@ impl EngineState {
             // import-alias dispatch below.
             let held = self.peek_object(ctx, namespace);
             if held {
-                return self.call_instance_method(namespace, method, args, ctx, legs);
+                return self.call_instance_method(id, namespace, method, args, ctx, legs);
             }
             // Nested field receivers (`bars.hist_l.get`) dispatch like held
             // instances when their root is held: the instance dispatch
@@ -3605,7 +3748,7 @@ impl EngineState {
             // namespaces keep their existing routes below and above.
             if let Some((root, _)) = namespace.split_once('.') {
                 if !root.is_empty() && root != "this" && self.peek_object(ctx, root) {
-                    return self.call_instance_method(namespace, method, args, ctx, legs);
+                    return self.call_instance_method(id, namespace, method, args, ctx, legs);
                 }
             }
             // Imported-library calls (`ALIAS.fn(...)`) bind through the
@@ -3632,7 +3775,8 @@ impl EngineState {
                         &values,
                     )?;
                     let site = format!("{target}::{method}@{args:?}");
-                    return self.exec_call(site, &target, &params, args, &values, &body, ctx, legs);
+                    return self
+                        .exec_call(site, id, &target, &params, args, &values, &body, ctx, legs);
                 }
                 // Method-shaped call through the alias with an explicit
                 // receiver first argument (`libCandles.createMTFTable(table,
@@ -3696,6 +3840,7 @@ impl EngineState {
                         });
                         let value = self.exec_call(
                             site,
+                            id,
                             &method_owner,
                             &params[1..],
                             &args[1..],
@@ -3713,6 +3858,7 @@ impl EngineState {
                     let site = format!("{namespace}.{method}@{args:?}");
                     return self.exec_call(
                         site,
+                        id,
                         &method_owner,
                         &params,
                         args,
@@ -3842,15 +3988,8 @@ impl EngineState {
         if let Some(slot) = self.variables.get(name) {
             return matches!(slot, Some(PineValue::Object(_)));
         }
-        if let Some(present) = ctx.vars().get_var(name) {
-            if matches!(present, PineValue::Object(_)) {
-                return true;
-            }
-        }
-        if let Some(present) = ctx.vars().get_varip(name) {
-            if matches!(present, PineValue::Object(_)) {
-                return true;
-            }
+        if let Some(Some(present)) = self.persistent_binding(name, ctx) {
+            return matches!(present, PineValue::Object(_));
         }
         false
     }
@@ -3880,11 +4019,10 @@ impl EngineState {
         if let Some(found) = bridge(self.variables.get(name).and_then(|slot| slot.as_ref())) {
             return Some(found);
         }
-        if let Some(found) = bridge(ctx.vars().get_var(name).as_ref()) {
-            return Some(found);
-        }
-        if let Some(found) = bridge(ctx.vars().get_varip(name).as_ref()) {
-            return Some(found);
+        if let Some(value) = self.persistent_binding(name, ctx) {
+            if let Some(found) = bridge(value.as_ref()) {
+                return Some(found);
+            }
         }
         None
     }
@@ -3895,6 +4033,7 @@ impl EngineState {
     /// instance returns to its home before the value does.
     fn call_instance_method(
         &mut self,
+        id: NodeId,
         namespace: &str,
         method: &str,
         args: &[CallArg],
@@ -3914,7 +4053,7 @@ impl EngineState {
                 .last()
                 .map(|slot| slot.instance.clone())
                 .ok_or_else(|| refused("'this' is only bound inside a method"))?;
-            let outcome = self.run_method(receiver, method, args, ctx, legs, None)?;
+            let outcome = self.run_method(id, receiver, method, args, ctx, legs, None)?;
             match self.receiver.get_mut(depth - 1) {
                 Some(slot) => {
                     slot.instance = outcome.receiver;
@@ -3946,7 +4085,7 @@ impl EngineState {
         // receiver their arguments still spell.
         if let Some(depth) = self.receiver_slot(namespace) {
             let receiver = self.receiver[depth].instance.clone();
-            let outcome = self.run_method(receiver, method, args, ctx, legs, None)?;
+            let outcome = self.run_method(id, receiver, method, args, ctx, legs, None)?;
             match self.receiver.get_mut(depth) {
                 Some(slot) => {
                     slot.instance = outcome.receiver;
@@ -3960,7 +4099,7 @@ impl EngineState {
         match self.take_object(ctx, namespace)? {
             Some((instance, home)) => {
                 let lease = Self::lease_key_for(&home);
-                let outcome = self.run_method(instance, method, args, ctx, legs, lease)?;
+                let outcome = self.run_method(id, instance, method, args, ctx, legs, lease)?;
                 // Native serves synced the lease; Pine bodies invalidate it.
                 self.put_object(ctx, home, outcome.receiver, !outcome.served_native)?;
                 outcome.value
@@ -3968,7 +4107,7 @@ impl EngineState {
             None => match self.take_nested_object(ctx, namespace)? {
                 Some((instance, home)) => {
                     let lease = Self::lease_key_for(&home);
-                    let outcome = self.run_method(instance, method, args, ctx, legs, lease)?;
+                    let outcome = self.run_method(id, instance, method, args, ctx, legs, lease)?;
                     self.put_object(ctx, home, outcome.receiver, !outcome.served_native)?;
                     outcome.value
                 }
@@ -4095,7 +4234,7 @@ impl EngineState {
                 close,
                 volume,
             },
-            bar_open_ms: chart_ms(legs, cursor, true),
+            bar_open_ms: chart_ms(legs, cursor, true).get(),
             tick_ms,
         };
         // The resident-ring fast path: `Bars.fetch` on a leased slot
@@ -4332,6 +4471,7 @@ impl EngineState {
     /// takes, which never lease).
     fn run_method(
         &mut self,
+        id: NodeId,
         mut receiver: UserInstance,
         method: &str,
         args: &[CallArg],
@@ -4387,7 +4527,17 @@ impl EngineState {
             instance: receiver,
             alias: head.name.clone(),
         });
-        let value = self.exec_call(site, &owner, &params[1..], args, &values, &body, ctx, legs);
+        let value = self.exec_call(
+            site,
+            id,
+            &owner,
+            &params[1..],
+            args,
+            &values,
+            &body,
+            ctx,
+            legs,
+        );
         let back = self.receiver.pop().expect("receiver pushed above");
         Ok(MethodOutcome {
             receiver: back.instance,
@@ -4404,10 +4554,13 @@ impl EngineState {
     /// restores on return — but per-bar local values feed history reads
     /// through the frame table keyed by call site, so series offsets inside
     /// helpers observe their own prior bars exactly like top-level series
-    /// do, never a same-named binding from another scope.
+    /// do, never a same-named binding from another scope. The call expression
+    /// joins the call-path stack for the same reason: a `var`/`varip` cell
+    /// declared in this body belongs to this instance of it.
     fn exec_call(
         &mut self,
         site: String,
+        site_id: NodeId,
         module: &str,
         params: &[Param],
         call_args: &[CallArg],
@@ -4484,6 +4637,9 @@ impl EngineState {
         let base = self.journal.len();
         let caller = std::mem::replace(&mut self.current_module, module.to_owned());
         self.call_stack.push(site);
+        // The callee's persistent declarations belong to this call
+        // expression's instance, not to the module's top level.
+        self.sites.push(CallSite::new(module_key(&caller), site_id));
         // A `break` binds lexically: a body called from inside a loop still
         // refuses a loop-less `break` instead of unwinding the caller.
         let saved_depth = std::mem::replace(&mut self.loop_depth, 0);
@@ -4537,6 +4693,7 @@ impl EngineState {
             }
         }
         self.call_stack.pop();
+        self.sites.pop();
         self.current_module = caller;
         self.loop_depth = saved_depth;
         self.break_flag = saved_break;
@@ -4634,7 +4791,7 @@ impl EngineState {
             namespace,
             method,
             args,
-            type_args: _,
+            ..
         } = expr
         {
             if let Some(PineExpr::Variable(target)) = args.first().map(|arg| &arg.value) {
@@ -4963,38 +5120,66 @@ fn trailing_type(name: &str) -> &str {
     name.rsplit('.').next().unwrap_or(name)
 }
 
-/// One confirmed `request.security` window: parallel tail slices of the
-/// registered dataset, ending at the last confirmed bar.
+/// One confirmed `request.security` window over the registered dataset: the
+/// display tail the request returns plus the full confirmed prefix its kernels
+/// must compute over. Both are views, never copies.
+#[derive(Clone, Copy)]
 struct SecurityTail<'a> {
-    times: &'a [i64],
-    opens: &'a [f64],
-    highs: &'a [f64],
-    lows: &'a [f64],
-    closes: &'a [f64],
-    volumes: &'a [f64],
+    dataset: &'a LtfDataset,
+    skip: usize,
+    end: usize,
+    display_count: Option<usize>,
 }
 
 impl<'a> SecurityTail<'a> {
-    /// Borrow one leg column by chart-leg name.
-    fn column(&self, name: &str) -> Option<&'a [f64]> {
-        match name {
-            "open" => Some(self.opens),
-            "high" => Some(self.highs),
-            "low" => Some(self.lows),
-            "close" => Some(self.closes),
-            "volume" => Some(self.volumes),
-            _ => None,
+    /// Borrow the served display window `(skip, end)` of one dataset.
+    fn of(
+        dataset: &'a LtfDataset,
+        (skip, end): (usize, usize),
+        display_count: Option<usize>,
+    ) -> Self {
+        Self {
+            dataset,
+            skip,
+            end,
+            display_count,
         }
     }
 
-    /// Own the window as whole-series input for kernel batches.
+    /// The display window's stamps, oldest first.
+    fn times(&self) -> &'a [EpochMs] {
+        &self.dataset.times[self.skip..self.end]
+    }
+
+    /// Borrow one leg column of the display window by chart-leg name.
+    fn column(&self, name: &str) -> Option<&'a [f64]> {
+        let column = match name {
+            "open" => &self.dataset.opens,
+            "high" => &self.dataset.highs,
+            "low" => &self.dataset.lows,
+            "close" => &self.dataset.closes,
+            "volume" => &self.dataset.volumes,
+            _ => return None,
+        };
+        Some(&column[self.skip..self.end])
+    }
+
+    /// The same window widened back to the dataset's first confirmed row:
+    /// kernels batch over this, never over the display tail, so a recursive
+    /// arm seeds where the series starts and `calc_bars_count` stays a bound on
+    /// returned rows.
+    fn history(&self) -> Self {
+        Self { skip: 0, ..*self }
+    }
+
+    /// Own one view as whole-series kernel input.
     fn ohlcv(&self) -> crate::indicator::OwnedOhlcv {
         crate::indicator::OwnedOhlcv {
-            open: self.opens.to_vec(),
-            high: self.highs.to_vec(),
-            low: self.lows.to_vec(),
-            close: self.closes.to_vec(),
-            volume: self.volumes.to_vec(),
+            open: self.dataset.opens[self.skip..self.end].to_vec(),
+            high: self.dataset.highs[self.skip..self.end].to_vec(),
+            low: self.dataset.lows[self.skip..self.end].to_vec(),
+            close: self.dataset.closes[self.skip..self.end].to_vec(),
+            volume: self.dataset.volumes[self.skip..self.end].to_vec(),
         }
     }
 }
@@ -5003,7 +5188,11 @@ impl<'a> SecurityTail<'a> {
 /// `time` reads integer milliseconds like the pull registry's column.
 fn security_leg(tail: &SecurityTail, name: &str) -> Option<PineValue> {
     if name == "time" {
-        return tail.times.last().copied().map(PineValue::Int);
+        return tail
+            .times()
+            .last()
+            .copied()
+            .map(|stamp| PineValue::Int(stamp.get()));
     }
     tail.column(name)
         .and_then(|column| column.last().copied())
@@ -5075,8 +5264,17 @@ struct MethodOutcome {
 enum ObjectHome {
     /// Series variable in engine state.
     Variables(String),
-    /// Persistent `var` (`false`) or `varip` (`true`) binding.
-    VarStore(String, bool),
+    /// Persistent `var` (`is_varip` false) or `varip` (true) cell: the
+    /// declaring body's cell identity, the spelling it was written under,
+    /// and its lifetime flag.
+    VarStore {
+        /// Cell identity of the declaration this take came from.
+        scope: ScopeKey,
+        /// Spelling the cell was declared with (used for the write-back).
+        name: String,
+        /// Intrabar lifetime flag.
+        is_varip: bool,
+    },
     /// Field of the innermost receiver on the stack.
     ThisField(String),
     /// Field path under a taken root object (`bars.hist_l`): the mutated
@@ -5377,18 +5575,76 @@ fn leg_or_nan(legs: &Legs, name: &str, cursor: usize) -> f64 {
     nan_hole(legs.named(name).and_then(|leg| leg.get(cursor).copied()))
 }
 
-/// Current chart-bar time in milliseconds for injection lookups: tick
-/// emulation legs already run in Pine-native milliseconds, while
-/// closed-bar legs run in whole seconds (pinned runtime-shim behavior)
-/// and scale here. Datasets stamp milliseconds, exact below 2^53.
-#[allow(clippy::cast_possible_truncation)]
-fn chart_ms(legs: &Legs, cursor: usize, tick_mode: bool) -> i64 {
+/// How many leading rows of `dataset` have finished at `chart`.
+///
+/// A row is visible only once its own bucket has closed at or before the chart
+/// instant; a row whose close is unrecorded is never visible. The count stops at
+/// the first unconfirmed row, so an out-of-order close can only under-serve —
+/// never leak a forming bucket. This is the single visibility predicate for
+/// every injection arm.
+fn confirmed_prefix(dataset: &LtfDataset, chart: EpochMs) -> usize {
+    dataset
+        .closes_at
+        .iter()
+        .take_while(|close| close.is_some_and(|close| close <= chart))
+        .count()
+}
+
+/// The rows one injected dataset serves at `chart`: its confirmed prefix,
+/// optionally trimmed to the last `count` rows.
+///
+/// A free function over a borrowed dataset, deliberately: no caller needs a
+/// mutable engine (or a copy of the tape) to look at the window, and both
+/// `request.*` arms share this one rule instead of each spelling out
+/// prefix/skip/take.
+fn serve_security(dataset: &LtfDataset, chart: EpochMs, count: Option<usize>) -> (usize, usize) {
+    let end = confirmed_prefix(dataset, chart);
+    let rows = count.map_or(end, |count| end.min(count));
+    (end.saturating_sub(rows), end)
+}
+
+/// One column of a served window, named by chart leg. Absent values read as
+/// `na`, exactly as the pull registry's columns do.
+fn security_column(
+    dataset: &LtfDataset,
+    leg: &str,
+    (skip, end): (usize, usize),
+) -> Vec<Option<PineValue>> {
+    if leg == "time" {
+        return dataset.times[skip..end]
+            .iter()
+            .map(|stamp| Some(PineValue::Int(stamp.get())))
+            .collect();
+    }
+    let column = match leg {
+        "open" => &dataset.opens,
+        "high" => &dataset.highs,
+        "low" => &dataset.lows,
+        "close" => &dataset.closes,
+        _ => &dataset.volumes,
+    };
+    column[skip..end]
+        .iter()
+        .map(|value| crate::indicator::fin_or_none(*value).map(PineValue::Float))
+        .collect()
+}
+
+/// Current chart-bar time for injection lookups: tick emulation legs already
+/// run in Pine-native milliseconds, while closed-bar legs run in whole seconds
+/// (pinned runtime-shim behavior). Both domains meet in [`EpochMs`], so the
+/// unit conversion has one home instead of a bare scale factor at the
+/// comparison site.
+///
+/// An absent clock reads as the epoch, which is earlier than every injected
+/// stamp — the same "no rows" outcome the bounds always produced.
+fn chart_ms(legs: &Legs, cursor: usize, tick_mode: bool) -> EpochMs {
     let stamp = leg_or_nan(legs, "time", cursor);
     if tick_mode {
-        stamp as i64
+        EpochMs::from_millis_f64(stamp)
     } else {
-        (stamp * 1000.0) as i64
+        EpochMs::from_seconds_f64(stamp)
     }
+    .unwrap_or(EpochMs::UNIX_EPOCH)
 }
 
 /// Static name of one built-in series variable.
@@ -5662,6 +5918,11 @@ mod fastmas_tests;
 #[cfg(all(test, feature = "research"))]
 #[path = "../../tests/pine_calibration.rs"]
 mod calibration_tests;
+
+/// Persistent-binding scoping: declarations own cells per call instance.
+#[cfg(test)]
+#[path = "../../tests/pine_scope.rs"]
+mod scope_tests;
 
 /// Headless runtime suite: cursor flags, injected time, chart scope, session
 /// and source inputs, and live-fetch refusal.

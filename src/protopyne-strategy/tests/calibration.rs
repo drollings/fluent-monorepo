@@ -37,53 +37,23 @@ fn proposal(id: &str) -> Proposal {
 }
 
 fn grant() -> Grant {
-    Grant::new()
-        .id("cal".to_owned())
-        .scope(
-            GrantScope::new()
-                .strategies(vec!["ribbon".to_owned()])
-                .underlyings(vec!["SPY".to_owned()])
-                .structures(vec![StructureKind::Vertical, StructureKind::NakedShort])
-                .directions(vec![Direction::Long, Direction::Short])
-                .permissions(GrantPermission {
-                    entries: true,
-                    exits: true,
-                    rolls: false,
-                })
-                .build(),
-        )
-        .budgets(
-            GrantBudgets::new()
-                .max_trades(10)
-                .max_contracts(100)
-                .max_loss(money(5_000))
-                .max_notional(money(100_000))
-                .build(),
-        )
-        .signal(
-            SignalThresholds::new()
-                .min_conviction(0.5)
-                .min_activity_score(0.5)
-                .build(),
-        )
-        .trade(
-            TradeThresholds::new()
-                .max_loss_per_trade(money(1_000))
-                .max_spread_width(money(50))
-                .min_dte_days(7)
-                .max_dte_days(60)
-                .build(),
-        )
-        .portfolio(
-            PortfolioThresholds::new()
-                .max_open_risk(money(10_000))
-                .quote_max_age_secs(60)
-                .build(),
-        )
-        .breakers(BreakerLimits::new().max_consecutive_errors(3).build())
-        .valid_from(Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap())
-        .valid_until(Utc.with_ymd_and_hms(2027, 1, 1, 0, 0, 0).unwrap())
-        .build()
+    // The shared fixture's shape with the calibration corpus's tiers.
+    crate::fixtures::grant_with(|grant| {
+        grant.id = "cal".to_owned();
+        grant.scope.structures = vec![StructureKind::Vertical, StructureKind::NakedShort];
+        grant.budgets = GrantBudgets::new()
+            .max_trades(10)
+            .max_contracts(100)
+            .max_loss(money(5_000))
+            .max_notional(money(100_000))
+            .build();
+        grant.signal.min_conviction = 0.5;
+        grant.signal.min_activity_score = 0.5;
+        grant.trade.min_dte_days = 7;
+        grant.trade.max_dte_days = 60;
+        grant.portfolio.max_open_risk = money(10_000);
+        grant.valid_from = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
+    })
 }
 
 fn fresh_market() -> GrantMarket {

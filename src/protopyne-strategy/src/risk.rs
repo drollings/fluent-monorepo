@@ -10,7 +10,9 @@ use fluent_wvr::prelude::*;
 use fluent_wvr::{Describable, FieldAccess};
 use rust_decimal::Decimal;
 
-use protopyne_types::Money;
+use chrono::NaiveDate;
+use protopyne_types::{Greeks, Money, OptionContract};
+use rust_decimal::prelude::ToPrimitive as _;
 
 use crate::proposal::Proposal;
 
@@ -202,14 +204,23 @@ pub struct PortfolioFacts {
     pub observed: bool,
     /// Sum of live committed max loss over open positions.
     pub open_risk: Money,
-    /// Net portfolio delta, when a greeks feed exists.
-    pub net_delta: Option<f64>,
+    /// Net portfolio greeks, when a greeks feed exists. The delta cap reads
+    /// through [`net_delta`](Self::net_delta), so the call site is unchanged.
+    pub net_greeks: Option<Greeks>,
     /// Available buying power, when the venue reports it.
     pub buying_power: Option<Money>,
     /// Net liquidation value, when an equity source reports it. Sizing
     /// policies that need it (fraction-of-net-liq) size zero until one
     /// does — the venue book alone reports no equity line.
     pub net_liq: Option<Money>,
+    /// Equity peak the drawdown breaker falls from, when an equity source
+    /// reports one. `None` means the calendar of the book's high-water mark
+    /// is unknown — a configured drawdown cap then refuses as unobserved,
+    /// never passes.
+    pub equity_peak: Option<Money>,
+    /// Current equity the drawdown breaker judges, when an equity source
+    /// reports it. Same absence rule as the peak: no reading, no pass.
+    pub equity_now: Option<Money>,
 }
 
 impl PortfolioFacts {
@@ -219,28 +230,51 @@ impl PortfolioFacts {
         Self {
             observed: false,
             open_risk: Money::zero(),
-            net_delta: None,
+            net_greeks: None,
             buying_power: None,
             net_liq: None,
+            equity_peak: None,
+            equity_now: None,
         }
     }
 
     /// An observed bundle. Every observed bundle states its net liquidation
-    /// value, even when no equity source reported one (`None`).
+    /// value, even when no equity source reported one (`None`). The equity
+    /// pair stays `None` until a source attaches it with [`with_equity`](Self::with_equity).
     #[must_use]
     pub fn observed(
         open_risk: Money,
-        net_delta: Option<f64>,
+        net_greeks: Option<Greeks>,
         buying_power: Option<Money>,
         net_liq: Option<Money>,
     ) -> Self {
         Self {
             observed: true,
             open_risk,
-            net_delta,
+            net_greeks,
             buying_power,
             net_liq,
+            equity_peak: None,
+            equity_now: None,
         }
+    }
+
+    /// Net portfolio delta for the delta cap: the carried greeks' delta, or
+    /// `None` when no greeks feed supplied one. Preserves the call site the
+    /// rename would otherwise move.
+    #[must_use]
+    pub fn net_delta(&self) -> Option<f64> {
+        self.net_greeks.map(|greeks| greeks.delta)
+    }
+
+    /// Attach the equity pair a drawdown cap is judged against. `None` on
+    /// either side means the source has no reading — the breaker refuses as
+    /// unobserved rather than inventing one.
+    #[must_use]
+    pub fn with_equity(mut self, peak: Option<Money>, now: Option<Money>) -> Self {
+        self.equity_peak = peak;
+        self.equity_now = now;
+        self
     }
 }
 
@@ -250,6 +284,86 @@ impl PortfolioFacts {
 pub trait PortfolioFactsSource: Send + Sync {
     /// Observe the portfolio facts at the decision instant.
     fn facts(&self) -> PortfolioFacts;
+}
+
+/// Source of per-contract greeks: a live feed, a fitted surface, or a
+/// computed wrapper — mirroring [`PortfolioFactsSource`], so which Greeks
+/// implementation prices the delta cap is a wiring decision, not an engine
+/// edit. A session that configures [`RiskLimits::max_abs_net_delta`] must
+/// have one attached, so a missing delta refuses as unobserved rather than
+/// passing.
+pub trait GreeksSource: Send + Sync {
+    /// Greeks for `contract`, or `None` when this source has none.
+    fn greeks(&self, contract: &OptionContract) -> Option<Greeks>;
+}
+
+/// Rehearsal-grade computed greeks: the kernels closed form at one spot,
+/// rate, and volatility, dated `as_of` (ACT/365 year fractions). A live feed
+/// supplies per-contract surfaces instead; this wrapper exists so the delta
+/// cap has a deterministic producer in rehearsal and calibration.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ComputedGreeks {
+    /// Underlying spot the closed form prices against.
+    pub spot: f64,
+    /// Continuously-compounded risk-free rate.
+    pub rate: f64,
+    /// Implied volatility every contract is priced at.
+    pub volatility: f64,
+    /// Date the year fractions measure from.
+    pub as_of: NaiveDate,
+}
+
+impl ComputedGreeks {
+    /// Years from `as_of` to `expiry` (ACT/365), or `None` for a dead or
+    /// dateless expiry — an expired contract has no greeks.
+    fn years_to(&self, expiry: NaiveDate) -> Option<f64> {
+        let days = (expiry - self.as_of).num_days();
+        if days <= 0 {
+            return None;
+        }
+        let days = u32::try_from(days).ok()?;
+        Some(f64::from(days) / 365.0)
+    }
+}
+
+impl GreeksSource for ComputedGreeks {
+    fn greeks(&self, contract: &OptionContract) -> Option<Greeks> {
+        if !(self.spot > 0.0
+            && self.spot.is_finite()
+            && self.rate.is_finite()
+            && self.volatility > 0.0
+            && self.volatility.is_finite())
+        {
+            return None;
+        }
+        let strike = Self::contract_strike(contract)?;
+        let years = self.years_to(contract.expiry)?;
+        let priced = protopyne_kernels::bs_greeks(
+            contract.kind,
+            self.spot,
+            strike,
+            years,
+            self.rate,
+            self.volatility,
+        );
+        if !(priced.delta.is_finite()
+            && priced.gamma.is_finite()
+            && priced.theta.is_finite()
+            && priced.vega.is_finite())
+        {
+            return None;
+        }
+        Some(priced.into())
+    }
+}
+
+impl ComputedGreeks {
+    /// Strike per share as a positive finite `f64`, or `None` when the
+    /// contract names no priceable strike.
+    fn contract_strike(contract: &OptionContract) -> Option<f64> {
+        let strike = contract.strike.as_decimal().to_f64()?;
+        (strike > 0.0 && strike.is_finite()).then_some(strike)
+    }
 }
 
 /// The shape of the order that will actually be submitted, derived from the
@@ -430,7 +544,7 @@ impl RiskEngine {
         }
         if let Some(cap) = self.limits.max_abs_net_delta {
             if facts.observed {
-                match facts.net_delta {
+                match facts.net_delta() {
                     Some(delta) if delta.is_finite() => {
                         if delta.abs() > cap {
                             reasons.push(RiskReason::OverNetDelta);

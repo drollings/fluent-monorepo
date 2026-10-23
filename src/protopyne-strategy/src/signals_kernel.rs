@@ -469,8 +469,18 @@ pub(crate) fn apply_rule(
         direction,
         conviction: conviction.clamp(0.0, 1.0),
         activity_score,
+        // Measured in `evaluate`, which owns the view (and the registry).
+        volatility: None,
+        // The kernel signal estimates no edge or odds: a Kelly-style sizer
+        // reads absence as zero, never a default.
+        edge: None,
+        odds: None,
     })
 }
+
+/// Bars the realised volatility measures over: twenty returns capture a
+/// regime without lagging a break by a quarter.
+pub const VOLATILITY_WINDOW: usize = 20;
 
 impl KernelCore {
     fn evaluate(&self, view: &MarketView<'_>) -> Result<SignalOutput, StrategyError> {
@@ -484,7 +494,51 @@ impl KernelCore {
             .iter()
             .map(|line| self.series_of(line, view))
             .collect::<Result<Vec<_>, _>>()?;
-        self.apply(&series)
+        let volatility = self.realised_volatility(view);
+        Ok(self.apply(&series)?.with_volatility(volatility))
+    }
+
+    /// Realised per-bar volatility of simple returns at decision time.
+    ///
+    /// Read through the registered `stddev` kernel over a returns series the
+    /// signal builds from the view's closes, so the signal adds no second
+    /// statistics path: the kernel's population deviation is the one number a
+    /// sizer sees. `None` is *absence* — too few bars, a non-positive close, or
+    /// a kernel refusal — never a zero, because a zero σ would size **larger**,
+    /// the opposite of prudent.
+    fn realised_volatility(&self, view: &MarketView<'_>) -> Option<f64> {
+        let bars = view.data.bars;
+        if bars.len() < VOLATILITY_WINDOW + 1 {
+            return None;
+        }
+        use rust_decimal::prelude::ToPrimitive as _;
+        let mut returns = Vec::with_capacity(bars.len() - 1);
+        for pair in bars.windows(2) {
+            let previous = pair[0].c.to_f64()?;
+            let current = pair[1].c.to_f64()?;
+            if !(previous.is_finite() && previous > 0.0 && current.is_finite()) {
+                return None;
+            }
+            returns.push((current - previous) / previous);
+        }
+        let data = OwnedOhlcv {
+            open: Vec::new(),
+            high: Vec::new(),
+            low: Vec::new(),
+            close: returns,
+            volume: Vec::new(),
+        };
+        let params = ParamSet::new()
+            .with_int("length", VOLATILITY_WINDOW as i64)
+            .with_float("nbdev", 1.0);
+        let indicator = self.registry.get("stddev")?;
+        let result = indicator.batch(&data.views(), &params).ok()?;
+        result
+            .values
+            .last()
+            .copied()
+            .flatten()
+            .filter(|sigma| sigma.is_finite() && *sigma >= 0.0)
     }
 
     /// Largest declared warmup across the indicator lines; a registered

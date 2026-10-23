@@ -17,15 +17,19 @@
 //! invented number.
 
 use bon::Builder;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use rust_decimal::prelude::ToPrimitive as _;
 use rust_decimal::Decimal;
 use std::collections::BTreeMap;
 
-use protopyne_types::Money;
+use protopyne_types::{GreeksCurve, Money, OptionContract};
 use protopyne_venue::{
     calculate_pnl_unrealised, update_from_fill, LegExecution, OrderSide, PositionFill,
     PositionSide, SpreadPosition,
+};
+use protopyne_view::{
+    ConcentrationReport, ConcentrationShare, CONCENTRATION_EVENT_EXPIRY_WEEK,
+    CONCENTRATION_EVENT_UNEXPOSED, CONCENTRATION_NO_EXPIRY,
 };
 
 use crate::error::ServerError;
@@ -82,7 +86,9 @@ pub struct BookedFill {
 }
 
 /// Grouping key: one attributed book. Plain strings — these are names that
-/// already appear in JSON (orders, grants, configs), never opaque keys.
+/// already appear in JSON (orders, grants, configs), never opaque keys — plus
+/// the front expiry, so a roll opens a new book: the book follows the
+/// instrument, not the request.
 #[derive(
     Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
 )]
@@ -97,19 +103,40 @@ pub struct BucketKey {
     pub strategy: String,
     /// Grant.
     pub grant: String,
+    /// Front expiry across the fill's legs, when the fill names any. `None`
+    /// for legless fills, which book exactly as before.
+    pub expiry: Option<NaiveDate>,
 }
 
 impl BookedFill {
-    /// Grouping key for this fill's book.
-    #[must_use]
-    pub fn key(&self) -> BucketKey {
-        BucketKey {
+    /// Grouping key for this fill's book. The expiry is the earliest leg
+    /// expiry parsed from the legs' OCC symbols (the nearest event dominates
+    /// concentration); a fill that names no legs is dateless. An unparseable
+    /// contract refuses fail-closed with the trade id named — like a corrupt
+    /// fill, it never books silently.
+    pub fn key(&self) -> Result<BucketKey, ServerError> {
+        let mut expiry: Option<NaiveDate> = None;
+        for leg in &self.legs {
+            let contract =
+                OptionContract::parse_occ_symbol(leg.contract.as_str()).map_err(|refused| {
+                    ServerError::Backtest(format!(
+                        "fill {} names an unparseable contract {}: {refused}",
+                        self.trade_id,
+                        leg.contract.as_str()
+                    ))
+                })?;
+            expiry = Some(expiry.map_or(contract.expiry, |earliest: NaiveDate| {
+                earliest.min(contract.expiry)
+            }));
+        }
+        Ok(BucketKey {
             portfolio: self.portfolio.clone(),
             underlying: self.underlying.clone(),
             structure: self.structure.clone(),
             strategy: self.strategy.clone(),
             grant: self.grant.clone(),
-        }
+            expiry,
+        })
     }
 }
 
@@ -179,6 +206,17 @@ pub struct PortfolioReport {
     pub unrealized_curve: Vec<Money>,
     /// Why greeks-over-time is unavailable in the prototype.
     pub greeks_note: String,
+    /// Fitted volatility curve, when a surface feed is configured. `None`
+    /// until then — the note above says why, never an invented curve.
+    /// `#[serde(default)]` so payloads written before the field existed
+    /// still decode.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub greeks_curve: Option<GreeksCurve>,
+    /// Concentration over the fold's open books, projected from the same
+    /// fold the totals read — never a second fold. `#[serde(default)]` so
+    /// payloads written before the field existed still decode.
+    #[serde(default)]
+    pub concentration: ConcentrationReport,
 }
 
 /// One attributed book's fold state: the open engine position plus settled
@@ -353,7 +391,7 @@ pub fn aggregate(fills: &[BookedFill]) -> Result<Aggregation, ServerError> {
     let mut books: BTreeMap<BucketKey, BookState> = BTreeMap::new();
     for fill in &ordered {
         books
-            .entry(fill.key())
+            .entry(fill.key()?)
             .or_insert_with(BookState::new)
             .apply(fill)?;
     }
@@ -361,6 +399,28 @@ pub fn aggregate(fills: &[BookedFill]) -> Result<Aggregation, ServerError> {
         fills: ordered,
         books,
     })
+}
+
+/// One partition of the concentration report: per-bucket notionals become
+/// shares of the total. Inputs arrive sorted (B-tree order, or dated with
+/// dateless last); a zero total reports zero shares rather than dividing by
+/// zero.
+fn shares(buckets: Vec<(String, Decimal)>, total: Decimal) -> Vec<ConcentrationShare> {
+    buckets
+        .into_iter()
+        .map(|(key, notional)| {
+            let share = if total.is_zero() {
+                0.0
+            } else {
+                (notional / total).to_f64().unwrap_or(0.0)
+            };
+            ConcentrationShare {
+                key,
+                notional: Money::new(notional),
+                share,
+            }
+        })
+        .collect()
 }
 
 impl Aggregation {
@@ -391,6 +451,89 @@ impl Aggregation {
             .iter()
             .map(|(key, book)| book.snapshot(key, None))
             .collect()
+    }
+
+    /// Days before expiry that put a book in the event window: the expiry
+    /// week. Only expiry proximity feeds this — the fold carries no
+    /// corporate-action calendar, so ex-dividend windowing waits for one.
+    pub const EVENT_WINDOW_DAYS: i64 = 7;
+
+    /// Concentration over the fold's open books: three partitions of the
+    /// same open notional (quantity × entry average), projected from this
+    /// fold's books — never a second fold. Flat books contribute nothing;
+    /// an empty fold reports empty partitions and a zero total.
+    ///
+    /// The event partition reads expiry against the newest fill's date:
+    /// `expiry-week` for books expiring within the window (inclusive),
+    /// `unexposed` for everything else, including dateless books.
+    #[must_use]
+    pub fn concentration(&self) -> ConcentrationReport {
+        let mut entries: Vec<(String, Option<NaiveDate>, Decimal)> = Vec::new();
+        for (key, book) in &self.books {
+            let Some(open) = &book.position else {
+                continue;
+            };
+            let notional = Decimal::from(open.quantity_abs) * open.price_entry_average.as_decimal();
+            entries.push((key.underlying.clone(), key.expiry, notional));
+        }
+        let total = entries
+            .iter()
+            .map(|(_, _, notional)| *notional)
+            .sum::<Decimal>();
+        let as_of = self.fills.last().map(|fill| fill.at.date_naive());
+        let mut by_underlying: BTreeMap<&str, Decimal> = BTreeMap::new();
+        let mut by_expiry: BTreeMap<Option<NaiveDate>, Decimal> = BTreeMap::new();
+        let mut by_event: BTreeMap<&str, Decimal> = BTreeMap::new();
+        for (underlying, expiry, notional) in &entries {
+            *by_underlying.entry(underlying.as_str()).or_default() += *notional;
+            *by_expiry.entry(*expiry).or_default() += *notional;
+            let in_window = as_of.zip(*expiry).is_some_and(|(at, exp)| {
+                let days = (exp - at).num_days();
+                (0..=Self::EVENT_WINDOW_DAYS).contains(&days)
+            });
+            *by_event
+                .entry(if in_window {
+                    CONCENTRATION_EVENT_EXPIRY_WEEK
+                } else {
+                    CONCENTRATION_EVENT_UNEXPOSED
+                })
+                .or_default() += *notional;
+        }
+        let mut by_expiry: Vec<(String, Decimal)> = by_expiry
+            .into_iter()
+            .map(|(expiry, notional)| {
+                (
+                    expiry.map_or_else(
+                        || CONCENTRATION_NO_EXPIRY.to_owned(),
+                        |date| date.to_string(),
+                    ),
+                    notional,
+                )
+            })
+            .collect();
+        by_expiry.sort_by(|left, right| {
+            // Dated ascending, dateless last: ISO dates sort lexicographically.
+            (left.0 == CONCENTRATION_NO_EXPIRY, &left.0)
+                .cmp(&(right.0 == CONCENTRATION_NO_EXPIRY, &right.0))
+        });
+        ConcentrationReport {
+            by_underlying: shares(
+                by_underlying
+                    .into_iter()
+                    .map(|(key, notional)| (key.to_owned(), notional))
+                    .collect(),
+                total,
+            ),
+            by_expiry: shares(by_expiry, total),
+            by_event: shares(
+                by_event
+                    .into_iter()
+                    .map(|(key, notional)| (key.to_owned(), notional))
+                    .collect(),
+                total,
+            ),
+            total_notional: Money::new(total),
+        }
     }
 
     /// Price the fold at `marks` ([`MarkPoint`] per mark, in any order):
@@ -431,7 +574,7 @@ impl Aggregation {
         for mark in &ordered {
             while cursor < self.fills.len() && self.fills[cursor].at <= mark.at {
                 let fill = &self.fills[cursor];
-                live.entry(fill.key())
+                live.entry(fill.key()?)
                     .or_insert_with(BookState::new)
                     .apply(fill)?;
                 cursor += 1;
@@ -519,6 +662,8 @@ impl Aggregation {
             greeks_note: crate::report::BacktestReport::unavailable_greeks_note(
                 ordered.iter().any(|mark| !mark.chain.is_empty()),
             ),
+            greeks_curve: None,
+            concentration: self.concentration(),
         })
     }
 }

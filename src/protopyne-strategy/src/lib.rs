@@ -14,6 +14,9 @@ pub mod activity;
 pub mod economics;
 pub mod elements;
 pub mod error;
+/// The one grant fixture for test targets (crate tests and `test-support`).
+#[cfg(any(test, feature = "test-support"))]
+pub mod fixtures;
 pub mod generator;
 pub mod grant;
 pub mod ledger;
@@ -29,12 +32,15 @@ pub use legs::{LegRequest, LegSelectRefusal, LegSelector, StrikePolicy};
 
 pub use activity::{ChainActivityScore, OptionsActivity, DEFAULT_NEAR_MONEY_BAND};
 pub use economics::{spread_economics, EconRefusal, PackageSide, SpreadEconomics};
+#[cfg(feature = "research")]
+pub use elements::FractionalKelly;
 pub use elements::{
-    BuyingPower, EconomicsPolicy, ExplicitStructure, FixedContracts, FixedSignal, HoldLoss,
-    LimitMonitor, LossAction, LossMgmt, LossSet, MarkContext, Monitor, MonitorAlert, NullMonitor,
-    PercentNetLiq, PositionView, ProfitTarget, ProposeInput, Signal, SignalConfig, SignalInstance,
-    SignalOutput, Sizing, SizingCaps, StopLoss, Strategy, StructureRefusal, StructureRequest,
-    StructureSelection, StructureSelector, TimeStop,
+    AdjustRule, Adjustment, AssignmentGuard, BuyingPower, EconomicsPolicy, ExplicitStructure,
+    FixedContracts, FixedSignal, HoldLoss, LegView, LimitMonitor, LossAction, LossMgmt, LossSet,
+    MarkContext, Monitor, MonitorAlert, NullMonitor, PercentNetLiq, PositionEvents, PositionView,
+    ProfitTarget, ProposeInput, Signal, SignalConfig, SignalInstance, SignalOutput, Sizing,
+    SizingCaps, StopLoss, Strategy, StructureRefusal, StructureRequest, StructureSelection,
+    StructureSelector, TimeStop, VolatilityScaled,
 };
 pub use error::StrategyError;
 pub use generator::{
@@ -43,20 +49,22 @@ pub use generator::{
     REPORT_SLOPE_LOOKBACK,
 };
 pub use grant::{
-    evaluate_grant, worst_case_for, BreakerLimits, BreakerState, ComputedWorstCase, Grant,
-    GrantBudgets, GrantDecision, GrantMarket, GrantPatch, GrantPermission, GrantScope, GrantUsage,
-    PortfolioThresholds, SignalThresholds, TradeThresholds, WorstCaseBasis, WorstCaseUnit,
+    evaluate_grant, re_attestation_for_window, worst_case_for, BreakerLimits, BreakerState,
+    ComputedWorstCase, Grant, GrantBudgets, GrantDecision, GrantMarket, GrantPatch,
+    GrantPermission, GrantScope, GrantUsage, PortfolioThresholds, ReAttestationWindow,
+    SignalThresholds, TradeThresholds, WorstCaseBasis, WorstCaseUnit,
 };
 pub use ledger::{
-    FillOutcome, FillStatus, GrantLedger, LedgerRefusal, ReleaseReason, Reservation, Settled,
+    DrawdownStatus, FillOutcome, FillStatus, GrantLedger, LedgerRefusal, ReleaseReason,
+    Reservation, Settled,
 };
 pub use proposal::{
     transition, Direction, JournaledTransition, Proposal, ProposalEvent, ProposalSide,
     ProposalState, StructureKind,
 };
 pub use risk::{
-    OrderShape, PortfolioFacts, PortfolioFactsSource, RiskApproved, RiskEngine, RiskLimits,
-    RiskReason, RiskRefused, RiskState,
+    ComputedGreeks, GreeksSource, OrderShape, PortfolioFacts, PortfolioFactsSource, RiskApproved,
+    RiskEngine, RiskLimits, RiskReason, RiskRefused, RiskState,
 };
 #[cfg(feature = "pine")]
 pub use signals_pine::{ParityClaim, PineSignal};
@@ -73,3 +81,7 @@ mod validate_tests;
 #[cfg(test)]
 #[path = "../tests/layering.rs"]
 mod layering_tests;
+
+#[cfg(test)]
+#[path = "../tests/research_closure.rs"]
+mod research_closure_tests;

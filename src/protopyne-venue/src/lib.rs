@@ -16,6 +16,7 @@ pub mod alert;
 pub mod auth;
 pub mod backfill;
 pub mod broker;
+pub mod cert_soak;
 pub mod command;
 pub mod depth;
 pub mod error;
@@ -65,15 +66,19 @@ pub use backfill::{
     fetch_through, missing_range, splice, BackfillGate, BackfillHandle, BackfillReport,
     BackfillSource, BackfillUnit, BACKFILL_ASSET,
 };
+pub use cert_soak::{
+    fault_schedule, run_paper_soak, SoakOutcome, ALERTS_FILE, BREAKER_FILE, JOURNAL_FILE,
+    RECONCILE_FILE,
+};
 pub use command::{
     cancel_all_detail, cancel_all_ids, close_all_detail, close_all_intents, decide_proposal,
-    loop_started, open_groups_of, proposal_bodies, replay_grant, replay_proposal_states,
-    replay_proposals, replay_trading_state, CommandKind, CommandUnit, GrantHandle,
-    JournaledProposal, LegGroup, PortfolioRegistry, PortfolioView, ReplicaOrder, StateHandle,
-    StateReplica, TradingState, TradingStateUnit, COMMAND_ARM_GRANT_KIND, COMMAND_CANCEL_ALL_KIND,
-    COMMAND_CLOSE_ALL_KIND, COMMAND_DISARM_KIND, COMMAND_RESUME_KIND, COMMAND_REVOKE_GRANT_KIND,
-    COMMAND_START_LOOP_KIND, OPERATOR_CLIENT_ID, PROPOSAL_BODY_KIND, PROPOSAL_TRANSITION_KIND,
-    TRADING_ENABLED_ASSET,
+    loop_started, open_groups_of, proposal_bodies, replay_attestation, replay_grant,
+    replay_proposal_states, replay_proposals, replay_trading_state, CommandKind, CommandUnit,
+    GrantHandle, JournaledProposal, LegGroup, PortfolioRegistry, PortfolioView, ReplicaOrder,
+    StateHandle, StateReplica, TradingState, TradingStateUnit, COMMAND_ARM_GRANT_KIND,
+    COMMAND_ATTEST_KIND, COMMAND_CANCEL_ALL_KIND, COMMAND_CLOSE_ALL_KIND, COMMAND_DISARM_KIND,
+    COMMAND_RESUME_KIND, COMMAND_REVOKE_GRANT_KIND, COMMAND_START_LOOP_KIND, OPERATOR_CLIENT_ID,
+    PROPOSAL_BODY_KIND, PROPOSAL_TRANSITION_KIND, TRADING_ENABLED_ASSET,
 };
 pub use depth::{BookManager, DarkFinding, DepthBook, DepthDelta, PriceLevel, DEFAULT_MAX_LEVELS};
 pub use error::VenueError;

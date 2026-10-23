@@ -14,6 +14,7 @@ use fluent_wvr::validate::{check_for_execute, valid_output, Validate};
 use fluent_wvr::{Describable, FieldAccess};
 
 use crate::error::EguiError;
+use crate::paint::parse_hex_color;
 
 fn default_theme() -> String {
     "default".to_owned()
@@ -198,13 +199,30 @@ impl Default for ThemeConfig {
     }
 }
 
-/// Whether `value` spells a `#RRGGBB` color.
-fn is_hex_color(value: &str) -> bool {
-    let bytes = value.as_bytes();
-    bytes.len() == 7 && bytes[0] == b'#' && bytes[1..].iter().all(u8::is_ascii_hexdigit)
-}
-
 impl ThemeConfig {
+    /// The identity field: the theme key's own name, not a color.
+    const IDENTITY_FIELD: &'static str = "name";
+
+    /// Every series style key this theme resolves, in the derive's own field
+    /// order, minus the identity field.
+    ///
+    /// Derived from [`FieldAccess::field_names`] — the same declarative field
+    /// list the `Describable` schema is projected from — so a picker entry, the
+    /// resolver, and the settings pane cannot drift apart: a new color field is
+    /// a key the moment it is added to the struct.
+    #[must_use]
+    pub fn style_keys() -> &'static [&'static str] {
+        static KEYS: std::sync::OnceLock<Vec<&'static str>> = std::sync::OnceLock::new();
+        KEYS.get_or_init(|| {
+            ThemeConfig::default()
+                .field_names()
+                .iter()
+                .copied()
+                .filter(|name| *name != Self::IDENTITY_FIELD)
+                .collect()
+        })
+    }
+
     /// Fail-closed self-consistency check.
     pub fn validate(&self) -> Result<(), EguiError> {
         if self.name.trim().is_empty() {
@@ -225,17 +243,17 @@ impl ThemeConfig {
             ("bear_up", &self.bear_up),
             ("grid", &self.grid),
         ] {
-            if !is_hex_color(value) {
-                return Err(EguiError::InvalidParam {
-                    what: what.to_owned(),
-                    reason: format!("{value:?} is not a #RRGGBB color"),
-                });
-            }
+            // One hex reader: the same parse the painter uses, so a color
+            // that validates is a color that paints.
+            parse_hex_color(what, value)?;
         }
         Ok(())
     }
 
     /// Resolve a series style key to its color; `None` for unknown keys.
+    ///
+    /// A key from [`style_keys`](Self::style_keys) always resolves: the
+    /// resolver and the enumerator read the same field list (the test pins it).
     #[must_use]
     pub fn style(&self, key: &str) -> Option<&str> {
         match key {

@@ -245,7 +245,12 @@ fn mock_gateway_serves_canned_tickets_and_refuses_writes() {
     );
     let drifts = gateway.ticket_drifts().expect("mock serves drifts");
     assert!(drifts.is_empty(), "the canned book agrees with itself");
-    let issue = serde_json::json!({"client_id": "mock-ticket-2"});
+    let issue = crate::TicketDraft {
+        side: crate::TicketSide::Buy,
+        quantity: 2,
+        limit_price: "600.50".to_owned(),
+        symbol: "SPY".to_owned(),
+    };
     assert!(
         matches!(
             gateway.issue_ticket(issue),

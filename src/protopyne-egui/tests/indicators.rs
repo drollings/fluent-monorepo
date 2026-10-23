@@ -11,6 +11,7 @@ use super::*;
 
 use fluent_egui::{HotSlotStack, IndicatorStyle, PaneCache, PanePlan, SlotAttachment};
 use protopyne_chart_scale::PriceScaleMode;
+use protopyne_kernels::builtin_registry;
 
 use crate::fast_mas::FastMasConfig;
 use crate::integration_lite::IntegrationLiteConfig;

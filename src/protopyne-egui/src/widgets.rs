@@ -576,9 +576,13 @@ pub fn paint_top_bar(
             &format!("{current_symbol} {PULLDOWN_CHEVRON}"),
             |menu_ui| {
                 for kind in TOP_BAR_CHART_TYPES {
+                    let option_symbol = chart_type_symbol(kind);
+                    let option_label = chart_type_label(kind);
                     if menu_ui
-                        // .selectable_label(kind == chart_type, &format!("{current_symbol}"))
-                        .selectable_label(kind == chart_type, chart_type_symbol(kind))
+                        .selectable_label(
+                            kind == chart_type,
+                            format!("{option_symbol} {option_label}"),
+                        )
                         .clicked()
                     {
                         action = Some(TopBarAction::PickedChartType(kind));
@@ -793,8 +797,7 @@ pub enum RangeChoice {
 #[must_use]
 pub fn chart_type_symbol(kind: ChartType) -> &'static str {
     match kind {
-        ChartType::Candles => "┿",
-        ChartType::Heikin => "┿",
+        ChartType::Candles | ChartType::Heikin => "┿",
         ChartType::Line => "🗠",
         ChartType::Area => "📊",
         other => other.name(),
@@ -806,7 +809,7 @@ pub fn chart_type_symbol(kind: ChartType) -> &'static str {
 pub fn chart_type_label(kind: ChartType) -> &'static str {
     match kind {
         ChartType::Candles => "Candles",
-        ChartType::Heikin => "Heikin",
+        ChartType::Heikin => "Heikin-Ashi",
         ChartType::Line => "Line",
         ChartType::Area => "Area",
         other => other.name(),

@@ -29,7 +29,7 @@ fn money(value: i64) -> Money {
     Money::new(Decimal::from(value))
 }
 
-fn book(dte_days: Option<u32>) -> PositionView {
+fn book(dte_days: Option<u32>) -> PositionView<'static> {
     PositionView {
         underlying: "SPY".to_owned(),
         side: Direction::Long,
@@ -37,6 +37,8 @@ fn book(dte_days: Option<u32>) -> PositionView {
         entry_avg: money(250),
         max_loss: money(600),
         dte_days,
+        legs: None,
+        events: None,
     }
 }
 

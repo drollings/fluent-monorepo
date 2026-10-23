@@ -73,7 +73,7 @@ fn frozen_eps_table_never_widens() {
             row.eps
         );
         match row.status {
-            CompatStatus::ParityVerified => {}
+            CompatStatus::ExprParityVerified | CompatStatus::ExternalParityVerified(_) => {}
             CompatStatus::FormulaVerified(_) => pending.push(row.id),
         }
     }

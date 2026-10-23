@@ -175,6 +175,7 @@ impl Renderer {
                 type_name,
                 value,
                 is_varip,
+                ..
             } => {
                 let keyword = if *is_varip { "varip" } else { "var" };
                 let typed = type_name.as_ref().map_or_else(String::new, |type_name| {
@@ -456,6 +457,7 @@ impl Renderer {
                 name,
                 args,
                 type_args,
+                ..
             } => {
                 format!(
                     "{name}{}{}",
@@ -468,6 +470,7 @@ impl Renderer {
                 method,
                 args,
                 type_args,
+                ..
             } => {
                 format!(
                     "{namespace}.{method}{}{}",
@@ -480,6 +483,7 @@ impl Renderer {
                 method,
                 args,
                 type_args,
+                ..
             } => {
                 format!(
                     "{}.{method}{}{}",

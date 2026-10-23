@@ -27,14 +27,14 @@ use protopyne_venue::{
     serving_allows_entries, update_from_fill, AccountSummary, BrokerBundle, BrokerDeal,
     ConfirmedFill, DriftKind, ImportedPosition, JournalEvent, ManualTicket, OrderIntent,
     OrderRecord, OrderSide, Position, PositionFill, PositionSide, SpreadPosition, TicketDrift,
-    TicketRead, TradingState, COMMAND_ARM_GRANT_KIND, COMMAND_CANCEL_ALL_KIND,
+    TicketRead, TradingState, COMMAND_ARM_GRANT_KIND, COMMAND_ATTEST_KIND, COMMAND_CANCEL_ALL_KIND,
     COMMAND_CLOSE_ALL_KIND, COMMAND_REVOKE_GRANT_KIND, OPERATOR_CLIENT_ID,
 };
 use protopyne_view::{
     ArmResponse, BrokerAccountView, BrokerCapabilityView, BrokerDealView, BrokerLegView,
     BrokerOrderView, ChartBars, HealthView, JournalRowView, OverlaySeries, PortfolioView,
-    PositionView, ProposalView, ReplayStepView, ReplayView, TicketDriftView, TicketView, WorstCase,
-    PORTFOLIO_SOURCE_BOOKED, PORTFOLIO_SOURCE_REHEARSAL,
+    PositionView, ProposalView, ReplayStepView, ReplayView, TicketDraft, TicketDriftView,
+    TicketSide, TicketView, WorstCase, PORTFOLIO_SOURCE_BOOKED, PORTFOLIO_SOURCE_REHEARSAL,
 };
 
 use crate::boot::{AppState, Shared, TapeMissKind, TapeServeSnapshot};
@@ -536,6 +536,23 @@ fn journal_grant(state: &AppState, kind: &str, detail: &str) -> Result<(), (Stat
         })
 }
 
+/// Journal an operator re-attestation row for the loop to fold: re-arms
+/// entries for another cadence. A wrong or absent id refuses, exactly like
+/// revoke — attestation names the authority it extends.
+pub(crate) fn journal_attest(state: &Shared, grant_id: &str) -> Result<(), (StatusCode, String)> {
+    let Some(current) = live_grant(state) else {
+        return Err((StatusCode::CONFLICT, "no live grant to attest".to_owned()));
+    };
+    if current.id.as_str() != grant_id {
+        return Err((
+            StatusCode::CONFLICT,
+            format!("live grant {} is not {grant_id}", current.id),
+        ));
+    }
+    let detail = serde_json::json!({ "grant_id": grant_id }).to_string();
+    journal_grant(state, COMMAND_ATTEST_KIND, &detail)
+}
+
 /// Shared arm logic for the route and the gateway: refuse a revoked grant,
 /// enforce tighten-only against the live grant, journal the arm row first,
 /// then let the fold install it. The `Err` status rides along so both callers
@@ -688,6 +705,12 @@ pub(crate) fn issue_ticket(
             format!("ticket intent malformed: {error}"),
         )
     })?;
+    issue_intent(state, intent)
+}
+
+/// Journal one already-parsed intent as a waiting ticket: the tracker refuses
+/// a duplicate id before anything is journaled.
+fn issue_intent(state: &Shared, intent: OrderIntent) -> Result<(), (StatusCode, String)> {
     common_core::sync::lock(&state.tickets)
         .issue_journaled(
             &state.journal,
@@ -696,8 +719,53 @@ pub(crate) fn issue_ticket(
             chrono::Utc::now(),
         )
         .map(|_| ())
-        .map_err(|error| (StatusCode::CONFLICT, error.to_string()))?;
-    Ok(())
+        .map_err(|error| (StatusCode::CONFLICT, error.to_string()))
+}
+
+/// The venue intent one draft describes, under a client id the caller minted.
+///
+/// This is the one place a [`TicketDraft`] becomes an [`OrderIntent`]: the
+/// price is parsed by the venue's own scale-guarded money rule (the same one
+/// the wire parser applies), the side and quantity carry through, and the
+/// attribution names the manual surface. A blank symbol or an unparseable
+/// price refuses here, naming the field — never at the terminal.
+pub(crate) fn intent_of_draft(
+    draft: &TicketDraft,
+    client_id: String,
+) -> Result<OrderIntent, (StatusCode, String)> {
+    let symbol = draft.symbol.trim();
+    if symbol.is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "ticket intent malformed: symbol is required".to_owned(),
+        ));
+    }
+    let limit_price: Money = draft.limit_price.trim().parse().map_err(|_| {
+        (
+            StatusCode::BAD_REQUEST,
+            "ticket intent malformed: limit_price is not a decimal".to_owned(),
+        )
+    })?;
+    Ok(OrderIntent::new()
+        .client_id(client_id)
+        .proposal_id("manual".to_owned())
+        .strategy("manual".to_owned())
+        .underlying(symbol.to_owned())
+        .side(match draft.side {
+            TicketSide::Buy => OrderSide::Buy,
+            TicketSide::Sell => OrderSide::Sell,
+        })
+        .quantity(draft.quantity)
+        .limit_price(limit_price)
+        .build())
+}
+
+/// Issue one draft as a manual ticket: the core mints the identity, builds
+/// the intent, and journals the waiting row.
+pub(crate) fn issue_draft(state: &Shared, draft: &TicketDraft) -> Result<(), (StatusCode, String)> {
+    let client_id = common_core::sync::lock(&state.tickets).next_client_id();
+    let intent = intent_of_draft(draft, client_id)?;
+    issue_intent(state, intent)
 }
 
 /// Confirm a ticket against the human's fill report through the tracker's

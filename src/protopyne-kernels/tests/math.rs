@@ -294,3 +294,32 @@ fn promoted_extremes_match_util_on_flat_nan_gap_inputs() {
         }
     }
 }
+
+#[test]
+fn drawdown_of_peak_measures_peak_to_trough() {
+    use rust_decimal::Decimal;
+    let peak = Decimal::from(1000);
+    // (1000 − 900) / 1000 = 0.1 exactly in decimal.
+    assert_eq!(
+        drawdown_of_peak(peak, Decimal::from(900)),
+        Some(Decimal::new(1, 1))
+    );
+    // At the peak there is no drawdown — defined, and never a breach.
+    assert_eq!(drawdown_of_peak(peak, peak), Some(Decimal::ZERO));
+    // Above the peak is negative headroom, not a breach.
+    assert_eq!(
+        drawdown_of_peak(peak, Decimal::from(1100)),
+        Some(Decimal::new(-1, 1))
+    );
+    // No peak to fall from: zero, negative, and overflowed peaks refuse.
+    assert_eq!(drawdown_of_peak(Decimal::ZERO, Decimal::from(100)), None);
+    assert_eq!(
+        drawdown_of_peak(Decimal::from(-50), Decimal::from(-60)),
+        None
+    );
+    assert_eq!(
+        drawdown_of_peak(Decimal::MAX, Decimal::MIN),
+        None,
+        "a trough that overflows the subtraction refuses"
+    );
+}

@@ -21,8 +21,8 @@ use fluent_egui::{
     column_delta_geoms, crosshair_data, crosshair_lines, needs_column_aggregation,
     opacity_from_transparency, paint_candles_tinted, paint_catalog_modal, paint_crosshair,
     paint_delta_bars_tinted, paint_hot_slot_stack, paint_oscillator, paint_ribbon,
-    paint_ribbon_fill, paint_slot_settings_modal, proportional_ribbon_polygons, resolve_color,
-    sampled_line_points, sampled_ribbon_bands, translate_bands, translate_candles,
+    paint_ribbon_fill, paint_slot_settings_modal, paint_thresholds, proportional_ribbon_polygons,
+    resolve_color, sampled_line_points, sampled_ribbon_bands, translate_bands, translate_candles,
     translate_delta_bars, translate_points, translate_polygons, visible_rows, wheel_zoom_factor,
     zoom_range_around, CatalogAction, CatalogModal, CrosshairLines, EguiError, HotSlotAction,
     HotSlotStack, InteractionState, PaneCache, PanePlan, PaneZones, PointerInput, SettingsCommit,
@@ -35,7 +35,7 @@ use protopyne_chart_scale::{PriceRange, PriceScaleMode};
 use protopyne_types::{BucketAccum, Money, SymKey, SymbolIndex, Timeframe};
 use protopyne_view::{
     pick_default_symbol, symbol_catalog, AssetClass, ReplayDecisionView, ReplayStartParams,
-    ReplayStateView, SymbolInfoView, TerminalGateway,
+    ReplayStateView, StructureKindHint, SymbolInfoView, TerminalGateway, TicketDraft, TicketSide,
 };
 
 use crate::chart::{
@@ -44,12 +44,12 @@ use crate::chart::{
 };
 use crate::indicators::{
     build_indicator_catalog, instantiate_indicator, ChartIndicator, IndicatorCategory,
-    IndicatorEvaluation,
+    IndicatorEvaluation, IndicatorSeries,
 };
 use crate::integration_lite::{
     candle_momentum_keys, candle_momentum_series, integration_lite_sub_pane, momentum_key_for,
     momentum_tints, ribbon_fill_transparency, IntegrationLiteConfig, IntegrationLiteSubPane,
-    MomentumPalette, MomentumTint,
+    MomentumPalette, MomentumTint, CALIBRATED_PIVOT_THRESHOLD,
 };
 use crate::prefs::{BookmarkEntry, Favorites, SlotPrefs, TerminalPrefs, TickerLayout};
 use crate::session::{fmt_boundary_time, time_grid_lines, time_major_unit, SessionBreakCache};
@@ -338,15 +338,17 @@ fn tint_color(tint: MomentumTint) -> egui::Color32 {
     )
 }
 
-fn series_for_pane(evaluation: &IndicatorEvaluation, pane: &str) -> IndicatorEvaluation {
-    IndicatorEvaluation {
-        series: evaluation
-            .series
-            .iter()
-            .filter(|series| series.pane_id("sub") == pane)
-            .cloned()
-            .collect(),
-    }
+/// Where a merged slot paints: its computation stays where it was, only
+/// the presentation moves. The default keeps the plugin's own pane.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PaneTarget {
+    /// The plugin's own pane (no override row stored).
+    #[default]
+    Default,
+    /// Over the price pane.
+    Main,
+    /// In the shared oscillator pane.
+    SharedOscillator,
 }
 
 /// One sub-pane's identity and viewport.
@@ -839,6 +841,22 @@ enum ChartContextAction {
     /// Set a replay boundary at the trigger candle (beginning by default,
     /// the end when a beginning already precedes it).
     SetReplayBoundary,
+    /// Move the custom pane under the pointer onto the price pane.
+    MergeToChart,
+    /// Move the custom pane under the pointer into the shared oscillator.
+    MergeToOscillator,
+}
+
+/// Which pane the canvas menu opened over: the price pane, the shared
+/// oscillator, or one custom pane by id.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ContextPane {
+    /// The price pane.
+    Main,
+    /// The shared oscillator pane.
+    Shared,
+    /// One custom pane by id.
+    Custom(String),
 }
 
 /// An interactive replay run driven from the dock: the gateway owns the
@@ -869,14 +887,6 @@ struct LiveReplay {
 }
 
 impl LiveReplay {
-    /// Rehearsal economics a replay opens under: the preview's own per-trade
-    /// booking, so a replay and a preview over the same bars agree on money.
-    const MAX_LOSS: i64 = 400;
-    /// See [`Self::MAX_LOSS`].
-    const NOTIONAL: i64 = 2_000;
-    /// See [`Self::MAX_LOSS`]: front-leg days to expiry.
-    const DTE_DAYS: u32 = 30;
-
     fn new(session_id: String, state: ReplayStateView) -> Self {
         Self {
             session_id,
@@ -958,6 +968,11 @@ pub struct ChartWorkspace {
     sub: Option<Viewport>,
     /// Custom sub-panes after the default shared `sub` pane.
     sub_panes: Vec<SubPaneView>,
+    /// Presentation-only routing overrides by slot id: merging moves paint,
+    /// never plan nodes, cache keys, or fingerprints. Empty by default, so
+    /// routing is identical until a row is written. Removal deletes the row;
+    /// a target that no longer resolves reads as default.
+    pane_routing: HashMap<String, PaneTarget>,
     symbol_modal: Option<CatalogModal<AssetClass>>,
     indicator_modal: Option<CatalogModal<IndicatorCategory>>,
     /// Bookmark picker over the active ticker's entries, rebuilt on every
@@ -993,6 +1008,9 @@ pub struct ChartWorkspace {
     /// Bar time the context menu opened over, resolved through the main
     /// viewport at trigger time so later pans cannot move the actions.
     context_time: Option<i64>,
+    /// Which pane the context menu opened over, resolved from the layout
+    /// rects at trigger time so later pans cannot move the actions.
+    context_pane: Option<ContextPane>,
     /// Long-press tracking on the canvas: pointer position and UI seconds
     /// when the current primary hold started, if the pointer is down on it.
     context_press: Option<(f32, f32, f32)>,
@@ -1119,17 +1137,16 @@ pub struct ChartWorkspace {
     /// without an explicit window.
     replay_range: Option<(i64, i64)>,
     /// Manual-ticket issue drafts: the operator's exact ticket fields. The
-    /// core alone parses what is sent — drafts stay plain strings until the
-    /// issue click builds the intent document.
+    /// terminal only collects them into a [`TicketDraft`]; the core mints the
+    /// ticket identity and validates every value with its own parser.
     ticket_underlying: String,
-    /// Ticket side draft (`Buy`/`Sell`).
-    ticket_side: String,
-    /// Ticket quantity draft (whole contracts).
+    /// Ticket side draft.
+    ticket_side: TicketSide,
+    /// Ticket quantity draft (whole contracts, parsed only when the issue
+    /// click builds the typed draft).
     ticket_quantity: String,
-    /// Ticket limit-price draft (decimal text).
+    /// Ticket limit-price draft (decimal text, never parsed here).
     ticket_limit: String,
-    /// Ticket client-id sequence: each issue click mints `manual-{seq}`.
-    ticket_seq: u64,
     /// Ticket refusal, when the last ticket action failed.
     ticket_error: Option<String>,
 }
@@ -1245,6 +1262,7 @@ impl ChartWorkspace {
             main: None,
             sub: None,
             sub_panes: Vec::new(),
+            pane_routing: HashMap::new(),
             symbol_modal: None,
             indicator_modal: None,
             bookmark_modal: None,
@@ -1259,6 +1277,7 @@ impl ChartWorkspace {
             context_open: false,
             context_at: egui::Pos2::ZERO,
             context_time: None,
+            context_pane: None,
             context_press: None,
             context_fired: false,
             favorite_symbols: BTreeSet::new(),
@@ -1290,10 +1309,9 @@ impl ChartWorkspace {
             play_press: PlayPressState::default(),
             replay_range: None,
             ticket_underlying: "SPY".to_owned(),
-            ticket_side: "Buy".to_owned(),
+            ticket_side: TicketSide::Buy,
             ticket_quantity: "1".to_owned(),
             ticket_limit: String::new(),
-            ticket_seq: 0,
             ticket_error: None,
         };
         workspace.slot_indicator(INTEGRATION_LITE_ID)?;
@@ -1574,6 +1592,7 @@ impl ChartWorkspace {
     pub fn remove_indicator(&mut self, id: &str) -> Result<(), EguiError> {
         self.stack.remove(id)?;
         self.plugins.retain(|plugin| plugin.id() != id);
+        self.pane_routing.remove(id);
         // The plan and the series catalog are derived per recompute; rebuild
         // the plan now so a re-slot never trips over the removed nodes, and
         // drop the catalog so no later reader meets a stale producer.
@@ -1588,16 +1607,12 @@ impl ChartWorkspace {
                     .retain(|(key, _)| *key != series.key);
             }
         }
-        if id == INTEGRATION_LITE_ID {
-            self.sub_pane = None;
-            self.momentum_keys.clear();
-            self.tints.clear();
-        }
         if self.rows.is_empty() {
             return Ok(());
         }
         self.sub_pane = self.compute_sub_pane()?;
         self.recompute_tint()?;
+        self.rebuild_derived_panes()?;
         self.derived_builds += 1;
         // The direct rebuild above counts as the build for the new plan, so
         // the next no-op recompute holds the gate instead of re-evaluating.
@@ -1642,7 +1657,7 @@ impl ChartWorkspace {
     fn trailing_keep(&self, timeframe: TimeframeKey, end: Option<i64>) -> usize {
         fetch_for_span(
             self.window_span_seconds(end),
-            timeframe.seconds(),
+            timeframe.timeframe().total_seconds(),
             FETCH_WARMUP_BARS,
         )
     }
@@ -1860,34 +1875,23 @@ impl ChartWorkspace {
     /// Build the issue-click intent document from the ticket drafts. Drafts
     /// stay plain strings; the core alone parses them, so a bad draft
     /// refuses here with the field named and never reaches the gateway.
-    fn ticket_draft(&self) -> Result<serde_json::Value, String> {
-        let underlying = self.ticket_underlying.trim();
-        if underlying.is_empty() {
-            return Err("ticket needs an underlying".to_owned());
-        }
-        if self.ticket_side != "Buy" && self.ticket_side != "Sell" {
-            return Err("ticket side is Buy or Sell".to_owned());
-        }
+    fn ticket_draft(&self) -> Result<TicketDraft, String> {
+        // The typed fields are all the terminal contributes: the quantity text
+        // has to become a `u32` to fit the draft (a text field cannot hold an
+        // unparseable number), and everything else — the symbol, the price
+        // text, the side, the positive-quantity rule, the ticket identity —
+        // is the core's to validate and mint.
         let quantity: u32 = self
             .ticket_quantity
             .trim()
             .parse()
             .map_err(|_| "ticket quantity must be whole contracts".to_owned())?;
-        if quantity == 0 {
-            return Err("ticket quantity must be whole contracts".to_owned());
-        }
-        if self.ticket_limit.trim().is_empty() {
-            return Err("ticket needs a limit price".to_owned());
-        }
-        Ok(serde_json::json!({
-            "client_id": format!("manual-{}", self.ticket_seq),
-            "proposal_id": "manual",
-            "strategy": "manual",
-            "underlying": underlying,
-            "side": self.ticket_side,
-            "quantity": quantity,
-            "limit_price": self.ticket_limit.trim(),
-        }))
+        Ok(TicketDraft {
+            side: self.ticket_side,
+            quantity,
+            limit_price: self.ticket_limit.trim().to_owned(),
+            symbol: self.ticket_underlying.trim().to_owned(),
+        })
     }
 
     /// Refresh the dock's cached bundle (health/portfolio/proposals/journal)
@@ -1911,12 +1915,6 @@ impl ChartWorkspace {
                 self.dock_bundle = None;
                 self.dock_bundle_error = Some(error.to_string());
                 self.dock_journal_lines.clear();
-            }
-        }
-        // Live tier texts ride beside the form's editors (display only).
-        if let Ok(tiers) = gateway.grant_tiers() {
-            for (tier, text) in tiers {
-                let _ = (tier, text);
             }
         }
     }
@@ -2016,6 +2014,31 @@ impl ChartWorkspace {
         // A fresh open clears the last refusal, like every other replay
         // control path: a stale reason never outlives the retry it names.
         self.replay_error = None;
+        // The core declares the economics; the terminal sends them. A refused
+        // read, an unknown shape, or unparseable money is a visible error, not
+        // a fallback booking of our own.
+        let underlying = self.active_symbol().to_owned();
+        let Some(hint) = StructureKindHint::from_tag(&structure) else {
+            self.replay_error = Some(format!("unknown replay structure '{structure}'"));
+            return;
+        };
+        let economics = match gateway.rehearsal_economics(&underlying, hint) {
+            Ok(economics) => economics,
+            Err(error) => {
+                self.replay_error = Some(error.to_string());
+                return;
+            }
+        };
+        let (max_loss, notional) = match (
+            economics.max_loss.parse::<Money>(),
+            economics.notional.parse::<Money>(),
+        ) {
+            (Ok(max_loss), Ok(notional)) => (max_loss, notional),
+            (Err(error), _) | (_, Err(error)) => {
+                self.replay_error = Some(format!("rehearsal economics malformed: {error}"));
+                return;
+            }
+        };
         let mut start = self.rows.partition_point(|row| row.time < start_epoch);
         let mut end = match end_excl_epoch {
             Some(time) => self.rows.partition_point(|row| row.time < time),
@@ -2046,11 +2069,11 @@ impl ChartWorkspace {
             self.map_window_to_server(gateway, start, end);
         let params = ReplayStartParams {
             session_id: "terminal".to_owned(),
-            underlying: self.active_symbol().to_owned(),
-            strategy_name: "ribbon".to_owned(),
-            max_loss: Money::from(LiveReplay::MAX_LOSS),
-            notional: Money::from(LiveReplay::NOTIONAL),
-            dte_days: LiveReplay::DTE_DAYS,
+            underlying,
+            strategy_name: economics.strategy,
+            max_loss,
+            notional,
+            dte_days: economics.dte_days,
             warmup_bars: 0,
             seed,
             start_bar: server_start,
@@ -2290,12 +2313,14 @@ impl ChartWorkspace {
     }
 
     /// Open a replay run over the boundary window (full history when none is
-    /// set, e.g. no viewport bound yet). The run always rehearses: fixed deterministic ids,
-    /// the preview's own per-trade booking, and the single-leg strategy —
-    /// the same economics the preview agrees on. Structure and grant choice
-    /// stay core-side (the core builds the replay strategy and grant scope
-    /// from the `"Single"` shape and the rehearsal grant); the dock offers no
-    /// run-configuration knobs beyond the window and the transport.
+    /// set, e.g. no viewport bound yet). The run always rehearses: fixed
+    /// deterministic ids, and the economics the core declares for this
+    /// underlying and structure — read through the gateway, never authored
+    /// here, so the terminal cannot book numbers its own authority would
+    /// refuse. Structure and grant choice stay core-side (the core builds the
+    /// replay strategy and grant scope from the `"Single"` shape and the
+    /// rehearsal grant); the dock offers no run-configuration knobs beyond the
+    /// window and the transport.
     fn open_captured_replay(&mut self, gateway: &dyn TerminalGateway) {
         let (start_epoch, end_excl_epoch) = self.replay_epochs();
         self.open_live_replay(
@@ -2622,7 +2647,11 @@ impl ChartWorkspace {
     /// (picking a preset clears it), so the two never fight.
     #[must_use]
     pub fn effective_window(&self) -> &[ChartRow] {
-        let window = window_for_range(&self.rows, self.range, self.timeframe.seconds());
+        let window = window_for_range(
+            &self.rows,
+            self.range,
+            self.timeframe.timeframe().total_seconds(),
+        );
         match self.custom_start {
             Some(start) => {
                 let skip = window.iter().take_while(|row| row.time < start).count();
@@ -2985,8 +3014,9 @@ impl ChartWorkspace {
     /// bar grid, never below one bar. A 1M/5M chart steps a day, a 15M/1H
     /// chart a week, so one click moves a couple hundred candles.
     fn pan_step_bars(&self) -> i64 {
-        let seconds = self.timeframe.seconds().max(1) as i64;
-        (crate::session::pan_unit_seconds(self.timeframe.seconds()) / seconds).max(1)
+        let seconds = self.timeframe.timeframe().total_seconds().max(1) as i64;
+        (crate::session::pan_unit_seconds(self.timeframe.timeframe().total_seconds()) / seconds)
+            .max(1)
     }
 
     /// Step the time axis by `delta_bars` (negative moves earlier) on
@@ -3345,6 +3375,11 @@ impl ChartWorkspace {
                 self.sub = Some(synced);
             }
         }
+        for pane in &mut self.sub_panes {
+            if let Ok(synced) = pane.viewport.sync_time_axis(&next) {
+                pane.viewport = synced;
+            }
+        }
     }
 
     /// Build the AutoHeight event for the current culled window: fit the
@@ -3512,9 +3547,14 @@ impl ChartWorkspace {
     }
 
     /// Custom pane ids published by multi-output kernel plugins, sorted.
+    /// Merged slots publish no custom pane: routing is presentation-only,
+    /// so a merged slot's id disappears from the derivation until unmerged.
     fn custom_pane_ids(&self) -> Vec<String> {
         let mut ids = BTreeSet::new();
-        for evaluation in self.evaluations.values() {
+        for (slot_id, evaluation) in &self.evaluations {
+            if self.pane_target(slot_id) != PaneTarget::Default {
+                continue;
+            }
             for series in &evaluation.series {
                 if let Some(pane) = &series.pane {
                     if pane != "sub" {
@@ -3524,6 +3564,91 @@ impl ChartWorkspace {
             }
         }
         ids.into_iter().collect()
+    }
+
+    /// The routing target for a slot: the stored row, or the default when
+    /// no row exists or the slot is unknown. A dangling target never errors.
+    fn pane_target(&self, slot_id: &str) -> PaneTarget {
+        if !self.stack.contains(slot_id) {
+            return PaneTarget::Default;
+        }
+        self.pane_routing
+            .get(slot_id)
+            .copied()
+            .unwrap_or(PaneTarget::Default)
+    }
+
+    /// Whether a slot may merge into the shared oscillator pane: only slots
+    /// with a normalizable oscillator mapping qualify.
+    fn is_mergeable_to_shared(&self, slot_id: &str) -> bool {
+        if slot_id == INTEGRATION_LITE_ID {
+            return true;
+        }
+        let Some(config) = self.stack.config(slot_id) else {
+            return false;
+        };
+        let Some(config) =
+            fluent_wvr::component_downcast_ref::<crate::indicators::KernelIndicatorConfig>(config)
+        else {
+            return false;
+        };
+        crate::oscillators::oscillator_mapping_for_kernel(&config.kernel).is_some()
+    }
+
+    /// Merge a slot to a target pane: presentation-only, so plan nodes,
+    /// cache keys, and catalog entries never move. Merging to the shared
+    /// pane refuses with the plugin named when no normalizable mapping
+    /// exists. Setting the default deletes the row.
+    pub fn set_pane_target(&mut self, slot_id: &str, target: PaneTarget) -> Result<(), EguiError> {
+        if !self.stack.contains(slot_id) {
+            return Err(EguiError::InvalidParam {
+                what: slot_id.to_owned(),
+                reason: "unknown slot id".to_owned(),
+            });
+        }
+        if target == PaneTarget::SharedOscillator && !self.is_mergeable_to_shared(slot_id) {
+            return Err(EguiError::InvalidParam {
+                what: slot_id.to_owned(),
+                reason: format!(
+                    "{slot_id} has no normalizable oscillator mapping, so it cannot merge into the shared oscillator"
+                ),
+            });
+        }
+        if target == PaneTarget::Default {
+            self.pane_routing.remove(slot_id);
+        } else {
+            self.pane_routing.insert(slot_id.to_owned(), target);
+        }
+        Ok(())
+    }
+
+    /// The pane a series paints in after routing: merged slots resolve to
+    /// their target, everything else to the series' own pane.
+    fn resolved_series_pane(&self, slot_id: &str, series: &IndicatorSeries) -> String {
+        match self.pane_target(slot_id) {
+            PaneTarget::SharedOscillator => "sub".to_owned(),
+            PaneTarget::Main => "main".to_owned(),
+            PaneTarget::Default => series.pane_id("sub").to_owned(),
+        }
+    }
+
+    /// One slot's evaluation slice for a pane after routing: plan nodes,
+    /// cache keys, and catalog entries stay untouched, only the paint slice
+    /// moves.
+    fn evaluation_for_pane(
+        &self,
+        slot_id: &str,
+        evaluation: &IndicatorEvaluation,
+        pane: &str,
+    ) -> IndicatorEvaluation {
+        IndicatorEvaluation {
+            series: evaluation
+                .series
+                .iter()
+                .filter(|series| self.resolved_series_pane(slot_id, series) == pane)
+                .cloned()
+                .collect(),
+        }
     }
 
     /// Declared bounded policy union for one custom pane, when every
@@ -3551,6 +3676,8 @@ impl ChartWorkspace {
 
     /// The display range for one custom pane: declared bounds plus a small
     /// pad, or the visible values' extent. Values are never clamped.
+    /// Ranges read display values, the same contract painters read, so a
+    /// normalized pane contains its normalized content.
     fn custom_pane_range(&self, pane_id: &str) -> (f64, f64) {
         let mut lo = f64::INFINITY;
         let mut hi = f64::NEG_INFINITY;
@@ -3559,7 +3686,7 @@ impl ChartWorkspace {
                 if series.pane_id("sub") != pane_id {
                     continue;
                 }
-                for value in series.values.iter().flatten() {
+                for value in series.display_values.iter().flatten() {
                     if value.is_finite() {
                         lo = lo.min(*value);
                         hi = hi.max(*value);
@@ -3578,6 +3705,78 @@ impl ChartWorkspace {
         (lo - pad, hi + pad)
     }
 
+    /// Whether one slot paints into the shared oscillator pane: any of its
+    /// series resolving to `sub` after routing.
+    fn paints_in_shared(&self, slot_id: &str, evaluation: &IndicatorEvaluation) -> bool {
+        evaluation
+            .series
+            .iter()
+            .any(|series| self.resolved_series_pane(slot_id, series) == "sub")
+    }
+
+    /// Threshold rules the shared pane shows: one entry per contributing
+    /// slot, deduplicated. Kernel slots read their display threshold; the
+    /// composite slot reads the frozen pivot threshold. An empty shared pane
+    /// carries no rules.
+    fn shared_osc_thresholds(&self) -> Vec<f64> {
+        let mut thresholds = Vec::new();
+        for (slot_id, evaluation) in &self.evaluations {
+            if !self.paints_in_shared(slot_id, evaluation) {
+                continue;
+            }
+            if slot_id == INTEGRATION_LITE_ID {
+                thresholds.push(CALIBRATED_PIVOT_THRESHOLD);
+                continue;
+            }
+            if let Some(config) = self
+                .stack
+                .config(slot_id)
+                .and_then(component_downcast_ref::<crate::indicators::KernelIndicatorConfig>)
+            {
+                thresholds.push(config.osc_threshold);
+            }
+        }
+        thresholds.sort_by(f64::total_cmp);
+        thresholds.dedup();
+        thresholds
+    }
+
+    /// The shared oscillator display range: symmetric auto-range over the
+    /// normalized content painting there, padded, always containing every
+    /// slot threshold and zero. With no normalized content the fixed band
+    /// stays the honest fallback.
+    fn shared_osc_range(&self) -> (f64, f64) {
+        let mut half = 0.0_f64;
+        let mut found = false;
+        for (slot_id, evaluation) in &self.evaluations {
+            for series in &evaluation.series {
+                if self.resolved_series_pane(slot_id, series) != "sub" {
+                    continue;
+                }
+                if series.display_mapping.is_none() {
+                    continue;
+                }
+                for value in series.display_values.iter().flatten() {
+                    if value.is_finite() {
+                        half = half.max(value.abs());
+                        found = true;
+                    }
+                }
+            }
+        }
+        for threshold in self.shared_osc_thresholds() {
+            if threshold.is_finite() {
+                half = half.max(threshold.abs());
+                found = true;
+            }
+        }
+        if !found || !half.is_finite() || half <= 0.0 {
+            return (SUB_MIN, SUB_MAX);
+        }
+        let pad = (2.0 * half) * AUTO_HEIGHT_PAD_FRACTION;
+        (-half - pad, half + pad)
+    }
+
     /// Nominal plot heights for the current pane share: the price plot (minus
     /// its time strip) and one sub-pane's share for `pane_count` sub-panes.
     /// The frame resyncs both to the measured window; these only bind
@@ -3588,6 +3787,62 @@ impl ChartWorkspace {
         let price_plot = NOMINAL_CANVAS_HEIGHT * share - TIME_STRIP;
         let sub_plot = NOMINAL_CANVAS_HEIGHT * (1.0 - share);
         (price_plot, sub_plot / pane_count.max(1) as f32)
+    }
+
+    /// Rebuild the derived oscillator viewports from the published
+    /// evaluations: the shared pane plus one viewport per custom pane id.
+    /// Pane membership is derived state — the ids come from the evaluations,
+    /// never from slot order — so removal prunes through this one path and
+    /// recompute rebinds through it. Display ranges come from the existing
+    /// range helper; no new math lives here. Time axes sync to the main
+    /// viewport when one is bound, so a removal keeps the chart's position.
+    fn rebuild_derived_panes(&mut self) -> Result<(), EguiError> {
+        let custom_ids = self.custom_pane_ids();
+        let (_, pane_height) = self.pane_heights(custom_ids.len() + 1);
+        let spacing = if self.config.bar_spacing > 0.0 {
+            self.config.bar_spacing as f32
+        } else {
+            DEFAULT_BAR_SPACING
+        };
+        let (sub_lo, sub_hi) = self.shared_osc_range();
+        let mut sub = Viewport::new(
+            PriceScaleMode::Normal,
+            sub_lo,
+            sub_hi,
+            pane_height,
+            spacing,
+            0.0,
+            false,
+        )?;
+        let mut sub_panes = Vec::with_capacity(custom_ids.len());
+        for id in custom_ids {
+            let (pane_lo, pane_hi) = self.custom_pane_range(&id);
+            sub_panes.push(SubPaneView {
+                id,
+                viewport: Viewport::new(
+                    PriceScaleMode::Normal,
+                    pane_lo,
+                    pane_hi,
+                    pane_height,
+                    spacing,
+                    0.0,
+                    false,
+                )?,
+            });
+        }
+        if let Some(main) = self.main {
+            if let Ok(synced) = sub.sync_time_axis(&main) {
+                sub = synced;
+            }
+            for pane in &mut sub_panes {
+                if let Ok(synced) = pane.viewport.sync_time_axis(&main) {
+                    pane.viewport = synced;
+                }
+            }
+        }
+        self.sub = Some(sub);
+        self.sub_panes = sub_panes;
+        Ok(())
     }
 
     /// Rebind the main and sub-pane viewports (and the interaction bounds) to
@@ -3610,7 +3865,7 @@ impl ChartWorkspace {
             DEFAULT_BAR_SPACING
         };
         let custom_ids = self.custom_pane_ids();
-        let (price_plot, pane_height) = self.pane_heights(custom_ids.len() + 1);
+        let (price_plot, _) = self.pane_heights(custom_ids.len() + 1);
         let main = Viewport::new(
             PriceScaleMode::Normal,
             lo,
@@ -3620,34 +3875,8 @@ impl ChartWorkspace {
             PRICE_BASE,
             false,
         )?;
-        let sub = Viewport::new(
-            PriceScaleMode::Normal,
-            SUB_MIN,
-            SUB_MAX,
-            pane_height,
-            spacing,
-            0.0,
-            false,
-        )?;
-        let mut sub_panes = Vec::with_capacity(custom_ids.len());
-        for id in custom_ids {
-            let (pane_lo, pane_hi) = self.custom_pane_range(&id);
-            sub_panes.push(SubPaneView {
-                id,
-                viewport: Viewport::new(
-                    PriceScaleMode::Normal,
-                    pane_lo,
-                    pane_hi,
-                    pane_height,
-                    spacing,
-                    0.0,
-                    false,
-                )?,
-            });
-        }
         self.main = Some(main);
-        self.sub = Some(sub);
-        self.sub_panes = sub_panes;
+        self.rebuild_derived_panes()?;
         // Trailing-edge anchor when history overflows the window: a zero
         // offset would open on the oldest bars while every anchor read
         // addresses the full history. When the window covers the whole
@@ -3890,6 +4119,7 @@ impl ChartWorkspace {
             let mut stored = evaluation;
             for series in &mut stored.series {
                 series.values.resize(full_len, None);
+                series.display_values.resize(full_len, None);
             }
             self.evaluations.insert(id, stored);
         }
@@ -4284,7 +4514,7 @@ impl ChartWorkspace {
         // Right-click or long-press on either pane arms the canvas context
         // menu at the pointer, resolved against the decided view.
         self.poll_chart_context_menu(ui, &response, &layouts);
-        let bar_seconds = self.timeframe.seconds();
+        let bar_seconds = self.timeframe.timeframe().total_seconds();
 
         let theme = self.theme.clone();
         let background = resolve_color(&theme, "background")?;
@@ -4373,7 +4603,7 @@ impl ChartWorkspace {
                                 bullish,
                                 &main,
                                 layout.plot.width(),
-                            ),
+                            )?,
                             (layout.plot.left(), layout.plot.top()),
                         );
                         paint_ribbon_fill(&plot, &placed, &theme, paint_alpha)?;
@@ -4439,9 +4669,14 @@ impl ChartWorkspace {
                 }
             }
             for plugin in &self.plugins {
-                if plugin.attachment() != SlotAttachment::MainOverlay
-                    || self.stack.visible(plugin.id()) != Some(true)
-                {
+                if self.stack.visible(plugin.id()) != Some(true) {
+                    continue;
+                }
+                let target = self.pane_target(plugin.id());
+                let is_native_main = plugin.attachment() == SlotAttachment::MainOverlay
+                    && target == PaneTarget::Default;
+                let is_routed_main = target == PaneTarget::Main;
+                if !is_native_main && !is_routed_main {
                     continue;
                 }
                 let Some(config) = self.stack.config(plugin.id()) else {
@@ -4453,6 +4688,16 @@ impl ChartWorkspace {
                     // visible tail through the shared samplers — no per-frame,
                     // per-plugin window copy on this path. Native legs cull to
                     // the twice-visible borrow (display-only).
+                    let routed;
+                    let evaluation = if is_routed_main {
+                        routed = self.evaluation_for_pane(plugin.id(), evaluation, "main");
+                        if routed.series.is_empty() {
+                            continue;
+                        }
+                        &routed
+                    } else {
+                        evaluation
+                    };
                     plugin.paint_main_overlay(
                         &plot,
                         evaluation,
@@ -4520,8 +4765,15 @@ impl ChartWorkspace {
             paint_price_grid(&sub_plot, sub, sub_layout, &theme)?;
             paint_time_grid(&sub_plot, sub, view_rows, bar_seconds, sub_layout, &theme)?;
             for plugin in &self.plugins {
+                if self.stack.visible(plugin.id()) != Some(true) {
+                    continue;
+                }
+                let target = self.pane_target(plugin.id());
+                if target == PaneTarget::Main {
+                    continue;
+                }
                 if plugin.attachment() != SlotAttachment::SubPane
-                    || self.stack.visible(plugin.id()) != Some(true)
+                    && target != PaneTarget::SharedOscillator
                 {
                     continue;
                 }
@@ -4529,7 +4781,7 @@ impl ChartWorkspace {
                     let Some(config) = self.stack.config(plugin.id()) else {
                         continue;
                     };
-                    let evaluation = series_for_pane(evaluation, "sub");
+                    let evaluation = self.evaluation_for_pane(plugin.id(), evaluation, "sub");
                     if evaluation.series.is_empty() {
                         continue;
                     }
@@ -4595,6 +4847,20 @@ impl ChartWorkspace {
                     &theme,
                 )?;
             }
+            // Slot thresholds ride the shared pane as rules through the one
+            // threshold emitter; contributing slots each lend their display
+            // threshold, so the pane shows the union. Off-window legs draw
+            // nothing instead of mapping off-pane.
+            for threshold in self.shared_osc_thresholds() {
+                paint_thresholds(
+                    &sub_plot,
+                    sub_layout.plot.left(),
+                    sub_layout.plot.right(),
+                    threshold,
+                    &sub,
+                    &theme,
+                )?;
+            }
             // The zero line makes the centered histogram legible.
             if let Some(zero_y) = sub.windowed_y(0.0) {
                 let y = sub_layout.plot.top() + zero_y;
@@ -4626,9 +4892,13 @@ impl ChartWorkspace {
                 &theme,
             )?;
             for plugin in &self.plugins {
-                if plugin.attachment() != SlotAttachment::SubPane
-                    || self.stack.visible(plugin.id()) != Some(true)
-                {
+                if self.stack.visible(plugin.id()) != Some(true) {
+                    continue;
+                }
+                if self.pane_target(plugin.id()) != PaneTarget::Default {
+                    continue;
+                }
+                if plugin.attachment() != SlotAttachment::SubPane {
                     continue;
                 }
                 let Some(evaluation) = self.evaluations.get(plugin.id()) else {
@@ -4637,7 +4907,7 @@ impl ChartWorkspace {
                 let Some(config) = self.stack.config(plugin.id()) else {
                     continue;
                 };
-                let evaluation = series_for_pane(evaluation, &pane.id);
+                let evaluation = self.evaluation_for_pane(plugin.id(), evaluation, &pane.id);
                 if evaluation.series.is_empty() {
                     continue;
                 }
@@ -4692,6 +4962,7 @@ impl ChartWorkspace {
         if self.context_open {
             let mut open = true;
             let mut picked = None;
+            let (merge_chart_label, merge_osc_label) = self.merge_labels();
             Self::picker_popup(
                 ui,
                 "chart-context",
@@ -4707,6 +4978,16 @@ impl ChartWorkspace {
                     if menu.button("Set Replay Boundary").clicked() {
                         picked = Some(ChartContextAction::SetReplayBoundary);
                     }
+                    if let Some(label) = &merge_chart_label {
+                        if menu.button(label).clicked() {
+                            picked = Some(ChartContextAction::MergeToChart);
+                        }
+                    }
+                    if let Some(label) = &merge_osc_label {
+                        if menu.button(label).clicked() {
+                            picked = Some(ChartContextAction::MergeToOscillator);
+                        }
+                    }
                 },
             );
             if !open {
@@ -4714,19 +4995,7 @@ impl ChartWorkspace {
             }
             if let Some(action) = picked {
                 self.context_open = false;
-                match action {
-                    ChartContextAction::AutoZoom => self.auto_zoom(),
-                    ChartContextAction::Bookmark => {
-                        if let Some(time) = self.context_time {
-                            self.add_bookmark(time);
-                        }
-                    }
-                    ChartContextAction::SetReplayBoundary => {
-                        if let Some(time) = self.context_time {
-                            self.set_replay_boundary(time);
-                        }
-                    }
-                }
+                let _ = self.apply_context_action(action);
             }
         }
         // Load-more affordance: when panned to the earliest loaded bar, fade
@@ -4763,16 +5032,16 @@ impl ChartWorkspace {
         response: &egui::Response,
         layouts: &[PaneLayout],
     ) {
-        let Some(plot) = layouts.first().map(|layout| layout.plot) else {
+        if layouts.is_empty() {
             return;
-        };
+        }
         let now = ui.input(|input| input.time) as f32;
         if ui.input(|input| input.pointer.secondary_clicked()) {
             if let Some(pos) = response
                 .hover_pos()
                 .filter(|pos| response.rect.contains(*pos))
             {
-                self.open_chart_context(plot, pos);
+                self.open_chart_context(layouts, pos);
             }
             self.context_press = None;
             self.context_fired = false;
@@ -4789,7 +5058,7 @@ impl ChartWorkspace {
                         } else if !self.context_fired && now - start >= PLAY_LONG_PRESS_SECS as f32
                         {
                             self.context_fired = true;
-                            self.open_chart_context(plot, pos);
+                            self.open_chart_context(layouts, pos);
                         }
                     }
                 }
@@ -4804,9 +5073,13 @@ impl ChartWorkspace {
     /// bar beneath through the main viewport clamped into the decided view.
     /// A trigger with no resolvable bar still opens the menu — Auto Zoom
     /// needs no candle — with the candle actions refusing on their own.
-    fn open_chart_context(&mut self, plot: egui::Rect, pos: egui::Pos2) {
+    /// The pane resolves from the layout rects at open time through the one
+    /// shared path, so right-click and long-press agree.
+    fn open_chart_context(&mut self, layouts: &[PaneLayout], pos: egui::Pos2) {
+        let plot = layouts.first().map(|layout| layout.plot);
         self.context_at = pos;
         self.context_time = self.main.and_then(|main| {
+            let plot = plot?;
             if !plot.width().is_finite() || plot.width() <= 0.0 {
                 return None;
             }
@@ -4822,7 +5095,117 @@ impl ChartWorkspace {
             let index = (slot + 0.5).floor().max(0.0) as usize;
             self.rows.get(index.min(view_len - 1)).map(|row| row.time)
         });
+        self.context_pane = self.resolve_context_pane(layouts, pos);
         self.context_open = true;
+    }
+
+    /// Which pane `pos` sits over: the price plot, the shared oscillator, or
+    /// one custom pane by id. The one resolution path both gestures share.
+    fn resolve_context_pane(&self, layouts: &[PaneLayout], pos: egui::Pos2) -> Option<ContextPane> {
+        let [main, shared, customs @ ..] = layouts else {
+            return None;
+        };
+        if main.plot.contains(pos) {
+            return Some(ContextPane::Main);
+        }
+        if shared.plot.contains(pos) {
+            return Some(ContextPane::Shared);
+        }
+        for (layout, pane) in customs.iter().zip(self.sub_panes.iter()) {
+            if layout.plot.contains(pos) {
+                return Some(ContextPane::Custom(pane.id.clone()));
+            }
+        }
+        None
+    }
+
+    /// The merge rows the open menu offers: the chart merge appears for any
+    /// custom-pane target, while the oscillator merge appears only when the
+    /// pane's slot would survive the shared-pane gate — offering an action
+    /// that refuses on click is the same misfire the pane resolution removed.
+    /// Both rows name the pane id. One helper behind the labels and the
+    /// paint block, so the two can never disagree about what is offered.
+    fn merge_labels(&self) -> (Option<String>, Option<String>) {
+        let Some(ContextPane::Custom(id)) = &self.context_pane else {
+            return (None, None);
+        };
+        let chart = Some(format!("Merge {id} to Chart"));
+        let oscillator = id
+            .strip_prefix("kernel:")
+            .filter(|slot| self.is_mergeable_to_shared(slot))
+            .map(|_| format!("Merge {id} to Oscillator"));
+        (chart, oscillator)
+    }
+
+    /// Every row the open menu offers: the three base rows plus the merges
+    /// from the one helper behind the paint block.
+    pub fn context_menu_labels(&self) -> Vec<String> {
+        let mut labels = vec![
+            "Auto Zoom".to_owned(),
+            "Bookmark".to_owned(),
+            "Set Replay Boundary".to_owned(),
+        ];
+        let (chart, oscillator) = self.merge_labels();
+        labels.extend(chart);
+        labels.extend(oscillator);
+        labels
+    }
+
+    /// Run one menu row: the base rows keep today's behavior, the merges
+    /// write the routing row and prune through the derived rebuild.
+    fn apply_context_action(&mut self, action: ChartContextAction) -> Result<(), EguiError> {
+        match action {
+            ChartContextAction::AutoZoom => {
+                self.auto_zoom();
+                Ok(())
+            }
+            ChartContextAction::Bookmark => {
+                if let Some(time) = self.context_time {
+                    self.add_bookmark(time);
+                }
+                Ok(())
+            }
+            ChartContextAction::SetReplayBoundary => {
+                if let Some(time) = self.context_time {
+                    self.set_replay_boundary(time);
+                }
+                Ok(())
+            }
+            ChartContextAction::MergeToChart => {
+                let Some(ContextPane::Custom(pane_id)) = self.context_pane.clone() else {
+                    return Err(EguiError::InvalidParam {
+                        what: "merge".to_owned(),
+                        reason: "no custom pane under the menu".to_owned(),
+                    });
+                };
+                let Some(slot_id) = pane_id.strip_prefix("kernel:") else {
+                    return Err(EguiError::InvalidParam {
+                        what: pane_id,
+                        reason: "only kernel panes merge to the chart".to_owned(),
+                    });
+                };
+                self.set_pane_target(slot_id, PaneTarget::Main)?;
+                self.rebuild_derived_panes()?;
+                Ok(())
+            }
+            ChartContextAction::MergeToOscillator => {
+                let Some(ContextPane::Custom(pane_id)) = self.context_pane.clone() else {
+                    return Err(EguiError::InvalidParam {
+                        what: "merge".to_owned(),
+                        reason: "no custom pane under the menu".to_owned(),
+                    });
+                };
+                let Some(slot_id) = pane_id.strip_prefix("kernel:") else {
+                    return Err(EguiError::InvalidParam {
+                        what: pane_id,
+                        reason: "only kernel panes merge into the shared oscillator".to_owned(),
+                    });
+                };
+                self.set_pane_target(slot_id, PaneTarget::SharedOscillator)?;
+                self.rebuild_derived_panes()?;
+                Ok(())
+            }
+        }
     }
 
     /// Translate this frame's pointer gestures into typed interaction inputs.
@@ -5340,15 +5723,20 @@ impl ChartWorkspace {
             body.horizontal(|row| {
                 row.label("issue");
                 row.text_edit_singleline(&mut self.ticket_underlying);
-                row.text_edit_singleline(&mut self.ticket_side);
+                egui::ComboBox::from_id_salt("ticket-side")
+                    .selected_text(match self.ticket_side {
+                        TicketSide::Buy => "Buy",
+                        TicketSide::Sell => "Sell",
+                    })
+                    .show_ui(row, |ui| {
+                        ui.selectable_value(&mut self.ticket_side, TicketSide::Buy, "Buy");
+                        ui.selectable_value(&mut self.ticket_side, TicketSide::Sell, "Sell");
+                    });
                 row.text_edit_singleline(&mut self.ticket_quantity);
                 row.text_edit_singleline(&mut self.ticket_limit);
                 if row.button("issue").clicked() {
                     match self.ticket_draft() {
-                        Ok(ticket) => {
-                            self.ticket_seq += 1;
-                            actions.push(TicketAction::issue(ticket));
-                        }
+                        Ok(ticket) => actions.push(TicketAction::issue(ticket)),
                         Err(reason) => self.ticket_error = Some(reason),
                     }
                 }
@@ -6284,3 +6672,27 @@ mod prefs_tests;
 #[cfg(test)]
 #[path = "../tests/live_chart.rs"]
 mod live_chart_tests;
+
+#[cfg(test)]
+#[path = "../tests/derived_panes.rs"]
+mod derived_panes_tests;
+
+#[cfg(test)]
+#[path = "../tests/pane_routing.rs"]
+mod pane_routing_tests;
+
+#[cfg(test)]
+#[path = "../tests/context_panes.rs"]
+mod context_panes_tests;
+
+#[cfg(test)]
+#[path = "../tests/oscillator_display.rs"]
+mod oscillator_display_tests;
+
+#[cfg(test)]
+#[path = "../tests/threshold_calibration.rs"]
+mod threshold_calibration_tests;
+
+#[cfg(test)]
+#[path = "../tests/shared_oscillator.rs"]
+mod shared_oscillator_tests;

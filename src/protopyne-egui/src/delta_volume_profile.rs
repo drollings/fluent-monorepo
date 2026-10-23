@@ -812,6 +812,8 @@ impl crate::indicators::ChartIndicator for DeltaVolumeProfileIndicator {
             .map(|(node, values)| crate::indicators::IndicatorSeries {
                 node: (*node).to_owned(),
                 name: node.trim_start_matches("dvol:").to_owned(),
+                display_values: values.clone(),
+                display_mapping: None,
                 values,
                 style: "fast".to_owned(),
                 attachment: SlotAttachment::MainOverlay,

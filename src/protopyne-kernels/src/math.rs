@@ -20,6 +20,7 @@
 
 use crate::error::KernelError;
 use crate::indicator::{fin_or_none, ParamSet};
+use rust_decimal::Decimal;
 
 /// Validate one positive integer parameter shared by batch and update paths.
 ///
@@ -129,6 +130,22 @@ pub fn variance_sample(window: &[f64]) -> f64 {
     window.iter().map(|v| (v - mean) * (v - mean)).sum::<f64>() / (window.len() as f64 - 1.0)
 }
 
+/// Drawdown of one reading against its peak, as a fraction of the peak:
+/// `(peak − now) / peak`. The one home for peak-to-trough arithmetic — the
+/// series fold in `protopyne-server::metrics` delegates to this per step, so
+/// there is exactly one spelling of the division.
+///
+/// `None` when there is no peak to fall from (a non-positive peak) or the
+/// math overflows: no peak, no drawdown, never a zero. A reading at or above
+/// the peak reports zero or headroom — defined, and never a breach.
+#[must_use]
+pub fn drawdown_of_peak(peak: Decimal, now: Decimal) -> Option<Decimal> {
+    if peak <= Decimal::ZERO {
+        return None;
+    }
+    peak.checked_sub(now)?.checked_div(peak)
+}
+
 /// Sample standard deviation of a window (dividing by `n - 1`).
 #[must_use]
 pub fn std_sample(window: &[f64]) -> f64 {
@@ -202,16 +219,35 @@ pub fn linreg_slope_intercept(x: &[f64], y: &[f64]) -> Option<(f64, f64)> {
 /// `ta.median` bridge arm, which delegates here so the two never fork.
 #[must_use]
 pub fn median_of(values: &[f64]) -> Option<f64> {
+    let mut scratch = Vec::new();
+    median_of_with(values, &mut scratch)
+}
+
+/// [`median_of`] with a caller-provided scratch buffer: copies the window in
+/// (the caller's slice is never mutated) and **selects** the middle instead of
+/// sorting the whole window. Same values, O(n) instead of O(n log n) per call;
+/// `scratch` keeps its capacity across calls, so a hot caller allocates once.
+#[must_use]
+pub fn median_of_with(values: &[f64], scratch: &mut Vec<f64>) -> Option<f64> {
     if values.is_empty() {
         return None;
     }
-    let mut sorted = values.to_vec();
-    sorted.sort_by(f64::total_cmp);
-    let middle = sorted.len() / 2;
-    if sorted.len() % 2 == 1 {
-        Some(sorted[middle])
+    scratch.clear();
+    scratch.extend_from_slice(values);
+    let len = scratch.len();
+    let middle = len / 2;
+    let (less, &mut middle_value, _) = scratch.select_nth_unstable_by(middle, f64::total_cmp);
+    if len % 2 == 1 {
+        Some(middle_value)
     } else {
-        Some(f64::midpoint(sorted[middle - 1], sorted[middle]))
+        // An even window: the lower median is the largest of the `middle`
+        // elements the selection put before the pivot.
+        let lower = less
+            .iter()
+            .copied()
+            .max_by(f64::total_cmp)
+            .expect("an even non-empty window has a lower half");
+        Some(f64::midpoint(lower, middle_value))
     }
 }
 
@@ -223,20 +259,60 @@ pub fn median_of(values: &[f64]) -> Option<f64> {
 #[must_use]
 #[allow(clippy::float_cmp)]
 pub fn mode_of(values: &[f64]) -> Option<f64> {
-    let mut best: Option<(f64, usize)> = None;
-    for (at, value) in values.iter().enumerate() {
-        if values[..at].iter().any(|seen| seen == value) {
-            continue;
-        }
-        let count = values
+    let mut scratch = Vec::new();
+    mode_of_with(values, &mut scratch)
+}
+
+/// [`mode_of`] with a caller-provided scratch buffer: one sorted pass counting
+/// runs, then the leader is recovered in **first-appearance order**. The old
+/// shape scanned the prefix for a duplicate and recounted the whole slice for
+/// every element, O(n²); this is O(n log n) with the same answer.
+///
+/// `-0.0` and `0.0` count as one bucket (they compare equal), so the sorted
+/// copy folds the sign of zero before bucketing. `NaN` is never equal to
+/// itself, so it forms no bucket — an all-`NaN` input keeps the old answer,
+/// its first value.
+#[must_use]
+#[allow(clippy::float_cmp)]
+pub fn mode_of_with(values: &[f64], scratch: &mut Vec<f64>) -> Option<f64> {
+    let first = *values.first()?;
+    scratch.clear();
+    scratch.extend(
+        values
             .iter()
-            .filter(|candidate| *candidate == value)
-            .count();
-        if best.is_none_or(|(_, held)| count > held) {
-            best = Some((*value, count));
+            .map(|value| if *value == 0.0 { 0.0 } else { *value }),
+    );
+    scratch.sort_by(f64::total_cmp);
+    let mut best = 0_usize;
+    let mut start = 0_usize;
+    while start < scratch.len() {
+        let mut end = start + 1;
+        while end < scratch.len() && scratch[end] == scratch[start] {
+            end += 1;
         }
+        if !scratch[start].is_nan() {
+            best = best.max(end - start);
+        }
+        start = end;
     }
-    best.map(|(value, _)| value)
+    if best == 0 {
+        return Some(first);
+    }
+    values
+        .iter()
+        .copied()
+        .find(|candidate| run_len(scratch, *candidate) == best)
+}
+
+/// Length of `value`'s run in a `total_cmp`-sorted slice; zero for `NaN`,
+/// which forms no bucket.
+fn run_len(sorted: &[f64], value: f64) -> usize {
+    if value.is_nan() {
+        return 0;
+    }
+    let start = sorted.partition_point(|candidate| candidate.total_cmp(&value).is_lt());
+    let end = sorted.partition_point(|candidate| candidate.total_cmp(&value).is_le());
+    end - start
 }
 
 /// Linear-interpolation percentile: `rank = percentage / 100 * (n - 1)`
@@ -245,16 +321,40 @@ pub fn mode_of(values: &[f64]) -> Option<f64> {
 /// inside the sorted range.
 #[must_use]
 pub fn percentile_linear(values: &[f64], percentage: f64) -> Option<f64> {
+    let mut scratch = Vec::new();
+    percentile_linear_with(values, percentage, &mut scratch)
+}
+
+/// [`percentile_linear`] with a caller-provided scratch buffer: copies the
+/// window in and **selects** the two bracketing ranks instead of sorting the
+/// whole window. The interpolation is unchanged (`rank = p/100 * (n - 1)`,
+/// lerp between floor and ceil), and the ends stay the plain min/max ranks.
+#[must_use]
+pub fn percentile_linear_with(
+    values: &[f64],
+    percentage: f64,
+    scratch: &mut Vec<f64>,
+) -> Option<f64> {
     if values.is_empty() || !percentage.is_finite() {
         return None;
     }
-    let mut sorted = values.to_vec();
-    sorted.sort_by(f64::total_cmp);
-    let rank = percentage / 100.0 * (sorted.len() - 1) as f64;
+    scratch.clear();
+    scratch.extend_from_slice(values);
+    let rank = percentage / 100.0 * (values.len() - 1) as f64;
     let below = rank.floor() as usize;
     let above = rank.ceil() as usize;
     let frac = rank - rank.floor();
-    let (lo, hi) = (sorted[below], sorted[above]);
+    let (_, &mut lo, greater) = scratch.select_nth_unstable_by(below, f64::total_cmp);
+    let hi = if above == below {
+        lo
+    } else {
+        // The ranks differ by at most one, so the upper rank is the smallest
+        // element the selection left above the lower one.
+        *greater
+            .iter()
+            .min_by(|a, b| a.total_cmp(b))
+            .expect("a higher rank exists when ceil > floor")
+    };
     fin_or_none(lo * (1.0 - frac) + hi * frac)
 }
 
@@ -263,18 +363,31 @@ pub fn percentile_linear(values: &[f64], percentage: f64) -> Option<f64> {
 /// absent instead of refusing — the language yields `na` for `0 / 0`.
 #[must_use]
 pub fn standardize_scores(values: &[f64]) -> Vec<Option<f64>> {
+    let mut out = Vec::new();
+    standardize_scores_into(values, &mut out);
+    out
+}
+
+/// [`standardize_scores`] into a caller-provided buffer: clears and refills
+/// `out`, so a hot caller allocates once instead of once per evaluation. A
+/// zero or non-finite spread fills the buffer with `None` (the language's
+/// `0 / 0` is `na`), never a refusal.
+pub fn standardize_scores_into(values: &[f64], out: &mut Vec<Option<f64>>) {
+    out.clear();
     if values.is_empty() {
-        return Vec::new();
+        return;
     }
     let mean = window_mean(values);
     let spread = std_pop(values);
     if !spread.is_finite() || spread == 0.0 {
-        return vec![None; values.len()];
+        out.resize(values.len(), None);
+        return;
     }
-    values
-        .iter()
-        .map(|value| fin_or_none((value - mean) / spread))
-        .collect()
+    out.extend(
+        values
+            .iter()
+            .map(|value| fin_or_none((value - mean) / spread)),
+    );
 }
 
 /// Population covariance over equal-length legs (dividing by `n`); `None`
@@ -383,3 +496,8 @@ fn rolling_extreme(
 #[cfg(test)]
 #[path = "../tests/math.rs"]
 mod tests;
+
+/// Value pins for the selection-based helpers and the scratch-reuse contract.
+#[cfg(test)]
+#[path = "../tests/math_selection.rs"]
+mod selection_tests;

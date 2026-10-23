@@ -873,23 +873,32 @@ pub struct RibbonPolygon {
 /// a trend flip starts a new run so each polygon paints one flat color.
 /// Runs shorter than two bars still emit (degenerate but harmless); fully
 /// holed inputs yield no polygons.
-#[must_use]
-pub fn ribbon_polygons(ribbon: &RibbonView, viewport: &Viewport) -> Vec<RibbonPolygon> {
+/// # Errors
+///
+/// A mismatched leg length refuses, exactly like [`ribbon_view`](crate::view::ribbon_view):
+/// one contract for a ribbon, never truncation that could pair one bar's upper
+/// edge with another bar's lower.
+pub fn ribbon_polygons(
+    ribbon: &RibbonView,
+    viewport: &Viewport,
+) -> Result<Vec<RibbonPolygon>, EguiError> {
     ribbon_polygons_sliced(&ribbon.upper, &ribbon.lower, &ribbon.bullish, viewport)
 }
 
 /// Build ribbon fill polygons over borrowed legs: the same run-closing core
 /// as [`ribbon_polygons`] with no per-frame copy — the canvas slices its
-/// window through the shared slicer and paints from the borrow. Length
-/// mismatch truncates to the shortest leg, never panicking; holes, trend
+/// window through the shared slicer and paints from the borrow. Holes, trend
 /// flips, and off-window edges break runs exactly as the owned entry does.
-#[must_use]
+///
+/// # Errors
+///
+/// A mismatched leg length refuses (see [`ribbon_polygons_based`]).
 pub fn ribbon_polygons_sliced(
     upper: &[Option<f64>],
     lower: &[Option<f64>],
     bullish: &[bool],
     viewport: &Viewport,
-) -> Vec<RibbonPolygon> {
+) -> Result<Vec<RibbonPolygon>, EguiError> {
     ribbon_polygons_based(upper, lower, bullish, viewport, 0)
 }
 
@@ -899,20 +908,40 @@ pub fn ribbon_polygons_sliced(
 /// index of the first leg, so culled windows re-offset indices and x pixels
 /// to window coordinates instead of cloning a window. The zero-based entry
 /// is the same core, never a second polygon path.
-#[must_use]
+///
+/// # Errors
+///
+/// A mismatched leg length refuses. Truncating to the shortest leg would let a
+/// polygon's upper edge come from one bar and its lower edge from another — a
+/// wrong picture presented as a right one — so the paint contract matches
+/// [`ribbon_view`](crate::view::ribbon_view) and refuses instead.
 pub fn ribbon_polygons_based(
     upper: &[Option<f64>],
     lower: &[Option<f64>],
     bullish: &[bool],
     viewport: &Viewport,
     base: usize,
-) -> Vec<RibbonPolygon> {
-    let len = upper.len().min(lower.len()).min(bullish.len());
-    close_runs(
-        (0..len).map(|offset| (upper[offset], lower[offset], bullish[offset])),
+) -> Result<Vec<RibbonPolygon>, EguiError> {
+    if upper.len() != lower.len() || upper.len() != bullish.len() {
+        return Err(EguiError::InvalidParam {
+            what: "ribbon".to_owned(),
+            reason: format!(
+                "leg lengths differ (upper {}, lower {}, trend {})",
+                upper.len(),
+                lower.len(),
+                bullish.len()
+            ),
+        });
+    }
+    Ok(close_runs(
+        upper
+            .iter()
+            .zip(lower)
+            .zip(bullish)
+            .map(|((upper, lower), bullish)| (*upper, *lower, *bullish)),
         viewport,
         base,
-    )
+    ))
 }
 
 /// Native ribbon polygons over the twice-visible window only.
@@ -922,15 +951,29 @@ pub fn ribbon_polygons_based(
 /// corresponding runs of full-window [`ribbon_polygons_sliced`] output while
 /// native-zoom frames cost O(visible) instead of O(history). Empty and
 /// off-window viewports fill nothing.
-#[must_use]
+///
+/// # Errors
+///
+/// A mismatched leg length refuses (see [`ribbon_polygons_based`]).
 pub fn proportional_ribbon_polygons(
     upper: &[Option<f64>],
     lower: &[Option<f64>],
     bullish: &[bool],
     viewport: &Viewport,
     width_px: f32,
-) -> Vec<RibbonPolygon> {
-    let len = upper.len().min(lower.len()).min(bullish.len());
+) -> Result<Vec<RibbonPolygon>, EguiError> {
+    if upper.len() != lower.len() || upper.len() != bullish.len() {
+        return Err(EguiError::InvalidParam {
+            what: "ribbon".to_owned(),
+            reason: format!(
+                "leg lengths differ (upper {}, lower {}, trend {})",
+                upper.len(),
+                lower.len(),
+                bullish.len()
+            ),
+        });
+    }
+    let len = upper.len();
     let (start, end) = viewport.proportional_bar_range(width_px, len);
     let count = end.saturating_sub(start);
     let upper = visible_rows(upper, start, count);

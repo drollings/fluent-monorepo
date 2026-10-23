@@ -103,7 +103,7 @@ impl InstancePool {
     pub fn manager_for_url(&self, endpoint_url: &str) -> Option<Arc<InstanceManager>> {
         let base = management_base_url(endpoint_url);
         let key = self.by_base.get(&base)?;
-        self.managers.get(&key).map(|m| m.as_ref().clone())
+        self.managers.get(key.as_str()).map(|m| m.as_ref().clone())
     }
 
     /// The supervisor (present when any model is managed).

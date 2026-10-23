@@ -22,7 +22,7 @@ use rust_decimal::Decimal;
 use serde_json::{json, Value};
 
 use crate::risk::{PortfolioFacts, RiskLimits};
-use protopyne_types::{Money, Qty};
+use protopyne_types::{Greeks, Money, Qty};
 
 // Thresholds under calibration. Editing any of these must move a tally.
 const PERCENT_FRACTION: f64 = 0.1;
@@ -44,6 +44,12 @@ fn signal() -> SignalOutput {
         direction: Direction::Long,
         conviction: 0.8,
         activity_score: 0.7,
+
+        volatility: None,
+
+        edge: None,
+
+        odds: None,
     }
 }
 
@@ -114,7 +120,7 @@ fn a_poisoned_greek_sizes_zero() {
     // the policies read only their own fact, but neither trusts a bundle
     // that cannot do math.
     let facts = PortfolioFacts {
-        net_delta: Some(f64::NAN),
+        net_greeks: Some(Greeks::new().delta(f64::NAN).build()),
         ..PortfolioFacts::observed(
             money(0),
             None,

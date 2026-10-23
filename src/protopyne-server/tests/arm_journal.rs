@@ -3,10 +3,8 @@
 //! live nor tightenable.
 
 use super::*;
-use protopyne_strategy::{
-    BreakerLimits, GrantBudgets, GrantPermission, GrantScope, PortfolioThresholds,
-    SignalThresholds, TradeThresholds,
-};
+use protopyne_strategy::fixtures::grant_with;
+use protopyne_strategy::GrantBudgets;
 
 fn history() -> Vec<Bar> {
     let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -22,53 +20,25 @@ async fn boot() -> ServerHandle {
 }
 
 fn grant(id: &str) -> Grant {
-    Grant::new()
-        .id(id.to_owned())
-        .scope(
-            GrantScope::new()
-                .strategies(vec!["ribbon".to_owned()])
-                .underlyings(vec!["SPY".to_owned()])
-                .structures(vec![StructureKind::Vertical])
-                .directions(vec![Direction::Long, Direction::Short])
-                .permissions(GrantPermission {
-                    entries: true,
-                    exits: true,
-                    rolls: false,
-                })
-                .build(),
-        )
-        .budgets(
-            GrantBudgets::new()
-                .max_trades(10)
-                .max_contracts(100)
-                .max_loss(Money::from(5_000))
-                .max_notional(Money::from(100_000))
-                .build(),
-        )
-        .signal(
-            SignalThresholds::new()
-                .min_conviction(0.0)
-                .min_activity_score(0.0)
-                .build(),
-        )
-        .trade(
-            TradeThresholds::new()
-                .max_loss_per_trade(Money::from(1_000))
-                .max_spread_width(Money::from(50))
-                .min_dte_days(7)
-                .max_dte_days(60)
-                .build(),
-        )
-        .portfolio(
-            PortfolioThresholds::new()
-                .max_open_risk(Money::from(10_000))
-                .quote_max_age_secs(60)
-                .build(),
-        )
-        .breakers(BreakerLimits::new().max_consecutive_errors(3).build())
-        .valid_from(chrono::DateTime::from_timestamp(1_700_000_000, 0).expect("valid stamp"))
-        .valid_until(chrono::DateTime::from_timestamp(1_900_000_000, 0).expect("valid stamp"))
-        .build()
+    // The shared fixture's shape with the journal's tighter budgets and window;
+    // the id is what tells two arms apart.
+    grant_with(|grant| {
+        grant.id = id.to_owned();
+        grant.budgets = GrantBudgets::new()
+            .max_trades(10)
+            .max_contracts(100)
+            .max_loss(Money::from(5_000))
+            .max_notional(Money::from(100_000))
+            .build();
+        grant.trade.max_loss_per_trade = Money::from(1_000);
+        grant.trade.max_spread_width = Money::from(50);
+        grant.trade.min_dte_days = 7;
+        grant.trade.max_dte_days = 60;
+        grant.portfolio.max_open_risk = Money::from(10_000);
+        grant.valid_from = chrono::DateTime::from_timestamp(1_700_000_000, 0).expect("valid stamp");
+        grant.valid_until =
+            chrono::DateTime::from_timestamp(1_900_000_000, 0).expect("valid stamp");
+    })
 }
 
 fn journal_kinds(state: &Shared) -> Vec<String> {

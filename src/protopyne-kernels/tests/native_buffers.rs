@@ -478,7 +478,6 @@ fn script_bars() -> Vec<protopyne_types::Bar> {
 
 #[cfg(feature = "pine")]
 #[test]
-#[ignore = "requires trimmed CSV history fixtures no longer shipped in the tree"]
 fn engine_agrees_on_buffer_sequences() {
     const DRIVER: &str = "import showmethegrail/libBuffers/6 as BUF\n\
         var BUF.BufferFloat ring = BUF.BufferFloat.new().init(4, true)\n\

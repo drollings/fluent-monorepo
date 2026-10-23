@@ -27,9 +27,10 @@ use std::collections::HashMap;
 
 use crate::error::KernelError;
 use crate::indicator::{
-    builtin_registry, nan_hole, BarTick, IndicatorRegistry, IndicatorState, ParamSet,
+    builtin_registry, nan_hole, BarTick, Indicator, IndicatorRegistry, IndicatorState, ParamSet,
 };
 use crate::value::PineValue;
+use protopyne_types::warmup::trim_indicator_output;
 
 /// One script-facing `ta.*` namespace: kernels plus stream state.
 ///
@@ -528,16 +529,19 @@ impl TaBridge {
         self.histories.get(site).map_or(&[], Vec::as_slice)
     }
 
-    /// Evaluate one kernel-backed `ta.*` call over an explicit OHLCV
-    /// window and return the confirmed last value: the headless
-    /// `request.security` path. `source` is the call's source column (a
-    /// bare leg); it overrides `close` exactly like the streaming bridge,
-    /// so the source argument is honored, never dropped. Only
-    /// single-source kernel arms ride here — window operators, multi-leg
-    /// kernels (`stoch`), chart-leg kernels (`tr`, `obv`, `vwap`), and
-    /// unknown names refuse naming the subset instead of silently
-    /// re-scoping chart state. Batches are causal, so the last value over
-    /// a confirmed prefix equals a streaming evaluation over the same
+    /// Evaluate one kernel-backed `ta.*` call over the **full** confirmed
+    /// security history and return its value at the last returned bar: the
+    /// headless `request.security` path. `source` is the call's source column
+    /// (a bare leg); it overrides `close` exactly like the streaming bridge,
+    /// so the source argument is honored, never dropped. `display_count` is
+    /// the request's `calc_bars_count`: it bounds the rows *returned*, never
+    /// the history the kernel computes over, so a recursive arm seeds at the
+    /// series' first row and a warmup longer than the display window still
+    /// reads a number. Only single-source kernel arms ride here — window
+    /// operators, multi-leg kernels (`stoch`), chart-leg kernels (`tr`, `obv`,
+    /// `vwap`), and unknown names refuse naming the subset instead of
+    /// silently re-scoping chart state. Batches are causal, so the last value
+    /// over a confirmed prefix equals a streaming evaluation over the same
     /// prefix.
     pub fn batch_security(
         &self,
@@ -545,6 +549,7 @@ impl TaBridge {
         source: &[f64],
         args: &[Option<PineValue>],
         ohlcv: &crate::indicator::OwnedOhlcv,
+        display_count: Option<usize>,
     ) -> Result<Option<PineValue>, KernelError> {
         let bad_arity = |want: &str| {
             KernelError::Eval(format!(
@@ -559,14 +564,7 @@ impl TaBridge {
                 .ok_or_else(|| KernelError::Eval(format!("ta bridge has no '{kernel}' kernel")))?;
             let mut data = ohlcv.clone();
             data.close = source.to_vec();
-            let batch = indicator.batch(&data.views(), params)?;
-            Ok(batch
-                .values
-                .last()
-                .copied()
-                .flatten()
-                .and_then(crate::indicator::fin_or_none)
-                .map(PineValue::Float))
+            warmed_last(indicator.as_ref(), &data.views(), params, display_count)
         };
         match method {
             "sma" | "ema" | "wma" | "hma" | "rma" | "vwma" | "rsi" | "mom" | "roc" | "cci"
@@ -598,14 +596,7 @@ impl TaBridge {
                     .registry
                     .get("atr")
                     .ok_or_else(|| KernelError::Eval("ta bridge has no 'atr' kernel".to_owned()))?;
-                let batch = indicator.batch(&ohlcv.views(), &params)?;
-                Ok(batch
-                    .values
-                    .last()
-                    .copied()
-                    .flatten()
-                    .and_then(crate::indicator::fin_or_none)
-                    .map(PineValue::Float))
+                warmed_last(indicator.as_ref(), &ohlcv.views(), &params, display_count)
             }
             "stdev" | "variance" => {
                 let (length, biased) = match args {
@@ -630,6 +621,30 @@ impl TaBridge {
             ))),
         }
     }
+}
+
+/// Batch one kernel over the full confirmed security history and return the
+/// value at the last **returned** bar. `display_count` (the request's
+/// `calc_bars_count`) trims the returned tail through the shared warmup
+/// discipline, so the display bound can never shorten the history a recursive
+/// kernel seeds from. A series shorter than the kernel's warmup reads `na`,
+/// exactly as the reference does during warmup: absence of history is a data
+/// condition, never a reason to refuse the request.
+fn warmed_last(
+    indicator: &dyn Indicator,
+    data: &crate::indicator::Ohlcv<'_>,
+    params: &ParamSet,
+    display_count: Option<usize>,
+) -> Result<Option<PineValue>, KernelError> {
+    let warmup = indicator.warmup(params)?;
+    let batch = indicator.batch(data, params)?;
+    let returned = trim_indicator_output(&batch.values, warmup, display_count);
+    Ok(returned
+        .last()
+        .copied()
+        .flatten()
+        .and_then(crate::indicator::fin_or_none)
+        .map(PineValue::Float))
 }
 
 /// A confirmed pivot over an explicit source history: the bar `right`

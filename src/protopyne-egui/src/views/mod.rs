@@ -24,7 +24,7 @@ pub use broker::{paint_broker_panel, BrokerModel};
 pub use health::HealthModel;
 pub use inbox::{InboxAction, InboxModel};
 pub use journal::Provenance;
-pub use portfolio::PortfolioModel;
+pub use portfolio::{ConcentrationModel, PortfolioModel};
 pub use tickets::{TicketAction, TicketModel};
 
 use protopyne_view::{

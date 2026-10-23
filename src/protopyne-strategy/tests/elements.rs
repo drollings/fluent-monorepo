@@ -86,6 +86,8 @@ fn loss_and_monitor_default_to_quiet() {
         entry_avg: money(250),
         max_loss: money(300),
         dte_days: None,
+        legs: None,
+        events: None,
     };
     let unmarked = MarkContext {
         basis: protopyne_types::MarkBasis::Absent,
@@ -182,6 +184,12 @@ impl Signal for CountingSignal {
             direction: Direction::Long,
             conviction: 0.5,
             activity_score: 1.0,
+
+            volatility: None,
+
+            edge: None,
+
+            odds: None,
         })
     }
 }
@@ -193,6 +201,12 @@ impl SignalInstance for Counter {
             direction: Direction::Long,
             conviction: self.calls as f64 / 10.0,
             activity_score: 1.0,
+
+            volatility: None,
+
+            edge: None,
+
+            odds: None,
         })
     }
 
@@ -321,6 +335,67 @@ fn chain_derived_prices_the_package_and_attaches_legs() {
         Some(2)
     );
     assert!(proposal.economics.is_some());
+}
+
+/// A volatility-scaled policy with no σ to scale from sizes zero, and the
+/// composed strategy refuses that zero by name rather than proposing a
+/// zero-contract package.
+#[test]
+fn a_volatility_sized_zero_quantity_is_refused_with_a_reason() {
+    let ts = Utc.with_ymd_and_hms(2026, 6, 15, 14, 30, 0).unwrap();
+    let quotes = [chain_call(690, "3.50", ts), chain_call(695, "1.50", ts)];
+    let chain = ChainSlice::new(&quotes, ts, "SPY").expect("quotes bind");
+    let data = MarketData {
+        bars: &[],
+        chain: Some(chain),
+        dte_days: 30,
+        timeframe: Timeframe::D1,
+    };
+    let closes = [694.0];
+    let view = MarketView {
+        data: &data,
+        closes: &closes,
+        as_of: ts,
+    };
+    // The fixed signal reports no volatility: absence, not a zero.
+    let signal = FixedSignal::new(Direction::Long, 0.8, 0.7).expect("valid scores");
+    assert_eq!(signal.output().volatility, None);
+    let strategy = Strategy::with_signal(Arc::new(signal))
+        .with_sizing(Arc::new(
+            VolatilityScaled::for_timeframe(10, Timeframe::M15).expect("defaults validate"),
+        ))
+        .with_structure(Arc::new(LegSelector::new().build()));
+    let mut instance = strategy
+        .bind(&SignalConfig::new(Timeframe::D1))
+        .expect("binds");
+    let refused = strategy
+        .propose_with(
+            "p1",
+            ProposeInput {
+                strategy: "ribbon",
+                underlying: "SPY",
+                side: ProposalSide::Entry,
+                closes: &closes,
+                limit_price: money(690),
+                max_loss: money(300),
+                notional: money(1_000),
+                dte_days: 30,
+                max_dte_days: None,
+                economics: EconomicsPolicy::ChainDerived,
+                structure: StructureKind::Vertical,
+                credit: false,
+                fee_per_contract: Money::new(Decimal::new(65, 2)),
+                caps: SizingCaps::default(),
+                created_at: ts,
+            },
+            &view,
+            instance.as_mut(),
+        )
+        .expect_err("a zero-sized package is refused");
+    assert!(
+        refused.to_string().contains("quantity must be positive"),
+        "the refusal names the reason, got: {refused}"
+    );
 }
 
 /// The proposal carries the instrument's own DTE, so a grant window judges
@@ -473,6 +548,12 @@ fn percent_net_liq_sizes_within_observed_facts() {
         direction: Direction::Long,
         conviction: 0.8,
         activity_score: 0.7,
+
+        volatility: None,
+
+        edge: None,
+
+        odds: None,
     };
     let facts = PortfolioFacts {
         net_liq: Some(money(100_000)),
@@ -506,6 +587,12 @@ fn sizing_policies_size_zero_on_unobserved_facts() {
         direction: Direction::Long,
         conviction: 0.8,
         activity_score: 0.7,
+
+        volatility: None,
+
+        edge: None,
+
+        odds: None,
     };
     let net_liq = PercentNetLiq::new(0.1, money(500)).expect("valid policy");
     let buying_power = BuyingPower::new(0.5, money(250)).expect("valid policy");
@@ -550,6 +637,12 @@ fn sizing_policies_fail_closed_past_their_constructors() {
         direction: Direction::Long,
         conviction: 0.8,
         activity_score: 0.7,
+
+        volatility: None,
+
+        edge: None,
+
+        odds: None,
     };
     let facts = PortfolioFacts {
         net_liq: Some(money(100_000)),
@@ -571,6 +664,12 @@ fn buying_power_sizes_within_observed_facts() {
         direction: Direction::Long,
         conviction: 0.8,
         activity_score: 0.7,
+
+        volatility: None,
+
+        edge: None,
+
+        odds: None,
     };
     let facts = PortfolioFacts::observed(money(0), None, Some(money(1_000)), None);
     assert_eq!(
@@ -580,7 +679,7 @@ fn buying_power_sizes_within_observed_facts() {
     );
 }
 
-fn live_position() -> PositionView {
+fn live_position() -> PositionView<'static> {
     PositionView {
         underlying: "SPY".to_owned(),
         side: Direction::Long,
@@ -588,6 +687,8 @@ fn live_position() -> PositionView {
         entry_avg: money(250),
         max_loss: money(600),
         dte_days: Some(30),
+        legs: None,
+        events: None,
     }
 }
 
@@ -787,6 +888,8 @@ fn the_momentum_composition_installs_the_calibrated_elements() {
         entry_avg: money(250),
         max_loss: money(600),
         dte_days: Some(30),
+        legs: None,
+        events: None,
     };
     let marked = MarkContext {
         basis: protopyne_types::MarkBasis::ChainMid,

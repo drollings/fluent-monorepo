@@ -15,15 +15,14 @@
 //! package. That line replaced the bare `max loss <n> per proposal` line
 //! (same slot, same meaning for the config arm); no metric moved.
 
+use protopyne_strategy::fixtures::grant_with;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use chrono::{TimeZone, Utc};
 use protopyne_strategy::{
     elements::{EconomicsPolicy, ExplicitStructure},
-    BreakerLimits, Direction, FixedSignal, Grant, GrantBudgets, GrantPermission, GrantScope,
-    PortfolioThresholds, RiskEngine, RiskLimits, SignalThresholds, Strategy, StructureKind,
-    TradeThresholds,
+    Direction, FixedSignal, Grant, RiskEngine, RiskLimits, Strategy, StructureKind,
 };
 use protopyne_types::{Bar, ChainQuote, Money};
 use protopyne_venue::{PaperConfig, PaperVenue};
@@ -68,53 +67,14 @@ fn risk() -> RiskEngine {
 }
 
 fn grant(underlyings: &[&str]) -> Grant {
-    Grant::new()
-        .id("rehearsal-baseline".to_owned())
-        .scope(
-            GrantScope::new()
-                .strategies(vec!["ribbon".to_owned()])
-                .underlyings(underlyings.iter().map(|name| (*name).to_owned()).collect())
-                .structures(vec![StructureKind::Vertical])
-                .directions(vec![Direction::Long, Direction::Short])
-                .permissions(GrantPermission {
-                    entries: true,
-                    exits: true,
-                    rolls: false,
-                })
-                .build(),
-        )
-        .budgets(
-            GrantBudgets::new()
-                .max_trades(1_000)
-                .max_contracts(10_000)
-                .max_loss(money(1_000_000))
-                .max_notional(money(100_000_000))
-                .build(),
-        )
-        .signal(
-            SignalThresholds::new()
-                .min_conviction(0.5)
-                .min_activity_score(0.5)
-                .build(),
-        )
-        .trade(
-            TradeThresholds::new()
-                .max_loss_per_trade(money(1_000))
-                .max_spread_width(money(50))
-                .min_dte_days(1)
-                .max_dte_days(90)
-                .build(),
-        )
-        .portfolio(
-            PortfolioThresholds::new()
-                .max_open_risk(money(10_000_000))
-                .quote_max_age_secs(60)
-                .build(),
-        )
-        .breakers(BreakerLimits::new().max_consecutive_errors(3).build())
-        .valid_from(Utc.with_ymd_and_hms(2025, 1, 1, 0, 0, 0).unwrap())
-        .valid_until(Utc.with_ymd_and_hms(2027, 1, 1, 0, 0, 0).unwrap())
-        .build()
+    // The shared fixture's shape; only the id, the scope's symbols, and the
+    // signal floor a rehearsal tape must clear differ.
+    grant_with(|grant| {
+        grant.id = "rehearsal-baseline".to_owned();
+        grant.scope.underlyings = underlyings.iter().map(|name| (*name).to_owned()).collect();
+        grant.signal.min_conviction = 0.5;
+        grant.signal.min_activity_score = 0.5;
+    })
 }
 
 fn venue_config(underlying: &str, data_version: &str) -> BacktestConfig {

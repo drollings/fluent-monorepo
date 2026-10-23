@@ -62,6 +62,11 @@ struct RecordGateway {
     previewed: std::sync::Mutex<Option<serde_json::Value>>,
     preview_refusal: std::sync::Mutex<Option<String>>,
     sent: std::sync::Mutex<Option<serde_json::Value>>,
+    attested: std::sync::Mutex<Vec<String>>,
+    /// Tier reads served (or refused): the counter the interval pins read.
+    tier_reads: std::sync::atomic::AtomicUsize,
+    /// While set, every tier read refuses with this reason.
+    tier_failure: std::sync::Mutex<Option<String>>,
 }
 
 impl RecordGateway {
@@ -71,7 +76,30 @@ impl RecordGateway {
             previewed: std::sync::Mutex::new(None),
             preview_refusal: std::sync::Mutex::new(None),
             sent: std::sync::Mutex::new(None),
+            attested: std::sync::Mutex::new(Vec::new()),
+            tier_reads: std::sync::atomic::AtomicUsize::new(0),
+            tier_failure: std::sync::Mutex::new(None),
         }
+    }
+
+    /// Serve every tier read from now on, keeping the count.
+    fn recover_tiers(&self) {
+        *self.tier_failure.lock().expect("record lock") = None;
+    }
+
+    /// Refuse every tier read from now on with `reason`, keeping the count.
+    fn fail_tiers(&self, reason: &str) {
+        *self.tier_failure.lock().expect("record lock") = Some(reason.to_owned());
+    }
+
+    /// Tier reads the form drove through this gateway.
+    fn tier_reads(&self) -> usize {
+        self.tier_reads.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// What the gateway would answer right now, without counting a read.
+    fn tier_document(&self) -> BTreeMap<String, String> {
+        self.mock.grant_tiers().expect("the mock serves tiers")
     }
 
     /// Make the next previews refuse with the core-shaped reason, so the
@@ -131,7 +159,20 @@ impl TerminalGateway for RecordGateway {
     }
 
     fn grant_tiers(&self) -> Result<BTreeMap<String, String>, GatewayError> {
+        self.tier_reads
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        if let Some(reason) = self.tier_failure.lock().expect("record lock").clone() {
+            return Err(GatewayError::Unavailable(reason));
+        }
         self.mock.grant_tiers()
+    }
+
+    fn attest_grant(&self, grant_id: &str) -> Result<(), GatewayError> {
+        self.attested
+            .lock()
+            .expect("record lock")
+            .push(grant_id.to_owned());
+        Ok(())
     }
 
     fn arm(&self, grant: serde_json::Value) -> Result<ArmResponse, GatewayError> {
@@ -629,4 +670,188 @@ fn last_error_holds_text_not_a_walk() {
     let _ = form.submit(&gateway);
     let held = form.last_error().expect("refusal held").to_owned();
     assert!(!held.is_empty());
+}
+
+/// Ten painted frames read the tiers once, and the interval is honoured when
+/// it is made shorter: the contract is "at most once per N frames", not "the
+/// first frame and never again".
+#[test]
+fn a_frame_interval_gates_the_tier_read() {
+    let gateway = RecordGateway::new();
+    let mut form = GrantFormState::from_schema(&descriptor());
+    assert_eq!(
+        form.tier_interval(),
+        DEFAULT_TIER_READ_INTERVAL_FRAMES,
+        "the shipped default is the interval the pin below exercises"
+    );
+    for frame in 0..10 {
+        form.refresh_preview(&gateway);
+        assert!(
+            gateway.tier_reads() <= 1,
+            "frame {frame} read the tiers again"
+        );
+    }
+    assert_eq!(gateway.tier_reads(), 1, "ten frames, one tier read");
+
+    form.set_tier_interval(3);
+    for _ in 0..9 {
+        form.refresh_preview(&gateway);
+    }
+    assert_eq!(
+        gateway.tier_reads(),
+        1 + 3,
+        "nine frames at an interval of three read exactly three more times"
+    );
+}
+
+/// A content change re-reads on the **next** frame; identical content keeps
+/// waiting for the interval. The fingerprint is over the tier document, so the
+/// comparison is about what the grant holds, never about who asked.
+#[test]
+fn a_changed_grant_fingerprint_re_reads_on_the_next_frame() {
+    let gateway = RecordGateway::new();
+    let mut form = GrantFormState::from_schema(&descriptor());
+    form.refresh_preview(&gateway);
+    assert_eq!(gateway.tier_reads(), 1);
+
+    let unchanged = gateway.tier_document();
+    form.note_grant_content(&unchanged);
+    form.refresh_preview(&gateway);
+    assert_eq!(
+        gateway.tier_reads(),
+        1,
+        "identical content never forces a read"
+    );
+
+    let mut changed = unchanged;
+    changed.insert("valid_until".to_owned(), "2028-01-01T00:00:00Z".to_owned());
+    form.note_grant_content(&changed);
+    form.refresh_preview(&gateway);
+    assert_eq!(
+        gateway.tier_reads(),
+        2,
+        "a changed grant re-reads on the next frame, not the next interval"
+    );
+}
+
+/// A failed read is display-stale, never an empty grant: the last good text
+/// stays, the age keeps counting from the read that produced it, and the chip
+/// says so. A later good read clears the chip.
+#[test]
+fn a_failed_refresh_keeps_the_last_good_text_and_shows_the_chip() {
+    let gateway = RecordGateway::new();
+    let mut form = GrantFormState::from_schema(&descriptor());
+    form.refresh_preview(&gateway);
+    let good = form.tier_text_of("budgets").to_owned();
+    assert!(!good.is_empty(), "the mock serves a budgets tier");
+    let read_frame = form.tier_read_frame().expect("a good read happened");
+    assert!(form.tier_unavailable_chip().is_none());
+
+    gateway.fail_tiers("gateway down");
+    form.set_tier_interval(1);
+    form.refresh_preview(&gateway);
+    form.refresh_preview(&gateway);
+
+    assert_eq!(
+        form.tier_text_of("budgets"),
+        good,
+        "the last good text stays on screen"
+    );
+    let chip = form
+        .tier_unavailable_chip()
+        .expect("a failed read is never silent");
+    assert!(
+        chip.contains("unavailable — showing last good"),
+        "chip text: {chip}"
+    );
+    assert!(
+        chip.contains("gateway down"),
+        "chip names the cause: {chip}"
+    );
+    assert_eq!(
+        form.tier_read_frame(),
+        Some(read_frame),
+        "the age stays measured from the last good read"
+    );
+    assert!(
+        form.tier_age_line()
+            .contains(&format!("as of frame {read_frame}")),
+        "age line: {}",
+        form.tier_age_line()
+    );
+
+    gateway.recover_tiers();
+    form.refresh_preview(&gateway);
+    assert!(
+        form.tier_unavailable_chip().is_none(),
+        "a good read clears the chip"
+    );
+}
+
+/// With nothing ever read, a failure says exactly that — it never claims to
+/// be showing a last good read it does not have.
+#[test]
+fn a_failure_before_any_good_read_says_nothing_was_read() {
+    let gateway = RecordGateway::new();
+    gateway.fail_tiers("gateway down");
+    let mut form = GrantFormState::from_schema(&descriptor());
+    form.refresh_preview(&gateway);
+    let chip = form
+        .tier_unavailable_chip()
+        .expect("a failed read is never silent");
+    assert!(chip.contains("nothing read yet"), "chip text: {chip}");
+    assert_eq!(form.tier_read_frame(), None);
+    assert!(form.tier_age_line().contains("not read"));
+}
+
+/// The painter itself drives the gate and shows the chip: painting is the
+/// caller, so the pin runs one real frame.
+#[test]
+fn the_painter_refreshes_under_the_gate_and_paints_the_chip() {
+    let gateway = RecordGateway::new();
+    let mut form = GrantFormState::from_schema(&descriptor());
+    egui::__run_test_ui(|ui| {
+        paint_grant_form(ui, &mut form, &gateway);
+    });
+    assert_eq!(gateway.tier_reads(), 1, "the first frame reads");
+
+    gateway.fail_tiers("gateway down");
+    form.set_tier_interval(1);
+    egui::__run_test_ui(|ui| {
+        paint_grant_form(ui, &mut form, &gateway);
+    });
+    assert!(
+        form.tier_unavailable_chip().is_some(),
+        "the painted frame marks the read unavailable"
+    );
+}
+
+#[test]
+fn attest_sends_exactly_the_armed_grant_id() {
+    use crate::grant_form::GrantFormState;
+
+    // Nothing armed: the form refuses before any gateway sees a call.
+    let gateway = RecordGateway::new();
+    let mut fresh = GrantFormState::from_schema(&descriptor());
+    assert!(fresh.attest(&gateway).is_err());
+    assert!(gateway.attested.lock().expect("record lock").is_empty());
+
+    // Armed: one click, one verb, the armed id.
+    let mut form = GrantFormState::from_schema(&descriptor());
+    for leaf in tier_leaves(&descriptor_tier_names()[0]) {
+        form.set_draft(&leaf, "1".to_owned());
+    }
+    form.refresh_preview(&gateway);
+    let response = form.submit(&gateway).expect("tightening tier submits");
+    form.attest(&gateway).expect("attest sends");
+    assert_eq!(
+        gateway.attested.lock().expect("record lock").as_slice(),
+        &[response.grant_id],
+        "exactly one attest call carrying the armed grant"
+    );
+    assert!(
+        form.attest_note()
+            .is_some_and(|note| note.contains("recorded")),
+        "the painter echoes what the click did"
+    );
 }

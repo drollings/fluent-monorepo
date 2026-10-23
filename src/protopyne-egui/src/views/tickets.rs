@@ -6,7 +6,7 @@
 //! types. Only waiting tickets carry a confirm affordance; settled tickets
 //! leave the wait and read only as drift rows, if at all.
 
-use protopyne_view::{GatewayError, TerminalGateway, TicketDriftView, TicketView};
+use protopyne_view::{GatewayError, TerminalGateway, TicketDraft, TicketDriftView, TicketView};
 
 /// Read-only ticket split: rows awaiting the human's fill report versus
 /// flagged disagreements.
@@ -56,8 +56,8 @@ impl TicketModel {
 pub enum TicketAction {
     /// Issue a ticket the operator places by hand.
     Issue {
-        /// Opaque intent document the core parses.
-        ticket: serde_json::Value,
+        /// Draft the core turns into the venue intent.
+        ticket: TicketDraft,
     },
     /// Confirm a waiting ticket against the human's fill report.
     Confirm {
@@ -74,9 +74,9 @@ pub enum TicketAction {
 }
 
 impl TicketAction {
-    /// An issue click carrying the ticket document.
+    /// An issue click carrying the filled draft.
     #[must_use]
-    pub fn issue(ticket: serde_json::Value) -> Self {
+    pub fn issue(ticket: TicketDraft) -> Self {
         Self::Issue { ticket }
     }
 

@@ -6,14 +6,12 @@
 //! route's grant read. Journal reads empty on both sides until the journal
 //! route lands.
 
+use protopyne_strategy::fixtures::grant_with;
 use std::path::PathBuf;
 
 use crate::service::{serve, ServerConfig, ServerHandle};
 use chrono::{TimeZone, Utc};
-use protopyne_strategy::{
-    BreakerLimits, Direction, Grant, GrantBudgets, GrantPermission, GrantScope,
-    PortfolioThresholds, SignalThresholds, StructureKind, TradeThresholds,
-};
+use protopyne_strategy::{Direction, Grant, GrantBudgets, StructureKind};
 use protopyne_types::Bar;
 use protopyne_types::Money;
 use protopyne_view::TerminalGateway;
@@ -183,53 +181,20 @@ async fn replay_route_publishes_the_runner_graph_and_refuses_a_bad_cadence() {
 }
 
 fn arming_grant() -> Grant {
-    Grant::new()
-        .id("gateway-grant".to_owned())
-        .scope(
-            GrantScope::new()
-                .strategies(vec!["ribbon".to_owned()])
-                .underlyings(vec!["SPY".to_owned()])
-                .structures(vec![StructureKind::Vertical])
-                .directions(vec![Direction::Long])
-                .permissions(GrantPermission {
-                    entries: true,
-                    exits: true,
-                    rolls: false,
-                })
-                .build(),
-        )
-        .budgets(
-            GrantBudgets::new()
-                .max_trades(2)
-                .max_contracts(4)
-                .max_loss(Money::from(500))
-                .max_notional(Money::from(5_000))
-                .build(),
-        )
-        .signal(
-            SignalThresholds::new()
-                .min_conviction(0.0)
-                .min_activity_score(0.0)
-                .build(),
-        )
-        .trade(
-            TradeThresholds::new()
-                .max_loss_per_trade(Money::from(10))
-                .max_spread_width(Money::from(5))
-                .min_dte_days(1)
-                .max_dte_days(30)
-                .build(),
-        )
-        .portfolio(
-            PortfolioThresholds::new()
-                .max_open_risk(Money::from(10_000))
-                .quote_max_age_secs(60)
-                .build(),
-        )
-        .breakers(BreakerLimits::new().max_consecutive_errors(3).build())
-        .valid_from(Utc.with_ymd_and_hms(2025, 1, 1, 0, 0, 0).unwrap())
-        .valid_until(Utc.with_ymd_and_hms(2027, 1, 1, 0, 0, 0).unwrap())
-        .build()
+    // The shared fixture's shape with the gateway's small armable budgets: this
+    // is the grant the arm/preview/tier routes are exercised against.
+    grant_with(|grant| {
+        grant.id = "gateway-grant".to_owned();
+        grant.scope.structures = vec![StructureKind::Vertical];
+        grant.scope.directions = vec![Direction::Long];
+        grant.budgets = GrantBudgets::new()
+            .max_trades(2)
+            .max_contracts(4)
+            .max_loss(Money::from(500))
+            .max_notional(Money::from(5_000))
+            .build();
+        grant.trade.max_dte_days = 30;
+    })
 }
 
 #[tokio::test]

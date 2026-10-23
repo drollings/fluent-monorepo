@@ -811,6 +811,12 @@ fn the_selector_prices_the_chain_derived_package() {
         direction: Direction::Long,
         conviction: 0.5,
         activity_score: 0.0,
+
+        volatility: None,
+
+        edge: None,
+
+        odds: None,
     };
     let request = StructureRequest::new()
         .structure(StructureKind::Vertical)

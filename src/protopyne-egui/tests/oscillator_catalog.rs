@@ -2,8 +2,9 @@ use super::*;
 
 use chrono::TimeZone as _;
 use protopyne_kernels::{
-    parse_pine_source, parse_program, resolve_imports, InputSet, LibraryId, LinkedModule,
-    ModuleGraph, ModuleInput, PineEngine, PineRuntimeConfig, PineValue,
+    load_pine_source, parse_pine_source, parse_program, resolve_imports, InputSet, LibraryId,
+    LinkedModule, ModuleGraph, ModuleInput, PineEngine, PineExpr, PineProgram, PineRuntimeConfig,
+    PineStmt, PineValue, UnaryOp,
 };
 use protopyne_types::Bar;
 use rust_decimal::prelude::FromPrimitive as _;
@@ -165,51 +166,237 @@ fn assert_series_close(got: &[Option<f64>], want: &[Option<f64>], label: &str) {
     }
 }
 
+/// One `normalizeOsc` arm as the engine's own parser sees it: the enum member
+/// (or `"-"` for the pass-through default arm) and the three numbers in force
+/// for that arm.
+#[derive(Debug, Clone, PartialEq)]
+struct ArmConstants {
+    member: String,
+    offset: f64,
+    k: f64,
+    multiplier: f64,
+}
+
+/// A numeric literal, folding the unary minus the parser keeps: `-50.0` is
+/// `Unary(Negate, Number(50.0))`. Anything else is not a literal.
+fn literal_number(expr: &PineExpr) -> Option<f64> {
+    match expr {
+        PineExpr::Number(value) => Some(*value),
+        PineExpr::Unary {
+            op: UnaryOp::Negate,
+            expr,
+        } => literal_number(expr).map(|value| -value),
+        _ => None,
+    }
+}
+
+/// Read `normalizeOsc`'s arms off the parsed AST.
+///
+/// The function declares its defaults once at the top (`offset = -50.0`,
+/// `k = 0.0084`, `multiplier = 740.0`) and each arm overrides them with `:=`,
+/// so the extractor applies the same order the evaluator would: an arm that
+/// leaves a value alone reads the default. A value that is not a numeric
+/// literal refuses **naming the arm** — a drift test that silently skips a
+/// dynamic arm is not a drift test.
+fn normalize_osc_arms(program: &PineProgram) -> Vec<ArmConstants> {
+    let body = function_body(program, "normalizeOsc");
+    // The defaults are read from the function's own leading assignments, so a
+    // change there drifts the arms that inherit it exactly like an arm edit.
+    let mut defaults: std::collections::HashMap<&str, f64> = std::collections::HashMap::new();
+    for stmt in body {
+        if let PineStmt::Assignment { name, value } = stmt {
+            if let Some(number) = literal_number(value) {
+                defaults.insert(name.as_str(), number);
+            }
+        }
+    }
+    for name in ["offset", "k", "multiplier"] {
+        assert!(
+            defaults.contains_key(name),
+            "normalizeOsc declares a literal default for {name}"
+        );
+    }
+    let switch = body
+        .iter()
+        .find_map(|stmt| match stmt {
+            PineStmt::Assignment { value, .. } => match value.as_ref() {
+                protopyne_kernels::PineExpr::Switch(switch)
+                    if matches!(
+                        switch.scrutinee.as_deref(),
+                        Some(protopyne_kernels::PineExpr::Variable(name)) if name == "osc_type"
+                    ) =>
+                {
+                    Some(switch.as_ref())
+                }
+                _ => None,
+            },
+            _ => None,
+        })
+        .expect("normalizeOsc assigns a switch over osc_type to its data");
+    switch
+        .arms
+        .iter()
+        .map(|arm| {
+            let member = match &arm.pattern {
+                Some(protopyne_kernels::PineExpr::Variable(name)) => {
+                    name.rsplit('.').next().unwrap_or(name).to_owned()
+                }
+                Some(other) => panic!("normalizeOsc arm pattern is not an enum member: {other:?}"),
+                None => "-".to_owned(),
+            };
+            let mut numbers = defaults.clone();
+            for stmt in &arm.body {
+                let (name, value) = match stmt {
+                    PineStmt::Reassign { name, value } | PineStmt::Assignment { name, value } => {
+                        (name.as_str(), value.as_ref())
+                    }
+                    _ => continue,
+                };
+                let Some(slot) = numbers.get_mut(name) else {
+                    // An arm may compute locals of its own; only the three
+                    // constants are extraction targets.
+                    continue;
+                };
+                match literal_number(value) {
+                    Some(number) => *slot = number,
+                    None => panic!(
+                        "normalizeOsc arm {member}: {name} is not a literal ({value:?}) — the \
+                         extraction refuses rather than skipping the arm"
+                    ),
+                }
+            }
+            ArmConstants {
+                member,
+                offset: numbers["offset"],
+                k: numbers["k"],
+                multiplier: numbers["multiplier"],
+            }
+        })
+        .collect()
+}
+
+/// The body of one function declaration, exported or not.
+fn function_body<'a>(program: &'a PineProgram, wanted: &str) -> &'a [PineStmt] {
+    program
+        .statements
+        .iter()
+        .find_map(|stmt| {
+            let decl = match stmt {
+                PineStmt::ExportDecl(inner) => inner.as_ref(),
+                other => other,
+            };
+            match decl {
+                PineStmt::FuncDecl { name, body, .. } if name == wanted => Some(body.as_slice()),
+                _ => None,
+            }
+        })
+        .unwrap_or_else(|| panic!("{wanted} is declared"))
+}
+
+/// The catalog drift check: every extracted arm must be a catalog row with
+/// exactly those numbers, and every catalog row that the shipped function
+/// covers must appear as an arm. Returns the drift as a reason instead of
+/// asserting, so the negative control can prove the check can fail.
+fn catalog_drift(arms: &[ArmConstants]) -> Result<(), String> {
+    let mut seen = Vec::new();
+    for arm in arms {
+        let kind = parse_oscillator_kind(&arm.member)
+            .ok_or_else(|| format!("{} arm has no catalog row", arm.member))?;
+        let params = kind
+            .params()
+            .ok_or_else(|| format!("{} arm has no evaluable catalog constants", arm.member))?;
+        if params
+            != (OscParams {
+                offset: arm.offset,
+                k: arm.k,
+                multiplier: arm.multiplier,
+            })
+        {
+            return Err(format!(
+                "{} constants drifted: pine ({}, {}, {}), catalog ({}, {}, {})",
+                arm.member,
+                arm.offset,
+                arm.k,
+                arm.multiplier,
+                params.offset,
+                params.k,
+                params.multiplier
+            ));
+        }
+        seen.push(kind.pine_name());
+    }
+    for kind in OscillatorKind::all() {
+        if kind.params().is_none() {
+            continue;
+        }
+        if !seen.contains(&kind.pine_name()) {
+            return Err(format!(
+                "{} has no normalizeOsc arm in the shipped source",
+                kind.pine_name()
+            ));
+        }
+    }
+    Ok(())
+}
+
 #[test]
 fn catalog_rows_match_the_pine_normalize_osc_arms() {
-    // The Pine `normalizeOsc` arms (offset/k/multiplier) are excerpted here
-    // so a Pine edit fails this test loudly before it can drift the catalog.
-    let pine: &[(&str, f64, f64, f64)] = &[
-        ("AROON", -50.0, 0.005, 800.0),
-        ("CCI", -50.0, 0.0035, 500.0),
-        ("CMO", 0.0, 0.002, 1000.0),
-        ("MFI", -50.0, 0.0084, 740.0),
-        ("RSI", -50.0, 0.0084, 740.0),
-        ("SRSI", -50.0, 0.0006, 7000.0),
-        ("STOCH", -50.0, 0.0005, 7000.0),
-        ("TRENDSI", 0.0, 0.016, 9000.0),
-        ("VOSS", 0.0, 1.5, 300.0),
-    ];
-    for (member, offset, k, multiplier) in pine {
-        let kind = parse_oscillator_kind(member).expect("pine member parses");
-        let params = kind.params().expect("pine arm is evaluable");
-        assert_eq!(
-            params,
-            OscParams {
-                offset: *offset,
-                k: *k,
-                multiplier: *multiplier
-            },
-            "{member} constants moved from the pine arm"
-        );
-    }
-    // The shipped source must still carry every excerpted arm, so the table
-    // cannot silently detach from the reference.
-    let text = std::fs::read_to_string(data_root().join("libraries/_libMAs.pine"))
+    // The constants are read out of the shipped Pine with the engine's own
+    // parser, never copied into this file: an edit to any arm fails here.
+    let source = load_pine_source(&data_root().join("libraries/_libMAs.pine"))
         .expect("shipped library loads");
-    let body = text
-        .split("export normalizeOsc")
-        .nth(1)
-        .expect("normalizeOsc present")
-        .split("if smoothingLen")
-        .next()
-        .expect("arm body bounded");
-    for (member, _, _, _) in pine {
-        assert!(
-            body.contains(&format!("UTIL.Oscillators.{member}")),
-            "{member} arm missing from shipped normalizeOsc"
-        );
-    }
+    let program = parse_program(&source.text).expect("shipped library parses");
+    let arms = normalize_osc_arms(&program);
+    assert!(
+        arms.len() >= 10,
+        "normalizeOsc declares every arm plus the default, got {}",
+        arms.len()
+    );
+    catalog_drift(&arms).expect("the shipped arms and the catalog agree");
+    // The pass-through default arm is the `Raw` row's own constants.
+    let default_arm = arms
+        .iter()
+        .find(|arm| arm.member == "-")
+        .expect("normalizeOsc has a default arm");
+    assert_eq!(
+        OscillatorKind::Raw.params(),
+        Some(OscParams {
+            offset: default_arm.offset,
+            k: default_arm.k,
+            multiplier: default_arm.multiplier,
+        }),
+        "the pass-through row carries the default arm's numbers"
+    );
+}
+
+#[test]
+fn a_mutated_normalize_osc_arm_fails_the_catalog_check() {
+    // The negative control: the drift check must be able to fail. One number
+    // in one arm moves, and the check has to name it — otherwise the test
+    // above proves nothing.
+    let source = load_pine_source(&data_root().join("libraries/_libMAs.pine"))
+        .expect("shipped library loads");
+    let mutated = source.text.replace("k := 0.005", "k := 0.006");
+    assert_ne!(
+        source.text, mutated,
+        "the negative control must change the source"
+    );
+    let program = parse_program(&mutated).expect("the mutated library still parses");
+    let arms = normalize_osc_arms(&program);
+    let aroon = arms
+        .iter()
+        .find(|arm| arm.member == "AROON")
+        .expect("the mutated arm is still extracted");
+    assert_eq!(
+        aroon.k.to_bits(),
+        0.006_f64.to_bits(),
+        "the extractor reads the mutated literal, not a cached copy"
+    );
+    let drift = catalog_drift(&arms).expect_err("a mutated arm must fail the check");
+    assert!(
+        drift.contains("AROON"),
+        "the failure names the drifted arm: {drift}"
+    );
 }
 
 #[test]

@@ -304,6 +304,9 @@ impl KeyedSnapshot for Bar {
             c: newer.c,
             volume: newer.volume,
             adj: newer.adj.clone().or_else(|| self.adj.clone()),
+            // The newer snapshot supersedes the older one, so its recorded
+            // close wins; an unrecorded close falls back to the older one's.
+            confirmed_at: newer.confirmed_at.or(self.confirmed_at),
         };
         merged
             .validate()

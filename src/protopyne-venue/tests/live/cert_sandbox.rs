@@ -17,7 +17,7 @@ fn env(name: &str) -> Option<String> {
     std::env::var(name).ok().filter(|value| !value.is_empty())
 }
 
-#[ignore = "live: needs TASTYTRADE_* env against the cert sandbox; run via `make venue-test-live`"]
+#[ignore = "live-ai: needs TASTYTRADE_* env against the cert sandbox; run via `make venue-test-live`"]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn cert_sandbox_boot_login_and_absent_query() {
     let (Some(base_url), Some(account), Some(username), Some(password)) = (

@@ -22,10 +22,10 @@
 //! [`ConcurrentRegistry`]: common_core::registry::ConcurrentRegistry
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use common_core::registry::ConcurrentRegistry;
-use fluent_dag::dep_graph::{DependencyGraph, GraphError};
+use fluent_dag::dep_graph::GraphError;
 use fluent_wvr::prelude::*;
 
 use crate::error::KernelError;
@@ -224,9 +224,7 @@ impl ComponentRegistry {
     /// Look up an indicator by id.
     #[must_use]
     pub fn get(&self, id: &str) -> Option<Arc<dyn Indicator>> {
-        self.inner
-            .get(&id.to_string())
-            .map(|shared| Arc::clone(&shared.0))
+        self.inner.get(id).map(|shared| Arc::clone(&shared.0))
     }
 
     /// Registered ids in sorted order.
@@ -264,6 +262,34 @@ impl ComponentRegistry {
         Ok(registry)
     }
 
+    /// The process-wide shared component registry: [`Self::from_builtins`]
+    /// built once and shared by every reader.
+    ///
+    /// Same reasoning as
+    /// [`shared_registry`](crate::indicator::shared_registry): the entries are
+    /// stateless kernels behind concurrent handles, so one registration per
+    /// process is enough and two readers cannot tread on each other.
+    /// [`Self::from_builtins`] stays the owned constructor for callers that
+    /// need their own registration set (a test double, say).
+    ///
+    /// # Errors
+    ///
+    /// The same construction refusals [`Self::from_builtins`] can report. A
+    /// failed build installs nothing, so a later call retries instead of
+    /// inheriting a poisoned registry.
+    pub fn shared() -> Result<&'static ComponentRegistry, KernelError> {
+        static SHARED: OnceLock<ComponentRegistry> = OnceLock::new();
+        if let Some(registry) = SHARED.get() {
+            return Ok(registry);
+        }
+        let built = Self::from_builtins()?;
+        // A racing caller may win; either way both read the winner.
+        let _ = SHARED.set(built);
+        Ok(SHARED
+            .get()
+            .expect("the shared component registry was installed above"))
+    }
+
     /// Order `requested` indicators so dependencies execute first. Unknown
     /// requested ids and dependencies on unregistered indicators are
     /// [`GraphError::NodeNotFound`]; loops surface as
@@ -272,23 +298,28 @@ impl ComponentRegistry {
         &self,
         requested: &[IndicatorId],
     ) -> Result<Vec<IndicatorId>, GraphError> {
-        for id in requested {
-            if self.get(id).is_none() {
-                return Err(GraphError::NodeNotFound(id.clone()));
-            }
-        }
-        let mut graph = DependencyGraph::new();
-        for id in self.ids() {
-            let indicator = self.get(&id).expect("listed id is registered");
-            let spec = indicator.spec();
-            for dep in &spec.depends {
-                if self.get(dep).is_none() {
-                    return Err(GraphError::NodeNotFound(dep.clone()));
-                }
-            }
-            graph.register(&id, &spec.depends, &spec.provides())?;
-        }
-        graph.topo_sort_from(requested)
+        crate::order::execution_order_from(self, requested)
+    }
+}
+
+impl crate::order::Edged for ComponentRegistry {
+    fn edges(&self) -> Vec<crate::order::KernelEdges> {
+        self.ids()
+            .into_iter()
+            .filter_map(|id| {
+                let indicator = self.get(&id)?;
+                let spec = indicator.spec();
+                Some(crate::order::KernelEdges {
+                    id,
+                    depends: spec.depends.clone(),
+                    provides: spec.provides(),
+                })
+            })
+            .collect()
+    }
+
+    fn holds(&self, id: &IndicatorId) -> bool {
+        self.get(id).is_some()
     }
 }
 

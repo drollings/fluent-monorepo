@@ -371,3 +371,30 @@ fn every_style_field_classifies_into_the_style_tab() {
         "no override leaks into the Inputs tab: {inputs:?}"
     );
 }
+
+/// Every key the theme's own field list offers must resolve **and paint**: a
+/// catalogue entry that fails at paint time is the failure this pins shut, and
+/// the Style tab's overridable subset must map into the same key set.
+#[test]
+fn every_theme_style_key_resolves_and_paints() {
+    let theme = theme();
+    let keys = ThemeConfig::style_keys();
+    assert!(!keys.is_empty(), "the enumerator has keys");
+    assert!(!keys.contains(&"name"), "the identity field is not a color");
+    for key in keys {
+        theme
+            .style(key)
+            .unwrap_or_else(|| panic!("{key}: the enumerator offered a key the resolver lacks"));
+        crate::paint::resolve_color(&theme, key)
+            .unwrap_or_else(|error| panic!("{key}: must paint: {error}"));
+    }
+    for field in STYLE_FIELDS {
+        match style_key(field) {
+            Some(key) => assert!(
+                keys.contains(&key),
+                "{field} overrides {key}, which the theme does not resolve"
+            ),
+            None => assert_eq!(field, LINE_WIDTH_FIELD, "only the width has no color key"),
+        }
+    }
+}

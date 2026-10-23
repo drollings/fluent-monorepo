@@ -20,6 +20,7 @@ use std::fmt;
 
 use super::lexer::{PineToken, TokenKind};
 use super::source::{ImportDecl, LibraryId};
+use crate::vars::NodeId;
 
 /// A parsed Pine file: top-level statements in source order.
 #[derive(Debug, Clone, PartialEq)]
@@ -104,6 +105,9 @@ pub enum PineStmt {
     },
     /// `var[name] = value` / `varip [type] name = value`.
     VarDeclaration {
+        /// Parser-assigned node identity: the declaration that owns the
+        /// cell (see [`crate::vars::ScopeKey`]).
+        id: NodeId,
         /// Variable name.
         name: String,
         /// Optional declared type (`var float x = ...`).
@@ -253,6 +257,9 @@ pub enum PineExpr {
     },
     /// Plain call (`plot(...)`, `nz(...)`, `int(...)`).
     FunctionCall {
+        /// Parser-assigned node identity of the call expression: the instance
+        /// a callee's persistent declarations belong to.
+        id: NodeId,
         /// Function name.
         name: String,
         /// Arguments (names preserved).
@@ -262,6 +269,9 @@ pub enum PineExpr {
     },
     /// Namespaced call (`ta.sma(...)`, `this.register(...)`).
     MethodCall {
+        /// Parser-assigned node identity of the call expression: the instance
+        /// a method's persistent declarations belong to.
+        id: NodeId,
         /// Receiver namespace.
         namespace: String,
         /// Method name.
@@ -275,6 +285,9 @@ pub enum PineExpr {
     /// evaluates first, then the method runs against the resulting instance
     /// with no home to write back to.
     InstanceCall {
+        /// Parser-assigned node identity of the call expression: the instance
+        /// a method's persistent declarations belong to.
+        id: NodeId,
         /// Receiver expression (evaluates to an instance).
         receiver: Box<PineExpr>,
         /// Method name.
@@ -571,6 +584,9 @@ pub fn parse_program(source: &str) -> Result<PineProgram, PineParseError> {
 pub struct PineParser {
     tokens: Vec<PineToken>,
     position: usize,
+    /// Next node identity to hand out; one-based, so
+    /// [`NodeId::ROOT`] stays reserved for the enclosing scope.
+    nodes: u32,
 }
 
 impl PineParser {
@@ -580,7 +596,16 @@ impl PineParser {
         Self {
             tokens,
             position: 0,
+            nodes: 0,
         }
+    }
+
+    /// Take the next node identity. Node ids are handed out where parsing
+    /// begins, so they follow source order and repeat identically on every
+    /// parse of the same source.
+    fn next_node(&mut self) -> NodeId {
+        self.nodes += 1;
+        NodeId::new(self.nodes)
     }
 
     /// Parse every top-level statement.
@@ -658,6 +683,7 @@ impl PineParser {
     }
 
     fn parse_var_declaration(&mut self) -> Result<PineStmt, PineParseError> {
+        let id = self.next_node();
         let is_varip = self.current_kind() == &TokenKind::Varip;
         self.advance();
         self.skip_trivia();
@@ -676,6 +702,7 @@ impl PineParser {
         self.expect(&TokenKind::Equal)?;
         let value = Box::new(self.parse_expression()?);
         Ok(PineStmt::VarDeclaration {
+            id,
             name,
             type_name,
             value,
@@ -1673,17 +1700,20 @@ impl PineParser {
                     let field = self.expect_name()?;
                     self.skip_trivia();
                     if self.current_kind() == &TokenKind::LeftParen {
+                        let id = self.next_node();
                         self.advance();
                         let args = self.parse_call_args()?;
                         self.expect(&TokenKind::RightParen)?;
                         expr = match expr {
                             PineExpr::Variable(namespace) => PineExpr::MethodCall {
+                                id,
                                 namespace,
                                 method: field,
                                 args,
                                 type_args: Vec::new(),
                             },
                             receiver => PineExpr::InstanceCall {
+                                id,
                                 receiver: Box::new(receiver),
                                 method: field,
                                 args,
@@ -1766,10 +1796,12 @@ impl PineParser {
                 // session[, timezone])` function: call parens bind same-line.
                 self.skip_comments();
                 if self.current_kind() == &TokenKind::LeftParen {
+                    let id = self.next_node();
                     self.advance();
                     let args = self.parse_call_args()?;
                     self.expect(&TokenKind::RightParen)?;
                     Ok(PineExpr::FunctionCall {
+                        id,
                         name: "time".to_owned(),
                         args,
                         type_args: Vec::new(),
@@ -1795,11 +1827,13 @@ impl PineParser {
                     }
                 }
                 if self.current_kind() == &TokenKind::LeftParen {
+                    let id = self.next_node();
                     self.advance();
                     let args = self.parse_call_args()?;
                     self.expect(&TokenKind::RightParen)?;
                     if let Some(dot) = name.rfind('.') {
                         Ok(PineExpr::MethodCall {
+                            id,
                             namespace: name[..dot].to_owned(),
                             method: name[dot + 1..].to_owned(),
                             args,
@@ -1807,6 +1841,7 @@ impl PineParser {
                         })
                     } else {
                         Ok(PineExpr::FunctionCall {
+                            id,
                             name,
                             args,
                             type_args: Vec::new(),
@@ -1895,6 +1930,7 @@ impl PineParser {
             return None;
         }
         self.advance();
+        let id = self.next_node();
         let args = self.parse_call_args().ok()?;
         self.skip_trivia();
         if self.current_kind() != &TokenKind::RightParen {
@@ -1903,6 +1939,7 @@ impl PineParser {
         self.advance();
         if let Some(dot) = name.rfind('.') {
             Some(PineExpr::MethodCall {
+                id,
                 namespace: name[..dot].to_owned(),
                 method: name[dot + 1..].to_owned(),
                 args,
@@ -1910,6 +1947,7 @@ impl PineParser {
             })
         } else {
             Some(PineExpr::FunctionCall {
+                id,
                 name: name.to_owned(),
                 args,
                 type_args,

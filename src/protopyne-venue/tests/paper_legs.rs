@@ -599,3 +599,54 @@ async fn a_newest_only_source_opts_in_explicitly_and_fills() {
         .expect("an explicit newest opt-in fills");
     assert_eq!(record.status, OrderStatus::Filled);
 }
+
+/// A multi-leg roll fills all legs or none. The draft's legs submit as one
+/// package through the same `decide_spread` fold every roll uses (the fill
+/// path never sees `ProposalSide` — atomicity is proven once, here, for the
+/// path rolls submit through); a dark leg refuses the whole package and books
+/// no partial state.
+#[tokio::test]
+async fn a_roll_with_a_dark_leg_fills_nothing() {
+    use protopyne_strategy::{Adjustment, Direction, StructureKind};
+    use protopyne_types::Qty;
+
+    let draft = Adjustment {
+        structure: StructureKind::Vertical,
+        legs: vertical(),
+        target_dte_days: 45,
+        credit: true,
+        underlying: "SPY".to_owned(),
+        direction: Direction::Long,
+        quantity: Qty::new(Decimal::from(1)),
+        limit_price: money("5.00"),
+        max_loss: money("300"),
+        notional: money("1000"),
+        conviction: 0.8,
+        activity_score: 0.7,
+    };
+    // Quote only the long leg: the short leg is dark.
+    let legs = draft.legs.clone();
+    let mut map = HashMap::new();
+    map.insert(legs.legs()[0].contract.occ_symbol(), quote("2.50", "2.70"));
+    let venue = venue_with(MapLegQuotes { map });
+    let err = venue
+        .submit(
+            spread_intent("v#dark", draft.legs.clone()),
+            &quote("600.00", "600.10"),
+            now(),
+        )
+        .await
+        .expect_err("one dark leg refuses the whole package");
+    assert!(
+        err.to_string().contains("no quote"),
+        "the refusal names the missing quote, got {err:?}"
+    );
+    assert!(
+        venue.executed_legs("v#dark").is_empty(),
+        "no leg may fill when the package refuses"
+    );
+    assert!(
+        venue.spread_positions().is_empty(),
+        "no position may open when the package refuses"
+    );
+}

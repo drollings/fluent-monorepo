@@ -130,7 +130,7 @@ pub struct FastMasConfig {
     /// Theme style key for the first average.
     #[field(
         desc = "First MA theme style key",
-        variants = "crate::topology::theme_style_keys"
+        variants = "fluent_egui::ThemeConfig::style_keys"
     )]
     #[builder(default = default_line_style())]
     pub first_ma_style: String,
@@ -148,7 +148,7 @@ pub struct FastMasConfig {
     /// Theme style key for the second average.
     #[field(
         desc = "Second MA theme style key",
-        variants = "crate::topology::theme_style_keys"
+        variants = "fluent_egui::ThemeConfig::style_keys"
     )]
     #[builder(default = default_accent_style())]
     pub second_ma_style: String,
@@ -166,7 +166,7 @@ pub struct FastMasConfig {
     /// Theme style key for the signal average.
     #[field(
         desc = "Signal MA theme style key",
-        variants = "crate::topology::theme_style_keys"
+        variants = "fluent_egui::ThemeConfig::style_keys"
     )]
     #[builder(default = default_accent_style())]
     pub signal_ma_style: String,
@@ -184,7 +184,7 @@ pub struct FastMasConfig {
     /// Theme style key for the mean average.
     #[field(
         desc = "Mean MA theme style key",
-        variants = "crate::topology::theme_style_keys"
+        variants = "fluent_egui::ThemeConfig::style_keys"
     )]
     #[builder(default = default_line_style())]
     pub mean_ma_style: String,
@@ -202,7 +202,7 @@ pub struct FastMasConfig {
     /// Theme style key for the trend average.
     #[field(
         desc = "Trend MA theme style key",
-        variants = "crate::topology::theme_style_keys"
+        variants = "fluent_egui::ThemeConfig::style_keys"
     )]
     #[builder(default = default_line_style())]
     pub trend_ma_style: String,
@@ -220,14 +220,14 @@ pub struct FastMasConfig {
     /// Theme style key for the base average.
     #[field(
         desc = "Base MA theme style key",
-        variants = "crate::topology::theme_style_keys"
+        variants = "fluent_egui::ThemeConfig::style_keys"
     )]
     #[builder(default = default_line_style())]
     pub base_ma_style: String,
     /// Theme style key for the SMA trio.
     #[field(
         desc = "SMA theme style key",
-        variants = "crate::topology::theme_style_keys"
+        variants = "fluent_egui::ThemeConfig::style_keys"
     )]
     #[builder(default = default_sma_style())]
     pub sma_style: String,

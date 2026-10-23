@@ -1,4 +1,5 @@
 use super::*;
+use protopyne_strategy::fixtures;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -8,10 +9,8 @@ use rust_decimal::Decimal;
 
 use protopyne_strategy::{
     elements::{ExplicitStructure, FixedContracts},
-    BreakerLimits, BreakerState, Direction, FixedSignal, Grant, GrantBudgets, GrantLedger,
-    GrantMarket, GrantPermission, GrantScope, MarketData, MarketView, PortfolioThresholds,
-    Proposal, ProposalSide, ProposalState, RiskEngine, RiskLimits, SignalThresholds, Strategy,
-    StructureKind, TradeThresholds,
+    BreakerState, Direction, FixedSignal, Grant, GrantLedger, GrantMarket, MarketData, MarketView,
+    Proposal, ProposalSide, ProposalState, RiskEngine, RiskLimits, Strategy, StructureKind,
 };
 use protopyne_types::{Bar, Money, Qty};
 use protopyne_venue::{
@@ -65,53 +64,12 @@ fn risk() -> RiskEngine {
 }
 
 fn grant_with(min_conviction: f64) -> Grant {
-    Grant::new()
-        .id(format!("sweep-{min_conviction}"))
-        .scope(
-            GrantScope::new()
-                .strategies(vec!["ribbon".to_owned()])
-                .underlyings(vec!["SPY".to_owned()])
-                .structures(vec![StructureKind::Vertical])
-                .directions(vec![Direction::Long, Direction::Short])
-                .permissions(GrantPermission {
-                    entries: true,
-                    exits: true,
-                    rolls: false,
-                })
-                .build(),
-        )
-        .budgets(
-            GrantBudgets::new()
-                .max_trades(1_000)
-                .max_contracts(10_000)
-                .max_loss(money(1_000_000))
-                .max_notional(money(100_000_000))
-                .build(),
-        )
-        .signal(
-            SignalThresholds::new()
-                .min_conviction(min_conviction)
-                .min_activity_score(0.5)
-                .build(),
-        )
-        .trade(
-            TradeThresholds::new()
-                .max_loss_per_trade(money(1_000))
-                .max_spread_width(money(50))
-                .min_dte_days(1)
-                .max_dte_days(90)
-                .build(),
-        )
-        .portfolio(
-            PortfolioThresholds::new()
-                .max_open_risk(money(10_000_000))
-                .quote_max_age_secs(60)
-                .build(),
-        )
-        .breakers(BreakerLimits::new().max_consecutive_errors(3).build())
-        .valid_from(Utc.with_ymd_and_hms(2025, 1, 1, 0, 0, 0).unwrap())
-        .valid_until(Utc.with_ymd_and_hms(2027, 1, 1, 0, 0, 0).unwrap())
-        .build()
+    // The shared fixture's shape with the sweep's conviction floor.
+    fixtures::grant_with(|grant| {
+        grant.id = format!("sweep-{min_conviction}");
+        grant.signal.min_conviction = min_conviction;
+        grant.signal.min_activity_score = 0.5;
+    })
 }
 
 fn venue_config() -> BacktestConfig {
@@ -3135,6 +3093,12 @@ impl protopyne_strategy::Signal for AlternatingSignal {
             direction: Direction::Long,
             conviction: 0.8,
             activity_score: 1.0,
+
+            volatility: None,
+
+            edge: None,
+
+            odds: None,
         })
     }
 }
@@ -3154,6 +3118,12 @@ impl protopyne_strategy::SignalInstance for Alternation {
             },
             conviction: if odd { 0.8 } else { 0.4 },
             activity_score: 1.0,
+
+            volatility: None,
+
+            edge: None,
+
+            odds: None,
         })
     }
 
@@ -3251,53 +3221,13 @@ fn chain_strategy() -> Arc<Strategy> {
 }
 
 fn grant_for_structure(structure: StructureKind) -> Grant {
-    Grant::new()
-        .id("chain-derived".to_owned())
-        .scope(
-            GrantScope::new()
-                .strategies(vec!["ribbon".to_owned()])
-                .underlyings(vec!["SPY".to_owned()])
-                .structures(vec![structure])
-                .directions(vec![Direction::Long, Direction::Short])
-                .permissions(GrantPermission {
-                    entries: true,
-                    exits: true,
-                    rolls: false,
-                })
-                .build(),
-        )
-        .budgets(
-            GrantBudgets::new()
-                .max_trades(1_000)
-                .max_contracts(10_000)
-                .max_loss(money(1_000_000))
-                .max_notional(money(100_000_000))
-                .build(),
-        )
-        .signal(
-            SignalThresholds::new()
-                .min_conviction(0.5)
-                .min_activity_score(0.5)
-                .build(),
-        )
-        .trade(
-            TradeThresholds::new()
-                .max_loss_per_trade(money(1_000))
-                .max_spread_width(money(50))
-                .min_dte_days(1)
-                .max_dte_days(90)
-                .build(),
-        )
-        .portfolio(
-            PortfolioThresholds::new()
-                .max_open_risk(money(10_000_000))
-                .quote_max_age_secs(60)
-                .build(),
-        )
-        .breakers(BreakerLimits::new().max_consecutive_errors(3).build())
-        .valid_from(Utc.with_ymd_and_hms(2025, 1, 1, 0, 0, 0).unwrap())
-        .valid_until(Utc.with_ymd_and_hms(2027, 1, 1, 0, 0, 0).unwrap())
-        .build()
+    // The shared fixture's shape narrowed to one structure.
+    fixtures::grant_with(|grant| {
+        grant.id = "chain-derived".to_owned();
+        grant.scope.structures = vec![structure];
+        grant.signal.min_conviction = 0.5;
+        grant.signal.min_activity_score = 0.5;
+    })
 }
 
 async fn chain_derived_decision(

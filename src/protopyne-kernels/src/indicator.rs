@@ -3,8 +3,9 @@
 //! An [`Indicator`] declares its [`IndicatorSpec`] (identity, warmup floor,
 //! dependencies), evaluates whole windows ([`batch`](Indicator::batch)) and
 //! single bars ([`update`](Indicator::update)), and is looked up through an
-//! instance [`IndicatorRegistry`] — never a global, so parallel runs stay
-//! isolated. Ordering composes `fluent-dag`'s [`DependencyGraph`](fluent_dag::dep_graph::DependencyGraph);
+//! [`IndicatorRegistry`] that owns only *kernels*, never run state: a caller may
+//! build its own ([`builtin_registry`]) or share the process-wide immutable
+//! catalog ([`shared_registry`]). Ordering composes `fluent-dag`'s [`DependencyGraph`](fluent_dag::dep_graph::DependencyGraph);
 //! no second topological sort lives here.
 //!
 //! Series legs are plain `f64` slices where IEEE `NaN` means Pine `na`: it
@@ -12,12 +13,14 @@
 //! boundary via [`fin_or_none`]. Kernels read only the legs they need from
 //! [`Ohlcv`]; [`BarTick`] is the matching per-bar input for [`update`](Indicator::update).
 
+use std::any::Any;
 use std::collections::{HashMap, VecDeque};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, OnceLock};
 
 use bon::Builder;
 use common_core::registry::KeyedRegistry;
-use fluent_dag::dep_graph::{DependencyGraph, GraphError};
+use fluent_dag::dep_graph::GraphError;
 use serde::{Deserialize, Serialize};
 
 use crate::ema::EmaIndicator;
@@ -587,22 +590,14 @@ impl IndicatorSpec {
     /// central schema table.
     #[must_use]
     pub fn params(&self) -> &'static [IndicatorParam] {
-        if self.params.is_empty() {
-            indicator_schema(&self.id).map_or(&[], |schema| schema.params)
-        } else {
-            self.params
-        }
+        indicator_schema(&self.id).map_or(&[], |schema| schema.params)
     }
 
-    /// Declared outputs: the per-kernel field when populated, else the
-    /// central schema table.
+    /// Declared outputs, from the central schema table. There is deliberately
+    /// no per-spec override: [`indicator_schema`] is the one table.
     #[must_use]
     pub fn outputs(&self) -> &'static [OutputSpec] {
-        if self.outputs.is_empty() {
-            indicator_schema(&self.id).map_or(&[], |schema| schema.outputs)
-        } else {
-            self.outputs
-        }
+        indicator_schema(&self.id).map_or(&[], |schema| schema.outputs)
     }
 
     /// Build the declared defaults for one invocation.
@@ -657,14 +652,6 @@ impl IndicatorSpec {
     }
 }
 
-fn empty_param_slice() -> &'static [IndicatorParam] {
-    &[]
-}
-
-fn empty_output_slice() -> &'static [OutputSpec] {
-    &[]
-}
-
 /// Static description of one indicator: identity, warmup floor, and
 /// dependencies. The per-invocation refinement lives in
 /// [`Indicator::warmup`], which sees the actual parameters.
@@ -680,14 +667,6 @@ pub struct IndicatorSpec {
     /// Ids that must execute before this indicator.
     #[builder(default)]
     pub depends: Vec<IndicatorId>,
-    /// Declared parameters; empty falls back to the central schema table.
-    #[builder(default)]
-    #[serde(skip, default = "empty_param_slice")]
-    pub params: &'static [IndicatorParam],
-    /// Declared outputs; empty falls back to the central schema table.
-    #[builder(default)]
-    #[serde(skip, default = "empty_output_slice")]
-    pub outputs: &'static [OutputSpec],
 }
 
 impl IndicatorSpec {
@@ -1035,6 +1014,69 @@ pub struct FullTick {
     pub secondary: Vec<NamedValue>,
 }
 
+/// One kernel's resolved scalars, memoised on its [`IndicatorState`].
+///
+/// A state belongs to **one run of one kernel**, and a run's parameters are
+/// fixed for its lifetime, so the first resolution is the run's: later bars read
+/// a copy instead of re-reading the boundary [`ParamSet`] (a `HashMap` of
+/// `PineValue`s) once per bar. `T` is whatever the kernel's own resolver returns
+/// — a `usize` or a small tuple it already defines — never a shared bag of
+/// untyped slots.
+///
+/// The cache is pure, so it never has to be kept in step: cloning a state drops
+/// it (the clone re-resolves on its first bar) and a failed resolution stores
+/// nothing (the next bar retries). Asking one state for a *different* `T` than
+/// it cached is a caller bug — two kernels sharing a state — and refuses rather
+/// than silently rebuilding under the first kernel's feet.
+#[derive(Default)]
+pub struct ResolvedCache {
+    value: Option<Box<dyn Any + Send + Sync>>,
+}
+
+impl std::fmt::Debug for ResolvedCache {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(if self.value.is_some() {
+            "ResolvedCache(<resolved>)"
+        } else {
+            "ResolvedCache(empty)"
+        })
+    }
+}
+
+impl Clone for ResolvedCache {
+    /// A clone starts empty: the memo is a pure value, and a cloned state is a
+    /// fresh run window that re-resolves from its own first bar.
+    fn clone(&self) -> Self {
+        Self::default()
+    }
+}
+
+impl ResolvedCache {
+    /// Read the cached value, or build it once with `build`.
+    ///
+    /// # Errors
+    ///
+    /// The build's own refusal (nothing is stored, so the caller retries on the
+    /// next bar), or a refusal when this state already holds another `T`.
+    pub fn get<T: Copy + Send + Sync + 'static>(
+        &mut self,
+        build: impl FnOnce() -> Result<T, KernelError>,
+    ) -> Result<T, KernelError> {
+        if let Some(cached) = self.value.as_ref() {
+            return cached.downcast_ref::<T>().copied().ok_or_else(|| {
+                KernelError::InvalidParam(
+                    "indicator state was reused across kernels: its resolved scalars are \
+                     a different type"
+                        .to_owned(),
+                )
+            });
+        }
+        let built = build()?;
+        self.value = Some(Box::new(built));
+        Ok(built)
+    }
+}
+
 /// Incremental evaluation state: recent per-bar ticks, the last emitted
 /// value, and child states for composed kernels (MACD's three EMAs, RSI's
 /// gain/loss smoothers, …). Single- and multi-output paths share it, so
@@ -1055,6 +1097,9 @@ pub struct IndicatorState {
     /// bar. Pair/triple fills stack their legs back-to-back in the same
     /// buffer and split it — still one buffer, still no per-bar allocation.
     scratch: Vec<f64>,
+    /// The kernel's scalars, resolved once from its parameters (see
+    /// [`ResolvedCache`]).
+    scalars: ResolvedCache,
 }
 
 impl IndicatorState {
@@ -1211,6 +1256,23 @@ impl IndicatorState {
         (&mut self.children[index], params)
     }
 
+    /// The kernel's resolved scalars for this state: built once from the first
+    /// bar's parameters, then read as a copy on every later bar.
+    ///
+    /// Parameters are fixed for a state's lifetime (exactly like its window),
+    /// so this is a memo of a pure value, never a second source of truth.
+    ///
+    /// # Errors
+    ///
+    /// The kernel's own parameter refusal, or a refusal when the state already
+    /// holds a different scalar type (two kernels sharing one state).
+    pub fn resolved<T: Copy + Send + Sync + 'static>(
+        &mut self,
+        build: impl FnOnce() -> Result<T, KernelError>,
+    ) -> Result<T, KernelError> {
+        self.scalars.get(build)
+    }
+
     /// Last emitted value, if any.
     #[must_use]
     pub fn last(&self) -> Option<f64> {
@@ -1232,7 +1294,23 @@ pub trait Indicator: Send + Sync {
     fn spec(&self) -> &IndicatorSpec;
 
     /// Bars needed before the first trustworthy output for these parameters.
-    fn warmup(&self, params: &ParamSet) -> Result<usize, KernelError>;
+    ///
+    /// The static [`IndicatorSpec::warmup_bars`] is the default, and
+    /// [`refine_warmup`](Self::refine_warmup) is the *only* way a kernel may
+    /// raise it: one parameter-dependent channel, combined here, so no kernel
+    /// can carry a second answer beside its spec.
+    fn warmup(&self, params: &ParamSet) -> Result<usize, KernelError> {
+        Ok(self
+            .refine_warmup(params)?
+            .unwrap_or(self.spec().warmup_bars))
+    }
+
+    /// Bars before the first output when the parameters say more than the
+    /// static spec does: `None` (the default) means the static
+    /// [`warmup_bars`](IndicatorSpec::warmup_bars) applies unchanged.
+    fn refine_warmup(&self, _params: &ParamSet) -> Result<Option<usize>, KernelError> {
+        Ok(None)
+    }
 
     /// Evaluate over whole windows. Output length always equals input length;
     /// positions without enough history are `None`, never an error.
@@ -1279,9 +1357,21 @@ pub trait Indicator: Send + Sync {
     }
 }
 
-/// Instance registry of indicators keyed by spec id. Deliberately an owned
-/// value rather than a process-global, so tests and parallel runs each hold
-/// their own registry.
+/// Registry of indicators keyed by spec id.
+///
+/// What the ownership rule actually forbids is **per-run state** in a shared
+/// place: accumulators, cursors, "last bar" — anything two concurrent runs could
+/// tread on. This type holds none. Its entries are `Arc<dyn Indicator>` over
+/// stateless kernels (each `batch`/`update` call carries its own state —
+/// [`IndicatorState`] for the incremental path, `params` for both), so a registry
+/// is a pure value: two of them built from [`builtin_registry`] are
+/// interchangeable, and caching one is not a second source of truth.
+///
+/// That is why [`shared_registry`] may keep one in a `static`: the static is an
+/// **immutable cache of a pure value**, not shared mutable state. The owned
+/// constructor stays [`builtin_registry`], and a test that wants isolation can
+/// still build its own — nothing requires the shared handle.
+///
 /// Duplicate policy: first-wins, duplicates refuse `Err(DuplicateIndicator)`.
 /// `ids()` returns sorted order via [`KeyedRegistry`].
 #[derive(Default)]
@@ -1338,6 +1428,8 @@ impl IndicatorRegistry {
 
 /// Registry preloaded with the shipped kernels.
 pub fn builtin_registry() -> Result<IndicatorRegistry, KernelError> {
+    #[cfg(test)]
+    OWNED_BUILDS.with(|count| count.set(count.get() + 1));
     let mut registry = IndicatorRegistry::new();
     registry.register(Arc::new(SmaIndicator::new()))?;
     registry.register(Arc::new(EmaIndicator::new()))?;
@@ -1406,22 +1498,129 @@ pub fn execution_order(
     registry: &IndicatorRegistry,
     requested: &[IndicatorId],
 ) -> Result<Vec<IndicatorId>, GraphError> {
-    for id in requested {
-        if registry.get(id).is_none() {
-            return Err(GraphError::NodeNotFound(id.clone()));
-        }
+    crate::order::execution_order_from(registry, requested)
+}
+
+impl crate::order::Edged for IndicatorRegistry {
+    fn edges(&self) -> Vec<crate::order::KernelEdges> {
+        self.iter()
+            .map(|(id, indicator)| {
+                let spec = indicator.spec();
+                crate::order::KernelEdges {
+                    id: id.clone(),
+                    depends: spec.depends.clone(),
+                    provides: spec.provides(),
+                }
+            })
+            .collect()
     }
-    let mut graph = DependencyGraph::new();
-    for (id, indicator) in registry.iter() {
-        let spec = indicator.spec();
-        for dep in &spec.depends {
-            if registry.get(dep).is_none() {
-                return Err(GraphError::NodeNotFound(dep.clone()));
+
+    fn holds(&self, id: &IndicatorId) -> bool {
+        self.get(id).is_some()
+    }
+}
+
+/// The process-wide immutable kernel catalog: [`builtin_registry`] built once
+/// and shared by every reader.
+///
+/// This is the first non-zero-sized `static` in this crate, and it is not a
+/// violation of the instance-ownership rule: the value holds stateless kernels
+/// only (see [`IndicatorRegistry`]), so there is nothing for one run to tread on
+/// in another. Callers that mutate the catalog (registering a test kernel) build
+/// their own with [`builtin_registry`] and keep it local.
+///
+/// # Errors
+///
+/// The same construction refusals [`builtin_registry`] can report (a duplicate
+/// registration). A failed build installs nothing, so a later call retries
+/// instead of inheriting a poisoned registry.
+pub fn shared_registry() -> Result<&'static IndicatorRegistry, KernelError> {
+    if let Some(registry) = SHARED_REGISTRY.get() {
+        return Ok(registry);
+    }
+    let built = builtin_registry()?;
+    // Two readers may race here; the loser's registry is dropped and both read
+    // the winner, so every caller in the process still shares one address.
+    if SHARED_REGISTRY.set(built).is_ok() {
+        SHARED_BUILDS.fetch_add(1, Ordering::Relaxed);
+    }
+    Ok(SHARED_REGISTRY
+        .get()
+        .expect("the shared registry was installed above"))
+}
+
+/// Successful shared-registry installations. At most one per process; the
+/// counter exists so the tests can prove a migrated hot path never rebuilds the
+/// catalog, instead of trusting a benchmark nobody reads.
+static SHARED_BUILDS: AtomicUsize = AtomicUsize::new(0);
+
+static SHARED_REGISTRY: OnceLock<IndicatorRegistry> = OnceLock::new();
+
+/// How many times the shared registry has been *installed*, for the cache
+/// tests. Always at most one; a larger value means the `OnceLock` was replaced
+/// by a second mechanism.
+#[cfg(test)]
+#[must_use]
+pub(crate) fn shared_registry_builds() -> usize {
+    SHARED_BUILDS.load(Ordering::Relaxed)
+}
+
+// `builtin_registry` calls on this thread, for the hot-path pin. Thread-local
+// on purpose: tests run in parallel, so a process-wide counter would see other
+// tests' legitimate owned builds and turn the pin into a flake. The hot path is
+// synchronous on the calling thread, which is exactly what this measures.
+#[cfg(test)]
+thread_local! {
+    static OWNED_BUILDS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Owned-constructor calls observed on **this thread**, for the cache tests.
+/// A hot path that reads [`shared_registry`] never moves this count.
+#[cfg(test)]
+#[must_use]
+pub(crate) fn owned_registry_builds() -> usize {
+    OWNED_BUILDS.with(std::cell::Cell::get)
+}
+
+/// Give stateless kernel types a process-wide instance.
+///
+/// A kernel's only field is its static [`IndicatorSpec`]; per-run state lives in
+/// the caller's [`IndicatorState`]. Composed kernels therefore hold `&'static`
+/// children (`EmaIndicator::shared()`, …) and never build — or allocate — a spec
+/// per bar, while keeping static dispatch in the per-bar loop.
+macro_rules! shared_kernels {
+    ($($kernel:ty),+ $(,)?) => {
+        $(
+            impl $kernel {
+                /// Process-wide instance: the kernel is immutable, so one is
+                /// enough for every caller. Per-run state stays in the
+                /// caller's [`IndicatorState`].
+                #[must_use]
+                pub fn shared() -> &'static Self {
+                    static SHARED: OnceLock<$kernel> = OnceLock::new();
+                    SHARED.get_or_init(<$kernel>::new)
+                }
             }
-        }
-        graph.register(id, &spec.depends, &spec.provides())?;
-    }
-    graph.topo_sort_from(requested)
+        )+
+    };
+}
+
+shared_kernels!(
+    SmaIndicator,
+    EmaIndicator,
+    crate::averages::RmaIndicator,
+    crate::averages::WmaIndicator,
+    crate::ta_volume::AdIndicator,
+    crate::volatility::AtrIndicator,
+);
+
+/// Bit patterns of a series: `None` stays `None`, a value compares by every
+/// bit. The one home for the exact batch/update folds — a float comparison at
+/// an epsilon would let a recurrence drift while the fold still "agreed".
+#[cfg(test)]
+#[must_use]
+pub(crate) fn bits_of(values: &[Option<f64>]) -> Vec<Option<u64>> {
+    values.iter().map(|value| value.map(f64::to_bits)).collect()
 }
 
 #[cfg(test)]
@@ -1431,6 +1630,26 @@ mod tests;
 #[cfg(test)]
 #[path = "../tests/schema.rs"]
 mod schema_tests;
+
+/// All-kernel `batch`/`update_full` identity fold and the fixture it derives.
+#[cfg(test)]
+#[path = "../tests/kernel_identity.rs"]
+mod kernel_identity_tests;
+
+/// One-build/shared-address/concurrent-read pins for the process-wide catalog.
+#[cfg(test)]
+#[path = "../tests/shared_registry.rs"]
+mod shared_registry_tests;
+
+/// Memo-of-a-pure-value pins for the per-state resolved-scalar cache.
+#[cfg(test)]
+#[path = "../tests/resolved_cache.rs"]
+mod resolved_cache_tests;
+
+/// The shell-built families answer exactly at their declared warmup.
+#[cfg(test)]
+#[path = "../tests/warmup.rs"]
+mod warmup_tests;
 
 #[cfg(test)]
 #[path = "../tests/param_fingerprint.rs"]

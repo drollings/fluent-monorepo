@@ -1,4 +1,5 @@
 use super::*;
+use crate::indicator::bits_of;
 use crate::oscillators::{MacdIndicator, RsiIndicator, StochIndicator};
 
 fn approx(got: &[Option<f64>], want: &[Option<f64>], eps: f64) {
@@ -36,10 +37,6 @@ fn fold_all(
 
 fn close_ticks(data: &[f64]) -> Vec<BarTick> {
     data.iter().map(|&c| BarTick::close_only(c)).collect()
-}
-
-fn bits_of(values: &[Option<f64>]) -> Vec<Option<u64>> {
-    values.iter().map(|v| v.map(f64::to_bits)).collect()
 }
 
 #[test]

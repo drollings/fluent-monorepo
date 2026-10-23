@@ -7,6 +7,7 @@
 //! permit's scope here; callers that later read the tape (through the runner
 //! or the gateway) install the same scope around their async run.
 
+use protopyne_strategy::fixtures::grant_with;
 use std::sync::Arc;
 
 use protopyne_store::{
@@ -14,9 +15,8 @@ use protopyne_store::{
     TapeKey, TimeRange, WritePolicy,
 };
 use protopyne_strategy::{
-    elements::ExplicitStructure, BreakerLimits, Direction, FixedSignal, Grant, GrantBudgets,
-    GrantPermission, GrantScope, PortfolioThresholds, RiskEngine, RiskLimits, SignalThresholds,
-    Strategy, StructureKind, TradeThresholds,
+    elements::ExplicitStructure, Direction, FixedSignal, Grant, RiskEngine, RiskLimits, Strategy,
+    StructureKind,
 };
 use protopyne_types::{Bar, Money, Timeframe};
 use protopyne_venue::PaperConfig;
@@ -141,55 +141,18 @@ pub fn risk() -> RiskEngine {
 }
 
 /// A rehearsal grant whose window covers the vendored history by construction.
+///
+/// The shape is the shared fixture's; only the id, the symbol, and the window
+/// differ.
 #[must_use]
 pub fn grant(symbol: &str) -> Grant {
-    Grant::new()
-        .id("tape-rehearsal".to_owned())
-        .scope(
-            GrantScope::new()
-                .strategies(vec!["ribbon".to_owned()])
-                .underlyings(vec![symbol.to_owned()])
-                .structures(vec![StructureKind::Vertical])
-                .directions(vec![Direction::Long, Direction::Short])
-                .permissions(GrantPermission {
-                    entries: true,
-                    exits: true,
-                    rolls: false,
-                })
-                .build(),
-        )
-        .budgets(
-            GrantBudgets::new()
-                .max_trades(1_000)
-                .max_contracts(10_000)
-                .max_loss(Money::from(1_000_000))
-                .max_notional(Money::from(100_000_000))
-                .build(),
-        )
-        .signal(
-            SignalThresholds::new()
-                .min_conviction(0.0)
-                .min_activity_score(0.0)
-                .build(),
-        )
-        .trade(
-            TradeThresholds::new()
-                .max_loss_per_trade(Money::from(1_000))
-                .max_spread_width(Money::from(50))
-                .min_dte_days(1)
-                .max_dte_days(90)
-                .build(),
-        )
-        .portfolio(
-            PortfolioThresholds::new()
-                .max_open_risk(Money::from(10_000_000))
-                .quote_max_age_secs(60)
-                .build(),
-        )
-        .breakers(BreakerLimits::new().max_consecutive_errors(3).build())
-        .valid_from(chrono::DateTime::from_timestamp(1_700_000_000, 0).expect("valid stamp"))
-        .valid_until(chrono::DateTime::from_timestamp(1_900_000_000, 0).expect("valid stamp"))
-        .build()
+    grant_with(|grant| {
+        grant.id = "tape-rehearsal".to_owned();
+        grant.scope.underlyings = vec![symbol.to_owned()];
+        grant.valid_from = chrono::DateTime::from_timestamp(1_700_000_000, 0).expect("valid stamp");
+        grant.valid_until =
+            chrono::DateTime::from_timestamp(1_900_000_000, 0).expect("valid stamp");
+    })
 }
 
 /// A venue pin for one symbol.

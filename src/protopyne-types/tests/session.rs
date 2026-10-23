@@ -190,3 +190,53 @@ fn calendar_freeze_pins_regular_hours_and_dst_offsets() {
     assert_eq!(et_offset_ms(stamp(2026, 1, 15, 12, 0)), -5 * 3_600_000);
     assert_eq!(et_offset_ms(stamp(2026, 6, 15, 12, 0)), -4 * 3_600_000);
 }
+
+#[test]
+fn next_close_after_clips_a_span_to_the_session_close() {
+    use chrono::TimeZone as _;
+    const DAY_MS: i64 = 86_400_000;
+    let stamp = |y: i32, mo: u32, d: u32, h: u32, mi: u32| {
+        chrono::Utc
+            .with_ymd_and_hms(y, mo, d, h, mi, 0)
+            .single()
+            .expect("valid stamp")
+            .timestamp_millis()
+    };
+    let calendar = SessionCalendar::us_equities();
+
+    // A one-minute bar in the middle of the session crosses no close.
+    assert_eq!(
+        calendar.next_close_after(stamp(2026, 3, 6, 15, 0), 60_000),
+        None
+    );
+
+    // The last minute of the session is clipped to it.
+    assert_eq!(
+        calendar.next_close_after(stamp(2026, 3, 6, 20, 59), 60_000),
+        Some(stamp(2026, 3, 6, 21, 0))
+    );
+
+    // A daily bucket stamped at UTC midnight closes at Friday's session
+    // close — not at the next bucket's Monday open.
+    assert_eq!(
+        calendar.next_close_after(stamp(2026, 3, 6, 0, 0), DAY_MS),
+        Some(stamp(2026, 3, 6, 21, 0))
+    );
+
+    // The Monday after the spring transition closes an hour earlier in UTC
+    // than the Friday before it.
+    assert_eq!(
+        calendar.next_close_after(stamp(2026, 3, 9, 0, 0), DAY_MS),
+        Some(stamp(2026, 3, 9, 20, 0))
+    );
+
+    // A holiday shifts the close to the next session, and an empty horizon
+    // never reports one.
+    let with_holiday = SessionCalendar::us_equities().with_holiday((2026, 3, 9));
+    assert_eq!(
+        with_holiday.next_close_after(stamp(2026, 3, 9, 0, 0), DAY_MS),
+        None,
+        "no session closes inside that day"
+    );
+    assert_eq!(calendar.next_close_after(stamp(2026, 3, 6, 15, 0), 0), None);
+}

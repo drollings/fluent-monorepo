@@ -29,10 +29,10 @@ use crate::runner::{run_backtest, BacktestRun, RunnerConfig};
 use crate::views::{
     apply_arm, booked_portfolio_of, broker_account_of, broker_capabilities_of, broker_deal_of,
     broker_order_of, chart_bars_of, confirm_ticket, decide_journaled, deny_histogram_of,
-    health_view, import_tickets, issue_ticket, journal_cancel_all, journal_close_all,
-    journal_rows_of, journaled_proposals_of, live_grant, overlay_series_of, pending_proposals_of,
-    publish_run, replay_view_of, revoke_grant, ticket_drifts_of, waiting_tickets,
-    DEFAULT_REPLAY_CHECKPOINT_EVERY,
+    health_view, import_tickets, issue_ticket, journal_attest, journal_cancel_all,
+    journal_close_all, journal_rows_of, journaled_proposals_of, live_grant, overlay_series_of,
+    pending_proposals_of, publish_run, replay_view_of, revoke_grant, ticket_drifts_of,
+    waiting_tickets, DEFAULT_REPLAY_CHECKPOINT_EVERY,
 };
 use protopyne_view::{ArmResponse, DenyCount};
 
@@ -98,6 +98,13 @@ pub struct PreviewResponse {
 #[derive(Debug, serde::Deserialize)]
 pub struct RevokeParams {
     /// Grant id to revoke.
+    pub grant_id: String,
+}
+
+/// Attest request body: the id of the live grant to re-attest.
+#[derive(Debug, serde::Deserialize)]
+pub struct AttestParams {
+    /// Grant id to attest.
     pub grant_id: String,
 }
 
@@ -276,6 +283,18 @@ async fn revoke(
     Json(params): Json<RevokeParams>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorBody>)> {
     revoke_grant(&state, &params.grant_id)
+        .map(|()| StatusCode::OK)
+        .map_err(|(status, reason)| api_error(status, reason))
+}
+
+/// Journal an operator re-attestation row for the loop to fold: re-arms
+/// entries for another cadence. The route journals only; the loop's per-bar
+/// fold observes the row into the ledger.
+async fn attest(
+    State(state): State<Shared>,
+    Json(params): Json<AttestParams>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorBody>)> {
+    journal_attest(&state, &params.grant_id)
         .map(|()| StatusCode::OK)
         .map_err(|(status, reason)| api_error(status, reason))
 }
@@ -584,6 +603,7 @@ pub(crate) fn router(state: Shared) -> Router {
         .route("/proposals/preview", post(preview))
         .route("/grants/arm", post(arm))
         .route("/grants/revoke", post(revoke))
+        .route("/grants/attest", post(attest))
         .route("/grants/current", get(current_grant))
         .route("/operator/close-all", post(close_all))
         .route("/operator/cancel-all", post(cancel_all))

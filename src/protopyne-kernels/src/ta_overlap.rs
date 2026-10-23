@@ -10,6 +10,7 @@
 //! [`SmaIndicator`](crate::sma::SmaIndicator) passes through child states,
 //! exactly like the double-`EmaIndicator` composition behind `dema`.
 
+use crate::composed::{self, Chained};
 use crate::error::KernelError;
 use crate::indicator::{
     fin_or_none, nan_hole, BarTick, FullTick, Indicator, IndicatorId, IndicatorResult,
@@ -81,8 +82,8 @@ impl Indicator for BbandsIndicator {
         &self.spec
     }
 
-    fn warmup(&self, params: &ParamSet) -> Result<usize, KernelError> {
-        Ok(Self::shape(params)?.0)
+    fn refine_warmup(&self, params: &ParamSet) -> Result<Option<usize>, KernelError> {
+        Ok(Some(Self::shape(params)?.0))
     }
 
     fn batch(&self, data: &Ohlcv<'_>, params: &ParamSet) -> Result<IndicatorResult, KernelError> {
@@ -221,8 +222,8 @@ impl Indicator for MidpointIndicator {
         &self.spec
     }
 
-    fn warmup(&self, params: &ParamSet) -> Result<usize, KernelError> {
-        Self::period(params)
+    fn refine_warmup(&self, params: &ParamSet) -> Result<Option<usize>, KernelError> {
+        Ok(Some(Self::period(params)?))
     }
 
     fn batch(&self, data: &Ohlcv<'_>, params: &ParamSet) -> Result<IndicatorResult, KernelError> {
@@ -246,7 +247,7 @@ impl Indicator for MidpointIndicator {
         bar: BarTick,
         params: &ParamSet,
     ) -> Result<Option<f64>, KernelError> {
-        let period = Self::period(params)?;
+        let period = state.resolved(|| Self::period(params))?;
         state.push(bar, period);
         if state.len() < period {
             return Ok(None);
@@ -301,8 +302,8 @@ impl Indicator for MidpriceIndicator {
         &self.spec
     }
 
-    fn warmup(&self, params: &ParamSet) -> Result<usize, KernelError> {
-        Self::period(params)
+    fn refine_warmup(&self, params: &ParamSet) -> Result<Option<usize>, KernelError> {
+        Ok(Some(Self::period(params)?))
     }
 
     fn batch(&self, data: &Ohlcv<'_>, params: &ParamSet) -> Result<IndicatorResult, KernelError> {
@@ -330,7 +331,7 @@ impl Indicator for MidpriceIndicator {
         bar: BarTick,
         params: &ParamSet,
     ) -> Result<Option<f64>, KernelError> {
-        let period = Self::period(params)?;
+        let period = state.resolved(|| Self::period(params))?;
         state.push(bar, period);
         if state.len() < period {
             return Ok(None);
@@ -397,26 +398,65 @@ impl Default for TrimaIndicator {
     }
 }
 
-impl Indicator for TrimaIndicator {
+impl Chained for TrimaIndicator {
+    type Child = SmaIndicator;
+    type Shape = usize;
+
     fn spec(&self) -> &IndicatorSpec {
         &self.spec
     }
 
-    fn warmup(&self, params: &ParamSet) -> Result<usize, KernelError> {
+    fn shape(&self, params: &ParamSet) -> Result<Self::Shape, KernelError> {
         Self::period(params)
     }
 
+    fn passes(_shape: Self::Shape) -> usize {
+        2
+    }
+
+    fn pass_params(shape: Self::Shape, pass: usize) -> ParamSet {
+        let (first, second) = Self::sub_periods(shape);
+        Self::sma_params(if pass == 0 { first } else { second })
+    }
+
+    fn warmup(shape: Self::Shape) -> usize {
+        shape
+    }
+
+    /// Both sub-periods read frame legs when co-requested, so both are
+    /// declared; the kernel still runs its own inline cascade (the second pass
+    /// reads intermediate output, never the shared frame).
+    fn frame_passes(_shape: Self::Shape) -> usize {
+        2
+    }
+
+    fn combine(passes: &[Option<f64>]) -> Option<f64> {
+        match passes {
+            [_, second, ..] => *second,
+            _ => None,
+        }
+    }
+
+    fn child() -> &'static Self::Child {
+        SmaIndicator::shared()
+    }
+
+    fn child_id() -> &'static str {
+        SmaIndicator::ID
+    }
+}
+
+impl Indicator for TrimaIndicator {
+    fn spec(&self) -> &IndicatorSpec {
+        Chained::spec(self)
+    }
+
+    fn refine_warmup(&self, params: &ParamSet) -> Result<Option<usize>, KernelError> {
+        Ok(Some(composed::warmup(self, params)?))
+    }
+
     fn batch(&self, data: &Ohlcv<'_>, params: &ParamSet) -> Result<IndicatorResult, KernelError> {
-        let period = Self::period(params)?;
-        let (first_len, second_len) = Self::sub_periods(period);
-        let sma = SmaIndicator::new();
-        let first = sma.batch(&Ohlcv::close_only(data.close), &Self::sma_params(first_len))?;
-        let first_raw: Vec<f64> = first.values.iter().map(|v| nan_hole(*v)).collect();
-        let second = sma.batch(
-            &Ohlcv::close_only(&first_raw),
-            &Self::sma_params(second_len),
-        )?;
-        Ok(IndicatorResult::new(Self::ID.to_owned(), second.values))
+        composed::batch(self, data, params)
     }
 
     fn update(
@@ -425,33 +465,11 @@ impl Indicator for TrimaIndicator {
         bar: BarTick,
         params: &ParamSet,
     ) -> Result<Option<f64>, KernelError> {
-        let period = Self::period(params)?;
-        let (first_len, second_len) = Self::sub_periods(period);
-        let sma = SmaIndicator::new();
-        let (child, child_params) = state.child_with_params(0, || Self::sma_params(first_len));
-        let first = sma.update(child, bar, child_params)?;
-        let (child, child_params) = state.child_with_params(1, || Self::sma_params(second_len));
-        let second = sma.update(child, BarTick::close_only(nan_hole(first)), child_params)?;
-        if let Some(value) = second {
-            state.set_last(value);
-        }
-        Ok(second)
+        composed::update(self, state, bar, params)
     }
 
     fn deps_with_params(&self, params: &ParamSet) -> Vec<(IndicatorId, ParamSet)> {
-        // Both sub-periods read frame legs when co-requested, so both are
-        // declared; the kernel still runs its own inline cascade (the second
-        // pass reads intermediate output, never the shared frame).
-        match Self::period(params) {
-            Ok(period) => {
-                let (first_len, second_len) = Self::sub_periods(period);
-                vec![
-                    (SmaIndicator::ID.to_owned(), Self::sma_params(first_len)),
-                    (SmaIndicator::ID.to_owned(), Self::sma_params(second_len)),
-                ]
-            }
-            Err(_) => Vec::new(),
-        }
+        composed::deps_with_params(self, params)
     }
 }
 
@@ -541,8 +559,8 @@ impl Indicator for DonchianIndicator {
         &self.spec
     }
 
-    fn warmup(&self, params: &ParamSet) -> Result<usize, KernelError> {
-        Self::period(params)
+    fn refine_warmup(&self, params: &ParamSet) -> Result<Option<usize>, KernelError> {
+        Ok(Some(Self::period(params)?))
     }
 
     fn batch(&self, data: &Ohlcv<'_>, params: &ParamSet) -> Result<IndicatorResult, KernelError> {
@@ -676,9 +694,11 @@ impl Indicator for IchimokuIndicator {
         &self.spec
     }
 
-    fn warmup(&self, params: &ParamSet) -> Result<usize, KernelError> {
-        let (tenkan, kijun, senkou_b) = Self::lengths(params)?;
-        Ok(tenkan.max(kijun).max(senkou_b))
+    fn refine_warmup(&self, params: &ParamSet) -> Result<Option<usize>, KernelError> {
+        // The primary is the tenkan line, so that is the first answered bar; the
+        // cloud and the lagging span stay `na` until their own lengths are met.
+        let (tenkan, _, _) = Self::lengths(params)?;
+        Ok(Some(tenkan))
     }
 
     fn batch(&self, data: &Ohlcv<'_>, params: &ParamSet) -> Result<IndicatorResult, KernelError> {
@@ -930,9 +950,9 @@ impl Indicator for PsarIndicator {
         &self.spec
     }
 
-    fn warmup(&self, params: &ParamSet) -> Result<usize, KernelError> {
+    fn refine_warmup(&self, params: &ParamSet) -> Result<Option<usize>, KernelError> {
         let _ = Self::shape(params)?;
-        Ok(2)
+        Ok(Some(2))
     }
 
     fn batch(&self, data: &Ohlcv<'_>, params: &ParamSet) -> Result<IndicatorResult, KernelError> {

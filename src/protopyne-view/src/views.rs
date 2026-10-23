@@ -317,6 +317,91 @@ pub struct WorstCase {
     pub basis: String,
 }
 
+/// Side of a manual ticket, in the vocabulary the ticket form picks from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum TicketSide {
+    /// Buy at a limit (or better).
+    Buy,
+    /// Sell at a limit (or better).
+    Sell,
+}
+
+/// One manual ticket draft: the four fields the terminal's form fills.
+///
+/// This is the neutral **shape** of a manual order, not the venue's intent.
+/// The terminal fills it and the core turns it into an `OrderIntent` (minting
+/// the ticket identity and validating every value), so the intent schema —
+/// and the authority to submit one — never crosses into the paint edge.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct TicketDraft {
+    /// Buy or sell.
+    pub side: TicketSide,
+    /// Whole contracts (or shares).
+    pub quantity: u32,
+    /// Limit price per contract/share, as decimal text: the core parses it
+    /// with the venue's own scale-guarded rule, so a malformed price refuses
+    /// there instead of being re-validated here.
+    pub limit_price: String,
+    /// Underlying symbol.
+    pub symbol: String,
+}
+
+/// Structure a rehearsal is opened for, in the picker's vocabulary.
+///
+/// A **hint**, not a decision: the core maps it to its own structure kind and
+/// refuses a shape it cannot price. The neutral crate never links the
+/// strategy enum, so this mirror is what crosses the read boundary.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum StructureKindHint {
+    /// Single stock or single option leg.
+    Single,
+    /// Vertical spread (two legs, same expiry).
+    Vertical,
+    /// Calendar spread (same strikes, different expiries).
+    Calendar,
+    /// Iron condor (two paired verticals).
+    Condor,
+    /// Uncovered short option with unbounded loss.
+    NakedShort,
+}
+
+impl StructureKindHint {
+    /// The picker tag (`"Single"`, `"Vertical"`, …) as a hint, `None` for a
+    /// tag this contract does not know.
+    #[must_use]
+    pub fn from_tag(tag: &str) -> Option<Self> {
+        match tag {
+            "Single" => Some(Self::Single),
+            "Vertical" => Some(Self::Vertical),
+            "Calendar" => Some(Self::Calendar),
+            "Condor" => Some(Self::Condor),
+            "NakedShort" => Some(Self::NakedShort),
+            _ => None,
+        }
+    }
+}
+
+/// The economics the core books on every rehearsal proposal for one
+/// underlying and structure.
+///
+/// The core owns these numbers: a replay start takes them from here instead
+/// of authoring its own. Money rides decimal text (the neutral crate keeps
+/// exactness without narrowing the scale at the boundary).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct RehearsalEconomics {
+    /// Strategy name carried on every proposal for attribution.
+    pub strategy: String,
+    /// Worst-case loss booked per proposal, as decimal text.
+    pub max_loss: String,
+    /// Committed notional booked per proposal, as decimal text.
+    pub notional: String,
+    /// Days to expiry requested per proposal (the nearest expiry the
+    /// authority admits).
+    pub dte_days: u32,
+    /// Id of the grant these values come from.
+    pub grant_id: String,
+}
+
 /// Response to a successful arming.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ArmResponse {
@@ -638,6 +723,64 @@ pub struct TicketDriftView {
     pub kind: String,
     /// Human-readable reason.
     pub detail: String,
+}
+
+/// Event-window label for books expiring in the coming week: the only
+/// event exposure derivable from fills alone (expiry dates come from the
+/// legs' OCC symbols; no corporate-action calendar feeds the fold yet).
+pub const CONCENTRATION_EVENT_EXPIRY_WEEK: &str = "expiry-week";
+
+/// Event-window label for everything outside the coming week, including
+/// dateless books: no event exposure the fold can see.
+pub const CONCENTRATION_EVENT_UNEXPOSED: &str = "unexposed";
+
+/// Expiry key for books that name no expiry: dateless exposure is reported,
+/// never dropped, so the partitions reconcile to the total.
+pub const CONCENTRATION_NO_EXPIRY: &str = "no-expiry";
+
+/// One concentration bucket: open notional and its fraction of the total.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ConcentrationShare {
+    /// Bucket label: underlying symbol, `YYYY-MM-DD` expiry (or
+    /// [`CONCENTRATION_NO_EXPIRY`]), or event label.
+    pub key: String,
+    /// Open notional in this bucket (quantity × entry average).
+    pub notional: Money,
+    /// Fraction of total open notional.
+    pub share: f64,
+}
+
+/// Concentration over the fold's open books: three partitions of the same
+/// open notional — by underlying, by expiry, and by event window. A
+/// projection, never a gate: every share is a fraction of what the books
+/// hold, and an empty book yields empty partitions.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ConcentrationReport {
+    /// Open-notional shares by underlying symbol.
+    #[serde(default)]
+    pub by_underlying: Vec<ConcentrationShare>,
+    /// Open-notional shares by expiry (`YYYY-MM-DD`, dateless under
+    /// [`CONCENTRATION_NO_EXPIRY`]).
+    #[serde(default)]
+    pub by_expiry: Vec<ConcentrationShare>,
+    /// Open-notional shares by event window ([`CONCENTRATION_EVENT_EXPIRY_WEEK`]
+    /// vs [`CONCENTRATION_EVENT_UNEXPOSED`]).
+    #[serde(default)]
+    pub by_event: Vec<ConcentrationShare>,
+    /// Total open notional the shares partition.
+    pub total_notional: Money,
+}
+
+impl Default for ConcentrationReport {
+    /// An empty book concentrates nothing: no partitions, zero total.
+    fn default() -> Self {
+        Self {
+            by_underlying: Vec::new(),
+            by_expiry: Vec::new(),
+            by_event: Vec::new(),
+            total_notional: Money::zero(),
+        }
+    }
 }
 
 #[cfg(test)]

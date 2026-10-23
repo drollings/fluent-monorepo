@@ -148,6 +148,9 @@ pub struct TicketTracker {
     confirmed: Vec<(String, i64)>,
     drifts: Vec<TicketDrift>,
     imported: Vec<ImportedPosition>,
+    /// Client ids minted by this tracker: ticket identity is the tracker's,
+    /// so a caller never invents one.
+    minted: u64,
 }
 
 impl TicketTracker {
@@ -155,6 +158,15 @@ impl TicketTracker {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Mint the next manual-ticket client id (`manual-{n}`, one-based).
+    /// Ids never repeat within one tracker, so a duplicate wait is a caller
+    /// bug rather than a collision; a restarted process starts again at one
+    /// and the duplicate check refuses rather than overwriting a wait.
+    pub fn next_client_id(&mut self) -> String {
+        self.minted += 1;
+        format!("manual-{}", self.minted)
     }
 
     /// Issue a ticket: it waits as unconfirmed. A duplicate ID refuses —

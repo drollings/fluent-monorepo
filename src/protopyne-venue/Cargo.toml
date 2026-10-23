@@ -35,6 +35,8 @@ tokio = { workspace = true }
 workspace = true
 
 [dev-dependencies]
+# The shared grant fixture (one baseline + the deny order) for arming tests.
+protopyne-strategy = { path = "../protopyne-strategy", features = ["test-support"] }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 

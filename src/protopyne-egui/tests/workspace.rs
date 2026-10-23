@@ -1688,7 +1688,7 @@ fn presets_truncate_to_span_plus_warmup_and_beginning_keeps_headroom() {
         .expect("a smaller preset applies");
     let need = fetch_for_span(
         DateRange::Day1.span_seconds(),
-        TimeframeKey::M5.seconds(),
+        TimeframeKey::M5.timeframe().total_seconds(),
         200,
     );
     assert_eq!(
@@ -1706,7 +1706,7 @@ fn presets_truncate_to_span_plus_warmup_and_beginning_keeps_headroom() {
     let midnight = start - start.rem_euclid(86_400);
     let need = fetch_for_span(
         (last - midnight).max(0) as u64,
-        TimeframeKey::M5.seconds(),
+        TimeframeKey::M5.timeframe().total_seconds(),
         200,
     );
     let beginning = format_date_text(start);

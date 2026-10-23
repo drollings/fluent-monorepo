@@ -277,7 +277,7 @@ impl SmoothingFamily {
             }
             Self::Eit => {
                 let params = ParamSet::new().with_float("alpha", DEFAULT_N1);
-                let registry = crate::indicator::builtin_registry()?;
+                let registry = crate::indicator::shared_registry()?;
                 registry
                     .get("eit")
                     .ok_or_else(|| KernelError::UnknownIndicator("eit".to_owned()))?
@@ -286,7 +286,7 @@ impl SmoothingFamily {
             _ => {
                 let params = self.params_for_length(length)?;
                 let kernel = self.kernel_id().expect("kernel arm");
-                let registry = crate::indicator::builtin_registry()?;
+                let registry = crate::indicator::shared_registry()?;
                 registry
                     .get(kernel)
                     .ok_or_else(|| KernelError::UnknownIndicator(kernel.to_owned()))?
@@ -330,7 +330,7 @@ impl SmoothingFamily {
                     }
                 })
                 .collect();
-            let registry = crate::indicator::builtin_registry()?;
+            let registry = crate::indicator::shared_registry()?;
             let ema = registry
                 .get("ema")
                 .ok_or_else(|| KernelError::UnknownIndicator("ema".to_owned()))?;
@@ -341,7 +341,7 @@ impl SmoothingFamily {
         }
         let params = self.params_for_args(args)?;
         let kernel = self.kernel_id().expect("kernel arm");
-        let registry = crate::indicator::builtin_registry()?;
+        let registry = crate::indicator::shared_registry()?;
         Ok(registry
             .get(kernel)
             .ok_or_else(|| KernelError::UnknownIndicator(kernel.to_owned()))?
@@ -494,7 +494,7 @@ pub fn params_for_kernel(kernel: &str, length: i64) -> Result<ParamSet, KernelEr
                     "{kernel}: kernel length must be positive, got {length}"
                 )));
             }
-            let registry = crate::indicator::builtin_registry()?;
+            let registry = crate::indicator::shared_registry()?;
             let indicator = registry.get(kernel).ok_or_else(|| {
                 KernelError::InvalidParam(format!("{kernel}: kernel is not registered"))
             })?;

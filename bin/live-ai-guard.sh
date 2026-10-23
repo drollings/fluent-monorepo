@@ -25,14 +25,18 @@ FAIL=0
 
 # ── Check 1: every `#[ignore]` must carry a reason ─────────────────────────
 # A reason is present if the attribute is `#[ignore = "..."]` or
-# `#[ignore(reason = "...")]`. A bare `#[ignore]` is a violation. The
-# negative lookbehind for a backtick excludes prose mentions (e.g.
-# `` is `#[ignore]`d ``) in doc comments and READMEs.
+# `#[ignore(reason = "...")]`. A bare `#[ignore]` is a violation.
+#
+# The match is anchored to the start of a line because an attribute always
+# occupies its own line in valid Rust, while every false positive this guard
+# has ever seen (doc prose, a scanner's own quoted sample) puts the token
+# mid-line. Anchoring keeps the check exact instead of making it depend on
+# whatever quoting style the surrounding text happens to use.
 while IFS= read -r line; do
   file="${line%%:*}"; rest="${line#*:}"; lineno="${rest%%:*}"
   echo "FAIL: ${file}:${lineno}: bare #[ignore] has no reason (add '= \"...\"' or '(reason = \"...\")')"
   FAIL=1
-done < <(grep -rnP '(?<!`)#\[ignore\]' "$ROOT/src" 2>/dev/null || true)
+done < <(grep -rnP '^[[:space:]]*#\[ignore\]' "$ROOT/src" 2>/dev/null || true)
 
 # ── Check 2: no dialable non-loopback host in hermetic test code ───────────
 # Reserved / non-dialable host suffixes that never reach the network:

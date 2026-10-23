@@ -7,7 +7,7 @@
 //! and `var` state living in the [`IndicatorState`] family: own history for
 //! source lookbacks, child histories for output lookbacks, child `last`
 //! slots for scalar memories. Until a staged reference expression exists
-//! these kernels stand at `FormulaVerified`, never `ParityVerified`.
+//! these kernels stand at `FormulaVerified`, never `ExprParityVerified`.
 
 use crate::error::KernelError;
 use crate::indicator::{
@@ -121,7 +121,7 @@ impl Indicator for EitIndicator {
         bar: BarTick,
         params: &ParamSet,
     ) -> Result<Option<f64>, KernelError> {
-        let alpha = Self::sensitivity(params)?;
+        let alpha = state.resolved(|| Self::sensitivity(params))?;
         // Own history carries the source lookbacks; the first child history
         // carries prior outputs as its closes. Only back-indexed scalars
         // ever enter: the parent window rides the reuse buffer under the
@@ -253,7 +253,7 @@ impl Indicator for KalmanIndicator {
         bar: BarTick,
         params: &ParamSet,
     ) -> Result<Option<f64>, KernelError> {
-        let (period, alpha, beta) = Self::shape(params)?;
+        let (period, alpha, beta) = state.resolved(|| Self::shape(params))?;
         let v3 = alpha * period as f64;
         state.push(bar, 2);
         let mut v1 = state.child(0).last();

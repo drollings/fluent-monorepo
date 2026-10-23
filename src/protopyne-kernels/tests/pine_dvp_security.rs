@@ -12,12 +12,13 @@
 //! indicator evaluates.
 //!
 //! The suite calibrates the served subset before trusting it: a look-ahead
-//! probe (a future sentinel bar stays invisible), a gap probe (a deleted
-//! injected row carries the last confirmed value forward), and a must-be-
-//! visible same-bar control (proving the probes can distinguish future from
-//! current bars) run over three chart timeframes times three injected
-//! timeframes. Non-served `request.*` spellings refuse with the live-fetch
-//! reason; the per-closure call-site inventory pins which spellings exist.
+//! probe (a future sentinel bar stays invisible), a forming-bucket probe (a
+//! bucket opening at the chart bar's own stamp stays invisible), a closed-bucket
+//! control (a sentinel in the previous bucket does reach the served value), and
+//! a gap probe (a deleted injected row carries the last confirmed value forward)
+//! run over three chart timeframes times three injected timeframes. Non-served
+//! `request.*` spellings refuse with the live-fetch reason; the per-closure
+//! call-site inventory pins which spellings exist.
 //!
 //! Test path note: this file rides the `pine::eval` unit module (injection
 //! lives in `eval.rs`), so the runnable filter is `pine::eval`, not the
@@ -28,7 +29,7 @@ use crate::{
     LtfDataset, PineEngine, PineExpr, PineRuntimeConfig, PineStmt, PineValue, REAL_LIBRARIES,
     TASK_INDICATORS,
 };
-use protopyne_types::Bar;
+use protopyne_types::{Bar, EpochMs, Timeframe};
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::pine::test_fixture as fixture;
@@ -105,10 +106,15 @@ fn injected_datasets() -> Vec<(String, LtfDataset)> {
         .iter()
         .map(|(name, _, file)| {
             let bars = fixture::history_bars(file);
-            let dataset = if *name == "D" {
-                LtfDataset::of_bars(&fixture::daily_of(&bars))
+            let timeframe = match *name {
+                "D" => Timeframe::D1,
+                "15" => Timeframe::M15,
+                _ => Timeframe::M5,
+            };
+            let dataset = if timeframe == Timeframe::D1 {
+                LtfDataset::of_bars(&fixture::daily_of(&bars), timeframe)
             } else {
-                LtfDataset::of_bars(&bars)
+                LtfDataset::of_bars(&bars, timeframe)
             };
             ((*name).to_owned(), dataset)
         })
@@ -202,15 +208,18 @@ fn sentinel_row(time_ms: i64, close: f64, volume: f64) -> (i64, f64, f64, f64, f
     )
 }
 
-/// Append one row to a dataset in place (callers keep time order).
-fn push_row(dataset: &mut LtfDataset, row: (i64, f64, f64, f64, f64, f64)) {
-    insert_row_sorted(dataset, row.0, row.1, row.2, row.3, row.4, row.5);
+/// Append one row to a dataset in place (callers keep time order). The close
+/// is the instant the row's bucket finishes: pass it for a row that stands for
+/// a real bucket, [`None`] for one whose close is unknown (never visible).
+fn push_row(dataset: &mut LtfDataset, row: (i64, f64, f64, f64, f64, f64), close_ms: Option<i64>) {
+    insert_row_sorted(dataset, row.0, row.1, row.2, row.3, row.4, row.5, close_ms);
 }
 
 /// Insert one row keeping timestamps sorted, after any existing row with
 /// the same stamp: the engine reads the confirmed prefix in order, so a
 /// same-stamp insert wins as the last confirmed value (last-wins), while a
 /// past-the-end insert stays a future row the prefix never reaches.
+#[allow(clippy::too_many_arguments)]
 fn insert_row_sorted(
     dataset: &mut LtfDataset,
     time_ms: i64,
@@ -219,9 +228,11 @@ fn insert_row_sorted(
     low: f64,
     close: f64,
     volume: f64,
+    close_ms: Option<i64>,
 ) {
-    let at = dataset.times.partition_point(|time| *time <= time_ms);
-    dataset.times.insert(at, time_ms);
+    let at = dataset.times.partition_point(|time| time.get() <= time_ms);
+    dataset.times.insert(at, EpochMs::from(time_ms));
+    dataset.closes_at.insert(at, close_ms.map(EpochMs::from));
     dataset.opens.insert(at, open);
     dataset.highs.insert(at, high);
     dataset.lows.insert(at, low);
@@ -499,7 +510,6 @@ fn request_sites_per_task_closure_are_pinned() {
 }
 
 #[test]
-#[ignore = "requires trimmed CSV history fixtures no longer shipped in the tree"]
 fn daily_resample_of_fifteen_minute_tape_is_pinned() {
     // The timeframe with no CSV of its own: three UTC-day buckets over the
     // trimmed fifteen-minute tape, carrying the bucket-start timestamps.
@@ -529,15 +539,15 @@ fn daily_resample_of_fifteen_minute_tape_is_pinned() {
 }
 
 #[test]
-#[ignore = "requires trimmed CSV history fixtures no longer shipped in the tree"]
 fn libapex_fetch_matches_raw_security_shape() {
     // The probes run the fetch-shaped raw call; this ties that shape to the
     // production `libApex.fetch` code path over the same injected dataset.
     let bars = fixture::history_bars("historical/SPY_1M.csv");
     let last = bars.len() - 1;
-    let daily = LtfDataset::of_bars(&fixture::daily_of(&fixture::history_bars(
-        "historical/SPY_15M.csv",
-    )));
+    let daily = LtfDataset::of_bars(
+        &fixture::daily_of(&fixture::history_bars("historical/SPY_15M.csv")),
+        Timeframe::D1,
+    );
     let datasets = vec![("D".to_owned(), daily.clone())];
     let raw = run_cell("1", "historical/SPY_1M.csv", "D", &datasets, None, |_| {});
     let driver = "import showmethegrail/libUtil/12 as UTIL\n\
@@ -691,7 +701,7 @@ fn security_history_leg_refuses_naming_the_subset() {
     )]);
     let mut engine = engine_for("1");
     engine
-        .inject_security("SPY", "5", LtfDataset::of_bars(&unit_bars()))
+        .inject_security("SPY", "5", LtfDataset::of_bars(&unit_bars(), Timeframe::M1))
         .expect("unit dataset injects");
     let err = engine
         .run_linked(&modules, &unit_bars(), InputSet::new())
@@ -717,12 +727,13 @@ fn lower_tf_non_leg_expression_refuses() {
 }
 
 /// Calibration over three chart timeframes times three injected
-/// timeframes: a future sentinel bar stays invisible in every cell, and a
-/// same-bar sentinel stays visible (the control proving the probe can tell
-/// future from current bars). All nine cells must hold before any golden
-/// may be checked in over this path.
+/// timeframes: a future sentinel bar stays invisible in every cell, a bucket
+/// that opens at the chart bar's own stamp stays invisible because it is still
+/// forming, and a sentinel in the previous (closed) bucket does reach the
+/// served value. The last two are the control that lets the probe tell a
+/// forming bucket from a closed one. All nine cells must hold before any
+/// golden may be checked in over this path.
 #[test]
-#[ignore = "requires trimmed CSV history fixtures no longer shipped in the tree"]
 fn lookahead_calibration_nine_cells_green() {
     let datasets = injected_datasets();
     let mut failures = Vec::new();
@@ -736,7 +747,11 @@ fn lookahead_calibration_nine_cells_green() {
                 .expect("dataset present")
                 .1
                 .clone();
-            let base_last = base.times.last().copied().expect("dataset nonempty");
+            let base_last = base
+                .times
+                .last()
+                .map(|stamp| stamp.get())
+                .expect("dataset nonempty");
             let base_close = base.closes.last().copied().expect("dataset close");
             let base_volume = base.volumes.last().copied().expect("dataset volume");
             let cell = format!("chart={chart} injected={pair}");
@@ -749,25 +764,70 @@ fn lookahead_calibration_nine_cells_green() {
                 &datasets,
                 None,
                 |dataset| {
-                    push_row(dataset, sentinel_row(future_ms, base_close, base_volume));
+                    push_row(
+                        dataset,
+                        sentinel_row(future_ms, base_close, base_volume),
+                        Some(future_ms + step_ms),
+                    );
                 },
             ));
             if spiked != plain {
                 failures.push(format!("{cell}: future sentinel leaked into the fetch"));
             }
+            // A bucket opening at the chart bar's own stamp is still forming:
+            // the chart sits inside it, so it must stay invisible.
             let same_ms = chart_last_ms.div_euclid(step_ms) * step_ms;
-            let controlled = canon_array(&run_cell(
+            let forming = canon_array(&run_cell(
                 chart,
                 chart_file,
                 pair,
                 &datasets,
                 None,
                 |dataset| {
-                    push_row(dataset, sentinel_row(same_ms, base_close, base_volume));
+                    push_row(
+                        dataset,
+                        sentinel_row(same_ms, base_close, base_volume),
+                        Some(same_ms + step_ms),
+                    );
                 },
             ));
-            if controlled == plain {
-                failures.push(format!("{cell}: same-bar control stayed invisible"));
+            if forming != plain {
+                failures.push(format!(
+                    "{cell}: a bucket opening at the chart bar leaked into the fetch"
+                ));
+            }
+            // The previous bucket *has* closed by that instant, so a sentinel
+            // in it must reach the served value — otherwise the probe could not
+            // tell a closed bucket from a forming one.
+            let confirmed = base
+                .closes_at
+                .iter()
+                .take_while(|close| close.is_some_and(|close| close.get() <= chart_last_ms))
+                .count();
+            let Some(previous) = confirmed.checked_sub(1) else {
+                failures.push(format!("{cell}: no bucket is closed at the last chart bar"));
+                continue;
+            };
+            let previous_ms = base.times[previous].get();
+            let previous_close = base.closes_at[previous].map(|close| close.get());
+            let closed = canon_array(&run_cell(
+                chart,
+                chart_file,
+                pair,
+                &datasets,
+                None,
+                |dataset| {
+                    push_row(
+                        dataset,
+                        sentinel_row(previous_ms, base_close, base_volume),
+                        previous_close,
+                    );
+                },
+            ));
+            if closed == plain {
+                failures.push(format!(
+                    "{cell}: the previous, closed bucket stayed invisible"
+                ));
             }
         }
     }
@@ -778,12 +838,13 @@ fn lookahead_calibration_nine_cells_green() {
 }
 
 /// Gap calibration over the same nine cells: deleting one injected row
-/// carries the last confirmed value forward to the first chart bar past
-/// the hole, and the carried value differs from the hole-free run (so the
-/// probe is not vacuous). The deleted timestamp is recorded per cell:
+/// carries the last confirmed value forward, and the carried value differs from
+/// the hole-free run (so the probe is not vacuous). A hole is only observable
+/// once the deleted bucket would itself have closed — before that the bucket is
+/// outside the confirmed prefix, so removing it changes nothing. The probe
+/// therefore sits between the deleted bucket's close and the next bucket's:
 /// visibility, not concealment.
 #[test]
-#[ignore = "requires trimmed CSV history fixtures no longer shipped in the tree"]
 fn gap_calibration_nine_cells_green() {
     let datasets = injected_datasets();
     let mut failures = Vec::new();
@@ -798,36 +859,35 @@ fn gap_calibration_nine_cells_green() {
                 .1
                 .clone();
             let cell = format!("chart={chart} injected={pair}");
-            // The hole goes to the row nearest the chart midpoint that a
-            // chart bar can actually observe (a bar opens inside
-            // `[hole, next)`): otherwise the deletion is invisible by grid
-            // geometry, not by carry-forward, and the cell proves nothing.
+            // The hole goes to the row nearest the chart midpoint whose own
+            // close a chart bar actually reaches, and before the next bucket
+            // closes: otherwise the deletion is invisible by grid geometry —
+            // not by carry-forward — and the cell proves nothing.
             let middle_ms = chart_first_ms
                 + (bars.last().expect("chart nonempty").ts.timestamp_millis() - chart_first_ms) / 2;
-            let mut candidates: Vec<usize> = (1..base.times.len()).collect();
-            candidates.sort_by_key(|&index| (base.times[index] - middle_ms).abs());
+            let mut candidates: Vec<usize> = (1..base.times.len().saturating_sub(1)).collect();
+            candidates.sort_by_key(|&index| (base.times[index].get() - middle_ms).abs());
             let found = candidates.into_iter().find_map(|index| {
-                let hole_ms = base.times[index];
-                let next_ms = base.times.get(index + 1).copied().unwrap_or(i64::MAX);
-                let observing = bars.iter().any(|bar| {
+                let hole_ms = base.times[index].get();
+                let closed_at = base.closes_at[index].map(|close| close.get())?;
+                let next_closed_at = base.closes_at.get(index + 1).copied().flatten()?.get();
+                if next_closed_at <= closed_at {
+                    return None;
+                }
+                let probe_bar = bars.iter().position(|bar| {
                     let time = bar.ts.timestamp_millis();
-                    time >= hole_ms && time < next_ms
-                });
-                observing.then_some((index, hole_ms, next_ms))
+                    time >= closed_at && time < next_closed_at
+                })?;
+                Some((index, hole_ms, closed_at, probe_bar))
             });
-            let Some((hole, hole_ms, next_ms)) = found else {
-                failures.push(format!("{cell}: no observable hole on these grids"));
+            let Some((hole, hole_ms, closed_at, probe_bar)) = found else {
+                failures.push(format!(
+                    "{cell}: no chart bar lands after a bucket close and before the next"
+                ));
                 continue;
             };
             let carried_close = base.closes[hole - 1];
             let carried_canon = canon_value(Some(&PineValue::Float(carried_close)));
-            let probe_bar = bars
-                .iter()
-                .position(|bar| {
-                    let time = bar.ts.timestamp_millis();
-                    time >= hole_ms && time < next_ms
-                })
-                .expect("hole is observed");
             let plain = run_cell(chart, chart_file, pair, &datasets, Some(probe_bar), |_| {});
             let gapped = run_cell(
                 chart,
@@ -837,6 +897,7 @@ fn gap_calibration_nine_cells_green() {
                 Some(probe_bar),
                 |dataset| {
                     dataset.times.remove(hole);
+                    dataset.closes_at.remove(hole);
                     dataset.opens.remove(hole);
                     dataset.highs.remove(hole);
                     dataset.lows.remove(hole);
@@ -849,16 +910,321 @@ fn gap_calibration_nine_cells_green() {
             let plain_close = canon_value(plain[3].as_ref());
             if gapped_close != carried_canon {
                 failures.push(format!(
-                    "{cell}: hole {hole_ms} carried {gapped_close}, want last confirmed {carried_canon}"
+                    "{cell}: hole {hole_ms} (closed {closed_at}) carried {gapped_close}, want last confirmed {carried_canon}"
                 ));
             }
             if gapped_close == plain_close {
-                failures.push(format!("{cell}: hole {hole_ms} left no observable gap"));
+                failures.push(format!(
+                    "{cell}: hole {hole_ms} (closed {closed_at}) left no observable gap"
+                ));
             }
         }
     }
     assert!(
         failures.is_empty(),
         "gap calibration failures: {failures:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Injected-row confirmation
+// ---------------------------------------------------------------------------
+
+/// A bar opening at `ts_ms`, structurally valid and priced off its stamp.
+fn bar_at(ts_ms: i64) -> Bar {
+    let ts = chrono::DateTime::from_timestamp_millis(ts_ms).expect("stamp in range");
+    let price = |value: &str| value.parse().expect("decimal leg");
+    Bar::new()
+        .ts(ts)
+        .o(price("100.00"))
+        .h(price("101.00"))
+        .l(price("99.00"))
+        .c(price("100.50"))
+        .volume(1_000_u64)
+        .maybe_adj(None)
+        .build()
+}
+
+fn utc_ms(y: i32, mo: u32, d: u32, h: u32, mi: u32) -> i64 {
+    use chrono::TimeZone as _;
+    chrono::Utc
+        .with_ymd_and_hms(y, mo, d, h, mi, 0)
+        .single()
+        .expect("valid stamp")
+        .timestamp_millis()
+}
+
+#[test]
+fn injected_closes_are_session_aware() {
+    // The last two minutes of a Friday session: each closes on its own grid
+    // step, and the final one at the bell.
+    let minutes = LtfDataset::of_bars(
+        &[
+            bar_at(utc_ms(2026, 3, 6, 20, 58)),
+            bar_at(utc_ms(2026, 3, 6, 20, 59)),
+        ],
+        Timeframe::M1,
+    );
+    assert_eq!(
+        minutes.closes_at,
+        vec![
+            Some(EpochMs::from(utc_ms(2026, 3, 6, 20, 59))),
+            Some(EpochMs::from(utc_ms(2026, 3, 6, 21, 0))),
+        ],
+        "a minute bucket closes one step later, the session's last at the bell"
+    );
+
+    // Daily buckets stamped at UTC midnight. Friday closes on Friday — not at
+    // the next bucket's open and not one fixed day later — and the Monday
+    // after the spring transition closes an hour earlier in UTC.
+    let friday_open = utc_ms(2026, 3, 6, 0, 0);
+    let monday_open = utc_ms(2026, 3, 9, 0, 0);
+    let daily = LtfDataset::of_bars(&[bar_at(friday_open), bar_at(monday_open)], Timeframe::D1);
+    assert_eq!(
+        daily.closes_at,
+        vec![
+            Some(EpochMs::from(utc_ms(2026, 3, 6, 21, 0))),
+            Some(EpochMs::from(utc_ms(2026, 3, 9, 20, 0))),
+        ],
+        "the weekend gap does not delay Friday's close, and daylight moves it"
+    );
+    assert_ne!(
+        daily.closes_at[0],
+        Some(EpochMs::from(monday_open)),
+        "a close is never the next bucket's open"
+    );
+    assert_ne!(
+        daily.closes_at[0],
+        Some(EpochMs::from(friday_open + 86_400_000)),
+        "a close is never one fixed day after the open"
+    );
+}
+
+#[test]
+fn the_chart_clock_is_one_instant_in_both_modes() {
+    // Tick emulation carries milliseconds on its time leg, closed bars carry
+    // whole seconds: both must name the same instant.
+    let ts_ms = utc_ms(2026, 3, 6, 20, 55);
+    let closed = super::legs_of_for_test(&[bar_at(ts_ms)]);
+    assert_eq!(
+        super::chart_ms(&closed, 0, false),
+        EpochMs::from(ts_ms),
+        "closed-bar legs scale seconds once"
+    );
+    let mut tick = super::legs_of_for_test(&[bar_at(ts_ms)]);
+    tick.time = vec![ts_ms as f64];
+    assert_eq!(
+        super::chart_ms(&tick, 0, true),
+        EpochMs::from(ts_ms),
+        "tick legs are already milliseconds"
+    );
+    assert_eq!(
+        super::chart_ms(&closed, 0, false),
+        super::chart_ms(&tick, 0, true),
+        "one bar, one instant, whichever clock reads it"
+    );
+}
+
+/// Visibility is a function of the bucket's close, never of its open: the same
+/// three chart instants yield the same row index whatever the bucket span is,
+/// and a row without a recorded close is never visible.
+#[test]
+fn confirmed_prefix_table() {
+    const HOUR: i64 = 3_600_000;
+    let spans = [
+        ("daily", 24 * HOUR),
+        ("weekly", 7 * 24 * HOUR),
+        ("monthly", 30 * 24 * HOUR),
+    ];
+    let mut cells = 0;
+    for (label, span) in spans {
+        let opens = [0_i64, span, 2 * span];
+        let dataset = LtfDataset {
+            times: opens.iter().copied().map(EpochMs::from).collect(),
+            closes_at: opens
+                .iter()
+                .map(|open| Some(EpochMs::from(open + span)))
+                .collect(),
+            opens: vec![1.0; 3],
+            highs: vec![1.0; 3],
+            lows: vec![1.0; 3],
+            closes: vec![1.0; 3],
+            volumes: vec![1.0; 3],
+        };
+        for (chart, want) in [(opens[0], 0), (opens[0] + span, 1), (opens[1] + span, 2)] {
+            assert_eq!(
+                super::confirmed_prefix(&dataset, EpochMs::from(chart)),
+                want,
+                "{label}: chart at {chart}"
+            );
+            cells += 1;
+        }
+        let mut unknown = dataset;
+        unknown.closes_at[0] = None;
+        assert_eq!(
+            super::confirmed_prefix(&unknown, EpochMs::from(opens[2] + span)),
+            0,
+            "{label}: an unrecorded close stops the prefix"
+        );
+    }
+    assert_eq!(cells, 9, "daily/weekly/monthly at three chart bars");
+}
+
+// ---------------------------------------------------------------------------
+// Warmup history
+// ---------------------------------------------------------------------------
+
+const DAY_MS: i64 = 86_400_000;
+
+/// First daily bucket of the synthetic ramp tape: a Monday, so no session
+/// gap interferes with the one-day bucket grid.
+fn ramp_first_day() -> i64 {
+    utc_ms(2025, 1, 6, 0, 0)
+}
+
+/// A synthetic daily tape: closes ramp one point per row, volumes one unit per
+/// row, and the true range is wide for the first hundred rows and narrow for
+/// the next hundred — so a recursive kernel's seeding point is visible in its
+/// value, not just in whether it reads `na`. Every bucket closes a day after
+/// it opens.
+fn ramp_daily(rows: usize) -> LtfDataset {
+    let first = ramp_first_day();
+    let width = |i: usize| if i < 100 { 5.0 } else { 0.5 };
+    let closes: Vec<f64> = (0..rows).map(|i| 100.0 + i as f64).collect();
+    LtfDataset {
+        times: (0..rows)
+            .map(|i| EpochMs::from(first + i as i64 * DAY_MS))
+            .collect(),
+        closes_at: (0..rows)
+            .map(|i| Some(EpochMs::from(first + (i as i64 + 1) * DAY_MS)))
+            .collect(),
+        opens: closes.clone(),
+        highs: closes
+            .iter()
+            .enumerate()
+            .map(|(i, close)| close + width(i))
+            .collect(),
+        lows: closes
+            .iter()
+            .enumerate()
+            .map(|(i, close)| close - width(i))
+            .collect(),
+        closes,
+        volumes: (0..rows).map(|i| (i + 1) as f64).collect(),
+    }
+}
+
+/// Chart bars stamped at the close of each of the last `bars` ramp days: each
+/// one confirms exactly the rows before it plus its own day.
+fn chart_at_last_days(rows: usize, bars: usize) -> Vec<Bar> {
+    (rows - bars..rows)
+        .map(|i| bar_at(ramp_first_day() + (i as i64 + 1) * DAY_MS))
+        .collect()
+}
+
+/// The shipped `request.security` shape with a chosen `calc_bars_count`.
+fn daily_driver(expr: &str, count: usize) -> String {
+    format!(
+        "probe = request.security(\"SPY\", \"D\", {expr}, barmerge.gaps_off, barmerge.lookahead_off, calc_bars_count={count})\n"
+    )
+}
+
+/// Run one driver over `bars` with a single injected daily dataset: the
+/// outcome, or the refusal text.
+fn run_daily(driver: &str, dataset: LtfDataset, bars: &[Bar]) -> Result<crate::RunOutcome, String> {
+    let modules = fixture::linked_modules(vec![fixture::driver_module(driver)]);
+    let mut engine = engine_for("1");
+    engine
+        .inject_security("SPY", "D", dataset)
+        .expect("daily dataset injects");
+    engine
+        .run_linked(&modules, bars, InputSet::new())
+        .map_err(|error| error.to_string())
+}
+
+/// The single `probe` value on one bar.
+fn probe_num(outcome: &crate::RunOutcome, bar: usize) -> f64 {
+    match outcome.value_at(bar, "probe") {
+        Some(Some(PineValue::Float(value))) => value,
+        other => panic!("expected a finite probe value on bar {bar}, got {other:?}"),
+    }
+}
+
+/// `calc_bars_count` bounds the bars a request returns, never the history its
+/// kernels compute over: the shipped fetch shape's `ta.atr(50)` under a
+/// thirty-bar request reads the untruncated value on all thirty chart bars.
+/// Serving only the display tail read `na` on every one of them. The tape's
+/// early wide range also pins the seed: a kernel that started at the display
+/// tail would read the narrow regime (~1.5), while the recursive arm carries
+/// the wide one forward.
+#[test]
+fn warmup_starved_legs_read_the_full_series() {
+    const ROWS: usize = 200;
+    const BARS: usize = 30;
+    let dataset = ramp_daily(ROWS);
+    let bars = chart_at_last_days(ROWS, BARS);
+    let short = run_daily(&daily_driver("ta.atr(50)", 30), dataset.clone(), &bars)
+        .expect("thirty-bar request evaluates");
+    let full = run_daily(&daily_driver("ta.atr(50)", 300), dataset, &bars)
+        .expect("three-hundred-bar request evaluates");
+    for bar in 0..BARS {
+        let got = probe_num(&short, bar);
+        assert_eq!(
+            got,
+            probe_num(&full, bar),
+            "bar {bar}: the display bound never moves the value"
+        );
+        assert!(
+            got > 1.5,
+            "bar {bar}: {got} still carries the wide early range, so the kernel seeded at row zero"
+        );
+    }
+}
+
+/// A series the kernel genuinely cannot warm reads `na` — the reference's own
+/// warmup contract — never a number fabricated from the display window, and
+/// never a refusal, which would abort a chart whose newer history has simply
+/// not arrived yet. `ta.atr(50)` over twenty confirmed rows is the minimal
+/// case: the fix serves the full history, and the full history is still short.
+#[test]
+fn unservable_series_reads_na_not_a_number() {
+    let dataset = ramp_daily(20);
+    let bars = chart_at_last_days(20, 1);
+    let outcome = run_daily(&daily_driver("ta.atr(50)", 30), dataset, &bars)
+        .expect("a short series is warmup, not a refusal");
+    assert!(
+        outcome
+            .value_at(0, "probe")
+            .is_some_and(|value| value.is_none()),
+        "twenty rows cannot warm ta.atr(50): the leg reads na"
+    );
+}
+
+/// Control: a leg that already had enough history reads exactly what it read
+/// before. `ta.sma(volume, 20)` only needs the last twenty volumes, so the
+/// thirty-bar display bound never starved it — the fix is not a blanket
+/// behaviour swap.
+#[test]
+fn a_warm_leg_is_unchanged_by_the_returned_bound() {
+    const ROWS: usize = 200;
+    let dataset = ramp_daily(ROWS);
+    let bars = chart_at_last_days(ROWS, 1);
+    let short = run_daily(
+        &daily_driver("ta.sma(volume, 20)", 30),
+        dataset.clone(),
+        &bars,
+    )
+    .expect("sma evaluates");
+    let full =
+        run_daily(&daily_driver("ta.sma(volume, 20)", 300), dataset, &bars).expect("sma evaluates");
+    assert_eq!(
+        probe_num(&short, 0),
+        190.5,
+        "the mean of the ramp's last twenty volumes"
+    );
+    assert_eq!(
+        probe_num(&short, 0),
+        probe_num(&full, 0),
+        "the display bound never moves a warm value"
     );
 }

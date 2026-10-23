@@ -42,6 +42,9 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
+# The shared grant fixture (one baseline + the deny order) for every test target
+# that arms a grant; a dev-dependency never reaches the shipping library.
+protopyne-strategy = { path = "../protopyne-strategy", features = ["test-support"] }
 criterion = { workspace = true }
 reqwest = { workspace = true }
 tokio-tungstenite = "0.26"

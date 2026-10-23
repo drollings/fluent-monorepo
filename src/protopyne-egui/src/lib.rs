@@ -52,7 +52,9 @@ pub use export::{export_overlay_json, export_rows_csv, export_rows_json, EXPORT_
 pub use fast_mas::{evaluate_fast_mas, paint_fast_mas, FastMasConfig, FastMasLine, FastMasView};
 pub use feed::{RecomputeJob, RecomputePool};
 pub use fonts::{install_noto_sans, NOTO_SANS_MONO_NAME, NOTO_SANS_NAME};
-pub use grant_form::{paint_grant_form, GrantFormError, GrantFormField, GrantFormState};
+pub use grant_form::{
+    paint_grant_form, GrantAction, GrantFormError, GrantFormField, GrantFormState,
+};
 pub use indicators::{
     build_indicator_catalog, build_indicator_catalog_with_manifest, instantiate_indicator,
     instantiate_indicator_with_manifest, kernel_attachment, kernel_ids, kernel_title,
@@ -71,9 +73,10 @@ pub use integration_lite::{
 };
 pub use oscillators::{
     evaluable_oscillator_ids, normalize_oscillator, normalize_oscillator_bounded, normalize_series,
-    normalize_series_bounded, oscillator_kind_name, oscillator_options, parse_oscillator_kind,
-    squash_series_to_100, squash_to_100, OscParams, OscillatorKind, OscillatorOption, WhichLeg,
-    BOUNDED_OSC_SCALE, CALIBRATED_BOUNDED_PIVOT_THRESHOLD, SQUASH_100_DIVISOR,
+    normalize_series_bounded, oscillator_kind_name, oscillator_mapping_for_kernel,
+    oscillator_options, parse_oscillator_kind, squash_series_to_100, squash_to_100, OscParams,
+    OscillatorKind, OscillatorOption, WhichLeg, BOUNDED_OSC_SCALE,
+    CALIBRATED_BOUNDED_PIVOT_THRESHOLD, SQUASH_100_DIVISOR,
 };
 pub use pine_overlay::{
     overlay_geoms, paint_overlay, paint_unsupported_chip, translate_overlay, OverlayGeoms,

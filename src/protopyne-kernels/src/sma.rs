@@ -8,8 +8,10 @@
 
 use crate::error::KernelError;
 use crate::indicator::{
-    BarTick, Indicator, IndicatorResult, IndicatorSpec, IndicatorState, Ohlcv, ParamSet,
+    fin_or_none, BarTick, Indicator, IndicatorResult, IndicatorSpec, IndicatorState, Ohlcv,
+    ParamSet,
 };
+use crate::windowed::{self, Window, WindowLegs, Windowed};
 
 /// Simple moving average (`sma`), parameterized by `length`.
 pub struct SmaIndicator {
@@ -44,27 +46,41 @@ impl Default for SmaIndicator {
     }
 }
 
-impl Indicator for SmaIndicator {
+impl Windowed for SmaIndicator {
+    type Shape = usize;
+
     fn spec(&self) -> &IndicatorSpec {
         &self.spec
     }
 
-    fn warmup(&self, params: &ParamSet) -> Result<usize, KernelError> {
+    fn shape(&self, params: &ParamSet) -> Result<Self::Shape, KernelError> {
         Self::period(params)
     }
 
+    fn period(period: usize) -> usize {
+        period
+    }
+
+    fn legs(&self) -> WindowLegs {
+        WindowLegs::Close
+    }
+
+    fn eval(&self, _shape: usize, window: &Window<'_>, _previous: Option<f64>) -> Option<f64> {
+        fin_or_none(crate::math::window_mean(window.closes))
+    }
+}
+
+impl Indicator for SmaIndicator {
+    fn spec(&self) -> &IndicatorSpec {
+        Windowed::spec(self)
+    }
+
+    fn refine_warmup(&self, params: &ParamSet) -> Result<Option<usize>, KernelError> {
+        Ok(Some(windowed::warmup(self, params)?))
+    }
+
     fn batch(&self, data: &Ohlcv<'_>, params: &ParamSet) -> Result<IndicatorResult, KernelError> {
-        let closes = data.close;
-        let period = Self::period(params)?;
-        let mut values = crate::math::warmup_none(closes.len());
-        if period <= closes.len() {
-            for (i, value) in values.iter_mut().enumerate().skip(period - 1) {
-                let window = &closes[i + 1 - period..=i];
-                let mean = crate::math::window_mean(window);
-                *value = crate::indicator::fin_or_none(mean);
-            }
-        }
-        Ok(IndicatorResult::new(Self::ID.to_owned(), values))
+        windowed::batch(self, data, params)
     }
 
     fn update(
@@ -73,15 +89,7 @@ impl Indicator for SmaIndicator {
         bar: BarTick,
         params: &ParamSet,
     ) -> Result<Option<f64>, KernelError> {
-        let period = Self::period(params)?;
-        state.push(bar, period);
-        if state.len() < period {
-            return Ok(None);
-        }
-        let window = state.scratch_closes();
-        let mean = crate::math::window_mean(window);
-        state.set_last(mean);
-        Ok(crate::indicator::fin_or_none(mean))
+        windowed::update(self, state, bar, params)
     }
 }
 

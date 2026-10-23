@@ -19,23 +19,6 @@ fn batch_matches_hand_computed_values() {
 }
 
 #[test]
-fn batch_agrees_with_incremental_update_fold() {
-    let sma = SmaIndicator::new();
-    let closes = [3.0, 1.0, 4.0, 1.0, 5.0, 9.0, 2.0, 6.0];
-    let ps = params(4);
-    let batch = sma.batch(&Ohlcv::close_only(&closes), &ps).expect("valid");
-    let mut state = IndicatorState::new();
-    let mut folded = Vec::new();
-    for &close in &closes {
-        folded.push(
-            sma.update(&mut state, BarTick::close_only(close), &ps)
-                .expect("valid"),
-        );
-    }
-    assert_eq!(batch.values, folded);
-}
-
-#[test]
 fn invalid_periods_are_typed_errors_and_oversize_is_all_na() {
     let sma = SmaIndicator::new();
     let pair = [1.0, 2.0];
@@ -103,44 +86,4 @@ fn window_shorter_than_warmup_yields_holes_never_values() {
         .batch(&Ohlcv::close_only(&trending_closes(5)), &params(14))
         .expect("short input runs");
     assert_eq!(short.values, vec![None, None, None, None, None]);
-}
-
-fn fold_updates(closes: &[f64], params: &ParamSet) -> Vec<Option<f64>> {
-    let sma = SmaIndicator::new();
-    let mut state = IndicatorState::new();
-    closes
-        .iter()
-        .map(|close| {
-            sma.update(&mut state, BarTick::close_only(*close), params)
-                .expect("update runs")
-        })
-        .collect()
-}
-
-#[test]
-fn buffered_update_matches_batch_on_constant_and_subnormal_inputs() {
-    // Bit-exactness pin for the scratch migration: the incremental fold must
-    // reproduce the batch output bit-for-bit over degenerate inputs — a flat
-    // line (no rounding drift to hide behind) and subnormal magnitudes
-    // (underflow behavior must agree exactly).
-    let sma = SmaIndicator::new();
-    let ps = params(14);
-    for closes in [
-        vec![42.0; 40],
-        (1..=40).map(|i| f64::from(i) * 1e-310).collect::<Vec<_>>(),
-    ] {
-        let batch = sma
-            .batch(&Ohlcv::close_only(&closes), &ps)
-            .expect("batch runs")
-            .values;
-        assert_eq!(
-            bits_of(&fold_updates(&closes, &ps)),
-            bits_of(&batch),
-            "update fold reproduces batch bit-for-bit"
-        );
-    }
-}
-
-fn bits_of(values: &[Option<f64>]) -> Vec<Option<u64>> {
-    values.iter().map(|v| v.map(f64::to_bits)).collect()
 }

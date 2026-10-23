@@ -20,8 +20,28 @@ use chrono::{DateTime, Utc};
 use protopyne_types::Money;
 use rust_decimal::Decimal;
 
-use crate::grant::{evaluate_grant, BreakerState, Grant, GrantDecision, GrantMarket, GrantUsage};
+use crate::grant::{
+    evaluate_grant, evaluate_grant_merit, BreakerState, Grant, GrantDecision, GrantMarket,
+    GrantUsage,
+};
 use crate::proposal::Proposal;
+use crate::risk::PortfolioFacts;
+
+/// What the drawdown arm concluded over one facts reading: inert (no cap, or
+/// a cap that can never be a threshold), within (configured and holding),
+/// breached (configured and strictly past — the ledger trips), or unobserved
+/// (configured but the book's equity is unknown — refuse, never pass).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DrawdownStatus {
+    /// No drawdown cap configured, or a garbage cap that arming refused.
+    Inert,
+    /// Configured and holding at this fraction.
+    Within(Decimal),
+    /// Configured and strictly past the cap.
+    Breached(Decimal),
+    /// Configured but the equity reading is missing: refuse, never latch.
+    Unobserved,
+}
 
 /// Why a grant could not be installed.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -107,10 +127,11 @@ impl GrantLedger {
     /// Install a grant and open an empty ledger.
     #[must_use]
     pub fn new(grant: Grant) -> Self {
+        let valid_from = grant.valid_from;
         Self {
             state: Mutex::new(LedgerState {
                 grant,
-                usage: GrantUsage::new().build(),
+                usage: GrantUsage::new().last_attested(valid_from).build(),
                 pending: GrantUsage::new().build(),
                 breakers: BreakerState::new().build(),
             }),
@@ -121,13 +142,25 @@ impl GrantLedger {
     /// resume paths).
     #[must_use]
     pub fn with_breakers(grant: Grant, breakers: BreakerState) -> Self {
+        let valid_from = grant.valid_from;
         Self {
             state: Mutex::new(LedgerState {
                 grant,
-                usage: GrantUsage::new().build(),
+                usage: GrantUsage::new().last_attested(valid_from).build(),
                 pending: GrantUsage::new().build(),
                 breakers,
             }),
+        }
+    }
+
+    /// Record an operator attestation at `at`: the usage's last-attested
+    /// instant moves forward to `at`, never backwards, and budgets do not
+    /// move at all — attesting twice consumes nothing. The loop calls this
+    /// for every journaled `Attest` row it executes.
+    pub fn observe_attested(&self, at: DateTime<Utc>) {
+        let mut state = common_core::sync::lock(&self.state);
+        if state.usage.last_attested.is_none_or(|known| at > known) {
+            state.usage.last_attested = Some(at);
         }
     }
 
@@ -169,7 +202,8 @@ impl GrantLedger {
 
     /// Evaluate the grant without reserving: the merit verdict over consumed
     /// plus pending budgets. Breaker input is excluded, so a tripped breaker
-    /// never rewrites the trade's recorded merit.
+    /// never rewrites the trade's recorded merit; attestation is excluded
+    /// for the same reason, so a lapsed cadence never rewrites it either.
     #[must_use]
     pub fn evaluate(
         &self,
@@ -178,7 +212,7 @@ impl GrantLedger {
         now: DateTime<Utc>,
     ) -> GrantDecision {
         let state = common_core::sync::lock(&self.state);
-        evaluate_grant(
+        evaluate_grant_merit(
             proposal,
             &state.grant,
             &state.effective(),
@@ -251,6 +285,46 @@ impl GrantLedger {
                 state.breakers.consecutive_errors, state.grant.breakers.max_consecutive_errors,
             ));
         }
+    }
+
+    /// Judge the book's equity against the grant's drawdown cap and report
+    /// the arm's status. A breach trips exactly like the error streak — the
+    /// flag latches and the reason banks once, so the run stays disarmed and
+    /// the trip reads the same on every later evaluation. Anything else
+    /// leaves the breaker state untouched: `Unobserved` refuses the current
+    /// evaluation without latching (the feed may recover), and `Inert` and
+    /// `Within` move nothing.
+    pub fn observe_drawdown(&self, facts: &PortfolioFacts) -> DrawdownStatus {
+        let mut state = common_core::sync::lock(&self.state);
+        let Some(cap) = state.grant.breakers.max_portfolio_drawdown_fraction else {
+            return DrawdownStatus::Inert;
+        };
+        if !(cap > 0.0 && cap <= 1.0 && cap.is_finite()) {
+            return DrawdownStatus::Inert;
+        }
+        let (Some(peak), Some(now)) = (facts.equity_peak, facts.equity_now) else {
+            return DrawdownStatus::Unobserved;
+        };
+        if !facts.observed {
+            return DrawdownStatus::Unobserved;
+        }
+        let Some(fraction) =
+            protopyne_kernels::drawdown_of_peak(peak.as_decimal(), now.as_decimal())
+        else {
+            return DrawdownStatus::Unobserved;
+        };
+        let Some(limit) = Decimal::from_f64_retain(cap) else {
+            return DrawdownStatus::Inert;
+        };
+        if fraction <= limit {
+            return DrawdownStatus::Within(fraction);
+        }
+        if !state.breakers.tripped {
+            state.breakers.tripped = true;
+            state.breakers.trip_reason =
+                Some(format!("portfolio drawdown {fraction} past max {cap}"));
+        }
+        DrawdownStatus::Breached(fraction)
     }
 
     /// Clear a cooling streak after a successful venue call. A tripped
@@ -333,14 +407,17 @@ impl Drop for Reservation<'_> {
 }
 
 impl GrantUsage {
-    /// Consumed plus pending counters.
+    /// Consumed plus pending counters. Attestation rides along (the newer
+    /// of the two): budgets combine, authority does not reset.
     fn plus(&self, other: &Self) -> Self {
-        Self::new()
+        let mut combined = Self::new()
             .used_trades(self.used_trades.saturating_add(other.used_trades))
             .used_contracts(self.used_contracts.saturating_add(other.used_contracts))
             .used_loss(add(self.used_loss, other.used_loss))
             .used_notional(add(self.used_notional, other.used_notional))
-            .build()
+            .build();
+        combined.last_attested = max_attested(self.last_attested, other.last_attested);
+        combined
     }
 
     /// Counter-wise saturating subtraction.
@@ -351,6 +428,17 @@ impl GrantUsage {
             .used_loss(sub(self.used_loss, other.used_loss))
             .used_notional(sub(self.used_notional, other.used_notional))
             .build()
+    }
+}
+
+fn max_attested(
+    left: Option<chrono::DateTime<Utc>>,
+    right: Option<chrono::DateTime<Utc>>,
+) -> Option<chrono::DateTime<Utc>> {
+    match (left, right) {
+        (Some(left), Some(right)) => Some(left.max(right)),
+        (Some(at), None) | (None, Some(at)) => Some(at),
+        (None, None) => None,
     }
 }
 

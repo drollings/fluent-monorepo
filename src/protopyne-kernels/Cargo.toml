@@ -24,8 +24,10 @@ common-core = { path = "../common-core" }
 fluent-wvr = { path = "../fluent-wvr" }
 fluent-dag = { path = "../dag" }
 bon = { workspace = true }
+chrono = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+sha2 = { workspace = true }
 thiserror = { workspace = true }
 rust_decimal = { workspace = true }
 # `polars-parquet` is compiled non-optionally by polars 0.50 but carries no

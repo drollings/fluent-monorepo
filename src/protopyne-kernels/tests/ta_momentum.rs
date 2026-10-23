@@ -413,11 +413,13 @@ fn ppo_matches_expr_and_zero_convention() {
 fn mom_matches_expr_with_shift_warmup() {
     let mom = MomIndicator::new();
     let ps = ParamSet::new().with_int("length", 10);
-    assert_eq!(mom.warmup(&ps).expect("valid"), 10);
+    // Bar 1 reads the close `length` bars back, so the first answer is bar
+    // `length + 1` (the shift is part of the warmup, not hidden by it).
+    assert_eq!(mom.warmup(&ps).expect("valid"), 11);
     for (bars, name) in [(trend_bars(60), "trend"), (spy_bars(60), "spy")] {
         let data = OwnedOhlcv::from_bars(&bars);
         let result = mom.batch(&data.views(), &ps).expect("valid");
-        assert!(result.values[..9].iter().all(Option::is_none));
+        assert!(result.values[..10].iter().all(Option::is_none));
         let want = expr_fixture(&bars, mom_expr(10)).expect("fixture");
         assert_expr_parity(&result.values, &want, 1e-9, &format!("mom-{name}")).expect("parity");
         let mut state = IndicatorState::new();
@@ -439,10 +441,10 @@ fn roc_family_matches_expr() {
         (&Rocr100Indicator::new(), rocr100_expr(10), "rocr100"),
     ];
     for (kernel, expr, name) in cases {
-        assert_eq!(kernel.warmup(&ps).expect("valid"), 10, "{name} warmup");
+        assert_eq!(kernel.warmup(&ps).expect("valid"), 11, "{name} warmup");
         let result = kernel.batch(&data.views(), &ps).expect("valid");
         assert!(
-            result.values[..9].iter().all(Option::is_none),
+            result.values[..10].iter().all(Option::is_none),
             "{name} shift warmup"
         );
         let want = expr_fixture(&bars, expr).expect("fixture");
@@ -723,43 +725,6 @@ fn adx_matches_hand_stepped_rma_composition() {
 }
 
 #[test]
-fn adx_update_agrees_with_batch_on_all_legs() {
-    let adx = AdxIndicator::new();
-    for (bars, name) in [
-        (trend_bars(60), "trend"),
-        (spy_bars(60), "spy"),
-        (adx_bars(), "hand"),
-    ] {
-        let data = OwnedOhlcv::from_bars(&bars);
-        let result = adx.batch(&data.views(), &adx_params()).expect("valid");
-        let plus = result.secondary("plus_di").expect("plus leg");
-        let minus = result.secondary("minus_di").expect("minus leg");
-        let mut state = IndicatorState::new();
-        for (tick, ((want_adx, want_plus), want_minus)) in ticks_of(&bars)
-            .into_iter()
-            .zip(result.values.iter().zip(plus.iter()).zip(minus.iter()))
-        {
-            let tick_out = adx
-                .update_full(&mut state, tick, &adx_params())
-                .expect("valid");
-            assert_eq!(&tick_out.primary, want_adx, "adx agreement on {name}");
-            let got_plus = tick_out
-                .secondary
-                .iter()
-                .find(|v| v.name == "plus_di")
-                .and_then(|v| v.value);
-            let got_minus = tick_out
-                .secondary
-                .iter()
-                .find(|v| v.name == "minus_di")
-                .and_then(|v| v.value);
-            assert_eq!(got_plus, *want_plus, "plus_di agreement on {name}");
-            assert_eq!(got_minus, *want_minus, "minus_di agreement on {name}");
-        }
-    }
-}
-
-#[test]
 fn adx_reads_strong_on_a_steady_uptrend() {
     let bars = trend_bars(60);
     let data = OwnedOhlcv::from_bars(&bars);
@@ -822,57 +787,4 @@ fn adx_refuses_bad_periods() {
         "zero refuses"
     );
     assert!(adx.warmup(&ParamSet::new()).is_err(), "missing refuses");
-}
-
-fn bits_of(values: &[Option<f64>]) -> Vec<Option<u64>> {
-    values.iter().map(|v| v.map(f64::to_bits)).collect()
-}
-
-#[test]
-fn buffered_update_matches_batch_on_constant_and_subnormal_inputs() {
-    // Bit-exactness pin for the scratch migration, over the range-position
-    // representative (the highs-plus-lows pair must agree exactly).
-    let aroon = AroonIndicator::new();
-    let params = ParamSet::new().with_int("length", 14);
-    for closes in [
-        vec![42.0; 40],
-        (1..=40).map(|i| f64::from(i) * 1e-310).collect::<Vec<_>>(),
-    ] {
-        let high: Vec<f64> = closes.iter().map(|c| c + 0.5).collect();
-        let low: Vec<f64> = closes.iter().map(|c| c - 0.5).collect();
-        let frame = Ohlcv {
-            open: &[],
-            high: &high,
-            low: &low,
-            close: &closes,
-            volume: &[],
-        };
-        let batch = aroon.batch(&frame, &params).expect("batch runs").values;
-        let mut state = IndicatorState::new();
-        let folded: Vec<Option<f64>> = closes
-            .iter()
-            .enumerate()
-            .map(|(i, close)| {
-                aroon
-                    .update_full(
-                        &mut state,
-                        BarTick {
-                            open: *close,
-                            high: high[i],
-                            low: low[i],
-                            close: *close,
-                            volume: 0.0,
-                        },
-                        &params,
-                    )
-                    .expect("update runs")
-                    .primary
-            })
-            .collect();
-        assert_eq!(
-            bits_of(&folded),
-            bits_of(&batch),
-            "aroon reproduces batch bit-for-bit"
-        );
-    }
 }

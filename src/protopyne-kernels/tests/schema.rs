@@ -57,6 +57,77 @@ fn every_registered_kernel_has_a_schema_and_evaluates_with_defaults() {
     assert_eq!(checked, 56, "all 56 builtin kernels are covered");
 }
 
+/// The names/ordering check above compares *values*; this one pins the source.
+/// Every kernel's declared params/outputs must be the central table's own
+/// slice — a per-spec copy (the shadowing channel this milestone removed) would
+/// pass an equality check and fail a pointer check.
+#[test]
+fn every_spec_reads_the_schema_table_itself_never_a_copy() {
+    let registry = builtin_registry().expect("registry builds");
+    for id in registry.ids() {
+        let indicator = registry.get(&id).expect("registered");
+        let spec = indicator.spec();
+        let schema = indicator_schema(&id).unwrap_or_else(|| panic!("{id}: no schema"));
+        assert!(
+            std::ptr::eq(spec.params(), schema.params),
+            "{id}: params must be the schema table's slice, not a per-spec copy"
+        );
+        assert!(
+            std::ptr::eq(spec.outputs(), schema.outputs),
+            "{id}: outputs must be the schema table's slice, not a per-spec copy"
+        );
+    }
+}
+
+/// The identity fold's case list is derived from this same schema surface, so
+/// the fold can only be missing a kernel if this assertion is missing one:
+/// every registry id has exactly one case, and every declared secondary output
+/// appears in that case exactly once. Extending the schema suite is what keeps
+/// "all kernels" true instead of aspirational.
+#[test]
+fn the_identity_fold_covers_every_registry_id_and_declared_output() {
+    let registry = builtin_registry().expect("registry builds");
+    let cases = super::kernel_identity_tests::all_cases();
+    let mut case_ids: Vec<&str> = cases.iter().map(|case| case.id.as_str()).collect();
+    case_ids.sort_unstable();
+    let mut unique = case_ids.clone();
+    unique.dedup();
+    assert_eq!(
+        case_ids, unique,
+        "each registry id has exactly one fold case"
+    );
+    let ids = registry.ids();
+    let mut registry_ids: Vec<&str> = ids.iter().map(String::as_str).collect();
+    registry_ids.sort_unstable();
+    assert_eq!(
+        case_ids, registry_ids,
+        "the fold covers the registry exactly, no orphans either way"
+    );
+    for case in &cases {
+        let indicator = registry.get(&case.id).expect("registered");
+        let spec = indicator.spec();
+        let declared: Vec<&str> = spec
+            .outputs()
+            .iter()
+            .filter(|output| output.role == OutputRole::Secondary)
+            .map(|output| output.name)
+            .collect();
+        assert_eq!(
+            case.secondary, declared,
+            "{}: the case folds exactly the declared secondaries",
+            case.id
+        );
+        let mut seen = std::collections::HashSet::new();
+        for name in &case.secondary {
+            assert!(
+                seen.insert(*name),
+                "{}: declared output {name} appears once",
+                case.id
+            );
+        }
+    }
+}
+
 #[test]
 fn representative_schemas_snapshot_their_parameters_and_outputs() {
     let cases = [

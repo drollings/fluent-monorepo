@@ -66,8 +66,8 @@ impl Indicator for StddevIndicator {
         &self.spec
     }
 
-    fn warmup(&self, params: &ParamSet) -> Result<usize, KernelError> {
-        Ok(Self::shape(params)?.0)
+    fn refine_warmup(&self, params: &ParamSet) -> Result<Option<usize>, KernelError> {
+        Ok(Some(Self::shape(params)?.0))
     }
 
     fn batch(&self, data: &Ohlcv<'_>, params: &ParamSet) -> Result<IndicatorResult, KernelError> {
@@ -93,7 +93,7 @@ impl Indicator for StddevIndicator {
         bar: BarTick,
         params: &ParamSet,
     ) -> Result<Option<f64>, KernelError> {
-        let (period, nbdev) = Self::shape(params)?;
+        let (period, nbdev) = state.resolved(|| Self::shape(params))?;
         state.push(bar, period);
         if state.len() < period {
             return Ok(None);
@@ -153,8 +153,8 @@ impl Indicator for VarIndicator {
         &self.spec
     }
 
-    fn warmup(&self, params: &ParamSet) -> Result<usize, KernelError> {
-        Ok(Self::shape(params)?.0)
+    fn refine_warmup(&self, params: &ParamSet) -> Result<Option<usize>, KernelError> {
+        Ok(Some(Self::shape(params)?.0))
     }
 
     fn batch(&self, data: &Ohlcv<'_>, params: &ParamSet) -> Result<IndicatorResult, KernelError> {
@@ -176,7 +176,7 @@ impl Indicator for VarIndicator {
         bar: BarTick,
         params: &ParamSet,
     ) -> Result<Option<f64>, KernelError> {
-        let (period, nbdev) = Self::shape(params)?;
+        let (period, nbdev) = state.resolved(|| Self::shape(params))?;
         state.push(bar, period);
         if state.len() < period {
             return Ok(None);
@@ -228,8 +228,8 @@ impl Indicator for CorrelIndicator {
         &self.spec
     }
 
-    fn warmup(&self, params: &ParamSet) -> Result<usize, KernelError> {
-        Self::period(params)
+    fn refine_warmup(&self, params: &ParamSet) -> Result<Option<usize>, KernelError> {
+        Ok(Some(Self::period(params)?))
     }
 
     fn batch(&self, data: &Ohlcv<'_>, params: &ParamSet) -> Result<IndicatorResult, KernelError> {
@@ -254,7 +254,7 @@ impl Indicator for CorrelIndicator {
         bar: BarTick,
         params: &ParamSet,
     ) -> Result<Option<f64>, KernelError> {
-        let period = Self::period(params)?;
+        let period = state.resolved(|| Self::period(params))?;
         state.push(bar, period);
         if state.len() < period {
             return Ok(None);

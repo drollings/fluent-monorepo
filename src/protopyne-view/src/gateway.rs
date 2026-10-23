@@ -13,8 +13,9 @@ use protopyne_types::Money;
 use crate::views::{
     ArmResponse, BrokerAccountView, BrokerCapabilityView, BrokerDealView, BrokerOrderView,
     ChartBar, ChartBars, HealthView, JournalRowView, OverlaySeries, PortfolioView, PositionView,
-    ProposalView, ReplayStartParams, ReplayStateView, ReplayStepView, ReplayView, SymbolInfoView,
-    TicketDriftView, TicketView, WorstCase,
+    ProposalView, RehearsalEconomics, ReplayStartParams, ReplayStateView, ReplayStepView,
+    ReplayView, StructureKindHint, SymbolInfoView, TicketDraft, TicketDriftView, TicketView,
+    WorstCase,
 };
 
 /// Terminal-gateway failure: transport, shape, or refused submit.
@@ -188,6 +189,17 @@ pub trait TerminalGateway: Send + Sync {
         ))
     }
 
+    /// Re-attest the live grant by id: journal the attest row, re-arming
+    /// entries for another cadence. A wrong or absent id refuses. Additive
+    /// and default-refused — only a gateway backed by a journal serves it,
+    /// and the mock stays honest by refusing.
+    fn attest_grant(&self, grant_id: &str) -> Result<(), GatewayError> {
+        let _ = grant_id;
+        Err(GatewayError::Unavailable(
+            "grant attestation is not served by this gateway".to_owned(),
+        ))
+    }
+
     /// Close every open group in one portfolio: journal the close-all command
     /// row for the loop to execute. Additive and default-refused — only a
     /// gateway backed by the command journal serves it, and execution belongs
@@ -210,6 +222,22 @@ pub trait TerminalGateway: Send + Sync {
         ))
     }
 
+    /// The economics the core books on every rehearsal proposal over
+    /// `underlying` in `structure`: strategy name, per-proposal worst-case
+    /// loss, notional, and days to expiry, plus the grant they came from.
+    /// Additive and default-refused — the terminal sends what the core
+    /// declares and never substitutes a literal of its own.
+    fn rehearsal_economics(
+        &self,
+        underlying: &str,
+        structure: StructureKindHint,
+    ) -> Result<RehearsalEconomics, GatewayError> {
+        let _ = (underlying, structure);
+        Err(GatewayError::Unavailable(
+            "rehearsal economics are not served by this gateway".to_owned(),
+        ))
+    }
+
     /// Tickets still waiting for the human's fill report, in ticket order.
     /// Additive and default-refused — only a gateway backed by the ticket
     /// journal serves it.
@@ -229,11 +257,11 @@ pub trait TerminalGateway: Send + Sync {
     }
 
     /// Issue a manual ticket: journal the issued row so the ticket waits as
-    /// unconfirmed. The ticket rides an opaque intent document (the core
-    /// alone parses it); a duplicate wait refuses. Additive and
-    /// default-refused — only a gateway backed by the ticket journal serves
-    /// it.
-    fn issue_ticket(&self, ticket: serde_json::Value) -> Result<(), GatewayError> {
+    /// unconfirmed. The terminal fills a [`TicketDraft`]; the core mints the
+    /// ticket identity, builds the venue intent, and validates it with its
+    /// own parser. Additive and default-refused — only a gateway backed by
+    /// the ticket journal serves it.
+    fn issue_ticket(&self, ticket: TicketDraft) -> Result<(), GatewayError> {
         let _ = ticket;
         Err(GatewayError::Unavailable(
             "manual tickets are not served by this gateway".to_owned(),

@@ -23,7 +23,7 @@ fn env(name: &str) -> Option<String> {
 /// never placed (must read absent, never error) and takes an account
 /// snapshot. Success is total — any failed round fails the soak — and the
 /// worst round latency is reported, never averaged away.
-#[ignore = "live: needs TASTYTRADE_* env against the cert sandbox; run via `make venue-test-live`"]
+#[ignore = "live-ai: needs TASTYTRADE_* env against the cert sandbox; run via `make venue-test-live`"]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn cert_sandbox_read_storm() {
     let (Some(base_url), Some(account), Some(username), Some(password)) = (

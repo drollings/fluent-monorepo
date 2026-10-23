@@ -18,6 +18,7 @@
 use super::*;
 use crate::parse_program;
 use chrono::TimeZone as _;
+use protopyne_types::Timeframe;
 
 fn bar_at(index: i64) -> Bar {
     Bar::new()
@@ -539,9 +540,10 @@ fn run_capture(
 /// Daily dataset for the `"D"` pair, resampled from the fifteen-minute
 /// tape (shared helper, same buckets the injection proof serves).
 fn daily_dataset() -> LtfDataset {
-    LtfDataset::of_bars(&fixture::daily_of(&fixture::history_bars(
-        "historical/SPY_15M.csv",
-    )))
+    LtfDataset::of_bars(
+        &fixture::daily_of(&fixture::history_bars("historical/SPY_15M.csv")),
+        Timeframe::D1,
+    )
 }
 
 /// Assert the lifecycle well-formedness property over one outcome: every
@@ -583,7 +585,6 @@ fn assert_lifecycle_wellformed(outcome: &RunOutcome, maxima: &[(&str, usize)], l
 }
 
 #[test]
-#[ignore = "requires trimmed CSV history fixtures no longer shipped in the tree"]
 fn ppas_capture_contract_swing_label_bounded() {
     // PPAS over 5 minute bars with default inputs and no injections: swing
     // detection needs no history beyond two back-references, so one
@@ -618,7 +619,6 @@ fn ppas_capture_contract_swing_label_bounded() {
 }
 
 #[test]
-#[ignore = "requires trimmed CSV history fixtures no longer shipped in the tree"]
 fn ppas_version_skewed_pattern_reference_refuses() {
     // Fail-closed pin for the frozen PPAS bytes: the pattern branch calls
     // `libCandles.isPatternType`, but the on-disk v21 `libCandles` (PPAS
@@ -627,7 +627,7 @@ fn ppas_version_skewed_pattern_reference_refuses() {
     // alias. Thirty bars reach the branch (a reversal prints); the M5
     // contract regime above stays clear of it.
     let chart = fixture::history_bars("historical/SPY_1M.csv");
-    let minute = LtfDataset::of_bars(&chart[..60]);
+    let minute = LtfDataset::of_bars(&chart[..60], Timeframe::M1);
     let modules = fixture::linked_closure("ApexPPAS");
     let mut engine = capture_engine("1");
     engine
@@ -647,7 +647,6 @@ fn ppas_version_skewed_pattern_reference_refuses() {
 }
 
 #[test]
-#[ignore = "requires trimmed CSV history fixtures no longer shipped in the tree"]
 fn rsimd_capture_contract_plots_fills_shapes_levels() {
     // RSIMD over 30 minute bars with default inputs and no injections:
     // divergence detection runs on chart legs, so the full drawing

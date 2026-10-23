@@ -1,7 +1,7 @@
 use super::*;
 use crate::proposal::{Direction, Proposal, ProposalSide, ProposalState, StructureKind};
 use chrono::Utc;
-use protopyne_types::{Money, Qty};
+use protopyne_types::{Greeks, Money, Qty};
 use rust_decimal::Decimal;
 use std::sync::Arc;
 
@@ -394,8 +394,9 @@ fn observed_open_risk_over_the_cap_refuses_and_under_it_passes() {
 #[test]
 fn a_nan_net_delta_denies() {
     let engine = RiskEngine::new(RiskLimits::new().max_abs_net_delta(5.0).build());
+    let nan_greeks = Greeks::new().delta(f64::NAN).build();
     let state = RiskState {
-        facts: PortfolioFacts::observed(money(0), Some(f64::NAN), None, None),
+        facts: PortfolioFacts::observed(money(0), Some(nan_greeks), None, None),
         ..healthy()
     };
     assert!(engine
@@ -429,4 +430,84 @@ fn a_buying_power_floor_refuses_when_unmet() {
 fn try_new_refuses_aggregate_caps_without_a_producer() {
     assert!(RiskEngine::try_new(RiskLimits::default()).is_ok());
     assert!(RiskEngine::try_new(RiskLimits::new().max_open_risk(100.0).build()).is_err());
+}
+
+// ── The delta cap reads supplied greeks; nothing supplied refuses ──────────
+
+fn greeks_with_delta(delta: f64) -> Greeks {
+    Greeks::new().delta(delta).build()
+}
+
+#[test]
+fn a_supplied_delta_breach_denies_with_over_net_delta() {
+    let engine = RiskEngine::new(RiskLimits::new().max_abs_net_delta(5.0).build());
+    let state = RiskState {
+        facts: PortfolioFacts::observed(money(0), Some(greeks_with_delta(5.5)), None, None),
+        ..healthy()
+    };
+    assert!(engine
+        .check(&proposal(), limit_spread(), &state)
+        .is_err_and(|refused| refused.reasons.contains(&RiskReason::OverNetDelta)));
+    let state = RiskState {
+        facts: PortfolioFacts::observed(money(0), Some(greeks_with_delta(-5.5)), None, None),
+        ..healthy()
+    };
+    assert!(engine
+        .check(&proposal(), limit_spread(), &state)
+        .is_err_and(|refused| refused.reasons.contains(&RiskReason::OverNetDelta)));
+}
+
+#[test]
+fn no_greeks_source_refuses_as_unavailable() {
+    let engine = RiskEngine::new(RiskLimits::new().max_abs_net_delta(5.0).build());
+    // No source attached: the facts carry no greeks, so the configured cap
+    // refuses rather than passing a book it cannot see.
+    let state = RiskState {
+        facts: PortfolioFacts::observed(money(0), None, None, None),
+        ..healthy()
+    };
+    assert!(engine
+        .check(&proposal(), limit_spread(), &state)
+        .is_err_and(|refused| refused
+            .reasons
+            .contains(&RiskReason::PortfolioFactsUnavailable)));
+}
+
+// ── A computed source wraps the kernels closed form ─────────────────────────
+
+#[test]
+fn a_computed_source_prices_greeks_like_the_closed_form() {
+    use chrono::NaiveDate;
+    use protopyne_types::{OptionContract, OptionKind};
+
+    let as_of = NaiveDate::from_ymd_opt(2026, 6, 18).expect("valid test date");
+    let source = ComputedGreeks {
+        spot: 100.0,
+        rate: 0.02,
+        volatility: 0.25,
+        as_of,
+    };
+    let contract = OptionContract::new()
+        .underlying("SPY".to_owned())
+        .expiry(NaiveDate::from_ymd_opt(2026, 12, 18).expect("valid test date"))
+        .strike(money(100))
+        .kind(OptionKind::Call)
+        .build();
+    let supplied = source.greeks(&contract).expect("a live contract prices");
+    let years =
+        f64::from(u32::try_from((contract.expiry - as_of).num_days()).expect("live expiry"))
+            / 365.0;
+    let direct = protopyne_kernels::bs_greeks(OptionKind::Call, 100.0, 100.0, years, 0.02, 0.25);
+    assert!((supplied.delta - direct.delta).abs() < 1e-12);
+    assert!((supplied.gamma - direct.gamma).abs() < 1e-12);
+    // An expired contract has no greeks — absence, never a number.
+    let mut dead = contract.clone();
+    dead.expiry = as_of;
+    assert!(source.greeks(&dead).is_none());
+    // Garbage inputs refuse rather than miscompute.
+    let wild = ComputedGreeks {
+        spot: f64::NAN,
+        ..source
+    };
+    assert!(wild.greeks(&contract).is_none());
 }

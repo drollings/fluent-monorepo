@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::fmt;
 use std::str::FromStr;
+use std::time::Duration;
 
 use protopyne_types::Money;
 
@@ -371,20 +372,116 @@ pub struct GrantUsage {
     /// Notional already committed.
     #[builder(default = Money::zero())]
     pub used_notional: Money,
+    /// Last operator attestation, when the grant carries a re-attestation
+    /// window. Initialised to the grant's `valid_from` on arming; journaled
+    /// `Attest` rows move it forward (last wins, never backwards). Attesting
+    /// consumes nothing — budgets do not move.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_attested: Option<DateTime<Utc>>,
 }
 
+/// Re-attestation window: the operator's authority lapses on a cadence, so
+/// a grant left unconfirmed stops opening new risk while positions stay
+/// manageable. Additive and `None` by default: grants armed without one
+/// behave exactly as before, forever.
+#[derive(Debug, Clone, Copy, Builder, PartialEq, Serialize, Deserialize)]
+#[builder(start_fn = new)]
+pub struct ReAttestationWindow {
+    /// How long one attestation stays authoritative.
+    pub cadence: Duration,
+    /// Extra time past cadence before entries disarm.
+    pub grace: Duration,
+}
+
+/// Re-attestation window for a grant lifetime: longer windows get tighter
+/// (or equal) windows — never the reverse. A policy table, not a fit: the
+/// calibration suite asserts every window length maps exactly once and the
+/// mapping never loosens with length.
+///
+/// | window length | re-attestation |
+/// |---|---|
+/// | ≤ 1 h | none — the window ends before any cadence could lapse |
+/// | ≤ 24 h | none — a single session needs no re-attestation |
+/// | ≤ 72 h | daily cadence, one hour of grace |
+/// | > 72 h | daily cadence, no grace (re-confirm before each entry session) |
+#[must_use]
+pub fn re_attestation_for_window(window: Duration) -> Option<ReAttestationWindow> {
+    if window <= Duration::from_hours(24) {
+        None
+    } else if window <= Duration::from_hours(72) {
+        Some(ReAttestationWindow {
+            cadence: Duration::from_hours(24),
+            grace: Duration::from_hours(1),
+        })
+    } else {
+        Some(ReAttestationWindow {
+            cadence: Duration::from_hours(24),
+            grace: Duration::ZERO,
+        })
+    }
+}
 /// Circuit-breaker trip limits. Axis: **(producer-confidence)** — these
 /// measure doubt in the producer's health, never the trade's merit, and must
 /// never approve or veto a trade on merit.
 #[derive(
-    Debug, Clone, Copy, Builder, PartialEq, Eq, Serialize, Deserialize, FieldAccess, Describable,
+    Debug, Clone, Copy, Builder, PartialEq, Serialize, Deserialize, FieldAccess, Describable,
 )]
 #[builder(start_fn = new)]
 pub struct BreakerLimits {
     /// Consecutive venue errors that disarm entries **(producer-confidence)**.
     #[field(desc = "Consecutive venue errors that disarm entries (tightening lowers it)")]
     pub max_consecutive_errors: u32,
+    /// Peak-to-trough equity drawdown fraction that disarms entries
+    /// **(producer-confidence)**. `None` leaves the arm inert, so existing
+    /// runs are unaffected; `Some` must sit in `(0, 1]` (validated at
+    /// arming). A breach trips exactly like the error streak — entries
+    /// disarm, exits route, the reason banks once — while merit stays
+    /// recorded. A configured cap with no equity reading refuses as
+    /// unobserved, never passes.
+    #[field(desc = "Peak-to-trough drawdown fraction that disarms entries (tightening lowers it)")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_portfolio_drawdown_fraction: Option<f64>,
 }
+
+/// Whether a replacement drawdown cap is looser than the one it replaces: a
+/// higher cap trips later, and dropping the cap removes the arm entirely.
+/// `None`-to-`None` is equal, never looser.
+fn drawdown_looser(next: Option<f64>, current: Option<f64>) -> bool {
+    match (next, current) {
+        (None, Some(_)) => true,
+        (Some(next), Some(current)) => next > current,
+        _ => false,
+    }
+}
+
+/// Whether a replacement re-attestation window is looser than the one it
+/// replaces: dropping the window removes the arm entirely, and a later trip
+/// is looser. `None`-to-`None` is equal, never looser.
+fn re_attestation_looser(
+    next: Option<ReAttestationWindow>,
+    current: Option<ReAttestationWindow>,
+) -> bool {
+    match (next, current) {
+        (None, Some(_)) => true,
+        (Some(next), Some(current)) => {
+            next.cadence.saturating_add(next.grace) > current.cadence.saturating_add(current.grace)
+        }
+        _ => false,
+    }
+}
+
+/// Documented default drawdown cap for operators arming the breaker.
+///
+/// | cap | posture |
+/// |---|---|
+/// | 0.05 | tight: a twentieth off the peak disarms entries |
+/// | **0.10** | **default**: a tenth off the peak disarms entries; exits still route |
+/// | 0.20 | loose: only a fifth-off-peak stops new risk |
+///
+/// The default is a starting point, not a fit: the calibration suite proves
+/// a thousand rising curves stay within it and the boundary pins hold at any
+/// configured value.
+pub const DEFAULT_MAX_PORTFOLIO_DRAWDOWN_FRACTION: f64 = 0.10;
 
 json_boundary!(BreakerLimits, "breaker limits");
 
@@ -443,6 +540,11 @@ pub struct Grant {
     pub portfolio: PortfolioThresholds,
     /// Breaker limits **(producer-confidence)**.
     pub breakers: BreakerLimits,
+    /// Re-attestation window **(producer-confidence)**. `None` (the default)
+    /// leaves attestation unenforced, so existing grants behave exactly as
+    /// before; `Some` disarms entries past cadence + grace until re-attested.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub re_attestation: Option<ReAttestationWindow>,
     /// Window start (inclusive).
     pub valid_from: DateTime<Utc>,
     /// Window end (exclusive).
@@ -467,6 +569,13 @@ impl Grant {
     pub fn validate(&self) -> Result<(), String> {
         if self.valid_from >= self.valid_until {
             return Err("grant window is empty".to_owned());
+        }
+        if let Some(cap) = self.breakers.max_portfolio_drawdown_fraction {
+            if !(cap > 0.0 && cap <= 1.0 && cap.is_finite()) {
+                return Err(format!(
+                    "drawdown cap {cap} outside (0, 1]: it can never be a threshold"
+                ));
+            }
         }
         if self.budgets.max_trades < 1 || self.budgets.max_contracts < 1 {
             return Err("grant budgets must authorize at least one trade".to_owned());
@@ -539,6 +648,19 @@ impl Grant {
         if self.breakers.max_consecutive_errors > current.breakers.max_consecutive_errors {
             return false;
         }
+        // Dropping attestation is looser, tightening the window is tighter;
+        // the cadence table only ever tightens with window length.
+        if re_attestation_looser(self.re_attestation, current.re_attestation) {
+            return false;
+        }
+        // A lower drawdown cap trips sooner, so it is tighter; `None` never
+        // trips, so it is the loosest. Both unset is equal, never looser.
+        if drawdown_looser(
+            self.breakers.max_portfolio_drawdown_fraction,
+            current.breakers.max_portfolio_drawdown_fraction,
+        ) {
+            return false;
+        }
         if !self.scope.is_subset_of(&current.scope) {
             return false;
         }
@@ -607,7 +729,12 @@ impl Grant {
             next.portfolio = portfolio;
         }
         if let Some(breakers) = patch.breakers {
-            if breakers.max_consecutive_errors > self.breakers.max_consecutive_errors {
+            if breakers.max_consecutive_errors > self.breakers.max_consecutive_errors
+                || drawdown_looser(
+                    breakers.max_portfolio_drawdown_fraction,
+                    self.breakers.max_portfolio_drawdown_fraction,
+                )
+            {
                 return Err(StrategyError::InvalidGrant(
                     "tightening must not raise any breaker limit".to_owned(),
                 ));
@@ -837,6 +964,33 @@ pub fn evaluate_grant(
     breakers: &BreakerState,
     now: DateTime<Utc>,
 ) -> GrantDecision {
+    evaluate_grant_inner(proposal, grant, usage, market, breakers, now, true)
+}
+
+/// Merit-only evaluation: the attestation arm is excluded, exactly as the
+/// breaker input is excluded by passing clean state. The pipeline records
+/// merit through this, so a lapsed cadence never rewrites the trade's merit
+/// — authorization (reserve) always runs the full fixed order.
+pub(crate) fn evaluate_grant_merit(
+    proposal: &Proposal,
+    grant: &Grant,
+    usage: &GrantUsage,
+    market: &GrantMarket,
+    breakers: &BreakerState,
+    now: DateTime<Utc>,
+) -> GrantDecision {
+    evaluate_grant_inner(proposal, grant, usage, market, breakers, now, false)
+}
+
+fn evaluate_grant_inner(
+    proposal: &Proposal,
+    grant: &Grant,
+    usage: &GrantUsage,
+    market: &GrantMarket,
+    breakers: &BreakerState,
+    now: DateTime<Utc>,
+    enforce_attestation: bool,
+) -> GrantDecision {
     let mut reasons: Vec<String> = Vec::new();
 
     if grant.revoked {
@@ -844,6 +998,19 @@ pub fn evaluate_grant(
     }
     if now < grant.valid_from || now >= grant.valid_until {
         reasons.push("grant window not live".to_owned());
+    }
+    // Operator authority lapses on its own cadence: entries disarm past
+    // cadence + grace until re-attested, while exits and rolls route exactly
+    // like the breaker's disarmed-entries shape. Merit excludes this arm, so
+    // a lapsed cadence is never a verdict on the trade.
+    if enforce_attestation && proposal.side == ProposalSide::Entry {
+        if let Some(window) = grant.re_attestation {
+            let since = usage.last_attested.unwrap_or(grant.valid_from);
+            let elapsed = (now - since).to_std().unwrap_or(Duration::ZERO);
+            if elapsed > window.cadence.saturating_add(window.grace) {
+                reasons.push("grant attestation lapsed".to_owned());
+            }
+        }
     }
     if !grant.scope.allows(proposal) {
         reasons.push("proposal outside grant scope".to_owned());

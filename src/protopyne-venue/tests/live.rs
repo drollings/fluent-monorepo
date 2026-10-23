@@ -12,5 +12,7 @@
 
 #[path = "live/cert_sandbox.rs"]
 mod cert_sandbox;
+#[path = "live/live_soak.rs"]
+mod live_soak;
 #[path = "live/soak.rs"]
 mod soak;

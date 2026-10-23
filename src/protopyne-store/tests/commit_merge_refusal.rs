@@ -52,6 +52,7 @@ fn a_union_fold_alone_would_have_absorbed_the_garbage_print() {
         c: garbage.c,
         volume: garbage.volume,
         adj: None,
+        confirmed_at: None,
     };
     assert!(
         absorbed.validate().is_ok(),

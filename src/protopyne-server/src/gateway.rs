@@ -14,9 +14,9 @@ use protopyne_types::{Bar, Timeframe};
 use protopyne_view::{
     validate_symbol_timeframe, ArmResponse, BrokerAccountView, BrokerCapabilityView,
     BrokerDealView, BrokerOrderView, ChartBars, GatewayError, HealthView, JournalRowView,
-    OverlaySeries, PortfolioView, ProposalView, ReplayDecisionView, ReplayLegView,
-    ReplayPositionView, ReplayStartParams, ReplayStateView, ReplayView, SymbolInfoView,
-    TerminalGateway, WorstCase,
+    OverlaySeries, PortfolioView, ProposalView, RehearsalEconomics, ReplayDecisionView,
+    ReplayLegView, ReplayPositionView, ReplayStartParams, ReplayStateView, ReplayView,
+    StructureKindHint, SymbolInfoView, TerminalGateway, TicketDraft, WorstCase,
 };
 use std::collections::BTreeMap;
 
@@ -32,7 +32,7 @@ use crate::service::{
 };
 use crate::views::{
     booked_portfolio_of, broker_account_of, broker_capabilities_of, broker_deal_of,
-    broker_order_of, confirm_ticket, decide_journaled, import_tickets, issue_ticket,
+    broker_order_of, confirm_ticket, decide_journaled, import_tickets, journal_attest,
     journal_cancel_all, journal_close_all, journal_rows_of, journaled_proposals_of, revoke_grant,
     ticket_drifts_of, waiting_tickets,
 };
@@ -444,6 +444,18 @@ impl TerminalGateway for ServerGateway {
         )
     }
 
+    fn rehearsal_economics(
+        &self,
+        underlying: &str,
+        structure: StructureKindHint,
+    ) -> Result<RehearsalEconomics, GatewayError> {
+        crate::rehearsal::rehearsal_economics(
+            underlying,
+            crate::rehearsal::structure_of_hint(structure),
+        )
+        .map_err(|error| GatewayError::InvalidGrant(error.to_string()))
+    }
+
     fn replay_start(&self, params: ReplayStartParams) -> Result<ReplayStateView, GatewayError> {
         // Fail closed up front: a blank slot, blank attribution, or a start
         // past the last bar refuses before anything constructs, so a bad
@@ -678,6 +690,16 @@ impl TerminalGateway for ServerGateway {
         })
     }
 
+    fn attest_grant(&self, grant_id: &str) -> Result<(), GatewayError> {
+        journal_attest(&self.state, grant_id).map_err(|(status, reason)| {
+            if status.is_server_error() {
+                GatewayError::Unavailable(reason)
+            } else {
+                GatewayError::Malformed(reason)
+            }
+        })
+    }
+
     fn close_all(&self, portfolio: &str) -> Result<(), GatewayError> {
         journal_close_all(&self.state, portfolio).map_err(decision_error)
     }
@@ -694,8 +716,8 @@ impl TerminalGateway for ServerGateway {
         Ok(ticket_drifts_of(&self.state))
     }
 
-    fn issue_ticket(&self, ticket: serde_json::Value) -> Result<(), GatewayError> {
-        issue_ticket(&self.state, &ticket).map_err(decision_error)
+    fn issue_ticket(&self, ticket: TicketDraft) -> Result<(), GatewayError> {
+        crate::views::issue_draft(&self.state, &ticket).map_err(decision_error)
     }
 
     fn confirm_ticket(&self, ticket_id: &str, fill: serde_json::Value) -> Result<(), GatewayError> {

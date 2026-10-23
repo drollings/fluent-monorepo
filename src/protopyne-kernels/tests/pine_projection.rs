@@ -210,9 +210,11 @@ fn deleted_label_drops() {
 #[test]
 fn parity_lookup_stays_consistent_with_the_table() {
     // The gate reads these rows: engine-supported constructs project, and
-    // the table row's `Match` documents that tables refuse at the overlay,
-    // never in the engine. `plot` stands `Correct` (per-site series, not the
-    // reference merged series) — still projectable, pinned here.
+    // the table row's `MatchByInspection` documents that tables refuse at the
+    // overlay, never in the engine (the reference layer is not in this tree,
+    // so inspection is the honest standing). `plot` stands `Correct`
+    // (per-site series, not the reference merged series) — still projectable,
+    // pinned here.
     let standing = |construct: &str| {
         parity_for(construct)
             .unwrap_or_else(|| panic!("matrix covers {construct}"))
@@ -226,8 +228,8 @@ fn parity_lookup_stays_consistent_with_the_table() {
     for construct in ["hline()", "label.new", "box.new", "table.new"] {
         assert_eq!(
             standing(construct),
-            ParityVerdict::Match,
-            "{construct} stands matched"
+            ParityVerdict::MatchByInspection,
+            "{construct} stands inspected"
         );
     }
     assert!(

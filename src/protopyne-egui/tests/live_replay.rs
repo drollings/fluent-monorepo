@@ -11,8 +11,21 @@ use std::sync::Mutex;
 
 use protopyne_chart_model::ChartRow;
 use protopyne_view::{
-    GatewayError, ReplayDecisionView, ReplayPositionView, ReplayStartParams, ReplayStateView,
+    GatewayError, RehearsalEconomics, ReplayDecisionView, ReplayPositionView, ReplayStartParams,
+    ReplayStateView, StructureKindHint,
 };
+
+/// The economics a scripted gateway serves: a fixed booking the terminal
+/// asserts against, never a value the terminal could have invented.
+fn rehearsal_for_test() -> RehearsalEconomics {
+    RehearsalEconomics {
+        strategy: "ribbon".to_owned(),
+        max_loss: "400".to_owned(),
+        notional: "2000".to_owned(),
+        dte_days: 30,
+        grant_id: "replay-permissive".to_owned(),
+    }
+}
 
 fn ladder_rows(count: usize) -> Vec<ChartRow> {
     (0..count)
@@ -63,6 +76,8 @@ struct ScriptReplay {
     calls: Mutex<Vec<String>>,
     structures: Mutex<Vec<String>>,
     history: Vec<ChartRow>,
+    /// Refuse the rehearsal-economics read, for the fail-closed pin.
+    refuse_economics: bool,
 }
 
 impl ScriptReplay {
@@ -83,7 +98,14 @@ impl ScriptReplay {
             calls: Mutex::new(Vec::new()),
             structures: Mutex::new(Vec::new()),
             history,
+            refuse_economics: false,
         }
+    }
+
+    /// The same gateway with the economics read refused.
+    fn refusing_economics(mut self) -> Self {
+        self.refuse_economics = true;
+        self
     }
 
     fn state_of(&self, session: &str) -> ReplayStateView {
@@ -207,6 +229,19 @@ impl TerminalGateway for ScriptReplay {
 
     fn arm(&self, _grant: serde_json::Value) -> Result<protopyne_view::ArmResponse, GatewayError> {
         Err(GatewayError::Unavailable("script replay".to_owned()))
+    }
+
+    fn rehearsal_economics(
+        &self,
+        _underlying: &str,
+        _structure: StructureKindHint,
+    ) -> Result<RehearsalEconomics, GatewayError> {
+        if self.refuse_economics {
+            return Err(GatewayError::Unavailable(
+                "economics are not served".to_owned(),
+            ));
+        }
+        Ok(rehearsal_for_test())
     }
 
     fn replay_start(&self, params: ReplayStartParams) -> Result<ReplayStateView, GatewayError> {
@@ -395,6 +430,34 @@ fn open_step_and_stop_drive_the_cached_session() {
 }
 
 #[test]
+fn a_refused_economics_read_is_visible_and_sends_nothing() {
+    // The core owns the booking: when it refuses to state one, the terminal
+    // refuses the open visibly instead of inventing a number of its own.
+    let mut workspace =
+        ChartWorkspace::with_rows(ladder_rows(20)).expect("seeded workspace builds");
+    let gateway = ScriptReplay::new(20).refusing_economics();
+    let rows = ladder_rows(20);
+    workspace.open_live_replay(&gateway, rows[2].time, None, 7, None, "Single".to_owned());
+    assert!(
+        workspace.live_replay.is_none(),
+        "a refused read seats no run"
+    );
+    assert!(
+        workspace
+            .replay_error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("economics are not served"),
+        "the refusal is visible: {:?}",
+        workspace.replay_error
+    );
+    assert!(
+        gateway.calls.lock().expect("call log locks").is_empty(),
+        "nothing reaches a session when the core refuses its own economics"
+    );
+}
+
+#[test]
 fn a_refused_step_stops_play_with_the_reason_kept() {
     struct RefusingStart(ScriptReplay);
     impl TerminalGateway for RefusingStart {
@@ -448,6 +511,13 @@ fn a_refused_step_stops_play_with_the_reason_kept() {
             Err(GatewayError::Unavailable("refusing".to_owned()))
         }
 
+        fn rehearsal_economics(
+            &self,
+            underlying: &str,
+            structure: StructureKindHint,
+        ) -> Result<RehearsalEconomics, GatewayError> {
+            self.0.rehearsal_economics(underlying, structure)
+        }
         fn replay_start(&self, params: ReplayStartParams) -> Result<ReplayStateView, GatewayError> {
             self.0.replay_start(params)
         }
@@ -596,6 +666,13 @@ fn open_forwards_an_explicit_grant_document() {
             _grant: serde_json::Value,
         ) -> Result<protopyne_view::ArmResponse, GatewayError> {
             Err(GatewayError::Unavailable("recording".to_owned()))
+        }
+        fn rehearsal_economics(
+            &self,
+            underlying: &str,
+            structure: StructureKindHint,
+        ) -> Result<RehearsalEconomics, GatewayError> {
+            self.0.rehearsal_economics(underlying, structure)
         }
         fn replay_start(&self, params: ReplayStartParams) -> Result<ReplayStateView, GatewayError> {
             assert!(
@@ -960,6 +1037,13 @@ fn open_refuses_when_the_in_fill_fetch_fails() {
             _grant: serde_json::Value,
         ) -> Result<protopyne_view::ArmResponse, GatewayError> {
             Err(GatewayError::Unavailable("no charts".to_owned()))
+        }
+        fn rehearsal_economics(
+            &self,
+            underlying: &str,
+            structure: StructureKindHint,
+        ) -> Result<RehearsalEconomics, GatewayError> {
+            self.0.rehearsal_economics(underlying, structure)
         }
         fn replay_start(&self, params: ReplayStartParams) -> Result<ReplayStateView, GatewayError> {
             self.0.replay_start(params)

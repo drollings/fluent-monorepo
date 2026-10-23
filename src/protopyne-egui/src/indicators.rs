@@ -6,7 +6,7 @@
 //! serves every indicator kind — the two scripted modules
 //! ([`IntegrationLiteIndicator`], [`FastMasIndicator`]) and
 //! [`KernelIndicator`], which hosts any kernel from the shared
-//! [`builtin_registry`]. A plugin is stateless behavior: it owns no
+//! [`shared_registry`]. A plugin is stateless behavior: it owns no
 //! configuration, so the hot-slot stack stays the single settings authority
 //! and an edit and its recompute can never diverge. Every plugin reads its
 //! configuration through [`ChartIndicator::evaluate`], routing display legs
@@ -22,8 +22,8 @@ use std::collections::BTreeMap;
 use fluent_wvr::component_downcast_ref;
 use fluent_wvr::prelude::*;
 use protopyne_chart_model::ChartRow;
-use protopyne_kernels::builtin_registry;
 use protopyne_kernels::pine::manifest::{IndicatorManifestEntry, ManifestParity};
+use protopyne_kernels::shared_registry;
 use protopyne_kernels::smoothing::SmoothingFamily;
 
 use fluent_wvr::validate::{check_for_execute, valid_output, Validate};
@@ -37,6 +37,9 @@ use fluent_egui::{
 use crate::delta_volume_profile::{DeltaVolumeProfileIndicator, DELTA_VOLUME_PROFILE_ID};
 use crate::fast_mas::{evaluate_fast_mas, FastMasConfig};
 use crate::integration_lite::{integration_lite_sub_pane, IntegrationLiteConfig};
+use crate::oscillators::{
+    normalize_series, oscillator_mapping_for_kernel, OscillatorKind, WhichLeg,
+};
 use crate::topology::{
     consumer_cache_key, kernel_result, kernel_warmup, resolve_input_column, series_frame,
     SeriesCatalog, SeriesSource,
@@ -120,8 +123,16 @@ pub struct IndicatorSeries {
     pub node: String,
     /// Display name shown in readouts and legends.
     pub name: String,
-    /// Per-bar display values, holes preserved.
+    /// Per-bar raw values, holes preserved. Published under the node and
+    /// key; never normalized, never substituted.
     pub values: Vec<Option<f64>>,
+    /// Precomputed display values for painters and readouts, holes
+    /// preserved. Mapped oscillators carry the catalog squash of the raw
+    /// leg; everything else mirrors the raw values.
+    pub display_values: Vec<Option<f64>>,
+    /// Display provenance: the catalog mapping behind the display values,
+    /// or none for raw-passthrough series.
+    pub display_mapping: Option<(OscillatorKind, WhichLeg)>,
     /// Theme style key resolved against the theme at paint time.
     pub style: String,
     /// Where this series paints.
@@ -139,9 +150,17 @@ impl IndicatorSeries {
         self.pane.as_deref().unwrap_or(default)
     }
 
-    /// The most recent resolved value, holes skipped.
+    /// The most recent display value, holes skipped. Readouts and legends
+    /// read display, never raw.
     #[must_use]
     pub fn last_value(&self) -> Option<f64> {
+        self.display_values.iter().rev().find_map(|slot| *slot)
+    }
+
+    /// The most recent raw value, holes skipped. Decision paths and
+    /// `series:<node>` consumers read raw, never display.
+    #[must_use]
+    pub fn last_raw_value(&self) -> Option<f64> {
         self.values.iter().rev().find_map(|slot| *slot)
     }
 }
@@ -275,8 +294,8 @@ fn paint_series(
 ) -> Result<(), EguiError> {
     let aggregate = needs_column_aggregation(viewport.scale().bar_spacing());
     for series in &evaluation.series {
-        let len = series.values.len().saturating_sub(base);
-        let window = visible_rows(&series.values, base, len);
+        let len = series.display_values.len().saturating_sub(base);
+        let window = visible_rows(&series.display_values, base, len);
         let points = if aggregate {
             sampled_line_points(window, viewport, base)
         } else {
@@ -400,6 +419,8 @@ impl ChartIndicator for IntegrationLiteIndicator {
             .map(|(node, (name, values, style))| IndicatorSeries {
                 node: (*node).to_owned(),
                 name: name.to_owned(),
+                display_values: values.clone(),
+                display_mapping: None,
                 values,
                 style: style.to_owned(),
                 attachment: SlotAttachment::SubPane,
@@ -507,6 +528,8 @@ impl ChartIndicator for FastMasIndicator {
             .map(|(node, line)| IndicatorSeries {
                 node: node.to_owned(),
                 name: line.name,
+                display_values: line.values.clone(),
+                display_mapping: None,
                 values: line.values,
                 style: line.style,
                 attachment: SlotAttachment::MainOverlay,
@@ -554,6 +577,18 @@ fn default_kernel_source() -> String {
     crate::topology::default_source_spelling()
 }
 
+fn default_osc_gain() -> f64 {
+    1.0
+}
+
+fn default_osc_trim() -> f64 {
+    0.0
+}
+
+fn default_osc_threshold() -> f64 {
+    100.0
+}
+
 /// One kernel plugin's configuration: which kernel, its declared parameters,
 /// its paint style, and its input source. `length` remains a legacy alias
 /// that old preferences migrate through.
@@ -579,11 +614,47 @@ pub struct KernelIndicatorConfig {
     #[builder(default)]
     #[serde(default)]
     pub params: BTreeMap<String, String>,
+    /// Whether display values squash through the frozen catalog. `None`
+    /// (including old preferences that predate the dial) follows the kernel:
+    /// on for mapped oscillators, off otherwise. Explicit `Some(true)` on an
+    /// unmapped kernel refuses.
+    #[serde(default)]
+    pub normalize: Option<bool>,
+    /// Display gain over the catalog squash. Computation untouched.
+    #[builder(default = default_osc_gain())]
+    #[serde(default = "default_osc_gain")]
+    pub osc_gain: f64,
+    /// Post-normalization centering trim. Computation untouched.
+    #[builder(default = default_osc_trim())]
+    #[serde(default = "default_osc_trim")]
+    pub osc_trim: f64,
+    /// Display threshold at `±osc_threshold`. Painted rules only.
+    #[builder(default = default_osc_threshold())]
+    #[serde(default = "default_osc_threshold")]
+    pub osc_threshold: f64,
 }
 
-const FIXED_FIELDS: &[&str] = &["kernel", "length", "style", "source"];
+const FIXED_FIELDS: &[&str] = &[
+    "kernel",
+    "length",
+    "style",
+    "source",
+    "normalize",
+    "osc_gain",
+    "osc_trim",
+    "osc_threshold",
+];
 
 impl KernelIndicatorConfig {
+    /// Effective normalize flag: the explicit row, or the per-kernel default
+    /// (on for mapped oscillators, off otherwise) when unset.
+    #[must_use]
+    pub fn effective_normalize(&self) -> bool {
+        self.normalize.unwrap_or_else(|| {
+            crate::oscillators::oscillator_mapping_for_kernel(&self.kernel).is_some()
+        })
+    }
+
     /// The registered kernel's declared parameter and output schema.
     pub fn schema(
         &self,
@@ -594,7 +665,7 @@ impl KernelIndicatorConfig {
         ),
         EguiError,
     > {
-        let registry = builtin_registry().map_err(|error| EguiError::Dependency {
+        let registry = shared_registry().map_err(|error| EguiError::Dependency {
             reason: error.to_string(),
         })?;
         let indicator = registry
@@ -713,6 +784,41 @@ impl KernelIndicatorConfig {
             });
         }
         self.effective_params()?;
+        if !self.osc_gain.is_finite() || self.osc_gain <= 0.0 {
+            return Err(EguiError::InvalidParam {
+                what: "osc_gain".to_owned(),
+                reason: format!(
+                    "osc_gain must be a positive finite number, got {}",
+                    self.osc_gain
+                ),
+            });
+        }
+        if !self.osc_trim.is_finite() {
+            return Err(EguiError::InvalidParam {
+                what: "osc_trim".to_owned(),
+                reason: format!("osc_trim must be finite, got {}", self.osc_trim),
+            });
+        }
+        if !self.osc_threshold.is_finite() || self.osc_threshold <= 0.0 {
+            return Err(EguiError::InvalidParam {
+                what: "osc_threshold".to_owned(),
+                reason: format!(
+                    "osc_threshold must be a positive finite number, got {}",
+                    self.osc_threshold
+                ),
+            });
+        }
+        if self.effective_normalize()
+            && crate::oscillators::oscillator_mapping_for_kernel(&self.kernel).is_none()
+        {
+            return Err(EguiError::InvalidParam {
+                what: "normalize".to_owned(),
+                reason: format!(
+                    "kernel {:?} has no normalizable oscillator mapping, so normalize refuses",
+                    self.kernel
+                ),
+            });
+        }
         Ok(())
     }
 
@@ -729,6 +835,8 @@ impl KernelIndicatorConfig {
     #[must_use]
     pub fn defaults_for(kernel: &str) -> Self {
         let mut config = Self::new().kernel(kernel.to_owned()).build();
+        config.normalize =
+            Some(crate::oscillators::oscillator_mapping_for_kernel(kernel).is_some());
         if let Ok((declared, _)) = config.schema() {
             for param in declared {
                 config
@@ -755,6 +863,8 @@ impl FieldAccess for KernelIndicatorConfig {
                 }
                 value.clone_into(&mut self.kernel);
                 self.params.clear();
+                self.normalize =
+                    Some(crate::oscillators::oscillator_mapping_for_kernel(&self.kernel).is_some());
                 if let Ok((declared, _)) = self.schema() {
                     for param in declared {
                         self.params
@@ -781,6 +891,32 @@ impl FieldAccess for KernelIndicatorConfig {
             }
             "source" => {
                 value.clone_into(&mut self.source);
+                Ok(())
+            }
+            "normalize" => {
+                self.normalize = Some(
+                    value
+                        .parse()
+                        .map_err(|_| FieldError::Parse(value.to_owned()))?,
+                );
+                Ok(())
+            }
+            "osc_gain" => {
+                self.osc_gain = value
+                    .parse()
+                    .map_err(|_| FieldError::Parse(value.to_owned()))?;
+                Ok(())
+            }
+            "osc_trim" => {
+                self.osc_trim = value
+                    .parse()
+                    .map_err(|_| FieldError::Parse(value.to_owned()))?;
+                Ok(())
+            }
+            "osc_threshold" => {
+                self.osc_threshold = value
+                    .parse()
+                    .map_err(|_| FieldError::Parse(value.to_owned()))?;
                 Ok(())
             }
             other => {
@@ -827,6 +963,10 @@ impl FieldAccess for KernelIndicatorConfig {
             }
             "style" => Ok(self.style.clone()),
             "source" => Ok(self.source.clone()),
+            "normalize" => Ok(self.effective_normalize().to_string()),
+            "osc_gain" => Ok(self.osc_gain.to_string()),
+            "osc_trim" => Ok(self.osc_trim.to_string()),
+            "osc_threshold" => Ok(self.osc_threshold.to_string()),
             other => {
                 let (declared, _) = self
                     .schema()
@@ -866,7 +1006,7 @@ impl Describable for KernelIndicatorConfig {
             serde_json::json!({
                 "type": "string",
                 "description": "Line theme style key",
-                "enum": crate::topology::theme_style_keys(),
+                "enum": fluent_egui::ThemeConfig::style_keys(),
             }),
         );
         properties.insert(
@@ -875,6 +1015,40 @@ impl Describable for KernelIndicatorConfig {
                 "type": "string",
                 "description": "Input series (price source or series:<node>)",
                 "enum": crate::topology::price_source_ids(),
+            }),
+        );
+        properties.insert(
+            "normalize".to_owned(),
+            serde_json::json!({
+                "type": "boolean",
+                "description": "Squash display through the frozen oscillator catalog",
+                "default": true,
+            }),
+        );
+        properties.insert(
+            "osc_gain".to_owned(),
+            serde_json::json!({
+                "type": "number",
+                "description": "Display gain over the catalog squash",
+                "default": 1.0,
+                "exclusiveMinimum": 0.0,
+            }),
+        );
+        properties.insert(
+            "osc_trim".to_owned(),
+            serde_json::json!({
+                "type": "number",
+                "description": "Post-normalization centering trim",
+                "default": 0.0,
+            }),
+        );
+        properties.insert(
+            "osc_threshold".to_owned(),
+            serde_json::json!({
+                "type": "number",
+                "description": "Display threshold at plus/minus this value",
+                "default": 100.0,
+                "exclusiveMinimum": 0.0,
             }),
         );
         if let Ok((declared, _)) = self.schema() {
@@ -941,8 +1115,8 @@ impl_component!(KernelIndicatorConfig);
 /// the registry itself fails to build (which also refuses instantiation).
 #[must_use]
 pub fn kernel_ids() -> Vec<String> {
-    builtin_registry()
-        .map(|registry| registry.ids())
+    shared_registry()
+        .map(protopyne_kernels::IndicatorRegistry::ids)
         .unwrap_or_default()
 }
 
@@ -950,7 +1124,7 @@ pub fn kernel_ids() -> Vec<String> {
 /// to the id when the registry does not hold it.
 #[must_use]
 pub fn kernel_title(kernel: &str) -> String {
-    builtin_registry()
+    shared_registry()
         .ok()
         .and_then(|registry| {
             registry
@@ -1004,7 +1178,7 @@ impl KernelIndicator {
         kernel: &str,
         attachment: SlotAttachment,
     ) -> Result<Self, EguiError> {
-        let registry = builtin_registry().map_err(|error| EguiError::Dependency {
+        let registry = shared_registry().map_err(|error| EguiError::Dependency {
             reason: error.to_string(),
         })?;
         if registry.get(kernel).is_none() {
@@ -1104,9 +1278,12 @@ impl ChartIndicator for KernelIndicator {
         if outputs.is_empty() {
             let mut values = result.values.clone();
             mask_leading(&mut values, holes);
+            let (display_values, display_mapping) = display_for_kernel(&values, config);
             series_out.push(IndicatorSeries {
                 node: primary_node.clone(),
                 name: config.kernel.clone(),
+                display_values,
+                display_mapping,
                 values,
                 style: config.style.clone(),
                 attachment: self.attachment,
@@ -1134,6 +1311,11 @@ impl ChartIndicator for KernelIndicator {
                         .to_vec()
                 };
                 mask_leading(&mut values, holes);
+                let (display_values, display_mapping) = if index == 0 {
+                    display_for_kernel(&values, config)
+                } else {
+                    (values.clone(), None)
+                };
                 series_out.push(IndicatorSeries {
                     node: node.clone(),
                     name: if index == 0 {
@@ -1141,6 +1323,8 @@ impl ChartIndicator for KernelIndicator {
                     } else {
                         format!("{} {}", config.kernel, output.name)
                     },
+                    display_values,
+                    display_mapping,
                     values,
                     style: config.style.clone(),
                     attachment: self.attachment,
@@ -1157,6 +1341,40 @@ fn mask_leading(values: &mut [Option<f64>], holes: usize) {
     for value in values.iter_mut().take(holes) {
         *value = None;
     }
+}
+
+/// Display values plus provenance for one raw leg: the dialed transform
+/// `gain * catalog(raw) + trim` when normalizing is on and the kernel maps,
+/// else a raw passthrough. Holes stay holes; a refused kind cannot occur
+/// here because validation already refused `normalize` on unmapped kernels.
+fn display_for_kernel(
+    raw: &[Option<f64>],
+    config: &KernelIndicatorConfig,
+) -> (Vec<Option<f64>>, Option<(OscillatorKind, WhichLeg)>) {
+    if !config.effective_normalize() {
+        return (raw.to_vec(), None);
+    }
+    let Some(mapping) = oscillator_mapping_for_kernel(&config.kernel) else {
+        return (raw.to_vec(), None);
+    };
+    let (kind, _) = mapping;
+    let Ok(display) = normalize_series(raw, kind) else {
+        return (raw.to_vec(), None);
+    };
+    let shaped = display
+        .into_iter()
+        .map(|slot| {
+            slot.and_then(|value| {
+                let shaped = value * config.osc_gain + config.osc_trim;
+                if shaped.is_finite() {
+                    Some(shaped)
+                } else {
+                    None
+                }
+            })
+        })
+        .collect();
+    (shaped, Some(mapping))
 }
 
 /// Build the indicator catalog: the two scripted indicators under My Scripts,
@@ -1188,7 +1406,7 @@ pub fn build_indicator_catalog_with_manifest(
     for row in rows {
         catalog.register(&row.id, &row.title, IndicatorCategory::MyScripts)?;
     }
-    let registry = builtin_registry().map_err(|error| EguiError::Dependency {
+    let registry = shared_registry().map_err(|error| EguiError::Dependency {
         reason: error.to_string(),
     })?;
     for id in registry.ids() {
@@ -1267,7 +1485,7 @@ pub fn instantiate_indicator_with_manifest(
             "vwma",
         )?)),
         other => {
-            let registry = builtin_registry().map_err(|error| EguiError::Dependency {
+            let registry = shared_registry().map_err(|error| EguiError::Dependency {
                 reason: error.to_string(),
             })?;
             if registry.get(other).is_some() {
@@ -1297,3 +1515,7 @@ mod indicator_manifest_tests;
 #[cfg(test)]
 #[path = "../tests/kernel_plugins.rs"]
 mod kernel_plugin_tests;
+
+#[cfg(test)]
+#[path = "../tests/settings_dials.rs"]
+mod settings_dials_tests;

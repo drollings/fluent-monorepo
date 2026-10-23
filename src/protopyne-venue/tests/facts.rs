@@ -209,7 +209,7 @@ fn two_open_verticals_sum_their_committed_max_loss() {
     assert!(facts.observed);
     // (5.00 width - 1.80 credit) * 2 units + (5.00 - 1.50) * 1 unit.
     assert_eq!(facts.open_risk, money("9.90"));
-    assert_eq!(facts.net_delta, None);
+    assert_eq!(facts.net_greeks, None);
 }
 
 #[test]
@@ -223,7 +223,7 @@ fn a_configured_greek_cap_without_a_chain_source_is_unobserved() {
     let facts = facts_for(stub, limits.clone());
 
     assert!(!facts.observed);
-    assert_eq!(facts.net_delta, None);
+    assert_eq!(facts.net_greeks, None);
     let engine = RiskEngine::new(limits);
     let refused = engine
         .check(&proposal(), OrderShape::new(true, true), &state(facts))

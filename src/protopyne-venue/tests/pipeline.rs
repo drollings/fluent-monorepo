@@ -1,13 +1,12 @@
 use super::*;
+use protopyne_strategy::fixtures::grant_with;
 
 use chrono::{TimeZone, Utc};
 use rust_decimal::Decimal;
 
 use protopyne_store::StoreHealth;
 use protopyne_strategy::{
-    BreakerLimits, Direction, Grant, GrantBudgets, GrantPermission, GrantScope, PortfolioFacts,
-    PortfolioThresholds, ProposalSide, RiskLimits, SignalThresholds, StructureKind,
-    TradeThresholds,
+    Direction, Grant, PortfolioFacts, ProposalSide, ReAttestationWindow, RiskLimits, StructureKind,
 };
 use protopyne_types::{Money, Qty};
 
@@ -42,57 +41,13 @@ fn proposal(quantity: &str, side: ProposalSide) -> Proposal {
 }
 
 fn grant(min_conviction: f64, max_errors: u32) -> Grant {
-    Grant::new()
-        .id("pipeline-grant".to_owned())
-        .scope(
-            GrantScope::new()
-                .strategies(vec!["ribbon".to_owned()])
-                .underlyings(vec!["SPY".to_owned()])
-                .structures(vec![StructureKind::Vertical])
-                .directions(vec![Direction::Long, Direction::Short])
-                .permissions(GrantPermission {
-                    entries: true,
-                    exits: true,
-                    rolls: false,
-                })
-                .build(),
-        )
-        .budgets(
-            GrantBudgets::new()
-                .max_trades(1_000)
-                .max_contracts(10_000)
-                .max_loss(money("1000000"))
-                .max_notional(money("100000000"))
-                .build(),
-        )
-        .signal(
-            SignalThresholds::new()
-                .min_conviction(min_conviction)
-                .min_activity_score(0.5)
-                .build(),
-        )
-        .trade(
-            TradeThresholds::new()
-                .max_loss_per_trade(money("1000"))
-                .max_spread_width(money("50"))
-                .min_dte_days(1)
-                .max_dte_days(90)
-                .build(),
-        )
-        .portfolio(
-            PortfolioThresholds::new()
-                .max_open_risk(money("10000000"))
-                .quote_max_age_secs(60)
-                .build(),
-        )
-        .breakers(
-            BreakerLimits::new()
-                .max_consecutive_errors(max_errors)
-                .build(),
-        )
-        .valid_from(Utc.with_ymd_and_hms(2025, 1, 1, 0, 0, 0).unwrap())
-        .valid_until(Utc.with_ymd_and_hms(2027, 1, 1, 0, 0, 0).unwrap())
-        .build()
+    // The shared fixture's shape with the two knobs this suite sweeps.
+    grant_with(|grant| {
+        grant.id = "pipeline-grant".to_owned();
+        grant.signal.min_conviction = min_conviction;
+        grant.signal.min_activity_score = 0.5;
+        grant.breakers.max_consecutive_errors = max_errors;
+    })
 }
 
 fn risk_state() -> RiskState {
@@ -548,4 +503,337 @@ fn multiple_refusals_first_axis_wins_but_split_stays_full() {
     assert!(!split.risk_pass, "task-value stage still evaluated");
     assert!(!split.risk_reasons.is_empty(), "{:?}", split.risk_reasons);
     assert!(split.merit.is_some(), "merit evaluated, never defaulted");
+}
+
+// ── Rolls: the roll permission gates, the risk engine still judges ─────────
+
+/// A roll grant: the shared fixture's shape with only the roll permission
+/// flipped. The fixture baseline denies rolls; these tests arm them.
+fn roll_grant(rolls: bool) -> Grant {
+    grant_with(|grant| {
+        grant.id = "roll-grant".to_owned();
+        grant.scope.permissions.rolls = rolls;
+        grant.signal.min_conviction = 0.5;
+        grant.signal.min_activity_score = 0.5;
+    })
+}
+
+fn evaluate_roll(rolls: bool, kill_switch: bool, max_contracts: u32) -> Split {
+    let proposal = proposal("2", ProposalSide::Roll);
+    let mut grant = roll_grant(rolls);
+    grant.budgets.max_contracts = max_contracts;
+    let ledger = GrantLedger::new(grant);
+    let pipeline = DecisionPipeline::new(StateHandle::new(TradingState::Enabled));
+    let state = health(false);
+    let limits = HealthLimits::new().build();
+    let risk = RiskEngine::new(RiskLimits::new().kill_switch(kill_switch).build());
+    let risk_state = risk_state();
+    let market = GrantMarket::new()
+        .quote_age_secs(0)
+        .spread_width(money("1"))
+        .build();
+    let verdict = pipeline.evaluate(&PipelineRequest {
+        proposal: &proposal,
+        shape: OrderShape::new(true, true),
+        is_exit: false,
+        health: Some((&state, &limits)),
+        risk_state: &risk_state,
+        market: &market,
+        now: now(),
+        risk: &risk,
+        ledger: &ledger,
+    });
+    Split {
+        allowed: verdict.allowed,
+        axis: verdict.axis,
+        reasons: verdict.reasons,
+        risk_pass: verdict.risk_pass,
+        risk_reasons: verdict.risk_reasons,
+        approval: verdict.approval.is_some(),
+        merit: verdict.grant_merit,
+        merit_reasons: verdict.grant_merit_reasons,
+        authorized: verdict.grant_authorized,
+        authorization_reasons: verdict.grant_authorization_reasons,
+        reserved: verdict.reservation.is_some(),
+    }
+}
+
+#[test]
+fn a_roll_is_denied_without_the_roll_permission_and_allowed_with_it() {
+    // Without the permission the grant denies on scope — while the risk
+    // engine still passes, so the denial is the grant's, not the engine's.
+    let denied = evaluate_roll(false, false, 10_000);
+    assert!(!denied.allowed);
+    assert_eq!(denied.axis, Some(GateAxis::TaskValue));
+    assert!(
+        denied.reasons.iter().any(|reason| reason.contains("scope")),
+        "{:?}",
+        denied.reasons
+    );
+    assert!(denied.risk_pass, "the risk engine is consulted either way");
+    // With the permission the same roll authorizes and reserves budget.
+    let allowed = evaluate_roll(true, false, 10_000);
+    assert!(allowed.allowed, "{:?}", allowed.reasons);
+    assert!(allowed.risk_pass);
+    assert!(allowed.approval);
+    assert!(allowed.authorized);
+    assert!(allowed.reserved);
+    // A killed engine fails the roll even with the permission: risk still
+    // judges rolls, and the verdict records both refusals' split.
+    let risky = evaluate_roll(true, true, 10_000);
+    assert!(!risky.allowed);
+    assert!(
+        !risky.risk_pass,
+        "risk refusal recorded: {:?}",
+        risky.risk_reasons
+    );
+    assert!(
+        risky.merit.is_some_and(|decision| decision.is_allow()),
+        "merit stays recorded even when risk refuses"
+    );
+}
+
+#[test]
+fn a_roll_past_the_budgets_is_denied_with_the_grant_own_reason() {
+    // Two contracts against a one-contract budget: the grant's own contract
+    // budget reason, with the risk engine still consulted.
+    let split = evaluate_roll(true, false, 1);
+    assert!(!split.allowed);
+    assert_eq!(split.axis, Some(GateAxis::TaskValue));
+    assert!(
+        split
+            .authorization_reasons
+            .iter()
+            .any(|reason| reason.contains("contract budget exhausted")),
+        "{:?}",
+        split.authorization_reasons
+    );
+    assert!(split.risk_pass, "risk still judges a budget-denied roll");
+}
+
+// ── Portfolio-drawdown breaker: disarm entries, never merit ────────────────
+
+/// A grant with only the drawdown knob set: the shared fixture's shape plus
+/// a configured cap. The fixture baseline leaves the arm inert.
+fn drawdown_grant(cap: f64) -> Grant {
+    grant_with(|grant| {
+        grant.id = "drawdown-grant".to_owned();
+        grant.signal.min_conviction = 0.5;
+        grant.signal.min_activity_score = 0.5;
+        grant.breakers.max_portfolio_drawdown_fraction = Some(cap);
+    })
+}
+
+fn equity_facts(peak: &str, now: &str) -> PortfolioFacts {
+    PortfolioFacts::observed(money("0"), None, None, None)
+        .with_equity(Some(money(peak)), Some(money(now)))
+}
+
+fn evaluate_drawdown(cap: f64, facts: &PortfolioFacts, is_exit: bool) -> Split {
+    let proposal = proposal("2", ProposalSide::Entry);
+    let ledger = GrantLedger::new(drawdown_grant(cap));
+    let pipeline = DecisionPipeline::new(StateHandle::new(TradingState::Enabled));
+    let state = health(false);
+    let limits = HealthLimits::new().build();
+    let risk = RiskEngine::new(RiskLimits::new().build());
+    let risk_state = RiskState {
+        quote_age_secs: 0,
+        clock_skew_secs: 1,
+        reconciliation_healthy: true,
+        facts: *facts,
+    };
+    let market = GrantMarket::new()
+        .quote_age_secs(0)
+        .spread_width(money("1"))
+        .build();
+    let verdict = pipeline.evaluate(&PipelineRequest {
+        proposal: &proposal,
+        shape: OrderShape::new(true, true),
+        is_exit,
+        health: Some((&state, &limits)),
+        risk_state: &risk_state,
+        market: &market,
+        now: now(),
+        risk: &risk,
+        ledger: &ledger,
+    });
+    Split {
+        allowed: verdict.allowed,
+        axis: verdict.axis,
+        reasons: verdict.reasons,
+        risk_pass: verdict.risk_pass,
+        risk_reasons: verdict.risk_reasons,
+        approval: verdict.approval.is_some(),
+        merit: verdict.grant_merit,
+        merit_reasons: verdict.grant_merit_reasons,
+        authorized: verdict.grant_authorized,
+        authorization_reasons: verdict.grant_authorization_reasons,
+        reserved: verdict.reservation.is_some(),
+    }
+}
+
+#[test]
+fn a_drawdown_past_the_cap_disarms_entries_but_not_exits_or_merit() {
+    // (10000 − 8999) / 10000 = 0.1001: one basis point past a tenth.
+    let facts = equity_facts("10000", "8999");
+    // Entries disarm on the producer-confidence axis with the breaker's own
+    // reason — while merit still records Allow for the otherwise-fine trade.
+    let entry = evaluate_drawdown(0.10, &facts, false);
+    assert!(!entry.allowed);
+    assert_eq!(entry.axis, Some(GateAxis::ProducerConfidence));
+    assert!(
+        entry
+            .authorization_reasons
+            .iter()
+            .any(|reason| reason.contains("drawdown")),
+        "{:?}",
+        entry.authorization_reasons
+    );
+    assert!(
+        entry.risk_pass,
+        "risk knows no drawdown cap: {:?}",
+        entry.risk_reasons
+    );
+    assert!(
+        matches!(&entry.merit, Some(decision) if decision.is_allow()),
+        "a tripped breaker must not rewrite merit: {:?}",
+        entry.merit
+    );
+    assert!(!entry.authorized);
+    assert!(!entry.reserved);
+    // Exits still route: the book must be closable in a drawdown.
+    let exit = evaluate_drawdown(0.10, &facts, true);
+    assert!(exit.allowed, "{:?}", exit.reasons);
+    assert!(exit.authorized);
+    assert!(exit.reserved);
+}
+
+#[test]
+fn a_drawdown_at_the_cap_holds_and_an_unobserved_book_refuses() {
+    // (1000 − 750) / 1000 = 0.25 exactly: the boundary holds.
+    let edge = equity_facts("1000", "750");
+    let held = evaluate_drawdown(0.25, &edge, false);
+    assert!(held.allowed, "{:?}", held.reasons);
+    assert!(held.authorized);
+    // A configured cap with no equity refuses as unavailable — never a pass.
+    let dark = evaluate_drawdown(0.25, &PortfolioFacts::unobserved(), false);
+    assert!(!dark.allowed);
+    assert_eq!(dark.axis, Some(GateAxis::ProducerConfidence));
+    assert!(
+        dark.reasons
+            .iter()
+            .any(|reason| reason.contains("PortfolioFactsUnavailable")),
+        "{:?}",
+        dark.reasons
+    );
+}
+
+// ── Re-attestation: authorization-only, never merit ─────────────────────────
+
+/// A grant with a daily cadence and an hour of grace, attested `ago_secs`
+/// before `now()`.
+/// A grant with a daily cadence and an hour of grace, live for the
+/// test instant (attestation lapses against `now`, not the fixture window).
+/// The window opens 30 h back so even an untouched usage is already lapsed —
+/// the suite then moves attestation forward from there.
+fn attested_grant() -> Grant {
+    let mut grant = grant_with(|grant| {
+        grant.id = "attested-grant".to_owned();
+        grant.signal.min_conviction = 0.5;
+        grant.signal.min_activity_score = 0.5;
+        grant.re_attestation = Some(ReAttestationWindow {
+            cadence: std::time::Duration::from_hours(24),
+            grace: std::time::Duration::from_hours(1),
+        });
+    });
+    grant.valid_from = now() - chrono::Duration::hours(30);
+    grant
+}
+
+fn evaluate_attested(ago_secs: i64, is_exit: bool) -> Split {
+    let proposal = proposal(
+        "2",
+        if is_exit {
+            ProposalSide::Exit
+        } else {
+            ProposalSide::Entry
+        },
+    );
+    let ledger = GrantLedger::new(attested_grant());
+    // Seed the ledger the way the loop does after replaying attest rows:
+    // last attested `ago_secs` before now, budgets untouched.
+    ledger.observe_attested(now() - chrono::Duration::seconds(ago_secs));
+    let pipeline = DecisionPipeline::new(StateHandle::new(TradingState::Enabled));
+    let state = health(false);
+    let limits = HealthLimits::new().build();
+    let risk = RiskEngine::new(RiskLimits::new().build());
+    let risk_state = risk_state();
+    let market = GrantMarket::new()
+        .quote_age_secs(0)
+        .spread_width(money("1"))
+        .build();
+    let verdict = pipeline.evaluate(&PipelineRequest {
+        proposal: &proposal,
+        shape: OrderShape::new(true, true),
+        is_exit,
+        health: Some((&state, &limits)),
+        risk_state: &risk_state,
+        market: &market,
+        now: now(),
+        risk: &risk,
+        ledger: &ledger,
+    });
+    Split {
+        allowed: verdict.allowed,
+        axis: verdict.axis,
+        reasons: verdict.reasons,
+        risk_pass: verdict.risk_pass,
+        risk_reasons: verdict.risk_reasons,
+        approval: verdict.approval.is_some(),
+        merit: verdict.grant_merit,
+        merit_reasons: verdict.grant_merit_reasons,
+        authorized: verdict.grant_authorized,
+        authorization_reasons: verdict.grant_authorization_reasons,
+        reserved: verdict.reservation.is_some(),
+    }
+}
+
+#[test]
+fn a_lapsed_attestation_denies_entries_on_authorization_only() {
+    // Attested 26 h ago against a 24 h cadence + 1 h grace: lapsed.
+    let entry = evaluate_attested(26 * 3600, false);
+    assert!(!entry.allowed);
+    assert!(entry.risk_pass, "risk judges the trade, not the cadence");
+    assert!(
+        matches!(&entry.merit, Some(decision) if decision.is_allow()),
+        "merit stays recorded for the otherwise-fine trade: {:?}",
+        entry.merit
+    );
+    assert!(
+        entry.merit_reasons.is_empty(),
+        "NotAttested never lands in merit reasons: {:?}",
+        entry.merit_reasons
+    );
+    assert!(
+        entry
+            .authorization_reasons
+            .iter()
+            .any(|reason| reason.contains("attestation")),
+        "{:?}",
+        entry.authorization_reasons
+    );
+    assert!(!entry.authorized);
+    assert!(!entry.reserved);
+    // Exits still route under the same lapsed grant.
+    let exit = evaluate_attested(26 * 3600, true);
+    assert!(exit.allowed, "{:?}", exit.reasons);
+    assert!(exit.authorized);
+}
+
+#[test]
+fn an_attestation_inside_cadence_plus_grace_allows_entries() {
+    let entry = evaluate_attested(3600, false);
+    assert!(entry.allowed, "{:?}", entry.reasons);
+    assert!(entry.authorized);
+    assert!(entry.reserved);
 }

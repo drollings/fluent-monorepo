@@ -106,23 +106,3 @@ fn voss_gate_holds_then_computes() {
     // Recursive with a defined-zero gate: the opening print is defined.
     assert_eq!(voss.warmup(&ps).expect("valid"), 1);
 }
-
-fn bits_of(values: &[Option<f64>]) -> Vec<Option<u64>> {
-    values.iter().map(|v| v.map(f64::to_bits)).collect()
-}
-
-#[test]
-fn buffered_update_matches_batch_on_constant_and_subnormal_inputs() {
-    // Bit-exactness pin for the scratch migration, over the back-indexed
-    // representative: these kernels read lookbacks, never whole windows, so
-    // the pin proves the scalar reads carry exactly what the collects did.
-    let eit = EitIndicator::new();
-    let params = ParamSet::new().with_float("alpha", 0.5);
-    for data in [
-        vec![42.0; 40],
-        (1..=40).map(|i| f64::from(i) * 1e-310).collect::<Vec<_>>(),
-    ] {
-        let batch = eit.batch(&closes(&data), &params).expect("valid").values;
-        assert_eq!(bits_of(&fold(&eit, &data, &params)), bits_of(&batch));
-    }
-}

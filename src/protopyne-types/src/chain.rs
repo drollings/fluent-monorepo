@@ -270,6 +270,37 @@ pub struct Greeks {
     pub vega: f64,
 }
 
+/// One point of an implied-volatility curve: the strike, its expiry, and the
+/// fitted sensitivities there. Plain `f64` like [`Greeks`] — a report shape,
+/// never money math.
+#[derive(Debug, Clone, Copy, Builder, PartialEq, Serialize, Deserialize)]
+#[builder(start_fn = new)]
+pub struct GreeksPoint {
+    /// Strike price per share.
+    pub strike: Money,
+    /// Expiry date of the contract.
+    pub expiry: NaiveDate,
+    /// Implied volatility at this strike.
+    #[builder(default)]
+    pub iv: f64,
+    /// Model delta at this strike and IV.
+    #[builder(default)]
+    pub delta: f64,
+}
+
+/// An implied-volatility curve over one underlying: fitted points ascending
+/// by strike. A report shape carried on the portfolio report when a surface
+/// feed is configured — `None` until then, never an invented curve.
+#[derive(Debug, Clone, Builder, PartialEq, Serialize, Deserialize)]
+#[builder(start_fn = new)]
+pub struct GreeksCurve {
+    /// Underlying symbol this curve describes.
+    pub underlying: String,
+    /// Fitted points, ascending by strike.
+    #[builder(default)]
+    pub points: Vec<GreeksPoint>,
+}
+
 /// One point-in-time quote for one option contract.
 #[derive(Debug, Clone, Builder, PartialEq, Serialize, Deserialize)]
 #[builder(start_fn = new)]

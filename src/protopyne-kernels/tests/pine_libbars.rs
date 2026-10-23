@@ -819,14 +819,20 @@ fn pull_dataset_scaled(row_vol: f64) -> LtfDataset {
     // serves the confirmed prefix only, so synthetic future rows would
     // serve empty. Values, order, and widths are untouched, so every
     // hand-split golden below still holds.
+    let times = [
+        T0 - 2_400_000,
+        T0 - 1_800_000,
+        T0 - 1_200_000,
+        T0 - 600_000,
+        T0,
+    ];
     LtfDataset {
-        times: vec![
-            T0 - 2_400_000,
-            T0 - 1_800_000,
-            T0 - 1_200_000,
-            T0 - 600_000,
-            T0,
-        ],
+        times: times.iter().copied().map(EpochMs::from).collect(),
+        // Each row stands for one 600 s bucket.
+        closes_at: times
+            .iter()
+            .map(|open| Some(EpochMs::from(open + 600_000)))
+            .collect(),
         opens: vec![100.0, 100.5, 101.5, 102.5, 103.5],
         highs: vec![101.0, 102.0, 103.0, 104.0, 105.0],
         lows: vec![99.0, 100.0, 101.0, 102.0, 103.0],
@@ -1385,7 +1391,14 @@ fn pull_precision_recall() {
 fn ltf_injection_contract() {
     let bars = vec![ms_bar("100", "101", "99", "100", 1000, T0)];
     let dataset = LtfDataset {
-        times: vec![1000, 2000, 3000],
+        times: vec![1000, 2000, 3000]
+            .into_iter()
+            .map(EpochMs::from)
+            .collect(),
+        closes_at: vec![2000, 3000, 4000]
+            .into_iter()
+            .map(|close| Some(EpochMs::from(close)))
+            .collect(),
         opens: vec![10.0, 11.0, 12.0],
         highs: vec![10.5, 11.5, 12.5],
         lows: vec![9.5, 10.5, 11.5],
@@ -1454,7 +1467,8 @@ fn ltf_injection_contract() {
                 "SPY",
                 "1",
                 LtfDataset {
-                    times: vec![1000],
+                    times: vec![EpochMs::from(1000)],
+                    closes_at: vec![Some(EpochMs::from(2000))],
                     opens: vec![10.0],
                     highs: vec![10.5],
                     lows: vec![9.5],
@@ -1504,7 +1518,8 @@ fn ltf_injection_contract() {
                 "SPY",
                 "1",
                 LtfDataset {
-                    times: vec![1000],
+                    times: vec![EpochMs::from(1000)],
+                    closes_at: vec![Some(EpochMs::from(2000))],
                     opens: vec![10.0],
                     highs: vec![10.5],
                     lows: vec![9.5],
@@ -1530,7 +1545,8 @@ fn ltf_injection_contract() {
             "SPY",
             "1",
             LtfDataset {
-                times: vec![1000, 2000],
+                times: vec![EpochMs::from(1000), EpochMs::from(2000)],
+                closes_at: vec![Some(EpochMs::from(2000)), Some(EpochMs::from(3000))],
                 opens: vec![10.0],
                 highs: vec![10.5, 11.5],
                 lows: vec![9.5, 10.5],
@@ -1545,9 +1561,137 @@ fn ltf_injection_contract() {
     );
 }
 
+/// A hundred one-minute buckets from `start_ms`: opens `100..=199`, volumes
+/// `1..=100`, each bucket closing exactly one minute after it opens.
+fn hundred_minutes(start_ms: i64) -> LtfDataset {
+    let rows = || 0..100_i64;
+    LtfDataset {
+        times: rows()
+            .map(|i| EpochMs::from(start_ms + i * 60_000))
+            .collect(),
+        closes_at: rows()
+            .map(|i| Some(EpochMs::from(start_ms + (i + 1) * 60_000)))
+            .collect(),
+        opens: rows().map(|i| 100.0 + i as f64).collect(),
+        highs: rows().map(|i| 100.5 + i as f64).collect(),
+        lows: rows().map(|i| 99.5 + i as f64).collect(),
+        closes: rows().map(|i| 100.2 + i as f64).collect(),
+        volumes: rows().map(|i| i as f64 + 1.0).collect(),
+    }
+}
+
+/// The lower-timeframe window driver: row count plus the oldest and newest
+/// served opens, which together pin *which* window was served.
+const LTF_WINDOW_DRIVER: &str = "[t, o, h, l, c, v] = request.security_lower_tf(\"SPY\", \"1\", [time, open, high, low, close, volume], calc_bars_count = 300)\n\
+    n = array.size(t)\nfirst = array.get(o, 0)\nlast = array.get(o, n - 1)";
+
+/// The closed-bar window is the confirmed prefix, not the whole tape: with a
+/// hundred injected minute buckets, the call at bar *k* (the bucket grid's own
+/// open) sees exactly the *k* buckets that had closed by then. Serving the
+/// whole dataset would return 100 rows on every bar.
+#[test]
+fn ltf_closed_bar_window_is_fenced() {
+    // A minute-grid stamp, so each chart bar lands on a bucket open.
+    const START: i64 = 1_760_000_160_000;
+    let modules = linked(LTF_WINDOW_DRIVER);
+    let cases = [1_i64, 10, 50, 99];
+    let bars: Vec<Bar> = cases
+        .iter()
+        .map(|k| ms_bar("100", "101", "99", "100", 1, START + k * 60_000))
+        .collect();
+    let mut engine = test_engine();
+    engine
+        .inject_lower_tf("SPY", "1", hundred_minutes(START))
+        .expect("dataset validates");
+    let outcome = engine
+        .run_linked(&modules, &bars, InputSet::new())
+        .expect("fenced call evaluates");
+    for (bar, k) in cases.iter().enumerate() {
+        assert_eq!(
+            num(&outcome, bar, "n"),
+            *k as f64,
+            "bar {k}: only the buckets closed by the bar's own open"
+        );
+        assert_eq!(
+            num(&outcome, bar, "first"),
+            100.0,
+            "bar {k}: the window starts at the oldest visible bucket"
+        );
+        assert_eq!(
+            num(&outcome, bar, "last"),
+            100.0 + (*k as f64 - 1.0),
+            "bar {k}: the window ends at the newest closed bucket"
+        );
+    }
+}
+
+/// One instant, one window: the same bars and the same injection read the same
+/// confirmed prefix through either clock, so the tick arm and the closed-bar arm
+/// cannot disagree about how much of the tape exists yet.
+#[test]
+fn ltf_window_agrees_across_modes_at_an_aligned_clock() {
+    const START: i64 = 1_760_000_160_000;
+    let modules = linked(LTF_WINDOW_DRIVER);
+    let cases = [1_i64, 7, 40];
+    let bars: Vec<Bar> = cases
+        .iter()
+        .map(|k| ms_bar("100", "101", "99", "100", 1, START + k * 60_000))
+        .collect();
+    let stamps: Vec<i64> = bars.iter().map(|bar| bar.ts.timestamp_millis()).collect();
+    let mut engine = test_engine();
+    engine
+        .inject_lower_tf("SPY", "1", hundred_minutes(START))
+        .expect("dataset validates");
+    let closed = engine
+        .run_linked(&modules, &bars, InputSet::new())
+        .expect("closed-bar run evaluates");
+    let tick = engine
+        .run_linked_ticks(&modules, &bars, &stamps, InputSet::new())
+        .expect("tick run evaluates");
+    for (bar, k) in cases.iter().enumerate() {
+        for field in ["n", "first", "last"] {
+            assert_eq!(
+                num(&tick, bar, field),
+                num(&closed, bar, field),
+                "bar {k} {field}: one instant, one window"
+            );
+        }
+        assert_eq!(
+            num(&closed, bar, "n"),
+            *k as f64,
+            "bar {k}: the aligned clock confirms the same prefix in both modes"
+        );
+    }
+}
+
+/// Serving is a view, never a copy: `serve_security` is a free function over a
+/// borrowed dataset (no mutable engine, no clone), and the tail it selects
+/// points into the dataset's own columns.
+#[test]
+fn serve_security_borrows_the_dataset() {
+    const START: i64 = 1_760_000_160_000;
+    let dataset = hundred_minutes(START);
+    // Held across the call: a signature that needed `&mut` or a copy could not
+    // borrow the columns this way.
+    let times: &[EpochMs] = &dataset.times;
+    let window = serve_security(&dataset, EpochMs::from(START + 10 * 60_000), Some(4));
+    assert_eq!(window, (6, 10), "ten confirmed, the last four of them");
+    let tail = SecurityTail::of(&dataset, window, Some(4));
+    assert_eq!(
+        tail.column("close").expect("close leg").as_ptr(),
+        dataset.closes[6..10].as_ptr(),
+        "the served tail is a slice of the injected column, not a copy"
+    );
+    assert_eq!(
+        tail.history().column("close").expect("close leg").as_ptr(),
+        dataset.closes.as_ptr(),
+        "the computation view starts at the dataset's first confirmed row"
+    );
+    assert_eq!(times.len(), 100, "the borrow was live across the call");
+}
+
 // ---------------------------------------------------------------------------
-// Trimmed real-tape windows (checked-in fixtures with recorded baselines).
-//
+// Trimmed real-tape windows (checked-in fixtures with recorded baselines).//
 // Each file under `tests/data/ticks/` carries verbatim `SPY_ticks.csv`
 // rows for one window; baselines below are hand-derived from the fixture
 // bytes plus the library rules cited beside them, and the companion file
@@ -1687,9 +1831,11 @@ fn trim_quiet_reconciles_without_pull() {
     );
 }
 
-/// One real `SPY_1M.csv` row at or before `open_ms`, for pull windows
-/// whose injection must stay hand-summable.
-fn single_minute_row(open_ms: i64) -> LtfDataset {
+/// The last real `SPY_1M.csv` row whose bucket has **closed** by `open_ms`,
+/// for pull windows whose injection must stay hand-summable. The bucket
+/// running into the window is still forming at the pull, so it can never be
+/// served; the previous minute is the freshest reference the library can get.
+fn closed_minute_row(open_ms: i64) -> LtfDataset {
     let path = data_root().join("historical/SPY_1M.csv");
     let content = std::fs::read_to_string(&path).expect("minute history loads");
     let mut picked: Option<LtfDataset> = None;
@@ -1700,11 +1846,12 @@ fn single_minute_row(open_ms: i64) -> LtfDataset {
             .expect("time")
             .parse::<i64>()
             .expect("int time");
-        if secs * 1000 > open_ms {
+        if secs * 1000 + 60_000 > open_ms {
             break;
         }
         picked = Some(LtfDataset {
-            times: vec![secs * 1000],
+            times: vec![EpochMs::from(secs * 1000)],
+            closes_at: vec![Some(EpochMs::from(secs * 1000 + 60_000))],
             opens: vec![cells.next().expect("o").parse::<f64>().expect("open")],
             highs: vec![cells.next().expect("h").parse::<f64>().expect("high")],
             lows: vec![cells.next().expect("l").parse::<f64>().expect("low")],
@@ -1717,10 +1864,10 @@ fn single_minute_row(open_ms: i64) -> LtfDataset {
 
 /// Twenty real ticks with an 88-unit seeding loss over a 1062-unit
 /// tape (8.29% drift): the pull fires once and rebuilds the ring from the
-/// confirmed minute row (1062 units, exactly the leg, so the remainder has
-/// nothing to add) — landing on 1062.
+/// last closed minute — the *previous* bucket (827 units), since the bucket
+/// the window runs into has not closed yet — and the absolute remainder tops
+/// the bar up by the missing 235, landing exactly on 1062.
 #[test]
-#[ignore = "requires trimmed CSV history fixtures no longer shipped in the tree"]
 fn trim_pull_rebuilds_from_injected_row() {
     let rows = load_tick_window("window_pull.csv");
     assert_eq!(rows.len(), 20, "pull window row count pinned");
@@ -1729,7 +1876,7 @@ fn trim_pull_rebuilds_from_injected_row() {
     let modules = linked(&fetch_driver());
     let mut engine = test_engine();
     engine
-        .inject_lower_tf("SPY", "1", single_minute_row(open_ms))
+        .inject_lower_tf("SPY", "1", closed_minute_row(open_ms))
         .expect("pull row injects");
     let outcome = engine
         .run_linked_ticks(&modules, &bars, &stamps, InputSet::new())
@@ -1744,13 +1891,13 @@ fn trim_pull_rebuilds_from_injected_row() {
     );
     assert_eq!(
         field_num(&state, "count"),
-        1.0,
-        "rebuilt row only, zero overshoot"
+        2.0,
+        "rebuilt row plus abs remainder"
     );
     assert_close(
         field_num(&state, "total_vol"),
         1062.0,
-        "window plus abs remainder",
+        "827 rebuilt plus the 235 top-up",
     );
     assert_close(
         field_num(&state, "tick_accuracy"),
@@ -1903,16 +2050,17 @@ fn trim_out_of_order_accumulates_without_pull() {
 }
 
 /// Fourteen real ticks with a 107-unit seeding loss over a 298-unit tape
-/// (35.91% drift): the pull fires once and rebuilds the ring from the
-/// confirmed minute row (299 units, one unit above the leg). The
-/// abs-remainder rule writes the magnitude, so the second candle ADDS one
-/// unit and the bar lands on 300 — one above both the leg and the
-/// confirmed row. That overshoot is the script's own `math.abs` rule,
-/// faithfully executed, not a harness artifact: the window's frozen
-/// tolerance is the recorded 1-unit tape-vs-confirmed gap, asserted
-/// literally below.
+/// (35.91% drift): the pull fires once and rebuilds the ring from the last
+/// closed minute, which is made to carry 299 units — one above the rounded
+/// tape. The bucket the window runs into is still forming, so what the pull
+/// can see is a closed bucket at the previous minute's stamp; the 1-unit gap
+/// is this test's calibration, not a claim about that minute's real volume.
+/// The abs-remainder rule writes the magnitude, so the second candle ADDS one
+/// unit and the bar lands on 300 — one above both the leg and the rebuilt
+/// row. That overshoot is the script's own `math.abs` rule, faithfully
+/// executed, not a harness artifact: the window's frozen tolerance is the
+/// recorded 1-unit gap, asserted literally below.
 #[test]
-#[ignore = "requires trimmed CSV history fixtures no longer shipped in the tree"]
 fn trim_pull_remainder_tops_up_to_leg() {
     let rows = load_tick_window("window_pull_remainder.csv");
     assert_eq!(rows.len(), 14, "remainder window row count pinned");
@@ -1920,8 +2068,10 @@ fn trim_pull_remainder_tops_up_to_leg() {
     let (bars, stamps) = window_updates(&rows, |stamp| stamp.div_euclid(60_000) * 60_000);
     let modules = linked(&fetch_driver());
     let mut engine = test_engine();
+    let mut injection = closed_minute_row(open_ms);
+    injection.volumes = vec![299.0];
     engine
-        .inject_lower_tf("SPY", "1", single_minute_row(open_ms))
+        .inject_lower_tf("SPY", "1", injection)
         .expect("pull row injects");
     let outcome = engine
         .run_linked_ticks(&modules, &bars, &stamps, InputSet::new())
@@ -1970,12 +2120,13 @@ fn trim_pull_remainder_tops_up_to_leg() {
         0.0,
         "cumulatives never decrease"
     );
-    // Rebuilt row chains from the confirmed minute row (693.86/693.88/
-    // 693.86/693.861 x 299); the remainder carries the minute legs with the
-    // 1-unit abs top-up, and both candles conserve buy+sell into volume.
+    // Rebuilt row chains from the last closed minute row (693.84/693.87/
+    // 693.83/693.87, its 1105 volume overridden to the near-boundary 299);
+    // the remainder carries the 1-unit abs top-up, and both candles conserve
+    // buy+sell into volume.
     assert_eq!(
         field_num(&state, "candle_open"),
-        693.86,
+        693.84,
         "first injected open chains reads"
     );
     assert_close(
@@ -2023,7 +2174,6 @@ fn high_drift_tape() -> Vec<(i64, f64, u64)> {
 /// firing, and there are none. The silence controls are the below-gate
 /// verbatim windows (quiet 0%, sparse 0.28%, out-of-order 2.38%).
 #[test]
-#[ignore = "requires trimmed CSV history fixtures no longer shipped in the tree"]
 fn drift_rebuild_gate_precision_recall() {
     // (label, run): verbatim windows plus the synthetic high-drift tape.
     let mut cases: Vec<GateCase> = Vec::new();
@@ -2039,7 +2189,7 @@ fn drift_rebuild_gate_precision_recall() {
         let rows = load_tick_window(name);
         let open_ms = rows[0].0.div_euclid(60_000) * 60_000;
         let (bars, stamps) = window_updates(&rows, open_of);
-        let injection = inject.then(|| single_minute_row(open_ms));
+        let injection = inject.then(|| closed_minute_row(open_ms));
         cases.push((name, bars, stamps, injection));
     }
     {
@@ -2109,7 +2259,7 @@ fn drift_rebuild_gate_precision_recall() {
 /// in ~13 s, so the default gate stays smoke-fast and this runs via
 /// `make test-heavy`.
 #[test]
-#[ignore = "soak (~13s): full 10,503-tick tape reconstruction; run via `make test-heavy`"]
+#[ignore = "soak: ~13s; full 10,503-tick tape reconstruction; run via `make test-heavy`"]
 fn soak_full_tape_reconstructs() {
     let content = std::fs::read_to_string(data_root().join("historical/SPY_ticks.csv"))
         .expect("tick tape loads");
@@ -2142,6 +2292,7 @@ fn soak_full_tape_reconstructs() {
         .expect("minute history loads");
     let mut dataset = LtfDataset {
         times: Vec::new(),
+        closes_at: Vec::new(),
         opens: Vec::new(),
         highs: Vec::new(),
         lows: Vec::new(),
@@ -2155,7 +2306,7 @@ fn soak_full_tape_reconstructs() {
             .expect("time")
             .parse::<i64>()
             .expect("int time");
-        dataset.times.push(secs * 1000);
+        dataset.times.push(EpochMs::from(secs * 1000));
         dataset
             .opens
             .push(cells.next().expect("o").parse::<f64>().expect("open"));
@@ -2172,6 +2323,11 @@ fn soak_full_tape_reconstructs() {
             .volumes
             .push(cells.next().expect("v").parse::<f64>().expect("volume"));
     }
+    let bucket_stamps: Vec<i64> = dataset.times.iter().map(|stamp| stamp.get()).collect();
+    dataset.closes_at = crate::bars::bucket_closes(&bucket_stamps, 60_000)
+        .into_iter()
+        .map(|close| close.map(EpochMs::from))
+        .collect();
     let minutes = dataset.times.len();
     let modules = linked(&fetch_driver());
     // Proof chart scope: minute geometry with the M1/M1/D1 Bars init.

@@ -20,7 +20,7 @@ use protopyne_kernels::{
     LibraryId, LinkedModule, LtfDataset, ModuleGraph, ModuleInput, PineEngine, PineRuntimeConfig,
     PineValue, RunOutcome, UserInstance, REAL_LIBRARIES, TASK_INDICATORS,
 };
-use protopyne_types::Bar;
+use protopyne_types::{Bar, Timeframe};
 use rust_decimal::Decimal;
 
 /// Warmup bars skipped before the first evaluated bar. Zero: Pine
@@ -53,13 +53,13 @@ pub fn engine_for(period: &str) -> PineEngine {
     )
 }
 
-/// One injection dataset from bars (millisecond timestamps, matching the
-/// dataset convention; volumes ride as exact decimals where integral).
+/// One injection dataset from bars of one timeframe (bucket opens, per-row
+/// session-aware closes, volumes as exact decimals where integral).
 /// Shared constructor: the kernels harness builds the same datasets from
 /// the same bars through `LtfDataset :: of_bars`, so the two suites cannot
 /// drift into incompatible conversions.
-pub fn dataset_of(bars: &[Bar]) -> LtfDataset {
-    LtfDataset::of_bars(bars)
+pub fn dataset_of(bars: &[Bar], timeframe: Timeframe) -> LtfDataset {
+    LtfDataset::of_bars(bars, timeframe)
 }
 
 /// Resample bars into floor-aligned buckets of `bucket_ms` (first open,
@@ -101,13 +101,13 @@ pub fn resample(bars: &[Bar], bucket_ms: i64) -> Vec<Bar> {
 /// [`resample`]).
 pub fn inject_all(engine: &mut PineEngine, minute: &[Bar], m5: &[Bar], m15: &[Bar]) {
     engine
-        .inject_lower_tf("SPY", "1", dataset_of(minute))
+        .inject_lower_tf("SPY", "1", dataset_of(minute, Timeframe::M1))
         .expect("minute window injects");
     engine
-        .inject_security("SPY", "5", dataset_of(m5))
+        .inject_security("SPY", "5", dataset_of(m5, Timeframe::M5))
         .expect("M5 injects");
     engine
-        .inject_security("SPY", "15", dataset_of(m15))
+        .inject_security("SPY", "15", dataset_of(m15, Timeframe::M15))
         .expect("M15 injects");
     let h1 = resample(m15, 60 * 60 * 1000);
     let h4 = resample(m15, 4 * 60 * 60 * 1000);
@@ -116,10 +116,10 @@ pub fn inject_all(engine: &mut PineEngine, minute: &[Bar], m5: &[Bar], m15: &[Ba
         "resampling covers the tape"
     );
     engine
-        .inject_security("SPY", "60", dataset_of(&h1))
+        .inject_security("SPY", "60", dataset_of(&h1, Timeframe::H1))
         .expect("H1 injects");
     engine
-        .inject_security("SPY", "240", dataset_of(&h4))
+        .inject_security("SPY", "240", dataset_of(&h4, Timeframe::H4))
         .expect("H4 injects");
 }
 

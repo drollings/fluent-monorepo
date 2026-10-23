@@ -58,8 +58,8 @@ impl Indicator for RsiIndicator {
         &self.spec
     }
 
-    fn warmup(&self, params: &ParamSet) -> Result<usize, KernelError> {
-        Ok(Self::period(params)? + 1)
+    fn refine_warmup(&self, params: &ParamSet) -> Result<Option<usize>, KernelError> {
+        Ok(Some(Self::period(params)? + 1))
     }
 
     fn batch(&self, data: &Ohlcv<'_>, params: &ParamSet) -> Result<IndicatorResult, KernelError> {
@@ -96,7 +96,7 @@ impl Indicator for RsiIndicator {
         bar: BarTick,
         params: &ParamSet,
     ) -> Result<Option<f64>, KernelError> {
-        let period = Self::period(params)?;
+        let period = state.resolved(|| Self::period(params))?;
         // Own history keeps only the previous close for gain/loss splits;
         // the smoothing windows live in the child states. Read the previous
         // close after pushing: before that, the second bar cannot see the
@@ -110,7 +110,7 @@ impl Indicator for RsiIndicator {
             Some(prev) => (prev - bar.close).max(0.0),
             None => f64::NAN,
         };
-        let rma = RmaIndicator::new();
+        let rma = RmaIndicator::shared();
         let (child, child_params) =
             state.child_with_params(0, || ParamSet::new().with_int("length", period as i64));
         let avg_gain = rma.update(child, BarTick::close_only(gain), child_params)?;
@@ -177,9 +177,11 @@ impl Indicator for MacdIndicator {
         &self.spec
     }
 
-    fn warmup(&self, params: &ParamSet) -> Result<usize, KernelError> {
-        let (_, slow, signal) = Self::lengths(params)?;
-        Ok(slow + signal - 1)
+    fn refine_warmup(&self, params: &ParamSet) -> Result<Option<usize>, KernelError> {
+        // The primary is the MACD line, so it is ready once the slow leg is; the
+        // signal and histogram ride later `na` bars.
+        let (_, slow, _) = Self::lengths(params)?;
+        Ok(Some(slow))
     }
 
     fn batch(&self, data: &Ohlcv<'_>, params: &ParamSet) -> Result<IndicatorResult, KernelError> {
@@ -333,8 +335,10 @@ impl Indicator for StochIndicator {
         &self.spec
     }
 
-    fn warmup(&self, params: &ParamSet) -> Result<usize, KernelError> {
-        Ok(Self::period(params)? + Self::SMOOTH - 1)
+    fn refine_warmup(&self, params: &ParamSet) -> Result<Option<usize>, KernelError> {
+        // The primary is the raw %K, so it is ready at the window; the smoothed
+        // `d` rides later `na` bars.
+        Ok(Some(Self::period(params)?))
     }
 
     fn batch(&self, data: &Ohlcv<'_>, params: &ParamSet) -> Result<IndicatorResult, KernelError> {
@@ -457,8 +461,8 @@ impl Indicator for CciIndicator {
         &self.spec
     }
 
-    fn warmup(&self, params: &ParamSet) -> Result<usize, KernelError> {
-        Self::period(params)
+    fn refine_warmup(&self, params: &ParamSet) -> Result<Option<usize>, KernelError> {
+        Ok(Some(Self::period(params)?))
     }
 
     fn batch(&self, data: &Ohlcv<'_>, params: &ParamSet) -> Result<IndicatorResult, KernelError> {
@@ -479,7 +483,7 @@ impl Indicator for CciIndicator {
         bar: BarTick,
         params: &ParamSet,
     ) -> Result<Option<f64>, KernelError> {
-        let period = Self::period(params)?;
+        let period = state.resolved(|| Self::period(params))?;
         state.push(bar, period);
         if state.len() < period {
             return Ok(None);
@@ -539,8 +543,8 @@ impl Indicator for CmoIndicator {
         &self.spec
     }
 
-    fn warmup(&self, params: &ParamSet) -> Result<usize, KernelError> {
-        Ok(Self::period(params)? + 1)
+    fn refine_warmup(&self, params: &ParamSet) -> Result<Option<usize>, KernelError> {
+        Ok(Some(Self::period(params)? + 1))
     }
 
     fn batch(&self, data: &Ohlcv<'_>, params: &ParamSet) -> Result<IndicatorResult, KernelError> {
@@ -561,7 +565,7 @@ impl Indicator for CmoIndicator {
         bar: BarTick,
         params: &ParamSet,
     ) -> Result<Option<f64>, KernelError> {
-        let period = Self::period(params)?;
+        let period = state.resolved(|| Self::period(params))?;
         state.push(bar, period + 1);
         if state.len() < period + 1 {
             return Ok(None);

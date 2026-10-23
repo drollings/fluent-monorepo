@@ -12,6 +12,7 @@ use protopyne_strategy::{
     PortfolioThresholds, SignalThresholds, Strategy, StructureKind, TradeThresholds,
 };
 use protopyne_types::Money;
+use protopyne_view::{RehearsalEconomics, StructureKindHint};
 
 use crate::error::ServerError;
 
@@ -136,6 +137,65 @@ pub(crate) fn rehearsal_grant(id: &str, structures: Vec<StructureKind>) -> Grant
         .valid_from(rehearsal_stamp(1_700_000_000))
         .valid_until(rehearsal_stamp(1_900_000_000))
         .build()
+}
+
+/// Map the read boundary's structure hint to the core's own structure kind.
+#[must_use]
+pub(crate) fn structure_of_hint(hint: StructureKindHint) -> StructureKind {
+    match hint {
+        StructureKindHint::Single => StructureKind::Single,
+        StructureKindHint::Vertical => StructureKind::Vertical,
+        StructureKindHint::Calendar => StructureKind::Calendar,
+        StructureKindHint::Condor => StructureKind::Condor,
+        StructureKindHint::NakedShort => StructureKind::NakedShort,
+    }
+}
+
+/// The economics every rehearsal proposal books for `underlying` in
+/// `structure`, read off the core's own rehearsal grant — the one place that
+/// declares them, so a terminal never holds a copy that can drift.
+///
+/// The per-proposal numbers are the grant's own authorities: `max_loss` is
+/// the per-trade worst case it authorizes, `dte_days` the nearest expiry its
+/// trade tier admits, and `notional` the grant's notional budget shared over
+/// its trade budget — one trade can never commit more than its average share,
+/// so a run that spends its trade budget in full cannot exhaust notional
+/// first. An underlying or structure the grant does not cover refuses here,
+/// before a session is built around numbers the ledger would refuse bar by
+/// bar.
+pub(crate) fn rehearsal_economics(
+    underlying: &str,
+    structure: StructureKind,
+) -> Result<RehearsalEconomics, ServerError> {
+    let grant = replay_grant_for(structure);
+    if !grant
+        .scope
+        .underlyings
+        .iter()
+        .any(|name| name == underlying)
+    {
+        return Err(ServerError::Service(format!(
+            "the rehearsal grant covers {} only, not '{underlying}'",
+            grant.scope.underlyings.join(", ")
+        )));
+    }
+    let Some(strategy) = grant.scope.strategies.first() else {
+        return Err(ServerError::Service(
+            "the rehearsal grant names no strategy".to_owned(),
+        ));
+    };
+    let trades = std::num::NonZeroU32::new(grant.budgets.max_trades)
+        .ok_or_else(|| ServerError::Service("the rehearsal grant allows no trades".to_owned()))?;
+    let notional = Money::new(
+        grant.budgets.max_notional.as_decimal() / rust_decimal::Decimal::from(trades.get()),
+    );
+    Ok(RehearsalEconomics {
+        strategy: strategy.clone(),
+        max_loss: grant.trade.max_loss_per_trade.to_string(),
+        notional: notional.to_string(),
+        dte_days: grant.trade.min_dte_days,
+        grant_id: grant.id.clone(),
+    })
 }
 
 /// A fixed rehearsal-window stamp. The constant is a valid instant, so the

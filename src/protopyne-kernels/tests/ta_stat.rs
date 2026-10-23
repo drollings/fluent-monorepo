@@ -1,5 +1,6 @@
 use super::*;
 use crate::compat::compat_for;
+use crate::indicator::bits_of;
 use crate::indicator::{builtin_registry, OwnedOhlcv};
 use crate::parity::{assert_expr_parity, expr_fixture};
 use crate::ta_stat::{CorrelIndicator, StddevIndicator, VarIndicator};
@@ -363,10 +364,6 @@ fn stat_registry_and_matrix_cover_all_three() {
         let row = compat_for(id).unwrap_or_else(|| panic!("{id} matrix row"));
         assert!((row.eps - 1e-9).abs() == 0.0, "{id} frozen eps");
     }
-}
-
-fn bits_of(values: &[Option<f64>]) -> Vec<Option<u64>> {
-    values.iter().map(|v| v.map(f64::to_bits)).collect()
 }
 
 fn fold_stddev(closes: &[f64], params: &ParamSet) -> Vec<Option<f64>> {

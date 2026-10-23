@@ -73,6 +73,11 @@ fn mock_gateway_covers_every_trait_method() {
         "mock arm refuses a grant with no id before any core could see it"
     );
 
+    assert!(
+        gateway.attest_grant("g1").is_err(),
+        "the mock refuses attestation honestly: no journal behind it"
+    );
+
     let replay = gateway.replay().expect("mock replay reads");
     assert_eq!(
         replay.total_bars,
@@ -256,4 +261,20 @@ fn render_modules_name_no_trading_token() {
     // walk shape are the same rule, so keeping a second copy here would mean
     // two rules that agree only until someone edits one of them.
     super::budget_tests::forbid_trading_tokens_in_src();
+}
+
+#[test]
+fn an_attest_action_invokes_exactly_the_attest_verb() {
+    use crate::grant_form::GrantAction;
+
+    let action = GrantAction::attest("grant-9");
+    // The mock's honest refusal names attestation, proving the action routes
+    // to `attest_grant` and not to some other verb that also refuses.
+    let refused = action
+        .apply(&MockGateway::new())
+        .expect_err("mock has no journal to attest through");
+    assert!(
+        refused.to_string().contains("attest"),
+        "the refusal names the verb: {refused}"
+    );
 }

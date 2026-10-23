@@ -10,6 +10,14 @@ default = []
 # `pine` enables the Pine-backed signal. Default-off: the decision closure
 # carries no language runtime unless a consumer asks for one.
 pine = ["protopyne-kernels/pine"]
+# `test-support` exposes `fixtures` (one grant baseline + the deny order) to
+# downstream test targets. Never a runtime surface; off in every shipping build.
+test-support = []
+# `research` gates research-only sizing surface (capped fractional-Kelly):
+# compile-time, never a runtime flag. Empty on purpose — the policy prices
+# observed estimates, so it needs no dataframe surface and must not drag one
+# into the decision closure.
+research = []
 
 [dependencies]
 protopyne-types = { path = "../protopyne-types" }

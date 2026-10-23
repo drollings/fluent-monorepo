@@ -20,8 +20,8 @@
 use chrono::{DateTime, Utc};
 
 use protopyne_strategy::{
-    GrantDecision, GrantLedger, GrantMarket, OrderShape, Proposal, Reservation, RiskApproved,
-    RiskEngine, RiskState,
+    DrawdownStatus, GrantDecision, GrantLedger, GrantMarket, OrderShape, Proposal, Reservation,
+    RiskApproved, RiskEngine, RiskReason, RiskState,
 };
 
 use crate::backfill::BackfillHandle;
@@ -269,7 +269,36 @@ impl DecisionPipeline {
         // exactly when merit allows on a non-disarmed entry.
         let breakers = request.ledger.breakers();
         let max = request.ledger.grant().breakers.max_consecutive_errors;
-        let disarmed = breakers.tripped || breakers.consecutive_errors > max;
+        // The drawdown arm judges the live book on every evaluation. A breach
+        // trips the ledger (sticky, reason banked once) and disarms; an
+        // unobserved book disarms without latching, so the feed may recover.
+        // Either way merit above stays recorded: the breaker doubts the
+        // producer, never the trade.
+        let drawdown = request.ledger.observe_drawdown(&request.risk_state.facts);
+        let mut disarmed = breakers.tripped || breakers.consecutive_errors > max;
+        let mut drawdown_trip: Option<String> = None;
+        match drawdown {
+            DrawdownStatus::Breached(fraction) => {
+                disarmed = true;
+                let cap = request
+                    .ledger
+                    .grant()
+                    .breakers
+                    .max_portfolio_drawdown_fraction
+                    .expect("a breach implies a configured cap");
+                drawdown_trip = Some(format!(
+                    "breaker tripped: portfolio drawdown {fraction} past max {cap}"
+                ));
+            }
+            DrawdownStatus::Unobserved => {
+                disarmed = true;
+                drawdown_trip = Some(format!(
+                    "breaker tripped: {:?} — drawdown cap configured but equity unobserved",
+                    RiskReason::PortfolioFactsUnavailable
+                ));
+            }
+            DrawdownStatus::Inert | DrawdownStatus::Within(_) => {}
+        }
         let mut authorization_reasons = merit_reasons.clone();
         let mut reservation = None;
         if merit_allow && (request.is_exit || !disarmed) {
@@ -288,10 +317,14 @@ impl DecisionPipeline {
             }
         }
         if disarmed && !request.is_exit {
-            let trip = format!(
-                "breaker tripped: entries disarmed after {} consecutive venue errors (max {max})",
-                breakers.consecutive_errors,
-            );
+            // A fresh drawdown verdict names the trip; otherwise the error
+            // streak does. Either is the breaker's own reason, never merit's.
+            let trip = drawdown_trip.unwrap_or_else(|| {
+                format!(
+                    "breaker tripped: entries disarmed after {} consecutive venue errors (max {max})",
+                    breakers.consecutive_errors,
+                )
+            });
             authorization_reasons.push(trip);
             if refusal.is_none() {
                 refusal = Some((

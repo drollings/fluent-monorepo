@@ -17,13 +17,17 @@ pub mod calibration;
 pub mod candles;
 pub mod compat;
 pub mod component;
+pub mod composed;
 pub mod context;
 pub mod drawing;
 pub mod ema;
 pub mod error;
+pub mod external;
 pub mod filters;
+pub mod greeks;
 pub mod indicator;
 pub mod inputs;
+pub mod iv_surface;
 pub(crate) mod kernel_eval;
 pub mod market_context;
 pub mod math;
@@ -39,6 +43,7 @@ pub use market_context::{
 pub mod manifest_files;
 #[cfg(feature = "pine")]
 pub mod native_libs;
+pub mod order;
 pub mod oscillators;
 #[cfg(feature = "research")]
 pub mod parity;
@@ -63,8 +68,15 @@ pub mod util;
 pub mod value;
 pub mod vars;
 pub mod volatility;
+pub mod windowed;
 pub mod wq_comb;
+// The `ts_*` vocabulary and the half-life weights have no consumer in the
+// shipping library: they are the alpha/options-activity vocabulary, kept for a
+// consumer that asks for `research` and out of every default build (a `pub`
+// module would otherwise never raise a dead-code warning).
+#[cfg(feature = "research")]
 pub mod wq_half_life;
+#[cfg(feature = "research")]
 pub mod wq_series;
 
 pub use averages::{
@@ -94,25 +106,32 @@ pub use candles::{
 #[cfg(feature = "pine")]
 pub use compat::assert_native_matrix_covers;
 pub use compat::{
-    assert_matrix_covers, compat_for, is_native_row, native_row_id, CompatStatus, KernelCompat,
-    COMPATIBILITY, NATIVE_MATRIX_ROWS,
+    assert_matrix_covers, compat_for, external_evidence, is_native_row, native_row_id, ArtifactId,
+    CompatStatus, ExternalArtifact, ExternalRow, KernelCompat, ParityEvidence, COMPATIBILITY,
+    NATIVE_MATRIX_ROWS,
 };
 pub use component::{dynamic_indicator, indicator_double, ComponentRegistry, IndicatorComponent};
+pub use composed::{Chained, MAX_CHAIN_PASSES};
 pub use context::RunCtx;
 pub use drawing::{Drawing, DrawingKind};
 pub use ema::EmaIndicator;
 pub use error::KernelError;
 pub use filters::{EitIndicator, KalmanIndicator, VossIndicator};
+pub use greeks::{
+    bs_greeks, bs_price, implied_vol, BsGreeks, IMPLIED_VOL_MAX_ITER, IMPLIED_VOL_MIN,
+    IMPLIED_VOL_START_MAX,
+};
 pub use indicator::{
-    builtin_registry, execution_order, fin_or_none, nan_hole, BarTick, FullTick, Indicator,
-    IndicatorId, IndicatorRegistry, IndicatorResult, IndicatorSpec, IndicatorState, NamedSeries,
-    NamedValue, Ohlcv, OwnedOhlcv, ParamSet,
+    builtin_registry, execution_order, fin_or_none, nan_hole, shared_registry, BarTick, FullTick,
+    Indicator, IndicatorId, IndicatorRegistry, IndicatorResult, IndicatorSpec, IndicatorState,
+    NamedSeries, NamedValue, Ohlcv, OwnedOhlcv, ParamSet,
 };
 pub use inputs::{InputDef, InputSet};
+pub use iv_surface::{fit_surface, IvPoint, IvSurface, DAYS_PER_YEAR, MIN_SURFACE_STRIKES};
 #[cfg(feature = "pine")]
 pub use manifest_files::build_indicator_manifest;
 pub use math::{
-    corr_pearson, div_or_none, ema_factor, ema_step, ewm_span_step, linreg_slope,
+    corr_pearson, div_or_none, drawdown_of_peak, ema_factor, ema_step, ewm_span_step, linreg_slope,
     linreg_slope_intercept, midpoint_of, period_len, rolling_max, rolling_min,
     rolling_min_periods_mask, std_pop, std_sample, variance_pop, variance_sample, warmup_none,
     wilder_step, window_mean, window_sum,
@@ -130,6 +149,7 @@ pub use native_libs::{
     LibBuffersProvider, MethodCtx, NativeAudit, NativeLibraryEntry, NativeLibraryId, NativeOptions,
     NativeOverlay, NativeProvider, NativeResolution, NativeServed, TickLegs, NATIVE_LIBRARIES,
 };
+pub use order::{execution_order_from, Edged, KernelEdges};
 pub use oscillators::{CciIndicator, CmoIndicator, MacdIndicator, RsiIndicator, StochIndicator};
 #[cfg(feature = "research")]
 pub use parity::{assert_expr_parity, expr_fixture};
@@ -190,6 +210,7 @@ pub use volatility::{
     true_range, AtrIndicator, BbIndicator, KcIndicator, NatrIndicator, SupertrendIndicator,
     TrIndicator,
 };
+pub use windowed::{Window, WindowLegs, Windowed};
 pub use wq_comb::{
     comb_abs, comb_add, comb_and, comb_arc_cos, comb_arc_sin, comb_arc_tan, comb_arc_tan2,
     comb_bool, comb_cbrt, comb_ceiling, comb_clamp, comb_clamp_inverse, comb_cos, comb_cosh,
@@ -204,10 +225,19 @@ pub use wq_comb::{
     comb_tan, comb_tanh, comb_var, comb_xor,
 };
 
+/// What a default build carries (the research-only vocabulary stays gated).
+#[cfg(test)]
+#[path = "../tests/closure.rs"]
+mod closure_tests;
+#[cfg(test)]
+#[path = "../tests/ignore_policy.rs"]
+mod ignore_policy_tests;
 #[cfg(test)]
 #[path = "../tests/validate.rs"]
 mod validate_tests;
+#[cfg(feature = "research")]
 pub use wq_half_life::{hl_weights, ts_mean_hl, ts_std_hl, ts_sum_hl, ts_var_hl};
+#[cfg(feature = "research")]
 pub use wq_series::{
     ts_arg_max, ts_arg_min, ts_corr, ts_count, ts_count_eq, ts_count_ge, ts_count_nans,
     ts_covariance, ts_cum_count, ts_cum_max, ts_cum_min, ts_cum_prod, ts_cum_prod_by, ts_cum_sum,

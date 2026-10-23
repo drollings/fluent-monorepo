@@ -162,7 +162,14 @@ where
     }
 
     /// Look up `key`, returning a shared handle to the value if present.
-    pub fn get(&self, key: &K) -> Option<Arc<V>> {
+    ///
+    /// Borrowed lookup matches [`KeyedRegistry::get`]: `get("sma")` works when
+    /// the stored keys are `String`, so a read takes no per-lookup allocation.
+    pub fn get<Q>(&self, key: &Q) -> Option<Arc<V>>
+    where
+        K: std::borrow::Borrow<Q>,
+        Q: std::hash::Hash + Eq + ?Sized,
+    {
         lock_read(&self.inner).get(key).cloned()
     }
 

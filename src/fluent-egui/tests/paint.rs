@@ -285,7 +285,7 @@ fn ribbon_polygons_fill_runs_not_bars() {
         0.5,
     )
     .expect("valid ribbon");
-    let polygons = ribbon_polygons(&ribbon, &pane);
+    let polygons = ribbon_polygons(&ribbon, &pane).expect("legs agree");
     assert_eq!(polygons.len(), 3, "bull run, bear run, hole, lone bar");
     assert_eq!(polygons[0].indices, vec![0, 1]);
     assert!(polygons[0].bullish);
@@ -306,7 +306,9 @@ fn ribbon_polygons_fill_runs_not_bars() {
     }
     let empty = ribbon_view(&[None, None], &[None, None], 0.5).expect("holed ribbon");
     assert!(
-        ribbon_polygons(&empty, &pane).is_empty(),
+        ribbon_polygons(&empty, &pane)
+            .expect("legs agree")
+            .is_empty(),
         "fully holed input fills nothing"
     );
 }
@@ -331,7 +333,7 @@ fn area_polygons_match_ribbon_polygons_on_constant_legs() {
         "one-sided legs keep one trend key, so runs can only break on holes"
     );
     let area = area_polygons(&upper, 100.0, &pane);
-    let ribbons = ribbon_polygons(&ribbon, &pane);
+    let ribbons = ribbon_polygons(&ribbon, &pane).expect("legs agree");
     assert_eq!(area.len(), ribbons.len(), "holes break the same runs");
     for (closed, keyed) in area.iter().zip(ribbons.iter()) {
         assert_eq!(closed.indices, keyed.indices, "same run extents");
@@ -2289,8 +2291,9 @@ fn sliced_ribbon_polygons_match_the_owned_entry() {
         0.5,
     )
     .expect("valid ribbon");
-    let owned = ribbon_polygons(&ribbon, &pane);
-    let sliced = ribbon_polygons_sliced(&ribbon.upper, &ribbon.lower, &ribbon.bullish, &pane);
+    let owned = ribbon_polygons(&ribbon, &pane).expect("legs agree");
+    let sliced = ribbon_polygons_sliced(&ribbon.upper, &ribbon.lower, &ribbon.bullish, &pane)
+        .expect("legs agree");
     assert_eq!(sliced, owned, "the borrowed entry closes identical runs");
 }
 
@@ -2322,8 +2325,9 @@ fn native_overlay_shapes_stay_within_twice_the_visible_count() {
     let upper: Vec<Option<f64>> = rows.iter().map(|row| Some(row.high)).collect();
     let lower: Vec<Option<f64>> = rows.iter().map(|row| Some(row.low)).collect();
     let trend = vec![true; rows.len()];
-    let full_polygons = ribbon_polygons_sliced(&upper, &lower, &trend, &pane);
-    let culled_polygons = proportional_ribbon_polygons(&upper, &lower, &trend, &pane, width);
+    let full_polygons = ribbon_polygons_sliced(&upper, &lower, &trend, &pane).expect("legs agree");
+    let culled_polygons =
+        proportional_ribbon_polygons(&upper, &lower, &trend, &pane, width).expect("legs agree");
     let culled_bars: usize = culled_polygons
         .iter()
         .map(|polygon| polygon.indices.len())
@@ -2380,8 +2384,9 @@ fn twice_visible_native_output_matches_the_full_window_slice() {
     let upper: Vec<Option<f64>> = rows.iter().map(|row| Some(row.high)).collect();
     let lower: Vec<Option<f64>> = rows.iter().map(|row| Some(row.low)).collect();
     let trend = vec![true; rows.len()];
-    let full_polygons = ribbon_polygons_sliced(&upper, &lower, &trend, &pane);
-    let culled_polygons = proportional_ribbon_polygons(&upper, &lower, &trend, &pane, width);
+    let full_polygons = ribbon_polygons_sliced(&upper, &lower, &trend, &pane).expect("legs agree");
+    let culled_polygons =
+        proportional_ribbon_polygons(&upper, &lower, &trend, &pane, width).expect("legs agree");
     let mut full_points = std::collections::HashMap::new();
     for polygon in &full_polygons {
         for (index, point) in polygon.indices.iter().zip(polygon.points.iter()) {
@@ -2416,7 +2421,9 @@ fn twice_visible_native_output_is_empty_off_window() {
         "zero width paints nothing"
     );
     assert!(
-        proportional_ribbon_polygons(&upper, &lower, &trend, &pane, 0.0).is_empty(),
+        proportional_ribbon_polygons(&upper, &lower, &trend, &pane, 0.0)
+            .expect("legs agree")
+            .is_empty(),
         "zero width fills nothing"
     );
     assert!(
@@ -2429,12 +2436,39 @@ fn twice_visible_native_output_is_empty_off_window() {
         "bars shoved past the pane paint nothing"
     );
     assert!(
-        proportional_ribbon_polygons(&upper, &lower, &trend, &past_left, 800.0).is_empty(),
+        proportional_ribbon_polygons(&upper, &lower, &trend, &past_left, 800.0)
+            .expect("legs agree")
+            .is_empty(),
         "bars shoved past the pane fill nothing"
     );
     let past_right = pane.with_x_offset(-200_000.0).expect("finite pan");
     assert!(
         proportional_line_points(&closes, &past_right, 800.0).is_empty(),
         "bars shoved before the pane paint nothing"
+    );
+}
+
+/// A ribbon whose legs disagree refuses, exactly like `ribbon_view`: truncating
+/// to the shortest leg would let a polygon's upper edge come from one bar and
+/// its lower edge from another — a wrong picture presented as a right one.
+#[test]
+fn a_mismatched_ribbon_refuses_instead_of_truncating() {
+    let pane = price_pane();
+    let upper = [Some(102.0), Some(103.0)];
+    let lower = [Some(100.0)];
+    let trend = [true, true];
+    let refused = ribbon_polygons_based(&upper, &lower, &trend, &pane, 0)
+        .expect_err("a mismatched band must refuse");
+    assert!(
+        refused.to_string().contains("leg lengths differ"),
+        "the refusal names the disagreement: {refused}"
+    );
+    assert!(
+        ribbon_polygons_sliced(&upper, &lower, &trend, &pane).is_err(),
+        "the zero-based entry refuses too"
+    );
+    assert!(
+        proportional_ribbon_polygons(&upper, &lower, &trend, &pane, 800.0).is_err(),
+        "the proportional entry refuses too"
     );
 }

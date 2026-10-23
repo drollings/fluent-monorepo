@@ -8,13 +8,8 @@
 //! compares and fails loudly on any drift.
 
 use super::*;
+use protopyne_strategy::fixtures::grant_with;
 use std::path::PathBuf;
-
-use chrono::{TimeZone, Utc};
-use protopyne_strategy::{
-    BreakerLimits, GrantBudgets, GrantPermission, GrantScope, PortfolioThresholds,
-    SignalThresholds, TradeThresholds,
-};
 
 fn history() -> Vec<Bar> {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -25,53 +20,11 @@ fn history() -> Vec<Bar> {
 }
 
 fn test_grant(id: &str, max_trades: u32) -> Grant {
-    Grant::new()
-        .id(id.to_owned())
-        .scope(
-            GrantScope::new()
-                .strategies(vec!["ribbon".to_owned()])
-                .underlyings(vec!["SPY".to_owned()])
-                .structures(vec![StructureKind::Vertical])
-                .directions(vec![Direction::Long, Direction::Short])
-                .permissions(GrantPermission {
-                    entries: true,
-                    exits: true,
-                    rolls: false,
-                })
-                .build(),
-        )
-        .budgets(
-            GrantBudgets::new()
-                .max_trades(max_trades)
-                .max_contracts(10_000)
-                .max_loss(Money::from(1_000_000))
-                .max_notional(Money::from(100_000_000))
-                .build(),
-        )
-        .signal(
-            SignalThresholds::new()
-                .min_conviction(0.0)
-                .min_activity_score(0.0)
-                .build(),
-        )
-        .trade(
-            TradeThresholds::new()
-                .max_loss_per_trade(Money::from(1_000))
-                .max_spread_width(Money::from(50))
-                .min_dte_days(1)
-                .max_dte_days(90)
-                .build(),
-        )
-        .portfolio(
-            PortfolioThresholds::new()
-                .max_open_risk(Money::from(10_000_000))
-                .quote_max_age_secs(60)
-                .build(),
-        )
-        .breakers(BreakerLimits::new().max_consecutive_errors(3).build())
-        .valid_from(Utc.with_ymd_and_hms(2025, 1, 1, 0, 0, 0).unwrap())
-        .valid_until(Utc.with_ymd_and_hms(2027, 1, 1, 0, 0, 0).unwrap())
-        .build()
+    // The shared fixture's shape; only the id and the trade budget differ.
+    grant_with(|grant| {
+        grant.id = id.to_owned();
+        grant.budgets.max_trades = max_trades;
+    })
 }
 
 async fn boot() -> ServerHandle {

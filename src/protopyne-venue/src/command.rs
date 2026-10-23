@@ -236,6 +236,9 @@ pub const COMMAND_CANCEL_ALL_KIND: &str = "command.cancel_all";
 pub const COMMAND_ARM_GRANT_KIND: &str = "command.arm_grant";
 /// Journaled kind for a revoke-grant command. Its detail is `{"grant_id": …}`.
 pub const COMMAND_REVOKE_GRANT_KIND: &str = "command.revoke_grant";
+/// Journaled kind for an operator re-attestation: re-arms entries for
+/// another cadence. Its detail is `{"grant_id": …}`, last row wins.
+pub const COMMAND_ATTEST_KIND: &str = "command.attest";
 /// Journaled kind for an operator loop-start command: the explicit second
 /// half of live authority (an armed grant is the first). Audit-only for the
 /// trading-state fold.
@@ -303,6 +306,31 @@ pub fn replay_grant(events: &[JournalEvent]) -> Option<Grant> {
         }
     }
     live
+}
+
+/// The detail body of an attest row.
+#[derive(Deserialize)]
+struct AttestGrantBody {
+    grant_id: String,
+}
+
+/// Rebuild the last attestation instant from journaled attest rows: last row
+/// wins; no rows means never attested (callers fall back to the grant's
+/// `valid_from`, matching ledger initialization). Idempotent by
+/// construction — the fold reports a time, never a consumption, so folding
+/// twice reports the same instant and moves no budget. Rows whose detail is
+/// not an attest body never attest.
+#[must_use]
+pub fn replay_attestation(events: &[JournalEvent]) -> Option<DateTime<Utc>> {
+    events
+        .iter()
+        .filter(|event| event.kind == COMMAND_ATTEST_KIND)
+        .filter(|event| {
+            serde_json::from_str::<AttestGrantBody>(&event.detail)
+                .is_ok_and(|body| !body.grant_id.is_empty())
+        })
+        .filter_map(|event| DateTime::from_timestamp_millis(event.at_ms))
+        .next_back()
 }
 
 /// Journaled kind for a proposal lifecycle row. The single home: the run
@@ -450,6 +478,13 @@ pub enum CommandKind {
     /// Revoke the live grant by id. A mismatched or absent id refuses.
     RevokeGrant {
         /// Id of the grant to revoke.
+        grant_id: String,
+    },
+    /// Re-attest the live grant by id: re-arms entries for another cadence.
+    /// Journal-first like every command row; a mismatched or absent id
+    /// refuses before journaling, so a stray row never extends authority.
+    Attest {
+        /// Id of the grant to attest.
         grant_id: String,
     },
     /// Approve a journaled proposal: validate the move against its lifecycle,
@@ -872,6 +907,22 @@ impl WorkUnit for CommandUnit {
                 self.journal_command(ctx, COMMAND_REVOKE_GRANT_KIND, &detail)?;
                 self.grants.revoke(grant_id);
                 Ok(WorkOutput::ok("grant revoked: nothing routes"))
+            }
+            CommandKind::Attest { grant_id } => {
+                let matches_live = self
+                    .grants
+                    .get()
+                    .is_some_and(|grant| grant.id.as_str() == grant_id.as_str() && !grant.revoked);
+                if !matches_live {
+                    return Err(WorkError::execution_display(format!(
+                        "no live grant {grant_id} to attest"
+                    )));
+                }
+                let detail = serde_json::json!({ "grant_id": grant_id }).to_string();
+                self.journal_command(ctx, COMMAND_ATTEST_KIND, &detail)?;
+                Ok(WorkOutput::ok(
+                    "grant attested: entries re-arm for a cadence",
+                ))
             }
             CommandKind::Approve { proposal_id } => {
                 // The decision plane journals authority; the unit holds no risk

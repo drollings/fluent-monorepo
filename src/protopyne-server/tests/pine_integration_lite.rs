@@ -75,7 +75,7 @@ use protopyne_kernels::{
     indicator_library_id, load_closure_sources, parse_program, InputSet, LinkedModule, ModuleInput,
     PineEngine, PineRuntimeConfig, PineValue, RunOutcome,
 };
-use protopyne_types::Bar;
+use protopyne_types::{Bar, Timeframe};
 use rust_decimal::Decimal;
 
 use super::common_golden::{check_golden, dump_canonical};
@@ -428,7 +428,7 @@ fn tick_window_rows() -> Vec<(i64, f64, f64)> {
 /// decide bit-identically with the engine, and any tolerance would fork
 /// the pull/remainder decisions it pins.
 #[allow(clippy::float_cmp)]
-#[ignore = "full-tape tick run costs minutes in debug (interpreted closure per tick); trimmed-window proof runs explicitly"]
+#[ignore = "soak: full-tape tick run costs minutes in debug (interpreted closure per tick); the trimmed-window proof runs explicitly"]
 #[test]
 fn integration_lite_tick_tape_reconciles_minute_volumes() {
     let rows = tick_window_rows();
@@ -511,7 +511,7 @@ fn integration_lite_tick_tape_reconciles_minute_volumes() {
     // capacity read from the object itself.
     const MEANINGFUL: f64 = 0.0001;
     const PULL_WINDOW: usize = 300;
-    let minute_data = dataset_of(&minutes);
+    let minute_data = dataset_of(&minutes, Timeframe::M1);
     let reference: HashMap<i64, &Bar> = minutes
         .iter()
         .map(|bar| (bar.ts.timestamp_millis(), bar))
@@ -555,7 +555,9 @@ fn integration_lite_tick_tape_reconciles_minute_volumes() {
             // (rows at or before the bar-open, last `PULL_WINDOW` of them)
             // keeping the oldest rows up to capacity, then the remainder
             // tops up only when the ring has room.
-            let visible = minute_data.times.partition_point(|time| *time <= open_ms);
+            let visible = minute_data
+                .times
+                .partition_point(|time| time.get() <= open_ms);
             let served = visible.min(PULL_WINDOW);
             let kept = served.min(capacity);
             let skip = visible - served;
@@ -680,17 +682,20 @@ fn security_injection_agrees_with_kernels() {
     let modules = link_driver(DRIVER);
     let mut engine = engine_for("1");
     engine
-        .inject_security("SPY", "5", dataset_of(&bars))
+        .inject_security("SPY", "5", dataset_of(&bars, Timeframe::M1))
         .expect("M5 injects");
     let outcome = engine
         .run_linked(&modules, &bars, InputSet::new())
         .expect("injected fetch evaluates");
     let last = bars.len() - 1;
-    // Oracle: kernel batch over the same last-30 confirmed bars the
-    // `calc_bars_count = 30` tail takes, built from the identical dataset
-    // columns the injection serves.
-    let tail = &bars[bars.len() - 30..];
-    let fed = dataset_of(tail);
+    // Oracle: kernel batch over the same full confirmed prefix the bridge
+    // serves. The request's `calc_bars_count = 30` bounds the rows it
+    // *returns*, never the history its kernels compute over, so the confirmed
+    // prefix — not its last thirty rows — is the input. The injected rows are
+    // minute buckets, so the bucket opening at the final chart bar is still
+    // forming there and the confirmed prefix ends one row earlier.
+    let confirmed = &bars[..bars.len() - 1];
+    let fed = dataset_of(confirmed, Timeframe::M1);
     let ohlcv = protopyne_kernels::OwnedOhlcv {
         open: fed.opens.clone(),
         high: fed.highs.clone(),

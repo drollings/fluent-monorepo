@@ -328,8 +328,9 @@ pub fn fetch_tick_from_frame(ctx: &MethodCtx) -> crate::bars::NativeFetchTick {
 pub enum LeaseKey {
     /// Plain frame binding (`self.variables`).
     Variables(String),
-    /// Persistent store binding (`var`/`varip` with the flag).
-    VarStore(String, bool),
+    /// Persistent store cell, identified by the declaration instance that
+    /// owns it.
+    VarStore(crate::vars::ScopeKey),
 }
 
 impl LeaseKey {
@@ -339,10 +340,10 @@ impl LeaseKey {
         Self::Variables(name.to_owned())
     }
 
-    /// Build the persistent-store key for a `var`/`varip` home.
+    /// Build the persistent-store key for a `var`/`varip` cell.
     #[must_use]
-    pub fn var_store(name: &str, is_varip: bool) -> Self {
-        Self::VarStore(name.to_owned(), is_varip)
+    pub fn var_store(scope: crate::vars::ScopeKey) -> Self {
+        Self::VarStore(scope)
     }
 }
 

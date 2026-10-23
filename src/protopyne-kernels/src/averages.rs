@@ -15,12 +15,14 @@
 //!
 //! `NaN` in any leg propagates to `None`, matching Pine `na` semantics.
 
+use crate::composed::{self, Chained};
 use crate::ema::EmaIndicator;
 use crate::error::KernelError;
 use crate::indicator::{
-    fin_or_none, nan_hole, BarTick, Indicator, IndicatorId, IndicatorResult, IndicatorSpec,
-    IndicatorState, Ohlcv, ParamSet,
+    fin_or_none, BarTick, Indicator, IndicatorId, IndicatorResult, IndicatorSpec, IndicatorState,
+    Ohlcv, ParamSet,
 };
+use crate::windowed::{self, Window, WindowLegs, Windowed};
 
 /// Wilder's smoothing (`rma`), parameterized by `length`.
 pub struct RmaIndicator {
@@ -55,35 +57,49 @@ impl Default for RmaIndicator {
     }
 }
 
-impl Indicator for RmaIndicator {
+impl Windowed for RmaIndicator {
+    type Shape = usize;
+
     fn spec(&self) -> &IndicatorSpec {
         &self.spec
     }
 
-    fn warmup(&self, params: &ParamSet) -> Result<usize, KernelError> {
+    fn shape(&self, params: &ParamSet) -> Result<Self::Shape, KernelError> {
         Self::period(params)
     }
 
-    fn batch(&self, data: &Ohlcv<'_>, params: &ParamSet) -> Result<IndicatorResult, KernelError> {
-        let closes = data.close;
-        let period = Self::period(params)?;
-        let mut values = crate::math::warmup_none(closes.len());
-        if period <= closes.len() {
-            let mut prev = f64::NAN;
-            // DIVERGENCE (see compat.rs:11): seed-then-recurse order is load-bearing;
-            // seeding from the first full window before recursing preserves Expr parity.
-            for (i, value) in values.iter_mut().enumerate().skip(period - 1) {
-                let window = &closes[i + 1 - period..=i];
-                let next = if prev.is_nan() {
-                    crate::math::window_mean(window)
-                } else {
-                    crate::math::wilder_step(prev, closes[i], period)
-                };
-                prev = next;
-                *value = fin_or_none(next);
+    fn period(period: usize) -> usize {
+        period
+    }
+
+    fn legs(&self) -> WindowLegs {
+        WindowLegs::Close
+    }
+
+    /// DIVERGENCE (see `compat.rs:11`): seed-then-recurse order is
+    /// load-bearing; seeding from the first full window before recursing
+    /// preserves Expr parity.
+    fn eval(&self, shape: usize, window: &Window<'_>, previous: Option<f64>) -> Option<f64> {
+        match previous {
+            Some(previous) if !previous.is_nan() => {
+                fin_or_none(crate::math::wilder_step(previous, window.newest(), shape))
             }
+            _ => fin_or_none(crate::math::window_mean(window.closes)),
         }
-        Ok(IndicatorResult::new(Self::ID.to_owned(), values))
+    }
+}
+
+impl Indicator for RmaIndicator {
+    fn spec(&self) -> &IndicatorSpec {
+        Windowed::spec(self)
+    }
+
+    fn refine_warmup(&self, params: &ParamSet) -> Result<Option<usize>, KernelError> {
+        Ok(Some(windowed::warmup(self, params)?))
+    }
+
+    fn batch(&self, data: &Ohlcv<'_>, params: &ParamSet) -> Result<IndicatorResult, KernelError> {
+        windowed::batch(self, data, params)
     }
 
     fn update(
@@ -92,21 +108,7 @@ impl Indicator for RmaIndicator {
         bar: BarTick,
         params: &ParamSet,
     ) -> Result<Option<f64>, KernelError> {
-        let period = Self::period(params)?;
-        state.push(bar, period);
-        if state.len() < period {
-            return Ok(None);
-        }
-        // The previous output copies out before the scratch fill: the window
-        // slice borrows the state, so all scalar reads lead it.
-        let prev = state.last();
-        let window = state.scratch_closes();
-        let next = match prev {
-            Some(prev) if !prev.is_nan() => crate::math::wilder_step(prev, bar.close, period),
-            _ => crate::math::window_mean(window),
-        };
-        state.set_last(next);
-        Ok(fin_or_none(next))
+        windowed::update(self, state, bar, params)
     }
 }
 
@@ -157,25 +159,41 @@ impl Default for WmaIndicator {
     }
 }
 
-impl Indicator for WmaIndicator {
+impl Windowed for WmaIndicator {
+    type Shape = usize;
+
     fn spec(&self) -> &IndicatorSpec {
         &self.spec
     }
 
-    fn warmup(&self, params: &ParamSet) -> Result<usize, KernelError> {
+    fn shape(&self, params: &ParamSet) -> Result<Self::Shape, KernelError> {
         Self::period(params)
     }
 
+    fn period(period: usize) -> usize {
+        period
+    }
+
+    fn legs(&self) -> WindowLegs {
+        WindowLegs::Close
+    }
+
+    fn eval(&self, _shape: usize, window: &Window<'_>, _previous: Option<f64>) -> Option<f64> {
+        fin_or_none(Self::of_window(window.closes))
+    }
+}
+
+impl Indicator for WmaIndicator {
+    fn spec(&self) -> &IndicatorSpec {
+        Windowed::spec(self)
+    }
+
+    fn refine_warmup(&self, params: &ParamSet) -> Result<Option<usize>, KernelError> {
+        Ok(Some(windowed::warmup(self, params)?))
+    }
+
     fn batch(&self, data: &Ohlcv<'_>, params: &ParamSet) -> Result<IndicatorResult, KernelError> {
-        let closes = data.close;
-        let period = Self::period(params)?;
-        let mut values = vec![None; closes.len()];
-        if period <= closes.len() {
-            for (i, value) in values.iter_mut().enumerate().skip(period - 1) {
-                *value = fin_or_none(Self::of_window(&closes[i + 1 - period..=i]));
-            }
-        }
-        Ok(IndicatorResult::new(Self::ID.to_owned(), values))
+        windowed::batch(self, data, params)
     }
 
     fn update(
@@ -184,15 +202,7 @@ impl Indicator for WmaIndicator {
         bar: BarTick,
         params: &ParamSet,
     ) -> Result<Option<f64>, KernelError> {
-        let period = Self::period(params)?;
-        state.push(bar, period);
-        if state.len() < period {
-            return Ok(None);
-        }
-        let window = state.scratch_closes();
-        let mean = Self::of_window(window);
-        state.set_last(mean);
-        Ok(fin_or_none(mean))
+        windowed::update(self, state, bar, params)
     }
 }
 
@@ -243,9 +253,9 @@ impl Indicator for HmaIndicator {
         &self.spec
     }
 
-    fn warmup(&self, params: &ParamSet) -> Result<usize, KernelError> {
+    fn refine_warmup(&self, params: &ParamSet) -> Result<Option<usize>, KernelError> {
         let (_, full, root) = Self::periods(params)?;
-        Ok(full + root - 1)
+        Ok(Some(full + root - 1))
     }
 
     fn batch(&self, data: &Ohlcv<'_>, params: &ParamSet) -> Result<IndicatorResult, KernelError> {
@@ -273,8 +283,8 @@ impl Indicator for HmaIndicator {
         bar: BarTick,
         params: &ParamSet,
     ) -> Result<Option<f64>, KernelError> {
-        let (half_len, full_len, root_len) = Self::periods(params)?;
-        let wma = WmaIndicator::new();
+        let (half_len, full_len, root_len) = state.resolved(|| Self::periods(params))?;
+        let wma = WmaIndicator::shared();
         let (child, child_params) = state.child_with_params(0, || Self::wma_params(half_len));
         let half = wma.update(child, bar, child_params)?;
         let (child, child_params) = state.child_with_params(1, || Self::wma_params(full_len));
@@ -321,30 +331,47 @@ impl Default for VwmaIndicator {
     }
 }
 
-impl Indicator for VwmaIndicator {
+impl Windowed for VwmaIndicator {
+    type Shape = usize;
+
     fn spec(&self) -> &IndicatorSpec {
         &self.spec
     }
 
-    fn warmup(&self, params: &ParamSet) -> Result<usize, KernelError> {
+    fn shape(&self, params: &ParamSet) -> Result<Self::Shape, KernelError> {
         Self::period(params)
     }
 
+    fn period(period: usize) -> usize {
+        period
+    }
+
+    fn legs(&self) -> WindowLegs {
+        WindowLegs::CloseVolume
+    }
+
+    fn eval(&self, _shape: usize, window: &Window<'_>, _previous: Option<f64>) -> Option<f64> {
+        let (numerator, denominator) = window.closes.iter().zip(window.volumes).fold(
+            (0.0, 0.0),
+            |(numerator, denominator), (&close, &volume)| {
+                (numerator + close * volume, denominator + volume)
+            },
+        );
+        fin_or_none(numerator / denominator)
+    }
+}
+
+impl Indicator for VwmaIndicator {
+    fn spec(&self) -> &IndicatorSpec {
+        Windowed::spec(self)
+    }
+
+    fn refine_warmup(&self, params: &ParamSet) -> Result<Option<usize>, KernelError> {
+        Ok(Some(windowed::warmup(self, params)?))
+    }
+
     fn batch(&self, data: &Ohlcv<'_>, params: &ParamSet) -> Result<IndicatorResult, KernelError> {
-        let closes = data.close;
-        let volume = data.require("volume", data.volume)?;
-        let period = Self::period(params)?;
-        let mut values = vec![None; closes.len()];
-        if period <= closes.len() {
-            for (i, value) in values.iter_mut().enumerate().skip(period - 1) {
-                let (num, den) = closes[i + 1 - period..=i]
-                    .iter()
-                    .zip(&volume[i + 1 - period..=i])
-                    .fold((0.0, 0.0), |(num, den), (&c, &v)| (num + c * v, den + v));
-                *value = fin_or_none(num / den);
-            }
-        }
-        Ok(IndicatorResult::new(Self::ID.to_owned(), values))
+        windowed::batch(self, data, params)
     }
 
     fn update(
@@ -353,18 +380,7 @@ impl Indicator for VwmaIndicator {
         bar: BarTick,
         params: &ParamSet,
     ) -> Result<Option<f64>, KernelError> {
-        let period = Self::period(params)?;
-        state.push(bar, period);
-        if state.len() < period {
-            return Ok(None);
-        }
-        let (num, den) = state
-            .closes()
-            .zip(state.volumes())
-            .fold((0.0, 0.0), |(num, den), (c, v)| (num + c * v, den + v));
-        let vwma = num / den;
-        state.set_last(vwma);
-        Ok(fin_or_none(vwma))
+        windowed::update(self, state, bar, params)
     }
 }
 
@@ -441,26 +457,46 @@ impl Default for AlmaIndicator {
     }
 }
 
-impl Indicator for AlmaIndicator {
+impl Windowed for AlmaIndicator {
+    type Shape = (usize, f64, f64);
+
     fn spec(&self) -> &IndicatorSpec {
         &self.spec
     }
 
-    fn warmup(&self, params: &ParamSet) -> Result<usize, KernelError> {
-        Ok(Self::shape(params)?.0)
+    fn shape(&self, params: &ParamSet) -> Result<Self::Shape, KernelError> {
+        Self::shape(params)
+    }
+
+    fn period(shape: Self::Shape) -> usize {
+        shape.0
+    }
+
+    fn legs(&self) -> WindowLegs {
+        WindowLegs::Close
+    }
+
+    /// The weights stay a derived per-window `Vec` (computed constants, not a
+    /// retained window), so the evaluation is the kernel's own `of_window` on
+    /// the caller's window either way.
+    fn eval(&self, shape: Self::Shape, window: &Window<'_>, _previous: Option<f64>) -> Option<f64> {
+        let (period, offset, sigma) = shape;
+        let weights = Self::weights(period, offset, sigma);
+        fin_or_none(Self::of_window(window.closes, &weights))
+    }
+}
+
+impl Indicator for AlmaIndicator {
+    fn spec(&self) -> &IndicatorSpec {
+        Windowed::spec(self)
+    }
+
+    fn refine_warmup(&self, params: &ParamSet) -> Result<Option<usize>, KernelError> {
+        Ok(Some(windowed::warmup(self, params)?))
     }
 
     fn batch(&self, data: &Ohlcv<'_>, params: &ParamSet) -> Result<IndicatorResult, KernelError> {
-        let closes = data.close;
-        let (period, offset, sigma) = Self::shape(params)?;
-        let weights = Self::weights(period, offset, sigma);
-        let mut values = vec![None; closes.len()];
-        if period <= closes.len() {
-            for (i, value) in values.iter_mut().enumerate().skip(period - 1) {
-                *value = fin_or_none(Self::of_window(&closes[i + 1 - period..=i], &weights));
-            }
-        }
-        Ok(IndicatorResult::new(Self::ID.to_owned(), values))
+        windowed::batch(self, data, params)
     }
 
     fn update(
@@ -469,20 +505,7 @@ impl Indicator for AlmaIndicator {
         bar: BarTick,
         params: &ParamSet,
     ) -> Result<Option<f64>, KernelError> {
-        let (period, offset, sigma) = Self::shape(params)?;
-        state.push(bar, period);
-        if state.len() < period {
-            return Ok(None);
-        }
-        let weights = Self::weights(period, offset, sigma);
-        // The weights stay a derived per-bar `Vec`: they are computed
-        // constants, not a retained window, and sharing the recurrence with
-        // the batch path (`of_window`) forbids reshaping it around the
-        // scratch buffer. Only the window rides the reuse buffer.
-        let window = state.scratch_closes();
-        let alma = Self::of_window(window, &weights);
-        state.set_last(alma);
-        Ok(fin_or_none(alma))
+        windowed::update(self, state, bar, params)
     }
 }
 
@@ -530,32 +553,57 @@ impl Default for DemaIndicator {
     }
 }
 
-impl Indicator for DemaIndicator {
+impl Chained for DemaIndicator {
+    type Child = EmaIndicator;
+    type Shape = usize;
+
     fn spec(&self) -> &IndicatorSpec {
         &self.spec
     }
 
-    fn warmup(&self, params: &ParamSet) -> Result<usize, KernelError> {
-        let period = Self::period(params)?;
-        Ok(2 * period - 1)
+    fn shape(&self, params: &ParamSet) -> Result<Self::Shape, KernelError> {
+        Self::period(params)
+    }
+
+    fn passes(_shape: Self::Shape) -> usize {
+        2
+    }
+
+    fn pass_params(shape: Self::Shape, _pass: usize) -> ParamSet {
+        Self::ema_params(shape)
+    }
+
+    fn warmup(shape: Self::Shape) -> usize {
+        2 * shape - 1
+    }
+
+    fn combine(passes: &[Option<f64>]) -> Option<f64> {
+        match passes {
+            [Some(first), Some(second), ..] => fin_or_none(2.0 * first - second),
+            _ => None,
+        }
+    }
+
+    fn child() -> &'static Self::Child {
+        EmaIndicator::shared()
+    }
+
+    fn child_id() -> &'static str {
+        EmaIndicator::ID
+    }
+}
+
+impl Indicator for DemaIndicator {
+    fn spec(&self) -> &IndicatorSpec {
+        Chained::spec(self)
+    }
+
+    fn refine_warmup(&self, params: &ParamSet) -> Result<Option<usize>, KernelError> {
+        Ok(Some(composed::warmup(self, params)?))
     }
 
     fn batch(&self, data: &Ohlcv<'_>, params: &ParamSet) -> Result<IndicatorResult, KernelError> {
-        let period = Self::period(params)?;
-        let ema = EmaIndicator::new();
-        let first = ema.batch(data, &Self::ema_params(period))?;
-        let first_raw: Vec<f64> = first.values.iter().map(|v| nan_hole(*v)).collect();
-        let second = ema.batch(&Ohlcv::close_only(&first_raw), &Self::ema_params(period))?;
-        let values = first
-            .values
-            .iter()
-            .zip(second.values.iter())
-            .map(|(one, two)| match (one, two) {
-                (Some(one), Some(two)) => fin_or_none(2.0 * one - two),
-                _ => None,
-            })
-            .collect();
-        Ok(IndicatorResult::new(Self::ID.to_owned(), values))
+        composed::batch(self, data, params)
     }
 
     fn update(
@@ -564,27 +612,11 @@ impl Indicator for DemaIndicator {
         bar: BarTick,
         params: &ParamSet,
     ) -> Result<Option<f64>, KernelError> {
-        let period = Self::period(params)?;
-        let ema = EmaIndicator::new();
-        let (child, child_params) = state.child_with_params(0, || Self::ema_params(period));
-        let first = ema.update(child, bar, child_params)?;
-        let (child, child_params) = state.child_with_params(1, || Self::ema_params(period));
-        let second = ema.update(child, BarTick::close_only(nan_hole(first)), child_params)?;
-        let raw = match (first, second) {
-            (Some(one), Some(two)) => 2.0 * one - two,
-            _ => f64::NAN,
-        };
-        state.set_last(raw);
-        Ok(fin_or_none(raw))
+        composed::update(self, state, bar, params)
     }
 
     fn deps_with_params(&self, params: &ParamSet) -> Vec<(IndicatorId, ParamSet)> {
-        // The first pass reads frame legs when co-requested; the second pass
-        // reads intermediate output and stays inline.
-        match Self::period(params) {
-            Ok(period) => vec![(EmaIndicator::ID.to_owned(), Self::ema_params(period))],
-            Err(_) => Vec::new(),
-        }
+        composed::deps_with_params(self, params)
     }
 }
 
@@ -630,35 +662,59 @@ impl Default for TemaIndicator {
     }
 }
 
-impl Indicator for TemaIndicator {
+impl Chained for TemaIndicator {
+    type Child = EmaIndicator;
+    type Shape = usize;
+
     fn spec(&self) -> &IndicatorSpec {
         &self.spec
     }
 
-    fn warmup(&self, params: &ParamSet) -> Result<usize, KernelError> {
-        let period = Self::period(params)?;
-        Ok(3 * period - 2)
+    fn shape(&self, params: &ParamSet) -> Result<Self::Shape, KernelError> {
+        Self::period(params)
+    }
+
+    fn passes(_shape: Self::Shape) -> usize {
+        3
+    }
+
+    fn pass_params(shape: Self::Shape, _pass: usize) -> ParamSet {
+        Self::ema_params(shape)
+    }
+
+    fn warmup(shape: Self::Shape) -> usize {
+        3 * shape - 2
+    }
+
+    fn combine(passes: &[Option<f64>]) -> Option<f64> {
+        match passes {
+            [Some(first), Some(second), Some(third), ..] => {
+                fin_or_none(3.0 * first - 3.0 * second + third)
+            }
+            _ => None,
+        }
+    }
+
+    fn child() -> &'static Self::Child {
+        EmaIndicator::shared()
+    }
+
+    fn child_id() -> &'static str {
+        EmaIndicator::ID
+    }
+}
+
+impl Indicator for TemaIndicator {
+    fn spec(&self) -> &IndicatorSpec {
+        Chained::spec(self)
+    }
+
+    fn refine_warmup(&self, params: &ParamSet) -> Result<Option<usize>, KernelError> {
+        Ok(Some(composed::warmup(self, params)?))
     }
 
     fn batch(&self, data: &Ohlcv<'_>, params: &ParamSet) -> Result<IndicatorResult, KernelError> {
-        let period = Self::period(params)?;
-        let ema = EmaIndicator::new();
-        let first = ema.batch(data, &Self::ema_params(period))?;
-        let first_raw: Vec<f64> = first.values.iter().map(|v| nan_hole(*v)).collect();
-        let second = ema.batch(&Ohlcv::close_only(&first_raw), &Self::ema_params(period))?;
-        let second_raw: Vec<f64> = second.values.iter().map(|v| nan_hole(*v)).collect();
-        let third = ema.batch(&Ohlcv::close_only(&second_raw), &Self::ema_params(period))?;
-        let values = first
-            .values
-            .iter()
-            .zip(second.values.iter())
-            .zip(third.values.iter())
-            .map(|((one, two), three)| match (one, two, three) {
-                (Some(one), Some(two), Some(three)) => fin_or_none(3.0 * one - 3.0 * two + three),
-                _ => None,
-            })
-            .collect();
-        Ok(IndicatorResult::new(Self::ID.to_owned(), values))
+        composed::batch(self, data, params)
     }
 
     fn update(
@@ -667,29 +723,11 @@ impl Indicator for TemaIndicator {
         bar: BarTick,
         params: &ParamSet,
     ) -> Result<Option<f64>, KernelError> {
-        let period = Self::period(params)?;
-        let ema = EmaIndicator::new();
-        let (child, child_params) = state.child_with_params(0, || Self::ema_params(period));
-        let first = ema.update(child, bar, child_params)?;
-        let (child, child_params) = state.child_with_params(1, || Self::ema_params(period));
-        let second = ema.update(child, BarTick::close_only(nan_hole(first)), child_params)?;
-        let (child, child_params) = state.child_with_params(2, || Self::ema_params(period));
-        let third = ema.update(child, BarTick::close_only(nan_hole(second)), child_params)?;
-        let raw = match (first, second, third) {
-            (Some(one), Some(two), Some(three)) => 3.0 * one - 3.0 * two + three,
-            _ => f64::NAN,
-        };
-        state.set_last(raw);
-        Ok(fin_or_none(raw))
+        composed::update(self, state, bar, params)
     }
 
     fn deps_with_params(&self, params: &ParamSet) -> Vec<(IndicatorId, ParamSet)> {
-        // The first pass reads frame legs when co-requested; the second and
-        // third passes read intermediate output and stay inline.
-        match Self::period(params) {
-            Ok(period) => vec![(EmaIndicator::ID.to_owned(), Self::ema_params(period))],
-            Err(_) => Vec::new(),
-        }
+        composed::deps_with_params(self, params)
     }
 }
 

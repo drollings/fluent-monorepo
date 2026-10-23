@@ -769,15 +769,6 @@ pub fn comb_tail(values: &[f64], lower: f64, upper: f64, newval: f64) -> Vec<Opt
         .collect()
 }
 
-/// Clear non-finite values (`NaN` and both infinities) to `None`.
-#[must_use]
-pub fn comb_purify(values: &[f64]) -> Vec<Option<f64>> {
-    values
-        .iter()
-        .map(|v| if v.is_finite() { Some(*v) } else { None })
-        .collect()
-}
-
 /// Fill missing (`NaN`) slots with `value`; a `NaN` fill stays missing
 /// through the funnel.
 #[must_use]

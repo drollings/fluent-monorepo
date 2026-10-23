@@ -1,4 +1,5 @@
 use super::*;
+use protopyne_strategy::fixtures;
 
 use std::path::PathBuf;
 
@@ -7,9 +8,8 @@ use rust_decimal::Decimal;
 
 use protopyne_strategy::{
     elements::{ExplicitStructure, FixedSignal},
-    BreakerLimits, Direction, Grant, GrantBudgets, GrantPermission, GrantScope, OrderShape,
-    PortfolioFacts, PortfolioFactsSource, PortfolioThresholds, Proposal, ProposalSide,
-    RiskApproved, RiskLimits, RiskState, SignalThresholds, StructureKind, TradeThresholds,
+    Direction, Grant, OrderShape, PortfolioFacts, PortfolioFactsSource, Proposal, ProposalSide,
+    RiskApproved, RiskLimits, RiskState, StructureKind,
 };
 use protopyne_types::{GapPolicy, Money, Qty, SeriesContext};
 use protopyne_venue::{
@@ -47,53 +47,12 @@ fn risk() -> RiskEngine {
 }
 
 fn grant_with(min_conviction: f64) -> Grant {
-    Grant::new()
-        .id(format!("loop-{min_conviction}"))
-        .scope(
-            GrantScope::new()
-                .strategies(vec!["ribbon".to_owned()])
-                .underlyings(vec!["SPY".to_owned()])
-                .structures(vec![StructureKind::Vertical])
-                .directions(vec![Direction::Long, Direction::Short])
-                .permissions(GrantPermission {
-                    entries: true,
-                    exits: true,
-                    rolls: false,
-                })
-                .build(),
-        )
-        .budgets(
-            GrantBudgets::new()
-                .max_trades(1_000)
-                .max_contracts(10_000)
-                .max_loss(money(1_000_000))
-                .max_notional(money(100_000_000))
-                .build(),
-        )
-        .signal(
-            SignalThresholds::new()
-                .min_conviction(min_conviction)
-                .min_activity_score(0.5)
-                .build(),
-        )
-        .trade(
-            TradeThresholds::new()
-                .max_loss_per_trade(money(1_000))
-                .max_spread_width(money(50))
-                .min_dte_days(1)
-                .max_dte_days(90)
-                .build(),
-        )
-        .portfolio(
-            PortfolioThresholds::new()
-                .max_open_risk(money(10_000_000))
-                .quote_max_age_secs(60)
-                .build(),
-        )
-        .breakers(BreakerLimits::new().max_consecutive_errors(3).build())
-        .valid_from(Utc.with_ymd_and_hms(2025, 1, 1, 0, 0, 0).unwrap())
-        .valid_until(Utc.with_ymd_and_hms(2027, 1, 1, 0, 0, 0).unwrap())
-        .build()
+    // The shared fixture's shape with the loop's conviction floor.
+    fixtures::grant_with(|grant| {
+        grant.id = format!("loop-{min_conviction}");
+        grant.signal.min_conviction = min_conviction;
+        grant.signal.min_activity_score = 0.5;
+    })
 }
 
 fn venue_config() -> BacktestConfig {

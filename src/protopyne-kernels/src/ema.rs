@@ -13,6 +13,7 @@ use crate::indicator::{
     fin_or_none, BarTick, Indicator, IndicatorResult, IndicatorSpec, IndicatorState, Ohlcv,
     ParamSet,
 };
+use crate::windowed::{self, Window, WindowLegs, Windowed};
 
 /// Exponential moving average (`ema`), parameterized by `length`.
 pub struct EmaIndicator {
@@ -52,36 +53,52 @@ impl Default for EmaIndicator {
     }
 }
 
-impl Indicator for EmaIndicator {
+impl Windowed for EmaIndicator {
+    type Shape = usize;
+
     fn spec(&self) -> &IndicatorSpec {
         &self.spec
     }
 
-    fn warmup(&self, params: &ParamSet) -> Result<usize, KernelError> {
+    fn shape(&self, params: &ParamSet) -> Result<Self::Shape, KernelError> {
         Self::period(params)
     }
 
-    fn batch(&self, data: &Ohlcv<'_>, params: &ParamSet) -> Result<IndicatorResult, KernelError> {
-        let closes = data.close;
-        let period = Self::period(params)?;
-        let mut values = crate::math::warmup_none(closes.len());
-        if period <= closes.len() {
-            let factor = Self::factor(period);
-            let mut prev = f64::NAN;
-            // DIVERGENCE (see compat.rs:11): SMA seed before EMA recursion is load-bearing;
-            // recursing from zero would under-read the Expr reference.
-            for (i, value) in values.iter_mut().enumerate().skip(period - 1) {
-                let window = &closes[i + 1 - period..=i];
-                let next = if prev.is_nan() {
-                    crate::math::window_mean(window)
-                } else {
-                    crate::math::ema_step(prev, closes[i], factor)
-                };
-                prev = next;
-                *value = fin_or_none(next);
-            }
+    fn period(period: usize) -> usize {
+        period
+    }
+
+    fn legs(&self) -> WindowLegs {
+        WindowLegs::Close
+    }
+
+    /// Seed from the first full window, then step: a window whose previous
+    /// output is `na` re-seeds from its own mean, which is Pine's
+    /// `na(ema[1]) ? sma : recurrence` shape (the load-bearing divergence
+    /// recorded in `compat.rs`).
+    fn eval(&self, shape: usize, window: &Window<'_>, previous: Option<f64>) -> Option<f64> {
+        match previous {
+            Some(previous) if !previous.is_nan() => fin_or_none(crate::math::ema_step(
+                previous,
+                window.newest(),
+                Self::factor(shape),
+            )),
+            _ => fin_or_none(crate::math::window_mean(window.closes)),
         }
-        Ok(IndicatorResult::new(Self::ID.to_owned(), values))
+    }
+}
+
+impl Indicator for EmaIndicator {
+    fn spec(&self) -> &IndicatorSpec {
+        Windowed::spec(self)
+    }
+
+    fn refine_warmup(&self, params: &ParamSet) -> Result<Option<usize>, KernelError> {
+        Ok(Some(windowed::warmup(self, params)?))
+    }
+
+    fn batch(&self, data: &Ohlcv<'_>, params: &ParamSet) -> Result<IndicatorResult, KernelError> {
+        windowed::batch(self, data, params)
     }
 
     fn update(
@@ -90,23 +107,7 @@ impl Indicator for EmaIndicator {
         bar: BarTick,
         params: &ParamSet,
     ) -> Result<Option<f64>, KernelError> {
-        let period = Self::period(params)?;
-        state.push(bar, period);
-        if state.len() < period {
-            return Ok(None);
-        }
-        // The previous output copies out before the scratch fill: the window
-        // slice borrows the state, so all scalar reads lead it.
-        let prev = state.last();
-        let window = state.scratch_closes();
-        let next = match prev {
-            Some(prev) if !prev.is_nan() => {
-                crate::math::ema_step(prev, bar.close, Self::factor(period))
-            }
-            _ => crate::math::window_mean(window),
-        };
-        state.set_last(next);
-        Ok(fin_or_none(next))
+        windowed::update(self, state, bar, params)
     }
 }
 

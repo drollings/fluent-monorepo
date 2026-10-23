@@ -458,12 +458,8 @@ fn docstring_tables_pin_reference_values() {
         comb_right_tail(la, 3.0),
         vec![None, None, None, Some(3.0), Some(4.0), Some(5.0)]
     );
-    // Purify clears `NaN` and both infinities; the sign-log composite pins
-    // the base-10 convention from the upstream example.
-    assert_eq!(
-        comb_purify(&[nan, 1.0, 2.0, f64::INFINITY, f64::NEG_INFINITY]),
-        vec![None, Some(1.0), Some(2.0), None, None]
-    );
+    // The sign-log composite pins the base-10 convention from the upstream
+    // example.
     assert_eq!(
         comb_s_log_1p(&[nan, 9.0, -9.0, 99.0, -99.0]),
         vec![None, Some(1.0), Some(-1.0), Some(2.0), Some(-2.0)]

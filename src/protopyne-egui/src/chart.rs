@@ -84,19 +84,6 @@ impl TimeframeKey {
         }
     }
 
-    /// Bar spacing in seconds, for range-window math.
-    #[must_use]
-    pub fn seconds(self) -> u64 {
-        match self {
-            Self::M1 => 60,
-            Self::M5 => 300,
-            Self::M15 => 900,
-            Self::H1 => 3_600,
-            Self::H4 => 14_400,
-            Self::D1 => 86_400,
-        }
-    }
-
     /// The store/kernel grid spacing behind this key: resolved through the
     /// one toolbar-label bridge
     /// ([`Timeframe::from_chart_label`](protopyne_types::Timeframe::from_chart_label)),
@@ -144,7 +131,7 @@ pub fn prefold_levels(base: TimeframeKey) -> Vec<TimeframeKey> {
     TimeframeKey::all()
         .into_iter()
         .filter(|key| {
-            key.seconds() >= base.seconds()
+            key.timeframe().total_seconds() >= base.timeframe().total_seconds()
                 && key.timeframe().is_whole_multiple_of(base.timeframe())
         })
         .collect()

@@ -3,10 +3,8 @@
 
 use super::*;
 use chrono::{TimeZone, Utc};
-use protopyne_strategy::{
-    worst_case_for, BreakerLimits, GrantBudgets, GrantPermission, GrantScope, PortfolioThresholds,
-    SignalThresholds, TradeThresholds, WorstCaseBasis,
-};
+use protopyne_strategy::fixtures::grant_with;
+use protopyne_strategy::{worst_case_for, GrantBudgets, WorstCaseBasis};
 use protopyne_types::{Bar, ChainQuote, OptionContract, OptionKind};
 use rust_decimal::Decimal;
 
@@ -50,53 +48,24 @@ fn quote(kind: OptionKind, strike: &str, price: &str) -> ChainQuote {
 }
 
 fn grant(structures: Vec<StructureKind>, directions: Vec<Direction>) -> Grant {
-    Grant::new()
-        .id("worst-case".to_owned())
-        .scope(
-            GrantScope::new()
-                .strategies(vec!["ribbon".to_owned()])
-                .underlyings(vec!["SPY".to_owned()])
-                .structures(structures)
-                .directions(directions)
-                .permissions(GrantPermission {
-                    entries: true,
-                    exits: true,
-                    rolls: false,
-                })
-                .build(),
-        )
-        .budgets(
-            GrantBudgets::new()
-                .max_trades(10)
-                .max_contracts(40)
-                .max_loss(money("1000000"))
-                .max_notional(money("1000000"))
-                .build(),
-        )
-        .signal(
-            SignalThresholds::new()
-                .min_conviction(0.0)
-                .min_activity_score(0.0)
-                .build(),
-        )
-        .trade(
-            TradeThresholds::new()
-                .max_loss_per_trade(money("1000"))
-                .max_spread_width(money("50"))
-                .min_dte_days(7)
-                .max_dte_days(60)
-                .build(),
-        )
-        .portfolio(
-            PortfolioThresholds::new()
-                .max_open_risk(money("10000"))
-                .quote_max_age_secs(60)
-                .build(),
-        )
-        .breakers(BreakerLimits::new().max_consecutive_errors(3).build())
-        .valid_from(stamp(1_767_225_600))
-        .valid_until(stamp(1_798_761_600))
-        .build()
+    // The shared fixture's shape with the worst-case suite's tighter budgets.
+    grant_with(|grant| {
+        grant.id = "worst-case".to_owned();
+        grant.scope.structures = structures;
+        grant.scope.directions = directions;
+        grant.budgets = GrantBudgets::new()
+            .max_trades(10)
+            .max_contracts(40)
+            .max_loss(Money::from(1_000_000))
+            .max_notional(Money::from(1_000_000))
+            .build();
+        grant.trade.min_dte_days = 7;
+        grant.trade.max_dte_days = 60;
+        grant.portfolio.max_open_risk = Money::from(10_000);
+        grant.valid_from = chrono::DateTime::from_timestamp(1_767_225_600, 0).expect("valid stamp");
+        grant.valid_until =
+            chrono::DateTime::from_timestamp(1_798_761_600, 0).expect("valid stamp");
+    })
 }
 
 fn condor_chain() -> Vec<ChainQuote> {

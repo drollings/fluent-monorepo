@@ -12,7 +12,7 @@ use common_core::hash::fingerprint_framed;
 use fluent_egui::{cache_key, EguiError, PanePlan, ReplayController};
 use protopyne_chart_model::{ChartRow, DisplayOnly};
 use protopyne_kernels::indicator::{execution_order, IndicatorId, IndicatorRegistry, ParamSet};
-use protopyne_kernels::{builtin_registry, nan_hole, OwnedOhlcv, PriceSource};
+use protopyne_kernels::{nan_hole, shared_registry, OwnedOhlcv, PriceSource};
 
 /// Price pane: converted rows, no upstream pane.
 pub const PRICE_NODE: &str = "price";
@@ -252,26 +252,6 @@ pub fn price_source_ids() -> Vec<String> {
 }
 
 /// Theme style keys for pickers: every key a series may resolve against the
-/// theme. Used as the `variants` behind every `*_style`/`style` field so line
-/// colors are catalogue picks, never free text. The Style tab's per-indicator
-/// overrides (colors, width) stay on the shared `IndicatorStyle` component
-/// with its own Material color/slider editors.
-#[must_use]
-pub fn theme_style_keys() -> Vec<String> {
-    vec![
-        "bull".to_owned(),
-        "bear".to_owned(),
-        "fast".to_owned(),
-        "slow".to_owned(),
-        "bull_down".to_owned(),
-        "bear_up".to_owned(),
-        "ribbon_bull".to_owned(),
-        "ribbon_bear".to_owned(),
-        "grid".to_owned(),
-        "background".to_owned(),
-    ]
-}
-
 /// The input column for a source: bar columns read the rows (producer
 /// warmup zero — kernels emit their own holes), series columns resolve from
 /// the catalog or refuse naming the node.
@@ -367,7 +347,7 @@ pub(crate) fn kernel_result(
     params: &ParamSet,
     frame: &OwnedOhlcv,
 ) -> Result<protopyne_kernels::IndicatorResult, EguiError> {
-    let registry = builtin_registry().map_err(|e| describe_kernel(&e))?;
+    let registry = shared_registry().map_err(|e| describe_kernel(&e))?;
     let kernel = registry
         .get(kernel_id)
         .ok_or_else(|| EguiError::Dependency {
@@ -392,7 +372,7 @@ pub(crate) fn kernel_series(
 /// never a magic number; unknown kernels refuse instead of warming up by
 /// zero (which would fabricate a value where a hole belongs).
 pub fn kernel_warmup(kernel_id: &str, params: &ParamSet) -> Result<usize, EguiError> {
-    let registry = builtin_registry().map_err(|e| describe_kernel(&e))?;
+    let registry = shared_registry().map_err(|e| describe_kernel(&e))?;
     let kernel = registry
         .get(kernel_id)
         .ok_or_else(|| EguiError::Dependency {

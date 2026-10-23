@@ -3,6 +3,7 @@
 //! per-bar fold settles closes through the ledger while cancels hold no
 //! budget.
 
+use protopyne_strategy::fixtures::grant_with;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -11,9 +12,7 @@ use chrono::{TimeZone, Utc};
 use rust_decimal::Decimal;
 
 use protopyne_strategy::{
-    BreakerLimits, Direction, Grant, GrantBudgets, GrantLedger, GrantPermission, GrantScope,
-    PortfolioFacts, PortfolioThresholds, RiskEngine, RiskLimits, RiskState, SignalThresholds,
-    StructureKind, TradeThresholds,
+    Grant, GrantLedger, PortfolioFacts, RiskEngine, RiskLimits, RiskState, StructureKind,
 };
 use protopyne_types::{LegSide, Money, OptionContract, OptionKind, SpreadLeg, SpreadLegs};
 use protopyne_venue::{
@@ -56,53 +55,12 @@ fn quote() -> Quote {
 }
 
 fn grant() -> Grant {
-    Grant::new()
-        .id("operator".to_owned())
-        .scope(
-            GrantScope::new()
-                .strategies(vec!["operator".to_owned()])
-                .underlyings(vec!["SPY".to_owned()])
-                .structures(vec![StructureKind::Vertical, StructureKind::Single])
-                .directions(vec![Direction::Long, Direction::Short])
-                .permissions(GrantPermission {
-                    entries: true,
-                    exits: true,
-                    rolls: false,
-                })
-                .build(),
-        )
-        .budgets(
-            GrantBudgets::new()
-                .max_trades(1_000)
-                .max_contracts(10_000)
-                .max_loss(money("1000000"))
-                .max_notional(money("100000000"))
-                .build(),
-        )
-        .signal(
-            SignalThresholds::new()
-                .min_conviction(0.0)
-                .min_activity_score(0.0)
-                .build(),
-        )
-        .trade(
-            TradeThresholds::new()
-                .max_loss_per_trade(money("1000"))
-                .max_spread_width(money("50"))
-                .min_dte_days(1)
-                .max_dte_days(90)
-                .build(),
-        )
-        .portfolio(
-            PortfolioThresholds::new()
-                .max_open_risk(money("10000000"))
-                .quote_max_age_secs(60)
-                .build(),
-        )
-        .breakers(BreakerLimits::new().max_consecutive_errors(3).build())
-        .valid_from(Utc.with_ymd_and_hms(2025, 1, 1, 0, 0, 0).unwrap())
-        .valid_until(Utc.with_ymd_and_hms(2027, 1, 1, 0, 0, 0).unwrap())
-        .build()
+    // The shared fixture's shape scoped to the operator strategy.
+    grant_with(|grant| {
+        grant.id = "operator".to_owned();
+        grant.scope.strategies = vec!["operator".to_owned()];
+        grant.scope.structures = vec![StructureKind::Vertical, StructureKind::Single];
+    })
 }
 
 fn risk_state() -> RiskState {
@@ -536,9 +494,40 @@ async fn operator_cancel_holds_no_budget() {
         ledger.pending(),
         protopyne_strategy::GrantUsage::new().build()
     );
-    assert_eq!(
-        ledger.usage(),
-        protopyne_strategy::GrantUsage::new().build()
-    );
+    // Usage initializes attestation at the grant's valid_from; cancelling
+    // consumes no budget and moves no attestation.
+    let mut empty = protopyne_strategy::GrantUsage::new().build();
+    empty.last_attested =
+        Some(chrono::DateTime::from_timestamp_millis(1_735_689_600_000).expect("valid instant"));
+    assert_eq!(ledger.usage(), empty);
     session.shutdown().await;
+}
+
+#[test]
+fn attest_rows_apply_only_to_the_ledger_they_name() {
+    use crate::operator::execute_attest;
+    use protopyne_venue::JournalEvent;
+
+    let ledger = GrantLedger::new(grant());
+    let row = |grant_id: &str, at_ms: i64| JournalEvent {
+        seq: 1,
+        client_id: OPERATOR_CLIENT_ID.to_owned(),
+        kind: protopyne_venue::COMMAND_ATTEST_KIND.to_owned(),
+        detail: serde_json::json!({ "grant_id": grant_id }).to_string(),
+        at_ms,
+    };
+    // A row naming the ledger's grant moves attestation to the row's time.
+    let at = now().timestamp_millis();
+    assert_eq!(execute_attest(&ledger, &row("operator", at), 7), 7);
+    assert_eq!(
+        ledger.usage().last_attested.map(|at| at.timestamp_millis()),
+        Some(at)
+    );
+    // A row naming another generation is skipped: no move, no error.
+    assert_eq!(execute_attest(&ledger, &row("retired", at + 1), 8), 8);
+    assert_eq!(
+        ledger.usage().last_attested.map(|at| at.timestamp_millis()),
+        Some(at),
+        "a stale row never extends authority"
+    );
 }

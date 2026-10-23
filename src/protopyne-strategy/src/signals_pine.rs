@@ -112,7 +112,7 @@ impl PineCore {
         );
         // The view is the only data source: the chart pair is served from
         // its bars, and every other pair keeps the engine's refusal.
-        let dataset = LtfDataset::of_bars(view.data.bars);
+        let dataset = LtfDataset::of_bars(view.data.bars, view.data.timeframe);
         engine
             .inject_security(&self.chart_symbol, period, dataset.clone())
             .map_err(|e| engine_error(&e))?;

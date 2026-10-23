@@ -130,8 +130,8 @@ impl Indicator for AtrIndicator {
         &self.spec
     }
 
-    fn warmup(&self, params: &ParamSet) -> Result<usize, KernelError> {
-        Self::period(params)
+    fn refine_warmup(&self, params: &ParamSet) -> Result<Option<usize>, KernelError> {
+        Ok(Some(Self::period(params)?))
     }
 
     fn batch(&self, data: &Ohlcv<'_>, params: &ParamSet) -> Result<IndicatorResult, KernelError> {
@@ -153,11 +153,11 @@ impl Indicator for AtrIndicator {
         bar: BarTick,
         params: &ParamSet,
     ) -> Result<Option<f64>, KernelError> {
-        let period = Self::period(params)?;
+        let period = state.resolved(|| Self::period(params))?;
         state.push(bar, 2);
         let prev = state.prev_close();
         let tr = true_range(bar.high, bar.low, prev);
-        let rma = RmaIndicator::new();
+        let rma = RmaIndicator::shared();
         let (child, child_params) =
             state.child_with_params(0, || ParamSet::new().with_int("length", period as i64));
         let smoothed = rma.update(child, BarTick::close_only(tr), child_params)?;
@@ -216,8 +216,8 @@ impl Indicator for BbIndicator {
         &self.spec
     }
 
-    fn warmup(&self, params: &ParamSet) -> Result<usize, KernelError> {
-        Ok(Self::shape(params)?.0)
+    fn refine_warmup(&self, params: &ParamSet) -> Result<Option<usize>, KernelError> {
+        Ok(Some(Self::shape(params)?.0))
     }
 
     fn batch(&self, data: &Ohlcv<'_>, params: &ParamSet) -> Result<IndicatorResult, KernelError> {
@@ -343,10 +343,10 @@ impl Indicator for KcIndicator {
         &self.spec
     }
 
-    fn warmup(&self, params: &ParamSet) -> Result<usize, KernelError> {
+    fn refine_warmup(&self, params: &ParamSet) -> Result<Option<usize>, KernelError> {
         // Basis and span both need `length` bars; ranges are valid from the
         // first bar, so nothing lags behind the basis.
-        Ok(Self::shape(params)?.0)
+        Ok(Some(Self::shape(params)?.0))
     }
 
     fn batch(&self, data: &Ohlcv<'_>, params: &ParamSet) -> Result<IndicatorResult, KernelError> {
@@ -491,8 +491,8 @@ impl Indicator for NatrIndicator {
         &self.spec
     }
 
-    fn warmup(&self, params: &ParamSet) -> Result<usize, KernelError> {
-        Self::period(params)
+    fn refine_warmup(&self, params: &ParamSet) -> Result<Option<usize>, KernelError> {
+        Ok(Some(Self::period(params)?))
     }
 
     fn batch(&self, data: &Ohlcv<'_>, params: &ParamSet) -> Result<IndicatorResult, KernelError> {
@@ -514,10 +514,10 @@ impl Indicator for NatrIndicator {
         bar: BarTick,
         params: &ParamSet,
     ) -> Result<Option<f64>, KernelError> {
-        let period = Self::period(params)?;
+        let period = state.resolved(|| Self::period(params))?;
         let (child, child_params) =
             state.child_with_params(0, || ParamSet::new().with_int("length", period as i64));
-        let atr = AtrIndicator::new().update(child, bar, child_params)?;
+        let atr = AtrIndicator::shared().update(child, bar, child_params)?;
         let ratio = atr.and_then(|v| crate::math::div_or_none(v, bar.close));
         if let Some(value) = ratio {
             state.set_last(value);
@@ -660,8 +660,8 @@ impl Indicator for SupertrendIndicator {
         &self.spec
     }
 
-    fn warmup(&self, params: &ParamSet) -> Result<usize, KernelError> {
-        Ok(Self::shape(params)?.0)
+    fn refine_warmup(&self, params: &ParamSet) -> Result<Option<usize>, KernelError> {
+        Ok(Some(Self::shape(params)?.0))
     }
 
     fn batch(&self, data: &Ohlcv<'_>, params: &ParamSet) -> Result<IndicatorResult, KernelError> {

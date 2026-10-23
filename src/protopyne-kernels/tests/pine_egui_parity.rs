@@ -7,6 +7,7 @@
 //! the runnable filter is `pine::egui_parity`, not the file stem.
 
 use super::*;
+use crate::compat::{evidence_path_exists, ParityEvidence};
 use crate::{parse_program, InputSet, PineEngine, PineRuntimeConfig, TaBridge};
 use chrono::TimeZone as _;
 use protopyne_types::Bar;
@@ -57,22 +58,82 @@ fn rows_cite_both_sides_with_reasons() {
             "{} cites the engine side",
             row.construct
         );
+    }
+}
+
+/// Every row's standing must be the standing its evidence can carry. The
+/// reference layer is not in this tree, so no row may claim a numeric match
+/// without a checked-in vector, and a row with only its own probe must say
+/// so (`MatchByInspection`); a citation must name a file that exists.
+#[test]
+fn every_row_standing_matches_its_evidence() {
+    for row in EGUI_PARITY {
         match row.verdict {
-            ParityVerdict::Match => {}
-            ParityVerdict::Correct | ParityVerdict::Refuse => {
+            ParityVerdict::Match => assert!(
+                matches!(
+                    row.evidence,
+                    ParityEvidence::GoldenVector(_) | ParityEvidence::ExternalExport(_)
+                ),
+                "{} claims a reference match with only {:?}",
+                row.construct,
+                row.evidence
+            ),
+            ParityVerdict::MatchByInspection => match row.probe {
+                Some(_) => assert_eq!(
+                    row.evidence,
+                    ParityEvidence::ProbeRuns,
+                    "{} runs a probe, so the probe is its evidence",
+                    row.construct
+                ),
+                None => assert!(
+                    matches!(row.evidence, ParityEvidence::StagedReference(_)),
+                    "{} has no probe and must name the suite that exercises it",
+                    row.construct
+                ),
+            },
+            ParityVerdict::Correct => {
                 assert!(
                     !row.reason.is_empty(),
-                    "{} explains its standing",
+                    "{} explains its divergence",
+                    row.construct
+                );
+                assert_eq!(
+                    row.evidence,
+                    ParityEvidence::ProbeRuns,
+                    "{} pins a divergence by running its probe",
+                    row.construct
+                );
+            }
+            ParityVerdict::Refuse => {
+                assert!(
+                    row.probe.is_some() && row.refusal.is_some(),
+                    "{} pins probe plus exact refusal",
+                    row.construct
+                );
+                assert_eq!(
+                    row.evidence,
+                    ParityEvidence::ProbeRuns,
+                    "{} pins its refusal by running its probe",
                     row.construct
                 );
             }
         }
-        if row.verdict == ParityVerdict::Refuse {
-            assert!(
-                row.probe.is_some() && row.refusal.is_some(),
-                "{} pins probe plus exact refusal",
+        match row.evidence {
+            ParityEvidence::GoldenVector(path) | ParityEvidence::StagedReference(path) => {
+                assert!(
+                    evidence_path_exists(path),
+                    "{} cites missing evidence {path}",
+                    row.construct
+                );
+            }
+            ParityEvidence::ExternalExport(id) => {
+                assert!(!id.is_empty(), "{} names an empty export", row.construct);
+            }
+            ParityEvidence::ProbeRuns => assert!(
+                row.probe.is_some(),
+                "{} cites a probe it does not carry",
                 row.construct
-            );
+            ),
         }
     }
 }
@@ -132,19 +193,22 @@ fn refusal_probes_fail_with_exact_strings() {
 }
 
 #[test]
-fn match_probes_run_clean() {
+fn inspection_probes_run_clean() {
     for row in EGUI_PARITY {
         let Some(probe) = row.probe else { continue };
-        if row.verdict != ParityVerdict::Match {
+        if !matches!(
+            row.verdict,
+            ParityVerdict::Match | ParityVerdict::MatchByInspection
+        ) {
             continue;
         }
-        run_probe(probe).expect("match probe runs");
+        run_probe(probe).expect("inspection probe runs");
     }
 }
 
 #[test]
 fn lookup_finds_rows_by_construct() {
     let row = parity_for("ta.sma").expect("ta.sma row known");
-    assert_eq!(row.verdict, ParityVerdict::Match);
+    assert_eq!(row.verdict, ParityVerdict::MatchByInspection);
     assert!(parity_for("no.such.construct").is_none());
 }
