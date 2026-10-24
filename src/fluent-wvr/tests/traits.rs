@@ -49,6 +49,8 @@ fn field_schema_serde_round_trip() {
         description: Some("listen port".into()),
         min: Some(1.0),
         max: Some(65535.0),
+        min_raw: Some("1".into()),
+        max_raw: Some("65535".into()),
         required: true,
         format: Some("duration".into()),
         max_len: Some(10),

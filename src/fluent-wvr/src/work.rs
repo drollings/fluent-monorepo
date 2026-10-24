@@ -54,6 +54,19 @@ pub struct WorkOutput {
 }
 
 impl WorkOutput {
+    /// Task-value acceptance predicate: the unit ran cleanly **and** its
+    /// verdict is positive.
+    ///
+    /// This is orthogonal to `Result::is_ok` (producer-confidence — "did it
+    /// run"). A confident `Ok(WorkOutput::fail(..))` is maximally confident
+    /// and task-value-negative: `is_ok()` is true, `is_accept()` is false.
+    /// Callers that need "was it accepted" must use this predicate; callers
+    /// that need "did it run" keep using `Result::is_ok`. Never derive one
+    /// from the other implicitly.
+    pub fn is_accept(&self) -> bool {
+        self.success
+    }
+
     pub fn ok(message: impl Into<String>) -> Self {
         Self {
             success: true,

@@ -1302,15 +1302,46 @@ fn leg_kind_and_bound_refusals_name_the_field() {
         ("fast_period", "1"),
         ("fast_period", "201"),
         ("slow_smooth_period", "1"),
-        ("fast_k", "0"),
         ("slow_k", "-1"),
     ] {
+        // Write-time: bounds (including `Option` bounds) refuse at `set_field`.
         let mut candidate = IntegrationLiteConfig::new().build();
-        candidate.set_field(slot, value).expect("writes");
-        let error = format!("{}", candidate.validate().expect_err("refuses"));
+        let error = format!(
+            "{}",
+            candidate
+                .set_field(slot, value)
+                .expect_err("refuses at write")
+        );
         assert!(
             error.contains(slot),
-            "{slot}={value} names the field: {error}"
+            "{slot}={value} names the field at write: {error}"
+        );
+    }
+    // Validate-time: typed out-of-range state (e.g. loaded from a stored
+    // config, bypassing `set_field`) still refuses naming the field.
+    // `fast_k = 0` sits exactly on the write-time floor (`0.0 < 0.0` is
+    // false) but below the validate-time bar (`<= 0.0` refuses): the two
+    // gates overlap without coinciding, by design.
+    for (slot, built) in [
+        (
+            "fast_period",
+            IntegrationLiteConfig::new().fast_period(1).build(),
+        ),
+        (
+            "fast_period",
+            IntegrationLiteConfig::new().fast_period(201).build(),
+        ),
+        (
+            "slow_smooth_period",
+            IntegrationLiteConfig::new().slow_smooth_period(1).build(),
+        ),
+        ("fast_k", IntegrationLiteConfig::new().fast_k(0.0).build()),
+        ("slow_k", IntegrationLiteConfig::new().slow_k(-1.0).build()),
+    ] {
+        let error = format!("{}", built.validate().expect_err("refuses"));
+        assert!(
+            error.contains(slot),
+            "{slot} names the field at validate: {error}"
         );
     }
     for smooth in ["not-a-smoothing", "eit"] {

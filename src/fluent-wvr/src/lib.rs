@@ -21,6 +21,7 @@ pub mod boundary;
 pub mod capability;
 pub mod coerce;
 pub mod dynamic;
+pub mod ladder;
 pub mod macros;
 pub mod metadata;
 pub mod runtime;

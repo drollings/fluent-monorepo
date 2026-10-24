@@ -386,6 +386,30 @@ impl Drop for SupervisedBatch {
     }
 }
 
+/// Run one unit with per-attempt timeout and retry-with-backoff.
+///
+/// # Timeout guarantee (hard)
+///
+/// The timeout bounds the await/retry loop around the synchronous
+/// `execute` body — it does **not** preempt that body. A body that blocks
+/// past its budget (sleep, busy-loop, blocking I/O) holds its worker: the
+/// deadline cannot fire until `execute` returns, and then the finished
+/// inner wins the race, so the summary reports `completed`, late — never
+/// a prompt `cancelled`. A retry scheduled after such an overrun may
+/// overlap the still-running zombie, so attempts of a non-idempotent unit
+/// can run concurrently while the summary already moved on.
+///
+/// `cancelled` with `CancelReason::Timeout` is reachable only where the
+/// task suspends at an await point — between-attempt backoff — so the
+/// deadline can fire. This is why `WorkUnit::execute` must be
+/// non-blocking (see its purity contract): a blocking body defeats the
+/// supervisor's timeout and retry invariants by construction.
+///
+/// A cooperative cancellation token threaded through the context is the
+/// deferred alternative (it would let bodies observe the budget). It is
+/// not implemented here: it changes the `WorkUnit` signature for every
+/// implementor, it still cannot preempt a truly blocked syscall, and the
+/// guarantee above is exactly accounted without it.
 async fn execute_with_timeout_and_retry(
     unit: Arc<dyn Component>,
     ctx: WorkContext,

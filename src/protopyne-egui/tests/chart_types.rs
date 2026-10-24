@@ -219,14 +219,14 @@ fn every_chart_type_reaches_both_dispatchers() {
         ChartType::all().len(),
         "every variant is classified exactly once"
     );
-    // The outcome split is the rows-backed pair, exactly: splitting by
+    // The outcome split is the rows-backed kind, exactly: splitting by
     // outcome is expected where the classification splits (the bars path
     // refuses what the rows path paints), and the agreement table below
     // pins the classification behind it.
     assert_eq!(
         split,
-        vec![ChartType::Line, ChartType::Area],
-        "only the rows-backed kinds split by outcome: painted={painted_by_both:?} / refused={refused_by_both:?} / split={split:?}"
+        vec![ChartType::Line],
+        "only the rows-backed kind splits by outcome: painted={painted_by_both:?} / refused={refused_by_both:?} / split={split:?}"
     );
     assert!(
         painted_by_both.contains(&ChartType::Candles)

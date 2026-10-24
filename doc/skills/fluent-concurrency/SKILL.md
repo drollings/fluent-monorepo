@@ -107,6 +107,21 @@ When a unit fails/panics/times out, `cancel_dependents_of(name)` (`batch.rs:189-
 - On `Err(WorkError)`, sleeps the shared jittered-exponential backoff via `common_core::retry::retry_async`
 - Wraps the whole thing in `tokio::time::timeout(timeout_ms, …)`; on timeout returns `Err(WorkError::Timeout { duration_ms, unit })` and `poll` records it as `Cancelled(Timeout)`.
 
+**Timeout guarantee (hard): the timeout bounds the await/retry loop, never
+a blocking body.** A `thread::sleep` or busy-loop past `timeout_ms` holds
+its worker; the deadline cannot fire until `execute` returns, and then the
+finished inner wins the race — the summary reports `completed`, late, with
+the unit's completion effects applied (the zombie). A retry scheduled after
+such an overrun may overlap the still-running body, so attempts of a
+non-idempotent unit can run concurrently. `Cancelled(Timeout)` is reachable
+only where the task suspends at an await point (between-attempt backoff).
+Never bridge onto a per-call runtime to "fix" this: compose
+`common_core::runtime::block_on_shared` (process-wide fallback — callers do
+not serialize) or `block_on` (single-threaded fallback) instead of an
+inline `tokio::runtime::Builder`. A cooperative cancellation token is the
+deferred alternative, explicitly not implemented (see the runner's docs for
+the reasons).
+
 **Panic propagation**: panics are *not* caught via `catch_unwind`. They propagate through `JoinSet` as `JoinError::Panic`, which `SupervisedBatch::poll` intercepts (`batch.rs:300-330`) and records as `SupervisedBatchEvent::Panicked`. This is deliberate: a `catch_unwind` would lose the panic site and prevent the dependency-aware cancellation graph from firing.
 
 **Event taxonomy** (`batch.rs:20-75`):
@@ -330,6 +345,8 @@ reintroducing a shared-counter permit type until two consumers need it.
 ### 3.11 `first_accept_in_order` — the First-Ok Ladder (canonical fallback combinator)
 
 **Status: production.** The single first-Ok fallback combinator, consumed by the router's dispatch chain, backend retry/fallback, and the escalation ladder. Any "try A, then B, then C, take the first success" logic MUST compose this instead of hand-rolling a loop.
+
+**Canonical home: `fluent_wvr::ladder`.** The implementation lives there (so `ComponentCascade` can compose the sync walk without a dependency cycle); `fluent_concurrency::ladder` re-exports both combinators, so existing imports keep resolving. Do not add a second walker.
 
 **API** (`ladder.rs:38`):
 

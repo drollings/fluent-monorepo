@@ -58,12 +58,52 @@ pub fn describe_work_unit(
 #[doc(hidden)]
 #[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Schema bounds travel as JSON numbers, never strings: a `minimum` that
+/// serializes as `"1"` fails JSON Schema meta-validation. This example is
+/// compiled and run by the regular gate, so a regression back to
+/// string-encoded bounds fails the build.
+///
+/// ```rust
+/// use fluent_wvr::traits::FieldSchema;
+///
+/// let field = FieldSchema {
+///     name: "port".to_string(),
+///     type_name: "u16".to_string(),
+///     description: Some("TCP listen port".to_string()),
+///     min: Some(1.0),
+///     max: Some(65535.0),
+///     min_raw: Some("1".to_string()),
+///     max_raw: Some("65535".to_string()),
+///     required: true,
+///     format: None,
+///     max_len: None,
+///     sanitize: None,
+///     pattern: None,
+///     coerce: None,
+///     parse: None,
+/// };
+/// let json = serde_json::to_value(&field).expect("FieldSchema serializes");
+/// assert!(json["min"].is_number(), "min must be a JSON number, got {json}");
+/// assert!(json["max"].is_number(), "max must be a JSON number, got {json}");
+/// ```
 pub struct FieldSchema {
     pub name: String,
     pub type_name: String,
     pub description: Option<String>,
     pub min: Option<f64>,
     pub max: Option<f64>,
+    /// Exact decimal spellings of the `min`/`max` attribute literals (e.g.
+    /// `"18446744073709551615"`, `"-9223372036854775808"`). The `f64` bounds
+    /// above cannot name integer edges exactly — they round to the nearest
+    /// representable value (within one ulp, saturating to the edge on cast)
+    /// — so the raws preserve the author's contract for schema consumers.
+    /// `None` when no bound was given. Added additively: older schema JSON
+    /// without these keys still deserializes.
+    #[serde(default)]
+    pub min_raw: Option<String>,
+    /// Exact decimal spelling of the `max` attribute literal. See `min_raw`.
+    #[serde(default)]
+    pub max_raw: Option<String>,
     pub required: bool,
     /// Optional JSON Schema `format` hint (e.g. "url", "duration", "email").
     /// Informational only; not enforced by `set_field`.
@@ -108,6 +148,12 @@ pub trait SchemaProvider {
 /// `SupervisedBatch::execute_with_timeout_and_retry` runs `execute` in an async
 /// context but expects `execute` itself to return promptly. Violations
 /// defeat the supervisor's timeout and retry invariants.
+///
+/// A blocking body that overruns its per-attempt budget keeps running
+/// past it: the supervisor reports `completed`, late — never a prompt
+/// `cancelled` — and a scheduled retry may overlap the still-running
+/// zombie. See the timeout guarantee on the supervisor's per-attempt
+/// runner for the full accounting.
 ///
 /// See: `AGENTS.md` "Refinement contract" §3.
 ///

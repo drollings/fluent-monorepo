@@ -5,10 +5,16 @@ use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use syn::{parse_macro_input, Data, DataStruct, DeriveInput, Fields, Lit, Path};
 
+#[derive(Debug)]
 struct FieldMeta {
     desc: Option<String>,
     min: Option<f64>,
     max: Option<f64>,
+    /// Exact decimal spellings of the `min`/`max` attribute literals. The
+    /// `f64` bounds above cannot name integer edges exactly (`u64::MAX`,
+    /// `i64::MIN`); the raws preserve them for schema consumers.
+    min_raw: Option<String>,
+    max_raw: Option<String>,
     clamp: bool,
     skip: bool,
     required: bool,
@@ -22,11 +28,39 @@ struct FieldMeta {
     variants: Option<TokenStream2>,
 }
 
-fn parse_field_attrs(field: &syn::Field) -> FieldMeta {
+/// Parse a `min`/`max` bound literal: an unsigned int/float, or a
+/// unary-negated one (`-5`, `i64::MIN`). Returns the legacy `f64` value for
+/// the runtime bound check and the exact decimal spelling for the raw schema
+/// trace. Anything else is a contract error, not a silent drop: a bound
+/// that does not bind must fail the build.
+///
+/// The sign is restored from the token spelling: digit accessors may or may
+/// not carry it depending on the literal form, but the spelling never lies —
+/// without this, `min = -5` would silently bind `5`.
+fn bound_from_lit(lit: &Lit) -> Result<(f64, String), String> {
+    let (digits, token) = match lit {
+        Lit::Int(i) => (i.base10_digits().to_string(), i.to_string()),
+        Lit::Float(f) => (f.base10_digits().to_string(), f.to_string()),
+        _ => return Err("bound must be an integer or float literal".to_string()),
+    };
+    let unsigned = digits.strip_prefix('-').unwrap_or(&digits).to_string();
+    let raw = if token.starts_with('-') {
+        format!("-{unsigned}")
+    } else {
+        unsigned
+    };
+    raw.parse::<f64>()
+        .map(|num| (num, raw.clone()))
+        .map_err(|_| format!("bound `{raw}` is not a number"))
+}
+
+fn parse_field_attrs(field: &syn::Field) -> Result<FieldMeta, syn::Error> {
     let mut result = FieldMeta {
         desc: None,
         min: None,
         max: None,
+        min_raw: None,
+        max_raw: None,
         clamp: false,
         skip: false,
         required: true,
@@ -45,7 +79,7 @@ fn parse_field_attrs(field: &syn::Field) -> FieldMeta {
             continue;
         }
 
-        let _ = attr.parse_nested_meta(|meta| {
+        attr.parse_nested_meta(|meta| {
             if meta.path.is_ident("skip") {
                 result.skip = true;
                 return Ok(());
@@ -61,21 +95,19 @@ fn parse_field_attrs(field: &syn::Field) -> FieldMeta {
             if meta.path.is_ident("min") {
                 let value = meta.value()?;
                 let lit: Lit = value.parse()?;
-                match lit {
-                    Lit::Int(i) => result.min = Some(i.base10_parse::<f64>().unwrap()),
-                    Lit::Float(f) => result.min = Some(f.base10_parse::<f64>().unwrap()),
-                    _ => {}
-                }
+                let (num, raw) =
+                    bound_from_lit(&lit).map_err(|message| meta.error(message))?;
+                result.min = Some(num);
+                result.min_raw = Some(raw);
                 return Ok(());
             }
             if meta.path.is_ident("max") {
                 let value = meta.value()?;
                 let lit: Lit = value.parse()?;
-                match lit {
-                    Lit::Int(i) => result.max = Some(i.base10_parse::<f64>().unwrap()),
-                    Lit::Float(f) => result.max = Some(f.base10_parse::<f64>().unwrap()),
-                    _ => {}
-                }
+                let (num, raw) =
+                    bound_from_lit(&lit).map_err(|message| meta.error(message))?;
+                result.max = Some(num);
+                result.max_raw = Some(raw);
                 return Ok(());
             }
             if meta.path.is_ident("required") {
@@ -112,9 +144,9 @@ fn parse_field_attrs(field: &syn::Field) -> FieldMeta {
                             result.sanitize = Some(mode);
                         }
                         _ => {
-                            return Err(meta.error(
-                                "unknown sanitize mode, expected `trim`, `lowercase`, `strip_html`, or `slugify`",
-                            ));
+                            return Err(meta.error(format!(
+                                "unknown sanitize mode `{mode}`, expected `trim`, `lowercase`, `strip_html`, or `slugify`",
+                            )));
                         }
                     }
                 }
@@ -180,13 +212,18 @@ fn parse_field_attrs(field: &syn::Field) -> FieldMeta {
                 }
                 return Ok(());
             }
-            Err(meta.error(
-                "unknown field attribute, expected `skip`, `desc`, `min`, `max`, `clamp`, `required`, `format`, `max_len`, `sanitize`, `pattern`, `coerce`, `parse`, `variants`, or `empty_is_none`",
-            ))
-        });
+            let path = &meta.path;
+            let name = path
+                .get_ident()
+                .map(ToString::to_string)
+                .unwrap_or_else(|| quote!(#path).to_string());
+            Err(meta.error(format!(
+                "unknown field attribute `{name}`, expected one of: `skip`, `desc`, `min`, `max`, `clamp`, `required`, `format`, `max_len`, `sanitize`, `pattern`, `coerce`, `parse`, `variants`, `empty_is_none`",
+            )))
+        })?;
     }
 
-    result
+    Ok(result)
 }
 
 fn is_numeric_type(ty_str: &str) -> bool {
@@ -211,7 +248,17 @@ fn is_numeric_type(ty_str: &str) -> bool {
 fn is_integer_type(ty_str: &str) -> bool {
     matches!(
         ty_str,
-        "u8" | "u16" | "u32" | "u64" | "u128" | "i8" | "i16" | "i32" | "i64" | "i128" | "usize" | "isize"
+        "u8" | "u16"
+            | "u32"
+            | "u64"
+            | "u128"
+            | "i8"
+            | "i16"
+            | "i32"
+            | "i64"
+            | "i128"
+            | "usize"
+            | "isize"
     )
 }
 
@@ -265,15 +312,35 @@ fn strip_option_wrapper(ty_str: &str) -> String {
 /// that intern property names via `ArcIntern<str>` for O(1) pointer-sized
 /// key matching in routing boundaries.
 ///
-/// Supports optional field attributes:
+/// Supports optional field attributes (closed vocabulary — anything else
+/// fails expansion naming the argument):
 /// - `#[field(skip)]` — exclude this field from runtime access and schema
 /// - `#[field(desc = "...")]` — field description (used by `Describable`)
 /// - `#[field(min = N)]` — minimum value constraint (numeric fields only)
 /// - `#[field(max = N)]` — maximum value constraint (numeric fields only)
+/// - `#[field(clamp)]` — clamp out-of-range numerics into `[min, max]`
+///   instead of erroring; requires both bounds; leaves an `x-clamp` trace
+///   in the schema
+/// - `#[field(required = false)]` — opt out of the `required` array
+///   (`Option<T>` fields are never required)
 /// - `#[field(format = "...")]` — JSON Schema format hint (informational)
 /// - `#[field(max_len = N)]` — maximum string length
-/// - `#[field(sanitize = "trim,lowercase")]` — sanitization mode
-/// - `#[field(pattern = "...")]` — substring pattern; value must contain this string
+/// - `#[field(sanitize = "trim")]` — sanitization mode (`trim`,
+///   `lowercase`, `strip_html`, `slugify`)
+/// - `#[field(pattern = "...")]` — substring pattern, enforced by
+///   containment (not a regex); emitted under the JSON Schema `pattern`
+///   slot by deliberate vendor interpretation, documented here
+/// - `#[field(coerce = "trim,strip_quotes")]` — boundary-string shaping
+///   pipeline applied before parsing
+/// - `#[field(parse = "number")]` — tolerant numeric parse via
+///   `coerce::parse_number`
+/// - `#[field(variants = "path::to::fn")]` — live `enum` list from a
+///   zero-arg path called at `describe()` time
+/// - `#[field(empty_is_none = false)]` — keep `Some("")` for empty
+///   `Option<String>` input (default converts to `None`)
+///
+/// `version_added` / `version_removed` are planned, not implemented: using
+/// them fails expansion under the closed-vocabulary rule.
 #[proc_macro_derive(FieldAccess, attributes(field))]
 pub fn derive_field_access(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -295,11 +362,17 @@ pub fn derive_field_access(input: TokenStream) -> TokenStream {
         }
     };
 
-    let field_name_strs: Vec<String> = fields
-        .iter()
-        .filter(|f| !parse_field_attrs(f).skip)
-        .map(|f| f.ident.as_ref().unwrap().to_string())
-        .collect();
+    let mut field_name_strs: Vec<String> = Vec::new();
+    for f in fields.iter() {
+        match parse_field_attrs(f) {
+            Ok(meta) => {
+                if !meta.skip {
+                    field_name_strs.push(f.ident.as_ref().unwrap().to_string());
+                }
+            }
+            Err(error) => return error.to_compile_error().into(),
+        }
+    }
 
     let mut set_body = TokenStream2::new();
     let mut get_body = TokenStream2::new();
@@ -310,7 +383,10 @@ pub fn derive_field_access(input: TokenStream) -> TokenStream {
         let field_name_str = field_ident.to_string();
         let ty = &f.ty;
         let ty_str = quote!(#ty).to_string();
-        let meta = parse_field_attrs(f);
+        let meta = match parse_field_attrs(f) {
+            Ok(meta) => meta,
+            Err(error) => return error.to_compile_error().into(),
+        };
 
         if meta.skip {
             continue;
@@ -340,8 +416,8 @@ pub fn derive_field_access(input: TokenStream) -> TokenStream {
         let number_tolerant = meta.parse.as_deref() == Some("number") && inner_is_numeric;
         // Explicit inner-type tokens for Option<T> strict parsing (avoids the
         // empty-turbofish inference hole).
-        let inner_ty_tokens: TokenStream2 = syn::parse_str::<TokenStream2>(&inner_ty_str)
-            .unwrap_or_else(|_| quote! { String });
+        let inner_ty_tokens: TokenStream2 =
+            syn::parse_str::<TokenStream2>(&inner_ty_str).unwrap_or_else(|_| quote! { String });
 
         let mut parse_and_set = if is_option {
             if inner_is_string && meta.empty_is_none {
@@ -504,8 +580,12 @@ pub fn derive_field_access(input: TokenStream) -> TokenStream {
                     field_name_str, max_len
                 );
                 inner_expr = Some(match inner_expr {
-                    None => quote! { { let s: String = s; if s.chars().count() > #max_len_lit { return Err(fluent_wvr::FieldError::Constraint(#max_len_err.into())); } s } },
-                    Some(prev) => quote! { { let s: String = #prev; if s.chars().count() > #max_len_lit { return Err(fluent_wvr::FieldError::Constraint(#max_len_err.into())); } s } },
+                    None => {
+                        quote! { { let s: String = s; if s.chars().count() > #max_len_lit { return Err(fluent_wvr::FieldError::Constraint(#max_len_err.into())); } s } }
+                    }
+                    Some(prev) => {
+                        quote! { { let s: String = #prev; if s.chars().count() > #max_len_lit { return Err(fluent_wvr::FieldError::Constraint(#max_len_err.into())); } s } }
+                    }
                 });
             }
             if let Some(ref pattern) = meta.pattern {
@@ -515,8 +595,12 @@ pub fn derive_field_access(input: TokenStream) -> TokenStream {
                     field_name_str, pattern
                 );
                 inner_expr = Some(match inner_expr {
-                    None => quote! { { let s: String = s; if !s.contains(#pattern_lit) { return Err(fluent_wvr::FieldError::Constraint(#pattern_err.into())); } s } },
-                    Some(prev) => quote! { { let s: String = #prev; if !s.contains(#pattern_lit) { return Err(fluent_wvr::FieldError::Constraint(#pattern_err.into())); } s } },
+                    None => {
+                        quote! { { let s: String = s; if !s.contains(#pattern_lit) { return Err(fluent_wvr::FieldError::Constraint(#pattern_err.into())); } s } }
+                    }
+                    Some(prev) => {
+                        quote! { { let s: String = #prev; if !s.contains(#pattern_lit) { return Err(fluent_wvr::FieldError::Constraint(#pattern_err.into())); } s } }
+                    }
                 });
             }
             if let Some(expr) = inner_expr {
@@ -865,7 +949,10 @@ pub fn derive_describable(input: TokenStream) -> TokenStream {
         let field_name_str = field_ident.to_string();
         let ty = &f.ty;
         let ty_str = quote!(#ty).to_string();
-        let meta = parse_field_attrs(f);
+        let meta = match parse_field_attrs(f) {
+            Ok(meta) => meta,
+            Err(error) => return error.to_compile_error().into(),
+        };
 
         if meta.skip {
             continue;
@@ -911,7 +998,31 @@ pub fn derive_describable(input: TokenStream) -> TokenStream {
         }
 
         if let Some(ref pattern) = meta.pattern {
+            // Substring-enforced, documented as such: the JSON Schema
+            // `pattern` slot carries a substring, not a regex. The slot is
+            // kept (additive-only contract); the enforcement never changed.
             schema.push(quote! { "pattern": #pattern });
+        }
+
+        if meta.clamp {
+            // Exactly one clamp trace: `x-clamp` with the numeric bounds,
+            // mirroring `minimum`/`maximum`. `clamp` requires both `min` and
+            // `max` (enforced in `set_field` codegen), so both are present.
+            match (meta.min, meta.max) {
+                (Some(min), Some(max)) => {
+                    let min_lit = proc_macro2::Literal::f64_unsuffixed(min);
+                    let max_lit = proc_macro2::Literal::f64_unsuffixed(max);
+                    schema.push(quote! { "x-clamp": [#min_lit, #max_lit] });
+                }
+                _ => {
+                    return syn::Error::new_spanned(
+                        f,
+                        "`clamp` requires both `min` and `max` to be specified",
+                    )
+                    .to_compile_error()
+                    .into();
+                }
+            }
         }
 
         if let Some(ref coerce) = meta.coerce {
@@ -943,6 +1054,14 @@ pub fn derive_describable(input: TokenStream) -> TokenStream {
         };
         let max_expr = match meta.max {
             Some(v) => quote! { Some(#v) },
+            None => quote! { None },
+        };
+        let min_raw_expr = match &meta.min_raw {
+            Some(r) => quote! { Some(#r.into()) },
+            None => quote! { None },
+        };
+        let max_raw_expr = match &meta.max_raw {
+            Some(r) => quote! { Some(#r.into()) },
             None => quote! { None },
         };
         let type_name_str = ty_str.clone();
@@ -985,6 +1104,8 @@ pub fn derive_describable(input: TokenStream) -> TokenStream {
                 description: #desc_expr,
                 min: #min_expr,
                 max: #max_expr,
+                min_raw: #min_raw_expr,
+                max_raw: #max_raw_expr,
                 required: #required_expr,
                 format: #format_expr,
                 max_len: #max_len_expr,
@@ -1024,6 +1145,10 @@ pub fn derive_describable(input: TokenStream) -> TokenStream {
 }
 
 #[cfg(test)]
+#[path = "unknown_attr_tests.rs"]
+mod unknown_attr_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -1045,7 +1170,7 @@ mod tests {
     #[test]
     fn parse_field_attrs_extracts_desc() {
         let field = make_field(r#"desc = "TCP port""#, "u16", "port");
-        let meta = parse_field_attrs(&field);
+        let meta = parse_field_attrs(&field).expect("fixture uses known attributes");
         assert_eq!(meta.desc.as_deref(), Some("TCP port"));
         assert!(meta.min.is_none());
         assert!(meta.max.is_none());
@@ -1056,7 +1181,7 @@ mod tests {
     #[test]
     fn parse_field_attrs_extracts_min_max() {
         let field = make_field("min = 1, max = 65535", "u16", "port");
-        let meta = parse_field_attrs(&field);
+        let meta = parse_field_attrs(&field).expect("fixture uses known attributes");
         assert_eq!(meta.min, Some(1.0));
         assert_eq!(meta.max, Some(65535.0));
     }
@@ -1064,42 +1189,42 @@ mod tests {
     #[test]
     fn parse_field_attrs_extracts_skip() {
         let field = make_field("skip", "String", "ignored");
-        let meta = parse_field_attrs(&field);
+        let meta = parse_field_attrs(&field).expect("fixture uses known attributes");
         assert!(meta.skip);
     }
 
     #[test]
     fn parse_field_attrs_extracts_required_false() {
         let field = make_field("required = false", "Option<String>", "nickname");
-        let meta = parse_field_attrs(&field);
+        let meta = parse_field_attrs(&field).expect("fixture uses known attributes");
         assert!(!meta.required);
     }
 
     #[test]
     fn parse_field_attrs_extracts_format() {
         let field = make_field(r#"format = "url""#, "String", "endpoint");
-        let meta = parse_field_attrs(&field);
+        let meta = parse_field_attrs(&field).expect("fixture uses known attributes");
         assert_eq!(meta.format.as_deref(), Some("url"));
     }
 
     #[test]
     fn parse_field_attrs_extracts_max_len() {
         let field = make_field("max_len = 100", "String", "name");
-        let meta = parse_field_attrs(&field);
+        let meta = parse_field_attrs(&field).expect("fixture uses known attributes");
         assert_eq!(meta.max_len, Some(100));
     }
 
     #[test]
     fn parse_field_attrs_extracts_sanitize() {
         let field = make_field(r#"sanitize = "trim""#, "String", "name");
-        let meta = parse_field_attrs(&field);
+        let meta = parse_field_attrs(&field).expect("fixture uses known attributes");
         assert_eq!(meta.sanitize.as_deref(), Some("trim"));
     }
 
     #[test]
     fn parse_field_attrs_extracts_pattern() {
         let field = make_field(r#"pattern = "https://""#, "String", "url");
-        let meta = parse_field_attrs(&field);
+        let meta = parse_field_attrs(&field).expect("fixture uses known attributes");
         assert_eq!(meta.pattern.as_deref(), Some("https://"));
         assert!(meta.variants.is_none());
     }
@@ -1107,7 +1232,7 @@ mod tests {
     #[test]
     fn parse_field_attrs_extracts_variants_path() {
         let field = make_field(r#"variants = "crate::smoothing_ids""#, "String", "kind");
-        let meta = parse_field_attrs(&field);
+        let meta = parse_field_attrs(&field).expect("fixture uses known attributes");
         assert_eq!(
             meta.variants.map(|tokens| tokens.to_string()),
             Some("crate :: smoothing_ids".to_owned())
@@ -1117,14 +1242,14 @@ mod tests {
     #[test]
     fn parse_field_attrs_extracts_empty_is_none() {
         let field = make_field("empty_is_none = false", "Option<String>", "email");
-        let meta = parse_field_attrs(&field);
+        let meta = parse_field_attrs(&field).expect("fixture uses known attributes");
         assert!(!meta.empty_is_none);
     }
 
     #[test]
     fn parse_field_attrs_default_empty_is_none_true() {
         let field = make_field("required = false", "Option<String>", "nickname");
-        let meta = parse_field_attrs(&field);
+        let meta = parse_field_attrs(&field).expect("fixture uses known attributes");
         assert!(meta.empty_is_none);
     }
 
@@ -1202,17 +1327,5 @@ mod tests {
         // Bounds ride along: an optional number still declares its floor.
         assert!(is_numeric_type(&strip_option_wrapper("Option<f64>")));
         assert!(!is_numeric_type(&strip_option_wrapper("Option<String>")));
-    }
-
-    #[test]
-    fn unknown_sanitize_mode_returns_none() {
-        // parse_field_attrs returns sanitize: None for unknown modes
-        // (the error from parse_nested_meta is swallowed by `let _ =`)
-        let field = make_field(r#"sanitize = "invalid""#, "String", "x");
-        let meta = parse_field_attrs(&field);
-        assert_eq!(
-            meta.sanitize, None,
-            "unknown sanitize mode should not be set"
-        );
     }
 }

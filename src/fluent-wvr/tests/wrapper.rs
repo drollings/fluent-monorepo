@@ -130,6 +130,67 @@ fn instrumented_downcast_roundtrip() {
     assert!(fluent_wvr::component_downcast_ref::<MockUnit>(&*arc).is_none());
 }
 
+/// Downcast matrix through 0/1/2 wrapper layers: `as_any` always yields
+/// the outermost wrapper, and each wrapper's `inner()` unwraps exactly one
+/// layer — there is no forwarded auto-downcast that would hide which layer
+/// answered.
+#[test]
+fn downcast_matrix_outermost_wins_per_layer_unwrap() {
+    // 0 layers: the bare component downcasts to itself.
+    let bare: Arc<dyn Component> = Arc::new(MockUnit::ok("bare"));
+    assert!(fluent_wvr::component_downcast_ref::<MockUnit>(&*bare).is_some());
+
+    // 1 layer (Instrumented): outermost wins; inner() unwraps one layer.
+    let one: Arc<dyn Component> = Arc::new(Instrumented::new(MockUnit::ok("one"), "l1"));
+    assert!(fluent_wvr::component_downcast_ref::<Instrumented<MockUnit>>(&*one).is_some());
+    assert!(fluent_wvr::component_downcast_ref::<MockUnit>(&*one).is_none());
+    let outer = fluent_wvr::component_downcast_ref::<Instrumented<MockUnit>>(&*one).expect("outer");
+    assert_eq!(outer.inner().name(), "one");
+
+    // 1 layer (ComponentAdapter): outermost wins; inner() yields the wrapped Arc.
+    let adapted: Arc<dyn Component> =
+        Arc::new(ComponentAdapter::new(Arc::new(MockUnit::ok("adapted"))));
+    assert!(fluent_wvr::component_downcast_ref::<ComponentAdapter>(&*adapted).is_some());
+    assert!(fluent_wvr::component_downcast_ref::<MockUnit>(&*adapted).is_none());
+    let adapter =
+        fluent_wvr::component_downcast_ref::<ComponentAdapter>(&*adapted).expect("adapter");
+    assert!(
+        fluent_wvr::component_downcast_ref::<MockUnit>(&**adapter.inner()).is_some(),
+        "one inner() hop must reach the wrapped component"
+    );
+
+    // 1 layer (SuffixedComponent): outermost wins; inner() yields the wrapped Arc.
+    let suffixed: Arc<dyn Component> = Arc::new(SuffixedComponent::new(
+        Arc::new(MockUnit::ok("sfx")),
+        "shard",
+        WorkContext::default(),
+    ));
+    assert!(fluent_wvr::component_downcast_ref::<SuffixedComponent>(&*suffixed).is_some());
+    assert!(fluent_wvr::component_downcast_ref::<MockUnit>(&*suffixed).is_none());
+    let suffix_holder =
+        fluent_wvr::component_downcast_ref::<SuffixedComponent>(&*suffixed).expect("suffixed");
+    assert!(
+        fluent_wvr::component_downcast_ref::<MockUnit>(&**suffix_holder.inner()).is_some(),
+        "one inner() hop must reach the wrapped component"
+    );
+
+    // 2 layers (Instrumented over ComponentAdapter): unwrap one layer at a time.
+    let two: Arc<dyn Component> = Arc::new(Instrumented::new(
+        ComponentAdapter::new(Arc::new(MockUnit::ok("two"))),
+        "l2",
+    ));
+    assert!(fluent_wvr::component_downcast_ref::<Instrumented<ComponentAdapter>>(&*two).is_some());
+    assert!(fluent_wvr::component_downcast_ref::<ComponentAdapter>(&*two).is_none());
+    assert!(fluent_wvr::component_downcast_ref::<MockUnit>(&*two).is_none());
+    let outer2 = fluent_wvr::component_downcast_ref::<Instrumented<ComponentAdapter>>(&*two)
+        .expect("outer2");
+    let mid: &ComponentAdapter = outer2.inner();
+    assert!(
+        fluent_wvr::component_downcast_ref::<MockUnit>(&**mid.inner()).is_some(),
+        "two inner() hops must reach the wrapped component"
+    );
+}
+
 // --- ComponentAdapter tests ---
 
 #[test]

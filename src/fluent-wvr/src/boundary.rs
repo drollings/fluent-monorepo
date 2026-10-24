@@ -20,6 +20,39 @@
 //! spelling mapping) lives in [`crate::coerce`], shared with the derive macro's
 //! `#[field(coerce = "...")]` pipeline, so one definition drives extraction,
 //! coercion, and validation.
+//!
+//! ## Contract
+//!
+//! The decoder is aimed at adversarial input (LLM output, user text), so it
+//! publishes these guarantees, each pinned by the boundary contract suite:
+//!
+//! - **Identity on valid JSON.** Canonical JSON passes through byte-identical
+//!   (control-free subset; control characters take the escaping exception
+//!   below). Schema-blind mode additionally parses strictly first, so valid
+//!   documents never enter the repair walk.
+//! - **Idempotence.** Repairing repaired output is a fixpoint.
+//! - **No panic on arbitrary bytes.** Arbitrary byte strings, arbitrary
+//!   UTF-8, and unterminated string shapes never panic, in any mode.
+//! - **String-content preservation in `lenient` mode.** Structure outside
+//!   strings is repaired; string contents are never altered except for
+//!   control-character escaping and single-quote conversion.
+//! - **Unknown-member handling in `for_schema` mode.** Members whose keys are
+//!   not in the schema's `field_names` are ignored: they never reach
+//!   `set_field`, however hostile the spelling.
+//! - **Bounded work and stack.** The walk is iterative and single-pass over
+//!   `char`s (no recursion over nesting); output size stays proportional to
+//!   input on deeply nested and megabyte-scale input.
+//! - **No key smuggling past validation.** Only schema-listed names reach
+//!   `set_field`; a member that fails `set_field` keeps its field default
+//!   (the `serde(default)` equivalent) and is absent from the decoded-names
+//!   list — never a fabricated pass.
+//! - **Quote ownership.** The field's own `coerce` pipeline owns quote
+//!   handling. `decode_boundary` passes member strings through `set_field`
+//!   unchanged, so a bare `String` without `coerce` keeps its surrounding
+//!   quotes (pinned spec); no second stripper exists.
+//!
+//! Repaired output is *recovered, not pristine*: always prefer a strict parse,
+//! and treat a successful repair as a signal to inspect, not as clean input.
 
 use crate::coerce::{escaped_char, literal_kind, LiteralKind};
 use crate::{Describable, FieldAccess};
@@ -160,6 +193,40 @@ fn capture_value(chars: &[char], v0: usize) -> usize {
         j += 1;
     }
     j
+}
+
+/// Scan a JSON number literal starting at `i` (a leading `-` or an ASCII
+/// digit) and return the index just past it: digits, an optional fraction,
+/// an optional exponent. The slice is emitted verbatim — strict parsing
+/// validates later — so exponents (`1e-3`) survive repair instead of being
+/// split into a quoted identifier.
+fn consume_number(chars: &[char], mut i: usize) -> usize {
+    let n = chars.len();
+    if i < n && chars[i] == '-' {
+        i += 1;
+    }
+    while i < n && chars[i].is_ascii_digit() {
+        i += 1;
+    }
+    if i < n && chars[i] == '.' && i + 1 < n && chars[i + 1].is_ascii_digit() {
+        i += 1;
+        while i < n && chars[i].is_ascii_digit() {
+            i += 1;
+        }
+    }
+    if i < n && (chars[i] == 'e' || chars[i] == 'E') {
+        let mut k = i + 1;
+        if k < n && (chars[k] == '+' || chars[k] == '-') {
+            k += 1;
+        }
+        if k < n && chars[k].is_ascii_digit() {
+            i = k;
+            while i < n && chars[i].is_ascii_digit() {
+                i += 1;
+            }
+        }
+    }
+    i
 }
 
 /// Record a member whose key was just recognised at `key` with the value
@@ -348,10 +415,19 @@ fn walk(raw: &str, opts: &BoundaryOptions) -> (String, Vec<(String, String)>) {
                 if matches!(word.as_str(), "Infinity" | "NaN") {
                     out.push_str("null");
                     i = j;
+                } else if j < n && chars[i + 1].is_ascii_digit() {
+                    let end = consume_number(&chars, i);
+                    out.push_str(&chars[i..end].iter().collect::<String>());
+                    i = end;
                 } else {
                     out.push('-');
                     i += 1;
                 }
+            }
+            c if c.is_ascii_digit() => {
+                let end = consume_number(&chars, i);
+                out.push_str(&chars[i..end].iter().collect::<String>());
+                i = end;
             }
             c if c.is_ascii_alphabetic() || c == '_' || c == '$' => {
                 let start = i;
@@ -441,11 +517,21 @@ fn walk(raw: &str, opts: &BoundaryOptions) -> (String, Vec<(String, String)>) {
 /// schema's field names, and returns the `(key, value)` pairs so callers can
 /// coerce them through `set_field`.
 ///
+/// Strict-parse-first: input that already parses as JSON passes through
+/// byte-identical (schema-blind mode); repair only engages on malformed
+/// input.
+///
 /// Conservative by construction: it only repairs structure outside string
 /// values; string contents are never altered except for control-character
 /// escaping and single-quote conversion. Callers should try a strict parse
 /// first and treat repaired output as recovered, not pristine.
 pub fn repair_boundary(raw: &str, opts: &BoundaryOptions) -> BoundaryRepair {
+    if opts.schema.is_none() && serde_json::from_str::<serde_json::Value>(raw).is_ok() {
+        return BoundaryRepair {
+            text: raw.to_string(),
+            members: Vec::new(),
+        };
+    }
     let start = if opts.schema.is_some() {
         0
     } else {
@@ -515,21 +601,4 @@ pub fn decode_boundary_typed<T: FieldAccess + Describable + Default>(
 ) -> Result<(T, Vec<String>), BoundaryError> {
     let opts = BoundaryOptions::for_schema(T::default().field_names());
     decode_boundary::<T>(raw, &opts)
-}
-
-/// Build `BoundaryOptions` from a `Describable` type's schema (M6).
-pub fn from_describable<T: FieldAccess + Describable + Default>() -> BoundaryOptions<'static> {
-    BoundaryOptions::for_schema(T::default().field_names())
-}
-
-/// Coerce a raw boundary value for a specific field (M6) — delegates to
-/// `coerce` with the field's canonical pipeline (`Trim` + `StripQuotes`).
-pub fn coerce_for_field(_field: &str, raw: &str) -> String {
-    crate::coerce::coerce(
-        raw,
-        &[
-            crate::coerce::Coercion::Trim,
-            crate::coerce::Coercion::StripQuotes,
-        ],
-    )
 }

@@ -52,41 +52,20 @@ fn h1a_shared_arc_set_field_is_readonly() {
     }
 }
 
-/// Characterization: adapter over shared inner stores override WITHOUT validation.
-/// Desired: should return Err and NOT store (see ignored test below).
+/// Fail-closed H1b: over a shared inner the adapter cannot validate (no
+/// exclusive access), so it returns `ReadOnly` without storing — mirroring
+/// the `Arc<dyn Component>` blanket impl. Exclusive inners still validate
+/// (see the test below).
 #[test]
-fn h1b_adapter_shared_stores_invalid_without_validation_characterization() {
-    let inner: Arc<dyn Component> = Arc::new(AuditPort { port: 8079 });
-    let _clone = Arc::clone(&inner); // strong count >= 2 -> Arc::get_mut fails
-    let mut adapter = ComponentAdapter::new(inner);
-    // "0" is below min=1 -> inner would reject, but adapter currently stores anyway.
-    let res = adapter.set_field("port", "0");
-    // PIN current behavior:
-    assert!(res.is_ok(), "characterization: currently Ok, desired is Err");
-    assert_eq!(adapter.get_field("port").unwrap(), "0");
-    // DIVERGENCE: inner still holds old value; execute sees old value.
-    assert_eq!(adapter.inner().get_field("port").unwrap(), "8079");
-    let out = adapter.execute(&WorkContext::default()).unwrap();
-    assert!(
-        out.message.contains("8079"),
-        "execute sees inner value, not override: {}",
-        out.message
-    );
-}
-
-/// Desired behavior for H1b: adapter must validate even when shared.
-/// Currently fails -> marked ignore until fix.
-#[test]
-#[ignore = "AUDIT-H1: adapter stores unvalidated override when shared; want Err + no store"]
 fn h1b_adapter_shared_invalid_must_err_desired() {
     let inner: Arc<dyn Component> = Arc::new(AuditPort { port: 8079 });
     let _clone = Arc::clone(&inner);
     let mut adapter = ComponentAdapter::new(inner);
     let err = adapter.set_field("port", "0").unwrap_err();
-    assert!(matches!(
-        err,
-        FieldError::Constraint(_) | FieldError::Parse(_)
-    ));
+    assert!(
+        matches!(err, FieldError::ReadOnly(_, _)),
+        "shared adapter write must fail closed, got {err:?}"
+    );
     // override must NOT be stored
     assert_eq!(adapter.get_field("port").unwrap(), "8079");
 }
@@ -102,4 +81,36 @@ fn h1b_adapter_exclusive_validates_and_stores() {
     // 99999 > max 65535 -> Constraint (via f64 bound check); must NOT store
     assert!(matches!(err, FieldError::Constraint(_)), "got {err:?}");
     assert_eq!(adapter.get_field("port").unwrap(), "9000");
+}
+
+/// Shared inner, *valid* value: still `Err(ReadOnly)`, nothing stored.
+/// A valid value must not fork the source of truth either.
+#[test]
+fn h1b_adapter_shared_valid_still_readonly_no_store() {
+    let inner: Arc<dyn Component> = Arc::new(AuditPort { port: 8079 });
+    let _clone = Arc::clone(&inner); // strong count >= 2 -> Arc::get_mut fails
+    let mut adapter = ComponentAdapter::new(inner);
+    match adapter.set_field("port", "9000") {
+        Err(FieldError::ReadOnly(_, _)) => {}
+        other => panic!("expected ReadOnly, got {other:?}"),
+    }
+    // No override stored: get_field falls through to the inner value.
+    assert_eq!(adapter.get_field("port").unwrap(), "8079");
+}
+
+/// Control: the explicit `with_field_override` builder remains the
+/// deliberate unchecked path, even over a shared inner.
+#[test]
+fn h1b_with_field_override_builder_stays_unchecked_bypass() {
+    let inner: Arc<dyn Component> = Arc::new(AuditPort { port: 8079 });
+    let _clone = Arc::clone(&inner);
+    let adapter = ComponentAdapter::new(inner).with_field_override("port", "0");
+    assert_eq!(adapter.get_field("port").unwrap(), "0");
+    // The bypass is explicit: execution still sees the inner value.
+    let out = adapter.execute(&WorkContext::default()).unwrap();
+    assert!(
+        out.message.contains("8079"),
+        "bypass stores the override; execute reads the inner: {}",
+        out.message
+    );
 }

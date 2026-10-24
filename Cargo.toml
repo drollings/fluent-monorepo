@@ -62,6 +62,9 @@ serde_json = "1"
 # Builders
 bon = "3"
 criterion = "0.8"
+# Adversarial-input properties for the boundary codec (M6): hermetic,
+# dev-only, never a production dependency.
+proptest = "1"
 
 # Templating
 # minijinja is used by fluent-router's chart templates: charts need

@@ -882,6 +882,8 @@ fn scaffold_types_still_compile() {
         description: None,
         min: None,
         max: None,
+        min_raw: None,
+        max_raw: None,
         required: true,
         format: None,
         max_len: None,

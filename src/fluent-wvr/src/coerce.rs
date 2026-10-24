@@ -279,11 +279,6 @@ pub fn parse_bool(s: &str) -> Option<bool> {
     }
 }
 
-/// Coerce a raw value for a named field (M6 helper) — `Trim` then `StripQuotes`.
-pub fn coerce_for_field(_field: &str, raw: &str) -> String {
-    coerce(raw, &[Coercion::Trim, Coercion::StripQuotes])
-}
-
 /// Split a boundary string on a separator character at the top nesting level,
 /// respecting quote pairs and `()`/`[]`/`{}` nesting so separators inside a
 /// quoted or nested region are never split. This is the primitive for parsing

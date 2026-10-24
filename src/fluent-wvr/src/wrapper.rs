@@ -114,6 +114,36 @@ impl<U: WorkUnit> Instrumented<U> {
             histogram: Some(histogram),
         }
     }
+
+    /// Borrow the wrapped unit.
+    ///
+    /// Downcasting stops at the outermost wrapper by design — `as_any`
+    /// yields the wrapper, never the inner type — so unwrapping a chain
+    /// means calling `inner()` one layer at a time:
+    ///
+    /// ```rust
+    /// use std::sync::Arc;
+    /// use fluent_wvr::prelude::*;
+    /// use fluent_wvr::test_support::MockUnit;
+    ///
+    /// let erased: Arc<dyn Component> = Arc::new(Instrumented::new(
+    ///     ComponentAdapter::new(Arc::new(MockUnit::ok("leaf"))),
+    ///     "layer",
+    /// ));
+    /// // Outermost wins: the leaf is invisible until each layer is peeled.
+    /// assert!(fluent_wvr::component_downcast_ref::<MockUnit>(&*erased).is_none());
+    /// let outer =
+    ///     fluent_wvr::component_downcast_ref::<Instrumented<ComponentAdapter>>(&*erased)
+    ///         .expect("outer wrapper");
+    /// let mid: &ComponentAdapter = outer.inner();
+    /// assert!(
+    ///     fluent_wvr::component_downcast_ref::<MockUnit>(&**mid.inner()).is_some(),
+    ///     "two inner() hops reach the wrapped component"
+    /// );
+    /// ```
+    pub fn inner(&self) -> &U {
+        &self.inner
+    }
 }
 
 impl<U: WorkUnit> WorkUnit for Instrumented<U> {
@@ -306,11 +336,22 @@ impl WorkUnit for ComponentAdapter {
 
 impl FieldAccess for ComponentAdapter {
     fn set_field(&mut self, name: &str, value: &str) -> Result<(), FieldError> {
-        if let Some(inner) = Arc::get_mut(&mut self.inner) {
-            inner.set_field(name, value)?;
+        // Fail closed when the inner handle is shared: without exclusive
+        // access the write cannot be validated against the inner component,
+        // so storing it would fork `get_field` (override) from `execute`
+        // (inner). The explicit `with_field_override` builders remain the
+        // deliberate unchecked path.
+        match Arc::get_mut(&mut self.inner) {
+            Some(inner) => {
+                inner.set_field(name, value)?;
+                self.field_overrides.insert(name.into(), value.into());
+                Ok(())
+            }
+            None => Err(FieldError::ReadOnly(
+                name.to_string(),
+                "inner Arc has multiple owners; configure before wrapping".into(),
+            )),
         }
-        self.field_overrides.insert(name.into(), value.into());
-        Ok(())
     }
     fn get_field(&self, name: &str) -> Result<String, FieldError> {
         if let Some(v) = self.field_overrides.get(name) {
@@ -345,12 +386,16 @@ impl Describable for ComponentAdapter {
 
 impl_component!(ComponentAdapter);
 
-/// A first-Ok-wins cascade of `Arc<dyn Component>` units.
+/// A first-accepted-wins cascade of `Arc<dyn Component>` units.
 ///
-/// Runs units in registration order and returns the first `Ok` `WorkOutput`
-/// (coral's `TierRegistry` semantics, generalized). An `Err` from a unit
-/// advances to the next one; when every unit fails, the last `Err` is
-/// returned (falling back to a descriptive error when the cascade is empty).
+/// Runs units in registration order and returns the first *accepted*
+/// `WorkOutput` (`WorkOutput::is_accept`, the task-value verdict). An
+/// `Ok` output with `success == false` advances to the next unit — the
+/// last failure verdict is preserved and returned when no unit is
+/// accepted. An `Err` from a unit advances through the ladder's error
+/// walk (never terminal here); when every unit errors, the last `Err`
+/// is returned (falling back to a descriptive error when the cascade
+/// is empty).
 ///
 /// The cascade itself is a `Component`, so it can be registered, wrapped, or
 /// nested like any other unit. `depends`/`provides` are empty — the cascade
@@ -389,18 +434,43 @@ impl ComponentCascade {
         self.units.is_empty()
     }
 
-    /// Run units in order; return the first `Ok` `WorkOutput`, or the last
-    /// `Err` when all units fail.
+    /// Run units in order; return the first *accepted* `WorkOutput`.
+    ///
+    /// `Ok` outputs with `success == true` win immediately; `Ok` outputs
+    /// with `success == false` advance (the last failure verdict is
+    /// remembered); `Err` advances through the ladder's error walk. Total
+    /// failure returns the last `Err`, else the last failure `Ok(fail)`,
+    /// else a descriptive empty-cascade error. A failure verdict never
+    /// becomes `WorkError::Execution`, so `is_retryable` and supervisor
+    /// accounting keep transport failures distinct from task-value verdicts.
     pub fn execute_first_ok(&self, ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
-        let mut last_err = None;
-        for unit in &self.units {
-            match unit.execute(ctx) {
-                Ok(output) => return Ok(output),
-                Err(e) => last_err = Some(e),
-            }
+        if self.units.is_empty() {
+            return Err(WorkError::Execution(
+                "component cascade has no units".into(),
+            ));
         }
-        Err(last_err
-            .unwrap_or_else(|| WorkError::Execution("component cascade has no units".into())))
+        let mut last_fail: Option<WorkOutput> = None;
+        match crate::ladder::first_accept_in_order_sync(
+            &self.units,
+            |unit: &Arc<dyn Component>| match unit.execute(ctx) {
+                Ok(output) if output.is_accept() => Ok(Some(output)),
+                Ok(output) => {
+                    last_fail = Some(output);
+                    Ok(None)
+                }
+                Err(e) => Err(e),
+            },
+            |_: &WorkError| false,
+        ) {
+            Ok(Some(output)) => Ok(output),
+            Ok(None) => match last_fail {
+                Some(fail) => Ok(fail),
+                None => Err(WorkError::Execution(
+                    "component cascade has no units".into(),
+                )),
+            },
+            Err(e) => Err(e),
+        }
     }
 }
 
@@ -571,6 +641,13 @@ impl SuffixedComponent {
             suffix,
             ctx,
         }
+    }
+
+    /// Borrow the wrapped component. Pairs with `Instrumented::inner` and
+    /// `ComponentAdapter::inner` for layer-by-layer unwrapping after
+    /// type erasure: each call peels exactly one wrapper.
+    pub fn inner(&self) -> &Arc<dyn Component> {
+        &self.inner
     }
 }
 

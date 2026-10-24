@@ -57,12 +57,24 @@ fn sample() -> FullAttrs {
 fn h2_minimum_maximum_are_numbers() {
     let s = sample().describe();
     let port = &s["properties"]["port"];
-    assert!(port["minimum"].is_number(), "minimum should be number, got {}", port["minimum"]);
-    assert!(port["maximum"].is_number(), "maximum should be number, got {}", port["maximum"]);
+    assert!(
+        port["minimum"].is_number(),
+        "minimum should be number, got {}",
+        port["minimum"]
+    );
+    assert!(
+        port["maximum"].is_number(),
+        "maximum should be number, got {}",
+        port["maximum"]
+    );
     assert!((port["minimum"].as_f64().unwrap() - 1.0).abs() < f64::EPSILON);
     assert!((port["maximum"].as_f64().unwrap() - 65535.0).abs() < f64::EPSILON);
     let host = &s["properties"]["host"];
-    assert!(host["maxLength"].is_number(), "maxLength should be number, got {}", host["maxLength"]);
+    assert!(
+        host["maxLength"].is_number(),
+        "maxLength should be number, got {}",
+        host["maxLength"]
+    );
     assert_eq!(host["maxLength"].as_u64().unwrap(), 255);
 }
 
@@ -82,8 +94,14 @@ fn h2_required_respects_option_and_flag() {
     for f in ["port", "host", "verbose", "endpoint", "name", "clamped"] {
         assert!(req.iter().any(|v| v == f), "{f} should be required");
     }
-    assert!(!req.iter().any(|v| v == "nickname"), "nickname Option must not be required");
-    assert!(!req.iter().any(|v| v == "skipped"), "skipped must not appear");
+    assert!(
+        !req.iter().any(|v| v == "nickname"),
+        "nickname Option must not be required"
+    );
+    assert!(
+        !req.iter().any(|v| v == "skipped"),
+        "skipped must not appear"
+    );
 }
 
 #[test]
@@ -107,17 +125,24 @@ fn h2_pattern_is_substring_not_regex() {
     assert!(c.set_field("endpoint", "http://x").is_err());
     // schema keyword is named "pattern" (JSON Schema regex slot)
     let s = c.describe();
-    assert_eq!(s["properties"]["endpoint"]["pattern"], serde_json::json!("https://"));
+    assert_eq!(
+        s["properties"]["endpoint"]["pattern"],
+        serde_json::json!("https://")
+    );
     // NOTE: "https://" as regex also matches "https://" literally except `//` fine,
     // but e.g. pattern "a.c" would differ: substring "a.c" vs regex any-char.
 }
 
 #[test]
-fn h2_clamp_not_in_schema_characterization() {
+fn h2_clamp_leaves_single_x_clamp_trace() {
     let s = sample().describe();
     let clamped = &s["properties"]["clamped"];
-    // clamp affects set_field but leaves no schema trace
-    assert!(clamped.get("clamp").is_none(), "clamp mode is dropped from schema: {clamped}");
+    // `clamp` is enforced in `set_field` and leaves exactly one schema trace.
+    assert_eq!(clamped["x-clamp"], serde_json::json!([0.0, 10.0]));
+    assert!(
+        clamped.get("clamp").is_none(),
+        "no parallel `clamp` keyword beside `x-clamp`: {clamped}"
+    );
     // behavior: out-of-range clamps instead of error
     let mut c = sample();
     c.set_field("clamped", "999").unwrap();

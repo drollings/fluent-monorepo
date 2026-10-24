@@ -239,9 +239,11 @@ fn normalize_curie_preserves_lowercased_prefix() {
 
 // ── Turtle-reader parity: the streaming parser and the line scanner ────────
 
-fn n2_fixture() -> String {
+fn n2_fixture() -> Option<String> {
+    // Operator artifact (`make yago-load` regenerates it from the full
+    // taxonomy download); absent in checkouts without it — skip, don't fail.
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../env/yago-taxonomy-n2.ttl");
-    std::fs::read_to_string(&path).expect("n2 taxonomy TTL readable")
+    std::fs::read_to_string(&path).ok()
 }
 
 /// The line scanner is the per-line reader `prune_ttl` uses; the streaming
@@ -263,7 +265,10 @@ fn parity_readers_agree_on_mini_fixture() {
 
 #[test]
 fn parity_readers_agree_on_real_n2_taxonomy() {
-    let ttl = n2_fixture();
+    let Some(ttl) = n2_fixture() else {
+        eprintln!("skip: env/yago-taxonomy-n2.ttl absent (operator artifact)");
+        return;
+    };
     assert_readers_agree(&ttl, "yago-taxonomy-n2.ttl");
     let (_, edges) = collect_edges(&ttl);
     assert!(

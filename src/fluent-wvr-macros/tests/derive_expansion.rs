@@ -230,3 +230,95 @@ fn impl_component_generic_expands() {
     assert!(fluent_wvr::component_downcast_ref::<Wrapper<Arc<dyn Component>>>(&*comp).is_some());
     assert_eq!(comp.name(), "fieldless");
 }
+
+// ── Closed-vocabulary control: every documented #[field(...)] argument ─────
+// still expands and round-trips set_field/describe. The unknown-argument
+// fence must not become a blanket refusal.
+
+fn kind_options() -> Vec<String> {
+    vec!["fast".to_string(), "slow".to_string()]
+}
+
+#[derive(FieldAccess, Describable)]
+struct ClosedVocab {
+    #[field(desc = "TCP listen port", min = 1, max = 65535)]
+    port: u16,
+    #[field(desc = "Clamped dial", min = 0, max = 10, clamp)]
+    clamped: u32,
+    #[field(desc = "Host address", max_len = 64)]
+    host: String,
+    #[field(desc = "Display name", sanitize = "trim")]
+    trimmed: String,
+    #[field(desc = "API endpoint", pattern = "https://")]
+    endpoint: String,
+    #[field(desc = "Mode flag", coerce = "trim, strip_quotes")]
+    mode: String,
+    #[field(desc = "Smoothing ratio", parse = "number")]
+    ratio: f64,
+    #[field(desc = "Smoothing kind", variants = "kind_options")]
+    kind: String,
+    #[field(desc = "Endpoint URL", format = "url")]
+    url: String,
+    #[field(desc = "Nickname", required = false)]
+    nick: Option<String>,
+    #[field(desc = "Contact mail", required = false, empty_is_none = false)]
+    email: Option<String>,
+    #[allow(dead_code)]
+    #[field(skip)]
+    internal: u64,
+}
+
+#[test]
+fn closed_vocabulary_still_expands_and_round_trips() {
+    let mut cfg = ClosedVocab {
+        port: 8080,
+        clamped: 5,
+        host: "localhost".into(),
+        trimmed: "x".into(),
+        endpoint: "https://api.example.com".into(),
+        mode: "fast".into(),
+        ratio: 0.5,
+        kind: "fast".into(),
+        url: "https://example.com".into(),
+        nick: None,
+        email: None,
+        internal: 7,
+    };
+    cfg.set_field("port", "9000").unwrap();
+    assert_eq!(cfg.get_field("port").unwrap(), "9000");
+    cfg.set_field("clamped", "999").unwrap();
+    assert_eq!(cfg.clamped, 10);
+    cfg.set_field("host", "router.local").unwrap();
+    assert_eq!(cfg.get_field("host").unwrap(), "router.local");
+    cfg.set_field("trimmed", "  padded  ").unwrap();
+    assert_eq!(cfg.get_field("trimmed").unwrap(), "padded");
+    cfg.set_field("endpoint", "https://ok.example.com").unwrap();
+    assert!(cfg.set_field("endpoint", "http://plain").is_err());
+    cfg.set_field("mode", "  \"slow\"  ").unwrap();
+    assert_eq!(cfg.get_field("mode").unwrap(), "slow");
+    cfg.set_field("ratio", "0.75").unwrap();
+    assert_eq!(cfg.get_field("ratio").unwrap(), "0.75");
+    cfg.set_field("kind", "slow").unwrap();
+    assert_eq!(cfg.get_field("kind").unwrap(), "slow");
+    cfg.set_field("url", "https://example.com").unwrap();
+    cfg.set_field("nick", "bob").unwrap();
+    assert_eq!(cfg.get_field("nick").unwrap(), "bob");
+    cfg.set_field("nick", "").unwrap();
+    assert_eq!(cfg.get_field("nick").unwrap(), "");
+    cfg.set_field("email", "").unwrap();
+    assert_eq!(cfg.get_field("email").unwrap(), "");
+    assert!(!cfg.field_names().contains(&"internal"));
+
+    let schema = cfg.describe();
+    assert_eq!(schema["properties"]["port"]["type"], "integer");
+    assert!(schema["properties"]["port"]["minimum"].is_number());
+    assert_eq!(schema["properties"]["url"]["format"], "url");
+    let kinds = schema["properties"]["kind"]["enum"]
+        .as_array()
+        .expect("variants list");
+    assert!(kinds.iter().any(|v| v == "fast"));
+    let required = schema["required"].as_array().expect("required");
+    assert!(!required.iter().any(|v| v == "nick"));
+    assert!(!required.iter().any(|v| v == "internal"));
+    assert!(schema["properties"].get("internal").is_none());
+}

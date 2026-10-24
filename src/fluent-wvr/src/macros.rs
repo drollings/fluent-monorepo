@@ -22,8 +22,8 @@
 ///
 /// For generic types, use the generic form:
 ///
-/// ```ignore
-/// impl_component!(generic (U: crate::Component + 'static) for Instrumented<U>);
+/// ```text
+/// // impl_component!(generic (U: Component + 'static) for Instrumented<U>);
 /// ```
 #[macro_export]
 macro_rules! impl_component {

@@ -81,14 +81,14 @@ fn top_bar_renders_default_ticker_timeframes_and_search_triggers() {
     assert_eq!(BOOKMARK_SEARCH_LABEL, "Bookmarks");
     assert_eq!(
         TOP_BAR_CHART_TYPES.len(),
-        4,
-        "the workspace offers candles, line, area, and Heikin"
+        3,
+        "the workspace offers candles, line, and Heikin"
     );
     for kind in TOP_BAR_CHART_TYPES {
         assert!(!chart_type_label(kind).is_empty(), "{kind:?} has a label");
     }
     assert_eq!(chart_type_label(ChartType::Candles), "Candles");
-    assert_eq!(chart_type_label(ChartType::Heikin), "Heikin");
+    assert_eq!(chart_type_label(ChartType::Heikin), "Heikin-Ashi");
     // The timeframe selector renders straight from the canonical list and the
     // dock range section offers the coarse chart presets on demand.
     assert_eq!(

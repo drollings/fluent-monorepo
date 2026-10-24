@@ -14,5 +14,23 @@ tracing = { workspace = true }
 tokio = { workspace = true }
 fluent-wvr-macros = { path = "../fluent-wvr-macros" }
 
+# Calibration-corpus fixtures must be built from the sanctioned
+# `StubComponent` (SKILL rule 12 bans hand-rolled test quads in new test
+# code). Dev-only: never linked into the library.
+[dev-dependencies]
+fluent-wvr-testutil = { path = "../fluent-wvr-testutil" }
+# Adversarial-input properties for the boundary contract (M6): the codec
+# takes hostile strings by definition, so example tests cannot cover the
+# input space. Hermetic, never a production dependency.
+proptest = { workspace = true }
+# Statistical bench harness for the reflection-tier cost table (M8): ratios
+# are measured, not folklore. Soak-tier only (never in regular gates), never
+# a production dependency.
+criterion = { workspace = true }
+
+[[bench]]
+name = "tier_costs"
+harness = false
+
 [lints]
 workspace = true

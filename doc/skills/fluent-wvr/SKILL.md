@@ -314,6 +314,18 @@ Violations defeat the supervisor's timeout and retry invariants. This is why
 `DbWorkUnit` (Pattern 8) offloads blocking rusqlite work to a blocking thread
 instead of doing it inline.
 
+**What a violation costs (the zombie).** The per-attempt timeout bounds the
+supervisor's await/retry loop, never a blocking body: a body that sleeps or
+spins past its budget holds its worker, keeps running past the deadline, and
+the finished inner wins the race — the summary reports `completed`, late,
+never a prompt `cancelled`. A retry scheduled after such an overrun may
+overlap the still-running body. `cancelled`/`Timeout` fires only where the
+task suspends at an await point (between-attempt backoff). If a test or tool
+must block on async work outside an executor, compose
+`common_core::runtime::block_on_shared` (process-wide fallback) or
+`block_on` (single-threaded fallback) — never an inline
+`tokio::runtime::Builder` per call.
+
 ### Error and output types
 
 `WorkError` and `WorkOutput` are the data flow types for `WorkUnit::execute`.
@@ -575,14 +587,21 @@ setattr(config, "port", 9000)
 
 ### Four tiers of reflection
 
+Measured by `benches/tier_costs.rs` (criterion, soak-tier only; ratios are
+portable, absolute nanos are not — see `audit/adr/007-ecosystem.md`):
+
 | Tier | Mechanism | Relative cost | When to use |
 |------|-----------|---------------|-------------|
-| 1 | Direct field access | 1x (baseline) | Hot inner loops, trusted internal code |
-| 2 | `serde` boundary serialization | ~10x | Boundary crossing, type known at compile time |
-| 3 | `FieldAccess` trait | ~20x | Field names from runtime data; config editors, WASM configs |
-| 4 | `HashMap` fallback | ~12–20x† | Schema genuinely unknown until runtime |
+| 1 | Direct field access | 1x (baseline; width-independent) | Hot inner loops, trusted internal code |
+| 2 | `serde` boundary serialization | ~330x–5400x per document (scales with width: 3→40 fields) | Boundary crossing, type known at compile time |
+| 3 | `FieldAccess` trait | ~17x–41x per field (grows with match-chain position) | Field names from runtime data; config editors, WASM configs |
+| 4 | `HashMap` fallback | ~100x (flat: hashing dominates, not width) | Schema genuinely unknown until runtime |
 
-†`HashMap` cost is dominated by hashing and heap allocation, not a string match. For types with many fields, a generated `match` (Tier 3) is often faster than `HashMap::get` (Tier 4). Do not assume Tier 4 is always cheaper than Tier 3.
+†For a 12-field document, twelve `set_field` calls (≈ 178 ns) beat one
+`from_value` (≈ 551 ns). `serde` is per-document while `set_field` is
+per-field — compare whole documents, not single ops. A length-bucketed or
+perfect-hash `set_field` dispatch for wide structs is a filed follow-up,
+not implemented here.
 
 #### Tier 1: Direct field access
 
@@ -729,6 +748,39 @@ Is a field name known only at runtime (config editor, WASM config)?
 - **Use `serde` for all boundary serialization.** JSON, database rows, RPC.
 - **Never call `set_field` in a hot loop.** Use Tier 1.
 - **Never add `FieldAccess` to a type that never crosses a boundary.** It adds code for no benefit.
+
+### Boundary codec contract
+
+`repair_boundary` / `extract_members` / `decode_boundary` (`fluent_wvr::boundary`)
+decode untrusted strings (LLM output, user input, IPC text, DB columns) against
+the schema's `field_names` through each field's own `coerce`/`parse` pipeline.
+Guarantees (each pinned by `tests/boundary_contract.rs`):
+
+- Identity on valid JSON (byte-identical; control-free subset), idempotence,
+  and no-panic on arbitrary bytes in any mode.
+- `lenient()` alters structure outside strings only — string contents survive
+  except control-character escaping and single-quote conversion.
+- `for_schema` ignores unknown members, however hostile the spelling.
+- Only schema-listed names reach `set_field` (no key smuggling); a member that
+  fails `set_field` keeps its default and is absent from the decoded names.
+- Bounded work/stack on deeply nested and megabyte-scale input (iterative,
+  single-pass walk).
+- Repaired output is *recovered, not pristine*: strict-parse first, and treat a
+  successful repair as a signal to inspect.
+
+Quote table (the field's `coerce` pipeline owns quote handling — no second
+stripper exists):
+
+| Field | Input member | Decoded value |
+|---|---|---|
+| bare `String`, no `coerce` | `"hi"` | `"hi"` (quotes kept — pinned spec) |
+| `coerce = "trim, strip_quotes"` | `"slow"` | `slow` |
+| `coerce = "trim, strip_quotes"` | `" padded "` | ` padded ` (inner spaces are content) |
+| `coerce = "json_escape"` | `"a<TAB>b"` | `"a\tb"`, parses back to `a<TAB>b` |
+
+Fuzzing is manual and nightly-only, never gating:
+`cd src/fluent-wvr/fuzz && cargo +nightly fuzz run repair` (proptest
+regression seeds can be dropped into `fuzz/corpus/repair/`).
 
 ---
 
@@ -1480,7 +1532,7 @@ pipeline.run(&mut cfg)?;   // required step always runs; prod-only step gated
 Use `Pipeline` when a config/handshake/request goes through an ordered series
 of fallible transformations with optional stages. Use `MiddlewareChain` for
 post-erasure `Arc<dyn Component>` wrapping, and `ComponentCascade` (Pattern 10)
-for first-Ok-wins dispatch.
+for first-accepted-wins dispatch.
 
 
 ---
@@ -1557,12 +1609,20 @@ override only after the inner accepts the value.
 ```rust
 impl FieldAccess for ComponentAdapter {
     fn set_field(&mut self, name: &str, value: &str) -> Result<(), FieldError> {
-        if let Some(inner) = Arc::get_mut(&mut self.inner) {
-            inner.set_field(name, value)?;   // inner validates; on Err, the
-                                              // override below is NOT stored
+        // Fail closed when shared: no exclusive access means no validation,
+        // so nothing is stored (mirrors the Arc<dyn Component> blanket impl).
+        match Arc::get_mut(&mut self.inner) {
+            Some(inner) => {
+                inner.set_field(name, value)?;   // inner validates; on Err, the
+                                                 // override below is NOT stored
+                self.field_overrides.insert(name.into(), value.into());
+                Ok(())
+            }
+            None => Err(FieldError::ReadOnly(
+                name.into(),
+                "inner Arc has multiple owners; configure before wrapping".into(),
+            )),
         }
-        self.field_overrides.insert(name.into(), value.into());
-        Ok(())
     }
     fn get_field(&self, name: &str) -> Result<String, FieldError> {
         if let Some(v) = self.field_overrides.get(name) {
@@ -1639,24 +1699,34 @@ registry.push(adapted);
 - **Use when adaptation decisions are made at runtime.** For compile-time adaptation, use newtype wrappers.
 - **Adapters implement `Component`** via `impl_component!(ComponentAdapter)`, so they store in the same registry as any other component.
 - **Delegate to the inner component** for all methods you don't override — `depends`, `provides`, `field_names`, and `get_field` (when no override is set) all fall through.
-- **`set_field` validates against the inner first, then stores.** If `Arc::get_mut(&mut self.inner)` returns `None`, the override is stored silently — the inner sees the value on the next call only if the inner has interior mutability. If the inner rejects the value, the override is *not* stored.
+- **`set_field` validates against the inner first, then stores — and fails closed when the inner is shared.** If `Arc::get_mut(&mut self.inner)` returns `None`, `set_field` returns `FieldError::ReadOnly` and stores nothing (mirroring the `Arc<dyn Component>` blanket impl): `get_field` keeps reading the inner value, never a forked override. If the inner rejects the value, the override is *not* stored. The `with_field_override` / `with_field_overrides` builders remain the explicit unchecked path — use them only when the fork is deliberate.
 - **`get_field` falls back to the inner component** when no override exists for the requested field.
+- **Unwrap one layer at a time.** `as_any` yields the outermost wrapper, never the inner type. `Instrumented::inner()`, `ComponentAdapter::inner()`, and `SuffixedComponent::inner()` each peel exactly one layer; there is no forwarded auto-downcast that would hide which layer answered.
 
-### ComponentCascade — first-Ok-wins fallback cascade
+### ComponentCascade — first-accepted-wins fallback cascade
 
 `ComponentCascade` (`fluent_wvr::wrapper`, in the prelude) is the shared
-first-Ok-wins primitive: a sequence of `Arc<dyn Component>` units whose
-`execute_first_ok` runs each in order and returns the first `Ok(WorkOutput)`.
-An `Err`/`WorkOutput::fail` moves to the next unit; exhaustion returns the
-last error (empty cascade → `Err(WorkError::Execution("component cascade has
-no units"))`). It is itself a `Component` via `impl_component!`.
+first-accepted-wins primitive: a sequence of `Arc<dyn Component>` units whose
+`execute_first_ok` runs each in order and returns the first *accepted*
+`WorkOutput` (`WorkOutput::is_accept`, the task-value verdict). An
+`Ok` output with `success == false` advances to the next unit (the last
+failure verdict is preserved); an `Err` advances through the ladder's error
+walk (never terminal here). Total failure returns the last `Err`, else the
+last failure `Ok(fail)`, else `Err(WorkError::Execution("component cascade
+has no units"))` for the empty cascade. It is itself a `Component` via
+`impl_component!`. The walk composes `first_accept_in_order_sync` — the
+ladder stays the single error-walk implementation; a failure verdict never
+becomes `WorkError::Execution`. Calibration (trusted):
+`cascade_acceptance_corpus` (27 cases) green — advance precision/recall
+100%/100%, abort precision/recall 100%/100%, confident-but-wrong 100%
+advanced-past / 0% won, 12/12 controls hold.
 
 ```rust
 let cascade = ComponentCascade::with_units(vec![
     Arc::new(l1_unit),
     Arc::new(l2_unit),
 ]);
-let output = cascade.execute_first_ok(&ctx)?;  // first Ok short-circuits
+let output = cascade.execute_first_ok(&ctx)?;  // first accepted wins
 ```
 
 Canonical consumer: coral's `TierRegistry` (L1/L2/L3/L4 tier dispatch)
@@ -2186,7 +2256,7 @@ rules of thumb.
 | `serde` | Stateless serialization — zero contention |
 | `FieldAccess` on Rust structs | Requires `&mut self` — configure before sharing |
 | `FieldAccess` on WASM/dynamic | Interior mutability (`Mutex`) inside the impl |
-| `FieldAccess` on shared `Arc<dyn Component>` | `Arc::get_mut` succeeds only with exclusive ownership; the blanket impl returns `FieldError::ReadOnly` otherwise. Use `ComponentArcExt::try_as_any_mut` for safe fallback. |
+| `FieldAccess` on shared `Arc<dyn Component>` | `Arc::get_mut` succeeds only with exclusive ownership; the blanket impl returns `FieldError::ReadOnly` otherwise. `ComponentAdapter::set_field` mirrors it: shared inner means `ReadOnly` with nothing stored. Use `ComponentArcExt::try_as_any_mut` for safe fallback. |
 | Newtype wrappers | No state — no contention |
 | `bon::Builder` | Per-request, lock-free until `build()` |
 | Scoped ownership | Stack-local — no sharing |
@@ -2255,6 +2325,14 @@ pub struct Config {
 
 ### Field-level version annotations
 
+> **Planned, not implemented.** `#[field(version_added = "...")]` and
+> `#[field(version_removed = "...")]` are reserved vocabulary for a future
+> schema-evolution layer, but the derive macro has no such arms today — and
+> since the unknown-argument fence landed, using either fails to compile
+> instead of silently doing nothing. Version your schemas with `serde`
+> (`default` / `skip` / `alias`, above) until the field-level layer ships.
+> Do not reintroduce these spellings for another purpose.
+
 ```rust
 #[derive(Serialize, Deserialize)]
 pub struct Config {
@@ -2262,18 +2340,45 @@ pub struct Config {
     pub port: u16,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[field(version_added = "1.1")]
+    // #[field(version_added = "1.1")]  // planned — does not compile yet
     pub new_field: Option<String>,
 
     #[serde(skip)]
-    #[field(version_removed = "2.0")]
+    // #[field(version_removed = "2.0")]  // planned — does not compile yet
     pub old_field: Option<String>,
 
     #[serde(alias = "old_name")]
-    #[field(version_added = "1.2")]
+    // #[field(version_added = "1.2")]  // planned — does not compile yet
     pub renamed_field: String,
 }
 ```
+
+### Closed `#[field(...)]` vocabulary
+
+The derive macros accept exactly these arguments — anything else fails
+expansion with an error naming the argument:
+
+`skip`, `desc`, `min`, `max`, `clamp`, `required`, `format`, `max_len`,
+`sanitize`, `pattern`, `coerce`, `parse`, `variants`, `empty_is_none`.
+
+Two shape notes (pinned by `tests/schema_edges.rs`):
+
+- `pattern` stays substring-enforced and stays under the JSON Schema
+  `pattern` slot by deliberate vendor interpretation (not a regex) — the
+  additive-only contract forbids moving the key.
+- `clamp` is enforced in `set_field` and leaves exactly one schema trace:
+  `"x-clamp": [min, max]`. No parallel `clamp` keyword exists.
+
+### Lossless bound raws
+
+`FieldSchema::{min, max}: Option<f64>` cannot exactly name `u64::MAX` /
+`i64::MIN` (the `f64` rounds to the nearest representable value — within
+one ulp, saturating to the edge on cast). The struct therefore also carries
+`min_raw` / `max_raw: Option<String>` with the exact decimal spellings from
+the attribute literals (`#[serde(default)]`, so older schema JSON without
+them still deserializes). The `f64` fields are untouched. Negative bounds
+(`min = -5`, `i64::MIN`) bind the negated value — previously the sign was
+silently dropped.
 
 ### Migration functions
 
