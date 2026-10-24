@@ -820,17 +820,20 @@ pub fn paint_candles_as(
 }
 
 /// Paint ribbon fill strips between the band edges at `alpha` opacity.
+/// The `ribbon_bull`/`ribbon_bear` keys resolve through the slot style
+/// (override first, theme second), like every other slot-owned mark.
 pub fn paint_ribbon(
     painter: &egui::Painter,
     bands: &[Option<RibbonBand>],
     half_width: f32,
     theme: &ThemeConfig,
+    style: &IndicatorStyle,
     bullish: &[bool],
     alpha: f32,
 ) -> Result<(), EguiError> {
     let opacity = alpha_u8(alpha);
-    let bull = resolve_color(theme, ribbon_fill_style_key(true))?;
-    let bear = resolve_color(theme, ribbon_fill_style_key(false))?;
+    let bull = style.color(theme, ribbon_fill_style_key(true))?;
+    let bear = style.color(theme, ribbon_fill_style_key(false))?;
     for (band, trend) in bands.iter().zip(bullish.iter()) {
         let Some(strip) = band else {
             continue;
@@ -1171,18 +1174,19 @@ fn paintable_points(polygon: &RibbonPolygon) -> Option<Vec<egui::Pos2>> {
 
 /// Paint ribbon fill runs as translucent areas between the band edges.
 ///
-/// One flat color per run (`ribbon_bull`/`ribbon_bear` theme keys at
-/// `alpha`), matching the reference shaded band. Single-bar runs paint as
-/// thin quads through the same polygon path — no special case.
+/// One flat color per run (`ribbon_bull`/`ribbon_bear` keys through the slot
+/// style at `alpha`), matching the reference shaded band. Single-bar runs
+/// paint as thin quads through the same polygon path — no special case.
 pub fn paint_ribbon_fill(
     painter: &egui::Painter,
     polygons: &[RibbonPolygon],
     theme: &ThemeConfig,
+    style: &IndicatorStyle,
     alpha: f32,
 ) -> Result<(), EguiError> {
     let opacity = alpha_u8(alpha);
-    let bull = resolve_color(theme, ribbon_fill_style_key(true))?;
-    let bear = resolve_color(theme, ribbon_fill_style_key(false))?;
+    let bull = style.color(theme, ribbon_fill_style_key(true))?;
+    let bear = style.color(theme, ribbon_fill_style_key(false))?;
     for polygon in polygons {
         let Some(points) = paintable_points(polygon) else {
             continue;

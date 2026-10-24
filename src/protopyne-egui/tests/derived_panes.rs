@@ -17,6 +17,33 @@ fn ramp_rows(count: usize) -> Vec<ChartRow> {
 }
 
 #[test]
+fn moving_averages_paint_on_the_chart_without_a_pane() {
+    let mut workspace = ChartWorkspace::with_rows(ramp_rows(120)).expect("workspace boots");
+    for id in ["sma", "hma", "ema"] {
+        workspace.slot_indicator(id).expect("average slots");
+    }
+    workspace.recompute().expect("evaluations build");
+    assert!(
+        workspace.custom_pane_ids().is_empty(),
+        "moving averages own no pane: {:?}",
+        workspace.custom_pane_ids()
+    );
+    assert!(
+        workspace.sub_panes.is_empty(),
+        "no average binds a viewport"
+    );
+    for id in ["sma", "hma", "ema"] {
+        let evaluation = workspace.evaluations.get(id).expect("slot evaluates");
+        assert!(
+            evaluation.series.iter().all(|series| series.attachment
+                == fluent_egui::SlotAttachment::MainOverlay
+                && series.pane.is_none()),
+            "{id} paints on the chart with no pane"
+        );
+    }
+}
+
+#[test]
 fn removed_multi_output_plugin_prunes_its_pane_without_recompute() {
     let mut workspace = ChartWorkspace::with_rows(ramp_rows(120)).expect("workspace boots");
     workspace.slot_indicator("macd").expect("macd slots");

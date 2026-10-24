@@ -291,20 +291,24 @@ fn pane_scales_pad_declared_bounds_without_clipping_or_dead_space() {
         "the display pad is frozen at five percent"
     );
     let mut workspace = ChartWorkspace::with_rows(ladder(120)).expect("workspace boots");
-    for id in ["stoch", "sma"] {
+    // `sma` is a chart overlay and owns no pane; `adx` carries a bounded
+    // custom pane and `macd` the auto-ranged one. (`stoch` used to pin the
+    // bounded pane, but its legs normalize now, so its range reads display
+    // space, not the raw declared band.)
+    for id in ["adx", "macd"] {
         workspace.slot_indicator(id).expect("kernel slots");
     }
     workspace.recompute().expect("evaluations build");
     let ids = workspace.custom_pane_ids();
     assert_eq!(
         ids,
-        vec!["kernel:sma".to_owned(), "kernel:stoch".to_owned()],
+        vec!["kernel:adx".to_owned(), "kernel:macd".to_owned()],
         "custom panes sort by id"
     );
 
     // Bounded pane: the declared 0–100 band holds even where values sit
     // interior, widened by exactly the pad.
-    let (lo, hi) = workspace.custom_pane_range("kernel:stoch");
+    let (lo, hi) = workspace.custom_pane_range("kernel:adx");
     assert!(lo <= 0.0, "the pad reaches past the declared floor: {lo}");
     assert!(
         hi >= 100.0,
@@ -322,12 +326,12 @@ fn pane_scales_pad_declared_bounds_without_clipping_or_dead_space() {
     );
 
     // Auto pane: the visible extent plus exactly the pad on each side.
-    let (sma_lo, sma_hi) = workspace.custom_pane_range("kernel:sma");
+    let (auto_lo, auto_hi) = workspace.custom_pane_range("kernel:macd");
     let mut data_lo = f64::INFINITY;
     let mut data_hi = f64::NEG_INFINITY;
     for evaluation in workspace.evaluations.values() {
         for series in &evaluation.series {
-            if series.pane_id("sub") != "kernel:sma" {
+            if series.pane_id("sub") != "kernel:macd" {
                 continue;
             }
             for value in series.values.iter().flatten() {
@@ -336,15 +340,18 @@ fn pane_scales_pad_declared_bounds_without_clipping_or_dead_space() {
             }
         }
     }
-    assert!(data_lo.is_finite() && data_hi > data_lo, "sma values exist");
+    assert!(
+        data_lo.is_finite() && data_hi > data_lo,
+        "macd values exist"
+    );
     let data_pad = (data_hi - data_lo) * AUTO_HEIGHT_PAD_FRACTION;
     assert!(
-        (sma_lo - (data_lo - data_pad)).abs() <= 1e-9,
-        "the auto floor is the extent minus exactly the pad: {sma_lo}"
+        (auto_lo - (data_lo - data_pad)).abs() <= 1e-9,
+        "the auto floor is the extent minus exactly the pad: {auto_lo}"
     );
     assert!(
-        (sma_hi - (data_hi + data_pad)).abs() <= 1e-9,
-        "the auto ceiling is the extent plus exactly the pad: {sma_hi}"
+        (auto_hi - (data_hi + data_pad)).abs() <= 1e-9,
+        "the auto ceiling is the extent plus exactly the pad: {auto_hi}"
     );
 
     // Empty panes fall back to the design band; values never clamp.
@@ -395,20 +402,38 @@ const DEFAULT_PREFS_JSON: &str = r#"{
           "config": {
             "delta_unit": "80",
             "eit_alpha": "0.14",
+            "fast_k": "",
+            "fast_kind": "rsi",
+            "fast_period": "",
+            "fast_smooth_period": "",
+            "fast_smooth_type": "na",
             "fill_alpha": "0.5",
             "ma_health_k": "1.2",
+            "pivot_threshold": "100",
             "ribbon_health_k": "1.8",
-            "show_ribbon": "true"
+            "show_ribbon": "true",
+            "slow_k": "",
+            "slow_kind": "cci",
+            "slow_period": "",
+            "slow_smooth_period": "",
+            "slow_smooth_type": "na"
           },
           "style": {
+            "color_adx": "",
+            "color_aroon": "",
             "color_bear": "",
             "color_bear_up": "",
             "color_bull": "",
             "color_bull_down": "",
+            "color_cci": "",
+            "color_cmo": "",
             "color_fast": "",
+            "color_mfi": "",
             "color_ribbon_bear": "",
             "color_ribbon_bull": "",
+            "color_rsi": "",
             "color_slow": "",
+            "color_stoch": "",
             "line_width": "1"
           }
         },
@@ -442,14 +467,21 @@ const DEFAULT_PREFS_JSON: &str = r#"{
             "trend_ma_type": "ema"
           },
           "style": {
+            "color_adx": "",
+            "color_aroon": "",
             "color_bear": "",
             "color_bear_up": "",
             "color_bull": "",
             "color_bull_down": "",
+            "color_cci": "",
+            "color_cmo": "",
             "color_fast": "",
+            "color_mfi": "",
             "color_ribbon_bear": "",
             "color_ribbon_bull": "",
+            "color_rsi": "",
             "color_slow": "",
+            "color_stoch": "",
             "line_width": "1"
           }
         },
@@ -468,14 +500,21 @@ const DEFAULT_PREFS_JSON: &str = r#"{
             "width": "30"
           },
           "style": {
+            "color_adx": "",
+            "color_aroon": "",
             "color_bear": "",
             "color_bear_up": "",
             "color_bull": "",
             "color_bull_down": "",
+            "color_cci": "",
+            "color_cmo": "",
             "color_fast": "",
+            "color_mfi": "",
             "color_ribbon_bear": "",
             "color_ribbon_bull": "",
+            "color_rsi": "",
             "color_slow": "",
+            "color_stoch": "",
             "line_width": "1"
           }
         }
@@ -489,7 +528,72 @@ const DEFAULT_PREFS_JSON: &str = r#"{
   },
   "bookmarks": {},
   "dock_open": false,
-  "theme": "default"
+  "theme": "default",
+  "oscillators": {
+    "rsi": {
+      "period": 14,
+      "smooth_type": "na",
+      "smooth_period": 3,
+      "gain": 1.0,
+      "offset": -50.0,
+      "k": 0.0084,
+      "mult": 740.0
+    },
+    "cci": {
+      "period": 14,
+      "smooth_type": "na",
+      "smooth_period": 3,
+      "gain": 1.0,
+      "offset": -50.0,
+      "k": 0.0035,
+      "mult": 500.0
+    },
+    "cmo": {
+      "period": 14,
+      "smooth_type": "na",
+      "smooth_period": 3,
+      "gain": 1.0,
+      "offset": 0.0,
+      "k": 0.002,
+      "mult": 1000.0
+    },
+    "mfi": {
+      "period": 14,
+      "smooth_type": "na",
+      "smooth_period": 3,
+      "gain": 1.0,
+      "offset": -50.0,
+      "k": 0.0084,
+      "mult": 740.0
+    },
+    "stoch": {
+      "period": 14,
+      "smooth_type": "na",
+      "smooth_period": 3,
+      "gain": 1.0,
+      "offset": -50.0,
+      "k": 0.0005,
+      "mult": 7000.0
+    },
+    "aroon": {
+      "period": 14,
+      "smooth_type": "na",
+      "smooth_period": 3,
+      "gain": 1.0,
+      "offset": -50.0,
+      "k": 0.005,
+      "mult": 800.0
+    },
+    "adx": {
+      "period": 14,
+      "smooth_type": "na",
+      "smooth_period": 3,
+      "gain": 1.0,
+      "offset": 0.0,
+      "k": 1.0,
+      "mult": 100.0
+    }
+  }
 }"#;
 
 /// A wrapped or reordered feed never splices non-consecutive history onto

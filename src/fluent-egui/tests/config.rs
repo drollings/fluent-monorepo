@@ -95,7 +95,13 @@ fn theme_resolves_style_keys() {
     assert_eq!(theme.style("bull_down"), Some("#FF9800"));
     assert_eq!(theme.style("bear_up"), Some("#2196F3"));
     assert_eq!(theme.style("grid"), Some("#2A2A2A"));
-    assert_eq!(theme.style("rsi"), None, "domain names are not style keys");
+    assert_eq!(theme.style("rsi"), Some("#20C8F0"));
+    assert_eq!(theme.style("cci"), Some("#B4F028"));
+    assert_eq!(theme.style("cmo"), Some("#8CF050"));
+    assert_eq!(theme.style("mfi"), Some("#F020F0"));
+    assert_eq!(theme.style("stoch"), Some("#B4F0C8"));
+    assert_eq!(theme.style("aroon"), Some("#FAF028"));
+    assert_eq!(theme.style("adx"), Some("#20C8F0"));
 }
 
 #[test]

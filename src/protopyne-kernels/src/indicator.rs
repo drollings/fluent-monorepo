@@ -347,6 +347,19 @@ const PRIMARY_BOUNDED: OutputSpec = output(
 
 const NO_PARAMS: &[IndicatorParam] = &[];
 const LENGTH: &[IndicatorParam] = &[int_param("length", 14, 1.0, 100_000.0, "Lookback length")];
+
+/// The moving-average period definition: the one shared row every MA
+/// kernel's `length` reads, rooted in the smoothing catalog's period
+/// contract. Non-MA kernels keep the wide [`LENGTH`] lookback; the settings
+/// sliders and the validators read the same bounds, so the 2..200 window
+/// is one fact, not two.
+const MA_LENGTH: &[IndicatorParam] = &[int_param(
+    "length",
+    14,
+    crate::smoothing::MA_PERIOD_MIN as f64,
+    crate::smoothing::MA_PERIOD_MAX as f64,
+    "Lookback length",
+)];
 const ONE: &[OutputSpec] = &[PRIMARY];
 const UPPER_LOWER: &[OutputSpec] = &[
     PRIMARY,
@@ -393,33 +406,6 @@ const MACD_OUT: &[OutputSpec] = &[
 const BB_PARAMS: &[IndicatorParam] = &[
     int_param("length", 20, 1.0, 100_000.0, "Lookback length"),
     float_param("mult", 2.0, 0.0, 100.0, 0.1, "Band deviation multiplier"),
-];
-const BBANDS_PARAMS: &[IndicatorParam] = &[
-    int_param("length", 20, 1.0, 100_000.0, "Lookback length"),
-    float_param(
-        "nbdevup",
-        2.0,
-        0.0,
-        100.0,
-        0.1,
-        "Upper deviation multiplier",
-    ),
-    float_param(
-        "nbdevdn",
-        2.0,
-        0.0,
-        100.0,
-        0.1,
-        "Lower deviation multiplier",
-    ),
-    float_param(
-        "matype",
-        0.0,
-        0.0,
-        1.0,
-        1.0,
-        "Smoothing type (0 SMA, 1 EMA)",
-    ),
 ];
 const KC_PARAMS: &[IndicatorParam] = &[
     int_param("length", 20, 1.0, 100_000.0, "Lookback length"),
@@ -518,7 +504,13 @@ const APO_PARAMS: &[IndicatorParam] = &[
     ),
 ];
 const ALMA_PARAMS: &[IndicatorParam] = &[
-    int_param("length", 14, 1.0, 100_000.0, "Lookback length"),
+    int_param(
+        "length",
+        14,
+        crate::smoothing::MA_PERIOD_MIN as f64,
+        crate::smoothing::MA_PERIOD_MAX as f64,
+        "Lookback length",
+    ),
     float_param("offset", 0.85, 0.0, 1.0, 0.01, "ALMA offset"),
     float_param("sigma", 6.0, 0.0, 100.0, 0.1, "ALMA sigma"),
 ];
@@ -535,7 +527,13 @@ const EIT_PARAMS: &[IndicatorParam] = &[float_param(
     "Smoothing alpha",
 )];
 const KALMAN_PARAMS: &[IndicatorParam] = &[
-    int_param("length", 14, 1.0, 100_000.0, "Lookback length"),
+    int_param(
+        "length",
+        14,
+        crate::smoothing::MA_PERIOD_MIN as f64,
+        crate::smoothing::MA_PERIOD_MAX as f64,
+        "Lookback length",
+    ),
     float_param("alpha", 0.012, 0.0, 1.0, 0.001, "Process coupling"),
     float_param("beta", 0.1, 0.0, 1.0, 0.001, "Measurement coupling"),
 ];
@@ -553,8 +551,10 @@ const STDDEV_PARAMS: &[IndicatorParam] = &[
 #[must_use]
 pub fn indicator_schema(id: &str) -> Option<IndicatorSchema> {
     let (params, outputs): (&'static [IndicatorParam], &'static [OutputSpec]) = match id {
-        "sma" | "ema" | "rma" | "wma" | "hma" | "vwma" | "dema" | "tema" | "rsi" | "cci"
-        | "cmo" | "tr" | "atr" | "natr" | "midpoint" | "midprice" | "trima" | "mom" | "roc"
+        "sma" | "ema" | "rma" | "wma" | "hma" | "vwma" | "dema" | "tema" | "trima" => {
+            (MA_LENGTH, ONE)
+        }
+        "rsi" | "cci" | "cmo" | "tr" | "atr" | "natr" | "midpoint" | "midprice" | "mom" | "roc"
         | "rocp" | "rocr" | "rocr100" | "rsv" | "willr" | "trix" | "correl" | "mfi" | "cmf" => {
             (LENGTH, ONE)
         }
@@ -564,7 +564,6 @@ pub fn indicator_schema(id: &str) -> Option<IndicatorSchema> {
         "stochf" => (STOCHF_PARAMS, STOCHF_OUT),
         "macd" => (MACD_PARAMS, MACD_OUT),
         "bb" => (BB_PARAMS, UPPER_LOWER),
-        "bbands" => (BBANDS_PARAMS, UPPER_LOWER),
         "kc" => (KC_PARAMS, UPPER_LOWER),
         "supertrend" => (SUPERTREND_PARAMS, SUPERTREND_OUT),
         "donchian" => (DONCHIAN_PARAMS, UPPER_LOWER),
@@ -1451,7 +1450,6 @@ pub fn builtin_registry() -> Result<IndicatorRegistry, KernelError> {
     registry.register(Arc::new(crate::volatility::KcIndicator::new()))?;
     registry.register(Arc::new(crate::volatility::NatrIndicator::new()))?;
     registry.register(Arc::new(crate::volatility::SupertrendIndicator::new()))?;
-    registry.register(Arc::new(crate::ta_overlap::BbandsIndicator::new()))?;
     registry.register(Arc::new(crate::ta_overlap::DonchianIndicator::new()))?;
     registry.register(Arc::new(crate::ta_overlap::IchimokuIndicator::new()))?;
     registry.register(Arc::new(crate::ta_overlap::PsarIndicator::new()))?;

@@ -140,6 +140,10 @@ impl<U: WorkUnit> WorkUnit for Instrumented<U> {
         result
     }
 
+    fn default_timeout_ms(&self) -> u64 {
+        self.inner.default_timeout_ms()
+    }
+
     fn type_name(&self) -> &'static str {
         self.inner.type_name()
     }
@@ -289,6 +293,10 @@ impl WorkUnit for ComponentAdapter {
             Some(f) => f(ctx),
             None => self.inner.execute(ctx),
         }
+    }
+
+    fn default_timeout_ms(&self) -> u64 {
+        self.inner.default_timeout_ms()
     }
 
     fn type_name(&self) -> &'static str {

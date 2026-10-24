@@ -68,7 +68,7 @@ fn indicator_catalog_populates_my_scripts_technical_financial_and_favorites() {
 
     // Technical holds every builtin kernel, exactly.
     let registry = builtin_registry().expect("registry builds");
-    assert_eq!(registry.len(), 56, "the registry ships 56 kernels");
+    assert_eq!(registry.len(), 55, "the registry ships 55 kernels");
     catalog.set_category(Some(IndicatorCategory::Technical));
     let technical: Vec<String> = catalog
         .filtered()

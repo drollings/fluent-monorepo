@@ -114,7 +114,7 @@ reading a pattern:
 |---|---|---|
 | Python `getattr`/`setattr` | dynamic field access | `FieldAccess` (Pattern 2) — but *checked* and *validated* |
 | Python `@decorator` | function wrapping | Newtype wrapper (Pattern 3) — compile-time, inlinable |
-| Python duck typing | dynamic dispatch | `dyn Trait` + `Arc` (Pattern 4) — *static* dispatch, no runtime crash |
+| Python duck typing | dynamic dispatch | `dyn Trait` + `Arc` (Pattern 4) — dynamic dispatch with static checking, no runtime crash |
 | C++ virtual methods / vtables | runtime polymorphism | `dyn Trait` + `Arc` (Pattern 4) — compiler generates the vtable |
 | C++ templates | compile-time polymorphism | Generics / `impl Trait` — monomorphized, zero-cost |
 | C++ constructor overloads | readable multi-arg init | `bon::Builder` (Pattern 1) |
@@ -677,7 +677,7 @@ impl Describable for ToolConfig {
         serde_json::json!({
             "type": "object",
             "properties": {
-                "port":    { "type": "integer", "minimum": "1", "maximum": "65535",
+                "port":    { "type": "integer", "minimum": 1, "maximum": 65535,
                              "description": "TCP listen port" },
                 "host":    { "type": "string", "description": "Host address" },
                 "verbose": { "type": "boolean", "description": "Enable verbose logging" }
@@ -756,7 +756,7 @@ Python decorators execute at import time and wrap functions transparently. They'
 
 ### The Rust solution
 
-Newtype wrappers around trait implementations. Each wrapper implements the same trait, delegating to the inner type while adding its cross-cutting concern. The compiler monomorphizes or dispatches through `dyn Trait`.
+Newtype wrappers around trait implementations. Each wrapper implements the same trait, delegating to the inner type while adding its cross-cutting concern. The compiler monomorphizes or dispatches through `dyn Trait`. Generic wrappers inline; `Instrumented` additionally emits one `tracing::info!` per `execute` (plus optional histogram) — not zero-cost when enabled.
 
 ### Canonical shape: `Instrumented<U>`
 
@@ -1987,7 +1987,7 @@ impl_component!(generic (U: Component + 'static) for Instrumented<U>);
 ```
 
 There is **no blanket `impl<T: FieldAccess + Describable + WorkUnit +
-Send + Sync> Component for T`**. The blanket impl is unsound because it
+Send + Sync> Component for T`**. The blanket impl is rejected by coherence (E0119) because it
 collides with `impl Component for Arc<dyn Component>` (every trait
 object would then be a `Component` twice). The `impl_component!` macro
 is the canonical mechanism; if a second consumer materializes that

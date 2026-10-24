@@ -99,7 +99,7 @@ fn fast_mas_config_derives_component_and_validates_fail_closed() {
         config.validate().is_ok(),
         "the default config is self-consistent"
     );
-    // Zero lengths refuse on every arm.
+    // Sub-window lengths refuse on every arm, at write time.
     for field in [
         "first_ma_length",
         "second_ma_length",
@@ -109,8 +109,14 @@ fn fast_mas_config_derives_component_and_validates_fail_closed() {
         "base_ma_length",
     ] {
         let mut candidate = FastMasConfig::new().build();
-        candidate.set_field(field, "0").expect("field is writable");
-        assert!(candidate.validate().is_err(), "zero {field} refuses");
+        assert!(
+            candidate.set_field(field, "0").is_err(),
+            "zero {field} refuses at write"
+        );
+        assert!(
+            candidate.set_field(field, "201").is_err(),
+            "over-window {field} refuses at write"
+        );
     }
     // Unsupported MA kernel names refuse.
     for field in ["first_ma_type", "second_ma_type", "signal_ma_type"] {
@@ -145,6 +151,50 @@ fn fast_mas_config_derives_component_and_validates_fail_closed() {
         .is_err(),
         "the evaluator refuses a config its own validation refuses"
     );
+}
+
+/// The MA period contract, shared with every kernel MA: each line length
+/// spans 2..200 in the schema (so the settings render sliders) and the
+/// validation refuses both sides of the window.
+#[test]
+fn ma_line_lengths_span_two_to_two_hundred() {
+    let lifted = fluent_egui::schema_fields(&FastMasConfig::new().build().describe());
+    for field in [
+        "first_ma_length",
+        "second_ma_length",
+        "signal_ma_length",
+        "mean_ma_length",
+        "trend_ma_length",
+        "base_ma_length",
+    ] {
+        let lifted = lifted
+            .iter()
+            .find(|lifted| lifted.name == field)
+            .unwrap_or_else(|| panic!("{field} lifts"));
+        assert_eq!(
+            (lifted.minimum, lifted.maximum),
+            (Some(2.0), Some(200.0)),
+            "{field} declares the shared window"
+        );
+        for rejected in ["0", "1", "201"] {
+            let mut candidate = FastMasConfig::new().build();
+            assert!(
+                candidate.set_field(field, rejected).is_err(),
+                "{field} refuses {rejected} at write"
+            );
+        }
+    }
+    for length in [0, 1, 201, 100_000] {
+        let candidate = FastMasConfig::new().first_ma_length(length).build();
+        assert!(
+            candidate.validate().is_err(),
+            "length {length} refuses validation"
+        );
+    }
+    for length in [2, 14, 200] {
+        let candidate = FastMasConfig::new().first_ma_length(length).build();
+        assert!(candidate.validate().is_ok(), "length {length} validates");
+    }
 }
 
 #[test]
@@ -283,6 +333,62 @@ fn catalog_arms_validate_and_evaluate_through_the_fast_mas_path() {
         .first_ma_type("not-a-smoothing".to_owned())
         .build();
     assert!(unknown.validate().is_err());
+}
+
+/// Settings audit against the shipped Fast MAs script: every reference input
+/// is present with its reference default. The two deliberate deltas stay
+/// recorded here rather than drifting silently: the shared 2..200 window
+/// admits length 2 on the first two arms where the script floors at 3 (the
+/// kernels evaluate length 2 soundly), and the three script SMA colors ride
+/// one theme key until the color audit.
+#[test]
+fn reference_inputs_match_the_shipped_defaults() {
+    let config = FastMasConfig::new().build();
+    assert_eq!(config.source, "close", "reference source");
+    assert_eq!(config.first_ma_type, "wma", "reference first type");
+    assert_eq!(config.first_ma_length, 3, "reference first length");
+    assert!(config.show_first_ma, "reference shows the first average");
+    assert_eq!(config.second_ma_type, "alma", "reference second type");
+    assert_eq!(config.second_ma_length, 8, "reference second length");
+    assert!(!config.show_second_ma, "reference hides the second average");
+    for (kind, length, name) in [
+        (&config.signal_ma_type, config.signal_ma_length, "signal"),
+        (&config.mean_ma_type, config.mean_ma_length, "mean"),
+        (&config.trend_ma_type, config.trend_ma_length, "trend"),
+        (&config.base_ma_type, config.base_ma_length, "base"),
+    ] {
+        assert_eq!(kind, "ema", "reference {name} type");
+        assert!(
+            [8, 21, 34, 55].contains(&length),
+            "reference {name} length, got {length}"
+        );
+    }
+    assert_eq!(config.signal_ma_length, 8, "reference signal length");
+    assert_eq!(config.mean_ma_length, 21, "reference mean length");
+    assert_eq!(config.trend_ma_length, 34, "reference trend length");
+    assert_eq!(config.base_ma_length, 55, "reference base length");
+    assert!(
+        config.show_extra_mas,
+        "reference shows the signal/mean/trend/base group"
+    );
+    assert!(!config.show_smas, "reference hides the SMA trio");
+    for (field, value) in [
+        ("source", "close"),
+        ("first_ma_type", "wma"),
+        ("first_ma_length", "3"),
+        ("second_ma_type", "alma"),
+        ("second_ma_length", "8"),
+        ("signal_ma_length", "8"),
+        ("mean_ma_length", "21"),
+        ("trend_ma_length", "34"),
+        ("base_ma_length", "55"),
+    ] {
+        assert_eq!(
+            config.get_field(field).expect("field reads"),
+            value,
+            "{field} round-trips its reference default"
+        );
+    }
 }
 
 #[test]

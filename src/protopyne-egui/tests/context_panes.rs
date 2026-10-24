@@ -32,13 +32,22 @@ fn test_layouts(pane_count: usize) -> Vec<PaneLayout> {
 #[test]
 fn pane_resolution_drives_merge_rows() {
     let mut workspace = ChartWorkspace::with_rows(ramp_rows(120)).expect("workspace boots");
+    workspace.slot_indicator("macd").expect("macd slots");
     workspace.slot_indicator("rsi").expect("rsi slots");
     workspace.recompute().expect("evaluations build");
     assert!(
         workspace
             .custom_pane_ids()
-            .contains(&"kernel:rsi".to_owned()),
+            .contains(&"kernel:macd".to_owned()),
         "the fixture owns a custom pane"
+    );
+    assert!(
+        !workspace
+            .custom_pane_ids()
+            .iter()
+            .any(|id| id == "kernel:rsi"),
+        "a normalized oscillator shares the sub pane instead: {:?}",
+        workspace.custom_pane_ids()
     );
     let layouts = test_layouts(2);
     assert_eq!(layouts.len(), 3, "price plus shared plus one custom");
@@ -74,7 +83,7 @@ fn pane_resolution_drives_merge_rows() {
         .expect("custom resolves");
     assert_eq!(
         custom_pane,
-        ContextPane::Custom("kernel:rsi".to_owned()),
+        ContextPane::Custom("kernel:macd".to_owned()),
         "custom rect resolves to its pane id"
     );
     workspace.context_pane = Some(custom_pane.clone());
@@ -82,14 +91,14 @@ fn pane_resolution_drives_merge_rows() {
     assert!(
         custom_labels.iter().any(|label| label.contains("Merge")
             && label.contains("Chart")
-            && label.contains("kernel:rsi")),
+            && label.contains("kernel:macd")),
         "custom offers a chart merge naming the pane: {custom_labels:?}"
     );
     assert!(
-        custom_labels.iter().any(|label| label.contains("Merge")
-            && label.contains("Oscillator")
-            && label.contains("kernel:rsi")),
-        "custom offers an oscillator merge naming the pane: {custom_labels:?}"
+        !custom_labels
+            .iter()
+            .any(|label| label.contains("Oscillator")),
+        "an unmapped kernel offers no oscillator merge: {custom_labels:?}"
     );
 }
 

@@ -521,7 +521,7 @@ pub fn fetch_for_span(span_seconds: u64, bar_seconds: u64, warmup: usize) -> usi
 pub enum PictureSource {
     /// Candle geometry pictures from bars (`Candles`, `Heikin`).
     Bars,
-    /// Series pictures from display rows (`Line`, `Area`).
+    /// Series pictures from display rows (`Line`).
     Rows,
 }
 
@@ -543,7 +543,7 @@ pub fn refuse_chart_type(kind: ChartType) -> EguiError {
 pub fn picture_source(kind: ChartType) -> Result<PictureSource, EguiError> {
     match kind {
         ChartType::Candles | ChartType::Heikin => Ok(PictureSource::Bars),
-        ChartType::Line | ChartType::Area => Ok(PictureSource::Rows),
+        ChartType::Line => Ok(PictureSource::Rows),
         unsupported => Err(refuse_chart_type(unsupported)),
     }
 }

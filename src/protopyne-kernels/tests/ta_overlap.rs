@@ -3,10 +3,10 @@ use crate::compat::compat_for;
 use crate::indicator::{builtin_registry, OwnedOhlcv};
 use crate::parity::{assert_expr_parity, expr_fixture};
 use crate::ta_overlap::{
-    BbandsIndicator, DonchianIndicator, IchimokuIndicator, MidpointIndicator, MidpriceIndicator,
-    PsarIndicator, TrimaIndicator,
+    DonchianIndicator, IchimokuIndicator, MidpointIndicator, MidpriceIndicator, PsarIndicator,
+    TrimaIndicator,
 };
-use polars::prelude::{col, lit, RollingFnParams, RollingOptionsFixedWindow, RollingVarParams};
+use polars::prelude::{col, lit, RollingOptionsFixedWindow};
 use protopyne_types::Bar;
 use std::path::PathBuf;
 
@@ -117,108 +117,8 @@ fn strict(n: usize) -> RollingOptionsFixedWindow {
     }
 }
 
-fn std_pop_opts(n: usize) -> RollingOptionsFixedWindow {
-    RollingOptionsFixedWindow {
-        window_size: n,
-        min_periods: n,
-        weights: None,
-        center: false,
-        fn_params: Some(RollingFnParams::Var(RollingVarParams { ddof: 0 })),
-    }
-}
-
-fn bbands_params() -> ParamSet {
-    ParamSet::new()
-        .with_int("length", 14)
-        .with_float("nbdevup", 2.0)
-        .with_float("nbdevdn", 2.0)
-}
-
 fn len_params() -> ParamSet {
     ParamSet::new().with_int("length", 14)
-}
-
-#[test]
-fn bbands_matches_expr_on_spy_slice() {
-    let bars = spy_bars(60);
-    let data = OwnedOhlcv::from_bars(&bars);
-    let bbands = BbandsIndicator::new();
-    let result = bbands
-        .batch(&data.views(), &bbands_params())
-        .expect("valid");
-    let sma = col("close").rolling_mean(strict(14));
-    let std = col("close").rolling_std(std_pop_opts(14));
-    let middle = expr_fixture(&bars, sma.clone().alias("middle")).expect("middle evaluates");
-    let upper =
-        expr_fixture(&bars, (sma.clone() + std.clone() * lit(2.0)).alias("upper")).expect("upper");
-    let lower = expr_fixture(&bars, (sma - std * lit(2.0)).alias("lower")).expect("lower");
-    assert_expr_parity(&result.values, &middle, 1e-9, "bbands middle").expect("middle parity");
-    assert_expr_parity(
-        result.secondary("upper").expect("upper leg"),
-        &upper,
-        1e-9,
-        "bbands upper",
-    )
-    .expect("upper parity");
-    assert_expr_parity(
-        result.secondary("lower").expect("lower leg"),
-        &lower,
-        1e-9,
-        "bbands lower",
-    )
-    .expect("lower parity");
-}
-
-#[test]
-fn bbands_matches_symmetric_bb_bit_for_bit() {
-    // Same denominator (population) and same loop: symmetric bands must equal
-    // the legacy kernel exactly, locking the shared arithmetic.
-    let bars = spy_bars(60);
-    let data = OwnedOhlcv::from_bars(&bars);
-    let bbands = BbandsIndicator::new();
-    let got = bbands
-        .batch(&data.views(), &bbands_params())
-        .expect("valid");
-    let bb = crate::volatility::BbIndicator::new();
-    let want = bb
-        .batch(
-            &data.views(),
-            &ParamSet::new()
-                .with_int("length", 14)
-                .with_float("mult", 2.0),
-        )
-        .expect("valid");
-    assert_eq!(got.values, want.values);
-    assert_eq!(
-        got.secondary("upper").expect("upper"),
-        want.secondary("upper").expect("upper")
-    );
-    assert_eq!(
-        got.secondary("lower").expect("lower"),
-        want.secondary("lower").expect("lower")
-    );
-}
-
-#[test]
-fn bbands_warmup_is_length_and_refuses_non_sma_matype() {
-    let bbands = BbandsIndicator::new();
-    assert_eq!(bbands.warmup(&bbands_params()).expect("valid"), 14);
-    let bars = trend_bars(20);
-    let data = OwnedOhlcv::from_bars(&bars);
-    let result = bbands
-        .batch(&data.views(), &bbands_params())
-        .expect("valid");
-    assert!(result.values[..13].iter().all(Option::is_none));
-    assert!(result.values[13].is_some());
-    // Only SMA smoothing exists; any other moving-average type refuses.
-    let bad = ParamSet::new()
-        .with_int("length", 14)
-        .with_float("nbdevup", 2.0)
-        .with_float("nbdevdn", 2.0)
-        .with_float("matype", 1.0);
-    assert!(bbands.batch(&data.views(), &bad).is_err());
-    // Absent matype defaults to SMA.
-    assert!(bbands.batch(&data.views(), &bbands_params()).is_ok());
 }
 
 #[test]

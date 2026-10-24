@@ -390,6 +390,42 @@ pub const SQUASH_100_DIVISOR: f64 = 100.0;
 /// (`100.0`) under [`squash_to_100`], so the same swing reversals fire.
 pub const CALIBRATED_BOUNDED_PIVOT_THRESHOLD: f64 = 50.0;
 
+/// Display rules sit at ±this band on every normalized oscillator pane;
+/// the extremes squash below fixes exactly these points, so thresholds
+/// painted over the display mean what the calibration measured.
+pub const DISPLAY_RULE_BAND: f64 = 100.0;
+
+/// Half-width of the normalized display extremes: overshoot past the ±100
+/// rules compresses toward these asymptotes instead of clipping, the
+/// shipped `_ApexOscillators` reading (0 centerline, ±100
+/// overbought/oversold, ±200 extremes).
+pub const DISPLAY_EXTREME_BAND: f64 = 200.0;
+
+/// One mapped display leg: the dialed catalog squash constrained into the
+/// extremes band.
+///
+/// Total over finite inputs: the catalog affine squash under `params`,
+/// scaled by `gain`, centered by `trim`, then squeezed toward the ±200
+/// asymptotes. Length-preserving with holes preserved; an out-of-band or
+/// non-finite midpoint becomes a hole, never a substituted value. The band
+/// fixes 0 and ±100 exactly, so threshold crossings are identical to the
+/// unbounded squash's while overshoot past ±100 compresses toward ±200.
+#[must_use]
+pub fn display_mapped_series(
+    raw: &[Option<f64>],
+    params: &OscParams,
+    gain: f64,
+    trim: f64,
+) -> Vec<Option<f64>> {
+    map_series_optional(raw, |value| {
+        band_squash(
+            gain * affine_squash(value, params.offset, params.k, params.multiplier) + trim,
+            DISPLAY_RULE_BAND,
+            DISPLAY_EXTREME_BAND,
+        )
+    })
+}
+
 /// Compress an unbounded reading onto the zero-centered `(-100, +100)` band.
 ///
 /// Strictly monotonic and bijective from `(-∞, +∞)` onto
@@ -443,18 +479,50 @@ pub fn normalize_series_bounded(
     }))
 }
 
-/// One kernel to its display mapping: the catalog kind plus the leg whose
-/// window the kernel's length matches. Single-output catalog kinds only;
-/// multi-leg families stay unmapped until their own follow-up.
+/// One kernel output's display mapping: the catalog kind plus the leg whose
+/// window the kernel's length matches, or `None` for a leg that paints raw.
+///
+/// This is the taxonomy the shared pane gates on: single-output catalog
+/// kernels map their `value` leg, the stochastic family maps both legs
+/// (the %D leg lives in the same bounded 0..100 space), aroon maps both
+/// legs through the unit bridge (fractions rescale to the Pine 0..100 arm),
+/// and everything else — price bands, multi-output recipes, unmapped
+/// families — reads raw and refuses the merge. The leg is provenance:
+/// display squashes by kind, and every mapped leg shares its kernel's
+/// length window, which the slow leg names.
 #[must_use]
-pub fn oscillator_mapping_for_kernel(kernel: &str) -> Option<(OscillatorKind, WhichLeg)> {
-    match kernel {
-        "rsi" => Some((OscillatorKind::Rsi, WhichLeg::Slow)),
-        "cci" => Some((OscillatorKind::Cci, WhichLeg::Slow)),
-        "cmo" => Some((OscillatorKind::Cmo, WhichLeg::Slow)),
-        "mfi" => Some((OscillatorKind::Mfi, WhichLeg::Slow)),
+pub fn oscillator_mapping_for_output(
+    kernel: &str,
+    output: &str,
+) -> Option<(OscillatorKind, WhichLeg)> {
+    match (kernel, output) {
+        ("rsi", "value") => Some((OscillatorKind::Rsi, WhichLeg::Slow)),
+        ("cci", "value") => Some((OscillatorKind::Cci, WhichLeg::Slow)),
+        ("cmo", "value") => Some((OscillatorKind::Cmo, WhichLeg::Slow)),
+        ("mfi", "value") => Some((OscillatorKind::Mfi, WhichLeg::Slow)),
+        ("stoch", "value" | "d") => Some((OscillatorKind::Stoch, WhichLeg::Slow)),
+        ("aroon", "value" | "down") => Some((OscillatorKind::Aroon, WhichLeg::Slow)),
         _ => None,
     }
+}
+/// Rescale native aroon fractions into the catalog's 0..100 arm.
+///
+/// The kernel emits window fractions (`back/length`); the catalog row is
+/// calibrated for Pine-scale percentages, so the bridge maps each fraction
+/// to its 0..100 arm: `100 * (P * r - 1) / (P - 1)`. The bridge is exact:
+/// both engines share the window and break ties to the most recent bar, so
+/// it reproduces the shipped arm bar-for-bar (pinned by the parity test).
+/// Holes stay holes; the degenerate length-1 arm divides to `NaN`, which
+/// the lift turns into holes — exactly Pine's `0/0 = na`. Lengths below 1
+/// pass through, as the kernel batch refuses those before display ever
+/// runs.
+#[must_use]
+pub fn rescale_aroon_output(raw: &[Option<f64>], length: i64) -> Vec<Option<f64>> {
+    if length < 1 {
+        return raw.to_vec();
+    }
+    let period = length as f64;
+    map_series_optional(raw, |value| 100.0 * (period * value - 1.0) / (period - 1.0))
 }
 
 #[cfg(test)]

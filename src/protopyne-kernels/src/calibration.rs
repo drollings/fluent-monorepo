@@ -48,10 +48,6 @@ pub fn canonical_params(id: &str) -> ParamSet {
         "bb" | "kc" => ParamSet::new()
             .with_int("length", 14)
             .with_float("mult", 2.0),
-        "bbands" => ParamSet::new()
-            .with_int("length", 14)
-            .with_float("nbdevup", 2.0)
-            .with_float("nbdevdn", 2.0),
         "apo" | "ppo" => ParamSet::new()
             .with_int("fast_length", 5)
             .with_int("slow_length", 12)
@@ -911,25 +907,6 @@ fn reference(id: &str, frame: &DataFrame) -> Result<ReferenceLegs, KernelError> 
                 .collect()
                 .map_err(|e| KernelError::Research(format!("natr stage: {e}")))?;
             vec![("values", column_of(&staged, "values")?)]
-        }
-        "bbands" => {
-            let mid = col("close").rolling_mean(strict(n));
-            let std = col("close").rolling_std(pop_opts(n));
-            let staged = frame
-                .clone()
-                .lazy()
-                .select([
-                    mid.clone().alias("values"),
-                    (mid.clone() + lit(2.0) * std.clone()).alias("upper"),
-                    (mid - lit(2.0) * std).alias("lower"),
-                ])
-                .collect()
-                .map_err(|e| KernelError::Research(format!("bbands stage: {e}")))?;
-            vec![
-                ("values", column_of(&staged, "values")?),
-                ("upper", column_of(&staged, "upper")?),
-                ("lower", column_of(&staged, "lower")?),
-            ]
         }
         "midpoint" => vec![(
             "values",

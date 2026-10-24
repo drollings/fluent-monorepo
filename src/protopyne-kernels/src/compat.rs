@@ -308,12 +308,6 @@ pub const COMPATIBILITY: &[KernelCompat] = &[
         evidence: ParityEvidence::GoldenVector("tests/data/golden/kc14.json"),
     },
     KernelCompat {
-        id: "bbands",
-        eps: 1e-9,
-        status: CompatStatus::ExprParityVerified,
-        evidence: ParityEvidence::StagedReference("src/calibration.rs :: ParityDashboard"),
-    },
-    KernelCompat {
         id: "midpoint",
         eps: 1e-9,
         status: CompatStatus::ExprParityVerified,

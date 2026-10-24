@@ -53,7 +53,7 @@ pub const LINE_WIDTH_FIELD: &str = "line_width";
 /// [`style_key`] strips the `color_` prefix to recover the theme key a field
 /// overrides — so a field cannot exist without a key behind it, and a key
 /// cannot resolve without a field to edit it.
-pub const STYLE_FIELDS: [&str; 9] = [
+pub const STYLE_FIELDS: [&str; 16] = [
     "line_width",
     "color_bull",
     "color_bear",
@@ -63,6 +63,13 @@ pub const STYLE_FIELDS: [&str; 9] = [
     "color_slow",
     "color_ribbon_bull",
     "color_ribbon_bear",
+    "color_rsi",
+    "color_cci",
+    "color_cmo",
+    "color_mfi",
+    "color_stoch",
+    "color_aroon",
+    "color_adx",
 ];
 
 /// The theme style key one Style field overrides (`"color_fast"` → `"fast"`),

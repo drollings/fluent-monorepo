@@ -188,8 +188,8 @@ pub use ta_momentum::{
     WillrIndicator,
 };
 pub use ta_overlap::{
-    BbandsIndicator, DonchianIndicator, IchimokuIndicator, MidpointIndicator, MidpriceIndicator,
-    PsarIndicator, TrimaIndicator,
+    DonchianIndicator, IchimokuIndicator, MidpointIndicator, MidpriceIndicator, PsarIndicator,
+    TrimaIndicator,
 };
 pub use ta_price::{AvgPriceIndicator, MedPriceIndicator, TypPriceIndicator, WclPriceIndicator};
 pub use ta_stat::{CorrelIndicator, StddevIndicator, VarIndicator};

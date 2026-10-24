@@ -28,12 +28,8 @@ use crate::chart::TimeframeKey;
 /// Heikin-Ashi (bar-backed, converted over the core bar pipeline before
 /// windowing). The pulldown lists exactly this array, so the menu can never
 /// drift from the paint path.
-pub const TOP_BAR_CHART_TYPES: [ChartType; 4] = [
-    ChartType::Candles,
-    ChartType::Line,
-    ChartType::Area,
-    ChartType::Heikin,
-];
+pub const TOP_BAR_CHART_TYPES: [ChartType; 3] =
+    [ChartType::Candles, ChartType::Line, ChartType::Heikin];
 
 /// How long the pointer must stay down on the play button before the press
 /// becomes a long-press and opens the speed popup instead of toggling play
@@ -464,9 +460,19 @@ fn bar_button(ui: &mut egui::Ui, width: f32, label: &str) -> egui::Response {
     )
 }
 
-/// One top-bar menu button (opens a popup) with the shared label treatment.
-fn bar_menu_button(ui: &mut egui::Ui, label: &str, add_contents: impl FnOnce(&mut egui::Ui)) {
-    let _ = ui.menu_button(bar_text(label), add_contents);
+/// One fixed-width top-bar menu button (opens a popup) with the shared label
+/// treatment. The width is a minimum, like `bar_button`'s exact size for the
+/// usual short labels: a wider label still fits instead of clipping.
+fn bar_menu_button(
+    ui: &mut egui::Ui,
+    width: f32,
+    label: &str,
+    add_contents: impl FnOnce(&mut egui::Ui),
+) {
+    let _ = egui::containers::menu::MenuButton::from_button(
+        egui::Button::new(bar_text(label)).min_size(egui::vec2(width, TOP_BAR_BUTTON_HEIGHT)),
+    )
+    .ui(ui, add_contents);
 }
 
 /// Paint the terminal Material top bar; returns the one action this frame
@@ -524,7 +530,7 @@ pub fn paint_top_bar(
         bar.separator();
         // 2. Ticker button — current symbol, opens the catalogue. The rect
         // is stored so the popup hangs below this button.
-        let ticker_response = bar_button(bar, 110.0, &format!("📈 {symbol} {PULLDOWN_CHEVRON}"))
+        let ticker_response = bar_button(bar, 100.0, &format!("📈 {symbol} {PULLDOWN_CHEVRON}"))
             .on_hover_text("Symbol catalogue");
         if ticker_response.clicked() {
             *symbol_anchor = Some(ticker_response.rect);
@@ -554,7 +560,7 @@ pub fn paint_top_bar(
         }
         // 5. Bookmarks — the active ticker's bookmarked candles. The rect
         // is stored so the picker hangs below this button.
-        let bookmark_response = bar_button(bar, 60.0, &format!("🔖 {PULLDOWN_CHEVRON}"))
+        let bookmark_response = bar_button(bar, 40.0, &format!("🔖 {PULLDOWN_CHEVRON}"))
             .on_hover_text("Bookmarked candles for this ticker");
         if bookmark_response.clicked() {
             *bookmark_anchor = Some(bookmark_response.rect);
@@ -563,8 +569,9 @@ pub fn paint_top_bar(
         bar.separator();
         // 6. Indicator selector. The rect is stored so the picker hangs
         // below this button.
-        let indicator_response = bar_button(bar, 60.0, &format!("📊 {PULLDOWN_CHEVRON}"))
-            .on_hover_text("Indicator catalogue");
+        let indicator_response =
+            bar_button(bar, 130.0, &format!("📊 Indicators {PULLDOWN_CHEVRON}"))
+                .on_hover_text("Indicator catalogue");
         if indicator_response.clicked() {
             *indicator_anchor = Some(indicator_response.rect);
             action = Some(TopBarAction::OpenIndicatorSearch);
@@ -573,6 +580,7 @@ pub fn paint_top_bar(
         let current_symbol = chart_type_symbol(chart_type);
         bar_menu_button(
             bar,
+            40.0,
             &format!("{current_symbol} {PULLDOWN_CHEVRON}"),
             |menu_ui| {
                 for kind in TOP_BAR_CHART_TYPES {
@@ -799,7 +807,6 @@ pub fn chart_type_symbol(kind: ChartType) -> &'static str {
     match kind {
         ChartType::Candles | ChartType::Heikin => "┿",
         ChartType::Line => "🗠",
-        ChartType::Area => "📊",
         other => other.name(),
     }
 }
@@ -811,7 +818,6 @@ pub fn chart_type_label(kind: ChartType) -> &'static str {
         ChartType::Candles => "Candles",
         ChartType::Heikin => "Heikin-Ashi",
         ChartType::Line => "Line",
-        ChartType::Area => "Area",
         other => other.name(),
     }
 }

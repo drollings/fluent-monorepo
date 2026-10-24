@@ -126,7 +126,7 @@ const DENY_PATTERNS: [&str; 8] = [
 const LEGS: [&str; 5] = ["open", "high", "low", "close", "volume"];
 
 /// Kernels the spike emits: the two rolling averages plus the verified
-/// single-output overlaps. Multi-leg kernels (`bbands`: upper/mid/lower) do
+/// single-output overlaps. Multi-leg kernels (`macd`: value/signal/hist) do
 /// not fit single-series binding evaluation, nullary price kernels sit
 /// outside the two-argument call grammar, and `midprice` needs high/low legs
 /// together where a binding carries one series — all three stay refused.

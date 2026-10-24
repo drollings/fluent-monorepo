@@ -24,7 +24,7 @@ use fluent_wvr::prelude::*;
 use protopyne_chart_model::ChartRow;
 use protopyne_kernels::pine::manifest::{IndicatorManifestEntry, ManifestParity};
 use protopyne_kernels::shared_registry;
-use protopyne_kernels::smoothing::SmoothingFamily;
+use protopyne_kernels::smoothing::{SmoothingArgs, SmoothingFamily, MA_PERIOD_MAX, MA_PERIOD_MIN};
 
 use fluent_wvr::validate::{check_for_execute, valid_output, Validate};
 
@@ -37,12 +37,13 @@ use fluent_egui::{
 use crate::delta_volume_profile::{DeltaVolumeProfileIndicator, DELTA_VOLUME_PROFILE_ID};
 use crate::fast_mas::{evaluate_fast_mas, FastMasConfig};
 use crate::integration_lite::{integration_lite_sub_pane, IntegrationLiteConfig};
+use crate::oscillator_panel::{panel_kind_for_kernel, KindDefaults};
 use crate::oscillators::{
-    normalize_series, oscillator_mapping_for_kernel, OscillatorKind, WhichLeg,
+    display_mapped_series, oscillator_mapping_for_output, OscParams, OscillatorKind, WhichLeg,
 };
 use crate::topology::{
-    consumer_cache_key, kernel_result, kernel_warmup, resolve_input_column, series_frame,
-    SeriesCatalog, SeriesSource,
+    consumer_cache_key, describe_kernel, kernel_result, kernel_warmup, resolve_input_column,
+    series_frame, SeriesCatalog, SeriesSource,
 };
 
 /// Stable id of the IntegrationLite script indicator.
@@ -128,7 +129,8 @@ pub struct IndicatorSeries {
     pub values: Vec<Option<f64>>,
     /// Precomputed display values for painters and readouts, holes
     /// preserved. Mapped oscillators carry the catalog squash of the raw
-    /// leg; everything else mirrors the raw values.
+    /// leg constrained into the extremes band; everything else mirrors the
+    /// raw values.
     pub display_values: Vec<Option<f64>>,
     /// Display provenance: the catalog mapping behind the display values,
     /// or none for raw-passthrough series.
@@ -408,10 +410,14 @@ impl ChartIndicator for IntegrationLiteIndicator {
         let pane = integration_lite_sub_pane(rows, config)?;
         let fingerprint = config_fingerprint(config);
         let legs = [
-            ("Fast", pane.fast_bounded, "fast"),
-            ("Slow", pane.slow_bounded, "slow"),
-            ("Ribbon Health", pane.ribbon_health_bounded, "fast"),
-            ("MA Health", pane.ma_health_bounded, "slow"),
+            ("Fast", pane.fast_bounded, config.fast_kind.clone()),
+            ("Slow", pane.slow_bounded, config.slow_kind.clone()),
+            (
+                "Ribbon Health",
+                pane.ribbon_health_bounded,
+                "fast".to_owned(),
+            ),
+            ("MA Health", pane.ma_health_bounded, "slow".to_owned()),
         ];
         let series = INTEGRATION_LITE_NODES
             .iter()
@@ -422,7 +428,7 @@ impl ChartIndicator for IntegrationLiteIndicator {
                 display_values: values.clone(),
                 display_mapping: None,
                 values,
-                style: style.to_owned(),
+                style,
                 attachment: SlotAttachment::SubPane,
                 key: cache_key(node, fingerprint),
                 pane: None,
@@ -573,12 +579,17 @@ fn default_kernel_style() -> String {
     "fast".to_owned()
 }
 
-fn default_kernel_source() -> String {
-    crate::topology::default_source_spelling()
+/// Default line style key for a kernel: the oscillator kind key where the
+/// kernel is a bounded oscillator, else the role default. Slots keep their
+/// own choice afterwards — this only seeds new slots, so existing slots
+/// never move.
+#[must_use]
+pub fn default_style_for_kernel(kernel: &str) -> &'static str {
+    panel_kind_for_kernel(kernel).unwrap_or("fast")
 }
 
-fn default_osc_gain() -> f64 {
-    1.0
+fn default_kernel_source() -> String {
+    crate::topology::default_source_spelling()
 }
 
 fn default_osc_trim() -> f64 {
@@ -587,6 +598,14 @@ fn default_osc_trim() -> f64 {
 
 fn default_osc_threshold() -> f64 {
     100.0
+}
+
+fn default_smooth_type() -> String {
+    "na".to_owned()
+}
+
+fn default_smooth_period() -> i64 {
+    3
 }
 
 /// One kernel plugin's configuration: which kernel, its declared parameters,
@@ -620,10 +639,11 @@ pub struct KernelIndicatorConfig {
     /// unmapped kernel refuses.
     #[serde(default)]
     pub normalize: Option<bool>,
-    /// Display gain over the catalog squash. Computation untouched.
-    #[builder(default = default_osc_gain())]
-    #[serde(default = "default_osc_gain")]
-    pub osc_gain: f64,
+    /// Display gain over the catalog squash. Unset follows the kind
+    /// default from the Oscillators panel (neutral 1.0); empty clears back
+    /// to following.
+    #[serde(default)]
+    pub osc_gain: Option<f64>,
     /// Post-normalization centering trim. Computation untouched.
     #[builder(default = default_osc_trim())]
     #[serde(default = "default_osc_trim")]
@@ -632,6 +652,26 @@ pub struct KernelIndicatorConfig {
     #[builder(default = default_osc_threshold())]
     #[serde(default = "default_osc_threshold")]
     pub osc_threshold: f64,
+    /// Display offset over the catalog row. Unset follows the row;
+    /// explicit values reshape the squash. Empty clears back to unset.
+    #[serde(default)]
+    pub osc_offset: Option<f64>,
+    /// Display steepness over the catalog row. Unset follows the row.
+    #[serde(default)]
+    pub osc_k: Option<f64>,
+    /// Display band half-width over the catalog row. Unset follows the row.
+    #[serde(default)]
+    pub osc_mult: Option<f64>,
+    /// Trailing smoothing family for the display leg (`NA` disables).
+    /// Applied to the raw leg before normalization; the published raw
+    /// series never sees it.
+    #[builder(default = default_smooth_type())]
+    #[serde(default = "default_smooth_type")]
+    pub smooth_type: String,
+    /// Trailing smoothing window in bars. Shares the MA period contract.
+    #[builder(default = default_smooth_period())]
+    #[serde(default = "default_smooth_period")]
+    pub smooth_period: i64,
 }
 
 const FIXED_FIELDS: &[&str] = &[
@@ -643,6 +683,11 @@ const FIXED_FIELDS: &[&str] = &[
     "osc_gain",
     "osc_trim",
     "osc_threshold",
+    "osc_offset",
+    "osc_k",
+    "osc_mult",
+    "smooth_type",
+    "smooth_period",
 ];
 
 impl KernelIndicatorConfig {
@@ -650,9 +695,52 @@ impl KernelIndicatorConfig {
     /// (on for mapped oscillators, off otherwise) when unset.
     #[must_use]
     pub fn effective_normalize(&self) -> bool {
-        self.normalize.unwrap_or_else(|| {
-            crate::oscillators::oscillator_mapping_for_kernel(&self.kernel).is_some()
-        })
+        self.normalize
+            .unwrap_or_else(|| kernel_normalizes(&self.kernel))
+    }
+
+    /// Resolve blank dials against one kind's panel defaults: an unset
+    /// gain takes the kind gain, and disarmed slot smoothing follows armed
+    /// kind smoothing. Everything set wins as-is; the frozen catalog stays
+    /// the last resort downstream. The resolved config is what evaluates
+    /// and fingerprints, so following slots move exactly when the kind
+    /// does.
+    #[must_use]
+    pub fn resolve_panel_defaults(&self, defaults: &KindDefaults) -> Self {
+        let mut out = self.clone();
+        if out.osc_gain.is_none() {
+            out.osc_gain = Some(defaults.gain);
+        }
+        // The triple follows only where a catalog row exists to shape:
+        // unmapped kernels keep their blanks, so placeholder rows never
+        // fabricate a shape.
+        if crate::oscillator_panel::panel_kind_is_shaped(&self.kernel) {
+            if out.osc_offset.is_none() {
+                out.osc_offset = defaults.offset;
+            }
+            if out.osc_k.is_none() {
+                out.osc_k = defaults.k;
+            }
+            if out.osc_mult.is_none() {
+                out.osc_mult = defaults.mult;
+            }
+        }
+        // `NA` is disarmed by definition: the length-taking check alone
+        // would count it as armed, so it is pinned off here like the
+        // smoothing validation pins it.
+        let slot_armed = matches!(
+            SmoothingFamily::parse(&out.smooth_type),
+            Some(family) if family != SmoothingFamily::Na && family.takes_length()
+        );
+        let kind_armed = matches!(
+            SmoothingFamily::parse(&defaults.smooth_type),
+            Some(family) if family != SmoothingFamily::Na && family.takes_length()
+        );
+        if !slot_armed && kind_armed {
+            out.smooth_type.clone_from(&defaults.smooth_type);
+            out.smooth_period = defaults.smooth_period;
+        }
+        out
     }
 
     /// The registered kernel's declared parameter and output schema.
@@ -752,6 +840,19 @@ impl KernelIndicatorConfig {
         Ok(params)
     }
 
+    /// The display triple in force for one catalog kind: the explicit dials
+    /// over the frozen row, or `None` when the kind refuses (only the
+    /// refused row lacks constants, and no mapped output names it).
+    #[must_use]
+    pub fn effective_osc_params_for(&self, kind: &OscillatorKind) -> Option<OscParams> {
+        let catalog = kind.params()?;
+        Some(OscParams {
+            offset: self.osc_offset.unwrap_or(catalog.offset),
+            k: self.osc_k.unwrap_or(catalog.k),
+            multiplier: self.osc_mult.unwrap_or(catalog.multiplier),
+        })
+    }
+
     /// Fail-closed self-consistency check: a registered kernel, a positive
     /// legacy length, a non-empty style key, and a valid declared schema.
     pub fn validate(&self) -> Result<(), EguiError> {
@@ -784,11 +885,14 @@ impl KernelIndicatorConfig {
             });
         }
         self.effective_params()?;
-        if !self.osc_gain.is_finite() || self.osc_gain <= 0.0 {
+        if self
+            .osc_gain
+            .is_some_and(|value| !value.is_finite() || value <= 0.0)
+        {
             return Err(EguiError::InvalidParam {
                 what: "osc_gain".to_owned(),
                 reason: format!(
-                    "osc_gain must be a positive finite number, got {}",
+                    "osc_gain must be a positive finite number, got {:?}",
                     self.osc_gain
                 ),
             });
@@ -808,9 +912,77 @@ impl KernelIndicatorConfig {
                 ),
             });
         }
-        if self.effective_normalize()
-            && crate::oscillators::oscillator_mapping_for_kernel(&self.kernel).is_none()
+        if self.osc_offset.is_some_and(|value| !value.is_finite()) {
+            return Err(EguiError::InvalidParam {
+                what: "osc_offset".to_owned(),
+                reason: format!("osc_offset must be finite, got {:?}", self.osc_offset),
+            });
+        }
+        if self
+            .osc_k
+            .is_some_and(|value| !value.is_finite() || value <= 0.0)
         {
+            return Err(EguiError::InvalidParam {
+                what: "osc_k".to_owned(),
+                reason: format!(
+                    "osc_k must be a positive finite number, got {:?}",
+                    self.osc_k
+                ),
+            });
+        }
+        if self
+            .osc_mult
+            .is_some_and(|value| !value.is_finite() || value <= 0.0)
+        {
+            return Err(EguiError::InvalidParam {
+                what: "osc_mult".to_owned(),
+                reason: format!(
+                    "osc_mult must be a positive finite number, got {:?}",
+                    self.osc_mult
+                ),
+            });
+        }
+        let armed_family = match SmoothingFamily::parse(&self.smooth_type) {
+            Some(SmoothingFamily::Na) => None,
+            Some(family) if family.takes_length() => Some(family),
+            _ => {
+                return Err(EguiError::InvalidParam {
+                    what: "smooth_type".to_owned(),
+                    reason: format!(
+                        "smoothing {:?} is not a length-taking smoothing family",
+                        self.smooth_type
+                    ),
+                });
+            }
+        };
+        if let Some(family) = armed_family {
+            let kernel = family.kernel_id().ok_or_else(|| EguiError::InvalidParam {
+                what: "smooth_type".to_owned(),
+                reason: format!("smoothing {:?} has no kernel to evaluate", self.smooth_type),
+            })?;
+            if shared_registry()
+                .map_err(|error| EguiError::Dependency {
+                    reason: error.to_string(),
+                })?
+                .get(kernel)
+                .is_none()
+            {
+                return Err(EguiError::InvalidParam {
+                    what: "smooth_type".to_owned(),
+                    reason: format!("smoothing kernel {kernel:?} is not registered"),
+                });
+            }
+            if self.smooth_period < MA_PERIOD_MIN || self.smooth_period > MA_PERIOD_MAX {
+                return Err(EguiError::InvalidParam {
+                    what: "smooth_period".to_owned(),
+                    reason: format!(
+                        "smoothing window must sit within [{MA_PERIOD_MIN}, {MA_PERIOD_MAX}], got {}",
+                        self.smooth_period
+                    ),
+                });
+            }
+        }
+        if self.effective_normalize() && !kernel_normalizes(&self.kernel) {
             return Err(EguiError::InvalidParam {
                 what: "normalize".to_owned(),
                 reason: format!(
@@ -835,8 +1007,8 @@ impl KernelIndicatorConfig {
     #[must_use]
     pub fn defaults_for(kernel: &str) -> Self {
         let mut config = Self::new().kernel(kernel.to_owned()).build();
-        config.normalize =
-            Some(crate::oscillators::oscillator_mapping_for_kernel(kernel).is_some());
+        config.normalize = Some(kernel_normalizes(kernel));
+        default_style_for_kernel(kernel).clone_into(&mut config.style);
         if let Ok((declared, _)) = config.schema() {
             for param in declared {
                 config
@@ -854,6 +1026,20 @@ impl Default for KernelIndicatorConfig {
     }
 }
 
+/// Parse an optional display dial: blank restores the catalog default, any
+/// other text must parse as a number. Mirrors the style component's
+/// empty-clears convention, so unsetting a dial needs no magic value.
+fn parse_optional_number(value: &str) -> Result<Option<f64>, FieldError> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    trimmed
+        .parse()
+        .map(Some)
+        .map_err(|_| FieldError::Parse(value.to_owned()))
+}
+
 impl FieldAccess for KernelIndicatorConfig {
     fn set_field(&mut self, name: &str, value: &str) -> Result<(), FieldError> {
         match name {
@@ -863,8 +1049,7 @@ impl FieldAccess for KernelIndicatorConfig {
                 }
                 value.clone_into(&mut self.kernel);
                 self.params.clear();
-                self.normalize =
-                    Some(crate::oscillators::oscillator_mapping_for_kernel(&self.kernel).is_some());
+                self.normalize = Some(kernel_normalizes(&self.kernel));
                 if let Ok((declared, _)) = self.schema() {
                     for param in declared {
                         self.params
@@ -902,9 +1087,7 @@ impl FieldAccess for KernelIndicatorConfig {
                 Ok(())
             }
             "osc_gain" => {
-                self.osc_gain = value
-                    .parse()
-                    .map_err(|_| FieldError::Parse(value.to_owned()))?;
+                self.osc_gain = parse_optional_number(value)?;
                 Ok(())
             }
             "osc_trim" => {
@@ -915,6 +1098,28 @@ impl FieldAccess for KernelIndicatorConfig {
             }
             "osc_threshold" => {
                 self.osc_threshold = value
+                    .parse()
+                    .map_err(|_| FieldError::Parse(value.to_owned()))?;
+                Ok(())
+            }
+            "osc_offset" => {
+                self.osc_offset = parse_optional_number(value)?;
+                Ok(())
+            }
+            "osc_k" => {
+                self.osc_k = parse_optional_number(value)?;
+                Ok(())
+            }
+            "osc_mult" => {
+                self.osc_mult = parse_optional_number(value)?;
+                Ok(())
+            }
+            "smooth_type" => {
+                value.clone_into(&mut self.smooth_type);
+                Ok(())
+            }
+            "smooth_period" => {
+                self.smooth_period = value
                     .parse()
                     .map_err(|_| FieldError::Parse(value.to_owned()))?;
                 Ok(())
@@ -964,9 +1169,26 @@ impl FieldAccess for KernelIndicatorConfig {
             "style" => Ok(self.style.clone()),
             "source" => Ok(self.source.clone()),
             "normalize" => Ok(self.effective_normalize().to_string()),
-            "osc_gain" => Ok(self.osc_gain.to_string()),
+            "osc_gain" => Ok(self
+                .osc_gain
+                .map(|value| value.to_string())
+                .unwrap_or_default()),
             "osc_trim" => Ok(self.osc_trim.to_string()),
             "osc_threshold" => Ok(self.osc_threshold.to_string()),
+            "osc_offset" => Ok(self
+                .osc_offset
+                .map(|value| value.to_string())
+                .unwrap_or_default()),
+            "osc_k" => Ok(self
+                .osc_k
+                .map(|value| value.to_string())
+                .unwrap_or_default()),
+            "osc_mult" => Ok(self
+                .osc_mult
+                .map(|value| value.to_string())
+                .unwrap_or_default()),
+            "smooth_type" => Ok(self.smooth_type.clone()),
+            "smooth_period" => Ok(self.smooth_period.to_string()),
             other => {
                 let (declared, _) = self
                     .schema()
@@ -994,14 +1216,6 @@ impl Describable for KernelIndicatorConfig {
         use protopyne_kernels::indicator::ParamKind;
         let mut properties = serde_json::Map::new();
         properties.insert(
-            "kernel".to_owned(),
-            serde_json::json!({
-                "type": "string",
-                "description": "Kernel id",
-                "enum": crate::kernel_ids(),
-            }),
-        );
-        properties.insert(
             "style".to_owned(),
             serde_json::json!({
                 "type": "string",
@@ -1017,38 +1231,97 @@ impl Describable for KernelIndicatorConfig {
                 "enum": crate::topology::price_source_ids(),
             }),
         );
+        // The normalization dials render only where they can move the
+        // picture: slots whose kernel never normalizes omit all seven, so
+        // moving averages stop offering inert controls. Smoothing stays —
+        // smoothed passthrough is functional on any leg — as do style,
+        // source, and the kernel's own params. Validation still refuses a
+        // forced normalize on such kernels; the schema simply stops
+        // suggesting it.
+        if kernel_normalizes(&self.kernel) {
+            properties.insert(
+                "normalize".to_owned(),
+                serde_json::json!({
+                    "type": "boolean",
+                    "description": "Squash display through the frozen oscillator catalog",
+                    "default": true,
+                    "x-tab": "style",
+                }),
+            );
+            properties.insert(
+                "osc_gain".to_owned(),
+                serde_json::json!({
+                    "type": "number",
+                    "description": "Display gain over the catalog squash",
+                    "default": 1.0,
+                    "exclusiveMinimum": 0.0,
+                    "x-tab": "style",
+                }),
+            );
+            properties.insert(
+                "osc_trim".to_owned(),
+                serde_json::json!({
+                    "type": "number",
+                    "description": "Post-normalization centering trim",
+                    "default": 0.0,
+                    "x-tab": "style",
+                }),
+            );
+            properties.insert(
+                "osc_threshold".to_owned(),
+                serde_json::json!({
+                    "type": "number",
+                    "description": "Display threshold at plus/minus this value",
+                    "default": 100.0,
+                    "exclusiveMinimum": 0.0,
+                }),
+            );
+            properties.insert(
+                "osc_offset".to_owned(),
+                serde_json::json!({
+                    "type": "number",
+                    "description": "Display offset over the catalog row (blank follows the catalog)",
+                    "x-tab": "style",
+                }),
+            );
+            properties.insert(
+                "osc_k".to_owned(),
+                serde_json::json!({
+                    "type": "number",
+                    "description": "Display steepness over the catalog row, positive (blank follows the catalog)",
+                    "exclusiveMinimum": 0.0,
+                    "x-tab": "style",
+                }),
+            );
+            properties.insert(
+                "osc_mult".to_owned(),
+                serde_json::json!({
+                    "type": "number",
+                    "description": "Display band half-width over the catalog row, positive (blank follows the catalog)",
+                    "exclusiveMinimum": 0.0,
+                    "x-tab": "style",
+                }),
+            );
+        }
         properties.insert(
-            "normalize".to_owned(),
+            "smooth_type".to_owned(),
             serde_json::json!({
-                "type": "boolean",
-                "description": "Squash display through the frozen oscillator catalog",
-                "default": true,
+                "type": "string",
+                "description": "Trailing smoothing for the display leg (NA disables)",
+                "enum": protopyne_kernels::smoothing::length_smoothing_ids(),
+                "default": "na",
+                "x-tab": "style",
             }),
         );
         properties.insert(
-            "osc_gain".to_owned(),
+            "smooth_period".to_owned(),
             serde_json::json!({
-                "type": "number",
-                "description": "Display gain over the catalog squash",
-                "default": 1.0,
-                "exclusiveMinimum": 0.0,
-            }),
-        );
-        properties.insert(
-            "osc_trim".to_owned(),
-            serde_json::json!({
-                "type": "number",
-                "description": "Post-normalization centering trim",
-                "default": 0.0,
-            }),
-        );
-        properties.insert(
-            "osc_threshold".to_owned(),
-            serde_json::json!({
-                "type": "number",
-                "description": "Display threshold at plus/minus this value",
-                "default": 100.0,
-                "exclusiveMinimum": 0.0,
+                "type": "integer",
+                "description": "Trailing smoothing window in bars",
+                "default": 3,
+                "minimum": 2,
+                "maximum": 200,
+                "x-tab": "style",
             }),
         );
         if let Ok((declared, _)) = self.schema() {
@@ -1132,6 +1405,27 @@ pub fn kernel_title(kernel: &str) -> String {
                 .map(|indicator| indicator.spec().display_name.clone())
         })
         .unwrap_or_else(|| kernel.to_owned())
+}
+
+/// Whether every declared output leg of a kernel maps into the shared
+/// oscillator catalog: the single predicate behind the merge gate, the
+/// normalize default, and shared-pane derivation. Unknown kernels and
+/// partially mapped families refuse — merging half-raw content into a
+/// symmetric normalized pane is structurally meaningless, and the pane
+/// derivation must agree with the gate.
+#[must_use]
+pub fn kernel_normalizes(kernel: &str) -> bool {
+    let Ok(registry) = shared_registry() else {
+        return false;
+    };
+    let Some(indicator) = registry.get(kernel) else {
+        return false;
+    };
+    let outputs = indicator.spec().outputs();
+    !outputs.is_empty()
+        && outputs
+            .iter()
+            .all(|output| oscillator_mapping_for_output(kernel, output.name).is_some())
 }
 
 /// Pane a kernel plugin paints in: length-taking smoothings are one-arm
@@ -1261,7 +1555,16 @@ impl ChartIndicator for KernelIndicator {
                 reason: format!("unknown input source {:?}", config.source),
             })?;
         let (column, producer) = resolve_input_column(&source, rows, series)?;
-        let frame = series_frame(rows, &column)?;
+        // The reference arm ignores the source series and reads the bars
+        // directly (high/low legs); the port mirrors that, so the slot
+        // evaluates converted bars instead of the picked column. Only
+        // aroon needs this today; range kernels in general still evaluate
+        // their picked column (recorded follow-up).
+        let frame = if config.kernel == "aroon" {
+            crate::topology::kernel_preview_frame(rows)
+        } else {
+            series_frame(rows, &column)?
+        };
         let params = config.effective_params()?;
         let result = kernel_result(&config.kernel, &params, &frame)?;
         let (_, outputs) = config.schema()?;
@@ -1278,7 +1581,16 @@ impl ChartIndicator for KernelIndicator {
         if outputs.is_empty() {
             let mut values = result.values.clone();
             mask_leading(&mut values, holes);
-            let (display_values, display_mapping) = display_for_kernel(&values, config);
+            let display_source = smooth_raw_for_display(
+                &values,
+                rows,
+                &config.smooth_type,
+                config.smooth_period,
+                holes,
+                "smooth_type",
+            )?;
+            let (display_values, display_mapping) =
+                display_for_kernel(&display_source, config, "value");
             series_out.push(IndicatorSeries {
                 node: primary_node.clone(),
                 name: config.kernel.clone(),
@@ -1311,11 +1623,16 @@ impl ChartIndicator for KernelIndicator {
                         .to_vec()
                 };
                 mask_leading(&mut values, holes);
-                let (display_values, display_mapping) = if index == 0 {
-                    display_for_kernel(&values, config)
-                } else {
-                    (values.clone(), None)
-                };
+                let display_source = smooth_raw_for_display(
+                    &values,
+                    rows,
+                    &config.smooth_type,
+                    config.smooth_period,
+                    holes,
+                    "smooth_type",
+                )?;
+                let (display_values, display_mapping) =
+                    display_for_kernel(&display_source, config, output.name);
                 series_out.push(IndicatorSeries {
                     node: node.clone(),
                     name: if index == 0 {
@@ -1329,7 +1646,19 @@ impl ChartIndicator for KernelIndicator {
                     style: config.style.clone(),
                     attachment: self.attachment,
                     key: series_key_for(&node, fingerprint, producer_key),
-                    pane: Some(format!("kernel:{}", self.id)),
+                    // Main-overlays paint on the chart and own no pane: a
+                    // pane identity here would derive an empty strip below
+                    // it. Normalized oscillators resolve to the shared
+                    // sub-pane natively, so they never derive a custom pane
+                    // either — only kernels that are neither chart nor
+                    // normalized-oscillator content name one.
+                    pane: if self.attachment == SlotAttachment::MainOverlay
+                        || kernel_normalizes(&config.kernel)
+                    {
+                        None
+                    } else {
+                        Some(format!("kernel:{}", self.id))
+                    },
                 });
             }
         }
@@ -1343,38 +1672,112 @@ fn mask_leading(values: &mut [Option<f64>], holes: usize) {
     }
 }
 
+/// Smooth one raw leg for display when the slot arms a trailing smoothing
+/// family (`NA` passes through). The smoothing kernel runs over the
+/// single-column frame built from the masked raw leg, and its own warmup
+/// masks on top of the leg's holes — holes stay holes, and no value is
+/// ever invented past the kernels' own warmups. An unevaluable arm refuses
+/// naming the field. The published raw series never sees this: smoothing
+/// feeds normalization only.
+/// Smooth one raw leg for display through a trailing smoothing family
+/// (`NA` passes through). The smoothing kernel runs over the
+/// single-column frame built from the masked raw leg, and its own warmup
+/// masks on top of the leg's holes: holes stay holes, and no value is ever
+/// invented past the kernels' own warmups. `field` names the dial refused
+/// reports carry. Callers resolve blanks to effective values before this
+/// runs, so every dial reads concrete here.
+pub(crate) fn smooth_raw_for_display(
+    raw: &[Option<f64>],
+    rows: &[ChartRow],
+    smooth_type: &str,
+    smooth_period: i64,
+    holes: usize,
+    field: &str,
+) -> Result<Vec<Option<f64>>, EguiError> {
+    let family = match SmoothingFamily::parse(smooth_type) {
+        Some(SmoothingFamily::Na) => return Ok(raw.to_vec()),
+        Some(family) if family.takes_length() => family,
+        _ => {
+            return Err(EguiError::InvalidParam {
+                what: field.to_owned(),
+                reason: format!(
+                    "smoothing {smooth_type:?} is not a length-taking smoothing family"
+                ),
+            });
+        }
+    };
+    let kernel = family.kernel_id().ok_or_else(|| EguiError::InvalidParam {
+        what: field.to_owned(),
+        reason: format!("smoothing {smooth_type:?} has no kernel to evaluate"),
+    })?;
+    if shared_registry()
+        .map_err(|error| EguiError::Dependency {
+            reason: error.to_string(),
+        })?
+        .get(kernel)
+        .is_none()
+    {
+        return Err(EguiError::InvalidParam {
+            what: field.to_owned(),
+            reason: format!("smoothing kernel {kernel:?} is not registered"),
+        });
+    }
+    let frame = series_frame(rows, raw)?;
+    let smoothed = family
+        .evaluate(&frame, &SmoothingArgs::length(smooth_period))
+        .map_err(|error| describe_kernel(&error))?;
+    let warmup = family
+        .warmup_for_length(smooth_period)
+        .map_err(|error| describe_kernel(&error))?;
+    let mut out = smoothed;
+    let mask = holes.saturating_add(warmup).min(out.len());
+    mask_leading(&mut out, mask);
+    Ok(out)
+}
+
 /// Display values plus provenance for one raw leg: the dialed transform
-/// `gain * catalog(raw) + trim` when normalizing is on and the kernel maps,
-/// else a raw passthrough. Holes stay holes; a refused kind cannot occur
-/// here because validation already refused `normalize` on unmapped kernels.
+/// `band(gain * catalog(raw) + trim)` when normalizing is on and the output
+/// maps, else a raw passthrough. Holes stay holes; a refused kind cannot
+/// occur here because validation already refused `normalize` on unmapped
+/// kernels.
 fn display_for_kernel(
     raw: &[Option<f64>],
     config: &KernelIndicatorConfig,
+    output: &str,
 ) -> (Vec<Option<f64>>, Option<(OscillatorKind, WhichLeg)>) {
     if !config.effective_normalize() {
         return (raw.to_vec(), None);
     }
-    let Some(mapping) = oscillator_mapping_for_kernel(&config.kernel) else {
+    let Some(mapping) = oscillator_mapping_for_output(&config.kernel, output) else {
         return (raw.to_vec(), None);
     };
     let (kind, _) = mapping;
-    let Ok(display) = normalize_series(raw, kind) else {
+    let Some(params) = config.effective_osc_params_for(&kind) else {
         return (raw.to_vec(), None);
     };
-    let shaped = display
-        .into_iter()
-        .map(|slot| {
-            slot.and_then(|value| {
-                let shaped = value * config.osc_gain + config.osc_trim;
-                if shaped.is_finite() {
-                    Some(shaped)
-                } else {
-                    None
-                }
-            })
-        })
-        .collect();
-    (shaped, Some(mapping))
+    // Aroon legs arrive as window fractions; the catalog row is calibrated
+    // for the Pine 0..100 arm, so the exact bridge rescales first. The
+    // length is the slot's own (validated before display runs): panel edits
+    // template new slots, and every slot carries what it evaluates.
+    let shaped: Vec<Option<f64>> = if kind == OscillatorKind::Aroon {
+        let length = config
+            .params
+            .get("length")
+            .and_then(|text| text.parse::<i64>().ok())
+            .unwrap_or(config.length);
+        crate::oscillators::rescale_aroon_output(raw, length)
+    } else {
+        raw.to_vec()
+    };
+    (
+        display_mapped_series(
+            &shaped,
+            &params,
+            config.osc_gain.unwrap_or(1.0),
+            config.osc_trim,
+        ),
+        Some(mapping),
+    )
 }
 
 /// Build the indicator catalog: the two scripted indicators under My Scripts,

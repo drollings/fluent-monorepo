@@ -15,7 +15,7 @@ use fluent_wvr::prelude::*;
 use fluent_wvr::{Describable, FieldAccess};
 use protopyne_chart_model::ChartRow;
 use protopyne_kernels::indicator::OwnedOhlcv;
-use protopyne_kernels::smoothing::{SmoothingArgs, SmoothingFamily};
+use protopyne_kernels::smoothing::{SmoothingArgs, SmoothingFamily, MA_PERIOD_MAX, MA_PERIOD_MIN};
 
 use fluent_wvr::validate::{check_for_execute, valid_output, Validate};
 
@@ -124,7 +124,7 @@ pub struct FastMasConfig {
     #[builder(default = default_first_ma_type())]
     pub first_ma_type: String,
     /// Length of the first average.
-    #[field(desc = "First MA length")]
+    #[field(desc = "First MA length", min = 2, max = 200)]
     #[builder(default = default_first_ma_length())]
     pub first_ma_length: i64,
     /// Theme style key for the first average.
@@ -142,7 +142,7 @@ pub struct FastMasConfig {
     #[builder(default = default_second_ma_type())]
     pub second_ma_type: String,
     /// Length of the second average.
-    #[field(desc = "Second MA length")]
+    #[field(desc = "Second MA length", min = 2, max = 200)]
     #[builder(default = default_second_ma_length())]
     pub second_ma_length: i64,
     /// Theme style key for the second average.
@@ -160,7 +160,7 @@ pub struct FastMasConfig {
     #[builder(default = default_ema_type())]
     pub signal_ma_type: String,
     /// Length of the signal average.
-    #[field(desc = "Signal MA length")]
+    #[field(desc = "Signal MA length", min = 2, max = 200)]
     #[builder(default = default_signal_ma_length())]
     pub signal_ma_length: i64,
     /// Theme style key for the signal average.
@@ -178,7 +178,7 @@ pub struct FastMasConfig {
     #[builder(default = default_ema_type())]
     pub mean_ma_type: String,
     /// Length of the mean average.
-    #[field(desc = "Mean MA length")]
+    #[field(desc = "Mean MA length", min = 2, max = 200)]
     #[builder(default = default_mean_ma_length())]
     pub mean_ma_length: i64,
     /// Theme style key for the mean average.
@@ -196,7 +196,7 @@ pub struct FastMasConfig {
     #[builder(default = default_ema_type())]
     pub trend_ma_type: String,
     /// Length of the trend average.
-    #[field(desc = "Trend MA length")]
+    #[field(desc = "Trend MA length", min = 2, max = 200)]
     #[builder(default = default_trend_ma_length())]
     pub trend_ma_length: i64,
     /// Theme style key for the trend average.
@@ -214,7 +214,7 @@ pub struct FastMasConfig {
     #[builder(default = default_ema_type())]
     pub base_ma_type: String,
     /// Length of the base average.
-    #[field(desc = "Base MA length")]
+    #[field(desc = "Base MA length", min = 2, max = 200)]
     #[builder(default = default_base_ma_length())]
     pub base_ma_length: i64,
     /// Theme style key for the base average.
@@ -279,10 +279,16 @@ impl FastMasConfig {
             ("trend_ma", &self.trend_ma_type, self.trend_ma_length),
             ("base_ma", &self.base_ma_type, self.base_ma_length),
         ] {
-            if length <= 0 {
+            // The MA period contract, shared with every kernel MA: the
+            // derive attrs above mirror these same bounds as literals (the
+            // macro only reads literals), so the schema sliders and this
+            // refusal stay one window.
+            if !(MA_PERIOD_MIN..=MA_PERIOD_MAX).contains(&length) {
                 return Err(EguiError::InvalidParam {
                     what: format!("{label}_length"),
-                    reason: "moving-average length must be positive".to_owned(),
+                    reason: format!(
+                        "moving-average period must sit within [{MA_PERIOD_MIN}, {MA_PERIOD_MAX}], got {length}"
+                    ),
                 });
             }
             if !is_supported_arm(kind) {

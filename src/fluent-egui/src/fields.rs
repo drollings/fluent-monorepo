@@ -1,19 +1,29 @@
 //! Schema-driven control-plane field editors.
 //!
 //! Every control-plane struct derives `FieldAccess` + `Describable`, so its
-//! `describe()` document already names each field, its type, its hint, and
-//! its declared numeric range. This module reads that document once into
-//! [`SchemaField`]s and paints one editor per field, so a control renders
-//! from its schema and a new field appears in the UI without a UI edit.
+//! `describe()` document already names each field, its type, its hint, its
+//! declared numeric range, and — through the `x-tab` extension — the tab it
+//! belongs on. This module reads that document once into [`SchemaField`]s
+//! and paints one editor per field, so a control renders from its schema
+//! and a new field appears in the UI without a UI edit.
+//!
+//! The widget follows the metadata: a number with a finite closed range
+//! earns a bounded slider, a number without one keeps the drag value, a
+//! boolean earns a toggle switch, an `enum` list earns a dropdown, and a
+//! `color` format earns a swatch beside its hex text. Sliders are
+//! bounds-*guided*, never bounds-*clamped*: they render with
+//! [`egui::SliderClamping::Never`], so an out-of-band stored value still
+//! displays as held and typed input reaches the field's own contract
+//! unclamped — a silently clamping control is a control that lies about
+//! what it holds.
 //!
 //! Two rules keep the editors honest. A value the widget produces that the
 //! field's own contract refuses (non-finite float, out-of-range integer,
 //! over-length string) is **not** written and **not** clamped — the refusal
-//! is returned with the field's name, because a silently clamped control is
-//! a control that lies about what it holds. And an editor never binds a
-//! schema `minimum`/`maximum` as a drag bound: the bound would make the
-//! operator's out-of-range input unreachable instead of visibly refused,
-//! which is the difference between a constraint and a guard rail.
+//! is returned with the field's name. And an editor never substitutes for a
+//! missing schema: an unrecognised type renders as text rather than
+//! disappearing, and its write still goes through the field's own
+//! `set_field` contract.
 
 use fluent_wvr::FieldAccess;
 
@@ -89,6 +99,11 @@ pub struct SchemaField {
     /// Declared option set, when the schema carries an `enum` list. A
     /// non-empty set makes this field a [`FieldKind::Select`].
     pub options: Vec<String>,
+    /// Explicit tab pin from the schema's `x-tab` hint, when it names a
+    /// known tab. An explicit pin wins over the name heuristics in
+    /// [`classify_schema_field`], so a domain schema can place its own
+    /// display knobs without teaching this router domain vocabulary.
+    pub explicit_tab: Option<SettingsTab>,
 }
 
 /// Every field in `schema`, in schema order. Properties are read from the
@@ -123,10 +138,12 @@ pub fn schema_fields(schema: &serde_json::Value) -> Vec<SchemaField> {
                         .and_then(serde_json::Value::as_str)
                         .unwrap_or_default()
                         .to_owned(),
-                    minimum: number_hint(hint.get("minimum")),
+                    minimum: number_hint(hint.get("minimum"))
+                        .or_else(|| number_hint(hint.get("exclusiveMinimum"))),
                     maximum: number_hint(hint.get("maximum")),
                     max_len: usize_hint(hint.get("maxLength")),
                     options: enum_hint(hint.get("enum")),
+                    explicit_tab: tab_hint(hint.get("x-tab")),
                 })
                 .collect()
         })
@@ -156,6 +173,20 @@ fn enum_hint(hint: Option<&serde_json::Value>) -> Vec<String> {
             .map(str::to_owned)
             .collect(),
         _ => Vec::new(),
+    }
+}
+
+/// An explicit tab pin, spelled as the tab label in lowercase
+/// (`"inputs"`, `"style"`, `"visibility"`). Any other shape — including an
+/// unknown tab name — reads as no pin, so the name heuristics stay the
+/// fallback instead of a typo silently emptying a tab.
+fn tab_hint(hint: Option<&serde_json::Value>) -> Option<SettingsTab> {
+    let name = hint?.as_str()?;
+    match name {
+        "inputs" => Some(SettingsTab::Inputs),
+        "style" => Some(SettingsTab::Style),
+        "visibility" => Some(SettingsTab::Visibility),
+        _ => None,
     }
 }
 
@@ -214,14 +245,19 @@ impl SettingsTab {
 
 /// Route one lifted field to its settings tab.
 ///
-/// Precedence is fixed so the partition is total: a boolean visibility name
-/// (`show_*`, `visible`) wins over everything, then a paint-style name
-/// (color, alpha, transparency, brightness, width, threshold, style, theme),
-/// and everything else — calculation fields and the unclassified remainder —
-/// renders under Inputs. Name matching is case-insensitive, because schemas
-/// arrive in both `snake_case` and display casing.
+/// An explicit `x-tab` pin wins over everything: the schema names its tab
+/// and the router obeys. Otherwise precedence is fixed so the partition is
+/// total: a boolean visibility name (`show_*`, `visible`) wins over
+/// everything, then a paint-style name (color, alpha, transparency,
+/// brightness, width, threshold, style, theme), and everything else —
+/// calculation fields and the unclassified remainder — renders under
+/// Inputs. Name matching is case-insensitive, because schemas arrive in
+/// both `snake_case` and display casing.
 #[must_use]
 pub fn classify_schema_field(field: &SchemaField) -> SettingsTab {
+    if let Some(tab) = field.explicit_tab {
+        return tab;
+    }
     let name = field.name.to_ascii_lowercase();
     let is_toggle = name == "visible"
         || name.starts_with("visible_")
@@ -254,6 +290,36 @@ pub fn fields_for_tab(fields: &[SchemaField], tab: SettingsTab) -> Vec<SchemaFie
     fields
         .iter()
         .filter(|field| classify_schema_field(field) == tab)
+        .cloned()
+        .collect()
+}
+
+/// Project a style-component schema down to the keys one slot paints.
+///
+/// The style component's whole schema is the same override block for every
+/// indicator; a settings pane that renders all of it shows every slot the
+/// same editors. Filtering to the stroke width plus the `color_<key>`
+/// overrides for the keys the slot's own series carry makes the tab show
+/// that indicator's display values instead. An empty key set projects to
+/// the whole schema rather than an empty tab: with nothing evaluated yet
+/// there is nothing to project by, and hiding every override would read
+/// as if the slot had none.
+#[must_use]
+pub fn project_style_fields(
+    style_fields: &[SchemaField],
+    painted_keys: &[&str],
+) -> Vec<SchemaField> {
+    if painted_keys.is_empty() {
+        return style_fields.to_vec();
+    }
+    style_fields
+        .iter()
+        .filter(|field| {
+            field.name == crate::style::LINE_WIDTH_FIELD
+                || painted_keys
+                    .iter()
+                    .any(|key| field.name == format!("color_{key}"))
+        })
         .cloned()
         .collect()
 }
@@ -454,7 +520,7 @@ fn paint_one(
                 return;
             };
             let mut value = value;
-            let changed = row.checkbox(&mut value, "").changed();
+            let changed = paint_switch(row, &mut value).changed();
             changed.then(|| value.to_string())
         }
         FieldKind::Text => {
@@ -475,12 +541,15 @@ fn paint_one(
     }
 }
 
-/// A whole-number editor. A value this editor cannot hold is reported, not
-/// rounded or wrapped into the widget. The control is always the unbounded
-/// drag value — never a slider bound to the schema range, which would hide
-/// an out-of-band stored value and clamp an operator edit onto the bound;
-/// the write still goes through the field's own contract, never a clamp.
-/// Infinite bounds need no special case: no bound ever reaches the widget.
+/// A whole-number editor: a bounded slider when the schema declares a
+/// finite closed range, the unbounded drag value otherwise.
+///
+/// The slider is bounds-*guided*, never bounds-*clamped*: it renders with
+/// [`egui::SliderClamping::Never`], so an out-of-band stored value still
+/// displays as held (the handle parks at the nearest edge) and typed input
+/// travels to `set_field` unclamped, where the field's own contract
+/// refuses it with the field named. Infinite bounds need no special case:
+/// no bound ever reaches the widget.
 fn edit_integer(
     row: &mut egui::Ui,
     field: &SchemaField,
@@ -494,16 +563,39 @@ fn edit_integer(
         ));
         return None;
     };
+    if let Some(range) = integer_range(field) {
+        let mut value = value;
+        let changed = row
+            .add(egui::Slider::new(&mut value, range).clamping(egui::SliderClamping::Never))
+            .changed();
+        return changed.then(|| value.to_string());
+    }
     let mut value = value;
     let changed = row.add(egui::DragValue::new(&mut value).speed(1)).changed();
     changed.then(|| value.to_string())
 }
 
-/// A real-number editor. `NaN` and the infinities are never written: a
-/// control holding one would render it as a value it does not have. The
-/// control is always the unbounded drag value, for the same reason as the
-/// integer editor: bounds are display-only hints, enforced by the field's
-/// own contract on write.
+/// The closed integer range a schema declares, when both bounds are finite
+/// and order correctly. Anything else is not a range a slider can hold, so
+/// the field keeps the unbounded drag value and the field's own contract
+/// stays the only bound.
+fn integer_range(field: &SchemaField) -> Option<std::ops::RangeInclusive<i64>> {
+    let lo = field.minimum?;
+    let hi = field.maximum?;
+    if !lo.is_finite() || !hi.is_finite() {
+        return None;
+    }
+    let (lo, hi) = (lo.ceil() as i64, hi.floor() as i64);
+    (lo <= hi).then_some(lo..=hi)
+}
+
+/// A real-number editor: a bounded slider when the schema declares a
+/// finite closed range, the unbounded drag value otherwise. `NaN` and the
+/// infinities are never written: a control holding one would render it as
+/// a value it does not have. Like the integer editor the slider never
+/// clamps — [`egui::SliderClamping::Never`] keeps the stored value on
+/// screen and typed input unclamped, and the field's own contract stays
+/// the only bound that can refuse.
 fn edit_number(
     row: &mut egui::Ui,
     field: &SchemaField,
@@ -517,6 +609,22 @@ fn edit_number(
         ));
         return None;
     };
+    if let Some(range) = number_range(field) {
+        let mut value = value;
+        let changed = row
+            .add(egui::Slider::new(&mut value, range).clamping(egui::SliderClamping::Never))
+            .changed();
+        if !changed {
+            return None;
+        }
+        if !value.is_finite() {
+            edits
+                .refusals
+                .push(refusal(field, "a real number must be finite".to_owned()));
+            return None;
+        }
+        return Some(value.to_string());
+    }
     let mut value = value;
     let changed = row
         .add(egui::DragValue::new(&mut value).speed(0.01))
@@ -531,6 +639,51 @@ fn edit_number(
         return None;
     }
     Some(value.to_string())
+}
+
+/// The closed real range a schema declares, when both bounds are finite
+/// and strictly ordered. Anything else keeps the unbounded drag value.
+fn number_range(field: &SchemaField) -> Option<std::ops::RangeInclusive<f64>> {
+    let (lo, hi) = (field.minimum?, field.maximum?);
+    (lo.is_finite() && hi.is_finite() && lo < hi).then_some(lo..=hi)
+}
+
+/// A boolean toggle switch: the on/off counterpart of the checkbox, drawn
+/// from the ambient visuals so it follows the theme with no color of its
+/// own. A click flips the value; anything else leaves it alone.
+fn paint_switch(row: &mut egui::Ui, value: &mut bool) -> egui::Response {
+    use egui::{pos2, Color32, Sense, Stroke, Vec2};
+    let desired = Vec2::new(30.0, 16.0);
+    let (rect, mut response) = row.allocate_exact_size(desired, Sense::click());
+    if response.clicked() {
+        *value = !*value;
+        response.mark_changed();
+    }
+    if !row.is_rect_visible(rect) {
+        return response;
+    }
+    let visuals = row.visuals().clone();
+    let track = if *value {
+        visuals.selection.bg_fill
+    } else {
+        visuals.widgets.inactive.bg_fill
+    };
+    let radius = rect.height() / 2.0;
+    row.painter()
+        .rect(rect, radius, track, Stroke::NONE, egui::StrokeKind::Inside);
+    let knob_r = radius - 2.0;
+    let knob_x = if *value {
+        rect.right() - radius
+    } else {
+        rect.left() + radius
+    };
+    row.painter().circle(
+        pos2(knob_x, rect.center().y),
+        knob_r,
+        Color32::WHITE,
+        Stroke::NONE,
+    );
+    response
 }
 
 /// A dropdown over the schema's option set. A current value outside the set

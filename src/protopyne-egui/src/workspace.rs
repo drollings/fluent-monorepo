@@ -21,15 +21,17 @@ use fluent_egui::{
     column_delta_geoms, crosshair_data, crosshair_lines, needs_column_aggregation,
     opacity_from_transparency, paint_candles_tinted, paint_catalog_modal, paint_crosshair,
     paint_delta_bars_tinted, paint_hot_slot_stack, paint_oscillator, paint_ribbon,
-    paint_ribbon_fill, paint_slot_settings_modal, paint_thresholds, proportional_ribbon_polygons,
-    resolve_color, sampled_line_points, sampled_ribbon_bands, translate_bands, translate_candles,
-    translate_delta_bars, translate_points, translate_polygons, visible_rows, wheel_zoom_factor,
-    zoom_range_around, CatalogAction, CatalogModal, CrosshairLines, EguiError, HotSlotAction,
-    HotSlotStack, InteractionState, PaneCache, PanePlan, PaneZones, PointerInput, SettingsCommit,
-    SettingsTab, SlotAttachment, ThemeConfig, TintedCandle, TintedDeltaBar, Viewport, WheelTarget,
-    WheelZones,
+    paint_ribbon_fill, paint_slot_settings_modal, paint_thresholds, project_style_fields,
+    proportional_ribbon_polygons, resolve_color, sampled_line_points, sampled_ribbon_bands,
+    schema_fields, translate_bands, translate_candles, translate_delta_bars, translate_points,
+    translate_polygons, visible_rows, wheel_zoom_factor, zoom_range_around, CatalogAction,
+    CatalogModal, CrosshairLines, EguiError, HotSlotAction, HotSlotStack, InteractionState,
+    PaneCache, PanePlan, PaneZones, PointerInput, SchemaField, SettingsCommit, SettingsTab,
+    SlotAttachment, ThemeConfig, TintedCandle, TintedDeltaBar, Viewport, WheelTarget, WheelZones,
 };
-use fluent_wvr::{component_downcast_ref, Component, FieldAccess};
+use fluent_wvr::{
+    component_downcast_mut, component_downcast_ref, Component, Describable, FieldAccess,
+};
 use protopyne_chart_model::{heikin_rows_of, ChartRow, ChartType, DateRange};
 use protopyne_chart_scale::{PriceRange, PriceScaleMode};
 use protopyne_types::{BucketAccum, Money, SymKey, SymbolIndex, Timeframe};
@@ -51,6 +53,7 @@ use crate::integration_lite::{
     momentum_tints, ribbon_fill_transparency, IntegrationLiteConfig, IntegrationLiteSubPane,
     MomentumPalette, MomentumTint, CALIBRATED_PIVOT_THRESHOLD,
 };
+use crate::oscillator_panel::{panel_kind_for_kernel, OscillatorPanelState, PANEL_KINDS};
 use crate::prefs::{BookmarkEntry, Favorites, SlotPrefs, TerminalPrefs, TickerLayout};
 use crate::session::{fmt_boundary_time, time_grid_lines, time_major_unit, SessionBreakCache};
 use crate::topology::SeriesCatalog;
@@ -1064,6 +1067,9 @@ pub struct ChartWorkspace {
     top_menu: TopBarMenuState,
     /// Draft preset in the dock range section; `None` when a Beginning is drafted.
     range_draft: Option<DateRange>,
+    /// Oscillator kind defaults behind the dock Oscillators section: the
+    /// live defaults unset slot dials follow. Persists in prefs.
+    oscillator_panel: OscillatorPanelState,
     /// Month the Beginning calendar is showing. Owned here (not in the
     /// reflection-backed menu component) so the picker navigates months
     /// without a schema field per cursor.
@@ -1217,6 +1223,28 @@ fn rows_content_of(rows: &[ChartRow]) -> u64 {
     fnv1a64(&bytes)
 }
 
+/// A slot config ready to evaluate or fingerprint: the stored config, or
+/// a kind-resolved clone when the slot follows panel defaults. Borrowed
+/// storage and owned resolutions share one call shape, so the plan
+/// fingerprint and the evaluator cannot disagree on what a slot means.
+enum EvalConfig<'a> {
+    /// The slot's stored config, untouched.
+    Stored(&'a dyn Component),
+    /// Blanks resolved against the panel kind rows (boxed: resolved configs
+    /// dwarf a fat pointer, and the lint is right to say so).
+    Resolved(Box<dyn Component>),
+}
+
+impl EvalConfig<'_> {
+    /// The config to evaluate and fingerprint.
+    fn as_component(&self) -> &dyn Component {
+        match self {
+            Self::Stored(config) => *config,
+            Self::Resolved(config) => config.as_ref(),
+        }
+    }
+}
+
 impl ChartWorkspace {
     /// Boot the terminal: the default ticker (`SPY`), the five-minute default
     /// timeframe, a one-month default window, and the three scripted
@@ -1291,6 +1319,7 @@ impl ChartWorkspace {
             dock_open: false,
             top_menu: TopBarMenuState::new().build(),
             range_draft: None,
+            oscillator_panel: OscillatorPanelState::default(),
             calendar: CalendarState::default(),
             range_error: None,
             custom_start: None,
@@ -1550,10 +1579,12 @@ impl ChartWorkspace {
     }
 
     /// Write one settings field on a slot through its own `FieldAccess`
-    /// contract, then recompute so the edit is live.
+    /// contract, then recompute so the edit is live. Like every
+    /// indicator-side recompute the view is preserved: X stays put and Y
+    /// refits to the visible window.
     pub fn set_slot_field(&mut self, id: &str, name: &str, value: &str) -> Result<(), EguiError> {
         self.stack.set_slot_field(id, name, value)?;
-        self.recompute()
+        self.recompute_preserving_view()
     }
 
     /// Write one Style field (a color override or the line width) on a slot
@@ -1583,8 +1614,43 @@ impl ChartWorkspace {
     /// (never silently swallowed) while every accepted field applies.
     pub fn commit_slot_settings(&mut self, id: &str) -> Result<Vec<String>, EguiError> {
         let refused = self.stack.commit_settings(id)?;
-        self.recompute()?;
+        self.recompute_preserving_view()?;
         Ok(refused)
+    }
+
+    /// Recompute after an indicator-side change (slot add, settings commit,
+    /// single-field write): the recompute rebinds every viewport from the
+    /// configured spacing onto the trailing edge, so the whole time axis —
+    /// position *and* zoom — is restored afterwards and the Y axis refits
+    /// to the visible window in place. That is the same visible-window
+    /// refit the Refresh button owns, never a jump to the newest bar. A
+    /// pre-paint call has no measured width yet, so the Y fit waits for
+    /// the first frame instead of fitting on a proxy.
+    fn recompute_preserving_view(&mut self) -> Result<(), EguiError> {
+        let saved_main = self.main;
+        self.recompute()?;
+        if let (Some(saved), Some(fresh)) = (saved_main, self.main) {
+            // The rebind rebuilt every viewport from the configured spacing;
+            // adopt the saved time axis (zoom and position) onto the fresh
+            // price range, then lock every pane back to it. Rows never move
+            // under an indicator-side change, so no prepend compensation
+            // applies — a direct adopt is exact.
+            if let Ok(restored) = fresh.sync_time_axis(&saved) {
+                self.main = Some(restored);
+                if let Some(sub) = self.sub {
+                    if let Ok(synced) = sub.sync_time_axis(&restored) {
+                        self.sub = Some(synced);
+                    }
+                }
+                for pane in &mut self.sub_panes {
+                    if let Ok(synced) = pane.viewport.sync_time_axis(&restored) {
+                        pane.viewport = synced;
+                    }
+                }
+            }
+        }
+        self.apply_auto_height(self.last_plot_width);
+        Ok(())
     }
 
     /// Remove an indicator: close its pane handle, unslot it, drop its
@@ -3465,7 +3531,22 @@ impl ChartWorkspace {
             return Ok(());
         }
         let plugin = instantiate_indicator(id)?;
-        let config = plugin.default_config();
+        let mut config = plugin.default_config();
+        // New oscillator slots template the panel period: the kind default
+        // is the length a fresh slot opens with (the registry default it
+        // replaces matches, so a neutral panel changes nothing).
+        if let Some(kernel_config) =
+            component_downcast_mut::<crate::indicators::KernelIndicatorConfig>(&mut *config)
+        {
+            if let Some(kind) = panel_kind_for_kernel(&kernel_config.kernel) {
+                if let (Ok(defaults), Some(length)) = (
+                    self.oscillator_panel.entry(kind),
+                    kernel_config.params.get_mut("length"),
+                ) {
+                    *length = defaults.period.to_string();
+                }
+            }
+        }
         let nodes = plugin.plan_nodes(&*config)?;
         let node_refs: Vec<&str> = nodes.iter().map(String::as_str).collect();
         let deps = plugin.plan_deps(&*config)?;
@@ -3579,7 +3660,9 @@ impl ChartWorkspace {
     }
 
     /// Whether a slot may merge into the shared oscillator pane: only slots
-    /// with a normalizable oscillator mapping qualify.
+    /// whose every declared output leg normalizes qualify. A partially
+    /// mapped kernel would paint raw legs into a symmetric normalized
+    /// pane, which is structurally meaningless, not low confidence.
     fn is_mergeable_to_shared(&self, slot_id: &str) -> bool {
         if slot_id == INTEGRATION_LITE_ID {
             return true;
@@ -3592,7 +3675,7 @@ impl ChartWorkspace {
         else {
             return false;
         };
-        crate::oscillators::oscillator_mapping_for_kernel(&config.kernel).is_some()
+        crate::indicators::kernel_normalizes(&config.kernel)
     }
 
     /// Merge a slot to a target pane: presentation-only, so plan nodes,
@@ -3677,14 +3760,21 @@ impl ChartWorkspace {
     /// The display range for one custom pane: declared bounds plus a small
     /// pad, or the visible values' extent. Values are never clamped.
     /// Ranges read display values, the same contract painters read, so a
-    /// normalized pane contains its normalized content.
+    /// normalized pane contains its normalized content. Declared bounds
+    /// describe raw outputs, so they join the union only when no series in
+    /// the pane normalizes — mixing a raw-space band into a display-space
+    /// range would misplace both.
     fn custom_pane_range(&self, pane_id: &str) -> (f64, f64) {
         let mut lo = f64::INFINITY;
         let mut hi = f64::NEG_INFINITY;
+        let mut mapped = false;
         for evaluation in self.evaluations.values() {
             for series in &evaluation.series {
                 if series.pane_id("sub") != pane_id {
                     continue;
+                }
+                if series.display_mapping.is_some() {
+                    mapped = true;
                 }
                 for value in series.display_values.iter().flatten() {
                     if value.is_finite() {
@@ -3694,15 +3784,78 @@ impl ChartWorkspace {
                 }
             }
         }
-        if let Some((declared_lo, declared_hi)) = self.declared_pane_bounds(pane_id) {
-            lo = lo.min(declared_lo);
-            hi = hi.max(declared_hi);
+        if !mapped {
+            if let Some((declared_lo, declared_hi)) = self.declared_pane_bounds(pane_id) {
+                lo = lo.min(declared_lo);
+                hi = hi.max(declared_hi);
+            }
         }
         if !lo.is_finite() || !hi.is_finite() || lo >= hi {
             return (SUB_MIN, SUB_MAX);
         }
         let pad = (hi - lo) * AUTO_HEIGHT_PAD_FRACTION;
         (lo - pad, hi + pad)
+    }
+
+    /// The style keys one slot's series paint with, in first-painted order.
+    /// The settings Style tab projects the generic override block down to
+    /// these keys, so the tab shows that indicator's display values. An
+    /// unevaluated slot projects to nothing, which keeps the whole schema.
+    pub fn painted_style_keys(&self, slot_id: &str) -> Vec<String> {
+        let Some(evaluation) = self.evaluations.get(slot_id) else {
+            return Vec::new();
+        };
+        let mut keys = Vec::new();
+        for series in &evaluation.series {
+            if !keys.iter().any(|key: &String| key == &series.style) {
+                keys.push(series.style.clone());
+            }
+        }
+        if slot_id == INTEGRATION_LITE_ID {
+            // The slot paints the trend ribbon beside its legs, so the
+            // Style tab offers the ribbon overrides with the leg keys.
+            for key in ["ribbon_bull", "ribbon_bear"] {
+                if !keys.iter().any(|held: &String| held == key) {
+                    keys.push(key.to_owned());
+                }
+            }
+        }
+        keys
+    }
+
+    /// The lifted settings schemas for one slot: the config schema plus the
+    /// style schema, assembled where the domain facts live.
+    ///
+    /// The config's `source` dropdown gains the live `series:<node>`
+    /// producer options beside the schema's static price sources, so the
+    /// dropdown is the single source picker — no bespoke button row beside
+    /// it. The style schema projects to the stroke width plus the keys the
+    /// slot's own series paint. Unknown slots lift nothing.
+    pub fn settings_fields(&self, slot_id: &str) -> Option<(Vec<SchemaField>, Vec<SchemaField>)> {
+        let config = self.stack.config(slot_id)?;
+        let mut config_fields = schema_fields(&config.describe());
+        if let Some(source) = config_fields
+            .iter_mut()
+            .find(|field| field.name == "source" && field.kind == fluent_egui::FieldKind::Select)
+        {
+            let mut nodes: Vec<String> = self
+                .series_catalog
+                .node_names()
+                .into_iter()
+                .map(|node| format!("series:{node}"))
+                .collect();
+            nodes.sort();
+            for node in nodes {
+                if !source.options.contains(&node) {
+                    source.options.push(node);
+                }
+            }
+        }
+        let painted = self.painted_style_keys(slot_id);
+        let key_refs: Vec<&str> = painted.iter().map(String::as_str).collect();
+        let style = self.stack.style(slot_id)?;
+        let style_fields = project_style_fields(&schema_fields(&style.describe()), &key_refs);
+        Some((config_fields, style_fields))
     }
 
     /// Whether one slot paints into the shared oscillator pane: any of its
@@ -4018,16 +4171,10 @@ impl ChartWorkspace {
     fn plan_fingerprint(&self) -> Result<u64, EguiError> {
         let mut hashes = Vec::with_capacity(self.plugins.len());
         for plugin in &self.plugins {
-            let config = self
-                .stack
-                .config(plugin.id())
-                .ok_or_else(|| EguiError::InvalidParam {
-                    what: plugin.id().to_owned(),
-                    reason: "slot owns no configuration".to_owned(),
-                })?;
+            let resolved = self.resolved_slot_config(plugin.id())?;
             hashes.push((
                 plugin.id().to_owned(),
-                plugin.config_key(config)?.to_le_bytes(),
+                plugin.config_key(resolved.as_component())?.to_le_bytes(),
             ));
         }
         let pairs: Vec<(&str, &[u8])> = hashes
@@ -4035,6 +4182,42 @@ impl ChartWorkspace {
             .map(|(id, hash)| (id.as_str(), &hash[..]))
             .collect();
         Ok(fingerprint_framed(&pairs))
+    }
+
+    /// The slot config with panel kind-defaults resolved in: kernel slots
+    /// bound to a panel kind evaluate their blanks (unset gain, disarmed
+    /// smoothing) against the kind row; everything else evaluates its
+    /// stored config untouched. Both the plan fingerprint and evaluation
+    /// read through this, so following slots rebuild exactly when the
+    /// kind does and overriding slots never move.
+    fn resolved_slot_config(&self, plugin_id: &str) -> Result<EvalConfig<'_>, EguiError> {
+        let config = self
+            .stack
+            .config(plugin_id)
+            .ok_or_else(|| EguiError::InvalidParam {
+                what: plugin_id.to_owned(),
+                reason: "slot owns no configuration".to_owned(),
+            })?;
+        if let Some(kernel_config) =
+            component_downcast_ref::<crate::indicators::KernelIndicatorConfig>(config)
+        {
+            if let Some(kind) = panel_kind_for_kernel(&kernel_config.kernel) {
+                if let Ok(defaults) = self.oscillator_panel.entry(kind) {
+                    return Ok(EvalConfig::Resolved(Box::new(
+                        kernel_config.resolve_panel_defaults(defaults),
+                    )));
+                }
+            }
+            return Ok(EvalConfig::Stored(config));
+        }
+        if let Some(lite_config) =
+            component_downcast_ref::<crate::integration_lite::IntegrationLiteConfig>(config)
+        {
+            return Ok(EvalConfig::Resolved(Box::new(
+                lite_config.resolve_panel_defaults(&self.oscillator_panel),
+            )));
+        }
+        Ok(EvalConfig::Stored(config))
     }
 
     /// Evaluate every active indicator into the pane cache and readouts, then
@@ -4091,14 +4274,12 @@ impl ChartWorkspace {
         for index in order {
             let id = self.plugins[index].id().to_owned();
             let evaluation = {
-                let config = self
-                    .stack
-                    .config(&id)
-                    .ok_or_else(|| EguiError::InvalidParam {
-                        what: id.clone(),
-                        reason: "slot owns no configuration".to_owned(),
-                    })?;
-                self.plugins[index].evaluate(eval_rows, config, &self.series_catalog)?
+                let resolved = self.resolved_slot_config(&id)?;
+                self.plugins[index].evaluate(
+                    eval_rows,
+                    resolved.as_component(),
+                    &self.series_catalog,
+                )?
             };
             for series in &evaluation.series {
                 // Pad past the cursor with holes: painters cull the full
@@ -4209,9 +4390,10 @@ impl ChartWorkspace {
         let Some(config) = component_downcast_ref::<IntegrationLiteConfig>(config) else {
             return Ok(None);
         };
+        let resolved = config.resolve_panel_defaults(&self.oscillator_panel);
         Ok(Some(integration_lite_sub_pane(
             self.replay_view_rows(&self.rows),
-            config,
+            &resolved,
         )?))
     }
 
@@ -4582,6 +4764,7 @@ impl ChartWorkspace {
                     let paint_alpha =
                         f32::from(opacity_from_transparency(ribbon_fill_transparency(*alpha)))
                             / 255.0;
+                    let ribbon_style = self.stack.indicator_style(INTEGRATION_LITE_ID);
                     if needs_column_aggregation(main.scale().bar_spacing()) {
                         // One band per painted column through the shared
                         // band sampler (display-only: values untouched,
@@ -4591,7 +4774,15 @@ impl ChartWorkspace {
                             sampled_ribbon_bands(upper, lower, bullish, &main, layout.plot.width());
                         let placed =
                             translate_bands(bands, (layout.plot.left(), layout.plot.top()));
-                        paint_ribbon(&plot, &placed, 0.5, &theme, &trends, paint_alpha)?;
+                        paint_ribbon(
+                            &plot,
+                            &placed,
+                            0.5,
+                            &theme,
+                            &ribbon_style,
+                            &trends,
+                            paint_alpha,
+                        )?;
                     } else {
                         // Native ribbon fills over the twice-visible borrow
                         // only (display-only cull through the shared core:
@@ -4606,7 +4797,7 @@ impl ChartWorkspace {
                             )?,
                             (layout.plot.left(), layout.plot.top()),
                         );
-                        paint_ribbon_fill(&plot, &placed, &theme, paint_alpha)?;
+                        paint_ribbon_fill(&plot, &placed, &theme, &ribbon_style, paint_alpha)?;
                     }
                 }
             }
@@ -5396,14 +5587,19 @@ impl ChartWorkspace {
         }
         if let Some(id) = self.open_settings_id() {
             let theme = self.theme.clone();
-            let outcome = paint_slot_settings_modal(ui, &mut self.stack, &id, &theme)?;
-            // Series picker beside the generic editors: price-source catalogue
-            // plus live producer nodes, writing into the staged draft so Cancel
-            // still discards and Apply commits through the live contract.
-            // This is the dynamic half of the source picker (static price
-            // sources already ride the schema `variants`); style colors/widths
-            // ride the Material color/slider editors in the Style tab.
-            self.paint_series_picker(ui, &id);
+            // The settings schemas assemble here, where the domain facts
+            // live: the source dropdown gains the live producer nodes and
+            // the style schema projects to the keys the slot paints. The
+            // modal stays a domain-blind renderer of the lists it is given.
+            let (config_fields, style_fields) = self.settings_fields(&id).unwrap_or_default();
+            let outcome = paint_slot_settings_modal(
+                ui,
+                &mut self.stack,
+                &id,
+                &theme,
+                &config_fields,
+                &style_fields,
+            )?;
             match outcome.commit {
                 SettingsCommit::Apply => {
                     self.commit_slot_settings(&id)?;
@@ -5420,41 +5616,6 @@ impl ChartWorkspace {
             }
         }
         Ok(())
-    }
-
-    /// Series picker for a slot's `source` field: price-source catalogue plus
-    /// live producer nodes (`series:<node>`). Writes into the staged draft
-    /// when the settings pane is open; a closed pane refuses (the caller
-    /// ignores the refusal — no source field, no picker).
-    fn paint_series_picker(&mut self, ui: &mut egui::Ui, id: &str) {
-        let has_source = self
-            .stack
-            .config(id)
-            .is_some_and(|config| config.field_names().contains(&"source"));
-        if !has_source {
-            return;
-        }
-        let nodes: Vec<String> = {
-            let mut nodes: Vec<String> = crate::topology::price_source_ids();
-            let mut series: Vec<String> = self
-                .series_catalog
-                .node_names()
-                .into_iter()
-                .map(|node| format!("series:{node}"))
-                .collect();
-            // Picker canonicalization, not pane ordering (ordering is `PanePlan`).
-            series.sort();
-            nodes.extend(series);
-            nodes
-        };
-        ui.horizontal_wrapped(|row| {
-            row.label("Source:");
-            for node in nodes {
-                if row.small_button(&node).clicked() {
-                    let _ = self.stack.set_staged_field(id, "source", &node);
-                }
-            }
-        });
     }
 
     /// Material dock contents: collapsible subpanes for health, portfolio,
@@ -5501,6 +5662,45 @@ impl ChartWorkspace {
                 if body.button("dismiss").clicked() {
                     self.range_error = None;
                 }
+            }
+        });
+        // Oscillators: one input row per bounded oscillator kind — period,
+        // smoothing, gain, and the theme color the kind paints through.
+        // Plain input values in the shipped script's spirit, never source
+        // bindings. Writes land immediately; refusals name the field and
+        // leave the row untouched.
+        ui.collapsing("Oscillators", |body| {
+            for kind in PANEL_KINDS {
+                body.collapsing(crate::oscillator_panel::panel_kind_label(kind), |row| {
+                    let mut row_refusals = Vec::new();
+                    if let Ok(entry) = self.oscillator_panel.entry_mut(kind) {
+                        let fields: Vec<fluent_egui::SchemaField> =
+                            fluent_egui::schema_fields(&entry.describe())
+                                .into_iter()
+                                .filter(|field| {
+                                    !crate::oscillator_panel::hides_dial(kind, &field.name)
+                                })
+                                .collect();
+                        let edits = fluent_egui::paint_schema_fields(row, &fields, &mut *entry);
+                        row_refusals.extend(edits.refusals);
+                        if let Err(error) = entry.validate() {
+                            row_refusals.push(error.to_string());
+                        }
+                    } else {
+                        row_refusals.push(format!("{kind:?} is not an oscillator panel kind"));
+                    }
+                    let mut color_target = crate::oscillator_panel::ThemeKindColor {
+                        theme: &mut self.theme,
+                        kind,
+                    };
+                    let color_fields = fluent_egui::schema_fields(&color_target.describe());
+                    let color_edits =
+                        fluent_egui::paint_schema_fields(row, &color_fields, &mut color_target);
+                    row_refusals.extend(color_edits.refusals);
+                    for refusal in row_refusals {
+                        row.colored_label(egui::Color32::RED, refusal);
+                    }
+                });
             }
         });
         // Portfolio. A live replay serves its own fills; the bundle is the
@@ -5922,6 +6122,7 @@ impl ChartWorkspace {
             bookmarks: self.bookmarks.clone(),
             dock_open: Some(self.dock_open),
             theme: Some(self.config.theme.clone()),
+            oscillators: self.oscillator_panel.clone(),
             ..TerminalPrefs::default()
         }
     }
@@ -5963,6 +6164,9 @@ impl ChartWorkspace {
         }
         if let Some(dock) = prefs.dock_open {
             self.dock_open = dock;
+        }
+        if prefs.oscillators.validate().is_ok() {
+            self.oscillator_panel.clone_from(&prefs.oscillators);
         }
         self.favorite_symbols = prefs.favorites.symbols.iter().cloned().collect();
         self.favorite_indicators = prefs.favorites.indicators.iter().cloned().collect();
@@ -6373,7 +6577,7 @@ impl ChartWorkspace {
             self.indicator_modal = None;
             self.indicator_anchor = None;
             self.slot_indicator(&id)?;
-            self.recompute()?;
+            self.recompute_preserving_view()?;
         }
 
         let mut picked_bookmark = None;
@@ -6696,3 +6900,27 @@ mod threshold_calibration_tests;
 #[cfg(test)]
 #[path = "../tests/shared_oscillator.rs"]
 mod shared_oscillator_tests;
+
+#[cfg(test)]
+#[path = "../tests/source_options.rs"]
+mod source_options_tests;
+
+#[cfg(test)]
+#[path = "../tests/settings_style.rs"]
+mod settings_style_tests;
+
+#[cfg(test)]
+#[path = "../tests/schema_coverage.rs"]
+mod schema_coverage_tests;
+
+#[cfg(test)]
+#[path = "../tests/oscillator_panel.rs"]
+mod oscillator_panel_tests;
+
+#[cfg(test)]
+#[path = "../tests/pane_taxonomy.rs"]
+mod pane_taxonomy_tests;
+
+#[cfg(test)]
+#[path = "../tests/add_preserves_view.rs"]
+mod add_preserves_view_tests;

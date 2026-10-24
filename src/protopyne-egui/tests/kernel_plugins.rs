@@ -57,12 +57,8 @@ fn multi_output_goldens() -> Vec<MultiOutputGolden> {
             attachment: SlotAttachment::SubPane,
         },
         MultiOutputGolden {
-            id: "bbands",
-            nodes: vec![
-                "kernel:bbands",
-                "kernel:bbands:upper",
-                "kernel:bbands:lower",
-            ],
+            id: "bb",
+            nodes: vec!["kernel:bb", "kernel:bb:upper", "kernel:bb:lower"],
             first: vec![19, 19, 19],
             last: vec![209.5, 221.0325625946708, 197.9674374053292],
             attachment: SlotAttachment::SubPane,
@@ -191,9 +187,9 @@ fn golden_kernels_seed_declared_defaults() {
     assert_eq!(macd.get_field("fast_length").expect("reads"), "12");
     assert_eq!(macd.get_field("slow_length").expect("reads"), "26");
     assert_eq!(macd.get_field("signal_length").expect("reads"), "9");
-    let bbands = KernelIndicatorConfig::defaults_for("bbands");
-    assert_eq!(bbands.get_field("length").expect("reads"), "20");
-    assert_eq!(bbands.get_field("nbdevup").expect("reads"), "2");
+    let bb = KernelIndicatorConfig::defaults_for("bb");
+    assert_eq!(bb.get_field("length").expect("reads"), "20");
+    assert_eq!(bb.get_field("mult").expect("reads"), "2");
     let stoch = KernelIndicatorConfig::defaults_for("stoch");
     assert_eq!(stoch.get_field("length").expect("reads"), "14");
     let ichimoku = KernelIndicatorConfig::defaults_for("ichimoku");

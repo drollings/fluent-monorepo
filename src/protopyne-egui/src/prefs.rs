@@ -136,6 +136,9 @@ pub struct TerminalPrefs {
     /// Theme key.
     #[serde(default)]
     pub theme: Option<String>,
+    /// Oscillator kind defaults behind the dock Oscillators section.
+    #[serde(default)]
+    pub oscillators: crate::oscillator_panel::OscillatorPanelState,
     // Legacy flat layout (pre-ticker documents): read-only migration source,
     // never serialized. When `tickers` is empty and these name a ticker, they
     // fold into that ticker's layout once (see `ticker_layout`).

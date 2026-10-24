@@ -6,7 +6,7 @@ use super::*;
 use fluent_wvr::{Describable, FieldAccess, WorkError, WorkOutput, WorkUnit};
 
 use crate::annotations::annotate_at;
-use crate::fields::{fields_for_tab, tab_fields};
+use crate::fields::{fields_for_tab, schema_fields, tab_fields};
 use crate::style::IndicatorStyle;
 use crate::viewport::Viewport;
 use protopyne_chart_model::ChartRow;
@@ -384,9 +384,18 @@ fn paint_stack_and_settings_modal_render_headlessly() {
         stack
             .set_settings_tab("fast_mas", tab)
             .expect("tab selects");
+        let config_fields = schema_fields(&stack.config("fast_mas").expect("reads").describe());
+        let style_fields = schema_fields(&stack.style("fast_mas").expect("reads").describe());
         egui::__run_test_ui(|ui| {
-            let outcome = paint_slot_settings_modal(ui, &mut stack, "fast_mas", &theme)
-                .expect("the modal paints");
+            let outcome = paint_slot_settings_modal(
+                ui,
+                &mut stack,
+                "fast_mas",
+                &theme,
+                &config_fields,
+                &style_fields,
+            )
+            .expect("the modal paints");
             assert_eq!(
                 outcome,
                 SettingsOutcome::default(),
@@ -395,8 +404,20 @@ fn paint_stack_and_settings_modal_render_headlessly() {
         });
     }
     egui::__run_test_ui(|ui| {
+        let config_fields =
+            schema_fields(&stack.config("integration_lite").expect("reads").describe());
+        let style_fields =
+            schema_fields(&stack.style("integration_lite").expect("reads").describe());
         assert!(
-            paint_slot_settings_modal(ui, &mut stack, "integration_lite", &theme).is_err(),
+            paint_slot_settings_modal(
+                ui,
+                &mut stack,
+                "integration_lite",
+                &theme,
+                &config_fields,
+                &style_fields,
+            )
+            .is_err(),
             "a closed modal refuses instead of painting another slot's schema"
         );
     });

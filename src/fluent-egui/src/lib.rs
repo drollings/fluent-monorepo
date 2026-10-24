@@ -55,8 +55,8 @@ pub use feed::{
 };
 pub use fields::{
     classify_schema_field, fields_for_tab, paint_schema_fields, paint_tabbed_schema_fields,
-    paint_tabbed_schema_fields_compact, schema_fields, tab_fields, FieldEdits, FieldKind,
-    SchemaField, SettingsTab, COLOR_FORMAT,
+    paint_tabbed_schema_fields_compact, project_style_fields, schema_fields, tab_fields,
+    FieldEdits, FieldKind, SchemaField, SettingsTab, COLOR_FORMAT,
 };
 pub use fonts::{
     bundled_font_insert, font_insert, install_bundled_font, monospace_font_insert,

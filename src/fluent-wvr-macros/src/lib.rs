@@ -208,9 +208,19 @@ fn is_numeric_type(ty_str: &str) -> bool {
     )
 }
 
-fn quote_type_string(ty_str: &str) -> TokenStream2 {
-    if matches!(
+fn is_integer_type(ty_str: &str) -> bool {
+    matches!(
         ty_str,
+        "u8" | "u16" | "u32" | "u64" | "u128" | "i8" | "i16" | "i32" | "i64" | "i128" | "usize" | "isize"
+    )
+}
+
+fn quote_type_string(ty_str: &str) -> TokenStream2 {
+    // An optional dial edits its inner type; blank clears back to unset, so
+    // the schema names the number the editor edits, not the wrapper.
+    let inner = strip_option_wrapper(ty_str);
+    if matches!(
+        inner.as_str(),
         "u8" | "u16"
             | "u32"
             | "u64"
@@ -224,13 +234,29 @@ fn quote_type_string(ty_str: &str) -> TokenStream2 {
             | "isize"
     ) {
         quote! { "integer" }
-    } else if matches!(ty_str, "f32" | "f64") {
+    } else if matches!(inner.as_str(), "f32" | "f64") {
         quote! { "number" }
-    } else if ty_str == "bool" {
+    } else if inner.as_str() == "bool" {
         quote! { "boolean" }
     } else {
         quote! { "string" }
     }
+}
+
+/// The wrapped type behind an `Option<...>` spelling, or the spelling
+/// itself when it names a bare type. Single-level only: the schemas that
+/// reach this helper never nest optionals. Token spelling spaces the
+/// brackets out, so spaces go first.
+fn strip_option_wrapper(ty_str: &str) -> String {
+    let compact: String = ty_str.chars().filter(|c| !c.is_whitespace()).collect();
+    for prefix in ["Option<", "std::option::Option<"] {
+        if let Some(rest) = compact.strip_prefix(prefix) {
+            if let Some(inner) = rest.strip_suffix('>') {
+                return inner.to_owned();
+            }
+        }
+    }
+    compact
 }
 
 /// Derive macro for `fluent_wvr::FieldAccess`.
@@ -307,33 +333,17 @@ pub fn derive_field_access(input: TokenStream) -> TokenStream {
             ty_str.clone()
         };
         let inner_is_numeric = is_numeric_type(&inner_ty_str);
+        let inner_is_integer = is_integer_type(&inner_ty_str);
+        let inner_is_string = inner_ty_str == "String"
+            || inner_ty_str == "std::string::String"
+            || inner_ty_str.ends_with("::String");
         let number_tolerant = meta.parse.as_deref() == Some("number") && inner_is_numeric;
-        let inner_ty_tokens: TokenStream2 = if number_tolerant {
-            syn::parse_str::<TokenStream2>(&inner_ty_str)
-                .unwrap_or_else(|_| syn::parse_str::<TokenStream2>("i64").expect("i64 parses"))
-        } else {
-            TokenStream2::new()
-        };
-        // Numeric initializer honoring `#[field(parse = "number")]`: tolerant
-        // parse_number when requested, strict str::parse otherwise.
-        let wide_init_tokens: TokenStream2 = if number_tolerant {
-            quote! {
-                ::fluent_wvr::coerce::parse_number(&value).ok_or_else(|| fluent_wvr::FieldError::Parse(
-                    format!("invalid {} for '{}': {}", #ty_str, #field_name_str, value)
-                ))?
-            }
-        } else {
-            quote! {
-                value.parse().map_err(|_| fluent_wvr::FieldError::Parse(
-                    format!("invalid {} for '{}': {}", #ty_str, #field_name_str, value)
-                ))?
-            }
-        };
+        // Explicit inner-type tokens for Option<T> strict parsing (avoids the
+        // empty-turbofish inference hole).
+        let inner_ty_tokens: TokenStream2 = syn::parse_str::<TokenStream2>(&inner_ty_str)
+            .unwrap_or_else(|_| quote! { String });
 
         let mut parse_and_set = if is_option {
-            let inner_is_string = inner_ty_str == "String"
-                || inner_ty_str == "std::string::String"
-                || inner_ty_str.ends_with("::String");
             if inner_is_string && meta.empty_is_none {
                 quote! {
                     if value.is_empty() {
@@ -345,6 +355,24 @@ pub fn derive_field_access(input: TokenStream) -> TokenStream {
             } else if inner_is_string {
                 quote! {
                     Some(value.to_string())
+                }
+            } else if number_tolerant && inner_is_integer {
+                quote! {
+                    if value.is_empty() {
+                        None
+                    } else {
+                        {
+                            let n = ::fluent_wvr::coerce::parse_number(&value).ok_or_else(|| fluent_wvr::FieldError::Parse(
+                                format!("invalid Option<{}> for '{}': {}", #inner_ty_str, #field_name_str, value)
+                            ))?;
+                            if n.fract() != 0.0 {
+                                return Err(fluent_wvr::FieldError::Parse(
+                                    format!("invalid Option<{}> for '{}': {}", #inner_ty_str, #field_name_str, value)
+                                ));
+                            }
+                            Some(n as #inner_ty_tokens)
+                        }
+                    }
                 }
             } else if number_tolerant {
                 quote! {
@@ -381,10 +409,47 @@ pub fn derive_field_access(input: TokenStream) -> TokenStream {
         } else if ty_str.starts_with("ArcIntern") || ty_str.contains("ArcIntern") {
             quote! { fluent_wvr::ArcIntern::from(value) }
         } else if has_constraints && inner_is_numeric {
+            // Strict native parse first (rejects fractions/whitespace/scientific
+            // for integers via FromStr). On native-parse failure, consult f64
+            // to preserve Constraint for out-of-range numerics (e.g. "65536"
+            // with max 65535) while returning Parse for gibberish/fractions.
+            // Fixes H3 without breaking the Constraint expectation.
+            let min_lit_fb = meta.min.map(proc_macro2::Literal::f64_unsuffixed);
+            let max_lit_fb = meta.max.map(proc_macro2::Literal::f64_unsuffixed);
+            let min_check_fb = min_lit_fb.map(|m| {
+                let e = format!("{}: value below minimum {}", field_name_str, meta.min.unwrap());
+                quote! { if wide < #m { return Err(fluent_wvr::FieldError::Constraint(#e.into())); } }
+            });
+            let max_check_fb = max_lit_fb.map(|m| {
+                let e = format!("{}: value above maximum {}", field_name_str, meta.max.unwrap());
+                quote! { if wide > #m { return Err(fluent_wvr::FieldError::Constraint(#e.into())); } }
+            });
+            quote! {
+                match value.parse::<#ty>() {
+                    Ok(v) => v,
+                    Err(_) => {
+                        if let Ok(wide) = value.parse::<f64>() {
+                            #min_check_fb
+                            #max_check_fb
+                        }
+                        return Err(fluent_wvr::FieldError::Parse(
+                            format!("invalid {} for '{}': {}", #ty_str, #field_name_str, value)
+                        ));
+                    }
+                }
+            }
+        } else if number_tolerant && inner_is_integer {
             quote! {
                 {
-                    let wide_val: f64 = #wide_init_tokens;
-                    wide_val as #ty
+                    let n = ::fluent_wvr::coerce::parse_number(&value).ok_or_else(|| fluent_wvr::FieldError::Parse(
+                        format!("invalid {} for '{}': {}", #ty_str, #field_name_str, value)
+                    ))?;
+                    if n.fract() != 0.0 {
+                        return Err(fluent_wvr::FieldError::Parse(
+                            format!("invalid {} for '{}': {}", #ty_str, #field_name_str, value)
+                        ));
+                    }
+                    n as #ty
                 }
             }
         } else if number_tolerant {
@@ -401,46 +466,23 @@ pub fn derive_field_access(input: TokenStream) -> TokenStream {
             }
         };
 
-        // Apply string sanitization before constraint checks
-        if !is_option
+        // Apply string sanitization before constraint checks.
+        // Bare String: transform directly. Option<String>: transform the Some value, preserving None.
+        let is_bare_string = !is_option
             && (ty_str == "String"
                 || ty_str == "std::string::String"
-                || ty_str.ends_with("::String"))
-        {
+                || ty_str.ends_with("::String"));
+        if is_bare_string || (is_option && inner_is_string) {
+            // Build inner String transform (sanitize + max_len + pattern) as a
+            // `|s: String| -> Result<String>` shape, then apply to bare or Option.
+            let mut inner_expr: Option<TokenStream2> = None;
+            // sanitize
             if let Some(ref sanitize_mode) = meta.sanitize {
-                match sanitize_mode.as_str() {
-                    "trim" => {
-                        parse_and_set = quote! {
-                            {
-                                let s: String = #parse_and_set;
-                                s.trim().to_string()
-                            }
-                        };
-                    }
-                    "lowercase" => {
-                        parse_and_set = quote! {
-                            {
-                                let s: String = #parse_and_set;
-                                s.to_lowercase()
-                            }
-                        };
-                    }
-                    "strip_html" => {
-                        parse_and_set = quote! {
-                            {
-                                let s: String = #parse_and_set;
-                                ::fluent_wvr::strip_html(&s)
-                            }
-                        };
-                    }
-                    "slugify" => {
-                        parse_and_set = quote! {
-                            {
-                                let s: String = #parse_and_set;
-                                ::fluent_wvr::slugify(&s)
-                            }
-                        };
-                    }
+                let sanitize_step: TokenStream2 = match sanitize_mode.as_str() {
+                    "trim" => quote! { s.trim().to_string() },
+                    "lowercase" => quote! { s.to_lowercase() },
+                    "strip_html" => quote! { ::fluent_wvr::strip_html(&s) },
+                    "slugify" => quote! { ::fluent_wvr::slugify(&s) },
                     _ => {
                         return syn::Error::new_spanned(
                             f,
@@ -449,61 +491,128 @@ pub fn derive_field_access(input: TokenStream) -> TokenStream {
                         .to_compile_error()
                         .into();
                     }
-                }
+                };
+                inner_expr = Some(match inner_expr {
+                    None => quote! { { let s: String = s; #sanitize_step } },
+                    Some(prev) => quote! { { let s: String = #prev; #sanitize_step } },
+                });
             }
-
-            // Apply max_len check
             if let Some(max_len) = meta.max_len {
                 let max_len_lit = proc_macro2::Literal::usize_suffixed(max_len);
                 let max_len_err = format!(
                     "{}: string length exceeds maximum {}",
                     field_name_str, max_len
                 );
-                parse_and_set = quote! {
-                    {
-                        let s: String = #parse_and_set;
-                        if s.chars().count() > #max_len_lit {
-                            return Err(fluent_wvr::FieldError::Constraint(#max_len_err.into()));
-                        }
-                        s
-                    }
-                };
+                inner_expr = Some(match inner_expr {
+                    None => quote! { { let s: String = s; if s.chars().count() > #max_len_lit { return Err(fluent_wvr::FieldError::Constraint(#max_len_err.into())); } s } },
+                    Some(prev) => quote! { { let s: String = #prev; if s.chars().count() > #max_len_lit { return Err(fluent_wvr::FieldError::Constraint(#max_len_err.into())); } s } },
+                });
             }
-
-            // Apply pattern check
             if let Some(ref pattern) = meta.pattern {
                 let pattern_lit = pattern.clone();
                 let pattern_err = format!(
                     "{}: value does not match pattern '{}'",
                     field_name_str, pattern
                 );
-                parse_and_set = quote! {
-                    {
-                        let s: String = #parse_and_set;
-                        if !s.contains(#pattern_lit) {
-                            return Err(fluent_wvr::FieldError::Constraint(#pattern_err.into()));
+                inner_expr = Some(match inner_expr {
+                    None => quote! { { let s: String = s; if !s.contains(#pattern_lit) { return Err(fluent_wvr::FieldError::Constraint(#pattern_err.into())); } s } },
+                    Some(prev) => quote! { { let s: String = #prev; if !s.contains(#pattern_lit) { return Err(fluent_wvr::FieldError::Constraint(#pattern_err.into())); } s } },
+                });
+            }
+            if let Some(expr) = inner_expr {
+                if is_bare_string {
+                    parse_and_set = quote! {
+                        {
+                            let s: String = #parse_and_set;
+                            #expr
                         }
-                        s
-                    }
-                };
+                    };
+                } else {
+                    parse_and_set = quote! {
+                        match (#parse_and_set) {
+                            None => None,
+                            Some(s) => Some({ let s: String = s; #expr }),
+                        }
+                    };
+                }
             }
         }
 
-        if is_numeric_type(&ty_str) {
+        // Numeric bounds/clamp: bare numerics and Option numerics share native logic.
+        let is_bare_numeric = !is_option && is_numeric_type(&ty_str);
+        let is_opt_numeric = is_option && inner_is_numeric;
+        if is_bare_numeric || is_opt_numeric {
             let min_val = meta.min;
             let max_val = meta.max;
 
             if meta.clamp {
-                let min_lit = min_val.map(proc_macro2::Literal::f64_suffixed);
-                let max_lit = max_val.map(proc_macro2::Literal::f64_suffixed);
+                let min_lit = min_val.map(proc_macro2::Literal::f64_unsuffixed);
+                let max_lit = max_val.map(proc_macro2::Literal::f64_unsuffixed);
                 match (min_lit, max_lit) {
                     (Some(min), Some(max)) => {
-                        parse_and_set = quote! {
-                            {
-                                let wide: f64 = #wide_init_tokens;
-                                (wide.clamp(#min, #max)) as #ty
-                            }
+                        // Clamp uses an f64 round-trip so negative-for-unsigned
+                        // ("-5" -> 0) still clamps instead of Parse. Fractions
+                        // for integers remain Parse (fract check).
+                        let is_int = if is_bare_numeric {
+                            is_integer_type(&ty_str)
+                        } else {
+                            inner_is_integer
                         };
+                        if is_bare_numeric {
+                            if is_int {
+                                parse_and_set = quote! {
+                                    {
+                                        let n: f64 = value.parse().map_err(|_| fluent_wvr::FieldError::Parse(
+                                            format!("invalid {} for '{}': {}", #ty_str, #field_name_str, value)
+                                        ))?;
+                                        if n.fract() != 0.0 {
+                                            return Err(fluent_wvr::FieldError::Parse(
+                                                format!("invalid {} for '{}': {}", #ty_str, #field_name_str, value)
+                                            ));
+                                        }
+                                        (n.clamp(#min, #max)) as #ty
+                                    }
+                                };
+                            } else {
+                                parse_and_set = quote! {
+                                    {
+                                        let n: f64 = value.parse().map_err(|_| fluent_wvr::FieldError::Parse(
+                                            format!("invalid {} for '{}': {}", #ty_str, #field_name_str, value)
+                                        ))?;
+                                        (n.clamp(#min, #max)) as #ty
+                                    }
+                                };
+                            }
+                        } else if is_int {
+                            parse_and_set = quote! {
+                                match (if value.is_empty() { None } else {
+                                    let n: f64 = value.parse().map_err(|_| fluent_wvr::FieldError::Parse(
+                                        format!("invalid Option<{}> for '{}': {}", #inner_ty_str, #field_name_str, value)
+                                    ))?;
+                                    if n.fract() != 0.0 {
+                                        return Err(fluent_wvr::FieldError::Parse(
+                                            format!("invalid Option<{}> for '{}': {}", #inner_ty_str, #field_name_str, value)
+                                        ));
+                                    }
+                                    Some((n.clamp(#min, #max)) as #inner_ty_tokens)
+                                }) {
+                                    None => None,
+                                    Some(v) => Some(v),
+                                }
+                            };
+                        } else {
+                            parse_and_set = quote! {
+                                match (if value.is_empty() { None } else {
+                                    let n: f64 = value.parse().map_err(|_| fluent_wvr::FieldError::Parse(
+                                        format!("invalid Option<{}> for '{}': {}", #inner_ty_str, #field_name_str, value)
+                                    ))?;
+                                    Some((n.clamp(#min, #max)) as #inner_ty_tokens)
+                                }) {
+                                    None => None,
+                                    Some(v) => Some(v),
+                                }
+                            };
+                        }
                     }
                     _ => {
                         return syn::Error::new_spanned(
@@ -515,34 +624,65 @@ pub fn derive_field_access(input: TokenStream) -> TokenStream {
                     }
                 }
             } else {
-                let min_check = min_val.map(|min_val| {
-                    let min_lit = proc_macro2::Literal::f64_suffixed(min_val);
+                let min_check_bare = min_val.map(|min_val| {
+                    let min_lit = proc_macro2::Literal::f64_unsuffixed(min_val);
                     let min_err = format!("{}: value below minimum {}", field_name_str, min_val);
                     quote! {
-                        if wide < #min_lit {
+                        if v < (#min_lit as #ty) {
                             return Err(fluent_wvr::FieldError::Constraint(#min_err.into()));
                         }
                     }
                 });
-                let max_check = max_val.map(|max_val| {
-                    let max_lit = proc_macro2::Literal::f64_suffixed(max_val);
+                let max_check_bare = max_val.map(|max_val| {
+                    let max_lit = proc_macro2::Literal::f64_unsuffixed(max_val);
                     let max_err = format!("{}: value above maximum {}", field_name_str, max_val);
                     quote! {
-                        if wide > #max_lit {
+                        if v > (#max_lit as #ty) {
+                            return Err(fluent_wvr::FieldError::Constraint(#max_err.into()));
+                        }
+                    }
+                });
+                let min_check_opt = min_val.map(|min_val| {
+                    let min_lit = proc_macro2::Literal::f64_unsuffixed(min_val);
+                    let min_err = format!("{}: value below minimum {}", field_name_str, min_val);
+                    quote! {
+                        if v < (#min_lit as #inner_ty_tokens) {
+                            return Err(fluent_wvr::FieldError::Constraint(#min_err.into()));
+                        }
+                    }
+                });
+                let max_check_opt = max_val.map(|max_val| {
+                    let max_lit = proc_macro2::Literal::f64_unsuffixed(max_val);
+                    let max_err = format!("{}: value above maximum {}", field_name_str, max_val);
+                    quote! {
+                        if v > (#max_lit as #inner_ty_tokens) {
                             return Err(fluent_wvr::FieldError::Constraint(#max_err.into()));
                         }
                     }
                 });
 
-                if min_check.is_some() || max_check.is_some() {
-                    parse_and_set = quote! {
-                        {
-                            let wide: f64 = #wide_init_tokens;
-                            #min_check
-                            #max_check
-                            wide as #ty
-                        }
-                    };
+                if min_val.is_some() || max_val.is_some() {
+                    if is_bare_numeric {
+                        parse_and_set = quote! {
+                            {
+                                let v: #ty = #parse_and_set;
+                                #min_check_bare
+                                #max_check_bare
+                                v
+                            }
+                        };
+                    } else {
+                        parse_and_set = quote! {
+                            match (#parse_and_set) {
+                                None => None,
+                                Some(v) => {
+                                    #min_check_opt
+                                    #max_check_opt
+                                    Some(v)
+                                }
+                            }
+                        };
+                    }
                 }
             }
         }
@@ -746,14 +886,14 @@ pub fn derive_describable(input: TokenStream) -> TokenStream {
             schema.push(quote! { "description": #desc });
         }
 
-        if is_numeric_type(&ty_str) {
+        if is_numeric_type(&strip_option_wrapper(&ty_str)) {
             if let Some(min) = meta.min {
-                let min_str = format!("{}", min);
-                schema.push(quote! { "minimum": #min_str });
+                let min_lit = proc_macro2::Literal::f64_unsuffixed(min);
+                schema.push(quote! { "minimum": #min_lit });
             }
             if let Some(max) = meta.max {
-                let max_str = format!("{}", max);
-                schema.push(quote! { "maximum": #max_str });
+                let max_lit = proc_macro2::Literal::f64_unsuffixed(max);
+                schema.push(quote! { "maximum": #max_lit });
             }
         }
 
@@ -762,8 +902,8 @@ pub fn derive_describable(input: TokenStream) -> TokenStream {
         }
 
         if let Some(max_len) = meta.max_len {
-            let max_len_str = max_len.to_string();
-            schema.push(quote! { "maxLength": #max_len_str });
+            let max_len_lit = proc_macro2::Literal::usize_unsuffixed(max_len);
+            schema.push(quote! { "maxLength": #max_len_lit });
         }
 
         if let Some(ref sanitize) = meta.sanitize {
@@ -1045,6 +1185,23 @@ mod tests {
         let ts = quote_type_string("String");
         let s = ts.to_string();
         assert_eq!(s.trim_matches('"'), "string", "got {s}");
+    }
+
+    #[test]
+    fn quote_type_string_sees_through_option() {
+        for (ty, want) in [
+            ("Option<f64>", "number"),
+            ("Option < i64 >", "integer"),
+            ("Option<bool>", "boolean"),
+            ("Option<String>", "string"),
+            ("std::option::Option<f32>", "number"),
+        ] {
+            let s = quote_type_string(ty).to_string();
+            assert_eq!(s.trim_matches('"'), want, "{ty} lifts its inner type");
+        }
+        // Bounds ride along: an optional number still declares its floor.
+        assert!(is_numeric_type(&strip_option_wrapper("Option<f64>")));
+        assert!(!is_numeric_type(&strip_option_wrapper("Option<String>")));
     }
 
     #[test]

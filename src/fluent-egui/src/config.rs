@@ -56,6 +56,34 @@ fn default_bear_up() -> String {
     "#2196F3".to_owned()
 }
 
+fn default_rsi() -> String {
+    "#20C8F0".to_owned()
+}
+
+fn default_cci() -> String {
+    "#B4F028".to_owned()
+}
+
+fn default_cmo() -> String {
+    "#8CF050".to_owned()
+}
+
+fn default_mfi() -> String {
+    "#F020F0".to_owned()
+}
+
+fn default_stoch() -> String {
+    "#B4F0C8".to_owned()
+}
+
+fn default_aroon() -> String {
+    "#FAF028".to_owned()
+}
+
+fn default_adx() -> String {
+    "#20C8F0".to_owned()
+}
+
 fn default_grid() -> String {
     "#2A2A2A".to_owned()
 }
@@ -186,6 +214,42 @@ pub struct ThemeConfig {
     #[builder(default = default_bear_up())]
     #[serde(default = "default_bear_up")]
     pub bear_up: String,
+    /// RSI oscillator color: the shipped oscillator hue.
+    #[field(desc = "RSI oscillator color (#RRGGBB)")]
+    #[builder(default = default_rsi())]
+    #[serde(default = "default_rsi")]
+    pub rsi: String,
+    /// CCI oscillator color: the shipped oscillator hue.
+    #[field(desc = "CCI oscillator color (#RRGGBB)")]
+    #[builder(default = default_cci())]
+    #[serde(default = "default_cci")]
+    pub cci: String,
+    /// CMO oscillator color: the shipped oscillator hue.
+    #[field(desc = "CMO oscillator color (#RRGGBB)")]
+    #[builder(default = default_cmo())]
+    #[serde(default = "default_cmo")]
+    pub cmo: String,
+    /// MFI oscillator color: the shipped oscillator hue.
+    #[field(desc = "MFI oscillator color (#RRGGBB)")]
+    #[builder(default = default_mfi())]
+    #[serde(default = "default_mfi")]
+    pub mfi: String,
+    /// Stochastic oscillator color: the shipped oscillator hue.
+    #[field(desc = "Stochastic oscillator color (#RRGGBB)")]
+    #[builder(default = default_stoch())]
+    #[serde(default = "default_stoch")]
+    pub stoch: String,
+    /// Aroon oscillator color: the shipped oscillator hue.
+    #[field(desc = "Aroon oscillator color (#RRGGBB)")]
+    #[builder(default = default_aroon())]
+    #[serde(default = "default_aroon")]
+    pub aroon: String,
+    /// ADX oscillator color. The shipped table names no ADX hue, so the
+    /// key defaults to the current effective hue and changes nothing.
+    #[field(desc = "ADX oscillator color (#RRGGBB)")]
+    #[builder(default = default_adx())]
+    #[serde(default = "default_adx")]
+    pub adx: String,
     /// Gridline color.
     #[field(desc = "Gridline color (#RRGGBB)")]
     #[builder(default = default_grid())]
@@ -241,6 +305,13 @@ impl ThemeConfig {
             ("ribbon_bear", &self.ribbon_bear),
             ("bull_down", &self.bull_down),
             ("bear_up", &self.bear_up),
+            ("rsi", &self.rsi),
+            ("cci", &self.cci),
+            ("cmo", &self.cmo),
+            ("mfi", &self.mfi),
+            ("stoch", &self.stoch),
+            ("aroon", &self.aroon),
+            ("adx", &self.adx),
             ("grid", &self.grid),
         ] {
             // One hex reader: the same parse the painter uses, so a color
@@ -266,6 +337,13 @@ impl ThemeConfig {
             "ribbon_bear" => Some(&self.ribbon_bear),
             "bull_down" => Some(&self.bull_down),
             "bear_up" => Some(&self.bear_up),
+            "rsi" => Some(&self.rsi),
+            "cci" => Some(&self.cci),
+            "cmo" => Some(&self.cmo),
+            "mfi" => Some(&self.mfi),
+            "stoch" => Some(&self.stoch),
+            "aroon" => Some(&self.aroon),
+            "adx" => Some(&self.adx),
             "grid" => Some(&self.grid),
             _ => None,
         }

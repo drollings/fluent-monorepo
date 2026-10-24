@@ -803,8 +803,14 @@ fn fill_emitters_share_one_polygon_path() {
     };
     // Fully opaque so the tessellated vertex colors carry the resolved slot
     // exactly; the shaded band resolves its own teal/purple slots.
-    paint_ribbon_fill(&painter, &[run.clone(), bear, degenerate], &theme, 1.0)
-        .expect("flat fill paints");
+    paint_ribbon_fill(
+        &painter,
+        &[run.clone(), bear, degenerate],
+        &theme,
+        &IndicatorStyle::default(),
+        1.0,
+    )
+    .expect("flat fill paints");
     paint_area_fill(&painter, &[run], master_top(), theme_grid());
     let output = end_frame(&ctx);
     assert!(!output.shapes.is_empty(), "fills emit shapes");
@@ -820,10 +826,84 @@ fn fill_emitters_share_one_polygon_path() {
     let broken = ThemeConfig::new().ribbon_bull("red".to_owned()).build();
     // `ribbon_fill` resolves through the dedicated slot: a malformed
     // `ribbon_bull` slot refuses the flat fill with the key named.
-    let refused = paint_ribbon_fill(&painter, &[ribbon_run()], &broken, 0.5).expect_err("refuses");
+    let refused = paint_ribbon_fill(
+        &painter,
+        &[ribbon_run()],
+        &broken,
+        &IndicatorStyle::default(),
+        0.5,
+    )
+    .expect_err("refuses");
     assert!(
         refused.to_string().contains("ribbon_bull"),
         "refusal names the key: {refused}"
+    );
+}
+
+/// Both ribbon emitters prefer a slot override over the theme: a set
+/// `color_ribbon_bull` repaints the bull fill, and clearing it restores the
+/// theme teal. The shaded band resolves the same dedicated slots as the
+/// flat fill, so one override moves both emitters together.
+#[test]
+fn ribbon_emitters_prefer_slot_overrides() {
+    use fluent_wvr::FieldAccess as _;
+    let (ctx, painter) = test_painter();
+    let theme = ThemeConfig::default();
+    let run = ribbon_run();
+    let mut bear = run.clone();
+    bear.bullish = false;
+    bear.points = vec![(0.0, 60.0), (8.0, 62.0), (8.0, 90.0), (0.0, 92.0)];
+    let mut style = IndicatorStyle::default();
+    style
+        .set_field("color_ribbon_bull", "#FF0000")
+        .expect("override writes");
+    style
+        .set_field("color_ribbon_bear", "#00FF00")
+        .expect("override writes");
+    paint_ribbon_fill(&painter, &[run.clone(), bear.clone()], &theme, &style, 1.0)
+        .expect("styled fill paints");
+    let colors = frame_colors(&ctx, end_frame(&ctx));
+    assert!(
+        colors.contains(&egui::Color32::from_rgb(0xFF, 0x00, 0x00)),
+        "the bull override repaints the flat fill"
+    );
+    assert!(
+        colors.contains(&egui::Color32::from_rgb(0x00, 0xFF, 0x00)),
+        "the bear override repaints the flat fill"
+    );
+    assert!(
+        !colors.contains(&egui::Color32::from_rgb(0x00, 0xBC, 0xD4)),
+        "the theme teal no longer paints under the override"
+    );
+    let (ctx, painter) = test_painter();
+    paint_ribbon(
+        &painter,
+        &[Some(RibbonBand {
+            index: 0,
+            x: 8.0,
+            top_y: 10.0,
+            bottom_y: 20.0,
+        })],
+        3.0,
+        &theme,
+        &style,
+        &[true],
+        1.0,
+    )
+    .expect("styled strips paint");
+    let colors = frame_colors(&ctx, end_frame(&ctx));
+    assert!(
+        colors.contains(&egui::Color32::from_rgb(0xFF, 0x00, 0x00)),
+        "the bull override repaints the strip emitter"
+    );
+    style.set_field("color_ribbon_bull", "").expect("clears");
+    style.set_field("color_ribbon_bear", "").expect("clears");
+    let (ctx, painter) = test_painter();
+    paint_ribbon_fill(&painter, &[run, bear], &theme, &style, 1.0).expect("cleared paints");
+    let colors = frame_colors(&ctx, end_frame(&ctx));
+    assert!(
+        colors.contains(&egui::Color32::from_rgb(0x00, 0xBC, 0xD4)),
+        "clearing the override restores the theme teal"
     );
 }
 
@@ -1061,6 +1141,7 @@ fn every_other_emitter_paints_or_refuses() {
         ],
         3.0,
         &theme,
+        &IndicatorStyle::default(),
         &[true, false],
         0.5,
     )

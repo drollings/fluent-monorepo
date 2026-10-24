@@ -27,7 +27,7 @@ use fluent_wvr::prelude::*;
 use crate::config::ThemeConfig;
 use crate::error::EguiError;
 use crate::feed::PaneHandle;
-use crate::fields::{paint_tabbed_schema_fields_compact, schema_fields, FieldEdits, SettingsTab};
+use crate::fields::{paint_tabbed_schema_fields_compact, FieldEdits, SchemaField, SettingsTab};
 use crate::paint::{
     eye_icon_geom, hex_bolt_icon_geom, paint_eye_icon, paint_hex_bolt_icon, resolve_color,
 };
@@ -1042,11 +1042,19 @@ fn bolt_radius() -> f32 {
 /// caller commits through [`HotSlotStack::commit_settings`] on Apply/OK (and
 /// closes on OK/Cancel). Nothing renders for a closed pane — that refuses
 /// instead of painting another slot's schema.
+///
+/// The field lists arrive lifted: the caller assembles the config schema
+/// (merging any live option sets the static schema cannot name) and the
+/// projected style schema, so this stays a domain-blind renderer. Staging
+/// still routes by the live style component's own field names, never by
+/// the projected list.
 pub fn paint_slot_settings_modal(
     ui: &mut egui::Ui,
     stack: &mut HotSlotStack,
     slot_id: &str,
     theme: &ThemeConfig,
+    config_fields: &[SchemaField],
+    style_fields: &[SchemaField],
 ) -> Result<SettingsOutcome, EguiError> {
     let accent = resolve_color(theme, "fast")?;
     let slot = stack
@@ -1060,8 +1068,6 @@ pub fn paint_slot_settings_modal(
         });
     }
     let title = slot.title.clone();
-    let config_fields = schema_fields(&slot.config.describe());
-    let style_fields = schema_fields(&slot.style.describe());
     if slot.pending.is_none() {
         slot.pending = Some(seed_pending(&*slot.config, &*slot.style));
     }
@@ -1083,8 +1089,8 @@ pub fn paint_slot_settings_modal(
         let edits = paint_tabbed_schema_fields_compact(
             pane,
             settings_tab,
-            &config_fields,
-            &style_fields,
+            config_fields,
+            style_fields,
             &mut target,
         );
         pane.horizontal(|row| {

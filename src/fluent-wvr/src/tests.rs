@@ -189,8 +189,10 @@ fn test_derive_describable_with_constraints() {
     let port_schema = &schema["properties"]["port"];
     assert_eq!(port_schema["type"], "integer");
     assert_eq!(port_schema["description"], "TCP port");
-    assert_eq!(port_schema["minimum"], "1");
-    assert_eq!(port_schema["maximum"], "65535");
+    assert!(port_schema["minimum"].is_number());
+    assert!((port_schema["minimum"].as_f64().unwrap() - 1.0).abs() < f64::EPSILON);
+    assert!(port_schema["maximum"].is_number());
+    assert!((port_schema["maximum"].as_f64().unwrap() - 65535.0).abs() < f64::EPSILON);
 }
 
 #[test]
@@ -604,7 +606,8 @@ fn describable_includes_max_len_and_pattern() {
     };
     let desc = cfg.describe();
     let short_schema = &desc["properties"]["short_name"];
-    assert_eq!(short_schema["maxLength"], "10");
+    assert!(short_schema["maxLength"].is_number());
+    assert_eq!(short_schema["maxLength"].as_u64().unwrap(), 10);
     let patterned_schema = &desc["properties"]["patterned"];
     assert_eq!(patterned_schema["pattern"], "hello");
 

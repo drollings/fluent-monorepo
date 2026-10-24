@@ -29,6 +29,7 @@ pub mod fonts;
 pub mod grant_form;
 pub mod indicators;
 pub mod integration_lite;
+pub mod oscillator_panel;
 pub mod oscillators;
 pub mod pine_overlay;
 pub mod prefs;
@@ -57,9 +58,9 @@ pub use grant_form::{
 };
 pub use indicators::{
     build_indicator_catalog, build_indicator_catalog_with_manifest, instantiate_indicator,
-    instantiate_indicator_with_manifest, kernel_attachment, kernel_ids, kernel_title,
-    ChartIndicator, FastMasIndicator, IndicatorCategory, IndicatorEvaluation, IndicatorSeries,
-    IntegrationLiteIndicator, KernelIndicator, KernelIndicatorConfig,
+    instantiate_indicator_with_manifest, kernel_attachment, kernel_ids, kernel_normalizes,
+    kernel_title, ChartIndicator, FastMasIndicator, IndicatorCategory, IndicatorEvaluation,
+    IndicatorSeries, IntegrationLiteIndicator, KernelIndicator, KernelIndicatorConfig,
 };
 pub use integration_lite::{
     candle_momentum_keys, candle_momentum_series, compare_freeze, integration_lite_sub_pane,
@@ -71,12 +72,17 @@ pub use integration_lite::{
     MA_HEALTH_K, OSCILLATOR_BRIGHTNESS, RAW_OSCILLATOR_LENGTH, RIBBON_HEALTH_K, RIBBON_MEAN_LENGTH,
     SIGNAL_EIT_ALPHA, VOLUME_TRANSPARENCY, VOL_SMA_LENGTH,
 };
+pub use oscillator_panel::{
+    lite_leg_kind_ids, KindDefaults, OscillatorPanelState, LITE_LEG_KINDS, PANEL_KINDS,
+    PANEL_UNSHAPED_KINDS,
+};
 pub use oscillators::{
-    evaluable_oscillator_ids, normalize_oscillator, normalize_oscillator_bounded, normalize_series,
-    normalize_series_bounded, oscillator_kind_name, oscillator_mapping_for_kernel,
-    oscillator_options, parse_oscillator_kind, squash_series_to_100, squash_to_100, OscParams,
-    OscillatorKind, OscillatorOption, WhichLeg, BOUNDED_OSC_SCALE,
-    CALIBRATED_BOUNDED_PIVOT_THRESHOLD, SQUASH_100_DIVISOR,
+    display_mapped_series, evaluable_oscillator_ids, normalize_oscillator,
+    normalize_oscillator_bounded, normalize_series, normalize_series_bounded, oscillator_kind_name,
+    oscillator_mapping_for_output, oscillator_options, parse_oscillator_kind, squash_series_to_100,
+    squash_to_100, OscParams, OscillatorKind, OscillatorOption, WhichLeg, BOUNDED_OSC_SCALE,
+    CALIBRATED_BOUNDED_PIVOT_THRESHOLD, DISPLAY_EXTREME_BAND, DISPLAY_RULE_BAND,
+    SQUASH_100_DIVISOR,
 };
 pub use pine_overlay::{
     overlay_geoms, paint_overlay, paint_unsupported_chip, translate_overlay, OverlayGeoms,

@@ -167,6 +167,7 @@ fn bloat_ledger_pins_source_files() {
             "indicators.rs",
             "integration_lite.rs",
             "lib.rs",
+            "oscillator_panel.rs",
             "oscillators.rs",
             "pine_overlay.rs",
             "prefs.rs",

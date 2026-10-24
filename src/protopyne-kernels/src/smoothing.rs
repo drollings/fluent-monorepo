@@ -10,6 +10,15 @@
 use crate::error::KernelError;
 use crate::indicator::{fin_or_none, OwnedOhlcv, ParamSet};
 
+/// The MA period contract: every moving-average length in the workspace —
+/// kernel MA schemas, the Fast MAs line lengths — spans this window. One
+/// root: the schema metadata, the validators, and the settings sliders all
+/// read these bounds, so the slider window and the refusal window are the
+/// same window by construction.
+pub const MA_PERIOD_MIN: i64 = 2;
+/// See [`MA_PERIOD_MIN`].
+pub const MA_PERIOD_MAX: i64 = 200;
+
 /// Pine `factorySmoothing` default for `n1` (EIT alpha, ALMA offset).
 pub const DEFAULT_N1: f64 = 0.85;
 /// Pine `factorySmoothing` default for `param2` (ALMA sigma).

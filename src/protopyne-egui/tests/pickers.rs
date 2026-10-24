@@ -177,30 +177,38 @@ fn settings_schemas_expose_catalog_selectors() {
         );
     }
     let kernel = KernelIndicatorConfig::new().build().describe();
-    let options = kernel
+    let properties = kernel
         .get("properties")
         .expect("object properties")
-        .get("kernel")
-        .expect("kernel is described")
-        .get("enum")
-        .expect("kernel is a selector");
+        .as_object()
+        .expect("object");
     assert!(
-        options
-            .as_array()
-            .expect("string options")
-            .iter()
-            .any(|option| option == "sma"),
-        "the kernel selector lists registry ids"
+        properties.get("kernel").is_none(),
+        "the kernel is chosen in the catalog, never offered as a settings choice"
+    );
+    assert!(
+        properties.get("source").is_some(),
+        "the input selector stays"
     );
     let lite = IntegrationLiteConfig::default().describe();
-    assert!(
-        lite.get("properties")
-            .expect("object properties")
-            .as_object()
-            .expect("object")
-            .values()
-            .all(|hint| hint.get("enum").is_none()),
-        "numeric-only schemas gain no selectors"
+    let lite_properties = lite
+        .get("properties")
+        .expect("object properties")
+        .as_object()
+        .expect("object");
+    let lite_selectors: Vec<&str> = lite_properties
+        .iter()
+        .filter_map(|(name, hint)| hint.get("enum").is_some().then_some(name.as_str()))
+        .collect();
+    assert_eq!(
+        lite_selectors,
+        vec![
+            "fast_kind",
+            "fast_smooth_type",
+            "slow_kind",
+            "slow_smooth_type"
+        ],
+        "only the leg-kind and leg-smoothing dropdowns select"
     );
     for (name, config) in [
         ("fast_mas", FastMasConfig::new().build().describe()),

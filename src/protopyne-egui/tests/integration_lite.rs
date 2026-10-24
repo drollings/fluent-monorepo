@@ -1,4 +1,5 @@
 use super::*;
+use crate::oscillators::CALIBRATED_BOUNDED_PIVOT_THRESHOLD;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -257,6 +258,29 @@ fn bad_alphas_and_thresholds_refuse() {
         integration_lite_view(&rows, 0.14, 0.5, 0.0).is_err(),
         "zero threshold refuses"
     );
+}
+
+/// Forty-bar up-then-down reversal: climbs 100 → 138 over twenty bars, then
+/// descends symmetrically. Fires bounded pivots at the frozen threshold, so
+/// dial tests can compare mark sets across thresholds on one live window.
+fn reversal_rows() -> Vec<ChartRow> {
+    (0..40_i64)
+        .map(|i| {
+            let close = if i < 20 {
+                100.0 + 2.0 * i as f64
+            } else {
+                138.0 - 2.0 * (i - 20) as f64
+            };
+            ChartRow {
+                time: i,
+                open: close - 0.5,
+                high: close + 0.5,
+                low: close - 0.5,
+                close,
+                volume: 1_000 + i as u64,
+            }
+        })
+        .collect()
 }
 
 fn flat_fast(bars: usize, level: f64) -> Vec<Option<f64>> {
@@ -697,6 +721,7 @@ fn integration_lite_config_derives_component_schema_and_validates_fail_closed() 
         "ribbon_health_k",
         "ma_health_k",
         "delta_unit",
+        "pivot_threshold",
         "show_ribbon",
     ] {
         assert!(
@@ -987,6 +1012,183 @@ fn delta_volume_histogram_controls_and_confidence_axis_separation() {
 /// precision measurement first, and no consumer may branch a decision on
 /// this field until that measurement lands.
 #[test]
+fn pivot_threshold_renders_with_the_frozen_default_and_the_reference_floor() {
+    let config = IntegrationLiteConfig::new().build();
+    assert!(
+        (config.pivot_threshold - CALIBRATED_PIVOT_THRESHOLD).abs() < 1e-12,
+        "the dial defaults to the frozen Pine-scale threshold, got {}",
+        config.pivot_threshold
+    );
+    assert_eq!(
+        config.get_field("pivot_threshold").expect("reads"),
+        "100",
+        "the default round-trips through field access"
+    );
+    let lifted = fluent_egui::schema_fields(&config.describe());
+    let field = lifted
+        .iter()
+        .find(|field| field.name == "pivot_threshold")
+        .expect("pivot_threshold lifts");
+    assert_eq!(
+        field.minimum,
+        Some(20.0),
+        "the reference floor lifts into the schema"
+    );
+    assert_eq!(
+        field.maximum, None,
+        "the reference sets no ceiling, so the schema carries none"
+    );
+    assert_eq!(
+        fluent_egui::classify_schema_field(field),
+        fluent_egui::SettingsTab::Style,
+        "thresholds render on the Style tab"
+    );
+}
+
+#[test]
+fn pivot_threshold_refusals_name_the_field() {
+    for value in [0.0, -100.0, 19.9, f64::NAN, f64::INFINITY] {
+        let candidate = IntegrationLiteConfig::new().pivot_threshold(value).build();
+        let error = format!("{}", candidate.validate().expect_err("refuses"));
+        assert!(
+            error.contains("pivot_threshold"),
+            "threshold {value} names the field: {error}"
+        );
+    }
+    for value in [20.0, 100.0, 200.0, 1000.0] {
+        assert!(
+            IntegrationLiteConfig::new()
+                .pivot_threshold(value)
+                .build()
+                .validate()
+                .is_ok(),
+            "threshold {value} validates"
+        );
+    }
+    let rows = ramp_rows();
+    assert!(
+        integration_lite_sub_pane(
+            &rows,
+            &IntegrationLiteConfig::new().pivot_threshold(0.0).build()
+        )
+        .is_err(),
+        "the pane refuses a config its own validation refuses"
+    );
+}
+
+#[test]
+fn default_pivot_threshold_reproduces_the_frozen_marks() {
+    let rows = reversal_rows();
+    let pane = integration_lite_sub_pane(&rows, &IntegrationLiteConfig::new().build())
+        .expect("default pane builds");
+    assert!(
+        !pane.pivots.is_empty(),
+        "the reversal window fires at the default: {:?}",
+        pane.pivots
+    );
+    let frozen = fluent_egui::pivot_marks(&pane.fast_bounded, CALIBRATED_BOUNDED_PIVOT_THRESHOLD)
+        .expect("frozen threshold is valid");
+    assert_eq!(
+        pane.pivots, frozen,
+        "the default dial reproduces the frozen-constant marks bar-for-bar"
+    );
+}
+
+#[test]
+fn explicit_pivot_thresholds_reshape_the_marks_without_touching_the_legs() {
+    let rows = reversal_rows();
+    let default_pane = integration_lite_sub_pane(&rows, &IntegrationLiteConfig::new().build())
+        .expect("default pane builds");
+    for threshold in [60.0, 150.0, 200.0] {
+        let config = IntegrationLiteConfig::new()
+            .pivot_threshold(threshold)
+            .build();
+        let pane = integration_lite_sub_pane(&rows, &config).expect("builds");
+        for (name, leg, frozen_leg) in [
+            ("fast", &pane.fast_bounded, &default_pane.fast_bounded),
+            ("slow", &pane.slow_bounded, &default_pane.slow_bounded),
+            (
+                "ribbon_health",
+                &pane.ribbon_health_bounded,
+                &default_pane.ribbon_health_bounded,
+            ),
+            (
+                "ma_health",
+                &pane.ma_health_bounded,
+                &default_pane.ma_health_bounded,
+            ),
+        ] {
+            assert_eq!(
+                leg, frozen_leg,
+                "threshold {threshold} steers marks, never the {name} leg"
+            );
+        }
+        let converted = crate::oscillators::squash_to_100(threshold);
+        assert_eq!(
+            pane.pivots,
+            fluent_egui::pivot_marks(&pane.fast_bounded, converted).expect("valid"),
+            "marks at {threshold} follow the converted dial"
+        );
+    }
+    let quiet = integration_lite_sub_pane(
+        &rows,
+        &IntegrationLiteConfig::new().pivot_threshold(150.0).build(),
+    )
+    .expect("builds");
+    assert_ne!(
+        quiet.pivots, default_pane.pivots,
+        "an explicit threshold visibly reshapes the marks"
+    );
+}
+
+/// The script input defaults to 200 on the gained leg while the port freezes
+/// the task value at 100: at 200 the frozen calibration windows go quiet, so
+/// the port keeps the frozen default and records the script value as a
+/// reachable dial stop instead of its default.
+#[test]
+fn reference_default_silences_the_calibration_windows() {
+    use crate::oscillators::squash_to_100;
+    for (name, (fast, _)) in [
+        ("rise_reversal", rise_reversal()),
+        ("fall_recovery", fall_recovery()),
+    ] {
+        let bounded = squash_series_to_100(&fast);
+        let script_default =
+            fluent_egui::pivot_marks(&bounded, squash_to_100(200.0)).expect("valid");
+        assert!(
+            script_default.is_empty(),
+            "{name}: the script default would miss the known pivot"
+        );
+        let frozen =
+            fluent_egui::pivot_marks(&bounded, CALIBRATED_BOUNDED_PIVOT_THRESHOLD).expect("valid");
+        assert!(
+            !frozen.is_empty(),
+            "{name}: the frozen threshold catches the known pivot"
+        );
+    }
+}
+
+#[test]
+fn pivot_threshold_joins_the_cache_fingerprint() {
+    use crate::{ChartIndicator, IntegrationLiteIndicator};
+    let plugin = IntegrationLiteIndicator::new();
+    let base: Box<dyn fluent_wvr::Component> = Box::new(IntegrationLiteConfig::new().build());
+    let moved: Box<dyn fluent_wvr::Component> =
+        Box::new(IntegrationLiteConfig::new().pivot_threshold(150.0).build());
+    assert_ne!(
+        plugin.config_key(&*base).expect("keys"),
+        plugin.config_key(&*moved).expect("keys"),
+        "the dial moves the cache key"
+    );
+    let same: Box<dyn fluent_wvr::Component> = Box::new(IntegrationLiteConfig::new().build());
+    assert_eq!(
+        plugin.config_key(&*base).expect("keys"),
+        plugin.config_key(&*same).expect("keys"),
+        "the default fingerprints stably"
+    );
+}
+
+#[test]
 fn history_confidence_never_exceeds_low_and_never_moves_pivots() {
     let config = IntegrationLiteConfig::new().build();
     let mut state: u64 = 0x9e37_79b9_7f4a_7c15;
@@ -1034,4 +1236,113 @@ fn history_confidence_never_exceeds_low_and_never_moves_pivots() {
             "seed {seed}: volume rescale never moves pivots"
         );
     }
+}
+
+/// Leg kinds render as dropdowns defaulting to the Pine legs; the display
+/// legs stay blank to follow the panel.
+#[test]
+fn leg_kinds_render_as_dropdowns_with_the_pine_legs() {
+    use fluent_egui::FieldKind;
+    let config = IntegrationLiteConfig::new().build();
+    assert_eq!(config.get_field("fast_kind").expect("reads"), "rsi");
+    assert_eq!(config.get_field("slow_kind").expect("reads"), "cci");
+    for name in ["fast_period", "fast_smooth_period", "fast_k"] {
+        assert_eq!(
+            config.get_field(name).expect("reads"),
+            "",
+            "{name} defaults to following the panel"
+        );
+    }
+    let lifted = fluent_egui::schema_fields(&config.describe());
+    for name in ["fast_kind", "slow_kind"] {
+        let field = lifted
+            .iter()
+            .find(|field| field.name == name)
+            .unwrap_or_else(|| panic!("{name} lifts"));
+        assert_eq!(field.kind, FieldKind::Select, "{name} is a dropdown");
+        assert_eq!(
+            field.options,
+            vec!["rsi", "cci", "cmo", "mfi", "stoch"]
+                .into_iter()
+                .map(str::to_owned)
+                .collect::<Vec<_>>(),
+            "only normalized kernel-backed kinds are offered"
+        );
+    }
+    for name in [
+        "fast_period",
+        "slow_period",
+        "fast_smooth_period",
+        "slow_smooth_period",
+    ] {
+        let field = lifted
+            .iter()
+            .find(|field| field.name == name)
+            .unwrap_or_else(|| panic!("{name} lifts"));
+        assert_eq!((field.minimum, field.maximum), (Some(2.0), Some(200.0)));
+    }
+}
+
+/// Unknown or unmapped leg kinds refuse, and every leg bound names its
+/// field.
+#[test]
+fn leg_kind_and_bound_refusals_name_the_field() {
+    for kind in ["not-an-oscillator", "aroon", "adx", ""] {
+        for slot in ["fast_kind", "slow_kind"] {
+            let mut candidate = IntegrationLiteConfig::new().build();
+            candidate.set_field(slot, kind).expect("writes");
+            let error = format!("{}", candidate.validate().expect_err("refuses"));
+            assert!(
+                error.contains(slot),
+                "{slot}={kind:?} names the field: {error}"
+            );
+        }
+    }
+    for (slot, value) in [
+        ("fast_period", "1"),
+        ("fast_period", "201"),
+        ("slow_smooth_period", "1"),
+        ("fast_k", "0"),
+        ("slow_k", "-1"),
+    ] {
+        let mut candidate = IntegrationLiteConfig::new().build();
+        candidate.set_field(slot, value).expect("writes");
+        let error = format!("{}", candidate.validate().expect_err("refuses"));
+        assert!(
+            error.contains(slot),
+            "{slot}={value} names the field: {error}"
+        );
+    }
+    for smooth in ["not-a-smoothing", "eit"] {
+        let mut candidate = IntegrationLiteConfig::new().build();
+        candidate
+            .set_field("fast_smooth_type", smooth)
+            .expect("writes");
+        let error = format!("{}", candidate.validate().expect_err("refuses"));
+        assert!(
+            error.contains("fast_smooth_type"),
+            "{smooth} names the field: {error}"
+        );
+    }
+}
+
+/// Defaults reproduce today's legs bar-for-bar: RSI/CCI at 14, no
+/// smoothing, unit gain.
+#[test]
+fn default_legs_reproduce_the_frozen_arms() {
+    use crate::oscillators::{normalize_series_bounded, OscillatorKind};
+    let rows = ramp_rows();
+    let config = IntegrationLiteConfig::new().build();
+    let pane = integration_lite_sub_pane(&rows, &config).expect("pane builds");
+    let native = native_lite_series(&rows, 0.14).expect("native builds");
+    assert_eq!(
+        pane.fast_bounded,
+        normalize_series_bounded(&native.fast_raw, OscillatorKind::Rsi).expect("evaluable"),
+        "the default fast leg is the frozen RSI arm"
+    );
+    assert_eq!(
+        pane.slow_bounded,
+        normalize_series_bounded(&native.slow_raw, OscillatorKind::Cci).expect("evaluable"),
+        "the default slow leg is the frozen CCI arm"
+    );
 }

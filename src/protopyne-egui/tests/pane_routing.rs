@@ -1,4 +1,5 @@
 use super::*;
+use crate::oscillators::{DISPLAY_EXTREME_BAND, DISPLAY_RULE_BAND};
 
 fn ramp_rows(count: usize) -> Vec<ChartRow> {
     (0..count)
@@ -14,6 +15,105 @@ fn ramp_rows(count: usize) -> Vec<ChartRow> {
             }
         })
         .collect()
+}
+
+use crate::oscillators::{normalize_series, OscillatorKind};
+
+#[test]
+fn mapped_stoch_legs_paint_normalized_display() {
+    let mut workspace = ChartWorkspace::with_rows(ramp_rows(120)).expect("workspace boots");
+    workspace.slot_indicator("stoch").expect("stoch slots");
+    workspace.recompute().expect("evaluations build");
+    let evaluation = workspace.evaluations.get("stoch").expect("stoch evaluates");
+    assert_eq!(evaluation.series.len(), 2, "stoch carries both legs");
+    for (leg, series) in ["%K", "%D"].iter().zip(evaluation.series.iter()) {
+        let catalog =
+            normalize_series(&series.values, OscillatorKind::Stoch).expect("kind evaluates");
+        let expected: Vec<Option<f64>> = catalog
+            .iter()
+            .map(|slot| {
+                slot.map(|value| {
+                    fluent_egui::band_squash(value, DISPLAY_RULE_BAND, DISPLAY_EXTREME_BAND)
+                })
+            })
+            .collect();
+        assert_eq!(
+            series.display_values, expected,
+            "{leg} equals the catalog squash constrained into the extremes band"
+        );
+    }
+    assert_ne!(
+        evaluation.series[0].values, evaluation.series[0].display_values,
+        "%K display differs from raw on a ramp"
+    );
+}
+
+#[test]
+fn stoch_series_publish_raw_under_unchanged_keys() {
+    let mut workspace = ChartWorkspace::with_rows(ramp_rows(120)).expect("workspace boots");
+    workspace.slot_indicator("stoch").expect("stoch slots");
+    workspace.recompute().expect("evaluations build");
+    let evaluation = workspace.evaluations.get("stoch").expect("stoch evaluates");
+    for series in &evaluation.series {
+        let catalog_values = workspace
+            .series_catalog
+            .resolve(&series.node)
+            .expect("node publishes")
+            .to_vec();
+        assert_eq!(
+            catalog_values, series.values,
+            "the catalog carries raw values under {}",
+            series.node
+        );
+        assert_eq!(
+            workspace.series_catalog.series_key(&series.node),
+            Some(series.key),
+            "the catalog key matches the stored series key"
+        );
+    }
+}
+
+#[test]
+fn stoch_warmup_holes_stay_holes_through_the_mapping() {
+    let mut workspace = ChartWorkspace::with_rows(ramp_rows(30)).expect("workspace boots");
+    workspace.slot_indicator("stoch").expect("stoch slots");
+    workspace.recompute().expect("evaluations build");
+    let evaluation = workspace.evaluations.get("stoch").expect("stoch evaluates");
+    for series in &evaluation.series {
+        for (raw, display) in series.values.iter().zip(series.display_values.iter()) {
+            if raw.is_none() {
+                assert!(display.is_none(), "warmup holes stay holes");
+            }
+        }
+        assert_eq!(
+            series.values.len(),
+            series.display_values.len(),
+            "display preserves length"
+        );
+    }
+}
+
+#[test]
+fn mapped_multi_output_merges_into_shared_while_bands_refuse() {
+    let mut workspace = ChartWorkspace::with_rows(ramp_rows(60)).expect("workspace boots");
+    workspace.slot_indicator("stoch").expect("stoch slots");
+    workspace.slot_indicator("macd").expect("macd slots");
+    workspace.recompute().expect("evaluations build");
+    workspace
+        .set_pane_target("stoch", PaneTarget::SharedOscillator)
+        .expect("mapped legs merge into the shared pane");
+    assert_eq!(
+        workspace.pane_target("stoch"),
+        PaneTarget::SharedOscillator,
+        "the routing row sticks"
+    );
+    let refused = workspace
+        .set_pane_target("macd", PaneTarget::SharedOscillator)
+        .expect_err("bands refuse the shared pane");
+    assert!(
+        refused.to_string().contains("macd"),
+        "the refusal names the plugin: {refused}"
+    );
 }
 
 #[test]
@@ -123,13 +223,16 @@ fn removal_clears_the_routing_row() {
 #[test]
 fn merging_a_band_into_the_shared_pane_refuses_naming_the_plugin() {
     let mut workspace = ChartWorkspace::with_rows(ramp_rows(120)).expect("workspace boots");
-    workspace.slot_indicator("bbands").expect("bbands slots");
+    workspace.slot_indicator("bb").expect("bb slots");
     workspace.recompute().expect("evaluations build");
-    let refused = workspace.set_pane_target("bbands", PaneTarget::SharedOscillator);
+    let refused = workspace.set_pane_target("bb", PaneTarget::SharedOscillator);
     let error = refused.expect_err("a band cannot merge into the shared oscillator");
-    let message = format!("{error:?}");
     assert!(
-        message.contains("bbands"),
-        "the refusal names the plugin: {message}"
+        matches!(&error, EguiError::InvalidParam { what, .. } if what == "bb"),
+        "the refusal names the plugin: {error:?}"
+    );
+    assert!(
+        format!("{error:?}").contains("normalizable"),
+        "the refusal carries the reason: {error:?}"
     );
 }

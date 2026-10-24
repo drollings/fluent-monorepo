@@ -7,6 +7,7 @@
 //! alone instead of clamping it.
 
 use super::*;
+use crate::style::IndicatorStyle;
 use fluent_wvr::Describable;
 
 /// A small control-plane value exercising every editor kind plus the
@@ -93,6 +94,25 @@ fn a_declared_bound_is_read_in_either_spelling() {
         }}));
         assert_eq!(lifted[0].max_len, Some(4));
     }
+}
+
+#[test]
+fn an_exclusive_floor_lifts_as_the_lower_edge() {
+    // An exclusive floor is still a declared edge: the lifter carries it so
+    // the control holds there instead of dropping the constraint, and the
+    // field's own contract keeps refining the exclusivity.
+    let lifted = schema_fields(&serde_json::json!({"properties": {
+        "threshold": {"type": "number", "exclusiveMinimum": 0.0}
+    }}));
+    assert_eq!(lifted[0].minimum, Some(0.0));
+    let both = schema_fields(&serde_json::json!({"properties": {
+        "threshold": {"type": "number", "minimum": 2.0, "exclusiveMinimum": 0.0}
+    }}));
+    assert_eq!(
+        both[0].minimum,
+        Some(2.0),
+        "an inclusive floor wins over the exclusive edge"
+    );
 }
 
 #[test]
@@ -317,6 +337,7 @@ fn tab_field(name: &str, kind: FieldKind) -> SchemaField {
         maximum: None,
         max_len: None,
         options: Vec::new(),
+        explicit_tab: None,
     }
 }
 
@@ -380,6 +401,99 @@ fn schema_fields_classify_into_inputs_style_and_visibility_tabs() {
         SettingsTab::all().map(SettingsTab::label),
         ["Inputs", "Style", "Visibility"],
         "tab labels stay fixed"
+    );
+}
+
+#[test]
+fn an_explicit_tab_hint_beats_name_matching() {
+    // A schema may pin a field's tab explicitly: the hint wins over the
+    // name heuristics, so domain display knobs land on the Style tab
+    // without teaching the router domain vocabulary.
+    for (hint, expected) in [
+        ("inputs", SettingsTab::Inputs),
+        ("style", SettingsTab::Style),
+        ("visibility", SettingsTab::Visibility),
+    ] {
+        let lifted = schema_fields(&serde_json::json!({"properties": {
+            "mystery_dial": {"type": "number", "x-tab": hint},
+            "threshold": {"type": "number", "x-tab": hint},
+        }}));
+        for field in &lifted {
+            assert_eq!(
+                classify_schema_field(field),
+                expected,
+                "{} with x-tab {hint} routes to {expected:?}",
+                field.name
+            );
+        }
+    }
+    let lifted = schema_fields(&serde_json::json!({"properties": {
+        "mystery_dial": {"type": "number", "x-tab": "cellar"}
+    }}));
+    assert_eq!(
+        classify_schema_field(&lifted[0]),
+        SettingsTab::Inputs,
+        "an unknown tab hint degrades to the name rules"
+    );
+}
+
+/// A control exercising the metadata-driven widgets: bounded numbers earn
+/// sliders, the boolean earns a switch.
+#[derive(Debug, Clone, PartialEq, FieldAccess, Describable)]
+struct WidgetProbe {
+    #[field(desc = "Bounded number", min = 0, max = 10)]
+    level: f64,
+    #[field(desc = "Bounded integer", min = 0, max = 10)]
+    count: i64,
+    #[field(desc = "Toggle")]
+    armed: bool,
+}
+
+#[test]
+fn bounded_fields_render_sliders_and_booleans_render_switches() {
+    // An untouched frame writes nothing and refuses nothing: the slider
+    // and the switch paint from the stored values without moving them.
+    let mut control = WidgetProbe {
+        level: 4.0,
+        count: 4,
+        armed: true,
+    };
+    let fields = schema_fields(&control.describe());
+    egui::__run_test_ui(|ui| {
+        let edits = paint_schema_fields(ui, &fields, &mut control);
+        assert_eq!(
+            edits,
+            FieldEdits::default(),
+            "an untouched frame changes nothing: {edits:?}"
+        );
+    });
+    assert_eq!(
+        (control.level, control.count, control.armed),
+        (4.0, 4, true),
+        "rendering moves no value"
+    );
+}
+
+#[test]
+fn style_projection_keeps_the_width_and_the_painted_keys_only() {
+    let style_fields = schema_fields(&IndicatorStyle::default().describe());
+    assert!(
+        style_fields.len() > 2,
+        "the whole schema is the generic block: {}",
+        style_fields.len()
+    );
+    let projected = project_style_fields(&style_fields, &["fast", "ribbon_bull"]);
+    let mut names: Vec<&str> = projected.iter().map(|field| field.name.as_str()).collect();
+    names.sort_unstable();
+    assert_eq!(
+        names,
+        vec!["color_fast", "color_ribbon_bull", "line_width"],
+        "the tab keeps the width and the painted keys: {names:?}"
+    );
+    assert_eq!(
+        project_style_fields(&style_fields, &[]).len(),
+        style_fields.len(),
+        "with nothing evaluated yet the whole schema stays"
     );
 }
 
@@ -506,6 +620,7 @@ fn an_infinite_bound_falls_back_to_the_unbounded_editor() {
         maximum: Some(f64::INFINITY),
         max_len: None,
         options: Vec::new(),
+        explicit_tab: None,
     }];
     let mut control = BothBoundedProbe { count: 4 };
     egui::__run_test_ui(|ui| {
@@ -557,6 +672,7 @@ fn tint_field() -> SchemaField {
         maximum: None,
         max_len: None,
         options: Vec::new(),
+        explicit_tab: None,
     }
 }
 

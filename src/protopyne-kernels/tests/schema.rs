@@ -17,6 +17,37 @@ fn fixture() -> OwnedOhlcv {
     }
 }
 
+/// The Technical tab lists every registry id under its display name, so two
+/// kernels sharing one display name render as a duplicated indicator.
+/// Bollinger Bands ships once, as the native kernel: the TA-Lib-shaped
+/// `bbands` duplicate (asymmetric `nbdevup`/`nbdevdn`) is gone.
+#[test]
+fn bollinger_bands_is_listed_once() {
+    let registry = builtin_registry().expect("registry builds");
+    assert!(
+        registry.get("bb").is_some(),
+        "the native kernel stays registered"
+    );
+    assert!(
+        registry.get("bbands").is_none(),
+        "the asymmetric duplicate is gone"
+    );
+    let mut names: Vec<&str> = registry
+        .ids()
+        .iter()
+        .filter_map(|id| registry.get(id))
+        .map(|indicator| indicator.spec().display_name.as_str())
+        .collect();
+    names.sort_unstable();
+    let len_before = names.len();
+    names.dedup();
+    assert_eq!(
+        names.len(),
+        len_before,
+        "no two kernels share a display name"
+    );
+}
+
 #[test]
 fn every_registered_kernel_has_a_schema_and_evaluates_with_defaults() {
     let registry = builtin_registry().expect("registry builds");
@@ -54,7 +85,7 @@ fn every_registered_kernel_has_a_schema_and_evaluates_with_defaults() {
         }
     }
     checked += registry.len();
-    assert_eq!(checked, 56, "all 56 builtin kernels are covered");
+    assert_eq!(checked, 55, "all 55 builtin kernels are covered");
 }
 
 /// The names/ordering check above compares *values*; this one pins the source.
@@ -137,8 +168,8 @@ fn representative_schemas_snapshot_their_parameters_and_outputs() {
             vec!["value", "signal", "hist"],
         ),
         (
-            "bbands",
-            vec!["length", "nbdevup", "nbdevdn", "matype"],
+            "bb",
+            vec!["length", "mult"],
             vec!["value", "upper", "lower"],
         ),
         ("stoch", vec!["length"], vec!["value", "d"]),
@@ -169,4 +200,40 @@ fn declared_defaults_typecheck() {
         }
     }
     let _ = Ohlcv::close_only(&[]);
+}
+
+/// The moving-average tree shares one period contract: every MA kernel's
+/// `length` spans 2..200 (the settings sliders' window), while non-MA
+/// kernels keep the wide lookback range. One shared definition feeds both
+/// the schema and the validation, so the slider and the refusal agree.
+#[test]
+fn ma_family_shares_one_period_contract() {
+    for id in [
+        "sma", "ema", "rma", "wma", "hma", "vwma", "dema", "tema", "trima", "alma", "kalman",
+    ] {
+        let schema = indicator_schema(id).expect("schema");
+        let length = schema
+            .params
+            .iter()
+            .find(|param| param.name == "length")
+            .unwrap_or_else(|| panic!("{id}: declares a period length"));
+        assert_eq!(
+            (length.min, length.max),
+            (Some(2.0), Some(200.0)),
+            "{id}: the MA period spans 2..200"
+        );
+    }
+    for id in ["rsi", "cci", "mom", "mfi", "stoch"] {
+        let schema = indicator_schema(id).expect("schema");
+        let length = schema
+            .params
+            .iter()
+            .find(|param| param.name == "length")
+            .unwrap_or_else(|| panic!("{id}: declares a lookback length"));
+        assert_eq!(
+            (length.min, length.max),
+            (Some(1.0), Some(100_000.0)),
+            "{id}: non-MA lookbacks keep the wide range"
+        );
+    }
 }

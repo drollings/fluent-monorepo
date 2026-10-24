@@ -19,6 +19,7 @@ use fluent_wvr::{Describable, FieldAccess};
 use protopyne_chart_model::{ChartRow, DisplayOnly};
 use protopyne_kernels::bars::{estimate_delta_volume_estimated, fast_tanh, DeltaConfidence};
 use protopyne_kernels::indicator::{nan_hole, OwnedOhlcv, ParamSet};
+use protopyne_kernels::smoothing::{SmoothingFamily, MA_PERIOD_MAX, MA_PERIOD_MIN};
 
 use crate::topology::{kernel_preview_frame, kernel_series};
 use protopyne_kernels::market_context::{health_mas, HEALTH_K};
@@ -31,10 +32,8 @@ use fluent_egui::{
     ThemeConfig,
 };
 
-use crate::oscillators::{
-    normalize_series, normalize_series_bounded, squash_series_to_100, OscillatorKind,
-    CALIBRATED_BOUNDED_PIVOT_THRESHOLD,
-};
+use crate::indicators::smooth_raw_for_display;
+use crate::oscillators::{normalize_series, squash_series_to_100, squash_to_100, OscillatorKind};
 
 /// Kernel length for the fast/slow raw oscillators (freeze-pinned: the Pine
 /// freeze drivers evaluate `normalizeOsc` at length 14 on both arms).
@@ -56,9 +55,71 @@ fn lite_normalize(raw: &[Option<f64>], kind: OscillatorKind) -> Vec<Option<f64>>
     normalize_series(raw, kind).expect("lite fast/slow arms are evaluable")
 }
 
-/// Bounded sibling of [`lite_normalize`] (same evaluable-arm invariant).
-fn lite_normalize_bounded(raw: &[Option<f64>], kind: OscillatorKind) -> Vec<Option<f64>> {
-    normalize_series_bounded(raw, kind).expect("lite fast/slow arms are evaluable")
+/// One Lite leg selector: the panel resolves each leg independently.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LiteLeg {
+    Fast,
+    Slow,
+}
+
+/// One bounded Lite leg from its configured kind: kernel raw at the leg
+/// period, trailing smoothing when armed, the catalog squash scaled by the
+/// leg gain, compressed onto the bounded band. Direct calls without
+/// resolution read the neutral fallbacks (length 14, no smoothing, unit
+/// gain), reproducing the frozen arms exactly; the workspace resolves
+/// blanks against the panel kind rows before evaluation.
+fn lite_panel_leg(
+    rows: &[ChartRow],
+    config: &IntegrationLiteConfig,
+    leg: LiteLeg,
+) -> Result<Vec<Option<f64>>, EguiError> {
+    let (kind_slot, kind_name, period, smooth_slot, smooth_type, smooth_period, gain) = match leg {
+        LiteLeg::Fast => (
+            "fast_kind",
+            config.fast_kind.as_str(),
+            config.fast_period,
+            "fast_smooth_type",
+            config.fast_smooth_type.as_str(),
+            config.fast_smooth_period,
+            config.fast_k,
+        ),
+        LiteLeg::Slow => (
+            "slow_kind",
+            config.slow_kind.as_str(),
+            config.slow_period,
+            "slow_smooth_type",
+            config.slow_smooth_type.as_str(),
+            config.slow_smooth_period,
+            config.slow_k,
+        ),
+    };
+    let kind = IntegrationLiteConfig::leg_kind(kind_slot, kind_name)?;
+    let frame = kernel_preview_frame(rows);
+    let raw = kernel_series(
+        lite_kernel(kind),
+        &ParamSet::new().with_int("length", period.unwrap_or(RAW_OSCILLATOR_LENGTH)),
+        &frame,
+    )?;
+    let holes = raw.iter().take_while(|slot| slot.is_none()).count();
+    let smoothed = smooth_raw_for_display(
+        &raw,
+        rows,
+        smooth_type,
+        smooth_period.unwrap_or(3),
+        holes,
+        smooth_slot,
+    )?;
+    let unbounded = lite_normalize(&smoothed, kind);
+    let scaled = gain.unwrap_or(1.0);
+    Ok(unbounded
+        .into_iter()
+        .map(|slot| {
+            slot.and_then(|value| {
+                let shaped = squash_to_100(value * scaled);
+                shaped.is_finite().then_some(shaped)
+            })
+        })
+        .collect())
 }
 
 /// Fast arm of the lite pane (RSI).
@@ -641,6 +702,18 @@ fn default_delta_unit() -> f64 {
     BOUNDED_DELTA_UNIT
 }
 
+fn default_pivot_threshold() -> f64 {
+    CALIBRATED_PIVOT_THRESHOLD
+}
+
+fn default_fast_kind() -> String {
+    "rsi".to_owned()
+}
+
+fn default_slow_kind() -> String {
+    "cci".to_owned()
+}
+
 fn default_show_ribbon() -> bool {
     true
 }
@@ -682,10 +755,66 @@ pub struct IntegrationLiteConfig {
     #[field(desc = "Delta volume height at average volume", min = 0.0)]
     #[builder(default = default_delta_unit())]
     pub delta_unit: f64,
+    /// Pivot threshold in Pine-scale (unbounded) units: the bounded fast leg
+    /// fires at the squash of this value. Defaults to the frozen task value;
+    /// the script input defaults higher on its gained leg, which would miss
+    /// the frozen calibration windows, so the port keeps the frozen default
+    /// and offers the script value as a reachable dial stop.
+    #[field(desc = "Pivot threshold (Pine-scale)", min = 20.0)]
+    #[builder(default = default_pivot_threshold())]
+    pub pivot_threshold: f64,
     /// Whether the trend ribbon paints.
     #[field(desc = "Show the trend ribbon")]
     #[builder(default = default_show_ribbon())]
     pub show_ribbon: bool,
+    /// Fast oscillator kind: the catalog leg behind the fast arm, resolved
+    /// against the panel kind row for period, smoothing, and gain.
+    #[field(
+        desc = "Fast oscillator kind",
+        variants = "crate::oscillator_panel::lite_leg_kind_ids"
+    )]
+    #[builder(default = default_fast_kind())]
+    pub fast_kind: String,
+    /// Fast-arm length in bars (blank follows the panel kind row).
+    #[field(desc = "Fast arm length in bars", min = 2, max = 200)]
+    pub fast_period: Option<i64>,
+    /// Fast-arm smoothing family (`NA` follows a disarmed panel row).
+    #[field(
+        desc = "Fast-arm smoothing",
+        variants = "protopyne_kernels::smoothing::length_smoothing_ids"
+    )]
+    #[builder(default = "na".to_owned())]
+    pub fast_smooth_type: String,
+    /// Fast-arm smoothing window in bars (blank follows the panel kind row).
+    #[field(desc = "Fast-arm smoothing window in bars", min = 2, max = 200)]
+    pub fast_smooth_period: Option<i64>,
+    /// Fast-arm gain (blank follows the panel kind row).
+    #[field(desc = "Fast-arm display gain", min = 0.0)]
+    pub fast_k: Option<f64>,
+    /// Slow oscillator kind: the catalog leg behind the slow arm, resolved
+    /// against the panel kind row for period, smoothing, and gain.
+    #[field(
+        desc = "Slow oscillator kind",
+        variants = "crate::oscillator_panel::lite_leg_kind_ids"
+    )]
+    #[builder(default = default_slow_kind())]
+    pub slow_kind: String,
+    /// Slow-arm length in bars (blank follows the panel kind row).
+    #[field(desc = "Slow arm length in bars", min = 2, max = 200)]
+    pub slow_period: Option<i64>,
+    /// Slow-arm smoothing family (`NA` follows a disarmed panel row).
+    #[field(
+        desc = "Slow-arm smoothing",
+        variants = "protopyne_kernels::smoothing::length_smoothing_ids"
+    )]
+    #[builder(default = "na".to_owned())]
+    pub slow_smooth_type: String,
+    /// Slow-arm smoothing window in bars (blank follows the panel kind row).
+    #[field(desc = "Slow-arm smoothing window in bars", min = 2, max = 200)]
+    pub slow_smooth_period: Option<i64>,
+    /// Slow-arm gain (blank follows the panel kind row).
+    #[field(desc = "Slow-arm display gain", min = 0.0)]
+    pub slow_k: Option<f64>,
 }
 
 impl IntegrationLiteConfig {
@@ -721,7 +850,144 @@ impl IntegrationLiteConfig {
                 reason: "delta volume unit must be positive and finite".to_owned(),
             });
         }
+        if !self.pivot_threshold.is_finite() || self.pivot_threshold < 20.0 {
+            return Err(EguiError::InvalidParam {
+                what: "pivot_threshold".to_owned(),
+                reason: format!(
+                    "pivot threshold must be finite and at least 20.0, got {}",
+                    self.pivot_threshold
+                ),
+            });
+        }
+        for (slot, kind) in [
+            ("fast_kind", &self.fast_kind),
+            ("slow_kind", &self.slow_kind),
+        ] {
+            if !crate::oscillator_panel::LITE_LEG_KINDS.contains(&kind.as_str()) {
+                return Err(EguiError::InvalidParam {
+                    what: (*slot).to_owned(),
+                    reason: format!("{kind:?} is not a lite leg kind (rsi, cci, cmo, mfi, stoch)"),
+                });
+            }
+        }
+        for (slot, window) in [
+            ("fast_period", self.fast_period),
+            ("slow_period", self.slow_period),
+            ("fast_smooth_period", self.fast_smooth_period),
+            ("slow_smooth_period", self.slow_smooth_period),
+        ] {
+            if window.is_some_and(|value| !(MA_PERIOD_MIN..=MA_PERIOD_MAX).contains(&value)) {
+                return Err(EguiError::InvalidParam {
+                    what: slot.to_owned(),
+                    reason: format!(
+                        "leg length must sit within [{MA_PERIOD_MIN}, {MA_PERIOD_MAX}], got {window:?}"
+                    ),
+                });
+            }
+        }
+        for (slot, smooth) in [
+            ("fast_smooth_type", &self.fast_smooth_type),
+            ("slow_smooth_type", &self.slow_smooth_type),
+        ] {
+            match SmoothingFamily::parse(smooth) {
+                Some(SmoothingFamily::Na) => {}
+                Some(family) if family.takes_length() => {}
+                _ => {
+                    return Err(EguiError::InvalidParam {
+                        what: (*slot).to_owned(),
+                        reason: format!(
+                            "smoothing {smooth:?} is not a length-taking smoothing family"
+                        ),
+                    });
+                }
+            }
+        }
+        for (slot, gain) in [("fast_k", self.fast_k), ("slow_k", self.slow_k)] {
+            if gain.is_some_and(|value| !value.is_finite() || value <= 0.0) {
+                return Err(EguiError::InvalidParam {
+                    what: slot.to_owned(),
+                    reason: format!("leg gain must be positive and finite, got {gain:?}"),
+                });
+            }
+        }
         Ok(())
+    }
+}
+
+impl IntegrationLiteConfig {
+    /// Parse one leg kind, refusing anything outside the normalized
+    /// kernel-backed set instead of substituting.
+    fn leg_kind(slot: &str, name: &str) -> Result<OscillatorKind, EguiError> {
+        match name {
+            "rsi" => Ok(OscillatorKind::Rsi),
+            "cci" => Ok(OscillatorKind::Cci),
+            "cmo" => Ok(OscillatorKind::Cmo),
+            "mfi" => Ok(OscillatorKind::Mfi),
+            "stoch" => Ok(OscillatorKind::Stoch),
+            _ => Err(EguiError::InvalidParam {
+                what: slot.to_owned(),
+                reason: format!("{name:?} is not a lite leg kind (rsi, cci, cmo, mfi, stoch)"),
+            }),
+        }
+    }
+
+    /// Resolve blank leg dials against the panel kind rows: unset periods
+    /// and gains take the kind row, and disarmed leg smoothing follows an
+    /// armed kind. Explicit leg values win; the frozen catalog remains the
+    /// last resort downstream. Infallible by design: an unknown kind keeps
+    /// its blanks so `validate` refuses naming the field.
+    #[must_use]
+    pub fn resolve_panel_defaults(
+        &self,
+        panel: &crate::oscillator_panel::OscillatorPanelState,
+    ) -> Self {
+        let mut out = self.clone();
+        for (slot, kind_name, period, smooth_type, smooth_period, gain) in [
+            (
+                "fast_kind",
+                self.fast_kind.as_str(),
+                &mut out.fast_period,
+                &mut out.fast_smooth_type,
+                &mut out.fast_smooth_period,
+                &mut out.fast_k,
+            ),
+            (
+                "slow_kind",
+                self.slow_kind.as_str(),
+                &mut out.slow_period,
+                &mut out.slow_smooth_type,
+                &mut out.slow_smooth_period,
+                &mut out.slow_k,
+            ),
+        ] {
+            let Ok(_kind) = Self::leg_kind(slot, kind_name) else {
+                continue;
+            };
+            let Ok(row) = panel.entry(kind_name) else {
+                continue;
+            };
+            if period.is_none() {
+                *period = Some(row.period);
+            }
+            let slot_armed = matches!(
+                SmoothingFamily::parse(smooth_type),
+                Some(family) if family != SmoothingFamily::Na && family.takes_length()
+            );
+            let kind_armed = matches!(
+                SmoothingFamily::parse(&row.smooth_type),
+                Some(family) if family != SmoothingFamily::Na && family.takes_length()
+            );
+            if !slot_armed && kind_armed {
+                smooth_type.clone_from(&row.smooth_type);
+                *smooth_period = Some(row.smooth_period);
+            } else if slot_armed && smooth_period.is_none() {
+                *smooth_period = Some(row.smooth_period);
+            }
+            if gain.is_none() {
+                *gain = Some(row.gain);
+            }
+        }
+        out
     }
 }
 
@@ -793,24 +1059,24 @@ pub struct IntegrationLiteSubPane {
 /// Reuses the frozen kernel truth: the fast/slow oscillators squashed onto the
 /// `[-100, +100]` band, ribbon health from the shared health fold, MA health
 /// from [`ma_health_series`], and the shape-estimated delta volume through
-/// [`delta_candle_view`]. Pivots fire on the bounded fast leg at
-/// [`CALIBRATED_BOUNDED_PIVOT_THRESHOLD`], bijective with the frozen
-/// `±CALIBRATED_PIVOT_THRESHOLD`. Refuses a config its own validation refuses.
+/// [`delta_candle_view`]. Pivots fire on the bounded fast leg at the squash of
+/// the configured Pine-scale threshold (the default squashes exactly onto the
+/// frozen bounded threshold). Refuses a config its own validation refuses.
 pub fn integration_lite_sub_pane(
     rows: &[ChartRow],
     config: &IntegrationLiteConfig,
 ) -> Result<IntegrationLiteSubPane, EguiError> {
     config.validate()?;
     let native = native_lite_series(rows, config.eit_alpha)?;
-    let fast_bounded = lite_normalize_bounded(&native.fast_raw, LITE_FAST_KIND);
-    let slow_bounded = lite_normalize_bounded(&native.slow_raw, LITE_SLOW_KIND);
+    let fast_bounded = lite_panel_leg(rows, config, LiteLeg::Fast)?;
+    let slow_bounded = lite_panel_leg(rows, config, LiteLeg::Slow)?;
     let (ribbon_health, _vol_ratio) =
         ribbon_health_inputs(rows, config.eit_alpha, config.ribbon_health_k)?;
     let ribbon_health_bounded = squash_series_to_100(&ribbon_health);
     let ma_health_bounded = squash_series_to_100(&ma_health_series(rows, config.ma_health_k)?);
     let (buy, sell, delta_confidence) = delta_splits(rows);
     let delta_volume = delta_candle_view(rows, &buy, &sell, config.delta_unit)?;
-    let pivots = pivot_marks(&fast_bounded, CALIBRATED_BOUNDED_PIVOT_THRESHOLD)?;
+    let pivots = pivot_marks(&fast_bounded, squash_to_100(config.pivot_threshold))?;
     let ribbon = ribbon_view(&native.adaptive, &native.signal, config.fill_alpha)?;
     Ok(IntegrationLiteSubPane {
         fast_bounded,
