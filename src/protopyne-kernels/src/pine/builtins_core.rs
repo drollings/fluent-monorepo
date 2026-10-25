@@ -155,18 +155,41 @@ pub fn resolve_constant(name: &str) -> Option<PineValue> {
         },
         // Plot-shape markers observed in the shipped drawing calls.
         "shape" => match member {
-            "labelup" | "labeldown" => EnumHandle::new(namespace, member),
+            "labelup" | "labeldown" | "triangleup" | "triangledown" | "diamond" | "xcross" => {
+                EnumHandle::new(namespace, member)
+            }
             _ => return None,
         },
         // Plot-shape location observed in the shipped drawing calls.
         "location" => match member {
-            "absolute" => EnumHandle::new(namespace, member),
+            "absolute" | "abovebar" | "belowbar" => EnumHandle::new(namespace, member),
+            _ => return None,
+        },
+        // Display number formats: carried opaquely like any other enum
+        // member. `str.tostring` renders them at default precision — table
+        // text only, never a decision.
+        "format" => match member {
+            "price" | "mintick" => EnumHandle::new(namespace, member),
             _ => return None,
         },
         // Horizontal-line styles (the shipped `hline()` calls spell dashed
         // and dotted; solid completes the linestyle set like `line.*`).
         "hline" => match member {
             "style_solid" | "style_dotted" | "style_dashed" => EnumHandle::new(namespace, member),
+            _ => return None,
+        },
+        // Alert frequencies (the shipped strategy passes
+        // `alert.freq_once_per_bar_close`; alerts never fire headlessly).
+        "alert" => match member {
+            "freq_once_per_bar" | "freq_once_per_bar_close" | "freq_all" => {
+                EnumHandle::new(namespace, member)
+            }
+            _ => return None,
+        },
+        // Plot styles observed in the shipped strategy (`linebr` breaks
+        // the line where the series reads `na`).
+        "plot" => match member {
+            "style_linebr" => EnumHandle::new(namespace, member),
             _ => return None,
         },
         _ => return None,
@@ -402,6 +425,13 @@ fn str_call(method: &str, args: &[CoreArg]) -> Result<Option<PineValue>, KernelE
             let Some(format) = format else {
                 return Ok(Some(PineValue::Str(rendered)));
             };
+            // Opaque display-format handles (`format.mintick`) render at
+            // default precision: they only ever reach table text, never a
+            // decision, so the harness pins the deterministic default
+            // instead of the feed's tick size.
+            if matches!(&format.value, Some(PineValue::EnumHandle(_))) {
+                return Ok(Some(PineValue::Str(rendered)));
+            }
             let Some(PineValue::Str(pattern)) = &format.value else {
                 return Err(refused(format!("{name} takes a string format")));
             };

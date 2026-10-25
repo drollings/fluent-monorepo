@@ -920,3 +920,132 @@ fn oscillator_colors_pin_rgb_table() {
         );
     }
 }
+
+#[test]
+fn srsi_ignores_fast_leg_window() {
+    // The shipped SRSI arm hardcodes its RSI leg at 14: on the slow leg
+    // (`which = -1`, which reads `slowLen`), varying the fast window must
+    // leave the output untouched, while the slow window sizes the
+    // stochastic leg and must move it. A steady ramp saturates RSI flat,
+    // so both halves run on a wobble tape with mixed gains.
+    let wobble: Vec<Bar> = (0..60)
+        .map(|i| {
+            let close = 100.0 + 0.5 * (i as f64) + if i % 2 == 0 { 1.0 } else { -1.0 };
+            bar_full(
+                &format!("{:.2}", close - 0.25),
+                &format!("{:.2}", close + 0.6),
+                &format!("{:.2}", close - 0.6),
+                &format!("{close:.2}"),
+                1_000,
+                1_700_000_000_000 + i as i64 * 60_000,
+            )
+        })
+        .collect();
+    let run = |fast: i64, slow: i64| {
+        let outcome = run_linked(
+            &format!(
+                "{IMPORTS}out = MAS.normalizeOsc(close, UTIL.Oscillators.SRSI, -1, {fast}, {slow}, UTIL.Smoothings.NA, 0)"
+            ),
+            &wobble,
+        );
+        series_of(&outcome, "out", wobble.len())
+    };
+    let base = run(5, 14);
+    let moved_fast = run(9, 14);
+    assert_eq!(
+        base, moved_fast,
+        "fastLen must not reach the fixed RSI-14 relay"
+    );
+    let moved_slow = run(5, 20);
+    let mut differs = false;
+    for (a, b) in base.iter().zip(moved_slow.iter()) {
+        match (a, b) {
+            (Some(a), Some(b)) if (a - b).abs() > EPS => {
+                differs = true;
+                break;
+            }
+            _ => {}
+        }
+    }
+    assert!(differs, "slowLen must size the stochastic leg");
+}
+
+#[test]
+fn trendsi_matches_hand_computed_pearson() {
+    // Perfect linear rise correlates at exactly +1, a perfect fall at -1,
+    // and a constant window carries no direction (na) — the three facts the
+    // shipped `ta.correlation(src, bar_index, length)` arm rests on.
+    let kernel = crate::indicator::builtin_registry()
+        .expect("builtins")
+        .get("trendsi")
+        .expect("trendsi registered")
+        .clone();
+    let run = |closes: &[f64]| {
+        let frame = OwnedOhlcv {
+            open: closes.to_vec(),
+            high: closes.to_vec(),
+            low: closes.to_vec(),
+            close: closes.to_vec(),
+            volume: vec![1.0; closes.len()],
+        };
+        kernel
+            .batch(&frame.views(), &ParamSet::new().with_int("length", 5))
+            .expect("valid batch")
+            .values
+    };
+    let rise: Vec<f64> = (0..10).map(|i| 100.0 + 2.0 * i as f64).collect();
+    for value in run(&rise).iter().flatten() {
+        assert!(
+            (*value - 1.0).abs() <= EPS,
+            "perfect rise correlates at +1, got {value}"
+        );
+    }
+    let fall: Vec<f64> = (0..10).map(|i| 100.0 - 3.0 * i as f64).collect();
+    for value in run(&fall).iter().flatten() {
+        assert!(
+            (*value + 1.0).abs() <= EPS,
+            "perfect fall correlates at -1, got {value}"
+        );
+    }
+    let flat = vec![42.0; 10];
+    assert!(
+        run(&flat).iter().all(Option::is_none),
+        "a constant window carries no direction"
+    );
+}
+
+#[test]
+fn trendsi_batch_and_update_agree() {
+    // The incremental path rebuilds windows from retained bars plus a
+    // relative index leg; it must reproduce the batch path bar for bar.
+    use crate::indicator::{BarTick, Indicator, IndicatorState};
+    use crate::ta_stat::TrendsiIndicator;
+    let kernel = TrendsiIndicator::new();
+    let params = ParamSet::new().with_int("length", 5);
+    let closes: Vec<f64> = (0..30)
+        .map(|i| 100.0 + (i as f64) * 0.3 + ((i * 7) % 11) as f64)
+        .collect();
+    let frame = OwnedOhlcv {
+        open: closes.clone(),
+        high: closes.iter().map(|c| c + 0.5).collect(),
+        low: closes.iter().map(|c| c - 0.5).collect(),
+        close: closes.clone(),
+        volume: vec![1.0; closes.len()],
+    };
+    let batched = kernel.batch(&frame.views(), &params).expect("valid");
+    let mut state = IndicatorState::new();
+    for (index, &close) in closes.iter().enumerate() {
+        let tick = BarTick {
+            open: close,
+            high: close + 0.5,
+            low: close - 0.5,
+            close,
+            volume: 1.0,
+        };
+        let got = kernel.update(&mut state, tick, &params).expect("valid");
+        assert_eq!(
+            got, batched.values[index],
+            "bar {index}: update matches batch"
+        );
+    }
+}

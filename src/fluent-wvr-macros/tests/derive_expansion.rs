@@ -322,3 +322,44 @@ fn closed_vocabulary_still_expands_and_round_trips() {
     assert!(!required.iter().any(|v| v == "internal"));
     assert!(schema["properties"].get("internal").is_none());
 }
+
+// ── Display hints ride the schema as x-* ──────────────────────────────────
+
+#[derive(FieldAccess, Describable)]
+struct HintedConfig {
+    #[field(
+        desc = "Low",
+        min = 0.03,
+        max = 1.0,
+        tab = "inputs",
+        group = "Trend Ribbon",
+        inline = "adaptive",
+        tooltip = "Weak-leg shading",
+        step = 0.02
+    )]
+    pub alpha_low: f64,
+    #[field(desc = "Plain")]
+    pub plain: f64,
+}
+
+#[test]
+fn derive_describable_emits_display_hints() {
+    let cfg = HintedConfig {
+        alpha_low: 0.14,
+        plain: 1.0,
+    };
+    let props = &cfg.describe()["properties"];
+    assert_eq!(props["alpha_low"]["x-tab"], "inputs");
+    assert_eq!(props["alpha_low"]["x-group"], "Trend Ribbon");
+    assert_eq!(props["alpha_low"]["x-inline"], "adaptive");
+    assert_eq!(props["alpha_low"]["x-tooltip"], "Weak-leg shading");
+    assert_eq!(props["alpha_low"]["x-step"], 0.02);
+    // Unhinted fields carry no x-* keys, so schemas without the hints
+    // describe exactly as before.
+    for key in ["x-tab", "x-group", "x-inline", "x-tooltip", "x-step"] {
+        assert!(
+            props["plain"].get(key).is_none(),
+            "no {key} without the hint"
+        );
+    }
+}

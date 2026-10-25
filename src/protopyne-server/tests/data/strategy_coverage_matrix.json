@@ -1,0 +1,145 @@
+{
+  "scope": "Every strategy.* spelling the shipped strategy file uses, mapped to Supported (observed and pinned), FormulaVerified (deterministic empty-book read, native-model cross-check pending), or Refuse (executable probe names the refusal). Anything outside this table refuses with its matrix row instead of miscomputing.",
+  "rows": [
+    {
+      "site": "strategy",
+      "status": "Supported",
+      "evidence": "declaration args evaluate; initial capital retained for day-P&L; SPY goldens link and run with zero refusals"
+    },
+    {
+      "site": "declaration-spellings",
+      "status": "Supported",
+      "evidence": "fixed/long/short/commission.percent spellings resolve; golden runs evaluate the declaration"
+    },
+    {
+      "site": "entry",
+      "status": "Supported",
+      "evidence": "recorded per bar with id, direction, qty; pine_integration_lite_strategy goldens pin the call stream"
+    },
+    {
+      "site": "exit",
+      "status": "Supported",
+      "evidence": "recorded per bar with id, qty, limit, stop, profit, loss, comment; pinned in goldens"
+    },
+    {
+      "site": "close",
+      "status": "Supported",
+      "evidence": "recorded per bar with id and qty; pinned in goldens"
+    },
+    {
+      "site": "close_all",
+      "status": "Supported",
+      "evidence": "recorded per bar with comment; pinned in goldens"
+    },
+    {
+      "site": "closedtrades",
+      "status": "FormulaVerified",
+      "evidence": "empty book reads zero by construction; golden pins the count reads; native-model comparison pending"
+    },
+    {
+      "site": "closedtrades.*",
+      "status": "FormulaVerified",
+      "evidence": "size/exit_comment read na on the empty book; pinned in goldens; native-model comparison pending"
+    },
+    {
+      "site": "opentrades",
+      "status": "FormulaVerified",
+      "evidence": "empty book reads zero by construction; pinned in goldens"
+    },
+    {
+      "site": "wintrades",
+      "status": "FormulaVerified",
+      "evidence": "empty book reads zero by construction; pinned in goldens"
+    },
+    {
+      "site": "losstrades",
+      "status": "FormulaVerified",
+      "evidence": "empty book reads zero by construction"
+    },
+    {
+      "site": "position_size",
+      "status": "FormulaVerified",
+      "evidence": "empty book reads zero by construction; entries gate on s_pos_dir == 0 in goldens"
+    },
+    {
+      "site": "equity",
+      "status": "FormulaVerified",
+      "evidence": "reads the declared initial capital so sizing computes; fills never booked so the book stays empty; pinned in goldens"
+    },
+    {
+      "site": "netprofit",
+      "status": "FormulaVerified",
+      "evidence": "empty book reads zero realized; pinned in goldens"
+    },
+    {
+      "site": "openprofit",
+      "status": "FormulaVerified",
+      "evidence": "no position is ever open in the harness; reads na"
+    },
+    {
+      "site": "grossprofit",
+      "status": "FormulaVerified",
+      "evidence": "empty book reads zero by construction"
+    },
+    {
+      "site": "grossloss",
+      "status": "FormulaVerified",
+      "evidence": "empty book reads zero by construction"
+    },
+    {
+      "site": "position_avg_price",
+      "status": "FormulaVerified",
+      "evidence": "no position is ever open in the harness; reads na"
+    },
+    {
+      "site": "max_drawdown",
+      "status": "FormulaVerified",
+      "evidence": "reads na; unexercised by the shipped file, mapped for completeness"
+    },
+    {
+      "site": "initial_capital",
+      "status": "Supported",
+      "evidence": "retained from the declaration; day-P&L baseline reads it in goldens"
+    },
+    {
+      "site": "long",
+      "status": "Supported",
+      "evidence": "direction constant resolves; entry calls carry it in goldens"
+    },
+    {
+      "site": "short",
+      "status": "Supported",
+      "evidence": "direction constant resolves; entry calls carry it in goldens"
+    },
+    {
+      "site": "fixed",
+      "status": "Supported",
+      "evidence": "sizing-mode spelling resolves; exercised by the declaration"
+    },
+    {
+      "site": "commission.percent",
+      "status": "Supported",
+      "evidence": "commission-mode spelling resolves; exercised by the declaration"
+    },
+    {
+      "site": "strategy.order",
+      "status": "Refuse",
+      "evidence": "probe strategy_refusals_name_their_matrix_row: refuses naming the row"
+    },
+    {
+      "site": "strategy.opentrades.*",
+      "status": "Refuse",
+      "evidence": "probe strategy_refusals_name_their_matrix_row: refuses naming the row"
+    },
+    {
+      "site": "request.security gaps_on",
+      "status": "Refuse",
+      "evidence": "probe strategy_refusals_name_their_matrix_row: refuses as live fetch"
+    },
+    {
+      "site": "request.security unregistered pair",
+      "status": "Refuse",
+      "evidence": "probe strategy_refusals_name_their_matrix_row: refuses naming the missing dataset"
+    }
+  ]
+}

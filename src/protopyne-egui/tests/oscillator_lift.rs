@@ -81,3 +81,39 @@ fn lifts_refuse_the_cdv_row() {
     assert!(normalize_oscillator(1.0, refused).is_err());
     assert!(normalize_oscillator_bounded(1.0, refused).is_err());
 }
+
+#[test]
+fn bounded_pivot_crossings_match_unbounded_crossings() {
+    use fluent_egui::pivot_marks;
+    // The bounded band preserves the unbounded crossing sets: squashing
+    // both the series and the threshold through `squash_to_100` can neither
+    // invent nor drop a pivot, at any display gain. Holes stay holes on
+    // both sides, and non-finite slots never fire on either side.
+    let raw: Vec<Option<f64>> = vec![
+        Some(-250.0),
+        Some(-150.0),
+        Some(-50.0),
+        Some(50.0),
+        Some(150.0),
+        Some(250.0),
+        Some(150.0),
+        Some(-150.0),
+        None,
+        Some(f64::NAN),
+        Some(0.0),
+        Some(300.0),
+    ];
+    for gain in [0.5, 1.0, 2.0] {
+        for threshold in [50.0, 100.0, 200.0] {
+            let scaled: Vec<Option<f64>> = raw.iter().map(|v| v.map(|x| x * gain)).collect();
+            let direct = pivot_marks(&scaled, threshold).expect("valid threshold");
+            let squashed = squash_series_to_100(&scaled);
+            let mapped = pivot_marks(&squashed, squash_to_100(threshold))
+                .expect("squashed threshold stays valid");
+            assert_eq!(
+                mapped, direct,
+                "gain {gain} threshold {threshold}: bounded crossings equal unbounded crossings"
+            );
+        }
+    }
+}

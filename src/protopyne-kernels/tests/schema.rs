@@ -85,7 +85,7 @@ fn every_registered_kernel_has_a_schema_and_evaluates_with_defaults() {
         }
     }
     checked += registry.len();
-    assert_eq!(checked, 55, "all 55 builtin kernels are covered");
+    assert_eq!(checked, 57, "all 57 builtin kernels are covered");
 }
 
 /// The names/ordering check above compares *values*; this one pins the source.

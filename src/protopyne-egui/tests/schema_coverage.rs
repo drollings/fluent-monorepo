@@ -3,11 +3,15 @@ use fluent_wvr::Describable;
 
 /// Numeric dials with no lower edge: unbounded reals by contract (any finite
 /// value validates), so no schema floor can state them without lying. Every
-/// other numeric dial states its floor in the schema.
-/// Numeric dials with no lower edge: unbounded reals by contract (any finite
-/// value validates), so no schema floor can state them. The panel `offset`
+/// other numeric dial states its floor in the schema. The panel `offset`
 /// joins the slot set for the same reason.
 const OPEN_DIALS: &[&str] = &["osc_trim", "osc_offset", "offset"];
+
+/// Free-text dials: session windows are genuinely open-ended (validated
+/// non-empty by contract), so no catalog can list them. Every other audited
+/// string is a catalog-backed select or a color; a new free-text field trips
+/// the audit on purpose until it is catalogued here with its reason.
+const FREE_TEXT: &[&str] = &["session"];
 
 fn check_schema(owner: &str, fields: &[SchemaField]) {
     assert!(!fields.is_empty(), "{owner} describes no fields at all");
@@ -50,7 +54,13 @@ fn check_schema(owner: &str, fields: &[SchemaField]) {
                 "{owner}: {} is a switch carrying bounds or options",
                 field.name
             ),
-            FieldKind::Text | FieldKind::Color => panic!(
+            FieldKind::Color => assert!(
+                field.format.as_deref() == Some("color"),
+                "{owner}: {} is a color without the color format",
+                field.name
+            ),
+            FieldKind::Text => assert!(
+                FREE_TEXT.contains(&field.name.as_str()),
                 "{owner}: {} renders outside the catalogued widgets",
                 field.name
             ),

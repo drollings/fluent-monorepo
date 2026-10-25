@@ -76,6 +76,8 @@ struct ScriptReplay {
     calls: Mutex<Vec<String>>,
     structures: Mutex<Vec<String>>,
     history: Vec<ChartRow>,
+    /// Core-side journal: steps append, terminal verbs never rewrite.
+    journal: Mutex<Vec<protopyne_view::JournalRowView>>,
     /// Refuse the rehearsal-economics read, for the fail-closed pin.
     refuse_economics: bool,
 }
@@ -98,6 +100,7 @@ impl ScriptReplay {
             calls: Mutex::new(Vec::new()),
             structures: Mutex::new(Vec::new()),
             history,
+            journal: Mutex::new(Vec::new()),
             refuse_economics: false,
         }
     }
@@ -161,7 +164,7 @@ impl TerminalGateway for ScriptReplay {
     }
 
     fn journal(&self) -> Result<Vec<protopyne_view::JournalRowView>, GatewayError> {
-        Err(GatewayError::Unavailable("script replay".to_owned()))
+        Ok(self.journal.lock().expect("journal locks").clone())
     }
 
     fn chart_bars(&self) -> Result<protopyne_view::ChartBars, GatewayError> {
@@ -266,8 +269,29 @@ impl TerminalGateway for ScriptReplay {
             .expect("call log locks")
             .push(format!("step:{bars}"));
         let mut cursor = self.cursor.lock().expect("cursor locks");
+        let from = *cursor;
         *cursor = (*cursor + bars).min(self.total);
+        let stepped = *cursor - from;
         drop(cursor);
+        // Core-side booking appends one journal row per decided bar; the
+        // sequence never restarts, so a terminal verb can only extend the
+        // log, never rewrite it.
+        let mut journal = self.journal.lock().expect("journal locks");
+        for bar in from..from + stepped {
+            let at_ms = self
+                .history
+                .get(bar as usize)
+                .map_or(0, |row| row.time * 1_000);
+            let seq = journal.len() as i64 + 1;
+            journal.push(protopyne_view::JournalRowView {
+                seq,
+                client_id: session_id.to_owned(),
+                kind: "filled".to_owned(),
+                detail: format!("{{\"bar\":{bar}}}"),
+                at_ms,
+            });
+        }
+        drop(journal);
         Ok(self.state_of(session_id))
     }
 
@@ -1572,4 +1596,40 @@ fn pump_holds_slow_speeds_until_a_bar_is_due() {
     );
 
     common_core::runtime::block_on(handle.shutdown());
+}
+
+#[test]
+fn stopping_a_replay_never_rewrites_the_journal() {
+    // The terminal owns the cursor; the gateway owns the journal. Steps
+    // append core-side, and stop/exit only closes the session — rows are
+    // never cleared, reordered, or renumbered by a terminal verb.
+    let mut workspace =
+        ChartWorkspace::with_rows(ladder_rows(40)).expect("seeded workspace builds");
+    let gateway = ScriptReplay::new(40);
+    let rows = ladder_rows(40);
+    workspace.open_live_replay(&gateway, rows[5].time, None, 7, None, "Single".to_owned());
+    workspace.step_live_replay(&gateway, 3);
+    let journal = gateway.journal().expect("journal serves stepped rows");
+    assert_eq!(journal.len(), 3, "each stepped bar appends one row");
+    assert!(
+        journal
+            .windows(2)
+            .all(|pair| pair[0].seq + 1 == pair[1].seq),
+        "sequence numbers stay dense and monotonic"
+    );
+    workspace.stop_live_replay(&gateway);
+    assert_eq!(
+        gateway.journal().expect("journal serves after stop"),
+        journal,
+        "stop preserves every row byte-identically"
+    );
+    workspace.open_live_replay(&gateway, rows[5].time, None, 7, None, "Single".to_owned());
+    workspace.step_live_replay(&gateway, 2);
+    let resumed = gateway.journal().expect("journal serves the new session");
+    assert_eq!(resumed.len(), 5, "the new session appends, never rewrites");
+    assert_eq!(
+        &resumed[..3],
+        journal.as_slice(),
+        "earlier rows survive the reopen untouched"
+    );
 }

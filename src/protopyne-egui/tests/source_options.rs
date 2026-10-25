@@ -75,16 +75,35 @@ fn fast_mas_source_matches_the_kernel_dropdown_standard() {
 }
 
 #[test]
-fn integration_lite_takes_no_input_selector() {
+fn integration_lite_offers_a_price_source_choice_without_producer_edges() {
+    // The bar-reading composite takes no `series:` producer edge, but its
+    // arms do read one selectable price column: the picker lists exactly
+    // the price-source catalog, so a producer spelling never reaches it.
     let lite = crate::integration_lite::IntegrationLiteConfig::default().describe();
+    let properties = lite
+        .get("properties")
+        .expect("object properties")
+        .as_object()
+        .expect("object");
+    let source = properties
+        .get("price_source")
+        .expect("the price-source choice");
+    assert_eq!(source.get("type").and_then(|v| v.as_str()), Some("string"));
+    let options: Vec<&str> = source
+        .get("enum")
+        .and_then(|v| v.as_array())
+        .expect("catalog options")
+        .iter()
+        .map(|v| v.as_str().expect("string option"))
+        .collect();
+    assert_eq!(
+        options,
+        crate::topology::price_source_ids(),
+        "the picker lists the catalog without re-spelling it"
+    );
     assert!(
-        lite.get("properties")
-            .expect("object properties")
-            .as_object()
-            .expect("object")
-            .get("source")
-            .is_none(),
-        "the bar-reading composite offers no source choice"
+        options.iter().all(|option| !option.starts_with("series:")),
+        "no producer spelling reaches the bar-reading composite: {options:?}"
     );
 }
 

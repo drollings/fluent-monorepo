@@ -1,0 +1,12 @@
+{
+  "scope": "shape calibration only: Pine/native defaults, validation window, control refusals. Outcome calibration (whether the trigger should fire on a bar) lands in the equity-sweep milestone with the native signal, which reads these same fields.",
+  "shape": {
+    "control_refusals": [
+      "invalid element: filt_volume_min 0.09 sits outside its [0.1, unbounded] window",
+      "invalid element: filt_volume_min NaN sits outside its [0.1, unbounded] window"
+    ],
+    "native_default": "0.8",
+    "pine_default": "0.8",
+    "validation_window": "filt_volume_min in [0.1, +inf)"
+  }
+}

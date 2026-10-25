@@ -386,7 +386,7 @@ fn default_workspace_is_byte_pinned() {
 
 /// The exact default prefs document: any added, removed, renamed, or
 /// re-defaulted field fails this pin on purpose.
-const DEFAULT_PREFS_JSON: &str = r#"{
+const DEFAULT_PREFS_JSON: &str = r##"{
   "active_symbol": "SPY",
   "tickers": {
     "SPY": {
@@ -400,6 +400,12 @@ const DEFAULT_PREFS_JSON: &str = r#"{
           "id": "integration_lite",
           "visible": true,
           "config": {
+            "adaptive": "false",
+            "brightness": "30",
+            "color_code": "true",
+            "delta_bear": "#ff0000",
+            "delta_bull": "#00ff00",
+            "delta_show": "true",
             "delta_unit": "80",
             "eit_alpha": "0.14",
             "fast_k": "",
@@ -407,11 +413,41 @@ const DEFAULT_PREFS_JSON: &str = r#"{
             "fast_period": "",
             "fast_smooth_period": "",
             "fast_smooth_type": "na",
+            "fetch_timeframe": "c",
             "fill_alpha": "0.5",
+            "htf_timeframe": "w1",
+            "ltf_timeframe": "m1",
             "ma_health_k": "1.2",
+            "ma_health_show": "true",
+            "mean_param1": "0.06",
+            "mean_period": "21",
+            "mean_type": "ema",
+            "mtf_table_bg": "#000000",
+            "mtf_table_position": "middle_left",
+            "mtf_table_show": "true",
+            "mtf_table_size": "small",
+            "mtf_table_text": "#dbdbdb",
+            "mtf_timeframe_1": "m5",
+            "mtf_timeframe_2": "m15",
+            "mtf_timeframe_3": "h1",
+            "mtf_timeframe_4": "h4",
+            "osc_show": "true",
             "pivot_threshold": "100",
+            "pivots_lookback": "8",
+            "pivots_show": "true",
+            "price_source": "close",
+            "ribbon_alpha_high": "0.8",
+            "ribbon_alpha_low": "0.14",
+            "ribbon_bear": "#7b1fa2",
+            "ribbon_bull": "#00bcd4",
             "ribbon_health_k": "1.8",
+            "ribbon_health_show": "true",
+            "session": "0930-1600",
+            "session_filter": "true",
             "show_ribbon": "true",
+            "signal_param1": "0.12",
+            "signal_period": "10",
+            "signal_type": "eit",
             "slow_k": "",
             "slow_kind": "cci",
             "slow_period": "",
@@ -594,7 +630,7 @@ const DEFAULT_PREFS_JSON: &str = r#"{
       "mult": 100.0
     }
   }
-}"#;
+}"##;
 
 /// A wrapped or reordered feed never splices non-consecutive history onto
 /// the tail: an older bar refuses (fail closed), the same stamp revises,

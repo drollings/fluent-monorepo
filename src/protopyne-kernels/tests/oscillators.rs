@@ -187,3 +187,72 @@ fn buffered_update_matches_batch_on_constant_and_subnormal_inputs() {
         );
     }
 }
+
+#[test]
+fn stoch_refuses_close_only_frames() {
+    // The Pine arm spells `ta.stoch(close, high, low, length)`: the kernel
+    // must read all three legs, so a frame without highs and lows refuses
+    // instead of fabricating a range.
+    let stoch = StochIndicator::new();
+    let ps = ParamSet::new().with_int("length", 3);
+    let err = stoch
+        .batch(&Ohlcv::close_only(&[7.0, 8.0, 9.0]), &ps)
+        .expect_err("high/low legs are required");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("high") || msg.contains("low"),
+        "refusal names the missing leg, got: {msg}"
+    );
+}
+
+#[test]
+fn srsi_composes_fixed_rsi14_over_stoch_window() {
+    use crate::indicator::OwnedOhlcv;
+    use crate::oscillators::SrsiIndicator;
+    let srsi = SrsiIndicator::new();
+    assert_eq!(
+        SrsiIndicator::RSI_LENGTH,
+        14,
+        "the relay window is Pine-fixed"
+    );
+    // Batch and incremental paths share the child recurrences: the same
+    // bars must produce the same primary and secondary legs.
+    let data: Vec<f64> = (0..40).map(|i| 100.0 + f64::from(i % 7) * 1.5).collect();
+    let ticks: Vec<BarTick> = data.iter().map(|&c| BarTick::close_only(c)).collect();
+    let ps = ParamSet::new().with_int("length", 5);
+    let frame = OwnedOhlcv {
+        open: data.clone(),
+        high: data.iter().map(|c| c + 0.5).collect(),
+        low: data.iter().map(|c| c - 0.5).collect(),
+        close: data.clone(),
+        volume: vec![1.0; data.len()],
+    };
+    let batched = srsi.batch(&frame.views(), &ps).expect("valid batch");
+    let (primary, secondaries) = fold_all(&srsi, &ticks, &ps);
+    approx(&primary, &batched.values, 1e-9);
+    assert_eq!(secondaries.len(), primary.len(), "secondary aligns");
+    let d = batched
+        .secondary
+        .iter()
+        .find(|leg| leg.name == "d")
+        .expect("d leg");
+    for (index, tick) in secondaries.iter().enumerate() {
+        assert_eq!(tick.len(), 1, "one secondary update per bar");
+        assert_eq!(tick[0].name, "d", "secondary leg keeps its name per bar");
+        approx(&[tick[0].value], &[d.values[index]], 1e-9);
+    }
+    // Flat input stays na end to end: the relay carries na, never a number.
+    let flat = OwnedOhlcv {
+        open: vec![42.0; 20],
+        high: vec![42.0; 20],
+        low: vec![42.0; 20],
+        close: vec![42.0; 20],
+        volume: vec![1.0; 20],
+    };
+    let flat_out = srsi.batch(&flat.views(), &ps).expect("flat batch runs");
+    assert!(flat_out.values.iter().all(Option::is_none));
+    assert!(flat_out
+        .secondary
+        .iter()
+        .all(|leg| leg.name == "d" && leg.values.iter().all(Option::is_none)));
+}

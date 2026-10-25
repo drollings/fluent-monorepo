@@ -476,3 +476,7 @@ mod pine_integration_lite_tests;
 #[cfg(all(test, feature = "pine"))]
 #[path = "../tests/pine_task_indicators.rs"]
 mod pine_task_indicators_tests;
+
+#[cfg(all(test, feature = "pine"))]
+#[path = "../tests/pine_integration_lite_strategy.rs"]
+mod pine_integration_lite_strategy_tests;

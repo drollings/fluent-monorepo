@@ -465,3 +465,7 @@ impl Describable for ThemeKindColor<'_> {
         })
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/taxonomy_single_truth.rs"]
+mod taxonomy_single_truth_tests;

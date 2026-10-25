@@ -2126,12 +2126,12 @@ pub const EGUI_PARITY: &[EguiParityRow] = &[
     EguiParityRow {
         construct: "strategy.* (live orders)",
         egui: "reference (external, not in this tree): runtime/strategy_exec.rs: call_strategy_method (entry/exit/close/position reads)",
-        protopyne: "pine eval.rs :: call_method (no strategy namespace)",
+        protopyne: "pine eval.rs :: strategy.* observation recording (entry/exit/close/close_all record into RunOutcome; order flow refuses naming the matrix)",
         verdict: ParityVerdict::Refuse,
         evidence: ParityEvidence::ProbeRuns,
-        reason: "live order submission has no headless meaning; entries route through the venue layer, never the script engine",
-        probe: Some("strategy.entry(\"L\", \"long\")"),
-        refusal: Some("unknown method 'strategy.entry'"),
+        reason: "live order submission has no headless meaning; order flow refuses while entries route through the venue layer, never the script engine",
+        probe: Some("strategy.order(\"O\", strategy.long, 1)"),
+        refusal: Some("strategy call strategy.order is outside the harness matrix (Supported: entry, exit, close, close_all, closedtrades.size, closedtrades.exit_comment)"),
     },
     // ---- Script metadata ----
     EguiParityRow {

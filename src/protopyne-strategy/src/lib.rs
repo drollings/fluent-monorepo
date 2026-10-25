@@ -13,17 +13,20 @@
 pub mod activity;
 pub mod economics;
 pub mod elements;
+pub mod equity;
 pub mod error;
 /// The one grant fixture for test targets (crate tests and `test-support`).
 #[cfg(any(test, feature = "test-support"))]
 pub mod fixtures;
 pub mod generator;
 pub mod grant;
+pub mod integration_lite;
 pub mod ledger;
 pub mod legs;
 pub mod proposal;
 pub mod risk;
 pub mod signals_kernel;
+pub mod signals_lite;
 #[cfg(feature = "pine")]
 pub mod signals_pine;
 pub mod view;
@@ -41,6 +44,12 @@ pub use elements::{
     ProfitTarget, ProposeInput, Signal, SignalConfig, SignalInstance, SignalOutput, Sizing,
     SizingCaps, StopLoss, Strategy, StructureRefusal, StructureRequest, StructureSelection,
     StructureSelector, TimeStop, VolatilityScaled,
+};
+pub use equity::{
+    breakeven_price, clamp_stop, normalize_tp_weights, ratchet_stop, stop_distance_atr,
+    stop_distance_pct, stop_distance_swing, trail_chandelier, trail_percent, trail_ribbon_edge,
+    CooldownGate, DailyLimits, EquitySizer, EquityStopLoss, EquityTarget, GateMonitor, PartialOnce,
+    SessionGate,
 };
 pub use error::StrategyError;
 pub use generator::{

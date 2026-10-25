@@ -1,6 +1,6 @@
-//! Oscillators: `rsi`, `macd`, `stoch`.
+//! Oscillators: `rsi`, `macd`, `stoch`, `srsi`.
 //!
-//! All three follow the published Pine formulations: RSI is Wilder-smoothed
+//! All four follow the published Pine formulations: RSI is Wilder-smoothed
 //! gains over losses (`100 - 100/(1 + rma(u)/rma(d))`, `0/0` staying `na` on
 //! flat markets); MACD is fast/slow EMA convergence with an EMA signal line;
 //! stochastics pair the raw `%K` with its 3-bar SMA (`%D`). Composite legs
@@ -12,7 +12,7 @@ use crate::ema::EmaIndicator;
 use crate::error::KernelError;
 use crate::indicator::{
     fin_or_none, nan_hole, BarTick, FullTick, Indicator, IndicatorId, IndicatorResult,
-    IndicatorSpec, IndicatorState, NamedSeries, NamedValue, Ohlcv, ParamSet,
+    IndicatorSpec, IndicatorState, NamedSeries, NamedValue, Ohlcv, OwnedOhlcv, ParamSet,
 };
 use crate::sma::SmaIndicator;
 
@@ -406,6 +406,146 @@ impl Indicator for StochIndicator {
                 value: d,
             }],
         })
+    }
+}
+
+/// Stochastic RSI (`srsi`): `ta.stoch` over a fixed RSI-14 relay, mirroring
+/// the shipped `normalizeOsc` SRSI arm (`rsi = ta.rsi(src, 14)` then
+/// `ta.stoch(rsi, rsi, rsi, length)`).
+///
+/// The RSI window is Pine-fixed at 14: the caller's `length` sizes only the
+/// stochastic window, so a fast-leg dial can never move the relay (pinned by
+/// `srsi_ignores_fast_leg_window`). The relay carries the RSI series on
+/// every OHLC leg (holes as `NaN`, so the stochastic na-policy keeps gaps as
+/// gaps); volume is unread by the stochastic leg. Like every composed kernel
+/// (see MACD), batch and incremental paths share the child recurrences
+/// through `IndicatorState` children — an RSI child and a stochastic child —
+/// never a second implementation. The warmup stacks both legs: the RSI seed
+/// plus the stochastic window.
+pub struct SrsiIndicator {
+    spec: IndicatorSpec,
+}
+
+impl SrsiIndicator {
+    /// Stable registry id.
+    pub const ID: &'static str = "srsi";
+
+    /// The Pine-fixed RSI window behind the relay. Not the caller's
+    /// `length`: that sizes the stochastic window only.
+    pub const RSI_LENGTH: usize = 14;
+
+    /// Describe the kernel.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            spec: IndicatorSpec::new()
+                .id(Self::ID.to_owned())
+                .display_name("Stochastic RSI".to_owned())
+                .warmup_bars(1_usize)
+                .depends(vec![RsiIndicator::ID.to_owned()])
+                .build(),
+        }
+    }
+
+    /// Validate the `length` parameter shared by batch and update paths.
+    pub fn period(params: &ParamSet) -> Result<usize, KernelError> {
+        crate::math::period_len(Self::ID, params, "length")
+    }
+
+    /// RSI parameters: Pine-fixed window, never the caller's length.
+    fn rsi_params() -> ParamSet {
+        ParamSet::new().with_int("length", Self::RSI_LENGTH as i64)
+    }
+
+    /// Relay frame: every OHLC leg carries the RSI series. Holes ride as
+    /// `NaN`, so a warming RSI propagates `na` through the stochastic legs
+    /// instead of fabricating a window.
+    fn relay(rsi: &[Option<f64>]) -> OwnedOhlcv {
+        let leg: Vec<f64> = rsi.iter().map(|slot| nan_hole(*slot)).collect();
+        OwnedOhlcv {
+            open: leg.clone(),
+            high: leg.clone(),
+            low: leg.clone(),
+            close: leg,
+            volume: vec![0.0; rsi.len()],
+        }
+    }
+}
+
+impl Default for SrsiIndicator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Indicator for SrsiIndicator {
+    fn spec(&self) -> &IndicatorSpec {
+        &self.spec
+    }
+
+    fn refine_warmup(&self, params: &ParamSet) -> Result<Option<usize>, KernelError> {
+        // RSI seed (fixed 14) plus one bar: %K needs two distinct relay
+        // closes, and the second cannot arrive before the relay's first
+        // valid bar. Longer stochastic windows dominate via the batch loop
+        // floor, never the relay.
+        Ok(Some(Self::period(params)?.max(Self::RSI_LENGTH + 2)))
+    }
+
+    fn batch(&self, data: &Ohlcv<'_>, params: &ParamSet) -> Result<IndicatorResult, KernelError> {
+        let period = Self::period(params)?;
+        let rsi = RsiIndicator::new();
+        let rsi_values = rsi.batch(data, &Self::rsi_params())?.values;
+        let relay = Self::relay(&rsi_values);
+        let stoch = StochIndicator::new();
+        let result = stoch.batch(
+            &relay.views(),
+            &ParamSet::new().with_int("length", period as i64),
+        )?;
+        Ok(
+            IndicatorResult::new(Self::ID.to_owned(), result.values).with_secondary(
+                result
+                    .secondary
+                    .into_iter()
+                    .find(|series| series.name == "d")
+                    .expect("stochastic carries its smoothing leg"),
+            ),
+        )
+    }
+
+    fn update(
+        &self,
+        state: &mut IndicatorState,
+        bar: BarTick,
+        params: &ParamSet,
+    ) -> Result<Option<f64>, KernelError> {
+        Ok(self.update_full(state, bar, params)?.primary)
+    }
+
+    fn update_full(
+        &self,
+        state: &mut IndicatorState,
+        bar: BarTick,
+        params: &ParamSet,
+    ) -> Result<FullTick, KernelError> {
+        let period = state.resolved(|| Self::period(params))?;
+        let rsi = RsiIndicator::new();
+        let (rsi_child, rsi_params) = state.child_with_params(0, Self::rsi_params);
+        let rsi_value = rsi.update(rsi_child, bar, rsi_params)?;
+        let stoch = StochIndicator::new();
+        let (stoch_child, stoch_params) =
+            state.child_with_params(1, || ParamSet::new().with_int("length", period as i64));
+        let relay = BarTick::close_only(nan_hole(rsi_value));
+        let tick = stoch.update_full(stoch_child, relay, stoch_params)?;
+        state.set_last(nan_hole(tick.primary));
+        Ok(tick)
+    }
+
+    fn deps_with_params(&self, _params: &ParamSet) -> Vec<(IndicatorId, ParamSet)> {
+        // The RSI leg reads frame closes when co-requested; the stochastic
+        // leg smooths the intermediate relay series and stays inline — it
+        // reads no shared frame, so sharing it would need a second data
+        // flow, not an edge.
+        vec![(RsiIndicator::ID.to_owned(), Self::rsi_params())]
     }
 }
 

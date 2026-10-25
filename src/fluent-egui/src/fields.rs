@@ -3,9 +3,13 @@
 //! Every control-plane struct derives `FieldAccess` + `Describable`, so its
 //! `describe()` document already names each field, its type, its hint, its
 //! declared numeric range, and — through the `x-tab` extension — the tab it
-//! belongs on. This module reads that document once into [`SchemaField`]s
-//! and paints one editor per field, so a control renders from its schema
-//! and a new field appears in the UI without a UI edit.
+//! belongs on. Pine `group`/`inline`/`tooltip`/`step` metadata rides the same
+//! document as `x-group`/`x-inline`/`x-tooltip`/`x-step`: the lift carries
+//! them, the painters below render them (section headers, shared rows, hover
+//! help, drag sensitivity), and no second renderer exists for one indicator.
+//! This module reads that document once into [`SchemaField`]s and paints one
+//! editor per field, so a control renders from its schema and a new field
+//! appears in the UI without a UI edit.
 //!
 //! The widget follows the metadata: a number with a finite closed range
 //! earns a bounded slider, a number without one keeps the drag value, a
@@ -104,6 +108,21 @@ pub struct SchemaField {
     /// [`classify_schema_field`], so a domain schema can place its own
     /// display knobs without teaching this router domain vocabulary.
     pub explicit_tab: Option<SettingsTab>,
+    /// Section this field renders under, from the schema's `x-group` hint
+    /// (Pine `group`). `None` renders with no header; schemas that carry no
+    /// groups paint exactly as before.
+    pub group: Option<String>,
+    /// Row marker from the schema's `x-inline` hint (Pine `inline`).
+    /// Consecutive fields sharing one marker render on one shared row via
+    /// [`inline_runs`]; `None` keeps the field on its own row.
+    pub inline_group: Option<String>,
+    /// Hover help from the schema's `x-tooltip` hint (Pine `tooltip`),
+    /// rendered after the description in the field's hover text.
+    pub tooltip: Option<String>,
+    /// Drag sensitivity from the schema's `x-step` hint (Pine `step`),
+    /// applied to the unbounded drag editors. Sliders stay continuous and
+    /// never snap: the field's own contract stays the only bound.
+    pub step: Option<f64>,
 }
 
 /// Every field in `schema`, in schema order. Properties are read from the
@@ -144,10 +163,22 @@ pub fn schema_fields(schema: &serde_json::Value) -> Vec<SchemaField> {
                     max_len: usize_hint(hint.get("maxLength")),
                     options: enum_hint(hint.get("enum")),
                     explicit_tab: tab_hint(hint.get("x-tab")),
+                    group: text_hint(hint.get("x-group")),
+                    inline_group: text_hint(hint.get("x-inline")),
+                    tooltip: text_hint(hint.get("x-tooltip")),
+                    step: number_hint(hint.get("x-step")),
                 })
                 .collect()
         })
         .unwrap_or_default()
+}
+
+/// A Pine display string (`x-group`, `x-inline`, `x-tooltip`): surrounding
+/// space ignored, empty reads as absent so no empty section header or shared
+/// row ever renders from a blank spelling.
+fn text_hint(hint: Option<&serde_json::Value>) -> Option<String> {
+    let text = hint?.as_str()?.trim();
+    (!text.is_empty()).then(|| text.to_owned())
 }
 
 /// A declared numeric bound, whether the schema spells it as a JSON number
@@ -294,6 +325,56 @@ pub fn fields_for_tab(fields: &[SchemaField], tab: SettingsTab) -> Vec<SchemaFie
         .collect()
 }
 
+/// Section order for one tab's fields: the first-seen `x-group` of each
+/// field, `None` for ungrouped fields kept in place. Headers render in this
+/// order, so a schema that never names a group yields at most one entry
+/// and paints no headers at all.
+#[must_use]
+pub fn groups_in_order(fields: &[SchemaField]) -> Vec<Option<String>> {
+    let mut order = Vec::new();
+    for field in fields {
+        if !order.contains(&field.group) {
+            order.push(field.group.clone());
+        }
+    }
+    order
+}
+
+/// The fields of one section, in schema order.
+#[must_use]
+pub fn fields_for_group(fields: &[SchemaField], group: &Option<String>) -> Vec<SchemaField> {
+    fields
+        .iter()
+        .filter(|field| &field.group == group)
+        .cloned()
+        .collect()
+}
+
+/// Shared-row runs for one tab's fields: consecutive fields carrying the
+/// same `x-inline` marker render on one row, in schema order. A field with
+/// no marker is its own run and keeps its own row. A marker never reaches
+/// across an unmarked field, so an inline row is exactly the consecutive
+/// run the schema spelled.
+#[must_use]
+pub fn inline_runs(fields: &[SchemaField]) -> Vec<Vec<SchemaField>> {
+    let mut runs: Vec<Vec<SchemaField>> = Vec::new();
+    for field in fields {
+        let shared = field.inline_group.is_some()
+            && runs.last().is_some_and(|run: &Vec<SchemaField>| {
+                run.last()
+                    .is_some_and(|last| last.inline_group == field.inline_group)
+            });
+        if shared {
+            runs.last_mut()
+                .expect("shared run exists")
+                .push(field.clone());
+        } else {
+            runs.push(vec![field.clone()]);
+        }
+    }
+    runs
+}
+
 /// Project a style-component schema down to the keys one slot paints.
 ///
 /// The style component's whole schema is the same override block for every
@@ -432,6 +513,8 @@ pub fn paint_schema_fields(
 
 /// The one field-row layout. A set `label_width` fixes the label column (the
 /// compact editor); `None` lets the label size to its text (the default).
+/// Grouped fields render under one strong section header per `x-group`,
+/// emitted ahead of the group's first row; inline runs share a row.
 fn paint_schema_fields_sized(
     ui: &mut egui::Ui,
     fields: &[SchemaField],
@@ -439,36 +522,73 @@ fn paint_schema_fields_sized(
     label_width: Option<f32>,
 ) -> FieldEdits {
     let mut edits = FieldEdits::default();
-    for field in fields {
-        ui.horizontal(|row| {
-            match label_width {
-                Some(width) => {
-                    row.add_sized([width, COMPACT_ROW_HEIGHT], egui::Label::new(&field.name))
-                        .on_hover_text(bounds_hint(field));
+    let mut headed: Option<String> = None;
+    let mut started = false;
+    for run in inline_runs(fields) {
+        let Some(first) = run.first() else {
+            continue;
+        };
+        if let Some(group) = first.group.as_deref() {
+            if headed.as_deref() != Some(group) {
+                if started {
+                    ui.separator();
                 }
-                None => {
-                    row.label(&field.name).on_hover_text(bounds_hint(field));
-                }
+                ui.label(egui::RichText::new(group).strong());
+                headed = Some(group.to_owned());
             }
-            paint_one(row, field, target, &mut edits);
+        }
+        started = true;
+        ui.horizontal(|row| {
+            for field in &run {
+                paint_label(row, field, label_width);
+                paint_one(row, field, target, &mut edits);
+            }
         });
     }
     edits
 }
 
-/// Hover text for one field: the schema description plus the declared
-/// bounds the field's own contract enforces. Bounds are display only — the
-/// refusal still comes from `set_field`, never from clamping or from
-/// binding the widget to the bound (which would make out-of-range input
-/// unreachable instead of visibly refused).
+/// One field's label with the schema hover help.
+fn paint_label(row: &mut egui::Ui, field: &SchemaField, label_width: Option<f32>) {
+    match label_width {
+        Some(width) => {
+            row.add_sized([width, COMPACT_ROW_HEIGHT], egui::Label::new(&field.name))
+                .on_hover_text(bounds_hint(field));
+        }
+        None => {
+            row.label(&field.name).on_hover_text(bounds_hint(field));
+        }
+    }
+}
+
+/// Hover text for one field: the schema description, then the Pine tooltip
+/// when the schema carries one, plus the declared bounds the field's own
+/// contract enforces. Bounds are display only — the refusal still comes
+/// from `set_field`, never from clamping or from binding the widget to the
+/// bound (which would make out-of-range input unreachable instead of
+/// visibly refused).
 fn bounds_hint(field: &SchemaField) -> String {
     let mut hint = field.description.clone();
+    if let Some(tooltip) = field.tooltip.as_deref() {
+        let tooltip = tooltip.trim();
+        if !tooltip.is_empty() {
+            if !hint.is_empty() {
+                hint.push_str(". ");
+            }
+            hint.push_str(tooltip);
+        }
+    }
     let mut bounds = Vec::new();
     if let Some(minimum) = field.minimum {
         bounds.push(format!("min {minimum}"));
     }
     if let Some(maximum) = field.maximum {
         bounds.push(format!("max {maximum}"));
+    }
+    if let Some(step) = field.step {
+        if step.is_finite() && step > 0.0 {
+            bounds.push(format!("step {step}"));
+        }
     }
     if let Some(max_len) = field.max_len {
         bounds.push(format!("max length {max_len}"));
@@ -541,6 +661,17 @@ fn paint_one(
     }
 }
 
+/// Drag sensitivity for the unbounded editors: the schema's `x-step`
+/// when it names a positive finite stride (the Pine `step` the dial
+/// already documents), else the long-standing default. Sensitivity never
+/// decides a value — every edit still travels to `set_field` unclamped.
+fn drag_speed(field: &SchemaField, fallback: f64) -> f64 {
+    field
+        .step
+        .filter(|step| step.is_finite() && *step > 0.0)
+        .unwrap_or(fallback)
+}
+
 /// A whole-number editor: a bounded slider when the schema declares a
 /// finite closed range, the unbounded drag value otherwise.
 ///
@@ -571,7 +702,9 @@ fn edit_integer(
         return changed.then(|| value.to_string());
     }
     let mut value = value;
-    let changed = row.add(egui::DragValue::new(&mut value).speed(1)).changed();
+    let changed = row
+        .add(egui::DragValue::new(&mut value).speed(drag_speed(field, 1.0)))
+        .changed();
     changed.then(|| value.to_string())
 }
 
@@ -627,7 +760,7 @@ fn edit_number(
     }
     let mut value = value;
     let changed = row
-        .add(egui::DragValue::new(&mut value).speed(0.01))
+        .add(egui::DragValue::new(&mut value).speed(drag_speed(field, 0.01)))
         .changed();
     if !changed {
         return None;

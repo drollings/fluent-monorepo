@@ -338,6 +338,10 @@ fn tab_field(name: &str, kind: FieldKind) -> SchemaField {
         max_len: None,
         options: Vec::new(),
         explicit_tab: None,
+        group: None,
+        inline_group: None,
+        tooltip: None,
+        step: None,
     }
 }
 
@@ -621,6 +625,10 @@ fn an_infinite_bound_falls_back_to_the_unbounded_editor() {
         max_len: None,
         options: Vec::new(),
         explicit_tab: None,
+        group: None,
+        inline_group: None,
+        tooltip: None,
+        step: None,
     }];
     let mut control = BothBoundedProbe { count: 4 };
     egui::__run_test_ui(|ui| {
@@ -673,6 +681,10 @@ fn tint_field() -> SchemaField {
         max_len: None,
         options: Vec::new(),
         explicit_tab: None,
+        group: None,
+        inline_group: None,
+        tooltip: None,
+        step: None,
     }
 }
 
@@ -727,4 +739,156 @@ fn an_unreadable_tint_paints_no_stand_in_color() {
         inherit_fills.contains(&neutral),
         "the empty inherit case keeps its neutral start: {inherit_fills:?}"
     );
+}
+
+#[test]
+fn pine_group_hints_lift_into_schema_fields() {
+    // Pine `group`/`inline`/`tooltip`/`step` ride the schema as data, next
+    // to the existing `x-tab` pin: the lift carries them, the painters
+    // below render them, and no second renderer exists for one indicator.
+    let lifted = schema_fields(&serde_json::json!({"properties": {
+        "alpha_low": {
+            "type": "number", "minimum": 0.03, "maximum": 1.0,
+            "description": "Low", "x-group": "Trend Ribbon",
+            "x-inline": "adaptive", "x-tooltip": "Weak-leg shading",
+            "x-step": 0.02
+        },
+        "plain": {"type": "number", "description": "Ungrouped"}
+    }}));
+    assert_eq!(lifted.len(), 2);
+    let ribbon = lifted
+        .iter()
+        .find(|field| field.name == "alpha_low")
+        .expect("grouped field lifts");
+    assert_eq!(ribbon.group.as_deref(), Some("Trend Ribbon"));
+    assert_eq!(ribbon.inline_group.as_deref(), Some("adaptive"));
+    assert_eq!(ribbon.tooltip.as_deref(), Some("Weak-leg shading"));
+    assert_eq!(ribbon.step, Some(0.02));
+    let plain = lifted
+        .iter()
+        .find(|field| field.name == "plain")
+        .expect("plain field lifts");
+    assert_eq!(plain.group, None);
+    assert_eq!(plain.inline_group, None);
+    assert_eq!(plain.tooltip, None);
+    assert_eq!(plain.step, None);
+    // Empty spellings degrade to absent, never to an empty section header.
+    let blank = schema_fields(&serde_json::json!({"properties": {
+        "dial": {"type": "number", "x-group": "  ", "x-inline": "",
+                 "x-tooltip": "", "x-step": "not-a-number"}
+    }}));
+    assert_eq!(blank[0].group, None);
+    assert_eq!(blank[0].inline_group, None);
+    assert_eq!(blank[0].tooltip, None);
+    assert_eq!(blank[0].step, None);
+}
+
+#[test]
+fn groups_partition_the_schema_in_first_seen_order() {
+    // Property order is name order here: a_two ungrouped first, then the
+    // two Ribbon fields, so first-seen order is ungrouped then Ribbon.
+    let fields = schema_fields(&serde_json::json!({"properties": {
+        "m_one": {"type": "number", "x-group": "Ribbon"},
+        "a_two": {"type": "number"},
+        "z_three": {"type": "number", "x-group": "Ribbon"}
+    }}));
+    let order = groups_in_order(&fields);
+    assert_eq!(
+        order,
+        vec![None, Some("Ribbon".to_owned())],
+        "first-seen group order, ungrouped kept in place"
+    );
+    let ribbon = fields_for_group(&fields, &Some("Ribbon".to_owned()));
+    assert_eq!(ribbon.len(), 2);
+    let ungrouped = fields_for_group(&fields, &None);
+    assert_eq!(ungrouped.len(), 1);
+}
+
+#[test]
+fn inline_runs_share_a_row_only_with_the_same_marker() {
+    let fields = schema_fields(&serde_json::json!({"properties": {
+        "a": {"type": "number", "x-inline": "row"},
+        "b": {"type": "number", "x-inline": "row"}
+    }}));
+    let runs = inline_runs(&fields);
+    assert_eq!(runs.len(), 1, "one shared row for one marker");
+    assert_eq!(runs[0].len(), 2);
+    let split = schema_fields(&serde_json::json!({"properties": {
+        "a": {"type": "number", "x-inline": "row"}
+    }}));
+    let split = split
+        .into_iter()
+        .chain(schema_fields(&serde_json::json!({"properties": {
+            "b": {"type": "number", "x-inline": "other"}
+        }})))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        inline_runs(&split).len(),
+        2,
+        "a different marker starts a new row"
+    );
+}
+
+#[test]
+fn tooltip_reaches_the_hover_text_and_step_stays_numeric() {
+    let lifted = schema_fields(&serde_json::json!({"properties": {
+        "alpha_low": {"type": "number", "description": "Low",
+                      "x-tooltip": "Weak-leg shading", "x-step": 0.02}
+    }}));
+    let hint = bounds_hint(&lifted[0]);
+    assert!(
+        hint.contains("Weak-leg shading"),
+        "the Pine tooltip is what the hover explains: {hint:?}"
+    );
+    assert!(
+        hint.contains("Low"),
+        "the short description stays first: {hint:?}"
+    );
+}
+
+#[test]
+fn grouped_sections_paint_their_headers_and_their_editors() {
+    // Headers are text in the frame, painted once per group ahead of that
+    // group's editors; schemas without groups paint no headers at all.
+    let fields = schema_fields(&serde_json::json!({"properties": {
+        "alpha_low": {"type": "number", "description": "Low",
+                      "minimum": 0, "maximum": 1, "x-group": "Trend Ribbon"}
+    }}));
+    #[derive(Debug, Clone, PartialEq, FieldAccess, Describable)]
+    struct GroupProbe {
+        #[field(desc = "Low", min = 0, max = 1)]
+        alpha_low: f64,
+    }
+    let mut control = GroupProbe { alpha_low: 0.14 };
+    let ctx = egui::Context::default();
+    let mut output = ctx.run_ui(egui::RawInput::default(), |root| {
+        egui::CentralPanel::default().show(root, |ui| {
+            paint_schema_fields(ui, &fields, &mut control);
+        });
+    });
+    output.textures_delta.clear();
+    let texts = painted_texts(&output);
+    assert!(
+        texts.iter().any(|text| text == "Trend Ribbon"),
+        "the group header paints once: {texts:?}"
+    );
+    assert_eq!(
+        texts.iter().filter(|text| *text == "Trend Ribbon").count(),
+        1,
+        "one header per group, not per field: {texts:?}"
+    );
+    assert!(
+        texts.iter().any(|text| text.contains("alpha_low")),
+        "the grouped editor still paints: {texts:?}"
+    );
+    // No group hints: no headers, today's panes byte-identical.
+    let bare = schema_fields(&tab_probe().describe());
+    let mut probe = tab_probe();
+    let mut bare_out = ctx.run_ui(egui::RawInput::default(), |root| {
+        egui::CentralPanel::default().show(root, |ui| {
+            paint_schema_fields(ui, &bare, &mut probe);
+        });
+    });
+    bare_out.textures_delta.clear();
+    assert_eq!(probe, tab_probe(), "an untouched frame writes nothing");
 }

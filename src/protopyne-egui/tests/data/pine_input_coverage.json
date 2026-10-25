@@ -1,0 +1,1130 @@
+[
+ {
+  "pine": "i_delta_candles_show",
+  "kind": "bool",
+  "group": "Delta Volume Candles",
+  "status": "mapped",
+  "native": "delta_show",
+  "note": "Paints the buy/sell delta histogram around zero"
+ },
+ {
+  "pine": "i_volume_color_bull",
+  "kind": "color",
+  "group": "Delta Volume Candles",
+  "status": "mapped",
+  "native": "delta_bull",
+  "note": "Bull-side delta histogram color at script transparency 60"
+ },
+ {
+  "pine": "i_volume_color_bear",
+  "kind": "color",
+  "group": "Delta Volume Candles",
+  "status": "mapped",
+  "native": "delta_bear",
+  "note": "Bear-side delta histogram color at script transparency 60"
+ },
+ {
+  "pine": "i_delta_vol_unit",
+  "kind": "float",
+  "group": "Delta Volume Candles",
+  "status": "mapped",
+  "native": "delta_unit",
+  "note": "display-scale fork: native default 80 vs script 300; 300 reachable as dial stop"
+ },
+ {
+  "pine": "i_ribbon_show",
+  "kind": "bool",
+  "group": "Trend Ribbon",
+  "status": "mapped",
+  "native": "show_ribbon",
+  "note": "paints the ribbon on the main pane when set"
+ },
+ {
+  "pine": "i_ribbon_alpha_low",
+  "kind": "float",
+  "group": "Trend Ribbon",
+  "status": "mapped",
+  "native": "ribbon_alpha_low",
+  "note": "Adaptive alpha span low end; display-only until per-bar adaptive alpha lands with the multi-timeframe tape"
+ },
+ {
+  "pine": "i_ribbon_alpha_high",
+  "kind": "float",
+  "group": "Trend Ribbon",
+  "status": "mapped",
+  "native": "ribbon_alpha_high",
+  "note": "Adaptive alpha span high end; display-only until per-bar adaptive alpha lands"
+ },
+ {
+  "pine": "i_ribbon_color_bull",
+  "kind": "color",
+  "group": "Trend Ribbon",
+  "status": "mapped",
+  "native": "ribbon_bull",
+  "note": "Bull-side ribbon fill color at script transparency 60"
+ },
+ {
+  "pine": "i_ribbon_color_bear",
+  "kind": "color",
+  "group": "Trend Ribbon",
+  "status": "mapped",
+  "native": "ribbon_bear",
+  "note": "Bear-side ribbon fill color at script transparency 60"
+ },
+ {
+  "pine": "i_ribbon_signal_type",
+  "kind": "enum",
+  "group": "Trend Ribbon",
+  "status": "mapped",
+  "native": "signal_type",
+  "note": "Smoothing family of the ribbon signal leg"
+ },
+ {
+  "pine": "i_ribbon_signal_period",
+  "kind": "int",
+  "group": "Trend Ribbon",
+  "status": "mapped",
+  "native": "signal_period",
+  "note": "Window of the ribbon signal leg"
+ },
+ {
+  "pine": "i_ribbon_signal_param1",
+  "kind": "float",
+  "group": "Trend Ribbon",
+  "status": "mapped",
+  "native": "signal_param1",
+  "note": "EIT alpha or ALMA offset of the signal leg"
+ },
+ {
+  "pine": "i_ribbon_mean_type",
+  "kind": "enum",
+  "group": "Trend Ribbon",
+  "status": "mapped",
+  "native": "mean_type",
+  "note": "Smoothing family of the ribbon mean leg"
+ },
+ {
+  "pine": "i_ribbon_mean_period",
+  "kind": "int",
+  "group": "Trend Ribbon",
+  "status": "mapped",
+  "native": "mean_period",
+  "note": "Window of the ribbon mean leg"
+ },
+ {
+  "pine": "i_ribbon_mean_param1",
+  "kind": "float",
+  "group": "Trend Ribbon",
+  "status": "mapped",
+  "native": "mean_param1",
+  "note": "EIT alpha or ALMA offset of the mean leg"
+ },
+ {
+  "pine": "i_ribbon_health_show",
+  "kind": "bool",
+  "group": "Trend Ribbon",
+  "status": "mapped",
+  "native": "ribbon_health_show",
+  "note": "Ribbon-health leg visibility on the sub-pane"
+ },
+ {
+  "pine": "i_ribbon_health_k",
+  "kind": "float",
+  "group": "Trend Ribbon",
+  "status": "mapped",
+  "native": "ribbon_health_k",
+  "note": "task-value display gain, never producer confidence"
+ },
+ {
+  "pine": "i_ma_health_show",
+  "kind": "bool",
+  "group": "Trend Ribbon",
+  "status": "mapped",
+  "native": "ma_health_show",
+  "note": "MA-health leg visibility on the sub-pane"
+ },
+ {
+  "pine": "i_ma_health_k",
+  "kind": "float",
+  "group": "Trend Ribbon",
+  "status": "mapped",
+  "native": "ma_health_k",
+  "note": "task-value display gain, never producer confidence"
+ },
+ {
+  "pine": "i_pivots_show",
+  "kind": "bool",
+  "group": "Trend Ribbon",
+  "status": "mapped",
+  "native": "pivots_show",
+  "note": "Pivot dots and the shared-pane threshold rule"
+ },
+ {
+  "pine": "i_pivots_threshold",
+  "kind": "int",
+  "group": "Trend Ribbon",
+  "status": "mapped",
+  "native": "pivot_threshold",
+  "note": "frozen default 100 vs script 200; 200 reachable as dial stop"
+ },
+ {
+  "pine": "i_pivots_lookback",
+  "kind": "int",
+  "group": "Trend Ribbon",
+  "status": "mapped",
+  "native": "pivots_lookback",
+  "note": "Pivot confirmation lookback; stored until the extreme-labeling detector lands"
+ },
+ {
+  "pine": "i_oscillator1_show",
+  "kind": "bool",
+  "group": "Oscillator 1 Settings",
+  "status": "mapped",
+  "native": "osc_show",
+  "note": "Fast/slow oscillator leg visibility on the sub-pane"
+ },
+ {
+  "pine": "i_oscillator1_brightness",
+  "kind": "int",
+  "group": "Oscillator 1 Settings",
+  "status": "mapped",
+  "native": "brightness",
+  "note": "Leg brightness, script dims by 90 minus brightness"
+ },
+ {
+  "pine": "i_oscillator1_k",
+  "kind": "float",
+  "group": "Oscillator 1 Settings",
+  "status": "mapped",
+  "native": "fast_k, slow_k",
+  "note": "shared script gain split into per-leg fast_k/slow_k dials"
+ },
+ {
+  "pine": "i_oscillator1_adaptive",
+  "kind": "bool",
+  "group": "Oscillator 1 Settings",
+  "status": "mapped",
+  "native": "adaptive",
+  "note": "Adaptive EIT relay; native default off until multi-timeframe alpha lands"
+ },
+ {
+  "pine": "i_oscillator1_fast_type",
+  "kind": "enum",
+  "group": "Oscillator 1 Settings",
+  "status": "mapped",
+  "native": "fast_kind",
+  "note": "Fast-arm oscillator kind behind the fast leg"
+ },
+ {
+  "pine": "i_oscillator1_fast",
+  "kind": "int",
+  "group": "Oscillator 1 Settings",
+  "status": "mapped",
+  "native": "fast_period",
+  "note": "fast-arm length in bars"
+ },
+ {
+  "pine": "i_oscillator1_fast_smooth_type",
+  "kind": "enum",
+  "group": "Oscillator 1 Settings",
+  "status": "mapped",
+  "native": "fast_smooth_type",
+  "note": "trailing smoothing family for the fast display leg"
+ },
+ {
+  "pine": "i_oscillator1_fast_smooth_period",
+  "kind": "int",
+  "group": "Oscillator 1 Settings",
+  "status": "mapped",
+  "native": "fast_smooth_period",
+  "note": "trailing smoothing window for the fast display leg"
+ },
+ {
+  "pine": "i_oscillator1_slow_type",
+  "kind": "enum",
+  "group": "Oscillator 1 Settings",
+  "status": "mapped",
+  "native": "slow_kind",
+  "note": "slow-arm oscillator kind"
+ },
+ {
+  "pine": "i_oscillator1_slow",
+  "kind": "int",
+  "group": "Oscillator 1 Settings",
+  "status": "mapped",
+  "native": "slow_period",
+  "note": "slow-arm length in bars"
+ },
+ {
+  "pine": "i_oscillator1_slow_smooth_type",
+  "kind": "enum",
+  "group": "Oscillator 1 Settings",
+  "status": "mapped",
+  "native": "slow_smooth_type",
+  "note": "trailing smoothing family for the slow display leg"
+ },
+ {
+  "pine": "i_oscillator1_slow_smooth_period",
+  "kind": "int",
+  "group": "Oscillator 1 Settings",
+  "status": "mapped",
+  "native": "slow_smooth_period",
+  "note": "trailing smoothing window for the slow display leg"
+ },
+ {
+  "pine": "i_candles_color_code",
+  "kind": "bool",
+  "group": "Colors",
+  "status": "mapped",
+  "native": "color_code",
+  "note": "Momentum tint switch; off keeps discrete trend keys"
+ },
+ {
+  "pine": "i_color_bull",
+  "kind": "color",
+  "group": "Colors",
+  "status": "tracked",
+  "native": null,
+  "note": "not yet ported; no native dial; tracked here until the full-config milestone lands it"
+ },
+ {
+  "pine": "i_color_bear",
+  "kind": "color",
+  "group": "Colors",
+  "status": "tracked",
+  "native": null,
+  "note": "not yet ported; no native dial; tracked here until the full-config milestone lands it"
+ },
+ {
+  "pine": "i_color_bull_down",
+  "kind": "color",
+  "group": "Colors",
+  "status": "tracked",
+  "native": null,
+  "note": "not yet ported; no native dial; tracked here until the full-config milestone lands it"
+ },
+ {
+  "pine": "i_color_bear_up",
+  "kind": "color",
+  "group": "Colors",
+  "status": "tracked",
+  "native": null,
+  "note": "not yet ported; no native dial; tracked here until the full-config milestone lands it"
+ },
+ {
+  "pine": "i_tf_low",
+  "kind": "enum",
+  "group": "Configuration",
+  "status": "mapped",
+  "native": "ltf_timeframe",
+  "note": "Lower timeframe for the adaptive alpha; display-only until the multi-timeframe milestone"
+ },
+ {
+  "pine": "i_tf_fetch",
+  "kind": "enum",
+  "group": "Configuration",
+  "status": "mapped",
+  "native": "fetch_timeframe",
+  "note": "Chart timeframe the legs evaluate on"
+ },
+ {
+  "pine": "i_tf_high",
+  "kind": "enum",
+  "group": "Configuration",
+  "status": "mapped",
+  "native": "htf_timeframe",
+  "note": "Higher timeframe for the adaptive alpha; display-only until the multi-timeframe milestone"
+ },
+ {
+  "pine": "i_session_filter",
+  "kind": "bool",
+  "group": "Session Filter",
+  "status": "mapped",
+  "native": "session_filter",
+  "note": "Session gate; enforced once the native signal lands"
+ },
+ {
+  "pine": "i_session",
+  "kind": "session",
+  "group": "Session Filter",
+  "status": "mapped",
+  "native": "session",
+  "note": "Session window; enforced once the native signal lands"
+ },
+ {
+  "pine": "i_mtf_table_show",
+  "kind": "bool",
+  "group": "Multi-Timeframe Table",
+  "status": "mapped",
+  "native": "mtf_table_show",
+  "note": "Multi-timeframe table visibility"
+ },
+ {
+  "pine": "i_mtf_table_position",
+  "kind": "enum",
+  "group": "Multi-Timeframe Table",
+  "status": "mapped",
+  "native": "mtf_table_position",
+  "note": "Multi-timeframe table location"
+ },
+ {
+  "pine": "i_mtf_table_size",
+  "kind": "enum",
+  "group": "Multi-Timeframe Table",
+  "status": "mapped",
+  "native": "mtf_table_size",
+  "note": "Multi-timeframe table size"
+ },
+ {
+  "pine": "i_mtf_table_text",
+  "kind": "color",
+  "group": "Multi-Timeframe Table",
+  "status": "mapped",
+  "native": "mtf_table_text",
+  "note": "Multi-timeframe table foreground at script transparency"
+ },
+ {
+  "pine": "i_mtf_table_bg",
+  "kind": "color",
+  "group": "Multi-Timeframe Table",
+  "status": "mapped",
+  "native": "mtf_table_bg",
+  "note": "Multi-timeframe table background at script transparency"
+ },
+ {
+  "pine": "timeframe1",
+  "kind": "enum",
+  "group": "Multi-Timeframe Selection",
+  "status": "mapped",
+  "native": "mtf_timeframe_1",
+  "note": "First compared timeframe"
+ },
+ {
+  "pine": "timeframe2",
+  "kind": "enum",
+  "group": "Multi-Timeframe Selection",
+  "status": "mapped",
+  "native": "mtf_timeframe_2",
+  "note": "Second compared timeframe"
+ },
+ {
+  "pine": "timeframe3",
+  "kind": "enum",
+  "group": "Multi-Timeframe Selection",
+  "status": "mapped",
+  "native": "mtf_timeframe_3",
+  "note": "Third compared timeframe"
+ },
+ {
+  "pine": "timeframe4",
+  "kind": "enum",
+  "group": "Multi-Timeframe Selection",
+  "status": "mapped",
+  "native": "mtf_timeframe_4",
+  "note": "Fourth compared timeframe"
+ },
+ {
+  "pine": "i_s_enabled",
+  "kind": "bool",
+  "group": "Strategy: General",
+  "status": "mapped",
+  "native": "enabled",
+  "note": "Master switch for entries"
+ },
+ {
+  "pine": "i_s_direction",
+  "kind": "string",
+  "group": "Strategy: General",
+  "status": "mapped",
+  "native": "direction",
+  "note": "Allowed directions"
+ },
+ {
+  "pine": "i_s_allow_reverse",
+  "kind": "bool",
+  "group": "Strategy: General",
+  "status": "mapped",
+  "native": "allow_reverse",
+  "note": "Flip the position on a filtered opposite signal"
+ },
+ {
+  "pine": "i_s_warmup",
+  "kind": "int",
+  "group": "Strategy: General",
+  "status": "mapped",
+  "native": "warmup_bars",
+  "note": "Bars before the first order, so every oscillator is seeded"
+ },
+ {
+  "pine": "i_sig_momentum",
+  "kind": "bool",
+  "group": "Strategy: Entry Signals (any enabled trigger arms an entry)",
+  "status": "mapped",
+  "native": "sig_momentum",
+  "note": "Momentum breakout trigger"
+ },
+ {
+  "pine": "i_sig_entry_level",
+  "kind": "float",
+  "group": "Strategy: Entry Signals (any enabled trigger arms an entry)",
+  "status": "mapped",
+  "native": "sig_entry_level",
+  "note": "Momentum trigger level"
+ },
+ {
+  "pine": "i_sig_adaptive_level",
+  "kind": "bool",
+  "group": "Strategy: Entry Signals (any enabled trigger arms an entry)",
+  "status": "mapped",
+  "native": "sig_adaptive_level",
+  "note": "Use the adaptive threshold instead of the fixed level"
+ },
+ {
+  "pine": "i_sig_exhaust_entry",
+  "kind": "bool",
+  "group": "Strategy: Entry Signals (any enabled trigger arms an entry)",
+  "status": "mapped",
+  "native": "sig_exhaust_entry",
+  "note": "Exhaustion-reversal trigger"
+ },
+ {
+  "pine": "i_sig_ribbon_flip",
+  "kind": "bool",
+  "group": "Strategy: Entry Signals (any enabled trigger arms an entry)",
+  "status": "mapped",
+  "native": "sig_ribbon_flip",
+  "note": "Ribbon-flip trigger"
+ },
+ {
+  "pine": "i_sig_osc_cross",
+  "kind": "bool",
+  "group": "Strategy: Entry Signals (any enabled trigger arms an entry)",
+  "status": "mapped",
+  "native": "sig_osc_cross",
+  "note": "Fast/slow oscillator-cross trigger"
+ },
+ {
+  "pine": "i_sig_exhaust_level",
+  "kind": "float",
+  "group": "Strategy: Entry Signals (any enabled trigger arms an entry)",
+  "status": "mapped",
+  "native": "sig_exhaust_level",
+  "note": "Exhaustion level for exhaustion exits and reversal entries"
+ },
+ {
+  "pine": "i_sig_dual",
+  "kind": "bool",
+  "group": "Strategy: Entry Signals (any enabled trigger arms an entry)",
+  "status": "mapped",
+  "native": "sig_dual",
+  "note": "Dual-oscillator exhaustion trigger"
+ },
+ {
+  "pine": "i_sig_dual_slow",
+  "kind": "float",
+  "group": "Strategy: Entry Signals (any enabled trigger arms an entry)",
+  "status": "mapped",
+  "native": "sig_dual_slow",
+  "note": "Slow-oscillator level for the dual trigger"
+ },
+ {
+  "pine": "i_sig_dual_fast",
+  "kind": "float",
+  "group": "Strategy: Entry Signals (any enabled trigger arms an entry)",
+  "status": "mapped",
+  "native": "sig_dual_fast",
+  "note": "Fast-oscillator level for the dual trigger"
+ },
+ {
+  "pine": "i_sig_dual_lookback",
+  "kind": "int",
+  "group": "Strategy: Entry Signals (any enabled trigger arms an entry)",
+  "status": "mapped",
+  "native": "sig_dual_lookback",
+  "note": "Fast-oscillator lookback for the dual trigger"
+ },
+ {
+  "pine": "i_sig_dual_bypass",
+  "kind": "bool",
+  "group": "Strategy: Entry Signals (any enabled trigger arms an entry)",
+  "status": "mapped",
+  "native": "sig_dual_bypass",
+  "note": "Bypass trend filters for the dual trigger"
+ },
+ {
+  "pine": "i_sig_dual_exit",
+  "kind": "bool",
+  "group": "Strategy: Entry Signals (any enabled trigger arms an entry)",
+  "status": "mapped",
+  "native": "sig_dual_exit",
+  "note": "Dual trigger also fires exhaustion exits"
+ },
+ {
+  "pine": "i_sig_window",
+  "kind": "int",
+  "group": "Strategy: Entry Signals (any enabled trigger arms an entry)",
+  "status": "mapped",
+  "native": "sig_window",
+  "note": "Setup window: a trigger stays armed N more bars"
+ },
+ {
+  "pine": "i_f_ribbon",
+  "kind": "bool",
+  "group": "Strategy: Entry Filters (all enabled filters must pass)",
+  "status": "mapped",
+  "native": "filt_ribbon",
+  "note": "Ribbon-alignment filter"
+ },
+ {
+  "pine": "i_f_mahealth",
+  "kind": "bool",
+  "group": "Strategy: Entry Filters (all enabled filters must pass)",
+  "status": "mapped",
+  "native": "filt_ma_health",
+  "note": "MA-health alignment filter"
+ },
+ {
+  "pine": "i_f_mahealth_min",
+  "kind": "float",
+  "group": "Strategy: Entry Filters (all enabled filters must pass)",
+  "status": "mapped",
+  "native": "filt_ma_health_min",
+  "note": "MA-health minimum"
+ },
+ {
+  "pine": "i_f_ribhealth",
+  "kind": "bool",
+  "group": "Strategy: Entry Filters (all enabled filters must pass)",
+  "status": "mapped",
+  "native": "filt_ribbon_health",
+  "note": "Ribbon-health alignment filter"
+ },
+ {
+  "pine": "i_f_slow",
+  "kind": "bool",
+  "group": "Strategy: Entry Filters (all enabled filters must pass)",
+  "status": "mapped",
+  "native": "filt_slow",
+  "note": "Slow-oscillator side filter"
+ },
+ {
+  "pine": "i_f_slow_min",
+  "kind": "float",
+  "group": "Strategy: Entry Filters (all enabled filters must pass)",
+  "status": "mapped",
+  "native": "filt_slow_min",
+  "note": "Slow-oscillator minimum; may be negative"
+ },
+ {
+  "pine": "i_f_delta",
+  "kind": "bool",
+  "group": "Strategy: Entry Filters (all enabled filters must pass)",
+  "status": "mapped",
+  "native": "filt_delta",
+  "note": "Delta-volume alignment filter"
+ },
+ {
+  "pine": "i_f_delta_len",
+  "kind": "int",
+  "group": "Strategy: Entry Filters (all enabled filters must pass)",
+  "status": "mapped",
+  "native": "filt_delta_len",
+  "note": "Delta-averaging window in bars"
+ },
+ {
+  "pine": "i_f_volume",
+  "kind": "bool",
+  "group": "Strategy: Entry Filters (all enabled filters must pass)",
+  "status": "mapped",
+  "native": "filt_volume",
+  "note": "Minimum relative-volume filter"
+ },
+ {
+  "pine": "i_f_volume_min",
+  "kind": "float",
+  "group": "Strategy: Entry Filters (all enabled filters must pass)",
+  "status": "mapped",
+  "native": "filt_volume_min",
+  "note": "Relative-volume multiple"
+ },
+ {
+  "pine": "i_f_extension",
+  "kind": "bool",
+  "group": "Strategy: Entry Filters (all enabled filters must pass)",
+  "status": "mapped",
+  "native": "filt_extension",
+  "note": "Maximum-distance-from-mean filter"
+ },
+ {
+  "pine": "i_f_extension_max",
+  "kind": "float",
+  "group": "Strategy: Entry Filters (all enabled filters must pass)",
+  "status": "mapped",
+  "native": "filt_extension_max",
+  "note": "Extension limit in ATRs"
+ },
+ {
+  "pine": "i_f_regime_lowvol",
+  "kind": "bool",
+  "group": "Strategy: Entry Filters (all enabled filters must pass)",
+  "status": "mapped",
+  "native": "filt_regime_lowvol",
+  "note": "Skip low-volume-regime bars"
+ },
+ {
+  "pine": "i_f_regime_volatile",
+  "kind": "bool",
+  "group": "Strategy: Entry Filters (all enabled filters must pass)",
+  "status": "mapped",
+  "native": "filt_regime_volatile",
+  "note": "Skip volatile-regime bars"
+ },
+ {
+  "pine": "i_r_size_mode",
+  "kind": "string",
+  "group": "Strategy: Position Size & Initial Stop",
+  "status": "mapped",
+  "native": "size_mode",
+  "note": "Sizing mode"
+ },
+ {
+  "pine": "i_r_risk_pct",
+  "kind": "float",
+  "group": "Strategy: Position Size & Initial Stop",
+  "status": "mapped",
+  "native": "risk_pct",
+  "note": "Risk percent of equity per trade"
+ },
+ {
+  "pine": "i_r_size_pct",
+  "kind": "float",
+  "group": "Strategy: Position Size & Initial Stop",
+  "status": "mapped",
+  "native": "size_pct",
+  "note": "Notional percent of equity per trade"
+ },
+ {
+  "pine": "i_r_fixed_qty",
+  "kind": "float",
+  "group": "Strategy: Position Size & Initial Stop",
+  "status": "mapped",
+  "native": "fixed_qty",
+  "note": "Fixed quantity per trade"
+ },
+ {
+  "pine": "i_r_max_notional",
+  "kind": "float",
+  "group": "Strategy: Position Size & Initial Stop",
+  "status": "mapped",
+  "native": "max_notional_pct",
+  "note": "Hard notional cap per trade"
+ },
+ {
+  "pine": "i_r_atr_len",
+  "kind": "int",
+  "group": "Strategy: Position Size & Initial Stop",
+  "status": "mapped",
+  "native": "risk_atr_len",
+  "note": "ATR length behind the risk stop"
+ },
+ {
+  "pine": "i_r_stop_type",
+  "kind": "string",
+  "group": "Strategy: Position Size & Initial Stop",
+  "status": "mapped",
+  "native": "stop_type",
+  "note": "Initial-stop construction"
+ },
+ {
+  "pine": "i_r_stop_atr",
+  "kind": "float",
+  "group": "Strategy: Position Size & Initial Stop",
+  "status": "mapped",
+  "native": "stop_atr_mult",
+  "note": "ATR multiple for ATR stops"
+ },
+ {
+  "pine": "i_r_stop_pct",
+  "kind": "float",
+  "group": "Strategy: Position Size & Initial Stop",
+  "status": "mapped",
+  "native": "stop_pct",
+  "note": "Percent distance for percent stops"
+ },
+ {
+  "pine": "i_r_swing_len",
+  "kind": "int",
+  "group": "Strategy: Position Size & Initial Stop",
+  "status": "mapped",
+  "native": "swing_len",
+  "note": "Swing lookback in bars"
+ },
+ {
+  "pine": "i_r_swing_buf",
+  "kind": "float",
+  "group": "Strategy: Position Size & Initial Stop",
+  "status": "mapped",
+  "native": "swing_buf_atr",
+  "note": "Swing buffer in ATRs"
+ },
+ {
+  "pine": "i_r_min_stop_atr",
+  "kind": "float",
+  "group": "Strategy: Position Size & Initial Stop",
+  "status": "mapped",
+  "native": "min_stop_atr",
+  "note": "Stop-distance floor in ATRs"
+ },
+ {
+  "pine": "i_r_max_stop_atr",
+  "kind": "float",
+  "group": "Strategy: Position Size & Initial Stop",
+  "status": "mapped",
+  "native": "max_stop_atr",
+  "note": "Stop-distance ceiling in ATRs"
+ },
+ {
+  "pine": "i_tp_basis",
+  "kind": "string",
+  "group": "Strategy: Take Profit Zones (remainder runs on the trailing stop)",
+  "status": "mapped",
+  "native": "tp_basis",
+  "note": "Take-profit zone distance unit"
+ },
+ {
+  "pine": "i_tp1_mult",
+  "kind": "float",
+  "group": "Strategy: Take Profit Zones (remainder runs on the trailing stop)",
+  "status": "mapped",
+  "native": "tp1_mult",
+  "note": "First take-profit distance"
+ },
+ {
+  "pine": "i_tp1_pct",
+  "kind": "float",
+  "group": "Strategy: Take Profit Zones (remainder runs on the trailing stop)",
+  "status": "mapped",
+  "native": "tp1_pct",
+  "note": "First take-profit share of the position"
+ },
+ {
+  "pine": "i_tp2_mult",
+  "kind": "float",
+  "group": "Strategy: Take Profit Zones (remainder runs on the trailing stop)",
+  "status": "mapped",
+  "native": "tp2_mult",
+  "note": "Second take-profit distance"
+ },
+ {
+  "pine": "i_tp2_pct",
+  "kind": "float",
+  "group": "Strategy: Take Profit Zones (remainder runs on the trailing stop)",
+  "status": "mapped",
+  "native": "tp2_pct",
+  "note": "Second take-profit share of the position"
+ },
+ {
+  "pine": "i_tp3_mult",
+  "kind": "float",
+  "group": "Strategy: Take Profit Zones (remainder runs on the trailing stop)",
+  "status": "mapped",
+  "native": "tp3_mult",
+  "note": "Third take-profit distance"
+ },
+ {
+  "pine": "i_tp3_pct",
+  "kind": "float",
+  "group": "Strategy: Take Profit Zones (remainder runs on the trailing stop)",
+  "status": "mapped",
+  "native": "tp3_pct",
+  "note": "Third take-profit share of the position"
+ },
+ {
+  "pine": "i_be_enable",
+  "kind": "bool",
+  "group": "Strategy: Breakeven",
+  "status": "mapped",
+  "native": "be_enable",
+  "note": "Move the stop to breakeven"
+ },
+ {
+  "pine": "i_be_on_tp",
+  "kind": "bool",
+  "group": "Strategy: Breakeven",
+  "status": "mapped",
+  "native": "be_on_tp",
+  "note": "Breakeven once any take-profit fills"
+ },
+ {
+  "pine": "i_be_atr",
+  "kind": "float",
+  "group": "Strategy: Breakeven",
+  "status": "mapped",
+  "native": "be_trigger_atr",
+  "note": "Breakeven at this profit in ATRs"
+ },
+ {
+  "pine": "i_be_offset",
+  "kind": "float",
+  "group": "Strategy: Breakeven",
+  "status": "mapped",
+  "native": "be_offset_atr",
+  "note": "Breakeven offset past entry in ATRs"
+ },
+ {
+  "pine": "i_t_type",
+  "kind": "string",
+  "group": "Strategy: Trailing Stop",
+  "status": "mapped",
+  "native": "trail_type",
+  "note": "Trailing-stop construction"
+ },
+ {
+  "pine": "i_t_mult",
+  "kind": "float",
+  "group": "Strategy: Trailing Stop",
+  "status": "mapped",
+  "native": "trail_mult",
+  "note": "Normal trailing distance in ATRs"
+ },
+ {
+  "pine": "i_t_tight_mult",
+  "kind": "float",
+  "group": "Strategy: Trailing Stop",
+  "status": "mapped",
+  "native": "trail_tight_mult",
+  "note": "Tight trailing distance after exhaustion"
+ },
+ {
+  "pine": "i_t_ribbon_buf",
+  "kind": "float",
+  "group": "Strategy: Trailing Stop",
+  "status": "mapped",
+  "native": "trail_ribbon_buf",
+  "note": "Ribbon-edge buffer in ATRs"
+ },
+ {
+  "pine": "i_t_pct",
+  "kind": "float",
+  "group": "Strategy: Trailing Stop",
+  "status": "mapped",
+  "native": "trail_pct",
+  "note": "Percent distance for percent trails"
+ },
+ {
+  "pine": "i_t_immediate",
+  "kind": "bool",
+  "group": "Strategy: Trailing Stop",
+  "status": "mapped",
+  "native": "trail_immediate",
+  "note": "Trail from entry immediately"
+ },
+ {
+  "pine": "i_t_on_tp",
+  "kind": "bool",
+  "group": "Strategy: Trailing Stop",
+  "status": "mapped",
+  "native": "trail_on_tp",
+  "note": "Trail once any take-profit fills"
+ },
+ {
+  "pine": "i_t_on_exh",
+  "kind": "bool",
+  "group": "Strategy: Trailing Stop",
+  "status": "mapped",
+  "native": "trail_on_exhaustion",
+  "note": "Trail when the exhaustion response fires"
+ },
+ {
+  "pine": "i_t_on_profit",
+  "kind": "bool",
+  "group": "Strategy: Trailing Stop",
+  "status": "mapped",
+  "native": "trail_on_profit",
+  "note": "Trail once profit reaches the trigger"
+ },
+ {
+  "pine": "i_t_profit_atr",
+  "kind": "float",
+  "group": "Strategy: Trailing Stop",
+  "status": "mapped",
+  "native": "trail_profit_atr",
+  "note": "Profit trigger in ATRs"
+ },
+ {
+  "pine": "i_x_action",
+  "kind": "string",
+  "group": "Strategy: Exhaustion & Exit Signals",
+  "status": "mapped",
+  "native": "exit_action",
+  "note": "Exhaustion response"
+ },
+ {
+  "pine": "i_x_partial_pct",
+  "kind": "float",
+  "group": "Strategy: Exhaustion & Exit Signals",
+  "status": "mapped",
+  "native": "exit_partial_pct",
+  "note": "Share of the open position closed on exhaustion"
+ },
+ {
+  "pine": "i_x_only_profit",
+  "kind": "bool",
+  "group": "Strategy: Exhaustion & Exit Signals",
+  "status": "mapped",
+  "native": "exit_only_profit",
+  "note": "Exhaustion response only when in profit"
+ },
+ {
+  "pine": "i_x_opposite",
+  "kind": "bool",
+  "group": "Strategy: Exhaustion & Exit Signals",
+  "status": "mapped",
+  "native": "exit_opposite",
+  "note": "Close on an opposite trigger"
+ },
+ {
+  "pine": "i_x_ribbon",
+  "kind": "bool",
+  "group": "Strategy: Exhaustion & Exit Signals",
+  "status": "mapped",
+  "native": "exit_ribbon",
+  "note": "Exit on a ribbon flip against the trade"
+ },
+ {
+  "pine": "i_x_zero",
+  "kind": "bool",
+  "group": "Strategy: Exhaustion & Exit Signals",
+  "status": "mapped",
+  "native": "exit_zero_cross",
+  "note": "Exit on a fast-oscillator zero-cross against the trade"
+ },
+ {
+  "pine": "i_x_time_bars",
+  "kind": "int",
+  "group": "Strategy: Exhaustion & Exit Signals",
+  "status": "mapped",
+  "native": "exit_time_bars",
+  "note": "Time stop in bars"
+ },
+ {
+  "pine": "i_c_cd_bars",
+  "kind": "int",
+  "group": "Strategy: Cooldowns & Daily Limits",
+  "status": "mapped",
+  "native": "cd_bars",
+  "note": "Cooldown after any exit, in bars"
+ },
+ {
+  "pine": "i_c_cd_loss_bars",
+  "kind": "int",
+  "group": "Strategy: Cooldowns & Daily Limits",
+  "status": "mapped",
+  "native": "cd_loss_bars",
+  "note": "Extra cooldown after a losing exit"
+ },
+ {
+  "pine": "i_c_max_trades",
+  "kind": "int",
+  "group": "Strategy: Cooldowns & Daily Limits",
+  "status": "mapped",
+  "native": "max_trades_day",
+  "note": "Maximum trades per day"
+ },
+ {
+  "pine": "i_c_max_consec",
+  "kind": "int",
+  "group": "Strategy: Cooldowns & Daily Limits",
+  "status": "mapped",
+  "native": "max_consec_losses",
+  "note": "Halt entries after N losses in a row"
+ },
+ {
+  "pine": "i_c_max_daily_loss",
+  "kind": "float",
+  "group": "Strategy: Cooldowns & Daily Limits",
+  "status": "mapped",
+  "native": "max_daily_loss_pct",
+  "note": "Flatten and halt at this daily loss"
+ },
+ {
+  "pine": "i_c_flatten_eod",
+  "kind": "bool",
+  "group": "Strategy: Cooldowns & Daily Limits",
+  "status": "mapped",
+  "native": "flatten_eod",
+  "note": "Flatten at the end of the session"
+ },
+ {
+  "pine": "i_c_flatten_min",
+  "kind": "int",
+  "group": "Strategy: Cooldowns & Daily Limits",
+  "status": "mapped",
+  "native": "flatten_min_before",
+  "note": "Flatten this many minutes before the session end"
+ },
+ {
+  "pine": "i_c_noentry_min",
+  "kind": "int",
+  "group": "Strategy: Cooldowns & Daily Limits",
+  "status": "mapped",
+  "native": "noentry_min",
+  "note": "No new entries in the final minutes"
+ },
+ {
+  "pine": "i_vis_show",
+  "kind": "bool",
+  "group": "Strategy: Display & Alerts",
+  "status": "mapped",
+  "native": "show_markers",
+  "note": "Paint trade markers and levels"
+ },
+ {
+  "pine": "i_vis_color_long",
+  "kind": "color",
+  "group": "Strategy: Display & Alerts",
+  "status": "mapped",
+  "native": "marker_long_color",
+  "note": "Long marker color at script alpha 0"
+ },
+ {
+  "pine": "i_vis_color_short",
+  "kind": "color",
+  "group": "Strategy: Display & Alerts",
+  "status": "mapped",
+  "native": "marker_short_color",
+  "note": "Short marker color at script alpha 0"
+ },
+ {
+  "pine": "i_vis_table",
+  "kind": "bool",
+  "group": "Strategy: Display & Alerts",
+  "status": "mapped",
+  "native": "show_table",
+  "note": "Paint the status table"
+ },
+ {
+  "pine": "i_vis_table_pos",
+  "kind": "enum",
+  "group": "Strategy: Display & Alerts",
+  "status": "mapped",
+  "native": "table_position",
+  "note": "Status table location"
+ },
+ {
+  "pine": "i_vis_alerts",
+  "kind": "bool",
+  "group": "Strategy: Display & Alerts",
+  "status": "mapped",
+  "native": "send_alerts",
+  "note": "Send alerts on entries and exits"
+ },
+ {
+  "pine": "_src",
+  "kind": "source",
+  "group": "Strategy: Display & Alerts",
+  "status": "mapped",
+  "native": "price_source",
+  "note": "Price source the arms read when Adaptive is off; series spellings refuse, so the composite keeps no producer edges"
+ }
+]

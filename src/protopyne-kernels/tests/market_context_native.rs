@@ -715,3 +715,47 @@ fn regime_stability_transition_table() {
         );
     }
 }
+
+#[test]
+fn hysteresis_never_reaches_the_frozen_probe() {
+    // The frozen probe takes no previous label: identical inputs always
+    // reproduce the identical label, so no held surface can move it. The
+    // stable wrapper may hold a label inside the hysteresis band, but only
+    // there — outside the band it agrees with the probe.
+    use crate::market_context::{detect_regime, detect_regime_stable, MarketRegime};
+    let inputs = [
+        (Some(10.0), Some(1.5), Some(2.0)),
+        (Some(16.0), Some(2.2), Some(0.5)),
+        (Some(5.0), Some(4.375), Some(2.6)),
+        (None, None, None),
+    ];
+    for (health, volatility, volume) in inputs {
+        let probe = detect_regime(health, volatility, volume);
+        // No prev exists on the probe: every stable call from any previous
+        // label must either agree with the probe or name the band as its
+        // reason (a held label the fresh evidence did not beat).
+        for prev in [
+            MarketRegime::Ranging,
+            MarketRegime::TrendingBull,
+            MarketRegime::TrendingBear,
+            MarketRegime::Volatile,
+            MarketRegime::LowVolume,
+        ] {
+            let stable = detect_regime_stable(prev, health, volatility, volume);
+            if stable != probe {
+                // A hold is only legal from a non-quiet previous label the
+                // fresh evidence failed to beat by the hysteresis band.
+                assert_ne!(
+                    prev,
+                    MarketRegime::LowVolume,
+                    "quiet never holds against the probe"
+                );
+                assert_eq!(
+                    detect_regime_stable(probe, health, volatility, volume),
+                    probe,
+                    "the probe label itself never holds away"
+                );
+            }
+        }
+    }
+}

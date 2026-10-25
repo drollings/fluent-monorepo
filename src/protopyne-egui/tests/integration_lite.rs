@@ -1377,3 +1377,355 @@ fn default_legs_reproduce_the_frozen_arms() {
         "the default slow leg is the frozen CCI arm"
     );
 }
+
+/// One discriminating tape in both engine shapes: mixed-sign gains with
+/// varying ranges and volumes, so no two arms saturate together.
+fn wobble_tape(count: usize) -> (Vec<Bar>, Vec<ChartRow>) {
+    let mut bars = Vec::with_capacity(count);
+    let mut rows = Vec::with_capacity(count);
+    for i in 0..count {
+        let close = 100.0 + i as f64 * 0.5 + if i % 2 == 0 { 1.0 } else { -1.0 };
+        let span = (i % 5) as f64 * 0.4;
+        let px = |v: f64| Decimal::from_f64(v).expect("exact test decimal");
+        bars.push(
+            Bar::new()
+                .ts(chrono::Utc
+                    .with_ymd_and_hms(2026, 1, 5, 0, 0, 0)
+                    .single()
+                    .expect("valid time")
+                    + chrono::Duration::minutes(i as i64))
+                .o(px(close - 0.25))
+                .h(px(close + 0.5 + span))
+                .l(px(close - 0.5))
+                .c(px(close))
+                .volume(1_000 + 37 * i as u64)
+                .maybe_adj(None)
+                .build(),
+        );
+        rows.push(ChartRow {
+            time: i as i64,
+            open: close - 0.25,
+            high: close + 0.5 + span,
+            low: close - 0.5,
+            close,
+            volume: 1_000 + 37 * i as u64,
+        });
+    }
+    (bars, rows)
+}
+
+/// A flat tape: every 0/0 arm must read `na` on both engines, never a
+/// number and never a refusal.
+fn flat_tape(count: usize) -> (Vec<Bar>, Vec<ChartRow>) {
+    let mut bars = Vec::with_capacity(count);
+    let mut rows = Vec::with_capacity(count);
+    for i in 0..count {
+        let px = |v: f64| Decimal::from_f64(v).expect("exact test decimal");
+        bars.push(
+            Bar::new()
+                .ts(chrono::Utc
+                    .with_ymd_and_hms(2026, 1, 5, 0, 0, 0)
+                    .single()
+                    .expect("valid time")
+                    + chrono::Duration::minutes(i as i64))
+                .o(px(100.0))
+                .h(px(100.5))
+                .l(px(99.5))
+                .c(px(100.0))
+                .volume(1_000)
+                .maybe_adj(None)
+                .build(),
+        );
+        rows.push(ChartRow {
+            time: i as i64,
+            open: 100.0,
+            high: 100.5,
+            low: 99.5,
+            close: 100.0,
+            volume: 1_000,
+        });
+    }
+    (bars, rows)
+}
+
+/// A tie tape: repeated highs force the aroon extremum search onto its
+/// tie-break (most recent wins on both engines).
+fn tie_tape(count: usize) -> (Vec<Bar>, Vec<ChartRow>) {
+    let mut bars = Vec::with_capacity(count);
+    let mut rows = Vec::with_capacity(count);
+    for i in 0..count {
+        let close = 100.0 + (i / 4) as f64;
+        let px = |v: f64| Decimal::from_f64(v).expect("exact test decimal");
+        bars.push(
+            Bar::new()
+                .ts(chrono::Utc
+                    .with_ymd_and_hms(2026, 1, 5, 0, 0, 0)
+                    .single()
+                    .expect("valid time")
+                    + chrono::Duration::minutes(i as i64))
+                .o(px(close - 0.25))
+                .h(px(close + 0.5))
+                .l(px(close - 0.5))
+                .c(px(close))
+                .volume(1_000)
+                .maybe_adj(None)
+                .build(),
+        );
+        rows.push(ChartRow {
+            time: i as i64,
+            open: close - 0.25,
+            high: close + 0.5,
+            low: close - 0.5,
+            close,
+            volume: 1_000,
+        });
+    }
+    (bars, rows)
+}
+
+/// Max-diff over one paired series, counting co-read bars; presence
+/// mismatches and non-finite pairs diverge loudly instead of skipping.
+fn arm_max_diff(native: &[Option<f64>], pine: &[Option<f64>]) -> (f64, usize) {
+    series_max_diff(native, pine)
+}
+
+fn normalize_driver(pine_kind: &str, which: i64, length: i64) -> String {
+    format!(
+        "{DRIVER_IMPORTS}out = MAS.normalizeOsc(close, UTIL.Oscillators.{pine_kind}, {which}, {length}, {length}, UTIL.Smoothings.NA, 0)"
+    )
+}
+
+/// Every kernel-backed `normalizeOsc` arm, Pine driver against the native
+/// path: the shipped library evaluates over bar history, the native side
+/// reads the same bars through its kernel plus the frozen catalog squash.
+/// A mismatch names a transcription divergence (logged, never widened);
+/// agreement pins the arm. SRSI and TRENDSI have no native raw producer
+/// yet, so they ride no assertion here — the panel and the Lite legs
+/// exclude them for exactly that reason.
+///
+/// Window pairing: Pine's aroon arm scans `length + 1` bars, so Pine
+/// length 13 meets the native period-14 kernel over the same window (the
+/// bridge lemma's `P = L + 1`, pinned by
+/// `aroon_bridge_matches_the_pine_arms`). Every other arm reads a plain
+/// trailing window, so both sides run length 14.
+#[test]
+fn normalize_arms_match_pine_across_tapes() {
+    type Tape = (Vec<Bar>, Vec<ChartRow>);
+    let tapes: [(&str, Tape); 3] = [
+        ("wobble", wobble_tape(60)),
+        ("flat", flat_tape(60)),
+        ("ties", tie_tape(60)),
+    ];
+    // (arm label, Pine kind, native kernel, which leg, native leg, Pine length)
+    let arms: &[(&str, &str, &str, i64, &str, i64)] = &[
+        ("rsi", "RSI", "rsi", 1, "value", 14),
+        ("cci", "CCI", "cci", 1, "value", 14),
+        ("cmo", "CMO", "cmo", 1, "value", 14),
+        ("mfi", "MFI", "mfi", 1, "value", 14),
+        ("stoch-k", "STOCH", "stoch", 1, "value", 14),
+        ("srsi", "SRSI", "srsi", 1, "value", 14),
+        ("trendsi", "TRENDSI", "trendsi", 1, "value", 14),
+        ("aroon-up", "AROON", "aroon", 1, "value", 13),
+        ("aroon-spread", "AROON", "aroon", 0, "spread", 13),
+        ("voss", "VOSS", "voss", 1, "value", 14),
+        ("voss-filter", "VOSS", "voss", -1, "filter", 14),
+        ("voss-spread", "VOSS", "voss", 0, "spread", 14),
+    ];
+    for (tape_name, (bars, rows)) in &tapes {
+        for (label, pine_kind, kernel, which, leg, pine_len) in arms {
+            let (pine, counters) =
+                run_driver(&normalize_driver(pine_kind, *which, *pine_len), bars);
+            assert_eq!(
+                counters.fallbacks(),
+                0,
+                "{label} on {tape_name}: no seam fetches behind the arm"
+            );
+            let native = native_squashed_leg(kernel, leg, rows);
+            let (diff, compared) = arm_max_diff(&native, &pine);
+            // Presence mismatches already diverge loudly as inf inside
+            // `arm_max_diff`, so a zero co-read count means both sides
+            // stayed na everywhere (the 0/0 arms on the flat tape).
+            if compared == 0 {
+                continue;
+            }
+            assert!(
+                compared >= 20,
+                "{label} on {tape_name}: only {compared} bars co-read"
+            );
+            assert!(
+                diff <= EPS,
+                "{label} on {tape_name} drifted past the freeze (max diff {diff})"
+            );
+        }
+    }
+}
+
+/// Native squashed leg with secondary-leg support for multi-output kernels.
+///
+/// The `spread` pseudo-leg mirrors the shipped spread arms, which squash
+/// the leg *difference* (`up - down`, `voss - filter`) through the same
+/// affine map — not the difference of two squashes.
+fn native_squashed_leg(kernel: &str, leg: &str, rows: &[ChartRow]) -> Vec<Option<f64>> {
+    use crate::topology::{kernel_preview_frame, kernel_series};
+    let frame = kernel_preview_frame(rows);
+    let params = protopyne_kernels::indicator::ParamSet::new().with_int("length", 14);
+    let parsed = crate::oscillators::parse_oscillator_kind(match kernel {
+        "stoch" => "stoch",
+        "aroon" => "aroon",
+        "voss" => "voss",
+        _ => kernel,
+    })
+    .expect("catalog parses");
+    let rescale = |values: Vec<Option<f64>>| {
+        if kernel == "aroon" {
+            crate::oscillators::rescale_aroon_output(&values, 14)
+        } else {
+            values
+        }
+    };
+    if leg == "value" {
+        let raw = kernel_series(kernel, &params, &frame).expect("primary evaluates");
+        crate::oscillators::normalize_series(&rescale(raw), parsed).expect("squashes")
+    } else if leg == "spread" {
+        let result = shared_registry_batch(kernel, &params, &frame);
+        let (up_name, down_name) = match kernel {
+            "aroon" => ("value", "down"),
+            "voss" => ("value", "filter"),
+            _ => panic!("{kernel} has no spread legs"),
+        };
+        let up = if up_name == "value" {
+            kernel_series(kernel, &params, &frame).expect("primary evaluates")
+        } else {
+            result
+                .secondary
+                .iter()
+                .find(|s| s.name == up_name)
+                .unwrap_or_else(|| panic!("{kernel} carries {up_name}"))
+                .values
+                .clone()
+        };
+        let down = result
+            .secondary
+            .iter()
+            .find(|s| s.name == down_name)
+            .unwrap_or_else(|| panic!("{kernel} carries {down_name}"));
+        let diff: Vec<Option<f64>> = rescale(up)
+            .into_iter()
+            .zip(rescale(down.values.clone()))
+            .map(|(u, d)| match (u, d) {
+                (Some(u), Some(d)) => {
+                    let v = u - d;
+                    v.is_finite().then_some(v)
+                }
+                _ => None,
+            })
+            .collect();
+        crate::oscillators::normalize_series(&diff, parsed).expect("squashes")
+    } else {
+        let result = shared_registry_batch(kernel, &params, &frame);
+        let series = result
+            .secondary
+            .iter()
+            .find(|s| s.name == leg)
+            .unwrap_or_else(|| panic!("{kernel} carries {leg}"));
+        crate::oscillators::normalize_series(&rescale(series.values.clone()), parsed)
+            .expect("squashes")
+    }
+}
+
+fn shared_registry_batch(
+    kernel: &str,
+    params: &protopyne_kernels::indicator::ParamSet,
+    frame: &protopyne_kernels::indicator::OwnedOhlcv,
+) -> protopyne_kernels::indicator::IndicatorResult {
+    let registry = protopyne_kernels::shared_registry().expect("shared registry boots");
+    registry
+        .get(kernel)
+        .unwrap_or_else(|| panic!("{kernel} registered"))
+        .batch(&frame.views(), params)
+        .unwrap_or_else(|_| panic!("{kernel} batches"))
+}
+
+/// Producer confidence never gates: on plain OHLCV history the volume split
+/// earns `Low` (correct self-doubt — no trade tape backs the estimate), yet
+/// the histogram still paints its legs and the pivots recompute identically
+/// without it. Confidence rides beside the pane, never inside a threshold.
+#[test]
+fn delta_confidence_low_paints_but_never_gates() {
+    use crate::integration_lite::{integration_lite_sub_pane, IntegrationLiteConfig};
+    use protopyne_kernels::bars::DeltaConfidence;
+    let (_bars, rows) = wobble_tape(60);
+    let config = IntegrationLiteConfig::default();
+    let pane = integration_lite_sub_pane(&rows, &config).expect("pane evaluates");
+    assert_eq!(
+        pane.delta_confidence,
+        DeltaConfidence::Low,
+        "OHLCV history earns Low, honestly"
+    );
+    let painted = pane
+        .delta_volume
+        .buy_top
+        .iter()
+        .chain(pane.delta_volume.sell_bottom.iter())
+        .any(Option::is_some);
+    assert!(painted, "Low confidence still paints histogram legs");
+    let refired = fluent_egui::pivot_marks(
+        &pane.fast_bounded,
+        crate::oscillators::squash_to_100(config.pivot_threshold),
+    )
+    .expect("valid threshold");
+    assert_eq!(
+        refired, pane.pivots,
+        "pivots recompute identically with no confidence input"
+    );
+}
+
+/// Fetch accounting never gates: the same bars through the same driver
+/// reproduce the identical series, and the counters ride alongside the
+/// comparison (reported, like the freeze's `pine_fallbacks`) instead of
+/// entering it — `compare_freeze` takes series only.
+#[test]
+fn fetch_counters_are_observed_never_gating() {
+    let bars = ramp_bars();
+    let driver = format!("{DRIVER_IMPORTS}out = MAS.getEIT(close, 0.14)");
+    let (first, first_counters) = run_driver(&driver, &bars);
+    let (second, second_counters) = run_driver(&driver, &bars);
+    assert_eq!(first, second, "same bars rerun bit-identically");
+    assert_eq!(
+        first_counters.fallbacks(),
+        second_counters.fallbacks(),
+        "accounting itself is deterministic"
+    );
+    assert_eq!(
+        first_counters.fallbacks(),
+        0,
+        "the freeze driver performs no seam fetches"
+    );
+    let frozen = LiteFrozen {
+        fast: first.clone(),
+        slow: first.clone(),
+        adaptive: first.clone(),
+    };
+    let report = compare_freeze(&frozen, &frozen);
+    assert!(
+        report.adaptive.max_abs_diff <= f64::EPSILON,
+        "identical runs agree exactly"
+    );
+    assert_eq!(report.adaptive.compared, first.iter().flatten().count());
+}
+
+/// Pane revision never flips a pivot: rebuilding the sub-pane over the same
+/// rows reproduces every readout bit-for-bit, so no cache generation key
+/// participates in a threshold.
+#[test]
+fn rebuild_reproduces_every_readout_bit_for_bit() {
+    use crate::integration_lite::{integration_lite_sub_pane, IntegrationLiteConfig};
+    let rows = ramp_rows();
+    let config = IntegrationLiteConfig::default();
+    let first = integration_lite_sub_pane(&rows, &config).expect("evaluates");
+    let second = integration_lite_sub_pane(&rows, &config).expect("re-evaluates");
+    assert_eq!(first.fast_bounded, second.fast_bounded);
+    assert_eq!(first.slow_bounded, second.slow_bounded);
+    assert_eq!(first.pivots, second.pivots);
+    assert_eq!(first.show_ribbon, second.show_ribbon);
+}

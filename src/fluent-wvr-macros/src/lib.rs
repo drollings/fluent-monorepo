@@ -26,6 +26,11 @@ struct FieldMeta {
     parse: Option<String>,
     empty_is_none: bool,
     variants: Option<TokenStream2>,
+    tab: Option<String>,
+    group: Option<String>,
+    tooltip: Option<String>,
+    step: Option<f64>,
+    inline_group: Option<String>,
 }
 
 /// Parse a `min`/`max` bound literal: an unsigned int/float, or a
@@ -72,6 +77,11 @@ fn parse_field_attrs(field: &syn::Field) -> Result<FieldMeta, syn::Error> {
         parse: None,
         empty_is_none: true,
         variants: None,
+        tab: None,
+        group: None,
+        tooltip: None,
+        step: None,
+        inline_group: None,
     };
 
     for attr in &field.attrs {
@@ -212,13 +222,58 @@ fn parse_field_attrs(field: &syn::Field) -> Result<FieldMeta, syn::Error> {
                 }
                 return Ok(());
             }
+            // Display hints: Pine `group`/`inline`/`tooltip`/`step` ride the
+            // schema as `x-group`/`x-inline`/`x-tooltip`/`x-step`, and the tab
+            // pin as `x-tab`. The painters read them; the field contract
+            // never does. String hints trim at read time (an empty spelling
+            // degrades to absent, never to an empty section header).
+            if meta.path.is_ident("tab") {
+                let value = meta.value()?;
+                let lit: Lit = value.parse()?;
+                if let Lit::Str(s) = lit {
+                    result.tab = Some(s.value());
+                }
+                return Ok(());
+            }
+            if meta.path.is_ident("group") {
+                let value = meta.value()?;
+                let lit: Lit = value.parse()?;
+                if let Lit::Str(s) = lit {
+                    result.group = Some(s.value());
+                }
+                return Ok(());
+            }
+            if meta.path.is_ident("tooltip") {
+                let value = meta.value()?;
+                let lit: Lit = value.parse()?;
+                if let Lit::Str(s) = lit {
+                    result.tooltip = Some(s.value());
+                }
+                return Ok(());
+            }
+            if meta.path.is_ident("inline") {
+                let value = meta.value()?;
+                let lit: Lit = value.parse()?;
+                if let Lit::Str(s) = lit {
+                    result.inline_group = Some(s.value());
+                }
+                return Ok(());
+            }
+            if meta.path.is_ident("step") {
+                let value = meta.value()?;
+                let lit: Lit = value.parse()?;
+                let (num, _) =
+                    bound_from_lit(&lit).map_err(|message| meta.error(message))?;
+                result.step = Some(num);
+                return Ok(());
+            }
             let path = &meta.path;
             let name = path
                 .get_ident()
                 .map(ToString::to_string)
                 .unwrap_or_else(|| quote!(#path).to_string());
             Err(meta.error(format!(
-                "unknown field attribute `{name}`, expected one of: `skip`, `desc`, `min`, `max`, `clamp`, `required`, `format`, `max_len`, `sanitize`, `pattern`, `coerce`, `parse`, `variants`, `empty_is_none`",
+                "unknown field attribute `{name}`, expected one of: `skip`, `desc`, `min`, `max`, `clamp`, `required`, `format`, `max_len`, `sanitize`, `pattern`, `coerce`, `parse`, `variants`, `tab`, `group`, `tooltip`, `step`, `inline`, `empty_is_none`",
             )))
         })?;
     }
@@ -336,6 +391,17 @@ fn strip_option_wrapper(ty_str: &str) -> String {
 ///   `coerce::parse_number`
 /// - `#[field(variants = "path::to::fn")]` — live `enum` list from a
 ///   zero-arg path called at `describe()` time
+/// - `#[field(tab = "inputs")]` — explicit settings tab pin, emitted as
+///   the `x-tab` hint (`inputs`, `style`, or `visibility`); wins over the
+///   painter's name heuristics
+/// - `#[field(group = "Trend Ribbon")]` — section header, emitted as
+///   `x-group`; schemas without groups paint exactly as before
+/// - `#[field(tooltip = "...")]` — hover help, emitted as `x-tooltip`,
+///   rendered after the description
+/// - `#[field(step = 0.02)]` — drag sensitivity, emitted as `x-step`;
+///   sliders stay continuous and never snap
+/// - `#[field(inline = "adaptive")]` — shared-row marker, emitted as
+///   `x-inline`; consecutive fields sharing one marker paint on one row
 /// - `#[field(empty_is_none = false)]` — keep `Some("")` for empty
 ///   `Option<String>` input (default converts to `None`)
 ///
@@ -940,7 +1006,8 @@ pub fn derive_describable(input: TokenStream) -> TokenStream {
         }
     };
 
-    let mut properties = Vec::new();
+    let mut property_names = Vec::new();
+    let mut property_bodies = Vec::new();
     let mut required = Vec::new();
     let mut schema_fields = Vec::new();
 
@@ -1037,12 +1104,30 @@ pub fn derive_describable(input: TokenStream) -> TokenStream {
             schema.push(quote! { "enum": #variants() });
         }
 
+        if let Some(ref tab) = meta.tab {
+            schema.push(quote! { "x-tab": #tab });
+        }
+
+        if let Some(ref group) = meta.group {
+            schema.push(quote! { "x-group": #group });
+        }
+
+        if let Some(ref tooltip) = meta.tooltip {
+            schema.push(quote! { "x-tooltip": #tooltip });
+        }
+
+        if let Some(step) = meta.step {
+            let step_lit = proc_macro2::Literal::f64_unsuffixed(step);
+            schema.push(quote! { "x-step": #step_lit });
+        }
+
+        if let Some(ref inline_group) = meta.inline_group {
+            schema.push(quote! { "x-inline": #inline_group });
+        }
+
         let field_name_lit = field_name_str.clone();
-        properties.push(quote! {
-            #field_name_lit: {
-                #(#schema),*
-            }
-        });
+        property_names.push(field_name_lit);
+        property_bodies.push(quote! { #(#schema),* });
 
         let desc_expr = match &meta.desc {
             Some(d) => quote! { Some(#d.into()) },
@@ -1124,12 +1209,20 @@ pub fn derive_describable(input: TokenStream) -> TokenStream {
     let expanded = quote! {
         impl #impl_generics fluent_wvr::Describable for #name #ty_generics #where_clause {
             fn describe(&self) -> serde_json::Value {
+                // Imperative assembly, not one nested `json!` document:
+                // the macro muncher recurses per literal, so a wide schema
+                // would cross the caller's recursion budget. Each field
+                // still renders through its own small literal; only the
+                // document spine is built by hand. Output is identical
+                // (same map type, same insertion order).
+                let mut properties = serde_json::Map::new();
+                #(properties.insert(#property_names.to_owned(), serde_json::json!({ #property_bodies }));)*
+                let mut required_names: Vec<serde_json::Value> = Vec::new();
+                #(required_names.push(#required.into());)*
                 serde_json::json!({
                     "type": "object",
-                    "properties": {
-                        #(#properties),*
-                    },
-                    "required": [#(#required),*]
+                    "properties": serde_json::Value::Object(properties),
+                    "required": required_names
                 })
             }
         }
@@ -1237,6 +1330,39 @@ mod tests {
             meta.variants.map(|tokens| tokens.to_string()),
             Some("crate :: smoothing_ids".to_owned())
         );
+    }
+
+    #[test]
+    fn parse_field_attrs_extracts_display_hints() {
+        let field = make_field(
+            r#"desc = "Low", tab = "inputs", group = "Trend Ribbon", inline = "adaptive", tooltip = "Weak-leg shading", step = 0.02"#,
+            "f64",
+            "alpha_low",
+        );
+        let meta = parse_field_attrs(&field).expect("fixture uses known attributes");
+        assert_eq!(meta.tab.as_deref(), Some("inputs"));
+        assert_eq!(meta.group.as_deref(), Some("Trend Ribbon"));
+        assert_eq!(meta.inline_group.as_deref(), Some("adaptive"));
+        assert_eq!(meta.tooltip.as_deref(), Some("Weak-leg shading"));
+        assert_eq!(meta.step, Some(0.02));
+    }
+
+    #[test]
+    fn parse_field_attrs_display_hints_default_absent() {
+        let field = make_field(r#"desc = "Plain""#, "f64", "dial");
+        let meta = parse_field_attrs(&field).expect("fixture uses known attributes");
+        assert!(meta.tab.is_none());
+        assert!(meta.group.is_none());
+        assert!(meta.inline_group.is_none());
+        assert!(meta.tooltip.is_none());
+        assert!(meta.step.is_none());
+    }
+
+    #[test]
+    fn parse_field_attrs_extracts_integer_step() {
+        let field = make_field("step = 10", "i64", "brightness");
+        let meta = parse_field_attrs(&field).expect("fixture uses known attributes");
+        assert_eq!(meta.step, Some(10.0));
     }
 
     #[test]

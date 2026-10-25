@@ -245,11 +245,15 @@ fn must_not_fire_flat_constant_and_spike_controls() {
             // and constant-leg correlation carry no signal by construction.
             // So do the 0/0 ratio oscillators (cci/cmo/mfi) and the
             // zero-movement/zero-range DMI system (adx): a flat market has
-            // no direction and no range to ratio.
-            "rsi" | "stoch" | "correl" | "cci" | "cmo" | "mfi" | "adx" => assert!(
-                result.values.iter().all(Option::is_none),
-                "{id} must stay na on flat input"
-            ),
+            // no direction and no range to ratio. The composed SRSI inherits
+            // it (na relay in, na out) and the index correlation has zero
+            // variance on a constant.
+            "rsi" | "stoch" | "srsi" | "correl" | "trendsi" | "cci" | "cmo" | "mfi" | "adx" => {
+                assert!(
+                    result.values.iter().all(Option::is_none),
+                    "{id} must stay na on flat input"
+                )
+            }
             "macd" => {
                 assert!(expect_value(0.0), "macd line must read zero");
                 for name in ["signal", "hist"] {
@@ -354,7 +358,9 @@ fn must_not_fire_flat_constant_and_spike_controls() {
             !result.values.iter().all(Option::is_none)
                 || id == "rsi"
                 || id == "stoch"
+                || id == "srsi"
                 || id == "correl"
+                || id == "trendsi"
                 || id == "cci"
                 || id == "cmo"
                 || id == "mfi"

@@ -555,12 +555,11 @@ pub fn indicator_schema(id: &str) -> Option<IndicatorSchema> {
             (MA_LENGTH, ONE)
         }
         "rsi" | "cci" | "cmo" | "tr" | "atr" | "natr" | "midpoint" | "midprice" | "mom" | "roc"
-        | "rocp" | "rocr" | "rocr100" | "rsv" | "willr" | "trix" | "correl" | "mfi" | "cmf" => {
-            (LENGTH, ONE)
-        }
+        | "rocp" | "rocr" | "rocr100" | "rsv" | "willr" | "trix" | "correl" | "trendsi" | "mfi"
+        | "cmf" => (LENGTH, ONE),
         "aroon" => (LENGTH, AROON_OUT),
         "adx" => (LENGTH, ADX_OUT),
-        "stoch" => (LENGTH, STOCH_OUT),
+        "stoch" | "srsi" => (LENGTH, STOCH_OUT),
         "stochf" => (STOCHF_PARAMS, STOCHF_OUT),
         "macd" => (MACD_PARAMS, MACD_OUT),
         "bb" => (BB_PARAMS, UPPER_LOWER),
@@ -1198,6 +1197,22 @@ impl IndicatorState {
         (highs, lows)
     }
 
+    /// Retained closes then bar-relative indices as reused slices, oldest
+    /// first: one buffer, two legs stacked back-to-back. The indices read
+    /// `0.0` oldest — correlation against them is shift-invariant, so a
+    /// window-relative index reproduces the absolute `bar_index` the Pine
+    /// arm correlates against, without carrying a run counter in the state.
+    /// Same reuse contract as [`scratch_closes`](Self::scratch_closes).
+    pub fn scratch_closes_indices(&mut self) -> (&[f64], &[f64]) {
+        self.scratch.clear();
+        self.scratch
+            .extend(self.history.iter().map(|tick| tick.close));
+        let mid = self.scratch.len();
+        self.scratch.extend((0..mid).map(|index| index as f64));
+        let (closes, indices) = self.scratch.split_at(mid);
+        (closes, indices)
+    }
+
     /// Retained highs, lows, then closes as reused slices, oldest first:
     /// one buffer, three legs stacked back-to-back. Same reuse contract as
     /// [`scratch_closes`](Self::scratch_closes).
@@ -1444,6 +1459,7 @@ pub fn builtin_registry() -> Result<IndicatorRegistry, KernelError> {
     registry.register(Arc::new(crate::oscillators::CmoIndicator::new()))?;
     registry.register(Arc::new(crate::oscillators::MacdIndicator::new()))?;
     registry.register(Arc::new(crate::oscillators::StochIndicator::new()))?;
+    registry.register(Arc::new(crate::oscillators::SrsiIndicator::new()))?;
     registry.register(Arc::new(crate::volatility::TrIndicator::new()))?;
     registry.register(Arc::new(crate::volatility::AtrIndicator::new()))?;
     registry.register(Arc::new(crate::volatility::BbIndicator::new()))?;
@@ -1476,6 +1492,7 @@ pub fn builtin_registry() -> Result<IndicatorRegistry, KernelError> {
     registry.register(Arc::new(crate::ta_stat::StddevIndicator::new()))?;
     registry.register(Arc::new(crate::ta_stat::VarIndicator::new()))?;
     registry.register(Arc::new(crate::ta_stat::CorrelIndicator::new()))?;
+    registry.register(Arc::new(crate::ta_stat::TrendsiIndicator::new()))?;
     registry.register(Arc::new(crate::ta_volume::AdIndicator::new()))?;
     registry.register(Arc::new(crate::ta_volume::MfiIndicator::new()))?;
     registry.register(Arc::new(crate::ta_volume::VwapIndicator::new()))?;

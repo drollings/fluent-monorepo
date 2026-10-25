@@ -2553,3 +2553,33 @@ fn a_mismatched_ribbon_refuses_instead_of_truncating() {
         "the proportional entry refuses too"
     );
 }
+
+#[test]
+fn styled_delta_bars_split_bull_and_bear_legs() {
+    // The fixed Pine-style split: the buy leg paints the bull color, the
+    // sell leg the bear color, holes lift the pen on both sides.
+    let pane = zero_pane();
+    let delta = DeltaView {
+        buy_top: vec![Some(50.0), None],
+        sell_bottom: vec![Some(30.0), None],
+    };
+    let bars = delta_bar_geoms(&delta, &pane).expect("spanning pane paints");
+    assert_eq!(bars.len(), 2);
+    let (ctx, painter) = test_painter();
+    let bull = egui::Color32::from_rgb(0, 255, 0);
+    let bear = egui::Color32::from_rgb(255, 0, 0);
+    paint_delta_bars_styled(&painter, &bars, 2.0, bull, bear);
+    let colors = frame_colors(&ctx, end_frame(&ctx));
+    assert!(
+        colors.contains(&bull),
+        "the buy leg paints bull: {colors:?}"
+    );
+    assert!(
+        colors.contains(&bear),
+        "the sell leg paints bear: {colors:?}"
+    );
+    assert!(
+        !colors.contains(&egui::Color32::WHITE),
+        "no default color leaks in: {colors:?}"
+    );
+}

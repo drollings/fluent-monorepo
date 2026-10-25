@@ -482,6 +482,18 @@ pub const COMPATIBILITY: &[KernelCompat] = &[
         evidence: ParityEvidence::StagedReference("src/calibration.rs :: ParityDashboard"),
     },
     KernelCompat {
+        id: "srsi",
+        eps: 1e-9,
+        status: CompatStatus::FormulaVerified("RSI-14 relay composed through the stochastic window, Pine-driver agreement pinned in the parity harness; staged-expression cross-check pending"),
+        evidence: ParityEvidence::StagedReference("tests/cal.rs :: must_fire_*"),
+    },
+    KernelCompat {
+        id: "trendsi",
+        eps: 1e-9,
+        status: CompatStatus::FormulaVerified("window-relative bar-index correlation, shift-invariant by construction, Pine-driver agreement pinned in the parity harness; staged-expression cross-check pending"),
+        evidence: ParityEvidence::StagedReference("tests/cal.rs :: must_fire_*"),
+    },
+    KernelCompat {
         id: "vwap",
         eps: 1e-9,
         status: CompatStatus::ExprParityVerified,

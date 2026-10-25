@@ -8,6 +8,26 @@
 
 use super::*;
 
+/// Kernels whose primary legitimately needs variation: on the monotonic
+/// ramp their windows carry no signal (a saturated RSI relay for `srsi`),
+/// so they stay `na` end to end — exactly what the reference does. Their
+/// warmup promise is pinned on the wobble fixture below instead.
+const VARIATION_GATED: &[&str] = &["srsi"];
+
+/// A fixture with mixed gains, so variation-gated kernels answer.
+fn wobble(count: usize) -> OwnedOhlcv {
+    let close: Vec<f64> = (0..count)
+        .map(|index| 100.0 + index as f64 * 0.5 + if index % 2 == 0 { 1.0 } else { -1.0 })
+        .collect();
+    OwnedOhlcv {
+        open: close.clone(),
+        high: close.iter().map(|value| value + 0.5).collect(),
+        low: close.iter().map(|value| value - 0.5).collect(),
+        close,
+        volume: vec![1_000.0; count],
+    }
+}
+
 /// A fixture with every leg aligned, so window and volume kernels all answer.
 fn bars(count: usize) -> OwnedOhlcv {
     let close: Vec<f64> = (0..count as i32)
@@ -79,6 +99,11 @@ fn every_registered_kernel_answers_exactly_at_its_reported_warmup() {
             .batch(&data.views(), &params)
             .unwrap_or_else(|error| panic!("{id}: defaults refused: {error}"));
         let Some(first) = batch.values.iter().position(Option::is_some) else {
+            if VARIATION_GATED.contains(&id.as_str()) {
+                // Stays na on the ramp by construction (no signal in a
+                // saturated relay); the wobble check below pins the promise.
+                continue;
+            }
             mismatches.push(format!("{id}: no primary output within 400 bars"));
             continue;
         };
@@ -94,4 +119,35 @@ fn every_registered_kernel_answers_exactly_at_its_reported_warmup() {
         "warmup must be the first answered primary bar:\n{}",
         mismatches.join("\n")
     );
+}
+
+#[test]
+fn variation_gated_kernels_answer_exactly_at_warmup_on_mixed_gains() {
+    // The ramp-flat exemption above must not become a free pass: on mixed
+    // gains the relay varies, so the promise is pinned here instead — same
+    // rule, discriminating fixture.
+    let registry = builtin_registry().expect("registry builds");
+    let data = wobble(160);
+    for id in VARIATION_GATED {
+        let indicator = registry.get(id).expect("registered");
+        let params = indicator.spec().default_params();
+        let warmup = indicator.warmup(&params).expect("warmup resolves");
+        let batch = indicator
+            .batch(&data.views(), &params)
+            .unwrap_or_else(|error| panic!("{id}: defaults refused: {error}"));
+        let first = batch
+            .values
+            .iter()
+            .position(Option::is_some)
+            .unwrap_or_else(|| panic!("{id}: no output on mixed gains"));
+        assert_eq!(
+            first + 1,
+            warmup,
+            "{id}: the declared warmup must be the first answered bar"
+        );
+        assert!(
+            batch.values[..first].iter().all(Option::is_none),
+            "{id}: no answers before warmup"
+        );
+    }
 }

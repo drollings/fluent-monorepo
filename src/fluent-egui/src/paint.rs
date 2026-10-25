@@ -1332,6 +1332,43 @@ pub fn paint_delta_bars(
     Ok(())
 }
 
+/// Paint zero-based delta bars in a caller-resolved bull/bear split.
+///
+/// The same leg rule as [`paint_delta_bars`], but the two colors arrive as
+/// values instead of theme keys: a script-parity caller resolves its own
+/// volume colors (with its own transparency) and the emitter draws exactly
+/// what it is given, like every painter here.
+pub fn paint_delta_bars_styled(
+    painter: &egui::Painter,
+    bars: &[DeltaBarGeom],
+    half_width: f32,
+    bull: egui::Color32,
+    bear: egui::Color32,
+) {
+    for bar in bars {
+        if let Some(buy_y) = bar.buy_y {
+            painter.rect_filled(
+                egui::Rect::from_min_max(
+                    egui::Pos2::new(bar.x - half_width, buy_y),
+                    egui::Pos2::new(bar.x + half_width, bar.zero_y),
+                ),
+                0.0,
+                bull,
+            );
+        }
+        if let Some(sell_y) = bar.sell_y {
+            painter.rect_filled(
+                egui::Rect::from_min_max(
+                    egui::Pos2::new(bar.x - half_width, bar.zero_y),
+                    egui::Pos2::new(bar.x + half_width, sell_y),
+                ),
+                0.0,
+                bear,
+            );
+        }
+    }
+}
+
 /// One delta bar paired with the display color the caller resolved for it
 /// (theme key, momentum tint, or fallback): the emitter draws exactly what it
 /// is given, like every painter here.

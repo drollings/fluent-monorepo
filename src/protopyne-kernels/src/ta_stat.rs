@@ -266,6 +266,90 @@ impl Indicator for CorrelIndicator {
     }
 }
 
+/// Trend-strength correlation (`trendsi`): Pearson correlation of the close
+/// leg against the bar index over `length` bars, mirroring the shipped
+/// `normalizeOsc` TRENDSI arm (`ta.correlation(src, bar_index, length)`).
+///
+/// The indices are window-relative (`0.0` oldest): correlation is invariant
+/// under shifts of either leg, so the relative index reproduces the
+/// absolute `bar_index` the Pine arm correlates against, without a run
+/// counter in the state. Constant or `na`-bearing windows carry no
+/// direction and read `None` (the shared correlation core refuses them, as
+/// the reference nulls them).
+pub struct TrendsiIndicator {
+    spec: IndicatorSpec,
+}
+
+impl TrendsiIndicator {
+    /// Stable registry id.
+    pub const ID: &'static str = "trendsi";
+
+    /// Describe the kernel.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            spec: IndicatorSpec::new()
+                .id(Self::ID.to_owned())
+                .display_name("Trend Strength Index".to_owned())
+                .warmup_bars(1_usize)
+                .build(),
+        }
+    }
+
+    /// Validate the `length` parameter shared by batch and update paths.
+    pub fn period(params: &ParamSet) -> Result<usize, KernelError> {
+        crate::math::period_len(Self::ID, params, "length")
+    }
+}
+
+impl Default for TrendsiIndicator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Indicator for TrendsiIndicator {
+    fn spec(&self) -> &IndicatorSpec {
+        &self.spec
+    }
+
+    fn refine_warmup(&self, params: &ParamSet) -> Result<Option<usize>, KernelError> {
+        Ok(Some(Self::period(params)?))
+    }
+
+    fn batch(&self, data: &Ohlcv<'_>, params: &ParamSet) -> Result<IndicatorResult, KernelError> {
+        let period = Self::period(params)?;
+        let closes = data.close;
+        // Window-relative indices, matching the incremental path: shift
+        // invariance makes them equal to absolute bar indices.
+        let relative: Vec<f64> = (0..period).map(|index| index as f64).collect();
+        let mut values = crate::math::warmup_none(data.len());
+        if period <= data.len() {
+            for (i, slot) in values.iter_mut().enumerate().skip(period - 1) {
+                *slot = crate::math::corr_pearson(&closes[i + 1 - period..=i], &relative);
+            }
+        }
+        Ok(IndicatorResult::new(Self::ID.to_owned(), values))
+    }
+
+    fn update(
+        &self,
+        state: &mut IndicatorState,
+        bar: BarTick,
+        params: &ParamSet,
+    ) -> Result<Option<f64>, KernelError> {
+        let period = state.resolved(|| Self::period(params))?;
+        state.push(bar, period);
+        if state.len() < period {
+            return Ok(None);
+        }
+        let (closes, indices) = state.scratch_closes_indices();
+        let out = crate::math::corr_pearson(closes, indices);
+        state.set_last(nan_hole(out));
+        Ok(out)
+    }
+}
+
 #[cfg(all(test, feature = "research"))]
 #[path = "../tests/ta_stat.rs"]
 mod tests;

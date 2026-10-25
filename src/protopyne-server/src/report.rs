@@ -409,6 +409,15 @@ pub struct BacktestReport {
     /// default.
     #[serde(default)]
     pub mark_basis: MarkBasis,
+    /// Trade-level analysis over closed trades, when the run closed any.
+    /// `None` keeps pre-trade-analysis reports byte-identical.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trades: Option<TradesAnalysis>,
+    /// Strategy-Analysis tabs the prototype cannot render, each named with
+    /// its missing feed. Empty for runs that predate the tab list — the
+    /// tearsheet prints the line only when non-empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unavailable_tabs: Vec<String>,
 }
 
 impl BacktestReport {
@@ -676,7 +685,197 @@ pub fn build_report(
         equity_curve,
         portfolio: None,
         mark_basis,
+        trades: None,
+        unavailable_tabs: Vec::new(),
     }
+}
+
+/// One closed trade's economics, as the trades analysis sees it: signed
+/// realized P&L after fees, the signal side that opened it, and how long it
+/// lived. Returns are P&L over entry notional (`None` on zero notional).
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TradePnl {
+    /// Signal side that opened the trade.
+    pub long: bool,
+    /// Signed realized P&L after fees, in account currency.
+    pub pnl: f64,
+    /// Entry notional (price times quantity), when positive.
+    pub notional: f64,
+    /// Bars held, entry to exit inclusive.
+    pub bars_held: u64,
+}
+
+impl TradePnl {
+    /// Simple return on entry notional, or `None` on zero/non-positive
+    /// notional or non-finite P&L.
+    #[must_use]
+    pub fn ret(&self) -> Option<f64> {
+        if self.notional > 0.0 && self.pnl.is_finite() {
+            Some(self.pnl / self.notional)
+        } else {
+            None
+        }
+    }
+}
+
+/// Trade-level Strategy Analysis parity set: expectancy, outliers, largest
+/// profit/loss, return moments, and by-side breakdown. Zero denominators
+/// yield `None`, never invented. Computed once via [`TradesAnalysis::of`];
+/// reruns over the same closed trades are byte-identical.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TradesAnalysis {
+    /// Closed trades counted.
+    pub closed_trades: u64,
+    /// Winners (strictly positive P&L).
+    pub winners: u64,
+    /// Losers (strictly negative P&L).
+    pub losers: u64,
+    /// Mean P&L per closed trade (`None` with no trades).
+    pub expectancy: Option<f64>,
+    /// Largest winning trade (`None` with no winners).
+    pub largest_win: Option<f64>,
+    /// Largest losing trade, as a negative number (`None` with no losers).
+    pub largest_loss: Option<f64>,
+    /// Index (in close order) of the max-|P&L| trade and its P&L.
+    pub outlier: Option<(u64, f64)>,
+    /// Mean per-trade simple return (`None` with no measurable return).
+    pub return_mean: Option<f64>,
+    /// Population std of per-trade simple returns (`None` under two
+    /// measurable returns).
+    pub return_std: Option<f64>,
+    /// Gross wins over gross losses (`None` with no losses; all-win books
+    /// read `None`, never infinity).
+    pub profit_factor_trades: Option<f64>,
+    /// Mean bars held (`None` with no trades).
+    pub avg_bars_held: Option<f64>,
+    /// Closed longs.
+    pub long_closed: u64,
+    /// Winning longs.
+    pub long_wins: u64,
+    /// Closed shorts.
+    pub short_closed: u64,
+    /// Winning shorts.
+    pub short_wins: u64,
+}
+
+impl TradesAnalysis {
+    /// Fold closed trades into the analysis. Empty input yields a zeroed
+    /// frame with every ratio `None` — the honest empty book.
+    #[must_use]
+    pub fn of(trades: &[TradePnl]) -> Self {
+        let mut winners = 0_u64;
+        let mut losers = 0_u64;
+        let mut pnl_sum = 0.0;
+        let mut gross_win = 0.0;
+        let mut gross_loss = 0.0;
+        let mut largest_win: Option<f64> = None;
+        let mut largest_loss: Option<f64> = None;
+        let mut outlier: Option<(u64, f64)> = None;
+        let mut ret_sum = 0.0;
+        let mut ret_sq = 0.0;
+        let mut ret_n = 0_u64;
+        let mut hold_sum = 0_u64;
+        let mut long_closed = 0_u64;
+        let mut long_wins = 0_u64;
+        let mut short_closed = 0_u64;
+        let mut short_wins = 0_u64;
+        for (index, trade) in trades.iter().enumerate() {
+            if trade.long {
+                long_closed += 1;
+            } else {
+                short_closed += 1;
+            }
+            if trade.pnl > 0.0 {
+                winners += 1;
+                gross_win += trade.pnl;
+                if trade.long {
+                    long_wins += 1;
+                } else {
+                    short_wins += 1;
+                }
+                largest_win = Some(largest_win.map_or(trade.pnl, |best: f64| best.max(trade.pnl)));
+            } else if trade.pnl < 0.0 {
+                losers += 1;
+                gross_loss += -trade.pnl;
+                largest_loss =
+                    Some(largest_loss.map_or(trade.pnl, |worst: f64| worst.min(trade.pnl)));
+            }
+            if trade.pnl.is_finite() {
+                pnl_sum += trade.pnl;
+                if outlier.is_none_or(|(_, p)| trade.pnl.abs() > p.abs()) {
+                    outlier = Some((index as u64, trade.pnl));
+                }
+            }
+            if let Some(ret) = trade.ret() {
+                if ret.is_finite() {
+                    ret_sum += ret;
+                    ret_sq += ret * ret;
+                    ret_n += 1;
+                }
+            }
+            hold_sum += trade.bars_held;
+        }
+        let n = trades.len() as u64;
+        let expectancy = if n > 0 {
+            Some(pnl_sum / n as f64)
+        } else {
+            None
+        };
+        let (return_mean, return_std) = if ret_n > 0 {
+            let mean = ret_sum / ret_n as f64;
+            let std = if ret_n > 1 {
+                let var = (ret_sq / ret_n as f64 - mean * mean).max(0.0);
+                Some(var.sqrt())
+            } else {
+                None
+            };
+            (Some(mean), std)
+        } else {
+            (None, None)
+        };
+        TradesAnalysis {
+            closed_trades: n,
+            winners,
+            losers,
+            expectancy,
+            largest_win,
+            largest_loss,
+            outlier,
+            return_mean,
+            return_std,
+            profit_factor_trades: if gross_loss > 0.0 {
+                Some(gross_win / gross_loss)
+            } else {
+                None
+            },
+            avg_bars_held: if n > 0 {
+                Some(hold_sum as f64 / n as f64)
+            } else {
+                None
+            },
+            long_closed,
+            long_wins,
+            short_closed,
+            short_wins,
+        }
+    }
+}
+
+/// Strategy-Analysis tabs the prototype cannot render, each named with the
+/// feed it would need. One constant so the honest absences cannot drift.
+#[must_use]
+pub fn absent_tabs() -> Vec<String> {
+    [
+        "Performance attribution: no benchmark feed (buy-and-hold only)",
+        "Breakdown: no multi-symbol book",
+        "Periodical: single-run window only",
+        "Benchmarking: no benchmark feed",
+        "Margin: no margin feed (cash account)",
+        "Growth: no multi-run history",
+    ]
+    .iter()
+    .map(|s| (*s).to_owned())
+    .collect()
 }
 
 /// Render one human-readable tearsheet from the same structs the JSON report
@@ -781,6 +980,37 @@ pub fn render_tearsheet(report: &BacktestReport) -> String {
     rows.push("limits:".to_owned());
     for limit in &report.data_limits {
         rows.push(format!("- {limit}"));
+    }
+    // Trade-level analysis appears only when the run closed trades, and
+    // unavailable tabs only when the run names them: runs that predate
+    // either render exactly as before.
+    if let Some(trades) = &report.trades {
+        rows.push(
+            format!(
+                "trades: closed {} winners {} losers {} expectancy {} largest_win {} largest_loss {} outlier {:?} return_mean {} return_std {} profit_factor {} avg_bars_held {} long {}/{} short {}/{}",
+                trades.closed_trades,
+                trades.winners,
+                trades.losers,
+                stat(trades.expectancy),
+                stat(trades.largest_win),
+                stat(trades.largest_loss),
+                trades.outlier,
+                stat(trades.return_mean),
+                stat(trades.return_std),
+                stat(trades.profit_factor_trades),
+                stat(trades.avg_bars_held),
+                trades.long_wins,
+                trades.long_closed,
+                trades.short_wins,
+                trades.short_closed,
+            ),
+        );
+    }
+    if !report.unavailable_tabs.is_empty() {
+        rows.push("unavailable_tabs:".to_owned());
+        for tab in &report.unavailable_tabs {
+            rows.push(format!("- {tab}"));
+        }
     }
     rows.push(format!("greeks: {}", report.greeks_note));
     let mut text = rows.join("\n");

@@ -80,6 +80,8 @@ fn frozen_eps_table_never_widens() {
     assert_eq!(
         pending,
         [
+            "srsi",
+            "trendsi",
             "eit",
             "kalman",
             "voss",
@@ -114,7 +116,9 @@ fn dashboard_is_green_with_full_accept_and_zero_false_fire() {
         "donchian",
         "ichimoku",
         "sar",
+        "srsi",
         "supertrend",
+        "trendsi",
     ];
     for row in &dashboard.rows {
         if pending.contains(&row.id.as_str()) {

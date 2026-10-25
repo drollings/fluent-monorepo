@@ -561,6 +561,17 @@ pub fn smoothing_options() -> Vec<SmoothingOption> {
         .collect()
 }
 
+/// Ids a smoothing picker may hold when an alpha/param1 dial rides along:
+/// every family in Pine-dispatch order, including the alpha-driven `eit`
+/// and pass-through `na` that length-only arms refuse.
+#[must_use]
+pub fn smoothing_ids() -> Vec<String> {
+    SmoothingFamily::all()
+        .iter()
+        .map(|family| family.id().to_owned())
+        .collect()
+}
+
 /// Ids a length-only arm may hold: exactly what arm validation accepts, so
 /// selector schemas and validators read one list.
 #[must_use]

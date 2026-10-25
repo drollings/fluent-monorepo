@@ -36,7 +36,9 @@ use fluent_egui::{
 
 use crate::delta_volume_profile::{DeltaVolumeProfileIndicator, DELTA_VOLUME_PROFILE_ID};
 use crate::fast_mas::{evaluate_fast_mas, FastMasConfig};
-use crate::integration_lite::{integration_lite_sub_pane, IntegrationLiteConfig};
+use crate::integration_lite::{
+    integration_lite_sub_pane, oscillator_transparency, IntegrationLiteConfig,
+};
 use crate::oscillator_panel::{panel_kind_for_kernel, KindDefaults};
 use crate::oscillators::{
     display_mapped_series, oscillator_mapping_for_output, OscParams, OscillatorKind, WhichLeg,
@@ -396,7 +398,10 @@ impl ChartIndicator for IntegrationLiteIndicator {
     fn config_key(&self, config: &dyn Component) -> Result<u64, EguiError> {
         let config = component_downcast_ref::<IntegrationLiteConfig>(config)
             .ok_or_else(|| wrong_config(self.id(), "IntegrationLite"))?;
-        Ok(config_fingerprint(config))
+        // Value identity, not whole-document identity: paint-only dials
+        // keep the plan fingerprint still, exactly when the evaluations
+        // would not move.
+        Ok(config.evaluation_key())
     }
 
     fn evaluate(
@@ -435,6 +440,54 @@ impl ChartIndicator for IntegrationLiteIndicator {
             })
             .collect();
         Ok(IndicatorEvaluation { series })
+    }
+
+    /// Paint the visible legs only, at the dialed brightness.
+    ///
+    /// The four evaluated series stay published (plan nodes and cache keys
+    /// never move with a paint toggle), but only the shown legs reach the
+    /// emitter: `osc_show` gates both raw legs, the health flags gate their
+    /// folds. Brightness scales line opacity exactly like the script's
+    /// `90 - brightness` transparency; paint-only, values never move.
+    fn paint_sub_pane(
+        &self,
+        painter: &egui::Painter,
+        evaluation: &IndicatorEvaluation,
+        viewport: &Viewport,
+        origin: egui::Pos2,
+        base: usize,
+        width_px: f32,
+        theme: &ThemeConfig,
+        config: &dyn Component,
+        style: &IndicatorStyle,
+    ) -> Result<(), EguiError> {
+        let config = component_downcast_ref::<IntegrationLiteConfig>(config)
+            .ok_or_else(|| wrong_config(self.id(), "IntegrationLite"))?;
+        let visible = |name: &str| match name {
+            "Fast" | "Slow" => config.osc_show,
+            "Ribbon Health" => config.ribbon_health_show,
+            "MA Health" => config.ma_health_show,
+            _ => true,
+        };
+        let alpha =
+            (1.0 - oscillator_transparency(config.brightness.clamp(0, 100) as u32) / 100.0) as f32;
+        let aggregate = needs_column_aggregation(viewport.scale().bar_spacing());
+        for series in evaluation
+            .series
+            .iter()
+            .filter(|series| visible(&series.name))
+        {
+            let len = series.display_values.len().saturating_sub(base);
+            let window = visible_rows(&series.display_values, base, len);
+            let points = if aggregate {
+                sampled_line_points(window, viewport, base)
+            } else {
+                proportional_line_points(window, viewport, width_px)
+            };
+            let placed = translate_points(points, (origin.x, origin.y));
+            paint_oscillator_styled(painter, &placed, &series.style, theme, style, alpha)?;
+        }
+        Ok(())
     }
 }
 

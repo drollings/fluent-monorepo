@@ -205,10 +205,22 @@ fn settings_schemas_expose_catalog_selectors() {
         vec![
             "fast_kind",
             "fast_smooth_type",
+            "fetch_timeframe",
+            "htf_timeframe",
+            "ltf_timeframe",
+            "mean_type",
+            "mtf_table_position",
+            "mtf_table_size",
+            "mtf_timeframe_1",
+            "mtf_timeframe_2",
+            "mtf_timeframe_3",
+            "mtf_timeframe_4",
+            "price_source",
+            "signal_type",
             "slow_kind",
             "slow_smooth_type"
         ],
-        "only the leg-kind and leg-smoothing dropdowns select"
+        "only the catalog-backed dropdowns select"
     );
     for (name, config) in [
         ("fast_mas", FastMasConfig::new().build().describe()),

@@ -20,14 +20,15 @@ use fluent_egui::{
     anchor_window, auto_height_range, axis_ticks, candle_body_width, column_candle_geoms,
     column_delta_geoms, crosshair_data, crosshair_lines, needs_column_aggregation,
     opacity_from_transparency, paint_candles_tinted, paint_catalog_modal, paint_crosshair,
-    paint_delta_bars_tinted, paint_hot_slot_stack, paint_oscillator, paint_ribbon,
-    paint_ribbon_fill, paint_slot_settings_modal, paint_thresholds, project_style_fields,
-    proportional_ribbon_polygons, resolve_color, sampled_line_points, sampled_ribbon_bands,
-    schema_fields, translate_bands, translate_candles, translate_delta_bars, translate_points,
-    translate_polygons, visible_rows, wheel_zoom_factor, zoom_range_around, CatalogAction,
-    CatalogModal, CrosshairLines, EguiError, HotSlotAction, HotSlotStack, InteractionState,
-    PaneCache, PanePlan, PaneZones, PointerInput, SchemaField, SettingsCommit, SettingsTab,
-    SlotAttachment, ThemeConfig, TintedCandle, TintedDeltaBar, Viewport, WheelTarget, WheelZones,
+    paint_delta_bars_styled, paint_delta_bars_tinted, paint_hot_slot_stack, paint_oscillator,
+    paint_ribbon, paint_ribbon_fill, paint_slot_settings_modal, paint_thresholds,
+    project_style_fields, proportional_ribbon_polygons, resolve_color, sampled_line_points,
+    sampled_ribbon_bands, schema_fields, translate_bands, translate_candles, translate_delta_bars,
+    translate_points, translate_polygons, visible_rows, wheel_zoom_factor, zoom_range_around,
+    CatalogAction, CatalogModal, CrosshairLines, EguiError, HotSlotAction, HotSlotStack,
+    InteractionState, PaneCache, PanePlan, PaneZones, PointerInput, SchemaField, SettingsCommit,
+    SettingsTab, SlotAttachment, ThemeConfig, TintedCandle, TintedDeltaBar, Viewport, WheelTarget,
+    WheelZones,
 };
 use fluent_wvr::{
     component_downcast_mut, component_downcast_ref, Component, Describable, FieldAccess,
@@ -51,7 +52,7 @@ use crate::indicators::{
 use crate::integration_lite::{
     candle_momentum_keys, candle_momentum_series, integration_lite_sub_pane, momentum_key_for,
     momentum_tints, ribbon_fill_transparency, IntegrationLiteConfig, IntegrationLiteSubPane,
-    MomentumPalette, MomentumTint, CALIBRATED_PIVOT_THRESHOLD,
+    MomentumPalette, MomentumTint, CALIBRATED_PIVOT_THRESHOLD, VOLUME_TRANSPARENCY,
 };
 use crate::oscillator_panel::{panel_kind_for_kernel, OscillatorPanelState, PANEL_KINDS};
 use crate::prefs::{BookmarkEntry, Favorites, SlotPrefs, TerminalPrefs, TickerLayout};
@@ -339,6 +340,21 @@ fn tint_color(tint: MomentumTint) -> egui::Color32 {
         tint.blue,
         opacity_from_transparency(tint.transparency),
     )
+}
+
+/// One resolved delta volume color at the script's delta transparency: the
+/// dialed hex through the shared hex reader, dimmed exactly like the
+/// script's `color.new(hex, 60)`. A malformed dial refuses naming its
+/// field instead of tinting from silent gray — validation already refuses
+/// it, so paint can only see this on a config that changed mid-frame.
+fn volume_color(hex: &str, slot: &str) -> Result<egui::Color32, EguiError> {
+    let base = fluent_egui::parse_hex_color(slot, hex)?;
+    Ok(egui::Color32::from_rgba_unmultiplied(
+        base.r(),
+        base.g(),
+        base.b(),
+        opacity_from_transparency(VOLUME_TRANSPARENCY),
+    ))
 }
 
 /// Where a merged slot paints: its computation stays where it was, only
@@ -3878,7 +3894,14 @@ impl ChartWorkspace {
                 continue;
             }
             if slot_id == INTEGRATION_LITE_ID {
-                thresholds.push(CALIBRATED_PIVOT_THRESHOLD);
+                let show = self
+                    .stack
+                    .config(INTEGRATION_LITE_ID)
+                    .and_then(component_downcast_ref::<IntegrationLiteConfig>)
+                    .is_none_or(|config| config.pivots_show);
+                if show {
+                    thresholds.push(CALIBRATED_PIVOT_THRESHOLD);
+                }
                 continue;
             }
             if let Some(config) = self
@@ -4352,6 +4375,17 @@ impl ChartWorkspace {
             .config(INTEGRATION_LITE_ID)
             .and_then(|config| component_downcast_ref::<IntegrationLiteConfig>(config))
             .map_or(DEFAULT_EIT_ALPHA, |config| config.eit_alpha);
+        // The color-code switch is display-only: off clears the gradient so
+        // bars fall back to the discrete trend keys, on tints as today.
+        let color_code = self
+            .stack
+            .config(INTEGRATION_LITE_ID)
+            .and_then(|config| component_downcast_ref::<IntegrationLiteConfig>(config))
+            .is_none_or(|config| config.color_code);
+        if !color_code {
+            self.tints = Vec::new();
+            return Ok(());
+        }
         self.tints = match MomentumPalette::from_theme(&self.theme) {
             Ok(palette) => {
                 let momentum = candle_momentum_series(rows, eit_alpha)?;
@@ -4995,36 +5029,58 @@ impl ChartWorkspace {
                 }
             }
             if let Some(pane) = &self.sub_pane {
-                // The delta histogram reads the full-history legs and
-                // dispatches by pixel columns exactly as the candles do:
-                // native bars above one pixel per bar, one folded bar per
-                // screen column below it — display density only, values
-                // untouched, holes staying holes per leg.
-                let bars = column_delta_geoms(
-                    &pane.delta_volume.buy_top,
-                    &pane.delta_volume.sell_bottom,
-                    &sub,
-                    sub_layout.plot.width(),
-                )?;
-                let placed =
-                    translate_delta_bars(bars, (sub_layout.plot.left(), sub_layout.plot.top()));
-                let mut tinted = Vec::with_capacity(placed.len());
-                for geom in &placed {
-                    let key = self
-                        .momentum_keys
-                        .get(geom.index)
-                        .copied()
-                        .unwrap_or("bull");
-                    let color = self.bar_color(geom.index, key, &theme)?;
-                    tinted.push(TintedDeltaBar { geom: *geom, color });
+                // A hidden delta leg paints nothing but leaves the shared
+                // pane's rules, zero line, and axis untouched below.
+                if pane.show_delta {
+                    // The delta histogram reads the full-history legs and
+                    // dispatches by pixel columns exactly as the candles do:
+                    // native bars above one pixel per bar, one folded bar per
+                    // screen column below it — display density only, values
+                    // untouched, holes staying holes per leg.
+                    let bars = column_delta_geoms(
+                        &pane.delta_volume.buy_top,
+                        &pane.delta_volume.sell_bottom,
+                        &sub,
+                        sub_layout.plot.width(),
+                    )?;
+                    let placed =
+                        translate_delta_bars(bars, (sub_layout.plot.left(), sub_layout.plot.top()));
+                    let half_width =
+                        candle_body_width(sub.scale().bar_spacing()) * DELTA_BAR_BODY_SHARE / 2.0;
+                    // Script-parity split first: the dialed volume colors
+                    // paint the buy/sell legs exactly like the reference
+                    // plotcandles. A slot that lost its config mid-frame
+                    // falls back to the momentum tint rather than refusing
+                    // the whole pane.
+                    let styled = self
+                        .stack
+                        .config(INTEGRATION_LITE_ID)
+                        .and_then(component_downcast_ref::<IntegrationLiteConfig>)
+                        .map(|config| {
+                            Ok::<_, EguiError>((
+                                volume_color(&config.delta_bull, "delta_bull")?,
+                                volume_color(&config.delta_bear, "delta_bear")?,
+                            ))
+                        })
+                        .transpose()?;
+                    if let Some((bull, bear)) = styled {
+                        paint_delta_bars_styled(&sub_plot, &placed, half_width, bull, bear);
+                    } else {
+                        let mut tinted = Vec::with_capacity(placed.len());
+                        for geom in &placed {
+                            let key = self
+                                .momentum_keys
+                                .get(geom.index)
+                                .copied()
+                                .unwrap_or("bull");
+                            let color = self.bar_color(geom.index, key, &theme)?;
+                            tinted.push(TintedDeltaBar { geom: *geom, color });
+                        }
+                        // The histogram is a slimmer overlay inside the oscillator
+                        // pane, but it tracks the same live zoom as the candles.
+                        paint_delta_bars_tinted(&sub_plot, &tinted, half_width);
+                    }
                 }
-                // The histogram is a slimmer overlay inside the oscillator
-                // pane, but it tracks the same live zoom as the candles.
-                paint_delta_bars_tinted(
-                    &sub_plot,
-                    &tinted,
-                    candle_body_width(sub.scale().bar_spacing()) * DELTA_BAR_BODY_SHARE / 2.0,
-                );
             }
             // The crosshair's vertical band spans the oscillator at the same
             // snapped bar the price pane reads: the band is the shared time

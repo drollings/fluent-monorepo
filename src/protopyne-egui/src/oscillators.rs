@@ -144,8 +144,9 @@ impl OscillatorKind {
     }
 
     /// Kernel that produces the raw series, or `None` for pass-through
-    /// (`Raw`), refused (`Cdv`), and recipe families without a single kernel
-    /// (`Srsi`, `TrendSi`).
+    /// (`Raw`) and the refused row (`Cdv`). Every other catalog row,
+    /// including the composed recipes (`Srsi`, `TrendSi`), names its
+    /// registered kernel.
     #[must_use]
     pub fn kernel_id(self) -> Option<&'static str> {
         match self {
@@ -154,9 +155,11 @@ impl OscillatorKind {
             Self::Cmo => Some("cmo"),
             Self::Mfi => Some("mfi"),
             Self::Rsi => Some("rsi"),
+            Self::Srsi => Some("srsi"),
             Self::Stoch => Some("stoch"),
+            Self::TrendSi => Some("trendsi"),
             Self::Voss => Some("voss"),
-            Self::Cdv | Self::Srsi | Self::TrendSi | Self::Raw => None,
+            Self::Cdv | Self::Raw => None,
         }
     }
 
@@ -484,12 +487,13 @@ pub fn normalize_series_bounded(
 ///
 /// This is the taxonomy the shared pane gates on: single-output catalog
 /// kernels map their `value` leg, the stochastic family maps both legs
-/// (the %D leg lives in the same bounded 0..100 space), aroon maps both
-/// legs through the unit bridge (fractions rescale to the Pine 0..100 arm),
-/// and everything else — price bands, multi-output recipes, unmapped
-/// families — reads raw and refuses the merge. The leg is provenance:
-/// display squashes by kind, and every mapped leg shares its kernel's
-/// length window, which the slow leg names.
+/// (the %D leg lives in the same bounded 0..100 space, and the SRSI relay
+/// carries the same secondary), aroon maps both legs through the unit
+/// bridge (fractions rescale to the Pine 0..100 arm), and everything else —
+/// price bands, multi-output recipes, unmapped families — reads raw and
+/// refuses the merge. The leg is provenance: display squashes by kind, and
+/// every mapped leg shares its kernel's length window, which the slow leg
+/// names.
 #[must_use]
 pub fn oscillator_mapping_for_output(
     kernel: &str,
@@ -501,6 +505,8 @@ pub fn oscillator_mapping_for_output(
         ("cmo", "value") => Some((OscillatorKind::Cmo, WhichLeg::Slow)),
         ("mfi", "value") => Some((OscillatorKind::Mfi, WhichLeg::Slow)),
         ("stoch", "value" | "d") => Some((OscillatorKind::Stoch, WhichLeg::Slow)),
+        ("srsi", "value" | "d") => Some((OscillatorKind::Srsi, WhichLeg::Slow)),
+        ("trendsi", "value") => Some((OscillatorKind::TrendSi, WhichLeg::Slow)),
         ("aroon", "value" | "down") => Some((OscillatorKind::Aroon, WhichLeg::Slow)),
         _ => None,
     }

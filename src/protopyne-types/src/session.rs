@@ -61,6 +61,24 @@ impl TradingSession {
         mins >= self.open_min && mins < self.close_min
     }
 
+    /// Session open in ET minutes past midnight.
+    #[must_use]
+    pub fn open_minute(self) -> u32 {
+        self.open_min
+    }
+
+    /// Session close in ET minutes past midnight (exclusive bound).
+    #[must_use]
+    pub fn close_minute(self) -> u32 {
+        self.close_min
+    }
+
+    /// ET wall-clock minutes of a millisecond timestamp.
+    #[must_use]
+    pub fn wall_minutes(ts_ms: i64) -> u32 {
+        et_wall_minutes(ts_ms)
+    }
+
     /// ET calendar date `(year, month, day)` of the stamp.
     #[must_use]
     pub fn session_date(self, ts_ms: i64) -> (i32, u32, u32) {

@@ -9,6 +9,7 @@ pub mod backtest;
 pub mod boot;
 pub mod chain_history;
 pub mod csv;
+pub mod equity;
 pub mod error;
 pub mod gateway;
 pub mod history;

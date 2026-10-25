@@ -2,7 +2,8 @@
 //!
 //! The closed vocabulary is `skip`, `desc`, `min`, `max`, `clamp`,
 //! `required`, `format`, `max_len`, `sanitize`, `pattern`, `coerce`,
-//! `parse`, `variants`, `empty_is_none`. Anything else — a typo like
+//! `parse`, `variants`, `tab`, `group`, `tooltip`, `step`,
+//! `inline`, `empty_is_none`. Anything else — a typo like
 //! `max_lne` or a planned-not-implemented `version_added` — must fail
 //! expansion with an error naming the argument, never silently drop.
 
@@ -44,6 +45,11 @@ fn version_added_refuses_naming_the_argument() {
         "coerce",
         "parse",
         "variants",
+        "tab",
+        "group",
+        "tooltip",
+        "step",
+        "inline",
         "empty_is_none",
     ] {
         assert!(

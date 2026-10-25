@@ -106,6 +106,42 @@ pub struct RunOutcome {
     /// Every drawing lifecycle event in execution order (created, updated,
     /// deleted with the object key and call arguments), rendering nothing.
     pub draw_events: Vec<DrawingEvent>,
+    /// Every `strategy.entry/exit/close/close_all` call in execution order:
+    /// harness observations of the broker dialogue, never venue authority.
+    pub strategy_calls: Vec<StrategyCall>,
+}
+
+/// One recorded `strategy.*` broker call: the harness observation of what
+/// the strategy asked its broker to do on one closed bar. Quantities,
+/// prices, and comments ride along verbatim; nothing here ever reaches a
+/// venue — the native backtester replays the same tape through real fills
+/// and the parity harness compares the two decision streams.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StrategyCall {
+    /// Bar index that committed the call.
+    pub bar: usize,
+    /// `entry`, `exit`, `close`, or `close_all`.
+    pub kind: &'static str,
+    /// Order id (`exit` also carries `from_entry`).
+    pub id: String,
+    /// `strategy.long`/`strategy.short` direction, when the call names one.
+    pub direction: Option<String>,
+    /// `qty`/`qty_percent` legs, when present.
+    pub qty: Option<f64>,
+    /// `qty_percent` leg, when present.
+    pub qty_percent: Option<f64>,
+    /// Price legs (`limit`, `stop`, `profit`, `loss`), when present.
+    pub limit: Option<f64>,
+    /// Stop leg, when present.
+    pub stop: Option<f64>,
+    /// Take-profit leg, when present.
+    pub profit: Option<f64>,
+    /// Stop-loss leg, when present.
+    pub loss: Option<f64>,
+    /// Comment legs (`comment`, `comment_profit`, `comment_loss`, ...).
+    pub comment: Option<String>,
+    /// Entry id this exit closes, when named.
+    pub from_entry: Option<String>,
 }
 
 /// One captured `plot()` series: title and display flag plus one value per
@@ -522,6 +558,15 @@ struct EngineState {
     plotshapes: Vec<PlotShapeCapture>,
     hlines: Vec<HlineCapture>,
     draw_events: Vec<DrawingEvent>,
+    /// Every `strategy.entry/exit/close/close_all` call in execution
+    /// order, with the bar that committed it: harness observations of the
+    /// broker dialogue, never venue authority. Reset per run with the rest
+    /// of the state.
+    strategy_calls: Vec<StrategyCall>,
+    /// `initial_capital` from the `strategy(...)` declaration, when the run
+    /// linked a strategy root. Reads of `strategy.initial_capital` return
+    /// exactly this; an unset value refuses instead of inventing capital.
+    strategy_initial_capital: Option<f64>,
     drawings: HashMap<u64, DrawingObject>,
     next_drawing_id: u64,
     error: Option<KernelError>,
@@ -580,6 +625,8 @@ impl EngineState {
             plotshapes: Vec::new(),
             hlines: Vec::new(),
             draw_events: Vec::new(),
+            strategy_calls: Vec::new(),
+            strategy_initial_capital: None,
             drawings: HashMap::new(),
             next_drawing_id: 0,
             error: None,
@@ -957,6 +1004,7 @@ impl PineEngine {
             plotshapes: std::mem::take(&mut state.plotshapes),
             hlines: std::mem::take(&mut state.hlines),
             draw_events: std::mem::take(&mut state.draw_events),
+            strategy_calls: std::mem::take(&mut state.strategy_calls),
         })
     }
 
@@ -2297,6 +2345,9 @@ impl EngineState {
                     ))
                 });
         }
+        if let Some(member) = name.strip_prefix("strategy.") {
+            return self.read_strategy_member(member);
+        }
         if name == "timenow" {
             if self.tick_mode() {
                 return Ok(ctx
@@ -2308,6 +2359,37 @@ impl EngineState {
         }
         if name == "syminfo.tickerid" {
             return Ok(Some(PineValue::Str(self.chart_symbol.clone())));
+        }
+        if name == "syminfo.timezone" {
+            // Harness constant: histories are US equities, so wall-clock
+            // session math runs in Eastern. Named here, not inferred.
+            return Ok(Some(PineValue::Str("America/New_York".to_owned())));
+        }
+        if name == "syminfo.pointvalue" {
+            // Harness constant: stock histories carry one currency unit per
+            // point. Futures would need a contract feed this harness does
+            // not inject — their pointvalue stays unmapped on purpose.
+            return Ok(Some(PineValue::Float(1.0)));
+        }
+        if name == "syminfo.mincontract" {
+            // Harness constant: stock histories trade whole shares.
+            return Ok(Some(PineValue::Int(1)));
+        }
+        if name == "timeframe.isintraday" {
+            return Ok(Some(PineValue::Bool(chart_period_is_intraday(
+                &self.chart_period,
+            ))));
+        }
+        if name == "time_open" {
+            return Ok(read_leg(legs, "time", ctx.cursor()));
+        }
+        if name == "time_close" {
+            let span = chart_period_seconds(&self.chart_period) as f64;
+            return Ok(read_leg(legs, "time", ctx.cursor()).map(|v| match v {
+                PineValue::Float(f) => PineValue::Float(f + span),
+                PineValue::Int(i) => PineValue::Int(i + span as i64),
+                other => other,
+            }));
         }
         if name == "timeframe.period" {
             return Ok(Some(PineValue::Str(self.chart_period.clone())));
@@ -2666,11 +2748,45 @@ impl EngineState {
                 )
             }
             "time" => self.call_session_time(&values, ctx, legs),
+            // Clock reads for session math: `hour(t)`/`minute(t)` in UTC,
+            // or in ET with an explicit `"America/New_York"` zone (the only
+            // zone the headless harness maps — histories are US equities).
+            // Anything else refuses naming the row instead of guessing an
+            // offset.
+            "hour" => Self::call_wall_part(&values, 0),
+            "minute" => Self::call_wall_part(&values, 1),
+            // The strategy declaration carries the broker contract the
+            // harness observes but never runs: pyramiding, commission,
+            // slippage, margin, and the initial capital the day-P&L
+            // baseline reads back. Arguments evaluate (errors refuse
+            // above); only a declared initial capital is retained,
+            // everything else is a documented harness boundary.
+            "strategy" => {
+                for (arg, value) in args.iter().zip(values.iter()) {
+                    if arg.name.as_deref() == Some("initial_capital") {
+                        match value {
+                            Some(PineValue::Int(v)) => {
+                                self.strategy_initial_capital = Some(*v as f64);
+                            }
+                            Some(PineValue::Float(v)) => {
+                                self.strategy_initial_capital = Some(*v);
+                            }
+                            _ => {
+                                return Err(refused(
+                                    "strategy initial_capital must be a number",
+                                ));
+                            }
+                        }
+                    }
+                }
+                Ok(None)
+            }
             // Alert declarations evaluate their condition and record
             // nothing: alerts cannot fire headlessly, and they draw
             // nothing, so there is no capture vector for them. Argument
-            // evaluation errors still refuse above.
-            "alertcondition" => Ok(None),
+            // evaluation errors still refuse above. Bare `alert(...)`
+            // calls from strategy scripts share the rule.
+            "alertcondition" | "alert" => Ok(None),
             _ if self
                 .functions
                 .contains_key(&(self.current_module.clone(), name.to_owned())) =>
@@ -2918,6 +3034,46 @@ impl EngineState {
             Some(Some(other)) => Err(refused(format!("time takes a session string, got {other}"))),
             None => Ok(read_leg(legs, "time", ctx.cursor())),
         }
+    }
+
+    /// Wall-clock parts for session math: `hour(t)`/`minute(t)` in UTC, or
+    /// in Eastern with an explicit `"America/New_York"` zone (the single
+    /// mapped zone — histories are US equities). Absent input reads absent;
+    /// non-numeric stamps and unmapped zones refuse naming the row.
+    fn call_wall_part(values: &[Option<PineValue>], part: u8) -> Result<Option<PineValue>, KernelError> {
+        let stamp = match values.first() {
+            Some(Some(PineValue::Float(v))) => *v,
+            Some(Some(PineValue::Int(v))) => *v as f64,
+            Some(None) => return Ok(None),
+            _ => {
+                return Err(refused(format!(
+                    "{} takes a timestamp, got {:?}",
+                    if part == 0 { "hour" } else { "minute" },
+                    values.first()
+                )));
+            }
+        };
+        if !stamp.is_finite() {
+            return Ok(None);
+        }
+        let offset_secs: i64 = match values.get(1) {
+            None | Some(None) => 0,
+            Some(Some(PineValue::Str(zone))) if zone == "America/New_York" => {
+                i64::from(eastern_offset_secs(stamp as i64))
+            }
+            Some(Some(other)) => {
+                return Err(refused(format!(
+                    "wall-clock zones outside America/New_York are not mapped headlessly, got {other}"
+                )));
+            }
+        };
+        let wall = stamp as i64 + offset_secs;
+        let value = if part == 0 {
+            wall.div_euclid(3600).rem_euclid(24)
+        } else {
+            wall.div_euclid(60).rem_euclid(60)
+        };
+        Ok(Some(PineValue::Int(value)))
     }
 
     /// Serve an injected lower-timeframe dataset to
@@ -3655,6 +3811,190 @@ impl EngineState {
         }
     }
 
+    /// Harness reads of the `strategy.*` namespace: direction and sizing
+    /// constants answer literally, the empty-book trade history reads zero
+    /// or `na` (the harness models no broker — fills never happen here, so
+    /// there is no book to read), and anything outside the covered set
+    /// refuses naming the member. The empty book is the documented harness
+    /// boundary the coverage matrix pins per member.
+    fn read_strategy_member(&self, member: &str) -> Result<Option<PineValue>, KernelError> {
+        match member {
+            "long" => Ok(Some(PineValue::Str("long".to_owned()))),
+            "short" => Ok(Some(PineValue::Str("short".to_owned()))),
+            "fixed" => Ok(Some(PineValue::Str("contracts".to_owned()))),
+            "commission.percent" => Ok(Some(PineValue::Str("percent".to_owned()))),
+            "initial_capital" => self
+                .strategy_initial_capital
+                .map(PineValue::Float)
+                .map(Some)
+                .ok_or_else(|| {
+                    refused("strategy.initial_capital read before any strategy declaration ran")
+                }),
+            // No broker runs headlessly, so the book is empty by
+            // construction: counts read zero, realized money reads zero,
+            // and anything that needs a fill reads `na`. The one modeled
+            // exception is `equity`, which reads the initial capital so
+            // sizing can compute a quantity — fills are still never
+            // booked, positions never tracked, and `closedtrades` stays
+            // zero, so the harness observes entries but never their
+            // aftermath.
+            "closedtrades" | "opentrades" | "wintrades" | "losstrades" => {
+                Ok(Some(PineValue::Int(0)))
+            }
+            "position_size" => Ok(Some(PineValue::Float(0.0))),
+            "netprofit" | "grossprofit" | "grossloss" | "commission" => {
+                Ok(Some(PineValue::Float(0.0)))
+            }
+            "equity" => self
+                .strategy_initial_capital
+                .map(PineValue::Float)
+                .map(Some)
+                .ok_or_else(|| {
+                    refused("strategy.equity read before any strategy declaration ran")
+                }),
+            "position_avg_price" | "openprofit" | "max_drawdown" => Ok(None),
+            _ => Err(refused(format!(
+                "strategy.{member} is outside the harness matrix (Supported: long, short, fixed, commission.percent, initial_capital, closedtrades, opentrades, wintrades, losstrades, position_size, equity, netprofit, openprofit, grossprofit, grossloss, position_avg_price, max_drawdown)"
+            ))),
+        }
+    }
+
+    /// Harness recording of the `strategy.*` broker dialogue: entries,
+    /// exits, closes, and the empty-book trade-history reads. Every call
+    /// lands in [`RunOutcome::strategy_calls`] with the committing bar;
+    /// nothing here reaches a venue.
+    #[allow(clippy::too_many_lines)]
+    fn call_strategy(
+        &mut self,
+        namespace: &str,
+        method: &str,
+        args: &[CallArg],
+        ctx: &mut RunCtx<'_>,
+        legs: &Legs,
+    ) -> Result<Option<PineValue>, KernelError> {
+        let mut evaluated = Vec::with_capacity(args.len());
+        for arg in args {
+            evaluated.push((arg.name.clone(), self.eval_expr(&arg.value, ctx, legs)?));
+        }
+        let number = |names: &[&str]| -> Option<f64> {
+            evaluated.iter().find_map(|(name, value)| {
+                let key = name.as_deref()?;
+                if !names.contains(&key) {
+                    return None;
+                }
+                match value {
+                    Some(PineValue::Float(v)) => Some(*v),
+                    Some(PineValue::Int(v)) => Some(*v as f64),
+                    _ => None,
+                }
+            })
+        };
+        let text = |names: &[&str]| -> Option<String> {
+            evaluated.iter().find_map(|(name, value)| {
+                let key = name.as_deref()?;
+                if !names.contains(&key) {
+                    return None;
+                }
+                match value {
+                    Some(PineValue::Str(v)) => Some(v.clone()),
+                    _ => None,
+                }
+            })
+        };
+        let positional = |index: usize| -> Option<PineValue> {
+            let mut positionals = evaluated
+                .iter()
+                .filter(|(name, _)| name.is_none())
+                .map(|(_, value)| value);
+            positionals.nth(index).cloned().flatten()
+        };
+        let bar = ctx.cursor();
+        match (namespace, method) {
+            ("strategy", "entry") => {
+                let direction = match positional(1) {
+                    Some(PineValue::Str(v)) => Some(v),
+                    _ => None,
+                };
+                let id = match positional(0) {
+                    Some(PineValue::Str(v)) => Some(v),
+                    _ => None,
+                }
+                .or_else(|| text(&["id"]));
+                self.strategy_calls.push(StrategyCall {
+                    bar,
+                    kind: "entry",
+                    id: id.unwrap_or_default(),
+                    direction,
+                    qty: number(&["qty"]),
+                    qty_percent: number(&["qty_percent"]),
+                    limit: number(&["limit"]),
+                    stop: number(&["stop"]),
+                    profit: None,
+                    loss: None,
+                    comment: text(&["comment", "comment_profit", "comment_loss"]),
+                    from_entry: None,
+                });
+                Ok(None)
+            }
+            ("strategy", "exit") => {
+                self.strategy_calls.push(StrategyCall {
+                    bar,
+                    kind: "exit",
+                    id: text(&["id"]).unwrap_or_default(),
+                    direction: None,
+                    qty: number(&["qty"]),
+                    qty_percent: number(&["qty_percent"]),
+                    limit: number(&["limit"]),
+                    stop: number(&["stop"]),
+                    profit: number(&["profit"]),
+                    loss: number(&["loss"]),
+                    comment: text(&["comment", "comment_profit", "comment_loss"]),
+                    from_entry: text(&["from_entry"]),
+                });
+                Ok(None)
+            }
+            ("strategy", "close") => {
+                self.strategy_calls.push(StrategyCall {
+                    bar,
+                    kind: "close",
+                    id: text(&["id"]).unwrap_or_default(),
+                    direction: None,
+                    qty: number(&["qty"]),
+                    qty_percent: number(&["qty_percent"]),
+                    limit: None,
+                    stop: None,
+                    profit: None,
+                    loss: None,
+                    comment: text(&["comment"]),
+                    from_entry: None,
+                });
+                Ok(None)
+            }
+            ("strategy", "close_all") => {
+                self.strategy_calls.push(StrategyCall {
+                    bar,
+                    kind: "close_all",
+                    id: String::new(),
+                    direction: None,
+                    qty: None,
+                    qty_percent: None,
+                    limit: None,
+                    stop: None,
+                    profit: None,
+                    loss: None,
+                    comment: text(&["comment"]),
+                    from_entry: None,
+                });
+                Ok(None)
+            }
+            ("strategy.closedtrades", "size") => Ok(Some(PineValue::Int(0))),
+            ("strategy.closedtrades", "exit_comment") => Ok(None),
+            _ => Err(refused(format!(
+                "strategy call {namespace}.{method} is outside the harness matrix (Supported: entry, exit, close, close_all, closedtrades.size, closedtrades.exit_comment)"
+            ))),
+        }
+    }
+
     /// Namespaced calls: `ta.*` dispatches to the kernel bridge with the
     /// current chart tick; the scalar and structural namespaces (`math`,
     /// `str`, `input`, `array`, `map`, `color`, `timeframe`) dispatch to the
@@ -3675,6 +4015,12 @@ impl EngineState {
         ctx: &mut RunCtx<'_>,
         legs: &Legs,
     ) -> Result<Option<PineValue>, KernelError> {
+        // `strategy.*` broker calls are harness observations: entries,
+        // exits, closes, and the empty-book trade-history reads the
+        // strategy file leans on. Nothing here reaches a venue.
+        if namespace == "strategy" || namespace.starts_with("strategy.") {
+            return self.call_strategy(namespace, method, args, ctx, legs);
+        }
         if namespace == "runtime" && method == "error" {
             let mut values = Vec::with_capacity(args.len());
             for arg in args {
@@ -5512,6 +5858,56 @@ fn is_absent(value: Option<&PineValue>) -> bool {
 /// Absence inside a present slot (a `NaN` float).
 fn is_absent_value(value: &PineValue) -> bool {
     matches!(value, PineValue::Float(v) if v.is_nan())
+}
+
+/// Whether a chart period string names an intraday timeframe: trailing `S`
+/// is seconds, a bare number is minutes, anything else (days and up) is
+/// not intraday.
+fn chart_period_is_intraday(period: &str) -> bool {
+    if let Some(seconds) = period.strip_suffix('S') {
+        return seconds.parse::<u64>().is_ok();
+    }
+    period.parse::<u64>().is_ok()
+}
+
+/// Bar span in seconds for a chart period string: bare numbers read
+/// minutes, a trailing `S` reads seconds. Unknown shapes read zero and let
+/// the caller refuse with the reason.
+fn chart_period_seconds(period: &str) -> i64 {
+    if let Some(seconds) = period.strip_suffix('S') {
+        return seconds.parse::<i64>().unwrap_or(0);
+    }
+    period.parse::<i64>().map_or(0, |m| m.saturating_mul(60))
+}
+
+/// US/Eastern UTC offset in seconds for a timestamp: -4h inside daylight
+/// time (second Sunday of March 07:00 UTC through first Sunday of November
+/// 06:00 UTC), -5h otherwise. The harness maps exactly one zone; every
+/// other spelling refuses at the call site.
+fn eastern_offset_secs(ts_secs: i64) -> i32 {
+    use chrono::{Datelike, NaiveDate};
+    let date = chrono::DateTime::from_timestamp(ts_secs, 0).map_or_else(
+        || NaiveDate::from_ymd_opt(1970, 1, 1).expect("epoch date"),
+        |dt| dt.naive_utc().date(),
+    );
+    let year = date.year();
+    let sunday_in =
+        |month: u32, ordinal: u32| -> Option<NaiveDate> {
+            let first = NaiveDate::from_ymd_opt(year, month, 1)?;
+            let until_sunday =
+                (7 - first.weekday().num_days_from_sunday()) % 7;
+            NaiveDate::from_ymd_opt(year, month, 1 + until_sunday + (ordinal - 1) * 7)
+        };
+    let dst_start = sunday_in(3, 2)
+        .and_then(|d| d.and_hms_opt(7, 0, 0))
+        .map(|d| d.and_utc().timestamp());
+    let dst_end = sunday_in(11, 1)
+        .and_then(|d| d.and_hms_opt(6, 0, 0))
+        .map(|d| d.and_utc().timestamp());
+    match (dst_start, dst_end) {
+        (Some(start), Some(end)) if ts_secs >= start && ts_secs < end => -4 * 3600,
+        _ => -5 * 3600,
+    }
 }
 
 /// One leg read at a data index; `NaN` legs are `na`.
