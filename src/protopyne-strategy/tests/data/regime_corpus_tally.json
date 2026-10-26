@@ -1,0 +1,80 @@
+{
+  "detector": [
+    {
+      "health": 30.0,
+      "label": "TRENDING_BULL",
+      "vol_ratio": null,
+      "volatility_ratio": null
+    },
+    {
+      "health": -30.0,
+      "label": "TRENDING_BEAR",
+      "vol_ratio": null,
+      "volatility_ratio": null
+    },
+    {
+      "health": 10.0,
+      "label": "VOLATILE",
+      "vol_ratio": 1.0,
+      "volatility_ratio": 3.0
+    },
+    {
+      "health": 5.0,
+      "label": "RANGING",
+      "vol_ratio": 3.0,
+      "volatility_ratio": 1.0
+    },
+    {
+      "health": null,
+      "label": "LOW_VOLUME",
+      "vol_ratio": null,
+      "volatility_ratio": null
+    },
+    {
+      "health": null,
+      "label": "LOW_VOLUME",
+      "vol_ratio": 0.5,
+      "volatility_ratio": 1.0
+    }
+  ],
+  "method": "Each corpus triple is read once by the frozen detector (exact label equality) and each stability row once by the hysteresis wrapper; the tally freezes every label. Evidence, not code: the labels are the gate's contract.",
+  "scope": "regime gate only: no trigger, filter, sizing, or exit reads these rows",
+  "stability": [
+    {
+      "health": 10.0,
+      "held": "LOW_VOLUME",
+      "label": "VOLATILE",
+      "vol_ratio": 1.0,
+      "volatility_ratio": 3.0
+    },
+    {
+      "health": -30.0,
+      "held": "TRENDING_BULL",
+      "label": "TRENDING_BEAR",
+      "vol_ratio": null,
+      "volatility_ratio": null
+    },
+    {
+      "health": 10.0,
+      "held": "TRENDING_BULL",
+      "label": "VOLATILE",
+      "vol_ratio": 0.5,
+      "volatility_ratio": 3.0
+    },
+    {
+      "health": 10.0,
+      "held": "RANGING",
+      "label": "LOW_VOLUME",
+      "vol_ratio": 1.0,
+      "volatility_ratio": 2.0
+    },
+    {
+      "health": 5.0,
+      "held": "RANGING",
+      "label": "RANGING",
+      "vol_ratio": 2.0,
+      "volatility_ratio": 1.0
+    }
+  ],
+  "thresholds": "trend_floor=20;volatility_floor=20;volume_floor=25;volatility_scale=8;volume_scale=10"
+}

@@ -167,6 +167,42 @@ async fn server_gateway_matches_http_routes() {
         "the published window carries the core's own anchors to scrub to"
     );
 
+    // Backtest parity: the schema, the stored run, and the state read read
+    // the same bytes through the gateway and through the route.
+    let schema: protopyne_view::BacktestSchemaView =
+        route(&client, format!("{base}/backtest/schema")).await;
+    assert_eq!(
+        gateway.backtest_schema().expect("gateway schema reads"),
+        schema
+    );
+    let spec = protopyne_strategy::integration_lite::IntegrationLiteSpec::from(
+        &protopyne_strategy::integration_lite::IntegrationLiteStrategyConfig::default(),
+    );
+    let run: protopyne_view::BacktestRunRef = client
+        .post(format!("{base}/backtest/run"))
+        .json(&protopyne_view::BacktestRunParams {
+            spec: serde_json::to_value(&spec).expect("spec serializes"),
+            seed: 7,
+            initial_equity: "100000".to_owned(),
+            start: None,
+            end: None,
+            grant: None,
+        })
+        .send()
+        .await
+        .expect("run reachable")
+        .json()
+        .await
+        .expect("run ref is JSON");
+    let state: protopyne_view::BacktestRunView =
+        route(&client, format!("{base}/backtest/{}", run.run_id)).await;
+    assert_eq!(
+        gateway
+            .backtest_state(&run.run_id)
+            .expect("gateway state reads"),
+        state
+    );
+
     handle.shutdown().await;
 }
 

@@ -27,14 +27,17 @@ use crate::error::ServerError;
 use crate::rehearsal::{preview_grant, select_strategy, StrategyKind};
 use crate::runner::{run_backtest, BacktestRun, RunnerConfig};
 use crate::views::{
-    apply_arm, booked_portfolio_of, broker_account_of, broker_capabilities_of, broker_deal_of,
+    apply_arm, backtest_run_of, backtest_run_view_of_entry, backtest_schema_of,
+    booked_portfolio_of, broker_account_of, broker_capabilities_of, broker_deal_of,
     broker_order_of, chart_bars_of, confirm_ticket, decide_journaled, deny_histogram_of,
     health_view, import_tickets, issue_ticket, journal_attest, journal_cancel_all,
     journal_close_all, journal_rows_of, journaled_proposals_of, live_grant, overlay_series_of,
     pending_proposals_of, publish_run, replay_view_of, revoke_grant, ticket_drifts_of,
     waiting_tickets, DEFAULT_REPLAY_CHECKPOINT_EVERY,
 };
-use protopyne_view::{ArmResponse, DenyCount};
+use protopyne_view::{
+    ArmResponse, BacktestRunParams, BacktestRunRef, BacktestRunView, BacktestSchemaView, DenyCount,
+};
 
 type ApiResult<T> = Result<Json<T>, (StatusCode, Json<ErrorBody>)>;
 
@@ -84,7 +87,9 @@ pub struct PreviewParams {
 /// (manifest, per-bar verdicts, report) is core-owned, and a neutral copy
 /// would be a second implementation. The histogram legs ride the neutral
 /// [`DenyCount`] DTO; the run serializes exactly as before, which the
-/// golden proves byte-for-byte.
+/// golden proves byte-for-byte. The neutral `protopyne_view::views::`
+/// `PreviewResponse` carries the same shape with the run opaque for
+/// terminal reads; this is the typed core side of that split.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PreviewResponse {
     /// The backtest run, unchanged in shape.
@@ -428,6 +433,39 @@ async fn replay(
     .map_err(|(status, reason)| api_error(status, reason))
 }
 
+/// The composition schema plus the registry enumerations a form picker
+/// must offer. The terminal renders this without naming any strategy type.
+async fn backtest_schema(State(_state): State<Shared>) -> Json<BacktestSchemaView> {
+    Json(backtest_schema_of())
+}
+
+/// Run one backtest and store it under a deterministic run id. The stored
+/// bytes are what `GET /backtest/{id}` reads back.
+async fn backtest_run(
+    State(state): State<Shared>,
+    Json(params): Json<BacktestRunParams>,
+) -> Result<Json<BacktestRunRef>, (StatusCode, Json<ErrorBody>)> {
+    backtest_run_of(&state, params)
+        .await
+        .map(Json)
+        .map_err(|(status, reason)| api_error(status, reason))
+}
+
+/// Read one stored backtest run, fully projected.
+async fn backtest_state(
+    State(state): State<Shared>,
+    Path(id): Path<String>,
+) -> Result<Json<BacktestRunView>, (StatusCode, Json<ErrorBody>)> {
+    let backtests = common_core::sync::lock(&state.backtests);
+    match backtests.get(&id) {
+        Some(entry) => Ok(Json(backtest_run_view_of_entry(entry))),
+        None => Err(api_error(
+            StatusCode::NOT_FOUND,
+            format!("no backtest stored under run id {id}"),
+        )),
+    }
+}
+
 async fn feed(State(state): State<Shared>, upgrade: WebSocketUpgrade) -> impl IntoResponse {
     let feed = state.feed.subscribe();
     upgrade.on_upgrade(move |mut socket| async move {
@@ -618,6 +656,9 @@ pub(crate) fn router(state: Shared) -> Router {
         .route("/chart/bars", get(chart_bars))
         .route("/chart/overlays", get(chart_overlay))
         .route("/replay", get(replay))
+        .route("/backtest/schema", get(backtest_schema))
+        .route("/backtest/run", post(backtest_run))
+        .route("/backtest/{id}", get(backtest_state))
         .route("/journal", get(journal))
         .route("/feed", get(feed))
         .route("/broker/venues", get(broker_venues))
@@ -627,3 +668,7 @@ pub(crate) fn router(state: Shared) -> Router {
         .route("/broker/accounts/{account}/deals", get(broker_deals))
         .with_state(state)
 }
+
+#[cfg(test)]
+#[path = "../../tests/backtest_api.rs"]
+mod backtest_api_tests;

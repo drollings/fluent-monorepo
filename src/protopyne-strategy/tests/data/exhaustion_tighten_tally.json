@@ -1,0 +1,308 @@
+{
+  "dials": "trail_on_exhaustion=true;exit_action=Off;sig_exhaust_level=50;sig_dual=false;sig_dual_slow=150;sig_dual_fast=200;sig_dual_lookback=0",
+  "disarmed_tight_bars": 0,
+  "method": "Each sine bar is read once by the exit pass; the tally freezes (exhausted, tight) per bar. Evidence, not code: the trace is the conversion's contract.",
+  "scope": "trail tightening on exhaustion only: no trigger, filter, sizing, or exit-kind verdict reads these rows",
+  "treatment": [
+    {
+      "bar": 0,
+      "exhausted": false,
+      "tight": false
+    },
+    {
+      "bar": 1,
+      "exhausted": false,
+      "tight": false
+    },
+    {
+      "bar": 2,
+      "exhausted": false,
+      "tight": false
+    },
+    {
+      "bar": 3,
+      "exhausted": false,
+      "tight": false
+    },
+    {
+      "bar": 4,
+      "exhausted": false,
+      "tight": false
+    },
+    {
+      "bar": 5,
+      "exhausted": false,
+      "tight": false
+    },
+    {
+      "bar": 6,
+      "exhausted": false,
+      "tight": false
+    },
+    {
+      "bar": 7,
+      "exhausted": false,
+      "tight": false
+    },
+    {
+      "bar": 8,
+      "exhausted": false,
+      "tight": false
+    },
+    {
+      "bar": 9,
+      "exhausted": false,
+      "tight": false
+    },
+    {
+      "bar": 10,
+      "exhausted": false,
+      "tight": false
+    },
+    {
+      "bar": 11,
+      "exhausted": false,
+      "tight": false
+    },
+    {
+      "bar": 12,
+      "exhausted": true,
+      "tight": true
+    },
+    {
+      "bar": 13,
+      "exhausted": true,
+      "tight": true
+    },
+    {
+      "bar": 14,
+      "exhausted": true,
+      "tight": true
+    },
+    {
+      "bar": 15,
+      "exhausted": true,
+      "tight": true
+    },
+    {
+      "bar": 16,
+      "exhausted": true,
+      "tight": true
+    },
+    {
+      "bar": 17,
+      "exhausted": true,
+      "tight": true
+    },
+    {
+      "bar": 18,
+      "exhausted": true,
+      "tight": true
+    },
+    {
+      "bar": 19,
+      "exhausted": true,
+      "tight": true
+    },
+    {
+      "bar": 20,
+      "exhausted": true,
+      "tight": true
+    },
+    {
+      "bar": 21,
+      "exhausted": true,
+      "tight": true
+    },
+    {
+      "bar": 22,
+      "exhausted": true,
+      "tight": true
+    },
+    {
+      "bar": 23,
+      "exhausted": true,
+      "tight": true
+    },
+    {
+      "bar": 24,
+      "exhausted": true,
+      "tight": true
+    },
+    {
+      "bar": 25,
+      "exhausted": true,
+      "tight": true
+    },
+    {
+      "bar": 26,
+      "exhausted": true,
+      "tight": true
+    },
+    {
+      "bar": 27,
+      "exhausted": true,
+      "tight": true
+    },
+    {
+      "bar": 28,
+      "exhausted": true,
+      "tight": true
+    },
+    {
+      "bar": 29,
+      "exhausted": true,
+      "tight": true
+    },
+    {
+      "bar": 30,
+      "exhausted": true,
+      "tight": true
+    },
+    {
+      "bar": 31,
+      "exhausted": true,
+      "tight": true
+    },
+    {
+      "bar": 32,
+      "exhausted": true,
+      "tight": true
+    },
+    {
+      "bar": 33,
+      "exhausted": true,
+      "tight": true
+    },
+    {
+      "bar": 34,
+      "exhausted": true,
+      "tight": true
+    },
+    {
+      "bar": 35,
+      "exhausted": true,
+      "tight": true
+    },
+    {
+      "bar": 36,
+      "exhausted": true,
+      "tight": true
+    },
+    {
+      "bar": 37,
+      "exhausted": true,
+      "tight": true
+    },
+    {
+      "bar": 38,
+      "exhausted": true,
+      "tight": true
+    },
+    {
+      "bar": 39,
+      "exhausted": true,
+      "tight": true
+    },
+    {
+      "bar": 40,
+      "exhausted": true,
+      "tight": true
+    },
+    {
+      "bar": 41,
+      "exhausted": true,
+      "tight": true
+    },
+    {
+      "bar": 42,
+      "exhausted": true,
+      "tight": true
+    },
+    {
+      "bar": 43,
+      "exhausted": true,
+      "tight": true
+    },
+    {
+      "bar": 44,
+      "exhausted": true,
+      "tight": true
+    },
+    {
+      "bar": 45,
+      "exhausted": true,
+      "tight": true
+    },
+    {
+      "bar": 46,
+      "exhausted": true,
+      "tight": true
+    },
+    {
+      "bar": 47,
+      "exhausted": true,
+      "tight": true
+    },
+    {
+      "bar": 48,
+      "exhausted": true,
+      "tight": true
+    },
+    {
+      "bar": 49,
+      "exhausted": true,
+      "tight": true
+    },
+    {
+      "bar": 50,
+      "exhausted": true,
+      "tight": true
+    },
+    {
+      "bar": 51,
+      "exhausted": true,
+      "tight": true
+    },
+    {
+      "bar": 52,
+      "exhausted": true,
+      "tight": true
+    },
+    {
+      "bar": 53,
+      "exhausted": true,
+      "tight": true
+    },
+    {
+      "bar": 54,
+      "exhausted": true,
+      "tight": true
+    },
+    {
+      "bar": 55,
+      "exhausted": true,
+      "tight": true
+    },
+    {
+      "bar": 56,
+      "exhausted": true,
+      "tight": true
+    },
+    {
+      "bar": 57,
+      "exhausted": true,
+      "tight": true
+    },
+    {
+      "bar": 58,
+      "exhausted": true,
+      "tight": true
+    },
+    {
+      "bar": 59,
+      "exhausted": true,
+      "tight": true
+    }
+  ]
+}

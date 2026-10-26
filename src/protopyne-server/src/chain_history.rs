@@ -32,6 +32,9 @@ use rust_decimal::Decimal;
 use protopyne_types::{ChainQuote, Greeks, Money, OptionContract, OptionKind};
 use protopyne_venue::{ChainSnapshotSource, LegQuoteSource, Quote};
 
+use crate::csv::{
+    header_positions, optional_column, parse_decimal_field, parse_int_field, parse_timestamp_field,
+};
 use crate::error::ServerError;
 
 /// Where historical chains come from and which credentials the fetch path
@@ -59,19 +62,12 @@ impl Default for ChainFeedConfig {
     }
 }
 
-impl ChainFeedConfig {
-    /// Load from `path`, or default (chains absent) when missing or broken —
-    /// the shared loader warns loudly on broken files, and absence is the
-    /// safe default the gate already handles.
-    #[must_use]
-    pub fn load(path: &Path) -> Self {
-        common_core::config::load_json_or_default(path)
-    }
-
+impl fluent_wvr::validate::Validate for ChainFeedConfig {
+    type Err = ServerError;
     /// Fail-closed self-consistency check: blank paths refuse, and a named
     /// credentials file must exist — a fetch that cannot authenticate must
     /// never start.
-    pub fn validate(&self) -> Result<(), ServerError> {
+    fn validate(&self) -> Result<(), Self::Err> {
         if self
             .chain_data_path
             .as_deref()
@@ -98,6 +94,16 @@ impl ChainFeedConfig {
     }
 }
 
+impl ChainFeedConfig {
+    /// Load from `path`, or default (chains absent) when missing or broken —
+    /// the shared loader warns loudly on broken files, and absence is the
+    /// safe default the gate already handles.
+    #[must_use]
+    pub fn load(path: &Path) -> Self {
+        common_core::config::load_json_or_default(path)
+    }
+}
+
 /// Required columns after lowercasing the header row: the contract identity
 /// (`ts`, `underlying`, `expiry`, `strike`, `kind`) plus the touch
 /// (`bid`, `ask`). Sizes, open interest, IV, and greeks default when absent.
@@ -105,21 +111,11 @@ const REQUIRED_CHAIN_COLUMNS: [&str; 7] =
     ["ts", "underlying", "expiry", "strike", "kind", "bid", "ask"];
 
 fn parse_chain_decimal(field: &str, line: usize, column: &str) -> Result<Decimal, ServerError> {
-    field.parse::<Decimal>().map_err(|_| ServerError::BadRow {
-        line,
-        reason: format!("invalid decimal in column '{column}': {field:?}"),
-    })
+    parse_decimal_field(field, line, column)
 }
 
 fn parse_chain_ts(field: &str, line: usize) -> Result<DateTime<Utc>, ServerError> {
-    let secs: i64 = field.parse().map_err(|_| ServerError::BadRow {
-        line,
-        reason: format!("invalid epoch timestamp: {field:?}"),
-    })?;
-    DateTime::from_timestamp(secs, 0).ok_or(ServerError::BadRow {
-        line,
-        reason: format!("epoch timestamp out of range: {field:?}"),
-    })
+    parse_timestamp_field(field, line)
 }
 
 fn parse_chain_expiry(field: &str, line: usize) -> Result<NaiveDate, ServerError> {
@@ -141,17 +137,11 @@ fn parse_chain_kind(field: &str, line: usize) -> Result<OptionKind, ServerError>
 }
 
 fn parse_chain_u32(field: &str, line: usize, column: &str) -> Result<u32, ServerError> {
-    field.parse::<u32>().map_err(|_| ServerError::BadRow {
-        line,
-        reason: format!("invalid integer in column '{column}': {field:?}"),
-    })
+    parse_int_field(field, line, column)
 }
 
 fn parse_chain_u64(field: &str, line: usize, column: &str) -> Result<u64, ServerError> {
-    field.parse::<u64>().map_err(|_| ServerError::BadRow {
-        line,
-        reason: format!("invalid integer in column '{column}': {field:?}"),
-    })
+    parse_int_field(field, line, column)
 }
 
 fn parse_chain_f64(field: &str, line: usize, column: &str) -> Result<f64, ServerError> {
@@ -177,33 +167,29 @@ pub fn parse_chain_csv(content: &str) -> Result<Vec<ChainQuote>, ServerError> {
 
     let headers = reader
         .headers()
-        .map_err(|e| ServerError::BadHeader(format!("cannot read header row: {e}")))?
-        .iter()
-        .map(str::to_lowercase)
-        .collect::<Vec<_>>();
-    let index_of = |name: &str| headers.iter().position(|h| h == name);
-    let missing: Vec<&str> = REQUIRED_CHAIN_COLUMNS
-        .iter()
-        .copied()
-        .filter(|name| index_of(name).is_none())
-        .collect();
-    if !missing.is_empty() {
-        return Err(ServerError::BadHeader(format!(
-            "missing columns: {}",
-            missing.join(", ")
-        )));
-    }
-    let col = |name: &str| index_of(name).expect("column presence checked");
+        .map_err(|e| ServerError::BadHeader(format!("cannot read header row: {e}")))?;
+    let positions = header_positions(headers, &REQUIRED_CHAIN_COLUMNS)?;
     let (ts_c, und_c, exp_c, strike_c, kind_c, bid_c, ask_c) = (
-        col("ts"),
-        col("underlying"),
-        col("expiry"),
-        col("strike"),
-        col("kind"),
-        col("bid"),
-        col("ask"),
+        positions[0],
+        positions[1],
+        positions[2],
+        positions[3],
+        positions[4],
+        positions[5],
+        positions[6],
     );
-    let opt = |name: &str| index_of(name);
+    // Optional columns resolve once, before the row loop: the header borrow
+    // must end before `records()` takes the reader mutably.
+    let (bid_size_c, ask_size_c, oi_c, iv_c, delta_c, gamma_c, theta_c, vega_c) = (
+        optional_column(headers, "bid_size"),
+        optional_column(headers, "ask_size"),
+        optional_column(headers, "open_interest"),
+        optional_column(headers, "iv"),
+        optional_column(headers, "delta"),
+        optional_column(headers, "gamma"),
+        optional_column(headers, "theta"),
+        optional_column(headers, "vega"),
+    );
 
     let mut quotes = Vec::new();
     for (row_idx, record) in reader.records().enumerate() {
@@ -229,7 +215,7 @@ pub fn parse_chain_csv(content: &str) -> Result<Vec<ChainQuote>, ServerError> {
         })?;
         let bid = Money::new(parse_chain_decimal(field(bid_c), line, "bid")?);
         let ask = Money::new(parse_chain_decimal(field(ask_c), line, "ask")?);
-        let bid_size = opt("bid_size").map_or(Ok(0), |c| {
+        let bid_size = bid_size_c.map_or(Ok(0), |c| {
             let raw = field(c);
             if raw.is_empty() {
                 Ok(0)
@@ -237,7 +223,7 @@ pub fn parse_chain_csv(content: &str) -> Result<Vec<ChainQuote>, ServerError> {
                 parse_chain_u32(raw, line, "bid_size")
             }
         })?;
-        let ask_size = opt("ask_size").map_or(Ok(0), |c| {
+        let ask_size = ask_size_c.map_or(Ok(0), |c| {
             let raw = field(c);
             if raw.is_empty() {
                 Ok(0)
@@ -245,7 +231,7 @@ pub fn parse_chain_csv(content: &str) -> Result<Vec<ChainQuote>, ServerError> {
                 parse_chain_u32(raw, line, "ask_size")
             }
         })?;
-        let open_interest = opt("open_interest").map_or(Ok(0), |c| {
+        let open_interest = oi_c.map_or(Ok(0), |c| {
             let raw = field(c);
             if raw.is_empty() {
                 Ok(0)
@@ -255,7 +241,7 @@ pub fn parse_chain_csv(content: &str) -> Result<Vec<ChainQuote>, ServerError> {
         })?;
         // NOT-A-LADDER: optional-column parse — absent/empty reads as none,
         // malformed refuses; no candidate walk, no skip/stop verdicts.
-        let iv = opt("iv").map_or(Ok(None), |c| {
+        let iv = iv_c.map_or(Ok(None), |c| {
             let raw = field(c);
             if raw.is_empty() {
                 Ok(None)
@@ -263,7 +249,7 @@ pub fn parse_chain_csv(content: &str) -> Result<Vec<ChainQuote>, ServerError> {
                 parse_chain_f64(raw, line, "iv").map(Some)
             }
         })?;
-        let greeks = match (opt("delta"), opt("gamma"), opt("theta"), opt("vega")) {
+        let greeks = match (delta_c, gamma_c, theta_c, vega_c) {
             (Some(d), Some(g), Some(t), Some(v)) => {
                 let (rd, rg, rt, rv) = (field(d), field(g), field(t), field(v));
                 if rd.is_empty() && rg.is_empty() && rt.is_empty() && rv.is_empty() {

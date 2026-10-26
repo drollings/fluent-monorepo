@@ -58,6 +58,10 @@ fn field_schema_serde_round_trip() {
         pattern: Some("http".into()),
         coerce: Some("trim,strip_quotes".into()),
         parse: Some("number".into()),
+        axis: None,
+        visible_when: None,
+        items: None,
+        fixed: false,
     };
     let back: FieldSchema =
         serde_json::from_str(&serde_json::to_string(&schema).expect("serialize"))

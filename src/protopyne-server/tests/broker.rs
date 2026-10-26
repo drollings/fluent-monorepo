@@ -7,7 +7,6 @@
 //! no existing route's bytes.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use chrono::{DateTime, TimeZone, Utc};
@@ -18,21 +17,9 @@ use protopyne_venue::{
     PaperConfig, PaperVenue, Venue,
 };
 use protopyne_view::{GatewayError, MockGateway, TerminalGateway};
-use rust_decimal::Decimal;
 
+use crate::common_fixtures::{money, spy_history};
 use crate::service::{serve_with_tape, ServerConfig};
-
-fn history() -> Vec<protopyne_types::Bar> {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests")
-        .join("data")
-        .join("SPY_15M.csv");
-    crate::csv::load_bars_csv(&path).expect("vendored history loads")
-}
-
-fn money(value: &str) -> Money {
-    Money::new(value.parse::<Decimal>().expect("decimal"))
-}
 
 fn stamp(hour: u32) -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 1, 5, hour, 0, 0)
@@ -227,7 +214,7 @@ fn bundle(id: &str, reader: FakeReader) -> BrokerBundle {
 
 async fn boot() -> crate::service::ServerHandle {
     let config = ServerConfig::new().bind("127.0.0.1:0".to_owned()).build();
-    serve_with_tape(config, history(), None, None)
+    serve_with_tape(config, spy_history(), None, None)
         .await
         .expect("test server boots")
 }

@@ -342,6 +342,11 @@ fn tab_field(name: &str, kind: FieldKind) -> SchemaField {
         inline_group: None,
         tooltip: None,
         step: None,
+        axis: None,
+        visible_when: None,
+        count_of: None,
+        item_of: None,
+        item_index: None,
     }
 }
 
@@ -629,6 +634,11 @@ fn an_infinite_bound_falls_back_to_the_unbounded_editor() {
         inline_group: None,
         tooltip: None,
         step: None,
+        axis: None,
+        visible_when: None,
+        count_of: None,
+        item_of: None,
+        item_index: None,
     }];
     let mut control = BothBoundedProbe { count: 4 };
     egui::__run_test_ui(|ui| {
@@ -685,6 +695,11 @@ fn tint_field() -> SchemaField {
         inline_group: None,
         tooltip: None,
         step: None,
+        axis: None,
+        visible_when: None,
+        count_of: None,
+        item_of: None,
+        item_index: None,
     }
 }
 
@@ -891,4 +906,105 @@ fn grouped_sections_paint_their_headers_and_their_editors() {
     });
     bare_out.textures_delta.clear();
     assert_eq!(probe, tab_probe(), "an untouched frame writes nothing");
+}
+
+// ── Composed schema: visibility, lists, and axis badges ───────────────────
+
+#[derive(Debug, Clone, Default, FieldAccess, Describable)]
+struct ListItem {
+    amount: i64,
+}
+
+#[derive(Debug, Clone, Default, FieldAccess, Describable)]
+struct ListProbe {
+    #[field(items = 2)]
+    slots: Vec<ListItem>,
+}
+
+#[derive(Debug, Clone, PartialEq, FieldAccess, Describable)]
+enum ArmProbe {
+    Breakout {
+        #[field(axis = "task-value")]
+        period: i64,
+    },
+    Cross {
+        fast: i64,
+    },
+}
+
+impl Default for ArmProbe {
+    fn default() -> Self {
+        Self::Breakout { period: 4 }
+    }
+}
+
+#[test]
+fn the_lift_carries_list_visibility_and_axis_metadata() {
+    let fields = schema_fields(&ListProbe::default().describe());
+    let count = fields
+        .iter()
+        .find(|field| field.name == "slots.count")
+        .expect("count lifts");
+    assert_eq!(count.count_of.as_deref(), Some("slots"));
+    let leaf = fields
+        .iter()
+        .find(|field| field.name == "slots.0.amount")
+        .expect("item leaf lifts");
+    assert_eq!(leaf.item_of.as_deref(), Some("slots"));
+    assert_eq!(leaf.item_index, Some(0));
+    assert_eq!(leaf.visible_when.as_deref(), Some("slots.count>0"));
+
+    let arms = schema_fields(&ArmProbe::default().describe());
+    let period = arms
+        .iter()
+        .find(|field| field.name == "breakout.period")
+        .expect("active arm leaf lifts");
+    assert_eq!(period.axis.as_deref(), Some("task-value"));
+    assert_eq!(period.visible_when.as_deref(), Some("kind=breakout"));
+}
+
+#[test]
+fn an_inactive_arm_paints_no_widget() {
+    let mut arm = ArmProbe::default();
+    let fields = schema_fields(&arm.describe());
+    let ctx = egui::Context::default();
+    let edits_cell = std::cell::RefCell::new(FieldEdits::default());
+    let mut output = ctx.run_ui(egui::RawInput::default(), |root| {
+        egui::CentralPanel::default().show(root, |ui| {
+            *edits_cell.borrow_mut() = paint_schema_fields(ui, &fields, &mut arm);
+        });
+    });
+    output.textures_delta.clear();
+    let texts = painted_texts(&output);
+    assert!(
+        texts.iter().any(|text| text == "breakout.period"),
+        "the active arm paints: {texts:?}"
+    );
+    assert!(
+        !texts.iter().any(|text| text == "cross.fast"),
+        "the hidden arm paints nothing: {texts:?}"
+    );
+}
+
+#[test]
+fn a_zero_count_list_still_offers_an_add_button() {
+    let mut list = ListProbe::default();
+    let fields = schema_fields(&list.describe());
+    let ctx = egui::Context::default();
+    let edits_cell = std::cell::RefCell::new(FieldEdits::default());
+    let mut output = ctx.run_ui(egui::RawInput::default(), |root| {
+        egui::CentralPanel::default().show(root, |ui| {
+            *edits_cell.borrow_mut() = paint_schema_fields(ui, &fields, &mut list);
+        });
+    });
+    output.textures_delta.clear();
+    let texts = painted_texts(&output);
+    assert!(
+        texts.iter().any(|text| text == "+"),
+        "the empty list still renders its add affordance: {texts:?}"
+    );
+    assert!(
+        !texts.iter().any(|text| text == "slots.0.amount"),
+        "no item row paints while the count is zero: {texts:?}"
+    );
 }

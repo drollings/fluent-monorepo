@@ -13,16 +13,11 @@ fn closes(data: &[f64]) -> Ohlcv<'_> {
 }
 
 /// Approximate equality for hand-computed vectors; exact equality is proven
-/// separately by the batch/update fold tests below.
+/// separately by the batch/update fold tests below. Mismatches report
+/// through the shared series comparison (index, both sides, max drift).
 fn assert_approx(got: &[Option<f64>], want: &[Option<f64>], eps: f64) {
-    assert_eq!(got.len(), want.len());
-    for (g, w) in got.iter().zip(want.iter()) {
-        match (g, w) {
-            (None, None) => {}
-            (Some(g), Some(w)) => assert!((g - w).abs() <= eps, "{g} vs {w}"),
-            _ => panic!("na mismatch: {g:?} vs {w:?}"),
-        }
-    }
+    let report = common_core::golden::compare_series(got, want, eps);
+    assert!(report.matches, "series mismatch: {:?}", report.mismatches);
 }
 
 fn fold_closes(kernel: &impl Indicator, closes: &[f64], params: &ParamSet) -> Vec<Option<f64>> {

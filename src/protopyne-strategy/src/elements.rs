@@ -16,22 +16,40 @@ use rust_decimal::Decimal;
 use thiserror::Error;
 
 use crate::activity::{with_source_score, OptionsActivity};
-use crate::economics::{spread_economics, EconRefusal, SpreadEconomics};
+use crate::axes::{Confidence, GateAxis, Merit};
+use crate::economics::{
+    spread_economics, EconRefusal, PackageSide, SpreadEconomics, UnitEconomics, UnitSelection,
+};
 use crate::error::StrategyError;
 use crate::legs::{LegRequest, LegSelector, StrikePolicy};
 use crate::proposal::{Direction, Proposal, ProposalSide, ProposalState, StructureKind};
 use crate::risk::{PortfolioFacts, RiskLimits};
 use crate::view::{MarketData, MarketView};
 
-/// What a signal concluded on closed bars: a direction, two scores in
-/// `[0, 1]`, the realised volatility at decision time, and the observed
+/// What a signal concluded on closed bars: a direction, a confidence in that
+/// direction, the task-value readings a policy may threshold, and the observed
 /// edge/odds pair a research sizer prices.
 ///
-/// Scores feed the grant's signal tier **(task-value)**. `volatility` is a
-/// **task-value** input too: the size a policy asks for is wrong for the
-/// regime when it ignores it. It is `Option` on purpose — absence is not a
-/// zero: a policy that needs σ and does not get one sizes **zero**, and the
-/// composed strategy refuses the zero quantity with a reason
+/// **The two axes are distinct and are never substituted for one another.**
+///
+/// - [`SignalOutput::conviction`] is **producer confidence**: the signal's own
+///   doubt about the reading it just produced. It may silence the producer
+///   (disarm entries, withhold a reading); it must never deny a trade on merit.
+///   Read it through [`SignalOutput::confidence`], which returns the typed
+///   [`Confidence`] value.
+/// - [`SignalOutput::activity_score`] and [`SignalOutput::volatility`] are
+///   **task-value** readings: the opportunity and the regime a sizing policy
+///   needs in order to judge the *outcome*. Read them through
+///   [`SignalOutput::merit`].
+///
+/// A confident producer can be wrong for the task, and a hesitant one can be
+/// right, so a policy that gates a trade must say that it is applying a
+/// task-value threshold to a confidence reading — it must not pretend the two
+/// are the same number.
+///
+/// `volatility` is `Option` on purpose — absence is not a zero: a policy that
+/// needs σ and does not get one sizes **zero**, and the composed strategy
+/// refuses the zero quantity with a reason
 /// ([`EconRefusal::ZeroQuantity`](crate::economics::EconRefusal::ZeroQuantity)).
 ///
 /// `edge` and `odds` are the same doctrine for a Kelly-style sizer: observed
@@ -41,9 +59,10 @@ use crate::view::{MarketData, MarketView};
 pub struct SignalOutput {
     /// Direction of exposure.
     pub direction: Direction,
-    /// Indicator conviction in `[0, 1]`.
+    /// The producer's **confidence** in its own reading, in `[0, 1]`.
+    /// Producer-confidence axis; see the type doc.
     pub conviction: f64,
-    /// Options-activity score in `[0, 1]`.
+    /// Options-activity **task-value** score in `[0, 1]`.
     pub activity_score: f64,
     /// Realised per-bar volatility of returns at decision time, when the
     /// signal could measure it. `None` stays `None` all the way to the sizer.
@@ -57,6 +76,25 @@ pub struct SignalOutput {
 }
 
 impl SignalOutput {
+    /// The producer's confidence in its own reading, on the
+    /// producer-confidence axis.
+    ///
+    /// This is the only typed view of [`conviction`](Self::conviction): a gate
+    /// that wants "do not act on a reading the producer doubts" is applying a
+    /// *task-value* policy to a confidence value, and must say so at its own
+    /// call site (see [`SignalThresholds`](crate::grant::SignalThresholds)).
+    #[must_use]
+    pub fn confidence(&self) -> Confidence {
+        Confidence::saturating(self.conviction)
+    }
+
+    /// The task-value readings a policy may threshold. Refuses a malformed
+    /// activity score rather than letting a bad number reach a policy that
+    /// gates a trade.
+    pub fn merit(&self) -> Result<Merit, StrategyError> {
+        Merit::new(self.activity_score, self.edge)
+    }
+
     /// Attach the realised volatility the signal measured.
     #[must_use]
     pub fn with_volatility(mut self, volatility: Option<f64>) -> Self {
@@ -260,6 +298,13 @@ pub struct StructureRequest {
     /// How the anchor strike is chosen.
     #[builder(default)]
     pub strike_policy: StrikePolicy,
+    /// The caller's per-unit limit price, when the caller prices the unit
+    /// (the config-supplied arm). `None` on the chain arm, where the pricer
+    /// names the price.
+    pub limit_price: Option<Money>,
+    /// The caller's per-unit worst-case loss, when the caller states one.
+    /// `None` on the chain arm, where the pricer bounds the loss.
+    pub max_loss: Option<Money>,
 }
 
 /// What selection concluded: the kind, plus legs, economics, and the
@@ -329,6 +374,44 @@ pub trait StructureSelector: Send + Sync {
         signal: &SignalOutput,
         request: &StructureRequest,
     ) -> Result<StructureSelection, StructureRefusal>;
+
+    /// Pick the structure and price one unit of it. The default runs
+    /// [`select`](Self::select) and derives the unit: a chain-priced
+    /// selection carries the one pricer's per-unit economics, and a
+    /// kind-only selection carries the caller's per-unit prices, so no new
+    /// implementation is needed for a selector that adds no pricing.
+    fn select_unit(
+        &self,
+        view: &MarketView<'_>,
+        signal: &SignalOutput,
+        request: &StructureRequest,
+    ) -> Result<UnitSelection, StructureRefusal> {
+        let selection = self.select(view, signal, request)?;
+        // A kind-only selection carries the caller's stated totals as its
+        // unit: for the single-unit compositions that name them the two
+        // coincide, and the proposal path passes config-arm totals through
+        // verbatim rather than repricing them.
+        let unit = match selection.economics {
+            Some(economics) => economics.unit(),
+            None => UnitEconomics {
+                price_per_unit: request.limit_price.unwrap_or(Money::zero()),
+                max_loss_per_unit: request.max_loss.unwrap_or(Money::zero()),
+                bid_ask_width: Money::zero(),
+                side: if signal.direction == Direction::Long {
+                    PackageSide::Buy
+                } else {
+                    PackageSide::Sell
+                },
+            },
+        };
+        Ok(UnitSelection {
+            kind: selection.kind,
+            legs: selection.legs,
+            dte_days: selection.dte_days,
+            unit,
+            economics: selection.economics,
+        })
+    }
 }
 
 /// Structure selector that always returns one explicit structure.
@@ -353,15 +436,17 @@ impl StructureSelector for ExplicitStructure {
     }
 }
 
-/// Chain-aware selection: the one leg chooser, priced through
-/// [`spread_economics`](crate::economics::spread_economics).
-impl StructureSelector for LegSelector {
-    fn select(
-        &self,
+impl LegSelector {
+    /// The legs for one selection, without pricing: the shared leg-picking
+    /// half of [`select`](StructureSelector::select) and
+    /// [`select_unit`](StructureSelector::select_unit), so the two never
+    /// diverge on what the package holds.
+    fn selected_legs(
+        self,
         view: &MarketView<'_>,
-        signal: &SignalOutput,
+        direction: Direction,
         request: &StructureRequest,
-    ) -> Result<StructureSelection, StructureRefusal> {
+    ) -> Result<SpreadLegs, StructureRefusal> {
         let chain = view
             .data
             .chain
@@ -379,30 +464,26 @@ impl StructureSelector for LegSelector {
                     .map(Money::new)
             })
             .ok_or(crate::legs::LegSelectRefusal::NoTouch)?;
-        let as_of = view.as_of.date_naive();
-        let legs = self.select_directional(
+        Ok(self.select_directional(
             &LegRequest {
                 structure: request.structure,
-                direction: signal.direction,
+                direction,
                 credit: request.credit,
                 strike_policy: request.strike_policy,
                 dte_days: request.dte_days,
                 max_dte_days: request.max_dte_days,
                 underlying: chain.underlying(),
                 touch,
-                as_of,
+                as_of: view.as_of.date_naive(),
             },
             chain.quotes(),
-        )?;
-        let economics = spread_economics(
-            &legs,
-            chain.quotes(),
-            request.quantity,
-            request.fee_per_contract,
-        )?;
-        // The package lives until its front leg expires: that is the window a
-        // grant's DTE tier judges, so the proposal names it rather than the
-        // requested minimum.
+        )?)
+    }
+
+    /// The front expiry's DTE: the package lives until its front leg
+    /// expires, so that window is what a grant's DTE tier judges rather
+    /// than the requested minimum.
+    fn legs_dte(legs: &SpreadLegs, as_of: chrono::NaiveDate) -> Result<u32, StructureRefusal> {
         let front = legs
             .legs()
             .iter()
@@ -411,12 +492,67 @@ impl StructureSelector for LegSelector {
             .ok_or(crate::legs::LegSelectRefusal::NoSuitableStrikes(
                 "selected package carries no legs".to_owned(),
             ))?;
+        Ok(crate::legs::dte_of(front, as_of))
+    }
+}
+
+/// Chain-aware selection: the one leg chooser, priced through
+/// [`spread_economics`](crate::economics::spread_economics).
+impl StructureSelector for LegSelector {
+    fn select(
+        &self,
+        view: &MarketView<'_>,
+        signal: &SignalOutput,
+        request: &StructureRequest,
+    ) -> Result<StructureSelection, StructureRefusal> {
+        let legs = self.selected_legs(view, signal.direction, request)?;
+        let chain = view
+            .data
+            .chain
+            .as_ref()
+            .ok_or(crate::legs::LegSelectRefusal::EmptySnapshot)?;
+        let economics = spread_economics(
+            &legs,
+            chain.quotes(),
+            request.quantity,
+            request.fee_per_contract,
+        )?;
+        let dte_days = Self::legs_dte(&legs, view.as_of.date_naive())?;
         Ok(StructureSelection::priced(
             request.structure,
             legs,
             economics,
-            crate::legs::dte_of(front, as_of),
+            dte_days,
         ))
+    }
+
+    fn select_unit(
+        &self,
+        view: &MarketView<'_>,
+        signal: &SignalOutput,
+        request: &StructureRequest,
+    ) -> Result<UnitSelection, StructureRefusal> {
+        let legs = self.selected_legs(view, signal.direction, request)?;
+        let chain = view
+            .data
+            .chain
+            .as_ref()
+            .ok_or(crate::legs::LegSelectRefusal::EmptySnapshot)?;
+        // The unit comes from the one pricer at a single unit, never from a
+        // quantity-scaled pricing the caller could mistake for per-unit.
+        let economics = spread_economics(
+            &legs,
+            chain.quotes(),
+            Qty::new(Decimal::ONE),
+            request.fee_per_contract,
+        )?;
+        Ok(UnitSelection {
+            kind: request.structure,
+            dte_days: Self::legs_dte(&legs, view.as_of.date_naive())?,
+            legs: Some(legs),
+            unit: economics.unit(),
+            economics: Some(economics),
+        })
     }
 }
 
@@ -528,17 +664,43 @@ impl SizingCaps<'_> {
     }
 }
 
+/// What a sizing policy sees: the priced unit, the observed facts, and
+/// the marked equity when the caller prices against equity rather than net
+/// liquidation. The unit is always per-unit — a policy that needs a total
+/// multiplies by the quantity it returns, never by a number it was handed.
+#[derive(Debug, Clone, Copy)]
+pub struct SizingCtx<'a> {
+    /// The priced unit the policy sizes.
+    pub unit: &'a UnitEconomics,
+    /// Observed portfolio facts.
+    pub facts: &'a PortfolioFacts,
+    /// Marked equity for the trade, when the caller sizes against equity.
+    /// `None` sizes against the observed net liquidation alone.
+    pub equity: Option<f64>,
+}
+
 /// Determines quantity. Optional: defaults to a fixed contract count.
 /// Sizing can only reduce what risk permits, never exceed it — the engine
 /// re-checks every quantity, so an aggressive sizer is contained.
 pub trait Sizing: Send + Sync {
     /// Policy name for attribution (which sizing priced a proposal).
     fn name(&self) -> &str;
+    /// The axis this policy judges on. Required, never defaulted: a sizer
+    /// that cannot name its axis cannot back a trade. `TaskValue` policies
+    /// express edge or allocation; `Correctness` policies enforce a bound
+    /// that must never be violated (affordability, notional caps).
+    fn axis(&self) -> GateAxis;
     /// Contracts (or shares) for this signal given the observed portfolio
     /// facts. An unobserved bundle must size as if broke: a policy never
     /// invents buying power, and the composed strategy still contains the
     /// answer against its caps.
     fn size(&self, signal: &SignalOutput, facts: &PortfolioFacts) -> Qty;
+    /// Contracts (or shares) for this signal against the priced unit. The
+    /// default answers exactly as [`size`](Self::size), so a policy without
+    /// instrument awareness keeps its pinned behavior under the new path.
+    fn size_for(&self, signal: &SignalOutput, ctx: &SizingCtx<'_>) -> Qty {
+        self.size(signal, ctx.facts)
+    }
 }
 
 /// Whether a fact bundle can do sizing arithmetic: every number present is
@@ -558,6 +720,10 @@ pub struct FixedContracts {
 impl Sizing for FixedContracts {
     fn name(&self) -> &str {
         "fixed"
+    }
+
+    fn axis(&self) -> GateAxis {
+        GateAxis::TaskValue
     }
 
     fn size(&self, _signal: &SignalOutput, _facts: &PortfolioFacts) -> Qty {
@@ -604,6 +770,10 @@ impl PercentNetLiq {
 impl Sizing for PercentNetLiq {
     fn name(&self) -> &str {
         "percent-net-liq"
+    }
+
+    fn axis(&self) -> GateAxis {
+        GateAxis::TaskValue
     }
 
     fn size(&self, _signal: &SignalOutput, facts: &PortfolioFacts) -> Qty {
@@ -734,6 +904,10 @@ impl Sizing for VolatilityScaled {
         "volatility-scaled"
     }
 
+    fn axis(&self) -> GateAxis {
+        GateAxis::TaskValue
+    }
+
     fn size(&self, signal: &SignalOutput, _facts: &PortfolioFacts) -> Qty {
         // Absence is not a zero: without a measurement there is no size to
         // defend, and the composed strategy refuses the zero with a reason.
@@ -824,6 +998,10 @@ impl Sizing for FractionalKelly {
         "fractional-kelly"
     }
 
+    fn axis(&self) -> GateAxis {
+        GateAxis::TaskValue
+    }
+
     fn size(&self, signal: &SignalOutput, _facts: &PortfolioFacts) -> Qty {
         // Absence is not a zero: without observed estimates there is no edge
         // to price, and the composed strategy refuses the zero with a reason.
@@ -897,6 +1075,10 @@ impl Sizing for BuyingPower {
         "buying-power"
     }
 
+    fn axis(&self) -> GateAxis {
+        GateAxis::Correctness
+    }
+
     fn size(&self, _signal: &SignalOutput, facts: &PortfolioFacts) -> Qty {
         if !bundle_is_arithmetical(facts) {
             return Qty::zero();
@@ -938,6 +1120,13 @@ pub trait LossMgmt: Send + Sync {
         "custom"
     }
 
+    /// Whether this element can emit anything other than a hold. The exit
+    /// pass is opt-in on this fact, so a strategy with no protective rule
+    /// keeps every bar byte-identical.
+    fn has_exits(&self) -> bool {
+        true
+    }
+
     /// Propose actions for a position at its mark, in firing order; empty
     /// to hold. An absent mark acts on nothing — absence is not a trigger,
     /// so a rule that needs a price refuses rather than inventing one.
@@ -951,6 +1140,10 @@ pub struct HoldLoss;
 impl LossMgmt for HoldLoss {
     fn name(&self) -> &str {
         "hold"
+    }
+
+    fn has_exits(&self) -> bool {
+        false
     }
 
     fn review(&self, _position: &PositionView<'_>, _mark: &MarkContext) -> Vec<LossAction> {
@@ -1368,6 +1561,10 @@ impl LossMgmt for LossSet {
         "set"
     }
 
+    fn has_exits(&self) -> bool {
+        self.rules.iter().any(|rule| rule.has_exits())
+    }
+
     fn review(&self, position: &PositionView<'_>, mark: &MarkContext) -> Vec<LossAction> {
         self.rules
             .iter()
@@ -1685,56 +1882,71 @@ impl Strategy {
         if let Some(source) = &self.activity {
             output = with_source_score(output, market, source.as_ref())?;
         }
-        // Containment after the policy returns: the policy asks against the
-        // observed facts (unobserved when the caller threaded none), then
-        // the bounds decide. The per-unit price is the caller's own limit —
-        // known before selection only on the config-supplied arm.
-        let unobserved = PortfolioFacts::unobserved();
-        let facts = input.caps.facts.unwrap_or(&unobserved);
-        let unit = input
-            .economics
-            .is_config_supplied()
-            .then_some(input.limit_price);
-        let quantity = input.caps.contain(self.sizing.size(&output, facts), unit);
+        // Select first: the instrument prices one unit before any quantity
+        // exists, so sizing never sees a quantity-scaled number. The request
+        // carries one unit because selection prices per unit now; the sized
+        // quantity lands below, in containment.
         let request = StructureRequest::new()
             .structure(input.structure)
             .dte_days(input.dte_days)
             .maybe_max_dte_days(input.max_dte_days)
-            .quantity(quantity)
+            .quantity(Qty::new(Decimal::ONE))
             .fee_per_contract(input.fee_per_contract)
             .credit(input.credit)
+            .limit_price(input.limit_price)
+            .max_loss(input.max_loss)
             .build();
         let selection = self
             .structure
-            .select(market, &output, &request)
+            .select_unit(market, &output, &request)
             .map_err(|refused| StrategyError::InvalidElement(refused.to_string()))?;
-        let (limit_price, max_loss, notional, legs, economics) = if input
-            .economics
-            .is_config_supplied()
-        {
-            (
+        // Size against the priced unit, then contain: the per-unit price the
+        // caller priced is what bounds buying power, so a chain-derived
+        // package is bounded by its own package price rather than the
+        // underlying's bar price.
+        let unobserved = PortfolioFacts::unobserved();
+        let facts = input.caps.facts.unwrap_or(&unobserved);
+        let sizing_ctx = SizingCtx {
+            unit: &selection.unit,
+            facts,
+            equity: None,
+        };
+        let quantity = input.caps.contain(
+            self.sizing.size_for(&output, &sizing_ctx),
+            Some(selection.unit.price_per_unit),
+        );
+        // A zero-sized package refuses by name rather than proposing a
+        // zero-contract trade: selection priced the instrument, sizing
+        // declined it, and containment must not invent a trade.
+        if quantity == Qty::zero() {
+            return Err(StrategyError::InvalidElement(
+                "quantity must be positive".to_owned(),
+            ));
+        }
+        let capital = Money::new(selection.unit.max_loss_per_unit.as_decimal() * quantity.0);
+        let (limit_price, max_loss, notional, legs, economics) = match selection.legs {
+            Some(legs) => {
+                let mut priced = selection.economics.ok_or_else(|| {
+                    StrategyError::InvalidElement(
+                        "chain-derived selection supplied no economics".to_owned(),
+                    )
+                })?;
+                // Only the requirement scales: every other field is already
+                // per-unit, so the rescaled economics read exactly as a
+                // pricing at the sized quantity would.
+                priced.capital_requirement = capital;
+                (priced.mid_limit, capital, capital, Some(legs), Some(priced))
+            }
+            // The config arm states totals, not per-unit economics: the
+            // caller priced one trade (its cap), so the totals pass through
+            // verbatim instead of scaling with the sized quantity.
+            None => (
                 input.limit_price,
                 input.max_loss,
                 input.notional,
                 None,
                 None,
-            )
-        } else {
-            let economics = selection.economics.ok_or_else(|| {
-                StrategyError::InvalidElement(
-                    "chain-derived selection supplied no economics".to_owned(),
-                )
-            })?;
-            let legs = selection.legs.clone().ok_or_else(|| {
-                StrategyError::InvalidElement("chain-derived selection supplied no legs".to_owned())
-            })?;
-            (
-                economics.mid_limit,
-                economics.capital_requirement,
-                economics.capital_requirement,
-                Some(legs),
-                Some(economics),
-            )
+            ),
         };
         Ok(Proposal::new()
             .id(id.to_owned())
@@ -1774,6 +1986,93 @@ impl Strategy {
         };
         let mut signal = self.bind(&SignalConfig::new(data.timeframe))?;
         self.propose_with(id, input, &view, signal.as_mut())
+    }
+
+    /// Whether the installed loss element can emit a real exit. The replay
+    /// exit pass is opt-in on this: a hold-only composition leaves every bar
+    /// byte-identical.
+    #[must_use]
+    pub fn has_exits(&self) -> bool {
+        self.loss.has_exits()
+    }
+
+    /// One exit-proposal body: the entry supplies identity, direction, and
+    /// structure; the intent supplies quantity and resting price. Callers
+    /// with their own proposal id use [`exit_proposal_named`](Self::exit_proposal_named).
+    #[must_use]
+    pub fn exit_proposal(
+        &self,
+        entry: &Proposal,
+        intent: &crate::slots::exit::ExitIntent,
+        touch: Money,
+        at: DateTime<Utc>,
+    ) -> Proposal {
+        let id = format!("{}-exit-{}", entry.id, intent.kind);
+        self.exit_proposal_named(entry, entry.quantity, intent, touch, at, &id)
+    }
+
+    /// The same exit body with an explicit proposal id (the runner keeps its
+    /// deterministic per-bar id).
+    #[must_use]
+    pub fn exit_proposal_named(
+        &self,
+        entry: &Proposal,
+        remaining: Qty,
+        intent: &crate::slots::exit::ExitIntent,
+        touch: Money,
+        at: DateTime<Utc>,
+        id: &str,
+    ) -> Proposal {
+        use crate::slots::exit::{ExitQuantity, RestingPrice};
+        let quantity = match intent.quantity {
+            ExitQuantity::All => remaining,
+            ExitQuantity::Fraction(fraction) => {
+                let fraction = fraction.clamp(0.0, 1.0);
+                Qty::new(remaining.0 * Decimal::from_f64_retain(fraction).unwrap_or_default())
+            }
+            ExitQuantity::Units(units) => Qty::new(Decimal::from(units)),
+        };
+        let price = match intent.price {
+            RestingPrice::Market => touch,
+            RestingPrice::At(price) => {
+                let marketable = if entry.direction == Direction::Long {
+                    price.as_decimal() <= touch.as_decimal()
+                } else {
+                    price.as_decimal() >= touch.as_decimal()
+                };
+                if marketable {
+                    price
+                } else {
+                    touch
+                }
+            }
+        };
+        Proposal::new()
+            .id(id.to_owned())
+            .strategy(entry.strategy.clone())
+            .underlying(entry.underlying.clone())
+            .direction(entry.direction)
+            .side(ProposalSide::Exit)
+            .structure(entry.structure)
+            .quantity(quantity)
+            .limit_price(price)
+            .max_loss(Money::zero())
+            .notional(Money::new(
+                price.as_decimal() * quantity.0.max(Decimal::ZERO),
+            ))
+            .dte_days(0)
+            .conviction(1.0)
+            .activity_score(1.0)
+            .created_at(at)
+            .build()
+    }
+
+    /// Ask loss management for protective actions over a marked position.
+    /// An absent mark acts on nothing — the rule, not the caller, refuses
+    /// to invent a price.
+    #[must_use]
+    pub fn review_exits(&self, position: &PositionView<'_>, mark: &MarkContext) -> Vec<LossAction> {
+        self.review_position(position, mark)
     }
 
     /// Ask loss management for protective actions over a marked position.
@@ -1842,3 +2141,11 @@ mod assignment_guard_tests;
 #[cfg(test)]
 #[path = "../tests/adjustment.rs"]
 mod adjustment_tests;
+
+#[cfg(test)]
+#[path = "../tests/sizing_exit_pins.rs"]
+mod sizing_exit_pins_tests;
+
+#[cfg(test)]
+#[path = "../tests/sizing_axis_pins.rs"]
+mod sizing_axis_pins_tests;

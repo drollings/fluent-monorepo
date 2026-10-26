@@ -79,7 +79,10 @@ fn h13_for_schema_ignores_unknown_members() {
     let opts = BoundaryOptions::for_schema(Mini::default().field_names());
     let members = extract_members(raw, &opts).unwrap();
     assert!(members.iter().any(|(k, _)| k == "action"));
-    assert!(!members.iter().any(|(k, _)| k == "unknown"), "unknown ignored: {members:?}");
+    assert!(
+        !members.iter().any(|(k, _)| k == "unknown"),
+        "unknown ignored: {members:?}"
+    );
     // decode keeps defaults for missing? here both present
     let (mini, decoded) = decode_boundary::<Mini>(raw, &opts).unwrap();
     assert!(decoded.contains(&"action".to_string()));

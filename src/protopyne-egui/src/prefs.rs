@@ -107,6 +107,27 @@ pub struct TickerLayout {
     pub slots: Vec<SlotPrefs>,
 }
 
+/// A stored backtest run configuration: the run params as text. The spec
+/// document itself is not persisted (it is re-seeded from the served schema
+/// on every boot); only the operator's run params round-trip. Best-effort
+/// like every other prefs arm: absent or partial reads leave the live form
+/// untouched.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct BacktestPrefs {
+    /// Deterministic seed, as text.
+    #[serde(default)]
+    pub seed: Option<String>,
+    /// Opening equity, decimal text.
+    #[serde(default)]
+    pub initial_equity: Option<String>,
+    /// Window start (RFC3339), or absent for the tape start.
+    #[serde(default)]
+    pub start: Option<String>,
+    /// Window end (RFC3339), or absent for the tape end.
+    #[serde(default)]
+    pub end: Option<String>,
+}
+
 /// The persisted terminal state: per-ticker layouts (written only by the Save
 /// Layout button), the session selection, the starred entries, and the
 /// per-ticker bookmarks.
@@ -139,6 +160,9 @@ pub struct TerminalPrefs {
     /// Oscillator kind defaults behind the dock Oscillators section.
     #[serde(default)]
     pub oscillators: crate::oscillator_panel::OscillatorPanelState,
+    /// Stored backtest run configuration (run params only).
+    #[serde(default)]
+    pub backtest: Option<BacktestPrefs>,
     // Legacy flat layout (pre-ticker documents): read-only migration source,
     // never serialized. When `tickers` is empty and these name a ticker, they
     // fold into that ticker's layout once (see `ticker_layout`).

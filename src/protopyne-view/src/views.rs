@@ -208,7 +208,7 @@ impl Default for PortfolioView {
         Self {
             positions: Vec::new(),
             filled_orders: 0,
-            total_fees: Money::from(0),
+            total_fees: Money::zero(),
             open_contracts: 0,
             // Views boot allowing everything, matching a fresh session.
             trading_state: "Enabled".to_owned(),
@@ -427,7 +427,9 @@ pub struct DenyCount {
 /// `run` stays an opaque JSON value on this side of the boundary: the typed
 /// run tree (manifest, per-bar verdicts, report) is core-owned, and the
 /// terminal reads the typed deny histogram, not the run. The value
-/// round-trips byte-stable, so route payloads stay identical.
+/// round-trips byte-stable, so route payloads stay identical. This is the
+/// neutral wire projection of the server's typed preview response, which
+/// serves the same shape with the run tree attached.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PreviewResponse {
     /// The backtest run, opaque here, byte-stable on the wire.
@@ -786,3 +788,139 @@ impl Default for ConcentrationReport {
 #[cfg(test)]
 #[path = "../tests/views.rs"]
 mod tests;
+
+/// A backtest schema: the composition description plus the registry
+/// enumerations a form picker must offer. The schema is data: the terminal
+/// renders it without naming any strategy type.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct BacktestSchemaView {
+    /// The composition description (nested spec shape).
+    pub schema: serde_json::Value,
+}
+
+/// Parameters for one backtest run. Money rides decimal text (never a JSON
+/// number); the time window is RFC3339; the grant is an optional explicit
+/// document, defaulting to a permissive single-structure rehearsal grant.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct BacktestRunParams {
+    /// The nested composition document the run binds.
+    pub spec: serde_json::Value,
+    /// Deterministic seed.
+    pub seed: u64,
+    /// Opening equity, decimal text.
+    pub initial_equity: String,
+    /// Window start (RFC3339), or the tape start when absent.
+    pub start: Option<String>,
+    /// Window end (RFC3339), or the tape end when absent.
+    pub end: Option<String>,
+    /// Explicit grant document, or the default when absent.
+    pub grant: Option<serde_json::Value>,
+}
+
+/// One labelled metric; the value rides text so an absent metric reads
+/// `None` instead of an invented zero.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct BacktestMetricView {
+    /// Metric label.
+    pub label: String,
+    /// Metric value, or `None` when the book cannot measure it.
+    pub value: Option<String>,
+}
+
+/// One closed trade; every price rides decimal text.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct BacktestTradeView {
+    /// Signal side that opened the trade.
+    pub long: bool,
+    /// Shares closed.
+    pub quantity: u32,
+    /// Entry bar timestamp (RFC3339).
+    pub entry_at: String,
+    /// Volume-weighted entry price, decimal text.
+    pub entry_price: String,
+    /// Exit bar timestamp (RFC3339).
+    pub exit_at: String,
+    /// Volume-weighted exit price, decimal text.
+    pub exit_price: String,
+    /// Signed realized P&L after fees, decimal text.
+    pub pnl: String,
+    /// Bars held, entry to exit inclusive.
+    pub bars_held: u64,
+    /// Why the position closed.
+    pub exit_reason: String,
+}
+
+/// One equity-curve point; equity rides decimal text.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct EquityPointView {
+    /// Bar timestamp (RFC3339).
+    pub at: String,
+    /// Marked equity, decimal text.
+    pub equity: String,
+}
+
+/// One chart marker; the kind is a stable tag (`entry`, `exit`, `stop`,
+/// `target`).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct BacktestMarkerView {
+    /// Bar timestamp (RFC3339).
+    pub at: String,
+    /// Marker price, decimal text.
+    pub price: String,
+    /// Marker kind.
+    pub kind: String,
+}
+
+/// The reference status table's eight rows at one bar: position, day P&L,
+/// trades today, loss streak, cooldown, halt line, win rate, net P&L. Formatted
+/// text mirrors the reference table exactly; the terminal paints it directly.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct BacktestStatusView {
+    /// Bar timestamp (RFC3339).
+    pub at: String,
+    /// Open position (`LONG n`, `SHORT n`, or `Flat`).
+    pub position: String,
+    /// Day P&L (`#.##%`).
+    pub day_pnl_pct: String,
+    /// Trades taken today (`n`, or `n / max` when capped).
+    pub trades_today: String,
+    /// Consecutive losses into today.
+    pub loss_streak: u64,
+    /// Cooldown left (`N bars`, or `Ready`).
+    pub cooldown: String,
+    /// Halt line (`HALTED: reason`, `Active`, or `Disabled`).
+    pub status: String,
+    /// Win rate over closed trades (`#.#%`, or `-` with no closes).
+    pub win_rate: String,
+    /// Realized P&L over closed trades, decimal text.
+    pub net_pnl: String,
+}
+
+/// A handle to one stored backtest run.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct BacktestRunRef {
+    /// Registry id the run is stored under.
+    pub run_id: String,
+}
+
+/// One stored backtest run, fully projected: metrics, equity curve, trades,
+/// markers, the final status row, and the declared warnings.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct BacktestRunView {
+    /// Registry id.
+    pub run_id: String,
+    /// The run's reproducibility pin (data, code, config).
+    pub manifest_json: String,
+    /// Labelled metrics; an unmeasurable metric reads `None`.
+    pub metrics: Vec<BacktestMetricView>,
+    /// Marked equity per bar.
+    pub equity: Vec<EquityPointView>,
+    /// Closed trades in close order.
+    pub trades: Vec<BacktestTradeView>,
+    /// Entry/exit markers in bar order.
+    pub markers: Vec<BacktestMarkerView>,
+    /// The final bar's status row, when the run decided at least one bar.
+    pub status: Option<BacktestStatusView>,
+    /// Declared limits and unavailable surfaces beside the metrics.
+    pub warnings: Vec<String>,
+}

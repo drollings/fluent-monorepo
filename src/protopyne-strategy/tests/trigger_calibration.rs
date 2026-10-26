@@ -12,6 +12,8 @@
 
 use std::path::PathBuf;
 
+use fluent_wvr::validate::Validate;
+
 use crate::integration_lite::IntegrationLiteStrategyConfig;
 
 fn data_file(name: &str) -> PathBuf {

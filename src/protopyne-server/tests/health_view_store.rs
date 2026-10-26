@@ -8,18 +8,11 @@
 //! it reads.
 
 use super::*;
+use crate::common_fixtures::spy_history;
 use std::path::PathBuf;
 
 use protopyne_store::StoreHealth;
 use protopyne_view::TerminalGateway;
-
-fn history() -> Vec<Bar> {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests")
-        .join("data")
-        .join("SPY_15M.csv");
-    crate::csv::load_bars_csv(&path).expect("vendored history loads")
-}
 
 fn golden_path(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -34,7 +27,9 @@ async fn boot_with(store_health: StoreHealth) -> ServerHandle {
         .bind("127.0.0.1:0".to_owned())
         .store_health(store_health)
         .build();
-    serve(config, history()).await.expect("test server boots")
+    serve(config, spy_history())
+        .await
+        .expect("test server boots")
 }
 
 async fn get_body(client: &reqwest::Client, base: &str) -> String {
@@ -88,7 +83,7 @@ async fn recorded_reading_surfaces_on_the_route_and_the_gateway() {
 fn shared_with(store_health: StoreHealth) -> Shared {
     std::sync::Arc::new(AppState {
         limiter: Limiter::new(32),
-        history: history(),
+        history: spy_history(),
         history_timeframe: Timeframe::M15,
         inbox: Mutex::new(Vec::new()),
         armed: Mutex::new(None),
@@ -104,6 +99,7 @@ fn shared_with(store_health: StoreHealth) -> Shared {
         tape_serve_stats: Arc::new(TapeServeStats::default()),
         fallback_latch: Mutex::new(FallbackLatch::default()),
         replay: Mutex::new(ReplayRegistry::new()),
+        backtests: Mutex::new(crate::backtest_registry::BacktestRegistry::new()),
         chain_history: None,
         history_root: None,
         broker: protopyne_venue::BrokerRegistry::new(),
@@ -146,13 +142,7 @@ async fn tape_counters_surface_on_the_route_and_the_gateway() {
     // reports the identical view — one truth for the terminal.
     let dir = tempfile::tempdir().expect("tempdir");
     let root = dir.path().join("store");
-    let bars = crate::csv::load_bars_csv(
-        &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("tests")
-            .join("data")
-            .join("SPY_15M.csv"),
-    )
-    .expect("vendored history loads");
+    let bars = spy_history();
     tape::seed_file(&root, &bars, "SPY", Timeframe::M15, tape::VENUE);
     let reader = crate::service::open_tape_reader(&root).expect("boot opens the store");
     let config = ServerConfig::new().bind("127.0.0.1:0".to_owned()).build();
@@ -194,7 +184,7 @@ async fn unobserved_tape_stats_report_no_fields() {
 
     let dir = tempfile::tempdir().expect("tempdir");
     let root = dir.path().join("store");
-    let bars = history();
+    let bars = spy_history();
     tape::seed_file(&root, &bars, "SPY", Timeframe::M15, tape::VENUE);
     let reader = crate::service::open_tape_reader(&root).expect("boot opens the store");
     let config = ServerConfig::new().bind("127.0.0.1:0".to_owned()).build();

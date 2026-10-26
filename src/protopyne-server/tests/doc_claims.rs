@@ -47,6 +47,17 @@ fn readme_claims_the_shipped_subsystems() {
 }
 
 #[test]
+fn readme_names_the_terminal_backtest_surface() {
+    let readme = read("README.md");
+    for claim in ["strategy form", "equity pane", "eight-row status"] {
+        assert!(
+            readme.contains(claim),
+            "README must name the terminal backtest surface ({claim:?})"
+        );
+    }
+}
+
+#[test]
 fn the_unwired_symbol_advisory_runs_and_exits_zero() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")

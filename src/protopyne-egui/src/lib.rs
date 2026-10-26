@@ -20,6 +20,7 @@
 //! headless chart crate may gain a paint dependency.
 
 pub mod annotations;
+pub mod backtest;
 pub mod chart;
 pub mod delta_volume_profile;
 pub mod export;
@@ -31,6 +32,7 @@ pub mod indicators;
 pub mod integration_lite;
 pub mod oscillator_panel;
 pub mod oscillators;
+pub mod overlay;
 pub mod pine_overlay;
 pub mod prefs;
 pub mod regime_labels;
@@ -42,6 +44,10 @@ pub mod widgets;
 pub mod workspace;
 
 pub use annotations::{annotations_of, annotations_of_counted, append_new};
+pub use backtest::{
+    paint_backtest_panel, BacktestAction, BacktestFormError, BacktestFormField, BacktestFormState,
+    BacktestModel,
+};
 pub use chart::{
     area_view, chart_price_bars, default_symbol, line_values, picture_rows, picture_source,
     prefold_levels, prefold_pick, prefold_pick_hysteretic, refuse_chart_type,
@@ -64,13 +70,13 @@ pub use indicators::{
 };
 pub use integration_lite::{
     candle_momentum_keys, candle_momentum_series, compare_freeze, integration_lite_sub_pane,
-    integration_lite_view, integration_lite_view_calibrated, momentum_key_for, momentum_tint,
-    momentum_tints, native_lite_series, oscillator_transparency, precision_recall,
+    integration_lite_view, integration_lite_view_calibrated, lite_native_series, momentum_key_for,
+    momentum_tint, momentum_tints, oscillator_transparency, precision_recall,
     ribbon_fill_transparency, series_max_diff, CandleMomentum, FreezePair, FreezeReport,
     IntegrationLiteConfig, IntegrationLiteSubPane, IntegrationLiteView, LiteFrozen, LiteNative,
     MomentumPalette, MomentumTint, ATR_LENGTH, BOUNDED_DELTA_UNIT, CALIBRATED_PIVOT_THRESHOLD,
     MA_HEALTH_K, OSCILLATOR_BRIGHTNESS, RAW_OSCILLATOR_LENGTH, RIBBON_HEALTH_K, RIBBON_MEAN_LENGTH,
-    SIGNAL_EIT_ALPHA, VOLUME_TRANSPARENCY, VOL_SMA_LENGTH,
+    SIGNAL_EIT_ALPHA, VOLUME_TRANSPARENCY,
 };
 pub use oscillator_panel::{
     lite_leg_kind_ids, KindDefaults, OscillatorPanelState, LITE_LEG_KINDS, PANEL_KINDS,
@@ -84,12 +90,17 @@ pub use oscillators::{
     CALIBRATED_BOUNDED_PIVOT_THRESHOLD, DISPLAY_EXTREME_BAND, DISPLAY_RULE_BAND,
     SQUASH_100_DIVISOR,
 };
+pub use overlay::{
+    BacktestOverlay, BacktestOverlayConfig, BacktestPoint, BacktestPointKind, EquityPane,
+    BACKTEST_EQUITY_ID, BACKTEST_EQUITY_PANE, BACKTEST_OVERLAY_ID,
+};
 pub use pine_overlay::{
     overlay_geoms, paint_overlay, paint_unsupported_chip, translate_overlay, OverlayGeoms,
     PlacedLabel, SeriesGeom,
 };
 pub use prefs::{
-    prefs_path, BookmarkEntry, Favorites, SlotPrefs, TerminalPrefs, TickerLayout, PREFS_FILE,
+    prefs_path, BacktestPrefs, BookmarkEntry, Favorites, SlotPrefs, TerminalPrefs, TickerLayout,
+    PREFS_FILE,
 };
 pub use protopyne_view::AssetClass;
 pub use regime_labels::{
@@ -121,6 +132,10 @@ pub fn is_terminal_edge() -> bool {
     let _ = egui::Color32::WHITE;
     true
 }
+
+#[cfg(test)]
+#[path = "../tests/common/fakes.rs"]
+pub(crate) mod common_fakes;
 
 #[cfg(test)]
 #[path = "../tests/lib.rs"]

@@ -180,6 +180,13 @@ impl TerminalApp {
                 // the form. Until set, the dock's arm-grant subpane shows
                 // read-only tier texts.
                 workspace.set_grant_schema(&protopyne_strategy::GrantPatch::default().describe());
+                // The backtest form needs the served schema before it can
+                // draft a run; a gateway that does not serve it (the mock)
+                // leaves the run params over an empty document, and the
+                // server names any missing field on submit.
+                if let Ok(schema) = gateway.backtest_schema() {
+                    workspace.set_backtest_schema(&schema.schema);
+                }
                 // Restore the persisted selection and per-ticker layouts over
                 // the boot history; the active ticker's layout (timeframe,
                 // range, chart type, loadout) applies on the switch below.

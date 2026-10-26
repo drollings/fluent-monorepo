@@ -22,6 +22,7 @@ pub use crate::views::DEFAULT_REPLAY_CHECKPOINT_EVERY;
 #[allow(unused_imports)]
 pub(crate) use {
     crate::backtest::BacktestConfig,
+    crate::backtest_registry::{BacktestEntry, BacktestRegistry},
     crate::boot::{Shared, TapeServeStats},
     crate::chain_history::{ChainFeedConfig, HistoricalChainSource},
     crate::error::ServerError,

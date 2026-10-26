@@ -77,11 +77,21 @@ pub fn terminal_reason(code: &str) -> Option<&'static str> {
 #[builder(start_fn = new)]
 pub struct StreamConfig {
     /// Backoff base in milliseconds between reconnects (shared schedule).
-    #[field(desc = "Reconnect backoff base in milliseconds", min = 1, max = 60_000)]
+    #[field(
+        desc = "Reconnect backoff base in milliseconds",
+        min = 1,
+        max = 60_000,
+        axis = "producer-confidence"
+    )]
     #[builder(default = crate::tastytrade::RETRY_BACKOFF_BASE_MS)]
     pub backoff_base_ms: u64,
     /// Backoff jitter percent (shared schedule, 0–100).
-    #[field(desc = "Reconnect backoff jitter percent", min = 0, max = 100)]
+    #[field(
+        desc = "Reconnect backoff jitter percent",
+        min = 0,
+        max = 100,
+        axis = "producer-confidence"
+    )]
     #[builder(default = crate::tastytrade::RETRY_JITTER_PCT)]
     pub backoff_jitter_pct: u32,
     /// Consecutive retryable connect errors that disarm entries
@@ -90,13 +100,19 @@ pub struct StreamConfig {
     #[field(
         desc = "Consecutive stream errors before the breaker trips",
         min = 1,
-        max = 1_000
+        max = 1_000,
+        axis = "producer-confidence"
     )]
     #[builder(default = 3)]
     pub max_consecutive_errors: u32,
     /// Window in seconds for counting stream restarts
     /// **(producer-confidence)**.
-    #[field(desc = "Restart-rate window in seconds", min = 1, max = 3_600)]
+    #[field(
+        desc = "Restart-rate window in seconds",
+        min = 1,
+        max = 3_600,
+        axis = "producer-confidence"
+    )]
     #[builder(default = 60)]
     pub restart_window_secs: u64,
     /// Restarts inside one window that trip the breaker
@@ -104,7 +120,8 @@ pub struct StreamConfig {
     #[field(
         desc = "Restarts per window before the breaker trips",
         min = 1,
-        max = 1_000
+        max = 1_000,
+        axis = "producer-confidence"
     )]
     #[builder(default = 5)]
     pub max_restarts_per_window: u32,
@@ -112,20 +129,8 @@ pub struct StreamConfig {
 
 impl fluent_wvr::validate::Validate for StreamConfig {
     type Err = String;
-    fn validate(&self) -> Result<(), Self::Err> {
-        StreamConfig::validate(self)
-    }
-}
-
-impl Default for StreamConfig {
-    fn default() -> Self {
-        Self::new().build()
-    }
-}
-
-impl StreamConfig {
     /// Fail-closed self-consistency check.
-    pub fn validate(&self) -> Result<(), String> {
+    fn validate(&self) -> Result<(), Self::Err> {
         if self.backoff_base_ms < 1 {
             return Err("backoff_base_ms must be at least 1".to_owned());
         }
@@ -142,6 +147,12 @@ impl StreamConfig {
             return Err("max_restarts_per_window must be at least 1".to_owned());
         }
         Ok(())
+    }
+}
+
+impl Default for StreamConfig {
+    fn default() -> Self {
+        Self::new().build()
     }
 }
 

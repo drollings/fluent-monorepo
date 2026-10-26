@@ -17,23 +17,23 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use common_core::hash::{fingerprint_framed, fnv1a64};
 use fluent_egui::{
-    anchor_window, auto_height_range, axis_ticks, candle_body_width, column_candle_geoms,
-    column_delta_geoms, crosshair_data, crosshair_lines, needs_column_aggregation,
-    opacity_from_transparency, paint_candles_tinted, paint_catalog_modal, paint_crosshair,
-    paint_delta_bars_styled, paint_delta_bars_tinted, paint_hot_slot_stack, paint_oscillator,
-    paint_ribbon, paint_ribbon_fill, paint_slot_settings_modal, paint_thresholds,
-    project_style_fields, proportional_ribbon_polygons, resolve_color, sampled_line_points,
-    sampled_ribbon_bands, schema_fields, translate_bands, translate_candles, translate_delta_bars,
-    translate_points, translate_polygons, visible_rows, wheel_zoom_factor, zoom_range_around,
-    CatalogAction, CatalogModal, CrosshairLines, EguiError, HotSlotAction, HotSlotStack,
-    InteractionState, PaneCache, PanePlan, PaneZones, PointerInput, SchemaField, SettingsCommit,
-    SettingsTab, SlotAttachment, ThemeConfig, TintedCandle, TintedDeltaBar, Viewport, WheelTarget,
-    WheelZones,
+    anchor_window, annotate_at, auto_height_range, axis_ticks, candle_body_width,
+    column_candle_geoms, column_delta_geoms, crosshair_data, crosshair_lines, marker_dots,
+    needs_column_aggregation, opacity_from_transparency, paint_candles_tinted, paint_catalog_modal,
+    paint_crosshair, paint_delta_bars_styled, paint_delta_bars_tinted, paint_hot_slot_stack,
+    paint_markers, paint_oscillator, paint_ribbon, paint_ribbon_fill, paint_slot_settings_modal,
+    paint_thresholds, project_style_fields, proportional_ribbon_polygons, resolve_color,
+    sampled_line_points, sampled_ribbon_bands, schema_fields, translate_bands, translate_candles,
+    translate_delta_bars, translate_points, translate_polygons, visible_rows, wheel_zoom_factor,
+    zoom_range_around, AnnotationSet, CatalogAction, CatalogModal, CrosshairLines, EguiError,
+    HotSlotAction, HotSlotStack, InteractionState, PaneCache, PanePlan, PaneZones, PointerInput,
+    SchemaField, SettingsCommit, SettingsTab, SlotAttachment, ThemeConfig, TintedCandle,
+    TintedDeltaBar, Viewport, WheelTarget, WheelZones,
 };
 use fluent_wvr::{
     component_downcast_mut, component_downcast_ref, Component, Describable, FieldAccess,
 };
-use protopyne_chart_model::{heikin_rows_of, ChartRow, ChartType, DateRange};
+use protopyne_chart_model::{heikin_rows_of, Annotation, ChartRow, ChartType, DateRange};
 use protopyne_chart_scale::{PriceRange, PriceScaleMode};
 use protopyne_types::{BucketAccum, Money, SymKey, SymbolIndex, Timeframe};
 use protopyne_view::{
@@ -55,6 +55,7 @@ use crate::integration_lite::{
     MomentumPalette, MomentumTint, CALIBRATED_PIVOT_THRESHOLD, VOLUME_TRANSPARENCY,
 };
 use crate::oscillator_panel::{panel_kind_for_kernel, OscillatorPanelState, PANEL_KINDS};
+use crate::overlay::{BACKTEST_EQUITY_ID, BACKTEST_OVERLAY_ID};
 use crate::prefs::{BookmarkEntry, Favorites, SlotPrefs, TerminalPrefs, TickerLayout};
 use crate::session::{fmt_boundary_time, time_grid_lines, time_major_unit, SessionBreakCache};
 use crate::topology::SeriesCatalog;
@@ -63,10 +64,13 @@ use crate::views::{
     TicketModel, ViewsBundle,
 };
 use crate::widgets::{
-    bar_text, paint_calendar, paint_range_dialog, paint_top_bar, CalendarState, PlayPressState,
-    RangeChoice, ReplaySpeed, TopBarAction, TopBarMenuState, PLAY_LONG_PRESS_SECS,
+    bar_text, paint_calendar, paint_mtf_table, paint_range_dialog, paint_top_bar, CalendarState,
+    MtfRow, PlayPressState, RangeChoice, ReplaySpeed, TopBarAction, TopBarMenuState,
+    PLAY_LONG_PRESS_SECS,
 };
-use crate::{paint_grant_form, GrantFormState};
+use crate::{
+    paint_backtest_panel, paint_grant_form, BacktestFormState, BacktestModel, GrantFormState,
+};
 
 /// Stable id of the IntegrationLite slot whose richer sub-pane geometry
 /// (delta histogram) the canvas paints alongside the plugin's series.
@@ -860,6 +864,10 @@ enum ChartContextAction {
     /// Set a replay boundary at the trigger candle (beginning by default,
     /// the end when a beginning already precedes it).
     SetReplayBoundary,
+    /// Drop an operator note on the trigger candle.
+    Annotate,
+    /// Remove the most recently added operator note.
+    UndoAnnotation,
     /// Move the custom pane under the pointer onto the price pane.
     MergeToChart,
     /// Move the custom pane under the pointer into the shared oscillator.
@@ -1024,6 +1032,10 @@ pub struct ChartWorkspace {
     context_open: bool,
     /// Pointer position the context menu opened at, in global pixels.
     context_at: egui::Pos2,
+    /// Pointer position relative to the price plot's origin, for the
+    /// annotate action's hit test. Resolved at trigger time with the bar
+    /// time above, so later pans cannot move the note.
+    context_local: Option<(f32, f32)>,
     /// Bar time the context menu opened over, resolved through the main
     /// viewport at trigger time so later pans cannot move the actions.
     context_time: Option<i64>,
@@ -1123,6 +1135,23 @@ pub struct ChartWorkspace {
     /// [`set_grant_schema`](Self::set_grant_schema) when a descriptor is
     /// available, else the form stays empty and read-only tier texts show.
     grant_form: GrantFormState,
+    /// Served backtest schema, kept so a re-render never re-asks: the form
+    /// owns the working document, this owns the descriptor it was built from.
+    backtest_schema: Option<serde_json::Value>,
+    /// Backtest authoring form over the served schema: drafts, submit, and
+    /// the last outcome. Owned here so the dock's backtest subpane and the
+    /// terminal example share one truth.
+    backtest_form: BacktestFormState,
+    /// Cached backtest read: metrics, trades, curve, and the final status
+    /// row. Reads happen on click only; the painter never re-reads.
+    backtest: Option<BacktestModel>,
+    /// Operator annotations on the chart: click-to-annotate notes with undo.
+    /// Painted as markers over the main canvas; the run's own markers stay
+    /// with the backtest overlay, so the two never double-paint a bar.
+    annotations: AnnotationSet,
+    /// Backtest refusal, when the last run control failed. Shown inline in
+    /// the backtest section; running again overwrites it.
+    backtest_error: Option<String>,
     /// Replay refusal, when the last replay control failed. Shown inline in
     /// the replay section; applying again or opening overwrites it.
     replay_error: Option<String>,
@@ -1320,6 +1349,7 @@ impl ChartWorkspace {
             bookmark_error: None,
             context_open: false,
             context_at: egui::Pos2::ZERO,
+            context_local: None,
             context_time: None,
             context_pane: None,
             context_press: None,
@@ -1346,6 +1376,11 @@ impl ChartWorkspace {
             broker_model: None,
             dock_journal_lines: Vec::new(),
             grant_form: GrantFormState::default(),
+            backtest_schema: None,
+            backtest_form: BacktestFormState::default(),
+            backtest: None,
+            backtest_error: None,
+            annotations: AnnotationSet::new(),
             replay_error: None,
             live_replay: None,
             replay_speed: ReplaySpeed::default(),
@@ -2710,6 +2745,162 @@ impl ChartWorkspace {
     /// texts.
     pub fn set_grant_schema(&mut self, schema: &serde_json::Value) {
         self.grant_form = GrantFormState::from_schema(schema);
+    }
+
+    /// Set the backtest schema once when the served descriptor is available
+    /// (the terminal composition root owns the descriptor; this crate never
+    /// names the trading path). Until set, the backtest subpane offers the
+    /// run params over an empty document and the server names any missing
+    /// field on submit.
+    pub fn set_backtest_schema(&mut self, schema: &serde_json::Value) {
+        self.backtest_schema = Some(schema.clone());
+        // A stored run configuration survives the schema arriving late: only
+        // the document and the leaf set refresh, never the operator's text.
+        let seed = self.backtest_form.seed_text().to_owned();
+        let initial_equity = self.backtest_form.initial_equity_text().to_owned();
+        let start = self.backtest_form.start_text().to_owned();
+        let end = self.backtest_form.end_text().to_owned();
+        self.backtest_form = BacktestFormState::from_schema(schema);
+        self.backtest_form.set_seed_text(seed);
+        self.backtest_form.set_initial_equity_text(initial_equity);
+        self.backtest_form.set_start_text(start);
+        self.backtest_form.set_end_text(end);
+    }
+
+    /// One multi-timeframe row per loaded history: the window direction
+    /// over that timeframe's loaded rows plus the signed percent move on
+    /// the display band. A flat window reads flat; an unmeasurable window
+    /// is skipped, never zero-filled.
+    fn mtf_window_rows(&self) -> Vec<MtfRow> {
+        let mut keys: Vec<TimeframeKey> = self.histories.keys().copied().collect();
+        keys.sort();
+        let mut rows = Vec::new();
+        for key in keys {
+            let Some(history) = self.histories.get(&key) else {
+                continue;
+            };
+            let (Some(first), Some(last)) = (history.first(), history.last()) else {
+                continue;
+            };
+            if !first.close.is_finite() || !last.close.is_finite() || first.close == 0.0 {
+                continue;
+            }
+            let moved = (last.close - first.close) / first.close.abs() * 100.0;
+            if !moved.is_finite() {
+                continue;
+            }
+            let bias = if moved > 0.0 {
+                "bull"
+            } else if moved < 0.0 {
+                "bear"
+            } else {
+                "flat"
+            };
+            rows.push(MtfRow {
+                timeframe: key.label().to_owned(),
+                bias: bias.to_owned(),
+                strength: moved.clamp(-100.0, 100.0),
+            });
+        }
+        rows
+    }
+
+    /// Show one stored run on the chart: the marker/resting-line overlay
+    /// plus the equity pane, replacing any previous run's slots. The
+    /// plugins carry the run's points (immutable evaluation input); the
+    /// slot configs carry the run id that keys the plan fingerprint, so a
+    /// new run always recomputes. Reads the cached model only — never the
+    /// gateway. Called after the backtest panel paints, so the overlay
+    /// follows the model with no extra click.
+    pub fn sync_backtest_overlay(&mut self) {
+        let want = self
+            .backtest
+            .as_ref()
+            .and_then(|model| model.view())
+            .map(|view| view.run_id.clone());
+        if want == self.backtest_overlay_run_id() {
+            return;
+        }
+        if self.stack.contains(BACKTEST_OVERLAY_ID) {
+            let _ = self.remove_indicator(BACKTEST_OVERLAY_ID);
+        }
+        if self.stack.contains(BACKTEST_EQUITY_ID) {
+            let _ = self.remove_indicator(BACKTEST_EQUITY_ID);
+        }
+        let Some(run_id) = want else {
+            return;
+        };
+        let view = self
+            .backtest
+            .as_ref()
+            .and_then(|model| model.view())
+            .cloned();
+        let Some(view) = view else {
+            return;
+        };
+        let (overlay, overlay_config) = crate::overlay::BacktestOverlay::with_run(&run_id, &view);
+        let (equity, equity_config) = crate::overlay::EquityPane::with_run(&run_id, &view);
+        let _ = self.slot_backtest_plugin(
+            Box::new(overlay),
+            Box::new(overlay_config),
+            BACKTEST_OVERLAY_ID,
+            "Backtest Overlay",
+            fluent_egui::SlotAttachment::MainOverlay,
+        );
+        let _ = self.slot_backtest_plugin(
+            Box::new(equity),
+            Box::new(equity_config),
+            BACKTEST_EQUITY_ID,
+            "Backtest Equity",
+            fluent_egui::SlotAttachment::SubPane,
+        );
+    }
+
+    /// The run id the overlay slots were built for, when both are slotted
+    /// and agree. Anything else reads as unslotted, so the next sync
+    /// rebuilds rather than painting a half-run overlay.
+    fn backtest_overlay_run_id(&self) -> Option<String> {
+        let overlay = self.stack.config(BACKTEST_OVERLAY_ID)?;
+        let equity = self.stack.config(BACKTEST_EQUITY_ID)?;
+        let overlay_id =
+            fluent_wvr::component_downcast_ref::<crate::overlay::BacktestOverlayConfig>(overlay)?
+                .run_id
+                .clone();
+        let equity_id =
+            fluent_wvr::component_downcast_ref::<crate::overlay::BacktestOverlayConfig>(equity)?
+                .run_id
+                .clone();
+        (overlay_id == equity_id).then_some(overlay_id)
+    }
+
+    /// Slot one prebuilt backtest plugin: the catalog path builds from an
+    /// id, but a run overlay arrives with its points, so the plugin and its
+    /// run-id configuration enter together.
+    fn slot_backtest_plugin(
+        &mut self,
+        plugin: Box<dyn crate::indicators::ChartIndicator>,
+        config: Box<dyn fluent_wvr::Component>,
+        id: &str,
+        title: &str,
+        attachment: fluent_egui::SlotAttachment,
+    ) -> Result<(), EguiError> {
+        let nodes = plugin.plan_nodes(&*config)?;
+        let node_refs: Vec<&str> = nodes.iter().map(String::as_str).collect();
+        let deps = plugin.plan_deps(&*config)?;
+        let dep_refs: Vec<&str> = deps.iter().map(String::as_str).collect();
+        let fingerprint = common_core::hash::fnv1a64(id.as_bytes());
+        self.stack.insert(
+            plugin.id(),
+            title,
+            attachment,
+            config,
+            &node_refs,
+            &dep_refs,
+            fingerprint,
+            &mut self.plan,
+        )?;
+        self.plugins.push(plugin);
+        Ok(())
     }
 
     /// Whether the Material dock is open.
@@ -4936,6 +5127,18 @@ impl ChartWorkspace {
                     )?;
                 }
             }
+            // Operator annotations paint as markers over the main canvas:
+            // the set stays empty until the context menu adds a note, so the
+            // common frame pays no per-note allocation.
+            if !self.annotations.is_empty() {
+                let notes: Vec<Annotation> = self.annotations.iter().cloned().collect();
+                let mut dots = marker_dots(&notes, view_rows, &main);
+                for dot in &mut dots {
+                    dot.x += layout.plot.left();
+                    dot.y += layout.plot.top();
+                }
+                paint_markers(&plot, &dots, &theme)?;
+            }
             let last = view_rows.last();
             paint_price_axis(
                 &chrome,
@@ -5225,6 +5428,12 @@ impl ChartWorkspace {
                     if menu.button("Set Replay Boundary").clicked() {
                         picked = Some(ChartContextAction::SetReplayBoundary);
                     }
+                    if menu.button("Annotate").clicked() {
+                        picked = Some(ChartContextAction::Annotate);
+                    }
+                    if !self.annotations.is_empty() && menu.button("Undo annotation").clicked() {
+                        picked = Some(ChartContextAction::UndoAnnotation);
+                    }
                     if let Some(label) = &merge_chart_label {
                         if menu.button(label).clicked() {
                             picked = Some(ChartContextAction::MergeToChart);
@@ -5325,6 +5534,7 @@ impl ChartWorkspace {
     fn open_chart_context(&mut self, layouts: &[PaneLayout], pos: egui::Pos2) {
         let plot = layouts.first().map(|layout| layout.plot);
         self.context_at = pos;
+        self.context_local = plot.map(|plot| (pos.x - plot.left(), pos.y - plot.top()));
         self.context_time = self.main.and_then(|main| {
             let plot = plot?;
             if !plot.width().is_finite() || plot.width() <= 0.0 {
@@ -5384,6 +5594,23 @@ impl ChartWorkspace {
         (chart, oscillator)
     }
 
+    /// Drop an operator note on the trigger candle: the pointer resolves
+    /// through the main viewport against the loaded rows, and a miss paints
+    /// nothing rather than a misplaced note. Main-pane only — a sub-pane
+    /// pointer has no candle to annotate.
+    fn annotate_trigger_candle(&mut self) {
+        if self.context_pane != Some(ContextPane::Main) {
+            return;
+        }
+        let note = match (self.context_local, self.main) {
+            (Some(local), Some(viewport)) => annotate_at(local, &viewport, &self.rows),
+            _ => None,
+        };
+        if let Some(note) = note {
+            crate::annotations::append_new(&mut self.annotations, &[note]);
+        }
+    }
+
     /// Every row the open menu offers: the three base rows plus the merges
     /// from the one helper behind the paint block.
     pub fn context_menu_labels(&self) -> Vec<String> {
@@ -5391,7 +5618,11 @@ impl ChartWorkspace {
             "Auto Zoom".to_owned(),
             "Bookmark".to_owned(),
             "Set Replay Boundary".to_owned(),
+            "Annotate".to_owned(),
         ];
+        if !self.annotations.is_empty() {
+            labels.push("Undo annotation".to_owned());
+        }
         let (chart, oscillator) = self.merge_labels();
         labels.extend(chart);
         labels.extend(oscillator);
@@ -5416,6 +5647,14 @@ impl ChartWorkspace {
                 if let Some(time) = self.context_time {
                     self.set_replay_boundary(time);
                 }
+                Ok(())
+            }
+            ChartContextAction::Annotate => {
+                self.annotate_trigger_candle();
+                Ok(())
+            }
+            ChartContextAction::UndoAnnotation => {
+                self.annotations.undo();
                 Ok(())
             }
             ChartContextAction::MergeToChart => {
@@ -6056,8 +6295,28 @@ impl ChartWorkspace {
                 body.label("Connect a gateway to arm");
             }
         });
-        // Replay: an interactive backtest over the shared decide path. The
-        // gateway owns the session (decisions, fills, journal); this owns
+        // Backtest pane: author a run from the served schema, run it, and
+        // read the stored metrics, trades, curve, and status table. This is
+        // the only place a strategy run starts: the replay section below
+        // replays the fixed rehearsal composition and never runs a strategy.
+        ui.collapsing("backtest", |body| {
+            if let Some(reason) = self.backtest_error.clone() {
+                body.colored_label(egui::Color32::RED, format!("backtest refused: {reason}"));
+            }
+            paint_backtest_panel(body, &mut self.backtest_form, &mut self.backtest, gateway);
+            self.backtest_error = self.backtest_form.last_error().map(str::to_owned);
+            self.sync_backtest_overlay();
+        });
+        // Timeframes: the loaded histories' window move, one row per
+        // timeframe. Display-only (the terminal's own window read, never a
+        // strategy signal): direction over the loaded window plus the signed
+        // percent move on the display band.
+        ui.collapsing("timeframes", |body| {
+            paint_mtf_table(body, &self.mtf_window_rows());
+        });
+        // Replay: the rehearsal composition (fixed long, no exits) stepped
+        // interactively over the shared decide path — never a strategy run.
+        // The gateway owns the session (decisions, fills, journal); this owns
         // the captured window plus the transport, and the chart and panes
         // truncate to the decided prefix. Singles fill honestly; spreads
         // fill when the window's chains cover the bar and refuse with the
@@ -6090,6 +6349,7 @@ impl ChartWorkspace {
             } else {
                 body.label("No live replay — the chart is live.");
             }
+            body.label("source: rehearsal (fixed long) — interactive replay, not a backtest");
             body.label(format!("window: {}", self.replay_range_label()));
             body.label("Play replays the boundary window when set, else captures the chart's own visible window; edges stay marked on the pane divider. Right-click the chart to set boundaries.");
             if self.replay_range.is_some()
@@ -6179,6 +6439,14 @@ impl ChartWorkspace {
             dock_open: Some(self.dock_open),
             theme: Some(self.config.theme.clone()),
             oscillators: self.oscillator_panel.clone(),
+            backtest: Some(crate::prefs::BacktestPrefs {
+                seed: Some(self.backtest_form.seed_text().to_owned()),
+                initial_equity: Some(self.backtest_form.initial_equity_text().to_owned()),
+                start: (!self.backtest_form.start_text().is_empty())
+                    .then(|| self.backtest_form.start_text().to_owned()),
+                end: (!self.backtest_form.end_text().is_empty())
+                    .then(|| self.backtest_form.end_text().to_owned()),
+            }),
             ..TerminalPrefs::default()
         }
     }
@@ -6223,6 +6491,29 @@ impl ChartWorkspace {
         }
         if prefs.oscillators.validate().is_ok() {
             self.oscillator_panel.clone_from(&prefs.oscillators);
+        }
+        if let Some(backtest) = &prefs.backtest {
+            // Best-effort like every other arm: only non-blank texts win,
+            // and a blank window bound clears the live one.
+            if let Some(seed) = backtest
+                .seed
+                .as_deref()
+                .filter(|text| !text.trim().is_empty())
+            {
+                self.backtest_form.set_seed_text(seed.to_owned());
+            }
+            if let Some(equity) = backtest
+                .initial_equity
+                .as_deref()
+                .filter(|text| !text.trim().is_empty())
+            {
+                self.backtest_form
+                    .set_initial_equity_text(equity.to_owned());
+            }
+            self.backtest_form
+                .set_start_text(backtest.start.clone().unwrap_or_default());
+            self.backtest_form
+                .set_end_text(backtest.end.clone().unwrap_or_default());
         }
         self.favorite_symbols = prefs.favorites.symbols.iter().cloned().collect();
         self.favorite_indicators = prefs.favorites.indicators.iter().cloned().collect();

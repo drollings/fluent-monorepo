@@ -1,13 +1,9 @@
 //! Mark selection: chain mid, fill-price fallback, and absent-not-zero.
 
 use super::*;
+use crate::common_fixtures::money;
 use chrono::TimeZone;
 use protopyne_types::{ContractId, OptionContract, OptionKind};
-use rust_decimal::Decimal;
-
-fn money(value: &str) -> Money {
-    Money::new(value.parse::<Decimal>().expect("decimal"))
-}
 
 fn at(secs: i64) -> DateTime<Utc> {
     Utc.timestamp_opt(secs, 0).unwrap()

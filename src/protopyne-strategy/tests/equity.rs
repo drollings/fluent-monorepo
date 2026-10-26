@@ -8,7 +8,7 @@ use rust_decimal::Decimal;
 use crate::elements::Sizing;
 use crate::proposal::Direction;
 use crate::risk::PortfolioFacts;
-use protopyne_types::{MarkBasis, Money, Qty};
+use protopyne_types::{Money, Qty};
 
 fn money(value: &str) -> Money {
     Money::new(value.parse::<Decimal>().expect("decimal"))
@@ -22,41 +22,89 @@ fn sizer() -> EquitySizer {
     EquitySizer::new("Risk Percent", 0.5, 25.0, 1.0, 100.0).expect("dials validate")
 }
 
+fn unit(price: f64, stop: f64) -> crate::UnitEconomics {
+    crate::UnitEconomics {
+        price_per_unit: Money::new(
+            rust_decimal::Decimal::from_f64_retain(price).unwrap_or(rust_decimal::Decimal::ZERO),
+        ),
+        max_loss_per_unit: Money::new(
+            rust_decimal::Decimal::from_f64_retain(stop).unwrap_or(rust_decimal::Decimal::ZERO),
+        ),
+        bid_ask_width: Money::zero(),
+        side: crate::PackageSide::Buy,
+    }
+}
+
+fn sized(sizer: &EquitySizer, price: f64, stop: f64, facts: &PortfolioFacts) -> u64 {
+    use rust_decimal::prelude::ToPrimitive as _;
+    let unit = unit(price, stop);
+    let ctx = crate::SizingCtx {
+        unit: &unit,
+        facts,
+        equity: Some(100_000.0),
+    };
+    let out = crate::elements::SignalOutput {
+        direction: Direction::Long,
+        conviction: 0.8,
+        activity_score: 0.7,
+        volatility: None,
+        edge: None,
+        odds: None,
+    };
+    sizer
+        .size_for(&out, &ctx)
+        .as_decimal()
+        .to_f64()
+        .unwrap_or(0.0) as u64
+}
+
 #[test]
 fn risk_percent_sizes_from_stop_distance_by_hand() {
     // $100k equity, 0.5% risk = $500 over a $2 stop → 250 shares.
-    let trade = sizer().for_trade(100_000.0, 100.0, 2.0);
-    assert_eq!(trade.shares(&unobserved()), 250);
+    assert_eq!(sized(&sizer(), 100.0, 2.0, &unobserved()), 250);
     // No stop distance where the mode needs one sizes zero, never a guess.
-    let missing = sizer().for_trade(100_000.0, 100.0, f64::NAN);
-    assert_eq!(missing.shares(&unobserved()), 0);
+    assert_eq!(sized(&sizer(), 100.0, f64::NAN, &unobserved()), 0);
 }
 
 #[test]
 fn percent_of_equity_and_fixed_modes_by_hand() {
     // 25% of $100k = $25k notional at $100 → 250 shares.
-    let pct = EquitySizer::new("Percent of Equity", 0.5, 25.0, 1.0, 100.0)
-        .expect("validates")
-        .for_trade(100_000.0, 100.0, 2.0);
-    assert_eq!(pct.shares(&unobserved()), 250);
+    let pct = EquitySizer::new("Percent of Equity", 0.5, 25.0, 1.0, 100.0).expect("validates");
+    assert_eq!(sized(&pct, 100.0, 2.0, &unobserved()), 250);
     // Fixed mode ignores price and stop: 7 shares, capped by max notional.
-    let fixed = EquitySizer::new("Fixed Quantity", 0.5, 25.0, 7.0, 100.0)
-        .expect("validates")
-        .for_trade(100_000.0, 10_000.0, 2.0);
-    assert_eq!(fixed.shares(&unobserved()), 7);
+    let fixed = EquitySizer::new("Fixed Quantity", 0.5, 25.0, 7.0, 100.0).expect("validates");
+    assert_eq!(sized(&fixed, 10_000.0, 2.0, &unobserved()), 7);
     // Max-notional cap binds every mode: $100k cap at $200 asks 500, not
     // the 1000 the risk math allows.
-    let capped = EquitySizer::new("Risk Percent", 2.0, 25.0, 1.0, 100.0)
-        .expect("validates")
-        .for_trade(100_000.0, 200.0, 2.0);
-    assert_eq!(capped.shares(&unobserved()), 500);
-    // Observed facts win over carried numbers: net liq $50k halves the
+    let capped = EquitySizer::new("Risk Percent", 2.0, 25.0, 1.0, 100.0).expect("validates");
+    assert_eq!(sized(&capped, 200.0, 2.0, &unobserved()), 500);
+    // Observed facts win over the caller's equity: net liq $50k halves the
     // percent-of-equity answer.
     let facts = PortfolioFacts {
         net_liq: Some(money("50000")),
         ..unobserved()
     };
-    assert_eq!(pct.shares(&facts), 125);
+    assert_eq!(sized(&pct, 100.0, 2.0, &facts), 125);
+}
+
+#[test]
+fn the_unitless_size_shim_sizes_zero() {
+    // The compatibility shim carries no unit, so it sizes nothing: size
+    // through the unit context instead.
+    assert_eq!(
+        sizer().size(
+            &crate::elements::SignalOutput {
+                direction: Direction::Long,
+                conviction: 0.8,
+                activity_score: 0.7,
+                volatility: None,
+                edge: None,
+                odds: None,
+            },
+            &unobserved()
+        ),
+        Qty::zero()
+    );
 }
 
 #[test]
@@ -238,85 +286,35 @@ fn sizer_names_itself_and_refuses_bad_dials() {
     assert!(EquitySizer::new("Risk Percent", 0.5, 25.0, -1.0, 100.0).is_err());
 }
 
-fn position(side: Direction, qty: u32, entry: &str) -> crate::elements::PositionView<'static> {
-    crate::elements::PositionView {
-        underlying: "SPY".to_owned(),
-        side,
-        quantity: qty,
-        entry_avg: money(entry),
-        max_loss: money("1000"),
-        dte_days: None,
-        legs: None,
-        events: None,
-    }
-}
-
-fn mark(price: Option<&str>) -> crate::elements::MarkContext {
-    crate::elements::MarkContext {
-        basis: MarkBasis::FillPrice,
-        mark: price.map(money),
-    }
-}
-
-#[test]
-fn stop_and_target_fire_past_the_line_hold_on_it() {
-    use crate::elements::LossMgmt;
-    let stop = EquityStopLoss::new(money("200")).expect("positive validates");
-    assert_eq!(stop.name(), "equity-stop");
-    assert!(
-        EquityStopLoss::new(money("0")).is_err(),
-        "dust stop refuses"
-    );
-    let pos = position(Direction::Long, 100, "100");
-    // $2 adverse on 100 shares = -$200: exactly on the line holds.
-    assert!(stop.review(&pos, &mark(Some("98"))).is_empty());
-    assert_eq!(stop.review(&pos, &mark(Some("97.99"))).len(), 1);
-    assert!(
-        stop.review(&pos, &mark(None)).is_empty(),
-        "absent mark holds"
-    );
-    let target = EquityTarget::new(money("300")).expect("positive validates");
-    assert_eq!(target.name(), "equity-target");
-    assert!(target.review(&pos, &mark(Some("103"))).is_empty());
-    assert_eq!(target.review(&pos, &mark(Some("103.01"))).len(), 1);
-}
-
-#[test]
-fn gate_monitor_names_its_breach() {
-    use crate::elements::Monitor;
-    let blocked = GateMonitor {
-        gate: "cooldown",
-        blocked: true,
-    };
-    let alerts = blocked.observe(&unobserved(), &[]);
-    assert_eq!(alerts.len(), 1);
-    assert!(
-        alerts[0].message.contains("cooldown"),
-        "alert names the gate"
-    );
-    let open = GateMonitor {
-        gate: "cooldown",
-        blocked: false,
-    };
-    assert!(open.observe(&unobserved(), &[]).is_empty());
-}
-
 #[test]
 fn sizer_adapter_sizes_through_the_trait() {
-    // The composed strategy sizes through `Sizing::size`; the adapter must
-    // agree with the hand-checked math above.
-    let trade = sizer().for_trade(100_000.0, 100.0, 2.0);
-    let qty = trade.size(
-        &crate::elements::SignalOutput {
-            direction: Direction::Long,
-            conviction: 1.0,
-            activity_score: 1.0,
-            volatility: Some(0.01),
-            edge: None,
-            odds: None,
-        },
-        &unobserved(),
+    // The composed strategy sizes through `Sizing::size_for`; the adapter
+    // must agree with the hand-checked math above.
+    let qty = sized(&sizer(), 100.0, 2.0, &unobserved());
+    assert_eq!(qty, 250);
+}
+
+#[test]
+fn a_loosening_stop_candidate_is_ignored_on_both_sides() {
+    // A trailing candidate that would move the stop away from the market is
+    // discarded: stops only ever tighten, even when the candidate is
+    // confident (far from the stop) but wrong (on the wrong side of it).
+    // Bit-exact: a ratchet returns one of its inputs unchanged, so identity
+    // is the assertion — no tolerance band may forgive a moved stop.
+    assert_eq!(
+        crate::equity::ratchet_stop(true, 99.0, 90.0).to_bits(),
+        99.0_f64.to_bits()
     );
-    assert_eq!(qty, Qty::new(Decimal::from(250)));
-    assert_eq!(qty.as_decimal(), Decimal::from(250));
+    assert_eq!(
+        crate::equity::ratchet_stop(true, 99.0, 99.5).to_bits(),
+        99.5_f64.to_bits()
+    );
+    assert_eq!(
+        crate::equity::ratchet_stop(false, 101.0, 110.0).to_bits(),
+        101.0_f64.to_bits()
+    );
+    assert_eq!(
+        crate::equity::ratchet_stop(false, 101.0, 100.5).to_bits(),
+        100.5_f64.to_bits()
+    );
 }

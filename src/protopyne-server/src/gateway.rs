@@ -8,15 +8,17 @@
 //! core-side: `arm` runs the identical tighten-only logic through
 //! `apply_arm`, including its refusal messages.
 
+use fluent_wvr::validate::Validate;
 use protopyne_store::{fold_bars_edges, FoldEdges};
 use protopyne_strategy::{Grant, ProposalEvent, RiskEngine, RiskLimits};
 use protopyne_types::{Bar, Timeframe};
 use protopyne_view::{
-    validate_symbol_timeframe, ArmResponse, BrokerAccountView, BrokerCapabilityView,
-    BrokerDealView, BrokerOrderView, ChartBars, GatewayError, HealthView, JournalRowView,
-    OverlaySeries, PortfolioView, ProposalView, RehearsalEconomics, ReplayDecisionView,
-    ReplayLegView, ReplayPositionView, ReplayStartParams, ReplayStateView, ReplayView,
-    StructureKindHint, SymbolInfoView, TerminalGateway, TicketDraft, WorstCase,
+    validate_symbol_timeframe, ArmResponse, BacktestRunParams, BacktestRunRef, BacktestRunView,
+    BacktestSchemaView, BrokerAccountView, BrokerCapabilityView, BrokerDealView, BrokerOrderView,
+    ChartBars, GatewayError, HealthView, JournalRowView, OverlaySeries, PortfolioView,
+    ProposalView, RehearsalEconomics, ReplayDecisionView, ReplayLegView, ReplayPositionView,
+    ReplayStartParams, ReplayStateView, ReplayView, StructureKindHint, SymbolInfoView,
+    TerminalGateway, TicketDraft, WorstCase,
 };
 use std::collections::BTreeMap;
 
@@ -31,10 +33,10 @@ use crate::service::{
     DEFAULT_REPLAY_CHECKPOINT_EVERY,
 };
 use crate::views::{
-    booked_portfolio_of, broker_account_of, broker_capabilities_of, broker_deal_of,
-    broker_order_of, confirm_ticket, decide_journaled, import_tickets, journal_attest,
-    journal_cancel_all, journal_close_all, journal_rows_of, journaled_proposals_of, revoke_grant,
-    ticket_drifts_of, waiting_tickets,
+    backtest_run_of, backtest_run_view_of_entry, backtest_schema_of, booked_portfolio_of,
+    broker_account_of, broker_capabilities_of, broker_deal_of, broker_order_of, confirm_ticket,
+    decide_journaled, import_tickets, journal_attest, journal_cancel_all, journal_close_all,
+    journal_rows_of, journaled_proposals_of, revoke_grant, ticket_drifts_of, waiting_tickets,
 };
 
 /// The fallback latch: edge-triggered, so a sustained fallback warns once and
@@ -618,6 +620,58 @@ impl TerminalGateway for ServerGateway {
         } else {
             Err(GatewayError::Unavailable(format!(
                 "no live replay session {session_id:?}"
+            )))
+        }
+    }
+
+    fn backtest_schema(&self) -> Result<BacktestSchemaView, GatewayError> {
+        // The schema is data: the same builder the route serves.
+        Ok(backtest_schema_of())
+    }
+
+    fn backtest_run(&self, params: BacktestRunParams) -> Result<BacktestRunRef, GatewayError> {
+        // Bridge the async run onto the caller's context, exactly as the
+        // replay step does: the gateway is sync, and the shared bridge
+        // outlives the call.
+        common_core::runtime::block_on_shared(backtest_run_of(&self.state, params)).map_err(
+            |(status, reason)| {
+                if status == axum::http::StatusCode::BAD_REQUEST {
+                    GatewayError::Malformed(reason)
+                } else {
+                    GatewayError::Unavailable(reason)
+                }
+            },
+        )
+    }
+
+    fn backtest_state(&self, run_id: &str) -> Result<BacktestRunView, GatewayError> {
+        if run_id.trim().is_empty() {
+            return Err(GatewayError::Malformed(
+                "run_id must not be empty".to_owned(),
+            ));
+        }
+        let registry = common_core::sync::lock(&self.state.backtests);
+        match registry.get(run_id) {
+            Some(entry) => Ok(backtest_run_view_of_entry(entry)),
+            None => Err(GatewayError::Unavailable(format!(
+                "no backtest stored under run id {run_id:?}"
+            ))),
+        }
+    }
+
+    fn backtest_stop(&self, run_id: &str) -> Result<(), GatewayError> {
+        if run_id.trim().is_empty() {
+            return Err(GatewayError::Malformed(
+                "run_id must not be empty".to_owned(),
+            ));
+        }
+        // Dropping an unknown run refuses rather than succeeding emptily:
+        // the terminal only offers the stop while a run reads live.
+        if common_core::sync::lock(&self.state.backtests).remove(run_id) {
+            Ok(())
+        } else {
+            Err(GatewayError::Unavailable(format!(
+                "no backtest stored under run id {run_id:?}"
             )))
         }
     }

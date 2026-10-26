@@ -8,6 +8,7 @@
 use super::*;
 
 use chrono::{TimeZone, Utc};
+use fluent_wvr::validate::Validate;
 use protopyne_types::{Money, Qty};
 use rust_decimal::Decimal;
 

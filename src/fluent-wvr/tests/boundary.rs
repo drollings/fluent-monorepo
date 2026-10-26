@@ -295,3 +295,78 @@ fn decode_boundary_typed_uses_field_names_as_schema() {
     assert_eq!(v.action, "respond");
     assert!(v.target.is_none());
 }
+
+// ── Dotted names from composed members ────────────────────────────────────
+
+#[derive(Debug, Clone, Default)]
+struct BoundaryLeaf {
+    amount: u32,
+    label: String,
+}
+
+impl FieldAccess for BoundaryLeaf {
+    fn set_field(&mut self, name: &str, value: &str) -> Result<(), FieldError> {
+        match name {
+            "amount" => {
+                self.amount = value.parse().map_err(|_| FieldError::Parse(name.into()))?;
+                Ok(())
+            }
+            "label" => {
+                value.clone_into(&mut self.label);
+                Ok(())
+            }
+            _ => Err(FieldError::NotFound(name.into())),
+        }
+    }
+
+    fn get_field(&self, name: &str) -> Result<String, FieldError> {
+        match name {
+            "amount" => Ok(self.amount.to_string()),
+            "label" => Ok(self.label.clone()),
+            _ => Err(FieldError::NotFound(name.into())),
+        }
+    }
+
+    fn field_names(&self) -> &'static [&'static str] {
+        &["amount", "label"]
+    }
+}
+
+impl Describable for BoundaryLeaf {
+    fn describe(&self) -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "amount": {"type": "integer"},
+                "label": {"type": "string"},
+            }
+        })
+    }
+}
+
+#[derive(Debug, Clone, Default, FieldAccess, Describable)]
+struct BoundaryList {
+    #[field(items = 2)]
+    slots: Vec<BoundaryLeaf>,
+    #[field(nested)]
+    inner: BoundaryLeaf,
+    label: String,
+}
+
+#[test]
+fn boundary_admits_only_listed_names_with_a_list_field_present() {
+    let owner = BoundaryList::default();
+    let names = owner.field_names();
+    assert!(names.contains(&"slots.0.amount"), "names: {names:?}");
+    assert!(names.contains(&"slots.count"), "names: {names:?}");
+    assert!(names.contains(&"inner.amount"), "names: {names:?}");
+
+    let opts = BoundaryOptions::for_schema(names);
+    let members = extract_members("{label: admitted, unknown: 9}", &opts).expect("members");
+    let keys: Vec<&str> = members.iter().map(|(key, _)| key.as_str()).collect();
+    assert_eq!(
+        keys,
+        vec!["label"],
+        "only a listed name is admitted: {keys:?}"
+    );
+}

@@ -14,6 +14,8 @@ use protopyne_types::{
     ChainQuote, ContractId, LegSide, Money, OptionKind, Qty, SpreadLeg, SpreadLegs,
 };
 
+use crate::proposal::StructureKind;
+
 /// Which side of the package an order takes. Debit packages buy, credit
 /// packages sell; the runner maps this to the venue's order side.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -97,6 +99,58 @@ impl SpreadEconomics {
             PackageSide::Buy => amount + tolerance,
             PackageSide::Sell => amount - tolerance,
         })
+    }
+}
+
+/// One unit's economics: the per-unit price, loss, width, and side a
+/// sizing policy and the containment caps read. A share's unit is its price
+/// and the caller's stated per-trade worst case; a package's unit comes from
+/// the one pricer at a single unit, so sizing never sees a quantity-scaled
+/// number it could mistake for a per-unit one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct UnitEconomics {
+    /// Signed price per unit: a package's net debit/credit, a share's price.
+    pub price_per_unit: Money,
+    /// Worst-case loss for one unit, fees included.
+    pub max_loss_per_unit: Money,
+    /// Executable width per unit (the package bid/ask cross, zero for shares).
+    pub bid_ask_width: Money,
+    /// Order side implied by the unit's sign.
+    pub side: PackageSide,
+}
+
+/// One selected instrument: its shape, legs, expiry, and unit economics.
+/// The sizing policy and the containment caps read the unit; the proposal
+/// carries the capital the sized quantity commits.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct UnitSelection {
+    /// Structure to propose.
+    pub kind: StructureKind,
+    /// Concrete legs, when selected from a chain.
+    pub legs: Option<SpreadLegs>,
+    /// Days to the selected expiry.
+    pub dte_days: u32,
+    /// The unit the policy sizes and the caps contain.
+    pub unit: UnitEconomics,
+    /// The one-pricer's package economics at a single unit, when the unit
+    /// was chain-priced. The proposal rescales only the capital requirement
+    /// to the sized quantity; every other field is already per-unit, so the
+    /// rescaled economics read exactly as a sized pricing would.
+    pub economics: Option<SpreadEconomics>,
+}
+
+impl SpreadEconomics {
+    /// The per-unit economics of this priced package. Every field but the
+    /// capital requirement is already per-unit (the pricer scales only the
+    /// requirement by quantity), so the unit is exact at any quantity.
+    #[must_use]
+    pub fn unit(&self) -> UnitEconomics {
+        UnitEconomics {
+            price_per_unit: self.net_per_unit,
+            max_loss_per_unit: self.max_loss_per_unit,
+            bid_ask_width: self.bid_ask_width,
+            side: self.side,
+        }
     }
 }
 

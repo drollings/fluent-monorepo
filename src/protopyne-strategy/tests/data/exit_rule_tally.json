@@ -1,0 +1,27 @@
+{
+  "mapping": "every legacy action becomes a whole-position market intent, kind and reason preserved",
+  "method": "Each walk is reviewed bar-by-bar through the default exit-rule mapping (legacy loss review to whole-position market intents); the tally freezes which bars fire which kind. Evidence, not code: the firing bars are the rules' contract.",
+  "scope": "exit-rule default mapping only: no manager state, no submission, no fill",
+  "stop_path": {
+    "profit-target": [],
+    "stop": [
+      3
+    ],
+    "time-stop": []
+  },
+  "target_path": {
+    "profit-target": [
+      3
+    ],
+    "stop": [],
+    "time-stop": []
+  },
+  "thresholds": "stop_max_loss=200;target_gain=400;time_floor_dte=7",
+  "time_path": {
+    "profit-target": [],
+    "stop": [],
+    "time-stop": [
+      3
+    ]
+  }
+}

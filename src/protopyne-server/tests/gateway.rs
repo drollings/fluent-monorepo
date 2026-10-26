@@ -6,27 +6,21 @@
 //! route's grant read. Journal reads empty on both sides until the journal
 //! route lands.
 
+use crate::common_fixtures::spy_history;
 use protopyne_strategy::fixtures::grant_with;
 use std::path::PathBuf;
 
 use crate::service::{serve, ServerConfig, ServerHandle};
 use chrono::{TimeZone, Utc};
 use protopyne_strategy::{Direction, Grant, GrantBudgets, StructureKind};
-use protopyne_types::Bar;
 use protopyne_types::Money;
 use protopyne_view::TerminalGateway;
 
-fn history() -> Vec<Bar> {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests")
-        .join("data")
-        .join("SPY_15M.csv");
-    crate::csv::load_bars_csv(&path).expect("vendored history loads")
-}
-
 async fn boot() -> ServerHandle {
     let config = ServerConfig::new().bind("127.0.0.1:0".to_owned()).build();
-    serve(config, history()).await.expect("test server boots")
+    serve(config, spy_history())
+        .await
+        .expect("test server boots")
 }
 
 #[tokio::test]
@@ -130,7 +124,7 @@ async fn replay_route_publishes_the_runner_graph_and_refuses_a_bad_cadence() {
     let view = gateway.replay().expect("gateway replay reads");
     assert_eq!(
         view.steps.len(),
-        history().len(),
+        spy_history().len(),
         "one step per history bar"
     );
     assert_eq!(view.total_bars, view.steps.len() as u64);
@@ -463,7 +457,9 @@ async fn gateway_symbols_read_the_history_root_it_booted() {
     }
     let mut config = ServerConfig::new().bind("127.0.0.1:0".to_owned()).build();
     config.history_path = Some(dir.path().to_string_lossy().into_owned());
-    let handle = serve(config, history()).await.expect("test server boots");
+    let handle = serve(config, spy_history())
+        .await
+        .expect("test server boots");
     let rows = handle.gateway().symbols().expect("gateway symbols read");
     let ids: Vec<&str> = rows.iter().map(|row| row.symbol.as_str()).collect();
     assert_eq!(
@@ -649,7 +645,7 @@ fn resampled_fallback_limit_reads_the_trailing_bars() {
     use protopyne_types::Timeframe;
     // The vendored fixture holds eleven 15M bars aligned to whole hours, so
     // the hourly fold emits exactly two whole bars.
-    let bars = history();
+    let bars = spy_history();
     assert_eq!(bars.len(), 11, "the fixture pins its bar count");
     let unbounded =
         super::resampled_history(&bars, Timeframe::M15, "15M", None).expect("unbounded reads");

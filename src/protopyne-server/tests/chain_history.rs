@@ -5,6 +5,7 @@
 //! quote stamped after it.
 
 use chrono::{TimeZone, Utc};
+use fluent_wvr::validate::Validate;
 use rust_decimal::Decimal;
 
 use protopyne_types::{Money, OptionContract, OptionKind};

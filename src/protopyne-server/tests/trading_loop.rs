@@ -1,7 +1,7 @@
 use super::*;
+use crate::common_fixtures::money;
+use crate::common_fixtures::spy_history;
 use protopyne_strategy::fixtures;
-
-use std::path::PathBuf;
 
 use chrono::{TimeZone, Utc};
 use rust_decimal::Decimal;
@@ -11,7 +11,7 @@ use protopyne_strategy::{
     Direction, Grant, OrderShape, PortfolioFacts, PortfolioFactsSource, Proposal, ProposalSide,
     RiskApproved, RiskLimits, RiskState, StructureKind,
 };
-use protopyne_types::{GapPolicy, Money, Qty, SeriesContext};
+use protopyne_types::{GapPolicy, Qty, SeriesContext};
 use protopyne_venue::{
     GateReading, Journal, JournalBook, OrderIntent, OrderSide, OrderStatus, PaperConfig,
     PaperVenue, Position, Quote, ReconcileReport, ReconcileSource, SessionConfig, StreamBreaker,
@@ -20,18 +20,6 @@ use protopyne_venue::{
 
 use crate::backtest::{BacktestConfig, BacktestVenue};
 use crate::runner::{run_backtest, RunnerConfig};
-
-fn money(value: i64) -> Money {
-    Money::new(Decimal::from(value))
-}
-
-fn history() -> Vec<Bar> {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests")
-        .join("data")
-        .join("SPY_15M.csv");
-    crate::csv::load_bars_csv(&path).expect("vendored history loads")
-}
 
 fn strategy() -> Strategy {
     Strategy::with_signal(Arc::new(
@@ -66,8 +54,8 @@ fn runner_config() -> RunnerConfig {
     RunnerConfig::new(
         "SPY".to_owned(),
         "ribbon".to_owned(),
-        money(400),
-        money(2_000),
+        money("400"),
+        money("2_000"),
         30,
         0,
     )
@@ -88,8 +76,8 @@ impl QuoteSource for FixedSource {
 
 fn quote() -> Quote {
     Quote::new()
-        .bid(money(600))
-        .ask(money(601))
+        .bid(money("600"))
+        .ask(money("601"))
         .bid_size(50)
         .ask_size(50)
         .ts(Utc.with_ymd_and_hms(2026, 6, 1, 12, 0, 0).unwrap())
@@ -111,7 +99,7 @@ fn feed(bars: &[Bar]) -> mpsc::Receiver<Bar> {
 /// as the batch run — the "one code path" assertion, mechanized.
 #[tokio::test]
 async fn the_loop_reproduces_the_batch_run() {
-    let bars = history();
+    let bars = spy_history();
     let strategy = strategy();
     let risk = risk();
     let grant = grant_with(0.5);
@@ -167,7 +155,7 @@ async fn the_loop_reproduces_the_batch_run() {
 /// fails closed with the missing quote named, never inventing a price.
 #[tokio::test]
 async fn a_dark_quote_source_halts_entries() {
-    let bars = history();
+    let bars = spy_history();
     let strategy = strategy();
     let risk = risk();
     let grant = grant_with(0.5);
@@ -242,9 +230,9 @@ fn approved_for(proposal_id: &str) -> RiskApproved {
         .side(ProposalSide::Exit)
         .structure(StructureKind::Vertical)
         .quantity(Qty::new(Decimal::from(2)))
-        .limit_price(money(600))
-        .max_loss(money(300))
-        .notional(money(1_000))
+        .limit_price(money("600"))
+        .max_loss(money("300"))
+        .notional(money("1_000"))
         .dte_days(30)
         .conviction(0.8)
         .activity_score(0.7)
@@ -279,7 +267,7 @@ async fn operator_exit(
         .underlying("SPY".to_owned())
         .side(OrderSide::Sell)
         .quantity(2)
-        .limit_price(money(600))
+        .limit_price(money("600"))
         .build();
     let at = Utc.with_ymd_and_hms(2026, 6, 1, 12, 0, 5).unwrap();
     let permit = VenueStorage::new(dir.path().join("journal.db"));
@@ -308,7 +296,7 @@ async fn operator_exit(
 struct BookOverCap;
 impl PortfolioFactsSource for BookOverCap {
     fn facts(&self) -> PortfolioFacts {
-        PortfolioFacts::observed(money(1_000_000), None, None, None)
+        PortfolioFacts::observed(money("1_000_000"), None, None, None)
     }
 }
 
@@ -317,11 +305,11 @@ impl PortfolioFactsSource for BookOverCap {
 /// producer, not from the ledger's lifetime tally.
 #[tokio::test]
 async fn observed_book_over_the_open_risk_cap_halts_loop_entries() {
-    let bars = history();
+    let bars = spy_history();
     let strategy = strategy();
     let risk = risk();
     let mut grant = grant_with(0.5);
-    grant.portfolio.max_open_risk = money(10_000);
+    grant.portfolio.max_open_risk = money("10_000");
     let quote_config = venue_config();
     let runner = runner_config();
     let timeframe = Timeframe::infer(&bars).unwrap_or(Timeframe::D1);
@@ -372,7 +360,7 @@ async fn observed_book_over_the_open_risk_cap_halts_loop_entries() {
 #[tokio::test]
 async fn a_paper_exit_still_routes_while_entries_halt() {
     let (session, dir, journal) = session_with_journal();
-    let mut receiver = feed(&history());
+    let mut receiver = feed(&spy_history());
     let decisions = session
         .run_trading_loop(
             &mut receiver,
@@ -401,7 +389,7 @@ async fn a_paper_exit_still_routes_while_entries_halt() {
 /// session then shuts down with no task left to drain.
 #[tokio::test]
 async fn shutdown_drains_after_the_feed_closes() {
-    let bars = history();
+    let bars = spy_history();
     let strategy = strategy();
     let risk = risk();
     let grant = grant_with(0.5);
@@ -460,7 +448,7 @@ impl ReconcileSource for DriftingBook {
         vec![Position::new()
             .underlying("SPY".to_owned())
             .quantity(100)
-            .avg_price(money(600))
+            .avg_price(money("600"))
             .build()]
     }
 
@@ -481,7 +469,7 @@ fn mismatch_report() -> ReconcileReport {
 /// paper exit submitted through the session still routes.
 #[tokio::test]
 async fn tripped_reconcile_halts_loop_entries_but_routes_a_paper_exit() {
-    let bars = history();
+    let bars = spy_history();
     let (mut session, dir, journal) = session_with_journal();
     // The sensor observes this every bar through the loop's supervised
     // units, so the halt persists instead of being cleared.
@@ -529,7 +517,7 @@ async fn tripped_reconcile_halts_loop_entries_but_routes_a_paper_exit() {
 async fn journaled_close_all_routes_while_entries_halt() {
     use protopyne_venue::{close_all_detail, COMMAND_CLOSE_ALL_KIND, OPERATOR_CLIENT_ID};
 
-    let bars = history();
+    let bars = spy_history();
     let (mut session, dir, journal) = session_with_journal();
     // The sensor observes this every bar through the loop's supervised
     // units, so the halt persists instead of being cleared.
@@ -547,7 +535,7 @@ async fn journaled_close_all_routes_while_entries_halt() {
                 .underlying("SPY".to_owned())
                 .side(OrderSide::Buy)
                 .quantity(2)
-                .limit_price(money(601))
+                .limit_price(money("601"))
                 .build(),
             &quote(),
             Utc.with_ymd_and_hms(2026, 6, 1, 12, 0, 5).unwrap(),
@@ -616,7 +604,7 @@ async fn journaled_close_all_routes_while_entries_halt() {
 /// exits still route through the submission path.
 #[tokio::test]
 async fn reconnect_gap_suspends_loop_entries() {
-    let bars = history();
+    let bars = spy_history();
     let timeframe = Timeframe::infer(&bars).unwrap_or(Timeframe::D1);
     let mut gapped: Vec<Bar> = bars.iter().take(5).cloned().collect();
     let mut jumped = bars[5].clone();
@@ -677,7 +665,7 @@ async fn reconnect_gap_suspends_loop_entries() {
 async fn loop_quote_projects_the_reconcile_reading() {
     use protopyne_venue::TradingState;
 
-    let bar = history()
+    let bar = spy_history()
         .into_iter()
         .nth(3)
         .expect("fixture has a fourth bar");
@@ -709,7 +697,7 @@ async fn loop_quote_projects_the_reconcile_reading() {
 /// paper exit submitted through the session still routes.
 #[tokio::test]
 async fn stalled_stream_halts_loop_entries_but_routes_a_paper_exit() {
-    let bars = history();
+    let bars = spy_history();
     let (mut session, dir, journal) = session_with_journal();
     let breaker = std::sync::Arc::new(StreamBreaker::new(StreamConfig::new().build()));
     breaker.record_error(&TransportError::Terminal("line cut".to_owned()));
@@ -755,7 +743,7 @@ async fn stalled_stream_halts_loop_entries_but_routes_a_paper_exit() {
 /// closing the scope aborts the parked send and the drain reports clean.
 #[tokio::test]
 async fn shutdown_aborts_a_blocked_feed_pump() {
-    let bars = history();
+    let bars = spy_history();
     let venue: Arc<dyn Venue> = Arc::new(PaperVenue::new(PaperConfig::new().build()));
     let mut session = TradingSession::boot(
         &SessionConfig::new().build(),

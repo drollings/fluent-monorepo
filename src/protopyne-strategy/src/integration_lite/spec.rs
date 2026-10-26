@@ -3,7 +3,7 @@
 //!
 //! One flat schema struct carrying every `GROUP_S_*` input with its Pine
 //! default, bounds, and group metadata, so the settings surface and the
-//! backtester read one truth. This milestone owns shape only — defaults,
+//! backtester read one truth. This surface owns shape only — defaults,
 //! validation, and schema groups. Semantics (trigger evaluation, sizing
 //! math, stop management) land with the native signal and the equity
 //! backtester, which read these same fields; until then no decision path
@@ -112,14 +112,25 @@ fn default_false() -> bool {
 /// with its script default. A new dial appears in settings without a UI
 /// edit; semantics arrive with the native signal and the equity backtester.
 #[derive(
-    Debug, Clone, bon::Builder, serde::Serialize, serde::Deserialize, FieldAccess, Describable,
+    Debug,
+    Clone,
+    PartialEq,
+    bon::Builder,
+    serde::Serialize,
+    serde::Deserialize,
+    FieldAccess,
+    Describable,
 )]
 #[builder(start_fn = new)]
 #[allow(clippy::struct_excessive_bools)]
 pub struct IntegrationLiteStrategyConfig {
     // ── Strategy: General ──────────────────────────────────────────────
     /// Master switch for entries.
-    #[field(desc = "Enable trading", group = "Strategy: General")]
+    #[field(
+        desc = "Enable trading",
+        group = "Strategy: General",
+        axis = "task-value"
+    )]
     #[builder(default = default_true())]
     #[serde(default = "default_true")]
     pub enabled: bool,
@@ -128,7 +139,8 @@ pub struct IntegrationLiteStrategyConfig {
         desc = "Direction",
         group = "Strategy: General",
         tooltip = "Which side the strategy may enter",
-        variants = "crate::integration_lite::direction_options"
+        variants = "crate::integration_lite::direction_options",
+        axis = "task-value"
     )]
     #[builder(default = "Both".to_owned())]
     #[serde(default = "default_direction")]
@@ -137,7 +149,8 @@ pub struct IntegrationLiteStrategyConfig {
     #[field(
         desc = "Reverse on opposite signal",
         group = "Strategy: General",
-        tooltip = "When flat-or-opposite and a filtered opposite entry fires, flip the position in one order"
+        tooltip = "When flat-or-opposite and a filtered opposite entry fires, flip the position in one order",
+        axis = "task-value"
     )]
     #[builder(default = default_true())]
     #[serde(default = "default_true")]
@@ -148,7 +161,8 @@ pub struct IntegrationLiteStrategyConfig {
         min = 0,
         step = 10,
         group = "Strategy: General",
-        tooltip = "No orders until this many bars have been calculated"
+        tooltip = "No orders until this many bars have been calculated",
+        axis = "task-value"
     )]
     #[builder(default = 100)]
     #[serde(default = "default_warmup_bars")]
@@ -158,7 +172,8 @@ pub struct IntegrationLiteStrategyConfig {
     #[field(
         desc = "Momentum breakout",
         group = "Strategy: Entry Signals",
-        tooltip = "Long when the fast oscillator crosses up through +Level; short when it crosses down through -Level"
+        tooltip = "Long when the fast oscillator crosses up through +Level; short when it crosses down through -Level",
+        axis = "task-value"
     )]
     #[builder(default = default_true())]
     #[serde(default = "default_true")]
@@ -168,7 +183,8 @@ pub struct IntegrationLiteStrategyConfig {
         desc = "Level",
         min = 10.0,
         step = 10.0,
-        group = "Strategy: Entry Signals"
+        group = "Strategy: Entry Signals",
+        axis = "task-value"
     )]
     #[builder(default = 100.0)]
     #[serde(default = "default_sig_entry_level")]
@@ -177,7 +193,8 @@ pub struct IntegrationLiteStrategyConfig {
     #[field(
         desc = "Adaptive level",
         group = "Strategy: Entry Signals",
-        tooltip = "Use the adaptive threshold instead of the fixed level"
+        tooltip = "Use the adaptive threshold instead of the fixed level",
+        axis = "task-value"
     )]
     #[builder(default = default_false())]
     #[serde(default = "default_false")]
@@ -186,7 +203,8 @@ pub struct IntegrationLiteStrategyConfig {
     #[field(
         desc = "Exhaustion reversal",
         group = "Strategy: Entry Signals",
-        tooltip = "Counter-trend entry on bearish/bullish exhaustion ending"
+        tooltip = "Counter-trend entry on bearish/bullish exhaustion ending",
+        axis = "task-value"
     )]
     #[builder(default = default_false())]
     #[serde(default = "default_false")]
@@ -195,7 +213,8 @@ pub struct IntegrationLiteStrategyConfig {
     #[field(
         desc = "Ribbon flip",
         group = "Strategy: Entry Signals",
-        tooltip = "Long when EIT crosses above the ribbon signal; short when below"
+        tooltip = "Long when EIT crosses above the ribbon signal; short when below",
+        axis = "task-value"
     )]
     #[builder(default = default_false())]
     #[serde(default = "default_false")]
@@ -204,7 +223,8 @@ pub struct IntegrationLiteStrategyConfig {
     #[field(
         desc = "Fast/slow oscillator cross",
         group = "Strategy: Entry Signals",
-        tooltip = "Long when the fast oscillator crosses above the slow one; short when below"
+        tooltip = "Long when the fast oscillator crosses above the slow one; short when below",
+        axis = "task-value"
     )]
     #[builder(default = default_false())]
     #[serde(default = "default_false")]
@@ -215,7 +235,8 @@ pub struct IntegrationLiteStrategyConfig {
         min = 50.0,
         step = 10.0,
         group = "Strategy: Entry Signals",
-        tooltip = "Fast oscillator crossing back through this level marks exhaustion"
+        tooltip = "Fast oscillator crossing back through this level marks exhaustion",
+        axis = "task-value"
     )]
     #[builder(default = 200.0)]
     #[serde(default = "default_sig_exhaust_level")]
@@ -226,7 +247,8 @@ pub struct IntegrationLiteStrategyConfig {
         min = 0,
         max = 20,
         group = "Strategy: Entry Signals",
-        tooltip = "0 = filters must pass on the trigger bar"
+        tooltip = "0 = filters must pass on the trigger bar",
+        axis = "task-value"
     )]
     #[builder(default = 0)]
     #[serde(default = "default_zero_i64")]
@@ -237,7 +259,8 @@ pub struct IntegrationLiteStrategyConfig {
         desc = "Dual-oscillator exhaustion",
         group = "Strategy: Entry Signals",
         inline = "dual1",
-        tooltip = "Counter-trend entry on exhaustion confirmed by both oscillators"
+        tooltip = "Counter-trend entry on exhaustion confirmed by both oscillators",
+        axis = "task-value"
     )]
     #[builder(default = default_false())]
     #[serde(default = "default_false")]
@@ -248,7 +271,8 @@ pub struct IntegrationLiteStrategyConfig {
         min = 10.0,
         step = 10.0,
         group = "Strategy: Entry Signals",
-        inline = "dual1"
+        inline = "dual1",
+        axis = "task-value"
     )]
     #[builder(default = 150.0)]
     #[serde(default = "default_sig_dual_slow")]
@@ -259,7 +283,8 @@ pub struct IntegrationLiteStrategyConfig {
         min = 10.0,
         step = 10.0,
         group = "Strategy: Entry Signals",
-        inline = "dual1"
+        inline = "dual1",
+        axis = "task-value"
     )]
     #[builder(default = 200.0)]
     #[serde(default = "default_sig_dual_fast")]
@@ -271,7 +296,8 @@ pub struct IntegrationLiteStrategyConfig {
         max = 10,
         group = "Strategy: Entry Signals",
         inline = "dual2",
-        tooltip = "0 = the fast oscillator must be beyond its level on the same bar"
+        tooltip = "0 = the fast oscillator must be beyond its level on the same bar",
+        axis = "task-value"
     )]
     #[builder(default = 0)]
     #[serde(default = "default_zero_i64")]
@@ -281,7 +307,8 @@ pub struct IntegrationLiteStrategyConfig {
         desc = "Bypass trend filters",
         group = "Strategy: Entry Signals",
         inline = "dual2",
-        tooltip = "Skip ribbon, MA-health, ribbon-health, slow-side and extension filters for this signal only"
+        tooltip = "Skip ribbon, MA-health, ribbon-health, slow-side and extension filters for this signal only",
+        axis = "task-value"
     )]
     #[builder(default = default_true())]
     #[serde(default = "default_true")]
@@ -290,7 +317,8 @@ pub struct IntegrationLiteStrategyConfig {
     #[field(
         desc = "Also count as exhaustion for exits",
         group = "Strategy: Entry Signals",
-        tooltip = "An open trade's exhaustion response also fires on the opposite dual signal"
+        tooltip = "An open trade's exhaustion response also fires on the opposite dual signal",
+        axis = "task-value"
     )]
     #[builder(default = default_false())]
     #[serde(default = "default_false")]
@@ -300,7 +328,8 @@ pub struct IntegrationLiteStrategyConfig {
     #[field(
         desc = "Ribbon alignment",
         group = "Strategy: Entry Filters",
-        tooltip = "Long needs EIT above the ribbon signal; short needs below"
+        tooltip = "Long needs EIT above the ribbon signal; short needs below",
+        axis = "task-value"
     )]
     #[builder(default = default_true())]
     #[serde(default = "default_true")]
@@ -310,7 +339,8 @@ pub struct IntegrationLiteStrategyConfig {
         desc = "MA health alignment",
         group = "Strategy: Entry Filters",
         inline = "f2",
-        tooltip = "Long needs MA health above +Min; short needs below -Min"
+        tooltip = "Long needs MA health above +Min; short needs below -Min",
+        axis = "task-value"
     )]
     #[builder(default = default_true())]
     #[serde(default = "default_true")]
@@ -322,7 +352,8 @@ pub struct IntegrationLiteStrategyConfig {
         max = 100.0,
         step = 5.0,
         group = "Strategy: Entry Filters",
-        inline = "f2"
+        inline = "f2",
+        axis = "task-value"
     )]
     #[builder(default = 10.0)]
     #[serde(default = "default_filt_ma_health_min")]
@@ -331,7 +362,8 @@ pub struct IntegrationLiteStrategyConfig {
     #[field(
         desc = "Ribbon health alignment",
         group = "Strategy: Entry Filters",
-        tooltip = "Long needs ribbon health above zero; short needs below"
+        tooltip = "Long needs ribbon health above zero; short needs below",
+        axis = "task-value"
     )]
     #[builder(default = default_false())]
     #[serde(default = "default_false")]
@@ -341,7 +373,8 @@ pub struct IntegrationLiteStrategyConfig {
         desc = "Slow oscillator side",
         group = "Strategy: Entry Filters",
         inline = "f4",
-        tooltip = "Long needs the slow oscillator above +Min; short needs below -Min"
+        tooltip = "Long needs the slow oscillator above +Min; short needs below -Min",
+        axis = "task-value"
     )]
     #[builder(default = default_false())]
     #[serde(default = "default_false")]
@@ -351,7 +384,8 @@ pub struct IntegrationLiteStrategyConfig {
         desc = "Min",
         step = 10.0,
         group = "Strategy: Entry Filters",
-        inline = "f4"
+        inline = "f4",
+        axis = "task-value"
     )]
     #[builder(default = 0.0)]
     #[serde(default = "default_zero_f64")]
@@ -361,7 +395,8 @@ pub struct IntegrationLiteStrategyConfig {
         desc = "Delta volume alignment",
         group = "Strategy: Entry Filters",
         inline = "f5",
-        tooltip = "Long needs average buy-minus-sell volume positive over N bars"
+        tooltip = "Long needs average buy-minus-sell volume positive over N bars",
+        axis = "task-value"
     )]
     #[builder(default = default_false())]
     #[serde(default = "default_false")]
@@ -372,7 +407,8 @@ pub struct IntegrationLiteStrategyConfig {
         min = 1,
         max = 20,
         group = "Strategy: Entry Filters",
-        inline = "f5"
+        inline = "f5",
+        axis = "task-value"
     )]
     #[builder(default = 3)]
     #[serde(default = "default_filt_delta_len")]
@@ -382,7 +418,8 @@ pub struct IntegrationLiteStrategyConfig {
         desc = "Min relative volume",
         group = "Strategy: Entry Filters",
         inline = "f6",
-        tooltip = "Requires current volume over volume SMA to be at least this multiple"
+        tooltip = "Requires current volume over volume SMA to be at least this multiple",
+        axis = "task-value"
     )]
     #[builder(default = default_false())]
     #[serde(default = "default_false")]
@@ -393,7 +430,8 @@ pub struct IntegrationLiteStrategyConfig {
         min = 0.1,
         step = 0.1,
         group = "Strategy: Entry Filters",
-        inline = "f6"
+        inline = "f6",
+        axis = "task-value"
     )]
     #[builder(default = 0.8)]
     #[serde(default = "default_filt_volume_min")]
@@ -403,7 +441,8 @@ pub struct IntegrationLiteStrategyConfig {
         desc = "Max distance from mean",
         group = "Strategy: Entry Filters",
         inline = "f7",
-        tooltip = "Skips entries when price is stretched more than this many ATRs from the mean"
+        tooltip = "Skips entries when price is stretched more than this many ATRs from the mean",
+        axis = "task-value"
     )]
     #[builder(default = default_false())]
     #[serde(default = "default_false")]
@@ -414,7 +453,8 @@ pub struct IntegrationLiteStrategyConfig {
         min = 0.5,
         step = 0.25,
         group = "Strategy: Entry Filters",
-        inline = "f7"
+        inline = "f7",
+        axis = "task-value"
     )]
     #[builder(default = 2.5)]
     #[serde(default = "default_filt_extension_max")]
@@ -423,7 +463,8 @@ pub struct IntegrationLiteStrategyConfig {
     #[field(
         desc = "Skip low-volume regime",
         group = "Strategy: Entry Filters",
-        inline = "f8"
+        inline = "f8",
+        axis = "task-value"
     )]
     #[builder(default = default_false())]
     #[serde(default = "default_false")]
@@ -432,7 +473,8 @@ pub struct IntegrationLiteStrategyConfig {
     #[field(
         desc = "Skip volatile regime",
         group = "Strategy: Entry Filters",
-        inline = "f8"
+        inline = "f8",
+        axis = "task-value"
     )]
     #[builder(default = default_false())]
     #[serde(default = "default_false")]
@@ -443,7 +485,8 @@ pub struct IntegrationLiteStrategyConfig {
         desc = "Sizing mode",
         group = "Strategy: Position Size & Initial Stop",
         tooltip = "Risk Percent sizes so hitting the stop loses this % of equity",
-        variants = "crate::integration_lite::size_mode_options"
+        variants = "crate::integration_lite::size_mode_options",
+        axis = "task-value"
     )]
     #[builder(default = default_size_mode())]
     #[serde(default = "default_size_mode")]
@@ -454,7 +497,8 @@ pub struct IntegrationLiteStrategyConfig {
         min = 0.05,
         max = 10.0,
         step = 0.05,
-        group = "Strategy: Position Size & Initial Stop"
+        group = "Strategy: Position Size & Initial Stop",
+        axis = "task-value"
     )]
     #[builder(default = 0.5)]
     #[serde(default = "default_risk_pct")]
@@ -465,7 +509,8 @@ pub struct IntegrationLiteStrategyConfig {
         min = 1.0,
         max = 500.0,
         step = 5.0,
-        group = "Strategy: Position Size & Initial Stop"
+        group = "Strategy: Position Size & Initial Stop",
+        axis = "task-value"
     )]
     #[builder(default = 25.0)]
     #[serde(default = "default_size_pct")]
@@ -475,7 +520,8 @@ pub struct IntegrationLiteStrategyConfig {
         desc = "Fixed quantity",
         min = 0.0,
         step = 1.0,
-        group = "Strategy: Position Size & Initial Stop"
+        group = "Strategy: Position Size & Initial Stop",
+        axis = "task-value"
     )]
     #[builder(default = 1.0)]
     #[serde(default = "default_fixed_qty")]
@@ -487,7 +533,8 @@ pub struct IntegrationLiteStrategyConfig {
         max = 1000.0,
         step = 10.0,
         group = "Strategy: Position Size & Initial Stop",
-        tooltip = "Hard cap on position value for every sizing mode"
+        tooltip = "Hard cap on position value for every sizing mode",
+        axis = "task-value"
     )]
     #[builder(default = 100.0)]
     #[serde(default = "default_max_notional_pct")]
@@ -498,7 +545,8 @@ pub struct IntegrationLiteStrategyConfig {
         min = 2,
         max = 100,
         group = "Strategy: Position Size & Initial Stop",
-        inline = "atr"
+        inline = "atr",
+        axis = "task-value"
     )]
     #[builder(default = 14)]
     #[serde(default = "default_risk_atr_len")]
@@ -509,7 +557,8 @@ pub struct IntegrationLiteStrategyConfig {
         group = "Strategy: Position Size & Initial Stop",
         inline = "stop1",
         tooltip = "ATR, swing beyond recent extremes, or a fixed percent of price",
-        variants = "crate::integration_lite::stop_type_options"
+        variants = "crate::integration_lite::stop_type_options",
+        axis = "task-value"
     )]
     #[builder(default = default_stop_type())]
     #[serde(default = "default_stop_type")]
@@ -520,7 +569,8 @@ pub struct IntegrationLiteStrategyConfig {
         min = 0.2,
         step = 0.1,
         group = "Strategy: Position Size & Initial Stop",
-        inline = "stop2"
+        inline = "stop2",
+        axis = "task-value"
     )]
     #[builder(default = 1.5)]
     #[serde(default = "default_stop_atr_mult")]
@@ -531,7 +581,8 @@ pub struct IntegrationLiteStrategyConfig {
         min = 0.05,
         step = 0.05,
         group = "Strategy: Position Size & Initial Stop",
-        inline = "stop2"
+        inline = "stop2",
+        axis = "task-value"
     )]
     #[builder(default = 1.0)]
     #[serde(default = "default_stop_pct")]
@@ -542,7 +593,8 @@ pub struct IntegrationLiteStrategyConfig {
         min = 2,
         max = 60,
         group = "Strategy: Position Size & Initial Stop",
-        inline = "stop3"
+        inline = "stop3",
+        axis = "task-value"
     )]
     #[builder(default = 8)]
     #[serde(default = "default_swing_len")]
@@ -553,7 +605,8 @@ pub struct IntegrationLiteStrategyConfig {
         min = 0.0,
         step = 0.05,
         group = "Strategy: Position Size & Initial Stop",
-        inline = "stop3"
+        inline = "stop3",
+        axis = "task-value"
     )]
     #[builder(default = 0.25)]
     #[serde(default = "default_swing_buf_atr")]
@@ -565,7 +618,8 @@ pub struct IntegrationLiteStrategyConfig {
         step = 0.1,
         group = "Strategy: Position Size & Initial Stop",
         inline = "clamp",
-        tooltip = "Stop distance is clamped into this range for every stop type"
+        tooltip = "Stop distance is clamped into this range for every stop type",
+        axis = "task-value"
     )]
     #[builder(default = 0.5)]
     #[serde(default = "default_min_stop_atr")]
@@ -576,7 +630,8 @@ pub struct IntegrationLiteStrategyConfig {
         min = 0.5,
         step = 0.25,
         group = "Strategy: Position Size & Initial Stop",
-        inline = "clamp"
+        inline = "clamp",
+        axis = "task-value"
     )]
     #[builder(default = 4.0)]
     #[serde(default = "default_max_stop_atr")]
@@ -587,7 +642,8 @@ pub struct IntegrationLiteStrategyConfig {
         desc = "Zone distance unit",
         group = "Strategy: Take Profit Zones",
         tooltip = "R Multiple measures from the stop distance, ATR from the entry ATR",
-        variants = "crate::integration_lite::tp_basis_options"
+        variants = "crate::integration_lite::tp_basis_options",
+        axis = "task-value"
     )]
     #[builder(default = default_tp_basis())]
     #[serde(default = "default_tp_basis")]
@@ -598,7 +654,8 @@ pub struct IntegrationLiteStrategyConfig {
         min = 0.1,
         step = 0.1,
         group = "Strategy: Take Profit Zones",
-        inline = "tp1"
+        inline = "tp1",
+        axis = "task-value"
     )]
     #[builder(default = 1.0)]
     #[serde(default = "default_tp1_mult")]
@@ -610,7 +667,8 @@ pub struct IntegrationLiteStrategyConfig {
         max = 100.0,
         step = 5.0,
         group = "Strategy: Take Profit Zones",
-        inline = "tp1"
+        inline = "tp1",
+        axis = "task-value"
     )]
     #[builder(default = 30.0)]
     #[serde(default = "default_tp1_pct")]
@@ -621,7 +679,8 @@ pub struct IntegrationLiteStrategyConfig {
         min = 0.1,
         step = 0.1,
         group = "Strategy: Take Profit Zones",
-        inline = "tp2"
+        inline = "tp2",
+        axis = "task-value"
     )]
     #[builder(default = 2.0)]
     #[serde(default = "default_tp2_mult")]
@@ -633,7 +692,8 @@ pub struct IntegrationLiteStrategyConfig {
         max = 100.0,
         step = 5.0,
         group = "Strategy: Take Profit Zones",
-        inline = "tp2"
+        inline = "tp2",
+        axis = "task-value"
     )]
     #[builder(default = 30.0)]
     #[serde(default = "default_tp2_pct")]
@@ -645,7 +705,8 @@ pub struct IntegrationLiteStrategyConfig {
         step = 0.1,
         group = "Strategy: Take Profit Zones",
         inline = "tp3",
-        tooltip = "A zone with 0% is disabled; whatever is left runs on the stop"
+        tooltip = "A zone with 0% is disabled; whatever is left runs on the stop",
+        axis = "task-value"
     )]
     #[builder(default = 3.5)]
     #[serde(default = "default_tp3_mult")]
@@ -657,7 +718,8 @@ pub struct IntegrationLiteStrategyConfig {
         max = 100.0,
         step = 5.0,
         group = "Strategy: Take Profit Zones",
-        inline = "tp3"
+        inline = "tp3",
+        axis = "task-value"
     )]
     #[builder(default = 0.0)]
     #[serde(default = "default_zero_f64")]
@@ -667,7 +729,8 @@ pub struct IntegrationLiteStrategyConfig {
     #[field(
         desc = "Move stop to breakeven",
         group = "Strategy: Breakeven",
-        inline = "be1"
+        inline = "be1",
+        axis = "task-value"
     )]
     #[builder(default = default_true())]
     #[serde(default = "default_true")]
@@ -676,7 +739,8 @@ pub struct IntegrationLiteStrategyConfig {
     #[field(
         desc = "After any TP fills",
         group = "Strategy: Breakeven",
-        inline = "be1"
+        inline = "be1",
+        axis = "task-value"
     )]
     #[builder(default = default_true())]
     #[serde(default = "default_true")]
@@ -688,7 +752,8 @@ pub struct IntegrationLiteStrategyConfig {
         step = 0.25,
         group = "Strategy: Breakeven",
         inline = "be2",
-        tooltip = "0 disables the profit trigger"
+        tooltip = "0 disables the profit trigger",
+        axis = "task-value"
     )]
     #[builder(default = 1.0)]
     #[serde(default = "default_be_trigger_atr")]
@@ -700,7 +765,8 @@ pub struct IntegrationLiteStrategyConfig {
         step = 0.05,
         group = "Strategy: Breakeven",
         inline = "be2",
-        tooltip = "Places the stop slightly beyond entry to cover fees and slippage"
+        tooltip = "Places the stop slightly beyond entry to cover fees and slippage",
+        axis = "task-value"
     )]
     #[builder(default = 0.1)]
     #[serde(default = "default_be_offset_atr")]
@@ -711,7 +777,8 @@ pub struct IntegrationLiteStrategyConfig {
         desc = "Trail type",
         group = "Strategy: Trailing Stop",
         tooltip = "Chandelier trails the best price, ribbon edge trails the band, percent trails by percent off the extreme",
-        variants = "crate::integration_lite::trail_type_options"
+        variants = "crate::integration_lite::trail_type_options",
+        axis = "task-value"
     )]
     #[builder(default = default_trail_type())]
     #[serde(default = "default_trail_type")]
@@ -722,7 +789,8 @@ pub struct IntegrationLiteStrategyConfig {
         min = 0.2,
         step = 0.1,
         group = "Strategy: Trailing Stop",
-        inline = "t1"
+        inline = "t1",
+        axis = "task-value"
     )]
     #[builder(default = 2.5)]
     #[serde(default = "default_trail_mult")]
@@ -733,7 +801,8 @@ pub struct IntegrationLiteStrategyConfig {
         min = 0.1,
         step = 0.1,
         group = "Strategy: Trailing Stop",
-        inline = "t1"
+        inline = "t1",
+        axis = "task-value"
     )]
     #[builder(default = 1.0)]
     #[serde(default = "default_trail_tight_mult")]
@@ -744,7 +813,8 @@ pub struct IntegrationLiteStrategyConfig {
         min = 0.0,
         step = 0.1,
         group = "Strategy: Trailing Stop",
-        inline = "t2"
+        inline = "t2",
+        axis = "task-value"
     )]
     #[builder(default = 0.5)]
     #[serde(default = "default_trail_ribbon_buf")]
@@ -756,7 +826,8 @@ pub struct IntegrationLiteStrategyConfig {
         step = 0.05,
         group = "Strategy: Trailing Stop",
         inline = "t2",
-        tooltip = "Tight mode halves this percentage"
+        tooltip = "Tight mode halves this percentage",
+        axis = "task-value"
     )]
     #[builder(default = 1.0)]
     #[serde(default = "default_trail_pct")]
@@ -765,7 +836,8 @@ pub struct IntegrationLiteStrategyConfig {
     #[field(
         desc = "Activate: immediately",
         group = "Strategy: Trailing Stop",
-        inline = "a1"
+        inline = "a1",
+        axis = "task-value"
     )]
     #[builder(default = default_false())]
     #[serde(default = "default_false")]
@@ -774,7 +846,8 @@ pub struct IntegrationLiteStrategyConfig {
     #[field(
         desc = "After any TP",
         group = "Strategy: Trailing Stop",
-        inline = "a1"
+        inline = "a1",
+        axis = "task-value"
     )]
     #[builder(default = default_true())]
     #[serde(default = "default_true")]
@@ -784,7 +857,8 @@ pub struct IntegrationLiteStrategyConfig {
         desc = "On exhaustion",
         group = "Strategy: Trailing Stop",
         inline = "a2",
-        tooltip = "Activates when the exhaustion response below fires"
+        tooltip = "Activates when the exhaustion response below fires",
+        axis = "task-value"
     )]
     #[builder(default = default_true())]
     #[serde(default = "default_true")]
@@ -793,7 +867,8 @@ pub struct IntegrationLiteStrategyConfig {
     #[field(
         desc = "At profit (ATR)",
         group = "Strategy: Trailing Stop",
-        inline = "a2"
+        inline = "a2",
+        axis = "task-value"
     )]
     #[builder(default = default_false())]
     #[serde(default = "default_false")]
@@ -804,7 +879,8 @@ pub struct IntegrationLiteStrategyConfig {
         min = 0.25,
         step = 0.25,
         group = "Strategy: Trailing Stop",
-        inline = "a2"
+        inline = "a2",
+        axis = "task-value"
     )]
     #[builder(default = 1.5)]
     #[serde(default = "default_trail_profit_atr")]
@@ -815,7 +891,8 @@ pub struct IntegrationLiteStrategyConfig {
         desc = "Exhaustion response",
         group = "Strategy: Exhaustion & Exit Signals",
         tooltip = "What to do when the fast oscillator crosses back through the exhaustion level against the trade",
-        variants = "crate::integration_lite::exit_action_options"
+        variants = "crate::integration_lite::exit_action_options",
+        axis = "task-value"
     )]
     #[builder(default = default_exit_action())]
     #[serde(default = "default_exit_action")]
@@ -828,7 +905,8 @@ pub struct IntegrationLiteStrategyConfig {
         step = 5.0,
         group = "Strategy: Exhaustion & Exit Signals",
         inline = "x1",
-        tooltip = "Percent of the still-open position closed on exhaustion, once per trade"
+        tooltip = "Percent of the still-open position closed on exhaustion, once per trade",
+        axis = "task-value"
     )]
     #[builder(default = 50.0)]
     #[serde(default = "default_exit_partial_pct")]
@@ -837,7 +915,8 @@ pub struct IntegrationLiteStrategyConfig {
     #[field(
         desc = "Only when in profit",
         group = "Strategy: Exhaustion & Exit Signals",
-        inline = "x1"
+        inline = "x1",
+        axis = "task-value"
     )]
     #[builder(default = default_true())]
     #[serde(default = "default_true")]
@@ -846,7 +925,8 @@ pub struct IntegrationLiteStrategyConfig {
     #[field(
         desc = "Exit on opposite trigger",
         group = "Strategy: Exhaustion & Exit Signals",
-        tooltip = "Close the trade when an opposite entry trigger fires"
+        tooltip = "Close the trade when an opposite entry trigger fires",
+        axis = "task-value"
     )]
     #[builder(default = default_true())]
     #[serde(default = "default_true")]
@@ -854,7 +934,8 @@ pub struct IntegrationLiteStrategyConfig {
     /// Exit on a ribbon flip against the trade.
     #[field(
         desc = "Exit on ribbon flip against",
-        group = "Strategy: Exhaustion & Exit Signals"
+        group = "Strategy: Exhaustion & Exit Signals",
+        axis = "task-value"
     )]
     #[builder(default = default_false())]
     #[serde(default = "default_false")]
@@ -862,7 +943,8 @@ pub struct IntegrationLiteStrategyConfig {
     /// Exit on a fast-oscillator zero-cross against the trade.
     #[field(
         desc = "Exit on fast osc zero-cross against",
-        group = "Strategy: Exhaustion & Exit Signals"
+        group = "Strategy: Exhaustion & Exit Signals",
+        axis = "task-value"
     )]
     #[builder(default = default_false())]
     #[serde(default = "default_false")]
@@ -872,7 +954,8 @@ pub struct IntegrationLiteStrategyConfig {
         desc = "Time stop (bars, 0 = off)",
         min = 0,
         step = 10,
-        group = "Strategy: Exhaustion & Exit Signals"
+        group = "Strategy: Exhaustion & Exit Signals",
+        axis = "task-value"
     )]
     #[builder(default = 0)]
     #[serde(default = "default_zero_i64")]
@@ -883,7 +966,8 @@ pub struct IntegrationLiteStrategyConfig {
         desc = "Cooldown after exit (bars)",
         min = 0,
         max = 500,
-        group = "Strategy: Cooldowns & Daily Limits"
+        group = "Strategy: Cooldowns & Daily Limits",
+        axis = "task-value"
     )]
     #[builder(default = 3)]
     #[serde(default = "default_cd_bars")]
@@ -893,7 +977,8 @@ pub struct IntegrationLiteStrategyConfig {
         desc = "Extra cooldown after loss (bars)",
         min = 0,
         max = 500,
-        group = "Strategy: Cooldowns & Daily Limits"
+        group = "Strategy: Cooldowns & Daily Limits",
+        axis = "task-value"
     )]
     #[builder(default = 10)]
     #[serde(default = "default_cd_loss_bars")]
@@ -903,7 +988,8 @@ pub struct IntegrationLiteStrategyConfig {
         desc = "Max trades per day (0 = off)",
         min = 0,
         max = 100,
-        group = "Strategy: Cooldowns & Daily Limits"
+        group = "Strategy: Cooldowns & Daily Limits",
+        axis = "task-value"
     )]
     #[builder(default = 8)]
     #[serde(default = "default_max_trades_day")]
@@ -914,7 +1000,8 @@ pub struct IntegrationLiteStrategyConfig {
         min = 0,
         max = 20,
         group = "Strategy: Cooldowns & Daily Limits",
-        tooltip = "Stops new entries for the rest of the day"
+        tooltip = "Stops new entries for the rest of the day",
+        axis = "task-value"
     )]
     #[builder(default = 3)]
     #[serde(default = "default_max_consec_losses")]
@@ -926,7 +1013,8 @@ pub struct IntegrationLiteStrategyConfig {
         max = 20.0,
         step = 0.25,
         group = "Strategy: Cooldowns & Daily Limits",
-        tooltip = "Flattens and halts for the rest of the day"
+        tooltip = "Flattens and halts for the rest of the day",
+        axis = "correctness"
     )]
     #[builder(default = 2.0)]
     #[serde(default = "default_max_daily_loss_pct")]
@@ -936,7 +1024,8 @@ pub struct IntegrationLiteStrategyConfig {
         desc = "Flatten at end of session",
         group = "Strategy: Cooldowns & Daily Limits",
         inline = "eod",
-        tooltip = "Intraday charts only, and only when the session filter is enabled"
+        tooltip = "Intraday charts only, and only when the session filter is enabled",
+        axis = "task-value"
     )]
     #[builder(default = default_true())]
     #[serde(default = "default_true")]
@@ -947,7 +1036,8 @@ pub struct IntegrationLiteStrategyConfig {
         min = 0,
         max = 120,
         group = "Strategy: Cooldowns & Daily Limits",
-        inline = "eod"
+        inline = "eod",
+        axis = "task-value"
     )]
     #[builder(default = 0)]
     #[serde(default = "default_zero_i64")]
@@ -958,7 +1048,8 @@ pub struct IntegrationLiteStrategyConfig {
         min = 0,
         max = 240,
         group = "Strategy: Cooldowns & Daily Limits",
-        inline = "eod"
+        inline = "eod",
+        axis = "task-value"
     )]
     #[builder(default = 5)]
     #[serde(default = "default_noentry_min")]
@@ -1119,12 +1210,13 @@ fn check_color(slot: &str, value: &str) -> Result<(), StrategyError> {
     )))
 }
 
-impl IntegrationLiteStrategyConfig {
+impl fluent_wvr::validate::Validate for IntegrationLiteStrategyConfig {
+    type Err = StrategyError;
     /// Fail-closed self-consistency check: every dial inside its Pine
     /// window, every option dial naming a listed option. TP-zone weights
     /// are deliberately NOT refused above 100%: the script normalizes them
     /// and the backtester will too.
-    pub fn validate(&self) -> Result<(), StrategyError> {
+    fn validate(&self) -> Result<(), Self::Err> {
         check_int("warmup_bars", self.warmup_bars, 0, None)?;
         check_float("sig_entry_level", self.sig_entry_level, 10.0, None)?;
         check_float("sig_exhaust_level", self.sig_exhaust_level, 50.0, None)?;
@@ -1203,19 +1295,12 @@ impl IntegrationLiteStrategyConfig {
     }
 }
 
-impl fluent_wvr::validate::Validate for IntegrationLiteStrategyConfig {
-    type Err = StrategyError;
-    fn validate(&self) -> Result<(), Self::Err> {
-        IntegrationLiteStrategyConfig::validate(self)
-    }
-}
-
 #[cfg(test)]
-#[path = "../tests/integration_lite.rs"]
+#[path = "../../tests/integration_lite.rs"]
 mod tests;
 
 #[cfg(test)]
-#[path = "../tests/trigger_calibration.rs"]
+#[path = "../../tests/trigger_calibration.rs"]
 mod trigger_calibration_tests;
 
 fn default_direction() -> String {

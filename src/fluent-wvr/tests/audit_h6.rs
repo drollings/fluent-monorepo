@@ -49,7 +49,11 @@ fluent_wvr::impl_component!(TimeoutUnit);
 fn h6_instrumented_delegates_timeout_and_typename() {
     let wrapped = Instrumented::new(TimeoutUnit { timeout: 0 }, "lbl");
     assert_eq!(wrapped.default_timeout_ms(), 5_000);
-    assert_eq!(wrapped.type_name(), "CustomTimeoutUnit", "type_name delegates correctly");
+    assert_eq!(
+        wrapped.type_name(),
+        "CustomTimeoutUnit",
+        "type_name delegates correctly"
+    );
 }
 
 #[test]

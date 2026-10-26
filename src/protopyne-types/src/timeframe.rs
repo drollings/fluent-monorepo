@@ -256,6 +256,15 @@ impl Timeframe {
         smallest.and_then(Self::from_duration_ms)
     }
 
+    /// Base spacing of `bars`, or daily when the window is too short or off
+    /// the grid to name: the fail-closed read for runners that must bind a
+    /// signal config before the first bar. The fallback is daily because an
+    /// unnamed spacing is a data gap, never a faster chart.
+    #[must_use]
+    pub fn infer_or_d1(bars: &[Bar]) -> Self {
+        Self::infer(bars).unwrap_or(Self::D1)
+    }
+
     /// Parse a toolbar label (`1M`/`5M`/`15M`/`1H`/`4H`/`1D`): the one
     /// toolbar-label bridge. Other chart spellings ride
     /// [`from_resolution`](Self::from_resolution); anything else is an

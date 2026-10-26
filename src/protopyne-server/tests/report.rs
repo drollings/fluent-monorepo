@@ -1,14 +1,11 @@
 use super::*;
+use crate::common_fixtures::money;
 use rust_decimal::Decimal;
 
 use protopyne_store::{FoldPolicy, ReadRequest, SymbolId, TapeKey, TimeRange};
-use protopyne_types::{Bar, Money, Timeframe};
+use protopyne_types::{Bar, Timeframe};
 
 use crate::backtest::HistorySource;
-
-fn money(value: &str) -> Money {
-    Money::new(value.parse::<Decimal>().expect("decimal"))
-}
 
 fn manifest(bar_count: u64) -> RunManifest {
     RunManifest {

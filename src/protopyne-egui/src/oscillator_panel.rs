@@ -237,12 +237,13 @@ impl KindDefaults {
     /// but hidden placeholders the resolver never reads.
     #[must_use]
     pub fn for_kind(kind: &str) -> Self {
+        // The catalog row is the one home for the affine triple. Kinds the
+        // catalog does not default here keep the neutral squash the panel has
+        // always shown, so an unlisted kind cannot inherit a calibrated shape.
         let (offset, k, mult) = match kind {
-            "rsi" | "mfi" => (-50.0, 0.0084, 740.0),
-            "cci" => (-50.0, 0.0035, 500.0),
-            "cmo" => (0.0, 0.002, 1000.0),
-            "stoch" => (-50.0, 0.0005, 7000.0),
-            "aroon" => (-50.0, 0.005, 800.0),
+            "rsi" | "mfi" | "cci" | "cmo" | "stoch" | "aroon" => {
+                protopyne_kernels::lite::leg_constants(kind).expect("catalog-backed kinds resolve")
+            }
             _ => (0.0, 1.0, 100.0),
         };
         Self::new()

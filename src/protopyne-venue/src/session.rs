@@ -63,24 +63,18 @@ pub struct SessionConfig {
 
 impl fluent_wvr::validate::Validate for SessionConfig {
     type Err = String;
+    /// Fail-closed self-consistency check.
     fn validate(&self) -> Result<(), Self::Err> {
-        SessionConfig::validate(self)
+        if self.shutdown_timeout_secs < 1 {
+            return Err("shutdown_timeout_secs must be at least 1".to_owned());
+        }
+        Ok(())
     }
 }
 
 impl Default for SessionConfig {
     fn default() -> Self {
         Self::new().build()
-    }
-}
-
-impl SessionConfig {
-    /// Fail-closed self-consistency check.
-    pub fn validate(&self) -> Result<(), String> {
-        if self.shutdown_timeout_secs < 1 {
-            return Err("shutdown_timeout_secs must be at least 1".to_owned());
-        }
-        Ok(())
     }
 }
 

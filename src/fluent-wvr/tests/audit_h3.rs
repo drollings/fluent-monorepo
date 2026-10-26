@@ -106,7 +106,10 @@ fn h3_large_u64_exact_via_native_parse() {
     assert_eq!(oracle, 9007199254740993u64);
     let mut c = ConstrainedU64 { big: 0 };
     c.set_field("big", input).unwrap();
-    assert_eq!(c.big, 9007199254740993u64, "native parse preserves precision");
+    assert_eq!(
+        c.big, 9007199254740993u64,
+        "native parse preserves precision"
+    );
 }
 
 #[test]
@@ -133,5 +136,8 @@ fn h3_scientific_rejected_for_integer() {
     let mut c = PlainU64 { big: 0 };
     assert!(c.set_field("big", "1e3").is_err());
     let mut cc = ConstrainedU64 { big: 0 };
-    assert!(cc.set_field("big", "1e3").is_err(), "constrained must match strict oracle");
+    assert!(
+        cc.set_field("big", "1e3").is_err(),
+        "constrained must match strict oracle"
+    );
 }

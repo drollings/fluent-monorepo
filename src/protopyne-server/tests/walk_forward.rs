@@ -1,4 +1,5 @@
 use super::*;
+use crate::common_fixtures::money;
 use protopyne_strategy::fixtures::grant_with;
 
 use std::sync::Arc;
@@ -10,11 +11,7 @@ use protopyne_strategy::{
     elements::ExplicitStructure, Direction, FixedSignal, Grant, RiskEngine, RiskLimits, Strategy,
     StructureKind,
 };
-use protopyne_types::{Bar, Money};
-
-fn money(value: i64) -> Money {
-    Money::new(Decimal::from(value))
-}
+use protopyne_types::Bar;
 
 fn strategy() -> Strategy {
     Strategy::with_signal(Arc::new(
@@ -49,8 +46,8 @@ fn runner_config() -> RunnerConfig {
     RunnerConfig::new(
         "SPY".to_owned(),
         "ribbon".to_owned(),
-        money(400),
-        money(2_000),
+        money("400"),
+        money("2_000"),
         30,
         0,
     )

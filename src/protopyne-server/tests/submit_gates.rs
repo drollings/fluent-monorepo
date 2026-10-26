@@ -5,6 +5,7 @@
 //! implementation of the order would drift from these rows.
 
 use super::*;
+use crate::common_fixtures::money;
 use protopyne_strategy::fixtures::grant_with;
 
 use chrono::{TimeZone, Utc};
@@ -13,10 +14,6 @@ use rust_decimal::Decimal;
 use protopyne_strategy::{Direction, Grant, GrantLedger, RiskEngine, RiskLimits, StructureKind};
 use protopyne_types::{Money, Qty};
 use protopyne_venue::{Journal, PaperConfig, PaperVenue};
-
-fn money(value: &str) -> Money {
-    Money::new(value.parse::<Decimal>().expect("decimal"))
-}
 
 fn now() -> chrono::DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 6, 1, 12, 0, 0).unwrap()

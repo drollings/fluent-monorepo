@@ -11,6 +11,7 @@
 //! GO/NO-GO decision recorded in the roadmap.
 
 use super::*;
+use crate::common_fixtures::money;
 use crate::marks::MarkBasis;
 use protopyne_kernels::math::{std_pop, variance_pop, window_mean};
 
@@ -302,10 +303,6 @@ fn spike_ratio_and_curve_helpers_have_no_second_family() {
 }
 
 // ── Report goldens under the spike: no production edit, so byte-identical ──
-
-fn money(value: &str) -> protopyne_types::Money {
-    protopyne_types::Money::new(value.parse::<Decimal>().expect("decimal"))
-}
 
 fn manifest() -> crate::report::RunManifest {
     crate::report::RunManifest {

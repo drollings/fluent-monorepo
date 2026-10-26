@@ -142,10 +142,16 @@ impl GrantScope {
 #[builder(start_fn = new)]
 pub struct SignalThresholds {
     /// Minimum signal conviction in `[0, 1]` **(task-value)**.
-    #[field(desc = "Minimum signal conviction in [0, 1] (tightening raises it)")]
+    #[field(
+        desc = "Minimum signal conviction in [0, 1] (tightening raises it)",
+        axis = "task-value"
+    )]
     pub min_conviction: f64,
     /// Minimum options-activity score in `[0, 1]` **(task-value)**.
-    #[field(desc = "Minimum options-activity score in [0, 1] (tightening raises it)")]
+    #[field(
+        desc = "Minimum options-activity score in [0, 1] (tightening raises it)",
+        axis = "task-value"
+    )]
     pub min_activity_score: f64,
 }
 
@@ -161,22 +167,30 @@ pub struct TradeThresholds {
     /// Maximum loss any single trade may commit **(task-value)**.
     #[field(
         desc = "Maximum loss one trade may commit, decimal major units (tightening lowers it)",
-        format = "decimal"
+        format = "decimal",
+        axis = "task-value"
     )]
     pub max_loss_per_trade: Money,
     /// Maximum bid/ask spread width the fill model tolerates **(task-value)**.
     #[field(
         desc = "Maximum bid/ask spread width, decimal major units (tightening lowers it)",
-        format = "decimal"
+        format = "decimal",
+        axis = "task-value"
     )]
     pub max_spread_width: Money,
     /// Minimum days to expiry **(task-value)**, judged against the proposal's
     /// own instrument.
-    #[field(desc = "Minimum days to expiry (tightening raises it)")]
+    #[field(
+        desc = "Minimum days to expiry (tightening raises it)",
+        axis = "task-value"
+    )]
     pub min_dte_days: u32,
     /// Maximum days to expiry **(task-value)**, judged against the
     /// proposal's own instrument.
-    #[field(desc = "Maximum days to expiry (tightening lowers it)")]
+    #[field(
+        desc = "Maximum days to expiry (tightening lowers it)",
+        axis = "task-value"
+    )]
     pub max_dte_days: u32,
 }
 
@@ -194,12 +208,16 @@ pub struct PortfolioThresholds {
     /// **(task-value)**.
     #[field(
         desc = "Maximum aggregate committed max loss, decimal major units (tightening lowers it)",
-        format = "decimal"
+        format = "decimal",
+        axis = "task-value"
     )]
     pub max_open_risk: Money,
     /// Maximum quote age in seconds before data counts as stale
     /// **(correctness)**.
-    #[field(desc = "Maximum quote age in seconds (tightening lowers it)")]
+    #[field(
+        desc = "Maximum quote age in seconds (tightening lowers it)",
+        axis = "correctness"
+    )]
     pub quote_max_age_secs: u64,
 }
 
@@ -214,21 +232,29 @@ json_boundary!(PortfolioThresholds, "portfolio thresholds");
 #[builder(start_fn = new)]
 pub struct GrantBudgets {
     /// Maximum number of trades under this grant **(task-value)**.
-    #[field(desc = "Maximum trades under this grant (tightening lowers it)")]
+    #[field(
+        desc = "Maximum trades under this grant (tightening lowers it)",
+        axis = "task-value"
+    )]
     pub max_trades: u32,
     /// Maximum contracts (or shares) under this grant **(task-value)**.
-    #[field(desc = "Maximum contracts under this grant (tightening lowers it)")]
+    #[field(
+        desc = "Maximum contracts under this grant (tightening lowers it)",
+        axis = "task-value"
+    )]
     pub max_contracts: u32,
     /// Maximum committed max loss under this grant **(task-value)**.
     #[field(
         desc = "Maximum committed max loss, decimal major units (tightening lowers it)",
-        format = "decimal"
+        format = "decimal",
+        axis = "task-value"
     )]
     pub max_loss: Money,
     /// Maximum committed notional under this grant **(task-value)**.
     #[field(
         desc = "Maximum committed notional, decimal major units (tightening lowers it)",
-        format = "decimal"
+        format = "decimal",
+        axis = "task-value"
     )]
     pub max_notional: Money,
 }
@@ -429,7 +455,10 @@ pub fn re_attestation_for_window(window: Duration) -> Option<ReAttestationWindow
 #[builder(start_fn = new)]
 pub struct BreakerLimits {
     /// Consecutive venue errors that disarm entries **(producer-confidence)**.
-    #[field(desc = "Consecutive venue errors that disarm entries (tightening lowers it)")]
+    #[field(
+        desc = "Consecutive venue errors that disarm entries (tightening lowers it)",
+        axis = "producer-confidence"
+    )]
     pub max_consecutive_errors: u32,
     /// Peak-to-trough equity drawdown fraction that disarms entries
     /// **(producer-confidence)**. `None` leaves the arm inert, so existing
@@ -438,7 +467,10 @@ pub struct BreakerLimits {
     /// disarm, exits route, the reason banks once — while merit stays
     /// recorded. A configured cap with no equity reading refuses as
     /// unobserved, never passes.
-    #[field(desc = "Peak-to-trough drawdown fraction that disarms entries (tightening lowers it)")]
+    #[field(
+        desc = "Peak-to-trough drawdown fraction that disarms entries (tightening lowers it)",
+        axis = "producer-confidence"
+    )]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_portfolio_drawdown_fraction: Option<f64>,
 }
@@ -556,17 +588,11 @@ pub struct Grant {
 
 impl fluent_wvr::validate::Validate for Grant {
     type Err = String;
-    fn validate(&self) -> Result<(), Self::Err> {
-        Grant::validate(self)
-    }
-}
-
-impl Grant {
     /// Fail-closed structural check: live window, nonzero budgets, and a
     /// fully named scope. A *revoked* grant is structurally sound and stays
     /// representable (serde, storage, folds); whether it may be armed is a
     /// separate arm-time rule in [`Grant::validate_armable`].
-    pub fn validate(&self) -> Result<(), String> {
+    fn validate(&self) -> Result<(), Self::Err> {
         if self.valid_from >= self.valid_until {
             return Err("grant window is empty".to_owned());
         }
@@ -592,13 +618,92 @@ impl Grant {
         }
         Ok(())
     }
+}
+
+/// A named grant construction: the one place a preset grant is built.
+/// Presets name their tier values once; every caller that arms the same
+/// rehearsal surface shares this body instead of a second literal.
+#[derive(Debug, Clone, PartialEq)]
+pub enum GrantPreset {
+    /// The permissive rehearsal surface: fixed strategies over one
+    /// underlying, both directions, wide budgets, open thresholds, a long
+    /// validity window. The scope's structure list always follows the run
+    /// that requested it, so a backtest over one structure is never denied
+    /// for naming another.
+    Rehearsal {
+        /// Stable grant identifier.
+        id: String,
+        /// Structures the run may name.
+        structures: Vec<StructureKind>,
+    },
+}
+
+impl Grant {
+    /// Build a preset grant. The rehearsal preset is the only permissive
+    /// construction; every other grant is armed explicitly.
+    #[must_use]
+    pub fn preset(preset: GrantPreset) -> Self {
+        match preset {
+            GrantPreset::Rehearsal { id, structures } => Grant::new()
+                .id(id)
+                .scope(
+                    GrantScope::new()
+                        .strategies(vec!["ribbon".to_owned()])
+                        .underlyings(vec!["SPY".to_owned()])
+                        .structures(structures)
+                        .directions(vec![Direction::Long, Direction::Short])
+                        .permissions(GrantPermission {
+                            entries: true,
+                            exits: true,
+                            rolls: false,
+                        })
+                        .build(),
+                )
+                .budgets(
+                    GrantBudgets::new()
+                        .max_trades(1_000)
+                        .max_contracts(10_000)
+                        .max_loss(Money::from(1_000_000))
+                        .max_notional(Money::from(100_000_000))
+                        .build(),
+                )
+                .signal(
+                    SignalThresholds::new()
+                        .min_conviction(0.0)
+                        .min_activity_score(0.0)
+                        .build(),
+                )
+                .trade(
+                    TradeThresholds::new()
+                        .max_loss_per_trade(Money::from(1_000))
+                        .max_spread_width(Money::from(50))
+                        .min_dte_days(1)
+                        .max_dte_days(90)
+                        .build(),
+                )
+                .portfolio(
+                    PortfolioThresholds::new()
+                        .max_open_risk(Money::from(10_000_000))
+                        .quote_max_age_secs(60)
+                        .build(),
+                )
+                .breakers(BreakerLimits::new().max_consecutive_errors(3).build())
+                .valid_from(
+                    DateTime::from_timestamp(1_700_000_000, 0).expect("fixed stamp is valid"),
+                )
+                .valid_until(
+                    DateTime::from_timestamp(1_900_000_000, 0).expect("fixed stamp is valid"),
+                )
+                .build(),
+        }
+    }
 
     /// Structural check plus the arm-time rule: a revoked grant authorizes
     /// nothing, so arming it is refused. Every arming path (the HTTP route and
     /// the journaled command plane) calls this instead of `validate`, keeping
     /// the refusal in exactly one place.
     pub fn validate_armable(&self) -> Result<(), String> {
-        self.validate()?;
+        fluent_wvr::validate::Validate::validate(self)?;
         if self.revoked {
             return Err("grant is revoked".to_owned());
         }

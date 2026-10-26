@@ -123,6 +123,51 @@ pub struct SchemaField {
     /// applied to the unbounded drag editors. Sliders stay continuous and
     /// never snap: the field's own contract stays the only bound.
     pub step: Option<f64>,
+    /// Measured axis from `x-axis`, painted as a small badge beside the
+    /// editor. `None` for a field that measures neither merit nor producer
+    /// health.
+    pub axis: Option<String>,
+    /// Visibility rule from `x-visible-when` (`"kind=breakout"` for a union
+    /// arm, `"slots.count>0"` for a list item). An invisible field paints no
+    /// widget, so an inactive arm can never be written by the renderer.
+    pub visible_when: Option<String>,
+    /// The list whose `count` this field edits (`x-count`), when it is the
+    /// synthetic count of an open list.
+    pub count_of: Option<String>,
+    /// The list this field belongs to (`x-item-of`), with its item index.
+    pub item_of: Option<String>,
+    /// Item index within [`item_of`](Self::item_of).
+    pub item_index: Option<usize>,
+}
+
+impl SchemaField {
+    /// Whether the schema's visibility rule admits this field for the
+    /// current value. No rule means always visible; an unreadable rule is
+    /// treated as visible so a malformed hint never hides a field silently.
+    #[must_use]
+    pub fn visible(&self, target: &dyn FieldAccess) -> bool {
+        let Some(rule) = self.visible_when.as_deref() else {
+            return true;
+        };
+        if let Some((selector, expected)) = rule.split_once('=') {
+            return target
+                .get_field(selector.trim())
+                .is_ok_and(|current| current.trim() == expected.trim());
+        }
+        if let Some((selector, minimum)) = rule.split_once('>') {
+            let Ok(current) = target.get_field(selector.trim()) else {
+                return false;
+            };
+            let Ok(current) = current.trim().parse::<usize>() else {
+                return false;
+            };
+            let Ok(minimum) = minimum.trim().parse::<usize>() else {
+                return true;
+            };
+            return current > minimum;
+        }
+        true
+    }
 }
 
 /// Every field in `schema`, in schema order. Properties are read from the
@@ -167,6 +212,11 @@ pub fn schema_fields(schema: &serde_json::Value) -> Vec<SchemaField> {
                     inline_group: text_hint(hint.get("x-inline")),
                     tooltip: text_hint(hint.get("x-tooltip")),
                     step: number_hint(hint.get("x-step")),
+                    axis: text_hint(hint.get("x-axis")),
+                    visible_when: text_hint(hint.get("x-visible-when")),
+                    count_of: text_hint(hint.get("x-count")),
+                    item_of: text_hint(hint.get("x-item-of")),
+                    item_index: usize_hint(hint.get("x-item-index")),
                 })
                 .collect()
         })
@@ -540,8 +590,14 @@ fn paint_schema_fields_sized(
         started = true;
         ui.horizontal(|row| {
             for field in &run {
+                if !field.visible(target) {
+                    continue;
+                }
                 paint_label(row, field, label_width);
                 paint_one(row, field, target, &mut edits);
+                if let Some(axis) = field.axis.as_deref() {
+                    row.label(egui::RichText::new(axis).small().weak());
+                }
             }
         });
     }
@@ -653,11 +709,53 @@ fn paint_one(
         FieldKind::Select => edit_select(row, field, &current),
     };
     let Some(edited) = edited else {
+        if field.count_of.is_some() {
+            paint_count_buttons(row, field, target, edits);
+        }
         return;
     };
     match target.set_field(&field.name, &edited) {
         Ok(()) => edits.written.push(field.name.clone()),
         Err(error) => edits.refusals.push(refusal(field, error.to_string())),
+    }
+    if field.count_of.is_some() {
+        paint_count_buttons(row, field, target, edits);
+    }
+}
+
+/// Add/remove affordances for an open list's `count` field. They write the
+/// same `name.count` path the editor does, so the list's own contract
+/// (maximum, truncation) stays the only authority.
+fn paint_count_buttons(
+    row: &mut egui::Ui,
+    field: &SchemaField,
+    target: &mut dyn FieldAccess,
+    edits: &mut FieldEdits,
+) {
+    let Ok(current) = target.get_field(&field.name) else {
+        return;
+    };
+    let Ok(current) = current.trim().parse::<usize>() else {
+        return;
+    };
+    for (label, delta, enabled) in [("+", 1_i64, true), ("-", -1_i64, current > 0)] {
+        if !enabled {
+            continue;
+        }
+        if row
+            .add_enabled(enabled, egui::Button::new(label).small())
+            .clicked()
+        {
+            let next = if delta > 0 {
+                current.saturating_add(delta as usize)
+            } else {
+                current.saturating_sub(1)
+            };
+            match target.set_field(&field.name, &next.to_string()) {
+                Ok(()) => edits.written.push(field.name.clone()),
+                Err(error) => edits.refusals.push(refusal(field, error.to_string())),
+            }
+        }
     }
 }
 

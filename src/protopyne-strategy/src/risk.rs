@@ -26,7 +26,12 @@ use crate::proposal::Proposal;
 pub struct RiskLimits {
     /// Maximum contracts (or shares) on any single proposal
     /// **(correctness)**.
-    #[field(desc = "Maximum contracts on one proposal", min = 1, max = 1000000)]
+    #[field(
+        desc = "Maximum contracts on one proposal",
+        min = 1,
+        max = 1000000,
+        axis = "correctness"
+    )]
     #[builder(default = 10)]
     pub max_contracts_per_trade: u64,
     /// Maximum committed max loss on one proposal, in account-currency major
@@ -34,7 +39,8 @@ pub struct RiskLimits {
     #[field(
         desc = "Maximum committed loss on one proposal",
         min = 1,
-        max = 1000000000
+        max = 1000000000,
+        axis = "correctness"
     )]
     #[builder(default = 500.0)]
     pub max_loss_per_trade: f64,
@@ -43,48 +49,90 @@ pub struct RiskLimits {
     #[field(
         desc = "Maximum committed notional on one proposal",
         min = 1,
-        max = 10000000000
+        max = 10000000000,
+        axis = "correctness"
     )]
     #[builder(default = 50_000.0)]
     pub max_notional: f64,
     /// Maximum quote age in seconds before data counts as stale
     /// **(correctness)**.
-    #[field(desc = "Maximum quote age in seconds", min = 1, max = 3600)]
+    #[field(
+        desc = "Maximum quote age in seconds",
+        min = 1,
+        max = 3600,
+        axis = "correctness"
+    )]
     #[builder(default = 60)]
     pub quote_max_age_secs: u64,
     /// Maximum tolerable clock skew in seconds **(correctness)**.
-    #[field(desc = "Maximum clock skew in seconds", min = 1, max = 3600)]
+    #[field(
+        desc = "Maximum clock skew in seconds",
+        min = 1,
+        max = 3600,
+        axis = "correctness"
+    )]
     #[builder(default = 5)]
     pub clock_skew_secs: u64,
     /// Whether spreads must be limit orders **(correctness)**.
-    #[field(desc = "Require limit orders for spreads")]
+    #[field(desc = "Require limit orders for spreads", axis = "correctness")]
     #[builder(default = true)]
     pub limit_only_spreads: bool,
     /// When set, every proposal is refused **(correctness)**.
-    #[field(desc = "Kill switch: refuse every proposal when set")]
+    #[field(
+        desc = "Kill switch: refuse every proposal when set",
+        axis = "correctness"
+    )]
     #[builder(default = false)]
     pub kill_switch: bool,
     /// Maximum aggregate open risk across the book. `None` leaves the cap
     /// unconfigured, so rehearsal is unaffected **(task-value)**.
-    #[field(desc = "Maximum aggregate open risk")]
+    #[field(desc = "Maximum aggregate open risk", axis = "task-value")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_open_risk: Option<f64>,
     /// Maximum absolute net portfolio delta. `None` leaves it unconfigured
     /// **(task-value)**.
-    #[field(desc = "Maximum absolute net portfolio delta")]
+    #[field(desc = "Maximum absolute net portfolio delta", axis = "task-value")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_abs_net_delta: Option<f64>,
     /// Minimum buying power that must remain available. `None` leaves it
     /// unconfigured **(task-value)**.
-    #[field(desc = "Minimum buying power")]
+    #[field(desc = "Minimum buying power", axis = "task-value")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_buying_power: Option<f64>,
 }
 
 impl fluent_wvr::validate::Validate for RiskLimits {
     type Err = String;
+    /// Fail-closed self-consistency check shared by supervision
+    /// (`execute`) and the decision path (`RiskEngine::check`).
     fn validate(&self) -> Result<(), Self::Err> {
-        RiskLimits::validate(self)
+        if self.max_contracts_per_trade < 1 {
+            return Err("max_contracts_per_trade must be at least 1".to_owned());
+        }
+        if !(self.max_loss_per_trade > 0.0 && self.max_loss_per_trade.is_finite()) {
+            return Err("max_loss_per_trade must be a positive finite cap".to_owned());
+        }
+        if !(self.max_notional > 0.0 && self.max_notional.is_finite()) {
+            return Err("max_notional must be a positive finite cap".to_owned());
+        }
+        if self.quote_max_age_secs < 1 || self.quote_max_age_secs > 3_600 {
+            return Err("quote_max_age_secs must be within [1, 3600]".to_owned());
+        }
+        if self.clock_skew_secs < 1 || self.clock_skew_secs > 3_600 {
+            return Err("clock_skew_secs must be within [1, 3600]".to_owned());
+        }
+        for (name, cap) in [
+            ("max_open_risk", self.max_open_risk),
+            ("max_abs_net_delta", self.max_abs_net_delta),
+            ("min_buying_power", self.min_buying_power),
+        ] {
+            if let Some(cap) = cap {
+                if !cap.is_finite() || cap < 0.0 {
+                    return Err(format!("{name} must be a non-negative finite cap"));
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -114,38 +162,6 @@ impl WorkUnit for RiskLimits {
 }
 
 impl RiskLimits {
-    /// Fail-closed self-consistency check shared by supervision
-    /// (`execute`) and the decision path (`RiskEngine::check`).
-    pub fn validate(&self) -> Result<(), String> {
-        if self.max_contracts_per_trade < 1 {
-            return Err("max_contracts_per_trade must be at least 1".to_owned());
-        }
-        if !(self.max_loss_per_trade > 0.0 && self.max_loss_per_trade.is_finite()) {
-            return Err("max_loss_per_trade must be a positive finite cap".to_owned());
-        }
-        if !(self.max_notional > 0.0 && self.max_notional.is_finite()) {
-            return Err("max_notional must be a positive finite cap".to_owned());
-        }
-        if self.quote_max_age_secs < 1 || self.quote_max_age_secs > 3_600 {
-            return Err("quote_max_age_secs must be within [1, 3600]".to_owned());
-        }
-        if self.clock_skew_secs < 1 || self.clock_skew_secs > 3_600 {
-            return Err("clock_skew_secs must be within [1, 3600]".to_owned());
-        }
-        for (name, cap) in [
-            ("max_open_risk", self.max_open_risk),
-            ("max_abs_net_delta", self.max_abs_net_delta),
-            ("min_buying_power", self.min_buying_power),
-        ] {
-            if let Some(cap) = cap {
-                if !cap.is_finite() || cap < 0.0 {
-                    return Err(format!("{name} must be a non-negative finite cap"));
-                }
-            }
-        }
-        Ok(())
-    }
-
     /// Whether any aggregate cap is configured. Aggregate caps need a
     /// portfolio facts producer, so construction refuses them until one is
     /// attached.

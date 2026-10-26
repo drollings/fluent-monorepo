@@ -9,6 +9,8 @@
 //!
 //! Record deliberately with `PROTOPYNE_RECORD=1`; a normal run only compares.
 
+use crate::common_fixtures::money;
+use crate::common_fixtures::spy_history;
 use protopyne_strategy::fixtures::grant_with;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -17,7 +19,7 @@ use protopyne_strategy::{
     elements::ExplicitStructure, Direction, FixedSignal, Grant, RiskEngine, RiskLimits,
     StructureKind,
 };
-use protopyne_types::{Bar, Money, Timeframe};
+use protopyne_types::{Bar, Timeframe};
 use protopyne_venue::{PaperConfig, SessionConfig, TradingSession, VenueRegistry, VenueStorage};
 use rust_decimal::Decimal;
 
@@ -31,14 +33,6 @@ fn data_path(name: &str) -> PathBuf {
         .join("tests")
         .join("data")
         .join(name)
-}
-
-fn history() -> Vec<Bar> {
-    crate::csv::load_bars_csv(&data_path("SPY_15M.csv")).expect("vendored history loads")
-}
-
-fn money(value: i64) -> Money {
-    Money::new(Decimal::from(value))
 }
 
 fn strategy() -> protopyne_strategy::Strategy {
@@ -74,8 +68,8 @@ fn runner_config() -> RunnerConfig {
     RunnerConfig::new(
         "SPY".to_owned(),
         "ribbon".to_owned(),
-        money(400),
-        money(2_000),
+        money("400"),
+        money("2_000"),
         30,
         0,
     )
@@ -158,7 +152,7 @@ fn feed(bars: &[Bar]) -> tokio::sync::mpsc::Receiver<Bar> {
 
 #[tokio::test]
 async fn live_loop_matches_batch_as_a_decision_vector() {
-    let bars = history();
+    let bars = spy_history();
     let strategy = strategy();
     let risk = risk();
     let granted = grant();

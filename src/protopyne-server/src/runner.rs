@@ -16,15 +16,16 @@
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
+use fluent_wvr::validate::Validate;
 use rust_decimal::Decimal;
 
 use fluent_dag::checkpointed::CheckpointedStepGraph;
 use protopyne_store::{CandleStore, SpanPlan};
 use protopyne_strategy::{
-    Direction, EconomicsPolicy, FillOutcome, FillStatus, Grant, GrantLedger, GrantMarket,
-    JournaledTransition, MarketView, OrderShape, PackageSide, PortfolioFacts, Proposal,
-    ProposalEvent, ProposalSide, ProposeInput, RiskEngine, RiskState, SignalConfig, SignalInstance,
-    SizingCaps, Strategy, StrategyError, StructureKind,
+    rsrs_score, Direction, EconomicsPolicy, FillOutcome, FillStatus, Grant, GrantLedger,
+    GrantMarket, JournaledTransition, MarketView, OrderShape, PackageSide, PortfolioFacts,
+    Proposal, ProposalEvent, ProposalSide, ProposeInput, RiskEngine, RiskState, SignalConfig,
+    SignalInstance, SizingCaps, Strategy, StrategyError, StructureKind,
 };
 use protopyne_types::{Bar, ChainQuote, Money};
 use protopyne_venue::{
@@ -91,8 +92,17 @@ fn is_false(value: &bool) -> bool {
 
 impl fluent_wvr::validate::Validate for RunnerConfig {
     type Err = ServerError;
+    /// Fail-closed self-consistency check.
     fn validate(&self) -> Result<(), Self::Err> {
-        RunnerConfig::validate(self)
+        if self.underlying.trim().is_empty() {
+            return Err(ServerError::Backtest("underlying must be named".to_owned()));
+        }
+        if self.strategy_name.trim().is_empty() {
+            return Err(ServerError::Backtest(
+                "strategy_name must be named".to_owned(),
+            ));
+        }
+        Ok(())
     }
 }
 
@@ -141,19 +151,6 @@ impl RunnerConfig {
         self.credit = credit;
         self
     }
-
-    /// Fail-closed self-consistency check.
-    pub fn validate(&self) -> Result<(), ServerError> {
-        if self.underlying.trim().is_empty() {
-            return Err(ServerError::Backtest("underlying must be named".to_owned()));
-        }
-        if self.strategy_name.trim().is_empty() {
-            return Err(ServerError::Backtest(
-                "strategy_name must be named".to_owned(),
-            ));
-        }
-        Ok(())
-    }
 }
 
 /// One bar's recorded verdict: proposal, gates, and fill outcome.
@@ -171,6 +168,15 @@ pub struct BarDecision {
     pub proposal_id: String,
     /// Signal direction (`None` when no proposal was emitted).
     pub direction: Option<Direction>,
+    /// Which side of the book the proposal acted on: an entry opens, an exit
+    /// closes, a roll replaces.
+    ///
+    /// Absence reads as an entry, which is both what an older payload means
+    /// (nothing but entries were recorded then) and what the portfolio fold
+    /// assumed for them. An entry therefore omits the field, so a run that only
+    /// opens positions serializes exactly as it did before the side existed.
+    #[serde(default, skip_serializing_if = "is_entry_side")]
+    pub side: Option<ProposalSide>,
     /// Proposal structure (`None` when no proposal was emitted, or for runs
     /// recorded before structure was captured — the portfolio fold labels
     /// those fills `unrecorded` rather than guessing).
@@ -262,6 +268,7 @@ pub(crate) fn skipped_decision(
         ts,
         proposal_id,
         direction: None,
+        side: None,
         structure: None,
         strategy: String::new(),
         underlying: String::new(),
@@ -312,6 +319,31 @@ pub fn side_for_direction(direction: Direction) -> OrderSide {
         Direction::Long => OrderSide::Buy,
         Direction::Short => OrderSide::Sell,
     }
+}
+
+/// Whether a decision's side carries no information beyond "opened the book".
+#[allow(clippy::ref_option, clippy::trivially_copy_pass_by_ref)] // serde passes the field by reference
+fn is_entry_side(side: &Option<ProposalSide>) -> bool {
+    matches!(side, None | Some(ProposalSide::Entry))
+}
+
+/// The order side a booked fill implies.
+///
+/// The proposal's own side decides it: opening a long buys, closing one sells,
+/// and the short book mirrors that. Reading only the direction would book an
+/// exit as a second entry, doubling the position the report folds.
+#[must_use]
+pub fn order_side(decision: &BarDecision) -> OrderSide {
+    if decision.side == Some(ProposalSide::Exit) {
+        return if decision.direction == Some(Direction::Long) {
+            OrderSide::Sell
+        } else {
+            OrderSide::Buy
+        };
+    }
+    decision
+        .direction
+        .map_or(OrderSide::Buy, side_for_direction)
 }
 
 /// Derive the executable order for `direction` from the current touch.
@@ -494,6 +526,7 @@ fn proposed_decision(
         ts,
         proposal_id: proposal.id.clone(),
         direction: Some(proposal.direction),
+        side: Some(proposal.side),
         structure: Some(proposal.structure),
         strategy: proposal.strategy.clone(),
         underlying: proposal.underlying.clone(),
@@ -1275,9 +1308,12 @@ pub fn equity_curve_for(bars: &[Bar], decisions: &[BarDecision]) -> Vec<Money> {
             return;
         };
         let qty = decision.filled_quantity;
-        let signed: i64 = match decision.direction {
-            Some(Direction::Short) => -(i64::from(qty)),
-            _ => i64::from(qty),
+        // The order's own side decides the cash flow, not the position's
+        // direction: closing a long is a sale. Reading the direction would book
+        // an exit as a second entry and double the book.
+        let signed: i64 = match order_side(decision) {
+            OrderSide::Buy => i64::from(qty),
+            OrderSide::Sell => -(i64::from(qty)),
         };
         let flow = price.as_decimal() * Decimal::from(qty);
         if signed >= 0 {
@@ -1348,7 +1384,8 @@ fn economics_arm_note(economics: EconomicsPolicy, configured: Money) -> String {
         ),
         EconomicsPolicy::ChainDerived => format!(
             "economics arm chain-derived: package price, max loss, and notional priced from the \
-             chain (the run's configured max loss {configured} is unused)"
+             chain (the run's configured max loss {configured} is unused); buying power bounds the \
+             package at its own per-unit price"
         ),
     }
 }
@@ -1636,7 +1673,7 @@ pub(crate) fn booked_fills_of(
 ) -> Result<Vec<BookedFill>, ServerError> {
     let mut booked = Vec::new();
     for decision in decisions {
-        let (Some(direction), Some(price)) = (decision.direction, decision.fill_price) else {
+        let (Some(_), Some(price)) = (decision.direction, decision.fill_price) else {
             continue;
         };
         if !decision.submitted || decision.filled_quantity == 0 {
@@ -1660,7 +1697,7 @@ pub(crate) fn booked_fills_of(
                 ))
                 .strategy(decision.strategy.clone())
                 .grant(grant.to_owned())
-                .side(side_for_direction(direction))
+                .side(order_side(decision))
                 .quantity(decision.filled_quantity)
                 .price(price)
                 .fee(decision.fee.unwrap_or_else(Money::zero))
@@ -2190,22 +2227,11 @@ pub fn triple_barrier(
 /// Latest RSRS timing score over replayed bars at the upstream lookbacks
 /// (`n = 18`, `m = 600`): the last finite score, or `None` when the history
 /// is shorter than the scoring window. Called once per backtest over the
-/// whole series — never per bar.
+/// whole series — never per bar. Reads through the generator's scorer, so
+/// the report and the generator can never disagree on the reading.
 #[must_use]
 pub fn report_rsrs(bars: &[Bar]) -> Option<f64> {
-    use rust_decimal::prelude::ToPrimitive as _;
-    let highs: Vec<f64> = bars
-        .iter()
-        .map(|bar| bar.h.to_f64().unwrap_or(f64::NAN))
-        .collect();
-    let lows: Vec<f64> = bars
-        .iter()
-        .map(|bar| bar.l.to_f64().unwrap_or(f64::NAN))
-        .collect();
-    protopyne_kernels::scores::rsrs(&highs, &lows, 18, 600)
-        .into_iter()
-        .flatten()
-        .next_back()
+    rsrs_score(bars, 18, 600)
 }
 
 /// Split history into a head (`train`) and tail (`test`) at `train_len`.

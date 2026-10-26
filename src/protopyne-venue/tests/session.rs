@@ -806,3 +806,143 @@ async fn failing_sink_reports_loudly_and_delivers_nothing_twice() {
     assert_eq!(redelivered, 0, "the drained bank is never redelivered");
     session.shutdown().await;
 }
+
+/// The gate-unit contract: one constructor for both call sites.
+///
+/// A gate wraps any inner component, overrides its name, and runs a
+/// synchronous check inside `execute` so a failing gate cancels its
+/// dependents through the batch graph. The server boot gates (config,
+/// history) and the venue per-bar checks share this constructor; the only
+/// difference is the wrapped inner.
+#[test]
+fn check_unit_carries_the_override_name_and_check_verdict() {
+    let gate = check_unit(stub("base", &[], &[], false), "gate", || {
+        Ok("fine".to_owned())
+    });
+    assert_eq!(gate.name(), "gate");
+    let ctx = WorkContext::default();
+    let output = gate.execute(&ctx).expect("passing check");
+    assert!(output.success);
+    assert_eq!(output.message, "fine");
+
+    let failing = check_unit(stub("base", &[], &[], false), "gate", || {
+        Err("broken".to_owned())
+    });
+    assert_eq!(failing.name(), "gate");
+    assert!(
+        failing.execute(&ctx).is_err(),
+        "a failing check must surface as an execution error"
+    );
+}
+
+#[test]
+fn check_unit_behaves_identically_for_both_call_site_shapes() {
+    let ctx = WorkContext::default();
+    let venue_shape = check_unit(stub("sensor", &[], &[], false), "gate", || {
+        Ok("fine".to_owned())
+    });
+    let server_shape = check_unit(Arc::new(RiskLimits::new().build()), "gate", || {
+        Ok("fine".to_owned())
+    });
+    assert_eq!(venue_shape.name(), server_shape.name());
+    let venue_out = venue_shape.execute(&ctx).expect("venue shape");
+    let server_out = server_shape.execute(&ctx).expect("server shape");
+    assert_eq!(venue_out.success, server_out.success);
+    assert_eq!(venue_out.message, server_out.message);
+
+    let venue_fail = check_unit(stub("sensor", &[], &[], false), "gate", || {
+        Err("broken".to_owned())
+    });
+    let server_fail = check_unit(Arc::new(RiskLimits::new().build()), "gate", || {
+        Err("broken".to_owned())
+    });
+    assert!(venue_fail.execute(&ctx).is_err());
+    assert!(server_fail.execute(&ctx).is_err());
+}
+
+#[tokio::test]
+async fn a_failing_gate_cancels_its_dependents_through_the_batch() {
+    use fluent_concurrency::batch::{CancelReason, SupervisedBatch, SupervisedBatchEvent};
+
+    struct Waiting {
+        name: String,
+        needs: Vec<ArcIntern<str>>,
+    }
+    impl WorkUnit for Waiting {
+        fn name(&self) -> &str {
+            &self.name
+        }
+        fn depends(&self) -> &[ArcIntern<str>] {
+            &self.needs
+        }
+        fn provides(&self) -> &[ArcIntern<str>] {
+            &[]
+        }
+        fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
+            Err(WorkError::Dependency(format!(
+                "{} waits for an upstream asset",
+                self.name
+            )))
+        }
+    }
+    impl_fieldless!(Waiting);
+    impl Describable for Waiting {
+        fn describe(&self) -> serde_json::Value {
+            fluent_wvr::describe_work_unit(&self.name, &self.needs, &[], None)
+        }
+    }
+    impl_component!(Waiting);
+
+    // Containment, not ordering: a dependent that finishes before the gate
+    // fails still completes. The deterministic pin holds the dependent at an
+    // await point — its retryable first failure parks it in backoff — so the
+    // gate failure cancels it. Same shape as the command-plane test.
+    let mut batch = SupervisedBatch::new(
+        fluent_concurrency::tokio_runtime(),
+        fluent_wvr::CapabilitySet::new(),
+    );
+    let gate = check_unit(stub("sensor", &[], &["gate_ok"], false), "gate", || {
+        Err("broken".to_owned())
+    });
+    batch.register(gate).expect("register gate");
+    batch
+        .register_with_context(
+            Arc::new(Waiting {
+                name: "worker".to_owned(),
+                needs: vec![ArcIntern::from("gate_ok")],
+            }),
+            WorkContext {
+                max_retries: 10,
+                ..WorkContext::default()
+            },
+        )
+        .expect("register worker");
+    let summary = batch.await;
+    let failed_names: Vec<String> = summary
+        .failed
+        .iter()
+        .filter_map(|event| match event {
+            SupervisedBatchEvent::Failed { name, .. } => Some(name.to_string()),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        failed_names.iter().any(|name| name == "gate"),
+        "the failing gate must land in failed: {summary:?}"
+    );
+    let cancelled: Vec<(&str, &CancelReason)> = summary
+        .cancelled
+        .iter()
+        .filter_map(|event| match event {
+            SupervisedBatchEvent::Cancelled { name, reason } => Some((&**name, reason)),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        cancelled
+            .iter()
+            .any(|(name, reason)| *name == "worker"
+                && matches!(reason, CancelReason::DependencyFailed)),
+        "the held dependent must be cancelled via the graph: {summary:?}"
+    );
+}

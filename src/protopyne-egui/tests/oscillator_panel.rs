@@ -442,7 +442,7 @@ fn lite_leg_kind_switch_rebuilds_that_leg_only() {
 /// kind gain scales it.
 #[test]
 fn panel_smoothing_and_gain_reach_the_lite_legs() {
-    use crate::integration_lite::native_lite_series;
+    use crate::integration_lite::lite_native_series;
     use crate::oscillators::OscillatorKind;
     use fluent_egui::band_squash;
     let mut workspace = ChartWorkspace::with_rows(ramp_rows(120)).expect("workspace boots");
@@ -465,7 +465,7 @@ fn panel_smoothing_and_gain_reach_the_lite_legs() {
     let pane = workspace.sub_pane.as_ref().expect("sub pane builds");
     // Manual pipeline: RSI raw, SMA(7) smoothed, gain-scaled, squashed.
     let rows = ramp_rows(120);
-    let native = native_lite_series(&rows, 0.14).expect("native builds");
+    let native = lite_native_series(&rows, 0.14).expect("native builds");
     let raw = &native.fast_raw;
     let leading = raw.iter().take_while(|slot| slot.is_none()).count();
     let expected: Vec<Option<f64>> = crate::topology::series_frame(&rows, raw)

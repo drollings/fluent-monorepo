@@ -34,11 +34,11 @@ use protopyne_kernels::{
 use protopyne_strategy::fixtures;
 use protopyne_types::{Bar, Money, Timeframe};
 
+use super::common_golden::dump_value;
 use super::common_mtf::{
     data_root, engine_for, inject_all, linked_from_graph, load_history, present, resolve_inputs,
     WARMUP,
 };
-use super::common_golden::dump_value;
 
 /// The strategy root as a closure entry: same seven libraries, the
 /// strategy file in place of the indicator.
@@ -79,8 +79,8 @@ fn matrix_path() -> PathBuf {
 /// linked dependency-first, exactly like the loader hands the engine.
 fn linked_strategy_closure() -> Vec<LinkedModule> {
     let entry = strategy_entry();
-    let mut sources = load_listed_closure(&data_root(), REAL_LIBRARIES, &entry)
-        .expect("strategy closure loads");
+    let mut sources =
+        load_listed_closure(&data_root(), REAL_LIBRARIES, &entry).expect("strategy closure loads");
     // The strategy root keeps its own key; the libraries keep theirs.
     let inputs: Vec<ModuleInput> = sources
         .drain(..)
@@ -295,7 +295,10 @@ fn check_strategy_golden(path: &PathBuf, outcome: &RunOutcome) {
     }
     let recorded = std::fs::read_to_string(path)
         .unwrap_or_else(|_| panic!("golden {} records first", path.display()));
-    assert_eq!(dump, recorded, "rerun matches the checked-in strategy golden");
+    assert_eq!(
+        dump, recorded,
+        "rerun matches the checked-in strategy golden"
+    );
 }
 
 /// Structural proof shared by every chart timeframe: bar counts, pinned
@@ -375,8 +378,9 @@ fn integration_lite_strategy_runs_clean_on_15m() {
 /// row. The matrix test below fails on any unmapped spelling, so a new
 /// broker call cannot land silently.
 fn strategy_call_sites() -> BTreeSet<String> {
-    let text = std::fs::read_to_string(data_root().join("strategies/_IntegrationLiteStrategy.pine"))
-        .expect("shipped strategy loads");
+    let text =
+        std::fs::read_to_string(data_root().join("strategies/_IntegrationLiteStrategy.pine"))
+            .expect("shipped strategy loads");
     let mut sites = BTreeSet::new();
     for line in text.lines() {
         let line = line.trim();
@@ -624,22 +628,23 @@ async fn native_and_harness_agree_bar_for_bar() {
         adaptive: true,
         ..LiteIndicatorParams::default()
     };
-    let run = crate::equity::run_equity_backtest(
-        &indicator,
-        &IntegrationLiteStrategyConfig::default(),
-        &test_risk(),
-        &test_grant(),
-        &test_venue_config(),
-        &test_runner_config(),
-        "integration_lite",
-        "SPY",
-        Timeframe::M1,
-        &bars,
-        7,
-        100_000.0,
-    )
-    .await
-    .expect("native equity run completes");
+    let default_strategy = IntegrationLiteStrategyConfig::default();
+    let run = crate::equity::BacktestRequest::builder()
+        .indicator(&indicator)
+        .strategy(&default_strategy)
+        .risk(&test_risk())
+        .grant(&test_grant())
+        .venue_config(&test_venue_config())
+        .runner_config(&test_runner_config())
+        .signal_name("integration_lite")
+        .underlying("SPY")
+        .timeframe(Timeframe::M1)
+        .bars(&bars)
+        .seed(7)
+        .initial_equity(100_000.0)
+        .run()
+        .await
+        .expect("native equity run completes");
     // Entry size reconstructs from fills: every record carries the shares
     // its own exit filled (a partial slice or the remainder), so the entry
     // quantity is the per-bar fill sum across closes and partials.
@@ -704,7 +709,7 @@ fn native_legs_match_harness_legs_on_spy_1m() {
         adaptive: true,
         ..LiteIndicatorParams::default()
     };
-    let legs = market_legs(&params, &bars).expect("legs evaluate");
+    let legs = market_legs(&params, 14, &bars).expect("legs evaluate");
     let modules = linked_strategy_closure();
     let outcome = run_chart_with(&modules, "1", &bars, constant_alpha_inputs());
     let pine_float = |bar: usize, name: &str| match outcome.value_at(bar, name) {

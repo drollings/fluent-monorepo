@@ -19,6 +19,7 @@ use std::time::Duration;
 
 use tokio::sync::mpsc;
 
+use fluent_wvr::validate::Validate;
 use protopyne_strategy::{Grant, GrantLedger, RiskEngine, SignalConfig, Strategy};
 use protopyne_types::{Bar, Timeframe};
 use protopyne_venue::{GateReading, Journal, QuoteSource, TradingSession};
@@ -95,6 +96,7 @@ impl TradingLoopExt for TradingSession {
         let mut history: Vec<Bar> = Vec::new();
         let mut closes: Vec<f64> = Vec::new();
         let mut skipped_warmup = 0u64;
+        let mut book = crate::replay_session::PositionBook::new();
         let mut decisions = Vec::new();
         // Last executed operator-command seq: audit rows carry their
         // command's seq, so a restart never re-executes a command.
@@ -169,6 +171,7 @@ impl TradingLoopExt for TradingSession {
                     timeframe,
                     closes: &mut closes,
                     skipped_warmup: &mut skipped_warmup,
+                    book: &mut book,
                     runner_config,
                     seed,
                     corporate: &corporate,

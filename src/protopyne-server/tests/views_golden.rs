@@ -8,16 +8,9 @@
 //! compares and fails loudly on any drift.
 
 use super::*;
+use crate::common_fixtures::spy_history;
 use protopyne_strategy::fixtures::grant_with;
 use std::path::PathBuf;
-
-fn history() -> Vec<Bar> {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests")
-        .join("data")
-        .join("SPY_15M.csv");
-    crate::csv::load_bars_csv(&path).expect("vendored history loads")
-}
 
 fn test_grant(id: &str, max_trades: u32) -> Grant {
     // The shared fixture's shape; only the id and the trade budget differ.
@@ -29,7 +22,9 @@ fn test_grant(id: &str, max_trades: u32) -> Grant {
 
 async fn boot() -> ServerHandle {
     let config = ServerConfig::new().bind("127.0.0.1:0".to_owned()).build();
-    serve(config, history()).await.expect("test server boots")
+    serve(config, spy_history())
+        .await
+        .expect("test server boots")
 }
 
 fn golden_path(name: &str) -> PathBuf {

@@ -22,7 +22,6 @@ use protopyne_kernels::indicator::{nan_hole, OwnedOhlcv, ParamSet};
 use protopyne_kernels::smoothing::{SmoothingArgs, SmoothingFamily, MA_PERIOD_MAX, MA_PERIOD_MIN};
 
 use crate::topology::{describe_kernel, kernel_preview_frame, kernel_series, source_frame};
-use protopyne_kernels::market_context::{health_mas, HEALTH_K};
 use protopyne_kernels::price_source::PriceSource;
 
 use fluent_wvr::validate::{check_for_execute, valid_output, Validate};
@@ -33,7 +32,6 @@ use fluent_egui::{
     ThemeConfig,
 };
 
-use crate::indicators::smooth_raw_for_display;
 use crate::oscillators::{normalize_series, squash_series_to_100, squash_to_100, OscillatorKind};
 
 /// Kernel length for the fast/slow raw oscillators (freeze-pinned: the Pine
@@ -102,27 +100,50 @@ fn lite_panel_leg(
         ),
     };
     let kind = IntegrationLiteConfig::leg_kind(kind_slot, kind_name)?;
-    let raw = kernel_series(
-        lite_kernel(kind),
-        &ParamSet::new().with_int("length", period.unwrap_or(RAW_OSCILLATOR_LENGTH)),
+    let registry =
+        protopyne_kernels::indicator::shared_registry().map_err(|error| describe_kernel(&error))?;
+    let arm = protopyne_kernels::lite::arm_leg(
+        registry,
         frame,
-    )?;
-    let holes = raw.iter().take_while(|slot| slot.is_none()).count();
-    let smoothed = smooth_raw_for_display(
-        &raw,
-        rows,
+        &row_volumes(rows),
+        kind.id(),
+        period.unwrap_or(RAW_OSCILLATOR_LENGTH),
         smooth_type,
         smooth_period.unwrap_or(3),
-        holes,
+        gain.unwrap_or(1.0),
         smooth_slot,
-    )?;
-    let unbounded = lite_normalize(&smoothed, kind);
-    let scaled = gain.unwrap_or(1.0);
-    Ok(unbounded
+    )
+    .map_err(|error| describe_kernel(&error))?;
+    // Display convention: the arm's leading holes and its smoothing warmup
+    // are masked before the bounded compression, so a partial reading never
+    // paints as a calibrated value.
+    let holes = arm.raw.iter().take_while(|slot| slot.is_none()).count();
+    let warmup = match SmoothingFamily::parse(smooth_type) {
+        Some(SmoothingFamily::Na) => 0,
+        Some(family) => family
+            .warmup_for_length(smooth_period.unwrap_or(3))
+            .map_err(|error| EguiError::InvalidParam {
+                what: smooth_slot.to_owned(),
+                reason: error.to_string(),
+            })?,
+        None => {
+            return Err(EguiError::InvalidParam {
+                what: smooth_slot.to_owned(),
+                reason: format!("unknown smoothing family {smooth_type:?}"),
+            });
+        }
+    };
+    let mask = holes.saturating_add(warmup);
+    let mut shaped = arm.shaped;
+    let len = shaped.len();
+    for slot in shaped.iter_mut().take(mask.min(len)) {
+        *slot = None;
+    }
+    Ok(shaped
         .into_iter()
         .map(|slot| {
             slot.and_then(|value| {
-                let shaped = squash_to_100(value * scaled);
+                let shaped = squash_to_100(value);
                 shaped.is_finite().then_some(shaped)
             })
         })
@@ -133,14 +154,6 @@ fn lite_panel_leg(
 const LITE_FAST_KIND: OscillatorKind = OscillatorKind::Rsi;
 /// Slow arm of the lite pane (CCI).
 const LITE_SLOW_KIND: OscillatorKind = OscillatorKind::Cci;
-
-/// Kernel id for one lite arm, sourced from the catalog row instead of a
-/// hardcoded string; both lite arms are kernel-backed rows, so a missing
-/// kernel means the catalog lost an evaluable row and fails loudly.
-fn lite_kernel(kind: OscillatorKind) -> &'static str {
-    kind.kernel_id()
-        .expect("lite fast/slow arms are kernel-backed")
-}
 
 /// Native kernel series behind one pane: raw oscillators plus the
 /// smoothing pair, all over the same converted rows.
@@ -188,37 +201,55 @@ fn row_volumes(rows: &[ChartRow]) -> Vec<f64> {
     rows.iter().map(|row| row.volume as f64).collect()
 }
 
-/// Evaluate the native pane series over converted rows.
-pub fn native_lite_series(rows: &[ChartRow], eit_alpha: f64) -> Result<LiteNative, EguiError> {
-    if !eit_alpha.is_finite() || eit_alpha <= 0.0 || eit_alpha > 1.0 {
-        return Err(EguiError::InvalidParam {
-            what: "eit_alpha".to_owned(),
-            reason: "adaptive smoothing must sit within (0, 1]".to_owned(),
-        });
+/// The frozen pane dials, expressed through the shared leg batch.
+///
+/// RSI/CCI at the freeze length, no smoothing, unit gain, EIT-0.12 signal
+/// leg and EMA-21 mean: the values the Pine freeze drivers pinned.
+fn frozen_lite_params(eit_alpha: f64) -> protopyne_kernels::lite::LiteParams {
+    protopyne_kernels::lite::LiteParams {
+        fast_kernel: "rsi".to_owned(),
+        fast_length: RAW_OSCILLATOR_LENGTH,
+        fast_smooth: "na".to_owned(),
+        fast_smooth_length: 3,
+        fast_gain: 1.0,
+        slow_kernel: "cci".to_owned(),
+        slow_length: RAW_OSCILLATOR_LENGTH,
+        slow_smooth: "na".to_owned(),
+        slow_smooth_length: 3,
+        slow_gain: 1.0,
+        eit_alpha,
+        signal_type: "eit".to_owned(),
+        signal_length: RAW_OSCILLATOR_LENGTH,
+        signal_param1: SIGNAL_EIT_ALPHA,
+        mean_type: "ema".to_owned(),
+        mean_length: RIBBON_MEAN_LENGTH,
+        mean_param1: 0.06,
+        ribbon_health_k: RIBBON_HEALTH_K,
+        price_source: "close".to_owned(),
+        adaptive: false,
+        session_filter: false,
+        session: "0930-1600".to_owned(),
     }
+}
+
+/// Evaluate the frozen pane series over converted rows through the one
+/// market-leg batch.
+pub fn lite_native_series(rows: &[ChartRow], eit_alpha: f64) -> Result<LiteNative, EguiError> {
     let frame = kernel_preview_frame(rows);
-    let length = ParamSet::new().with_int("length", RAW_OSCILLATOR_LENGTH);
-    let fast_raw = kernel_series(lite_kernel(LITE_FAST_KIND), &length, &frame)?;
-    let slow_raw = kernel_series(lite_kernel(LITE_SLOW_KIND), &length, &frame)?;
-    let adaptive = kernel_series(
-        "eit",
-        &ParamSet::new().with_float("alpha", eit_alpha),
+    let closes = frame.close.clone();
+    let params = frozen_lite_params(eit_alpha);
+    let legs = protopyne_kernels::lite::lite_legs_from_frame(
         &frame,
-    )?;
-    // Relayed adaptive legs descend from the fenced frame above, so they
-    // stay fenced until the same reveal; the relayed volume is the real
-    // bar volume, not display-descended, and needs no fence.
-    let synth = synth_close_frame(&adaptive, &row_volumes(rows));
-    let signal = kernel_series(
-        "eit",
-        &ParamSet::new().with_float("alpha", SIGNAL_EIT_ALPHA),
-        &synth,
-    )?;
+        &closes,
+        &params,
+        protopyne_kernels::lite::ATR_LENGTH,
+    )
+    .map_err(|error| describe_kernel(&error))?;
     Ok(LiteNative {
-        fast_raw,
-        slow_raw,
-        adaptive,
-        signal,
+        fast_raw: legs.fast_raw,
+        slow_raw: legs.slow_raw,
+        adaptive: legs.adaptive,
+        signal: legs.signal,
     })
 }
 
@@ -245,7 +276,7 @@ pub fn integration_lite_view(
     fill_alpha: f64,
     threshold: f64,
 ) -> Result<IntegrationLiteView, EguiError> {
-    let native = native_lite_series(rows, eit_alpha)?;
+    let native = lite_native_series(rows, eit_alpha)?;
     let fast = lite_normalize(&native.fast_raw, LITE_FAST_KIND);
     let slow = lite_normalize(&native.slow_raw, LITE_SLOW_KIND);
     let ribbon = ribbon_view(&native.adaptive, &native.signal, fill_alpha)?;
@@ -330,17 +361,15 @@ pub fn candle_momentum_keys(
         .collect())
 }
 
-/// EMA length of the ribbon mean leg (reference `i_ribbon_mean_period`;
-/// the `EMA` factory branch ignores `param1`, so plain length-21 EMA).
-pub const RIBBON_MEAN_LENGTH: i64 = 21;
-/// Volume SMA length behind the conviction ratio (reference
-/// `ta.sma(volume, 20)` in the context fetch).
-pub const VOL_SMA_LENGTH: i64 = 20;
-/// ATR length behind the health distances (reference context ATR).
-pub const ATR_LENGTH: i64 = 14;
+/// EMA length of the ribbon mean leg, from the shared context bundle
+/// (reference `i_ribbon_mean_period`; the `EMA` factory branch ignores
+/// `param1`, so plain length-21 EMA).
+pub const RIBBON_MEAN_LENGTH: i64 = protopyne_kernels::lite::MA_MEAN_LENGTH;
+/// ATR length behind the health distances, from the shared context.
+pub const ATR_LENGTH: i64 = protopyne_kernels::lite::ATR_LENGTH;
 /// Ribbon health gain (reference `i_ribbon_health_k`; task value: display
 /// fitness of the health fold, never producer confidence).
-pub const RIBBON_HEALTH_K: f64 = 1.8;
+pub const RIBBON_HEALTH_K: f64 = protopyne_kernels::lite::RIBBON_HEALTH_K;
 
 /// Four tint corners at the reference `barcolor` call
 /// (`i_color_bull`, `i_color_bear`, `i_color_bull_down`, `i_color_bear_up`),
@@ -475,7 +504,7 @@ pub fn candle_momentum_series(
     // The tint path predates the dialed ribbon legs and stays on the
     // reference pair (EIT-0.12 signal, EMA-21 mean) until it reads
     // configuration: tint values must not move under an unrelated dial.
-    let native = native_lite_series(rows, eit_alpha)?;
+    let native = lite_native_series(rows, eit_alpha)?;
     let volumes = row_volumes(rows);
     let mean = kernel_series(
         "ema",
@@ -538,49 +567,23 @@ fn ribbon_health_inputs(
             });
         }
     }
-    let native = native_lite_series(rows, eit_alpha)?;
+    let native = lite_native_series(rows, eit_alpha)?;
     let frame = kernel_preview_frame(rows);
-    let atr = kernel_series(
-        "atr",
-        &ParamSet::new().with_int("length", ATR_LENGTH),
-        &frame,
-    )?;
-    let volumes: Vec<Option<f64>> = rows.iter().map(|row| Some(row.volume as f64)).collect();
-    let vol_sma = kernel_series(
-        "sma",
-        &ParamSet::new().with_int("length", VOL_SMA_LENGTH),
-        &synth_close_frame(&volumes, &row_volumes(rows)),
-    )?;
-    let vol_ratio: Vec<f64> = rows
-        .iter()
-        .zip(vol_sma.iter())
-        .map(|(row, sma)| match sma {
-            Some(sma) if *sma > 0.0 => {
-                let ratio = row.volume as f64 / sma;
-                if ratio.is_finite() {
-                    ratio
-                } else {
-                    0.0
-                }
-            }
-            _ => 0.0,
-        })
-        .collect();
-    let health: Vec<Option<f64>> = (0..rows.len())
-        .map(|index| {
-            let gain = vol_ratio[index] * (eit_alpha + health_k);
-            let leg = |series: &[Option<f64>]| series.get(index).and_then(|slot| *slot);
-            health_mas(
-                leg(&atr),
-                leg(&native.adaptive),
-                leg(signal),
-                leg(mean),
-                gain,
-            )
-            .map(|score| score * health_k)
-        })
-        .collect();
-    Ok((health, vol_ratio))
+    let context =
+        protopyne_kernels::lite::context_legs(&frame).map_err(|error| describe_kernel(&error))?;
+    let health = protopyne_kernels::lite::ribbon_health(
+        &context.atr,
+        &native.adaptive,
+        signal,
+        mean,
+        &context.vol_ratio,
+        eit_alpha,
+        health_k,
+    )
+    .into_iter()
+    .map(|slot| slot.map(|score| score * health_k))
+    .collect();
+    Ok((health, context.vol_ratio))
 }
 
 /// Tint every bar through the ported gradient, preserving holes.
@@ -727,15 +730,7 @@ pub fn precision_recall(
 pub const BOUNDED_DELTA_UNIT: f64 = 80.0;
 /// MA-health oscillator gain (reference `i_ma_health_k`; task value: display
 /// fitness of the health fold, never producer confidence).
-pub const MA_HEALTH_K: f64 = 1.2;
-/// ALMA length behind the MA-health primary leg (reference context ALMA-8).
-const MA_PRIMARY_LENGTH: i64 = 8;
-/// ALMA offset behind the MA-health primary leg.
-const MA_PRIMARY_OFFSET: f64 = 0.85;
-/// ALMA sigma behind the MA-health primary leg.
-const MA_PRIMARY_SIGMA: f64 = 6.0;
-/// VWMA length behind the MA-health signal leg (reference context VWMA-12).
-const MA_SIGNAL_LENGTH: i64 = 12;
+pub const MA_HEALTH_K: f64 = protopyne_kernels::lite::MA_HEALTH_K;
 
 fn default_eit_alpha() -> f64 {
     0.14
@@ -1939,7 +1934,7 @@ pub fn integration_lite_sub_pane(
     config: &IntegrationLiteConfig,
 ) -> Result<IntegrationLiteSubPane, EguiError> {
     config.validate()?;
-    let native = native_lite_series(rows, config.eit_alpha)?;
+    let native = lite_native_series(rows, config.eit_alpha)?;
     let volumes = row_volumes(rows);
     let leg_frame = lite_leg_frame(rows, config, &native.adaptive)?;
     let fast_bounded = lite_panel_leg(&leg_frame, rows, config, LiteLeg::Fast)?;
@@ -2027,35 +2022,11 @@ fn lite_leg_frame(
 /// holes stay holes; output lines up with `rows`.
 fn ma_health_series(rows: &[ChartRow], k: f64) -> Result<Vec<Option<f64>>, EguiError> {
     let frame = kernel_preview_frame(rows);
-    let alma = kernel_series(
-        "alma",
-        &ParamSet::new()
-            .with_int("length", MA_PRIMARY_LENGTH)
-            .with_float("offset", MA_PRIMARY_OFFSET)
-            .with_float("sigma", MA_PRIMARY_SIGMA),
-        &frame,
-    )?;
-    let vwma = kernel_series(
-        "vwma",
-        &ParamSet::new().with_int("length", MA_SIGNAL_LENGTH),
-        &frame,
-    )?;
-    let ema = kernel_series(
-        "ema",
-        &ParamSet::new().with_int("length", RIBBON_MEAN_LENGTH),
-        &frame,
-    )?;
-    let atr = kernel_series(
-        "atr",
-        &ParamSet::new().with_int("length", ATR_LENGTH),
-        &frame,
-    )?;
-    Ok((0..rows.len())
-        .map(|index| {
-            let leg = |series: &[Option<f64>]| series.get(index).and_then(|slot| *slot);
-            health_mas(leg(&atr), leg(&alma), leg(&vwma), leg(&ema), HEALTH_K)
-                .map(|score| score * k)
-        })
+    let raw = protopyne_kernels::lite::ma_health_series(&frame)
+        .map_err(|error| describe_kernel(&error))?;
+    Ok(raw
+        .into_iter()
+        .map(|slot| slot.map(|score| score * k))
         .collect())
 }
 

@@ -13,6 +13,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
+use fluent_wvr::validate::Validate;
 use rust_decimal::Decimal;
 
 use protopyne_store::{CandleStore, ReadRequest as TapeReadRequest, SpanPlan, TapeKey};
@@ -77,14 +78,8 @@ pub struct BacktestConfig {
 
 impl fluent_wvr::validate::Validate for BacktestConfig {
     type Err = ServerError;
-    fn validate(&self) -> Result<(), Self::Err> {
-        BacktestConfig::validate(self)
-    }
-}
-
-impl BacktestConfig {
     /// Fail-closed self-consistency check.
-    pub fn validate(&self) -> Result<(), ServerError> {
+    fn validate(&self) -> Result<(), Self::Err> {
         if self.underlying.trim().is_empty() {
             return Err(ServerError::Backtest("underlying must be named".to_owned()));
         }
@@ -448,6 +443,10 @@ impl Venue for BacktestVenue {
 #[cfg(test)]
 #[path = "../tests/backtest.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/trigger_filter_calibration.rs"]
+mod trigger_filter_calibration_tests;
 
 #[cfg(test)]
 #[path = "../tests/history_source_tape.rs"]

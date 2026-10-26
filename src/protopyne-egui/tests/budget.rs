@@ -157,6 +157,7 @@ fn bloat_ledger_pins_source_files() {
         src_file_names(),
         vec![
             "annotations.rs",
+            "backtest.rs",
             "chart.rs",
             "delta_volume_profile.rs",
             "export.rs",
@@ -169,6 +170,7 @@ fn bloat_ledger_pins_source_files() {
             "lib.rs",
             "oscillator_panel.rs",
             "oscillators.rs",
+            "overlay.rs",
             "pine_overlay.rs",
             "prefs.rs",
             "regime_labels.rs",

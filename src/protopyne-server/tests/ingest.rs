@@ -1,6 +1,7 @@
 //! Ingest service fault-injection suite: boot repair, duplicate/out-of-order,
 //! gap suspension, and one-pass recovery.
 
+use crate::common_fixtures::money;
 use std::sync::{Arc, Mutex};
 
 use chrono::{TimeZone, Utc};
@@ -11,7 +12,7 @@ use protopyne_store::{
     MarketTape, PriceScale, StoreStorage, TapeKey, TimeRange,
 };
 use protopyne_types::session::SessionCalendar;
-use protopyne_types::{Bar, Money, Timeframe};
+use protopyne_types::{Bar, Timeframe};
 use protopyne_venue::{
     AdapterOutcome, FeedCapabilities, FeedError, FeedFuture, FeedSession, FeedStats,
     FeedSubscription, MarketDataFeed, MarketEvent, TradeBarAdapter, TradePrint,
@@ -41,10 +42,6 @@ fn bar(offset_ms: i64, close: &str) -> Bar {
         .c(price)
         .volume(10)
         .build()
-}
-
-fn money(value: &str) -> Money {
-    Money::new(value.parse().expect("decimal"))
 }
 
 struct FeedPump {

@@ -5,7 +5,7 @@
 //! transforms here are what a caller applies to a raw boundary string (an LLM
 //! classifier's response, a user-supplied form field, an IPC payload field, a
 //! file/DB record column) before it becomes a typed member via
-//! [`FieldAccess::set_field`] or a `serde` deserialize.
+//! [`crate::FieldAccess::set_field`] or a `serde` deserialize.
 //!
 //! The derive macro's `#[field(coerce = "trim,strip_quotes")]` attribute applies
 //! a [`Coercion`] pipeline inside `set_field`, so the coercion policy lives with

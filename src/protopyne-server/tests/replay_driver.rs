@@ -1,3 +1,4 @@
+use crate::common_fixtures::money;
 use protopyne_strategy::fixtures::grant_with;
 use std::sync::Arc;
 
@@ -14,10 +15,6 @@ use protopyne_venue::PaperConfig;
 use crate::backtest::{BacktestConfig, BacktestVenue};
 use crate::replay_session::{ChainPolicy, ReplayDriver, ReplayRegistry, ReplaySession};
 use crate::runner::RunnerConfig;
-
-fn money(value: i64) -> Money {
-    Money::new(Decimal::from(value))
-}
 
 fn synthetic_bars(count: usize) -> Vec<Bar> {
     (0..count)
@@ -70,8 +67,8 @@ fn runner_config() -> RunnerConfig {
     RunnerConfig::new(
         "SPY".to_owned(),
         "ribbon".to_owned(),
-        money(400),
-        money(2_000),
+        money("400"),
+        money("2_000"),
         30,
         0,
     )
@@ -333,8 +330,8 @@ async fn uncovered_bars_keep_the_unchanged_refusal() {
         RunnerConfig::new(
             "SPY".to_owned(),
             "ribbon".to_owned(),
-            money(400),
-            money(2_000),
+            money("400"),
+            money("2_000"),
             30,
             0,
         ),
@@ -384,8 +381,8 @@ async fn covered_bars_flow_into_two_leg_fills() {
         RunnerConfig::new(
             "SPY".to_owned(),
             "ribbon".to_owned(),
-            money(400),
-            money(2_000),
+            money("400"),
+            money("2_000"),
             30,
             0,
         ),

@@ -25,6 +25,50 @@ pub fn cross_warmup() -> usize {
     1
 }
 
+/// Which way a reading crossed a level.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Crossing {
+    /// The reading moved from at-or-below the level to strictly above it.
+    Up,
+    /// The reading moved from at-or-above the level to strictly below it.
+    Down,
+}
+
+/// The one scalar crossing core.
+///
+/// `level` is held constant across the pair (the level-crossing shape); use
+/// [`crossed_between`] when both sides move. The contract is the existing
+/// one: the previous side may touch the level (`<=` / `>=`), the current side
+/// must be strictly past it, equality on both sides never fires, and a
+/// missing or non-finite side yields `None` rather than a phantom crossing.
+#[must_use]
+pub fn crossed(prev: Option<f64>, curr: Option<f64>, level: f64) -> Option<Crossing> {
+    crossed_between(prev, curr, Some(level), Some(level))
+}
+
+/// The two-series crossing core: `a` crosses `b` between the previous and
+/// current readings. Both sides move, so both previous and current values are
+/// supplied; the strict-inequality contract matches [`crossed`].
+#[must_use]
+pub fn crossed_between(
+    prev_a: Option<f64>,
+    curr_a: Option<f64>,
+    prev_b: Option<f64>,
+    curr_b: Option<f64>,
+) -> Option<Crossing> {
+    let (prev_a, curr_a, prev_b, curr_b) = (prev_a?, curr_a?, prev_b?, curr_b?);
+    if !prev_a.is_finite() || !curr_a.is_finite() || !prev_b.is_finite() || !curr_b.is_finite() {
+        return None;
+    }
+    if prev_a <= prev_b && curr_a > curr_b {
+        Some(Crossing::Up)
+    } else if prev_a >= prev_b && curr_a < curr_b {
+        Some(Crossing::Down)
+    } else {
+        None
+    }
+}
+
 /// `true` where `a` crosses over `b`; `None` where either side is missing.
 #[must_use]
 pub fn crossover(a: &[f64], b: &[f64]) -> Vec<Option<bool>> {
@@ -35,7 +79,10 @@ pub fn crossover(a: &[f64], b: &[f64]) -> Vec<Option<bool>> {
         if a_now.is_nan() || a_prev.is_nan() || b_now.is_nan() || b_prev.is_nan() {
             continue;
         }
-        *slot = Some(a_prev <= b_prev && a_now > b_now);
+        *slot = Some(
+            crossed_between(Some(a_prev), Some(a_now), Some(b_prev), Some(b_now))
+                == Some(Crossing::Up),
+        );
     }
     out
 }
@@ -50,7 +97,10 @@ pub fn crossunder(a: &[f64], b: &[f64]) -> Vec<Option<bool>> {
         if a_now.is_nan() || a_prev.is_nan() || b_now.is_nan() || b_prev.is_nan() {
             continue;
         }
-        *slot = Some(a_prev >= b_prev && a_now < b_now);
+        *slot = Some(
+            crossed_between(Some(a_prev), Some(a_now), Some(b_prev), Some(b_now))
+                == Some(Crossing::Down),
+        );
     }
     out
 }

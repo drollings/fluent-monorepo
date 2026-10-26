@@ -23,11 +23,12 @@ use criterion::{criterion_group, criterion_main, Criterion};
 use rust_decimal::Decimal;
 
 use protopyne_server::{
-    run_backtest, run_multi_backtest, run_sweep, BacktestConfig, HistorySource, MultiSymbolInput,
-    RunnerConfig,
+    equity::run_equity_backtest, run_backtest, run_multi_backtest, run_sweep, BacktestConfig,
+    HistorySource, MultiSymbolInput, RunnerConfig,
 };
 use protopyne_strategy::{
-    elements::ExplicitStructure, BreakerLimits, Direction, FixedSignal, Grant, GrantBudgets,
+    elements::ExplicitStructure, fixtures, integration_lite::IntegrationLiteStrategyConfig,
+    signals_lite::LiteIndicatorParams, BreakerLimits, Direction, FixedSignal, Grant, GrantBudgets,
     GrantPermission, GrantScope, PortfolioThresholds, RiskEngine, RiskLimits, SignalThresholds,
     Strategy, StructureKind, TradeThresholds,
 };
@@ -246,6 +247,95 @@ fn multi_fanout(criterion: &mut Criterion) {
     });
 }
 
+/// Ten thousand bars through the equity decision stack.
+///
+/// This is the workload the leg batch exists for: before the single causal
+/// batch, every bar re-batched its own prefix twice, so the cost grew with
+/// the square of the tape. The bench is observed, never asserted — a wall
+/// time on this machine is evidence, not a threshold.
+fn equity_path(criterion: &mut Criterion) {
+    let count: i64 = 10_000;
+    let bars: Vec<Bar> = (0..count)
+        .map(|index| {
+            let phase = index as f64;
+            let close = 500.0 + 40.0 * (phase / 17.0).sin() + 15.0 * (phase / 5.3).sin();
+            let value = Decimal::from_f64_retain(close).expect("finite close");
+            Bar::new()
+                .ts(Utc
+                    .with_ymd_and_hms(2026, 1, 5, 14, 30, 0)
+                    .single()
+                    .expect("valid instant")
+                    + chrono::Duration::minutes(index))
+                .o(value)
+                .h(Decimal::from_f64_retain(close + 0.5).expect("finite high"))
+                .l(Decimal::from_f64_retain(close - 0.5).expect("finite low"))
+                .c(value)
+                .volume(10_000)
+                .maybe_adj(None)
+                .build()
+        })
+        .collect();
+    let indicator = LiteIndicatorParams::default();
+    let strategy = IntegrationLiteStrategyConfig {
+        sig_window: 20,
+        filt_ma_health_min: 0.0,
+        ..IntegrationLiteStrategyConfig::default()
+    };
+    let risk = RiskEngine::new(
+        RiskLimits::new()
+            .max_contracts_per_trade(1_000_000)
+            .max_loss_per_trade(10_000_000.0)
+            .max_notional(1_000_000_000.0)
+            .build(),
+    );
+    let grant = fixtures::grant_with(|grant| {
+        "bench-equity".clone_into(&mut grant.id);
+        grant.signal.min_conviction = 0.0;
+        grant.signal.min_activity_score = 0.0;
+        grant.scope.strategies = vec!["integration_lite".to_owned()];
+        grant.scope.structures = vec![StructureKind::Single];
+        grant.trade.min_dte_days = 0;
+        grant.budgets.max_trades = 100_000;
+        grant.budgets.max_contracts = 10_000_000;
+        grant.budgets.max_loss = money(10_000_000);
+        grant.budgets.max_notional = money(100_000_000_000);
+    });
+    let venue = BacktestConfig::new()
+        .underlying("SPY".to_owned())
+        .data_version("bench-equity".to_owned())
+        .quote_size(1_000_000)
+        .build();
+    let runner = RunnerConfig::new(
+        "SPY".to_owned(),
+        "integration_lite".to_owned(),
+        money(400),
+        money(2_000),
+        30,
+        0,
+    );
+    let runtime = runtime();
+    criterion.bench_function("equity_path_10k", |bencher| {
+        bencher.iter(|| {
+            runtime
+                .block_on(run_equity_backtest(
+                    &indicator,
+                    &strategy,
+                    &risk,
+                    &grant,
+                    &venue,
+                    &runner,
+                    "integration_lite",
+                    "SPY",
+                    protopyne_types::Timeframe::M1,
+                    &bars,
+                    7,
+                    100_000.0,
+                ))
+                .expect("bench equity run completes")
+        });
+    });
+}
+
 /// Native-vs-Pine comparison over one shared workload. Needs the server
 /// `pine` feature (the Pine leg drives the language runtime); the
 /// throughput benches above run on lean kernels.
@@ -376,8 +466,15 @@ criterion_group!(
     decide_path,
     sweep_fanout,
     multi_fanout,
+    equity_path,
     native_vs_pine
 );
 #[cfg(not(feature = "pine"))]
-criterion_group!(benches, decide_path, sweep_fanout, multi_fanout);
+criterion_group!(
+    benches,
+    decide_path,
+    sweep_fanout,
+    multi_fanout,
+    equity_path
+);
 criterion_main!(benches);

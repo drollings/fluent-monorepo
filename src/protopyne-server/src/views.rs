@@ -31,10 +31,12 @@ use protopyne_venue::{
     COMMAND_CLOSE_ALL_KIND, COMMAND_REVOKE_GRANT_KIND, OPERATOR_CLIENT_ID,
 };
 use protopyne_view::{
-    ArmResponse, BrokerAccountView, BrokerCapabilityView, BrokerDealView, BrokerLegView,
-    BrokerOrderView, ChartBars, HealthView, JournalRowView, OverlaySeries, PortfolioView,
-    PositionView, ProposalView, ReplayStepView, ReplayView, TicketDraft, TicketDriftView,
-    TicketSide, TicketView, WorstCase, PORTFOLIO_SOURCE_BOOKED, PORTFOLIO_SOURCE_REHEARSAL,
+    ArmResponse, BacktestMarkerView, BacktestMetricView, BacktestRunParams, BacktestRunRef,
+    BacktestRunView, BacktestSchemaView, BrokerAccountView, BrokerCapabilityView, BrokerDealView,
+    BrokerLegView, BrokerOrderView, ChartBars, EquityPointView, HealthView, JournalRowView,
+    OverlaySeries, PortfolioView, PositionView, ProposalView, ReplayStepView, ReplayView,
+    TicketDraft, TicketDriftView, TicketSide, TicketView, WorstCase, PORTFOLIO_SOURCE_BOOKED,
+    PORTFOLIO_SOURCE_REHEARSAL,
 };
 
 use crate::boot::{AppState, Shared, TapeMissKind, TapeServeSnapshot};
@@ -1368,6 +1370,391 @@ pub fn broker_deal_of(venue: &str, account: &str, deal: &BrokerDeal) -> BrokerDe
         executed_at: deal.executed_at,
         observed_at: deal.observed_at,
     }
+}
+
+/// Backtest result contract: the terminal's author/run/read surface. The
+/// route and the gateway share these builders, so the HTTP body and the
+/// in-process read cannot drift. Every money value rides decimal text; every
+/// refusal names the field that refused.
+///
+/// The composition description plus the registry enumerations a form picker
+/// must offer. Data only: no strategy type crosses into the view.
+#[must_use]
+pub fn backtest_schema_of() -> BacktestSchemaView {
+    use protopyne_strategy::integration_lite::IntegrationLiteSpec;
+    use protopyne_strategy::integration_lite::IntegrationLiteStrategyConfig;
+    let spec = IntegrationLiteSpec::from(&IntegrationLiteStrategyConfig::default());
+    // The terminal seeds its working document from these defaults and
+    // submits the edited document: no field is ever invented client-side,
+    // and a refused value names its field on the run call.
+    let defaults = serde_json::to_value(&spec).unwrap_or(serde_json::Value::Null);
+    BacktestSchemaView {
+        schema: serde_json::json!({
+            "indicator": spec.indicator.describe(),
+            "entry": spec.entry.describe(),
+            "exit": spec.exit.describe(),
+            "risk": spec.risk.describe(),
+            "session": spec.session.describe(),
+            "display": spec.display.describe(),
+            "triggers": protopyne_strategy::slots::trigger::trigger_ids(),
+            "filters": protopyne_strategy::slots::filter::filter_ids(),
+            "sizers": protopyne_strategy::slots::sizing::sizing_ids(),
+            "strategies": protopyne_strategy::slots::composition::strategy_ids(),
+            "defaults": defaults,
+        }),
+    }
+}
+
+/// Deterministic run id over the request: the same spec, seed, equity, and
+/// window file under the same id, so a repeated submit reads back the stored
+/// run instead of forking a duplicate.
+fn backtest_run_id(params: &BacktestRunParams) -> String {
+    let digest = common_core::hash::fingerprint_framed(&[
+        (
+            "spec",
+            &serde_json::to_vec(&params.spec).unwrap_or_default(),
+        ),
+        ("seed", &params.seed.to_le_bytes()),
+        ("initial_equity", params.initial_equity.as_bytes()),
+        ("start", params.start.as_deref().unwrap_or("").as_bytes()),
+        ("end", params.end.as_deref().unwrap_or("").as_bytes()),
+    ]);
+    format!("backtest-{digest:016x}")
+}
+
+/// Parse one RFC3339 window bound, naming the field on refusal.
+fn backtest_window_bound(
+    field: &'static str,
+    value: Option<&str>,
+) -> Result<Option<chrono::DateTime<chrono::Utc>>, (StatusCode, String)> {
+    match value {
+        None => Ok(None),
+        Some(text) => text
+            .parse::<chrono::DateTime<chrono::Utc>>()
+            .map(Some)
+            .map_err(|_| {
+                (
+                    StatusCode::BAD_REQUEST,
+                    format!("backtest spec refused: {field} is not RFC3339 ({text})"),
+                )
+            }),
+    }
+}
+
+fn money_text(
+    field: &'static str,
+    value: &str,
+) -> Result<protopyne_types::Money, (StatusCode, String)> {
+    value
+        .parse::<rust_decimal::Decimal>()
+        .map_err(|_| {
+            (
+                StatusCode::BAD_REQUEST,
+                format!("backtest spec refused: {field} is not decimal text ({value})"),
+            )
+        })
+        .map(protopyne_types::Money::new)
+}
+
+/// One labelled metric; an unmeasurable value reads `None`, never zero.
+fn metric(label: &str, value: Option<f64>) -> BacktestMetricView {
+    BacktestMetricView {
+        label: label.to_owned(),
+        value: value.map(|number| number.to_string()),
+    }
+}
+
+/// One count metric: integer text, so no float enters and no display fence
+/// is needed.
+fn metric_of_count(label: &str, value: u64) -> BacktestMetricView {
+    BacktestMetricView {
+        label: label.to_owned(),
+        value: Some(value.to_string()),
+    }
+}
+
+fn metric_of_money(label: &str, value: protopyne_types::Money) -> BacktestMetricView {
+    BacktestMetricView {
+        label: label.to_owned(),
+        value: Some(value.to_string()),
+    }
+}
+
+/// Project one stored run's report into labelled metrics.
+fn backtest_metrics_of(report: &crate::report::BacktestReport) -> Vec<BacktestMetricView> {
+    vec![
+        metric_of_count("bars", report.bars),
+        metric_of_count("proposals", report.proposals),
+        metric_of_count("fills", report.fills),
+        metric("fill_rate", report.fill_rate),
+        metric_of_money("total_fees", report.total_fees),
+        metric_of_money("filled_notional", report.filled_notional),
+        metric_of_money("drawdown", report.drawdown),
+        metric("cum_return", report.cum_return),
+        metric("sharpe", report.sharpe),
+        metric("sortino", report.sortino),
+        metric("calmar", report.calmar),
+        metric("win_rate", report.win_rate),
+        metric("profit_factor", report.profit_factor),
+        metric(
+            "expectancy",
+            report.trades.as_ref().and_then(|trades| trades.expectancy),
+        ),
+        metric(
+            "win_rate_trades",
+            report
+                .trades
+                .as_ref()
+                .and_then(|trades| trades.win_rate_trades),
+        ),
+        metric(
+            "profit_factor_trades",
+            report
+                .trades
+                .as_ref()
+                .and_then(|trades| trades.profit_factor_trades),
+        ),
+    ]
+}
+
+/// Project one run into its stored view: metrics, equity curve, trades,
+/// markers, and the final status row. Bars supply the timestamps the run
+/// itself does not retain.
+fn backtest_run_view_of(
+    run_id: &str,
+    run: &crate::equity::EquityRun,
+    bars: &[protopyne_types::Bar],
+) -> BacktestRunView {
+    let at = |index: usize| {
+        bars.get(index)
+            .map(|bar| bar.ts.to_rfc3339())
+            .unwrap_or_default()
+    };
+    let equity = run
+        .report
+        .equity_curve
+        .iter()
+        .enumerate()
+        .map(|(index, point)| EquityPointView {
+            at: at(index),
+            equity: point.to_string(),
+        })
+        .collect();
+    let mut markers: Vec<BacktestMarkerView> = Vec::new();
+    for trade in &run.trades {
+        markers.push(BacktestMarkerView {
+            at: at(trade.entry_bar),
+            price: protopyne_types::Money::new(
+                rust_decimal::Decimal::from_f64_retain(trade.entry_price)
+                    .unwrap_or(rust_decimal::Decimal::ZERO),
+            )
+            .to_string(),
+            kind: "entry".to_owned(),
+        });
+        markers.push(BacktestMarkerView {
+            at: at(trade.exit_bar),
+            price: protopyne_types::Money::new(
+                rust_decimal::Decimal::from_f64_retain(trade.exit_price)
+                    .unwrap_or(rust_decimal::Decimal::ZERO),
+            )
+            .to_string(),
+            kind: "exit".to_owned(),
+        });
+    }
+    for partial in &run.partials {
+        markers.push(BacktestMarkerView {
+            at: at(partial.exit_bar),
+            price: protopyne_types::Money::new(
+                rust_decimal::Decimal::from_f64_retain(partial.exit_price)
+                    .unwrap_or(rust_decimal::Decimal::ZERO),
+            )
+            .to_string(),
+            kind: "exit".to_owned(),
+        });
+    }
+    // Resting stop/target points: one marker per bar while the line rests, so
+    // the terminal draws one polyline per kind and breaks it wherever a bar
+    // carries no point.
+    for level in &run.levels {
+        markers.push(BacktestMarkerView {
+            at: at(level.bar),
+            price: protopyne_types::Money::new(
+                rust_decimal::Decimal::from_f64_retain(level.price)
+                    .unwrap_or(rust_decimal::Decimal::ZERO),
+            )
+            .to_string(),
+            kind: match level.kind {
+                crate::equity::LevelKind::Stop => "stop",
+                crate::equity::LevelKind::Target => "target",
+            }
+            .to_owned(),
+        });
+    }
+    markers.sort_by(|left, right| left.at.cmp(&right.at));
+    BacktestRunView {
+        run_id: run_id.to_owned(),
+        manifest_json: run.report.manifest.to_canonical_json(),
+        metrics: backtest_metrics_of(&run.report),
+        equity,
+        trades: run
+            .trades
+            .iter()
+            .map(|trade| protopyne_view::BacktestTradeView {
+                long: trade.long,
+                quantity: trade.qty,
+                entry_at: at(trade.entry_bar),
+                entry_price: protopyne_types::Money::new(
+                    rust_decimal::Decimal::from_f64_retain(trade.entry_price)
+                        .unwrap_or(rust_decimal::Decimal::ZERO),
+                )
+                .to_string(),
+                exit_at: at(trade.exit_bar),
+                exit_price: protopyne_types::Money::new(
+                    rust_decimal::Decimal::from_f64_retain(trade.exit_price)
+                        .unwrap_or(rust_decimal::Decimal::ZERO),
+                )
+                .to_string(),
+                pnl: protopyne_types::Money::new(
+                    rust_decimal::Decimal::from_f64_retain(trade.pnl)
+                        .unwrap_or(rust_decimal::Decimal::ZERO),
+                )
+                .to_string(),
+                bars_held: trade.bars_held,
+                exit_reason: trade.exit_reason.clone(),
+            })
+            .collect(),
+        markers,
+        status: run.status.last().cloned(),
+        warnings: run.report.data_limits.clone(),
+    }
+}
+
+/// The stored-run read one route and the gateway share.
+pub(crate) fn backtest_run_view_of_entry(
+    entry: &crate::backtest_registry::BacktestEntry,
+) -> BacktestRunView {
+    entry.view.clone()
+}
+
+/// Validate the run params, run the tape, project the view, and store it.
+/// The stored bytes are what `GET /backtest/{id}` and the gateway's
+/// `backtest_state` both read.
+pub(crate) async fn backtest_run_of(
+    state: &Shared,
+    params: BacktestRunParams,
+) -> Result<BacktestRunRef, (StatusCode, String)> {
+    use protopyne_strategy::integration_lite::{
+        IntegrationLiteSpec, IntegrationLiteStrategyConfig,
+    };
+    let spec: IntegrationLiteSpec =
+        serde_json::from_value(params.spec.clone()).map_err(|refused| {
+            (
+                StatusCode::BAD_REQUEST,
+                format!("backtest spec refused: {refused}"),
+            )
+        })?;
+    let strategy: IntegrationLiteStrategyConfig = spec.legacy.clone();
+    let indicator = spec.indicator.clone();
+    let grant: protopyne_strategy::Grant = match params.grant.clone() {
+        Some(document) => serde_json::from_value(document).map_err(|refused| {
+            (
+                StatusCode::BAD_REQUEST,
+                format!("backtest grant refused: {refused}"),
+            )
+        })?,
+        None => protopyne_strategy::Grant::preset(protopyne_strategy::GrantPreset::Rehearsal {
+            id: "backtest-permissive".to_owned(),
+            structures: vec![protopyne_strategy::proposal::StructureKind::Single],
+        }),
+    };
+    grant.validate().map_err(|refused| {
+        (
+            StatusCode::BAD_REQUEST,
+            format!("backtest grant refused: {refused}"),
+        )
+    })?;
+    let start = backtest_window_bound("start", params.start.as_deref())?;
+    let end = backtest_window_bound("end", params.end.as_deref())?;
+    if start.is_some_and(|bound| end.is_some_and(|stop| stop < bound)) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "backtest spec refused: end precedes start".to_owned(),
+        ));
+    }
+    let bars: Vec<protopyne_types::Bar> = state
+        .history
+        .iter()
+        .filter(|bar| {
+            start.is_none_or(|bound| bar.ts >= bound) && end.is_none_or(|bound| bar.ts <= bound)
+        })
+        .cloned()
+        .collect();
+    let underlying = grant
+        .scope
+        .underlyings
+        .first()
+        .cloned()
+        .unwrap_or_else(|| "SPY".to_owned());
+    // Input parsing, not display: decimal text becomes the runner's opening
+    // equity through one fallible conversion, and an unrepresentable value
+    // refuses naming the field.
+    let equity = money_text("initial_equity", &params.initial_equity)?
+        .as_decimal()
+        .to_string()
+        .parse::<f64>()
+        .map_err(|_| {
+            (
+                StatusCode::BAD_REQUEST,
+                "backtest spec refused: initial_equity is not representable".to_owned(),
+            )
+        })?;
+    let run_id = backtest_run_id(&params);
+    let venue_config = crate::backtest::BacktestConfig::new()
+        .underlying(underlying.clone())
+        .data_version(format!("backtest-{run_id}"))
+        .build();
+    let runner_config = crate::runner::RunnerConfig::new(
+        underlying.clone(),
+        "integration_lite".to_owned(),
+        protopyne_types::Money::from(400),
+        protopyne_types::Money::from(2_000),
+        0,
+        0,
+    );
+    let timeframe = protopyne_types::Timeframe::infer_or_d1(&bars);
+    let run = crate::equity::BacktestRequest::builder()
+        .indicator(&indicator)
+        .strategy(&strategy)
+        .risk(&protopyne_strategy::RiskEngine::new(
+            protopyne_strategy::RiskLimits::new().build(),
+        ))
+        .grant(&grant)
+        .venue_config(&venue_config)
+        .runner_config(&runner_config)
+        .signal_name("integration_lite")
+        .underlying(&underlying)
+        .timeframe(timeframe)
+        .bars(&bars)
+        .seed(params.seed)
+        .initial_equity(equity)
+        .run()
+        .await
+        .map_err(|error| (StatusCode::UNPROCESSABLE_ENTITY, error.to_string()))?;
+    let view = backtest_run_view_of(&run_id, &run, &bars);
+    publish_backtest(
+        state,
+        crate::backtest_registry::BacktestEntry {
+            run_id: run_id.clone(),
+            view,
+        },
+    );
+    Ok(BacktestRunRef { run_id })
+}
+
+/// Store one projected view under its run id (the registry write behind a
+/// run that was projected elsewhere, e.g. a test double).
+pub(crate) fn publish_backtest(state: &Shared, entry: crate::backtest_registry::BacktestEntry) {
+    common_core::sync::lock(&state.backtests).publish(entry);
 }
 
 #[cfg(test)]

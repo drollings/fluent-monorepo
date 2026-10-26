@@ -363,3 +363,164 @@ fn derive_describable_emits_display_hints() {
         );
     }
 }
+
+// ── Nested component and list members ─────────────────────────────────────
+
+#[derive(FieldAccess, Describable, Default, Clone, PartialEq, Debug)]
+struct Leaf {
+    #[field(desc = "Leaf amount")]
+    pub amount: u32,
+    pub label: String,
+}
+
+#[derive(FieldAccess, Describable, Default, Clone)]
+struct NestedOwner {
+    #[field(nested)]
+    pub inner: Leaf,
+    #[field(items = 3)]
+    pub slots: Vec<Leaf>,
+}
+
+#[test]
+fn nested_members_route_dotted_paths() {
+    let mut owner = NestedOwner::default();
+    owner.set_field("inner.amount", "7").expect("nested set");
+    assert_eq!(owner.get_field("inner.amount").expect("nested get"), "7");
+    let names = owner.field_names();
+    assert!(names.contains(&"inner.amount"), "names: {names:?}");
+    assert!(names.contains(&"inner.label"), "names: {names:?}");
+    assert!(
+        owner.set_field("inner.missing", "x").is_err(),
+        "an unknown inner leaf refuses"
+    );
+}
+
+#[test]
+fn list_members_grow_and_truncate_by_count() {
+    let mut owner = NestedOwner::default();
+    assert_eq!(owner.get_field("slots.count").expect("count"), "0");
+    owner.set_field("slots.count", "2").expect("grow");
+    assert_eq!(owner.slots.len(), 2);
+    owner.set_field("slots.0.amount", "11").expect("leaf set");
+    assert_eq!(owner.get_field("slots.0.amount").expect("leaf get"), "11");
+    assert_eq!(
+        owner.get_field("slots.count").expect("count"),
+        "2",
+        "the count reflects the grown list"
+    );
+    owner.set_field("slots.count", "1").expect("truncate");
+    assert_eq!(owner.slots.len(), 1, "the tail truncates");
+    assert!(
+        owner.set_field("slots.2.amount", "1").is_err(),
+        "an index past the current length refuses"
+    );
+    assert!(
+        owner.set_field("slots.count", "4").is_err(),
+        "an open list cannot exceed its declared maximum"
+    );
+    let names = owner.field_names();
+    assert!(names.contains(&"slots.0.amount"), "names: {names:?}");
+    assert!(names.contains(&"slots.2.label"), "names: {names:?}");
+    assert!(names.contains(&"slots.count"), "names: {names:?}");
+}
+
+#[test]
+fn nested_and_list_members_describe_their_shape() {
+    let owner = NestedOwner::default();
+    let schema = owner.describe();
+    let properties = schema["properties"].as_object().expect("properties");
+    assert_eq!(properties["inner"]["type"], "object");
+    assert_eq!(properties["inner"]["x-flatten"], true);
+    assert_eq!(
+        properties["inner.amount"]["description"], "Leaf amount",
+        "a nested leaf keeps its own metadata"
+    );
+    assert_eq!(properties["slots"]["type"], "array");
+    assert_eq!(properties["slots"]["x-items"], 3);
+    assert_eq!(properties["slots.0.amount"]["x-item-of"], "slots");
+    assert_eq!(properties["slots.0.amount"]["x-item-index"], 0);
+    assert_eq!(properties["slots.count"]["maximum"], 3);
+    assert_eq!(
+        schema["required"],
+        serde_json::json!([]),
+        "a defaulted struct requires nothing"
+    );
+}
+
+// ── Tagged union ──────────────────────────────────────────────────────────
+
+#[derive(FieldAccess, Describable, Clone, Debug, PartialEq)]
+enum Tagged {
+    Breakout {
+        #[field(desc = "Lookback", min = 1)]
+        period: u32,
+        level: f64,
+    },
+    Cross {
+        fast: u32,
+        slow: u32,
+    },
+    Off,
+}
+
+impl Default for Tagged {
+    fn default() -> Self {
+        Self::Breakout {
+            period: 0,
+            level: 0.0,
+        }
+    }
+}
+
+#[test]
+fn a_tagged_union_switches_its_legal_leaf_set() {
+    let mut union = Tagged::default();
+    assert_eq!(union.get_field("kind").expect("kind"), "breakout");
+    assert!(union.field_names().contains(&"kind"));
+    assert!(union.field_names().contains(&"breakout.period"));
+    union
+        .set_field("breakout.period", "9")
+        .expect("active leaf");
+    assert_eq!(union.get_field("breakout.period").expect("leaf"), "9");
+
+    union.set_field("kind", "cross").expect("switch arm");
+    assert_eq!(union, Tagged::Cross { fast: 0, slow: 0 });
+    assert!(
+        !union.field_names().contains(&"breakout.period"),
+        "the previous arm's leaves are gone: {:?}",
+        union.field_names()
+    );
+    assert!(union.field_names().contains(&"cross.fast"));
+    assert!(
+        union.set_field("breakout.period", "3").is_err(),
+        "an inactive leaf refuses"
+    );
+    assert_eq!(
+        union.get_field("cross.fast").expect("active leaf"),
+        "0",
+        "the refusal stored nothing"
+    );
+
+    union.set_field("kind", "off").expect("unit arm");
+    assert_eq!(union, Tagged::Off);
+    assert_eq!(union.get_field("kind").expect("kind"), "off");
+    assert_eq!(union.field_names(), &["kind"][..]);
+}
+
+#[test]
+fn a_tagged_union_describes_its_arms() {
+    let schema = Tagged::default().describe();
+    assert_eq!(
+        schema["properties"]["kind"]["enum"],
+        serde_json::json!(["breakout", "cross", "off"])
+    );
+    assert_eq!(
+        schema["properties"]["breakout.period"]["x-visible-when"],
+        "kind=breakout"
+    );
+    assert_eq!(
+        schema["properties"]["breakout.period"]["description"],
+        "Lookback"
+    );
+    assert_eq!(schema["oneOf"].as_array().expect("arms").len(), 3);
+}

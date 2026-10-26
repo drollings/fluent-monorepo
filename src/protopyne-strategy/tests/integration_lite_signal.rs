@@ -66,6 +66,12 @@ fn flat_closes(n: usize) -> Vec<f64> {
 fn trend_strategy() -> IntegrationLiteStrategyConfig {
     IntegrationLiteStrategyConfig {
         sig_window: 20,
+        // The health gate reads the raw score (a positive gain never changes
+        // its sign, so a gain-scaled magnitude is not a stricter filter —
+        // using one let trades through that the reference blocks). These
+        // synthetic V tapes carry a weak stack, so the dial sits at its legal
+        // floor: the gate still demands health aligned with the trade.
+        filt_ma_health_min: 0.0,
         ..IntegrationLiteStrategyConfig::default()
     }
 }
@@ -334,7 +340,7 @@ fn adaptive_relay_applies_once_over_raw_bars() {
         adaptive: true,
         ..LiteIndicatorParams::default()
     };
-    let legs = market_legs(&params, &bars).expect("legs evaluate");
+    let legs = market_legs(&params, 14, &bars).expect("legs evaluate");
     let frame = OwnedOhlcv::from_bars(&bars);
     let registry = builtin_registry().expect("registry builds");
     let raw_eit = registry
@@ -370,4 +376,95 @@ fn adaptive_relay_applies_once_over_raw_bars() {
         }
     }
     assert!(compared >= 60, "too few co-read bars: {compared}");
+}
+
+/// The regime gate reads all three of its surfaces, so every arm is reachable.
+///
+/// This is the control the earlier shape failed: feeding `None` for the
+/// dispersion surface voided every tie inside the detector, which made
+/// `VOLATILE` unreachable and collapsed the label onto the fail-closed quiet
+/// arm. A quiet arm that can never be anything else is not a gate — it is a
+/// constant.
+#[test]
+fn the_regime_detector_sees_every_surface() {
+    use protopyne_kernels::market_context::detect_regime;
+
+    // Bursty amplitude and bursty participation: alternating calm and violent
+    // stretches over a slow drift, which is what separates the surfaces.
+    let mut closes = Vec::new();
+    let mut volumes = Vec::new();
+    for index in 0..300 {
+        let phase = f64::from(index);
+        let amplitude = if (index / 30) % 2 == 0 { 0.6 } else { 7.0 };
+        closes.push(200.0 + amplitude * (phase / 2.5).sin() + 0.08 * phase);
+        volumes.push(if (index / 20) % 2 == 0 { 1_500 } else { 14_000 });
+    }
+    let bars: Vec<Bar> = closes
+        .iter()
+        .zip(&volumes)
+        .enumerate()
+        .map(|(index, (close, volume))| {
+            Bar::new()
+                .ts(Utc
+                    .with_ymd_and_hms(2026, 1, 5, 15, 0, 0)
+                    .single()
+                    .expect("valid time")
+                    + chrono::Duration::minutes(index as i64))
+                .o(Decimal::from_f64_retain(*close - 0.2).expect("finite"))
+                .h(Decimal::from_f64_retain(*close + 0.5).expect("finite"))
+                .l(Decimal::from_f64_retain(*close - 0.5).expect("finite"))
+                .c(Decimal::from_f64_retain(*close).expect("finite"))
+                .volume(*volume)
+                .maybe_adj(None)
+                .build()
+        })
+        .collect();
+
+    let legs = crate::signals_lite::market_legs(&LiteIndicatorParams::default(), 14, &bars)
+        .expect("legs evaluate");
+    let mut labels = std::collections::BTreeSet::new();
+    for index in 0..bars.len() {
+        let ratio = match (legs.stdev[index], legs.atr[index]) {
+            (Some(dev), Some(atr)) if atr > 0.0 => Some(dev / atr),
+            _ => None,
+        };
+        labels.insert(
+            detect_regime(legs.ma_health[index], ratio, Some(legs.vol_ratio[index])).to_string(),
+        );
+    }
+    assert!(
+        labels.contains("VOLATILE"),
+        "the dispersion surface is reachable, saw {labels:?}"
+    );
+    assert!(
+        labels.len() >= 3,
+        "the detector separates market conditions, saw {labels:?}"
+    );
+}
+
+/// The master switch is wired: a disabled strategy refuses every bar, rather
+/// than deciding and having the runner ignore it.
+#[test]
+fn a_disabled_strategy_refuses_every_bar() {
+    let signal = IntegrationLiteSignal::new(
+        LiteIndicatorParams::default(),
+        IntegrationLiteStrategyConfig {
+            enabled: false,
+            ..IntegrationLiteStrategyConfig::default()
+        },
+    )
+    .expect("a disabled composition still validates");
+    let (bars, closes) = tape(&v_up_closes(), 15);
+    let data = market_data(&bars);
+    let view = market_view(&data, &closes);
+    let mut instance = signal
+        .bind(&SignalConfig::new(Timeframe::M1))
+        .expect("binds");
+    let error = instance
+        .evaluate(&view)
+        .expect_err("nothing decides while off");
+    assert!(
+        error.to_string().contains("disabled"),
+        "the refusal names the switch, got {error}"
+    );
 }

@@ -342,15 +342,15 @@ fn command_plane_verbs_refuse_without_a_journal() {
     // shows a refusal line, never a silent success.
     let gateway = MockGateway::new();
     for outcome in [
-        gateway.approve("mock-prop-1"),
-        gateway.reject("mock-prop-1", "too much size"),
-        gateway.revoke_grant("mock-grant"),
-        gateway.close_all("paper").map(|_| ()),
-        gateway.cancel_all("paper").map(|_| ()),
+        gateway.approve("mock-prop-1").is_err(),
+        gateway.reject("mock-prop-1", "too much size").is_err(),
+        gateway.revoke_grant("mock-grant").is_err(),
+        gateway.close_all("paper").is_err(),
+        gateway.cancel_all("paper").is_err(),
     ] {
         assert!(
-            matches!(outcome, Err(GatewayError::Unavailable(_))),
-            "a command-plane-less gateway refuses every decision verb: {outcome:?}"
+            outcome,
+            "a command-plane-less gateway refuses every decision verb"
         );
     }
 }
@@ -366,5 +366,43 @@ fn booked_portfolio_read_refuses_without_a_venue_book() {
             Err(GatewayError::Unavailable(_))
         ),
         "a book-less gateway refuses the booked portfolio read"
+    );
+}
+
+#[test]
+fn backtest_verbs_refuse_without_a_stored_registry() {
+    let gateway = MockGateway::new();
+    assert!(
+        matches!(gateway.backtest_schema(), Err(GatewayError::Unavailable(_))),
+        "no stored schema without a serving gateway"
+    );
+    let params = super::BacktestRunParams {
+        spec: serde_json::json!({}),
+        seed: 7,
+        initial_equity: "100000".to_owned(),
+        start: None,
+        end: None,
+        grant: None,
+    };
+    assert!(
+        matches!(
+            gateway.backtest_run(params),
+            Err(GatewayError::Unavailable(_))
+        ),
+        "no run without a serving gateway"
+    );
+    assert!(
+        matches!(
+            gateway.backtest_state("backtest-00"),
+            Err(GatewayError::Unavailable(_))
+        ),
+        "no stored state without a serving gateway"
+    );
+    assert!(
+        matches!(
+            gateway.backtest_stop("backtest-00"),
+            Err(GatewayError::Unavailable(_))
+        ),
+        "no stored slot without a serving gateway"
     );
 }

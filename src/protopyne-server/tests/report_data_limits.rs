@@ -8,13 +8,7 @@
 //! that a manifest with no tape adds no line.
 
 use super::*;
-use rust_decimal::Decimal;
-
-use protopyne_types::Money;
-
-fn money(value: &str) -> Money {
-    Money::new(value.parse::<Decimal>().expect("decimal"))
-}
+use crate::common_fixtures::money;
 
 fn taped_manifest() -> RunManifest {
     RunManifest {

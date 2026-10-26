@@ -20,6 +20,7 @@ use bytes::Bytes;
 use chrono::{TimeZone, Utc};
 use fluent_concurrency::io::net::NetCapability;
 use fluent_concurrency::stream::StreamAbort;
+use fluent_wvr::validate::Validate;
 use futures_util::stream::{Stream, StreamExt};
 use rust_decimal::Decimal;
 use tokio::sync::mpsc;

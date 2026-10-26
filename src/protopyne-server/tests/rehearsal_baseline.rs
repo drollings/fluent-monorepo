@@ -15,6 +15,8 @@
 //! package. That line replaced the bare `max loss <n> per proposal` line
 //! (same slot, same meaning for the config arm); no metric moved.
 
+use crate::common_fixtures::money;
+use crate::common_fixtures::spy_history;
 use protopyne_strategy::fixtures::grant_with;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -41,14 +43,6 @@ fn data_path(name: &str) -> PathBuf {
         .join("tests")
         .join("data")
         .join(name)
-}
-
-fn history() -> Vec<Bar> {
-    crate::csv::load_bars_csv(&data_path("SPY_15M.csv")).expect("vendored history loads")
-}
-
-fn money(value: i64) -> Money {
-    Money::new(Decimal::from(value))
 }
 
 fn strategy() -> Arc<Strategy> {
@@ -88,8 +82,8 @@ fn runner_config(underlying: &str) -> crate::runner::RunnerConfig {
     crate::runner::RunnerConfig::new(
         underlying.to_owned(),
         "ribbon".to_owned(),
-        money(400),
-        money(2_000),
+        money("400"),
+        money("2_000"),
         30,
         0,
     )
@@ -136,7 +130,7 @@ fn multi_canonical(run: &crate::runner::MultiBacktestRun) -> String {
 
 #[tokio::test]
 async fn single_symbol_backtest_matches_its_baseline() {
-    let bars = history();
+    let bars = spy_history();
     let run = run_backtest(
         &strategy(),
         &risk(),
@@ -154,7 +148,7 @@ async fn single_symbol_backtest_matches_its_baseline() {
 
 #[tokio::test]
 async fn multi_symbol_backtest_matches_its_baseline() {
-    let spy = history();
+    let spy = spy_history();
     let qqq = crate::csv::load_bars_csv(&data_path("SPY_5M.csv")).expect("second history loads");
     let run = run_multi_backtest(
         &strategy(),
@@ -175,7 +169,7 @@ async fn multi_symbol_backtest_matches_its_baseline() {
 #[tokio::test]
 async fn preview_response_matches_its_baseline() {
     let config = ServerConfig::new().bind("127.0.0.1:0".to_owned()).build();
-    let handle = crate::service::serve(config, history())
+    let handle = crate::service::serve(config, spy_history())
         .await
         .expect("test server boots");
     let client = reqwest::Client::new();
@@ -202,7 +196,7 @@ async fn preview_response_matches_its_baseline() {
 
 #[tokio::test]
 async fn paper_decisions_match_their_baseline() {
-    let bars = history();
+    let bars = spy_history();
     let paper = PaperVenue::new(PaperConfig::new().build());
     let decisions = run_paper_decisions(
         &strategy(),
@@ -236,7 +230,7 @@ async fn paper_decisions_match_their_baseline() {
 /// adds chain facts shows up as a declared delta.
 #[tokio::test]
 async fn chainless_report_names_its_absence() {
-    let bars = history();
+    let bars = spy_history();
     let run = run_backtest(
         &strategy(),
         &risk(),
@@ -266,7 +260,7 @@ async fn chainless_report_names_its_absence() {
 /// declared delta against this pin, not a silent behaviour swap.
 #[tokio::test]
 async fn chain_derived_batch_without_source_skips_every_bar() {
-    let bars = history();
+    let bars = spy_history();
     let config = runner_config("SPY").with_economics(EconomicsPolicy::ChainDerived);
     let run = run_backtest(
         &strategy(),
@@ -463,7 +457,7 @@ async fn chain_backed_batch_books_chain_derived_economics() {
 /// all-skip run that reads as quiet.
 #[tokio::test]
 async fn require_chains_without_history_refuses_before_the_first_bar() {
-    let bars = history();
+    let bars = spy_history();
     let venue = BacktestConfig::new()
         .underlying("SPY".to_owned())
         .data_version("chainless-screened-v1".to_owned())
@@ -516,8 +510,8 @@ async fn an_expiry_past_the_grants_window_skips_every_bar() {
     let config = crate::runner::RunnerConfig::new(
         "SPY".to_owned(),
         "ribbon".to_owned(),
-        money(400),
-        money(2_000),
+        money("400"),
+        money("2_000"),
         7,
         0,
     )
@@ -752,12 +746,12 @@ mod momentum {
     use super::{grant, ladder_bars, money, runner_config, tick_ladder};
 
     fn buying_power_facts() -> PortfolioFacts {
-        PortfolioFacts::observed(money(0), None, Some(money(100_000)), None)
+        PortfolioFacts::observed(money("0"), None, Some(money("100_000")), None)
     }
 
     fn roomy_grant() -> Grant {
         let mut grant = grant(&["SPY"]);
-        grant.trade.max_loss_per_trade = money(1_000_000);
+        grant.trade.max_loss_per_trade = money("1_000_000");
         grant
     }
 
@@ -806,6 +800,7 @@ mod momentum {
         let chain = venue.chain_source();
         let mut closes = Vec::with_capacity(bars.len());
         let mut skipped_warmup = 0u64;
+        let mut book = crate::replay_session::PositionBook::new();
         let mut corporate_cursor = 0usize;
         let mut decisions = Vec::with_capacity(bars.len());
         for (index, bar) in bars.iter().enumerate() {
@@ -826,6 +821,7 @@ mod momentum {
                         timeframe,
                         closes: &mut closes,
                         skipped_warmup: &mut skipped_warmup,
+                        book: &mut book,
                         runner_config: &runner,
                         seed: 7,
                         corporate: &venue_config.corporate_actions,
@@ -957,9 +953,47 @@ mod momentum {
         assert_eq!(rehearsal.signal_name(), "fixed");
         assert_eq!(rehearsal.sizing_name(), "fixed");
         assert_eq!(rehearsal.loss_name(), "hold");
+        assert!(
+            !rehearsal.has_exits(),
+            "the rehearsal composition holds: no exit pass may touch its bars"
+        );
         let momentum = select_strategy(StrategyKind::Momentum).expect("momentum selects");
         assert_eq!(momentum.signal_name(), "kernel");
         assert_eq!(momentum.sizing_name(), "buying-power");
         assert_eq!(momentum.loss_name(), "set");
+        assert!(momentum.has_exits(), "momentum installs a real loss set");
     }
+}
+
+#[test]
+fn every_strategy_kind_resolves_through_the_composition_catalog() {
+    use crate::rehearsal::{rehearsal_strategy, select_strategy};
+    use protopyne_strategy::slots::composition::{strategies, strategy_ids};
+
+    // Every kind resolves; the shim adds error mapping, not behavior.
+    assert!(select_strategy(StrategyKind::Rehearsal).is_ok());
+    assert!(select_strategy(StrategyKind::Momentum).is_ok());
+    // Every catalog row builds, so no row can orphan outside the kinds.
+    for id in strategy_ids() {
+        assert!(
+            strategies().build(id, &serde_json::json!({})).is_ok(),
+            "{id} builds through the catalog"
+        );
+    }
+    // The rehearsal entry point covers every structure arm.
+    for structure in [
+        None,
+        Some(StructureKind::Single),
+        Some(StructureKind::Vertical),
+        Some(StructureKind::Calendar),
+    ] {
+        assert!(
+            rehearsal_strategy(structure).is_ok(),
+            "rehearsal builds for {structure:?}"
+        );
+    }
+    // Unknown structures refuse at the boundary, not downstream.
+    assert!(strategies()
+        .build("rehearsal", &serde_json::json!({"structure": "condor-ish"}))
+        .is_err());
 }

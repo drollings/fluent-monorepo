@@ -26,6 +26,7 @@ use protopyne_venue::{
 };
 use protopyne_view::{CommandStatus, PortfolioView, ProposalView};
 
+use crate::backtest_registry::BacktestRegistry;
 use crate::chain_history::{ChainFeedConfig, HistoricalChainSource};
 use crate::error::ServerError;
 use crate::gateway::FallbackLatch;
@@ -110,20 +111,8 @@ pub struct ServerConfig {
 
 impl fluent_wvr::validate::Validate for ServerConfig {
     type Err = String;
-    fn validate(&self) -> Result<(), Self::Err> {
-        ServerConfig::validate(self)
-    }
-}
-
-impl Default for ServerConfig {
-    fn default() -> Self {
-        Self::new().build()
-    }
-}
-
-impl ServerConfig {
     /// Fail-closed self-consistency check shared by supervision and boot.
-    pub fn validate(&self) -> Result<(), String> {
+    fn validate(&self) -> Result<(), Self::Err> {
         self.bind
             .parse::<SocketAddr>()
             .map(|_| ())
@@ -154,6 +143,12 @@ impl ServerConfig {
             ingest.validate()?;
         }
         Ok(())
+    }
+}
+
+impl Default for ServerConfig {
+    fn default() -> Self {
+        Self::new().build()
     }
 }
 
@@ -232,6 +227,9 @@ pub struct AppState {
     /// session-scoped venue and journal, so a replay never touches the live
     /// paper journal or the inbox/portfolio views a preview publishes.
     pub(crate) replay: Mutex<ReplayRegistry>,
+    /// Stored backtest runs by run id. A run is projected once and read many
+    /// times, so the terminal never re-runs the tape to re-read a report.
+    pub(crate) backtests: Mutex<BacktestRegistry>,
     /// Boot-loaded option-chain history, when the server was booted with a
     /// chain feed config naming a chain data file. The gateway slices the
     /// replay window out of this at open; `None` (or an empty load) keeps
@@ -551,19 +549,14 @@ pub fn open_tape_reader(root: &std::path::Path) -> Result<TapeReader, ServerErro
     })
 }
 
-/// Build a boot-gate unit: `check` runs inside `execute` so a failing gate
-/// cancels its dependents through the batch graph.
+/// Build a boot-gate unit: the shared venue `check_unit` constructor over a
+/// throwaway default base. A failing gate cancels its dependents through
+/// the batch graph, exactly like the per-bar checks.
 fn gate_unit(
     name: &str,
     check: impl Fn() -> Result<String, String> + Send + Sync + 'static,
 ) -> Arc<dyn Component> {
-    let adapter = ComponentAdapter::new(Arc::new(RiskLimits::new().build()))
-        .with_name_override(name.to_owned())
-        .with_execute_override(Arc::new(move |_ctx: &WorkContext| match check() {
-            Ok(message) => Ok(WorkOutput::ok(message)),
-            Err(reason) => Err(WorkError::execution_display(reason)),
-        }));
-    Arc::new(adapter)
+    protopyne_venue::check_unit(Arc::new(RiskLimits::new().build()), name, check)
 }
 
 /// How often the supervised ingest publisher mirrors the service health
@@ -747,6 +740,7 @@ pub async fn serve_with_tape(
         tape_serve_stats: Arc::new(TapeServeStats::default()),
         fallback_latch: Mutex::new(FallbackLatch::default()),
         replay: Mutex::new(ReplayRegistry::new()),
+        backtests: Mutex::new(BacktestRegistry::new()),
         chain_history,
         history_root,
         broker: BrokerRegistry::new(),

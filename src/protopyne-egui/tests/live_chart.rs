@@ -629,6 +629,12 @@ const DEFAULT_PREFS_JSON: &str = r##"{
       "k": 1.0,
       "mult": 100.0
     }
+  },
+  "backtest": {
+    "seed": "7",
+    "initial_equity": "100000",
+    "start": null,
+    "end": null
   }
 }"##;
 

@@ -280,9 +280,10 @@ impl Default for AuthConfig {
     }
 }
 
-impl AuthConfig {
+impl fluent_wvr::validate::Validate for AuthConfig {
+    type Err = String;
     /// Fail-closed self-consistency check.
-    pub fn validate(&self) -> Result<(), String> {
+    fn validate(&self) -> Result<(), Self::Err> {
         if self.max_attempts < 1 {
             return Err("max_attempts must be at least 1".to_owned());
         }
@@ -298,13 +299,6 @@ impl AuthConfig {
             }
         }
         Ok(())
-    }
-}
-
-impl fluent_wvr::validate::Validate for AuthConfig {
-    type Err = String;
-    fn validate(&self) -> Result<(), Self::Err> {
-        AuthConfig::validate(self)
     }
 }
 

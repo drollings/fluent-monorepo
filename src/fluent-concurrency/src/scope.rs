@@ -3,21 +3,25 @@
 //!
 //! # Usage
 //!
-//! ```rust,ignore
+//! ```rust
 //! use fluent_concurrency::scope::Scope;
 //!
-//! # async fn example() {
-//! let mut scope = Scope::new();
-//! scope.spawn(async { /* work */ });
-//! // Option 1: explicit close
-//! scope.close().await;
+//! tokio::runtime::Builder::new_current_thread()
+//!     .enable_all()
+//!     .build()
+//!     .expect("test runtime")
+//!     .block_on(async {
+//!         let mut scope = Scope::new();
+//!         scope.spawn(async { /* work */ });
+//!         // Option 1: explicit close
+//!         scope.close().await;
 //!
-//! // Option 2: defer guard — calls close_sync() on drop
-//! let mut scope = Scope::new();
-//! scope.spawn(async { /* work */ });
-//! let _guard = scope.defer();
-//! // _guard calls close_sync() on drop
-//! # }
+//!         // Option 2: defer guard — calls close_sync() on drop
+//!         let mut scope = Scope::new();
+//!         scope.spawn(async { /* work */ });
+//!         let _guard = scope.defer();
+//!         // _guard calls close_sync() on drop
+//!     });
 //! ```
 
 use std::future::Future;
@@ -175,11 +179,19 @@ impl Drop for Scope {
 ///
 /// # Example
 ///
-/// ```rust,ignore
-/// let mut scope = Scope::new();
-/// scope.spawn(async { /* work */ });
-/// let _guard = scope.defer();
-/// // When _guard drops, scope is closed automatically.
+/// ```rust
+/// use fluent_concurrency::scope::Scope;
+///
+/// tokio::runtime::Builder::new_current_thread()
+///     .enable_all()
+///     .build()
+///     .expect("test runtime")
+///     .block_on(async {
+///         let mut scope = Scope::new();
+///         scope.spawn(async { /* work */ });
+///         let _guard = scope.defer();
+///         // When _guard drops, scope is closed automatically.
+///     });
 /// ```
 pub struct ScopeGuard<'a> {
     scope: &'a mut Scope,

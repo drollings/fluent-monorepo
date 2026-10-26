@@ -619,7 +619,7 @@ fn replay_structure_round_trips_and_old_payloads_default_to_single() {
     round_trips(&vertical);
     // A payload written before the picker names no structure: it decodes,
     // and replays exactly as before (singles).
-    let json = serde_json::to_value(&sample_start_params()).expect("sample encodes");
+    let json = serde_json::to_value(sample_start_params()).expect("sample encodes");
     let mut old = json.as_object().expect("object").clone();
     old.remove("structure");
     let back: ReplayStartParams =
@@ -652,4 +652,72 @@ fn replay_legs_round_trip_and_old_decisions_default_to_no_legs() {
     let back: ReplayDecisionView =
         serde_json::from_value(serde_json::Value::Object(old)).expect("old verdict decodes");
     assert!(back.legs.is_empty(), "absence backfills to no leg rows");
+}
+
+fn sample_backtest_run() -> BacktestRunView {
+    BacktestRunView {
+        run_id: "backtest-01".to_owned(),
+        manifest_json: "{\"bars\":116}".to_owned(),
+        metrics: vec![
+            BacktestMetricView {
+                label: "fills".to_owned(),
+                value: Some("3".to_owned()),
+            },
+            BacktestMetricView {
+                label: "sharpe".to_owned(),
+                value: None,
+            },
+        ],
+        equity: vec![EquityPointView {
+            at: "2026-01-05T15:00:00+00:00".to_owned(),
+            equity: "100000".to_owned(),
+        }],
+        trades: vec![BacktestTradeView {
+            long: true,
+            quantity: 10,
+            entry_at: "2026-01-05T15:00:00+00:00".to_owned(),
+            entry_price: "500.00".to_owned(),
+            exit_at: "2026-01-05T15:05:00+00:00".to_owned(),
+            exit_price: "505.00".to_owned(),
+            pnl: "50.00".to_owned(),
+            bars_held: 6,
+            exit_reason: "take-profit".to_owned(),
+        }],
+        markers: vec![BacktestMarkerView {
+            at: "2026-01-05T15:00:00+00:00".to_owned(),
+            price: "500.00".to_owned(),
+            kind: "entry".to_owned(),
+        }],
+        status: Some(BacktestStatusView {
+            at: "2026-01-05T15:05:00+00:00".to_owned(),
+            position: "Flat".to_owned(),
+            day_pnl_pct: "0.05%".to_owned(),
+            trades_today: "1".to_owned(),
+            loss_streak: 0,
+            cooldown: "Ready".to_owned(),
+            status: "Active".to_owned(),
+            win_rate: "100.0%".to_owned(),
+            net_pnl: "50.00".to_owned(),
+        }),
+        warnings: vec!["single symbol".to_owned()],
+    }
+}
+
+/// The run view carries display vocabulary only: no strategy, venue, or
+/// server type crosses the boundary, and every money value rides decimal
+/// text. The round trip pins the shape; the string assertions pin the
+/// exactness contract a float could silently break.
+#[test]
+fn the_run_view_carries_no_trading_types_and_money_as_text() {
+    let json = round_trips(&sample_backtest_run());
+    let value: serde_json::Value = serde_json::from_str(&json).expect("view is JSON");
+    assert_eq!(value["run_id"], "backtest-01");
+    // Money rides text, never a JSON number.
+    assert_eq!(value["trades"][0]["pnl"], "50.00");
+    assert!(value["trades"][0]["pnl"].is_string());
+    assert_eq!(value["equity"][0]["equity"], "100000");
+    assert!(value["equity"][0]["equity"].is_string());
+    assert!(value["status"]["net_pnl"].is_string());
+    // An unmeasurable metric reads null, never an invented zero.
+    assert!(value["metrics"][1]["value"].is_null());
 }

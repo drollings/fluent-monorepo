@@ -11,11 +11,11 @@ use std::fmt::{Display, Formatter};
 use protopyne_types::Money;
 
 use crate::views::{
-    ArmResponse, BrokerAccountView, BrokerCapabilityView, BrokerDealView, BrokerOrderView,
-    ChartBar, ChartBars, HealthView, JournalRowView, OverlaySeries, PortfolioView, PositionView,
-    ProposalView, RehearsalEconomics, ReplayStartParams, ReplayStateView, ReplayStepView,
-    ReplayView, StructureKindHint, SymbolInfoView, TicketDraft, TicketDriftView, TicketView,
-    WorstCase,
+    ArmResponse, BacktestRunParams, BacktestRunRef, BacktestRunView, BacktestSchemaView,
+    BrokerAccountView, BrokerCapabilityView, BrokerDealView, BrokerOrderView, ChartBar, ChartBars,
+    HealthView, JournalRowView, OverlaySeries, PortfolioView, PositionView, ProposalView,
+    RehearsalEconomics, ReplayStartParams, ReplayStateView, ReplayStepView, ReplayView,
+    StructureKindHint, SymbolInfoView, TicketDraft, TicketDriftView, TicketView, WorstCase,
 };
 
 /// Terminal-gateway failure: transport, shape, or refused submit.
@@ -371,6 +371,42 @@ pub trait TerminalGateway: Send + Sync {
         let _ = session_id;
         Err(GatewayError::Unavailable(
             "interactive replay is not served by this gateway".to_owned(),
+        ))
+    }
+
+    /// The backtest composition schema: the nested spec shape plus the
+    /// registry enumerations a form picker must offer. Additive and
+    /// default-refused beside the other served reads.
+    fn backtest_schema(&self) -> Result<BacktestSchemaView, GatewayError> {
+        Err(GatewayError::Unavailable(
+            "backtest schema is not served by this gateway".to_owned(),
+        ))
+    }
+
+    /// Run one backtest and store it under a deterministic run id. Returns
+    /// the handle; the full projection reads back through
+    /// [`backtest_state`](Self::backtest_state).
+    fn backtest_run(&self, params: BacktestRunParams) -> Result<BacktestRunRef, GatewayError> {
+        let _ = params;
+        Err(GatewayError::Unavailable(
+            "backtest runs are not served by this gateway".to_owned(),
+        ))
+    }
+
+    /// Read one stored backtest run, fully projected.
+    fn backtest_state(&self, run_id: &str) -> Result<BacktestRunView, GatewayError> {
+        let _ = run_id;
+        Err(GatewayError::Unavailable(
+            "stored backtests are not served by this gateway".to_owned(),
+        ))
+    }
+
+    /// Drop one stored backtest run and release its registry slot. Dropping
+    /// an unknown run refuses rather than succeeding emptily.
+    fn backtest_stop(&self, run_id: &str) -> Result<(), GatewayError> {
+        let _ = run_id;
+        Err(GatewayError::Unavailable(
+            "stored backtests are not served by this gateway".to_owned(),
         ))
     }
 

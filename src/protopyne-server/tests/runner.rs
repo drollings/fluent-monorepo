@@ -1,4 +1,6 @@
 use super::*;
+use crate::common_fixtures::money;
+use crate::common_fixtures::spy_history;
 use protopyne_strategy::fixtures;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -28,18 +30,6 @@ fn bare_view(closes: &[f64], at: DateTime<Utc>) -> MarketView<'_> {
         closes,
         as_of: at,
     }
-}
-
-fn money(value: i64) -> Money {
-    Money::new(Decimal::from(value))
-}
-
-fn history() -> Vec<Bar> {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests")
-        .join("data")
-        .join("SPY_15M.csv");
-    crate::csv::load_bars_csv(&path).expect("vendored history loads")
 }
 
 /// A permit value the ephemeral gate ignores: ephemeral reads need a permit
@@ -83,8 +73,8 @@ fn runner_config() -> RunnerConfig {
     RunnerConfig::new(
         "SPY".to_owned(),
         "ribbon".to_owned(),
-        money(400),
-        money(2_000),
+        money("400"),
+        money("2_000"),
         30,
         0,
     )
@@ -146,7 +136,7 @@ fn assert_touch_limits(decisions: &[BarDecision], bars: &[Bar], direction: Direc
 
 #[tokio::test]
 async fn equity_and_notional_scale_with_sizer_quantity() {
-    let bars = history();
+    let bars = spy_history();
     let risk = risk();
     let grant = grant_with(0.5);
     let one = run_backtest(
@@ -200,7 +190,7 @@ async fn equity_and_notional_scale_with_sizer_quantity() {
 
 #[tokio::test]
 async fn backtest_and_paper_reach_identical_decisions() {
-    let bars = history();
+    let bars = spy_history();
     let strategy = strategy();
     let risk = risk();
     let grant = grant_with(0.5);
@@ -259,7 +249,7 @@ async fn backtest_and_paper_reach_identical_decisions() {
 
 #[tokio::test]
 async fn submitted_limits_match_touch_by_direction() {
-    let bars = history();
+    let bars = spy_history();
     for direction in [Direction::Long, Direction::Short] {
         let strategy = directional_strategy(direction);
         let run = run_backtest(
@@ -279,7 +269,7 @@ async fn submitted_limits_match_touch_by_direction() {
 
 #[tokio::test]
 async fn rerun_is_byte_identical() {
-    let bars = history();
+    let bars = spy_history();
     let strategy = strategy();
     let risk = risk();
     let grant = grant_with(0.5);
@@ -314,7 +304,7 @@ async fn rerun_is_byte_identical() {
 
 #[tokio::test]
 async fn walk_forward_test_segment_matches_full_run() {
-    let bars = history();
+    let bars = spy_history();
     let strategy = strategy();
     let risk = risk();
     let grant = grant_with(0.5);
@@ -359,7 +349,7 @@ async fn walk_forward_test_segment_matches_full_run() {
 
 #[tokio::test]
 async fn sweep_separates_loose_from_strict_grants() {
-    let bars = history();
+    let bars = spy_history();
     let outcomes = run_sweep(
         strategy(),
         RiskLimits::new().build(),
@@ -398,7 +388,7 @@ async fn sweep_separates_loose_from_strict_grants() {
 /// behind `&self` would diverge under the pool.
 #[tokio::test]
 async fn sweep_workers_share_a_stateless_strategy_without_leak() {
-    let bars = history();
+    let bars = spy_history();
     let outcomes = run_sweep(
         strategy(),
         RiskLimits::new().build(),
@@ -424,7 +414,7 @@ async fn sweep_workers_share_a_stateless_strategy_without_leak() {
 }
 
 #[tokio::test]
-async fn runner_rejects_empty_history() {
+async fn runner_rejects_empty_spy_history() {
     let strategy = strategy();
     let risk = risk();
     let grant = grant_with(0.5);
@@ -443,7 +433,7 @@ async fn runner_rejects_empty_history() {
 
 #[test]
 fn replay_graph_tracks_and_rewinds_research_steps() {
-    let bars = history();
+    let bars = spy_history();
     let mut graph = build_replay(&bars, 5).expect("replay builds");
     assert_eq!(graph.step_count(), bars.len());
     assert!(graph.is_checkpoint(&"bar-0".to_owned()));
@@ -467,7 +457,7 @@ fn runner_helpers_stay_on_the_venue_trait() {
     let now = Utc.with_ymd_and_hms(2026, 6, 1, 12, 0, 0).unwrap();
     let outcome = expire_position(&venue, "SPY", now).expect("expiry journals");
     assert!(outcome.note.contains("SPY"));
-    let quote = quote_for_bar(&history()[0], &venue_config()).expect("quotable");
+    let quote = quote_for_bar(&spy_history()[0], &venue_config()).expect("quotable");
     assert!([None, Some(&quote)]
         .into_iter()
         .find_map(|entry| entry)
@@ -477,10 +467,6 @@ fn runner_helpers_stay_on_the_venue_trait() {
         GrantMarket::new,
         StructureKind::Vertical,
     );
-}
-
-fn decimal_money(value: &str) -> Money {
-    Money::new(value.parse::<Decimal>().expect("decimal"))
 }
 
 fn synthetic_bar(close: &str, secs: i64) -> Bar {
@@ -509,6 +495,7 @@ fn filled_decision(
         ts,
         proposal_id: format!("synthetic-{bar_index}"),
         direction: Some(direction),
+        side: None,
         structure: Some(StructureKind::Vertical),
         strategy: "ribbon".to_owned(),
         underlying: "SPY".to_owned(),
@@ -520,12 +507,12 @@ fn filled_decision(
         grant_authorized: true,
         grant_authorization_reasons: Vec::new(),
         submitted: true,
-        limit_price: decimal_money(price),
-        checked_limit: decimal_money(price),
+        limit_price: money(price),
+        checked_limit: money(price),
         submitted_quantity: quantity,
         filled_quantity: quantity,
-        fill_price: Some(decimal_money(price)),
-        fee: Some(decimal_money(fee)),
+        fill_price: Some(money(price)),
+        fee: Some(money(fee)),
         legs: Vec::new(),
         transitions: Vec::new(),
         lifecycle_error: None,
@@ -539,6 +526,7 @@ fn flat_decision(bar_index: usize, ts: String) -> BarDecision {
         ts,
         proposal_id: format!("synthetic-{bar_index}"),
         direction: None,
+        side: None,
         structure: None,
         strategy: String::new(),
         underlying: String::new(),
@@ -724,27 +712,27 @@ fn equity_curve_prices_a_package_from_its_legs_once() {
             contract: protopyne_types::ContractId::new("SPY   260717C00600000".to_owned()),
             side: OrderSide::Buy,
             quantity: 1,
-            price: decimal_money("2.7027"),
-            fee: decimal_money("0.65"),
+            price: money("2.7027"),
+            fee: money("0.65"),
         },
         LegExecution {
             contract: protopyne_types::ContractId::new("SPY   260717C00610000".to_owned()),
             side: OrderSide::Sell,
             quantity: 1,
-            price: decimal_money("1.1988"),
-            fee: decimal_money("0.65"),
+            price: money("1.1988"),
+            fee: money("0.65"),
         },
     ];
     let curve = equity_curve_for(&bars, &[decision]);
-    let expected = -(decimal_money("2.7027").as_decimal() - decimal_money("1.1988").as_decimal())
-        - decimal_money("1.30").as_decimal();
+    let expected =
+        -(money("2.7027").as_decimal() - money("1.1988").as_decimal()) - money("1.30").as_decimal();
     assert_eq!(curve.len(), 1);
     assert_eq!(curve[0].as_decimal(), expected);
 }
 
 #[tokio::test]
 async fn the_report_carries_and_names_its_mark_basis() {
-    let bars = history();
+    let bars = spy_history();
     let run = run_backtest(
         &strategy(),
         &risk(),
@@ -771,7 +759,7 @@ async fn the_report_carries_and_names_its_mark_basis() {
 
 #[tokio::test]
 async fn a_corporate_action_tape_is_named_in_data_limits() {
-    let bars = history();
+    let bars = spy_history();
     let tape = vec![protopyne_venue::CorporateEventArgs::new()
         .underlying("SPY".to_owned())
         .at(bars[2].ts)
@@ -808,7 +796,7 @@ async fn a_corporate_action_tape_is_named_in_data_limits() {
 
 #[tokio::test]
 async fn quote_config_flows_into_submitted_touch() {
-    let bars = history();
+    let bars = spy_history();
     let wide_config = BacktestConfig::new()
         .underlying("SPY".to_owned())
         .data_version("spy-15m-wide".to_owned())
@@ -867,8 +855,8 @@ async fn a_misconfigured_paper_run_reports_its_refusal_never_a_panic() {
             RunnerConfig::new(
                 " ".to_owned(),
                 "ribbon".to_owned(),
-                money(400),
-                money(2_000),
+                money("400"),
+                money("2_000"),
                 30,
                 0,
             ),
@@ -878,8 +866,8 @@ async fn a_misconfigured_paper_run_reports_its_refusal_never_a_panic() {
             RunnerConfig::new(
                 "SPY".to_owned(),
                 " ".to_owned(),
-                money(400),
-                money(2_000),
+                money("400"),
+                money("2_000"),
                 30,
                 0,
             ),
@@ -935,7 +923,7 @@ async fn a_misconfigured_paper_run_reports_its_refusal_never_a_panic() {
 
 #[tokio::test]
 async fn paper_path_prices_at_its_labeled_default_spread() {
-    let bars = history();
+    let bars = spy_history();
     let paper = PaperVenue::new(PaperConfig::new().build());
     let decisions = run_paper_decisions(
         &strategy(),
@@ -977,7 +965,7 @@ fn transport_skipped(decision: &BarDecision) -> &str {
 
 #[tokio::test]
 async fn breaker_trips_past_the_configured_max_and_disarms_entries() {
-    let bars = history();
+    let bars = spy_history();
     let venue = PaperVenue::new(PaperConfig::new().build());
     // The shared submission protocol retries a retryable venue failure
     // `SUBMIT_RETRIES` times, so one failing bar burns that whole budget.
@@ -1042,7 +1030,7 @@ async fn breaker_trips_past_the_configured_max_and_disarms_entries() {
 
 #[tokio::test]
 async fn errors_capped_at_the_max_still_arm_and_reset_on_success() {
-    let bars = history();
+    let bars = spy_history();
     let venue = PaperVenue::new(PaperConfig::new().build());
     // Each failing bar burns the protocol's whole retry budget.
     let attempts = SUBMIT_RETRIES as usize;
@@ -1081,7 +1069,7 @@ async fn errors_capped_at_the_max_still_arm_and_reset_on_success() {
 
 #[tokio::test]
 async fn a_retryable_submission_failure_retains_its_budget_reservation() {
-    let bars = history();
+    let bars = spy_history();
     let bar = &bars[0];
     let venue = PaperVenue::new(PaperConfig::new().build());
     // Burn the protocol's whole retry budget so the verdict is unknown.
@@ -1124,7 +1112,7 @@ async fn a_retryable_submission_failure_retains_its_budget_reservation() {
 
 #[tokio::test]
 async fn merit_denials_never_feed_the_breaker() {
-    let bars = history();
+    let bars = spy_history();
     let venue = PaperVenue::new(PaperConfig::new().build());
     for _ in 0..2 {
         venue.inject(Fault::DropConnection);
@@ -1159,7 +1147,7 @@ async fn merit_denials_never_feed_the_breaker() {
 /// with no file and no fsync.
 #[tokio::test]
 async fn runner_records_in_memory_intents_for_submitted_proposals() {
-    let bars = history();
+    let bars = spy_history();
     let bar = &bars[0];
     let venue = PaperVenue::new(PaperConfig::new().build());
     let strategy = strategy();
@@ -1211,7 +1199,7 @@ async fn runner_records_in_memory_intents_for_submitted_proposals() {
 /// `Filled`.
 #[tokio::test]
 async fn decisions_carry_the_proposal_lifecycle() {
-    let bars = history();
+    let bars = spy_history();
     let run = run_backtest(
         &strategy(),
         &risk(),
@@ -1261,7 +1249,7 @@ async fn decisions_carry_the_proposal_lifecycle() {
 /// queue, and the recorded chain says so — never a fabricated rejection.
 #[tokio::test]
 async fn uncovered_grant_requires_human_in_the_chain() {
-    let bars = history();
+    let bars = spy_history();
     let run = run_backtest(
         &strategy(),
         &risk(),
@@ -1299,7 +1287,7 @@ async fn uncovered_grant_requires_human_in_the_chain() {
 /// A risk refusal is a terminal `Rejected`, recorded as `FailRisk`.
 #[tokio::test]
 async fn risk_refusal_terminalizes_the_chain() {
-    let bars = history();
+    let bars = spy_history();
     let bar = &bars[0];
     let venue = PaperVenue::new(PaperConfig::new().build());
     let ledger = GrantLedger::new(grant_with(0.5));
@@ -1339,7 +1327,7 @@ async fn risk_refusal_terminalizes_the_chain() {
 /// and the merit outcome never trips the confidence breaker.
 #[tokio::test]
 async fn submitted_chain_walks_to_filled_without_tripping_the_breaker() {
-    let bars = history();
+    let bars = spy_history();
     let bar = &bars[0];
     let venue = PaperVenue::new(PaperConfig::new().build());
     let ledger = GrantLedger::new(grant_with(0.5));
@@ -1390,7 +1378,7 @@ async fn submitted_chain_walks_to_filled_without_tripping_the_breaker() {
 
 #[tokio::test]
 async fn stale_quote_refuses_on_risk_and_grant_paths() {
-    let bars = history();
+    let bars = spy_history();
     let bar = &bars[0];
     let venue = PaperVenue::new(PaperConfig::new().build());
     let strategy = strategy();
@@ -1446,7 +1434,7 @@ async fn stale_quote_refuses_on_risk_and_grant_paths() {
 
 #[tokio::test]
 async fn tripped_breaker_disarms_entries_without_touching_merit_verdicts() {
-    let bars = history();
+    let bars = spy_history();
     let bar = &bars[0];
     let venue = PaperVenue::new(PaperConfig::new().build());
     let strategy = strategy();
@@ -1507,9 +1495,9 @@ fn manual_proposal(side: ProposalSide, bar: &Bar) -> Proposal {
         .side(side)
         .structure(StructureKind::Vertical)
         .quantity(Qty::new(Decimal::from(1)))
-        .limit_price(money(694))
-        .max_loss(money(300))
-        .notional(money(1_000))
+        .limit_price(money("694"))
+        .max_loss(money("300"))
+        .notional(money("1_000"))
         .dte_days(30)
         .conviction(0.8)
         .activity_score(0.7)
@@ -1526,7 +1514,7 @@ fn tripped_breaker() -> BreakerState {
 
 #[tokio::test]
 async fn a_tripped_breaker_denies_entries_but_routes_exits() {
-    let bars = history();
+    let bars = spy_history();
     let bar = &bars[0];
     let venue = PaperVenue::new(PaperConfig::new().build());
     let quote = bar_quote(bar, &venue_config()).expect("quoted bar");
@@ -1584,13 +1572,13 @@ async fn a_tripped_breaker_denies_entries_but_routes_exits() {
 
 #[tokio::test]
 async fn an_exhausted_budget_denies_merit_and_authorization() {
-    let bars = history();
+    let bars = spy_history();
     let bar = &bars[0];
     let venue = PaperVenue::new(PaperConfig::new().build());
     let quote = bar_quote(bar, &venue_config()).expect("quoted bar");
     let market = GrantMarket::new()
         .quote_age_secs(1)
-        .spread_width(money(10))
+        .spread_width(money("10"))
         .build();
     let mut grant = grant_with(0.5);
     grant.budgets.max_trades = 1;
@@ -1709,7 +1697,7 @@ async fn soak_breaker_trip_precision_recall_with_clean_control() {
             should_trip: false,
         },
     ];
-    let bars = history();
+    let bars = spy_history();
     let mut scores: Vec<(f64, bool)> = Vec::with_capacity(cases.len());
     for case in &cases {
         let venue = PaperVenue::new(PaperConfig::new().build());
@@ -1788,7 +1776,7 @@ async fn soak_real_run_marks_temporally_with_exact_fees() {
     // Re-soak under the corrected equity and quote-config paths: a real run
     // over history must mark pre-fill bars at zero, price the first fill at
     // the configured touch, and book exact per-contract fees.
-    let bars = history();
+    let bars = spy_history();
     let run = run_backtest(
         &strategy(),
         &risk(),
@@ -1842,7 +1830,7 @@ async fn soak_real_run_marks_temporally_with_exact_fees() {
 async fn report_states_dividend_exclusion_next_to_pnl() {
     // Cash dividends are not tracked in positions or portfolio: the report
     // must say so beside the numbers, never silently omit them.
-    let bars = history();
+    let bars = spy_history();
     let run = run_backtest(
         &strategy(),
         &risk(),
@@ -1950,6 +1938,29 @@ fn rsrs_history(n: usize) -> Vec<Bar> {
         .collect()
 }
 
+/// A full-window tape with no variance: every bar prints the same price,
+/// so the slope regression has nothing to rank.
+fn flat_history(n: usize) -> Vec<Bar> {
+    use chrono::TimeZone as _;
+    let price = rust_decimal::Decimal::from_f64_retain(100.0).expect("finite test price");
+    (0..n)
+        .map(|i| {
+            Bar::new()
+                .ts(chrono::Utc
+                    .with_ymd_and_hms(2026, 1, 2, 9, 0, 0)
+                    .single()
+                    .expect("ts")
+                    + chrono::Duration::minutes(i as i64))
+                .o(price)
+                .h(price)
+                .l(price)
+                .c(price)
+                .volume(1_000)
+                .maybe_adj(None)
+                .build()
+        })
+        .collect()
+}
 /// The stream-breaker wire: consecutive transport errors trip the shared
 /// stream breaker, the trip merges into `BreakerState` through `apply_to`,
 /// and the existing tripped path disarms entries with merit verdicts
@@ -1980,7 +1991,7 @@ async fn stream_breaker_trip_disarms_entries_through_breaker_state() {
         breakers.trip_reason
     );
 
-    let bars = history();
+    let bars = spy_history();
     let bar = &bars[0];
     let venue = PaperVenue::new(PaperConfig::new().build());
     let strategy = strategy();
@@ -2028,10 +2039,12 @@ async fn stream_breaker_trip_disarms_entries_through_breaker_state() {
 fn report_rsrs_is_honest_about_history_length() {
     use crate::runner::report_rsrs;
     // Under the default 600-bar scoring window there is nothing to score.
-    assert_eq!(report_rsrs(&history()), None);
+    assert_eq!(report_rsrs(&spy_history()), None);
     assert_eq!(report_rsrs(&rsrs_history(100)), None);
     // A full window on varying data scores finite values.
     assert!(report_rsrs(&rsrs_history(650)).is_some());
+    // A full window with no variance has nothing to rank.
+    assert_eq!(report_rsrs(&flat_history(650)), None);
 }
 
 /// Rising synthetic tape for the second symbol: no second CSV ships, so the
@@ -2077,8 +2090,8 @@ fn multi_input(
         .runner_config(RunnerConfig::new(
             underlying.to_owned(),
             "ribbon".to_owned(),
-            money(400),
-            money(2_000),
+            money("400"),
+            money("2_000"),
             30,
             0,
         ))
@@ -2138,8 +2151,8 @@ async fn multi_symbol_run_matches_single_symbol_runs() {
         let runner_config = RunnerConfig::new(
             (*underlying).to_owned(),
             "ribbon".to_owned(),
-            money(400),
-            money(2_000),
+            money("400"),
+            money("2_000"),
             30,
             0,
         );
@@ -2194,7 +2207,7 @@ async fn multi_symbol_reruns_are_identical_under_parallelism() {
     // decisions must still equal standalone runs bit for bit.
     use crate::backtest::HistorySource;
 
-    let spy_bars = history();
+    let spy_bars = spy_history();
     let qqq_bars = rising_bars("500", spy_bars.len());
     let grant = grant_covering(&["SPY", "QQQ"]);
     let paper = PaperConfig::new().build();
@@ -2244,8 +2257,8 @@ async fn multi_symbol_reruns_are_identical_under_parallelism() {
         let runner_config = RunnerConfig::new(
             (*underlying).to_owned(),
             "ribbon".to_owned(),
-            money(400),
-            money(2_000),
+            money("400"),
+            money("2_000"),
             30,
             0,
         );
@@ -2272,7 +2285,7 @@ async fn sweep_drains_more_variants_than_workers() {
     // Workers clamp at 8: twelve variants oversubscribe the pool and must
     // still all complete, sorted by index — the exactly-sized queue never
     // observes `Full`, no matter the oversubscription.
-    let bars = history();
+    let bars = spy_history();
     let grants: Vec<Grant> = (0..12)
         .map(|variant| grant_with(0.4 + f64::from(variant) * 0.01))
         .collect();
@@ -2306,8 +2319,8 @@ async fn bench_workload_smoke() {
     let runner = RunnerConfig::new(
         "SPY".to_owned(),
         "ribbon".to_owned(),
-        money(400),
-        money(2_000),
+        money("400"),
+        money("2_000"),
         0,
         0,
     );
@@ -2341,7 +2354,7 @@ async fn bench_workload_smoke() {
 async fn run_report_carries_decision_consistent_portfolio() {
     use crate::portfolio::PAPER_PORTFOLIO;
 
-    let bars = history();
+    let bars = spy_history();
     let run = run_backtest(
         &strategy(),
         &risk(),
@@ -2402,7 +2415,7 @@ async fn run_report_carries_decision_consistent_portfolio() {
 
 #[tokio::test]
 async fn fixed_history_run_records_its_shape_for_efficiency_work() {
-    let bars = history();
+    let bars = spy_history();
     let run = run_backtest(
         &strategy(),
         &risk(),
@@ -2448,7 +2461,7 @@ async fn backtest_output_identity_pins_report_and_tearsheet() {
     // that stated change; after that, any move is a revert, never an
     // accepted diff. Regenerate only with `OVERWRITE_GOLDENS=1` on reviewed
     // code, exactly as the route-payload goldens do.
-    let bars = history();
+    let bars = spy_history();
     let run = run_backtest(
         &strategy(),
         &risk(),
@@ -2517,7 +2530,7 @@ fn per_bar_clone_sites_are_gone() {
 #[tokio::test]
 async fn disarmed_entries_terminalize_as_cancelled() {
     use protopyne_strategy::ProposalEvent;
-    let bars = history();
+    let bars = spy_history();
     let bar = &bars[0];
     let venue = PaperVenue::new(PaperConfig::new().build());
     let ledger = GrantLedger::with_breakers(
@@ -2584,11 +2597,15 @@ async fn unrepresentable_quantity_refuses_terminal() {
             "fractional"
         }
 
+        fn axis(&self) -> protopyne_strategy::axes::GateAxis {
+            protopyne_strategy::axes::GateAxis::TaskValue
+        }
+
         fn size(&self, _signal: &SignalOutput, _facts: &PortfolioFacts) -> Qty {
             Qty::new(Decimal::new(15, 1))
         }
     }
-    let bars = history();
+    let bars = spy_history();
     let bar = &bars[0];
     let venue = PaperVenue::new(PaperConfig::new().build());
     let fractional = Arc::new(
@@ -2691,7 +2708,7 @@ async fn verdict_journal_failure_surfaces_without_losing_the_fill() {
             Recorder::ephemeral(&self.journal).record_transition(client_id, kind, detail, now)
         }
     }
-    let bars = history();
+    let bars = spy_history();
     let bar = &bars[0];
     let venue = PaperVenue::new(PaperConfig::new().build());
     let ledger = GrantLedger::new(grant_with(0.5));
@@ -2743,9 +2760,9 @@ async fn approving_submits_through_the_ledger() {
         .side(ProposalSide::Entry)
         .structure(StructureKind::Vertical)
         .quantity(Qty::new(Decimal::from(2)))
-        .limit_price(money(600))
-        .max_loss(money(300))
-        .notional(money(1_000))
+        .limit_price(money("600"))
+        .max_loss(money("300"))
+        .notional(money("1_000"))
         .dte_days(30)
         .conviction(0.8)
         .activity_score(0.7)
@@ -2767,8 +2784,8 @@ async fn approving_submits_through_the_ledger() {
     let recorder = Recorder::ephemeral(&journal);
     let ledger = GrantLedger::new(grant_with(0.5));
     let quote = Quote::new()
-        .bid(money(600))
-        .ask(money(601))
+        .bid(money("600"))
+        .ask(money("601"))
         .bid_size(50)
         .ask_size(50)
         .ts(at)
@@ -2781,7 +2798,7 @@ async fn approving_submits_through_the_ledger() {
     };
     let market = GrantMarket::new()
         .quote_age_secs(0)
-        .spread_width(money(1))
+        .spread_width(money("1"))
         .build();
     let record = submit_approved(
         &mut proposal,
@@ -2862,7 +2879,7 @@ async fn a_pending_proposal_does_not_block_the_next_bar() {
         }
     }
 
-    let bars = history();
+    let bars = spy_history();
     let venue = PaperVenue::new(PaperConfig::new().build());
     // A strict grant: no bar's proposal is covered, so each is handed to the
     // human.
@@ -3014,7 +3031,7 @@ async fn submit_with_chain(venue: &PaperVenue, bar: &Bar, seed: u64) -> BarDecis
 /// by the `chain_derived_*` cases).
 #[tokio::test]
 async fn the_config_arm_never_reads_the_chain() {
-    let bars = history();
+    let bars = spy_history();
     let bar = &bars[0];
     let mut venue = PaperVenue::new(PaperConfig::new().build());
     venue.set_leg_quotes(Arc::new(SnapshotChain {
@@ -3046,7 +3063,7 @@ async fn the_config_arm_never_reads_the_chain() {
 async fn chainless_multileg_keeps_legacy_single_leg_booking() {
     // Batch divergence, pinned not fixed: without a chain handle a spread
     // label still books one stock fill, exactly as before this milestone.
-    let bars = history();
+    let bars = spy_history();
     let bar = &bars[0];
     let venue = PaperVenue::new(PaperConfig::new().build());
     let decision = submit_with_chain(&venue, bar, 13).await;
@@ -3144,7 +3161,7 @@ fn alternating_strategy() -> Arc<Strategy> {
 
 #[tokio::test]
 async fn sweep_variants_never_share_stateful_signal_state() {
-    let bars = history();
+    let bars = spy_history();
     let grants = vec![grant_with(0.5); 8];
     let concurrent = run_sweep(
         alternating_strategy(),
@@ -3243,7 +3260,7 @@ async fn chain_derived_decision_with(
     structure: StructureKind,
     quotes: &[ChainQuote],
 ) -> (BarDecision, PaperVenue) {
-    let bars = history();
+    let bars = spy_history();
     let bar = &bars[0];
     let mut venue = PaperVenue::new(PaperConfig::new().build());
     let source = Arc::new(SnapshotChain {
@@ -3293,7 +3310,7 @@ async fn chain_derived_decision_with(
 /// wide.
 #[tokio::test]
 async fn a_wide_package_is_refused_by_the_spread_threshold() {
-    let bars = history();
+    let bars = spy_history();
     let bar = &bars[0];
     // Wide books on a deep debit package: crossing costs a dollar against a
     // 99.40 mid, well inside the 200 bps tolerance, so the package is
@@ -3325,7 +3342,7 @@ async fn a_wide_package_is_refused_by_the_spread_threshold() {
 
 #[tokio::test]
 async fn chain_derived_vertical_books_the_debit_package() {
-    let bars = history();
+    let bars = spy_history();
     let bar = &bars[0];
     // One-tick quotes: mid equals touch, so the fill clears the tolerance.
     let quotes = vec![
@@ -3370,7 +3387,7 @@ async fn chain_derived_vertical_books_the_debit_package() {
 
 #[tokio::test]
 async fn chain_derived_condor_flips_the_intent_to_sell() {
-    let bars = history();
+    let bars = spy_history();
     let bar = &bars[0];
     let quotes = vec![
         kind_quote(OptionKind::Put, 685, "0.999", "1.001", bar.ts),
@@ -3402,7 +3419,7 @@ async fn chain_derived_condor_flips_the_intent_to_sell() {
 
 #[tokio::test]
 async fn chain_derived_package_outside_tolerance_names_the_limit() {
-    let bars = history();
+    let bars = spy_history();
     let bar = &bars[0];
     let quotes = covering_chain(bar);
     let (decision, venue) =
@@ -3428,8 +3445,8 @@ fn legged_proposal(bar: &Bar, legs: Option<protopyne_types::SpreadLegs>) -> Prop
         .structure(StructureKind::Vertical)
         .quantity(Qty::new(Decimal::ONE))
         .limit_price(Money::new(bar.c))
-        .max_loss(money(400))
-        .notional(money(2_000))
+        .max_loss(money("400"))
+        .notional(money("2_000"))
         .dte_days(30)
         .conviction(0.8)
         .activity_score(0.8)
@@ -3447,7 +3464,7 @@ fn package_legs(bar: &Bar) -> protopyne_types::SpreadLegs {
         OptionContract::new()
             .underlying("SPY".to_owned())
             .expiry(bar.ts.date_naive() + chrono::Duration::days(30))
-            .strike(money(strike))
+            .strike(money(&strike.to_string()))
             .kind(OptionKind::Call)
             .build()
     };
@@ -3470,7 +3487,7 @@ fn package_legs(bar: &Bar) -> protopyne_types::SpreadLegs {
 /// without legs is the only config-supplied shape, and it flows unchanged.
 #[tokio::test]
 async fn a_config_supplied_proposal_with_legs_refuses_naming_the_arm() {
-    let bars = history();
+    let bars = spy_history();
     let bar = &bars[0];
     let venue = PaperVenue::new(PaperConfig::new().build());
     let journal = Journal::ephemeral();
@@ -3530,5 +3547,60 @@ async fn a_config_supplied_proposal_with_legs_refuses_naming_the_arm() {
     assert!(
         orders[0].intent.legs.is_none(),
         "the legless path still books one legless order"
+    );
+}
+
+/// The equity curve books an exit as a sale, not as a second entry.
+///
+/// The fill's own side decides the cash flow. Reading only the position's
+/// direction would add the exit quantity to the book instead of removing it,
+/// so a completed round trip would report a doubled position and no profit.
+#[test]
+fn the_equity_curve_books_an_exit_as_a_sale() {
+    use crate::runner::{equity_curve_for, skipped_decision};
+
+    let start = Utc
+        .with_ymd_and_hms(2026, 1, 5, 15, 0, 0)
+        .single()
+        .expect("valid instant");
+    let bar = |minute: u32, close: i64| {
+        Bar::new()
+            .ts(start + chrono::Duration::minutes(i64::from(minute)))
+            .o(Money::from(close).as_decimal())
+            .h(Money::from(close + 1).as_decimal())
+            .l(Money::from(close - 1).as_decimal())
+            .c(Money::from(close).as_decimal())
+            .volume(1_000)
+            .maybe_adj(None)
+            .build()
+    };
+    let bars = vec![bar(0, 100), bar(1, 110)];
+
+    let mut entry = skipped_decision(0, bars[0].ts.to_rfc3339(), "p0".to_owned(), "");
+    entry.direction = Some(Direction::Long);
+    entry.side = Some(ProposalSide::Entry);
+    entry.submitted = true;
+    entry.fill_price = Some(Money::from(100));
+    entry.filled_quantity = 10;
+    entry.fee = Some(Money::zero());
+
+    let mut exit = skipped_decision(1, bars[1].ts.to_rfc3339(), "p1".to_owned(), "");
+    exit.direction = Some(Direction::Long);
+    exit.side = Some(ProposalSide::Exit);
+    exit.submitted = true;
+    exit.fill_price = Some(Money::from(110));
+    exit.filled_quantity = 10;
+    exit.fee = Some(Money::zero());
+
+    let curve = equity_curve_for(&bars, &[entry, exit]);
+    assert_eq!(
+        curve[0],
+        Money::zero(),
+        "an entry leaves the book flat at its own fill"
+    );
+    assert_eq!(
+        curve[1],
+        Money::from(100),
+        "the exit realises the whole move and closes the book"
     );
 }

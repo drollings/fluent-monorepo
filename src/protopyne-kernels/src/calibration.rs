@@ -16,6 +16,14 @@
 //!   accept plus 0.0 false-fire, mirroring the spike `CalibrationTally` shape
 //!   (accept 1.0 plus reject 1.0) one crate over.
 //!
+//! Scope: this gate is deliberately NOT a threshold sweep. Its rows are
+//! binary (accepted at frozen eps or not; control tripped or not), so there
+//! is no score and no threshold to sweep — reporting through
+//! [`common_core::calibration`](common_core::calibration) would invent both
+//! while adding a parameter no gate reads. Threshold sweeps over scored
+//! cases belong to that harness (already composed by the breaker-trip
+//! suite); must-fire control invariants belong here.
+//!
 //! [`canonical_params`] is the single home for calibration parameterizations,
 //! shared by the family-specific flat suite and the dashboard.
 

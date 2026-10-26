@@ -2,15 +2,12 @@
 //! and anything unpriceable falls back to the budget echo.
 
 use super::*;
+use crate::common_fixtures::money;
 use chrono::{TimeZone, Utc};
 use protopyne_strategy::fixtures::grant_with;
 use protopyne_strategy::{worst_case_for, GrantBudgets, WorstCaseBasis};
 use protopyne_types::{Bar, ChainQuote, OptionContract, OptionKind};
 use rust_decimal::Decimal;
-
-fn money(text: &str) -> Money {
-    Money::new(text.parse().expect("money"))
-}
 
 fn stamp(secs: i64) -> chrono::DateTime<Utc> {
     Utc.timestamp_opt(secs, 0).unwrap()

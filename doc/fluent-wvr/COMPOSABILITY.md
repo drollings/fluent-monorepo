@@ -59,7 +59,13 @@ fluent_wvr::impl_component!(MyConfig);
 | `coerce = "trim,strip_quotes,..."` | Boundary-string pipeline before parse (`trim`, `lowercase`, `strip_quotes`, `json_escape`, `normalize_literal`) |
 | `parse = "number"` | Tolerant numeric parse (`parse_number`) |
 | `empty_is_none = false` | Keep empty string instead of mapping to `None` for `Option<String>` (default `true`) |
-| `version_added` / `version_removed` | Schema-evolution annotations |
+| `nested` | The field is itself a component: dotted-path access, delegated schema |
+| `items = N` | `Vec<T>` list member with at most `N` items (required on every `Vec<T>`; inferred for `[T; N]`) |
+| `fixed` | Fixed-arity list (`[T; N]`, no `count` writer) rather than open (`Vec<T>`) |
+| `visible_when = "kind=breakout"` | Editable only while the named selector holds the named value |
+| `axis = "..."` | Which axis the member measures: `correctness`, `task-value`, `producer-confidence` |
+| `tab` / `group` / `tooltip` / `step` / `inline` | Presentation-only `x-` schema hints (tab pin, section, hover help, drag sensitivity, shared-row marker); never change acceptance |
+| `version_added` / `version_removed` | Reserved, planned-not-implemented: using them fails expansion |
 
 Rules:
 

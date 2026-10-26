@@ -112,8 +112,29 @@ impl Default for IngestConfig {
 }
 
 impl IngestConfig {
+    /// The store freshness policy this config describes.
+    #[must_use]
+    pub fn freshness(&self) -> FreshnessPolicy {
+        FreshnessPolicy::new()
+            .max_lag_bars(self.max_lag_bars)
+            .max_gap_bars(self.max_gap_bars)
+            .build()
+    }
+
+    /// The repair bounds this config describes.
+    #[must_use]
+    pub fn repair(&self) -> RepairConfig {
+        RepairConfig::new()
+            .max_repair_span_ms(self.max_repair_span_ms)
+            .repair_concurrency(self.repair_concurrency)
+            .build()
+    }
+}
+
+impl fluent_wvr::validate::Validate for IngestConfig {
+    type Err = String;
     /// Validate the shape fail-closed.
-    pub fn validate(&self) -> Result<(), String> {
+    fn validate(&self) -> Result<(), Self::Err> {
         if self.venue.trim().is_empty() {
             return Err("ingest venue must not be blank".to_owned());
         }
@@ -136,31 +157,6 @@ impl IngestConfig {
             return Err("repair bounds must be at least 1".to_owned());
         }
         Ok(())
-    }
-
-    /// The store freshness policy this config describes.
-    #[must_use]
-    pub fn freshness(&self) -> FreshnessPolicy {
-        FreshnessPolicy::new()
-            .max_lag_bars(self.max_lag_bars)
-            .max_gap_bars(self.max_gap_bars)
-            .build()
-    }
-
-    /// The repair bounds this config describes.
-    #[must_use]
-    pub fn repair(&self) -> RepairConfig {
-        RepairConfig::new()
-            .max_repair_span_ms(self.max_repair_span_ms)
-            .repair_concurrency(self.repair_concurrency)
-            .build()
-    }
-}
-
-impl fluent_wvr::validate::Validate for IngestConfig {
-    type Err = String;
-    fn validate(&self) -> Result<(), Self::Err> {
-        IngestConfig::validate(self)
     }
 }
 

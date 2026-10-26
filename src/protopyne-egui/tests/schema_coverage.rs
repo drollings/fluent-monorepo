@@ -199,3 +199,85 @@ fn panel_triple_and_lite_legs_join_the_coverage() {
         assert_eq!(field.minimum, Some(0.0), "{name} states its floor");
     }
 }
+
+/// The backtest form joins the audit: the served composition sections are
+/// present and non-empty, every leaf the form would render carries a known
+/// editor kind, and every rendered path resolves in the defaults document
+/// the form submits from.
+///
+/// This is deliberately narrower than the settings audit: the backtest form
+/// performs no local validation of trading semantics (the server names any
+/// refused value on submit), so descriptions and floors are hints, not
+/// gates. What is gated is the three-way agreement — schema, defaults
+/// document, rendered leaves — because a leaf the form paints but cannot
+/// submit (or a default it submits but never paints) is a silent control.
+#[test]
+fn backtest_spec_sections_join_the_schema_audit() {
+    use fluent_egui::FieldKind;
+    use fluent_wvr::Describable as _;
+    use protopyne_strategy::integration_lite::{
+        IntegrationLiteSpec, IntegrationLiteStrategyConfig,
+    };
+    let spec = IntegrationLiteSpec::from(&IntegrationLiteStrategyConfig::default());
+    let described = [
+        ("indicator", spec.indicator.describe()),
+        ("entry", spec.entry.describe()),
+        ("exit", spec.exit.describe()),
+        ("risk", spec.risk.describe()),
+        ("session", spec.session.describe()),
+        ("display", spec.display.describe()),
+    ];
+    let defaults = serde_json::to_value(&spec).expect("defaults serialize");
+    for (section, schema) in &described {
+        let fields = fluent_egui::schema_fields(schema);
+        assert!(
+            !fields.is_empty(),
+            "backtest:{section} renders no fields at all"
+        );
+        for field in &fields {
+            // The synthetic count leaf is schema machinery, not a painted
+            // control: the rows carry the values, their number is the count.
+            if field.name.ends_with(".count") {
+                continue;
+            }
+            // List capacity beyond the default rows never paints: the form
+            // prunes to resolving paths, and the audit holds the same line.
+            if !crate::backtest::field_resolves(&defaults, &format!("{section}.{}", field.name)) {
+                continue;
+            }
+            assert!(
+                matches!(
+                    field.kind,
+                    FieldKind::Text
+                        | FieldKind::Number
+                        | FieldKind::Integer
+                        | FieldKind::Boolean
+                        | FieldKind::Select
+                        | FieldKind::Color
+                ),
+                "backtest:{section}: {} has no editor kind",
+                field.name
+            );
+            // Leaf names are relative to their section; the document path
+            // is the section plus the leaf.
+            let mut cursor = &defaults[section];
+            for part in field.name.split('.') {
+                // List rows address by index; every other segment by name.
+                cursor = match (cursor, part.parse::<usize>()) {
+                    (serde_json::Value::Array(rows), Ok(index)) => rows.get(index).unwrap_or_else(|| {
+                        panic!(
+                            "backtest:{section}: {} is painted but missing from the defaults document",
+                            field.name
+                        )
+                    }),
+                    _ => cursor.get(part).unwrap_or_else(|| {
+                        panic!(
+                            "backtest:{section}: {} is painted but missing from the defaults document",
+                            field.name
+                        )
+                    }),
+                };
+            }
+        }
+    }
+}

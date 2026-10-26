@@ -878,6 +878,32 @@ pub fn paint_timeframe_toolbar(ui: &mut egui::Ui, current: TimeframeKey) -> Opti
     picked
 }
 
+/// Paint the reference status table's rows: the bar the row belongs to
+/// plus the eight table rows (position, day P&L, trades today, loss streak,
+/// cooldown, halt line, win rate, net P&L), straight from the stored view.
+pub fn paint_status_table(ui: &mut egui::Ui, status: &protopyne_view::BacktestStatusView) {
+    egui::Grid::new("backtest_status")
+        .num_columns(2)
+        .striped(true)
+        .show(ui, |ui| {
+            for (label, value) in [
+                ("Bar", status.at.as_str()),
+                ("Position", status.position.as_str()),
+                ("Day P&L", status.day_pnl_pct.as_str()),
+                ("Trades today", status.trades_today.as_str()),
+                ("Loss streak", &status.loss_streak.to_string()),
+                ("Cooldown", status.cooldown.as_str()),
+                ("Status", status.status.as_str()),
+                ("Win rate", status.win_rate.as_str()),
+                ("Net P&L", status.net_pnl.as_str()),
+            ] {
+                ui.label(label);
+                ui.label(value);
+                ui.end_row();
+            }
+        });
+}
+
 /// Paint the multi-timeframe table widget.
 pub fn paint_mtf_table(ui: &mut egui::Ui, rows: &[MtfRow]) {
     egui::Grid::new("mtf_table")

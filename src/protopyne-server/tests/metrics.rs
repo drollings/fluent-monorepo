@@ -7,6 +7,7 @@
 //! profit-factor count only decisive steps (flat steps excluded).
 
 use super::*;
+use crate::common_fixtures::money;
 use crate::marks::MarkBasis;
 use rust_decimal::prelude::ToPrimitive as _;
 use rust_decimal::Decimal;
@@ -108,10 +109,6 @@ fn step_returns_skip_pre_deployment_zeros() {
     assert_eq!(step_returns(&equity), vec![decimal("0.1")]);
     assert!(step_returns(&[]).is_empty());
     assert!(step_returns(&returns(&["0", "0"])).is_empty());
-}
-
-fn money(value: &str) -> protopyne_types::Money {
-    protopyne_types::Money::new(value.parse::<Decimal>().expect("decimal"))
 }
 
 fn manifest() -> crate::report::RunManifest {

@@ -14,14 +14,8 @@ fn batch_matches_hand_computed_values() {
         .expect("valid");
     assert_eq!(result.spec_id, "ema");
     let expected = [None, Some(15.0), Some(25.0), Some(35.0), Some(45.0)];
-    assert_eq!(result.values.len(), expected.len());
-    for (got, want) in result.values.iter().zip(expected.iter()) {
-        match (got, want) {
-            (None, None) => {}
-            (Some(g), Some(w)) => assert!((g - w).abs() < 1e-9, "{g} vs {w}"),
-            _ => panic!("na mismatch: {got:?} vs {want:?}"),
-        }
-    }
+    let report = common_core::golden::compare_series(&result.values, &expected, 1e-9);
+    assert!(report.matches, "series mismatch: {:?}", report.mismatches);
 }
 
 #[test]

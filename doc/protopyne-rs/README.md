@@ -41,7 +41,11 @@ and re-expressed in this codebase's idioms, never taken as a dependency.
   signal → risk → grant → venue per bar over pinned history and records a
   manifest (data/code/config versions) plus an honest report (assumptions,
   data limits, drawdown, tail loss, capital efficiency). Same inputs give
-  byte-identical reruns; backtest and paper reach identical decisions.
+  byte-identical reruns; backtest and paper reach identical decisions. The
+  native terminal authors runs from a strategy form seeded by the served
+  schema, with run control, a metrics/trade table, the eight-row status
+  table, and an equity pane beside entry/exit markers and stop/target lines
+  on the chart.
 - **HTTP surface + WebSocket feed.** Health, proposal preview/inbox, grant
   arming, portfolio, chart-data rows and indicator overlays as JSON, and a
   live bar feed — served by the `protopyne-server` binary, containerized

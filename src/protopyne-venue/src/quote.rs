@@ -164,12 +164,22 @@ impl Slippage {
     }
 }
 
-/// Per-contract commission schedule.
+/// Commission schedule: a flat per-contract charge plus an optional
+/// percentage of notional.
+///
+/// The two arms exist because venues and reference strategies charge
+/// differently, and a run must be able to state which model it assumed. A
+/// percentage of `0` is not merely small — it reproduces the per-contract-only
+/// schedule exactly, bytes included, so adding this arm moved no existing pin.
 #[derive(Debug, Clone, Copy, Builder, PartialEq, Eq, Serialize, Deserialize)]
 #[builder(start_fn = new)]
 pub struct FeeSchedule {
     /// Commission per contract (or share).
     pub per_contract: Money,
+    /// Commission in basis points of notional (`3` = 0.03 %).
+    #[builder(default = 0)]
+    #[serde(default)]
+    pub percent_bps: u32,
 }
 
 impl FeeSchedule {
@@ -181,11 +191,30 @@ impl FeeSchedule {
             .checked_mul(Decimal::from(contracts))
             .map(Money::new)
     }
+
+    /// Commission for `contracts` at `notional`: the flat charge plus the
+    /// percentage arm. A zero percentage returns the flat charge untouched —
+    /// no zero-scale arithmetic, so a schedule that did not opt in stays
+    /// byte-identical to the one before this arm existed. `None` on overflow.
+    #[must_use]
+    pub fn fee_for_notional(&self, notional: Money, contracts: u32) -> Option<Money> {
+        let flat = self.fee_for(contracts)?;
+        if self.percent_bps == 0 {
+            return Some(flat);
+        }
+        let rate = Decimal::from(self.percent_bps) / Decimal::from(10_000);
+        let proportional = notional.as_decimal().abs().checked_mul(rate)?;
+        flat.as_decimal().checked_add(proportional).map(Money::new)
+    }
 }
 
 #[cfg(test)]
 #[path = "../tests/quote.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/fee_schedule.rs"]
+mod fee_schedule_tests;
 
 #[cfg(test)]
 #[path = "../tests/package_tolerance.rs"]

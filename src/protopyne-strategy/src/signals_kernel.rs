@@ -24,6 +24,7 @@
 
 use std::sync::Arc;
 
+use protopyne_kernels::util::{crossed, crossed_between, Crossing};
 use protopyne_kernels::{
     builtin_registry, fin_or_none, IndicatorId, IndicatorRegistry, OwnedOhlcv, ParamSet,
     PriceSource,
@@ -411,13 +412,8 @@ pub(crate) fn apply_rule(
             polarity,
         } => {
             let (previous, current) = last_two(series, line)?;
-            let crossed = if previous <= level && current > level {
-                Some(true)
-            } else if previous >= level && current < level {
-                Some(false)
-            } else {
-                None
-            };
+            let crossed = crossed(Some(previous), Some(current), level)
+                .map(|crossing| crossing == Crossing::Up);
             let (high, crossed) = match (crossed, direction) {
                 (Some(high), CrossDir::Above) if high => (high, true),
                 (Some(high), CrossDir::Below) if !high => (high, true),
@@ -439,13 +435,13 @@ pub(crate) fn apply_rule(
         } => {
             let (previous_fast, current_fast) = last_two(series, fast)?;
             let (previous_slow, current_slow) = last_two(series, slow)?;
-            let crossed = if previous_fast <= previous_slow && current_fast > current_slow {
-                Some(true)
-            } else if previous_fast >= previous_slow && current_fast < current_slow {
-                Some(false)
-            } else {
-                None
-            };
+            let crossed = crossed_between(
+                Some(previous_fast),
+                Some(current_fast),
+                Some(previous_slow),
+                Some(current_slow),
+            )
+            .map(|crossing| crossing == Crossing::Up);
             let (high, crossed) = match (crossed, direction) {
                 (Some(high), CrossDir::Above) if high => (high, true),
                 (Some(high), CrossDir::Below) if !high => (high, true),

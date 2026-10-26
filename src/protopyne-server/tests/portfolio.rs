@@ -8,6 +8,7 @@
 //! the report.
 
 use super::*;
+use crate::common_fixtures::money;
 use chrono::{DateTime, TimeZone, Utc};
 use rust_decimal::Decimal;
 
@@ -19,10 +20,6 @@ use protopyne_venue::{LegExecution, OrderSide, Position, PositionSide};
 /// Frozen comparison tolerance for portfolio stats: hand-computed
 /// Sharpe/Sortino/Calmar must reproduce within this eps.
 const EPS: f64 = 1e-9;
-
-fn money(value: &str) -> Money {
-    Money::new(value.parse::<Decimal>().expect("decimal"))
-}
 
 fn ts(secs: i64) -> DateTime<Utc> {
     Utc.timestamp_opt(secs, 0).unwrap()

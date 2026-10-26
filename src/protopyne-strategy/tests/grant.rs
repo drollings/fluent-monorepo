@@ -2,6 +2,7 @@ use super::*;
 use crate::economics::spread_economics;
 use crate::proposal::{Direction, Proposal, ProposalSide, StructureKind};
 use chrono::{NaiveDate, TimeZone, Utc};
+use fluent_wvr::validate::Validate;
 use fluent_wvr::{Describable, FieldAccess};
 use protopyne_types::{
     ChainQuote, LegSide, Money, OptionContract, OptionKind, Qty, SpreadLeg, SpreadLegs,

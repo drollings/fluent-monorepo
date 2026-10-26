@@ -5,7 +5,7 @@
 //! workers — the parse-review worker and the entity-link overlay worker
 //! (`server/review.rs`, `server/entity_link.rs`). Each worker is a
 //! `WorkerPool` whose `submit` path acquires a credit token before enqueuing
-//! and whose handler releases the token via [`CreditReceiver::recv`] after
+//! and whose handler releases the token via [`crate::flow::CreditReceiver::recv`] after
 //! each processed job. Centralizing it removes the drift risk that a third
 //! copy-pasted worker gets the `CreditSpec` formulas or the worker cap wrong.
 //!

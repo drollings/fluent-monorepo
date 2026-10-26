@@ -478,6 +478,10 @@ impl Sizing for GreedySizing {
         "greedy"
     }
 
+    fn axis(&self) -> GateAxis {
+        crate::axes::GateAxis::TaskValue
+    }
+
     fn size(&self, _signal: &SignalOutput, _facts: &PortfolioFacts) -> Qty {
         Qty::new(Decimal::from(100))
     }
@@ -896,4 +900,138 @@ fn the_momentum_composition_installs_the_calibrated_elements() {
         mark: Some(money(250)),
     };
     assert!(strategy.review_position(&flat, &marked).is_empty());
+}
+
+/// A share run through select, size, and contain matches hand math: the
+/// explicit kind selects, fixed sizing names four, containment leaves them
+/// standing, and capital prices the unit times the quantity.
+#[test]
+fn a_share_run_through_select_size_and_contain_matches_hand_math() {
+    let closes = [100.0, 101.0, 102.0];
+    let strategy = Strategy::with_signal(signal())
+        .with_structure(Arc::new(ExplicitStructure {
+            structure: StructureKind::Single,
+        }))
+        .with_sizing(Arc::new(FixedContracts { contracts: 4 }));
+    let p = strategy.propose("p1", input(&closes)).expect("proposal");
+    assert_eq!(p.contracts(), Some(4));
+    assert_eq!(p.limit_price, money(250));
+    // The config arm states totals: the caller's $300 worst case and $1,000
+    // notional pass through verbatim instead of repricing with quantity.
+    assert_eq!(p.max_loss, money(300));
+    assert_eq!(p.notional, money(1_000));
+}
+
+/// A package run through the same path matches hand math: the chain prices
+/// one unit, fixed sizing names four, capital is the per-unit loss times
+/// the quantity, and the sized economics ride the proposal.
+#[test]
+fn a_package_run_through_select_size_and_contain_matches_hand_math() {
+    use crate::LegSelector;
+    let ts = Utc.with_ymd_and_hms(2026, 6, 15, 14, 30, 0).unwrap();
+    let quotes = [chain_call(690, "3.50", ts), chain_call(695, "1.50", ts)];
+    let chain = ChainSlice::new(&quotes, ts, "SPY").expect("quotes bind");
+    let data = MarketData {
+        bars: &[],
+        chain: Some(chain),
+        dte_days: 30,
+        timeframe: Timeframe::D1,
+    };
+    let closes = [694.0];
+    let view = MarketView {
+        data: &data,
+        closes: &closes,
+        as_of: ts,
+    };
+    let strategy = Strategy::with_signal(Arc::new(
+        FixedSignal::new(Direction::Long, 0.8, 0.7).expect("valid scores"),
+    ))
+    .with_structure(Arc::new(LegSelector::new().build()))
+    .with_sizing(Arc::new(FixedContracts { contracts: 4 }));
+    let mut instance = strategy
+        .bind(&SignalConfig::new(Timeframe::D1))
+        .expect("binds");
+    let p = strategy
+        .propose_with("p1", chain_input(&closes, ts), &view, instance.as_mut())
+        .expect("package proposal");
+    assert_eq!(p.contracts(), Some(4));
+    assert_eq!(p.limit_price, money(2));
+    // Four units at the $3.30 per-unit worst case.
+    assert_eq!(p.max_loss, Money::new(Decimal::new(1_320, 2)));
+    assert_eq!(p.notional, p.max_loss);
+    let economics = p.economics.expect("sized economics ride");
+    assert_eq!(
+        economics.capital_requirement,
+        Money::new(Decimal::new(1_320, 2))
+    );
+}
+
+fn chain_input(closes: &[f64], ts: chrono::DateTime<Utc>) -> ProposeInput<'_> {
+    ProposeInput {
+        strategy: "ribbon",
+        underlying: "SPY",
+        side: ProposalSide::Entry,
+        closes,
+        limit_price: money(690),
+        max_loss: money(300),
+        notional: money(1_000),
+        dte_days: 30,
+        max_dte_days: None,
+        economics: EconomicsPolicy::ChainDerived,
+        structure: StructureKind::Vertical,
+        credit: false,
+        fee_per_contract: Money::new(Decimal::new(65, 2)),
+        caps: SizingCaps::default(),
+        created_at: ts,
+    }
+}
+
+/// Buying power bounds a package at its own per-unit price: with $100 of
+/// observed buying power against a $2.00-debit package, a 100-unit fixed
+/// sizing contains to 50 — not to the underlying's $694 bar price (which
+/// would refuse the trade outright), and not unbounded.
+#[test]
+fn buying_power_bounds_a_package_at_its_own_price() {
+    use crate::LegSelector;
+    let ts = Utc.with_ymd_and_hms(2026, 6, 15, 14, 30, 0).unwrap();
+    let quotes = [chain_call(690, "3.50", ts), chain_call(695, "1.50", ts)];
+    let closes = [694.0];
+    let funded = PortfolioFacts::observed(money(0), None, Some(money(100)), None);
+    for (facts, want) in [(Some(&funded), 50_u32), (None, 100_u32)] {
+        let chain = ChainSlice::new(&quotes, ts, "SPY").expect("quotes bind");
+        let data = MarketData {
+            bars: &[],
+            chain: Some(chain),
+            dte_days: 30,
+            timeframe: Timeframe::D1,
+        };
+        let view = MarketView {
+            data: &data,
+            closes: &closes,
+            as_of: ts,
+        };
+        let strategy = Strategy::with_signal(Arc::new(
+            FixedSignal::new(Direction::Long, 0.8, 0.7).expect("valid scores"),
+        ))
+        .with_structure(Arc::new(LegSelector::new().build()))
+        .with_sizing(Arc::new(FixedContracts { contracts: 100 }));
+        let mut instance = strategy
+            .bind(&SignalConfig::new(Timeframe::D1))
+            .expect("binds");
+        let mut params = chain_input(&closes, ts);
+        if let Some(facts) = facts {
+            params.caps = SizingCaps {
+                risk: None,
+                facts: Some(facts),
+            };
+        }
+        let p = strategy
+            .propose_with("p1", params, &view, instance.as_mut())
+            .expect("package proposal");
+        assert_eq!(
+            p.contracts(),
+            Some(want),
+            "buying power bounds the package at its own price"
+        );
+    }
 }

@@ -3,12 +3,11 @@
 //! path, a mismatched fill flags drift, the journal rebuilds the waiting
 //! set, and a dark import reports without touching ticket state.
 
+use crate::common_fixtures::money;
 use std::path::PathBuf;
 
 use chrono::{TimeZone, Utc};
-use rust_decimal::Decimal;
 
-use protopyne_types::Money;
 use protopyne_venue::{
     ConfirmedFill, ImportedPosition, ManualTicket, OrderIntent, OrderSide, TicketRead,
     TicketTracker, TICKET_CONFIRMED_KIND, TICKET_ISSUED_KIND,
@@ -27,10 +26,6 @@ fn bars() -> Vec<protopyne_types::Bar> {
 
 fn base(handle: &crate::service::ServerHandle) -> String {
     format!("http://{}", handle.addr)
-}
-
-fn money(value: &str) -> Money {
-    Money::new(value.parse::<Decimal>().expect("decimal"))
 }
 
 fn intent(id: &str) -> OrderIntent {

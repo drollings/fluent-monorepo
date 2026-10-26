@@ -16,30 +16,66 @@
 //! the next bar and retries. Trailing and breakeven only ever tighten the
 //! resting stop, never loosen it.
 
+use std::sync::Arc;
+
 use chrono::DateTime;
+use fluent_wvr::validate::Validate;
 use rust_decimal::prelude::ToPrimitive as _;
 use rust_decimal::Decimal;
 
+use protopyne_kernels::lite::lite_legs;
 use protopyne_strategy::integration_lite::IntegrationLiteStrategyConfig;
-use protopyne_strategy::signals_lite::{
-    market_legs, IntegrationLiteSignal, LiteIndicatorParams, LiteLegs,
+use protopyne_strategy::position::{
+    entry_stop_distance, OpenPosition, PositionManager, PositionSpec,
 };
+use protopyne_strategy::signals_lite::{IntegrationLiteSignal, LiteIndicatorParams};
+use protopyne_strategy::slots::exit::{ExitIntent, ExitQuantity, RestingPrice};
 use protopyne_strategy::{
-    breakeven_price, clamp_stop, normalize_tp_weights, ratchet_stop, stop_distance_atr,
-    stop_distance_pct, stop_distance_swing, trail_chandelier, trail_percent, trail_ribbon_edge,
-    CooldownGate, DailyLimits, Direction, EquitySizer, Grant, GrantLedger, MarketData, MarketView,
-    PartialOnce, PortfolioFacts, Proposal, ProposalSide, RiskEngine, SessionGate, Signal,
-    SignalConfig, SignalInstance, SignalOutput, StructureKind,
+    Direction, EquitySizer, Grant, GrantLedger, MarketData, MarketView, PortfolioFacts, Proposal,
+    ProposalSide, RiskEngine, SignalConfig, SignalOutput, Sizing as _, StructureKind,
 };
 use protopyne_types::{session::TradingSession, Bar, Money, Qty, Timeframe};
 use protopyne_venue::{Journal, PaperConfig, Recorder};
+use protopyne_view::BacktestStatusView;
 
 use crate::backtest::{quote_for_bar, BacktestConfig, BacktestVenue};
 use crate::error::ServerError;
+use crate::marks::MarkPoint;
 use crate::report::{absent_tabs, build_report, BacktestReport, TradePnl, TradesAnalysis};
 use crate::runner::{submit_decided, BarDecision, BarHealth, RunnerConfig};
 
+/// Which resting line a level point belongs to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LevelKind {
+    /// The trailing/breakeven resting stop.
+    Stop,
+    /// A take-profit zone that has not filled yet.
+    Target,
+}
+
+/// One resting level as it stood at a bar close: the stop or an unfilled
+/// target while a position is open, nothing while flat. The terminal draws
+/// one polyline per kind from these points, breaking the line wherever a
+/// bar carries no point for it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LevelPoint {
+    /// Bar index.
+    pub bar: usize,
+    /// Resting price.
+    pub price: f64,
+    /// Which line this point belongs to.
+    pub kind: LevelKind,
+}
+
 /// One closed equity trade, in close order.
+///
+/// Deliberately not the session book's trade record: this run is
+/// single-symbol (no `underlying`), prices in `f64`, carries `bars_held`,
+/// and reuses this same record for partial fills, while the session book
+/// averages in `Money` and never books partials. The field names differ
+/// (`qty`/`entry_price`/`exit_reason` here vs
+/// `quantity`/`entry_avg`/`reason` there) and the canonical JSON covers
+/// this shape, so renaming either side would move pinned bytes.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct EquityTrade {
     /// Signal side that opened the trade.
@@ -62,37 +98,10 @@ pub struct EquityTrade {
     pub exit_reason: String,
 }
 
-impl EquityTrade {
-    fn as_pnl(&self, entry_notional: f64) -> TradePnl {
-        TradePnl {
-            long: self.long,
-            pnl: self.pnl,
-            notional: entry_notional,
-            bars_held: self.bars_held,
-        }
-    }
-}
-
-/// One open equity position and its management state.
-#[allow(clippy::struct_excessive_bools)]
-struct OpenPosition {
-    long: bool,
-    qty: u32,
-    entry_price: f64,
-    entry_bar: usize,
-    stop: f64,
-    tp_prices: [Option<f64>; 3],
-    tp_weights: [f64; 3],
-    tp_filled: [bool; 3],
-    be_armed: bool,
-    tight: bool,
-    partial: PartialOnce,
-    partial_fired: bool,
-    best: f64,
-}
-
-/// An equity backtest run: per-bar verdicts, closed trades, and the honest
-/// report. Reruns over identical inputs are byte-identical.
+/// An equity backtest run: per-bar verdicts, closed trades, the honest
+/// report, and the reference status table once per bar. Reruns over identical
+/// inputs are byte-identical (the canonical form covers decisions, trades,
+/// and partials; the status rows project from the same state).
 pub struct EquityRun {
     /// Reproducibility pin (data, code, config).
     pub manifest: crate::report::RunManifest,
@@ -102,6 +111,12 @@ pub struct EquityRun {
     pub trades: Vec<EquityTrade>,
     /// Partial fills (TP zones, exhaustion slices) in fill order.
     pub partials: Vec<EquityTrade>,
+    /// The reference status table's eight rows, once per bar.
+    pub status: Vec<BacktestStatusView>,
+    /// Resting stop/target points, in bar order. The canonical JSON covers
+    /// decisions, trades, and partials only, so these project without moving
+    /// a single pinned byte.
+    pub levels: Vec<LevelPoint>,
     /// Metrics with stated assumptions and limits, plus trades analysis.
     pub report: BacktestReport,
 }
@@ -123,6 +138,130 @@ impl EquityRun {
             )
         });
         format!("{}\n{decisions}", self.manifest.to_canonical_json())
+    }
+}
+
+/// One equity backtest run, named: every policy the loop reads, stated once.
+/// The builder replaces the positional twelve-argument call, so a new policy
+/// joins as a named field instead of a thirteenth position.
+pub struct BacktestRequest<'a> {
+    indicator: &'a LiteIndicatorParams,
+    strategy: &'a IntegrationLiteStrategyConfig,
+    risk: &'a RiskEngine,
+    grant: &'a Grant,
+    venue_config: &'a BacktestConfig,
+    runner_config: &'a RunnerConfig,
+    signal_name: &'a str,
+    underlying: &'a str,
+    timeframe: Timeframe,
+    bars: &'a [Bar],
+    seed: u64,
+    initial_equity: f64,
+}
+
+/// The request builder: one setter per policy, `run` when complete. A
+/// missing policy refuses naming itself — no positional default fills in.
+#[derive(Default)]
+pub struct BacktestRequestBuilder<'a> {
+    indicator: Option<&'a LiteIndicatorParams>,
+    strategy: Option<&'a IntegrationLiteStrategyConfig>,
+    risk: Option<&'a RiskEngine>,
+    grant: Option<&'a Grant>,
+    venue_config: Option<&'a BacktestConfig>,
+    runner_config: Option<&'a RunnerConfig>,
+    signal_name: Option<&'a str>,
+    underlying: Option<&'a str>,
+    timeframe: Option<Timeframe>,
+    bars: Option<&'a [Bar]>,
+    seed: Option<u64>,
+    initial_equity: Option<f64>,
+}
+
+macro_rules! backtest_setter {
+    ($name:ident, $field:ident, $ty:ty) => {
+        #[doc = concat!("Set the request's `", stringify!($field), "` policy.")]
+        #[must_use]
+        pub fn $name(mut self, value: $ty) -> Self {
+            self.$field = Some(value);
+            self
+        }
+    };
+}
+
+impl<'a> BacktestRequestBuilder<'a> {
+    backtest_setter!(indicator, indicator, &'a LiteIndicatorParams);
+    backtest_setter!(strategy, strategy, &'a IntegrationLiteStrategyConfig);
+    backtest_setter!(risk, risk, &'a RiskEngine);
+    backtest_setter!(grant, grant, &'a Grant);
+    backtest_setter!(venue_config, venue_config, &'a BacktestConfig);
+    backtest_setter!(runner_config, runner_config, &'a RunnerConfig);
+    backtest_setter!(signal_name, signal_name, &'a str);
+    backtest_setter!(underlying, underlying, &'a str);
+    backtest_setter!(timeframe, timeframe, Timeframe);
+    backtest_setter!(bars, bars, &'a [Bar]);
+    backtest_setter!(seed, seed, u64);
+    backtest_setter!(initial_equity, initial_equity, f64);
+
+    /// Build the named request. A missing policy refuses naming itself —
+    /// no positional default fills in.
+    pub fn build(self) -> Result<BacktestRequest<'a>, ServerError> {
+        macro_rules! take {
+            ($field:ident) => {
+                self.$field.ok_or_else(|| {
+                    ServerError::Backtest(format!(
+                        "backtest request refuses: no {} was set",
+                        stringify!($field)
+                    ))
+                })?
+            };
+        }
+        Ok(BacktestRequest {
+            indicator: take!(indicator),
+            strategy: take!(strategy),
+            risk: take!(risk),
+            grant: take!(grant),
+            venue_config: take!(venue_config),
+            runner_config: take!(runner_config),
+            signal_name: take!(signal_name),
+            underlying: take!(underlying),
+            timeframe: take!(timeframe),
+            bars: take!(bars),
+            seed: take!(seed),
+            initial_equity: take!(initial_equity),
+        })
+    }
+
+    /// Build and run the request through the equity decision stack.
+    pub async fn run(self) -> Result<EquityRun, ServerError> {
+        self.build()?.run().await
+    }
+}
+
+impl<'a> BacktestRequest<'a> {
+    /// Start a named backtest request. Every policy is set explicitly; there
+    /// are no positional defaults to misread.
+    #[must_use]
+    pub fn builder() -> BacktestRequestBuilder<'a> {
+        BacktestRequestBuilder::default()
+    }
+
+    /// Run the named request through the equity decision stack.
+    pub async fn run(self) -> Result<EquityRun, ServerError> {
+        run_equity_backtest(
+            self.indicator,
+            self.strategy,
+            self.risk,
+            self.grant,
+            self.venue_config,
+            self.runner_config,
+            self.signal_name,
+            self.underlying,
+            self.timeframe,
+            self.bars,
+            self.seed,
+            self.initial_equity,
+        )
+        .await
     }
 }
 
@@ -160,7 +299,14 @@ pub async fn run_equity_backtest(
         .map_err(|e| ServerError::Backtest(format!("signal refused its dials: {e}")))?;
     let session = TradingSession::parse(&indicator.session)
         .map_err(|e| ServerError::Backtest(format!("malformed session: {e}")))?;
-    let paper = PaperConfig::new().build();
+    // The reference strategy commissions a percentage of notional (0.03 %),
+    // not a flat per-share charge. State it as the venue's schedule so every
+    // fill, fee total, and trade P&L uses the declared model.
+    let fees = protopyne_venue::FeeSchedule::new()
+        .per_contract(Money::zero())
+        .percent_bps(3)
+        .build();
+    let paper = PaperConfig::new().fees(fees).build();
     let venue = BacktestVenue::new(venue_config.clone(), bars.to_vec(), paper)
         .map_err(|e| ServerError::Backtest(e.to_string()))?;
     let ledger = GrantLedger::new(grant.clone());
@@ -179,38 +325,31 @@ pub async fn run_equity_backtest(
         venue.bars(),
         seed,
     );
+    // One leg batch for the whole run. Every kernel in it is causal, so the
+    // value at a bar is the value a prefix batch would have produced; the
+    // signal indexes this instead of re-batching every bar.
+    let legs = Arc::new(
+        lite_legs(bars, indicator, strategy.risk_atr_len)
+            .map_err(|e| ServerError::Backtest(format!("leg batch refused: {e}")))?,
+    );
     let mut instance = signal
-        .bind(&SignalConfig::new(timeframe))
+        .bind_with_legs(&SignalConfig::new(timeframe), Arc::clone(&legs))
         .map_err(|e| ServerError::Backtest(format!("signal bind refused: {e}")))?;
-    let tp_weights = normalize_tp_weights([strategy.tp1_pct, strategy.tp2_pct, strategy.tp3_pct]);
     let mut decisions: Vec<BarDecision> = Vec::with_capacity(bars.len());
     let mut trades: Vec<EquityTrade> = Vec::new();
     let mut partials: Vec<EquityTrade> = Vec::new();
     let mut cash = initial_equity;
     let mut fees_paid = 0.0;
-    let mut position: Option<OpenPosition> = None;
-    let mut cooldown = CooldownGate {
-        bars: strategy.cd_bars,
-        loss_bars: strategy.cd_loss_bars,
-        last_exit: None,
-    };
-    let mut daily = DailyLimits {
-        max_trades: strategy.max_trades_day,
-        max_consec_losses: strategy.max_consec_losses,
-        max_daily_loss_pct: strategy.max_daily_loss_pct,
-        trades_today: 0,
-        consec_losses: 0,
-        day_open_equity: None,
-        equity_now: None,
-        halted: false,
-    };
-    let gate = SessionGate {
-        flatten_min_before: strategy.flatten_min_before,
-        noentry_min: strategy.noentry_min,
-        close_min: i64::from(session.close_minute()),
-    };
-    let mut current_day: Option<(i32, u32, u32)> = None;
+    let bar_span_ms = timeframe.duration_ms();
+    let mut manager = PositionManager::new(
+        PositionSpec::from(strategy.clone()),
+        session,
+        bar_span_ms,
+        indicator.session_filter,
+    );
     let mut curve: Vec<protopyne_types::Money> = Vec::with_capacity(bars.len());
+    let mut status: Vec<BacktestStatusView> = Vec::with_capacity(bars.len());
+    let mut levels: Vec<LevelPoint> = Vec::with_capacity(bars.len());
     let mut closes: Vec<f64> = Vec::with_capacity(bars.len());
     let warmup = instance.warmup();
     let mut proposals = 0_u64;
@@ -225,21 +364,26 @@ pub async fn run_equity_backtest(
                 format!("equity-{seed}-{index}"),
                 "close not representable",
             ));
-            curve.push(money(cash));
+            push_point(
+                &mut curve,
+                &mut status,
+                &mut levels,
+                money(cash),
+                index,
+                &StatusCtx {
+                    manager: &manager,
+                    enabled: strategy.enabled,
+                    index,
+                    at: bar.ts.to_rfc3339(),
+                    trades: &trades,
+                    partials: &partials,
+                },
+            );
             continue;
         };
         closes.push(close);
-        let ts_ms = bar.ts.timestamp_millis();
-        let day = session.session_date(ts_ms);
-        if current_day != Some(day) {
-            current_day = Some(day);
-            daily.day_open_equity = Some(mark_equity(cash, position.as_ref(), close));
-            daily.trades_today = 0;
-            daily.halted = false;
-        }
-        let equity_now = mark_equity(cash, position.as_ref(), close);
-        daily.equity_now = Some(equity_now);
-        let et_min = i64::from(TradingSession::wall_minutes(ts_ms));
+        let equity_now = mark_equity(cash, manager.position(), close);
+        manager.begin_bar(bar, close, equity_now);
         let proposal_id = |tag: &str| format!("equity-{seed}-{index}-{tag}");
 
         // Warmup honesty first: no decision before every leg is seeded.
@@ -250,109 +394,38 @@ pub async fn run_equity_backtest(
                 proposal_id("warmup"),
                 "warmup",
             ));
-            curve.push(money(mark_equity(cash, position.as_ref(), close)));
+            push_point(
+                &mut curve,
+                &mut status,
+                &mut levels,
+                money(mark_equity(cash, manager.position(), close)),
+                index,
+                &StatusCtx {
+                    manager: &manager,
+                    enabled: strategy.enabled,
+                    index,
+                    at: bar.ts.to_rfc3339(),
+                    trades: &trades,
+                    partials: &partials,
+                },
+            );
             continue;
         }
 
-        let legs = market_legs(indicator, &bars[..=index])
-            .map_err(|e| ServerError::Backtest(format!("leg batch refused: {e}")))?;
-        let atr = legs.atr[index].unwrap_or(f64::NAN);
+        let atr = legs.atr_risk[index].unwrap_or(f64::NAN);
 
-        // --- Manage the open position before considering entries.
-        if position.is_some() {
-            {
-                let pos = position.as_mut().expect("open");
-                pos.best = if pos.long {
-                    pos.best.max(bar.h.to_f64().unwrap_or(pos.best))
-                } else {
-                    pos.best.min(bar.l.to_f64().unwrap_or(pos.best))
-                };
-            }
-            // Session flatten first: the close prices out everything.
-            if gate.must_flatten(et_min) {
-                let qty = position.as_ref().expect("open").qty;
-                close_position(
-                    &mut position,
-                    &mut trades,
-                    &mut cash,
-                    &mut fees_paid,
-                    &mut cooldown,
-                    &mut daily,
-                    &mut decisions,
-                    &mut fills,
-                    &mut filled_notional,
-                    &venue,
-                    &ledger,
-                    &recorder,
-                    risk,
-                    runner_config,
-                    signal_name,
-                    underlying,
-                    bar,
-                    index,
-                    &proposal_id("session"),
-                    "session-flatten",
-                    close,
-                    qty,
-                )
-                .await;
-                curve.push(money(mark_equity(cash, position.as_ref(), close)));
-                continue;
-            }
-            // Daily-loss flatten.
-            if daily.must_flatten() {
-                let qty = position.as_ref().expect("open").qty;
-                close_position(
-                    &mut position,
-                    &mut trades,
-                    &mut cash,
-                    &mut fees_paid,
-                    &mut cooldown,
-                    &mut daily,
-                    &mut decisions,
-                    &mut fills,
-                    &mut filled_notional,
-                    &venue,
-                    &ledger,
-                    &recorder,
-                    risk,
-                    runner_config,
-                    signal_name,
-                    underlying,
-                    bar,
-                    index,
-                    &proposal_id("dayloss"),
-                    "daily-loss",
-                    close,
-                    qty,
-                )
-                .await;
-                daily.halted = true;
-                curve.push(money(mark_equity(cash, position.as_ref(), close)));
-                continue;
-            }
-            let exit = manage_position(
-                strategy,
-                indicator,
-                &legs,
-                bars,
-                index,
-                position.as_mut().expect("open"),
-                &mut daily,
-                &mut instance,
-                &bars[..=index],
-                &closes,
-            );
-            if let Some(action) = exit {
-                apply_exit(
-                    action,
-                    &mut position,
+        // --- Exits before entries, in the documented order: session flatten,
+        // daily-loss flatten, the rule pass, then the breakeven/trailing
+        // ratchet (which only tightens the resting stop).
+        if manager.position().is_some() {
+            if let Some(reason) = manager.forced_flatten() {
+                submit_exit_intent(
+                    ExitIntent::close(reason, reason),
+                    &mut manager,
                     &mut trades,
                     &mut partials,
                     &mut cash,
                     &mut fees_paid,
-                    &mut cooldown,
-                    &mut daily,
                     &mut decisions,
                     &mut fills,
                     &mut filled_notional,
@@ -366,18 +439,58 @@ pub async fn run_equity_backtest(
                     bar,
                     index,
                     seed,
-                    atr,
                 )
                 .await;
+                push_point(
+                    &mut curve,
+                    &mut status,
+                    &mut levels,
+                    money(mark_equity(cash, manager.position(), close)),
+                    index,
+                    &StatusCtx {
+                        manager: &manager,
+                        enabled: strategy.enabled,
+                        index,
+                        at: bar.ts.to_rfc3339(),
+                        trades: &trades,
+                        partials: &partials,
+                    },
+                );
+                continue;
+            }
+            if let Some(tape) =
+                protopyne_strategy::tape::Tape::new(&bars[..=index], &legs, &closes, index)
+            {
+                for intent in manager.review_exits(&tape, bars, index) {
+                    submit_exit_intent(
+                        intent,
+                        &mut manager,
+                        &mut trades,
+                        &mut partials,
+                        &mut cash,
+                        &mut fees_paid,
+                        &mut decisions,
+                        &mut fills,
+                        &mut filled_notional,
+                        &venue,
+                        &ledger,
+                        &recorder,
+                        risk,
+                        runner_config,
+                        signal_name,
+                        underlying,
+                        bar,
+                        index,
+                        seed,
+                    )
+                    .await;
+                }
             }
         }
 
-        // --- Entries only when flat.
-        if position.is_none() {
-            let in_window = gate.may_enter(et_min);
-            let may_cool = cooldown.may_enter(index);
-            let may_daily = daily.may_enter();
-            if in_window && may_cool && may_daily {
+        // --- Entries when flat, and reversals when the operator allows them.
+        if manager.is_flat() || strategy.allow_reverse {
+            if manager.may_enter(index) {
                 let data = MarketData {
                     bars: &bars[..=index],
                     chain: None,
@@ -390,19 +503,110 @@ pub async fn run_equity_backtest(
                     as_of: bar.ts,
                 };
                 if let Ok(out) = instance.evaluate(&view) {
+                    // A reversal closes the old side first through the same
+                    // submission body, then opens the new side only if that
+                    // close filled.
+                    if let Some(open) = manager.position() {
+                        if open.long == (out.direction == Direction::Long) {
+                            decisions.push(crate::runner::skipped_decision(
+                                index,
+                                bar.ts.to_rfc3339(),
+                                proposal_id("hold"),
+                                "position already on the signal's side",
+                            ));
+                            push_point(
+                                &mut curve,
+                                &mut status,
+                                &mut levels,
+                                money(mark_equity(cash, manager.position(), close)),
+                                index,
+                                &StatusCtx {
+                                    manager: &manager,
+                                    enabled: strategy.enabled,
+                                    index,
+                                    at: bar.ts.to_rfc3339(),
+                                    trades: &trades,
+                                    partials: &partials,
+                                },
+                            );
+                            continue;
+                        }
+                        submit_exit_intent(
+                            ExitIntent::close("reverse", "reverse"),
+                            &mut manager,
+                            &mut trades,
+                            &mut partials,
+                            &mut cash,
+                            &mut fees_paid,
+                            &mut decisions,
+                            &mut fills,
+                            &mut filled_notional,
+                            &venue,
+                            &ledger,
+                            &recorder,
+                            risk,
+                            runner_config,
+                            signal_name,
+                            underlying,
+                            bar,
+                            index,
+                            seed,
+                        )
+                        .await;
+                        if manager.position().is_some() {
+                            decisions.push(crate::runner::skipped_decision(
+                                index,
+                                bar.ts.to_rfc3339(),
+                                proposal_id("reverse"),
+                                "reversal refused: the closing order did not fill",
+                            ));
+                            push_point(
+                                &mut curve,
+                                &mut status,
+                                &mut levels,
+                                money(mark_equity(cash, manager.position(), close)),
+                                index,
+                                &StatusCtx {
+                                    manager: &manager,
+                                    enabled: strategy.enabled,
+                                    index,
+                                    at: bar.ts.to_rfc3339(),
+                                    trades: &trades,
+                                    partials: &partials,
+                                },
+                            );
+                            continue;
+                        }
+                    }
                     if grant_covers(grant, &out) {
-                        let Some(quote) = quote_for_bar(bar, venue_config) else {
+                        let Some(quote) = quote_for_bar(bar, venue.config()) else {
                             decisions.push(crate::runner::skipped_decision(
                                 index,
                                 bar.ts.to_rfc3339(),
                                 proposal_id("entry"),
                                 "unquotable bar",
                             ));
-                            curve.push(money(mark_equity(cash, position.as_ref(), close)));
+                            push_point(
+                                &mut curve,
+                                &mut status,
+                                &mut levels,
+                                money(mark_equity(cash, manager.position(), close)),
+                                index,
+                                &StatusCtx {
+                                    manager: &manager,
+                                    enabled: strategy.enabled,
+                                    index,
+                                    at: bar.ts.to_rfc3339(),
+                                    trades: &trades,
+                                    partials: &partials,
+                                },
+                            );
                             continue;
                         };
-                        let equity_now = cash;
-                        let stop_distance = entry_stop_distance(strategy, atr, close);
+                        let equity_now = mark_equity(cash, manager.position(), close);
+                        let long = out.direction == Direction::Long;
+                        let stop_distance =
+                            entry_stop_distance(strategy, atr, close, bars, index, long);
                         let sizer = EquitySizer::new(
                             &strategy.size_mode,
                             strategy.risk_pct,
@@ -412,16 +616,33 @@ pub async fn run_equity_backtest(
                         )
                         .map_err(|e| ServerError::Backtest(format!("sizer refused: {e}")))?;
                         let facts = PortfolioFacts::unobserved();
-                        let qty = sizer
-                            .for_trade(equity_now, close, stop_distance)
-                            .shares(&facts)
-                            .min(u64::from(u32::MAX)) as u32;
-                        if qty > 0 {
-                            let touch = if out.direction == Direction::Long {
-                                quote.ask
+                        // The unit is priced per bar from the close and the
+                        // clamped stop distance: the sizer never sees a
+                        // quantity-scaled number.
+                        let unit = protopyne_strategy::UnitEconomics {
+                            price_per_unit: money(close),
+                            max_loss_per_unit: money(stop_distance),
+                            bid_ask_width: Money::zero(),
+                            side: if long {
+                                protopyne_strategy::PackageSide::Buy
                             } else {
-                                quote.bid
-                            };
+                                protopyne_strategy::PackageSide::Sell
+                            },
+                        };
+                        let ctx = protopyne_strategy::SizingCtx {
+                            unit: &unit,
+                            facts: &facts,
+                            equity: Some(equity_now),
+                        };
+                        let qty = sizer
+                            .size_for(&out, &ctx)
+                            .as_decimal()
+                            .to_f64()
+                            .unwrap_or(0.0)
+                            .min(u64::from(u32::MAX) as f64)
+                            as u32;
+                        if qty > 0 {
+                            let touch = if long { quote.ask } else { quote.bid };
                             let proposal = entry_proposal(
                                 &proposal_id("entry"),
                                 signal_name,
@@ -448,38 +669,58 @@ pub async fn run_equity_backtest(
                                 runner_config,
                             )
                             .await;
-                            let filled = decision.submitted;
-                            fills += u64::from(filled);
+                            fills += u64::from(decision.submitted);
                             let (Some(price), qty) =
                                 (decision.fill_price, decision.filled_quantity)
                             else {
                                 decisions.push(decision);
-                                curve.push(money(mark_equity(cash, position.as_ref(), close)));
+                                push_point(
+                                    &mut curve,
+                                    &mut status,
+                                    &mut levels,
+                                    money(mark_equity(cash, manager.position(), close)),
+                                    index,
+                                    &StatusCtx {
+                                        manager: &manager,
+                                        enabled: strategy.enabled,
+                                        index,
+                                        at: bar.ts.to_rfc3339(),
+                                        trades: &trades,
+                                        partials: &partials,
+                                    },
+                                );
                                 continue;
                             };
-                            {
-                                if filled && qty > 0 {
-                                    let entry = price.as_decimal().to_f64().unwrap_or(close);
-                                    filled_notional += price.as_decimal() * Decimal::from(qty);
-                                    fees_paid += decision
-                                        .fee
-                                        .map_or(0.0, |f| f.as_decimal().to_f64().unwrap_or(0.0));
-                                    // Longs pay the notional; shorts receive the
-                                    // proceeds (full-notional margin model is
-                                    // not used — equity marks the open leg).
-                                    if out.direction == Direction::Long {
-                                        cash -= entry * f64::from(qty);
-                                    } else {
-                                        cash += entry * f64::from(qty);
-                                    }
-                                    position = Some(open_position(
-                                        strategy, &out, qty, entry, index, atr, &legs, tp_weights,
-                                    ));
-                                    daily.trades_today += 1;
+                            if qty > 0 {
+                                let entry = price.as_decimal().to_f64().unwrap_or(close);
+                                filled_notional += price.as_decimal() * Decimal::from(qty);
+                                fees_paid += decision
+                                    .fee
+                                    .map_or(0.0, |f| f.as_decimal().to_f64().unwrap_or(0.0));
+                                if long {
+                                    cash -= entry * f64::from(qty);
+                                } else {
+                                    cash += entry * f64::from(qty);
                                 }
+                                manager.open(long, qty, entry, index, atr, bars);
+                                manager.note_entry();
                             }
                             decisions.push(decision);
-                            curve.push(money(mark_equity(cash, position.as_ref(), close)));
+                            push_point(
+                                &mut curve,
+                                &mut status,
+                                &mut levels,
+                                money(mark_equity(cash, manager.position(), close)),
+                                index,
+                                &StatusCtx {
+                                    manager: &manager,
+                                    enabled: strategy.enabled,
+                                    index,
+                                    at: bar.ts.to_rfc3339(),
+                                    trades: &trades,
+                                    partials: &partials,
+                                },
+                            );
                             continue;
                         }
                     }
@@ -489,7 +730,21 @@ pub async fn run_equity_backtest(
                         proposal_id("entry"),
                         "signal fired but sizing or grant left no quantity",
                     ));
-                    curve.push(money(mark_equity(cash, position.as_ref(), close)));
+                    push_point(
+                        &mut curve,
+                        &mut status,
+                        &mut levels,
+                        money(mark_equity(cash, manager.position(), close)),
+                        index,
+                        &StatusCtx {
+                            manager: &manager,
+                            enabled: strategy.enabled,
+                            index,
+                            at: bar.ts.to_rfc3339(),
+                            trades: &trades,
+                            partials: &partials,
+                        },
+                    );
                     continue;
                 }
             }
@@ -499,9 +754,23 @@ pub async fn run_equity_backtest(
                 proposal_id("quiet"),
                 "no entry: gate, cooldown, daily limit, or no trigger",
             ));
-            curve.push(money(mark_equity(cash, position.as_ref(), close)));
+            push_point(
+                &mut curve,
+                &mut status,
+                &mut levels,
+                money(mark_equity(cash, manager.position(), close)),
+                index,
+                &StatusCtx {
+                    manager: &manager,
+                    enabled: strategy.enabled,
+                    index,
+                    at: bar.ts.to_rfc3339(),
+                    trades: &trades,
+                    partials: &partials,
+                },
+            );
         } else {
-            curve.push(money(mark_equity(cash, position.as_ref(), close)));
+            curve.push(money(mark_equity(cash, manager.position(), close)));
         }
     }
 
@@ -510,6 +779,12 @@ pub async fn run_equity_backtest(
         vec![
             "equity fills price at the quoted touch through the installed venue".to_owned(),
             "stops and targets rest as explicit prices; trailing and breakeven only tighten"
+                .to_owned(),
+            "a bar that touches both the stop and a target resolves stop-first (the              exchange-conservative both-touched rule)"
+                .to_owned(),
+            "commissions are 3 basis points of notional (the reference percentage schedule),              with no per-contract charge"
+                .to_owned(),
+            "quotes are synthesized from the bar close with a symmetric spread, then the              venue's adverse slippage tolerance applies; the reference assumes one tick"
                 .to_owned(),
             "slippage is a fill-model assumption, never a gate".to_owned(),
         ],
@@ -527,19 +802,186 @@ pub async fn run_equity_backtest(
         None,
         protopyne_types::MarkBasis::FillPrice,
     );
-    let pnls: Vec<TradePnl> = trades
-        .iter()
-        .map(|t| t.as_pnl(t.entry_price * f64::from(t.qty)))
-        .collect();
-    report.trades = Some(TradesAnalysis::of(&pnls));
+    // Trade statistics describe **closed cycles**, not slices: a cycle is one
+    // entry through flat, so its P&L is the closing slice plus every partial
+    // that belonged to the same entry. Reporting only the closing slice would
+    // understate winners and hide the take-profit legs from the win rate.
+    report.trades = Some(TradesAnalysis::of(&cycles_of(&trades, &partials)));
     report.unavailable_tabs = absent_tabs();
+    // Portfolio aggregation over the same fills the report counts, folded once
+    // by the shared aggregator so an equity run and an option run describe
+    // their books identically.
+    let booked = crate::runner::booked_fills_of(
+        &decisions,
+        crate::portfolio::PAPER_PORTFOLIO,
+        grant.id.as_str(),
+        &venue_config.chain_history,
+    )?;
+    let marks: Vec<MarkPoint<'_>> = bars
+        .iter()
+        .map(|bar| MarkPoint {
+            at: bar.ts,
+            price: Money::new(bar.c),
+            chain: &venue_config.chain_history,
+        })
+        .collect();
+    report.portfolio = Some(crate::portfolio::aggregate(&booked)?.summarize(&marks)?);
     Ok(EquityRun {
         manifest,
         decisions,
         trades,
         partials,
+        status,
+        levels,
         report,
     })
+}
+
+/// Fold closed slices and their take-profit partials into per-cycle trades.
+/// A cycle is one entry through flat: the closing slice plus every partial
+/// that shares its entry bar and side. Units and P&L both accumulate, so the
+/// cycle's notional prices every share the entry opened.
+pub(crate) fn cycles_of(trades: &[EquityTrade], partials: &[EquityTrade]) -> Vec<TradePnl> {
+    trades
+        .iter()
+        .map(|trade| {
+            let mut pnl = trade.pnl;
+            let mut units = trade.qty;
+            for partial in partials {
+                if partial.entry_bar == trade.entry_bar && partial.long == trade.long {
+                    pnl += partial.pnl;
+                    units += partial.qty;
+                }
+            }
+            TradePnl {
+                long: trade.long,
+                pnl,
+                notional: trade.entry_price * f64::from(units),
+                bars_held: trade.bars_held,
+            }
+        })
+        .collect()
+}
+
+/// Everything one status row reads at one bar.
+struct StatusCtx<'a> {
+    manager: &'a PositionManager,
+    enabled: bool,
+    index: usize,
+    at: String,
+    trades: &'a [EquityTrade],
+    partials: &'a [EquityTrade],
+}
+
+/// The reference status table's eight rows at one bar, read from the run
+/// state the equity loop already carries. Closed-trade rows (win rate, net
+/// P&L) fold the same cycles the report counts, so the table and the metrics
+/// cannot disagree; the day rows mark at the curve value the bar closed at.
+fn status_of(equity: f64, ctx: &StatusCtx<'_>) -> BacktestStatusView {
+    let daily = ctx.manager.daily();
+    let position = match ctx.manager.position() {
+        Some(open) if open.long => format!("LONG {}", open.qty),
+        Some(open) => format!("SHORT {}", open.qty),
+        None => "Flat".to_owned(),
+    };
+    let day_pnl_pct = match daily.day_open_equity {
+        Some(open) if open > 0.0 => format!("{:.2}%", (equity - open) / open * 100.0),
+        _ => "0.00%".to_owned(),
+    };
+    let trades_today = if daily.max_trades > 0 {
+        format!("{} / {}", daily.trades_today, daily.max_trades)
+    } else {
+        format!("{}", daily.trades_today)
+    };
+    let cooldown = match ctx.manager.cooldown().last_exit {
+        Some((exit_bar, lost)) => {
+            let gate = ctx.manager.cooldown();
+            let wait = gate.bars + if lost { gate.loss_bars } else { 0 };
+            let left = (wait - ctx.index.saturating_sub(exit_bar) as i64).max(0);
+            if left > 0 {
+                format!("{left} bars")
+            } else {
+                "Ready".to_owned()
+            }
+        }
+        None => "Ready".to_owned(),
+    };
+    let status = if daily.halted {
+        "HALTED: daily loss".to_owned()
+    } else if !ctx.enabled {
+        "Disabled".to_owned()
+    } else {
+        "Active".to_owned()
+    };
+    let done_trades: Vec<EquityTrade> = ctx
+        .trades
+        .iter()
+        .filter(|trade| trade.exit_bar <= ctx.index)
+        .cloned()
+        .collect();
+    let done_partials: Vec<EquityTrade> = ctx
+        .partials
+        .iter()
+        .filter(|partial| partial.exit_bar <= ctx.index)
+        .cloned()
+        .collect();
+    let cycles = cycles_of(&done_trades, &done_partials);
+    let closed = cycles.len();
+    let wins = cycles.iter().filter(|cycle| cycle.pnl > 0.0).count();
+    let win_rate = if closed > 0 {
+        format!("{:.1}%", wins as f64 / closed as f64 * 100.0)
+    } else {
+        "-".to_owned()
+    };
+    let net: f64 = cycles.iter().map(|cycle| cycle.pnl).sum();
+    BacktestStatusView {
+        at: ctx.at.clone(),
+        position,
+        day_pnl_pct,
+        trades_today,
+        loss_streak: daily.consec_losses.max(0) as u64,
+        cooldown,
+        status,
+        win_rate,
+        net_pnl: Money::new(Decimal::from_f64_retain(net).unwrap_or(Decimal::ZERO)).to_string(),
+    }
+}
+
+/// Push one equity-curve point with its status row and resting levels: the
+/// three always move together, so no bar can carry a curve value without its
+/// table row, and a resting line never invents a point for a flat bar.
+#[allow(clippy::too_many_arguments)]
+fn push_point(
+    curve: &mut Vec<Money>,
+    status: &mut Vec<BacktestStatusView>,
+    levels: &mut Vec<LevelPoint>,
+    equity: Money,
+    index: usize,
+    ctx: &StatusCtx<'_>,
+) {
+    let marked = equity.as_decimal().to_f64().unwrap_or(f64::NAN);
+    status.push(status_of(marked, ctx));
+    if let Some(position) = ctx.manager.position() {
+        if position.stop.is_finite() {
+            levels.push(LevelPoint {
+                bar: index,
+                price: position.stop,
+                kind: LevelKind::Stop,
+            });
+        }
+        for (zone, target) in position.targets.iter().enumerate() {
+            if !position.target_fills[zone] {
+                if let Some(price) = target.filter(|price| price.is_finite()) {
+                    levels.push(LevelPoint {
+                        bar: index,
+                        price,
+                        kind: LevelKind::Target,
+                    });
+                }
+            }
+        }
+    }
+    curve.push(equity);
 }
 
 fn money(value: f64) -> Money {
@@ -565,25 +1007,6 @@ fn mark_equity(cash: f64, position: Option<&OpenPosition>, close: f64) -> f64 {
 fn grant_covers(grant: &Grant, out: &SignalOutput) -> bool {
     out.conviction >= grant.signal.min_conviction
         && out.activity_score >= grant.signal.min_activity_score
-}
-
-/// Entry stop distance from the configured construction, clamped into the
-/// ATR band.
-fn entry_stop_distance(strategy: &IntegrationLiteStrategyConfig, atr: f64, close: f64) -> f64 {
-    if !atr.is_finite() || atr <= 0.0 {
-        return f64::NAN;
-    }
-    let raw = match strategy.stop_type.as_str() {
-        "Percent" => stop_distance_pct(close, strategy.stop_pct).unwrap_or(f64::NAN),
-        "Swing" => {
-            stop_distance_swing(true, close, close, strategy.swing_buf_atr, atr).unwrap_or(f64::NAN)
-        }
-        _ => stop_distance_atr(atr, strategy.stop_atr_mult).unwrap_or(f64::NAN),
-    };
-    if !raw.is_finite() {
-        return f64::NAN;
-    }
-    clamp_stop(raw, atr, strategy.min_stop_atr, strategy.max_stop_atr)
 }
 
 fn entry_proposal(
@@ -616,406 +1039,13 @@ fn entry_proposal(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn open_position(
-    strategy: &IntegrationLiteStrategyConfig,
-    out: &SignalOutput,
-    qty: u32,
-    entry: f64,
-    entry_bar: usize,
-    atr: f64,
-    legs: &LiteLegs,
-    tp_weights: [f64; 3],
-) -> OpenPosition {
-    let long = out.direction == Direction::Long;
-    let stop_distance = entry_stop_distance(strategy, atr, entry);
-    let stop = if long {
-        entry - stop_distance
-    } else {
-        entry + stop_distance
-    };
-    let mults = [strategy.tp1_mult, strategy.tp2_mult, strategy.tp3_mult];
-    let mut tp_prices = [None; 3];
-    for (i, mult) in mults.iter().enumerate() {
-        let dist = if strategy.tp_basis == "ATR" {
-            atr * mult
-        } else {
-            stop_distance * mult
-        };
-        if dist.is_finite() && dist > 0.0 && tp_weights[i] > 0.0 {
-            tp_prices[i] = Some(if long { entry + dist } else { entry - dist });
-        }
-    }
-    let _ = legs;
-    OpenPosition {
-        long,
-        qty,
-        entry_price: entry,
-        entry_bar,
-        stop,
-        tp_prices,
-        tp_weights,
-        tp_filled: [false; 3],
-        be_armed: false,
-        tight: false,
-        partial: PartialOnce::default(),
-        partial_fired: false,
-        best: entry,
-    }
-}
-
-/// One management verdict for the open position on this bar.
-enum ExitAction {
-    Close {
-        price: f64,
-        reason: &'static str,
-    },
-    Partial {
-        price: f64,
-        qty: u32,
-        reason: &'static str,
-    },
-}
-
-/// Inspect the open position: stops, TP zones, exhaustion response, signal
-/// exits, and time stop, in that order. Trailing and breakeven only adjust
-/// the resting stop (ratchet-only) and return no action.
-#[allow(clippy::too_many_arguments)]
-fn manage_position(
-    strategy: &IntegrationLiteStrategyConfig,
-    indicator: &LiteIndicatorParams,
-    legs: &LiteLegs,
-    bars: &[Bar],
-    index: usize,
-    pos: &mut OpenPosition,
-    daily: &mut DailyLimits,
-    instance: &mut Box<dyn SignalInstance>,
-    window: &[Bar],
-    closes: &[f64],
-) -> Option<ExitAction> {
-    let bar = &bars[index];
-    let high = bar.h.to_f64().unwrap_or(f64::NAN);
-    let low = bar.l.to_f64().unwrap_or(f64::NAN);
-    let atr = legs.atr[index].unwrap_or(f64::NAN);
-    let fast = legs.fast[index];
-    let prev_fast = if index > 0 {
-        legs.fast[index - 1]
-    } else {
-        None
-    };
-    let crossed_back_against = match (prev_fast, fast) {
-        (Some(p), Some(c)) if pos.long => {
-            p >= strategy.sig_exhaust_level && c < strategy.sig_exhaust_level
-        }
-        (Some(p), Some(c)) if !pos.long => {
-            p <= -strategy.sig_exhaust_level && c > -strategy.sig_exhaust_level
-        }
-        _ => false,
-    };
-    // Exhaustion response.
-    if crossed_back_against || dual_against(strategy, legs, index, pos.long) {
-        let in_profit = if pos.long {
-            close_at(bars, index) > pos.entry_price
-        } else {
-            close_at(bars, index) < pos.entry_price
-        };
-        match strategy.exit_action.as_str() {
-            "Off" => {}
-            "Close All" => {
-                return Some(ExitAction::Close {
-                    price: close_at(bars, index),
-                    reason: "exhaustion-close",
-                });
-            }
-            action @ ("Partial Close" | "Tighten + Partial") => {
-                let _ = action;
-                if pos
-                    .partial
-                    .may_fire(true, in_profit, strategy.exit_only_profit)
-                {
-                    let qty =
-                        (f64::from(pos.qty) * strategy.exit_partial_pct / 100.0).floor() as u32;
-                    if qty > 0 && qty < pos.qty {
-                        pos.partial.latch();
-                        pos.partial_fired = true;
-                        pos.tight = true;
-                        return Some(ExitAction::Partial {
-                            price: close_at(bars, index),
-                            qty,
-                            reason: "exhaustion-partial",
-                        });
-                    }
-                }
-                if strategy.exit_action == "Tighten + Partial" {
-                    pos.tight = true;
-                }
-            }
-            _ => {
-                pos.tight = true;
-            }
-        }
-        if strategy.trail_on_exhaustion {
-            pos.tight = true;
-        }
-    }
-    // Stop first: a touched stop exits the full remainder at the stop.
-    if pos.long && low <= pos.stop {
-        return Some(ExitAction::Close {
-            price: pos.stop,
-            reason: "stop",
-        });
-    }
-    if !pos.long && high >= pos.stop {
-        return Some(ExitAction::Close {
-            price: pos.stop,
-            reason: "stop",
-        });
-    }
-    // TP zones in order: the first touched unfilled zone partials at its
-    // price. Whatever is left runs on the (possibly trailing) stop.
-    for zone in 0..3 {
-        if pos.tp_filled[zone] {
-            continue;
-        }
-        if let Some(tp) = pos.tp_prices[zone] {
-            let touched = if pos.long { high >= tp } else { low <= tp };
-            if touched {
-                let qty = (f64::from(pos.qty) * pos.tp_weights[zone] / 100.0).floor() as u32;
-                if qty > 0 && qty < pos.qty {
-                    pos.tp_filled[zone] = true;
-                    // Move the stop to breakeven immediately: this arm
-                    // returns below, which would otherwise skip the arm
-                    // until a later bar.
-                    if strategy.be_on_tp && atr.is_finite() && atr > 0.0 {
-                        pos.be_armed = true;
-                        let be =
-                            breakeven_price(pos.long, pos.entry_price, strategy.be_offset_atr, atr);
-                        pos.stop = ratchet_stop(pos.long, pos.stop, be);
-                    }
-                    return Some(ExitAction::Partial {
-                        price: tp,
-                        qty,
-                        reason: "take-profit",
-                    });
-                }
-                if qty >= pos.qty && pos.qty > 0 {
-                    pos.tp_filled[zone] = true;
-                    return Some(ExitAction::Close {
-                        price: tp,
-                        reason: "take-profit",
-                    });
-                }
-            }
-        }
-    }
-    // Signal exits: opposite trigger, ribbon flip against, fast zero-cross
-    // against, and the time stop.
-    if strategy.exit_opposite || strategy.exit_ribbon || strategy.exit_zero_cross {
-        let data = MarketData {
-            bars: window,
-            chain: None,
-            dte_days: 0,
-            timeframe: Timeframe::M1,
-        };
-        let view = MarketView {
-            data: &data,
-            closes,
-            as_of: bar.ts,
-        };
-        if let Ok(out) = instance.evaluate(&view) {
-            let opposite = out.direction
-                != if pos.long {
-                    Direction::Long
-                } else {
-                    Direction::Short
-                };
-            if strategy.exit_opposite && opposite {
-                return Some(ExitAction::Close {
-                    price: close_at(bars, index),
-                    reason: "opposite-signal",
-                });
-            }
-            if strategy.exit_ribbon && ribbon_against(legs, index, pos.long) {
-                return Some(ExitAction::Close {
-                    price: close_at(bars, index),
-                    reason: "ribbon-flip",
-                });
-            }
-            if strategy.exit_zero_cross && zero_against(legs, index, pos.long) {
-                return Some(ExitAction::Close {
-                    price: close_at(bars, index),
-                    reason: "zero-cross",
-                });
-            }
-        }
-    }
-    if strategy.exit_time_bars > 0
-        && index.saturating_sub(pos.entry_bar) as i64 >= strategy.exit_time_bars
-    {
-        return Some(ExitAction::Close {
-            price: close_at(bars, index),
-            reason: "time-stop",
-        });
-    }
-    // Breakeven arm: once armed, the stop rests past entry and only ever
-    // tightens from there.
-    if strategy.be_enable && atr.is_finite() && atr > 0.0 {
-        let profit_trigger = strategy.be_trigger_atr <= 0.0
-            || (if pos.long {
-                close_at(bars, index) - pos.entry_price
-            } else {
-                pos.entry_price - close_at(bars, index)
-            } >= strategy.be_trigger_atr * atr);
-        if profit_trigger || pos.be_armed {
-            pos.be_armed = true;
-            let be = breakeven_price(pos.long, pos.entry_price, strategy.be_offset_atr, atr);
-            pos.stop = ratchet_stop(pos.long, pos.stop, be);
-        }
-    }
-    // Trailing activation: immediate, on-TP, on-exhaustion, or on-profit.
-    // The candidate only ever tightens the resting stop.
-    let profit_atr = if atr.is_finite() && atr > 0.0 {
-        (if pos.long {
-            close_at(bars, index) - pos.entry_price
-        } else {
-            pos.entry_price - close_at(bars, index)
-        }) / atr
-    } else {
-        0.0
-    };
-    let active = strategy.trail_immediate
-        || (strategy.trail_on_tp && pos.tp_filled.iter().any(|f| *f))
-        || (strategy.trail_on_exhaustion && pos.tight)
-        || (strategy.trail_on_profit && profit_atr >= strategy.trail_profit_atr);
-    if active && atr.is_finite() && atr > 0.0 {
-        let mult = if pos.tight {
-            strategy.trail_tight_mult
-        } else {
-            strategy.trail_mult
-        };
-        let candidate = match strategy.trail_type.as_str() {
-            "Percent" => {
-                let pct = if pos.tight {
-                    strategy.trail_pct / 2.0
-                } else {
-                    strategy.trail_pct
-                };
-                trail_percent(pos.long, pos.best, pct)
-            }
-            "Ribbon Edge" => {
-                let edge = ribbon_edge(legs, index, pos.long);
-                trail_ribbon_edge(pos.long, edge, strategy.trail_ribbon_buf, atr)
-            }
-            _ => trail_chandelier(pos.long, pos.best, atr, mult),
-        };
-        pos.stop = ratchet_stop(pos.long, pos.stop, candidate);
-    }
-    let _ = (daily, indicator);
-    None
-}
-
-fn close_at(bars: &[Bar], index: usize) -> f64 {
-    bars[index].c.to_f64().unwrap_or(f64::NAN)
-}
-
-/// Dual-signal exhaustion mirror: the opposite dual trigger also fires
-/// exhaustion exits when armed.
-fn dual_against(
-    strategy: &IntegrationLiteStrategyConfig,
-    legs: &LiteLegs,
-    i: usize,
-    long: bool,
-) -> bool {
-    if !strategy.sig_dual || !strategy.sig_dual_exit {
-        return false;
-    }
-    let lookback = strategy.sig_dual_lookback.max(0) as usize;
-    let slow_cross_down = (0..=1).any(|_| false);
-    let _ = slow_cross_down;
-    let down = crossed_down_at(&legs.slow, strategy.sig_dual_slow, i);
-    let up = crossed_up_at(&legs.slow, -strategy.sig_dual_slow, i);
-    let fast_beyond = |level: f64, below: bool| {
-        (0..=lookback.min(i)).any(|back| {
-            legs.fast[i - back].is_some_and(|v| if below { v < level } else { v > level })
-        })
-    };
-    if long {
-        down && fast_beyond(strategy.sig_dual_fast, false)
-    } else {
-        up && fast_beyond(-strategy.sig_dual_fast, true)
-    }
-}
-
-fn crossed_up_at(series: &[Option<f64>], level: f64, i: usize) -> bool {
-    if i < 1 {
-        return false;
-    }
-    matches!(
-        (series.get(i - 1), series.get(i)),
-        (Some(Some(p)), Some(Some(c))) if *p <= level && *c > level
-    )
-}
-
-fn crossed_down_at(series: &[Option<f64>], level: f64, i: usize) -> bool {
-    if i < 1 {
-        return false;
-    }
-    matches!(
-        (series.get(i - 1), series.get(i)),
-        (Some(Some(p)), Some(Some(c))) if *p >= level && *c < level
-    )
-}
-
-fn ribbon_against(legs: &LiteLegs, i: usize, long: bool) -> bool {
-    if i < 1 {
-        return false;
-    }
-    match (
-        legs.adaptive.get(i - 1),
-        legs.adaptive.get(i),
-        legs.signal.get(i - 1),
-        legs.signal.get(i),
-    ) {
-        (Some(Some(pa)), Some(Some(ca)), Some(Some(ps)), Some(Some(cs))) => {
-            if long {
-                pa >= ps && ca < cs
-            } else {
-                pa <= ps && ca > cs
-            }
-        }
-        _ => false,
-    }
-}
-
-fn zero_against(legs: &LiteLegs, i: usize, long: bool) -> bool {
-    if long {
-        crossed_down_at(&legs.fast, 0.0, i)
-    } else {
-        crossed_up_at(&legs.fast, 0.0, i)
-    }
-}
-
-fn ribbon_edge(legs: &LiteLegs, i: usize, long: bool) -> f64 {
-    let a = legs.adaptive.get(i).and_then(|v| *v).unwrap_or(f64::NAN);
-    let g = legs.signal.get(i).and_then(|v| *v).unwrap_or(f64::NAN);
-    if long {
-        a.min(g)
-    } else {
-        a.max(g)
-    }
-}
-
-/// Submit one exit (full or partial) through the shared submission body
-/// and book the fill into runner state.
-#[allow(clippy::too_many_arguments)]
-async fn apply_exit(
-    action: ExitAction,
-    position: &mut Option<OpenPosition>,
+async fn submit_exit_intent(
+    intent: ExitIntent,
+    manager: &mut PositionManager,
     trades: &mut Vec<EquityTrade>,
     partials: &mut Vec<EquityTrade>,
     cash: &mut f64,
     fees_paid: &mut f64,
-    cooldown: &mut CooldownGate,
-    daily: &mut DailyLimits,
     decisions: &mut Vec<BarDecision>,
     fills: &mut u64,
     filled_notional: &mut Decimal,
@@ -1029,163 +1059,32 @@ async fn apply_exit(
     bar: &Bar,
     index: usize,
     seed: u64,
-    atr: f64,
 ) {
-    let Some(pos) = position.as_mut() else {
+    let Some(pos) = manager.position() else {
         return;
     };
-    let (qty, price, reason) = match action {
-        ExitAction::Close { price, reason } => (pos.qty, price, reason),
-        ExitAction::Partial { price, qty, reason } => (qty.min(pos.qty), price, reason),
+    let long = pos.long;
+    let qty = match intent.quantity {
+        ExitQuantity::All => pos.qty,
+        ExitQuantity::Units(units) => units.min(pos.qty),
+        ExitQuantity::Fraction(fraction) => {
+            (f64::from(pos.qty) * fraction.clamp(0.0, 1.0)).floor() as u32
+        }
+    };
+    let price = match intent.price {
+        RestingPrice::Market => bar.c.to_f64().unwrap_or(f64::NAN),
+        RestingPrice::At(price) => price.as_decimal().to_f64().unwrap_or(f64::NAN),
     };
     if qty == 0 || !price.is_finite() {
         return;
     }
-    let Some(quote) = quote_for_bar(bar, &venue_config_of(venue)) else {
+    let reason = intent.reason;
+    let Some(quote) = quote_for_bar(bar, venue.config()) else {
         return;
     };
-    let touch = if pos.long { quote.bid } else { quote.ask };
-    // Resting stop/target prices submit as limits; marketable flow still
-    // clears through the venue's own liquidity filter.
-    let _ = atr;
+    let touch = if long { quote.bid } else { quote.ask };
     let proposal = Proposal::new()
         .id(format!("equity-{seed}-{index}-x-{reason}"))
-        .strategy(signal_name.to_owned())
-        .underlying(underlying.to_owned())
-        .direction(if pos.long {
-            Direction::Long
-        } else {
-            Direction::Short
-        })
-        .side(ProposalSide::Exit)
-        .structure(StructureKind::Single)
-        .quantity(Qty::new(Decimal::from(qty)))
-        .limit_price(limit_price_for_exit(pos.long, price, touch))
-        .max_loss(money(0.0))
-        .notional(money(price * f64::from(qty)))
-        .dte_days(0)
-        .conviction(1.0)
-        .activity_score(1.0)
-        .created_at(bar.ts)
-        .build();
-    let decision = submit_decided(
-        proposal,
-        quote,
-        risk,
-        ledger,
-        venue,
-        recorder,
-        BarHealth::rehearsed(),
-        None,
-        index,
-        bar,
-        runner_config,
-    )
-    .await;
-    if decision.submitted {
-        *fills += 1;
-    }
-    let fill_price = decision
-        .fill_price
-        .map_or(price, |m| m.as_decimal().to_f64().unwrap_or(price));
-    let filled_qty = if decision.submitted {
-        decision.filled_quantity.min(pos.qty)
-    } else {
-        // Unfilled exits carry to the next bar at the resting price: the
-        // position stays open, so nothing books here.
-        decisions.push(decision);
-        return;
-    };
-    if filled_qty == 0 {
-        decisions.push(decision);
-        return;
-    }
-    let fee = decision
-        .fee
-        .map_or(0.0, |f| f.as_decimal().to_f64().unwrap_or(0.0));
-    *fees_paid += fee;
-    *filled_notional +=
-        Decimal::from_f64_retain(fill_price * f64::from(filled_qty)).unwrap_or(Decimal::ZERO);
-    let proceeds = fill_price * f64::from(filled_qty);
-    if pos.long {
-        *cash += proceeds - fee;
-    } else {
-        *cash -= proceeds + fee;
-    }
-    let closing_all = filled_qty >= pos.qty;
-    let pnl = if pos.long {
-        (fill_price - pos.entry_price) * f64::from(filled_qty) - fee
-    } else {
-        (pos.entry_price - fill_price) * f64::from(filled_qty) - fee
-    };
-    let trade = EquityTrade {
-        long: pos.long,
-        qty: filled_qty,
-        entry_price: pos.entry_price,
-        entry_bar: pos.entry_bar,
-        exit_price: fill_price,
-        exit_bar: index,
-        pnl,
-        bars_held: (index.saturating_sub(pos.entry_bar) + 1) as u64,
-        exit_reason: reason.to_owned(),
-    };
-    // Partial exits do not close the book: shrink the position, keep the
-    // resting stop, and record the slice as its own trade.
-    if closing_all {
-        let lost = pnl < 0.0;
-        cooldown.last_exit = Some((index, lost));
-        if lost {
-            daily.consec_losses += 1;
-        } else {
-            daily.consec_losses = 0;
-        }
-        *position = None;
-        trades.push(trade);
-    } else {
-        pos.qty -= filled_qty;
-        partials.push(trade);
-    }
-    decisions.push(decision);
-}
-
-/// Submit a full close through the shared body (session/day-loss flatten).
-#[allow(clippy::too_many_arguments)]
-async fn close_position(
-    position: &mut Option<OpenPosition>,
-    trades: &mut Vec<EquityTrade>,
-    cash: &mut f64,
-    fees_paid: &mut f64,
-    cooldown: &mut CooldownGate,
-    daily: &mut DailyLimits,
-    decisions: &mut Vec<BarDecision>,
-    fills: &mut u64,
-    filled_notional: &mut Decimal,
-    venue: &BacktestVenue,
-    ledger: &GrantLedger,
-    recorder: &Recorder<'_>,
-    risk: &RiskEngine,
-    runner_config: &RunnerConfig,
-    signal_name: &str,
-    underlying: &str,
-    bar: &Bar,
-    index: usize,
-    proposal_id: &str,
-    reason: &str,
-    price: f64,
-    qty: u32,
-) {
-    if qty == 0 {
-        return;
-    }
-    let Some(pos) = position.as_ref() else {
-        return;
-    };
-    let long = pos.long;
-    let Some(quote) = quote_for_bar(bar, &venue_config_of(venue)) else {
-        return;
-    };
-    let proposal = Proposal::new()
-        .id(proposal_id.to_owned())
         .strategy(signal_name.to_owned())
         .underlying(underlying.to_owned())
         .direction(if long {
@@ -1196,11 +1095,7 @@ async fn close_position(
         .side(ProposalSide::Exit)
         .structure(StructureKind::Single)
         .quantity(Qty::new(Decimal::from(qty)))
-        .limit_price(limit_price_for_exit(
-            long,
-            price,
-            if long { quote.bid } else { quote.ask },
-        ))
+        .limit_price(limit_price_for_exit(long, price, touch))
         .max_loss(money(0.0))
         .notional(money(price * f64::from(qty)))
         .dte_days(0)
@@ -1244,21 +1139,19 @@ async fn close_position(
     *fees_paid += fee;
     *filled_notional +=
         Decimal::from_f64_retain(fill_price * f64::from(filled_qty)).unwrap_or(Decimal::ZERO);
-    let pos = position.as_ref().expect("open");
     let proceeds = fill_price * f64::from(filled_qty);
-    if pos.long {
+    if long {
         *cash += proceeds - fee;
     } else {
         *cash -= proceeds + fee;
     }
-    let pnl = if pos.long {
+    let pnl = if long {
         (fill_price - pos.entry_price) * f64::from(filled_qty) - fee
     } else {
         (pos.entry_price - fill_price) * f64::from(filled_qty) - fee
     };
-    let lost = pnl < 0.0;
     let trade = EquityTrade {
-        long: pos.long,
+        long,
         qty: filled_qty,
         entry_price: pos.entry_price,
         entry_bar: pos.entry_bar,
@@ -1266,20 +1159,16 @@ async fn close_position(
         exit_bar: index,
         pnl,
         bars_held: (index.saturating_sub(pos.entry_bar) + 1) as u64,
-        exit_reason: reason.to_owned(),
+        exit_reason: reason.clone(),
     };
     if filled_qty >= pos.qty {
-        cooldown.last_exit = Some((index, lost));
-        if lost {
-            daily.consec_losses += 1;
-        } else {
-            daily.consec_losses = 0;
-        }
-        *position = None;
-    } else if let Some(open) = position.as_mut() {
-        open.qty -= filled_qty;
+        manager.close();
+        manager.note_exit(index, pnl);
+        trades.push(trade);
+    } else {
+        manager.take_units(filled_qty);
+        partials.push(trade);
     }
-    trades.push(trade);
     decisions.push(decision);
 }
 
@@ -1294,10 +1183,6 @@ fn limit_price_for_exit(long: bool, price: f64, touch: Money) -> Money {
         price >= touch_px
     };
     money(if marketable { price } else { touch_px })
-}
-
-fn venue_config_of(venue: &BacktestVenue) -> BacktestConfig {
-    venue.config().clone()
 }
 
 #[cfg(test)]

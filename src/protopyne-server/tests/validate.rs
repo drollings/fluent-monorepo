@@ -1,12 +1,7 @@
 use super::*;
+use crate::common_fixtures::money;
 use fluent_wvr::prelude::*;
 use fluent_wvr::validate::{check_for_execute, Validate};
-use protopyne_types::Money;
-use rust_decimal::Decimal;
-
-fn money(value: i64) -> Money {
-    Money::new(Decimal::from(value))
-}
 
 #[test]
 fn server_config_trait_parity() {
@@ -49,8 +44,8 @@ fn backtest_and_runner_trait_parity() {
     let good_run = RunnerConfig::new(
         "SPY".to_owned(),
         "ribbon".to_owned(),
-        money(400),
-        money(2_000),
+        money("400"),
+        money("2_000"),
         30,
         0,
     );
@@ -59,8 +54,8 @@ fn backtest_and_runner_trait_parity() {
     let bad_run = RunnerConfig::new(
         String::new(),
         "ribbon".to_owned(),
-        money(400),
-        money(2_000),
+        money("400"),
+        money("2_000"),
         30,
         0,
     );

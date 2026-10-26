@@ -3,23 +3,20 @@
 //! cooldown/daily/session gates — the script's risk/management book encoded
 //! as validated values and pure functions, not inline runner code.
 //!
-//! The stateless pieces implement the element traits where the signatures
-//! fit: [`EquitySizer`] sizes, [`EquityStopLoss`]/[`EquityTarget`] guard one
-//! open position each (constructed per trade, since the threshold is a
-//! per-trade distance). Everything that needs memory across bars — trailing
-//! ratchets, breakeven arms, partial-once flags, cooldown counters, daily
-//! tallies — lives in runner-owned state updated through the pure
-//! transitions below, so the rules stay testable without a venue. The
-//! server's equity runner is the only production caller.
+//! [`EquitySizer`] sizes through the priced unit; the pure transitions
+//! below (breakeven, ratchets, trailing candidates, cooldown/daily/session
+//! gates, partial-once latches) carry no memory across bars — the run-owned
+//! position manager holds the counters and threads them through, so the rules
+//! stay testable without a venue.
 
 use rust_decimal::prelude::ToPrimitive as _;
 use rust_decimal::Decimal;
 
-use crate::elements::{Monitor, MonitorAlert, Sizing};
+use crate::axes::GateAxis;
+use crate::elements::{Sizing, SizingCtx};
 use crate::error::StrategyError;
-use crate::proposal::Direction;
 use crate::risk::PortfolioFacts;
-use protopyne_types::{Money, Qty};
+use protopyne_types::Qty;
 
 /// Sizing-mode options (script spelling).
 #[must_use]
@@ -109,10 +106,11 @@ pub fn clamp_stop(distance: f64, atr: f64, min_mult: f64, max_mult: f64) -> f64 
     distance.clamp(min_mult * atr, max_mult * atr)
 }
 
-/// Sizing for one equity trade. The per-trade numbers (equity, price, stop
-/// distance) ride the instance because the [`Sizing`] signature only sees
-/// the signal and the observed facts; when the observed facts carry net
-/// liquidation it wins over the carried equity. Anything unmeasurable
+/// Sizing for one equity trade. The per-trade numbers arrive with the
+/// priced unit through [`Sizing::size_for`]: the equity path builds the
+/// unit from the close and the clamped stop distance every bar, so no
+/// per-trade state rides the instance and no
+/// second sizing path can drift from the first. Anything unmeasurable
 /// sizes zero — downstream refuses a zero quantity with a reason.
 #[derive(Debug, Clone, PartialEq)]
 pub struct EquitySizer {
@@ -121,15 +119,12 @@ pub struct EquitySizer {
     size_pct: f64,
     fixed_qty: f64,
     max_notional_pct: f64,
-    equity: Option<f64>,
-    price: Option<f64>,
-    stop_distance: Option<f64>,
 }
 
 impl EquitySizer {
     /// Build the policy from the strategy dials. Refuses unknown modes and
-    /// out-of-window numbers; per-trade numbers arrive via
-    /// [`for_trade`](Self::for_trade).
+    /// out-of-window numbers; per-trade numbers arrive with the priced unit
+    /// through [`size_for`](Sizing::size_for).
     pub fn new(
         mode: &str,
         risk_pct: f64,
@@ -168,49 +163,7 @@ impl EquitySizer {
             size_pct,
             fixed_qty,
             max_notional_pct,
-            equity: None,
-            price: None,
-            stop_distance: None,
         })
-    }
-
-    /// Bind the per-trade numbers: account equity, entry price, and the
-    /// clamped stop distance the risk stop will rest at.
-    #[must_use]
-    pub fn for_trade(&self, equity: f64, price: f64, stop_distance: f64) -> Self {
-        let mut out = self.clone();
-        out.equity = Some(equity);
-        out.price = Some(price);
-        out.stop_distance = Some(stop_distance);
-        out
-    }
-
-    /// Whole shares for the trade, floored, capped by max notional.
-    /// Unmeasurable inputs (no equity, no price, no stop where the mode
-    /// needs one) size zero.
-    #[must_use]
-    pub fn shares(&self, facts: &PortfolioFacts) -> u64 {
-        let equity = facts
-            .net_liq
-            .as_ref()
-            .and_then(|m| m.as_decimal().to_f64())
-            .filter(|v| v.is_finite() && *v > 0.0)
-            .or_else(|| self.equity.filter(|v| v.is_finite() && *v > 0.0));
-        let price = self.price.filter(|v| v.is_finite() && *v > 0.0);
-        let stop = self.stop_distance.filter(|v| v.is_finite() && *v > 0.0);
-        let (Some(equity), Some(price)) = (equity, price) else {
-            return 0;
-        };
-        let raw = match self.mode.as_str() {
-            "Risk Percent" => stop.map_or(0.0, |d| equity * self.risk_pct / 100.0 / d),
-            "Percent of Equity" => equity * self.size_pct / 100.0 / price,
-            _ => self.fixed_qty,
-        };
-        if !raw.is_finite() || raw < 0.0 {
-            return 0;
-        }
-        let cap = equity * self.max_notional_pct / 100.0 / price;
-        raw.min(cap).floor().max(0.0) as u64
     }
 }
 
@@ -223,118 +176,57 @@ impl Sizing for EquitySizer {
         }
     }
 
-    fn size(&self, _signal: &crate::elements::SignalOutput, facts: &PortfolioFacts) -> Qty {
-        Qty::new(Decimal::from(self.shares(facts)))
-    }
-}
-
-/// One open position's stop as a [`LossMgmt`](crate::elements::LossMgmt)
-/// rule: the runner constructs it per trade from the clamped stop distance
-/// times the held quantity, and replaces it when a ratchet tightens. The
-/// threshold only ever tightens — the runner enforces that, this rule just
-/// fires past its line.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EquityStopLoss {
-    max_loss: Money,
-}
-
-impl EquityStopLoss {
-    /// Build from the whole-position risk distance. Refuses non-positive
-    /// thresholds: a stop that cannot be a trigger is a construction error.
-    pub fn new(max_loss: Money) -> Result<Self, StrategyError> {
-        if max_loss.as_decimal() <= Decimal::ZERO {
-            return Err(StrategyError::InvalidElement(format!(
-                "equity stop needs a positive threshold, got {max_loss}"
-            )));
-        }
-        Ok(Self { max_loss })
+    fn axis(&self) -> GateAxis {
+        // The policy expresses allocation (TaskValue). Its internal
+        // max-notional cap (`size_for`: `raw.min(cap)`) is the Correctness
+        // bound on this path, and it lives in exactly that one place.
+        GateAxis::TaskValue
     }
 
-    /// The threshold this instance guards.
-    #[must_use]
-    pub fn threshold(&self) -> Money {
-        self.max_loss
-    }
-}
-
-impl crate::elements::LossMgmt for EquityStopLoss {
-    fn name(&self) -> &str {
-        "equity-stop"
+    /// Compatibility shim: the unit context is absent here, so this always
+    /// sizes zero. Size through [`size_for`](Sizing::size_for) with a priced
+    /// unit instead — a zero here is the documented absence, never a trade.
+    fn size(&self, _signal: &crate::elements::SignalOutput, _facts: &PortfolioFacts) -> Qty {
+        Qty::zero()
     }
 
-    fn review(
-        &self,
-        position: &crate::elements::PositionView<'_>,
-        mark: &crate::elements::MarkContext,
-    ) -> Vec<crate::elements::LossAction> {
-        use crate::elements::LossAction;
-        let Some(price) = mark.mark else {
-            return Vec::new();
+    /// Whole shares for the trade, floored, capped by max notional.
+    /// Unmeasurable inputs (no equity, no price, no stop where the mode
+    /// needs one) size zero. Observed net liquidation wins over the
+    /// caller's marked equity when both are present.
+    fn size_for(&self, _signal: &crate::elements::SignalOutput, ctx: &SizingCtx<'_>) -> Qty {
+        let equity = ctx
+            .facts
+            .net_liq
+            .as_ref()
+            .and_then(|m| m.as_decimal().to_f64())
+            .filter(|v| v.is_finite() && *v > 0.0)
+            .or_else(|| ctx.equity.filter(|v| v.is_finite() && *v > 0.0));
+        let price = ctx
+            .unit
+            .price_per_unit
+            .as_decimal()
+            .to_f64()
+            .filter(|v| v.is_finite() && *v > 0.0);
+        let stop = ctx
+            .unit
+            .max_loss_per_unit
+            .as_decimal()
+            .to_f64()
+            .filter(|v| v.is_finite() && *v > 0.0);
+        let (Some(equity), Some(price)) = (equity, price) else {
+            return Qty::zero();
         };
-        let per_unit = match position.side {
-            Direction::Long => price.as_decimal() - position.entry_avg.as_decimal(),
-            Direction::Short => position.entry_avg.as_decimal() - price.as_decimal(),
+        let raw = match self.mode.as_str() {
+            "Risk Percent" => stop.map_or(0.0, |d| equity * self.risk_pct / 100.0 / d),
+            "Percent of Equity" => equity * self.size_pct / 100.0 / price,
+            _ => self.fixed_qty,
         };
-        let pnl = per_unit * Decimal::from(position.quantity);
-        if pnl < -self.max_loss.as_decimal() {
-            vec![LossAction {
-                kind: "stop".to_owned(),
-                reason: format!("unrealised {pnl} past equity stop {}", self.max_loss),
-            }]
-        } else {
-            Vec::new()
+        if !raw.is_finite() || raw < 0.0 {
+            return Qty::zero();
         }
-    }
-}
-
-/// One take-profit zone as a rule: fires once the unrealised gain runs past
-/// its line. The runner owns the weight and the once-per-zone fill; the
-/// rule only names the line.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EquityTarget {
-    target: protopyne_types::Money,
-}
-
-impl EquityTarget {
-    /// Build from the whole-position gain at this zone. Refuses
-    /// non-positive lines.
-    pub fn new(target: Money) -> Result<Self, StrategyError> {
-        if target.as_decimal() <= Decimal::ZERO {
-            return Err(StrategyError::InvalidElement(format!(
-                "equity target needs a positive line, got {target}"
-            )));
-        }
-        Ok(Self { target })
-    }
-}
-
-impl crate::elements::LossMgmt for EquityTarget {
-    fn name(&self) -> &str {
-        "equity-target"
-    }
-
-    fn review(
-        &self,
-        position: &crate::elements::PositionView<'_>,
-        mark: &crate::elements::MarkContext,
-    ) -> Vec<crate::elements::LossAction> {
-        use crate::elements::LossAction;
-        let Some(price) = mark.mark else {
-            return Vec::new();
-        };
-        let per_unit = match position.side {
-            Direction::Long => price.as_decimal() - position.entry_avg.as_decimal(),
-            Direction::Short => position.entry_avg.as_decimal() - price.as_decimal(),
-        };
-        let pnl = per_unit * Decimal::from(position.quantity);
-        if pnl > self.target.as_decimal() {
-            vec![LossAction {
-                kind: "profit-target".to_owned(),
-                reason: format!("unrealised {pnl} past equity target {}", self.target),
-            }]
-        } else {
-            Vec::new()
-        }
+        let cap = equity * self.max_notional_pct / 100.0 / price;
+        Qty::new(Decimal::from(raw.min(cap).floor().max(0.0) as u64))
     }
 }
 
@@ -498,33 +390,6 @@ impl SessionGate {
     #[must_use]
     pub fn may_enter(&self, bar_min: i64) -> bool {
         bar_min < self.close_min - self.noentry_min
-    }
-}
-
-/// Monitor that surfaces gate breaches as alerts: the gate values above
-/// decide, this names them on the [`Monitor`] channel. Stateless over the
-/// values the runner threads in — the runner still owns the counters.
-pub struct GateMonitor {
-    /// What to blame in the alert.
-    pub gate: &'static str,
-    /// Whether the gate currently blocks.
-    pub blocked: bool,
-}
-
-impl Monitor for GateMonitor {
-    fn observe(
-        &self,
-        _facts: &PortfolioFacts,
-        _positions: &[crate::elements::PositionView<'_>],
-    ) -> Vec<MonitorAlert> {
-        if self.blocked {
-            vec![MonitorAlert {
-                portfolio: "equity".to_owned(),
-                message: format!("{} gate blocks new entries", self.gate),
-            }]
-        } else {
-            Vec::new()
-        }
     }
 }
 

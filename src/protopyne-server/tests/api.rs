@@ -1,22 +1,15 @@
 use super::*;
+use crate::common_fixtures::spy_history;
 use protopyne_strategy::fixtures::grant_with;
-use std::path::PathBuf;
 use std::time::Duration;
 
 use chrono::{TimeZone, Utc};
+use fluent_wvr::validate::Validate;
 use protopyne_strategy::elements::ExplicitStructure;
 use protopyne_strategy::{FixedSignal, GrantBudgets, Strategy};
 use protopyne_venue::calculate_price_entry_average;
 
 use crate::rehearsal::StrategyKind;
-
-fn history() -> Vec<Bar> {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests")
-        .join("data")
-        .join("SPY_15M.csv");
-    crate::csv::load_bars_csv(&path).expect("vendored history loads")
-}
 
 fn test_grant(id: &str, max_trades: u32) -> Grant {
     // The shared fixture's shape; only the id and the trade budget differ.
@@ -28,7 +21,9 @@ fn test_grant(id: &str, max_trades: u32) -> Grant {
 
 async fn boot() -> ServerHandle {
     let config = ServerConfig::new().bind("127.0.0.1:0".to_owned()).build();
-    serve(config, history()).await.expect("test server boots")
+    serve(config, spy_history())
+        .await
+        .expect("test server boots")
 }
 
 fn base(handle: &ServerHandle) -> String {
@@ -37,7 +32,7 @@ fn base(handle: &ServerHandle) -> String {
 
 #[test]
 fn bar_frames_carry_feed_cycle() {
-    let bar = &history()[0];
+    let bar = &spy_history()[0];
     for cycle in [0u64, 3] {
         let text = bar_frame(cycle, 7, bar).expect("chartable bar frames");
         let frame: serde_json::Value = serde_json::from_str(&text).expect("frame is JSON");
@@ -126,7 +121,7 @@ async fn preview_populates_inbox_and_portfolio() {
         .await
         .expect("preview is a run");
     let run = response.run;
-    assert_eq!(run.decisions.len(), history().len());
+    assert_eq!(run.decisions.len(), spy_history().len());
     assert!(run.report.fills > 0);
     for entry in &response.deny_histogram {
         assert!(!entry.reason.is_empty());
@@ -282,7 +277,7 @@ async fn unfilled_inbox_rows_carry_bar_close_limits() {
         .await
         .expect("rehearsal inbox is JSON");
     assert!(!inbox.is_empty());
-    let bars = history();
+    let bars = spy_history();
     let mut saw_pending = false;
     for row in &inbox {
         assert_eq!(
@@ -350,7 +345,7 @@ async fn inbox_projects_the_decisions_real_attribution() {
         &projection_grant(),
         &venue,
         &runner,
-        &history(),
+        &spy_history(),
         7,
     )
     .await
@@ -401,7 +396,7 @@ async fn portfolio_average_is_the_canonical_entry_formula() {
             30,
             0,
         ),
-        &history(),
+        &spy_history(),
         5,
     )
     .await
@@ -700,9 +695,9 @@ async fn chart_contract_matches_kernel_output() {
         .json()
         .await
         .expect("bars are JSON");
-    assert_eq!(bars.rows.len(), history().len());
+    assert_eq!(bars.rows.len(), spy_history().len());
     assert_eq!(bars.dropped, 0, "vendored history must be fully chartable");
-    assert_eq!(bars.rows[0].time, history()[0].ts.timestamp());
+    assert_eq!(bars.rows[0].time, spy_history()[0].ts.timestamp());
 
     let overlay: OverlaySeries = client
         .get(format!(
@@ -715,8 +710,8 @@ async fn chart_contract_matches_kernel_output() {
         .json()
         .await
         .expect("overlay is JSON");
-    assert_eq!(overlay.values.len(), history().len());
-    let closes: Vec<f64> = history()
+    assert_eq!(overlay.values.len(), spy_history().len());
+    let closes: Vec<f64> = spy_history()
         .iter()
         .filter_map(|bar| {
             use rust_decimal::prelude::ToPrimitive as _;
@@ -797,7 +792,7 @@ async fn chart_overlay_serves_verified_overlaps_positionally() {
         .json()
         .await
         .expect("bars are JSON");
-    let closes: Vec<f64> = history()
+    let closes: Vec<f64> = spy_history()
         .iter()
         .filter_map(|bar| {
             use rust_decimal::prelude::ToPrimitive as _;
@@ -971,7 +966,7 @@ async fn portfolio_fold_reduces_opposite_direction_fills_like_the_venue() {
             30,
             0,
         ),
-        &history(),
+        &spy_history(),
         5,
     )
     .await

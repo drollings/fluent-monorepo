@@ -12,6 +12,7 @@
 
 use std::ops::Range;
 
+use fluent_wvr::validate::Validate;
 use protopyne_strategy::{Grant, RiskEngine, RiskLimits, Strategy};
 use protopyne_types::{Bar, Money};
 

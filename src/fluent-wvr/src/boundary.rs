@@ -17,7 +17,7 @@
 //!   coercion into typed members.
 //!
 //! Value normalization (quote stripping, control-character escaping, literal
-//! spelling mapping) lives in [`crate::coerce`], shared with the derive macro's
+//! spelling mapping) lives in [`mod@crate::coerce`], shared with the derive macro's
 //! `#[field(coerce = "...")]` pipeline, so one definition drives extraction,
 //! coercion, and validation.
 //!
@@ -288,7 +288,9 @@ fn walk(raw: &str, opts: &BoundaryOptions) -> (String, Vec<(String, String)>) {
                 out.push(c);
             }
             if let Some((_, ke)) = key_slice.as_mut() {
-                *ke = i;
+                // One past the current content character, so the slice
+                // includes it when the closing quote resolves the key.
+                *ke = i + 1;
             }
             i += 1;
             continue;

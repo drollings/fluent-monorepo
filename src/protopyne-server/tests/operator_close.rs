@@ -3,6 +3,7 @@
 //! per-bar fold settles closes through the ledger while cancels hold no
 //! budget.
 
+use crate::common_fixtures::money;
 use protopyne_strategy::fixtures::grant_with;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -34,10 +35,6 @@ fn bars() -> Vec<protopyne_types::Bar> {
 
 fn base(handle: &crate::service::ServerHandle) -> String {
     format!("http://{}", handle.addr)
-}
-
-fn money(value: &str) -> Money {
-    Money::new(value.parse::<Decimal>().expect("decimal"))
 }
 
 fn now() -> chrono::DateTime<Utc> {

@@ -21,12 +21,14 @@ pub use symbols::{
     SYMBOL_CATALOG,
 };
 pub use views::{
-    ArmResponse, BrokerAccountView, BrokerCapabilityView, BrokerDealView, BrokerLegView,
-    BrokerOrderView, BrokerRefusal, ChartBar, ChartBars, CommandStatus, ConcentrationReport,
-    ConcentrationShare, DenyCount, HealthView, JournalRowView, OverlaySeries, PortfolioView,
-    PositionView, PreviewResponse, ProposalView, RehearsalEconomics, ReplayDecisionView,
-    ReplayLegView, ReplayPositionView, ReplayStartParams, ReplayStateView, ReplayStepView,
-    ReplayView, StructureKindHint, SymbolInfoView, TicketDraft, TicketDriftView, TicketSide,
-    TicketView, WorstCase, CONCENTRATION_EVENT_EXPIRY_WEEK, CONCENTRATION_EVENT_UNEXPOSED,
-    CONCENTRATION_NO_EXPIRY, PORTFOLIO_SOURCE_BOOKED, PORTFOLIO_SOURCE_REHEARSAL,
+    ArmResponse, BacktestMarkerView, BacktestMetricView, BacktestRunParams, BacktestRunRef,
+    BacktestRunView, BacktestSchemaView, BacktestStatusView, BacktestTradeView, BrokerAccountView,
+    BrokerCapabilityView, BrokerDealView, BrokerLegView, BrokerOrderView, BrokerRefusal, ChartBar,
+    ChartBars, CommandStatus, ConcentrationReport, ConcentrationShare, DenyCount, EquityPointView,
+    HealthView, JournalRowView, OverlaySeries, PortfolioView, PositionView, PreviewResponse,
+    ProposalView, RehearsalEconomics, ReplayDecisionView, ReplayLegView, ReplayPositionView,
+    ReplayStartParams, ReplayStateView, ReplayStepView, ReplayView, StructureKindHint,
+    SymbolInfoView, TicketDraft, TicketDriftView, TicketSide, TicketView, WorstCase,
+    CONCENTRATION_EVENT_EXPIRY_WEEK, CONCENTRATION_EVENT_UNEXPOSED, CONCENTRATION_NO_EXPIRY,
+    PORTFOLIO_SOURCE_BOOKED, PORTFOLIO_SOURCE_REHEARSAL,
 };

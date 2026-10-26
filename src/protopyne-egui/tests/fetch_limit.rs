@@ -1,12 +1,7 @@
 use super::*;
 use crate::chart::fetch_for_window;
+use crate::common_fakes::FakeGateway as LimitGateway;
 use protopyne_chart_model::ChartRow;
-use protopyne_view::{
-    ArmResponse, ChartBar, ChartBars, GatewayError, HealthView, JournalRowView, OverlaySeries,
-    PortfolioView, ProposalView, ReplayView, WorstCase,
-};
-use std::collections::BTreeMap;
-use std::sync::Mutex;
 
 fn m1_rows(count: usize) -> Vec<ChartRow> {
     let base = 1_700_000_000_i64;
@@ -27,102 +22,9 @@ fn m1_rows(count: usize) -> Vec<ChartRow> {
 
 /// A gateway holding a fixed history that honors `limit` as a trailing take
 /// and records every bounded read, like the tape-backed server read.
-struct LimitGateway {
-    rows: Vec<ChartRow>,
-    calls: Mutex<Vec<(String, String, Option<usize>)>>,
-}
-
-impl LimitGateway {
-    fn new(rows: Vec<ChartRow>) -> Self {
-        Self {
-            rows,
-            calls: Mutex::new(Vec::new()),
-        }
-    }
-
-    fn limits_for(&self, timeframe: &str) -> Vec<Option<usize>> {
-        self.calls
-            .lock()
-            .expect("call log locks")
-            .iter()
-            .filter(|(_, label, _)| label == timeframe)
-            .map(|(_, _, limit)| *limit)
-            .collect()
-    }
-}
-
-fn unavailable() -> GatewayError {
-    GatewayError::Unavailable("limit gateway".to_owned())
-}
-
-fn to_bars(rows: &[ChartRow]) -> ChartBars {
-    ChartBars {
-        rows: rows
-            .iter()
-            .map(|row| ChartBar {
-                time: row.time,
-                open: row.open,
-                high: row.high,
-                low: row.low,
-                close: row.close,
-                volume: row.volume,
-            })
-            .collect(),
-        dropped: 0,
-    }
-}
-
-impl protopyne_view::TerminalGateway for LimitGateway {
-    fn health(&self) -> Result<HealthView, GatewayError> {
-        Err(unavailable())
-    }
-    fn proposals(&self) -> Result<Vec<ProposalView>, GatewayError> {
-        Err(unavailable())
-    }
-    fn portfolio(&self) -> Result<PortfolioView, GatewayError> {
-        Err(unavailable())
-    }
-    fn journal(&self) -> Result<Vec<JournalRowView>, GatewayError> {
-        Err(unavailable())
-    }
-    fn chart_bars(&self) -> Result<ChartBars, GatewayError> {
-        Ok(to_bars(&self.rows))
-    }
-    fn chart_overlays(&self, _kind: &str, _period: i64) -> Result<OverlaySeries, GatewayError> {
-        Err(unavailable())
-    }
-    fn replay(&self) -> Result<ReplayView, GatewayError> {
-        Err(unavailable())
-    }
-    fn preview_arm(&self, _patch: serde_json::Value) -> Result<WorstCase, GatewayError> {
-        Err(unavailable())
-    }
-    fn grant_tiers(&self) -> Result<BTreeMap<String, String>, GatewayError> {
-        Err(unavailable())
-    }
-    fn arm(&self, _grant: serde_json::Value) -> Result<ArmResponse, GatewayError> {
-        Err(unavailable())
-    }
-    fn chart_bars_for_limit(
-        &self,
-        symbol: &str,
-        timeframe: &str,
-        limit: Option<usize>,
-    ) -> Result<ChartBars, GatewayError> {
-        protopyne_view::validate_symbol_timeframe(symbol, timeframe)?;
-        self.calls.lock().expect("call log locks").push((
-            symbol.to_owned(),
-            timeframe.to_owned(),
-            limit,
-        ));
-        let take = limit.unwrap_or(self.rows.len()).min(self.rows.len());
-        Ok(to_bars(&self.rows[self.rows.len() - take..]))
-    }
-}
-
 #[test]
 fn default_fetch_at_m5_covers_the_one_month_default() {
-    let gateway = LimitGateway::new(m1_rows(150_000));
+    let gateway = LimitGateway::with_rows(m1_rows(150_000));
     let workspace = ChartWorkspace::with_gateway(&gateway).expect("gateway boots the workspace");
     let limits = gateway.limits_for("5M");
     let need = fetch_for_window(DateRange::Month1, 300, FETCH_WARMUP_BARS);
@@ -140,7 +42,7 @@ fn default_fetch_at_m5_covers_the_one_month_default() {
 
 #[test]
 fn selecting_a_larger_preset_grows_the_trailing_read() {
-    let gateway = LimitGateway::new(m1_rows(300_000));
+    let gateway = LimitGateway::with_rows(m1_rows(300_000));
     let mut workspace =
         ChartWorkspace::with_gateway(&gateway).expect("gateway boots the workspace");
     let one = fetch_for_window(DateRange::Month1, 300, FETCH_WARMUP_BARS);
@@ -188,7 +90,7 @@ fn selecting_a_larger_preset_grows_the_trailing_read() {
 
 #[test]
 fn selecting_the_active_preset_is_a_no_op() {
-    let gateway = LimitGateway::new(m1_rows(50_000));
+    let gateway = LimitGateway::with_rows(m1_rows(50_000));
     let mut workspace =
         ChartWorkspace::with_gateway(&gateway).expect("gateway boots the workspace");
     let calls = gateway.limits_for("5M").len();
@@ -207,7 +109,7 @@ fn selecting_the_active_preset_is_a_no_op() {
 /// short window is re-read.
 #[test]
 fn refresh_verifies_the_chart_range_without_touching_the_dock() {
-    let gateway = LimitGateway::new(m1_rows(50_000));
+    let gateway = LimitGateway::with_rows(m1_rows(50_000));
     let mut workspace =
         ChartWorkspace::with_gateway(&gateway).expect("gateway boots the workspace");
     let calls = gateway.limits_for("5M").len();
@@ -237,7 +139,7 @@ fn refresh_verifies_the_chart_range_without_touching_the_dock() {
 
 #[test]
 fn load_more_grows_against_a_limit_honoring_gateway() {
-    let gateway = LimitGateway::new(m1_rows(200_000));
+    let gateway = LimitGateway::with_rows(m1_rows(200_000));
     let mut workspace =
         ChartWorkspace::with_gateway(&gateway).expect("gateway boots the workspace");
     let before = workspace.rows().len();
@@ -276,7 +178,7 @@ fn load_more_grows_against_a_limit_honoring_gateway() {
 fn refresh_refits_y_in_place_without_trailing_to_the_end() {
     use crate::workspace::PANE_WIDTH_PX;
     let full = m1_rows(100_000);
-    let gateway = LimitGateway::new(full.clone());
+    let gateway = LimitGateway::with_rows(full.clone());
     // Seed the trailing 1,000 bars directly so the test controls the window;
     // the gateway holds the full 100k behind it.
     let mut workspace =

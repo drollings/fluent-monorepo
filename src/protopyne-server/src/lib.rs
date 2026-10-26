@@ -6,6 +6,7 @@
 //! suite, the `axum` surface, and a store-backed history arm.
 
 pub mod backtest;
+pub mod backtest_registry;
 pub mod boot;
 pub mod chain_history;
 pub mod csv;
@@ -36,6 +37,7 @@ pub mod walk_forward;
 pub use backtest::{
     load_history, quote_for_bar, BacktestConfig, BacktestVenue, HistorySource, LoadedHistory,
 };
+pub use backtest_registry::{BacktestEntry, BacktestRegistry};
 pub use csv::parse_bars_csv;
 pub use error::ServerError;
 pub use gateway::ServerGateway;
@@ -93,8 +95,20 @@ mod validate_tests;
 pub(crate) mod common_tape;
 
 #[cfg(test)]
+#[path = "../tests/common/fixtures.rs"]
+pub(crate) mod common_fixtures;
+
+#[cfg(test)]
 #[path = "../tests/neutrality.rs"]
 mod neutrality_tests;
+
+#[cfg(test)]
+#[path = "../tests/composition_scan.rs"]
+mod composition_scan_tests;
+
+#[cfg(test)]
+#[path = "../tests/parity_soak.rs"]
+mod parity_soak_tests;
 
 #[cfg(test)]
 #[path = "../tests/doc_claims.rs"]

@@ -891,6 +891,10 @@ fn scaffold_types_still_compile() {
         pattern: None,
         coerce: None,
         parse: None,
+        axis: None,
+        visible_when: None,
+        items: None,
+        fixed: false,
     };
 }
 

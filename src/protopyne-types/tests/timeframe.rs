@@ -397,3 +397,14 @@ fn pine_abbreviations_round_trip() {
         );
     }
 }
+
+#[test]
+fn infer_or_d1_falls_back_to_daily_only_when_unnamed() {
+    let step = Timeframe::M15.duration_ms();
+    assert_eq!(Timeframe::infer_or_d1(&[]), Timeframe::D1);
+    assert_eq!(Timeframe::infer_or_d1(&[bar_at(0)]), Timeframe::D1);
+    assert_eq!(
+        Timeframe::infer_or_d1(&[bar_at(0), bar_at(step)]),
+        Timeframe::M15
+    );
+}

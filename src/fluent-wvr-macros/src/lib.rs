@@ -31,6 +31,19 @@ struct FieldMeta {
     tooltip: Option<String>,
     step: Option<f64>,
     inline_group: Option<String>,
+    /// Which axis this field measures: `correctness`, `task-value`, or
+    /// `producer-confidence`. A gate that cannot name its axis is a gate whose
+    /// meaning is ambiguous, so the vocabulary is closed at parse time.
+    axis: Option<String>,
+    /// The member belongs to one arm of a tagged union; editable only while
+    /// the selector has the named value (`"kind=breakout"`).
+    visible_when: Option<String>,
+    /// Maximum item count for a list member (`#[field(items = N)]`).
+    items: Option<usize>,
+    /// The list is fixed-arity (`[T; N]`) rather than open (`Vec<T>`).
+    fixed: bool,
+    /// The field embeds another component at a dotted prefix.
+    nested: bool,
 }
 
 /// Parse a `min`/`max` bound literal: an unsigned int/float, or a
@@ -82,6 +95,11 @@ fn parse_field_attrs(field: &syn::Field) -> Result<FieldMeta, syn::Error> {
         tooltip: None,
         step: None,
         inline_group: None,
+        axis: None,
+        visible_when: None,
+        items: None,
+        fixed: false,
+        nested: false,
     };
 
     for attr in &field.attrs {
@@ -140,7 +158,10 @@ fn parse_field_attrs(field: &syn::Field) -> Result<FieldMeta, syn::Error> {
                 let value = meta.value()?;
                 let lit: Lit = value.parse()?;
                 if let Lit::Int(i) = lit {
-                    result.max_len = Some(i.base10_parse::<usize>().unwrap());
+                    let max_len = i.base10_parse::<usize>().map_err(|error| {
+                        meta.error(format!("`max_len` must fit in a usize: {error}"))
+                    })?;
+                    result.max_len = Some(max_len);
                 }
                 return Ok(());
             }
@@ -267,13 +288,71 @@ fn parse_field_attrs(field: &syn::Field) -> Result<FieldMeta, syn::Error> {
                 result.step = Some(num);
                 return Ok(());
             }
+            if meta.path.is_ident("nested") {
+                result.nested = true;
+                return Ok(());
+            }
+            if meta.path.is_ident("fixed") {
+                result.fixed = true;
+                return Ok(());
+            }
+            if meta.path.is_ident("items") {
+                let value = meta.value()?;
+                let lit: Lit = value.parse()?;
+                if let Lit::Int(i) = lit {
+                    let items = i.base10_parse::<usize>().map_err(|error| {
+                        meta.error(format!("invalid item count: {error}"))
+                    })?;
+                    if items == 0 {
+                        return Err(meta.error("`items` must be at least 1"));
+                    }
+                    result.items = Some(items);
+                }
+                return Ok(());
+            }
+            if meta.path.is_ident("visible_when") {
+                let value = meta.value()?;
+                let lit: Lit = value.parse()?;
+                if let Lit::Str(s) = lit {
+                    let rule = s.value();
+                    if !rule.contains('=') {
+                        return Err(meta.error(format!(
+                            "`visible_when` expects `selector=value`, got `{rule}`"
+                        )));
+                    }
+                    result.visible_when = Some(rule);
+                }
+                return Ok(());
+            }
+            // The measured axis: a closed vocabulary, because an axis name is
+            // a semantic claim a consumer may branch on (a confidence reading
+            // must never deny a trade). An unknown spelling is a build error,
+            // never a silent absence.
+            if meta.path.is_ident("axis") {
+                let value = meta.value()?;
+                let lit: Lit = value.parse()?;
+                if let Lit::Str(s) = lit {
+                    let axis = s.value();
+                    match axis.as_str() {
+                        "correctness" | "task-value" | "producer-confidence" => {
+                            result.axis = Some(axis);
+                        }
+                        other => {
+                            return Err(meta.error(format!(
+                                "unknown axis `{other}`, expected `correctness`, `task-value`, or `producer-confidence`"
+                            )));
+                        }
+                    }
+                }
+                return Ok(());
+            }
             let path = &meta.path;
             let name = path
                 .get_ident()
                 .map(ToString::to_string)
                 .unwrap_or_else(|| quote!(#path).to_string());
             Err(meta.error(format!(
-                "unknown field attribute `{name}`, expected one of: `skip`, `desc`, `min`, `max`, `clamp`, `required`, `format`, `max_len`, `sanitize`, `pattern`, `coerce`, `parse`, `variants`, `tab`, `group`, `tooltip`, `step`, `inline`, `empty_is_none`",
+                "unknown field attribute `{name}`, expected one of: `skip`, `desc`, `min`, `max`, `clamp`, `required`, `format`, `max_len`, `sanitize`, `pattern`, `coerce`, `parse`, `variants`, `tab`, `group`, `tooltip`, `step`, `inline`, `axis`, `empty_is_none`, `nested`, `items`, `fixed`, `visible_when`",
             )))
         })?;
     }
@@ -361,6 +440,443 @@ fn strip_option_wrapper(ty_str: &str) -> String {
     compact
 }
 
+/// A list member's element type and declared arity.
+struct ListShape {
+    elem: syn::Type,
+    len: usize,
+    fixed: bool,
+}
+
+/// Classify `Vec<T>` / `[T; N]` for the list arms. `None` for any other type.
+fn list_shape(ty: &syn::Type, meta: &FieldMeta) -> Result<Option<ListShape>, syn::Error> {
+    match ty {
+        syn::Type::Path(path) if path.path.segments.last().is_some_and(|s| s.ident == "Vec") => {
+            let segment = path.path.segments.last().expect("checked above");
+            let elem = match &segment.arguments {
+                syn::PathArguments::AngleBracketed(args) => args
+                    .args
+                    .iter()
+                    .find_map(|arg| match arg {
+                        syn::GenericArgument::Type(ty) => Some(ty.clone()),
+                        _ => None,
+                    })
+                    .ok_or_else(|| {
+                        syn::Error::new_spanned(ty, "`items` on Vec<T> requires an element type")
+                    })?,
+                _ => {
+                    return Err(syn::Error::new_spanned(
+                        ty,
+                        "`items` on Vec<T> requires an element type",
+                    ))
+                }
+            };
+            let len = meta.items.ok_or_else(|| {
+                syn::Error::new_spanned(ty, "`Vec<T>` needs `#[field(items = N)]`")
+            })?;
+            Ok(Some(ListShape {
+                elem,
+                len,
+                fixed: false,
+            }))
+        }
+        syn::Type::Array(array) => {
+            let len = match &array.len {
+                syn::Expr::Lit(syn::ExprLit {
+                    lit: syn::Lit::Int(int),
+                    ..
+                }) => int.base10_parse::<usize>().map_err(|error| {
+                    syn::Error::new_spanned(&array.len, format!("invalid array length: {error}"))
+                })?,
+                _ => {
+                    return Err(syn::Error::new_spanned(
+                        &array.len,
+                        "`[T; N]` needs a literal length",
+                    ))
+                }
+            };
+            if let Some(declared) = meta.items {
+                if declared != len {
+                    return Err(syn::Error::new_spanned(
+                        ty,
+                        format!("`items = {declared}` disagrees with `[T; {len}]`"),
+                    ));
+                }
+            }
+            Ok(Some(ListShape {
+                elem: (*array.elem).clone(),
+                len,
+                fixed: true,
+            }))
+        }
+        _ => Ok(None),
+    }
+}
+
+/// Snake-case spelling of a variant name (`Breakout` -> `breakout`,
+/// `CrossSeries` -> `cross_series`), the wire id a tagged union switches on.
+fn variant_id(ident: &syn::Ident) -> String {
+    let name = ident.to_string();
+    let mut out = String::new();
+    for (index, ch) in name.chars().enumerate() {
+        if ch.is_uppercase() {
+            if index != 0 {
+                out.push('_');
+            }
+            out.extend(ch.to_lowercase());
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
+/// Parse a value for an enum-arm scalar field. The arm derive supports the
+/// same primitive surface the struct derive does; a component-valued arm
+/// field is a nested member and is refused here rather than mis-parsed.
+fn enum_scalar_parse(ty: &syn::Type, field_path: &str) -> TokenStream2 {
+    let ty_str = quote!(#ty).to_string();
+    let normalized = ty_str.replace(' ', "");
+    if normalized == "String" || normalized.ends_with("::String") {
+        quote! { value.to_string() }
+    } else if normalized == "bool" {
+        quote! {
+            value.parse().map_err(|_| fluent_wvr::FieldError::Parse(
+                format!("invalid bool for '{}': {}", #field_path, value)
+            ))?
+        }
+    } else if normalized.starts_with("ArcIntern") || normalized.contains("ArcIntern") {
+        quote! { fluent_wvr::ArcIntern::from(value) }
+    } else if normalized.starts_with("Option<") || normalized.starts_with("std::option::Option<") {
+        let inner = normalized
+            .strip_prefix("Option<")
+            .or_else(|| normalized.strip_prefix("std::option::Option<"))
+            .and_then(|s| s.strip_suffix('>'))
+            .unwrap_or("String");
+        let inner_ty: TokenStream2 =
+            syn::parse_str::<TokenStream2>(inner).unwrap_or_else(|_| quote! { String });
+        if inner == "String" {
+            quote! { if value.is_empty() { None } else { Some(value.to_string()) } }
+        } else {
+            quote! {
+                if value.is_empty() {
+                    None
+                } else {
+                    Some(value.parse::<#inner_ty>().map_err(|_| fluent_wvr::FieldError::Parse(
+                        format!("invalid value for '{}': {}", #field_path, value)
+                    ))?)
+                }
+            }
+        }
+    } else {
+        quote! {
+            value.parse::<#ty>().map_err(|_| fluent_wvr::FieldError::Parse(
+                format!("invalid value for '{}': {}", #field_path, value)
+            ))?
+        }
+    }
+}
+
+/// JSON-schema members for one enum-arm scalar field (the subset a union arm
+/// carries: scalar values with their own metadata).
+fn enum_scalar_schema(ty: &syn::Type, meta: &FieldMeta, arm: &str) -> TokenStream2 {
+    let ty_str = quote!(#ty).to_string();
+    let type_str = quote_type_string(&ty_str);
+    let mut parts: Vec<TokenStream2> = vec![quote! { "type": #type_str }];
+    if let Some(ref desc) = meta.desc {
+        parts.push(quote! { "description": #desc });
+    }
+    let inner = strip_option_wrapper(&ty_str);
+    if is_numeric_type(&inner) {
+        if let Some(min) = meta.min {
+            let lit = proc_macro2::Literal::f64_unsuffixed(min);
+            parts.push(quote! { "minimum": #lit });
+        }
+        if let Some(max) = meta.max {
+            let lit = proc_macro2::Literal::f64_unsuffixed(max);
+            parts.push(quote! { "maximum": #lit });
+        }
+    }
+    if let Some(ref format) = meta.format {
+        parts.push(quote! { "format": #format });
+    }
+    if let Some(step) = meta.step {
+        let lit = proc_macro2::Literal::f64_unsuffixed(step);
+        parts.push(quote! { "x-step": #lit });
+    }
+    if let Some(ref group) = meta.group {
+        parts.push(quote! { "x-group": #group });
+    }
+    if let Some(ref tooltip) = meta.tooltip {
+        parts.push(quote! { "x-tooltip": #tooltip });
+    }
+    if let Some(ref axis) = meta.axis {
+        parts.push(quote! { "x-axis": #axis });
+    }
+    let rule = format!("kind={arm}");
+    quote! {
+        serde_json::json!({ #(#parts),*, "x-visible-when": #rule })
+    }
+}
+
+/// One named field of an enum variant.
+struct ArmField {
+    ident: syn::Ident,
+    ty: syn::Type,
+    meta: FieldMeta,
+}
+
+/// One constructible arm of a tagged union.
+struct Arm {
+    ident: syn::Ident,
+    id: String,
+    fields: Vec<ArmField>,
+}
+
+fn enum_arms(input: &DeriveInput) -> Result<Vec<Arm>, syn::Error> {
+    let Data::Enum(data) = &input.data else {
+        return Err(syn::Error::new_spanned(
+            input,
+            "expected an enum for a tagged union",
+        ));
+    };
+    let mut arms = Vec::new();
+    for variant in &data.variants {
+        let id = variant_id(&variant.ident);
+        let mut fields = Vec::new();
+        match &variant.fields {
+            Fields::Unit => {}
+            Fields::Named(named) => {
+                for field in &named.named {
+                    let meta = parse_field_attrs(field)?;
+                    if meta.skip {
+                        continue;
+                    }
+                    if meta.nested || meta.items.is_some() {
+                        return Err(syn::Error::new_spanned(
+                            field,
+                            "a tagged-union arm carries scalar fields; nest a component in a field instead",
+                        ));
+                    }
+                    fields.push(ArmField {
+                        ident: field.ident.clone().expect("named field"),
+                        ty: field.ty.clone(),
+                        meta,
+                    });
+                }
+            }
+            Fields::Unnamed(_) => {
+                return Err(syn::Error::new_spanned(
+                    variant,
+                    "a tagged-union arm must be a unit or struct variant",
+                ));
+            }
+        }
+        arms.push(Arm {
+            ident: variant.ident.clone(),
+            id,
+            fields,
+        });
+    }
+    if arms.is_empty() {
+        return Err(syn::Error::new_spanned(
+            input,
+            "a tagged union needs at least one arm",
+        ));
+    }
+    Ok(arms)
+}
+
+fn expand_enum_field_access(input: &DeriveInput) -> TokenStream2 {
+    let name = &input.ident;
+    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+    let arms = match enum_arms(input) {
+        Ok(arms) => arms,
+        Err(error) => return error.to_compile_error(),
+    };
+
+    let ids: Vec<&str> = arms.iter().map(|arm| arm.id.as_str()).collect();
+    let mut arm_names: Vec<TokenStream2> = Vec::new();
+    let mut set_arms: Vec<TokenStream2> = Vec::new();
+    let mut get_arms: Vec<TokenStream2> = Vec::new();
+    let mut match_arms: Vec<TokenStream2> = Vec::new();
+
+    for arm in &arms {
+        let id = &arm.id;
+        let variant = &arm.ident;
+        let field_idents: Vec<&syn::Ident> = arm.fields.iter().map(|f| &f.ident).collect();
+        let dotted: Vec<String> = arm
+            .fields
+            .iter()
+            .map(|f| format!("{}.{}", arm.id, f.ident))
+            .collect();
+        arm_names.push(quote! {
+            {
+                let mut names: Vec<&'static str> = vec!["kind"];
+                #(names.push(#dotted);)*
+                ::std::boxed::Box::leak(names.into_boxed_slice())
+            }
+        });
+        if arm.fields.is_empty() {
+            match_arms.push(quote! { Self::#variant => #id });
+        } else {
+            match_arms.push(quote! {
+                Self::#variant { #(#field_idents),* } => #id
+            });
+        }
+        let leaf_names: Vec<String> = arm.fields.iter().map(|f| f.ident.to_string()).collect();
+        let setters = arm.fields.iter().zip(&leaf_names).map(|(field, leaf)| {
+            let ident = &field.ident;
+            let ty = &field.ty;
+            let parse = enum_scalar_parse(ty, &format!("{}.{}", arm.id, field.ident));
+            quote! { #leaf => { *#ident = #parse; Ok(()) } }
+        });
+        let getters = arm.fields.iter().zip(&leaf_names).map(|(field, leaf)| {
+            let ident = &field.ident;
+            let ty_str = quote!(&field.ty).to_string();
+            let render = if ty_str == "String" || ty_str.ends_with("::String") {
+                quote! { #ident.clone() }
+            } else {
+                quote! { #ident.to_string() }
+            };
+            quote! { #leaf => Ok(#render) }
+        });
+        if arm.fields.is_empty() {
+            set_arms.push(quote! {
+                if name.starts_with(concat!(#id, ".")) {
+                    return Err(fluent_wvr::FieldError::NotFound(name.into()));
+                }
+            });
+            get_arms.push(quote! {
+                if name.starts_with(concat!(#id, ".")) {
+                    return Err(fluent_wvr::FieldError::NotFound(name.into()));
+                }
+            });
+        } else {
+            set_arms.push(quote! {
+                if let Some(rest) = name.strip_prefix(concat!(#id, ".")) {
+                    return match self {
+                        Self::#variant { #(#field_idents),* } => {
+                            match rest {
+                                #(#setters),*,
+                                _ => Err(fluent_wvr::FieldError::NotFound(name.into())),
+                            }
+                        }
+                        _ => Err(fluent_wvr::FieldError::NotFound(name.into())),
+                    };
+                }
+            });
+            get_arms.push(quote! {
+                if let Some(rest) = name.strip_prefix(concat!(#id, ".")) {
+                    return match self {
+                        Self::#variant { #(#field_idents),* } => {
+                            match rest {
+                                #(#getters),*,
+                                _ => Err(fluent_wvr::FieldError::NotFound(name.into())),
+                            }
+                        }
+                        _ => Err(fluent_wvr::FieldError::NotFound(name.into())),
+                    };
+                }
+            });
+        }
+    }
+
+    let kind_set = arms.iter().map(|arm| {
+        let id = &arm.id;
+        let variant = &arm.ident;
+        let construct = if arm.fields.is_empty() {
+            quote! { Self::#variant }
+        } else {
+            let defaults = arm.fields.iter().map(|f| {
+                let ident = &f.ident;
+                let ty = &f.ty;
+                quote! { #ident: <#ty as ::core::default::Default>::default() }
+            });
+            quote! { Self::#variant { #(#defaults),* } }
+        };
+        quote! { #id => { *self = #construct; Ok(()) } }
+    });
+
+    quote! {
+        impl #impl_generics fluent_wvr::FieldAccess for #name #ty_generics #where_clause {
+            #[allow(unused_variables)]
+            fn set_field(&mut self, name: &str, value: &str) -> Result<(), fluent_wvr::FieldError> {
+                if name == "kind" {
+                    return match value {
+                        #(#kind_set),*,
+                        _ => Err(fluent_wvr::FieldError::Parse(
+                            format!("unknown union arm {value:?}")
+                        )),
+                    };
+                }
+                #(#set_arms)*
+                Err(fluent_wvr::FieldError::NotFound(name.into()))
+            }
+
+            #[allow(unused_variables)]
+            fn get_field(&self, name: &str) -> Result<String, fluent_wvr::FieldError> {
+                if name == "kind" {
+                    return Ok(match self { #(#match_arms),* }.to_owned());
+                }
+                #(#get_arms)*
+                Err(fluent_wvr::FieldError::NotFound(name.into()))
+            }
+
+            #[allow(unused_variables)]
+            fn field_names(&self) -> &'static [&'static str] {
+                static NAMES: ::std::sync::OnceLock<Vec<&'static [&'static str]>> = ::std::sync::OnceLock::new();
+                let arms = NAMES.get_or_init(|| vec![#(#arm_names),*]);
+                let id = match self { #(#match_arms),* };
+                let index = [#(#ids),*].iter().position(|candidate| *candidate == id).unwrap_or(0);
+                arms[index]
+            }
+        }
+    }
+}
+
+fn expand_enum_describable(input: &DeriveInput) -> TokenStream2 {
+    let name = &input.ident;
+    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+    let arms = match enum_arms(input) {
+        Ok(arms) => arms,
+        Err(error) => return error.to_compile_error(),
+    };
+    let ids: Vec<&str> = arms.iter().map(|arm| arm.id.as_str()).collect();
+    let mut arm_properties: Vec<TokenStream2> = Vec::new();
+    let mut one_of: Vec<TokenStream2> = Vec::new();
+    for arm in &arms {
+        let id = &arm.id;
+        let mut entries: Vec<TokenStream2> = Vec::new();
+        for field in &arm.fields {
+            let path = format!("{}.{}", arm.id, field.ident);
+            let schema = enum_scalar_schema(&field.ty, &field.meta, arm.id.as_str());
+            entries.push(quote! { properties.insert(#path.to_owned(), #schema); });
+        }
+        arm_properties.push(quote! { #(#entries)* });
+        one_of.push(quote! {
+            serde_json::json!({ "kind": #id, "x-visible-when": format!("kind={}", #id) })
+        });
+    }
+    quote! {
+        impl #impl_generics fluent_wvr::Describable for #name #ty_generics #where_clause {
+            fn describe(&self) -> serde_json::Value {
+                let mut properties = serde_json::Map::new();
+                properties.insert(
+                    "kind".to_owned(),
+                    serde_json::json!({ "type": "string", "enum": [#(#ids),*], "x-kind": true }),
+                );
+                #(#arm_properties)*
+                serde_json::json!({
+                    "type": "object",
+                    "properties": serde_json::Value::Object(properties),
+                    "oneOf": [#(#one_of),*],
+                    "required": []
+                })
+            }
+        }
+    }
+}
+
 /// Derive macro for `fluent_wvr::FieldAccess`.
 ///
 /// Generates `set_field`, `get_field`, and `field_names` implementations
@@ -404,12 +920,29 @@ fn strip_option_wrapper(ty_str: &str) -> String {
 ///   `x-inline`; consecutive fields sharing one marker paint on one row
 /// - `#[field(empty_is_none = false)]` — keep `Some("")` for empty
 ///   `Option<String>` input (default converts to `None`)
+/// - `#[field(nested)]` — the field is itself a component: `set_field`
+///   accepts dotted paths (`"child.port"`), `get_field`/`describe`
+///   delegate into the child schema
+/// - `#[field(items = N)]` — `Vec<T>` list member with at most `N` items;
+///   each item contributes dotted paths plus a synthetic `count` writer.
+///   Required on every `Vec<T>`; `[T; N]` arrays infer it (and are fixed)
+/// - `#[field(fixed)]` — the list is fixed-arity (`[T; N]`, no `count`
+///   writer) rather than open (`Vec<T>`)
+/// - `#[field(visible_when = "kind=breakout")]` — the member is editable
+///   only while the named selector holds the named value; the field layer
+///   refuses writes while inactive, so visibility is never the only guard
+/// - `#[field(axis = "task-value")]` — which axis the member measures
+///   (`correctness`, `task-value`, or `producer-confidence`); presentation
+///   members leave it unset
 ///
 /// `version_added` / `version_removed` are planned, not implemented: using
 /// them fails expansion under the closed-vocabulary rule.
 #[proc_macro_derive(FieldAccess, attributes(field))]
 pub fn derive_field_access(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
+    if matches!(input.data, Data::Enum(_)) {
+        return TokenStream::from(expand_enum_field_access(&input));
+    }
     let name = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
@@ -429,21 +962,11 @@ pub fn derive_field_access(input: TokenStream) -> TokenStream {
     };
 
     let mut field_name_strs: Vec<String> = Vec::new();
-    for f in fields.iter() {
-        match parse_field_attrs(f) {
-            Ok(meta) => {
-                if !meta.skip {
-                    field_name_strs.push(f.ident.as_ref().unwrap().to_string());
-                }
-            }
-            Err(error) => return error.to_compile_error().into(),
-        }
-    }
+    let mut dynamic_name_stmts: Vec<TokenStream2> = Vec::new();
+    let mut needs_dynamic_names = false;
 
-    let mut set_body = TokenStream2::new();
-    let mut get_body = TokenStream2::new();
-
-    let mut non_skip_idx = 0usize;
+    let mut set_branches: Vec<TokenStream2> = Vec::new();
+    let mut get_branches: Vec<TokenStream2> = Vec::new();
     for f in fields.iter() {
         let field_ident = f.ident.as_ref().unwrap();
         let field_name_str = field_ident.to_string();
@@ -458,6 +981,136 @@ pub fn derive_field_access(input: TokenStream) -> TokenStream {
             continue;
         }
 
+        // Nested component and list members route dotted paths into their
+        // inner members. Their names are flattened once per type (the derive
+        // cannot know an inner type's names at expansion time), and the
+        // field layer refuses an index or arm that is not currently present.
+        if meta.nested {
+            needs_dynamic_names = true;
+            let prefix = format!("{field_name_str}.");
+            let set_branch = quote! {
+                if let Some(rest) = name.strip_prefix(#prefix) {
+                    return self.#field_ident.set_field(rest, value);
+                }
+            };
+            let get_branch = quote! {
+                if let Some(rest) = name.strip_prefix(#prefix) {
+                    return self.#field_ident.get_field(rest);
+                }
+            };
+            set_branches.push(set_branch);
+            get_branches.push(get_branch);
+            dynamic_name_stmts.push(quote! {
+                for inner in <#ty as ::core::default::Default>::default().field_names() {
+                    names.push(::std::boxed::Box::leak(
+                        ::std::format!("{}.{}", #field_name_str, inner).into_boxed_str()
+                    ));
+                }
+            });
+            continue;
+        }
+        let list = match list_shape(&f.ty, &meta) {
+            Ok(list) => list,
+            Err(error) => return error.to_compile_error().into(),
+        };
+        if let Some(shape) = list {
+            needs_dynamic_names = true;
+            let prefix = format!("{field_name_str}.");
+            let count_name = format!("{field_name_str}.count");
+            let elem = &shape.elem;
+            let len = shape.len;
+            let count_branch = if shape.fixed {
+                quote! {}
+            } else {
+                let max_lit = proc_macro2::Literal::usize_unsuffixed(len);
+                quote! {
+                    if name == #count_name {
+                        let count: usize = value.parse().map_err(|_| fluent_wvr::FieldError::Parse(
+                            format!("invalid count for '{}': {}", #field_name_str, value)
+                        ))?;
+                        if count > #max_lit {
+                            return Err(fluent_wvr::FieldError::Constraint(
+                                format!("{}: count {} exceeds {}", #field_name_str, count, #max_lit)
+                            ));
+                        }
+                        if count < self.#field_ident.len() {
+                            self.#field_ident.truncate(count);
+                        }
+                        while self.#field_ident.len() < count {
+                            self.#field_ident.push(<#elem as ::core::default::Default>::default());
+                        }
+                        return Ok(());
+                    }
+                }
+            };
+            let count_condition = if shape.fixed {
+                quote! {}
+            } else {
+                quote! { || name == #count_name }
+            };
+            let set_branch = quote! {
+                if name.starts_with(#prefix) #count_condition {
+                    #count_branch
+                    if let Some(rest) = name.strip_prefix(#prefix) {
+                        let (index, child) = rest.split_once('.').ok_or_else(|| {
+                            fluent_wvr::FieldError::NotFound(name.into())
+                        })?;
+                        let index: usize = index.parse().map_err(|_| fluent_wvr::FieldError::NotFound(name.into()))?;
+                        let slot = self.#field_ident.get_mut(index).ok_or_else(|| {
+                            fluent_wvr::FieldError::NotFound(name.into())
+                        })?;
+                        return slot.set_field(child, value);
+                    }
+                    return Err(fluent_wvr::FieldError::NotFound(name.into()));
+                }
+            };
+            let get_count = if shape.fixed {
+                quote! {}
+            } else {
+                quote! {
+                    if name == #count_name {
+                        return Ok(self.#field_ident.len().to_string());
+                    }
+                }
+            };
+            let get_branch = quote! {
+                if name.starts_with(#prefix) #count_condition {
+                    #get_count
+                    if let Some(rest) = name.strip_prefix(#prefix) {
+                        let (index, child) = rest.split_once('.').ok_or_else(|| {
+                            fluent_wvr::FieldError::NotFound(name.into())
+                        })?;
+                        let index: usize = index.parse().map_err(|_| fluent_wvr::FieldError::NotFound(name.into()))?;
+                        let slot = self.#field_ident.get(index).ok_or_else(|| {
+                            fluent_wvr::FieldError::NotFound(name.into())
+                        })?;
+                        return slot.get_field(child);
+                    }
+                    return Err(fluent_wvr::FieldError::NotFound(name.into()));
+                }
+            };
+            set_branches.push(set_branch);
+            get_branches.push(get_branch);
+            for index in 0..len {
+                dynamic_name_stmts.push(quote! {
+                    for inner in <#elem as ::core::default::Default>::default().field_names() {
+                        names.push(::std::boxed::Box::leak(
+                            ::std::format!("{}.{}.{}", #field_name_str, #index, inner).into_boxed_str()
+                        ));
+                    }
+                });
+            }
+            if !shape.fixed {
+                dynamic_name_stmts.push(quote! {
+                    names.push(::std::boxed::Box::leak(
+                        ::std::format!("{}.count", #field_name_str).into_boxed_str()
+                    ));
+                });
+            }
+            continue;
+        }
+
+        field_name_strs.push(field_name_str.clone());
         let has_constraints = meta.min.is_some() || meta.max.is_some();
 
         // Detect Option<T> by checking if the type string contains "Option" with angle brackets
@@ -887,19 +1540,11 @@ pub fn derive_field_access(input: TokenStream) -> TokenStream {
             Ok(())
         };
 
-        if non_skip_idx == 0 {
-            set_body.extend(quote! {
-                if name == #field_name_str {
-                    #set_expr
-                }
-            });
-        } else {
-            set_body.extend(quote! {
-                else if name == #field_name_str {
-                    #set_expr
-                }
-            });
-        }
+        set_branches.push(quote! {
+            if name == #field_name_str {
+                #set_expr
+            }
+        });
 
         let to_string_expr = if is_option {
             let inner_is_string = inner_ty_str == "String"
@@ -921,60 +1566,86 @@ pub fn derive_field_access(input: TokenStream) -> TokenStream {
             quote! { self.#field_ident.to_string() }
         };
 
-        if non_skip_idx == 0 {
-            get_body.extend(quote! {
-                if name == #field_name_str {
-                    Ok(#to_string_expr)
-                }
-            });
-        } else {
-            get_body.extend(quote! {
-                else if name == #field_name_str {
-                    Ok(#to_string_expr)
-                }
-            });
-        }
-
-        non_skip_idx += 1;
+        get_branches.push(quote! {
+            if name == #field_name_str {
+                Ok(#to_string_expr)
+            }
+        });
     }
 
-    let expanded = if fields.is_empty() {
+    let mut set_body = TokenStream2::new();
+    for (index, branch) in set_branches.iter().enumerate() {
+        if index == 0 {
+            set_body.extend(quote! { #branch });
+        } else {
+            set_body.extend(quote! { else #branch });
+        }
+    }
+    let mut get_body = TokenStream2::new();
+    for (index, branch) in get_branches.iter().enumerate() {
+        if index == 0 {
+            get_body.extend(quote! { #branch });
+        } else {
+            get_body.extend(quote! { else #branch });
+        }
+    }
+
+    let names_impl = if needs_dynamic_names {
         quote! {
-            impl #impl_generics fluent_wvr::FieldAccess for #name #ty_generics #where_clause {
-                fn set_field(&mut self, name: &str, _value: &str) -> Result<(), fluent_wvr::FieldError> {
-                    Err(fluent_wvr::FieldError::NotFound(name.into()))
-                }
-
-                fn get_field(&self, name: &str) -> Result<String, fluent_wvr::FieldError> {
-                    Err(fluent_wvr::FieldError::NotFound(name.into()))
-                }
-
-                fn field_names(&self) -> &'static [&'static str] {
-                    static NAMES: &[&str] = &[];
-                    NAMES
-                }
+            fn field_names(&self) -> &'static [&'static str] {
+                static NAMES: ::std::sync::OnceLock<&'static [&'static str]> = ::std::sync::OnceLock::new();
+                NAMES.get_or_init(|| {
+                    let mut names: Vec<&'static str> = Vec::new();
+                    #(names.push(#field_name_strs);)*
+                    #(#dynamic_name_stmts)*
+                    ::std::boxed::Box::leak(names.into_boxed_slice())
+                })
             }
         }
     } else {
         quote! {
-            impl #impl_generics fluent_wvr::FieldAccess for #name #ty_generics #where_clause {
-                fn set_field(&mut self, name: &str, value: &str) -> Result<(), fluent_wvr::FieldError> {
-                    #set_body else {
-                        Err(fluent_wvr::FieldError::NotFound(name.into()))
-                    }
-                }
-
-                fn get_field(&self, name: &str) -> Result<String, fluent_wvr::FieldError> {
-                    #get_body else {
-                        Err(fluent_wvr::FieldError::NotFound(name.into()))
-                    }
-                }
-
-                fn field_names(&self) -> &'static [&'static str] {
-                    static NAMES: &[&str] = &[#(#field_name_strs),*];
-                    NAMES
-                }
+            fn field_names(&self) -> &'static [&'static str] {
+                static NAMES: &[&str] = &[#(#field_name_strs),*];
+                NAMES
             }
+        }
+    };
+
+    let set_impl = if set_branches.is_empty() {
+        quote! {
+            Err(fluent_wvr::FieldError::NotFound(name.into()))
+        }
+    } else {
+        quote! {
+            #set_body else {
+                Err(fluent_wvr::FieldError::NotFound(name.into()))
+            }
+        }
+    };
+    let get_impl = if get_branches.is_empty() {
+        quote! {
+            Err(fluent_wvr::FieldError::NotFound(name.into()))
+        }
+    } else {
+        quote! {
+            #get_body else {
+                Err(fluent_wvr::FieldError::NotFound(name.into()))
+            }
+        }
+    };
+
+    let expanded = quote! {
+        impl #impl_generics fluent_wvr::FieldAccess for #name #ty_generics #where_clause {
+            #[allow(unused_variables)]
+            fn set_field(&mut self, name: &str, value: &str) -> Result<(), fluent_wvr::FieldError> {
+                #set_impl
+            }
+
+            fn get_field(&self, name: &str) -> Result<String, fluent_wvr::FieldError> {
+                #get_impl
+            }
+
+            #names_impl
         }
     };
 
@@ -988,6 +1659,9 @@ pub fn derive_field_access(input: TokenStream) -> TokenStream {
 #[proc_macro_derive(Describable, attributes(field))]
 pub fn derive_describable(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
+    if matches!(input.data, Data::Enum(_)) {
+        return TokenStream::from(expand_enum_describable(&input));
+    }
     let name = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
@@ -1006,8 +1680,7 @@ pub fn derive_describable(input: TokenStream) -> TokenStream {
         }
     };
 
-    let mut property_names = Vec::new();
-    let mut property_bodies = Vec::new();
+    let mut property_stmts: Vec<TokenStream2> = Vec::new();
     let mut required = Vec::new();
     let mut schema_fields = Vec::new();
 
@@ -1022,6 +1695,192 @@ pub fn derive_describable(input: TokenStream) -> TokenStream {
         };
 
         if meta.skip {
+            continue;
+        }
+
+        let list = match list_shape(&f.ty, &meta) {
+            Ok(list) => list,
+            Err(error) => return error.to_compile_error().into(),
+        };
+
+        if meta.nested {
+            let desc_expr = match &meta.desc {
+                Some(d) => quote! { Some(#d.into()) },
+                None => quote! { None },
+            };
+            let axis_expr = match &meta.axis {
+                Some(a) => quote! { Some(#a.into()) },
+                None => quote! { None },
+            };
+            let visible_when_expr = match &meta.visible_when {
+                Some(v) => quote! { Some(#v.into()) },
+                None => quote! { None },
+            };
+            let group_expr = match &meta.group {
+                Some(g) => quote! { Some(#g) },
+                None => quote! { None },
+            };
+            property_stmts.push(quote! {
+                {
+                    let inner = <#ty as ::core::default::Default>::default().describe();
+                    let inner_properties = inner
+                        .get("properties")
+                        .and_then(serde_json::Value::as_object)
+                        .cloned()
+                        .unwrap_or_default();
+                    properties.insert(
+                        #field_name_str.to_owned(),
+                        serde_json::json!({
+                            "type": "object",
+                            "x-flatten": true,
+                            "properties": inner_properties,
+                        }),
+                    );
+                    let group: Option<&str> = #group_expr;
+                    for (key, value) in &inner_properties {
+                        let mut value = value.clone();
+                        if let Some(group) = group {
+                            if let Some(object) = value.as_object_mut() {
+                                object.insert("x-group".to_owned(), serde_json::json!(group));
+                            }
+                        }
+                        properties.insert(
+                            format!("{}.{}", #field_name_str, key),
+                            value,
+                        );
+                    }
+                }
+            });
+            schema_fields.push(quote! {
+                fluent_wvr::FieldSchema {
+                    name: #field_name_str.into(),
+                    type_name: #ty_str.into(),
+                    description: #desc_expr,
+                    min: None,
+                    max: None,
+                    min_raw: None,
+                    max_raw: None,
+                    required: true,
+                    format: None,
+                    max_len: None,
+                    sanitize: None,
+                    pattern: None,
+                    coerce: None,
+                    parse: None,
+                    axis: #axis_expr,
+                    visible_when: #visible_when_expr,
+                    items: None,
+                    fixed: false,
+                }
+            });
+            continue;
+        }
+
+        if let Some(shape) = list {
+            let desc_expr = match &meta.desc {
+                Some(d) => quote! { Some(#d.into()) },
+                None => quote! { None },
+            };
+            let axis_expr = match &meta.axis {
+                Some(a) => quote! { Some(#a.into()) },
+                None => quote! { None },
+            };
+            let visible_when_expr = match &meta.visible_when {
+                Some(v) => quote! { Some(#v.into()) },
+                None => quote! { None },
+            };
+            let elem = &shape.elem;
+            let len = shape.len;
+            let fixed = shape.fixed;
+            let group_expr = match &meta.group {
+                Some(g) => quote! { Some(#g) },
+                None => quote! { None },
+            };
+            let items_expr = quote! { Some(#len) };
+            let fixed_expr = if fixed {
+                quote! { true }
+            } else {
+                quote! { false }
+            };
+            property_stmts.push(quote! {
+                {
+                    let inner = <#elem as ::core::default::Default>::default().describe();
+                    let inner_properties = inner
+                        .get("properties")
+                        .and_then(serde_json::Value::as_object)
+                        .cloned()
+                        .unwrap_or_default();
+                    properties.insert(
+                        #field_name_str.to_owned(),
+                        serde_json::json!({
+                            "type": "array",
+                            "items": inner,
+                            "x-items": #len,
+                            "x-fixed": #fixed,
+                        }),
+                    );
+                    let group: Option<&str> = #group_expr;
+                    for index in 0..#len {
+                        for (key, value) in &inner_properties {
+                            let mut value = value.clone();
+                            if let Some(object) = value.as_object_mut() {
+                                if let Some(group) = group {
+                                    object.insert("x-group".to_owned(), serde_json::json!(group));
+                                }
+                                object.insert(
+                                    "x-visible-when".to_owned(),
+                                    serde_json::json!(format!("{}.count>{}", #field_name_str, index)),
+                                );
+                                object.insert(
+                                    "x-item-of".to_owned(),
+                                    serde_json::json!(#field_name_str),
+                                );
+                                object.insert(
+                                    "x-item-index".to_owned(),
+                                    serde_json::json!(index),
+                                );
+                            }
+                            properties.insert(
+                                format!("{}.{}.{}", #field_name_str, index, key),
+                                value,
+                            );
+                        }
+                    }
+                    if !#fixed {
+                        properties.insert(
+                            format!("{}.count", #field_name_str),
+                            serde_json::json!({
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": #len,
+                                "x-count": #field_name_str,
+                            }),
+                        );
+                    }
+                }
+            });
+            schema_fields.push(quote! {
+                fluent_wvr::FieldSchema {
+                    name: #field_name_str.into(),
+                    type_name: #ty_str.into(),
+                    description: #desc_expr,
+                    min: None,
+                    max: None,
+                    min_raw: None,
+                    max_raw: None,
+                    required: true,
+                    format: None,
+                    max_len: None,
+                    sanitize: None,
+                    pattern: None,
+                    coerce: None,
+                    parse: None,
+                    axis: #axis_expr,
+                    visible_when: #visible_when_expr,
+                    items: #items_expr,
+                    fixed: #fixed_expr,
+                }
+            });
             continue;
         }
 
@@ -1125,9 +1984,14 @@ pub fn derive_describable(input: TokenStream) -> TokenStream {
             schema.push(quote! { "x-inline": #inline_group });
         }
 
+        if let Some(ref axis) = meta.axis {
+            schema.push(quote! { "x-axis": #axis });
+        }
+
         let field_name_lit = field_name_str.clone();
-        property_names.push(field_name_lit);
-        property_bodies.push(quote! { #(#schema),* });
+        property_stmts.push(quote! {
+            properties.insert(#field_name_lit.to_owned(), serde_json::json!({ #(#schema),* }));
+        });
 
         let desc_expr = match &meta.desc {
             Some(d) => quote! { Some(#d.into()) },
@@ -1181,6 +2045,23 @@ pub fn derive_describable(input: TokenStream) -> TokenStream {
             Some(p) => quote! { Some(#p.into()) },
             None => quote! { None },
         };
+        let axis_expr = match &meta.axis {
+            Some(a) => quote! { Some(#a.into()) },
+            None => quote! { None },
+        };
+        let visible_when_expr = match &meta.visible_when {
+            Some(v) => quote! { Some(#v.into()) },
+            None => quote! { None },
+        };
+        let items_expr = match meta.items {
+            Some(items) => quote! { Some(#items) },
+            None => quote! { None },
+        };
+        let fixed_expr = if meta.fixed {
+            quote! { true }
+        } else {
+            quote! { false }
+        };
 
         schema_fields.push(quote! {
             fluent_wvr::FieldSchema {
@@ -1198,6 +2079,10 @@ pub fn derive_describable(input: TokenStream) -> TokenStream {
                 pattern: #pattern_expr,
                 coerce: #coerce_expr,
                 parse: #parse_expr,
+                axis: #axis_expr,
+                visible_when: #visible_when_expr,
+                items: #items_expr,
+                fixed: #fixed_expr,
             }
         });
 
@@ -1216,7 +2101,7 @@ pub fn derive_describable(input: TokenStream) -> TokenStream {
                 // document spine is built by hand. Output is identical
                 // (same map type, same insertion order).
                 let mut properties = serde_json::Map::new();
-                #(properties.insert(#property_names.to_owned(), serde_json::json!({ #property_bodies }));)*
+                #(#property_stmts)*
                 let mut required_names: Vec<serde_json::Value> = Vec::new();
                 #(required_names.push(#required.into());)*
                 serde_json::json!({

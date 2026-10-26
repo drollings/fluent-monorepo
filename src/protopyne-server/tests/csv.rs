@@ -169,3 +169,92 @@ fn fallback_stops_on_a_structurally_invalid_file() {
         "the ladder stops in the row shape, got: {err:?}"
     );
 }
+
+#[test]
+fn shared_decimal_field_reads_valid_and_refuses_malformed() {
+    use crate::csv::parse_decimal_field;
+    assert_eq!(
+        parse_decimal_field("693.98", 2, "close").expect("valid decimal"),
+        "693.98".parse().expect("decimal")
+    );
+    let Err(ServerError::BadRow { line, reason }) = parse_decimal_field("abc", 4, "close") else {
+        panic!("malformed decimal refuses as BadRow");
+    };
+    assert_eq!(line, 4);
+    assert!(
+        reason.contains("close") && reason.contains("abc"),
+        "refusal names the column and the value, got: {reason}"
+    );
+}
+
+#[test]
+fn shared_timestamp_field_reads_epoch_and_refuses_out_of_range() {
+    use crate::csv::parse_timestamp_field;
+    let ts = parse_timestamp_field("1767344400", 2).expect("valid epoch");
+    assert_eq!(ts.to_rfc3339(), "2026-01-02T09:00:00+00:00");
+    assert!(
+        matches!(
+            parse_timestamp_field("not-a-time", 3),
+            Err(ServerError::BadRow { .. })
+        ),
+        "malformed epoch refuses"
+    );
+    let Err(ServerError::BadRow { line, reason }) = parse_timestamp_field("9223372036854775807", 5)
+    else {
+        panic!("out-of-range epoch refuses as BadRow");
+    };
+    assert_eq!(line, 5);
+    assert!(
+        reason.contains("out of range"),
+        "refusal names the range failure, got: {reason}"
+    );
+}
+
+#[test]
+fn shared_int_field_parses_each_width_with_its_column_named() {
+    use crate::csv::parse_int_field;
+    assert_eq!(
+        parse_int_field::<u32>("12", 2, "bid_size").expect("u32"),
+        12
+    );
+    assert_eq!(
+        parse_int_field::<u64>("19063", 2, "open_interest").expect("u64"),
+        19063
+    );
+    let Err(ServerError::BadRow { line, reason }) = parse_int_field::<u32>("12.5", 3, "bid_size")
+    else {
+        panic!("fractional integer refuses as BadRow");
+    };
+    assert_eq!(line, 3);
+    assert!(
+        reason.contains("bid_size"),
+        "refusal names the column, got: {reason}"
+    );
+}
+
+#[test]
+fn shared_header_positions_map_required_order_and_name_gaps() {
+    use crate::csv::header_positions;
+    let record = csv::StringRecord::from(vec!["TS", "Strike", "Bid"]);
+    let positions =
+        header_positions(&record, &["ts", "strike", "bid"]).expect("present columns map");
+    assert_eq!(positions, vec![0, 1, 2]);
+    let Err(ServerError::BadHeader(message)) = header_positions(&record, &["ts", "strike", "ask"])
+    else {
+        panic!("missing column refuses as BadHeader");
+    };
+    assert!(
+        message.contains("ask"),
+        "refusal names the gap, got: {message}"
+    );
+}
+
+#[test]
+fn shared_optional_column_matches_case_insensitively_or_absent() {
+    use crate::csv::optional_column;
+    let record = csv::StringRecord::from(vec!["TS", "Bid_Size", "IV"]);
+    assert_eq!(optional_column(&record, "ts"), Some(0));
+    assert_eq!(optional_column(&record, "bid_size"), Some(1));
+    assert_eq!(optional_column(&record, "iv"), Some(2));
+    assert_eq!(optional_column(&record, "ask_size"), None);
+}

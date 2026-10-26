@@ -449,3 +449,22 @@ fn a_condor_with_inverted_wings_refuses() {
         Err(EconRefusal::UnsupportedShape(_))
     ));
 }
+
+#[test]
+fn a_unit_times_quantity_is_the_capital_requirement() {
+    let (legs, quotes) = long_vertical("105");
+    let one = spread_economics(&legs, &quotes, qty(1), fee("0.65")).expect("priced");
+    let sized = spread_economics(&legs, &quotes, qty(4), fee("0.65")).expect("priced");
+    let unit = one.unit();
+    assert_eq!(unit.price_per_unit, money("1.80"));
+    assert_eq!(unit.max_loss_per_unit, money("3.10"));
+    assert_eq!(unit.bid_ask_width, one.bid_ask_width);
+    assert_eq!(unit.side, PackageSide::Buy);
+    // The per-unit loss times the quantity is the sized requirement, to the
+    // decimal: rescaling needs no second pricing.
+    assert_eq!(
+        Money::new(unit.max_loss_per_unit.as_decimal() * Decimal::from(4)),
+        sized.capital_requirement,
+    );
+    assert_eq!(unit.price_per_unit, sized.net_per_unit);
+}

@@ -29,6 +29,7 @@ pub mod indicator;
 pub mod inputs;
 pub mod iv_surface;
 pub(crate) mod kernel_eval;
+pub mod lite;
 pub mod market_context;
 pub mod math;
 pub mod mtf;

@@ -6,7 +6,7 @@
 //! unknown-session refusals) and one end-to-end property: stepping a session
 //! to completion decides every bar from the start bar on.
 
-use std::path::PathBuf;
+use crate::common_fixtures::spy_history;
 
 use protopyne_strategy::StructureKind;
 use protopyne_types::{Bar, Money};
@@ -30,14 +30,6 @@ async fn step(
         .expect("blocking step joins")
 }
 
-fn history() -> Vec<Bar> {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests")
-        .join("data")
-        .join("SPY_15M.csv");
-    crate::csv::load_bars_csv(&path).expect("vendored history loads")
-}
-
 /// The terminal books what the core declares. For every structure the
 /// rehearsal grant admits, the read equals the grant's own numbers — the pin
 /// that would have caught the terminal's 400/2000/30 literals drifting from
@@ -45,7 +37,9 @@ fn history() -> Vec<Bar> {
 #[tokio::test(flavor = "multi_thread")]
 async fn rehearsal_economics_equals_the_grant_it_names() {
     let config = ServerConfig::new().bind("127.0.0.1:0".to_owned()).build();
-    let handle = serve(config, history()).await.expect("test server boots");
+    let handle = serve(config, spy_history())
+        .await
+        .expect("test server boots");
     let gateway = handle.gateway();
     for (hint, structure) in [
         (StructureKindHint::Single, StructureKind::Single),
@@ -57,7 +51,7 @@ async fn rehearsal_economics_equals_the_grant_it_names() {
         let economics = gateway
             .rehearsal_economics("SPY", hint)
             .unwrap_or_else(|error| panic!("{hint:?} economics served: {error}"));
-        let grant = crate::rehearsal::rehearsal_grant("replay-permissive", vec![structure]);
+        let grant = crate::rehearsal::replay_grant_for(structure);
         assert_eq!(
             economics.strategy, grant.scope.strategies[0],
             "{hint:?} books the grant's strategy"
@@ -132,9 +126,11 @@ fn params(session: &str) -> ReplayStartParams {
 #[tokio::test(flavor = "multi_thread")]
 async fn replay_opens_steps_reads_and_closes() {
     let config = ServerConfig::new().bind("127.0.0.1:0".to_owned()).build();
-    let handle = serve(config, history()).await.expect("test server boots");
+    let handle = serve(config, spy_history())
+        .await
+        .expect("test server boots");
     let gateway = handle.gateway();
-    let total = history().len() as u64;
+    let total = spy_history().len() as u64;
 
     let opened = gateway
         .replay_start(params("terminal"))
@@ -173,9 +169,11 @@ async fn replay_opens_steps_reads_and_closes() {
 #[tokio::test(flavor = "multi_thread")]
 async fn replay_steps_to_completion_from_a_start_bar() {
     let config = ServerConfig::new().bind("127.0.0.1:0".to_owned()).build();
-    let handle = serve(config, history()).await.expect("test server boots");
+    let handle = serve(config, spy_history())
+        .await
+        .expect("test server boots");
     let gateway = handle.gateway();
-    let total = history().len() as u64;
+    let total = spy_history().len() as u64;
 
     let opened = gateway
         .replay_start(ReplayStartParams {
@@ -231,7 +229,9 @@ async fn replay_steps_to_completion_from_a_start_bar() {
 #[tokio::test(flavor = "multi_thread")]
 async fn replay_start_replaces_the_slot() {
     let config = ServerConfig::new().bind("127.0.0.1:0".to_owned()).build();
-    let handle = serve(config, history()).await.expect("test server boots");
+    let handle = serve(config, spy_history())
+        .await
+        .expect("test server boots");
     let gateway = handle.gateway();
 
     gateway
@@ -252,7 +252,9 @@ async fn replay_start_replaces_the_slot() {
 #[tokio::test(flavor = "multi_thread")]
 async fn replay_verbs_fail_closed() {
     let config = ServerConfig::new().bind("127.0.0.1:0".to_owned()).build();
-    let handle = serve(config, history()).await.expect("test server boots");
+    let handle = serve(config, spy_history())
+        .await
+        .expect("test server boots");
     let gateway = handle.gateway();
 
     assert!(
@@ -340,7 +342,7 @@ async fn replay_verbs_fail_closed() {
 /// Vertical session.
 #[tokio::test(flavor = "multi_thread")]
 async fn replay_boot_with_chain_feed_opens_and_keeps_the_gate() {
-    let bars = history();
+    let bars = spy_history();
     // Two covered bars amid an uncovered history: the split below exercises
     // both arms of the screen in one session.
     let (handle, _dir) = chained_server(bars.clone(), &covering_rows(&bars, 4..6));
@@ -348,7 +350,7 @@ async fn replay_boot_with_chain_feed_opens_and_keeps_the_gate() {
     let opened = gateway
         .replay_start(vertical_params("chained"))
         .expect("replay opens with chains");
-    assert_eq!(opened.total_bars, history().len() as u64);
+    assert_eq!(opened.total_bars, spy_history().len() as u64);
     let stepped = step(&gateway, "chained", 6).await.expect("steps proceed");
     assert_eq!(stepped.cursor, 6);
     assert_eq!(stepped.decisions.len(), 6);
@@ -399,7 +401,7 @@ async fn replay_boot_with_unreadable_chains_refuses_to_bind() {
         .maybe_chain_feed_path(Some(feed_path.to_string_lossy().into_owned()))
         .build();
     assert!(
-        serve(config, history()).await.is_err(),
+        serve(config, spy_history()).await.is_err(),
         "a missing chain file refuses to bind"
     );
     // Malformed chain file.
@@ -419,7 +421,7 @@ async fn replay_boot_with_unreadable_chains_refuses_to_bind() {
         .maybe_chain_feed_path(Some(feed_path.to_string_lossy().into_owned()))
         .build();
     assert!(
-        serve(config, history()).await.is_err(),
+        serve(config, spy_history()).await.is_err(),
         "a malformed chain file refuses to bind"
     );
 }
@@ -475,7 +477,7 @@ fn vertical_params(session: &str) -> ReplayStartParams {
 /// verdict carries the gate note.
 #[tokio::test(flavor = "multi_thread")]
 async fn vertical_replay_with_covering_chains_fills_spreads() {
-    let bars = history();
+    let bars = spy_history();
     let csv = covering_rows(&bars, 0..6);
     let (handle, _dir) = chained_server(bars, &csv);
     let gateway = handle.gateway();
@@ -514,7 +516,7 @@ async fn vertical_replay_with_covering_chains_fills_spreads() {
 /// covered bars around them still fill: the run continues past the gap.
 #[tokio::test(flavor = "multi_thread")]
 async fn gap_bars_refuse_with_the_unchanged_note_and_continue() {
-    let bars = history();
+    let bars = spy_history();
     // Quotes only at bars 4 and 5: bars 0..4 see an empty snapshot.
     let csv = covering_rows(&bars, 4..6);
     let (handle, _dir) = chained_server(bars, &csv);
@@ -552,7 +554,7 @@ async fn gap_bars_refuse_with_the_unchanged_note_and_continue() {
 /// any driver constructs: no half-built session lingers in the registry.
 #[tokio::test(flavor = "multi_thread")]
 async fn unknown_and_naked_structures_refuse_at_open() {
-    let bars = history();
+    let bars = spy_history();
     let config = ServerConfig::new().bind("127.0.0.1:0".to_owned()).build();
     let handle = common_core::runtime::block_on(serve(config, bars)).expect("server boots");
     let gateway = handle.gateway();
@@ -603,7 +605,7 @@ fn vendored_server(bars: Vec<Bar>) -> (crate::service::ServerHandle, tempfile::T
 /// slippage, or grant tiers re-earns this tape first.
 #[tokio::test(flavor = "multi_thread")]
 async fn vertical_replay_economics_are_frozen() {
-    let bars = history();
+    let bars = spy_history();
     let (handle, _dir) = vendored_server(bars);
     let gateway = handle.gateway();
     gateway
@@ -645,7 +647,7 @@ async fn vertical_replay_economics_are_frozen() {
 /// submits, no lifecycle journals.
 #[tokio::test(flavor = "multi_thread")]
 async fn chains_absent_replay_reproduces_the_all_refused_tape() {
-    let bars = history();
+    let bars = spy_history();
     let total = bars.len();
     let config = ServerConfig::new().bind("127.0.0.1:0".to_owned()).build();
     let handle = common_core::runtime::block_on(serve(config, bars)).expect("server boots");
@@ -681,7 +683,7 @@ async fn fetched_fixture_reproduces_the_frozen_tape() {
     use protopyne_venue::{TastytradeConfig, TastytradeTransport};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-    let bars = history();
+    let bars = spy_history();
     // One 690/695 call pair per bar timestamp, in the chain-wire shape.
     let mut wires = Vec::new();
     for bar in &bars {
@@ -800,7 +802,7 @@ async fn fetched_fixture_reproduces_the_frozen_tape() {
 /// venue's own executions, so the terminal shows what the venue filled.
 #[tokio::test(flavor = "multi_thread")]
 async fn vertical_decisions_carry_per_leg_execution_rows() {
-    let bars = history();
+    let bars = spy_history();
     let csv = covering_rows(&bars, 0..6);
     let (handle, _dir) = chained_server(bars, &csv);
     let gateway = handle.gateway();

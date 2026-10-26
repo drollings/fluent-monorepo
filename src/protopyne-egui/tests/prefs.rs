@@ -198,3 +198,30 @@ fn prefs_path_anchors_at_the_data_root() {
         "a file entry point anchors the same way"
     );
 }
+
+/// The backtest run configuration round-trips: seed, equity, and window
+/// persist through the prefs document and restore onto a fresh workspace,
+/// best-effort like every other arm.
+#[test]
+fn backtest_run_params_round_trip_through_prefs() {
+    let mut workspace = ChartWorkspace::with_rows(ramp(60)).expect("workspace boots");
+    let prefs = TerminalPrefs {
+        backtest: Some(crate::BacktestPrefs {
+            seed: Some("11".to_owned()),
+            initial_equity: Some("50000".to_owned()),
+            start: Some("2026-01-05T14:30:00+00:00".to_owned()),
+            end: None,
+        }),
+        ..TerminalPrefs::default()
+    };
+    workspace.apply_prefs(&prefs).expect("backtest prefs apply");
+    let saved = workspace.prefs();
+    let backtest = saved.backtest.clone().expect("run params persist");
+    assert_eq!(backtest.seed.as_deref(), Some("11"));
+    assert_eq!(backtest.initial_equity.as_deref(), Some("50000"));
+    assert_eq!(backtest.start.as_deref(), Some("2026-01-05T14:30:00+00:00"));
+    assert_eq!(backtest.end, None);
+    // A second snapshot over the restored form is stable.
+    let again = workspace.prefs();
+    assert_eq!(again.backtest, saved.backtest);
+}

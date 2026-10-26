@@ -30,6 +30,7 @@
 
 use chrono::{DateTime, Utc};
 use common_core::registry::KeyedRegistry;
+use fluent_wvr::validate::Validate;
 use rust_decimal::prelude::ToPrimitive as _;
 
 use protopyne_strategy::{
@@ -58,10 +59,7 @@ pub(crate) const CHAIN_GATE_NOTE: &str =
 /// batch. Crate-visible so the shared decide path and the rehearsal
 /// composition screen the same shapes the session screens.
 pub(crate) fn needs_chain_data(structure: StructureKind) -> bool {
-    matches!(
-        structure,
-        StructureKind::Vertical | StructureKind::Calendar | StructureKind::Condor
-    )
+    structure.needs_chain_data()
 }
 
 /// Whether an installed chain source covers `underlying` at `at`: any held
@@ -90,6 +88,273 @@ pub enum ChainPolicy {
     /// the bar; uncovered bars refuse before anything journals or submits,
     /// naming the missing chain feed (interactive replay).
     RequireChains,
+}
+
+/// One position the session's book carries across bars.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BookPosition {
+    /// Underlying.
+    pub underlying: String,
+    /// Long or short.
+    pub long: bool,
+    /// Units held.
+    pub quantity: u32,
+    /// Average entry price.
+    pub entry_avg: protopyne_types::Money,
+    /// Worst-case loss committed at entry.
+    pub max_loss: protopyne_types::Money,
+    /// Entry bar.
+    pub entry_bar: usize,
+    /// Strategy attribution.
+    pub strategy: String,
+    /// Structure the entry used.
+    pub structure: StructureKind,
+    /// Original entry proposal id (the exit body keeps identity).
+    pub entry_id: String,
+}
+
+/// One realized trade booked by the session's book.
+///
+/// Deliberately not the equity runner's trade record: this book is
+/// multi-symbol (hence `underlying`), averages in `Money`, and never books
+/// partials, while the equity run is single-symbol, prices in `f64`, and
+/// reuses its record for partial fills — see that record's own note for the
+/// full field list that forbids the merge.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BookTrade {
+    /// Underlying.
+    pub underlying: String,
+    /// Long or short.
+    pub long: bool,
+    /// Units closed.
+    pub quantity: u32,
+    /// Entry average.
+    pub entry_avg: protopyne_types::Money,
+    /// Exit average.
+    pub exit_avg: protopyne_types::Money,
+    /// Realized P&L after fees.
+    pub pnl: f64,
+    /// Entry bar.
+    pub entry_bar: usize,
+    /// Exit bar.
+    pub exit_bar: usize,
+    /// Why it closed.
+    pub reason: String,
+}
+
+/// The session's position book: one open position per underlying plus the
+/// realized-trade log. It is fed by the same decisions the venue produced, so
+/// the strategy's exit rules and the report read one book.
+#[derive(Debug, Clone, Default)]
+pub struct PositionBook {
+    positions: Vec<BookPosition>,
+    trades: Vec<BookTrade>,
+}
+
+impl PositionBook {
+    /// An empty book.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Open positions.
+    #[must_use]
+    pub fn positions(&self) -> &[BookPosition] {
+        &self.positions
+    }
+
+    /// Realized trades in close order.
+    #[must_use]
+    pub fn trades(&self) -> &[BookTrade] {
+        &self.trades
+    }
+
+    /// Whether the book is flat.
+    #[must_use]
+    pub fn is_flat(&self) -> bool {
+        self.positions.is_empty()
+    }
+
+    /// Position views for the strategy's loss rules.
+    #[must_use]
+    pub fn views(&self) -> Vec<protopyne_strategy::PositionView<'_>> {
+        self.positions
+            .iter()
+            .map(|position| protopyne_strategy::PositionView {
+                underlying: position.underlying.clone(),
+                side: if position.long {
+                    protopyne_strategy::Direction::Long
+                } else {
+                    protopyne_strategy::Direction::Short
+                },
+                quantity: position.quantity,
+                entry_avg: position.entry_avg,
+                max_loss: position.max_loss,
+                dte_days: None,
+                legs: None,
+                events: None,
+            })
+            .collect()
+    }
+
+    /// Apply one filled decision to the book. An entry opens/averages in;
+    /// an exit reduces or closes and books the realized trade.
+    pub fn apply(
+        &mut self,
+        decision: &BarDecision,
+        proposal: Option<&protopyne_strategy::Proposal>,
+        index: usize,
+        reason: &str,
+    ) {
+        if !decision.submitted || decision.filled_quantity == 0 {
+            return;
+        }
+        let (Some(direction), Some(price)) = (decision.direction, decision.fill_price) else {
+            return;
+        };
+        let qty = decision.filled_quantity;
+        let long = direction == protopyne_strategy::Direction::Long;
+        let exit = matches!(decision.side, Some(protopyne_strategy::ProposalSide::Exit));
+        if exit {
+            let Some(position) = self
+                .positions
+                .iter_mut()
+                .find(|position| position.underlying == decision.underlying)
+            else {
+                return;
+            };
+            let closed = qty.min(position.quantity);
+            let sign = if position.long { 1.0 } else { -1.0 };
+            let pnl = (price.as_decimal().to_f64().unwrap_or(0.0)
+                - position.entry_avg.as_decimal().to_f64().unwrap_or(0.0))
+                * f64::from(closed)
+                * sign
+                - decision
+                    .fee
+                    .map_or(0.0, |fee| fee.as_decimal().to_f64().unwrap_or(0.0));
+            self.trades.push(BookTrade {
+                underlying: position.underlying.clone(),
+                long: position.long,
+                quantity: closed,
+                entry_avg: position.entry_avg,
+                exit_avg: price,
+                pnl,
+                entry_bar: position.entry_bar,
+                exit_bar: index,
+                reason: if reason.is_empty() {
+                    "exit".to_owned()
+                } else {
+                    reason.to_owned()
+                },
+            });
+            position.quantity = position.quantity.saturating_sub(closed);
+            if position.quantity == 0 {
+                self.positions
+                    .retain(|candidate| candidate.underlying != decision.underlying);
+            }
+        } else {
+            let entry_avg = price;
+            let max_loss =
+                proposal.map_or(protopyne_types::Money::zero(), |proposal| proposal.max_loss);
+            let strategy = proposal.map_or_else(String::new, |proposal| proposal.strategy.clone());
+            let structure = proposal.map_or(StructureKind::Single, |proposal| proposal.structure);
+            let entry_id = proposal.map_or_else(
+                || decision.proposal_id.clone(),
+                |proposal| proposal.id.clone(),
+            );
+            if let Some(position) = self.positions.iter_mut().find(|position| {
+                position.underlying == decision.underlying && position.long == long
+            }) {
+                let total = position.quantity.saturating_add(qty);
+                if total > 0 {
+                    let weighted = position.entry_avg.as_decimal()
+                        * rust_decimal::Decimal::from(position.quantity)
+                        + entry_avg.as_decimal() * rust_decimal::Decimal::from(qty);
+                    position.entry_avg =
+                        protopyne_types::Money::new(weighted / rust_decimal::Decimal::from(total));
+                    position.quantity = total;
+                }
+            } else {
+                self.positions.push(BookPosition {
+                    underlying: decision.underlying.clone(),
+                    long,
+                    quantity: qty,
+                    entry_avg,
+                    max_loss,
+                    entry_bar: index,
+                    strategy,
+                    structure,
+                    entry_id,
+                });
+            }
+        }
+    }
+
+    /// The first exit rule's proposal for the open book at this bar, when
+    /// the strategy has exits and a rule fires.
+    #[must_use]
+    pub fn exit_proposal(
+        &self,
+        strategy: &Strategy,
+        bar: &Bar,
+        index: usize,
+        seed: u64,
+        quote: &Quote,
+    ) -> Option<protopyne_strategy::Proposal> {
+        if !strategy.has_exits() {
+            return None;
+        }
+        let mark = protopyne_strategy::MarkContext {
+            basis: protopyne_types::MarkBasis::FillPrice,
+            mark: Some(protopyne_types::Money::new(bar.c)),
+        };
+        for view in self.views() {
+            let actions = strategy.review_exits(&view, &mark);
+            let Some(action) = actions.into_iter().next() else {
+                continue;
+            };
+            let position = self
+                .positions
+                .iter()
+                .find(|position| position.underlying == view.underlying)?;
+            let entry = protopyne_strategy::Proposal::new()
+                .id(position.entry_id.clone())
+                .strategy(position.strategy.clone())
+                .underlying(position.underlying.clone())
+                .direction(view.side)
+                .side(protopyne_strategy::ProposalSide::Entry)
+                .structure(position.structure)
+                .quantity(protopyne_types::Qty::new(rust_decimal::Decimal::from(
+                    position.quantity,
+                )))
+                .limit_price(position.entry_avg)
+                .max_loss(position.max_loss)
+                .notional(protopyne_types::Money::zero())
+                .dte_days(0)
+                .conviction(1.0)
+                .activity_score(1.0)
+                .created_at(bar.ts)
+                .build();
+            let intent =
+                protopyne_strategy::slots::exit::ExitIntent::close(action.kind, action.reason);
+            let touch = if view.side == protopyne_strategy::Direction::Long {
+                quote.bid
+            } else {
+                quote.ask
+            };
+            let id = format!("run-{seed}-{index}-exit");
+            return Some(strategy.exit_proposal_named(
+                &entry,
+                protopyne_types::Qty::new(rust_decimal::Decimal::from(position.quantity)),
+                &intent,
+                touch,
+                bar.ts,
+                &id,
+            ));
+        }
+        None
+    }
 }
 
 /// One replayable run over pinned bars, advanced a bar per [`step`](Self::step).
@@ -121,6 +386,7 @@ pub struct ReplaySession<'a, V> {
     decisions: Vec<BarDecision>,
     seed: u64,
     skipped_warmup: u64,
+    book: PositionBook,
     corporate: Vec<protopyne_venue::CorporateEventArgs>,
     corporate_cursor: usize,
 }
@@ -155,7 +421,7 @@ impl<'a, V: Venue> ReplaySession<'a, V> {
                 "history must not be empty".to_owned(),
             ));
         }
-        let timeframe = Timeframe::infer(bars).unwrap_or(Timeframe::D1);
+        let timeframe = Timeframe::infer_or_d1(bars);
         // One instance for the whole run: concurrent sessions never share
         // signal state, and a refusal to bind fails before the first bar.
         let signal = strategy
@@ -180,6 +446,7 @@ impl<'a, V: Venue> ReplaySession<'a, V> {
             decisions: Vec::with_capacity(bars.len()),
             seed,
             skipped_warmup: 0,
+            book: PositionBook::new(),
             corporate,
             corporate_cursor: 0,
         })
@@ -247,6 +514,7 @@ impl<'a, V: Venue> ReplaySession<'a, V> {
                 timeframe: self.timeframe,
                 closes: &mut self.closes,
                 skipped_warmup: &mut self.skipped_warmup,
+                book: &mut self.book,
                 runner_config: &self.runner_config,
                 seed: self.seed,
                 corporate: &self.corporate,
@@ -307,6 +575,8 @@ pub(crate) struct BarAdvance<'a, V> {
     pub timeframe: Timeframe,
     pub closes: &'a mut Vec<f64>,
     pub skipped_warmup: &'a mut u64,
+    /// The run's open positions and realized trades.
+    pub book: &'a mut PositionBook,
     pub runner_config: &'a RunnerConfig,
     pub seed: u64,
     /// Corporate-action tape in effective order; each event applies at the
@@ -379,6 +649,56 @@ pub(crate) async fn advance_bar<V: Venue>(
     if advance.closes.len() <= advance.runner_config.warmup_bars {
         *advance.skipped_warmup += 1;
         return skipped_decision(index, ts, proposal_id, "warmup");
+    }
+    // Exits run before any entry and before the signal is asked for one. A
+    // bar that closes the book records the exit decision; the next bar asks
+    // the signal fresh, exactly as the equity runner manages a position
+    // before it considers an entry.
+    let quote = match &advance.quote {
+        // Rehearsal policy: the quote is synthesized from the closed bar,
+        // exactly as the batch loops priced it.
+        BarQuote::Synthesized => match bar_quote(bar, advance.quote_config) {
+            Ok(quote) => quote,
+            Err(reason) => return skipped_decision(index, ts, proposal_id, reason),
+        },
+        // Live policy: price against the quote a source actually resolved.
+        BarQuote::Resolved(quote) => *quote,
+        // Every configured source was dark. The bar fails closed rather than
+        // inventing a price (the signal still advanced above).
+        BarQuote::Dark => {
+            return skipped_decision(index, ts, proposal_id, "no quote from any source")
+        }
+    };
+    // One recorder view per step over the session-scoped journal: the shared
+    // submission protocol runs unchanged, and parallel sessions stay
+    // isolated. A live loop supplies its durable permit, so the same body
+    // records authority-bearing rows.
+    let recorder = match advance.permit {
+        Some(permit) => Recorder::durable(advance.journal, permit),
+        None => Recorder::ephemeral(advance.journal),
+    };
+    if let Some(exit) =
+        advance
+            .book
+            .exit_proposal(advance.strategy, bar, index, advance.seed, &quote)
+    {
+        let kind = exit.id.clone();
+        let decision = submit_decided(
+            exit,
+            quote,
+            advance.risk,
+            advance.ledger,
+            advance.venue,
+            &recorder,
+            advance.health,
+            advance.facts,
+            index,
+            bar,
+            advance.runner_config,
+        )
+        .await;
+        advance.book.apply(&decision, None, index, &kind);
+        return decision;
     }
     // The view's bars are the prefix ending at this bar: a signal sees the
     // same past the caller's closes prefix does, never the future.
@@ -464,31 +784,8 @@ pub(crate) async fn advance_bar<V: Venue>(
             return skipped_decision(index, ts, proposal_id, &reason);
         }
     }
-    let quote = match &advance.quote {
-        // Rehearsal policy: the quote is synthesized from the closed bar,
-        // exactly as the batch loops priced it.
-        BarQuote::Synthesized => match bar_quote(bar, advance.quote_config) {
-            Ok(quote) => quote,
-            Err(reason) => return skipped_decision(index, ts, proposal_id, reason),
-        },
-        // Live policy: price against the quote a source actually resolved.
-        BarQuote::Resolved(quote) => *quote,
-        // Every configured source was dark. The signal advanced above; the
-        // bar fails closed rather than inventing a price.
-        BarQuote::Dark => {
-            return skipped_decision(index, ts, proposal_id, "no quote from any source")
-        }
-    };
-    // One recorder view per step over the session-scoped journal: the shared
-    // submission protocol runs unchanged, and parallel sessions stay
-    // isolated. A live loop supplies its durable permit, so the same body
-    // records authority-bearing rows.
-    let recorder = match advance.permit {
-        Some(permit) => Recorder::durable(advance.journal, permit),
-        None => Recorder::ephemeral(advance.journal),
-    };
-    submit_decided(
-        proposal,
+    let decision = submit_decided(
+        proposal.clone(),
         quote,
         advance.risk,
         advance.ledger,
@@ -500,7 +797,9 @@ pub(crate) async fn advance_bar<V: Venue>(
         bar,
         advance.runner_config,
     )
-    .await
+    .await;
+    advance.book.apply(&decision, Some(&proposal), index, "");
+    decision
 }
 
 /// Apply every corporate action due at-or-before `at`, in tape order, and
@@ -569,6 +868,7 @@ pub struct ReplayDriver {
     decisions: Vec<BarDecision>,
     seed: u64,
     skipped_warmup: u64,
+    book: PositionBook,
     /// Installed chain source, retained for point-in-time selection. The
     /// venue holds its own clone for fills; this one serves the snapshot the
     /// shared decide path prices legs from. `None` until installed, and its
@@ -619,7 +919,7 @@ impl ReplayDriver {
                 closes.push(close);
             }
         }
-        let timeframe = Timeframe::infer(venue.bars()).unwrap_or(Timeframe::D1);
+        let timeframe = Timeframe::infer_or_d1(venue.bars());
         // One instance for the driver's whole session, stepped with the
         // cursor so replay and batch see the same per-run state.
         let signal = strategy
@@ -641,6 +941,7 @@ impl ReplayDriver {
             decisions: Vec::new(),
             seed,
             skipped_warmup: 0,
+            book: PositionBook::new(),
             chain: None,
             corporate,
             corporate_cursor: 0,
@@ -716,6 +1017,7 @@ impl ReplayDriver {
                 timeframe: self.timeframe,
                 closes: &mut self.closes,
                 skipped_warmup: &mut self.skipped_warmup,
+                book: &mut self.book,
                 runner_config: &self.runner_config,
                 seed: self.seed,
                 corporate: &self.corporate,

@@ -81,6 +81,10 @@ pub fn describe_work_unit(
 ///     pattern: None,
 ///     coerce: None,
 ///     parse: None,
+///     axis: None,
+///     visible_when: None,
+///     items: None,
+///     fixed: false,
 /// };
 /// let json = serde_json::to_value(&field).expect("FieldSchema serializes");
 /// assert!(json["min"].is_number(), "min must be a JSON number, got {json}");
@@ -121,6 +125,35 @@ pub struct FieldSchema {
     /// uses the strict `str::parse`. `#[field(parse = "...")]`.
     #[serde(default)]
     pub parse: Option<String>,
+    /// Which axis this member measures, when the member is a gate, trigger,
+    /// or threshold: `"correctness"`, `"task-value"`, or
+    /// `"producer-confidence"`. `#[field(axis = "...")]`.
+    ///
+    /// The three axes answer different questions and must never stand in for
+    /// one another: a correctness bound may not be widened by configuration, a
+    /// task-value threshold judges the outcome, and a producer-confidence
+    /// reading may only silence a producer — never deny a trade, size a
+    /// position, or approve one on merit. `None` on presentation-only members.
+    /// Added additively: older schema JSON without this key still deserializes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub axis: Option<String>,
+    /// Visibility rule for a member that belongs to one arm of a tagged
+    /// union: the member is editable only while the named selector has the
+    /// named value (`"kind=breakout"`). `None` means always visible.
+    ///
+    /// The renderer hides an inactive member; the field layer refuses to write
+    /// it, so visibility can never be the only guard. Added additively.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub visible_when: Option<String>,
+    /// Maximum item count for a list member (`#[field(items = N)]`). Each item
+    /// contributes its own dotted paths plus a synthetic `count`; `None` for a
+    /// scalar or nested member. Added additively.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub items: Option<usize>,
+    /// Whether a list is fixed-arity (`[T; N]`, no `count` writer) rather than
+    /// open (`Vec<T>`, a `count` grows/truncates). `false` for non-lists.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub fixed: bool,
 }
 
 /// Compatibility surface (scaffold).

@@ -26,14 +26,18 @@ pub fn with_tlr<T: Default, R>(
 /// Declare a thread-local resource with a `Default` constructor.
 ///
 /// Usage:
-/// ```ignore
-/// thread_local_resource!(static PARSER: AstParser);
+/// ```rust
+/// fluent_concurrency::thread_local_resource!(static BUF: String);
+///
+/// let len = fluent_concurrency::thread_resource::with_tlr(&BUF, |buf| {
+///     buf.push_str("hi");
+///     buf.len()
+/// });
+/// assert_eq!(len, 2);
 /// ```
 ///
-/// Access with `with_tlr`:
-/// ```ignore
-/// with_tlr(&PARSER, |parser| parser.parse(&source))
-/// ```
+/// Access with `with_tlr` (see the macro example above, which is a compiled
+/// doctest exercising both faces).
 #[macro_export]
 macro_rules! thread_local_resource {
     (static $name:ident : $ty:ty) => {

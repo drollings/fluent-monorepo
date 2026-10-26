@@ -1,0 +1,20 @@
+# Manual-only fuzz crate for the boundary codec (M6.c2 — never runs in any
+# gate; nightly-only). Run it with:
+#
+#   cd src/fluent-wvr/fuzz && cargo +nightly fuzz run repair -- -max_len=65536
+#
+# To replay the proptest regression seeds, drop the seed files into
+# fuzz/corpus/repair/ (cargo-fuzz reuses that directory as its corpus).
+[package]
+name = "fluent-wvr-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+# Detached from the parent workspace: this crate builds only under
+# `cargo-fuzz` + nightly and must never join any gate matrix.
+[workspace]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+fluent-wvr = { path = ".." }

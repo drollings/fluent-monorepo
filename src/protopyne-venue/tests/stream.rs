@@ -1354,3 +1354,26 @@ fn short_fetch_keeps_the_hole_open() {
     assert!(gate.entries_suspended());
     assert_eq!(unit.pending(), 1, "the reconnect bar still waits");
 }
+
+/// The reconnect schedule and the breaker limits measure the *producer's*
+/// health, never a trade's merit. The schema says so, so a form or a gate
+/// cannot promote them into a trade judgement by accident.
+#[test]
+fn stream_config_declares_producer_confidence() {
+    use fluent_wvr::Describable;
+    use protopyne_strategy::GateAxis;
+
+    let schema = StreamConfig::new().build().describe();
+    let properties = schema["properties"].as_object().expect("properties");
+    assert_eq!(properties.len(), 5, "every stream dial is covered");
+    for (name, hint) in properties {
+        let word = hint["x-axis"]
+            .as_str()
+            .unwrap_or_else(|| panic!("{name} carries no axis"));
+        assert_eq!(
+            GateAxis::parse(word),
+            Some(GateAxis::ProducerConfidence),
+            "{name} measures producer health"
+        );
+    }
+}

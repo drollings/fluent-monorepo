@@ -215,7 +215,7 @@ async fn run_live(args: &Args) -> Result<(), String> {
         .ok_or("--live needs --history for the bar feed")?;
     let history_bars = load_history_path(&history_path, None)
         .map_err(|e| format!("live history failed to load: {e}"))?;
-    let timeframe = Timeframe::infer(&history_bars).unwrap_or(Timeframe::D1);
+    let timeframe = Timeframe::infer_or_d1(&history_bars);
     let underlying = std::env::var("TASTYTRADE_UNDERLYING").unwrap_or_else(|_| "SPY".to_owned());
     let boot = protopyne_venue::LiveBoot::new()
         .session(protopyne_venue::SessionConfig::default())

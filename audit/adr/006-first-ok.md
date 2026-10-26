@@ -10,3 +10,18 @@
 
 ## Recommendation
 (B) now (docs match code), (A)/(C) only with second consumer + major bump. Add equivalence table to docs.
+
+## Outcome (implemented)
+
+(C) landed: `ComponentCascade::execute_first_ok` now composes
+`first_accept_in_order_sync` (`src/fluent-wvr/src/wrapper.rs`), mapping
+`Ok`+`!is_accept` to `Ok(None)` with `stop = |_| false`. Behavior is
+fail-advance: an `Ok` failure verdict advances and the last one is
+returned on total failure; a failure verdict never becomes
+`WorkError::Execution`. The ladder stays the single error-walk
+implementation. Equivalence is pinned by `tests/audit_h8.rs` (cascade
+side) and `src/fluent-concurrency/tests/ladder.rs` (ladder side); the
+cascade doc-comment is the equivalence record. No second consumer
+appeared, but the change was contained (one function body) and covered
+by the pre-existing acceptance corpus (`tests/cascade_acceptance.rs`),
+so it shipped without a major bump.

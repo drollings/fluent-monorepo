@@ -5,6 +5,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
+use fluent_wvr::validate::Validate;
 use fluent_wvr::Describable as _;
 use fluent_wvr::FieldAccess as _;
 

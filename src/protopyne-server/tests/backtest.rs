@@ -1,15 +1,13 @@
 use super::*;
+use crate::common_fixtures::{money, spy_history};
 use std::path::PathBuf;
 
 use chrono::{TimeZone, Utc};
+use fluent_wvr::validate::Validate;
 use rust_decimal::Decimal;
 
-use protopyne_types::{Bar, Money};
+use protopyne_types::Bar;
 use protopyne_venue::{OrderIntent, OrderSide, PaperConfig, Quote, Venue};
-
-fn money(value: &str) -> Money {
-    Money::new(value.parse::<Decimal>().expect("decimal"))
-}
 
 fn bar_at(close: &str, ts_secs: i64) -> Bar {
     let close = close.parse::<Decimal>().expect("decimal");
@@ -111,7 +109,7 @@ fn empty_history_is_rejected() {
 
 #[tokio::test]
 async fn backtest_venue_shares_paper_fill_behavior() {
-    let bars = crate::csv::load_bars_csv(&test_data()).expect("vendored history loads");
+    let bars = spy_history();
     let bar = &bars[0];
     let venue = BacktestVenue::new(config(), bars[..8].to_vec(), PaperConfig::new().build())
         .expect("venue pins history");
@@ -156,7 +154,7 @@ async fn backtest_venue_shares_paper_fill_behavior() {
 #[tokio::test]
 async fn backtest_venue_honors_explicit_paper_tuning() {
     use protopyne_venue::FeeSchedule;
-    let bars = crate::csv::load_bars_csv(&test_data()).expect("vendored history loads");
+    let bars = spy_history();
     let bar = &bars[0];
     let tuned = PaperConfig::new()
         .fees(FeeSchedule::new().per_contract(money("1.30")).build())
@@ -185,7 +183,7 @@ async fn backtest_venue_honors_explicit_paper_tuning() {
 #[test]
 fn backtest_snapshot_delegates_to_inner_venue() {
     use protopyne_venue::PaperVenue;
-    let bars = crate::csv::load_bars_csv(&test_data()).expect("vendored history loads");
+    let bars = spy_history();
     let paper_cfg = PaperConfig::new().build();
     let paper = PaperVenue::new(paper_cfg.clone());
     let venue =

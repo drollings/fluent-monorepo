@@ -748,6 +748,12 @@ pub struct TradesAnalysis {
     pub profit_factor_trades: Option<f64>,
     /// Mean bars held (`None` with no trades).
     pub avg_bars_held: Option<f64>,
+    /// Winning closed cycles over closed cycles (`None` with no cycle). This
+    /// is the trade-shaped win rate the reference status table shows; the
+    /// report's top-level `win_rate` is a property of the *equity curve* and
+    /// answers a different question.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub win_rate_trades: Option<f64>,
     /// Closed longs.
     pub long_closed: u64,
     /// Winning longs.
@@ -843,6 +849,11 @@ impl TradesAnalysis {
             outlier,
             return_mean,
             return_std,
+            win_rate_trades: if n > 0 {
+                Some(winners as f64 / n as f64)
+            } else {
+                None
+            },
             profit_factor_trades: if gross_loss > 0.0 {
                 Some(gross_win / gross_loss)
             } else {

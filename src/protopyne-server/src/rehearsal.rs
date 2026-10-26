@@ -6,11 +6,7 @@
 
 use std::sync::Arc;
 
-use protopyne_strategy::elements::ExplicitStructure;
-use protopyne_strategy::{
-    BreakerLimits, Direction, FixedSignal, Grant, GrantBudgets, GrantPermission, GrantScope,
-    PortfolioThresholds, SignalThresholds, Strategy, StructureKind, TradeThresholds,
-};
+use protopyne_strategy::{Grant, Strategy, StructureKind};
 use protopyne_types::Money;
 use protopyne_view::{RehearsalEconomics, StructureKindHint};
 
@@ -37,43 +33,30 @@ pub enum StrategyKind {
 /// the deployment composition, which refuses at construction exactly as
 /// its elements refuse.
 pub fn select_strategy(kind: StrategyKind) -> Result<Arc<Strategy>, ServerError> {
-    match kind {
-        StrategyKind::Rehearsal => rehearsal_strategy(None),
-        StrategyKind::Momentum => Strategy::momentum().map(Arc::new).map_err(|refused| {
-            ServerError::Service(format!("momentum composition refused: {refused}"))
-        }),
-    }
+    let id = match kind {
+        StrategyKind::Rehearsal => "rehearsal",
+        StrategyKind::Momentum => "momentum",
+    };
+    protopyne_strategy::slots::composition::strategies()
+        .build(id, &serde_json::json!({}))
+        .map_err(|refused| ServerError::Service(format!("composition {id} refused: {refused}")))
 }
 
-/// The bundled rehearsal signal: fixed long exposure. Constants sit inside
-/// `[0, 1]` by construction; any refusal is a bug the caller sees as a failed
-/// run, never a fallback signal. `structure` pins the structure element
-/// (interactive replay), or leaves the strategy's default selector (preview)
-/// — the *same* signal either way, so the two surfaces share one builder.
-///
-/// A structure that needs per-leg market data gets the chain-aware selector:
-/// config-supplied economics cannot price a package, so a multi-leg replay
-/// can only be honest through the chain-derived arm, and only a chain-aware
-/// selector produces the legs that arm requires. `Single` keeps the explicit
-/// element, which has nothing to price.
+/// The bundled rehearsal signal: fixed long exposure. The composition
+/// library owns the builder so the preview, replay, and registry paths cannot
+/// drift.
 pub fn rehearsal_strategy(structure: Option<StructureKind>) -> Result<Arc<Strategy>, ServerError> {
-    use protopyne_strategy::LegSelector;
-
-    let signal = FixedSignal::new(Direction::Long, 0.8, 0.8)
-        .map_err(|e| ServerError::Service(format!("bundled signal refused: {e}")))?;
-    let strategy = Strategy::with_signal(Arc::new(signal));
-    Ok(Arc::new(match structure {
-        Some(structure) if crate::replay_session::needs_chain_data(structure) => {
-            strategy.with_structure(Arc::new(LegSelector::new().build()))
-        }
-        Some(structure) => strategy.with_structure(Arc::new(ExplicitStructure { structure })),
-        None => strategy,
-    }))
+    protopyne_strategy::slots::composition::rehearsal_strategy(structure).map_err(|refused| {
+        ServerError::Service(format!("rehearsal composition refused: {refused}"))
+    })
 }
 
 /// The fixed preview grant used when the caller supplies none.
 pub(crate) fn preview_grant() -> Grant {
-    rehearsal_grant("preview-permissive", vec![StructureKind::Vertical])
+    Grant::preset(protopyne_strategy::GrantPreset::Rehearsal {
+        id: "preview-permissive".to_owned(),
+        structures: vec![StructureKind::Vertical],
+    })
 }
 
 /// The fixed rehearsal grant an interactive replay runs under when the opener
@@ -82,61 +65,10 @@ pub(crate) fn preview_grant() -> Grant {
 /// shape the window's chains cover — uncovered bars are still refused by the
 /// session's coverage screen before the grant sees them.
 pub(crate) fn replay_grant_for(structure: StructureKind) -> Grant {
-    rehearsal_grant("replay-permissive", vec![structure])
-}
-
-/// One rehearsal-grant body over an explicit structure scope and id: preview
-/// and replay differ only in which structures they admit, never in budgets,
-/// thresholds, or breakers. The window is a compile-time constant (no ambient
-/// clock), so a pinned config is reproducible; evaluation happens at bar time.
-pub(crate) fn rehearsal_grant(id: &str, structures: Vec<StructureKind>) -> Grant {
-    Grant::new()
-        .id(id.to_owned())
-        .scope(
-            GrantScope::new()
-                .strategies(vec!["ribbon".to_owned()])
-                .underlyings(vec!["SPY".to_owned()])
-                .structures(structures)
-                .directions(vec![Direction::Long, Direction::Short])
-                .permissions(GrantPermission {
-                    entries: true,
-                    exits: true,
-                    rolls: false,
-                })
-                .build(),
-        )
-        .budgets(
-            GrantBudgets::new()
-                .max_trades(1_000)
-                .max_contracts(10_000)
-                .max_loss(Money::from(1_000_000))
-                .max_notional(Money::from(100_000_000))
-                .build(),
-        )
-        .signal(
-            SignalThresholds::new()
-                .min_conviction(0.0)
-                .min_activity_score(0.0)
-                .build(),
-        )
-        .trade(
-            TradeThresholds::new()
-                .max_loss_per_trade(Money::from(1_000))
-                .max_spread_width(Money::from(50))
-                .min_dte_days(1)
-                .max_dte_days(90)
-                .build(),
-        )
-        .portfolio(
-            PortfolioThresholds::new()
-                .max_open_risk(Money::from(10_000_000))
-                .quote_max_age_secs(60)
-                .build(),
-        )
-        .breakers(BreakerLimits::new().max_consecutive_errors(3).build())
-        .valid_from(rehearsal_stamp(1_700_000_000))
-        .valid_until(rehearsal_stamp(1_900_000_000))
-        .build()
+    Grant::preset(protopyne_strategy::GrantPreset::Rehearsal {
+        id: "replay-permissive".to_owned(),
+        structures: vec![structure],
+    })
 }
 
 /// Map the read boundary's structure hint to the core's own structure kind.
@@ -196,10 +128,4 @@ pub(crate) fn rehearsal_economics(
         dte_days: grant.trade.min_dte_days,
         grant_id: grant.id.clone(),
     })
-}
-
-/// A fixed rehearsal-window stamp. The constant is a valid instant, so the
-/// `expect` states a construction invariant, never reads a clock.
-fn rehearsal_stamp(seconds: i64) -> chrono::DateTime<chrono::Utc> {
-    chrono::DateTime::from_timestamp(seconds, 0).expect("fixed rehearsal stamp is valid")
 }

@@ -7,7 +7,7 @@
 
 use std::path::Path;
 
-use chrono::DateTime;
+use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 
 use crate::error::ServerError;
@@ -16,21 +16,24 @@ use protopyne_types::{validate_new_bar, Bar};
 /// Required columns after lowercasing the header row.
 const REQUIRED_COLUMNS: [&str; 6] = ["time", "open", "high", "low", "close", "volume"];
 
-fn parse_decimal(field: &str, line: usize, column: &str) -> Result<Decimal, ServerError> {
+/// Shared field readers for the crate's CSV ingests: the bar reader below
+/// and the chain reader both refuse malformed cells in this one vocabulary,
+/// so a refusal names the same line, column, and value whichever file broke.
+pub(crate) fn parse_decimal_field(
+    field: &str,
+    line: usize,
+    column: &str,
+) -> Result<Decimal, ServerError> {
     field.parse::<Decimal>().map_err(|_| ServerError::BadRow {
         line,
         reason: format!("invalid decimal in column '{column}': {field:?}"),
     })
 }
 
-fn parse_volume(field: &str, line: usize) -> Result<u64, ServerError> {
-    field.parse::<u64>().map_err(|_| ServerError::BadRow {
-        line,
-        reason: format!("invalid volume: {field:?}"),
-    })
-}
-
-fn parse_timestamp(field: &str, line: usize) -> Result<chrono::DateTime<chrono::Utc>, ServerError> {
+pub(crate) fn parse_timestamp_field(
+    field: &str,
+    line: usize,
+) -> Result<DateTime<Utc>, ServerError> {
     let secs: i64 = field.parse().map_err(|_| ServerError::BadRow {
         line,
         reason: format!("invalid epoch timestamp: {field:?}"),
@@ -38,6 +41,59 @@ fn parse_timestamp(field: &str, line: usize) -> Result<chrono::DateTime<chrono::
     DateTime::from_timestamp(secs, 0).ok_or(ServerError::BadRow {
         line,
         reason: format!("epoch timestamp out of range: {field:?}"),
+    })
+}
+
+/// Shared integer reader for optional chain columns (sizes, open interest):
+/// a non-empty cell that will not parse refuses with its column named.
+pub(crate) fn parse_int_field<T: std::str::FromStr>(
+    field: &str,
+    line: usize,
+    column: &str,
+) -> Result<T, ServerError> {
+    field.parse::<T>().map_err(|_| ServerError::BadRow {
+        line,
+        reason: format!("invalid integer in column '{column}': {field:?}"),
+    })
+}
+
+/// Position of one optional column in a CSV header row, after lowercasing:
+/// `None` when the file does not carry it. The caller decides the absent
+/// default; a present-but-malformed cell still refuses at the field reader.
+pub(crate) fn optional_column(record: &csv::StringRecord, name: &str) -> Option<usize> {
+    record.iter().position(|h| h.to_lowercase() == name)
+}
+
+/// Positions of the `required` columns in a CSV header row, in `required`
+/// order, after lowercasing. Refuses with the missing column names when any
+/// is absent, so both ingests name the same gap.
+pub(crate) fn header_positions(
+    record: &csv::StringRecord,
+    required: &[&str],
+) -> Result<Vec<usize>, ServerError> {
+    let headers = record.iter().map(str::to_lowercase).collect::<Vec<_>>();
+    let index_of = |name: &str| headers.iter().position(|h| h == name);
+    let missing: Vec<&str> = required
+        .iter()
+        .copied()
+        .filter(|name| index_of(name).is_none())
+        .collect();
+    if !missing.is_empty() {
+        return Err(ServerError::BadHeader(format!(
+            "missing columns: {}",
+            missing.join(", ")
+        )));
+    }
+    Ok(required
+        .iter()
+        .map(|name| index_of(name).expect("column presence checked"))
+        .collect())
+}
+
+fn parse_volume(field: &str, line: usize) -> Result<u64, ServerError> {
+    field.parse::<u64>().map_err(|_| ServerError::BadRow {
+        line,
+        reason: format!("invalid volume: {field:?}"),
     })
 }
 
@@ -50,30 +106,15 @@ pub fn parse_bars_csv(content: &str) -> Result<Vec<Bar>, ServerError> {
 
     let headers = reader
         .headers()
-        .map_err(|e| ServerError::BadHeader(format!("cannot read header row: {e}")))?
-        .iter()
-        .map(str::to_lowercase)
-        .collect::<Vec<_>>();
-    let index_of = |name: &str| headers.iter().position(|h| h == name);
-    let missing: Vec<&str> = REQUIRED_COLUMNS
-        .iter()
-        .copied()
-        .filter(|name| index_of(name).is_none())
-        .collect();
-    if !missing.is_empty() {
-        return Err(ServerError::BadHeader(format!(
-            "missing columns: {}",
-            missing.join(", ")
-        )));
-    }
-    let col = |name: &str| index_of(name).expect("column presence checked");
+        .map_err(|e| ServerError::BadHeader(format!("cannot read header row: {e}")))?;
+    let positions = header_positions(headers, &REQUIRED_COLUMNS)?;
     let (time_c, open_c, high_c, low_c, close_c, vol_c) = (
-        col("time"),
-        col("open"),
-        col("high"),
-        col("low"),
-        col("close"),
-        col("volume"),
+        positions[0],
+        positions[1],
+        positions[2],
+        positions[3],
+        positions[4],
+        positions[5],
     );
 
     let mut bars = Vec::new();
@@ -91,11 +132,15 @@ pub fn parse_bars_csv(content: &str) -> Result<Vec<Bar>, ServerError> {
             })
         };
         let bar = Bar::new()
-            .ts(parse_timestamp(field(time_c, "time")?, line)?)
-            .o(parse_decimal(field(open_c, "open")?, line, "open")?)
-            .h(parse_decimal(field(high_c, "high")?, line, "high")?)
-            .l(parse_decimal(field(low_c, "low")?, line, "low")?)
-            .c(parse_decimal(field(close_c, "close")?, line, "close")?)
+            .ts(parse_timestamp_field(field(time_c, "time")?, line)?)
+            .o(parse_decimal_field(field(open_c, "open")?, line, "open")?)
+            .h(parse_decimal_field(field(high_c, "high")?, line, "high")?)
+            .l(parse_decimal_field(field(low_c, "low")?, line, "low")?)
+            .c(parse_decimal_field(
+                field(close_c, "close")?,
+                line,
+                "close",
+            )?)
             .volume(parse_volume(field(vol_c, "volume")?, line)?)
             .maybe_adj(None)
             .build();

@@ -3,20 +3,15 @@
 //! live nor tightenable.
 
 use super::*;
+use crate::common_fixtures::spy_history;
 use protopyne_strategy::fixtures::grant_with;
 use protopyne_strategy::GrantBudgets;
 
-fn history() -> Vec<Bar> {
-    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests")
-        .join("data")
-        .join("SPY_15M.csv");
-    crate::csv::load_bars_csv(&path).expect("vendored history loads")
-}
-
 async fn boot() -> ServerHandle {
     let config = ServerConfig::new().bind("127.0.0.1:0".to_owned()).build();
-    serve(config, history()).await.expect("test server boots")
+    serve(config, spy_history())
+        .await
+        .expect("test server boots")
 }
 
 fn grant(id: &str) -> Grant {

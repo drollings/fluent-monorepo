@@ -147,70 +147,24 @@ impl OscillatorKind {
     /// (`Raw`) and the refused row (`Cdv`). Every other catalog row,
     /// including the composed recipes (`Srsi`, `TrendSi`), names its
     /// registered kernel.
+    ///
+    /// The catalog lives in the kernel crate, so the pane and the decision
+    /// path cannot drift apart.
     #[must_use]
     pub fn kernel_id(self) -> Option<&'static str> {
-        match self {
-            Self::Aroon => Some("aroon"),
-            Self::Cci => Some("cci"),
-            Self::Cmo => Some("cmo"),
-            Self::Mfi => Some("mfi"),
-            Self::Rsi => Some("rsi"),
-            Self::Srsi => Some("srsi"),
-            Self::Stoch => Some("stoch"),
-            Self::TrendSi => Some("trendsi"),
-            Self::Voss => Some("voss"),
-            Self::Cdv | Self::Raw => None,
-        }
+        protopyne_kernels::lite::leg_kernel(self.id())
     }
 
     /// Frozen squash constants, or `None` for the refused `Cdv` row (never a
     /// substitute default).
     #[must_use]
     pub fn params(self) -> Option<OscParams> {
-        let params = match self {
-            Self::Aroon => OscParams {
-                offset: -50.0,
-                k: 0.005,
-                multiplier: 800.0,
-            },
-            Self::Cci => OscParams {
-                offset: -50.0,
-                k: 0.0035,
-                multiplier: 500.0,
-            },
-            Self::Cdv => return None,
-            Self::Cmo => OscParams {
-                offset: 0.0,
-                k: 0.002,
-                multiplier: 1000.0,
-            },
-            Self::Mfi | Self::Rsi | Self::Raw => OscParams {
-                offset: -50.0,
-                k: 0.0084,
-                multiplier: 740.0,
-            },
-            Self::Srsi => OscParams {
-                offset: -50.0,
-                k: 0.0006,
-                multiplier: 7000.0,
-            },
-            Self::Stoch => OscParams {
-                offset: -50.0,
-                k: 0.0005,
-                multiplier: 7000.0,
-            },
-            Self::TrendSi => OscParams {
-                offset: 0.0,
-                k: 0.016,
-                multiplier: 9000.0,
-            },
-            Self::Voss => OscParams {
-                offset: 0.0,
-                k: 1.5,
-                multiplier: 300.0,
-            },
-        };
-        Some(params)
+        let (offset, k, multiplier) = protopyne_kernels::lite::leg_constants(self.id())?;
+        Some(OscParams {
+            offset,
+            k,
+            multiplier,
+        })
     }
 
     /// The `which` legs this family handles. Single-leg families list the

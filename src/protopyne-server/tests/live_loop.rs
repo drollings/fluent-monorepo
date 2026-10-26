@@ -4,6 +4,7 @@
 //! loopback; the credentialed soak stays `#[ignore]`.
 
 use super::*;
+use crate::common_fixtures::money;
 use protopyne_strategy::fixtures::grant_with;
 
 use std::collections::HashMap;
@@ -13,13 +14,11 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
 use chrono::{TimeZone, Utc};
-use rust_decimal::Decimal;
 
 use protopyne_strategy::{
     elements::{ExplicitStructure, FixedSignal},
     Direction, Grant, StructureKind,
 };
-use protopyne_types::Money;
 use protopyne_venue::{
     Journal, OrderIntent, OrderRecord, OrderStatus, PaperConfig, PaperVenue, SessionConfig,
     TastytradeConfig, TastytradeTransport, TastytradeVenue, Venue, VenueError, VenueRegistry,
@@ -28,10 +27,6 @@ use protopyne_venue::{
 
 use crate::backtest::BacktestConfig;
 use crate::runner::RunnerConfig;
-
-fn money(value: i64) -> Money {
-    Money::new(Decimal::from(value))
-}
 
 fn now() -> chrono::DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 6, 1, 12, 0, 0).unwrap()
@@ -72,8 +67,8 @@ fn runner_config() -> RunnerConfig {
     RunnerConfig::new(
         "SPY".to_owned(),
         "ribbon".to_owned(),
-        money(400),
-        money(2_000),
+        money("400"),
+        money("2_000"),
         30,
         0,
     )

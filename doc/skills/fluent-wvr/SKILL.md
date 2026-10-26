@@ -2356,10 +2356,19 @@ pub struct Config {
 ### Closed `#[field(...)]` vocabulary
 
 The derive macros accept exactly these arguments — anything else fails
-expansion with an error naming the argument:
+expansion with an error naming the argument (pinned by
+`tests/skill_doc_pins.rs`, which lists every one):
 
 `skip`, `desc`, `min`, `max`, `clamp`, `required`, `format`, `max_len`,
-`sanitize`, `pattern`, `coerce`, `parse`, `variants`, `empty_is_none`.
+`sanitize`, `pattern`, `coerce`, `parse`, `variants`, `tab`, `group`,
+`tooltip`, `step`, `inline`, `axis`, `empty_is_none`, `nested`, `items`,
+`fixed`, `visible_when`.
+
+Two groups: validation/emission (`skip`…`parse`, `variants`,
+`empty_is_none`, `nested`, `items`, `fixed`, `visible_when`, `axis`) change
+what `set_field` accepts or what `describe()` emits; presentation hints
+(`tab`, `group`, `tooltip`, `step`, `inline`) emit `x-`-prefixed schema
+hints only and never change acceptance.
 
 Two shape notes (pinned by `tests/schema_edges.rs`):
 

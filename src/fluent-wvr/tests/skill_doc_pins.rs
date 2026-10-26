@@ -5,10 +5,18 @@
 //! `#[field(...)]` vocabulary, the planned-not-implemented version
 //! annotations, and the no-blanket-impl rule stated as a coherence limit
 //! (not unsoundness). If the guide regresses, this gate fails.
+//!
+//! The vocabulary list must match `parse_field_attrs` in
+//! `src/fluent-wvr-macros/src/lib.rs` exactly: the test fails when an
+//! argument ships without documentation, and (via the derive's
+//! closed-vocabulary error) when documentation names an argument that no
+//! longer exists.
 
 const SKILL: &str = include_str!("../../../doc/skills/fluent-wvr/SKILL.md");
 
-const CLOSED_VOCABULARY: [&str; 14] = [
+/// Every argument `parse_field_attrs` accepts. Validation/emission first,
+/// then presentation-only `x-` hints.
+const CLOSED_VOCABULARY: [&str; 24] = [
     "skip",
     "desc",
     "min",
@@ -23,6 +31,16 @@ const CLOSED_VOCABULARY: [&str; 14] = [
     "parse",
     "variants",
     "empty_is_none",
+    "nested",
+    "items",
+    "fixed",
+    "visible_when",
+    "axis",
+    "tab",
+    "group",
+    "tooltip",
+    "step",
+    "inline",
 ];
 
 #[test]

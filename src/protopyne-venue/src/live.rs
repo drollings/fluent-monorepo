@@ -31,6 +31,7 @@ use std::sync::{Arc, Mutex};
 use chrono::{DateTime, Utc};
 use fluent_concurrency::io::net::NetCapability;
 use fluent_concurrency::stream::StreamAbort;
+use fluent_wvr::validate::Validate;
 use tokio::sync::mpsc;
 
 use crate::auth::{

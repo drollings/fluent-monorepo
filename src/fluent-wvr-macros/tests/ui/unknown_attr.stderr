@@ -1,0 +1,5 @@
+error: unknown field attribute `not_a_real_arm`, expected one of: `skip`, `desc`, `min`, `max`, `clamp`, `required`, `format`, `max_len`, `sanitize`, `pattern`, `coerce`, `parse`, `variants`, `tab`, `group`, `tooltip`, `step`, `inline`, `axis`, `empty_is_none`, `nested`, `items`, `fixed`, `visible_when`
+ --> tests/ui/unknown_attr.rs:7:13
+  |
+7 |     #[field(not_a_real_arm = 1)]
+  |             ^^^^^^^^^^^^^^

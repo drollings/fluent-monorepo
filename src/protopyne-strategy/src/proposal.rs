@@ -80,6 +80,13 @@ impl StructureKind {
     pub fn is_defined_risk(self) -> bool {
         !matches!(self, Self::NakedShort)
     }
+
+    /// Whether selecting this structure needs a point-in-time option chain:
+    /// every multi-leg package does, a single leg does not.
+    #[must_use]
+    pub fn needs_chain_data(self) -> bool {
+        matches!(self, Self::Vertical | Self::Calendar | Self::Condor)
+    }
 }
 
 /// Lifecycle state of a proposal.

@@ -6,26 +6,17 @@
 //! the same pure verdict `/health` reports, so the two cannot disagree. The
 //! control group runs the identical route over a healthy default reading.
 
-use std::path::PathBuf;
-
 use super::*;
+use crate::common_fixtures::spy_history;
 use protopyne_store::StoreHealth;
 use protopyne_view::TerminalGateway;
-
-fn history() -> Vec<Bar> {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests")
-        .join("data")
-        .join("SPY_15M.csv");
-    crate::csv::load_bars_csv(&path).expect("vendored history loads")
-}
 
 async fn boot(reading: StoreHealth) -> ServerHandle {
     let config = ServerConfig::new()
         .bind("127.0.0.1:0".to_owned())
         .store_health(reading)
         .build();
-    serve(config, history()).await.expect("server boots")
+    serve(config, spy_history()).await.expect("server boots")
 }
 
 #[tokio::test]

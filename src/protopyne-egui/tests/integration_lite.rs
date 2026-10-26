@@ -162,7 +162,7 @@ fn freeze_drivers() -> [(&'static str, &'static str); 3] {
 #[test]
 fn freeze_pins_native_against_pine() {
     let bars = ramp_bars();
-    let native = native_lite_series(&ramp_rows(), 0.14).expect("native series evaluate");
+    let native = lite_native_series(&ramp_rows(), 0.14).expect("native series evaluate");
     let frozen = LiteFrozen::from_native(&native);
     let mut pine = LiteFrozen {
         fast: Vec::new(),
@@ -242,14 +242,14 @@ fn calibrated_view_holds_shape_over_the_ramp() {
 fn bad_alphas_and_thresholds_refuse() {
     let rows = ramp_rows();
     assert!(
-        native_lite_series(&rows, 0.0).is_err(),
+        lite_native_series(&rows, 0.0).is_err(),
         "zero EIT alpha refuses"
     );
     assert!(
-        native_lite_series(&rows, 1.5).is_err(),
+        lite_native_series(&rows, 1.5).is_err(),
         "divergent EIT alpha refuses"
     );
-    assert!(native_lite_series(&rows, f64::NAN).is_err());
+    assert!(lite_native_series(&rows, f64::NAN).is_err());
     assert!(
         integration_lite_view(&rows, 0.14, 2.0, 100.0).is_err(),
         "fill alpha refuses"
@@ -1365,7 +1365,7 @@ fn default_legs_reproduce_the_frozen_arms() {
     let rows = ramp_rows();
     let config = IntegrationLiteConfig::new().build();
     let pane = integration_lite_sub_pane(&rows, &config).expect("pane builds");
-    let native = native_lite_series(&rows, 0.14).expect("native builds");
+    let native = lite_native_series(&rows, 0.14).expect("native builds");
     assert_eq!(
         pane.fast_bounded,
         normalize_series_bounded(&native.fast_raw, OscillatorKind::Rsi).expect("evaluable"),

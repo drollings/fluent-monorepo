@@ -181,10 +181,11 @@ impl PaperVenue {
         } else {
             slipped.as_decimal().max(intent.limit_price.as_decimal())
         };
+        let notional = Money::new(price * Decimal::from(intent.quantity));
         let fee = self
             .config
             .fees
-            .fee_for(intent.quantity)
+            .fee_for_notional(notional, intent.quantity)
             .ok_or_else(|| VenueError::Refused("fee overflow".to_owned()))?;
         let mut record = OrderRecord::pending(intent.clone(), now);
         record.status = OrderStatus::Acknowledged;
@@ -275,10 +276,12 @@ impl PaperVenue {
                 )));
             }
             let slipped = self.config.slippage.apply(touch, is_buy);
-            let fee =
-                self.config.fees.fee_for(leg_qty).ok_or_else(|| {
-                    VenueError::Refused(format!("leg {index} ({occ}): fee overflow"))
-                })?;
+            let leg_notional = Money::new(slipped.as_decimal() * Decimal::from(leg_qty));
+            let fee = self
+                .config
+                .fees
+                .fee_for_notional(leg_notional, leg_qty)
+                .ok_or_else(|| VenueError::Refused(format!("leg {index} ({occ}): fee overflow")))?;
             let sign = if is_buy {
                 Decimal::ONE
             } else {

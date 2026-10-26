@@ -20,6 +20,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
 use fluent_concurrency::stream::StreamAbort;
+use fluent_wvr::validate::Validate;
 
 use crate::market::{BarUpdate, MarketEvent, MarketEventKind, TradePrint};
 use crate::stream::{StreamConfig, StreamOutcome};
@@ -56,9 +57,12 @@ impl FeedSubscription {
             timeframe: Some(timeframe),
         }
     }
+}
 
+impl fluent_wvr::validate::Validate for FeedSubscription {
+    type Err = FeedError;
     /// Fail-closed shape check.
-    pub fn validate(&self) -> Result<(), FeedError> {
+    fn validate(&self) -> Result<(), Self::Err> {
         if self.symbol.trim().is_empty() {
             return Err(FeedError::Malformed(
                 "feed subscription symbol must not be blank".to_owned(),
