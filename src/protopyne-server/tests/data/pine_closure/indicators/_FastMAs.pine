@@ -1,0 +1,95 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © showmethegrail
+
+//@version=6
+
+import showmethegrail/libUtil/12 as UTIL
+import showmethegrail/libMAs/95 as libMAs
+
+indicator(title="*Fast MAs", overlay=true, precision=2)
+colorNone = color.rgb(0,0,0,100)
+
+// ----------------------------------------------------------------------
+// Getting inputs
+// ----------------------------------------------------------------------
+// Source MA for retargeting
+sourceMA = input(close, title="Source MA")
+
+// First MA
+GROUP_FIRST_MA = "First MA"
+bShowFirstMA = input.bool(true, title="👁️ First MA   ", inline="first", group=GROUP_FIRST_MA)
+colorFirstMA = input(color.rgb(192, 192, 192, 20), "", inline="first", group=GROUP_FIRST_MA)
+typeFirstMA = input.enum(UTIL.Smoothings.WMA, title="", inline='first', group=GROUP_FIRST_MA)
+lenFirstMA = input.int(3, "", step=2, minval=3, inline="first", group=GROUP_FIRST_MA)
+// shadeFirstMA = input.string(title="    Shading", defval="-", options=["-", "Oscillator"], inline="first2, group=GROUP_FIRST_MA")
+
+// Second MA
+GROUP_SECOND_MA = "Second MA"
+bShowSecondMA = input.bool(false, title="👁️ Second MA", inline="second", group=GROUP_SECOND_MA)
+colorSecondMA = input(color.rgb(192, 192, 192, 20), "", inline="second", group=GROUP_SECOND_MA)
+typeSecondMA = input.enum(UTIL.Smoothings.ALMA, title="", inline='second', group=GROUP_SECOND_MA)
+lenSecondMA = input.int(8, "", step=2, minval=3, maxval=200, inline="second", group=GROUP_SECOND_MA)
+
+// The usual EMAs
+GROUP_EMA = "Signal / Mean / Trend MAs"
+bShowExtraMAs = input.bool(true, title="👁️ Display EMAs", group=GROUP_EMA, inline="BA")
+
+colorSignalMA = input(color.rgb(40, 98, 255, 40), "", group=GROUP_EMA, inline="CA")
+typeSignalMA = input.enum(UTIL.Smoothings.EMA, title="Signal", inline='CA', group=GROUP_EMA, tooltip="SMAs are common, and unresponsive.  EMAs are used for common support levels.  HMAs are highly responsive to current price movements, yet still allow a good deal of smoothing.  RMAs are used as an alternative to SMAs for _trend_mas.  WMA is somewhat more responsive to recent movements, but less so than HMA.  VWMA is volume-weighted, requires volume data.")
+lenSignalMA = input.int(8, "", minval=2, group=GROUP_EMA, inline="CA")
+
+colorMeanMA = input(color.rgb(72, 176, 80, 60), "", group=GROUP_EMA, inline="CB")
+typeMeanMA = input.enum(UTIL.Smoothings.EMA, title="Mean ", inline='CB', group=GROUP_EMA)
+lenMeanMA = input.int(21, "", minval=2, group=GROUP_EMA, inline="CB")
+
+colorTrendMA = input(color.rgb(240, 128, 0, 70), "", group=GROUP_EMA, inline="CC")
+typeTrendMA = input.enum(UTIL.Smoothings.EMA, title="Trend", inline='CC', group=GROUP_EMA)
+lenTrendMA = input.int(34, "", minval=2, group=GROUP_EMA, inline="CC")
+
+colorBaseMA = input(color.rgb(255, 32, 84, 80), "", group=GROUP_EMA, inline="CD")
+typeBaseMA = input.enum(UTIL.Smoothings.EMA, title="Base ", inline='CD', group=GROUP_EMA)
+lenBaseMA = input.int(55, "", minval=2, group=GROUP_EMA, inline="CD")
+
+// SMAs
+g_sSMAHeader = "SMA 50/100/200"
+bShowSMAs = input.bool(false, title="👁️ Display SMAs", group=g_sSMAHeader, inline="first")
+colorSMA50 = input(color.rgb(99, 112, 146, 30), "SMA 50", group=g_sSMAHeader, inline="first")
+colorSMA100 = input(color.rgb(99, 146, 112, 40), "100", group=g_sSMAHeader, inline="first")
+colorSMA200 = input(color.rgb(146, 112, 96, 50), "200", group=g_sSMAHeader, inline="first")
+
+// ----------------------------------------------------------------------
+// Averages
+// -------------------------------------------------------------------
+_first_ma = libMAs.factorySmoothing(sourceMA, typeFirstMA, lenFirstMA)
+_second_ma = libMAs.factorySmoothing(sourceMA, typeSecondMA, lenSecondMA)
+_signal_ma = libMAs.factorySmoothing(sourceMA, typeSignalMA, lenSignalMA)
+_mean_ma = libMAs.factorySmoothing(sourceMA, typeMeanMA, lenMeanMA)
+_trend_ma = libMAs.factorySmoothing(sourceMA, typeTrendMA, lenTrendMA)
+_base_ma = libMAs.factorySmoothing(sourceMA, typeBaseMA, lenBaseMA)
+
+_sma50 = ta.sma(sourceMA, 50)
+_sma100 = ta.sma(sourceMA, 100)
+_sma200 = ta.sma(sourceMA, 200)
+
+// ----------------------------------------------------------------------
+// Plots
+// -------------------------------------------------------------------
+
+// fastShade = input(close, title="Fast", inline="first2, group=GROUP_FIRST_MA")
+// slowShade = input(close, title="Slow", inline="first2, group=GROUP_FIRST_MA", tooltip="If you wish to use shading on an external RSI-like indicator, set Fast and Slow to its short and long-length external sources.")
+
+// if bShowFirstMA
+//     if shadeFirstMA == "Oscillator"
+//         colorFirstMA := color.rgb(54 + (2*nz(fastShade)), 154 + (nz(fastShade)), 254 - (2*nz(slowShade)), 5)
+
+plot(_first_ma, title="First MA", color=colorFirstMA, display=bShowFirstMA ? display.all : display.none, linewidth=2)
+plot(_second_ma, title="Second MA", color=colorSecondMA, display=bShowSecondMA ? display.all : display.none, linewidth=2)
+
+plot(_signal_ma, title="Signal MA", color=colorSignalMA, display=bShowExtraMAs ? display.all : display.none, linewidth=1)
+plot(_mean_ma, title="Mean MA", color=colorMeanMA, display=bShowExtraMAs ? display.all : display.none, linewidth=1)
+plot(_trend_ma, title="Trend MA", color=colorTrendMA, display=bShowExtraMAs ? display.all : display.none, linewidth=1)
+plot(_base_ma, title="Base MA", color=colorBaseMA, display=bShowExtraMAs ? display.all : display.none, linewidth=1)
+
+plot(_sma50, title="SMA50", color=colorSMA50, display=bShowSMAs ? display.all : display.none, linewidth=1)
+plot(_sma100, title="SMA100", color=colorSMA100, display=bShowSMAs ? display.all : display.none, linewidth=3)
+plot(_sma200, title="SMA200", color=colorSMA200, display=bShowSMAs ? display.all : display.none, linewidth=5)

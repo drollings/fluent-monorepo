@@ -1,8 +1,8 @@
 //! Equity backtest contract: sizing modes on hand-checked tapes, TP
 //! normalization, ratchet-only stops, partial-once exhaustion, cooldown /
 //! halt / session gates with must-fire and must-not-fire windows, tearsheet
-//! parity with unavailable tabs, and rerun byte-identity. All runs reuse
-//! the shared submission body — no raw venue submits on this path.
+//! parity with unavailable tabs, and rerun byte-identity. All runs use the
+//! simple decision stack — no proposal, grant, risk, or journal layers.
 
 use crate::common_fixtures::money;
 use chrono::{TimeZone, Utc};
@@ -10,12 +10,13 @@ use rust_decimal::Decimal;
 
 use protopyne_strategy::integration_lite::IntegrationLiteStrategyConfig;
 use protopyne_strategy::signals_lite::LiteIndicatorParams;
-use protopyne_strategy::{fixtures, Grant, RiskEngine, RiskLimits};
+
 use protopyne_types::{Bar, Timeframe};
 
 use crate::backtest::BacktestConfig;
-use crate::equity::{BacktestRequest, EquityRun};
+use crate::equity::EquityRun;
 use crate::runner::RunnerConfig;
+use crate::simple_backtest::SimpleBacktestRequest;
 
 fn tape(closes: &[f64], start_hour_utc: u32) -> Vec<Bar> {
     closes
@@ -70,27 +71,6 @@ fn round_trip_closes() -> Vec<f64> {
     closes
 }
 
-fn risk() -> RiskEngine {
-    RiskEngine::new(
-        RiskLimits::new()
-            .max_contracts_per_trade(1_000_000)
-            .max_loss_per_trade(10_000_000.0)
-            .max_notional(1_000_000_000.0)
-            .build(),
-    )
-}
-
-fn grant() -> Grant {
-    fixtures::grant_with(|grant| {
-        grant.id = "equity-test".to_owned();
-        grant.signal.min_conviction = 0.0;
-        grant.signal.min_activity_score = 0.0;
-        grant.scope.strategies = vec!["integration_lite".to_owned()];
-        grant.scope.structures = vec![protopyne_strategy::StructureKind::Single];
-        grant.trade.min_dte_days = 0;
-    })
-}
-
 fn venue_config() -> BacktestConfig {
     BacktestConfig::new()
         .underlying("SPY".to_owned())
@@ -122,18 +102,16 @@ fn strategy_with(window: i64) -> IntegrationLiteStrategyConfig {
     }
 }
 
-async fn run_tape(
+fn run_tape(
     closes: &[f64],
-    strategy: IntegrationLiteStrategyConfig,
-    indicator: LiteIndicatorParams,
+    strategy: &IntegrationLiteStrategyConfig,
+    indicator: &LiteIndicatorParams,
     seed: u64,
-) -> EquityRun {
+) -> (EquityRun, Vec<Bar>) {
     let bars = tape(closes, 15);
-    BacktestRequest::builder()
-        .indicator(&indicator)
-        .strategy(&strategy)
-        .risk(&risk())
-        .grant(&grant())
+    let run = SimpleBacktestRequest::builder()
+        .indicator(indicator)
+        .strategy(strategy)
         .venue_config(&venue_config())
         .runner_config(&runner_config())
         .signal_name("integration_lite")
@@ -143,25 +121,24 @@ async fn run_tape(
         .seed(seed)
         .initial_equity(100_000.0)
         .run()
-        .await
-        .expect("equity run completes")
+        .expect("equity run completes");
+    (run, bars)
 }
 
-#[tokio::test]
-async fn risk_percent_sizes_the_hand_checked_tape() {
+#[test]
+fn risk_percent_sizes_the_hand_checked_tape() {
     // Fixed mode pins the exact share count end to end; risk-percent math
     // is pinned per-share in the strategy suite and must open a real
     // position here.
     let mut fixed = strategy_with(20);
     fixed.size_mode = "Fixed Quantity".to_owned();
     fixed.fixed_qty = 100.0;
-    let run = run_tape(
+    let (run, _) = run_tape(
         &round_trip_closes(),
-        fixed,
-        LiteIndicatorParams::default(),
+        &fixed,
+        &LiteIndicatorParams::default(),
         7,
-    )
-    .await;
+    );
     assert!(
         !run.trades.is_empty(),
         "the turn must open and close a trade"
@@ -181,32 +158,30 @@ async fn risk_percent_sizes_the_hand_checked_tape() {
             .map(|t| t.qty)
             .sum::<u32>();
     assert_eq!(opened, 100, "fixed sizing opens exactly 100 shares");
-    let risk = run_tape(
+    let (risk, _) = run_tape(
         &round_trip_closes(),
-        strategy_with(20),
-        LiteIndicatorParams::default(),
+        &strategy_with(20),
+        &LiteIndicatorParams::default(),
         7,
-    )
-    .await;
+    );
     assert!(!risk.trades.is_empty(), "risk-percent opens a position");
     assert!(risk.trades[0].qty > 0);
 }
 
-#[tokio::test]
-async fn tp_weights_normalize_so_no_dust_remains() {
+#[test]
+fn tp_weights_normalize_so_no_dust_remains() {
     // 60/60 splits normalize to 50/50: every opened share exits through a
     // zone or the trailing stop, never stranded by rounding.
     let mut strategy = strategy_with(20);
     strategy.tp1_pct = 60.0;
     strategy.tp2_pct = 60.0;
     strategy.tp3_pct = 0.0;
-    let run = run_tape(
+    let (run, _) = run_tape(
         &round_trip_closes(),
-        strategy,
-        LiteIndicatorParams::default(),
+        &strategy,
+        &LiteIndicatorParams::default(),
         7,
-    )
-    .await;
+    );
     assert!(!run.trades.is_empty());
     let opened: u32 = run.trades.iter().map(|t| t.qty).sum::<u32>()
         + run.partials.iter().map(|t| t.qty).sum::<u32>();
@@ -217,8 +192,8 @@ async fn tp_weights_normalize_so_no_dust_remains() {
     );
 }
 
-#[tokio::test]
-async fn breakeven_never_lets_a_winner_turn_loser() {
+#[test]
+fn breakeven_never_lets_a_winner_turn_loser() {
     // Fall, spike, then a slow drift back through the stop: breakeven arms
     // on the spike, and the gap-free drift fills at the resting stop, so a
     // stop exit prints at or above entry — never a gap-driven artifact.
@@ -237,7 +212,7 @@ async fn breakeven_never_lets_a_winner_turn_loser() {
     strategy.be_on_tp = false;
     strategy.be_trigger_atr = 0.25;
     strategy.be_offset_atr = 0.1;
-    let run = run_tape(&closes, strategy, LiteIndicatorParams::default(), 7).await;
+    let (run, _) = run_tape(&closes, &strategy, &LiteIndicatorParams::default(), 7);
     assert!(!run.trades.is_empty(), "the spike must open a trade");
     let armed: Vec<_> = run
         .trades
@@ -264,20 +239,19 @@ async fn breakeven_never_lets_a_winner_turn_loser() {
     }
 }
 
-#[tokio::test]
-async fn trailing_ratchet_only_tightens() {
+#[test]
+fn trailing_ratchet_only_tightens() {
     // Fall, extended rise, then moderate fall with a chandelier trail
     // from entry: the exit on the pullback must print above entry — the
     // stop only ever rose.
     let mut strategy = strategy_with(20);
     strategy.trail_immediate = true;
-    let run = run_tape(
+    let (run, _) = run_tape(
         &round_trip_closes(),
-        strategy,
-        LiteIndicatorParams::default(),
+        &strategy,
+        &LiteIndicatorParams::default(),
         7,
-    )
-    .await;
+    );
     assert!(!run.trades.is_empty(), "the trend must open a trade");
     let trade = &run.trades[0];
     assert!(
@@ -288,14 +262,19 @@ async fn trailing_ratchet_only_tightens() {
     );
 }
 
-#[tokio::test]
-async fn exhaustion_partial_fires_once() {
+#[test]
+fn exhaustion_partial_fires_once() {
     // Exhaustion partial takes its share once; a second exhaustion bar
     // cannot re-fire into the reduced position.
     let mut strategy = strategy_with(20);
     strategy.exit_action = "Partial Close".to_owned();
     strategy.exit_partial_pct = 50.0;
-    let run = run_tape(&v_up_closes(), strategy, LiteIndicatorParams::default(), 7).await;
+    let (run, _) = run_tape(
+        &v_up_closes(),
+        &strategy,
+        &LiteIndicatorParams::default(),
+        7,
+    );
     let partials: Vec<_> = run
         .trades
         .iter()
@@ -308,8 +287,8 @@ async fn exhaustion_partial_fires_once() {
     );
 }
 
-#[tokio::test]
-async fn cooldown_blocks_then_releases() {
+#[test]
+fn cooldown_blocks_then_releases() {
     // A long cooldown after the first trade suppresses the second setup;
     // a short one lets it through.
     let closes = v_up_closes();
@@ -317,7 +296,7 @@ async fn cooldown_blocks_then_releases() {
     repeats.extend(closes.clone());
     let mut gated = strategy_with(20);
     gated.cd_bars = 400;
-    let run = run_tape(&repeats, gated, LiteIndicatorParams::default(), 7).await;
+    let (run, _) = run_tape(&repeats, &gated, &LiteIndicatorParams::default(), 7);
     let mut entries: Vec<u64> = run
         .trades
         .iter()
@@ -333,7 +312,7 @@ async fn cooldown_blocks_then_releases() {
     );
     let mut open = strategy_with(20);
     open.cd_bars = 0;
-    let run = run_tape(&repeats, open, LiteIndicatorParams::default(), 7).await;
+    let (run, _) = run_tape(&repeats, &open, &LiteIndicatorParams::default(), 7);
     let mut entries: Vec<u64> = run
         .trades
         .iter()
@@ -349,13 +328,13 @@ async fn cooldown_blocks_then_releases() {
     );
 }
 
-#[tokio::test]
-async fn daily_trade_cap_holds() {
+#[test]
+fn daily_trade_cap_holds() {
     let mut strategy = strategy_with(20);
     strategy.max_trades_day = 1;
     let mut repeats = v_up_closes();
     repeats.extend(v_up_closes());
-    let run = run_tape(&repeats, strategy, LiteIndicatorParams::default(), 7).await;
+    let (run, _) = run_tape(&repeats, &strategy, &LiteIndicatorParams::default(), 7);
     assert_eq!(
         run.trades.len(),
         1,
@@ -364,8 +343,8 @@ async fn daily_trade_cap_holds() {
     );
 }
 
-#[tokio::test]
-async fn session_flatten_closes_before_the_close() {
+#[test]
+fn session_flatten_closes_before_the_close() {
     // Fall, rise into the session, then hold through the close: the runner
     // flattens on the bar whose *close* is 16:00 ET and opens nothing inside
     // the no-entry window. The session filter must be armed — without it the
@@ -411,11 +390,9 @@ async fn session_flatten_closes_before_the_close() {
     // early, or there is nothing left to flatten.
     strategy.trail_on_tp = false;
     strategy.trail_on_exhaustion = false;
-    let run = BacktestRequest::builder()
+    let run = SimpleBacktestRequest::builder()
         .indicator(&indicator)
         .strategy(&strategy)
-        .risk(&risk())
-        .grant(&grant())
         .venue_config(&venue_config())
         .runner_config(&runner_config())
         .signal_name("integration_lite")
@@ -425,7 +402,6 @@ async fn session_flatten_closes_before_the_close() {
         .seed(7)
         .initial_equity(100_000.0)
         .run()
-        .await
         .expect("equity run completes");
     let flatten = run
         .trades
@@ -451,11 +427,9 @@ async fn session_flatten_closes_before_the_close() {
         session_filter: true,
         ..LiteIndicatorParams::default()
     };
-    let carried = BacktestRequest::builder()
+    let carried = SimpleBacktestRequest::builder()
         .indicator(&session_indicator)
         .strategy(&carrying)
-        .risk(&risk())
-        .grant(&grant())
         .venue_config(&venue_config())
         .runner_config(&runner_config())
         .signal_name("integration_lite")
@@ -465,7 +439,6 @@ async fn session_flatten_closes_before_the_close() {
         .seed(7)
         .initial_equity(100_000.0)
         .run()
-        .await
         .expect("equity run completes");
     assert!(
         carried
@@ -476,15 +449,14 @@ async fn session_flatten_closes_before_the_close() {
     );
 }
 
-#[tokio::test]
-async fn tearsheet_parity_and_absent_tabs() {
-    let run = run_tape(
+#[test]
+fn tearsheet_parity_and_absent_tabs() {
+    let (run, _) = run_tape(
         &v_up_closes(),
-        strategy_with(20),
-        LiteIndicatorParams::default(),
+        &strategy_with(20),
+        &LiteIndicatorParams::default(),
         7,
-    )
-    .await;
+    );
     let report = &run.report;
     assert!(report.trades.is_some(), "closed trades are analyzed");
     let trades = report.trades.as_ref().expect("analyzed");
@@ -520,22 +492,20 @@ async fn tearsheet_parity_and_absent_tabs() {
     }
 }
 
-#[tokio::test]
-async fn rerun_is_byte_identical() {
-    let first = run_tape(
+#[test]
+fn rerun_is_byte_identical() {
+    let (first, _) = run_tape(
         &round_trip_closes(),
-        strategy_with(20),
-        LiteIndicatorParams::default(),
+        &strategy_with(20),
+        &LiteIndicatorParams::default(),
         7,
-    )
-    .await;
-    let second = run_tape(
+    );
+    let (second, _) = run_tape(
         &round_trip_closes(),
-        strategy_with(20),
-        LiteIndicatorParams::default(),
+        &strategy_with(20),
+        &LiteIndicatorParams::default(),
         7,
-    )
-    .await;
+    );
     assert_eq!(
         first.to_canonical_json(),
         second.to_canonical_json(),
@@ -573,15 +543,14 @@ fn manifest_decodes_old_reports() {
 /// that absence in its data limits rather than leaving the reader to assume a
 /// dividend-adjusted book. A short held across a dividend is therefore not
 /// credited and not debited — a stated limit, not a silent one.
-#[tokio::test]
-async fn corporate_actions_are_declared_absent_for_equity() {
-    let run = run_tape(
+#[test]
+fn corporate_actions_are_declared_absent_for_equity() {
+    let (run, _) = run_tape(
         &round_trip_closes(),
-        strategy_with(20),
-        LiteIndicatorParams::default(),
+        &strategy_with(20),
+        &LiteIndicatorParams::default(),
         7,
-    )
-    .await;
+    );
     let limits = run.report.data_limits.join(" | ");
     assert!(
         limits.contains("corporate-action"),
@@ -592,9 +561,9 @@ async fn corporate_actions_are_declared_absent_for_equity() {
 /// Observation harness, never a gate: it times one long equity run so the
 /// per-bar cost of the current composition is a recorded number rather than an
 /// estimate. `#[ignore]`d because a wall time is evidence, not an assertion.
-#[tokio::test]
+#[test]
 #[ignore = "soak: observation harness — prints the wall time of one long run; never asserted"]
-async fn observed_equity_run_time() {
+fn observed_equity_run_time() {
     let len = 2_000;
     let mut closes = Vec::with_capacity(len);
     for index in 0..len {
@@ -602,13 +571,12 @@ async fn observed_equity_run_time() {
         closes.push(500.0 + 40.0 * (phase / 17.0).sin() + 15.0 * (phase / 5.3).sin());
     }
     let started = std::time::Instant::now();
-    let run = run_tape(
+    let (run, _) = run_tape(
         &closes,
-        strategy_with(20),
-        LiteIndicatorParams::default(),
+        &strategy_with(20),
+        &LiteIndicatorParams::default(),
         7,
-    )
-    .await;
+    );
     let elapsed = started.elapsed();
     println!(
         "observed_equity_run_time bars={len} elapsed_ms={} decisions={} trades={}",
@@ -627,6 +595,7 @@ async fn observed_equity_run_time() {
 #[test]
 fn swing_stops_measure_the_recent_extreme() {
     use protopyne_strategy::integration_lite::IntegrationLiteStrategyConfig;
+    use protopyne_strategy::position::entry_stop_distance;
 
     let closes = [200.0, 199.0, 198.0, 197.0, 196.0, 195.0, 196.0, 197.0];
     let bars: Vec<Bar> = closes
@@ -659,14 +628,14 @@ fn swing_stops_measure_the_recent_extreme() {
     // Two ATRs of hand-fed volatility keeps the clamp out of the way.
     let atr = 1.0;
     let last = bars.len() - 1;
-    let long = crate::equity::entry_stop_distance(&strategy, atr, 197.0, &bars, last, true);
+    let long = entry_stop_distance(&strategy, atr, 197.0, &bars, last, true);
     // Lowest low over the window is 194.5; the entry is 197.0, so the raw
     // distance is 2.5 plus the 0.25 ATR buffer.
     assert!(
         (long - 2.75).abs() < 1e-9,
         "long swing distance reads the low, got {long}"
     );
-    let short = crate::equity::entry_stop_distance(&strategy, atr, 197.0, &bars, last, false);
+    let short = entry_stop_distance(&strategy, atr, 197.0, &bars, last, false);
     // Highest high over the window is 200.5; the entry is 197.0.
     assert!(
         (short - 3.75).abs() < 1e-9,
@@ -679,15 +648,14 @@ fn swing_stops_measure_the_recent_extreme() {
 /// The report's per-trade mean is the mean of *cycles* (entry through flat),
 /// so it must equal the closing slice plus every take-profit slice that
 /// belonged to the same entry — not the closing slice alone.
-#[tokio::test]
-async fn cycle_statistics_include_partials() {
-    let run = run_tape(
+#[test]
+fn cycle_statistics_include_partials() {
+    let (run, _) = run_tape(
         &round_trip_closes(),
-        strategy_with(20),
-        LiteIndicatorParams::default(),
+        &strategy_with(20),
+        &LiteIndicatorParams::default(),
         7,
-    )
-    .await;
+    );
     let analysis = run.report.trades.as_ref().expect("analyzed");
     assert!(
         !run.partials.is_empty(),
@@ -726,15 +694,14 @@ async fn cycle_statistics_include_partials() {
 }
 
 /// An equity run books a portfolio, folded by the shared aggregator.
-#[tokio::test]
-async fn the_equity_run_books_a_portfolio() {
-    let run = run_tape(
+#[test]
+fn the_equity_run_books_a_portfolio() {
+    let (run, _) = run_tape(
         &round_trip_closes(),
-        strategy_with(20),
-        LiteIndicatorParams::default(),
+        &strategy_with(20),
+        &LiteIndicatorParams::default(),
         7,
-    )
-    .await;
+    );
     let portfolio = run
         .report
         .portfolio
@@ -757,8 +724,8 @@ async fn the_equity_run_books_a_portfolio() {
 /// no take-profit zones, no trailing or breakeven, and a stop far enough away
 /// that nothing else can close the book. With the opposite-trigger exit
 /// disarmed, the reversal is then the only path that flips it.
-#[tokio::test]
-async fn reversals_flip_only_when_allowed() {
+#[test]
+fn reversals_flip_only_when_allowed() {
     fn bare(allow_reverse: bool) -> IntegrationLiteStrategyConfig {
         let mut strategy = strategy_with(20);
         strategy.allow_reverse = allow_reverse;
@@ -781,20 +748,18 @@ async fn reversals_flip_only_when_allowed() {
         strategy
     }
 
-    let reversed = run_tape(
+    let (reversed, _) = run_tape(
         &round_trip_closes(),
-        bare(true),
-        LiteIndicatorParams::default(),
+        &bare(true),
+        &LiteIndicatorParams::default(),
         7,
-    )
-    .await;
-    let held = run_tape(
+    );
+    let (held, _) = run_tape(
         &round_trip_closes(),
-        bare(false),
-        LiteIndicatorParams::default(),
+        &bare(false),
+        &LiteIndicatorParams::default(),
         7,
-    )
-    .await;
+    );
 
     assert!(
         reversed
@@ -821,17 +786,16 @@ async fn reversals_flip_only_when_allowed() {
 /// This is the reference's percentage schedule, and it is a hand-checkable
 /// identity: every filled notional in the run times the declared rate equals
 /// the booked fee total (to within the venue's per-fill money rounding).
-#[tokio::test]
-async fn commission_is_three_basis_points_of_notional() {
+#[test]
+fn commission_is_three_basis_points_of_notional() {
     use rust_decimal::prelude::ToPrimitive as _;
 
-    let run = run_tape(
+    let (run, _) = run_tape(
         &round_trip_closes(),
-        strategy_with(20),
-        LiteIndicatorParams::default(),
+        &strategy_with(20),
+        &LiteIndicatorParams::default(),
         7,
-    )
-    .await;
+    );
     let traded: f64 = run
         .decisions
         .iter()
@@ -936,16 +900,15 @@ fn a_hand_book_of_partials_and_a_full_close_folds_per_cycle() {
 
 /// Every decided bar carries its status row: the curve and the table move
 /// together, so no bar can hold equity without its eight reference rows.
-#[tokio::test]
-async fn every_bar_emits_its_status_row() {
+#[test]
+fn every_bar_emits_its_status_row() {
     let closes = round_trip_closes();
-    let run = run_tape(
+    let (run, _) = run_tape(
         &closes,
-        strategy_with(20),
-        LiteIndicatorParams::default(),
+        &strategy_with(20),
+        &LiteIndicatorParams::default(),
         7,
-    )
-    .await;
+    );
     let bars = tape(&closes, 15);
     assert_eq!(run.status.len(), bars.len());
     assert_eq!(
@@ -964,15 +927,14 @@ async fn every_bar_emits_its_status_row() {
 
 /// An open position rests its stop and targets once per bar: the run records
 /// the levels that were actually resting, and a flat run records none.
-#[tokio::test]
-async fn an_open_position_rests_its_levels_per_bar() {
-    let run = run_tape(
+#[test]
+fn an_open_position_rests_its_levels_per_bar() {
+    let (run, _) = run_tape(
         &round_trip_closes(),
-        strategy_with(20),
-        LiteIndicatorParams::default(),
+        &strategy_with(20),
+        &LiteIndicatorParams::default(),
         7,
-    )
-    .await;
+    );
     assert!(
         !run.trades.is_empty(),
         "the tape opens at least one position"

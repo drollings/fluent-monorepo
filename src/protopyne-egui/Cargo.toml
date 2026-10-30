@@ -6,9 +6,12 @@ autotests = false
 autobenches = false
 
 [features]
-default = []
+default = ["bytecode"]
 demo = ["dep:eframe", "eframe/glow", "eframe/wayland", "eframe/x11"]
 server-gateway = ["dep:protopyne-server"]
+# `bytecode` runs the Pine indicator plugin on the compiled slot VM.
+# Default-on: the chart pane's script evaluator runs the one compiled path.
+bytecode = ["protopyne-kernels/bytecode"]
 
 [dependencies]
 common-core = { path = "../common-core" }
@@ -32,6 +35,10 @@ eframe = { version = "0.36", optional = true, default-features = false }
 
 [dev-dependencies]
 criterion = { workspace = true }
+# The tree oracle for proof: test targets compare the compiled loop against
+# it, while shipping builds carry no interpreter. A dev-dependency never
+# reaches the shipping library.
+protopyne-kernels = { path = "../protopyne-kernels", features = ["oracle"] }
 rust_decimal = { workspace = true }
 reqwest = { workspace = true }
 skrifa = { version = "0.44" }

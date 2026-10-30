@@ -77,14 +77,12 @@ impl Windowed for EmaIndicator {
     /// `na(ema[1]) ? sma : recurrence` shape (the load-bearing divergence
     /// recorded in `compat.rs`).
     fn eval(&self, shape: usize, window: &Window<'_>, previous: Option<f64>) -> Option<f64> {
-        match previous {
-            Some(previous) if !previous.is_nan() => fin_or_none(crate::math::ema_step(
-                previous,
-                window.newest(),
-                Self::factor(shape),
-            )),
-            _ => fin_or_none(crate::math::window_mean(window.closes)),
-        }
+        fin_or_none(crate::math::seed_or_step(
+            previous,
+            window.newest(),
+            crate::math::window_mean(window.closes),
+            |prev, newest| crate::math::ema_step(prev, newest, Self::factor(shape)),
+        ))
     }
 }
 

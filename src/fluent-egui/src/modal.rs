@@ -6,9 +6,10 @@
 //! in deterministic sorted-key order (so a listing is reproducible, not
 //! hash-ordered), and each entry lowers its searchable text once into a
 //! [`common_core::string::LoweredHaystack`], so a scan never re-lowers the
-//! haystack. Query, category tab, and favorites filter compose; the modal
-//! owns that state and the caller reads [`CatalogModal::filtered`] or paints
-//! through [`paint_catalog_modal`].
+//! haystack. Query, category tab, favorites filter, and the opt-in tag
+//! namespace checkbox compose; the modal owns that state and the caller
+//! reads [`CatalogModal::filtered`] or paints through
+//! [`paint_catalog_modal`].
 //!
 //! The category type is fully generic: this crate knows nothing about asset
 //! classes or indicator families. Category is an entry field and a filter
@@ -81,17 +82,33 @@ pub enum CatalogAction {
     ToggledFavorite(String),
 }
 
+/// An opt-in second checkbox filter over an id namespace: entries whose id
+/// starts with the prefix read as tagged, and the checked box shows only
+/// them. Namespaces are a catalog convention (`pine:` scripts here); the
+/// modal never invents tags, it only matches the prefix the caller names.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TagFilter {
+    /// Checkbox label rendered beside the Favorites toggle.
+    pub label: &'static str,
+    /// Id namespace a tagged entry starts with.
+    pub id_prefix: &'static str,
+    /// Whether the tag-only view is active.
+    pub only: bool,
+}
+
 /// A categorized, searchable catalog over a deterministic keyed registry.
 ///
-/// Query, active category (`None` means every category), and the
-/// favorites-only flag are owned here; [`filtered`](Self::filtered) applies
-/// all three. Entries iterate in sorted key order.
+/// Query, active category (`None` means every category), the favorites-only
+/// flag, and an optional [`TagFilter`] namespace checkbox are owned here;
+/// [`filtered`](Self::filtered) applies all four. Entries iterate in sorted
+/// key order.
 pub struct CatalogModal<C> {
     title: String,
     entries: KeyedRegistry<String, CatalogEntry<C>>,
     query: String,
     category: Option<C>,
     favorites_only: bool,
+    tag_filter: Option<TagFilter>,
 }
 
 impl<C: Ord + Clone> CatalogModal<C> {
@@ -104,6 +121,7 @@ impl<C: Ord + Clone> CatalogModal<C> {
             query: String::new(),
             category: None,
             favorites_only: false,
+            tag_filter: None,
         }
     }
 
@@ -208,6 +226,22 @@ impl<C: Ord + Clone> CatalogModal<C> {
         self.favorites_only = favorites_only;
     }
 
+    /// Install an id-namespace checkbox filter (unchecked to start). Only
+    /// one tag filter fits; setting it again replaces the label and prefix.
+    pub fn set_tag_filter(&mut self, label: &'static str, id_prefix: &'static str) {
+        self.tag_filter = Some(TagFilter {
+            label,
+            id_prefix,
+            only: false,
+        });
+    }
+
+    /// Whether the tag checkbox is installed and currently checked.
+    #[must_use]
+    pub fn tag_only(&self) -> bool {
+        self.tag_filter.as_ref().is_some_and(|filter| filter.only)
+    }
+
     /// Whether `id` is starred (`None` for unknown ids).
     #[must_use]
     pub fn is_favorite(&self, id: &str) -> Option<bool> {
@@ -230,10 +264,16 @@ impl<C: Ord + Clone> CatalogModal<C> {
     #[must_use]
     pub fn filtered(&self) -> Vec<&CatalogEntry<C>> {
         let lowered_query = self.query.to_lowercase();
+        let tag = self
+            .tag_filter
+            .as_ref()
+            .filter(|filter| filter.only)
+            .map(|filter| filter.id_prefix);
         self.entries
             .values()
             .filter(|entry| self.category.as_ref().is_none_or(|c| entry.category == *c))
             .filter(|entry| !self.favorites_only || entry.favorite)
+            .filter(|entry| tag.is_none_or(|prefix| entry.id.starts_with(prefix)))
             .filter(|entry| entry.search.lowered().contains(&lowered_query))
             .collect()
     }
@@ -247,14 +287,15 @@ fn unknown_entry(id: &str) -> EguiError {
     }
 }
 
-/// Paint the catalog: title, a search field, a favorites toggle, optional
-/// category tabs, and the filtered rows (each with a favorite marker).
+/// Paint the catalog: title, a search field, a favorites toggle, an
+/// optional tag-namespace toggle, optional category tabs, and the filtered
+/// rows (each with a favorite marker).
 ///
-/// The modal owns its query, category, and favorites state, so painting
+/// The modal owns its query, category, favorites, and tag state, so painting
 /// mutates them directly. Clicking a row raises [`CatalogAction::Picked`];
-/// clicking a row's marker raises [`CatalogAction::ToggledFavorite`]. An
-/// untouched frame raises nothing. A theme that cannot resolve the accent
-/// key refuses with the key named.
+/// clicking a row's marker raises [`CatalogAction::ToggledFavorite`];
+/// an untouched frame raises nothing. A theme that cannot resolve the
+/// accent key refuses with the key named.
 pub fn paint_catalog_modal<C: Ord + Clone>(
     ui: &mut egui::Ui,
     modal: &mut CatalogModal<C>,
@@ -267,15 +308,21 @@ pub fn paint_catalog_modal<C: Ord + Clone>(
     ui.horizontal(|bar| {
         bar.label("Search");
         bar.add(egui::TextEdit::singleline(&mut modal.query).hint_text("filter"));
-        // One-click reset for every filter (query, category tab, favorites):
-        // a catalog never strands the operator in a narrowed view with no
-        // obvious way back to the full list.
+        // One-click reset for every filter (query, category tab,
+        // favorites, tag): a catalog never strands the operator in a
+        // narrowed view with no obvious way back to the full list.
         if bar.button("Clear").clicked() {
             modal.query.clear();
             modal.category = None;
             modal.favorites_only = false;
+            if let Some(filter) = modal.tag_filter.as_mut() {
+                filter.only = false;
+            }
         }
         bar.checkbox(&mut modal.favorites_only, "Favorites");
+        if let Some(filter) = modal.tag_filter.as_mut() {
+            bar.checkbox(&mut filter.only, filter.label);
+        }
     });
     if !categories.is_empty() {
         ui.horizontal(|tabs| {

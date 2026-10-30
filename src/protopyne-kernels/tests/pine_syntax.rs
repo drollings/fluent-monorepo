@@ -18,9 +18,11 @@ fn parse(text: &str) -> PineProgram {
     parse_program(text).expect("parses")
 }
 
+/// Fixture path (server `tests/data/pine_closure`), never the volatile live root:
+/// the golden snapshots pin fixture bytes, which are checked in.
 fn data_path(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../data/protopyne-rs")
+        .join("../protopyne-server/tests/data/pine_closure")
         .join(name)
 }
 
@@ -1252,5 +1254,199 @@ fn chained_calls_parse_on_computed_receivers() {
             );
         }
         other => panic!("expected assignment, got {other:?}"),
+    }
+}
+
+#[test]
+fn site_strings_render_head_plus_debug_args() {
+    // One shared site spelling for both engines: the head text plus the
+    // debug rendering of the call's static arguments. The compiler bakes
+    // these into constants at link time; the tree-walk recomputes the
+    // identical text per bar — golden here so any `Debug` drift trips the
+    // suite instead of silently renaming keyed state (ta kernels,
+    // call-site vars, capture pairings).
+    fn args_of(script: &str) -> Vec<CallArg> {
+        match &parse(script).statements[0] {
+            PineStmt::Expression(
+                PineExpr::FunctionCall { args, .. } | PineExpr::MethodCall { args, .. },
+            ) => args.clone(),
+            other => panic!("call expected, got {other:?}"),
+        }
+    }
+    for (head, script, golden) in [
+        (
+            "plot",
+            "plot(close, title=\"A\")",
+            "plot@[CallArg { name: None, value: BuiltinVariable(Close) }, CallArg { name: Some(\"title\"), value: StringLiteral(\"A\") }]",
+        ),
+        (
+            "plotshape",
+            "plotshape(close, title=\"S\")",
+            "plotshape@[CallArg { name: None, value: BuiltinVariable(Close) }, CallArg { name: Some(\"title\"), value: StringLiteral(\"S\") }]",
+        ),
+        (
+            "plotcandle",
+            "plotcandle(open, high, low, close, title=\"C\")",
+            "plotcandle@[CallArg { name: None, value: BuiltinVariable(Open) }, CallArg { name: None, value: BuiltinVariable(High) }, CallArg { name: None, value: BuiltinVariable(Low) }, CallArg { name: None, value: BuiltinVariable(Close) }, CallArg { name: Some(\"title\"), value: StringLiteral(\"C\") }]",
+        ),
+        (
+            "barcolor",
+            "barcolor(close, title=\"B\")",
+            "barcolor@[CallArg { name: None, value: BuiltinVariable(Close) }, CallArg { name: Some(\"title\"), value: StringLiteral(\"B\") }]",
+        ),
+        (
+            "hline",
+            "hline(50.0, \"L\")",
+            "hline@[CallArg { name: None, value: Number(50.0) }, CallArg { name: None, value: StringLiteral(\"L\") }]",
+        ),
+        (
+            "input",
+            "input.int(14, \"N\")",
+            "input@[CallArg { name: None, value: Number(14.0) }, CallArg { name: None, value: StringLiteral(\"N\") }]",
+        ),
+        (
+            "L::f",
+            "plot(close, title=\"A\")",
+            "L::f@[CallArg { name: None, value: BuiltinVariable(Close) }, CallArg { name: Some(\"title\"), value: StringLiteral(\"A\") }]",
+        ),
+        (
+            "ta.sma",
+            "plot(close, title=\"A\")",
+            "ta.sma@[CallArg { name: None, value: BuiltinVariable(Close) }, CallArg { name: Some(\"title\"), value: StringLiteral(\"A\") }]",
+        ),
+    ] {
+        assert_eq!(site_string(head, &args_of(script)), golden, "{head} site golden");
+    }
+}
+
+#[test]
+fn legacy_study_header_parses_as_indicator() {
+    // Pre-`indicator` scripts declare `study(...)` with the same header
+    // shape; the engine serves it as the indicator declaration so legacy
+    // catalog scripts evaluate instead of refusing on an unknown call.
+    let program = parse("study(\"Quadratic Regression\", overlay=true)");
+    match &program.statements[0] {
+        PineStmt::IndicatorDecl { args } => {
+            assert_eq!(args.len(), 2);
+            assert_eq!(args[0].name, None);
+            assert_eq!(args[1].name.as_deref(), Some("overlay"));
+        }
+        other => panic!("expected indicator, got {other:?}"),
+    }
+}
+
+#[test]
+fn type_keyword_parses_as_call_argument_name() {
+    // `type` is a contextual keyword (a `switch` scrutinee may name a
+    // parameter `type`), so it must also serve as a keyword-argument name:
+    // `input(true, title="T", type=bool)` binds three arguments.
+    let program = parse("x = input(true, title=\"T\", type=bool)");
+    match &program.statements[0] {
+        PineStmt::Assignment { value, .. } => match value.as_ref() {
+            PineExpr::FunctionCall { args, .. } => {
+                assert_eq!(args.len(), 3);
+                assert_eq!(args[2].name.as_deref(), Some("type"));
+            }
+            other => panic!("expected call, got {other:?}"),
+        },
+        other => panic!("expected assignment, got {other:?}"),
+    }
+}
+
+#[test]
+fn array_element_types_parse_on_type_fields() {
+    // User-type fields may hold arrays of other user types
+    // (`Candle[] candle`): the brackets belong to the field type, not to
+    // a second field name.
+    let program = parse("type Data\n    Candle[] candle\n    bool ready = false");
+    match &program.statements[0] {
+        PineStmt::TypeDecl { name, fields } => {
+            assert_eq!(name, "Data");
+            assert_eq!(fields.len(), 2);
+            assert_eq!(fields[0].type_name.name, "Candle");
+            assert_eq!(fields[0].name, "candle");
+            assert_eq!(fields[1].type_name.name, "bool");
+        }
+        other => panic!("expected type, got {other:?}"),
+    }
+}
+
+#[test]
+fn const_qualifier_parses_on_var_declarations() {
+    // Shipped scripts spell `var const int x = ...`: `const` is an
+    // ignorable qualifier (the value is bound once like `var`), never a
+    // second declaration shape.
+    let program = parse("var const int minimum_timeframe = 60");
+    match &program.statements[0] {
+        PineStmt::VarDeclaration { name, .. } => {
+            assert_eq!(name, "minimum_timeframe");
+        }
+        other => panic!("expected var, got {other:?}"),
+    }
+}
+
+#[test]
+fn switch_arms_take_comma_separated_same_line_bodies() {
+    // A same-line arm body may hold several comma-separated statements,
+    // exactly like a local block line.
+    let program = parse("switch true\n    true => 1.0, 2.0\n    => 3.0\n");
+    match &program.statements[0] {
+        PineStmt::Switch(switch) => {
+            assert_eq!(switch.arms.len(), 2);
+            assert_eq!(switch.arms[0].body.len(), 2);
+            assert_eq!(switch.arms[1].body.len(), 1);
+        }
+        other => panic!("expected switch, got {other:?}"),
+    }
+}
+
+#[test]
+fn array_typed_locals_parse_as_declarations() {
+    // `Candle[] candle = array.new<Candle>()` declares a fresh local every
+    // bar: the brackets belong to the type, and the statement is a plain
+    // declaration, not an offset read.
+    let program = parse("Candle[] candle = array.new<Candle>()");
+    match &program.statements[0] {
+        PineStmt::Declaration { name, value, .. } => {
+            assert_eq!(name, "candle");
+            assert!(matches!(value.as_ref(), PineExpr::MethodCall { .. }));
+        }
+        other => panic!("expected declaration, got {other:?}"),
+    }
+}
+
+#[test]
+fn leading_dot_continues_the_receiver_chain() {
+    // A `.method()` opening the next line continues the operand, so
+    // builder chains split across lines parse as nested instance calls.
+    let program = parse("x = CandleData.new(a, true)\n    .market_profile_data(1, 2)\n");
+    match &program.statements[0] {
+        PineStmt::Assignment { value, .. } => match value.as_ref() {
+            PineExpr::InstanceCall { method, .. } => {
+                assert_eq!(method, "market_profile_data");
+            }
+            other => panic!("expected chained call, got {other:?}"),
+        },
+        other => panic!("expected assignment, got {other:?}"),
+    }
+}
+
+#[test]
+fn for_range_takes_an_optional_by_step() {
+    // `for i = 0 to n by 2` strides the counter; without `by` the step
+    // stays absent (unit stride).
+    let program = parse("for i = 0 to 10 by 2\n    x = i");
+    match &program.statements[0] {
+        PineStmt::For { step, .. } => {
+            assert!(step.is_some(), "the stride is captured");
+        }
+        other => panic!("expected for, got {other:?}"),
+    }
+    let program = parse("for i = 0 to 10\n    x = i");
+    match &program.statements[0] {
+        PineStmt::For { step, .. } => {
+            assert!(step.is_none(), "no stride without by");
+        }
+        other => panic!("expected for, got {other:?}"),
     }
 }

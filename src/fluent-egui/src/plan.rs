@@ -88,6 +88,17 @@ impl PanePlan {
             .map_err(|e| describe_graph(&e))
     }
 
+    /// Panes with no dependencies, in plan order: the roots a scrub
+    /// controller offers as rewind anchors (M10.2b promotion of the
+    /// terminal's `rewind_anchors`: pure DAG query, no replay state).
+    pub fn root_panes(&self) -> Result<Vec<String>, EguiError> {
+        Ok(self
+            .order()?
+            .into_iter()
+            .filter(|pane| self.dependencies(pane).is_empty())
+            .collect())
+    }
+
     /// Panes whose dependencies are all complete, in plan order.
     #[must_use]
     pub fn ready_steps(&self) -> Vec<String> {

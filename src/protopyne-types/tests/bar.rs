@@ -109,3 +109,16 @@ fn the_confirmed_close_is_not_part_of_the_wire_shape() {
     let back: Bar = serde_json::from_str(&json).expect("deserialize close-free bar");
     assert_eq!(back.confirmed_at(), None, "a wire bar carries no close");
 }
+
+#[test]
+#[allow(clippy::float_cmp)]
+fn bar_leg_as_f64_pins_hole_policy() {
+    // Exact at market magnitudes.
+    assert_eq!(bar_leg_as_f64(Decimal::new(12345, 2)), 123.45);
+    // Negative legs convert exactly.
+    assert!(bar_leg_as_f64(Decimal::new(-500, 1)) < 0.0);
+    // `Decimal`'s range sits inside `f64`'s, so conversion is total in
+    // practice (the `unwrap_or(NAN)` arm is defensive, never live): even
+    // `Decimal::MAX` reads finite, approximately.
+    assert!(bar_leg_as_f64(Decimal::MAX).is_finite());
+}

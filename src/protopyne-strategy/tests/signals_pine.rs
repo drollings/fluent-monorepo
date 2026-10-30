@@ -4,9 +4,12 @@
 
 use super::*;
 use chrono::{TimeZone, Utc};
-use protopyne_kernels::{closure_data_root, load_closure_sources, parse_pine_source};
+use protopyne_kernels::manifest_files::load_pine_sources;
+use protopyne_kernels::parse_pine_source;
+use protopyne_kernels::{discover_closures, ClosureOutcome};
 use protopyne_types::{Bar, Timeframe};
 use rust_decimal::Decimal;
+use std::path::PathBuf;
 
 use crate::elements::{Signal, SignalConfig};
 use crate::proposal::Direction;
@@ -89,11 +92,11 @@ fn a_refuse_parity_row_refuses_at_construction() {
         parse_pine_source("local/Signal", SCRIPT),
         "Delta",
         delta_rule(),
-        ParityClaim::new(["ta.dmi"]),
+        ParityClaim::new(["ta.adx"]),
     )
     .expect_err("a refused construct refuses");
     assert!(
-        err.to_string().contains("ta.dmi"),
+        err.to_string().contains("ta.adx"),
         "the refusal names the construct: {err}"
     );
 }
@@ -174,16 +177,27 @@ fn a_bound_instance_matches_the_stateless_reference() {
     assert!((last.conviction - 1.0).abs() < 1e-12);
 }
 
-/// The shipped closure links and runs, but a run that asks for a timeframe
+/// The fixture closure links and runs, but a run that asks for a timeframe
 /// the view does not carry refuses instead of fetching: the decision input is
-/// the only data source.
+/// the only data source. Fixture bytes are checked in
+/// (`tests/data/pine_closure`), never the volatile live root.
 #[test]
 fn the_closure_refuses_to_fetch_outside_the_view() {
-    let root = closure_data_root(env!("CARGO_MANIFEST_DIR"));
-    let sources = load_closure_sources(&root).expect("the closure loads");
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../protopyne-server/tests/data/pine_closure");
+    let (indicators, libraries) = load_pine_sources(&root).expect("fixtures load");
+    let sources = discover_closures(&indicators, &libraries)
+        .into_iter()
+        .find_map(|outcome| match outcome {
+            ClosureOutcome::Linked(closure) if closure.stem == "_IntegrationLite" => {
+                Some(closure.sources)
+            }
+            _ => None,
+        })
+        .expect("fixture closure discovered");
     let signal = PineSignal::from_sources(
         sources,
-        "local/IntegrationLite",
+        "local/_IntegrationLite",
         "Osc Fast",
         DirectionRule::Sign {
             line: 0,
@@ -210,4 +224,96 @@ fn the_closure_refuses_to_fetch_outside_the_view() {
         .evaluate(&view(&data, &closes))
         .expect_err("the refusal is stable");
     assert_eq!(again.to_string(), err.to_string());
+}
+
+#[cfg(feature = "bytecode")]
+mod compiled_selection {
+    use super::*;
+    use crate::signals_pine::PineExecution;
+
+    #[test]
+    fn production_signal_path_matches_tree_when_compiled() {
+        // The default (compiled) selection must produce the identical
+        // decision series as the tree-walk oracle: both selections report
+        // byte-identical outcomes on lowered programs.
+        let closes: Vec<f64> = (0..40).map(|i| 100.0 + f64::from(i).sin() * 2.0).collect();
+        let bars = bars(&closes);
+        let data = data(&bars);
+        let view = view(&data, &closes);
+        let tree = signal(SCRIPT).with_execution(PineExecution::TreeWalk);
+        let compiled = signal(SCRIPT);
+        assert_eq!(compiled.execution(), PineExecution::Compiled);
+        let a = tree.evaluate(&view).expect("tree evaluates");
+        let b = compiled.evaluate(&view).expect("compiled evaluates");
+        assert_eq!(a.direction, b.direction, "directions agree");
+        assert_eq!(
+            a.conviction.to_bits(),
+            b.conviction.to_bits(),
+            "conviction agrees bitwise"
+        );
+    }
+
+    #[test]
+    fn production_path_evaluates_dead_branches_identically() {
+        // A script with an unreached refusal still evaluates: the dead
+        // branch stays silent on the loop exactly as on the tree, so the
+        // decision is unchanged instead of refused.
+        let ok_script = "//@version=6\nindicator(\"Fixture\", overlay=false)\nif close < 0.0\n    probe = runtime.error(\"dead\")\nplot(close - close[1], \"Delta\")\n";
+        let closes: Vec<f64> = (0..20).map(|i| 100.0 + f64::from(i)).collect();
+        let bars = bars(&closes);
+        let data = data(&bars);
+        let view = view(&data, &closes);
+        let tree = signal(ok_script).with_execution(PineExecution::TreeWalk);
+        let compiled = signal(ok_script);
+        let a = tree.evaluate(&view).expect("tree evaluates");
+        let b = compiled
+            .evaluate(&view)
+            .expect("compiled selection evaluates");
+        assert_eq!(a.direction, b.direction);
+        assert_eq!(a.conviction.to_bits(), b.conviction.to_bits());
+    }
+
+    #[test]
+    fn fresh_signals_run_compiled_by_default() {
+        // The shipping default is the compiled loop, and the setting is
+        // fixed at construction.
+        let signal = signal(SCRIPT);
+        assert_eq!(signal.execution(), PineExecution::Compiled);
+        assert_eq!(PineExecution::default(), PineExecution::Compiled);
+    }
+
+    #[test]
+    fn fresh_signals_need_no_opt_in() {
+        // No production constructor selects the tree-walk: every Pine
+        // signal built without an explicit opt-out evaluates on the
+        // compiled loop, and only the builder can change that.
+        for script in [
+            SCRIPT,
+            "//@version=6\nindicator(\"Fixture\")\nplot(close, \"Delta\")\n",
+        ] {
+            let signal = signal(script);
+            assert_eq!(
+                signal.execution(),
+                PineExecution::Compiled,
+                "construction needs no opt-in: {script}"
+            );
+        }
+    }
+}
+
+#[cfg(not(feature = "bytecode"))]
+#[test]
+fn feature_off_build_keeps_tree_walk() {
+    // Without the feature the compiled selection does not exist at all, so
+    // no production path can name it; the fixture still evaluates on the
+    // tree-walk exactly as before.
+    let closes: Vec<f64> = (0..10).map(|i| 100.0 + i as f64).collect();
+    let bars = bars(&closes);
+    let data = data(&bars);
+    let view = view(&data, &closes);
+    let outcome = signal(SCRIPT).evaluate(&view).expect("tree evaluates");
+    assert!(
+        matches!(outcome.direction, Direction::Long | Direction::Short),
+        "the tree-walk still decides: {outcome:?}"
+    );
 }

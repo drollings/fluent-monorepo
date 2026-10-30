@@ -31,140 +31,65 @@ use crate::chart::TimeframeKey;
 pub const TOP_BAR_CHART_TYPES: [ChartType; 3] =
     [ChartType::Candles, ChartType::Line, ChartType::Heikin];
 
-/// How long the pointer must stay down on the play button before the press
-/// becomes a long-press and opens the speed popup instead of toggling play
-/// on release, in egui UI seconds.
-pub const PLAY_LONG_PRESS_SECS: f64 = 0.5;
+/// How long the pointer must stay down on the chart before the press
+/// becomes a long-press and opens the canvas context menu, in egui UI
+/// seconds.
+pub const CHART_LONG_PRESS_SECS: f64 = 0.5;
 
-/// Long-press state of the menu-bar play button: while the pointer stays
-/// down on the button past [`PLAY_LONG_PRESS_SECS`], the speed popup opens
-/// instead of toggling play on release. Owned by the workspace; the top bar
-/// only feeds it pointer state. Times are egui UI seconds
-/// (`ui.input(|input| input.time)`), so the machine is pure arithmetic with
-/// no clock of its own.
-#[derive(Debug, Default)]
-pub struct PlayPressState {
-    /// UI seconds when the current button hold started, if the pointer is
-    /// down on it.
-    pub down_since_sec: Option<f64>,
-    /// Whether this hold already opened the popup: the release click is then
-    /// consumed instead of toggling play.
-    pub long_fired: bool,
-    /// Whether the speed popup is open.
-    pub popup_open: bool,
-}
-
-impl PlayPressState {
-    /// A press started at UI time `now_sec`.
-    pub fn press_started(&mut self, now_sec: f64) {
-        self.down_since_sec = Some(now_sec);
-    }
-
-    /// Poll a hold at UI time `now_sec`: true exactly once per hold when it
-    /// crosses the long-press threshold while the popup is still closed —
-    /// the caller opens the popup and records the long-press.
-    pub fn poll_hold(&mut self, now_sec: f64) -> bool {
-        let Some(since) = self.down_since_sec else {
-            return false;
-        };
-        if self.popup_open {
-            return false;
-        }
-        if now_sec - since >= PLAY_LONG_PRESS_SECS {
-            self.popup_open = true;
-            self.long_fired = true;
-            return true;
-        }
-        false
-    }
-
-    /// A pointer release: `clicked` names a release on the button. Returns
-    /// whether the release toggles play — never after a long-press, whose
-    /// release click is consumed instead.
-    pub fn release(&mut self, clicked: bool) -> bool {
-        self.down_since_sec = None;
-        if clicked {
-            // A consumed long-press release toggles nothing; anything else
-            // toggles, and a release anywhere else leaves no armed consume
-            // behind to eat the next tap.
-            !std::mem::replace(&mut self.long_fired, false)
-        } else {
-            self.long_fired = false;
-            false
-        }
-    }
-}
-
-/// Replay transport speed in candles at the selected timeframe: Slow shows
-/// one candle every three seconds, Normal paces one candle per second, Fast
-/// steps five candles per second, and Full advances as fast as the core
-/// calculates (bounded only by the gateway's per-step cap). Rates name chart
-/// candles — one 5M candle per second at Normal on a 5M chart replays five
-/// 1M candles per second, appearing as one candle per second — never base
-/// bars, so the selected speed feels the same on every timeframe. Two
-/// detents sit between Slow and Normal, and two more between Normal and
-/// Fast, so the slider moves in small loudness-like steps at both ends.
-/// Slider levels run `0..=7` in pedigree order (Full last).
+/// Replay transport speed in candles at the selected timeframe, chosen from
+/// the top-bar speed menu (the same switch-menu shape as the display-mode
+/// pulldown). Rates name chart candles — one 5M candle per second at Normal
+/// on a 5M chart replays five 1M candles per second, appearing as one candle
+/// per second — never base bars, so the selected speed feels the same on
+/// every timeframe.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ReplaySpeed {
-    /// One candle every three seconds.
-    Slow,
-    /// One candle every two seconds.
-    Unhurried,
-    /// Two candles every three seconds.
-    Steady,
+    /// One candle every five seconds.
+    Crawl,
     /// One candle per second.
     #[default]
     Normal,
-    /// Two candles per second.
-    Brisk,
     /// Three candles per second.
     Swift,
     /// Five candles per second.
     Fast,
+    /// Ten candles per second.
+    Sprint,
     /// As fast as calculated: every frame steps the gateway maximum.
     Full,
 }
 
+/// Every replay speed, menu order: slowest first, uncapped last.
+pub const TOP_BAR_REPLAY_SPEEDS: [ReplaySpeed; 6] = [
+    ReplaySpeed::Crawl,
+    ReplaySpeed::Normal,
+    ReplaySpeed::Swift,
+    ReplaySpeed::Fast,
+    ReplaySpeed::Sprint,
+    ReplaySpeed::Full,
+];
+
 impl ReplaySpeed {
-    /// Slider position for this speed, in pedigree order.
-    pub fn level(self) -> u8 {
+    /// Short label for the speed menu button.
+    pub fn short_label(self) -> &'static str {
         match self {
-            Self::Slow => 0,
-            Self::Unhurried => 1,
-            Self::Steady => 2,
-            Self::Normal => 3,
-            Self::Brisk => 4,
-            Self::Swift => 5,
-            Self::Fast => 6,
-            Self::Full => 7,
+            Self::Crawl => "0.2/s",
+            Self::Normal => "1/s",
+            Self::Swift => "3/s",
+            Self::Fast => "5/s",
+            Self::Sprint => "10/s",
+            Self::Full => "∞",
         }
     }
 
-    /// Speed for a slider position, clamped into range.
-    pub fn from_level(level: u8) -> Self {
-        match level {
-            0 => Self::Slow,
-            1 => Self::Unhurried,
-            2 => Self::Steady,
-            3 => Self::Normal,
-            4 => Self::Brisk,
-            5 => Self::Swift,
-            6 => Self::Fast,
-            _ => Self::Full,
-        }
-    }
-
-    /// Short label for the speed control.
+    /// Menu-row label for the speed control.
     pub fn label(self) -> &'static str {
         match self {
-            Self::Slow => "slow · 1 candle / 3s",
-            Self::Unhurried => "1 candle / 2s",
-            Self::Steady => "2 candles / 3s",
+            Self::Crawl => "slow · 1 candle / 5s",
             Self::Normal => "1 candle / s",
-            Self::Brisk => "2 candles / s",
             Self::Swift => "3 candles / s",
             Self::Fast => "fast · 5 candles / s",
+            Self::Sprint => "10 candles / s",
             Self::Full => "full speed",
         }
     }
@@ -172,13 +97,11 @@ impl ReplaySpeed {
     /// Paced steps per second in display candles, or `None` when uncapped.
     pub fn candles_per_sec(self) -> Option<f64> {
         match self {
-            Self::Slow => Some(1.0 / 3.0),
-            Self::Unhurried => Some(1.0 / 2.0),
-            Self::Steady => Some(2.0 / 3.0),
+            Self::Crawl => Some(0.2),
             Self::Normal => Some(1.0),
-            Self::Brisk => Some(2.0),
             Self::Swift => Some(3.0),
             Self::Fast => Some(5.0),
+            Self::Sprint => Some(10.0),
             Self::Full => None,
         }
     }
@@ -432,6 +355,8 @@ pub enum TopBarAction {
     Rewind,
     /// The replay play/pause button toggled the backtest transport.
     ToggleReplayPlay,
+    /// The replay speed menu picked a pace.
+    PickedReplaySpeed(ReplaySpeed),
     /// The forward button asked to step ahead one pan unit.
     Forward,
     /// The forward-to-last button asked to show the latest loaded bar.
@@ -480,12 +405,12 @@ fn bar_menu_button(
 ///
 /// Left to right: dock toggle, ticker, save layout, the timeframe selector,
 /// display-mode pulldown, refresh button, and the label-free pan cluster
-/// (rewind-to-beginning, rewind, play/pause, forward, forward-to-last),
-/// jump-to-time, bookmarks, indicator selector. A short tap on play toggles
-/// the backtest transport; a long-press (holding past
-/// [`PLAY_LONG_PRESS_SECS`]) opens the replay speed popup instead, anchored
-/// at the button. Every control draws at [`TOP_BAR_BUTTON_HEIGHT`] with the
-/// shared bold [`bar_text`] style, so the app bar reads as one material row.
+/// (rewind-to-beginning, rewind, play/pause, replay-speed menu, forward,
+/// forward-to-last), jump-to-time, bookmarks, indicator selector. Tapping
+/// play toggles the backtest transport; the speed menu beside it picks the
+/// replay pace from the six documented rates, like the Candles pulldown.
+/// Every control draws at [`TOP_BAR_BUTTON_HEIGHT`] with the shared bold
+/// [`bar_text`] style, so the app bar reads as one material row.
 /// An untouched frame raises nothing.
 ///
 /// The picker buttons (ticker, bookmarks, indicators, jump) record their
@@ -504,8 +429,7 @@ pub fn paint_top_bar(
     chart_type: ChartType,
     dock_open: bool,
     replay_playing: bool,
-    play_press: &mut PlayPressState,
-    replay_speed: &mut ReplaySpeed,
+    replay_speed: ReplaySpeed,
     symbol_anchor: &mut Option<egui::Rect>,
     indicator_anchor: &mut Option<egui::Rect>,
     bookmark_anchor: &mut Option<egui::Rect>,
@@ -628,56 +552,43 @@ pub fn paint_top_bar(
         {
             action = Some(TopBarAction::Rewind);
         }
-        // The play button answers two gestures: a short tap toggles the
-        // backtest transport, while holding past PLAY_LONG_PRESS_SECS opens
-        // the replay speed popup anchored at the button instead — the
-        // release after a long-press is consumed, never a toggle.
-        let now_sec = bar.ctx().input(|input| input.time);
-        let play_response = bar
+        // The play button toggles the backtest transport with a plain tap;
+        // the replay pace lives on the speed menu beside it.
+        if bar
             .add_sized(
                 [TOP_BAR_BUTTON_HEIGHT, TOP_BAR_BUTTON_HEIGHT],
                 egui::Button::new(bar_text(if replay_playing { "⏸" } else { "▶" })),
             )
             .on_hover_text(if replay_playing {
-                "Pause the backtest replay (long-press for speed)"
+                "Pause the backtest replay"
             } else {
-                "Play the backtest replay (long-press for speed)"
-            });
-        if play_response.clicked() && play_press.release(true) {
+                "Play the backtest replay"
+            })
+            .clicked()
+        {
             action = Some(TopBarAction::ToggleReplayPlay);
         }
-        if play_response.is_pointer_button_down_on() {
-            if play_press.down_since_sec.is_none() {
-                play_press.press_started(now_sec);
-            } else if play_press.poll_hold(now_sec) {
-                // Popup opens; the release click is consumed by long_fired.
-            }
-        } else {
-            play_press.down_since_sec = None;
-            if !play_response.clicked() {
-                play_press.long_fired = false;
-            }
-        }
-        if play_press.popup_open {
-            egui::Popup::menu(&play_response)
-                .open_bool(&mut play_press.popup_open)
-                .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-                .show(|popup_ui| {
-                    popup_ui.label(bar_text("Replay speed"));
-                    let mut level = replay_speed.level();
-                    if popup_ui
-                        .add(
-                            egui::Slider::new(&mut level, 0..=7)
-                                .step_by(1.0)
-                                .show_value(false),
+        // Replay speed menu: the six documented paces, like the
+        // display-mode pulldown. The button shows the current pace.
+        bar_menu_button(
+            bar,
+            56.0,
+            &format!("{} {PULLDOWN_CHEVRON}", replay_speed.short_label()),
+            |menu_ui| {
+                for speed in TOP_BAR_REPLAY_SPEEDS {
+                    if menu_ui
+                        .selectable_label(
+                            speed == replay_speed,
+                            format!("{} {}", speed.short_label(), speed.label()),
                         )
-                        .changed()
+                        .clicked()
                     {
-                        *replay_speed = ReplaySpeed::from_level(level);
+                        action = Some(TopBarAction::PickedReplaySpeed(speed));
+                        menu_ui.close();
                     }
-                    popup_ui.label(replay_speed.label());
-                });
-        }
+                }
+            },
+        );
         if bar
             .add_sized(
                 [TOP_BAR_BUTTON_HEIGHT, TOP_BAR_BUTTON_HEIGHT],

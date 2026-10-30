@@ -127,3 +127,54 @@ fn ladder_prefers_skip_and_stop_in_order() {
     });
     fetch_through(&[nothing], 0, 1).expect_err("no bars anywhere stays a failure");
 }
+
+/// Gate suspends on a hole, refuses entries, clears on a complete report,
+/// and drains without disarming (M9.2a transition pin, mirroring the
+/// reconcile gate's pin).
+#[test]
+fn gate_suspends_entries_until_the_series_is_contiguous() {
+    use crate::backfill::{BackfillGate, BackfillReport};
+    let mut gate = BackfillGate::default();
+    assert!(!gate.entries_suspended());
+    assert!(gate.check_entries().is_ok());
+    assert!(gate.backfilled());
+
+    gate.observe(&BackfillReport {
+        complete: false,
+        filled: 0,
+        alerts: vec!["hole [1, 2, 3]".to_owned()],
+    });
+    assert!(gate.entries_suspended());
+    assert!(gate.check_entries().is_err());
+    assert!(!gate.backfilled());
+    assert_eq!(gate.alerts().len(), 1);
+
+    gate.observe(&BackfillReport {
+        complete: true,
+        filled: 3,
+        alerts: Vec::new(),
+    });
+    assert!(!gate.entries_suspended());
+    assert!(gate.check_entries().is_ok());
+    assert!(gate.backfilled());
+}
+
+/// Delivery drains without touching the suspension (M9.2a).
+#[test]
+fn gate_delivery_drains_without_clearing_the_suspension() {
+    use crate::backfill::BackfillGate;
+    let mut gate = BackfillGate::default();
+    gate.suspend("reconnect".to_owned());
+    assert!(gate.is_observed());
+    assert!(gate.entries_suspended());
+    gate.suspend("still catching up".to_owned());
+    assert_eq!(gate.alerts().len(), 2);
+    let delivered = gate.drain_alerts();
+    assert_eq!(delivered.len(), 2);
+    assert!(gate.alerts().is_empty(), "delivery drains the bank");
+    assert!(
+        gate.entries_suspended(),
+        "draining never clears the suspension"
+    );
+    assert!(gate.drain_alerts().is_empty());
+}

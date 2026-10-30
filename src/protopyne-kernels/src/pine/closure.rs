@@ -1,224 +1,215 @@
-//! Real-file closure fixture: the indicator and its seven libraries.
+//! Directory-driven Pine closure discovery: per-indicator import closures
+//! resolved against the on-disk libraries, with link-or-refuse verdicts.
 //!
-//! The indicator under `data/protopyne-rs/indicators` pulls seven libraries;
-//! the five execution dependencies plus the drawing and candle helpers load
-//! and link as Pine source without executing anything here. Each entry
-//! records the publisher/name identity, the pinned version the file declares
-//! (metadata only — loading warns on skew, never refuses), the alias the
-//! importer binds, the repo-relative path, and the exact import lines the
-//! file carries so fixtures fail loudly when the real files drift.
+//! Nothing here names a file: indicators are enumerated from the
+//! caller-supplied rows, and each import resolves against whatever library
+//! sources are supplied. Loading warns on version skew and never refuses;
+//! unknown imports and unparseable text refuse with a reason.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-use super::modules::ModuleId;
-use super::source::{load_pine_source, LibraryId, PineSource};
+use super::source::{parse_pine_source, LibraryId, PineSource};
 use crate::error::KernelError;
+use crate::pine::manifest::ManifestFile;
 
-/// One real Pine file in the closure: identity plus its own import lines as
-/// `(library name, alias)` pairs in file order.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ClosureEntry {
-    /// Publisher namespace (`showmethegrail`).
-    pub publisher: &'static str,
-    /// Library name (`libUtil`).
-    pub name: &'static str,
-    /// Pinned version from the import line (never enforced on load).
-    pub version: u64,
-    /// Alias the indicator binds for this library.
-    pub alias: &'static str,
-    /// Path relative to the data root (the `data/protopyne-rs` directory).
-    pub relpath: &'static str,
-    /// `(library name, alias)` per `import` line in file order.
-    pub imports: &'static [(&'static str, &'static str)],
+/// Data directory holding the Pine sources and histories, derived from the
+/// calling crate's manifest directory (unit tests pass `env!("CARGO_MANIFEST_DIR")`).
+/// A pure path join: it assumes no file, only the root.
+#[must_use]
+pub fn closure_data_root(manifest_dir: &str) -> PathBuf {
+    PathBuf::from(manifest_dir).join("../../data/protopyne-rs")
 }
 
-impl ClosureEntry {
-    /// Graph identity: publisher and name only (versions never participate).
-    #[must_use]
-    pub fn module_id(&self) -> ModuleId {
-        ModuleId::new(self.publisher, self.name)
-    }
+/// One indicator closure discovered from the directory: the root plus its
+/// transitively resolved libraries, keyed `publisher/name` with the
+/// indicator last. Versions ride each file's own header (metadata only,
+/// never enforced).
+#[derive(Debug, Clone, PartialEq)]
+pub struct DiscoveredClosure {
+    /// File stem of the indicator (`_FastMAs`).
+    pub stem: String,
+    /// Root-relative indicator path (`indicators/_FastMAs.pine`).
+    pub relpath: String,
+    /// `(key, source)` pairs, indicator root last.
+    pub sources: Vec<(String, PineSource)>,
+}
 
-    /// Claimed identity with the pinned version attached as metadata.
+/// Discovery outcome per indicator file: linked with its closure, or
+/// refused with the reason it cannot run. A refusal names its cause
+/// (unparseable text, unsupported version, unknown import) — never a
+/// silent absence.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ClosureOutcome {
+    /// The indicator parsed and every import resolved.
+    Linked(DiscoveredClosure),
+    /// The indicator cannot run; `reason` is the refusal a slot would show.
+    Refused {
+        /// File stem of the indicator.
+        stem: String,
+        /// Root-relative indicator path.
+        relpath: String,
+        /// Why the indicator cannot run.
+        reason: String,
+    },
+}
+
+impl ClosureOutcome {
+    /// Stem of the indicator this outcome describes.
     #[must_use]
-    pub fn library_id(&self) -> LibraryId {
-        LibraryId {
-            publisher: self.publisher.to_owned(),
-            name: self.name.to_owned(),
-            version: self.version,
+    pub fn stem(&self) -> &str {
+        match self {
+            ClosureOutcome::Linked(closure) => &closure.stem,
+            ClosureOutcome::Refused { stem, .. } => stem,
         }
     }
 }
 
-/// The seven libraries the indicator imports: five execution dependencies
-/// plus the drawing and candle helpers (loaded and linked, captured
-/// headlessly rather than rendered).
-pub const REAL_LIBRARIES: &[ClosureEntry] = &[
-    ClosureEntry {
-        publisher: "showmethegrail",
-        name: "libUtil",
-        version: 12,
-        alias: "UTIL",
-        relpath: "libraries/_libUtil.pine",
-        imports: &[],
-    },
-    ClosureEntry {
-        publisher: "showmethegrail",
-        name: "libBars",
-        version: 12,
-        alias: "BARS",
-        relpath: "libraries/_libBars.pine",
-        imports: &[("libUtil", "UTIL")],
-    },
-    ClosureEntry {
-        publisher: "showmethegrail",
-        name: "libBuffers",
-        version: 6,
-        alias: "libBuffers",
-        relpath: "libraries/_libBuffers.pine",
-        imports: &[],
-    },
-    ClosureEntry {
-        publisher: "showmethegrail",
-        name: "libDrawing",
-        version: 61,
-        alias: "libDrawing",
-        relpath: "libraries/_libDrawing.pine",
-        imports: &[("libUtil", "UTIL")],
-    },
-    ClosureEntry {
-        publisher: "showmethegrail",
-        name: "libCandles",
-        version: 21,
-        alias: "libCandles",
-        relpath: "libraries/_libCandles.pine",
-        imports: &[
-            ("libUtil", "UTIL"),
-            ("libDrawing", "libDrawing"),
-            ("libApex", "libApex"),
-        ],
-    },
-    ClosureEntry {
-        publisher: "showmethegrail",
-        name: "libMAs",
-        version: 95,
-        alias: "libMAs",
-        relpath: "libraries/_libMAs.pine",
-        imports: &[("libUtil", "UTIL")],
-    },
-    ClosureEntry {
-        publisher: "showmethegrail",
-        name: "libApex",
-        version: 88,
-        alias: "libApex",
-        relpath: "libraries/_libApex.pine",
-        imports: &[
-            ("libUtil", "UTIL"),
-            ("libBuffers", "libBuffers"),
-            ("libBars", "BARS"),
-            ("libDrawing", "libDrawing"),
-        ],
-    },
-];
+/// Library lookup key for one file: the bare stem, plus the stem with one
+/// leading underscore stripped (the on-disk `_libUtil.pine` convention).
+fn library_keys(relpath: &str) -> Vec<String> {
+    let stem = relpath
+        .rsplit('/')
+        .next()
+        .unwrap_or(relpath)
+        .strip_suffix(".pine")
+        .unwrap_or(relpath)
+        .to_owned();
+    if let Some(stripped) = stem.strip_prefix('_').map(str::to_owned) {
+        vec![stem, stripped]
+    } else {
+        vec![stem]
+    }
+}
 
-/// Data-root-relative path of the indicator that imports the seven libraries.
-pub const INDICATOR_PATH: &str = "indicators/_IntegrationLite.pine";
-
-/// Task indicators under headless proof: the same [`ClosureEntry`] shape as
-/// [`REAL_LIBRARIES`], one entry per indicator with the `(library name,
-/// alias)` pairs from the file's own import lines in file order. The pinned
-/// versions are metadata only (loading warns on skew, never refuses); each
-/// closure links the single on-disk source per publisher/name, and the
-/// indicator root travels under `local/<Stem>`.
-pub const TASK_INDICATORS: &[ClosureEntry] = &[
-    ClosureEntry {
-        publisher: "local",
-        name: "DeltaVolumeProfileProtopyne",
-        version: 6,
-        alias: "DeltaVolumeProfileProtopyne",
-        relpath: "indicators/_DeltaVolumeProfileProtopyne.pine",
-        imports: &[
-            ("libUtil", "UTIL"),
-            ("libBuffers", "libBuffers"),
-            ("libApex", "libApex"),
-            ("libDrawing", "libDrawing"),
-        ],
-    },
-    ClosureEntry {
-        publisher: "local",
-        name: "ApexPPAS",
-        version: 6,
-        alias: "ApexPPAS",
-        relpath: "indicators/_ApexPPAS.pine",
-        imports: &[
-            ("libUtil", "UTIL"),
-            ("libCandles", "libCandles"),
-            ("libApex", "libApex"),
-        ],
-    },
-    ClosureEntry {
-        publisher: "local",
-        name: "ApexRSIMD",
-        version: 6,
-        alias: "ApexRSIMD",
-        relpath: "indicators/_ApexRSIMD.pine",
-        imports: &[
-            ("libUtil", "UTIL"),
-            ("libApex", "libApex"),
-            ("libMAs", "libMAs"),
-            ("libDrawing", "libDrawing"),
-        ],
-    },
-];
-
-/// Publisher/name the indicator root travels under in the import graph (the
-/// indicator declares no library identity of its own, so it uses its stem).
+/// Discover every indicator closure over caller-supplied files: for each
+/// `indicators/*.pine`, parse the header, resolve its import closure
+/// transitively against `libraries/*.pine` (one on-disk source per library
+/// name), and report the linked sources or the refusal. Pure over values:
+/// no I/O, deterministic in directory order.
 #[must_use]
-pub fn indicator_library_id() -> LibraryId {
-    LibraryId {
-        publisher: "local".to_owned(),
-        name: "IntegrationLite".to_owned(),
-        version: super::source::SUPPORTED_PINE_VERSION,
+pub fn discover_closures(
+    indicators: &[ManifestFile],
+    libraries: &[ManifestFile],
+) -> Vec<ClosureOutcome> {
+    let by_name: std::collections::HashMap<String, &ManifestFile> = libraries
+        .iter()
+        .flat_map(|file| {
+            library_keys(&file.relpath)
+                .into_iter()
+                .map(move |key| (key, file))
+        })
+        .collect();
+    let mut outcomes = Vec::with_capacity(indicators.len());
+    for file in indicators {
+        let stem = file
+            .relpath
+            .rsplit('/')
+            .next()
+            .unwrap_or(&file.relpath)
+            .strip_suffix(".pine")
+            .unwrap_or(&file.relpath)
+            .to_owned();
+        if file.text.trim().is_empty() {
+            outcomes.push(ClosureOutcome::Refused {
+                stem,
+                relpath: file.relpath.clone(),
+                reason: "empty source (unreadable or empty file)".to_owned(),
+            });
+            continue;
+        }
+        let root = parse_pine_source(&file.relpath, &file.text);
+        let mut sources: Vec<(String, PineSource)> = Vec::new();
+        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut queue: Vec<super::source::ImportDecl> = root.imports.clone();
+        let mut refusal: Option<String> = None;
+        while let Some(import) = queue.pop() {
+            if !seen.insert(import.library.name.clone()) {
+                continue;
+            }
+            if let Some(library) = by_name.get(&import.library.name) {
+                let source = parse_pine_source(&library.relpath, &library.text);
+                queue.extend(source.imports.clone());
+                sources.push((
+                    format!("{}/{}", import.library.publisher, import.library.name),
+                    source,
+                ));
+            } else {
+                refusal = Some(format!(
+                    "unknown import {:?} (no libraries/_{}.pine on disk)",
+                    import.library.to_string(),
+                    import.library.name,
+                ));
+                break;
+            }
+        }
+        if let Some(reason) = refusal {
+            outcomes.push(ClosureOutcome::Refused {
+                stem,
+                relpath: file.relpath.clone(),
+                reason,
+            });
+            continue;
+        }
+        // A linked closure parses end to end: unparseable text refuses
+        // here with the parser's reason, never as a link-time surprise.
+        let mut unparseable: Option<String> = None;
+        if let Err(err) = super::syntax::parse_program(&root.text) {
+            unparseable = Some(format!("{}: {err}", file.relpath));
+        }
+        if unparseable.is_none() {
+            for (key, source) in &sources {
+                if let Err(err) = super::syntax::parse_program(&source.text) {
+                    unparseable = Some(format!("{key} parses: {err}"));
+                    break;
+                }
+            }
+        }
+        if let Some(reason) = unparseable {
+            outcomes.push(ClosureOutcome::Refused {
+                stem,
+                relpath: file.relpath.clone(),
+                reason,
+            });
+            continue;
+        }
+        sources.push((format!("local/{stem}"), root));
+        outcomes.push(ClosureOutcome::Linked(DiscoveredClosure {
+            stem,
+            relpath: file.relpath.clone(),
+            sources,
+        }));
     }
+    outcomes
 }
 
-/// Data directory holding the Pine sources and histories, derived from the
-/// calling crate's manifest directory (unit tests pass `env!("CARGO_MANIFEST_DIR")`).
-#[must_use]
-pub fn closure_data_root(manifest_dir: &str) -> PathBuf {
-    Path::new(manifest_dir).join("../../data/protopyne-rs")
-}
-
-/// Load the seven library sources plus the indicator without executing them.
-/// Version skew warns on the loaded source and still resolves; only
-/// unreadable or empty files refuse.
-pub fn load_closure_sources(data_root: &Path) -> Result<Vec<(String, PineSource)>, KernelError> {
-    let mut sources = Vec::with_capacity(REAL_LIBRARIES.len() + 1);
-    for entry in REAL_LIBRARIES {
-        let source = load_pine_source(&data_root.join(entry.relpath))?;
-        sources.push((format!("{}/{}", entry.publisher, entry.name), source));
-    }
-    let indicator = load_pine_source(&data_root.join(INDICATOR_PATH))?;
-    sources.push(("local/IntegrationLite".to_owned(), indicator));
-    Ok(sources)
-}
-
-/// Load any listed closure from disk: the given libraries plus one indicator
-/// entry, each keyed `publisher/name` exactly like [`load_closure_sources`].
-/// Version skew still warns via [`PineSource::warnings`] and still resolves.
-pub fn load_listed_closure(
-    data_root: &Path,
-    libraries: &[ClosureEntry],
-    indicator: &ClosureEntry,
-) -> Result<Vec<(String, PineSource)>, KernelError> {
-    let mut sources = Vec::with_capacity(libraries.len() + 1);
-    for entry in libraries {
-        let source = load_pine_source(&data_root.join(entry.relpath))?;
-        sources.push((format!("{}/{}", entry.publisher, entry.name), source));
-    }
-    let root = load_pine_source(&data_root.join(indicator.relpath))?;
-    sources.push((format!("{}/{}", indicator.publisher, indicator.name), root));
-    Ok(sources)
+/// Parse every source of a discovered closure into graph inputs, keyed by
+/// the same `publisher/name` keys the loader used. Versions ride each
+/// file's own declared header (metadata only, never enforced on link).
+/// A source that fails to parse refuses with its position.
+pub fn closure_inputs(
+    closure: &DiscoveredClosure,
+) -> Result<Vec<crate::pine::modules::ModuleInput>, KernelError> {
+    closure
+        .sources
+        .iter()
+        .map(|(key, source)| {
+            let program = super::syntax::parse_program(&source.text).map_err(|err| {
+                KernelError::InvalidInput(format!("closure file {key} parses: {err}"))
+            })?;
+            let (publisher, name) = key.split_once('/').unwrap_or(("local", key.as_str()));
+            Ok(crate::pine::modules::ModuleInput::new(
+                LibraryId {
+                    publisher: publisher.to_owned(),
+                    name: name.to_owned(),
+                    version: source
+                        .version
+                        .unwrap_or(super::source::SUPPORTED_PINE_VERSION),
+                },
+                source.clone(),
+                program,
+            ))
+        })
+        .collect()
 }
 
 #[cfg(test)]

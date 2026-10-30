@@ -13,18 +13,51 @@
 #![allow(dead_code)]
 
 use crate::{
-    closure_data_root, load_listed_closure, load_pine_source, parse_pine_source, parse_program,
-    resolve_imports, ClosureEntry, LibraryId, LinkedModule, ModuleId, ModuleInput, REAL_LIBRARIES,
-    TASK_INDICATORS,
+    closure_inputs, discover_closures, load_pine_source, parse_pine_source, parse_program,
+    resolve_imports, ClosureOutcome, LibraryId, LinkedModule, LtfDataset, ManifestFile, ModuleId,
+    ModuleInput,
 };
 use protopyne_types::Bar;
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 
-/// The single data root every Pine fixture reads from.
+/// The single data root every live-directory probe reads from. Volatile
+/// input (externally synced, git-ignored): probes over this root must
+/// enumerate, never assume membership.
 #[must_use]
 pub fn data_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../data/protopyne-rs")
+}
+
+/// The checked-in hermetic fixture root: the canonical
+/// `protopyne-server/tests/data/pine_closure` tree (`indicators/` +
+/// `libraries/` with the same layout as the live data root), so the same
+/// loader and discovery code serve both. Fixture pins exact file bytes;
+/// the live root pins only properties.
+#[must_use]
+pub fn fixture_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../protopyne-server/tests/data/pine_closure")
+}
+
+/// Raw fixture files as manifest rows.
+#[must_use]
+pub fn fixture_sources() -> (Vec<ManifestFile>, Vec<ManifestFile>) {
+    crate::manifest_files::load_pine_sources(&fixture_root()).expect("fixture root loads")
+}
+
+/// Discovery outcomes over the hermetic fixtures.
+#[must_use]
+pub fn fixture_outcomes() -> Vec<ClosureOutcome> {
+    let (indicators, libraries) = fixture_sources();
+    discover_closures(&indicators, &libraries)
+}
+
+/// Discovery outcomes over the live data root (volatile: enumerate only).
+#[must_use]
+pub fn discovered_outcomes() -> Vec<ClosureOutcome> {
+    let (indicators, libraries) =
+        crate::manifest_files::load_pine_sources(&data_root()).expect("live root loads");
+    discover_closures(&indicators, &libraries)
 }
 
 /// Claimed library identity: publisher/name with the pinned version retained
@@ -54,6 +87,16 @@ pub fn shipped_module(file: &str, publisher: &str, name: &str, version: u64) -> 
     let path = data_root().join(file);
     let source = load_pine_source(&path).expect("shipped library loads");
     let program = parse_program(&source.text).expect("shipped library parses");
+    ModuleInput::new(library_id(publisher, name, version), source, program)
+}
+
+/// One fixture Pine file as a graph input: identity from the header scan,
+/// structure from the parser, over the checked-in byte-identical text.
+#[must_use]
+pub fn fixture_module(file: &str, publisher: &str, name: &str, version: u64) -> ModuleInput {
+    let path = fixture_root().join(file);
+    let source = load_pine_source(&path).expect("fixture file loads");
+    let program = parse_program(&source.text).expect("fixture file parses");
     ModuleInput::new(library_id(publisher, name, version), source, program)
 }
 
@@ -99,37 +142,43 @@ pub fn linked_modules(modules: Vec<ModuleInput>) -> Vec<LinkedModule> {
         .collect()
 }
 
-/// One task closure linked dependency-first: the same loader, parser, and
-/// linker the closure suites use, mapped to alias tables for runs. `name`
-/// is the [`TASK_INDICATORS`] entry name (`DeltaVolumeProfileProtopyne`,
-/// `ApexPPAS`, `ApexRSIMD`).
+/// One fixture closure linked dependency-first: the same loader, parser,
+/// and linker the closure suites use, mapped to alias tables for runs.
+/// `stem` is the fixture indicator stem (`_IntegrationLite`,
+/// `_DeltaVolumeProfileProtopyne`, `_FastMAs`).
 #[must_use]
-pub fn linked_closure(name: &str) -> Vec<LinkedModule> {
-    let indicator: &ClosureEntry = TASK_INDICATORS
-        .iter()
-        .find(|entry| entry.name == name)
-        .expect("task indicator entry");
-    let root = closure_data_root(env!("CARGO_MANIFEST_DIR"));
-    let sources = load_listed_closure(&root, REAL_LIBRARIES, indicator).expect("closure loads");
-    let modules: Vec<crate::ModuleInput> = sources
+pub fn linked_fixture(stem: &str) -> Vec<LinkedModule> {
+    let outcome = fixture_outcomes()
         .into_iter()
-        .map(|(key, source)| {
-            let program = parse_program(&source.text)
-                .unwrap_or_else(|err| panic!("closure file {key} parses: {err}"));
-            let (publisher, name) = key.split_once('/').expect("key shape");
-            let version = if publisher == "local" {
-                indicator.version
-            } else {
-                REAL_LIBRARIES
-                    .iter()
-                    .find(|entry| entry.publisher == publisher && entry.name == name)
-                    .expect("listed library")
-                    .version
-            };
-            crate::ModuleInput::new(library_id(publisher, name, version), source, program)
+        .find(|outcome| outcome.stem() == stem)
+        .unwrap_or_else(|| panic!("fixture closure {stem} discovered"));
+    let closure = match outcome {
+        ClosureOutcome::Linked(closure) => closure,
+        ClosureOutcome::Refused { reason, .. } => {
+            panic!("fixture closure {stem} links: {reason}")
+        }
+    };
+    let inputs = closure_inputs(&closure)
+        .unwrap_or_else(|err| panic!("fixture closure {stem} parses: {err}"));
+    linked_modules(inputs)
+}
+
+/// Every hermetic fixture closure linked: one entry per linkable fixture
+/// indicator. The fixture set is fixed, so the count is pinned here.
+#[must_use]
+pub fn linked_fixtures() -> Vec<(String, Vec<LinkedModule>)> {
+    fixture_outcomes()
+        .into_iter()
+        .map(|outcome| match outcome {
+            ClosureOutcome::Linked(closure) => {
+                let inputs = closure_inputs(&closure).expect("fixture closure parses");
+                (closure.stem.clone(), linked_modules(inputs))
+            }
+            ClosureOutcome::Refused { stem, reason, .. } => {
+                panic!("fixture closure {stem} links: {reason}")
+            }
         })
-        .collect();
-    linked_modules(modules)
+        .collect()
 }
 
 /// One trimmed history file as closed bars. The header is pinned: the
@@ -199,4 +248,35 @@ pub fn daily_of(bars: &[Bar]) -> Vec<Bar> {
                 .build()
         })
         .collect()
+}
+
+/// One synthetic daily tape for injected request tests: closes ramp one
+/// point per row, volumes one unit per row, every row a day after the last.
+/// Shared by the differential and calibration suites so one tape feeds both.
+#[must_use]
+pub fn daily_tape(rows: usize) -> LtfDataset {
+    const DAY_MS: i64 = 24 * 60 * 60 * 1000;
+    let first = 1_690_000_000_i64;
+    let closes: Vec<f64> = (0..rows).map(|i| 100.0 + i as f64).collect();
+    let daily: Vec<Bar> = closes
+        .iter()
+        .enumerate()
+        .map(|(i, close)| {
+            let millis = first + i as i64 * DAY_MS;
+            Bar::new()
+                .ts(chrono::DateTime::from_timestamp(
+                    millis / 1000,
+                    ((millis % 1000) * 1_000_000) as u32,
+                )
+                .expect("daily time in range"))
+                .o(rust_decimal::Decimal::from_f64_retain(*close).expect("finite"))
+                .h(rust_decimal::Decimal::from_f64_retain(close + 1.0).expect("finite"))
+                .l(rust_decimal::Decimal::from_f64_retain(close - 1.0).expect("finite"))
+                .c(rust_decimal::Decimal::from_f64_retain(*close).expect("finite"))
+                .volume((i + 1) as u64)
+                .maybe_adj(None)
+                .build()
+        })
+        .collect();
+    LtfDataset::of_bars(&daily, protopyne_types::Timeframe::D1)
 }

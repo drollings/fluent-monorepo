@@ -1,11 +1,13 @@
 //! Boot-time Pine indicator manifest: discovery at the data edge, gated on
-//! parity, served as rows the widget renders.
+//! resolution, served as rows the widget renders.
 //!
 //! The builder walks `<root>/indicators/*.pine` and resolves each script's
 //! import closure against `<root>/libraries`. A script is [`ManifestParity::Verified`]
-//! only when it loads, declares the supported version, resolves every import,
-//! and names a stem the parity suites cover ([`PROVEN_STEMS`]); anything else
-//! is listed with its refusal reason — advertised, never runnable. The widget
+//! when it loads, declares the supported version, and resolves every import;
+//! anything else is listed with its refusal reason — advertised, never runnable.
+//! `Verified` is structural readiness (version plus resolution), not a fitness
+//! claim: numeric parity lives in the hermetic engine suites, which run over
+//! checked-in fixtures instead of this volatile directory. The widget
 //! consumes these rows; it never reads the directory itself.
 //!
 //! Pure over caller-supplied files: no I/O here, so the language surface
@@ -17,20 +19,10 @@ use std::path::Path;
 
 use crate::pine::source::{parse_pine_source, SUPPORTED_PINE_VERSION};
 
-/// Indicator stems the parity suites cover (closure roots and task proofs):
-/// the only scripts that may verify. Every other script lists as unverified
-/// until a harness proves it.
-pub const PROVEN_STEMS: &[&str] = &[
-    "_IntegrationLite",
-    "_FastMAs",
-    "_DeltaVolumeProfileProtopyne",
-    "_ApexPPAS",
-    "_ApexRSIMD",
-];
-
-/// Parity standing of one manifest row: agreement proven, or listed with
-/// the reason it must not run. Unverified is availability information (the
-/// engine cannot vouch for this script), never a fitness claim.
+/// Parity standing of one manifest row: structural agreement proven, or
+/// listed with the reason it must not run. Unverified is availability
+/// information (the engine cannot vouch for this script), never a fitness
+/// claim.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ManifestParity {
     /// Structure resolves and a harness covers this script.
@@ -94,10 +86,16 @@ fn indicator_stem(relpath: &str) -> String {
         .unwrap_or_default()
 }
 
-/// Display title from the `indicator("...")` header's first string literal;
-/// the stem when no header parses. Pure over values.
+/// Display title from the `indicator("...")` (or legacy `study("...")`)
+/// header's first string literal; the stem when no header parses. Pure
+/// over values.
 fn manifest_title(stem: &str, text: &str) -> String {
-    let Some(start) = text.find("indicator(") else {
+    let start = text
+        .find("indicator(")
+        .into_iter()
+        .chain(text.find("study("))
+        .min();
+    let Some(start) = start else {
         return stem.to_owned();
     };
     let mut chars = text[start..].chars();
@@ -227,19 +225,30 @@ fn entry_for(
     }
     closure.sort_by(|left, right| left.0.cmp(right.0));
     let closure_hash = common_core::hash::fingerprint_framed(&closure);
-    if !PROVEN_STEMS.contains(&stem.as_str()) {
-        return IndicatorManifestEntry {
-            id: manifest_id(&stem),
-            title,
-            source_path: file.relpath.clone(),
-            version: source.version,
-            closure_hash,
-            parity: ManifestParity::Unverified {
-                reason: format!(
-                    "no parity harness covers {stem:?}: proven stems are {PROVEN_STEMS:?}"
-                ),
-            },
-        };
+    // Verified is structural readiness only: the version is supported,
+    // every import resolves, and the whole closure parses. Which scripts
+    // the hermetic parity suites prove is tracked by those suites over
+    // checked-in fixtures, never by name here — this directory is volatile
+    // input, so no stem list may live in this builder.
+    let mut closure_texts: Vec<(&str, &str)> = vec![(file.relpath.as_str(), file.text.as_str())];
+    for import in &source.imports {
+        // Resolution succeeded above, so the library is present.
+        if let Some(library) = libraries.get(&import.library.name) {
+            closure_texts.push((library.relpath.as_str(), library.text.as_str()));
+        }
+    }
+    for (relpath, text) in closure_texts {
+        if let Err(err) = crate::pine::syntax::parse_program(text) {
+            return IndicatorManifestEntry {
+                title,
+                ..unverified(
+                    &stem,
+                    &file.relpath,
+                    source.version,
+                    format!("unparseable pine source {relpath}: {err}"),
+                )
+            };
+        }
     }
     IndicatorManifestEntry {
         id: manifest_id(&stem),

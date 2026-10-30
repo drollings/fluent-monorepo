@@ -51,11 +51,11 @@ fn catalog_from_manifest_renders_titles_under_my_scripts() {
         .map(|entry| entry.title().to_owned())
         .collect();
     assert!(
-        titles.contains(&"Integration Lite (manifest)".to_owned()),
-        "the manifest title renders, not the id: {titles:?}"
+        titles.contains(&"🌲 Integration Lite (manifest)".to_owned()),
+        "the manifest title renders with its pine marker, not the id: {titles:?}"
     );
     assert!(
-        titles.contains(&"Broken Script".to_owned()),
+        titles.contains(&"🌲 Broken Script".to_owned()),
         "a red entry is listed, never hidden: {titles:?}"
     );
     assert!(
@@ -110,5 +110,21 @@ fn manifest_free_catalog_has_no_ambient_rows() {
     assert!(
         instantiate_indicator("pine:_IntegrationLite").is_err(),
         "manifest ids refuse without their manifest"
+    );
+}
+
+#[test]
+fn pine_rows_render_with_a_pine_marker_and_checkbox() {
+    let rows = vec![green_backed(), red_entry()];
+    let catalog = build_indicator_catalog_with_manifest(&rows).expect("the catalog builds");
+    assert!(!catalog.tag_only(), "the Pine checkbox installs unchecked");
+    let titles: Vec<String> = catalog
+        .filtered()
+        .iter()
+        .map(|entry| entry.title().to_owned())
+        .collect();
+    assert!(
+        titles.iter().any(|title| title.starts_with("🌲 ")),
+        "Pine rows carry the pine marker: {titles:?}"
     );
 }

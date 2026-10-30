@@ -391,7 +391,7 @@ const DEFAULT_PREFS_JSON: &str = r##"{
   "tickers": {
     "SPY": {
       "timeframe": "5M",
-      "range": "1M",
+      "range": "2M",
       "custom_start": null,
       "chart_type": "Candles",
       "pane_share": 0.75,

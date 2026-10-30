@@ -75,6 +75,33 @@ else
     say "note: nm unavailable — symbol-level wq_* check skipped (suite check below still applies)"
 fi
 
+say "pine-only production shape carries no oracle entry point"
+# The tree oracle ships only under `test` or the `oracle` feature: a
+# pine-only production rlib must name no oracle entry point. The artifact
+# dance below mirrors the FractionalKelly block — resolve the just-built
+# rlib while it still points at this feature set.
+KERNELS_LIB="$ROOT/src/protopyne-kernels/src/lib.rs"
+KERNELS_TOP_RLIB="$ROOT/target/debug/libprotopyne_kernels.rlib"
+if command -v nm >/dev/null 2>&1; then
+    touch "$KERNELS_LIB"
+    rm -f "$KERNELS_TOP_RLIB"
+    PINE_JSON="$(cargo build -p protopyne-kernels --no-default-features --features pine --message-format=json 2>/dev/null)"
+    PINE_RLIB="$(printf '%s\n' "$PINE_JSON" | sed -n 's/.*"filenames":\["\([^"]*libprotopyne_kernels[^"]*\.rlib\)".*/\1/p' | head -n 1)"
+    [[ -n "$PINE_RLIB" ]] || fail "pine-only kernels rlib not materialized"
+    PINE_SYMS="$(nm --defined-only "$PINE_RLIB" 2>/dev/null)"
+    if grep -q "OracleEngine" <<< "$PINE_SYMS"; then
+        fail "OracleEngine leaks into the pine-only production build"
+    fi
+    say "pine-only production rlib names no OracleEngine"
+else
+    say "note: nm unavailable — oracle absence check skipped (build above still applies)"
+    cargo build -p protopyne-kernels --no-default-features --features pine
+fi
+
+say "production refusal probe passes without the oracle, oracle run keeps both engines"
+cargo run -p protopyne-kernels --example production_refusal_probe --no-default-features --features pine,bytecode
+cargo run -p protopyne-kernels --example production_refusal_probe --features pine,bytecode,oracle
+
 say "full suite under --all-features"
 cargo test -p protopyne-kernels --all-features --lib
 
@@ -88,13 +115,13 @@ for suite in ta_volume native_apex wq_series wq_half_life; do
         && fail "suite family $suite leaks into the lean build"
 done
 
-say "server builds on lean kernels and runs its full suite"
+say "server builds on the default (compiled) kernels and runs its full suite"
 cargo build -p protopyne-server
 cargo test -p protopyne-server --all-features --lib
 
 say "strategy pine suite present under --all-features, absent without"
 STRATEGY_FULL_LIST="$(cargo test -p protopyne-strategy --all-features --lib -- --list)"
-STRATEGY_LEAN_LIST="$(cargo test -p protopyne-strategy --lib -- --list)"
+STRATEGY_LEAN_LIST="$(cargo test -p protopyne-strategy --no-default-features --lib -- --list)"
 [[ "$STRATEGY_FULL_LIST" == *"signals_pine"* ]] \
     || fail "signals_pine missing under --all-features"
 [[ "$STRATEGY_LEAN_LIST" == *"signals_pine"* ]] \
@@ -121,9 +148,11 @@ if command -v nm >/dev/null 2>&1; then
     # 64 KB pipe buffer, so `nm | grep -q` lets `grep` exit early, `nm` die
     # of SIGPIPE, and `pipefail` fail the pipeline even on a match. A
     # herestring has no producer to kill, so the status is `grep`'s alone.
+    # Lean means `--no-default-features`: the default build now ships the
+    # compiled Pine path.
     touch "$STRATEGY_LIB"
     rm -f "$STRATEGY_TOP_RLIB"
-    cargo build -p protopyne-strategy
+    cargo build -p protopyne-strategy --no-default-features
     [[ -f "$STRATEGY_TOP_RLIB" ]] || fail "lean strategy rlib not materialized"
     LEAN_SYMS="$(nm --defined-only "$STRATEGY_TOP_RLIB" 2>/dev/null)"
     if grep -q "FractionalKelly" <<< "$LEAN_SYMS"; then
@@ -144,6 +173,6 @@ else
 fi
 
 say "strategy (lean kernels consumer) suite stays green"
-cargo test -p protopyne-strategy --lib
+cargo test -p protopyne-strategy --no-default-features --lib
 
 echo "build matrix green"

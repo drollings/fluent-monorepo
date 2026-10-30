@@ -474,9 +474,13 @@ pub(crate) fn apply_rule(
     })
 }
 
-/// Bars the realised volatility measures over: twenty returns capture a
-/// regime without lagging a break by a quarter.
-pub const VOLATILITY_WINDOW: usize = 20;
+/// Bars the kernel realised volatility measures over: twenty returns
+/// capture a regime without lagging a break by a quarter. Intentionally
+/// separate from the lite estimator's `LITE_VOLATILITY_LENGTH` (kernels
+/// `lite`, manual mean/var over closes): different math over a same-sized
+/// window — the names now say which is which (M4.2). Do not unify the
+/// constants.
+pub const KERNEL_VOLATILITY_WINDOW: usize = 20;
 
 impl KernelCore {
     fn evaluate(&self, view: &MarketView<'_>) -> Result<SignalOutput, StrategyError> {
@@ -504,7 +508,7 @@ impl KernelCore {
     /// the opposite of prudent.
     fn realised_volatility(&self, view: &MarketView<'_>) -> Option<f64> {
         let bars = view.data.bars;
-        if bars.len() < VOLATILITY_WINDOW + 1 {
+        if bars.len() < KERNEL_VOLATILITY_WINDOW + 1 {
             return None;
         }
         use rust_decimal::prelude::ToPrimitive as _;
@@ -525,7 +529,7 @@ impl KernelCore {
             volume: Vec::new(),
         };
         let params = ParamSet::new()
-            .with_int("length", VOLATILITY_WINDOW as i64)
+            .with_int("length", KERNEL_VOLATILITY_WINDOW as i64)
             .with_float("nbdev", 1.0);
         let indicator = self.registry.get("stddev")?;
         let result = indicator.batch(&data.views(), &params).ok()?;

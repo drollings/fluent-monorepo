@@ -5,9 +5,10 @@
 //! Every composition here is strategy-runnable (fixed signal, explicit
 //! single-leg structure, composable loss rules), so each driver below runs
 //! the same shared per-bar body with the same venue tuning. The equity batch
-//! runner is a different decision stack (per-bar priced units, manager-owned
-//! exits, percent fees) and is not strategy-runnable; its parity story stays
-//! rerun-identity plus the calibration tallies.
+//! runner is the simple decision stack (per-bar priced units, manager-owned
+//! exits, percent fees, no proposal/grant/risk/journal layers) and is not
+//! strategy-runnable; its parity story stays rerun-identity plus the
+//! calibration tallies.
 
 use crate::common_fixtures::money;
 use std::sync::Arc;
@@ -28,9 +29,10 @@ use protopyne_types::{Bar, Money, Timeframe};
 use protopyne_venue::{PaperConfig, Venue, VenueRegistry, VenueStorage};
 
 use crate::backtest::{BacktestConfig, BacktestVenue};
-use crate::equity::{BacktestRequest, EquityRun};
+use crate::equity::EquityRun;
 use crate::replay_session::{ChainPolicy, ReplayDriver, ReplaySession};
 use crate::runner::{equity_curve_for, run_backtest, BacktestRun, BarDecision, RunnerConfig};
+use crate::simple_backtest::SimpleBacktestRequest;
 
 /// One-minute bars from closes; high/low equal the close unless the caller
 /// edits them afterwards.
@@ -382,27 +384,6 @@ fn equity_strategy() -> IntegrationLiteStrategyConfig {
     }
 }
 
-fn equity_risk() -> RiskEngine {
-    RiskEngine::new(
-        RiskLimits::new()
-            .max_contracts_per_trade(1_000_000)
-            .max_loss_per_trade(10_000_000.0)
-            .max_notional(1_000_000_000.0)
-            .build(),
-    )
-}
-
-fn equity_grant() -> Grant {
-    grant_with(|grant| {
-        grant.id = "parity-soak-equity".to_owned();
-        grant.signal.min_conviction = 0.0;
-        grant.signal.min_activity_score = 0.0;
-        grant.scope.strategies = vec!["integration_lite".to_owned()];
-        grant.scope.structures = vec![StructureKind::Single];
-        grant.trade.min_dte_days = 0;
-    })
-}
-
 fn equity_venue_config() -> BacktestConfig {
     BacktestConfig::new()
         .underlying("SPY".to_owned())
@@ -422,14 +403,12 @@ fn equity_runner_config() -> RunnerConfig {
     )
 }
 
-async fn equity_run(bars: &[Bar], seed: u64) -> EquityRun {
+fn equity_run(bars: &[Bar], seed: u64) -> EquityRun {
     let indicator = LiteIndicatorParams::default();
     let strategy = equity_strategy();
-    BacktestRequest::builder()
+    SimpleBacktestRequest::builder()
         .indicator(&indicator)
         .strategy(&strategy)
-        .risk(&equity_risk())
-        .grant(&equity_grant())
         .venue_config(&equity_venue_config())
         .runner_config(&equity_runner_config())
         .signal_name("integration_lite")
@@ -439,7 +418,6 @@ async fn equity_run(bars: &[Bar], seed: u64) -> EquityRun {
         .seed(seed)
         .initial_equity(100_000.0)
         .run()
-        .await
         .expect("equity run completes")
 }
 
@@ -447,8 +425,8 @@ async fn equity_run(bars: &[Bar], seed: u64) -> EquityRun {
 /// driver, so its parity story is determinism: every harness tape reruns
 /// byte-identical, including the adversarial ones — and a tape shaped like
 /// the suite's proven round trip must actually trade while doing so.
-#[tokio::test]
-async fn equity_batch_is_deterministic_on_every_harness_tape() {
+#[test]
+fn equity_batch_is_deterministic_on_every_harness_tape() {
     for (name, bars) in [
         ("fill", fill_tape()),
         ("exits", exit_tape()),
@@ -457,8 +435,8 @@ async fn equity_batch_is_deterministic_on_every_harness_tape() {
         ("dup-ts", dup_ts_tape()),
         ("session", session_close_tape()),
     ] {
-        let first = equity_run(&bars, 7).await;
-        let rerun = equity_run(&bars, 7).await;
+        let first = equity_run(&bars, 7);
+        let rerun = equity_run(&bars, 7);
         assert_eq!(
             rerun.to_canonical_json(),
             first.to_canonical_json(),
@@ -494,12 +472,12 @@ async fn equity_batch_is_deterministic_on_every_harness_tape() {
                 .build()
         })
         .collect();
-    let first = equity_run(&bars, 7).await;
+    let first = equity_run(&bars, 7);
     assert!(
         !first.trades.is_empty() || !first.partials.is_empty(),
         "the round trip must trade on the equity path"
     );
-    let rerun = equity_run(&bars, 7).await;
+    let rerun = equity_run(&bars, 7);
     assert_eq!(
         rerun.to_canonical_json(),
         first.to_canonical_json(),

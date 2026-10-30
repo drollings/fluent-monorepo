@@ -82,6 +82,19 @@ pub fn call(
     }
 }
 
+/// Trailing `Enum.Member` pair of a dotted spelling, resolved on the last
+/// two segments exactly like the tree-walk's member lookup (any module
+/// prefix is ignored). Both engines split the same way, so a static
+/// handle and a run-time table read can never name different members.
+/// Bare names miss.
+#[must_use]
+pub fn split_enum_member(dotted: &str) -> Option<(&str, &str)> {
+    let mut parts = dotted.rsplit('.');
+    let member = parts.next()?;
+    let enum_name = parts.next()?;
+    Some((enum_name, member))
+}
+
 /// Resolve a dotted display constant (`display.none`, `size.tiny`,
 /// `position.top_right`, `color.white`, `line.style_dotted`,
 /// `label.style_label_down`) to its opaque handle. Anything else
@@ -92,6 +105,41 @@ pub fn call(
 pub fn resolve_constant(name: &str) -> Option<PineValue> {
     if let Some(packed) = named_color(name) {
         return Some(PineValue::ColorHandle(ColorHandle::new(packed)));
+    }
+    // Legacy bare type keywords (`type=bool` in shipped `input(...)`
+    // calls): the keyword names its type. The input kind still infers
+    // from the default, so the tag is purely declarative. User bindings
+    // shadow these on both engines (variables resolve first).
+    match name {
+        "bool" | "int" | "float" | "string" => {
+            return Some(PineValue::Str(name.to_owned()));
+        }
+        _ => {}
+    }
+    // Legacy bare plot styles (`histogram`, `cross`, ...): the same
+    // handle as the `plot.style_*` spelling. Styles ride captures
+    // unevaluated, so the handle is recorded, never decided on.
+    match name {
+        "line" => return Some(PineValue::EnumHandle(EnumHandle::new("plot", "style_line"))),
+        "linebr" => return Some(PineValue::EnumHandle(EnumHandle::new("plot", "style_linebr"))),
+        "stepline" => {
+            return Some(PineValue::EnumHandle(EnumHandle::new("plot", "style_stepline")));
+        }
+        "steplinebr" => {
+            return Some(PineValue::EnumHandle(EnumHandle::new("plot", "style_steplinebr")));
+        }
+        "histogram" => {
+            return Some(PineValue::EnumHandle(EnumHandle::new("plot", "style_histogram")));
+        }
+        "columns" => {
+            return Some(PineValue::EnumHandle(EnumHandle::new("plot", "style_columns")));
+        }
+        "cross" => return Some(PineValue::EnumHandle(EnumHandle::new("plot", "style_cross"))),
+        "area" => return Some(PineValue::EnumHandle(EnumHandle::new("plot", "style_area"))),
+        "circles" => {
+            return Some(PineValue::EnumHandle(EnumHandle::new("plot", "style_circles")));
+        }
+        _ => {}
     }
     let (namespace, member) = name.split_once('.')?;
     let handle = match namespace {
@@ -165,6 +213,13 @@ pub fn resolve_constant(name: &str) -> Option<PineValue> {
             "absolute" | "abovebar" | "belowbar" => EnumHandle::new(namespace, member),
             _ => return None,
         },
+        // Plot x-location selectors (`xloc.bar_time`, `xloc.bar_index`):
+        // carried opaquely — plots index by series position, so the
+        // selector is recorded, never decided on.
+        "xloc" => match member {
+            "bar_time" | "bar_index" => EnumHandle::new(namespace, member),
+            _ => return None,
+        },
         // Display number formats: carried opaquely like any other enum
         // member. `str.tostring` renders them at default precision — table
         // text only, never a decision.
@@ -187,9 +242,14 @@ pub fn resolve_constant(name: &str) -> Option<PineValue> {
             _ => return None,
         },
         // Plot styles observed in the shipped strategy (`linebr` breaks
-        // the line where the series reads `na`).
+        // the line where the series reads `na`). Legacy scripts spell
+        // them bare (`histogram`, `cross`, ...): the prefix is optional
+        // and both spellings mint one handle. Styles ride captures
+        // unevaluated, so the handle is recorded, never decided on.
         "plot" => match member {
-            "style_linebr" => EnumHandle::new(namespace, member),
+            "style_line" | "style_linebr" | "style_stepline" | "style_steplinebr"
+            | "style_histogram" | "style_columns" | "style_cross" | "style_area"
+            | "style_circles" => EnumHandle::new(namespace, member),
             _ => return None,
         },
         _ => return None,
@@ -324,11 +384,32 @@ fn single(values: &[f64], f: impl Fn(&[f64]) -> Vec<Option<f64>>) -> Option<Pine
     f(&[values[0]])[0].map(PineValue::Float)
 }
 
+/// Legacy bare math names: pre-namespace scripts call `pow(...)` without/// the `math.` qualifier. Every name here is served by [`math_call`]
+/// below and claimed by no other bare builtin, so routing an unclaimed
+/// bare call through the `math` namespace is purely additive (user
+/// definitions shadow it on both engines, checked before this list).
+/// The calibration gate freezes this list: additions fail there first.
+#[must_use]
+pub fn legacy_bare_math_names() -> &'static [&'static str] {
+    &[
+        "abs", "floor", "ceil", "sqrt", "log", "log10", "exp", "sign", "cos", "sin", "tan",
+        "asin", "acos", "atan", "pow", "max", "min", "avg", "sum", "round", "todegrees",
+        "toradians",
+    ]
+}
+
+/// Legacy bare string names: pre-namespace scripts call `tostring(...)`
+/// without the `str.` qualifier. Same shadow rule as the math list; the
+/// calibration gate freezes this list too.
+#[must_use]
+pub fn legacy_bare_str_names() -> &'static [&'static str] {
+    &["tostring"]
+}
+
 /// Every op delegates to its [`wq_comb`](crate::wq_comb) combinator over
 /// single-element legs, inheriting the funnel contract (out-of-domain reads
 /// absence) instead of re-implementing it.
-fn math_call(method: &str, args: &[CoreArg]) -> Result<Option<PineValue>, KernelError> {
-    let name = format!("math.{method}");
+fn math_call(method: &str, args: &[CoreArg]) -> Result<Option<PineValue>, KernelError> {    let name = format!("math.{method}");
     let Some(values) = nums(&name, args)? else {
         return Ok(None);
     };
@@ -387,6 +468,12 @@ fn math_call(method: &str, args: &[CoreArg]) -> Result<Option<PineValue>, Kernel
             })?;
             Ok(single(&values, |v| crate::wq_comb::comb_round(v, decimals)))
         }
+        "todegrees" if values.len() == 1 => Ok(single(&values, |v| {
+            vec![Some(v[0] * 180.0 / std::f64::consts::PI)]
+        })),
+        "toradians" if values.len() == 1 => Ok(single(&values, |v| {
+            vec![Some(v[0] * std::f64::consts::PI / 180.0)]
+        })),
         _ => Err(refused(format!("unknown call '{name}'"))),
     }
 }
@@ -650,12 +737,43 @@ fn current_value_matches(def: &InputDef, current: &PineValue) -> Result<(), Kern
     }
 }
 
+/// Infer the bare `input(...)` overload from its evaluated default. Used
+/// when the default is not a literal (its shape is only known at run time):
+/// the value kind names the input, and the shared `input_call` owns every
+/// declaration and refusal. The tree-walk calls this for computed defaults
+/// and the loop dispatches here for the same reason, so one inference table
+/// serves both.
+pub(crate) fn input_auto(
+    site: &str,
+    args: &[CoreArg],
+    inputs: &mut InputSet,
+) -> Result<Option<PineValue>, KernelError> {
+    let first = args.first().and_then(|arg| arg.value.as_ref());
+    let method = match first {
+        Some(PineValue::EnumHandle(_)) => "enum",
+        Some(PineValue::ColorHandle(_)) => "color",
+        Some(PineValue::Int(_)) => "int",
+        Some(PineValue::Float(_)) => "float",
+        Some(PineValue::Bool(_)) => "bool",
+        Some(PineValue::Str(_)) => "string",
+        _ => {
+            return Err(refused(
+                "'input' takes a default int, float, bool, string, source, enum member, or color",
+            ));
+        }
+    };
+    input_call(site, method, args, inputs)
+}
+
 fn input_call(
     site: &str,
     method: &str,
     args: &[CoreArg],
     inputs: &mut InputSet,
 ) -> Result<Option<PineValue>, KernelError> {
+    if method == "auto" {
+        return input_auto(site, args, inputs);
+    }
     let name = format!("input.{method}");
     let defval = named_or(args, "defval", 0).cloned().flatten();
     match method {
@@ -680,8 +798,19 @@ fn input_call(
             declare_or_get(site, InputDef::Bool { default }, inputs)
         }
         "string" => {
-            let Some(PineValue::Str(default)) = defval else {
-                return Err(refused(format!("{name} takes a default string")));
+            // Layout enums read as strings at the input boundary (their
+            // member text), exactly like the reference runtime's string
+            // constants; anything else keeps the refusal.
+            let default = match defval {
+                Some(PineValue::Str(default)) => default,
+                Some(PineValue::EnumHandle(handle))
+                    if matches!(handle.enum_name.as_str(), "size" | "position") =>
+                {
+                    handle.member.clone()
+                }
+                _ => {
+                    return Err(refused(format!("{name} takes a default string")));
+                }
             };
             declare_or_get(site, InputDef::Text { default }, inputs)
         }
@@ -859,6 +988,36 @@ pub(crate) fn remove_parts(
     }
 }
 
+/// Statement-position store for split-return mutators: `array.shift`,
+/// `array.pop`, and `map.remove` yield the removed element while the
+/// holder keeps the shrunken collection. Returns the stored collection.
+/// `None` means the pair is not a split shape (the caller stores the
+/// bridge return) or the receiver is absent (absence propagates: nothing
+/// persists). Kind mismatches refuse through the shared parts helpers.
+/// `key` carries the removal key for `map.remove` and is ignored
+/// otherwise.
+#[allow(clippy::option_option)]
+pub(crate) fn split_rest(
+    bridge: &str,
+    method: &str,
+    receiver: Option<&PineValue>,
+    key: Option<&PineValue>,
+) -> Result<Option<Option<PineValue>>, KernelError> {
+    match (bridge, method) {
+        ("array", "shift") => Ok(shift_parts("array.shift", receiver)?
+            .map(|(rest, _)| Some(PineValue::Array(rest)))),
+        ("array", "pop") => match arr("array.pop", receiver)? {
+            Some(items) => Ok(Some(Some(PineValue::Array(
+                items[..items.len().saturating_sub(1)].to_vec(),
+            )))),
+            None => Ok(None),
+        },
+        ("map", "remove") => Ok(remove_parts("map.remove", receiver, key)?
+        .map(|(rest, _)| Some(PineValue::IntMap(rest)))),
+        _ => Ok(None),
+    }
+}
+
 fn array_call(method: &str, args: &[CoreArg]) -> Result<Option<PineValue>, KernelError> {
     let name = format!("array.{method}");
     let arity = |want: &str| bad_arity("array", method, want, args.len());
@@ -896,6 +1055,15 @@ fn array_call(method: &str, args: &[CoreArg]) -> Result<Option<PineValue>, Kerne
                 }
             };
             Ok(Some(PineValue::Array(vec![element; size])))
+        }
+        // Typed drawing constructors (`array.new_line()` and siblings):
+        // element typing is declarative — pushes never check it — so
+        // every typed constructor serves the same empty array.
+        "new_line" | "new_linefill" | "new_box" | "new_label" => {
+            if !args.is_empty() {
+                return Err(arity("no arguments"));
+            }
+            Ok(Some(PineValue::Array(Vec::new())))
         }
         "from" => Ok(Some(PineValue::Array(
             args.iter().map(|arg| arg.value.clone()).collect(),
@@ -941,6 +1109,18 @@ fn array_call(method: &str, args: &[CoreArg]) -> Result<Option<PineValue>, Kerne
             match arr(&name, array.value.as_ref())? {
                 Some(mut items) => {
                     items.push(value.value.clone());
+                    Ok(Some(PineValue::Array(items)))
+                }
+                None => Ok(None),
+            }
+        }
+        "unshift" => {
+            let [array, value] = args else {
+                return Err(arity("array and value"));
+            };
+            match arr(&name, array.value.as_ref())? {
+                Some(mut items) => {
+                    items.insert(0, value.value.clone());
                     Ok(Some(PineValue::Array(items)))
                 }
                 None => Ok(None),
@@ -1671,18 +1851,31 @@ fn map_call(
 
 /// Standard script palette, packed `0xRRGGBB00` (opaque until `new` tints).
 fn named_color(name: &str) -> Option<u32> {
-    match name {
-        "color.white" => Some(0xFF_FF_FF_00),
-        "color.black" => Some(0x00_00_00_00),
-        "color.red" => Some(0xFF_00_00_00),
-        "color.green" => Some(0x00_80_00_00),
-        "color.blue" => Some(0x00_00_FF_00),
-        "color.orange" => Some(0xFF_A0_00_00),
-        "color.teal" => Some(0x00_80_80_00),
-        "color.aqua" => Some(0x00_FF_FF_00),
-        "color.gray" => Some(0x78_78_78_00),
-        "color.lime" => Some(0x00_FF_00_00),
-        "color.yellow" => Some(0xFF_FF_00_00),
+    // The standard Pine named-color set; every documented name resolves so
+    // the drawing-surface probe holds over any script that names one.
+    // Legacy scripts spell the set bare (`lime`, `red`, ...): the prefix
+    // is optional and both spellings mint one handle. User bindings shadow
+    // these on both engines (variables and legs resolve first), so this
+    // only serves unbound names.
+    let short = name.strip_prefix("color.").unwrap_or(name);
+    match short {
+        "white" => Some(0xFF_FF_FF_00),
+        "black" => Some(0x00_00_00_00),
+        "red" => Some(0xFF_00_00_00),
+        "green" => Some(0x00_80_00_00),
+        "blue" => Some(0x00_00_FF_00),
+        "orange" => Some(0xFF_A0_00_00),
+        "teal" => Some(0x00_80_80_00),
+        "aqua" => Some(0x00_FF_FF_00),
+        "gray" => Some(0x78_78_78_00),
+        "lime" => Some(0x00_FF_00_00),
+        "yellow" => Some(0xFF_FF_00_00),
+        "silver" => Some(0xC0_C0_C0_00),
+        "maroon" => Some(0x80_00_00_00),
+        "olive" => Some(0x80_80_00_00),
+        "navy" => Some(0x00_00_80_00),
+        "purple" => Some(0x80_00_80_00),
+        "fuchsia" => Some(0xFF_00_FF_00),
         _ => None,
     }
 }
@@ -1827,6 +2020,29 @@ fn color_call(method: &str, args: &[CoreArg]) -> Result<Option<PineValue>, Kerne
                 _ => Ok(None),
             }
         }
+        // Channel readers report the packed lanes: `t` is 0-100, the
+        // rest are 0-255. Absence propagates; non-colors refuse naming
+        // the call.
+        "t" | "r" | "g" | "b" => {
+            let [color] = args else {
+                return Err(arity("one color"));
+            };
+            match &color.value {
+                Some(PineValue::ColorHandle(handle)) => {
+                    let (r, g, b, t) = unpack(handle.raw());
+                    let lane = match method {
+                        "t" => t,
+                        "r" => r,
+                        "g" => g,
+                        _ => b,
+                    };
+                    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                    Ok(Some(PineValue::Int(lane as i64)))
+                }
+                Some(other) => Err(refused(format!("{name} takes a color, got {other}"))),
+                None => Ok(None),
+            }
+        }
         _ => Err(refused(format!("unknown call '{name}'"))),
     }
 }
@@ -1852,8 +2068,189 @@ fn timeframe_call(method: &str, args: &[CoreArg]) -> Result<Option<PineValue>, K
                 None => Ok(None),
             }
         }
+        "from_seconds" => {
+            let [seconds] = args else {
+                return Err(bad_arity(
+                    "timeframe",
+                    method,
+                    "one second count",
+                    args.len(),
+                ));
+            };
+            match whole(&name, seconds.value.as_ref(), "seconds")? {
+                // Canonical rendering, bare at one so every output
+                // round-trips through `in_seconds`: minutes bare,
+                // sub-minute seconds with `S`, day-plus units bare at one.
+                Some(count) if count > 0 => {
+                    let text = if count % 2_592_000 == 0 {
+                        let months = count / 2_592_000;
+                        if months == 1 {
+                            "M".to_owned()
+                        } else {
+                            format!("{months}M")
+                        }
+                    } else if count % 604_800 == 0 {
+                        let weeks = count / 604_800;
+                        if weeks == 1 {
+                            "W".to_owned()
+                        } else {
+                            format!("{weeks}W")
+                        }
+                    } else if count % 86_400 == 0 {
+                        let days = count / 86_400;
+                        if days == 1 {
+                            "D".to_owned()
+                        } else {
+                            format!("{days}D")
+                        }
+                    } else if count % 60 == 0 {
+                        format!("{}", count / 60)
+                    } else {
+                        format!("{count}S")
+                    };
+                    Ok(Some(PineValue::Str(text)))
+                }
+                Some(count) => Err(refused(format!(
+                    "{name} takes a positive second count, got {count}"
+                ))),
+                None => Ok(None),
+            }
+        }
         _ => Err(refused(format!("unknown call '{name}'"))),
     }
+}
+
+/// One deterministic chart-scope member the headless harness serves.
+///
+/// Chart scope is run configuration, not bar state: the tree-walk and the
+/// compiled loop resolve the same names to the same values through
+/// [`ChartScope::read`], so a chart-scope read can never diverge across a
+/// split. Members outside this set keep their existing fallback/refusal
+/// because the tree-walk has no value for them either.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum ChartScope {
+    /// `syminfo.tickerid`.
+    Symbol,
+    /// `timeframe.period`.
+    Period,
+    /// `timeframe.isintraday`.
+    IsIntraday,
+    /// `syminfo.timezone`.
+    Timezone,
+    /// `syminfo.pointvalue`.
+    PointValue,
+    /// `syminfo.mincontract`.
+    MinContract,
+}
+
+#[allow(dead_code)] // the name/ALL surface is the chart-scope coverage corpus
+impl ChartScope {
+    /// Every member, in source-name order (calibration walks this).
+    pub(crate) const ALL: [Self; 6] = [
+        Self::Symbol,
+        Self::Period,
+        Self::IsIntraday,
+        Self::Timezone,
+        Self::PointValue,
+        Self::MinContract,
+    ];
+
+    /// Parse one source-level chart-scope spelling.
+    #[must_use]
+    pub(crate) fn parse(name: &str) -> Option<Self> {
+        match name {
+            "syminfo.tickerid" => Some(Self::Symbol),
+            "timeframe.period" => Some(Self::Period),
+            "timeframe.isintraday" => Some(Self::IsIntraday),
+            "syminfo.timezone" => Some(Self::Timezone),
+            "syminfo.pointvalue" => Some(Self::PointValue),
+            "syminfo.mincontract" => Some(Self::MinContract),
+            _ => None,
+        }
+    }
+
+    /// Source-level spelling (diagnostics and coverage pinning).
+    #[must_use]
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            Self::Symbol => "syminfo.tickerid",
+            Self::Period => "timeframe.period",
+            Self::IsIntraday => "timeframe.isintraday",
+            Self::Timezone => "syminfo.timezone",
+            Self::PointValue => "syminfo.pointvalue",
+            Self::MinContract => "syminfo.mincontract",
+        }
+    }
+
+    /// Read one member from the run's chart scope.
+    #[must_use]
+    pub(crate) fn read(self, symbol: &str, period: &str) -> PineValue {
+        match self {
+            Self::Symbol => PineValue::Str(symbol.to_owned()),
+            Self::Period => PineValue::Str(period.to_owned()),
+            Self::IsIntraday => PineValue::Bool(chart_period_is_intraday(period)),
+            // Harness constants: histories are US equities, one currency
+            // unit per point, whole shares. Futures would need a contract
+            // feed this harness does not inject.
+            Self::Timezone => PineValue::Str("America/New_York".to_owned()),
+            Self::PointValue => PineValue::Float(1.0),
+            Self::MinContract => PineValue::Int(1),
+        }
+    }
+}
+
+/// Whether a chart period string names an intraday span.
+#[must_use]
+pub(crate) fn chart_period_is_intraday(period: &str) -> bool {
+    if let Some(seconds) = period.strip_suffix('S') {
+        return seconds.parse::<u64>().is_ok();
+    }
+    period.parse::<u64>().is_ok()
+}
+
+/// Bar span in seconds for a chart period string: bare numbers read
+/// minutes, a trailing `S` reads seconds. Unknown shapes read zero and let
+/// the caller refuse with the reason.
+#[must_use]
+pub(crate) fn chart_period_seconds(period: &str) -> i64 {
+    if let Some(seconds) = period.strip_suffix('S') {
+        return seconds.parse::<i64>().unwrap_or(0);
+    }
+    period.parse::<i64>().map_or(0, |m| m.saturating_mul(60))
+}
+
+/// `timeframe.change(period)`: whether the current bar opens a new bucket
+/// for `period`, bucketed by the shared core helper. Pure over the two
+/// adjacent bar times — the first bar reads `false` — so both engines
+/// serve the same value with no remembered per-site state.
+pub(crate) fn timeframe_change(
+    values: &[Option<PineValue>],
+    cursor: usize,
+    times: &[f64],
+) -> Result<Option<PineValue>, KernelError> {
+    let [value] = values else {
+        return Err(refused(format!(
+            "timeframe.change takes one period string, got {} argument(s)",
+            values.len()
+        )));
+    };
+    let Some(period) = value else {
+        return Ok(None);
+    };
+    let PineValue::Str(period) = period else {
+        return Err(refused(format!(
+            "timeframe.change takes a period string, got {period}"
+        )));
+    };
+    if cursor == 0 {
+        return Ok(Some(PineValue::Bool(false)));
+    }
+    let (Some(&now), Some(&prev)) = (times.get(cursor), times.get(cursor - 1)) else {
+        return Err(refused("timeframe.change needs bar times".to_owned()));
+    };
+    let bucket = timeframe_bucket(period, now as i64)?;
+    let prior = timeframe_bucket(period, prev as i64)?;
+    Ok(Some(PineValue::Bool(bucket != prior)))
 }
 
 /// Check a chart period string with the same parser as

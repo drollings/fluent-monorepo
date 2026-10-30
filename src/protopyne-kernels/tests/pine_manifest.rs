@@ -1,11 +1,12 @@
 //! Indicator manifest: boot-time discovery over a Pine root, gated on
-//! resolution and harness coverage.
+//! resolution.
 //!
 //! The builder walks `<root>/indicators/*.pine` (never the widget, never
-//! `execute`): a script is `Verified` only when it loads, declares the
-//! supported version, resolves every import against `<root>/libraries`, and
-//! names a stem the parity suites cover. Anything else is listed with its
-//! refusal reason — advertised, never runnable.
+//! `execute`): a script is `Verified` when it loads, declares the
+//! supported version, and resolves every import against `<root>/libraries`.
+//! Anything else is listed with its refusal reason — advertised, never
+//! runnable. `Verified` is structural readiness, not harness proof: the
+//! hermetic engine suites prove numerics over checked-in fixtures.
 
 use super::*;
 use crate::pine::manifest::ManifestParity;
@@ -74,7 +75,7 @@ fn manifest_marks_good_and_missing_imports() {
 }
 
 #[test]
-fn manifest_refuses_version_skew_and_uncovered_stems() {
+fn manifest_refuses_version_skew_and_verifies_resolvable_stems() {
     let root = temp_root(&[
         (
             "indicators/_IntegrationLite.pine",
@@ -104,15 +105,14 @@ fn manifest_refuses_version_skew_and_uncovered_stems() {
         .iter()
         .find(|entry| entry.id == "pine:_Whatever")
         .expect("listed");
-    match &uncovered.parity {
-        ManifestParity::Unverified { reason } => {
-            assert!(
-                reason.contains("harness"),
-                "the refusal names coverage: {reason}"
-            );
-        }
-        ManifestParity::Verified => panic!("an uncovered script never verifies"),
-    }
+    // No stem list gates verification: a resolvable script verifies
+    // whatever it is named. Harness proof lives in the hermetic engine
+    // suites over checked-in fixtures, never in this builder.
+    assert_eq!(
+        uncovered.parity,
+        ManifestParity::Verified,
+        "a resolvable script verifies: {uncovered:?}"
+    );
 }
 
 #[test]
@@ -158,30 +158,79 @@ fn manifest_missing_root_refuses() {
 }
 
 #[test]
-fn manifest_real_root_covers_the_proven_set() {
-    let manifest = build_indicator_manifest(&data_root()).expect("the real root builds");
-    assert!(
-        manifest.len() >= 5,
-        "every checked-in script is listed: {}",
-        manifest.len()
+fn manifest_real_root_lists_every_file_with_a_verdict() {
+    // Directory-driven over the volatile live root: one row per file on
+    // disk, rows sorted by id, every row carrying a verdict. A `Verified`
+    // row resolves (its discovery closure links); an `Unverified` row
+    // names its reason. Adding, removing, or renaming a script changes
+    // only which per-file rows appear here, never the verdict shape.
+    use crate::{closure_inputs, discover_closures, resolve_imports, ClosureOutcome};
+    let (indicators, libraries) = load_pine_sources(&data_root()).expect("the real root builds");
+    let manifest = build_indicator_manifest(&data_root()).expect("the manifest builds");
+    assert_eq!(
+        manifest.len(),
+        indicators.len(),
+        "one row per indicator file on disk"
     );
-    for stem in [
-        "_IntegrationLite",
-        "_FastMAs",
-        "_DeltaVolumeProfileProtopyne",
-        "_ApexPPAS",
-        "_ApexRSIMD",
-    ] {
+    let ids: Vec<&str> = manifest.iter().map(|entry| entry.id.as_str()).collect();
+    assert!(
+        ids.windows(2).all(|pair| pair[0] <= pair[1]),
+        "rows sort: {ids:?}"
+    );
+    for outcome in discover_closures(&indicators, &libraries) {
+        let stem = outcome.stem().to_owned();
         let entry = manifest
             .iter()
             .find(|entry| entry.id == format!("pine:{stem}"))
             .unwrap_or_else(|| panic!("{stem} is listed"));
-        assert_eq!(
-            entry.parity,
-            ManifestParity::Verified,
-            "{stem} is harness-proven: {entry:?}"
-        );
-        assert!(!entry.title.is_empty(), "{stem} carries a title");
-        assert_ne!(entry.title, stem, "{stem} titles never echo the id");
+        match (&entry.parity, &outcome) {
+            (ManifestParity::Verified, ClosureOutcome::Linked(closure)) => {
+                let inputs = closure_inputs(closure).expect("verified closure parses");
+                resolve_imports(inputs).expect("verified closure links");
+                assert!(!entry.title.is_empty(), "{stem} carries a title");
+            }
+            (ManifestParity::Verified, ClosureOutcome::Refused { reason, .. }) => {
+                panic!("{stem} verifies but discovery refuses: {reason}")
+            }
+            (ManifestParity::Unverified { reason }, _) => {
+                assert!(!reason.is_empty(), "{stem} refuses with a reason");
+            }
+        }
     }
+}
+
+#[test]
+fn load_pine_sources_returns_both_dirs_byte_identical() {
+    let root = temp_root(&[
+        (
+            "indicators/_Foo.pine",
+            "//@version=6\nindicator(\"Foo\")\nplot(close)\n",
+        ),
+        ("libraries/_libUtil.pine", LIB_UTIL),
+    ]);
+    let (indicators, libraries) = load_pine_sources(root.path()).expect("the sources load");
+    assert_eq!(indicators.len(), 1);
+    assert_eq!(indicators[0].relpath, "indicators/_Foo.pine");
+    assert!(indicators[0].text.contains("plot(close)"));
+    assert_eq!(libraries.len(), 1);
+    assert_eq!(libraries[0].relpath, "libraries/_libUtil.pine");
+}
+
+#[test]
+fn load_pine_sources_tolerates_a_missing_libraries_dir() {
+    let root = temp_root(&[(
+        "indicators/_Solo.pine",
+        "//@version=6\nindicator(\"Solo\")\nplot(close)\n",
+    )]);
+    let (indicators, libraries) = load_pine_sources(root.path()).expect("loads");
+    assert_eq!(indicators.len(), 1);
+    assert!(libraries.is_empty(), "no libraries dir reads empty");
+}
+
+#[test]
+fn load_pine_sources_refuses_a_missing_root() {
+    assert!(
+        load_pine_sources(&temp_root(&[]).path().join("absent")).is_err(),
+        "a missing root refuses"
+    );
 }

@@ -11,6 +11,13 @@
 //! Rolling extremes delegate to the shared `math` core; the names here stay
 //! so existing callers are byte-identical.
 //!
+//! Intentional fork: the strict windows below (`max/min/sum_window` and the
+//! private `strict_window` loop) gate on `!is_nan` and allow `inf`, while
+//! [`math::strict_window`](crate::math::strict_window) gates on `is_finite`
+//! and refuses `inf`. Pinned by
+//! `strict_window_refuses_inf_while_util_allows_it`; unifying the predicate
+//! is a behavior proposal, not a DRY cleanup.
+//!
 //! The `*_expr` operator maps mirror the reference's horizontal/rolling
 //! combinators with strict null semantics: any `NaN` leg poisons its position
 //! (warmup included), except the null-ignoring `add_expr`/`mul_expr`, which
@@ -73,6 +80,8 @@ pub fn crossed_between(
 #[must_use]
 pub fn crossover(a: &[f64], b: &[f64]) -> Vec<Option<bool>> {
     let len = a.len().min(b.len());
+    // `bool` slots: `warmup_none` is the `Option<f64>` spelling and does
+    // not fit here; the bare mask stays (M1.4: typed helper is f64-only).
     let mut out = vec![None; len];
     for (i, slot) in out.iter_mut().enumerate().skip(1) {
         let (a_now, a_prev, b_now, b_prev) = (a[i], a[i - 1], b[i], b[i - 1]);
@@ -91,6 +100,7 @@ pub fn crossover(a: &[f64], b: &[f64]) -> Vec<Option<bool>> {
 #[must_use]
 pub fn crossunder(a: &[f64], b: &[f64]) -> Vec<Option<bool>> {
     let len = a.len().min(b.len());
+    // `bool` slots: see `crossover` — the bare mask stays.
     let mut out = vec![None; len];
     for (i, slot) in out.iter_mut().enumerate().skip(1) {
         let (a_now, a_prev, b_now, b_prev) = (a[i], a[i - 1], b[i], b[i - 1]);
@@ -134,7 +144,7 @@ pub fn mom(source: &[f64], length: usize) -> Vec<Option<f64>> {
 }
 
 fn momentum(source: &[f64], length: usize) -> Vec<Option<f64>> {
-    let mut out = vec![None; source.len()];
+    let mut out = crate::math::warmup_none(source.len());
     for (i, slot) in out.iter_mut().enumerate().skip(length) {
         let (now, then) = (source[i], source[i - length]);
         *slot = if now.is_nan() || then.is_nan() {
@@ -146,25 +156,32 @@ fn momentum(source: &[f64], length: usize) -> Vec<Option<f64>> {
     out
 }
 
-/// Null-ignoring horizontal sum over two or more legs; `None` only where
-/// every leg is missing, matching the reference fold shape.
-#[must_use]
-pub fn add_expr(a: &[f64], b: &[f64], rest: &[&[f64]]) -> Vec<Option<f64>> {
+/// Null-ignoring horizontal fold over two or more legs; `None` only where
+/// every leg is missing, matching the reference fold shape. The one body
+/// behind [`add_expr`] and [`mul_expr`], which differ only in identity
+/// and operator.
+fn fold_legs_null_ignoring(
+    a: &[f64],
+    b: &[f64],
+    rest: &[&[f64]],
+    identity: f64,
+    op: fn(f64, f64) -> f64,
+) -> Vec<Option<f64>> {
     let len = rest
         .iter()
         .fold(a.len().min(b.len()), |m, s| m.min(s.len()));
     (0..len)
         .map(|i| {
-            let mut sum = 0.0;
+            let mut acc = identity;
             let mut seen = false;
             for v in [a[i], b[i]].into_iter().chain(rest.iter().map(|s| s[i])) {
                 if !v.is_nan() {
-                    sum += v;
+                    acc = op(acc, v);
                     seen = true;
                 }
             }
             if seen {
-                Some(sum)
+                Some(acc)
             } else {
                 None
             }
@@ -172,30 +189,18 @@ pub fn add_expr(a: &[f64], b: &[f64], rest: &[&[f64]]) -> Vec<Option<f64>> {
         .collect()
 }
 
+/// Null-ignoring horizontal sum over two or more legs; `None` only where
+/// every leg is missing, matching the reference fold shape.
+#[must_use]
+pub fn add_expr(a: &[f64], b: &[f64], rest: &[&[f64]]) -> Vec<Option<f64>> {
+    fold_legs_null_ignoring(a, b, rest, 0.0, |x, y| x + y)
+}
+
 /// Null-ignoring horizontal product over two or more legs; `None` only where
 /// every leg is missing.
 #[must_use]
 pub fn mul_expr(a: &[f64], b: &[f64], rest: &[&[f64]]) -> Vec<Option<f64>> {
-    let len = rest
-        .iter()
-        .fold(a.len().min(b.len()), |m, s| m.min(s.len()));
-    (0..len)
-        .map(|i| {
-            let mut product = 1.0;
-            let mut seen = false;
-            for v in [a[i], b[i]].into_iter().chain(rest.iter().map(|s| s[i])) {
-                if !v.is_nan() {
-                    product *= v;
-                    seen = true;
-                }
-            }
-            if seen {
-                Some(product)
-            } else {
-                None
-            }
-        })
-        .collect()
+    fold_legs_null_ignoring(a, b, rest, 1.0, |x, y| x * y)
 }
 
 /// Elementwise difference; any missing leg poisons its position.
@@ -249,7 +254,7 @@ pub fn sum_window(source: &[f64], length: usize) -> Vec<Option<f64>> {
 }
 
 fn strict_window(source: &[f64], length: usize, fold: impl Fn(&[f64]) -> f64) -> Vec<Option<f64>> {
-    let mut out = vec![None; source.len()];
+    let mut out = crate::math::warmup_none(source.len());
     if length >= 1 && length <= source.len() {
         for (i, slot) in out.iter_mut().enumerate().skip(length - 1) {
             let window = &source[i + 1 - length..=i];
@@ -277,27 +282,16 @@ pub fn argmin_window(source: &[f64], length: usize) -> Vec<Option<usize>> {
 }
 
 fn strict_arg(source: &[f64], length: usize, find_max: bool) -> Vec<Option<usize>> {
+    // `usize` slots: `warmup_none` is the `Option<f64>` spelling and does
+    // not fit here; the bare mask stays (M1.4: typed helper is f64-only).
     let mut out = vec![None; source.len()];
     if length >= 1 && length <= source.len() {
         for (i, slot) in out.iter_mut().enumerate().skip(length - 1) {
             let window = &source[i + 1 - length..=i];
-            if window.iter().any(|v| v.is_nan()) {
-                continue;
-            }
-            let mut best = if find_max {
-                f64::NEG_INFINITY
-            } else {
-                f64::INFINITY
-            };
-            let mut index = 0;
-            for (j, &v) in window.iter().enumerate() {
-                let takes = if find_max { v >= best } else { v <= best };
-                if takes {
-                    best = v;
-                    index = j;
-                }
-            }
-            *slot = Some(length - 1 - index);
+            // Most-recent tie wins, matching the reference reversed argmax;
+            // holes void the window (see `extreme_position`).
+            *slot = crate::math::extreme_position(window, find_max, crate::math::TieBreak::Last)
+                .map(|index| length - 1 - index);
         }
     }
     out

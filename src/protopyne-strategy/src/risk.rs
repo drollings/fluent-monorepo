@@ -12,7 +12,6 @@ use rust_decimal::Decimal;
 
 use chrono::NaiveDate;
 use protopyne_types::{Greeks, Money, OptionContract};
-use rust_decimal::prelude::ToPrimitive as _;
 
 use crate::proposal::Proposal;
 
@@ -176,15 +175,13 @@ impl RiskLimits {
     /// exact-string round-trip as [`RiskLimits::loss_cap`].
     #[must_use]
     pub fn open_risk_cap(&self) -> Option<Decimal> {
-        self.max_open_risk
-            .and_then(|cap| cap.to_string().parse().ok())
+        self.max_open_risk.and_then(money_bound_from_display)
     }
 
     /// Buying-power floor as [`Decimal`], or `None` when unconfigured.
     #[must_use]
     pub fn buying_power_floor(&self) -> Option<Decimal> {
-        self.min_buying_power
-            .and_then(|cap| cap.to_string().parse().ok())
+        self.min_buying_power.and_then(money_bound_from_display)
     }
 
     /// Loss cap as [`Decimal`], or `None` when the configured float has no
@@ -194,9 +191,11 @@ impl RiskLimits {
     /// configured cap means exactly what it says (`19.99` is `19.99`, not
     /// the binary retain artifact). The `f64` field shapes (serde +
     /// `FieldAccess`) are untouched: only the comparison reads exactly.
+    /// See [`money_bound_from_display`]: this is intentionally NOT
+    /// `Decimal::from_f64_retain` (the sizers' spelling, M3.2).
     #[must_use]
     pub fn loss_cap(&self) -> Option<Decimal> {
-        self.max_loss_per_trade.to_string().parse().ok()
+        money_bound_from_display(self.max_loss_per_trade)
     }
 
     /// Notional cap as [`Decimal`], or `None` when the configured float has
@@ -204,8 +203,19 @@ impl RiskLimits {
     /// rule as [`RiskLimits::loss_cap`].
     #[must_use]
     pub fn notional_cap(&self) -> Option<Decimal> {
-        self.max_notional.to_string().parse().ok()
+        money_bound_from_display(self.max_notional)
     }
+}
+
+/// One configured `f64` cap as an exact [`Decimal`]: the decimal string
+/// round-trip (`19.99` stays `19.99`), `None` when the float has no decimal
+/// reading (fail-closed). This is intentionally NOT
+/// `Decimal::from_f64_retain` (the sizers' `fraction_from_f64`-style
+/// spelling): a risk bound must read exactly what the operator typed,
+/// while a sizing fraction retains the binary value. The two conversions
+/// never unify (M3.2).
+fn money_bound_from_display(cap: f64) -> Option<Decimal> {
+    cap.to_string().parse().ok()
 }
 
 impl_component!(RiskLimits);
@@ -377,8 +387,10 @@ impl ComputedGreeks {
     /// Strike per share as a positive finite `f64`, or `None` when the
     /// contract names no priceable strike.
     fn contract_strike(contract: &OptionContract) -> Option<f64> {
-        let strike = contract.strike.as_decimal().to_f64()?;
-        (strike > 0.0 && strike.is_finite()).then_some(strike)
+        contract
+            .strike
+            .as_finite_f64()
+            .filter(|strike| *strike > 0.0)
     }
 }
 

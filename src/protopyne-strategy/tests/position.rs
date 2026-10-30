@@ -326,3 +326,13 @@ fn the_breakeven_ratchet_never_retreats() {
         "a short stop never moves back up"
     );
 }
+
+#[test]
+fn pair_at_guards_the_window_edge_and_flattens_holes() {
+    use super::pair_at;
+    assert_eq!(pair_at(&[Some(1.0), Some(2.0)], 1), (Some(1.0), Some(2.0)));
+    assert_eq!(pair_at(&[Some(1.0), Some(2.0)], 0), (None, Some(1.0)));
+    assert_eq!(pair_at(&[None, Some(2.0)], 1), (None, Some(2.0)));
+    assert_eq!(pair_at(&[], 0), (None, None));
+    assert_eq!(pair_at(&[Some(1.0)], 5), (None, None));
+}

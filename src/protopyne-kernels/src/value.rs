@@ -176,6 +176,20 @@ impl DrawingKind {
             Self::Line => "line",
         }
     }
+
+    /// Parse a source-level drawing namespace. Both engines classify the
+    /// four recorded families through this one table, so a new namespace
+    /// cannot reach one engine and miss the other.
+    #[must_use]
+    pub fn parse(name: &str) -> Option<Self> {
+        match name {
+            "label" => Some(Self::Label),
+            "table" => Some(Self::Table),
+            "box" => Some(Self::Box),
+            "line" => Some(Self::Line),
+            _ => None,
+        }
+    }
 }
 
 impl fmt::Display for DrawingKind {
@@ -287,6 +301,22 @@ impl PineValue {
             | Self::Drawing(_)
             | Self::Matrix(_) => None,
         }
+    }
+
+    /// Whether a final parameter value flows back to its caller home.
+    /// Collections ride by reference: a callee returning (or reassigning)
+    /// an array, map, or matrix persists through the parameter into the
+    /// caller's variable. Everything else stays by value — rebinding
+    /// inside never travels, and objects/drawings keep their own
+    /// lifecycle rules. All three call paths (tree-only calls, loop
+    /// user calls, and the cross-engine harvest) decide on this one
+    /// predicate.
+    #[must_use]
+    pub fn is_collection_writeback(&self) -> bool {
+        matches!(
+            self,
+            Self::Array(_) | Self::IntMap(_) | Self::Map(_) | Self::Matrix(_)
+        )
     }
 }
 

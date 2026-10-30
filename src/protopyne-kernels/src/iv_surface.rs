@@ -153,8 +153,8 @@ pub fn fit_surface(
     });
     let mut points = Vec::with_capacity(by_strike.len());
     for (strike, quote) in by_strike {
-        let bid = quote.bid.as_decimal().to_f64().unwrap_or(f64::NAN);
-        let ask = quote.ask.as_decimal().to_f64().unwrap_or(f64::NAN);
+        let bid = protopyne_types::bar_leg_as_f64(quote.bid.as_decimal());
+        let ask = protopyne_types::bar_leg_as_f64(quote.ask.as_decimal());
         if bid.is_nan() || ask.is_nan() {
             return Err(KernelError::InvalidInput(format!(
                 "quote on {} has a non-finite market: bid {bid} ask {ask}",

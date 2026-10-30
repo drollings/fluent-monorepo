@@ -13,9 +13,11 @@ fn kinds_of(source: &str) -> Vec<TokenKind> {
     lex(source).into_iter().map(|token| token.kind).collect()
 }
 
+/// Fixture path (server `tests/data/pine_closure`), never the volatile live root:
+/// the golden snapshots pin fixture bytes, which are checked in.
 fn data_path(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../data/protopyne-rs")
+        .join("../protopyne-server/tests/data/pine_closure")
         .join(name)
 }
 

@@ -767,6 +767,28 @@ impl PercentNetLiq {
     }
 }
 
+/// Shared sizing arithmetic for fraction-of-base policies
+/// (`PercentNetLiq`, `BuyingPower`): `floor(fraction * observed /
+/// per_unit)`, floored at zero. Absence is handled by the caller (no
+/// `observed` → `Qty::zero` before this runs); a non-retainable fraction
+/// (NaN, infinite) or a non-positive fraction/per-unit sizes zero —
+/// fail-closed, never a nonsense quantity (M5.1).
+fn size_from_fraction(fraction: f64, observed: Decimal, per_unit: Decimal) -> Qty {
+    // A literal-built policy past the validating constructor still
+    // fails closed: NaN or out-of-band fractions size zero.
+    let Some(fraction) = Decimal::from_f64_retain(fraction) else {
+        return Qty::zero();
+    };
+    if fraction <= Decimal::ZERO || per_unit <= Decimal::ZERO {
+        return Qty::zero();
+    }
+    Qty::new(
+        ((fraction * observed) / per_unit)
+            .floor()
+            .max(Decimal::ZERO),
+    )
+}
+
 impl Sizing for PercentNetLiq {
     fn name(&self) -> &str {
         "percent-net-liq"
@@ -783,18 +805,10 @@ impl Sizing for PercentNetLiq {
         let Some(net_liq) = facts.net_liq else {
             return Qty::zero();
         };
-        // A literal-built policy past the validating constructor still
-        // fails closed: NaN or out-of-band fractions size zero.
-        let Some(fraction) = Decimal::from_f64_retain(self.fraction) else {
-            return Qty::zero();
-        };
-        if fraction <= Decimal::ZERO || self.per_unit_max_loss.as_decimal() <= Decimal::ZERO {
-            return Qty::zero();
-        }
-        Qty::new(
-            ((fraction * net_liq.as_decimal()) / self.per_unit_max_loss.as_decimal())
-                .floor()
-                .max(Decimal::ZERO),
+        size_from_fraction(
+            self.fraction,
+            net_liq.as_decimal(),
+            self.per_unit_max_loss.as_decimal(),
         )
     }
 }
@@ -1086,16 +1100,10 @@ impl Sizing for BuyingPower {
         let Some(power) = facts.buying_power else {
             return Qty::zero();
         };
-        let Some(fraction) = Decimal::from_f64_retain(self.fraction) else {
-            return Qty::zero();
-        };
-        if fraction <= Decimal::ZERO || self.per_unit_price.as_decimal() <= Decimal::ZERO {
-            return Qty::zero();
-        }
-        Qty::new(
-            ((fraction * power.as_decimal()) / self.per_unit_price.as_decimal())
-                .floor()
-                .max(Decimal::ZERO),
+        size_from_fraction(
+            self.fraction,
+            power.as_decimal(),
+            self.per_unit_price.as_decimal(),
         )
     }
 }
@@ -1170,6 +1178,36 @@ fn priced(mark: &MarkContext) -> Option<Money> {
     mark.mark
 }
 
+/// Shared level review for threshold rules (`StopLoss`, `ProfitTarget`):
+/// an absent mark holds; otherwise fires one `kind` action when
+/// `breached(pnl, threshold)` holds. Boundaries are strict (exactly on the
+/// threshold holds) — the caller's closure owns the direction, this owns
+/// the shape. `noun` is the reason word (`"stop"`/`"target"`), kept
+/// separate from `kind` (`"stop"`/`"profit-target"`) because the reason
+/// vocabulary differs from the attribution vocabulary (M5.2: both pinned
+/// verbatim — user-visible, never normalized).
+fn review_level(
+    position: &PositionView<'_>,
+    mark: &MarkContext,
+    kind: &'static str,
+    noun: &'static str,
+    limit: Money,
+    breached: impl FnOnce(Decimal, Decimal) -> bool,
+) -> Vec<LossAction> {
+    let Some(price) = priced(mark) else {
+        return Vec::new();
+    };
+    let pnl = unrealised_at(position, price);
+    if breached(pnl.as_decimal(), limit.as_decimal()) {
+        vec![LossAction {
+            kind: kind.to_owned(),
+            reason: format!("unrealised {pnl} past {noun} {limit}"),
+        }]
+    } else {
+        Vec::new()
+    }
+}
+
 /// Protective stop: fires `"stop"` once the book's unrealised loss runs
 /// strictly past the threshold. Exactly on the threshold holds — the
 /// boundary is not a trigger.
@@ -1198,21 +1236,14 @@ impl LossMgmt for StopLoss {
     }
 
     fn review(&self, position: &PositionView<'_>, mark: &MarkContext) -> Vec<LossAction> {
-        let Some(price) = priced(mark) else {
-            return Vec::new();
-        };
-        if unrealised_at(position, price).as_decimal() < -self.max_loss.as_decimal() {
-            vec![LossAction {
-                kind: "stop".to_owned(),
-                reason: format!(
-                    "unrealised {pnl} past stop {limit}",
-                    pnl = unrealised_at(position, price),
-                    limit = self.max_loss,
-                ),
-            }]
-        } else {
-            Vec::new()
-        }
+        review_level(
+            position,
+            mark,
+            "stop",
+            "stop",
+            self.max_loss,
+            |pnl, limit| pnl < -limit,
+        )
     }
 }
 
@@ -1242,21 +1273,14 @@ impl LossMgmt for ProfitTarget {
     }
 
     fn review(&self, position: &PositionView<'_>, mark: &MarkContext) -> Vec<LossAction> {
-        let Some(price) = priced(mark) else {
-            return Vec::new();
-        };
-        if unrealised_at(position, price).as_decimal() > self.target.as_decimal() {
-            vec![LossAction {
-                kind: "profit-target".to_owned(),
-                reason: format!(
-                    "unrealised {pnl} past target {limit}",
-                    pnl = unrealised_at(position, price),
-                    limit = self.target,
-                ),
-            }]
-        } else {
-            Vec::new()
-        }
+        review_level(
+            position,
+            mark,
+            "profit-target",
+            "target",
+            self.target,
+            |pnl, limit| pnl > limit,
+        )
     }
 }
 

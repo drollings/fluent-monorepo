@@ -71,7 +71,7 @@ pub struct RunnerConfig {
     #[serde(default = "default_structure", skip_serializing_if = "is_vertical")]
     pub structure: StructureKind,
     /// Credit intent under the chain-derived arm.
-    #[serde(default, skip_serializing_if = "is_false")]
+    #[serde(default, skip_serializing_if = "crate::backtest::is_false")]
     pub credit: bool,
 }
 
@@ -83,11 +83,6 @@ fn default_structure() -> StructureKind {
 #[allow(clippy::trivially_copy_pass_by_ref)]
 fn is_vertical(structure: &StructureKind) -> bool {
     *structure == StructureKind::Vertical
-}
-
-#[allow(clippy::trivially_copy_pass_by_ref)]
-fn is_false(value: &bool) -> bool {
-    !*value
 }
 
 impl fluent_wvr::validate::Validate for RunnerConfig {

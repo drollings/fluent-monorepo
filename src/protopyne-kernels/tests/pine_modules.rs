@@ -1,20 +1,21 @@
-//! Import graph tests: the real `_FastMAs -> {libMAs, libUtil}` triple, the
-//! real seven-library indicator closure, plus synthetic refusal cases.
+//! Import graph tests: the fixture `_FastMAs -> {libMAs, libUtil}` triple,
+//! the fixture seven-library indicator closure, plus synthetic refusal cases.
+//!
+//! All file reads run over the checked-in fixtures
+//! (server `tests/data/pine_closure`), never the volatile live root.
 //!
 //! Resolution is pure over supplied values (no I/O inside): each test loads
 //! or synthesizes its modules, then asserts order, alias binding, export
 //! visibility, and refusal reasons.
 
 use super::*;
-use crate::{
-    closure_data_root, indicator_library_id, load_closure_sources, load_pine_source,
-    parse_pine_source, parse_program,
-};
+use crate::pine::test_fixture as fixture;
+use crate::{load_pine_source, parse_pine_source, parse_program};
 use std::path::PathBuf;
 
 fn data_path(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../data/protopyne-rs")
+        .join("../protopyne-server/tests/data/pine_closure")
         .join(name)
 }
 
@@ -26,7 +27,7 @@ fn library_id(publisher: &str, name: &str, version: u64) -> LibraryId {
     }
 }
 
-/// Load one real file as a graph input: identity from the header scan,
+/// Load one fixture file as a graph input: identity from the header scan,
 /// structure from the parser, both over the same byte-identical text.
 fn real_module(id: LibraryId, file: &str) -> ModuleInput {
     let path = data_path(file);
@@ -69,7 +70,7 @@ fn module_key(publisher: &str, name: &str) -> ModuleId {
 }
 
 #[test]
-fn real_triple_resolves_dependencies_first() {
+fn fixture_triple_resolves_dependencies_first() {
     let graph = resolve_imports(real_triple()).expect("triple resolves");
     let order = graph.order();
     assert_eq!(order.len(), 3, "all three modules ordered");
@@ -91,7 +92,7 @@ fn real_triple_resolves_dependencies_first() {
 }
 
 #[test]
-fn real_triple_aliases_bind_to_exports() {
+fn fixture_triple_aliases_bind_to_exports() {
     let graph = resolve_imports(real_triple()).expect("triple resolves");
     let root = module_key("local", "FastMAs");
     let aliases = graph.alias_table(&root).expect("root aliases known");
@@ -219,26 +220,20 @@ fn non_exported_helper_is_invisible_to_importers() {
     );
 }
 
-/// The real indicator closure: seven libraries plus the indicator root.
-/// Identities come from the closure fixture; parsing runs over the same
-/// byte-identical text the loader returns.
-fn real_closure() -> Vec<ModuleInput> {
-    let root = closure_data_root(env!("CARGO_MANIFEST_DIR"));
-    load_closure_sources(&root)
-        .expect("closure loads")
+/// The fixture indicator closure: seven libraries plus the indicator root.
+/// Identities come from discovery over the checked-in fixtures; parsing runs
+/// over the same byte-identical text the loader returns.
+fn fixture_closure() -> Vec<ModuleInput> {
+    let closure = fixture::fixture_outcomes()
         .into_iter()
-        .map(|(key, source)| {
-            let program = parse_program(&source.text)
-                .unwrap_or_else(|err| panic!("real file {key} parses: {err}"));
-            let id = if key == "local/IntegrationLite" {
-                indicator_library_id()
-            } else {
-                let (publisher, name) = key.split_once('/').expect("key shape");
-                library_id(publisher, name, 1)
-            };
-            ModuleInput::new(id, source, program)
+        .find_map(|outcome| match outcome {
+            crate::ClosureOutcome::Linked(closure) if closure.stem == "_IntegrationLite" => {
+                Some(closure)
+            }
+            _ => None,
         })
-        .collect()
+        .expect("fixture IntegrationLite closure discovered");
+    crate::closure_inputs(&closure).unwrap_or_else(|err| panic!("fixture closure parses: {err}"))
 }
 
 fn closure_position(order: &[ModuleId], publisher: &str, name: &str) -> usize {
@@ -249,8 +244,8 @@ fn closure_position(order: &[ModuleId], publisher: &str, name: &str) -> usize {
 }
 
 #[test]
-fn real_closure_resolves_dependencies_first() {
-    let graph = resolve_imports(real_closure()).expect("closure resolves");
+fn fixture_closure_resolves_dependencies_first() {
+    let graph = resolve_imports(fixture_closure()).expect("closure resolves");
     let order = graph.order();
     assert_eq!(order.len(), 8, "seven libraries plus the indicator root");
     let before = |a: (&str, &str), b: (&str, &str)| {
@@ -262,7 +257,7 @@ fn real_closure_resolves_dependencies_first() {
         );
     };
     let util = ("showmethegrail", "libUtil");
-    let root = ("local", "IntegrationLite");
+    let root = ("local", "_IntegrationLite");
     // Libraries precede the indicator; libUtil precedes its importers;
     // libBars precedes libApex through the ring-buffer dependency.
     for library in [
@@ -291,9 +286,9 @@ fn real_closure_resolves_dependencies_first() {
 }
 
 #[test]
-fn real_closure_alias_tables_are_pinned() {
-    let graph = resolve_imports(real_closure()).expect("closure resolves");
-    let root = module_key("local", "IntegrationLite");
+fn fixture_closure_alias_tables_are_pinned() {
+    let graph = resolve_imports(fixture_closure()).expect("closure resolves");
+    let root = module_key("local", "_IntegrationLite");
     let aliases = graph.alias_table(&root).expect("root aliases known");
     for (alias, name) in [
         ("UTIL", "libUtil"),
@@ -338,20 +333,20 @@ fn real_closure_alias_tables_are_pinned() {
 }
 
 #[test]
-fn real_closure_version_skew_warns_and_preserves_order() {
-    let clean = resolve_imports(real_closure()).expect("clean closure resolves");
+fn fixture_closure_version_skew_warns_and_preserves_order() {
+    let clean = resolve_imports(fixture_closure()).expect("clean closure resolves");
     let clean_order: Vec<String> = clean.order().iter().map(ToString::to_string).collect();
-    // Copy fixture: the real libUtil text under a skewed declared version.
-    let root = closure_data_root(env!("CARGO_MANIFEST_DIR"));
-    let skewed_text = std::fs::read_to_string(root.join("libraries/_libUtil.pine"))
-        .expect("libUtil reads")
-        .replacen("//@version=6", "//@version=5", 1);
+    // Copy fixture: the fixture libUtil text under a skewed declared version.
+    let skewed_text =
+        std::fs::read_to_string(fixture::fixture_root().join("libraries/_libUtil.pine"))
+            .expect("libUtil reads")
+            .replacen("//@version=6", "//@version=5", 1);
     assert_ne!(
         skewed_text.matches("//@version=5").count(),
         0,
         "skew applied to the copy"
     );
-    let mut skewed = real_closure();
+    let mut skewed = fixture_closure();
     let slot = skewed
         .iter()
         .position(|input| input.module_id() == module_key("showmethegrail", "libUtil"))
@@ -371,8 +366,8 @@ fn real_closure_version_skew_warns_and_preserves_order() {
 }
 
 #[test]
-fn real_closure_private_helper_is_invisible() {
-    let graph = resolve_imports(real_closure()).expect("closure resolves");
+fn fixture_closure_private_helper_is_invisible() {
+    let graph = resolve_imports(fixture_closure()).expect("closure resolves");
     let apex = module_key("showmethegrail", "libApex");
     graph
         .resolve_reference(&apex, "BARS", "get")

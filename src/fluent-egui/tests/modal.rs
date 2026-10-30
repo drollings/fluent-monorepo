@@ -280,3 +280,52 @@ fn catalog_search_precision_and_recall_controls() {
         "favorites-only narrows cleanly: {precision}/{recall}"
     );
 }
+
+#[test]
+fn catalog_modal_tag_filter_shows_only_its_namespace() {
+    let mut modal = catalog();
+    modal
+        .register("pine:rsi", "🌲 RSI", Class::Stocks)
+        .expect("registers");
+    modal.set_tag_filter("Pine", "pine:");
+    assert!(!modal.tag_only(), "installing starts unchecked");
+    assert_eq!(ids(&modal).len(), 5, "unchecked shows everything");
+    modal.tag_filter.as_mut().expect("installed").only = true;
+    assert!(modal.tag_only(), "checking narrows the view");
+    assert_eq!(ids(&modal), vec!["pine:rsi"], "only the namespace shows");
+    // The tag composes with the other filters instead of replacing them.
+    modal.query = "rsi".to_owned();
+    assert_eq!(ids(&modal), vec!["pine:rsi"]);
+    modal.query = "zzz-no-match".to_owned();
+    assert!(ids(&modal).is_empty(), "query still narrows the tag view");
+    modal.query.clear();
+    modal.set_tag_filter("Pine", "other:");
+    assert_eq!(ids(&modal).len(), 5, "replacing starts unchecked");
+    modal.tag_filter.as_mut().expect("installed").only = true;
+    assert!(ids(&modal).is_empty(), "the new namespace matches nothing");
+}
+
+#[test]
+fn tag_checkbox_paints_headlessly_when_installed() {
+    use super::CatalogAction;
+
+    let mut modal = CatalogModal::new("Symbols");
+    modal
+        .register("pine:rsi", "RSI", Class::Stocks)
+        .expect("registers");
+    modal
+        .register("spy", "SPDR S&P 500", Class::Stocks)
+        .expect("registers");
+    modal.set_tag_filter("Pine", "pine:");
+    let theme = ThemeConfig::default();
+    egui::__run_test_ui(|ui| {
+        let actions: Vec<CatalogAction> =
+            paint_catalog_modal(ui, &mut modal, &[(Class::Stocks, "Stocks")], &theme)
+                .expect("the modal paints with a tag filter");
+        assert!(
+            actions.is_empty(),
+            "an untouched frame raises nothing: {actions:?}"
+        );
+    });
+    assert!(!modal.tag_only(), "painting does not check the box");
+}

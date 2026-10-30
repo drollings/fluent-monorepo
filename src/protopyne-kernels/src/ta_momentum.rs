@@ -710,6 +710,7 @@ impl Indicator for RsvIndicator {
     }
 
     fn warmup(&self, _params: &ParamSet) -> Result<usize, KernelError> {
+        // BYPASS(windowed::warmup): single-bar-relative fast oscillator — defined once one bar exists.
         Ok(1)
     }
 
@@ -808,6 +809,7 @@ impl Indicator for WillrIndicator {
     }
 
     fn warmup(&self, _params: &ParamSet) -> Result<usize, KernelError> {
+        // BYPASS(windowed::warmup): single-bar-relative fast oscillator — defined once one bar exists.
         Ok(1)
     }
 
@@ -898,7 +900,7 @@ impl Indicator for StochfIndicator {
     }
 
     fn warmup(&self, _params: &ParamSet) -> Result<usize, KernelError> {
-        // The fastk leg carries the reference's defined zero from bar zero.
+        // BYPASS(windowed::warmup): the fastk leg carries the reference's defined zero from bar zero.
         Ok(1)
     }
 

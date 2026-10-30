@@ -46,8 +46,8 @@ use crate::chart::{
     DEFAULT_SYMBOL,
 };
 use crate::indicators::{
-    build_indicator_catalog, instantiate_indicator, ChartIndicator, IndicatorCategory,
-    IndicatorEvaluation, IndicatorSeries,
+    build_indicator_catalog_with_manifest, instantiate_indicator, ChartIndicator,
+    IndicatorCategory, IndicatorEvaluation, IndicatorSeries,
 };
 use crate::integration_lite::{
     candle_momentum_keys, candle_momentum_series, integration_lite_sub_pane, momentum_key_for,
@@ -60,17 +60,13 @@ use crate::prefs::{BookmarkEntry, Favorites, SlotPrefs, TerminalPrefs, TickerLay
 use crate::session::{fmt_boundary_time, time_grid_lines, time_major_unit, SessionBreakCache};
 use crate::topology::SeriesCatalog;
 use crate::views::{
-    load_bundle, paint_broker_panel, BrokerModel, InboxAction, InboxModel, TicketAction,
-    TicketModel, ViewsBundle,
+    load_bundle, paint_broker_panel, BrokerModel, TicketAction, TicketModel, ViewsBundle,
 };
 use crate::widgets::{
     bar_text, paint_calendar, paint_mtf_table, paint_range_dialog, paint_top_bar, CalendarState,
-    MtfRow, PlayPressState, RangeChoice, ReplaySpeed, TopBarAction, TopBarMenuState,
-    PLAY_LONG_PRESS_SECS,
+    MtfRow, RangeChoice, ReplaySpeed, TopBarAction, TopBarMenuState, CHART_LONG_PRESS_SECS,
 };
-use crate::{
-    paint_backtest_panel, paint_grant_form, BacktestFormState, BacktestModel, GrantFormState,
-};
+use crate::{paint_backtest_panel, BacktestFormState, BacktestModel};
 
 /// Stable id of the IntegrationLite slot whose richer sub-pane geometry
 /// (delta histogram) the canvas paints alongside the plugin's series.
@@ -1055,6 +1051,15 @@ pub struct ChartWorkspace {
     /// Starred indicator ids; the indicator-catalog twin of
     /// [`favorite_symbols`](Self::favorite_symbols).
     favorite_indicators: BTreeSet<String>,
+    /// Pine indicator manifest rows for the catalog picker, empty until boot
+    /// loads `<data-root>/indicators`. Without rows the catalog offers no
+    /// Pine scripts and no Pine checkbox.
+    pine_manifest: Vec<protopyne_kernels::IndicatorManifestEntry>,
+    /// Pine sources behind the manifest rows, for linking at slot time:
+    /// indicator files and library files as loaded.
+    pine_indicators: Vec<protopyne_kernels::ManifestFile>,
+    /// Pine library files backing `import` resolution at link time.
+    pine_libraries: Vec<protopyne_kernels::ManifestFile>,
     /// Starred bookmark ids (`{symbol}|{timeframe}|{time}`); the bookmark
     /// picker's Favorites filter keys on this set, like the other catalogs.
     favorite_bookmarks: BTreeSet<String>,
@@ -1129,12 +1134,6 @@ pub struct ChartWorkspace {
     broker_model: Option<BrokerModel>,
     /// Journal lines pre-rendered in provenance order at refresh time.
     dock_journal_lines: Vec<String>,
-    /// Arming form over the patch descriptor: drafts, preview, submit all
-    /// through the gateway. Owned here so the dock's arm-grant subpane and
-    /// the terminal example share one truth; the schema is set once via
-    /// [`set_grant_schema`](Self::set_grant_schema) when a descriptor is
-    /// available, else the form stays empty and read-only tier texts show.
-    grant_form: GrantFormState,
     /// Served backtest schema, kept so a re-render never re-asks: the form
     /// owns the working document, this owns the descriptor it was built from.
     backtest_schema: Option<serde_json::Value>,
@@ -1176,9 +1175,6 @@ pub struct ChartWorkspace {
     /// and stop, so resuming restarts the cadence instead of dumping a
     /// banked backlog.
     replay_next_due: Option<f64>,
-    /// Long-press state of the menu-bar play button (tap toggles, hold opens
-    /// the speed popup).
-    play_press: PlayPressState,
     /// Applied replay window as epoch seconds: `(start, end)` with
     /// `start <= end`, captured from the chart's own visible window at the
     /// moment play is pressed. Times are fixed — panning the display moves
@@ -1292,7 +1288,7 @@ impl EvalConfig<'_> {
 
 impl ChartWorkspace {
     /// Boot the terminal: the default ticker (`SPY`), the five-minute default
-    /// timeframe, a one-month default window, and the three scripted
+    /// timeframe, a two-month default window, and the three scripted
     /// indicators hot-slotted. No history yet — pull it with
     /// [`with_gateway`](Self::with_gateway) or seed it with
     /// [`with_rows`](Self::with_rows).
@@ -1375,18 +1371,19 @@ impl ChartWorkspace {
             dock_bundle_error: None,
             broker_model: None,
             dock_journal_lines: Vec::new(),
-            grant_form: GrantFormState::default(),
             backtest_schema: None,
             backtest_form: BacktestFormState::default(),
             backtest: None,
             backtest_error: None,
+            pine_manifest: Vec::new(),
+            pine_indicators: Vec::new(),
+            pine_libraries: Vec::new(),
             annotations: AnnotationSet::new(),
             replay_error: None,
             live_replay: None,
             replay_speed: ReplaySpeed::default(),
             replay_clock: 0.0,
             replay_next_due: None,
-            play_press: PlayPressState::default(),
             replay_range: None,
             ticket_underlying: "SPY".to_owned(),
             ticket_side: TicketSide::Buy,
@@ -2739,14 +2736,6 @@ impl ChartWorkspace {
         let _ = self.place_bar_at_right(head, width);
     }
 
-    /// Set the grant schema once when a descriptor is available (the terminal
-    /// composition root owns the descriptor; this crate never names the
-    /// trading path). Until set, the arm-grant subpane shows read-only tier
-    /// texts.
-    pub fn set_grant_schema(&mut self, schema: &serde_json::Value) {
-        self.grant_form = GrantFormState::from_schema(schema);
-    }
-
     /// Set the backtest schema once when the served descriptor is available
     /// (the terminal composition root owns the descriptor; this crate never
     /// names the trading path). Until set, the backtest subpane offers the
@@ -2765,6 +2754,19 @@ impl ChartWorkspace {
         self.backtest_form.set_initial_equity_text(initial_equity);
         self.backtest_form.set_start_text(start);
         self.backtest_form.set_end_text(end);
+    }
+
+    /// Install Pine indicator sources discovered at boot: manifest rows for
+    /// the catalog picker plus the file texts linking needs at slot time.
+    /// Empty inputs clear both, leaving the catalog exactly as before.
+    pub fn set_pine_sources(
+        &mut self,
+        indicators: Vec<protopyne_kernels::ManifestFile>,
+        libraries: Vec<protopyne_kernels::ManifestFile>,
+    ) {
+        self.pine_manifest = protopyne_kernels::build_manifest(&indicators, &libraries);
+        self.pine_indicators = indicators;
+        self.pine_libraries = libraries;
     }
 
     /// One multi-timeframe row per loaded history: the window direction
@@ -2935,7 +2937,7 @@ impl ChartWorkspace {
     }
 
     /// Parse `YYYY-MM-DD` and set it as the custom window start (Beginning).
-    /// Clears to the default one-month window on empty input. Refuses
+    /// Clears to the default two-month window on empty input. Refuses
     /// unparseable dates and dates past the last bar; a date before the first
     /// bar clamps to the first bar. When a gateway can serve more, the read
     /// grows to cover the picked date to the latest bar (the chosen window),
@@ -2978,11 +2980,13 @@ impl ChartWorkspace {
         // trailing window; a seeded workspace grows over bars already held.
         // Either way the read/rebind is chart-only, so the picker never pays
         // for journal serialization.
-        match gateway {
-            Some(gateway) => {
-                let _ = self.refresh_chart(gateway, None);
-            }
-            None => self.rebound_from_history(),
+        if let Some(gateway) = gateway {
+            let _ = self.refresh_chart(gateway, None);
+        } else {
+            self.rebound_from_history();
+            // Rows changed under the held frame: re-evaluate so the
+            // panes track the widened window, never the old tape.
+            self.recompute()?;
         }
         self.rebind_viewports()?;
         self.jump_to_current_plot(self.last_plot_width)?;
@@ -3203,15 +3207,17 @@ impl ChartWorkspace {
         // seeded workspace widens over bars already held. A refused read still
         // leaves the widened window over the held rows, so the caller sees no
         // growth rather than a dead button.
-        match gateway {
-            Some(gateway) => {
-                if self.refresh_chart(gateway, None).is_err() {
-                    self.rebind_viewports()?;
-                    self.restore_anchor(anchor, self.last_plot_width)?;
-                    return Ok(false);
-                }
+        if let Some(gateway) = gateway {
+            if self.refresh_chart(gateway, None).is_err() {
+                self.rebind_viewports()?;
+                self.restore_anchor(anchor, self.last_plot_width)?;
+                return Ok(false);
             }
-            None => self.rebound_from_history(),
+        } else {
+            self.rebound_from_history();
+            // Rows changed under the held frame: re-evaluate so the
+            // panes track the widened window, never the old tape.
+            self.recompute()?;
         }
         self.rebind_viewports()?;
         // Keep the same rightmost bar so the new month appears to the left
@@ -3732,12 +3738,54 @@ impl ChartWorkspace {
         Ok(())
     }
 
+    /// Link a catalogued Pine script into an interpreted plugin. The script
+    /// text comes from the boot-discovered sources; libraries resolve by
+    /// filename stem as the manifest does. Anything missing or unparseable
+    /// refuses naming the stem, never a half-linked plugin.
+    fn instantiate_pine(&self, id: &str, stem: &str) -> Result<Box<dyn ChartIndicator>, EguiError> {
+        let script = self
+            .pine_indicators
+            .iter()
+            .find(|file| crate::pine_indicator::pine_stem_of(&file.relpath) == stem)
+            .ok_or_else(|| EguiError::InvalidParam {
+                what: "indicator".to_owned(),
+                reason: format!("unknown pine script {stem:?}: no boot source lists it"),
+            })?;
+        let title = self
+            .pine_manifest
+            .iter()
+            .find(|row| row.id == id)
+            .map_or_else(|| stem.to_owned(), |row| row.title.clone());
+        let libraries: std::collections::HashMap<String, String> = self
+            .pine_libraries
+            .iter()
+            .map(|file| (file.relpath.clone(), file.text.clone()))
+            .collect();
+        Ok(Box::new(crate::pine_indicator::PineIndicatorPlugin::link(
+            id,
+            &title,
+            &script.text,
+            &libraries,
+        )?))
+    }
+
     /// Slot one indicator plugin by catalog id; a duplicate is a no-op.
+    /// A `pine:` id prefers its shipped native backing when one exists
+    /// (parity-proven and identical to before); otherwise the workspace's
+    /// boot-discovered sources link through the embedded interpreter.
+    /// Anything else resolves through the native catalog exactly as before.
     fn slot_indicator(&mut self, id: &str) -> Result<(), EguiError> {
         if self.stack.contains(id) {
             return Ok(());
         }
-        let plugin = instantiate_indicator(id)?;
+        let plugin = match instantiate_indicator(id) {
+            Ok(plugin) => plugin,
+            Err(_) if id.starts_with("pine:") => {
+                let stem = id.strip_prefix("pine:").unwrap_or(id);
+                self.instantiate_pine(id, stem)?
+            }
+            Err(error) => return Err(error),
+        };
         let mut config = plugin.default_config();
         // New oscillator slots template the panel period: the kind default
         // is the length a fresh slot opens with (the registry default it
@@ -3931,14 +3979,21 @@ impl ChartWorkspace {
         evaluation: &IndicatorEvaluation,
         pane: &str,
     ) -> IndicatorEvaluation {
-        IndicatorEvaluation {
-            series: evaluation
-                .series
-                .iter()
-                .filter(|series| self.resolved_series_pane(slot_id, series) == pane)
-                .cloned()
-                .collect(),
-        }
+        let series: Vec<IndicatorSeries> = evaluation
+            .series
+            .iter()
+            .filter(|series| self.resolved_series_pane(slot_id, series) == pane)
+            .cloned()
+            .collect();
+        // The overlay rides with the pane that keeps the slot's series: a
+        // pane without series paints no overlay, so drawings never duplicate
+        // across the main and shared panes.
+        let overlay = if series.is_empty() {
+            Ok(Vec::new())
+        } else {
+            evaluation.overlay.clone()
+        };
+        IndicatorEvaluation { series, overlay }
     }
 
     /// Declared bounded policy union for one custom pane, when every
@@ -4007,7 +4062,8 @@ impl ChartWorkspace {
     /// The style keys one slot's series paint with, in first-painted order.
     /// The settings Style tab projects the generic override block down to
     /// these keys, so the tab shows that indicator's display values. An
-    /// unevaluated slot projects to nothing, which keeps the whole schema.
+    /// unevaluated slot projects to nothing, so the tab offers no colors
+    /// rather than every color of every indicator.
     pub fn painted_style_keys(&self, slot_id: &str) -> Vec<String> {
         let Some(evaluation) = self.evaluations.get(slot_id) else {
             return Vec::new();
@@ -4041,6 +4097,12 @@ impl ChartWorkspace {
     pub fn settings_fields(&self, slot_id: &str) -> Option<(Vec<SchemaField>, Vec<SchemaField>)> {
         let config = self.stack.config(slot_id)?;
         let mut config_fields = schema_fields(&config.describe());
+        // Pine slots inherit the chart scope (see `resolved_slot_config`):
+        // the symbol/period fields are redundant with the chart settings,
+        // so the slot UI hides them instead of offering a second copy.
+        if slot_id.starts_with("pine:") {
+            config_fields.retain(|field| field.name != "chart_symbol" && field.name != "chart_period");
+        }
         if let Some(source) = config_fields
             .iter_mut()
             .find(|field| field.name == "source" && field.kind == fluent_egui::FieldKind::Select)
@@ -4404,6 +4466,12 @@ impl ChartWorkspace {
     /// stored config untouched. Both the plan fingerprint and evaluation
     /// read through this, so following slots rebuild exactly when the
     /// kind does and overriding slots never move.
+    ///
+    /// Pine slots additionally inherit the chart scope: `chart_symbol` and
+    /// `chart_period` come from the workspace's active symbol and timeframe
+    /// (the chart owns both), never from the slot's own stored copy — the
+    /// slot settings UI hides those fields, so a Pine script's
+    /// `syminfo.tickerid`/`timeframe.period` always name the chart in view.
     fn resolved_slot_config(&self, plugin_id: &str) -> Result<EvalConfig<'_>, EguiError> {
         let config = self
             .stack
@@ -4431,6 +4499,25 @@ impl ChartWorkspace {
                 lite_config.resolve_panel_defaults(&self.oscillator_panel),
             )));
         }
+        if let Some(pine_config) =
+            component_downcast_ref::<protopyne_kernels::PineRuntimeConfig>(config)
+        {
+            let mut stamped = pine_config.clone();
+            self.active_symbol().clone_into(&mut stamped.chart_symbol);
+            self.timeframe.pine_period().clone_into(&mut stamped.chart_period);
+            // The chart window always evaluates: raise a stored cap below
+            // the loaded rows up to the window (a larger stored cap stands).
+            // The engine refuses past `max_bars` instead of truncating, so
+            // without this every Pine slot on a large window would degrade
+            // to an empty evaluation while native slots paint. The window
+            // itself stays bounded by the trailing keep, so this never
+            // opens unbounded runs — it only stops the cap from fighting
+            // the window the operator is looking at.
+            stamped.max_bars = stamped
+                .max_bars
+                .max(self.rows.len() as u64);
+            return Ok(EvalConfig::Resolved(Box::new(stamped)));
+        }
         Ok(EvalConfig::Stored(config))
     }
 
@@ -4443,6 +4530,54 @@ impl ChartWorkspace {
     /// deterministically) stay live, so the legend never goes stale on a
     /// skip. A miss rebuilds everything and the revision backdate still
     /// guards the derived vectors.
+    /// Evaluate one slot and publish its series: pad past the cursor with
+    /// holes (painters cull the full slot space, and a hole paints as a
+    /// gap — never a value the replay has not decided yet), publish to the
+    /// cache and catalog, answer readouts from the unpadded evaluation, and
+    /// store the padded evaluation. Any failure refuses with the slot's
+    /// reason; the caller isolates it so one refusing slot never blanks
+    /// the chart.
+    fn evaluate_slot(
+        &mut self,
+        index: usize,
+        id: &str,
+        eval_rows: &[ChartRow],
+        full_len: usize,
+        revisions: &mut Vec<(u64, u64)>,
+    ) -> Result<(), EguiError> {
+        let evaluation = {
+            let resolved = self.resolved_slot_config(id)?;
+            self.plugins[index].evaluate(
+                eval_rows,
+                resolved.as_component(),
+                &self.series_catalog,
+            )?
+        };
+        for series in &evaluation.series {
+            // Pad past the cursor with holes: painters cull the full
+            // slot space, and a hole paints as a gap — never a value the
+            // replay has not decided yet.
+            let mut values = series.values.clone();
+            values.resize(full_len, None);
+            revisions.push((series.key, self.cache.publish(series.key, values.clone())));
+            self.series_catalog
+                .publish(&series.node, series.key, values);
+        }
+        let readouts = self.plugins[index].readouts(&evaluation);
+        self.stack.set_readouts(id, readouts)?;
+        // Store the padded evaluation: painters read this through the
+        // global slot space, so stored series keep full length with
+        // holes past the cursor. Readouts stay prefix-native (answered
+        // above, from the unpadded evaluation).
+        let mut stored = evaluation;
+        for series in &mut stored.series {
+            series.values.resize(full_len, None);
+            series.display_values.resize(full_len, None);
+        }
+        self.evaluations.insert(id.to_owned(), stored);
+        Ok(())
+    }
+
     fn recompute(&mut self) -> Result<(), EguiError> {
         self.rebuild_series_plan()?;
         // A live replay evaluates over the decided prefix only: bars past
@@ -4482,41 +4617,35 @@ impl ChartWorkspace {
         if rows_shape != self.last_rows_shape || rows_content != self.last_rows_content {
             self.heikin = heikin_rows_of(&self.rows);
         }
+        // Owned prefix rows: per-slot evaluation borrows the workspace
+        // mutably, so the slice cannot outlive this statement.
+        let eval_rows: Vec<ChartRow> = eval_rows.to_vec();
+        let eval_rows = eval_rows.as_slice();
         let order = self.eval_order()?;
         let mut revisions = Vec::new();
         self.series_catalog.clear();
         for index in order {
             let id = self.plugins[index].id().to_owned();
-            let evaluation = {
-                let resolved = self.resolved_slot_config(&id)?;
-                self.plugins[index].evaluate(
-                    eval_rows,
-                    resolved.as_component(),
-                    &self.series_catalog,
-                )?
-            };
-            for series in &evaluation.series {
-                // Pad past the cursor with holes: painters cull the full
-                // slot space, and a hole paints as a gap — never a value the
-                // replay has not decided yet.
-                let mut values = series.values.clone();
-                values.resize(full_len, None);
-                revisions.push((series.key, self.cache.publish(series.key, values.clone())));
-                self.series_catalog
-                    .publish(&series.node, series.key, values);
+            // Per-slot isolation: one refusing indicator must never blank
+            // the chart. A slot that fails to resolve or evaluate keeps an
+            // empty evaluation (no series, no readouts — the same shape as
+            // an unevaluated slot), while every other slot still paints.
+            // Refusals stay loud at slot time (`slot_indicator` names them);
+            // recompute-time failures are data-dependent, so they degrade
+            // to empty instead of aborting the frame — but the reason goes
+            // to stderr, so an empty pane is diagnosable instead of silent.
+            if let Err(error) = self.evaluate_slot(index, &id, eval_rows, full_len, &mut revisions)
+            {
+                eprintln!("protopyne workspace: slot {id} refused to evaluate: {error}");
+                self.evaluations.insert(
+                    id.clone(),
+                    IndicatorEvaluation {
+                        series: Vec::new(),
+                        overlay: Ok(Vec::new()),
+                    },
+                );
+                let _ = self.stack.set_readouts(&id, Vec::new());
             }
-            let readouts = self.plugins[index].readouts(&evaluation);
-            self.stack.set_readouts(&id, readouts)?;
-            // Store the padded evaluation: painters read this through the
-            // global slot space, so stored series keep full length with
-            // holes past the cursor. Readouts stay prefix-native (answered
-            // above, from the unpadded evaluation).
-            let mut stored = evaluation;
-            for series in &mut stored.series {
-                series.values.resize(full_len, None);
-                series.display_values.resize(full_len, None);
-            }
-            self.evaluations.insert(id, stored);
         }
         // Picker-independent canonicalization for change detection, not pane ordering.
         revisions.sort_unstable();
@@ -4665,7 +4794,8 @@ impl ChartWorkspace {
                     self.indicator_modal = None;
                     self.indicator_anchor = None;
                 } else {
-                    self.indicator_modal = Some(build_indicator_catalog()?);
+                    self.indicator_modal =
+                        Some(build_indicator_catalog_with_manifest(&self.pine_manifest)?);
                     self.seed_favorites();
                 }
             }
@@ -4699,6 +4829,7 @@ impl ChartWorkspace {
                 None => self.select_timeframe(timeframe)?,
             },
             TopBarAction::PickedChartType(chart_type) => self.chart_type = chart_type,
+            TopBarAction::PickedReplaySpeed(speed) => self.replay_speed = speed,
             TopBarAction::Refresh => {
                 // No live feed is wired, so refresh verifies the chart range
                 // only: the dock bundle and replay cannot have changed and are
@@ -5511,7 +5642,7 @@ impl ChartWorkspace {
                         if (pos.x - x).hypot(pos.y - y) >= 8.0 {
                             // A drag is a pan, never a hold: cancel.
                             self.context_press = None;
-                        } else if !self.context_fired && now - start >= PLAY_LONG_PRESS_SECS as f32
+                        } else if !self.context_fired && now - start >= CHART_LONG_PRESS_SECS as f32
                         {
                             self.context_fired = true;
                             self.open_chart_context(layouts, pos);
@@ -6108,69 +6239,10 @@ impl ChartWorkspace {
                 }
                 return;
             }
-            self.ensure_dock_bundle(gateway);
-            let mut decided = false;
-            if let Some(bundle) = &self.dock_bundle {
-                let inbox = InboxModel::of(bundle.proposals.clone());
-                body.label(format!(
-                    "{} actionable · {} settled",
-                    inbox.actionable().len(),
-                    inbox.settled().len()
-                ));
-                let mut actions = Vec::new();
-                for proposal in inbox.actionable() {
-                    body.horizontal(|ui| {
-                        ui.label(format!(
-                            "{} {} {} {}",
-                            proposal.id, proposal.underlying, proposal.direction, proposal.state
-                        ));
-                        if ui.button("approve").clicked() {
-                            actions.push(InboxAction::approve(&proposal.id));
-                        }
-                        if ui.button("reject").clicked() {
-                            actions
-                                .push(InboxAction::reject(&proposal.id, "rejected from terminal"));
-                        }
-                    });
-                }
-                for proposal in inbox.settled().iter().take(20) {
-                    body.label(format!(
-                        "{} {} {} {}",
-                        proposal.id, proposal.underlying, proposal.direction, proposal.state
-                    ));
-                }
-                if !actions.is_empty() {
-                    if let Some(gateway) = gateway {
-                        let mut refused = None;
-                        for action in &actions {
-                            if let Err(error) = action.apply(gateway) {
-                                refused = Some(error.to_string());
-                            }
-                        }
-                        match refused {
-                            Some(reason) => {
-                                self.dock_bundle_error =
-                                    Some(format!("decision refused: {reason}"));
-                            }
-                            None => decided = true,
-                        }
-                    } else {
-                        body.label("Connect a gateway to decide");
-                    }
-                }
-            } else if let Some(error) = &self.dock_bundle_error {
-                body.colored_label(egui::Color32::RED, error.clone());
-                if body.button("retry").clicked() {
-                    self.dock_bundle_error = None;
-                }
-            } else {
-                body.label("No proposals pull yet");
-            }
-            if decided {
-                if let Some(gateway) = gateway {
-                    self.refresh_dock_bundle(gateway);
-                }
-            }
+            // The approval inbox is retired: proposals are authorized through
+            // the gateway API, not the terminal dock. The replay arm above
+            // still lists the live replay's own proposals read-only.
+            body.label("Proposal approval moved to the gateway API");
         });
         // Manual tickets. The platform never submits these — the operator
         // places the exact ticket by hand; the panel issues it, records the
@@ -6287,13 +6359,10 @@ impl ChartWorkspace {
                 }
             }
         });
-        // Arm grant pane.
+        // Arm grant pane (retired with the approval inbox: arming runs
+        // through the gateway API, not the terminal dock).
         ui.collapsing("arm grant", |body| {
-            if let Some(gateway) = gateway {
-                paint_grant_form(body, &mut self.grant_form, gateway);
-            } else {
-                body.label("Connect a gateway to arm");
-            }
+            body.label("Grant arming moved to the gateway API");
         });
         // Backtest pane: author a run from the served schema, run it, and
         // read the stored metrics, trades, curve, and status table. This is
@@ -6387,7 +6456,7 @@ impl ChartWorkspace {
                     }
                 });
                 body.label(format!(
-                    "speed: {} (long-press the menu ▶ button to change)",
+                    "speed: {} (change it from the top-bar speed menu)",
                     self.replay_speed.label()
                 ));
                 body.label("rehearsal economics (400/2000/30d, single-leg); spreads refuse without an option-chain feed.");
@@ -6719,11 +6788,13 @@ impl ChartWorkspace {
         if let Some(start) = layout.custom_start {
             self.custom_start = Some(start);
             self.range = DateRange::All;
-            match gateway {
-                Some(gateway) => {
-                    let _ = self.refresh_chart(gateway, None);
-                }
-                None => self.rebound_from_history(),
+            if let Some(gateway) = gateway {
+                let _ = self.refresh_chart(gateway, None);
+            } else {
+                self.rebound_from_history();
+                // Rows changed under the held frame: re-evaluate so a
+                // restored layout paints its own window, never stale panes.
+                let _ = self.recompute();
             }
             self.rebind_viewports()?;
             let _ = self.jump_to_current_plot(self.last_plot_width);
@@ -7110,8 +7181,7 @@ pub fn paint_workspace(
                     chart_type,
                     dock_open,
                     replay_playing,
-                    &mut workspace.play_press,
-                    &mut workspace.replay_speed,
+                    workspace.replay_speed,
                     &mut workspace.symbol_anchor,
                     &mut workspace.indicator_anchor,
                     &mut workspace.bookmark_anchor,

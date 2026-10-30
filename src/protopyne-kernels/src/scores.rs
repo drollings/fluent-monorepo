@@ -59,6 +59,54 @@ pub fn rolling_slope(highs: &[f64], lows: &[f64], end: usize, n: usize) -> Optio
     linreg_slope(low, high)
 }
 
+/// The last defined RSRS score: identical to
+/// `rsrs(highs, lows, n, m).into_iter().flatten().next_back()`, without
+/// building the whole series.
+///
+/// The full vector exists for the offline research surface; the report
+/// path only reads the last score, so materializing 10k slopes and 9.4k
+/// z-windows to keep one value is pure waste (profiled at over a third
+/// of the equity run). This computes the slope vector once, scans from
+/// the tail for the last all-finite `m`-window, and runs the single
+/// z-score with the exact same operations — bit-identical output.
+#[must_use]
+pub fn rsrs_last(highs: &[f64], lows: &[f64], n: usize, m: usize) -> Option<f64> {
+    if m == 0 {
+        return None;
+    }
+    let len = highs.len().min(lows.len());
+    if len < m {
+        return None;
+    }
+    let slopes: Vec<Option<f64>> = (0..len).map(|i| rolling_slope(highs, lows, i, n)).collect();
+    // Last bar whose `m`-window is fully finite, scanning from the tail:
+    // the same acceptance predicate as [`rsrs`], which refuses a window on
+    // its first non-finite leg.
+    let end = (m..=len).rev().find(|&end| {
+        slopes[end - m..end]
+            .iter()
+            .all(|slope| matches!(slope, Some(value) if value.is_finite()))
+    })?;
+    let mut scores = Vec::with_capacity(m);
+    for slope in slopes[end - m..end].iter().flatten() {
+        if slope.is_finite() {
+            scores.push(*slope);
+        } else {
+            return None;
+        }
+    }
+    if scores.len() != m {
+        return None;
+    }
+    let mean = scores.iter().sum::<f64>() / m as f64;
+    let variance = variance_pop(&scores);
+    #[allow(clippy::float_cmp)]
+    if variance == 0.0 {
+        return None;
+    }
+    div_or_none(scores[m - 1] - mean, variance.sqrt())
+}
+
 #[cfg(test)]
 #[path = "../tests/scores.rs"]
 mod tests;

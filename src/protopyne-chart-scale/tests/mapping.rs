@@ -256,6 +256,7 @@ fn mode_parses_common_spellings() {
 }
 
 #[test]
+#[allow(clippy::float_cmp)]
 fn price_range_contains_closed_touching_nan_saturation() {
     let range = PriceRange::new(90.0, 110.0).expect("valid range");
     assert!(range.contains(90.0), "closed: min inside");

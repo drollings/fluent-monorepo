@@ -102,6 +102,29 @@ fn overlay_error((status, reason): (axum::http::StatusCode, String)) -> GatewayE
 /// Upward-resample factor for a requested timeframe, over the boot
 /// history's actual base.
 ///
+/// Whether a symbol-scoped read may fall back to the boot history: when
+/// the boot recorded a symbol, only that same market (ASCII
+/// case-insensitive) qualifies — anything else must refuse naming the
+/// requested symbol, since serving the boot bars under a foreign label
+/// paints the wrong market behind a trusted ticker button. An unrecorded
+/// (empty) boot symbol keeps the legacy ungated fallback, so deployments
+/// that never configure one serve exactly as before.
+fn history_fallback_serves(recorded: &str, requested: &str) -> bool {
+    recorded.trim().is_empty() || recorded.eq_ignore_ascii_case(requested.trim())
+}
+
+/// Refusal for a symbol-scoped read the boot history must not serve: names
+/// the requested symbol and the recorded market (or its absence), so the
+/// operator picks a served ticker instead of reading a substituted chart.
+fn history_fallback_refusal(symbol: &str, recorded: &str) -> GatewayError {
+    let held = recorded.trim();
+    GatewayError::Unavailable(if held.is_empty() {
+        format!("no bars for symbol {symbol:?}: the tape holds no {symbol} market")
+    } else {
+        format!("no bars for symbol {symbol:?}: the tape holds no {symbol} market and the boot history is {held}")
+    })
+}
+
 /// Fold the boot history to the requested timeframe when it holds at least
 /// one full group, through the bucket-anchored fold under complete-only
 /// edges: whole buckets emit stamped at the bucket start, short or torn
@@ -304,6 +327,54 @@ impl ServerGateway {
             LatchEvent::None => {}
         }
     }
+
+    /// One market's merged 1M months from the history root, cached per ticker:
+    /// a picked ticker the tape doesn't hold still loads its own bars instead
+    /// of wearing the boot market's. `None` when no root is booted or the root
+    /// holds no such ticker (the caller then falls through to the boot-history
+    /// gate or its refusal); a structurally refused load fails loudly with its
+    /// own reason instead of degrading into a wrong-market read.
+    fn root_ticker_bars(&self, symbol: &str) -> Result<Option<Vec<Bar>>, GatewayError> {
+    let Some(root) = self.state.history_root.as_ref() else {
+        return Ok(None);
+    };
+    if let Some(bars) = self
+        .state
+        .root_bars
+        .lock()
+        .expect("root-bar cache locks")
+        .get(symbol)
+    {
+        return Ok(Some(bars.clone()));
+    }
+    let tickers = root
+        .tickers()
+        .map_err(|error| GatewayError::Unavailable(error.to_string()))?;
+    let Some(listed) = tickers.iter().find(|name| name.eq_ignore_ascii_case(symbol)) else {
+        return Ok(None);
+    };
+    let load = root
+        .load_ticker(listed)
+        .map_err(|error| GatewayError::Unavailable(error.to_string()))?;
+    if !load.skipped.is_empty() || load.skipped_rows > 0 {
+        tracing::warn!(
+            ticker = symbol,
+            skipped_files = load.skipped.len(),
+            skipped_rows = load.skipped_rows,
+            "history months excluded rows; the series carries the holes"
+        );
+    }
+    if load.bars.is_empty() {
+        return Ok(None);
+    }
+    self.state
+        .root_bars
+        .lock()
+        .expect("root-bar cache locks")
+        .insert(symbol.to_owned(), load.bars.clone());
+    Ok(Some(load.bars))
+}
+
 }
 
 impl TerminalGateway for ServerGateway {
@@ -397,12 +468,28 @@ impl TerminalGateway for ServerGateway {
             }
             TapeServe::Missing(miss) => {
                 self.observe_fallback(Some(miss.kind()));
-                Ok(chart_bars_of(&resampled_history(
-                    &self.state.history,
-                    self.state.history_timeframe,
-                    timeframe,
-                    limit,
-                )?))
+                if history_fallback_serves(&self.state.history_symbol, symbol) {
+                    return Ok(chart_bars_of(&resampled_history(
+                        &self.state.history,
+                        self.state.history_timeframe,
+                        timeframe,
+                        limit,
+                    )?));
+                }
+                // A picked ticker the tape doesn't hold still loads its own
+                // months from the history root — the actual market serves,
+                // never a substitution. Anything else refuses naming the
+                // symbol, so the workspace triple holds instead of stranding
+                // a fresh label on stale rows.
+                match self.root_ticker_bars(symbol)? {
+                    Some(months) => Ok(chart_bars_of(&resampled_history(
+                        &months,
+                        Timeframe::M1,
+                        timeframe,
+                        limit,
+                    )?)),
+                    None => Err(history_fallback_refusal(symbol, &self.state.history_symbol)),
+                }
             }
         }
     }
@@ -415,18 +502,34 @@ impl TerminalGateway for ServerGateway {
         period: i64,
     ) -> Result<OverlaySeries, GatewayError> {
         validate_symbol_timeframe(symbol, timeframe)?;
-        overlay_series_of(
-            &resampled_history(
-                &self.state.history,
-                self.state.history_timeframe,
-                timeframe,
-                None,
-            )?,
-            kind,
-            period,
-            2.0,
-        )
-        .map_err(overlay_error)
+        // Overlays derive from market bars, so the same provenance order
+        // applies: the recorded market first (established source), then the
+        // history root's months for the requested ticker, else a refusal
+        // naming the symbol instead of wearing foreign overlays.
+        if history_fallback_serves(&self.state.history_symbol, symbol) {
+            return overlay_series_of(
+                &resampled_history(
+                    &self.state.history,
+                    self.state.history_timeframe,
+                    timeframe,
+                    None,
+                )?,
+                kind,
+                period,
+                2.0,
+            )
+            .map_err(overlay_error);
+        }
+        match self.root_ticker_bars(symbol)? {
+            Some(months) => overlay_series_of(
+                &resampled_history(&months, Timeframe::M1, timeframe, None)?,
+                kind,
+                period,
+                2.0,
+            )
+            .map_err(overlay_error),
+            None => Err(history_fallback_refusal(symbol, &self.state.history_symbol)),
+        }
     }
 
     fn replay(&self) -> Result<ReplayView, GatewayError> {

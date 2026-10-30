@@ -432,16 +432,16 @@ pub fn inline_runs(fields: &[SchemaField]) -> Vec<Vec<SchemaField>> {
 /// same editors. Filtering to the stroke width plus the `color_<key>`
 /// overrides for the keys the slot's own series carry makes the tab show
 /// that indicator's display values instead. An empty key set projects to
-/// the whole schema rather than an empty tab: with nothing evaluated yet
-/// there is nothing to project by, and hiding every override would read
-/// as if the slot had none.
+/// nothing: with nothing evaluated (or an evaluation with no series) there
+/// is nothing to project by, and offering every color would let the
+/// operator set overrides that apply to no painted line.
 #[must_use]
 pub fn project_style_fields(
     style_fields: &[SchemaField],
     painted_keys: &[&str],
 ) -> Vec<SchemaField> {
     if painted_keys.is_empty() {
-        return style_fields.to_vec();
+        return Vec::new();
     }
     style_fields
         .iter()

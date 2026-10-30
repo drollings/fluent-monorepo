@@ -373,3 +373,25 @@ fn content_revision_keeps_on_identical_bumps_on_change() {
     assert_eq!(content_revision(43, Some(42), 5), (6, true));
     assert_eq!(content_revision(99, Some(42), 5), (6, true));
 }
+
+#[test]
+fn root_panes_names_dependency_free_panes_in_plan_order() {
+    let plan = test_plan();
+    assert_eq!(
+        plan.root_panes().expect("acyclic test plan"),
+        vec!["left".to_owned(), "right".to_owned()],
+        "the diamond roots are the rewind anchors"
+    );
+}
+
+#[test]
+fn root_panes_of_a_single_chain_is_the_head() {
+    let mut plan = PanePlan::new();
+    plan.register_node("head", &[], 0).expect("head registers");
+    plan.register_node("tail", &["head"], 0)
+        .expect("tail registers");
+    assert_eq!(
+        plan.root_panes().expect("acyclic chain"),
+        vec!["head".to_owned()]
+    );
+}

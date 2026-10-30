@@ -23,12 +23,12 @@ fn m1_rows(count: usize) -> Vec<ChartRow> {
 /// A gateway holding a fixed history that honors `limit` as a trailing take
 /// and records every bounded read, like the tape-backed server read.
 #[test]
-fn default_fetch_at_m5_covers_the_one_month_default() {
-    let gateway = LimitGateway::with_rows(m1_rows(150_000));
+fn default_fetch_at_m5_covers_the_two_month_default() {
+    let gateway = LimitGateway::with_rows(m1_rows(300_000));
     let workspace = ChartWorkspace::with_gateway(&gateway).expect("gateway boots the workspace");
     let limits = gateway.limits_for("5M");
-    let need = fetch_for_window(DateRange::Month1, 300, FETCH_WARMUP_BARS);
-    assert_eq!(need, 8_840, "one month of five-minute slots plus warmup");
+    let need = fetch_for_window(DateRange::Month2, 300, FETCH_WARMUP_BARS);
+    assert_eq!(need, 17_480, "two months of five-minute slots plus warmup");
     assert!(
         limits.contains(&Some(need)),
         "boot requests the selected range's need"
@@ -36,7 +36,7 @@ fn default_fetch_at_m5_covers_the_one_month_default() {
     assert_eq!(
         workspace.rows().len(),
         need,
-        "boot serves exactly the one-month window"
+        "boot serves exactly the two-month window"
     );
 }
 
@@ -45,11 +45,11 @@ fn selecting_a_larger_preset_grows_the_trailing_read() {
     let gateway = LimitGateway::with_rows(m1_rows(300_000));
     let mut workspace =
         ChartWorkspace::with_gateway(&gateway).expect("gateway boots the workspace");
-    let one = fetch_for_window(DateRange::Month1, 300, FETCH_WARMUP_BARS);
+    let one = fetch_for_window(DateRange::Month2, 300, FETCH_WARMUP_BARS);
     assert_eq!(
         workspace.rows().len(),
         one,
-        "boot holds the one-month default"
+        "boot holds the two-month default"
     );
 
     workspace
@@ -95,7 +95,7 @@ fn selecting_the_active_preset_is_a_no_op() {
         ChartWorkspace::with_gateway(&gateway).expect("gateway boots the workspace");
     let calls = gateway.limits_for("5M").len();
     workspace
-        .select_range(DateRange::Month1, Some(&gateway))
+        .select_range(DateRange::Month2, Some(&gateway))
         .expect("the active preset holds");
     assert_eq!(
         gateway.limits_for("5M").len(),

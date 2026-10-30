@@ -53,6 +53,43 @@ fn na_is_none_and_survives_the_float_boundary() {
 }
 
 #[test]
+fn only_collections_flow_back_to_caller_homes() {
+    // Write-back keys off the value kind, never the parameter or the
+    // return: arrays, int-maps, maps, and matrices ride by reference and
+    // persist through the parameter, while scalars, handles, objects, and
+    // drawings stay by value. All three call paths (tree-only calls, loop
+    // user calls, and the cross-engine bridge harvest) decide on this
+    // one predicate.
+    for value in [
+        PineValue::Array(vec![Some(PineValue::Float(1.0))]),
+        PineValue::IntMap(std::collections::HashMap::from([(0, 1)])),
+        PineValue::Map(std::collections::BTreeMap::from([(
+            "k".to_owned(),
+            (PineValue::Int(0), Some(PineValue::Int(1))),
+        )])),
+        PineValue::Matrix(MatrixValue {
+            rows: 1,
+            cols: 1,
+            cells: vec![Some(PineValue::Float(1.0))],
+        }),
+    ] {
+        assert!(value.is_collection_writeback(), "rides back: {value}");
+    }
+    for value in [
+        PineValue::Float(1.0),
+        PineValue::Int(1),
+        PineValue::Bool(true),
+        PineValue::Str("s".to_owned()),
+        PineValue::ColorHandle(ColorHandle::new(0x28_28_28_3C)),
+        PineValue::EnumHandle(EnumHandle::new("Smoothings", "WMA")),
+        PineValue::Object(UserInstance::new("T", FieldTable::new())),
+        PineValue::Drawing(DrawingHandle::new(DrawingKind::Label, 0)),
+    ] {
+        assert!(!value.is_collection_writeback(), "stays by value: {value}");
+    }
+}
+
+#[test]
 fn nz_fills_absence_with_default() {
     assert_eq!(nz(None, PineValue::Int(3)), PineValue::Int(3));
     assert_eq!(
@@ -108,5 +145,45 @@ fn handles_carry_identity_beside_numerics() {
     assert_eq!(
         PineValue::Str("a".to_owned()),
         PineValue::Str("a".to_owned())
+    );
+}
+
+#[test]
+fn object_handles_share_until_first_mutation() {
+    // Slot protocol: cloning an object shares one resident table (one
+    // `Arc` bump, never a deep copy); the first mutation through a
+    // shared handle copies, so the writer separates while old readers
+    // keep the original.
+    let fields: HashMap<String, Option<PineValue>> = [("n".to_owned(), Some(PineValue::Int(0)))]
+        .into_iter()
+        .collect();
+    let table = FieldTable::from(fields);
+    let shared = table.clone();
+    assert!(table.shares(&shared), "clone shares the resident table");
+    let instance = UserInstance::new("Counter", table);
+    let carried = PineValue::Object(instance.clone());
+    let PineValue::Object(back) = carried.clone() else {
+        panic!("object carries through");
+    };
+    assert!(
+        instance.fields.shares(&back.fields),
+        "slot carries share the handle"
+    );
+    let mut writer = back.fields.clone();
+    assert!(writer.shares(&instance.fields), "pre-write still shares");
+    writer.insert("n".to_owned(), Some(PineValue::Int(1)));
+    assert!(
+        !writer.shares(&instance.fields),
+        "first mutation copies the table"
+    );
+    assert_eq!(
+        instance.fields.get("n"),
+        Some(&Some(PineValue::Int(0))),
+        "old readers keep the original"
+    );
+    assert_eq!(
+        writer.get("n"),
+        Some(&Some(PineValue::Int(1))),
+        "the writer sees its own put"
     );
 }

@@ -214,11 +214,12 @@ impl ComponentRegistry {
     /// same id concurrently — startup code registers before sharing).
     pub fn register(&self, indicator: Arc<dyn Indicator>) -> Result<(), KernelError> {
         let id = indicator.spec().id.clone();
-        if self.inner.get(&id).is_some() {
-            return Err(KernelError::DuplicateIndicator(id));
-        }
-        self.inner.insert(id, SharedIndicator(indicator));
-        Ok(())
+        // First-wins under the write lock: `try_insert` refuses without
+        // storing, so two threads racing one id cannot both pass (M8.1).
+        // `get` + `insert` could; `insert` would replace — never use it here.
+        self.inner
+            .try_insert(id.clone(), SharedIndicator(indicator))
+            .map_err(|_| KernelError::DuplicateIndicator(id))
     }
 
     /// Look up an indicator by id.

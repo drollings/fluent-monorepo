@@ -1,0 +1,364 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © showmethegrail
+
+//@version=6
+indicator("Integration Lite", "Integration Lite", format=format.price, max_boxes_count=500, calc_bars_count=4000, overlay=false)
+
+import showmethegrail/libUtil/12 as UTIL
+import showmethegrail/libBars/12 as BARS
+import showmethegrail/libBuffers/6 as libBuffers
+import showmethegrail/libDrawing/61 as libDrawing
+import showmethegrail/libCandles/21 as libCandles
+import showmethegrail/libMAs/95 as libMAs
+import showmethegrail/libApex/88 as libApex
+
+DISPLAY_NO_STATUS = display.all - display.status_line
+DISPLAY_NO_NUM = display.all - display.status_line - display.price_scale
+
+/////////////////////////////////////////////////////////////
+// CONSTANTS
+/////////////////////////////////////////////////////////////
+
+const int TYPE_LINE = 1
+const int TYPE_BOX = 2
+const int TYPE_LABEL = 3
+const int TYPE_MAX = 4
+
+const int SIGNAL_NONE = 0
+const int SIGNAL_BULL_ENTRY = 1
+const int SIGNAL_BULL_EXIT = 2
+const int SIGNAL_BEAR_ENTRY = -1
+const int SIGNAL_BEAR_EXIT = -2
+
+/////////////////////////////////////////////////////////////
+// INPUTS - DELTA CANDLES
+/////////////////////////////////////////////////////////////
+
+const string GROUP_DELTA = "Delta Volume Candles"
+i_delta_candles_show   = input.bool(true, "Show Delta Candles", inline="adaptive_eit", group=GROUP_DELTA)
+i_volume_color_bull = input(color.new(#00ff00, 60), title="🐂", inline="adaptive_eit", group=GROUP_DELTA)
+i_volume_color_bear = input(color.new(#ff0000, 60), title="🐻", inline="adaptive_eit", group=GROUP_DELTA)
+// i_delta_candles_ltf    = input.enum(UTIL.Timeframes.C, "Delta Candles Timeframe", group=GROUP_DELTA)
+i_delta_vol_unit       = input.float(300.0, "Height at Average Volume", minval=0.0, step=1.0, group=GROUP_DELTA, tooltip="Oscillator distance from zero when delta volume equals the HTF4 vol_sma average. Scales proportionally above/below.")
+
+/////////////////////////////////////////////////////////////
+// INPUTS - RIBBON & HEALTH
+/////////////////////////////////////////////////////////////
+
+const string GROUP_RIBBON = "Trend Ribbon"
+i_ribbon_show = input.bool(true, title="👁️", inline='adaptive_eit', group=GROUP_RIBBON)
+i_ribbon_alpha_low = input.float(0.14, title="Low", step=0.02, minval=0.03, inline='adaptive_eit', group=GROUP_RIBBON)
+i_ribbon_alpha_high = input.float(0.8, title="High", step=0.05, minval=0.10, inline='adaptive_eit', group=GROUP_RIBBON)
+i_ribbon_color_bull = input(color.new(#00bcd4, 60), title="🐂", inline="adaptive_eit", group=GROUP_RIBBON)
+i_ribbon_color_bear = input(color.new(#7b1fa2, 60), title="🐻", inline="adaptive_eit", group=GROUP_RIBBON)
+i_ribbon_signal_type = input.enum(UTIL.Smoothings.EIT, "Signal", group=GROUP_RIBBON, inline="signal")
+i_ribbon_signal_period = input.int(10, "", step=2, minval=4, maxval=200, group=GROUP_RIBBON, inline="signal")
+i_ribbon_signal_param1 = input.float(0.12, title="", step=0.2, minval=0.01, group=GROUP_RIBBON, inline='signal')
+i_ribbon_mean_type = input.enum(UTIL.Smoothings.EMA, "Mean", group=GROUP_RIBBON, inline="mean")
+i_ribbon_mean_period = input.int(21 , "", step=4, minval=8, maxval=200, group=GROUP_RIBBON, inline="mean")
+i_ribbon_mean_param1 = input.float(0.06, title="", step=0.2, minval=0.01, group=GROUP_RIBBON, inline="mean")
+
+i_ribbon_health_show = input.bool(true, title="👁️ Ribbon Health Oscillator", group=GROUP_RIBBON, inline='osc1')
+i_ribbon_health_k = input.float(1.8, title="k", step=0.2, minval=0.2, group=GROUP_RIBBON, inline='osc1')
+i_ma_health_show = input.bool(true, title="👁️ MA Health Oscillator", group=GROUP_RIBBON, inline='osc2')
+i_ma_health_k = input.float(1.2, title="k", step=0.2, minval=0.2, group=GROUP_RIBBON, inline='osc2')
+
+/////////////////////////////////////////////////////////////
+// INPUTS - PIVOTS AND SIGNALS
+/////////////////////////////////////////////////////////////
+i_pivots_show = input.bool(true, title="👁️ Pivots", group=GROUP_RIBBON, inline="pivots")
+i_pivots_threshold = input.int(200, "Threshold", step=20, minval=20, group=GROUP_RIBBON, inline="pivots")
+i_pivots_lookback = input.int(8, "Lookback", step=1, minval=2, maxval=40, group=GROUP_RIBBON, inline="pivots")
+
+/////////////////////////////////////////////////////////////
+// INPUTS - OSCILLATORS
+/////////////////////////////////////////////////////////////
+
+const string GROUP_DISPLAY_OSC1 = "Oscillator 1 Settings"
+const string TT_DISPLAY_OSC = "Oscillator Displays and Alerts:\n\n👁️ Show the oscillator on chart\n🔅 Control oscillator brightness\n👁️ Shadow - Fill the area between fast and slow oscillators."
+const string TT_OSCILLATOR_FAST_ROW="The fast oscillator inputs:  oscillator type, period, smoothing type and period.  For SRSI and Stochastic, the standard is SMA 3.  Reduces noise while maintaining responsiveness."
+const string TT_OSCILLATOR_SLOW_ROW="The slow oscillator inputs:  oscillator type, period, smoothing type and period.  For SRSI and Stochastic, the standard is SMA 3.  Creates a more stable baseline for comparison."
+i_oscillator1_show = input.bool(true, title='👁️', group=GROUP_DISPLAY_OSC1, inline='osc1')
+i_oscillator1_brightness = input.int(30, '🔅', step=10, minval=0, maxval=100, group=GROUP_DISPLAY_OSC1, inline='osc1')
+i_oscillator1_k = input.float(1.2, title="k", step=0.1, minval=0.2, group=GROUP_DISPLAY_OSC1, inline='osc1')
+i_oscillator1_adaptive = input.bool(true, title='Adaptive', group=GROUP_DISPLAY_OSC1, inline='osc1')
+
+i_oscillator1_fast_type = input.enum(UTIL.Oscillators.RSI, title='🐇', inline='fast1', group=GROUP_DISPLAY_OSC1)
+i_oscillator1_fast = input.int(4, title='', minval=1, group=GROUP_DISPLAY_OSC1, inline='fast1')
+i_oscillator1_fast_smooth_type  = input.enum(UTIL.Smoothings.NA, title="", inline="fast1", group=GROUP_DISPLAY_OSC1)
+i_oscillator1_fast_smooth_period = input.int(3, '', minval=1, group=GROUP_DISPLAY_OSC1, inline='fast1', tooltip=TT_OSCILLATOR_FAST_ROW)
+i_oscillator1_slow_type = input.enum(UTIL.Oscillators.CCI, title='🐢', inline='slow1', group=GROUP_DISPLAY_OSC1)
+i_oscillator1_slow = input.int(8, title='', minval=1, group=GROUP_DISPLAY_OSC1, inline='slow1')
+i_oscillator1_slow_smooth_type  = input.enum(UTIL.Smoothings.NA, title="", inline="slow1", group=GROUP_DISPLAY_OSC1)
+i_oscillator1_slow_smooth_period = input.int(3, '', minval=1, group=GROUP_DISPLAY_OSC1, inline='slow1', tooltip=TT_OSCILLATOR_SLOW_ROW)
+
+/////////////////////////////////////////////////////////////
+// INPUTS - COLORS
+/////////////////////////////////////////////////////////////
+
+const string GROUP_COLORS = "Colors"
+i_candles_color_code = input.bool(true, "Color Code Candles", group=GROUP_COLORS, inline="colorcode")
+i_color_bull = input.color(color.new(#20B46C, 0), "🐂", group=GROUP_COLORS, inline="colorcode")
+i_color_bear = input.color(color.new(#B42020, 0), "🐻", group=GROUP_COLORS, inline="colorcode")
+i_color_bull_down = input.color(color.new(#FF9800, 0), "Retrace 🐂", group=GROUP_COLORS, inline="colorcode")
+i_color_bear_up = input.color(color.new(#2196F3, 0), "🐻", group=GROUP_COLORS, inline="colorcode")
+
+/////////////////////////////////////////////////////////////
+// INITIALIZATION
+/////////////////////////////////////////////////////////////
+const string GROUP_CONFIG = "Configuration"
+i_tf_low = input.enum(UTIL.Timeframes.M1, "LTF Timeframe", group=GROUP_CONFIG)
+i_tf_fetch = input.enum(UTIL.Timeframes.C, "Fetch Timeframe", group=GROUP_CONFIG)
+i_tf_high = input.enum(UTIL.Timeframes.W1, "HTF Timeframe", group=GROUP_CONFIG)
+
+/////////////////////////////////////////////////////////////
+// INPUTS - SESSION FILTER
+/////////////////////////////////////////////////////////////
+
+const string GROUP_SESSION = "Session Filter"
+i_session_filter = input.bool(true, "Enable Session Filter", group=GROUP_SESSION)
+i_session = input.session("0930-1600", "Trading Session", group=GROUP_SESSION)
+
+/////////////////////////////////////////////////////////////
+// INPUTS - MTF TABLE
+/////////////////////////////////////////////////////////////
+
+const string GROUP_MTF = 'Multi-Timeframe Table'
+const string TT_MTF_TIMEFRAMES = "Multi-timeframe UTIL.Timeframes:\n\nSelect UTIL.timeframes to analyze trends simultaneously.\nComparing UTIL.timeframes helps identify stronger trend signals."
+i_mtf_table_show = input.bool(true, title='👁️', group=GROUP_MTF, inline='mtftable')
+i_mtf_table_position = input.enum(UTIL.Positions.MIDDLE_LEFT, title='Location', group=GROUP_MTF, inline='mtftable')
+i_mtf_table_size = input.enum(UTIL.Sizes.SMALL, title='Size', group=GROUP_MTF, inline='mtftable')
+i_mtf_table_text = input(color.new(#dbdbdb, 0), 'FG', group=GROUP_MTF, inline='mtftable')
+i_mtf_table_bg = input(color.rgb(0, 0, 0, 25), 'BG', group=GROUP_MTF, inline='mtftable')
+
+const string GROUP_MTF_TF = "Multi-Timeframe Selection"
+timeframe1 = input.enum(UTIL.Timeframes.M5, "Timeframe 1", group=GROUP_MTF_TF)
+timeframe2 = input.enum(UTIL.Timeframes.M15, "Timeframe 2", group=GROUP_MTF_TF)
+timeframe3 = input.enum(UTIL.Timeframes.H1, "Timeframe 3", group=GROUP_MTF_TF)
+timeframe4 = input.enum(UTIL.Timeframes.H4, "Timeframe 4", group=GROUP_MTF_TF)
+
+var libApex.MarketContext context = na
+var UTIL.Scheduler scheduler = na
+var libDrawing.DrawingManager visuals = na
+var bars = BARS.Bars.new().init(i_tf_low, i_tf_fetch, i_tf_high).clear()
+var libApex.ManagedTable mtf_managed_table = na
+var map<UTIL.Timeframes, libApex.MarketContext> mtf_context = na
+var array<UTIL.Timeframes> active_timeframes = na
+
+// Shared calculation variables
+var int bar_ratio = 1 // TODO UTIL.getBarsInTimeframes(tf_lower, UTIL.getTimeframe(timeframe.period))
+var float alpha = i_ribbon_alpha_low
+var color color_candle_trend = color.gray
+
+// Oscillator variables
+var float _osc1_slow = 0.0
+var float _osc2_slow = 0.0
+var float _osc1_threshold = 100.0
+
+// Calculate delta volume using shared function
+float buyVolume = UTIL.estimateDeltaVolume(open, high, low, close, volume)
+float sellVolume = volume - buyVolume
+
+// Source
+_src = input.source(close, title="Source MA")
+
+// Delta volume candle display values
+var float dvc_max  = 1.0   // rolling max of buyVolume (for normalization)
+var float dvc_max_sell = 1.0   // rolling max of sellVolume (for normalization)
+float dvc_buy_top  = 0.0
+float dvc_sell_bot = 0.0
+
+if barstate.isfirst
+    scheduler := UTIL.Scheduler.new().init()
+    context := libApex.MarketContext.new().init()
+    // delta_candles := libApex.DeltaCandles.new().init(i_delta_candles_ltf, bar_ratio + 10)
+    mtf_managed_table := libApex.ManagedTable.new()
+
+    // Initialize MTF
+    active_timeframes := array.new<UTIL.Timeframes>()
+    active_timeframes.push(timeframe1)
+    active_timeframes.push(timeframe2)
+    active_timeframes.push(timeframe3)
+    active_timeframes.push(timeframe4)
+
+    mtf_context := map.new<UTIL.Timeframes, libApex.MarketContext>()
+    for tf in active_timeframes
+        if UTIL.getTimeframeAbbrev(tf) != UTIL.getTimeframeAbbrev(UTIL.Timeframes.C)
+            tf_context = libApex.MarketContext.new().init()
+            map.put(mtf_context, tf, tf_context)
+            tf_context.fetch(tf)
+
+/////////////////////////////////////////////////////////////
+// BASE CALCULATIONS (EIT & RIBBON)
+/////////////////////////////////////////////////////////////
+
+_eit_adaptive = libMAs.getEIT(close, alpha)
+_ribbon_signal = libMAs.factorySmoothing(_eit_adaptive, i_ribbon_signal_type, i_ribbon_signal_period, i_ribbon_signal_param1)
+_ribbon_mean = libMAs.factorySmoothing(_eit_adaptive, i_ribbon_mean_type, i_ribbon_mean_period, i_ribbon_mean_param1)
+
+/////////////////////////////////////////////////////////////
+// RIBBON HEALTH
+/////////////////////////////////////////////////////////////
+
+ribbon_upper = math.max(_eit_adaptive, _ribbon_signal)
+ribbon_lower = math.min(_eit_adaptive, _ribbon_signal)
+ribbon_color = _eit_adaptive > _ribbon_signal ?
+     color.new(i_ribbon_color_bull, 95-(60*alpha)) :
+     color.new(i_ribbon_color_bear, 95-(60*alpha))
+
+var float ribbon_health = 0.0
+ribbon_health := libApex.getHealthMAs(context.atr, _eit_adaptive, _ribbon_signal, _ribbon_mean,
+     context.vol_ratio * (alpha + i_ribbon_health_k)) * i_ribbon_health_k
+
+/////////////////////////////////////////////////////////////
+// DELTA VOLUME CANDLES
+/////////////////////////////////////////////////////////////
+
+if i_delta_candles_show
+    if volume > dvc_max
+        dvc_max := volume
+    dvc_buy_top  := dvc_max  > 0 ? (buyVolume  / dvc_max) * i_delta_vol_unit : 0.0
+    dvc_sell_bot := dvc_max > 0 ? (sellVolume / dvc_max) * i_delta_vol_unit : 0.0
+
+/////////////////////////////////////////////////////////////
+// BARS LIFECYCLE EXECUTION
+/////////////////////////////////////////////////////////////
+i_ltf = UTIL.Timeframes.M1
+
+if barstate.isnew
+    bars.clear()
+
+// Fetch ticks (no distribution)
+bars.fetch()
+
+// Simple distribution on boundary crossing if ready
+// if bars.ready_ltf_boundary
+imbalance = bars.getVolumeImbalance()
+// Calculate adaptive alpha from LTF data
+alpha := i_ribbon_alpha_low + bars.getAlpha(volume, context.vol_sma,
+         context.atr_distance, context.atr, context.atr_long, context.stdev) *
+         (i_ribbon_alpha_high - i_ribbon_alpha_low)
+
+/////////////////////////////////////////////////////////////
+// OSCILLATOR CALCULATIONS (Every Bar)
+/////////////////////////////////////////////////////////////
+
+i_oscillator1_source = i_oscillator1_adaptive ? _eit_adaptive : _src
+i_oscillator1_source_slow = i_oscillator1_adaptive ? _eit_adaptive : _src
+
+_osc1_fast = libMAs.normalizeOsc(i_oscillator1_source, i_oscillator1_fast_type, which=1,
+     fastLen=i_oscillator1_fast, slowLen=i_oscillator1_slow,
+     smoothing=i_oscillator1_fast_smooth_type, smoothingLen=i_oscillator1_fast_smooth_period) * i_oscillator1_k
+
+float _osc1_slow_abs = 0.0
+
+/////////////////////////////////////////////////////////////
+// BAR CONFIRMATION CALCULATIONS
+/////////////////////////////////////////////////////////////
+
+if barstate.isconfirmed
+    // Fetch market context
+    context.fetch()
+    context.regime := context.detectRegime()
+
+    // Oscillator slow values
+    _osc1_slow := libMAs.normalizeOsc(i_oscillator1_source_slow, i_oscillator1_slow_type, which=-1,
+         fastLen=i_oscillator1_fast, slowLen=i_oscillator1_slow,
+         smoothing=i_oscillator1_slow_smooth_type, smoothingLen=i_oscillator1_slow_smooth_period) * i_oscillator1_k
+
+    _osc1_slow_abs := math.abs(_osc1_slow)
+    _osc1_threshold := (_osc1_fast > 0) == (_osc1_slow > 0) ? 100.0 :
+                       (_osc1_slow_abs > 50.0 ? _osc1_slow_abs : 50.0)
+
+color_candle_trend := libApex.getColorMomentumAlpha(open, close, ribbon_health, alpha, context.vol_ratio,
+     i_color_bull, i_color_bear, i_color_bull_down, i_color_bear_up)
+
+barcolor(i_candles_color_code ? color_candle_trend : na)
+
+/////////////////////////////////////////////////////////////
+// PLOT RIBBONS
+/////////////////////////////////////////////////////////////
+
+fill(plot(i_ribbon_show ? ribbon_upper : na, 'Fast EIT', display=display.none, force_overlay=true),
+     plot(i_ribbon_show ? ribbon_lower : na, 'Signal EIT', display=display.none, force_overlay=true),
+     color=ribbon_color, title="Trend Ribbon")
+
+plot(ribbon_health, "Ribbon Health Osc",
+     color=i_ribbon_color_bear,
+     linewidth=2, display = i_ribbon_health_show ? display.all : display.none)
+
+plot(context.ma_health * i_ma_health_k, "MA Health Osc",
+     color=color.from_gradient(context.ma_health, -100.0, 100.0, color.orange, color.aqua),
+     linewidth=2, display = i_ma_health_show ? display.all : display.none)
+
+/////////////////////////////////////////////////////////////
+// PLOT OSCILLATORS
+/////////////////////////////////////////////////////////////
+
+p_osc1_fast = plot(_osc1_fast, 'Osc Fast',
+     color.new(libMAs.getOscillatorColor(i_oscillator1_fast_type), 90-i_oscillator1_brightness),
+     display=i_oscillator1_show ? display.all : display.none, linewidth=1)
+p_osc1 = plot(_osc1_slow, 'Osc Slow',
+     color=color.new(libMAs.getOscillatorColor(i_oscillator1_slow_type), 70-i_oscillator1_brightness),
+     display=i_oscillator1_show ? display.all : display.none, linewidth=1)
+
+/////////////////////////////////////////////////////////////
+// MTF UPDATES
+/////////////////////////////////////////////////////////////
+
+if barstate.isconfirmed and scheduler.every(UTIL.Timeframes.M3)
+    // Update MTF table
+    if barstate.islast and i_mtf_table_show
+        table_position = UTIL.getPosition(i_mtf_table_position)
+        libCandles.createMTFTable(mtf_managed_table, table_position, active_timeframes, mtf_context, context,
+             UTIL.getSize(i_mtf_table_size), bg_color=i_mtf_table_bg, header_color=i_mtf_table_text,
+             text_color=i_mtf_table_text)
+    else if barstate.islast
+        mtf_managed_table.delete()
+
+    for tf in active_timeframes
+        if tf != UTIL.Timeframes.C and map.contains(mtf_context, tf)
+            tf_context = map.get(mtf_context, tf)
+            tf_context.fetch(tf)
+
+/////////////////////////////////////////////////////////////
+// PIVOT DETECTION (every confirmed bar — not gated by scheduler)
+/////////////////////////////////////////////////////////////
+
+bool is_market = true
+if barstate.isconfirmed
+    is_market := i_session_filter ? not na(time(timeframe.period, i_session)) : true
+    if is_market
+        // Positive extreme dropping below threshold → pivot high
+        if _osc1_fast[1] >= i_pivots_threshold and _osc1_fast < i_pivots_threshold
+            [pivot_type, pivot_bar, pivot_price_high, pivot_price_low] =
+             libApex.detectPivotFromOscillatorExtreme(true, false, i_pivots_lookback)
+
+            if pivot_type != 0 and i_pivots_show
+                label.new(pivot_bar, pivot_price_high, "•", style=label.style_label_down,
+                 color=UTIL.COLOR_NONE, size=size.large, textcolor=i_color_bear, force_overlay=true)
+
+        // Negative extreme rising above threshold → pivot low
+        if _osc1_fast[1] <= -(i_pivots_threshold) and _osc1_fast > -(i_pivots_threshold)
+            [pivot_type, pivot_bar, pivot_price_high, pivot_price_low] =
+             libApex.detectPivotFromOscillatorExtreme(false, true, i_pivots_lookback)
+
+            if pivot_type != 0 and i_pivots_show
+                label.new(pivot_bar, pivot_price_low, "•", style=label.style_label_up,
+                 color=UTIL.COLOR_NONE, size=size.large, textcolor=i_color_bull, force_overlay=true)
+
+/////////////////////////////////////////////////////////////
+// PLOT DELTA VOLUME CANDLES
+/////////////////////////////////////////////////////////////
+
+// Buy-side: zero → dvc_buy_top - display=true
+plotcandle(0.0, dvc_buy_top, 0.0, dvc_buy_top,
+     title="Delta Buy Volume", color=i_volume_color_bull,
+     wickcolor=i_volume_color_bull, bordercolor=na,
+     display=i_delta_candles_show ? DISPLAY_NO_NUM : display.none)
+
+// Sell-side: dvc_sell_bot → zero
+plotcandle(0.0, 0.0, -dvc_sell_bot, -dvc_sell_bot,
+     title="Delta Sell Volume", color=i_volume_color_bear,
+     wickcolor=i_volume_color_bear, bordercolor=na,
+     display=i_delta_candles_show ? DISPLAY_NO_NUM : display.none)

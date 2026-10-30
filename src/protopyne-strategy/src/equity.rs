@@ -301,6 +301,15 @@ pub struct CooldownGate {
 
 impl CooldownGate {
     /// Whether `bar` may enter. No exit on record always passes.
+    ///
+    /// Authority note (M4.3): the `may_enter`/`must_flatten`/`may_fire`
+    /// vocabulary here reads alike across `CooldownGate`, `DailyLimits`,
+    /// `SessionGate`, `PartialOnce`, `RiskEngine`, and `Grant` tiers, but
+    /// each gates a different authority (strategy-local pacing vs
+    /// mandatory risk vs grant budget). The shared verbs are convention,
+    /// not a shared type — merging them would let a strategy-local edit
+    /// move a mandatory gate. Any semantic merge is a behavior proposal,
+    /// never a DRY cleanup.
     #[must_use]
     pub fn may_enter(&self, bar: usize) -> bool {
         let Some((exit_bar, lost)) = self.last_exit else {

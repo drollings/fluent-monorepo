@@ -1,23 +1,15 @@
-//! Headless end-to-end proof for the task indicators over the real
-//! histories: PPAS (`ApexPPAS`) and RSIMD (`ApexRSIMD`), each linked through
-//! its task closure and run bar-by-bar over `SPY_1M.csv` (436 bars),
-//! `SPY_5M.csv` (346 bars), and `SPY_15M.csv` (116 bars) with default
-//! inputs.
+//! Headless fail-closed proof for version-skewed cross-module references,
+//! plus the directory-driven closure verdict over the live data root.
 //!
-//! Regimes (cost-driven, each the honest-minimal injection set for the
-//! path the indicator evaluates):
-//!
-//! * PPAS runs full histories with no injections: its only `fetch` is
-//!   chart-scoped (chart legs, no pair needed). Full-history PPAS is
-//!   quarantined by human verdict (2026-10-12, see below): every full
-//!   history reaches the version-skewed `libCandles.isPatternType`
-//!   reference once ATR warms and a reversal prints, so no PPAS golden is
-//!   checked in. The suite pins the exact refusal per timeframe instead,
-//!   extending the kernels refusal pin to full-history scale; the
-//!   executable PPAS proof stays the five-bar clear-regime contract plus
-//!   this pin.
-//! * RSIMD runs full histories with no injections: divergence detection
-//!   runs on chart legs and it calls no `fetch` at all.
+//! The external indicator files this suite once proved (`ApexPPAS`,
+//! `ApexRSIMD`) were removed by an upstream sync of the git-ignored data
+//! directory, and an interpreted run cannot be fixture-pinned without the
+//! script bytes — so the executable half of this suite is synthetic:
+//! a driver calling a function its library does not export refuses with
+//! the exact pinned reason at full-history scale, on every timeframe.
+//! The fail-closed shape (unknown cross-module reference refuses instead
+//! of resolving across the alias) is what the engine guarantees; the
+//! script bytes were only ever its vehicle.
 //!
 //! DVP (`DeltaVolumeProfileProtopyne`) runs no interpreted suite here by
 //! human verdict (2026-10-12: prune every PineScript DVP run, keep native
@@ -26,49 +18,66 @@
 //! reference expression checks, without end-to-end interpretation or
 //! checked-in goldens.
 //!
-//! Goldens: `tests/data/pine_task_rsimd_<1m,5m,15m>.json` hold the slim
-//! canonical dump (pinned series plus every capture) in the exact shared
-//! dialect (`common_golden`), beside the untouched
-//! `pine_integration_lite_*.json`. Set `PROTOPYNE_RECORD=1` to regenerate
-//! after an intentional change; a missing file fails proving nothing.
-//! Calibration from the look-ahead and drift suites must already be green —
-//! no golden is checked in over a red gate.
+//! No test here names a file under `data/protopyne-rs/indicators/`:
+//! adding, removing, or renaming a script changes no outcome in this file.
 
 use std::path::PathBuf;
 
-use protopyne_kernels::{InputSet, RunOutcome};
-use protopyne_types::Bar;
+use protopyne_kernels::{InputSet, LibraryId, LinkedModule, ModuleInput};
 
-use super::common_golden::{check_golden, dump_canonical};
-use super::common_mtf::{data_root, engine_for, link_task_closure, load_history, WARMUP};
+use super::common_mtf::{engine_for, linked_from_graph, load_history, resolve_inputs};
 
-/// Golden file for one indicator and chart timeframe.
-fn golden_path(indicator: &str, timeframe: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests")
-        .join("data")
-        .join(format!("pine_task_{indicator}_{timeframe}.json"))
+/// A library that does not export `isPatternType` (the shape of the
+/// on-disk `libCandles` the quarantined reference once resolved against).
+const SKEWED_LIB: &str = "//@version=6\nlibrary(\"libCandles\")\nexport helper() => 1\n";
+
+/// A driver calling the missing export, then plotting the result so the
+/// reference sits on the evaluation path on every bar.
+const SKEWED_DRIVER: &str = "import showmethegrail/libCandles/11 as libCandles\n\
+     x = libCandles.isPatternType(close)\n\
+     plot(x)\n";
+
+/// Synthetic skewed closure: the importer pins an older version than the
+/// library declares, exactly like the quarantined reference did. Versions
+/// are metadata only — the refusal below is about the missing export,
+/// never the skew.
+fn skew_modules() -> Vec<LinkedModule> {
+    let lib_source = protopyne_kernels::parse_pine_source("showmethegrail/libCandles", SKEWED_LIB);
+    let lib_program = protopyne_kernels::parse_program(SKEWED_LIB).expect("library parses");
+    let driver_source = protopyne_kernels::parse_pine_source("local/Driver", SKEWED_DRIVER);
+    let driver_program = protopyne_kernels::parse_program(SKEWED_DRIVER).expect("driver parses");
+    linked_from_graph(&resolve_inputs(vec![
+        ModuleInput::new(
+            LibraryId {
+                publisher: "showmethegrail".to_owned(),
+                name: "libCandles".to_owned(),
+                version: 21,
+            },
+            lib_source,
+            lib_program,
+        ),
+        ModuleInput::new(
+            LibraryId {
+                publisher: "local".to_owned(),
+                name: "Driver".to_owned(),
+                version: 1,
+            },
+            driver_source,
+            driver_program,
+        ),
+    ]))
 }
 
-/// Link PPAS once and run it over one chart history with no injections:
-/// its only `fetch` is chart-scoped. Full histories reach the skewed
-/// pattern reference (quarantined — no PPAS golden is blessed).
-fn run_ppas(chart: &str, bars: &[Bar]) -> Result<RunOutcome, protopyne_kernels::KernelError> {
-    let modules = link_task_closure("ApexPPAS");
+/// Fail-closed pin: the skewed pattern reference refuses with the exact
+/// pinned reason instead of resolving across the alias. Runs at
+/// full-history scale on every timeframe; no golden is blessed over a
+/// refusing path.
+fn prove_skewed_reference_refuses(chart: &str, bars: &[protopyne_types::Bar], label: &str) {
+    let modules = skew_modules();
     let mut engine = engine_for(chart);
-    engine.run_linked(&modules, bars, InputSet::new())
-}
-
-/// Fail-closed pin for full-history PPAS (quarantine verdict,
-/// human-approved 2026-10-12): once ATR warms and a reversal prints, the
-/// pattern branch names `libCandles.isPatternType`, which the on-disk v21
-/// `libCandles` does not export. The run refuses with the exact pinned
-/// reason instead of resolving across the alias; no golden is blessed
-/// over this path. The executable PPAS proof stays the five-bar
-/// clear-regime contract (kernels suite) plus this pin.
-fn prove_ppas_refuses(chart: &str, bars: &[Bar], label: &str) {
-    let reason = run_ppas(chart, bars)
-        .expect_err("skewed pattern reference refuses at full history")
+    let reason = engine
+        .run_linked(&modules, bars, InputSet::new())
+        .expect_err("skewed reference refuses at full history")
         .to_string();
     assert_eq!(
         reason, "pine evaluation refused: unknown function 'libCandles.isPatternType'",
@@ -76,164 +85,55 @@ fn prove_ppas_refuses(chart: &str, bars: &[Bar], label: &str) {
     );
 }
 
-/// Link RSIMD once and run it over one chart history with no injections:
-/// divergence detection runs on chart legs; it calls no `fetch`.
-fn run_rsimd(chart: &str, bars: &[Bar]) -> RunOutcome {
-    let modules = link_task_closure("ApexRSIMD");
-    let mut engine = engine_for(chart);
-    engine
-        .run_linked(&modules, bars, InputSet::new())
-        .expect("RSIMD evaluates with zero refusals")
-}
-
-/// Plot titles in capture order.
-fn plot_titles(outcome: &RunOutcome) -> Vec<&str> {
-    outcome
-        .plots
-        .iter()
-        .map(|plot| plot.title.as_str())
-        .collect()
-}
-
-/// Structural proof shared by every task run: every non-warmup bar
-/// evaluates with one snapshot, and an identical second run is
-/// byte-identical (rerun determinism, in memory — the golden pins the
-/// bytes on disk).
-fn prove_task(outcome: &RunOutcome, rerun: impl FnOnce() -> RunOutcome, bars: &[Bar], label: &str) {
-    let expect_evaluated = bars.len() - WARMUP as usize;
-    assert_eq!(
-        outcome.evaluated, expect_evaluated,
-        "{label}: every non-warmup bar evaluates"
-    );
-    assert_eq!(
-        outcome.snapshots.len(),
-        expect_evaluated,
-        "{label}: one snapshot per evaluated bar"
-    );
-    assert_eq!(
-        dump_canonical(&rerun()),
-        dump_canonical(outcome),
-        "{label}: rerun over identical inputs is byte-identical"
-    );
-}
-
-const RSIMD_SERIES: &[&str] = &["rsi_val", "trend_health"];
-/// (no golden) — pins the exact full-history refusal instead.
+/// Skewed reference over the full 1-minute history.
 #[test]
-fn ppas_full_history_refuses_on_1m() {
+fn skewed_reference_refuses_on_1m() {
     let bars = load_history("SPY_1M.csv");
     assert_eq!(bars.len(), 436, "1M fixture row count pinned");
-    prove_ppas_refuses("1", &bars, "PPAS 1m");
+    prove_skewed_reference_refuses("1", &bars, "skew 1m");
 }
 
-/// PPAS over the full 5-minute history with no injections: quarantined
-/// (no golden) — pins the exact full-history refusal instead.
+/// Skewed reference over the full 5-minute history.
 #[test]
-fn ppas_full_history_refuses_on_5m() {
+fn skewed_reference_refuses_on_5m() {
     let bars = load_history("SPY_5M.csv");
     assert_eq!(bars.len(), 346, "5M fixture row count pinned");
-    prove_ppas_refuses("5", &bars, "PPAS 5m");
+    prove_skewed_reference_refuses("5", &bars, "skew 5m");
 }
 
-/// PPAS over the full 15-minute history with no injections: quarantined
-/// (no golden) — pins the exact full-history refusal instead.
+/// Skewed reference over the full 15-minute history.
 #[test]
-fn ppas_full_history_refuses_on_15m() {
+fn skewed_reference_refuses_on_15m() {
     let bars = load_history("SPY_15M.csv");
     assert_eq!(bars.len(), 116, "15M fixture row count pinned");
-    prove_ppas_refuses("15", &bars, "PPAS 15m");
+    prove_skewed_reference_refuses("15", &bars, "skew 15m");
 }
 
-/// Tick-accumulation surface a closed-bar indicator must not touch: the
-/// `Bars` accumulator objects, the lower-timeframe pull legs, and the
-/// realtime gate. A future reference fails by token name.
-const TICK_SURFACE_TOKENS: &[&str] = &["Bars.", "security_lower_tf", "isrealtime"];
-
-/// Strip `//` line comments (string literals stay: a token inside a
-/// string still counts — loud by design, diagnosed by token name).
-fn code_without_line_comments(text: &str) -> String {
-    text.lines()
-        .map(|line| line.split("//").next().unwrap_or("").to_string())
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-/// PPAS is closed-bar-only: its file references no tick-accumulation
-/// surface, so no tick path exists to prove — recorded here instead of
-/// forced. (Its only `fetch` is chart-scoped; the linked libraries'
-/// lower-timeframe legs stay unreached on this path.)
+/// Directory-driven verdict over the live data root: every indicator file
+/// on disk either discovers to a linkable closure or refuses with a
+/// reason. The fixture suite pins exact behavior; this probe only guards
+/// the shape, so directory churn changes no outcome here.
 #[test]
-fn ppas_closed_bars_only_no_tick_path() {
-    let path = data_root().join("indicators/_ApexPPAS.pine");
-    let text = std::fs::read_to_string(&path).expect("PPAS loads");
-    let code = code_without_line_comments(&text);
-    for token in TICK_SURFACE_TOKENS {
-        assert!(
-            !code.contains(token),
-            "PPAS references no tick surface {token}"
-        );
-    }
-}
-
-/// RSIMD is closed-bar-only: its file references no tick-accumulation
-/// surface, so no tick path exists to prove — recorded here instead of
-/// forced. (It calls no `fetch` at all; divergence runs on chart legs.)
-#[test]
-fn rsimd_closed_bars_only_no_tick_path() {
-    let path = data_root().join("indicators/_ApexRSIMD.pine");
-    let text = std::fs::read_to_string(&path).expect("RSIMD loads");
-    let code = code_without_line_comments(&text);
-    for token in TICK_SURFACE_TOKENS {
-        assert!(
-            !code.contains(token),
-            "RSIMD references no tick surface {token}"
-        );
-    }
-}
-
-/// RSIMD over the full 1-minute history with no injections.
-#[test]
-fn rsimd_runs_clean_on_1m() {
-    let bars = load_history("SPY_1M.csv");
-    assert_eq!(bars.len(), 436, "1M fixture row count pinned");
-    let outcome = run_rsimd("1", &bars);
-    prove_task(&outcome, || run_rsimd("1", &bars), &bars, "RSIMD 1m");
+fn live_indicators_link_or_refuse_with_a_reason() {
+    use protopyne_kernels::manifest_files::load_pine_sources;
+    use protopyne_kernels::{closure_inputs, discover_closures, ClosureOutcome};
+    let live = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../data/protopyne-rs");
+    let (indicators, libraries) = load_pine_sources(&live).expect("live root loads");
+    let outcomes = discover_closures(&indicators, &libraries);
     assert_eq!(
-        plot_titles(&outcome),
-        vec![
-            "RSI",
-            "plot:1",
-            "Bullish RSI HL",
-            "Bearish RSI LH",
-            "Bullish Price LL",
-            "Bullish Price LL BG",
-            "Bearish Price HH",
-            "Bearish Price HH BG",
-            "Trend Health",
-        ],
-        "RSIMD captures all nine plot sites"
+        outcomes.len(),
+        indicators.len(),
+        "one verdict per indicator file on disk"
     );
-    check_golden(&golden_path("rsimd", "1m"), &outcome, RSIMD_SERIES);
-}
-
-/// RSIMD over the full 5-minute history with no injections.
-#[test]
-fn rsimd_runs_clean_on_5m() {
-    let bars = load_history("SPY_5M.csv");
-    assert_eq!(bars.len(), 346, "5M fixture row count pinned");
-    let outcome = run_rsimd("5", &bars);
-    prove_task(&outcome, || run_rsimd("5", &bars), &bars, "RSIMD 5m");
-    assert_eq!(outcome.plots.len(), 9, "RSIMD captures all nine plot sites");
-    check_golden(&golden_path("rsimd", "5m"), &outcome, RSIMD_SERIES);
-}
-
-/// RSIMD over the full 15-minute history with no injections.
-#[test]
-fn rsimd_runs_clean_on_15m() {
-    let bars = load_history("SPY_15M.csv");
-    assert_eq!(bars.len(), 116, "15M fixture row count pinned");
-    let outcome = run_rsimd("15", &bars);
-    prove_task(&outcome, || run_rsimd("15", &bars), &bars, "RSIMD 15m");
-    assert_eq!(outcome.plots.len(), 9, "RSIMD captures all nine plot sites");
-    check_golden(&golden_path("rsimd", "15m"), &outcome, RSIMD_SERIES);
+    for outcome in &outcomes {
+        match outcome {
+            ClosureOutcome::Linked(closure) => {
+                let inputs = closure_inputs(closure).expect("linked closure parses");
+                resolve_inputs(inputs);
+            }
+            ClosureOutcome::Refused { stem, reason, .. } => {
+                assert!(!reason.is_empty(), "{stem} refuses with a reason");
+            }
+        }
+    }
 }

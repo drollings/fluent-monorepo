@@ -1,8 +1,8 @@
-//! Closed-coverage probe over the task closures: every `ta.<name>` call
-//! site across the three indicators under proof (plus the on-disk
-//! libraries they link) resolves to a bridged method or a checked-in
-//! refusal; no task closure destructures a `ta.*` result; and every
-//! `input.*` decorator spelling the task files use parses and runs.
+//! Closed-coverage probe over the discovered closures: every `ta.<name>`
+//! call site across every linkable closure (fixture and live, indicator
+//! plus the libraries it links) resolves to a bridged method or a
+//! checked-in refusal; no closure destructures a `ta.*` result; and every
+//! `input.*` decorator spelling the fixture files use parses and runs.
 //!
 //! `libTrendConsensus.<item>` sites are outside this probe's scope by
 //! construction: the triage suite pins zero references, so there is
@@ -10,33 +10,43 @@
 //! ASTs (never text), so identifiers inside comments, strings, or longer
 //! names (`DiagnosticData.new`) cannot false-positive.
 //!
+//! Exact per-script `ta.*` vocabularies are volatile file content and are
+//! not pinned here: the property that every site is bridged-or-refused
+//! survives any directory churn, while a vocabulary list would fail on
+//! every added script. Per-file destructure counts pin over the
+//! checked-in fixtures only.
+//!
 //! Test path note: this file rides the `pine::builtins_ta` unit module,
 //! so the runnable filter is `pine::builtins_ta`, not the file stem.
 
 use super::*;
+use crate::pine::test_fixture as fixture;
 use crate::{
-    closure_data_root, load_listed_closure, parse_program, InputSet, PineEngine, PineExpr,
-    PineRuntimeConfig, PineStmt, REAL_LIBRARIES, TASK_INDICATORS,
+    parse_program, ClosureOutcome, InputSet, PineEngine, PineExpr, PineRuntimeConfig, PineStmt,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Checked-in refuse-list: `(method, exact refusal string)` for closure
 /// call sites the bridge knowingly refuses. Empty today: every `ta.*`
-/// name the three closures touch is bridged. Any future entry must carry
-/// its exact refusal string, and the probe below executes it.
+/// name the discovered closures touch is bridged. Any future entry must
+/// carry its exact refusal string, and the probe below executes it.
 const REFUSE_LIST: &[(&str, &str)] = &[];
 
-fn closure_sources(indicator: &crate::ClosureEntry) -> Vec<(String, crate::PineProgram)> {
-    let root = closure_data_root(env!("CARGO_MANIFEST_DIR"));
-    load_listed_closure(&root, REAL_LIBRARIES, indicator)
-        .expect("task closure loads")
-        .into_iter()
-        .map(|(key, source)| {
+fn closure_programs() -> Vec<(String, crate::PineProgram)> {
+    let mut outcomes = fixture::fixture_outcomes();
+    outcomes.extend(fixture::discovered_outcomes());
+    let mut programs = Vec::new();
+    for outcome in &outcomes {
+        let ClosureOutcome::Linked(closure) = outcome else {
+            continue;
+        };
+        for (key, source) in &closure.sources {
             let program = parse_program(&source.text)
                 .unwrap_or_else(|err| panic!("closure file {key} parses: {err}"));
-            (key, program)
-        })
-        .collect()
+            programs.push((key.clone(), program));
+        }
+    }
+    programs
 }
 
 fn walk_call_args(args: &[crate::CallArg], sink: &mut BTreeSet<String>) {
@@ -192,10 +202,10 @@ fn walk_stmts(stmts: &[PineStmt], sink: &mut BTreeSet<String>) {
     }
 }
 
-/// Every `ta.*` name per closure file, in file order of the closure load
-/// (libraries first, indicator root last).
-fn ta_sites_per_closure(indicator: &crate::ClosureEntry) -> Vec<(String, BTreeSet<String>)> {
-    closure_sources(indicator)
+/// Every `ta.*` name per closure file, in file order of the discovery
+/// load (libraries first, indicator root last).
+fn ta_sites_per_closure() -> Vec<(String, BTreeSet<String>)> {
+    closure_programs()
         .iter()
         .map(|(key, program)| {
             let mut sink = BTreeSet::new();
@@ -217,12 +227,10 @@ fn task_closure_ta_calls_are_closed_over_bridge_or_refuse_list() {
         "no closure call site is knowingly refused"
     );
     let mut uncovered = Vec::new();
-    for indicator in TASK_INDICATORS {
-        for (file, sites) in ta_sites_per_closure(indicator) {
-            for method in &sites {
-                if !supported.contains(method.as_str()) && !refused.contains_key(method.as_str()) {
-                    uncovered.push(format!("{file}: ta.{method}"));
-                }
+    for (file, sites) in ta_sites_per_closure() {
+        for method in &sites {
+            if !supported.contains(method.as_str()) && !refused.contains_key(method.as_str()) {
+                uncovered.push(format!("{file}: ta.{method}"));
             }
         }
     }
@@ -233,102 +241,33 @@ fn task_closure_ta_calls_are_closed_over_bridge_or_refuse_list() {
 }
 
 #[test]
-fn task_closure_ta_inventory_is_pinned() {
-    // Fails loudly on file drift: the exact `ta.*` vocabulary each
-    // closure exercises, libraries included.
-    let mut per_closure = BTreeMap::new();
-    for indicator in TASK_INDICATORS {
-        let mut union = BTreeSet::new();
-        for (_, sites) in ta_sites_per_closure(indicator) {
-            union.extend(sites);
+fn task_closure_ta_vocabulary_agrees_across_closures() {
+    // One on-disk source per publisher/name serves every closure, so a
+    // file's `ta.*` vocabulary is closure-independent — and the fixture
+    // closures exercise the bridge (non-empty union). Exact vocabularies
+    // are not pinned: they are volatile file content, and the probe above
+    // already proves every site is bridged-or-refused.
+    let mut seen: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    let mut union: BTreeSet<String> = BTreeSet::new();
+    for (file, sites) in ta_sites_per_closure() {
+        union.extend(sites.iter().cloned());
+        match seen.get(&file) {
+            Some(known) => assert_eq!(known, &sites, "{file} vocabulary is closure-independent"),
+            None => {
+                seen.insert(file, sites);
+            }
         }
-        per_closure.insert(indicator.name, union.into_iter().collect::<Vec<_>>());
     }
-    assert_eq!(
-        per_closure
-            .get("DeltaVolumeProfileProtopyne")
-            .expect("dvp inventoried"),
-        &vec![
-            "alma",
-            "atr",
-            "cci",
-            "cmo",
-            "correlation",
-            "ema",
-            "highestbars",
-            "hma",
-            "lowestbars",
-            "mfi",
-            "rma",
-            "rsi",
-            "sma",
-            "stdev",
-            "stoch",
-            "vwma",
-            "wma",
-        ],
-        "DVP ta.* vocabulary pinned (indicator plus linked libraries)",
-    );
-    assert_eq!(
-        per_closure.get("ApexPPAS").expect("ppas inventoried"),
-        &vec![
-            "alma",
-            "atr",
-            "cci",
-            "cmo",
-            "correlation",
-            "ema",
-            "highestbars",
-            "hma",
-            "lowestbars",
-            "mfi",
-            "rma",
-            "rsi",
-            "sma",
-            "stdev",
-            "stoch",
-            "vwma",
-            "wma",
-        ],
-        "PPAS ta.* vocabulary pinned (ta.*-free indicator; library union)",
-    );
-    assert_eq!(
-        per_closure.get("ApexRSIMD").expect("rsimd inventoried"),
-        &vec![
-            "alma",
-            "atr",
-            "barssince",
-            "cci",
-            "cmo",
-            "correlation",
-            "ema",
-            "highestbars",
-            "hma",
-            "lowestbars",
-            "mfi",
-            "mom",
-            "pivothigh",
-            "pivotlow",
-            "rma",
-            "rsi",
-            "sma",
-            "stdev",
-            "stoch",
-            "valuewhen",
-            "vwma",
-            "wma",
-        ],
-        "RSIMD ta.* vocabulary pinned",
-    );
+    assert!(!union.is_empty(), "the discovered closures exercise ta.*");
 }
 
 #[test]
 fn no_task_closure_destructures_a_ta_result() {
-    // Tuple-unpacking verdict: the three `[...] =` sites in scope
-    // destructure user-function and method results
-    // (`detectDivergenceEnhanced(...)`, `bars.getHistoricalRange(...)`),
-    // never a `ta.*` call — so no tuple engine is wired for `ta.*`
-    // multi-outputs here. A future `ta.*` destructuring fails this test
+    // Tuple-unpacking verdict over every discovered closure: destructuring
+    // hits user-function and method results, never a `ta.*` call — with
+    // one deliberate exception: `ta.dmi` returns its Wilder triple
+    // ([+DI, -DI, ADX]) as an array, and the one closure spelling that
+    // triple unpacks it. Any other `ta.*` destructuring fails this test
     // by name instead of silently binding a primary series.
     fn destructure_ta_rhs(stmts: &[PineStmt], hits: &mut Vec<String>) {
         for stmt in stmts {
@@ -336,7 +275,8 @@ fn no_task_closure_destructures_a_ta_result() {
                 PineStmt::DestructureAssign { targets, value } => {
                     if matches!(
                         value.as_ref(),
-                        PineExpr::MethodCall { namespace, .. } if namespace == "ta"
+                        PineExpr::MethodCall { namespace, method, .. }
+                            if namespace == "ta" && method != "dmi"
                     ) {
                         hits.push(format!("destructures ta.* into {} targets", targets.len()));
                     }
@@ -369,70 +309,81 @@ fn no_task_closure_destructures_a_ta_result() {
             }
         }
     }
-    let mut counts: BTreeMap<String, usize> = BTreeMap::new();
     let mut hits = Vec::new();
-    for indicator in TASK_INDICATORS {
-        for (file, program) in closure_sources(indicator) {
-            let mut file_hits = Vec::new();
-            // Count all destructure sites per file for the drift pin below.
-            fn count_sites(stmts: &[PineStmt], count: &mut usize) {
-                for stmt in stmts {
-                    match stmt {
-                        PineStmt::DestructureAssign { .. } => *count += 1,
-                        PineStmt::FuncDecl { body, .. }
-                        | PineStmt::MethodDecl { body, .. }
-                        | PineStmt::For { body, .. }
-                        | PineStmt::ForIn { body, .. }
-                        | PineStmt::While { body, .. } => count_sites(body, count),
-                        PineStmt::If {
-                            then_branch,
-                            else_branch,
-                            ..
-                        } => {
-                            count_sites(then_branch, count);
-                            if let Some(branches) = else_branch {
-                                count_sites(branches, count);
-                            }
-                        }
-                        PineStmt::Switch(switch) => {
-                            for arm in &switch.arms {
-                                count_sites(&arm.body, count);
-                            }
-                        }
-                        PineStmt::ExportDecl(inner) => {
-                            count_sites(std::slice::from_ref(inner), count);
-                        }
-                        _ => {}
+    // The no-destructuring verdict holds over every discovered closure —
+    // fixture and live; the exact per-file counts pin over the hermetic
+    // fixture closures only, where file bytes are checked in.
+    for (file, program) in closure_programs() {
+        let mut file_hits = Vec::new();
+        destructure_ta_rhs(&program.statements, &mut file_hits);
+        for hit in file_hits {
+            hits.push(format!("{file}: {hit}"));
+        }
+    }
+    assert!(hits.is_empty(), "ta.* destructuring sites: {hits:?}");
+    // Count all destructure sites per file for the drift pin below.
+    fn count_sites(stmts: &[PineStmt], count: &mut usize) {
+        for stmt in stmts {
+            match stmt {
+                PineStmt::DestructureAssign { .. } => *count += 1,
+                PineStmt::FuncDecl { body, .. }
+                | PineStmt::MethodDecl { body, .. }
+                | PineStmt::For { body, .. }
+                | PineStmt::ForIn { body, .. }
+                | PineStmt::While { body, .. } => count_sites(body, count),
+                PineStmt::If {
+                    then_branch,
+                    else_branch,
+                    ..
+                } => {
+                    count_sites(then_branch, count);
+                    if let Some(branches) = else_branch {
+                        count_sites(branches, count);
                     }
                 }
+                PineStmt::Switch(switch) => {
+                    for arm in &switch.arms {
+                        count_sites(&arm.body, count);
+                    }
+                }
+                PineStmt::ExportDecl(inner) => {
+                    count_sites(std::slice::from_ref(inner), count);
+                }
+                _ => {}
             }
+        }
+    }
+    // Exact per-file destructure counts pin over the hermetic fixture
+    // closures only: file bytes are checked in, so drift fails loudly
+    // here — never over the volatile live root.
+    let mut fixture_counts: BTreeMap<String, usize> = BTreeMap::new();
+    for outcome in fixture::fixture_outcomes() {
+        let ClosureOutcome::Linked(closure) = &outcome else {
+            continue;
+        };
+        for (file, source) in &closure.sources {
+            let program = parse_program(&source.text)
+                .unwrap_or_else(|err| panic!("fixture file {file} parses: {err}"));
             let mut count = 0_usize;
             count_sites(&program.statements, &mut count);
             if count > 0 {
-                // One on-disk source per publisher/name serves every
-                // closure, so per-file counts agree across closures.
-                match counts.get(&file) {
+                match fixture_counts.get(file) {
                     Some(known) => assert_eq!(
                         *known, count,
                         "{file} destructure count is closure-independent"
                     ),
                     None => {
-                        counts.insert(file.clone(), count);
+                        fixture_counts.insert(file.clone(), count);
                     }
                 }
             }
-            destructure_ta_rhs(&program.statements, &mut file_hits);
-            for hit in file_hits {
-                hits.push(format!("{file}: {hit}"));
-            }
         }
     }
-    assert!(hits.is_empty(), "ta.* destructuring sites: {hits:?}");
     assert_eq!(
-        counts,
+        fixture_counts,
         BTreeMap::from([
-            ("local/ApexRSIMD".to_owned(), 2_usize),
-            ("local/DeltaVolumeProfileProtopyne".to_owned(), 1_usize),
+            ("local/_DeltaVolumeProfileProtopyne".to_owned(), 1_usize),
+            ("local/_IntegrationLite".to_owned(), 2_usize),
             ("showmethegrail/libApex".to_owned(), 2_usize),
             ("showmethegrail/libBars".to_owned(), 1_usize),
             ("showmethegrail/libBuffers".to_owned(), 2_usize),

@@ -455,7 +455,7 @@ fn arg_validation_refuses_with_reasons() {
         ("highestbars", vec![float(1.0)], "length"),
         ("tr", vec![Some(PineValue::Bool(true))], "na handling"),
         ("nope", vec![], "unknown"),
-        ("dmi", vec![float(1.0)], "unknown"),
+        ("dmi", vec![float(1.0)], "diLength"),
         ("median", vec![float(1.0), float(0.0)], "positive"),
     ];
     for (method, args, want) in cases {
@@ -741,4 +741,130 @@ fn pivots_reject_equal_extremes_and_na_windows() {
             .expect("valid");
     }
     assert_eq!(last, None, "na in the window reads na");
+}
+
+#[test]
+fn linreg_fits_the_window_least_squares() {
+    // `ta.linreg(source, length, offset)` evaluates the least-squares line
+    // over the window at `offset` bars back: a perfect ramp reproduces
+    // itself (offset 0) and its own lags (offset > 0); short windows and
+    // `na` poison read absent. Hand-computed: fits are exact on lines, so
+    // no tolerance beyond float rounding applies.
+    let legs = ramp_legs(10);
+    let ticks = full_ticks(&legs);
+    let mut bridge = TaBridge::new().expect("bridge builds");
+    let mut at = |offset: i64| -> Vec<Option<f64>> {
+        ticks
+            .iter()
+            .map(|&tick| {
+                let args = vec![
+                    float(tick.close),
+                    Some(PineValue::Int(5)),
+                    Some(PineValue::Int(offset)),
+                ];
+                let out = bridge
+                    .call("linreg-site", "linreg", &args, tick)
+                    .expect("valid call");
+                num(out.as_ref())
+            })
+            .collect()
+    };
+    let fitted = at(0);
+    assert_eq!(fitted.len(), 10);
+    assert!(
+        fitted[..4].iter().all(Option::is_none),
+        "short windows read absent: {fitted:?}"
+    );
+    for (index, value) in fitted.iter().enumerate().skip(4) {
+        let want = 100.0 + (index + 1) as f64 * 0.7;
+        let got = value.expect("warmed window fits");
+        assert!(
+            (got - want).abs() < 1e-9,
+            "offset 0 reproduces the ramp at bar {index}: got {got}, want {want}"
+        );
+    }
+    let lagged = at(2);
+    for (index, value) in lagged.iter().enumerate().skip(4) {
+        let want = 100.0 + (index + 1) as f64 * 0.7 - 2.0 * 0.7;
+        let got = value.expect("warmed window fits");
+        assert!(
+            (got - want).abs() < 1e-9,
+            "offset 2 lags two steps at bar {index}: got {got}, want {want}"
+        );
+    }
+}
+
+#[test]
+fn dmi_reports_directional_triples() {
+    // `ta.dmi(diLength, adxSmoothing)` returns [+DI, -DI, ADX]: Wilder
+    // smoothing with the kernel's seed-then-recurse order (first full
+    // window seeds from its mean). Hand-computed on a steady climber
+    // with lengths 2: bars (10,9,9.5), (11,10,10.5), (12,11,11.5) give
+    // raw (0,0,1), (1,0,1.5), (1,0,1.5); smoothed at bar 2 are
+    // (0.75, 0, 1.375), so +DI is 54.54.., -DI is 0, and DX pins at 100
+    // for both warmed bars, seeding ADX at 100.
+    let ticks = vec![
+        BarTick { open: 9.5, high: 10.0, low: 9.0, close: 9.5, volume: 1_000.0 },
+        BarTick { open: 10.5, high: 11.0, low: 10.0, close: 10.5, volume: 1_000.0 },
+        BarTick { open: 11.5, high: 12.0, low: 11.0, close: 11.5, volume: 1_000.0 },
+    ];
+    let mut bridge = TaBridge::new().expect("bridge builds");
+    let mut out = Vec::new();
+    for tick in &ticks {
+        let args = vec![Some(PineValue::Int(2)), Some(PineValue::Int(2))];
+        out.push(
+            bridge
+                .call("dmi-site", "dmi", &args, *tick)
+                .expect("valid call"),
+        );
+    }
+    assert_eq!(out.len(), 3);
+    match &out[0] {
+        Some(PineValue::Array(items)) => {
+            assert!(
+                items.iter().all(Option::is_none),
+                "the first bar reads absent: {items:?}"
+            );
+        }
+        other => panic!("dmi always returns its triple, got {other:?}"),
+    }
+    match &out[1] {
+        Some(PineValue::Array(items)) => {
+            let triple: Vec<Option<f64>> = items
+                .iter()
+                .map(|slot| match slot {
+                    Some(PineValue::Float(v)) => Some(*v),
+                    Some(PineValue::Int(v)) => Some(*v as f64),
+                    _ => None,
+                })
+                .collect();
+            // Seeded from the first full window (means 0.5, 0, 1.25), so
+            // +DI serves 40 while ADX still warms (one DX of two needed).
+            assert_eq!(triple.len(), 3);
+            assert!((triple[0].expect("+DI serves") - 40.0).abs() < 1e-9);
+            assert_eq!(triple[1], Some(0.0));
+            assert_eq!(triple[2], None, "ADX warms one bar later");
+        }
+        other => panic!("dmi always returns its triple, got {other:?}"),
+    }
+    match &out[2] {
+        Some(PineValue::Array(items)) => {
+            let triple: Vec<Option<f64>> = items
+                .iter()
+                .map(|slot| match slot {
+                    Some(PineValue::Float(v)) => Some(*v),
+                    Some(PineValue::Int(v)) => Some(*v as f64),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(triple.len(), 3);
+            let plus = triple[0].expect("directional plus serves");
+            let minus = triple[1].expect("directional minus serves");
+            let adx = triple[2].expect("adx serves");
+            assert!((plus - 54.545_454_545_454_55).abs() < 1e-9, "+DI: {plus}");
+            assert!((minus - 0.0).abs() < 1e-9, "-DI is flat zero: {minus}");
+            assert!((adx - 100.0).abs() < 1e-9, "ADX pins at full trend: {adx}");
+        }
+        other => panic!("dmi always returns its triple, got {other:?}"),
+    }
 }

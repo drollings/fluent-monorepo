@@ -14,8 +14,8 @@ use criterion::{criterion_group, criterion_main, Criterion};
 use fluent_wvr::{Describable, FieldAccess};
 use protopyne_chart_model::convert::ChartRow;
 use protopyne_egui::{
-    export_rows_csv, integration_lite_view, label_series, normalize_series, GrantFormState,
-    OscillatorKind,
+    export_rows_csv, integration_lite_sub_pane, integration_lite_view, label_series,
+    normalize_series, GrantFormState, IntegrationLiteConfig, OscillatorKind,
 };
 use protopyne_kernels::market_context::MarketRegime;
 use protopyne_strategy::{
@@ -77,6 +77,17 @@ fn lite_pane(c: &mut Criterion) {
     let rows = bench_rows(500);
     c.bench_function("integration_lite_view_500", |b| {
         b.iter(|| integration_lite_view(&rows, 0.14, 0.5, 100.0).expect("bench pane builds"));
+    });
+}
+
+fn lite_sub_pane(c: &mut Criterion) {
+    let rows = bench_rows(500);
+    let config = IntegrationLiteConfig::new()
+        .eit_alpha(0.14)
+        .fill_alpha(0.5)
+        .build();
+    c.bench_function("integration_lite_sub_pane_500", |b| {
+        b.iter(|| integration_lite_sub_pane(&rows, &config).expect("bench sub-pane builds"));
     });
 }
 
@@ -164,6 +175,7 @@ criterion_group!(
     quiet_labels,
     csv_export,
     lite_pane,
+    lite_sub_pane,
     grant_tier_read
 );
 criterion_main!(benches);

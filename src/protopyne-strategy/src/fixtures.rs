@@ -17,13 +17,9 @@
 //! fact rather than an accident of where a `push` was typed.
 
 use chrono::{TimeZone, Utc};
-use protopyne_types::Money;
 
-use crate::grant::{
-    BreakerLimits, Grant, GrantBudgets, GrantPermission, GrantScope, PortfolioThresholds,
-    SignalThresholds, TradeThresholds,
-};
-use crate::proposal::{Direction, StructureKind};
+use crate::grant::{refusal, Grant, GrantPermission, GrantPreset};
+use crate::proposal::StructureKind;
 
 /// The baseline grant, with `tweak` applied after construction.
 ///
@@ -33,61 +29,22 @@ use crate::proposal::{Direction, StructureKind};
 /// differs.
 #[must_use]
 pub fn grant_with(tweak: impl FnOnce(&mut Grant)) -> Grant {
-    let mut grant = Grant::new()
-        .id("fixture-grant".to_owned())
-        .scope(
-            GrantScope::new()
-                .strategies(vec!["ribbon".to_owned()])
-                .underlyings(vec!["SPY".to_owned()])
-                .structures(vec![StructureKind::Vertical])
-                .directions(vec![Direction::Long, Direction::Short])
-                .permissions(GrantPermission {
-                    entries: true,
-                    exits: true,
-                    rolls: false,
-                })
-                .build(),
-        )
-        .budgets(
-            GrantBudgets::new()
-                .max_trades(1_000)
-                .max_contracts(10_000)
-                .max_loss(Money::from(1_000_000))
-                .max_notional(Money::from(100_000_000))
-                .build(),
-        )
-        .signal(
-            SignalThresholds::new()
-                .min_conviction(0.0)
-                .min_activity_score(0.0)
-                .build(),
-        )
-        .trade(
-            TradeThresholds::new()
-                .max_loss_per_trade(Money::from(1_000))
-                .max_spread_width(Money::from(50))
-                .min_dte_days(1)
-                .max_dte_days(90)
-                .build(),
-        )
-        .portfolio(
-            PortfolioThresholds::new()
-                .max_open_risk(Money::from(10_000_000))
-                .quote_max_age_secs(60)
-                .build(),
-        )
-        .breakers(BreakerLimits::new().max_consecutive_errors(3).build())
-        .valid_from(
-            Utc.with_ymd_and_hms(2025, 1, 1, 0, 0, 0)
-                .single()
-                .expect("valid window"),
-        )
-        .valid_until(
-            Utc.with_ymd_and_hms(2027, 1, 1, 0, 0, 0)
-                .single()
-                .expect("valid window"),
-        )
-        .build();
+    // (M6.1c) The baseline IS the rehearsal preset: same scope, budgets,
+    // thresholds, and breakers — only the window differs (fixture
+    // 2025–2027 vs preset epoch stamps), so drift in any tier fails the
+    // shared preset suites instead of one copy silently.
+    let mut grant = Grant::preset(GrantPreset::Rehearsal {
+        id: "fixture-grant".to_owned(),
+        structures: vec![StructureKind::Vertical],
+    });
+    grant.valid_from = Utc
+        .with_ymd_and_hms(2025, 1, 1, 0, 0, 0)
+        .single()
+        .expect("valid window");
+    grant.valid_until = Utc
+        .with_ymd_and_hms(2027, 1, 1, 0, 0, 0)
+        .single()
+        .expect("valid window");
     tweak(&mut grant);
     grant
 }
@@ -123,15 +80,15 @@ pub fn grant_exit_only() -> Grant {
 #[must_use]
 pub fn deny_order() -> [&'static str; 9] {
     [
-        "grant revoked",
-        "grant window not live",
-        "grant attestation lapsed",
-        "proposal outside grant scope",
-        "trade budget exhausted",
-        "conviction below signal threshold",
-        "per-trade max loss exceeded",
-        "portfolio open-risk cap exceeded",
-        "breaker tripped: entries disarmed",
+        refusal::REVOKED,
+        refusal::WINDOW_NOT_LIVE,
+        refusal::ATTESTATION_LAPSED,
+        refusal::OUTSIDE_SCOPE,
+        refusal::TRADE_BUDGET_EXHAUSTED,
+        refusal::CONVICTION_BELOW_THRESHOLD,
+        refusal::MAX_LOSS_EXCEEDED,
+        refusal::OPEN_RISK_EXCEEDED,
+        refusal::BREAKER_TRIPPED,
     ]
 }
 

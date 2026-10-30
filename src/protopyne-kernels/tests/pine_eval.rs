@@ -329,9 +329,9 @@ fn unknown_function_refuses_naming_it() {
         reason.contains("nosuchfn"),
         "reason names the callee: {reason}"
     );
-    let reason = run_err("x = ta.dmi(close, 14)", &bars);
+    let reason = run_err("x = ta.adx(close, 14)", &bars);
     assert!(
-        reason.contains("ta.dmi"),
+        reason.contains("ta.adx"),
         "reason names the method: {reason}"
     );
     let reason = run_err("x = close.foo()", &bars);
@@ -774,5 +774,53 @@ fn primitive_first_method_binds_without_receiver() {
         num(&outcome, 3, "f"),
         Some(0.0),
         "false head takes the default"
+    );
+}
+
+#[test]
+fn oracle_present_in_test_build() {
+    // The test collaborator exists in test builds: a tree-only engine
+    // behind the evaluator seam runs a trivial script end to end.
+    use crate::pine::oracle::OracleEngine;
+    use crate::pine::PineEvaluator;
+    let program = parse_program("v = 1.0 + 2.0\nplot(v, title=\"V\")").expect("parses");
+    let modules = vec![LinkedModule::new(
+        "local",
+        program,
+        std::collections::HashMap::new(),
+    )];
+    let outcome = OracleEngine::new(PineRuntimeConfig::new().build())
+        .run_linked(&modules, &closes(), InputSet::new())
+        .expect("oracle runs the script");
+    assert_eq!(outcome.evaluated, 4, "every bar evaluates");
+    assert_eq!(
+        num(&outcome, 3, "v"),
+        Some(3.0),
+        "the oracle serves the computed value"
+    );
+}
+
+#[test]
+fn iff_selects_the_taken_branch() {
+    // Legacy `iff(condition, then, else)`: a true condition takes the
+    // second argument, false takes the third, an absent condition reads
+    // absent, and a non-bool condition refuses naming the call.
+    let bars = closes();
+    let outcome = run_default(
+        "a = iff(true, 1.0, 2.0)\nb = iff(false, 1.0, 2.0)\nc = iff(na, 1.0, 2.0)",
+        &bars,
+    );
+    assert_eq!(num(&outcome, 0, "a"), Some(1.0));
+    assert_eq!(num(&outcome, 0, "b"), Some(2.0));
+    assert_eq!(outcome.value_at(0, "c").expect("c bound"), None);
+    let reason = run_err("x = iff(1.0, 1.0, 2.0)", &bars);
+    assert!(
+        reason.contains("iff"),
+        "a non-bool condition names the call: {reason}"
+    );
+    let arity = run_err("x = iff(true, 1.0)", &bars);
+    assert!(
+        arity.contains("iff"),
+        "a short call names the call: {arity}"
     );
 }

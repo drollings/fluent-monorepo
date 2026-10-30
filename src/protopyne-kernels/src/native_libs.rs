@@ -625,10 +625,9 @@ pub(crate) fn provider_for(publisher: &str, name: &str) -> Option<&'static dyn N
 /// Link-time switch for native serving. The single default rule: links
 /// route native where a provider exists (`enabled: true` stays the link
 /// default — Pine stays linked underneath for audit and parity, and
-/// unserved symbols still fall through to Pine); execution stays Pine
-/// unless the engine opts in via `set_native_options` (the engine default
-/// `enabled: false` is preserved, so existing drivers keep proving exactly
-/// what they proved before). Construct explicitly with `enabled: false` for
+/// unserved symbols still fall through to Pine); execution follows the
+/// same default through the engine (explicit `enabled: false` keeps
+/// Pine-oracle runs). Construct explicitly with `enabled: false` for
 /// Pine-oracle runs. The row `enabled` flags are lookup intent for
 /// `find_native` only (pinned all-disabled — serving follows provider
 /// existence under this switch, never a per-library call-site flag).

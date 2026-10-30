@@ -85,6 +85,8 @@ impl TaBridge {
             "cum",
             "correlation",
             "median",
+            "linreg",
+            "dmi",
             "eit",
             "kalman",
             "voss",
@@ -323,7 +325,11 @@ impl TaBridge {
                     return Ok(None);
                 }
                 let running = self.cum_sums.get(site).copied().unwrap_or(0.0) + value;
-                self.cum_sums.insert(site.to_owned(), running);
+                if let Some(slot) = self.cum_sums.get_mut(site) {
+                    *slot = running;
+                } else {
+                    self.cum_sums.insert(site.to_owned(), running);
+                }
                 Ok(Some(PineValue::Float(running)))
             }
             "correlation" => {
@@ -358,6 +364,140 @@ impl TaBridge {
                     return Ok(None);
                 }
                 Ok(crate::math::median_of(window).map(PineValue::Float))
+            }
+            "dmi" => {
+                let [di_length, adx_length] = args else {
+                    return Err(bad_arity("diLength and adxSmoothing"));
+                };
+                let di_length = pine_usize(method, di_length.as_ref())?;
+                let adx_length = pine_usize(method, adx_length.as_ref())?;
+                // Raw directional legs accumulate per site; Wilder
+                // smoothing recurs through the stored smoothed values
+                // with the kernel's seed-then-recurse order (the first
+                // full window seeds from its mean, a non-finite previous
+                // reseeds from the trailing mean).
+                let key = |suffix: &str| format!("{site}#{suffix}");
+                self.push_history(&key("high"), tick.high);
+                self.push_history(&key("low"), tick.low);
+                self.push_history(&key("close"), tick.close);
+                let count = self.history(&key("close")).len();
+                let (raw_plus, raw_minus, raw_tr) = if ![tick.high, tick.low, tick.close]
+                    .iter()
+                    .all(|leg| leg.is_finite())
+                {
+                    (f64::NAN, f64::NAN, f64::NAN)
+                } else if count == 1 {
+                    (0.0, 0.0, tick.high - tick.low)
+                } else {
+                    let high = self.history(&key("high"));
+                    let low = self.history(&key("low"));
+                    let close = self.history(&key("close"));
+                    let (prev_high, prev_low, prev_close) =
+                        (high[count - 2], low[count - 2], close[count - 2]);
+                    let up_move = tick.high - prev_high;
+                    let down_move = prev_low - tick.low;
+                    let plus = if up_move > down_move && up_move > 0.0 {
+                        up_move
+                    } else {
+                        0.0
+                    };
+                    let minus = if down_move > up_move && down_move > 0.0 {
+                        down_move
+                    } else {
+                        0.0
+                    };
+                    (
+                        plus,
+                        minus,
+                        crate::volatility::true_range(tick.high, tick.low, Some(prev_close)),
+                    )
+                };
+                self.push_history(&key("plus"), raw_plus);
+                self.push_history(&key("minus"), raw_minus);
+                self.push_history(&key("tr"), raw_tr);
+                let smooth = |bridge: &mut Self, raw_key: &str, smooth_key: &str, length: usize| {
+                    let raw = bridge.history(&key(raw_key));
+                    let smoothed = bridge.history(&key(smooth_key));
+                    let value = if raw.len() < length {
+                        f64::NAN
+                    } else {
+                        let window = &raw[raw.len() - length..];
+                        if window.iter().any(|leg| !leg.is_finite()) {
+                            f64::NAN
+                        } else {
+                            match smoothed.last() {
+                                Some(prev) if prev.is_finite() => crate::math::wilder_step(
+                                    *prev,
+                                    raw[raw.len() - 1],
+                                    length,
+                                ),
+                                _ => crate::math::window_mean(window),
+                            }
+                        }
+                    };
+                    bridge.push_history(&key(smooth_key), value);
+                    value
+                };
+                let splus = smooth(self, "plus", "splus", di_length);
+                let sminus = smooth(self, "minus", "sminus", di_length);
+                let str_ = smooth(self, "tr", "str", di_length);
+                let leg_of =
+                    |part: f64, total: f64| nan_hole(crate::math::div_or_none(100.0 * part, total));
+                let plus = leg_of(splus, str_);
+                let minus = leg_of(sminus, str_);
+                let dx = if !plus.is_finite() || !minus.is_finite() || (plus + minus) == 0.0 {
+                    f64::NAN
+                } else {
+                    nan_hole(crate::math::div_or_none(
+                        100.0 * (plus - minus).abs(),
+                        plus + minus,
+                    ))
+                };
+                self.push_history(&key("dx"), dx);
+                let adx = smooth(self, "dx", "adx", adx_length);
+                let leg = |value: f64| crate::indicator::fin_or_none(value).map(PineValue::Float);
+                Ok(Some(PineValue::Array(vec![
+                    leg(plus),
+                    leg(minus),
+                    leg(adx),
+                ])))
+            }
+            "linreg" => {
+                let [source, length, offset] = args else {
+                    return Err(bad_arity("source, length and offset"));
+                };
+                let length = pine_usize(method, length.as_ref())?;
+                let offset = match pine_source(offset.as_ref())? {
+                    value if value.is_nan() => return Ok(None),
+                    value if value.fract() == 0.0 && value >= 0.0 => value,
+                    value => {
+                        return Err(KernelError::Eval(format!(
+                            "ta.{method} takes a non-negative whole offset, got {value}"
+                        )));
+                    }
+                };
+                let tail = self.push_history(site, pine_source(source.as_ref())?);
+                let window = window_of(tail, length);
+                if window.len() < length || window.iter().any(|v| v.is_nan()) {
+                    return Ok(None);
+                }
+                // Least squares in Pine's per-coordinates (the newest bar
+                // counts 1): slope and intercept over per = 1..=length,
+                // evaluated `offset` bars back. A single-point window is
+                // flat by definition, so it serves its own value.
+                let len = length as f64;
+                let (sum_x, sum_y, sum_xx, sum_xy) =
+                    window.iter().rev().enumerate().fold((0.0, 0.0, 0.0, 0.0), |(sx, sy, sxx, sxy), (back, value)| {
+                        let per = back as f64 + 1.0;
+                        (sx + per, sy + value, sxx + per * per, sxy + per * value)
+                    });
+                let denominator = len * sum_xx - sum_x * sum_x;
+                if denominator == 0.0 {
+                    return Ok(window.last().copied().map(PineValue::Float));
+                }
+                let slope = (len * sum_xy - sum_x * sum_y) / denominator;
+                let at_newest = sum_y / len + slope * (1.0 - sum_x / len);
+                Ok(Some(PineValue::Float(at_newest + slope * offset)))
             }
             "eit" => {
                 let [source, alpha] = args else {
@@ -499,13 +639,22 @@ impl TaBridge {
             .registry
             .get(kernel)
             .ok_or_else(|| KernelError::Eval(format!("ta bridge has no '{kernel}' kernel")))?;
-        let state = self.kernel_states.entry(site.to_owned()).or_default();
+        // Hit path borrows without allocating: the owned key materializes
+        // only for a first-seen site.
+        if !self.kernel_states.contains_key(site) {
+            self.kernel_states
+                .insert(site.to_owned(), Default::default());
+        }
+        let state = self.kernel_states.get_mut(site).expect("inserted above");
         Ok(indicator.update(state, tick, params)?.map(PineValue::Float))
     }
 
     /// Append one source value to a site history, returning the full history.
     fn push_history(&mut self, site: &str, value: f64) -> &[f64] {
-        let history = self.histories.entry(site.to_owned()).or_default();
+        if !self.histories.contains_key(site) {
+            self.histories.insert(site.to_owned(), Vec::new());
+        }
+        let history = self.histories.get_mut(site).expect("inserted above");
         history.push(value);
         history
     }
@@ -514,7 +663,10 @@ impl TaBridge {
     /// the full history. Conditions ride a `bool` history beside the
     /// `f64` source histories so `na` never encodes as a quiet `0.0`.
     fn push_cond(&mut self, site: &str, flag: bool) -> &[bool] {
-        let history = self.cond_histories.entry(site.to_owned()).or_default();
+        if !self.cond_histories.contains_key(site) {
+            self.cond_histories.insert(site.to_owned(), Vec::new());
+        }
+        let history = self.cond_histories.get_mut(site).expect("inserted above");
         history.push(flag);
         history
     }

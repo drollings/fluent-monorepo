@@ -1655,24 +1655,16 @@ pub(crate) async fn backtest_run_of(
         })?;
     let strategy: IntegrationLiteStrategyConfig = spec.legacy.clone();
     let indicator = spec.indicator.clone();
-    let grant: protopyne_strategy::Grant = match params.grant.clone() {
-        Some(document) => serde_json::from_value(document).map_err(|refused| {
-            (
-                StatusCode::BAD_REQUEST,
-                format!("backtest grant refused: {refused}"),
-            )
-        })?,
-        None => protopyne_strategy::Grant::preset(protopyne_strategy::GrantPreset::Rehearsal {
-            id: "backtest-permissive".to_owned(),
-            structures: vec![protopyne_strategy::proposal::StructureKind::Single],
-        }),
-    };
-    grant.validate().map_err(|refused| {
-        (
+    // Grants are retired from the backtest path: the simple loop evaluates
+    // no grant, so accepting a document it would not enforce would be a
+    // footgun. A supplied grant refuses naming the retirement; callers that
+    // never sent one see no change.
+    if params.grant.is_some() {
+        return Err((
             StatusCode::BAD_REQUEST,
-            format!("backtest grant refused: {refused}"),
-        )
-    })?;
+            "backtest grants are retired: the simple path evaluates no grant".to_owned(),
+        ));
+    }
     let start = backtest_window_bound("start", params.start.as_deref())?;
     let end = backtest_window_bound("end", params.end.as_deref())?;
     if start.is_some_and(|bound| end.is_some_and(|stop| stop < bound)) {
@@ -1689,12 +1681,9 @@ pub(crate) async fn backtest_run_of(
         })
         .cloned()
         .collect();
-    let underlying = grant
-        .scope
-        .underlyings
-        .first()
-        .cloned()
-        .unwrap_or_else(|| "SPY".to_owned());
+    // The endpoint serves the single-symbol tape; the retired grant's scope
+    // was the only other source of the label and defaulted to SPY.
+    let underlying = "SPY".to_owned();
     // Input parsing, not display: decimal text becomes the runner's opening
     // equity through one fallible conversion, and an unrepresentable value
     // refuses naming the field.
@@ -1722,13 +1711,9 @@ pub(crate) async fn backtest_run_of(
         0,
     );
     let timeframe = protopyne_types::Timeframe::infer_or_d1(&bars);
-    let run = crate::equity::BacktestRequest::builder()
+    let run = crate::simple_backtest::SimpleBacktestRequest::builder()
         .indicator(&indicator)
         .strategy(&strategy)
-        .risk(&protopyne_strategy::RiskEngine::new(
-            protopyne_strategy::RiskLimits::new().build(),
-        ))
-        .grant(&grant)
         .venue_config(&venue_config)
         .runner_config(&runner_config)
         .signal_name("integration_lite")
@@ -1738,7 +1723,6 @@ pub(crate) async fn backtest_run_of(
         .seed(params.seed)
         .initial_equity(equity)
         .run()
-        .await
         .map_err(|error| (StatusCode::UNPROCESSABLE_ENTITY, error.to_string()))?;
     let view = backtest_run_view_of(&run_id, &run, &bars);
     publish_backtest(

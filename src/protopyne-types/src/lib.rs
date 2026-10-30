@@ -20,7 +20,7 @@ pub mod timeframe;
 pub mod warmup;
 pub mod window;
 
-pub use bar::{validate_new_bar, Adjustment, Bar};
+pub use bar::{bar_leg_as_f64, validate_new_bar, Adjustment, Bar};
 pub use chain::{
     ChainQuote, ContractId, Greeks, GreeksCurve, GreeksPoint, LegSide, OptionContract, OptionKind,
     Portfolio, PortfolioId, SpreadLeg, SpreadLegs, DEFAULT_CONTRACT_MULTIPLIER, MAX_SPREAD_LEGS,

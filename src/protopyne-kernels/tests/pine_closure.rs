@@ -1,57 +1,94 @@
-//! Real-file closure fixtures: the indicator plus its seven libraries load
+//! Fixture closure files: the fixture indicator plus its seven libraries load
 //! with warn-only version findings, resolve to the pinned module set, and
 //! refuse unknown files with a reason. Shipped CSV histories pin their
 //! header shape and data-row counts here (lightweight header/count reads;
 //! full bar parsing stays in the server ingest suite).
 //!
+//! All Pine file reads run over the checked-in fixtures
+//! (server `tests/data/pine_closure`), never the volatile live root.
+//!
 //! Test path note: this file rides the `pine::closure` unit module, so the
 //! runnable filter is `pine::closure`, not the file stem.
 
-use super::*;
 use crate::{load_pine_source, parse_pine_source, PineSource, SourceKind};
 use fluent_wvr::validate::Validate;
 use std::path::PathBuf;
 
 fn data_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../protopyne-server/tests/data/pine_closure")
+}
+
+/// The volatile live root, used only for the shipped CSV histories (out
+/// of scope for the pin-free migration: histories are not Pine files).
+fn history_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../data/protopyne-rs")
 }
 
-fn load(entry: &ClosureEntry) -> PineSource {
-    let path = data_root().join(entry.relpath);
-    load_pine_source(&path).expect("real file loads")
+fn load(relpath: &str) -> PineSource {
+    let path = data_root().join(relpath);
+    load_pine_source(&path).expect("fixture file loads")
 }
 
 #[test]
+#[allow(clippy::type_complexity)]
 fn seven_libraries_load_with_identities() {
-    assert_eq!(
-        REAL_LIBRARIES.len(),
-        7,
-        "five in-scope plus drawing/candles"
-    );
-    for entry in REAL_LIBRARIES {
-        let source = load(entry);
-        assert_eq!(source.version, Some(6), "{} declares v6", entry.relpath);
+    // Fixture bytes are checked in: exact identities and import pairs pin
+    // here, never over the volatile live root.
+    let cases: &[(&str, &str, &[(&str, &str)])] = &[
+        ("libraries/_libUtil.pine", "libUtil", &[]),
+        ("libraries/_libBars.pine", "libBars", &[("libUtil", "UTIL")]),
+        ("libraries/_libBuffers.pine", "libBuffers", &[]),
+        (
+            "libraries/_libDrawing.pine",
+            "libDrawing",
+            &[("libUtil", "UTIL")],
+        ),
+        (
+            "libraries/_libCandles.pine",
+            "libCandles",
+            &[
+                ("libUtil", "UTIL"),
+                ("libDrawing", "libDrawing"),
+                ("libApex", "libApex"),
+            ],
+        ),
+        ("libraries/_libMAs.pine", "libMAs", &[("libUtil", "UTIL")]),
+        (
+            "libraries/_libApex.pine",
+            "libApex",
+            &[
+                ("libUtil", "UTIL"),
+                ("libBuffers", "libBuffers"),
+                ("libBars", "BARS"),
+                ("libDrawing", "libDrawing"),
+            ],
+        ),
+    ];
+    assert_eq!(cases.len(), 7, "five in-scope plus drawing/candles");
+    for (relpath, name, imports) in cases {
+        let source = load(relpath);
+        assert_eq!(source.version, Some(6), "{relpath} declares v6");
         assert!(
             source.warnings.is_empty(),
-            "{} warns nothing on a clean v6 tree: {:?}",
-            entry.relpath,
+            "{relpath} warns nothing on a clean v6 tree: {:?}",
             source.warnings
         );
         match &source.kind {
-            SourceKind::Library { name } => assert_eq!(name, entry.name),
-            other => panic!("{} is a library, got {other:?}", entry.relpath),
+            SourceKind::Library { name: kind } => assert_eq!(kind.as_str(), *name),
+            other => panic!("{relpath} is a library, got {other:?}"),
         }
-        assert_eq!(source.imports.len(), entry.imports.len());
-        for (got, want) in source.imports.iter().zip(entry.imports.iter()) {
-            assert_eq!(got.library.name, want.0);
-            assert_eq!(got.alias, want.1);
-        }
+        let got: Vec<(&str, &str)> = source
+            .imports
+            .iter()
+            .map(|decl| (decl.library.name.as_str(), decl.alias.as_str()))
+            .collect();
+        assert_eq!(got, *imports, "{relpath} import pairs");
     }
 }
 
 #[test]
 fn indicator_header_pins_seven_aliases() {
-    let path = data_root().join(INDICATOR_PATH);
+    let path = data_root().join("indicators/_IntegrationLite.pine");
     let source = load_pine_source(&path).expect("indicator loads");
     assert_eq!(source.version, Some(6));
     assert!(source.warnings.is_empty());
@@ -77,19 +114,26 @@ fn indicator_header_pins_seven_aliases() {
 
 #[test]
 fn closure_module_set_is_pinned() {
-    // Identity set from the fixture entries (load-time only, no execution).
-    // Dependency-first ordering over the parsed programs is exercised by
-    // the import-graph suite once every file parses.
-    let mut ids: Vec<String> = REAL_LIBRARIES
-        .iter()
-        .map(|entry| entry.module_id().to_string())
-        .collect();
-    ids.push("local/IntegrationLite".to_owned());
+    // Identity set from discovery over the fixtures (load-time only, no
+    // execution). Dependency-first ordering over the parsed programs is
+    // exercised by the import-graph suite once every file parses.
+    let (indicators, libraries) =
+        crate::manifest_files::load_pine_sources(&data_root()).expect("fixtures load");
+    let closure = crate::discover_closures(&indicators, &libraries)
+        .into_iter()
+        .find_map(|outcome| match outcome {
+            crate::ClosureOutcome::Linked(closure) if closure.stem == "_IntegrationLite" => {
+                Some(closure)
+            }
+            _ => None,
+        })
+        .expect("fixture closure discovered");
+    let mut ids: Vec<String> = closure.sources.iter().map(|(key, _)| key.clone()).collect();
     ids.sort();
     assert_eq!(
         ids,
         vec![
-            "local/IntegrationLite",
+            "local/_IntegrationLite",
             "showmethegrail/libApex",
             "showmethegrail/libBars",
             "showmethegrail/libBuffers",
@@ -126,7 +170,7 @@ fn version_skew_warns_and_still_loads() {
 }
 
 fn header_of(relative: &str) -> (Vec<String>, usize) {
-    let path = data_root().join(relative);
+    let path = history_root().join(relative);
     let text = std::fs::read_to_string(&path).expect("csv reads");
     let mut reader = csv::ReaderBuilder::new()
         .has_headers(true)

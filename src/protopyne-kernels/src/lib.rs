@@ -43,12 +43,19 @@ pub use market_context::{
 #[cfg(feature = "pine")]
 pub mod manifest_files;
 #[cfg(feature = "pine")]
+#[cfg_attr(not(all(feature = "bytecode", feature = "oracle")), allow(dead_code))]
 pub mod native_libs;
 pub mod order;
 pub mod oscillators;
 #[cfg(feature = "research")]
 pub mod parity;
+// Without the tree oracle (and outside tests) the interpreter's leaves
+// have no caller in this shape: the compiled loop and the oracle call
+// them, and both are absent here. The allowance is transitional — it
+// covers exactly the production shape the build matrix pins oracle-free,
+// and it is inert in every shape that compiles a caller.
 #[cfg(feature = "pine")]
+#[cfg_attr(not(all(feature = "bytecode", feature = "oracle")), allow(dead_code))]
 pub mod pine;
 pub mod price_source;
 #[cfg(feature = "research")]
@@ -85,14 +92,14 @@ pub use averages::{
     WmaIndicator,
 };
 pub use bars::{
-    choose_source, drift_pct, estimate_buy_volume, estimate_delta_volume, et_offset_ms, fast_tanh,
-    is_confirmed_bar, is_dst_et, is_valid_volume, project_bars, tick_bar_state, tick_resample,
-    validate_ohlcv, volume_deltas, BarParts, BarRing, BarStateFlags, BarsConfig, BarsHistory,
-    ClosedBar, ConfirmOutcome, ConfirmedBar, DeltaConfidence, DeltaEstimate, DeltaMethod,
-    DriftDecision, DriftReport, FetchCheck, FetchNativeOut, FetchSignal, LtfOutcome, LtfRow,
-    NativeFetchTick, RawTick, ReconcileOutcome, ResampleSource, RingCursor, TickClock, TickIngest,
-    TradingSession, BUFFER_PADDING, DRIFT_TOLERANCE_PCT, MAX_EXACT_VOLUME, NEUTRAL_BUY_RATIO,
-    VOLUME_EPSILON,
+    bars_from_display, choose_source, drift_pct, estimate_buy_volume, estimate_delta_volume,
+    et_offset_ms, fast_tanh, is_confirmed_bar, is_dst_et, is_valid_volume, project_bars,
+    tick_bar_state, tick_resample, validate_ohlcv, volume_deltas, BarParts, BarRing, BarStateFlags,
+    BarsConfig, BarsHistory, ClosedBar, ConfirmOutcome, ConfirmedBar, DeltaConfidence,
+    DeltaEstimate, DeltaMethod, DisplayBar, DriftDecision, DriftReport, FetchCheck, FetchNativeOut,
+    FetchSignal, LtfOutcome, LtfRow, NativeFetchTick, RawTick, ReconcileOutcome, ResampleSource,
+    RingCursor, TickClock, TickIngest, TradingSession, BUFFER_PADDING, DRIFT_TOLERANCE_PCT,
+    MAX_EXACT_VOLUME, NEUTRAL_BUY_RATIO, VOLUME_EPSILON,
 };
 #[cfg(feature = "research")]
 pub use calibration::{
@@ -130,7 +137,7 @@ pub use indicator::{
 pub use inputs::{InputDef, InputSet};
 pub use iv_surface::{fit_surface, IvPoint, IvSurface, DAYS_PER_YEAR, MIN_SURFACE_STRIKES};
 #[cfg(feature = "pine")]
-pub use manifest_files::build_indicator_manifest;
+pub use manifest_files::{build_indicator_manifest, load_pine_sources};
 pub use math::{
     corr_pearson, div_or_none, drawdown_of_peak, ema_factor, ema_step, ewm_span_step, linreg_slope,
     linreg_slope_intercept, midpoint_of, period_len, rolling_max, rolling_min,
@@ -158,19 +165,28 @@ pub use parity::{assert_expr_parity, expr_fixture};
 pub use pine::builtins_ta::TaBridge;
 #[cfg(feature = "pine")]
 pub use pine::manifest::{
-    build_manifest, manifest_id, IndicatorManifestEntry, ManifestFile, ManifestParity, PROVEN_STEMS,
+    build_manifest, manifest_id, IndicatorManifestEntry, ManifestFile, ManifestParity,
 };
+#[cfg(all(feature = "pine", feature = "bytecode"))]
+pub use pine::BytecodeMode;
 #[cfg(feature = "pine")]
 pub use pine::{
-    closure_data_root, display_program, indicator_library_id, lex, load_closure_sources,
-    load_listed_closure, load_pine_source, parity_for, parse_pine_source, parse_program, project,
-    resolve_imports, AssignItem, AssignOp, BarSnapshot, BinaryOp, BuiltinVar, CallArg,
-    ClosureEntry, EguiParityRow, EnumMember, FieldDecl, FieldPersistence, ImportDecl, LibraryId,
-    LinkedModule, LtfDataset, ModuleGraph, ModuleId, ModuleInput, MultiDecl, OverlayProjection,
-    Param, ParityVerdict, PineEngine, PineExpr, PineLexer, PineParseError, PineParser, PineProgram,
+    closure_data_root, closure_inputs, discover_closures, display_program, lex, load_pine_source,
+    parity_for, parse_pine_source, parse_program, project, resolve_imports, AssignItem, AssignOp,
+    BarSnapshot, BinaryOp, BuiltinVar, CallArg, ClosureOutcome, DiscoveredClosure, EguiParityRow,
+    EnumMember, FieldDecl, FieldPersistence, ImportDecl, LibraryId, LinkedModule, LtfDataset,
+    ModuleGraph, ModuleId, ModuleInput, MultiDecl, OverlayProjection, Param, ParityVerdict,
+    PineEngine, PineEvaluator, PineExpr, PineLexer, PineParseError, PineParser, PineProgram,
     PineSource, PineStmt, PineToken, PineType, PlotPrimitive, ProjectionRefusal, ResolvedModule,
     RunOutcome, SourceKind, SwitchArm, SwitchStmt, TokenKind, UnaryOp, VersionWarn, EGUI_PARITY,
-    INDICATOR_PATH, MAX_LOOP_ITERATIONS, REAL_LIBRARIES, SUPPORTED_PINE_VERSION, TASK_INDICATORS,
+    MAX_LOOP_ITERATIONS, SUPPORTED_PINE_VERSION,
+};
+#[cfg(all(feature = "pine", feature = "bytecode"))]
+pub use pine::{
+    decode_block, decode_consts, decode_symbols, encode_block, encode_consts, encode_symbols,
+    BinOp, BuiltinNamespace, BuiltinVarKind, CallArgSlot, CallTarget, CaptureKind, CompiledBlock,
+    CompiledModule, CompiledProgram, CondContext, ConstId, ConstPool, ConstValue, DecodeError,
+    FallbackReason, FillLeg, Instruction, LegKind, SlotId, SymbolId, SymbolTable, UnOp,
 };
 pub use price_source::PriceSource;
 #[cfg(feature = "research")]

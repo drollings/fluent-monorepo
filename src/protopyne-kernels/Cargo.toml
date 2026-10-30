@@ -17,6 +17,17 @@ research = ["dep:polars"]
 # the server's headless proofs, and benches comparing against Pine enable
 # it explicitly.
 pine = []
+# `bytecode` runs the Pine engine on the compiled slot VM behind an
+# explicit per-engine selection (the compiled loop is the default).
+# Default-off; implies `pine`. Test targets proving loop/engine parity
+# enable it explicitly.
+bytecode = ["pine"]
+# `oracle` compiles the tree-walk interpreter behind `pine::oracle` (and the
+# test-only `OracleEngine` collaborator). Default-off and dev-only: test
+# builds always have it (`cfg(test)`), while shipping builds carry no
+# interpreter. Test targets comparing the loop against the tree enable it
+# explicitly.
+oracle = []
 
 [dependencies]
 protopyne-types = { path = "../protopyne-types" }
@@ -46,6 +57,19 @@ tempfile = { workspace = true }
 [[bench]]
 name = "mtf_streaming"
 harness = false
+
+[[bench]]
+name = "pine_eval"
+harness = false
+required-features = ["pine"]
+
+# Production-shape refusal probe for the build matrix: asserts the typed
+# load-time diagnostics in builds without the oracle, and today's
+# selections in builds with it. Only builds where the compiled loop
+# exists; `cargo test` checks compilation, the matrix runs both shapes.
+[[example]]
+name = "production_refusal_probe"
+required-features = ["pine", "bytecode"]
 
 [[bench]]
 name = "fetch_tick"

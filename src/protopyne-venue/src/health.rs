@@ -13,6 +13,47 @@ use protopyne_store::StoreHealth;
 
 use crate::error::VenueError;
 
+/// Shared alert bank for entry gates (M9.2): the one `Vec<String>` +
+/// take-drain behind `BackfillGate` and `ReconcileGate`. The gates keep
+/// their own halt/suspend state, report types, and refusal vocabulary
+/// (different ubiquitous language — resync vs reconciliation); only the
+/// banking drains through here.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AlertBuffer {
+    alerts: Vec<String>,
+}
+
+impl AlertBuffer {
+    /// Empty bank.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Bank one alert line.
+    pub fn push(&mut self, alert: String) {
+        self.alerts.push(alert);
+    }
+
+    /// Bank a report's alert lines.
+    pub fn extend(&mut self, alerts: impl IntoIterator<Item = String>) {
+        self.alerts.extend(alerts);
+    }
+
+    /// Banked alert lines for out-of-band delivery.
+    #[must_use]
+    pub fn alerts(&self) -> &[String] {
+        &self.alerts
+    }
+
+    /// Take the banked alerts for out-of-band delivery, leaving the gate
+    /// state untouched. Delivery drains: alerts never accumulate without
+    /// bound across reporting cycles.
+    pub fn drain_alerts(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.alerts)
+    }
+}
+
 /// Observed health facts. State, not opinion: callers fill these from the
 /// feed, the clock, the connection supervisor, and the store's coverage
 /// probe.

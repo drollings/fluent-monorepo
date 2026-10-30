@@ -126,7 +126,10 @@ impl Indicator for AdIndicator {
             return Ok(None);
         };
         // Own `last` slot carries the running total (0 before the first
-        // clean bar); no bar history is needed.
+        // clean bar); no bar history is needed. Batch twin:
+        // `ts_cum_sum` (`wq_series.rs`) holds the last total on `NaN`
+        // instead of pausing without update — different shape (state
+        // machine vs batch map), documented fork (M1.3d), not unified.
         let running = state.last().unwrap_or(0.0) + flow;
         state.set_last(running);
         Ok(fin_or_none(running))

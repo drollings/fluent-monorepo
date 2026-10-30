@@ -18,7 +18,14 @@ decides and journals, not a web frontend over an API.
 - **Reliability over features.** Every capability earns its place by making the system safer or more auditable. Complexity that cannot be supervised is not added.
 - **Two distinct roles.** The human sets intent, bounds, and approvals; the machine executes within them and reports back. The machine never widens its own authority.
 - **Own the critical path.** Order state, risk checks, and the journal are first-party logic, not delegated to a framework or a venue SDK. Third-party code may render, analyze, or transport — never authorize or execute.
-- **One code path.** Backtest, paper, and live decisions run the same strategy, risk, and authorization logic over the same state machine. Divergence between rehearsal and reality is treated as a defect, not a modeling choice.
+- **One code path, two modes.** Live and paper run the same supervised
+  strategy, risk, and authorization logic over the same state machine —
+  divergence between rehearsal and reality on *that* path is a defect. The
+  research backtest is a deliberately simpler mode (see
+  `ADR_SIMPLE_BACKTEST.md`): it shares signal evaluation, sizing math, exit
+  management, and fee application with the supervised path, but evaluates
+  no grant, risk gate, or journal. A research result is never a transfer
+  certificate for live behavior.
 - **Fail closed.** Stale data, clock skew, reconciliation mismatch, expired credentials, or an offline broker halt new entries and alert — they never degrade into silent best-effort trading.
 - **Honest backtests.** Every report states its data limits and assumptions next to its metrics. A backtest that cannot name what it ignores is not trusted.
 - **Compose, don't reinvent.** Shared platform capabilities (task supervision, retry, dependency ordering, durable storage, calibration) are reused from common infrastructure; trading-domain logic lives in the trading crates. Nothing is implemented twice.
@@ -110,7 +117,9 @@ Rules:
 3. The grant evaluator is a **pure function**, `evaluate(proposal, grant, state, quotes) → Allow | Deny{reasons}`, run at decision time and again immediately before submission against a fresh quote.
 4. Grants **never bypass** the risk engine.
 5. Longer windows get **tighter defaults** and optional daily re-attestation, dropping to notify-only if unconfirmed.
-6. Because the evaluator is pure, the backtester runs the **same grant logic** over history. You can preview what a grant would have done and tune thresholds before arming.
+6. Because the evaluator is pure, the supervised rehearsal path runs the **same grant logic** over history. You can preview what a grant would have done and tune thresholds before arming.
+   (The equity research backtest is exempt: it evaluates no grant by design —
+   see `ADR_SIMPLE_BACKTEST.md`. Its reports state the absence.)
 7. Initial grants allow **defined-risk structures only**; naked short options are excluded.
 
 ## 8. Pine compatibility
@@ -141,6 +150,9 @@ Execution sits behind a venue interface so additional venues can be added later 
 - **Single-writer order and position state,** owned by this project rather than delegated to a third-party engine.
 - **Durable event-sourced journal:** intent is recorded before any broker call. State is rebuilt by replay, which also gives auditability and backtest/live parity.
 - **Safe submission:** deterministic external identifiers → journal intent → dry-run and margin check → submit → on any timeout or ambiguous failure, *query by identifier, never blindly resubmit*.
+  (Live and paper only. The research backtest writes no journal and submits
+  no orders; its fills price directly off the bar — see
+  `ADR_SIMPLE_BACKTEST.md`.)
 - **Reconciliation loop** against broker positions and live orders. Any mismatch halts new entries and alerts.
 - **Staleness and health gate:** quote age, stream state, credential expiry, and clock skew feed a "may trade" decision that fails closed.
 - **Reconnect and resync:** after any stream drop, missing bars are backfilled before signals resume, so indicators never evaluate on a gapped series.
@@ -155,7 +167,12 @@ Execution sits behind a venue interface so additional venues can be added later 
 - Expiration, assignment, exercise, dividends, and splits handled as explicit events.
 - Walk-forward and out-of-sample evaluation, parameter sweeps, and metrics beyond Sharpe (drawdown, tail loss, greeks exposure over time, capital efficiency).
 - Every run is reproducible from **(data version, code version, configuration)**.
-- Backtests exercise the real risk engine, sizing, loss-management, and grant logic, so what you test is what you trade.
+- The supervised (live/paper) rehearsal path exercises the real risk engine, sizing, loss-management, and grant logic, so what you test is what you trade.
+  The equity research backtest instead shares signal evaluation, sizing math,
+  exit management, and fee application with that path while omitting risk,
+  grant, and journal layers; its reports state the omission next to the
+  metrics, and its numbers are never transfer certificates (see
+  `ADR_SIMPLE_BACKTEST.md`).
 
 ## 12. Platform direction
 
@@ -178,7 +195,9 @@ Execution sits behind a venue interface so additional venues can be added later 
 ## 14. Success criteria
 
 - A Pine indicator from your library produces **numerically matching output** in Pine and in this platform, within a documented tolerance.
-- The same strategy produces **identical decisions** in backtest replay and live paper trading on the same data.
+- The supervised rehearsal path produces **identical decisions** in backtest replay and live paper trading on the same data.
+  (The simple research backtest is exempt by design — see
+  `ADR_SIMPLE_BACKTEST.md` — and its reports say so.)
 - Killing the process, the network, or the database at any point leaves **no unknown position and no unauthorized order**.
 - An armed grant can **never** exceed its stated worst-case exposure.
 - Every order can be traced to a proposal, a risk decision, and an approval or grant.

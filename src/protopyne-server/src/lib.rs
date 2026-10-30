@@ -29,6 +29,7 @@ pub mod report;
 pub mod routes;
 pub mod runner;
 pub mod service;
+pub mod simple_backtest;
 pub mod trading_loop;
 pub mod transpile;
 pub mod views;

@@ -544,6 +544,7 @@ fn int_type() -> PineType {
     PineType {
         name: "int".to_owned(),
         args: Vec::new(),
+        array_depth: 0,
     }
 }
 
@@ -878,4 +879,237 @@ fn engine_declares_inputs_and_resolves_display_constants() {
         outcome.value_at(0, "c").expect("c bound"),
         Some(PineValue::ColorHandle(_))
     ));
+}
+
+#[test]
+fn color_channel_readers_report_packed_channels() {
+    // `color.t/r/g/b` read back the packed lanes (`t` is 0-100, the rest
+    // 0-255); absence propagates and non-colors refuse.
+    let mut inputs = InputSet::new();
+    let mut one = |method: &str, args: &[CoreArg]| {
+        call("color", method, "s", args, &[], &mut inputs).expect("valid color call")
+    };
+    let color = one(
+        "rgb",
+        &[int_arg(10), int_arg(20), int_arg(30), int_arg(40)],
+    );
+    assert_eq!(
+        one("t", &[pos(color.clone())]),
+        Some(PineValue::Int(40)),
+        "transparency lane reads 0-100"
+    );
+    assert_eq!(
+        one("r", &[pos(color.clone())]),
+        Some(PineValue::Int(10)),
+        "red lane reads 0-255"
+    );
+    assert_eq!(
+        one("g", &[pos(color.clone())]),
+        Some(PineValue::Int(20)),
+        "green lane reads 0-255"
+    );
+    assert_eq!(
+        one("b", &[pos(color.clone())]),
+        Some(PineValue::Int(30)),
+        "blue lane reads 0-255"
+    );
+    assert_eq!(
+        one("t", &[pos(None)]),
+        None,
+        "absent color propagates"
+    );
+    let err = call(
+        "color",
+        "t",
+        "s",
+        &[float_arg(1.5)],
+        &[],
+        &mut inputs,
+    )
+    .expect_err("a non-color refuses");
+    assert!(
+        err.to_string().contains("color.t takes a color"),
+        "the refusal names the call: {err}"
+    );
+}
+
+#[test]
+fn legacy_bare_colors_resolve_as_their_dotted_handles() {
+    // Pre-namespace scripts spell colors bare (`lime`, `red`, ...): each
+    // bare name mints the identical handle as its `color.*` spelling, so
+    // both engines serve one color identity. Anything outside the legacy
+    // set stays unbound.
+    for bare in [
+        "white", "black", "red", "green", "blue", "orange", "teal", "aqua", "gray", "lime",
+        "yellow", "silver", "maroon", "olive", "navy", "purple", "fuchsia",
+    ] {
+        let dotted = format!("color.{bare}");
+        assert_eq!(
+            resolve_constant(bare),
+            resolve_constant(&dotted),
+            "{bare} mints the {dotted} handle"
+        );
+    }
+    assert_eq!(resolve_constant("chartreuse"), None);
+}
+
+#[test]
+fn math_degree_radian_conversions_match_reference() {
+    // `math.todegrees`/`math.toradians` convert between radians and
+    // degrees; absence propagates.
+    assert_eq!(
+        math_num("todegrees", &[float_arg(std::f64::consts::PI)]),
+        Some(180.0)
+    );
+    assert_eq!(
+        math_num("toradians", &[float_arg(180.0)]),
+        Some(std::f64::consts::PI)
+    );
+    assert_eq!(run_math("todegrees", &[pos(None)]), None);
+}
+
+#[test]
+fn bare_type_names_read_as_their_spelling() {
+    // Legacy scripts pass `type=bool` to `input(...)`: the bare type
+    // keywords name their type as strings (the input kind still infers
+    // from the default — the tag carries no additional information, so
+    // every input arm ignores it). Anything outside the keyword set
+    // stays unbound.
+    for keyword in ["bool", "int", "float", "string"] {
+        assert_eq!(
+            resolve_constant(keyword),
+            Some(PineValue::Str(keyword.to_owned())),
+            "{keyword} names its type"
+        );
+    }
+    assert_eq!(resolve_constant("chart"), None);
+}
+
+#[test]
+fn xloc_members_resolve_opaque() {
+    // Plot/drawing x-location selectors (`xloc.bar_time`,
+    // `xloc.bar_index`) ride calls opaquely: the engine indexes plots by
+    // series position, so the selector is recorded, never decided on.
+    for member in ["bar_time", "bar_index"] {
+        let name = format!("xloc.{member}");
+        let got = resolve_constant(&name).expect("xloc resolves");
+        assert!(matches!(got, PineValue::EnumHandle(_)), "{name} is opaque");
+    }
+    assert_eq!(resolve_constant("xloc.something"), None);
+}
+
+#[test]
+fn plot_styles_resolve_bare_and_qualified() {
+    // Plot styles ride `plot()` calls unevaluated-but-present: every
+    // legacy bare spelling mints the identical handle as its
+    // `plot.style_*` form, so both engines serve one style identity.
+    for (bare, member) in [
+        ("line", "style_line"),
+        ("linebr", "style_linebr"),
+        ("stepline", "style_stepline"),
+        ("steplinebr", "style_steplinebr"),
+        ("histogram", "style_histogram"),
+        ("columns", "style_columns"),
+        ("cross", "style_cross"),
+        ("area", "style_area"),
+        ("circles", "style_circles"),
+    ] {
+        let dotted = format!("plot.{member}");
+        let got = resolve_constant(bare).expect("bare style resolves");
+        assert_eq!(got, resolve_constant(&dotted).expect("dotted style resolves"));
+        assert!(matches!(got, PineValue::EnumHandle(_)), "{bare} is opaque");
+    }
+    assert_eq!(resolve_constant("plot.style_something"), None);
+}
+
+#[test]
+fn timeframe_from_seconds_inverts_in_seconds() {
+    // `timeframe.from_seconds` renders the canonical period string for a
+    // second count (minutes bare, sub-minute seconds with `S`, day-plus
+    // units bare at one): every rendering round-trips through
+    // `in_seconds`, and non-positive counts refuse.
+    let mut inputs = InputSet::new();
+    for (seconds, text) in [(60, "1"), (300, "5"), (45, "45S"), (86_400, "D")] {
+        let rendered = match call(
+            "timeframe",
+            "from_seconds",
+            "s",
+            &[int_arg(seconds)],
+            &[],
+            &mut InputSet::new(),
+        )
+        .expect("renders")
+        {
+            Some(PineValue::Str(rendered)) => rendered,
+            other => panic!("renders a string, got {other:?}"),
+        };
+        assert_eq!(rendered, text, "{seconds}s renders {text}");
+        let back = call(
+            "timeframe",
+            "in_seconds",
+            "s",
+            &[str_arg(&rendered)],
+            &[],
+            &mut InputSet::new(),
+        )
+        .expect("parses");
+        assert_eq!(
+            back,
+            Some(PineValue::Int(seconds)),
+            "{text} parses back to {seconds}"
+        );
+    }
+    let err = call(
+        "timeframe",
+        "from_seconds",
+        "s",
+        &[int_arg(0)],
+        &[],
+        &mut inputs,
+    )
+    .expect_err("zero refuses");
+    assert!(
+        err.to_string().contains("from_seconds"),
+        "the refusal names the call: {err}"
+    );
+}
+
+#[test]
+fn input_string_accepts_layout_enum_handles() {
+    // Shipped scripts pass `size.tiny` as an `input.string` default: the
+    // layout enums read as strings at the input boundary (their member
+    // text), exactly like the reference runtime's string constants. The
+    // stored default is the member text; other handles still refuse.
+    let mut inputs = InputSet::new();
+    let tiny = resolve_constant("size.tiny").expect("size resolves");
+    let got = call(
+        "input",
+        "string",
+        "s",
+        &[pos(Some(tiny)), pos(Some(PineValue::Str("T".to_owned())))],
+        &[],
+        &mut inputs,
+    )
+    .expect("enum default evaluates");
+    assert_eq!(
+        got,
+        Some(PineValue::Str("tiny".to_owned())),
+        "the member text stores"
+    );
+}
+
+#[test]
+fn array_typed_constructors_mint_empty_arrays() {
+    // `array.new_line()` (and its drawing siblings) mint empty arrays:
+    // element typing is declarative — pushes never check it — so every
+    // typed constructor serves the same empty array as `array.new()`.
+    let mut inputs = InputSet::new();
+    for method in ["new_line", "new_linefill", "new_box", "new_label"] {
+        let got = call("array", method, "s", &[], &[], &mut inputs).expect("constructs");
+        assert_eq!(
+            got,
+            Some(PineValue::Array(Vec::new())),
+            "{method} mints empty"
+        );
+    }
 }

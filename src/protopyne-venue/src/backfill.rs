@@ -23,6 +23,7 @@ use fluent_wvr::prelude::*;
 use protopyne_types::{adjust_fetch_bounds, AdjustedBounds, Bar, BarGap, SeriesContext, Timeframe};
 
 use crate::error::VenueError;
+use crate::health::AlertBuffer;
 
 /// Asset the backfill sensor provides: units whose validity depends on a
 /// contiguous series declare it in `depends`, so a hole cancels them
@@ -59,7 +60,7 @@ pub struct BackfillGate {
     /// per-bar reading fails closed on no reading instead.
     observed: bool,
     reason: Option<String>,
-    alerts: Vec<String>,
+    alerts: AlertBuffer,
 }
 
 impl BackfillGate {
@@ -101,6 +102,12 @@ impl BackfillGate {
         self.observed
     }
 
+    /// Banked alert lines for out-of-band delivery.
+    #[must_use]
+    pub fn alerts(&self) -> &[String] {
+        self.alerts.alerts()
+    }
+
     /// Whether the series is contiguous (the health gate's backfill fact).
     #[must_use]
     pub fn backfilled(&self) -> bool {
@@ -129,7 +136,7 @@ impl BackfillGate {
     /// suspension untouched. Delivery drains: alerts never accumulate
     /// without bound across reporting cycles.
     pub fn drain_alerts(&mut self) -> Vec<String> {
-        std::mem::take(&mut self.alerts)
+        self.alerts.drain_alerts()
     }
 }
 

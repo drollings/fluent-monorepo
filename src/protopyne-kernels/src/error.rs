@@ -40,6 +40,27 @@ pub enum KernelError {
     /// type mismatch, loop bound, unsupported node) instead of miscomputing.
     #[error("pine evaluation refused: {0}")]
     Eval(String),
+    /// A program could not be linked for the compiled loop in a build
+    /// without the tree oracle. The `construct` carries the linker's own
+    /// diagnostic, so this never masks a script-level refusal as a
+    /// load-time one: script refusals keep their `Eval` wording on both
+    /// engines, while this variant fires only when no engine remains.
+    #[error("uncompilable program in {module}: {construct}")]
+    Uncompilable {
+        /// Owning module of the unlowered construct.
+        module: String,
+        /// The linker's diagnostic for the unlowered construct.
+        construct: String,
+    },
+    /// The tree-walk selection was requested in a build without the tree
+    /// oracle. Selecting it is an operator choice against a retired
+    /// engine, so it refuses at run start instead of silently running
+    /// another engine.
+    #[error("tree-walk engine retired in this build (requested {mode})")]
+    EngineRetired {
+        /// The retired selection that was requested.
+        mode: String,
+    },
     /// Bisection exhausted its iteration cap without bracketing the price.
     #[error("implied volatility did not converge after {tried} iterations")]
     VolNotConverged {

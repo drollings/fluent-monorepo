@@ -16,8 +16,9 @@ use fluent_wvr::FieldAccess as _;
 
 use crate::integration_lite::IntegrationLiteConfig;
 
+/// Fixture strategy (server `tests/data/pine_closure`), never the volatile live root.
 fn data_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../data/protopyne-rs")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../protopyne-server/tests/data/pine_closure")
 }
 
 fn coverage_table() -> serde_json::Value {

@@ -24,7 +24,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use rust_decimal::prelude::ToPrimitive as _;
 use rust_decimal::Decimal;
 
 use protopyne_types::ChainQuote;
@@ -204,8 +203,9 @@ fn open_interest_concentration(quotes: &[&ChainQuote]) -> f64 {
 }
 
 fn strike_of(quote: &ChainQuote) -> Option<f64> {
-    let strike = quote.contract.strike.as_decimal().to_f64()?;
-    strike.is_finite().then_some(strike)
+    // No positivity check here (unlike `ComputedGreeks::contract_strike`):
+    // activity bins by relative position, it never prices the strike.
+    quote.contract.strike.as_finite_f64()
 }
 
 /// Replace a signal's constant activity score with the source's reading.

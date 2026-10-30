@@ -28,13 +28,15 @@ use std::path::PathBuf;
 
 use common_core::config::load_json_or_default;
 use common_core::io::write_atomic;
-use fluent_wvr::Describable;
 use protopyne_egui::views::{load_bundle, HealthModel, PortfolioModel, ViewsBundle};
 use protopyne_egui::{
     live_update_of_frame, paint_workspace, prefs_path, ChartWorkspace, ReplayScrub, TerminalPrefs,
 };
-use protopyne_server::{serve, ServerConfig, ServerHandle};
+use protopyne_server::{serve, HistoryCache, HistoryRoot, ServerConfig, ServerHandle};
 use protopyne_view::{ChartBars, GatewayError, MockGateway, OverlaySeries, TerminalGateway};
+
+#[path = "shared/seed.rs"]
+mod seed;
 
 /// Overlay shown on the dashboard: same kernel and length the parity test
 /// pins, so the example and the suite read the same view.
@@ -131,6 +133,13 @@ async fn boot(path: PathBuf, base: Option<String>) -> Result<ServerHandle, Strin
     if bars.is_empty() {
         return Err(format!("no bars in {}", path.display()));
     }
+    // Starting window only: the server boots on the trailing two months by
+    // time (the same span as the chart's default range), never the whole
+    // store. Deeper history stays on disk and serves on demand through the
+    // gateway's tape/root reads, so load-more and wider presets keep working
+    // while startup pays for the window in view. When less exists, it all
+    // stays — the cutoff predates the first bar instead of fabricating one.
+    let bars = trailing_two_months(bars);
     // Directories hold one-minute months by contract; files keep the legacy
     // fifteen-minute default unless `--base` says otherwise.
     let base = base.unwrap_or_else(|| {
@@ -140,13 +149,75 @@ async fn boot(path: PathBuf, base: Option<String>) -> Result<ServerHandle, Strin
             "15M".to_owned()
         }
     });
-    let config = ServerConfig::new()
+    let config_builder = ServerConfig::new()
         .bind("127.0.0.1:0".to_owned())
         .history_timeframe(base)
-        .build();
+        .history_symbol(history_symbol_of(&path));
+    // Directories that open as a history root ride along as the server's
+    // root: ticker picks outside the boot market (GLD beside SPY) load
+    // their own months through it instead of refusing. A directory that
+    // will not open stays unset — boot serves exactly as before, with the
+    // gateway falling back to the recorded market or refusing by symbol.
+    let config = if path.is_dir() && protopyne_server::HistoryRoot::open(&path).is_ok() {
+        config_builder
+            .history_path(path.to_string_lossy().into_owned())
+            .build()
+    } else {
+        config_builder.build()
+    };
     serve(config, bars)
         .await
         .map_err(|e| format!("server refused to boot: {e}"))
+}
+
+/// Trailing two months of `bars` by timestamp (the chart's default range
+/// span, not a hardcoded count, so thin and dense tapes alike keep their
+/// most recent two calendar months). Ascending input stays ascending; a
+/// history shorter than the span keeps every bar.
+fn trailing_two_months(
+    bars: Vec<protopyne_types::Bar>,
+) -> Vec<protopyne_types::Bar> {
+    let Some(last) = bars.last().map(|bar| bar.ts.timestamp()) else {
+        return bars;
+    };
+    let cutoff = last - 2 * protopyne_chart_model::MONTH_SECONDS;
+    let skip = bars
+        .iter()
+        .position(|bar| bar.ts.timestamp() >= cutoff)
+        .unwrap_or(bars.len());
+    bars.into_iter().skip(skip).collect()
+}
+
+/// Ticker the boot bars hold, mirroring `load_history_path`'s own pick so
+/// the gateway's fallback gate serves the right market: directories name it
+/// through the root's tickers (preferred default first), files carry it as
+/// the stem's leading letters (`SPY_15M.csv` → `SPY`). Anything
+/// unrecognizable falls back to the default ticker rather than an empty
+/// gate (which would refuse every symbol-scoped read).
+fn history_symbol_of(path: &std::path::Path) -> String {
+    if path.is_dir() {
+        if let Ok(root) = protopyne_server::HistoryRoot::open(path) {
+            if let Ok(tickers) = root.tickers() {
+                if let Some(symbol) = protopyne_view::pick_default_symbol(
+                    protopyne_server::DEFAULT_TICKER,
+                    tickers.iter().map(String::as_str),
+                ) {
+                    return symbol;
+                }
+            }
+        }
+        return protopyne_server::DEFAULT_TICKER.to_owned();
+    }
+    path.file_stem()
+        .and_then(|stem| stem.to_str())
+        .map(|stem| {
+            stem.chars()
+                .take_while(char::is_ascii_alphabetic)
+                .collect::<String>()
+                .to_ascii_uppercase()
+        })
+        .filter(|symbol| !symbol.is_empty())
+        .unwrap_or_else(|| protopyne_server::DEFAULT_TICKER.to_owned())
 }
 
 struct TerminalApp {
@@ -160,6 +231,19 @@ struct TerminalApp {
     /// portfolio, proposals, chart, journals, arm-grant, replay), canvas with
     /// the upper-left hotlist, and the symbol/indicator modals.
     workspace: Result<ChartWorkspace, String>,
+    /// Month cache for serverless ticker switches: in `--mock` mode there
+    /// is no tape to pull through, so a picked ticker's months load from
+    /// the history directory here (exactly like the chart shell) instead
+    /// of wearing the mock's canned bars. Absent outside mock-plus-dir
+    /// boots, where the gateway path serves every read.
+    cache: Option<HistoryCache>,
+    /// Ticker whose months the workspace holds via the cache above; `None`
+    /// forces a first-frame sync so mock boots open on real months, not
+    /// canned rows.
+    loaded_symbol: Option<String>,
+    /// Load notice for the status line (holes in served months, or the
+    /// reason a picked ticker refused).
+    notice: Option<seed::Notice>,
     /// Where the favorites/loadout/settings document lives.
     prefs_path: PathBuf,
     /// Last persisted snapshot, so the frame writes only on a real change.
@@ -171,15 +255,27 @@ impl TerminalApp {
         gateway: Box<dyn TerminalGateway>,
         feed: Option<tokio::sync::broadcast::Receiver<String>>,
         history: &std::path::Path,
+        mock: bool,
     ) -> Self {
         let path = prefs_path(history);
         let prefs = load_json_or_default::<TerminalPrefs>(&path);
+        // Serverless ticker switches need months from disk: in `--mock`
+        // mode over a history directory, open the month cache so a picked
+        // ticker loads its own market (exactly like the chart shell)
+        // instead of wearing the mock's canned bars. Every other mode
+        // serves through the gateway and leaves this absent.
+        let cache = if mock {
+            history
+                .is_dir()
+                .then(|| HistoryRoot::open(history).ok())
+                .flatten()
+                .map(HistoryCache::new)
+        } else {
+            None
+        };
         let workspace = ChartWorkspace::with_gateway(&*gateway)
             .map(|mut workspace| {
-                // The composition root owns the descriptor; the workspace owns
-                // the form. Until set, the dock's arm-grant subpane shows
-                // read-only tier texts.
-                workspace.set_grant_schema(&protopyne_strategy::GrantPatch::default().describe());
+                load_pine_catalog(&mut workspace, history);
                 // The backtest form needs the served schema before it can
                 // draft a run; a gateway that does not serve it (the mock)
                 // leaves the run params over an empty document, and the
@@ -204,14 +300,36 @@ impl TerminalApp {
             gateway,
             feed,
             workspace,
+            cache,
+            loaded_symbol: None,
+            notice: None,
             prefs_path: path,
             saved: prefs,
         }
+    }
+
+    /// Serverless ticker switch ahead of the paint: when the modal picked a
+    /// symbol the seeded frames do not hold, load its months through the
+    /// cache and reseed, so the frame draws the picked ticker. No cache
+    /// (loopback mode) means the gateway path already served the pick.
+    fn maybe_switch_symbol(&mut self) {
+        let (Ok(workspace), Some(cache)) = (&mut self.workspace, self.cache.as_mut()) else {
+            return;
+        };
+        seed::sync_symbol(
+            workspace,
+            cache,
+            &mut self.loaded_symbol,
+            &mut self.notice,
+        );
     }
 }
 
 impl eframe::App for TerminalApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        // Serverless ticker switch first: a modal pick the seeded frames do
+        // not hold loads here, so the paint below draws the picked ticker.
+        self.maybe_switch_symbol();
         // One live drain per frame: the rehearsal frames the server already
         // pumps become closed-bar updates through the workspace's own live
         // path, so the window chart advances exactly like a fed terminal.
@@ -253,6 +371,50 @@ impl eframe::App for TerminalApp {
                 ui.colored_label(egui::Color32::RED, format!("workspace refused: {reason}"));
             }
         }
+        if let Some(notice) = &self.notice {
+            let ink = if notice.is_error() {
+                egui::Color32::RED
+            } else {
+                egui::Color32::YELLOW
+            };
+            ui.colored_label(ink, notice.text());
+        }
+    }
+}
+
+/// Load `<data-root>/indicators/*.pine` plus libraries into the workspace
+/// catalog. A missing tree or an unreadable file degrades to no Pine rows
+/// (named on stderr) rather than refusing boot: Pine scripts are an
+/// opt-in testing surface, never a boot dependency.
+fn load_pine_catalog(workspace: &mut ChartWorkspace, history: &std::path::Path) {
+    use protopyne_egui::pine_data_root;
+
+    let Some(root) = pine_data_root(history) else {
+        return;
+    };
+    match protopyne_egui::load_pine_sources(&root) {
+        Ok((indicators, libraries)) => {
+            // One boot line names what the catalog serves: a script added
+            // to `indicators/` later needs a restart (sources load once at
+            // boot), and this line is where that staleness shows up.
+            let mut stems: Vec<&str> = indicators
+                .iter()
+                .map(|file| {
+                    file.relpath
+                        .rsplit('/')
+                        .next()
+                        .unwrap_or(&file.relpath)
+                })
+                .collect();
+            stems.sort_unstable();
+            eprintln!(
+                "protopyne-terminal: pine catalog serves {} scripts: {}",
+                stems.len(),
+                stems.join(", ")
+            );
+            workspace.set_pine_sources(indicators, libraries);
+        }
+        Err(error) => eprintln!("protopyne-terminal: pine indicators unavailable: {error}"),
     }
 }
 
@@ -360,7 +522,7 @@ fn main() {
         }
     } else {
         let feed = handle.as_ref().map(ServerHandle::feed_receiver);
-        let app = TerminalApp::new(gateway, feed, &prefs_source);
+        let app = TerminalApp::new(gateway, feed, &prefs_source, mock);
         let run = eframe::run_native(
             "protopyne gateway terminal",
             eframe::NativeOptions::default(),

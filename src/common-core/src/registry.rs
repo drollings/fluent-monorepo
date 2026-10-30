@@ -44,6 +44,22 @@ where
         self.entries.insert(key, value)
     }
 
+    /// Register `value` under `key` only when no entry is present
+    /// (first-wins): `Ok(())` on a fresh registration, `Err(value)` with
+    /// the value handed back — unstored — on a duplicate. Unlike
+    /// `contains` + `insert`, the check and the store are one map
+    /// operation, so a duplicate can never overwrite the winner (M8.1).
+    pub fn try_insert(&mut self, key: K, value: V) -> Result<(), V> {
+        use std::collections::btree_map::Entry;
+        match self.entries.entry(key) {
+            Entry::Vacant(slot) => {
+                slot.insert(value);
+                Ok(())
+            }
+            Entry::Occupied(_) => Err(value),
+        }
+    }
+
     /// Look up `key` by borrowed form — `get("foo")` works when the stored
     /// keys are `String` and the caller only has `&str`.
     pub fn get<Q>(&self, key: &Q) -> Option<&V>
@@ -188,6 +204,24 @@ where
     /// for the shared/concurrent form.
     pub fn insert(&self, key: K, value: V) -> Option<Arc<V>> {
         lock_write(&self.inner).insert(key, Arc::new(value))
+    }
+
+    /// Register `value` under `key` only when no entry is present
+    /// (first-wins): `Ok(())` on a fresh registration, `Err(value)` with
+    /// the value handed back — unstored — on a duplicate. The check and
+    /// the store hold the write lock together, so two threads racing one
+    /// id cannot both pass (unlike `get` + `insert`, which can). This is
+    /// the registration path; upserts keep using [`insert`](Self::insert)
+    /// (M8.1).
+    pub fn try_insert(&self, key: K, value: V) -> Result<(), V> {
+        use std::collections::hash_map::Entry;
+        match lock_write(&self.inner).entry(key) {
+            Entry::Vacant(slot) => {
+                slot.insert(Arc::new(value));
+                Ok(())
+            }
+            Entry::Occupied(_) => Err(value),
+        }
     }
 
     /// Look up `key`, or construct and register a new value on a miss.

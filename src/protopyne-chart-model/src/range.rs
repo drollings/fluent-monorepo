@@ -18,9 +18,11 @@ pub enum DateRange {
     Day1,
     /// Five days.
     Day5,
-    /// One month (default).
-    #[default]
+    /// One month.
     Month1,
+    /// Two months (default).
+    #[default]
+    Month2,
     /// Three months.
     Month3,
     /// Six months.
@@ -43,6 +45,7 @@ impl DateRange {
             Self::Day1 => "1D",
             Self::Day5 => "5D",
             Self::Month1 => "1M",
+            Self::Month2 => "2M",
             Self::Month3 => "3M",
             Self::Month6 => "6M",
             Self::Ytd => "YTD",
@@ -69,6 +72,7 @@ impl DateRange {
             Self::Day1 => "1 day",
             Self::Day5 => "5 days",
             Self::Month1 => "1 month",
+            Self::Month2 => "2 months",
             Self::Month3 => "3 months",
             Self::Month6 => "6 months",
             Self::Ytd => "Year to date",
@@ -85,6 +89,7 @@ impl DateRange {
             Self::Day1,
             Self::Day5,
             Self::Month1,
+            Self::Month2,
             Self::Month3,
             Self::Month6,
             Self::Ytd,
@@ -95,13 +100,14 @@ impl DateRange {
     }
 
     /// Chart-range presets offered in the range menu, in display order: the
-    /// coarse spans an operator scans with (one month through everything).
+    /// coarse spans an operator scans with (two months by default, one month through everything).
     /// Orthogonal to the bar timeframe — the preset sets months or years of
     /// range and the loader completes it on demand.
     #[must_use]
     pub fn chart_presets() -> Vec<Self> {
         vec![
             Self::Month1,
+            Self::Month2,
             Self::Month3,
             Self::Ytd,
             Self::Year1,
@@ -117,6 +123,7 @@ impl DateRange {
     pub fn lookback_months(self) -> Option<u32> {
         match self {
             Self::Day1 | Self::Day5 | Self::Month1 => Some(1),
+            Self::Month2 => Some(2),
             Self::Month3 => Some(3),
             Self::Month6 => Some(6),
             Self::Ytd | Self::Year1 => Some(12),
@@ -133,6 +140,7 @@ impl DateRange {
             Self::Day1 => Some(now - Duration::days(1)),
             Self::Day5 => Some(now - Duration::days(5)),
             Self::Month1 => Some(now - Duration::days(30)),
+            Self::Month2 => Some(now - Duration::days(60)),
             Self::Month3 => Some(now - Duration::days(90)),
             Self::Month6 => Some(now - Duration::days(180)),
             Self::Ytd => {
@@ -164,6 +172,7 @@ impl DateRange {
             Self::Day1 => 24 * 3_600,
             Self::Day5 => 5 * 24 * 3_600,
             Self::Month1 => MONTH_SECONDS,
+            Self::Month2 => 2 * MONTH_SECONDS,
             Self::Month3 => 3 * MONTH_SECONDS,
             Self::Month6 => 6 * MONTH_SECONDS,
             Self::Ytd => i64::from(Utc::now().ordinal()) * 24 * 3_600,

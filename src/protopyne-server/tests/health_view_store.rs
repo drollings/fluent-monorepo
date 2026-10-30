@@ -85,6 +85,8 @@ fn shared_with(store_health: StoreHealth) -> Shared {
         limiter: Limiter::new(32),
         history: spy_history(),
         history_timeframe: Timeframe::M15,
+        history_symbol: "SPY".to_owned(),
+        root_bars: Mutex::new(std::collections::HashMap::new()),
         inbox: Mutex::new(Vec::new()),
         armed: Mutex::new(None),
         journal: Arc::new(Journal::ephemeral()),

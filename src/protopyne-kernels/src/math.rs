@@ -56,6 +56,12 @@ pub fn window_mean(window: &[f64]) -> f64 {
 ///
 /// Shared with the series combinators, which impose the same
 /// min-periods-as-warmup convention over bare slices.
+///
+/// Intentional fork: this gates on `is_finite` (refuses `inf`), while
+/// [`crate::util::max_window`]/[`min_window`]/[`sum_window`] gate on
+/// `!is_nan` (allow `inf` through `fin_or_none`). Pinned by
+/// `strict_window_refuses_inf_while_util_allows_it`; unifying the
+/// predicate is a behavior proposal, not a DRY cleanup.
 pub(crate) fn strict_window(values: &[f64], end: usize, period: usize) -> Option<&[f64]> {
     if period == 0 || end + 1 < period || values.len() <= end {
         return None;
@@ -491,6 +497,103 @@ fn rolling_extreme(
         }
     }
     out
+}
+
+/// Skip-`NaN` maximum fold: the one spelling for a per-window `max` where a
+/// hole is skipped, not poisoning (Pine skip-`na` contract). `f64::max`
+/// returns the non-`NaN` operand, so the bare fold skips holes; an
+/// all-`NaN` window reads the seed (`NEG_INFINITY`) and the caller maps it
+/// (flat-range checks like `k_of`, or the Donchian non-finite guard).
+/// Shared by the stoch batch/update folds and the Donchian midline.
+#[must_use]
+pub fn fold_skip_nan_max(values: impl IntoIterator<Item = f64>) -> f64 {
+    values.into_iter().fold(f64::NEG_INFINITY, f64::max)
+}
+
+/// Skip-`NaN` minimum fold: mirror of [`fold_skip_nan_max`] with the
+/// `INFINITY` seed. All-`NaN` reads the seed; callers map it.
+#[must_use]
+pub fn fold_skip_nan_min(values: impl IntoIterator<Item = f64>) -> f64 {
+    values.into_iter().fold(f64::INFINITY, f64::min)
+}
+
+/// Strict maximum fold over a window already proven finite: no `NaN` check
+/// inside (the caller guards, e.g. Donchian's `is_finite` gate or
+/// `math::strict_window`). Poisoning and skipping agree on finite inputs,
+/// so this delegates to [`fold_skip_nan_max`] — the name records which
+/// contract the caller established, not a second implementation.
+#[must_use]
+pub fn fold_strict_max(values: impl IntoIterator<Item = f64>) -> f64 {
+    fold_skip_nan_max(values)
+}
+
+/// Strict minimum fold over a window already proven finite: mirror of
+/// [`fold_strict_max`], delegating to [`fold_skip_nan_min`].
+#[must_use]
+pub fn fold_strict_min(values: impl IntoIterator<Item = f64>) -> f64 {
+    fold_skip_nan_min(values)
+}
+
+/// Which tied extreme wins a position search: the earliest print in the
+/// window or the most recent. Ties are exact-equality only (a tie is a tie
+/// only when the prints are identical) — no tolerance.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TieBreak {
+    /// Earliest occurrence wins (forward search).
+    First,
+    /// Most-recent occurrence wins (reversed search, the reference's
+    /// reversed-argmax rule).
+    Last,
+}
+
+/// Position of the window extreme under `tie`: index of the winning print,
+/// or `None` when any leg is `NaN` (holes poison position searches in both
+/// the strict operator maps and the WorldQuant transcription). The one
+/// search behind [`crate::util::argmax_window`]/[`argmin_window`]
+/// (`TieBreak::Last`) and WorldQuant `ts_arg_max`/`ts_arg_min`
+/// (`reverse` selects the break).
+#[must_use]
+pub fn extreme_position(window: &[f64], want_max: bool, tie: TieBreak) -> Option<usize> {
+    if window.iter().any(|v| v.is_nan()) {
+        return None;
+    }
+    let mut best = if want_max {
+        f64::NEG_INFINITY
+    } else {
+        f64::INFINITY
+    };
+    let mut index = None;
+    for (j, &v) in window.iter().enumerate() {
+        let takes = match (want_max, tie) {
+            (true, TieBreak::First) => v > best,
+            (true, TieBreak::Last) => v >= best,
+            (false, TieBreak::First) => v < best,
+            (false, TieBreak::Last) => v <= best,
+        };
+        if takes {
+            best = v;
+            index = Some(j);
+        }
+    }
+    index
+}
+
+/// Seed-then-recurse step shared by the EMA family (`ema`, `rma`): a finite
+/// previous output steps forward, otherwise the window mean seeds (Pine's
+/// `na(prev) ? sma : recurrence` shape — seed order is load-bearing per
+/// `compat.rs`). The step is a closure because EMA derives a smoothing
+/// factor from the shape while Wilder takes the period directly.
+#[must_use]
+pub fn seed_or_step(
+    previous: Option<f64>,
+    newest: f64,
+    seed: f64,
+    step: impl FnOnce(f64, f64) -> f64,
+) -> f64 {
+    match previous {
+        Some(previous) if !previous.is_nan() => step(previous, newest),
+        _ => seed,
+    }
 }
 
 #[cfg(test)]

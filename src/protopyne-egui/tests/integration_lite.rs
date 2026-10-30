@@ -21,8 +21,9 @@ const EPS: f64 = 1e-9;
 const DRIVER_IMPORTS: &str =
     "import showmethegrail/libUtil/12 as UTIL\nimport showmethegrail/libMAs/95 as MAS\n";
 
+/// Fixture root (server `tests/data/pine_closure`), never the volatile live root.
 fn data_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../data/protopyne-rs")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../protopyne-server/tests/data/pine_closure")
 }
 
 fn library_id(publisher: &str, name: &str, version: u64) -> LibraryId {
@@ -34,7 +35,7 @@ fn library_id(publisher: &str, name: &str, version: u64) -> LibraryId {
 }
 
 fn shipped_module(file: &str, publisher: &str, name: &str, version: u64) -> ModuleInput {
-    let text = std::fs::read_to_string(data_root().join(file)).expect("shipped library loads");
+    let text = std::fs::read_to_string(data_root().join(file)).expect("fixture library loads");
     let source = parse_pine_source(file, &text);
     let program = parse_program(&text).expect("shipped library parses");
     ModuleInput::new(library_id(publisher, name, version), source, program)

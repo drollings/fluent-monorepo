@@ -296,10 +296,7 @@ impl LegSelector {
                     let Some(distance) = delta_distance(greeks.delta, delta) else {
                         continue;
                     };
-                    if best.is_none_or(|(best_distance, best_strike)| {
-                        distance < best_distance
-                            || (distance == best_distance && *strike < best_strike)
-                    }) {
+                    if is_better_delta(distance, *strike, best) {
                         best = Some((distance, *strike));
                     }
                 }
@@ -454,6 +451,17 @@ fn greatest_below(grid: &[Decimal], strike: &Decimal) -> Option<Decimal> {
 /// Strike on `expiry`/`kind` whose absolute delta is closest to `target`.
 /// Quotes without greeks are skipped; if none carry greeks the request
 /// refuses rather than falling back to the touch.
+/// Whether `(distance, strike)` beats the running best: strictly closer
+/// wins; exact-distance ties go to the lower strike. The one home for the
+/// three delta loops — `delta_strike`, `delta_index`, and the calendar arm
+/// (M3.3). `nearest_contract` (touch metric) and `contract_of` (identity
+/// lookup) are different queries and stay separate.
+fn is_better_delta(distance: Decimal, strike: Decimal, best: Option<(Decimal, Decimal)>) -> bool {
+    best.is_none_or(|(best_distance, best_strike)| {
+        distance < best_distance || (distance == best_distance && strike < best_strike)
+    })
+}
+
 fn delta_strike(
     quotes: &[&ChainQuote],
     expiry: NaiveDate,
@@ -472,9 +480,7 @@ fn delta_strike(
             continue;
         };
         let strike = quote.contract.strike.as_decimal();
-        if best.is_none_or(|(best_distance, best_strike)| {
-            distance < best_distance || (distance == best_distance && strike < best_strike)
-        }) {
+        if is_better_delta(distance, strike, best) {
             best = Some((distance, strike));
         }
     }
@@ -485,7 +491,7 @@ fn delta_strike(
 /// Index of the quote whose absolute delta is closest to `target`, ties to
 /// the lower strike. Refuses when no quote carries greeks.
 fn delta_index(quotes: &[&ChainQuote], target: Decimal) -> Result<usize, LegSelectRefusal> {
-    let mut best: Option<(Decimal, Decimal, usize)> = None;
+    let mut best: Option<((Decimal, Decimal), usize)> = None;
     for (index, quote) in quotes.iter().enumerate() {
         let Some(greeks) = quote.greeks else {
             continue;
@@ -494,13 +500,11 @@ fn delta_index(quotes: &[&ChainQuote], target: Decimal) -> Result<usize, LegSele
             continue;
         };
         let strike = quote.contract.strike.as_decimal();
-        if best.is_none_or(|(best_distance, best_strike, _)| {
-            distance < best_distance || (distance == best_distance && strike < best_strike)
-        }) {
-            best = Some((distance, strike, index));
+        if is_better_delta(distance, strike, best.map(|(pair, _)| pair)) {
+            best = Some(((distance, strike), index));
         }
     }
-    best.map(|(_, _, index)| index)
+    best.map(|(_, index)| index)
         .ok_or(LegSelectRefusal::MissingGreeks)
 }
 

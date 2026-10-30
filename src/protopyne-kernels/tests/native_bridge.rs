@@ -402,11 +402,18 @@ fn provider_call_reports_handled_with_matching_fields() {
 fn corrupt_state_refuses_through_the_engine() {
     // Dispatch-engagement probe with no scaffolding: shrinking a ring
     // array from the driver makes hydration fail, and the run must carry
-    // the bridge's refusal marker — Pine alone could never emit it.
+    // the bridge's refusal marker — Pine alone could never emit it. The
+    // native bridge engages through the tree engine (its leases and tick
+    // frames are tree-owned state), so this probe names that engine
+    // explicitly; the compiled loop runs the Pine body instead.
     let driver = "import showmethegrail/libUtil/12 as UTIL\nimport showmethegrail/libBars/12 as BARS\nvar bars = BARS.Bars.new()\nif barstate.isfirst\n    bars.init(UTIL.Timeframes.M1, UTIL.Timeframes.M1, UTIL.Timeframes.D1)\n    bars.ch := [1.0]\nbars.fetch()\n";
     let modules = linked_fetch(driver);
     let (bars, stamps) = one_bar_legs(T0, &quiet_prices(), &quiet_volumes(), &quiet_stamps());
     let mut engine = test_engine();
+    // Without the compiled loop there is only the tree engine, so the pin
+    // holds vacuously; with it, name the tree explicitly.
+    #[cfg(feature = "bytecode")]
+    engine.set_bytecode_mode(crate::pine::BytecodeMode::TreeWalk);
     engine
         .set_native_options(native_on())
         .expect("native opt-in applies");

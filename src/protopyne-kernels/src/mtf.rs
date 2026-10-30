@@ -355,6 +355,11 @@ impl_component!(BucketSpec);
 // as confirmed before entry); ascending order is enforced here because the
 // bucket math assumes it. Parallel fan-out over independent keys belongs to
 // the batch/backtest callers via `ResultPool`, never to per-bar spawns.
+//
+// NOT-A-BYTE-BUDGET-CACHE (M8.3): the per-key series cache here is a
+// revision-stamped whole-series map keyed by `fnv1a64`, evicted by
+// explicit invalidation — not the weighted byte-budget LRU in
+// `common_core::cache`. Do not swap policies.
 
 /// Reserved kernel id naming a resampled OHLCV frame node inside the store
 /// graph. Frames materialize from base bars in the pre-pass, never through

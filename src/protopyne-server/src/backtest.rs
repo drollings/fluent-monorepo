@@ -25,10 +25,36 @@ use protopyne_venue::{
 };
 
 use crate::error::ServerError;
+use crate::runner::RunnerConfig;
+
+/// Shared session-open preamble (M7.1): config validation plus the
+/// non-empty-history fence. The one spelling for the constructors' opening
+/// (`ReplaySession::start`, `ReplayDriver::start`, `run_simple_backtest`),
+/// which diverge afterwards (borrowed vs owned bars, `Strategy::bind` vs
+/// `IntegrationLiteSignal` + leg batch, `PositionBook` vs `PositionManager`)
+/// and stay divergent — only the preamble is shared, never the session
+/// state that follows it.
+pub(crate) fn ensure_bars_for_session(
+    runner_config: &RunnerConfig,
+    quote_config: &BacktestConfig,
+    bars: &[Bar],
+) -> Result<(), ServerError> {
+    runner_config.validate()?;
+    quote_config.validate()?;
+    if bars.is_empty() {
+        return Err(ServerError::Backtest(
+            "history must not be empty".to_owned(),
+        ));
+    }
+    Ok(())
+}
 
 /// `skip_serializing_if` requires a `&bool` predicate; the type is `Copy`.
+/// Crate-visible: the one `is_false` for every serde default-triple
+/// (`backtest.rs`, `runner.rs`), instead of one private copy per module
+/// (M7.3b).
 #[allow(clippy::trivially_copy_pass_by_ref)]
-fn is_false(value: &bool) -> bool {
+pub(crate) fn is_false(value: &bool) -> bool {
     !*value
 }
 
@@ -226,6 +252,12 @@ impl LoadedHistory {
 /// Load bars from any source arm. Pure dispatch over the established loaders
 /// and the store's own read — no third parsing path may hide here.
 ///
+/// Name collision, documented (M7.3c): [`fluent_egui::feed::load_history`]
+/// is a different function (history-rung ladder for chart panes), while this
+/// one dispatches to the ladder-based `load_bars_candidates`. Same name,
+/// different layers — do not rename either as drive-by; a rename is a
+/// public-surface change needing its own commit.
+///
 /// The file and dynamic arms ignore `store`; the tape arm requires it and
 /// refuses when it is absent, naming the missing collaborator rather than
 /// falling back to another source. An empty tape — of any arm — refuses just
@@ -360,6 +392,12 @@ impl BacktestVenue {
     }
 }
 
+/// Every venue behavior delegates to the inner [`PaperVenue`](protopyne_venue::PaperVenue):
+/// backtest fills ARE paper fills (M7.3c). The forwards stay explicit,
+/// one method per line, rather than a forwarding macro: there is no
+/// workspace-wide delegate macro, and a local macro would hide the one
+/// method that must never be added here by accident. `Deref` cannot
+/// replace this impl (`Venue` bounds do not resolve through deref).
 impl Venue for BacktestVenue {
     fn dry_run(&self, intent: &OrderIntent, quote: &Quote) -> Result<DryRunOutcome, VenueError> {
         self.inner.dry_run(intent, quote)

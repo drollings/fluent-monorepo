@@ -161,3 +161,82 @@ fn window_helper_single_source() {
         "rebind fits the helper window"
     );
 }
+
+/// A gateway serving only SPY: any other ticker refuses naming itself, like
+/// the tape-backed server gateway once the fallback gate records a history
+/// symbol. Switching to the unservable ticker must leave the published
+/// triple untouched — the button never strands a fresh label on stale rows.
+struct SpyOnlyGateway {
+    rows: Vec<ChartRow>,
+}
+
+impl protopyne_view::TerminalGateway for SpyOnlyGateway {
+    fn health(&self) -> Result<HealthView, GatewayError> {
+        Err(refused())
+    }
+    fn proposals(&self) -> Result<Vec<ProposalView>, GatewayError> {
+        Err(refused())
+    }
+    fn portfolio(&self) -> Result<PortfolioView, GatewayError> {
+        Err(refused())
+    }
+    fn journal(&self) -> Result<Vec<JournalRowView>, GatewayError> {
+        Err(refused())
+    }
+    fn chart_bars(&self) -> Result<ChartBars, GatewayError> {
+        Err(refused())
+    }
+    fn chart_overlays(&self, _kind: &str, _period: i64) -> Result<OverlaySeries, GatewayError> {
+        Err(refused())
+    }
+    fn replay(&self) -> Result<ReplayView, GatewayError> {
+        Err(refused())
+    }
+    fn preview_arm(&self, _patch: serde_json::Value) -> Result<WorstCase, GatewayError> {
+        Err(refused())
+    }
+    fn grant_tiers(&self) -> Result<BTreeMap<String, String>, GatewayError> {
+        Err(refused())
+    }
+    fn arm(&self, _grant: serde_json::Value) -> Result<ArmResponse, GatewayError> {
+        Err(refused())
+    }
+    fn chart_bars_for_limit(
+        &self,
+        symbol: &str,
+        timeframe: &str,
+        _limit: Option<usize>,
+    ) -> Result<ChartBars, GatewayError> {
+        protopyne_view::validate_symbol_timeframe(symbol, timeframe)?;
+        if !symbol.eq_ignore_ascii_case("SPY") {
+            return Err(GatewayError::Unavailable(format!(
+                "no bars for symbol {symbol:?}: the tape holds no {symbol} market"
+            )));
+        }
+        Ok(ChartBars {
+            rows: self.rows.clone(),
+            dropped: 0,
+        })
+    }
+}
+
+#[test]
+fn unservable_ticker_keeps_chart_on_the_served_symbol() {
+    let rows = switch_rows();
+    let mut workspace = ChartWorkspace::with_rows(rows.clone()).expect("workspace boots");
+    assert_eq!(workspace.active_symbol(), "SPY");
+    let gateway = SpyOnlyGateway { rows: rows.clone() };
+    let err = workspace
+        .switch_symbol("GLD", &gateway)
+        .expect_err("an unservable ticker refuses");
+    assert!(
+        err.to_string().contains("GLD"),
+        "the refusal names the picked ticker: {err}"
+    );
+    assert_eq!(
+        workspace.active_symbol(),
+        "SPY",
+        "the ticker button holds the served symbol"
+    );
+    assert_eq!(workspace.rows(), &rows, "the chart holds the served rows");
+}

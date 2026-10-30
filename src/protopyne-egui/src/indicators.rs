@@ -23,6 +23,7 @@ use fluent_wvr::component_downcast_ref;
 use fluent_wvr::prelude::*;
 use protopyne_chart_model::ChartRow;
 use protopyne_kernels::pine::manifest::{IndicatorManifestEntry, ManifestParity};
+use protopyne_kernels::pine::projection::{PlotPrimitive, ProjectionRefusal};
 use protopyne_kernels::shared_registry;
 use protopyne_kernels::smoothing::{SmoothingArgs, SmoothingFamily, MA_PERIOD_MAX, MA_PERIOD_MIN};
 
@@ -169,11 +170,17 @@ impl IndicatorSeries {
     }
 }
 
-/// One plugin evaluation: the series produced, in plan-node order.
-#[derive(Debug, Clone, PartialEq, Default)]
+/// One plugin evaluation: the series produced, in plan-node order, plus any
+/// projected non-series visuals (Pine drawings, markers, levels) for the
+/// pane to paint beside the series. Native plugins always carry an empty
+/// `Ok`; a Pine `Err` carries the projection refusal the pane renders as an
+/// "unsupported" chip instead of silent absence.
+#[derive(Debug, Clone, PartialEq)]
 pub struct IndicatorEvaluation {
     /// Series produced by the evaluation.
     pub series: Vec<IndicatorSeries>,
+    /// Projected non-series visuals, or the refusal that blocked them.
+    pub overlay: Result<Vec<PlotPrimitive>, ProjectionRefusal>,
 }
 
 /// The indicator plugin contract: identity, default configuration, the
@@ -286,7 +293,7 @@ pub trait ChartIndicator: Send + Sync {
 /// native branch to the twice-visible window (display-only cull, same pixels
 /// fewer shapes); at sub-pixel zoom the windowed series sample per column run
 /// (display-only sampling over native-timeframe values).
-fn paint_series(
+pub(crate) fn paint_series(
     painter: &egui::Painter,
     evaluation: &IndicatorEvaluation,
     viewport: &Viewport,
@@ -312,7 +319,7 @@ fn paint_series(
 }
 
 /// A config whose concrete type does not match the plugin refuses by name.
-fn wrong_config(id: &str, expected: &str) -> EguiError {
+pub(crate) fn wrong_config(id: &str, expected: &str) -> EguiError {
     EguiError::InvalidParam {
         what: "config".to_owned(),
         reason: format!("{id} expects a {expected} configuration"),
@@ -439,7 +446,10 @@ impl ChartIndicator for IntegrationLiteIndicator {
                 pane: None,
             })
             .collect();
-        Ok(IndicatorEvaluation { series })
+        Ok(IndicatorEvaluation {
+            series,
+            overlay: Ok(Vec::new()),
+        })
     }
 
     /// Paint the visible legs only, at the dialed brightness.
@@ -596,7 +606,10 @@ impl ChartIndicator for FastMasIndicator {
                 pane: None,
             })
             .collect();
-        Ok(IndicatorEvaluation { series })
+        Ok(IndicatorEvaluation {
+            series,
+            overlay: Ok(Vec::new()),
+        })
     }
 
     fn paint_main_overlay(
@@ -1715,7 +1728,10 @@ impl ChartIndicator for KernelIndicator {
                 });
             }
         }
-        Ok(IndicatorEvaluation { series: series_out })
+        Ok(IndicatorEvaluation {
+            series: series_out,
+            overlay: Ok(Vec::new()),
+        })
     }
 }
 
@@ -1841,9 +1857,12 @@ pub fn build_indicator_catalog() -> Result<CatalogModal<IndicatorCategory>, Egui
 }
 
 /// Build the indicator catalog over manifest rows: discovered Pine scripts
-/// register under My Scripts with their manifest titles (never id-as-title).
-/// The manifest is built at boot/CLI time; the widget only renders its rows
-/// and never reads the directory.
+/// register under My Scripts with their manifest titles (never id-as-title),
+/// prefixed with 🌲 so scripts read as scripts in the picker. The manifest
+/// is built at boot/CLI time; the widget only renders its rows and never
+/// reads the directory. A non-empty manifest also installs the Pine
+/// namespace checkbox beside Favorites; an empty one leaves the catalog
+/// exactly as before.
 pub fn build_indicator_catalog_with_manifest(
     rows: &[IndicatorManifestEntry],
 ) -> Result<CatalogModal<IndicatorCategory>, EguiError> {
@@ -1860,7 +1879,14 @@ pub fn build_indicator_catalog_with_manifest(
         IndicatorCategory::MyScripts,
     )?;
     for row in rows {
-        catalog.register(&row.id, &row.title, IndicatorCategory::MyScripts)?;
+        catalog.register(
+            &row.id,
+            &format!("🌲 {}", row.title),
+            IndicatorCategory::MyScripts,
+        )?;
+    }
+    if !rows.is_empty() {
+        catalog.set_tag_filter("Pine", "pine:");
     }
     let registry = shared_registry().map_err(|error| EguiError::Dependency {
         reason: error.to_string(),

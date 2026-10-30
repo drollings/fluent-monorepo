@@ -1,0 +1,729 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © showmethegrail
+//@version=6
+library('libApex')
+
+import showmethegrail/libUtil/12 as UTIL
+import showmethegrail/libBuffers/6 as libBuffers
+import showmethegrail/libBars/12 as BARS
+import showmethegrail/libDrawing/61 as libDrawing
+
+///////////////////////////////////////////////////////////////////////////////
+// libApex - CORE LIBRARY GUIDANCE FOR CODE ASSISTANTS
+///////////////////////////////////////////////////////////////////////////////
+//
+// 🎯 PRIMARY PURPOSE: Replace multiple indicators with unified technical analysis
+// This library eliminates duplicate calculations across indicators by providing:
+// • Standardized volume delta analysis (replaces custom volume calculations)
+// • Unified trend health scoring (replaces ADX + custom trend filters)
+// • Multi-timeframe data management (replaces manual security() calls)
+// • Market regime detection (replaces manual volatility/ranging analysis)
+//
+// ⚡ CORE FUNCTIONS - USE THESE INSTEAD OF RECREATING:
+//
+// 1. MarketContext type + .fetch(timeframe) -> Multi-timeframe market analysis
+//    - Replaces manual indicator calculations across UTIL.timeframes
+//    - Automatically calculates EMAs, RSI, ATR, volume ratios, etc.
+//    - Built-in regime detection and market health scoring
+//    - USE THIS instead of manual security() calls for indicators
+//
+// 2. getHealthMAs(atr, fast_ma, mid_ma, slow_ma, k) -> health_score (-100 to +100)
+//    - Replaces ADX, trend filters, and manual MA alignment checks
+//    - Automatic regime detection: abs(score) < 10 = ranging, >15 = trending
+//    - Built-in trend strength and direction in single value
+//    - USE THIS instead of separate trend/strength indicators
+//
+//    - 📊 HEALTH SCORE INTERPRETATION:
+//      health_score = getHealthMAs(atr, close, ema8, ema21, 2.0)
+//      -100 to -50: Strong bear trend (perfect MA alignment)
+//      -50 to -10:  Weak bear trend
+//      -10 to +10:  Ranging market (use for mean reversion)
+//      +10 to +50:  Weak bull trend
+//      +50 to +100: Strong bull trend (perfect MA alignment)
+//      abs(health_score) > 15: Trending (boost signal sensitivity)
+//      abs(health_score) < 10:  Ranging (reduce signal sensitivity)
+//
+// 🎛️ REGIME DETECTION USAGE:
+// regime = detectRegime(health_score, vol_ratio, atr_ratio)
+// Returns: RANGING, TRENDING_BULL, TRENDING_BEAR, VOLATILE, LOW_VOLUME
+// USE THIS to automatically adapt indicator behavior to market conditions
+//
+// 🚫 ANTI-PATTERNS - DON'T DO THESE:
+// ❌ Manual volume delta calculations when UTIL.estimateDeltaVolume() exists
+// ❌ Custom trend strength indicators when getHealthMAs() provides this
+// ❌ Manual request.security() when BARS.Bars.fetch() handles MTF data
+// ❌ Separate ADX/DMI calculations when health_score includes direction+strength
+// ❌ Complex scheduling systems when simple time-based throttling works
+// ❌ Recreating market regime logic when detectRegime() exists
+//
+// 💡 INTEGRATION STRATEGY:
+// 1. Use libApex for CORE calculations (volume, trend, MTF data)
+// 2. Focus indicator logic on UNIQUE value-add, not reimplemented basics
+//
+// 🔑 KEY INSIGHT: libApex provides the "common technical analysis layer" that
+// eliminates 70-80% of duplicate code across indicators. Use it as the foundation,
+// then build indicator-specific logic on top.
+///////////////////////////////////////////////////////////////////////////////
+
+// @function getHealthMAs
+// @description Calculates a health score for moving averages based on their distances and relationships.
+// @param atr: float - Average True Range value.
+// @param fast_ma: float - Value of the fast moving average.
+// @param mid_ma: float - Value of the medium moving average.
+// @param slow_ma: float - Value of the slow moving average.
+// @param k: float - Scaling factor for the tanh function, default is 1.0.
+// @returns float - Health score indicating the relationship and distance between moving averages.
+export getHealthMAs(float atr, float fast_ma, float mid_ma, float slow_ma, float k=1.0) =>
+    float health_score = 0.0
+    float fast_dist = (fast_ma - mid_ma) / atr
+    float slow_dist = (mid_ma - slow_ma) / atr
+
+    if fast_ma > mid_ma and mid_ma > slow_ma
+        float min_dist = math.min(fast_dist, slow_dist)
+        health_score := UTIL.OSC_UPPER_RANGE + UTIL.fast_tanh(k * min_dist) * 120
+
+    else if fast_ma < mid_ma and mid_ma < slow_ma
+        float min_dist = math.min(math.abs(fast_dist), math.abs(slow_dist))
+        health_score := UTIL.OSC_LOWER_THRESHOLD - UTIL.fast_tanh(k * min_dist) * 120
+
+    else
+        float bullish_component = 0.0
+        float bearish_component = 0.0
+
+        bullish_component += fast_ma > mid_ma ? math.abs(fast_dist) : 0.0
+        bearish_component += fast_ma < mid_ma ? math.abs(fast_dist) : 0.0
+
+        bullish_component += mid_ma > slow_ma ? math.abs(slow_dist) * 0.7 : 0.0
+        bearish_component += mid_ma < slow_ma ? math.abs(slow_dist) * 0.7 : 0.0
+
+        float total_dist = bullish_component + bearish_component
+        health_score := total_dist <= 0.01 ? 0.0 : -10 + (bullish_component / total_dist * 20)
+
+    health_score
+
+/////////////////////////////////////////////////////////////
+// MARKET CONTEXT TYPE
+/////////////////////////////////////////////////////////////
+
+// @type MarketContext - Encapsulated market analysis data with multi-timeframe support
+export type MarketContext
+    UTIL.Timeframes tf = UTIL.Timeframes.NA
+    UTIL.CandlePatterns candles = na
+
+    // Moving averages
+    float ma_primary = 0.0      // Fast EMA (typically 8-13 period)
+    float ma_signal = 0.0       // Signal EMA (typically 21 period)
+    float ma_mean = 0.0         // Mean/Baseline (typically 50-89 period)
+
+    // Core TA indicators
+    float atr = 0.0             // Average True Range (14 period)
+    float atr_long = 0.0        // Long-term ATR (50 period)
+    float cci = 0.0            // Normalized CCI to zero-centered -100 to +100
+    float rsi = 0.0            // Normalized RSI to zero-centered -100 to +100
+    float stdev = 0.0           // Standard deviation of close (14 period)
+    float vol = na             // Current volume
+    float vol_sma = 0.0         // Volume SMA (20 period)
+
+    // Calculated ratios and derived metrics
+    float atr_distance = 0.0    // ATR-normalized distance between close and ma_mean
+    float ma_health = 0.0       // Absolute value of ma_health normalized (-100 bearish, 0 neutral, +100 bullish)
+    float volatility_ratio = 0.0   // Bollinger Band squeeze indicator: stdev / atr
+    float vol_ratio = 0.0       // Current volume / volume SMA
+
+    // Cached regime analysis
+    UTIL.MarketRegimes regime = UTIL.MarketRegimes.RANGING
+    float trend_strength = 0.0  // Absolute value of ma_health normalized (0-1)
+    float trend_direction = 0.0 // -1 (bear), 0 (neutral), 1 (bull)
+
+// @function init
+// @description Initializes a MarketContext object with specified timeframe and market regime settings.
+// @param this: MarketContext - The MarketContext instance to initialize
+// @param tf: UTIL.Timeframes - The timeframe to set for the context
+// @param regime: UTIL.MarketRegimes - The market regime to set for the context
+// @returns MarketContext - The initialized MarketContext object
+export method init(MarketContext this, UTIL.Timeframes tf = UTIL.Timeframes.C, UTIL.MarketRegimes regime = UTIL.MarketRegimes.RANGING) =>
+    this.tf := tf == UTIL.Timeframes.C or tf == UTIL.getTimeframe(timeframe.period) ? UTIL.Timeframes.C : tf
+    this.regime := regime
+    this
+
+// @function detectRegime
+// @description Pure ratio-based regime detection without hard thresholds on base scores
+// @param this: MarketContext
+// @returns MarketRegime enum
+export method detectRegime(MarketContext this) =>
+    // Base scores (0-100 scale)
+    trend_score = math.abs(this.ma_health)
+    volatility_score = 8 * this.volatility_ratio
+    volume_score = 10 * this.vol_ratio
+
+    // Find maximum signal
+    max_signal = math.max(trend_score, volatility_score, volume_score)
+
+    // Default
+    regime = UTIL.MarketRegimes.LOW_VOLUME
+
+    // Select based on which polynomial surface is highest
+    if trend_score > 20 or max_signal == trend_score
+        regime := this.ma_health > 0 ?
+                  UTIL.MarketRegimes.TRENDING_BULL :
+                  UTIL.MarketRegimes.TRENDING_BEAR
+    else if max_signal == volatility_score and max_signal > 20
+        regime := UTIL.MarketRegimes.VOLATILE
+    else if max_signal == volume_score and max_signal > 25
+        regime := UTIL.MarketRegimes.RANGING
+
+    regime
+
+// @function fetch
+// @description Fetches market context data for a specified timeframe, including indicators and derived metrics.
+// @param this: MarketContext - The market context object to update with fetched data.
+// @param target_tf: UTIL.Timeframes - The target timeframe to fetch data for; defaults to current timeframe (C).
+// @returns MarketContext - The updated market context object with fetched data and computed values.
+export method fetch(MarketContext this, UTIL.Timeframes target_tf = UTIL.Timeframes.C) =>
+    tf_string = target_tf == UTIL.Timeframes.C ? timeframe.period : UTIL.getTimeframeAbbrev(target_tf)
+    float o = na, float h = na, float l = na, float c = na, float v = na
+
+    if target_tf == UTIL.Timeframes.C or UTIL.isChartTimeframe(target_tf)
+        this.ma_primary := ta.alma(close, 8, 0.85, 6)
+        this.ma_signal := ta.vwma(close, 12)
+        this.ma_mean := ta.ema(close, 21)
+        this.atr := ta.atr(14)
+        this.atr_long := ta.atr(50)
+        this.cci := ta.cci(close, 14) * 3  // Normalize to -100 to +100
+        this.rsi := (ta.rsi(close, 14) - 50 ) * 2  // Normalize to -100 to +100
+        this.stdev := ta.stdev(close, 14)
+
+        this.atr_distance := this.atr > 0 ? (close - this.ma_mean) / this.atr : 0.0
+        // Set OHLCV for common calculations
+        o := open, h := high, l := low, c := close, v := volume
+
+        this.vol := nz(volume, this.vol)
+        this.vol_sma := ta.sma(volume, 20)
+    else
+        // Fetch indicators from target timeframe
+        [ _o, _h, _l, _c, _v, vol_sma,
+             ma_primary, ma_signal, ma_mean, atr14, atr50, cci14, rsi14, stdev14 ] =
+             request.security(syminfo.tickerid, UTIL.getTimeframeAbbrev(target_tf), [
+             open, high, low, close, volume, ta.sma(volume, 20),
+             ta.alma(close, 8, 0.85, 6), ta.vwma(close, 12), ta.ema(close, 21),
+             ta.atr(14), ta.atr(50), ta.cci(close, 14) * 3, (ta.rsi(close, 14) - 50) * 2, ta.stdev(close, 14)
+             ], barmerge.gaps_off, barmerge.lookahead_off, calc_bars_count=30)
+
+        o := _o, h := _h, l := _l, c := _c
+
+        this.ma_primary := ma_primary
+        this.ma_signal := ma_signal
+        this.ma_mean := ma_mean
+        this.atr := atr14
+        this.atr_long := atr50
+        this.cci := (cci14) * 3  // Normalize to -100 to +100
+        this.rsi := (rsi14 - 50) * 2  // Normalize to -100 to +100
+        this.stdev := stdev14
+
+        this.vol := nz(_v, this.vol)
+        this.vol_sma := vol_sma
+
+    // Calculate derived metrics
+    this.atr_distance := (c - this.ma_mean) / this.atr
+    this.ma_health := getHealthMAs(this.atr, this.ma_primary, this.ma_signal, this.ma_mean, 2.0)
+    this.volatility_ratio := this.stdev / this.atr
+
+    // Only update vol_ratio if we have valid volume and vol_sma data
+    if not na(this.vol) and not na(this.vol_sma) and this.vol_sma > 0
+        this.vol_ratio := this.vol / this.vol_sma
+
+    // Determine trend metrics
+    this.trend_strength := math.abs(this.ma_health) / 100.0
+    this.trend_direction := this.ma_health > 15 ? 1.0 : this.ma_health < -15 ? -1.0 : 0.0
+
+    // Determine market regime
+    this.regime := this.detectRegime()
+    this.tf := target_tf
+    this
+
+/////////////////////////////////////////////////////////////
+// STANDARD COLOR SCHEMES
+/////////////////////////////////////////////////////////////
+
+// @function getColorMomentumAlpha
+// @description Returns a color based on price momentum and volume conviction with smooth gradients and alpha transparency
+// @param _o: float - The opening price of the candle
+// @param _c: float - The closing price of the candle
+// @param momentum: float - The price momentum, -100 (bearish) to +100 (bullish)
+// @param alpha: float - Value from 0.03 to 0.9 measuring conviction
+// @param vol_ratio: float - Ratio of volume over average volume
+// @param color_bull_up: color - Color for bullish candle in bullish trend (default color.green)
+// @param color_bear_up: color - Color for bearish candle in bullish trend (default color.aqua)
+// @param color_bull_down: color - Color for bullish candle in bearish trend (default color.orange)
+// @param color_bear_down: color - Color for bearish candle in bearish trend (default color.red)
+// @returns color - The calculated color with momentum-based gradient and alpha transparency
+export getColorMomentumAlpha(float _o, float _c, float momentum, float alpha, float vol_ratio,
+     color color_bull_up = color.green, color color_bear_down = color.red,
+     color color_bull_down = color.orange, color color_bear_up = color.blue) =>
+
+    // Convert alpha (0.03-0.9) to transparency (3-90) using UTIL.fast_tanh for smooth scaling
+    // Map alpha range to transparency: higher alpha = lower transparency (more opaque)
+    normalized_alpha = UTIL.fast_tanh((alpha + vol_ratio)) * 90
+    transparency = int(100 - (normalized_alpha))
+
+    // Clamp momentum to valid range and normalize
+    clamped_momentum = math.max(-100, math.min(100, momentum))
+
+    // Determine base colors for gradient based on candle direction and momentum
+    color start_color = na
+    color end_color = na
+
+    if _c > _o
+        // Bullish candle: gradient from bear_down (bearish momentum) to bull_up (bullish momentum)
+        start_color := color_bear_up
+        end_color := color_bull_up
+    else
+        // Bearish candle: gradient from bull_down (bearish momentum) to bear_up (bullish momentum)
+        start_color := color_bear_down
+        end_color := color_bull_down
+
+    // Create smooth gradient color based on momentum
+    gradient_color = color.from_gradient(clamped_momentum * normalized_alpha / 100, -100, 100, start_color, end_color)
+
+    // Apply alpha transparency
+    color.new(gradient_color, transparency)
+
+// @function calcVolumePreview
+// @description Calculates scaled volume preview heights based on volume SMA estimate
+// @param bars_buffer: BARS.Bars - The bars buffer containing volume data
+// @param vol_sma_est: float - The volume SMA estimate for scaling calculation
+// @returns array<float> - An array containing buy height and sell height values
+export calcVolumePreview(BARS.Bars bars_buffer, float vol_sma_est) =>
+    float buy_height = 0.0
+    float sell_height = 0.0
+
+    // Get current bar volume data
+    if not na(bars_buffer) and bars_buffer.size() > 0
+        [_o, _h, _l, _c, _v, _v_buying] = bars_buffer.get(0)
+
+        if not na(_v) and _v > 0 and vol_sma_est > 0
+            // Calculate scaled heights matching the original formula
+            buy_height := _v_buying / vol_sma_est
+            sell_height := (_v - _v_buying) / vol_sma_est
+    [ buy_height, sell_height ]
+
+// @function detectPivotFromOscillatorExtreme
+// @description Detects pivot points based on oscillator extreme values within a lookback period
+// @param upper_extreme: bool - Flag indicating if upper extreme condition is met
+// @param lower_extreme: bool - Flag indicating if lower extreme condition is met
+// @param lookback: int - Number of bars to look back for pivot detection (default: 8)
+// @returns int - Pivot type (1 for pivot high, -1 for pivot low)
+// @returns int - Bar index of pivot
+// @returns float - Pivot high value
+// @returns float - Pivot low value
+export detectPivotFromOscillatorExtreme(bool upper_extreme, bool lower_extreme, int lookback = 8) =>
+    int pivot_type = 0  // 1 for pivot high, -1 for pivot low
+    int pivot_bar = na
+    float pivot_high = na
+    float pivot_low = na
+
+    if upper_extreme
+        // Find lowest low in lookback period
+        highest_idx = 0
+        highest_val = high
+        for i = 1 to lookback
+            if high[i] > highest_val
+                highest_val := high[i]
+                highest_idx := i
+
+        pivot_type := 1
+        pivot_bar := bar_index - highest_idx
+        pivot_high := highest_val
+
+    else if lower_extreme
+        lowest_idx = 0
+        lowest_val = low
+        // Find highest high in lookback period
+        for i = 1 to lookback
+            if low[i] < lowest_val
+                lowest_val := low[i]
+                lowest_idx := i
+
+        pivot_type := -1
+        pivot_bar := bar_index - lowest_idx
+        pivot_low := lowest_val
+
+    [pivot_type, pivot_bar, pivot_high, pivot_low]
+
+// @type ManagedTable - Generic managed table for automatic creation/update/deletion
+// @field table_obj: table - The Pine Script table object reference
+export type ManagedTable
+    table table_obj = na
+
+// @method update - Creates or updates a managed table with flexible data structure
+// @description Creates/updates a table with customizable headers and data from a matrix
+// @param this: ManagedTable - The managed table instance
+// @param headers: array<string> - Column headers for the table
+// @param data_matrix: matrix<string> - Data matrix where each row is a table row
+// @param cell_colors: matrix<color> - Optional color matrix for individual cell styling
+// @param pos: string - Table position (use getPosition() with Positions enum)
+// @param table_size: string - Text size for table cells (default: size.normal)
+// @param header_color: color - Text color for headers (default: white)
+// @param text_color: color - Default text color for data cells (default: white)
+// @param bg_color: color - Background color for the table (default: semi-transparent black)
+// @param border_width: int - Border width for the table (default: 1)
+// @returns ManagedTable - Returns this for method chaining
+export method update(ManagedTable this, array<string> headers, matrix<string> data_matrix,
+         matrix<color> cell_colors = na, string pos = position.bottom_right, string table_size = size.normal,
+         color header_color = color.white, color text_color = color.white, color bg_color = color.black,
+         int border_width = 0) =>
+    if array.size(headers) == 0
+        this
+    else
+        // Validate data matrix dimensions
+        data_rows = matrix.rows(data_matrix)
+        data_cols = matrix.columns(data_matrix)
+        header_cols = array.size(headers)
+
+        if data_cols != header_cols
+            runtime.error("Data matrix columns must match header count")
+            this
+        else
+            // Check if table needs to be recreated
+            needs_recreation = false
+
+            if na(this.table_obj)
+                needs_recreation := true
+            else
+                // Check if existing table dimensions match required dimensions
+                total_rows = data_rows + 1  // +1 for header row
+                total_cols = header_cols
+
+                // Pine Script doesn't provide direct table dimension access,
+                // so we recreate on any structural change for safety
+                needs_recreation := true
+
+            if needs_recreation
+                // Delete existing table if it exists
+                if not na(this.table_obj)
+                    table.delete(this.table_obj)
+
+                // Calculate table dimensions
+                total_rows = data_rows + 1  // +1 for header row
+                total_cols = header_cols
+
+                // Create new table
+                this.table_obj := table.new(pos, total_cols, total_rows, bgcolor=bg_color, border_width=border_width)
+
+            // Update table content (whether new or existing)
+            if not na(this.table_obj)
+                // Add header row
+                for [col_idx, header_text] in headers
+                    table.cell(this.table_obj, col_idx, 0, header_text, text_color=header_color, text_size=table_size)
+
+                // Add data rows
+                for row_idx = 0 to data_rows - 1
+                    for col_idx = 0 to data_cols - 1
+                        cell_text = matrix.get(data_matrix, row_idx, col_idx)
+
+                        // Determine cell color
+                        cell_color = text_color
+                        if not na(cell_colors) and matrix.rows(cell_colors) > row_idx and matrix.columns(cell_colors) > col_idx
+                            custom_color = matrix.get(cell_colors, row_idx, col_idx)
+                            if not na(custom_color)
+                                cell_color := custom_color
+
+                        table.cell(this.table_obj, col_idx, row_idx + 1, cell_text, text_color=cell_color, text_size=table_size)
+
+            this
+
+// @function delete
+// @description Deletes the ManagedTable object and sets its table reference to na.
+// @param this: ManagedTable - The ManagedTable object to delete.
+// @returns ManagedTable - The ManagedTable object with its table reference set to na.
+export method delete(ManagedTable this) =>
+    if not na(this.table_obj)
+        table.delete(this.table_obj)
+        this.table_obj := na
+    this
+
+///////////////////////////////////////////////////////////////////////////////
+// MARKET STRUCTURES
+///////////////////////////////////////////////////////////////////////////////
+
+// @enum SweepType - Types of liquidity sweeps
+export enum SweepType
+    NO_SWEEP = "No Sweep"
+    PARTIAL_SWEEP = "Partial Sweep"
+    FULL_SWEEP = "Full Sweep"
+    STOP_HUNT = "Stop Hunt"
+
+// @type OrderBlock - Institutional order block data
+export type OrderBlock
+    float mitigation_price = na
+    float volume_confirmation = 0.0
+    int creation_bar = na
+    float atr_distance = 0.0
+
+// @type FairValueGap - Price imbalance zone
+export type FairValueGap
+    float gap_size = na
+    bool is_filled = false
+    float fill_percentage = 0.0
+    int creation_time = na
+
+// @type LiquidityZone - Stop hunt/sweep area
+export type LiquidityZone
+    SweepType sweep_type = SweepType.NO_SWEEP
+    float hunt_completion_percent = 0.0
+    array<float> sweep_levels = na
+
+// @type StructureBreak - BOS/CHoCH detection
+export type StructureBreak
+    string break_type = na        // "BOS" or "CHoCH"
+    int break_bar = na
+    float conviction_score = 0.0
+
+// @type MarketLevel - Comprehensive swing level with ICT classification
+export type MarketLevel
+    int id = 0
+    // Core spatial and temporal bounds
+    float price_high = na
+    float price_low = na
+    int creation_bar = na
+    int last_touch_bar = na
+    int last_active_bar = na
+    int last_success_bar = na
+
+    // Visuals
+    int zone_id = na
+
+    // State and lifecycle management
+    int direction = na                // 1 bullish, -1 bearish
+    float pressure = 0.0                // If positive, pressure pushes price in according to the direction field.  of direction.  If negative, draws price action towards itself, i.e. liquidity pools, fair value gaps, etc.
+    int touch_count = 0
+    int successes = 0
+    int aged = 0                        // Total age of level
+    int aged_outside_profile = 0        // Age only when outside profile range
+    int breach_count = 0                // Count of confirmed breaches/flips
+
+    // Flags
+    bool is_sr = false                  // RENAMED: true if level can act as support or resistance
+    bool is_magnetic = false            // If true, this level tends to draw price action towards it - liquidity pools, fair value gaps
+
+    // Composition - specialized structure types (replaces booleans)
+    UTIL.CandlePatterns pattern = UTIL.CandlePatterns.NA
+    OrderBlock order_block = na
+    FairValueGap fvg = na
+    LiquidityZone liquidity_zone = na
+    StructureBreak structure_break = na
+
+///////////////////////////////////////////////////////////////////////////////
+// MARKET LEVEL METHODS
+///////////////////////////////////////////////////////////////////////////////
+
+export method init(MarketLevel this, float price_low, float price_high, int pivot_bar, int direction) =>
+    this.price_low := price_low
+    this.price_high := price_high
+    this.creation_bar := pivot_bar
+    this.last_touch_bar := pivot_bar
+    this.last_active_bar := pivot_bar
+    this.last_success_bar := pivot_bar
+    this.touch_count := 1
+    this.successes := 1
+    this.is_sr := true
+    this.direction := direction
+    this
+
+// @function clean
+// @description Cleans up the MarketLevel object by setting certain properties and arrays to na.
+// @param this: MarketLevel - The MarketLevel object to be cleaned.
+// @returns MarketLevel - The cleaned MarketLevel object, indicated by returning na.
+export method clean(MarketLevel this) =>
+    if not na(this)
+        // Clear composition data
+        this.order_block := na
+        this.fvg := na
+        this.liquidity_zone := na
+        this.structure_break := na
+
+        // Clear arrays
+        if not na(this.liquidity_zone) and not na(this.liquidity_zone.sweep_levels)
+            array.clear(this.liquidity_zone.sweep_levels)
+
+    // Return na to indicate cleaned object
+    this
+
+// @function updateLevelSuccess
+// @description Updates a market level with successful interaction data
+// @param level: MarketLevel - The level to update
+// @param current_bar: int - Current bar index
+// @param o: float - Open price
+// @param h: float - High price
+// @param l: float - Low price
+// @param c: float - Close price
+// @param v: float - Volume
+// @returns MarketLevel - The updated level
+export method updateLevelSuccess(MarketLevel level, int current_bar) =>
+    if not na(level)
+        level.aged := 0
+        level.successes += 1
+        level.last_success_bar := current_bar
+        level.last_active_bar := current_bar
+    level
+
+// @function updateLevelTouch
+// @description Updates a market level with touch data
+// @param level: MarketLevel - The level to update
+// @param current_bar: int - Current bar index
+// @param is_successful: bool - Whether the touch was successful
+// @param o: float - Open price (optional, for success updates)
+// @param h: float - High price (optional, for success updates)
+// @param l: float - Low price (optional, for success updates)
+// @param c: float - Close price (optional, for success updates)
+// @param v: float - Volume (optional, for success updates)
+// @returns MarketLevel - The updated level
+export method updateLevelTouch(MarketLevel level, int current_bar, bool is_successful, float v = na) =>
+    if not na(level)
+        level.touch_count += 1
+        level.last_touch_bar := current_bar
+        if is_successful and not na(v)
+            level.updateLevelSuccess(current_bar)
+        else
+            level.last_active_bar := current_bar
+    level
+
+// @function breakLevel
+// @description Weakens a level after being broken
+// @param level: MarketLevel - The level to break
+// @param current_bar: int - Current bar index
+// @returns MarketLevel - The weakened level
+export method breakLevel(MarketLevel level, int current_bar) =>
+    if not na(level)
+        level.touch_count += 1
+        level.pressure := level.pressure / 2.0
+        level.last_active_bar := current_bar
+    level
+
+// @function binarySearchMarketLevels
+// @description Searches for the position in the sorted array where the given price would fit, using binary search.
+// @param arr: array<MarketLevel> - The sorted array of MarketLevel objects.
+// @param price: float - The price to search for in the array.
+// @returns int - The index where the price would fit in the array.
+export binarySearchMarketLevels(array<MarketLevel> arr, float price) =>
+    if na(arr) or array.size(arr) == 0
+        0
+    else
+        left = 0
+        right = array.size(arr)
+        while left < right
+            mid = math.floor((left + right) / 2)
+            mid_level = array.get(arr, mid)
+            if not na(mid_level) and not na(mid_level.price_low) and mid_level.price_low < price
+                left := mid + 1
+            else
+                right := mid
+        left
+
+// @function flip
+// @description Determines if a market level flip occurs based on breach direction and current market conditions
+// @param this: MarketLevel - The market level object being evaluated
+// @param current_price: float - The current market price
+// @param breach_direction: int - The direction of price breach (1 for bullish, -1 for bearish)
+// @returns bool - True if level flip occurs, false otherwise
+export method flip(MarketLevel this, float current_price, int breach_direction) =>
+    if na(this) or na(current_price) or breach_direction == 0
+        false
+    else
+        if this.is_sr
+            // Progressive weakening: each breach weakens more
+            // First flip: ~50%, Second: ~42%, Third: ~35%, etc.
+            decay_factor = math.pow(0.5, 1.0 + (this.breach_count * 0.2))
+            this.pressure *= decay_factor
+            this.breach_count += 1
+
+        // Perform the flip
+        this.direction := breach_direction
+        this.last_active_bar := bar_index
+
+        true
+
+// @function remove
+// @description Removes a MarketLevel object and cleans up its visual representations
+// @param this: MarketLevel - The MarketLevel object to remove
+// @param visuals: libDrawing.DrawingManager - The visual manager to handle drawing cleanup
+// @param show_static_outline: bool - Whether to make the visual static instead of fully removing
+// @returns MarketLevel - Returns na to indicate the object has been cleaned up
+export method remove(MarketLevel this, libDrawing.DrawingManager visuals, bool show_static_outline = false) =>
+    if not na(this)
+        // Clean up visual zone if it exists
+        if not na(this.zone_id)
+            visuals.disableAutoExtend(this.zone_id)
+
+            // Conditionally make static or fully remove
+            if show_static_outline
+                visuals.makeStatic(this.zone_id)
+            else
+                visuals.remove(this.zone_id)
+
+            this.zone_id := na
+
+        this.clean()
+
+    // Return na to indicate cleaned object
+    this
+
+// @function createNewZoneWithProfile
+// @description Creates a new zone with a profile visual and returns the zone ID or na if creation failed.
+// @param this: MarketLevel - The market level object containing zone data and configuration.
+// @param visuals: libDrawing.DrawingManager - The drawing manager instance for managing visual elements.
+// @param content: string - The content string to display within the zone label.
+// @param color_support: color - The color used for support zones (default: teal).
+// @param color_resistance: color - The color used for resistance zones (default: orange).
+// @returns series int - The ID of the created zone, or na if the zone was not created.
+export method createNewZoneWithProfile(MarketLevel this, libDrawing.DrawingManager visuals, string content, color color_support = color.teal, color color_resistance = color.orange) =>
+    // Check if creation_bar is within historical buffer limits
+    max_lookback = 500
+    safe_creation_bar = this.creation_bar
+
+    if bar_index - this.creation_bar > max_lookback
+        safe_creation_bar := bar_index - max_lookback + 50
+
+    level_color = this.direction == 1 ? color_support : (this.direction == -1 ? color_resistance : UTIL.COLOR_NEUTRAL)
+
+    // Create the main visual zone
+    zone = visuals.addLabeledZone(
+         "zone_" + str.tostring(this.id),
+         safe_creation_bar,
+         this.price_low,
+         this.price_high,
+         color.new(level_color, 75),
+         color.new(level_color, 100),
+         content)
+
+    if not na(zone)
+        this.zone_id := zone.id
+        zone.id
+    else
+        na
+
+// @function draw
+// @description Draws a market level zone on the chart using the provided drawing manager and content.
+// @param this: MarketLevel - The market level instance containing zone and direction data.
+// @param visuals: libDrawing.DrawingManager - The drawing manager to handle visual elements.
+// @param content: string - The text content to display within the zone.
+// @param color_support: color - The color used for support levels (default: teal).
+// @param color_resistance: color - The color used for resistance levels (default: orange).
+// @returns string - The ID of the created or updated zone.
+export method draw(MarketLevel this, libDrawing.DrawingManager visuals, string content, color color_support = color.teal, color color_resistance = color.orange) =>
+    if not na(this.zone_id) and visuals.contains(this.zone_id)
+        // Update existing zone
+        box_element = visuals.getElement(this.zone_id)
+        if not na(box_element)
+            level_color = this.direction == 1 ? color_support : (this.direction == -1 ? color_resistance : UTIL.COLOR_NEUTRAL)
+            visuals.setStyle(this.zone_id,
+                 bg = color.new(level_color, math.max(80, 95-this.pressure/8.0)),
+                 fg = color.new(level_color, 30))
+
+            visuals.setStyle(this.zone_id, content = content)
+
+            this.zone_id
+        else
+            this.createNewZoneWithProfile(visuals, content)
+    else
+        this.createNewZoneWithProfile(visuals, content)

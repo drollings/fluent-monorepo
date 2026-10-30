@@ -346,8 +346,8 @@ pub(crate) fn donchian_mid(high: &[f64], low: &[f64], length: usize, end: usize)
     {
         return f64::NAN;
     }
-    let highest = window_h.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-    let lowest = window_l.iter().copied().fold(f64::INFINITY, f64::min);
+    let highest = crate::math::fold_strict_max(window_h.iter().copied());
+    let lowest = crate::math::fold_strict_min(window_l.iter().copied());
     f64::midpoint(highest, lowest)
 }
 

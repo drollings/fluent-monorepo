@@ -72,11 +72,11 @@ fn seeded_switch_bounds_the_loaded_window_and_a_preset_grows_over_held_rows() {
     workspace
         .switch_symbol_seeded("SPY", all_frames(60, 140_000))
         .expect("SPY seeds");
-    let one = fetch_for_window(DateRange::Month1, 300, FETCH_WARMUP_BARS);
+    let one = fetch_for_window(DateRange::Month2, 300, FETCH_WARMUP_BARS);
     assert_eq!(
         workspace.rows().len(),
         one,
-        "the seed binds the one-month window"
+        "the seed binds the two-month window"
     );
     assert_eq!(
         workspace.loaded_timeframes().len(),

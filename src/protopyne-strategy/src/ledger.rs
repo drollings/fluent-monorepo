@@ -443,12 +443,14 @@ fn max_attested(
 }
 
 fn add(left: Money, right: Money) -> Money {
-    Money::new(left.as_decimal() + right.as_decimal())
+    // (M3.2: `Money::saturating_add` matches `+` absent overflow, which is
+    // unreachable at market magnitudes.)
+    left.saturating_add(right)
 }
 
 fn sub(left: Money, right: Money) -> Money {
-    let value = left.as_decimal() - right.as_decimal();
-    Money::new(value.max(Decimal::ZERO))
+    // (M3.2: `Money::saturating_sub` floors at zero — exact match.)
+    left.saturating_sub(right)
 }
 
 #[cfg(test)]

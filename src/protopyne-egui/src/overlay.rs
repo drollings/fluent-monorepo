@@ -335,7 +335,10 @@ impl ChartIndicator for BacktestOverlay {
         // A slot that names a different run than this overlay's data paints
         // nothing: a mislabelled run is worse than a blank one.
         if overlay_config_of(self.id(), &self.run_id, config).is_err() {
-            return Ok(IndicatorEvaluation { series: Vec::new() });
+            return Ok(IndicatorEvaluation {
+                series: Vec::new(),
+                overlay: Ok(Vec::new()),
+            });
         }
         let kinds = [
             (BacktestPointKind::Entry, OVERLAY_NODES[0]),
@@ -348,6 +351,7 @@ impl ChartIndicator for BacktestOverlay {
                 .iter()
                 .map(|(kind, node)| self.series_for(rows, *kind, node))
                 .collect(),
+            overlay: Ok(Vec::new()),
         })
     }
 
@@ -440,7 +444,10 @@ impl ChartIndicator for EquityPane {
         _series: &crate::topology::SeriesCatalog,
     ) -> Result<IndicatorEvaluation, EguiError> {
         if overlay_config_of(self.id(), &self.run_id, config).is_err() {
-            return Ok(IndicatorEvaluation { series: Vec::new() });
+            return Ok(IndicatorEvaluation {
+                series: Vec::new(),
+                overlay: Ok(Vec::new()),
+            });
         }
         let index_of = bar_index_of(rows);
         let mut values = vec![None; rows.len()];
@@ -462,6 +469,7 @@ impl ChartIndicator for EquityPane {
                 key: cache_key("backtest:equity", fingerprint),
                 pane: Some(BACKTEST_EQUITY_PANE.to_owned()),
             }],
+            overlay: Ok(Vec::new()),
         })
     }
 

@@ -42,8 +42,13 @@ pub const MA_PRIMARY_LENGTH: i64 = 8;
 pub const MA_SIGNAL_LENGTH: i64 = 12;
 /// EMA span behind the MA-health fold.
 pub const MA_MEAN_LENGTH: i64 = 21;
-/// Trailing window behind realised volatility.
-pub const VOLATILITY_LENGTH: usize = 20;
+/// Trailing window behind the lite realised-volatility estimator
+/// (`protopyne-strategy signals_lite::realised_volatility`, manual
+/// mean/var over closes). Intentionally separate from the kernel
+/// estimator's `KERNEL_VOLATILITY_WINDOW` (strategy `signals_kernel`,
+/// returns + `stddev` kernel): different math over a same-sized window —
+/// the names now say which is which (M4.2). Do not unify the constants.
+pub const LITE_VOLATILITY_LENGTH: usize = 20;
 /// Default ribbon-health gain (the reference dial's shipped value).
 pub const RIBBON_HEALTH_K: f64 = 1.8;
 /// Default MA-health display gain (the reference dial's shipped value).
@@ -519,10 +524,7 @@ pub fn lite_legs(
     let frame = OwnedOhlcv::from_bars(bars);
     let closes: Vec<f64> = bars
         .iter()
-        .map(|bar| {
-            use rust_decimal::prelude::ToPrimitive as _;
-            bar.c.to_f64().unwrap_or(f64::NAN)
-        })
+        .map(|bar| protopyne_types::bar_leg_as_f64(bar.c))
         .collect();
     lite_legs_from_frame(&frame, &closes, params, risk_atr_len)
 }

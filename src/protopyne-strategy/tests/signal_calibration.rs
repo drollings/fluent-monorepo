@@ -401,7 +401,7 @@ fn a_kernel_signal_reports_realised_volatility_from_its_registry() {
     );
 
     // Too few bars is absence, never a zero.
-    let short = trend_closes(crate::signals_kernel::VOLATILITY_WINDOW);
+    let short = trend_closes(crate::signals_kernel::KERNEL_VOLATILITY_WINDOW);
     let short_bars = bars(&short);
     let short_output = evaluate_last(&signal, &short_bars, &short);
     assert_eq!(

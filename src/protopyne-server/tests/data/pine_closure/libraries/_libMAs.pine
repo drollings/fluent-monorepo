@@ -1,0 +1,272 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © showmethegrail
+
+//@version=6
+
+// @description A comprehensive library for various moving averages and technical indicators
+// Provides utility functions for size/position conversion, different types of moving averages,
+// oscillators, pattern detection, and advanced analytics for technical analysis
+library('libMAs')
+
+import showmethegrail/libUtil/12 as UTIL
+
+// @function getOscillatorColor
+// @description Returns a color corresponding to the specified oscillator type.
+// @param osc: UTIL.Oscillators - The oscillator type for which to return a color.
+// @returns color - The color associated with the specified oscillator type.
+export getOscillatorColor(UTIL.Oscillators osc) =>
+    switch osc
+        UTIL.Oscillators.NA => color.white
+        UTIL.Oscillators.AROON => color.rgb(250, 240, 40, 20)
+        UTIL.Oscillators.CCI => color.rgb(180, 240, 40, 20)
+        UTIL.Oscillators.CDV => color.rgb(240, 100, 200, 20)
+        UTIL.Oscillators.CMO => color.rgb(140, 240, 80, 40)
+        UTIL.Oscillators.MFI => color.rgb(240, 32, 240, 50)
+        UTIL.Oscillators.RSI => color.rgb(32, 200, 240, 40)
+        UTIL.Oscillators.SRSI => color.rgb(240, 180, 64, 20)
+        UTIL.Oscillators.STOCH => color.rgb(180, 240, 200, 20)
+        UTIL.Oscillators.TRENDSI => color.rgb(64, 240, 64, 20)
+        =>
+           color.white
+
+// @function getKalman
+// @description Calculates the Kalman filtered value of a given source series.
+// @param source: float - The input series to be filtered.
+// @param period: simple int - The period for the Kalman filter.
+// @param alpha: simple float - The alpha parameter for the filter (default 0.012).
+// @param beta: simple float - The beta parameter for the filter (default 0.1).
+// @returns float - The filtered value of the source series.
+export getKalman(float source, simple int period, simple float alpha=0.012, simple float beta=0.1) =>
+    var float v1 = na
+    var float v2 = 1.0
+    var float v3 = alpha * period
+    var float v4 = 0.0
+    var float v5 = na
+
+    if na(v1)
+        v1 := nz(source[1], source)
+
+    v5 := v1
+    v4 := v2 / (v2 + v3)
+    v1 := v5 + v4 * (source - v5)
+    v2 := (1 - v4) * v2 + beta / period
+
+    v1
+
+// @function getEIT
+// @description Calculates the Exponential Indicator Transform (EIT) of the given source data with a specified smoothing factor.
+// @param source: float - The input data source for the EIT calculation.
+// @param alpha: float - The smoothing factor for the EIT calculation.
+// @returns float - The calculated EIT value for the given source and alpha.
+export getEIT(float source, float alpha) =>
+    var float eit = na
+
+    init_eit = (source + 2*nz(source[1], source) + nz(source[2], source)) / 4.0
+    eit := (alpha - (alpha*alpha)/4.0) * source +
+           0.5 * alpha * alpha * nz(source[1], source) -
+           (alpha - 0.75 * alpha * alpha) * nz(source[2], source) +
+           2 * (1 - alpha) * nz(eit[1], init_eit) -
+           (1 - alpha) * (1 - alpha) * nz(eit[2], init_eit)
+
+    eit
+
+// @function getSupertrend
+// @description Calculates the Supertrend indicator for a given source and ATR.
+// @param src: float - The source data for the Supertrend calculation.
+// @param atr: float - The ATR value used in the Supertrend calculation.
+// @param factor: float - The factor to multiply the ATR by.
+// @returns array - An array containing the Supertrend value and the direction.
+export getSupertrend(float src, float atr, float factor) =>
+    upperBand = src + factor * atr
+    lowerBand = src - factor * atr
+    prevLowerBand = nz(lowerBand[1])
+    prevUpperBand = nz(upperBand[1])
+
+    lowerBand := lowerBand > prevLowerBand or close[1] < prevLowerBand ? lowerBand : prevLowerBand
+    upperBand := upperBand < prevUpperBand or close[1] > prevUpperBand ? upperBand : prevUpperBand
+    int _direction = na
+    float superTrend = na
+    prevSuperTrend = superTrend[1]
+    if na(atr[1])
+        _direction := 1
+    else if prevSuperTrend == prevUpperBand
+        _direction := close > upperBand ? -1 : 1
+    else
+        _direction := close < lowerBand ? 1 : -1
+    superTrend := _direction == -1 ? lowerBand : upperBand
+    [superTrend, _direction]
+
+// @function factorySmoothing
+// @description Returns a smoothed value of the input data based on the specified smoothing type and parameters.
+// @param data: float - The input data to be smoothed.
+// @param smoothing: UTIL.Smoothings - The type of smoothing to apply.
+// @param length: simple int - The length parameter for the smoothing function.
+// @param n1: simple float - A parameter for certain smoothing types, default is 0.85.
+// @param param2: simple float - A parameter for certain smoothing types, default is 6.
+// @returns float - The smoothed value of the input data.
+export factorySmoothing(float data, UTIL.Smoothings smoothing, simple int length, simple float n1=0.85, simple float param2=6) =>
+    if na(data)
+        0.0
+    if length <= 0
+        runtime.error("Smoothing length must be positive")
+        0.0
+
+    switch smoothing
+        UTIL.Smoothings.NA => data
+        UTIL.Smoothings.ALMA => ta.alma(data, length, n1, param2)
+        UTIL.Smoothings.EIT => getEIT(data, n1)  // n1 would be alpha
+        UTIL.Smoothings.EMA => ta.ema(data, length)
+        UTIL.Smoothings.HMA => ta.hma(data, length)
+        UTIL.Smoothings.KALMAN => getKalman(data, length)
+        UTIL.Smoothings.RMA => ta.rma(data, length)
+        UTIL.Smoothings.SMA => ta.sma(data, length)
+        UTIL.Smoothings.VWMA => ta.vwma(data, length)
+        UTIL.Smoothings.WMA => ta.wma(data, length)
+        UTIL.Smoothings.ZLEMA => ta.ema(2 * data - data[math.floor((length - 1) / 2)], length)
+        =>
+            runtime.error("Unknown smoothing type: " + str.tostring(smoothing))
+            data
+
+// @function getMACD
+// @description Calculates the MACD (Moving Average Convergence Divergence) for the given data with specified parameters.
+// @param data: float - The input data for which MACD is calculated.
+// @param fast: simple int - The period for the fast moving average (default 12).
+// @param slow: simple int - The period for the slow moving average (default 26).
+// @param signal: simple int - The period for the signal line moving average (default 9).
+// @param smoothFast: UTIL.Smoothings - The smoothing type for the fast moving average (default SMA).
+// @param smoothSlow: UTIL.Smoothings - The smoothing type for the slow moving average (default SMA).
+// @param smoothSignal: UTIL.Smoothings - The smoothing type for the signal line moving average (default SMA).
+// @returns array<float, float, float> - An array containing the MACD line, signal line, and histogram values.
+export getMACD(float data, simple int fast=12, simple int slow=26, simple int signal=9, UTIL.Smoothings smoothFast=UTIL.Smoothings.SMA, UTIL.Smoothings smoothSlow=UTIL.Smoothings.SMA, UTIL.Smoothings smoothSignal=UTIL.Smoothings.SMA) =>
+    if na(data)
+        [0.0, 0.0, 0.0]
+    if fast <= 0 or slow <= 0 or signal <= 0
+        runtime.error("All periods must be positive in getMACD")
+        [0.0, 0.0, 0.0]
+    if fast >= slow
+        runtime.error("Fast length must be less than slow length")
+        [0.0, 0.0, 0.0]
+
+    float fastMA = factorySmoothing(data, smoothFast, fast)
+    float slowMA = factorySmoothing(data, smoothSlow, slow)
+    float macdLine = fastMA - slowMA
+    float signalLine = factorySmoothing(macdLine, smoothSignal, signal)
+    float histogram = macdLine - signalLine
+
+    [macdLine, signalLine, histogram]
+
+// @function getVossPredictiveFilter
+// @description Calculates a predictive filter value and the filter value itself based on input data, period, prediction length, and bandwidth.
+// @param _data: float - The input data series to filter.
+// @param _period: int - The period of the cycle to filter out.
+// @param _predict: int - The length of the prediction (default is 3).
+// @param _band: float - The bandwidth of the filter (default is 0.25).
+// @returns array - An array containing the predictive filter value and the filter value.
+export getVossPredictiveFilter(float _data, int _period, int _predict=3, float _band=0.25) =>
+    // Initialize variables
+    float filter = 0.0
+    float sumC = 0.0
+    float voss = 0.0
+
+    // Calculate constants
+    pi_x2 = 2 * math.asin(1)  // 2π constant (6.28318...)
+    order = 3 * _predict  // Filter order based on prediction length
+
+    // Calculate filter coefficients
+    alpha = math.cos(2 * pi_x2 / _period)  // Primary coefficient based on cycle period
+    gamma = math.cos(_band * 2 * pi_x2 / _period)  // Bandwidth coefficient
+
+    // Calculate delta (determines filter sharpness)
+    delta = 1 / gamma - math.sqrt(1 / (gamma * gamma) - 1)
+
+    // Calculate filter scaling factors
+    s2 = 1 + delta
+    s3 = 1 - delta
+
+    // Sum the weighted prior predictions for the center of mass calculation
+    // This creates a weighted average of previous filter values
+    for i = 0 to order - 1
+        // Note: Using := for reassignment within the loop
+        sumC := sumC + (i + 1) / order * voss[order - i]
+
+    // Handle initialization period (first few bars)
+    if bar_index <= order
+        filter := 0
+        voss := 0
+    else
+        // Calculate the bandpass filter value
+        // This is the core filter equation that isolates the cyclic component
+        filter := 0.5 * s3 * (nz(_data) - nz(_data[2])) + alpha * s2 * filter[1] - delta * filter[2]
+
+        // Calculate the predictive value using the center of mass principle
+        // This shifts the filtered signal forward in time
+        voss := ((3 + order)/2) * filter - sumC
+
+    // Return both the prediction and the filter value
+    [voss, filter]
+
+export normalizeOsc(float src, UTIL.Oscillators osc_type,
+         simple int which = 0, simple int fastLen = 5, simple int slowLen = 14,
+         UTIL.Smoothings smoothing = UTIL.Smoothings.NA, simple int smoothingLen = 0) =>
+    offset = -50.0
+    k = 0.0084
+    multiplier = 740.0
+    length = switch which
+        1 => fastLen
+        => slowLen
+
+    _data = switch osc_type
+        UTIL.Oscillators.AROON =>
+            k := 0.005
+            multiplier := 800.0
+            switch which
+                1 => (100 * (ta.highestbars(high, length + 1) + length)/length)
+                -1 => (100 * (ta.highestbars(high, length + 1) + length)/length)
+                =>
+                    (100 * (ta.highestbars(high, length + 1) + length)/length) -
+                     (100 * (ta.lowestbars(low, length + 1) + length)/length)
+        UTIL.Oscillators.CCI =>
+            k := 0.0035
+            multiplier := 500.0
+            ta.cci(src, length)
+        UTIL.Oscillators.CMO =>
+            offset := 0.0
+            k := 0.002
+            multiplier := 1000.0
+            ta.cmo(src, length)
+        UTIL.Oscillators.MFI => ta.mfi(src, length)
+        UTIL.Oscillators.RSI => ta.rsi(src, length)
+        UTIL.Oscillators.SRSI =>
+            offset := -50.0
+            k := 0.0006
+            multiplier := 7000.0
+            rsi = ta.rsi(src, 14)   // TODO - we need general preferences
+            ta.stoch(rsi, rsi, rsi, length)
+        UTIL.Oscillators.STOCH =>
+            offset := -50.0
+            k := 0.0005
+            multiplier := 7000.0
+            ta.stoch(close, high, low, length)
+        UTIL.Oscillators.TRENDSI =>
+            offset := 0.0
+            k := 0.016
+            multiplier := 9000.0
+            ta.correlation(src, bar_index, length)
+        UTIL.Oscillators.VOSS =>
+            offset := 0.0
+            k := 1.5
+            multiplier := 300.0
+            [_voss, _voss_filter] = getVossPredictiveFilter(src, length, 3, 0.25)
+
+            switch which
+                1 => _voss
+                -1 => _voss_filter
+                =>
+                    _voss - _voss_filter
+        =>
+            src
+
+    if smoothingLen > 0 and smoothing != UTIL.Smoothings.NA
+        _data := factorySmoothing(_data, smoothing, smoothingLen)
+    x = (_data + offset) * k
+    x / (1.0 + math.abs(x)) * multiplier

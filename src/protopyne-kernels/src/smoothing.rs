@@ -269,6 +269,13 @@ impl SmoothingFamily {
 
     /// Bars before trustworthy output: the kernel's own warmup, or the recipe
     /// composition (`ema` warmup plus the derivation lag) for `Zlema`.
+    ///
+    /// Role split (M2.2): this resolves one kernel's warmup through the
+    /// registry; the slowest-leg honesty *check* lives in
+    /// `calibration.rs` (max of first-defined positions vs `warmup - 1`);
+    /// fetch planning lives in `protopyne_types::adjust_fetch_bounds`,
+    /// which `backfill::missing_range` already reuses. Three operations,
+    /// three homes — no shared max-of-legs calculator fits all three.
     pub fn warmup_for_length(&self, length: i64) -> Result<usize, KernelError> {
         if length <= 0 {
             return Err(KernelError::InvalidParam(format!(

@@ -1035,3 +1035,40 @@ fn buying_power_bounds_a_package_at_its_own_price() {
         );
     }
 }
+
+#[test]
+fn size_from_fraction_floors_and_fails_closed() {
+    use super::size_from_fraction;
+    // floor(0.1 * 1000 / 50) = 2.
+    assert_eq!(
+        size_from_fraction(0.1, Decimal::from(1000), Decimal::from(50)),
+        Qty::new(Decimal::from(2))
+    );
+    // Fractional results floor toward zero.
+    assert_eq!(
+        size_from_fraction(0.1, Decimal::from(1000), Decimal::from(60)),
+        Qty::new(Decimal::from(1))
+    );
+    // Fail-closed: NaN fraction, zero/negative fraction or per-unit,
+    // and negative observed all size zero.
+    assert_eq!(
+        size_from_fraction(f64::NAN, Decimal::from(1000), Decimal::from(50)),
+        Qty::zero()
+    );
+    assert_eq!(
+        size_from_fraction(0.0, Decimal::from(1000), Decimal::from(50)),
+        Qty::zero()
+    );
+    assert_eq!(
+        size_from_fraction(-0.1, Decimal::from(1000), Decimal::from(50)),
+        Qty::zero()
+    );
+    assert_eq!(
+        size_from_fraction(0.1, Decimal::from(1000), Decimal::ZERO),
+        Qty::zero()
+    );
+    assert_eq!(
+        size_from_fraction(0.1, Decimal::from(-1000), Decimal::from(50)),
+        Qty::zero()
+    );
+}

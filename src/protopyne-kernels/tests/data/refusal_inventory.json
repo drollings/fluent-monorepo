@@ -1,0 +1,16 @@
+{
+  "refusals": {
+    "array_index_out_of_bounds": "pine evaluation refused: array index 5 out of bounds",
+    "call_depth_over_limit": "pine evaluation refused: call depth exceeds 64",
+    "destructure_arity_mismatch": "pine evaluation refused: destructuring arity 1 does not match 2 targets",
+    "for_range_over_limit": "pine evaluation refused: 'for' range 0..=20000 exceeds 10000 iterations",
+    "input_missing_default": "pine evaluation refused: 'input' takes a default value",
+    "live_request": "pine evaluation refused: live request.security is refused headlessly; inject multi-timeframe bars and tick data through the run instead of a network fetch",
+    "na_arity": "pine evaluation refused: 'na' takes zero or one argument",
+    "nz_arity": "pine evaluation refused: 'nz' takes one or two arguments",
+    "plot_missing_series": "pine evaluation refused: 'plot' takes a series to draw",
+    "reassign_undeclared": "pine evaluation refused: ':=' targets undeclared variable 'x'",
+    "undefined_variable": "pine evaluation refused: undefined variable 'nosuchvar'",
+    "unknown_function": "pine evaluation refused: unknown function 'nosuchfn'"
+  }
+}

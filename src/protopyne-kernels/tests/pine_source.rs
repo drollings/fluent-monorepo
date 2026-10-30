@@ -2,20 +2,21 @@ use super::*;
 use fluent_wvr::validate::Validate;
 use std::path::PathBuf;
 
-fn data_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../data/protopyne-rs")
+/// Fixture root (server `tests/data/pine_closure`), never the volatile live root.
+fn fixture_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../protopyne-server/tests/data/pine_closure")
 }
 
 fn library_path() -> PathBuf {
-    data_root().join("libraries/_libUtil.pine")
+    fixture_root().join("libraries/_libUtil.pine")
 }
 
 fn mas_path() -> PathBuf {
-    data_root().join("libraries/_libMAs.pine")
+    fixture_root().join("libraries/_libMAs.pine")
 }
 
 fn indicator_path() -> PathBuf {
-    data_root().join("indicators/_FastMAs.pine")
+    fixture_root().join("indicators/_FastMAs.pine")
 }
 
 fn read_raw(path: &std::path::Path) -> String {
@@ -142,7 +143,7 @@ fn load_refuses_empty_file_with_reason() {
 
 #[test]
 fn load_refuses_unreadable_path_with_reason() {
-    let missing = data_root().join("libraries/_does_not_exist.pine");
+    let missing = fixture_root().join("libraries/_does_not_exist.pine");
     let err = load_pine_source(&missing).expect_err("missing file must refuse");
     assert!(
         err.to_string().contains("_does_not_exist.pine"),
@@ -172,4 +173,10 @@ fn component_surface_validates_through_execute() {
     assert!(empty.execute(&ctx).is_err(), "empty source fails closed");
     assert!(empty.set_field("anything", "v").is_err());
     let _ = empty.as_any();
+}
+
+#[test]
+fn legacy_study_header_scans_as_indicator() {
+    let source = parse_pine_source("local/Study", "study(\"T\", overlay=true)\nplot(close)\n");
+    assert_eq!(source.kind, SourceKind::Indicator);
 }

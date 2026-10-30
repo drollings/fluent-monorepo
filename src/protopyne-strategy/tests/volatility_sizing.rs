@@ -226,7 +226,7 @@ fn the_documented_defaults_sit_inside_the_observed_sigma_band() {
         .filter(|pair| pair[0] > 0.0 && pair[0].is_finite() && pair[1].is_finite())
         .map(|pair| (pair[1] - pair[0]) / pair[0])
         .collect();
-    let window = crate::signals_kernel::VOLATILITY_WINDOW;
+    let window = crate::signals_kernel::KERNEL_VOLATILITY_WINDOW;
     let mut sigmas: Vec<f64> = returns
         .windows(window)
         .map(|slice| {

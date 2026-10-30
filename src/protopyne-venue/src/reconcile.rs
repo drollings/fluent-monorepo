@@ -11,6 +11,7 @@ use std::sync::{Arc, Mutex};
 use fluent_wvr::prelude::*;
 
 use crate::error::VenueError;
+use crate::health::AlertBuffer;
 use crate::journal::{JournalEvent, LEG_FILL_KIND};
 use crate::order::{OrderSide, Position};
 use crate::venue::LegExecution;
@@ -153,7 +154,7 @@ fn compare_nets<S: std::hash::BuildHasher, T: std::hash::BuildHasher>(
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ReconcileGate {
     halted: bool,
-    alerts: Vec<String>,
+    alerts: AlertBuffer,
     /// Whether a report was ever observed. The gate itself stays permissive
     /// until it reads (every existing caller is preserved); the per-bar
     /// reading fails closed on no reading instead.
@@ -196,14 +197,14 @@ impl ReconcileGate {
     /// Banked alert lines for out-of-band delivery.
     #[must_use]
     pub fn alerts(&self) -> &[String] {
-        &self.alerts
+        self.alerts.alerts()
     }
 
     /// Take the banked alerts for out-of-band delivery, leaving the halt
     /// state untouched. Delivery drains: alerts never accumulate without
     /// bound across reporting cycles.
     pub fn drain_alerts(&mut self) -> Vec<String> {
-        std::mem::take(&mut self.alerts)
+        self.alerts.drain_alerts()
     }
 
     /// Refuse entries while halted. Call from the submission path.

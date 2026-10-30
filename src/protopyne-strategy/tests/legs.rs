@@ -834,3 +834,36 @@ fn the_selector_prices_the_chain_derived_package() {
     assert_eq!(economics.package_width, Some(strike("5")));
     assert!(economics.bounded);
 }
+
+#[test]
+fn delta_target_breaks_exact_distance_ties_at_the_lower_strike() {
+    // 595 (delta 0.25) and 605 (delta 0.75) are both exactly 0.25 from the
+    // 0.50 target (all three are exact binary fractions, so no float dust
+    // breaks the tie): the lower strike wins (M3.3 tie rule).
+    let ladder = [("595", 0.25), ("605", 0.75)]
+        .into_iter()
+        .map(|(strike_value, delta)| {
+            call_quote(
+                contract(strike_value, front_expiry(), OptionKind::Call),
+                delta,
+            )
+        })
+        .collect::<Vec<_>>();
+    let legs = selected_legs(
+        &request_for(
+            Direction::Long,
+            false,
+            StrikePolicy::DeltaTarget {
+                delta: "0.50".parse().unwrap(),
+            },
+        ),
+        &ladder,
+    );
+    assert_eq!(
+        legs,
+        vec![
+            long_leg("595", front_expiry(), OptionKind::Call),
+            short_leg("605", front_expiry(), OptionKind::Call),
+        ]
+    );
+}

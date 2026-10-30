@@ -13,7 +13,7 @@ use protopyne_types::{Money, Qty};
 use rust_decimal::Decimal;
 
 use crate::grant::{evaluate_grant, BreakerState, GrantDecision, GrantMarket, GrantUsage};
-use crate::proposal::{Proposal, ProposalSide};
+use crate::proposal::{Direction, Proposal, ProposalSide};
 use crate::ReAttestationWindow;
 
 fn now() -> chrono::DateTime<Utc> {

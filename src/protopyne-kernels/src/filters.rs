@@ -86,8 +86,8 @@ impl Indicator for EitIndicator {
     }
 
     fn warmup(&self, _params: &ParamSet) -> Result<usize, KernelError> {
-        // Recursive with `nz`-seeding: the opening print is defined, so the
-        // honest warmup is 1 (cumulative-kernel precedent).
+        // BYPASS(windowed::warmup): recursive with `nz`-seeding — the opening
+        // print is defined, so the honest warmup is 1 (cumulative-kernel precedent).
         Ok(1)
     }
 
@@ -219,7 +219,8 @@ impl Indicator for KalmanIndicator {
     }
 
     fn warmup(&self, _params: &ParamSet) -> Result<usize, KernelError> {
-        // Recursive with seeded estimate: the opening print is defined.
+        // BYPASS(windowed::warmup): recursive with seeded estimate — the opening
+        // print is defined.
         Ok(1)
     }
 
@@ -353,7 +354,7 @@ impl Indicator for VossIndicator {
     }
 
     fn warmup(&self, _params: &ParamSet) -> Result<usize, KernelError> {
-        // The initialization gate emits defined zeros, so the opening print
+        // BYPASS(windowed::warmup): the initialization gate emits defined zeros, so the opening print
         // is defined even though full-strength output starts later.
         Ok(1)
     }

@@ -643,3 +643,25 @@ fn every_timeframe_key_seconds_come_from_the_one_table() {
         "every toolbar key is pinned"
     );
 }
+
+#[test]
+fn timeframe_keys_map_to_pine_period_strings() {
+    // The chart owns the timeframe: Pine slots inherit these strings for
+    // `timeframe.period` instead of carrying their own copy.
+    let expected = [
+        (TimeframeKey::M1, "1"),
+        (TimeframeKey::M5, "5"),
+        (TimeframeKey::M15, "15"),
+        (TimeframeKey::H1, "60"),
+        (TimeframeKey::H4, "240"),
+        (TimeframeKey::D1, "D"),
+    ];
+    for (key, period) in expected {
+        assert_eq!(key.pine_period(), period, "{key:?} maps to {period}");
+    }
+    assert_eq!(
+        expected.len(),
+        TimeframeKey::all().len(),
+        "every toolbar key is pinned"
+    );
+}

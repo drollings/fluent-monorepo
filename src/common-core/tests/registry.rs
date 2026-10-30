@@ -277,3 +277,31 @@ fn concurrent_resolve_or_create_exactly_once_under_32_threads() {
         "constructor must run exactly once under contention"
     );
 }
+
+#[test]
+fn try_insert_is_first_wins_and_hands_back_the_loser() {
+    let mut reg = KeyedRegistry::new();
+    assert!(reg.try_insert("k".to_string(), "first".to_string()).is_ok());
+    let loser = reg.try_insert("k".to_string(), "second".to_string());
+    assert_eq!(loser, Err("second".to_string()));
+    // The winner stands: no overwrite on duplicate.
+    assert_eq!(reg.get("k").map(String::as_str), Some("first"));
+}
+
+#[test]
+fn concurrent_try_insert_is_first_wins_under_contention() {
+    use std::thread;
+    let reg = ConcurrentRegistry::new();
+    let handles: Vec<_> = (0..8)
+        .map(|i| {
+            let reg = reg.clone();
+            thread::spawn(move || reg.try_insert("k".to_string(), i).is_ok())
+        })
+        .collect();
+    let wins: usize = handles
+        .into_iter()
+        .map(|h| usize::from(h.join().expect("thread joins")))
+        .sum();
+    assert_eq!(wins, 1, "exactly one racer wins");
+    assert!(reg.get("k").is_some());
+}

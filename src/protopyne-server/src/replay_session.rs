@@ -30,7 +30,6 @@
 
 use chrono::{DateTime, Utc};
 use common_core::registry::KeyedRegistry;
-use fluent_wvr::validate::Validate;
 use rust_decimal::prelude::ToPrimitive as _;
 
 use protopyne_strategy::{
@@ -414,13 +413,7 @@ impl<'a, V: Venue> ReplaySession<'a, V> {
         bars: &'a [Bar],
         seed: u64,
     ) -> Result<Self, ServerError> {
-        runner_config.validate()?;
-        quote_config.validate()?;
-        if bars.is_empty() {
-            return Err(ServerError::Backtest(
-                "history must not be empty".to_owned(),
-            ));
-        }
+        crate::backtest::ensure_bars_for_session(&runner_config, &quote_config, bars)?;
         let timeframe = Timeframe::infer_or_d1(bars);
         // One instance for the whole run: concurrent sessions never share
         // signal state, and a refusal to bind fails before the first bar.
@@ -869,6 +862,13 @@ pub struct ReplayDriver {
     seed: u64,
     skipped_warmup: u64,
     book: PositionBook,
+    /// Chain policy for this driver's steps. Always [`ChainPolicy::RequireChains`]:
+    /// interactive replay screens multi-leg proposals bar by bar (covered
+    /// bars flow past the screen, uncovered bars refuse naming the feed),
+    /// while the borrowed [`ReplaySession`] follows its caller's policy.
+    /// A field rather than a step-local literal so both steps read their
+    /// policy from `self` the same way (M7.2).
+    chains: ChainPolicy,
     /// Installed chain source, retained for point-in-time selection. The
     /// venue holds its own clone for fills; this one serves the snapshot the
     /// shared decide path prices legs from. `None` until installed, and its
@@ -896,13 +896,7 @@ impl ReplayDriver {
         seed: u64,
         start_bar: usize,
     ) -> Result<Self, ServerError> {
-        runner_config.validate()?;
-        quote_config.validate()?;
-        if bars.is_empty() {
-            return Err(ServerError::Backtest(
-                "history must not be empty".to_owned(),
-            ));
-        }
+        crate::backtest::ensure_bars_for_session(&runner_config, &quote_config, &bars)?;
         if start_bar > bars.len() {
             return Err(ServerError::Backtest(format!(
                 "start_bar {start_bar} is past {} bars",
@@ -943,6 +937,7 @@ impl ReplayDriver {
             skipped_warmup: 0,
             book: PositionBook::new(),
             chain: None,
+            chains: ChainPolicy::RequireChains,
             corporate,
             corporate_cursor: 0,
         })
@@ -1011,7 +1006,7 @@ impl ReplayDriver {
                 journal: &self.journal,
                 permit: None,
                 quote_config: &self.quote_config,
-                chains: ChainPolicy::RequireChains,
+                chains: self.chains,
                 chain: self.chain.as_deref(),
                 bars: self.venue.bars(),
                 timeframe: self.timeframe,

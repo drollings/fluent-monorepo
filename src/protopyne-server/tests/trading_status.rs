@@ -17,6 +17,8 @@ fn shared_with(trading: TradingState, reading: StoreHealth) -> Shared {
         limiter: Limiter::new(32),
         history: Vec::new(),
         history_timeframe: Timeframe::M15,
+        history_symbol: String::new(),
+        root_bars: Mutex::new(std::collections::HashMap::new()),
         inbox: Mutex::new(Vec::new()),
         armed: Mutex::new(None),
         journal: Arc::new(Journal::ephemeral()),

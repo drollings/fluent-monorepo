@@ -59,6 +59,19 @@ pub fn build_indicator_manifest(
     Ok(build_manifest(&indicators, &libraries))
 }
 
+/// Load the raw Pine sources behind a manifest: `(indicators, libraries)`
+/// as byte-identical file rows, for callers that link scripts themselves
+/// (the terminal's Pine plugins). Same walk as [`build_indicator_manifest`];
+/// a missing root refuses, a missing `libraries` dir reads empty.
+pub fn load_pine_sources(
+    data_root: &Path,
+) -> Result<(Vec<ManifestFile>, Vec<ManifestFile>), KernelError> {
+    let root = PathBuf::from(data_root);
+    let indicators = read_pine_dir(&root.join("indicators"))?;
+    let libraries = read_pine_dir(&root.join("libraries")).unwrap_or_default();
+    Ok((indicators, libraries))
+}
+
 #[cfg(test)]
 #[path = "../tests/pine_manifest.rs"]
 mod tests;

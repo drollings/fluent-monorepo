@@ -15,10 +15,11 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
+use protopyne_kernels::manifest_files::load_pine_sources;
 use protopyne_kernels::{
-    closure_data_root, load_listed_closure, parse_program, resolve_imports, ClosureEntry,
-    LibraryId, LinkedModule, LtfDataset, ModuleGraph, ModuleInput, PineEngine, PineRuntimeConfig,
-    PineValue, RunOutcome, UserInstance, REAL_LIBRARIES, TASK_INDICATORS,
+    closure_data_root, closure_inputs, discover_closures, resolve_imports, ClosureOutcome,
+    LinkedModule, LtfDataset, ModuleGraph, ModuleInput, PineEngine, PineRuntimeConfig, PineValue,
+    RunOutcome, UserInstance,
 };
 use protopyne_types::{Bar, Timeframe};
 use rust_decimal::Decimal;
@@ -150,47 +151,46 @@ pub fn linked_from_graph(graph: &ModuleGraph) -> Vec<LinkedModule> {
         .collect()
 }
 
-/// One task closure linked dependency-first: the same loader, parser, and
-/// linker the closure suites use, mapped to alias tables for runs. `name`
-/// is the [`TASK_INDICATORS`] entry name (`DeltaVolumeProfileProtopyne`,
-/// `ApexPPAS`, `ApexRSIMD`). Pinned versions in the entries are metadata
-/// only (warn-only, never matched on): there is exactly one on-disk
-/// source per publisher/name, and cross-version member drift refuses
-/// fail-closed instead of becoming a shim.
-pub fn link_task_closure(name: &str) -> Vec<LinkedModule> {
-    let indicator: &ClosureEntry = TASK_INDICATORS
-        .iter()
-        .find(|entry| entry.name == name)
-        .expect("task indicator entry");
-    let root = closure_data_root(env!("CARGO_MANIFEST_DIR"));
-    let sources = load_listed_closure(&root, REAL_LIBRARIES, indicator).expect("closure loads");
-    let inputs: Vec<ModuleInput> = sources
+/// Checked-in fixture root for Pine closures (`tests/data/pine_closure`,
+/// same layout as the live data root). Fixture bytes are hermetic; the
+/// volatile live root is never read for Pine sources here.
+pub fn fixture_closure_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/data/pine_closure")
+}
+
+/// One fixture indicator closure linked dependency-first: the same loader,
+/// parser, and linker the closure suites use, mapped to alias tables for
+/// runs. `stem` is the fixture indicator stem. Versions ride each file's
+/// own header (metadata only, never enforced): there is exactly one
+/// on-disk source per publisher/name, and cross-version member drift
+/// refuses fail-closed instead of becoming a shim.
+pub fn link_fixture_closure(stem: &str) -> Vec<LinkedModule> {
+    let (indicators, libraries) =
+        load_pine_sources(&fixture_closure_root()).expect("fixtures load");
+    let closure = discover_closures(&indicators, &libraries)
         .into_iter()
-        .map(|(key, source)| {
-            let program = parse_program(&source.text)
-                .unwrap_or_else(|err| panic!("closure file {key} parses: {err}"));
-            let (publisher, name) = key.split_once('/').expect("key shape");
-            let version = if publisher == "local" {
-                indicator.version
-            } else {
-                REAL_LIBRARIES
-                    .iter()
-                    .find(|entry| entry.publisher == publisher && entry.name == name)
-                    .expect("listed library")
-                    .version
-            };
-            ModuleInput::new(
-                LibraryId {
-                    publisher: publisher.to_owned(),
-                    name: name.to_owned(),
-                    version,
-                },
-                source,
-                program,
-            )
+        .find_map(|outcome| match outcome {
+            ClosureOutcome::Linked(closure) if closure.stem == stem => Some(closure),
+            _ => None,
         })
-        .collect();
+        .unwrap_or_else(|| panic!("fixture closure {stem} discovered"));
+    let inputs = closure_inputs(&closure)
+        .unwrap_or_else(|err| panic!("fixture closure {stem} parses: {err}"));
     linked_from_graph(&resolve_inputs(inputs))
+}
+
+/// One discovered fixture closure's parsed inputs, for suites that link
+/// their own driver root against the fixture libraries.
+pub fn fixture_closure_inputs(stem: &str) -> Vec<(String, protopyne_kernels::PineSource)> {
+    let (indicators, libraries) =
+        load_pine_sources(&fixture_closure_root()).expect("fixtures load");
+    discover_closures(&indicators, &libraries)
+        .into_iter()
+        .find_map(|outcome| match outcome {
+            ClosureOutcome::Linked(closure) if closure.stem == stem => Some(closure.sources),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("fixture closure {stem} discovered"))
 }
 
 pub fn num(outcome: &RunOutcome, at_bar: usize, name: &str) -> f64 {

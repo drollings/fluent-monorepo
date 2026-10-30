@@ -98,6 +98,17 @@ impl Bar {
     }
 }
 
+/// One decimal price leg as an `f64` hole (`NaN` when unrepresentable):
+/// the one spelling for the `to_f64().unwrap_or(NAN)` / `nan_hole(...)`
+/// price-leg conversions across the kernel layer (indicator legs, bar
+/// frames, research frames, Pine legs, IV quotes). Volume legs
+/// (`u64 as f64`) are not decimals and stay out of scope (M3.1).
+#[must_use]
+pub fn bar_leg_as_f64(leg: Decimal) -> f64 {
+    use rust_decimal::prelude::ToPrimitive as _;
+    leg.to_f64().unwrap_or(f64::NAN)
+}
+
 /// Validate one new bar against its predecessor for the streaming feed path:
 /// OHLC structure first, then strictly increasing timestamps (duplicates
 /// included — an equal timestamp is a reorder, never a new bar).

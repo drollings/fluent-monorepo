@@ -1,0 +1,721 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © showmethegrail
+
+//@version=6
+indicator(title="*Enhanced Regressions", overlay=true)
+
+import showmethegrail/libMAs/60 as libMAs
+import showmethegrail/libTrendConsensus/45 as libTrendConsensus
+import showmethegrail/libPivots/9 as libPivots
+
+///////////////////////////////////////////////////////////////////////////////
+// CONSTANTS AND ENUMS
+///////////////////////////////////////////////////////////////////////////////
+
+colorNone = color.rgb(0,0,0,100)
+
+// Enhanced logistic regression input indices (8 sophisticated confidence-based inputs)
+const int IDX_CONFIDENCE_FAST = 0
+const int IDX_CONFIDENCE_MEDIUM = 1
+const int IDX_CONFIDENCE_SLOW = 2
+const int IDX_ATR_DISTANCE = 3
+const int IDX_VOLUME_ANALYSIS = 4
+const int IDX_VOLATILITY_CONTEXT = 5
+const int IDX_VOSS_CYCLE = 6
+const int IDX_CHANNEL_ANALYSIS = 7
+const int IDX_MAX = 8
+
+///////////////////////////////////////////////////////////////////////////////
+// LIBRARY CANDIDATE FUNCTIONS
+///////////////////////////////////////////////////////////////////////////////
+
+// @function Library candidate: Calculate linear regression channel slope
+// @param data Price data series
+// @param length Period for regression calculation
+// @returns float Channel slope value
+getChannelSlope(float data, int length) =>
+    ta.linreg(data, length, 0) - ta.linreg(data, length, 1)
+
+// @function Library candidate: Calculate linear regression channel with deviation
+// @param data Price data series
+// @param length Period for regression calculation
+// @param deviation_multiplier Standard deviation multiplier for channel bands
+// @returns [float, float, float, float] [slope, middle_line, upper_band, lower_band]
+calculateLinearChannel(float data, int length, float deviation_multiplier) =>
+    // Calculate regression using Pine's built-in function
+    current_regression = ta.linreg(data, length, 0)
+    slope = getChannelSlope(data, length)
+
+    // Calculate standard deviation using historical data approach
+    sum_data = 0.0
+    sum_squared_diff = 0.0
+
+    // Calculate mean
+    for i = 0 to length - 1
+        sum_data := sum_data + data[i]
+    mean_data = sum_data / length
+
+    // Calculate regression line values and deviations
+    for i = 0 to length - 1
+        // Calculate expected regression value for this point
+        regression_value = current_regression - slope * i
+        // Calculate squared difference from actual data
+        sum_squared_diff := sum_squared_diff + math.pow(data[i] - regression_value, 2)
+
+    // Standard deviation
+    dev = math.sqrt(sum_squared_diff / length)
+
+    upper_band = current_regression + dev * deviation_multiplier
+    lower_band = current_regression - dev * deviation_multiplier
+
+    [slope, current_regression, upper_band, lower_band]
+
+// @function Library candidate: Calculates ATR distance confidence score
+// @param _atr_distance (float) Distance from mean in ATR units
+// @returns float ATR distance confidence score (-100 to +100)
+// @description Measures mean reversion pressure based on distance from EMA21.
+calcAtrDistanceConfidence(float _atr_distance, float entry, float exit) =>
+    if na(_atr_distance)
+        0.0
+    else
+        // Base distance score
+        distance_score = libMAs.tanh(_atr_distance / 3) * 70
+
+        // Extension penalty (reduces confidence when extremely extended)
+        extension_penalty = libMAs.tanh((math.abs(_atr_distance) - exit) / entry) * 30
+        extension_direction = -math.sign(_atr_distance)
+
+        // Combined ATR distance confidence
+        raw_score = distance_score + (extension_penalty * extension_direction)
+        libMAs.tanh(raw_score / 80) * 100
+
+// @function Library candidate: Calculates volume momentum and consistency confidence score
+// @param _o (float) Opening price
+// @param _c (float) Closing price
+// @param vol_delta (float) Volume delta (buying vs selling pressure)
+// @param _vol_ratio (float) Current volume ratio relative to average
+// @returns float Volume confidence score (-100 to +100)
+calcVolumeConfidence(float _o, float _c, float vol_delta, float _vol_ratio) =>
+    if na(_o) or na(_c) or na(vol_delta) or na(_vol_ratio)
+        0.0
+    else
+        // Price direction
+        price_direction = math.sign(_c - _o)
+
+        // Volume momentum (above/below average)
+        vol_momentum_raw = _vol_ratio > 1.0 ? (_vol_ratio - 1.0) * 60 : (_vol_ratio - 1.0) * 80
+        vol_momentum = libMAs.tanh(vol_momentum_raw / 50) * 50
+
+        // Volume delta alignment (buying vs selling pressure)
+        vol_delta_normalized = libMAs.tanh((vol_delta - 1.0) * 2) * 40
+
+        // Volume consistency (strength of the volume signal)
+        vol_consistency = libMAs.tanh(math.abs(vol_delta - 1.0) * 1.5) * 30
+
+        // Direction alignment bonus/penalty
+        alignment_factor = price_direction * math.sign(vol_delta_normalized)
+        alignment_bonus = alignment_factor * vol_consistency * 0.5
+
+        // Combined volume confidence
+        raw_score = vol_momentum + vol_delta_normalized + alignment_bonus
+        libMAs.tanh(raw_score / 80) * 100
+
+// @function Library candidate: Calculates MA health trend alignment confidence score
+// @param _health_score (float) Pre-calculated trend health score from MA alignment
+// @param _health_score_sma10 (float) SMA10 of health score for momentum analysis
+// @returns float MA health confidence score (-100 to +100)
+calcMaHealthConfidence(float _health_score, float _health_score_sma10) =>
+    if na(_health_score) or na(_health_score_sma10)
+        0.0
+    else
+        // Base health score (current trend quality)
+        base_health = libMAs.tanh(_health_score / 80) * 60
+
+        // Health momentum (position relative to recent average)
+        health_momentum = _health_score - _health_score_sma10
+        momentum_score = libMAs.tanh(health_momentum / 30) * 40
+
+        // Combined health confidence with momentum component
+        raw_score = base_health + momentum_score
+        libMAs.tanh(raw_score / 80) * 100
+
+// @function Library candidate: Calculates volatility context confidence score
+// @param trend_dir (float) Current trend direction (-1, 0, 1)
+// @param _atr (float) Current ATR value
+// @param _atr_sma (float) ATR simple moving average for context
+// @returns float Volatility confidence score (-100 to +100)
+calcVolatilityConfidence(float trend_dir, float _atr, float _atr_sma) =>
+    if na(trend_dir) or na(_atr) or na(_atr_sma) or _atr_sma <= 0
+        0.0
+    else
+        // Volatility ratio (current vs average)
+        volatility_ratio = _atr / _atr_sma
+
+        // Volatility expansion/contraction
+        vol_expansion = libMAs.tanh((volatility_ratio - 1.0) * 5) * 60
+
+        // Volatility momentum (rate of change)
+        atr_momentum = (_atr - _atr[5]) / _atr[5]
+        vol_momentum = libMAs.tanh(atr_momentum * 10) * 40
+
+        // Context: expansion good for new trends, contraction good for trend continuation
+        trend_strength = math.abs(trend_dir)
+        expansion_context = trend_strength > 0.5 ? vol_expansion * 0.7 : vol_expansion
+
+        // Combined volatility confidence
+        raw_score = expansion_context + vol_momentum
+        libMAs.tanh(raw_score / 80) * 100
+
+// @function Library candidate: Calculates Voss cycle momentum confidence score
+// @param _voss (float) Voss Predictive Filter current value
+// @param _voss_filter (float) Voss filter reference line
+// @returns float Voss confidence score (-100 to +100)
+calcVossConfidence(float _voss, float _voss_filter) =>
+    if na(_voss) or na(_voss_filter)
+        0.0
+    else
+        // Voss position relative to filter
+        voss_position = _voss - _voss_filter
+        position_score = libMAs.tanh(voss_position * 10) * 50
+
+        // Voss acceleration (second derivative)
+        voss_velocity = _voss - _voss[1]
+        voss_acceleration = voss_velocity - (_voss[1] - _voss[2])
+        acceleration_score = libMAs.tanh(voss_acceleration * 500) * 50
+
+        // Combined Voss confidence
+        raw_score = position_score + acceleration_score
+        libMAs.tanh(raw_score / 80) * 100
+
+// @function Library candidate: Detects bullish divergence between price and an oscillator
+// @param price_series Price data to analyze
+// @param oscillator_series Oscillator data (volume ratio, RSI, etc.)
+// @param lookback Period to look for divergence
+// @returns float Divergence strength (0-1)
+calcBullishDivergence(series float price_series, series float oscillator_series, simple int lookback) =>
+    if na(price_series) or na(oscillator_series) or lookback <= 0
+        0.0
+    else
+        // Find recent lows in the lookback period
+        price_low = ta.lowest(price_series, lookback)
+        osc_low = ta.lowest(oscillator_series, lookback)
+
+        // Check if current price is at or near the low
+        is_price_low = price_series <= price_low * 1.02  // Within 2% of low
+
+        // Check if oscillator has improved significantly from its low
+        osc_improvement = oscillator_series > osc_low * 1.1  // 10% improvement
+
+        // Calculate divergence strength
+        if is_price_low and osc_improvement and osc_low != 0
+            // Normalize the improvement to 0-1 scale
+            improvement_ratio = (oscillator_series - osc_low) / math.abs(osc_low)
+            math.min(improvement_ratio, 1.0)
+        else
+            0.0
+
+// @function Library candidate: Detects bearish divergence between price and an oscillator
+// @param price_series Price data to analyze
+// @param oscillator_series Oscillator data (volume ratio, RSI, etc.)
+// @param lookback Period to look for divergence
+// @returns float Divergence strength (0-1)
+calcBearishDivergence(series float price_series, series float oscillator_series, simple int lookback) =>
+    if na(price_series) or na(oscillator_series) or lookback <= 0
+        0.0
+    else
+        // Find recent highs in the lookback period
+        price_high = ta.highest(price_series, lookback)
+        osc_high = ta.highest(oscillator_series, lookback)
+
+        // Check if current price is at or near the high
+        is_price_high = price_series >= price_high * 0.98  // Within 2% of high
+
+        // Check if oscillator has weakened significantly from its high
+        osc_weakness = oscillator_series < osc_high * 0.9  // 10% deterioration
+
+        // Calculate divergence strength
+        if is_price_high and osc_weakness and osc_high != 0
+            // Normalize the deterioration to 0-1 scale
+            deterioration_ratio = (osc_high - oscillator_series) / math.abs(osc_high)
+            math.min(deterioration_ratio, 1.0)
+        else
+            0.0
+
+// @function Library candidate: Calculate specialized channel analysis confidence score
+// @param slope Current channel slope
+// @param price Current price
+// @param upper Upper channel band
+// @param lower Lower channel band
+// @param atr Average True Range for normalization
+// @returns float Channel confidence score (-100 to +100)
+calculateChannelConfidence(float slope, float price, float upper, float lower, float atr) =>
+    // Position within channel (-100 = bottom, +100 = top)
+    channel_range = upper - lower
+    if channel_range <= 0
+        0.0
+    else
+        position = (price - lower) / channel_range * 200 - 100
+
+        // Slope strength (normalized by ATR)
+        slope_strength = math.max(-50, math.min(50, slope / atr * 10000))
+
+        // Combine position and slope with better logic
+        if slope > 0 and position > 20  // Uptrend, price in upper half
+            math.min(100, slope_strength + position * 0.5)
+        else if slope < 0 and position < -20  // Downtrend, price in lower half
+            math.max(-100, slope_strength + position * 0.5)
+        else
+            // Neutral or conflicting signals
+            slope_strength * 0.5
+
+// @function Convert confidence scores to logistic regression inputs
+// @param confidence_scores Array of confidence scores (-100 to +100)
+// @returns array<float> Array of logistic inputs (-1, 0, +1)
+convertConfidenceToLogisticInputs(array<float> confidence_scores) =>
+    logistic_inputs = array.new<float>(IDX_MAX, 0.0)
+
+    for i = 0 to IDX_MAX - 1
+        confidence = array.get(confidence_scores, i)
+        logistic_value = confidence <= -40 ? -1.0 : (confidence >= 40 ? 1.0 : 0.0)
+        array.set(logistic_inputs, i, logistic_value)
+
+    logistic_inputs
+
+// @function Calculate final logistic regression probability
+// @param inputs Array of logistic inputs (-1, 0, +1)
+// @param weights Array of user-defined weights
+// @param steepness Logistic function steepness
+// @returns [float, float] [probability, raw_weighted_score]
+calculateLogisticRegression(array<float> inputs, array<float> weights, float steepness) =>
+    if array.size(inputs) != array.size(weights)
+        runtime.error("Inputs and weights arrays must be same size")
+        [0.5, 0.0]
+
+    weighted_sum = 0.0
+    weight_sum = 0.0
+
+    for i = 0 to array.size(inputs) - 1
+        input_val = array.get(inputs, i)
+        weight = array.get(weights, i)
+        weighted_sum += input_val * weight
+        weight_sum += weight
+
+    // Calculate weighted average
+    raw_score = weight_sum > 0 ? weighted_sum / weight_sum : 0.0
+
+    // Apply logistic function: 1 / (1 + exp(-x))
+    logistic_result = 1.0 / (1.0 + math.exp(-raw_score * steepness))
+
+    [logistic_result, raw_score]
+
+// @function Inflecting candle detection (from original)
+candlesInflectUp(float c) =>
+    c[1] < c and c[2] > c[1] and ta.lowest(c, 10) == c[1] ? true : false
+
+candlesInflectDown(float c) =>
+    c[1] > c and c[2] < c[1] and ta.highest(c, 10) == c[1] ? true : false
+
+// @function Normalized close for display (from original)
+getNormalizedClose(src) =>
+    basis = libMAs.factorySmoothing(src, libMAs.Smoothings.SMA, 10)
+    zscore = (src - basis) / ta.stdev(src, 50)
+    zscore
+
+///////////////////////////////////////////////////////////////////////////////
+// USER INPUTS
+///////////////////////////////////////////////////////////////////////////////
+
+// Source and Display Settings
+sourceMA = input.source(close, title = "Source")
+positionTable = input.enum(libMAs.Positions.BOTTOM_LEFT, title="Dashboard Position")
+leadingSymbol = input.symbol("DJI", title="Leading ticker")
+
+// Linear Regression Channel Settings
+const string sChannelHeader = "Linear Regression Channel"
+const string sChannelTooltip = "The Linear Regression Channel helps track trend strength and ranges."
+lenChannel = input.int(140, title = "Length", minval=10, step=10, group=sChannelHeader, inline="Channel", tooltip=sChannelTooltip)
+colorUpChannel = input.color(color.rgb(80,240,120,70), title = "▲", group=sChannelHeader, inline="Channel")
+colorDownChannel = input.color(color.rgb(240,120,80,70), title = "▼", group=sChannelHeader, inline="Channel")
+bExtendChannel = input.bool(true, title = "Extend", group=sChannelHeader, inline="Channel")
+timeframeLongChannel = input.enum(libMAs.Timeframes.M5, title="Timeframe", group=sChannelHeader, inline="Channelb", tooltip="The extra channel")
+lenLongChannel = input.int(800, title = "Long Term ChannelLength", minval=10, step=10, group=sChannelHeader, inline="Channelb", tooltip=sChannelTooltip)
+lenDeviation = input.float(2.0, title = "StdDev", minval=0.1, step=0.1, group=sChannelHeader, inline="Channelc")
+
+// Enhanced Meta-Analysis Logistic Regression Settings
+const string sMLRHeader = "Meta-Analysis Consensus / Learning Parameters"
+bool bShowLRCrosses = input.bool(false, '👁️ Crosses', group=sMLRHeader, inline="AA")
+color colorUpLR = input.color(color.rgb(20, 150, 250, 0), "▲",  group=sMLRHeader, inline="AA")
+color colorDownLR = input.color(color.rgb(250, 200, 20, 0), "▼", group=sMLRHeader, inline="AA")
+float consensusSteepness = input.float(3.0, 'Steepness', step=0.5, minval=0.5, maxval=10.0, group=sMLRHeader, inline="AA")
+simple int lenNormalCloseLR = input.int(50, "Signal MA Length", minval=10, step=10, group=sMLRHeader, inline="AA")
+
+// Multi-Timeframe Confidence Analysis
+const string sMTFHeader = "Multi-Timeframe Confidence Analysis"
+timeframe_fast = input.enum(libMAs.Timeframes.M1, title='Fast TF', group=sMTFHeader, inline='mtf1')
+timeframe_medium = input.enum(libMAs.Timeframes.M5, title='Medium TF', group=sMTFHeader, inline='mtf1')
+timeframe_slow = input.enum(libMAs.Timeframes.M15, title='Slow TF', group=sMTFHeader, inline='mtf2')
+reversal_threshold = input.float(60, 'Reversal Threshold', step=10, minval=20, maxval=200, group=sMTFHeader, inline='mtf2')
+
+// Enhanced Meta-Analysis Weights (8 sophisticated confidence-based inputs)
+const string sCoefficientHeader = "ENHANCED CONFIDENCE WEIGHTS 𝛃 (0 deactivates)"
+float weightConfidenceFast = input.float(2.0, "𝛃 Fast Confidence    ", step=0.5, minval=0, group=sCoefficientHeader, inline="Conf1")
+float weightConfidenceMedium = input.float(3.0, "𝛃 Medium Confidence  ", step=0.5, minval=0, group=sCoefficientHeader, inline="Conf2")
+float weightConfidenceSlow = input.float(4.0, "𝛃 Slow Confidence    ", step=0.5, minval=0, group=sCoefficientHeader, inline="Conf3")
+float weightATRDistance = input.float(2.5, "𝛃 ATR Distance       ", step=0.5, minval=0, group=sCoefficientHeader, inline="Analysis1")
+float weightVolumeAnalysis = input.float(3.0, "𝛃 Volume Analysis    ", step=0.5, minval=0, group=sCoefficientHeader, inline="Analysis2")
+float weightVolatilityContext = input.float(2.0, "𝛃 Volatility Context ", step=0.5, minval=0, group=sCoefficientHeader, inline="Analysis3")
+float weightVossCycle = input.float(2.5, "𝛃 Voss Cycle         ", step=0.5, minval=0, group=sCoefficientHeader, inline="Analysis4")
+float weightChannelAnalysis = input.float(3.0, "𝛃 Channel Analysis   ", step=0.5, minval=0, group=sCoefficientHeader, inline="Analysis5")
+
+// ATR Distance Settings
+const string sATRHeader = "ATR Distance Analysis"
+atrEntry = input.float(1.5, "Entry Threshold", step=0.25, minval=0.5, maxval=5.0, group=sATRHeader, inline="ATR")
+atrExit = input.float(3.0, "Exit Threshold", step=0.25, minval=1.0, maxval=10.0, group=sATRHeader, inline="ATR")
+
+// Divergence Analysis Settings
+const string sDivergenceHeader = "Divergence Analysis"
+divergenceLookback = input.int(14, "Lookback Period", minval=5, maxval=50, group=sDivergenceHeader, inline="Div")
+divergenceEnabled = input.bool(true, "Enable Divergence", group=sDivergenceHeader, inline="Div")
+
+// Moving Average Settings for Trend Consensus
+const string sMAHeader = "Moving Averages for Trend Consensus"
+typePrimaryMA = input.enum(libMAs.Smoothings.ALMA, title="Primary ", group=sMAHeader, inline="Primary")
+lenPrimaryMA = input.int(7, "", minval=2, group=sMAHeader, inline="Primary")
+typeSignalMA = input.enum(libMAs.Smoothings.EMA, title="Signal   ", group=sMAHeader, inline="Signal")
+lenSignalMA = input.int(8, "", minval=2, group=sMAHeader, inline="Signal")
+typeMeanMA = input.enum(libMAs.Smoothings.EMA, title="Mean     ", group=sMAHeader, inline="Mean")
+lenMeanMA = input.int(21, "", minval=2, group=sMAHeader, inline="Mean")
+
+// Voss Predictive Filter Settings
+const string sVossHeader = "Voss Predictive Filter"
+const string sVossTooltip = "Spectral analysis filter for cycle detection and trend prediction"
+vossPeriod = input.int(18, "Period", minval=8, maxval=100, group=sVossHeader, inline="Voss", tooltip=sVossTooltip)
+vossPredict = input.int(3, "Predict", minval=1, maxval=10, group=sVossHeader, inline="Voss")
+vossBand = input.float(0.25, "Band", minval=0.05, maxval=0.5, step=0.05, group=sVossHeader, inline="Voss")
+
+// Volume Analysis Settings
+const string sVolumeHeader = "Volume Analysis"
+volumeLookback = input.int(20, "Volume Average Period", minval=5, maxval=50, group=sVolumeHeader, inline="Vol")
+volumeThreshold = input.float(1.5, "Volume Spike Threshold", minval=1.0, maxval=5.0, step=0.1, group=sVolumeHeader, inline="Vol")
+
+// Display Options
+const string sDebugHeader = "Display Options"
+bool bLabelLogisticRegression = input.bool(false, '👁️ Labels', group=sDebugHeader, inline="AB")
+bool bShowInflectingCandles = input.bool(true, title="👁️ Inflecting Candles", group=sDebugHeader, inline="FB")
+colorInflectingBullish = input.color(color.rgb(0, 120, 240, 20), "", group=sDebugHeader, inline="FB")
+colorInflectingBearish = input.color(color.rgb(240, 80, 52, 20), "", group=sDebugHeader, inline="FB")
+
+///////////////////////////////////////////////////////////////////////////////
+// VARIABLE INITIALIZATION
+///////////////////////////////////////////////////////////////////////////////
+
+// Throttling setup (following Trend Consensus pattern)
+throttling_interval = math.max(2000, math.round(math.log(10 + timeframe.in_seconds(timeframe.period) * 300)))
+var int throttling_time = 0
+
+// Multi-timeframe Trend Consensus objects
+var libTrendConsensus.TrendConsensus tc_fast = na
+var libTrendConsensus.TrendConsensus tc_medium = na
+var libTrendConsensus.TrendConsensus tc_slow = na
+
+// Initialize TrendConsensus objects
+if na(tc_fast)
+    tc_fast := libTrendConsensus.TrendConsensus.new()
+    tc_fast.update_interval := math.max(1000, math.round(math.log(5 + libMAs.getTimeframeSeconds(timeframe_fast))*2000))
+if na(tc_medium)
+    tc_medium := libTrendConsensus.TrendConsensus.new()
+    tc_medium.update_interval := math.max(2000, math.round(math.log(5 + libMAs.getTimeframeSeconds(timeframe_medium))*4000))
+if na(tc_slow)
+    tc_slow := libTrendConsensus.TrendConsensus.new()
+    tc_slow.update_interval := math.max(5000, math.round(math.log(5 + libMAs.getTimeframeSeconds(timeframe_slow))*8000))
+
+// Enhanced meta-analysis weights and state
+var array<float> meta_weights = array.from(weightConfidenceFast, weightConfidenceMedium, weightConfidenceSlow,
+                                          weightATRDistance, weightVolumeAnalysis, weightVolatilityContext,
+                                          weightVossCycle, weightChannelAnalysis)
+var array<string> meta_names = array.from("FAST_CONF", "MED_CONF", "SLOW_CONF",
+                                         "ATR_DIST", "VOLUME", "VOLATILITY", "VOSS", "CHANNEL")
+
+// State variables for meta-analysis
+var float logistic_regression = 0.5
+var float raw_meta_consensus = 0.0
+var array<float> current_confidences = array.new<float>(IDX_MAX, 0.0)
+var array<float> current_inputs = array.new<float>(IDX_MAX, 0.0)
+
+// Channel analysis with RingBufferPivot
+var libPivots.RingBufferPivot pivots = na
+if na(pivots)
+    pivots := libPivots.RingBufferPivot.new()
+    pivots.init(20)
+
+// Quick calculations (updated every bar)
+_ma_primary = libMAs.factorySmoothing(sourceMA, typePrimaryMA, lenPrimaryMA)
+_ma_signal = libMAs.factorySmoothing(sourceMA, typeSignalMA, lenSignalMA)
+_ma_mean = libMAs.factorySmoothing(sourceMA, typeMeanMA, lenMeanMA)
+_atr = ta.atr(21)
+
+// Volume analysis
+_volume_safe = na(volume) or volume <= 0 ? 1.0 : volume
+_vol_sma = ta.sma(_volume_safe, volumeLookback)
+_vol_ratio = _volume_safe / _vol_sma
+
+///////////////////////////////////////////////////////////////////////////////
+// THROTTLED EXPENSIVE CALCULATIONS
+///////////////////////////////////////////////////////////////////////////////
+
+float health_fast = 0.0
+float health_med = 0.0
+float health_slow = 0.0
+
+if time > (throttling_time + throttling_interval)
+
+    // Update meta-analysis weights from user inputs
+    array.set(meta_weights, IDX_CONFIDENCE_FAST, weightConfidenceFast)
+    array.set(meta_weights, IDX_CONFIDENCE_MEDIUM, weightConfidenceMedium)
+    array.set(meta_weights, IDX_CONFIDENCE_SLOW, weightConfidenceSlow)
+    array.set(meta_weights, IDX_ATR_DISTANCE, weightATRDistance)
+    array.set(meta_weights, IDX_VOLUME_ANALYSIS, weightVolumeAnalysis)
+    array.set(meta_weights, IDX_VOLATILITY_CONTEXT, weightVolatilityContext)
+    array.set(meta_weights, IDX_VOSS_CYCLE, weightVossCycle)
+    array.set(meta_weights, IDX_CHANNEL_ANALYSIS, weightChannelAnalysis)
+
+    // 1. Multi-timeframe Trend Confidence Analysis
+
+    // Fast timeframe confidence
+    if timeframe_fast != libMAs.Timeframes.C
+        tf_str = libMAs.getTimeframeAbbrev(timeframe_fast)
+        [data_fast, ma_fast, ma_signal_fast, ma_mean_fast, atr_fast] = request.security(syminfo.tickerid, tf_str,
+           [close, libMAs.factorySmoothing(close, typePrimaryMA, lenPrimaryMA),
+           libMAs.factorySmoothing(close, typeSignalMA, lenSignalMA),
+           libMAs.factorySmoothing(close, typeMeanMA, lenMeanMA), ta.atr(21)])
+        health_fast = libMAs.getHealthMAs(atr_fast, ma_fast, ma_signal_fast, ma_mean_fast, 1.0)
+        [dir_fast, conf_fast] = libTrendConsensus.updateTrendHealth(tc_fast, data_fast, health_fast, reversal_threshold)
+        array.set(current_confidences, IDX_CONFIDENCE_FAST, conf_fast)
+    else
+        health_fast = libMAs.getHealthMAs(_atr, _ma_primary, _ma_signal, _ma_mean, 1.0)
+        [dir_fast, conf_fast] = libTrendConsensus.updateTrendHealth(tc_fast, close, health_fast, reversal_threshold)
+        array.set(current_confidences, IDX_CONFIDENCE_FAST, conf_fast)
+
+    // Medium timeframe confidence
+    if timeframe_medium != libMAs.Timeframes.C
+        tf_str = libMAs.getTimeframeAbbrev(timeframe_medium)
+        [data_med, ma_fast_med, ma_signal_med, ma_mean_med, atr_med] = request.security(syminfo.tickerid, tf_str,
+           [close, libMAs.factorySmoothing(close, typePrimaryMA, lenPrimaryMA),
+           libMAs.factorySmoothing(close, typeSignalMA, lenSignalMA),
+           libMAs.factorySmoothing(close, typeMeanMA, lenMeanMA), ta.atr(21)])
+        health_med = libMAs.getHealthMAs(atr_med, ma_fast_med, ma_signal_med, ma_mean_med, 1.0)
+        [dir_med, conf_med] = libTrendConsensus.updateTrendHealth(tc_medium, data_med, health_med, reversal_threshold)
+        array.set(current_confidences, IDX_CONFIDENCE_MEDIUM, conf_med)
+    else
+        health_med = libMAs.getHealthMAs(_atr, _ma_primary, _ma_signal, _ma_mean, 1.0)
+        [dir_med, conf_med] = libTrendConsensus.updateTrendHealth(tc_medium, close, health_med, reversal_threshold)
+        array.set(current_confidences, IDX_CONFIDENCE_MEDIUM, conf_med)
+
+    // Slow timeframe confidence
+    if timeframe_slow != libMAs.Timeframes.C
+        tf_str = libMAs.getTimeframeAbbrev(timeframe_slow)
+        [data_slow, ma_fast_slow, ma_signal_slow, ma_mean_slow, atr_slow] = request.security(syminfo.tickerid, tf_str,
+           [close, libMAs.factorySmoothing(close, typePrimaryMA, lenPrimaryMA),
+           libMAs.factorySmoothing(close, typeSignalMA, lenSignalMA),
+           libMAs.factorySmoothing(close, typeMeanMA, lenMeanMA), ta.atr(21)])
+        health_slow = libMAs.getHealthMAs(atr_slow, ma_fast_slow, ma_signal_slow, ma_mean_slow, 1.0)
+        [dir_slow, conf_slow] = libTrendConsensus.updateTrendHealth(tc_slow, data_slow, health_slow, reversal_threshold)
+        array.set(current_confidences, IDX_CONFIDENCE_SLOW, conf_slow)
+    else
+        health_slow = libMAs.getHealthMAs(_atr, _ma_primary, _ma_signal, _ma_mean, 1.0)
+        [dir_slow, conf_slow] = libTrendConsensus.updateTrendHealth(tc_slow, close, health_slow, reversal_threshold)
+        array.set(current_confidences, IDX_CONFIDENCE_SLOW, conf_slow)
+
+    // 2. Enhanced Specialized Analysis Using Proven Confidence Functions
+
+    // ATR Distance Analysis
+    atr_distance = (close - _ma_mean) / _atr
+    atr_confidence = calcAtrDistanceConfidence(atr_distance, atrEntry, atrExit)
+    array.set(current_confidences, IDX_ATR_DISTANCE, atr_confidence)
+
+    // Volume Analysis (enhanced with momentum and consistency)
+    [vol_up, vol_down] = libMAs.calculateDeltaVolume(open, high, low, close, _volume_safe)
+    vol_delta = vol_up / math.max(vol_down, 1.0)  // Ratio form for calcVolumeConfidence
+    volume_confidence = calcVolumeConfidence(open, close, vol_delta, _vol_ratio)
+    array.set(current_confidences, IDX_VOLUME_ANALYSIS, volume_confidence)
+
+    // Volatility Context Analysis
+    trend_direction = health_slow > 20 ? 1 : (health_slow < -20 ? -1 : 0)  // Current trend direction
+    _atr_sma = ta.sma(_atr, 20)
+    volatility_confidence = calcVolatilityConfidence(trend_direction, _atr, _atr_sma)
+    array.set(current_confidences, IDX_VOLATILITY_CONTEXT, volatility_confidence)
+
+    // Voss Cycle Analysis (enhanced with acceleration)
+    [voss_pred, voss_filter] = libMAs.getVossPredictiveFilter(close, vossPeriod, vossPredict, vossBand)
+    voss_confidence = calcVossConfidence(voss_pred, voss_filter)
+    array.set(current_confidences, IDX_VOSS_CYCLE, voss_confidence)
+
+    // Channel Analysis (enhanced position + slope analysis)
+    [channel_slope, channel_middle, channel_upper, channel_lower] = calculateLinearChannel(sourceMA, lenChannel, lenDeviation)
+    channel_confidence = calculateChannelConfidence(channel_slope, close, channel_upper, channel_lower, _atr)
+    array.set(current_confidences, IDX_CHANNEL_ANALYSIS, channel_confidence)
+
+    // 3. Meta-Analysis: Convert to logistic inputs and calculate final regression
+    current_inputs := convertConfidenceToLogisticInputs(current_confidences)
+    [logistic_regression, raw_meta_consensus] = calculateLogisticRegression(current_inputs, meta_weights, consensusSteepness)
+
+    // Update pivots with volume delta for advanced analysis
+    pivots.add_pivot(close > close[1], close, bar_index, vol_up, vol_down)
+
+    throttling_time := time
+
+///////////////////////////////////////////////////////////////////////////////
+// CHANNEL VISUALIZATION
+///////////////////////////////////////////////////////////////////////////////
+
+// Calculate linear regression channel for display
+[channel_slope_display, channel_middle_display, channel_upper_display, channel_lower_display] = calculateLinearChannel(sourceMA, lenChannel, lenDeviation)
+
+// Channel break detection (from original)
+outofchannel = (channel_slope_display > 0 and close < channel_lower_display) ? 0 :
+               (channel_slope_display < 0 and close > channel_upper_display) ? 2 : -1
+
+// Channel visualization
+var line upperLine = na
+var line middleLine = na
+var line lowerLine = na
+var label slopeLabel = na
+
+if barstate.islast and bExtendChannel
+    line.delete(upperLine)
+    line.delete(middleLine)
+    line.delete(lowerLine)
+    label.delete(slopeLabel)
+
+    start_bar = bar_index - lenChannel + 1
+    channel_color = channel_slope_display > 0 ? colorUpChannel : colorDownChannel
+
+    // Calculate start values for proper slope visualization
+    start_upper = channel_upper_display - channel_slope_display * (lenChannel - 1)
+    start_middle = channel_middle_display - channel_slope_display * (lenChannel - 1)
+    start_lower = channel_lower_display - channel_slope_display * (lenChannel - 1)
+
+    upperLine := line.new(x1=start_bar, y1=start_upper, x2=bar_index, y2=channel_upper_display,
+                         color=channel_color, style=line.style_dashed, width=2, extend=extend.right)
+    middleLine := line.new(x1=start_bar, y1=start_middle, x2=bar_index, y2=channel_middle_display,
+                          color=channel_color, style=line.style_solid, width=2, extend=extend.right)
+    lowerLine := line.new(x1=start_bar, y1=start_lower, x2=bar_index, y2=channel_lower_display,
+                         color=channel_color, style=line.style_dashed, width=2, extend=extend.right)
+
+    // Enhanced slope direction label with actual slope value
+    slope_text = channel_slope_display > 0 ? (channel_slope_display > nz(channel_slope_display[1], 0) ? "⇑" : "⇗") : channel_slope_display < 0 ? (channel_slope_display < nz(channel_slope_display[1], 0) ? "⇓" : "⇘") : "⇒"
+    slope_style = channel_slope_display > 0 ? label.style_label_up :
+                 channel_slope_display < 0 ? label.style_label_down : label.style_label_right
+    slope_color = channel_slope_display > 0 ? color.green : channel_slope_display < 0 ? color.red : color.blue
+
+    slopeLabel := label.new(x=start_bar, y=channel_middle_display, text=slope_text,
+                           style=slope_style, color=slope_color, size=size.large)
+
+///////////////////////////////////////////////////////////////////////////////
+// SIGNAL GENERATION
+///////////////////////////////////////////////////////////////////////////////
+
+// Enhanced signal generation based on logistic regression
+lr_bullish = ta.crossover(logistic_regression, 0.5)
+lr_bearish = ta.crossunder(logistic_regression, 0.5)
+
+// Inflecting candles (from original)
+_candlesInflectUp = candlesInflectUp(close)
+_candlesInflectDown = candlesInflectDown(close)
+
+///////////////////////////////////////////////////////////////////////////////
+// VISUALIZATION
+///////////////////////////////////////////////////////////////////////////////
+
+// Main MA plot with gradient coloring based on meta-analysis
+colorPrimaryMA = color.from_gradient(logistic_regression, 0, 1, colorDownLR, colorUpLR)
+plot(_ma_primary, color=colorPrimaryMA, linewidth=2, title="Primary MA")
+
+// Signal shapes
+plotshape(lr_bullish and bShowLRCrosses ? _ma_signal : na, title="Meta-Analysis Cross Up",
+          color=colorUpLR, style=shape.triangleup, location=location.belowbar, size=size.small)
+plotshape(lr_bearish and bShowLRCrosses ? _ma_signal : na, title="Meta-Analysis Cross Down",
+          color=colorDownLR, style=shape.triangledown, location=location.abovebar, size=size.small)
+
+// Inflecting candles
+plotshape(_candlesInflectUp and bShowInflectingCandles ? close : na, title="Inflecting Up",
+          style=shape.triangleup, location=location.belowbar, color=colorInflectingBullish, size=size.tiny)
+plotshape(_candlesInflectDown and bShowInflectingCandles ? close : na, title="Inflecting Down",
+          style=shape.triangledown, location=location.abovebar, color=colorInflectingBearish, size=size.tiny)
+
+///////////////////////////////////////////////////////////////////////////////
+// META-ANALYSIS DASHBOARD
+///////////////////////////////////////////////////////////////////////////////
+
+if barstate.islast
+    // Create enhanced meta-analysis dashboard
+    tbl = table.new(libMAs.getPosition(positionTable), IDX_MAX + 3, IDX_MAX + 3)
+
+    // Headers
+    table.cell(tbl, 0, 0, "𝗠𝗲𝘁𝗮-𝗔𝗻𝗮𝗹𝘆𝘀𝗶𝘀", text_color=color.white)
+    table.cell(tbl, 1, 0, "𝗖𝗼𝗻𝗳𝗶𝗱𝗲𝗻𝗰𝗲", text_color=color.white)
+    table.cell(tbl, 2, 0, "𝗜𝗻𝗽𝘂𝘁", text_color=color.white)
+    table.cell(tbl, 3, 0, "𝛃", text_color=color.white)
+
+    // Add each meta-analysis component
+    for i = 0 to IDX_MAX - 1
+        component_name = array.get(meta_names, i)
+        confidence_val = array.get(current_confidences, i)
+        input_val = array.get(current_inputs, i)
+        weight_val = array.get(meta_weights, i)
+
+        confidence_color = color.from_gradient(confidence_val, -100, 100, colorDownLR, colorUpLR)
+        input_color = input_val > 0 ? colorUpLR : input_val < 0 ? colorDownLR : color.gray
+
+        table.cell(tbl, 0, i + 1, component_name, text_color=confidence_color)
+        table.cell(tbl, 1, i + 1, str.tostring(math.round(confidence_val, 1)), text_color=confidence_color)
+        table.cell(tbl, 2, i + 1, str.tostring(input_val, "#.0"), text_color=input_color)
+        table.cell(tbl, 3, i + 1, str.tostring(weight_val, "#.#"), text_color=color.gray)
+
+    // Summary row
+    table.cell(tbl, 0, IDX_MAX + 1, ">> Meta Regression", text_color=color.white)
+    table.cell(tbl, 1, IDX_MAX + 1, str.tostring(math.round(logistic_regression, 3)), text_color=colorPrimaryMA)
+    table.cell(tbl, 2, IDX_MAX + 1, logistic_regression > 0.5 ? "▲" : "▼", text_color=colorPrimaryMA)
+    table.cell(tbl, 3, IDX_MAX + 1, "Consensus: " + str.tostring(consensusSteepness), text_color=color.gray)
+
+///////////////////////////////////////////////////////////////////////////////
+// LABELS (DEBUG)
+///////////////////////////////////////////////////////////////////////////////
+
+if bLabelLogisticRegression
+    label.new(bar_index, logistic_regression > 0.5 ? high : low,
+       text = str.tostring(math.round(logistic_regression, 3)),
+       xloc = xloc.bar_index,
+       yloc = logistic_regression > 0.5 ? yloc.abovebar : yloc.belowbar,
+       style = label.style_none,
+       textcolor = colorPrimaryMA,
+       size = size.normal)
+
+///////////////////////////////////////////////////////////////////////////////
+// ALERTS
+///////////////////////////////////////////////////////////////////////////////
+
+alertcondition(lr_bullish, "Meta-Analysis UP", "Meta-Analysis Logistic Regression UP ▲")
+alertcondition(lr_bearish, "Meta-Analysis DOWN", "Meta-Analysis Logistic Regression DOWN ▼")
+
+// Channel break alerts (from original)
+alertcondition(outofchannel != -1, title='Channel Broken', message='Channel Broken')
+
+// Trend direction alerts (from original)
+_trend_is_up = math.sign(channel_slope_display) != math.sign(nz(channel_slope_display[1], 0)) and channel_slope_display > 0
+_trend_is_down = math.sign(channel_slope_display) != math.sign(nz(channel_slope_display[1], 0)) and channel_slope_display < 0
+alertcondition(_trend_is_up, title='Up trend', message='Up trend')
+alertcondition(_trend_is_down, title='Down trend', message='Down trend')
+
+// Comprehensive alert message
+alert_msg = "Enhanced Meta-Analysis: " + str.tostring(math.round(logistic_regression, 3)) +
+           (logistic_regression > 0.5 ? " ▲" : " ▼") +
+           " | Consensus: " + str.tostring(math.round(raw_meta_consensus, 2)) +
+           " | Fast: " + str.tostring(math.round(array.get(current_confidences, IDX_CONFIDENCE_FAST), 0)) +
+           " | Med: " + str.tostring(math.round(array.get(current_confidences, IDX_CONFIDENCE_MEDIUM), 0)) +
+           " | Slow: " + str.tostring(math.round(array.get(current_confidences, IDX_CONFIDENCE_SLOW), 0)) +
+           " | ATR: " + str.tostring(math.round(array.get(current_confidences, IDX_ATR_DISTANCE), 0)) +
+           " | Vol: " + str.tostring(math.round(array.get(current_confidences, IDX_VOLUME_ANALYSIS), 0))
+
+if lr_bullish or lr_bearish
+    alert(alert_msg, alert.freq_once_per_bar_close)

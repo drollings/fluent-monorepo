@@ -1,0 +1,926 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © showmethegrail
+
+//@version=6
+
+// @description Tick-to-LTF Candle Ingestion Layer
+// Captures real-time tick data and reconstructs Lower TimeFrame (LTF) candles
+// with volume distribution across candle boundaries. Validates reconstructed
+// candles against higher timeframe volumes for accuracy.
+library('libBars')
+
+import showmethegrail/libUtil/12 as UTIL
+
+///////////////////////////////////////////////////////////////////////////////
+// BARS TYPE DEFINITION
+///////////////////////////////////////////////////////////////////////////////
+
+// @type Bars - Tick-to-LTF candle ingestion with volume distribution
+// @description On initialization, arrays are pre-filled with historical LTF data using
+//              request.security_lower_tf(). This provides historical context from the start.
+//              Each new bar clears and resets for fresh tick accumulation.
+//              Uses SPARSE representation by default (no candles for zero-volume periods).
+//              Set fill_gaps=true for DENSE representation (zero-volume placeholders).
+// @field spike_threshold (float) Sigma threshold for spike detection
+// @field drift_threshold (float) Volume drift % threshold to trigger LTF data pull (default 2.0%)
+// @field fill_gaps (bool) If true, creates zero-volume candles for periods with no trades (default false)
+// @field ltf_ms (int) LTF timeframe in milliseconds (reconstructed candles)
+// @field fetch_ms (int) Fetch timeframe in milliseconds (for gap correction)
+// @field ctf_ms (int) Current timeframe in milliseconds (chart timeframe)
+// @field htf_ms (int) Higher timeframe in milliseconds (volume validation)
+// @field ratio_ctf_ltf (int) CTF/LTF ratio for buffer sizing
+// @field ratio_fetch_ltf (int) Fetch/LTF ratio
+// @field ratio_htf_ltf (int) HTF/LTF ratio
+//
+// @field last_price (varip float) Last tick price for delta calculation
+// @field last_volume (varip float) Last cumulative volume for delta calculation
+// @field last_time (varip int) Last tick timestamp
+// @field tick_count (varip int) Number of ticks in current bar
+// @field tick_volume_total (varip float) Total volume from ticks
+// @field tick_buy_volume (varip float) Total buy volume from ticks
+//
+// @field h (varip float) Accumulator: high of current incomplete candle
+// @field l (varip float) Accumulator: low of current incomplete candle
+// @field c (varip float) Accumulator: close of current incomplete candle
+// @field v (varip float) Accumulator: total volume of current incomplete candle
+// @field b (varip float) Accumulator: buy volume of current incomplete candle
+// @field accum_start_time (varip int) Start time of current accumulator candle
+//
+// @field ch (array<float>) Reconstructed LTF candle highs
+// @field cl (array<float>) Reconstructed LTF candle lows
+// @field cc (array<float>) Reconstructed LTF candle closes
+// @field cv (array<float>) Reconstructed LTF candle total volumes
+// @field cb (array<float>) Reconstructed LTF candle buy volumes
+// @field ct (array<int>) Reconstructed LTF candle timestamps
+//
+// @field head (int) Ring buffer write position (0 to max_candles-1)
+// @field count (int) Number of valid candles in ring buffer (0 to max_candles)
+// @field max_candles (int) Maximum buffer capacity
+// @field candle_open (float) Open price for intrabar candles
+// @field total_vol (float) Total volume across all reconstructed candles
+// @field total_buy (float) Total buy volume across all reconstructed candles
+//
+// @field tick_accuracy (float) Tick volume / CTF volume ratio
+// @field volume_drift_pct (float) Volume drift percentage
+// @field gap_count (int) Number of skipped LTF intervals (no trades) - see GAP HANDLING DOCUMENTATION
+//
+// @field ready_ltf_boundary (bool) LTF boundary was crossed and accumulator is ready for distribution
+// @field ready_ctf_confirmed (bool) CTF bar confirmed and reconciliation complete
+// @field ready_distribution (bool) Accumulator has meaningful volume ready to be finalized
+export type Bars
+    // ========== CONFIGURATION ==========
+    float spike_threshold = 2.0
+    float drift_threshold = 4.0  // Volume drift % threshold to trigger LTF data pull
+    bool fill_gaps = false       // If true, create zero-volume candles for no-trade periods
+    int ltf_ms = 10000
+    int fetch_ms = 60000
+    int ctf_ms = 60000
+    int htf_ms = 86400000
+    UTIL.Timeframes ltf = UTIL.Timeframes.M1
+    UTIL.Timeframes fetch = UTIL.Timeframes.M1
+    UTIL.Timeframes htf = UTIL.Timeframes.D1
+    varip int ratio_ctf_ltf = 4
+    int ratio_fetch_ltf = 4
+    int ratio_htf_ltf = 5760
+
+    // ========== TICK TRACKING (varip) ==========
+    varip float last_price = na
+    varip float last_volume = na
+    varip int last_time = na
+    varip int tick_count = 0
+    varip float tick_volume_total = 0.0
+    varip float tick_buy_volume = 0.0
+
+    // ========== ACCUMULATION TO CANDLES (varip) ==========
+    varip float h = 0.0   // High accumulator
+    varip float l = 0.0   // Low accumulator
+    varip float c = 0.0   // Close accumulator
+    varip float v = 0.0   // Volume accumulator
+    varip float b = 0.0   // Buy volume accumulator
+    varip int accum_start_time = na  // Start time of current accumulator
+    varip int last_fetch_time = na   // Last time we validated against fetch timeframe
+
+    // ========== RECONSTRUCTED LTF CANDLES ==========
+    array<float> ch = na   // Highs
+    array<float> cl = na   // Lows
+    array<float> cc = na   // Closes
+    array<float> cv = na   // Total Volume
+    array<float> cb = na   // Buying Volume
+    array<int> ct = na     // Timestamps
+
+    // ========== STATE TRACKING (RING BUFFER) ==========
+    int head = 0             // Ring buffer write position (0 to max_candles-1)
+    int count = 0            // Number of valid candles (0 to max_candles)
+    int max_candles = 0      // Maximum capacity (ratio_ctf_ltf)
+    varip int last_time_diff = na
+    float candle_open = 0.0
+    float total_vol = 0.0
+    float total_buy = 0.0
+
+    // ========== VALIDATION ==========
+    float tick_accuracy = 0.0
+    float volume_drift_pct = 0.0
+    int pull_count = 0  // Number of times we've pulled LTF data
+    int fetch_check_count = 0    // Number of fetch boundary checks (opportunities to pull)
+    float pull_rate_pct = 0.0
+
+    // ========== DIAGNOSTICS ==========
+    varip int rollback_count = 0      // Rollbacks detected (volume decrease)
+    varip int rejected_ticks = 0       // Ticks skipped due to validation failure
+    varip bool last_bar_healthy = true // Last CTF bar met quality threshold
+    varip float last_bar_drift = 0.0   // Last bar's volume drift percentage
+    int boundary_count = 0              // LTF boundaries crossed this bar (for distribution)
+    int gap_count = 0                   // Number of skipped LTF intervals (no trades)
+
+    // ========== OVERCOUNTING PREVENTION (varip) ==========
+    varip int last_confirmed_ctf_time = na  // Guard 1: Single-confirmation fence (idempotency)
+
+    // ========== FLUENT API STATE FLAGS ==========
+    varip bool ready_ltf_boundary = false    // LTF boundary crossed, ready for distribution
+    varip bool ready_distribution = false    // Accumulator has meaningful volume to distribute
+
+    // ========== PERFORMANCE OPTIMIZATION (CACHING) ==========
+    varip int last_ltf_check_time = na  // Cache: Last time onConfirmLTF was called
+
+    // ========== RUNNING SUMS (O(1) METRICS) ==========
+    float sum_h_running = 0.0  // Running sum of highs for O(1) metrics
+    float sum_l_running = 0.0  // Running sum of lows for O(1) metrics
+    float sum_c_running = 0.0  // Running sum of closes for O(1) metrics
+
+///////////////////////////////////////////////////////////////////////////////
+// GAP HANDLING DOCUMENTATION
+///////////////////////////////////////////////////////////////////////////////
+//
+// This library supports two modes of operation for handling periods with no trades:
+//
+// 1. SPARSE REPRESENTATION (default, fill_gaps=false):
+//    - Only creates candles when trades occur
+//    - Gaps (no-trade periods) are detected and counted but not represented
+//    - Timestamp gaps will exist in the candle array
+//    - Use this for memory efficiency and when zero-volume periods are not meaningful
+//
+// 2. DENSE REPRESENTATION (fill_gaps=true):
+//    - Creates zero-volume placeholder candles for all time intervals
+//    - Maintains continuous time series with no timestamp gaps
+//    - Placeholder candles have: volume=0, O=H=L=C=last_close
+//    - Use this when time continuity is required for downstream analysis
+//
+// Gap detection works by comparing LTF candle indices:
+//    - If current_candle - previous_candle > 1, gaps exist
+//    - gap_count tracks total skipped intervals per CTF bar
+//    - Gaps are filled (if enabled) during distribution methods
+//
+// Example (LTF=1min):
+//    - Trade at 10:00:00 -> Candle 0
+//    - No trades until 10:05:00 -> 4 gaps (10:01, 10:02, 10:03, 10:04)
+//    - Trade at 10:05:00 -> Candle 5
+//    - If fill_gaps=true: Creates 4 zero-volume candles for gaps
+//    - If fill_gaps=false: Only stores candles 0 and 5, gap_count=4
+//
+///////////////////////////////////////////////////////////////////////////////
+// CONSTANTS
+///////////////////////////////////////////////////////////////////////////////
+
+const float VOLUME_EPSILON = 0.0001          // Minimum volume to be considered meaningful
+const float DRIFT_TOLERANCE_PCT = 0.1      // Drift tolerance percentage
+const int BUFFER_PADDING = 5                // Extra buffer capacity for partial ticks
+const float NEUTRAL_BUY_RATIO = 0.5        // Buy/sell split for neutral price movement
+
+///////////////////////////////////////////////////////////////////////////////
+// HELPER METHODS - RING BUFFER (Private)
+///////////////////////////////////////////////////////////////////////////////
+
+// @function _getPhysicalIndex
+// @description Converts logical ring buffer index to physical array index
+//              Handles both wrapped and non-wrapped buffer states
+// @param this: Bars - The Bars object
+// @param logical_idx: int - Logical index (0 = oldest, count-1 = newest)
+// @returns int - Physical array index for accessing ring buffer
+method _getPhysicalIndex(Bars this, int logical_idx) =>
+    this.count < this.max_candles ?
+         logical_idx :
+         (this.head + logical_idx) % this.max_candles
+
+// @function _getLastIndex
+// @description Returns the physical index of the most recently written candle
+// @param this: Bars - The Bars object
+// @returns int - Physical array index of last written candle
+method _getLastIndex(Bars this) =>
+    (this.head - 1 + this.max_candles) % this.max_candles
+
+///////////////////////////////////////////////////////////////////////////////
+// HELPER METHODS - CALCULATIONS (Private)
+///////////////////////////////////////////////////////////////////////////////
+
+// @function calculateDriftPct
+// @description Calculates percentage drift between actual and expected volume
+// @param actual: float - Actual volume measured
+// @param expected: float - Expected volume (reference)
+// @returns float - Drift percentage (0.0 if expected is 0 or invalid)
+export calculateDriftPct(float actual, float expected) =>
+    expected > 0 ? math.abs(actual - expected) / expected * 100.0 : 0.0
+
+// @function estimateBuyVolume
+// @description Estimates buy volume from total volume based on price movement direction
+// @param total_volume: float - Total volume to split
+// @param price_delta: float - Price change (positive=up, negative=down, zero=neutral)
+// @returns float - Estimated buy volume
+export estimateBuyVolume(float total_volume, float price_delta) =>
+    price_delta > 0 ? total_volume :
+     price_delta < 0 ? 0.0 :
+     total_volume * NEUTRAL_BUY_RATIO
+
+// @function getLTFBoundary
+// @description Calculates the LTF candle boundary timestamp for a given time
+// @param this: Bars - The Bars object
+// @param current_time: int - Current timestamp
+// @returns int - LTF boundary timestamp
+export method getLTFBoundary(Bars this, int current_time) =>
+    int(math.floor(current_time / this.ltf_ms) * this.ltf_ms)
+
+// @function getCandleIndex
+// @description Calculates which candle a given timestamp belongs to
+// @param timestamp: int - Timestamp to check
+// @param candle_ms: int - Candle period in milliseconds
+// @returns int - Candle index
+export getCandleIndex(int timestamp, int candle_ms) =>
+    int(math.floor(timestamp / candle_ms))
+
+// @function isValidVolume
+// @description Checks if volume is meaningful (above epsilon threshold)
+// @param vol: float - Volume to check
+// @returns bool - True if volume is meaningful
+export isValidVolume(float vol) =>
+    not na(vol) and vol > VOLUME_EPSILON
+
+///////////////////////////////////////////////////////////////////////////////
+// BUFFER MANAGEMENT (Private)
+///////////////////////////////////////////////////////////////////////////////
+
+// @function _hasBufferSpace
+// @description Checks if ring buffer has space for another candle
+// @param this: Bars - The Bars object
+// @returns bool - True if buffer has space
+method _hasBufferSpace(Bars this) =>
+    this.count < this.max_candles
+
+// @function _hasMeaningfulVolume
+// @description Checks if accumulator contains meaningful volume
+// @param this: Bars - The Bars object
+// @returns bool - True if accumulator has volume above threshold
+method _hasMeaningfulVolume(Bars this) =>
+    isValidVolume(this.v)
+
+// @function _resetRingBuffer
+// @description Resets ring buffer state (no array operations, just counters)
+// @param this: Bars - The Bars object
+// @returns Bars - this for fluent chaining
+method _resetRingBuffer(Bars this) =>
+    this.head := 0
+    this.count := 0
+    this.total_vol := 0.0
+    this.total_buy := 0.0
+    this.sum_h_running := 0.0
+    this.sum_l_running := 0.0
+    this.sum_c_running := 0.0
+    this
+
+// @function _writeCandle
+// @description Writes a candle to the ring buffer and updates totals
+// @param this: Bars - The Bars object
+// @param h: float - High
+// @param l: float - Low
+// @param c: float - Close
+// @param v: float - Total volume
+// @param b: float - Buy volume
+// @param t: int - Timestamp
+// @returns Bars - this for fluent chaining
+method _writeCandle(Bars this, float h, float l, float c, float v, float b, int t) =>
+    // Write to current head position
+    array.set(this.ch, this.head, h)
+    array.set(this.cl, this.head, l)
+    array.set(this.cc, this.head, c)
+    array.set(this.cv, this.head, v)
+    array.set(this.cb, this.head, b)
+    array.set(this.ct, this.head, t)
+
+    // Update totals
+    this.total_vol += v
+    this.total_buy += b
+
+    // Update running sums for O(1) metrics
+    this.sum_h_running += h
+    this.sum_l_running += l
+    this.sum_c_running += c
+
+    // Advance ring buffer
+    this.head := (this.head + 1) % this.max_candles
+    this.count := math.min(this.count + 1, this.max_candles)
+
+    this
+
+// @function _resetAccumulatorToPrice
+// @description Resets accumulator to a specific price and volume
+// @param this: Bars - The Bars object
+// @param current_time: int - Timestamp for new accumulator
+// @param price: float - Price to initialize
+// @param volume: float - Initial volume
+// @param buy_volume: float - Initial buy volume
+// @returns Bars - this for fluent chaining
+method _resetAccumulatorToPrice(Bars this, int current_time, float price, float vol, float buy_volume) =>
+    this.h := price
+    this.l := price
+    this.c := price
+    this.v := vol
+    this.b := buy_volume
+    this.accum_start_time := current_time
+    this
+
+///////////////////////////////////////////////////////////////////////////////
+// LTF CANDLE PROCESSING (Private)
+///////////////////////////////////////////////////////////////////////////////
+
+// @function _processLTFCandle
+// @description Processes a single LTF candle into the ring buffer
+// @param this: Bars - The Bars object
+// @param o: float - Open
+// @param h: float - High
+// @param l: float - Low
+// @param c: float - Close
+// @param v: float - Volume
+// @param t: int - Timestamp
+// @returns Bars - this for fluent chaining
+method _processLTFCandle(Bars this, float o, float h, float l, float c, float v, int t) =>
+    if isValidVolume(v)
+        buy_vol = UTIL.estimateDeltaVolume(o, h, l, c, v)
+        this._writeCandle(h, l, c, v, buy_vol, t)
+    this
+
+// @function _addRemainderCandle
+// @description Adds a remainder candle to match reference volume exactly
+// @param this: Bars - The Bars object
+// @param remainder_vol: float - Volume difference to add
+// @param o: float - Open (for buy volume estimation)
+// @param h: float - High
+// @param l: float - Low
+// @param c: float - Close
+// @param t: int - Timestamp
+// @returns Bars - this for fluent chaining
+method _addRemainderCandle(Bars this, float remainder_vol, float o, float h, float l, float c, int t) =>
+    if isValidVolume(math.abs(remainder_vol)) and this._hasBufferSpace()
+        buy_vol = UTIL.estimateDeltaVolume(o, h, l, c, math.abs(remainder_vol))
+        this._writeCandle(h, l, c, math.abs(remainder_vol), buy_vol, t)
+    this
+
+// @function _processLTFArrays
+// @description Processes arrays of LTF data (common pattern for backfill and pullAndReconcile)
+// @param this: Bars - The Bars object
+// @param ltf_times: array<int> - LTF timestamps
+// @param ltf_opens: array<float> - LTF opens
+// @param ltf_highs: array<float> - LTF highs
+// @param ltf_lows: array<float> - LTF lows
+// @param ltf_closes: array<float> - LTF closes
+// @param ltf_volumes: array<float> - LTF volumes
+// @returns Bars - this for fluent chaining (first_open stored internally)
+method _processLTFArrays(Bars this, array<int> ltf_times, array<float> ltf_opens,
+                       array<float> ltf_highs, array<float> ltf_lows,
+                       array<float> ltf_closes, array<float> ltf_volumes) =>
+    if not na(ltf_times) and array.size(ltf_times) > 0
+        // Reset ring buffer (no array operations)
+        this._resetRingBuffer()
+
+        // Process each LTF candle
+        ltf_count = array.size(ltf_times)
+        for i = 0 to ltf_count - 1
+            if not this._hasBufferSpace()
+                break  // Safety check
+
+            this._processLTFCandle(
+                array.get(ltf_opens, i),
+                array.get(ltf_highs, i),
+                array.get(ltf_lows, i),
+                array.get(ltf_closes, i),
+                array.get(ltf_volumes, i),
+                array.get(ltf_times, i))
+
+        // Set candle_open - use first LTF open if available
+        if this.count > 0
+            this.candle_open := array.get(ltf_opens, 0)
+
+    this
+
+// @function _detectRollback
+// @description Detects Pine Script rollback events (volume decrease within bar)
+// @param this: Bars - The Bars object
+// @param current_volume: float - Current cumulative volume
+// @returns bool - True if rollback detected
+method _detectRollback(Bars this, float current_volume) =>
+    // First tick of bar is always valid
+    if na(this.last_volume)
+        false
+    else
+        // Volume should only increase within a bar
+        // If it decreases, Pine has rolled back the bar state
+        current_volume < this.last_volume
+
+// @function _resetAccumulatorState
+// @description Resets accumulator state (for rollback recovery)
+// @param this: Bars - The Bars object
+// @returns Bars - this for fluent chaining
+method _resetAccumulatorState(Bars this) =>
+    this.v := 0.0
+    this.b := 0.0
+    this.h := high
+    this.l := low
+    this.c := close
+    this.last_price := close
+    this.last_volume := volume
+    this.last_time := time
+    this
+
+///////////////////////////////////////////////////////////////////////////////
+// INITIALIZATION
+///////////////////////////////////////////////////////////////////////////////
+
+// @function init
+// @description Initializes the Bars object with LTF and HTF timeframes, then backfills
+//              arrays with historical LTF data using request.security_lower_tf().
+//              This ensures the Bars object starts with historical context rather than empty.
+// @param this: Bars - The Bars object to initialize
+// @param ltf: UTIL.Timeframes - Lower timeframe for candle reconstruction
+// @param fetch: UTIL.Timeframes - Fetch timeframe for periodic validation
+// @param htf: UTIL.Timeframes - Higher timeframe for volume validation
+// @returns Bars - this for fluent chaining
+export method init(Bars this,
+                   UTIL.Timeframes ltf = UTIL.Timeframes.M1,
+                   UTIL.Timeframes fetch = UTIL.Timeframes.M1,
+                   UTIL.Timeframes htf = UTIL.Timeframes.D1) =>
+
+    this.ltf := ltf
+    this.fetch := fetch
+    this.htf := htf
+
+    ltf_ms = UTIL.getTimeframeMS(ltf)
+    fetch_ms = UTIL.getTimeframeMS(fetch)
+    ctf_ms = UTIL.getTimeframeMS(UTIL.Timeframes.C)
+    htf_ms = UTIL.getTimeframeMS(htf)
+    this.ltf_ms := ltf_ms
+    this.fetch_ms := fetch_ms
+    this.ctf_ms := ctf_ms
+    this.ltf_ms := ltf_ms
+    this.ratio_ctf_ltf := math.ceil(ctf_ms / ltf_ms)
+    this.ratio_fetch_ltf := math.ceil(fetch_ms / ltf_ms)
+    this.ratio_htf_ltf := math.ceil(htf_ms / ltf_ms)
+
+    // Calculate max candles (add buffer for partial ticks)
+    this.max_candles := this.ratio_ctf_ltf + BUFFER_PADDING
+
+    // Pre-allocate fixed-size arrays
+    this.ch := array.new<float>(this.max_candles, 0.0)
+    this.cl := array.new<float>(this.max_candles, 0.0)
+    this.cc := array.new<float>(this.max_candles, 0.0)
+    this.cv := array.new<float>(this.max_candles, 0.0)
+    this.cb := array.new<float>(this.max_candles, 0.0)
+    this.ct := array.new<int>(this.max_candles, 0)
+
+    // Backfill with historical LTF data
+    this.pull_count := 0
+    this.fetch_check_count := 0
+
+    this
+
+// @function clear
+// @description Clears all bar state when a new bar begins
+// @param this: Bars - The Bars object
+// @returns Bars - this for fluent chaining
+export method clear(Bars this) =>
+    // Reset tick tracking (varip variables persist across updates)
+    this.last_price := close
+    this.last_volume := na  // Use na to trigger first-tick handling
+    this.last_time := time
+    this.last_fetch_time := time
+    this.tick_count := 0
+    this.last_time_diff := na
+    this.tick_volume_total := 0.0
+    this.tick_buy_volume := 0.0
+
+    // Reset accumulators
+    this.h := high
+    this.l := low
+    this.c := close
+    this.v := 0.0
+    this.b := 0.0
+    this.accum_start_time := time
+    // Reset ring buffer (no array operations)
+    this._resetRingBuffer()
+
+    // Reset boundary tracking (not varip - per-bar counters)
+    this.boundary_count := 0
+    this.gap_count := 0
+
+    // Reset state flags
+    this.ready_ltf_boundary := false
+
+    // Reset performance caches
+    this.last_ltf_check_time := na
+
+    // Set initial values
+    this.candle_open := open
+
+    this
+
+///////////////////////////////////////////////////////////////////////////////
+// HELPER METHODS
+///////////////////////////////////////////////////////////////////////////////
+
+// @function size
+// @description Returns the number of reconstructed LTF candles
+// @param this: Bars - The Bars object
+// @returns int - The number of reconstructed candles
+export method size(Bars this) =>
+    this.count
+
+// @function hasVolumeWaiting
+// @description Checks if there are reconstructed candles available
+// @param this: Bars - The Bars object
+// @returns bool - True if candles are available
+export method hasVolumeWaiting(Bars this) =>
+    this.count > 0
+
+// @function get
+// @description Retrieves reconstructed candle data at the specified index (ring buffer aware)
+// @param this: Bars - The Bars object
+// @param index: int - The index (0 = oldest, count-1 = most recent)
+// @returns [float, float, float, float, float, float] - [o, h, l, c, buy_vol, sell_vol]
+export method get(Bars this, int index) =>
+    if index < 0 or index >= this.count
+        [na, na, na, na, na, na]
+    else
+        // Ring buffer indexing: calculate physical array index
+        physical_idx = this._getPhysicalIndex(index)
+
+        // Get open from previous candle's close, or candle_open for first
+        o = index == 0 ? this.candle_open : array.get(this.cc, this._getPhysicalIndex(index - 1))
+
+        h = array.get(this.ch, physical_idx)
+        l = array.get(this.cl, physical_idx)
+        c = array.get(this.cc, physical_idx)
+        buy_vol = array.get(this.cb, physical_idx)
+        total_vol = array.get(this.cv, physical_idx)
+        sell_vol = total_vol - buy_vol
+        [o, h, l, c, buy_vol, sell_vol]
+
+// @function isSpike
+// @description Checks if the most recent candle is a volume spike
+// @param this: Bars - The Bars object
+// @param htf_vol_sma: float - HTF volume SMA for comparison
+// @returns bool - True if the most recent candle is a spike
+export method isSpike(Bars this, float htf_vol_sma) =>
+    if this.count == 0 or htf_vol_sma <= 0
+        false
+    else
+        // Get most recent candle (last written, just before head)
+        last_idx = this._getLastIndex()
+        bar_vol = array.get(this.cv, last_idx)
+
+        if na(bar_vol) or bar_vol <= 0
+            false
+        else
+            // Calculate expected volume based on time ratio
+            time_ratio = this.ltf_ms / this.htf_ms
+            expected_vol = htf_vol_sma * time_ratio
+
+            if expected_vol <= 0
+                false
+            else
+                // Spike if volume exceeds expected by spike_threshold
+                vol_ratio = bar_vol / expected_vol
+                vol_ratio > (1.0 + this.spike_threshold)
+
+///////////////////////////////////////////////////////////////////////////////
+// LTF DATA PULLING AND RECONCILIATION
+///////////////////////////////////////////////////////////////////////////////
+
+// @function pullAndReconcile
+// @description Pulls LTF candle data using request.security_lower_tf() and reconciles with tick data
+// @param this: Bars - The Bars object
+// @param ltf_timeframe: string - The LTF timeframe to pull (e.g., "10", "15")
+// @param reference_vol: float - The reference volume to reconcile against
+// @returns Bars - this for fluent chaining
+export method pullAndReconcile(Bars this, float reference_vol) =>
+    // Pull LTF data using request.security_lower_tf
+    [ltf_times, ltf_opens, ltf_highs, ltf_lows, ltf_closes, ltf_volumes] =
+         request.security_lower_tf(syminfo.tickerid, UTIL.getTimeframeAbbrev(this.ltf), [time, open, high, low, close, volume], calc_bars_count = 300)
+
+    // Process the LTF arrays using helper method
+    this._processLTFArrays(ltf_times, ltf_opens, ltf_highs, ltf_lows, ltf_closes, ltf_volumes)
+
+    // Set candle_open - use current close as fallback
+    if this.count == 0
+        this.candle_open := close
+    else if na(this.candle_open)
+        // Use last candle's close
+        last_idx = this._getLastIndex()
+        this.candle_open := array.get(this.cc, last_idx)
+
+    // Add remainder volume to match reference if needed
+    if not na(ltf_times) and array.size(ltf_times) > 0
+        remainder_vol = reference_vol - this.total_vol
+        if math.abs(remainder_vol) > VOLUME_EPSILON
+            last_idx = array.size(ltf_times) - 1
+            this._addRemainderCandle(remainder_vol,
+                array.get(ltf_opens, last_idx),
+                array.get(ltf_highs, last_idx),
+                array.get(ltf_lows, last_idx),
+                array.get(ltf_closes, last_idx),
+                array.get(ltf_times, last_idx))
+
+    if not barstate.ishistory
+        this.pull_count += 1
+
+    this
+
+///////////////////////////////////////////////////////////////////////////////
+// VOLUME DISTRIBUTION METHODS
+///////////////////////////////////////////////////////////////////////////////
+
+// @function _finalizeAccumulator
+// @description Finalizes the current accumulator into a reconstructed LTF candle
+// @param this: Bars - The Bars object
+// @returns Bars - this for fluent chaining
+method _finalizeAccumulator(Bars this) =>
+    // Only finalize if there's meaningful volume
+    if this._hasMeaningfulVolume()
+        this._writeCandle(this.h, this.l, this.c, this.v, this.b, this.accum_start_time)
+
+        // Reset accumulators
+        this.v := 0.0
+        this.b := 0.0
+        this.h := 0.0
+        this.l := 0.0
+        this.c := 0.0
+
+    this
+
+// @function _processGaps
+// @description Fills gaps if configured and num_gaps > 0, using current accumulator start time
+// @param this: Bars - The Bars object
+// @param num_gaps: int - Number of gaps to fill
+// @returns Bars - this for fluent chaining
+method _processGaps(Bars this, int num_gaps) =>
+    gap_start_time = this.accum_start_time + this.ltf_ms
+    last_close = this.count > 0 ?
+             array.get(this.cc, this._getLastIndex()) :
+             close
+
+    for i = 0 to num_gaps - 1
+        if not this._hasBufferSpace()
+            break
+        gap_time = gap_start_time + (i * this.ltf_ms)
+        this._writeCandle(last_close, last_close, last_close, 0.0, 0.0, gap_time)
+    this
+
+///////////////////////////////////////////////////////////////////////////////
+// LTF CANDLE BOUNDARY DETECTION
+///////////////////////////////////////////////////////////////////////////////
+
+// @function onConfirmLTF
+// @description Checks if an LTF candle boundary has been crossed, validates volume, and pulls LTF data if needed
+//              Sets internal state flags: ready_ltf_boundary, ready_distribution
+//              Uses caching to avoid redundant calculations on same timestamp
+// @param this: Bars - The Bars object
+// @param current_time: int - Current timestamp
+// @param fetch_tf_vol: float - Fetch timeframe volume for validation (use na to skip validation)
+// @param ltf_timeframe: string - LTF timeframe string for pulling if needed (e.g., "10", "15")
+// @returns Bars - this for fluent chaining
+export method onConfirmLTF(Bars this, int current_time, float fetch_tf_vol = na) =>
+    int num_gaps = 0
+
+    if not na(this.accum_start_time)
+        // Calculate which LTF candle the current time belongs to
+        current_ltf_candle = getCandleIndex(current_time, this.ltf_ms)
+        accum_ltf_candle = getCandleIndex(this.accum_start_time, this.ltf_ms)
+
+        // Calculate how many boundaries were crossed
+        num_boundaries_crossed = current_ltf_candle - accum_ltf_candle
+        ltf_boundary_crossed = num_boundaries_crossed > 0
+
+        if ltf_boundary_crossed
+            this.boundary_count += num_boundaries_crossed
+            if num_boundaries_crossed > 1
+                num_gaps := num_boundaries_crossed - 1
+                this.gap_count += num_gaps
+
+            // Set flags ONLY on this tick (they pulse true once per boundary)
+            this.ready_ltf_boundary := true
+            if not this.ready_distribution
+                this.ready_distribution := this._hasMeaningfulVolume()
+
+            // Finalize and reset accumulator for next LTF candle
+            this._finalizeAccumulator()
+
+            if this.fill_gaps and num_gaps > 0
+                this._processGaps(num_gaps)
+
+            this._resetAccumulatorToPrice(current_time, close, 0.0, 0.0)
+
+        // Check fetch boundary
+        fetch_boundary_crossed = false
+        if not na(this.last_fetch_time) and this.fetch_ms > 0
+            current_fetch_candle = getCandleIndex(current_time, this.fetch_ms)
+            last_fetch_candle = getCandleIndex(this.last_fetch_time, this.fetch_ms)
+            fetch_boundary_crossed := current_fetch_candle > last_fetch_candle
+
+        if fetch_boundary_crossed and not na(fetch_tf_vol)
+            this.fetch_check_count += 1
+            actual_vol = this.total_vol + this.v
+            drift_pct = calculateDriftPct(actual_vol, fetch_tf_vol)
+
+            if drift_pct > this.drift_threshold
+                this.pullAndReconcile(fetch_tf_vol)
+
+            this.last_fetch_time := current_time
+
+    this
+
+///////////////////////////////////////////////////////////////////////////////
+// CTF CONFIRMATION AND RECONCILIATION
+///////////////////////////////////////////////////////////////////////////////
+
+// @function onConfirm
+// @description Finalizes CTF bar with volume reconciliation, pulls LTF data if drift exceeds threshold
+// @param this: Bars - The Bars object
+// @param ctf_vol: float - CTF total volume
+// @param ctf_o: float - CTF open
+// @param ctf_h: float - CTF high
+// @param ctf_l: float - CTF low
+// @param ctf_c: float - CTF close
+// @param ltf_timeframe: string - LTF timeframe string for pulling if needed (e.g., "10", "15")
+// @returns Bars - this for fluent chaining
+export method onConfirm(Bars this, float ctf_vol, float ctf_o, float ctf_h, float ctf_l, float ctf_c) =>
+    // Guard 1: Single-confirmation fence (prevent double confirmation on same CTF bar)
+    if na(this.last_confirmed_ctf_time) or time > this.last_confirmed_ctf_time
+        this.last_confirmed_ctf_time := time
+
+        // Finalize any remaining accumulator
+        if this._hasMeaningfulVolume()
+            this._finalizeAccumulator()
+
+        // Calculate tick accuracy
+        tick_based_total = this.tick_volume_total
+        if tick_based_total > 0
+            this.tick_accuracy := tick_based_total / ctf_vol
+            this.volume_drift_pct := calculateDriftPct(tick_based_total, ctf_vol)
+        else
+            this.tick_accuracy := 0.0
+            this.volume_drift_pct := 0.0
+
+        // Calculate drift from reconstructed candles
+        drift_pct = calculateDriftPct(this.total_vol, ctf_vol)
+
+        // Store diagnostic metrics
+        this.last_bar_drift := drift_pct
+        this.last_bar_healthy := drift_pct < this.drift_threshold
+
+        // If drift exceeds threshold and we have an LTF timeframe, pull LTF data to correct
+        if drift_pct > this.drift_threshold
+            // CTF confirmations also count as fetch checks
+            this.fetch_check_count += 1
+            this.pullAndReconcile(ctf_vol)
+        else
+            // Guard 2: Only add remainder if reconciliation hasn't occurred this bar
+            remainder_vol = ctf_vol - this.total_vol
+            this._addRemainderCandle(remainder_vol, ctf_o, ctf_h, ctf_l, ctf_c, time)
+
+        this._resetAccumulatorToPrice(time, close, 0.0, 0.0)
+    this
+
+///////////////////////////////////////////////////////////////////////////////
+// ANALYTICS
+///////////////////////////////////////////////////////////////////////////////
+
+// @function getVolumeImbalance
+// @description Calculates buy-sell volume imbalance, allowing sorting of delta volume by quantity
+//              Uses ring buffer if available, otherwise falls back to real-time accumulator
+// @param this: Bars - The Bars object
+// @returns float - Volume imbalance (positive = buy pressure, negative = sell pressure)
+//                  Range: [-total_vol/2, +total_vol/2] where total_vol/2 = 0 (neutral)
+export method getVolumeImbalance(Bars this) =>
+    // Use ring buffer if available, otherwise use real-time accumulator
+    vol = this.count > 0 ? this.total_vol : this.v
+    buy = this.count > 0 ? this.total_buy : this.b
+    buy - (vol * NEUTRAL_BUY_RATIO)
+
+// @function getAlpha
+// @description Calculates adaptive alpha parameter with NaN guards
+// @param this: Bars - The Bars object
+// @param vol: float - Current volume
+// @param vol_sma: float - Volume SMA
+// @param atr_distance: float - ATR distance
+// @param atr_short: float - Short ATR
+// @param atr_long: float - Long ATR
+// @param stddev_val: float - Standard deviation
+// @returns float - Alpha value (0.01 to 0.90)
+export method getAlpha(Bars this, float vol, float vol_sma, float atr_distance,
+                       float atr_short, float atr_long, float stddev_val) =>
+    // Guard against NaN inputs - use nz() for safety
+    safe_vol_sma = nz(vol_sma, 1.0)
+    safe_atr_short = nz(atr_short, 1.0)
+    safe_atr_long = nz(atr_long, 1.0)
+    safe_stddev = nz(stddev_val, 0.1)
+    safe_atr_distance = nz(atr_distance, 0.0)
+
+    // Prevent division by zero
+    if safe_vol_sma <= 0 or safe_atr_long <= 0
+        0.08  // Return default alpha
+    else
+        // Use ring buffer if available, otherwise accumulator
+        total_vol = this.count > 0 ? this.total_vol : this.v
+        total_buy = this.count > 0 ? this.total_buy : this.b
+
+        if total_vol <= 0
+            0.08
+        else
+            total_sell = total_vol - total_buy
+
+            buy_height = total_buy / total_vol
+            sell_height = total_sell / total_vol
+
+            bar_ratio = this.ltf_ms / this.ctf_ms
+
+            delta_alpha = buy_height - sell_height
+            vol_alpha = (vol/safe_vol_sma) + (buy_height+sell_height) / math.max(1.0, nz(safe_vol_sma/math.max(0.05, bar_ratio)))
+            volatility = math.max(0.1, safe_atr_short / safe_atr_long)
+            squeeze = safe_stddev / safe_atr_long
+
+            if delta_alpha < 0.0 and safe_atr_distance > 0
+                delta_alpha := safe_atr_distance * sell_height / math.max(sell_height / 2.0, buy_height)
+            else if delta_alpha > 0.0 and safe_atr_distance < 0
+                delta_alpha := (-safe_atr_distance) * buy_height / math.max(buy_height / 2.0, sell_height)
+
+            UTIL.fast_tanh(((6*vol_alpha) + (2*delta_alpha) + (volatility) + (2*squeeze)) / 50.0)
+
+///////////////////////////////////////////////////////////////////////////////
+// TICK INGESTION
+///////////////////////////////////////////////////////////////////////////////
+
+// @function fetch
+// @description Ingests tick data and accumulates into current LTF candle (no distribution)
+// @param this: Bars - The Bars object
+// @returns Bars - this for fluent chaining
+export method fetch(Bars this) =>
+    // Always reset flags at start - they only pulse true on boundary crossing
+    this.ready_ltf_boundary := false
+    this.ready_distribution := false
+
+    if barstate.isnew
+        this.clear()
+    // Only process ticks on real-time updates
+    else
+        // Detect rollback (Pine redrew the bar with different data)
+        if this._detectRollback(volume)
+            this.rollback_count += 1
+            this._resetAccumulatorState()
+        else if na(this.last_volume)
+            // First tick of bar - initialize tracking without processing
+            this.last_volume := volume
+            this.last_price := close
+            this.last_time := time
+        else if not na(this.last_price)
+            // Calculate price and volume deltas
+            price_delta = close - this.last_price
+            volume_delta = volume - this.last_volume
+            current_time = time
+
+            // Only process if we have meaningful volume change
+            if volume_delta > 0
+                this.tick_count += 1
+                this.tick_volume_total += volume_delta
+
+                // Determine buy volume based on price movement
+                // estimateBuyVolume already handles directional logic correctly
+                buyvol = estimateBuyVolume(volume_delta, price_delta)
+                this.tick_buy_volume += buyvol  // Trust estimateBuyVolume
+
+                // Accumulate into current candle
+                this.v += volume_delta
+                this.b += buyvol
+                this.h := math.max(this.h, close)
+                this.l := this.l == 0 ? close : math.min(this.l, close)
+                this.c := close
+
+                // Update tracking
+                this.last_time_diff := current_time - this.last_time
+                this.last_time := current_time
+                this.last_volume := volume
+
+        this.last_price := close
+
+    // Check for LTF boundary crossing and update state flags
+    this.onConfirmLTF(timenow)
+
+    // Confirm CTF bar
+    if barstate.isconfirmed
+        this.onConfirm(volume, open, high, low, close)
+
+    this

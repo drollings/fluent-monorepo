@@ -1,0 +1,670 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © showmethegrail
+
+//@version=6
+
+// @description A comprehensive library for detecting candle patterns
+library('libCandles')
+
+import showmethegrail/libUtil/12 as UTIL
+import showmethegrail/libDrawing/61 as libDrawing
+import showmethegrail/libApex/88 as libApex
+
+colorNone = color.rgb(0,0,0,100.0)
+
+///////////////////////////////////////////////////////////////////////////////
+// CANDLE PATTERN DETECTION
+///////////////////////////////////////////////////////////////////////////////
+
+// @function getCandlePatternAcronym
+// @description Returns the acronym or symbol representation of a given candle pattern.
+// @param pattern: UTIL.CandlePatterns - The candle pattern to get the acronym for.
+// @returns string - The acronym or symbol representing the candle pattern.
+export getCandlePatternAcronym(UTIL.CandlePatterns pattern) =>
+    switch pattern
+        UTIL.CandlePatterns.DOJI => "DJ"
+        UTIL.CandlePatterns.DRAGONFLY_DOJI => "DD"
+        UTIL.CandlePatterns.GRAVESTONE_DOJI => "GD"
+        UTIL.CandlePatterns.MARUBOZU_WHITE => "MW"
+        UTIL.CandlePatterns.MARUBOZU_BLACK => "MB"
+        UTIL.CandlePatterns.HAMMER => "HM"
+        UTIL.CandlePatterns.HANGING_MAN => "HG"
+        UTIL.CandlePatterns.INVERTED_HAMMER => "IH"
+        UTIL.CandlePatterns.SHOOTING_STAR => "SS"
+        UTIL.CandlePatterns.ENGULFING_BULL => "EB"
+        UTIL.CandlePatterns.ENGULFING_BEAR => "ER"
+        UTIL.CandlePatterns.MORNING_STAR => "MS"
+        UTIL.CandlePatterns.EVENING_STAR => "ES"
+        UTIL.CandlePatterns.MORNING_DOJI_STAR => "MDS"
+        UTIL.CandlePatterns.EVENING_DOJI_STAR => "EDS"
+        UTIL.CandlePatterns.THREE_WHITE_SOLDIERS => "3WS"
+        UTIL.CandlePatterns.THREE_BLACK_CROWS => "3BC"
+        UTIL.CandlePatterns.HARAMI_BULL => "HB"
+        UTIL.CandlePatterns.HARAMI_BEAR => "HR"
+        UTIL.CandlePatterns.HARAMI_CROSS => "HC"
+        UTIL.CandlePatterns.INFLECTION_UP => "IU"
+        UTIL.CandlePatterns.INFLECTION_DOWN => "ID"
+        UTIL.CandlePatterns.PIERCING_LINE => "PL"
+        UTIL.CandlePatterns.DARK_CLOUD_COVER => "DCC"
+        UTIL.CandlePatterns.TWEEZER_TOP => "TT"
+        UTIL.CandlePatterns.TWEEZER_BOTTOM => "TB"
+        UTIL.CandlePatterns.ABANDONED_BABY_BULL => "ABB"
+        UTIL.CandlePatterns.ABANDONED_BABY_BEAR => "ABR"
+        UTIL.CandlePatterns.BULL_SPINNING_TOP => "STB"
+        UTIL.CandlePatterns.BEAR_SPINNING_TOP => "STR"
+        UTIL.CandlePatterns.KICKING_BULL => "KB"
+        UTIL.CandlePatterns.KICKING_BEAR => "KR"
+        UTIL.CandlePatterns.LONG_LOWER_SHADOW => "LLS"
+        UTIL.CandlePatterns.LONG_UPPER_SHADOW => "LUS"
+        // SMC Patterns
+        UTIL.CandlePatterns.LIQUIDITY_GRAB_BULL => "LGB"
+        UTIL.CandlePatterns.LIQUIDITY_GRAB_BEAR => "LGR"
+        UTIL.CandlePatterns.INDUCEMENT_BULL => "INB"
+        UTIL.CandlePatterns.INDUCEMENT_BEAR => "INR"
+        UTIL.CandlePatterns.DISPLACEMENT_BULL => "DSB"
+        UTIL.CandlePatterns.DISPLACEMENT_BEAR => "DSR"
+        UTIL.CandlePatterns.MITIGATION_TEST_BULL => "MTB"
+        UTIL.CandlePatterns.MITIGATION_TEST_BEAR => "MTR"
+        UTIL.CandlePatterns.ACCUMULATION => "ACC"
+        UTIL.CandlePatterns.DISTRIBUTION => "DIST"
+        UTIL.CandlePatterns.WYCKOFF_SPRING => "SPR"
+        UTIL.CandlePatterns.WYCKOFF_UPTHRUST => "UPT"
+        UTIL.CandlePatterns.STOP_HUNT => "HUNT"
+        UTIL.CandlePatterns.FAIR_VALUE_REBALANCE => "FVR"
+        UTIL.CandlePatterns.NA => "-"
+
+// @function getCandlePatternEmoji
+// @description Returns an emoji representation of a candlestick pattern.
+// @param pattern: UTIL.CandlePatterns - The candle pattern to convert to an emoji.
+// @returns string - The emoji corresponding to the specified candle pattern.
+export getCandlePatternEmoji(UTIL.CandlePatterns pattern) =>
+    switch pattern
+        UTIL.CandlePatterns.DOJI => "●"
+        UTIL.CandlePatterns.DRAGONFLY_DOJI => "▲"
+        UTIL.CandlePatterns.GRAVESTONE_DOJI => "▼"
+        UTIL.CandlePatterns.MARUBOZU_WHITE => "🚀"
+        UTIL.CandlePatterns.MARUBOZU_BLACK => "🚨"
+        UTIL.CandlePatterns.HAMMER => "🔨"
+        UTIL.CandlePatterns.INVERTED_HAMMER => "🔨"
+        UTIL.CandlePatterns.HANGING_MAN => "●"
+        UTIL.CandlePatterns.SHOOTING_STAR => "☄️"
+        UTIL.CandlePatterns.ENGULFING_BULL => "🪃"
+        UTIL.CandlePatterns.ENGULFING_BEAR => "🪃"
+        UTIL.CandlePatterns.MORNING_STAR => "✴️"
+        UTIL.CandlePatterns.EVENING_STAR => "✴️"
+        UTIL.CandlePatterns.MORNING_DOJI_STAR => "💫"
+        UTIL.CandlePatterns.EVENING_DOJI_STAR => "💫"
+        UTIL.CandlePatterns.THREE_WHITE_SOLDIERS => "🪖"
+        UTIL.CandlePatterns.THREE_BLACK_CROWS => "🐦‍⬛"
+        UTIL.CandlePatterns.HARAMI_BULL => "▲"
+        UTIL.CandlePatterns.HARAMI_BEAR => "▼"
+        UTIL.CandlePatterns.HARAMI_CROSS => "●"
+        UTIL.CandlePatterns.INFLECTION_UP => "▲"
+        UTIL.CandlePatterns.INFLECTION_DOWN => "▼"
+        UTIL.CandlePatterns.PIERCING_LINE => "⚡️"
+        UTIL.CandlePatterns.DARK_CLOUD_COVER => "☁️"
+        UTIL.CandlePatterns.TWEEZER_TOP => "▼"
+        UTIL.CandlePatterns.TWEEZER_BOTTOM => "▲"
+        UTIL.CandlePatterns.ABANDONED_BABY_BULL => "▲"
+        UTIL.CandlePatterns.ABANDONED_BABY_BEAR => "▼"
+        UTIL.CandlePatterns.BULL_SPINNING_TOP => "🌀"
+        UTIL.CandlePatterns.BEAR_SPINNING_TOP => "🌀"
+        UTIL.CandlePatterns.KICKING_BULL => "🤸‍♂"
+        UTIL.CandlePatterns.KICKING_BEAR => "🤸‍♂"
+        UTIL.CandlePatterns.LONG_LOWER_SHADOW => "⚫"
+        UTIL.CandlePatterns.LONG_UPPER_SHADOW => "⚫"
+
+        // SMC Patterns
+        UTIL.CandlePatterns.LIQUIDITY_GRAB_BULL => "🎣"
+        UTIL.CandlePatterns.LIQUIDITY_GRAB_BEAR => "🎣"
+        UTIL.CandlePatterns.INDUCEMENT_BULL => "🪤"
+        UTIL.CandlePatterns.INDUCEMENT_BEAR => "🪤"
+        UTIL.CandlePatterns.DISPLACEMENT_BULL => "⚠"
+        UTIL.CandlePatterns.DISPLACEMENT_BEAR => "⚠"
+        UTIL.CandlePatterns.MITIGATION_TEST_BULL => "🧪"
+        UTIL.CandlePatterns.MITIGATION_TEST_BEAR => "🧪"
+        UTIL.CandlePatterns.ACCUMULATION => "📦"
+        UTIL.CandlePatterns.DISTRIBUTION => "📤"
+        UTIL.CandlePatterns.WYCKOFF_SPRING => "💥"
+        UTIL.CandlePatterns.WYCKOFF_UPTHRUST => "💥"
+        UTIL.CandlePatterns.STOP_HUNT => "🎯"
+        UTIL.CandlePatterns.FAIR_VALUE_REBALANCE => "⚖️"
+        => string(na)
+
+///////////////////////////////////////////////////////////////////////////////
+// CANDLE PATTERN EXPLANATION
+///////////////////////////////////////////////////////////////////////////////
+
+TT_DOJI = "A Doji forms when the open and close prices are nearly identical, creating a small or nonexistent body. It signals market indecision."
+TT_DRAGONFLY_DOJI = "A Doji with a long lower shadow and no upper shadow, showing sellers pushed the price down, but buyers brought it back up."
+TT_GRAVESTONE_DOJI = "A Doji with a long upper shadow and no lower shadow, indicating buyers pushed the price up, but sellers drove it back down."
+TT_MARUBOZU_WHITE = "A long green (bullish) candle with no shadows, where the open is the low and the close is the high, showing strong buying pressure."
+TT_MARUBOZU_BLACK = "A long red (bearish) candle with no shadows, where the open is the high and the close is the low, showing strong selling pressure."
+TT_HAMMER = "A small body with a long lower shadow, typically at the bottom of a downtrend, suggesting buyers stepped in after sellers pushed the price down."
+TT_HANGING_MAN = "Similar to the Hammer but at the top of an uptrend, showing sellers gained control after buyers pushed the price up."
+TT_INVERTED_HAMMER = "A small body with a long upper shadow at the bottom of a downtrend, indicating buyers tried to push the price up, suggesting a bullish reversal."
+TT_SHOOTING_STAR = "A small body with a long upper shadow at the top of an uptrend, showing sellers took over after buyers pushed the price up."
+TT_ENGULFING_BULL = "A small bearish candle followed by a larger bullish candle that engulfs it, signaling a shift from selling to buying pressure."
+TT_ENGULFING_BEAR = "A small bullish candle followed by a larger bearish candle that engulfs it, indicating a shift from buying to selling pressure."
+TT_MORNING_STAR = "A three-candle pattern with a long bearish candle, a small-bodied candle (indecision), and a long bullish candle, signaling a bearish-to-bullish reversal."
+TT_EVENING_STAR = "A three-candle pattern with a long bullish candle, a small-bodied candle, and a long bearish candle, signaling a bullish-to-bearish reversal."
+TT_MORNING_DOJI_STAR = "Like the Morning Star, but the middle candle is a Doji, emphasizing indecision before a bullish reversal."
+TT_EVENING_DOJI_STAR = "Like the Evening Star, but with a Doji in the middle, highlighting indecision before a bearish reversal."
+TT_THREE_WHITE_SOLDIERS = "Three consecutive long bullish candles, each closing higher, showing strong buying pressure and potential uptrend continuation."
+TT_THREE_BLACK_CROWS = "Three consecutive long bearish candles, each closing lower, indicating strong selling pressure and potential downtrend continuation."
+TT_HARAMI_BULL = "A large bearish candle followed by a small bullish candle within its body, suggesting a potential reversal to the upside."
+TT_HARAMI_BEAR = "A large bullish candle followed by a small bearish candle within its body, suggesting a potential reversal to the downside."
+TT_INFLECTION_UP = "A pattern where the price begins turning upward, possibly after a downtrend, indicating a shift in momentum."
+TT_INFLECTION_DOWN = "A pattern where the price starts turning downward after an uptrend, signaling a shift in momentum."
+TT_PIERCING_LINE = "A two-candle pattern with a bearish candle followed by a bullish candle that opens below the prior close but closes above the prior candle's midpoint."
+TT_DARK_CLOUD_COVER = "A two-candle pattern with a bullish candle followed by a bearish candle that opens above the prior close but closes below the prior candle's midpoint."
+TT_TWEEZER_TOP = "Two candles with matching highs, suggesting resistance and a potential bearish reversal."
+TT_TWEEZER_BOTTOM = "Two candles with matching lows, indicating support and a potential bullish reversal."
+TT_ABANDONED_BABY_BULL = "A three-candle pattern with a long bearish candle, a Doji gapped below it, and a long bullish candle gapped above the Doji, signaling a strong bullish reversal."
+TT_ABANDONED_BABY_BEAR = "A three-candle pattern with a long bullish candle, a Doji gapped above it, and a long bearish candle gapped below the Doji, indicating a strong bearish reversal."
+TT_SPINNING_TOP = "A candle with a small body and long upper and lower shadows, showing market indecision."
+TT_KICKING_BULL = "A two-candle pattern with a red Marubozu followed by a green Marubozu with a gap, indicating a strong bullish reversal."
+TT_KICKING_BEAR = "A two-candle pattern with a green Marubozu followed by a red Marubozu with a gap, signaling a strong bearish reversal."
+
+// SMC Pattern Explanations
+TT_LIQUIDITY_GRAB_BULL = "A wick extends beyond a key level (liquidity pool) followed by strong bullish rejection, indicating institutional liquidity grab before move higher."
+TT_LIQUIDITY_GRAB_BEAR = "A wick extends beyond a key level (liquidity pool) followed by strong bearish rejection, showing institutional liquidity grab before move lower."
+TT_INDUCEMENT_BULL = "A false breakout candle that breaks above resistance with weak follow-through, designed to trap retail traders before reversal."
+TT_INDUCEMENT_BEAR = "A false breakout candle that breaks below support with weak follow-through, trapping retail sellers before institutional buying."
+TT_DISPLACEMENT_BULL = "A large bullish candle with minimal wicks that breaks through multiple levels, showing institutional order flow and momentum."
+TT_DISPLACEMENT_BEAR = "A large bearish candle with minimal wicks that breaks through multiple levels, indicating institutional selling pressure."
+TT_MITIGATION_TEST_BULL = "A candle that touches or slightly penetrates an order block or FVG without fully breaking it, testing institutional levels."
+TT_MITIGATION_TEST_BEAR = "A candle that tests bearish institutional levels (order blocks/FVGs) without breaking them, showing respect for smart money zones."
+TT_ACCUMULATION = "Low range, high volume candle indicating institutional accumulation - smart money building positions without moving price."
+TT_DISTRIBUTION = "High range candle at extreme levels with climactic volume, showing institutional distribution before major moves."
+TT_WYCKOFF_SPRING = "A false breakdown below support that quickly reverses higher, shaking out weak hands before institutional markup phase."
+TT_WYCKOFF_UPTHRUST = "A false breakout above resistance that fails immediately, distributing to retail buyers before institutional markdown."
+TT_STOP_HUNT = "Aggressive wick that hunts stop losses beyond obvious levels before sharp reversal, classic institutional manipulation."
+TT_FAIR_VALUE_REBALANCE = "Candle that fills previous imbalances (FVGs) while maintaining directional bias, showing market efficiency restoration."
+
+// @function getCandlePatternExplanation
+// @description Returns the explanation text for a given candlestick pattern.
+// @param pattern: UTIL.CandlePatterns - The candlestick pattern to get the explanation for.
+// @returns string - The explanation text for the specified candle pattern.
+export getCandlePatternExplanation(UTIL.CandlePatterns pattern) =>
+    switch pattern
+        UTIL.CandlePatterns.DOJI => TT_DOJI
+        UTIL.CandlePatterns.DRAGONFLY_DOJI => TT_DRAGONFLY_DOJI
+        UTIL.CandlePatterns.GRAVESTONE_DOJI => TT_GRAVESTONE_DOJI
+        UTIL.CandlePatterns.MARUBOZU_WHITE => TT_MARUBOZU_WHITE
+        UTIL.CandlePatterns.MARUBOZU_BLACK => TT_MARUBOZU_BLACK
+        UTIL.CandlePatterns.HAMMER => TT_HAMMER
+        UTIL.CandlePatterns.HANGING_MAN => TT_HANGING_MAN
+        UTIL.CandlePatterns.INVERTED_HAMMER => TT_INVERTED_HAMMER
+        UTIL.CandlePatterns.SHOOTING_STAR => TT_SHOOTING_STAR
+        UTIL.CandlePatterns.ENGULFING_BULL => TT_ENGULFING_BULL
+        UTIL.CandlePatterns.ENGULFING_BEAR => TT_ENGULFING_BEAR
+        UTIL.CandlePatterns.MORNING_STAR => TT_MORNING_STAR
+        UTIL.CandlePatterns.EVENING_STAR => TT_EVENING_STAR
+        UTIL.CandlePatterns.MORNING_DOJI_STAR => TT_MORNING_DOJI_STAR
+        UTIL.CandlePatterns.EVENING_DOJI_STAR => TT_EVENING_DOJI_STAR
+        UTIL.CandlePatterns.THREE_WHITE_SOLDIERS => TT_THREE_WHITE_SOLDIERS
+        UTIL.CandlePatterns.THREE_BLACK_CROWS => TT_THREE_BLACK_CROWS
+        UTIL.CandlePatterns.HARAMI_BULL => TT_HARAMI_BULL
+        UTIL.CandlePatterns.HARAMI_BEAR => TT_HARAMI_BEAR
+        UTIL.CandlePatterns.INFLECTION_UP => TT_INFLECTION_UP
+        UTIL.CandlePatterns.INFLECTION_DOWN => TT_INFLECTION_DOWN
+        UTIL.CandlePatterns.PIERCING_LINE => TT_PIERCING_LINE
+        UTIL.CandlePatterns.DARK_CLOUD_COVER => TT_DARK_CLOUD_COVER
+        UTIL.CandlePatterns.TWEEZER_TOP => TT_TWEEZER_TOP
+        UTIL.CandlePatterns.TWEEZER_BOTTOM => TT_TWEEZER_BOTTOM
+        UTIL.CandlePatterns.ABANDONED_BABY_BULL => TT_ABANDONED_BABY_BULL
+        UTIL.CandlePatterns.ABANDONED_BABY_BEAR => TT_ABANDONED_BABY_BEAR
+        UTIL.CandlePatterns.BULL_SPINNING_TOP => TT_SPINNING_TOP
+        UTIL.CandlePatterns.BEAR_SPINNING_TOP => TT_SPINNING_TOP
+        UTIL.CandlePatterns.KICKING_BULL => TT_KICKING_BULL
+        UTIL.CandlePatterns.KICKING_BEAR => TT_KICKING_BEAR
+        UTIL.CandlePatterns.LIQUIDITY_GRAB_BULL => TT_LIQUIDITY_GRAB_BULL
+        UTIL.CandlePatterns.LIQUIDITY_GRAB_BEAR => TT_LIQUIDITY_GRAB_BEAR
+        UTIL.CandlePatterns.INDUCEMENT_BULL => TT_INDUCEMENT_BULL
+        UTIL.CandlePatterns.INDUCEMENT_BEAR => TT_INDUCEMENT_BEAR
+        UTIL.CandlePatterns.DISPLACEMENT_BULL => TT_DISPLACEMENT_BULL
+        UTIL.CandlePatterns.DISPLACEMENT_BEAR => TT_DISPLACEMENT_BEAR
+        UTIL.CandlePatterns.MITIGATION_TEST_BULL => TT_MITIGATION_TEST_BULL
+        UTIL.CandlePatterns.MITIGATION_TEST_BEAR => TT_MITIGATION_TEST_BEAR
+        UTIL.CandlePatterns.ACCUMULATION => TT_ACCUMULATION
+        UTIL.CandlePatterns.DISTRIBUTION => TT_DISTRIBUTION
+        UTIL.CandlePatterns.WYCKOFF_SPRING => TT_WYCKOFF_SPRING
+        UTIL.CandlePatterns.WYCKOFF_UPTHRUST => TT_WYCKOFF_UPTHRUST
+        UTIL.CandlePatterns.STOP_HUNT => TT_STOP_HUNT
+        UTIL.CandlePatterns.FAIR_VALUE_REBALANCE => TT_FAIR_VALUE_REBALANCE
+        => "No explanation available for this pattern."
+
+// @function detectCandlePatterns - Pruned Version
+// @description Efficient detection of core candle patterns: Marubozu, Three Soldiers/Crows, Spinning Tops, Engulfing
+// @param {bool} is_trend_up - Is trending up?
+// @param {bool} is_trend_down - Is trending down?
+// @param {float} atr - Average true range
+// @param {float} vol_ratio - Ratio of volume over average volume
+// @param {float} o, h, l, c - Current candle OHLC
+// @param {float} o1, h1, l1, c1 - Previous candle OHLC
+// @param {float} o2, h2, l2, c2 - Two candles ago OHLC
+// @returns {UTIL.CandlePatterns} The detected candle pattern
+export method detectCandlePatterns(bool is_trend_up, bool is_trend_down,
+         float atrval, float vol_ratio,
+         float o, float h, float l, float c,
+         float o1, float h1, float l1, float c1,
+         float o2, float h2, float l2, float c2,
+         float prev_high = na, float prev_low = na, float key_level = na,
+         bool near_order_block = false, bool near_fvg = false) =>
+    //==========================================================================
+    // EARLY EXIT CONDITIONS
+    //==========================================================================
+    if na(o) or na(h) or na(l) or na(c)
+        runtime.error("Price data cannot be na")
+        UTIL.CandlePatterns.NA
+    else if h <= l or (na(vol_ratio) ? 1.0 : vol_ratio) < 0.7
+        UTIL.CandlePatterns.NA
+    else
+        //======================================================================
+        // PRE-CALCULATE BASIC CONDITIONS - CURRENT CANDLE
+        //======================================================================
+        height = h - l
+        body = math.abs(c - o)
+        upperWick = h - math.max(o, c)
+        lowerWick = math.min(o, c) - l
+        atr = na(atrval) ? height : atrval
+        volAdjustedAvgHeight = atr * 0.33 * math.max(0.7, math.min(1.5, na(vol_ratio) ? 1.0 : vol_ratio))
+
+        // Current candle ratios and classifications
+        bodyPct = body / height
+        upperWickPct = upperWick / height
+        lowerWickPct = lowerWick / height
+        isBullish = c > o
+        isBearish = c < o
+        isSmallBody = bodyPct <= 0.3
+        isMarubozu = bodyPct >= 0.95
+
+        // Volume and context conditions
+        isSignificantVolume = (na(vol_ratio) ? 1.0 : vol_ratio) > 1.2
+        isExtremeVolume = (na(vol_ratio) ? 1.0 : vol_ratio) > 2.0
+        isLowVolume = (na(vol_ratio) ? 1.0 : vol_ratio) < 0.8
+
+        //======================================================================
+        // SMC-SPECIFIC CONDITIONS
+        //======================================================================
+
+        // Displacement conditions
+        isDisplacementBull = isBullish and bodyPct > 0.8 and body > (atr * 1.8) and
+                 isSignificantVolume and upperWickPct < 0.15
+        isDisplacementBear = isBearish and bodyPct > 0.8 and body > (atr * 1.8) and
+                 isSignificantVolume and lowerWickPct < 0.15
+
+        // Liquidity grab conditions (requires previous level data)
+        isLiquidityGrabBull = not na(prev_high) and h > prev_high and c > o and
+                 upperWickPct > 0.3 and isBullish and isSignificantVolume
+        isLiquidityGrabBear = not na(prev_low) and l < prev_low and c < o and
+                 lowerWickPct > 0.3 and isBearish and isSignificantVolume
+
+        // Inducement conditions (false breakouts)
+        isInducementBull = not na(key_level) and c > key_level and o < key_level and
+                 upperWickPct > 0.4 and body < atr * 0.5
+        isInducementBear = not na(key_level) and c < key_level and o > key_level and
+                 lowerWickPct > 0.4 and body < atr * 0.5
+
+        // Mitigation test conditions
+        isMitigationTestBull = near_order_block and upperWickPct > 0.2 and lowerWickPct < 0.1 and
+                 isBullish and bodyPct < 0.6
+        isMitigationTestBear = near_order_block and lowerWickPct > 0.2 and upperWickPct < 0.1 and
+                 isBearish and bodyPct < 0.6
+
+        // Accumulation/Distribution conditions
+        isAccumulation = bodyPct < 0.4 and height < atr * 0.6 and isExtremeVolume and
+                 upperWickPct > 0.2 and lowerWickPct > 0.2
+        isDistribution = height > atr * 1.5 and isExtremeVolume and bodyPct > 0.6 and
+                 (is_trend_up and isBearish or is_trend_down and isBullish)
+
+        // Wyckoff conditions
+        isWyckoffSpring = not na(prev_low) and l < prev_low and c > prev_low and
+                 isBullish and lowerWickPct > 0.3 and isSignificantVolume
+        isWyckoffUpthrust = not na(prev_high) and h > prev_high and c < prev_high and
+                 isBearish and upperWickPct > 0.3 and isSignificantVolume
+
+        // Stop hunt conditions
+        isStopHunt = (upperWickPct > 0.5 or lowerWickPct > 0.5) and bodyPct < 0.3 and
+                 isExtremeVolume and not na(key_level)
+
+        // Fair value rebalance
+        isFairValueRebalance = near_fvg and bodyPct > 0.5 and bodyPct < 0.8 and
+                 isSignificantVolume and (isBullish and is_trend_up or isBearish and is_trend_down)
+
+        //======================================================================
+        // PREVIOUS CANDLE CONDITIONS (for traditional patterns)
+        //======================================================================
+        height1 = h1 - l1
+        body1 = math.abs(c1 - o1)
+        upperWick1 = h1 - math.max(o1, c1)
+        lowerWick1 = math.min(o1, c1) - l1
+
+        isBull1 = c1 > o1
+        isBear1 = c1 < o1
+        isLongBody1 = body1 > volAdjustedAvgHeight
+
+        //======================================================================
+        // TWO CANDLES AGO CONDITIONS (for traditional patterns)
+        //======================================================================
+        height2 = h2 - l2
+        body2 = math.abs(c2 - o2)
+
+        isBull2 = c2 > o2
+        isBear2 = c2 < o2
+        isLongBody2 = body2 > volAdjustedAvgHeight
+
+        //======================================================================
+        // TRADITIONAL PATTERN CONDITIONS
+        //======================================================================
+
+        // Engulfing conditions
+        engulfsBull = isBullish and isBear1 and isLongBody1 and o <= c1 and c >= o1
+        engulfsBear = isBearish and isBull1 and isLongBody1 and o >= c1 and c <= o1
+
+        // Three-bar pattern conditions
+        threeWhiteSoldiers = isBullish and isBull1 and isLongBody1 and isBull2 and isLongBody2 and
+                 c > c1 and c1 > c2 and o > o2 and o < c1 and
+                 (upperWick / height > 0.05 or (upperWick1 / height1 > 0.05) or
+                 (h2 - math.max(o2, c2)) / height2 > 0.05)
+
+        threeBlackCrows = isBearish and isBear1 and isLongBody1 and isBear2 and isLongBody2 and
+                 c < c1 and c1 < c2 and o < o2 and o > c1 and
+                 (lowerWick / height > 0.05 or (lowerWick1 / height1 > 0.05) or
+                 (math.min(o2, c2) - l2) / height2 > 0.05)
+
+        //======================================================================
+        // PATTERN DETECTION - SMC PATTERNS TAKE PRIORITY
+        //======================================================================
+        switch
+            // SMC Liquidity and Manipulation Patterns (highest priority)
+            isLiquidityGrabBull => UTIL.CandlePatterns.LIQUIDITY_GRAB_BULL
+            isLiquidityGrabBear => UTIL.CandlePatterns.LIQUIDITY_GRAB_BEAR
+            isWyckoffSpring => UTIL.CandlePatterns.WYCKOFF_SPRING
+            isWyckoffUpthrust => UTIL.CandlePatterns.WYCKOFF_UPTHRUST
+            isStopHunt => UTIL.CandlePatterns.STOP_HUNT
+
+            // SMC Displacement and Flow Patterns
+            isDisplacementBull => UTIL.CandlePatterns.DISPLACEMENT_BULL
+            isDisplacementBear => UTIL.CandlePatterns.DISPLACEMENT_BEAR
+            isInducementBull => UTIL.CandlePatterns.INDUCEMENT_BULL
+            isInducementBear => UTIL.CandlePatterns.INDUCEMENT_BEAR
+
+            // SMC Volume and Structure Patterns
+            isAccumulation => UTIL.CandlePatterns.ACCUMULATION
+            isDistribution => UTIL.CandlePatterns.DISTRIBUTION
+            isMitigationTestBull => UTIL.CandlePatterns.MITIGATION_TEST_BULL
+            isMitigationTestBear => UTIL.CandlePatterns.MITIGATION_TEST_BEAR
+            isFairValueRebalance => UTIL.CandlePatterns.FAIR_VALUE_REBALANCE
+
+            // Traditional Three-candle patterns
+            threeWhiteSoldiers => UTIL.CandlePatterns.THREE_WHITE_SOLDIERS
+            threeBlackCrows => UTIL.CandlePatterns.THREE_BLACK_CROWS
+
+            // Traditional Two-candle patterns
+            engulfsBull and isSignificantVolume => UTIL.CandlePatterns.ENGULFING_BULL
+            engulfsBear and isSignificantVolume => UTIL.CandlePatterns.ENGULFING_BEAR
+
+            // Traditional Single-candle patterns
+            isMarubozu and isBullish and is_trend_up => UTIL.CandlePatterns.MARUBOZU_WHITE
+            isMarubozu and isBearish and is_trend_down => UTIL.CandlePatterns.MARUBOZU_BLACK
+
+            // Spinning tops
+            isSmallBody and upperWickPct > 0.25 and lowerWickPct > 0.25 and isBullish and is_trend_up =>
+                UTIL.CandlePatterns.BULL_SPINNING_TOP
+            isSmallBody and upperWickPct > 0.25 and lowerWickPct > 0.25 and isBearish and is_trend_down =>
+                UTIL.CandlePatterns.BEAR_SPINNING_TOP
+
+            => UTIL.CandlePatterns.NA
+
+export method fetchWithCandlePatterns(libApex.MarketContext this, UTIL.Timeframes target_tf = UTIL.Timeframes.C) =>
+    tf_string = target_tf == UTIL.Timeframes.C ? timeframe.period : UTIL.getTimeframeAbbrev(target_tf)
+    float o = na, float h = na, float l = na, float c = na, float v = na
+    float o1 = na, float h1 = na, float l1 = na, float c1 = na
+    float o2 = na, float h2 = na, float l2 = na, float c2 = na
+    float o3 = na, float h3 = na, float l3 = na, float c3 = na
+
+    if target_tf == UTIL.Timeframes.C or UTIL.isChartTimeframe(target_tf)
+        this.ma_primary := ta.alma(close, 8, 0.85, 6)
+        this.ma_signal := ta.vwma(close, 16)
+        this.ma_mean := ta.ema(close, 21)
+        this.atr := ta.atr(14)
+        this.atr_long := ta.atr(50)
+        this.cci := ta.cci(close, 14) * 3  // Normalize to -100 to +100
+        this.rsi := (ta.rsi(close, 14) - 50 ) * 2  // Normalize to -100 to +100
+        this.stdev := ta.stdev(close, 14)
+
+        this.atr_distance := this.atr > 0 ? (close - this.ma_mean) / this.atr : 0.0
+        // Set OHLCV for common calculations
+        o := open, h := high, l := low, c := close, v := volume
+        o1 := open[1], h1 := high[1], l1 := low[1], c1 := close[1]
+        o2 := open[2], h2 := high[2], l2 := low[2], c2 := close[2]
+        o3 := open[3], h3 := high[3], l3 := low[3], c3 := close[3]
+
+        this.vol := nz(volume, this.vol)
+        this.vol_sma := ta.sma(volume, 20)
+    else
+        // Fetch indicators from target timeframe
+        [ _o, _h, _l, _c, _v, vol_sma,
+             _o1, _h1, _l1, _c1,
+             _o2, _h2, _l2, _c2,
+             _o3, _h3, _l3, _c3,
+             ma_primary, ma_signal, ma_mean, atr14, atr50, cci14, rsi14, stdev14 ] =
+             request.security(syminfo.tickerid, UTIL.getTimeframeAbbrev(target_tf), [
+             open, high, low, close, volume, ta.sma(volume, 20),
+             open[1], high[1], low[1], close[1],
+             open[2], high[2], low[2], close[2],
+             open[3], high[3], low[3], close[3],
+             ta.alma(close, 8, 0.85, 6), ta.vwma(close, 16), ta.ema(close, 21),
+             ta.atr(14), ta.atr(50), ta.cci(close, 14) * 3, (ta.rsi(close, 14) - 50) * 2, ta.stdev(close, 14)
+             ], barmerge.gaps_off, barmerge.lookahead_off, calc_bars_count=30)
+
+        o := _o, h := _h, l := _l, c := _c
+        o1 := _o1, h1 := _h1, l1 := _l1, c1 := _c1
+        o2 := _o2, h2 := _h2, l2 := _l2, c2 := _c2
+        o3 := _o3, h3 := _h3, l3 := _l3, c3 := _c3
+
+        this.ma_primary := ma_primary
+        this.ma_signal := ma_signal
+        this.ma_mean := ma_mean
+        this.atr := atr14
+        this.atr_long := atr50
+        this.cci := (cci14) * 3  // Normalize to -100 to +100
+        this.rsi := (rsi14 - 50) * 2  // Normalize to -100 to +100
+        this.stdev := stdev14
+
+        this.vol := nz(_v, this.vol)
+        this.vol_sma := vol_sma
+
+    // Calculate derived metrics
+    this.atr_distance := (c - this.ma_mean) / this.atr
+    this.ma_health := libApex.getHealthMAs(this.atr, this.ma_primary, this.ma_signal, this.ma_mean, 2.0)
+    this.volatility_ratio := this.stdev / this.atr
+
+    // Only update vol_ratio if we have valid volume and vol_sma data
+    if not na(this.vol) and not na(this.vol_sma) and this.vol_sma > 0
+        this.vol_ratio := this.vol / this.vol_sma
+
+    // Determine trend metrics
+    this.trend_strength := math.abs(this.ma_health) / 100.0
+    this.trend_direction := this.ma_health > 15 ? 1.0 : this.ma_health < -15 ? -1.0 : 0.0
+
+    // Determine market regime
+    this.regime := this.detectRegime()
+    this.tf := target_tf
+    if not na(c3)
+        this.candles := detectCandlePatterns(
+             this.trend_direction == 1 or this.ma_health > 10 or this.cci > 20,
+             this.trend_direction == -1 or this.ma_health < -10 or this.cci < -20,
+             this.atr, this.vol_ratio, o1, h1, l1, c1, o2, h2, l2, c2, o3, h3, l3, c3)
+    this
+
+// @function createMTFColumn
+// @description Creates a multi-timeframe column with market context data and colors.
+// @param this: libApex.MarketContext - The market context object containing regime, ATR distance, MA health, standard deviation, volatility ratio, and candle data.
+// @returns array<string> - An array of strings representing the formatted data for each row in the column.
+// @returns array<color> - An array of colors corresponding to each row's text color.
+export method createMTFColumn(libApex.MarketContext this) =>
+    data_column = array.new<string>(7)
+    color_column = array.new<color>(7)
+
+    // Row 0: Regime
+    regime_str = UTIL.getRegimeEmoji(this.regime)
+    regime_color = switch this.regime
+        UTIL.MarketRegimes.TRENDING_BULL => color.lime
+        UTIL.MarketRegimes.TRENDING_BEAR => color.red
+        UTIL.MarketRegimes.RANGING => color.yellow
+        => color.gray
+    array.set(data_column, 0, regime_str)
+    array.set(color_column, 0, regime_color)
+
+    // Row 1: ATR Distance
+    atr_safe = na(this.atr_distance) ? 0.0 : this.atr_distance
+    atr_clamped = math.max(-5.0, math.min(5.0, atr_safe))
+    atr_dist_str = str.tostring(math.round(atr_clamped, 2), "#.##")
+    atr_dist_color = color.from_gradient(atr_clamped, -3.0, 3.0, color.red, color.green)
+    array.set(data_column, 1, atr_dist_str)
+    array.set(color_column, 1, atr_dist_color)
+
+    // Row 2: MA Health
+    ma_safe = na(this.ma_health) ? 0.0 : this.ma_health
+    ma_clamped = math.max(-100.0, math.min(100.0, ma_safe))
+    ma_health_str = str.tostring(math.round(ma_clamped, 0), "#")
+    ma_health_color = color.from_gradient(ma_clamped, -100, 100, color.red, color.green)
+    array.set(data_column, 2, ma_health_str)
+    array.set(color_column, 2, ma_health_color)
+
+    // Row 3: Standard Deviation
+    stdev = this.stdev
+    stdev_str = str.tostring(math.round(stdev, 2), "#.##")
+    stdev_color = color.from_gradient(stdev, -100, 100, color.gray, color.orange)
+    array.set(data_column, 3, stdev_str)
+    array.set(color_column, 3, stdev_color)
+
+    // Row 4: Volatility
+    volatility_safe = na(this.volatility_ratio) ? 1.0 : this.volatility_ratio
+    volatility_str = str.tostring(math.round(volatility_safe, 2), "#.##")
+    volatility_color = color.from_gradient(volatility_safe, -100, 100, color.red, color.green)
+    array.set(data_column, 4, volatility_str)
+    array.set(color_column, 4, volatility_color)
+
+    // Row 5: Vol Ratio
+    vol_safe = na(this.vol_ratio) ? 1.0 : this.vol_ratio
+    vol_clamped = math.max(0.0, math.min(10.0, vol_safe))
+    vol_ratio_str = str.tostring(math.round(vol_clamped, 2), "#.##")
+    vol_ratio_color = color.from_gradient(vol_clamped, 0.5, 2.0, color.gray, color.orange)
+    array.set(data_column, 5, vol_ratio_str)
+    array.set(color_column, 5, vol_ratio_color)
+
+    // Row 6: Pattern
+    pattern_str = na(this.candles) ? "" : getCandlePatternEmoji(this.candles)
+    array.set(data_column, 6, pattern_str)
+    array.set(color_column, 6, color.white)
+
+    [data_column, color_column]
+
+// @method createMTFTable - Multi-timeframe market analysis table using libApex.MarketContext map
+// @description Creates a comprehensive MTF table displaying key market metrics across UTIL.timeframes
+// @param managed_table: libApex.ManagedTable - The managed table instance to update
+// @param pos: string - Table position
+// @param timeframe_keys: array<UTIL.Timeframes> - Ordered timeframe keys to display
+// @param mtf_context: map<UTIL.Timeframes, libApex.MarketContext> - Map of timeframe data
+// @param current_context: libApex.MarketContext - Current timeframe libApex.MarketContext
+// @param table_size: libDrawing.Sizes - Table size enum
+// @returns libApex.ManagedTable - The updated managed table instance
+export method createMTFTable(libApex.ManagedTable managed_table, string pos, array<UTIL.Timeframes> timeframe_keys,
+         map<UTIL.Timeframes, libApex.MarketContext> mtf_context, libApex.MarketContext current_context, string table_size,
+         color bg_color=color.black, color header_color=color.white, color text_color=color.white) =>
+    if array.size(timeframe_keys) == 0 or na(mtf_context)
+        managed_table
+    else
+        // Get current timeframe
+        current_tf = UTIL.getTimeframe(timeframe.period)
+
+        // Check if current timeframe is already in the list
+        current_tf_index = -1
+        for i = 0 to array.size(timeframe_keys) - 1
+            if array.get(timeframe_keys, i) == current_tf
+                current_tf_index := i
+                break
+
+        max_timeframes = math.min(array.size(timeframe_keys), 4)
+        has_separate_current = current_tf_index == -1
+
+        // Create headers
+        headers = array.new<string>()
+        array.push(headers, "⏱️")
+
+        // Add current timeframe column if separate
+        if has_separate_current
+            array.push(headers, "C")
+
+        // Add MTF timeframe headers
+        for i = 0 to max_timeframes - 1
+            tf_key = array.get(timeframe_keys, i)
+            tf_name = UTIL.getTimeframeAbbrev(tf_key)
+
+            // Modify header if this matches current timeframe
+            if i == current_tf_index
+                tf_name := tf_name + " (C)"
+
+            array.push(headers, tf_name)
+
+        // Build data matrix
+        row_labels = array.from("Regime", "ATR", "MAs", "StdDev", "Volatility", "Vol Avg", "Pattern")
+        data_rows = 7
+        data_cols = max_timeframes + 1 + (has_separate_current ? 1 : 0)
+        data_matrix = matrix.new<string>(data_rows, data_cols)
+        color_matrix = matrix.new<color>(data_rows, data_cols)
+
+        // Fill row labels (first column)
+        for i = 0 to 6
+            matrix.set(data_matrix, i, 0, array.get(row_labels, i))
+            matrix.set(color_matrix, i, 0, color.white)
+
+        // Fill current timeframe column if separate
+        if has_separate_current
+            col_idx = 1
+            if not na(current_context)
+                [data_col, color_col] = current_context.createMTFColumn()
+                for row = 0 to 6
+                    matrix.set(data_matrix, row, col_idx, array.get(data_col, row))
+                    matrix.set(color_matrix, row, col_idx, array.get(color_col, row))
+            else
+                data_col = array.new<string>(7, "-")
+                color_col = array.new<color>(7, color.gray)
+                for row = 0 to 6
+                    matrix.set(data_matrix, row, col_idx, array.get(data_col, row))
+                    matrix.set(color_matrix, row, col_idx, array.get(color_col, row))
+
+        // Fill MTF timeframe columns
+        for i = 0 to max_timeframes - 1
+            timeframe_key = array.get(timeframe_keys, i)
+            col_idx = i + 1 + (has_separate_current ? 1 : 0)
+
+            // Get the context to use
+            libApex.MarketContext context_to_use = na
+            if map.contains(mtf_context, timeframe_key)
+                context_to_use := map.get(mtf_context, timeframe_key)
+
+            // If this is current TF without separate column, use current_context
+            if i == current_tf_index and not has_separate_current
+                context_to_use := current_context
+
+            // Fill column data
+            if not na(context_to_use)
+                [data_col, color_col] = context_to_use.createMTFColumn()
+                for row = 0 to 6
+                    matrix.set(data_matrix, row, col_idx, array.get(data_col, row))
+                    matrix.set(color_matrix, row, col_idx, array.get(color_col, row))
+            else
+                // Handle missing data
+                fill_text = map.contains(mtf_context, timeframe_key) ? "NULL" : "—"
+                fill_color = map.contains(mtf_context, timeframe_key) ? color.red : color.gray
+                for row = 0 to 6
+                    matrix.set(data_matrix, row, col_idx, fill_text)
+                    matrix.set(color_matrix, row, col_idx, fill_color)
+
+        // Update managed table
+        libApex.update(managed_table, headers, data_matrix, color_matrix, pos, table_size, header_color, text_color, bg_color, 0)

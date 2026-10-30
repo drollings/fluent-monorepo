@@ -9,7 +9,6 @@
 use protopyne_types::session::TradingSession;
 use protopyne_types::{Bar, Money};
 use rust_decimal::prelude::ToPrimitive as _;
-use rust_decimal::Decimal;
 
 use fluent_wvr::{Describable, FieldAccess, FieldError};
 
@@ -322,6 +321,14 @@ impl PositionManager {
         self.daily.trades_today = self.daily.trades_today.saturating_add(1);
     }
 
+    /// Latch the rest-of-day halt after a daily-loss flatten. The reference
+    /// halts entries for the rest of the day on breach; the day rollover in
+    /// [`begin_bar`](Self::begin_bar) clears it. Callers that only flatten
+    /// (the legacy equity path) never call this and are unaffected.
+    pub fn latch_day_halt(&mut self) {
+        self.daily.halted = true;
+    }
+
     /// The exit pass for one bar: exhaustion, stops, targets, signal exits,
     /// time stop, then the breakeven/trailing ratchet. At most one intent is
     /// returned; the runner submits it and feeds the fill back.
@@ -340,10 +347,7 @@ impl PositionManager {
         let high = bars[index].h.to_f64().unwrap_or(f64::NAN);
         let low = bars[index].l.to_f64().unwrap_or(f64::NAN);
         let atr = legs.atr.get(index).copied().flatten().unwrap_or(f64::NAN);
-        let fast = legs.fast.get(index).copied().flatten();
-        let prev_fast = index
-            .checked_sub(1)
-            .and_then(|prev| legs.fast.get(prev).copied().flatten());
+        let (prev_fast, fast) = pair_at(&legs.fast, index);
         let crossed_back_against = match (prev_fast, fast) {
             (Some(prev), Some(curr)) if position.long => {
                 prev >= strategy.sig_exhaust_level && curr < strategy.sig_exhaust_level
@@ -585,7 +589,18 @@ pub fn money_for_test(value: f64) -> Money {
 }
 
 fn money(value: f64) -> Money {
-    Money::new(Decimal::from_f64_retain(value).unwrap_or_default())
+    // (M7.3c) `Money::from_f64_or_zero` — the one f64→Money spelling.
+    Money::from_f64_or_zero(value)
+}
+
+fn pair_at(series: &[Option<f64>], index: usize) -> (Option<f64>, Option<f64>) {
+    // (M4.1) The one index-guard behind the crossing wrappers: the previous
+    // and current readings, each flattened. Callers keep their own
+    // threshold/level math and kernel delegates.
+    let prev = index
+        .checked_sub(1)
+        .and_then(|prev| series.get(prev).copied().flatten());
+    (prev, series.get(index).copied().flatten())
 }
 
 fn dual_against(
@@ -620,41 +635,26 @@ fn dual_against(
 }
 
 fn crossed_up_at(series: &[Option<f64>], level: f64, index: usize) -> bool {
-    let Some(prev) = index.checked_sub(1) else {
-        return false;
-    };
-    protopyne_kernels::util::crossed(
-        series.get(prev).copied().flatten(),
-        series.get(index).copied().flatten(),
-        level,
-    ) == Some(protopyne_kernels::util::Crossing::Up)
+    let (prev, curr) = pair_at(series, index);
+    protopyne_kernels::util::crossed(prev, curr, level)
+        == Some(protopyne_kernels::util::Crossing::Up)
 }
 
 fn crossed_down_at(series: &[Option<f64>], level: f64, index: usize) -> bool {
-    let Some(prev) = index.checked_sub(1) else {
-        return false;
-    };
-    protopyne_kernels::util::crossed(
-        series.get(prev).copied().flatten(),
-        series.get(index).copied().flatten(),
-        level,
-    ) == Some(protopyne_kernels::util::Crossing::Down)
+    let (prev, curr) = pair_at(series, index);
+    protopyne_kernels::util::crossed(prev, curr, level)
+        == Some(protopyne_kernels::util::Crossing::Down)
 }
 
 fn ribbon_against(legs: &LiteLegs, index: usize, long: bool) -> bool {
-    let Some(prev) = index.checked_sub(1) else {
-        return false;
-    };
-    protopyne_kernels::util::crossed_between(
-        legs.adaptive.get(prev).copied().flatten(),
-        legs.adaptive.get(index).copied().flatten(),
-        legs.signal.get(prev).copied().flatten(),
-        legs.signal.get(index).copied().flatten(),
-    ) == Some(if long {
-        protopyne_kernels::util::Crossing::Down
-    } else {
-        protopyne_kernels::util::Crossing::Up
-    })
+    let (prev_adaptive, curr_adaptive) = pair_at(&legs.adaptive, index);
+    let (prev_signal, curr_signal) = pair_at(&legs.signal, index);
+    protopyne_kernels::util::crossed_between(prev_adaptive, curr_adaptive, prev_signal, curr_signal)
+        == Some(if long {
+            protopyne_kernels::util::Crossing::Down
+        } else {
+            protopyne_kernels::util::Crossing::Up
+        })
 }
 
 fn zero_against(legs: &LiteLegs, index: usize, long: bool) -> bool {

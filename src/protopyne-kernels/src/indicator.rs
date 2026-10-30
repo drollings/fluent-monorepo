@@ -109,13 +109,23 @@ impl OwnedOhlcv {
     /// rather than failing the whole window.
     #[must_use]
     pub fn from_bars(bars: &[protopyne_types::Bar]) -> Self {
-        use rust_decimal::prelude::ToPrimitive as _;
-        let conv = |d: rust_decimal::Decimal| nan_hole(d.to_f64());
         Self {
-            open: bars.iter().map(|b| conv(b.o)).collect(),
-            high: bars.iter().map(|b| conv(b.h)).collect(),
-            low: bars.iter().map(|b| conv(b.l)).collect(),
-            close: bars.iter().map(|b| conv(b.c)).collect(),
+            open: bars
+                .iter()
+                .map(|b| protopyne_types::bar_leg_as_f64(b.o))
+                .collect(),
+            high: bars
+                .iter()
+                .map(|b| protopyne_types::bar_leg_as_f64(b.h))
+                .collect(),
+            low: bars
+                .iter()
+                .map(|b| protopyne_types::bar_leg_as_f64(b.l))
+                .collect(),
+            close: bars
+                .iter()
+                .map(|b| protopyne_types::bar_leg_as_f64(b.c))
+                .collect(),
             volume: bars.iter().map(|b| b.volume as f64).collect(),
         }
     }
@@ -1403,11 +1413,11 @@ impl IndicatorRegistry {
     /// Register an indicator. Duplicate ids are refused.
     pub fn register(&mut self, indicator: Arc<dyn Indicator>) -> Result<(), KernelError> {
         let id = indicator.spec().id.clone();
-        if self.indicators.contains(&id) {
-            return Err(KernelError::DuplicateIndicator(id));
-        }
-        self.indicators.insert(id, indicator);
-        Ok(())
+        // First-wins: `try_insert` refuses without storing, so the winner
+        // stands (M8.1). `insert` would replace — never use it here.
+        self.indicators
+            .try_insert(id.clone(), indicator)
+            .map_err(|_| KernelError::DuplicateIndicator(id))
     }
 
     /// Look up an indicator by id.

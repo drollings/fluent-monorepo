@@ -80,12 +80,12 @@ impl Windowed for RmaIndicator {
     /// load-bearing; seeding from the first full window before recursing
     /// preserves Expr parity.
     fn eval(&self, shape: usize, window: &Window<'_>, previous: Option<f64>) -> Option<f64> {
-        match previous {
-            Some(previous) if !previous.is_nan() => {
-                fin_or_none(crate::math::wilder_step(previous, window.newest(), shape))
-            }
-            _ => fin_or_none(crate::math::window_mean(window.closes)),
-        }
+        fin_or_none(crate::math::seed_or_step(
+            previous,
+            window.newest(),
+            crate::math::window_mean(window.closes),
+            |prev, newest| crate::math::wilder_step(prev, newest, shape),
+        ))
     }
 }
 
@@ -140,6 +140,11 @@ impl WmaIndicator {
 
     /// Weighted mean of a full window, oldest first, current bar heaviest:
     /// the `i`-th oldest of `n` bars carries weight `(i + 1) * n`.
+    ///
+    /// Intentionally not shared with WorldQuant `ts_decay_linear` /
+    /// `ts_decay_exp_window` (`wq_series.rs`): different weight formulas
+    /// (linear vs exponential) and normalizations — common helper would
+    /// parameterize the very thing that differs (M1.3c, documented fork).
     fn of_window(window: &[f64]) -> f64 {
         let length = window.len() as f64;
         let mut norm = 0.0;

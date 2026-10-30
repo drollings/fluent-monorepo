@@ -12,6 +12,8 @@ use crate::proposal::Direction;
 use crate::signals_lite::{IntegrationLiteSignal, LiteIndicatorParams};
 use crate::view::{MarketData, MarketView};
 
+use super::realised_volatility;
+
 fn tape(closes: &[f64], start_hour_utc: u32) -> (Vec<Bar>, Vec<f64>) {
     // 1-minute bars from 2026-01-05; 15:00 UTC is 10:00 ET (inside the
     // default 0930-1600 session), 22:00 UTC is 17:00 ET (outside it).
@@ -466,5 +468,62 @@ fn a_disabled_strategy_refuses_every_bar() {
     assert!(
         error.to_string().contains("disabled"),
         "the refusal names the switch, got {error}"
+    );
+}
+
+#[test]
+fn lite_volatility_tracks_shared_population_deviation() {
+    // Twin-guard: the lite estimator's manual mean/var must track the
+    // shared population deviation at 1e-9 on clean tapes. The estimators
+    // stay separate — the lite path measures short tapes the kernel
+    // path declines (under 21 bars), scopes non-finite refusal to its
+    // window, and stays allocation-free over borrowed closes — so this
+    // test names the relationship instead of merging the twins: a drift
+    // in either fails loudly instead of silently forking sizer inputs.
+    use protopyne_kernels::math::variance_pop;
+    let trailing_returns = |closes: &[f64]| {
+        let start = closes.len().saturating_sub(21);
+        closes[start..]
+            .windows(2)
+            .map(|pair| pair[1] / pair[0] - 1.0)
+            .collect::<Vec<_>>()
+    };
+    // Clean tapes: ramp, oscillation, and flat — agreement at 1e-9.
+    let tapes = [
+        (0..30)
+            .map(|i| 100.0 + f64::from(i) * 0.5)
+            .collect::<Vec<_>>(),
+        (0..25)
+            .map(|i| 100.0 + 5.0 * (f64::from(i) * 0.7).sin())
+            .collect::<Vec<_>>(),
+        vec![100.0; 30],
+    ];
+    for (n, closes) in tapes.iter().enumerate() {
+        let lite = realised_volatility(closes).expect("clean tape measures");
+        let returns = trailing_returns(closes);
+        assert_eq!(returns.len(), 20, "trailing window holds 20 returns");
+        let shared = variance_pop(&returns).sqrt();
+        let tolerance = 1e-9 * shared.abs().max(1.0);
+        assert!(
+            (lite - shared).abs() <= tolerance,
+            "tape {n}: lite {lite} vs shared {shared}"
+        );
+    }
+    // Retention surface: a short tape still measures over available
+    // returns, while the kernel estimator declines under 21 bars — the
+    // contracts diverge, so the twins cannot merge.
+    let short: Vec<f64> = (0..10).map(|i| 100.0 + f64::from(i)).collect();
+    let short_lite = realised_volatility(&short).expect("short tape measures");
+    assert!(
+        short_lite.is_finite() && short_lite >= 0.0,
+        "short tape yields a finite deviation: {short_lite}"
+    );
+    // Non-finite anywhere in the trailing window declines.
+    let mut gapped = tapes[0].clone();
+    gapped[25] = f64::NAN;
+    assert_eq!(
+        realised_volatility(&gapped),
+        None,
+        "non-finite input declines"
     );
 }

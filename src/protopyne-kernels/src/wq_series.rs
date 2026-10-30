@@ -17,7 +17,7 @@
 //! no meaning over `f64` slices, so only `NaN` counting is provided.
 
 use crate::indicator::fin_or_none;
-use crate::math::{div_or_none, strict_window};
+use crate::math::{div_or_none, strict_window, warmup_none};
 
 /// Shift forward (`d > 0`) or backward (`d < 0`) with an optional fill for
 /// the exposed edge; `None` fill leaves the edge missing. `d == 0` is the
@@ -60,7 +60,7 @@ pub fn ts_delay(values: &[f64], d: i64, fill: Option<f64>) -> Vec<Option<f64>> {
 #[must_use]
 pub fn ts_delta(values: &[f64], d: usize) -> Vec<Option<f64>> {
     if d == 0 {
-        return vec![None; values.len()];
+        return warmup_none(values.len());
     }
     values
         .iter()
@@ -541,7 +541,7 @@ pub fn ts_median(values: &[f64], d: usize) -> Vec<Option<f64>> {
 #[must_use]
 pub fn ts_percentage(values: &[f64], d: usize, pct: f64) -> Vec<Option<f64>> {
     if !(0.0..=1.0).contains(&pct) {
-        return vec![None; values.len()];
+        return warmup_none(values.len());
     }
     values
         .iter()
@@ -599,6 +599,12 @@ pub fn ts_arg_min(values: &[f64], d: usize, reverse: bool) -> Vec<Option<f64>> {
 /// tolerance (a tie is a tie only when the prints are identical).
 #[allow(clippy::float_cmp)]
 fn arg_extreme(values: &[f64], d: usize, reverse: bool, want_max: bool) -> Vec<Option<f64>> {
+    use crate::math::{extreme_position, TieBreak};
+    let tie = if reverse {
+        TieBreak::Last
+    } else {
+        TieBreak::First
+    };
     values
         .iter()
         .enumerate()
@@ -610,20 +616,9 @@ fn arg_extreme(values: &[f64], d: usize, reverse: bool, want_max: bool) -> Vec<O
             if window.iter().any(|v| v.is_nan()) {
                 return None;
             }
-            let extreme = if want_max {
-                window.iter().copied().reduce(f64::max)
-            } else {
-                window.iter().copied().reduce(f64::min)
-            }?;
-            let position = if reverse {
-                window
-                    .iter()
-                    .rposition(|v| *v == extreme)
-                    .map(|from_start| d - 1 - from_start)
-            } else {
-                window.iter().position(|v| *v == extreme)
-            };
-            position.map(|p| p as f64).and_then(fin_or_none)
+            let index = extreme_position(window, want_max, tie)?;
+            let position = if reverse { d - 1 - index } else { index };
+            Some(position as f64).and_then(fin_or_none)
         })
         .collect()
 }
@@ -795,7 +790,7 @@ pub fn ts_weighted_sum(values: &[f64], weights: &[f64], d: usize) -> Vec<Option<
 
 fn weighted_sum(values: &[f64], weights: &[f64], d: usize, normalize: bool) -> Vec<Option<f64>> {
     if weights.len() != values.len() {
-        return vec![None; values.len()];
+        return warmup_none(values.len());
     }
     values
         .iter()
@@ -819,7 +814,7 @@ fn weighted_sum(values: &[f64], weights: &[f64], d: usize, normalize: bool) -> V
 #[must_use]
 pub fn ts_returns(values: &[f64], d: usize) -> Vec<Option<f64>> {
     if d == 0 {
-        return vec![None; values.len()];
+        return warmup_none(values.len());
     }
     values
         .iter()
@@ -838,7 +833,7 @@ pub fn ts_returns(values: &[f64], d: usize) -> Vec<Option<f64>> {
 #[must_use]
 pub fn ts_log_diff(values: &[f64], d: usize) -> Vec<Option<f64>> {
     if d == 0 {
-        return vec![None; values.len()];
+        return warmup_none(values.len());
     }
     values
         .iter()
@@ -916,7 +911,7 @@ pub fn ts_count_ge(values: &[f64], d: usize, n: usize) -> Vec<Option<f64>> {
 
 fn count_condition(values: &[f64], d: usize, n: usize, at_least: bool) -> Vec<Option<f64>> {
     if d == 0 || n == 0 {
-        return vec![None; values.len()];
+        return warmup_none(values.len());
     }
     let truthy = |end: usize, width: usize| {
         if end + 1 < width {

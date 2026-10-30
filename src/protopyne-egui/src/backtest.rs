@@ -28,6 +28,17 @@ use fluent_egui::FieldKind;
 use protopyne_view::{BacktestRunRef, BacktestRunView, GatewayError, TerminalGateway};
 
 /// Sections of the served backtest schema, in render order.
+///
+/// Documented fork (M10.1 spike verdict): this form edits a server-served
+/// JSON *document* through dotted paths (`set_dotted`), while
+/// `fluent_egui::fields` edits `FieldAccess` structs. There is no struct
+/// to point the shared editor at — a facade would be a new speculative
+/// type, and a typed server contract is a public-surface change. The
+/// shared part is already shared: leaf kinds map through
+/// `FieldKind::of_schema`. Render order stays hardcoded here because the
+/// served schema does not encode section order; deriving it from property
+/// order would depend on JSON object ordering. Revisit only if the server
+/// publishes a typed form contract.
 const SECTIONS: [&str; 6] = ["indicator", "entry", "exit", "risk", "session", "display"];
 
 /// One editable leaf, lifted from the schema's nested sections.

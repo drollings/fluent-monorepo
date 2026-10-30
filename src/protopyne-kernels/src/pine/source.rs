@@ -136,6 +136,15 @@ pub fn parse_pine_source(path: &str, text: &str) -> PineSource {
             }
             continue;
         }
+        // Legacy header: pre-`indicator` scripts declare `study(...)` with
+        // the same header shape and serve as indicators.
+        if trimmed.starts_with("study(") || trimmed.starts_with("study (") {
+            if !kind_set {
+                kind = SourceKind::Indicator;
+                kind_set = true;
+            }
+            continue;
+        }
         if let Some(decl) = parse_import_line(trimmed) {
             imports.push(decl);
         }

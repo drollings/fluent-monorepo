@@ -1,6 +1,6 @@
 use super::*;
 use crate::indicator::{fin_or_none, ParamSet};
-use crate::util::{highest, lowest};
+use crate::util::{highest, lowest, max_window};
 
 fn params_with_length(length: i64) -> ParamSet {
     ParamSet::new().with_int("length", length)
@@ -321,5 +321,121 @@ fn drawdown_of_peak_measures_peak_to_trough() {
         drawdown_of_peak(Decimal::MAX, Decimal::MIN),
         None,
         "a trough that overflows the subtraction refuses"
+    );
+}
+
+#[test]
+fn strict_window_characterization_warming_and_nan_policy() {
+    // Warming: fewer than `period` bars ending at `end` refuses.
+    assert_eq!(strict_window(&[1.0, 2.0], 1, 3), None);
+    // Exact-length window at the boundary is accepted.
+    assert_eq!(
+        strict_window(&[1.0, 2.0, 3.0], 2, 3),
+        Some(&[1.0, 2.0, 3.0][..])
+    );
+    // Empty input and zero period always refuse.
+    assert_eq!(strict_window(&[], 0, 3), None);
+    assert_eq!(strict_window(&[1.0, 2.0], 1, 0), None);
+    // `end` past the input refuses instead of panicking.
+    assert_eq!(strict_window(&[1.0, 2.0], 5, 1), None);
+    // NaN anywhere in the window refuses (head, middle, tail).
+    assert_eq!(strict_window(&[f64::NAN, 2.0, 3.0], 2, 3), None);
+    assert_eq!(strict_window(&[1.0, f64::NAN, 3.0], 2, 3), None);
+    assert_eq!(strict_window(&[1.0, 2.0, f64::NAN], 2, 3), None);
+    // All-NaN refuses.
+    assert_eq!(strict_window(&[f64::NAN, f64::NAN, f64::NAN], 2, 3), None);
+}
+
+#[test]
+#[allow(clippy::float_cmp)]
+fn fold_helpers_skip_nan_and_pin_seed_on_all_missing() {
+    // Holes are skipped, not poisoning (Pine skip-`na` contract).
+    assert_eq!(fold_skip_nan_max([3.0, f64::NAN, 2.0]), 3.0);
+    assert_eq!(fold_skip_nan_min([3.0, f64::NAN, 2.0]), 2.0);
+    // Single-value windows read the value.
+    assert_eq!(fold_skip_nan_max([5.0]), 5.0);
+    assert_eq!(fold_skip_nan_min([5.0]), 5.0);
+    // All-`NaN` reads the seed; callers map it (flat-range checks).
+    assert_eq!(fold_skip_nan_max([f64::NAN, f64::NAN]), f64::NEG_INFINITY);
+    assert_eq!(fold_skip_nan_min([f64::NAN, f64::NAN]), f64::INFINITY);
+    // Strict twins agree on finite inputs (same implementation, named
+    // contract only).
+    assert_eq!(fold_strict_max([3.0, 1.0, 2.0]), 3.0);
+    assert_eq!(fold_strict_min([3.0, 1.0, 2.0]), 1.0);
+    // `inf` is content, not a hole, in both spellings.
+    assert_eq!(fold_skip_nan_max([1.0, f64::INFINITY]), f64::INFINITY);
+    assert_eq!(
+        fold_skip_nan_min([1.0, f64::NEG_INFINITY]),
+        f64::NEG_INFINITY
+    );
+}
+
+#[test]
+fn extreme_position_tie_breaks_and_nan_policy() {
+    // Most-recent tie wins under `Last` (the reference reversed-argmax).
+    assert_eq!(
+        extreme_position(&[1.0, 5.0, 5.0, 2.0], true, TieBreak::Last),
+        Some(2)
+    );
+    // Earliest tie wins under `First` (WorldQuant forward search).
+    assert_eq!(
+        extreme_position(&[1.0, 5.0, 5.0, 2.0], true, TieBreak::First),
+        Some(1)
+    );
+    assert_eq!(
+        extreme_position(&[4.0, 1.0, 1.0, 3.0], false, TieBreak::Last),
+        Some(2)
+    );
+    assert_eq!(
+        extreme_position(&[4.0, 1.0, 1.0, 3.0], false, TieBreak::First),
+        Some(1)
+    );
+    // Any hole voids the window in both breaks.
+    assert_eq!(
+        extreme_position(&[1.0, f64::NAN, 2.0], true, TieBreak::Last),
+        None
+    );
+    assert_eq!(
+        extreme_position(&[1.0, f64::NAN, 2.0], false, TieBreak::First),
+        None
+    );
+    // Empty window has no extreme.
+    assert_eq!(extreme_position(&[], true, TieBreak::Last), None);
+}
+
+#[test]
+fn strict_window_refuses_inf_while_util_allows_it() {
+    // Pinned disagreement (M1.1): `math::strict_window` gates on
+    // `is_finite` and refuses `inf`; `util`'s strict windows gate on
+    // `!is_nan` and allow `inf` through `fin_or_none` (which only strips
+    // NaN). Unifying the predicate would change one side's output, so
+    // both spellings stay until a behavior proposal says otherwise.
+    assert_eq!(strict_window(&[1.0, f64::INFINITY, 3.0], 2, 3), None);
+    assert_eq!(strict_window(&[1.0, 2.0, f64::NEG_INFINITY], 2, 3), None);
+    assert_eq!(
+        max_window(&[1.0, f64::INFINITY, 3.0], 3),
+        vec![None, None, Some(f64::INFINITY)]
+    );
+}
+
+#[test]
+#[allow(clippy::float_cmp)]
+fn seed_or_step_recurses_on_finite_previous_and_seeds_otherwise() {
+    // Finite previous steps forward with the closure's recurrence.
+    assert_eq!(
+        seed_or_step(Some(1.0), 2.0, 99.0, |p, n| p + n),
+        3.0,
+        "finite previous recurses"
+    );
+    // Missing or `NaN` previous seeds from the window mean.
+    assert_eq!(
+        seed_or_step(None, 2.0, 1.5, |p, n| p + n),
+        1.5,
+        "missing previous seeds"
+    );
+    assert_eq!(
+        seed_or_step(Some(f64::NAN), 2.0, 1.5, |p, n| p + n),
+        1.5,
+        "`NaN` previous seeds"
     );
 }

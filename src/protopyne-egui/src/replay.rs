@@ -389,12 +389,10 @@ impl ReplayScrub {
     /// the rewind anchors. Derived from the plan, so a topology that adds,
     /// drops, or moves a root changes its anchors without an edit here.
     fn rewind_anchors(&self) -> Result<Vec<String>, ScrubRefusal> {
+        // (M10.2b) Pure DAG query owned by `fluent_egui::PanePlan`; the
+        // terminal only maps the plan error to its scrub refusal.
         let plan = self.controller.plan();
-        let order = plan.order().map_err(ScrubRefusal::Plan)?;
-        Ok(order
-            .into_iter()
-            .filter(|pane| plan.dependencies(pane).is_empty())
-            .collect())
+        plan.root_panes().map_err(ScrubRefusal::Plan)
     }
 
     /// Record a refusal and hand it back, so every failing call leaves the

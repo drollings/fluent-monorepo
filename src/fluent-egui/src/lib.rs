@@ -70,7 +70,7 @@ pub use interaction::{
     anchor_window, wheel_zoom_factor, zoom_range_around, InteractionState, PointerInput,
     ANCHOR_DRIFT_EPS_PX, MAX_BAR_SPACING, MIN_BAR_SPACING,
 };
-pub use modal::{paint_catalog_modal, CatalogAction, CatalogEntry, CatalogModal};
+pub use modal::{paint_catalog_modal, CatalogAction, CatalogEntry, CatalogModal, TagFilter};
 pub use paint::{
     aggregate_column, alpha_u8, area_polygons, area_vertex_color, candle_body_width, candle_geoms,
     column_candle_geoms, column_delta_geoms, column_runs, crosshair_lines, culled_candle_geoms,

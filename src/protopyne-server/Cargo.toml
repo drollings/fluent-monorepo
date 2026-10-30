@@ -6,12 +6,14 @@ autotests = false
 autobenches = false
 
 [features]
-default = []
+default = ["bytecode"]
 # `pine` passes through the kernels Pine runtime for the headless
-# integration proofs and the native-vs-Pine bench. Default-off: the shipped
-# server serves the lean kernels closure, so the release carries neither a
-# language runtime nor a dataframe.
+# integration proofs and the native-vs-Pine bench.
 pine = ["protopyne-kernels/pine"]
+
+# `bytecode` passes the compiled Pine engine through to the server's Pine
+# call sites. Default-on: the shipped server runs the one compiled path.
+bytecode = ["pine", "protopyne-kernels/bytecode"]
 
 [dependencies]
 protopyne-types = { path = "../protopyne-types" }
@@ -42,6 +44,10 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
+# The tree oracle for proof: test targets compare the compiled loop against
+# it, while shipping builds carry no interpreter. A dev-dependency never
+# reaches the shipping library.
+protopyne-kernels = { path = "../protopyne-kernels", features = ["oracle"] }
 # The shared grant fixture (one baseline + the deny order) for every test target
 # that arms a grant; a dev-dependency never reaches the shipping library.
 protopyne-strategy = { path = "../protopyne-strategy", features = ["test-support"] }

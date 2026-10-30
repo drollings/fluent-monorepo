@@ -2,6 +2,7 @@
 //! tape reader, and the two boot entry points. Serving lives here so the
 //! routes stay thin over the state this module owns.
 
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -90,6 +91,17 @@ pub struct ServerConfig {
     #[builder(default = default_history_timeframe())]
     #[serde(default = "default_history_timeframe")]
     pub history_timeframe: String,
+    /// Ticker the boot history holds (e.g. `SPY`). Symbol-scoped reads
+    /// serve the boot-history fallback only for this market: any other
+    /// symbol refuses naming itself instead of painting the wrong market
+    /// under the picked label. Empty (the default) keeps the legacy
+    /// ungated fallback for deployments that never record a symbol, so
+    /// existing boots keep serving exactly as before. `#[serde(default)]`
+    /// keeps older config files (which name no symbol) loading.
+    #[field(desc = "Ticker the boot history holds (gates the fallback read)")]
+    #[builder(default)]
+    #[serde(default)]
+    pub history_symbol: String,
     /// Latest observed store liveness, seeded into serving state at boot.
     /// The repair worker publishes live readings over this once it exists;
     /// until then the boot-supplied reading (healthy by default) is what
@@ -180,6 +192,15 @@ pub struct AppState {
     /// Bar spacing of [`Self::history`], so the gateway folds from the base
     /// the history actually holds — never an assumed one.
     pub(crate) history_timeframe: Timeframe,
+    /// Ticker [`Self::history`] holds (empty when the boot never recorded
+    /// one): the gateway's boot-history fallback serves only this market,
+    /// so a foreign symbol refuses instead of painting the wrong bars.
+    pub(crate) history_symbol: String,
+    /// Merged 1M months per ticker loaded from [`Self::history_root`] on
+    /// demand: a picked ticker the tape doesn't hold still loads its own
+    /// market instead of wearing the boot history. Populated once per
+    /// ticker per boot (months parse on first pick, never per read).
+    pub(crate) root_bars: Mutex<HashMap<String, Vec<Bar>>>,
     pub(crate) inbox: Mutex<Vec<ProposalView>>,
     pub(crate) armed: Mutex<Option<Grant>>,
     /// Server command journal: the authority for arming. `live_grant` folds
@@ -725,6 +746,8 @@ pub async fn serve_with_tape(
         limiter: Limiter::new(config.max_concurrent_requests as usize),
         history,
         history_timeframe,
+        history_symbol: config.history_symbol.clone(),
+        root_bars: Mutex::new(HashMap::new()),
         inbox: Mutex::new(Vec::new()),
         armed: Mutex::new(None),
         journal,

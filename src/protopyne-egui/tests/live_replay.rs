@@ -1291,47 +1291,37 @@ fn replay_over_a_real_server_maps_display_bars_to_base_history() {
 }
 
 #[test]
-fn replay_speed_slider_positions_map_to_the_documented_candle_rates() {
+fn replay_speed_menu_positions_map_to_the_documented_candle_rates() {
     assert_eq!(
-        [0_u8, 1, 2, 3, 4, 5, 6, 7, 9]
-            .iter()
-            .map(|level| ReplaySpeed::from_level(*level).level())
-            .collect::<Vec<_>>(),
-        vec![0, 1, 2, 3, 4, 5, 6, 7, 7],
-        "levels clamp into the eight detents"
+        crate::widgets::TOP_BAR_REPLAY_SPEEDS,
+        [
+            ReplaySpeed::Crawl,
+            ReplaySpeed::Normal,
+            ReplaySpeed::Swift,
+            ReplaySpeed::Fast,
+            ReplaySpeed::Sprint,
+            ReplaySpeed::Full,
+        ],
+        "menu order runs slowest-first, uncapped last"
     );
     assert_eq!(ReplaySpeed::default(), ReplaySpeed::Normal);
-    assert_eq!(ReplaySpeed::Slow.candles_per_sec(), Some(1.0 / 3.0));
-    // Two detents sit between Slow and Normal, and two more between Normal
-    // and Fast, so the slider moves in small steps at both ends.
-    assert!(
-        ReplaySpeed::Unhurried.candles_per_sec() > ReplaySpeed::Slow.candles_per_sec()
-            && ReplaySpeed::Steady.candles_per_sec() > ReplaySpeed::Unhurried.candles_per_sec()
-            && ReplaySpeed::Normal.candles_per_sec() > ReplaySpeed::Steady.candles_per_sec(),
-        "Slow..Normal paces strictly upward"
-    );
-    assert!(
-        ReplaySpeed::Brisk.candles_per_sec() > ReplaySpeed::Normal.candles_per_sec()
-            && ReplaySpeed::Swift.candles_per_sec() > ReplaySpeed::Brisk.candles_per_sec()
-            && ReplaySpeed::Fast.candles_per_sec() > ReplaySpeed::Swift.candles_per_sec(),
-        "Normal..Fast paces strictly upward"
-    );
+    assert_eq!(ReplaySpeed::Crawl.candles_per_sec(), Some(0.2));
     assert_eq!(ReplaySpeed::Normal.candles_per_sec(), Some(1.0));
+    assert_eq!(ReplaySpeed::Swift.candles_per_sec(), Some(3.0));
     assert_eq!(ReplaySpeed::Fast.candles_per_sec(), Some(5.0));
+    assert_eq!(ReplaySpeed::Sprint.candles_per_sec(), Some(10.0));
     assert_eq!(ReplaySpeed::Full.candles_per_sec(), None);
-    for speed in [
-        ReplaySpeed::Slow,
-        ReplaySpeed::Unhurried,
-        ReplaySpeed::Steady,
-        ReplaySpeed::Normal,
-        ReplaySpeed::Brisk,
-        ReplaySpeed::Swift,
-        ReplaySpeed::Fast,
-        ReplaySpeed::Full,
-    ] {
+    let mut previous = 0.0;
+    for speed in crate::widgets::TOP_BAR_REPLAY_SPEEDS.iter().take(5) {
+        let rate = speed.candles_per_sec().expect("paced detent");
+        assert!(rate > previous, "{speed:?} paces strictly upward");
+        previous = rate;
+    }
+    for speed in crate::widgets::TOP_BAR_REPLAY_SPEEDS {
+        assert!(!speed.label().is_empty(), "every pace labels itself");
         assert!(
-            !ReplaySpeed::from_level(speed.level()).label().is_empty(),
-            "every detent labels itself"
+            !speed.short_label().is_empty(),
+            "every pace short-labels itself"
         );
     }
 }
@@ -1569,8 +1559,8 @@ fn pump_holds_slow_speeds_until_a_bar_is_due() {
         workspace.replay_error
     );
 
-    // Slow (1 candle / 3s) holds still over a two-second frame: nothing is due.
-    workspace.replay_speed = ReplaySpeed::Slow;
+    // Crawl (1 candle / 5s) holds still over a two-second frame: nothing is due.
+    workspace.replay_speed = ReplaySpeed::Crawl;
     workspace
         .live_replay
         .as_mut()
@@ -1583,16 +1573,26 @@ fn pump_holds_slow_speeds_until_a_bar_is_due() {
     assert_eq!(
         workspace.live_replay.as_ref().expect("run").state.cursor,
         held,
-        "Slow (1 candle / 3s) decides nothing in two seconds"
+        "Crawl (1 candle / 5s) decides nothing in two seconds"
     );
-    // ...but three seconds decide exactly one display candle.
+    // ...and the fifth second decides exactly one display candle (five 1M
+    // bars make one 5M candle).
+    egui::__run_test_ui(|ui| {
+        workspace.pump_replay_play(Some(&gateway), ui, Duration::from_secs(3));
+    });
+    assert_eq!(
+        workspace.live_replay.as_ref().expect("run").state.cursor,
+        held + 5,
+        "the fifth second decides one 5M candle"
+    );
+    // The next deadline is a full interval away: one second later holds.
     egui::__run_test_ui(|ui| {
         workspace.pump_replay_play(Some(&gateway), ui, Duration::from_secs(1));
     });
     assert_eq!(
         workspace.live_replay.as_ref().expect("run").state.cursor,
         held + 5,
-        "the third second decides one 5M candle"
+        "the cadence never steps twice for one deadline"
     );
 
     common_core::runtime::block_on(handle.shutdown());

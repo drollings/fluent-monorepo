@@ -86,6 +86,25 @@ impl ParityClaim {
     }
 }
 
+/// Execution selection for one Pine signal.
+///
+/// The compiled loop is the default: a signal that does not ask for the
+/// tree-walk evaluates on the one shipping path. The tree-walk opt-out
+/// exists only where the oracle does (test and `oracle` builds), so
+/// production code cannot name another engine — and where it exists both
+/// selections report byte-identical outcomes on lowered programs.
+#[cfg(feature = "bytecode")]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum PineExecution {
+    /// The compiled slot VM (default).
+    #[default]
+    Compiled,
+    /// The tree-walk evaluator: the oracle opt-out, unnameable in
+    /// shipping builds.
+    #[cfg(any(test, feature = "oracle"))]
+    TreeWalk,
+}
+
 /// One linked Pine program evaluated against the decision view.
 #[derive(Debug, Clone)]
 struct PineCore {
@@ -94,6 +113,10 @@ struct PineCore {
     rule: DirectionRule,
     activity_score: f64,
     chart_symbol: String,
+    /// Evaluator selection. Fixed at construction: an instance never flips
+    /// engines mid-run, so a decision closure cannot observe two evaluators.
+    #[cfg(feature = "bytecode")]
+    execution: PineExecution,
 }
 
 impl PineCore {
@@ -110,6 +133,11 @@ impl PineCore {
                 .chart_period(period.to_owned())
                 .build(),
         );
+        #[cfg(feature = "bytecode")]
+        #[cfg(any(test, feature = "oracle"))]
+        if self.execution == PineExecution::TreeWalk {
+            engine.set_bytecode_mode(protopyne_kernels::pine::BytecodeMode::TreeWalk);
+        }
         // The view is the only data source: the chart pair is served from
         // its bars, and every other pair keeps the engine's refusal.
         let dataset = LtfDataset::of_bars(view.data.bars, view.data.timeframe);
@@ -209,6 +237,8 @@ impl PineSignal {
                 rule,
                 activity_score: 1.0,
                 chart_symbol,
+                #[cfg(feature = "bytecode")]
+                execution: PineExecution::Compiled,
             }),
         })
     }
@@ -232,6 +262,24 @@ impl PineSignal {
     #[must_use]
     pub fn rule(&self) -> &DirectionRule {
         &self.core.rule
+    }
+
+    /// Opt this signal out to the tree-walk oracle. The default stays the
+    /// compiled loop, and the selection is fixed for the signal's lifetime.
+    /// The opt-out exists only in oracle builds; shipping builds cannot
+    /// name it.
+    #[cfg(feature = "bytecode")]
+    #[must_use]
+    pub fn with_execution(mut self, execution: PineExecution) -> Self {
+        Arc::make_mut(&mut self.core).execution = execution;
+        self
+    }
+
+    /// This signal's evaluator selection.
+    #[cfg(feature = "bytecode")]
+    #[must_use]
+    pub fn execution(&self) -> PineExecution {
+        self.core.execution
     }
 }
 

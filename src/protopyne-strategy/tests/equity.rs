@@ -318,3 +318,13 @@ fn a_loosening_stop_candidate_is_ignored_on_both_sides() {
         100.5_f64.to_bits()
     );
 }
+
+#[test]
+fn zero_stop_distance_sizes_zero_where_the_mode_needs_it() {
+    // Pine `calcQty` divides by the stop distance and the entry gate demands
+    // `sdist > 0`: a zero stop must size nothing in Risk Percent mode (the
+    // only mode that reads it), while Percent of Equity ignores it.
+    assert_eq!(sized(&sizer(), 100.0, 0.0, &unobserved()), 0);
+    let pct = EquitySizer::new("Percent of Equity", 0.5, 25.0, 1.0, 100.0).expect("validates");
+    assert_eq!(sized(&pct, 100.0, 0.0, &unobserved()), 250);
+}

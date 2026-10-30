@@ -21,7 +21,7 @@ fn dated_rows() -> Vec<ChartRow> {
 }
 
 #[test]
-fn clear_beginning_restores_one_month_default() {
+fn clear_beginning_restores_two_month_default() {
     let mut workspace = ChartWorkspace::with_rows(dated_rows()).expect("workspace boots");
     workspace
         .set_beginning("2025-02-01", None)
@@ -34,12 +34,12 @@ fn clear_beginning_restores_one_month_default() {
     workspace.set_beginning("", None).expect("clear applies");
     assert_eq!(
         workspace.range(),
-        DateRange::Month1,
+        DateRange::Month2,
         "clear restores the default preset"
     );
     assert_eq!(
         workspace.visible_months(),
-        1,
+        2,
         "clear restores the default width"
     );
     assert!(
@@ -54,12 +54,12 @@ fn clear_beginning_restores_one_month_default() {
         .expect("whitespace clear applies");
     assert_eq!(
         workspace.range(),
-        DateRange::Month1,
+        DateRange::Month2,
         "whitespace restores the default preset"
     );
     assert_eq!(
         workspace.visible_months(),
-        1,
+        2,
         "whitespace restores the default width"
     );
     assert!(
@@ -92,10 +92,10 @@ fn range_button_reflects_a_beginning_pick() {
     let mut workspace = ChartWorkspace::with_rows(dated_rows()).expect("workspace boots");
     assert_eq!(
         workspace.active_range(),
-        Some(DateRange::Month1),
+        Some(DateRange::Month2),
         "a preset is highlighted"
     );
-    assert_eq!(workspace.range_label(), "1M");
+    assert_eq!(workspace.range_label(), "2M");
     workspace
         .set_beginning("2025-02-01", None)
         .expect("date pick applies");
@@ -110,6 +110,6 @@ fn range_button_reflects_a_beginning_pick() {
         "the button names the picked start"
     );
     workspace.set_beginning("", None).expect("clear applies");
-    assert_eq!(workspace.active_range(), Some(DateRange::Month1));
-    assert_eq!(workspace.range_label(), "1M");
+    assert_eq!(workspace.active_range(), Some(DateRange::Month2));
+    assert_eq!(workspace.range_label(), "2M");
 }

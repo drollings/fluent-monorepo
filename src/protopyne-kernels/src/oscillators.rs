@@ -354,8 +354,8 @@ impl Indicator for StochIndicator {
             for (i, slot) in k.iter_mut().enumerate().skip(period - 1) {
                 let window_h = &high[i + 1 - period..=i];
                 let window_l = &low[i + 1 - period..=i];
-                let highest = window_h.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-                let lowest = window_l.iter().copied().fold(f64::INFINITY, f64::min);
+                let highest = crate::math::fold_skip_nan_max(window_h.iter().copied());
+                let lowest = crate::math::fold_skip_nan_min(window_l.iter().copied());
                 *slot = Self::k_of(data.close[i], lowest, highest);
             }
         }
@@ -389,8 +389,8 @@ impl Indicator for StochIndicator {
         let k_raw = if state.len() < period {
             f64::NAN
         } else {
-            let highest = state.highs().fold(f64::NEG_INFINITY, f64::max);
-            let lowest = state.lows().fold(f64::INFINITY, f64::min);
+            let highest = crate::math::fold_skip_nan_max(state.highs());
+            let lowest = crate::math::fold_skip_nan_min(state.lows());
             Self::k_of(bar.close, lowest, highest)
         };
         let sma = SmaIndicator::new();

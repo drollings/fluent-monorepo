@@ -25,9 +25,8 @@
 //! file stem.
 
 use crate::{
-    closure_data_root, load_listed_closure, parse_program, ClosureEntry, InputSet, LinkedModule,
-    LtfDataset, PineEngine, PineExpr, PineRuntimeConfig, PineStmt, PineValue, REAL_LIBRARIES,
-    TASK_INDICATORS,
+    parse_program, ClosureOutcome, DiscoveredClosure, InputSet, LinkedModule, LtfDataset,
+    PineEngine, PineExpr, PineRuntimeConfig, PineStmt, PineValue,
 };
 use protopyne_types::{Bar, EpochMs, Timeframe};
 use std::collections::{BTreeMap, BTreeSet};
@@ -64,25 +63,25 @@ fn probe_driver(timeframe: &str) -> String {
     )
 }
 
-/// Five shipped libraries plus one synthetic driver, linked
+/// Five fixture libraries plus one synthetic driver, linked
 /// dependency-first (the same shape the `libApex` suites use).
 fn linked_driver(driver: &str) -> Vec<LinkedModule> {
     fixture::linked_modules(vec![
-        fixture::shipped_module("libraries/_libUtil.pine", "showmethegrail", "libUtil", 12),
-        fixture::shipped_module(
+        fixture::fixture_module("libraries/_libUtil.pine", "showmethegrail", "libUtil", 12),
+        fixture::fixture_module(
             "libraries/_libBuffers.pine",
             "showmethegrail",
             "libBuffers",
             6,
         ),
-        fixture::shipped_module("libraries/_libBars.pine", "showmethegrail", "libBars", 12),
-        fixture::shipped_module(
+        fixture::fixture_module("libraries/_libBars.pine", "showmethegrail", "libBars", 12),
+        fixture::fixture_module(
             "libraries/_libDrawing.pine",
             "showmethegrail",
             "libDrawing",
             61,
         ),
-        fixture::shipped_module("libraries/_libApex.pine", "showmethegrail", "libApex", 88),
+        fixture::fixture_module("libraries/_libApex.pine", "showmethegrail", "libApex", 88),
         fixture::driver_module(driver),
     ])
 }
@@ -240,25 +239,24 @@ fn insert_row_sorted(
     dataset.volumes.insert(at, volume);
 }
 
-/// Every `request.<method>` call site per task closure: `(file, {method:
-/// shapes})` in file order of the load. The shape names the merge modes
-/// for `security` and the leg count for `security_lower_tf`. Shapes
+/// Every `request.<method>` call site per discovered closure: `(file,
+/// {method: shapes})` in file order of the load. The shape names the merge
+/// modes for `security` and the leg count for `security_lower_tf`. Shapes
 /// collect per method, so a second same-method site with a new shape
 /// cannot hide behind the first. The walker covers expressions, so
 /// identifiers inside comments or strings cannot false-positive.
 fn request_sites_per_closure(
-    indicator: &ClosureEntry,
+    closure: &DiscoveredClosure,
 ) -> Vec<(String, BTreeMap<String, BTreeSet<String>>)> {
-    let root = closure_data_root(env!("CARGO_MANIFEST_DIR"));
-    load_listed_closure(&root, REAL_LIBRARIES, indicator)
-        .expect("task closure loads")
-        .into_iter()
+    closure
+        .sources
+        .iter()
         .map(|(key, source)| {
             let program = parse_program(&source.text)
                 .unwrap_or_else(|err| panic!("closure file {key} parses: {err}"));
             let mut sites = BTreeMap::new();
             walk_request_stmts(&program.statements, &mut sites);
-            (key, sites)
+            (key.clone(), sites)
         })
         .collect()
 }
@@ -455,42 +453,54 @@ fn walk_request_stmts(stmts: &[PineStmt], sink: &mut BTreeMap<String, BTreeSet<S
 
 #[test]
 #[allow(clippy::type_complexity)]
-fn request_sites_per_task_closure_are_pinned() {
-    // Syntactic `request.*` inventory per closure (file order of the load):
-    // every arm the closures can reach must stay inside the served subset
-    // (`security` with the confirmed-bars merge modes, `security_lower_tf`
-    // with bare-leg lists) or refuse with the live-fetch reason. A new
-    // spelling fails this pin by name before it can run anywhere. Every
-    // task closure loads the full seven-library set, so all three pin the
-    // same triple: the candle fetch sits linked-but-unreached beside the
-    // apex fetch no indicator calls multi-timeframe.
+fn request_sites_per_fixture_closure_are_pinned() {
+    // Syntactic `request.*` inventory per fixture closure (file order of
+    // the load): every arm the closures can reach must stay inside the
+    // served subset (`security` with the confirmed-bars merge modes,
+    // `security_lower_tf` with bare-leg lists) or refuse with the
+    // live-fetch reason. A new spelling fails this pin by name before it
+    // can run anywhere. Fixture bytes are checked in, so the pin is exact
+    // here — never over the volatile live root.
+    // Discovery resolves depth-first from the import list, so the pin
+    // follows the loader's file order: apex, bars, candles.
     let triple: &[(&str, &str, &str)] = &[
+        (
+            "showmethegrail/libApex",
+            "security",
+            "gaps_off+lookahead_off",
+        ),
         ("showmethegrail/libBars", "security_lower_tf", "legs:6"),
         (
             "showmethegrail/libCandles",
             "security",
             "gaps_off+lookahead_off",
         ),
+    ];
+    // DVP never pulls `libCandles`: its fetch surface is the apex fetch
+    // beside the linked-but-unreached candle fetch of the full closure.
+    let pair: &[(&str, &str, &str)] = &[
         (
             "showmethegrail/libApex",
             "security",
             "gaps_off+lookahead_off",
         ),
+        ("showmethegrail/libBars", "security_lower_tf", "legs:6"),
     ];
     let expected: &[(&str, &[(&str, &str, &str)])] = &[
-        ("DeltaVolumeProfileProtopyne", triple),
-        ("ApexPPAS", triple),
-        ("ApexRSIMD", triple),
+        ("_IntegrationLite", triple),
+        ("_DeltaVolumeProfileProtopyne", pair),
     ];
-    assert_eq!(
-        TASK_INDICATORS.len(),
-        expected.len(),
-        "closures under proof"
-    );
-    for (indicator, want) in TASK_INDICATORS.iter().zip(expected.iter()) {
-        let (_, files) = want;
+    let outcomes = fixture::fixture_outcomes();
+    for (stem, want) in expected {
+        let closure = outcomes
+            .iter()
+            .find_map(|outcome| match outcome {
+                ClosureOutcome::Linked(closure) if &closure.stem == stem => Some(closure),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("fixture closure {stem} discovered"));
         let mut got = Vec::new();
-        for (key, sites) in request_sites_per_closure(indicator) {
+        for (key, sites) in request_sites_per_closure(closure) {
             for (method, shapes) in &sites {
                 for shape in shapes {
                     got.push((key.clone(), method.clone(), shape.clone()));
@@ -498,14 +508,14 @@ fn request_sites_per_task_closure_are_pinned() {
             }
         }
         let mut want_flat = Vec::new();
-        for (file, method, shape) in *files {
+        for (file, method, shape) in *want {
             want_flat.push((
                 (*file).to_owned(),
                 (*method).to_owned(),
                 (*shape).to_owned(),
             ));
         }
-        assert_eq!(got, want_flat, "{} request sites pinned", indicator.name);
+        assert_eq!(got, want_flat, "{stem} request sites pinned");
     }
 }
 
@@ -809,7 +819,7 @@ fn lookahead_calibration_nine_cells_green() {
                 continue;
             };
             let previous_ms = base.times[previous].get();
-            let previous_close = base.closes_at[previous].map(|close| close.get());
+            let previous_close = base.closes_at[previous].map(protopyne_types::EpochMs::get);
             let closed = canon_array(&run_cell(
                 chart,
                 chart_file,
@@ -869,7 +879,7 @@ fn gap_calibration_nine_cells_green() {
             candidates.sort_by_key(|&index| (base.times[index].get() - middle_ms).abs());
             let found = candidates.into_iter().find_map(|index| {
                 let hole_ms = base.times[index].get();
-                let closed_at = base.closes_at[index].map(|close| close.get())?;
+                let closed_at = base.closes_at[index].map(protopyne_types::EpochMs::get)?;
                 let next_closed_at = base.closes_at.get(index + 1).copied().flatten()?.get();
                 if next_closed_at <= closed_at {
                     return None;
@@ -1158,6 +1168,7 @@ fn probe_num(outcome: &crate::RunOutcome, bar: usize) -> f64 {
 /// tail would read the narrow regime (~1.5), while the recursive arm carries
 /// the wide one forward.
 #[test]
+#[allow(clippy::float_cmp)]
 fn warmup_starved_legs_read_the_full_series() {
     const ROWS: usize = 200;
     const BARS: usize = 30;
@@ -1205,6 +1216,7 @@ fn unservable_series_reads_na_not_a_number() {
 /// thirty-bar display bound never starved it — the fix is not a blanket
 /// behaviour swap.
 #[test]
+#[allow(clippy::float_cmp)]
 fn a_warm_leg_is_unchanged_by_the_returned_bound() {
     const ROWS: usize = 200;
     let dataset = ramp_daily(ROWS);

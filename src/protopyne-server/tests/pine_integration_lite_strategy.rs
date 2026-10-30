@@ -28,30 +28,15 @@ use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 use protopyne_kernels::{
-    load_closure_sources, load_listed_closure, parse_program, ClosureEntry, InputSet, LibraryId,
-    LinkedModule, ModuleInput, RunOutcome, REAL_LIBRARIES,
+    parse_program, InputSet, LibraryId, LinkedModule, ModuleInput, RunOutcome,
 };
-use protopyne_strategy::fixtures;
 use protopyne_types::{Bar, Money, Timeframe};
 
 use super::common_golden::dump_value;
 use super::common_mtf::{
-    data_root, engine_for, inject_all, linked_from_graph, load_history, present, resolve_inputs,
-    WARMUP,
+    engine_for, fixture_closure_inputs, fixture_closure_root, inject_all, linked_from_graph,
+    load_history, present, resolve_inputs, WARMUP,
 };
-
-/// The strategy root as a closure entry: same seven libraries, the
-/// strategy file in place of the indicator.
-fn strategy_entry() -> ClosureEntry {
-    ClosureEntry {
-        publisher: "local",
-        name: "IntegrationLiteStrategy",
-        version: 1,
-        alias: "STRAT",
-        relpath: "strategies/_IntegrationLiteStrategy.pine",
-        imports: &[],
-    }
-}
 
 fn strategy_id() -> LibraryId {
     LibraryId {
@@ -75,31 +60,41 @@ fn matrix_path() -> PathBuf {
         .join("strategy_coverage_matrix.json")
 }
 
-/// The real eight-module closure (seven libraries plus the strategy root)
-/// linked dependency-first, exactly like the loader hands the engine.
+/// The fixture eight-module closure (seven libraries plus the strategy
+/// root) linked dependency-first, exactly like the loader hands the
+/// engine. Fixture bytes are checked in; the volatile live root is never
+/// read for Pine sources.
 fn linked_strategy_closure() -> Vec<LinkedModule> {
-    let entry = strategy_entry();
-    let mut sources =
-        load_listed_closure(&data_root(), REAL_LIBRARIES, &entry).expect("strategy closure loads");
+    let strategy_text = std::fs::read_to_string(
+        fixture_closure_root().join("strategies/_IntegrationLiteStrategy.pine"),
+    )
+    .expect("fixture strategy loads");
+    let strategy_source =
+        protopyne_kernels::parse_pine_source("local/IntegrationLiteStrategy", &strategy_text);
+    let strategy_program = parse_program(&strategy_text).expect("fixture strategy parses");
+    let mut inputs = vec![ModuleInput::new(
+        strategy_id(),
+        strategy_source,
+        strategy_program,
+    )];
     // The strategy root keeps its own key; the libraries keep theirs.
-    let inputs: Vec<ModuleInput> = sources
-        .drain(..)
-        .map(|(key, source)| {
-            let program = parse_program(&source.text)
-                .unwrap_or_else(|err| panic!("real file {key} parses: {err}"));
-            let id = if key == "local/IntegrationLiteStrategy" {
-                strategy_id()
-            } else {
-                let (publisher, name) = key.split_once('/').expect("key shape");
-                LibraryId {
-                    publisher: publisher.to_owned(),
-                    name: name.to_owned(),
-                    version: 1,
-                }
-            };
-            ModuleInput::new(id, source, program)
-        })
-        .collect();
+    for (key, source) in fixture_closure_inputs("_IntegrationLite") {
+        if key == "local/_IntegrationLite" {
+            continue;
+        }
+        let program = parse_program(&source.text)
+            .unwrap_or_else(|err| panic!("fixture file {key} parses: {err}"));
+        let (publisher, name) = key.split_once('/').expect("key shape");
+        inputs.push(ModuleInput::new(
+            LibraryId {
+                publisher: publisher.to_owned(),
+                name: name.to_owned(),
+                version: 1,
+            },
+            source,
+            program,
+        ));
+    }
     let graph = resolve_inputs(inputs);
     assert!(
         graph.warnings().is_empty(),
@@ -128,9 +123,10 @@ fn run_chart(modules: &[LinkedModule], period: &str, bars: &[Bar]) -> RunOutcome
 /// "High" may exist, and the run asserts the relay actually stayed flat.
 fn constant_alpha_inputs() -> InputSet {
     use protopyne_kernels::pine::syntax::{CallArg, PineExpr, PineStmt};
-    let text =
-        std::fs::read_to_string(data_root().join("strategies/_IntegrationLiteStrategy.pine"))
-            .expect("strategy loads");
+    let text = std::fs::read_to_string(
+        fixture_closure_root().join("strategies/_IntegrationLiteStrategy.pine"),
+    )
+    .expect("fixture strategy loads");
     let program = parse_program(&text).expect("strategy parses");
     let mut found: Vec<Vec<CallArg>> = Vec::new();
     for stmt in &program.statements {
@@ -374,13 +370,14 @@ fn integration_lite_strategy_runs_clean_on_15m() {
     check_strategy_golden(&golden_path("15m"), &outcome);
 }
 
-/// Every `strategy.*` spelling the shipped file uses, mapped to its matrix
+/// Every `strategy.*` spelling the fixture file uses, mapped to its matrix
 /// row. The matrix test below fails on any unmapped spelling, so a new
-/// broker call cannot land silently.
+/// broker call cannot land silently. Fixture bytes are checked in.
 fn strategy_call_sites() -> BTreeSet<String> {
-    let text =
-        std::fs::read_to_string(data_root().join("strategies/_IntegrationLiteStrategy.pine"))
-            .expect("shipped strategy loads");
+    let text = std::fs::read_to_string(
+        fixture_closure_root().join("strategies/_IntegrationLiteStrategy.pine"),
+    )
+    .expect("fixture strategy loads");
     let mut sites = BTreeSet::new();
     for line in text.lines() {
         let line = line.trim();
@@ -397,9 +394,9 @@ fn strategy_call_sites() -> BTreeSet<String> {
             // `strategy.closedtrades.size(i)` and friends: the dotted receiver
             // is the matrix key, not the leaf call.
             if site.starts_with("closedtrades.") {
-                site = "closedtrades.*".to_owned();
+                "closedtrades.*".clone_into(&mut site);
             } else if site.starts_with("opentrades.") {
-                site = "strategy.opentrades.*".to_owned();
+                "strategy.opentrades.*".clone_into(&mut site);
             }
             if !site.is_empty() {
                 sites.insert(site);
@@ -476,8 +473,8 @@ fn strategy_refusals_name_their_matrix_row() {
             program,
         );
         let mut inputs = Vec::new();
-        for (key, source) in load_closure_sources(&data_root()).expect("closure loads") {
-            if key == "local/IntegrationLite" {
+        for (key, source) in fixture_closure_inputs("_IntegrationLite") {
+            if key == "local/_IntegrationLite" {
                 continue;
             }
             let program = parse_program(&source.text).expect("library parses");
@@ -539,27 +536,6 @@ fn strategy_refusals_name_their_matrix_row() {
     }
 }
 
-fn test_risk() -> protopyne_strategy::RiskEngine {
-    protopyne_strategy::RiskEngine::new(
-        protopyne_strategy::RiskLimits::new()
-            .max_contracts_per_trade(1_000_000)
-            .max_loss_per_trade(10_000_000.0)
-            .max_notional(1_000_000_000.0)
-            .build(),
-    )
-}
-
-fn test_grant() -> protopyne_strategy::Grant {
-    fixtures::grant_with(|grant| {
-        grant.id = "strategy-harness".to_owned();
-        grant.signal.min_conviction = 0.0;
-        grant.signal.min_activity_score = 0.0;
-        grant.scope.strategies = vec!["integration_lite".to_owned()];
-        grant.scope.structures = vec![protopyne_strategy::StructureKind::Single];
-        grant.trade.min_dte_days = 0;
-    })
-}
-
 fn test_venue_config() -> crate::backtest::BacktestConfig {
     crate::backtest::BacktestConfig::new()
         .underlying("SPY".to_owned())
@@ -579,13 +555,13 @@ fn test_runner_config() -> crate::runner::RunnerConfig {
     )
 }
 
-/// Native-vs-harness parity: the same closed-bar tape through the native M7
+/// Native-vs-harness parity: the same closed-bar tape through the native simple
 /// equity path and the headless strategy harness must place the same
 /// entries on the same bars. The harness sees the empty book (no fills are
 /// modeled), so the tape carries isolated setups: both books stay flat
 /// outside the compared entries by construction.
-#[tokio::test]
-async fn native_and_harness_agree_bar_for_bar() {
+#[test]
+fn native_and_harness_agree_bar_for_bar() {
     use protopyne_strategy::integration_lite::IntegrationLiteStrategyConfig;
     use protopyne_strategy::signals_lite::LiteIndicatorParams;
 
@@ -629,11 +605,9 @@ async fn native_and_harness_agree_bar_for_bar() {
         ..LiteIndicatorParams::default()
     };
     let default_strategy = IntegrationLiteStrategyConfig::default();
-    let run = crate::equity::BacktestRequest::builder()
+    let run = crate::simple_backtest::SimpleBacktestRequest::builder()
         .indicator(&indicator)
         .strategy(&default_strategy)
-        .risk(&test_risk())
-        .grant(&test_grant())
         .venue_config(&test_venue_config())
         .runner_config(&test_runner_config())
         .signal_name("integration_lite")
@@ -643,7 +617,6 @@ async fn native_and_harness_agree_bar_for_bar() {
         .seed(7)
         .initial_equity(100_000.0)
         .run()
-        .await
         .expect("native equity run completes");
     // Entry size reconstructs from fills: every record carries the shares
     // its own exit filled (a partial slice or the remainder), so the entry
@@ -714,11 +687,10 @@ fn native_legs_match_harness_legs_on_spy_1m() {
     let outcome = run_chart_with(&modules, "1", &bars, constant_alpha_inputs());
     let pine_float = |bar: usize, name: &str| match outcome.value_at(bar, name) {
         Some(Some(PineValue::Float(v))) => Some(v),
-        Some(None) => None,
         // Names assigned under a Bars-state gate (e.g. the confirmed-bar
         // slow leg) are absent before their first assignment; those bars
         // carry no harness reading to compare against.
-        None => None,
+        Some(None) | None => None,
         other => panic!("leg {name} reads float-or-na at bar {bar}, got {other:?}"),
     };
     let mut compared = 0;

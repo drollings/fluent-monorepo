@@ -240,12 +240,15 @@ impl BrokerRegistry {
 
     /// Register one bundle; duplicate ids refuse.
     pub fn register(&self, bundle: BrokerBundle) -> Result<(), BrokerError> {
-        let mut entries = common_core::sync::lock_write(&self.entries);
-        if entries.contains_key(&bundle.id) {
-            return Err(BrokerError::Duplicate(bundle.id.to_string()));
+        use std::collections::btree_map::Entry;
+        // First-wins under the lock (M8.1): `insert` would replace.
+        match common_core::sync::lock_write(&self.entries).entry(bundle.id.clone()) {
+            Entry::Vacant(slot) => {
+                slot.insert(bundle);
+                Ok(())
+            }
+            Entry::Occupied(entry) => Err(BrokerError::Duplicate(entry.key().to_string())),
         }
-        entries.insert(bundle.id.clone(), bundle);
-        Ok(())
     }
 
     /// Replace or insert one bundle.

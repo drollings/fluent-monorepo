@@ -75,6 +75,10 @@ pub const DEFAULT_MAX_BARS: usize = 5_000_000;
 /// How a file-backed store bounds its in-memory footprint. Both fields are
 /// **cost bounds** in the seal-options sense: they cap what the producer
 /// holds, never what the data means.
+///
+/// NOT-A-BYTE-BUDGET-CACHE (M8.3): this is a fixed-count bar bound with
+/// refuse-on-overflow, not the weighted byte-budget LRU in
+/// `common_core::cache`. Do not swap policies.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, bon::Builder)]
 #[builder(start_fn = new)]
 pub struct TapeOptions {

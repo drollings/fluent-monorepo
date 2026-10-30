@@ -1,0 +1,758 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © showmethegrail
+
+//@version=6
+
+library('libDrawing')
+
+import showmethegrail/libUtil/12 as UTIL
+
+const int TYPE_LINE = 1
+const int TYPE_BOX = 2
+const int TYPE_LABEL = 3
+const int TYPE_MAX = 4
+
+///////////////////////////////////////////////////////////////////////////////
+// libDrawing - GUIDANCE FOR CODERS
+///////////////////////////////////////////////////////////////////////////////
+//
+// 🎯 WHEN TO USE THESE FUNCTIONS
+//
+// ✅ USE libDrawing FOR:
+// • Dynamic elements that move, extend, or change color frequently
+// • Level lines that auto-extend as new bars form (like MPP resistance/support)
+// • Volume profile boxes that update with new data (like DVP profile bars)
+// • Labels that change text content based on calculations (pressure, success rates)
+// • Any drawing element that requires lifecycle management (creation, updates, deletion)
+// • Multi-element patterns where some elements may become obsolete
+// • Performance-critical scenarios with 50+ dynamic drawing objects
+//
+// 🗃️  INTEGRATION PATTERN
+//
+// var drawing_manager = DrawingManager.new().init(max_elements)
+//
+// // In main calculation loop:
+// if barstate.isconfirmed
+//     // Stage updates (no visual changes yet) - returns integer ID
+//     level_id = drawing_manager.addElement(TYPE_LINE, x1, y1, x2, y2, level_color, name="level_1")
+//     drawing_manager.setAutoExtend(level_id, extension_bars)
+//
+//     // Process all staged updates efficiently
+//     drawing_manager.processUpdates()
+//
+//     // Clean up deleted elements
+//     drawing_manager.cleanup()
+//
+// 🚀 PERFORMANCE OPTIMIZATIONS
+//
+// • Integer IDs provide O(1) map lookups for optimal performance
+// • Optional string names for convenience without performance loss
+// • Call .processUpdates() once per calculation cycle for batched efficiency
+// • Enable auto-extend only for elements that actually extend: .setAutoExtend(id, bars)
+// • Use .cleanup() to remove elements marked for deletion
+// • Batch style updates rather than recreating elements
+// • Use consistent color objects to leverage Pine Script's color caching
+//
+// 💡 BEST PRACTICES
+//
+// 1. INITIALIZATION: Always use .init() with appropriate max_elements for use case
+//    - MPP-style indicators: 50-100 elements
+//    - Volume profile -style profiles: 200-500 elements
+//    - Simple level indicators: 20-50 elements
+//
+// 2. ELEMENT LIFECYCLE: Use the three-phase pattern
+//    ✅ Stage: level_id = drawing_manager.addLine(TYPE_LINE, x1, y1, x2, y2, color)  // Returns ID
+//    ✅ Process: drawing_manager.processUpdates()                                   // Apply changes
+//    ✅ Clean: drawing_manager.cleanup()                                           // Remove deleted
+//
+// 3. PERFORMANCE CALLS: Include these in indicators using libDrawing
+//    - drawing_manager.processUpdates() after staging changes
+//    - drawing_manager.cleanup() when needed
+//
+// 4. ERROR PREVENTION: Library handles basic validation, but follow patterns:
+//    - Store returned IDs from creation methods
+//    - Check barstate.isconfirmed for main updates
+//    - Use barstate.islast for extension calls
+//    - Call processUpdates() after staging multiple changes
+//
+// 🎨 ELEMENT TYPE GUIDANCE
+//
+// PATTERN METHODS: Complex composite elements (returns base ID)
+// • .addStructureLine(name, price, direction, context, line_type, extension_type, ...) -> int
+//
+// All methods use optional parameters - specify only what you need to change from defaults
+//
+// 🔗 INDICATOR INTEGRATION CHECKLIST
+//
+// ☑ Import: import username/libDrawing/version as libDrawing
+// ☑ Initialize: var drawing_manager = DrawingManager.new().init(max)
+// ☑ Stage Loop: Stage elements in barstate.isconfirmed blocks, store returned IDs
+// ☑ Process: Call .processUpdates() after staging changes
+// ☑ Visual Loop: Extend elements in barstate.islast blocks
+// ☑ Lifecycle: Call .cleanup() to remove deleted elements
+//
+// 📋 COMMON INTEGRATION MISTAKES TO AVOID
+//
+// ❌ Creating new DrawingManager instances in loops
+// ❌ Not calling .processUpdates() after staging changes
+// ❌ Not calling .cleanup()
+// ❌ Using libDrawing for static elements that never change
+// ❌ Forgetting .setAutoExtend() for lines that should project forward
+// ❌ Not storing returned IDs from creation methods
+// ❌ Exceeding max_elements limit without cleanup
+//
+///////////////////////////////////////////////////////////////////////////////
+
+///////////////////////////////////////////////////////////////////////////////
+// CORE TYPES - OPTIMIZED WITH INTEGER IDS
+///////////////////////////////////////////////////////////////////////////////
+
+// @type Visual element wrapper with essential state tracking
+export type VisualElement
+    int id = 0
+    int element_type = 0
+    string name = na
+    int parent_id = na
+    array<int> child_ids = na
+    line line_obj = na
+    box box_obj = na
+    label label_obj = na
+    string content = na
+    string tooltip = na
+    bool needs_deletion = false
+    bool auto_extend = false
+    int version = 1
+    int last_processed_version = 0
+    bool is_processed = false
+    int extension_bars = 100
+
+// @type Consolidated pending update - unified for all element types
+export type PendingUpdate
+    int id = 0
+    string name = na
+    int element_type = 0
+    int x1
+    float y1
+    int x2 = na              // Optional for labels
+    float y2 = na            // Optional for labels
+    string content = ""
+    color bg = na     // Unified: main color for any element
+    color fg = na   // Unified: secondary color (border/text)
+    int width = 1
+    UTIL.Sizes size = UTIL.Sizes.NORMAL
+    string label = label.style_label_down
+    int target_version = 1          // Version this update targets
+
+///////////////////////////////////////////////////////////////////////////////
+// OPTIMIZED DRAWING MANAGER WITH INTEGER IDS
+///////////////////////////////////////////////////////////////////////////////
+
+// @type Lightweight drawing manager with integer ID optimization
+export type DrawingManager
+    map<int, VisualElement> elements = na
+    map<string, int> name_to_id = na
+    int id_counter = 0
+    int max_elements = 200
+    bool batch_mode = false
+    array<PendingUpdate> pending_updates = na
+    map<int, bool> auto_extend_lookup = na      // O(1) auto-extend checks
+    map<int, bool> deletion_queue = na          // Mark for deletion queue
+    memory_warning_threshold = 300
+    integrity_check_enabled = true
+    // PERFORMANCE TRACKING
+    int last_cleanup_size = 0
+
+// @function init
+// @description Initializes the DrawingManager with default or specified parameters.
+// @param this: DrawingManager - The DrawingManager instance to initialize.
+// @param max_elements: int - The maximum number of elements to manage.
+// @returns DrawingManager - The initialized DrawingManager instance.
+export method init(DrawingManager this, int max_elements = 100) =>
+    this.elements := map.new<int, VisualElement>()
+    this.name_to_id := map.new<string, int>()
+    this.auto_extend_lookup := map.new<int, bool>()
+    this.deletion_queue := map.new<int, bool>()
+    this.pending_updates := array.new<PendingUpdate>()
+    this.max_elements := math.max(10, max_elements)
+    this.id_counter := 0
+    this.batch_mode := false
+    this.last_cleanup_size := 0
+    this.memory_warning_threshold := 300
+    this.integrity_check_enabled := true
+    this
+
+// @function getNextId
+// @description Increments and returns the next available ID from a drawing manager.
+// @param this: DrawingManager - The drawing manager instance to get the next ID from
+// @returns int - The incremented ID value
+export method getNextId(DrawingManager this) =>
+    this.id_counter += 1
+    this.id_counter
+
+// @function init
+// @description Initializes a VisualElement with a unique ID, element type, and name.
+// @param this: VisualElement - The VisualElement instance to initialize.
+// @param manager: DrawingManager - The DrawingManager instance to get the next ID from.
+// @param type: int - The type of the element.
+// @param name: string - The name of the element (default is na).
+// @returns VisualElement - The initialized VisualElement instance.
+export method init(VisualElement this, DrawingManager manager, int type, string name = na) =>
+    this.id := manager.getNextId()
+    this.element_type := type
+    this.name := name
+    this
+
+// @function remove
+// @description Marks a drawing element and its children for deletion in the DrawingManager.
+// @param this: DrawingManager - The DrawingManager instance to operate on.
+// @param id: int - The ID of the element to mark for deletion.
+// @returns DrawingManager - The DrawingManager instance after marking the element for deletion.
+export method remove(DrawingManager this, int id) =>
+    if map.contains(this.elements, id)
+        element = map.get(this.elements, id)
+        element.needs_deletion := true
+        map.put(this.deletion_queue, id, true)
+
+        // Recursively mark child elements for deletion
+        if not na(element.child_ids)
+            for child_id in element.child_ids
+                if map.contains(this.elements, child_id)
+                    child_element = map.get(this.elements, child_id)
+                    child_element.needs_deletion := true
+                    map.put(this.deletion_queue, child_id, true)
+    this
+
+// @function remove
+// @description Removes a drawing from the chart by its name.
+// @param this: DrawingManager - The instance of the DrawingManager class.
+// @param name: string - The name of the drawing to be removed.
+// @returns DrawingManager - The instance of the DrawingManager class.
+export method remove(DrawingManager this, string name) =>
+    if not na(name) and str.length(name) > 0 and map.contains(this.name_to_id, name)
+        id = map.get(this.name_to_id, name)
+        this.remove(id)
+    this
+
+// @function enforceElementLimit
+// @description Removes excess elements from a drawing manager when the maximum element limit is exceeded.
+// @param this: DrawingManager - The drawing manager instance to process
+// @returns DrawingManager - The updated drawing manager with excess elements removed
+export method enforceElementLimit(DrawingManager this) =>
+    current_count = map.size(this.elements)
+    if current_count >= this.max_elements
+        excess_count = current_count - this.max_elements + 1
+        removed = 0
+        for [id, element] in this.elements
+            if removed >= excess_count
+                break
+            if not element.needs_deletion  // Don't double-mark
+                this.remove(id)
+                removed += 1
+    this
+
+// @function needsUpdate
+// @description Determines if a VisualElement needs to be updated based on its version and deletion status.
+// @param element: VisualElement - The element to check for update needs.
+// @returns boolean - True if the element needs an update, false otherwise.
+export method needsUpdate(VisualElement element) =>
+    element.version != element.last_processed_version and not element.needs_deletion
+
+// @function processUpdates
+// @description Processes pending updates for drawing elements in the DrawingManager.
+// @param this: DrawingManager - The DrawingManager instance containing pending updates and elements.
+// @returns int - The number of successfully processed updates.
+export method processUpdates(DrawingManager this) =>
+    if na(this.pending_updates)
+        0
+    else
+        int processed = 0
+
+        for update in this.pending_updates
+            element = map.get(this.elements, update.id)
+
+            if element.needsUpdate()
+                // Update existing element
+                switch element.element_type
+                    TYPE_LINE =>
+                        if not na(element.line_obj)
+                            line.set_xy1(element.line_obj, update.x1, update.y1)
+                            line.set_xy2(element.line_obj, update.x2, update.y2)
+                            line.set_color(element.line_obj, update.bg)
+                            line.set_width(element.line_obj, update.width)
+                    TYPE_BOX =>
+                        if not na(element.box_obj)
+                            box.set_left(element.box_obj, update.x1)
+                            box.set_top(element.box_obj, update.y1)
+                            box.set_right(element.box_obj, update.x2)
+                            box.set_bottom(element.box_obj, update.y2)
+                            box.set_bgcolor(element.box_obj, update.bg)
+                            if not na(update.fg)
+                                box.set_border_color(element.box_obj, update.fg)
+                            if str.length(update.content) > 0
+                                box.set_text(element.box_obj, update.content)
+                    TYPE_LABEL =>
+                        if not na(element.label_obj)
+                            label.set_x(element.label_obj, update.x1)
+                            label.set_y(element.label_obj, update.y1)
+                            if str.length(update.content) > 0
+                                label.set_text(element.label_obj, update.content)
+                            label.set_color(element.label_obj, update.bg)
+                            if not na(update.fg)
+                                label.set_textcolor(element.label_obj, update.fg)
+                            if update.label != label.style_label_down
+                                label.set_style(element.label_obj, update.label)
+
+                element.last_processed_version := element.version
+                processed += 1
+
+        array.clear(this.pending_updates)
+        processed
+
+// @function Universal style setter using integer ID
+export method setStyle(DrawingManager this, int id, color bg = na, color fg = na,
+         int width = na, string content = na, string label = na, string tooltip = na) =>
+    if map.contains(this.elements, id)
+        element = map.get(this.elements, id)
+
+        // Skip elements marked for deletion
+        if element.needs_deletion
+            this
+        else
+            // Unified style updates based on element type
+            switch element.element_type
+                TYPE_LINE =>
+                    if not na(element.line_obj)
+                        if not na(bg)
+                            line.set_color(element.line_obj, bg)
+                        if not na(width)
+                            line.set_width(element.line_obj, width)
+                TYPE_BOX =>
+                    if not na(element.box_obj)
+                        if not na(bg)
+                            box.set_bgcolor(element.box_obj, bg)
+                        if not na(fg)
+                            box.set_border_color(element.box_obj, fg)
+                        if not na(content)
+                            box.set_text(element.box_obj, content)
+                TYPE_LABEL =>
+                    if not na(element.label_obj)
+                        if not na(bg)
+                            label.set_color(element.label_obj, bg)
+                        if not na(fg)
+                            label.set_textcolor(element.label_obj, fg)
+                        if not na(content)
+                            label.set_text(element.label_obj, content)
+                        if not na(label)
+                            label.set_style(element.label_obj, label)
+                        if not na(tooltip)
+                            label.set_tooltip(element.label_obj, tooltip)
+    this
+
+// @function setAutoExtend
+// @description Sets auto-extend properties for a drawing element by ID.
+// @param this: DrawingManager - The drawing manager instance
+// @param id: int - The ID of the drawing element to modify
+// @param extension_bars: int - Number of bars to extend the drawing
+// @returns DrawingManager - The updated drawing manager instance
+export method setAutoExtend(DrawingManager this, int id, int extension_bars) =>
+    if map.contains(this.elements, id)
+        element = map.get(this.elements, id)
+        element.auto_extend := true
+        element.extension_bars := extension_bars
+        map.put(this.auto_extend_lookup, id, true)
+    this
+
+// @function disableAutoExtend
+// @description Disables auto extension for a drawing element by ID and removes it from auto extend lookup.
+// @param this: DrawingManager - The drawing manager instance containing the elements
+// @param id: int - The ID of the drawing element to disable auto extension for
+// @returns DrawingManager - The updated drawing manager instance
+export method disableAutoExtend(DrawingManager this, int id) =>
+    if map.contains(this.elements, id)
+        element = map.get(this.elements, id)
+        element.auto_extend := false
+        if map.contains(this.auto_extend_lookup, id)
+            map.remove(this.auto_extend_lookup, id)
+    this
+
+// @function extend
+// @description Extends the geometry of a drawing element and its children to a specified target bar, ensuring it does not exceed Pine Script's 500-bar future limit.
+// @param this: DrawingManager - The instance of the DrawingManager class.
+// @param id: int - The unique identifier of the element to extend.
+// @param target_bar: int - The target bar index to extend the element to.
+// @returns DrawingManager - The instance of the DrawingManager class.
+export method extend(DrawingManager this, int id, int target_bar) =>
+    if map.contains(this.elements, id) and not na(target_bar)
+        element = map.get(this.elements, id)
+
+        // Validate target_bar is within Pine Script's 500-bar future limit
+        max_allowed_bar = bar_index + 500
+        safe_target_bar = math.min(target_bar, max_allowed_bar)
+
+        if not element.needs_deletion and safe_target_bar > bar_index
+            // Extend element geometry TO the target bar position
+            switch element.element_type
+                TYPE_LINE =>
+                    if not na(element.line_obj)
+                        line.set_x2(element.line_obj, safe_target_bar)
+                TYPE_BOX =>
+                    if not na(element.box_obj)
+                        box.set_right(element.box_obj, safe_target_bar)
+                TYPE_LABEL =>
+                    if not na(element.label_obj)
+                        label.set_x(element.label_obj, safe_target_bar)
+
+            // Recursively extend all child elements to the same target
+            if not na(element.child_ids)
+                for child_id in element.child_ids
+                    if map.contains(this.elements, child_id)
+                        child_element = map.get(this.elements, child_id)
+                        if not child_element.needs_deletion
+                            // Extend child to same target bar
+                            switch child_element.element_type
+                                TYPE_LINE =>
+                                    if not na(child_element.line_obj)
+                                        line.set_x2(child_element.line_obj, safe_target_bar)
+                                TYPE_BOX =>
+                                    if not na(child_element.box_obj)
+                                        box.set_right(child_element.box_obj, safe_target_bar)
+                                TYPE_LABEL =>
+                                    if not na(child_element.label_obj)
+                                        label.set_x(child_element.label_obj, safe_target_bar)
+    this
+
+// @function extendAll
+// @description Extends all elements managed by the DrawingManager to a specified target bar, if they are set to auto-extend and the target is in the future.
+// @param this: DrawingManager - The DrawingManager instance managing the elements to be extended.
+// @param target_bar: int - The target bar index to which elements should be extended.
+// @param current_bar: int - The current bar index, used for optimization. Defaults to na.
+// @returns DrawingManager - The DrawingManager instance, allowing method chaining.
+export method extendAll(DrawingManager this, int target_bar, int current_bar = na) =>
+    if na(this.elements) or na(target_bar)
+        this
+    else
+        // Validate target_bar is within Pine Script's 500-bar future limit
+        max_allowed_bar = bar_index + 500
+        safe_target_bar = math.min(target_bar, max_allowed_bar)
+        safe_current_bar = na(current_bar) ? bar_index : current_bar
+
+        // Only proceed if target is in the future
+        if safe_target_bar > safe_current_bar
+            if not na(current_bar) and not na(this.auto_extend_lookup)
+                // Optimized: Single pass through auto-extend lookup
+                for [id, _] in this.auto_extend_lookup
+                    if map.contains(this.elements, id)
+                        element = map.get(this.elements, id)
+                        if not element.needs_deletion and element.auto_extend
+                            should_extend = false
+
+                            // Check if element needs extension to target
+                            switch element.element_type
+                                TYPE_LINE =>
+                                    should_extend := not na(element.line_obj) and safe_target_bar > line.get_x2(element.line_obj)
+                                TYPE_BOX =>
+                                    should_extend := not na(element.box_obj) and safe_target_bar > box.get_right(element.box_obj)
+                                TYPE_LABEL =>
+                                    should_extend := not na(element.label_obj) and safe_target_bar > label.get_x(element.label_obj)
+
+                            if should_extend
+                                this.extend(id, safe_target_bar)
+            else
+                // Full iteration when current_bar is na
+                for [id, element] in this.elements
+                    if not element.needs_deletion
+                        should_extend = false
+
+                        if element.auto_extend and not na(current_bar)
+                            // Check if auto-extend element needs extension to target
+                            switch element.element_type
+                                TYPE_LINE =>
+                                    should_extend := not na(element.line_obj) and safe_target_bar > line.get_x2(element.line_obj)
+                                TYPE_BOX =>
+                                    should_extend := not na(element.box_obj) and safe_target_bar > box.get_right(element.box_obj)
+                                TYPE_LABEL =>
+                                    should_extend := not na(element.label_obj) and safe_target_bar > label.get_x(element.label_obj)
+
+                        if should_extend
+                            this.extend(id, safe_target_bar)
+        this
+
+// @function cleanup
+// @description Cleans up deleted drawing elements from the DrawingManager.
+// @param this: DrawingManager - The DrawingManager instance to clean up
+// @returns int - The number of elements successfully removed during cleanup
+export method cleanup(DrawingManager this) =>
+    if na(this.elements) or na(this.deletion_queue)
+        0
+    else
+        int removed = 0
+
+        // Single pass: Process all queued deletions
+        for [id, _] in this.deletion_queue
+            if map.contains(this.elements, id)
+                element = map.get(this.elements, id)
+
+                // Unified deletion logic
+                switch element.element_type
+                    TYPE_LINE =>
+                        if not na(element.line_obj)
+                            line.delete(element.line_obj)
+                    TYPE_BOX =>
+                        if not na(element.box_obj)
+                            box.delete(element.box_obj)
+                    TYPE_LABEL =>
+                        if not na(element.label_obj)
+                            label.delete(element.label_obj)
+
+                // Clean up tracking structures
+                map.remove(this.elements, id)
+
+                if not na(element.name) and str.length(element.name) > 0
+                    map.remove(this.name_to_id, element.name)
+
+                if map.contains(this.auto_extend_lookup, id)
+                    map.remove(this.auto_extend_lookup, id)
+
+                removed += 1
+
+        // Clear deletion queue
+        this.deletion_queue := map.new<int, bool>()
+        this.last_cleanup_size := removed
+        removed
+
+// @function contains
+// @description Checks if a drawing element with the specified ID exists in the DrawingManager.
+// @param this: DrawingManager - The DrawingManager instance to search in
+// @param id: int - The ID of the drawing element to look for
+// @returns bool - True if the element exists, false otherwise
+export method contains(DrawingManager this, int id) =>
+    na(this.elements) ? false : map.contains(this.elements, id)
+
+// @function contains
+// @description Checks if a given name exists in the DrawingManager's name_to_id map.
+// @param this: DrawingManager - The DrawingManager instance to check.
+// @param name: string - The name to search for in the map.
+// @returns boolean - True if the name exists in the map, false otherwise.
+export method contains(DrawingManager this, string name) =>
+    if na(this.name_to_id) or na(name) or str.length(name) == 0
+        false
+    else
+        map.contains(this.name_to_id, name)
+
+// @function getElement
+// @description Retrieves a visual element from the drawing manager by its ID.
+// @param this: DrawingManager - The drawing manager instance containing the elements
+// @param id: int - The identifier of the element to retrieve
+// @returns VisualElement - The visual element with the specified ID or na if not found
+export method getElement(DrawingManager this, int id) =>
+    VisualElement retval = na
+    if not na(id)
+        retval := map.get(this.elements, id)
+    retval
+
+// @function getElement
+// @description Returns the VisualElement associated with the given name.
+// @param this: DrawingManager - The instance of DrawingManager.
+// @param name: string - The name of the VisualElement to retrieve.
+// @returns VisualElement - The VisualElement associated with the given name, or na if not found.
+export method getElement(DrawingManager this, string name) =>
+    VisualElement retval = na
+    if not na(this.name_to_id) and not na(name) and str.length(name) > 0
+        id = map.get(this.name_to_id, name)
+        if not na(id)
+            retval := map.get(this.elements, id)
+    retval
+
+// @function Universal element staging with integer ID management
+export method addElement(DrawingManager this, int element_type, int x1, float y1,
+                 int x2 = na, float y2 = na,
+                 color bg = color.blue, color fg = na, color text_color = color.white,
+                 int width = 1, UTIL.Sizes size = UTIL.Sizes.SMALL,
+                 string content = "", string label = label.style_label_down, int id = na, string name = na) =>
+    VisualElement element = na
+
+    // Pass a first sanity check
+    if not na(this.elements) and element_type > 0 and element_type < TYPE_MAX
+        this.enforceElementLimit()
+
+        // See if the name lookup works
+        int _id = id
+        if na(_id) and not na(name) and str.length(name) > 0
+            _id := map.get(this.name_to_id, name)
+
+        if not na(_id)
+            element := map.get(this.elements, _id)
+
+        // Determine if updating existing named element or creating new
+        if na(element)
+            // Create new element
+            element := VisualElement.new().init(this, element_type, name)
+
+            // Unified element creation
+            switch element_type
+                TYPE_LINE =>
+                    element.line_obj := line.new(x1, y1, x2, y2, color=bg, width=width,
+                             force_overlay=true)
+                TYPE_BOX =>
+                    bg_color = na(fg) ? bg : fg
+                    element.box_obj := box.new(x1, y1, x2, y2,
+                             bgcolor=bg, border_color=fg, border_width=width,
+                             text=content, text_color=text_color, text_size=UTIL.getSize(size),
+                             text_halign=text.align_right, force_overlay=true)
+                TYPE_LABEL =>
+                    element.label_obj := label.new(x1, y1, content,
+                             color=bg, textcolor=text_color, size=UTIL.getSize(size),
+                             style=label, force_overlay=true)
+
+            map.put(this.elements, element.id, element)
+            element.last_processed_version := element.version
+            if not na(name) and str.length(name) > 0
+                map.put(this.name_to_id, name, element.id)
+        else
+            update = PendingUpdate.new()
+            update.id := _id
+            update.element_type := element_type
+            update.x1 := x1
+            update.y1 := y1
+            update.x2 := x2
+            update.y2 := y2
+            update.content := content
+            update.bg := bg
+            update.fg := fg
+            update.width := width
+            update.size := size
+            update.label := label
+            update.name := name
+            update.target_version := map.contains(this.elements, _id) ? map.get(this.elements, _id).version : 1
+
+            array.push(this.pending_updates, update)
+            if not na(element) and element.needs_deletion == false
+                element.version += 1  // Mark as dirty for update
+
+    element
+
+// @function Enhanced structure line returning integer ID
+export method addStructureLine(DrawingManager this, string name, float price, float direction, string context,
+         UTIL.LineType line_type = UTIL.LineType.HORIZONTAL, int line_width = 1,
+         UTIL.ExtensionType extension_type = UTIL.ExtensionType.EXTENDING,
+         int extension_bars, int target_bar = na, float target_price = na,
+         color bullish_color = color.green, color bearish_color = color.red) =>
+    if na(this.elements) or str.length(name) == 0
+        0
+    else
+        shared_color = direction >= 0 ? bullish_color : bearish_color
+
+        // Consolidated coordinate calculation
+        [start_x, start_y, end_x, end_y, label_x, label_y] = switch line_type
+            UTIL.LineType.HORIZONTAL =>
+                [bar_index, price, bar_index + extension_bars, price, bar_index + extension_bars, price]
+            UTIL.LineType.VERTICAL =>
+                [bar_index, low, bar_index, high, bar_index, price]
+            UTIL.LineType.ANGLED =>
+                target_bar_calc = na(target_bar) ? bar_index + extension_bars : target_bar
+                total_bars = target_bar_calc - bar_index
+                angled_bars = math.round(total_bars / 8.0)
+                horizontal_bars = total_bars - angled_bars
+                horizontal_end_bar = bar_index + horizontal_bars
+                current_price = direction > 0 ? low : high
+                [bar_index, price, target_bar_calc, current_price, target_bar_calc, current_price]
+            UTIL.LineType.DIRECT =>
+                target_bar_calc = na(target_bar) ? bar_index + extension_bars : target_bar
+                target_price_calc = na(target_price) ? price : target_price
+                [bar_index, price, target_bar_calc, target_price_calc, target_bar_calc, target_price_calc]
+
+        element_label = this.addElement(TYPE_LABEL, label_x, label_y, bg=shared_color, fg = color.white, label=label.style_label_left, content=context, name=name)
+        // Create elements
+        element_line = this.addElement(TYPE_LINE, start_x, start_y, end_x, end_y, shared_color, width=line_width, name=name)
+        VisualElement element_bg = na
+
+        // Apply extension behavior
+        if extension_type != UTIL.ExtensionType.FIXED
+            this.setAutoExtend(element_label.id, extension_bars)
+            this.setAutoExtend(element_line.id, extension_bars)
+
+        element_label.id
+
+// @function makeStatic
+// @description Marks an element and its children for deletion by setting their objects to na and adding them to the deletion queue.
+// @param this: DrawingManager - The instance of DrawingManager to operate on.
+// @param id: int - The ID of the element to mark for deletion.
+// @returns DrawingManager - The instance of DrawingManager after marking the element for deletion.
+export method makeStatic(DrawingManager this, int id) =>
+    element = map.get(this.elements, id)
+    if not na(element)
+        if not na(element.line_obj)
+            element.line_obj.set_color(UTIL.COLOR_NEUTRAL)
+            element.line_obj := na
+        if not na(element.box_obj)
+            element.box_obj.set_bgcolor(UTIL.COLOR_NONE)
+            element.box_obj.set_border_color(color.gray)
+            element.box_obj.set_border_width(1)
+            element.box_obj.set_border_style(line.style_dotted)
+            element.box_obj := na
+        if not na(element.label_obj)
+            element.label_obj.set_color(UTIL.COLOR_NEUTRAL)
+            element.label_obj := na
+        element.needs_deletion := true
+        element.auto_extend := false
+        if map.contains(this.auto_extend_lookup, id)
+            map.remove(this.auto_extend_lookup, id)
+        map.put(this.deletion_queue, id, true)
+
+        // Recursively mark child elements for deletion
+        if not na(element.child_ids)
+            for child_id in element.child_ids
+                if map.contains(this.elements, child_id)
+                    child_element = map.get(this.elements, child_id)
+                    child_element.line_obj := na
+                    child_element.box_obj := na
+                    child_element.label_obj := na
+                    child_element.needs_deletion := true
+                    map.put(this.deletion_queue, child_id, true)
+    this
+
+// @function addLabeledZone
+// @description Creates a pressure zone with box, line, and label elements
+// @param DrawingManager this - The drawing manager instance
+// @param string name - Element name for tracking
+// @param int creation_bar - Bar index where zone starts
+// @param float price - First price level
+// @param float price_far - Second price level
+// @param color bg - Box background color
+// @param color fg - Box border and line color
+// @param string content - Text content for the label
+// @param color text_color - Label text color (default black)
+// @param int auto_extend_bars - Offset to extend to
+// @returns VisualElement - The box element (parent of line and label)
+export method addLabeledZone(DrawingManager this, string name, int creation_bar,
+         float price, float price_far,
+         color bg, color fg,
+         string content = na, color text_color = color.white,
+         int auto_extend_bars = 50) =>
+    VisualElement box_element = na
+    if not na(price) and not na(price_far) and not na(creation_bar)
+        // Check if creation_bar is within safe historical limits
+        max_lookback = 300
+        safe_creation_bar = creation_bar
+
+        if bar_index - creation_bar > max_lookback
+            safe_creation_bar := bar_index - max_lookback + auto_extend_bars
+
+        // Create the main zone box
+        box_element := this.addElement(
+             TYPE_BOX,
+             safe_creation_bar, price,
+             safe_creation_bar + auto_extend_bars, price_far,
+             bg = bg,
+             fg = fg,
+             text_color = text_color,
+             width = 0,
+             name = name,
+             content = content)
+
+        if not na(box_element) and not na(content) and str.length(content) > 0
+            b = box_element.box_obj
+            // Enable auto-extension for the box
+            this.setAutoExtend(box_element.id, auto_extend_bars)
+
+    box_element

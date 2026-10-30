@@ -15,7 +15,7 @@
 
 use fluent_wvr::prelude::*;
 use fluent_wvr::validate::Validate;
-use protopyne_types::{Bar, Timeframe};
+use protopyne_types::{Bar, Timeframe, MAX_DECIMAL_SCALE};
 use rust_decimal::Decimal;
 
 use crate::error::{PlanError, StoreError};
@@ -124,9 +124,11 @@ impl Validate for PriceScale {
     type Err = String;
 
     fn validate(&self) -> Result<(), Self::Err> {
-        if self.digits > 28 {
+        // (M8.2) The one 28-digit ceiling lives in `protopyne-types`
+        // (`MAX_DECIMAL_SCALE`); this check names it, never a literal.
+        if self.digits > MAX_DECIMAL_SCALE {
             return Err(format!(
-                "price scale {} exceeds the Decimal maximum of 28 digits",
+                "price scale {} exceeds the Decimal maximum of {MAX_DECIMAL_SCALE} digits",
                 self.digits
             ));
         }

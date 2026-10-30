@@ -6,10 +6,16 @@ autotests = false
 autobenches = false
 
 [features]
-default = []
-# `pine` enables the Pine-backed signal. Default-off: the decision closure
-# carries no language runtime unless a consumer asks for one.
+default = ["bytecode"]
+# `pine` enables the Pine-backed signal.
 pine = ["protopyne-kernels/pine"]
+# `bytecode` runs the Pine signal's evaluator on the compiled slot VM.
+# Default-on: the shipped decision closure runs the one compiled path.
+bytecode = ["pine", "protopyne-kernels/bytecode"]
+# `oracle` compiles the tree-walk opt-out behind `PineExecution::TreeWalk`
+# (and the kernels interpreter it selects). Default-off and dev-only:
+# test builds always have it, shipping builds never select it.
+oracle = ["protopyne-kernels/oracle"]
 # `test-support` exposes `fixtures` (one grant baseline + the deny order) to
 # downstream test targets. Never a runtime surface; off in every shipping build.
 test-support = []
@@ -30,6 +36,12 @@ rust_decimal = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+
+[dev-dependencies]
+# The tree oracle for proof: test targets compare the compiled loop against
+# it, while shipping builds carry no interpreter. A dev-dependency never
+# reaches the shipping library.
+protopyne-kernels = { path = "../protopyne-kernels", features = ["oracle"] }
 
 [lints]
 workspace = true

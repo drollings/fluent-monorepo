@@ -16,6 +16,11 @@
 //! totals never face eviction), and fields the library declares but never
 //! reads or writes are not ported.
 //!
+//! NOT-A-BYTE-BUDGET-CACHE (M8.3): this ring is fixed-count FIFO, not the
+//! weighted byte-budget LRU in `common_core::cache`
+//! (`eviction_score`/`evict_until_fit`). Do not swap policies; adopt the
+//! shared engine only if a genuine byte budget appears (second-consumer rule).
+//!
 //! Tick input reuses the shared [`BarTick`](crate::indicator::BarTick) legs
 //! (cumulative volume, bar-so-far high/low/close over a bar-open time);
 //! raw trade prints fold through [`tick_resample`]. Grid math composes the
@@ -157,6 +162,59 @@ pub fn is_valid_volume(vol: f64) -> bool {
     vol.is_finite() && vol > VOLUME_EPSILON
 }
 
+/// One display bar as plain floats, for callers that must cross the
+/// display → kernel boundary (a Pine plugin evaluating chart rows).
+/// Timestamps ride epoch seconds; legs ride chart floats.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DisplayBar {
+    /// Bar close time as epoch seconds.
+    pub time: i64,
+    /// Open as chart-native float.
+    pub open: f64,
+    /// High as chart-native float.
+    pub high: f64,
+    /// Low as chart-native float.
+    pub low: f64,
+    /// Close as chart-native float.
+    pub close: f64,
+    /// Traded volume.
+    pub volume: u64,
+}
+
+/// Closed kernel bars from display floats: the one sanctioned
+/// display-float → `Decimal` crossing. Kernel code owns exact math, so the
+/// render-side one-way boundary (display floats never parse back into money
+/// in a render module) stays intact — Pine plugins convert through here.
+/// Refuses naming the first bad bar (a non-finite leg or an unrepresentable
+/// timestamp) instead of inventing a price.
+pub fn bars_from_display(rows: &[DisplayBar]) -> Result<Vec<Bar>, KernelError> {
+    rows.iter()
+        .enumerate()
+        .map(|(index, row)| {
+            let ts = chrono::DateTime::from_timestamp(row.time, 0).ok_or_else(|| {
+                KernelError::InvalidInput(format!(
+                    "bar {index} timestamp {} out of range",
+                    row.time
+                ))
+            })?;
+            let decimal = |value: f64, leg: &str| {
+                rust_decimal::Decimal::from_f64_retain(value).ok_or_else(|| {
+                    KernelError::InvalidInput(format!("bar {index} {leg} is not finite"))
+                })
+            };
+            Ok(Bar::new()
+                .ts(ts)
+                .o(decimal(row.open, "open")?)
+                .h(decimal(row.high, "high")?)
+                .l(decimal(row.low, "low")?)
+                .c(decimal(row.close, "close")?)
+                .volume(row.volume)
+                .maybe_adj(None)
+                .build())
+        })
+        .collect()
+}
+
 /// Structural OHLCV guard behind delta estimation: every leg finite,
 /// positive volume, and a non-degenerate range (relative floor keeps dust
 /// wicks from inventing direction). The dust floor (1e-6 of low) is
@@ -252,14 +310,13 @@ impl ClosedBar {
     /// unrepresentable rather than failing the window).
     #[must_use]
     pub fn from_proto_bar(bar: &protopyne_types::Bar) -> Self {
-        use rust_decimal::prelude::ToPrimitive as _;
-        let conv = |d: rust_decimal::Decimal| nan_hole(d.to_f64());
+        use protopyne_types::bar_leg_as_f64;
         Self {
             ts_ms: bar.ts.timestamp_millis(),
-            o: conv(bar.o),
-            h: conv(bar.h),
-            l: conv(bar.l),
-            c: conv(bar.c),
+            o: bar_leg_as_f64(bar.o),
+            h: bar_leg_as_f64(bar.h),
+            l: bar_leg_as_f64(bar.l),
+            c: bar_leg_as_f64(bar.c),
             volume: bar.volume as f64,
         }
     }

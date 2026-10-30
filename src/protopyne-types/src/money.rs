@@ -38,6 +38,54 @@ impl Money {
     pub fn as_decimal(self) -> Decimal {
         self.0
     }
+
+    /// Finite `f64` reading, or `None` when unrepresentable or non-finite
+    /// (M6.3: the one home for the strike conversions in `risk.rs` and
+    /// `activity.rs`, which differ only in the positivity check the caller
+    /// keeps).
+    #[must_use]
+    pub fn as_finite_f64(self) -> Option<f64> {
+        use rust_decimal::prelude::ToPrimitive as _;
+        self.0.to_f64().filter(|value| value.is_finite())
+    }
+
+    /// Lossy `f64` read for f64-native paths (equity marks, stop distances):
+    /// retains the binary value; unrepresentable reads `ZERO` (fail-closed
+    /// for sizing/curve math, never a panic). Risk bounds must use the
+    /// string round-trip instead — exact, not retained (M3.2).
+    #[must_use]
+    pub fn from_f64_or_zero(value: f64) -> Self {
+        Self(Decimal::from_f64_retain(value).unwrap_or(Decimal::ZERO))
+    }
+
+    /// The smaller of two amounts: a budget is a hard ceiling (M3.2: the
+    /// one home for `grant.rs`'s former bespoke `cheaper`).
+    #[must_use]
+    pub fn min(self, other: Self) -> Self {
+        Self(self.0.min(other.0))
+    }
+
+    /// The larger of two amounts.
+    #[must_use]
+    pub fn max(self, other: Self) -> Self {
+        Self(self.0.max(other.0))
+    }
+
+    /// Saturating addition: same result as `+` absent overflow (overflow
+    /// previously panicked inside `Decimal`; unreachable at market
+    /// magnitudes — now saturates at `Decimal::MAX` instead).
+    #[must_use]
+    pub fn saturating_add(self, other: Self) -> Self {
+        Self(self.0.saturating_add(other.0))
+    }
+
+    /// Subtraction floored at zero: money never goes negative, so
+    /// `a < b` reads `ZERO` rather than a negative amount (M3.2: exact
+    /// match for the ledger's former bespoke `sub`).
+    #[must_use]
+    pub fn saturating_sub(self, other: Self) -> Self {
+        Self((self.0 - other.0).max(Decimal::ZERO))
+    }
 }
 
 impl fmt::Display for Money {

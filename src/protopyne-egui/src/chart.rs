@@ -35,10 +35,10 @@ pub fn default_symbol() -> String {
 /// Ticker symbol shown by default in the top-bar symbol dropdown.
 pub const DEFAULT_SYMBOL: &str = "SPY";
 
-/// Trailing window the chart starts on: one month up to the latest bar.
+/// Trailing window the chart starts on: two months up to the latest bar.
 /// Selecting a larger preset (or a Beginning date) grows the loaded history
 /// on demand; a smaller one prunes the window without a re-read.
-pub const DEFAULT_RANGE: DateRange = DateRange::Month1;
+pub const DEFAULT_RANGE: DateRange = DateRange::Month2;
 
 /// Intraday-to-daily bar timeframe key behind the terminal toolbar.
 ///
@@ -92,6 +92,21 @@ impl TimeframeKey {
     pub fn timeframe(self) -> protopyne_types::Timeframe {
         protopyne_types::Timeframe::from_chart_label(self.label())
             .expect("every toolbar label resolves on the store grid")
+    }
+
+    /// The Pine period string backing `timeframe.period` for slots that run
+    /// Pine scripts: the chart owns the timeframe, so Pine slots inherit it
+    /// instead of carrying a redundant copy in their own settings.
+    #[must_use]
+    pub fn pine_period(self) -> &'static str {
+        match self {
+            Self::M1 => "1",
+            Self::M5 => "5",
+            Self::M15 => "15",
+            Self::H1 => "60",
+            Self::H4 => "240",
+            Self::D1 => "D",
+        }
     }
 }
 

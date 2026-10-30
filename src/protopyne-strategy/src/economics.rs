@@ -260,6 +260,12 @@ struct ResolvedQuote {
 
 /// Recognize the defined-risk shapes this pricer bounds. Ratios must match
 /// within a package so a strike width scales the whole position.
+/// The pricing shape of a validated leg package: what the pricer needs
+/// (width, premium) rather than what selection needed (grid, delta).
+/// Runs *after* [`SpreadLegs::try_new`](protopyne_types::SpreadLegs::try_new) —
+/// the defined-risk authority stays there; this maps validated legs to
+/// pricing shapes and never re-decides validity (M5.4: sequential stages,
+/// not duplicate shape knowledge).
 fn classify(legs: &[SpreadLeg]) -> Result<Shape, EconRefusal> {
     match legs {
         [_] => Ok(Shape::DebitPremium),

@@ -848,3 +848,48 @@ fn empty_reconcile_is_default_substitution_not_a_walk() {
     assert_eq!(second.rebuilt, 0);
     assert!(ring.is_empty());
 }
+
+#[test]
+fn bars_from_display_round_trips_finite_legs() {
+    let rows = vec![
+        DisplayBar {
+            time: 1_767_344_400,
+            open: 99.5,
+            high: 100.5,
+            low: 99.0,
+            close: 100.25,
+            volume: 1_000,
+        },
+        DisplayBar {
+            time: 1_767_344_460,
+            open: 100.25,
+            high: 101.0,
+            low: 100.0,
+            close: 100.75,
+            volume: 2_000,
+        },
+    ];
+    let bars = bars_from_display(&rows).expect("finite legs convert");
+    assert_eq!(bars.len(), 2);
+    assert_eq!(bars[1].c.to_string(), "100.75");
+    assert_eq!(bars[1].volume, 2_000);
+    assert_eq!(bars[0].ts.timestamp(), 1_767_344_400);
+}
+
+#[test]
+fn bars_from_display_refuses_naming_the_bad_bar() {
+    let mut rows = vec![DisplayBar {
+        time: 1_767_344_400,
+        open: 99.5,
+        high: f64::NAN,
+        low: 99.0,
+        close: 100.25,
+        volume: 1_000,
+    }];
+    let err = bars_from_display(&rows).expect_err("NaN refuses");
+    assert!(err.to_string().contains("bar 0"), "names the bar: {err}");
+    rows[0].high = 100.5;
+    rows[0].time = i64::MAX;
+    let err = bars_from_display(&rows).expect_err("wild timestamp refuses");
+    assert!(err.to_string().contains("bar 0"), "names the bar: {err}");
+}

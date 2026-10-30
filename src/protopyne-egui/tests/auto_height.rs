@@ -106,13 +106,13 @@ fn price_extent_shares_the_calibrated_pad() {
     );
 }
 
-/// The workspace boots a one-month window: the range menu grows or prunes the
+/// The workspace boots a two-month window: the range menu grows or prunes the
 /// span on demand, and the chart never pre-fetches a range it is not showing.
 #[test]
-fn workspace_boots_a_one_month_window() {
+fn workspace_boots_a_two_month_window() {
     let workspace = ChartWorkspace::new().expect("workspace boots");
-    assert_eq!(workspace.range(), DateRange::Month1);
-    assert_eq!(workspace.visible_months(), 1);
+    assert_eq!(workspace.range(), DateRange::Month2);
+    assert_eq!(workspace.visible_months(), 2);
     assert_eq!(
         workspace.timeframe(),
         TimeframeKey::M5,
@@ -291,7 +291,7 @@ fn menu_bar_view_buttons_fit_and_pan() {
 /// demo path) and keeps the anchor stable.
 #[test]
 fn load_more_widens_one_month_over_held_rows() {
-    // 120 daily bars ≈ four months; the default window shows one.
+    // 120 daily bars ≈ four months; the default window shows two.
     let rows: Vec<ChartRow> = (0..120)
         .map(|i| {
             let close = 100.0 + f64::from(i);
@@ -306,12 +306,12 @@ fn load_more_widens_one_month_over_held_rows() {
         })
         .collect();
     let mut workspace = ChartWorkspace::with_rows(rows).expect("workspace boots");
-    assert_eq!(workspace.visible_months(), 1);
+    assert_eq!(workspace.visible_months(), 2);
     let grew = workspace
         .load_previous_month(None)
         .expect("load-more applies");
     assert!(grew, "earlier held rows widen the window");
-    assert_eq!(workspace.visible_months(), 2);
+    assert_eq!(workspace.visible_months(), 3);
     assert_eq!(workspace.range(), DateRange::All);
     assert!(
         workspace.custom_start.is_some(),

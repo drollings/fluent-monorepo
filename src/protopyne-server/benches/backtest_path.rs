@@ -23,11 +23,11 @@ use criterion::{criterion_group, criterion_main, Criterion};
 use rust_decimal::Decimal;
 
 use protopyne_server::{
-    equity::run_equity_backtest, run_backtest, run_multi_backtest, run_sweep, BacktestConfig,
-    HistorySource, MultiSymbolInput, RunnerConfig,
+    run_backtest, run_multi_backtest, run_sweep, simple_backtest::run_simple_backtest,
+    BacktestConfig, HistorySource, MultiSymbolInput, RunnerConfig,
 };
 use protopyne_strategy::{
-    elements::ExplicitStructure, fixtures, integration_lite::IntegrationLiteStrategyConfig,
+    elements::ExplicitStructure, integration_lite::IntegrationLiteStrategyConfig,
     signals_lite::LiteIndicatorParams, BreakerLimits, Direction, FixedSignal, Grant, GrantBudgets,
     GrantPermission, GrantScope, PortfolioThresholds, RiskEngine, RiskLimits, SignalThresholds,
     Strategy, StructureKind, TradeThresholds,
@@ -281,25 +281,6 @@ fn equity_path(criterion: &mut Criterion) {
         filt_ma_health_min: 0.0,
         ..IntegrationLiteStrategyConfig::default()
     };
-    let risk = RiskEngine::new(
-        RiskLimits::new()
-            .max_contracts_per_trade(1_000_000)
-            .max_loss_per_trade(10_000_000.0)
-            .max_notional(1_000_000_000.0)
-            .build(),
-    );
-    let grant = fixtures::grant_with(|grant| {
-        "bench-equity".clone_into(&mut grant.id);
-        grant.signal.min_conviction = 0.0;
-        grant.signal.min_activity_score = 0.0;
-        grant.scope.strategies = vec!["integration_lite".to_owned()];
-        grant.scope.structures = vec![StructureKind::Single];
-        grant.trade.min_dte_days = 0;
-        grant.budgets.max_trades = 100_000;
-        grant.budgets.max_contracts = 10_000_000;
-        grant.budgets.max_loss = money(10_000_000);
-        grant.budgets.max_notional = money(100_000_000_000);
-    });
     let venue = BacktestConfig::new()
         .underlying("SPY".to_owned())
         .data_version("bench-equity".to_owned())
@@ -313,25 +294,21 @@ fn equity_path(criterion: &mut Criterion) {
         30,
         0,
     );
-    let runtime = runtime();
     criterion.bench_function("equity_path_10k", |bencher| {
         bencher.iter(|| {
-            runtime
-                .block_on(run_equity_backtest(
-                    &indicator,
-                    &strategy,
-                    &risk,
-                    &grant,
-                    &venue,
-                    &runner,
-                    "integration_lite",
-                    "SPY",
-                    protopyne_types::Timeframe::M1,
-                    &bars,
-                    7,
-                    100_000.0,
-                ))
-                .expect("bench equity run completes")
+            run_simple_backtest(
+                &indicator,
+                &strategy,
+                &venue,
+                &runner,
+                "integration_lite",
+                "SPY",
+                protopyne_types::Timeframe::M1,
+                &bars,
+                7,
+                100_000.0,
+            )
+            .expect("bench equity run completes")
         });
     });
 }

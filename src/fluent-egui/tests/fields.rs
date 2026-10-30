@@ -499,10 +499,10 @@ fn style_projection_keeps_the_width_and_the_painted_keys_only() {
         vec!["color_fast", "color_ribbon_bull", "line_width"],
         "the tab keeps the width and the painted keys: {names:?}"
     );
-    assert_eq!(
-        project_style_fields(&style_fields, &[]).len(),
-        style_fields.len(),
-        "with nothing evaluated yet the whole schema stays"
+    assert!(!projected.is_empty(), "painted keys project");
+    assert!(
+        project_style_fields(&style_fields, &[]).is_empty(),
+        "with nothing evaluated there is nothing to offer: no whole-schema fallback"
     );
 }
 

@@ -143,13 +143,7 @@ impl Signal for IntegrationLiteSignal {
     }
 
     fn bind(&self, _cfg: &SignalConfig) -> Result<Box<dyn SignalInstance>, StrategyError> {
-        Ok(Box::new(IntegrationLiteSignalInstance {
-            signal: self.clone_for_instance(),
-            committed_len: 0,
-            cached: None,
-            filters: build_filters(&self.strategy),
-            precomputed: None,
-        }))
+        Ok(Box::new(self.instance_with(None)))
     }
 
     fn evaluate(&self, view: &crate::view::MarketView<'_>) -> Result<SignalOutput, StrategyError> {
@@ -168,13 +162,19 @@ impl IntegrationLiteSignal {
         _cfg: &SignalConfig,
         legs: Arc<LiteLegs>,
     ) -> Result<Box<dyn SignalInstance>, StrategyError> {
-        Ok(Box::new(IntegrationLiteSignalInstance {
+        Ok(Box::new(self.instance_with(Some(legs))))
+    }
+
+    /// The one instance constructor: `bind` passes no precomputed legs,
+    /// `bind_with_legs` passes the run-batched legs (M5.3).
+    fn instance_with(&self, precomputed: Option<Arc<LiteLegs>>) -> IntegrationLiteSignalInstance {
+        IntegrationLiteSignalInstance {
             signal: self.clone_for_instance(),
             committed_len: 0,
             cached: None,
             filters: build_filters(&self.strategy),
-            precomputed: Some(legs),
-        }))
+            precomputed,
+        }
     }
 
     fn clone_for_instance(&self) -> InstanceShared {
@@ -388,7 +388,9 @@ fn realised_volatility(closes: &[f64]) -> Option<f64> {
     if closes.len() < 2 {
         return None;
     }
-    let start = closes.len().saturating_sub(lite::VOLATILITY_LENGTH + 1);
+    let start = closes
+        .len()
+        .saturating_sub(lite::LITE_VOLATILITY_LENGTH + 1);
     let window = &closes[start..];
     let mut sum = 0.0;
     let mut sum_sq = 0.0;

@@ -72,16 +72,17 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use protopyne_kernels::{
-    indicator_library_id, load_closure_sources, parse_program, InputSet, LinkedModule, ModuleInput,
-    PineEngine, PineRuntimeConfig, PineValue, RunOutcome,
+    parse_program, InputSet, LinkedModule, ModuleInput, PineEngine, PineRuntimeConfig, PineValue,
+    RunOutcome,
 };
 use protopyne_types::{Bar, Timeframe};
 use rust_decimal::Decimal;
 
 use super::common_golden::{check_golden, dump_canonical};
 use super::common_mtf::{
-    bars_at, build_tick_legs, data_root, dataset_of, engine_for, field_num, inject_all,
-    linked_from_graph, load_history, load_tick_rows_from, num, present, resolve_inputs, WARMUP,
+    bars_at, build_tick_legs, dataset_of, engine_for, field_num, fixture_closure_inputs,
+    inject_all, link_fixture_closure, linked_from_graph, load_history, load_tick_rows_from, num,
+    present, resolve_inputs, WARMUP,
 };
 
 /// Snapshot series the proof pins on confirmed bars.
@@ -105,46 +106,22 @@ fn golden_path(timeframe: &str) -> PathBuf {
         .join(format!("pine_integration_lite_{timeframe}.json"))
 }
 
-/// The real eight-module closure (seven libraries plus the indicator root)
-/// linked dependency-first, exactly like the loader hands the engine.
+/// The fixture eight-module closure (seven libraries plus the indicator
+/// root) linked dependency-first, exactly like the loader hands the engine.
+/// Fixture bytes are checked in; the volatile live root is never read.
 fn linked_closure() -> Vec<LinkedModule> {
-    let inputs: Vec<ModuleInput> = load_closure_sources(&data_root())
-        .expect("closure loads")
-        .into_iter()
-        .map(|(key, source)| {
-            let program = parse_program(&source.text)
-                .unwrap_or_else(|err| panic!("real file {key} parses: {err}"));
-            let id = if key == "local/IntegrationLite" {
-                indicator_library_id()
-            } else {
-                let (publisher, name) = key.split_once('/').expect("key shape");
-                protopyne_kernels::LibraryId {
-                    publisher: publisher.to_owned(),
-                    name: name.to_owned(),
-                    version: 1,
-                }
-            };
-            ModuleInput::new(id, source, program)
-        })
-        .collect();
-    let graph = resolve_inputs(inputs);
-    assert!(
-        graph.warnings().is_empty(),
-        "clean v6 closure warns nothing"
-    );
-    linked_from_graph(&graph)
+    link_fixture_closure("_IntegrationLite")
 }
 
-/// Link the seven shipped libraries with one driver root calling
+/// Link the seven fixture libraries with one driver root calling
 /// through the same aliases the indicator uses.
 fn link_driver(driver: &str) -> Vec<LinkedModule> {
-    let mut inputs: Vec<ModuleInput> = load_closure_sources(&data_root())
-        .expect("closure loads")
+    let mut inputs: Vec<ModuleInput> = fixture_closure_inputs("_IntegrationLite")
         .into_iter()
-        .filter(|(key, _)| key != "local/IntegrationLite")
+        .filter(|(key, _)| key != "local/_IntegrationLite")
         .map(|(key, source)| {
             let program = parse_program(&source.text)
-                .unwrap_or_else(|err| panic!("real file {key} parses: {err}"));
+                .unwrap_or_else(|err| panic!("fixture file {key} parses: {err}"));
             let (publisher, name) = key.split_once('/').expect("key shape");
             let id = protopyne_kernels::LibraryId {
                 publisher: publisher.to_owned(),
@@ -459,20 +436,15 @@ fn integration_lite_tick_tape_reconciles_minute_volumes() {
         bars.init(UTIL.Timeframes.M1, UTIL.Timeframes.M1, UTIL.Timeframes.D1)\n\
         bars.fetch()\n";
     let tick_modules: Vec<LinkedModule> = linked_from_graph(&resolve_inputs(
-        load_closure_sources(&data_root())
-            .expect("closure loads")
+        fixture_closure_inputs("_IntegrationLite")
             .into_iter()
             .map(|(key, source)| {
-                let program = parse_program(&source.text).expect("real file parses");
-                let id = if key == "local/IntegrationLite" {
-                    indicator_library_id()
-                } else {
-                    let (publisher, name) = key.split_once('/').expect("key shape");
-                    protopyne_kernels::LibraryId {
-                        publisher: publisher.to_owned(),
-                        name: name.to_owned(),
-                        version: 1,
-                    }
+                let program = parse_program(&source.text).expect("fixture file parses");
+                let (publisher, name) = key.split_once('/').expect("key shape");
+                let id = protopyne_kernels::LibraryId {
+                    publisher: publisher.to_owned(),
+                    name: name.to_owned(),
+                    version: 1,
                 };
                 ModuleInput::new(id, source, program)
             })

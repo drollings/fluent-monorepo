@@ -373,12 +373,9 @@ fn exercise_budget_echo(budgets: GrantBudgets) -> ComputedWorstCase {
 }
 
 /// The smaller of two amounts: a budget is a hard ceiling.
+/// (M3.2: delegates to [`Money::min`], the one home for this comparison.)
 fn cheaper(left: Money, right: Money) -> Money {
-    if left.as_decimal() <= right.as_decimal() {
-        left
-    } else {
-        right
-    }
+    left.min(right)
 }
 
 /// Budget already consumed. Kept separate from the immutable [`Grant`] so
@@ -638,6 +635,55 @@ pub enum GrantPreset {
     },
 }
 
+/// Per-tier tightening predicates shared by [`Grant::tightens`] (whole-grant
+/// compare) and [`Grant::tighten`] (patch compare): `next` authorizes no more
+/// than `current` in that tier. One rule set, two call shapes — the patch
+/// path wraps these in per-tier errors, the predicate path negates them
+/// (M6.1). `re_attestation` and `valid_from` have no patch fields, so they
+/// stay inline in `tightens` only.
+fn budgets_tightens(next: &GrantBudgets, current: &GrantBudgets) -> bool {
+    next.max_trades <= current.max_trades
+        && next.max_contracts <= current.max_contracts
+        && next.max_loss.as_decimal() <= current.max_loss.as_decimal()
+        && next.max_notional.as_decimal() <= current.max_notional.as_decimal()
+}
+
+fn signal_tightens(next: &SignalThresholds, current: &SignalThresholds) -> bool {
+    next.min_conviction >= current.min_conviction
+        && next.min_activity_score >= current.min_activity_score
+}
+
+fn trade_tightens(next: &TradeThresholds, current: &TradeThresholds) -> bool {
+    next.max_loss_per_trade.as_decimal() <= current.max_loss_per_trade.as_decimal()
+        && next.max_spread_width.as_decimal() <= current.max_spread_width.as_decimal()
+        && next.min_dte_days >= current.min_dte_days
+        && next.max_dte_days <= current.max_dte_days
+}
+
+fn portfolio_tightens(next: &PortfolioThresholds, current: &PortfolioThresholds) -> bool {
+    next.max_open_risk.as_decimal() <= current.max_open_risk.as_decimal()
+        && next.quote_max_age_secs <= current.quote_max_age_secs
+}
+
+fn breakers_tightens(next: &BreakerLimits, current: &BreakerLimits) -> bool {
+    next.max_consecutive_errors <= current.max_consecutive_errors
+        && !drawdown_looser(
+            next.max_portfolio_drawdown_fraction,
+            current.max_portfolio_drawdown_fraction,
+        )
+}
+
+fn scope_tightens(next: &GrantScope, current: &GrantScope) -> bool {
+    next.is_subset_of(current)
+}
+
+fn window_end_tightens(
+    next_valid_until: DateTime<Utc>,
+    current_valid_until: DateTime<Utc>,
+) -> bool {
+    next_valid_until <= current_valid_until
+}
+
 impl Grant {
     /// Build a preset grant. The rehearsal preset is the only permissive
     /// construction; every other grant is armed explicitly.
@@ -724,52 +770,34 @@ impl Grant {
     /// start is a shorter window, hence narrower.
     #[must_use]
     pub fn tightens(&self, current: &Self) -> bool {
-        if self.budgets.max_trades > current.budgets.max_trades
-            || self.budgets.max_contracts > current.budgets.max_contracts
-            || self.budgets.max_loss.as_decimal() > current.budgets.max_loss.as_decimal()
-            || self.budgets.max_notional.as_decimal() > current.budgets.max_notional.as_decimal()
-        {
+        if !budgets_tightens(&self.budgets, &current.budgets) {
             return false;
         }
-        if self.signal.min_conviction < current.signal.min_conviction
-            || self.signal.min_activity_score < current.signal.min_activity_score
-        {
+        if !signal_tightens(&self.signal, &current.signal) {
             return false;
         }
-        if self.trade.max_loss_per_trade.as_decimal()
-            > current.trade.max_loss_per_trade.as_decimal()
-            || self.trade.max_spread_width.as_decimal()
-                > current.trade.max_spread_width.as_decimal()
-            || self.trade.min_dte_days < current.trade.min_dte_days
-            || self.trade.max_dte_days > current.trade.max_dte_days
-        {
+        if !trade_tightens(&self.trade, &current.trade) {
             return false;
         }
-        if self.portfolio.max_open_risk.as_decimal() > current.portfolio.max_open_risk.as_decimal()
-            || self.portfolio.quote_max_age_secs > current.portfolio.quote_max_age_secs
-        {
+        if !portfolio_tightens(&self.portfolio, &current.portfolio) {
             return false;
         }
-        if self.breakers.max_consecutive_errors > current.breakers.max_consecutive_errors {
+        if !breakers_tightens(&self.breakers, &current.breakers) {
             return false;
         }
         // Dropping attestation is looser, tightening the window is tighter;
         // the cadence table only ever tightens with window length.
+        // (`re_attestation` has no patch field, so it stays here, not in a
+        // shared predicate.)
         if re_attestation_looser(self.re_attestation, current.re_attestation) {
             return false;
         }
-        // A lower drawdown cap trips sooner, so it is tighter; `None` never
-        // trips, so it is the loosest. Both unset is equal, never looser.
-        if drawdown_looser(
-            self.breakers.max_portfolio_drawdown_fraction,
-            current.breakers.max_portfolio_drawdown_fraction,
-        ) {
+        if !scope_tightens(&self.scope, &current.scope) {
             return false;
         }
-        if !self.scope.is_subset_of(&current.scope) {
-            return false;
-        }
-        if self.valid_until > current.valid_until || self.valid_from < current.valid_from {
+        if !window_end_tightens(self.valid_until, current.valid_until)
+            || self.valid_from < current.valid_from
+        {
             return false;
         }
         true
@@ -790,11 +818,7 @@ impl Grant {
     pub fn tighten(&self, patch: GrantPatch) -> Result<Self, StrategyError> {
         let mut next = self.clone();
         if let Some(budgets) = patch.budgets {
-            if budgets.max_trades > self.budgets.max_trades
-                || budgets.max_contracts > self.budgets.max_contracts
-                || budgets.max_loss.as_decimal() > self.budgets.max_loss.as_decimal()
-                || budgets.max_notional.as_decimal() > self.budgets.max_notional.as_decimal()
-            {
+            if !budgets_tightens(&budgets, &self.budgets) {
                 return Err(StrategyError::InvalidGrant(
                     "tightening must not raise any budget".to_owned(),
                 ));
@@ -802,9 +826,7 @@ impl Grant {
             next.budgets = budgets;
         }
         if let Some(signal) = patch.signal {
-            if signal.min_conviction < self.signal.min_conviction
-                || signal.min_activity_score < self.signal.min_activity_score
-            {
+            if !signal_tightens(&signal, &self.signal) {
                 return Err(StrategyError::InvalidGrant(
                     "tightening must not lower any signal threshold".to_owned(),
                 ));
@@ -812,11 +834,7 @@ impl Grant {
             next.signal = signal;
         }
         if let Some(trade) = patch.trade {
-            if trade.max_loss_per_trade.as_decimal() > self.trade.max_loss_per_trade.as_decimal()
-                || trade.max_spread_width.as_decimal() > self.trade.max_spread_width.as_decimal()
-                || trade.min_dte_days < self.trade.min_dte_days
-                || trade.max_dte_days > self.trade.max_dte_days
-            {
+            if !trade_tightens(&trade, &self.trade) {
                 return Err(StrategyError::InvalidGrant(
                     "tightening must not widen any trade threshold".to_owned(),
                 ));
@@ -824,9 +842,7 @@ impl Grant {
             next.trade = trade;
         }
         if let Some(portfolio) = patch.portfolio {
-            if portfolio.max_open_risk.as_decimal() > self.portfolio.max_open_risk.as_decimal()
-                || portfolio.quote_max_age_secs > self.portfolio.quote_max_age_secs
-            {
+            if !portfolio_tightens(&portfolio, &self.portfolio) {
                 return Err(StrategyError::InvalidGrant(
                     "tightening must not widen any portfolio threshold".to_owned(),
                 ));
@@ -834,12 +850,7 @@ impl Grant {
             next.portfolio = portfolio;
         }
         if let Some(breakers) = patch.breakers {
-            if breakers.max_consecutive_errors > self.breakers.max_consecutive_errors
-                || drawdown_looser(
-                    breakers.max_portfolio_drawdown_fraction,
-                    self.breakers.max_portfolio_drawdown_fraction,
-                )
-            {
+            if !breakers_tightens(&breakers, &self.breakers) {
                 return Err(StrategyError::InvalidGrant(
                     "tightening must not raise any breaker limit".to_owned(),
                 ));
@@ -847,7 +858,7 @@ impl Grant {
             next.breakers = breakers;
         }
         if let Some(scope) = patch.scope {
-            if !scope.is_subset_of(&self.scope) {
+            if !scope_tightens(&scope, &self.scope) {
                 return Err(StrategyError::InvalidGrant(
                     "tightening must not widen grant scope".to_owned(),
                 ));
@@ -855,7 +866,7 @@ impl Grant {
             next.scope = scope;
         }
         if let Some(valid_until) = patch.valid_until {
-            if valid_until > self.valid_until {
+            if !window_end_tightens(valid_until, self.valid_until) {
                 return Err(StrategyError::InvalidGrant(
                     "tightening must not extend the grant window".to_owned(),
                 ));
@@ -1001,6 +1012,34 @@ impl Describable for GrantPatch {
     }
 }
 
+/// Single-sourced denial vocabulary (M6.1c): the fixed tier order
+/// [`evaluate_grant`] walks, as constants. The evaluator and
+/// [`deny_order`](crate::fixtures::deny_order) both read these, so a
+/// renamed stage or a moved tier fails to compile instead of silently
+/// forking the string pin. A full typed-refusal enum would change
+/// [`GrantDecision`]'s wire shape (`reasons: Vec<String>` is read by the
+/// server, ledger, journal, and UI) — deliberately not done here.
+pub mod refusal {
+    /// Grant is revoked.
+    pub const REVOKED: &str = "grant revoked";
+    /// Outside `[valid_from, valid_until)`.
+    pub const WINDOW_NOT_LIVE: &str = "grant window not live";
+    /// Entry past cadence + grace without re-attestation.
+    pub const ATTESTATION_LAPSED: &str = "grant attestation lapsed";
+    /// Whole-scope gate (strategy/underlying/structure/direction/permission).
+    pub const OUTSIDE_SCOPE: &str = "proposal outside grant scope";
+    /// Trade-count budget consumed.
+    pub const TRADE_BUDGET_EXHAUSTED: &str = "trade budget exhausted";
+    /// Conviction below the signal floor.
+    pub const CONVICTION_BELOW_THRESHOLD: &str = "conviction below signal threshold";
+    /// Per-trade max loss exceeded.
+    pub const MAX_LOSS_EXCEEDED: &str = "per-trade max loss exceeded";
+    /// Portfolio open-risk cap exceeded.
+    pub const OPEN_RISK_EXCEEDED: &str = "portfolio open-risk cap exceeded";
+    /// Breaker disarmed entries.
+    pub const BREAKER_TRIPPED: &str = "breaker tripped: entries disarmed";
+}
+
 /// Outcome of [`evaluate_grant`]: unconditional allow, or deny with every
 /// reason collected (never just the first) for audit.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1024,7 +1063,11 @@ impl GrantDecision {
 
 /// Compare one committed total against its cap, denying on arithmetic
 /// overflow: an unrepresentable sum must refuse, never wrap or saturate into
-/// an authorization.
+/// an authorization. (M6.2) This is the grant-budget comparator; the
+/// mandatory-risk caps (`RiskEngine::check`, typed `RiskReason`) and the
+/// sizing clamp (`SizingCaps::contain`, which clamps rather than refuses)
+/// are different authorities over different refusal representations — keep
+/// all three, do not abstract over them.
 fn budget_exceeded(
     used: Decimal,
     commit: Decimal,
@@ -1096,13 +1139,14 @@ fn evaluate_grant_inner(
     now: DateTime<Utc>,
     enforce_attestation: bool,
 ) -> GrantDecision {
+    use refusal as R;
     let mut reasons: Vec<String> = Vec::new();
 
     if grant.revoked {
-        reasons.push("grant revoked".to_owned());
+        reasons.push(R::REVOKED.to_owned());
     }
     if now < grant.valid_from || now >= grant.valid_until {
-        reasons.push("grant window not live".to_owned());
+        reasons.push(R::WINDOW_NOT_LIVE.to_owned());
     }
     // Operator authority lapses on its own cadence: entries disarm past
     // cadence + grace until re-attested, while exits and rolls route exactly
@@ -1113,16 +1157,16 @@ fn evaluate_grant_inner(
             let since = usage.last_attested.unwrap_or(grant.valid_from);
             let elapsed = (now - since).to_std().unwrap_or(Duration::ZERO);
             if elapsed > window.cadence.saturating_add(window.grace) {
-                reasons.push("grant attestation lapsed".to_owned());
+                reasons.push(R::ATTESTATION_LAPSED.to_owned());
             }
         }
     }
     if !grant.scope.allows(proposal) {
-        reasons.push("proposal outside grant scope".to_owned());
+        reasons.push(R::OUTSIDE_SCOPE.to_owned());
     }
 
     if usage.used_trades.saturating_add(1) > grant.budgets.max_trades {
-        reasons.push("trade budget exhausted".to_owned());
+        reasons.push(R::TRADE_BUDGET_EXHAUSTED.to_owned());
     }
     match proposal.leg_contracts() {
         Some(contracts) => {
@@ -1156,7 +1200,7 @@ fn evaluate_grant_inner(
         Some(Ordering::Greater | Ordering::Equal)
     );
     if !conviction_ok {
-        reasons.push("conviction below signal threshold".to_owned());
+        reasons.push(R::CONVICTION_BELOW_THRESHOLD.to_owned());
     }
     let activity_ok = matches!(
         proposal
@@ -1169,7 +1213,7 @@ fn evaluate_grant_inner(
     }
 
     if proposal.max_loss.as_decimal() > grant.trade.max_loss_per_trade.as_decimal() {
-        reasons.push("per-trade max loss exceeded".to_owned());
+        reasons.push(R::MAX_LOSS_EXCEEDED.to_owned());
     }
     if market.spread_width.as_decimal() > grant.trade.max_spread_width.as_decimal() {
         reasons.push("spread width above trade threshold".to_owned());
@@ -1196,7 +1240,7 @@ fn evaluate_grant_inner(
             proposal.max_loss.as_decimal(),
             grant.portfolio.max_open_risk.as_decimal(),
             &mut reasons,
-            "portfolio open-risk cap exceeded",
+            R::OPEN_RISK_EXCEEDED,
         );
     }
     if market.quote_age_secs > grant.portfolio.quote_max_age_secs {
@@ -1204,7 +1248,7 @@ fn evaluate_grant_inner(
     }
 
     if breakers.tripped {
-        reasons.push("breaker tripped: entries disarmed".to_owned());
+        reasons.push(R::BREAKER_TRIPPED.to_owned());
     }
     if breakers.consecutive_errors > grant.breakers.max_consecutive_errors {
         reasons.push("consecutive-error breaker tripped".to_owned());

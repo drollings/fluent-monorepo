@@ -18,6 +18,19 @@
 //! kernel (`ema`, `rma`) live here without a second shell: the generic loop
 //! carries the last output, and the kernel decides whether to seed from the
 //! window mean or step from it.
+//!
+//! Bypass table (M2.1): every one-leg indicator delegates `refine_warmup`
+//! to [`warmup`] below unless listed here. Each bypass carries a
+//! `// BYPASS(windowed::warmup)` comment at its `warmup` with its reason.
+//!
+//! | Bypass | Reason |
+//! |---|---|
+//! | `filters` Eit / Kalman / Voss | Recursive with seeded estimate or
+//! defined-zero gate — opening print defined, honest warmup is 1 |
+//! | `ta_momentum` RSV / Williams %R | Single-bar-relative fast
+//! oscillators — defined once one bar exists |
+//! | `ta_momentum` fast Stoch | fastk leg carries the reference's defined
+//! zero from bar zero |
 
 use crate::indicator::{
     nan_hole, BarTick, IndicatorResult, IndicatorSpec, IndicatorState, Ohlcv, ParamSet,

@@ -33,6 +33,7 @@ pub mod integration_lite;
 pub mod oscillator_panel;
 pub mod oscillators;
 pub mod overlay;
+pub mod pine_indicator;
 pub mod pine_overlay;
 pub mod prefs;
 pub mod regime_labels;
@@ -94,6 +95,7 @@ pub use overlay::{
     BacktestOverlay, BacktestOverlayConfig, BacktestPoint, BacktestPointKind, EquityPane,
     BACKTEST_EQUITY_ID, BACKTEST_EQUITY_PANE, BACKTEST_OVERLAY_ID,
 };
+pub use pine_indicator::{pine_data_root, pine_overlay_of, PineIndicatorPlugin};
 pub use pine_overlay::{
     overlay_geoms, paint_overlay, paint_unsupported_chip, translate_overlay, OverlayGeoms,
     PlacedLabel, SeriesGeom,
@@ -102,6 +104,7 @@ pub use prefs::{
     prefs_path, BacktestPrefs, BookmarkEntry, Favorites, SlotPrefs, TerminalPrefs, TickerLayout,
     PREFS_FILE,
 };
+pub use protopyne_kernels::{load_pine_sources, IndicatorManifestEntry, ManifestFile};
 pub use protopyne_view::AssetClass;
 pub use regime_labels::{
     display_label, label_series, parity_label, regime_style_key, stability_band, QuietLabel,
@@ -117,9 +120,9 @@ pub use topology::{
 pub use widgets::{
     chart_type_label, mtf_table_shape, paint_mtf_table, paint_range_dialog,
     paint_timeframe_toolbar, paint_top_bar, timeframe_labels, toolbar_labels, CalendarState,
-    MtfRow, PlayPressState, RangeChoice, ReplaySpeed, TopBarAction, TopBarMenuState,
-    BOOKMARK_SEARCH_LABEL, INDICATOR_SEARCH_LABEL, PLAY_LONG_PRESS_SECS, PULLDOWN_CHEVRON,
-    SYMBOL_SEARCH_LABEL, TOP_BAR_CHART_TYPES,
+    MtfRow, RangeChoice, ReplaySpeed, TopBarAction, TopBarMenuState, BOOKMARK_SEARCH_LABEL,
+    CHART_LONG_PRESS_SECS, INDICATOR_SEARCH_LABEL, PULLDOWN_CHEVRON, SYMBOL_SEARCH_LABEL,
+    TOP_BAR_CHART_TYPES,
 };
 pub use workspace::{
     build_symbol_catalog, live_update_of_frame, paint_workspace, symbol_modal_for, ChartWorkspace,

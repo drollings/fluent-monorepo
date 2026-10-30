@@ -1,7 +1,7 @@
-//! Real-file parse conformance: every shipped Pine file parses with zero
-//! errors, per-module statement/export shapes are pinned, a malformed corpus
-//! still refuses, and parse-then-display round-trips structurally on both the
-//! overlap subset and the full real closure.
+//! Fixture-file parse conformance: every checked-in Pine fixture parses
+//! with zero errors, per-module statement/export shapes are pinned, a
+//! malformed corpus still refuses, and parse-then-display round-trips
+//! structurally on both the overlap subset and the full fixture closure.
 //!
 //! Display normalizes (comments and blank lines vanish, blocks re-indent to
 //! four spaces, expressions gain clarifying parentheses), so round-trip means
@@ -12,21 +12,24 @@
 //!
 //! Test path note: this file rides the `pine::syntax` unit module, so the
 //! runnable filter is `pine::syntax`, not the file stem.
+//!
+//! All file reads run over the checked-in fixtures
+//! (server `tests/data/pine_closure`), never the volatile live root.
 
 use super::*;
 use crate::display_program;
 use std::path::PathBuf;
 
 fn data_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../data/protopyne-rs")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../protopyne-server/tests/data/pine_closure")
 }
 
 fn load(relative: &str) -> String {
-    std::fs::read_to_string(data_root().join(relative)).expect("real file reads")
+    std::fs::read_to_string(data_root().join(relative)).expect("fixture file reads")
 }
 
 fn parse_file(relative: &str) -> PineProgram {
-    parse_program(&load(relative)).expect("real file parses with zero errors")
+    parse_program(&load(relative)).expect("fixture file parses with zero errors")
 }
 
 /// Top-level `export`ed names in source order, mirroring the import graph's
@@ -320,7 +323,7 @@ fn closure_files_parse_with_pinned_shapes() {
         .collect();
     assert_eq!(
         actuals, expected,
-        "statement/export snapshots pin the real-file shapes"
+        "statement/export snapshots pin the fixture-file shapes"
     );
 }
 
@@ -438,8 +441,8 @@ fn display_round_trips_overlap_subset() {
 }
 
 #[test]
-fn display_round_trips_real_closure() {
-    // Full structural round-trip on every shipped file: display drops
+fn display_round_trips_fixture_closure() {
+    // Full structural round-trip on every fixture file: display drops
     // comments and layout but must preserve every statement and expression.
     let files = vec![
         "libraries/_libUtil.pine",
@@ -454,10 +457,10 @@ fn display_round_trips_real_closure() {
     for relative in files {
         let program = parse_file(relative);
         let displayed = display_program(&program);
-        let reparsed = parse_program(&displayed).expect("displayed real file re-parses");
+        let reparsed = parse_program(&displayed).expect("displayed fixture file re-parses");
         assert_eq!(
             reparsed, program,
-            "real file {relative} survives parse-then-display"
+            "fixture file {relative} survives parse-then-display"
         );
     }
 }

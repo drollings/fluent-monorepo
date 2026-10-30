@@ -511,8 +511,14 @@ pub fn candle_momentum_series(
         &ParamSet::new().with_int("length", RIBBON_MEAN_LENGTH),
         &synth_close_frame(&native.adaptive, &volumes),
     )?;
-    let (health, vol_ratio) =
-        ribbon_health_inputs(rows, eit_alpha, RIBBON_HEALTH_K, &native.signal, &mean)?;
+    let (health, vol_ratio) = ribbon_health_inputs(
+        rows,
+        &native.adaptive,
+        eit_alpha,
+        RIBBON_HEALTH_K,
+        &native.signal,
+        &mean,
+    )?;
     Ok(CandleMomentum { health, vol_ratio })
 }
 
@@ -548,6 +554,7 @@ fn ribbon_smoothing_leg(
 /// non-finite `eit_alpha`.
 fn ribbon_health_inputs(
     rows: &[ChartRow],
+    native_adaptive: &[Option<f64>],
     eit_alpha: f64,
     health_k: f64,
     signal: &[Option<f64>],
@@ -559,7 +566,11 @@ fn ribbon_health_inputs(
             reason: "adaptive smoothing must sit within (0, 1]".to_owned(),
         });
     }
-    for (slot, series) in [("signal", signal), ("mean", mean)] {
+    for (slot, series) in [
+        ("adaptive", native_adaptive),
+        ("signal", signal),
+        ("mean", mean),
+    ] {
         if series.len() != rows.len() {
             return Err(EguiError::InvalidParam {
                 what: (*slot).to_owned(),
@@ -567,13 +578,16 @@ fn ribbon_health_inputs(
             });
         }
     }
-    let native = lite_native_series(rows, eit_alpha)?;
+    // The adaptive leg arrives precomputed: both callers just batched these
+    // same rows at this same alpha, and re-batching to read one leg redoubles
+    // the full leg batch every frame. Same rows, same alpha, same values —
+    // threading the leg is sharing, not caching.
     let frame = kernel_preview_frame(rows);
     let context =
         protopyne_kernels::lite::context_legs(&frame).map_err(|error| describe_kernel(&error))?;
     let health = protopyne_kernels::lite::ribbon_health(
         &context.atr,
-        &native.adaptive,
+        native_adaptive,
         signal,
         mean,
         &context.vol_ratio,
@@ -1961,6 +1975,7 @@ pub fn integration_lite_sub_pane(
     )?;
     let (ribbon_health, _vol_ratio) = ribbon_health_inputs(
         rows,
+        &native.adaptive,
         config.eit_alpha,
         config.ribbon_health_k,
         &signal,

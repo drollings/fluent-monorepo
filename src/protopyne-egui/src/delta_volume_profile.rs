@@ -821,7 +821,10 @@ impl crate::indicators::ChartIndicator for DeltaVolumeProfileIndicator {
                 pane: None,
             })
             .collect();
-        Ok(crate::indicators::IndicatorEvaluation { series: built })
+        Ok(crate::indicators::IndicatorEvaluation {
+            series: built,
+            overlay: Ok(Vec::new()),
+        })
     }
 
     fn readouts(&self, evaluation: &crate::indicators::IndicatorEvaluation) -> Vec<ReadoutValue> {

@@ -467,3 +467,119 @@ fn apex_audit_names_rust_where_served() {
         "audit reads pine where not served"
     );
 }
+
+#[test]
+fn apex_gap_tape_poisons_to_pine_byte_identical() {
+    // One-bar-lag regression pin: a tape with one uneven gap must serve
+    // zero bars, never a prefix. The feed validates the whole tape up
+    // front and poisons on the first gap, so the run falls back to the
+    // Pine body from bar zero. Any serve-until-gap implementation would
+    // warm the bridge on the served prefix and reseed every recursive
+    // kernel one bar late — agreement here fails exactly then.
+    let mut bars = ramp_bars(60).into_iter().take(12).collect::<Vec<_>>();
+    let shifted = bar(
+        "104.75",
+        "105.50",
+        "104.50",
+        "105.00",
+        1050,
+        1_700_000_000 + 5 * 60 + 30,
+    );
+    bars[5] = shifted;
+    let driver = format!("{IMPORTS}{CTX_DRIVER}");
+    let pine_outcome = run_ctx(&mut test_engine("1"), &driver, &bars);
+    let native_outcome = run_ctx(&mut native_engine("1"), &driver, &bars);
+    let at = bars.len() - 1;
+    assert_instances_agree(
+        &instance_at(&pine_outcome, at, "ctx"),
+        &instance_at(&native_outcome, at, "ctx"),
+        "gapped tape stored ctx",
+    );
+    assert_instances_agree(
+        &instance_at(&pine_outcome, at, "ctx2"),
+        &instance_at(&native_outcome, at, "ctx2"),
+        "gapped tape fetch value",
+    );
+}
+
+#[test]
+fn apex_serve_decline_accounting() {
+    // Serve/decline ledger for the bar-context gate: span-matched tapes
+    // are the served set (routing audit pins rust-where-served; values
+    // agree within EPS), uneven tapes are the declined set (first feed
+    // poisons; the Pine body runs instead). Precision is agreement
+    // within class over runs in that class — any lag or misroute fails
+    // its row.
+    let mut served_runs = 0;
+    let mut served_agreeing = 0;
+    for period in ["1", "5", "15"] {
+        let bars = ramp_bars(60).into_iter().take(12).collect::<Vec<_>>();
+        let driver = format!("{IMPORTS}{CTX_DRIVER}");
+        let pine_outcome = run_ctx(&mut test_engine(period), &driver, &bars);
+        let native_outcome = run_ctx(&mut native_engine(period), &driver, &bars);
+        served_runs += 1;
+        let at = bars.len() - 1;
+        assert_instances_agree(
+            &instance_at(&pine_outcome, at, "ctx"),
+            &instance_at(&native_outcome, at, "ctx"),
+            &format!("{period}-chart served ctx"),
+        );
+        served_agreeing += 1;
+    }
+    assert_eq!(served_agreeing, served_runs, "every served run agrees");
+    assert!(served_runs > 0, "served set non-empty");
+    let mut declined_runs = 0;
+    let mut declined_agreeing = 0;
+    let mut gap = ramp_bars(60).into_iter().take(12).collect::<Vec<_>>();
+    gap[5] = bar(
+        "104.75",
+        "105.50",
+        "104.50",
+        "105.00",
+        1050,
+        1_700_000_000 + 5 * 60 + 30,
+    );
+    {
+        // Uneven spacing poisons the first feed: zero bars serve, the
+        // Pine body runs from bar zero, outcomes agree.
+        let driver = format!("{IMPORTS}{CTX_DRIVER}");
+        let pine_outcome = run_ctx(&mut test_engine("1"), &driver, &gap);
+        let native_outcome = run_ctx(&mut native_engine("1"), &driver, &gap);
+        declined_runs += 1;
+        let at = gap.len() - 1;
+        assert_instances_agree(
+            &instance_at(&pine_outcome, at, "ctx"),
+            &instance_at(&native_outcome, at, "ctx"),
+            "gap tape declined ctx",
+        );
+        declined_agreeing += 1;
+    }
+    {
+        // Tick runs decline outright: the opted-in engine reproduces the
+        // Pine engine tick for tick.
+        let (chart, tick_bars, ticks) = tick_tape();
+        let _ = chart;
+        let driver = format!("{IMPORTS}{CTX_DRIVER}");
+        let modules = linked(&driver);
+        let pine_outcome = test_engine("1")
+            .run_linked_ticks(&modules, &tick_bars, &ticks, InputSet::new())
+            .expect("pine tick run evaluates");
+        let modules = linked(&driver);
+        let native_outcome = native_engine("1")
+            .run_linked_ticks(&modules, &tick_bars, &ticks, InputSet::new())
+            .expect("opted-in tick run evaluates");
+        declined_runs += 1;
+        let at = ticks.len() - 1;
+        assert_instances_agree(
+            &instance_at(&pine_outcome, at, "ctx"),
+            &instance_at(&native_outcome, at, "ctx"),
+            "tick tape declined ctx",
+        );
+        declined_agreeing += 1;
+    }
+    assert_eq!(
+        declined_agreeing, declined_runs,
+        "every declined run agrees"
+    );
+    assert!(declined_runs > 0, "declined set non-empty");
+}

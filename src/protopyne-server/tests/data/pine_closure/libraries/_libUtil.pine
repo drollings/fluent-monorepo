@@ -1,0 +1,792 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © showmethegrail
+//@version=6
+library('libUtil')
+
+// @enum Signal constants for backtest adapter compatibility
+export const int SIGNAL_NONE = 0
+export const int SIGNAL_BULL_ENTRY = 1
+export const int SIGNAL_BULL_EXIT = 2
+export const int SIGNAL_BEAR_ENTRY = -1
+export const int SIGNAL_BEAR_EXIT = -2
+
+export const float OSC_UPPER_BOUND = 200.0
+export const float OSC_UPPER_THRESHOLD = 50.0
+export const float OSC_UPPER_RANGE = 10.0
+export const float OSC_CENTER = 0.0
+export const float OSC_LOWER_RANGE = -10.0
+export const float OSC_LOWER_THRESHOLD = -50.0
+export const float OSC_LOWER_BOUND = -200.0
+export const float OSC_RANGE_WIDTH = OSC_UPPER_RANGE - OSC_LOWER_RANGE
+
+export const color COLOR_NONE = color.rgb(0,0,0,100.0)
+export const color COLOR_NEUTRAL = color.rgb(40, 40, 40, 60)
+
+/////////////////////////////////////////////////////////////
+// TIMEFRAME ENUM AND UTILITY FUNCTIONS
+/////////////////////////////////////////////////////////////
+
+//@enum An enumeration of timeframes
+export enum Timeframes
+    C = "Chart"
+    S5 = "5 Seconds"
+    S10 = "10 Seconds"
+    S15 = "15 Seconds"
+    S30 = "30 Seconds"
+    M1 = "1 Minute"
+    M3 = "3 Minutes"
+    M5 = "5 Minutes"
+    M10 = "10 Minutes"
+    M15 = "15 Minutes"
+    M30 = "30 Minutes"
+    H1 = "1 Hour"
+    H2 = "2 Hours"
+    H4 = "4 Hours"
+    D1 = "1 Day"
+    W1 = "1 Week"
+    MO1 = "1 Month"
+    MO3 = "3 Months"
+    Y = "Year"
+    NA = "-"
+
+// @function getTimeframeAbbrev
+// @description Returns the abbreviated string representation of a given timeframe.
+// @param tf: Timeframes - The timeframe to convert to an abbreviated string.
+// @returns string - The abbreviated string representation of the timeframe.
+export getTimeframeAbbrev(Timeframes tf) =>
+    switch tf
+        Timeframes.NA => timeframe.period
+        Timeframes.C => timeframe.period
+        Timeframes.S5 => "5S"
+        Timeframes.S10 => "10S"
+        Timeframes.S15 => "15S"
+        Timeframes.S30 => "30S"
+        Timeframes.M1 => "1"
+        Timeframes.M3 => "3"
+        Timeframes.M5 => "5"
+        Timeframes.M10 => "10"
+        Timeframes.M15 => "15"
+        Timeframes.M30 => "30"
+        Timeframes.H1 => "60"
+        Timeframes.H2 => "120"
+        Timeframes.H4 => "240"
+        Timeframes.D1 => "D"
+        Timeframes.W1 => "W"
+        Timeframes.MO1 => "1M"
+        Timeframes.MO3 => "3M"
+        Timeframes.Y => "12M"
+        =>
+            runtime.error("Unknown timeframe enum value")
+            timeframe.period
+
+// @function getTimeframeMS
+// @description Returns the millisecond representation of a given time frame.
+// @param tf: Timeframes - The time frame to convert to milliseconds.
+// @returns int - The millisecond representation of the time frame.
+export getTimeframeMS(Timeframes tf) =>
+    switch tf
+        Timeframes.S5 => 5000
+        Timeframes.S10 => 10000
+        Timeframes.S15 => 15000
+        Timeframes.S30 => 30000
+        Timeframes.M1 => 60000
+        Timeframes.M3 => 180000
+        Timeframes.M5 => 300000
+        Timeframes.M10 => 600000
+        Timeframes.M15 => 900000
+        Timeframes.M30 => 1800000
+        Timeframes.H1 => 3600000
+        Timeframes.H2 => 7200000
+        Timeframes.H4 => 14400000
+        Timeframes.D1 => 86400000
+        Timeframes.W1 => 604800000
+        =>
+            timeframe.in_seconds(timeframe.period) * 1000
+
+// @function getTimeframeFromMS
+// @description Converts a given interval in milliseconds to the corresponding Pine Script timeframe.
+// @param interval_ms: int - The interval in milliseconds to convert.
+// @returns Timeframes - The corresponding Pine Script timeframe for the given interval.
+export getTimeframeFromMS(int interval_ms) =>
+    switch interval_ms
+        5000 => Timeframes.S5
+        15000 => Timeframes.S15
+        30000 => Timeframes.S30
+        60000 => Timeframes.M1
+        300000 => Timeframes.M5
+        600000 => Timeframes.M10
+        900000 => Timeframes.M15
+        1800000 => Timeframes.M30
+        3600000 => Timeframes.H1
+        14400000 => Timeframes.H4
+        86400000 => Timeframes.D1
+        604800000 => Timeframes.W1
+        =>
+            Timeframes.NA
+
+// @function getTimeframeFromMultiplier
+// @description Returns the closest timeframe to a given multiple of the input time frame.
+// @param tf: Timeframes - The input time frame to determine the anchor for.
+// @param multiple: The multiple of the given timeframe to seek
+// @returns Timeframes - The closest Timeframes enum to getTimeframeMS(tf) * target
+export getTimeframeFromMultiplier(Timeframes tf, float multiple) =>
+    int target = int(math.round(getTimeframeMS(tf) * multiple, 0))
+    foundTF = getTimeframeFromMS(target)
+
+    if foundTF == Timeframes.NA
+        a = array.from(5000, 15000, 30000, 60000, 300000, 600000, 900000, 1800000, 3600000, 7200000, 14400000, 86400000, 604800000)
+        idx = math.min(array.binary_search_leftmost(a, target), 13)
+        foundTF := getTimeframeFromMS(array.get(a, idx))
+        array.clear(a)
+    foundTF
+
+// @function getTimeframe
+// @description Returns the corresponding Pine Script timeframe constant for a given period string.
+// @param _period: string - The period string to convert to a timeframe constant.
+// @returns Timeframes - The corresponding Pine Script timeframe constant.
+export getTimeframe(string _period = timeframe.period) =>
+    switch _period
+        // Seconds timeframes
+        "5S" => Timeframes.S5
+        "10S" => Timeframes.S10
+        "15S" => Timeframes.S15
+        "30S" => Timeframes.S30
+
+        // Minutes timeframes
+        "1" => Timeframes.M1
+        "1M" => Timeframes.M1
+        "3" => Timeframes.M3
+        "3M" => Timeframes.M3
+        "5" => Timeframes.M5
+        "5M" => Timeframes.M5
+        "10" => Timeframes.M10
+        "10M" => Timeframes.M10
+        "15" => Timeframes.M15
+        "15M" => Timeframes.M15
+        "30" => Timeframes.M30
+        "30M" => Timeframes.M30
+
+        // Hours timeframes
+        "60" => Timeframes.H1
+        "1H" => Timeframes.H1
+        "120" => Timeframes.H2
+        "2H" => Timeframes.H2
+        "240" => Timeframes.H4
+        "4H" => Timeframes.H4
+
+        // Daily timeframes
+        "D" => Timeframes.D1
+        "1D" => Timeframes.D1
+
+        // Weekly timeframes
+        "W" => Timeframes.W1
+        "1W" => Timeframes.W1
+
+        // Monthly timeframes
+        "1M" => Timeframes.MO1
+        "M1" => Timeframes.MO1
+        "3M" => Timeframes.MO3
+        "M3" => Timeframes.MO3
+        "12M" => Timeframes.Y
+        "Y" => Timeframes.Y
+
+        // Default case
+        => Timeframes.NA
+
+// @function getBarsInTimeframes
+// @description Calculates the number of lower timeframe bars that fit into a higher timeframe bar.
+// @param lowerTf: Timeframes - The lower timeframe to compare against.
+// @param higherTf: Timeframes - The higher timeframe to compare against.
+// @returns int - The number of lower timeframe bars that fit into a higher timeframe bar.
+export getBarsInTimeframes(Timeframes lowerTf, Timeframes higherTf) =>
+    int lowerSeconds = getTimeframeMS(lowerTf)
+    int higherSeconds = getTimeframeMS(higherTf)
+
+    // The conditional logic is now handled by a ternary operator in a single line.
+    // This allows the entire expression to be resolved at compile time.
+    int retval = 1
+    retval := not na(higherSeconds) and not na(lowerSeconds) and lowerSeconds < higherSeconds ? int(higherSeconds / lowerSeconds) : 1
+    retval
+
+// @function isChartTimeframe
+// @description Determines if the current chart timeframe matches the specified target timeframe.
+// @param target_tf: Timeframes - The target timeframe to compare against the current chart's timeframe.
+// @returns bool - True if the current chart's timeframe matches the target timeframe, false otherwise.
+export isChartTimeframe(Timeframes target_tf) =>
+    target_tf == getTimeframe(timeframe.period)
+
+/////////////////////////////////////////////////////////////
+// MARKET REGIMES
+/////////////////////////////////////////////////////////////
+
+// Regime detection (add after MarketRegimes enum)
+export enum MarketRegimes
+    RANGING = "Ranging"
+    TRENDING_BULL = "Trending Bull"
+    TRENDING_BEAR = "Trending Bear"
+    VOLATILE = "Volatile"
+    LOW_VOLUME = "Low Volume"
+
+// @function getRegimeEmoji
+// @description Returns an emoji corresponding to the given market regime.
+// @param regime: MarketRegimes - The market regime to get the emoji for.
+// @returns string - The emoji representing the market regime.
+export getRegimeEmoji(MarketRegimes regime) =>
+    switch regime
+        MarketRegimes.RANGING => "⚖"
+        MarketRegimes.TRENDING_BULL => "🐂"
+        MarketRegimes.TRENDING_BEAR => "🐻"
+        MarketRegimes.VOLATILE => "⚡"
+        MarketRegimes.LOW_VOLUME => "💤"
+        => "❓"
+
+/////////////////////////////////////////////////////////////
+// SMOOTHINGS / MAs
+/////////////////////////////////////////////////////////////
+
+//@enum An enumeration of smoothing MA types
+export enum Smoothings
+    ALMA = "ALMA"
+    EIT = "EIT"
+    EMA = "EMA"
+    HMA = "HMA"
+    KALMAN = "Kalman"
+    RMA = "RMA"
+    SMA = "SMA"
+    VWMA = "VWMA"
+    WMA = "WMA"
+    ZLEMA = "ZLEMA"
+    NA = "-"
+
+//@enum An enumeration of oscillator types
+export enum Oscillators
+    AROON = "AROON"
+    CCI = "CCI"
+    CDV = "CDV"		// Cumulative Delta Volume
+    CMO = "CMO"
+    MFI = "MFI"
+    RSI = "RSI"
+    SRSI = "SRSI"
+    STOCH = "STOCH"
+    TRENDSI = "TRENDSI"
+    VOSS = "VOSS"
+    NA = "-"
+
+/////////////////////////////////////////////////////////////
+// CANDLE PATTERNS
+/////////////////////////////////////////////////////////////
+
+//@enum Pattern type classification
+export enum PatternTypes
+    BULLISH = "Bullish"
+    BEARISH = "Bearish"
+    NEUTRAL = "Neutral"
+    REVERSAL = "Reversal"
+    CONTINUATION = "Continuation"
+
+//@enum An enumeration of price patterns
+export enum CandlePatterns
+    ABANDONED_BABY_BULL = "Abandoned Baby Bull"
+    ABANDONED_BABY_BEAR = "Abandoned Baby Bear"
+    DOJI = "Doji"
+    DARK_CLOUD_COVER = "Dark Cloud Cover"
+    DRAGONFLY_DOJI = "Dragonfly Doji"
+    ENGULFING_BULL = "Engulfing Bull"
+    ENGULFING_BEAR = "Engulfing Bear"
+    EVENING_DOJI_STAR = "Evening Doji Star"
+    EVENING_STAR = "Evening Star"
+    GRAVESTONE_DOJI = "Gravestone Doji"
+    HAMMER = "Hammer"
+    HANGING_MAN = "Hanging Man"
+    HARAMI_BULL = "Harami Bull"
+    HARAMI_BEAR = "Harami Bear"
+    HARAMI_CROSS = "Harami Cross"
+    INFLECTION_UP = "Inflection Up"
+    INFLECTION_DOWN = "Inflection Down"
+    INVERTED_HAMMER = "Inverted Hammer"
+    KICKING_BULL = "Kicking Bull"
+    KICKING_BEAR = "Kicking Bear"
+    LONG_LOWER_SHADOW = "Long Lower Shadow"
+    LONG_UPPER_SHADOW = "Long Upper Shadow"
+    MARUBOZU_WHITE = "Marubozu White"
+    MARUBOZU_BLACK = "Marubozu Black"
+    MORNING_DOJI_STAR = "Morning Doji Star"
+    MORNING_STAR = "Morning Star"
+    PIERCING_LINE = "Piercing Line"
+    SHOOTING_STAR = "Shooting Star"
+    BULL_SPINNING_TOP = " Bull Spinning Top"
+    BEAR_SPINNING_TOP = "Bear Spinning Top"
+    THREE_WHITE_SOLDIERS = "Three White Soldiers"
+    THREE_BLACK_CROWS = "Three Black Crows"
+    TWEEZER_TOP = "Tweezer Top"
+    TWEEZER_BOTTOM = "Tweezer Bottom"
+
+    // SMC-Specific Patterns
+    LIQUIDITY_GRAB_BULL = "Liquidity Grab Bull"
+    LIQUIDITY_GRAB_BEAR = "Liquidity Grab Bear"
+    INDUCEMENT_BULL = "Inducement Bull"
+    INDUCEMENT_BEAR = "Inducement Bear"
+    DISPLACEMENT_BULL = "Displacement Bull"
+    DISPLACEMENT_BEAR = "Displacement Bear"
+    MITIGATION_TEST_BULL = "Mitigation Test Bull"
+    MITIGATION_TEST_BEAR = "Mitigation Test Bear"
+    ACCUMULATION = "Accumulation"
+    DISTRIBUTION = "Distribution"
+    WYCKOFF_SPRING = "Wyckoff Spring"
+    WYCKOFF_UPTHRUST = "Wyckoff Upthrust"
+    STOP_HUNT = "Stop Hunt"
+    FAIR_VALUE_REBALANCE = "Fair Value Rebalance"
+
+    NA = "-"
+
+// @function isPatternType
+// @description Checks if a given candle pattern matches the specified pattern type.
+// @param pattern: CandlePatterns - The candle pattern to evaluate.
+// @param type: PatternTypes - The type of pattern to check against.
+// @returns bool - True if the pattern matches the specified type, false otherwise.
+export isPatternType(CandlePatterns pattern, PatternTypes type) =>
+    switch type
+        PatternTypes.BULLISH =>
+            switch pattern
+                CandlePatterns.DRAGONFLY_DOJI => true
+                CandlePatterns.MARUBOZU_WHITE => true
+                CandlePatterns.HAMMER => true
+                CandlePatterns.INVERTED_HAMMER => true
+                CandlePatterns.ENGULFING_BULL => true
+                CandlePatterns.MORNING_STAR => true
+                CandlePatterns.MORNING_DOJI_STAR => true
+                CandlePatterns.THREE_WHITE_SOLDIERS => true
+                CandlePatterns.HARAMI_BULL => true
+                CandlePatterns.INFLECTION_UP => true
+                CandlePatterns.PIERCING_LINE => true
+                CandlePatterns.TWEEZER_BOTTOM => true
+                CandlePatterns.ABANDONED_BABY_BULL => true
+                CandlePatterns.BULL_SPINNING_TOP => true
+                CandlePatterns.KICKING_BULL => true
+                CandlePatterns.LONG_LOWER_SHADOW => true
+                CandlePatterns.LIQUIDITY_GRAB_BULL => true
+                CandlePatterns.INDUCEMENT_BULL => true
+                CandlePatterns.DISPLACEMENT_BULL => true
+                CandlePatterns.MITIGATION_TEST_BULL => true
+                CandlePatterns.WYCKOFF_SPRING => true
+                => false
+
+        PatternTypes.BEARISH =>
+            switch pattern
+                CandlePatterns.GRAVESTONE_DOJI => true
+                CandlePatterns.MARUBOZU_BLACK => true
+                CandlePatterns.HANGING_MAN => true
+                CandlePatterns.SHOOTING_STAR => true
+                CandlePatterns.ENGULFING_BEAR => true
+                CandlePatterns.EVENING_STAR => true
+                CandlePatterns.EVENING_DOJI_STAR => true
+                CandlePatterns.THREE_BLACK_CROWS => true
+                CandlePatterns.HARAMI_BEAR => true
+                CandlePatterns.INFLECTION_DOWN => true
+                CandlePatterns.DARK_CLOUD_COVER => true
+                CandlePatterns.TWEEZER_TOP => true
+                CandlePatterns.ABANDONED_BABY_BEAR => true
+                CandlePatterns.BEAR_SPINNING_TOP => true
+                CandlePatterns.KICKING_BEAR => true
+                CandlePatterns.LONG_UPPER_SHADOW => true
+                CandlePatterns.LIQUIDITY_GRAB_BEAR => true
+                CandlePatterns.INDUCEMENT_BEAR => true
+                CandlePatterns.DISPLACEMENT_BEAR => true
+                CandlePatterns.MITIGATION_TEST_BEAR => true
+                CandlePatterns.WYCKOFF_UPTHRUST => true
+                => false
+
+        PatternTypes.NEUTRAL =>
+            switch pattern
+                CandlePatterns.DOJI => true
+                CandlePatterns.HARAMI_CROSS => true
+                CandlePatterns.ACCUMULATION => true
+                CandlePatterns.DISTRIBUTION => true
+                CandlePatterns.STOP_HUNT => true
+                CandlePatterns.FAIR_VALUE_REBALANCE => true
+                => false
+
+        PatternTypes.REVERSAL =>
+            switch pattern
+                CandlePatterns.DOJI => true
+                CandlePatterns.DRAGONFLY_DOJI => true
+                CandlePatterns.GRAVESTONE_DOJI => true
+                CandlePatterns.HAMMER => true
+                CandlePatterns.HANGING_MAN => true
+                CandlePatterns.INVERTED_HAMMER => true
+                CandlePatterns.SHOOTING_STAR => true
+                CandlePatterns.ENGULFING_BULL => true
+                CandlePatterns.ENGULFING_BEAR => true
+                CandlePatterns.MORNING_STAR => true
+                CandlePatterns.EVENING_STAR => true
+                CandlePatterns.MORNING_DOJI_STAR => true
+                CandlePatterns.EVENING_DOJI_STAR => true
+                CandlePatterns.HARAMI_BULL => true
+                CandlePatterns.HARAMI_BEAR => true
+                CandlePatterns.HARAMI_CROSS => true
+                CandlePatterns.PIERCING_LINE => true
+                CandlePatterns.DARK_CLOUD_COVER => true
+                CandlePatterns.TWEEZER_TOP => true
+                CandlePatterns.TWEEZER_BOTTOM => true
+                CandlePatterns.ABANDONED_BABY_BULL => true
+                CandlePatterns.ABANDONED_BABY_BEAR => true
+                CandlePatterns.BULL_SPINNING_TOP => true
+                CandlePatterns.BEAR_SPINNING_TOP => true
+                CandlePatterns.KICKING_BULL => true
+                CandlePatterns.KICKING_BEAR => true
+                CandlePatterns.LONG_LOWER_SHADOW => true
+                CandlePatterns.LONG_UPPER_SHADOW => true
+                CandlePatterns.LIQUIDITY_GRAB_BULL => true
+                CandlePatterns.LIQUIDITY_GRAB_BEAR => true
+                CandlePatterns.INDUCEMENT_BULL => true
+                CandlePatterns.INDUCEMENT_BEAR => true
+                CandlePatterns.WYCKOFF_SPRING => true
+                CandlePatterns.WYCKOFF_UPTHRUST => true
+                CandlePatterns.STOP_HUNT => true
+                => false
+
+        PatternTypes.CONTINUATION =>
+            switch pattern
+                CandlePatterns.MARUBOZU_WHITE => true
+                CandlePatterns.MARUBOZU_BLACK => true
+                CandlePatterns.THREE_WHITE_SOLDIERS => true
+                CandlePatterns.THREE_BLACK_CROWS => true
+                CandlePatterns.DISPLACEMENT_BULL => true
+                CandlePatterns.DISPLACEMENT_BEAR => true
+                CandlePatterns.MITIGATION_TEST_BULL => true
+                CandlePatterns.MITIGATION_TEST_BEAR => true
+                CandlePatterns.FAIR_VALUE_REBALANCE => true
+                => false
+
+        => false
+
+/////////////////////////////////////////////////////////////
+// CORE UTILITY FUNCTIONS
+/////////////////////////////////////////////////////////////
+
+// @function risingMeterChar
+// @description Returns a character representing a rising meter based on the given value.
+// @param value: float - The value to determine the meter character.
+// @returns string - A character representing the meter level.
+export risingMeterChar(float value) =>
+    switch math.floor(value * 8)
+        1 => '_'
+        2 => '▁'
+        3 => '▂'
+        4 => '▃'
+        5 => '▄'
+        6 => '▅'
+        7 => '▇'
+        8 => '█'
+        => ' '
+
+// @function tanh
+// @description Calculates the hyperbolic tangent of a given float value.
+// @param x: float - The input value for which to calculate the hyperbolic tangent.
+// @returns float - The hyperbolic tangent of the input value.
+export tanh(float x) =>
+    exp_2x = math.exp(2 * x)
+    (exp_2x - 1) / (exp_2x + 1)
+
+// @function fast_tanh
+// @description Returns a fast approximation of the hyperbolic tangent of a given float value.
+// @param x: float - The input value for which to compute the fast hyperbolic tangent.
+// @returns float - The fast approximation of the hyperbolic tangent of x.
+export fast_tanh(float x) =>
+    x / (1 + math.abs(x))
+
+// @function safeDivide
+// @description Safely divides two numbers, returning a default value if division is not possible.
+// @param numerator: float - The number to be divided.
+// @param denominator: float - The number to divide by.
+// @param defaultValue: float - The value to return if division is not possible (default is 0.0).
+// @returns float - The result of the division or the default value if division is not possible.
+export safeDivide(float numerator, float denominator, float defaultValue = 0.0) =>
+    if na(numerator) or na(denominator) or denominator == 0
+        defaultValue
+    else
+        numerator / denominator
+
+// @function sameSign
+// @description Returns true if both input values have the same sign, false otherwise.
+// @param val1: float - The first value to compare.
+// @param val2: float - The second value to compare.
+// @returns boolean - True if both values have the same sign, false otherwise.
+export sameSign(float val1, float val2) =>
+    if na(val1) or na(val2)
+        false
+    else
+        (val1 >= 0 and val2 >= 0) or (val1 < 0 and val2 < 0)
+
+// @function safeArrayAccess
+// @description Returns a safe access to an element in an array, returning a default value if the index is out of bounds.
+// @param arr: array<float> - The array to access.
+// @param idx: int - The index to access in the array.
+// @param defaultValue: float - The default value to return if the index is out of bounds (default is 0.0).
+// @returns float - The accessed element or the default value if the index is out of bounds.
+export safeArrayAccess(array<float> arr, int idx, float defaultValue = 0.0) =>
+    if na(arr) or na(idx) or idx < 0 or idx >= array.size(arr)
+        defaultValue
+    else
+        array.get(arr, idx)
+
+//@enum UI sizes for elements
+export enum Sizes
+    AUTO = "Auto"
+    TINY = "Tiny"
+    SMALL = "Small"
+    NORMAL = "Normal"
+    LARGE = "Large"
+    HUGE = "Huge"
+
+//@enum Line styles
+export enum LineStyles
+    SOLID = "Solid"
+    DOTTED = "Dotted"
+    DASHED = "Dashed"
+
+//@enum Table positions
+export enum Positions
+    TOP_LEFT = "Top Left"
+    TOP_CENTER = "Top Center"
+    TOP_RIGHT = "Top Right"
+    MIDDLE_LEFT = "Middle Left"
+    MIDDLE_CENTER = "Middle Center"
+    MIDDLE_RIGHT = "Middle Right"
+    BOTTOM_LEFT = "Bottom Left"
+    BOTTOM_CENTER = "Bottom Center"
+    BOTTOM_RIGHT = "Bottom Right"
+    TOP_LEFT_PANE = "Top Left Pane"
+    TOP_RIGHT_PANE = "Top Right Pane"
+    BOTTOM_LEFT_PANE = "Bottom Left Pane"
+    BOTTOM_RIGHT_PANE = "Bottom Right Pane"
+
+//@enum Line types for different drawing patterns
+export enum LineType
+    HORIZONTAL = "Horizontal"
+    VERTICAL = "Vertical"
+    ANGLED = "Angled"
+    DIRECT = "Direct"
+
+//@enum Extension behavior for lines
+export enum ExtensionType
+    FIXED = "Fixed"
+    EXTENDING = "Extending"
+    CONDITIONAL = "Conditional"
+    TEMPORARY = "Temporary"
+
+/////////////////////////////////////////////////////////////
+// UI UTILITY FUNCTIONS
+/////////////////////////////////////////////////////////////
+
+// @function getSize
+// @description Returns the appropriate size based on the provided Sizes enum value.
+// @param s: Sizes - The size enum value to convert to a specific size.
+// @returns size - The corresponding size value for the given Sizes enum.
+export getSize(Sizes s) =>
+    switch s
+        Sizes.AUTO => size.auto
+        Sizes.TINY => size.tiny
+        Sizes.SMALL => size.small
+        Sizes.NORMAL => size.normal
+        Sizes.LARGE => size.large
+        Sizes.HUGE => size.huge
+        =>
+            runtime.error("Unknown size enum value")
+            size.auto
+
+// @function getLineStyle
+// @description Returns a line style based on the provided LineStyles enum value.
+// @param s: LineStyles - The line style to convert to a Pine Script line style.
+// @returns line.style - The corresponding Pine Script line style.
+export getLineStyle(LineStyles s) =>
+    switch s
+        LineStyles.SOLID => line.style_solid
+        LineStyles.DOTTED => line.style_dotted
+        LineStyles.DASHED => line.style_dashed
+        =>
+            runtime.error("Unknown line style enum value")
+            line.style_dotted
+
+// @function getPosition
+// @description Returns the position based on the provided Positions enum value.
+// @param pos: Positions - The Positions enum value to determine the position.
+// @returns position - The corresponding position based on the Positions enum value.
+export getPosition(Positions pos) =>
+    switch pos
+        Positions.TOP_LEFT => position.top_left
+        Positions.TOP_CENTER => position.top_center
+        Positions.TOP_RIGHT => position.top_right
+        Positions.MIDDLE_LEFT => position.middle_left
+        Positions.MIDDLE_CENTER => position.middle_center
+        Positions.MIDDLE_RIGHT => position.middle_right
+        Positions.BOTTOM_LEFT => position.bottom_left
+        Positions.BOTTOM_CENTER => position.bottom_center
+        Positions.BOTTOM_RIGHT => position.bottom_right
+        Positions.TOP_LEFT_PANE => position.top_left
+        Positions.TOP_RIGHT_PANE => position.top_right
+        Positions.BOTTOM_LEFT_PANE => position.bottom_left
+        Positions.BOTTOM_RIGHT_PANE => position.bottom_right
+        =>
+            runtime.error("Unknown position enum value")
+            position.middle_center
+
+// @function isPositionOverlay
+// @description Determines if a given position is not in the middle panes.
+// @param pos: Positions - The position to check.
+// @returns bool - True if the position is not in the middle panes, false otherwise.
+export isPositionOverlay(Positions pos) =>
+    not array.includes(array.from(Positions.TOP_LEFT_PANE, Positions.TOP_RIGHT_PANE, Positions.BOTTOM_LEFT_PANE, Positions.BOTTOM_RIGHT_PANE), pos)
+
+/////////////////////////////////////////////////////////////
+// Pivots
+/////////////////////////////////////////////////////////////
+
+export enum Pivots
+    HIGHER_HIGH = "HH"
+    HIGHER_LOW = "HL"
+    LOWER_HIGH = "LH"
+    LOWER_LOW = "LL"
+    NA = ""
+
+/////////////////////////////////////////////////////////////
+// SCHEDULER - Lightweight throttling mechanism
+/////////////////////////////////////////////////////////////
+
+// @type Scheduler - Ultra-simple scheduler for interval-based execution throttling
+// Uses actual time intervals, not bar counting, for precise timing
+export type Scheduler
+    map<int, int> next_update = na  // interval_ms -> next_update_time
+    int earliest_due = na           // Cached earliest due time for O(1) quick exits
+
+// @function init
+// @description Initializes a Scheduler object with empty maps and null earliest due time.
+// @param this: Scheduler - The Scheduler instance to initialize
+// @returns Scheduler - The initialized Scheduler object with empty internal state
+export method init(Scheduler this) =>
+    this.next_update := map.new<int, int>()
+    this.earliest_due := na
+    this
+
+// @function register
+// @description Registers a timeframe with the scheduler and schedules its next update.
+// @param this: Scheduler - The scheduler instance to register the timeframe with
+// @param tf: Timeframes - The timeframe to register
+// @returns Scheduler - The updated scheduler instance
+export method register(Scheduler this, Timeframes tf) =>
+    int interval_ms = getTimeframeMS(tf)
+
+    if not na(interval_ms) and not map.contains(this.next_update, interval_ms)
+        // Schedule first execution one interval from current time
+        int next_time = time + interval_ms
+        map.put(this.next_update, interval_ms, next_time)
+
+        // Update earliest_due if this is sooner
+        if na(this.earliest_due) or next_time < this.earliest_due
+            this.earliest_due := next_time
+
+    this
+
+// @function updateEarliestDue
+// @description Updates the earliest due time by iterating through all intervals.
+// @param this: Scheduler - The scheduler object containing next_update map and earliest_due field
+// @returns Scheduler - The updated scheduler object with earliest_due field modified
+export method updateEarliestDue(Scheduler this) =>
+    this.earliest_due := na
+
+    // Iterate through all intervals to find the earliest due time
+    if map.size(this.next_update) > 0
+        array<int> keys = map.keys(this.next_update)
+        int size = array.size(keys)
+
+        for i = 0 to math.min(size - 1, 19) // Limit iterations to 20 for safety
+            int interval_ms = array.get(keys, i)
+            int next_time = map.get(this.next_update, interval_ms)
+
+            if not na(next_time) and (na(this.earliest_due) or next_time < this.earliest_due)
+                this.earliest_due := next_time
+
+    this
+
+// @function every
+// @description Checks if a scheduler should execute for a given timeframe.
+// @param this: Scheduler - The scheduler instance to check
+// @param tf: Timeframes - The timeframe to evaluate
+// @returns bool - True if the scheduler should execute for the specified timeframe, false otherwise
+export method every(Scheduler this, Timeframes tf) =>
+    int target_ms = getTimeframeMS(tf)
+    bool is_due = false
+
+    if not na(target_ms)
+        // Auto-register timeframe on first call
+        if not map.contains(this.next_update, target_ms)
+            this.register(tf)
+
+        // Check if scheduler specific timeframe is due
+        int next_time = map.get(this.next_update, target_ms)
+        is_due := not na(next_time) and time >= next_time
+
+        // If due, reschedule from the PREVIOUS scheduled time
+        if is_due
+            // If severely overdue, catch up by scheduling from current time
+            // Otherwise, schedule from previous time to maintain precision
+            int next_execution = na
+            if time - next_time > target_ms * 3
+                // More than 3 intervals overdue - reset to current time
+                next_execution := time + target_ms
+            else
+                // Normal case - schedule from previous scheduled time
+                next_execution := next_time + target_ms
+
+            map.put(this.next_update, target_ms, next_execution)
+
+            // Update scheduler's earliest_due
+            this.updateEarliestDue()
+
+    is_due
+
+/////////////////////////////////////////////////////////////
+// DELTA VOLUME ESTIMATION
+/////////////////////////////////////////////////////////////
+
+// @function validateOHLCV
+// @description Validates that OHLCV data has valid values and reasonable ranges.
+// @param o: float - Open price value
+// @param h: float - High price value
+// @param l: float - Low price value
+// @param c: float - Close price value
+// @param v: float - Volume value
+// @returns bool - True if all OHLCV values are valid and reasonable, false otherwise
+export validateOHLCV(float o, float h, float l, float c, float v) =>
+    not na(o) and not na(h) and not na(l) and not na(c) and not na(v) and
+     v > 0 and (h - l) > (l * 0.000001)  // Relative minimum: 0.0001% of price
+
+// @function estimateDeltaVolume
+// @description Estimates the adjusted volume based on the candlestick pattern and volume.
+// @param o: float - The opening price of the candle.
+// @param h: float - The highest price of the candle.
+// @param l: float - The lowest price of the candle.
+// @param c: float - The closing price of the candle.
+// @param v: float - The volume of the candle.
+// @returns float - The estimated adjusted volume.
+export estimateDeltaVolume(float o, float h, float l, float c, float v) =>
+    // Basic validation
+    if not validateOHLCV(o, h, l, c, v) // This covers na values and range < 0.001 issues
+        v * 0.5                         // Safe fallback
+    else
+        current_range = h - l
+        body_size = math.abs(c - o)
+        direction = c > o ? 1.0 : c < o ? -1.0 : 0.0
+        body_ratio = body_size / current_range          // 0..1
+        close_pos  = (c - l) / current_range            // 0..1
+
+        // Linear directional component from body ratio, full range ±0.5
+        directional_factor = direction * body_ratio * 0.5
+
+        // Close position bias: where did price close in the bar's range?
+        // close_pos=1.0 (closed at high) → +0.15, close_pos=0.0 → -0.15
+        close_adjustment = (close_pos - 0.5) * 0.3
+
+        buy_ratio = math.max(0.02, math.min(0.98, 0.5 + directional_factor + close_adjustment))
+        v * buy_ratio
+

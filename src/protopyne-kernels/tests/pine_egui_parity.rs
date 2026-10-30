@@ -157,14 +157,12 @@ fn ta_surface_covered_both_directions() {
         .filter_map(|row| row.construct.strip_prefix("ta."))
         .collect();
     for missing in [
-        "dmi",
         "adx",
         "sar",
         "kc",
         "dc",
         "mode",
         "percentrank",
-        "linreg",
     ] {
         assert!(
             refused.contains(&missing),
@@ -212,3 +210,4 @@ fn lookup_finds_rows_by_construct() {
     assert_eq!(row.verdict, ParityVerdict::MatchByInspection);
     assert!(parity_for("no.such.construct").is_none());
 }
+

@@ -84,8 +84,9 @@ pub use depth::{BookManager, DarkFinding, DepthBook, DepthDelta, PriceLevel, DEF
 pub use error::VenueError;
 pub use facts::VenueBookFacts;
 pub use health::{
-    check_route, check_trade, may_trade, serving_allows_entries, serving_verdict, GateClass,
-    GateFailure, GateReport, HealthGate, HealthLimits, HealthState, HealthVerdict, RouteIntent,
+    check_route, check_trade, may_trade, serving_allows_entries, serving_verdict, AlertBuffer,
+    GateClass, GateFailure, GateReport, HealthGate, HealthLimits, HealthState, HealthVerdict,
+    RouteIntent,
 };
 pub use journal::{
     Journal, JournalEvent, ReplayedState, VenueStorage, CORPORATE_KIND, INTENT_KIND, LEG_FILL_KIND,

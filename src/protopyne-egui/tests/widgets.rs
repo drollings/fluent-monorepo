@@ -51,8 +51,7 @@ fn mtf_table_renders_headlessly() {
 fn top_bar_renders_default_ticker_timeframes_and_search_triggers() {
     let mut raised: Option<TopBarAction> = None;
     egui::__run_test_ui(|ui| {
-        let mut press = PlayPressState::default();
-        let mut speed = ReplaySpeed::default();
+        let speed = ReplaySpeed::default();
         let mut symbol_anchor = None;
         let mut indicator_anchor = None;
         let mut bookmark_anchor = None;
@@ -64,8 +63,7 @@ fn top_bar_renders_default_ticker_timeframes_and_search_triggers() {
             ChartType::Candles,
             true,
             false,
-            &mut press,
-            &mut speed,
+            speed,
             &mut symbol_anchor,
             &mut indicator_anchor,
             &mut bookmark_anchor,
@@ -99,7 +97,7 @@ fn top_bar_renders_default_ticker_timeframes_and_search_triggers() {
         .iter()
         .map(|preset| preset.label())
         .collect();
-    assert_eq!(presets, vec!["1M", "3M", "YTD", "1Y", "5Y", "All"]);
+    assert_eq!(presets, vec!["1M", "2M", "3M", "YTD", "1Y", "5Y", "All"]);
     assert!(
         presets.contains(&"YTD"),
         "the range section offers year-to-date"
@@ -191,8 +189,7 @@ fn top_bar_carries_play_state_headlessly() {
     for playing in [false, true] {
         let mut raised: Option<TopBarAction> = None;
         egui::__run_test_ui(|ui| {
-            let mut press = PlayPressState::default();
-            let mut speed = ReplaySpeed::default();
+            let speed = ReplaySpeed::default();
             let mut symbol_anchor = None;
             let mut indicator_anchor = None;
             let mut bookmark_anchor = None;
@@ -204,8 +201,7 @@ fn top_bar_carries_play_state_headlessly() {
                 ChartType::Candles,
                 false,
                 playing,
-                &mut press,
-                &mut speed,
+                speed,
                 &mut symbol_anchor,
                 &mut indicator_anchor,
                 &mut bookmark_anchor,
@@ -236,28 +232,20 @@ fn top_bar_carries_play_state_headlessly() {
 }
 
 #[test]
-fn play_press_holds_open_the_speed_popup_and_consumes_the_release() {
-    let mut press = PlayPressState::default();
-    let t0 = 1000.0_f64;
-    // A short tap toggles: the release consumes nothing.
-    press.press_started(t0);
-    assert!(!press.poll_hold(t0 + 0.1));
-    assert!(press.release(true), "a short tap toggles play");
-    // A hold past the threshold opens the popup once; the release that ends
-    // it is consumed instead of toggling.
-    press.press_started(t0);
-    assert!(!press.poll_hold(t0 + 0.1));
-    assert!(press.poll_hold(t0 + PLAY_LONG_PRESS_SECS));
-    assert!(!press.poll_hold(t0 + PLAY_LONG_PRESS_SECS + 1.0));
-    assert!(press.popup_open, "the hold opens the speed popup");
-    assert!(
-        !press.release(true),
-        "the long-press release toggles nothing"
+fn replay_speed_menu_lists_six_documented_paces() {
+    assert_eq!(
+        TOP_BAR_REPLAY_SPEEDS.len(),
+        6,
+        "the speed menu offers 0.2, 1, 3, 5, 10 candles/s, then unlimited"
     );
-    assert!(!press.long_fired, "the consume resets the latch");
-    // Releasing anywhere else arms nothing: the next tap still toggles.
-    press.long_fired = true;
-    assert!(!press.release(false), "a release elsewhere toggles nothing");
-    press.press_started(t0);
-    assert!(press.release(true), "a later tap toggles again");
+    let shorts: Vec<&str> = TOP_BAR_REPLAY_SPEEDS
+        .iter()
+        .map(|speed| speed.short_label())
+        .collect();
+    assert_eq!(shorts, vec!["0.2/s", "1/s", "3/s", "5/s", "10/s", "∞"]);
+    for speed in TOP_BAR_REPLAY_SPEEDS {
+        assert!(!speed.label().is_empty(), "{speed:?} has a menu label");
+    }
+    assert_eq!(TOP_BAR_REPLAY_SPEEDS[0].candles_per_sec(), Some(0.2));
+    assert_eq!(TOP_BAR_REPLAY_SPEEDS[5].candles_per_sec(), None);
 }

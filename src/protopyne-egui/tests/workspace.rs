@@ -1901,7 +1901,7 @@ fn drawer_pickers_and_context_menu_paint_headlessly() {
         egui::vec2(110.0, 30.0),
     ));
     workspace.indicator_modal =
-        Some(build_indicator_catalog().expect("an indicator catalog builds"));
+        Some(build_indicator_catalog_with_manifest(&[]).expect("an indicator catalog builds"));
     workspace.indicator_anchor = Some(egui::Rect::from_min_size(
         egui::pos2(300.0, 40.0),
         egui::vec2(140.0, 30.0),
@@ -1995,5 +1995,506 @@ fn picker_buttons_toggle_their_popups() {
     assert!(
         !workspace.jump_open && workspace.jump_anchor.is_none(),
         "the second click closes"
+    );
+}
+
+/// Pine scripts discovered at boot slot through the interpreter: manifest
+/// rows feed the catalog with a pine marker, and slotting links the script
+/// (libraries resolve by filename stem).
+#[test]
+fn pine_script_slots_from_boot_discovered_sources() {
+    use protopyne_kernels::ManifestFile;
+
+    let mut workspace = ChartWorkspace::with_rows(ramp_rows(60)).expect("workspace boots");
+    let indicators = vec![ManifestFile {
+        relpath: "indicators/_T.pine".to_owned(),
+        text: "indicator(\"T\", overlay=true)\nplot(close)\n".to_owned(),
+    }];
+    workspace.set_pine_sources(indicators, Vec::new());
+    workspace
+        .slot_indicator("pine:_T")
+        .expect("a discovered script slots");
+    assert!(
+        workspace.stack.contains("pine:_T"),
+        "the Pine plugin owns its slot"
+    );
+    let Err(err) = workspace.slot_indicator("pine:_Missing") else {
+        panic!("an undiscovered stem refuses");
+    };
+    assert!(
+        err.to_string().contains("_Missing"),
+        "the refusal names the stem: {err}"
+    );
+}
+
+#[test]
+fn pine_slot_evaluates_readouts_and_style_keys_end_to_end() {
+    use protopyne_kernels::ManifestFile;
+
+    let mut workspace = ChartWorkspace::with_rows(ramp_rows(60)).expect("workspace boots");
+    let indicators = vec![ManifestFile {
+        relpath: "indicators/_T.pine".to_owned(),
+        text: "indicator(\"T\", overlay=true)\nplot(close, \"A\")\nplot(close * 2, \"B\")\n"
+            .to_owned(),
+    }];
+    workspace.set_pine_sources(indicators, Vec::new());
+    workspace.slot_indicator("pine:_T").expect("pine slots");
+    workspace.recompute().expect("recompute evaluates");
+    let evaluation = workspace
+        .evaluations
+        .get("pine:_T")
+        .expect("the Pine slot evaluated");
+    assert_eq!(evaluation.series.len(), 2, "both plots publish");
+    let readouts = workspace
+        .stack
+        .readouts("pine:_T")
+        .expect("the slot card has readouts");
+    assert_eq!(readouts.len(), 2, "each plot labels the card");
+    assert!(
+        readouts.iter().all(|readout| readout.value.is_some()),
+        "readouts resolve values on the ramp: {readouts:?}"
+    );
+    let keys = workspace.painted_style_keys("pine:_T");
+    assert_eq!(keys.len(), 2, "only the slot's own series keys: {keys:?}");
+}
+
+#[test]
+fn pine_slot_survives_a_prefs_round_trip_with_style_set() {
+    use protopyne_kernels::ManifestFile;
+
+    let script =
+        "indicator(\"T\", overlay=true)\nplot(close, \"A\")\nplot(close * 2, \"B\")\n".to_owned();
+    let indicators = vec![ManifestFile {
+        relpath: "indicators/_T.pine".to_owned(),
+        text: script,
+    }];
+    let mut workspace = ChartWorkspace::with_rows(ramp_rows(60)).expect("workspace boots");
+    workspace.set_pine_sources(indicators.clone(), Vec::new());
+    workspace.slot_indicator("pine:_T").expect("pine slots");
+    workspace.recompute().expect("recompute evaluates");
+    // Mimic the Style tab: override one of the slot's own series colors.
+    workspace
+        .stack
+        .set_style_field("pine:_T", "color_fast", "#ff0000")
+        .expect("the slot's own key sets");
+    let before: Vec<(String, Vec<Option<f64>>)> = workspace
+        .evaluations
+        .get("pine:_T")
+        .expect("evaluated")
+        .series
+        .iter()
+        .map(|series| (series.node.clone(), series.values.clone()))
+        .collect();
+    let layout = workspace.current_layout();
+    // Fresh workspace, same sources: restore the saved layout like a reload.
+    let mut reloaded = ChartWorkspace::with_rows(ramp_rows(60)).expect("workspace boots");
+    reloaded.set_pine_sources(indicators, Vec::new());
+    reloaded
+        .apply_slot_prefs(&layout.slots)
+        .expect("saved slots restore");
+    reloaded.recompute().expect("recompute evaluates");
+    let after = reloaded
+        .evaluations
+        .get("pine:_T")
+        .expect("the Pine slot survived the reload");
+    assert_eq!(
+        after
+            .series
+            .iter()
+            .map(|series| (series.node.clone(), series.values.clone()))
+            .collect::<Vec<_>>(),
+        before,
+        "a saved Pine slot restores its series, not a blank"
+    );
+    assert!(
+        !reloaded.painted_style_keys("pine:_T").is_empty(),
+        "the restored slot keeps its style keys"
+    );
+}
+
+#[test]
+fn unevaluated_slot_projects_no_style_colors() {
+    use protopyne_kernels::ManifestFile;
+
+    let mut workspace = ChartWorkspace::with_rows(ramp_rows(60)).expect("workspace boots");
+    workspace.set_pine_sources(
+        vec![ManifestFile {
+            relpath: "indicators/_T.pine".to_owned(),
+            text: "indicator(\"T\", overlay=true)\nplot(close)\n".to_owned(),
+        }],
+        Vec::new(),
+    );
+    workspace.slot_indicator("pine:_T").expect("pine slots");
+    // No recompute yet: the Style tab offers nothing instead of every
+    // color of every indicator.
+    let Some((_, style_fields)) = workspace.settings_fields("pine:_T") else {
+        panic!("the slot lifts settings");
+    };
+    assert!(
+        style_fields
+            .iter()
+            .all(|field| !field.name.starts_with("color_")),
+        "no painted series, no color overrides: {:?}",
+        style_fields
+            .iter()
+            .map(|field| &field.name)
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn one_refusing_slot_never_blanks_the_chart() {
+    // Regression: a script that refuses at evaluate time must degrade to
+    // an empty slot while every other slot — native and Pine — still
+    // evaluates. Before per-slot isolation, one refusal aborted the whole
+    // recompute and blanked the chart. The refusing script is an inline
+    // hermetic fixture, so this never depends on the live data root.
+    use protopyne_kernels::ManifestFile;
+    let mut workspace = ChartWorkspace::with_rows(ramp_rows(120)).expect("workspace boots");
+    workspace.set_pine_sources(
+        vec![
+            ManifestFile {
+                relpath: "indicators/_Refusing.pine".to_owned(),
+                text: "indicator(\"R\", overlay=true)\nplot(no_such_variable)\n".to_owned(),
+            },
+            ManifestFile {
+                relpath: "indicators/_Healthy.pine".to_owned(),
+                text: "indicator(\"H\", overlay=true)\nplot(close)\n".to_owned(),
+            },
+        ],
+        Vec::new(),
+    );
+    workspace
+        .slot_indicator("pine:_Refusing")
+        .expect("the refusing script still slots");
+    workspace
+        .slot_indicator("pine:_Healthy")
+        .expect("the healthy script slots");
+    workspace.slot_indicator("sma").expect("native slots");
+    workspace
+        .recompute()
+        .expect("recompute survives the refusal");
+    let refused = workspace
+        .evaluations
+        .get("pine:_Refusing")
+        .expect("the refusing slot keeps an evaluation");
+    assert!(
+        refused.series.is_empty(),
+        "the refusing slot degrades to empty, never stale"
+    );
+    for id in ["pine:_Healthy", "sma"] {
+        let evaluation = workspace
+            .evaluations
+            .get(id)
+            .unwrap_or_else(|| panic!("{id} evaluated"));
+        assert!(
+            !evaluation.series.is_empty(),
+            "{id} still paints beside the refusal"
+        );
+    }
+    assert!(
+        !workspace.stack.slot_ids().is_empty(),
+        "the hotlist keeps every slotted indicator"
+    );
+}
+
+#[test]
+fn versionless_study_script_slots_and_paints() {
+    // LazyBear-class legacy scripts carry no `//@version` header (study
+    // era): boot sources still serve them, the slot links through the
+    // workspace fallback, and the plots paint finite values — the script
+    // appears instead of refusing or painting holes.
+    use protopyne_kernels::ManifestFile;
+
+    let mut workspace = ChartWorkspace::with_rows(ramp_rows(60)).expect("workspace boots");
+    let indicators = vec![ManifestFile {
+        relpath: "indicators/LazyBear_Mini.pine".to_owned(),
+        text: "study(\"Mini\", overlay=false)\nplot(close + 1.0, \"Up\")\n".to_owned(),
+    }];
+    workspace.set_pine_sources(indicators, Vec::new());
+    workspace
+        .slot_indicator("pine:LazyBear_Mini")
+        .expect("a versionless study script slots");
+    workspace.recompute().expect("recompute evaluates");
+    let evaluation = workspace
+        .evaluations
+        .get("pine:LazyBear_Mini")
+        .expect("the Pine slot evaluated");
+    assert_eq!(evaluation.series.len(), 1, "the plot publishes");
+    let finite = evaluation.series[0].values.iter().flatten().count();
+    assert!(
+        finite > 0,
+        "the series paints finite values, never all holes: {:?}",
+        evaluation.series[0].values
+    );
+}
+
+#[test]
+fn pine_slot_inherits_chart_scope_and_hides_redundant_settings() {
+    // The chart owns the symbol and timeframe: a Pine slot evaluates with
+    // the workspace scope stamped in (not its stored copy), and the slot
+    // settings hide the redundant fields.
+    use protopyne_kernels::ManifestFile;
+
+    let mut workspace = ChartWorkspace::with_rows(ramp_rows(60)).expect("workspace boots");
+    let indicators = vec![ManifestFile {
+        relpath: "indicators/_Scope.pine".to_owned(),
+        text: "indicator(\"Scope\", overlay=false)\nplot(close, \"C\")\n".to_owned(),
+    }];
+    workspace.set_pine_sources(indicators, Vec::new());
+    workspace.slot_indicator("pine:_Scope").expect("pine slots");
+    let resolved = workspace
+        .resolved_slot_config("pine:_Scope")
+        .expect("the slot has a config");
+    let stamped: &protopyne_kernels::PineRuntimeConfig =
+        fluent_wvr::component_downcast_ref(resolved.as_component()).expect("a Pine config");
+    assert_eq!(
+        stamped.chart_symbol,
+        workspace.active_symbol(),
+        "the slot reads the chart symbol, not LOCAL"
+    );
+    assert_eq!(
+        stamped.chart_period,
+        workspace.timeframe().pine_period(),
+        "the slot reads the chart timeframe, not the stored copy"
+    );
+    let (config_fields, _) = workspace
+        .settings_fields("pine:_Scope")
+        .expect("pine slot lifts settings");
+    assert!(
+        config_fields.iter().all(|field| field.name != "chart_symbol"
+            && field.name != "chart_period"),
+        "redundant chart fields stay out of the slot UI: {:?}",
+        config_fields.iter().map(|field| &field.name).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn adding_a_subpane_slot_routes_a_new_subpane() {
+    // Adding an indicator must update the pane display: after slotting an
+    // oscillator and recomputing, its evaluation is present and its series
+    // route into the shared sub-pane slice.
+    let mut workspace = ChartWorkspace::with_rows(ramp_rows(120)).expect("workspace boots");
+    assert!(
+        !workspace.evaluations.contains_key("rsi"),
+        "no rsi evaluation before slotting"
+    );
+    workspace.slot_indicator("rsi").expect("rsi slots");
+    workspace.recompute().expect("recompute evaluates");
+    let evaluation = workspace
+        .evaluations
+        .get("rsi")
+        .expect("rsi evaluated after add");
+    assert!(!evaluation.series.is_empty(), "the added slot paints series");
+    let sub = workspace.evaluation_for_pane("rsi", evaluation, "sub");
+    assert!(
+        !sub.series.is_empty(),
+        "the oscillator routes into the sub-pane slice"
+    );
+}
+
+#[test]
+fn removing_a_slot_drops_its_panes() {
+    // Removing an indicator must update the pane display: its evaluation
+    // leaves, its catalog nodes unpublish, and the boot-provided
+    // IntegrationLite sub-pane clears when its own slot goes.
+    let mut workspace = ChartWorkspace::with_rows(ramp_rows(120)).expect("workspace boots");
+    workspace.slot_indicator("rsi").expect("rsi slots");
+    workspace.recompute().expect("recompute evaluates");
+    let node = workspace
+        .evaluations
+        .get("rsi")
+        .expect("rsi evaluated")
+        .series
+        .first()
+        .expect("rsi paints")
+        .node
+        .clone();
+    assert!(workspace.series_catalog.resolve(&node).is_some());
+    workspace.remove_indicator("rsi").expect("rsi removes");
+    assert!(
+        !workspace.evaluations.contains_key("rsi"),
+        "the removed slot leaves no evaluation"
+    );
+    assert!(
+        workspace.series_catalog.resolve(&node).is_none(),
+        "the removed slot unpublishes its nodes"
+    );
+    assert!(
+        workspace.sub_pane.is_some(),
+        "the boot IntegrationLite sub-pane still routes"
+    );
+    workspace
+        .remove_indicator("integration_lite")
+        .expect("integration lite removes");
+    assert!(
+        workspace.sub_pane.is_none(),
+        "removing the sub-pane owner clears it: {:?}",
+        workspace.sub_pane.is_some()
+    );
+}
+
+#[test]
+fn fresh_rows_refresh_existing_evaluations() {
+    // A timeframe/symbol switch lands fresh rows: the next recompute must
+    // refresh every existing evaluation to the new tape, never keep
+    // painting the old values.
+    let mut workspace = ChartWorkspace::with_rows(ramp_rows(120)).expect("workspace boots");
+    workspace.slot_indicator("sma").expect("sma slots");
+    workspace.recompute().expect("recompute evaluates");
+    let before: Vec<Option<f64>> = workspace
+        .evaluations
+        .get("sma")
+        .expect("sma evaluated")
+        .series
+        .iter()
+        .flat_map(|series| series.values.clone())
+        .collect();
+    assert!(before.iter().flatten().count() > 0);
+    let doubled: Vec<ChartRow> = ramp_rows(120)
+        .into_iter()
+        .map(|mut row| {
+            row.close *= 2.0;
+            row.open *= 2.0;
+            row.high *= 2.0;
+            row.low *= 2.0;
+            row
+        })
+        .collect();
+    workspace.set_rows(doubled).expect("fresh rows land");
+    workspace.recompute().expect("recompute refreshes");
+    let after: Vec<Option<f64>> = workspace
+        .evaluations
+        .get("sma")
+        .expect("sma still evaluated")
+        .series
+        .iter()
+        .flat_map(|series| series.values.clone())
+        .collect();
+    assert_eq!(before.len(), after.len(), "same shape on the new tape");
+    assert_ne!(before, after, "values follow the fresh rows");
+}
+
+#[test]
+fn widening_the_window_repaints_indicator_panes() {
+    // `load_previous_month` without a gateway widens over held bars: the
+    // stored evaluations must grow with the rows, never keep painting the
+    // truncated tape.
+    let mut workspace =
+        ChartWorkspace::with_rows(grid_rows(1_700_000_000, 9_000)).expect("workspace boots");
+    workspace.slot_indicator("sma").expect("sma slots");
+    workspace
+        .select_range(DateRange::All, None)
+        .expect("All loads the held frame");
+    workspace.recompute().expect("recompute evaluates");
+    workspace
+        .select_range(DateRange::Day1, None)
+        .expect("a smaller preset truncates");
+    let shrunk = workspace.rows().len();
+    assert!(shrunk < 9_000, "the window actually shrank: {shrunk}");
+    workspace.load_previous_month(None).expect("the window widens");
+    assert!(
+        workspace.rows().len() > shrunk,
+        "held bars widen the window"
+    );
+    let stored = workspace
+        .evaluations
+        .get("sma")
+        .expect("sma evaluated")
+        .series
+        .first()
+        .expect("sma paints")
+        .values
+        .len();
+    assert_eq!(
+        stored,
+        workspace.rows().len(),
+        "the stored panes track the widened rows"
+    );
+}
+
+#[test]
+fn beginning_pick_repaints_indicator_panes() {
+    // A Beginning pick without a gateway widens over held bars: panes must
+    // follow the rows, not keep the truncated evaluation.
+    let mut workspace =
+        ChartWorkspace::with_rows(grid_rows(1_700_000_000, 9_000)).expect("workspace boots");
+    workspace.slot_indicator("sma").expect("sma slots");
+    workspace
+        .select_range(DateRange::All, None)
+        .expect("All loads the held frame");
+    workspace.recompute().expect("recompute evaluates");
+    workspace
+        .select_range(DateRange::Day1, None)
+        .expect("a smaller preset truncates");
+    let shrunk = workspace.rows().len();
+    workspace
+        .set_beginning("2023-01-01", None)
+        .expect("an early Beginning widens");
+    assert!(
+        workspace.rows().len() > shrunk,
+        "the Beginning pick widened the window"
+    );
+    let stored = workspace
+        .evaluations
+        .get("sma")
+        .expect("sma evaluated")
+        .series
+        .first()
+        .expect("sma paints")
+        .values
+        .len();
+    assert_eq!(
+        stored,
+        workspace.rows().len(),
+        "the stored panes track the widened rows"
+    );
+}
+
+#[test]
+fn pine_slot_evaluates_past_the_default_max_bars_cap() {
+    // The engine refuses past `max_bars` instead of truncating — but the
+    // chart window must still paint: the resolved Pine config raises a
+    // stored cap below the loaded rows up to the window, so a large window
+    // evaluates instead of degrading to an empty slot. 12k rows would
+    // refuse under the 10k default without the stamp.
+    use protopyne_kernels::ManifestFile;
+
+    let mut workspace =
+        ChartWorkspace::with_rows(grid_rows(1_700_000_000, 12_000)).expect("workspace boots");
+    let indicators = vec![ManifestFile {
+        relpath: "indicators/_Wide.pine".to_owned(),
+        text: "indicator(\"Wide\", overlay=false)\nplot(close + 1.0, \"Up\")\n".to_owned(),
+    }];
+    workspace.set_pine_sources(indicators, Vec::new());
+    workspace.slot_indicator("pine:_Wide").expect("pine slots");
+    workspace
+        .select_range(DateRange::All, None)
+        .expect("All loads the held frame");
+    assert_eq!(
+        workspace.rows().len(),
+        12_000,
+        "the wide window holds all seeded rows"
+    );
+    let resolved = workspace
+        .resolved_slot_config("pine:_Wide")
+        .expect("the slot has a config");
+    let stamped: &protopyne_kernels::PineRuntimeConfig =
+        fluent_wvr::component_downcast_ref(resolved.as_component()).expect("a Pine config");
+    assert!(
+        stamped.max_bars >= 12_000,
+        "the stamped cap covers the window: {}",
+        stamped.max_bars
+    );
+    workspace.recompute().expect("recompute evaluates");
+    let evaluation = workspace
+        .evaluations
+        .get("pine:_Wide")
+        .expect("the wide slot evaluated");
+    assert_eq!(evaluation.series.len(), 1, "the plot publishes");
+    let finite = evaluation.series[0].values.iter().flatten().count();
+    assert!(
+        finite > 0,
+        "the series paints finite values past the default cap"
     );
 }

@@ -7,6 +7,7 @@
 //! workspace seeded with rows paints unchanged, so the store path is
 //! additive and never required.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use super::*;
@@ -160,4 +161,77 @@ fn a_gateway_less_workspace_seeds_and_paints_unchanged() {
     egui::__run_test_ui(|ui| {
         paint_workspace(ui, &mut workspace, None).expect("the workspace paints without a gateway");
     });
+}
+
+/// End-to-end over the shipped data root without a tape: the boot history
+/// is SPY, the root carries GLD months, and picking GLD must redraw the
+/// chart, the oscillator panes, and the replay state — never strand the
+/// SPY tape under a GLD label.
+#[tokio::test]
+async fn root_backed_switch_redraws_chart_panes_and_replay() {
+    use protopyne_kernels::ManifestFile;
+
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../data/protopyne-rs/historical");
+    if !root.join("GLD").is_dir() {
+        eprintln!("shipped root has no GLD tree; skipping");
+        return;
+    }
+    let config = ServerConfig::new()
+        .bind("127.0.0.1:0".to_owned())
+        .history_path(root.to_string_lossy().into_owned())
+        .history_symbol("SPY".to_owned())
+        .build();
+    let handle = serve_with_tape(config, boot_bars(), None, None)
+        .await
+        .expect("server boots over the shipped root");
+    let gateway = handle.gateway();
+
+    let mut workspace = ChartWorkspace::new().expect("the workspace boots");
+    workspace
+        .switch_timeframe(TimeframeKey::M15, &gateway)
+        .expect("the boot market selects");
+    workspace.slot_indicator("rsi").expect("rsi slots");
+    let indicators = vec![ManifestFile {
+        relpath: "indicators/_Scope.pine".to_owned(),
+        text: "indicator(\"Scope\", overlay=false)\nplot(close, \"C\")\n".to_owned(),
+    }];
+    workspace.set_pine_sources(indicators, Vec::new());
+    workspace.slot_indicator("pine:_Scope").expect("pine slots");
+    // A picked replay window is live before the switch: the switch must
+    // unset it, never carry SPY's boundaries onto GLD.
+    let rows = workspace.rows().to_vec();
+    workspace.replay_range = Some((rows[0].time, rows[1].time));
+    workspace
+        .switch_symbol("GLD", &gateway)
+        .expect("a root-backed switch pulls GLD");
+    assert_eq!(workspace.active_symbol(), "GLD", "the ticker button follows");
+    assert!(
+        !workspace.rows().is_empty(),
+        "GLD months load rows of their own"
+    );
+    assert!(
+        workspace.rows().iter().all(|row| (row.close - 100.0).abs() > 1e-6),
+        "no SPY boot bar survives under the GLD label"
+    );
+    for id in ["rsi", "pine:_Scope"] {
+        let evaluation = workspace
+            .evaluations
+            .get(id)
+            .unwrap_or_else(|| panic!("{id} evaluated after the switch"));
+        assert!(!evaluation.series.is_empty(), "{id} paints after the switch");
+        assert_eq!(
+            evaluation.series[0].values.len(),
+            workspace.rows().len(),
+            "{id} tracks the GLD rows"
+        );
+    }
+    assert_eq!(workspace.replay_range, None, "the picked window unsets");
+    assert!(
+        workspace.replay_error.is_some(),
+        "the unset names itself on the replay section"
+    );
+    egui::__run_test_ui(|ui| {
+        paint_workspace(ui, &mut workspace, Some(&gateway)).expect("the workspace paints");
+    });
+    handle.shutdown().await;
 }

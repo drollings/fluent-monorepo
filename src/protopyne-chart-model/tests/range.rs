@@ -9,9 +9,11 @@ fn labels_match_toolbar_buttons() {
 }
 
 #[test]
-fn presets_cover_nine_windows() {
-    assert_eq!(DateRange::default_presets().len(), 9);
-    assert_eq!(DateRange::default(), DateRange::Month1);
+fn presets_cover_ten_windows() {
+    assert_eq!(DateRange::default_presets().len(), 10);
+    assert_eq!(DateRange::default(), DateRange::Month2);
+    assert_eq!(DateRange::Month2.label(), "2M");
+    assert_eq!(DateRange::from_label("2M"), Some(DateRange::Month2));
 }
 
 #[test]
@@ -20,6 +22,7 @@ fn chart_presets_are_the_coarse_spans_in_display_order() {
         DateRange::chart_presets(),
         vec![
             DateRange::Month1,
+            DateRange::Month2,
             DateRange::Month3,
             DateRange::Ytd,
             DateRange::Year1,
@@ -31,8 +34,9 @@ fn chart_presets_are_the_coarse_spans_in_display_order() {
         .iter()
         .map(|preset| preset.label())
         .collect();
-    assert_eq!(labels, vec!["1M", "3M", "YTD", "1Y", "5Y", "All"]);
+    assert_eq!(labels, vec!["1M", "2M", "3M", "YTD", "1Y", "5Y", "All"]);
     assert_eq!(DateRange::Month1.lookback_months(), Some(1));
+    assert_eq!(DateRange::Month2.lookback_months(), Some(2));
     assert_eq!(DateRange::Ytd.lookback_months(), Some(12));
     assert_eq!(DateRange::Year1.lookback_months(), Some(12));
     assert_eq!(DateRange::All.lookback_months(), None);

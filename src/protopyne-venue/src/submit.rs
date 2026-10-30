@@ -20,6 +20,12 @@ use crate::venue::{LegExecution, Venue};
 /// How long one submit attempt may take before the caller queries by ID.
 pub const SUBMIT_TIMEOUT: Duration = Duration::from_secs(5);
 /// Retry budget for retryable venue failures (transport, 5xx, timeout).
+///
+/// Submission-protocol budget only (M9.1): the transport retry knobs
+/// (`tastytrade::RETRY_MAX_ATTEMPTS/BACKOFF_BASE_MS/JITTER_PCT`, frozen by
+/// the transport freeze test and reused as stream config defaults) are a
+/// different authority with different values — same `3` is coincidence,
+/// not a shared constant. Do not unify.
 pub const SUBMIT_RETRIES: u32 = 3;
 
 /// The mutation sink the safe-submission protocol writes through.

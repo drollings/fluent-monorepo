@@ -316,3 +316,17 @@ fn a_source_outside_the_unit_interval_refuses() {
         .expect_err("an out-of-range score refuses");
     assert!(err.to_string().contains("outside [0, 1]"), "{err}");
 }
+
+#[test]
+fn no_default_strategy_wires_an_activity_source() {
+    // (M11.3) The activity module is opt-in: a strategy built without
+    // `with_options_activity` carries no source, so shipping signals read
+    // unattributed scores until an operator installs one.
+    let strategy = Strategy::with_signal(Arc::new(
+        FixedSignal::new(Direction::Long, 0.8, 0.8).expect("valid signal"),
+    ));
+    assert!(
+        !strategy.has_options_activity(),
+        "default strategy installs no activity source"
+    );
+}

@@ -242,16 +242,23 @@ impl Renderer {
                 variable,
                 start,
                 end,
+                step,
                 body,
             } => {
-                self.line(
-                    level,
-                    &format!(
+                let header = match step {
+                    Some(step) => format!(
+                        "for {variable} = {} to {} by {}",
+                        self.expr(level, start),
+                        self.expr(level, end),
+                        self.expr(level, step)
+                    ),
+                    None => format!(
                         "for {variable} = {} to {}",
                         self.expr(level, start),
                         self.expr(level, end)
                     ),
-                );
+                };
+                self.line(level, &header);
                 self.body(level + 1, body);
             }
             PineStmt::ForIn {

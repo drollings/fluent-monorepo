@@ -20,9 +20,10 @@ use protopyne_types::Bar;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+/// Fixture root (server `tests/data/pine_closure`), never the volatile live root.
 fn repo_data(path: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../data/protopyne-rs")
+        .join("../protopyne-server/tests/data/pine_closure")
         .join(path)
 }
 

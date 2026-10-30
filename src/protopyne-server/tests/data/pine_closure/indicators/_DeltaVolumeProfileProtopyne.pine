@@ -1,0 +1,1717 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © showmethegrail
+
+//@version=6
+indicator("Delta Volume Profile [New - Protopyne]", "DVP [New]", overlay=true,
+         max_boxes_count=800, max_labels_count=500, max_lines_count=100,
+         max_polylines_count=50, calc_bars_count=2000)
+
+// Import libraries
+import showmethegrail/libUtil/12 as UTIL
+import showmethegrail/libBuffers/6 as libBuffers
+import showmethegrail/libApex/88 as libApex
+import showmethegrail/libDrawing/61 as libDrawing
+
+///////////////////////////////////////////////////////////////////////////////
+// CONSTANTS
+///////////////////////////////////////////////////////////////////////////////
+
+const float VOLUME_EPSILON = 0.0001
+const float PRICE_EPSILON = 0.001
+const int BUFFER_PADDING = 5
+const float NEUTRAL_BUY_RATIO = 0.5
+const float BUY_RATIO_UP = 0.8
+const float BUY_RATIO_DOWN = 0.2
+const int MAX_BINS = 600
+const int MAX_LTF_BARS = 10000
+const int MIN_REBUILD_BARS = 10
+const int DEFAULT_BIN_PADDING = 40
+const float ALPHA_DEFAULT = 0.08
+const float ALPHA_MIN = 0.01
+const float ALPHA_MAX = 0.9
+
+/////////////////////////////////////////////////////////////
+// DIAGNOSTIC INPUTS
+/////////////////////////////////////////////////////////////
+
+const string GROUP_DIAGNOSTIC = "Diagnostic"
+i_show_diagnostic = input.bool(true, "Show Profile Diagnostic Table", group=GROUP_DIAGNOSTIC)
+// i_show_bars_diagnostic = input.bool(true, "Show Bars Diagnostic Table", group=GROUP_DIAGNOSTIC)
+// i_show_audit_diagnostic = input.bool(true, "Show Audit Diagnostic Table", group=GROUP_DIAGNOSTIC)
+// i_enable_audit = input.bool(true, "Enable LTF Audit (Covariance Check)", group=GROUP_DIAGNOSTIC)
+i_log_enabled = input.bool(false, "Enable Logging", group=GROUP_DIAGNOSTIC)
+
+///////////////////////////////////////////////////////////////////////////////
+// UTILITY FUNCTIONS
+///////////////////////////////////////////////////////////////////////////////
+
+// @function Calculate volume drift percentage
+calculateDriftPct(float actual, float expected) =>
+    expected > VOLUME_EPSILON ? math.abs(actual - expected) / expected * 100.0 : 0.0
+
+// @function Validate volume is meaningful
+isValidVolume(float vol) =>
+    not na(vol) and vol > VOLUME_EPSILON
+
+// @function Safe division with default
+safeDivide(float num, float den, float default_val = 0.0) =>
+    den > VOLUME_EPSILON ? num / den : default_val
+
+// @function Get candle index from timestamp
+getCandleIndex(int timestamp, int candle_ms) =>
+    int(math.floor(timestamp / candle_ms))
+
+///////////////////////////////////////////////////////////////////////////////
+// ENUMS
+///////////////////////////////////////////////////////////////////////////////
+
+enum ProfileCategory
+    ROLLING = "Rolling"
+    CHANNEL = "Channel"
+    ANCHOR = "Anchor"
+
+enum ProfileDisplay
+    RIGHT = "Rightward"
+    LEFT = "Leftward"
+
+enum NodeType
+    POC = "POC"
+    BUY_NODE = "Buy Node"
+    SELL_NODE = "Sell Node"
+
+enum DrawingStyle
+    PROFILE = "Box Profile"
+    LABEL = "Label Bars"
+    CURVE = "Polyline Curve"
+
+enum ProfileType
+    PRICE = "Price Profile"
+    OSCILLATOR = "Oscillator Profile"
+
+///////////////////////////////////////////////////////////////////////////////
+// CONFIG TYPES
+///////////////////////////////////////////////////////////////////////////////
+
+type DrawConfig
+    int offset = 5
+    int width = 30
+    ProfileDisplay mode = ProfileDisplay.RIGHT
+    int label_offset = 5
+    int lookback = 100
+    bool show_nodes = true
+    bool show_labels = true
+    UTIL.Sizes label_size = UTIL.Sizes.TINY
+    color color_support = color.teal
+    color color_resistance = color.orange
+    color color_poc = color.yellow
+
+type VWAPConfig
+    bool enabled = true
+    bool show_bands = true
+    color vwap_color = color.aqua
+
+type DiagnosticData
+    // Bars diagnostics
+    int bars_hist_count = 0
+    float bars_total_vol = 0.0
+    float bars_total_buy = 0.0
+    int bars_count = 0
+    int bars_boundary_count = 0
+    float bars_last_drift = 0.0
+    bool bars_last_healthy = true
+    float bars_last_alpha = 0.08
+    float bars_last_imbalance = 0.0
+
+    // Price profile diagnostics
+    bool price_active = false
+    float price_anchor = na
+    float price_bin_height = na
+    int price_bin_size = 0
+    int price_bin_count = 0
+    float price_total_vol = 0.0
+    float price_vwap = na
+    float price_poc = na
+    int price_low_bin_idx = na
+    int price_high_bin_idx = na
+    float price_hist_low = na
+    float price_hist_high = na
+    int price_hist_count = 0
+    int price_expansion_count = 0
+    int price_rebuild_count = 0
+    bool price_needs_realignment = false
+
+    // Anchor integrity
+    float anchor_at_last_distribution = na
+    bool anchor_changed_since_distribution = false
+    int bins_at_last_distribution = 0
+    int last_low_bin_distributed = na
+    int last_high_bin_distributed = na
+    bool last_bins_in_range = false
+    int distribution_success = 0
+    int distribution_failures = 0
+
+    // Oscillator profile diagnostics
+    bool osc_active = false
+    float osc_anchor = na
+    float osc_bin_height = na
+    int osc_bin_size = 0
+    int osc_bin_count = 0
+    float osc_current = na
+    int osc_current_bin_idx = na
+    float osc_total_vol = 0.0
+    int osc_expansion_count = 0
+    string osc_category = ""
+    bool osc_needs_realignment = false
+
+///////////////////////////////////////////////////////////////////////////////
+// VOLUME NODE TYPE
+///////////////////////////////////////////////////////////////////////////////
+
+type VolumeNode
+    int bin_index = 0
+    float price = 0.0
+    float total_volume = 0.0
+    float imbalance = 0.0
+    NodeType node_type = NodeType.POC
+
+///////////////////////////////////////////////////////////////////////////////
+// BARS TYPE WITH HISTORICAL STORAGE - ALGORITHMIC UPGRADE
+///////////////////////////////////////////////////////////////////////////////
+
+// @type Bars - Multi-timeframe ring buffer with historical LTF storage
+type Bars
+    // Ring buffers for current CTF candles (size = ctf_ltf_ratio)
+    libBuffers.BufferFloat ring_o = na
+    libBuffers.BufferFloat ring_h = na
+    libBuffers.BufferFloat ring_l = na
+    libBuffers.BufferFloat ring_c = na
+    libBuffers.BufferFloat ring_v = na
+    libBuffers.BufferFloat ring_b = na  // Buy volume
+    libBuffers.BufferFloat ring_t = na  // Timestamp
+
+    // Historical storage for completed LTF candles
+    libBuffers.BufferFloat hist_o = na
+    libBuffers.BufferFloat hist_h = na
+    libBuffers.BufferFloat hist_l = na
+    libBuffers.BufferFloat hist_c = na
+    libBuffers.BufferFloat hist_v = na
+    libBuffers.BufferFloat hist_b = na  // Historical buy volume
+    libBuffers.BufferFloat hist_t = na  // Historical timestamp
+
+    // Accumulator for current LTF candle being built
+    float accum_o = na
+    float accum_h = na
+    float accum_l = na
+    float accum_c = na
+    float accum_v = 0.0
+    float accum_b = 0.0
+    int accum_start_time = na
+    int accum_ltf_idx = na
+
+    // State tracking
+    int completed_count = 0
+    float last_price = na
+    int last_time = na
+    float last_volume = na
+
+    // Analytics
+    float last_imbalance = 0.0
+    float last_alpha = 0.8
+    libBuffers.BufferFloat drift_history = na
+
+    // Configuration
+    int ltf_ms = 0
+    int ctf_ms = 0
+    int ctf_ltf_ratio = 0
+    int hist_capacity = 500
+
+    // Distribution control
+    float total_vol = 0.0
+    float total_buy = 0.0
+    int count = 0
+    int boundary_count = 0
+    bool ready_distribution = false
+    float last_bar_drift = 0.0
+    bool last_bar_healthy = true
+
+// @function Initialize Bars with timeframes
+method init(Bars this, UTIL.Timeframes ltf, UTIL.Timeframes ctf, int hist_cap = 500) =>
+    this.ltf_ms := UTIL.getTimeframeMS(ltf)
+    this.ctf_ms := UTIL.getTimeframeMS(ctf)
+    this.ctf_ltf_ratio := this.ctf_ms / this.ltf_ms
+    this.hist_capacity := hist_cap
+
+    // Initialize current CTF ring buffers
+    buf_size = this.ctf_ltf_ratio
+    this.ring_o := libBuffers.BufferFloat.new().init(buf_size, true)
+    this.ring_h := libBuffers.BufferFloat.new().init(buf_size, true)
+    this.ring_l := libBuffers.BufferFloat.new().init(buf_size, true)
+    this.ring_c := libBuffers.BufferFloat.new().init(buf_size, true)
+    this.ring_v := libBuffers.BufferFloat.new().init(buf_size, true)
+    this.ring_b := libBuffers.BufferFloat.new().init(buf_size, true)
+    this.ring_t := libBuffers.BufferFloat.new().init(buf_size, true)
+
+    // Initialize historical buffers
+    this.hist_o := libBuffers.BufferFloat.new().init(hist_cap, true)
+    this.hist_h := libBuffers.BufferFloat.new().init(hist_cap, true)
+    this.hist_l := libBuffers.BufferFloat.new().init(hist_cap, true)
+    this.hist_c := libBuffers.BufferFloat.new().init(hist_cap, true)
+    this.hist_v := libBuffers.BufferFloat.new().init(hist_cap, true)
+    this.hist_b := libBuffers.BufferFloat.new().init(hist_cap, true)
+    this.hist_t := libBuffers.BufferFloat.new().init(hist_cap, true)
+
+    // Initialize drift tracking
+    this.drift_history := libBuffers.BufferFloat.new().init(20)
+
+    this
+
+// @function Clear current CTF buffers for new bar
+method clear(Bars this) =>
+    this.ring_o.clear()
+    this.ring_h.clear()
+    this.ring_l.clear()
+    this.ring_c.clear()
+    this.ring_v.clear()
+    this.ring_b.clear()
+    this.ring_t.clear()
+
+    this.accum_o := na
+    this.accum_h := na
+    this.accum_l := na
+    this.accum_c := na
+    this.accum_v := 0.0
+    this.accum_b := 0.0
+    this.accum_start_time := na
+    this.accum_ltf_idx := na
+
+    this.completed_count := 0
+    this.total_vol := 0.0
+    this.total_buy := 0.0
+    this.count := 0
+    this.boundary_count := 0
+    this.ready_distribution := false
+
+    this
+
+// @function Get number of historical LTF candles available
+method getHistoricalCount(Bars this) =>
+    this.hist_h.size()
+
+// @function Get range of historical LTF candles for profile rebuilds
+// @returns [highs, lows, closes, buy_vols, total_vols] arrays
+method getHistoricalRange(Bars this, int start_idx, int count) =>
+    hist_size = this.getHistoricalCount()
+
+    if start_idx < 0 or start_idx >= hist_size or count <= 0
+        [array.new<float>(), array.new<float>(), array.new<float>(), array.new<float>(), array.new<float>()]
+    else
+        actual_count = math.min(count, hist_size - start_idx)
+
+        highs = array.new<float>()
+        lows = array.new<float>()
+        closes = array.new<float>()
+        buy_vols = array.new<float>()
+        total_vols = array.new<float>()
+
+        for i = 0 to actual_count - 1
+            idx = start_idx + i
+            h = this.hist_h.get(idx)
+            l = this.hist_l.get(idx)
+            c = this.hist_c.get(idx)
+            bv = this.hist_b.get(idx)
+            tv = this.hist_v.get(idx)
+
+            if not na(h) and not na(l) and not na(c) and not na(bv) and not na(tv)
+                array.push(highs, h)
+                array.push(lows, l)
+                array.push(closes, c)
+                array.push(buy_vols, bv)
+                array.push(total_vols, tv)
+
+        [highs, lows, closes, buy_vols, total_vols]
+
+// @function Calculate volume imbalance (buy_volume - neutral)
+method getVolumeImbalance(Bars this) =>
+    total_vol = this.total_vol
+    total_buy = this.total_buy
+
+    if total_vol <= VOLUME_EPSILON
+        this.last_imbalance := 0.0
+        0.0
+    else
+        neutral = total_vol * 0.5
+        imbalance = total_buy - neutral
+        this.last_imbalance := imbalance
+        imbalance
+
+// @function Calculate adaptive alpha based on market conditions - ALGORITHMIC UPGRADE
+method calcAlpha(Bars this, float vol, float vol_sma, float atr_distance,
+                 float atr_short, float atr_long, float stddev) =>
+    safe_vol_sma = vol_sma > 0 ? vol_sma : 1.0
+    safe_atr_short = atr_short > 0 ? atr_short : 1.0
+    safe_atr_long = atr_long > 0 ? atr_long : 1.0
+    safe_stddev = stddev > 0 ? stddev : 0.1
+    safe_atr_distance = atr_distance
+
+    if safe_vol_sma <= 0 or safe_atr_long <= 0
+        this.last_alpha := ALPHA_DEFAULT
+        ALPHA_DEFAULT
+    else
+        total_vol = this.total_vol
+        total_buy = this.total_buy
+
+        if total_vol <= VOLUME_EPSILON
+            this.last_alpha := ALPHA_DEFAULT
+            ALPHA_DEFAULT
+        else
+            total_sell = total_vol - total_buy
+            buy_height = total_buy / total_vol
+            sell_height = total_sell / total_vol
+            delta_alpha = buy_height - sell_height
+
+            // Bar ratio adjustment
+            bar_ratio = float(this.ltf_ms) / float(this.ctf_ms)
+            vol_alpha = (vol / safe_vol_sma) + (buy_height + sell_height) / math.max(1.0, safe_vol_sma / math.max(0.05, bar_ratio))
+
+            // Volatility and squeeze
+            volatility = math.max(0.1, safe_atr_short / safe_atr_long)
+            squeeze = safe_stddev / safe_atr_long
+
+            // Adjust delta_alpha based on ATR distance
+            if delta_alpha < 0.0 and safe_atr_distance > 0
+                max_denominator = math.max(sell_height / 2.0, buy_height)
+                if max_denominator > VOLUME_EPSILON
+                    delta_alpha := safe_atr_distance * sell_height / max_denominator
+            else if delta_alpha > 0.0 and safe_atr_distance < 0
+                max_denominator = math.max(buy_height / 2.0, sell_height)
+                if max_denominator > VOLUME_EPSILON
+                    delta_alpha := (-safe_atr_distance) * buy_height / max_denominator
+
+            // Final alpha calculation
+            raw_alpha = UTIL.fast_tanh(((6 * vol_alpha) + (2 * delta_alpha) + volatility + (2 * squeeze)) / 50.0)
+            clamped_alpha = math.max(ALPHA_MIN, math.min(raw_alpha, ALPHA_MAX))
+
+            this.last_alpha := clamped_alpha
+            clamped_alpha
+
+// @function Get cached alpha value
+method getAlpha(Bars this) =>
+    this.last_alpha
+
+// @function Reconcile accumulated LTF bars with CTF candle - ALGORITHMIC UPGRADE
+// Synthesizes LTF candles from CTF OHLCV when tick data unavailable
+method reconcile(Bars this, float ctf_open, float ctf_high, float ctf_low,
+                 float ctf_close, float ctf_volume) =>
+    if ctf_open <= 0 or ctf_high <= 0 or ctf_low <= 0 or ctf_close <= 0
+        this
+    else if ctf_high < ctf_low or ctf_volume < 0
+        this
+    else
+        // If no accumulated data but CTF has volume, synthesize LTF candles
+        if this.completed_count == 0 and ctf_volume > VOLUME_EPSILON
+            num_candles = this.ctf_ltf_ratio
+            vol_per_candle = ctf_volume / num_candles
+            price_range = ctf_high - ctf_low
+            is_bullish = ctf_close >= ctf_open
+            float synth_o = 0.0
+            float synth_c = 0.0
+
+            for i = 0 to num_candles - 1
+                if is_bullish
+                    synth_o := ctf_low + (price_range / num_candles) * i
+                    synth_c := ctf_low + (price_range / num_candles) * (i + 1)
+                else
+                    synth_o := ctf_high - (price_range / num_candles) * i
+                    synth_c := ctf_high - (price_range / num_candles) * (i + 1)
+
+                synth_h = math.max(synth_o, synth_c)
+                synth_l = math.min(synth_o, synth_c)
+
+                this.ring_o.push(synth_o)
+                this.ring_h.push(synth_h)
+                this.ring_l.push(synth_l)
+                this.ring_c.push(synth_c)
+                this.ring_v.push(vol_per_candle)
+                this.ring_b.push(vol_per_candle * NEUTRAL_BUY_RATIO)
+                this.ring_t.push(not na(this.accum_start_time) ? this.accum_start_time : 0)
+
+            this.completed_count := num_candles
+
+        // Move completed LTF candles to historical storage
+        for i = 0 to this.completed_count - 1
+            o = this.ring_o.get(i)
+            h = this.ring_h.get(i)
+            l = this.ring_l.get(i)
+            c = this.ring_c.get(i)
+            v = this.ring_v.get(i)
+            b = this.ring_b.get(i)
+            t = this.ring_t.get(i)
+
+            if not na(o) and not na(h) and not na(l) and not na(c) and not na(v) and not na(b)
+                this.hist_o.push(o)
+                this.hist_h.push(h)
+                this.hist_l.push(l)
+                this.hist_c.push(c)
+                this.hist_v.push(v)
+                this.hist_b.push(b)
+                this.hist_t.push(not na(t) ? t : 0)
+
+        // Calculate drift
+        total_ltf_vol = 0.0
+        for i = 0 to this.completed_count - 1
+            v = this.ring_v.get(i)
+            total_ltf_vol += not na(v) ? v : 0.0
+
+        drift_pct = calculateDriftPct(total_ltf_vol, ctf_volume)
+        this.drift_history.push(drift_pct)
+        this.last_bar_drift := drift_pct
+        this.last_bar_healthy := drift_pct < 10.0
+
+        this
+
+// @function Get average drift over last N bars
+method getAverageDrift(Bars this, int lookback = 20) =>
+    actual_lookback = math.min(lookback, this.drift_history.size())
+
+    if actual_lookback == 0
+        0.0
+    else
+        total_drift = 0.0
+        for i = 0 to actual_lookback - 1
+            drift = this.drift_history.get(i)
+            total_drift += not na(drift) ? drift : 0.0
+
+        total_drift / actual_lookback
+
+// @function Fetch LTF data (stub - uses CTF for now)
+method fetch(Bars this, bool in_market_hours) =>
+    this
+
+// @function Confirm CTF bar and accumulate volume
+method onConfirm(Bars this, float vol, float o, float h, float l, float c) =>
+    // Estimate buy volume from close position
+    buy_ratio = NEUTRAL_BUY_RATIO
+    if c > o
+        buy_ratio := BUY_RATIO_UP
+    else if c < o
+        buy_ratio := BUY_RATIO_DOWN
+
+    buy_vol = vol * buy_ratio
+
+    this.total_vol += vol
+    this.total_buy += buy_vol
+    this.count += 1
+    this.ready_distribution := true
+
+    this
+
+// @function Check if ready to distribute to profiles
+method shouldDistribute(Bars this) =>
+    this.ready_distribution
+
+///////////////////////////////////////////////////////////////////////////////
+// DELTAPROFILE TYPE WITH ALGORITHMIC UPGRADES
+///////////////////////////////////////////////////////////////////////////////
+
+// @type DeltaProfile - Volume profile with Delta Volume Imbalance tracking
+type DeltaProfile
+    int id = 0
+    DrawingStyle drawing_style = DrawingStyle.PROFILE
+    ProfileType profile_type = ProfileType.PRICE
+    ProfileCategory category = ProfileCategory.ROLLING
+    bool active = false
+    bool needs_realignment = false
+    bool force_overlay = false
+
+    // Volume and imbalance arrays (parallel)
+    array<float> vol_profile = na
+    array<float> imbalance = na
+
+    // VWAP tracking
+    float vwap_num = 0.0
+    float vwap_den = 0.0
+    float vwap = na
+    float vwap_variance = 0.0
+    float vah = na
+    float val = na
+
+    // Bin configuration
+    float anchor_price = na
+    float bin_height = na
+    int bin_count = 0
+    int anchor_bar = na  // For VWAP drawing
+
+    // Node tracking
+    array<VolumeNode> nodes = na
+    int node_padding = 3
+    int max_nodes = 5
+    VolumeNode poc = na
+
+    // Statistics
+    float total_volume = 0.0
+    float max_bin_volume = 0.0
+    float avg_bin_volume = 0.0
+    float current_price = na
+
+    // Drawing objects
+    array<box> profile_boxes = na
+    array<polyline> profile_polylines = na
+
+    // PHASE 1: Distribution tracking
+    float anchor_at_last_distribution = na
+    int bins_at_last_distribution = 0
+    bool anchor_changed_since_distribution = false
+    int last_low_bin_distributed = na
+    int last_high_bin_distributed = na
+    bool last_bins_in_range = false
+
+    // Diagnostics
+    int expansion_count = 0
+    int reanchor_count = 0
+    int rebuild_count = 0
+    int distribution_success = 0
+    int distribution_failures = 0
+
+///////////////////////////////////////////////////////////////////////////////
+// DELTAPROFILE - INITIALIZATION
+///////////////////////////////////////////////////////////////////////////////
+
+method init(DeltaProfile this, int initial_bins, int max_nodes,
+            ProfileType ptype, ProfileCategory pcategory, DrawingStyle dstyle, bool force_overlay) =>
+    this.vol_profile := array.new<float>(initial_bins, 0.0)
+    this.imbalance := array.new<float>(initial_bins, 0.0)
+    this.nodes := array.new<VolumeNode>()
+    this.profile_boxes := array.new<box>()
+    this.profile_polylines := array.new<polyline>()
+    this.bin_count := initial_bins
+    this.max_nodes := max_nodes
+    this.profile_type := ptype
+    this.category := pcategory
+    this.drawing_style := dstyle
+    this.force_overlay := force_overlay
+    this.vwap_num := 0.0
+    this.vwap_den := 0.0
+    this.vwap := na
+    this.total_volume := 0.0
+    this.max_bin_volume := 0.0
+    this.avg_bin_volume := 0.0
+    this.expansion_count := 0
+    this.reanchor_count := 0
+    this.rebuild_count := 0
+    this.distribution_success := 0
+    this.distribution_failures := 0
+    this.anchor_at_last_distribution := na
+    this.bins_at_last_distribution := 0
+    this.anchor_changed_since_distribution := false
+    this
+
+method initAnchor(DeltaProfile this, float anchor, float bin_height) =>
+    this.anchor_price := math.floor(anchor / bin_height) * bin_height
+    this.bin_height := bin_height
+
+    // Set anchor_bar based on category
+    if this.category == ProfileCategory.ANCHOR
+        // For anchored profiles, use session start
+        this.anchor_bar := na  // Will be set to session start bar
+
+    this
+
+method clearProfiles(DeltaProfile this) =>
+    array.fill(this.vol_profile, 0.0)
+    array.fill(this.imbalance, 0.0)
+    array.clear(this.nodes)
+    this.vwap_num := 0.0
+    this.vwap_den := 0.0
+    this.vwap := na
+    this.total_volume := 0.0
+    this.max_bin_volume := 0.0
+    this.avg_bin_volume := 0.0
+    this
+
+///////////////////////////////////////////////////////////////////////////////
+// DELTAPROFILE - BIN MANAGEMENT
+///////////////////////////////////////////////////////////////////////////////
+
+method priceToBin(DeltaProfile this, float price) =>
+    this.bin_height > 0 ? int(math.floor((price - this.anchor_price) / this.bin_height)) : 0
+
+method binToPrice(DeltaProfile this, int bin_idx) =>
+    this.anchor_price + (bin_idx * this.bin_height) + (this.bin_height / 2)
+
+method addVolumeToBin(DeltaProfile this, int bin_idx, float vol, float buy_vol) =>
+    if bin_idx >= 0 and bin_idx < array.size(this.vol_profile)
+        current_vol = array.get(this.vol_profile, bin_idx)
+        current_imb = array.get(this.imbalance, bin_idx)
+
+        new_vol = current_vol + vol
+        imbalance_delta = buy_vol - (vol / 2.0)
+        new_imb = current_imb + imbalance_delta
+
+        array.set(this.vol_profile, bin_idx, new_vol)
+        array.set(this.imbalance, bin_idx, new_imb)
+    this
+
+// @function Dynamically expand profile bins - ALGORITHMIC UPGRADE
+method ensureBinCapacity(DeltaProfile this, int needed) =>
+    if this.profile_type == ProfileType.OSCILLATOR
+        this
+    else
+        current_size = array.size(this.vol_profile)
+        old_anchor = this.anchor_price
+
+        if needed < 0
+            bins_to_add = math.abs(needed) + 4
+            if current_size + bins_to_add > MAX_BINS
+                bins_to_add := math.max(0, MAX_BINS - current_size)
+
+            if bins_to_add > 0
+                new_vol = array.new<float>(bins_to_add, 0.0)
+                new_imb = array.new<float>(bins_to_add, 0.0)
+                this.vol_profile := array.concat(new_vol, this.vol_profile)
+                this.imbalance := array.concat(new_imb, this.imbalance)
+                this.anchor_price := this.anchor_price - (bins_to_add * this.bin_height)
+                this.bin_count := array.size(this.vol_profile)
+                this.expansion_count += 1
+
+        else if needed >= current_size
+            bins_to_add = (needed - current_size + 1) + 4
+            if current_size + bins_to_add > MAX_BINS
+                bins_to_add := math.max(0, MAX_BINS - current_size)
+
+            if bins_to_add > 0
+                for i = 0 to bins_to_add - 1
+                    array.push(this.vol_profile, 0.0)
+                    array.push(this.imbalance, 0.0)
+                this.bin_count := array.size(this.vol_profile)
+                this.expansion_count += 1
+
+        if this.anchor_price != old_anchor
+            this.anchor_changed_since_distribution := true
+            this.reanchor_count += 1
+
+        this
+
+///////////////////////////////////////////////////////////////////////////////
+// DELTAPROFILE - VWAP METHODS
+///////////////////////////////////////////////////////////////////////////////
+
+method updateVWAP(DeltaProfile this, float h, float l, float c, float vol) =>
+    if vol > VOLUME_EPSILON
+        typical_price = (h + l + c) / 3.0
+        this.vwap_num += typical_price * vol
+        this.vwap_den += vol
+        if this.vwap_den > VOLUME_EPSILON
+            this.vwap := this.vwap_num / this.vwap_den
+            price_dev = typical_price - this.vwap
+            this.vwap_variance += vol * price_dev * price_dev
+    this
+
+method getVWAPStdDev(DeltaProfile this) =>
+    if this.vwap_den > VOLUME_EPSILON
+        variance = this.vwap_variance / this.vwap_den
+        math.sqrt(variance)
+    else
+        na
+
+///////////////////////////////////////////////////////////////////////////////
+// DELTAPROFILE - DISTRIBUTION WITH PROPORTIONAL OVERLAP - ALGORITHMIC UPGRADE
+///////////////////////////////////////////////////////////////////////////////
+
+method distributeBarVolumeDelta(DeltaProfile this, float bar_close, float buy_vol, float sell_vol,
+                                 float bar_high = na, float bar_low = na) =>
+    if not this.active
+        this
+    else
+        total_vol = buy_vol + sell_vol
+        if not isValidVolume(total_vol)
+            this
+        else
+            h_val = na(bar_high) ? bar_close : bar_high
+            l_val = na(bar_low) ? bar_close : bar_low
+            this.updateVWAP(h_val, l_val, bar_close, total_vol)
+
+            this.anchor_at_last_distribution := this.anchor_price
+            this.bins_at_last_distribution := array.size(this.vol_profile)
+
+            if na(bar_high) or na(bar_low)
+                bin_idx = this.priceToBin(bar_close)
+                if this.profile_type == ProfileType.OSCILLATOR
+                    bin_idx := math.max(0, math.min(this.bin_count - 1, bin_idx))
+                else
+                    bins = array.size(this.vol_profile)
+                    if bin_idx < 0 or bin_idx >= bins
+                        this.ensureBinCapacity(bin_idx)
+                    bin_idx := this.priceToBin(bar_close)
+                    bin_idx := math.max(0, math.min(array.size(this.vol_profile) - 1, bin_idx))
+                this.addVolumeToBin(bin_idx, total_vol, buy_vol)
+                this.distribution_success += 1
+            else
+                low_bin = this.priceToBin(bar_low)
+                high_bin = this.priceToBin(bar_high)
+
+                if low_bin < 0
+                    this.ensureBinCapacity(low_bin)
+                    low_bin := this.priceToBin(bar_low)
+                    high_bin := this.priceToBin(bar_high)
+
+                if high_bin >= array.size(this.vol_profile)
+                    this.ensureBinCapacity(high_bin)
+
+                bins = array.size(this.vol_profile)
+                bar_range = bar_high - bar_low
+
+                start_bin = math.max(0, this.priceToBin(bar_low))
+                end_bin = math.min(bins - 1, this.priceToBin(bar_high))
+
+                this.last_low_bin_distributed := start_bin
+                this.last_high_bin_distributed := end_bin
+                this.last_bins_in_range := start_bin >= 0 and end_bin < bins and start_bin <= end_bin
+
+                if start_bin <= end_bin
+                    // Proportional overlap calculation
+                    for i = start_bin to end_bin
+                        bin_low_price = this.anchor_price + (i * this.bin_height)
+                        bin_high_price = bin_low_price + this.bin_height
+
+                        if bar_high >= bin_low_price and bar_low <= bin_high_price
+                            overlap_low = math.max(bar_low, bin_low_price)
+                            overlap_high = math.min(bar_high, bin_high_price)
+
+                            if bar_range > VOLUME_EPSILON
+                                overlap_pct = safeDivide(overlap_high - overlap_low, bar_range, 1.0)
+                                distributed_vol = total_vol * overlap_pct
+                                distributed_buy = buy_vol * overlap_pct
+                                this.addVolumeToBin(i, distributed_vol, distributed_buy)
+                            else
+                                this.addVolumeToBin(i, total_vol, buy_vol)
+                                break
+
+                    this.distribution_success += 1
+                    this.anchor_changed_since_distribution := false
+                else
+                    this.distribution_failures += 1
+                    if i_log_enabled
+                        log.warning("Distribution failure - invalid bin range")
+            this
+
+///////////////////////////////////////////////////////////////////////////////
+// DELTAPROFILE - REBUILD FROM BARS - ALGORITHMIC UPGRADE
+///////////////////////////////////////////////////////////////////////////////
+
+// @function Rebuild profile from Bars historical data
+// @param bars: Bars - Source of historical OHLCV data
+// @param lookback: int - Number of bars to rebuild from
+method rebuildFromBars(DeltaProfile this, Bars bars, int lookback) =>
+    this.needs_realignment := false
+
+    hist_count = bars.getHistoricalCount()
+
+    if hist_count < MIN_REBUILD_BARS
+        if i_log_enabled
+            log.warning("Rebuild skipped - insufficient data: " + str.tostring(hist_count) + " bars")
+        this
+    else
+        // Calculate start index for iteration
+        available = hist_count
+        bars_to_use = math.min(lookback, available)
+        start_idx = math.max(0, available - bars_to_use)
+
+        if bars_to_use < MIN_REBUILD_BARS
+            if i_log_enabled
+                log.warning("Rebuild skipped - only " + str.tostring(bars_to_use) + " bars available")
+            this
+        else
+            // First pass: Find price range for anchor calculation
+            [h_list, l_list, c_list, bv_list, tv_list] = bars.getHistoricalRange(start_idx, bars_to_use)
+
+            float hist_low = na
+            float hist_high = na
+
+            for i = 0 to array.size(h_list) - 1
+                h = array.get(h_list, i)
+                l = array.get(l_list, i)
+
+                if not na(h) and not na(l)
+                    hist_high := na(hist_high) ? h : math.max(hist_high, h)
+                    hist_low := na(hist_low) ? l : math.min(hist_low, l)
+
+            if na(hist_low) or na(hist_high)
+                if i_log_enabled
+                    log.error("Rebuild failed - invalid historical range (na values)")
+                this
+            else
+                price_range = hist_high - hist_low
+
+                if price_range < this.bin_height * 5
+                    if i_log_enabled
+                        log.error("Rebuild failed - price range too small: " + str.tostring(price_range))
+                    this
+                else
+                    // Calculate centered anchor with padding
+                    hist_center = (hist_high + hist_low) / 2.0
+                    bins_needed = int(math.ceil(price_range / this.bin_height)) + DEFAULT_BIN_PADDING
+                    bins_needed := math.min(bins_needed, MAX_BINS)
+                    bins_needed := math.max(bins_needed, 100)
+
+                    // Resize arrays if needed
+                    current_size = array.size(this.vol_profile)
+                    if bins_needed != current_size
+                        this.vol_profile := array.new<float>(bins_needed, 0.0)
+                        this.imbalance := array.new<float>(bins_needed, 0.0)
+                        this.bin_count := bins_needed
+                    else
+                        this.clearProfiles()
+
+                    // Center anchor on historical data
+                    new_anchor = hist_center - (bins_needed / 2.0 * this.bin_height)
+                    this.anchor_price := math.floor(new_anchor / this.bin_height) * this.bin_height
+
+                    // Reset VWAP for fresh calculation
+                    this.vwap_num := 0.0
+                    this.vwap_den := 0.0
+                    this.vwap := na
+                    this.vwap_variance := 0.0
+
+                    // Second pass: Distribute all historical data
+                    for i = 0 to array.size(h_list) - 1
+                        h = array.get(h_list, i)
+                        l = array.get(l_list, i)
+                        c = array.get(c_list, i)
+                        buy_vol = array.get(bv_list, i)
+                        total_vol = array.get(tv_list, i)
+
+                        if not na(total_vol) and total_vol > VOLUME_EPSILON
+                            sell_vol = total_vol - buy_vol
+                            this.distributeBarVolumeDelta(c, buy_vol, sell_vol, h, l)
+
+                    this.rebuild_count += 1
+
+                    if i_log_enabled
+                        log.info("Rebuild complete - " + str.tostring(bars_to_use) + " bars, anchor: " +
+                            str.tostring(this.anchor_price, "#.##") + ", bins: " + str.tostring(this.bin_count))
+                    this
+
+///////////////////////////////////////////////////////////////////////////////
+// DELTAPROFILE - NODE DETECTION WITH PADDING - ALGORITHMIC UPGRADE
+///////////////////////////////////////////////////////////////////////////////
+
+method getImbalanceRatio(DeltaProfile this, int bin_idx) =>
+    bins = array.size(this.vol_profile)
+    if bin_idx < 0 or bin_idx >= bins
+        0.0
+    else
+        vol = array.get(this.vol_profile, bin_idx)
+        imb = array.get(this.imbalance, bin_idx)
+        if vol < VOLUME_EPSILON
+            0.0
+        else
+            max_imb = vol / 2.0
+            max_imb > VOLUME_EPSILON ? math.max(-1.0, math.min(1.0, imb / max_imb)) : 0.0
+
+method detectNodes(DeltaProfile this, int max_nodes, float min_threshold_pct) =>
+    this.current_price := close
+    bins = array.size(this.vol_profile)
+
+    if bins == 0
+        this
+    else
+        array.clear(this.nodes)
+        this.poc := na
+        this.total_volume := 0.0
+        this.max_bin_volume := 0.0
+
+        for i = 0 to bins - 1
+            vol = array.get(this.vol_profile, i)
+            this.total_volume += vol
+            if vol > this.max_bin_volume
+                this.max_bin_volume := vol
+
+        this.avg_bin_volume := safeDivide(this.total_volume, float(bins), 0.0)
+        threshold_volume = this.max_bin_volume * min_threshold_pct
+        sorted_indices = array.sort_indices(this.vol_profile, order.descending)
+        used_bins = array.new<bool>(bins, false)
+        price_bin = this.priceToBin(this.current_price)
+        price_bin := math.max(0, math.min(bins - 1, price_bin))
+        nodes_found = 0
+
+        for idx in sorted_indices
+            if nodes_found >= max_nodes
+                break
+
+            vol = array.get(this.vol_profile, idx)
+            if vol < threshold_volume
+                continue
+
+            is_valid = true
+            start_check = math.max(0, idx - this.node_padding)
+            end_check = math.min(bins - 1, idx + this.node_padding)
+
+            for check_idx = start_check to end_check
+                if array.get(used_bins, check_idx)
+                    is_valid := false
+                    break
+
+            if is_valid
+                node = VolumeNode.new()
+                node.bin_index := idx
+                node.price := this.binToPrice(idx)
+                node.total_volume := vol
+                node.imbalance := array.get(this.imbalance, idx)
+
+                imb_ratio = this.getImbalanceRatio(idx)
+
+                if nodes_found == 0
+                    node.node_type := NodeType.POC
+                    this.poc := node
+                else
+                    if imb_ratio > 0.15
+                        node.node_type := NodeType.BUY_NODE
+                    else if imb_ratio < -0.15
+                        node.node_type := NodeType.SELL_NODE
+                    else if idx < price_bin
+                        node.node_type := NodeType.BUY_NODE
+                    else
+                        node.node_type := NodeType.SELL_NODE
+
+                array.push(this.nodes, node)
+
+                for mark_idx = start_check to end_check
+                    array.set(used_bins, mark_idx, true)
+
+                nodes_found += 1
+        this
+
+///////////////////////////////////////////////////////////////////////////////
+// DELTAPROFILE - DRAWING METHODS (unchanged from original)
+///////////////////////////////////////////////////////////////////////////////
+
+method getBinColors(DeltaProfile this, int bin_idx, color color_support, color color_resistance,
+                    float lo = 0.2, float hi = 0.8) =>
+    bins = array.size(this.vol_profile)
+    if bin_idx < 0 or bin_idx >= bins
+        UTIL.COLOR_NONE
+    else
+        vol = array.get(this.vol_profile, bin_idx)
+        if vol < VOLUME_EPSILON
+            UTIL.COLOR_NONE
+        else
+            imb_ratio = this.getImbalanceRatio(bin_idx)
+            vol_ratio = this.avg_bin_volume > VOLUME_EPSILON ? vol / this.avg_bin_volume : 1.0
+
+            amplified = 0.5 + (math.pow(math.abs(imb_ratio), 0.7) * math.sign(imb_ratio) * 1.5)
+            amplified := math.max(0.0, math.min(1.0, amplified))
+
+            volume_strength = math.pow(vol_ratio / 4.0, 2.0)
+            transparency = int(75 - (volume_strength * 70))
+            transparency := math.max(5, math.min(95, transparency))
+
+            base_color = color.from_gradient(amplified, lo, hi, color_resistance, color_support)
+            color.new(base_color, transparency)
+
+method drawBoxes(DeltaProfile this, array<box> boxes, int anchor_x, int width,
+                 color color_support, color color_resistance,
+                 ProfileDisplay display_mode, bool force_overlay, int fixed_width = 0) =>
+    bins = array.size(this.vol_profile)
+
+    if bins > 0 and this.max_bin_volume > VOLUME_EPSILON
+        current_size = array.size(boxes)
+
+        if current_size > bins
+            for i = bins to current_size - 1
+                existing_box = array.get(boxes, i)
+                if not na(existing_box)
+                    box.delete(existing_box)
+
+            while array.size(boxes) > bins
+                array.pop(boxes)
+
+        else if current_size < bins
+            boxes_to_add = bins - current_size
+            for i = 0 to boxes_to_add - 1
+                array.push(boxes, box(na))
+
+        for i = 0 to bins - 1
+            vol = array.get(this.vol_profile, i)
+            bin_low = this.anchor_price + (i * this.bin_height)
+            bin_high = bin_low + this.bin_height
+
+            normalized_width = this.max_bin_volume > 0 ? int((vol / math.max(0.001, this.max_bin_volume)) * width) : 0
+
+            single_box = array.get(boxes, i)
+
+            if normalized_width > 0
+                bg_color = this.getBinColors(i, color_support, color_resistance)
+
+                border_color = UTIL.COLOR_NONE
+                if not na(this.poc) and i == this.poc.bin_index
+                    imb_ratio = this.getImbalanceRatio(i)
+                    border_color := imb_ratio >= 0 ?
+                                 color.new(color_support, 20) :
+                                 color.new(color_resistance, 20)
+
+                if na(single_box)
+                    single_box := force_overlay ?
+                             box.new(na, na, na, na, force_overlay=true) :
+                             box.new(na, na, na, na, force_overlay=false)
+                    array.set(boxes, i, single_box)
+
+                is_leftward = display_mode == ProfileDisplay.LEFT
+                left_coord = 0
+                right_coord = 0
+
+                if fixed_width > 0
+                    left_coord := display_mode == ProfileDisplay.RIGHT ? anchor_x + 1 : anchor_x - width - 1
+                    right_coord := display_mode == ProfileDisplay.RIGHT ? anchor_x + width + 1 : anchor_x - 1
+                else
+                    left_coord := is_leftward ? anchor_x - normalized_width - 1 : anchor_x + 1
+                    right_coord := is_leftward ? anchor_x - 1 : anchor_x + normalized_width + 1
+
+                box.set_lefttop(single_box, left_coord, bin_high)
+                box.set_rightbottom(single_box, right_coord, bin_low)
+                box.set_bgcolor(single_box, bg_color)
+                box.set_border_color(single_box, border_color)
+                box.set_border_width(single_box, 1)
+            else
+                if not na(single_box)
+                    box.delete(single_box)
+                    array.set(boxes, i, box(na))
+    this
+
+method drawCurve(DeltaProfile this, int anchor_x, int width,
+                 color color_support, color color_resistance,
+                 ProfileDisplay display_mode, bool force_overlay) =>
+    for p in this.profile_polylines
+        polyline.delete(p)
+    array.clear(this.profile_polylines)
+
+    bins = array.size(this.vol_profile)
+    if bins > 0 and this.max_bin_volume > 0
+        points = array.new<chart.point>()
+
+        first_bin = -1
+        last_bin = -1
+
+        for i = 0 to bins - 1
+            vol = array.get(this.vol_profile, i)
+            if vol > 0
+                if first_bin == -1
+                    first_bin := i
+                last_bin := i
+
+        if first_bin != -1
+            first_price = this.binToPrice(first_bin)
+            array.push(points, chart.point.from_index(anchor_x, first_price))
+
+            for i = 0 to bins - 1
+                vol = array.get(this.vol_profile, i)
+
+                if vol > 0
+                    bin_center = this.binToPrice(i)
+                    normalized_width = int((vol / this.max_bin_volume) * width)
+
+                    x_pos = display_mode == ProfileDisplay.RIGHT ?
+                         anchor_x + normalized_width : anchor_x - normalized_width
+
+                    array.push(points, chart.point.from_index(x_pos, bin_center))
+
+            last_price = this.binToPrice(last_bin)
+            array.push(points, chart.point.from_index(anchor_x, last_price))
+
+            if array.size(points) > 2
+                total_buy_vol = 0.0
+                total_vol = 0.0
+
+                for i = 0 to array.size(this.vol_profile) - 1
+                    vol = array.get(this.vol_profile, i)
+                    imb_ratio = this.getImbalanceRatio(i)
+                    total_vol += vol
+                    total_buy_vol += vol * imb_ratio
+
+                overall_buy_pct = total_vol > 0 ? total_buy_vol / total_vol : 0.5
+                curve_color = overall_buy_pct >= 0.5 ? color_support : color_resistance
+
+                if force_overlay
+                    p = polyline.new(points, closed=false, curved=true, xloc=xloc.bar_index,
+                        line_color=curve_color, line_width=2,
+                        fill_color=color.new(curve_color, 85), force_overlay=true)
+                    array.push(this.profile_polylines, p)
+                else
+                    p = polyline.new(points, closed=false, curved=true, xloc=xloc.bar_index,
+                        line_color=curve_color, line_width=2,
+                        fill_color=color.new(curve_color, 85))
+                    array.push(this.profile_polylines, p)
+    this
+
+method drawNodesAndLabels(DeltaProfile this, libDrawing.DrawingManager visuals, DrawConfig config, int anchor_bar) =>
+    if not config.show_nodes
+        this
+    else
+        current_count = array.size(this.nodes)
+        profile_size = array.size(this.vol_profile)
+
+        for [rank, node] in this.nodes
+            if node.bin_index < profile_size
+                node_color = this.getBinColors(node.bin_index, config.color_support, config.color_resistance, 0.2, 0.8)
+                line_name = "node_" + str.tostring(rank)
+
+                visuals.addElement(1,
+                        anchor_bar - config.lookback, node.price,
+                        anchor_bar, node.price,
+                        bg=node_color, width=node.node_type == NodeType.POC ? 2 : 1,
+                        name=line_name)
+
+                if config.show_labels
+                    node_text = switch node.node_type
+                        NodeType.POC => "POC"
+                        NodeType.BUY_NODE => "Buy"
+                        NodeType.SELL_NODE => "Sell"
+                        => ""
+
+                    label_name = "node_label_" + str.tostring(rank)
+                    imb_ratio = this.getImbalanceRatio(node.bin_index)
+                    imb_pct = str.tostring(imb_ratio * 100, "#") + "%"
+
+                    visuals.addElement(3,
+                            anchor_bar + config.label_offset, node.price,
+                            bg=color.new(node_color, 70), fg=color.white,
+                            content=node_text + " " + imb_pct, size=config.label_size,
+                            label=label.style_label_left, name=label_name)
+
+        for rank = current_count to this.max_nodes - 1
+            visuals.remove("node_" + str.tostring(rank))
+            visuals.remove("node_label_" + str.tostring(rank))
+        this
+
+method drawVWAP(DeltaProfile this, libDrawing.DrawingManager visuals, DrawConfig config,
+                VWAPConfig vwap_config, int anchor_bar) =>
+    if not na(this.vwap) and this.active and vwap_config.enabled
+        // VWAP start bar depends on profile category
+        start_bar = this.category == ProfileCategory.ANCHOR and not na(this.anchor_bar) ?
+             this.anchor_bar : anchor_bar - config.lookback
+        start_bar := math.max(start_bar, bar_index - 500)
+
+        visuals.addElement(1, start_bar, this.vwap, anchor_bar, this.vwap,
+                 bg=vwap_config.vwap_color, width=2, name="vwap_line")
+
+        if vwap_config.show_bands
+            std_dev = this.getVWAPStdDev()
+            if not na(std_dev) and std_dev > VOLUME_EPSILON
+                band_color = color.new(vwap_config.vwap_color, 70)
+
+                visuals.addElement(1, start_bar, this.vwap + std_dev, anchor_bar, this.vwap + std_dev,
+                         bg=band_color, width=1, name="vwap_plus_1")
+                visuals.addElement(1, start_bar, this.vwap - std_dev, anchor_bar, this.vwap - std_dev,
+                         bg=band_color, width=1, name="vwap_minus_1")
+                visuals.addElement(1, start_bar, this.vwap + 2*std_dev, anchor_bar, this.vwap + 2*std_dev,
+                         bg=band_color, width=1, name="vwap_plus_2")
+                visuals.addElement(1, start_bar, this.vwap - 2*std_dev, anchor_bar, this.vwap - 2*std_dev,
+                         bg=band_color, width=1, name="vwap_minus_2")
+    this
+
+method draw(DeltaProfile this, libDrawing.DrawingManager visuals, DrawConfig config,
+            VWAPConfig vwap_config, int anchor_bar) =>
+    switch this.drawing_style
+        DrawingStyle.PROFILE =>
+            this.drawBoxes(this.profile_boxes, bar_index + config.offset, config.width,
+                     config.color_support, config.color_resistance, config.mode, this.force_overlay)
+        DrawingStyle.LABEL =>
+            this.drawBoxes(this.profile_boxes, bar_index + config.offset, config.width,
+                     config.color_support, config.color_resistance, config.mode, this.force_overlay, fixed_width=10)
+        DrawingStyle.CURVE =>
+            this.drawCurve(bar_index + config.offset, config.width,
+                     config.color_support, config.color_resistance, config.mode, this.force_overlay)
+
+    if this.profile_type == ProfileType.PRICE
+        this.drawNodesAndLabels(visuals, config, anchor_bar)
+        this.drawVWAP(visuals, config, vwap_config, anchor_bar)
+
+    visuals.processUpdates()
+
+    if barstate.islast
+        visuals.extendAll(bar_index + config.offset + config.width, bar_index)
+    this
+
+///////////////////////////////////////////////////////////////////////////////
+// PROFILEMANAGER TYPE
+///////////////////////////////////////////////////////////////////////////////
+
+type ProfileManager
+    int max_profiles = 10
+    array<DeltaProfile> profiles = na
+    array<DrawConfig> configs = na
+
+    float calculated_bin_height = na
+    float htf_atr = na
+    int id_counter = 0
+
+///////////////////////////////////////////////////////////////////////////////
+// PROFILEMANAGER METHODS
+///////////////////////////////////////////////////////////////////////////////
+
+method init(ProfileManager this) =>
+    this.profiles := array.new<DeltaProfile>()
+    this.configs := array.new<DrawConfig>()
+    this.id_counter := 0
+    this
+
+method addProfile(ProfileManager this, DeltaProfile profile, DrawConfig config) =>
+    profile.id := this.id_counter
+    this.id_counter += 1
+    array.push(this.profiles, profile)
+    array.push(this.configs, config)
+    this
+
+method getProfileByType(ProfileManager this, ProfileType ptype) =>
+    DeltaProfile result = na
+    if not na(this.profiles)
+        for profile in this.profiles
+            if profile.profile_type == ptype
+                result := profile
+                break
+    result
+
+method setupHTF(ProfileManager this, UTIL.Timeframes htf, int bins_per_atr) =>
+    if barstate.isconfirmed and na(this.calculated_bin_height)
+        htf_context = libApex.MarketContext.new().init(htf)
+        libApex.fetch(htf_context, htf)
+
+        if not na(htf_context.atr) and htf_context.atr > VOLUME_EPSILON
+            raw_bin_height = htf_context.atr / bins_per_atr
+            min_bin_height = 0.01
+            this.calculated_bin_height := math.max(min_bin_height, math.round(raw_bin_height, 2))
+            this.htf_atr := htf_context.atr
+
+            if i_log_enabled
+                log.info("HTF Setup - ATR: " + str.tostring(htf_context.atr, "#.##") +
+                    ", Bin Height: " + str.tostring(this.calculated_bin_height, "#.##"))
+    this
+
+method setupProfiles(ProfileManager this, float osc_atr_range) =>
+    if not na(this.profiles)
+        for profile in this.profiles
+            if profile.profile_type == ProfileType.PRICE and not na(this.calculated_bin_height)
+                if na(profile.anchor_price)
+                    expected_range = 5.0 * this.htf_atr
+                    bins_needed = int(math.ceil(expected_range * 2.0 / this.calculated_bin_height))
+                    bins_needed := math.min(bins_needed, MAX_BINS)
+                    bins_needed := math.max(bins_needed, 100)
+
+                    current_size = array.size(profile.vol_profile)
+                    if bins_needed > current_size
+                        profile.vol_profile := array.new<float>(bins_needed, 0.0)
+                        profile.imbalance := array.new<float>(bins_needed, 0.0)
+                        profile.bin_count := bins_needed
+
+                    centered_anchor = close - (bins_needed / 2.0 * this.calculated_bin_height)
+                    profile.initAnchor(centered_anchor, this.calculated_bin_height)
+                profile.active := true
+
+            else if profile.profile_type == ProfileType.OSCILLATOR and not na(this.htf_atr)
+                osc_bins = profile.bin_count
+                osc_bin_height = (2.0 * osc_atr_range) / osc_bins
+                osc_bin_height := math.max(0.001, osc_bin_height)
+                profile.initAnchor(-osc_atr_range, osc_bin_height)
+                profile.active := true
+    this
+
+method distributeVolume(ProfileManager this, Bars bars, float close_atr_dist) =>
+    if bars.shouldDistribute()
+        buy_vol = bars.total_buy
+        sell_vol = bars.total_vol - buy_vol
+
+        if not na(this.profiles)
+            for profile in this.profiles
+                if profile.active
+                    if profile.profile_type == ProfileType.PRICE
+                        // Distribute current bar data to price profile
+                        // Use bars aggregated data
+                        if bars.count > 0
+                            // Get representative values from most recent LTF bar
+                            h = bars.ring_h.get(0)
+                            l = bars.ring_l.get(0)
+                            c = bars.ring_c.get(0)
+
+                            if not na(h) and not na(l) and not na(c)
+                                profile.distributeBarVolumeDelta(c, buy_vol, sell_vol, h, l)
+                    else if profile.profile_type == ProfileType.OSCILLATOR
+                        profile.distributeBarVolumeDelta(close_atr_dist, buy_vol, sell_vol)
+    this
+
+method calculateProfiles(ProfileManager this, int node_count, float node_threshold, int node_padding) =>
+    if not na(this.profiles)
+        for profile in this.profiles
+            if profile.active
+                profile.node_padding := node_padding
+                profile.detectNodes(node_count, node_threshold)
+    this
+
+method handleRealignments(ProfileManager this, Bars bars) =>
+    if not na(this.profiles)
+        for profile in this.profiles
+            if profile.needs_realignment
+                // Use rebuildFromBars with proper parameters
+                lookback = profile.category == ProfileCategory.ANCHOR ?
+                     bars.getHistoricalCount() : 100  // Full history for ANCHOR, lookback for ROLLING
+                profile.rebuildFromBars(bars, lookback)
+    this
+
+method rebuildRollingProfiles(ProfileManager this, Bars bars, int lookback) =>
+    if not na(this.profiles)
+        for profile in this.profiles
+            if profile.category == ProfileCategory.ROLLING
+                profile.clearProfiles()
+                profile.rebuildFromBars(bars, lookback)
+    this
+
+method drawProfiles(ProfileManager this, libDrawing.DrawingManager visuals, VWAPConfig vwap_config) =>
+    if not na(this.profiles) and not na(this.configs)
+        profile_count = array.size(this.profiles)
+        for i = 0 to profile_count - 1
+            profile = array.get(this.profiles, i)
+            config = array.get(this.configs, i)
+            if profile.active
+                vwap_cfg = profile.profile_type == ProfileType.OSCILLATOR ?
+                     VWAPConfig.new(false, false, color.aqua) : vwap_config
+                profile.draw(visuals, config, vwap_cfg, bar_index)
+    this
+
+// DIAGNOSTICS
+
+method updateDiagnostics(DiagnosticData this, ProfileManager manager, Bars bars,
+             UTIL.Timeframes ltf, UTIL.Timeframes htf,
+             int bar_ratio, int ltf_multiplier, int htf_multiplier,
+             libApex.MarketContext context,
+             bool scheduler_fired, int scheduler_fire_count,
+             string last_volume_source) =>
+    this.bars_hist_count := bars.getHistoricalCount()
+    this.bars_total_vol := bars.total_vol
+    this.bars_total_buy := bars.total_buy
+    this.bars_count := bars.count
+    this.bars_boundary_count := bars.boundary_count
+    this.bars_last_drift := bars.last_bar_drift
+    this.bars_last_healthy := bars.last_bar_healthy
+    this.bars_last_alpha := bars.last_alpha
+    this.bars_last_imbalance := bars.last_imbalance
+
+    price_profile = manager.getProfileByType(ProfileType.PRICE)
+    if not na(price_profile)
+        this.price_active := price_profile.active
+        this.price_anchor := price_profile.anchor_price
+        this.price_bin_height := price_profile.bin_height
+        this.price_bin_size := array.size(price_profile.vol_profile)
+        this.price_bin_count := price_profile.bin_count
+        this.price_total_vol := price_profile.total_volume
+        this.price_vwap := price_profile.vwap
+        this.price_poc := not na(price_profile.poc) ? price_profile.poc.price : na
+        this.price_expansion_count := price_profile.expansion_count
+        this.price_rebuild_count := price_profile.rebuild_count
+        this.price_needs_realignment := price_profile.needs_realignment
+        this.anchor_at_last_distribution := price_profile.anchor_at_last_distribution
+        this.anchor_changed_since_distribution := price_profile.anchor_changed_since_distribution
+        this.bins_at_last_distribution := price_profile.bins_at_last_distribution
+        this.last_low_bin_distributed := price_profile.last_low_bin_distributed
+        this.last_high_bin_distributed := price_profile.last_high_bin_distributed
+        this.last_bins_in_range := price_profile.last_bins_in_range
+        this.distribution_success := price_profile.distribution_success
+        this.distribution_failures := price_profile.distribution_failures
+
+        // Calculate historical range from direct buffer iteration
+        hist_count = bars.getHistoricalCount()
+        if hist_count > 0
+            this.price_hist_count := hist_count
+            float hist_low = na
+            float hist_high = na
+
+            for i = 0 to math.min(hist_count - 1, 499)  // Limit iteration
+                l = bars.hist_l.get(i)
+                h = bars.hist_h.get(i)
+                if not na(l) and not na(h)
+                    hist_low := na(hist_low) ? l : math.min(hist_low, l)
+                    hist_high := na(hist_high) ? h : math.max(hist_high, h)
+
+            this.price_hist_low := hist_low
+            this.price_hist_high := hist_high
+
+            if not na(hist_low) and not na(price_profile.anchor_price)
+                this.price_low_bin_idx := price_profile.priceToBin(hist_low)
+                this.price_high_bin_idx := price_profile.priceToBin(hist_high)
+
+    osc_profile = manager.getProfileByType(ProfileType.OSCILLATOR)
+    if not na(osc_profile)
+        this.osc_active := osc_profile.active
+        this.osc_anchor := osc_profile.anchor_price
+        this.osc_bin_height := osc_profile.bin_height
+        this.osc_bin_size := array.size(osc_profile.vol_profile)
+        this.osc_bin_count := osc_profile.bin_count
+        this.osc_total_vol := osc_profile.total_volume
+        this.osc_expansion_count := osc_profile.expansion_count
+        this.osc_category := str.tostring(osc_profile.category)
+        this.osc_needs_realignment := osc_profile.needs_realignment
+    this
+
+method drawDiagnosticTable(DiagnosticData this, bool show) =>
+    if not show
+        na
+    else
+        profile_diag_table = table.new(position.top_right, 5, 26, bgcolor=color.new(color.black, 85),
+                                      border_width=1, border_color=color.gray)
+
+        table.cell(profile_diag_table, 0, 0, "DELTA VOLUME PROFILE [NEW]", bgcolor=color.new(color.blue, 70),
+                  text_color=color.white)
+        table.merge_cells(profile_diag_table, 0, 0, 4, 0)
+
+        // Bars Section
+        table.cell(profile_diag_table, 0, 1, "BARS ENGINE", bgcolor=color.new(color.green, 70),
+                  text_color=color.white)
+        table.merge_cells(profile_diag_table, 0, 1, 4, 1)
+
+        table.cell(profile_diag_table, 0, 2, "Historical", text_color=color.white)
+        table.cell(profile_diag_table, 1, 2, str.tostring(this.bars_hist_count) + " bars",
+                  text_color=this.bars_hist_count > 50 ? color.green : color.orange)
+        table.cell(profile_diag_table, 2, 2, "Current", text_color=color.white)
+        table.cell(profile_diag_table, 3, 2, str.tostring(this.bars_count) + " LTF",
+                  text_color=color.white)
+        table.cell(profile_diag_table, 4, 2, str.tostring(this.bars_boundary_count) + " bnds",
+                  text_color=color.gray)
+
+        table.cell(profile_diag_table, 0, 3, "Volume", text_color=color.white)
+        table.cell(profile_diag_table, 1, 3, str.tostring(this.bars_total_vol, "#.#"),
+                  text_color=color.white)
+        table.cell(profile_diag_table, 2, 3, "Buy %", text_color=color.white)
+        buy_pct = this.bars_total_vol > 0 ? (this.bars_total_buy / this.bars_total_vol) * 100 : 50
+        table.cell(profile_diag_table, 3, 3, str.tostring(buy_pct, "#.#") + "%",
+                  text_color=buy_pct > 55 ? color.green : buy_pct < 45 ? color.red : color.white)
+        table.cell(profile_diag_table, 4, 3, "α=" + str.tostring(this.bars_last_alpha, "#.##"),
+                  text_color=color.aqua)
+
+        table.cell(profile_diag_table, 0, 4, "Drift", text_color=color.white)
+        table.cell(profile_diag_table, 1, 4, str.tostring(this.bars_last_drift, "#.##") + "%",
+                  text_color=this.bars_last_healthy ? color.green : color.red)
+        table.cell(profile_diag_table, 2, 4, "Imbal", text_color=color.white)
+        table.cell(profile_diag_table, 3, 4, str.tostring(this.bars_last_imbalance, "#.#"),
+                  text_color=this.bars_last_imbalance > 0 ? color.green : color.red)
+        table.cell(profile_diag_table, 4, 4, "", text_color=color.white)
+
+        // Price Profile Section
+        table.cell(profile_diag_table, 0, 5, "PRICE PROFILE", bgcolor=color.new(color.blue, 70),
+                  text_color=color.white)
+        table.merge_cells(profile_diag_table, 0, 5, 4, 5)
+
+        table.cell(profile_diag_table, 0, 6, "Status", text_color=color.white)
+        table.cell(profile_diag_table, 1, 6, this.price_active ? "ACTIVE" : "INACTIVE",
+                  text_color=this.price_active ? color.green : color.red)
+        table.cell(profile_diag_table, 2, 6, "Bins", text_color=color.white)
+        table.cell(profile_diag_table, 3, 6, str.tostring(this.price_bin_count),
+                  text_color=this.price_bin_size > MAX_BINS ? color.red : color.white)
+        table.cell(profile_diag_table, 4, 6, str.tostring(this.price_bin_size) + " max",
+                  text_color=this.price_bin_size > MAX_BINS ? color.red : color.white)
+
+        table.cell(profile_diag_table, 0, 7, "Anchor", text_color=color.white)
+        table.cell(profile_diag_table, 1, 7, str.tostring(this.price_anchor, "#.##"),
+                  text_color=color.aqua)
+        table.cell(profile_diag_table, 2, 7, "Height", text_color=color.white)
+        table.cell(profile_diag_table, 3, 7, str.tostring(this.price_bin_height, "#.##"),
+                  text_color=color.aqua)
+        table.cell(profile_diag_table, 4, 7, "Exp:" + str.tostring(this.price_expansion_count),
+                  text_color=color.gray)
+
+        table.cell(profile_diag_table, 0, 8, "Volume", text_color=color.white)
+        table.cell(profile_diag_table, 1, 8, str.tostring(this.price_total_vol, "#.#"),
+                  text_color=color.white)
+        table.cell(profile_diag_table, 2, 8, "VWAP", text_color=color.white)
+        table.cell(profile_diag_table, 3, 8, str.tostring(this.price_vwap, "#.##"),
+                  text_color=color.aqua)
+        table.cell(profile_diag_table, 4, 8, str.tostring(this.price_poc, "#.##") + " POC",
+                  text_color=color.yellow)
+
+        table.cell(profile_diag_table, 0, 9, "Distributions", text_color=color.white)
+        table.cell(profile_diag_table, 1, 9, "✓ " + str.tostring(this.distribution_success),
+                  text_color=color.green)
+        table.cell(profile_diag_table, 2, 9, "Failures", text_color=color.white)
+        fail_color = this.distribution_failures > 0 ? color.red : color.green
+        table.cell(profile_diag_table, 3, 9, "✗ " + str.tostring(this.distribution_failures),
+                  text_color=fail_color)
+        table.cell(profile_diag_table, 4, 9, "Rbld:" + str.tostring(this.price_rebuild_count),
+                  text_color=color.gray)
+
+///////////////////////////////////////////////////////////////////////////////
+// INPUTS
+///////////////////////////////////////////////////////////////////////////////
+
+const string GROUP_TIMEFRAME = "Timeframe Settings"
+i_tf_lo = input.timeframe("1", "Lower Timeframe", group=GROUP_TIMEFRAME)
+i_tf_hi = input.timeframe("D", "Higher Timeframe", group=GROUP_TIMEFRAME)
+
+const string GROUP_PROFILE = "Price Profile Settings"
+i_price_show = input.bool(true, "Show Price Profile", group=GROUP_PROFILE)
+i_price_style = input.enum(DrawingStyle.PROFILE, "Drawing Style", group=GROUP_PROFILE)
+i_profile_display_mode = input.enum(ProfileDisplay.LEFT, "Display Style", group=GROUP_PROFILE)
+i_profile_category = input.enum(ProfileCategory.ROLLING, "Profile Category", group=GROUP_PROFILE)
+i_profile_lookback = input.int(100, "Profile Lookback", minval=20, step=10, maxval=500, group=GROUP_PROFILE)
+i_profile_bins = input.int(30, "Bins per ATR", minval=10, maxval=100, step=10, group=GROUP_PROFILE)
+i_profile_offset = input.int(5, "Profile Offset", minval=0, step=5, maxval=50, group=GROUP_PROFILE)
+i_profile_width = input.int(30, "Profile Width", minval=10, step=10, maxval=200, group=GROUP_PROFILE)
+i_label_offset = input.int(5, "Label Offset", minval=0, step=5, maxval=50, group=GROUP_PROFILE)
+
+const string GROUP_OSC_PROFILE = "Oscillator Profile Settings"
+i_osc_show = input.bool(true, "Show MA+ATR Profile", group=GROUP_OSC_PROFILE)
+i_osc_style = input.enum(DrawingStyle.PROFILE, "Drawing Style", group=GROUP_OSC_PROFILE)
+i_osc_display_mode = input.enum(ProfileDisplay.LEFT, "Display Style", group=GROUP_OSC_PROFILE)
+i_osc_lookback = input.int(300, "Oscillator Lookback", minval=50, step=50, maxval=2000, group=GROUP_OSC_PROFILE)
+i_osc_bins = input.int(40, "Oscillator Bins", minval=20, step=10, maxval=100, group=GROUP_OSC_PROFILE)
+i_osc_atr_bins = input.float(10.0, "ATR Range (±)", minval=2.0, maxval=20.0, step=1.0, group=GROUP_OSC_PROFILE)
+i_osc_offset = input.int(5, "Oscillator Profile Offset", minval=5, step=5, maxval=50, group=GROUP_OSC_PROFILE)
+i_osc_width = input.int(30, "Oscillator Profile Width", minval=10, step=10, maxval=200, group=GROUP_OSC_PROFILE)
+i_trend_ma_length = input.int(34, "Trend MA Length", minval=5, maxval=200, group=GROUP_OSC_PROFILE)
+
+const string GROUP_NODES = "Node Detection Settings"
+i_show_node = input.bool(true, "Show Node Lines", group=GROUP_NODES)
+i_node_count = input.int(6, "Node Count", minval=1, maxval=10, group=GROUP_NODES)
+i_node_threshold = input.int(40, "Node Threshold %", minval=0, step=10, maxval=100, group=GROUP_NODES) / 100.0
+i_node_padding = input.int(3, "Node Padding (bins)", minval=1, maxval=10, group=GROUP_NODES)
+i_show_node_labels = input.bool(true, "Show Node Labels", group=GROUP_NODES)
+i_node_label_size = input.enum(UTIL.Sizes.TINY, "Node Label Size", group=GROUP_NODES)
+
+const string GROUP_VWAP = "VWAP Settings"
+i_vwap_show = input.bool(true, "Show VWAP", group=GROUP_VWAP)
+i_vwap_bands = input.bool(true, "Show VWAP Bands", group=GROUP_VWAP)
+i_vwap_color = input.color(color.aqua, "VWAP Color", group=GROUP_VWAP)
+
+const string GROUP_COLORS = "Colors"
+i_color_support = input.color(color.teal, "Support", group=GROUP_COLORS, inline="sr")
+i_color_resistance = input.color(color.orange, "Resistance", group=GROUP_COLORS, inline="sr")
+i_color_poc = input.color(color.yellow, "POC", group=GROUP_COLORS, inline="sr")
+
+///////////////////////////////////////////////////////////////////////////////
+// INITIALIZATION
+///////////////////////////////////////////////////////////////////////////////
+
+var Bars bars = na
+var ProfileManager manager = na
+var DiagnosticData diagnostics = na
+var libDrawing.DrawingManager visuals = na
+var DrawConfig price_config = na
+var DrawConfig osc_config = na
+var VWAPConfig vwap_config = na
+var libApex.MarketContext context = na
+
+if barstate.isfirst
+    // Initialize Bars with historical storage
+    tf_lower = UTIL.getTimeframe(i_tf_lo)
+    tf_higher = UTIL.getTimeframe(i_tf_hi)
+    bars := Bars.new().init(tf_lower, tf_higher, 500)
+
+    // Initialize ProfileManager
+    manager := ProfileManager.new().init()
+
+    // Create price profile
+    price_profile = DeltaProfile.new().init(100, i_node_count,
+        ProfileType.PRICE, i_profile_category, i_price_style, true)
+    price_config := DrawConfig.new()
+    price_config.offset := i_profile_offset
+    price_config.width := i_profile_width
+    price_config.mode := i_profile_display_mode
+    price_config.label_offset := i_label_offset
+    price_config.lookback := i_profile_lookback
+    price_config.show_nodes := i_show_node
+    price_config.show_labels := i_show_node_labels
+    price_config.label_size := i_node_label_size
+    price_config.color_support := i_color_support
+    price_config.color_resistance := i_color_resistance
+    price_config.color_poc := i_color_poc
+    manager.addProfile(price_profile, price_config)
+
+    // Create oscillator profile
+    osc_profile = DeltaProfile.new().init(i_osc_bins, i_node_count,
+        ProfileType.OSCILLATOR, ProfileCategory.ROLLING, i_osc_style, false)
+    osc_config := DrawConfig.new()
+    osc_config.offset := i_osc_offset
+    osc_config.width := i_osc_width
+    osc_config.mode := i_osc_display_mode
+    osc_config.show_nodes := false
+    osc_config.show_labels := false
+    osc_config.color_support := i_color_support
+    osc_config.color_resistance := i_color_resistance
+    manager.addProfile(osc_profile, osc_config)
+
+    // VWAP config
+    vwap_config := VWAPConfig.new()
+    vwap_config.enabled := i_vwap_show
+    vwap_config.show_bands := i_vwap_bands
+    vwap_config.vwap_color := i_vwap_color
+
+    // Initialize visuals
+    visuals := libDrawing.DrawingManager.new().init(i_node_count * 5)
+
+    // Initialize diagnostics
+    diagnostics := DiagnosticData.new()
+
+    // Initialize context
+    context := libApex.MarketContext.new().init()
+
+///////////////////////////////////////////////////////////////////////////////
+// EXECUTION
+///////////////////////////////////////////////////////////////////////////////
+
+// Update context and setup
+if barstate.isconfirmed
+    libApex.fetch(context)
+    manager.setupHTF(UTIL.getTimeframe(i_tf_hi), i_profile_bins)
+    manager.setupProfiles(i_osc_atr_bins)
+
+    // Set anchor_bar for ANCHOR profiles
+    price_profile = manager.getProfileByType(ProfileType.PRICE)
+    if not na(price_profile) and price_profile.category == ProfileCategory.ANCHOR
+        if timeframe.change(i_tf_hi)
+            price_profile.anchor_bar := bar_index
+
+// Calculate oscillator
+trend_ma = ta.ema(close, i_trend_ma_length)
+close_atr_dist = context.atr > 0 ? (close - trend_ma) / context.atr : 0.0
+
+// Calculate adaptive alpha - ALGORITHMIC UPGRADE
+vol_sma = ta.sma(volume, 20)
+atr_short = ta.atr(14)
+atr_long = ta.atr(50)
+stddev = ta.stdev(close, 20)
+adaptive_alpha = bars.calcAlpha(volume, vol_sma, close_atr_dist, atr_short, atr_long, stddev)
+
+// Bars lifecycle
+if barstate.isnew
+    bars.clear()
+
+bars.fetch(true)    // TODO - in market hours
+
+if barstate.isconfirmed
+    bars.onConfirm(volume, open, high, low, close)
+
+    // Reconcile with CTF candle for historical storage
+    bars.reconcile(open, high, low, close, volume)
+
+    if bars.shouldDistribute()
+        manager.distributeVolume(bars, close_atr_dist)
+        manager.calculateProfiles(i_node_count, i_node_threshold, i_node_padding)
+        bars.ready_distribution := false
+
+// Handle realignments and rebuilds
+if barstate.isconfirmed
+    manager.handleRealignments(bars)
+
+    // Rebuild rolling profiles periodically
+    if timeframe.change(i_tf_hi) and i_profile_category == ProfileCategory.ROLLING
+        manager.rebuildRollingProfiles(bars, i_profile_lookback)
+
+// Drawing
+if barstate.islast
+    manager.drawProfiles(visuals, vwap_config)
+
+    if i_show_diagnostic
+        tf_lower = UTIL.getTimeframe(i_tf_lo)
+        tf_higher = UTIL.getTimeframe(i_tf_hi)
+        diagnostics.updateDiagnostics(manager, bars, tf_lower, tf_higher,
+            1, 1, 1, context, false, 0, "")
+        diagnostics.drawDiagnosticTable(i_show_diagnostic)
+
+// Plot oscillator
+plot(i_osc_show ? close_atr_dist : na, "ATR Distance", color.aqua, 1, force_overlay=false)
+plot(i_show_diagnostic ? adaptive_alpha * 100 : na, "Adaptive Alpha x100", color.yellow, 1, force_overlay=false)

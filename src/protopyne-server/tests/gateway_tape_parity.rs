@@ -252,3 +252,164 @@ async fn miss_serve_miss_tallies_each_counter() {
     assert_eq!(stats.last_miss, Some(TapeMissKind::UnknownSymbol));
     handle.shutdown().await;
 }
+
+#[tokio::test]
+async fn recorded_history_symbol_refuses_wrong_market_reads() {
+    // SPY tape + SPY boot history with the history symbol recorded: asking
+    // for GLD must refuse naming GLD, never serve SPY bars under the GLD
+    // label. The miss still counts as UnknownSymbol; the matching symbol
+    // keeps its fallback.
+    let bars = boot_history();
+    let caps = tape::caps();
+    let (store, _key, _request) = tape::seed(&bars, "SPY", Timeframe::M15, &caps);
+    let reader = TapeReader {
+        store: Arc::new(store),
+        caps,
+        permit: StoreStorage::new(":memory:".into()),
+        venue: tape::VENUE.to_owned(),
+        limit: crate::DEFAULT_TAPE_LIMIT,
+    };
+    let config = ServerConfig::new()
+        .bind("127.0.0.1:0".to_owned())
+        .history_symbol("SPY".to_owned())
+        .build();
+    let handle = serve_with_tape(config, bars.clone(), Some(reader), None)
+        .await
+        .expect("server boots with a tape");
+    let gateway = handle.gateway();
+
+    let err = gateway
+        .chart_bars_for("GLD", "15M")
+        .expect_err("a wrong-market read refuses");
+    assert!(
+        err.to_string().contains("GLD"),
+        "the refusal names the requested symbol: {err}"
+    );
+    let overlay_err = gateway
+        .chart_overlays_for("GLD", "15M", "bb", 20)
+        .expect_err("a wrong-market overlay refuses");
+    assert!(
+        overlay_err.to_string().contains("GLD"),
+        "the overlay refusal names the requested symbol: {overlay_err}"
+    );
+    let served = gateway
+        .chart_bars_for("SPY", "15M")
+        .expect("the recorded market still serves");
+    assert_eq!(served.rows.len(), bars.len());
+    let stats = handle.tape_serve_stats();
+    assert_eq!(stats.served, 1, "one tape serve");
+    assert_eq!(stats.unknown_symbol, 1, "the wrong-market miss counts");
+    handle.shutdown().await;
+}
+
+#[tokio::test]
+async fn tapeless_boot_refuses_unrecorded_symbols() {
+    // CSV-only boot with the history symbol recorded: the single boot
+    // market serves its own symbol, and any other symbol refuses instead
+    // of painting the boot bars under a foreign label.
+    let bars = boot_history();
+    let config = ServerConfig::new()
+        .bind("127.0.0.1:0".to_owned())
+        .history_symbol("SPY".to_owned())
+        .build();
+    let handle = serve_with_tape(config, bars.clone(), None, None)
+        .await
+        .expect("server boots without a tape");
+    let gateway = handle.gateway();
+    let fallback = gateway
+        .chart_bars_for("SPY", "15M")
+        .expect("the recorded market falls back");
+    assert_eq!(fallback.rows.len(), bars.len());
+    let err = gateway
+        .chart_bars_for("GLD", "15M")
+        .expect_err("a foreign symbol refuses without a tape");
+    assert!(
+        err.to_string().contains("GLD"),
+        "the refusal names the requested symbol: {err}"
+    );
+    handle.shutdown().await;
+}
+
+#[tokio::test]
+async fn history_root_serves_tickers_the_tape_does_not_hold() {
+    // Dir boot with SPY boot history and the recorded symbol, no tape: GLD
+    // months under the root serve GLD reads (its own closes from the 1M
+    // months), while a ticker with no directory still refuses naming
+    // itself. Months parse once per ticker per boot (cached), never per
+    // read.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let month = dir.path().join("GLD/2026/01");
+    std::fs::create_dir_all(&month).expect("month creates");
+    let base = 1_772_442_000i64;
+    let mut csv = String::from("time,open,high,low,close,volume\n");
+    for step in 0..5 {
+        use std::fmt::Write as _;
+        writeln!(csv, "{},55.00,55.00,55.00,55.00,10", base + step * 60)
+            .expect("csv fixture writes");
+    }
+    std::fs::write(month.join("GLD-2026-01-1M.csv"), csv).expect("month writes");
+    let config = ServerConfig::new()
+        .bind("127.0.0.1:0".to_owned())
+        .history_path(dir.path().to_string_lossy().into_owned())
+        .history_symbol("SPY".to_owned())
+        .build();
+    let handle = serve_with_tape(config, boot_history(), None, None)
+        .await
+        .expect("server boots over the root");
+    let gateway = handle.gateway();
+    let gld = gateway
+        .chart_bars_for("GLD", "1M")
+        .expect("the root serves GLD");
+    assert_eq!(gld.rows.len(), 5, "the GLD months serve whole");
+    assert!(
+        gld.rows.iter().all(|row| (row.close - 55.0).abs() < 1e-6),
+        "GLD closes serve, never the SPY boot bars"
+    );
+    // Second read hits the per-boot cache and agrees byte-for-byte.
+    let again = gateway
+        .chart_bars_for("GLD", "1M")
+        .expect("the cached months serve again");
+    assert_eq!(again, gld, "cached months agree");
+    let err = gateway
+        .chart_bars_for("NOPE", "1M")
+        .expect_err("a ticker with no months refuses");
+    assert!(
+        err.to_string().contains("NOPE"),
+        "the refusal names the requested ticker: {err}"
+    );
+    handle.shutdown().await;
+}
+
+#[tokio::test]
+async fn shipped_root_serves_gld_months_by_symbol() {
+    // End-to-end over the shipped data root: GLD parquet months serve GLD
+    // reads with GLD closes (never the SPY boot bars), proving a picked
+    // ticker loads instead of substituting or refusing.
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../data/protopyne-rs/historical");
+    if !root.join("GLD").is_dir() {
+        eprintln!("shipped root has no GLD tree; skipping");
+        return;
+    }
+    let boot = boot_history();
+    let config = ServerConfig::new()
+        .bind("127.0.0.1:0".to_owned())
+        .history_path(root.to_string_lossy().into_owned())
+        .history_symbol("SPY".to_owned())
+        .build();
+    let handle = serve_with_tape(config, boot.clone(), None, None)
+        .await
+        .expect("server boots over the shipped root");
+    let gateway = handle.gateway();
+    let gld = gateway
+        .chart_bars_for("GLD", "1M")
+        .expect("the shipped root serves GLD");
+    assert!(!gld.rows.is_empty(), "GLD months serve bars");
+    let spy_close = boot.last().map(|bar| bar.c);
+    let gld_close = gld.rows.last().map(|row| row.close);
+    assert_ne!(
+        gld_close, spy_close.map(|c| c.to_string().parse().unwrap_or(f64::NAN)),
+        "GLD serves its own closes: {gld_close:?} vs SPY {spy_close:?}"
+    );
+    handle.shutdown().await;
+}

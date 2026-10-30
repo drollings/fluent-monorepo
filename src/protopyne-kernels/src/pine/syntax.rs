@@ -21,22 +21,66 @@ use std::fmt;
 use super::lexer::{PineToken, TokenKind};
 use super::source::{ImportDecl, LibraryId};
 use crate::vars::NodeId;
+use common_core::hash::blake3_hash;
 
 /// A parsed Pine file: top-level statements in source order.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PineProgram {
     /// Top-level statements.
     pub statements: Vec<PineStmt>,
+    /// Content digest of `statements`, sealed when parsing finishes.
+    /// Never set by hand: `new` seals the empty program and `parse`
+    /// reseals after the last statement, so the digest always
+    /// matches the tree. The link cache keys on it instead of
+    /// re-rendering the tree per run.
+    content_hash: [u8; 32],
 }
 
 impl PineProgram {
     /// Create an empty program.
     #[must_use]
     pub fn new() -> Self {
+        Self::with_statements(Vec::new())
+    }
+
+    /// Seal parsed statements with their content digest. The only
+    /// constructor besides `new`; the parser calls it once the tree is
+    /// complete.
+    #[must_use]
+    pub fn with_statements(statements: Vec<PineStmt>) -> Self {
         Self {
-            statements: Vec::new(),
+            content_hash: content_hash_statements(&statements),
+            statements,
         }
     }
+
+    /// Content digest identifying this tree: identical sources parse to
+    /// identical digests (node ids follow source order). Full width, so
+    /// two distinct trees never share a cache entry.
+    #[must_use]
+    pub fn content_hash(&self) -> [u8; 32] {
+        self.content_hash
+    }
+
+    /// Compatibility accessor over the digest prefix: existing callers
+    /// that keyed human-readable logs on a `u64` keep compiling, but no
+    /// cache path may key on it — only [`content_hash`](Self::content_hash)
+    /// addresses content.
+    #[must_use]
+    pub fn fingerprint(&self) -> u64 {
+        u64::from_le_bytes(
+            self.content_hash[..8]
+                .try_into()
+                .expect("the digest always covers eight bytes"),
+        )
+    }
+}
+
+/// Content digest of one statement list: the derived `Debug` rendering is
+/// deterministic for a given tree (`syntax` holds no maps), so equal
+/// trees hash equally and the digest never drifts from the grammar.
+fn content_hash_statements(statements: &[PineStmt]) -> [u8; 32] {
+    blake3_hash(format!("{statements:?}").as_bytes())
 }
 
 impl Default for PineProgram {
@@ -179,6 +223,8 @@ pub enum PineStmt {
         start: Box<PineExpr>,
         /// Last value.
         end: Box<PineExpr>,
+        /// Stride (`by` clause); `None` steps by one.
+        step: Option<Box<PineExpr>>,
         /// Loop body.
         body: Vec<PineStmt>,
     },
@@ -345,6 +391,18 @@ pub struct CallArg {
     pub value: PineExpr,
 }
 
+/// One call-site key: the head text plus the debug rendering of the
+/// call's static arguments. Both engines name the same call the same
+/// site — the compiler bakes it into constants at link time, the
+/// tree-walk recomputes the identical text per bar — so shared keyed
+/// state (call-site vars, capture pairings, bridge dispatch) partitions
+/// identically. The arguments are static syntax, so the text is stable
+/// for the whole run; only its construction site differs per engine.
+#[must_use]
+pub fn site_string(head: &str, args: &[CallArg]) -> String {
+    format!("{head}@{args:?}")
+}
+
 /// One declared parameter: `[qualifier] [type] name [= default]`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Param {
@@ -398,6 +456,8 @@ pub struct PineType {
     pub name: String,
     /// Generic arguments.
     pub args: Vec<PineType>,
+    /// Trailing `[]` rank (`Candle[] candle` holds an array of `Candle`).
+    pub array_depth: u32,
 }
 
 /// One `MEMBER = value` enum line.
@@ -622,7 +682,7 @@ impl PineParser {
                 self.advance();
             }
         }
-        Ok(program)
+        Ok(PineProgram::with_statements(program.statements))
     }
 
     fn parse_statement(&mut self) -> Result<PineStmt, PineParseError> {
@@ -687,11 +747,21 @@ impl PineParser {
         let is_varip = self.current_kind() == &TokenKind::Varip;
         self.advance();
         self.skip_trivia();
-        // Optional declared type: `var float x = ...` (or `var array<int> x`)
-        // shows a type before the name, while `var x = ...` names the
-        // variable directly.
+        // Ignorable `const` qualifier (`var const int x = ...` in shipped
+        // scripts): the binding still assigns once like `var`, so parsing
+        // drops the qualifier with no new declaration shape.
+        if self.current_kind() == &TokenKind::Const {
+            self.advance();
+            self.skip_trivia();
+        }
+        // Optional declared type: `var float x = ...` (or `var array<int> x`,
+        // `var Drawing[] drawings`) shows a type before the name, while
+        // `var x = ...` names the variable directly.
         let (name, type_name) = match (self.current_kind(), self.peek_kind()) {
-            (TokenKind::Identifier(_), Some(TokenKind::Identifier(_) | TokenKind::Less)) => {
+            (
+                TokenKind::Identifier(_),
+                Some(TokenKind::Identifier(_) | TokenKind::Less | TokenKind::LeftBracket),
+            ) => {
                 let parsed = self.parse_type();
                 let variable = self.expect_identifier()?;
                 (variable, Some(parsed))
@@ -810,11 +880,23 @@ impl PineParser {
             }
         }
         let end = Box::new(self.parse_expression()?);
+        // Optional same-line stride (`for i = 0 to n by 2`): only a `by`
+        // on the header line counts; anything else starts the body.
+        self.skip_comments();
+        let step = match self.current_kind() {
+            TokenKind::Identifier(id) if id == "by" => {
+                self.advance();
+                self.skip_trivia();
+                Some(Box::new(self.parse_expression()?))
+            }
+            _ => None,
+        };
         let body = self.parse_block(column)?;
         Ok(PineStmt::For {
             variable,
             start,
             end,
+            step,
             body,
         })
     }
@@ -981,11 +1063,13 @@ impl PineParser {
             let (type_name, field) = if self.current_kind() == &TokenKind::Equal
                 && !type_name.name.is_empty()
                 && type_name.args.is_empty()
+                && type_name.array_depth == 0
             {
                 (
                     PineType {
                         name: String::new(),
                         args: Vec::new(),
+                        array_depth: 0,
                     },
                     type_name.name,
                 )
@@ -1137,7 +1221,29 @@ impl PineParser {
                 self.advance();
             }
         }
-        PineType { name, args }
+        // Trailing array rank (`Candle[]`, `float[][]`): each empty bracket
+        // pair adds one level. A non-empty bracket here is not a type
+        // suffix, so parsing stops and the caller reports the token.
+        let mut array_depth = 0_u32;
+        loop {
+            if self.current_kind() != &TokenKind::LeftBracket {
+                break;
+            }
+            let save = self.position;
+            self.advance();
+            self.skip_trivia();
+            if self.current_kind() != &TokenKind::RightBracket {
+                self.position = save;
+                break;
+            }
+            self.advance();
+            array_depth += 1;
+        }
+        PineType {
+            name,
+            args,
+            array_depth,
+        }
     }
 
     fn parse_identifier_statement(&mut self) -> Result<PineStmt, PineParseError> {
@@ -1228,10 +1334,11 @@ impl PineParser {
                     }),
                 })
             }
-            TokenKind::Identifier(_) | TokenKind::Less => {
+            TokenKind::Identifier(_) | TokenKind::Less | TokenKind::LeftBracket => {
                 // Possibly a typed declaration (`int x = ...`,
-                // `array<int> keys = ...`): rewind and prove the full
-                // `type name =` shape before committing to it.
+                // `array<int> keys = ...`, `Candle[] candle = ...`): rewind
+                // and prove the full `type name =` shape before committing
+                // to it.
                 self.position = checkpoint;
                 if let Some(decl) = self.try_parse_declaration() {
                     Ok(decl)
@@ -1356,7 +1463,9 @@ impl PineParser {
                 }
             }
         }
-        if name == "indicator" && self.current_kind() == &TokenKind::LeftParen {
+        if (name == "indicator" || name == "study")
+            && self.current_kind() == &TokenKind::LeftParen
+        {
             self.advance();
             let args = self.parse_call_args()?;
             self.expect(&TokenKind::RightParen)?;
@@ -1490,6 +1599,12 @@ impl PineParser {
                 }
             } else if !self.is_at_end() {
                 body.push(self.parse_statement()?);
+                // Same-line comma-separated statements share the arm body,
+                // exactly like a local block line (`=> f(1), f(0)`).
+                while self.current_kind() == &TokenKind::Comma {
+                    self.advance();
+                    body.push(self.parse_statement()?);
+                }
             } else {
                 return Err(PineParseError::InvalidSyntax(
                     "switch arm has no body".to_owned(),
@@ -1675,6 +1790,30 @@ impl PineParser {
             // line is complete, and a `[` on the next line starts a new
             // statement (tuple literal), never an index into the operand.
             self.skip_comments();
+            // Leading-dot continuation: a `.` opening the next line
+            // continues the operand (`x = f()\n    .g()`). Any other token
+            // after the newline ends it; no statement ever opens with a
+            // dot, so the lookahead cannot swallow a new statement.
+            if self.current_kind() == &TokenKind::Newline {
+                let mut probe = self.position;
+                while probe < self.tokens.len()
+                    && matches!(
+                        self.tokens[probe].kind,
+                        TokenKind::Newline | TokenKind::Comment(_)
+                    )
+                {
+                    probe += 1;
+                }
+                let continues = self
+                    .tokens
+                    .get(probe)
+                    .map(|token| &token.kind)
+                    == Some(&TokenKind::Dot);
+                if !continues {
+                    break;
+                }
+                self.position = probe;
+            }
             match self.current_kind() {
                 TokenKind::LeftBracket => {
                     self.advance();
@@ -1972,6 +2111,20 @@ impl PineParser {
                     if self.current_kind() == &TokenKind::Equal {
                         self.advance();
                         Some(id)
+                    } else {
+                        self.position = checkpoint;
+                        None
+                    }
+                }
+                // `type` is a contextual keyword (see `expect_name`), so it
+                // serves as a keyword-argument name exactly like a plain
+                // identifier (`input(..., type=bool)`).
+                TokenKind::Type => {
+                    self.advance();
+                    self.skip_trivia();
+                    if self.current_kind() == &TokenKind::Equal {
+                        self.advance();
+                        Some("type".to_owned())
                     } else {
                         self.position = checkpoint;
                         None

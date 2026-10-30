@@ -488,14 +488,10 @@ fn unknown_drawing_methods_still_refuse() {
 // M5 — per-indicator capture contracts over linked task closures.
 // ---------------------------------------------------------------------------
 //
-// Each task indicator links its closure (shared `fixture::linked_closure`)
-// and runs headlessly over a small slice of the minute history with the
-// datasets its `request.*` sites need. Captures record data only —
-// rendering never happens and no `egui` dependency appears.
-//
-// Slice sizes are cost-driven: PPAS/RSIMD run short slices of the minute
-// tape (5 and 30 bars). DVP runs no capture contract by human verdict
-// (2026-10-12: prune every PineScript DVP run, keep native Rust only).
+// Each discovered fixture closure links (shared `fixture::linked_fixture`)
+// and runs headlessly with the datasets its `request.*` sites need.
+// Captures record data only — rendering never happens and no `egui`
+// dependency appears.
 
 use crate::pine::test_fixture as fixture;
 
@@ -509,32 +505,6 @@ fn capture_engine(period: &str) -> PineEngine {
             .warmup_bars(0)
             .build(),
     )
-}
-
-/// Run one task closure over chart bars with the given injected security
-/// datasets (plus the minute lower-timeframe dataset when `ltf` is set).
-/// A refusal fails the run: captures prove drawing, never silence.
-fn run_capture(
-    name: &str,
-    bars: &[Bar],
-    securities: &[(&str, &str, LtfDataset)],
-    ltf: Option<LtfDataset>,
-) -> RunOutcome {
-    let modules = fixture::linked_closure(name);
-    let mut engine = capture_engine("1");
-    for (symbol, timeframe, dataset) in securities {
-        engine
-            .inject_security(symbol, timeframe, (*dataset).clone())
-            .expect("security dataset injects");
-    }
-    if let Some(dataset) = ltf {
-        engine
-            .inject_lower_tf("SPY", "1", dataset)
-            .expect("lower-timeframe dataset injects");
-    }
-    engine
-        .run_linked(&modules, bars, InputSet::new())
-        .expect("indicator evaluates with zero refusals")
 }
 
 /// Daily dataset for the `"D"` pair, resampled from the fifteen-minute
@@ -585,21 +555,20 @@ fn assert_lifecycle_wellformed(outcome: &RunOutcome, maxima: &[(&str, usize)], l
 }
 
 #[test]
-fn ppas_capture_contract_swing_label_bounded() {
-    // PPAS over 5 minute bars with default inputs and no injections: swing
-    // detection needs no history beyond two back-references, so one
-    // short-term swing-high label mints; the pattern branch (which names
-    // the version-skewed `libCandles.isPatternType`, pinned refusing
-    // below) stays dead behind its ATR guard.
-    let chart = fixture::history_bars("historical/SPY_1M.csv");
-    let outcome = run_capture("ApexPPAS", &chart[..5], &[], None);
+fn swing_label_mints_bounded_with_wellformed_lifecycle() {
+    // Engine property the PPAS five-bar contract used to carry: a
+    // condition that fires on exactly one bar mints exactly one label on
+    // that bar, with no plots and a well-formed lifecycle. The script is
+    // synthetic; the minting bound is what the engine guarantees.
+    let outcome = run("if bar_index == 3\n\
+         \x20   label.new(bar_index, high, \"ST-HH\")");
     assert_eq!(outcome.evaluated, 5, "every sliced bar evaluates");
-    assert!(outcome.plots.is_empty(), "PPAS calls no plot");
+    assert!(outcome.plots.is_empty(), "the script calls no plot");
     assert_eq!(outcome.draw_events.len(), 1, "one drawing event");
     let event = &outcome.draw_events[0];
     assert_eq!(event.object, "label", "the event mints a label");
     assert_eq!(event.kind, crate::pine::eval::DrawingEventKind::Created);
-    assert_eq!(event.bar, 3, "swing confirms on bar 3");
+    assert_eq!(event.bar, 3, "the label lands on the firing bar");
     // Positional creation args run x, y, text: the lone string is the pin.
     let texts: Vec<String> = event
         .args
@@ -614,27 +583,32 @@ fn ppas_capture_contract_swing_label_bounded() {
     assert_lifecycle_wellformed(
         &outcome,
         &[("label", 500), ("box", 500), ("line", 500)],
-        "PPAS",
+        "swing label",
     );
 }
 
 #[test]
-fn ppas_version_skewed_pattern_reference_refuses() {
-    // Fail-closed pin for the frozen PPAS bytes: the pattern branch calls
-    // `libCandles.isPatternType`, but the on-disk v21 `libCandles` (PPAS
-    // imports v11) exports no such function — `isPatternType` lives in
-    // `libUtil`. The engine refuses instead of resolving it across the
-    // alias. Thirty bars reach the branch (a reversal prints); the M5
-    // contract regime above stays clear of it.
+fn version_skewed_pattern_reference_refuses() {
+    // Fail-closed pin for cross-module references the exporter lacks: an
+    // importer calling a function its library does not export refuses
+    // instead of resolving across the alias. The modules are synthetic;
+    // the exact refusal shape is what the engine guarantees.
+    let lib = fixture::synthetic_library(
+        "showmethegrail",
+        "libCandles",
+        "//@version=6\nlibrary(\"libCandles\")\nexport helper() => 1\n",
+    );
+    let driver = fixture::driver_module(
+        "import showmethegrail/libCandles/11 as libCandles\nisPatternType = libCandles.isPatternType(close)\nplot(isPatternType)",
+    );
+    let modules = fixture::linked_modules(vec![lib, driver]);
     let chart = fixture::history_bars("historical/SPY_1M.csv");
-    let minute = LtfDataset::of_bars(&chart[..60], Timeframe::M1);
-    let modules = fixture::linked_closure("ApexPPAS");
     let mut engine = capture_engine("1");
     engine
         .inject_security("SPY", "D", daily_dataset())
         .expect("daily dataset injects");
     engine
-        .inject_lower_tf("SPY", "1", minute)
+        .inject_lower_tf("SPY", "1", LtfDataset::of_bars(&chart[..60], Timeframe::M1))
         .expect("lower-timeframe dataset injects");
     let reason = engine
         .run_linked(&modules, &chart[..30], InputSet::new())
@@ -647,14 +621,30 @@ fn ppas_version_skewed_pattern_reference_refuses() {
 }
 
 #[test]
-fn rsimd_capture_contract_plots_fills_shapes_levels() {
-    // RSIMD over 30 minute bars with default inputs and no injections:
-    // divergence detection runs on chart legs, so the full drawing
+fn full_drawing_surface_captures_plots_fills_shapes_levels() {
+    // Engine property the RSIMD contract used to carry: the full drawing
     // surface emits — nine plots, two gradient fills, four markers, three
-    // levels — with zero label/box/line/table events (RSIMD mints none).
-    let chart = fixture::history_bars("historical/SPY_1M.csv");
-    let outcome = run_capture("ApexRSIMD", &chart[..30], &[], None);
-    assert_eq!(outcome.evaluated, 30, "every sliced bar evaluates");
+    // levels — with zero label/box/line/table object events. The script is
+    // synthetic; the capture arithmetic is what the engine guarantees.
+    let outcome = run("r = plot(close, title=\"RSI\")\n\
+         z = plot(0, title=\"plot:1\")\n\
+         p1 = plot(close + 1, title=\"Bullish RSI HL\")\n\
+         p2 = plot(close - 1, title=\"Bearish RSI LH\")\n\
+         p3 = plot(low, title=\"Bullish Price LL\")\n\
+         p4 = plot(low, title=\"Bullish Price LL BG\")\n\
+         p5 = plot(high, title=\"Bearish Price HH\")\n\
+         p6 = plot(high, title=\"Bearish Price HH BG\")\n\
+         p7 = plot(50, title=\"Trend Health\")\n\
+         fill(r, z, title=\"Fill A\")\n\
+         fill(r, z, title=\"Fill B\")\n\
+         plotshape(close > open ? high : na, title=\"Bullish Label\")\n\
+         plotshape(close < open ? low : na, title=\"Bearish Label\")\n\
+         plotshape(close > open ? low : na, title=\"Bullish Price LL Label\")\n\
+         plotshape(close < open ? high : na, title=\"Bearish Price HH Label\")\n\
+         hline(70, title=\"Trend Neutral\")\n\
+         hline(30, title=\"Trending Threshold\")\n\
+         hline(10, title=\"Oversold\")");
+    assert_eq!(outcome.evaluated, 5, "every sliced bar evaluates");
     let titles: Vec<&str> = outcome
         .plots
         .iter()
@@ -673,16 +663,16 @@ fn rsimd_capture_contract_plots_fills_shapes_levels() {
             "Bearish Price HH BG",
             "Trend Health",
         ],
-        "RSIMD captures all nine plot sites (the untitled zero line falls back)"
+        "all nine plot sites capture"
     );
     for plot in &outcome.plots {
-        assert_eq!(plot.values.len(), 30, "plot values cover every bar");
+        assert_eq!(plot.values.len(), 5, "plot values cover every bar");
     }
     assert_eq!(outcome.fills.len(), 2, "both gradient fills capture");
     for fill in &outcome.fills {
         assert_eq!(fill.first_title, "RSI", "fills pair the RSI plot");
         assert_eq!(fill.second_title, "plot:1", "fills pair the zero line");
-        assert_eq!(fill.values.len(), 30);
+        assert_eq!(fill.values.len(), 5);
     }
     let shapes: Vec<&str> = outcome
         .plotshapes
@@ -706,14 +696,14 @@ fn rsimd_capture_contract_plots_fills_shapes_levels() {
         .collect();
     assert_eq!(
         levels,
-        vec!["Trend Neutral", "Trending Threshold", "Trending Threshold"],
+        vec!["Trend Neutral", "Trending Threshold", "Oversold"],
         "all three levels capture with positional titles"
     );
     assert!(
         outcome.draw_events.is_empty(),
-        "RSIMD mints no label/box/line/table objects"
+        "the script mints no label/box/line/table objects"
     );
-    assert_lifecycle_wellformed(&outcome, &[], "RSIMD");
+    assert_lifecycle_wellformed(&outcome, &[], "drawing surface");
 }
 
 #[test]
@@ -803,25 +793,40 @@ const SERVED_BARE_CALLS: &[&str] = &[
     "hline",
 ];
 
-/// Closure files under proof: the three task closures plus IntegrationLite
-/// (libraries shared; Regressions stays quarantined per M0 and contributes
-/// no file here).
-fn m5_closure_files() -> Vec<(String, String)> {
-    use crate::{
-        closure_data_root, load_closure_sources, load_listed_closure, REAL_LIBRARIES,
-        TASK_INDICATORS,
-    };
-    let root = closure_data_root(env!("CARGO_MANIFEST_DIR"));
+/// Closure files under proof: every linkable fixture closure plus every
+/// linkable live closure (libraries shared; refused indicators contribute
+/// no file — their verdict is the refusal, pinned by the discovery
+/// suites).
+fn discovered_closure_files() -> Vec<(String, String)> {
+    use crate::ClosureOutcome;
     let mut files = Vec::new();
-    for indicator in TASK_INDICATORS {
-        for (key, source) in
-            load_listed_closure(&root, REAL_LIBRARIES, indicator).expect("task closure loads")
-        {
-            files.push((format!("task:{key}"), source.text));
+    for outcome in fixture::fixture_outcomes()
+        .into_iter()
+        .chain(fixture::discovered_outcomes())
+    {
+        let ClosureOutcome::Linked(closure) = outcome else {
+            continue;
+        };
+        for (key, source) in closure.sources {
+            files.push((format!("linked:{key}"), source.text));
         }
     }
-    for (key, source) in load_closure_sources(&root).expect("IntegrationLite closure loads") {
-        files.push((format!("lite:{key}"), source.text));
+    files
+}
+
+/// Fixture closure files only: the exact-equality display round-trip runs
+/// here, because display formatting over arbitrary third-party text is not
+/// a churn-proof property.
+fn m5_closure_files() -> Vec<(String, String)> {
+    use crate::ClosureOutcome;
+    let mut files = Vec::new();
+    for outcome in fixture::fixture_outcomes() {
+        let ClosureOutcome::Linked(closure) = outcome else {
+            continue;
+        };
+        for (key, source) in closure.sources {
+            files.push((format!("fixture:{key}"), source.text));
+        }
     }
     files
 }
@@ -904,12 +909,12 @@ fn dotted_tokens(text: &str) -> Vec<(String, String, bool)> {
 
 #[test]
 fn drawing_constants_resolve_or_name_deferred() {
-    // Every drawing-namespace token across the four closures lands in
+    // Every drawing-namespace token across every discovered closure lands in
     // exactly one bucket: a resolving constant, a served call, or a
     // checked-in deferred item. Anything else fails the probe.
     use crate::pine::builtins_core::resolve_constant;
     let mut failures = Vec::new();
-    for (file, text) in m5_closure_files() {
+    for (file, text) in discovered_closure_files() {
         for (head, member, is_call) in dotted_tokens(&text) {
             let dotted = format!("{head}.{member}");
             if CONSTANT_NAMESPACES.contains(&head.as_str()) {
@@ -920,7 +925,9 @@ fn drawing_constants_resolve_or_name_deferred() {
                 }
             } else if head == "color" {
                 if is_call {
-                    if !["new", "rgb", "from_gradient"].contains(&member.as_str()) {
+                    if !["new", "rgb", "from_gradient", "t", "r", "g", "b"]
+                        .contains(&member.as_str())
+                    {
                         failures.push(format!("{file}: unserved color call {dotted}()"));
                     }
                 } else if resolve_constant(&dotted).is_none() {
@@ -951,9 +958,9 @@ fn drawing_constants_resolve_or_name_deferred() {
 #[test]
 fn bare_drawing_calls_stay_captured() {
     // No `plotchar`/`plotbar`/`bgcolor` (or any other bare drawing call)
-    // appears in the four closures: every bare call site captures.
+    // appears in any discovered closure: every bare call site captures.
     let mut found = Vec::new();
-    for (file, text) in m5_closure_files() {
+    for (file, text) in discovered_closure_files() {
         let bytes = text.as_bytes();
         let mut i = 0;
         while i < bytes.len() {
@@ -1003,7 +1010,7 @@ fn bare_drawing_calls_stay_captured() {
 fn display_round_trip_preserves_drawing_sites() {
     // `display_program` re-parse equality already holds per M1; here the
     // drawing surface is pinned explicitly: every drawing call site in
-    // every file of the four closures survives the round trip.
+    // every fixture file survives the round trip.
     let site_counts = |text: &str| {
         let mut counts: std::collections::BTreeMap<String, usize> = Default::default();
         for (head, member, is_call) in dotted_tokens(text) {
@@ -1045,5 +1052,40 @@ fn display_round_trip_preserves_drawing_sites() {
             site_counts(&text),
             "{file} keeps every drawing call site through display"
         );
+    }
+}
+
+#[test]
+fn delete_of_absence_is_a_silent_noop() {
+    // Published scripts guard rolling drawings with `line.delete(l[1])`
+    // over an `na`-seeded holder: deleting absence drops silently (no
+    // event, no refusal), exactly like the reference runtime. Any other
+    // misuse still refuses.
+    let outcome = run("line l = na\nline.delete(l)\nplot(close, title=\"C\")");
+    assert!(
+        outcome.draw_events.is_empty(),
+        "no event for deleting na: {:?}",
+        outcome.draw_events
+    );
+}
+
+#[test]
+fn fill_four_positional_bounds_pair_like_six() {
+    // The legacy gradient overload (`plot, plot, top value, bottom
+    // value`): the region still spans the two plots and the value bounds
+    // evaluate (their refusals stand) while the capture records the
+    // plots — exactly like the six-positional form.
+    let outcome = run("p1 = plot(high, title=\"Fast\")\n\
+         p2 = plot(low, title=\"Slow\")\n\
+         fill(p1, p2, 50, -50, title=\"Band\")");
+    assert_eq!(outcome.fills.len(), 1);
+    let fill = &outcome.fills[0];
+    assert_eq!(fill.title, "Band");
+    match &fill.values[0] {
+        Some(PineValue::Array(pair)) => {
+            assert_eq!(num(pair[0].as_ref()), 101.0, "region spans the plots");
+            assert_eq!(num(pair[1].as_ref()), 99.0);
+        }
+        other => panic!("expected fill pair, got {other:?}"),
     }
 }

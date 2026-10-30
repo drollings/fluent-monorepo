@@ -15,7 +15,6 @@
 use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
-use rust_decimal::prelude::ToPrimitive as _;
 use rust_decimal::Decimal;
 
 use protopyne_types::{Bar, Money, Portfolio, PortfolioId, Qty};
@@ -64,18 +63,19 @@ pub fn utility(conviction: f64, activity_score: f64) -> f64 {
 /// same last-finite reading the backtest report uses.
 #[must_use]
 pub fn rsrs_score(bars: &[Bar], slope_lookback: usize, score_window: usize) -> Option<f64> {
+    // Last-value only: the full series exists for the offline research
+    // surface, but every in-tree consumer keeps one score — materializing
+    // the whole vector to discard all but the tail was over a third of the
+    // equity run (profiled). `rsrs_last` is bit-identical to the tail.
     let highs: Vec<f64> = bars
         .iter()
-        .map(|bar| bar.h.to_f64().unwrap_or(f64::NAN))
+        .map(|bar| protopyne_types::bar_leg_as_f64(bar.h))
         .collect();
     let lows: Vec<f64> = bars
         .iter()
-        .map(|bar| bar.l.to_f64().unwrap_or(f64::NAN))
+        .map(|bar| protopyne_types::bar_leg_as_f64(bar.l))
         .collect();
-    protopyne_kernels::scores::rsrs(&highs, &lows, slope_lookback, score_window)
-        .into_iter()
-        .flatten()
-        .next_back()
+    protopyne_kernels::scores::rsrs_last(&highs, &lows, slope_lookback, score_window)
 }
 
 /// Caller-supplied economics for one generation attempt. Bars feed the

@@ -1,0 +1,963 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © showmethegrail
+
+//@version=6
+strategy("Integration Lite Strategy", "Integration Lite", format=format.price, max_boxes_count=500, calc_bars_count=4000, overlay=false,
+     initial_capital=100000, default_qty_type=strategy.fixed, default_qty_value=1, pyramiding=1,
+     commission_type=strategy.commission.percent, commission_value=0.03, slippage=1,
+     margin_long=100, margin_short=100, process_orders_on_close=true, calc_on_every_tick=false)
+
+import showmethegrail/libUtil/12 as UTIL
+import showmethegrail/libBars/12 as BARS
+import showmethegrail/libBuffers/6 as libBuffers
+import showmethegrail/libDrawing/61 as libDrawing
+import showmethegrail/libCandles/21 as libCandles
+import showmethegrail/libMAs/95 as libMAs
+import showmethegrail/libApex/88 as libApex
+
+DISPLAY_NO_STATUS = display.all - display.status_line
+DISPLAY_NO_NUM = display.all - display.status_line - display.price_scale
+
+/////////////////////////////////////////////////////////////
+// CONSTANTS
+/////////////////////////////////////////////////////////////
+
+const int TYPE_LINE = 1
+const int TYPE_BOX = 2
+const int TYPE_LABEL = 3
+const int TYPE_MAX = 4
+
+const int SIGNAL_NONE = 0
+const int SIGNAL_BULL_ENTRY = 1
+const int SIGNAL_BULL_EXIT = 2
+const int SIGNAL_BEAR_ENTRY = -1
+const int SIGNAL_BEAR_EXIT = -2
+
+/////////////////////////////////////////////////////////////
+// INPUTS - DELTA CANDLES
+/////////////////////////////////////////////////////////////
+
+const string GROUP_DELTA = "Delta Volume Candles"
+i_delta_candles_show   = input.bool(true, "Show Delta Candles", inline="adaptive_eit", group=GROUP_DELTA)
+i_volume_color_bull = input(color.new(#00ff00, 60), title="🐂", inline="adaptive_eit", group=GROUP_DELTA)
+i_volume_color_bear = input(color.new(#ff0000, 60), title="🐻", inline="adaptive_eit", group=GROUP_DELTA)
+// i_delta_candles_ltf    = input.enum(UTIL.Timeframes.C, "Delta Candles Timeframe", group=GROUP_DELTA)
+i_delta_vol_unit       = input.float(300.0, "Height at Average Volume", minval=0.0, step=1.0, group=GROUP_DELTA, tooltip="Oscillator distance from zero when delta volume equals the HTF4 vol_sma average. Scales proportionally above/below.")
+
+/////////////////////////////////////////////////////////////
+// INPUTS - RIBBON & HEALTH
+/////////////////////////////////////////////////////////////
+
+const string GROUP_RIBBON = "Trend Ribbon"
+i_ribbon_show = input.bool(true, title="👁️", inline='adaptive_eit', group=GROUP_RIBBON)
+i_ribbon_alpha_low = input.float(0.14, title="Low", step=0.02, minval=0.03, inline='adaptive_eit', group=GROUP_RIBBON)
+i_ribbon_alpha_high = input.float(0.8, title="High", step=0.05, minval=0.10, inline='adaptive_eit', group=GROUP_RIBBON)
+i_ribbon_color_bull = input(color.new(#00bcd4, 60), title="🐂", inline="adaptive_eit", group=GROUP_RIBBON)
+i_ribbon_color_bear = input(color.new(#7b1fa2, 60), title="🐻", inline="adaptive_eit", group=GROUP_RIBBON)
+i_ribbon_signal_type = input.enum(UTIL.Smoothings.EIT, "Signal", group=GROUP_RIBBON, inline="signal")
+i_ribbon_signal_period = input.int(10, "", step=2, minval=4, maxval=200, group=GROUP_RIBBON, inline="signal")
+i_ribbon_signal_param1 = input.float(0.12, title="", step=0.2, minval=0.01, group=GROUP_RIBBON, inline='signal')
+i_ribbon_mean_type = input.enum(UTIL.Smoothings.EMA, "Mean", group=GROUP_RIBBON, inline="mean")
+i_ribbon_mean_period = input.int(21 , "", step=4, minval=8, maxval=200, group=GROUP_RIBBON, inline="mean")
+i_ribbon_mean_param1 = input.float(0.06, title="", step=0.2, minval=0.01, group=GROUP_RIBBON, inline="mean")
+
+i_ribbon_health_show = input.bool(true, title="👁️ Ribbon Health Oscillator", group=GROUP_RIBBON, inline='osc1')
+i_ribbon_health_k = input.float(1.8, title="k", step=0.2, minval=0.2, group=GROUP_RIBBON, inline='osc1')
+i_ma_health_show = input.bool(true, title="👁️ MA Health Oscillator", group=GROUP_RIBBON, inline='osc2')
+i_ma_health_k = input.float(1.2, title="k", step=0.2, minval=0.2, group=GROUP_RIBBON, inline='osc2')
+
+/////////////////////////////////////////////////////////////
+// INPUTS - PIVOTS AND SIGNALS
+/////////////////////////////////////////////////////////////
+i_pivots_show = input.bool(true, title="👁️ Pivots", group=GROUP_RIBBON, inline="pivots")
+i_pivots_threshold = input.int(200, "Threshold", step=20, minval=20, group=GROUP_RIBBON, inline="pivots")
+i_pivots_lookback = input.int(8, "Lookback", step=1, minval=2, maxval=40, group=GROUP_RIBBON, inline="pivots")
+
+/////////////////////////////////////////////////////////////
+// INPUTS - OSCILLATORS
+/////////////////////////////////////////////////////////////
+
+const string GROUP_DISPLAY_OSC1 = "Oscillator 1 Settings"
+const string TT_DISPLAY_OSC = "Oscillator Displays and Alerts:\n\n👁️ Show the oscillator on chart\n🔅 Control oscillator brightness\n👁️ Shadow - Fill the area between fast and slow oscillators."
+const string TT_OSCILLATOR_FAST_ROW="The fast oscillator inputs:  oscillator type, period, smoothing type and period.  For SRSI and Stochastic, the standard is SMA 3.  Reduces noise while maintaining responsiveness."
+const string TT_OSCILLATOR_SLOW_ROW="The slow oscillator inputs:  oscillator type, period, smoothing type and period.  For SRSI and Stochastic, the standard is SMA 3.  Creates a more stable baseline for comparison."
+i_oscillator1_show = input.bool(true, title='👁️', group=GROUP_DISPLAY_OSC1, inline='osc1')
+i_oscillator1_brightness = input.int(30, '🔅', step=10, minval=0, maxval=100, group=GROUP_DISPLAY_OSC1, inline='osc1')
+i_oscillator1_k = input.float(1.2, title="k", step=0.1, minval=0.2, group=GROUP_DISPLAY_OSC1, inline='osc1')
+i_oscillator1_adaptive = input.bool(true, title='Adaptive', group=GROUP_DISPLAY_OSC1, inline='osc1')
+
+i_oscillator1_fast_type = input.enum(UTIL.Oscillators.RSI, title='🐇', inline='fast1', group=GROUP_DISPLAY_OSC1)
+i_oscillator1_fast = input.int(4, title='', minval=1, group=GROUP_DISPLAY_OSC1, inline='fast1')
+i_oscillator1_fast_smooth_type  = input.enum(UTIL.Smoothings.NA, title="", inline="fast1", group=GROUP_DISPLAY_OSC1)
+i_oscillator1_fast_smooth_period = input.int(3, '', minval=1, group=GROUP_DISPLAY_OSC1, inline='fast1', tooltip=TT_OSCILLATOR_FAST_ROW)
+i_oscillator1_slow_type = input.enum(UTIL.Oscillators.CCI, title='🐢', inline='slow1', group=GROUP_DISPLAY_OSC1)
+i_oscillator1_slow = input.int(8, title='', minval=1, group=GROUP_DISPLAY_OSC1, inline='slow1')
+i_oscillator1_slow_smooth_type  = input.enum(UTIL.Smoothings.NA, title="", inline="slow1", group=GROUP_DISPLAY_OSC1)
+i_oscillator1_slow_smooth_period = input.int(3, '', minval=1, group=GROUP_DISPLAY_OSC1, inline='slow1', tooltip=TT_OSCILLATOR_SLOW_ROW)
+
+/////////////////////////////////////////////////////////////
+// INPUTS - COLORS
+/////////////////////////////////////////////////////////////
+
+const string GROUP_COLORS = "Colors"
+i_candles_color_code = input.bool(true, "Color Code Candles", group=GROUP_COLORS, inline="colorcode")
+i_color_bull = input.color(color.new(#20B46C, 0), "🐂", group=GROUP_COLORS, inline="colorcode")
+i_color_bear = input.color(color.new(#B42020, 0), "🐻", group=GROUP_COLORS, inline="colorcode")
+i_color_bull_down = input.color(color.new(#FF9800, 0), "Retrace 🐂", group=GROUP_COLORS, inline="colorcode")
+i_color_bear_up = input.color(color.new(#2196F3, 0), "🐻", group=GROUP_COLORS, inline="colorcode")
+
+/////////////////////////////////////////////////////////////
+// INITIALIZATION
+/////////////////////////////////////////////////////////////
+const string GROUP_CONFIG = "Configuration"
+i_tf_low = input.enum(UTIL.Timeframes.M1, "LTF Timeframe", group=GROUP_CONFIG)
+i_tf_fetch = input.enum(UTIL.Timeframes.C, "Fetch Timeframe", group=GROUP_CONFIG)
+i_tf_high = input.enum(UTIL.Timeframes.W1, "HTF Timeframe", group=GROUP_CONFIG)
+
+/////////////////////////////////////////////////////////////
+// INPUTS - SESSION FILTER
+/////////////////////////////////////////////////////////////
+
+const string GROUP_SESSION = "Session Filter"
+i_session_filter = input.bool(true, "Enable Session Filter", group=GROUP_SESSION)
+i_session = input.session("0930-1600", "Trading Session", group=GROUP_SESSION)
+
+/////////////////////////////////////////////////////////////
+// INPUTS - MTF TABLE
+/////////////////////////////////////////////////////////////
+
+const string GROUP_MTF = 'Multi-Timeframe Table'
+const string TT_MTF_TIMEFRAMES = "Multi-timeframe UTIL.Timeframes:\n\nSelect UTIL.timeframes to analyze trends simultaneously.\nComparing UTIL.timeframes helps identify stronger trend signals."
+i_mtf_table_show = input.bool(true, title='👁️', group=GROUP_MTF, inline='mtftable')
+i_mtf_table_position = input.enum(UTIL.Positions.MIDDLE_LEFT, title='Location', group=GROUP_MTF, inline='mtftable')
+i_mtf_table_size = input.enum(UTIL.Sizes.SMALL, title='Size', group=GROUP_MTF, inline='mtftable')
+i_mtf_table_text = input(color.new(#dbdbdb, 0), 'FG', group=GROUP_MTF, inline='mtftable')
+i_mtf_table_bg = input(color.rgb(0, 0, 0, 25), 'BG', group=GROUP_MTF, inline='mtftable')
+
+const string GROUP_MTF_TF = "Multi-Timeframe Selection"
+timeframe1 = input.enum(UTIL.Timeframes.M5, "Timeframe 1", group=GROUP_MTF_TF)
+timeframe2 = input.enum(UTIL.Timeframes.M15, "Timeframe 2", group=GROUP_MTF_TF)
+timeframe3 = input.enum(UTIL.Timeframes.H1, "Timeframe 3", group=GROUP_MTF_TF)
+timeframe4 = input.enum(UTIL.Timeframes.H4, "Timeframe 4", group=GROUP_MTF_TF)
+
+/////////////////////////////////////////////////////////////
+// STRATEGY INPUTS - GENERAL
+/////////////////////////////////////////////////////////////
+
+const string GROUP_S_GEN = "Strategy: General"
+i_s_enabled = input.bool(true, "Enable Trading", group=GROUP_S_GEN, inline="gen1")
+i_s_direction = input.string("Both", "Direction", options=["Both", "Long Only", "Short Only"], group=GROUP_S_GEN, inline="gen1")
+i_s_allow_reverse = input.bool(true, "Reverse on Opposite Signal", group=GROUP_S_GEN, tooltip="When flat-or-opposite and a filtered opposite entry fires, flip the position in one order. If off, an opposite signal can only exit (see Exit Signals) and re-entry waits for cooldown.")
+i_s_warmup = input.int(100, "Warmup Bars", minval=0, step=10, group=GROUP_S_GEN, tooltip="No orders until this many bars have been calculated, so every oscillator and MA is fully seeded.")
+
+/////////////////////////////////////////////////////////////
+// STRATEGY INPUTS - ENTRY SIGNALS
+/////////////////////////////////////////////////////////////
+
+const string GROUP_S_SIG = "Strategy: Entry Signals (any enabled trigger arms an entry)"
+i_sig_momentum = input.bool(true, "Momentum Breakout", group=GROUP_S_SIG, inline="sig1", tooltip="Long when the fast oscillator crosses UP through +Level (overbought momentum). Short when it crosses DOWN through -Level (oversold momentum).")
+i_sig_entry_level = input.float(100.0, "Level", minval=10.0, step=10.0, group=GROUP_S_SIG, inline="sig1")
+i_sig_adaptive_level = input.bool(false, "Adaptive", group=GROUP_S_SIG, inline="sig1", tooltip="Use the indicator's adaptive threshold (100 when fast and slow oscillators agree in sign, otherwise the slow oscillator magnitude, floor 50) instead of the fixed Level.")
+i_sig_exhaust_entry = input.bool(false, "Exhaustion Reversal", group=GROUP_S_SIG, tooltip="Counter-trend entry. Long when the fast oscillator crosses UP through -Exhaustion Level (bearish exhaustion ending). Short when it crosses DOWN through +Exhaustion Level (bullish exhaustion ending).")
+i_sig_ribbon_flip = input.bool(false, "Ribbon Flip", group=GROUP_S_SIG, tooltip="Long when the EIT crosses above the ribbon signal line; short when it crosses below.")
+i_sig_osc_cross = input.bool(false, "Fast/Slow Oscillator Cross", group=GROUP_S_SIG, tooltip="Long when the fast oscillator crosses above the slow oscillator; short when it crosses below.")
+i_sig_dual = input.bool(false, "Dual-Oscillator Exhaustion", group=GROUP_S_SIG, inline="dual1", tooltip="Counter-trend entry on exhaustion confirmed by both oscillators. SHORT (bullish exhaustion): the slow oscillator (Oscillator 2) crosses DOWN through +Slow Level while the fast oscillator (Oscillator 1) is above +Fast Level. LONG (bearish exhaustion): the slow oscillator crosses UP through -Slow Level while the fast oscillator is below -Fast Level.")
+i_sig_dual_slow = input.float(150.0, "Slow Level", minval=10.0, step=10.0, group=GROUP_S_SIG, inline="dual1")
+i_sig_dual_fast = input.float(200.0, "Fast Level", minval=10.0, step=10.0, group=GROUP_S_SIG, inline="dual1")
+i_sig_dual_lookback = input.int(0, "Fast Osc Lookback (bars)", minval=0, maxval=10, group=GROUP_S_SIG, inline="dual2", tooltip="0 = the fast oscillator must be beyond its level on the same bar as the slow oscillator cross. N > 0 = it may have been beyond the level at any point in the last N bars.")
+i_sig_dual_bypass = input.bool(true, "Bypass Trend Filters", group=GROUP_S_SIG, inline="dual2", tooltip="This is a counter-trend signal, so Ribbon Alignment, MA Health, Ribbon Health, Slow Oscillator Side and Max Distance filters would normally block it. When on, those are skipped for this signal only; session, cooldown, regime, volume and delta filters still apply.")
+i_sig_dual_exit = input.bool(false, "Also Count As Exhaustion For Exits", group=GROUP_S_SIG, tooltip="Lets an open trade's Exhaustion Response (tighten / partial / close) also fire on the opposite dual-oscillator exhaustion signal, in addition to the single-oscillator crossing.")
+i_sig_exhaust_level = input.float(200.0, "Exhaustion Level", minval=50.0, step=10.0, group=GROUP_S_SIG, inline="sig2", tooltip="Fast oscillator crossing DOWN through +Level = bullish trend exhaustion. Crossing UP through -Level = bearish trend exhaustion. Used by exhaustion exits and exhaustion reversal entries.")
+i_sig_window = input.int(0, "Setup Window (bars)", minval=0, maxval=20, group=GROUP_S_SIG, tooltip="0 = filters must pass on the trigger bar. N > 0 = a trigger stays armed for N more bars so filters can line up; the entry fires on the first bar they all pass, and each trigger is used once.")
+
+/////////////////////////////////////////////////////////////
+// STRATEGY INPUTS - ENTRY FILTERS
+/////////////////////////////////////////////////////////////
+
+const string GROUP_S_FILT = "Strategy: Entry Filters (all enabled filters must pass)"
+i_f_ribbon = input.bool(true, "Ribbon Alignment", group=GROUP_S_FILT, tooltip="Long needs EIT above the ribbon signal; short needs EIT below. Disable for Exhaustion Reversal entries.")
+i_f_mahealth = input.bool(true, "MA Health Alignment", group=GROUP_S_FILT, inline="f2", tooltip="Long needs MA Health >= +Min; short needs <= -Min. Below about 10 the market is ranging.")
+i_f_mahealth_min = input.float(10.0, "Min", minval=0.0, maxval=100.0, step=5.0, group=GROUP_S_FILT, inline="f2")
+i_f_ribhealth = input.bool(false, "Ribbon Health Alignment", group=GROUP_S_FILT, tooltip="Long needs Ribbon Health > 0; short needs < 0.")
+i_f_slow = input.bool(false, "Slow Oscillator Side", group=GROUP_S_FILT, inline="f4", tooltip="Long needs the slow oscillator above +Min; short needs it below -Min (Min may be negative to allow slight disagreement).")
+i_f_slow_min = input.float(0.0, "Min", step=10.0, group=GROUP_S_FILT, inline="f4")
+i_f_delta = input.bool(false, "Delta Volume Alignment", group=GROUP_S_FILT, inline="f5", tooltip="Long needs the average estimated buy-minus-sell volume over N bars to be positive; short needs it negative.")
+i_f_delta_len = input.int(3, "Bars", minval=1, maxval=20, group=GROUP_S_FILT, inline="f5")
+i_f_volume = input.bool(false, "Min Relative Volume", group=GROUP_S_FILT, inline="f6", tooltip="Requires current volume / volume SMA to be at least this multiple.")
+i_f_volume_min = input.float(0.8, "x", minval=0.1, step=0.1, group=GROUP_S_FILT, inline="f6")
+i_f_extension = input.bool(false, "Max Distance From Mean", group=GROUP_S_FILT, inline="f7", tooltip="Skips entries when price is already stretched more than this many ATRs from the EMA21 mean (in the direction of the trade).")
+i_f_extension_max = input.float(2.5, "ATR", minval=0.5, step=0.25, group=GROUP_S_FILT, inline="f7")
+i_f_regime_lowvol = input.bool(false, "Skip Low-Volume Regime", group=GROUP_S_FILT, inline="f8")
+i_f_regime_volatile = input.bool(false, "Skip Volatile Regime", group=GROUP_S_FILT, inline="f8")
+
+/////////////////////////////////////////////////////////////
+// STRATEGY INPUTS - RISK, SIZING, STOPS
+/////////////////////////////////////////////////////////////
+
+const string GROUP_S_RISK = "Strategy: Position Size & Initial Stop"
+i_r_size_mode = input.string("Risk Percent", "Sizing Mode", options=["Risk Percent", "Percent of Equity", "Fixed Quantity"], group=GROUP_S_RISK, tooltip="Risk Percent sizes each trade so that hitting the initial stop loses this % of equity. Percent of Equity sizes by notional. Fixed Quantity uses a constant unit count.")
+i_r_risk_pct = input.float(0.5, "Risk % of Equity", minval=0.05, maxval=10.0, step=0.05, group=GROUP_S_RISK)
+i_r_size_pct = input.float(25.0, "Notional % of Equity", minval=1.0, maxval=500.0, step=5.0, group=GROUP_S_RISK)
+i_r_fixed_qty = input.float(1.0, "Fixed Quantity", minval=0.0, step=1.0, group=GROUP_S_RISK)
+i_r_max_notional = input.float(100.0, "Max Notional % of Equity", minval=1.0, maxval=1000.0, step=10.0, group=GROUP_S_RISK, tooltip="Hard cap on position value for every sizing mode. 100 = no leverage.")
+i_r_atr_len = input.int(14, "Risk ATR Length", minval=2, maxval=100, group=GROUP_S_RISK, inline="atr")
+i_r_stop_type = input.string("ATR", "Initial Stop", options=["ATR", "Swing", "Percent"], group=GROUP_S_RISK, inline="stop1", tooltip="ATR: entry -/+ Mult x ATR.  Swing: beyond the lowest low / highest high of the last N bars plus a buffer.  Percent: fixed % of price.")
+i_r_stop_atr = input.float(1.5, "ATR Mult", minval=0.2, step=0.1, group=GROUP_S_RISK, inline="stop2")
+i_r_stop_pct = input.float(1.0, "Percent", minval=0.05, step=0.05, group=GROUP_S_RISK, inline="stop2")
+i_r_swing_len = input.int(8, "Swing Bars", minval=2, maxval=60, group=GROUP_S_RISK, inline="stop3")
+i_r_swing_buf = input.float(0.25, "Swing Buffer (ATR)", minval=0.0, step=0.05, group=GROUP_S_RISK, inline="stop3")
+i_r_min_stop_atr = input.float(0.5, "Min Stop (ATR)", minval=0.1, step=0.1, group=GROUP_S_RISK, inline="clamp", tooltip="Stop distance is clamped into this range regardless of stop type, so a tiny swing cannot produce an oversized position and a huge one cannot produce an unreasonable loss.")
+i_r_max_stop_atr = input.float(4.0, "Max Stop (ATR)", minval=0.5, step=0.25, group=GROUP_S_RISK, inline="clamp")
+
+/////////////////////////////////////////////////////////////
+// STRATEGY INPUTS - TAKE PROFIT ZONES
+/////////////////////////////////////////////////////////////
+
+const string GROUP_S_TP = "Strategy: Take Profit Zones (remainder runs on the trailing stop)"
+i_tp_basis = input.string("R Multiple", "Zone Distance Unit", options=["R Multiple", "ATR"], group=GROUP_S_TP, tooltip="R Multiple: distance = multiple x initial stop distance.  ATR: distance = multiple x entry ATR.")
+i_tp1_mult = input.float(1.0, "TP1", minval=0.1, step=0.1, group=GROUP_S_TP, inline="tp1")
+i_tp1_pct = input.float(30.0, "% of Position", minval=0.0, maxval=100.0, step=5.0, group=GROUP_S_TP, inline="tp1")
+i_tp2_mult = input.float(2.0, "TP2", minval=0.1, step=0.1, group=GROUP_S_TP, inline="tp2")
+i_tp2_pct = input.float(30.0, "% of Position", minval=0.0, maxval=100.0, step=5.0, group=GROUP_S_TP, inline="tp2")
+i_tp3_mult = input.float(3.5, "TP3", minval=0.1, step=0.1, group=GROUP_S_TP, inline="tp3")
+i_tp3_pct = input.float(0.0, "% of Position", minval=0.0, maxval=100.0, step=5.0, group=GROUP_S_TP, inline="tp3", tooltip="A zone with 0% is disabled. Whatever is left after all enabled zones (100% minus their sum) is the runner, managed only by the stop / trailing stop / exit signals.")
+
+const string GROUP_S_BE = "Strategy: Breakeven"
+i_be_enable = input.bool(true, "Move Stop to Breakeven", group=GROUP_S_BE, inline="be1")
+i_be_on_tp = input.bool(true, "After Any TP Fills", group=GROUP_S_BE, inline="be1")
+i_be_atr = input.float(1.0, "Or at Profit (ATR)", minval=0.0, step=0.25, group=GROUP_S_BE, inline="be2", tooltip="0 disables the profit trigger.")
+i_be_offset = input.float(0.1, "Offset (ATR)", minval=0.0, step=0.05, group=GROUP_S_BE, inline="be2", tooltip="Places the stop slightly beyond entry to cover fees and slippage.")
+
+/////////////////////////////////////////////////////////////
+// STRATEGY INPUTS - TRAILING STOP & EXHAUSTION
+/////////////////////////////////////////////////////////////
+
+const string GROUP_S_TRAIL = "Strategy: Trailing Stop"
+i_t_type = input.string("Chandelier ATR", "Trail Type", options=["Chandelier ATR", "Ribbon Edge", "Percent"], group=GROUP_S_TRAIL, tooltip="Chandelier: best price since entry -/+ Mult x ATR.  Ribbon Edge: follows the trend ribbon boundary with an ATR buffer.  Percent: % off the best price since entry.")
+i_t_mult = input.float(2.5, "Normal ATR Mult", minval=0.2, step=0.1, group=GROUP_S_TRAIL, inline="t1")
+i_t_tight_mult = input.float(1.0, "Tight (after exhaustion)", minval=0.1, step=0.1, group=GROUP_S_TRAIL, inline="t1")
+i_t_ribbon_buf = input.float(0.5, "Ribbon Buffer (ATR)", minval=0.0, step=0.1, group=GROUP_S_TRAIL, inline="t2")
+i_t_pct = input.float(1.0, "Percent", minval=0.05, step=0.05, group=GROUP_S_TRAIL, inline="t2", tooltip="Tight mode halves this percentage.")
+i_t_immediate = input.bool(false, "Activate: Immediately", group=GROUP_S_TRAIL, inline="a1")
+i_t_on_tp = input.bool(true, "After Any TP", group=GROUP_S_TRAIL, inline="a1")
+i_t_on_exh = input.bool(true, "On Exhaustion", group=GROUP_S_TRAIL, inline="a2", tooltip="Activates when the exhaustion response below fires (requires an Exhaustion Response other than Off).")
+i_t_on_profit = input.bool(false, "At Profit (ATR)", group=GROUP_S_TRAIL, inline="a2")
+i_t_profit_atr = input.float(1.5, "", minval=0.25, step=0.25, group=GROUP_S_TRAIL, inline="a2")
+
+const string GROUP_S_EXIT = "Strategy: Exhaustion & Exit Signals"
+i_x_action = input.string("Tighten + Partial", "Exhaustion Response", options=["Off", "Tighten Trail", "Partial Close", "Tighten + Partial", "Close All"], group=GROUP_S_EXIT, tooltip="What to do when the fast oscillator crosses back through the Exhaustion Level against the trade (long: down through +Level; short: up through -Level).")
+i_x_partial_pct = input.float(50.0, "Partial Close %", minval=5.0, maxval=100.0, step=5.0, group=GROUP_S_EXIT, inline="x1", tooltip="Percent of the position still open that is closed on exhaustion. Applied once per trade.")
+i_x_only_profit = input.bool(true, "Only When In Profit", group=GROUP_S_EXIT, inline="x1")
+i_x_opposite = input.bool(true, "Exit on Opposite Trigger", group=GROUP_S_EXIT, tooltip="Close the trade when an opposite entry trigger fires (before filters). With Reverse on Opposite Signal, a filtered opposite signal flips instead.")
+i_x_ribbon = input.bool(false, "Exit on Ribbon Flip Against", group=GROUP_S_EXIT)
+i_x_zero = input.bool(false, "Exit on Fast Osc Zero-Cross Against", group=GROUP_S_EXIT)
+i_x_time_bars = input.int(0, "Time Stop (bars, 0 = off)", minval=0, step=10, group=GROUP_S_EXIT)
+
+/////////////////////////////////////////////////////////////
+// STRATEGY INPUTS - COOLDOWNS & LIMITS
+/////////////////////////////////////////////////////////////
+
+const string GROUP_S_CD = "Strategy: Cooldowns & Daily Limits"
+i_c_cd_bars = input.int(3, "Cooldown After Exit (bars)", minval=0, maxval=500, group=GROUP_S_CD)
+i_c_cd_loss_bars = input.int(10, "Extra Cooldown After Loss (bars)", minval=0, maxval=500, group=GROUP_S_CD)
+i_c_max_trades = input.int(8, "Max Trades Per Day (0 = off)", minval=0, maxval=100, group=GROUP_S_CD)
+i_c_max_consec = input.int(3, "Halt After N Losses In A Row (0 = off)", minval=0, maxval=20, group=GROUP_S_CD, tooltip="Stops new entries for the rest of the day.")
+i_c_max_daily_loss = input.float(2.0, "Max Daily Loss % (0 = off)", minval=0.0, maxval=20.0, step=0.25, group=GROUP_S_CD, tooltip="Flattens and halts for the rest of the day when equity falls this far below the day's starting equity.")
+i_c_flatten_eod = input.bool(true, "Flatten at End of Session", group=GROUP_S_CD, inline="eod", tooltip="Intraday charts only, and only when Session Filter is enabled. Closes at the close of the last bar of the Trading Session (or the first bar outside it).")
+i_c_flatten_min = input.int(0, "Min Before End", minval=0, maxval=120, group=GROUP_S_CD, inline="eod")
+i_c_noentry_min = input.int(5, "No New Entries Final (min)", minval=0, maxval=240, group=GROUP_S_CD)
+
+/////////////////////////////////////////////////////////////
+// STRATEGY INPUTS - DISPLAY & ALERTS
+/////////////////////////////////////////////////////////////
+
+const string GROUP_S_VIS = "Strategy: Display & Alerts"
+i_vis_show = input.bool(true, "👁️ Trade Markers & Levels", group=GROUP_S_VIS, inline="vis1")
+i_vis_color_long = input.color(color.new(#20B46C, 0), "🐂", group=GROUP_S_VIS, inline="vis1")
+i_vis_color_short = input.color(color.new(#B42020, 0), "🐻", group=GROUP_S_VIS, inline="vis1")
+i_vis_table = input.bool(true, "👁️ Status Table", group=GROUP_S_VIS, inline="vis2")
+i_vis_table_pos = input.enum(UTIL.Positions.TOP_RIGHT, "", group=GROUP_S_VIS, inline="vis2")
+i_vis_alerts = input.bool(true, "Send alert() on Entries and Exits", group=GROUP_S_VIS)
+
+var libApex.MarketContext context = na
+var UTIL.Scheduler scheduler = na
+var libDrawing.DrawingManager visuals = na
+var bars = BARS.Bars.new().init(i_tf_low, i_tf_fetch, i_tf_high).clear()
+var libApex.ManagedTable mtf_managed_table = na
+var map<UTIL.Timeframes, libApex.MarketContext> mtf_context = na
+var array<UTIL.Timeframes> active_timeframes = na
+
+// Shared calculation variables
+var int bar_ratio = 1 // TODO UTIL.getBarsInTimeframes(tf_lower, UTIL.getTimeframe(timeframe.period))
+var float alpha = i_ribbon_alpha_low
+var color color_candle_trend = color.gray
+
+// Oscillator variables
+var float _osc1_slow = 0.0
+var float _osc2_slow = 0.0
+var float _osc1_threshold = 100.0
+
+// Calculate delta volume using shared function
+float buyVolume = UTIL.estimateDeltaVolume(open, high, low, close, volume)
+float sellVolume = volume - buyVolume
+
+// Source
+_src = input.source(close, title="Source MA")
+
+// Delta volume candle display values
+var float dvc_max  = 1.0   // rolling max of buyVolume (for normalization)
+var float dvc_max_sell = 1.0   // rolling max of sellVolume (for normalization)
+float dvc_buy_top  = 0.0
+float dvc_sell_bot = 0.0
+
+if barstate.isfirst
+    scheduler := UTIL.Scheduler.new().init()
+    context := libApex.MarketContext.new().init()
+    // delta_candles := libApex.DeltaCandles.new().init(i_delta_candles_ltf, bar_ratio + 10)
+    mtf_managed_table := libApex.ManagedTable.new()
+
+    // Initialize MTF
+    active_timeframes := array.new<UTIL.Timeframes>()
+    active_timeframes.push(timeframe1)
+    active_timeframes.push(timeframe2)
+    active_timeframes.push(timeframe3)
+    active_timeframes.push(timeframe4)
+
+    mtf_context := map.new<UTIL.Timeframes, libApex.MarketContext>()
+    for tf in active_timeframes
+        if UTIL.getTimeframeAbbrev(tf) != UTIL.getTimeframeAbbrev(UTIL.Timeframes.C)
+            tf_context = libApex.MarketContext.new().init()
+            map.put(mtf_context, tf, tf_context)
+            tf_context.fetch(tf)
+
+/////////////////////////////////////////////////////////////
+// BASE CALCULATIONS (EIT & RIBBON)
+/////////////////////////////////////////////////////////////
+
+_eit_adaptive = libMAs.getEIT(close, alpha)
+_ribbon_signal = libMAs.factorySmoothing(_eit_adaptive, i_ribbon_signal_type, i_ribbon_signal_period, i_ribbon_signal_param1)
+_ribbon_mean = libMAs.factorySmoothing(_eit_adaptive, i_ribbon_mean_type, i_ribbon_mean_period, i_ribbon_mean_param1)
+
+/////////////////////////////////////////////////////////////
+// RIBBON HEALTH
+/////////////////////////////////////////////////////////////
+
+ribbon_upper = math.max(_eit_adaptive, _ribbon_signal)
+ribbon_lower = math.min(_eit_adaptive, _ribbon_signal)
+ribbon_color = _eit_adaptive > _ribbon_signal ?
+     color.new(i_ribbon_color_bull, 95-(60*alpha)) :
+     color.new(i_ribbon_color_bear, 95-(60*alpha))
+
+var float ribbon_health = 0.0
+ribbon_health := libApex.getHealthMAs(context.atr, _eit_adaptive, _ribbon_signal, _ribbon_mean,
+     context.vol_ratio * (alpha + i_ribbon_health_k)) * i_ribbon_health_k
+
+/////////////////////////////////////////////////////////////
+// DELTA VOLUME CANDLES
+/////////////////////////////////////////////////////////////
+
+if i_delta_candles_show
+    if volume > dvc_max
+        dvc_max := volume
+    dvc_buy_top  := dvc_max  > 0 ? (buyVolume  / dvc_max) * i_delta_vol_unit : 0.0
+    dvc_sell_bot := dvc_max > 0 ? (sellVolume / dvc_max) * i_delta_vol_unit : 0.0
+
+/////////////////////////////////////////////////////////////
+// BARS LIFECYCLE EXECUTION
+/////////////////////////////////////////////////////////////
+i_ltf = UTIL.Timeframes.M1
+
+if barstate.isnew
+    bars.clear()
+
+// Fetch ticks (no distribution)
+bars.fetch()
+
+// Simple distribution on boundary crossing if ready
+// if bars.ready_ltf_boundary
+imbalance = bars.getVolumeImbalance()
+// Calculate adaptive alpha from LTF data
+alpha := i_ribbon_alpha_low + bars.getAlpha(volume, context.vol_sma,
+         context.atr_distance, context.atr, context.atr_long, context.stdev) *
+         (i_ribbon_alpha_high - i_ribbon_alpha_low)
+
+/////////////////////////////////////////////////////////////
+// OSCILLATOR CALCULATIONS (Every Bar)
+/////////////////////////////////////////////////////////////
+
+i_oscillator1_source = i_oscillator1_adaptive ? _eit_adaptive : _src
+i_oscillator1_source_slow = i_oscillator1_adaptive ? _eit_adaptive : _src
+
+_osc1_fast = libMAs.normalizeOsc(i_oscillator1_source, i_oscillator1_fast_type, which=1,
+     fastLen=i_oscillator1_fast, slowLen=i_oscillator1_slow,
+     smoothing=i_oscillator1_fast_smooth_type, smoothingLen=i_oscillator1_fast_smooth_period) * i_oscillator1_k
+
+float _osc1_slow_abs = 0.0
+
+/////////////////////////////////////////////////////////////
+// BAR CONFIRMATION CALCULATIONS
+/////////////////////////////////////////////////////////////
+
+if barstate.isconfirmed
+    // Fetch market context
+    context.fetch()
+    context.regime := context.detectRegime()
+
+    // Oscillator slow values
+    _osc1_slow := libMAs.normalizeOsc(i_oscillator1_source_slow, i_oscillator1_slow_type, which=-1,
+         fastLen=i_oscillator1_fast, slowLen=i_oscillator1_slow,
+         smoothing=i_oscillator1_slow_smooth_type, smoothingLen=i_oscillator1_slow_smooth_period) * i_oscillator1_k
+
+    _osc1_slow_abs := math.abs(_osc1_slow)
+    _osc1_threshold := (_osc1_fast > 0) == (_osc1_slow > 0) ? 100.0 :
+                       (_osc1_slow_abs > 50.0 ? _osc1_slow_abs : 50.0)
+
+color_candle_trend := libApex.getColorMomentumAlpha(open, close, ribbon_health, alpha, context.vol_ratio,
+     i_color_bull, i_color_bear, i_color_bull_down, i_color_bear_up)
+
+barcolor(i_candles_color_code ? color_candle_trend : na)
+
+/////////////////////////////////////////////////////////////
+// PLOT RIBBONS
+/////////////////////////////////////////////////////////////
+
+fill(plot(i_ribbon_show ? ribbon_upper : na, 'Fast EIT', display=display.none, force_overlay=true),
+     plot(i_ribbon_show ? ribbon_lower : na, 'Signal EIT', display=display.none, force_overlay=true),
+     color=ribbon_color, title="Trend Ribbon")
+
+plot(ribbon_health, "Ribbon Health Osc",
+     color=i_ribbon_color_bear,
+     linewidth=2, display = i_ribbon_health_show ? display.all : display.none)
+
+plot(context.ma_health * i_ma_health_k, "MA Health Osc",
+     color=color.from_gradient(context.ma_health, -100.0, 100.0, color.orange, color.aqua),
+     linewidth=2, display = i_ma_health_show ? display.all : display.none)
+
+/////////////////////////////////////////////////////////////
+// PLOT OSCILLATORS
+/////////////////////////////////////////////////////////////
+
+p_osc1_fast = plot(_osc1_fast, 'Osc Fast',
+     color.new(libMAs.getOscillatorColor(i_oscillator1_fast_type), 90-i_oscillator1_brightness),
+     display=i_oscillator1_show ? display.all : display.none, linewidth=1)
+p_osc1 = plot(_osc1_slow, 'Osc Slow',
+     color=color.new(libMAs.getOscillatorColor(i_oscillator1_slow_type), 70-i_oscillator1_brightness),
+     display=i_oscillator1_show ? display.all : display.none, linewidth=1)
+
+/////////////////////////////////////////////////////////////
+// MTF UPDATES
+/////////////////////////////////////////////////////////////
+
+if barstate.isconfirmed and scheduler.every(UTIL.Timeframes.M3)
+    // Update MTF table
+    if barstate.islast and i_mtf_table_show
+        table_position = UTIL.getPosition(i_mtf_table_position)
+        libCandles.createMTFTable(mtf_managed_table, table_position, active_timeframes, mtf_context, context,
+             UTIL.getSize(i_mtf_table_size), bg_color=i_mtf_table_bg, header_color=i_mtf_table_text,
+             text_color=i_mtf_table_text)
+    else if barstate.islast
+        mtf_managed_table.delete()
+
+    for tf in active_timeframes
+        if tf != UTIL.Timeframes.C and map.contains(mtf_context, tf)
+            tf_context = map.get(mtf_context, tf)
+            tf_context.fetch(tf)
+
+/////////////////////////////////////////////////////////////
+// PIVOT DETECTION (every confirmed bar — not gated by scheduler)
+/////////////////////////////////////////////////////////////
+
+bool is_market = true
+if barstate.isconfirmed
+    is_market := i_session_filter ? not na(time(timeframe.period, i_session)) : true
+    if is_market
+        // Positive extreme dropping below threshold → pivot high
+        if _osc1_fast[1] >= i_pivots_threshold and _osc1_fast < i_pivots_threshold
+            [pivot_type, pivot_bar, pivot_price_high, pivot_price_low] =
+             libApex.detectPivotFromOscillatorExtreme(true, false, i_pivots_lookback)
+
+            if pivot_type != 0 and i_pivots_show
+                label.new(pivot_bar, pivot_price_high, "•", style=label.style_label_down,
+                 color=UTIL.COLOR_NONE, size=size.large, textcolor=i_color_bear, force_overlay=true)
+
+        // Negative extreme rising above threshold → pivot low
+        if _osc1_fast[1] <= -(i_pivots_threshold) and _osc1_fast > -(i_pivots_threshold)
+            [pivot_type, pivot_bar, pivot_price_high, pivot_price_low] =
+             libApex.detectPivotFromOscillatorExtreme(false, true, i_pivots_lookback)
+
+            if pivot_type != 0 and i_pivots_show
+                label.new(pivot_bar, pivot_price_low, "•", style=label.style_label_up,
+                 color=UTIL.COLOR_NONE, size=size.large, textcolor=i_color_bull, force_overlay=true)
+
+/////////////////////////////////////////////////////////////
+// PLOT DELTA VOLUME CANDLES
+/////////////////////////////////////////////////////////////
+
+// Buy-side: zero → dvc_buy_top - display=true
+plotcandle(0.0, dvc_buy_top, 0.0, dvc_buy_top,
+     title="Delta Buy Volume", color=i_volume_color_bull,
+     wickcolor=i_volume_color_bull, bordercolor=na,
+     display=i_delta_candles_show ? DISPLAY_NO_NUM : display.none)
+
+// Sell-side: dvc_sell_bot → zero
+plotcandle(0.0, 0.0, -dvc_sell_bot, -dvc_sell_bot,
+     title="Delta Sell Volume", color=i_volume_color_bear,
+     wickcolor=i_volume_color_bear, bordercolor=na,
+     display=i_delta_candles_show ? DISPLAY_NO_NUM : display.none)
+
+/////////////////////////////////////////////////////////////
+// STRATEGY ENGINE
+// Everything below this line is the trading layer. All indicator
+// calculations and visuals above are unchanged from Integration Lite.
+/////////////////////////////////////////////////////////////
+
+// ---------- Series used by risk management (called on every bar) ----------
+float s_atr = ta.atr(i_r_atr_len)
+float s_swing_low = ta.lowest(low, i_r_swing_len)
+float s_swing_high = ta.highest(high, i_r_swing_len)
+float s_delta_sm = ta.sma(buyVolume - sellVolume, i_f_delta_len)
+bool s_new_day = timeframe.change("D")
+
+// Normalized take-profit weights (if the three zones sum past 100% they are scaled down)
+float s_pct_sum = i_tp1_pct + i_tp2_pct + i_tp3_pct
+float s_norm = s_pct_sum > 100.0 ? 100.0 / s_pct_sum : 1.0
+float s_w1 = i_tp1_pct * s_norm / 100.0
+float s_w2 = i_tp2_pct * s_norm / 100.0
+float s_w3 = i_tp3_pct * s_norm / 100.0
+
+// ---------- Oscillator events (computed unconditionally so history stays consistent) ----------
+float s_lvl = i_sig_adaptive_level ? _osc1_threshold : i_sig_entry_level
+bool s_x_up_lvl = ta.crossover(_osc1_fast, s_lvl)
+bool s_x_dn_lvl = ta.crossunder(_osc1_fast, -s_lvl)
+bool s_x_dn_exh = ta.crossunder(_osc1_fast, i_sig_exhaust_level)    // bullish trend exhaustion
+bool s_x_up_exh = ta.crossover(_osc1_fast, -i_sig_exhaust_level)    // bearish trend exhaustion
+bool s_x_ribbon_up = ta.crossover(_eit_adaptive, _ribbon_signal)
+bool s_x_ribbon_dn = ta.crossunder(_eit_adaptive, _ribbon_signal)
+bool s_x_osc_up = ta.crossover(_osc1_fast, _osc1_slow)
+bool s_x_osc_dn = ta.crossunder(_osc1_fast, _osc1_slow)
+bool s_x_zero_up = ta.crossover(_osc1_fast, 0.0)
+bool s_x_zero_dn = ta.crossunder(_osc1_fast, 0.0)
+
+// Dual-oscillator exhaustion: slow osc (Osc 2) crosses back inside its level while the fast osc (Osc 1) is beyond its level
+bool s_x_slow_dn_lvl = ta.crossunder(_osc1_slow, i_sig_dual_slow)
+bool s_x_slow_up_lvl = ta.crossover(_osc1_slow, -i_sig_dual_slow)
+float s_fast_hi = ta.highest(_osc1_fast, i_sig_dual_lookback + 1)
+float s_fast_lo = ta.lowest(_osc1_fast, i_sig_dual_lookback + 1)
+bool s_dual_bull = s_x_slow_dn_lvl and s_fast_hi > i_sig_dual_fast     // bullish exhaustion -> short setup
+bool s_dual_bear = s_x_slow_up_lvl and s_fast_lo < -i_sig_dual_fast    // bearish exhaustion -> long setup
+
+bool s_trig_long = (i_sig_momentum and s_x_up_lvl) or (i_sig_exhaust_entry and s_x_up_exh) or
+     (i_sig_ribbon_flip and s_x_ribbon_up) or (i_sig_osc_cross and s_x_osc_up) or (i_sig_dual and s_dual_bear)
+bool s_trig_short = (i_sig_momentum and s_x_dn_lvl) or (i_sig_exhaust_entry and s_x_dn_exh) or
+     (i_sig_ribbon_flip and s_x_ribbon_dn) or (i_sig_osc_cross and s_x_osc_dn) or (i_sig_dual and s_dual_bull)
+
+// ---------- Session helpers (parsed from the existing Trading Session input) ----------
+string s_sess_end_str = str.length(i_session) >= 9 ? str.substring(i_session, 5, 9) : ""
+float s_end_min = str.length(s_sess_end_str) == 4 ?
+     str.tonumber(str.substring(s_sess_end_str, 0, 2)) * 60 + str.tonumber(str.substring(s_sess_end_str, 2, 4)) : na
+float s_start_min = str.length(i_session) >= 4 ?
+     str.tonumber(str.substring(i_session, 0, 2)) * 60 + str.tonumber(str.substring(i_session, 2, 4)) : na
+int s_bar_close_min = hour(time_close, syminfo.timezone) * 60 + minute(time_close, syminfo.timezone)
+bool s_sess_ok = i_session_filter and timeframe.isintraday and not na(s_end_min) and not na(s_start_min) and s_end_min > s_start_min
+bool s_flat_zone = s_sess_ok and s_bar_close_min >= s_end_min - i_c_flatten_min
+bool s_noentry_zone = s_sess_ok and s_bar_close_min >= s_end_min - i_c_noentry_min
+
+// ---------- Sizing and level helpers ----------
+roundQty(float q) =>
+    syminfo.mincontract > 0 ? math.floor(q / syminfo.mincontract) * syminfo.mincontract : q
+
+calcStopDist(int d, float px) =>
+    float raw = switch i_r_stop_type
+        "ATR" => i_r_stop_atr * s_atr
+        "Percent" => px * i_r_stop_pct / 100.0
+        => (d > 0 ? px - s_swing_low : s_swing_high - px) + i_r_swing_buf * s_atr
+    math.min(math.max(raw, s_atr * i_r_min_stop_atr), s_atr * i_r_max_stop_atr)
+
+calcQty(float px, float stop_dist) =>
+    float eq = strategy.equity
+    float unit_value = px * syminfo.pointvalue
+    float q = switch i_r_size_mode
+        "Risk Percent" => eq * i_r_risk_pct / 100.0 / (stop_dist * syminfo.pointvalue)
+        "Percent of Equity" => eq * i_r_size_pct / 100.0 / unit_value
+        => i_r_fixed_qty
+    float q_cap = eq * i_r_max_notional / 100.0 / unit_value
+    roundQty(math.min(q, q_cap))
+
+// Places the shared stop plus one limit order per enabled take-profit zone. The runner (whatever
+// is left) has only the stop, which is also the trailing stop once it is active. Every leg shares
+// the same stop so a stop-out closes everything at one price.
+issueExits(int dir, float stop_px, float tp1_px, float tp2_px, float tp3_px, float q_total, float q_rem, bool d1, bool d2, bool d3) =>
+    string eid = dir > 0 ? "Long" : "Short"
+    float q1 = d1 ? 0.0 : math.min(q_rem, roundQty(q_total * s_w1))
+    float q2 = d2 ? 0.0 : math.min(q_rem, roundQty(q_total * s_w2))
+    float q3 = d3 ? 0.0 : math.min(q_rem, roundQty(q_total * s_w3))
+    if q1 > 0
+        strategy.exit("TP1", eid, qty=q1, limit=tp1_px, stop=stop_px, comment_profit="TP1", comment_loss="Stop")
+    if q2 > 0
+        strategy.exit("TP2", eid, qty=q2, limit=tp2_px, stop=stop_px, comment_profit="TP2", comment_loss="Stop")
+    if q3 > 0
+        strategy.exit("TP3", eid, qty=q3, limit=tp3_px, stop=stop_px, comment_profit="TP3", comment_loss="Stop")
+    strategy.exit("Runner", eid, stop=stop_px, comment_loss="Stop")
+    0
+
+// ---------- Persistent trade / day state ----------
+var float st_day_equity = strategy.initial_capital
+var int st_day_trades = 0
+var int st_day_losses_row = 0
+var bool st_day_halted = false
+var string st_halt_reason = ""
+
+var float st_prev_size = 0.0
+var int st_prev_closed = 0
+var float st_np_at_entry = 0.0
+var int st_last_exit_bar = na
+var bool st_last_exit_loss = false
+
+var bool st_pending = false
+var bool st_open = false
+var int st_signal_bar = na
+var float st_sig_dist = na
+var float st_sig_atr = na
+
+var int st_dir = 0
+var float st_entry_px = na
+var float st_entry_atr = na
+var float st_init_qty = 0.0
+var float st_stop = na
+var float st_tp1 = na
+var float st_tp2 = na
+var float st_tp3 = na
+var float st_trade_high = na
+var float st_trade_low = na
+var int st_bars = 0
+var bool st_tp1_done = false
+var bool st_tp2_done = false
+var bool st_tp3_done = false
+var bool st_trail_on = false
+var bool st_exh = false
+var bool st_exh_partial_done = false
+var bool st_be_done = false
+
+var int st_long_trig_bar = na
+var int st_short_trig_bar = na
+
+// ---------- Daily reset ----------
+if s_new_day
+    st_day_equity := strategy.equity
+    st_day_trades := 0
+    st_day_losses_row := 0
+    st_day_halted := false
+    st_halt_reason := ""
+
+float s_day_pnl_pct = st_day_equity > 0 ? (strategy.equity - st_day_equity) / st_day_equity * 100.0 : 0.0
+
+// ---------- Position events (own bookkeeping is robust to order-fill timing) ----------
+float s_pos = strategy.position_size
+int s_pos_dir = int(math.sign(s_pos))
+int s_prev_dir = int(math.sign(st_prev_size))
+int s_closed_now = strategy.closedtrades
+
+// 1) A trade finished: either the position closed / flipped, or it opened and stopped out within one bar
+bool s_complete = false
+if s_prev_dir != 0 and s_pos_dir != s_prev_dir
+    s_complete := true
+else if st_pending and s_pos_dir == 0 and bar_index > st_signal_bar
+    s_complete := true
+
+if s_complete
+    float net = strategy.netprofit - st_np_at_entry
+    st_last_exit_bar := bar_index
+    st_last_exit_loss := net < 0
+    if net < 0
+        st_day_losses_row += 1
+    else if net > 0
+        st_day_losses_row := 0
+    st_np_at_entry := strategy.netprofit
+    if s_pos_dir == 0
+        st_open := false
+        st_pending := false
+        st_dir := 0
+        st_stop := na
+        st_tp1 := na
+        st_tp2 := na
+        st_tp3 := na
+
+// 2) A position opened (or flipped): re-anchor stop and targets on the real average fill price
+if s_pos_dir != 0 and s_pos_dir != s_prev_dir
+    st_dir := s_pos_dir
+    st_pending := false
+    st_open := true
+    st_entry_px := strategy.position_avg_price
+    st_entry_atr := nz(st_sig_atr, s_atr)
+    st_init_qty := math.abs(s_pos)
+    float dist0 = nz(st_sig_dist, st_entry_atr * i_r_stop_atr)
+    float unit0 = i_tp_basis == "ATR" ? st_entry_atr : dist0
+    st_stop := st_entry_px - st_dir * dist0
+    st_tp1 := st_entry_px + st_dir * i_tp1_mult * unit0
+    st_tp2 := st_entry_px + st_dir * i_tp2_mult * unit0
+    st_tp3 := st_entry_px + st_dir * i_tp3_mult * unit0
+    st_trade_high := high
+    st_trade_low := low
+    st_bars := 0
+    st_tp1_done := false
+    st_tp2_done := false
+    st_tp3_done := false
+    st_trail_on := false
+    st_exh := false
+    st_exh_partial_done := false
+    st_be_done := false
+
+// 3) Which take-profit zones have filled (identified by the exit comment, same-direction trades only)
+if s_closed_now > st_prev_closed and st_dir != 0
+    for i = st_prev_closed to s_closed_now - 1
+        if int(math.sign(strategy.closedtrades.size(i))) == st_dir
+            string cm = strategy.closedtrades.exit_comment(i)
+            if cm == "TP1"
+                st_tp1_done := true
+            else if cm == "TP2"
+                st_tp2_done := true
+            else if cm == "TP3"
+                st_tp3_done := true
+
+// ---------- Trigger memory (setup window) ----------
+if s_trig_long
+    st_long_trig_bar := bar_index
+    st_short_trig_bar := na
+if s_trig_short
+    st_short_trig_bar := bar_index
+    st_long_trig_bar := na
+bool s_long_armed = not na(st_long_trig_bar) and bar_index - st_long_trig_bar <= i_sig_window
+bool s_short_armed = not na(st_short_trig_bar) and bar_index - st_short_trig_bar <= i_sig_window
+
+// ---------- Entry filters ----------
+float s_mah = context.ma_health
+bool s_regime_block = (i_f_regime_lowvol and context.regime == UTIL.MarketRegimes.LOW_VOLUME) or
+     (i_f_regime_volatile and context.regime == UTIL.MarketRegimes.VOLATILE)
+
+bool s_filt_common = not s_regime_block and (not i_f_volume or context.vol_ratio >= i_f_volume_min)
+
+bool s_filt_long = s_filt_common and
+     (not i_f_ribbon or _eit_adaptive > _ribbon_signal) and
+     (not i_f_mahealth or s_mah >= i_f_mahealth_min) and
+     (not i_f_ribhealth or ribbon_health > 0) and
+     (not i_f_slow or _osc1_slow > i_f_slow_min) and
+     (not i_f_delta or s_delta_sm > 0) and
+     (not i_f_extension or context.atr_distance <= i_f_extension_max)
+
+bool s_filt_short = s_filt_common and
+     (not i_f_ribbon or _eit_adaptive < _ribbon_signal) and
+     (not i_f_mahealth or s_mah <= -i_f_mahealth_min) and
+     (not i_f_ribhealth or ribbon_health < 0) and
+     (not i_f_slow or _osc1_slow < -i_f_slow_min) and
+     (not i_f_delta or s_delta_sm < 0) and
+     (not i_f_extension or context.atr_distance >= -i_f_extension_max)
+
+// ---------- Risk gates: cooldowns, daily limits, session ----------
+bool s_act = barstate.isconfirmed and i_s_enabled and bar_index >= i_s_warmup
+bool s_halt_flatten = false
+if s_act and not st_day_halted
+    if i_c_max_daily_loss > 0 and s_day_pnl_pct <= -i_c_max_daily_loss
+        st_day_halted := true
+        st_halt_reason := "Daily Loss"
+        s_halt_flatten := true
+    else if i_c_max_consec > 0 and st_day_losses_row >= i_c_max_consec
+        st_day_halted := true
+        st_halt_reason := "Loss Streak"
+
+int s_since_exit = na(st_last_exit_bar) ? 999999 : bar_index - st_last_exit_bar
+int s_cd_need = i_c_cd_bars + (st_last_exit_loss ? i_c_cd_loss_bars : 0)
+bool s_cd_ok = s_pos_dir != 0 or s_since_exit >= s_cd_need
+bool s_trades_ok = i_c_max_trades == 0 or st_day_trades < i_c_max_trades
+bool s_gate = s_act and is_market and not st_day_halted and s_trades_ok and s_cd_ok and
+     not s_noentry_zone and not s_flat_zone and not st_pending
+
+bool s_dir_long_ok = i_s_direction != "Short Only"
+bool s_dir_short_ok = i_s_direction != "Long Only"
+
+// Dual-oscillator exhaustion fires on its own bar and may skip the trend/extension filters (counter-trend by design)
+bool s_filt_ct_long = s_filt_common and (not i_f_delta or s_delta_sm > 0)
+bool s_filt_ct_short = s_filt_common and (not i_f_delta or s_delta_sm < 0)
+bool s_dual_long_sig = i_sig_dual and i_sig_dual_bypass and s_dual_bear and s_gate and s_dir_long_ok and s_filt_ct_long
+bool s_dual_short_sig = i_sig_dual and i_sig_dual_bypass and s_dual_bull and s_gate and s_dir_short_ok and s_filt_ct_short
+
+bool s_long_sig = (s_gate and s_dir_long_ok and s_filt_long and s_long_armed) or s_dual_long_sig
+bool s_short_sig = (s_gate and s_dir_short_ok and s_filt_short and s_short_armed) or s_dual_short_sig
+bool s_do_long = s_long_sig and not s_short_sig and (s_pos_dir == 0 or (s_pos_dir < 0 and i_s_allow_reverse))
+bool s_do_short = s_short_sig and not s_long_sig and (s_pos_dir == 0 or (s_pos_dir > 0 and i_s_allow_reverse))
+
+// ---------- Open-position management (evaluated on confirmed bars) ----------
+bool s_flatten_now = false
+string s_flatten_reason = ""
+bool s_plot_exit = false
+bool s_plot_exh = false
+
+if barstate.isconfirmed and s_pos_dir != 0 and st_dir == s_pos_dir
+    float d = st_dir
+    string eid = st_dir > 0 ? "Long" : "Short"
+    st_trade_high := math.max(nz(st_trade_high, high), high)
+    st_trade_low := math.min(nz(st_trade_low, low), low)
+    st_bars += 1
+    float prof_atr = st_entry_atr > 0 ? (close - st_entry_px) * d / st_entry_atr : 0.0
+    bool any_tp = st_tp1_done or st_tp2_done or st_tp3_done
+
+    // Trend-exhaustion response
+    bool exh_evt = st_dir > 0 ? (s_x_dn_exh or (i_sig_dual_exit and s_dual_bull)) : (s_x_up_exh or (i_sig_dual_exit and s_dual_bear))
+    if exh_evt and not st_exh and i_x_action != "Off" and (not i_x_only_profit or prof_atr > 0)
+        st_exh := true
+        s_plot_exh := true
+        if i_x_action == "Close All"
+            s_flatten_now := true
+            s_flatten_reason := "Exhaustion"
+        else if (i_x_action == "Partial Close" or i_x_action == "Tighten + Partial") and not st_exh_partial_done
+            strategy.close(eid, qty_percent=i_x_partial_pct, comment="Exhaustion")
+            st_exh_partial_done := true
+            s_plot_exit := true
+
+    // Signal-based exits
+    bool opp_raw = st_dir > 0 ? s_trig_short : s_trig_long
+    bool will_flip = st_dir > 0 ? s_do_short : s_do_long
+    if i_x_opposite and opp_raw and not will_flip
+        s_flatten_now := true
+        s_flatten_reason := "Opposite Signal"
+    if i_x_ribbon and (st_dir > 0 ? s_x_ribbon_dn : s_x_ribbon_up)
+        s_flatten_now := true
+        s_flatten_reason := "Ribbon Flip"
+    if i_x_zero and (st_dir > 0 ? s_x_zero_dn : s_x_zero_up)
+        s_flatten_now := true
+        s_flatten_reason := "Osc Zero-Cross"
+    if i_x_time_bars > 0 and st_bars >= i_x_time_bars
+        s_flatten_now := true
+        s_flatten_reason := "Time Stop"
+
+    // Risk-driven exits
+    if s_halt_flatten
+        s_flatten_now := true
+        s_flatten_reason := "Daily Loss Limit"
+    if i_c_flatten_eod and s_sess_ok and (s_flat_zone or not is_market)
+        s_flatten_now := true
+        s_flatten_reason := "End of Session"
+
+    // Breakeven
+    if i_be_enable and not st_be_done and ((i_be_on_tp and any_tp) or (i_be_atr > 0 and prof_atr >= i_be_atr))
+        float be_px = st_entry_px + d * i_be_offset * st_entry_atr
+        st_stop := st_dir > 0 ? math.max(st_stop, be_px) : math.min(st_stop, be_px)
+        st_be_done := true
+
+    // Trailing stop: activation, then ratchet only in the profitable direction
+    if not st_trail_on
+        if i_t_immediate or (i_t_on_tp and any_tp) or (i_t_on_exh and st_exh) or (i_t_on_profit and prof_atr >= i_t_profit_atr)
+            st_trail_on := true
+    if st_trail_on
+        bool tight = st_exh and (i_x_action == "Tighten Trail" or i_x_action == "Tighten + Partial")
+        float cand = na
+        if i_t_type == "Chandelier ATR"
+            float m = tight ? i_t_tight_mult : i_t_mult
+            cand := st_dir > 0 ? st_trade_high - m * s_atr : st_trade_low + m * s_atr
+        else if i_t_type == "Ribbon Edge"
+            float buf = tight ? 0.0 : i_t_ribbon_buf * s_atr
+            cand := st_dir > 0 ? ribbon_lower - buf : ribbon_upper + buf
+        else
+            float pc = (tight ? i_t_pct * 0.5 : i_t_pct) / 100.0
+            cand := st_dir > 0 ? st_trade_high * (1.0 - pc) : st_trade_low * (1.0 + pc)
+        if not na(cand)
+            st_stop := st_dir > 0 ? math.max(st_stop, cand) : math.min(st_stop, cand)
+
+// ---------- Order execution ----------
+bool s_plot_long = false
+bool s_plot_short = false
+
+if s_flatten_now and s_pos_dir != 0
+    strategy.close_all(comment=s_flatten_reason)
+    s_plot_exit := true
+    if i_vis_alerts
+        alert("Integration Lite EXIT (" + s_flatten_reason + ") " + syminfo.tickerid + " @ " + str.tostring(close, format.mintick), alert.freq_once_per_bar_close)
+else if s_do_long or s_do_short
+    int ed = s_do_long ? 1 : -1
+    float px = close
+    float sdist = calcStopDist(ed, px)
+    float q = calcQty(px, sdist)
+    if q > 0 and sdist > 0
+        float unit = i_tp_basis == "ATR" ? s_atr : sdist
+        float p_stop = px - ed * sdist
+        float p_tp1 = px + ed * i_tp1_mult * unit
+        float p_tp2 = px + ed * i_tp2_mult * unit
+        float p_tp3 = px + ed * i_tp3_mult * unit
+        strategy.entry(ed > 0 ? "Long" : "Short", ed > 0 ? strategy.long : strategy.short, qty=q)
+        issueExits(ed, p_stop, p_tp1, p_tp2, p_tp3, q, q, false, false, false)
+        if s_pos_dir == 0
+            st_np_at_entry := strategy.netprofit
+        st_pending := true
+        st_signal_bar := bar_index
+        st_sig_dist := sdist
+        st_sig_atr := s_atr
+        st_day_trades += 1
+        st_long_trig_bar := na
+        st_short_trig_bar := na
+        s_plot_long := ed > 0
+        s_plot_short := ed < 0
+        if i_vis_alerts
+            alert("Integration Lite " + (ed > 0 ? "LONG" : "SHORT") + " " + syminfo.tickerid + " @ " + str.tostring(close, format.mintick), alert.freq_once_per_bar_close)
+else if barstate.isconfirmed and s_pos_dir != 0 and st_dir == s_pos_dir and not na(st_stop)
+    issueExits(st_dir, st_stop, st_tp1, st_tp2, st_tp3, st_init_qty, math.abs(s_pos), st_tp1_done, st_tp2_done, st_tp3_done)
+
+// Carry this bar's view of the position into the next bar
+st_prev_size := s_pos
+st_prev_closed := s_closed_now
+
+/////////////////////////////////////////////////////////////
+// STRATEGY VISUALS (drawn last so existing plot layering is untouched)
+/////////////////////////////////////////////////////////////
+
+DISPLAY_S = i_vis_show ? display.all : display.none
+
+plotshape(s_plot_long, "Long Entry", style=shape.triangleup, location=location.belowbar,
+     color=i_vis_color_long, size=size.small, force_overlay=true, display=DISPLAY_S)
+plotshape(s_plot_short, "Short Entry", style=shape.triangledown, location=location.abovebar,
+     color=i_vis_color_short, size=size.small, force_overlay=true, display=DISPLAY_S)
+plotshape(s_plot_exit ? close : na, "Exit", style=shape.xcross, location=location.absolute,
+     color=color.new(color.orange, 0), size=size.tiny, force_overlay=true, display=DISPLAY_S)
+plotshape(s_plot_exh ? close : na, "Exhaustion", style=shape.diamond, location=location.absolute,
+     color=color.new(color.yellow, 0), size=size.tiny, force_overlay=true, display=DISPLAY_S)
+
+bool s_in_trade = s_pos_dir != 0 and st_dir == s_pos_dir
+plot(s_in_trade ? st_entry_px : na, "Entry Price", color=color.new(color.gray, 20), style=plot.style_linebr,
+     linewidth=1, force_overlay=true, display=DISPLAY_S)
+plot(s_in_trade ? st_stop : na, "Stop / Trail", color=color.new(color.red, 10), style=plot.style_linebr,
+     linewidth=2, force_overlay=true, display=DISPLAY_S)
+plot(s_in_trade and i_tp1_pct > 0 and not st_tp1_done ? st_tp1 : na, "TP1", color=color.new(color.green, 20),
+     style=plot.style_linebr, linewidth=1, force_overlay=true, display=DISPLAY_S)
+plot(s_in_trade and i_tp2_pct > 0 and not st_tp2_done ? st_tp2 : na, "TP2", color=color.new(color.green, 20),
+     style=plot.style_linebr, linewidth=1, force_overlay=true, display=DISPLAY_S)
+plot(s_in_trade and i_tp3_pct > 0 and not st_tp3_done ? st_tp3 : na, "TP3", color=color.new(color.green, 20),
+     style=plot.style_linebr, linewidth=1, force_overlay=true, display=DISPLAY_S)
+
+// Status table
+var table s_tbl = na
+if barstate.islast
+    if not na(s_tbl)
+        table.delete(s_tbl)
+        s_tbl := na
+    if i_vis_table
+        s_tbl := table.new(UTIL.getPosition(i_vis_table_pos), 2, 8, bgcolor=i_mtf_table_bg, border_width=0, force_overlay=true)
+        string pos_txt = s_pos_dir > 0 ? "LONG " + str.tostring(s_pos) : s_pos_dir < 0 ? "SHORT " + str.tostring(math.abs(s_pos)) : "Flat"
+        string halt_txt = st_day_halted ? "HALTED: " + st_halt_reason : (i_s_enabled ? "Active" : "Disabled")
+        int cd_left = math.max(0, s_cd_need - s_since_exit)
+        string win_txt = strategy.closedtrades > 0 ? str.tostring(strategy.wintrades / strategy.closedtrades * 100.0, "#.#") + "%" : "-"
+        color pos_col = s_pos_dir > 0 ? i_vis_color_long : s_pos_dir < 0 ? i_vis_color_short : i_mtf_table_text
+        color halt_col = st_day_halted ? i_vis_color_short : i_mtf_table_text
+        table.cell(s_tbl, 0, 0, "Position", text_color=i_mtf_table_text, text_size=size.small, text_halign=text.align_left)
+        table.cell(s_tbl, 1, 0, pos_txt, text_color=pos_col, text_size=size.small, text_halign=text.align_right)
+        table.cell(s_tbl, 0, 1, "Day P&L", text_color=i_mtf_table_text, text_size=size.small, text_halign=text.align_left)
+        table.cell(s_tbl, 1, 1, str.tostring(s_day_pnl_pct, "#.##") + "%", text_color=s_day_pnl_pct >= 0 ? i_vis_color_long : i_vis_color_short, text_size=size.small, text_halign=text.align_right)
+        table.cell(s_tbl, 0, 2, "Trades Today", text_color=i_mtf_table_text, text_size=size.small, text_halign=text.align_left)
+        table.cell(s_tbl, 1, 2, str.tostring(st_day_trades) + (i_c_max_trades > 0 ? " / " + str.tostring(i_c_max_trades) : ""), text_color=i_mtf_table_text, text_size=size.small, text_halign=text.align_right)
+        table.cell(s_tbl, 0, 3, "Loss Streak", text_color=i_mtf_table_text, text_size=size.small, text_halign=text.align_left)
+        table.cell(s_tbl, 1, 3, str.tostring(st_day_losses_row), text_color=i_mtf_table_text, text_size=size.small, text_halign=text.align_right)
+        table.cell(s_tbl, 0, 4, "Cooldown", text_color=i_mtf_table_text, text_size=size.small, text_halign=text.align_left)
+        table.cell(s_tbl, 1, 4, cd_left > 0 ? str.tostring(cd_left) + " bars" : "Ready", text_color=i_mtf_table_text, text_size=size.small, text_halign=text.align_right)
+        table.cell(s_tbl, 0, 5, "Status", text_color=i_mtf_table_text, text_size=size.small, text_halign=text.align_left)
+        table.cell(s_tbl, 1, 5, halt_txt, text_color=halt_col, text_size=size.small, text_halign=text.align_right)
+        table.cell(s_tbl, 0, 6, "Win Rate", text_color=i_mtf_table_text, text_size=size.small, text_halign=text.align_left)
+        table.cell(s_tbl, 1, 6, win_txt, text_color=i_mtf_table_text, text_size=size.small, text_halign=text.align_right)
+        table.cell(s_tbl, 0, 7, "Net P&L", text_color=i_mtf_table_text, text_size=size.small, text_halign=text.align_left)
+        table.cell(s_tbl, 1, 7, str.tostring(strategy.netprofit, format.mintick), text_color=strategy.netprofit >= 0 ? i_vis_color_long : i_vis_color_short, text_size=size.small, text_halign=text.align_right)
