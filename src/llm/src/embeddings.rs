@@ -45,6 +45,18 @@ pub enum EmbeddingError {
     InvalidDevice(String),
 }
 
+impl From<reqwest::Error> for EmbeddingError {
+    fn from(e: reqwest::Error) -> Self {
+        Self::RequestFailed(e.to_string())
+    }
+}
+
+impl From<serde_json::Error> for EmbeddingError {
+    fn from(e: serde_json::Error) -> Self {
+        Self::ParseError(e.to_string())
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct BatchEmbedding {
     pub flat: Vec<f32>,
@@ -53,6 +65,8 @@ pub struct BatchEmbedding {
 }
 
 impl BatchEmbedding {
+    /// Unchecked accessor: panics when `i` is out of bounds.
+    /// Prefer [`try_vector`](Self::try_vector) for input-derived indices.
     pub fn vector(&self, i: usize) -> &[f32] {
         let start = i * self.dims;
         &self.flat[start..start + self.dims]

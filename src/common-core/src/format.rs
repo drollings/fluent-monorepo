@@ -234,6 +234,10 @@ pub fn escape_markdown_cell(cell: &str) -> String {
 /// Empty headers render `(none)` — a zero-column table is unparseable, so
 /// the marker keeps the shape mechanical.
 ///
+/// Generic string-grid renderer. For calibration `(threshold, report)` rows
+/// use [`render_calibration_table`](crate::calibration::render_calibration_table)
+/// instead — different schema, no string-grid call-site code.
+///
 /// # Examples
 ///
 /// ```

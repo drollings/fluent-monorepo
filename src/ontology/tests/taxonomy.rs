@@ -18,8 +18,8 @@ fn fixture_ttl() -> String {
     std::fs::read_to_string(&path).expect("fixture TTL readable")
 }
 
-fn entry(parents: &[&str], ancestors: &[&str]) -> ClassEntry {
-    ClassEntry {
+fn entry(parents: &[&str], ancestors: &[&str]) -> TaxonomyEntry {
+    TaxonomyEntry {
         parents: parents.iter().map(ToString::to_string).collect(),
         ancestors: ancestors.iter().map(ToString::to_string).collect(),
     }
@@ -132,7 +132,7 @@ fn parity_json_string_is_sorted_and_newline_terminated() {
     sorted.sort_unstable();
     assert_eq!(keys, sorted, "sorted keys");
     // Round-trip: the emitted text parses back to the same map.
-    let back: BTreeMap<String, ClassEntry> = serde_json::from_str(&text).expect("round-trip");
+    let back: BTreeMap<String, TaxonomyEntry> = serde_json::from_str(&text).expect("round-trip");
     assert_eq!(back, map);
 }
 
@@ -228,11 +228,11 @@ fn prune_multiple_inheritance_keeps_shallow_path() {
 }
 
 #[test]
-fn normalize_curie_preserves_lowercased_prefix() {
-    assert_eq!(normalize_curie("yago:City_Q515"), "yago:city");
-    assert_eq!(normalize_curie("YAGO:City"), "yago:city");
+fn normalize_taxonomy_curie_preserves_lowercased_prefix() {
+    assert_eq!(normalize_taxonomy_curie("yago:City_Q515"), "yago:city");
+    assert_eq!(normalize_taxonomy_curie("YAGO:City"), "yago:city");
     assert_eq!(
-        normalize_curie("<http://yago-knowledge.org/resource/City_Q515>"),
+        normalize_taxonomy_curie("<http://yago-knowledge.org/resource/City_Q515>"),
         "<http://yago-knowledge.org/resource/city>"
     );
 }
@@ -325,4 +325,10 @@ fn malformed_inputs_never_panic() {
             let _ = crate::turtle::subclass_edges_in_line(line, &prefixes);
         }
     }
+}
+
+#[test]
+fn canonical_taxonomy_entry_constructs_directly() {
+    let e = entry(&["yago:entity"], &["yago:entity"]);
+    assert_eq!(e.parents, vec!["yago:entity".to_string()]);
 }

@@ -21,9 +21,10 @@
 //!
 //! `fluent-db` may import `common-core` (with `sqlite` feature), `fluent-wvr`,
 //! `tokio`, `rusqlite`, `hnsw_rs`, `anndists`, `serde`, `thiserror`,
-//! `tracing`. It must NOT import `fluent-concurrency`, `guidance`, `coral`,
+//! `tracing`, and the weight-free `fluent-types` row-mapper leaf (`NodeId`,
+//! `KnnHit` in `vector` only). It must NOT import `fluent-concurrency`, `guidance`, `coral`,
 //! `fluent-router`, `search-vector`, `knowledge`, `ontology`, `rdf`,
-//! `fluent-types`, or `wasm_ipc`. The dependency direction is **acyclic**:
+//! or `wasm_ipc`. The dependency direction is **acyclic**:
 //! `fluent-concurrency` re-exports `fluent-db::capability::DbCapability`
 //! behind its `db` feature (never the reverse), and the capability-gating
 //! primitives (`CURRENT_CAPS`, `check_capability`, `CapabilityError`) live in

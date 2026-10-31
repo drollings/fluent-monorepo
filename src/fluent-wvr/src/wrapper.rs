@@ -415,11 +415,16 @@ impl ComponentCascade {
     }
 
     /// Append a unit to the end of the cascade.
+    ///
+    /// Canonical insertion name. [`register`](Self::register) is the
+    /// backward-compatible alias (it does not build a `WorkContext` or
+    /// supervise, unlike `SupervisedBatch::register`).
     pub fn push(&mut self, unit: Arc<dyn Component>) {
         self.units.push(unit);
     }
 
-    /// Append a unit to the end of the cascade (alias for `push`).
+    /// Append a unit to the end of the cascade (backward-compatible alias
+    /// for [`push`](Self::push)). Prefer `push` in new code.
     pub fn register(&mut self, unit: Arc<dyn Component>) {
         self.units.push(unit);
     }

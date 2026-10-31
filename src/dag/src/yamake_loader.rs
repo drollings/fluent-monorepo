@@ -4,6 +4,7 @@ use fluent_types::{ExecutorKind, TargetType};
 use internment::ArcIntern;
 use serde::Deserialize;
 
+use crate::error::RegistryError;
 use crate::target::{Target, TargetRegistry};
 
 #[derive(Debug, Deserialize)]
@@ -24,8 +25,11 @@ struct YamakeConfig {
     targets: Vec<TargetDef>,
 }
 
-pub fn load_yamake_config(json: &str) -> (TargetRegistry, CapabilityRegistry) {
-    let config: YamakeConfig = serde_json::from_str(json).expect("invalid yamake.json");
+pub fn load_yamake_config(
+    json: &str,
+) -> Result<(TargetRegistry, CapabilityRegistry), RegistryError> {
+    let config: YamakeConfig = serde_json::from_str(json)
+        .map_err(|e| RegistryError::InvalidCapability(format!("invalid yamake.json: {e}")))?;
     let caps = CapabilityRegistry::new();
     let mut reg = TargetRegistry::new();
 
@@ -68,7 +72,11 @@ pub fn load_yamake_config(json: &str) -> (TargetRegistry, CapabilityRegistry) {
             "file" => TargetType::File,
             "abstract" => TargetType::Abstract,
             "phony" => TargetType::Phony,
-            other => panic!("unknown target_type: {other}"),
+            other => {
+                return Err(RegistryError::InvalidCapability(format!(
+                    "unknown target_type: {other}"
+                )));
+            }
         };
         let name: ArcIntern<str> = ArcIntern::from(td.name.as_str());
         let target = Target::new()
@@ -80,11 +88,10 @@ pub fn load_yamake_config(json: &str) -> (TargetRegistry, CapabilityRegistry) {
             .provides(combined_provides)
             .essential(td.essential)
             .build();
-        reg.register(target)
-            .expect("duplicate target in yamake.json");
+        reg.register(target)?;
     }
 
-    (reg, caps)
+    Ok((reg, caps))
 }
 
 #[cfg(test)]

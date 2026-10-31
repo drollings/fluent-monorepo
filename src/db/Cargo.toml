@@ -31,5 +31,9 @@ anndists = { workspace = true, optional = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 
+[[test]]
+name = "doc_stubs"
+path = "tests/doc_stubs.rs"
+
 [lints]
 workspace = true

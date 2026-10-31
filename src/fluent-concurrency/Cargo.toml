@@ -34,5 +34,17 @@ tokio = { workspace = true, features = ["test-util"] }
 tempfile = { workspace = true }
 fluent-wvr-testutil = { path = "../fluent-wvr-testutil" }
 
+[[test]]
+name = "audit_h5"
+path = "tests/audit_h5.rs"
+
+[[test]]
+name = "pool_paths"
+path = "tests/pool_paths.rs"
+
+[[test]]
+name = "doc_stubs"
+path = "tests/doc_stubs.rs"
+
 [lints]
 workspace = true

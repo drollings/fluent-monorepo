@@ -85,7 +85,7 @@ fn load_class_labels_overrides() {
 #[test]
 fn to_metadata_parent_class_id_matches_subclass_edges() {
     // DRY (red-team M2): `parent_class_id` and `subclass_edges` must derive
-    // from the SAME `ClassEntry.superclass` field — never two sources of
+    // from the SAME `RegistryEntry.superclass` field — never two sources of
     // edges. For every concept with a parent, the metadata's parent id
     // appears as the parent of that exact child in `subclass_edges`.
     let (l, _) = loader();
@@ -118,4 +118,14 @@ fn load_taxonomy_from_file() {
     let stats = l.load_taxonomy(&path).expect("load");
     assert_eq!(stats.classes, 1);
     assert_eq!(stats.edges, 1);
+}
+
+#[test]
+fn canonical_registry_entry_constructs_directly() {
+    let meta = RegistryEntry {
+        iri: "http://schema.org/Person".to_string(),
+        label: "Person".to_string(),
+        superclass: None,
+    };
+    assert_eq!(meta.label, "Person");
 }

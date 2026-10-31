@@ -44,7 +44,3 @@ mod e2e_tests;
 #[cfg(test)]
 #[path = "../tests/affinity_calibration.rs"]
 mod affinity_calibration_tests;
-
-#[cfg(test)]
-#[path = "audit_tests.rs"]
-mod audit_tests;

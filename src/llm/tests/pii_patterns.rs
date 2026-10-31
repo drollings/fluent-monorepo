@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn patterns_table_has_expected_shape() {
     let patterns = pii_patterns();
-    let names: Vec<&str> = patterns.iter().map(|p| p.name).collect();
+    let names: Vec<&str> = patterns.iter().map(|p| p.name.as_str()).collect();
     assert_eq!(names, ["ssn", "card_number", "email", "phone", "api_key"]);
     for p in patterns {
         assert!(!p.regex.as_str().is_empty());
@@ -35,7 +35,7 @@ fn twelve_vs_five_exposure_gap_is_deliberate() {
     // `anonymize` (golden table) while staying out of this table (pre-filter
     // behavior unchanged). Any change to either side fails here first.
     assert_eq!(pii_patterns().len(), 5);
-    let exposed: Vec<&str> = pii_patterns().iter().map(|p| p.name).collect();
+    let exposed: Vec<&str> = pii_patterns().iter().map(|p| p.name.as_str()).collect();
     for name in [
         "nino",
         "sin",

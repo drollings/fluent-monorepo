@@ -1,5 +1,6 @@
 use super::*;
 use crate::tokio_runtime;
+use fluent_wvr::Runtime;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;

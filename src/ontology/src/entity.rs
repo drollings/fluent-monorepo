@@ -17,50 +17,18 @@ pub struct EntityFreq {
 
 use std::sync::LazyLock;
 
+/// Lexicon stoplist loaded from `data/entity_stoplist.txt` (one word per
+/// line). The file is the single home; the `LazyLock` set is the compiled
+/// view. Confidence heuristic: membership means "not a name", never a
+/// task-value judgment.
 static ENTITY_STOPLIST: LazyLock<std::collections::HashSet<&'static str>> = LazyLock::new(|| {
+    const WORDS: &str = include_str!("../data/entity_stoplist.txt");
     let mut s = std::collections::HashSet::new();
-    for w in &[
-        "The",
-        "This",
-        "That",
-        "When",
-        "Where",
-        "What",
-        "Why",
-        "Who",
-        "Which",
-        "How",
-        "Then",
-        "There",
-        "Here",
-        "Now",
-        "Just",
-        "Also",
-        "Some",
-        "Such",
-        "Each",
-        "Every",
-        "Monday",
-        "Tuesday",
-        "Wednesday",
-        "Thursday",
-        "Friday",
-        "Saturday",
-        "Sunday",
-        "January",
-        "February",
-        "March",
-        "April",
-        "May",
-        "June",
-        "July",
-        "August",
-        "September",
-        "October",
-        "November",
-        "December",
-    ] {
-        s.insert(*w);
+    for line in WORDS.lines() {
+        let w = line.trim();
+        if !w.is_empty() {
+            s.insert(Box::leak(w.to_string().into_boxed_str()) as &'static str);
+        }
     }
     s
 });
@@ -117,3 +85,7 @@ pub fn extract_entities(content: &str, min_frequency: usize) -> Vec<EntityFreq> 
 #[cfg(test)]
 #[path = "../tests/entity.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/entity_calibration.rs"]
+mod entity_calibration_tests;

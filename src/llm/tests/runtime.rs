@@ -267,7 +267,7 @@ fn row(key: &'static str, name: &'static str, pinned: bool, last_used: i64) -> L
         parallel: 1,
         pinned,
         resume: false,
-        state: "loaded".into(),
+        state: ResidencyState::Loaded,
         runtime: LlmRuntime::Llama,
         model_bytes: 0,
         context_bytes: 0,

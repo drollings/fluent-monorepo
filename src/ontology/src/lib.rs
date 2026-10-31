@@ -9,6 +9,7 @@ pub mod mapper;
 pub mod migration;
 pub mod normalize;
 pub mod plausibility;
+pub mod prefix;
 pub mod taxonomy;
 pub(crate) mod turtle;
 pub mod yago;
@@ -26,6 +27,24 @@ pub enum OntologyError {
     Inference(String),
     #[error("yago view error: {0}")]
     YagoView(String),
+}
+
+impl From<crate::mapper::MappingError> for OntologyError {
+    fn from(e: crate::mapper::MappingError) -> Self {
+        Self::Mapping(e.to_string())
+    }
+}
+
+impl From<crate::inference::InferenceError> for OntologyError {
+    fn from(e: crate::inference::InferenceError) -> Self {
+        Self::Inference(e.to_string())
+    }
+}
+
+impl From<crate::canonical::CanonicalFormError> for OntologyError {
+    fn from(e: crate::canonical::CanonicalFormError) -> Self {
+        Self::Mapping(e.to_string())
+    }
 }
 
 pub use plausibility::{score_plausibility, PlausibilityInput};

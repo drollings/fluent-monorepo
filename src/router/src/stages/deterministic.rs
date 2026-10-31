@@ -147,7 +147,7 @@ pub(crate) fn builtin_filter_engine() -> DeterministicFilterEngine {
     let pii_patterns = fluent_llm::pii_patterns::pii_patterns();
     let pii_map: std::collections::HashMap<&str, &str> = pii_patterns
         .iter()
-        .map(|p| (p.name, p.regex.as_str()))
+        .map(|p| (p.name.as_str(), p.regex.as_str()))
         .collect();
     fn pii_regex<'a>(map: &'a HashMap<&str, &str>, key: &str, fallback: &'a str) -> String {
         map.get(key).copied().unwrap_or(fallback).to_string()

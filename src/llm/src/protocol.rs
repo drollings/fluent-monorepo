@@ -86,11 +86,36 @@ impl LlmError {
     }
 }
 
+impl From<reqwest::Error> for LlmError {
+    fn from(e: reqwest::Error) -> Self {
+        Self::Http(e.to_string())
+    }
+}
+
 /// A single chat message in a conversation.
 #[derive(Debug, Clone, Serialize, Deserialize, Builder)]
 pub struct ChatMessage {
     pub role: String,
     pub content: String,
+}
+
+impl ChatMessage {
+    /// Parse the wire `role` into the closed `ChatRole` vocabulary.
+    ///
+    /// Refusal measures task-value correctness of the input (unknown role
+    /// for this protocol), never producer confidence.
+    pub fn role_enum(&self) -> Result<crate::roles::ChatRole, crate::roles::RoleParseError> {
+        self.role.parse()
+    }
+
+    /// Construct a message from a closed-vocabulary role.
+    #[must_use]
+    pub fn with_role(role: crate::roles::ChatRole, content: impl Into<String>) -> Self {
+        Self {
+            role: role.as_str().to_string(),
+            content: content.into(),
+        }
+    }
 }
 
 /// Per-request LLM configuration. The `LlmClient` carries one of these and

@@ -43,3 +43,51 @@ fn non_finite_scores_do_not_panic_and_treat_as_no_match() {
         );
     }
 }
+
+#[test]
+fn router_route_kind_round_trips_through_display_and_fromstr() {
+    use crate::score_matrix::RouterRouteKind;
+    for kind in [
+        RouterRouteKind::Plan,
+        RouterRouteKind::Rigor,
+        RouterRouteKind::Local,
+    ] {
+        assert_eq!(kind.as_str(), kind.to_string());
+        assert_eq!(kind.as_str().parse::<RouterRouteKind>().unwrap(), kind);
+    }
+}
+
+#[test]
+fn router_route_kind_rejects_unknown_with_typed_error() {
+    use crate::score_matrix::RouterRouteKind;
+    let err = "charisma".parse::<RouterRouteKind>().unwrap_err();
+    assert_eq!(
+        err,
+        crate::score_matrix::UnknownRouterRoute("charisma".into())
+    );
+}
+
+#[test]
+fn router_default_built_from_enum_matches_string_built_matrix() {
+    use crate::score_matrix::RouterRouteKind;
+    let m = ScoreMatrix::router_default();
+    for kind in [
+        RouterRouteKind::Plan,
+        RouterRouteKind::Rigor,
+        RouterRouteKind::Local,
+    ] {
+        assert!(m.routes().contains_key(kind.as_str()));
+    }
+    let scores = HashMap::from([
+        ("completeness".into(), 0.8),
+        ("risk".into(), 0.6),
+        ("coherence".into(), 0.9),
+        ("complexity".into(), 0.7),
+    ]);
+    let resolved: Vec<String> = m
+        .resolve(&scores)
+        .iter()
+        .map(|r| r.route_name.clone())
+        .collect();
+    assert_eq!(resolved, vec!["rigor".to_string()]);
+}

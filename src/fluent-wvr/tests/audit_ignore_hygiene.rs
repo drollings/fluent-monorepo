@@ -16,7 +16,7 @@ fn audit_files() -> Vec<PathBuf> {
                 .is_some_and(|name| name.starts_with("audit_") && name.ends_with(".rs"))
         })
         .collect();
-    files.push(manifest.join("../fluent-concurrency/src/audit_tests.rs"));
+    files.push(manifest.join("../fluent-concurrency/tests/audit_h5.rs"));
     files.sort();
     files
 }

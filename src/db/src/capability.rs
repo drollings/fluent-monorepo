@@ -74,3 +74,7 @@ impl DbCapability {
 #[cfg(all(test, feature = "sqlite"))]
 #[path = "../tests/capability.rs"]
 mod tests;
+
+#[cfg(all(test, feature = "sqlite"))]
+#[path = "../tests/capability_surface.rs"]
+mod capability_surface_tests;

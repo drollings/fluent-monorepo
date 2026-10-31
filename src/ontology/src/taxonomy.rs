@@ -16,6 +16,18 @@
 //! `yago:remix  u0028 work u0029`, Rust `yago:remix ( work )`. The CURIE
 //! prefix is preserved lowercased in both. Hyphens are word separators only
 //! in [`crate::normalize::matches_lexicon`], never rewritten here.
+//!
+//! # Canonical entry path
+//!
+//! The pipeline has exactly four stages, and every caller uses them in this
+//! order: [`collect_edges`] (the single Turtle reader over
+//! [`crate::turtle::subclass_edges`]) then [`build_json`] (or the one-call
+//! [`taxonomy_from_ttl`]), then [`to_json_string`] for operator output and
+//! [`to_flat`] for the ancestors-only view. [`transitive_ancestors`] is the
+//! shared build-time closure underneath [`build_json`] (memoized DFS,
+//! cycle-safe); the only *runtime* closure is the shared
+//! [`HierarchyIndex`](fluent_dag::hierarchy::HierarchyIndex) composed by
+//! `YagoView`. There is no second build-time graph walk.
 
 #![forbid(unsafe_code)]
 
@@ -28,7 +40,7 @@ use crate::normalize::{normalize_extracted_name, normalize_yago_name};
 
 /// One taxonomy entry: direct parents + all transitive ancestors.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ClassEntry {
+pub struct TaxonomyEntry {
     /// Direct `rdfs:subClassOf` parents (normalized, sorted).
     pub parents: Vec<String>,
     /// Full transitive ancestor closure (normalized, sorted, deduplicated).
@@ -74,8 +86,13 @@ pub fn curie_for_iri(iri: &str, prefixes: &BTreeMap<String, String>) -> String {
 /// [`normalize_yago_name`] (Wikidata `_Q\d+` strip, `_UXXXX` decode,
 /// `_`→space, lowercase, WS collapse). Full `<...>` IRIs normalize the
 /// inner IRI the same way.
+///
+/// The prefix branch matches on the closed [`crate::prefix::CuriePrefix`]
+/// set; genuinely open prefixes (arbitrary TTL `@prefix` declarations) take
+/// the same formatting path with their carried text, since the open key set
+/// cannot be closed by construction.
 #[must_use]
-pub fn normalize_curie(curie: &str) -> String {
+pub fn normalize_taxonomy_curie(curie: &str) -> String {
     let curie = curie.trim();
     if let Some(inner) = curie.strip_prefix('<').and_then(|s| s.strip_suffix('>')) {
         // Full IRI: normalize the whole inner string (lowercase,
@@ -88,8 +105,8 @@ pub fn normalize_curie(curie: &str) -> String {
         // no `<>` wrapping — mirrors the Python bare branch.
         return normalize_extracted_name(curie);
     }
-    if let Some((pfx, _)) = curie.split_once(':') {
-        return format!("{}:{}", pfx.to_lowercase(), normalize_yago_name(curie));
+    if let Some((prefix, _)) = crate::prefix::split_prefix(curie) {
+        return format!("{prefix}:{}", normalize_yago_name(curie));
     }
     normalize_yago_name(curie)
 }
@@ -157,7 +174,7 @@ pub fn build_json(
     prefixes: &BTreeMap<String, String>,
     yago_only: bool,
     use_curie: bool,
-) -> BTreeMap<String, ClassEntry> {
+) -> BTreeMap<String, TaxonomyEntry> {
     let mut direct: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for (s, o) in edges {
         direct.entry(s.clone()).or_default().insert(o.clone());
@@ -173,9 +190,9 @@ pub fn build_json(
 
     let name_of = |iri: &str| {
         if use_curie {
-            normalize_curie(&curie_for_iri(iri, prefixes))
+            normalize_taxonomy_curie(&curie_for_iri(iri, prefixes))
         } else {
-            normalize_curie(iri)
+            normalize_taxonomy_curie(iri)
         }
     };
 
@@ -203,7 +220,7 @@ pub fn build_json(
         .map(|(k, (parents, ancestors))| {
             (
                 k,
-                ClassEntry {
+                TaxonomyEntry {
                     parents: parents.into_iter().collect(),
                     ancestors: ancestors.into_iter().collect(),
                 },
@@ -218,7 +235,7 @@ pub fn taxonomy_from_ttl(
     ttl: &str,
     yago_only: bool,
     use_curie: bool,
-) -> BTreeMap<String, ClassEntry> {
+) -> BTreeMap<String, TaxonomyEntry> {
     let (prefixes, edges) = collect_edges(ttl);
     build_json(&edges, &prefixes, yago_only, use_curie)
 }
@@ -226,7 +243,7 @@ pub fn taxonomy_from_ttl(
 /// Serialize the map exactly as the operator JSON: pretty, 2-space indent,
 /// sorted keys, trailing newline.
 #[must_use]
-pub fn to_json_string(map: &BTreeMap<String, ClassEntry>) -> String {
+pub fn to_json_string(map: &BTreeMap<String, TaxonomyEntry>) -> String {
     format!(
         "{}\n",
         serde_json::to_string_pretty(map).unwrap_or_default()
@@ -235,7 +252,7 @@ pub fn to_json_string(map: &BTreeMap<String, ClassEntry>) -> String {
 
 /// Flat mapping: class → ancestors list.
 #[must_use]
-pub fn to_flat(map: &BTreeMap<String, ClassEntry>) -> BTreeMap<String, Vec<String>> {
+pub fn to_flat(map: &BTreeMap<String, TaxonomyEntry>) -> BTreeMap<String, Vec<String>> {
     map.iter()
         .map(|(k, v)| (k.clone(), v.ancestors.clone()))
         .collect()
@@ -395,3 +412,7 @@ pub fn prune_ttl(ttl: &str, num_tiers: usize) -> String {
 #[cfg(test)]
 #[path = "../tests/taxonomy.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/curie_disambiguation.rs"]
+mod curie_disambiguation_tests;

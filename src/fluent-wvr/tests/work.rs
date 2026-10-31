@@ -100,14 +100,13 @@ fn work_output_data_take_consumes_self() {
 }
 
 #[test]
-#[allow(deprecated)]
-fn work_output_typed_infallible_roundtrip() {
+fn work_output_typed_lossy_roundtrip() {
     #[derive(serde::Serialize, serde::Deserialize, PartialEq, Debug)]
     struct MyData {
         x: i32,
     }
     let data = MyData { x: 42 };
-    let output = WorkOutput::typed_infallible("ok", &data);
+    let output = WorkOutput::typed_lossy("ok", &data);
     assert!(output.success);
     let recovered: MyData = output.data_as().unwrap();
     assert_eq!(recovered, data);

@@ -29,18 +29,6 @@ pub trait VectorStore: Send + Sync {
     }
 }
 
-/// Back-compat shim for the pre-rename `VectorIndex` store-trait name: a
-/// deprecated supertrait with a blanket impl, so both `impl VectorIndex`
-/// and `dyn VectorIndex` positions keep compiling (with a warning).
-/// `fluent_db::vector::VectorIndex` (the math seam) keeps that name; new code
-/// uses `VectorStore`. Remove next minor.
-#[deprecated(
-    note = "use VectorStore: VectorIndex unambiguously means fluent_db::vector::VectorIndex"
-)]
-pub trait VectorIndex: VectorStore {}
-#[allow(deprecated)]
-impl<T: VectorStore> VectorIndex for T {}
-
 /// Byte-identical brute-force implementation — the ground-truth recall
 /// baseline for the HNSW harness.
 pub struct BruteForceIndex {

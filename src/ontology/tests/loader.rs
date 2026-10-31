@@ -102,3 +102,11 @@ fn loader_scales_linearly_on_synthetic_registry() {
     assert_eq!(stats.classes, 3000);
     assert_eq!(stats.edges, 2999);
 }
+
+#[test]
+fn canonical_registry_entry_round_trips_through_loader() {
+    let raw = entry("http://schema.org/Person", "Person", None);
+    let mut loader = YaGoLoader::new();
+    let stats = loader.load_taxonomy_json(&format!("[{raw}]")).unwrap();
+    assert_eq!(stats.classes, 1);
+}

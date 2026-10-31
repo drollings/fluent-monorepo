@@ -30,7 +30,7 @@ use crate::OntologyError;
 
 /// One registry entry (the `yago_classes.json` line format).
 #[derive(Debug, Clone, Deserialize)]
-pub struct ClassEntry {
+pub struct RegistryEntry {
     pub iri: String,
     pub label: String,
     #[serde(default)]
@@ -65,7 +65,7 @@ pub fn yago_class_id(iri: &str) -> InterlinguaId {
 
 /// The `ConceptMetadata` for a registry entry (F5 discipline: `node_id` is
 /// the full 64-bit hash, never derived from the truncated `local_id`).
-fn to_metadata(entry: &ClassEntry) -> ConceptMetadata {
+fn to_metadata(entry: &RegistryEntry) -> ConceptMetadata {
     let id = yago_class_id(&entry.iri);
     ConceptMetadata {
         id,
@@ -115,7 +115,7 @@ impl YaGoLoader {
 
     /// Parse a registry JSON string into concepts + edges.
     pub fn load_taxonomy_json(&mut self, raw: &str) -> Result<LoadStats, OntologyError> {
-        let entries: Vec<ClassEntry> = serde_json::from_str(raw)
+        let entries: Vec<RegistryEntry> = serde_json::from_str(raw)
             .map_err(|e| OntologyError::Mapping(format!("parse yago_classes: {e}")))?;
         for entry in &entries {
             let meta = to_metadata(entry);

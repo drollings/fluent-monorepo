@@ -131,7 +131,7 @@ fn ann_calibration_recall_and_latency_baseline() {
 
 #[test]
 fn store_and_math_seams_coexist_without_qualification_clash() {
-    // After the rename, `VectorIndex` unambiguously means the stateless math
+    // `VectorIndex` unambiguously means the stateless math
     // seam (`fluent_db::vector`) while the stateful store seam is
     // `VectorStore`: both names resolve unqualified in one scope.
     use super::VectorStore;
@@ -146,28 +146,4 @@ fn store_and_math_seams_coexist_without_qualification_clash() {
         "one".to_string(),
     )]);
     takes_math(&math);
-}
-
-#[test]
-#[allow(deprecated)]
-fn deprecated_vector_index_positions_keep_compiling() {
-    // Back-compat pin: implementors write `impl VectorStore` (the only
-    // method provider — a second method set would make every call site
-    // ambiguous) and still satisfy the deprecated `dyn VectorIndex`
-    // position until removal.
-    use std::sync::Arc;
-    struct Legacy;
-    impl VectorStore for Legacy {
-        fn insert(&self, _: NodeId, _: &[f32]) -> Result<(), fluent_db::error::DbError> {
-            Ok(())
-        }
-        fn search(&self, _: &[f32], _: usize) -> Vec<(NodeId, f64)> {
-            Vec::new()
-        }
-        fn len(&self) -> usize {
-            0
-        }
-    }
-    let legacy: Arc<dyn VectorIndex> = Arc::new(Legacy);
-    assert!(legacy.is_empty());
 }

@@ -179,3 +179,22 @@ fn top_k_nan_scores_do_not_panic() {
     let out = top_k_by_score(items, 3, |t| t.1, true);
     assert_eq!(out.len(), 3);
 }
+
+#[test]
+fn score_dimension_round_trips_through_display_and_fromstr() {
+    for dim in [
+        ScoreDimension::Coherence,
+        ScoreDimension::Complexity,
+        ScoreDimension::Completeness,
+        ScoreDimension::Risk,
+    ] {
+        assert_eq!(dim.as_str(), dim.to_string());
+        assert_eq!(dim.as_str().parse::<ScoreDimension>().unwrap(), dim);
+    }
+}
+
+#[test]
+fn score_dimension_rejects_unknown_with_typed_error() {
+    let err = "charisma".parse::<ScoreDimension>().unwrap_err();
+    assert_eq!(err, UnknownScoreDimension("charisma".to_string()));
+}

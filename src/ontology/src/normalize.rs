@@ -70,7 +70,7 @@ pub fn normalize_yago_name(iri: &str) -> String {
 
 /// Normalize a CURIE (`yago:Foo` / `schema:Bar`) — lower, `UXXXX` decode, `_→space`.
 #[must_use]
-pub fn normalize_curie(curie: &str) -> String {
+pub fn normalize_lexicon_name(curie: &str) -> String {
     normalize_yago_name(curie)
 }
 
@@ -78,14 +78,14 @@ pub fn normalize_curie(curie: &str) -> String {
 /// schema.org, `yago:Person` for the YaGO resource namespace, else the IRI
 /// unchanged. The single shared prefix table behind the loader
 /// (`canonical_class_name`), the view's curie keys, and [`lemma_to_curies`].
+/// Matches on the closed [`crate::prefix::CuriePrefix`] IRI bases so new
+/// code never repeats the raw base strings.
 #[must_use]
 pub fn iri_to_curie(iri: &str) -> String {
-    const SCHEMA: &str = "http://schema.org/";
-    const YAGO: &str = "http://yago-knowledge.org/resource/";
-    if let Some(local) = iri.strip_prefix(SCHEMA) {
-        format!("schema:{local}")
-    } else if let Some(local) = iri.strip_prefix(YAGO) {
-        format!("yago:{local}")
+    if let Some(local) = iri.strip_prefix(crate::prefix::SCHEMA_IRI_BASE) {
+        format!("{}:{local}", crate::prefix::CuriePrefix::Schema)
+    } else if let Some(local) = iri.strip_prefix(crate::prefix::YAGO_IRI_BASE) {
+        format!("{}:{local}", crate::prefix::CuriePrefix::Yago)
     } else {
         iri.to_string()
     }
@@ -179,3 +179,7 @@ pub fn matches_lexicon(normalized: &str, lexicon: &std::collections::HashSet<Str
     }
     false
 }
+
+#[cfg(test)]
+#[path = "../tests/normalize.rs"]
+mod normalize_tests;

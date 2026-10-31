@@ -19,6 +19,68 @@ pub trait VectorIndex {
     fn knn(&self, query: &[f32], k: usize) -> Vec<fluent_types::KnnHit>;
 }
 
+/// Plain-data brute-force index generic over id type.
+///
+/// New code prefers this over the `NodeId`-specialized `BruteForceIndex`:
+/// the shared crate stays free of consumer row-mappers while existing
+/// `NodeId` callers keep working unchanged through the adapter below.
+/// For `Id = NodeId`, [`knn_hits`](Self::knn_hits) returns workspace
+/// [`KnnHit`] rows directly without a second lookup.
+pub struct PlainBruteForceIndex<Id: Clone + Eq + std::hash::Hash> {
+    pub entries: Vec<(Id, Vec<f32>, String)>,
+    names: std::collections::HashMap<Id, String>,
+}
+
+impl<Id: Clone + Eq + std::hash::Hash> PlainBruteForceIndex<Id> {
+    /// Build the index and its id → name map in one pass.
+    #[must_use]
+    pub fn new(entries: Vec<(Id, Vec<f32>, String)>) -> Self {
+        let mut names = std::collections::HashMap::with_capacity(entries.len());
+        for (id, _, name) in &entries {
+            names.entry(id.clone()).or_insert_with(|| name.clone());
+        }
+        Self { entries, names }
+    }
+
+    /// Brute-force KNN returning `(id, distance, name)` triples.
+    #[must_use]
+    pub fn knn(&self, query: &[f32], k: usize) -> Vec<(Id, f32, String)> {
+        let results = knn_brute_force(
+            query,
+            self.entries
+                .iter()
+                .map(|(id, emb, _)| (id.clone(), emb.as_slice())),
+            k,
+        );
+        results
+            .into_iter()
+            .map(|(id, dist)| {
+                let name = self.names.get(&id).cloned().unwrap_or_default();
+                (id, dist, name)
+            })
+            .collect()
+    }
+}
+
+impl PlainBruteForceIndex<fluent_types::NodeId> {
+    /// KNN returning workspace [`KnnHit`](fluent_types::KnnHit) rows.
+    ///
+    /// Adapter so `NodeId` callers can migrate from [`BruteForceIndex`] to
+    /// the generic index without a second lookup: identical results,
+    /// identical first-wins naming.
+    #[must_use]
+    pub fn knn_hits(&self, query: &[f32], k: usize) -> Vec<fluent_types::KnnHit> {
+        self.knn(query, k)
+            .into_iter()
+            .map(|(id, dist, name)| fluent_types::KnnHit {
+                node_id: id,
+                distance: dist,
+                name: name.into(),
+            })
+            .collect()
+    }
+}
+
 /// Brute-force index wrapping `knn_brute_force`, with the id → name lookup
 /// precomputed once at construction (not rebuilt per query).
 pub struct BruteForceIndex {

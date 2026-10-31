@@ -278,7 +278,7 @@ pub const BINARY_CONTROL_CHAR_RATIO_PERCENT: u64 = 30;
 /// zvec-grep uses jieba + lowercase. SQLite FTS5 has no jieba tokenizer;
 /// the P0 decision is FTS5 `unicode61` with diacritics removed (case folding
 /// is inherent), plus application-level CJK bigram expansion (see
-/// [`crate::search_types::cjk_bigrams`]) so CJK substring queries match without
+/// [`common_core::string::cjk_bigrams`]) so CJK substring queries match without
 /// a dictionary. Spelling is the space-separated FTS5 directive form
 /// (verified against bundled SQLite — the quoted `=` form does not parse).
 /// Revisit only with A/B evidence in P1.

@@ -165,7 +165,10 @@ impl<J: Send + Sync + 'static> CreditGatedPool<J> {
     /// Enqueue a job, bounded by the credit gate (blocks only when credit is
     /// exhausted — the hot path returns immediately otherwise).
     ///
-    /// Only the closed-check + handle snapshot run under the pool mutex;
+    /// Narrower than `WorkerPool::submit` (which only bounds the queue) and
+    /// `Limiter::run` (which only bounds concurrency): this gate acquires a
+    /// credit token first, then enqueues. Only the closed-check + handle
+    /// snapshot run under the pool mutex;
     /// the guard is dropped before the credit gate, so producers no longer
     /// serialize on the mutex while waiting for credit.
     pub async fn submit(&self, job: J) -> Result<(), PoolError> {
@@ -195,6 +198,10 @@ impl<J: Send + Sync + 'static> CreditGatedPool<J> {
     /// Drain in-flight jobs and shut the pool down (graceful shutdown). The
     /// pool is unusable afterward. Idempotent: concurrent or repeated drains
     /// take the pool at most once and all return after shutdown.
+    ///
+    /// Canonical lifecycle name is `drain` (it waits out in-flight jobs);
+    /// [`shutdown`](Self::shutdown) and [`close`](Self::close) are aliases
+    /// so `WorkerPool::shutdown` / `Queue::close` call sites read uniformly.
     pub async fn drain(&self) {
         let pool = {
             let mut guard = self.pool.lock().await;
@@ -223,6 +230,18 @@ impl<J: Send + Sync + 'static> CreditGatedPool<J> {
                 ),
             }
         }
+    }
+
+    /// Alias for [`drain`](Self::drain) matching `WorkerPool::shutdown`
+    /// spelling at generic `SinkPool` call sites.
+    pub async fn shutdown(&self) {
+        self.drain().await;
+    }
+
+    /// Alias for [`drain`](Self::drain) matching `Queue::close` spelling
+    /// at queue-lifecycle call sites.
+    pub async fn close(&self) {
+        self.drain().await;
     }
 
     /// The number of worker tasks processing jobs.

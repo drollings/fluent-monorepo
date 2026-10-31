@@ -90,35 +90,33 @@ fn matched_by_provenance_matches_default() {
 
 // --- extractSymbolNames + symbolNameFromToken ---
 
-// P0 contract surface: these tests pin the stable `search_types` wrappers
-// (deprecated shims over the canonical homes) — the `allow` is the point:
-// the surface must keep working while new code takes canonical paths.
+// P0 contract surface: these tests pin the canonical homes directly
+// (`search_vector::tokens`) — the deprecated `search_types` wrappers are
+// removed, so new and old code take the canonical paths.
 #[test]
-#[allow(deprecated)]
 fn extract_symbol_names_skips_keyword_stoplist() {
     assert_eq!(
-        extract_symbol_names("find Namespace::AlphaSymbol"),
+        search_vector::tokens::symbol_names("find Namespace::AlphaSymbol"),
         vec!["Namespace::AlphaSymbol".to_string()]
     );
-    assert_eq!(extract_symbol_names("class Foo"), vec!["Foo".to_string()]);
-    assert!(extract_symbol_names("find where explain").is_empty());
+    assert_eq!(search_vector::tokens::symbol_names("class Foo"), vec!["Foo".to_string()]);
+    assert!(search_vector::tokens::symbol_names("find where explain").is_empty());
 }
 
 #[test]
-#[allow(deprecated)]
 fn symbol_name_from_token_keeps_uppercase_owner_only() {
     assert_eq!(
-        symbol_name_from_token("AlphaSymbol"),
+        search_vector::tokens::symbol_name_from_token("AlphaSymbol"),
         Some("AlphaSymbol".to_string())
     );
     assert_eq!(
-        symbol_name_from_token("Namespace::AlphaSymbol"),
+        search_vector::tokens::symbol_name_from_token("Namespace::AlphaSymbol"),
         Some("Namespace::AlphaSymbol".to_string())
     );
     // Lowercase owner is dropped (zvec: `foo::bar` → `bar`).
-    assert_eq!(symbol_name_from_token("foo::bar"), Some("bar".to_string()));
-    assert_eq!(symbol_name_from_token("123"), None);
-    assert_eq!(symbol_name_from_token("a-b"), None);
+    assert_eq!(search_vector::tokens::symbol_name_from_token("foo::bar"), Some("bar".to_string()));
+    assert_eq!(search_vector::tokens::symbol_name_from_token("123"), None);
+    assert_eq!(search_vector::tokens::symbol_name_from_token("a-b"), None);
 }
 
 // --- char boundaries (surrogate-pair safety; zvec `code.test.mjs:327`) ---
@@ -260,30 +258,28 @@ fn symbol_vocabularies_are_closed() {
 // --- FTS/CJK goldens (new; P1 builds the table on this contract) ---
 
 #[test]
-#[allow(deprecated)]
 fn cjk_detection_covers_han_hiragana_katakana_hangul() {
-    assert!(is_cjk_char('日'));
-    assert!(is_cjk_char('あ'));
-    assert!(is_cjk_char('ア'));
-    assert!(is_cjk_char('한'));
-    assert!(!is_cjk_char('a'));
-    assert!(!is_cjk_char('1'));
-    assert!(!is_cjk_char(' '));
+    assert!(common_core::string::is_cjk_char('日'));
+    assert!(common_core::string::is_cjk_char('あ'));
+    assert!(common_core::string::is_cjk_char('ア'));
+    assert!(common_core::string::is_cjk_char('한'));
+    assert!(!common_core::string::is_cjk_char('a'));
+    assert!(!common_core::string::is_cjk_char('1'));
+    assert!(!common_core::string::is_cjk_char(' '));
 }
 
 #[test]
-#[allow(deprecated)]
 fn cjk_bigrams_expand_runs_without_dictionary() {
-    assert_eq!(cjk_bigrams("日本語"), vec!["日本", "本語"]);
+    assert_eq!(common_core::string::cjk_bigrams("日本語"), vec!["日本", "本語"]);
     assert_eq!(
-        cjk_bigrams("日本語テスト"),
+        common_core::string::cjk_bigrams("日本語テスト"),
         vec!["日本", "本語", "語テ", "テス", "スト"]
     );
     // Non-CJK text breaks runs; single trailing chars emit nothing.
-    assert!(cjk_bigrams("hello").is_empty());
-    assert_eq!(cjk_bigrams("a日本b"), vec!["日本"]);
-    assert!(cjk_bigrams("日").is_empty());
-    assert!(cjk_bigrams("").is_empty());
+    assert!(common_core::string::cjk_bigrams("hello").is_empty());
+    assert_eq!(common_core::string::cjk_bigrams("a日本b"), vec!["日本"]);
+    assert!(common_core::string::cjk_bigrams("日").is_empty());
+    assert!(common_core::string::cjk_bigrams("").is_empty());
 }
 
 #[test]
@@ -305,52 +301,50 @@ fn search_plan_value_types_carry_wire_shape() {
 // --- M13.1 characterization: symbol-token edges (verbatim current outputs) ---
 
 #[test]
-#[allow(deprecated)]
 fn m13_extract_symbol_names_edge_cases() {
     // Empty input yields nothing.
-    assert!(extract_symbol_names("").is_empty());
+    assert!(search_vector::tokens::symbol_names("").is_empty());
     // First-seen order wins; repeats collapse.
     assert_eq!(
-        extract_symbol_names("foo bar foo"),
+        search_vector::tokens::symbol_names("foo bar foo"),
         vec!["foo".to_string(), "bar".to_string()]
     );
     // `~` starts a token and survives validation.
-    assert_eq!(extract_symbol_names("~temp"), vec!["~temp".to_string()]);
+    assert_eq!(search_vector::tokens::symbol_names("~temp"), vec!["~temp".to_string()]);
     // Single colons fail token validation (only `::` splits).
-    assert!(extract_symbol_names("a:b:c").is_empty());
+    assert!(search_vector::tokens::symbol_names("a:b:c").is_empty());
     // Non-ASCII bytes terminate the ASCII token scan.
-    assert_eq!(extract_symbol_names("café"), vec!["caf".to_string()]);
+    assert_eq!(search_vector::tokens::symbol_names("café"), vec!["caf".to_string()]);
     // Mixed keywords + symbols keep symbols in order.
     assert_eq!(
-        extract_symbol_names("find Foo where Bar"),
+        search_vector::tokens::symbol_names("find Foo where Bar"),
         vec!["Foo".to_string(), "Bar".to_string()]
     );
 }
 
 #[test]
-#[allow(deprecated)]
 fn m13_symbol_name_from_token_edges() {
     // Trailing / leading `::` empties collapse away.
-    assert_eq!(symbol_name_from_token("foo::"), Some("foo".to_string()));
-    assert_eq!(symbol_name_from_token("::foo"), Some("foo".to_string()));
+    assert_eq!(search_vector::tokens::symbol_name_from_token("foo::"), Some("foo".to_string()));
+    assert_eq!(search_vector::tokens::symbol_name_from_token("::foo"), Some("foo".to_string()));
     // Deep chains keep the last pair when the owner is uppercase.
     assert_eq!(
-        symbol_name_from_token("Foo::Bar::baz"),
+        search_vector::tokens::symbol_name_from_token("Foo::Bar::baz"),
         Some("Bar::baz".to_string())
     );
     assert_eq!(
-        symbol_name_from_token("foo::Bar::baz"),
+        search_vector::tokens::symbol_name_from_token("foo::Bar::baz"),
         Some("Bar::baz".to_string())
     );
     assert_eq!(
-        symbol_name_from_token("foo::bar::baz"),
+        search_vector::tokens::symbol_name_from_token("foo::bar::baz"),
         Some("baz".to_string())
     );
     // Degenerate inputs.
-    assert_eq!(symbol_name_from_token(""), None);
-    assert_eq!(symbol_name_from_token("::"), None);
-    assert_eq!(symbol_name_from_token("a_b"), Some("a_b".to_string()));
-    assert_eq!(symbol_name_from_token("A::~x"), Some("A::~x".to_string()));
+    assert_eq!(search_vector::tokens::symbol_name_from_token(""), None);
+    assert_eq!(search_vector::tokens::symbol_name_from_token("::"), None);
+    assert_eq!(search_vector::tokens::symbol_name_from_token("a_b"), Some("a_b".to_string()));
+    assert_eq!(search_vector::tokens::symbol_name_from_token("A::~x"), Some("A::~x".to_string()));
 }
 
 // --- M6.1 characterization: RRF goldens (verbatim current outputs, K=60) ---

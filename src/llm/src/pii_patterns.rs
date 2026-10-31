@@ -28,6 +28,8 @@ pub static GENERIC_API_KEY_RE: LazyLock<Regex> =
 pub static IPV6_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\b([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}\b").unwrap());
 
+use crate::pii_label::PiiLabel;
+
 /// Canonical PII detection patterns.
 ///
 /// The compiled statics above are the single source of truth. This table is
@@ -43,40 +45,102 @@ pub static IPV6_RE: LazyLock<Regex> =
 /// (unifying the two consumers on one table) is a behavior-change proposal,
 /// filed separately — see `tests/pii_patterns.rs` for the lock.
 pub struct PiiPattern {
-    pub name: &'static str,
+    pub name: PiiLabel,
     pub regex: &'static LazyLock<Regex>,
 }
 
 pub fn pii_patterns() -> &'static [PiiPattern] {
     static PATTERNS: &[PiiPattern] = &[
         PiiPattern {
-            name: "ssn",
+            name: PiiLabel::Ssn,
             regex: &SSN_US_RE,
         },
         PiiPattern {
-            name: "card_number",
+            name: PiiLabel::CardNumber,
             regex: &CREDIT_CARD_RE,
         },
         PiiPattern {
-            name: "email",
+            name: PiiLabel::Email,
             regex: &EMAIL_RE,
         },
         PiiPattern {
-            name: "phone",
+            name: PiiLabel::Phone,
             regex: &PHONE_US_RE,
         },
         PiiPattern {
-            name: "api_key",
+            name: PiiLabel::ApiKey,
             regex: &API_KEY_RE,
         },
     ];
     PATTERNS
 }
 
+/// Full 12-pattern table (the 5 request-path patterns plus the 7
+/// anonymize-only statics), for detectors that opt into the wider net.
+///
+/// Additive only: [`pii_patterns`] keeps its historical 5-pattern behavior
+/// (widening it would change which spans the review pre-filter reports).
+/// New detectors choose explicitly: `pii_patterns()` for the locked
+/// baseline, `pii_patterns_all()` for the full set.
+pub fn pii_patterns_all() -> &'static [PiiPattern] {
+    static ALL: &[PiiPattern] = &[
+        PiiPattern {
+            name: PiiLabel::Ssn,
+            regex: &SSN_US_RE,
+        },
+        PiiPattern {
+            name: PiiLabel::CardNumber,
+            regex: &CREDIT_CARD_RE,
+        },
+        PiiPattern {
+            name: PiiLabel::Email,
+            regex: &EMAIL_RE,
+        },
+        PiiPattern {
+            name: PiiLabel::Phone,
+            regex: &PHONE_US_RE,
+        },
+        PiiPattern {
+            name: PiiLabel::ApiKey,
+            regex: &API_KEY_RE,
+        },
+        PiiPattern {
+            name: PiiLabel::NinoUk,
+            regex: &NINO_UK_RE,
+        },
+        PiiPattern {
+            name: PiiLabel::SinCa,
+            regex: &SIN_CA_RE,
+        },
+        PiiPattern {
+            name: PiiLabel::Bearer,
+            regex: &BEARER_RE,
+        },
+        PiiPattern {
+            name: PiiLabel::AwsKey,
+            regex: &AWS_KEY_RE,
+        },
+        PiiPattern {
+            name: PiiLabel::GenericApiKey,
+            regex: &GENERIC_API_KEY_RE,
+        },
+        PiiPattern {
+            name: PiiLabel::Ipv6,
+            regex: &IPV6_RE,
+        },
+        PiiPattern {
+            name: PiiLabel::Ipv4,
+            regex: &IPV4_RE,
+        },
+    ];
+    ALL
+}
+
 /// One `anonymize` rewrite: a compiled static plus its stable `[TYPE]`
 /// placeholder.
 pub struct AnonymizeAction {
     pub name: &'static str,
+    pub label: PiiLabel,
     pub regex: &'static LazyLock<Regex>,
     pub placeholder: &'static str,
 }
@@ -91,61 +155,73 @@ pub fn anonymize_actions() -> &'static [AnonymizeAction] {
     static ACTIONS: &[AnonymizeAction] = &[
         AnonymizeAction {
             name: "email",
+            label: PiiLabel::Email,
             regex: &EMAIL_RE,
             placeholder: "[EMAIL]",
         },
         AnonymizeAction {
             name: "credit_card",
+            label: PiiLabel::CardNumber,
             regex: &CREDIT_CARD_RE,
             placeholder: "[CREDIT_CARD]",
         },
         AnonymizeAction {
             name: "ssn_us",
+            label: PiiLabel::Ssn,
             regex: &SSN_US_RE,
             placeholder: "[SSN]",
         },
         AnonymizeAction {
             name: "nino_uk",
+            label: PiiLabel::NinoUk,
             regex: &NINO_UK_RE,
             placeholder: "[NINO]",
         },
         AnonymizeAction {
             name: "sin_ca",
+            label: PiiLabel::SinCa,
             regex: &SIN_CA_RE,
             placeholder: "[SIN]",
         },
         AnonymizeAction {
             name: "bearer",
+            label: PiiLabel::Bearer,
             regex: &BEARER_RE,
             placeholder: "[BEARER_TOKEN]",
         },
         AnonymizeAction {
             name: "aws_key",
+            label: PiiLabel::AwsKey,
             regex: &AWS_KEY_RE,
             placeholder: "[AWS_KEY]",
         },
         AnonymizeAction {
             name: "generic_api_key",
+            label: PiiLabel::GenericApiKey,
             regex: &GENERIC_API_KEY_RE,
             placeholder: "[API_KEY]",
         },
         AnonymizeAction {
             name: "ipv6",
+            label: PiiLabel::Ipv6,
             regex: &IPV6_RE,
             placeholder: "[IPv6]",
         },
         AnonymizeAction {
             name: "ipv4",
+            label: PiiLabel::Ipv4,
             regex: &IPV4_RE,
             placeholder: "[IP_ADDRESS]",
         },
         AnonymizeAction {
             name: "phone_us",
+            label: PiiLabel::Phone,
             regex: &PHONE_US_RE,
             placeholder: "[PHONE]",
         },
         AnonymizeAction {
             name: "api_key",
+            label: PiiLabel::ApiKey,
             regex: &API_KEY_RE,
             placeholder: "[REDACTED]",
         },

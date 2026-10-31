@@ -25,11 +25,14 @@ pub mod onnx_error;
 pub mod onnx_session;
 pub mod openai;
 pub mod parse;
+pub mod pii_calibration;
+pub mod pii_label;
 pub mod pii_patterns;
 pub mod prompt;
 pub mod protocol;
 pub mod qwen;
 pub mod resolution;
+pub mod roles;
 pub mod runtime;
 pub mod sse;
 pub mod telemetry;
@@ -49,6 +52,7 @@ pub use qwen::{
 pub use resolution::{
     resolve_embedding_reference, ResolveEmbeddingReferenceOptions, EMBEDDING_ENVIRONMENT_VARIABLE,
 };
+pub use roles::{ChatRole, RoleParseError};
 
 pub use anonymize::{anonymize, build_anonymize_map};
 pub use artifact::{
@@ -66,7 +70,8 @@ pub use backend::{
     BackendCaps, BackendError, BackendLoader, ContextProfile, EntityLinkScorer, InferenceBackend,
     InferenceCapability, InferenceRegistry, NamedContexts, OverlayContribution, OverlayError,
     PiiError, PiiSpan, PiiSpanDetector, Readiness, RegexPiiDetector, Residual, ResidualKind,
-    ResidualOverlay, RouteLabel,
+    ResidualOverlay, RouteLabel, WellKnownBackend, WellKnownBackendParseError,
+    DEFAULT_CONTEXT_GROUP,
 };
 pub use catalog::{
     get_embedding_model_catalog_entry, list_embedding_models, ArtifactMirror, ArtifactSources,
@@ -112,9 +117,11 @@ pub use parse::{
     parse_json_response, parse_rerank_output, parse_typed, repair_json, strip_json_fence,
     JsonParseError,
 };
+pub use pii_label::{PiiLabel, PiiLabelParseError};
 pub use runtime::{
     EvictionPolicy, LlmContext, LlmKVCache, LlmResidencyEngine, LlmResidencyRow, LlmRuntime,
-    LlmRuntimeError, LlmWeights, MemoryPool, SnapshotMeta,
+    LlmRuntimeError, LlmWeights, MemoryPool, ResidencyState, ResidencyStateParseError,
+    SnapshotMeta,
 };
 pub use telemetry::{
     FeatureName, NoopSink, ProviderCategory, TelemetryEvent, TelemetrySink, ToolName, TracingSink,

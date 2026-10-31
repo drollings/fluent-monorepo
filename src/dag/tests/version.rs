@@ -145,3 +145,13 @@ fn unconstrained_seeds_behave_byte_identically() {
     assert_eq!(plain.order, versioned.order);
     assert_eq!(plain.target_names, versioned.target_names);
 }
+
+#[test]
+fn version_parse_single_pass_cases() {
+    assert_eq!(Version::parse("11").unwrap().to_string(), "11");
+    assert_eq!(Version::parse("1.2.0").unwrap().to_string(), "1.2");
+    assert_eq!(Version::parse("1.2.3").unwrap().to_string(), "1.2.3");
+    assert!(Version::parse("").is_err());
+    assert!(Version::parse("1..2").is_err());
+    assert!(Version::parse("a.b").is_err());
+}

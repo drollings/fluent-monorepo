@@ -164,6 +164,8 @@ pub fn read_to_string_err(path: &Path) -> Result<String, IoError> {
 /// Resolve `path` against the current directory without touching the
 /// filesystem. Unlike earlier versions this never creates directories;
 /// callers that need the directory to exist call [`ensure_dir`] explicitly.
+/// For a pure lexical absolute check without I/O see
+/// [`is_absolute_lexical`](crate::path::is_absolute_lexical).
 pub fn make_path_absolute(path: &str) -> std::io::Result<String> {
     let pb = Path::new(path);
     let abs = if pb.is_absolute() {
@@ -174,14 +176,26 @@ pub fn make_path_absolute(path: &str) -> std::io::Result<String> {
     Ok(abs.to_string_lossy().to_string())
 }
 
+/// Read a file to a string, returning `None` on any failure (missing file,
+/// oversized file, invalid UTF-8). Fail-open convenience over
+/// [`read_file_alloc_err`]: use when a missing file means "unchanged" or
+/// "absent" rather than an error (file-id hashing, optional config).
 pub fn read_file_alloc(path: &str) -> Option<String> {
     read_file_alloc_err(path).ok()
 }
 
+/// Read a file to a string, returning `std::io::Error` on failure.
+/// Unlike [`read_to_string_err`] this reports the raw OS error (no
+/// [`IoError`](crate::error::IoError) wrapping, no size cap): use at
+/// trust boundaries where the caller maps the error itself.
 pub fn read_file_alloc_err(path: &str) -> Result<String, std::io::Error> {
     fs::read_to_string(path)
 }
 
+/// Join `relative` onto the parent directory of `base` without touching the
+/// filesystem (pure string join; no normalization, no existence check).
+/// For lexical normalization without I/O use
+/// [`normalize_lexical`](crate::path::normalize_lexical) instead.
 pub fn resolve_path(base: &str, relative: &str) -> String {
     if relative == "." {
         let base_path = Path::new(base);

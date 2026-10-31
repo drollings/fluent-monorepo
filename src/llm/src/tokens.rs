@@ -204,6 +204,10 @@ impl AtomicTokenBudget {
 
 /// A remaining token budget that can be checked and consumed.
 ///
+/// Single-threaded, `&mut` form: the caller owns the count and mutates it
+/// directly. For shared ownership across threads/tasks use
+/// [`AtomicTokenBudget`] instead (interior mutability via atomics, `&`
+/// methods). The two never interconvert: pick one per call path.
 /// Useful for truncating prompts or responses to fit within LLM context windows.
 ///
 /// # Examples

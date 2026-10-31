@@ -77,7 +77,10 @@ fn main() {
                 eprintln!("error reading {config}: {e}");
                 process::exit(1);
             });
-            let (reg, _caps) = load_yamake_config(&json);
+            let (reg, _caps) = load_yamake_config(&json).unwrap_or_else(|e| {
+                eprintln!("invalid yamake config: {e}");
+                process::exit(1);
+            });
             let targets: Vec<&str> = targets.iter().map(String::as_str).collect();
             let resolver = DependencyResolver::new(&reg).with_strict(!non_strict);
             let start = Instant::now();
@@ -106,7 +109,10 @@ fn main() {
                 eprintln!("error reading {config}: {e}");
                 process::exit(1);
             });
-            let (reg, caps) = load_yamake_config(&json);
+            let (reg, caps) = load_yamake_config(&json).unwrap_or_else(|e| {
+                eprintln!("invalid yamake config: {e}");
+                process::exit(1);
+            });
             let targets: Vec<&str> = targets.iter().map(String::as_str).collect();
             let resolver = DependencyResolver::with_narrowing(&reg, &caps).with_strict(!non_strict);
             let start = Instant::now();
@@ -135,7 +141,10 @@ fn main() {
                 eprintln!("error reading {config}: {e}");
                 process::exit(1);
             });
-            let (reg, caps) = load_yamake_config(&json);
+            let (reg, caps) = load_yamake_config(&json).unwrap_or_else(|e| {
+                eprintln!("invalid yamake config: {e}");
+                process::exit(1);
+            });
             let targets: Vec<&str> = targets.iter().map(String::as_str).collect();
 
             println!("=== Classic DependencyResolver ===");
@@ -172,7 +181,10 @@ fn main() {
                 eprintln!("error reading {config}: {e}");
                 process::exit(1);
             });
-            let (reg, caps) = load_yamake_config(&json);
+            let (reg, caps) = load_yamake_config(&json).unwrap_or_else(|e| {
+                eprintln!("invalid yamake config: {e}");
+                process::exit(1);
+            });
 
             println!("=== yamake-coral test battery ===\n");
 

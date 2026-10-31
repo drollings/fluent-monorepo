@@ -6,6 +6,19 @@ use std::collections::{HashMap, HashSet};
 
 use crate::error::RegistryError;
 
+/// Resolver-plane record: bitset capabilities plus identity.
+///
+/// `depends`/`provides` are `BitVec` indexed by [`CapabilityRegistry`]
+/// bit index (compact, O(1) membership). Execution-plane [`WorkUnit`]s use
+/// `Vec<ArcIntern<str>>` for the same names instead — convert at the bridge
+/// (`TargetWorkUnit::from_target` maps each set bit through the registry;
+/// unmapped bits warn and skip). `id` is the target's bit index in the
+/// *target-id* space, which shares the `usize` representation with the
+/// capability-bit space but is never interchangeable: use [`get`](Self::get)
+/// (by name), [`get_by_index`](Self::get_by_index) (Vec position), or
+/// [`get_by_bit_index`](Self::get_by_bit_index) (by `id`) accordingly.
+/// `executor` records the intended runtime (`Native` for yamake-loaded
+/// targets); dispatch reads it, the resolver itself does not execute.
 #[derive(Debug, Clone, Builder)]
 #[builder(start_fn = new)]
 pub struct Target {
@@ -49,8 +62,10 @@ impl TargetRegistry {
         let bit_idx = target.id as usize;
         self.by_name.insert(target.name.clone(), idx);
         self.by_bit_index.insert(bit_idx, idx);
+        // Store Vec position (not target id): capability and target-id spaces
+        // are both `usize` and must never be conflated.
         for cap_idx in target.provides.iter_ones() {
-            self.providers.entry(cap_idx).or_default().push(bit_idx);
+            self.providers.entry(cap_idx).or_default().push(idx);
         }
         self.targets.push(target);
         Ok(())
@@ -77,11 +92,7 @@ impl TargetRegistry {
             .map(|indices| {
                 indices
                     .iter()
-                    .filter_map(|bit_idx| {
-                        self.by_bit_index
-                            .get(bit_idx)
-                            .map(|&idx| &self.targets[idx])
-                    })
+                    .filter_map(|idx| self.targets.get(*idx))
                     .collect()
             })
             .unwrap_or_default()
@@ -112,7 +123,10 @@ impl TargetRegistry {
             .unwrap_or_default();
         for b in &bits[1..] {
             if let Some(post) = self.providers.get(b) {
-                candidates.retain(|c| post.contains(c));
+                // `post` is a Vec posting list; build a set once so the
+                // retain is O(candidates) instead of O(candidates × post).
+                let post_set: HashSet<usize> = post.iter().copied().collect();
+                candidates.retain(|c| post_set.contains(c));
             }
             if candidates.is_empty() {
                 return Vec::new();
@@ -124,10 +138,12 @@ impl TargetRegistry {
         // returns `None` instead of panicking).
         self.targets
             .iter()
-            .filter(|t| {
-                candidates.contains(&(t.id as usize))
+            .enumerate()
+            .filter(|(idx, t)| {
+                candidates.contains(idx)
                     && bits.iter().all(|b| t.provides.get(*b).is_some_and(|x| *x))
             })
+            .map(|(_, t)| t)
             .collect()
     }
 

@@ -129,6 +129,21 @@ pub fn default_thresholds() -> Vec<f64> {
 /// Render a markdown table for `reports` (from `sweep_thresholds`) to `path`.
 ///
 /// Creates parent directories as needed. Returns the markdown string.
+///
+/// Named `render_calibration_table` canonically to distinguish it from the
+/// generic [`render_markdown_table`](crate::format::render_markdown_table)
+/// (headers + string rows). This one renders `(threshold, CalibrationReport)`
+/// rows with the fixed `threshold | precision | recall | FPR | support | gate`
+/// schema; the generic one renders arbitrary string grids.
+pub fn render_calibration_table(reports: &[(f64, CalibrationReport)]) -> String {
+    render_markdown_table(reports)
+}
+
+/// Render a markdown table for `reports` (from `sweep_thresholds`).
+///
+/// Legacy name for [`render_calibration_table`]: same schema, same output.
+/// New code prefers `render_calibration_table`, which does not collide with
+/// the generic `format::render_markdown_table`.
 pub fn render_markdown_table(reports: &[(f64, CalibrationReport)]) -> String {
     let mut out = String::new();
     out.push_str("| threshold | precision | recall | FPR | support | gate |\n");

@@ -1,5 +1,7 @@
 use std::collections::HashMap;
+use std::fmt;
 use std::hash::Hash;
+use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 
@@ -123,6 +125,67 @@ where
     pub route_name: String,
     pub weighted_score: f64,
     pub score_vector: Vec<(D, f64)>,
+}
+
+/// Closed set of score dimensions used by ranked-candidate scoring.
+///
+/// The wire format stays the lowercase strings (`"coherence"`,
+/// `"complexity"`, `"completeness"`, `"risk"`), so existing configs and
+/// serialized matrices deserialize byte-identically; new code matches on
+/// this enum instead of repeating the raw literals. The confidence /
+/// task-value axis separation is a consumer-side contract (documented where
+/// the matrix is configured): this type carries the category names only,
+///
+/// and assigns no meaning to them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ScoreDimension {
+    /// Producer confidence/self-doubt axis at consumers that use it so.
+    Coherence,
+    /// Task-value axis at consumers that use it so.
+    Complexity,
+    /// Task-value axis at consumers that use it so.
+    Completeness,
+    /// Task-value axis at consumers that use it so.
+    Risk,
+}
+
+/// Typed rejection for unknown dimension names: never a silent default.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("unknown score dimension: {0}")]
+pub struct UnknownScoreDimension(pub String);
+
+impl ScoreDimension {
+    /// Canonical lowercase wire string for this dimension.
+    #[must_use]
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ScoreDimension::Coherence => "coherence",
+            ScoreDimension::Complexity => "complexity",
+            ScoreDimension::Completeness => "completeness",
+            ScoreDimension::Risk => "risk",
+        }
+    }
+}
+
+impl fmt::Display for ScoreDimension {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for ScoreDimension {
+    type Err = UnknownScoreDimension;
+
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        match text.to_lowercase().as_str() {
+            "coherence" => Ok(ScoreDimension::Coherence),
+            "complexity" => Ok(ScoreDimension::Complexity),
+            "completeness" => Ok(ScoreDimension::Completeness),
+            "risk" => Ok(ScoreDimension::Risk),
+            _ => Err(UnknownScoreDimension(text.to_string())),
+        }
+    }
 }
 
 impl<D> ScoreMatrix<D>

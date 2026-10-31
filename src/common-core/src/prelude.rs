@@ -1,5 +1,5 @@
 //! The common-core prelude — import this in every consumer to get the
-//! 80% case for I/O, hashing, formatting, metrics, JSON-RPC, tokens, retry
+//! 80% case for I/O, hashing, formatting, metrics, JSON-RPC, retry
 //! schedules, locking, caching, and wall-clock time.
 //!
 //! ```rust

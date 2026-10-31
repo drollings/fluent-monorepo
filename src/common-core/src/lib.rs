@@ -31,7 +31,7 @@ pub mod cite;
 pub mod score;
 pub mod telemetry;
 
-pub use cache::LoadCache;
+pub use cache::{evict_until_fit, eviction_order, eviction_score, ArcLoadCache, Budget, LoadCache};
 
 pub mod config;
 pub mod constants;
@@ -97,7 +97,7 @@ pub use registry::{ConcurrentRegistry, KeyedRegistry};
 pub use retry::{
     backoff_ms, capped_backoff_ms, capped_exp_backoff_ms, retry_async, PollResult, PollWithBackoff,
 };
-pub use runtime::block_on;
+pub use runtime::{block_on, block_on_shared};
 pub use shell::{run_capture, run_command, run_shell_capture, shell_cmd, CommandOutput};
 pub use sort::{dedup_sorted, sorted_by_vec, sorted_vec};
 pub use string::{

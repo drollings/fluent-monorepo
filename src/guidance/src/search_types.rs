@@ -736,26 +736,6 @@ pub fn validate_fragment_groups(
     Ok(())
 }
 
-/// Query tokens that name code symbols, minus the keyword stoplist.
-/// Source: `pipeline/search/index.ts` (`extractSymbolNames`).
-/// Canonical implementation lives in `search_vector::tokens` (M13); this
-/// wrapper keeps the P0 contract surface stable.
-#[must_use]
-#[deprecated(note = "use search_vector::tokens::symbol_names")]
-pub fn extract_symbol_names(query: &str) -> Vec<String> {
-    search_vector::tokens::symbol_names(query)
-}
-
-/// Owner-aware symbol name: keeps `Owner::name` only for uppercase owners.
-/// Source: `pipeline/search/index.ts` (`symbolNameFromToken`).
-/// Canonical implementation lives in `search_vector::tokens` (M13); this
-/// wrapper keeps the P0 contract surface stable.
-#[must_use]
-#[deprecated(note = "use search_vector::tokens::symbol_name_from_token")]
-pub fn symbol_name_from_token(token: &str) -> Option<String> {
-    search_vector::tokens::symbol_name_from_token(token)
-}
-
 /// One fused candidate: id + RRF score + 1-based rank. Canonical home is
 /// `search_vector::fusion::FusedHit` (M6) — re-exported here for surface
 /// stability.
@@ -789,26 +769,6 @@ pub fn derive_matched_by(paths: &[RecallPath]) -> SearchMatchedBy {
 // `text.floor_char_boundary(index)` (the bin crate already did). The zvec
 // `code.test.mjs:327` provenance stays pinned by the golden in
 // `tests/search_types.rs`.
-
-/// Whether a char is CJK (Han, Hiragana, Katakana, Hangul syllables + Jamo).
-/// Canonical home is `common_core::string` (second consumer: the
-/// search-vector FTS query side); this wrapper keeps the P0 contract
-/// surface stable.
-#[must_use]
-#[deprecated(note = "use common_core::string::is_cjk_char")]
-pub fn is_cjk_char(c: char) -> bool {
-    common_core::string::is_cjk_char(c)
-}
-
-/// Overlapping character bigrams over CJK runs — the application-level half
-/// of the P0 CJK contract (`FTS_CJK_STRATEGY = "cjk-bigram-expansion"`).
-/// Canonical implementation lives in `common_core::string` (shared by the
-/// index side and the FTS query side in search-vector).
-#[must_use]
-#[deprecated(note = "use common_core::string::cjk_bigrams")]
-pub fn cjk_bigrams(text: &str) -> Vec<String> {
-    common_core::string::cjk_bigrams(text)
-}
 
 /// Single storage contract for recall: lexical + vector + lemma recall,
 /// entity lookup, file listing. Canonical home is

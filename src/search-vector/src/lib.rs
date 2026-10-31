@@ -24,6 +24,4 @@ pub use fusion::{
 };
 pub use salience::{pagerank, NodeGraph, PAGERANK_ALPHA, PAGERANK_ITERATIONS};
 pub use tokens::{lower_dedup_push, split_tokens, symbol_name_from_token, symbol_names};
-#[allow(deprecated)]
-pub use vector_index::VectorIndex;
 pub use vector_index::{BruteForceIndex, HnswVectorIndex, VectorStore};

@@ -89,16 +89,21 @@ fn collect_ext_recursive(dir: &Path, exts: &mut HashSet<String>) {
 ///
 /// Public so the cross-crate test-support crate (`fluent-wvr-testutil`) can
 /// delegate to it — the single implementation of tree scaffolding.
+///
+/// # Panics
+///
+/// Panics when a directory cannot be created or a file cannot be written.
+/// Test-only helper: never call from production code paths.
 pub fn make_tree(root: &Path, files: &[&str], dirs: &[&str]) {
     for d in dirs {
-        std::fs::create_dir_all(root.join(d)).unwrap();
+        std::fs::create_dir_all(root.join(d)).expect("make_tree: create test dir");
     }
     for f in files {
         let p = root.join(f);
         if let Some(parent) = p.parent() {
-            std::fs::create_dir_all(parent).unwrap();
+            std::fs::create_dir_all(parent).expect("make_tree: create test parent dir");
         }
-        std::fs::write(&p, "").unwrap();
+        std::fs::write(&p, "").expect("make_tree: write test file");
     }
 }
 

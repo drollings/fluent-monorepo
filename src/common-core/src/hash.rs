@@ -21,6 +21,10 @@ impl HashAlgorithm {
     }
 }
 
+/// sha256 hex of raw bytes. The family splits by input kind so call sites
+/// read unambiguously: [`sha256_hex`] (bytes) vs [`sha256_str`] (a path-ID
+/// string, hashed as bytes) vs [`sha256_file`] (file contents, fail-open
+/// `None`) vs [`sha256_digest`] (raw 32-byte digest, no hex).
 pub fn sha256_hex(data: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(data);
@@ -50,6 +54,7 @@ pub fn sha256_str(data: &str) -> String {
 /// (fail-open: callers treat unreadable files as changed, never as
 /// current). Streams through the shared [`hash_file`] engine, so the
 /// digest is byte-identical to [`sha256_hex`] over the full contents.
+/// See also [`sha256_digest`] for the raw-byte (non-hex) form.
 ///
 /// # Examples
 ///
@@ -232,6 +237,10 @@ pub fn hash_batch(paths: &[std::path::PathBuf], algorithm: HashAlgorithm) -> Vec
         .collect()
 }
 
+/// Raw 32-byte sha256 digest of `data` (no hex encoding). Prefer
+/// [`sha256_hex`] for display/cache keys; use this only where the caller
+/// needs the bytes (HMAC, truncation to 16 bytes as in
+/// [`content_hash_with_model`]).
 pub fn sha256_digest(data: &[u8]) -> [u8; 32] {
     let mut hasher = Sha256::new();
     hasher.update(data);

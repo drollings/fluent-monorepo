@@ -37,9 +37,10 @@ impl Version {
         }
         let mut parts = Vec::new();
         for part in raw.split('.') {
-            part.parse::<u64>()
+            let value: u64 = part
+                .parse()
                 .map_err(|_| format!("invalid version {raw:?}"))?;
-            parts.push(part.parse::<u64>().expect("just validated"));
+            parts.push(value);
         }
         while parts.len() > 1 && parts.last() == Some(&0) {
             parts.pop();

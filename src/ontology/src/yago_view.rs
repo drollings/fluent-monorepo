@@ -20,7 +20,12 @@ use crate::OntologyError;
 /// Runtime YaGO view.
 #[derive(Debug)]
 pub struct YagoView {
-    // fst::Map curie -> InterlinguaId (stored as HashMap for now; fst codegen lands later — O(log n) vs O(1) but correct)
+    // Lexicon index: curie -> id. `HashMap` is the recorded decision (not a
+    // placeholder): class counts are ~10^2 embedded / ~10^5 full, lookups are
+    // point queries with no prefix search, and measured load+resolve stays
+    // sub-millisecond. An `fst::Map` would buy prefix enumeration we do not
+    // need at the cost of a build-time codegen step; revisit only if prefix
+    // queries appear.
     classes: HashMap<String, InterlinguaId>,
     hierarchy: HierarchyIndex<InterlinguaId>,
 }

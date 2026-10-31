@@ -248,11 +248,13 @@ Every registered target has these fields:
 
 | Field | Type | Description |
 |---|---|---|
-| `id` | i64 | Unique numeric ID (bit index in capability vectors) |
+| `id` | i64 | Unique numeric ID (bit index in target-id space; see `TargetRegistry` docs — not interchangeable with capability bit indexes) |
 | `name` | string | Target name (also used for implicit-name fallback) |
 | `target_type` | `"file"` \| `"abstract"` \| `"phony"` | Concrete or abstract |
-| `depends` | string[] | Capabilities this target requires |
-| `provides` | string[] | Capabilities this target provides |
+| `depends` | string[] | Capabilities this target requires (stored as `BitVec` via `CapabilityRegistry`) |
+| `provides` | string[] | Capabilities this target provides (stored as `BitVec`) |
+| `executor` | `ExecutorKind` | Intended runtime (registry-plane record; `yamake_loader` sets `Native`; dispatch reads it) |
+| `command` | string | Shell body for `CommandUnit`/`TargetWorkUnit` execution adapters (resolver ignores it) |
 | `essential` | bool | Preference marker for narrowing (Stage 1) |
 
 Names are interned through a `CapabilityRegistry` which assigns each unique
@@ -389,20 +391,15 @@ CircularDependency
 ## How to Test
 
 ```bash
-# Unit tests (96 tests)
+# Unit + integration suites (hermetic; no live-AI)
 cargo test -p fluent-dag
+make dag-test        # component gate: same suite via the gate runner
+make dag-smoke        # fast gate: type-check + unit tests
 
-# Full E2E battery (21 scenarios)
-cargo run --bin yamake-coral -- test
-
-# Compare policies for specific inputs
-cargo run --bin yamake-coral -- compare confuse bee
-cargo run --bin yamake-coral -- compare confuse stoat
-cargo run --bin yamake-coral -- compare confuse_a_cat
-
-# Run a single policy
-cargo run --bin yamake-coral -- classic confuse bee
-cargo run --bin yamake-coral -- ambiguous confuse bee
+# Policy comparison is exercised inside the suite
+# (confuse bee/stoat/cat scenarios live in src/dag/tests/; the legacy
+# yamake-coral binary E2E battery they document has been retired — the
+# resolver scenarios are pinned by scan_sort_equiv + resolver tests).
 ```
 
 ### Key scenarios

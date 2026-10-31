@@ -118,18 +118,6 @@ impl WorkOutput {
         }
     }
 
-    /// Same as `typed` but panics on serialization failure.
-    /// Use this when the input is trusted and you want a one-liner.
-    /// For untrusted input, prefer `typed` to handle the error gracefully.
-    #[deprecated(note = "use typed_lossy or typed")]
-    pub fn typed_infallible<T: serde::Serialize>(message: impl Into<String>, data: &T) -> Self {
-        Self {
-            success: true,
-            message: message.into(),
-            data: serde_json::to_value(data).expect("serialize typed data"),
-        }
-    }
-
     /// Deserialize the `data` field back to a typed value, borrowing it.
     ///
     /// Identical errors to [`WorkOutput::data_as`], without the intermediate

@@ -119,6 +119,51 @@ pub enum LlmRuntimeError {
     Other(String),
 }
 
+/// Lifecycle state of a residency row. Serialized as today's wire strings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ResidencyState {
+    Loaded,
+    Sleeping,
+    Unloaded,
+}
+
+/// Refusal for residency input outside the closed vocabulary.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("unknown residency state: {0}")]
+pub struct ResidencyStateParseError(pub String);
+
+impl ResidencyState {
+    /// Canonical wire string for the state.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Loaded => "loaded",
+            Self::Sleeping => "sleeping",
+            Self::Unloaded => "unloaded",
+        }
+    }
+}
+
+impl std::str::FromStr for ResidencyState {
+    type Err = ResidencyStateParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "loaded" => Ok(Self::Loaded),
+            "sleeping" => Ok(Self::Sleeping),
+            "unloaded" => Ok(Self::Unloaded),
+            _ => Err(ResidencyStateParseError(s.to_string())),
+        }
+    }
+}
+
+impl std::fmt::Display for ResidencyState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 /// One row of a weights instance's residency view — the trait-object form of
 /// `InstanceInfo` (llama) / `ResidencyReportEntry` + pool context (onnx).
 ///
@@ -141,8 +186,8 @@ pub struct LlmResidencyRow {
     pub pinned: bool,
     /// Whether the context is resume-marked (KV snapshotted before eviction).
     pub resume: bool,
-    /// `"loaded"` | `"sleeping"` | `"unloaded"`.
-    pub state: String,
+    /// Lifecycle state of the context.
+    pub state: ResidencyState,
     /// The owning runtime (drives `ps`; never a type check).
     pub runtime: LlmRuntime,
     /// Shared weights bytes (reported once per loaded instance).
@@ -939,3 +984,7 @@ impl LlmResidencyEngine {
 #[cfg(test)]
 #[path = "../tests/runtime.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/residency_state.rs"]
+mod residency_state_tests;

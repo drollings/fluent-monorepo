@@ -63,6 +63,12 @@ impl DbStore for Arc<SqlitePool> {
         R: Send + 'static,
     {
         let pool = Arc::clone(self);
+        // `block_on` (not `block_on_shared`): this runs on a blocking thread
+        // that may itself sit inside a runtime worker (`DbWorkUnit::execute`
+        // offload, bare multi-thread tasks). `block_on` drives via
+        // `block_in_place` there and only falls back to the single-threaded
+        // runtime with no active runtime; `block_on_shared`'s bare
+        // `handle().block_on` would panic inside a runtime.
         common_core::runtime::block_on(async move {
             let conn = pool.acquire().await?;
             tokio::task::spawn_blocking(move || f(&conn))

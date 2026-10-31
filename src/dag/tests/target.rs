@@ -98,3 +98,37 @@ fn target_builder_with_defaults() {
     assert!(!t.essential);
     assert!(t.command.is_empty());
 }
+
+#[test]
+fn providers_multi_provider_lookup() {
+    use common_core::interner::CapabilityRegistry;
+    let caps = CapabilityRegistry::new();
+    let mut reg = TargetRegistry::new();
+    // Non-sequential ids prove provider lookup resolves by capability, not
+    // by conflating target-id and capability-id spaces.
+    let provides = caps.to_bitvec(&["artifact"]);
+    for (id, name) in [(101i64, "a"), (202, "b")] {
+        reg.register(
+            Target::new()
+                .id(id)
+                .name((*name).into())
+                .target_type(TargetType::File)
+                .executor(ExecutorKind::Native)
+                .depends(BitVec::new())
+                .provides(provides.clone())
+                .essential(false)
+                .build(),
+        )
+        .unwrap();
+    }
+    let cap_idx = caps.to_bitvec(&["artifact"]).iter_ones().next().unwrap();
+    let mut names: Vec<String> = reg
+        .get_providers(cap_idx)
+        .iter()
+        .map(|t| t.name.to_string())
+        .collect();
+    names.sort();
+    assert_eq!(names, vec!["a".to_string(), "b".to_string()]);
+    let found = reg.find_providers(&caps.to_bitvec(&["artifact"]));
+    assert_eq!(found.len(), 2);
+}

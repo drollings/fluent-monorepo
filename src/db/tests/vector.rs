@@ -368,3 +368,16 @@ fn policy_thresholds_reexport_canonical_aliases() {
         "TaskRelevanceThreshold 2 out of range"
     );
 }
+
+#[test]
+fn vector_plain_data_roundtrip() {
+    let index = PlainBruteForceIndex::new(vec![
+        (1i64, vec![1.0, 0.0], "first".to_string()),
+        (1i64, vec![1.0, 0.0], "second".to_string()),
+        (2i64, vec![0.0, 1.0], "other".to_string()),
+    ]);
+    let hits = index.knn(&[1.0, 0.0], 2);
+    assert_eq!(hits.len(), 2);
+    assert_eq!(hits[0].0, 1i64);
+    assert_eq!(hits[0].2, "first");
+}

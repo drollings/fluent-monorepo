@@ -75,6 +75,14 @@ pub enum Readiness {
 /// Declarative shape of a named context window. Mirrors the onnx context
 /// profile field-for-field without importing it, so callers describe a
 /// window once for any backend that serves named contexts.
+///
+/// `group` is open identity (user-named), not a closed category: it stays
+/// `String` with `DEFAULT_CONTEXT_GROUP` as the default, never an enum.
+pub const DEFAULT_CONTEXT_GROUP: &str = "default";
+
+/// Declarative shape of a named context window. Mirrors the onnx context
+/// profile field-for-field without importing it, so callers describe a
+/// window once for any backend that serves named contexts.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ContextProfile {
     /// The context's group.
@@ -93,7 +101,7 @@ pub struct ContextProfile {
 impl Default for ContextProfile {
     fn default() -> Self {
         Self {
-            group: "default".into(),
+            group: DEFAULT_CONTEXT_GROUP.into(),
             n_ctx: 0,
             max_ctx: None,
             pinned: false,
@@ -103,6 +111,49 @@ impl Default for ContextProfile {
 }
 
 // ─── Backend loader seam ────────────────────────────────────────────────────
+
+/// Well-known backend identifiers. Registry keys stay `String` so third-party
+/// backends keep working; this enum covers the built-in ids for exhaustive
+/// matching at decision points.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum WellKnownBackend {
+    Llama,
+    Onnx,
+}
+
+/// Refusal for backend identifiers outside the well-known set.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("unknown backend: {0}")]
+pub struct WellKnownBackendParseError(pub String);
+
+impl WellKnownBackend {
+    /// Canonical registry string for the backend.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Llama => "llama",
+            Self::Onnx => "onnx",
+        }
+    }
+}
+
+impl std::str::FromStr for WellKnownBackend {
+    type Err = WellKnownBackendParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "llama" => Ok(Self::Llama),
+            "onnx" => Ok(Self::Onnx),
+            _ => Err(WellKnownBackendParseError(s.to_string())),
+        }
+    }
+}
+
+impl std::fmt::Display for WellKnownBackend {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
 
 /// How a backend loads a model key. Generalizes the session-loader seam:
 /// the real loader spawns or maps the weights, tests inject a stub.
@@ -350,6 +401,10 @@ impl InferenceCapability {
 /// A detected PII span: byte offsets into the scanned text, the label (the
 /// regex pattern name or the token-classification label, e.g.
 /// `"credential.password"`), and the detector's confidence.
+///
+/// `label` stays `String` on the wire so open-vocabulary producers keep
+/// working. `score` is confidence (regex `1.0`, classifier average), never
+/// redaction task-value.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PiiSpan {
     /// Byte offset of the span's start within the scanned text.
@@ -373,6 +428,24 @@ impl PiiSpan {
             label: label.into(),
             score,
         }
+    }
+
+    /// A span from a closed-vocabulary label.
+    #[must_use]
+    pub fn with_label(
+        start: usize,
+        end: usize,
+        label: crate::pii_label::PiiLabel,
+        score: f64,
+    ) -> Self {
+        Self::new(start, end, label.as_str(), score)
+    }
+
+    /// Parse the wire `label` into the closed `PiiLabel` vocabulary.
+    pub fn label_enum(
+        &self,
+    ) -> Result<crate::pii_label::PiiLabel, crate::pii_label::PiiLabelParseError> {
+        self.label.parse()
     }
 
     /// Slice the span's text out of `source`. `None` when out of bounds.
@@ -411,7 +484,7 @@ impl PiiSpanDetector for RegexPiiDetector {
         let mut spans = Vec::new();
         for pattern in crate::pii_patterns::pii_patterns() {
             for m in pattern.regex.find_iter(text) {
-                spans.push(PiiSpan::new(m.start(), m.end(), pattern.name, 1.0));
+                spans.push(PiiSpan::with_label(m.start(), m.end(), pattern.name, 1.0));
             }
         }
         Ok(spans)
@@ -510,3 +583,7 @@ pub type EntityLinkScorer<EntityId = u64> = Arc<dyn Fn(&str) -> Vec<(EntityId, f
 #[cfg(test)]
 #[path = "../tests/pii.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/backend_identity.rs"]
+mod backend_identity_tests;
