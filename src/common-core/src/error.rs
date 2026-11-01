@@ -67,8 +67,8 @@ pub struct SqliteError(#[from] pub rusqlite::Error);
 ///
 /// # Usage
 ///
-/// ```ignore
-/// use common_core::error::impl_from_io_error;
+/// ```
+/// use common_core::impl_from_io_error;
 ///
 /// #[derive(thiserror::Error, Debug)]
 /// enum MyError {
@@ -81,7 +81,7 @@ pub struct SqliteError(#[from] pub rusqlite::Error);
 ///
 /// Equivalent to:
 ///
-/// ```ignore
+/// ```text
 /// impl From<std::io::Error> for MyError {
 ///     fn from(e: std::io::Error) -> Self {
 ///         MyError::Io(common_core::error::IoError(e))

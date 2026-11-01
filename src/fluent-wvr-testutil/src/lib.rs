@@ -10,11 +10,23 @@ pub use fluent_wvr::prelude::*;
 /// Generates trivial `FieldAccess` + `Describable` impls so test types
 /// satisfy the `Component` supertrait bound.
 ///
+/// The target type must already implement `WorkUnit` (the macro only fills
+/// the config surface, never the execution body).
+///
 /// # Example
-/// ```ignore
-/// use fluent_wvr_testutil::impl_component_for_test;
+/// ```
+/// use fluent_wvr_testutil::{impl_component_for_test, WorkUnit, WorkOutput, WorkError, WorkContext};
+/// use internment::ArcIntern;
 ///
 /// struct MyTestType;
+/// impl WorkUnit for MyTestType {
+///     fn name(&self) -> &str { "my-test" }
+///     fn depends(&self) -> &[ArcIntern<str>] { &[] }
+///     fn provides(&self) -> &[ArcIntern<str>] { &[] }
+///     fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
+///         Ok(WorkOutput::ok("ok"))
+///     }
+/// }
 /// impl_component_for_test!(MyTestType);
 /// ```
 #[macro_export]
@@ -74,7 +86,7 @@ impl_component_for_test!(PassthroughUnit);
 ///
 /// # Examples
 ///
-/// ```ignore
+/// ```
 /// use fluent_wvr_testutil::StubComponent;
 ///
 /// let ok_unit = StubComponent::ok("worker");

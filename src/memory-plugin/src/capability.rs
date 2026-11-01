@@ -17,7 +17,7 @@ use tokio::sync::RwLock;
 ///
 /// # Usage
 ///
-/// ```rust,ignore
+/// ```text
 /// // At startup:
 /// let registry = Arc::new(RwLock::new(MemoryPluginRegistry::new()));
 /// let cap = MemoryCapability::new(Arc::clone(&registry));

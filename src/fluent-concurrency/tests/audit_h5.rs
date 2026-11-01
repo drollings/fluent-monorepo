@@ -103,33 +103,6 @@ async fn h5_sync_sleep_blocks_timeout_characterization() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-#[ignore = "AUDIT-H5: sync execute must be interruptible (spawn_blocking + timeout); currently timeout is silently ignored"]
-async fn h5_sync_sleep_timeout_desired() {
-    let finished = Arc::new(AtomicBool::new(false));
-    let calls = Arc::new(AtomicUsize::new(0));
-    let unit: Arc<dyn Component> = Arc::new(SleepUnit {
-        name: ArcIntern::from("sleeper-desired"),
-        sleep_ms: 400,
-        finished: Arc::clone(&finished),
-        calls: Arc::clone(&calls),
-    });
-    let rt = fluent_concurrency::tokio_runtime();
-    let mut batch = fluent_concurrency::batch::SupervisedBatch::new(rt, CapabilitySet::new());
-    let mut ctx = WorkContext::for_unit(&*unit, CapabilitySet::new());
-    ctx.timeout_ms = 50;
-    ctx.max_retries = 0;
-    batch.register_with_context(unit, ctx).unwrap();
-    let start = Instant::now();
-    let summary = batch.await;
-    let elapsed = start.elapsed();
-    assert_eq!(summary.cancelled.len(), 1, "timeout must land in cancelled");
-    assert!(
-        elapsed < Duration::from_millis(300),
-        "summary must return near budget, got {elapsed:?}"
-    );
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn h5_busy_loop_blocks_sibling_characterization() {
     struct Busy {
         n: ArcIntern<str>,

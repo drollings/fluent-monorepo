@@ -55,12 +55,8 @@ const DEFERRED_CRATES: &[(&str, &[&str], &str)] = &[
     ),
     (
         "src/ontology",
-        &[
-            "tests/normalize.rs",
-            "tests/taxonomy_equivalence.rs",
-            "tests/yago_interlingua.rs",
-        ],
-        "three suites left behind when the crate stopped forwarding its own \
+        &["tests/taxonomy_equivalence.rs", "tests/yago_interlingua.rs"],
+        "two suites left behind when the crate stopped forwarding its own \
          tree; each needs to be either forwarded or deleted, and deleting is \
          a decision the suite's subject has to make first",
     ),

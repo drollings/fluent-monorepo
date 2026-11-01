@@ -139,16 +139,22 @@ impl KvSnapshotPolicy {
 ///
 /// # Examples
 ///
-/// ```rust,ignore
-/// use fluent_router::dag_session::DependencySession;
+/// ```
+/// use fluent_router::dag_session::{DependencySession, SessionStep, StepResult};
 ///
 /// let mut session = DependencySession::new("sess-1");
-/// session.add_step(SessionStep::new("plan", "Create plan"));
+/// session.add_step(SessionStep::new("plan", "Create plan")).unwrap();
 /// session.add_step(SessionStep::new("execute", "Execute plan")
-///     .with_depends(vec!["plan".into()]));
+///     .with_depends(vec!["plan".into()])).unwrap();
 ///
 /// let ready = session.next_ready(); // - vec!["plan"]
-/// session.complete_step("plan", StepResult { ... });
+/// session.complete_step("plan", StepResult {
+///     content: "done".into(),
+///     accepted: true,
+///     score: None,
+///     latency_ms: 0,
+///     error: None,
+/// }).unwrap();
 /// let ready = session.next_ready(); // - vec!["execute"]
 /// ```
 pub struct DependencySession {

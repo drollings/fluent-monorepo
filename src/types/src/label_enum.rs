@@ -15,7 +15,12 @@
 
 /// Declare a closed string vocabulary.
 ///
-/// ```ignore
+/// ```
+/// #[derive(Debug, PartialEq)]
+/// pub enum MyError {
+///     UnknownLevel(String),
+/// }
+///
 /// fluent_types::label_enum! {
 ///     /// Doc comment on the enum.
 ///     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -29,6 +34,9 @@
 ///     err_ctor MyError::UnknownLevel,
 ///     normalize lowercase,
 /// }
+///
+/// assert_eq!("LOW".parse::<Level>(), Ok(Level::Low));
+/// assert_eq!("nope".parse::<Level>(), Err(MyError::UnknownLevel("nope".into())));
 /// ```
 ///
 /// This generates the enum plus `as_str()`, `Display` (via `as_str`), and

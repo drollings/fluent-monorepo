@@ -524,12 +524,18 @@ fn integration_lite_tick_tape_reconciles_minute_volumes() {
         let close_enough = |got: f64, want: f64| (got - want).abs() <= 1e-9 * want.abs().max(1.0);
         if expect_pull {
             // Pulled minute: the ring rebuilds from the confirmed prefix
-            // (rows at or before the bar-open, last `PULL_WINDOW` of them)
-            // keeping the oldest rows up to capacity, then the remainder
-            // tops up only when the ring has room.
+            // (rows whose bucket closed at or before the pull tick, last
+            // `PULL_WINDOW` of them) keeping the oldest rows up to capacity,
+            // then the remainder tops up only when the ring has room. The
+            // visibility predicate is the engine's single
+            // `confirmed_prefix` rule (closes_at, never times): a row whose
+            // bucket is still forming at the pull tick is not served.
+            let chart_ms = stamps[bucket.last_at];
             let visible = minute_data
-                .times
-                .partition_point(|time| time.get() <= open_ms);
+                .closes_at
+                .iter()
+                .take_while(|close| close.is_some_and(|c| c.get() <= chart_ms))
+                .count();
             let served = visible.min(PULL_WINDOW);
             let kept = served.min(capacity);
             let skip = visible - served;

@@ -108,16 +108,13 @@ fn managed_config() -> RouterConfig {
     let mut cfg: RouterConfig = serde_json::from_value(serde_json::json!({
         "roles": {
             "work": {
-                "instances": {
-                    "swarm": {"group": "swarm", "num_ctx": 4096, "pinned": true}
-                },
-                "models": {"pinned-m": {}}
+                "pinned": true,
+                "params": {"num_ctx": 4096},
+                "models": ["pinned-m"]
             },
             "rest": {
-                "instances": {
-                    "scratch": {"num_ctx": 4096}
-                },
-                "models": {"lazy-m": {}}
+                "params": {"num_ctx": 4096},
+                "models": ["lazy-m"]
             }
         },
         "models": {
