@@ -1,0 +1,11 @@
+[package]
+name = "orator-vad"
+version.workspace = true
+edition.workspace = true
+autotests = false
+
+[dependencies]
+orator-core = { path = "../orator-core" }
+
+[lints]
+workspace = true

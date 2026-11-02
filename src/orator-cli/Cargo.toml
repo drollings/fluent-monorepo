@@ -1,0 +1,49 @@
+[package]
+name = "orator-cli"
+version.workspace = true
+edition.workspace = true
+autotests = false
+
+[dependencies]
+clap = { workspace = true, features = ["derive"] }
+clap_complete = { workspace = true }
+common-core = { path = "../common-core", features = ["http"] }
+fluent-concurrency = { path = "../fluent-concurrency" }
+fluent-llm = { path = "../llm" }
+fluent-wvr = { path = "../fluent-wvr" }
+futures-util = { workspace = true }
+orator-audio = { path = "../orator-audio" }
+orator-bench = { path = "../orator-bench" }
+orator-core = { path = "../orator-core" }
+orator-desktop = { path = "../orator-desktop" }
+orator-llm = { path = "../orator-llm" }
+orator-models = { path = "../orator-models" }
+orator-s2s = { path = "../orator-s2s" }
+orator-stt = { path = "../orator-stt" }
+orator-tts = { path = "../orator-tts" }
+orator-vad = { path = "../orator-vad" }
+ratatui = "0.30"
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tokio-tungstenite = { workspace = true }
+
+[dev-dependencies]
+orator-daemon = { path = "../orator-daemon" }
+orator-diar = { path = "../orator-diar" }
+orator-notes = { path = "../orator-notes" }
+orator-store = { path = "../orator-store" }
+base64 = { workspace = true }
+httpmock = { workspace = true }
+tempfile = { workspace = true }
+
+[[test]]
+name = "it_parity"
+path = "tests/it_parity.rs"
+
+[[test]]
+name = "it_end_to_end"
+path = "tests/it_end_to_end.rs"
+
+[lints]
+workspace = true

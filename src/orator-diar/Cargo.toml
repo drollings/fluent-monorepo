@@ -1,0 +1,26 @@
+[package]
+name = "orator-diar"
+version.workspace = true
+edition.workspace = true
+autotests = false
+
+[dependencies]
+common-core = { path = "../common-core" }
+fluent-concurrency = { path = "../fluent-concurrency" }
+fluent-dag = { path = "../dag" }
+fluent-db = { path = "../db" }
+fluent-wvr = { path = "../fluent-wvr" }
+orator-core = { path = "../orator-core" }
+orator-store = { path = "../orator-store" }
+rusqlite = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+vector-math = { path = "../vector-math" }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

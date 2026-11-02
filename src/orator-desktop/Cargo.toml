@@ -1,0 +1,16 @@
+[package]
+name = "orator-desktop"
+version.workspace = true
+edition.workspace = true
+autotests = false
+
+[dependencies]
+common-core = { path = "../common-core" }
+fluent-wvr = { path = "../fluent-wvr" }
+orator-core = { path = "../orator-core" }
+orator-tools = { path = "../orator-tools" }
+thiserror = { workspace = true }
+which = { workspace = true }
+
+[lints]
+workspace = true

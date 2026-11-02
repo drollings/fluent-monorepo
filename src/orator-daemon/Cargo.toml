@@ -1,0 +1,43 @@
+[package]
+name = "orator-daemon"
+version.workspace = true
+edition.workspace = true
+autotests = false
+
+[dependencies]
+common-core = { path = "../common-core" }
+fluent-dag = { path = "../dag" }
+fluent-wvr = { path = "../fluent-wvr" }
+fluent-concurrency = { path = "../fluent-concurrency" }
+fluent-llm = { path = "../llm" }
+orator-audio = { path = "../orator-audio" }
+orator-core = { path = "../orator-core" }
+orator-llm = { path = "../orator-llm" }
+orator-turn = { path = "../orator-turn" }
+orator-store = { path = "../orator-store" }
+orator-diar = { path = "../orator-diar" }
+fluent-db = { path = "../db" }
+base64 = { workspace = true }
+futures-util = { workspace = true }
+tokio-tungstenite = { workspace = true }
+# The daemon boots the supervised audio server through the s2s
+# audio-specific argv/probe wrapper; the shared bundle type lives in
+# orator-core.
+orator-s2s = { path = "../orator-s2s" }
+clap = { workspace = true, features = ["derive"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+reqwest = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+
+[[bin]]
+name = "oratord"
+path = "src/main.rs"
+
+[dev-dependencies]
+tempfile = { workspace = true }
+httpmock = { workspace = true }
+
+[lints]
+workspace = true

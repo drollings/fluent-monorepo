@@ -1,0 +1,10 @@
+[package]
+name = "orator-testkit"
+version.workspace = true
+edition.workspace = true
+autotests = false
+
+[dependencies]
+
+[lints]
+workspace = true

@@ -1,0 +1,19 @@
+[package]
+name = "orator-notes"
+version.workspace = true
+edition.workspace = true
+autotests = false
+
+[dependencies]
+common-core = { path = "../common-core" }
+fluent-concurrency = { path = "../fluent-concurrency" }
+fluent-db = { path = "../db" }
+fluent-llm = { path = "../llm" }
+orator-core = { path = "../orator-core" }
+orator-store = { path = "../orator-store" }
+rusqlite = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

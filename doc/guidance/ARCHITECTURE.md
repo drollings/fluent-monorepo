@@ -15,7 +15,7 @@
   │             │          Consumer Layer   │                     │
   │             │                          │                     │
   │  ┌──────────▼──────────┐    ┌──────────▼──────────┐          │
-  │  │  guidance-core      │    │  guidance-coral     │          │
+  │  │  guidance-core      │    │  coral-context      │          │
   │  │  (src/guidance)     │    │  (src/coral)        │          │
   │  │  app logic, CLI     │    │  context graph      │          │
   │  └──────────┬──────────┘    └──────────┬──────────┘          │
@@ -24,7 +24,7 @@
   │             │      Capability Layer     │                     │
   │             │                          │                     │
   │  ┌──────────▼──────────┐    ┌──────────▼──────────┐          │
-  │  │  guidance-llm       │    │  guidance-dag       │          │
+  │  │  fluent-llm         │    │  fluent-dag         │          │
   │  │  (src/llm)          │    │  (src/dag)          │          │
   │  │  LLM HTTP client    │    │  DAG executor       │          │
   │  └─────────────────────┘    └─────────────────────┘          │
@@ -36,17 +36,16 @@
   │  └─────────────────────┘    └─────────────────────┘          │
   │                                                              │
   │  ┌─────────────────────┐    ┌─────────────────────┐          │
-  │  │  guidance-search-   │    │  guidance-project-  │          │
-  │  │  vector             │    │  knowledge          │          │
-  │  │  (src/search-vector)│    │  (src/project-      │          │
-  │  │  hybrid search      │    │   knowledge)        │          │
-  │  └─────────────────────┘    │  word/trigram index │          │
-  │                             └─────────────────────┘          │
+  │  │  search-vector      │    │  fluent-knowledge   │          │
+  │  │  (src/search-vector)│    │  (src/knowledge)    │          │
+  │  │  hybrid search      │    │  word/trigram index │          │
+  │  └─────────────────────┘    └─────────────────────┘          │
+  │                                                              │
   │                                                              │
   │  ┌─────────────────────┐    ┌─────────────────────┐          │
-  │  │  guidance-content-  │    │  guidance-wasm-ipc  │          │
-  │  │  node               │    │  (src/wasm_ipc)     │          │
-  │  │  (src/content-node) │    │  Extism binary IPC  │          │
+  │  │  content LOD        │    │  fluent-wasm-ipc    │          │
+  │  │  (src/knowledge/    │    │  (src/wasm_ipc)     │          │
+  │  │   lod.rs)           │    │  Extism binary IPC  │          │
   │  │  LOD slicing        │    └─────────────────────┘          │
   │  └─────────────────────┘                                     │
   │                                                              │
@@ -61,7 +60,7 @@
   ├───────────────────────────┼───────────────────────────────────┤
   │                           │   Types Layer                     │
   │             ┌─────────────▼───────────────┐                   │
-  │             │  guidance-types (src/types)  │                   │
+  │             │  fluent-types (src/types)    │                   │
   │             │  shared data types           │                   │
   │             └─────────────────────────────┘                   │
   │                                                              │
@@ -69,11 +68,11 @@
   │                    Common Layer                                │
   │                                                              │
   │  ┌─────────────────────┐    ┌─────────────────────┐          │
-  │  │  common-core        │    │  guidance-           │          │
-  │  │  (src/common-core)  │    │  concurrency-queue   │          │
-  │  │  zero-domain utils  │    │  (src/concurrency-  │          │
-  │  └─────────────────────┘    │   queue)             │          │
-  │                             │  EventQueue          │          │
+  │  │  common-core        │    │  fluent-            │          │
+  │  │  (src/common-core)  │    │  concurrency        │          │
+  │  │  zero-domain utils  │    │  (src/fluent-       │          │
+  │  └─────────────────────┘    │   concurrency)      │          │
+  │                             │  shared pools       │          │
   │                             └─────────────────────┘          │
   └──────────────────────────────────────────────────────────────┘
 ```
@@ -88,7 +87,7 @@ A crate in this layer must never import any `guidance-*` or `coral-*` crate.
 | Crate | Path | Responsibility |
 |-------|------|----------------|
 | `common-core` | `src/common-core/` | Generic utilities: hashing, formatting, I/O, shell, metrics, error context |
-| `guidance-concurrency-queue` | `src/concurrency-queue/` | Thread-safe `EventQueue<T>` for producer-consumer workloads |
+| `fluent-concurrency` | `src/fluent-concurrency/` | `Scope`, pools, credit flow, `StreamAbort` (shared with the router/assistant stacks) |
 
 ### Types Layer (shared data types)
 Contains the canonical data types used across all higher layers. No business
@@ -96,7 +95,7 @@ logic — only type definitions, serialization, and validation.
 
 | Crate | Path | Responsibility |
 |-------|------|----------------|
-| `guidance-types` | `src/types/` | `GuidanceDoc`, `Member`, `Param`, `FileType`, `NodeId`, etc. |
+| `fluent-types` | `src/types/` | `GuidanceDoc`, `Member`, `Param`, `FileType`, `NodeId`, etc. |
 
 ### Framework Layer (trait definitions)
 Defines the core trait boundary between the DAG executor and its components.
@@ -110,19 +109,19 @@ blanket impls only, no implementation code.
 ### Capability Layer (reusable domain capabilities)
 Each crate in this layer encapsulates a single domain concern. They depend
 on the Common, Types, and Framework layers but NOT on each other (no
-`guidance-dag` importing `guidance-coral`, etc.). Cross-capability integration
+`fluent-dag` importing `coral-context`, etc.). Cross-capability integration
 happens only in the Consumer layer.
 
 | Crate | Path | Responsibility |
 |-------|------|----------------|
-| `guidance-llm` | `src/llm/` | LLM HTTP client, embeddings, chat completions, prompt utilities |
-| `guidance-dag` | `src/dag/` | DAG executor, resolver, middleware, work unit abstractions |
-| `guidance-content-node` | `src/content-node/` | Level-of-detail text slicing, content annotation |
-| `guidance-search-vector` | `src/search-vector/` | SQLite hybrid search (KNN + keyword + RRF) |
+| `fluent-llm` | `src/llm/` | LLM HTTP client, embeddings, chat completions, prompt utilities |
+| `fluent-dag` | `src/dag/` | DAG executor, resolver, middleware, work unit abstractions |
+| LOD slicing | `src/knowledge/lod.rs` | Level-of-detail text slicing over the word index |
+| `search-vector` | `src/search-vector/` | SQLite hybrid search (KNN + keyword + RRF) |
 | `fluent-knowledge` | `src/knowledge/` | Word/trigram index, CSR graph, frequency tables |
 | `guidance-ontology` | `src/ontology/` | Entity extraction, capability inference, YAGO taxonomy |
 | `guidance-rdf` | `src/rdf/` | RDF/Turtle/N-Quads parser, normalizer |
-| `guidance-wasm-ipc` | `src/wasm_ipc/` | `#[repr(C)]` binary IPC schemas for Extism boundary |
+| `fluent-wasm-ipc` | `src/wasm_ipc/` | `#[repr(C)]` binary IPC schemas for Extism boundary |
 
 ### Consumer Layer (application logic)
 Composes capabilities into application-level workflows and services.
@@ -130,7 +129,7 @@ Composes capabilities into application-level workflows and services.
 | Crate | Path | Responsibility |
 |-------|------|----------------|
 | `guidance-core` | `src/guidance/` | CLI dispatch, sync engine, query pipeline, config, plugins, AST parsing |
-| `guidance-coral` | `src/coral/` | Context graph cache tiers (L1–L5), MCP router, wasm runtime, ingest |
+| `coral-context` | `src/coral/` | Context graph cache tiers (L1–L5), MCP router, wasm runtime, ingest |
 
 ### Binary Layer (thin entry points)
 Zero library exports — pure CLI entry points that parse arguments and delegate

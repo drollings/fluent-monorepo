@@ -21,8 +21,11 @@ router implements `SqliteConceptStore`/`CorrectionIndex` over the shared
 | Module | Role |
 |---|---|
 | `hash.rs` | MurmurHash64A (seed 1) — the content-addressing hash |
+| `error.rs` | `SpacyError` taxonomy |
 | `strings.rs` | `StringStore`: interned `(u64 hash → ArcIntern<str>)`, **first-wins**, durable (`to_bytes`/`from_bytes`/`save`/`load_or_empty`) |
 | `lexeme.rs` | Two-level lexicon: `Lexeme` (word-type, shared by orth) + `LexiconConfig`/`OOV_RANK` |
+| `lex_attrs.rs` | `word_shape`, `LEX_ATTRS` port |
+| `ortho.rs` | `TaggerOrtho`, `SOR1` blob compiled from `env/en_orthography.json` by `build.rs` |
 | `vocab.rs` | `Vocab` = `StringStore` + `Lexicon` + `Morphology`; `save`/`load_or_empty` for durability |
 | `doc.rs` | `Doc` + `TokenRecord`: orth/lemma/dep heads (relative offsets), tree rebuild, `to_array`/`from_array`, attribute dispatch |
 | `attrs.rs` | `Attribute` ids incl. 89–91 (`InterlinguaLemmaId`/`InterlinguaEntityId`/`AnnotationConfidence`) |
@@ -30,12 +33,12 @@ router implements `SqliteConceptStore`/`CorrectionIndex` over the shared
 | `lang/` | English defaults (`lang::en::tokenizer`, `lexicon_config`) + the version-pinned rule-data audit surface (M2c): tokenizer exceptions, lemma-blob pipeline, and `lang::genesis` promotions |
 | `tokenizer.rs` | Deterministic tokenizer over the lexicon |
 | `sentencizer.rs` | Deterministic sentence-boundary prediction (`predict`/`process`) |
-| `lemmatizer.rs` + `lemma_blob.rs` | Rule lemmatizer over a versioned blob built by `build.rs` from `data/en_lemmatizer.json` |
+| `lemmatizer.rs` + `lemma_blob.rs` | Rule lemmatizer over a versioned blob built by `build.rs` from `env/en_lemmatizer.json` (workspace-root `env/`, not `src/spacy-rs/data/`) |
 | `morph.rs`, `tag_map.rs` | Morphology + tag→UPOS map |
-| `validate.rs` | The 7-check annotation gate; checks 5+6 compose `DependencyGraph` (never hand-rolled DFS) |
+| `validate.rs` | The 7-check annotation gate; checks 5+6 (connectivity/acyclicity) are one linear pass over head chains — the general `DependencyGraph` build previously used here was removed as ~40× overhead for a single-head forest |
 | `llm.rs` | `AnnotationRecord`/`AnnotationSet` (wire JSON), `AnnotationResult` + `AnnotationSource` (provenance + confidence), `LlmRefinePrompt` (span-scoped corrections contract), `attach`/`apply_with` — the annotation *inputs* the ledger's `NodeAnnotation` consumes |
 | `arc_eager.rs` | The deterministic transition parser (heuristic ArcEager) + `ParseConfidence` |
-| `fluent-concept` (neutral shared crate, M3) | `ConceptStore` trait + `TaxonomyHierarchy` (DAG-backed ancestors/is-subclass), `ConceptStoreState::Loading/Ready` gate + the hermetic `InMemoryConceptStore` test double (never production); spacy-rs keeps a read-only view import only (`InterlinguaResolver`, `FrameExtractor`, `triple::extract_triples` + `build_plausibility_inputs`, `YagoResolveStage` read through it; boot-only registration invariant unchanged) + the `PlausibilityTriple`/`ScoredLemma` text↔knowledge bridge inputs (M5) |
+| `fluent-concept` (neutral shared crate at `src/concept/`, M3) | `ConceptStore` trait + `TaxonomyHierarchy` (DAG-backed ancestors/is-subclass), `ConceptStoreState::Loading/Ready` gate + the hermetic `InMemoryConceptStore` test double (never production); spacy-rs keeps a read-only view import only (`InterlinguaResolver`, `FrameExtractor`, `triple::extract_triples` + `build_plausibility_inputs`, `YagoResolveStage` read through it; boot-only registration invariant unchanged) + the `PlausibilityTriple`/`ScoredLemma` text↔knowledge bridge inputs (M5) |
 | `interlingua.rs` | `InterlinguaResolver` (pure), `CollisionNote`, `resolve_doc` stamping |
 | `routing.rs` | `extract_routing_signals` → `RoutingSignal` (+ `InterlinguaSignal`) |
 | `frame.rs` | `RoleType`/`Frame`/`AmbiguityKind`/`FrameAnalysis`, `FrameKey::permanent/provisional`, `extract_frames`, `Resolution` value type — the deterministic structural index (M3); the `PreferredSenseIndex` promotion seam lives in the router (`ledger::frame_index`, M2a) |
@@ -46,7 +49,8 @@ router implements `SqliteConceptStore`/`CorrectionIndex` over the shared
 | `lang/genesis.rs` | Rule genesis for POS/NER (`GenesisIndex` trait, `InMemoryGenesisIndex` hermetic, threshold-promoted version-pinned data; M6.2 pos/ner genesis — `CorrectionField::Ner` promotes `ner` on same `count >= threshold` path, `RuleAnnotator::annotate` consults `genesis.get_ner` for `ent_type`, F4; M2c rule-data home beside tokenizer exceptions + lemma-blob pipeline, thresholds POS 3 / NER 5 preserved) |
 | `review.rs` | `ParseReview`/`Correction` (`CorrectionField::Ner` for entity type)/`ReviewStatus`, `CorrectionIndex` trait, `review_prompt`, shared `apply_edits` amendment helper (guards `old_value`: empty = don't-care, non-empty mismatch = `warn!` + skip, F6) — `ParseReview::parse_json` preserves `serde_json::Error` source (line/column) via `AnnotationError::Json { source }` (F6) |
 | `retrieval.rs` | Pure lemma-grep helpers only: `Span`, `LemmaGrepHit` (confidence mandatory), `lemma_grep` (M4 — the fuzzy axis, hit tagging, and `cross_check` combiner live with the router retrieval owner beside `NodeRetrievalService`) |
-| `pipeline.rs` + `pipeline/` | `NlpPipeline`, `StagePipeline` (DAG), `AnnotationRung` ladder + gated `AnnotationRefiner` refine phase (`LlmRefineRung`, `EncoderResidualRung`, `RefineSeams` + `SpanCacheSeam`, `RuleAnnotator` + `genesis`), `RefinePolicy`/`should_refine`/`refine_focus`/`frame_coverage`, `PipelineState` |
+| `pipeline.rs` | `NlpPipeline`, `StagePipeline` (DAG), `AnnotationRung` ladder + gated `AnnotationRefiner` refine phase (`LlmRefineRung`, `EncoderResidualRung`, `RefineSeams` + `SpanCacheSeam`, `RuleAnnotator` + `genesis`), `RefinePolicy`/`should_refine`/`refine_focus`/`frame_coverage`, `PipelineState` (single file; no `pipeline/` directory) |
+| `entity_gate.rs` | Two-gate promotion for entity-link candidates (`EntityStampGate`, `StampedSpan`, `verify_stamps`); the candidate plane is the router's `ledger/overlay.rs::OverlayCandidateStore`, never a parse-time stamp |
 
 ## Core data model
 
@@ -273,7 +277,7 @@ configured (durable `StringStore`).
 
 ## The interlingua bridge
 
-- `fluent-types` owns `InterlinguaId` (16-bit namespace + 48-bit truncated
+- `fluent-types` (at `src/types/`) owns `InterlinguaId` (16-bit namespace + 48-bit truncated
   hash), `InterlinguaNamespace` (`YagoClass`, `YagoEntity`, `SpacyLemma`,
   `RdfProperty`, `UserDefined`), `local_id_of`, `ConceptMetadata` (with a
   stored `node_id` — never derived from the truncated local, F5).
@@ -325,7 +329,7 @@ with metadata from the YaGO 4.5 taxonomy for nouns and direct objects.
    is a hit. This mirrors the frame extractor's reuse of `Doc::children`/heads
    and the validator's DAG discipline — never a hand-rolled graph walk.
 4. The score fills the existing `ParseConfidence.semantic_plausibility: Option<f64>`
-   field (`arc_eager.rs:711`) — a **separate** field, never blended into
+   field (see `ParseConfidence` in `arc_eager.rs`) — a **separate** field, never blended into
    `oracle_margins` (roadmap E7). `Loading` state yields `None` (provisional,
    mirroring `FrameKey` gating).
 
@@ -405,8 +409,10 @@ lexeme-flag + closed function-word/verb maps; PROPN fires on `is_upper()` only
   InterlinguaSignal` (role ids, `concept_ids`, aligned `token_ids`, and a
   per-sentence `confidence` — the sentence-mean of the tokens' parse
   confidence, `None` when the producing rung carried none). `concept_ids`
-  carries live entity-link candidates only via the overlay's candidate plane
-  (`overlay_candidates`) — parse-time `concept_ids` stays empty; the routing
+  carries live entity-link candidates only via the router-owned
+  candidate plane (`ledger/overlay.rs::OverlayCandidateStore` over
+  the `overlay_candidates` table, see `entity_gate.rs`) —
+  parse-time `concept_ids` stays empty; the routing
   filters (`match_interlingua`) dispatch on the role/token ids and gate on
   `confidence_min` from the signal confidence. The live request path writes
   the parse node + `interlingua_index` rows (one per sentence × role id,
@@ -447,14 +453,18 @@ lexeme-flag + closed function-word/verb maps; PROPN fires on `is_upper()` only
 
 ## Known gaps
 
-- `triple.rs token_known` per-token alloc — deferred, profile before fixing.
+- (none currently tracked here — see `ITERATIVE_PARSE_IMPROVEMENT.md` for the live gap list)
 
 ## Verification
 
 `cargo test -p spacy-rs` (unit + golden + integration), `cargo clippy -p spacy-rs`.
 The router suites (`cargo test -p fluent-router`) cover the integration:
 `NlpStage` accessors, `match_interlingua` filters, ledger interlingua tables,
-and the review worker.
+and the review worker. Canonical entry points: `spacy-benchmark` /
+`spacy-parse-benchmark`, `review-test`, and the `test-heavy` soak leg
+(`make test-heavy` runs `spacy-rs --lib -- --ignored`); spacy-rs has no
+dedicated component gate (`COMPONENT_NAMES`) — use the raw cargo commands
+above plus repo-wide smoke for the workflow close.
 
 Throughput (printed by the `parse_bench` scoreboard as `timing:`, never a
 floor — timings are machine-specific): ~31.0–31.2k tok/s before the

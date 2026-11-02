@@ -39,6 +39,24 @@ members = [
     "src/protopyne-view",
     "src/fluent-egui",
     "src/protopyne-egui",
+    "src/orator-core",
+    "src/orator-audio",
+    "src/orator-vad",
+    "src/orator-stt",
+    "src/orator-llm",
+    "src/orator-tts",
+    "src/orator-turn",
+    "src/orator-tools",
+    "src/orator-store",
+    "src/orator-models",
+    "src/orator-diar",
+    "src/orator-notes",
+    "src/orator-s2s",
+    "src/orator-desktop",
+    "src/orator-testkit",
+    "src/orator-bench",
+    "src/orator-daemon",
+    "src/orator-cli",
 ]
 
 [workspace.package]
@@ -48,6 +66,7 @@ edition = "2021"
 [workspace.dependencies]
 # CLI & FS
 clap = { version = "4", features = ["derive"] }
+clap_complete = "4"
 notify = "7"
 blake3 = "1.8"
 
@@ -101,6 +120,7 @@ async-trait = "0.1"
 
 # HTTP
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
+base64 = "0.22"
 axum = { version = "0.8", features = ["ws"] }
 hyper = { version = "1", default-features = false, features = ["server", "http1"] }
 hyper-util = { version = "0.1", default-features = false, features = ["tokio", "server", "http1"] }
@@ -109,6 +129,7 @@ http-body-util = { version = "0.1", features = ["channel"] }
 http = "1"
 bytes = "1"
 futures-util = "0.3"
+tokio-tungstenite = "0.29"
 
 
 # Testing
@@ -144,6 +165,13 @@ proc-macro2 = "1"
 chrono = { version = "0.4", features = ["serde"] }
 rust_decimal = { version = "1", features = ["serde", "maths"] }
 csv = { version = "1" }
+
+# Audio (orator)
+cpal = "0.16"
+rtrb = "0.3"
+rubato = "0.15"
+opus = "0.3"
+ogg = "0.9"
 
 # System
 libc = "0.2"

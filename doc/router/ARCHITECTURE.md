@@ -116,12 +116,11 @@ serialized decision is deserialized once and published to the same store.
 
 | File | Role |
 |------|------|
-| `types.rs` | OpenAI protocol (`RouterRequest`/`RouterResponse`/`RouterMessage`/`RouterChoice`/`Usage`). `RouterRequest` also carries the routing fields the owning llama-server reads: `instance`, `snapshot`, `id_slot`, plus the LoRA `adapter` |
+| `normalize.rs` + `fluent_types::openai_wire` | OpenAI protocol (`RouterRequest`/`RouterResponse`/`RouterMessage`/`RouterChoice`/`Usage`; canonical home is `fluent_types`, `src/types/src/openai_wire.rs`). `RouterRequest` carries the routing fields the owning server reads (`instance`, `snapshot`, `id_slot`, LoRA `adapter`); `normalize.rs` re-attaches the fields the shared normalizer strips |
 | `pipeline_types.rs` | `StageDecision`, `PipelineStage`, `StageVerdict`, `StageDecisionProducer`, `StageMetadata` (typed handoff keys incl. `nlp_parse`), `NlpResidual` (typed residual under `nlp_residual`), `PiiVerdict` |
 | `pipeline.rs` | `PipelineOrchestrator`, `PipelineResult`, `RoutingTarget` (url/model/group/params/filter_thinking/retry/stream/timeouts/fallbacks + `instance`/`snapshot`/`id_slot`), `STAGE_DECISION_KEY` |
 | `error.rs` | `ServerError` — the single typed server error (Bind / Http / Addr / transparent `DispatchError`) |
-| `config.rs` | `RouterConfig` + sub-config re-exported as submodules: `addr`, `builder` (`PipelineParams`, `NlpConfig`, `NlpOrdering`, `TargetMatchMode`), `classification` (`ClassificationTree`/`Node`/`Child`), `compiled_tree`, `escalation` (`EscalationLadderConfig`, `FrontierConfig`, `RoleMember`), `filters` (`RejectPatterns`/`PatternEntry`/`FilterAction`/`FilterScope`/`ConfidenceGate`), `fleet` (`RoleParams`), `ledger_group`, `models` (`ModelEntry`, `ModelBinding`, `InstanceProfile`), `normalize`, `refine_policy` (`RouterRefinePolicy`), `rounds`, `routing` (`RoutingConfig`, `RouteRef` with `always_route`), `runtime`, `serving`, `tree_reload`; top-level `ledger`/`session`/`review`/`overlay`. `ModelEntry` adds managed-weights source (`weights`/`hf_repo`/`hf_file`), the `snapshot` save-mode block (`SnapshotConfig`/`SnapshotMode`), `is_managed()`. In-process ONNX models are NOT `ModelEntry`s — the top-level `onnx` role section owns them (`RouterConfig::onnx`). `RoleEntry` binds serving models via `roles.<role>.models` (empty lists ride the `last` sentinel) + optional `snapshot`/`escalation`. Top-level `gguf_dir`/`onnx_dir` are the admin-CLI root + prefix for relative `models.<model>.weights`/`template` and ONNX paths; both resolve through `join_config_dir`/`resolve_weights`/`resolve_template`/`resolve_onnx_path`; `sidecar.resume_ttl_s` bounds resume snapshot lifetime |
-| `normalize.rs` | Thin adapter over `fluent_llm::openai`: OpenAI JSON ↔ `RouterRequest`/`RouterResponse`, `error_response()`, `messages_to_json()`, `parse_openai_stream_delta`. Re-attaches the routing fields the shared normalizer strips |
+| `config.rs` | `RouterConfig` + sub-config re-exported as submodules: `addr`, `builder` (`PipelineParams`, `NlpConfig`, `NlpOrdering`, `TargetMatchMode`), `classification` (`ClassificationTree`/`Node`/`Child`), `compiled_tree`, `escalation` (`EscalationLadderConfig`, `FrontierConfig`, `RoleMember`), `filters` (`RejectPatterns`/`PatternEntry`/`FilterAction`/`FilterScope`/`ConfidenceGate`), `fleet` (`RoleParams`), `ledger_group`, `models` (`ModelEntry`, `ModelBinding`, `InstanceProfile`), `normalize`, `refine_policy` (`RouterRefinePolicy`), `rounds`, `routing` (`RoutingConfig`, `RouteRef` with `always_route`), `runtime`, `serving`, `tree_reload`; top-level `ledger`/`session`/`review`/`overlay` plus `config/{audit, charts, frame, orchestrator, overlay, review, rigor, root, server, session, sidecar}.rs` (per-area schema slices assembled by the builder). `ModelEntry` adds managed-weights source (`weights`/`hf_repo`/`hf_file`), the `snapshot` save-mode block (`SnapshotConfig`/`SnapshotMode`), `is_managed()`. In-process ONNX models are NOT `ModelEntry`s — the top-level `onnx` role section owns them (`RouterConfig::onnx`). `RoleEntry` binds serving models via `roles.<role>.models` (empty lists ride the `last` sentinel) + optional `snapshot`/`escalation`. Top-level `gguf_dir`/`onnx_dir` are the admin-CLI root + prefix for relative `models.<model>.weights`/`template` and ONNX paths; both resolve through `join_config_dir`/`resolve_weights`/`resolve_template`/`resolve_onnx_path`; `sidecar.resume_ttl_s` bounds resume snapshot lifetime |
 | `routing_context.rs` | `RoutingContext` — routing fields (`model`/`instance`/`snapshot`/`id_slot`/…) read from query string and JSON body (body wins via `merge`), carried as params through normalize and dispatch |
 | `target_match.rs` | `TargetMatcher` — the in-role complexity ladder (`build_self_assessment_prompt`, `parse_self_assessment`, `candidates_for_role`, `start_index`/`is_match`); DRY-shared by the flat classifier path and the classification-tree engine. `RoleRecency` — bounded (4096) `(session, role) → model` recency map with interned keys and monotonic sequence for total-ordered eviction |
 
@@ -132,7 +131,7 @@ serialized decision is deserialized once and published to the same store.
 | `stages/deterministic.rs` | `DeterministicPreFilter` — delegates to `DeterministicFilterEngine`; slash-command dispatch (`/help`, `/stats`, `/checkpoint`) |
 | `stages/nlp.rs` | `NlpStage` — runs `spacy-rs` on inbound text and publishes per-sentence `RoutingSignal`s under `"nlp_parse"`, plus the confidence summary and typed `NlpResidual`. Enrichment, never a gate. Deterministic-first ladder; `chat_backend_to_fetch_sync` bridges a `ChatBackend` to `spacy_rs::LlmFetchSync` |
 | `stages/overlay.rs` | `OverlayStage` — under `deterministic_first`, scores parser residuals with configured onnx overlays (`PromptRouterOverlay` via `ort::disambiguation_overlays`) and publishes route hints the classifier merges. Enrichment, never a gate |
-| `stages/classifier.rs` + `stages/classifier/` | `ClassifierStage` — single LLM call (flat) or `ClassificationEngine` (tree); emits direct response / routing target / rejection; builds `RoutingTarget`; enforces route-level `always_route` (override `action=respond` → `route`) and auto-generates the system prompt's "Dispatch rules" section. `classifier/action.rs` (`ClassifierAction`); `classifier/prompt.rs` (route list + threshold substitutions) |
+| `stages/classifier.rs` + `stages/classifier/` | `ClassifierStage` — single LLM call (flat) or `ClassificationEngine` (tree); emits direct response / routing target / rejection; builds `RoutingTarget`; enforces route-level `always_route` (override `action=respond` → `route`) and auto-generates the system prompt's "Dispatch rules" section. `classifier/action.rs` (`ClassifierAction`); prompts live in `config/classification.rs` + shared `fluent_llm::prompt` (no `classifier/prompt.rs` — removed, render lives in the shared prompt module) |
 | `stages/tree/` | `ClassificationEngine` — recursive nested-tree evaluation; filter / classifier / terminal / fallback nodes; `tree_path` audit trail; `kind = "tree_node"` records. Split `mod.rs` (re-exports) / `engine.rs` (recursive walk + `cost` + the `match_interlingua` filter dispatching on parsed interlingua ids) / `verdict.rs` (`TreeClassifierVerdict` + `parse_tree_verdict`) / `decisions.rs` (`TreeOutcome`/`TreeEvaluation` + `StageDecision` builders); classifier-node prompts live in `config/classification.rs` |
 | `stages/common.rs` | Shared helpers — `extract_user_message()`, `get_metadata_string()`, JSON-field ensure helpers |
 | `stages/prompt_parse.rs` | `chat_json` + `PromptParseError` — router-local LLM-JSON round-trip codec over `fluent_llm::parse::parse_typed` |
@@ -153,14 +152,13 @@ serialized decision is deserialized once and published to the same store.
 | File | Role |
 |------|------|
 | `dispatch/backend.rs` | `DispatchBackend` trait (`complete` / `stream_complete[_with_abort]` — object-safe, per-request params as args); `OpenAiChatBackend` (single-attempt HTTP via raw `reqwest`), `RetryBackend` (jittered-exponential via `common_core::retry`), `BackendChain` (ordered chain) — the single production dispatch path (D4). LLM client trait remains `fluent_llm::client::ChatBackend` |
-| `dispatch/escalation/` | `Ladder` — local-chain exhaustion → `filter → question → team → turnover` modes, deterministic-first `ContextCache` short-circuit, `ResultPool`-backed parallel slots, `kind = "escalation"` audit records; `EscalationBackends`/`LocalBackend`/`FrontierBackend` role wiring; `dispatch_frontier` bypass for frontier-owned sessions. Split `mod.rs` (`Ladder` + `try_escalate`) / `modes.rs` (four modes + the single shared `frontier_complete` transport) / `assemble.rs` (parse/scorer) / `audit.rs` (`emit_audit`) |
+| `dispatch/escalation/` | `Ladder` — local-chain exhaustion → `filter → question → team → turnover` modes, deterministic-first `LedgerContextCache` short-circuit (implements `fluent_types::ContextCache`), `ResultPool`-backed parallel slots, `kind = "escalation"` audit records; `EscalationBackends`/`LocalBackend`/`FrontierBackend` role wiring; `dispatch_frontier` bypass for frontier-owned sessions. Split `mod.rs` (`Ladder` + `try_escalate`) / `modes.rs` (four modes + the single shared `frontier_complete` transport) / `assemble.rs` (parse/scorer) / `audit.rs` (`emit_audit`) |
 | `dispatch/frontier.rs` | `DispatchError` + `is_retryable` (the public error type of `ChatBackend`); wire-format build/parse helpers reserved for the ladder — `OpenAiBackend` (its `parse_response` reused by `OpenAiChatBackend`), `Anthropic` Messages-API helpers, `StreamEvent` |
 
 ### Session & Orchestration
 
 | File | Role |
 |------|------|
-| `session.rs` | Thin shim — re-exports `StepStatus` from `fluent-types` (canonical session node schema is `fluent_types::ContentNode`) |
 | `dag_session.rs` | `DependencySession` — DAG session over `fluent_dag::dep_graph::DependencyGraph<String>` (step tracking, checkpoint/rewind, real KV snapshot restore keyed model/adapter/session, frontier-ownership flag); `SessionRegistry` — canonical server-side session home (D6), per-`session_id`, shared `SnapshotStore`, retained for process lifetime |
 | `ledger.rs` | `ContentNodeLedger` — **thin facade** over the shared `ContentNodeStore`; owns LOD lifecycle (LOD0/LOD5 eager, LOD1–4 lazy from LOD0 via `Summarizer`, at most once); `CompactionStrategy`/`RecencyCompaction`; routes all writes through the write-path scrub; `write_annotation` is the tiered-annotation facade |
 | `ledger/nlp.rs` | Ledger writer for the NLP parse — `record_parse_node_with_confidence` writes the parse `ContentNode` **and** the per-sentence × role `interlingua_index` rows in one transaction, so "requests whose `direct_object_id` is X" is a real SQL query |
@@ -175,7 +173,7 @@ serialized decision is deserialized once and published to the same store.
 | `ledger/node_annotation.rs` | `NodeAnnotation` — the fully-materialized immutable annotation document (moved from `spacy-rs::arcready::ArcReadyAnnotation`, renamed), with its `fluent_types::NodeOverlay` impl; built by `node_annotation(doc, result)` |
 | `node_store.rs` | `ContentNodeStore` — nodes behind `Arc<RwLock<ContentNode>>`, interned `ArcIntern<str>` session/role index keys, durable `content_json` hydration (seeded `next_id`), `ensure_tier`/`lod_text`/`session_node_ids`, `knn_brute_force`, and `content_hash` stamping in the single write funnel. Overlays: `annotation_for`/`embedding_for`/`llm_overlay_for` derive lazily and **at-most-once** from LOD0 (shared `derive_overlay` re-checks under the write lock, marks `ready`/`failed`); fail-open seams injected by `set_overlay_pipeline`/`set_overlay_embedder`/`set_overlay_llm`; the `overlay_events` feed (`enqueue_if_needs_overlay`, `node_ids_needing_overlays`) |
 | `ledger_guard.rs` | `scrub_for_ledger` — the irreversible write-path scrubber, decision D1; Redact/Anonymize collapse to `[REDACTED:<pattern>]`, no codeword map retained; uses the builtin filter engine with `ContentNodeWrite` scope |
-| `views.rs` | `LedgerView` — reference-only view layer over `ContentNodeStore`; `Lod` (0..=5), `ParallelLedger` (one store, N views), `FilteredLedger<V>` (exclusion set + render transform); `render()` is the single text-exit; degrades to LOD0 when a lazy tier is un-derivable |
+| `views.rs` | `LedgerView` — reference-only view layer over `ContentNodeStore` (`Lod` 0..=5, `ParallelLedger`, `FilteredLedger<V>`, single text-exit `render()`); canonical view types live in the knowledge crate (`src/knowledge/src/views.rs`), re-exported here |
 | `knowledge.rs` | `KnowledgeCapability` impl on `ContentNodeStore` behind the `RouterKnowledgeCapability` token — the cross-crate read path for embedded consumers |
 
 ### Routes
@@ -202,8 +200,8 @@ serialized decision is deserialized once and published to the same store.
 | `streaming.rs` | `StreamingHandler` — SSE delta formatting for OpenAI-compatible chunks; cross-chunk think-block filtering via `StreamingThinkFilter` |
 | `kv_cache.rs` | Two-tier snapshot **metadata index** (the router never reads/writes raw KV bytes — the fork owns them): `HotSnapshotIndex` (RAM LRU over `common_core::cache::LoadCache`) + `ColdSnapshotIndex` (in-memory `(model, adapter, session)` map with TTL sweep; derives `file_path` to the fork's slot-save layout). `SnapshotIdentity` (weights fingerprint + quant + fork version); `KvSnapshot::check_compatible` rejects restores on known-vs-known drift (unknown fields never reject); `save_snapshot_for_model` requires an adapter when a LoRA is attached, so base and base+LoRA never share a key |
 | `instances/` | Instance-pool grammar generation + validation (`instance_grammar_string`, `validate_instances`, `is_valid_instance_name`) and the sidecar. Split `mod.rs` (grammar/validation + test stub), `client.rs` (`InstanceClient` — one server's `/instances` over raw `reqwest`, `HttpClass`-classified; `InstanceError`/`InstanceInfo`/`InstanceTotals`/`SnapshotInfo`), `manager.rs` (`InstanceManager` — boot reconcile; per-instance `resume` map; `is_sleeping` residency probe; `list_with_fallback` synthesizing a footprint for plain models; `weights_bytes`+`load_bytes_for`; `snapshot_mode`; `ensure_instance`; `ensure_group` allocate-on-503), `pool.rs` (`InstancePool` — aggregate facade: `<model_id>:<name>` ids, 64-bit-summed `total`, eviction `Evictable::{Context, Model}`+`evict_to_fit`, admission `make_room_for` against the allocation budget, `resume` ops, `run_residency`). Public surface in `instances/api.rs` |
-| `supervisor.rs` + `supervisor/` | `LlamaServerSupervisor` + `ManagedServer` (`LlamaServerSpec`, `build_server_args`, `free_port`, `resolve_llama_server`) — resolves `llama-server` from `$PATH`/`LLAMA_SERVER`, spawns one process per managed model on a free localhost port, waits for `/health`, supervises each child (logs output, restarts with capped backoff, post-boot liveness probes `/health` and kills+restarts a hung server past `liveness_failures_before_restart`). Boots only pinned-instance models (`start_all`); lazy models load via `ensure_running` (spawn-locked) and unload via `unload`. `supervisor/adopt.rs` reaps pre-existing servers at boot; `supervisor/health.rs` owns the probes. **Onnx-declared models are excluded** (served by `ort.rs`) |
-| `ort.rs` | Onnx composition root (crate `fluent-onnx`). `build_onnx_registry(config)` turns the top-level `onnx` section into a boot-built `OrtSessionRegistry` (`resident: true` loads at boot, else lazily; fail-open to empty/plain-HTTP when the feature is off). `onnx_chat_backend(key)` wraps a `CausalLm` session as the generative `ChatBackend` (`OnnxRole::Llm`) — the single wiring point for the LLM rung, review, enrichment, tiering, summarization, ranking, retrieval; `grammar_from_json_schema` constrains structured decodes. Onnx CPU-RAM residency rides the shared `LlmResidencyEngine`. Encoder-role builders (`disambiguation_overlays`, `nlp_encoder_fetch`, `pii_prefilter`, `colbert_entity_scorer`, `onnx_colbert_reranker`) stay feature-gated legacy seams; no encoder-role model is configured in the reference deployment |
+| `supervisor.rs` + `supervisor/` | `LlamaServerSupervisor` (defined in `supervisor/fleet.rs`) + `ManagedServer` (`LlamaServerSpec` in `supervisor/spec.rs`, `build_server_args`, `free_port`, `resolve_llama_server`) — resolves `llama-server` from `$PATH`/`LLAMA_SERVER`, spawns one process per managed model on a free localhost port, waits for `/health`, supervises each child (logs output, restarts with capped backoff, post-boot liveness probes `/health` and kills+restarts a hung server past `liveness_failures_before_restart`). Boots only pinned-instance models (`start_all`); lazy models load via `ensure_running` (spawn-locked) and unload via `unload`. `supervisor/adopt.rs` reaps pre-existing servers at boot; `supervisor/health.rs` owns the probes. **Onnx-declared models are excluded** (served by `ort.rs`) |
+| `ort.rs` + `ort/` | Thin facade re-exporting `ort/{registry,weights,backends,prefilter}` (stable `crate::ort::X` paths). Onnx composition root (crate `fluent-onnx`). `build_onnx_registry(config)` (defined in `ort/registry.rs`) turns the top-level `onnx` section into a boot-built `OrtSessionRegistry` (`resident: true` loads at boot, else lazily; fail-open to empty/plain-HTTP when the feature is off). `onnx_chat_backend(key)` (defined in `ort/backends.rs`) wraps a `CausalLm` session as the generative `ChatBackend` (`OnnxRole::Llm`) — the single wiring point for the LLM rung, review, enrichment, tiering, summarization, ranking, retrieval; `grammar_from_json_schema` constrains structured decodes. Onnx CPU-RAM residency rides the shared `LlmResidencyEngine`. Encoder-role builders (`disambiguation_overlays`, `nlp_encoder_fetch`, `pii_prefilter`, `colbert_entity_scorer`, `onnx_colbert_reranker`) stay feature-gated legacy seams; no encoder-role model is configured in the reference deployment |
 | `concept_store_sqlite.rs` | `SqliteConceptStore` — durable `fluent_concept::ConceptStore` over the shared ledger SQLite connection (`interlingua_concepts`, keyed `(namespace, canonical_name)` with content-addressed `id` + coral `node_id`). The **second home** of the one-loader/two-homes YaGO design; boot reconciliation locks it equal to coral's graph |
 | `ledger/orchestrator.rs` (affinity) | Composes `AffinityScheduler`/`ScheduledTask` from `fluent_concurrency::affinity` directly (no router shim) — opt-in via `ledger.orchestrator.affinity_cap` |
 | `summarization.rs` | `ResultScorer` + `Summarizer` — `WorkUnit`s calling an LLM (`Arc<dyn ChatBackend>`) to score/condense responses; feeds the ledger's lazy LOD tiers |
@@ -213,13 +211,14 @@ serialized decision is deserialized once and published to the same store.
 | `logging.rs` | Two-stream `tracing` subscriber: operational JSON/console rolling file + the durable audit stream (separate retention, always JSON, gated on `router.audit=info`) |
 | `frontier/modes.rs` | `EscalationMode` ladder taxonomy — `Filter`, `Question`, `Team`, `Turnover` (D8; the old `FrontierMode` is gone), serde snake_case; `FrontierResult` + `AuditEntry`. Taxonomy/audit types only — the runtime lives in `dispatch/escalation/` |
 | `overlay.rs` + `overlay/canonical.rs` | Overlay plane's pure, model-free data: `CanonicalFormTable` — a versioned, offline-clustered `(surface lemma → canonical lemma)` table for predicate canonicalization, loaded like the lemmatizer blob and consulted by plain lookup (never an inference call), keeping "ids are pure functions of content" |
-| `instances/traits.rs` | Unified fleet adapters — `LlamaWeights`/`LlamaContext`/`LlamaKVCache` implement the shared `fluent-llm::runtime` traits (`LlmWeights`/`LlmContext`/`LlmKVCache`), composed by `LlmFleet` (llama + onnx implementors) so `/instances`, `/v1/models`, and unload drive both fleets uniformly. `LlamaContext::evict` snapshots resume contexts only in `auto` mode (`manual` destroys without saving and audits `evict_skip_snapshot`); `LlamaKVCache` carries adapter + expected identity and rejects on drift |
+| `instances/traits/` (+ `traits.rs` facade) | Unified fleet adapters — `LlamaWeights`/`LlamaContext`/`LlamaKVCache` implement the shared `fluent-llm::runtime` traits (`LlmWeights`/`LlmContext`/`LlmKVCache`), composed by `LlmFleet` (llama + onnx implementors) so `/instances`, `/v1/models`, and unload drive both fleets uniformly. `LlamaContext::evict` snapshots resume contexts only in `auto` mode (`manual` destroys without saving and audits `evict_skip_snapshot`); `LlamaKVCache` carries adapter + expected identity and rejects on drift |
 | `telemetry.rs` | Structured telemetry with a controlled vocabulary (`ToolName`/`ProviderCategory`/`FeatureName`), the `TelemetryEvent` enum, and `TelemetrySink` (`TracingSink`/`NoopSink`) — no free strings, no PII |
 | `transforms/` | `TransformStrategy` trait + `rewrite_text_messages`/`insert_string_map` helpers: `NoTransform`, `PiiAnonymize`, `DecomposeToAnonymizedHypothetical`, `DecomposeToSubtasks` (bespoke `subtasks` object), `CodewordAnonymizer`, `Sanitize`, `SecretMask` |
 | `ranking.rs` | Ranking pipeline — `SalienceSignal`/`SalienceScorer` (weighted, pure), `pagerank` (minimal power-iteration over the `interlingua_index` co-reference + `parent_id` graph), `SalienceSource`/`LedgerSalienceProvider` (read-only snapshot), `rank_candidates` (salience prefilter to top-K then **one** grammar-constrained call over the shortlist; degrades to salience order), `SalienceRanker` (the composable step the retrieval service composes) |
 | `retrieval.rs` | Live dispatch seam + subagent tool owner: `NodeRetrievalService` parses a candidate node's LOD0, runs spacy-rs' pure `lemma_grep` + the router-owned fuzzy axis (`EmbeddingProvider`/`FuzzyRetrieval`/`InMemoryFuzzyIndex`) + the `cross_check` combiner, and pre-filters the pool through `SalienceRanker`; exposed on `LedgerAgentCoordinator` via `with_retrieval`/`retrieve_nodes`. Reports carry per-sentence `predicate_ids`; `filter_by_interlingua` drops candidates whose predicates are neither equal to nor a subclass of the query predicate (fail-open; never consults parse confidence; default-off) |
 | `cli/` | Admin CLI support backing `coral-router` `list`/`ps`/`pull`/`scan`/`rm`/`show`/`stop`/`speedtest` (ported from `gguf_tool.py`): `gguf.rs` (GGUF scanning + `models.json` cache), `preset.rs` (`models-preset.ini`), `commands/` (`filesystem.rs`, `server.rs`), `CliContext`/`CliError` |
-| `testing/` | `TranscriptProvider`, `MockTranscriptEntry`, `MockDispatchContext` — transcript-driven integration-test harness for E2E/golden tests |
+| `testing/` | `TranscriptProvider`, `MockTranscriptEntry`, `MockDispatchContext` — transcript-driven integration-test harness for E2E/golden tests; `testing/{calibration.rs, fixtures.rs, ledger_golden.rs, mock.rs}` |
+| `cli/` | Admin CLI (`cli/gguf.rs`, `preset.rs`, `cli/commands/{filesystem,server}.rs`, `cli/{ps_table,tables}.rs`) backing `coral-router list/ps/pull/scan/rm/show/stop/speedtest`, plus `routes/mod.rs`, `dispatch/mod.rs`, `frontier/mod.rs` re-export facades |
 | `test_stubs.rs` | `StubChatBackend`, `HashEmbedder` — test-only backends (cfg(test)) |
 | `test_support.rs` | Test-only log capture (`capture_logs`) — installs a global subscriber and rebuilds the callsite-interest cache so parallel tests assert logs deterministically |
 
@@ -255,7 +254,7 @@ explicit `POST /abort` (`InstanceClient::abort`) — belt-and-suspenders, best-e
 
 `dispatch/escalation/` owns the ladder runtime: after every local model in a
 `model_group` chain fails, `try_escalate` consults the deterministic
-`ContextCache` first (short-circuit before any frontier call), then runs the
+`LedgerContextCache` (`ledger/context_cache.rs`) first (short-circuit before any frontier call), then runs the
 configured modes in order. Each mode's frontier transport reuses
 `dispatch/backend.rs` — no third HTTP path — and every interaction emits a
 `kind = "escalation"` audit record. Turnover marks the session frontier-owned
@@ -272,7 +271,7 @@ accepted answer. Before dispatch, the pre-dispatch guard
 (`server/compaction.rs`) estimates prompt tokens against the role window and, on
 projected overflow, rebuilds the request from the ledger's eager LOD5 per-turn
 labels (zero model calls), fail-open. The ladder's cache is ledger-backed
-(`ledger/context_cache.rs`): an exact normalized-question match over accepted
+(`ledger/context_cache.rs`, `LedgerContextCache` over `fluent_types::ContextCache`): an exact normalized-question match over accepted
 answers only, consulted strictly post-failure.
 
 `dispatch/frontier.rs` owns the wire-format build/parse logic reserved for the
@@ -312,9 +311,9 @@ pipeline pre-filter and the write-path scrubber (`ledger_guard.rs`).
 | `LatencyHistogram` | `common-core::metrics` | `Instrumented::with_metrics` |
 | `retry_async` | `common-core::retry` | `RetryBackend`, `RetryClassifier`, `SupervisedBatch` retries |
 | `AdaptiveHnsw`/`HnswIndex`/`knn_brute_force` | `fluent-db::{hnsw,vector}` | `ContentNodeStore` KNN (`AdaptiveHnsw`: brute-force below the corpus threshold, HNSW above); `charts/store.rs` chart index |
-| `HttpClass` | `guidance-llm` | `dispatch/backend.rs` status classification (streaming + buffered) |
+| `HttpClass` | `fluent-llm` (`src/llm/`, ex-`guidance-llm`) | `dispatch/backend.rs` status classification (streaming + buffered) |
 | `DispatchError::is_retryable()` | `fluent-router` (`dispatch/frontier.rs`) | retry/fallback decisions in `dispatch/backend.rs` and `server/dispatch.rs` |
-| `LlmError::is_retryable()` | `fluent-concurrency::llm_queue` | `guidance-llm` client error classification |
+| `LlmError::is_retryable()` | `fluent-llm::client` | `fluent-llm` client error classification |
 | `parse_json_response` | `fluent_llm::parse` | `routes/rigor/`, `dispatch/escalation/assemble.rs` |
 | `Decomposer` | `fluent_llm` | `dispatch/escalation/modes.rs` — question-mode decomposition |
 | `first_accept_in_order[_sync]` | `fluent-concurrency::ladder` | spacy-rs annotation ladder, `Ladder::try_escalate`, `BackendChain`, `dispatch_real`. **Exception:** `TargetMatcher::match_target` (start-index skip + last-member-always-wins + per-rung audit) |
@@ -325,9 +324,8 @@ pipeline pre-filter and the write-path scrubber (`ledger_guard.rs`).
 ## HttpClass: where it lives and why
 
 `HttpClass` (`HardReject`, `TransientFailure`, `EscalationRequired`,
-`UpstreamFailure`) is defined in `guidance-llm/src/http_class.rs`, re-exported via
-`fluent_llm::HttpClass`, and consumed in two layers: (1) **`LlmClient`** in
-`guidance-llm`, which checks HTTP status before parsing the body (non-2xx
+`UpstreamFailure`) is defined in `src/llm/src/http_class.rs` (crate `fluent-llm`, `fluent_llm::HttpClass`) and consumed in two layers: (1) **`LlmClient`** in
+`fluent-llm`, which checks HTTP status before parsing the body (non-2xx
 short-circuits with `LlmError::RateLimited` or `LlmError::Api`); (2) **router
 dispatch backends** in `dispatch/backend.rs`, which dispatch with a raw
 `reqwest::Client` (not `LlmClient`) and so apply `HttpClass` directly —
@@ -340,7 +338,7 @@ vs `DispatchError::Http` (permanent), on both the buffered and streaming paths.
 ## Import Boundaries (enforced)
 
 `fluent-router` imports from `common-core`, `fluent-wvr`, `fluent-concurrency`,
-`guidance-llm`, `fluent-types`, `fluent-dag`, `fluent-concept`, `spacy-rs`,
+`fluent-llm` (`src/llm/`), `fluent-types`, `fluent-dag`, `fluent-concept`, `spacy-rs`,
 `fluent-onnx`, and std/`tokio`/`reqwest`. It does NOT import from `guidance`,
 `coral`, `wasm_ipc`, `knowledge`, `ontology`, or `rdf`. `knowledge.rs` gives
 coral's Context a reachable read path without the router importing coral.
@@ -382,7 +380,7 @@ both the coral graph and the router's `SqliteConceptStore`.
    asks the `InstancePool` to allocate fresh KV before one retry. With no target,
    the handler dispatches to the classifier's own model as a fallback *target* (or
    a canned response). On dispatch+escalation failure the per-group `Ladder`
-   (`try_escalate`) runs, short-circuiting on a `ContextCache` hit. Every local
+   (`try_escalate`) runs, short-circuiting on a `LedgerContextCache` hit. Every local
    dispatch is a direct HTTP call on the owning spawned `llama-server`.
 7. **Ledger (post-pipeline):** `record_result()` updates acceptance score +
    metadata, and — on routed and classifier-fallback branches — records the
@@ -735,9 +733,9 @@ seam leaves that overlay off, `status: failed`, never retried). Emits a
 each seam attaches only when its model/pipeline resolves; drained on graceful
 shutdown.
 
-### Prompt assembly (`ledger/prompt.rs`) — pure function object
+### Prompt assembly (`ledger/prompt.rs`, re-export) — pure function object
 
-`LedgerPromptAssembler` builds a fidelity-budget-fit prompt from a session's cached
+`ledger/prompt.rs` re-exports `fluent_knowledge::assembler::{AssembledPrompt, LedgerPromptAssembler}` (canonical home: the knowledge crate). `LedgerPromptAssembler` builds a fidelity-budget-fit prompt from a session's cached
 LOD tiers: first/last LOD0 anchors guaranteed, intermediate nodes relevance-ranked
 (lexical + recency) and demoted to the highest LOD that fits; only *cached* tiers
 are rendered (never triggers summarization cost). Pure (no I/O), unit-tested, and
@@ -944,3 +942,17 @@ diff review), not its raw contents (operator-owned). See
   `classifier_model`, per-model `sessions`, `retrieval_model`,
   `review.annotation_model`, `review.pii_model`) are loud errors, not silent
   misroutes.
+
+## Verification (gates and harnesses)
+
+- Hermetic gates: `make test-router` (unit/golden/e2e + `--help` dry
+  run), `make router-mock` (config-synced routing integration:
+  intent → model group derived from `env/coral-router.json`).
+- Heavy legs: `make test-router-all` (adds context HNSW benchmarks),
+  `make test-heavy` (router supervisor/HNSW soaks, `#[ignore]`d),
+  the generic `-test-live` leg (`#[ignore]` + `live-ai` only, skips
+  cleanly without env).
+- Mock/transcript harnesses for E2E goldens live in `testing/`
+  (`TranscriptProvider`, `MockDispatchContext`); review/overlay
+  workers are covered behind their runtime gates; perf legs use
+  banded (never exact) assertions.

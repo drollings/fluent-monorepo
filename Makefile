@@ -525,7 +525,8 @@ COMPONENT_NAMES := \
 	guidance \
 	coral \
 	protopyne \
-	protopyne-egui
+	protopyne-egui \
+	orator
 
 # component -> the Cargo packages that make it up, plus any extra cargo args
 # (features). `dag` is the workspace name of package `fluent-dag`; the binary
@@ -541,6 +542,7 @@ guidance_PKGS           := guidance-core guidance guidance-ontology
 coral_PKGS              := coral-context coral
 protopyne_PKGS          := protopyne-types protopyne-kernels protopyne-store protopyne-strategy protopyne-venue protopyne-server
 protopyne-egui_PKGS     := protopyne-egui
+orator_PKGS            := orator-core orator-audio orator-vad orator-stt orator-llm orator-tts orator-turn orator-tools orator-store orator-models orator-diar orator-notes orator-s2s orator-desktop orator-testkit orator-bench orator-daemon orator-cli
 # The trading terminal's golden/contract tests compile only under these
 # features, so its gates carry them (its `demo_shell` golden suite is skipped
 # without them).
@@ -593,7 +595,11 @@ LIVE_CRATES := \
 	llm:fluent-llm \
 	spacy:spacy-rs \
 	ort:fluent-onnx \
-	venue:protopyne-venue
+	venue:protopyne-venue \
+	orator_llm:orator-llm \
+	orator_stt:orator-stt \
+	orator_tts:orator-tts \
+	orator_s2s:orator-s2s
 
 # Live-AI feature sets per crate shorthand (the `ort` live tests drive real
 # `ort` sessions, so they need `onnx` on top of `live-ai`; every other crate's
@@ -604,6 +610,10 @@ LIVE_FEATURES_guidance := live-ai
 LIVE_FEATURES_llm := live-ai
 LIVE_FEATURES_spacy := live-ai
 LIVE_FEATURES_venue := live-ai
+LIVE_FEATURES_orator_llm := live-ai
+LIVE_FEATURES_orator_stt := live-ai
+LIVE_FEATURES_orator_tts := live-ai
+LIVE_FEATURES_orator_s2s := live-ai
 
 define live-crate-rule
 .PHONY: $(1)-test-live
@@ -611,6 +621,9 @@ $(1)-test-live: ## Run the live-AI (real model) tests for $(2); skip-not-fail wi
 	$(Q)cargo test -p $(2) --features $(LIVE_FEATURES_$(1)) --test live -- --ignored
 endef
 $(foreach pair,$(LIVE_CRATES),$(eval $(call live-crate-rule,$(firstword $(subst :, ,$(pair))),$(lastword $(subst :, ,$(pair))))))
+
+.PHONY: orator-test-live
+orator-test-live: orator_llm-test-live orator_stt-test-live orator_tts-test-live orator_s2s-test-live ## Run the orator live-AI suites (LLM + STT + TTS + S2S); skip-not-fail without env
 
 .PHONY: test-live
 test-live: ## Run ALL live-AI tests (the ONLY real-inference pathway); skips cleanly without env

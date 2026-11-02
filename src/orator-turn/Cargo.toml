@@ -1,0 +1,19 @@
+[package]
+name = "orator-turn"
+version.workspace = true
+edition.workspace = true
+autotests = false
+
+[dependencies]
+fluent-concurrency = { path = "../fluent-concurrency" }
+fluent-wvr = { path = "../fluent-wvr" }
+internment = { workspace = true }
+orator-core = { path = "../orator-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+[lints]
+workspace = true

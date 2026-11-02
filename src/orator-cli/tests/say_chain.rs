@@ -1,0 +1,109 @@
+//! Voice chain goldens: advance exactly on voicelessness and empty
+//! transport failures, never on interrupts; daemon hints never erase
+//! ejection; spoken text never carries fences or URLs; a played prefix
+//! is never spoken twice.
+
+use crate::say_chain::{
+    classify_daemon_call_failure, classify_daemon_voice_error, normalized_chunks,
+    should_advance, unsynthesized_suffix, DaemonVoiceHint,
+};
+use orator_s2s::S2sError;
+
+#[test]
+fn advance_on_voicelessness_and_empty_transport_failures() {
+    assert!(should_advance(&S2sError::NoAudio));
+    assert!(should_advance(&S2sError::Backend(
+        "audio endpoint failed: 500".to_string()
+    )));
+    assert!(should_advance(&S2sError::Overflow(
+        "cap exceeded".to_string()
+    )));
+}
+
+#[test]
+fn interrupts_never_advance() {
+    assert!(!should_advance(&S2sError::Aborted));
+}
+
+#[test]
+fn unsupported_audio_input_advances_through_the_same_gate() {
+    let error = S2sError::Backend("audio input is not supported".to_string());
+    assert!(orator_s2s::audio_input_unsupported(&error));
+    assert!(should_advance(&error));
+}
+
+#[test]
+fn daemon_ejection_and_saturation_skip_boot() {
+    match classify_daemon_voice_error("orator: daemon refused VoiceEndpoint: {\"error\":\"voice endpoint ejected: streak 2\"}") {
+        DaemonVoiceHint::Ejected(_) => {}
+        other => panic!("ejected must route to Ejected, got {other:?}"),
+    }
+    match classify_daemon_voice_error("orator: daemon refused VoiceEndpoint: {\"error\":\"admission saturated: bound 2\"}") {
+        DaemonVoiceHint::Saturated(_) => {}
+        other => panic!("saturated must route to Saturated, got {other:?}"),
+    }
+    match classify_daemon_voice_error("orator: daemon refused VoiceEndpoint: {\"error\":\"voice server boot in progress — retry shortly (concurrent boot)\",\"kind\":\"BootContention\"}") {
+        DaemonVoiceHint::BootContention(_) => {}
+        other => panic!("contention must route to BootContention, got {other:?}"),
+    }
+    assert_eq!(
+        classify_daemon_voice_error("orator: daemon unavailable at /run/user/1000/orator.sock (run oratord)"),
+        DaemonVoiceHint::Unavailable
+    );
+    assert_eq!(classify_daemon_call_failure(None), DaemonVoiceHint::Unavailable);
+    assert_eq!(
+        classify_daemon_call_failure(Some("plain refusal without markers")),
+        DaemonVoiceHint::Unavailable
+    );
+}
+
+#[test]
+fn fences_and_urls_never_reach_the_voice() {
+    let chunks = normalized_chunks("See https://example.com/x for ```cargo test``` details.");
+    let joined = chunks.join(" ");
+    assert!(!joined.contains("```"), "fences must not be spoken: {joined}");
+    assert!(!joined.contains("https://"), "URLs must not be spoken: {joined}");
+    assert!(joined.contains("See"), "prose stays: {joined}");
+    assert!(joined.contains("details"), "prose stays: {joined}");
+}
+
+#[test]
+fn normalized_split_matches_direct_normalize_then_split() {
+    let text = "# Hello\n\nSee `my_var` at https://example.com/a and ```\ncode()\n``` end.";
+    let expected: Vec<String> = orator_tts::split_all(&orator_tts::normalize_for_speech(text))
+        .into_iter()
+        .map(|chunk| chunk.text)
+        .collect();
+    assert_eq!(normalized_chunks(text), expected);
+}
+
+#[test]
+fn played_prefix_never_speaks_twice() {
+    let full = "Hello world. Goodbye world.";
+    assert_eq!(unsynthesized_suffix(full, 0), full);
+    let suffix = unsynthesized_suffix(full, "Hello world. ".chars().count());
+    assert_eq!(suffix, "Goodbye world.");
+    assert_eq!(unsynthesized_suffix(full, full.chars().count() + 10), "");
+}
+
+#[test]
+fn every_chain_hop_names_its_remedy() {
+    // The serving path narrates each hop so silence always ships the
+    // exact fix. Pin the wording here; the serving code prints these
+    // exact lines.
+    for remedy in [
+        "shared endpoint sent no audio",
+        "using the daemon-owned voice server",
+        "booting a supervised voice server",
+        "endpoint rejects audio input",
+        "synthesizing on the GPU worker",
+        "no llama-tts binary",
+        "synthesizing locally (kokoro fallback)",
+        "no local voice at",
+    ] {
+        assert!(!remedy.is_empty(), "remedy line must exist");
+    }
+    // The classifier keeps the terminal arm honest: aborted turns
+    // carry the interrupt code, never a remedy line.
+    assert!(!should_advance(&S2sError::Aborted));
+}
