@@ -2,7 +2,7 @@
 
 use fluent_wvr::FieldAccess;
 
-use crate::config::{AudioConfig, DaemonConfig, LlmEndpointConfig, OratorConfig, SttConfig, TtsConfig, TurnConfig};
+use crate::config::{AudioConfig, DaemonConfig, LlmEndpointConfig, OratorConfig, S2sConfig, SttConfig, TtsConfig, TurnConfig};
 
 #[test]
 fn canonical_paths_and_weights_resolution() {
@@ -140,6 +140,80 @@ fn within_root_rejects_symlink_escape() {
 }
 
 #[test]
+fn within_root_caps_symlink_hops_and_rejects_tmp() {
+    let root = tempfile::tempdir().expect("tempdir");
+    let outside = tempfile::tempdir().expect("outside");
+    let target = outside.path().join("evil.gguf");
+    std::fs::write(&target, b"stub").expect("stub writes");
+    #[cfg(unix)]
+    {
+        // Chain longer than the hop cap never resolves inside.
+        let mut prev = target.clone();
+        for depth in 0..50 {
+            let link = root.path().join(format!("hop-{depth}"));
+            std::os::unix::fs::symlink(&prev, &link).expect("chain link");
+            prev = link;
+        }
+        assert!(
+            !crate::paths::within_root(root.path(), &prev),
+            "hop-capped chase refuses deep chains"
+        );
+        // Loop never resolves inside.
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::os::unix::fs::symlink("loop-b", dir.path().join("loop-a")).expect("loop a");
+        std::os::unix::fs::symlink("loop-a", dir.path().join("loop-b")).expect("loop b");
+        assert!(
+            !crate::paths::within_root(dir.path(), &dir.path().join("loop-a")),
+            "symlink loop fails closed"
+        );
+    }
+    // Component-prefix /tmp check: /tmpfoo is fine, /tmp/evil is not
+    // trusted even when it exists.
+    let tmp_evil = std::path::PathBuf::from("/tmp/orator-redteam-guard-probe");
+    assert!(
+        !crate::paths::within_root(&tmp_evil, &tmp_evil.join("x")),
+        "missing under /tmp still fails closed"
+    );
+}
+
+#[test]
+fn server_binary_gate_requires_absolute_trusted_paths() {
+    use crate::paths::{current_uid, validate_server_binary};
+    let uid = current_uid();
+    // Relative paths refuse (explicit bypass is the only override).
+    assert!(
+        validate_server_binary(std::path::Path::new("relative/llama-server"), uid, false)
+            .is_err(),
+        "relative binary paths refuse"
+    );
+    // /tmp-rooted paths refuse without an explicit override.
+    assert!(
+        validate_server_binary(std::path::Path::new("/tmp/llama-server"), uid, false)
+            .is_err(),
+        "/tmp binaries refuse without explicit override"
+    );
+    assert!(
+        validate_server_binary(
+            std::path::Path::new("/tmp/llama-server"),
+            uid,
+            true
+        )
+        .is_ok(),
+        "explicit override accepts responsibility"
+    );
+    // Missing files refuse loudly.
+    assert!(
+        validate_server_binary(
+            std::path::Path::new("/nonexistent-orator/llama-server"),
+            uid,
+            false
+        )
+        .is_err(),
+        "missing binaries refuse"
+    );
+}
+
+#[test]
 fn reference_bundle_names_all_components() {
     let bundle = crate::config::default_bundle();
     assert!(bundle.backbone.ends_with("latest.gguf"));
@@ -165,9 +239,17 @@ fn bundle_presence_tracks_the_filesystem() {
     };
     assert!(full.present());
     assert!(full.missing().is_empty());
+    // Legacy companions are optional: LFM3 voices from backbone +
+    // projector alone, so dropping them never un-presents the bundle.
     std::fs::remove_file(dir.path().join("v.gguf")).expect("remove");
+    std::fs::remove_file(dir.path().join("t.gguf")).expect("remove");
+    assert!(full.present());
+    assert!(full.missing().is_empty());
+    assert_eq!(full.missing_optional().len(), 2);
+    // Required components still gate presence.
+    std::fs::remove_file(dir.path().join("m.gguf")).expect("remove");
     assert!(!full.present());
-    assert_eq!(full.missing(), vec![dir.path().join("v.gguf")]);
+    assert_eq!(full.missing(), vec![dir.path().join("m.gguf")]);
 }
 
 #[test]
@@ -175,8 +257,6 @@ fn defaults_match_the_documented_values() {
     let audio = AudioConfig::default();
     assert_eq!(audio.backend, "cpal");
     assert_eq!(audio.mic, "default");
-    assert_eq!(audio.system_source, "default-sink-monitor");
-    assert_eq!(audio.echo_cancel, "auto");
 
     let stt = SttConfig::default();
     assert_eq!(stt.backend, "audio-server");
@@ -196,13 +276,21 @@ fn defaults_match_the_documented_values() {
     assert_eq!(llm.endpoint, "127.0.0.1:8080");
     assert_eq!(llm.ctx, 8192);
     assert_eq!(llm.n_batch, 512);
-    assert_eq!(llm.model, "liquidai/lfm2.5-2.6b");
-    assert_eq!(llm.weights, "liquidai/lfm2.5-2.6b-gguf/latest.gguf");
+    assert_eq!(llm.model, "bartowski/lfm3-1.7b");
+    assert_eq!(llm.weights, "bartowski/lfm3-1.7b/latest.gguf");
     assert_eq!(llm.gguf_dir, "/ai/models/gguf");
 
     let tts = TtsConfig::default();
     assert_eq!(tts.backend, "audio-server");
     assert_eq!(tts.voice, "bf_emma");
+
+    // The llama.cpp audio endpoint ships in the file (default port
+    // 8080, same loopback default as the text endpoint).
+    let s2s = S2sConfig::default();
+    assert_eq!(s2s.backend, "audio-server");
+    assert_eq!(s2s.endpoint, "http://127.0.0.1:8080");
+    assert_eq!(s2s.model, "liquidai/lfm3-audio-2b");
+    assert_eq!(s2s.turn_window_ms, 2000);
 
     // GPU offload is explicit opt-in everywhere: defaults stay CPU.
     assert!(!stt.gpu);
@@ -367,4 +455,69 @@ fn pre_gpu_schema_files_load_with_gpu_off() {
     assert!(!loaded.stt.gpu);
     assert!(!loaded.llm.gpu);
     assert!(!loaded.tts.gpu);
+}
+
+#[test]
+fn removed_audio_keys_are_detected_by_name() {
+    use crate::config::removed_audio_keys;
+    let dir = tempfile::tempdir().expect("tempdir");
+    // Clean configs pass silently.
+    let clean = dir.path().join("clean.json");
+    std::fs::write(&clean, r#"{"audio": {"backend": "cpal"}}"#).expect("writes");
+    assert!(removed_audio_keys(&clean).is_empty());
+    // Removed keys are named, never silently absorbed.
+    let legacy = dir.path().join("legacy.json");
+    std::fs::write(
+        &legacy,
+        r#"{"audio": {"system_source": "x", "echo_cancel": "auto"}}"#,
+    )
+    .expect("writes");
+    let mut found = removed_audio_keys(&legacy);
+    found.sort();
+    assert_eq!(found, vec!["echo_cancel".to_string(), "system_source".to_string()]);
+    // Missing files are not removals (defaults apply).
+    assert!(removed_audio_keys(&dir.path().join("absent.json")).is_empty());
+}
+
+#[test]
+fn s2s_section_loads_from_file_and_old_files_stay_port_8080() {
+    // A file with an s2s section round-trips the llama.cpp endpoint.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("config.json");
+    std::fs::write(
+        &path,
+        r#"{"s2s": {"endpoint": "http://127.0.0.1:18080", "model": "custom-voice"}}"#,
+    )
+    .expect("write fixture");
+    let loaded: OratorConfig = common_core::config::load_json(&path).expect("s2s schema loads");
+    assert_eq!(loaded.s2s.endpoint, "http://127.0.0.1:18080");
+    assert_eq!(loaded.s2s.model, "custom-voice");
+    // Unset leaves fall back to the builder values (never empty/zero).
+    assert_eq!(loaded.s2s.backend, S2sConfig::default().backend);
+    assert_eq!(loaded.s2s.turn_window_ms, 2000);
+    let bare_path = dir.path().join("bare.json");
+    std::fs::write(&bare_path, r#"{"s2s": {}}"#).expect("write fixture");
+    let bare: OratorConfig = common_core::config::load_json(&bare_path).expect("empty section loads");
+    assert_eq!(bare.s2s, S2sConfig::default());
+    // Files written before the section existed load the port-8080 default.
+    let legacy = dir.path().join("legacy.json");
+    std::fs::write(&legacy, r#"{"daemon": {"admission_max": 2}}"#).expect("write fixture");
+    let old: OratorConfig = common_core::config::load_json(&legacy).expect("old schema loads");
+    assert_eq!(old.s2s, S2sConfig::default());
+    assert_eq!(old.s2s.endpoint, "http://127.0.0.1:8080");
+}
+
+#[test]
+fn bundle_from_s2s_pins_the_backbone_and_honors_component_paths() {
+    let mut s2s = S2sConfig::default();
+    let bundle = crate::config::bundle_from_s2s(&s2s);
+    assert_eq!(bundle.backbone, crate::config::default_bundle().backbone);
+    assert!(bundle.mmproj.ends_with("mmproj.gguf"));
+    s2s.mmproj = "/voices/custom-mmproj.gguf".to_string();
+    let custom = crate::config::bundle_from_s2s(&s2s);
+    assert_eq!(
+        custom.mmproj,
+        std::path::PathBuf::from("/voices/custom-mmproj.gguf")
+    );
+    assert_eq!(custom.backbone, bundle.backbone, "backbone stays pinned");
 }

@@ -10,14 +10,18 @@ use orator_core::AudioBundle;
 use crate::worker::{resolve_tts_binary, synth_blocking, TtsWorkerError};
 
 /// Stub `llama-tts`: copies the fixture WAV to its `-o` target (the
-/// last argument). Writes nothing else, exits zero.
+/// last argument). Writes nothing else, exits zero. The fixture path
+/// is baked into the script so the scrubbed child env needs no
+/// pass-through.
 fn stub_script(fixture: &std::path::Path, dir: &std::path::Path) -> std::path::PathBuf {
     let script = dir.join("llama-tts");
-    std::fs::write(&script, "#!/bin/sh\ncp \"$ORATOR_S2S_STUB_WAV\" \"$8\"\n")
-        .expect("stub writes");
+    std::fs::write(
+        &script,
+        format!("#!/bin/sh\ncp '{}' \"$8\"\n", fixture.display()),
+    )
+    .expect("stub writes");
     std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755))
         .expect("stub is executable");
-    let _ = fixture;
     script
 }
 
@@ -50,14 +54,12 @@ fn bundle() -> AudioBundle {
 fn stub_synthesis_round_trips_samples() {
     let dir = tempfile::tempdir().expect("tempdir");
     let fixture = fixture_wav(dir.path());
-    std::env::set_var("ORATOR_S2S_STUB_WAV", &fixture);
     let stub = stub_script(&fixture, dir.path());
     let (samples, rate) =
         synth_blocking(&stub, &bundle(), "hello", Duration::from_secs(10)).expect("stub runs");
     assert_eq!(rate, 24_000);
     assert_eq!(samples.len(), 4);
     assert!((samples[1] - 0.5).abs() < 0.01);
-    std::env::remove_var("ORATOR_S2S_STUB_WAV");
 }
 
 #[test]
@@ -150,4 +152,86 @@ fn scratch_guard_deletes_on_drop() {
         let _guard = ScratchGuard::new(path.clone());
     }
     assert!(!path.exists(), "drop reaps the scratch file");
+}
+
+#[test]
+fn scratch_reservation_is_exclusive_and_private() {
+    use crate::worker::reserve_scratch_wav;
+    let first = reserve_scratch_wav().expect("first reserves");
+    let second = reserve_scratch_wav().expect("second reserves");
+    assert_ne!(first, second, "reservations never collide");
+    assert!(
+        first.parent() == second.parent(),
+        "both live in the private scratch dir"
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        let mode = std::fs::metadata(first.parent().expect("parent"))
+            .expect("metadata")
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o700, "scratch dir is owner-only");
+    }
+    let _ = std::fs::remove_file(&first);
+    let _ = std::fs::remove_file(&second);
+}
+
+#[test]
+fn synth_scrubs_the_environment_and_pins_path() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let fixture = fixture_wav(dir.path());
+    let script = dir.path().join("llama-tts");
+    std::fs::write(
+        &script,
+        format!(
+            "#!/bin/sh\n\
+             if [ -n \"$ORATOR_REDTEAM_SECRET\" ]; then echo 'parent secret leaked' >&2; exit 9; fi\n\
+             if [ \"$PATH\" != \"/usr/bin:/bin\" ]; then echo \"PATH not pinned: $PATH\" >&2; exit 10; fi\n\
+             if [ \"$LANG\" != \"C.UTF-8\" ]; then echo \"LANG not pinned: $LANG\" >&2; exit 11; fi\n\
+             cp '{}' \"$8\"\n",
+            fixture.display()
+        ),
+    )
+    .expect("stub writes");
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755))
+        .expect("executable");
+    std::env::set_var("ORATOR_REDTEAM_SECRET", "hunter2");
+    let result = synth_blocking(&script, &bundle(), "hello", Duration::from_secs(10));
+    std::env::remove_var("ORATOR_REDTEAM_SECRET");
+    result.expect("scrubbed env with pinned PATH/LANG runs the stub");
+}
+
+#[test]
+fn synth_timeout_kills_the_whole_group() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let marker = dir.path().join("orphan.wav");
+    let script = dir.path().join("llama-tts");
+    // Background writer outlives the main sleep: killing only the
+    // child leaves the grandchild to write the marker; killing the
+    // whole group leaves nothing.
+    std::fs::write(
+        &script,
+        format!(
+            "#!/bin/sh\n(sleep 1; echo x > {}) & sleep 30\n",
+            marker.display()
+        ),
+    )
+    .expect("stub writes");
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755))
+        .expect("executable");
+    let error = synth_blocking(&script, &bundle(), "hi", Duration::from_millis(400))
+        .expect_err("budget must fire");
+    assert!(
+        error.to_string().contains("timed out"),
+        "timeout names itself: {error}"
+    );
+    std::thread::sleep(std::time::Duration::from_millis(1500));
+    assert!(
+        !marker.exists(),
+        "group kill leaves no orphan output"
+    );
 }

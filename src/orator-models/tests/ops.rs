@@ -39,10 +39,13 @@ fn cross_kind_same_tag_resolves_deterministically() {
 
 #[test]
 fn audio_bundle_lists_with_component_presence() {
-    let entry = find_entry(ModelKind::Audio, "liquidai/lfm2.5-audio-1.5b").expect("audio listed");
+    let entry = find_entry(ModelKind::Audio, "liquidai/lfm3-audio-2b").expect("audio listed");
     assert!(entry.pinned(), "bundle manifest is measured and pinned");
     let rows = list_models();
-    assert!(rows.iter().any(|row| row.name == "liquidai/lfm2.5-audio-1.5b" && row.kind == "audio"));
+    assert!(rows.iter().any(|row| row.name == "liquidai/lfm3-audio-2b" && row.kind == "audio"));
+    // Legacy bundle stays listed as the unpinned fallback.
+    let legacy = find_entry(ModelKind::Audio, "liquidai/lfm2.5-audio-1.5b").expect("legacy listed");
+    assert!(!legacy.pinned(), "legacy bundle is intent, not a download");
 }
 
 #[test]
@@ -51,7 +54,7 @@ fn bundle_manifest_rejects_tampered_files() {
     let dir = tempfile::tempdir().expect("tempdir");
     let mut pins = Vec::new();
     let mut paths = Vec::new();
-    for (index, name) in ["a.gguf", "b.gguf", "c.gguf", "d.gguf"].into_iter().enumerate() {
+    for (index, name) in ["a.gguf", "b.gguf"].into_iter().enumerate() {
         let path = dir.path().join(name);
         let content = format!("component-{index}");
         std::fs::write(&path, &content).expect("fixture");
@@ -62,24 +65,24 @@ fn bundle_manifest_rejects_tampered_files() {
         pins.push((name, bytes, leaked));
         paths.push(path);
     }
-    let pins: [(&str, u64, &str); 4] = [pins[0], pins[1], pins[2], pins[3]];
+    let pins: Vec<(&str, u64, &str)> = pins.into_iter().collect();
     let manifest = sha256_hex(
         pins.iter()
             .map(|(_, _, hash)| *hash)
             .collect::<String>()
             .as_bytes(),
     );
-    let files = [paths[0].as_path(), paths[1].as_path(), paths[2].as_path(), paths[3].as_path()];
-    assert!(verify_bundle_files(files, &pins, &manifest).expect("valid manifest"));
-    std::fs::write(&paths[2], "tampered").expect("tamper");
-    assert!(!verify_bundle_files(files, &pins, &manifest).expect("tamper reports"));
+    let files: Vec<std::path::PathBuf> = paths.clone();
+    assert!(verify_bundle_files(&files, &pins, &manifest).expect("valid manifest"));
+    std::fs::write(&paths[1], "tampered").expect("tamper");
+    assert!(!verify_bundle_files(&files, &pins, &manifest).expect("tamper reports"));
     let _ = sha256_hex;
 }
 
-#[ignore = "hashes ~1.2GB off disk; run via the soak gate"]
+#[ignore = "hashes ~2GB off disk; run via the soak gate"]
 #[test]
 fn bundle_manifest_matches_live_bytes() {
-    let entry = find_entry(ModelKind::Audio, "liquidai/lfm2.5-audio-1.5b").expect("audio listed");
+    let entry = find_entry(ModelKind::Audio, "liquidai/lfm3-audio-2b").expect("audio listed");
     match verify_bundle(&entry) {
         Ok(verified) => assert!(verified, "installation bundle must verify"),
         Err(ModelOpError::Missing(_)) => {

@@ -10,26 +10,23 @@ use clap::Parser;
 use fluent_concurrency::stream::StreamAbort;
 use orator_audio::{resample_linear, CpalBackend};
 use orator_cli::{
-    config::{audio_base_url, gpu_llm_args, resolve_backend, resolve_llm_base},
+    config::resolve_backend,
     doctor::{full_report, render_full},
     shell::{init_script, write_completions, Shell},
     socket::{
         daemon_call_transport, parse_transport, unavailable_socket_text, unavailable_ws_text,
         Transport,
     },
-    stream::stream_chunks,
     transcribe::{audio_server_cue, cue_from_centiseconds, render, Cue, TranscriptFormat},
-    Cli, Command, ExitCode, ModelsAction,
+    Cli, Command, ExitCode,
 };
-use orator_core::{models_dir, LlmEndpointConfig, LlmSession, OratorConfig, SttConfig};
+use orator_core::{models_dir, OratorConfig, SttConfig};
 use orator_desktop::{ExternalClipboard, LadderMemory, NoChord};
-use orator_llm::{probe_models, HttpSession, Supervisor, SupervisorConfig};
 use orator_stt::WhisperBackend;
 
-/// Shared shutdown releaser: the current endpoint's release callback.
-type Releaser = std::sync::Arc<dyn Fn() + Send + Sync>;
-/// Slot holding the active releaser for the signal watcher.
-type ReleaserSlot = std::sync::Arc<std::sync::Mutex<Option<Releaser>>>;
+mod ask_cmd;
+mod models_cmd;
+mod say;
 
 fn main() -> ProcessExit {
     match run(Cli::parse()) {
@@ -49,14 +46,33 @@ fn run(cli: Cli) -> ExitCode {
             return ExitCode::Usage;
         }
     };
+    if cli.insecure {
+        // Explicit only: the socket preflight refuses foreign sockets
+        // unless this flag (or the env it sets) opts out.
+        std::env::set_var("ORATOR_INSECURE", "1");
+    }
     let (cfg, config_source) = orator_core::config::load_hierarchical();
+    // Removed audio keys refuse loudly: a config that sets them names
+    // the removal instead of running with silently ignored fields.
+    // `load_hierarchical` falls back to the canonical path when no
+    // file exists, so only a real file refusal counts.
+    if config_source.is_file() {
+        let removed = orator_core::config::removed_audio_keys(&config_source);
+        if !removed.is_empty() {
+            eprintln!(
+                "orator: audio.{} removed from the config (no capture path or AEC gate ever read it); delete the key",
+                removed.join(", audio.")
+            );
+            return ExitCode::Usage;
+        }
+    }
     match cli.command {
         Command::Doctor => {
             print!("{}", render_full(&full_report(&cfg)));
             println!("config: {}", config_source.display());
             ExitCode::Success
         }
-        Command::Models { action } => models(action),
+        Command::Models { action } => models_cmd::models(action),
         Command::ShellInit { shell } => {
             let Some(parsed) = Shell::parse(&shell) else {
                 eprintln!("orator: unknown shell: {shell}");
@@ -78,8 +94,8 @@ fn run(cli: Cli) -> ExitCode {
         Command::Transcribe { file, format, backend } => {
             transcribe(&file, &format, &backend, &cfg, transport)
         }
-        Command::Ask { question, speak } => ask(&question, speak, &cfg, transport),
-        Command::Say { text, backend } => say(&text, &backend, &cfg, transport),
+        Command::Ask { question, speak } => ask_cmd::ask(&question, speak, &cfg, transport),
+        Command::Say { text, backend } => say::say(&text, &backend, &cfg, transport),
         Command::Listen { sys, mic, json } => listen(sys, mic, json, transport),
         Command::Chat => chat(&cfg),
         Command::Status { selector } => {
@@ -91,7 +107,7 @@ fn run(cli: Cli) -> ExitCode {
         }
         Command::Ptt { action } => ptt(&action, transport),
         Command::Meeting { action, id } => meeting(&action, &id, transport),
-        Command::Cmd { request } => propose(&request),
+        Command::Cmd { request } => propose(&request, &cfg, transport),
         Command::Approve { id, deny } => approve(&id, deny, transport),
         Command::Stats { file, selector } => {
             if !selector.trim().is_empty() {
@@ -132,22 +148,25 @@ fn daemon_passthrough(
         }
         Err(code) => {
             if code == ExitCode::DaemonUnavailable {
-                match transport {
-                    Transport::Socket => {
-                        eprintln!(
-                            "{}",
-                            unavailable_socket_text(
-                                orator_core::socket_path().as_deref()
-                            )
-                        );
-                    }
-                    Transport::Ws => {
-                        let (config, _) = orator_core::config::load_hierarchical();
-                        eprintln!("{}", unavailable_ws_text(&config.daemon.ws_listen));
-                    }
-                }
+                note_unavailable(transport);
             }
             code
+        }
+    }
+}
+
+/// Name the missing daemon for the selected transport on stderr.
+pub(crate) fn note_unavailable(transport: Transport) {
+    match transport {
+        Transport::Socket => {
+            eprintln!(
+                "{}",
+                unavailable_socket_text(orator_core::socket_path().as_deref())
+            );
+        }
+        Transport::Ws => {
+            let (config, _) = orator_core::config::load_hierarchical();
+            eprintln!("{}", unavailable_ws_text(&config.daemon.ws_listen));
         }
     }
 }
@@ -157,9 +176,9 @@ fn stats(file: &str, transport: Transport) -> ExitCode {
     if file.is_empty() {
         daemon_passthrough("GetState", serde_json::json!({}), transport)
     } else {
-        match orator_bench::BenchLog::read_stat_file(std::path::Path::new(file)) {
+        match orator_core::bench::BenchLog::read_stat_file(std::path::Path::new(file)) {
             Ok(log) => {
-                print!("{}", orator_bench::render_stats(&orator_bench::histograms(&log)));
+                print!("{}", orator_core::bench::render_stats(&orator_core::bench::histograms(&log)));
                 ExitCode::Success
             }
             Err(error) => {
@@ -170,470 +189,110 @@ fn stats(file: &str, transport: Transport) -> ExitCode {
     }
 }
 
-/// Speak TEXT or stdin: through the daemon by default, or the audio
-/// endpoint with local playout under `--backend audio-server` (text
-/// falls back to the daemon when the server sends none).
-fn say(text: &[String], backend: &str, config: &OratorConfig, transport: Transport) -> ExitCode {
-    let spoken = if text.is_empty() {
-        let mut stdin = String::new();
-        if std::io::Read::read_to_string(&mut std::io::stdin(), &mut stdin).is_err() {
-            eprintln!("orator: failed to read stdin");
+/// Listen-in: capture the default input, transcribe utterances
+/// through the daemon, print timestamped lines. Never speaks, never
+/// acts — transcripts are untrusted data by construction. `--sys`
+/// and `--mic` both select the default input in v1 (separate system
+/// tap lands later); `--json` emits JSON lines. Ctrl-C stops.
+fn listen(sys: bool, mic: bool, json: bool, transport: Transport) -> ExitCode {
+    use orator_cli::transcribe::{decode_transcribe_text, encode_transcribe_audio};
+    let _ = (sys, mic);
+    let mut capture = match CpalBackend::open_default() {
+        Ok(backend) => backend,
+        Err(error) => {
+            eprintln!("orator: {error}");
             return ExitCode::Error;
         }
-        stdin
-    } else {
-        text.join(" ")
     };
-    if spoken.trim().is_empty() {
-        eprintln!("orator: nothing to speak");
-        return ExitCode::Usage;
-    }
-    let selected = resolve_backend(backend, &config.tts.backend);
-    if selected == "audio-server" {
-        return say_audio_server(&spoken, config, transport);
-    }
-    if selected == "kokoro" {
-        return say_kokoro(&spoken, &config.tts.voice, config.tts.gpu).0;
-    }
-    if selected != "daemon" {
-        eprintln!("orator: unknown TTS backend: {selected}");
-        return ExitCode::Usage;
-    }
-    daemon_passthrough("Say", serde_json::json!({ "text": spoken }), transport)
-}
-
-/// Synthesize through the audio endpoint and play locally (blocking
-/// cpal output at the vocoder rate). Text-only servers fall back to
-/// the daemon so the reply still speaks.
-fn say_audio_server(text: &str, config: &OratorConfig, transport: Transport) -> ExitCode {
-    match run_audio_turn(&audio_base_url(&config.llm), transport, |session| {
-        session.speak_blocking(text)
-    }) {
-        Ok(samples) => match orator_audio::play_blocking(&samples, orator_s2s::AUDIO_OUT_RATE) {
-            Ok(()) => ExitCode::Success,
-            Err(error) => {
-                eprintln!("orator: {error}");
-                ExitCode::Error
-            }
-        },
-        Err(orator_s2s::S2sError::Aborted) => ExitCode::Interrupted,
-        Err(error) if orator_s2s::should_advance_chain(&error) => {
-            say_fallback(text, config, transport)
+    let rate = capture.sample_rate;
+    let mut gate = orator_cli::tui::MicGate::new();
+    let mut buffered: Vec<f32> = Vec::new();
+    let watch = orator_cli::SignalWatch::arm(|| {});
+    eprintln!("orator: listening on the default input at {rate} Hz (Ctrl-C stops; transcripts only, never actions)");
+    let started = std::time::Instant::now();
+    let mut frames_seen: u64 = 0;
+    let mut utterances: u64 = 0;
+    let mut last_nudge = started;
+    loop {
+        if watch.signalled() {
+            eprintln!("orator: listen stopped after {utterances} utterance(s)");
+            return ExitCode::Interrupted;
         }
-        Err(error) => {
-            eprintln!("orator: {error}");
-            ExitCode::Error
+        let mut batch = Vec::new();
+        while let Ok(sample) = capture.consumer.pop() {
+            batch.push(sample);
         }
-    }
-}
-
-/// Run one audio turn against an assured endpoint: shared when the
-/// model is served, supervised when it is not. A shared endpoint
-/// that rejects audio input retries once on a fresh supervised
-/// server (verified live: the gateway route has no mmproj, a
-/// self-booted one accepts audio). Releases every handle taken.
-fn run_audio_turn<T>(
-    base: &str,
-    transport: Transport,
-    mut run: impl FnMut(&mut orator_s2s::AudioSession) -> Result<T, orator_s2s::S2sError>,
-) -> Result<T, orator_s2s::S2sError> {
-    use orator_s2s::S2sError;
-    // One overall budget for the whole chain so a worker timeout plus
-    // a stream timeout plus a boot timeout never stack without bound.
-    // `shutdown_signal` stays the only preemption; this bound only
-    // skips further supervised boots once billed time is spent.
-    const CHAIN_BUDGET: std::time::Duration = std::time::Duration::from_secs(600);
-    let chain_start = std::time::Instant::now();
-    let model = orator_s2s::S2sConfig::default().model.clone();
-    let bundle = orator_core::default_bundle();
-    let endpoint = std::sync::Arc::new(
-        common_core::runtime::block_on(orator_s2s::ensure_audio_server(base, &model, &bundle))
-            .map_err(|error| {
-                eprintln!("orator: {error}");
-                error
-            })?,
-    );
-    // Current releaser: the watcher runs whatever it holds when the
-    // signal lands, so supervised retries booted below stay covered.
-    // Every handle here releases idempotently.
-    let slot: ReleaserSlot =
-        std::sync::Arc::new(std::sync::Mutex::new(None));
-    let releasing = std::sync::Arc::clone(&slot);
-    let watch = orator_cli::SignalWatch::arm(move || {
-        if let Some(release) = common_core::sync::lock(&releasing).as_ref() {
-            release();
-        }
-    });
-    let hold = |release: std::sync::Arc<dyn Fn() + Send + Sync>| {
-        *common_core::sync::lock(&slot) = Some(release);
-    };
-    hold(std::sync::Arc::new({
-        let endpoint = std::sync::Arc::clone(&endpoint);
-        move || endpoint.release()
-    }));
-    let interrupted = || -> Result<T, S2sError> {
-        if let Some(release) = common_core::sync::lock(&slot).as_ref() {
-            release();
-        }
-        eprintln!("orator: interrupted; endpoint released");
-        Err(S2sError::Aborted)
-    };
-    let mut session = orator_s2s::AudioSession::new(orator_s2s::S2sConfig {
-        endpoint: endpoint.base_url().to_string(),
-        ..orator_s2s::S2sConfig::default()
-    });
-    let outcome = run(&mut session);
-    if watch.signalled() {
-        return interrupted();
-    }
-    match outcome {
-        Ok(value) => {
-            endpoint.release();
-            Ok(value)
-        }
-        Err(S2sError::NoAudio) if bundle.present() => {
-            endpoint.release();
-            eprintln!("orator: shared endpoint sent no audio; seeking the LiquidAI voice server");
-            match daemon_voice_endpoint(transport) {
-                orator_cli::say_chain::DaemonVoiceHint::Available(url) => {
-                    eprintln!("orator: using the daemon-owned voice server");
-                    let mut retry = orator_s2s::AudioSession::new(orator_s2s::S2sConfig {
-                        endpoint: url,
-                        ..orator_s2s::S2sConfig::default()
-                    });
-                    let outcome = run(&mut retry);
-                    if watch.signalled() {
-                        return interrupted();
-                    }
-                    outcome
-                }
-                orator_cli::say_chain::DaemonVoiceHint::Ejected(reason)
-                | orator_cli::say_chain::DaemonVoiceHint::Saturated(reason) => {
-                    eprintln!("orator: {reason}; skipping supervised boot");
-                    Err(S2sError::NoAudio)
-                }
-                orator_cli::say_chain::DaemonVoiceHint::BootContention(reason) => {
-                    eprintln!("orator: {reason}; waiting for the daemon boot (progress, not a failure)");
-                    std::thread::sleep(std::time::Duration::from_secs(2));
-                    match daemon_voice_endpoint(transport) {
-                        orator_cli::say_chain::DaemonVoiceHint::Available(url) => {
-                            eprintln!("orator: using the daemon-owned voice server");
-                            let mut retry = orator_s2s::AudioSession::new(orator_s2s::S2sConfig {
-                                endpoint: url,
-                                ..orator_s2s::S2sConfig::default()
-                            });
-                            let outcome = run(&mut retry);
-                            if watch.signalled() {
-                                return interrupted();
-                            }
-                            outcome
-                        }
-                        other => {
-                            eprintln!(
-                                "orator: daemon still busy ({}); falling through to the voice chain",
-                                match other {
-                                    orator_cli::say_chain::DaemonVoiceHint::Ejected(reason)
-                                    | orator_cli::say_chain::DaemonVoiceHint::Saturated(reason)
-                                    | orator_cli::say_chain::DaemonVoiceHint::BootContention(reason) => {
-                                        reason
-                                    }
-                                    _ => "unavailable".to_string(),
-                                }
-                            );
-                            Err(S2sError::NoAudio)
-                        }
-                    }
-                }
-                orator_cli::say_chain::DaemonVoiceHint::Unavailable => {
-                    if chain_start.elapsed() > CHAIN_BUDGET {
-                        eprintln!("orator: chain budget spent; skipping supervised boot");
-                        return Err(S2sError::NoAudio);
-                    }
-                    if orator_s2s::resolve_audio_server().is_none() {
-                        eprintln!(
-                            "orator: no voice server binary (set LLAMA_AUDIO_SERVER or install llama-liquid-audio-server); falling through to the voice chain"
-                        );
-                        return Err(S2sError::NoAudio);
-                    }
-                    eprintln!("orator: booting a supervised voice server");
-                    match common_core::runtime::block_on(orator_s2s::boot_audio_server(&bundle, &model))
-                    {
-                        Ok(owned) => {
-                            let owned = std::sync::Arc::new(owned);
-                            hold(std::sync::Arc::new({
-                                let owned = std::sync::Arc::clone(&owned);
-                                move || owned.release()
-                            }));
-                            let mut retry = orator_s2s::AudioSession::new(orator_s2s::S2sConfig {
-                                endpoint: owned.base_url().to_string(),
-                                ..orator_s2s::S2sConfig::default()
-                            });
-                            let outcome = run(&mut retry);
-                            if watch.signalled() {
-                                return interrupted();
-                            }
-                            let out = outcome;
-                            owned.release();
-                            out
-                        }
-                        Err(error) => {
-                            eprintln!("orator: voice server failed: {error}");
-                            Err(S2sError::NoAudio)
-                        }
-                    }
-                }
-            }
-        }
-        Err(error)
-            if orator_s2s::audio_input_unsupported(&error)
-                && matches!(&*endpoint, orator_s2s::AudioEndpoint::Shared(_))
-                && bundle.present() =>
-        {
-            endpoint.release();
-            eprintln!("orator: endpoint rejects audio input; seeking the LiquidAI voice server");
-            match daemon_voice_endpoint(transport) {
-                orator_cli::say_chain::DaemonVoiceHint::Available(url) => {
-                    eprintln!("orator: using the daemon-owned voice server");
-                    let mut retry = orator_s2s::AudioSession::new(orator_s2s::S2sConfig {
-                        endpoint: url,
-                        ..orator_s2s::S2sConfig::default()
-                    });
-                    let outcome = run(&mut retry);
-                    if watch.signalled() {
-                        return interrupted();
-                    }
-                    outcome
-                }
-                orator_cli::say_chain::DaemonVoiceHint::Ejected(reason)
-                | orator_cli::say_chain::DaemonVoiceHint::Saturated(reason) => {
-                    eprintln!("orator: {reason}; skipping supervised boot");
-                    Err(S2sError::NoAudio)
-                }
-                orator_cli::say_chain::DaemonVoiceHint::BootContention(reason) => {
-                    eprintln!("orator: {reason}; waiting for the daemon boot (progress, not a failure)");
-                    std::thread::sleep(std::time::Duration::from_secs(2));
-                    Err(S2sError::NoAudio)
-                }
-                orator_cli::say_chain::DaemonVoiceHint::Unavailable => {
-                    if chain_start.elapsed() > CHAIN_BUDGET {
-                        eprintln!("orator: chain budget spent; skipping supervised boot");
-                        return Err(S2sError::NoAudio);
-                    }
-                    eprintln!("orator: booting a supervised voice server");
-                    match common_core::runtime::block_on(orator_s2s::boot_audio_server(&bundle, &model)) {
-                        Ok(owned) => {
-                            let owned = std::sync::Arc::new(owned);
-                            hold(std::sync::Arc::new({
-                                let owned = std::sync::Arc::clone(&owned);
-                                move || owned.release()
-                            }));
-                            let mut retry = orator_s2s::AudioSession::new(orator_s2s::S2sConfig {
-                                endpoint: owned.base_url().to_string(),
-                                ..orator_s2s::S2sConfig::default()
-                            });
-                            let outcome = run(&mut retry);
-                            if watch.signalled() {
-                                return interrupted();
-                            }
-                            let out = outcome;
-                            owned.release();
-                            out
-                        }
-                        Err(boot_error) => {
-                            eprintln!("orator: voice server failed: {boot_error}");
-                            Err(S2sError::NoAudio)
-                        }
-                    }
-                }
-            }
-        }
-        Err(error) => {
-            endpoint.release();
-            Err(error)
-        }
-    }
-}
-
-/// Ask the daemon for its owned voice-server URL.
-///
-/// The daemon distinguishes absence (caller may boot its own server)
-/// from ejection and saturation (caller must not boot; fall through
-/// to the voice chain instead). The quiet transport core preserves
-/// the body text so those two cases stay distinguishable.
-fn daemon_voice_endpoint(
-    transport: Transport,
-) -> orator_cli::say_chain::DaemonVoiceHint {
-    use orator_cli::socket::call_transport;
-    match call_transport(transport, "VoiceEndpoint", serde_json::json!({})) {
-        Ok(body) => body
-            .get("url")
-            .and_then(|url| url.as_str())
-            .map_or(
-                orator_cli::say_chain::DaemonVoiceHint::Unavailable,
-                |url| orator_cli::say_chain::DaemonVoiceHint::Available(url.to_string()),
-            ),
-        Err(failure) => {
-            if let Some(text) = failure.text.as_deref() {
-                eprintln!("{text}");
-            }
-            orator_cli::say_chain::classify_daemon_call_failure(
-                failure.text.as_deref(),
-            )
-        }
-    }
-}
-
-/// Whether the daemon currently refuses voice work with a named
-/// ejection or saturation is decided by the caller matching on
-/// [`orator_cli::say_chain::DaemonVoiceHint`]; no separate helper
-/// exists so the decision stays in one place.
-/// Voice fallback chain after a text-only server turn: the GPU
-/// vocoder worker, then the local Kokoro voice, then the daemon.
-/// LiquidAI stays the default everywhere; the worker voices on the
-/// GPU whenever the bundle's projector supports generation, Kokoro
-/// covers the CPU fallback, and the daemon is the last resort.
-/// Every hop narrates, so silence always comes with the exact
-/// remedy.
-fn say_fallback(text: &str, config: &OratorConfig, transport: Transport) -> ExitCode {
-    if let Some(binary) = orator_s2s::resolve_tts_binary() {
-        eprintln!("orator: server sent no audio; synthesizing on the GPU worker");
-        let bundle = orator_core::default_bundle();
-        match orator_s2s::synth_blocking(&binary, &bundle, text, orator_s2s::TTS_TIMEOUT) {
-            Ok((samples, rate)) => {
-                return match orator_audio::play_blocking(&samples, rate) {
-                    Ok(()) => ExitCode::Success,
-                    Err(error) => {
-                        eprintln!("orator: {error}");
-                        ExitCode::Error
-                    }
-                };
-            }
-            Err(error) => eprintln!("orator: GPU worker failed: {error}"),
-        }
-    } else {
-        eprintln!("orator: server sent no audio; no llama-tts binary (set LLAMA_TTS or add it to $PATH)");
-    }
-    let resolved = orator_tts::default_paths();
-    let kokoro_ready = resolved
-        .as_ref()
-        .is_some_and(|(model, voices)| model.exists() && voices.exists());
-    if kokoro_ready {
-        eprintln!("orator: synthesizing locally (kokoro fallback)");
-        let (code, chunks, played) = say_kokoro(text, &config.tts.voice, config.tts.gpu);
-        match code {
-            ExitCode::Success => return ExitCode::Success,
-            ExitCode::Error if played > 0 && played < chunks.len() => {
-                let remaining: Vec<&str> =
-                    chunks.iter().skip(played).map(String::as_str).collect();
-                let suffix = remaining.join(" ");
-                if suffix.trim().is_empty() {
-                    eprintln!(
-                        "orator: local voice played {played}/{} chunks; remainder empty, not re-speaking",
-                        chunks.len()
-                    );
-                    return ExitCode::Error;
-                }
-                eprintln!(
-                    "orator: local voice played {played}/{} chunks; continuing with the daemon for the remainder",
-                    chunks.len()
-                );
-                return daemon_passthrough(
-                    "Say",
-                    serde_json::json!({ "text": suffix }),
-                    transport,
-                );
-            }
-            ExitCode::Error if played > 0 => {
-                eprintln!(
-                    "orator: local voice played {played}/{} chunks; output already heard, not re-speaking",
-                    chunks.len()
-                );
+        if batch.is_empty() {
+            // No device data at all: after 5 s the input is dead or
+            // absent — fail loudly instead of spinning silently
+            // forever. Silence (frames flowing, gate closed) is fine
+            // and waits below.
+            if frames_seen == 0 && started.elapsed() > std::time::Duration::from_secs(5) {
+                eprintln!("orator: capture delivered no frames in 5 s (no live input on the default device)");
                 return ExitCode::Error;
             }
-            ExitCode::Error => {}
-            code => return code,
+            if frames_seen > 0 && last_nudge.elapsed() > std::time::Duration::from_secs(30) {
+                last_nudge = std::time::Instant::now();
+                eprintln!("orator: still listening ({utterances} utterance(s) so far; speak to transcribe)");
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            continue;
         }
-    } else {
-        let hint = resolved.map_or_else(
-            || "the managed model directory".to_string(),
-            |(model, _)| model.display().to_string(),
-        );
-        eprintln!(
-            "orator: no local voice at {hint} (fetch kokoro-v1.0.onnx plus a voice pack)"
-        );
-    }
-    daemon_passthrough("Say", serde_json::json!({ "text": text }), transport)
-}
-
-/// Speak `text` through the local Kokoro voice and play it on the
-/// default output device. Weights missing or device absent fail
-/// actionably; synthesis errors never fall through silently. GPU is
-/// explicit opt-in and fails without a device instead of running CPU.
-/// Text normalizes once (fences and URLs never spoken) then splits on
-/// sentence boundaries; chunk N plays while chunk N+1 synthesizes, so
-/// first audio lands after the first chunk. Returns the exit code plus
-/// the chunk list and the count already played, so the caller speaks
-/// only the unsynthesized suffix onward and never repeats a prefix.
-fn say_kokoro(text: &str, voice: &str, gpu: bool) -> (ExitCode, Vec<String>, usize) {
-    let Some((model, voices)) = orator_tts::default_paths() else {
-        eprintln!("orator: no managed model directory (HOME and XDG_DATA_HOME are unset)");
-        return (ExitCode::Error, Vec::new(), 0);
-    };
-    let backend = std::sync::Arc::new(if gpu {
-        orator_tts::KokoroBackend::new(model, voices, voice.to_string()).with_gpu()
-    } else {
-        orator_tts::KokoroBackend::new(model, voices, voice.to_string())
-    });
-    let chunks: Vec<String> = orator_cli::say_chain::normalized_chunks(text);
-    if chunks.iter().all(|chunk| chunk.trim().is_empty()) {
-        return (ExitCode::Success, chunks, 0);
-    }
-    let player = match orator_audio::StreamPlayer::open(orator_tts::KOKORO_SAMPLE_RATE) {
-        Ok(player) => player,
-        Err(error) => {
-            eprintln!("orator: {error}");
-            return (ExitCode::Error, Vec::new(), 0);
+        frames_seen += 1;
+        let samples_16k = if rate == 16_000 {
+            batch
+        } else {
+            resample_linear(&batch, rate, 16_000)
+        };
+        // Frame the resample output through the mic gate (20 ms
+        // frames); hot spans buffer, gate close commits one utterance.
+        let mut committed = false;
+        for frame in samples_16k.chunks(320) {
+            if gate.push(frame) {
+                buffered.extend_from_slice(frame);
+                if buffered.len() > orator_cli::tui::MAX_PENDING_UTTERANCE {
+                    let excess = buffered.len() - orator_cli::tui::MAX_PENDING_UTTERANCE;
+                    buffered.drain(..excess);
+                }
+            } else if !buffered.is_empty() {
+                committed = true;
+                break;
+            }
         }
-    };
-    let mut played_chunks = 0usize;
-    let outcome = stream_chunks(
-        chunks.clone(),
-        {
-            let backend = std::sync::Arc::clone(&backend);
-            move |chunk: &str| backend.synth_blocking(chunk).map_err(|error| error.to_string())
-        },
-        |samples: &[f32]| {
-            player.push(samples);
-            played_chunks += 1;
-            Ok::<(), String>(())
-        },
-    );
-    // Drain whatever queued even on failure: committed audio is
-    // already on the device, and the stream must stop cleanly.
-    if let Err(error) = player.finish() {
-        eprintln!("orator: {error}");
-        return (ExitCode::Error, chunks, played_chunks);
-    }
-    match outcome {
-        Ok(()) => (ExitCode::Success, chunks, played_chunks),
-        Err(error) => {
-            eprintln!("orator: local voice failed: {error}");
-            (ExitCode::Error, chunks, played_chunks)
+        if !committed || buffered.is_empty() {
+            continue;
+        }
+        let utterance = std::mem::take(&mut buffered);
+        let params = encode_transcribe_audio(&utterance);
+        let text = match orator_cli::socket::call_transport(transport, "Transcribe", params) {
+            Ok(body) => match decode_transcribe_text(&body) {
+                Ok(text) => text,
+                Err(error) => {
+                    eprintln!("orator: {error}");
+                    continue;
+                }
+            },
+            Err(failure) => {
+                if let Some(line) = failure.text {
+                    eprintln!("{line}");
+                }
+                continue;
+            }
+        };
+        if text.trim().is_empty() {
+            continue;
+        }
+        utterances += 1;
+        last_nudge = std::time::Instant::now();
+        if json {
+            println!(
+                "{}",
+                serde_json::json!({ "text": text, "samples": utterance.len() })
+            );
+        } else {
+            println!("{text}");
         }
     }
-}
-
-/// Stream the live transcript selector to the daemon.
-fn listen(sys: bool, mic: bool, json: bool, transport: Transport) -> ExitCode {
-    if sys || mic || json {
-        eprintln!("orator: listen takes no selectors in v1 (got sys={sys} mic={mic} json={json}); run bare `listen`");
-        return ExitCode::Usage;
-    }
-    daemon_passthrough(
-        "ListSessions",
-        serde_json::json!({}),
-        transport,
-    )
 }
 
 /// Interactive voice chat over the audio endpoint (interleaved mode):
@@ -642,12 +301,14 @@ fn listen(sys: bool, mic: bool, json: bool, transport: Transport) -> ExitCode {
 /// checkable without audio.
 fn chat(config: &OratorConfig) -> ExitCode {
     use std::io::{BufRead, Write as _};
-    let model = orator_s2s::S2sConfig::default().model.clone();
-    let bundle = orator_core::default_bundle();
+    use orator_cli::config::s2s_base_url;
+    let s2s = config.s2s.clone();
+    let bundle = orator_core::bundle_from_s2s(&s2s);
     let assured = common_core::runtime::block_on(orator_s2s::ensure_audio_server(
-        &audio_base_url(&config.llm),
-        &model,
+        &s2s_base_url(&s2s),
+        &s2s.model,
         &bundle,
+        s2s.auto_boot,
     ));
     let endpoint = std::sync::Arc::new(match assured {
         Ok(endpoint) => endpoint,
@@ -656,17 +317,24 @@ fn chat(config: &OratorConfig) -> ExitCode {
             return ExitCode::Error;
         }
     });
-    // A shutdown mid-chat releases the endpoint; the loop below
-    // observes the watch between turns and exits interrupted.
+    // A shutdown mid-chat releases the endpoint and cancels the
+    // in-flight turn: the watch closure owns both, so a mid-turn
+    // Ctrl-C interrupts `chat_turn` instead of waiting out the
+    // stream timeout. The loop below still observes the watch
+    // between turns and exits interrupted.
+    let abort = StreamAbort::new();
     let watch = {
         let endpoint = std::sync::Arc::clone(&endpoint);
-        orator_cli::SignalWatch::arm(move || endpoint.release())
+        let turn_abort = abort.clone();
+        orator_cli::SignalWatch::arm(move || {
+            turn_abort.cancel();
+            endpoint.release();
+        })
     };
     let mut session = orator_s2s::AudioSession::new(orator_s2s::S2sConfig {
         endpoint: endpoint.base_url().to_string(),
-        ..orator_s2s::S2sConfig::default()
+        ..s2s
     });
-    let abort = StreamAbort::new();
     println!("orator chat (interleaved voice). /wav <path> speaks a file, /reset restarts, /quit exits.");
     let stdin = std::io::stdin();
     // Pipelined turns: the previous reply plays while the next turn
@@ -799,39 +467,128 @@ fn meeting(action: &str, id: &str, transport: Transport) -> ExitCode {
             }
             daemon_passthrough("ListSessions", serde_json::json!({}), transport)
         }
-        "status" | "show" | "export" => {
-            eprintln!("orator: meeting {action} is not implemented; supported: start/stop/list");
+        // Status/show read the live registry: same sessions the
+        // daemon serves, no second store. Export needs the diarized
+        // transcript store (orator-diar over the event log) — not
+        // yet served over the socket, so it names the gap instead of
+        // printing an empty file.
+        "status" | "show" => {
+            if !id.trim().is_empty() {
+                eprintln!("orator: meeting {action} takes no id; run `meeting list`");
+                return ExitCode::Usage;
+            }
+            daemon_passthrough("GetState", serde_json::json!({}), transport)
+        }
+        "export" => {
+            eprintln!("orator: meeting export needs a transcript store over the socket (run `meeting list`, then `orator transcribe <archive.wav>`); refusing to write an empty file");
             ExitCode::Usage
         }
         _ => {
-            eprintln!("orator: meeting expects start/stop/list (show/export/status are not implemented)");
+            eprintln!("orator: meeting expects start/stop/list/status/show/export");
             ExitCode::Usage
         }
     }
 }
 
-/// Propose a shell command from words. Printed, never executed.
-fn propose(request: &[String]) -> ExitCode {
+/// Propose a shell command from words via the local LLM. Printed,
+/// never executed. Falls back to echoing the request when no
+/// endpoint answers (honest, never a silent success).
+fn propose(request: &[String], config: &OratorConfig, transport: Transport) -> ExitCode {
     if request.is_empty() {
         eprintln!("orator: cmd needs a request to propose from");
         return ExitCode::Usage;
     }
-    println!("# proposed (review before running):");
-    println!("{}", request.join(" "));
+    let want = request.join(" ");
+    // Prefer the daemon (shared endpoint, no per-command boot) when
+    // it answers; otherwise boot one supervised question like `ask`.
+    let daemon_try = match transport {
+        Transport::Socket | Transport::Ws => orator_cli::socket::call_transport(
+            transport,
+            "Ask",
+            serde_json::json!({
+                "question": format!(
+                    "Propose a shell command for this request. Reply with only the command, no explanation, no fences: {want}"
+                ),
+            }),
+        ),
+    };
+    let proposed = match daemon_try {
+        Ok(body) => body
+            .get("reply")
+            .and_then(|reply| reply.as_str())
+            .unwrap_or("")
+            .to_string(),
+        Err(_) => match propose_via_supervised(&want, config) {
+            Ok(text) => text,
+            Err(code) => {
+                // No inference available: echo honestly so the
+                // caller still gets a reviewable line, marked as
+                // unrefined.
+                println!("# proposed (review before running; no LLM available):");
+                println!("{want}");
+                return code;
+            }
+        },
+    };
+    let proposed = proposed.trim();
+    if proposed.is_empty() {
+        println!("# proposed (review before running):");
+        println!("{want}");
+    } else {
+        println!("# proposed (review before running):");
+        println!("{proposed}");
+    }
     ExitCode::Success
 }
 
-/// Answer a pending approval through the daemon. Denials are ordinary.
+/// One supervised LLM question for `cmd` (the `ask` precedent):
+/// probe the configured address, boot when nothing answers, ask,
+/// stop. Returns the reply text or the exit to fall back with.
+fn propose_via_supervised(want: &str, config: &OratorConfig) -> Result<String, ExitCode> {
+    use orator_cli::config::resolve_llm_base;
+    use orator_core::LlmSession as _;
+    use orator_llm::{probe_models, HttpSession};
+    let llm = config.llm.clone();
+    let explicit = std::env::var("LLM_BASE_URL").unwrap_or_default();
+    let (base, model) = resolve_llm_base(&llm);
+    common_core::runtime::block_on_shared(async {
+        let live = probe_models(&base, common_core::http::shared_http_client())
+            .await
+            .is_ok()
+            || !explicit.is_empty();
+        if !live {
+            return Err(ExitCode::Error);
+        }
+        let mut session = HttpSession::open(
+            &base,
+            &model,
+            usize::from(llm.ctx),
+            usize::from(llm.n_batch),
+        );
+        session.push_text(&format!(
+            "Propose a shell command for this request. Reply with only the command, no explanation, no fences: {want}"
+        ));
+        match session.step(&mut orator_core::Sampler::default()) {
+            Ok(out) => Ok(out.delta.trim().to_string()),
+            Err(_) => Err(ExitCode::Error),
+        }
+    })
+}
+
+/// Answer a pending approval through the daemon. Approvals and
+/// denials are ordinary answers on the `Approve` method (never an
+/// interrupt): the socket caller is trusted, D-Bus callers gate on
+/// `Caller::may_approve` before dialing.
 fn approve(id: &str, deny: bool, transport: Transport) -> ExitCode {
     if id.is_empty() {
         eprintln!("orator: approve needs an approval id");
         return ExitCode::Usage;
     }
-    if deny {
-        eprintln!("orator: approve --deny is not served by the daemon; denial stays local and never maps to Interrupt");
-        return ExitCode::Usage;
-    }
-    daemon_passthrough("Interrupt", serde_json::json!({ "id": id }), transport)
+    daemon_passthrough(
+        "Approve",
+        serde_json::json!({ "id": id, "approve": !deny }),
+        transport,
+    )
 }
 
 /// Local configuration administration.
@@ -934,10 +691,7 @@ fn config(action: &str, key: &str, value: &str) -> ExitCode {
 /// reload go through the socket.
 fn daemon_lifecycle(action: &str, transport: Transport) -> ExitCode {
     match action {
-        "run" => {
-            eprintln!("orator: `daemon run` starts oratord in the foreground");
-            ExitCode::Error
-        }
+        "run" => daemon_run(),
         "stop" => daemon_passthrough("StopDaemon", serde_json::json!({}), transport),
         "reload" => {
             eprintln!("orator: daemon reload is not implemented; restart oratord to reload config");
@@ -948,6 +702,26 @@ fn daemon_lifecycle(action: &str, transport: Transport) -> ExitCode {
             ExitCode::Usage
         }
     }
+}
+
+/// Run the daemon in the foreground: replace this process with
+/// `oratord` from the same directory (or `$PATH`). Never returns on
+/// success; fails loudly when no binary resolves.
+fn daemon_run() -> ExitCode {
+    use std::os::unix::process::CommandExt as _;
+    let candidate = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|dir| dir.join("oratord")))
+        .filter(|path| path.is_file())
+        .or_else(|| orator_core::paths::find_on_path("oratord"));
+    let Some(binary) = candidate else {
+        eprintln!("orator: no oratord binary (same directory or $PATH)");
+        return ExitCode::Error;
+    };
+    eprintln!("orator: starting {} in the foreground", binary.display());
+    let error = std::process::Command::new(&binary).exec();
+    eprintln!("orator: daemon exec failed: {error}");
+    ExitCode::Error
 }
 
 fn stt_backend(config: &SttConfig) -> Result<WhisperBackend, ExitCode> {
@@ -1041,7 +815,7 @@ fn transcribe_audio_server(
     config: &OratorConfig,
     transport: Transport,
 ) -> ExitCode {
-    match run_audio_turn(&audio_base_url(&config.llm), transport, |session| {
+    match say::run_audio_turn(&config.s2s, transport, |session| {
         session.transcribe_blocking(samples)
     }) {
         Ok(text) => {
@@ -1101,21 +875,35 @@ fn dictate_once(seconds: u64, echo_stdout: bool, backend: &str, config: &OratorC
     };
     let watch = orator_cli::SignalWatch::arm(|| {});
     let mut samples = Vec::with_capacity(orator_cli::dictate::reserve_for(seconds, rate));
-    while Instant::now() < deadline {
+    let mut cap_drops: usize = 0;
+    let mut capped = false;
+    while Instant::now() < deadline && !capped {
         if watch.signalled() {
             return ExitCode::Interrupted;
         }
+        // Drain the ring in one batch: count cap drops, then break
+        // the outer loop (never spin to the deadline once capped).
+        let mut batch = Vec::new();
         while let Ok(sample) = capture.consumer.pop() {
-            if samples.len() >= orator_cli::dictate::MAX_DICTATE_SAMPLES {
-                eprintln!(
-                    "orator: capture over the {}-sample bound; truncating",
-                    orator_cli::dictate::MAX_DICTATE_SAMPLES
-                );
-                break;
+            batch.push(sample);
+        }
+        if !batch.is_empty() {
+            let (filled, dropped, hit) =
+                orator_cli::dictate::apply_cap(samples.len(), batch.len());
+            let keep = filled.saturating_sub(samples.len());
+            samples.extend(batch.into_iter().take(keep));
+            cap_drops += dropped;
+            if hit {
+                capped = true;
             }
-            samples.push(sample);
         }
         std::thread::sleep(Duration::from_millis(10));
+    }
+    if capped {
+        eprintln!(
+            "orator: capture over the {}-sample bound; truncating ({cap_drops} sample(s) dropped at the cap)",
+            orator_cli::dictate::MAX_DICTATE_SAMPLES
+        );
     }
     let dropped = capture.dropped();
     if dropped > 0 {
@@ -1144,13 +932,10 @@ fn dictate_once(seconds: u64, echo_stdout: bool, backend: &str, config: &OratorC
         eprintln!("orator: unknown STT backend: {selected}");
         return ExitCode::Usage;
     };
-    if echo_stdout {
-        println!("{text}");
-    }
     let clip = ExternalClipboard::new();
-    // Single-print sink report: `OutputOnly` already printed via the
-    // ladder, so `--stdout` only prints for real injections. Headless
-    // runs report the stdout sink instead of false `Injected` success.
+    // Single print: the ladder never prints; the caller prints the
+    // policy text exactly once (`--stdout` echoes injections, the
+    // output-only fallback always prints through the same gate).
     // `--once` joins with single spaces; selection capture stays
     // document-mode while continuation spacing joins in-window repeats
     // via the ladder memory (see ladder tests). The refine chain
@@ -1158,13 +943,12 @@ fn dictate_once(seconds: u64, echo_stdout: bool, backend: &str, config: &OratorC
     let mut memory = LadderMemory::default();
     let mut history = Vec::new();
     match orator_cli::dictate::finish_turn(&text, &mut memory, &mut history, &clip, &NoChord) {
-        Ok(orator_desktop::InjectOutcome::Injected(_)) => {
-            if echo_stdout {
-                println!("{text}");
+        Ok(outcome) => {
+            if let Some(line) = orator_cli::dictate::print_text_for(echo_stdout, &text, &outcome) {
+                println!("{line}");
             }
             ExitCode::Success
         }
-        Ok(orator_desktop::InjectOutcome::OutputOnly(_)) => ExitCode::Success,
         Err(error) => {
             eprintln!("orator: {error}");
             ExitCode::Error
@@ -1186,7 +970,7 @@ fn dictate_whisper(samples: &[f32], stt: &SttConfig) -> Result<String, ExitCode>
 /// stripped before injection: dictation carries what was said, never
 /// how the model thought about it.
 fn dictate_audio_server(samples: &[f32], config: &OratorConfig, transport: Transport) -> Result<String, ExitCode> {
-    run_audio_turn(&audio_base_url(&config.llm), transport, |session| {
+    say::run_audio_turn(&config.s2s, transport, |session| {
         session.transcribe_blocking(samples)
     })
         .map_err(|error| {
@@ -1199,208 +983,3 @@ fn dictate_audio_server(samples: &[f32], config: &OratorConfig, transport: Trans
         .map(|text| fluent_llm::thinking::strip_thinking_blocks(&text))
 }
 
-/// One question through the supervised endpoint: probe the configured
-/// address, boot a supervised server when nothing answers, ask, print.
-/// One-shot CLI use keeps one-question ownership only when it booted the
-/// server itself; the per-process model-load cost is retained by design
-/// (no cross-command server lease in v1).
-fn ask(question: &str, speak: bool, config: &OratorConfig, transport: Transport) -> ExitCode {
-    let llm = config.llm.clone();
-    let explicit = std::env::var("LLM_BASE_URL").unwrap_or_default();
-    let (base, model) = resolve_llm_base(&llm);
-    common_core::runtime::block_on_shared(async {
-        // A live endpoint is used as-is; otherwise this command owns a
-        // supervised server for exactly one question.
-        let supervised: Option<std::sync::Arc<Supervisor>> = if probe_models(
-            &base,
-            common_core::http::shared_http_client(),
-        )
-        .await
-        .is_err()
-            && explicit.is_empty()
-        {
-            match boot_supervised(&llm).await {
-                Ok(server) => Some(std::sync::Arc::new(server)),
-                Err(orator_cli::ask::AskFail::Usage(message)) => {
-                    eprintln!("{message}");
-                    return ExitCode::Usage;
-                }
-                Err(orator_cli::ask::AskFail::Error(message)) => {
-                    eprintln!("{message}");
-                    return ExitCode::Error;
-                }
-            }
-        } else {
-            None
-        };
-        // A shutdown mid-question stops the owned server; the step
-        // below then fails fast instead of hanging on a dead child.
-        let watch = supervised.clone().map(|server| {
-            orator_cli::SignalWatch::arm(move || server.stop())
-        });
-        let live_base = supervised
-            .as_ref()
-            .map(|server| server.base_url().to_string())
-            .unwrap_or(base);
-        let mut session = HttpSession::open(
-            &live_base,
-            &model,
-            usize::from(llm.ctx),
-            usize::from(llm.n_batch),
-        );
-        session.push_text(question);
-        if watch.as_ref().is_some_and(orator_cli::SignalWatch::signalled) {
-            return ExitCode::Interrupted;
-        }
-        let code = match session.step(&mut orator_core::Sampler::default()) {
-            Ok(out) => {
-                let reply = out.delta.trim_end().to_string();
-                println!("{reply}");
-                if speak {
-                    match daemon_call_transport(transport, "Say", serde_json::json!({ "text": reply })) {
-                        Ok(_) => ExitCode::Success,
-                        Err(code) => {
-                            eprintln!("{}", orator_cli::ask::speak_failure_note(code));
-                            code
-                        }
-                    }
-                } else {
-                    ExitCode::Success
-                }
-            }
-            Err(error) => {
-                eprintln!("orator: {error}");
-                ExitCode::Error
-            }
-        };
-        if watch.as_ref().is_some_and(orator_cli::SignalWatch::signalled) {
-            return ExitCode::Interrupted;
-        }
-        if let Some(server) = supervised {
-            server.stop();
-        }
-        code
-    })
-}
-
-/// Boot the configured endpoint under supervision: weights resolve from
-/// the model home when present, otherwise the boot refuses fast naming
-/// the expected path (no 60 s health burn on known-missing files). A
-/// GPU opt-in without a visible device refuses before boot; with one
-/// it requests full layer offload. Garbage ports are usage errors and
-/// never silently auto-reserve elsewhere.
-async fn boot_supervised(endpoint: &LlmEndpointConfig) -> Result<Supervisor, orator_cli::ask::AskFail> {
-    use orator_cli::ask::AskFail;
-    if endpoint.gpu {
-        orator_core::gpu::require_gpu("llama-server").map_err(AskFail::Error)?;
-    }
-    let weights =
-        orator_cli::ask::check_ask_weights(endpoint).map_err(AskFail::Error)?;
-    let port = orator_cli::ask::parse_ask_port(&endpoint.endpoint).map_err(AskFail::Usage)?;
-    let mut config = SupervisorConfig {
-        model: endpoint.model.clone(),
-        weights: Some(weights),
-        ctx: endpoint.ctx,
-        n_batch: endpoint.n_batch,
-        port,
-        ..SupervisorConfig::default()
-    };
-    config.extra_args.extend(gpu_llm_args(endpoint.gpu));
-    config.health_timeout = std::time::Duration::from_secs(60);
-    Supervisor::boot(config)
-        .await
-        .map_err(|error| AskFail::Error(error.to_string()))
-}
-
-/// Model management: list, pull, rm, verify. Pulls of unpinned entries
-/// refuse before any network; verify re-hashes with SHA-256.
-fn models(action: ModelsAction) -> ExitCode {
-    match action {
-        ModelsAction::List => {
-            for row in orator_models::list_models() {
-                let state = if row.present {
-                    match row.verified {
-                        Some(true) => "present verified",
-                        Some(false) => "present MISMATCH",
-                        None => "present",
-                    }
-                } else {
-                    "missing"
-                };
-                println!("{} ({}) {state}", row.name, row.kind);
-            }
-            ExitCode::Success
-        }
-        ModelsAction::Verify { name } => {
-            let rows = orator_models::list_models();
-            let report = orator_cli::models::verify_report(&rows, &name, |row_name| {
-                let Some(entry) = find_model_entry(row_name) else {
-                    return Err(format!("no catalog entry for {row_name}"));
-                };
-                orator_models::verify_entry(&entry).map_err(|error| error.to_string())
-            });
-            if report.unknown {
-                eprintln!("orator: unknown model: {name}");
-                return ExitCode::Usage;
-            }
-            for line in &report.lines {
-                println!("{line}");
-            }
-            if report.failed { ExitCode::Error } else { ExitCode::Success }
-        }
-        ModelsAction::Rm { name } => {
-            let Some(entry) = find_model_entry(&name) else {
-                eprintln!("orator: unknown model: {name}");
-                return ExitCode::Usage;
-            };
-            match orator_models::remove_entry(&entry) {
-                Ok(true) => {
-                    println!("removed {name}");
-                    ExitCode::Success
-                }
-                Ok(false) => {
-                    println!("{name}: not present");
-                    ExitCode::Success
-                }
-                Err(error) => {
-                    eprintln!("orator: {error}");
-                    ExitCode::Error
-                }
-            }
-        }
-        ModelsAction::Pull { name } => {
-            let Some(entry) = find_model_entry(&name) else {
-                eprintln!("orator: unknown model: {name}");
-                return ExitCode::Usage;
-            };
-            match orator_models::pull_plan(&entry) {
-                Ok((repo, file, dest)) => {
-                    if dest.exists() && orator_models::verify_entry(&entry) == Ok(true) {
-                        println!("{name}: already present and verified");
-                        return ExitCode::Success;
-                    }
-                    eprintln!(
-                        "orator: download {repo}/{file} to {} via `orator models pull` once pinned (artifact plane)",
-                        dest.display()
-                    );
-                    ExitCode::Error
-                }
-                Err(error) => {
-                    eprintln!("orator: {error}");
-                    ExitCode::Error
-                }
-            }
-        }
-    }
-}
-
-/// Look up a catalog entry by tag across families.
-fn find_model_entry(name: &str) -> Option<orator_models::ModelEntry> {
-    use orator_models::ModelKind;
-    for kind in [ModelKind::Whisper, ModelKind::Llm, ModelKind::Tts, ModelKind::Audio, ModelKind::Vad] {
-        if let Some(entry) = orator_models::find_entry(kind, name) {
-            return Some(entry);
-        }
-    }
-    None
-}

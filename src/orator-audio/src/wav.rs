@@ -21,6 +21,12 @@ pub fn read_wav_mono(path: &std::path::Path) -> Result<WavPcm, SttError> {
     parse_wav(&bytes)
 }
 
+/// Decode in-memory WAV bytes into mono f32 (e.g. a `/tts` HTTP
+/// body). Same parser as [`read_wav_mono`], no temp file.
+pub fn decode_wav_bytes(bytes: &[u8]) -> Result<WavPcm, SttError> {
+    parse_wav(bytes)
+}
+
 fn parse_wav(bytes: &[u8]) -> Result<WavPcm, SttError> {
     let fail = |why: &str| SttError::Backend(format!("wav parse: {why}"));
     if bytes.len() < 44 || &bytes[0..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {

@@ -123,6 +123,10 @@ pub struct Cli {
     /// Daemon transport: `socket` (default) or `ws`.
     #[arg(long, default_value = "socket", global = true)]
     pub transport: String,
+    /// Bypass the socket preflight (wrong uid/mode). Explicit only:
+    /// without this the CLI refuses a foreign socket instead of dialing.
+    #[arg(long, global = true)]
+    pub insecure: bool,
     /// Subcommand to run.
     #[command(subcommand)]
     pub command: Command,

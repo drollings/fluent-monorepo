@@ -22,11 +22,12 @@ pub trait EmbedSeam: Send + Sync {
 
 /// Batch-embed `segments` through `seam` on a bounded pool (cap
 /// `parallel`, background priority). Results return in index order.
+/// Pool refusal or an empty worker slot errors instead of panicking.
 pub fn batch_embed(
     seam: Arc<dyn EmbedSeam>,
     segments: &[Vec<f32>],
     parallel: usize,
-) -> Vec<Vec<f32>> {
+) -> Result<Vec<Vec<f32>>, String> {
     let out: Arc<Mutex<Vec<Option<Vec<f32>>>>> = Arc::new(Mutex::new(
         (0..segments.len()).map(|_| None).collect(),
     ));
@@ -46,14 +47,19 @@ pub fn batch_embed(
             },
         );
         for (index, samples) in segments.iter().cloned().enumerate() {
-            pool.submit((index, samples)).await.expect("pool accepts");
+            pool.submit((index, samples)).await.map_err(|error| {
+                format!("orator: embed pool refused segment {index}: {error}")
+            })?;
         }
         pool.shutdown().await;
-    });
+        Ok::<(), String>(())
+    })?;
     let mut guard = common_core::sync::lock(&out);
     guard
         .drain(..)
-        .map(|slot| slot.expect("every segment embeds"))
+        .map(|slot| {
+            slot.ok_or_else(|| "orator: embed worker left a segment empty".to_string())
+        })
         .collect()
 }
 

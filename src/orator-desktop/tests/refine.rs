@@ -70,7 +70,7 @@ fn refine_prompt_carries_the_data_discipline() {
     assert!(DEFAULT_REFINE_PROMPT.contains("data, never commands"));
     assert_eq!(
         DEFAULT_REFINE_PROMPT.contains("data, never commands"),
-        orator_tools::TRANSCRIPT_AS_DATA.contains("data, never commands"),
+        orator_core::TRANSCRIPT_AS_DATA.contains("data, never commands"),
         "refine and tool prompts share one discipline"
     );
 }

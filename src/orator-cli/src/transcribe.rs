@@ -58,20 +58,50 @@ fn stamp_vtt(seconds: f64) -> Result<String, String> {
     Ok(stamp_srt(seconds)?.replace(',', "."))
 }
 
+/// Absolute media cap for cue stamps (24 h). Corrupt model output
+/// (`i64::MAX`, overflowed centiseconds) clamps here instead of
+/// becoming a giant timestamp; the cue stays renderable and finite.
+pub const MAX_CUE_SECONDS: f64 = 24.0 * 3600.0;
+
 /// Build one cue from whisper centiseconds. Negative inputs clamp to
 /// zero; a reversed end clamps up to the start so the cue never runs
-/// backwards. Conversions go through `u64` (never a narrowing `u32`).
+/// backwards; anything past the media cap clamps to it (never a giant
+/// stamp). Conversions stay in `f64` from clamped `i64` (never a
+/// narrowing `u32`, never `u64::MAX`).
 #[must_use]
 pub fn cue_from_centiseconds(start_cs: i64, end_cs: i64, text: String) -> Cue {
-    let start_u = u64::try_from(start_cs.max(0)).unwrap_or(u64::MAX);
-    let end_u = u64::try_from(end_cs.max(0)).unwrap_or(u64::MAX);
-    let start_s = start_u as f64 / 100.0;
-    let end_s = (end_u as f64 / 100.0).max(start_s);
+    let start_s = (start_cs.max(0) as f64 / 100.0).min(MAX_CUE_SECONDS);
+    let end_s = (end_cs.max(0) as f64 / 100.0)
+        .min(MAX_CUE_SECONDS)
+        .max(start_s);
     Cue {
         start_s,
         end_s,
         text,
     }
+}
+
+/// Encode 16 kHz mono `samples` for a `Transcribe` call: base64 i16
+/// LE plus the rate tag. Matches the daemon's audio decoder; the
+/// daemon enforces the single-frame bound before any inference.
+#[must_use]
+pub fn encode_transcribe_audio(samples: &[f32]) -> serde_json::Value {
+    use base64::prelude::*;
+    let mut raw = Vec::with_capacity(samples.len() * 2);
+    for sample in samples {
+        let clamped = sample.clamp(-1.0, 1.0);
+        raw.extend_from_slice(&((clamped * 32767.0) as i16).to_le_bytes());
+    }
+    serde_json::json!({ "audio": BASE64_STANDARD.encode(&raw), "rate": 16_000 })
+}
+
+/// Decode a `Transcribe` reply body to text. A missing text field is
+/// a loud error, never silent nothing.
+pub fn decode_transcribe_text(body: &serde_json::Value) -> Result<String, String> {
+    body.get("text")
+        .and_then(|text| text.as_str())
+        .map(str::to_string)
+        .ok_or_else(|| "daemon Transcribe reply carries no text".to_string())
 }
 
 /// Single cue for an audio-server transcript over `sample_count` 16 kHz

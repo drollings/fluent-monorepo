@@ -353,10 +353,13 @@ impl Tool for FileWrite {
             .guarded
             .within(std::path::Path::new(&path))
             .map_err(|error| ToolError::Denied(error.to_string()))?;
-        if let Some(parent) = candidate.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|error| ToolError::Failed("file_write".to_string(), error.to_string()))?;
-        }
+        // Parents are created through the jail: each level refuses a
+        // symlinked parent instead of following it outside, and any
+        // escape removes what this call created. No `create_dir_all` on
+        // the raw candidate — that follows a swapped symlink outside.
+        self.guarded
+            .mkdir_parents_inside(&candidate)
+            .map_err(|error| ToolError::Denied(error.to_string()))?;
         let mut file = self
             .guarded
             .open_within(
@@ -401,29 +404,167 @@ impl Tool for WebFetch {
         if !(url.starts_with("http://") || url.starts_with("https://")) {
             return Err(ToolError::Args("url".to_string(), "http(s) only".to_string()));
         }
-        common_core::runtime::block_on(fetch(&url))
+        // Fail closed before any connect: loopback, link-local,
+        // multicast, unspecified, and private ranges never dial.
+        // Redirects re-check every hop below.
+        common_core::runtime::block_on_shared(fetch(&url))
     }
 }
 
 /// Fetch cap in chars; the marker carries the total.
 pub const FETCH_CHARS: usize = crate::tool::TOOL_OUTPUT_CHARS;
 
+/// Raw body cap in bytes: streaming stops here, then the char
+/// truncator marks the total. Prevents a huge page from OOMing the
+/// tool before the 6k-char truncation runs.
+const FETCH_BODY_BYTES: usize = 1_000_000;
+
+/// Whether `ip` may be dialed. Denies loopback, link-local,
+/// multicast, unspecified, broadcast, and private/intranet ranges —
+/// an approved-once URL must never become an intranet oracle.
+fn ip_allowed(ip: std::net::IpAddr) -> bool {
+    match ip {
+        std::net::IpAddr::V4(v4) => {
+            !(v4.is_loopback()
+                || v4.is_private()
+                || v4.is_link_local()
+                || v4.is_multicast()
+                || v4.is_unspecified()
+                || v4.is_broadcast()
+                || v4.is_documentation()
+                || v4.octets()[0] == 0)
+        }
+        std::net::IpAddr::V6(v6) => {
+            !(v6.is_loopback() || v6.is_multicast() || v6.is_unspecified())
+        }
+    }
+}
+
+/// Whether `host` is denied without resolving: `localhost`, metadata
+/// names, and IP literals in a denied range. Hostnames that resolve
+/// to a denied IP are refused in `resolve_allowed`.
+fn host_denied_literal(host: &str) -> bool {
+    let lower = host.to_lowercase();
+    if lower == "localhost" || lower.ends_with(".localhost") {
+        return true;
+    }
+    if lower == "metadata.google.internal" {
+        return true;
+    }
+    if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+        return !ip_allowed(ip);
+    }
+    false
+}
+
+/// Resolve `host` and refuse when any address is denied. Fails closed
+/// on resolution failure (cannot prove safety without an address).
+async fn resolve_allowed(host: &str) -> Result<(), String> {
+    if host_denied_literal(host) {
+        return Err(format!("refusing denied fetch host: {host}"));
+    }
+    let addrs = tokio::net::lookup_host(format!("{host}:80"))
+        .await
+        .map_err(|error| format!("refusing unresolvable fetch host {host}: {error}"))?;
+    let mut any = false;
+    for addr in addrs {
+        any = true;
+        if !ip_allowed(addr.ip()) {
+            return Err(format!("refusing denied fetch address for {host}: {}", addr.ip()));
+        }
+    }
+    if !any {
+        return Err(format!("refusing fetch host with no addresses: {host}"));
+    }
+    Ok(())
+}
+
+/// Check one URL for SSRF before connecting: scheme, host literal,
+/// and resolved addresses all pass.
+async fn check_url(url: &reqwest::Url) -> Result<(), String> {
+    match url.scheme() {
+        "http" | "https" => {}
+        other => return Err(format!("refusing non-http(s) fetch scheme: {other}")),
+    }
+    let Some(host) = url.host_str() else {
+        return Err("refusing fetch URL with no host".to_string());
+    };
+    if host_denied_literal(host) {
+        return Err(format!("refusing denied fetch host: {host}"));
+    }
+    resolve_allowed(host).await
+}
+
 async fn fetch(url: &str) -> Result<String, ToolError> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .redirect(reqwest::redirect::Policy::limited(5))
-        .build()
-        .map_err(|error| ToolError::Failed("web_fetch".to_string(), error.to_string()))?;
-    let body = client
-        .get(url)
-        .send()
-        .await
-        .map_err(|error| ToolError::Failed("web_fetch".to_string(), error.to_string()))?
-        .text()
-        .await
-        .map_err(|error| ToolError::Failed("web_fetch".to_string(), error.to_string()))?;
-    let text = common_core::string::collapse_whitespace(&common_core::string::strip_html(&body));
-    Ok(crate::tool::truncate_tool_output(&text))
+    let fail = |message: String| ToolError::Failed("web_fetch".to_string(), message);
+    let mut current = reqwest::Url::parse(url).map_err(|error| {
+        ToolError::Args("url".to_string(), format!("bad URL: {error}"))
+    })?;
+    // Manual redirect loop (shared client never auto-follows): every
+    // hop re-checks SSRF before connecting, at most 5 hops.
+    for _ in 0..=5 {
+        check_url(&current).await.map_err(fail)?;
+        let mut response = common_core::http::shared_http_client()
+            .get(current.clone())
+            .timeout(std::time::Duration::from_secs(15))
+            .send()
+            .await
+            .map_err(|error| fail(error.to_string()))?;
+        let status = response.status();
+        if status.is_redirection() {
+            let Some(next) = response.headers().get(reqwest::header::LOCATION) else {
+                return Err(fail("redirect without Location".to_string()));
+            };
+            let next = next
+                .to_str()
+                .map_err(|_| fail("bad redirect Location".to_string()))?;
+            current = current
+                .join(next)
+                .map_err(|error| fail(format!("bad redirect: {error}")))?;
+            continue;
+        }
+        if !status.is_success() {
+            return Err(fail(format!("fetch failed: {status}")));
+        }
+        // Chunked read with a byte cap: huge pages stop at 1 MiB
+        // instead of OOMing before the char truncator runs.
+        if let Some(len) = response
+            .headers()
+            .get(reqwest::header::CONTENT_LENGTH)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|text| text.parse::<usize>().ok())
+        {
+            if len > FETCH_BODY_BYTES {
+                return Err(fail(format!(
+                    "refusing fetch body of {len} bytes (cap {FETCH_BODY_BYTES})"
+                )));
+            }
+        }
+        let mut raw: Vec<u8> = Vec::new();
+        loop {
+            let chunk = response
+                .chunk()
+                .await
+                .map_err(|error| fail(error.to_string()))?;
+            let Some(chunk) = chunk else {
+                break;
+            };
+            let remaining = FETCH_BODY_BYTES.saturating_sub(raw.len());
+            if remaining == 0 {
+                break;
+            }
+            let take = chunk.len().min(remaining);
+            raw.extend_from_slice(&chunk[..take]);
+            if chunk.len() > take || raw.len() >= FETCH_BODY_BYTES {
+                break;
+            }
+        }
+        let body = String::from_utf8_lossy(&raw).into_owned();
+        let text =
+            common_core::string::collapse_whitespace(&common_core::string::strip_html(&body));
+        return Ok(crate::tool::truncate_tool_output(&text));
+    }
+    Err(fail("too many redirects (5 max)".to_string()))
 }
 
 /// The v1 catalog. `guarded` backs the effectful tools; `notify_sink`

@@ -1,18 +1,18 @@
-//! Supervised LiquidAI voice server: the custom audio-capable
-//! server binary over the native bundle.
+//! Supervised voice server: stock `llama-server` over the native
+//! audio bundle.
 //!
-//! Stock `llama-server` builds cannot voice this bundle (their
-//! projector handling has no generation pipeline for it), so voice
-//! turns boot the LiquidAI audio server instead: `-m` backbone,
-//! `-mm` projector, `-mv` vocoder, `--tts-speaker-file` tokenizer
-//! — the file mapping the reference server runs. The binary
-//! resolves from `LLAMA_AUDIO_SERVER`, then `$PATH`, then the
-//! managed servers directory; readiness is an `OPTIONS` probe
-//! against `/v1/chat/completions` (this build serves no `/health`
-//! or `/models`). The child is owned by `orator_llm::Supervisor`
-//! — the single supervised-child implementation — configured with
-//! the audio probe; this module keeps only the audio-specific
-//! argv/probe wrapper.
+//! Current `llama-server` builds voice LFM3-Audio from backbone +
+//! projector alone (the codec lives in the projector; `/tts` voices,
+//! `input_audio` transcribes, `/v1/realtime` converses). The legacy
+//! LiquidAI audio server (`-mv` vocoder, `--tts-speaker-file`
+//! tokenizer) stays supported when installed, but nothing requires
+//! it. The binary resolves from `LLAMA_AUDIO_SERVER`, then the legacy
+//! name on `$PATH`/managed home, then stock `llama-server`
+//! (`LLAMA_SERVER`/`$PATH`); readiness is an `OPTIONS` probe against
+//! `/v1/chat/completions`. The child is owned by
+//! `orator_llm::Supervisor` — the single supervised-child
+//! implementation — configured with the audio probe; this module keeps
+//! only the audio-specific argv/probe wrapper.
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -40,66 +40,125 @@ pub fn audio_server_home() -> Option<PathBuf> {
         .map(|home| home.join(".local/share/orator/servers/liquid-audio"))
 }
 
-/// Resolve the voice-server binary: the `LLAMA_AUDIO_SERVER`
-/// override first, then a `$PATH` search, then the managed home.
-/// Searched hits pass the ownership gate for the current uid and are
-/// refused (`None`) when untrusted; the explicit override bypasses
-/// the gate. `None` when installed nowhere trusted.
+/// Every voice-server candidate binary in try order: the
+/// `LLAMA_AUDIO_SERVER` override alone when set, else the legacy
+/// audio server (validated) plus every validated stock
+/// `llama-server` `$PATH` hit, deduplicated. Boot tries each until
+/// one answers readiness: a pre-LFM3 install fails fast on the
+/// bundle and the next serves, instead of one shadowed binary
+/// vetoing voice.
+#[must_use]
+pub fn resolve_audio_server_candidates() -> Vec<PathBuf> {
+    if let Some(explicit) = std::env::var_os(AUDIO_SERVER_ENV) {
+        let path = PathBuf::from(explicit);
+        if path.is_absolute() {
+            return vec![path];
+        }
+        return Vec::new();
+    }
+    let uid = orator_core::paths::current_uid();
+    let mut out = Vec::new();
+    let mut seen: Vec<PathBuf> = Vec::new();
+    let mut push_validated = |candidate: PathBuf| {
+        let canonical =
+            std::fs::canonicalize(&candidate).unwrap_or_else(|_| candidate.clone());
+        if seen.contains(&canonical) {
+            return;
+        }
+        if orator_core::paths::validate_server_binary(&candidate, uid, false).is_ok() {
+            seen.push(canonical);
+            out.push(candidate);
+        }
+    };
+    for legacy in orator_core::paths::find_all_on_path(AUDIO_SERVER_BIN) {
+        push_validated(legacy);
+    }
+    if let Some(home) = audio_server_home().map(|home| home.join(AUDIO_SERVER_BIN)) {
+        if home.is_file() {
+            push_validated(home);
+        }
+    }
+    for stock in orator_llm::resolve_binary_candidates() {
+        push_validated(stock);
+    }
+    out
+}
+
+/// Resolve the voice-server binary: the first of
+/// [`resolve_audio_server_candidates`]. Searched hits pass the
+/// ownership gate for the current uid and are refused (`None`) when
+/// untrusted; explicit overrides log their owner/mode/fingerprint
+/// (the user accepts responsibility). `None` when installed nowhere
+/// trusted. Prefer the candidate list plus a boot attempt wherever a
+/// turn is at stake: the first candidate may be a pre-LFM3 install
+/// that fails the bundle fast while a later one serves.
 #[must_use]
 pub fn resolve_audio_server() -> Option<PathBuf> {
-    if let Some(explicit) = std::env::var_os(AUDIO_SERVER_ENV) {
-        return Some(PathBuf::from(explicit));
+    let candidates = resolve_audio_server_candidates();
+    if candidates.len() == 1 && std::env::var_os(AUDIO_SERVER_ENV).is_some() {
+        let path = &candidates[0];
+        let fingerprint = orator_core::paths::binary_fingerprint(path);
+        if let Err(error) = orator_core::paths::validate_server_binary(
+            path,
+            orator_core::paths::current_uid(),
+            false,
+        ) {
+            eprintln!(
+                "orator: explicit audio server {} ({fingerprint}) bypasses the gate with a warning: {error}",
+                path.display()
+            );
+        }
     }
-    let searched = orator_core::paths::find_on_path(AUDIO_SERVER_BIN).or_else(|| {
-        audio_server_home()
-            .map(|home| home.join(AUDIO_SERVER_BIN))
-            .filter(|candidate| candidate.is_file())
-    })?;
-    orator_core::paths::validate_server_binary(
-        &searched,
-        orator_core::paths::current_uid(),
-        false,
-    )
-    .ok()?;
-    Some(searched)
+    candidates.into_iter().next()
 }
 
 /// Render the exact argv for a voice-server spawn. Unit-testable, no
-/// side effects. Loopback-only; the reference file mapping, nothing
-/// the stock arg shape would add (this build takes no `--alias`).
-/// The supervised spawn renders the same bytes through
+/// side effects. Loopback-only; stock `llama-server` shape (`-m`
+/// backbone, `--mmproj` projector) plus the legacy `-mv`/
+/// `--tts-speaker-file` pair only when the bundle carries them
+/// (LFM2.5). The supervised spawn renders the same bytes through
 /// [`orator_llm::build_args`] over [`audio_supervisor_config`].
 #[must_use]
 pub fn voice_server_args(bundle: &AudioBundle, port: u16) -> Vec<String> {
-    vec![
+    let mut args = vec![
         "-m".to_string(),
         bundle.backbone.to_string_lossy().into_owned(),
-        "-mm".to_string(),
+        "--mmproj".to_string(),
         bundle.mmproj.to_string_lossy().into_owned(),
-        "-mv".to_string(),
-        bundle.vocoder.to_string_lossy().into_owned(),
-        "--tts-speaker-file".to_string(),
-        bundle.tokenizer.to_string_lossy().into_owned(),
-        "--host".to_string(),
-        "127.0.0.1".to_string(),
-        "--port".to_string(),
-        port.to_string(),
-    ]
+    ];
+    if !bundle.vocoder.as_os_str().is_empty() && bundle.vocoder.exists() {
+        args.push("-mv".to_string());
+        args.push(bundle.vocoder.to_string_lossy().into_owned());
+    }
+    if !bundle.tokenizer.as_os_str().is_empty() && bundle.tokenizer.exists() {
+        args.push("--tts-speaker-file".to_string());
+        args.push(bundle.tokenizer.to_string_lossy().into_owned());
+    }
+    args.push("--host".to_string());
+    args.push("127.0.0.1".to_string());
+    args.push("--port".to_string());
+    args.push(port.to_string());
+    args
 }
 
-/// Audio `SupervisorConfig`: the bundle as weights/projector/vocoder/
-/// speaker file on a loopback port, readied by the completions
-/// `OPTIONS` probe. The served-model tag stays empty here — callers
-/// that know it set `config.model` themselves (no `--alias` is ever
-/// rendered for this build).
+/// Audio `SupervisorConfig`: the bundle as weights/projector on a
+/// loopback port, readied by the completions `OPTIONS` probe. The
+/// legacy vocoder/speaker pair rides along only when present
+/// (LFM2.5); LFM3 voices from backbone + projector alone. The
+/// served-model tag stays empty here — callers that know it set
+/// `config.model` themselves.
 #[must_use]
 pub fn audio_supervisor_config(bundle: &AudioBundle, port: u16) -> SupervisorConfig {
+    let vocoder = (!bundle.vocoder.as_os_str().is_empty() && bundle.vocoder.exists())
+        .then(|| bundle.vocoder.clone());
+    let speaker = (!bundle.tokenizer.as_os_str().is_empty() && bundle.tokenizer.exists())
+        .then(|| bundle.tokenizer.clone());
     SupervisorConfig {
         model: String::new(),
         weights: Some(bundle.backbone.clone()),
         mmproj: Some(bundle.mmproj.clone()),
-        vocoder: Some(bundle.vocoder.clone()),
-        tts_speaker_file: Some(bundle.tokenizer.clone()),
+        vocoder,
+        tts_speaker_file: speaker,
         port,
         health_probe: HealthProbe::OptionsCompletions,
         health_timeout: VOICE_BOOT_TIMEOUT,

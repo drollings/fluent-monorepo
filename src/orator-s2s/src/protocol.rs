@@ -6,10 +6,12 @@
 //! `content` text and/or `audio_chunk` base64 little-endian f32 PCM at
 //! 24 kHz. `reset_context` scopes server-side state per turn mode.
 
-/// ASR single-shot system prompt.
-pub const SYSTEM_ASR: &str = "Perform ASR.";
-/// Interleaved chat system prompt.
-pub const SYSTEM_INTERLEAVED: &str = "Respond with interleaved text and audio.";
+/// ASR single-shot system prompt: single home in
+/// `orator_core::prompts`.
+pub use orator_core::prompts::S2S_ASR_PROMPT as SYSTEM_ASR;
+/// Interleaved chat system prompt: single home in
+/// `orator_core::prompts`.
+pub use orator_core::prompts::S2S_INTERLEAVED_PROMPT as SYSTEM_INTERLEAVED;
 
 /// One parsed stream event.
 #[derive(Debug, Clone, PartialEq)]

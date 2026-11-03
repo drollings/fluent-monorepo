@@ -12,7 +12,6 @@ fluent-concurrency = { path = "../fluent-concurrency" }
 fluent-llm = { path = "../llm" }
 internment = { workspace = true }
 orator-core = { path = "../orator-core" }
-orator-turn = { path = "../orator-turn" }
 regex = { workspace = true }
 reqwest = { workspace = true }
 serde_json = { workspace = true }

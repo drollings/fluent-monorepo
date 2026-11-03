@@ -216,3 +216,135 @@ fn audit_vector_rotates_under_cap() {
         rows.len()
     );
 }
+
+#[test]
+fn default_root_is_private_and_never_tmp() {
+    let root = crate::sandbox::GuardedConfig::default().root;
+    assert!(root.is_absolute(), "jail root is absolute: {}", root.display());
+    assert!(
+        !root.starts_with("/tmp"),
+        "jail root never lives in /tmp: {}",
+        root.display()
+    );
+    // Private home-rooted jail when a home resolves; fail-closed
+    // sentinel otherwise (never /tmp, never relative-cwd).
+    if let Some(home) = orator_core::paths::home_dir() {
+        assert!(
+            root.starts_with(&home),
+            "default jail lives under the home base: {} vs {}",
+            root.display(),
+            home.display()
+        );
+        assert!(
+            root.ends_with("orator/sandbox"),
+            "default jail is the private sandbox dir: {}",
+            root.display()
+        );
+    } else {
+        assert!(
+            !root.starts_with("/tmp"),
+            "no-home fallback still never /tmp: {}",
+            root.display()
+        );
+    }
+}
+
+#[test]
+fn within_rejects_dotdot_and_chained_escapes() {
+    let (guard, dir) = guarded(5000);
+    // Ancestor escape via `..`.
+    for evil in [
+        "a/../../outside.txt",
+        "../outside.txt",
+        "sub/../../outside.txt",
+    ] {
+        assert!(
+            matches!(
+                guard.within(std::path::Path::new(evil)),
+                Err(crate::sandbox::WithinError::Escape(_))
+            ),
+            "{evil} must escape, not resolve"
+        );
+    }
+    // Absolute path with `..` that lexically lands outside.
+    let outside_abs = dir.path().join("a").join("..").join("..").join("outside.txt");
+    assert!(
+        matches!(
+            guard.within(&outside_abs),
+            Err(crate::sandbox::WithinError::Escape(_))
+        ),
+        "absolute-plus-dotdot outside must escape"
+    );
+    // Chained symlinks: b -> c -> outside.
+    let outside_dir = tempfile::tempdir().expect("outside");
+    let target = outside_dir.path().join("secret.txt");
+    std::fs::write(&target, "secret").expect("outside fixture");
+    std::os::unix::fs::symlink(&target, dir.path().join("c")).expect("c links outside");
+    std::os::unix::fs::symlink("c", dir.path().join("b")).expect("b links c");
+    assert!(
+        matches!(
+            guard.within(std::path::Path::new("b")),
+            Err(crate::sandbox::WithinError::Escape(_))
+        ),
+        "chained b->c->outside must escape"
+    );
+    // Tail symlink escape: dir/sub is real, sub/link points outside.
+    std::fs::create_dir_all(dir.path().join("sub")).expect("sub");
+    std::os::unix::fs::symlink(&target, dir.path().join("sub").join("link"))
+        .expect("tail link outside");
+    assert!(
+        matches!(
+            guard.within(std::path::Path::new("sub/link")),
+            Err(crate::sandbox::WithinError::Escape(_))
+        ),
+        "tail symlink to outside must escape"
+    );
+    // Symlink loop is HopCap (or Escape), never Ok outside.
+    std::os::unix::fs::symlink("loop-b", dir.path().join("loop-a")).expect("loop a");
+    std::os::unix::fs::symlink("loop-a", dir.path().join("loop-b")).expect("loop b");
+    assert!(
+        matches!(
+            guard.within(std::path::Path::new("loop-a")),
+            Err(crate::sandbox::WithinError::HopCap(_)
+                | crate::sandbox::WithinError::Escape(_))
+        ),
+        "symlink loop must not resolve"
+    );
+}
+
+#[test]
+fn open_within_is_fail_closed_without_fd_revalidation() {
+    // The fd-backed check must refuse when the descriptor path cannot
+    // be re-resolved: an error never falls back to the pre-open
+    // candidate. The helper models the decision so the masked-/proc
+    // case is pinned without masking /proc itself.
+    let candidate = std::path::PathBuf::from("/jail/candidate.txt");
+    let root = std::path::PathBuf::from("/jail");
+    let refused: Result<std::path::PathBuf, crate::sandbox::WithinError> =
+        crate::sandbox::check_fd_containment(
+            Err("masked".to_string()),
+            &candidate,
+            &root,
+        );
+    assert!(
+        matches!(
+            refused,
+            Err(crate::sandbox::WithinError::Escape(_)
+                | crate::sandbox::WithinError::Missing(_))
+        ),
+        "unresolvable fd must refuse, never open the candidate: {refused:?}"
+    );
+    let inside = std::path::PathBuf::from("/jail/note.txt");
+    let ok = crate::sandbox::check_fd_containment(
+        Ok(inside.clone()),
+        &candidate,
+        &root,
+    )
+    .expect("inside fd opens");
+    assert_eq!(ok, inside);
+    let outside = std::path::PathBuf::from("/etc/passwd");
+    assert!(
+        crate::sandbox::check_fd_containment(Ok(outside), &candidate, &root).is_err(),
+        "outside fd must refuse even when the candidate is inside"
+    );
+}

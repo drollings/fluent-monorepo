@@ -95,6 +95,65 @@ fn saturated_body() -> serde_json::Value {
     })
 }
 
+/// Named slow-peer reply: `ok: false` with the `SlowPeer` kind so the
+/// CLI retries instead of suppressing its supervised boot. Slow peers
+/// never bump the saturation counter and never report saturation.
+fn slow_peer_body() -> serde_json::Value {
+    serde_json::json!({
+        "error": "slow peer: handler budget elapsed before the frame completed — retry the call",
+        "kind": "SlowPeer",
+    })
+}
+
+/// Single-frame bound for daemon `Say` audio: 1.2M f32 samples (50 s
+/// at 24 kHz) encode to about 6.4 MiB of base64, inside the 8 MiB
+/// frame cap. Longer turns refuse with `Overflow` instead of
+/// truncating mid-sentence.
+const MAX_SAY_SAMPLES: usize = 1_200_000;
+
+/// Base64 (standard) encode for the `Say` audio payload.
+fn b64(bytes: &[u8]) -> String {
+    use base64::prelude::*;
+    BASE64_STANDARD.encode(bytes)
+}
+
+/// Decode a `Transcribe` audio payload: base64 i16 LE mono at 16 kHz
+/// into f32 samples. Wrong rates refuse with the remedy (resample
+/// before sending); over-bound inputs refuse before any inference.
+fn decode_transcribe_audio(params: &serde_json::Value) -> Result<Vec<f32>, String> {
+    let encoded = params
+        .get("audio")
+        .and_then(|audio| audio.as_str())
+        .ok_or_else(|| "Transcribe takes an `audio` param (base64 i16 LE mono)".to_string())?;
+    let rate = params
+        .get("rate")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(16_000);
+    if rate != 16_000 {
+        return Err(format!(
+            "Transcribe needs 16 kHz mono audio (got {rate} Hz); resample before sending"
+        ));
+    }
+    use base64::prelude::*;
+    let raw = BASE64_STANDARD
+        .decode(encoded.trim())
+        .map_err(|error| format!("Transcribe audio is not base64: {error}"))?;
+    if raw.len() % 2 != 0 {
+        return Err("Transcribe audio length is not a whole i16 count".to_string());
+    }
+    if raw.len() / 2 > crate::voice::MAX_TRANSCRIBE_SAMPLES {
+        return Err(format!(
+            "Transcribe turn of {} samples exceeds the single-frame bound ({} samples); send shorter utterances",
+            raw.len() / 2,
+            crate::voice::MAX_TRANSCRIBE_SAMPLES,
+        ));
+    }
+    Ok(raw
+        .chunks_exact(2)
+        .map(|pair| f32::from(i16::from_le_bytes([pair[0], pair[1]])) / 32768.0)
+        .collect())
+}
+
 pub async fn serve(path: &Path, voice: Arc<VoiceOwner>) -> std::io::Result<()> {
     let listener = bind(path)?;
     let own_uid = own_uid_of(path);
@@ -108,7 +167,11 @@ pub async fn serve(path: &Path, voice: Arc<VoiceOwner>) -> std::io::Result<()> {
         let Ok(permit) = Arc::clone(&in_flight).try_acquire_owned() else {
             LISTENER_REFUSALS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             let body = saturated_body();
-            let frame = encode_reply_frame(0, false, &body).encode();
+            let Ok(frame) = encode_reply_frame(0, false, &body) else {
+                eprintln!("oratord: saturated refusal encode failed; dropping the peer");
+                continue;
+            };
+            let frame = frame.encode();
             use tokio::io::AsyncWriteExt as _;
             let mut stream = stream;
             let _ = stream.write_all(&frame).await;
@@ -118,23 +181,47 @@ pub async fn serve(path: &Path, voice: Arc<VoiceOwner>) -> std::io::Result<()> {
         let voice = Arc::clone(&voice);
         handlers.spawn(async move {
             let _permit = permit;
-            if let Err(error) = handle_tokio_connection(stream, own_uid, &voice).await {
+            if let Err(error) = handle_tokio_connection(stream, own_uid, voice).await {
                 eprintln!("oratord: refused one call: {error}");
             }
         });
     }
-    while handlers.join_next().await.is_some() {}
+    // Bounded drain: handlers are timeout-bounded, but a degraded
+    // voice boot can still outrun shutdown; abandon stragglers with a
+    // log line instead of hanging the accept loop forever.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    loop {
+        if handlers.is_empty() {
+            break;
+        }
+        let remaining = deadline
+            .checked_duration_since(std::time::Instant::now())
+            .unwrap_or_default();
+        if remaining.is_zero() {
+            eprintln!("oratord: serve drain timed out with handlers in flight; exiting anyway");
+            break;
+        }
+        if tokio::time::timeout(remaining, handlers.join_next())
+            .await
+            .is_err()
+        {
+            eprintln!("oratord: serve drain timed out with handlers in flight; exiting anyway");
+            break;
+        }
+    }
     Ok(())
 }
 
 /// Production connection handler: reads its own peer credential
 /// (fail-closed), gates, then reads, dispatches, and replies — all
-/// with timeouts so a slow peer never holds a handler. Callers never
-/// feed the uid in.
+/// with timeouts so a slow peer never holds a handler. The dispatch
+/// itself runs on a blocking thread (same shape as the WS listener),
+/// so minutes-long voice boots never park this I/O worker. Callers
+/// never feed the uid in.
 async fn handle_tokio_connection(
     mut stream: tokio::net::UnixStream,
     own_uid: u32,
-    voice: &VoiceOwner,
+    voice: Arc<VoiceOwner>,
 ) -> Result<(), String> {
     let peer_uid = stream
         .peer_cred()
@@ -147,9 +234,8 @@ async fn handle_tokio_connection(
     let read = tokio::time::timeout(std::time::Duration::from_secs(5), stream.read_exact(&mut header)).await;
     let read_ok = matches!(read, Ok(Ok(_)));
     if !read_ok {
-        LISTENER_REFUSALS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        let body = saturated_body();
-        let frame = encode_reply_frame(0, false, &body).encode();
+        let body = slow_peer_body();
+        let frame = encode_reply_frame(0, false, &body)?.encode();
         let _ = stream.write_all(&frame).await;
         return Err("slow peer".to_string());
     }
@@ -159,10 +245,9 @@ async fn handle_tokio_connection(
     }
     let mut rest = vec![0u8; len - 1];
     let read_body = tokio::time::timeout(std::time::Duration::from_secs(5), stream.read_exact(&mut rest)).await;
-    if read_body.is_err() || read_body.unwrap().is_err() {
-        LISTENER_REFUSALS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        let body = saturated_body();
-        let frame = encode_reply_frame(0, false, &body).encode();
+    if !matches!(read_body, Ok(Ok(_))) {
+        let body = slow_peer_body();
+        let frame = encode_reply_frame(0, false, &body)?.encode();
         let _ = stream.write_all(&frame).await;
         return Err("slow peer".to_string());
     }
@@ -170,13 +255,14 @@ async fn handle_tokio_connection(
     bytes.extend_from_slice(&rest);
     let frame = SocketFrame::decode(&bytes).map_err(|error| error.to_string())?;
     let (id, method, params) = parse_request_frame(&frame)?;
-    let (ok, body) = serve_call(voice, &method, &params);
-    let reply = encode_reply_frame(id, ok, &body).encode();
+    let (ok, body) = tokio::task::spawn_blocking(move || serve_call(&voice, &method, &params))
+        .await
+        .map_err(|error| format!("serving task failed: {error}"))?;
+    let reply = encode_reply_frame(id, ok, &body)?.encode();
     let write = tokio::time::timeout(std::time::Duration::from_secs(5), stream.write_all(&reply)).await;
     if let Ok(Ok(())) = write {
         Ok(())
     } else {
-        LISTENER_REFUSALS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         Err("slow peer on write".to_string())
     }
 }
@@ -196,11 +282,13 @@ fn bind(path: &Path) -> std::io::Result<tokio::net::UnixListener> {
             "neither XDG_RUNTIME_DIR nor HOME is set; refusing to bind outside a private runtime directory",
         ));
     }
-    if path.is_symlink() {
+    // Every component lstat-ed: a symlink parent refuses instead of
+    // serving through it.
+    if orator_core::paths::has_symlink_parent(path) {
         return Err(std::io::Error::new(
             std::io::ErrorKind::PermissionDenied,
             format!(
-                "socket path {} is a symlink; refusing to serve on a link (remove it)",
+                "socket path {} is a symlink or under one; refusing to serve on a link (remove it)",
                 path.display()
             ),
         ));
@@ -236,6 +324,19 @@ fn bind(path: &Path) -> std::io::Result<tokio::net::UnixListener> {
                         format!("stale socket {}: remove failed: {remove}", path.display()),
                     )
                 })?;
+                // Re-lstat after unlink: a swapped-in link refuses
+                // instead of riding the retry.
+                if orator_core::paths::has_symlink_parent(path)
+                    || std::fs::symlink_metadata(path).is_ok()
+                {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::PermissionDenied,
+                        format!(
+                            "socket path {} reappeared as a link after unlink; refusing",
+                            path.display()
+                        ),
+                    ));
+                }
                 attempts += 1;
             }
             Err(error) => return Err(error),
@@ -329,11 +430,11 @@ pub(crate) fn serve_call(
     params: &serde_json::Value,
 ) -> (bool, serde_json::Value) {
     if method == "VoiceEndpoint" {
-        // Serving path with concurrent voice calls: the process-wide
-        // shared runtime when bridging from blocking threads, the
-        // in-place bridge when already on a runtime worker (tests).
-        // Never a per-call runtime and never the serializing fallback
-        // for concurrent callers; single-flight lives in the boot flag.
+        // Serving path with concurrent voice calls: the in-place
+        // bridge on runtime workers and blocking threads, the shared
+        // runtime where no runtime is active. Never a per-call runtime
+        // and never the serializing fallback for concurrent callers;
+        // single-flight lives in the boot flag.
         match bridge_concurrent(voice.ensure()) {
             Ok(url) => (true, serde_json::json!({ "url": url })),
             Err(error) => (
@@ -403,7 +504,27 @@ fn route(voice: &VoiceOwner, method: &str, params: &serde_json::Value) -> (bool,
             let text = params.get("text").and_then(|value| value.as_str()).unwrap_or("");
             let session = params.get("session").and_then(|value| value.as_str());
             match voice.say_blocking(text, session) {
-                Ok((samples, rate)) => (true, serde_json::json!({ "samples": samples, "rate": rate })),
+                Ok((samples, rate)) => {
+                    if samples.len() > MAX_SAY_SAMPLES {
+                        (
+                            false,
+                            serde_json::json!({
+                                "error": format!(
+                                    "voice turn of {} samples exceeds the single-frame bound ({} samples); use the audio-server path for long-form speech",
+                                    samples.len(),
+                                    MAX_SAY_SAMPLES,
+                                ),
+                                "kind": "Overflow",
+                            }),
+                        )
+                    } else {
+                        let mut raw = Vec::with_capacity(samples.len() * 4);
+                        for sample in &samples {
+                            raw.extend_from_slice(&sample.to_le_bytes());
+                        }
+                        (true, serde_json::json!({ "audio": b64(&raw), "rate": rate, "samples": samples.len() }))
+                    }
+                }
                 Err(error) => (
                     false,
                     serde_json::json!({ "error": error.to_string(), "kind": error.kind() }),
@@ -419,7 +540,23 @@ fn route(voice: &VoiceOwner, method: &str, params: &serde_json::Value) -> (bool,
             let session = params.get("session").and_then(|value| value.as_str());
             match voice.ask_blocking(question, session) {
                 Ok(reply) => (true, serde_json::json!({ "reply": reply })),
-                Err(error) => (false, serde_json::json!({ "error": error.to_string() })),
+                Err(error) => (
+                    false,
+                    serde_json::json!({ "error": error.to_string(), "kind": error.kind() }),
+                ),
+            }
+        }
+        "Transcribe" => {
+            let session = params.get("session").and_then(|value| value.as_str());
+            match decode_transcribe_audio(params) {
+                Ok(samples) => match voice.transcribe_blocking(&samples, session) {
+                    Ok(text) => (true, serde_json::json!({ "text": text })),
+                    Err(error) => (
+                        false,
+                        serde_json::json!({ "error": error.to_string(), "kind": error.kind() }),
+                    ),
+                },
+                Err(error) => (false, serde_json::json!({ "error": error })),
             }
         }
         "ToggleDictation" => {
@@ -439,6 +576,18 @@ fn route(voice: &VoiceOwner, method: &str, params: &serde_json::Value) -> (bool,
             let server = voice.has_server();
             (true, serde_json::json!({ "sessions": count, "voice_server": server }))
         }
+        "Approve" => {
+            let id = params.get("id").and_then(|value| value.as_str()).unwrap_or("");
+            let approve = params.get("approve").and_then(serde_json::Value::as_bool).unwrap_or(false);
+            if id.is_empty() {
+                return (false, serde_json::json!({ "error": "Approve takes an `id` param" }));
+            }
+            if voice.answer_approval(id, approve) {
+                (true, serde_json::json!({ "approved": approve }))
+            } else {
+                (false, serde_json::json!({ "error": format!("unknown approval: {id}") }))
+            }
+        }
         _ => (false, serde_json::json!({ "error": format!("unknown method: {method}") })),
     }
 }
@@ -451,7 +600,9 @@ fn reject_unknown_params(method: &str, params: &serde_json::Value) -> Result<(),
         "StopSession" | "Interrupt" => &["session", "id"],
         "Say" => &["text", "session"],
         "Ask" => &["question", "text", "session"],
+        "Transcribe" => &["audio", "rate", "session"],
         "ToggleDictation" => &["enabled"],
+        "Approve" => &["id", "approve"],
         "ListSessions" | "GetState" | "VoiceEndpoint" | "StopDaemon" => &[],
         _ => return Ok(()),
     };
@@ -506,9 +657,16 @@ pub(crate) fn parse_request_frame(
 }
 
 /// Bridge a serving-path future without a per-call runtime: on a
-/// runtime worker use the in-place bridge (never starves the worker);
-/// on a blocking thread use the process-wide shared runtime (callers
-/// do not serialize). Single-flight still lives in the boot flag.
+/// runtime worker or blocking thread use the in-place bridge (never
+/// starves the worker); on a thread with no runtime use the
+/// process-wide shared runtime (callers do not serialize). Single-flight
+/// still lives in the boot flag.
+///
+/// Thread evidence (verified with a scratch probe, not assumed):
+/// `Handle::try_current` succeeds on both async workers and
+/// `spawn_blocking` threads, so no heuristic can split them — and none
+/// needs to, because `block_in_place` serves both. The serializing
+/// single-thread fallback below only affects runtime-less threads.
 pub(crate) fn bridge_concurrent<F: std::future::Future>(fut: F) -> F::Output {
     if tokio::runtime::Handle::try_current().is_ok() {
         common_core::runtime::block_on(fut)
@@ -524,19 +682,26 @@ fn write_reply(
     ok: bool,
     body: &serde_json::Value,
 ) -> Result<(), String> {
-    encode_reply_frame(id, ok, body)
+    encode_reply_frame(id, ok, body)?
         .write_to(stream)
         .map_err(|error| error.to_string())
 }
 
-/// One reply frame: the JSON envelope both listeners share.
-pub(crate) fn encode_reply_frame(id: u64, ok: bool, body: &serde_json::Value) -> SocketFrame {
+/// One reply frame: the JSON envelope both listeners share. Encoding
+/// a JSON `Value` never fails, but the error propagates instead of an
+/// empty body desyncing the frame.
+pub(crate) fn encode_reply_frame(
+    id: u64,
+    ok: bool,
+    body: &serde_json::Value,
+) -> Result<SocketFrame, String> {
     let reply = serde_json::json!({ "id": id, "ok": ok, "body": body });
-    let bytes = serde_json::to_vec(&reply).unwrap_or_default();
-    SocketFrame {
+    let bytes = serde_json::to_vec(&reply)
+        .map_err(|error| format!("orator: reply encode failed: {error}"))?;
+    Ok(SocketFrame {
         kind: MessageType::Response,
         body: bytes,
-    }
+    })
 }
 
 #[cfg(test)]

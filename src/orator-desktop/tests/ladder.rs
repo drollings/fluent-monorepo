@@ -101,3 +101,57 @@ fn shared_clipboard_shares_state() {
     shared.write("x").expect("write");
     assert_eq!(shared.read().as_deref(), Some("x"));
 }
+
+#[test]
+fn each_failing_rung_falls_back_to_output_only() {
+    use crate::clipboard::NoChord;
+    // Forced-fail every rung in isolation (headless: no chord can
+    // paste): each must land on the exact output-only fallback, never
+    // a false `Injected` and never an error.
+    for rung in [
+        Rung::RemoteDesktop,
+        Rung::ClipboardPaste,
+        Rung::VirtualKeyboard,
+        Rung::Uinput,
+    ] {
+        let clip = InMemoryClipboard::new();
+        let mut memory = LadderMemory {
+            last_working: Some(rung.clone()),
+            last_inject: None,
+        };
+        let outcome = inject(&clip, &NoChord, "forced down", &mut memory)
+            .expect("ladder always resolves");
+        assert_eq!(
+            outcome,
+            InjectOutcome::OutputOnly("forced down".to_string()),
+            "rung {rung:?} must fall back exactly"
+        );
+    }
+}
+
+#[test]
+fn failed_paste_skips_to_output_only() {
+    use crate::clipboard::NoChord;
+    // A lost chord is a skip, not terminal: ClipboardPaste fails and
+    // the ladder still resolves output-only (same sink as headless).
+    struct LostChord;
+    impl ChordSender for LostChord {
+        fn send_paste(&self) -> Result<(), InjectError> {
+            Err(InjectError::Failed("chord lost".to_string()))
+        }
+        fn send_copy(&self) -> Result<(), InjectError> {
+            Ok(())
+        }
+    }
+    let clip = InMemoryClipboard::new();
+    let outcome = inject(&clip, &LostChord, "lost chord", &mut LadderMemory::default())
+        .expect("failed paste still resolves");
+    assert!(
+        matches!(outcome, InjectOutcome::OutputOnly(_)),
+        "lost chord must skip to output-only: {outcome:?}"
+    );
+    // NoChord agrees: the fallback is exact, not chord-dependent.
+    let silent = inject(&clip, &NoChord, "lost chord", &mut LadderMemory::default())
+        .expect("headless resolves");
+    assert_eq!(outcome, silent);
+}

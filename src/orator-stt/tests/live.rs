@@ -36,3 +36,85 @@ fn live_tiny_decodes_silence_to_nothing() {
     let words: usize = segments.iter().map(|segment| segment.text.split_whitespace().count()).sum();
     assert_eq!(words, 0, "silence must decode to no words");
 }
+
+/// WER per tier over the checked-in corpus. For every pinned whisper
+/// tier present on disk and every `tests/corpus/name.{wav,txt}` pair,
+/// decodes and scores; the table prints per tier. No budgets gate —
+/// budgets land in the calibration register once measured on real
+/// audio. Skips cleanly without models or corpus (never fails a
+/// hermetic gate; run via the live-ai target).
+#[ignore = "needs real whisper models + corpus; run via the live-ai target"]
+#[test]
+fn live_wer_per_tier() {
+    use std::collections::BTreeMap;
+
+    let entries = whisper_entries();
+    let Some(managed) = orator_core::models_dir() else {
+        eprintln!("live: no managed dir, skipping");
+        return;
+    };
+    let mut tiers = Vec::new();
+    for entry in &entries {
+        if entry.kind == ModelKind::Whisper && entry.pinned() && managed.join(&entry.file).exists()
+        {
+            tiers.push(entry.clone());
+        }
+    }
+    if tiers.is_empty() {
+        eprintln!("live: no whisper models on disk, skipping");
+        return;
+    }
+    let corpus_dir =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/corpus");
+    let mut pairs: Vec<(std::path::PathBuf, String)> = Vec::new();
+    if let Ok(dir) = std::fs::read_dir(&corpus_dir) {
+        for item in dir.filter_map(Result::ok) {
+            let wav = item.path();
+            if wav.extension().is_some_and(|ext| ext == "wav") {
+                let label = wav.with_extension("txt");
+                if let Ok(text) = std::fs::read_to_string(&label) {
+                    pairs.push((wav, text));
+                }
+            }
+        }
+    }
+    pairs.sort();
+    if pairs.is_empty() {
+        eprintln!("live: corpus empty (see tests/corpus/README.md), skipping");
+        return;
+    }
+    let mut table: BTreeMap<String, Vec<(String, f64)>> = BTreeMap::new();
+    for tier in &tiers {
+        let backend =
+            orator_stt::WhisperBackend::new(managed.join(&tier.file), "en");
+        let abort = StreamAbort::new();
+        for (wav, reference) in &pairs {
+            let pcm = orator_audio::read_wav_mono(wav).expect("corpus wav reads");
+            let samples = if pcm.sample_rate == 16_000 {
+                pcm.samples.clone()
+            } else {
+                orator_audio::resample_linear(&pcm.samples, pcm.sample_rate, 16_000)
+            };
+            let segments = backend
+                .decode_blocking(&samples, &abort)
+                .expect("live decode");
+            let hypothesis = segments
+                .iter()
+                .map(|segment| segment.text.clone())
+                .collect::<Vec<_>>()
+                .join(" ");
+            let score = orator_stt::wer(reference, &hypothesis);
+            assert!(score.is_finite(), "WER must score finite");
+            table
+                .entry(tier.name.clone())
+                .or_default()
+                .push((wav.display().to_string(), score));
+        }
+    }
+    for (tier, rows) in &table {
+        for (file, score) in rows {
+            eprintln!("live wer: tier={tier} file={file} wer={score:.3}");
+        }
+    }
+    assert!(!table.is_empty(), "measured at least one tier");
+}

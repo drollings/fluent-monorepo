@@ -2,7 +2,7 @@
 //! and the locked T2 toggle.
 
 use fluent_wvr::FieldAccess;
-use orator_turn::SessionKind;
+use orator_core::SessionKind;
 
 use crate::policy::{CallOrigin, Policy, PolicyCtx, Verdict};
 use crate::tool::{ToolCall, ToolTier};

@@ -80,3 +80,16 @@ fn grammar_names_every_tool_and_stays_open_on_args() {
     let empty = gbnf_for_tools(&[]);
     assert!(empty.contains("root ::="), "{empty}");
 }
+
+#[test]
+fn xml_caps_reject_attrs_and_oversize() {
+    // Quote/bracket/amper in names refuse.
+    let evil = "<tool_call><invoke name=\"a'b\"><parameter name=\"x\">1</parameter></invoke></tool_call>";
+    assert!(parse_xml(evil).is_err(), "quote in name refuses");
+    let evil = "<tool_call><invoke name=\"shell\"><parameter name=\"a<b\">1</parameter></invoke></tool_call>";
+    assert!(parse_xml(evil).is_err(), "bracket in param refuses");
+    // Oversize preamble refuses.
+    let big_preamble = "x".repeat(10_001);
+    let big = format!("{big_preamble}<tool_call><invoke name=\"time_now\"></invoke></tool_call>");
+    assert!(parse_xml(&big).is_err(), "oversize preamble refuses");
+}

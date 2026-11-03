@@ -53,3 +53,24 @@ fn watch_marks_and_releases_on_signal() {
     assert!(watch.signalled(), "the watch observes the signal");
     assert!(released.load(Ordering::SeqCst), "the watch releases on signal");
 }
+
+#[test]
+fn chat_release_cancels_abort_and_releases_endpoint() {
+    use fluent_concurrency::stream::StreamAbort;
+    // Pins the chat wiring shape: the shutdown release cancels the
+    // in-flight turn (so a mid-turn Ctrl-C interrupts `chat_turn`
+    // instead of waiting out the stream timeout) and releases the
+    // endpoint. Both fire from the same release, idempotently.
+    let abort = StreamAbort::new();
+    let released = Arc::new(AtomicBool::new(false));
+    let flag = Arc::clone(&released);
+    let turn_abort = abort.clone();
+    let release = move || {
+        flag.store(true, Ordering::SeqCst);
+        turn_abort.cancel();
+    };
+    assert!(!abort.is_cancelled(), "no signal yet");
+    release();
+    assert!(released.load(Ordering::SeqCst), "endpoint releases");
+    assert!(abort.is_cancelled(), "in-flight turn cancels");
+}

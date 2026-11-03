@@ -189,3 +189,28 @@ fn barge_in_hits_zero_false_cuts_and_full_recall() {
     assert_eq!(true_cuts, musts, "interruptions must always cut");
     assert!(controls >= 7, "control group must stay covered");
 }
+
+#[test]
+fn recall_splits_evenly_across_languages() {
+    // Must-cut recall per language: the lexicon must not protect one
+    // language's interruptions while cutting the other's. Both `en`
+    // and `de` must-cuts recall at 1.0 on this corpus.
+    for lang in ["en", "de"] {
+        let mut musts = 0usize;
+        let mut true_cuts = 0usize;
+        for case in corpus() {
+            if case.lang != lang || !case.must_cut {
+                continue;
+            }
+            let mut driver = TurnDriver::with_lang(Epoch(1), case.lang);
+            let cut = driver.confirm(&case.evidence) == BargeInOutcome::Cut;
+            musts += 1;
+            true_cuts += usize::from(cut);
+        }
+        assert!(musts > 0, "language {lang} needs must-cut cases");
+        assert_eq!(
+            true_cuts, musts,
+            "language {lang} must recall every interruption"
+        );
+    }
+}

@@ -37,7 +37,7 @@ pub mod voice;
 
 /// Methods this daemon serves. Mirrors the wire contract in `orator-core`;
 /// the dispatch test enforces set equality so the two can never drift.
-pub const DISPATCH_METHODS: [&str; 11] = METHOD_NAMES;
+pub const DISPATCH_METHODS: [&str; 13] = METHOD_NAMES;
 
 /// Daemon shutdown signal: set by the `StopDaemon` call, observed by the
 /// accept loop. Test seam resets through `clear_shutdown_for_tests`.
@@ -81,7 +81,7 @@ pub enum DispatchError {
 pub fn dispatch(method: &str) -> Result<(), DispatchError> {
     match method {
         "VoiceEndpoint" | "StopDaemon" | "StartSession" | "StopSession" | "Interrupt" | "Say"
-        | "Ask" | "ToggleDictation" | "ListSessions" | "GetState" => Ok(()),
+        | "Ask" | "Transcribe" | "ToggleDictation" | "ListSessions" | "GetState" | "Approve" => Ok(()),
         "Reload" => Err(DispatchError::NotImplemented("Reload")),
         _ => Err(DispatchError::Unknown(method.to_string())),
     }

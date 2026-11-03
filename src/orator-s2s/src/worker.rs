@@ -44,20 +44,49 @@ pub enum TtsWorkerError {
 }
 
 /// Resolve the `llama-tts` binary: the `LLAMA_TTS` override first,
-/// then a `$PATH` search. `None` when not found.
+/// then a `$PATH` search. Searched hits pass the ownership gate for
+/// the current uid (owner/mode/non-`/tmp`/executable); explicit
+/// overrides require absolute paths and log their fingerprint (the
+/// user accepts responsibility). `None` when absent or untrusted.
 #[must_use]
 pub fn resolve_tts_binary() -> Option<PathBuf> {
     if let Some(explicit) = std::env::var_os(LLAMA_TTS_ENV) {
-        return Some(PathBuf::from(explicit));
-    }
-    let path = std::env::var_os("PATH")?;
-    for dir in std::env::split_paths(&path) {
-        let candidate = dir.join(LLAMA_TTS_BIN);
-        if candidate.is_file() {
-            return Some(candidate);
+        let path = PathBuf::from(explicit);
+        if !path.is_absolute() {
+            return None;
         }
+        let fingerprint = orator_core::paths::binary_fingerprint(&path);
+        if let Err(error) = orator_core::paths::validate_server_binary(
+            &path,
+            orator_core::paths::current_uid(),
+            false,
+        ) {
+            eprintln!(
+                "orator: explicit tts binary {} ({fingerprint}) bypasses the gate with a warning: {error}",
+                path.display()
+            );
+        }
+        return Some(path);
     }
-    None
+    let searched = {
+        let path = std::env::var_os("PATH")?;
+        let mut found = None;
+        for dir in std::env::split_paths(&path) {
+            let candidate = dir.join(LLAMA_TTS_BIN);
+            if candidate.is_file() {
+                found = Some(candidate);
+                break;
+            }
+        }
+        found?
+    };
+    orator_core::paths::validate_server_binary(
+        &searched,
+        orator_core::paths::current_uid(),
+        false,
+    )
+    .ok()?;
+    Some(searched)
 }
 
 /// Synthesize `text` through `binary` over `bundle`: run
@@ -67,7 +96,10 @@ pub fn resolve_tts_binary() -> Option<PathBuf> {
 /// read) happens inside one bridge so no per-call runtime is built.
 /// Standard streams are piped explicitly (never inherited): the
 /// failure message carries the run's own stderr tail, so a model
-/// that cannot voice names its reason instead of exiting bare.
+/// that cannot voice names its reason instead of exiting bare. The
+/// child mirrors the sandbox shape: scrubbed env with a pinned
+/// `PATH`/`LANG`, private jail cwd, its own process group, and a
+/// whole-group kill on timeout.
 pub fn synth_blocking(
     binary: &Path,
     bundle: &AudioBundle,
@@ -75,16 +107,19 @@ pub fn synth_blocking(
     timeout: Duration,
 ) -> Result<(Vec<f32>, u32), TtsWorkerError> {
     validate_tts_inputs(binary, bundle)?;
-    static SEQ: AtomicU64 = AtomicU64::new(0);
-    let out = std::env::temp_dir().join(format!(
-        "orator-tts-{}-{}.wav",
-        std::process::id(),
-        SEQ.fetch_add(1, Ordering::Relaxed)
-    ));
+    let out = reserve_scratch_wav()?;
     let _guard = ScratchGuard::new(out.clone());
-    let (status, stderr) = common_core::runtime::block_on(async {
-        let mut child = tokio::process::Command::new(binary)
-            .arg("-m")
+    let cwd = out.parent().map_or_else(
+        || {
+            orator_core::paths::home_dir().map_or_else(std::env::temp_dir, |home| {
+                home.join(".local/share/orator/scratch")
+            })
+        },
+        Path::to_path_buf,
+    );
+    let (status, stderr) = common_core::runtime::block_on_shared(async {
+        let mut cmd = tokio::process::Command::new(binary);
+        cmd.arg("-m")
             .arg(&bundle.backbone)
             .arg("-mm")
             .arg(&bundle.mmproj)
@@ -92,12 +127,19 @@ pub fn synth_blocking(
             .arg(text)
             .arg("-o")
             .arg(&out)
+            .current_dir(&cwd)
+            .env_clear()
+            .env("PATH", "/usr/bin:/bin")
+            .env("LANG", "C.UTF-8")
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::piped())
             .kill_on_drop(true)
+            .process_group(0);
+        let mut child = cmd
             .spawn()
             .map_err(|error| TtsWorkerError::Failed(format!("spawn: {error}")))?;
+        let pgid = child.id();
         let pipe = child.stderr.take();
         let mut drain = tokio::spawn(async move {
             let mut buf = Vec::new();
@@ -114,6 +156,7 @@ pub fn synth_blocking(
                     return Err(TtsWorkerError::Failed(format!("wait: {error}")));
                 }
                 Err(_) => {
+                    kill_group(pgid);
                     let _ = child.start_kill();
                     let _ = (&mut drain).await;
                     return Err(TtsWorkerError::Failed(format!(
@@ -123,6 +166,7 @@ pub fn synth_blocking(
                 }
             },
             () = orator_core::shutdown_signal() => {
+                kill_group(pgid);
                 let _ = child.start_kill();
                 let _ = (&mut drain).await;
                 return Err(TtsWorkerError::Failed(
@@ -140,10 +184,19 @@ pub fn synth_blocking(
     Ok(samples)
 }
 
-/// Validate worker inputs before spawn: the `LLAMA_TTS` override must
-/// be a file (executable check is best-effort), and the bundle must be
-/// present. Failures fire before any child or scratch file exists.
+/// Validate worker inputs before spawn: the binary must be absolute
+/// and a file (executable check is best-effort); the bundle must be
+/// present. Ownership of searched hits is gated in
+/// `resolve_tts_binary`; explicit overrides bypass it as the user's
+/// responsibility. Failures fire before any child or scratch file
+/// exists.
 fn validate_tts_inputs(binary: &Path, bundle: &AudioBundle) -> Result<(), TtsWorkerError> {
+    if !binary.is_absolute() {
+        return Err(TtsWorkerError::NoBinary(format!(
+            "tts binary must be absolute: {}",
+            binary.display()
+        )));
+    }
     if !binary.is_file() {
         return Err(TtsWorkerError::NoBinary(format!(
             "tts binary missing: {}",
@@ -168,8 +221,29 @@ fn validate_tts_inputs(binary: &Path, bundle: &AudioBundle) -> Result<(), TtsWor
     Ok(())
 }
 
+/// Kill a whole process group started by `synth_blocking`: the child
+/// leads its own group (`process_group(0)`), so `kill -KILL -pgid`
+/// takes grandchildren with it instead of orphaning them. Best-effort:
+/// a missing `kill` binary still leaves `kill_on_drop` plus the
+/// explicit `start_kill` at the call site.
+fn kill_group(pgid: Option<u32>) {
+    let Some(id) = pgid else {
+        return;
+    };
+    let program = (["/bin/kill", "/usr/bin/kill"])
+        .into_iter()
+        .find(|candidate| std::path::Path::new(candidate).is_file())
+        .unwrap_or("kill");
+    let _ = std::process::Command::new(program)
+        .args(["-KILL", "--", &format!("-{id}")])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+}
+
 /// Scratch-file owner: deletes the WAV on drop so a panic between
-/// spawn and read cannot leak `/tmp/orator-tts-*`.
+/// spawn and read cannot leak the scratch file.
 struct ScratchGuard {
     path: PathBuf,
 }
@@ -178,6 +252,48 @@ impl ScratchGuard {
     fn new(path: PathBuf) -> Self {
         Self { path }
     }
+}
+
+/// Reserve a scratch WAV path with `O_EXCL` semantics inside a private
+/// directory: the file is created (and immediately closed) before the
+/// child ever sees the path, so a pre-planted symlink cannot redirect
+/// the run's output.
+fn reserve_scratch_wav() -> Result<PathBuf, TtsWorkerError> {
+    use std::io::ErrorKind;
+    static SEQ: AtomicU64 = AtomicU64::new(0);
+    let mut dir = std::env::temp_dir();
+    dir.push(format!("orator-tts-{}", orator_core::paths::current_uid()));
+    std::fs::create_dir_all(&dir)
+        .map_err(|error| TtsWorkerError::Failed(format!("scratch dir: {error}")))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700));
+    }
+    for _ in 0..15 {
+        let candidate = dir.join(format!(
+            "orator-tts-{}-{}-{}.wav",
+            std::process::id(),
+            SEQ.fetch_add(1, Ordering::Relaxed),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |elapsed| elapsed.subsec_nanos())
+        ));
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&candidate)
+        {
+            Ok(_) => return Ok(candidate),
+            Err(error) if error.kind() != ErrorKind::AlreadyExists => {
+                return Err(TtsWorkerError::Failed(format!("scratch reserve: {error}")));
+            }
+            Err(_) => {}
+        }
+    }
+    Err(TtsWorkerError::Failed(
+        "scratch reserve: too many collisions".to_string(),
+    ))
 }
 
 impl Drop for ScratchGuard {

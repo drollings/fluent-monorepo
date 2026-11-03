@@ -43,7 +43,11 @@ pub fn config_path() -> Option<PathBuf> {
 #[must_use]
 pub fn llama_weights_dirs() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
-    for candidate in ["/app/ai/models/gguf", "/opt/ai/models/gguf"] {
+    for candidate in [
+        "/ai/models/gguf",
+        "/app/ai/models/gguf",
+        "/opt/ai/models/gguf",
+    ] {
         let path = PathBuf::from(candidate);
         if path.is_dir() {
             let canonical = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
@@ -56,43 +60,58 @@ pub fn llama_weights_dirs() -> Vec<PathBuf> {
 }
 
 /// Installation directory holding the reference audio bundle.
-pub const AUDIO_BUNDLE_DIR: &str = "/ai/models/gguf/liquidai/lfm2.5-audio-1.5b-gguf";
+/// Pinned to LFM3-Audio-2B: the backbone plus its mmproj carry the
+/// full voice pipeline (encoder + codec in the projector), served by
+/// stock `llama-server`. Whisper/Kokoro stay selectable via
+/// `--backend whisper|kokoro`.
+pub const AUDIO_BUNDLE_DIR: &str = "/ai/models/gguf/liquidai/lfm3-audio-2b-gguf";
 
 /// The three audio components plus the language backbone.
 ///
 /// A speech model is a bundle, not a file: the audio encoder
-/// projector (mmproj), the vocoder (audio decoder), and the audio
-/// tokenizer ride alongside the language backbone. Paths resolve
-/// router-style — absolute, or relative to the shared installation
-/// layout.
+/// projector (mmproj) rides alongside the language backbone. The
+/// vocoder (audio decoder) and audio tokenizer are legacy LFM2.5
+/// companions: stock `llama-server` voices LFM3-Audio from
+/// backbone + mmproj alone (the codec lives in the projector), so
+/// those two paths are optional. Paths resolve router-style —
+/// absolute, or relative to the shared installation layout.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AudioBundle {
     /// Language backbone weights (`-m`).
     pub backbone: PathBuf,
     /// Audio encoder projector (`--mmproj`).
     pub mmproj: PathBuf,
-    /// Audio decoder (vocoder) weights.
+    /// Audio decoder (vocoder) weights (legacy; empty/absent on LFM3).
     pub vocoder: PathBuf,
-    /// Audio tokenizer weights.
+    /// Audio tokenizer weights (legacy; empty/absent on LFM3).
     pub tokenizer: PathBuf,
 }
 
 impl AudioBundle {
-    /// Whether every component file exists.
+    /// Whether the bundle can voice: backbone + projector present.
+    /// Vocoder/tokenizer are optional (LFM3 embeds the codec).
     #[must_use]
     pub fn present(&self) -> bool {
-        self.backbone.exists()
-            && self.mmproj.exists()
-            && self.vocoder.exists()
-            && self.tokenizer.exists()
+        self.backbone.exists() && self.mmproj.exists()
     }
 
-    /// Components missing from disk, in stable order.
+    /// Required components missing from disk, in stable order.
     #[must_use]
     pub fn missing(&self) -> Vec<PathBuf> {
-        [&self.backbone, &self.mmproj, &self.vocoder, &self.tokenizer]
+        [&self.backbone, &self.mmproj]
             .into_iter()
             .filter(|path| !path.exists())
+            .cloned()
+            .collect()
+    }
+
+    /// Legacy companions missing from disk (vocoder, tokenizer).
+    /// Empty when the bundle voices without them (LFM3).
+    #[must_use]
+    pub fn missing_optional(&self) -> Vec<PathBuf> {
+        [&self.vocoder, &self.tokenizer]
+            .into_iter()
+            .filter(|path| !path.as_os_str().is_empty() && !path.exists())
             .cloned()
             .collect()
     }
@@ -109,6 +128,174 @@ pub fn default_bundle() -> AudioBundle {
         mmproj: dir.join("mmproj.gguf"),
         vocoder: dir.join("vocoder.gguf"),
         tokenizer: dir.join("tokenizer.gguf"),
+    }
+}
+
+/// Microphone-side sample rate in Hz (encoder preprocessor).
+pub const AUDIO_IN_RATE: u32 = 16_000;
+
+/// Speaker-side sample rate in Hz (vocoder output).
+pub const AUDIO_OUT_RATE: u32 = 24_000;
+
+/// Speech-session selection: the llama.cpp audio endpoint (STT, TTS,
+/// and speech-to-speech over one supervised server). Lives in the
+/// config file under `s2s.*` so the endpoint, model tag, and bundle
+/// paths are operator-settable; the endpoint defaults to port 8080,
+/// the same loopback default as the text endpoint.
+///
+/// Every leaf carries its builder value as the serde default (the
+/// `DaemonConfig` precedent), so hand-written files may set only the
+/// endpoint and still load port-8080-complete everywhere else.
+#[derive(
+    Debug, Clone, PartialEq, Eq, Serialize, Deserialize, FieldAccess, Describable, Builder,
+)]
+#[builder(start_fn = new)]
+pub struct S2sConfig {
+    /// Session backend (`audio-server` selects this path).
+    #[field(desc = "Speech backend", max_len = 32)]
+    #[builder(default = "audio-server".to_string())]
+    #[serde(default = "default_s2s_backend")]
+    pub backend: String,
+    /// Turn mode (`asr`, `tts`, `interleaved`).
+    #[field(desc = "Speech turn mode", max_len = 16)]
+    #[builder(default = "interleaved".to_string())]
+    #[serde(default = "default_s2s_mode")]
+    pub mode: String,
+    /// Audio endpoint base URL (llama.cpp server; default port 8080).
+    #[field(desc = "Audio endpoint base URL", max_len = 128)]
+    #[builder(default = "http://127.0.0.1:8080".to_string())]
+    #[serde(default = "default_s2s_endpoint")]
+    pub endpoint: String,
+    /// Served model tag.
+    #[field(desc = "Audio model tag", max_len = 64)]
+    #[builder(default = "liquidai/lfm3-audio-2b".to_string())]
+    #[serde(default = "default_s2s_model")]
+    pub model: String,
+    /// Audio encoder projector path (`--mmproj`).
+    #[field(desc = "Audio projector path", max_len = 256)]
+    #[builder(default = format!("{AUDIO_BUNDLE_DIR}/mmproj.gguf"))]
+    #[serde(default = "default_s2s_mmproj")]
+    pub mmproj: String,
+    /// Audio decoder (vocoder) path (legacy; absent on LFM3).
+    #[field(desc = "Vocoder path", max_len = 256)]
+    #[builder(default = format!("{AUDIO_BUNDLE_DIR}/vocoder.gguf"))]
+    #[serde(default = "default_s2s_vocoder")]
+    pub vocoder: String,
+    /// Audio tokenizer path (legacy; absent on LFM3).
+    #[field(desc = "Audio tokenizer path", max_len = 256)]
+    #[builder(default = format!("{AUDIO_BUNDLE_DIR}/tokenizer.gguf"))]
+    #[serde(default = "default_s2s_tokenizer")]
+    pub tokenizer: String,
+    /// System prompt used for TTS turns.
+    #[field(desc = "TTS voice prompt", max_len = 128)]
+    #[builder(default = crate::prompts::S2S_VOICE_PROMPT.to_string())]
+    #[serde(default = "default_s2s_voice_prompt")]
+    pub voice_prompt: String,
+    /// Mic audio buffered per duplex turn in ms.
+    #[field(desc = "Duplex turn window ms", min = 500, max = 10000)]
+    #[builder(default = 2000)]
+    #[serde(default = "default_s2s_turn_window_ms")]
+    pub turn_window_ms: u32,
+    /// Generation token cap per turn.
+    #[field(desc = "Max tokens per turn", min = 16, max = 4096)]
+    #[builder(default = 512)]
+    #[serde(default = "default_s2s_max_tokens")]
+    pub max_tokens: u16,
+    /// Streamed-audio bound per turn in samples (24 kHz): the turn
+    /// errors instead of growing past it.
+    #[field(desc = "Max streamed audio samples per turn", min = 24_000, max = 96_000_000)]
+    #[builder(default = 7_200_000)]
+    #[serde(default = "default_s2s_max_audio_samples")]
+    pub max_audio_samples: u32,
+    /// Boot a supervised voice server when none answers (explicit
+    /// opt-in, default off). Off means the configured endpoint is
+    /// expected to be independently started: absence fails loudly
+    /// with the remedy instead of spawning a child.
+    #[field(desc = "Boot a supervised voice server when none answers")]
+    #[builder(default = false)]
+    #[serde(default = "default_s2s_auto_boot")]
+    pub auto_boot: bool,
+}
+
+fn default_s2s_auto_boot() -> bool {
+    false
+}
+
+fn default_s2s_backend() -> String {
+    "audio-server".to_string()
+}
+
+fn default_s2s_mode() -> String {
+    "interleaved".to_string()
+}
+
+fn default_s2s_endpoint() -> String {
+    "http://127.0.0.1:8080".to_string()
+}
+
+fn default_s2s_model() -> String {
+    "liquidai/lfm3-audio-2b".to_string()
+}
+
+fn default_s2s_mmproj() -> String {
+    format!("{AUDIO_BUNDLE_DIR}/mmproj.gguf")
+}
+
+fn default_s2s_vocoder() -> String {
+    format!("{AUDIO_BUNDLE_DIR}/vocoder.gguf")
+}
+
+fn default_s2s_tokenizer() -> String {
+    format!("{AUDIO_BUNDLE_DIR}/tokenizer.gguf")
+}
+
+fn default_s2s_voice_prompt() -> String {
+    crate::prompts::S2S_VOICE_PROMPT.to_string()
+}
+
+fn default_s2s_turn_window_ms() -> u32 {
+    2000
+}
+
+fn default_s2s_max_tokens() -> u16 {
+    512
+}
+
+fn default_s2s_max_audio_samples() -> u32 {
+    7_200_000
+}
+
+impl Default for S2sConfig {
+    fn default() -> Self {
+        Self::new().build()
+    }
+}
+
+impl S2sConfig {
+    /// Bundle described by this config (backbone from `model` when it
+    /// names a file, else the reference backbone).
+    #[must_use]
+    pub fn bundle(&self, backbone: PathBuf) -> AudioBundle {
+        AudioBundle {
+            backbone,
+            mmproj: PathBuf::from(&self.mmproj),
+            vocoder: PathBuf::from(&self.vocoder),
+            tokenizer: PathBuf::from(&self.tokenizer),
+        }
+    }
+}
+
+/// Reference bundle with its audio component paths taken from the
+/// loaded `s2s` section: the backbone stays the pinned installation
+/// file while projector/vocoder/tokenizer honor operator overrides.
+#[must_use]
+pub fn bundle_from_s2s(s2s: &S2sConfig) -> AudioBundle {
+    let reference = default_bundle();
+    AudioBundle {
+        backbone: reference.backbone,
+        mmproj: PathBuf::from(&s2s.mmproj),
+        vocoder: PathBuf::from(&s2s.vocoder),
+        tokenizer: PathBuf::from(&s2s.tokenizer),
     }
 }
 
@@ -206,14 +393,6 @@ pub struct AudioConfig {
     #[field(desc = "Microphone selector", max_len = 128)]
     #[builder(default = "default".to_string())]
     pub mic: String,
-    /// System-audio monitor source.
-    #[field(desc = "System monitor source", max_len = 128)]
-    #[builder(default = "default-sink-monitor".to_string())]
-    pub system_source: String,
-    /// Echo cancellation mode (`auto`, `pipewire`, `gate`, `off`).
-    #[field(desc = "Echo cancellation mode", max_len = 16)]
-    #[builder(default = "auto".to_string())]
-    pub echo_cancel: String,
 }
 
 impl Default for AudioConfig {
@@ -268,7 +447,7 @@ pub struct LlmEndpointConfig {
     pub endpoint: String,
     /// Served model tag.
     #[field(desc = "LLM model tag", max_len = 64)]
-    #[builder(default = "liquidai/lfm2.5-2.6b".to_string())]
+    #[builder(default = "bartowski/lfm3-1.7b".to_string())]
     pub model: String,
     /// Context window in tokens.
     #[field(desc = "Context window", min = 1024, max = 65535)]
@@ -282,7 +461,7 @@ pub struct LlmEndpointConfig {
     /// relative to `gguf_dir`. Empty means search the installation
     /// layout for `<model>.gguf` before the managed directory.
     #[field(desc = "LLM weights declaration", max_len = 256)]
-    #[builder(default = "liquidai/lfm2.5-2.6b-gguf/latest.gguf".to_string())]
+    #[builder(default = "bartowski/lfm3-1.7b/latest.gguf".to_string())]
     pub weights: String,
     /// GGUF root prefixing a relative `weights` declaration. Empty
     /// means the shared llama.cpp installation layout.
@@ -297,6 +476,20 @@ pub struct LlmEndpointConfig {
     #[builder(default = false)]
     #[serde(default)]
     pub gpu: bool,
+    /// Boot a supervised llama-server when none answers (explicit
+    /// opt-in, default off). Off means the configured endpoint is
+    /// expected to be independently started: absence fails loudly
+    /// with the remedy instead of spawning a child.
+    #[field(desc = "Boot a supervised server when none answers")]
+    #[builder(default = false)]
+    #[serde(default = "default_llm_auto_boot")]
+    pub auto_boot: bool,
+}
+
+/// Default matching the builder so `#[serde(default)]` on the leaf
+/// agrees with `LlmEndpointConfig::default()` on old files.
+fn default_llm_auto_boot() -> bool {
+    false
 }
 
 /// Resolve language-model weights, router-consistent: the explicit
@@ -427,6 +620,10 @@ pub struct OratorConfig {
     /// Speech-synthesis section.
     #[serde(default)]
     pub tts: TtsConfig,
+    /// Speech endpoint section (llama.cpp audio server: STT, TTS,
+    /// speech-to-speech; default port 8080).
+    #[serde(default)]
+    pub s2s: S2sConfig,
     /// Turn-taking section.
     #[serde(default)]
     pub turn: TurnConfig,
@@ -442,6 +639,31 @@ impl OratorConfig {
     pub fn load_or_default(path: &Path) -> Self {
         common_core::config::load_json_or_default(path)
     }
+}
+
+/// Audio keys removed from [`AudioConfig`] (`system_source`,
+/// `echo_cancel` were write-only: no capture path or AEC gate ever
+/// read them). Configs that still set them refuse with a `Usage`
+/// error naming the removal instead of silently ignoring them.
+/// Returns the removed key names present in the file at `path`
+/// (empty when absent, unreadable, or clean).
+#[must_use]
+pub fn removed_audio_keys(path: &Path) -> Vec<String> {
+    const REMOVED: [&str; 2] = ["system_source", "echo_cancel"];
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return Vec::new();
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) else {
+        return Vec::new();
+    };
+    let Some(audio) = value.get("audio") else {
+        return Vec::new();
+    };
+    REMOVED
+        .into_iter()
+        .filter(|key| audio.get(key).is_some())
+        .map(str::to_string)
+        .collect()
 }
 
 /// Load from the hierarchical lookup: `orator.json` in the working

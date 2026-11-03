@@ -59,6 +59,18 @@ fn speech_frame() -> Vec<f32> {
         .collect()
 }
 
+
+fn speech_span(frames: usize) -> Vec<f32> {
+    // Multi-frame voiced utterance: the speech-presence gate scores
+    // whole turns (attack run plus voiced span), so scripted turns
+    // speak in spans, never single frames.
+    let mut out = Vec::with_capacity(frames * 320);
+    for _ in 0..frames {
+        out.extend_from_slice(&speech_frame());
+    }
+    out
+}
+
 #[test]
 fn cascade_turn_flows_from_speech_to_store() {
     common_core::runtime::block_on_shared(async {
@@ -87,7 +99,7 @@ fn cascade_turn_flows_from_speech_to_store() {
             ..orator_s2s::S2sConfig::default()
         });
         let transcript = listener
-            .transcribe_blocking(&speech_frame())
+            .transcribe_blocking(&speech_span(8))
             .expect("asr turn runs");
         assert_eq!(transcript, "book a table for two");
 
@@ -484,7 +496,7 @@ fn live_conversation_with_barge_in_completes_in_order() {
         }
         assert!(vad.push(&speech_frame()).speech, "hot span opens");
         let transcript = listener
-            .transcribe_blocking(&speech_frame())
+            .transcribe_blocking(&speech_span(8))
             .expect("asr turn runs");
         assert_eq!(transcript, "book a table for two");
 

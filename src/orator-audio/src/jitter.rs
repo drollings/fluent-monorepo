@@ -48,6 +48,8 @@ impl JitterBuffer {
             cap: 4,
             drops: 0,
             underruns: 0,
+            // Min-seed: any pushed frame lowers it via `min` below.
+            // Tracked for calibration; unreported while empty.
             min_depth_samples: usize::MAX,
             max_depth_samples: 0,
         }

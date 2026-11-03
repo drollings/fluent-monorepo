@@ -6,7 +6,7 @@
 use crate::parse::{parse_gbnf, parse_model_output, ParseError};
 use crate::policy::{Policy, PolicyCtx, Verdict};
 use crate::tool::{truncate_tool_output, ToolCall, ToolError, ToolRegistry, ToolTier};
-use crate::untrusted::{wrap_tool_result, TRANSCRIPT_AS_DATA};
+use orator_core::untrusted::{wrap_tool_result, TRANSCRIPT_AS_DATA};
 
 /// Dexter's bound: five tool rounds, then a final answer pass.
 pub const MAX_TOOL_ROUNDS: u32 = 5;

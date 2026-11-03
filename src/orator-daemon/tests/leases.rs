@@ -118,7 +118,7 @@ fn contention_two_complete_third_refuses_fast() {
             let refused = &refused;
             scope.spawn(move || match owner.say_via(&url, "hello", Some(session)) {
                 Ok((samples, _)) => {
-                    assert_eq!(samples, 1);
+                    assert_eq!(samples.len(), 1);
                     done.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 }
                 Err(VoiceError::Saturated(reason)) => {
@@ -307,7 +307,7 @@ fn concurrent_sessions_multiplex_over_one_shared_endpoint() {
                 let (samples, rate) = owner
                     .say_via(&url, "hello", Some(session))
                     .expect("shared endpoint serves every session");
-                assert_eq!(samples, 1);
+                assert_eq!(samples.len(), 1);
                 assert_eq!(rate, orator_s2s::AUDIO_OUT_RATE);
                 done.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             });

@@ -339,3 +339,26 @@ fn legality_split_counts_match() {
     assert_eq!(machine.illegal_drops(), 1);
     assert_eq!(machine.drops(), 2);
 }
+
+#[test]
+fn vad_alone_never_sets_a_hold() {
+    // VAD confidence isolation: voice-activity flaps without a
+    // silence ruling never move the floor. Only `SilenceElapsed` at
+    // or past the hold band commits; VAD alone is producer
+    // confidence and never sets a hold by itself.
+    let config = config();
+    let mut machine = TurnMachine::new(config);
+    assert_eq!(machine.step(&TurnEvent::VadStart), TurnState::UserSpeaking);
+    for _ in 0..10 {
+        assert_eq!(machine.step(&TurnEvent::VadEnd), TurnState::UserSpeaking);
+        assert_eq!(machine.step(&TurnEvent::VadStart), TurnState::UserSpeaking);
+    }
+    // Short silence below the hold band still holds the floor.
+    assert_eq!(
+        machine.step(&TurnEvent::SilenceElapsed {
+            ms: 250,
+            looks_complete: false,
+        }),
+        TurnState::UserSpeaking
+    );
+}

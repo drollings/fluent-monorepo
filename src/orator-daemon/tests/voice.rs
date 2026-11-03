@@ -335,3 +335,38 @@ fn ejected_probe_success_drops_the_same_child() {
     }
     owner.shutdown();
 }
+
+#[test]
+fn ensure_uses_a_serving_configured_endpoint_without_booting() {
+    // The independently-started workflow: the configured server
+    // answers readiness, so ensure returns it shared — no child boots
+    // (no binary could even serve here: the managed legacy predates
+    // LFM3 and the stub speaks no weights).
+    let server = httpmock::MockServer::start();
+    server.mock(|when, then| {
+        when.method("OPTIONS").path("/v1/chat/completions");
+        then.status(200);
+    });
+    let mut config = orator_core::OratorConfig::default();
+    config.s2s.endpoint = server.base_url();
+    let owner = VoiceOwner::new(&config);
+    let url = common_core::runtime::block_on_shared(owner.ensure()).expect("shared serves");
+    assert_eq!(url, server.base_url());
+    assert!(!owner.has_server(), "shared use boots no child");
+    owner.shutdown();
+}
+
+#[test]
+fn ensure_without_server_or_boot_names_auto_boot() {
+    // Dead configured endpoint, auto-boot off: the refusal names the
+    // file leave instead of spawning a child.
+    let mut config = orator_core::OratorConfig::default();
+    config.s2s.endpoint = "http://127.0.0.1:9".to_string();
+    assert!(!config.s2s.auto_boot, "off unless the file opts in");
+    let owner = VoiceOwner::new(&config);
+    let error = common_core::runtime::block_on_shared(owner.ensure())
+        .expect_err("nothing serves, nothing boots");
+    assert_eq!(error.kind(), "AutoBootDisabled");
+    assert!(error.to_string().contains("s2s.auto_boot"), "{error}");
+    owner.shutdown();
+}

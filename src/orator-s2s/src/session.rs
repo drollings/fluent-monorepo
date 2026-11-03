@@ -55,6 +55,184 @@ pub enum S2sError {
     NoAudio,
 }
 
+/// How long a turn waits out a still-loading model before failing.
+/// The readiness probe opens routes before weights finish streaming
+/// in, so the first turn after a cold boot rides this instead of
+/// failing a server that is seconds from serving.
+const LOADING_WAIT: std::time::Duration = std::time::Duration::from_secs(90);
+
+/// Interval between loading polls. Short enough to start promptly
+/// once the model answers, long enough to stay out of the way.
+const LOADING_POLL: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Whether `body` names a still-loading model (the transient 503 the
+/// server answers while weights stream in). Anything else — model
+/// errors, auth, unknown routes — is terminal and never retried.
+fn is_loading_body(status: reqwest::StatusCode, body: &str) -> bool {
+    status == reqwest::StatusCode::SERVICE_UNAVAILABLE
+        && body.to_ascii_lowercase().contains("loading model")
+}
+
+/// Sleep `duration` unless `abort` fires first. Returns whether the
+/// turn was cancelled during the wait.
+fn sleep_abort_aware(abort: &StreamAbort, duration: std::time::Duration) -> bool {
+    let waited = std::time::Duration::from_millis(0);
+    let mut waited = waited;
+    let step = std::time::Duration::from_millis(100);
+    while waited < duration {
+        if abort.is_cancelled() {
+            return true;
+        }
+        let chunk = step.min(duration.saturating_sub(waited));
+        std::thread::sleep(chunk);
+        waited += chunk;
+    }
+    abort.is_cancelled()
+}
+
+/// POST `body` as JSON until the server answers something other than
+/// "still loading", the budget burns, or `abort` fires. Transport
+/// failures report through `on_transport_error` (which owns any
+/// cache invalidation); a burnt budget replays the last loading
+/// reply so the caller names what it saw instead of a bare timeout.
+fn post_until_loaded(
+    client: &reqwest::Client,
+    url: &str,
+    body: &serde_json::Value,
+    abort: &StreamAbort,
+    on_transport_error: impl Fn(reqwest::Error) -> S2sError,
+) -> Result<reqwest::Response, S2sError> {
+    if abort.is_cancelled() {
+        return Err(S2sError::Aborted);
+    }
+    let deadline = std::time::Instant::now() + LOADING_WAIT;
+    loop {
+        // The request builds inside the async block: `send()` arms
+        // the client timeout eagerly at construction, which needs the
+        // runtime context the bridge only enters on first poll.
+        let response = common_core::runtime::block_on(async {
+            client
+                .post(url)
+                .header("Authorization", "Bearer dummy")
+                .json(body)
+                .timeout(std::time::Duration::from_secs(120))
+                .send()
+                .await
+        })
+        .map_err(&on_transport_error)?;
+        if abort.is_cancelled() {
+            return Err(S2sError::Aborted);
+        }
+        if !is_loading_status(&response) {
+            return Ok(response);
+        }
+        // Peek without consuming: only a loading body waits; any
+        // other 503 shape falls through as a terminal reply below.
+        let (status, bytes) = common_core::runtime::block_on(async {
+            let status = response.status();
+            let bytes = response
+                .bytes()
+                .await
+                .unwrap_or_default()
+                .to_vec();
+            (status, bytes)
+        });
+        let text = String::from_utf8_lossy(&bytes);
+        if !is_loading_body(status, &text) {
+            return rebuild_reply(url, client, body, abort, &on_transport_error);
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err(S2sError::Backend(format!(
+                "model still loading at {url} after {}s",
+                LOADING_WAIT.as_secs()
+            )));
+        }
+        if sleep_abort_aware(abort, LOADING_POLL) {
+            return Err(S2sError::Aborted);
+        }
+    }
+}
+
+/// Whether the reply line is even eligible for a loading wait: only
+/// 503 continues; every other status returns immediately.
+fn is_loading_status(response: &reqwest::Response) -> bool {
+    response.status() == reqwest::StatusCode::SERVICE_UNAVAILABLE
+}
+
+/// Re-issue the POST once after consuming a non-loading 503 body for
+/// inspection. Loading retries need the reply to decide; a terminal
+/// 503 must still reach the caller as a full response, so the turn
+/// replays the request exactly once instead of fabricating one.
+fn rebuild_reply(
+    url: &str,
+    client: &reqwest::Client,
+    body: &serde_json::Value,
+    abort: &StreamAbort,
+    on_transport_error: &impl Fn(reqwest::Error) -> S2sError,
+) -> Result<reqwest::Response, S2sError> {
+    if abort.is_cancelled() {
+        return Err(S2sError::Aborted);
+    }
+    common_core::runtime::block_on(async {
+        client
+            .post(url)
+            .header("Authorization", "Bearer dummy")
+            .json(body)
+            .timeout(std::time::Duration::from_secs(120))
+            .send()
+            .await
+    })
+    .map_err(on_transport_error)
+}
+
+/// Whether 16 kHz samples carry likely speech: overall RMS above the
+/// digital-silence floor plus a minimum fraction of VAD speech frames.
+/// Energy alone cannot separate quiet speech from hiss (measured:
+/// RMS-0.003 speech transcribes while RMS-0.01 noise hallucinates),
+/// but the detector's zero-crossing ceiling rejects broadband hiss
+/// while voiced frames pass — so the fraction separates them with
+/// margin (white noise scores 0.0, short words score ≥0.4).
+fn speech_present(samples: &[f32]) -> bool {
+    /// Below this RMS the input is effectively digital silence.
+    const SILENCE_RMS: f32 = 0.002;
+    /// Minimum speech-frame fraction over 20 ms frames.
+    const MIN_SPEECH_FRACTION: f32 = 0.15;
+    if samples.is_empty() {
+        return false;
+    }
+    let energy: f32 = samples.iter().map(|sample| sample * sample).sum();
+    if (energy / samples.len() as f32).sqrt() < SILENCE_RMS {
+        return false;
+    }
+    // Gate floor below the detector default: far-mic speech around
+    // RMS 0.01 must still open spans, while the zero-crossing ceiling
+    // keeps rejecting broadband hiss at the same energy (measured
+    // grid: hiss ≤0.03 scores 0.00, quiet speech scores ≥0.57).
+    // The verdict re-arms every 50 frames (1 s): a latched span must
+    // re-prove, so stationary hiss that wins one attack lottery
+    // cannot ride it for the whole utterance, while voiced spans
+    // re-latch at once (3 attack frames per window).
+    let mut vad = orator_vad::EnergyVad::with_floor(0.01);
+    let mut speech_frames = 0usize;
+    let mut total_frames = 0usize;
+    for frame in samples.chunks(320) {
+        if frame.len() < 320 {
+            break;
+        }
+        if total_frames % 50 == 0 {
+            vad.reset();
+        }
+        total_frames += 1;
+        if vad.push(frame).speech {
+            speech_frames += 1;
+        }
+    }
+    if total_frames == 0 {
+        return false;
+    }
+    speech_frames as f32 / total_frames as f32 >= MIN_SPEECH_FRACTION
+}
+
 /// Whether the endpoint reports it cannot encode audio input.
 ///
 /// Pinned by transcript goldens: the reference text-only gateway
@@ -77,17 +255,6 @@ pub const fn should_advance_chain(error: &S2sError) -> bool {
     match error {
         S2sError::NoAudio | S2sError::Backend(_) | S2sError::Overflow(_) => true,
         S2sError::Aborted => false,
-    }
-}
-
-/// Truncate an error body to `max` chars (single line) so endpoint
-/// diagnostics stay informative without flooding the terminal.
-fn truncate(body: &str, max: usize) -> String {
-    let flat: String = body.split_whitespace().collect::<Vec<_>>().join(" ");
-    if flat.chars().count() <= max {
-        flat
-    } else {
-        flat.chars().take(max).collect::<String>() + "…"
     }
 }
 
@@ -144,15 +311,14 @@ pub struct AudioSession {
 }
 
 impl AudioSession {
-    /// Session over `config` with a fresh transport.
+    /// Session over `config` with a fresh transport. The client is a
+    /// default per-session transport (never shared across runtimes);
+    /// the 120 s turn bound is set per request, never via a builder.
     #[must_use]
     pub fn new(config: S2sConfig) -> Self {
         Self {
             config,
-            client: reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(120))
-                .build()
-                .unwrap_or_else(|_| reqwest::Client::new()),
+            client: reqwest::Client::new(),
             history: Vec::new(),
             first_turn: true,
             heard_audio: false,
@@ -223,8 +389,15 @@ impl AudioSession {
         self.voicing
     }
 
-    /// Transcribe 16 kHz mic samples (single-shot ASR).
+    /// Transcribe 16 kHz mic samples (single-shot ASR). Input with
+    /// no speech presence answers empty without inference: the model
+    /// voices politeness priors ("Okay.", "Thank you.") for hiss and
+    /// room tone, and no prompt steers that away (measured live), so
+    /// the gate is signal-level, never a denylist.
     pub fn transcribe_blocking(&mut self, samples: &[f32]) -> Result<String, S2sError> {
+        if !speech_present(samples) {
+            return Ok(String::new());
+        }
         let wav = encode_wav_pcm16(samples, AUDIO_IN_RATE);
         let messages = vec![system_msg(SYSTEM_ASR), audio_msg(&wav)];
         let abort = self.abort.clone();
@@ -232,9 +405,12 @@ impl AudioSession {
         Ok(turn.text)
     }
 
-    /// Speak `text` to 24 kHz samples (single-shot TTS). Errors when
-    /// the server sends text only — the caller falls back to the
-    /// configured cascade voice.
+    /// Speak `text` to 24 kHz samples (single-shot TTS). The custom
+    /// voice server streams `audio_chunk` deltas inside the chat
+    /// stream; stock `llama-server` voices through `POST /tts`
+    /// instead — so a text-only chat turn falls through to `/tts`
+    /// before reporting `NoAudio`. The caller still owns the cascade
+    /// (Kokoro/daemon) past this.
     pub fn speak_blocking(&mut self, text: &str) -> Result<Vec<f32>, S2sError> {
         let messages = vec![
             system_msg(&self.config.voice_prompt.clone()),
@@ -243,10 +419,54 @@ impl AudioSession {
         let abort = self.abort.clone();
         let turn = self.stream_turn(&messages, true, &abort)?;
         if turn.voiced {
-            Ok(turn.audio)
-        } else {
-            Err(S2sError::NoAudio)
+            return Ok(turn.audio);
         }
+        // Stock server: no audio deltas in chat — voice via /tts.
+        self.speak_via_tts(text, &abort)
+    }
+
+    /// Voice `text` through `POST {endpoint}/tts` (stock server
+    /// shape): `{"input": text}` in, WAV bytes out. Resamples to the
+    /// 24 kHz speaker rate when the server answers otherwise. A 404
+    /// (no `/tts` route: text-only gateway) reports `NoAudio`, never
+    /// `Backend` — voiceless stays voiceless and never ejects.
+    fn speak_via_tts(&self, text: &str, abort: &StreamAbort) -> Result<Vec<f32>, S2sError> {
+        if abort.is_cancelled() {
+            return Err(S2sError::Aborted);
+        }
+        let url = format!("{}/tts", self.config.endpoint.trim_end_matches('/'));
+        let body = serde_json::json!({ "input": text });
+        // Still-loading 503s wait like chat turns (cold-boot race);
+        // anything else returns as-is for the status handling below.
+        let response = post_until_loaded(&self.client, &url, &body, abort, |error| {
+            S2sError::Backend(error.to_string())
+        })?;
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err(S2sError::NoAudio);
+        }
+        let bytes: Vec<u8> = common_core::runtime::block_on(async {
+            response
+                .error_for_status()
+                .map_err(|error| S2sError::Backend(error.to_string()))?
+                .bytes()
+                .await
+                .map_err(|error| S2sError::Backend(format!("tts read: {error}")))
+                .map(|chunk| chunk.to_vec())
+        })?;
+        if abort.is_cancelled() {
+            return Err(S2sError::Aborted);
+        }
+        let wav = orator_audio::decode_wav_bytes(&bytes)
+            .map_err(|error| S2sError::Backend(error.to_string()))?;
+        if wav.samples.is_empty() {
+            return Err(S2sError::NoAudio);
+        }
+        let samples = if wav.sample_rate == AUDIO_OUT_RATE {
+            wav.samples
+        } else {
+            orator_audio::resample_linear(&wav.samples, wav.sample_rate, AUDIO_OUT_RATE)
+        };
+        Ok(samples)
     }
 
     /// One interleaved turn: optional text plus optional 16 kHz audio
@@ -339,23 +559,25 @@ impl AudioSession {
         // `block_on` argument: `RequestBuilder::send()` arms the
         // client timeout eagerly at construction, which needs the
         // runtime context the bridge only enters on first poll.
-        let mut response = common_core::runtime::block_on(async {
-            self.client
-                .post(&url)
-                .header("Authorization", "Bearer dummy")
-                .json(&body)
-                .send()
-                .await
-        })
-        .map_err(|error| {
-            crate::ensure::invalidate_hint_cache(&self.config.endpoint);
-            S2sError::Backend(error.to_string())
-        })?;
+        // A 503 that names model loading retries with backoff: the
+        // readiness probe opens routes before weights finish
+        // streaming in, so the first turn after a cold boot would
+        // otherwise fail a server that is seconds from serving.
+        let mut response = post_until_loaded(
+            &self.client,
+            &url,
+            &body,
+            abort,
+            |error: reqwest::Error| {
+                crate::ensure::invalidate_hint_cache(&self.config.endpoint);
+                S2sError::Backend(error.to_string())
+            },
+        )?;
         if !response.status().is_success() {
             crate::ensure::invalidate_hint_cache(&self.config.endpoint);
             let status = response.status();
             let detail = common_core::runtime::block_on(response.text())
-                .map(|body| truncate(&body, 300))
+                .map(|body| orator_core::truncate_tool_output(&body))
                 .unwrap_or_default();
             let hint = common_core::runtime::block_on(self.served_models_hint());
             return Err(S2sError::Backend(format!(
@@ -374,7 +596,10 @@ impl AudioSession {
         let mut buffer = Vec::new();
         let mut text = String::new();
         let mut audio = Vec::new();
-        let cap = usize::try_from(self.config.max_audio_samples).unwrap_or(usize::MAX);
+        // Audio bound: `max_audio_samples` is a `u32` (schema-capped at
+        // 96M), which fits every supported `usize` exactly — no
+        // silent `usize::MAX` fallback that would uncap the turn.
+        let cap = self.config.max_audio_samples as usize;
         loop {
             if abort.is_cancelled() {
                 return Err(S2sError::Aborted);

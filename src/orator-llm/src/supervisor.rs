@@ -16,7 +16,7 @@ use std::time::Duration;
 
 use thiserror::Error;
 
-pub use orator_core::paths::find_on_path;
+pub use orator_core::paths::{find_all_on_path, find_on_path};
 
 /// The `llama-server` binary name resolved from `$PATH`.
 pub const LLAMA_SERVER_BIN: &str = "llama-server";
@@ -135,10 +135,55 @@ pub fn resolve_with_override(explicit: Option<PathBuf>) -> Option<PathBuf> {
 }
 
 /// Resolve the `llama-server` binary: the `LLAMA_SERVER` env override
-/// first, then a `$PATH` search. `None` when not found.
+/// first, then a `$PATH` search. Explicit overrides require absolute
+/// paths and log their fingerprint (the user accepts responsibility);
+/// searched hits are validated by `resolve_binary_validated`.
+/// `None` when not found or relative.
 #[must_use]
 pub fn resolve_binary() -> Option<PathBuf> {
-    resolve_with_override(std::env::var_os(LLAMA_SERVER_ENV).map(PathBuf::from))
+    let explicit = std::env::var_os(LLAMA_SERVER_ENV).map(PathBuf::from);
+    if let Some(path) = explicit {
+        if !path.is_absolute() {
+            return None;
+        }
+        let fingerprint = orator_core::paths::binary_fingerprint(&path);
+        if let Err(error) = orator_core::paths::validate_server_binary(
+            &path,
+            orator_core::paths::current_uid(),
+            false,
+        ) {
+            eprintln!(
+                "orator: explicit llama-server {} ({fingerprint}) bypasses the gate with a warning: {error}",
+                path.display()
+            );
+        }
+        return Some(path);
+    }
+    resolve_with_override(None)
+}
+
+/// Resolve every `llama-server` candidate: the `LLAMA_SERVER` env
+/// override alone when set, else every validated `$PATH` hit in
+/// directory order. A stale install earlier on `$PATH` (e.g. a
+/// pre-LFM3 build shadowing the system one) fails its boot fast and
+/// the next candidate serves, instead of one shadowed binary vetoing
+/// inference.
+#[must_use]
+pub fn resolve_binary_candidates() -> Vec<PathBuf> {
+    if let Some(explicit) = std::env::var_os(LLAMA_SERVER_ENV) {
+        let path = PathBuf::from(explicit);
+        if path.is_absolute() {
+            return vec![path];
+        }
+        return Vec::new();
+    }
+    let uid = orator_core::paths::current_uid();
+    orator_core::paths::find_all_on_path(LLAMA_SERVER_BIN)
+        .into_iter()
+        .filter(|candidate| {
+            orator_core::paths::validate_server_binary(candidate, uid, false).is_ok()
+        })
+        .collect()
 }
 
 /// Resolve the `llama-server` binary with the ownership gate applied:
@@ -340,13 +385,36 @@ pub struct Supervisor {
 }
 
 impl Supervisor {
-    /// Resolve the binary and boot one server. Searched hits pass
-    /// the ownership gate for the current uid; an explicit
-    /// `LLAMA_SERVER` override bypasses it. Fails fast with an
-    /// actionable message when nothing trusted is installed.
+    /// Resolve the binary and boot one server. Every validated
+    /// candidate is tried in order until one answers its readiness
+    /// probe: a stale `$PATH` shadow fails fast and the next serves.
+    /// Searched hits pass the ownership gate for the current uid; an
+    /// explicit `LLAMA_SERVER` override bypasses it. Fails fast with an
+    /// actionable message when nothing trusted is installed, or with
+    /// the last boot error when every candidate failed.
     pub async fn boot(config: SupervisorConfig) -> Result<Self, SupervisorError> {
-        let binary = resolve_binary_validated(orator_core::paths::current_uid())?;
-        boot_with_binary(config, &binary).await
+        let candidates = resolve_binary_candidates();
+        if candidates.is_empty() {
+            return Err(SupervisorError::NoBinary(format!(
+                "llama-server binary not found in $PATH (set the {LLAMA_SERVER_ENV} env var or install it)"
+            )));
+        }
+        let mut last_error = None;
+        for binary in &candidates {
+            match boot_with_binary(config.clone(), binary).await {
+                Ok(server) => return Ok(server),
+                Err(error) => {
+                    tracing::warn!(
+                        target: "orator.llm",
+                        binary = %binary.display(),
+                        %error,
+                        "server candidate failed; trying the next",
+                    );
+                    last_error = Some(error);
+                }
+            }
+        }
+        Err(last_error.expect("one candidate at least"))
     }
 
     /// Manage an already-running endpoint at `base_url`. No process is
@@ -527,7 +595,12 @@ impl Supervisor {
             .process_group(0)
             .spawn()
             .map_err(|error| {
-                SupervisorError::Spawn(format!("{} ({}): {error}", binary.display(), args.join(" ")))
+                let marker = if error.kind() == std::io::ErrorKind::AddrInUse {
+                    "addr-in-use "
+                } else {
+                    ""
+                };
+                SupervisorError::Spawn(format!("{marker}{} ({}): {error}", binary.display(), args.join(" ")))
             })?;
         // Reap promptly on drop instead of leaking a zombie supervisor row.
         let _ = child.id();
@@ -536,19 +609,28 @@ impl Supervisor {
     }
 
     fn stop_child(&self) {
-        let mut guard = common_core::sync::lock(&self.child);
-        if let Some(mut child) = guard.take() {
-            let _ = child.start_kill();
-            // Bounded reap so no zombie survives the call; dropping
-            // still kills as a backstop.
-            let deadline = std::time::Instant::now() + Duration::from_secs(5);
-            while std::time::Instant::now() < deadline {
-                match child.try_wait() {
-                    Ok(Some(_)) | Err(_) => return,
-                    Ok(None) => std::thread::sleep(Duration::from_millis(50)),
-                }
+        let child = common_core::sync::lock(&self.child).take();
+        let Some(mut child) = child else {
+            return;
+        };
+        let _ = child.start_kill();
+        // Bounded reap so no zombie survives the call; dropping
+        // still kills as a backstop. The lock is released before the
+        // wait so concurrent boots and health checks never block on
+        // the reap.
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while std::time::Instant::now() < deadline {
+            match child.try_wait() {
+                Ok(Some(_)) | Err(_) => return,
+                Ok(None) => std::thread::sleep(Duration::from_millis(50)),
             }
         }
+    }
+}
+
+impl Drop for Supervisor {
+    fn drop(&mut self) {
+        self.stop();
     }
 }
 
@@ -587,7 +669,8 @@ pub async fn boot_with_binary(
             Ok(()) => {}
             Err(error) => {
                 let text = error.to_string();
-                let collision = text.contains("Address already in use")
+                let collision = text.contains("addr-in-use")
+                    || text.contains("Address already in use")
                     || text.contains("EADDRINUSE")
                     || text.contains("98");
                 attempts += 1;

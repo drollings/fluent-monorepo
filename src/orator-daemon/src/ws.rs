@@ -9,7 +9,7 @@
 
 use std::net::SocketAddr;
 use std::sync::{
-    Arc,
+    Arc, Mutex,
     atomic::{AtomicBool, Ordering},
 };
 use std::time::{Duration, Instant};
@@ -97,16 +97,49 @@ pub async fn serve_ws(
     voice: Arc<VoiceOwner>,
     tuning: WsTuning,
 ) -> std::io::Result<()> {
-    if token.is_empty() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "refusing to serve WebSocket without a bearer token (set daemon.ws_token)",
-        ));
-    }
+    validate_ws_token(&token).map_err(|message| {
+        std::io::Error::new(std::io::ErrorKind::InvalidInput, message)
+    })?;
     let listener = bind_ws(addr).await?;
     let never = AtomicBool::new(false);
     serve_ws_on_tuned(listener, &token, voice, tuning, &never).await;
     Ok(())
+}
+
+/// Minimum bearer-token length. Short tokens refuse to serve
+/// (fail closed, never unauthenticated).
+pub const MIN_WS_TOKEN_LEN: usize = 32;
+
+/// Validate a WS bearer token: non-empty and at least 32 chars.
+/// Short tokens refuse at startup with a named remedy.
+pub fn validate_ws_token(token: &str) -> Result<(), String> {
+    if token.is_empty() {
+        return Err(
+            "refusing to serve WebSocket without a bearer token (set daemon.ws_token)".to_string(),
+        );
+    }
+    if token.len() < MIN_WS_TOKEN_LEN {
+        return Err(format!(
+            "refusing short WS token ({} chars, min {MIN_WS_TOKEN_LEN}; generate 32+ random chars)",
+            token.len()
+        ));
+    }
+    Ok(())
+}
+
+/// Constant-time bearer comparison: length leaks, content does not.
+/// Rejects early on length (tokens share the minimum), then xors every
+/// byte so a wrong token costs the same as a right one.
+#[must_use]
+pub fn constant_time_eq(a: &str, b: &str) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (x, y) in a.bytes().zip(b.bytes()) {
+        diff |= x ^ y;
+    }
+    diff == 0
 }
 
 /// Bind a loopback-only TCP listener. Anything else fails closed with
@@ -164,7 +197,14 @@ pub async fn serve_ws_on_tuned(
     tuning: WsTuning,
     stop: &AtomicBool,
 ) {
+    use std::collections::HashMap;
+    use std::net::IpAddr;
     let in_flight = Arc::new(tokio::sync::Semaphore::new(WS_HANDLER_CAP));
+    // Per-IP handshake-failure backoff: wrong-token peers wait longer
+    // each time (100ms * 2^failures, capped at 5s) inside their own
+    // handler, never blocking the accept loop or honest peers.
+    let backoff: Arc<Mutex<HashMap<IpAddr, u32>>> =
+        Arc::new(Mutex::new(HashMap::new()));
     let mut handlers = tokio::task::JoinSet::new();
     loop {
         if crate::shutdown_requested() || stop.load(Ordering::SeqCst) {
@@ -173,9 +213,17 @@ pub async fn serve_ws_on_tuned(
         let Ok(accept) = timeout(WS_WATCHDOG_POLL, listener.accept()).await else {
             continue;
         };
-        let Ok((mut stream, _)) = accept else {
+        let Ok((mut stream, peer)) = accept else {
             continue;
         };
+        let peer_ip = peer.ip();
+        {
+            let failures = common_core::sync::lock(&backoff).get(&peer_ip).copied().unwrap_or(0);
+            if failures > 0 {
+                let wait_ms = (100u64.saturating_mul(1u64 << failures.min(6))).min(5000);
+                tokio::time::sleep(Duration::from_millis(wait_ms)).await;
+            }
+        }
         let Ok(permit) = Arc::clone(&in_flight).try_acquire_owned() else {
             crate::socket::LISTENER_REFUSALS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             use tokio::io::AsyncWriteExt as _;
@@ -194,9 +242,16 @@ pub async fn serve_ws_on_tuned(
         };
         let voice = Arc::clone(&voice);
         let token = token.to_string();
+        let backoff = Arc::clone(&backoff);
         handlers.spawn(async move {
             let _permit = permit;
-            handle_ws(stream, &token, voice, tuning).await;
+            let peer_ip = peer.ip();
+            if handle_ws(stream, &token, voice, tuning).await {
+                common_core::sync::lock(&backoff).remove(&peer_ip);
+            } else {
+                let mut map = common_core::sync::lock(&backoff);
+                *map.entry(peer_ip).or_insert(0) += 1;
+            }
         });
     }
     while handlers.join_next().await.is_some() {}
@@ -223,8 +278,11 @@ impl tokio_tungstenite::tungstenite::handshake::server::Callback for Gate {
         let bearer = request
             .headers()
             .get("authorization")
-            .and_then(|value| value.to_str().ok());
-        if bearer == Some(self.expected.as_str()) {
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or("");
+        // Constant-time compare: a wrong token costs the same as the
+        // right one, so timing never oracles the secret.
+        if constant_time_eq(bearer, self.expected.as_str()) {
             Ok(response)
         } else {
             Err(status_response(401))
@@ -233,13 +291,14 @@ impl tokio_tungstenite::tungstenite::handshake::server::Callback for Gate {
 }
 
 /// One connection: handshake-gate, then calls until silence, cap, or
-/// shutdown. Every incoming message resets the silence clock.
-async fn handle_ws(stream: TcpStream, token: &str, voice: Arc<VoiceOwner>, tuning: WsTuning) {
+/// shutdown. Every incoming message resets the silence clock. Returns
+/// whether the handshake succeeded (for per-IP backoff).
+async fn handle_ws(stream: TcpStream, token: &str, voice: Arc<VoiceOwner>, tuning: WsTuning) -> bool {
     let gate = Gate {
         expected: format!("Bearer {token}"),
     };
     let Ok(mut ws) = accept_hdr_async(stream, gate).await else {
-        return;
+        return false;
     };
     let mut last_active = Instant::now();
     let born = Instant::now();
@@ -302,6 +361,7 @@ async fn handle_ws(stream: TcpStream, token: &str, voice: Arc<VoiceOwner>, tunin
             },
         }
     }
+    true
 }
 
 /// One call on a blocking thread (voice boots may take minutes):
@@ -320,20 +380,36 @@ async fn serve_one(voice: &Arc<VoiceOwner>, bytes: &[u8]) -> Vec<u8> {
                 }
             },
         };
-        crate::socket::encode_reply_frame(id, ok, &body).encode()
+        crate::socket::encode_reply_frame(id, ok, &body).map_or_else(
+            |error| error_bytes(0, &error),
+            |frame| frame.encode(),
+        )
     })
     .await
     .unwrap_or_else(|_| error_bytes(0, "handler panicked"))
 }
 
-/// Reply bytes for a carrier-level refusal (no parsable id).
+/// Reply bytes for a carrier-level refusal (no parsable id). The inner
+/// envelope is a JSON `Value`, whose serialization never fails; the
+/// fallback names the failure instead of sending an empty frame.
 fn error_bytes(id: u64, error: &str) -> Vec<u8> {
     crate::socket::encode_reply_frame(
         id,
         false,
         &serde_json::json!({ "error": error.to_string() }),
     )
-    .encode()
+    .map_or_else(
+        |encode_error| {
+            // Last resort stays a valid frame: the body names the failure
+            // instead of an empty payload desyncing the carrier.
+            SocketFrame {
+                kind: orator_core::MessageType::Response,
+                body: format!("refusal encode failed ({encode_error}): {error}").into_bytes(),
+            }
+            .encode()
+        },
+        |frame| frame.encode(),
+    )
 }
 
 /// Handshake refusal with a status and no body.

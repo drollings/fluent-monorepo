@@ -45,6 +45,19 @@ pub fn audio_base_url(llm: &LlmEndpointConfig) -> String {
     }
 }
 
+/// Resolve the audio-server base URL: `LLM_BASE_URL` wins when set,
+/// otherwise the `s2s` section applies (default port 8080).
+#[must_use]
+pub fn s2s_base_url(s2s: &orator_core::S2sConfig) -> String {
+    let endpoint =
+        std::env::var("LLM_BASE_URL").unwrap_or_else(|_| s2s.endpoint.clone());
+    if endpoint.starts_with("http") {
+        endpoint
+    } else {
+        format!("http://{endpoint}")
+    }
+}
+
 /// Every settable dotted key, in section order.
 #[must_use]
 pub fn config_keys() -> Vec<String> {
@@ -54,6 +67,7 @@ pub fn config_keys() -> Vec<String> {
         ("stt", OratorConfig::default().stt.field_names()),
         ("llm", OratorConfig::default().llm.field_names()),
         ("tts", OratorConfig::default().tts.field_names()),
+        ("s2s", OratorConfig::default().s2s.field_names()),
         ("turn", OratorConfig::default().turn.field_names()),
         ("daemon", OratorConfig::default().daemon.field_names()),
     ] {
@@ -92,6 +106,7 @@ pub fn config_get(config: &OratorConfig, key: &str) -> Result<String, String> {
         "stt" => config.stt.get_field(field).map_err(|error| error.to_string()),
         "llm" => config.llm.get_field(field).map_err(|error| error.to_string()),
         "tts" => config.tts.get_field(field).map_err(|error| error.to_string()),
+        "s2s" => config.s2s.get_field(field).map_err(|error| error.to_string()),
         "turn" => config.turn.get_field(field).map_err(|error| error.to_string()),
         "daemon" => config.daemon.get_field(field).map_err(|error| error.to_string()),
         _ => Err(format!(
@@ -113,6 +128,7 @@ pub fn config_set(config: &mut OratorConfig, key: &str, value: &str) -> Result<(
         "stt" => config.stt.set_field(field, value).map_err(|error| error.to_string()),
         "llm" => config.llm.set_field(field, value).map_err(|error| error.to_string()),
         "tts" => config.tts.set_field(field, value).map_err(|error| error.to_string()),
+        "s2s" => config.s2s.set_field(field, value).map_err(|error| error.to_string()),
         "turn" => config.turn.set_field(field, value).map_err(|error| error.to_string()),
         "daemon" => config.daemon.set_field(field, value).map_err(|error| error.to_string()),
         _ => Err(format!("unknown section '{section}'")),

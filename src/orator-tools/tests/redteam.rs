@@ -6,7 +6,7 @@
 
 use std::sync::Arc;
 
-use orator_turn::SessionKind;
+use orator_core::SessionKind;
 
 use crate::approve::ApprovalHub;
 use crate::builtins::default_registry;

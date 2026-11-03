@@ -16,7 +16,10 @@ fn method_table_equals_the_wire_contract() {
     let wired: HashSet<&str> = METHOD_NAMES.into_iter().collect();
     assert_eq!(served, wired);
     assert!(!serves("Bogus"));
-    assert!(!serves("Approve"));
+    // `Approve` is on the wire contract (socket answers it); arbitrary
+    // D-Bus callers still never approve — `may_approve` enforces that
+    // at the edge, not the method table.
+    assert!(serves("Approve"));
 }
 
 #[test]

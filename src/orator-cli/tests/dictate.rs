@@ -1,8 +1,8 @@
 //! Dictate bounds: seconds validation, deadline math, capture choice.
 
 use crate::dictate::{
-    capture_choice, checked_deadline, finish_turn, reserve_for, validate_seconds, CaptureChoice,
-    MAX_DICTATE_SECS,
+    capture_choice, checked_deadline, finish_turn, print_text_for, reserve_for, validate_seconds,
+    CaptureChoice, MAX_DICTATE_SECS,
 };
 
 #[test]
@@ -76,4 +76,61 @@ fn finish_turn_refines_records_and_joins_continuation() {
         vec!["One.".to_string(), "Two.".to_string()],
         "clean text recorded for every turn"
     );
+}
+
+#[test]
+fn injected_plus_stdout_prints_once() {
+    use orator_desktop::{InjectOutcome, Rung};
+    let outcome = InjectOutcome::Injected(Rung::ClipboardPaste);
+    assert_eq!(
+        print_text_for(true, "hello", &outcome),
+        Some("hello".to_string()),
+        "injected + --stdout prints the text once"
+    );
+}
+
+#[test]
+fn injected_without_stdout_prints_nothing() {
+    use orator_desktop::{InjectOutcome, Rung};
+    let outcome = InjectOutcome::Injected(Rung::ClipboardPaste);
+    assert_eq!(
+        print_text_for(false, "hello", &outcome),
+        None,
+        "injected without --stdout stays silent (already in the window)"
+    );
+}
+
+#[test]
+fn output_only_prints_through_the_same_gate() {
+    use orator_desktop::InjectOutcome;
+    let outcome = InjectOutcome::OutputOnly("hello".to_string());
+    // Stdout is the sink: prints even without --stdout, exactly once.
+    assert_eq!(
+        print_text_for(false, "hello", &outcome),
+        Some("hello".to_string())
+    );
+    assert_eq!(
+        print_text_for(true, "hello", &outcome),
+        Some("hello".to_string()),
+        "--stdout with OutputOnly still prints once, never twice"
+    );
+}
+
+#[test]
+fn cap_counts_drops_and_breaks_early() {
+    use crate::dictate::{apply_cap, MAX_DICTATE_SAMPLES};
+    // Room for 10: keeps all, no drops, not capped.
+    assert_eq!(apply_cap(0, 10), (10, 0, false));
+    // Exactly at cap: kept fills, capped signals outer break.
+    assert_eq!(
+        apply_cap(MAX_DICTATE_SAMPLES - 5, 5),
+        (MAX_DICTATE_SAMPLES, 0, true)
+    );
+    // Over cap: keeps to the bound, counts the rest, capped.
+    assert_eq!(
+        apply_cap(MAX_DICTATE_SAMPLES - 5, 10),
+        (MAX_DICTATE_SAMPLES, 5, true)
+    );
+    // Already full: everything drops.
+    assert_eq!(apply_cap(MAX_DICTATE_SAMPLES, 3), (MAX_DICTATE_SAMPLES, 3, true));
 }

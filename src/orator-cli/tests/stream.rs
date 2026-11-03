@@ -145,3 +145,37 @@ fn chunked_first_audio_beats_whole_turn() {
         "first chunk voices before the whole turn would: chunked={first}ms whole~{whole_ms}ms"
     );
 }
+
+#[test]
+fn single_sentence_is_one_identical_synth_call() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    // Transparency golden: a single sentence chunks to exactly one
+    // call, and the streamed samples equal the whole-turn synth of
+    // the same text — chunking never rewrites a one-chunk turn.
+    let fixture = "Hello there.";
+    let chunks: Vec<String> = orator_tts::split_all(fixture)
+        .into_iter()
+        .map(|chunk| chunk.text)
+        .collect();
+    assert_eq!(chunks.len(), 1, "single sentence stays one chunk");
+    let calls = Arc::new(AtomicUsize::new(0));
+    let synth_count = Arc::clone(&calls);
+    let synth = move |text: &str| -> Result<Vec<f32>, String> {
+        synth_count.fetch_add(1, Ordering::SeqCst);
+        Ok(text.bytes().map(f32::from).collect())
+    };
+    let played = Arc::new(Mutex::new(Vec::new()));
+    let played_out = Arc::clone(&played);
+    stream_chunks(
+        chunks,
+        synth,
+        move |samples: &[f32]| -> Result<(), String> {
+            played_out.lock().expect("play log").extend_from_slice(samples);
+            Ok(())
+        },
+    )
+    .expect("streams");
+    assert_eq!(calls.load(Ordering::SeqCst), 1, "one chunk, one synth call");
+    let reference: Vec<f32> = fixture.bytes().map(f32::from).collect();
+    assert_eq!(*played.lock().expect("play log"), reference);
+}

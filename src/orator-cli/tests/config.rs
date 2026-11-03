@@ -54,8 +54,16 @@ fn dotted_keys_round_trip_through_the_schema() {
     assert_eq!(config_get(&config, "tts.backend").expect("valid get"), "kokoro");
     config_set(&mut config, "turn.barge_in_ms", "200").expect("valid set");
     assert_eq!(config_get(&config, "turn.barge_in_ms").expect("valid get"), "200");
+    // The llama.cpp audio endpoint is file-settable (default port 8080).
+    config_set(&mut config, "s2s.endpoint", "http://127.0.0.1:18080").expect("valid set");
+    assert_eq!(
+        config_get(&config, "s2s.endpoint").expect("valid get"),
+        "http://127.0.0.1:18080"
+    );
     assert!(config_keys().contains(&"tts.backend".to_string()));
     assert!(config_keys().contains(&"llm.endpoint".to_string()));
+    assert!(config_keys().contains(&"s2s.endpoint".to_string()));
+    assert!(config_keys().contains(&"s2s.model".to_string()));
 }
 
 #[test]

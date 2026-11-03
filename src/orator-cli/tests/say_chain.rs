@@ -58,8 +58,51 @@ fn daemon_ejection_and_saturation_skip_boot() {
 }
 
 #[test]
-fn fences_and_urls_never_reach_the_voice() {
-    let chunks = normalized_chunks("See https://example.com/x for ```cargo test``` details.");
+fn structured_kind_wins_over_wording() {
+    match classify_daemon_voice_error(
+        "orator: daemon refused Say: {\"error\":\"totally calm line\",\"kind\":\"Saturated\"}",
+    ) {
+        DaemonVoiceHint::Saturated(_) => {}
+        other => panic!("kind Saturated must win without the word, got {other:?}"),
+    }
+    match classify_daemon_voice_error(
+        "orator: daemon refused Ask: {\"error\":\"admission saturated: bound 2\",\"kind\":\"Ejected\"}",
+    ) {
+        DaemonVoiceHint::Ejected(_) => {}
+        other => panic!("kind Ejected must win over wording, got {other:?}"),
+    }
+    match classify_daemon_voice_error(
+        "orator: daemon refused Say: {\"error\":\"slow peer: handler budget elapsed\",\"kind\":\"SlowPeer\"}",
+    ) {
+        DaemonVoiceHint::SlowPeer(_) => {}
+        other => panic!("kind SlowPeer must map to SlowPeer, got {other:?}"),
+    }
+    match classify_daemon_voice_error(
+        "orator: daemon refused VoiceEndpoint: {\"error\":\"slow peer: handler budget elapsed\",\"kind\":\"SlowPeer\"}",
+    ) {
+        DaemonVoiceHint::SlowPeer(_) => {}
+        other => panic!("SlowPeer must stay retryable, got {other:?}"),
+    }
+    assert_eq!(
+        classify_daemon_call_failure(Some(
+            "orator: daemon refused Ask: {\"error\":\"x\",\"kind\":\"BootContention\"}"
+        )),
+        DaemonVoiceHint::BootContention(
+            "orator: daemon refused Ask: {\"error\":\"x\",\"kind\":\"BootContention\"}".to_string()
+        )
+    );
+    assert_eq!(
+        classify_daemon_call_failure(Some(
+            "orator: daemon refused Say: {\"error\":\"slow peer\",\"kind\":\"SlowPeer\"}"
+        )),
+        DaemonVoiceHint::SlowPeer(
+            "orator: daemon refused Say: {\"error\":\"slow peer\",\"kind\":\"SlowPeer\"}".to_string()
+        )
+    );
+}
+
+#[test]
+fn fences_and_urls_never_reach_the_voice() {    let chunks = normalized_chunks("See https://example.com/x for ```cargo test``` details.");
     let joined = chunks.join(" ");
     assert!(!joined.contains("```"), "fences must not be spoken: {joined}");
     assert!(!joined.contains("https://"), "URLs must not be spoken: {joined}");
@@ -106,4 +149,30 @@ fn every_chain_hop_names_its_remedy() {
     // The classifier keeps the terminal arm honest: aborted turns
     // carry the interrupt code, never a remedy line.
     assert!(!should_advance(&S2sError::Aborted));
+}
+
+#[test]
+fn daemon_audio_body_decodes_to_playable_samples() {
+    use crate::say_chain::decode_say_audio;
+    let samples = vec![0.0f32, 0.5, -0.5];
+    let mut raw = Vec::new();
+    for sample in &samples {
+        raw.extend_from_slice(&sample.to_le_bytes());
+    }
+    use base64::prelude::*;
+    let body = serde_json::json!({ "audio": BASE64_STANDARD.encode(&raw), "rate": 24000 });
+    let (decoded, rate) = decode_say_audio(&body).expect("audio decodes");
+    assert_eq!(rate, 24_000);
+    assert_eq!(decoded.len(), 3);
+    for (got, want) in decoded.iter().zip(samples.iter()) {
+        assert!((got - want).abs() < f32::EPSILON, "samples survive the round trip");
+    }
+}
+
+#[test]
+fn counts_without_audio_never_voice() {
+    use crate::say_chain::decode_say_audio;
+    assert!(decode_say_audio(&serde_json::json!({ "samples": 42, "rate": 24000 })).is_err());
+    assert!(decode_say_audio(&serde_json::json!({ "audio": "", "rate": 24000 })).is_err());
+    assert!(decode_say_audio(&serde_json::json!({ "audio": "AAAAAA==", "rate": 0 })).is_err());
 }

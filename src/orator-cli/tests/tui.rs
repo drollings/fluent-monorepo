@@ -360,61 +360,100 @@ fn slow_transcribe_bounds_the_utterance_queue() {
 }
 
 #[test]
-fn whisper_backend_reuses_across_utterances() {
-    use super::WhisperCache;
-    let mut cache = WhisperCache::default();
-    let path = std::path::PathBuf::from("/nonexistent/ggml-test.bin");
-    let first = std::ptr::from_ref(cache.get_or_build("m", "en", path.clone()));
-    let second = std::ptr::from_ref(cache.get_or_build("m", "en", path.clone()));
-    assert_eq!(first, second, "same key reuses the backend");
-    assert_eq!(cache.builds, 1);
-    cache.get_or_build("other", "en", path);
-    assert_eq!(cache.builds, 2, "key change rebuilds exactly once");
-}
-
-#[test]
-fn kokoro_backend_reuses_across_replies() {
-    use super::KokoroCache;
-    let mut cache = KokoroCache::default();
-    let dir = std::path::PathBuf::from("/nonexistent-models");
-    let first = std::ptr::from_ref(cache.get_or_build(dir.clone(), dir.clone(), "bf_emma", false));
-    let second = std::ptr::from_ref(cache.get_or_build(dir.clone(), dir.clone(), "bf_emma", false));
-    assert_eq!(first, second, "same key reuses the session");
-    assert_eq!(cache.builds, 1);
-    cache.get_or_build(dir.clone(), dir, "other_voice", false);
-    assert_eq!(cache.builds, 2, "voice change rebuilds exactly once");
-}
-
-#[test]
-fn cancelled_abort_never_decodes() {
-    use super::{transcribe_samples, WhisperCache};
+fn transcribe_is_a_daemon_call_never_local_inference() {
+    use super::{transcribe_samples, SttWorker, Transport};
     use fluent_concurrency::stream::StreamAbort;
+    // Cancelled aborts fast without dialing (no backend, no model, no
+    // endpoint involved — the thin path needs none of them).
     let abort = StreamAbort::new();
     abort.cancel();
-    let mut whisper = WhisperCache::default();
-    let error = transcribe_samples(
-        &vec![0.0; 16_000],
-        "whisper",
-        "en",
-        "large-v3-turbo-q5_0",
-        "http://127.0.0.1:9",
-        &abort,
-        &mut whisper,
-    )
-    .expect_err("cancelled aborts fast");
+    let error = transcribe_samples(&vec![0.0; 16_000], Transport::Socket, &abort)
+        .expect_err("cancelled aborts fast");
     assert!(error.contains("aborted"), "{error}");
-    assert_eq!(whisper.builds, 0, "aborted turns build nothing");
+    // The worker forwards to the dial function and delivers its text.
+    let worker = SttWorker::spawn_with(|samples, _transport, _abort| {
+        assert_eq!(samples.len(), 1600);
+        Ok("hello there".to_string())
+    });
+    let job = worker.transcribe(vec![0.0; 1600], Transport::Socket, StreamAbort::new());
+    let result = job
+        .receiver
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("worker answers promptly");
+    assert_eq!(result.expect("scripted text delivers"), "hello there");
 }
 
 #[test]
-fn barged_worker_turns_never_deliver() {
-    use super::SttWorker;
+fn voice_turn_voices_through_the_daemon_not_a_local_synth() {
+    use super::ask_then_voice_with;
+    // A refused Say surfaces with its text: the voice path dials the
+    // daemon with the reply text and reports its answer — local
+    // synthesis is never consulted, and words are never lost to a
+    // playback problem.
+    let turn = ask_then_voice_with(
+        "hi there",
+        None,
+        &|text, _session| {
+            assert_eq!(text, "hi there");
+            Ok("hi there".to_string())
+        },
+        &|spoken| {
+            assert_eq!(spoken, "hi there", "short replies voice verbatim");
+            Err("orator: daemon refused Say".to_string())
+        },
+    )
+    .expect("say failure still returns its text");
+    assert_eq!(turn.reply, "hi there");
+    assert_eq!(
+        turn.voice,
+        Err("orator: daemon refused Say".to_string()),
+        "refusals attach verbatim"
+    );
+}
+
+#[test]
+fn voice_turn_summarizes_long_replies_and_skips_empty_ones() {
+    use super::ask_then_voice_with;
+    // Long replies voice the concise form while the transcript keeps
+    // the full text.
+    let long = format!("First. Second. {}", "More. ".repeat(200));
+    let turn = ask_then_voice_with(
+        "tell me everything",
+        None,
+        &|_, _| Ok(long.clone()),
+        &|spoken| {
+            assert!(spoken.len() < long.len(), "voice shortens: {spoken}");
+            assert!(spoken.contains("Full answer printed"), "{spoken}");
+            Ok((vec![0.1; 24], 24_000))
+        },
+    )
+    .expect("voiced turn runs");
+    assert_eq!(turn.reply, long, "transcript keeps every word");
+    assert!(matches!(turn.voice, Ok(Some(_))), "audio rides along");
+    // Empty replies never reach synthesis.
+    let turn = ask_then_voice_with(
+        "silence",
+        None,
+        &|_, _| Ok("   ".to_string()),
+        &|_| panic!("empty replies must never dial Say"),
+    )
+    .expect("empty turn runs");
+    assert!(matches!(turn.voice, Ok(None)), "nothing to voice");
+}
+
+#[test]
+fn barged_worker_turns_never_dial() {
+    use super::{SttWorker, Transport};
     use fluent_concurrency::stream::StreamAbort;
-    let worker = SttWorker::spawn();
+    // A cancelled turn never reaches the dial function: the worker
+    // answers abort before any network, so stale audio never becomes
+    // text after a barge.
+    let worker = SttWorker::spawn_with(|_, _, _| {
+        panic!("barged turns must never dial");
+    });
     let abort = StreamAbort::new();
     abort.cancel();
-    let config = orator_core::OratorConfig::default();
-    let job = worker.transcribe(vec![0.0; 1600], &config, abort);
+    let job = worker.transcribe(vec![0.0; 1600], Transport::Socket, abort);
     let result = job
         .receiver
         .recv_timeout(std::time::Duration::from_secs(5))
@@ -423,4 +462,186 @@ fn barged_worker_turns_never_deliver() {
         result.expect_err("barged turn reports abort").contains("aborted"),
         "stale results never deliver as text"
     );
+}
+
+#[test]
+fn saturated_send_keeps_the_typed_message_for_retry() {
+    use crate::ExitCode;
+    let saturated = ControlError {
+        code: ExitCode::Error,
+        text: "orator: daemon refused Ask: saturated (bound 2)".to_string(),
+    };
+    let mut app = TuiApp::new(StubControl::answering(vec![Err(saturated)]));
+    for ch in "hello".chars() {
+        app.key(key(KeyCode::Char(ch)));
+    }
+    app.key(key(KeyCode::Enter));
+    assert_eq!(app.state.input, "hello", "saturated send restores the input");
+    assert!(
+        app.state.lines.iter().any(|line| matches!(line, TuiLine::Status(note) if note.contains("retry"))),
+        "the remedy names retry: {:?}",
+        app.state.lines
+    );
+    // Retry delivers once the daemon drains: the restored input sends.
+    app.control.answers.push_back(Ok(serde_json::json!({"reply": "hi"})));
+    app.key(key(KeyCode::Enter));
+    assert_eq!(app.state.input, "", "delivered input clears");
+    assert!(
+        app.state.lines.iter().any(|line| matches!(line, TuiLine::Heard(reply) if reply == "hi")),
+        "retry answer lands: {:?}",
+        app.state.lines
+    );
+}
+
+#[test]
+fn other_send_failures_still_drop_with_the_line() {
+    use crate::ExitCode;
+    let refused = ControlError {
+        code: ExitCode::Error,
+        text: "orator: daemon refused Ask: backend gone".to_string(),
+    };
+    let mut app = TuiApp::new(StubControl::answering(vec![Err(refused)]));
+    for ch in "hi".chars() {
+        app.key(key(KeyCode::Char(ch)));
+    }
+    app.key(key(KeyCode::Enter));
+    assert_eq!(app.state.input, "", "non-saturated failures drop like before");
+    assert!(
+        app.state.lines.iter().any(|line| matches!(line, TuiLine::Said(text) if text == "hi")),
+        "the attempt stays on record: {:?}",
+        app.state.lines
+    );
+}
+
+#[test]
+fn voice_worker_delivers_turns_and_drops_cuts() {
+    use crate::tui::{Transport, VoiceJob, VoiceTurn, VoiceWorker};
+    use fluent_concurrency::stream::StreamAbort;
+    let worker = VoiceWorker::spawn_with(|text, _session, _transport, _abort| {
+        Ok(VoiceTurn {
+            reply: format!("echo:{text}"),
+            voice: Ok(Some((vec![0.5; 48], 24_000))),
+        })
+    });
+    let job: VoiceJob = worker.turn(
+        "hi".to_string(),
+        None,
+        Transport::Socket,
+        StreamAbort::new(),
+    );
+    let turn = job.receiver.recv_timeout(std::time::Duration::from_secs(10)).expect("turn arrives").expect("turn ok");
+    assert_eq!(turn.reply, "echo:hi");
+    assert!(matches!(turn.voice, Ok(Some(_))), "audio rides along");
+    // A cut before delivery never arrives: the worker skips the send
+    // and the loop has already dropped the job.
+    let abort = StreamAbort::new();
+    abort.cancel();
+    let cut: VoiceJob = worker.turn(
+        "late".to_string(),
+        None,
+        Transport::Socket,
+        abort,
+    );
+    let outcome = cut.receiver.recv_timeout(std::time::Duration::from_secs(10));
+    assert!(
+        matches!(outcome, Err(_) | Ok(Err(_))),
+        "cut turns never deliver speech: {outcome:?}"
+    );
+}
+
+#[test]
+fn mic_modes_cycle_with_keys_and_slashes() {
+    use crate::tui::{MicMode, SlashCommand};
+    let mut app = TuiApp::new(StubControl::default());
+    assert_eq!(app.state.mic_mode, MicMode::Auto);
+    assert_eq!(crate::tui::parse_command("/ptt"), Some(SlashCommand::Ptt));
+    assert_eq!(crate::tui::parse_command("/auto"), Some(SlashCommand::Auto));
+    assert_eq!(crate::tui::parse_command("/talk"), Some(SlashCommand::Talk));
+    app.key(ctrl(KeyCode::Char('g')));
+    assert_eq!(app.state.mic_mode, MicMode::PushToTalk);
+    assert!(!app.state.talking, "mode switch never latches talk");
+    app.key(ctrl(KeyCode::Char('g')));
+    assert_eq!(app.state.mic_mode, MicMode::Auto);
+    for line in ["/ptt", "/talk", "/auto"] {
+        for ch in line.chars() {
+            app.key(key(KeyCode::Char(ch)));
+        }
+        app.key(key(KeyCode::Enter));
+    }
+    assert_eq!(app.state.mic_mode, MicMode::Auto, "slash round-trip ends home");
+}
+
+
+fn hot_span(app: &mut TuiApp<StubControl>, frames: usize) {
+    // The detector needs an attack run before a span opens.
+    let hot = hot_frame();
+    for _ in 0..frames {
+        app.mic(&hot);
+    }
+}
+
+#[test]
+fn ptt_buffers_only_while_talking_and_commits_on_toggle_off() {
+    let mut app = TuiApp::new(StubControl::default());
+    app.key(ctrl(KeyCode::Char('g')));
+    app.mic(&hot_frame());
+    assert!(app.pending_utterance.is_empty(), "cold PTT mic buffers nothing");
+    app.key(ctrl(KeyCode::Char('t')));
+    assert!(app.state.talking, "talk latches hot");
+    hot_span(&mut app, 3);
+    assert!(!app.pending_utterance.is_empty(), "hot PTT mic buffers");
+    app.key(ctrl(KeyCode::Char('t')));
+    assert!(!app.state.talking, "toggle-off unlatches");
+    assert!(app.ptt_commit, "toggle-off endpoints the turn");
+}
+
+#[test]
+fn talk_key_names_the_remedy_outside_ptt() {
+    let mut app = TuiApp::new(StubControl::default());
+    app.key(ctrl(KeyCode::Char('t')));
+    assert!(!app.state.talking, "auto mode has no talk state");
+    assert!(
+        app.state.lines.iter().any(|line| matches!(line, TuiLine::Status(note) if note.contains("Ctrl+G"))),
+        "the hint names the mode key: {:?}",
+        app.state.lines
+    );
+}
+
+#[test]
+fn voicing_suppression_moves_meter_without_buffering() {
+    let mut app = TuiApp::new(StubControl::default());
+    app.suppress_utterance = true;
+    hot_span(&mut app, 3);
+    assert!(app.state.mic_level > 0.0, "meter stays live under suppression");
+    assert!(app.pending_utterance.is_empty(), "echo never buffers");
+    app.suppress_utterance = false;
+    app.gate.reset();
+    hot_span(&mut app, 3);
+    assert!(!app.pending_utterance.is_empty(), "release resumes buffering");
+}
+
+#[test]
+fn shed_drops_the_buffer_with_a_count_and_a_reset_gate() {
+    let mut app = TuiApp::new(StubControl::default());
+    hot_span(&mut app, 3);
+    assert!(!app.pending_utterance.is_empty());
+    let shed = app.shed_utterance();
+    assert!(shed > 0, "echo tail has samples");
+    assert!(app.pending_utterance.is_empty());
+    assert_eq!(app.pending_dropped, shed as u64, "shed samples count");
+    assert!(!app.gate_speaking(), "reset closes the phantom span");
+}
+
+#[test]
+fn barge_clears_the_buffer_and_unlatches_talk() {
+    let mut app = TuiApp::new(StubControl::default());
+    app.key(ctrl(KeyCode::Char('g')));
+    app.key(ctrl(KeyCode::Char('t')));
+    hot_span(&mut app, 3);
+    assert!(!app.pending_utterance.is_empty());
+    app.key(ctrl(KeyCode::Char('b')));
+    assert!(app.pending_utterance.is_empty(), "barge sheds the cut");
+    assert!(!app.state.talking, "barge unlatches talk");
+    assert!(!app.ptt_commit, "no endpoint after a cut");
+    assert_eq!(app.control.aborted, 1, "barge still fires abort");
 }

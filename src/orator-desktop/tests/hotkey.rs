@@ -34,6 +34,23 @@ fn bare_keys_are_reserved() {
 }
 
 #[test]
+fn system_chords_are_reserved() {
+    for text in [
+        "ctrl-c",
+        "ctrl-v",
+        "ctrl-x",
+        "alt-f4",
+        "super-l",
+        "ctrl-shift-c",
+    ] {
+        let chord = parse_chord(text).expect("parses");
+        assert!(chord.is_reserved(), "{text} must be reserved");
+    }
+    let safe = parse_chord("ctrl-alt-d").expect("parses");
+    assert!(!safe.is_reserved(), "ctrl-alt-d stays bindable");
+}
+
+#[test]
 fn fallback_bindings_quote_the_cli_verbs() {
     // Quoted literals: renaming a CLI verb without mirroring here
     // fails the build (no drift between the compositor fallback and

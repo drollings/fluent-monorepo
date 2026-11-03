@@ -71,6 +71,29 @@ pub fn finish_turn(
     orator_desktop::inject(clip, chord, &refined.text, memory).map_err(|error| error.to_string())
 }
 
+/// Single-print policy: the caller prints the returned text exactly
+/// once, never inside the ladder. Real injections echo only with
+/// `--stdout`; the output-only fallback prints always (stdout is the
+/// sink). `spoken` carries continuation spacing; `raw` is the fallback
+/// when the outcome holds no text (injected rungs).
+#[must_use]
+pub fn print_text_for(
+    echo_stdout: bool,
+    raw: &str,
+    outcome: &orator_desktop::InjectOutcome,
+) -> Option<String> {
+    match outcome {
+        orator_desktop::InjectOutcome::Injected(_) => {
+            if echo_stdout {
+                Some(raw.to_string())
+            } else {
+                None
+            }
+        }
+        orator_desktop::InjectOutcome::OutputOnly(spoken) => Some(spoken.clone()),
+    }
+}
+
 /// Checked deadline from now plus `duration`. Fails closed instead of
 /// panicking on overflow.
 pub fn checked_deadline(
@@ -79,6 +102,24 @@ pub fn checked_deadline(
 ) -> Result<std::time::Instant, String> {
     now.checked_add(duration)
         .ok_or_else(|| "dictate deadline overflows the clock".to_string())
+}
+
+/// Cap accounting for one drain batch: how many of `incoming`
+/// popped samples fit under [`MAX_DICTATE_SAMPLES`], how many drop,
+/// and whether the outer capture loop must break (cap reached — do
+/// not spin to the deadline).
+#[must_use]
+pub fn apply_cap(current: usize, incoming: usize) -> (usize, usize, bool) {
+    if current >= MAX_DICTATE_SAMPLES {
+        return (MAX_DICTATE_SAMPLES, incoming, true);
+    }
+    let room = MAX_DICTATE_SAMPLES - current;
+    if incoming <= room {
+        let filled = current + incoming;
+        (filled, 0, filled >= MAX_DICTATE_SAMPLES)
+    } else {
+        (MAX_DICTATE_SAMPLES, incoming - room, true)
+    }
 }
 
 /// Reserve bound for `seconds` at `rate` Hz, capped at

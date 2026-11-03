@@ -90,7 +90,7 @@ pub fn bundle_dir() -> Option<PathBuf> {
 pub fn verify_bundle(entry: &crate::model::ModelEntry) -> Result<bool, ModelOpError> {
     let bundle = orator_core::default_bundle();
     verify_bundle_files(
-        [&bundle.backbone, &bundle.mmproj, &bundle.vocoder, &bundle.tokenizer],
+        &[bundle.backbone.clone(), bundle.mmproj.clone()],
         &crate::model::AUDIO_COMPONENT_PINS,
         entry.sha256.as_deref().unwrap_or_default(),
     )
@@ -99,12 +99,18 @@ pub fn verify_bundle(entry: &crate::model::ModelEntry) -> Result<bool, ModelOpEr
 /// Manifest check over explicit files and pins (test seam: temp files
 /// stay fast while the live-bytes case covers the installation).
 pub fn verify_bundle_files(
-    files: [&std::path::Path; 4],
-    pins: &[(&str, u64, &str); 4],
+    files: &[std::path::PathBuf],
+    pins: &[(&str, u64, &str)],
     manifest: &str,
 ) -> Result<bool, ModelOpError> {
+    if files.len() != pins.len() {
+        return Err(ModelOpError::Mismatch(
+            "bundle".to_string(),
+            format!("file/pin count mismatch ({} files, {} pins)", files.len(), pins.len()),
+        ));
+    }
     let mut digests = String::new();
-    for (file, (_, size, hash)) in files.into_iter().zip(pins) {
+    for (file, (_, size, hash)) in files.iter().zip(pins) {
         if !file.exists() {
             return Err(ModelOpError::Missing(file.display().to_string()));
         }
@@ -171,7 +177,7 @@ fn size_matches(entry: &crate::model::ModelEntry) -> Option<bool> {
     let want = entry.size.unwrap_or(0);
     if entry.kind == crate::model::ModelKind::Audio {
         let bundle = orator_core::default_bundle();
-        let files = [&bundle.backbone, &bundle.mmproj, &bundle.vocoder, &bundle.tokenizer];
+        let files = [&bundle.backbone, &bundle.mmproj];
         let mut total = 0u64;
         for (file, (_, size, _)) in files.into_iter().zip(crate::model::AUDIO_COMPONENT_PINS) {
             let bytes = std::fs::metadata(file).ok()?.len();

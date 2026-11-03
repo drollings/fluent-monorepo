@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use orator_turn::SessionKind;
+use orator_core::SessionKind;
 
 use crate::builtins::default_registry;
 use crate::loop_::{run_turn, TurnOutcome, MAX_TOOL_ROUNDS};

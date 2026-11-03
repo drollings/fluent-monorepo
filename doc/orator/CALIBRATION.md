@@ -178,6 +178,21 @@ scoring harness is `common_core::calibration`.
 - **Decision:** budgets recorded, never gated. The scenarios assert
   completion, shape, and generous bands only.
 
+### Operator wall-clock soak (manual, never CI)
+
+- **Trigger:** confidence that an 8-hour production-shaped run holds
+  counters flat (drops, RSS, ejection streaks) outside logical scale.
+- **Procedure:** `make orator-soak` (heavy tier: 400 faulted turns
+  plus live-AI skips) on the target machine; then run the daemon
+  under load (`orator tui` or scripted `Ask`/`Say` loop) with
+  `orator stats --file stat.jsonl` recording; gate the file with
+  `orator stats` render and the `gate()` ceilings (GPU profile).
+- **Watch:** `drops == 0` on clean replays, RSS flat across hours
+  (first-touch arenas excluded), no ejection on responsive servers,
+  WS ping steady at 5 s with no silence kills on an active call.
+- **Decision:** wall-clock numbers are operator evidence, not gates —
+  shared runners flake on timing, so CI asserts logical scale only.
+
 ## Neural codec: adopt-or-defer decision (DEFERRED)
 
 - **Trigger:** shipping low-bitrate streaming neural audio (24 kHz
@@ -308,6 +323,79 @@ scoring harness is `common_core::calibration`.
 - **Decision:** the gate holds as built. Any future "verified"
   heuristic (size-only, ETag, mtime) ships only with a new control
   group here that must not fire.
+
+## R8 calibration harnesses (2026-11-02)
+
+Each row below ships with its control group (must not fire) and its
+must-fire case, all through the shared `common_core::calibration`
+gate where scored (precision ≥ 0.90, FPR ≤ 0.05). Uncalibrated paths
+stay behind config flags defaulting to the safe value.
+
+### VAD confidence isolation (`vad_alone_never_sets_a_hold`)
+
+- **Trigger:** VAD flaps (`VadStart`/`VadEnd`) with no silence ruling.
+- **Axis:** producer confidence (frame verdicts) must never set a hold.
+- **Control:** 10 VAD flap cycles plus 250 ms sub-hold silence stay in
+  `UserSpeaking` — the floor never moves on VAD alone.
+- **Decision:** keep the rule; holds come only from `SilenceElapsed`
+  at or past the band. Gate: hermetic unit test, always run.
+
+### Injection rungs exact fallback (`each_failing_rung_falls_back…`,
+  `failed_paste_skips_to_output_only`)
+
+- **Trigger:** forcing each ladder rung to fail in isolation.
+- **Axis:** task-value (the text reaches the user exactly once).
+- **Control/must-fire:** every failing rung (`RemoteDesktop`,
+  `ClipboardPaste`, `VirtualKeyboard`, `Uinput`) resolves to the exact
+  `OutputOnly` text; a lost chord skips identically to headless.
+- **Decision:** skip-on-failure holds; `Fatal` still aborts (existing
+  pin). Gate: hermetic unit tests, always run.
+
+### Speculative prefix equality (`speculation_resume_is_exact…`)
+
+- **Trigger:** abort at every token position of the stable text.
+- **Axis:** task-value (re-request byte-equals the armed prefix, so
+  the server reuses its cache).
+- **Control/must-fire:** all 17 prefixes of `"the stable text"`
+  round-trip exactly and cut the epoch (`live == Epoch(6)`,
+  `check(5, PreLlm) == false`); empty arm resumes to `Some("")`.
+- **Decision:** no speculation on mismatch — resume always re-sends
+  exactly. Gate: hermetic unit test, always run.
+
+### TTS single-sentence transparency
+  (`single_sentence_is_one_identical_synth_call`)
+
+- **Trigger:** one sentence through the chunked synth seam.
+- **Axis:** task-value (one chunk, one call, identical bytes).
+- **Control/must-fire:** `split_all` yields 1 chunk; the streamed
+  samples equal the whole-turn synth byte-for-byte.
+- **Decision:** chunking never rewrites a one-chunk turn. Gate:
+  hermetic unit test, always run.
+
+### Backchannel recall per language (`recall_splits_evenly…`)
+
+- **Trigger:** must-cut interruptions scored per lexicon language.
+- **Axis:** task-value (no language's interruptions protected).
+- **Control/must-fire:** `en` and `de` must-cuts each recall at 1.0 on
+  the barge-in corpus (aggregate 0 false cuts already pinned).
+- **Decision:** keep the lexicon; per-language split guards future
+  lexicon edits. Gate: hermetic unit test, always run.
+
+### WER per tier (`live_wer_per_tier`, `wer` goldens)
+
+- **Trigger:** decoding the checked-in corpus per pinned tier.
+- **Axis:** task-value (words transcribed as intended).
+- **Control:** empty reference pairs (`0.0`/`1.0` contract); the live
+  runner skips cleanly without models or corpus — never fails
+  hermetic gates. Scripted-decoder WER is explicitly NOT measured
+  (scripted decoders ignore audio by contract; a 0.0 there would be a
+  false measurement).
+- **Corpus:** `src/orator-stt/tests/corpus/` (`name.wav` 16 kHz mono
+  plus `name.txt` reference; contract in `README.md`). No budgets gate
+  yet — budgets land here once measured on real audio.
+- **Decision:** harness green (`wer` goldens always run; live runner
+  skip-clean verified via the live-ai target). Safe default holds:
+  larger model until tiers score.
 
 ## Appendix R: residual findings to fixing sections (2026-11-01)
 

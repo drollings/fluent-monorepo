@@ -159,3 +159,33 @@ fn streaming_cuts_agree_with_the_sentence_oracle() {
     }
     assert!(cuts >= 2, "oracle text must yield hard cuts");
 }
+
+#[test]
+fn token_budget_rechunks_without_losing_words() {
+    // The token budget (`CAP_CHUNK / 4` ≈ four chars per token) keeps a
+    // no-pause run near the same length: every word survives, and no
+    // chunk runs far past the cap.
+    let run = "word ".repeat(200);
+    let chunks = split_all(&run);
+    assert!(!chunks.is_empty(), "long run splits");
+    let covered: usize = chunks
+        .iter()
+        .map(|chunk| chunk.text.split_whitespace().count())
+        .sum();
+    assert_eq!(covered, 200, "budget re-chunking never loses words");
+    for chunk in &chunks {
+        assert!(
+            chunk.text.chars().count() <= CAP_CHUNK + 8,
+            "chunk stays near the cap: {} chars",
+            chunk.text.chars().count()
+        );
+    }
+    // A spaceless run has no word boundary to cut on: the budget
+    // chunker still preserves every char (one or two synth calls,
+    // never a dropped tail).
+    let solid = "x".repeat(300);
+    let chunks = split_all(&solid);
+    assert!(!chunks.is_empty(), "unbreakable tail still synthesizes");
+    let kept: String = chunks.iter().map(|chunk| chunk.text.as_str()).collect();
+    assert_eq!(kept.len(), 300, "budget re-chunking never loses chars");
+}

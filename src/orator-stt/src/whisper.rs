@@ -73,27 +73,37 @@ impl WhisperBackend {
     /// Load (once) and return the shared context. GPU is attempted only
     /// when opted in *and* a device is visible; a device-less opt-in
     /// fails here naming the remedy instead of running silently on CPU.
+    /// Double-checked: path and flags clone under the lock, the weight
+    /// load runs unlocked, then the winner publishes — a concurrent
+    /// second decode never blocks on the full load.
     fn load(&self) -> Result<Arc<WhisperContext>, SttError> {
-        let mut guard = common_core::sync::lock(&self.ctx);
-        if let Some(loaded) = guard.as_ref() {
-            return Ok(Arc::clone(loaded));
-        }
-        if self.gpu {
+        let (model_path, gpu) = {
+            let guard = common_core::sync::lock(&self.ctx);
+            if let Some(loaded) = guard.as_ref() {
+                return Ok(Arc::clone(loaded));
+            }
+            (self.model_path.clone(), self.gpu)
+        };
+        if gpu {
             orator_core::gpu::require_gpu("whisper").map_err(SttError::Unavailable)?;
         }
-        if !self.model_path.exists() {
+        if !model_path.exists() {
             return Err(SttError::Unavailable(format!(
                 "whisper model missing at {}",
-                self.model_path.display()
+                model_path.display()
             )));
         }
         let params = WhisperContextParameters {
-            use_gpu: self.gpu,
+            use_gpu: gpu,
             ..WhisperContextParameters::default()
         };
-        let ctx = WhisperContext::new_with_params(&self.model_path, params)
+        let ctx = WhisperContext::new_with_params(&model_path, params)
             .map_err(|error| SttError::Backend(format!("whisper load: {error}")))?;
         let loaded = Arc::new(ctx);
+        let mut guard = common_core::sync::lock(&self.ctx);
+        if let Some(winner) = guard.as_ref() {
+            return Ok(Arc::clone(winner));
+        }
         *guard = Some(Arc::clone(&loaded));
         Ok(loaded)
     }

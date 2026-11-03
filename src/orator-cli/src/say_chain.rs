@@ -24,6 +24,42 @@ pub enum DaemonVoiceHint {
     /// A sibling boot owns the server; retry shortly with progress,
     /// never a read failure and never a second boot storm.
     BootContention(String),
+    /// A peer was too slow for the handler budget. Transport-level
+    /// only: the caller may retry and may boot its own server.
+    SlowPeer(String),
+}
+
+/// Extract a structured `kind` marker from a daemon refusal line when
+/// the envelope carried one. Matches the JSON `"kind":"X"` shape the
+/// daemon emits; returns `None` for old daemons that only sent wording.
+fn structured_kind(body: &str) -> Option<&str> {
+    for kind in [
+        "Ejected",
+        "Saturated",
+        "BootContention",
+        "SlowPeer",
+        "Disabled",
+        "ShuttingDown",
+        "NoBinary",
+        "Boot",
+        "Backend",
+        "NoAudio",
+        "Overflow",
+        "Aborted",
+        "UnknownSession",
+    ] {
+        let marker = format!("\"kind\":\"{kind}\"");
+        if body.contains(&marker) {
+            return match kind {
+                "Ejected" => Some("Ejected"),
+                "Saturated" => Some("Saturated"),
+                "BootContention" => Some("BootContention"),
+                "SlowPeer" => Some("SlowPeer"),
+                _ => Some("Other"),
+            };
+        }
+    }
+    None
 }
 
 /// Classify a daemon `VoiceEndpoint` failure body.
@@ -31,10 +67,19 @@ pub enum DaemonVoiceHint {
 /// The daemon reports ejection, saturation, and boot contention as
 /// `ok: false` with the reason in the body; absence or refusal
 /// without those markers is `Unavailable` (the caller may boot). The
-/// match stays narrow: only the daemon's own wording routes to the
-/// chain-skipping arms.
+/// structured `kind` marker wins when present; the wording match stays
+/// only for old daemons that omitted it.
 #[must_use]
 pub fn classify_daemon_voice_error(body: &str) -> DaemonVoiceHint {
+    if let Some(kind) = structured_kind(body) {
+        match kind {
+            "Ejected" => return DaemonVoiceHint::Ejected(body.to_string()),
+            "Saturated" => return DaemonVoiceHint::Saturated(body.to_string()),
+            "BootContention" => return DaemonVoiceHint::BootContention(body.to_string()),
+            "SlowPeer" => return DaemonVoiceHint::SlowPeer(body.to_string()),
+            _ => {}
+        }
+    }
     let lower = body.to_lowercase();
     if lower.contains("ejected") {
         DaemonVoiceHint::Ejected(body.to_string())
@@ -63,9 +108,9 @@ pub fn classify_daemon_call_failure(text: Option<&str>) -> DaemonVoiceHint {
             DaemonVoiceHint::Ejected(reason) => DaemonVoiceHint::Ejected(reason),
             DaemonVoiceHint::Saturated(reason) => DaemonVoiceHint::Saturated(reason),
             DaemonVoiceHint::BootContention(reason) => DaemonVoiceHint::BootContention(reason),
-            DaemonVoiceHint::Available(_) | DaemonVoiceHint::Unavailable => {
-                DaemonVoiceHint::Unavailable
-            }
+            DaemonVoiceHint::SlowPeer(reason) => DaemonVoiceHint::SlowPeer(reason),
+            DaemonVoiceHint::Available(url) => DaemonVoiceHint::Available(url),
+            DaemonVoiceHint::Unavailable => DaemonVoiceHint::Unavailable,
         },
         None => DaemonVoiceHint::Unavailable,
     }
@@ -95,8 +140,7 @@ pub fn normalized_chunks(text: &str) -> Vec<String> {
         .collect()
 }
 
-/// Remaining text after `played_chars` chars were already heard.
-///
+/// Remaining text after `played_chars` chars were already heard.///
 /// The daemon last resort speaks only the unsynthesized suffix so an
 /// already-played prefix is never spoken twice. Splits on a char
 /// boundary; short or over-long counts clamp to the ends.
@@ -124,6 +168,39 @@ pub fn played_chars_for_chunks(chunks: &[String], played_chunks: usize) -> usize
         .take(played_chunks)
         .map(|chunk| chunk.chars().count())
         .sum()
+}
+
+/// Decode a daemon `Say` audio body: base64 little-endian f32 PCM plus
+/// the sample rate. Counts without audio are refused — a turn with no
+/// samples is a failed turn, never a silent success.
+pub fn decode_say_audio(body: &serde_json::Value) -> Result<(Vec<f32>, u32), String> {
+    let encoded = body
+        .get("audio")
+        .and_then(|audio| audio.as_str())
+        .ok_or_else(|| "daemon Say reply carries no audio".to_string())?;
+    let rate = body
+        .get("rate")
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| "daemon Say reply carries no rate".to_string())?;
+    let rate = u32::try_from(rate).map_err(|_| "daemon Say rate overflows u32".to_string())?;
+    if rate == 0 {
+        return Err("daemon Say rate is zero".to_string());
+    }
+    use base64::prelude::*;
+    let raw = BASE64_STANDARD
+        .decode(encoded.trim())
+        .map_err(|error| format!("daemon Say audio is not base64: {error}"))?;
+    if raw.len() % 4 != 0 {
+        return Err("daemon Say audio length is not a whole f32 count".to_string());
+    }
+    if raw.is_empty() {
+        return Err("daemon Say returned no samples".to_string());
+    }
+    let samples: Vec<f32> = raw
+        .chunks_exact(4)
+        .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+        .collect();
+    Ok((samples, rate))
 }
 
 #[cfg(test)]

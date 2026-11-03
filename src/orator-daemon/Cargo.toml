@@ -16,6 +16,7 @@ orator-llm = { path = "../orator-llm" }
 orator-turn = { path = "../orator-turn" }
 orator-store = { path = "../orator-store" }
 orator-diar = { path = "../orator-diar" }
+orator-tools = { path = "../orator-tools" }
 fluent-db = { path = "../db" }
 base64 = { workspace = true }
 futures-util = { workspace = true }

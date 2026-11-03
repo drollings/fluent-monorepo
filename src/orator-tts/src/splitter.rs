@@ -289,7 +289,11 @@ fn period_confirmed(
 
 /// Overflow safety: chunks past the cap without any pause re-chunk through
 /// the shared budget-bounded chunker (newline/unit boundaries). Normal
-/// chunks pass through untouched.
+/// chunks pass through untouched. The budget is tokens while the cap is
+/// chars: `CAP_CHUNK / 4` assumes roughly four chars per token, so a
+/// 220-char no-pause run re-chunks near the same length. Over-long
+/// pieces that still refuse to split return untouched (one synth call
+/// instead of a dropped tail).
 fn safety_chunk(chunk: Chunk) -> Vec<Chunk> {
     if chunk.text.chars().count() <= CAP_CHUNK {
         return vec![chunk];

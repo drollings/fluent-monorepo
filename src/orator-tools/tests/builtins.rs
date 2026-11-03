@@ -80,3 +80,62 @@ fn file_read_caps_large_files() {
         .expect("read runs");
     assert!(back.contains("truncated"), "large reads truncate with marker");
 }
+
+#[test]
+fn file_write_swap_race_creates_nothing_outside() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let guarded = Arc::new(
+        Guarded::new(GuardedConfig {
+            root: dir.path().to_path_buf(),
+            ..GuardedConfig::default()
+        })
+        .expect("jail builds"),
+    );
+    let registry = default_registry(&guarded, Arc::new(|_| {}));
+    let write = registry.get("file_write").expect("writer listed");
+    // Symlinked parent pointing outside: the write must refuse and
+    // must not mkdir anything outside the jail.
+    let outside = tempfile::tempdir().expect("outside");
+    std::os::unix::fs::symlink(outside.path(), dir.path().join("link"))
+        .expect("link outside");
+    write
+        .execute(
+            serde_json::json!({"path": "link/evil.txt", "content": "x"}),
+        )
+        .expect_err("escape through a linked parent must refuse");
+    assert!(
+        !outside.path().join("evil.txt").exists(),
+        "refused write leaves no outside file"
+    );
+    assert!(
+        !outside.path().join("link").exists(),
+        "refused write creates no outside dir"
+    );
+    // Legit nested writes still work through the jail.
+    write
+        .execute(serde_json::json!({"path": "sub/nested.txt", "content": "hi"}))
+        .expect("nested jailed write runs");
+    assert!(dir.path().join("sub/nested.txt").exists());
+}
+
+#[test]
+fn web_fetch_refuses_loopback_and_metadata_before_connect() {
+    use crate::builtins::WebFetch;
+    use crate::tool::Tool;
+    let fetch = WebFetch;
+    for url in [
+        "http://127.0.0.1/",
+        "http://127.0.0.1:8080/v1/chat",
+        "http://localhost/",
+        "http://[::1]/",
+        "http://169.254.169.254/latest/meta-data/",
+        "http://0.0.0.0/",
+        "http://10.0.0.5/",
+        "http://192.168.1.1/",
+        "ftp://example.com/file",
+    ] {
+        fetch
+            .execute(serde_json::json!({"url": url}))
+            .expect_err(&format!("SSRF deny must refuse {url} before connect"));
+    }
+}

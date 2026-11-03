@@ -21,7 +21,7 @@ fn request_envelope_round_trips_framing() {
         method: "GetState".to_string(),
         params: serde_json::json!({}),
     };
-    let bytes = encode_request(&request);
+    let bytes = encode_request(&request).expect("request encodes");
     let frame = orator_core::SocketFrame::decode(&bytes).expect("framing holds");
     assert_eq!(frame.kind, orator_core::MessageType::Request);
     let back: WireRequest = serde_json::from_slice(&frame.body).expect("json holds");
@@ -93,6 +93,16 @@ fn quiet_socket_core_returns_text_instead_of_printing() {
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("orator.sock");
     let listener = std::os::unix::net::UnixListener::bind(&path).expect("bind");
+    // Production sockets are owner-only (0600 via `restrict`); the
+    // preflight fails closed otherwise, so the mock mimics production
+    // or the client correctly refuses before dialing (and the server
+    // would hang on accept).
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
+            .expect("mock socket owner-only");
+    }
     let server = std::thread::spawn(move || {
         let (mut stream, _) = listener.accept().expect("accept");
         let mut header = [0u8; 5];
@@ -211,6 +221,12 @@ fn dropped_connection_is_error_not_unavailable() {
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("orator.sock");
     let listener = std::os::unix::net::UnixListener::bind(&path).expect("bind");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
+            .expect("mock socket owner-only");
+    }
     let server = std::thread::spawn(move || {
         let (stream, _) = listener.accept().expect("accept");
         drop(stream);
@@ -226,6 +242,12 @@ fn daemon_call_round_trips_through_shared_framing() {
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("orator.sock");
     let listener = std::os::unix::net::UnixListener::bind(&path).expect("bind");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
+            .expect("mock socket owner-only");
+    }
     let server = std::thread::spawn(move || {
         let (mut stream, _) = listener.accept().expect("accept");
         let frame =
@@ -256,6 +278,12 @@ fn daemon_refusal_is_error_not_unavailable() {
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("orator.sock");
     let listener = std::os::unix::net::UnixListener::bind(&path).expect("bind");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
+            .expect("mock socket owner-only");
+    }
     let server = std::thread::spawn(move || {
         let (mut stream, _) = listener.accept().expect("accept");
         let mut header = [0u8; 5];
@@ -343,7 +371,7 @@ fn control_calls_keep_the_short_budget_voice_calls_get_more() {
     for method in ["VoiceEndpoint", "Say", "Ask"] {
         assert_eq!(
             socket_timeout_for(method),
-            std::time::Duration::from_secs(30),
+            std::time::Duration::from_secs(300),
             "{method} carries the voice budget with progress"
         );
     }
@@ -365,6 +393,41 @@ fn contention_renders_as_retryable_progress_not_read_failure() {
         "orator: daemon refused VoiceEndpoint: {\"error\":\"voice endpoint ejected\",\"kind\":\"Ejected\"}",
     ));
     assert!(matches!(hint, DaemonVoiceHint::Ejected(_)));
+}
+
+#[test]
+fn preflight_refuses_without_dialing_unless_explicitly_overridden() {
+    use crate::socket::{call_socket_at, socket_preflight_warning};
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("orator.sock");
+    // Plant a regular file with the wrong mode: preflight must warn,
+    // and the call must refuse before dialing (no hang, no connect).
+    std::fs::write(&path, b"not a socket").expect("plant");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644))
+            .expect("wrong mode");
+    }
+    assert!(
+        socket_preflight_warning(&path).is_some(),
+        "wrong mode must warn"
+    );
+    // Without the explicit override the call refuses with the
+    // preflight line (fail closed, never dials a foreign socket).
+    std::env::remove_var("ORATOR_INSECURE");
+    let failure = call_socket_at(&path, "GetState", serde_json::json!({}))
+        .expect_err("preflight must refuse");
+    assert_eq!(failure.code, crate::ExitCode::Error);
+    // Explicit override dials (and fails on the planted file, not on
+    // preflight) — the escape hatch works when asked for.
+    std::env::set_var("ORATOR_INSECURE", "1");
+    let bypassed = call_socket_at(&path, "GetState", serde_json::json!({}));
+    std::env::remove_var("ORATOR_INSECURE");
+    assert!(
+        bypassed.is_err(),
+        "override dials past preflight (then fails on the file)"
+    );
 }
 
 #[test]

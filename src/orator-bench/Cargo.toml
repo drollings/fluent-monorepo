@@ -6,6 +6,7 @@ autotests = false
 
 [dependencies]
 common-core = { path = "../common-core" }
+orator-core = { path = "../orator-core" }
 orator-testkit = { path = "../orator-testkit" }
 serde = { workspace = true }
 serde_json = { workspace = true }

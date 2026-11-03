@@ -274,18 +274,9 @@ impl SpecState {
     }
 }
 
-/// Session kinds for the degrade table.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SessionKind {
-    /// Speak → focused window.
-    Dictation,
-    /// Full duplex with tools.
-    Assistant,
-    /// Hears others, never speaks.
-    ListenIn,
-    /// Records and transcribes.
-    Meeting,
-}
+/// Session kinds for the degrade table: re-exported from the core
+/// vocabulary (single home).
+pub use orator_core::types::SessionKind;
 
 /// Degraded serving shape after a stage failure.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

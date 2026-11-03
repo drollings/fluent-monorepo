@@ -63,7 +63,7 @@ fn language_model_default_resolves_as_documented_intent() {
         entries: llm_entries(),
     };
     let default = manifest
-        .find(ModelKind::Llm, "liquidai/lfm2.5-2.6b")
+        .find(ModelKind::Llm, "bartowski/lfm3-1.7b")
         .expect("default tag listed");
     assert_eq!(default.kind, ModelKind::Llm);
     assert!(default.file.ends_with(".gguf"));
@@ -80,7 +80,7 @@ fn audio_bundle_entry_pins_the_manifest() {
         entries: audio_entries(),
     };
     let bundle = manifest
-        .find(ModelKind::Audio, "liquidai/lfm2.5-audio-1.5b")
+        .find(ModelKind::Audio, "liquidai/lfm3-audio-2b")
         .expect("audio bundle listed");
     assert!(bundle.pinned());
     assert_eq!(bundle.size, Some(AUDIO_BUNDLE_SIZE));

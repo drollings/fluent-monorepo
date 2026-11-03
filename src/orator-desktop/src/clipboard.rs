@@ -44,17 +44,35 @@ pub enum PasteOutcome {
 /// then poll every 10 ms up to `deadline_ms` for the fingerprint to move.
 /// A moved clipboard is left alone (clipboard-manager safe); a still one
 /// gets its previous content back, or is cleared when nothing was saved.
-/// Never a fixed timer.
+/// Never a fixed timer. Focus is attested through the fingerprint:
+/// an external modification between snapshot and write, or between
+/// write and chord, refuses (focus lost). Hash-backed clipboards treat
+/// equality as a weak hint (documented); counter-backed clipboards
+/// enforce exactly.
 pub fn paste_with_restore(
     clip: &dyn Clipboard,
     chord: &dyn ChordSender,
     text: &str,
     deadline_ms: u64,
 ) -> Result<PasteOutcome, InjectError> {
+    let attest_before = clip.fingerprint();
     let saved = clip.read();
+    if clip.fingerprint() != attest_before {
+        return Err(InjectError::Failed(
+            "focus lost before paste (clipboard moved during snapshot)".to_string(),
+        ));
+    }
     clip.write(text)?;
+    let after_write = clip.fingerprint();
+    if after_write == attest_before && !text.is_empty() {
+        return Err(InjectError::Failed(
+            "paste write did not land (clipboard unchanged)".to_string(),
+        ));
+    }
     // Fingerprint _after_ our own write: only external movement counts.
-    let before = clip.fingerprint();
+    // Hash equality is a weak hint (collisions err toward restore);
+    // counter equality enforces exactly. The poll below decides.
+    let before = after_write;
     chord.send_paste()?;
     if wait_for_change(clip, before, deadline_ms) {
         Ok(PasteOutcome::Pasted)

@@ -70,21 +70,47 @@ fn parse_call_value(value: &serde_json::Value) -> Result<(Vec<ToolCall>, String)
 
 /// Dexter-shaped XML fallback: `<tool_call><invoke name>…<parameter
 /// name>…`, values JSON-or-String. Text before the first block is the
-/// preamble. `None` when no block exists (skip, not error).
+/// preamble. `None` when no block exists (skip, not error). Caps:
+/// preamble at most 10k chars, args JSON at most 64 KiB; `'`/`<`/`&`
+/// in names refuse (strict shape, never silent).
 pub fn parse_xml(text: &str) -> Result<Option<(Vec<ToolCall>, String)>, ParseError> {
+    const MAX_ARGS_BYTES: usize = 64 * 1024;
+    const MAX_PREAMBLE_CHARS: usize = 10_000;
     let blocks = xml_blocks(text, "tool_call");
     if blocks.is_empty() {
         return Ok(None);
     }
     let first = text.find("<tool_call>").or_else(|| text.find("<tool_call ")).unwrap_or(0);
     let preamble = text[..first].trim().to_string();
+    if preamble.chars().count() > MAX_PREAMBLE_CHARS {
+        return Err(ParseError::BadJson(format!(
+            "preamble exceeds {MAX_PREAMBLE_CHARS} chars"
+        )));
+    }
     let mut out = Vec::new();
+    let mut args_bytes = 0usize;
     for block in blocks {
         for invoke in xml_tag(&block, "invoke", "name") {
+            if invoke.attr.contains(['\'', '<', '&']) {
+                return Err(ParseError::BadJson(
+                    "invoke name rejects '/</&".to_string(),
+                ));
+            }
             let mut args = serde_json::Map::new();
             for param in xml_tag(&invoke.inner, "parameter", "name") {
+                if param.attr.contains(['\'', '<', '&']) || param.inner.contains(['<', '&']) {
+                    return Err(ParseError::BadJson(
+                        "parameter rejects '/</&".to_string(),
+                    ));
+                }
                 let key = param.attr;
                 let raw = param.inner;
+                args_bytes += key.len() + raw.len();
+                if args_bytes > MAX_ARGS_BYTES {
+                    return Err(ParseError::BadJson(format!(
+                        "args exceed {MAX_ARGS_BYTES} bytes"
+                    )));
+                }
                 let value: serde_json::Value =
                     serde_json::from_str(raw.trim()).unwrap_or_else(|_| {
                         serde_json::Value::String(raw.trim().to_string())

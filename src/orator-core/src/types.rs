@@ -321,6 +321,21 @@ pub enum EventKind {
     Metrics(String),
 }
 
+/// Session kinds for the degrade table: what the session is for
+/// decides which degraded shape a stage failure produces. Single
+/// home; the turn driver re-exports this for compatibility.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SessionKind {
+    /// Speak → focused window.
+    Dictation,
+    /// Full duplex with tools.
+    Assistant,
+    /// Hears others, never speaks.
+    ListenIn,
+    /// Records and transcribes.
+    Meeting,
+}
+
 #[cfg(test)]
 #[path = "../tests/types.rs"]
 mod tests;

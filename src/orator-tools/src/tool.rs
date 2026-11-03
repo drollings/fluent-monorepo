@@ -111,21 +111,9 @@ impl ToolRegistry {
     }
 }
 
-/// Shared tool-output cap in chars. Every tool truncates through
-/// [`truncate_tool_output`]; the marker carries the total length.
-pub const TOOL_OUTPUT_CHARS: usize = 6000;
-
-/// Cap `text` at [`TOOL_OUTPUT_CHARS`] chars with a total-length marker.
-/// Small outputs pass through verbatim.
-#[must_use]
-pub fn truncate_tool_output(text: &str) -> String {
-    if text.chars().count() <= TOOL_OUTPUT_CHARS {
-        return text.to_string();
-    }
-    let total = text.chars().count();
-    let head: String = text.chars().take(TOOL_OUTPUT_CHARS).collect();
-    format!("{head}\n(truncated, {total} total chars)")
-}
+/// Shared tool-output cap and truncator: re-exported from the core
+/// vocabulary (single home); tool code composes it from here.
+pub use orator_core::truncate::{truncate_tool_output, TOOL_OUTPUT_CHARS};
 
 #[cfg(test)]
 #[path = "../tests/tool.rs"]

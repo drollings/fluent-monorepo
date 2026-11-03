@@ -95,3 +95,26 @@ fn instance_lock_refuses_a_live_holder_and_heals_stale_files() {
     let third = InstanceLock::acquire(dir.path(), "orator.sock").expect("stale heals");
     assert!(third.path.ends_with("orator.sock"));
 }
+
+#[test]
+fn same_second_backups_never_share_a_name() {
+    use crate::store::backup_db;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("orator.db");
+    std::fs::write(&path, b"data").expect("seed");
+    let first = backup_db(&path).expect("first backup");
+    let second = backup_db(&path).expect("second backup");
+    assert_ne!(first, second, "same-second migrates must not overwrite");
+    assert!(first.exists() && second.exists(), "both backups survive");
+}
+
+#[test]
+fn symlink_parents_refuse_without_binding() {
+    use crate::store::InstanceLock;
+    let outside = tempfile::tempdir().expect("outside");
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::os::unix::fs::symlink(outside.path(), dir.path().join("link")).expect("link");
+    // A runtime dir under a symlink parent refuses before binding.
+    let refused = InstanceLock::acquire(&dir.path().join("link"), "orator.sock");
+    assert!(refused.is_err(), "symlink parent must refuse: {refused:?}");
+}

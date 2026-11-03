@@ -177,3 +177,27 @@ fn degrade_table_pins_every_row() {
     assert_eq!(degrade_on("tts", ListenIn), SessionMode::Full);
     assert_eq!(degrade_on("notes", Meeting), SessionMode::Full);
 }
+
+#[test]
+fn speculation_resume_is_exact_at_every_position() {
+    // Abort at every token position: arming on each prefix of the
+    // stable text and resuming must hand back exactly that prefix —
+    // the re-request re-sends it byte-identical for cache reuse. The
+    // epoch cut holds at every position too: no prefix ever leaks
+    // past the retired epoch.
+    let stable = "the stable text";
+    for end in 0..=stable.len() {
+        let prefix = stable[..end].to_string();
+        let mut driver = TurnDriver::new(Epoch(5));
+        driver.speculate(prefix.clone());
+        let back = driver.on_resume().expect("armed prefix returns");
+        assert_eq!(back, prefix, "position {end} must round-trip exactly");
+        assert_eq!(driver.live(), Epoch(6), "position {end} cuts the epoch");
+        assert!(!driver.check(Epoch(5), Hop::PreLlm));
+    }
+    // Empty arm resumes to empty (armed, not idle): the re-request
+    // sends nothing rather than reusing a stale cache.
+    let mut driver = TurnDriver::new(Epoch(5));
+    driver.speculate(String::new());
+    assert_eq!(driver.on_resume().as_deref(), Some(""));
+}

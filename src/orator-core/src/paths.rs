@@ -44,31 +44,136 @@ pub fn current_uid() -> u32 {
 /// Search `$PATH` for `name`. `None` when absent.
 #[must_use]
 pub fn find_on_path(name: &str) -> Option<PathBuf> {
-    let path = std::env::var_os("PATH")?;
+    find_all_on_path(name).into_iter().next()
+}
+
+/// Every `name` hit on `$PATH` in directory order, deduplicated by
+/// canonical path (the literal join is returned, so symlinked hits
+/// keep their `$PATH` spelling). Boot code tries each in turn: a
+/// stale install earlier on `$PATH` fails fast (measured boot
+/// outcome) and the next candidate serves, instead of one shadowed
+/// binary vetoing voice.
+#[must_use]
+pub fn find_all_on_path(name: &str) -> Vec<PathBuf> {
+    let Some(path) = std::env::var_os("PATH") else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    let mut seen = Vec::new();
     for dir in std::env::split_paths(&path) {
         let candidate = dir.join(name);
-        if candidate.is_file() {
-            return Some(candidate);
+        if !candidate.is_file() {
+            continue;
+        }
+        let canonical = std::fs::canonicalize(&candidate).unwrap_or_else(|_| candidate.clone());
+        if !seen.contains(&canonical) {
+            seen.push(canonical);
+            out.push(candidate);
         }
     }
-    None
+    out
 }
 
 /// Whether `candidate` stays inside `root` after resolving symlinks.
-/// Missing paths and escapes both fail closed (`false`).
+/// Missing paths and escapes both fail closed (`false`). Resolution is
+/// hop-capped (40) with no unbounded `canonicalize`: loops and deep
+/// chains refuse instead of hanging or resolving outside.
 #[must_use]
 pub fn within_root(root: &Path, candidate: &Path) -> bool {
-    let (Ok(root), Ok(candidate)) = (root.canonicalize(), candidate.canonicalize()) else {
+    let Some(root) = resolve_hop_capped(root, 40) else {
         return false;
     };
-    candidate.starts_with(root)
+    let Some(resolved) = resolve_hop_capped(candidate, 40) else {
+        return false;
+    };
+    resolved.starts_with(root)
+}
+
+/// 12-char fingerprint for an explicit binary path (for logs): sha256
+/// of the path string, not the file contents (instant even for
+/// gigabyte weights; the content hash gate lives in `verify_entry`).
+#[must_use]
+pub fn binary_fingerprint(path: &Path) -> String {
+    common_core::hash::sha256_hex(path.as_os_str().as_encoded_bytes())
+        .chars()
+        .take(12)
+        .collect()
+}
+
+/// Whether any component of `path` (or its parents up to root) is a
+/// symlink. Uses `symlink_metadata` per component (never follows), so
+/// a swapped parent refuses instead of serving through it.
+#[must_use]
+pub fn has_symlink_parent(path: &Path) -> bool {
+    let mut cursor: Option<&Path> = Some(path);
+    while let Some(current) = cursor {
+        if std::fs::symlink_metadata(current).is_ok_and(|meta| meta.file_type().is_symlink()) {
+            return true;
+        }
+        cursor = current.parent();
+    }
+    false
+}
+
+/// Chase symlinks at `path` up to `hops`, normalizing `..` per join.
+/// Returns `None` on loops, hop exhaustion, missing paths, or `..`
+/// past the filesystem root — all fail closed for callers.
+fn resolve_hop_capped(path: &Path, hops: u32) -> Option<PathBuf> {
+    use std::path::Component;
+    // Lexical normalize first so `..` cannot skip out before the walk.
+    let mut current = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::ParentDir => {
+                if !current.pop() {
+                    return None;
+                }
+            }
+            Component::CurDir => {}
+            other => current.push(other.as_os_str()),
+        }
+    }
+    for _ in 0..hops {
+        let meta = std::fs::symlink_metadata(&current).ok()?;
+        if !meta.file_type().is_symlink() {
+            return Some(current);
+        }
+        let target = std::fs::read_link(&current).ok()?;
+        let joined = if target.is_absolute() {
+            target
+        } else {
+            current.parent().map_or(target.clone(), |dir| dir.join(&target))
+        };
+        let mut normal = PathBuf::new();
+        for component in joined.components() {
+            match component {
+                Component::ParentDir => {
+                    if !normal.pop() {
+                        return None;
+                    }
+                }
+                Component::CurDir => {}
+                other => normal.push(other.as_os_str()),
+            }
+        }
+        current = normal;
+    }
+    // Budget exhausted: only accept when the landing is no longer a
+    // symlink; loops stay `None`.
+    if std::fs::symlink_metadata(&current)
+        .is_ok_and(|meta| meta.file_type().is_symlink())
+    {
+        return None;
+    }
+    Some(current)
 }
 
 /// Ownership gate for searched server binaries: the canonical path
-/// must be owned by `expected_uid`, carry no group/other write bits,
-/// and live outside `/tmp` in a non-world-writable directory.
-/// `explicit` marks a user override, which bypasses the gate — the
-/// user accepts responsibility for that path.
+/// must be absolute, owned by `expected_uid`, carry no group/other
+/// write bits, and live outside `/tmp` in a non-world-writable
+/// directory. `explicit` marks a user override, which bypasses the
+/// gate — the user accepts responsibility for that path. Resolution is
+/// hop-capped, never an unbounded `canonicalize`.
 pub fn validate_server_binary(
     path: &Path,
     expected_uid: u32,
@@ -77,15 +182,23 @@ pub fn validate_server_binary(
     if explicit {
         return Ok(());
     }
+    if !path.is_absolute() {
+        return Err(format!(
+            "refusing relative server binary {}; set the explicit binary override to accept responsibility for this path",
+            path.display()
+        ));
+    }
     #[cfg(unix)]
     {
         use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
-        let canonical = std::fs::canonicalize(path).map_err(|error| {
+        let canonical = resolve_hop_capped(path, 40).ok_or_else(|| {
             format!(
-                "cannot resolve server binary {}: {error}",
+                "cannot resolve server binary {}: hop cap or missing",
                 path.display()
             )
         })?;
+        // Component-prefix `/tmp` check (`Path::starts_with` is
+        // component-wise, so `/tmpfoo` never matches).
         if canonical.starts_with("/tmp") {
             return Err(format!(
                 "refusing server binary {} in world-writable /tmp; set the explicit binary override to accept responsibility for this path",

@@ -10,7 +10,7 @@ use fluent_wvr::{
     impl_component,
 };
 use internment::ArcIntern;
-use orator_turn::SessionKind;
+use orator_core::SessionKind;
 
 use crate::tool::{ToolCall, ToolTier};
 
@@ -85,10 +85,10 @@ impl Policy {
             return Verdict::Deny("ambient-origin calls never execute".to_string());
         }
         match ctx.session {
-            orator_turn::SessionKind::ListenIn | orator_turn::SessionKind::Meeting => {
+            orator_core::SessionKind::ListenIn | orator_core::SessionKind::Meeting => {
                 return Verdict::Deny("session holds no effectful capability".to_string());
             }
-            orator_turn::SessionKind::Dictation | orator_turn::SessionKind::Assistant => {}
+            orator_core::SessionKind::Dictation | orator_core::SessionKind::Assistant => {}
         }
         match tier {
             ToolTier::T0 => Verdict::Allow,

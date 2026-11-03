@@ -127,6 +127,74 @@ fn no_plan_references_in_source() {
 }
 
 #[test]
+fn no_private_http_client_builders() {
+    // One shared client plus default per-session clients: no private
+    // `Client::builder` in orator production source (tests excluded).
+    // A per-session client keeps its transport but sets timeouts per
+    // request, never via a private builder.
+    let root = crates_src();
+    let mut files = Vec::new();
+    let entries = std::fs::read_dir(&root).expect("workspace src readable");
+    for entry in entries.filter_map(std::result::Result::ok) {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if entry.path().is_dir() && name.starts_with("orator-") {
+            rs_files(&entry.path().join("src"), &mut files);
+        }
+    }
+    assert!(!files.is_empty(), "scanned no source files");
+    let mut violations = Vec::new();
+    for path in &files {
+        if path.components().any(|part| part.as_os_str() == "tests") {
+            continue;
+        }
+        let source = std::fs::read_to_string(path).expect("source readable");
+        for (index, line) in source.lines().enumerate() {
+            if line.contains("Client::builder") {
+                violations.push(format!("{}:{}: private client builder", path.display(), index + 1));
+            }
+        }
+    }
+    assert!(
+        violations.is_empty(),
+        "private HTTP client builders:\n{}",
+        violations.join("\n")
+    );
+}
+
+#[test]
+fn tui_stays_a_thin_client() {
+    // The TUI renders over the daemon (mic meter, transcript, barge
+    // key) and never owns inference: no whisper/Kokoro backends, no
+    // audio sessions, no endpoint supervision inside `tui.rs`.
+    // Playout of daemon-provided audio (`StreamPlayer`, `CpalBackend`)
+    // stays — that is local devices, not inference.
+    const FORBIDDEN: [&str; 4] = [
+        "WhisperBackend",
+        "KokoroBackend",
+        "AudioSession",
+        "ensure_audio_server",
+    ];
+    let path = crates_src()
+        .join("orator-cli")
+        .join("src")
+        .join("tui.rs");
+    let source = std::fs::read_to_string(&path).expect("tui readable");
+    let mut violations = Vec::new();
+    for (index, line) in source.lines().enumerate() {
+        for banned in FORBIDDEN {
+            if line.contains(banned) {
+                violations.push(format!("tui.rs:{}: owns inference `{banned}`", index + 1));
+            }
+        }
+    }
+    assert!(
+        violations.is_empty(),
+        "thin-client violations:\n{}",
+        violations.join("\n")
+    );
+}
+
+#[test]
 fn every_crate_root_forbids_unsafe() {
     let root = crates_src();
     let mut roots = Vec::new();
@@ -246,6 +314,20 @@ fn dependency_edges_stay_split() {
     assert!(
         !has_dep(&cli, "crossterm"),
         "crossterm arrives only via the ratatui re-export"
+    );
+    // De-bloated edges: the CLI renders bench stats through the core
+    // home (never `cli→bench`), and the desktop wraps transcripts
+    // through core (never `desktop→tools`).
+    assert!(
+        !has_dep(&cli, "orator-bench"),
+        "orator-cli must not depend on orator-bench (render lives in core)"
+    );
+    let desktop =
+        std::fs::read_to_string(root.join("orator-desktop/Cargo.toml"))
+            .expect("desktop manifest readable");
+    assert!(
+        !has_dep(&desktop, "orator-tools"),
+        "orator-desktop must not depend on orator-tools (wrap lives in core)"
     );
     assert!(
         has_dep(&cli, "orator-vad"),

@@ -8,7 +8,6 @@ autotests = false
 common-core = { path = "../common-core" }
 fluent-wvr = { path = "../fluent-wvr" }
 orator-core = { path = "../orator-core" }
-orator-tools = { path = "../orator-tools" }
 thiserror = { workspace = true }
 which = { workspace = true }
 

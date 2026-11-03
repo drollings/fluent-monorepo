@@ -16,6 +16,7 @@ whisper-rs = "0.16"
 
 [dev-dependencies]
 fluent-concurrency = { path = "../fluent-concurrency" }
+orator-audio = { path = "../orator-audio" }
 orator-core = { path = "../orator-core" }
 orator-models = { path = "../orator-models" }
 proptest = { workspace = true }

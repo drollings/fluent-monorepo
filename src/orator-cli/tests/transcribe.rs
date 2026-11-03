@@ -126,3 +126,37 @@ fn audio_server_cue_spans_the_samples() {
     let rendered = render(&[cue], TranscriptFormat::Txt).expect("renders");
     assert_eq!(rendered, "hello");
 }
+
+#[test]
+fn cue_bounds_extremes_to_media_range() {
+    use crate::transcribe::{cue_from_centiseconds, MAX_CUE_SECONDS};
+    // i64 extremes never become giant stamps: clamped to the media cap.
+    let max = cue_from_centiseconds(i64::MAX, i64::MAX, "h".to_string());
+    assert!(max.start_s <= MAX_CUE_SECONDS, "MAX clamps: {max:?}");
+    assert!(max.end_s <= MAX_CUE_SECONDS, "MAX clamps: {max:?}");
+    let min = cue_from_centiseconds(i64::MIN, i64::MIN, "m".to_string());
+    assert!((min.start_s - 0.0).abs() < 1e-9, "MIN clamps to zero: {min:?}");
+    assert!((min.end_s - 0.0).abs() < 1e-9, "MIN clamps to zero: {min:?}");
+    // Negative overflow clamps, never wraps.
+    let neg = cue_from_centiseconds(-9_223_372_036_854, -1, "n".to_string());
+    assert!((neg.start_s - 0.0).abs() < 1e-9);
+    assert!((neg.end_s - 0.0).abs() < 1e-9);
+    // End-before-start clamps up (existing contract holds under the cap).
+    let rev = cue_from_centiseconds(200, 100, "hi".to_string());
+    assert!(rev.end_s >= rev.start_s);
+}
+
+#[test]
+fn transcribe_codec_round_trips_i16_base64() {
+    use crate::transcribe::{decode_transcribe_text, encode_transcribe_audio};
+    let params = encode_transcribe_audio(&[0.0, 0.5, -0.5, 1.0]);
+    assert_eq!(params.get("rate").and_then(serde_json::Value::as_u64), Some(16_000));
+    let encoded = params.get("audio").and_then(|audio| audio.as_str()).expect("audio present");
+    use base64::prelude::*;
+    let raw = BASE64_STANDARD.decode(encoded).expect("valid base64");
+    assert_eq!(raw.len(), 8, "i16 LE: 2 bytes per sample");
+    assert_eq!(i16::from_le_bytes([raw[2], raw[3]]), 16383, "0.5 scales to half range");
+    let body = serde_json::json!({"text": "hello there"});
+    assert_eq!(decode_transcribe_text(&body).expect("text decodes"), "hello there");
+    decode_transcribe_text(&serde_json::json!({})).expect_err("missing text is loud");
+}

@@ -2,6 +2,7 @@
 //! and shortcuts. Every line is actionable; absence is reported, never
 //! raised. Hermetic: no network, no hardware writes.
 
+use crate::config::s2s_base_url;
 use orator_models::ModelStatus;
 
 /// One full diagnosis run.
@@ -31,7 +32,7 @@ pub fn full_report(config: &orator_core::OratorConfig) -> FullReport {
         injection: injection_lines(),
         models: orator_models::list_models(),
         endpoint: config.llm.endpoint.clone(),
-        speech: speech_lines(&config.tts.voice),
+        speech: speech_lines(config),
         shortcuts: shortcut_lines(),
     }
 }
@@ -81,17 +82,23 @@ fn injection_lines() -> Vec<String> {
     ]
 }
 
-fn speech_lines(voice: &str) -> Vec<String> {
-    let config = orator_s2s::S2sConfig::default();
-    let mut lines = vec![format!("endpoint: {}", config.endpoint)];
-    let bundle = orator_core::default_bundle();
+fn speech_lines(config: &orator_core::OratorConfig) -> Vec<String> {
+    let voice = config.tts.voice.clone();
+    let s2s = config.s2s.clone();
+    let mut lines = vec![format!("endpoint: {}", s2s_base_url(&s2s))];
+    lines.push(if s2s.auto_boot {
+        "auto-boot: on (a supervised server boots when none answers)".to_string()
+    } else {
+        "auto-boot: off (the endpoint above is expected to be independently started)".to_string()
+    });
+    let bundle = orator_core::bundle_from_s2s(&s2s);
     for missing in bundle.missing() {
         lines.push(format!("missing: {}", missing.display()));
     }
     if bundle.present() {
-        lines.push("bundle liquidai/lfm2.5-audio-1.5b: complete (mmproj, vocoder, tokenizer)".to_string());
+        lines.push("bundle liquidai/lfm3-audio-2b: complete (backbone + mmproj; codec in projector)".to_string());
     } else {
-        lines.push("bundle liquidai/lfm2.5-audio-1.5b: incomplete — text-only serving".to_string());
+        lines.push("bundle liquidai/lfm3-audio-2b: incomplete — text-only serving".to_string());
     }
     let kokoro_paths = orator_tts::default_paths();
     let voice_pack = kokoro_paths.as_ref().map(|(_, voices)| voices.join(format!("{voice}.bin")));

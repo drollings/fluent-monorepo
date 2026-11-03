@@ -30,12 +30,13 @@ fn unknown_bytes_are_rejected_never_defaulted() {
 
 #[test]
 fn methods_validate_against_the_contract() {
-    assert_eq!(METHOD_NAMES.len(), 11);
+    assert_eq!(METHOD_NAMES.len(), 13);
     for method in METHOD_NAMES {
         validate_method(method).expect("contract method must validate");
     }
     validate_method("StopDaemon").expect("lifecycle method validates");
     validate_method("Reload").expect("lifecycle method validates");
+    validate_method("Approve").expect("approval method validates");
     validate_method("Nope").expect_err("unknown method must fail");
     validate_method("").expect_err("empty method must fail");
 }

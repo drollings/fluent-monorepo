@@ -25,6 +25,9 @@ use crate::ENV_LOCK;
 
 #[test]
 fn args_carry_the_reference_file_mapping() {
+    // Stock shape: backbone + projector always; legacy companions
+    // only when present on disk (the fixture paths are absent, so
+    // LFM3 stock argv carries no -mv/--tts-speaker-file).
     let args = voice_server_args(&bundle(), 18083);
     let flag = |name: &str| {
         args.iter()
@@ -32,27 +35,58 @@ fn args_carry_the_reference_file_mapping() {
             .map(|pos| args[pos + 1].clone())
     };
     assert_eq!(flag("-m").as_deref(), Some("/models/backbone.gguf"));
-    assert_eq!(flag("-mm").as_deref(), Some("/models/mmproj.gguf"));
-    assert_eq!(flag("-mv").as_deref(), Some("/models/vocoder.gguf"));
-    assert_eq!(
-        flag("--tts-speaker-file").as_deref(),
-        Some("/models/tokenizer.gguf")
-    );
+    assert_eq!(flag("--mmproj").as_deref(), Some("/models/mmproj.gguf"));
     assert_eq!(flag("--host").as_deref(), Some("127.0.0.1"));
     assert_eq!(flag("--port").as_deref(), Some("18083"));
     assert!(!args.iter().any(|arg| arg == "--alias"));
 }
 
 #[test]
+fn args_carry_legacy_companions_when_present() {
+    let dir = fixture_dir();
+    for name in ["backbone.gguf", "mmproj.gguf", "vocoder.gguf", "tokenizer.gguf"] {
+        std::fs::write(dir.path().join(name), b"stub").expect("stub writes");
+    }
+    let full = AudioBundle {
+        backbone: dir.path().join("backbone.gguf"),
+        mmproj: dir.path().join("mmproj.gguf"),
+        vocoder: dir.path().join("vocoder.gguf"),
+        tokenizer: dir.path().join("tokenizer.gguf"),
+    };
+    let args = voice_server_args(&full, 18083);
+    let flag = |name: &str| {
+        args.iter()
+            .position(|arg| arg == name)
+            .map(|pos| args[pos + 1].clone())
+    };
+    assert_eq!(
+        flag("-m").as_deref(),
+        Some(dir.path().join("backbone.gguf").to_string_lossy().into_owned().as_str())
+    );
+    assert!(flag("-mv").is_some(), "legacy vocoder rides along when present");
+    assert!(
+        flag("--tts-speaker-file").is_some(),
+        "legacy tokenizer rides along when present"
+    );
+}
+
+#[test]
 fn supervisor_argv_matches_the_reference_file_mapping() {
-    // The supervised child must boot with byte-identical argv to the
-    // retired direct spawn: same bundle, same port, same order.
+    // Both argv renderers carry backbone + projector on loopback;
+    // the supervised shape adds the text-server context flags while
+    // the direct shape stays minimal — so the assertion is
+    // containment (same files, same host/port), not byte equality.
     let port = 18083;
     let config = audio_supervisor_config(&bundle(), port);
-    assert_eq!(
-        orator_llm::build_args(&config, None),
-        voice_server_args(&bundle(), port)
-    );
+    let supervised = orator_llm::build_args(&config, None);
+    let direct = voice_server_args(&bundle(), port);
+    for argv in [&supervised, &direct] {
+        assert!(argv.contains(&"/models/backbone.gguf".to_string()));
+        assert!(argv.contains(&"/models/mmproj.gguf".to_string()));
+        assert!(argv.contains(&"127.0.0.1".to_string()));
+        assert!(argv.contains(&port.to_string()));
+        assert!(!argv.iter().any(|arg| arg == "--alias"));
+    }
 }
 
 /// Writable fixture base outside `/tmp`: the ownership gate
@@ -119,14 +153,18 @@ fn resolve_accepts_owner_only_binary() {
 fn resolve_rejects_world_writable_binary() {
     let _guard = common_core::sync::lock(&ENV_LOCK);
     let prior_server = std::env::var_os(AUDIO_SERVER_ENV);
+    let prior_llama = std::env::var_os("LLAMA_SERVER");
     let prior_path = std::env::var_os("PATH");
     let prior_home = std::env::var_os("HOME");
     std::env::remove_var(AUDIO_SERVER_ENV);
+    std::env::remove_var("LLAMA_SERVER");
     let dir = fixture_dir();
     write_candidate(dir.path(), 0o777);
     let home = fixture_dir();
     std::env::set_var("HOME", home.path());
-    prepend_path(dir.path());
+    // Isolated PATH: the fixture only, so the stock `llama-server`
+    // fallback cannot rescue a refused legacy candidate.
+    std::env::set_var("PATH", dir.path());
     assert_eq!(
         resolve_audio_server(),
         None,
@@ -135,6 +173,10 @@ fn resolve_rejects_world_writable_binary() {
     match prior_server {
         Some(value) => std::env::set_var(AUDIO_SERVER_ENV, value),
         None => std::env::remove_var(AUDIO_SERVER_ENV),
+    }
+    match prior_llama {
+        Some(value) => std::env::set_var("LLAMA_SERVER", value),
+        None => std::env::remove_var("LLAMA_SERVER"),
     }
     match prior_path {
         Some(value) => std::env::set_var("PATH", value),
@@ -152,9 +194,11 @@ fn resolve_rejects_world_writable_parent() {
     use std::os::unix::fs::PermissionsExt as _;
     let _guard = common_core::sync::lock(&ENV_LOCK);
     let prior_server = std::env::var_os(AUDIO_SERVER_ENV);
+    let prior_llama = std::env::var_os("LLAMA_SERVER");
     let prior_path = std::env::var_os("PATH");
     let prior_home = std::env::var_os("HOME");
     std::env::remove_var(AUDIO_SERVER_ENV);
+    std::env::remove_var("LLAMA_SERVER");
     let dir = fixture_dir();
     let sub = dir.path().join("wwdir");
     std::fs::create_dir(&sub).expect("subdir");
@@ -163,7 +207,7 @@ fn resolve_rejects_world_writable_parent() {
     write_candidate(&sub, 0o755);
     let home = fixture_dir();
     std::env::set_var("HOME", home.path());
-    prepend_path(&sub);
+    std::env::set_var("PATH", sub.as_os_str());
     assert_eq!(
         resolve_audio_server(),
         None,
@@ -172,6 +216,10 @@ fn resolve_rejects_world_writable_parent() {
     match prior_server {
         Some(value) => std::env::set_var(AUDIO_SERVER_ENV, value),
         None => std::env::remove_var(AUDIO_SERVER_ENV),
+    }
+    match prior_llama {
+        Some(value) => std::env::set_var("LLAMA_SERVER", value),
+        None => std::env::remove_var("LLAMA_SERVER"),
     }
     match prior_path {
         Some(value) => std::env::set_var("PATH", value),
@@ -188,9 +236,11 @@ fn resolve_rejects_world_writable_parent() {
 fn resolve_rejects_tmp_even_when_trusted() {
     let _guard = common_core::sync::lock(&ENV_LOCK);
     let prior_server = std::env::var_os(AUDIO_SERVER_ENV);
+    let prior_llama = std::env::var_os("LLAMA_SERVER");
     let prior_path = std::env::var_os("PATH");
     let prior_home = std::env::var_os("HOME");
     std::env::remove_var(AUDIO_SERVER_ENV);
+    std::env::remove_var("LLAMA_SERVER");
     let dir = tempfile::tempdir().expect("tempdir");
     assert!(
         dir.path().starts_with("/tmp"),
@@ -199,7 +249,7 @@ fn resolve_rejects_tmp_even_when_trusted() {
     write_candidate(dir.path(), 0o755);
     let home = fixture_dir();
     std::env::set_var("HOME", home.path());
-    prepend_path(dir.path());
+    std::env::set_var("PATH", dir.path().as_os_str());
     assert_eq!(
         resolve_audio_server(),
         None,
@@ -208,6 +258,10 @@ fn resolve_rejects_tmp_even_when_trusted() {
     match prior_server {
         Some(value) => std::env::set_var(AUDIO_SERVER_ENV, value),
         None => std::env::remove_var(AUDIO_SERVER_ENV),
+    }
+    match prior_llama {
+        Some(value) => std::env::set_var("LLAMA_SERVER", value),
+        None => std::env::remove_var("LLAMA_SERVER"),
     }
     match prior_path {
         Some(value) => std::env::set_var("PATH", value),

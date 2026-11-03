@@ -143,3 +143,53 @@ fn lagged_live_receivers_skip_never_block() {
         "lagged receivers skip to the newest"
     );
 }
+
+#[test]
+fn kill_mid_stream_reconnects_without_gaps_or_dupes() {
+    use fluent_db::migrate::migrate;
+    // Durability golden: the writer dies mid-stream (drop without
+    // close) and the reader reconnects from a mid-stream cursor.
+    // Replayed rows must be contiguous with zero gaps or dupes.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("events.db");
+    {
+        let store = fluent_db::store::SqliteStore::open(&path).expect("open");
+        store
+            .with_conn(|conn| {
+                migrate(conn, &crate::schema::migrations())?;
+                Ok(())
+            })
+            .expect("migrate");
+        let log = EventLog::over(store);
+        for index in 0..60 {
+            log.append("s1", 1, "ReplyFinal", &format!("{{\"n\":{index}}}"), 1000 + index as u64)
+                .expect("append");
+        }
+        // Drop without close: the kill under test.
+    }
+    let store = fluent_db::store::SqliteStore::open(&path).expect("reopen");
+    let log = EventLog::over(store);
+    let mut seen: Vec<i64> = Vec::new();
+    let mut cursor = 20i64;
+    loop {
+        let page = log.replay(cursor, 25).expect("replay");
+        if page.is_empty() {
+            break;
+        }
+        for event in &page {
+            cursor = cursor.max(event.seq);
+        }
+        seen.extend(page.iter().map(|event| event.seq));
+        if page.len() < 25 {
+            break;
+        }
+    }
+    assert_eq!(seen.len(), 40, "reconnect resumes at the cursor: {seen:?}");
+    for pair in seen.windows(2) {
+        assert_eq!(pair[1], pair[0] + 1, "zero gaps after kill: {seen:?}");
+    }
+    let mut sorted = seen.clone();
+    sorted.sort_unstable();
+    sorted.dedup();
+    assert_eq!(sorted.len(), seen.len(), "zero dupes after kill");
+}

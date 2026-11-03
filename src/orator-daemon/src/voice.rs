@@ -20,11 +20,11 @@ use crate::admission::{AdmissionGate, EjectionTracker, EJECTION_THRESHOLD};
 /// sleep-idle shape: minutes, not seconds).
 pub const VOICE_IDLE_TIMEOUT: Duration = Duration::from_mins(15);
 
-/// How long `shutdown` waits for an in-flight boot to finish before
-/// giving up the wait. A late boot still checks the shutdown flag and
-/// releases instead of publishing, so the bound only shortens the
-/// shutdown path — it never leaks.
-const SHUTDOWN_WAIT: Duration = Duration::from_secs(10);
+/// Single-shot transcribe input bound: 1.92M f32 samples (120 s at
+/// 16 kHz, the TUI utterance bound) as i16 base64 (~5.1 MiB) fits the
+/// 8 MiB frame cap. Longer utterances refuse with `Overflow` instead
+/// of desyncing the frame.
+pub const MAX_TRANSCRIBE_SAMPLES: usize = 1_920_000;
 
 /// Failures serving the voice endpoint. Every variant names the
 /// remedy for the CLI to carry.
@@ -39,6 +39,10 @@ pub enum VoiceError {
     /// No server binary resolves.
     #[error("no voice server binary: {0}")]
     NoBinary(String),
+    /// Auto-boot is off and no server answers: start one instead of
+    /// spawning a child.
+    #[error("voice auto-boot is off: {0}")]
+    AutoBootDisabled(String),
     /// The boot failed.
     #[error("voice server boot failed: {0}")]
     Boot(String),
@@ -73,6 +77,11 @@ pub enum VoiceError {
     /// chain and never counts toward ejection.
     #[error("voice turn aborted: {0}")]
     Aborted(String),
+    /// A peer was too slow to complete its read or write inside the
+    /// handler budget. Transport-level, never a capacity signal: the
+    /// caller may retry. Counted separately from saturation.
+    #[error("slow peer: {0}")]
+    SlowPeer(String),
     /// No such session.
     #[error("unknown session: {0}")]
     UnknownSession(String),
@@ -89,6 +98,7 @@ impl VoiceError {
             Self::Disabled => "Disabled",
             Self::ShuttingDown => "ShuttingDown",
             Self::NoBinary(_) => "NoBinary",
+            Self::AutoBootDisabled(_) => "AutoBootDisabled",
             Self::Boot(_) => "Boot",
             Self::BootContention => "BootContention",
             Self::Backend(_) => "Backend",
@@ -97,6 +107,7 @@ impl VoiceError {
             Self::NoAudio(_) => "NoAudio",
             Self::Overflow(_) => "Overflow",
             Self::Aborted(_) => "Aborted",
+            Self::SlowPeer(_) => "SlowPeer",
             Self::UnknownSession(_) => "UnknownSession",
         }
     }
@@ -149,6 +160,15 @@ enum RequestOutcome {
     Backend,
 }
 
+/// Kept turns per session for conversational context. Past this the
+/// oldest turns drop; the context builder additionally caps chars so
+/// long sessions hold a ceiling and the newest question always fits.
+const MAX_SESSION_TURNS: usize = 20;
+
+/// Context chars past which oldest turns drop (newest question is
+/// never cut to fit history).
+const MAX_HISTORY_CHARS: usize = 6_000;
+
 /// One daemon-owned voice server. `binary` pins the server binary
 /// (`None` resolves at boot); `disabled` never boots (tests).
 pub struct VoiceOwner {
@@ -171,6 +191,17 @@ pub struct VoiceOwner {
     state: Mutex<VoiceState>,
     sessions: Mutex<crate::session::SessionRegistry>,
     log: std::sync::Arc<orator_store::EventLog>,
+    /// Pending human approvals. The socket route answers through this
+    /// hub; the D-Bus edge gates on `Caller::may_approve` before ever
+    /// dialing `Approve`, so ambient speech can never approve.
+    approvals: orator_tools::ApprovalHub,
+    /// Conversational context per session: past (question, reply)
+    /// turns, oldest first. `ask_via` with a session id voices the
+    /// joined history plus the new question, so voice and text chat
+    /// build context turn by turn; `stop_session` drops the entry.
+    /// History is text only (transcripts + replies), bounded by
+    /// [`MAX_SESSION_TURNS`] and [`MAX_HISTORY_CHARS`].
+    llm_history: Mutex<std::collections::HashMap<String, Vec<(String, String)>>>,
 }
 
 impl VoiceOwner {
@@ -188,6 +219,8 @@ impl VoiceOwner {
             state: Mutex::new(VoiceState::fresh()),
             sessions: Mutex::new(crate::session::SessionRegistry::new()),
             log: memory_log(),
+            approvals: orator_tools::ApprovalHub::new(),
+            llm_history: Mutex::new(std::collections::HashMap::new()),
         }
     }
 
@@ -205,6 +238,8 @@ impl VoiceOwner {
             state: Mutex::new(VoiceState::fresh()),
             sessions: Mutex::new(crate::session::SessionRegistry::new()),
             log: memory_log(),
+            approvals: orator_tools::ApprovalHub::new(),
+            llm_history: Mutex::new(std::collections::HashMap::new()),
         }
     }
 
@@ -222,7 +257,26 @@ impl VoiceOwner {
             state: Mutex::new(VoiceState::fresh()),
             sessions: Mutex::new(crate::session::SessionRegistry::new()),
             log: memory_log(),
+            approvals: orator_tools::ApprovalHub::new(),
+            llm_history: Mutex::new(std::collections::HashMap::new()),
         }
+    }
+
+    /// Open an approval round for `summary`. Test seam for the
+    /// approval-spoof golden; production rounds open through the tool
+    /// loop.
+    #[cfg(test)]
+    pub fn request_approval_for_tests(
+        &self,
+        summary: String,
+    ) -> (String, tokio::sync::oneshot::Receiver<bool>) {
+        self.approvals.request(summary)
+    }
+
+    /// Answer an approval round. The socket route (trusted caller) uses
+    /// this; D-Bus callers gate on `Caller::may_approve` before dialing.
+    pub fn answer_approval(&self, id: &str, approve: bool) -> bool {
+        self.approvals.answer(id, approve)
     }
 
     /// The loaded configuration this owner was built with, for the
@@ -258,6 +312,13 @@ impl VoiceOwner {
     /// Endpoint URL, booting on demand. Boot failures and a disabled
     /// owner report actionably; the CLI falls back to its own boot
     /// or the next voice in its chain.
+    ///
+    /// An independently-started server at the configured `s2s`
+    /// endpoint is used as-is (shared, never booted, never reaped):
+    /// only when nothing serves there does the owner consider a
+    /// supervised child — and only when the file opts in
+    /// (`s2s.auto_boot`) or an explicit binary pins one. Off means
+    /// the voice server is independently started.
     pub async fn ensure(&self) -> Result<String, VoiceError> {
         if self.disabled {
             return Err(VoiceError::Disabled);
@@ -267,6 +328,17 @@ impl VoiceOwner {
             .load(std::sync::atomic::Ordering::SeqCst)
         {
             return Err(VoiceError::ShuttingDown);
+        }
+        // Shared first: the configured endpoint serves, use it. No
+        // child, no boot, no timer. Explicit-binary owners skip this
+        // (a pinned binary means boot exactly that).
+        if self.binary.is_none() && !self.has_server() {
+            let base = self.config.s2s.endpoint.clone();
+            let model = self.config.s2s.model.clone();
+            if crate::socket::bridge_concurrent(orator_s2s::serves_model(&base, &model)) {
+                self.record_voice_success(&base);
+                return Ok(base);
+            }
         }
         // Ejected fast path: one cheap probe, never a boot. A healthy
         // probe drops the suspect child and clears the streak so the
@@ -379,31 +451,34 @@ impl VoiceOwner {
 
     /// Stop and drop the child, if any. Sets the shutdown flag first,
     /// drains every session (firing their aborts and releasing their
-    /// leases), waits boundedly for an in-flight boot, then clears. A
-    /// boot that lands after the wait releases instead of publishing.
+    /// leases), then clears. No waiting: an in-flight boot that lands
+    /// after the clear checks the shutdown flag and releases instead of
+    /// publishing (see `ensure`), and dropping the supervisor reaps the
+    /// child — so nothing leaks and no worker ever sleeps here.
     pub fn shutdown(&self) {
         self.shutting_down
             .store(true, std::sync::atomic::Ordering::SeqCst);
         for id in self.list_sessions() {
             let _ = self.stop_session(&id);
         }
-        let deadline = Instant::now() + SHUTDOWN_WAIT;
-        while Instant::now() < deadline {
-            {
-                let state = common_core::sync::lock(&self.state);
-                if !state.booting {
-                    break;
-                }
-            }
-            std::thread::sleep(Duration::from_millis(100));
-        }
+        common_core::sync::lock(&self.llm_history).clear();
         self.clear();
     }
 
     async fn boot(&self) -> Result<orator_llm::Supervisor, VoiceError> {
-        let bundle = orator_core::default_bundle();
-        if !bundle.present() {
-            return Err(VoiceError::Boot(format!(
+        // Explicit binaries pin exactly one candidate below; the
+        // resolved path boots only when the file opts in. Off means
+        // the voice server is independently started: absence fails
+        // loudly with the remedy instead of spawning a child.
+        let auto_boot = self.binary.is_some() || self.config.s2s.auto_boot;
+        if !auto_boot {
+            return Err(VoiceError::AutoBootDisabled(format!(
+                "no voice server answers (start a llama-server for '{}', or set s2s.auto_boot to boot one automatically)",
+                self.config.s2s.model,
+            )));
+        }
+        let bundle = orator_core::bundle_from_s2s(&self.config.s2s);
+        if !bundle.present() {            return Err(VoiceError::Boot(format!(
                 "audio bundle incomplete: {}",
                 bundle
                     .missing()
@@ -413,22 +488,34 @@ impl VoiceOwner {
                     .join(", ")
             )));
         }
-        let config = orator_s2s::audio_supervisor_config(&bundle, 0);
-        let booted = if let Some(binary) = self.binary.as_ref() {
-            orator_llm::boot_with_binary(config, binary).await
-        } else {
-            match orator_s2s::resolve_audio_server() {
-                Some(binary) => orator_llm::boot_with_binary(config, &binary).await,
-                None => {
-                    return Err(VoiceError::NoBinary(format!(
-                        "no voice server (set {} or install {}; search hits that fail the ownership check are refused)",
-                        orator_s2s::AUDIO_SERVER_ENV,
-                        orator_s2s::AUDIO_SERVER_BIN
-                    )));
+        // Every candidate binary is tried in order until one serves:
+        // an explicit `with_binary` pins exactly one, otherwise a
+        // pre-LFM3 install fails fast on the bundle and the next
+        // serves instead of vetoing voice.
+        let candidates: Vec<std::path::PathBuf> = match self.binary.as_ref() {
+            Some(pinned) => vec![pinned.clone()],
+            None => orator_s2s::resolve_audio_server_candidates(),
+        };
+        if candidates.is_empty() {
+            return Err(VoiceError::NoBinary(format!(
+                "no voice server (set {} or install {}; search hits that fail the ownership check are refused)",
+                orator_s2s::AUDIO_SERVER_ENV,
+                orator_s2s::AUDIO_SERVER_BIN
+            )));
+        }
+        let mut last_error = String::new();
+        for binary in &candidates {
+            let config = orator_s2s::audio_supervisor_config(&bundle, 0);
+            match orator_llm::boot_with_binary(config, binary).await {
+                Ok(server) => return Ok(server),
+                Err(error) => {
+                    last_error = error.to_string();
                 }
             }
-        };
-        booted.map_err(|error| VoiceError::Boot(error.to_string()))
+        }
+        Err(VoiceError::Boot(format!(
+            "every voice server candidate failed (last: {last_error})"
+        )))
     }
 
     fn clear(&self) {
@@ -492,11 +579,16 @@ impl VoiceOwner {
         } else {
             Some(id.to_string())
         };
-        let target = target.expect("single live session");
+        let Some(target) = target else {
+            return Err(VoiceError::UnknownSession(
+                "no session id: no live session to stop (pass one id)".to_string(),
+            ));
+        };
         {
             let mut sessions = common_core::sync::lock(&self.sessions);
             sessions.stop(&target).map_err(VoiceError::UnknownSession)?;
         }
+        self.drop_history(&target);
         // Dropping the entry releases its lease.
         let mut state = common_core::sync::lock(&self.state);
         state.leases = state.leases.saturating_sub(1);
@@ -560,9 +652,9 @@ impl VoiceOwner {
     }
 
     /// Speak `text` through the daemon-owned voice server. Returns the
-    /// voiced sample count and rate; audio bytes stay out of the
-    /// socket envelope (the CLI plays locally).
-    pub fn say_blocking(&self, text: &str, session: Option<&str>) -> Result<(usize, u32), VoiceError> {
+    /// voiced samples and their rate; the caller plays them locally.
+    /// Audio bytes travel in the socket envelope for the CLI to voice.
+    pub fn say_blocking(&self, text: &str, session: Option<&str>) -> Result<(Vec<f32>, u32), VoiceError> {
         if text.trim().is_empty() {
             return Err(VoiceError::Backend("nothing to speak".to_string()));
         }
@@ -572,12 +664,12 @@ impl VoiceOwner {
                 return Err(VoiceError::UnknownSession(id.to_string()));
             }
         }
-        // Serving path, concurrent callers: the shared runtime from
-        // blocking threads, the in-place bridge from runtime workers
-        // (tests). The serializing fallback stays only where
-        // single-flight is load-bearing (the boot flag inside `ensure`);
-        // this bridge must never serialize concurrent voice turns behind
-        // one boot.
+        // Serving path, concurrent callers: the in-place bridge on
+        // runtime workers and blocking threads, the shared runtime
+        // where no runtime is active (see `bridge_concurrent`). The
+        // serializing fallback stays only where single-flight is
+        // load-bearing (the boot flag inside `ensure`); this bridge must
+        // never serialize concurrent voice turns behind one boot.
         let url = crate::socket::bridge_concurrent(self.ensure()).map_err(|error| match error {
             VoiceError::Disabled
             | VoiceError::ShuttingDown
@@ -588,6 +680,7 @@ impl VoiceOwner {
             | VoiceError::Ejected(_)
             | VoiceError::NoAudio(_)
             | VoiceError::Overflow(_)
+            | VoiceError::SlowPeer(_)
             | VoiceError::Aborted(_) => error,
             other => VoiceError::Backend(other.to_string()),
         })?;
@@ -599,7 +692,7 @@ impl VoiceOwner {
     /// outcome for ejection: transport failures and over-bound turns
     /// count, responsive turns (including voiceless and cancelled ones)
     /// break the streak.
-    pub fn say_via(&self, endpoint: &str, text: &str, session: Option<&str>) -> Result<(usize, u32), VoiceError> {
+    pub fn say_via(&self, endpoint: &str, text: &str, session: Option<&str>) -> Result<(Vec<f32>, u32), VoiceError> {
         // The bound lives at the turn entries so stub-driven turns and
         // production turns share one enforcement point.
         let _permit = self
@@ -608,21 +701,20 @@ impl VoiceOwner {
             .map_err(|refusal| VoiceError::Saturated(refusal.reason))?;
         let mut audio = orator_s2s::AudioSession::new(orator_s2s::S2sConfig {
             endpoint: endpoint.to_string(),
-            ..orator_s2s::S2sConfig::default()
+            ..self.config.s2s.clone()
         });
         // Every attempt names the probe target, success or failure —
         // ejection without a URL could never re-probe.
         common_core::sync::lock(&self.state).last_url = Some(endpoint.to_string());
         match audio.speak_blocking(text) {
             Ok(samples) => {
-                let count = samples.len();
                 let label = session.unwrap_or("daemon").to_string();
                 let _ = self.log.append(&label, 0, "reply", text, wall_ms());
                 if let Some(id) = session {
                     common_core::sync::lock(&self.sessions).touch(id);
                 }
                 self.record_voice_success(endpoint);
-                Ok((count, orator_s2s::AUDIO_OUT_RATE))
+                Ok((samples, orator_s2s::AUDIO_OUT_RATE))
             }
             Err(orator_s2s::S2sError::NoAudio) => {
                 self.record_voice_response();
@@ -657,18 +749,168 @@ impl VoiceOwner {
         }
         let llm = self.config.llm.clone();
         let (base, model) = orator_cli_config_base(&llm);
-        self.ask_via(&base, &model, usize::from(llm.ctx), usize::from(llm.n_batch), question, session)
+        // Local-first text: the configured endpoint wins when it
+        // answers; otherwise the ensured voice server takes the turn
+        // (LFM3-Audio answers text as well as speech). A refused
+        // connection fails the probe instantly, so the fallback costs
+        // nothing when the gateway is simply down — and a live gateway
+        // never pays for a voice boot it does not need.
+        if crate::socket::bridge_concurrent(orator_llm::probe_models(
+            &base,
+            common_core::http::shared_http_client(),
+        ))
+        .is_ok()
+        {
+            return self.ask_via(
+                &base,
+                &model,
+                usize::from(llm.ctx),
+                usize::from(llm.n_batch),
+                question,
+                session,
+            );
+        }
+        let url = crate::socket::bridge_concurrent(self.ensure()).map_err(|error| match error {
+            VoiceError::Disabled
+            | VoiceError::ShuttingDown
+            | VoiceError::NoBinary(_)
+            | VoiceError::Boot(_)
+            | VoiceError::BootContention
+            | VoiceError::Saturated(_)
+            | VoiceError::Ejected(_)
+            | VoiceError::NoAudio(_)
+            | VoiceError::Overflow(_)
+            | VoiceError::Aborted(_)
+            | VoiceError::SlowPeer(_)
+            | VoiceError::UnknownSession(_)
+            | VoiceError::AutoBootDisabled(_)
+            | VoiceError::Backend(_) => error,
+        })?;
+        // The readiness probe opens routes before weights finish
+        // streaming in: hold the turn until `/health` answers (or the
+        // budget burns and the turn reports honestly). Legacy builds
+        // serve no `/health` (404 counts as ready — their OPTIONS
+        // probe already gated load).
+        wait_voice_loaded(&url);
+        self.ask_via(
+            &url,
+            &model,
+            usize::from(llm.ctx),
+            usize::from(llm.n_batch),
+            question,
+            session,
+        )
+    }
+
+    /// Transcribe 16 kHz mono `samples` through the ensured voice
+    /// server. Empty input is silence, not a failure (`Ok("")`). The
+    /// input bound lives here so stub-driven and production turns
+    /// share one enforcement point.
+    pub fn transcribe_blocking(
+        &self,
+        samples: &[f32],
+        session: Option<&str>,
+    ) -> Result<String, VoiceError> {
+        if samples.len() > MAX_TRANSCRIBE_SAMPLES {
+            return Err(VoiceError::Overflow(format!(
+                "transcribe turn of {} samples exceeds the single-frame bound ({} samples); send shorter utterances",
+                samples.len(),
+                MAX_TRANSCRIBE_SAMPLES,
+            )));
+        }
+        if samples.iter().all(|sample| *sample == 0.0) {
+            return Ok(String::new());
+        }
+        if let Some(id) = session {
+            let sessions = common_core::sync::lock(&self.sessions);
+            if !sessions.contains(id) {
+                return Err(VoiceError::UnknownSession(id.to_string()));
+            }
+        }
+        let url = crate::socket::bridge_concurrent(self.ensure()).map_err(|error| match error {
+            VoiceError::Disabled
+            | VoiceError::ShuttingDown
+            | VoiceError::NoBinary(_)
+            | VoiceError::Boot(_)
+            | VoiceError::BootContention
+            | VoiceError::Saturated(_)
+            | VoiceError::Ejected(_)
+            | VoiceError::NoAudio(_)
+            | VoiceError::Overflow(_)
+            | VoiceError::Aborted(_)
+            | VoiceError::SlowPeer(_)
+            | VoiceError::UnknownSession(_)
+            | VoiceError::AutoBootDisabled(_)
+            | VoiceError::Backend(_) => error,
+        })?;
+        self.transcribe_via(&url, samples, session)
+    }
+
+    /// Transcribe `samples` through `endpoint` (the hermetic seam:
+    /// tests pass a scripted server; production passes the ensured
+    /// URL). Transport failures count toward ejection; responsive
+    /// turns break the streak.
+    pub fn transcribe_via(
+        &self,
+        endpoint: &str,
+        samples: &[f32],
+        session: Option<&str>,
+    ) -> Result<String, VoiceError> {
+        let _permit = self
+            .gate
+            .admit()
+            .map_err(|refusal| VoiceError::Saturated(refusal.reason))?;
+        let mut audio = orator_s2s::AudioSession::new(orator_s2s::S2sConfig {
+            endpoint: endpoint.to_string(),
+            ..self.config.s2s.clone()
+        });
+        common_core::sync::lock(&self.state).last_url = Some(endpoint.to_string());
+        match audio.transcribe_blocking(samples) {
+            Ok(text) => {
+                let label = session.unwrap_or("daemon").to_string();
+                let _ = self.log.append(&label, 0, "transcript", &text, wall_ms());
+                if let Some(id) = session {
+                    common_core::sync::lock(&self.sessions).touch(id);
+                }
+                self.record_voice_success(endpoint);
+                Ok(text)
+            }
+            Err(orator_s2s::S2sError::Aborted) => {
+                self.record_voice_response();
+                Err(VoiceError::Aborted("voice turn aborted".to_string()))
+            }
+            Err(orator_s2s::S2sError::Backend(message)) => {
+                self.record_voice_backend();
+                Err(VoiceError::Backend(message))
+            }
+            Err(orator_s2s::S2sError::Overflow(detail)) => {
+                self.record_voice_backend();
+                Err(VoiceError::Overflow(detail))
+            }
+            Err(orator_s2s::S2sError::NoAudio) => {
+                self.record_voice_response();
+                Ok(String::new())
+            }
+        }
     }
 
     /// Ask `question` through `endpoint`/`model` (the hermetic seam).
+    /// With a session id, past turns ride along as text context (oldest
+    /// first, bounded), so voice and text chat build context turn by
+    /// turn; without one the turn is stateless. Only completed turns
+    /// extend history — errors and aborts never do.
     pub fn ask_via(&self, endpoint: &str, model: &str, ctx: usize, n_batch: usize, question: &str, session: Option<&str>) -> Result<String, VoiceError> {
         // Text shares the bound: one policy for every serving path.
         let _permit = self
             .gate
             .admit()
             .map_err(|refusal| VoiceError::Saturated(refusal.reason))?;
+        let prompt = match session {
+            Some(id) => self.prompt_with_history(id, question),
+            None => question.to_string(),
+        };
         let mut llm_session = orator_llm::HttpSession::open(endpoint, model, ctx, n_batch);
-        llm_session.push_text(question);
+        llm_session.push_text(&prompt);
         match llm_session.step(&mut orator_core::Sampler::default()) {
             Ok(out) => {
                 let reply = out.delta.trim_end().to_string();
@@ -677,11 +919,58 @@ impl VoiceOwner {
                 let _ = self.log.append(&label, 0, "reply", &reply, wall_ms());
                 if let Some(id) = session {
                     common_core::sync::lock(&self.sessions).touch(id);
+                    self.record_history(id, question, &reply);
                 }
                 Ok(reply)
             }
             Err(error) => Err(VoiceError::Backend(error.to_string())),
         }
+    }
+
+    /// Build the prompt for a session turn: bounded past turns plus
+    /// the new question. Oldest turns drop past [`MAX_HISTORY_CHARS`];
+    /// the new question always survives intact.
+    fn prompt_with_history(&self, id: &str, question: &str) -> String {
+        let history = common_core::sync::lock(&self.llm_history);
+        let Some(turns) = history.get(id) else {
+            return question.to_string();
+        };
+        if turns.is_empty() {
+            return question.to_string();
+        }
+        let mut kept = turns.as_slice();
+        while !kept.is_empty() {
+            let mut prompt = String::new();
+            for (past_q, past_a) in kept {
+                prompt.push_str("user: ");
+                prompt.push_str(past_q);
+                prompt.push_str("\nassistant: ");
+                prompt.push_str(past_a);
+                prompt.push('\n');
+            }
+            prompt.push_str("user: ");
+            prompt.push_str(question);
+            if prompt.chars().count() <= MAX_HISTORY_CHARS {
+                return prompt;
+            }
+            kept = &kept[1..];
+        }
+        question.to_string()
+    }
+
+    /// Record one completed turn, capping stored turns.
+    fn record_history(&self, id: &str, question: &str, reply: &str) {
+        let mut history = common_core::sync::lock(&self.llm_history);
+        let turns = history.entry(id.to_string()).or_default();
+        turns.push((question.to_string(), reply.to_string()));
+        while turns.len() > MAX_SESSION_TURNS {
+            turns.remove(0);
+        }
+    }
+
+    /// Drop a session's conversational context, if any.
+    fn drop_history(&self, id: &str) {
+        common_core::sync::lock(&self.llm_history).remove(id);
     }
 }
 
@@ -699,6 +988,34 @@ fn wall_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |duration| duration.as_millis() as u64)
+}
+
+/// Hold a voice turn until the server's model answers `/health`.
+/// Cold boots open routes before weights finish streaming in; the
+/// first turn would otherwise fail a server seconds from serving.
+/// Legacy builds serve no `/health` (404 counts as ready). A burnt
+/// budget returns silently and the turn reports whatever the server
+/// says — never a silent success, never an unbounded wait.
+fn wait_voice_loaded(url: &str) {
+    let budget = std::time::Duration::from_secs(90);
+    let poll = std::time::Duration::from_secs(2);
+    let deadline = Instant::now() + budget;
+    loop {
+        let ready = common_core::runtime::block_on(
+            common_core::http::shared_http_client()
+                .get(format!("{url}/health"))
+                .timeout(std::time::Duration::from_secs(5))
+                .send(),
+        )
+        .is_ok_and(|response| {
+            response.status().is_success()
+                || response.status() == reqwest::StatusCode::NOT_FOUND
+        });
+        if ready || Instant::now() >= deadline {
+            return;
+        }
+        std::thread::sleep(poll);
+    }
 }
 
 fn default_max_inflight() -> usize {

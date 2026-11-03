@@ -9,6 +9,34 @@ use orator_core::{DuplexEngine, Epoch, Frame, MediaTime};
 use crate::config::S2sConfig;
 use crate::session::{AudioSession, S2sError};
 
+
+/// Deterministic voiced synth: harmonic sines with speech-like energy
+/// and low zero-crossing rate, so the speech-presence gate passes and
+/// scripted turns run without a microphone.
+fn voiced(samples: usize) -> Vec<f32> {
+    (0..samples)
+        .map(|index| {
+            let time = index as f32 / 16_000.0;
+            0.35 * (2.0 * std::f32::consts::PI * 150.0 * time).sin()
+                + 0.35 * (2.0 * std::f32::consts::PI * 300.0 * time).sin()
+        })
+        .collect()
+}
+
+/// Deterministic white-ish noise (xorshift): broadband energy the
+/// detector's zero-crossing ceiling rejects as non-speech.
+fn hiss(samples: usize, amplitude: f32) -> Vec<f32> {
+    let mut state = 0x1234_5679u32;
+    (0..samples)
+        .map(|_| {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            (state as f32 / u32::MAX as f32 - 0.5) * 2.0 * amplitude
+        })
+        .collect()
+}
+
 fn sse_turn(text: &str, audio_b64: Option<&str>) -> String {
     use std::fmt::Write as _;
     let mut out = String::new();
@@ -47,7 +75,7 @@ fn transcribe_collects_text_deltas() {
         then.status(200).body(sse_turn("hello world", None));
     });
     let mut session = session_with(&server);
-    let text = session.transcribe_blocking(&[0.0; 1600]).expect("asr runs");
+    let text = session.transcribe_blocking(&voiced(1600)).expect("asr runs");
     assert_eq!(text, "hello world");
     assert!(!session.heard_audio());
     });
@@ -262,7 +290,7 @@ fn turn_reassembles_across_separate_chunks() {
         endpoint: url,
         ..S2sConfig::default()
     });
-    let text = session.transcribe_blocking(&[0.0; 1600]).expect("asr runs");
+    let text = session.transcribe_blocking(&voiced(1600)).expect("asr runs");
     assert_eq!(text, "hello world");
     server.join().expect("stub done");
 }
@@ -533,7 +561,7 @@ fn failed_turn_invalidates_the_hint_cache() {
         assert!(crate::ensure::serves_model(&server.base_url(), "swap-model").await);
         models.assert_hits(1);
         let mut session = session_with(&server);
-        let _ = session.transcribe_blocking(&[0.0; 1600]);
+        let _ = session.transcribe_blocking(&voiced(1600));
         assert!(crate::ensure::serves_model(&server.base_url(), "swap-model").await);
         models.assert_hits(2);
         invalidate_hint_cache(&server.base_url());
@@ -800,3 +828,131 @@ fn fallback_advance_grid_with_must_not_fire_controls() {
     // at the CLI) and never reach this gate — compile-time control.
     assert!(!should_advance_chain(&S2sError::Aborted));
 }
+
+#[test]
+fn long_error_bodies_cap_through_the_shared_truncator() {
+    common_core::runtime::block_on_shared(async {
+    let server = httpmock::MockServer::start();
+    let big = "e".repeat(orator_core::TOOL_OUTPUT_CHARS + 500);
+    server.mock(|when, then| {
+        when.method("POST").path("/v1/chat/completions");
+        then.status(500).body(big.clone());
+    });
+    let mut session = session_with(&server);
+    let error = session
+        .transcribe_blocking(&voiced(1600))
+        .expect_err("500 fails");
+    let text = error.to_string();
+    assert!(
+        text.contains("truncated,"),
+        "long bodies cap with the shared marker: {text}"
+    );
+    assert!(
+        text.chars().count() < big.chars().count(),
+        "capped shorter than the body"
+    );
+    });
+}
+
+#[test]
+fn loading_probe_names_only_the_transient_503() {
+    use crate::session::is_loading_body;
+    let loading = reqwest::StatusCode::SERVICE_UNAVAILABLE;
+    assert!(is_loading_body(loading, "{\"error\":{\"message\":\"Loading model\",\"type\":\"unavailable_error\"}}"));
+    assert!(is_loading_body(loading, "loading MODEL weights"));
+    assert!(!is_loading_body(loading, "{\"error\":{\"message\":\"unknown model\"}}"));
+    assert!(!is_loading_body(reqwest::StatusCode::NOT_FOUND, "Loading model"));
+    assert!(!is_loading_body(reqwest::StatusCode::OK, "Loading model"));
+}
+
+#[test]
+fn post_until_loaded_passes_non_loading_through() {
+    use crate::session::{post_until_loaded, S2sError};
+    common_core::runtime::block_on_shared(async {
+    let server = httpmock::MockServer::start();
+    server.mock(|when, then| {
+        when.method("POST").path("/probe");
+        then.status(200).body("fine");
+    });
+    let client = reqwest::Client::new();
+    let abort = StreamAbort::new();
+    let body = serde_json::json!({ "input": "hi" });
+    let response = post_until_loaded(
+        &client,
+        &format!("{}/probe", server.base_url()),
+        &body,
+        &abort,
+        |error: reqwest::Error| S2sError::Backend(error.to_string()),
+    )
+    .expect("200 passes through");
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    });
+}
+
+#[test]
+fn post_until_loaded_stops_on_abort() {
+    use crate::session::{post_until_loaded, S2sError};
+    let client = reqwest::Client::new();
+    let abort = StreamAbort::new();
+    abort.cancel();
+    let body = serde_json::json!({ "input": "hi" });
+    let error = post_until_loaded(
+        &client,
+        "http://127.0.0.1:1/probe",
+        &body,
+        &abort,
+        |error: reqwest::Error| S2sError::Backend(error.to_string()),
+    )
+    .expect_err("cancelled aborts");
+    assert_eq!(error, S2sError::Aborted);
+}
+
+#[test]
+fn speech_gate_skips_inference_on_hiss_and_silence() {
+    // Hiss at several energies answers empty without dialing: the
+    // stub 500s if hit, so any network means the gate leaked.
+    let server = httpmock::MockServer::start();
+    let hits = server.mock(|when, then| {
+        when.method("POST").path("/v1/chat/completions");
+        then.status(500).body("must not dial");
+    });
+    let mut session = session_with(&server);
+    assert_eq!(
+        session.transcribe_blocking(&[]).expect("empty is silence"),
+        "",
+        "empty input never dials"
+    );
+    assert_eq!(
+        session.transcribe_blocking(&[0.0; 3200]).expect("zeros are silence"),
+        "",
+        "digital silence never dials"
+    );
+    // Observed hallucination band, plus loud hiss: the re-armed
+    // verdict keeps even RMS-0.1 broadband hiss under the fraction
+    // (measured grid).
+    for amplitude in [0.001, 0.003, 0.01, 0.03, 0.1] {
+        assert_eq!(
+            session
+                .transcribe_blocking(&hiss(48_000, amplitude))
+                .expect("hiss is not speech"),
+            "",
+            "hiss at {amplitude} never dials"
+        );
+    }
+    assert_eq!(hits.hits(), 0, "gate skipped every inference");
+    // Quiet voiced input still dials: far-mic speech around RMS 0.03
+    // opens spans at the gate floor (measured grid).
+    let quiet: Vec<f32> = voiced(48_000).iter().map(|s| s * 0.1).collect();
+    let before = hits.hits();
+    let text = session.transcribe_blocking(&quiet).expect_err("500 fails");
+    assert!(text.to_string().contains("500"), "{text}");
+    assert_eq!(hits.hits(), before + 1, "quiet speech dials");
+    // Voiced input at the same scale still dials: the gate keeps
+    // quiet speech, not just loud speech.
+    let text = session.transcribe_blocking(&voiced(1600)).expect_err("500 fails");
+    assert!(text.to_string().contains("500"), "{text}");
+    assert_eq!(hits.hits(), before + 2, "voiced input dials");
+}
+
+
+

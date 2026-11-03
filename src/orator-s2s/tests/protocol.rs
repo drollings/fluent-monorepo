@@ -36,7 +36,7 @@ fn pcm_bytes_slice_f32_little_endian() {
 #[test]
 fn messages_carry_the_demo_shapes() {
     assert_eq!(SYSTEM_ASR, "Perform ASR.");
-    assert_eq!(SYSTEM_INTERLEAVED, "Respond with interleaved text and audio.");
+    assert!(SYSTEM_INTERLEAVED.starts_with("Respond with interleaved text and audio."));
     let system = system_msg(SYSTEM_ASR);
     assert_eq!(system["role"], serde_json::json!("system"));
     assert_eq!(system["content"], serde_json::json!(SYSTEM_ASR));

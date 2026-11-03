@@ -28,6 +28,7 @@ fn served_model_uses_the_endpoint_as_is() {
             &server.base_url(),
             "liquidai/lfm2.5-audio-1.5b",
             &bundle(),
+            true,
         )
         .await
         .expect("served model needs no boot");
@@ -49,7 +50,7 @@ fn missing_model_without_bundle_fails_actionably() {
             when.method("GET").path("/v1/models");
             then.status(200).json_body(serde_json::json!({"data": []}));
         });
-        let Err(error) = ensure_audio_server(&server.base_url(), "nope", &bundle()).await
+        let Err(error) = ensure_audio_server(&server.base_url(), "nope", &bundle(), true).await
         else {
             panic!("nothing served, bundle incomplete on disk");
         };
@@ -68,7 +69,7 @@ fn shared_release_is_a_noop() {
                 "data": [{"id": "m"}],
             }));
         });
-        let endpoint = ensure_audio_server(&server.base_url(), "m", &bundle())
+        let endpoint = ensure_audio_server(&server.base_url(), "m", &bundle(), true)
             .await
             .expect("served");
         endpoint.release();
@@ -244,7 +245,7 @@ fn boot_release_reaps_the_owned_child() {
         .expect("stub server runs");
     std::env::set_var(crate::voice::AUDIO_SERVER_ENV, &script);
     let endpoint = common_core::runtime::block_on_shared(crate::ensure::boot_audio_server(
-        &bundle, "m",
+        &bundle, "m", true,
     ))
     .expect("stub server boots");
     let port: u16 = endpoint
@@ -275,4 +276,48 @@ fn boot_release_reaps_the_owned_child() {
         Some(value) => std::env::set_var(crate::voice::AUDIO_SERVER_ENV, value),
         None => std::env::remove_var(crate::voice::AUDIO_SERVER_ENV),
     }
+}
+
+#[test]
+fn audio_build_without_models_list_serves_on_options_readiness() {
+    common_core::runtime::block_on_shared(async {
+        let server = httpmock::MockServer::start();
+        crate::ensure::invalidate_hint_cache(&server.base_url());
+        // The appliance build serves no `/models` (unmocked paths
+        // answer 404); its readiness is the completions `OPTIONS`.
+        server.mock(|when, then| {
+            when.method("OPTIONS").path("/v1/chat/completions");
+            then.status(200);
+        });
+        assert!(
+            serves_model(&server.base_url(), "any-audio-model").await,
+            "OPTIONS-ready appliance serves without a listing"
+        );
+        let endpoint = ensure_audio_server(
+            &server.base_url(),
+            "any-audio-model",
+            &bundle(),
+            true,
+        )
+        .await
+        .expect("OPTIONS-ready audio build is shared, never booted");
+        assert_eq!(endpoint.base_url(), server.base_url());
+        endpoint.release();
+    });
+}
+
+#[test]
+fn auto_boot_off_refuses_before_spawning() {
+    common_core::runtime::block_on_shared(async {
+        // Nothing serves here and nothing may boot: the refusal names
+        // the remedy instead of burning a health timeout on a child.
+        match ensure_audio_server("http://127.0.0.1:1", "m", &bundle(), false).await {
+            Err(error) => assert!(error.to_string().contains("s2s.auto_boot"), "{error}"),
+            Ok(_) => panic!("auto-boot off must refuse"),
+        }
+        match crate::ensure::boot_audio_server(&bundle(), "m", false).await {
+            Err(error) => assert!(error.to_string().contains("s2s.auto_boot"), "{error}"),
+            Ok(_) => panic!("direct boot refusal"),
+        }
+    });
 }

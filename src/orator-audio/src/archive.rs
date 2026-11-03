@@ -332,10 +332,11 @@ impl ArchiveWriter {
             self.writers
                 .insert(channel, SegmentWriter::open(serial, start)?);
         }
-        Ok(self
-            .writers
+        self.writers
             .get_mut(&channel)
-            .expect("writer inserted above"))
+            .ok_or_else(|| {
+                AudioError::Archive(format!("archive writer for {channel:?} vanished after insert"))
+            })
     }
 
     fn serial_for(&self, channel: Channel) -> u32 {
@@ -393,10 +394,24 @@ pub fn spawn_archive_feed(
         move |item: ArchiveItem| {
             let writer = Arc::clone(&writer);
             async move {
+                // Disk stalls park a blocking-pool thread, never a
+                // runtime worker: the lock is taken inside the blocking
+                // task and released there, so the feed handler itself
+                // never holds a mutex across disk I/O on the executor.
                 let ArchiveItem::Pcm { channel, samples } = item;
-                let mut guard = common_core::sync::lock(&writer);
-                if let Err(error) = guard.push(channel, &samples) {
-                    tracing::error!(target: "orator.archive", %error, "feed write failed");
+                let outcome = tokio::task::spawn_blocking(move || {
+                    let mut guard = common_core::sync::lock(&writer);
+                    guard.push(channel, &samples)
+                })
+                .await;
+                match outcome {
+                    Ok(Ok(())) => {}
+                    Ok(Err(error)) => {
+                        tracing::error!(target: "orator.archive", %error, "feed write failed");
+                    }
+                    Err(error) => {
+                        tracing::error!(target: "orator.archive", %error, "archive blocking task failed");
+                    }
                 }
             }
         },

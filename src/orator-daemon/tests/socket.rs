@@ -223,7 +223,12 @@ fn parent_check_rejects_a_foreign_owner() {
 fn booting_owner_answers_contention_immediately() {
     let _guard = serve_serial();
     let (listener, path, _dir) = bind_temp();
-    let voice = VoiceOwner::new(&orator_core::OratorConfig::default());
+    // Dead configured endpoint: the shared-probe misses hermetically
+    // (no dial past loopback stubs), so the in-flight boot answers
+    // contention instead of serving.
+    let mut config = orator_core::OratorConfig::default();
+    config.s2s.endpoint = "http://127.0.0.1:9".to_string();
+    let voice = VoiceOwner::new(&config);
     voice.set_booting_for_tests(true);
     let server = std::thread::spawn(move || {
         crate::socket::serve_once(&listener, 1000, 1000, &voice).expect("serve");
@@ -304,20 +309,21 @@ fn slow_header_read_times_out() {
         .expect("timeout");
     stream.write_all(&[1u8, 0u8]).expect("partial header");
     let mut header = [0u8; 5];
-    std::io::Read::read_exact(&mut stream, &mut header).expect("saturated header arrives");
+    std::io::Read::read_exact(&mut stream, &mut header).expect("slow-peer header arrives");
     let len = u32::from_le_bytes([header[0], header[1], header[2], header[3]]) as usize;
-    assert!(len > 1, "saturated reply carries a body");
+    assert!(len > 1, "slow-peer reply carries a body");
     let mut rest = vec![0u8; len - 1];
-    std::io::Read::read_exact(&mut stream, &mut rest).expect("saturated body arrives");
+    std::io::Read::read_exact(&mut stream, &mut rest).expect("slow-peer body arrives");
     let mut bytes = header.to_vec();
     bytes.extend_from_slice(&rest);
-    let reply = SocketFrame::decode(&bytes).expect("saturated frame decodes");
+    let reply = SocketFrame::decode(&bytes).expect("slow-peer frame decodes");
     let value: serde_json::Value = serde_json::from_slice(&reply.body).expect("json");
     assert_eq!(value["ok"], serde_json::json!(false));
-    assert_eq!(value["body"]["kind"], serde_json::json!("Saturated"));
-    assert!(
-        crate::socket::listener_refusals() > before,
-        "slow-peer refusal counts"
+    assert_eq!(value["body"]["kind"], serde_json::json!("SlowPeer"));
+    assert_eq!(
+        crate::socket::listener_refusals(),
+        before,
+        "slow peers never count as saturation"
     );
 }
 

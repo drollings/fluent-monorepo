@@ -102,11 +102,34 @@ impl Chord {
     }
 
     /// Whether the chord collides with reserved system shortcuts and must
-    /// be rejected at registration time.
+    /// be rejected at registration time. Bare Escape / single keys with
+    /// no modifier belong to the app; system chords never bind.
     #[must_use]
     pub fn is_reserved(&self) -> bool {
-        // Bare Escape / single keys with no modifier belong to the app.
-        self.modifiers.is_empty()
+        if self.modifiers.is_empty() {
+            return true;
+        }
+        let has = |modifier: Modifier| self.modifiers.contains(&modifier);
+        let key = self.key.as_str();
+        // Clipboard and kill chords.
+        if has(Modifier::Ctrl) && matches!(key, "c" | "v" | "x" | "z" | "a") {
+            return true;
+        }
+        // Window and session chords.
+        if has(Modifier::Alt) && key == "f4" {
+            return true;
+        }
+        if has(Modifier::Super) && matches!(key, "l" | "d" | "t" | "w" | "q") {
+            return true;
+        }
+        // Terminal and interrupt chords.
+        if has(Modifier::Ctrl) && has(Modifier::Shift) && matches!(key, "c" | "v") {
+            return true;
+        }
+        if has(Modifier::Ctrl) && key == "alt" {
+            return true;
+        }
+        false
     }
 }
 

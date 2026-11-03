@@ -72,6 +72,10 @@ pub enum TuiAction {
     Stop,
     /// Show sessions.
     List,
+    /// Cycle the mic mode (auto VAD ↔ push-to-talk).
+    Mode,
+    /// Toggle the PTT mic (push-to-talk mode only).
+    Talk,
     /// Type into the input line.
     Type(char),
     /// Delete one input char.
@@ -93,6 +97,8 @@ pub fn map_key(key: KeyEvent) -> TuiAction {
             KeyCode::Char('s') => TuiAction::Start,
             KeyCode::Char('e') => TuiAction::Stop,
             KeyCode::Char('l') => TuiAction::List,
+            KeyCode::Char('g') => TuiAction::Mode,
+            KeyCode::Char('t') => TuiAction::Talk,
             _ => TuiAction::Ignore,
         };
     }
@@ -116,6 +122,12 @@ pub enum SlashCommand {
     List,
     /// Release the endpoint and exit.
     Quit,
+    /// Switch the mic to push-to-talk.
+    Ptt,
+    /// Switch the mic to auto VAD.
+    Auto,
+    /// Toggle the PTT mic.
+    Talk,
 }
 
 /// Parse a slash command. Anything else (including unknown slashes)
@@ -127,6 +139,9 @@ pub fn parse_command(input: &str) -> Option<SlashCommand> {
         "/stop" => Some(SlashCommand::Stop),
         "/list" => Some(SlashCommand::List),
         "/quit" | "/exit" => Some(SlashCommand::Quit),
+        "/ptt" => Some(SlashCommand::Ptt),
+        "/auto" => Some(SlashCommand::Auto),
+        "/talk" => Some(SlashCommand::Talk),
         _ => None,
     }
 }
@@ -246,6 +261,12 @@ impl MicGate {
         self.vad.push(samples);
         self.vad.speaking()
     }
+
+    /// Drop the detector state (open spans close): the echo tail shed
+    /// at voice end must not commit as a phantom utterance.
+    pub fn reset(&mut self) {
+        self.vad.reset();
+    }
 }
 
 impl Default for MicGate {
@@ -271,6 +292,30 @@ pub fn level_bar(level: f32, width: usize) -> String {
     "█".repeat(filled) + &"░".repeat(width - filled)
 }
 
+/// Mic capture mode: continuous voice activity detection, or
+/// explicit push-to-talk for speaker setups where the assistant's
+/// own voice would otherwise loop back through the mic as input.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MicMode {
+    /// VAD-gated capture (commits suppressed while voicing, so the
+    /// reply never becomes the next question).
+    #[default]
+    Auto,
+    /// Mic hot only while toggled on; toggle-off endpoints the turn.
+    PushToTalk,
+}
+
+impl MicMode {
+    /// Short label for the status header.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::PushToTalk => "ptt",
+        }
+    }
+}
+
 /// Live TUI state: transcript, meter, voicing, session, input line.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TuiState {
@@ -284,6 +329,10 @@ pub struct TuiState {
     pub session: Option<String>,
     /// Pending input line.
     pub input: String,
+    /// Mic capture mode (header readout).
+    pub mic_mode: MicMode,
+    /// PTT mic latched hot (header readout).
+    pub talking: bool,
 }
 
 impl TuiState {
@@ -294,6 +343,8 @@ impl TuiState {
             voicing: false,
             session: None,
             input: String::new(),
+            mic_mode: MicMode::Auto,
+            talking: false,
         }
     }
 
@@ -321,6 +372,13 @@ pub struct TuiApp<C: SessionControl> {
     pub pending_dropped: u64,
     /// Quit latched: the loop exits after releasing.
     pub quit: bool,
+    /// PTT toggle-off endpoints the buffered turn even when the VAD
+    /// still holds speech open (consumed once by the loop).
+    pub ptt_commit: bool,
+    /// Echo suppression: while set, hot spans move the meter but never
+    /// buffer — the reply playing on the speakers must not become the
+    /// next question. The loop sets this from the voicing flag.
+    pub suppress_utterance: bool,
     gate: MicGate,
 }
 
@@ -339,6 +397,8 @@ impl<C: SessionControl> TuiApp<C> {
             pending_utterance: Vec::new(),
             pending_dropped: 0,
             quit: false,
+            ptt_commit: false,
+            suppress_utterance: false,
             gate: MicGate::new(),
         }
     }
@@ -354,6 +414,11 @@ impl<C: SessionControl> TuiApp<C> {
         match map_key(key) {
             TuiAction::Barge => {
                 self.control.abort();
+                // A cut drops everything buffered (it may hold reply
+                // echo) and unlatches the PTT mic: nothing survives.
+                self.shed_utterance();
+                self.state.talking = false;
+                self.ptt_commit = false;
                 self.state
                     .push_line(TuiLine::Status("barge: cut the in-flight turn".to_string()));
             }
@@ -361,6 +426,8 @@ impl<C: SessionControl> TuiApp<C> {
             TuiAction::Start => self.start_session(),
             TuiAction::Stop => self.stop_session(),
             TuiAction::List => self.list_sessions(),
+            TuiAction::Mode => self.cycle_mic_mode(),
+            TuiAction::Talk => self.toggle_talk(),
             TuiAction::Type(char) => self.state.input.push(char),
             TuiAction::Backspace => {
                 self.state.input.pop();
@@ -370,22 +437,80 @@ impl<C: SessionControl> TuiApp<C> {
         }
     }
 
-    /// One captured mic frame: meter always follows; hot spans buffer.
-    /// Over-cap spans drop the oldest first (realtime lossy) and count
-    /// them, so a slow transcribe never grows the queue without bound.
-    pub fn mic(&mut self, samples: &[f32]) {
-        if self.gate.push(samples) {
-            self.pending_utterance.extend_from_slice(samples);
-            let excess = self
-                .pending_utterance
-                .len()
-                .saturating_sub(MAX_PENDING_UTTERANCE);
-            if excess > 0 {
-                self.pending_utterance.drain(..excess);
-                self.pending_dropped += excess as u64;
+    /// Cycle the mic mode. Leaving PTT unlatches the talk mic and
+    /// drops its buffer; the mode readout rides the shared state.
+    pub fn cycle_mic_mode(&mut self) {
+        match self.state.mic_mode {
+            MicMode::Auto => {
+                self.state.mic_mode = MicMode::PushToTalk;
+                self.state.talking = false;
+                self.ptt_commit = false;
+                self.state.push_line(TuiLine::Status(
+                    "mic: push-to-talk (Ctrl+T talks, toggle off sends)".to_string(),
+                ));
+            }
+            MicMode::PushToTalk => {
+                self.state.mic_mode = MicMode::Auto;
+                self.state.talking = false;
+                self.ptt_commit = false;
+                self.state.push_line(TuiLine::Status(
+                    "mic: auto VAD (commits pause while voicing)".to_string(),
+                ));
             }
         }
+    }
+
+    /// Toggle the PTT talk mic. Toggle-off endpoints the buffered
+    /// turn through `ptt_commit` even when the VAD still holds speech
+    /// open. Outside PTT mode this names the remedy instead of acting.
+    pub fn toggle_talk(&mut self) {
+        if self.state.mic_mode != MicMode::PushToTalk {
+            self.state.push_line(TuiLine::Status(
+                "talk is for push-to-talk mode (Ctrl+G to switch)".to_string(),
+            ));
+            return;
+        }
+        self.state.talking = !self.state.talking;
+        if self.state.talking {
+            self.state
+                .push_line(TuiLine::Status("talk: mic hot — toggle off to send".to_string()));
+        } else {
+            self.ptt_commit = true;
+            self.state
+                .push_line(TuiLine::Status("talk: mic off — sending".to_string()));
+        }
+    }
+
+    /// One captured mic frame: meter always follows; hot spans buffer
+    /// unless suppressed (voicing echo) or the PTT mic is cold. The
+    /// meter stays live in every mode so silence-vs-signal is visible
+    /// even while buffering pauses.
+    pub fn mic(&mut self, samples: &[f32]) {
+        let hot = self.gate.push(samples);
         self.state.mic_level = self.gate.level();
+        let ptt_hot = self.state.mic_mode == MicMode::PushToTalk && !self.state.talking;
+        if !hot || self.suppress_utterance || ptt_hot {
+            return;
+        }
+        self.pending_utterance.extend_from_slice(samples);
+        let excess = self
+            .pending_utterance
+            .len()
+            .saturating_sub(MAX_PENDING_UTTERANCE);
+        if excess > 0 {
+            self.pending_utterance.drain(..excess);
+            self.pending_dropped += excess as u64;
+        }
+    }
+
+    /// Shed the buffered utterance (echo tail, barge cut): counted,
+    /// never transcribed. Returns the shed sample count.
+    pub fn shed_utterance(&mut self) -> usize {
+        let shed = self.pending_utterance.len();
+        self.pending_utterance.clear();
+        self.pending_dropped += shed as u64;
+        self.gate.reset();
+        shed
     }
 
     /// One voice-turn event into the transcript.
@@ -476,6 +601,17 @@ impl<C: SessionControl> TuiApp<C> {
                 SlashCommand::Stop => self.stop_session(),
                 SlashCommand::List => self.list_sessions(),
                 SlashCommand::Quit => self.quit(),
+                SlashCommand::Ptt => {
+                    if self.state.mic_mode != MicMode::PushToTalk {
+                        self.cycle_mic_mode();
+                    }
+                }
+                SlashCommand::Auto => {
+                    if self.state.mic_mode != MicMode::Auto {
+                        self.cycle_mic_mode();
+                    }
+                }
+                SlashCommand::Talk => self.toggle_talk(),
             }
             return;
         }
@@ -494,8 +630,20 @@ impl<C: SessionControl> TuiApp<C> {
                 self.state.push_line(TuiLine::Heard(reply));
             }
             Err(error) => {
-                self.state.push_line(TuiLine::Said(input));
-                self.state.push_line(TuiLine::Failure(error.text));
+                // A saturated daemon refused the turn: keep the typed
+                // message on the input line instead of dropping it, so
+                // Enter retries. The refusal wording stays exactly the
+                // shared text; the status names the remedy.
+                if error.text.to_ascii_lowercase().contains("saturated") {
+                    self.state.input = input;
+                    self.state.push_line(TuiLine::Failure(error.text));
+                    self.state.push_line(TuiLine::Status(
+                        "message kept — press Enter to retry".to_string(),
+                    ));
+                } else {
+                    self.state.push_line(TuiLine::Said(input));
+                    self.state.push_line(TuiLine::Failure(error.text));
+                }
             }
         }
     }
@@ -532,7 +680,12 @@ where
             .split(area);
         let session = state.session.as_deref().unwrap_or("none");
         let voice = if state.voicing { "VOICING" } else { "idle" };
-        let header = Paragraph::new(format!("orator tui | session: {session} | {voice}"))
+        let mic = match (state.mic_mode, state.talking) {
+            (MicMode::Auto, _) => "mic:auto".to_string(),
+            (MicMode::PushToTalk, true) => "mic:ptt TALK".to_string(),
+            (MicMode::PushToTalk, false) => "mic:ptt".to_string(),
+        };
+        let header = Paragraph::new(format!("orator tui | session: {session} | {voice} | {mic}"))
             .block(Block::default().borders(Borders::ALL).title("status"));
         frame.render_widget(header, rows[0]);
         let meter = Paragraph::new(format!("mic [{}]", level_bar(state.mic_level, 20)))
@@ -549,7 +702,7 @@ where
         let prompt = Paragraph::new(format!("> {}", state.input)).block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("say (Ctrl+B barge · Ctrl+Q quit)"),
+                .title("say (Ctrl+B barge · Ctrl+Q quit · Ctrl+G mode · Ctrl+T talk)"),
         );
         frame.render_widget(prompt, rows[3]);
         })
@@ -562,7 +715,7 @@ where
 /// else refuses with a named usage error before touching the display.
 pub fn run_live(
     transport: Transport,
-    config: &orator_core::OratorConfig,
+    _config: &orator_core::OratorConfig,
 ) -> crate::ExitCode {
     use ratatui::crossterm::tty::IsTty as _;
 
@@ -592,7 +745,7 @@ pub fn run_live(
         eprintln!("orator: tui needs a terminal (alternate screen refused)");
         return crate::ExitCode::Usage;
     }
-    let outcome = run_loop(transport, config, backend);
+    let outcome = run_loop(transport, backend);
     let _ = ratatui::crossterm::terminal::disable_raw_mode();
     let _ = ratatui::crossterm::execute!(
         stdout,
@@ -605,104 +758,41 @@ struct TranscribeJob {
     receiver: std::sync::mpsc::Receiver<Result<String, String>>,
 }
 
-/// Cached whisper backend keyed by (model, language). The struct owns
-/// the lazily loaded ONNX context, so reuse across utterances never
-/// pays a second load; a key change rebuilds once and drops the old
-/// context. Construction is lazy (no I/O), loads happen on decode.
-#[derive(Default)]
-struct WhisperCache {
-    key: Option<(String, String)>,
-    backend: Option<orator_stt::WhisperBackend>,
-    builds: u64,
-}
-
-impl WhisperCache {
-    /// Backend for (`model`, `language`), rebuilding only on key
-    /// change. `model_path` must already name the weights file.
-    fn get_or_build(
-        &mut self,
-        model: &str,
-        language: &str,
-        model_path: std::path::PathBuf,
-    ) -> &orator_stt::WhisperBackend {
-        let hit = self
-            .key
-            .as_ref()
-            .is_some_and(|(cached_model, cached_language)| {
-                cached_model == model && cached_language == language
-            });
-        if !hit {
-            self.builds += 1;
-            self.key = Some((model.to_string(), language.to_string()));
-            self.backend = Some(orator_stt::WhisperBackend::new(
-                model_path,
-                language.to_string(),
-            ));
-        }
-        self.backend.as_ref().expect("built above")
-    }
-}
-
-/// Cached Kokoro backend keyed by (model path, voices dir, voice,
-/// gpu). Same single-build discipline as [`WhisperCache`]: the TUI
-/// reply path reuses the session instead of reloading ONNX per reply.
-#[derive(Default)]
-struct KokoroCache {
-    key: Option<(std::path::PathBuf, std::path::PathBuf, String, bool)>,
-    backend: Option<orator_tts::KokoroBackend>,
-    builds: u64,
-}
-
-impl KokoroCache {
-    /// Backend for the reply config, rebuilding only on key change.
-    fn get_or_build(
-        &mut self,
-        model: std::path::PathBuf,
-        voices: std::path::PathBuf,
-        voice: &str,
-        gpu: bool,
-    ) -> &orator_tts::KokoroBackend {
-        let hit = self.key.as_ref().is_some_and(|key| {
-            key.0 == model && key.1 == voices && key.2 == voice && key.3 == gpu
-        });
-        if !hit {
-            self.builds += 1;
-            self.key = Some((model.clone(), voices.clone(), voice.to_string(), gpu));
-            let backend =
-                orator_tts::KokoroBackend::new(model, voices, voice.to_string());
-            self.backend = Some(if gpu { backend.with_gpu() } else { backend });
-        }
-        self.backend.as_ref().expect("built above")
-    }
-}
-
-/// One TUI transcription request: samples plus everything the worker
-/// thread needs, answered once over `reply`.
+/// One TUI transcription request: samples plus the transport the
+/// worker dials, answered once over `reply`. The worker owns no
+/// inference — transcription runs on the daemon.
 struct SttRequest {
     samples: Vec<f32>,
-    backend_name: String,
-    language: String,
-    model: String,
-    endpoint: String,
+    transport: Transport,
     abort: StreamAbort,
     reply: std::sync::mpsc::Sender<Result<String, String>>,
 }
 
-/// Long-lived TUI speech worker. One thread owns the whisper backend
-/// for the whole `tui` run (the whisper context is not `Send`, so it
-/// can never cross threads — reuse happens by thread affinity, not
-/// sharing). Audio-server turns resolve the endpoint per request;
-/// barged turns abort promptly (whisper) or drop on delivery.
+/// Long-lived TUI speech worker. One thread forwards utterances to the
+/// daemon `Transcribe` method; the loop never blocks on the network
+/// and barged turns abort before dialing (or drop on delivery when
+/// the abort lands mid-call — the loop already dropped the job).
 struct SttWorker {
     tx: std::sync::mpsc::Sender<SttRequest>,
 }
 
 impl SttWorker {
     /// Spawn the worker; it parks until the first utterance.
+    /// Transcription runs on the daemon through `transcribe_samples`.
     fn spawn() -> Self {
+        Self::spawn_with(transcribe_samples)
+    }
+
+    /// Spawn the worker with a scripted dial (tests answer without a
+    /// daemon; production passes [`transcribe_samples`]).
+    fn spawn_with(
+        dial: impl Fn(&[f32], Transport, &StreamAbort) -> Result<String, String>
+            + Send
+            + Sync
+            + 'static,
+    ) -> Self {
         let (tx, rx) = std::sync::mpsc::channel::<SttRequest>();
         std::thread::spawn(move || {
-            let mut whisper = WhisperCache::default();
             for request in rx {
                 if request.abort.is_cancelled() {
                     let _ = request
@@ -710,16 +800,8 @@ impl SttWorker {
                         .send(Err("orator: transcribe aborted".to_string()));
                     continue;
                 }
-                let outcome = transcribe_samples(
-                    &request.samples,
-                    &request.backend_name,
-                    &request.language,
-                    &request.model,
-                    &request.endpoint,
-                    &request.abort,
-                    &mut whisper,
-                );
-                // Barge landed mid-decode: the transcript is stale by
+                let outcome = dial(&request.samples, request.transport, &request.abort);
+                // Barge landed mid-call: the transcript is stale by
                 // definition, so it is never delivered (the loop already
                 // dropped the job on the cut).
                 if request.abort.is_cancelled() {
@@ -733,20 +815,17 @@ impl SttWorker {
 
     /// Transcribe `samples` on the worker; the answer arrives over the
     /// job receiver. The request carries the turn abort so a barge
-    /// cancels the decode instead of orphaning it.
+    /// cancels the call instead of orphaning it.
     fn transcribe(
         &self,
         samples: Vec<f32>,
-        config: &orator_core::OratorConfig,
+        transport: Transport,
         abort: StreamAbort,
     ) -> TranscribeJob {
         let (sender, receiver) = std::sync::mpsc::channel();
         let request = SttRequest {
             samples,
-            backend_name: config.stt.backend.clone(),
-            language: config.stt.language.clone(),
-            model: config.stt.model.clone(),
-            endpoint: crate::config::audio_base_url(&config.llm),
+            transport,
             abort,
             reply: sender,
         };
@@ -755,9 +834,219 @@ impl SttWorker {
     }
 }
 
+/// One completed voice turn: the reply text plus its spoken audio.
+/// `voice` carries the `Say` outcome separately so a failed voicing
+/// still shows its text: the transcript never loses words to a
+/// playback problem.
+#[derive(Debug)]
+struct VoiceTurn {
+    /// Reply text (always shown, even when voicing failed).
+    reply: String,
+    /// Spoken audio at its server rate, or the voicing failure.
+    /// `None` (no error) means the reply was empty: nothing to voice.
+    voice: Result<Option<(Vec<f32>, u32)>, String>,
+}
+
+/// One TUI voice request: text plus the transport the worker dials,
+/// answered once over `reply`. The worker owns no inference — the
+/// daemon answers `Ask`, then `Say`.
+struct VoiceRequest {
+    text: String,
+    session: Option<String>,
+    transport: Transport,
+    abort: StreamAbort,
+    reply: std::sync::mpsc::Sender<Result<VoiceTurn, String>>,
+}
+
+struct VoiceJob {
+    receiver: std::sync::mpsc::Receiver<Result<VoiceTurn, String>>,
+}
+
+/// Long-lived TUI voice worker. One thread runs `Ask` then `Say`
+/// against the daemon; the loop never blocks on the network, so keys
+/// (barge, quit, typing) stay live through slow turns and a cut
+/// drops the job before delivery — exactly the `SttWorker` shape one
+/// layer up the turn.
+struct VoiceWorker {
+    tx: std::sync::mpsc::Sender<VoiceRequest>,
+}
+
+impl VoiceWorker {
+    /// Spawn the worker; it parks until the first turn.
+    /// Voice runs on the daemon through `ask_then_voice`.
+    fn spawn() -> Self {
+        Self::spawn_with(ask_then_voice)
+    }
+
+    /// Spawn the worker with a scripted dial (tests answer without a
+    /// daemon; production passes [`ask_then_voice`]).
+    fn spawn_with(
+        dial: impl Fn(&str, Option<&str>, Transport, &StreamAbort) -> Result<VoiceTurn, String>
+            + Send
+            + Sync
+            + 'static,
+    ) -> Self {
+        let (tx, rx) = std::sync::mpsc::channel::<VoiceRequest>();
+        std::thread::spawn(move || {
+            for request in rx {
+                if request.abort.is_cancelled() {
+                    let _ = request
+                        .reply
+                        .send(Err("orator: voice turn aborted".to_string()));
+                    continue;
+                }
+                let outcome = dial(
+                    &request.text,
+                    request.session.as_deref(),
+                    request.transport,
+                    &request.abort,
+                );
+                // Barge landed mid-turn: the answer is stale by
+                // definition, so it is never delivered (the loop already
+                // dropped the job on the cut).
+                if request.abort.is_cancelled() {
+                    continue;
+                }
+                let _ = request.reply.send(outcome);
+            }
+        });
+        Self { tx }
+    }
+
+    /// Run one voice turn on the worker; the answer arrives over the
+    /// job receiver. The request carries the turn abort so a barge
+    /// cuts the turn instead of orphaning it.
+    fn turn(
+        &self,
+        text: String,
+        session: Option<String>,
+        transport: Transport,
+        abort: StreamAbort,
+    ) -> VoiceJob {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let request = VoiceRequest {
+            text,
+            session,
+            transport,
+            abort,
+            reply: sender,
+        };
+        let _ = self.tx.send(request);
+        VoiceJob { receiver }
+    }
+}
+
+/// One voice turn against the daemon: `Ask` for the reply text, then
+/// `Say` for its audio. The transcript shows the full reply; the
+/// voice carries the concise form (short replies pass through, long
+/// ones voice a summary — the single [`crate::ask::concise_for_speech`]
+/// home shared with `ask --speak`). A failed `Say` still returns its
+/// text with the voicing failure attached, so words are never lost to
+/// a playback problem.
+fn ask_then_voice(
+    text: &str,
+    session: Option<&str>,
+    transport: Transport,
+    abort: &StreamAbort,
+) -> Result<VoiceTurn, String> {
+    if abort.is_cancelled() {
+        return Err("orator: voice turn aborted".to_string());
+    }
+    ask_then_voice_with(
+        text,
+        session,
+        &|text, session| live_ask(text, session, transport, abort),
+        &|text| {
+            // Cut between the answer and its voicing skips a
+            // pointless synthesis; the worker drops the turn anyway.
+            if abort.is_cancelled() {
+                return Err("orator: voice turn aborted".to_string());
+            }
+            live_say(text, transport, abort)
+        },
+    )
+}
+
+/// Ask one question through the daemon transport. Pure dial seam for
+/// [`ask_then_voice_with`]: production passes this, tests script it.
+fn live_ask(
+    text: &str,
+    session: Option<&str>,
+    transport: Transport,
+    abort: &StreamAbort,
+) -> Result<String, String> {
+    // Thin client: the daemon owns the LLM. This side ships text —
+    // never inference.
+    let mut control = LiveControl::new(transport, abort.clone());
+    let mut params = serde_json::json!({"question": text});
+    if let Some(session) = session {
+        params["session"] = serde_json::Value::String(session.to_string());
+    }
+    match control.call("Ask", params) {
+        Ok(body) => Ok(body
+            .get("reply")
+            .and_then(|value| value.as_str())
+            .unwrap_or("")
+            .to_string()),
+        Err(error) => Err(error.text),
+    }
+}
+
+/// Voice one reply through the daemon transport. Pure dial seam for
+/// [`ask_then_voice_with`]: production passes this, tests script it.
+fn live_say(text: &str, transport: Transport, abort: &StreamAbort) -> Result<(Vec<f32>, u32), String> {
+    // Thin client: the daemon owns TTS. This side plays the daemon's
+    // audio bytes locally — playout of provided audio, never inference.
+    let mut control = LiveControl::new(transport, abort.clone());
+    match control.call("Say", serde_json::json!({"text": text})) {
+        Ok(body) => crate::say_chain::decode_say_audio(&body).map_err(|error| format!("orator: {error}")),
+        Err(error) => Err(error.text),
+    }
+}
+
+/// Ask dial for [`ask_then_voice_with`]: question plus session in,
+/// reply text or the failure line out.
+type AskDial<'a> = &'a dyn Fn(&str, Option<&str>) -> Result<String, String>;
+
+/// Say dial for [`ask_then_voice_with`]: spoken text in, PCM samples
+/// plus rate, or the failure line, out.
+type SayDial<'a> = &'a dyn Fn(&str) -> Result<(Vec<f32>, u32), String>;
+
+/// One voice turn from its dials: `ask` for the reply text, then
+/// `say` for its audio. The transcript shows the full reply; the
+/// voice carries the concise form (short replies pass through, long
+/// ones voice a summary — the single [`crate::ask::concise_for_speech`]
+/// home shared with `ask --speak`). A failed `say` still returns its
+/// text with the voicing failure attached, so words are never lost to
+/// a playback problem. An empty reply voices nothing (no dial).
+fn ask_then_voice_with(
+    text: &str,
+    session: Option<&str>,
+    ask: AskDial<'_>,
+    say: SayDial<'_>,
+) -> Result<VoiceTurn, String> {
+    let reply = ask(text, session)?;
+    if reply.trim().is_empty() {
+        return Ok(VoiceTurn {
+            reply,
+            voice: Ok(None),
+        });
+    }
+    let spoken = crate::ask::concise_for_speech(&reply);
+    match say(&spoken) {
+        Ok((samples, rate)) => Ok(VoiceTurn {
+            reply,
+            voice: Ok(Some((samples, rate))),
+        }),
+        Err(error) => Ok(VoiceTurn {
+            reply,
+            voice: Err(error),
+        }),
+    }
+}
+
 fn run_loop(
     transport: Transport,
-    config: &orator_core::OratorConfig,
     backend: orator_audio::CpalBackend,
 ) -> crate::ExitCode {
     use ratatui::backend::CrosstermBackend;
@@ -785,13 +1074,23 @@ fn run_loop(
     let mut consumer = backend.consumer;
     let mut carry: Vec<f32> = Vec::new();
     let mut remainder_16k: Vec<f32> = Vec::new();
-    // Long-lived speech handles for the run: the STT worker owns its
-    // whisper backend on its thread (no ONNX reload per utterance),
-    // and the Kokoro session persists across replies.
+    // One thin worker forwards utterances to the daemon; the TUI
+    // owns no inference backends.
     let stt_worker = SttWorker::spawn();
-    let mut tts_cache = KokoroCache::default();
     let mut transcribing: Option<TranscribeJob> = None;
+    // Voice turns ride their own worker for the same reason: `Ask`
+    // plus `Say` block on the network, and keys (barge, quit,
+    // typing) must stay live through slow turns. A cut drops the job
+    // before delivery — never stale speech after a barge.
+    let voice_worker = VoiceWorker::spawn();
+    let mut voicing_turn: Option<VoiceJob> = None;
     let mut player: Option<orator_audio::StreamPlayer> = None;
+    // Saturated-daemon cooldown: a refused transcribe sheds mic input
+    // instead of hot-looping the bound. Realtime stays lossy with a
+    // counter; the shed line itself is throttled so the transcript
+    // shows load, not spam.
+    let mut cooldown_until: Option<std::time::Instant> = None;
+    let mut last_shed_line: Option<std::time::Instant> = None;
     loop {
         if tui_loop_should_quit(&app, &shutdown) {
             tui_loop_quit_cleanup(&mut app);
@@ -799,8 +1098,12 @@ fn run_loop(
             return crate::ExitCode::Success;
         }
         // Drain capture into 16 kHz frames; the gate decides upward.
+        // Echo suppression rides the voicing flag: while the reply
+        // plays, hot spans move the meter but never buffer, so the
+        // speakers cannot become the next question.
         // The 16 kHz remainder keeps its own domain across polls (see
         // `drain_capture`): resampling never re-tags it as device-rate.
+        app.suppress_utterance = app.state.voicing;
         drain_capture(
             &mut || consumer.pop().ok(),
             &mut carry,
@@ -808,29 +1111,108 @@ fn run_loop(
             device_rate,
             &mut app,
         );
-        // Utterance complete: the gate closed over buffered hot spans.
+        // Utterance complete: the gate closed over buffered hot spans,
+        // or PTT toggled off (which endpoints even a hot VAD span).
+        // Past a saturated refusal the loop sheds instead of
+        // submitting: drop the buffer with a counter and tell the
+        // transcript (throttled), so one overloaded daemon is one
+        // line, not a hot retry loop.
+        let cooling = cooldown_until.is_some_and(|until| std::time::Instant::now() < until);
+        if cooling && !app.pending_utterance.is_empty() && !app.gate_speaking() {
+            let shed = app.take_utterance().len();
+            app.pending_dropped += shed as u64;
+            let due = last_shed_line.is_none_or(|at| {
+                at.elapsed() > std::time::Duration::from_secs(10)
+            });
+            if due {
+                last_shed_line = Some(std::time::Instant::now());
+                app.state.push_line(TuiLine::Status(format!(
+                    "daemon saturated; shedding mic input until it drains ({} sample(s) shed)",
+                    app.pending_dropped
+                )));
+            }
+        }
+        // PTT toggle-off endpoints the turn: consume the flag every
+        // poll (never stale), commit when audio actually buffered.
+        let ptt_end = std::mem::take(&mut app.ptt_commit);
         if transcribing.is_none()
+            && !cooling
             && !app.pending_utterance.is_empty()
-            && !app.gate_speaking()
+            && (!app.gate_speaking() || ptt_end)
         {
             let samples = app.take_utterance();
-            transcribing = Some(stt_worker.transcribe(samples, config, turn_abort.clone()));
+            transcribing = Some(stt_worker.transcribe(samples, transport, turn_abort.clone()));
         }
         if let Some(job) = transcribing.as_mut() {
             if let Ok(result) = job.receiver.try_recv() {
                 transcribing = None;
                 match result {
                     Ok(text) if !text.trim().is_empty() => {
-                        ask_and_voice(&mut app, &text, config, &mut player, &turn_abort, &mut tts_cache);
+                        cooldown_until = None;
+                        // The user turn shows at once; the assistant
+                        // turn arrives over the voice job below, so a
+                        // slow answer never freezes the transcript.
+                        app.event(TurnEvent::Text(text.clone()), true);
+                        let session = app.state.session.clone();
+                        voicing_turn = Some(voice_worker.turn(
+                            text,
+                            session,
+                            transport,
+                            turn_abort.clone(),
+                        ));
                     }
                     Ok(_) => {}
+                    Err(error) => {
+                        if error.to_ascii_lowercase().contains("saturated") {
+                            cooldown_until =
+                                Some(std::time::Instant::now() + std::time::Duration::from_secs(2));
+                        }
+                        app.state.push_line(TuiLine::Failure(error));
+                    }
+                }
+            }
+        }
+        // Voice turn complete: transcript first, then playout. A cut
+        // already dropped the job, so anything delivered here is fresh.
+        if let Some(job) = voicing_turn.as_mut() {
+            if let Ok(result) = job.receiver.try_recv() {
+                voicing_turn = None;
+                match result {
+                    Ok(turn) => {
+                        app.event(TurnEvent::Text(turn.reply.clone()), false);
+                        match turn.voice {
+                            Ok(Some((samples, rate))) => {
+                                match orator_audio::StreamPlayer::open(rate) {
+                                    Ok(opened) => {
+                                        player = Some(opened);
+                                        app.state.voicing = true;
+                                        if let Some(active) = player.as_ref() {
+                                            active.push(&samples);
+                                        }
+                                        app.event(TurnEvent::Audio(samples.len()), false);
+                                    }
+                                    Err(error) => {
+                                        app.state.push_line(TuiLine::Failure(format!(
+                                            "orator: {error}"
+                                        )));
+                                    }
+                                }
+                            }
+                            Ok(None) => {}
+                            Err(voice_error) => {
+                                app.state.push_line(TuiLine::Failure(voice_error));
+                            }
+                        }
+                    }
                     Err(error) => {
                         app.state.push_line(TuiLine::Failure(error));
                     }
                 }
             }
         }
-        // Playback drained: the reply finished voicing.
+        // Playback drained: the reply finished voicing. The mic
+        // buffer sheds here (echo tail) with the gate reset, so the
+        // speakers' last syllables never commit as a phantom turn.
         if app.state.voicing {
             if let Some(active) = player.as_ref() {
                 if active.played() >= active.pushed() {
@@ -838,6 +1220,7 @@ fn run_loop(
                         let _ = finished.finish();
                     }
                     app.state.voicing = false;
+                    app.shed_utterance();
                     app.event(TurnEvent::Done, false);
                 }
             } else {
@@ -848,14 +1231,16 @@ fn run_loop(
             if let Ok(Event::Key(key)) = event::read() {
                 let barged = map_key(key) == TuiAction::Barge;
                 if barged {
-                    // Barge abandons queued playout and the pending
-                    // transcript: the device stops, nothing buffered
-                    // survives the cut.
+                    // Barge abandons queued playout, the pending
+                    // transcript, and the in-flight voice turn: the
+                    // device stops, nothing buffered survives the cut,
+                    // and a late answer never delivers stale speech.
                     if let Some(abandoned) = player.take() {
                         drop(abandoned);
                     }
                     app.state.voicing = false;
                     transcribing = None;
+                    voicing_turn = None;
                 }
                 app.key(key);
                 if barged {
@@ -926,151 +1311,22 @@ fn drain_capture<C: SessionControl>(
 
 fn transcribe_samples(
     samples: &[f32],
-    backend_name: &str,
-    language: &str,
-    model: &str,
-    endpoint: &str,
+    transport: Transport,
     abort: &StreamAbort,
-    whisper: &mut WhisperCache,
 ) -> Result<String, String> {
     if abort.is_cancelled() {
         return Err("orator: transcribe aborted".to_string());
     }
-    if backend_name == "audio-server" {
-        // No abort hook on the single-shot endpoint call: the HTTP
-        // timeout bounds it, and barged results are never delivered
-        // (the worker drops them, the loop dropped the job).
-        let bundle = orator_core::default_bundle();
-        let assured = common_core::runtime::block_on(orator_s2s::ensure_audio_server(
-            endpoint, model, &bundle,
-        ));
-        let owned = match assured {
-            Ok(owned) => owned,
-            Err(error) => return Err(format!("orator: {error}")),
-        };
-        let mut session = orator_s2s::AudioSession::new(orator_s2s::S2sConfig {
-            endpoint: owned.base_url().to_string(),
-            ..orator_s2s::S2sConfig::default()
-        });
-        let outcome = session.transcribe_blocking(samples);
-        owned.release();
-        outcome.map_err(|error| format!("orator: {error}"))
-    } else if backend_name == "whisper" {
-        let Some(dir) = orator_core::models_dir() else {
-            return Err(
-                "orator: no managed model directory (HOME and XDG_DATA_HOME are unset)".to_string(),
-            );
-        };
-        let path = dir.join(format!("ggml-{model}.bin"));
-        if !path.exists() {
-            return Err(format!(
-                "orator: model missing at {} (fetch it with `orator models pull`)",
-                path.display()
-            ));
-        }
-        let backend = whisper.get_or_build(model, language, path);
-        backend
-            .decode_blocking(samples, abort)
-            .map(|segments| {
-                segments
-                    .iter()
-                    .map(|segment| segment.text.clone())
-                    .collect::<Vec<_>>()
-                    .join(" ")
-            })
-            .map_err(|error| format!("orator: {error}"))
-    } else {
-        Err(format!("orator: unknown STT backend: {backend_name}"))
-    }
-}
-
-fn ask_and_voice<C: SessionControl>(
-    app: &mut TuiApp<C>,
-    text: &str,
-    config: &orator_core::OratorConfig,
-    player: &mut Option<orator_audio::StreamPlayer>,
-    turn_abort: &StreamAbort,
-    tts: &mut KokoroCache,
-) {
-    app.event(TurnEvent::Text(text.to_string()), true);
-    let mut params = serde_json::json!({"question": text});
-    if let Some(session) = app.state.session.as_deref() {
-        params["session"] = serde_json::Value::String(session.to_string());
-    }
-    let reply = match app.control.call("Ask", params) {
-        Ok(body) => body
-            .get("reply")
-            .and_then(|value| value.as_str())
-            .unwrap_or("")
-            .to_string(),
-        Err(error) => {
-            app.state.push_line(TuiLine::Failure(error.text));
-            return;
-        }
-    };
-    app.event(TurnEvent::Text(reply.clone()), false);
-    if reply.trim().is_empty() {
-        return;
-    }
-    voice_reply(app, &reply, config, player, turn_abort, tts);
-}
-
-fn voice_reply<C: SessionControl>(
-    app: &mut TuiApp<C>,
-    reply: &str,
-    config: &orator_core::OratorConfig,
-    player: &mut Option<orator_audio::StreamPlayer>,
-    turn_abort: &StreamAbort,
-    tts: &mut KokoroCache,
-) {
-    let Some((model, voices)) = orator_tts::default_paths() else {
-        app.state.push_line(TuiLine::Failure(
-            "orator: no managed model directory (HOME and XDG_DATA_HOME are unset)".to_string(),
-        ));
-        return;
-    };
-    // Reused across replies: the session loads once, later replies
-    // synthesize against the resident weights.
-    let backend = tts.get_or_build(model, voices, &config.tts.voice, config.tts.gpu);
-    let chunks: Vec<String> = orator_tts::split_all(reply)
-        .into_iter()
-        .map(|chunk| chunk.text)
-        .collect();
-    let opened = match orator_audio::StreamPlayer::open(orator_tts::KOKORO_SAMPLE_RATE) {
-        Ok(opened) => opened,
-        Err(error) => {
-            app.state
-                .push_line(TuiLine::Failure(format!("orator: {error}")));
-            return;
-        }
-    };
-    *player = Some(opened);
-    app.state.voicing = true;
-    for chunk in &chunks {
-        if turn_abort.is_cancelled() {
-            if let Some(abandoned) = player.take() {
-                drop(abandoned);
-            }
-            app.state.voicing = false;
-            return;
-        }
-        match backend.synth_blocking(chunk) {
-            Ok(samples) => {
-                if let Some(active) = player.as_ref() {
-                    active.push(&samples);
-                }
-                app.event(TurnEvent::Audio(samples.len()), false);
-            }
-            Err(error) => {
-                app.state
-                    .push_line(TuiLine::Failure(format!("orator: local voice failed: {error}")));
-                if let Some(abandoned) = player.take() {
-                    drop(abandoned);
-                }
-                app.state.voicing = false;
-                return;
-            }
-        }
+    // Thin client: the daemon owns STT (whisper, audio-server, or
+    // supervised voice server). The TUI ships 16 kHz mono and reads
+    // text back — never inference.
+    let mut control = LiveControl::new(transport, abort.clone());
+    match control.call(
+        "Transcribe",
+        crate::transcribe::encode_transcribe_audio(samples),
+    ) {
+        Ok(body) => crate::transcribe::decode_transcribe_text(&body),
+        Err(error) => Err(error.text),
     }
 }
 

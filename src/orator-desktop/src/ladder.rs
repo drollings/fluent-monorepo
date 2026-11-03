@@ -160,7 +160,9 @@ fn attempt_rung(
             "uinput needs device-group membership".to_string(),
         )),
         Rung::OutputOnly => {
-            println!("{text}");
+            // No print here: the caller owns the single print per
+            // `--stdout`/sink policy, so headless and headed paths
+            // print exactly once through the same gate.
             Ok(Some(()))
         },
     }

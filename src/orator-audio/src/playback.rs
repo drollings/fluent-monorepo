@@ -71,15 +71,19 @@ pub fn play_blocking(samples: &[f32], rate: u32) -> Result<(), AudioError> {
         )?
     };
     // Exact drain: poll the callback cursor until the buffer is
-    // consumed, bounded by samples/rate + 1 s so a stalled device
-    // fails closed instead of holding the turn.
+    // consumed, bounded by samples/rate + 1 s. A stall fails closed
+    // with the undrained count instead of reporting a truncated turn
+    // as success.
     let ceiling = std::time::Duration::from_secs_f64(
         samples.len() as f64 / f64::from(rate.max(1)) + 1.0,
     );
     let deadline = std::time::Instant::now() + ceiling;
     while cursor.load(Ordering::Relaxed) < samples.len() {
         if std::time::Instant::now() >= deadline {
-            break;
+            return Err(AudioError::Stream(format!(
+                "playout stalled with {} sample(s) undrained",
+                samples.len().saturating_sub(cursor.load(Ordering::Relaxed))
+            )));
         }
         std::thread::sleep(std::time::Duration::from_millis(10));
     }

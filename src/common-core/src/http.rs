@@ -11,12 +11,17 @@ static SHARED: OnceLock<reqwest::Client> = OnceLock::new();
 
 /// Returns a process-wide shared `reqwest::Client` with sensible defaults.
 /// Amortizes TLS handshakes and connection pool setup across all callers.
+/// Proxy env is ignored (local inference never proxies) and redirects
+/// are not followed automatically — callers that need them (WebFetch)
+/// follow manually with a per-hop SSRF re-check.
 pub fn shared_http_client() -> &'static reqwest::Client {
     SHARED.get_or_init(|| {
         reqwest::Client::builder()
             .user_agent(concat!("common-core/", env!("CARGO_PKG_VERSION")))
             .connect_timeout(Duration::from_secs(10))
             .timeout(Duration::from_secs(30))
+            .no_proxy()
+            .redirect(reqwest::redirect::Policy::none())
             .build()
             .expect("build shared reqwest client")
     })

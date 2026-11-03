@@ -194,15 +194,17 @@ pub fn socket_preflight_warning(path: &std::path::Path) -> Option<String> {
     }
 }
 
-/// Encode one request frame.
-#[must_use]
-pub fn encode_request(request: &WireRequest) -> Vec<u8> {
-    let body = serde_json::to_vec(request).unwrap_or_default();
-    SocketFrame {
+/// Encode one request frame. A `WireRequest` (string/number fields
+/// only) always serializes; the error propagates instead of an empty
+/// body desyncing the frame.
+pub fn encode_request(request: &WireRequest) -> Result<Vec<u8>, String> {
+    let body =
+        serde_json::to_vec(request).map_err(|error| format!("orator: request encode failed: {error}"))?;
+    Ok(SocketFrame {
         kind: MessageType::Request,
         body,
     }
-    .encode()
+    .encode())
 }
 
 /// Decode one reply frame from exact wire bytes.
@@ -324,7 +326,8 @@ pub fn call_ws_at(
         method: valid.method,
         params,
     };
-    let bytes = encode_request(&envelope);
+    let bytes = encode_request(&envelope)
+        .map_err(|error| CallFailure::lined(ExitCode::Error, error))?;
     common_core::runtime::block_on_shared(async {
         let (mut ws, _) = tokio_tungstenite::connect_async(request).await.map_err(|error| {
             // A 401/403 means the daemon is there and refused (bad
@@ -395,7 +398,10 @@ pub(crate) fn map_connect_error(path: &std::path::Path, error: &std::io::Error) 
 }
 
 /// Quiet core of [`daemon_call_at`]: same framing, same envelopes, no
-/// printing — the caller renders `text`.
+/// printing — the caller renders `text`. Fails closed on a preflight
+/// mismatch (wrong uid/mode) unless the explicit `ORATOR_INSECURE=1`
+/// override (or the `--insecure` flag that sets it) is present; the
+/// warning text stays the remedy.
 pub fn call_socket_at(
     path: &std::path::Path,
     method: &str,
@@ -403,7 +409,10 @@ pub fn call_socket_at(
 ) -> Result<serde_json::Value, CallFailure> {
     let valid = OutboundRequest::new(method).map_err(|_| CallFailure::silent(ExitCode::Usage))?;
     if let Some(warning) = socket_preflight_warning(path) {
-        eprintln!("{warning}");
+        if std::env::var("ORATOR_INSECURE").unwrap_or_default() != "1" {
+            return Err(CallFailure::lined(ExitCode::Error, warning));
+        }
+        eprintln!("{warning} (override ORATOR_INSECURE=1)");
     }
     let timeout = socket_timeout_for(valid.method.as_str());
     let mut stream = UnixStream::connect(path).map_err(|error| map_connect_error(path, &error))?;
@@ -418,7 +427,8 @@ pub fn call_socket_at(
         method: valid.method,
         params,
     };
-    let bytes = encode_request(&request);
+    let bytes = encode_request(&request)
+        .map_err(|error| CallFailure::lined(ExitCode::Error, error))?;
     stream.write_all(&bytes).map_err(|error| {
         CallFailure::lined(ExitCode::Error, write_failed_text(&error.to_string()))
     })?;
@@ -436,13 +446,15 @@ pub fn call_socket_at(
 }
 
 /// Per-method socket budgets: control calls stay at 10 s; voice
-/// calls (`VoiceEndpoint`/`Say`/`Ask`) get a longer bound with
-/// progress rendered by the caller. One overall chain budget in the
-/// caller bounds stacked worker/stream/boot timeouts.
+/// calls (`VoiceEndpoint`/`Say`/`Ask`) get a longer bound covering a
+/// cold supervised boot plus one turn (progress renders through
+/// `BootContention` for siblings, but the first caller holds the
+/// handler for the whole boot). One overall chain budget in the caller
+/// bounds stacked worker/stream/boot timeouts.
 #[must_use]
 pub fn socket_timeout_for(method: &str) -> Duration {
     match method {
-        "VoiceEndpoint" | "Say" | "Ask" => Duration::from_secs(30),
+        "VoiceEndpoint" | "Say" | "Ask" => Duration::from_secs(300),
         _ => Duration::from_secs(10),
     }
 }

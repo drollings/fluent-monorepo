@@ -5,6 +5,7 @@ edition.workspace = true
 autotests = false
 
 [dependencies]
+base64 = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 clap_complete = { workspace = true }
 common-core = { path = "../common-core", features = ["http"] }
@@ -13,7 +14,6 @@ fluent-llm = { path = "../llm" }
 fluent-wvr = { path = "../fluent-wvr" }
 futures-util = { workspace = true }
 orator-audio = { path = "../orator-audio" }
-orator-bench = { path = "../orator-bench" }
 orator-core = { path = "../orator-core" }
 orator-desktop = { path = "../orator-desktop" }
 orator-llm = { path = "../orator-llm" }
@@ -33,7 +33,7 @@ orator-daemon = { path = "../orator-daemon" }
 orator-diar = { path = "../orator-diar" }
 orator-notes = { path = "../orator-notes" }
 orator-store = { path = "../orator-store" }
-base64 = { workspace = true }
+async-trait = { workspace = true }
 httpmock = { workspace = true }
 tempfile = { workspace = true }
 

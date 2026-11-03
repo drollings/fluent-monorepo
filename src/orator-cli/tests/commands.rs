@@ -28,6 +28,12 @@ fn not_implemented_refusal_is_error() {
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("orator.sock");
     let listener = std::os::unix::net::UnixListener::bind(&path).expect("bind");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
+            .expect("mock socket owner-only");
+    }
     let server = std::thread::spawn(move || {
         let (mut stream, _) = listener.accept().expect("accept");
         let mut header = [0u8; 5];

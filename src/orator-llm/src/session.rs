@@ -70,18 +70,25 @@ pub struct HttpSession {
 }
 
 impl HttpSession {
-    /// Session over a fresh default queue pointed at `endpoint_base`.
+    /// Session over the process-wide shared queue pointed at
+    /// `endpoint_base`. One queue per process (two workers, bounded
+    /// capacity); sessions stay per turn, so one-question ownership in
+    /// the CLI keeps its cost model while concurrent turns share worker
+    /// slots instead of oversubscribing a worker pair per question.
     #[must_use]
     pub fn open(endpoint_base: &str, model: &str, ctx_tokens: usize, n_batch: usize) -> Self {
-        let queue = build_default_queue(
-            fluent_concurrency::tokio_runtime(),
-            &LlmQueueConfig {
-                worker_count: 2,
-                queue_capacity: 64,
-            },
-        );
+        static SHARED_QUEUE: std::sync::LazyLock<Arc<LlmRequestQueue>> =
+            std::sync::LazyLock::new(|| {
+                build_default_queue(
+                    fluent_concurrency::tokio_runtime(),
+                    &LlmQueueConfig {
+                        worker_count: 2,
+                        queue_capacity: 64,
+                    },
+                )
+            });
         Self::with_queue(
-            queue,
+            Arc::clone(&SHARED_QUEUE),
             SessionConfig {
                 endpoint_base: endpoint_base.to_string(),
                 model: model.to_string(),

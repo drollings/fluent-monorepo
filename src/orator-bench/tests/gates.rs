@@ -41,3 +41,23 @@ fn drops_realtime_and_memory_fail() {
     assert!(gate(&log, Profile::Gpu, 100, 790, 0, high_water).is_err());
     assert!(gate(&log, Profile::Gpu, 2000, 790, 0, u64::MAX).is_err());
 }
+
+#[test]
+fn late_breach_reports_its_own_ceiling_first() {
+    // Earliest-ceiling reporting: when only a late pipeline stage
+    // blows, the gate names that stage with its numbers — never an
+    // earlier stage and never a bare pass/fail.
+    let mut late = turn();
+    for step in &mut late.steps {
+        if step.stage == "tts_first_audio" {
+            step.latency_ms = 500;
+        }
+    }
+    let (log, high_water) = run_scenario(&late);
+    let error = gate(&log, Profile::Gpu, 2000, 1290, 0, high_water).expect_err("late breach fails");
+    assert!(
+        error.to_string().contains("tts_first_audio")
+            && error.to_string().contains("500 ms"),
+        "earliest blown ceiling reports itself: {error}"
+    );
+}

@@ -215,7 +215,7 @@ fn n_session_contention_measures_refusal_and_completion() {
                 let turn_began = began.elapsed().as_millis() as u64;
                 match owner.say_via(&url, "hello", None) {
                     Ok((samples, _)) => {
-                        assert_eq!(samples, 1);
+                        assert_eq!(samples.len(), 1);
                         completed.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                         common_core::sync::lock(done_ms)
                             .push(began.elapsed().as_millis() as u64 - turn_began);

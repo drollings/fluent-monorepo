@@ -82,7 +82,7 @@ fn say_against_scripted_audio_server() {
     let (samples, rate) = owner
         .say_via(&server.base_url(), "hello", None)
         .expect("scripted speak runs");
-    assert_eq!(samples, 1);
+    assert_eq!(samples.len(), 1);
     assert_eq!(rate, orator_s2s::AUDIO_OUT_RATE);
     owner.shutdown();
 }
@@ -186,5 +186,126 @@ fn toggle_dictation_enable_starts_dictation() {
     assert!(active);
     let id = session.expect("session id");
     assert!(owner.list_sessions().contains(&id));
+    owner.shutdown();
+}
+
+#[test]
+fn transcribe_against_scripted_audio_server() {
+    let server = httpmock::MockServer::start();
+    server.mock(|when, then| {
+        when.method("POST").path("/v1/chat/completions");
+        then.status(200).body(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"hello there\"}}]}\n\
+             data: [DONE]\n",
+        );
+    });
+    let owner = VoiceOwner::disabled();
+    let text = owner
+        .transcribe_via(&server.base_url(), &[0.5; 1600], None)
+        .expect("scripted transcribe runs");
+    assert_eq!(text, "hello there");
+    owner.shutdown();
+}
+
+#[test]
+fn transcribe_silence_is_empty_not_a_failure() {
+    let owner = VoiceOwner::disabled();
+    let text = owner
+        .transcribe_blocking(&[0.0; 1600], None)
+        .expect("silence transcribes");
+    assert_eq!(text, "");
+    owner.shutdown();
+}
+
+#[test]
+fn transcribe_over_bound_refuses_before_inference() {
+    let owner = VoiceOwner::disabled();
+    let error = owner
+        .transcribe_blocking(&vec![0.5; crate::voice::MAX_TRANSCRIBE_SAMPLES + 1], None)
+        .expect_err("over-bound refuses");
+    assert!(error.to_string().contains("exceeds the single-frame bound"), "{error}");
+    owner.shutdown();
+}
+
+#[test]
+fn ask_with_session_builds_context_across_turns() {
+    fn chat_reply(text: &str) -> String {
+        serde_json::json!({ "choices": [{ "message": { "content": text } }] }).to_string()
+    }
+    // HttpSession fronts a process-wide queue whose workers spawn on
+    // first use: seed it inside a runtime before the sync `ask_via`
+    // path touches it (production always has one; tests do not).
+    common_core::runtime::block_on_shared(async {
+        let _seed = orator_llm::HttpSession::open("http://127.0.0.1:1", "m", 8192, 512);
+    });
+    let server = httpmock::MockServer::start();
+    let mut first = server.mock(|when, then| {
+        when.method("POST").path("/chat/completions");
+        then.status(200).body(chat_reply("reply-one"));
+    });
+    let owner = VoiceOwner::disabled();
+    let id = owner.start_session("assistant").expect("start");
+    let reply = owner
+        .ask_via(&server.base_url(), "m", 8192, 512, "question-one", Some(&id))
+        .expect("first turn runs");
+    assert_eq!(reply, "reply-one");
+    assert_eq!(first.hits(), 1);
+    first.delete();
+    // The second turn must carry the first reply as context: the only
+    // mock requires it in the request body.
+    let mut second = server.mock(|when, then| {
+        when.method("POST")
+            .path("/chat/completions")
+            .body_contains("reply-one");
+        then.status(200).body(chat_reply("reply-two"));
+    });
+    let reply = owner
+        .ask_via(&server.base_url(), "m", 8192, 512, "question-two", Some(&id))
+        .expect("second turn carries history");
+    assert_eq!(reply, "reply-two");
+    assert_eq!(second.hits(), 1);
+    // History is text-only and dies with the session: after stop the
+    // same id carries no context, so a mock requiring the old reply
+    // in the body no longer matches (terminal Backend, never a
+    // fabricated answer).
+    owner.stop_session(&id).expect("stop");
+    second.delete();
+    let historical = server.mock(|when, then| {
+        when.method("POST")
+            .path("/chat/completions")
+            .body_contains("reply-one");
+        then.status(200).body(chat_reply("stale"));
+    });
+    let error = owner
+        .ask_via(&server.base_url(), "m", 8192, 512, "question-three", Some(&id))
+        .expect_err("dropped history matches nothing");
+    assert!(
+        matches!(error, crate::voice::VoiceError::Backend(_)),
+        "history-free prompt misses the mock: {error}"
+    );
+    assert_eq!(historical.hits(), 0);
+    owner.shutdown();
+}
+
+#[test]
+fn ask_without_session_stays_stateless() {
+    fn chat_reply(text: &str) -> String {
+        serde_json::json!({ "choices": [{ "message": { "content": text } }] }).to_string()
+    }
+    common_core::runtime::block_on_shared(async {
+        let _seed = orator_llm::HttpSession::open("http://127.0.0.1:1", "m", 8192, 512);
+    });
+    let server = httpmock::MockServer::start();
+    server.mock(|when, then| {
+        when.method("POST").path("/chat/completions");
+        then.status(200).body(chat_reply("stateless"));
+    });
+    let owner = VoiceOwner::disabled();
+    for _ in 0..2 {
+        let reply = owner
+            .ask_via(&server.base_url(), "m", 8192, 512, "ping", None)
+            .expect("stateless turn runs");
+        assert_eq!(reply, "stateless");
+    }
     owner.shutdown();
 }

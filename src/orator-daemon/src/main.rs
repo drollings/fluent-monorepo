@@ -51,7 +51,17 @@ async fn main() {
         );
         std::process::exit(1);
     };
-    let (daemon_config, _) = orator_core::config::load_hierarchical();
+    let (daemon_config, config_source) = orator_core::config::load_hierarchical();
+    if config_source.is_file() {
+        let removed = orator_core::config::removed_audio_keys(&config_source);
+        if !removed.is_empty() {
+            eprintln!(
+                "oratord: audio.{} removed from the config (no capture path or AEC gate ever read it); delete the key",
+                removed.join(", audio.")
+            );
+            std::process::exit(2);
+        }
+    }
     let voice = std::sync::Arc::new(orator_daemon::voice::VoiceOwner::new(&daemon_config));
     let serve_path = path.clone();
     let server = {

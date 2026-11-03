@@ -71,6 +71,30 @@ fn uniform_marks_cover_and_order() {
 fn empty_text_yields_no_marks() {
     assert!(uniform_marks("   ", 2400, KOKORO_SAMPLE_RATE).is_empty());
     assert!(uniform_marks("hi", 0, KOKORO_SAMPLE_RATE).is_empty());
+    assert!(uniform_marks("hi", 2400, 0).is_empty());
+}
+
+#[test]
+fn long_tail_marks_stay_ordered_and_cover_exactly() {
+    // A no-pause run keeps every word through the safety chunker, and
+    // marks over a long span still partition it exactly, in order.
+    let text = "word ".repeat(200);
+    let chunks = crate::splitter::split_all(&text);
+    let mut covered = 0usize;
+    for chunk in &chunks {
+        let words: Vec<&str> = chunk.text.split_whitespace().collect();
+        assert!(!words.is_empty(), "re-chunks keep words");
+        covered += words.len();
+    }
+    assert_eq!(covered, 200, "safety chunking never loses words");
+    let marks = uniform_marks(&text, 48_000, KOKORO_SAMPLE_RATE);
+    assert_eq!(marks.len(), 200);
+    assert_eq!(marks.first().expect("first mark").start_samples, 0);
+    assert_eq!(marks.last().expect("last mark").end_samples, 48_000);
+    for pair in marks.windows(2) {
+        assert!(pair[0].start_samples < pair[1].start_samples);
+        assert_eq!(pair[0].end_samples, pair[1].start_samples);
+    }
 }
 
 #[test]

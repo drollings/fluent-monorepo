@@ -31,8 +31,8 @@ fn cli_method_set_equals_wire_contract() {
     let cli: HashSet<&str> = Cli::methods().into_iter().collect();
     let wired: HashSet<&str> = METHOD_NAMES.into_iter().collect();
     assert_eq!(cli, wired);
-    assert_eq!(METHOD_NAMES.len(), 11);
-    assert_eq!(DISPATCH_METHODS.len(), 11);
+    assert_eq!(METHOD_NAMES.len(), 13);
+    assert_eq!(DISPATCH_METHODS.len(), 13);
     for method in ["StopDaemon", "Reload"] {
         OutboundRequest::new(method).expect("lifecycle methods build");
     }

@@ -7,7 +7,6 @@
 //! router's `AuditRecord`. File paths additionally pass the
 //! check-then-open guard.
 
-use std::collections::HashMap;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -63,14 +62,25 @@ pub struct GuardedConfig {
     pub max_address_kb: u64,
     /// Pinned `PATH` for every child.
     pub path: String,
-    /// Directory-cache time-to-live. Stale entries re-resolve.
+    /// Legacy directory-cache TTL. Retained for config compatibility;
+    /// authorization never consults a cache (every open re-resolves).
     pub dir_cache_ttl: std::time::Duration,
+}
+
+/// Private jail root: `~/.local/share/orator/sandbox`. Fail-closed
+/// sentinel (empty relative path, rejected by `new`) when no home
+/// resolves — never `/tmp`, never the current directory.
+#[must_use]
+pub fn default_sandbox_root() -> PathBuf {
+    orator_core::paths::home_dir()
+        .map(|home| home.join(".local/share/orator/sandbox"))
+        .unwrap_or_default()
 }
 
 impl Default for GuardedConfig {
     fn default() -> Self {
         Self {
-            root: PathBuf::from("/tmp"),
+            root: default_sandbox_root(),
             timeout_ms: 15_000,
             max_address_kb: 2 * 1024 * 1024,
             path: "/usr/bin:/bin".to_string(),
@@ -94,26 +104,33 @@ pub struct ExecResult {
 pub struct Guarded {
     config: GuardedConfig,
     audit: Mutex<Vec<ToolAudit>>,
-    dir_cache: Mutex<HashMap<PathBuf, CachedDir>>,
-}
-
-/// One cached directory resolution with insertion time and source mtime.
-#[derive(Debug, Clone)]
-struct CachedDir {
-    canonical: PathBuf,
-    inserted: Instant,
-    mtime: Option<std::time::SystemTime>,
 }
 
 impl Guarded {
-    /// Executor over `config`. Creates the jail root when missing.
+    /// Executor over `config`. Creates the jail root when missing with
+    /// owner-only permissions. Rejects relative roots, the bare `/tmp`
+    /// root, and the no-home sentinel — all fail closed before any tool
+    /// runs.
     pub fn new(config: GuardedConfig) -> Result<Self, WithinError> {
+        if !config.root.is_absolute() {
+            return Err(WithinError::Missing(config.root.display().to_string()));
+        }
+        if config.root == std::path::Path::new("/tmp") {
+            return Err(WithinError::Escape(config.root.display().to_string()));
+        }
         std::fs::create_dir_all(&config.root)
             .map_err(|_| WithinError::Missing(config.root.display().to_string()))?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            let _ = std::fs::set_permissions(
+                &config.root,
+                std::fs::Permissions::from_mode(0o700),
+            );
+        }
         Ok(Self {
             config,
             audit: Mutex::new(Vec::new()),
-            dir_cache: Mutex::new(HashMap::new()),
         })
     }
 
@@ -126,32 +143,23 @@ impl Guarded {
     /// Check-then-open guard: normalize `path`, resolve symlinks with a
     /// hop cap, verify containment in the jail root. Returns the
     /// canonical path for opening. Yet-uncreated paths resolve through
-    /// their nearest existing ancestor (writes must pass too).
+    /// their nearest existing ancestor (writes must pass too). Both the
+    /// ancestor walk and the tail re-attachment are hop-capped with a
+    /// containment check per hop and `..` normalized per join, so
+    /// `a/../../x` and chained `b->c->outside` both refuse.
     pub fn within(&self, path: &Path) -> Result<PathBuf, WithinError> {
         let joined = if path.is_absolute() {
             path.to_path_buf()
         } else {
             self.config.root.join(path)
         };
-        // Lexical normalize first: `..` past the root fails fast without
-        // touching the filesystem.
-        let mut normal = PathBuf::new();
-        for component in joined.components() {
-            match component {
-                Component::ParentDir => {
-                    if !normal.pop() {
-                        return Err(WithinError::Escape(path.display().to_string()));
-                    }
-                }
-                Component::CurDir => {}
-                other => normal.push(other.as_os_str()),
-            }
-        }
+        let normal = normalize_lexical(&joined)
+            .ok_or_else(|| WithinError::Escape(path.display().to_string()))?;
         if !normal.starts_with(&self.config.root) {
             return Err(WithinError::Escape(path.display().to_string()));
         }
         // Nearest existing ancestor anchors the symlink walk; the
-        // remainder re-attaches lexically afterwards.
+        // remainder re-attaches one component at a time below.
         let mut ancestor = normal.clone();
         let mut tail: Vec<std::ffi::OsString> = Vec::new();
         while std::fs::symlink_metadata(&ancestor).is_err() {
@@ -163,40 +171,18 @@ impl Guarded {
                 None => return Err(WithinError::Missing(normal.display().to_string())),
             }
         }
-        let mut current = ancestor;
-        for _ in 0..MAX_SYMLINK_HOPS {
-            let metadata = std::fs::symlink_metadata(&current)
-                .map_err(|_| WithinError::Missing(current.display().to_string()))?;
-            if !metadata.file_type().is_symlink() {
-                break;
-            }
-            let target = std::fs::read_link(&current)
-                .map_err(|_| WithinError::Missing(current.display().to_string()))?;
-            if target.is_absolute() {
-                current = target;
-            } else {
-                current = match current.parent() {
-                    Some(dir) => dir.join(&target),
-                    None => target,
-                };
-            }
-        }
-        if std::fs::symlink_metadata(&current)
-            .is_ok_and(|metadata| metadata.file_type().is_symlink())
-        {
-            return Err(WithinError::HopCap(path.display().to_string()));
-        }
+        let mut current =
+            resolve_symlink_chain(&ancestor, &self.config.root, path, MAX_SYMLINK_HOPS)?;
+        let mut remaining = MAX_SYMLINK_HOPS;
         for part in tail.into_iter().rev() {
-            // A symlinked tail component re-anchors: resolve one more hop.
             let next = current.join(&part);
-            if let Ok(target) = std::fs::read_link(&next) {
-                current = if target.is_absolute() {
-                    target
-                } else {
-                    current.join(target)
-                };
-            } else {
-                current = next;
+            current = resolve_symlink_chain(&next, &self.config.root, path, remaining)?;
+            // `resolve_symlink_chain` on a non-symlink normalizes the
+            // join (so `..` in a link target cannot skip out) and checks
+            // containment; a hop consumed above shrinks the budget.
+            remaining = remaining.saturating_sub(1);
+            if remaining == 0 && is_symlink(&current) {
+                return Err(WithinError::HopCap(path.display().to_string()));
             }
         }
         if !current.starts_with(&self.config.root) {
@@ -205,50 +191,25 @@ impl Guarded {
         Ok(current)
     }
 
-    /// Memoized real directory for `dir` with a bounded time-to-live
-    /// plus ancestor-change invalidation. A hit returns only when the
-    /// entry is fresh and the source mtime still matches; replacement of
-    /// the directory re-resolves instead of serving a stale jail path.
+    /// Display-only directory resolution: re-resolves on every call and
+    /// never caches. Authorization always goes through `within` plus
+    /// `open_within` (fd re-validation), so a replaced directory can
+    /// never serve a stale jail path.
     #[must_use]
     pub fn real_dir(&self, dir: &Path) -> Option<PathBuf> {
-        let now = Instant::now();
-        let current_mtime = std::fs::symlink_metadata(dir).ok()?.modified().ok();
-        if let Some(hit) = common_core::sync::lock(&self.dir_cache).get(dir).cloned() {
-            if now.duration_since(hit.inserted) <= self.config.dir_cache_ttl
-                && hit.mtime == current_mtime
-            {
-                return Some(hit.canonical);
-            }
-        }
         let canonical = std::fs::canonicalize(dir).ok()?;
         if !canonical.starts_with(&self.config.root) {
             return None;
         }
-        let mut cache = common_core::sync::lock(&self.dir_cache);
-        if cache.len() >= MAX_DIR_CACHE_ENTRIES {
-            if let Some(oldest) = cache
-                .iter()
-                .min_by_key(|(_, entry)| entry.inserted)
-                .map(|(key, _)| key.clone())
-            {
-                cache.remove(&oldest);
-            }
-        }
-        cache.insert(
-            dir.to_path_buf(),
-            CachedDir {
-                canonical: canonical.clone(),
-                inserted: now,
-                mtime: current_mtime,
-            },
-        );
         Some(canonical)
     }
 
     /// Open `path` inside the jail and validate the opened handle.
     /// Check-then-open alone races a symlink swap; this opens first and
     /// then re-validates the file the descriptor points at, refusing
-    /// anything that now resolves outside the jail.
+    /// anything that now resolves outside the jail. An unreadable
+    /// descriptor path (masked `/proc`) refuses instead of falling back
+    /// to the pre-open candidate.
     pub fn open_within(
         &self,
         path: &Path,
@@ -258,11 +219,70 @@ impl Guarded {
         let file = options
             .open(&candidate)
             .map_err(|_| WithinError::Missing(path.display().to_string()))?;
-        let real = real_path_of(&file).unwrap_or_else(|_| candidate.clone());
-        if !real.starts_with(&self.config.root) {
-            return Err(WithinError::Escape(path.display().to_string()));
-        }
+        let real = real_path_of(&file).map_err(|error| error.to_string());
+        let _ = check_fd_containment(real, &candidate, &self.config.root)?;
         Ok(file)
+    }
+
+    /// Create the parent directories of an already-validated `candidate`
+    /// without following a swapped symlink outside the jail. Each prefix
+    /// is checked for symlink-ness before its child is created; any
+    /// escape removes the directories this call created and refuses.
+    pub fn mkdir_parents_inside(&self, candidate: &Path) -> Result<(), WithinError> {
+        let Some(parent) = candidate.parent() else {
+            return Ok(());
+        };
+        if parent.starts_with(&self.config.root) && parent.exists() {
+            // Fast path still refuses a symlinked parent.
+            if is_symlink(parent) {
+                return Err(WithinError::Escape(candidate.display().to_string()));
+            }
+            return Ok(());
+        }
+        // Collect the missing chain from the root down.
+        let mut missing: Vec<PathBuf> = Vec::new();
+        let mut cursor = parent.to_path_buf();
+        while !cursor.exists() {
+            missing.push(cursor.clone());
+            let Some(up) = cursor.parent().map(Path::to_path_buf) else {
+                break;
+            };
+            if !up.starts_with(&self.config.root) {
+                return Err(WithinError::Escape(candidate.display().to_string()));
+            }
+            cursor = up;
+        }
+        // The existing anchor must itself be inside and not a symlink;
+        // otherwise creating below it would land outside.
+        if is_symlink(&cursor) || !cursor.starts_with(&self.config.root) {
+            return Err(WithinError::Escape(candidate.display().to_string()));
+        }
+        let mut created: Vec<PathBuf> = Vec::new();
+        for dir in missing.into_iter().rev() {
+            // Re-check the parent before each level: a concurrent swap
+            // to a symlink refuses instead of following outside.
+            if let Some(up) = dir.parent() {
+                if is_symlink(up) {
+                    for done in created.into_iter().rev() {
+                        let _ = std::fs::remove_dir(&done);
+                    }
+                    return Err(WithinError::Escape(candidate.display().to_string()));
+                }
+            }
+            match std::fs::create_dir(&dir) {
+                Ok(()) => created.push(dir),
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+                Err(_) => {
+                    // Lost a race with another creator: re-validate the
+                    // full candidate before proceeding.
+                    let _ = self.within(candidate.strip_prefix(&self.config.root).unwrap_or(candidate))?;
+                }
+            }
+        }
+        // Final re-validation: the whole candidate must still resolve
+        // inside after the mkdirs.
+        let _ = self.within(candidate.strip_prefix(&self.config.root).unwrap_or(candidate))?;
+        Ok(())
     }
 
     /// Run `argv` under the guard. `tool` names the audit row.
@@ -385,8 +405,8 @@ impl Guarded {
 }
 
 /// Resolve the filesystem path a live descriptor points at via
-/// `/proc/self/fd`. Falls back to an error when the platform link is
-/// unreadable so callers keep their pre-open candidate.
+/// `/proc/self/fd`. Errors (masked `/proc`, closed fd) fail closed in
+/// `open_within` — never a fallback to the pre-open candidate.
 fn real_path_of(file: &std::fs::File) -> Result<PathBuf, std::io::Error> {
     use std::os::unix::io::AsRawFd as _;
     let fd = file.as_raw_fd();
@@ -397,6 +417,92 @@ fn real_path_of(file: &std::fs::File) -> Result<PathBuf, std::io::Error> {
         .unwrap_or(&text)
         .to_string();
     Ok(PathBuf::from(trimmed))
+}
+
+/// Fail-closed fd decision: an unresolvable descriptor refuses, an
+/// outside target refuses even when the pre-open candidate was inside.
+/// Split out so the masked-`/proc` case is pinned without masking the
+/// host's `/proc`.
+pub fn check_fd_containment(
+    real: Result<PathBuf, String>,
+    candidate: &Path,
+    root: &Path,
+) -> Result<PathBuf, WithinError> {
+    let path = real.map_err(|_| WithinError::Escape(candidate.display().to_string()))?;
+    if path.starts_with(root) {
+        Ok(path)
+    } else {
+        Err(WithinError::Escape(candidate.display().to_string()))
+    }
+}
+
+/// Lexically normalize `path` (`..` pops, `.` drops, `//` collapses).
+/// Returns `None` when `..` would escape the filesystem root.
+fn normalize_lexical(path: &Path) -> Option<PathBuf> {
+    let mut normal = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::ParentDir => {
+                if !normal.pop() {
+                    return None;
+                }
+            }
+            Component::CurDir => {}
+            other => normal.push(other.as_os_str()),
+        }
+    }
+    Some(normal)
+}
+
+/// Whether `path` is itself a symlink (never follows).
+fn is_symlink(path: &Path) -> bool {
+    std::fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_symlink())
+}
+
+/// Chase symlinks at `start` up to `hops`, normalizing `..` per join
+/// and checking containment per hop. Non-symlinks normalize the join
+/// and check once. Exhausting the budget on a symlink is `HopCap`;
+/// leaving the jail is `Escape`.
+fn resolve_symlink_chain(
+    start: &Path,
+    root: &Path,
+    original: &Path,
+    hops: u32,
+) -> Result<PathBuf, WithinError> {
+    // Normalize the join itself so `..` in a link target cannot skip
+    // out before the containment check runs.
+    let mut current = normalize_lexical(start)
+        .ok_or_else(|| WithinError::Escape(original.display().to_string()))?;
+    if !current.starts_with(root) {
+        return Err(WithinError::Escape(original.display().to_string()));
+    }
+    for _ in 0..hops {
+        if !is_symlink(&current) {
+            return Ok(current);
+        }
+        let target = std::fs::read_link(&current)
+            .map_err(|_| WithinError::Missing(original.display().to_string()))?;
+        let joined = if target.is_absolute() {
+            target
+        } else {
+            match current.parent() {
+                Some(dir) => dir.join(&target),
+                None => target,
+            }
+        };
+        current = normalize_lexical(&joined)
+            .ok_or_else(|| WithinError::Escape(original.display().to_string()))?;
+        if !current.starts_with(root) {
+            return Err(WithinError::Escape(original.display().to_string()));
+        }
+    }
+    if is_symlink(&current) {
+        return Err(WithinError::HopCap(original.display().to_string()));
+    }
+    if !current.starts_with(root) {
+        return Err(WithinError::Escape(original.display().to_string()));
+    }
+    Ok(current)
 }
 
 /// Timeout-kill binary: absolute path when present, `PATH` lookup

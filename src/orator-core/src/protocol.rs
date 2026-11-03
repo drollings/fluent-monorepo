@@ -68,7 +68,9 @@ impl MessageType {
 /// Method names accepted in `Request` bodies and over D-Bus: the wire
 /// contract both sides speak. The CLI builds requests only from this
 /// set; the daemon answers each with work or a named refusal.
-pub const METHOD_NAMES: [&str; 11] = [
+/// `Transcribe` lets thin clients (the TUI) turn captured audio into
+/// text through the daemon instead of owning inference.
+pub const METHOD_NAMES: [&str; 13] = [
     "StartSession",
     "StopSession",
     "Interrupt",
@@ -80,6 +82,8 @@ pub const METHOD_NAMES: [&str; 11] = [
     "VoiceEndpoint",
     "StopDaemon",
     "Reload",
+    "Approve",
+    "Transcribe",
 ];
 
 /// Accept `method` iff it belongs to the wire contract.

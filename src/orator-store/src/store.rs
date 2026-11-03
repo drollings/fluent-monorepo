@@ -112,8 +112,20 @@ impl InstanceLock {
     /// a stale socket file is unlinked and the bind retried in a
     /// bounded loop (a racing starter may win the unlink window).
     /// Hardening failures refuse instead of failing open; symlinks
-    /// refuse; unlink errors propagate.
+    /// refuse; unlink errors propagate. Every component is lstat-ed
+    /// (symlink parents refuse), and the path is re-lstat-ed after
+    /// `remove_file` so a swapped-in link cannot ride the retry.
     pub fn acquire(runtime_dir: &Path, socket_name: &str) -> Result<Self, OpenError> {
+        // Lstat before mkdir: a symlink parent refuses before creating
+        // anything outside the jail.
+        if orator_core::paths::has_symlink_parent(runtime_dir)
+            || orator_core::paths::has_symlink_parent(&runtime_dir.join(socket_name))
+        {
+            return Err(OpenError::Store(format!(
+                "runtime dir {} is a symlink or under one; refusing (remove it)",
+                runtime_dir.display()
+            )));
+        }
         std::fs::create_dir_all(runtime_dir)
             .map_err(|error| OpenError::Store(format!("mkdir {}: {error}", runtime_dir.display())))?;
         #[cfg(unix)]
@@ -129,9 +141,9 @@ impl InstanceLock {
             )?;
         }
         let path = runtime_dir.join(socket_name);
-        if path.is_symlink() {
+        if orator_core::paths::has_symlink_parent(&path) {
             return Err(OpenError::Store(format!(
-                "socket path {} is a symlink; refusing (remove it)",
+                "socket path {} is a symlink or under one; refusing (remove it)",
                 path.display()
             )));
         }
@@ -157,6 +169,16 @@ impl InstanceLock {
                             path.display()
                         ))
                     })?;
+                    // Re-lstat after unlink: a swapped-in link refuses
+                    // instead of riding the retry.
+                    if orator_core::paths::has_symlink_parent(&path)
+                        || std::fs::symlink_metadata(&path).is_ok()
+                    {
+                        return Err(OpenError::Store(format!(
+                            "socket path {} reappeared as a link after unlink; refusing",
+                            path.display()
+                        )));
+                    }
                     attempts += 1;
                 }
                 Err(error) => {
@@ -171,12 +193,20 @@ impl InstanceLock {
 }
 
 /// Copy `db_path` to a timestamped sibling. Best-effort: a failed
-/// backup refuses to migrate rather than risking the file.
+/// backup refuses to migrate rather than risking the file. The process
+/// id plus a per-process sequence ride along so two migrates in the
+/// same second never share a name.
 pub fn backup_db(db_path: &Path) -> Result<PathBuf, OpenError> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static SEQ: AtomicU64 = AtomicU64::new(0);
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |duration| duration.as_secs());
-    let backup = db_path.with_extension(format!("bak-{stamp}"));
+    let backup = db_path.with_extension(format!(
+        "bak-{stamp}-{}-{}",
+        std::process::id(),
+        SEQ.fetch_add(1, Ordering::Relaxed)
+    ));
     std::fs::copy(db_path, &backup)
         .map_err(|error| OpenError::Store(format!("backup {}: {error}", db_path.display())))?;
     Ok(backup)

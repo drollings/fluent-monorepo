@@ -26,4 +26,4 @@ pub use merge::{MergeQueue, WordRecord};
 pub use playback::{play_blocking, StreamPlayer};
 pub use resample::{resample_linear, RubatoResampler};
 pub use source::{probe_device, supervise_driver, DriverError, HotPlug, SourceKind};
-pub use wav::{read_wav_mono, WavPcm};
+pub use wav::{decode_wav_bytes, read_wav_mono, WavPcm};
