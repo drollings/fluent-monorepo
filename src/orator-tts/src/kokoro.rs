@@ -11,8 +11,8 @@ use std::sync::{Arc, Mutex};
 
 use fluent_concurrency::pool::Limiter;
 use fluent_wvr::{
-    Describable, FieldAccess, FieldError, WorkContext, WorkError, WorkOutput, WorkUnit,
-    impl_component,
+    impl_component, Describable, FieldAccess, FieldError, WorkContext, WorkError, WorkOutput,
+    WorkUnit,
 };
 use internment::ArcIntern;
 use orator_core::{TtsError, WordMark};
@@ -33,10 +33,10 @@ pub const KOKORO_VOICES_DIR: &str = "kokoro-voices";
 #[must_use]
 pub fn default_paths() -> Option<(PathBuf, PathBuf)> {
     let dir = orator_core::models_dir()?;
-    let model = std::env::var("KOKORO_MODEL")
-        .map_or_else(|_| dir.join(KOKORO_MODEL_FILE), PathBuf::from);
-    let voices = std::env::var("KOKORO_VOICES")
-        .map_or_else(|_| dir.join(KOKORO_VOICES_DIR), PathBuf::from);
+    let model =
+        std::env::var("KOKORO_MODEL").map_or_else(|_| dir.join(KOKORO_MODEL_FILE), PathBuf::from);
+    let voices =
+        std::env::var("KOKORO_VOICES").map_or_else(|_| dir.join(KOKORO_VOICES_DIR), PathBuf::from);
     Some((model, voices))
 }
 
@@ -236,6 +236,12 @@ impl WorkUnit for KokoroBackend {
 
 impl FieldAccess for KokoroBackend {
     fn set_field(&mut self, name: &str, value: &str) -> Result<(), FieldError> {
+        // M15-S7 keep-decision: every successful set drops the session
+        // (a retune must reload voices, never synthesize stale), and
+        // `model_path`/`voices_dir` stay lossless `PathBuf`s. No
+        // post-set hook and no `PathBuf` support in the derive — see
+        // the M15-S5 note on WhisperBackend. Schema pinned by
+        // `kokoro_field_surface_pins_schema_and_table`.
         match name {
             "voice" => {
                 self.voice = value.to_string();
@@ -253,9 +259,9 @@ impl FieldAccess for KokoroBackend {
                 Ok(())
             }
             "gpu" => {
-                self.gpu = value.parse().map_err(|_| {
-                    FieldError::Parse(format!("invalid bool for 'gpu': {value}"))
-                })?;
+                self.gpu = value
+                    .parse()
+                    .map_err(|_| FieldError::Parse(format!("invalid bool for 'gpu': {value}")))?;
                 self.drop_session();
                 Ok(())
             }

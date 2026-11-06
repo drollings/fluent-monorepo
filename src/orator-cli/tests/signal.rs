@@ -51,7 +51,10 @@ fn watch_marks_and_releases_on_signal() {
         std::thread::sleep(std::time::Duration::from_millis(25));
     }
     assert!(watch.signalled(), "the watch observes the signal");
-    assert!(released.load(Ordering::SeqCst), "the watch releases on signal");
+    assert!(
+        released.load(Ordering::SeqCst),
+        "the watch releases on signal"
+    );
 }
 
 #[test]

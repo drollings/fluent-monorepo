@@ -5,7 +5,11 @@ edition.workspace = true
 autotests = false
 
 [dependencies]
+common-core = { path = "../common-core" }
 orator-core = { path = "../orator-core" }
+
+[dev-dependencies]
+common-core = { path = "../common-core" }
 
 [lints]
 workspace = true

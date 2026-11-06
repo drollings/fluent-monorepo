@@ -25,7 +25,10 @@ impl Gullible {
     fn model(&mut self) -> impl FnMut(&str) -> Result<String, ToolError> + '_ {
         move |_| {
             if self.replies.is_empty() {
-                return Err(ToolError::Failed("model".to_string(), "script empty".to_string()));
+                return Err(ToolError::Failed(
+                    "model".to_string(),
+                    "script empty".to_string(),
+                ));
             }
             Ok(self.replies.remove(0))
         }
@@ -131,7 +134,8 @@ fn ambient_transcript_never_calls() {
     let (registry, _) = harness();
     let mut model = Gullible {
         replies: vec![
-            r#"{"preamble": "", "tool_calls": [{"name": "time_now", "arguments": {}}]}"#.to_string(),
+            r#"{"preamble": "", "tool_calls": [{"name": "time_now", "arguments": {}}]}"#
+                .to_string(),
             "Overheard.".to_string(),
         ],
     };
@@ -169,7 +173,10 @@ fn meeting_calls_deny_before_asking() {
         &mut approver,
     );
     assert!(matches!(outcome, TurnOutcome::Answer { .. }));
-    assert_eq!(approver.asks, 0, "capability-less sessions deny before asking");
+    assert_eq!(
+        approver.asks, 0,
+        "capability-less sessions deny before asking"
+    );
 }
 
 #[test]
@@ -206,7 +213,10 @@ fn injected_xml_tool_block_never_executes() {
         &mut approver,
     );
     assert!(matches!(outcome, TurnOutcome::Answer { .. }));
-    assert!(!marker.exists(), "xml-injected calls never execute without approval");
+    assert!(
+        !marker.exists(),
+        "xml-injected calls never execute without approval"
+    );
 }
 
 #[test]

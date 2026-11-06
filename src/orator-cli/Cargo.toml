@@ -18,6 +18,7 @@ orator-core = { path = "../orator-core" }
 orator-desktop = { path = "../orator-desktop" }
 orator-llm = { path = "../orator-llm" }
 orator-models = { path = "../orator-models" }
+orator-lfm = { path = "../orator-lfm" }
 orator-s2s = { path = "../orator-s2s" }
 orator-stt = { path = "../orator-stt" }
 orator-tts = { path = "../orator-tts" }
@@ -29,6 +30,7 @@ tokio = { workspace = true }
 tokio-tungstenite = { workspace = true }
 
 [dev-dependencies]
+libc = { workspace = true }
 orator-daemon = { path = "../orator-daemon" }
 orator-diar = { path = "../orator-diar" }
 orator-notes = { path = "../orator-notes" }
@@ -44,6 +46,18 @@ path = "tests/it_parity.rs"
 [[test]]
 name = "it_end_to_end"
 path = "tests/it_end_to_end.rs"
+
+[features]
+live-ai = []
+
+[[test]]
+name = "progress"
+path = "tests/progress.rs"
+
+[[test]]
+name = "live"
+path = "tests/live.rs"
+required-features = ["live-ai"]
 
 [lints]
 workspace = true

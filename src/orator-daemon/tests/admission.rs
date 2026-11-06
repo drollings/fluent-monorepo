@@ -54,12 +54,8 @@ fn idle_capacity_admits_everything() {
         (0..4).map(|_| std::sync::Mutex::new(None)).collect();
     std::thread::scope(|scope| {
         for (index, slot) in outcomes.iter().enumerate() {
-            let (gate, lane, start, release) = (
-                Arc::clone(&gate),
-                Arc::clone(&lane),
-                &start,
-                &release,
-            );
+            let (gate, lane, start, release) =
+                (Arc::clone(&gate), Arc::clone(&lane), &start, &release);
             scope.spawn(move || {
                 start.wait();
                 let admitted = gate.admit().is_ok();
@@ -94,12 +90,8 @@ fn saturation_refuses_fast_with_a_named_reason() {
     let refused = std::sync::Mutex::new(Vec::new());
     std::thread::scope(|scope| {
         for _ in 0..4 {
-            let (gate, lane, start, release) = (
-                Arc::clone(&gate),
-                Arc::clone(&lane),
-                &start,
-                &release,
-            );
+            let (gate, lane, start, release) =
+                (Arc::clone(&gate), Arc::clone(&lane), &start, &release);
             let admitted = &admitted;
             let refused = &refused;
             scope.spawn(move || {
@@ -112,10 +104,8 @@ fn saturation_refuses_fast_with_a_named_reason() {
                         lane.turn();
                     }
                     Err(refusal) => {
-                        common_core::sync::lock(refused).push((
-                            refusal.reason.clone(),
-                            began.elapsed(),
-                        ));
+                        common_core::sync::lock(refused)
+                            .push((refusal.reason.clone(), began.elapsed()));
                         release.wait();
                     }
                 }
@@ -133,10 +123,7 @@ fn saturation_refuses_fast_with_a_named_reason() {
             reason.contains("saturated"),
             "refusal names its cause: {reason}"
         );
-        assert!(
-            reason.contains('2'),
-            "refusal names the bound: {reason}"
-        );
+        assert!(reason.contains('2'), "refusal names the bound: {reason}");
         assert!(
             *elapsed < Duration::from_secs(1),
             "refusal is fast, never queued: {elapsed:?}"
@@ -212,7 +199,12 @@ fn serial_depth_predicts_breach_on_the_measured_quantum() {
     );
     // Threshold 2 is exact on this fixture.
     assert_eq!(
-        (reports[1].1.tp, reports[1].1.fp, reports[1].1.tn, reports[1].1.r#fn),
+        (
+            reports[1].1.tp,
+            reports[1].1.fp,
+            reports[1].1.tn,
+            reports[1].1.r#fn
+        ),
         (4, 0, 2, 0)
     );
     assert!(
@@ -241,12 +233,30 @@ fn ejection_threshold_scores_two_over_one() {
     // Controls (one transient failure, then healthy) must never eject;
     // sustained failures must. Threshold 1 false-ejects the controls.
     let cases = vec![
-        EjectCase { consecutive_failures: 1, should_eject: false },
-        EjectCase { consecutive_failures: 1, should_eject: false },
-        EjectCase { consecutive_failures: 1, should_eject: false },
-        EjectCase { consecutive_failures: 2, should_eject: true },
-        EjectCase { consecutive_failures: 2, should_eject: true },
-        EjectCase { consecutive_failures: 2, should_eject: true },
+        EjectCase {
+            consecutive_failures: 1,
+            should_eject: false,
+        },
+        EjectCase {
+            consecutive_failures: 1,
+            should_eject: false,
+        },
+        EjectCase {
+            consecutive_failures: 1,
+            should_eject: false,
+        },
+        EjectCase {
+            consecutive_failures: 2,
+            should_eject: true,
+        },
+        EjectCase {
+            consecutive_failures: 2,
+            should_eject: true,
+        },
+        EjectCase {
+            consecutive_failures: 2,
+            should_eject: true,
+        },
     ];
     let reports = sweep_thresholds(
         &cases,
@@ -260,7 +270,12 @@ fn ejection_threshold_scores_two_over_one() {
         reports[0].1
     );
     assert_eq!(
-        (reports[1].1.tp, reports[1].1.fp, reports[1].1.tn, reports[1].1.r#fn),
+        (
+            reports[1].1.tp,
+            reports[1].1.fp,
+            reports[1].1.tn,
+            reports[1].1.r#fn
+        ),
         (3, 0, 3, 0)
     );
     assert!(
@@ -428,6 +443,29 @@ fn text_only_voiceless_turns_never_eject() {
         "voiceless turns never eject: {error:?}"
     );
     owner.shutdown();
+}
+
+/// M8-S1 characterization: the refusal line verbatim (cause +
+/// inflight count + bound + remedy) and guard-drop release — dropping
+/// the guard frees the permit, so admission is strictly scoped.
+#[test]
+fn refusal_line_is_verbatim_and_guards_release_on_drop() {
+    let gate = AdmissionGate::new(1);
+    assert_eq!(gate.max_inflight(), 1);
+    assert_eq!(gate.inflight(), 0);
+    let guard = gate.admit().expect("idle capacity admits");
+    assert_eq!(guard.depth(), 0, "nothing else in flight");
+    assert_eq!(gate.inflight(), 1);
+    let refusal = gate.admit().expect_err("past-bound refuses");
+    assert_eq!(
+        refusal.reason,
+        "admission saturated: 1 turns in flight (bound 1) — retry when a turn completes"
+    );
+    drop(guard);
+    assert_eq!(gate.inflight(), 0, "drop releases the permit");
+    let guard = gate.admit().expect("released capacity re-admits");
+    assert_eq!(gate.inflight(), 1);
+    drop(guard);
 }
 
 #[test]

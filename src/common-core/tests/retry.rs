@@ -192,3 +192,91 @@ fn capped_exp_backoff_never_panics_or_overflows() {
     assert_eq!(capped_exp_backoff_ms(0, 5, 6), 0);
     assert_eq!(capped_exp_backoff_ms(5_000, 0, 6), 5_000);
 }
+
+#[test]
+fn run_with_budget_passes_completed_outcomes_through() {
+    assert_eq!(
+        run_with_budget("probe", Duration::from_secs(10), || Ok::<_, String>(
+            "fast".to_string()
+        ))
+        .expect("completed ok passes through"),
+        Ok("fast".to_string())
+    );
+    assert_eq!(
+        run_with_budget("probe", Duration::from_secs(10), || Err::<String, String>(
+            "decode blew up".to_string()
+        ))
+        .expect("completed err passes through"),
+        Err("decode blew up".to_string())
+    );
+}
+
+#[test]
+fn run_with_budget_names_the_timeout_and_finishes_detached() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    let done = Arc::new(AtomicBool::new(false));
+    let flag = Arc::clone(&done);
+    let exceeded = run_with_budget("probe", Duration::from_millis(50), move || {
+        std::thread::sleep(Duration::from_millis(200));
+        flag.store(true, Ordering::SeqCst);
+        Ok::<_, String>("late".to_string())
+    })
+    .expect_err("slow op times out");
+    assert_eq!(exceeded.label(), "probe");
+    assert_eq!(
+        exceeded.budget_secs(),
+        0,
+        "50 ms truncates to 0 whole seconds"
+    );
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    while !done.load(Ordering::SeqCst) {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "stray worker finishes detached"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+#[test]
+fn run_with_budget_turns_worker_panics_into_timeouts() {
+    let exceeded = run_with_budget(
+        "probe",
+        Duration::from_secs(10),
+        || -> Result<String, String> {
+            panic!("worker blew up");
+        },
+    )
+    .expect_err("panic reports as a timeout");
+    assert_eq!(exceeded.label(), "probe");
+    assert_eq!(exceeded.budget_secs(), 10);
+}
+
+/// M5-S1 characterization: the mapping proof for the daemon ws per-IP
+/// backoff migration. Hand-derived from the inline formula at
+/// `ws.rs` (`100 * 2^min(failures, 6)`, capped at 5000): the shared
+/// `capped_exp_backoff_ms(100, failures, 6).min(5000)` reproduces the
+/// table exactly, including saturation past the shift cap.
+#[test]
+fn capped_exp_matches_the_ws_per_ip_backoff_table() {
+    let table = [
+        (0u32, 100u64),
+        (1, 200),
+        (2, 400),
+        (3, 800),
+        (4, 1600),
+        (5, 3200),
+        (6, 5000),
+        (7, 5000),
+        (8, 5000),
+    ];
+    for (failures, expected) in table {
+        assert_eq!(
+            capped_exp_backoff_ms(100, failures, 6).min(5000),
+            expected,
+            "failures={failures}"
+        );
+    }
+    assert_eq!(capped_exp_backoff_ms(100, u32::MAX, 6).min(5000), 5000);
+}

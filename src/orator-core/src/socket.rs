@@ -115,8 +115,7 @@ impl SocketFrame {
         reader
             .read_exact(&mut type_buf)
             .map_err(|error| FrameError::Io(error.to_string()))?;
-        let kind =
-            MessageType::from_u8(type_buf[0]).ok_or(FrameError::UnknownType(type_buf[0]))?;
+        let kind = MessageType::from_u8(type_buf[0]).ok_or(FrameError::UnknownType(type_buf[0]))?;
         let mut body = vec![0u8; body_len];
         if body_len > 0 {
             reader

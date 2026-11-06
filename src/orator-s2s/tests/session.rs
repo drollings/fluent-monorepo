@@ -9,7 +9,6 @@ use orator_core::{DuplexEngine, Epoch, Frame, MediaTime};
 use crate::config::S2sConfig;
 use crate::session::{AudioSession, S2sError};
 
-
 /// Deterministic voiced synth: harmonic sines with speech-like energy
 /// and low zero-crossing rate, so the speech-presence gate passes and
 /// scripted turns run without a microphone.
@@ -47,7 +46,10 @@ fn sse_turn(text: &str, audio_b64: Option<&str>) -> String {
         );
         out.push('\n');
     } else {
-        let _ = write!(out, "data: {{\"choices\":[{{\"delta\":{{\"content\":\"{text}\"}}}}]}}");
+        let _ = write!(
+            out,
+            "data: {{\"choices\":[{{\"delta\":{{\"content\":\"{text}\"}}}}]}}"
+        );
         out.push('\n');
     }
     out.push_str("data: {\"choices\":[{\"finish_reason\":\"stop\"}]}\n");
@@ -69,171 +71,189 @@ fn session_with(stub: &httpmock::MockServer) -> AudioSession {
 #[test]
 fn transcribe_collects_text_deltas() {
     common_core::runtime::block_on_shared(async {
-    let server = httpmock::MockServer::start();
-    server.mock(|when, then| {
-        when.method("POST").path("/v1/chat/completions");
-        then.status(200).body(sse_turn("hello world", None));
-    });
-    let mut session = session_with(&server);
-    let text = session.transcribe_blocking(&voiced(1600)).expect("asr runs");
-    assert_eq!(text, "hello world");
-    assert!(!session.heard_audio());
+        let server = httpmock::MockServer::start();
+        server.mock(|when, then| {
+            when.method("POST").path("/v1/chat/completions");
+            then.status(200).body(sse_turn("hello world", None));
+        });
+        let mut session = session_with(&server);
+        let text = session
+            .transcribe_blocking(&voiced(1600))
+            .expect("asr runs");
+        assert_eq!(text, "hello world");
+        assert!(!session.heard_audio());
     });
 }
 
 #[test]
 fn speak_collects_audio_and_reports_text_only() {
     common_core::runtime::block_on_shared(async {
-    let server = httpmock::MockServer::start();
-    server.mock(|when, then| {
-        when.method("POST").path("/v1/chat/completions");
-        then.status(200).body(sse_turn("hi", Some(&one_f32())));
-    });
-    let mut session = session_with(&server);
-    let samples = session.speak_blocking("hi").expect("tts runs");
-    assert_eq!(samples, vec![2.5]);
-    assert!(session.heard_audio());
+        let server = httpmock::MockServer::start();
+        server.mock(|when, then| {
+            when.method("POST").path("/v1/chat/completions");
+            then.status(200).body(sse_turn("hi", Some(&one_f32())));
+        });
+        let mut session = session_with(&server);
+        let samples = session.speak_blocking("hi").expect("tts runs");
+        assert_eq!(samples, vec![2.5]);
+        assert!(session.heard_audio());
 
-    let quiet = httpmock::MockServer::start();
-    quiet.mock(|when, then| {
-        when.method("POST").path("/v1/chat/completions");
-        then.status(200).body(sse_turn("text only", None));
-    });
-    let mut session = session_with(&quiet);
-    assert_eq!(
-        session.speak_blocking("hi").expect_err("no audio reports"),
-        S2sError::NoAudio
-    );
+        let quiet = httpmock::MockServer::start();
+        quiet.mock(|when, then| {
+            when.method("POST").path("/v1/chat/completions");
+            then.status(200).body(sse_turn("text only", None));
+        });
+        let mut session = session_with(&quiet);
+        assert_eq!(
+            session.speak_blocking("hi").expect_err("no audio reports"),
+            S2sError::NoAudio
+        );
     });
 }
 
 #[test]
 fn interleaved_chat_resets_once_then_holds_history() {
     common_core::runtime::block_on_shared(async {
-    let server = httpmock::MockServer::start();
-    let mock = server.mock(|when, then| {
-        when.method("POST").path("/v1/chat/completions");
-        then.status(200).body(sse_turn("ok", Some(&one_f32())));
-    });
-    let mut session = session_with(&server);
-    let abort = StreamAbort::new();
-    let first = session.chat_turn(Some("hello"), None, &abort).expect("turn one");
-    assert!(first.voiced);
-    session.chat_turn(Some("again"), None, &abort).expect("turn two");
-    assert_eq!(mock.hits(), 2);
-    session.reset();
-    session.chat_turn(Some("fresh"), None, &abort).expect("post-reset");
-    assert_eq!(mock.hits(), 3);
+        let server = httpmock::MockServer::start();
+        let mock = server.mock(|when, then| {
+            when.method("POST").path("/v1/chat/completions");
+            then.status(200).body(sse_turn("ok", Some(&one_f32())));
+        });
+        let mut session = session_with(&server);
+        let abort = StreamAbort::new();
+        let first = session
+            .chat_turn(Some("hello"), None, &abort)
+            .expect("turn one");
+        assert!(first.voiced);
+        session
+            .chat_turn(Some("again"), None, &abort)
+            .expect("turn two");
+        assert_eq!(mock.hits(), 2);
+        session.reset();
+        session
+            .chat_turn(Some("fresh"), None, &abort)
+            .expect("post-reset");
+        assert_eq!(mock.hits(), 3);
     });
 }
 
 #[test]
 fn history_rolls_under_a_cap_keeping_newest() {
     common_core::runtime::block_on_shared(async {
-    let server = httpmock::MockServer::start();
-    server.mock(|when, then| {
-        when.method("POST").path("/v1/chat/completions");
-        then.status(200).body(sse_turn("ok", Some(&one_f32())));
-    });
-    let mut session = session_with(&server);
-    let abort = StreamAbort::new();
-    for index in 0..70 {
-        session
-            .chat_turn(Some(&format!("turn {index}")), None, &abort)
-            .expect("turn runs");
-    }
-    assert!(
-        session.history.len() <= crate::session::MAX_HISTORY_ENTRIES,
-        "history bounded: {}",
-        session.history.len()
-    );
-    let tail: Vec<String> = session.history.iter().rev().take(2).map(ToString::to_string).collect();
-    assert!(
-        tail.iter().any(|entry| entry.contains("turn 69")),
-        "newest turn protected: {tail:?}"
-    );
+        let server = httpmock::MockServer::start();
+        server.mock(|when, then| {
+            when.method("POST").path("/v1/chat/completions");
+            then.status(200).body(sse_turn("ok", Some(&one_f32())));
+        });
+        let mut session = session_with(&server);
+        let abort = StreamAbort::new();
+        for index in 0..70 {
+            session
+                .chat_turn(Some(&format!("turn {index}")), None, &abort)
+                .expect("turn runs");
+        }
+        assert!(
+            session.history.len() <= crate::session::MAX_HISTORY_ENTRIES,
+            "history bounded: {}",
+            session.history.len()
+        );
+        let tail: Vec<String> = session
+            .history
+            .iter()
+            .rev()
+            .take(2)
+            .map(ToString::to_string)
+            .collect();
+        assert!(
+            tail.iter().any(|entry| entry.contains("turn 69")),
+            "newest turn protected: {tail:?}"
+        );
     });
 }
 
 #[test]
 fn endpoint_errors_name_the_model_body_and_served_set() {
     common_core::runtime::block_on_shared(async {
-    let server = httpmock::MockServer::start();
-    server.mock(|when, then| {
+        let server = httpmock::MockServer::start();
+        server.mock(|when, then| {
         when.method("POST").path("/v1/chat/completions");
         then.status(400).json_body(serde_json::json!({
             "error": {"message": "model 'lfm2.5-audio-1.5b' not found", "type": "invalid_request_error"},
         }));
     });
-    server.mock(|when, then| {
-        when.method("GET").path("/models");
-        then.status(200).json_body(serde_json::json!({
-            "data": [{"id": "bartowski/lfm3-1.7b"}],
-        }));
-    });
-    let mut session = session_with(&server);
-    let error = session.speak_blocking("hi").expect_err("unknown model fails");
-    let message = error.to_string();
-    assert!(message.contains("400"), "{message}");
-    assert!(message.contains("lfm2.5-audio-1.5b"), "{message}");
-    assert!(message.contains("not found"), "{message}");
-    assert!(message.contains("bartowski/lfm3-1.7b"), "{message}");
+        server.mock(|when, then| {
+            when.method("GET").path("/models");
+            then.status(200).json_body(serde_json::json!({
+                "data": [{"id": "liquidai/lfm3-audio-2b"}],
+            }));
+        });
+        let mut session = session_with(&server);
+        let error = session
+            .speak_blocking("hi")
+            .expect_err("unknown model fails");
+        let message = error.to_string();
+        assert!(message.contains("400"), "{message}");
+        assert!(message.contains("lfm2.5-audio-1.5b"), "{message}");
+        assert!(message.contains("not found"), "{message}");
+        assert!(message.contains("liquidai/lfm3-audio-2b"), "{message}");
     });
 }
 
 #[test]
 fn cancelled_turn_never_dials() {
     common_core::runtime::block_on_shared(async {
-    let server = httpmock::MockServer::start();
-    let mock = server.mock(|when, then| {
-        when.method("POST").path("/v1/chat/completions");
-        then.status(200).body(sse_turn("x", None));
-    });
-    let mut session = session_with(&server);
-    let abort = StreamAbort::new();
-    abort.cancel();
-    assert_eq!(
-        session.chat_turn(Some("hi"), None, &abort).expect_err("cancelled"),
-        S2sError::Aborted
-    );
-    mock.assert_hits(0);
+        let server = httpmock::MockServer::start();
+        let mock = server.mock(|when, then| {
+            when.method("POST").path("/v1/chat/completions");
+            then.status(200).body(sse_turn("x", None));
+        });
+        let mut session = session_with(&server);
+        let abort = StreamAbort::new();
+        abort.cancel();
+        assert_eq!(
+            session
+                .chat_turn(Some("hi"), None, &abort)
+                .expect_err("cancelled"),
+            S2sError::Aborted
+        );
+        mock.assert_hits(0);
     });
 }
 
 #[test]
 fn duplex_buffers_until_the_window_then_turns() {
     common_core::runtime::block_on_shared(async {
-    let server = httpmock::MockServer::start();
-    let mock = server.mock(|when, then| {
-        when.method("POST").path("/v1/chat/completions");
-        then.status(200).body(sse_turn("reply", Some(&one_f32())));
-    });
-    let mut session = AudioSession::new(S2sConfig {
-        endpoint: server.base_url(),
-        turn_window_ms: 100,
-        ..S2sConfig::default()
-    });
-    let rate = NonZeroU32::new(16_000).expect("rate");
-    let frame = Frame {
-        samples: std::sync::Arc::new(vec![0.1; 320]),
-        channel: orator_core::Channel::Mic,
-        sample_rate: 16_000,
-        stamp: MediaTime::zero(rate),
-    };
-    // Six 20 ms frames stay under the 100 ms cap once the VAD attack
-    // latches (the first two hot frames open the detector, the next
-    // four buffer): silence, no dial.
-    for _ in 0..6 {
-        let out = session.step(&frame).expect("buffers");
-        assert!(out.audio.samples.is_empty());
-        assert!(!out.end_of_turn);
-    }
-    mock.assert_hits(0);
-    let out = session.step(&frame).expect("window turns");
-    assert_eq!(*out.audio.samples, vec![2.5]);
-    assert_eq!(out.audio.sample_rate, 24_000);
-    mock.assert_hits(1);
-    let _ = Epoch(0);
+        let server = httpmock::MockServer::start();
+        let mock = server.mock(|when, then| {
+            when.method("POST").path("/v1/chat/completions");
+            then.status(200).body(sse_turn("reply", Some(&one_f32())));
+        });
+        let mut session = AudioSession::new(S2sConfig {
+            endpoint: server.base_url(),
+            turn_window_ms: 100,
+            ..S2sConfig::default()
+        });
+        let rate = NonZeroU32::new(16_000).expect("rate");
+        let frame = Frame {
+            samples: std::sync::Arc::new(vec![0.1; 320]),
+            channel: orator_core::Channel::Mic,
+            sample_rate: 16_000,
+            stamp: MediaTime::zero(rate),
+        };
+        // Six 20 ms frames stay under the 100 ms cap once the VAD attack
+        // latches (the first two hot frames open the detector, the next
+        // four buffer): silence, no dial.
+        for _ in 0..6 {
+            let out = session.step(&frame).expect("buffers");
+            assert!(out.audio.samples.is_empty());
+            assert!(!out.end_of_turn);
+        }
+        mock.assert_hits(0);
+        let out = session.step(&frame).expect("window turns");
+        assert_eq!(*out.audio.samples, vec![2.5]);
+        assert_eq!(out.audio.sample_rate, 24_000);
+        mock.assert_hits(1);
+        let _ = Epoch(0);
     });
 }
 
@@ -278,8 +298,7 @@ fn chunked_stub(lines: Vec<String>, hold_open_secs: u64) -> (String, std::thread
 
 #[test]
 fn turn_reassembles_across_separate_chunks() {
-    let text_line =
-        "data: {\"choices\":[{\"delta\":{\"content\":\"hello world\"}}]}\n".to_string();
+    let text_line = "data: {\"choices\":[{\"delta\":{\"content\":\"hello world\"}}]}\n".to_string();
     let audio_line = format!(
         "data: {{\"choices\":[{{\"delta\":{{\"audio_chunk\":{{\"data\":\"{}\"}}}}}}]}}\n",
         one_f32()
@@ -290,7 +309,9 @@ fn turn_reassembles_across_separate_chunks() {
         endpoint: url,
         ..S2sConfig::default()
     });
-    let text = session.transcribe_blocking(&voiced(1600)).expect("asr runs");
+    let text = session
+        .transcribe_blocking(&voiced(1600))
+        .expect("asr runs");
     assert_eq!(text, "hello world");
     server.join().expect("stub done");
 }
@@ -359,22 +380,22 @@ fn abort_cuts_a_hanging_stream() {
     std::thread::sleep(std::time::Duration::from_millis(300));
     abort.cancel();
     let outcome = worker.join().expect("worker done");
-    assert_eq!(outcome.expect_err("hanging stream aborts"), S2sError::Aborted);
+    assert_eq!(
+        outcome.expect_err("hanging stream aborts"),
+        S2sError::Aborted
+    );
     // The stub outlives the turn by design: detach it.
     let _ = server;
 }
 
 #[test]
-fn oversized_audio_errors_instead_of_growing() {    let audio_line = format!(
+fn oversized_audio_errors_instead_of_growing() {
+    let audio_line = format!(
         "data: {{\"choices\":[{{\"delta\":{{\"audio_chunk\":{{\"data\":\"{}\"}}}}}}]}}\n",
         one_f32()
     );
     let (url, server) = chunked_stub(
-        vec![
-            audio_line.clone(),
-            audio_line,
-            "data: [DONE]\n".to_string(),
-        ],
+        vec![audio_line.clone(), audio_line, "data: [DONE]\n".to_string()],
         0,
     );
     let mut session = AudioSession::new(S2sConfig {
@@ -480,7 +501,7 @@ fn audio_input_unsupported_matches_the_pinned_transcript() {
     let gateway_400 = S2sError::Backend(
         "HTTP 400 Bad Request from http://127.0.0.1:8080/v1/chat/completions \
          for model 'm': audio input is not supported by this server; \
-         endpoint serves: [bartowski/lfm3-1.7b]"
+         endpoint serves: [liquidai/lfm3-audio-2b]"
             .to_string(),
     );
     assert!(crate::session::audio_input_unsupported(&gateway_400));
@@ -510,33 +531,33 @@ fn audio_input_unsupported_rejects_other_failures() {
 #[test]
 fn voiced_turns_feed_the_first_audio_histogram() {
     common_core::runtime::block_on_shared(async {
-    let server = httpmock::MockServer::start();
-    server.mock(|when, then| {
-        when.method("POST").path("/v1/chat/completions");
-        then.status(200).body(sse_turn("hi", Some(&one_f32())));
-    });
-    let mut session = session_with(&server);
-    session.speak_blocking("hi").expect("tts runs");
-    assert_eq!(session.first_audio_latency().count(), 1);
-    assert_eq!(session.no_audio_turns(), 0);
+        let server = httpmock::MockServer::start();
+        server.mock(|when, then| {
+            when.method("POST").path("/v1/chat/completions");
+            then.status(200).body(sse_turn("hi", Some(&one_f32())));
+        });
+        let mut session = session_with(&server);
+        session.speak_blocking("hi").expect("tts runs");
+        assert_eq!(session.first_audio_latency().count(), 1);
+        assert_eq!(session.no_audio_turns(), 0);
     });
 }
 
 #[test]
 fn text_only_turns_count_no_audio_without_histograms() {
     common_core::runtime::block_on_shared(async {
-    let server = httpmock::MockServer::start();
-    server.mock(|when, then| {
-        when.method("POST").path("/v1/chat/completions");
-        then.status(200).body(sse_turn("text only", None));
-    });
-    let mut session = session_with(&server);
-    assert_eq!(
-        session.speak_blocking("hi").expect_err("no audio reports"),
-        S2sError::NoAudio
-    );
-    assert_eq!(session.no_audio_turns(), 1);
-    assert_eq!(session.first_audio_latency().count(), 0);
+        let server = httpmock::MockServer::start();
+        server.mock(|when, then| {
+            when.method("POST").path("/v1/chat/completions");
+            then.status(200).body(sse_turn("text only", None));
+        });
+        let mut session = session_with(&server);
+        assert_eq!(
+            session.speak_blocking("hi").expect_err("no audio reports"),
+            S2sError::NoAudio
+        );
+        assert_eq!(session.no_audio_turns(), 1);
+        assert_eq!(session.first_audio_latency().count(), 0);
     });
 }
 
@@ -832,25 +853,25 @@ fn fallback_advance_grid_with_must_not_fire_controls() {
 #[test]
 fn long_error_bodies_cap_through_the_shared_truncator() {
     common_core::runtime::block_on_shared(async {
-    let server = httpmock::MockServer::start();
-    let big = "e".repeat(orator_core::TOOL_OUTPUT_CHARS + 500);
-    server.mock(|when, then| {
-        when.method("POST").path("/v1/chat/completions");
-        then.status(500).body(big.clone());
-    });
-    let mut session = session_with(&server);
-    let error = session
-        .transcribe_blocking(&voiced(1600))
-        .expect_err("500 fails");
-    let text = error.to_string();
-    assert!(
-        text.contains("truncated,"),
-        "long bodies cap with the shared marker: {text}"
-    );
-    assert!(
-        text.chars().count() < big.chars().count(),
-        "capped shorter than the body"
-    );
+        let server = httpmock::MockServer::start();
+        let big = "e".repeat(orator_core::TOOL_OUTPUT_CHARS + 500);
+        server.mock(|when, then| {
+            when.method("POST").path("/v1/chat/completions");
+            then.status(500).body(big.clone());
+        });
+        let mut session = session_with(&server);
+        let error = session
+            .transcribe_blocking(&voiced(1600))
+            .expect_err("500 fails");
+        let text = error.to_string();
+        assert!(
+            text.contains("truncated,"),
+            "long bodies cap with the shared marker: {text}"
+        );
+        assert!(
+            text.chars().count() < big.chars().count(),
+            "capped shorter than the body"
+        );
     });
 }
 
@@ -858,10 +879,19 @@ fn long_error_bodies_cap_through_the_shared_truncator() {
 fn loading_probe_names_only_the_transient_503() {
     use crate::session::is_loading_body;
     let loading = reqwest::StatusCode::SERVICE_UNAVAILABLE;
-    assert!(is_loading_body(loading, "{\"error\":{\"message\":\"Loading model\",\"type\":\"unavailable_error\"}}"));
+    assert!(is_loading_body(
+        loading,
+        "{\"error\":{\"message\":\"Loading model\",\"type\":\"unavailable_error\"}}"
+    ));
     assert!(is_loading_body(loading, "loading MODEL weights"));
-    assert!(!is_loading_body(loading, "{\"error\":{\"message\":\"unknown model\"}}"));
-    assert!(!is_loading_body(reqwest::StatusCode::NOT_FOUND, "Loading model"));
+    assert!(!is_loading_body(
+        loading,
+        "{\"error\":{\"message\":\"unknown model\"}}"
+    ));
+    assert!(!is_loading_body(
+        reqwest::StatusCode::NOT_FOUND,
+        "Loading model"
+    ));
     assert!(!is_loading_body(reqwest::StatusCode::OK, "Loading model"));
 }
 
@@ -869,23 +899,23 @@ fn loading_probe_names_only_the_transient_503() {
 fn post_until_loaded_passes_non_loading_through() {
     use crate::session::{post_until_loaded, S2sError};
     common_core::runtime::block_on_shared(async {
-    let server = httpmock::MockServer::start();
-    server.mock(|when, then| {
-        when.method("POST").path("/probe");
-        then.status(200).body("fine");
-    });
-    let client = reqwest::Client::new();
-    let abort = StreamAbort::new();
-    let body = serde_json::json!({ "input": "hi" });
-    let response = post_until_loaded(
-        &client,
-        &format!("{}/probe", server.base_url()),
-        &body,
-        &abort,
-        |error: reqwest::Error| S2sError::Backend(error.to_string()),
-    )
-    .expect("200 passes through");
-    assert_eq!(response.status(), reqwest::StatusCode::OK);
+        let server = httpmock::MockServer::start();
+        server.mock(|when, then| {
+            when.method("POST").path("/probe");
+            then.status(200).body("fine");
+        });
+        let client = reqwest::Client::new();
+        let abort = StreamAbort::new();
+        let body = serde_json::json!({ "input": "hi" });
+        let response = post_until_loaded(
+            &client,
+            &format!("{}/probe", server.base_url()),
+            &body,
+            &abort,
+            |error: reqwest::Error| S2sError::Backend(error.to_string()),
+        )
+        .expect("200 passes through");
+        assert_eq!(response.status(), reqwest::StatusCode::OK);
     });
 }
 
@@ -907,6 +937,45 @@ fn post_until_loaded_stops_on_abort() {
     assert_eq!(error, S2sError::Aborted);
 }
 
+/// M5-S1 characterization: a non-loading 503 is terminal, not a wait.
+/// The loader consumes the body for inspection, then re-issues the
+/// POST exactly once and returns the terminal reply — pin the status
+/// and the two-hit shape so the `PollWithBackoff` audit (M5-S3) cannot
+/// silently change the retry count.
+#[test]
+fn post_until_loaded_returns_terminal_503_without_waiting() {
+    use crate::session::{post_until_loaded, S2sError};
+    common_core::runtime::block_on_shared(async {
+        let server = httpmock::MockServer::start();
+        let terminal = server.mock(|when, then| {
+            when.method("POST").path("/probe");
+            then.status(503).body("{\"error\":\"unknown model\"}");
+        });
+        let client = reqwest::Client::new();
+        let abort = StreamAbort::new();
+        let body = serde_json::json!({ "input": "hi" });
+        let began = std::time::Instant::now();
+        let response = post_until_loaded(
+            &client,
+            &format!("{}/probe", server.base_url()),
+            &body,
+            &abort,
+            |error: reqwest::Error| S2sError::Backend(error.to_string()),
+        )
+        .expect("terminal 503 returns, never waits");
+        assert_eq!(response.status(), reqwest::StatusCode::SERVICE_UNAVAILABLE);
+        assert!(
+            began.elapsed() < std::time::Duration::from_secs(10),
+            "no loading wait"
+        );
+        assert_eq!(
+            terminal.hits(),
+            2,
+            "body inspection re-issues the POST exactly once"
+        );
+    });
+}
+
 #[test]
 fn speech_gate_skips_inference_on_hiss_and_silence() {
     // Hiss at several energies answers empty without dialing: the
@@ -923,7 +992,9 @@ fn speech_gate_skips_inference_on_hiss_and_silence() {
         "empty input never dials"
     );
     assert_eq!(
-        session.transcribe_blocking(&[0.0; 3200]).expect("zeros are silence"),
+        session
+            .transcribe_blocking(&[0.0; 3200])
+            .expect("zeros are silence"),
         "",
         "digital silence never dials"
     );
@@ -949,10 +1020,71 @@ fn speech_gate_skips_inference_on_hiss_and_silence() {
     assert_eq!(hits.hits(), before + 1, "quiet speech dials");
     // Voiced input at the same scale still dials: the gate keeps
     // quiet speech, not just loud speech.
-    let text = session.transcribe_blocking(&voiced(1600)).expect_err("500 fails");
+    let text = session
+        .transcribe_blocking(&voiced(1600))
+        .expect_err("500 fails");
     assert!(text.to_string().contains("500"), "{text}");
     assert_eq!(hits.hits(), before + 2, "voiced input dials");
 }
 
+/// A loud pure tone is vowel-like to energy alone, so the gate must
+/// hold it on the tonal verdict: no inference, no hallucination.
+#[test]
+fn speech_gate_skips_inference_on_loud_pure_tone() {
+    let server = httpmock::MockServer::start();
+    let hits = server.mock(|when, then| {
+        when.method("POST").path("/v1/chat/completions");
+        then.status(500).body("must not dial");
+    });
+    let mut session = session_with(&server);
+    // The verified shape: 440 Hz sine, peak ~0.3, three seconds.
+    let tone: Vec<f32> = (0..48_000)
+        .map(|index| 0.3 * (2.0 * std::f32::consts::PI * 440.0 * index as f32 / 16_000.0).sin())
+        .collect();
+    assert_eq!(
+        session
+            .transcribe_blocking(&tone)
+            .expect("tone is not speech"),
+        "",
+        "loud pure tone never dials"
+    );
+    assert_eq!(hits.hits(), 0, "gate skipped every inference");
+}
 
-
+/// M15-S1: the session field surface. `describe()` is the schema
+/// golden; the table pins accept (verbatim, numbers) and reject
+/// (unknown, garbage numbers).
+#[test]
+fn session_field_surface_pins_schema_and_table() {
+    use fluent_wvr::{Describable, FieldAccess};
+    let mut session = AudioSession::new(S2sConfig {
+        endpoint: "http://127.0.0.1:1".to_string(),
+        ..S2sConfig::default()
+    });
+    assert_eq!(
+        session.describe(),
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "mode": { "type": "string", "description": "Turn mode" },
+                "voice_prompt": { "type": "string", "description": "TTS voice prompt" },
+                "turn_window_ms": { "type": "integer", "description": "Duplex turn window" }
+            },
+            "required": ["mode", "voice_prompt", "turn_window_ms"]
+        })
+    );
+    assert_eq!(
+        session.field_names(),
+        &["mode", "voice_prompt", "turn_window_ms"]
+    );
+    session.set_field("mode", "cascade").expect("mode sets");
+    assert_eq!(session.get_field("mode").expect("mode reads"), "cascade");
+    session
+        .set_field("turn_window_ms", "500")
+        .expect("numbers set");
+    session
+        .set_field("turn_window_ms", "lots")
+        .expect_err("garbage rejects");
+    session.set_field("nope", "1").expect_err("unknown rejects");
+    session.get_field("nope").expect_err("unknown reads reject");
+}

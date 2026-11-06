@@ -70,7 +70,9 @@ impl MessageType {
 /// set; the daemon answers each with work or a named refusal.
 /// `Transcribe` lets thin clients (the TUI) turn captured audio into
 /// text through the daemon instead of owning inference.
-pub const METHOD_NAMES: [&str; 13] = [
+/// `ExportMeeting` renders a session's recorded turns to a managed
+/// markdown artifact (additive: existing bytes untouched).
+pub const METHOD_NAMES: [&str; 14] = [
     "StartSession",
     "StopSession",
     "Interrupt",
@@ -84,6 +86,7 @@ pub const METHOD_NAMES: [&str; 13] = [
     "Reload",
     "Approve",
     "Transcribe",
+    "ExportMeeting",
 ];
 
 /// Accept `method` iff it belongs to the wire contract.

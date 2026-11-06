@@ -138,28 +138,31 @@ pub fn resolve_with_override(explicit: Option<PathBuf>) -> Option<PathBuf> {
 /// first, then a `$PATH` search. Explicit overrides require absolute
 /// paths and log their fingerprint (the user accepts responsibility);
 /// searched hits are validated by `resolve_binary_validated`.
+/// Shared override home: `orator_core::paths::ExplicitBinary` — the
+/// unvalidated first-hit search stays (fail-fast single resolve; the
+/// gate lives in the validated wrapper and the candidates filter).
 /// `None` when not found or relative.
 #[must_use]
 pub fn resolve_binary() -> Option<PathBuf> {
-    let explicit = std::env::var_os(LLAMA_SERVER_ENV).map(PathBuf::from);
-    if let Some(path) = explicit {
-        if !path.is_absolute() {
-            return None;
+    let explicit = orator_core::paths::ExplicitBinary::from_env(LLAMA_SERVER_ENV);
+    match explicit.path {
+        Some(path) if path.is_absolute() => {
+            let fingerprint = orator_core::paths::binary_fingerprint(&path);
+            if let Err(error) = orator_core::paths::validate_server_binary(
+                &path,
+                orator_core::paths::current_uid(),
+                false,
+            ) {
+                eprintln!(
+                    "orator: explicit llama-server {} ({fingerprint}) bypasses the gate with a warning: {error}",
+                    path.display()
+                );
+            }
+            Some(path)
         }
-        let fingerprint = orator_core::paths::binary_fingerprint(&path);
-        if let Err(error) = orator_core::paths::validate_server_binary(
-            &path,
-            orator_core::paths::current_uid(),
-            false,
-        ) {
-            eprintln!(
-                "orator: explicit llama-server {} ({fingerprint}) bypasses the gate with a warning: {error}",
-                path.display()
-            );
-        }
-        return Some(path);
+        Some(_) => None,
+        None => resolve_with_override(None),
     }
-    resolve_with_override(None)
 }
 
 /// Resolve every `llama-server` candidate: the `LLAMA_SERVER` env
@@ -168,42 +171,56 @@ pub fn resolve_binary() -> Option<PathBuf> {
 /// pre-LFM3 build shadowing the system one) fails its boot fast and
 /// the next candidate serves, instead of one shadowed binary vetoing
 /// inference.
+/// Shared filter home: `orator_core::paths::filter_validated_binaries`
+/// (order-preserving, canonical-deduped); the override classification
+/// is `orator_core::paths::ExplicitBinary`.
 #[must_use]
 pub fn resolve_binary_candidates() -> Vec<PathBuf> {
-    if let Some(explicit) = std::env::var_os(LLAMA_SERVER_ENV) {
-        let path = PathBuf::from(explicit);
-        if path.is_absolute() {
-            return vec![path];
-        }
-        return Vec::new();
+    let explicit = orator_core::paths::ExplicitBinary::from_env(LLAMA_SERVER_ENV);
+    match explicit.path {
+        Some(path) if path.is_absolute() => vec![path],
+        Some(_) => Vec::new(),
+        None => orator_core::paths::filter_validated_binaries(
+            orator_core::paths::find_all_on_path(LLAMA_SERVER_BIN),
+            orator_core::paths::current_uid(),
+        ),
     }
-    let uid = orator_core::paths::current_uid();
-    orator_core::paths::find_all_on_path(LLAMA_SERVER_BIN)
-        .into_iter()
-        .filter(|candidate| {
-            orator_core::paths::validate_server_binary(candidate, uid, false).is_ok()
-        })
-        .collect()
 }
 
 /// Resolve the `llama-server` binary with the ownership gate applied:
 /// an explicit `LLAMA_SERVER` override bypasses it, searched hits
 /// must be owned by `expected_uid` with no group/other write bits.
 /// Refusals report as `NoBinary` with the remedy named.
+/// Single-hit fail-fast shape (first hit validated, later hits NOT
+/// tried) — kept deliberately: the boot paths that try every
+/// candidate compose `resolve_binary_candidates` /
+/// `orator_core::paths::resolve_validated_binary` instead. Shared
+/// override home: `orator_core::paths::ExplicitBinary`.
 pub fn resolve_binary_validated(expected_uid: u32) -> Result<PathBuf, SupervisorError> {
-    let explicit = std::env::var_os(LLAMA_SERVER_ENV).is_some();
-    let binary = resolve_binary().ok_or_else(|| {
-        SupervisorError::NoBinary(format!(
-            "llama-server binary not found in $PATH (set the {LLAMA_SERVER_ENV} env var or install it)"
-        ))
-    })?;
-    orator_core::paths::validate_server_binary(&binary, expected_uid, explicit)
+    let explicit = orator_core::paths::ExplicitBinary::from_env(LLAMA_SERVER_ENV);
+    let is_explicit = explicit.path.is_some();
+    let binary = match explicit.path {
+        Some(path) if path.is_absolute() => path,
+        // Relative explicit and unset both fall through to the single
+        // first-hit search: relative resolves to nothing (hence the
+        // `NoBinary` below), unset to the first `$PATH` hit for
+        // first-hit-then-validate.
+        _ => resolve_binary().ok_or_else(|| {
+            SupervisorError::NoBinary(format!(
+                "llama-server binary not found in $PATH (set the {LLAMA_SERVER_ENV} env var or install it)"
+            ))
+        })?,
+    };
+    orator_core::paths::validate_server_binary(&binary, expected_uid, is_explicit)
         .map_err(SupervisorError::NoBinary)?;
     Ok(binary)
 }
 
 /// Reserve a free localhost port (bind `:0`, read the port, drop the
 /// listener). A hint — a race is possible but negligible at boot.
+/// Single home: the s2s voice/worker paths compose this through
+/// `boot_with_binary` (port `0` → hint → retry on collision); no
+/// second port-hint implementation exists in the tree.
 #[must_use]
 pub fn free_port() -> Option<u16> {
     std::net::TcpListener::bind("127.0.0.1:0")
@@ -399,22 +416,35 @@ impl Supervisor {
                 "llama-server binary not found in $PATH (set the {LLAMA_SERVER_ENV} env var or install it)"
             )));
         }
-        let mut last_error = None;
-        for binary in &candidates {
-            match boot_with_binary(config.clone(), binary).await {
-                Ok(server) => return Ok(server),
-                Err(error) => {
-                    tracing::warn!(
-                        target: "orator.llm",
-                        binary = %binary.display(),
-                        %error,
-                        "server candidate failed; trying the next",
-                    );
-                    last_error = Some(error);
+        match fluent_wvr::ladder::first_accept_in_order(
+            candidates,
+            |binary: PathBuf| {
+                let config = config.clone();
+                async move {
+                    match boot_with_binary(config, &binary).await {
+                        Ok(server) => Ok(Some(server)),
+                        Err(error) => {
+                            tracing::warn!(
+                                target: "orator.llm",
+                                binary = %binary.display(),
+                                %error,
+                                "server candidate failed; trying the next",
+                            );
+                            Err(error)
+                        }
+                    }
                 }
-            }
+            },
+            |_: &SupervisorError| false,
+        )
+        .await
+        {
+            Ok(Some(server)) => Ok(server),
+            Ok(None) => Err(SupervisorError::NoBinary(format!(
+                "llama-server binary not found in $PATH (set the {LLAMA_SERVER_ENV} env var or install it)"
+            ))),
+            Err(error) => Err(error),
         }
-        Err(last_error.expect("one candidate at least"))
     }
 
     /// Manage an already-running endpoint at `base_url`. No process is
@@ -476,10 +506,7 @@ impl Supervisor {
     /// Wait for the configured probe up to `timeout`, polling every
     /// 250 ms. A spawned child that exits first fails fast instead of
     /// burning the whole timeout on refused connections.
-    pub async fn wait_healthy_timeout(
-        &self,
-        timeout: Duration,
-    ) -> Result<(), SupervisorError> {
+    pub async fn wait_healthy_timeout(&self, timeout: Duration) -> Result<(), SupervisorError> {
         let deadline = tokio::time::Instant::now() + timeout;
         loop {
             match probe_health(&self.base_url, self.config.health_probe).await {
@@ -496,10 +523,7 @@ impl Supervisor {
                         )));
                     }
                     if tokio::time::Instant::now() >= deadline {
-                        return Err(SupervisorError::Unhealthy(
-                            self.base_url.clone(),
-                            detail,
-                        ));
+                        return Err(SupervisorError::Unhealthy(self.base_url.clone(), detail));
                     }
                     tokio::time::sleep(HEALTH_POLL_STEP).await;
                 }
@@ -552,9 +576,7 @@ impl Supervisor {
                             self.restarts.fetch_add(1, Ordering::Relaxed);
                             // A restart that never becomes healthy burns
                             // another failure below instead of hanging here.
-                            let _ = self
-                                .wait_healthy_timeout(self.config.health_timeout)
-                                .await;
+                            let _ = self.wait_healthy_timeout(self.config.health_timeout).await;
                         }
                         RecoveryAction::Contain => {
                             self.stop();
@@ -583,6 +605,15 @@ impl Supervisor {
         })?;
         let slot = slot_save_flag(self.config.slot_save_dir.clone());
         let args = build_args(&self.config, slot.as_deref());
+        // M6-S6 audit: no shared `supervised_cmd` builder. The sandbox
+        // prefix below (env_clear + pinned PATH/LANG + null stdio +
+        // kill_on_drop + process group) matches the worker's spawn, but
+        // the sites diverge load-bearingly — here stderr is discarded
+        // (health decides), there it is piped and drained for error
+        // tails; here cwd inherits, there it is a private jail; here the
+        // child is stored for the nanny, there it is scoped by a
+        // timeout + whole-group kill. Extracting the common prefix
+        // would hide those divergences, so it stays duplicated.
         let child = tokio::process::Command::new(binary)
             .args(&args)
             .env_clear()
@@ -600,7 +631,11 @@ impl Supervisor {
                 } else {
                     ""
                 };
-                SupervisorError::Spawn(format!("{marker}{} ({}): {error}", binary.display(), args.join(" ")))
+                SupervisorError::Spawn(format!(
+                    "{marker}{} ({}): {error}",
+                    binary.display(),
+                    args.join(" ")
+                ))
             })?;
         // Reap promptly on drop instead of leaking a zombie supervisor row.
         let _ = child.id();
@@ -645,8 +680,8 @@ pub async fn boot_with_binary(
     let auto_port = config.port == 0;
     let mut config = config;
     if auto_port {
-        config.port =
-            free_port().ok_or_else(|| SupervisorError::Spawn("no free localhost port".to_string()))?;
+        config.port = free_port()
+            .ok_or_else(|| SupervisorError::Spawn("no free localhost port".to_string()))?;
     }
     // Hint-then-reuse races a parallel boot; retry on collision instead
     // of failing the whole turn on one taken port. Spawn collisions
@@ -683,10 +718,7 @@ pub async fn boot_with_binary(
                 return Err(error);
             }
         }
-        if let Err(error) = this
-            .wait_healthy_timeout(this.config.health_timeout)
-            .await
-        {
+        if let Err(error) = this.wait_healthy_timeout(this.config.health_timeout).await {
             // Retry automatic ports on fast spawn exits (the hint was
             // likely taken); explicit ports, timeouts, and usage errors
             // never retry.

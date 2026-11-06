@@ -76,14 +76,22 @@ pub fn find_all_on_path(name: &str) -> Vec<PathBuf> {
 
 /// Whether `candidate` stays inside `root` after resolving symlinks.
 /// Missing paths and escapes both fail closed (`false`). Resolution is
-/// hop-capped (40) with no unbounded `canonicalize`: loops and deep
+/// hop-capped (never an unbounded `canonicalize`): loops and deep
 /// chains refuse instead of hanging or resolving outside.
+///
+/// Layering (intentional, not duplication): this is the fast check —
+/// callers that then open the path must re-validate the opened
+/// handle (`orator_tools::sandbox::open_within`, fd re-validation),
+/// because a check-then-open races a symlink swap. The sandbox is
+/// the authoritative jail; this is the cheap gate. Both share
+/// `common_core::path::MAX_SYMLINK_HOPS`.
 #[must_use]
 pub fn within_root(root: &Path, candidate: &Path) -> bool {
-    let Some(root) = resolve_hop_capped(root, 40) else {
+    use common_core::path::MAX_SYMLINK_HOPS;
+    let Some(root) = resolve_hop_capped(root, MAX_SYMLINK_HOPS) else {
         return false;
     };
-    let Some(resolved) = resolve_hop_capped(candidate, 40) else {
+    let Some(resolved) = resolve_hop_capped(candidate, MAX_SYMLINK_HOPS) else {
         return false;
     };
     resolved.starts_with(root)
@@ -119,20 +127,8 @@ pub fn has_symlink_parent(path: &Path) -> bool {
 /// Returns `None` on loops, hop exhaustion, missing paths, or `..`
 /// past the filesystem root — all fail closed for callers.
 fn resolve_hop_capped(path: &Path, hops: u32) -> Option<PathBuf> {
-    use std::path::Component;
     // Lexical normalize first so `..` cannot skip out before the walk.
-    let mut current = PathBuf::new();
-    for component in path.components() {
-        match component {
-            Component::ParentDir => {
-                if !current.pop() {
-                    return None;
-                }
-            }
-            Component::CurDir => {}
-            other => current.push(other.as_os_str()),
-        }
-    }
+    let mut current = common_core::path::normalize_std_path(path)?;
     for _ in 0..hops {
         let meta = std::fs::symlink_metadata(&current).ok()?;
         if !meta.file_type().is_symlink() {
@@ -142,31 +138,97 @@ fn resolve_hop_capped(path: &Path, hops: u32) -> Option<PathBuf> {
         let joined = if target.is_absolute() {
             target
         } else {
-            current.parent().map_or(target.clone(), |dir| dir.join(&target))
+            current
+                .parent()
+                .map_or(target.clone(), |dir| dir.join(&target))
         };
-        let mut normal = PathBuf::new();
-        for component in joined.components() {
-            match component {
-                Component::ParentDir => {
-                    if !normal.pop() {
-                        return None;
-                    }
-                }
-                Component::CurDir => {}
-                other => normal.push(other.as_os_str()),
-            }
-        }
-        current = normal;
+        current = common_core::path::normalize_std_path(&joined)?;
     }
     // Budget exhausted: only accept when the landing is no longer a
     // symlink; loops stay `None`.
-    if std::fs::symlink_metadata(&current)
-        .is_ok_and(|meta| meta.file_type().is_symlink())
-    {
+    if std::fs::symlink_metadata(&current).is_ok_and(|meta| meta.file_type().is_symlink()) {
         return None;
     }
     Some(current)
 }
+
+/// Explicit binary override slot: the env var plus its current value.
+/// The three server resolvers (`llm::resolve_binary*`,
+/// `s2s::resolve_audio_server*`, `s2s::resolve_tts_binary`) share one
+/// shape — absolute override wins untouched, relative refuses with no
+/// search, unset falls through to the order table — which these
+/// helpers capture. Per-caller order tables stay at the call sites;
+/// only the classification and the gate filter move here.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExplicitBinary {
+    /// Env var naming the override (kept for diagnostics at call sites).
+    pub env_var: &'static str,
+    /// Current value of the var; `None` when unset.
+    pub path: Option<PathBuf>,
+}
+
+impl ExplicitBinary {
+    /// Read the override slot from the process environment.
+    #[must_use]
+    pub fn from_env(env_var: &'static str) -> Self {
+        Self {
+            env_var,
+            path: std::env::var_os(env_var).map(PathBuf::from),
+        }
+    }
+}
+
+/// Every candidate passing [`validate_server_binary`], order
+/// preserved, deduplicated by canonical path (the literal join is
+/// returned, so symlinked hits keep their table spelling). Matches
+/// the `find_all_on_path` dedup contract, so filtering an already
+/// deduplicated list is a no-op.
+#[must_use]
+pub fn filter_validated_binaries(
+    candidates: impl IntoIterator<Item = PathBuf>,
+    expected_uid: u32,
+) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let mut seen: Vec<PathBuf> = Vec::new();
+    for candidate in candidates {
+        let canonical = std::fs::canonicalize(&candidate).unwrap_or_else(|_| candidate.clone());
+        if seen.contains(&canonical) {
+            continue;
+        }
+        if validate_server_binary(&candidate, expected_uid, false).is_ok() {
+            seen.push(canonical);
+            out.push(candidate);
+        }
+    }
+    out
+}
+
+/// Resolve one server binary: an absolute explicit override wins
+/// untouched (bypass — the caller logs the gate warning and owns the
+/// path); a relative override refuses with no search; otherwise the
+/// first gate-passing candidate serves (`None` when nothing trusted).
+/// Single-hit fail-fast wrappers (`resolve_binary_validated`) keep
+/// their own first-hit-then-validate shape on top of
+/// [`ExplicitBinary`] instead — the boot paths that try every
+/// candidate compose this function.
+#[must_use]
+pub fn resolve_validated_binary(
+    explicit: &ExplicitBinary,
+    candidates: impl IntoIterator<Item = PathBuf>,
+    expected_uid: u32,
+) -> Option<PathBuf> {
+    match &explicit.path {
+        Some(path) if path.is_absolute() => Some(path.clone()),
+        Some(_) => None,
+        None => filter_validated_binaries(candidates, expected_uid)
+            .into_iter()
+            .next(),
+    }
+}
+
+#[cfg(test)]
+#[path = "../tests/paths.rs"]
+mod tests;
 
 /// Ownership gate for searched server binaries: the canonical path
 /// must be absolute, owned by `expected_uid`, carry no group/other
@@ -191,12 +253,13 @@ pub fn validate_server_binary(
     #[cfg(unix)]
     {
         use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
-        let canonical = resolve_hop_capped(path, 40).ok_or_else(|| {
-            format!(
-                "cannot resolve server binary {}: hop cap or missing",
-                path.display()
-            )
-        })?;
+        let canonical =
+            resolve_hop_capped(path, common_core::path::MAX_SYMLINK_HOPS).ok_or_else(|| {
+                format!(
+                    "cannot resolve server binary {}: hop cap or missing",
+                    path.display()
+                )
+            })?;
         // Component-prefix `/tmp` check (`Path::starts_with` is
         // component-wise, so `/tmpfoo` never matches).
         if canonical.starts_with("/tmp") {
@@ -205,9 +268,8 @@ pub fn validate_server_binary(
                 path.display()
             ));
         }
-        let metadata = std::fs::metadata(&canonical).map_err(|error| {
-            format!("cannot stat server binary {}: {error}", path.display())
-        })?;
+        let metadata = std::fs::metadata(&canonical)
+            .map_err(|error| format!("cannot stat server binary {}: {error}", path.display()))?;
         let owner = metadata.uid();
         if owner != expected_uid {
             return Err(format!(
@@ -230,9 +292,8 @@ pub fn validate_server_binary(
             ));
         };
         // Unreadable parent metadata fails closed as world-writable.
-        let dir_mode = std::fs::metadata(parent).map_or(0o777, |metadata| {
-            metadata.permissions().mode() & 0o777
-        });
+        let dir_mode = std::fs::metadata(parent)
+            .map_or(0o777, |metadata| metadata.permissions().mode() & 0o777);
         if dir_mode & 0o002 != 0 {
             return Err(format!(
                 "refusing server binary {} in world-writable directory {}; set the explicit binary override to accept responsibility for this path",

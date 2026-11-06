@@ -6,8 +6,8 @@
 //! no lock per sample.
 
 use std::collections::VecDeque;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
@@ -38,9 +38,7 @@ fn open_default_output(
             |error| eprintln!("orator: playout error: {error}"),
             None,
         )
-        .map_err(|error| {
-            AudioError::Stream(format!("output stream failed: {error}"))
-        })?;
+        .map_err(|error| AudioError::Stream(format!("output stream failed: {error}")))?;
     stream
         .play()
         .map_err(|error| AudioError::Stream(format!("playout failed: {error}")))?;
@@ -59,24 +57,20 @@ pub fn play_blocking(samples: &[f32], rate: u32) -> Result<(), AudioError> {
     let _stream = {
         let shared = Arc::clone(&shared);
         let cursor = Arc::clone(&cursor);
-        open_default_output(
-            rate,
-            move |data: &mut [f32], _| {
-                let at = cursor.load(Ordering::Relaxed);
-                for (offset, sample) in data.iter_mut().enumerate() {
-                    *sample = shared.get(at + offset).copied().unwrap_or(0.0);
-                }
-                cursor.store(at + data.len(), Ordering::Relaxed);
-            },
-        )?
+        open_default_output(rate, move |data: &mut [f32], _| {
+            let at = cursor.load(Ordering::Relaxed);
+            for (offset, sample) in data.iter_mut().enumerate() {
+                *sample = shared.get(at + offset).copied().unwrap_or(0.0);
+            }
+            cursor.store(at + data.len(), Ordering::Relaxed);
+        })?
     };
     // Exact drain: poll the callback cursor until the buffer is
     // consumed, bounded by samples/rate + 1 s. A stall fails closed
     // with the undrained count instead of reporting a truncated turn
     // as success.
-    let ceiling = std::time::Duration::from_secs_f64(
-        samples.len() as f64 / f64::from(rate.max(1)) + 1.0,
-    );
+    let ceiling =
+        std::time::Duration::from_secs_f64(samples.len() as f64 / f64::from(rate.max(1)) + 1.0);
     let deadline = std::time::Instant::now() + ceiling;
     while cursor.load(Ordering::Relaxed) < samples.len() {
         if std::time::Instant::now() >= deadline {
@@ -129,16 +123,13 @@ impl StreamPlayer {
         });
         let stream = {
             let shared = Arc::clone(&shared);
-            open_default_output(
-                rate,
-                move |data: &mut [f32], _| {
-                    let mut queue = common_core::sync::lock(&shared.queue);
-                    for sample in data.iter_mut() {
-                        *sample = queue.pop_front().unwrap_or(0.0);
-                    }
-                    shared.played.fetch_add(data.len(), Ordering::Relaxed);
-                },
-            )?
+            open_default_output(rate, move |data: &mut [f32], _| {
+                let mut queue = common_core::sync::lock(&shared.queue);
+                for sample in data.iter_mut() {
+                    *sample = queue.pop_front().unwrap_or(0.0);
+                }
+                shared.played.fetch_add(data.len(), Ordering::Relaxed);
+            })?
         };
         Ok(Self {
             shared,
@@ -157,7 +148,9 @@ impl StreamPlayer {
         }
         let mut queue = common_core::sync::lock(&self.shared.queue);
         queue.extend(samples.iter().copied());
-        self.shared.pushed.fetch_add(samples.len(), Ordering::Relaxed);
+        self.shared
+            .pushed
+            .fetch_add(samples.len(), Ordering::Relaxed);
         let excess = queue.len().saturating_sub(Self::MAX_QUEUE_SAMPLES);
         if excess > 0 {
             queue.drain(0..excess);
@@ -187,7 +180,10 @@ impl StreamPlayer {
     /// samples at rate plus a 1 s ceiling), then stop the stream.
     /// A stalled device fails closed instead of reporting success.
     pub fn finish(self) -> Result<(), AudioError> {
-        let remaining = self.pushed().saturating_sub(self.played()).saturating_sub(self.dropped());
+        let remaining = self
+            .pushed()
+            .saturating_sub(self.played())
+            .saturating_sub(self.dropped());
         let ceiling = std::time::Duration::from_secs_f64(
             remaining as f64 / f64::from(self.rate.max(1)) + 1.0,
         );

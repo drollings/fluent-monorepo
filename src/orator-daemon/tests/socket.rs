@@ -5,7 +5,7 @@ use std::io::Write;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::sync::Arc;
 
-use orator_core::{SocketFrame, MessageType};
+use orator_core::{MessageType, SocketFrame};
 
 use crate::socket::serve_serial;
 use crate::voice::VoiceOwner;
@@ -80,7 +80,10 @@ fn contract_calls_execute_and_bogus_fails_closed() {
     let reply: serde_json::Value = call(&path, "Say");
     assert_eq!(reply["ok"], serde_json::json!(false));
     assert!(
-        reply["body"]["error"].as_str().unwrap_or_default().contains("nothing to speak"),
+        reply["body"]["error"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("nothing to speak"),
         "missing text names the reason: {reply}"
     );
     server.join().expect("server done");
@@ -131,7 +134,10 @@ fn voice_endpoint_fails_closed_without_an_owner() {
     let reply: serde_json::Value = call(&path, "VoiceEndpoint");
     assert_eq!(reply["ok"], serde_json::json!(false));
     assert!(
-        reply["body"]["error"].as_str().unwrap_or_default().contains("disabled"),
+        reply["body"]["error"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("disabled"),
         "names the remedy: {reply}"
     );
     server.join().expect("server done");
@@ -193,14 +199,10 @@ fn bind_rejects_insecure_parent_modes() {
     let dir = secure_dir();
     let sockdir = dir.path().join("sock");
     std::fs::create_dir(&sockdir).expect("mkdir");
-    std::fs::set_permissions(&sockdir, std::fs::Permissions::from_mode(0o777))
-        .expect("chmod 777");
+    std::fs::set_permissions(&sockdir, std::fs::Permissions::from_mode(0o777)).expect("chmod 777");
     let path = sockdir.join("orator.sock");
     let error = super::bind(&path).expect_err("0777 parent must refuse");
-    assert!(
-        error.to_string().contains("700"),
-        "names the fix: {error}"
-    );
+    assert!(error.to_string().contains("700"), "names the fix: {error}");
 }
 
 #[test]
@@ -209,8 +211,7 @@ fn parent_check_rejects_a_foreign_owner() {
     let _guard = serve_serial();
     let dir = secure_dir();
     let foreign = orator_core::paths::current_uid().wrapping_add(1);
-    let error = super::check_parent(dir.path(), foreign)
-        .expect_err("foreign owner must refuse");
+    let error = super::check_parent(dir.path(), foreign).expect_err("foreign owner must refuse");
     assert!(
         error.to_string().contains("owned by uid"),
         "names the owner: {error}"
@@ -252,7 +253,8 @@ fn booting_owner_answers_contention_immediately() {
 }
 
 #[test]
-fn over_cap_connections_close_without_a_handler() {    let _guard = serve_serial();
+fn over_cap_connections_close_without_a_handler() {
+    let _guard = serve_serial();
     crate::clear_shutdown_for_tests();
     let dir = secure_dir();
     let path = dir.path().join("orator.sock");
@@ -282,7 +284,10 @@ fn over_cap_connections_close_without_a_handler() {    let _guard = serve_serial
         std::thread::sleep(std::time::Duration::from_millis(200));
     }
     drop(held);
-    assert!(saturated, "a connection past the cap must refuse Saturated, not queue");
+    assert!(
+        saturated,
+        "a connection past the cap must refuse Saturated, not queue"
+    );
     assert!(
         crate::socket::listener_refusals() > before,
         "over-cap refusal counts"
@@ -539,4 +544,123 @@ fn hardening_chmod_failure_refuses_to_serve() {
         super::restrict(missing).is_err(),
         "chmod on a missing socket refuses instead of failing open"
     );
+}
+
+/// M14-S1: a live holder returns the original `AddrInUse` error —
+/// unwrapped, no stale-reclaim wording. Direct `bind` against a held
+/// listener (no serve loop), so the mapping itself is pinned.
+#[test]
+#[cfg(unix)]
+fn bind_live_holder_returns_the_original_addrinuse_error() {
+    use std::os::unix::net::UnixListener;
+    let _guard = serve_serial();
+    let dir = secure_dir();
+    let path = dir.path().join("orator.sock");
+    let _live = UnixListener::bind(&path).expect("live holder binds");
+    let error = super::bind(&path).expect_err("live holder refuses rebind");
+    assert_eq!(error.kind(), std::io::ErrorKind::AddrInUse);
+    let text = error.to_string();
+    assert!(
+        !text.contains("stale socket"),
+        "original error, not a reclaim wrap: {text}"
+    );
+    assert!(
+        !text.contains("reappeared"),
+        "original error, not a validation wrap: {text}"
+    );
+}
+
+/// M14-S1: a directory at the socket path binds `AddrInUse`, proves
+/// stale (no connect), then fails to unlink — the exact remove-failure
+/// text names the path and the remove error.
+#[test]
+#[cfg(unix)]
+fn bind_directory_at_socket_path_reports_remove_failure() {
+    let _guard = serve_serial();
+    let dir = secure_dir();
+    let path = dir.path().join("orator.sock");
+    std::fs::create_dir(&path).expect("directory at socket path");
+    let error = super::bind(&path).expect_err("directory never binds");
+    let text = error.to_string();
+    assert!(
+        text.contains("stale socket"),
+        "remove failure names the stale file: {text}"
+    );
+    assert!(
+        text.contains("remove failed"),
+        "remove failure names the cause: {text}"
+    );
+    assert!(
+        text.contains(&path.display().to_string()),
+        "remove failure names the path: {text}"
+    );
+}
+
+/// M14-S1: a non-`AddrInUse` failure returns unchanged — a file as the
+/// parent makes directory creation fail, never entering the reclaim
+/// loop, so no stale wording appears.
+#[test]
+#[cfg(unix)]
+fn bind_non_addrinuse_failure_returns_unchanged() {
+    let _guard = serve_serial();
+    let dir = secure_dir();
+    let parent_file = dir.path().join("parent");
+    std::fs::write(&parent_file, b"not a dir").expect("parent file writes");
+    let path = parent_file.join("orator.sock");
+    let error = super::bind(&path).expect_err("file parent never binds");
+    assert_ne!(
+        error.kind(),
+        std::io::ErrorKind::AddrInUse,
+        "not an address-in-use failure: {error:?}"
+    );
+    assert!(
+        !error.to_string().contains("stale socket"),
+        "no reclaim wording on unrelated failures: {error}"
+    );
+}
+
+/// M1-S1 characterization: the daemon Transcribe decoder divides by
+/// 32768 (NOT the 32767 every encoder-side call site uses), and
+/// refuses wrong rates, odd lengths, bad base64, and over-bound
+/// payloads with verbatim errors. The shared `common_core::pcm`
+/// primitive must reproduce the divisor exactly; the refusal strings
+/// stay in the daemon.
+#[test]
+fn orator_daemon_transcribe_decode() {
+    use super::decode_transcribe_audio;
+    use base64::prelude::*;
+    fn payload(samples: &[i16], rate: u64) -> serde_json::Value {
+        let mut raw = Vec::with_capacity(samples.len() * 2);
+        for sample in samples {
+            raw.extend_from_slice(&sample.to_le_bytes());
+        }
+        serde_json::json!({ "audio": BASE64_STANDARD.encode(&raw), "rate": rate })
+    }
+    // 16384 / 32768 is exactly 0.5 — the 32768 divisor, pinned.
+    let decoded = decode_transcribe_audio(&payload(&[16384, -16384], 16_000)).expect("decodes");
+    assert_eq!(decoded, vec![0.5, -0.5], "daemon divides by 32768");
+    assert_eq!(
+        decode_transcribe_audio(&serde_json::json!({ "rate": 16_000 }))
+            .expect_err("missing audio is loud"),
+        "Transcribe takes an `audio` param (base64 i16 LE mono)"
+    );
+    assert_eq!(
+        decode_transcribe_audio(&payload(&[0], 8_000)).expect_err("wrong rate refuses"),
+        "Transcribe needs 16 kHz mono audio (got 8000 Hz); resample before sending"
+    );
+    let odd = serde_json::json!({ "audio": BASE64_STANDARD.encode([0u8, 1, 2]), "rate": 16_000 });
+    assert_eq!(
+        decode_transcribe_audio(&odd).expect_err("odd length refuses"),
+        "Transcribe audio length is not a whole i16 count"
+    );
+    let bad = serde_json::json!({ "audio": "!!!not-base64!!!", "rate": 16_000 });
+    let err = decode_transcribe_audio(&bad).expect_err("bad base64 is loud");
+    assert!(
+        err.starts_with("Transcribe audio is not base64: "),
+        "names it: {err}"
+    );
+    // Over-bound payloads refuse before any inference.
+    let big = vec![0i16; crate::voice::MAX_TRANSCRIBE_SAMPLES + 1];
+    let err = decode_transcribe_audio(&payload(&big, 16_000)).expect_err("bound holds");
+    assert!(err.contains("single-frame bound"), "names the bound: {err}");
 }

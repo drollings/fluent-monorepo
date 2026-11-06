@@ -78,7 +78,9 @@ fn eval(expr: &str) -> Result<f64, ToolError> {
     let mut parser = Parser {
         chars: expr.chars().peekable(),
     };
-    let value = parser.sum().map_err(|why| ToolError::Args("expr".to_string(), why))?;
+    let value = parser
+        .sum()
+        .map_err(|why| ToolError::Args("expr".to_string(), why))?;
     parser.skip_ws();
     if parser.chars.peek().is_some() {
         return Err(ToolError::Args(
@@ -402,7 +404,10 @@ impl Tool for WebFetch {
     fn execute(&self, args: serde_json::Value) -> Result<String, ToolError> {
         let url = arg("url", &args)?;
         if !(url.starts_with("http://") || url.starts_with("https://")) {
-            return Err(ToolError::Args("url".to_string(), "http(s) only".to_string()));
+            return Err(ToolError::Args(
+                "url".to_string(),
+                "http(s) only".to_string(),
+            ));
         }
         // Fail closed before any connect: loopback, link-local,
         // multicast, unspecified, and private ranges never dial.
@@ -434,9 +439,7 @@ fn ip_allowed(ip: std::net::IpAddr) -> bool {
                 || v4.is_documentation()
                 || v4.octets()[0] == 0)
         }
-        std::net::IpAddr::V6(v6) => {
-            !(v6.is_loopback() || v6.is_multicast() || v6.is_unspecified())
-        }
+        std::net::IpAddr::V6(v6) => !(v6.is_loopback() || v6.is_multicast() || v6.is_unspecified()),
     }
 }
 
@@ -470,7 +473,10 @@ async fn resolve_allowed(host: &str) -> Result<(), String> {
     for addr in addrs {
         any = true;
         if !ip_allowed(addr.ip()) {
-            return Err(format!("refusing denied fetch address for {host}: {}", addr.ip()));
+            return Err(format!(
+                "refusing denied fetch address for {host}: {}",
+                addr.ip()
+            ));
         }
     }
     if !any {
@@ -497,9 +503,8 @@ async fn check_url(url: &reqwest::Url) -> Result<(), String> {
 
 async fn fetch(url: &str) -> Result<String, ToolError> {
     let fail = |message: String| ToolError::Failed("web_fetch".to_string(), message);
-    let mut current = reqwest::Url::parse(url).map_err(|error| {
-        ToolError::Args("url".to_string(), format!("bad URL: {error}"))
-    })?;
+    let mut current = reqwest::Url::parse(url)
+        .map_err(|error| ToolError::Args("url".to_string(), format!("bad URL: {error}")))?;
     // Manual redirect loop (shared client never auto-follows): every
     // hop re-checks SSRF before connecting, at most 5 hops.
     for _ in 0..=5 {

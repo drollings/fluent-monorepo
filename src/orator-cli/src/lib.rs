@@ -12,6 +12,9 @@ use orator_core::protocol::{validate_method, METHOD_NAMES};
 /// Shell integration surface.
 pub mod doctor;
 
+/// One error envelope for every CLI failure line.
+pub mod error;
+
 /// Configuration helpers: backend resolution and dotted-key access.
 pub mod config;
 
@@ -36,8 +39,20 @@ pub mod tui;
 /// Offline transcription rendering.
 pub mod transcribe;
 
+/// Local stat-file rendering (same bytes as the daemon path).
+pub mod stats;
+
 /// Dictation capture bounds (seconds ceiling, deadline, device choice).
 pub mod dictate;
+
+/// Local-first voice fallback (daemon first, local specialized second).
+pub mod fallback;
+
+/// Scrolling-log events for `chat` (text + JSON renderers).
+pub mod chatlog;
+
+/// `chat` turn helpers (slash parsing, voice/text modes, labels).
+pub mod chat;
 
 /// Ask preflight (strict ports, fail-fast weights, speak notes).
 pub mod ask;
@@ -163,7 +178,7 @@ pub enum Command {
         /// Output format: txt, srt, vtt, json.
         #[arg(long, default_value = "txt")]
         format: String,
-        /// STT backend: whisper, audio-server. Empty follows config.
+        /// STT backend: whisper, moonshine, audio-server. Empty follows config.
         #[arg(long, default_value = "")]
         backend: String,
     },
@@ -176,7 +191,27 @@ pub enum Command {
         speak: bool,
     },
     /// Interactive assistant in the terminal.
-    Chat,
+    Chat {
+        /// Log wire shape: human text on stderr, JSON lines on stdout.
+        /// Line input sends; the live mic (when a capture device
+        /// answers) endpoints VAD-gated turns in auto mode or on /talk
+        /// toggle-off in ptt. /quit exits, /reset clears, /wav + /input
+        /// voice a file, /mic auto|ptt gates file and mic turns, /talk
+        /// toggles, /voice off|short|full, /text short|full, /barge
+        /// on|off (voice barge default on, needs the audio.aec echo
+        /// guard; key barge always works). Chords
+        /// match the TUI (Ctrl+B barge, Ctrl+Q quit, Ctrl+G mic mode,
+        /// Ctrl+T talk) typed as the control character plus Enter;
+        /// Ctrl+C aborts, Ctrl+D ends input. Barge cuts queued turns
+        /// and pending audio; device-draining audio finishes. Mic
+        /// pauses while a turn runs; voice barge-in (talking over
+        /// audio) is not served — cut with Ctrl+B and speak.
+        #[arg(long, default_value = "text")]
+        log_format: String,
+        /// Verbosity: 0 hides agent tool-call detail, 1+ reveals it.
+        #[arg(long, default_value_t = 0)]
+        verbosity: u8,
+    },
     /// Dictation into the focused window.
     Dictate {
         /// Record once and exit instead of holding to talk.
@@ -188,7 +223,7 @@ pub enum Command {
         /// Print the transcript to stdout as well (shell fill).
         #[arg(long)]
         stdout: bool,
-        /// STT backend: whisper, audio-server. Empty follows config.
+        /// STT backend: whisper, moonshine, audio-server. Empty follows config.
         #[arg(long, default_value = "")]
         backend: String,
     },
@@ -385,8 +420,10 @@ impl SignalWatch {
         use std::sync::atomic::Ordering;
         let armed = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
         let signalled = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let (armed_task, signalled_task) =
-            (std::sync::Arc::clone(&armed), std::sync::Arc::clone(&signalled));
+        let (armed_task, signalled_task) = (
+            std::sync::Arc::clone(&armed),
+            std::sync::Arc::clone(&signalled),
+        );
         std::thread::spawn(move || {
             common_core::runtime::block_on(orator_core::shutdown_signal());
             signalled_task.store(true, Ordering::SeqCst);
@@ -400,8 +437,7 @@ impl SignalWatch {
     /// Whether the signal arrived while armed.
     #[must_use]
     pub fn signalled(&self) -> bool {
-        self.signalled
-            .load(std::sync::atomic::Ordering::SeqCst)
+        self.signalled.load(std::sync::atomic::Ordering::SeqCst)
     }
 }
 

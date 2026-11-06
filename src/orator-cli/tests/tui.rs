@@ -2,13 +2,13 @@
 //! rendering goldens, endpoint release. Every test draws into a
 //! `TestBackend` buffer — no TTY, no raw mode, no live daemon.
 
-use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use ratatui::Terminal;
 
 use crate::tui::{
-    MicGate, SessionControl, ControlError, SCROLLBACK, TuiApp, TuiLine, TurnEvent, level_bar,
-    map_key, parse_command, render, ControlOutcome,
+    level_bar, map_key, parse_command, render, ControlError, ControlOutcome, MicGate,
+    SessionControl, TuiApp, TuiLine, TurnEvent, SCROLLBACK,
 };
 
 fn key(code: KeyCode) -> KeyEvent {
@@ -29,9 +29,7 @@ struct StubControl {
 }
 
 impl StubControl {
-    fn answering(
-        answers: Vec<Result<serde_json::Value, ControlError>>,
-    ) -> Self {
+    fn answering(answers: Vec<Result<serde_json::Value, ControlError>>) -> Self {
         Self {
             answers: answers.into(),
             ..Self::default()
@@ -40,13 +38,11 @@ impl StubControl {
 }
 
 impl SessionControl for StubControl {
-    fn call(
-        &mut self,
-        method: &str,
-        params: serde_json::Value,
-    ) -> ControlOutcome {
+    fn call(&mut self, method: &str, params: serde_json::Value) -> ControlOutcome {
         self.calls.push((method.to_string(), params));
-        self.answers.pop_front().unwrap_or(Ok(serde_json::json!({})))
+        self.answers
+            .pop_front()
+            .unwrap_or(Ok(serde_json::json!({})))
     }
 
     fn abort(&mut self) {
@@ -84,13 +80,62 @@ fn screen_text(terminal: &Terminal<TestBackend>) -> String {
 #[test]
 fn barge_key_fires_abort_quit_releases_endpoint() {
     let mut app = TuiApp::new(StubControl::default());
-    assert_eq!(map_key(ctrl(KeyCode::Char('b'))), crate::tui::TuiAction::Barge);
+    assert_eq!(
+        map_key(ctrl(KeyCode::Char('b'))),
+        crate::tui::TuiAction::Barge
+    );
     app.key(ctrl(KeyCode::Char('b')));
     app.key(ctrl(KeyCode::Char('b')));
     assert_eq!(app.control.aborted, 2, "every barge keystroke aborts");
     assert_eq!(app.control.released, 0, "barge never releases");
     app.key(ctrl(KeyCode::Char('q')));
     assert_eq!(app.control.released, 1, "quit releases the endpoint");
+    assert!(app.quit, "quit latches the exit flag");
+}
+
+/// Barge mid-reply then the next turn completes: the cut sheds the
+/// buffered echo, records the cut, and the app stays drivable —
+//  abort, shed, status line, then a fresh Ask with a rendered reply,
+//  then a single release on quit.
+#[test]
+fn barge_mid_reply_sheds_then_next_turn_completes() {
+    let mut app = TuiApp::new(StubControl::answering(vec![Ok(
+        serde_json::json!({"reply": "second answer"}),
+    )]));
+    // Mid-reply state: voicing with a buffered echo tail.
+    app.state.voicing = true;
+    app.suppress_utterance = true;
+    app.pending_utterance = vec![0.1; 320];
+    app.key(ctrl(KeyCode::Char('b')));
+    assert_eq!(app.control.aborted, 1, "barge aborts the in-flight turn");
+    assert_eq!(app.control.released, 0, "barge never releases");
+    assert!(app.pending_utterance.is_empty(), "cut sheds the echo tail");
+    assert!(
+        app.state
+            .lines
+            .iter()
+            .any(|line| matches!(line, TuiLine::Status(text) if text.contains("barge: cut"))),
+        "cut is named on the transcript"
+    );
+    // Next turn drives normally after the cut.
+    for char in "again".chars() {
+        app.key(key(KeyCode::Char(char)));
+    }
+    app.key(key(KeyCode::Enter));
+    assert_eq!(
+        app.control.calls,
+        vec![("Ask".to_string(), serde_json::json!({"question": "again"}))],
+        "fresh Ask leaves after the cut"
+    );
+    assert!(
+        app.state
+            .lines
+            .iter()
+            .any(|line| matches!(line, TuiLine::Heard(text) if text == "second answer")),
+        "reply renders after the cut"
+    );
+    app.key(ctrl(KeyCode::Char('q')));
+    assert_eq!(app.control.released, 1, "quit releases exactly once");
     assert!(app.quit, "quit latches the exit flag");
 }
 
@@ -109,7 +154,10 @@ fn session_keys_drive_start_stop_list_with_exact_params() {
     assert_eq!(
         app.control.calls,
         vec![
-            ("StartSession".to_string(), serde_json::json!({"kind": "assistant"})),
+            (
+                "StartSession".to_string(),
+                serde_json::json!({"kind": "assistant"})
+            ),
             ("StopSession".to_string(), serde_json::json!({})),
             ("ListSessions".to_string(), serde_json::json!({})),
         ]
@@ -146,11 +194,18 @@ fn typed_line_sends_as_ask_and_slash_commands_dispatch() {
     app.key(key(KeyCode::Enter));
     assert_eq!(app.control.calls.len(), calls, "slash never voices");
     assert!(app.quit, "/quit latches the exit flag");
-    assert_eq!(parse_command("/start"), Some(crate::tui::SlashCommand::Start));
+    assert_eq!(
+        parse_command("/start"),
+        Some(crate::tui::SlashCommand::Start)
+    );
     assert_eq!(parse_command("/stop"), Some(crate::tui::SlashCommand::Stop));
     assert_eq!(parse_command("/list"), Some(crate::tui::SlashCommand::List));
     assert_eq!(parse_command("/quit"), Some(crate::tui::SlashCommand::Quit));
-    assert_eq!(parse_command("/nope"), None, "unknown slash is spoken, not dispatched");
+    assert_eq!(
+        parse_command("/nope"),
+        None,
+        "unknown slash is spoken, not dispatched"
+    );
     assert_eq!(parse_command("plain"), None);
 }
 
@@ -183,6 +238,15 @@ fn mic_gate_holds_silence_passes_hot_spans() {
     assert!(!gate.push(&hot), "second hot frame is attack, not speech");
     assert!(gate.push(&hot), "attack run opens the span");
     assert!(gate.level() > 0.0, "hot span raises the meter");
+}
+
+#[test]
+fn mic_level_pins_current_rms_bits() {
+    let mut gate = MicGate::new();
+    gate.push(&vec![0.0; 320]);
+    assert_eq!(gate.level().to_bits(), 0);
+    gate.push(&hot_frame());
+    assert_eq!(gate.level().to_bits(), 1051931444);
 }
 
 #[test]
@@ -229,7 +293,10 @@ fn transcript_golden_for_text_audio_done() {
     let mut terminal = Terminal::new(backend).expect("test backend builds");
     render(&mut terminal, &app.state).expect("headless render holds");
     let screen = screen_text(&terminal);
-    assert!(screen.contains("hello there"), "user text visible:\n{screen}");
+    assert!(
+        screen.contains("hello there"),
+        "user text visible:\n{screen}"
+    );
     assert!(screen.contains("hi back"), "reply text visible:\n{screen}");
     assert!(screen.contains("♪ 2400"), "audio marker visible:\n{screen}");
     assert!(screen.contains("done"), "turn-complete visible:\n{screen}");
@@ -247,7 +314,10 @@ fn render_shows_meter_voicing_and_session_without_tty() {
     render(&mut terminal, &app.state).expect("headless render holds");
     let screen = screen_text(&terminal);
     assert!(screen.contains("s1"), "session visible:\n{screen}");
-    assert!(screen.contains("VOICING"), "server-audio indicator visible:\n{screen}");
+    assert!(
+        screen.contains("VOICING"),
+        "server-audio indicator visible:\n{screen}"
+    );
     assert!(screen.contains("████░░░░"), "meter bar visible:\n{screen}");
     assert!(screen.contains("he"), "input line visible:\n{screen}");
 }
@@ -289,7 +359,10 @@ fn signal_flag_quits_and_releases_the_session() {
     assert_eq!(
         app.control.calls,
         vec![
-            ("StartSession".to_string(), serde_json::json!({"kind": "assistant"})),
+            (
+                "StartSession".to_string(),
+                serde_json::json!({"kind": "assistant"})
+            ),
             ("StopSession".to_string(), serde_json::json!({})),
         ]
     );
@@ -311,7 +384,11 @@ fn mixed_rate_capture_frames_like_same_rate() {
         &mut carry,
         &mut remainder,
         16_000,
-        &mut same,
+        &mut same.gate,
+        &mut same.pending_utterance,
+        &mut same.pending_dropped,
+        true,
+        None,
     );
     let mut mixed = TuiApp::new(StubControl::default());
     let mut carry = Vec::new();
@@ -323,7 +400,11 @@ fn mixed_rate_capture_frames_like_same_rate() {
             &mut carry,
             &mut remainder,
             48_000,
-            &mut mixed,
+            &mut mixed.gate,
+            &mut mixed.pending_utterance,
+            &mut mixed.pending_dropped,
+            true,
+            None,
         );
     }
     assert_eq!(
@@ -336,7 +417,10 @@ fn mixed_rate_capture_frames_like_same_rate() {
         3 * FRAME_SAMPLES,
         "five frames in, two attack frames dropped, three buffered"
     );
-    assert!(remainder.len() < FRAME_SAMPLES, "remainder never holds a frame");
+    assert!(
+        remainder.len() < FRAME_SAMPLES,
+        "remainder never holds a frame"
+    );
 }
 
 #[test]
@@ -360,7 +444,7 @@ fn slow_transcribe_bounds_the_utterance_queue() {
 }
 
 #[test]
-fn transcribe_is_a_daemon_call_never_local_inference() {
+fn transcribe_dials_daemon_first_and_aborts_fast() {
     use super::{transcribe_samples, SttWorker, Transport};
     use fluent_concurrency::stream::StreamAbort;
     // Cancelled aborts fast without dialing (no backend, no model, no
@@ -384,12 +468,8 @@ fn transcribe_is_a_daemon_call_never_local_inference() {
 }
 
 #[test]
-fn voice_turn_voices_through_the_daemon_not_a_local_synth() {
+fn voice_turn_reports_daemon_refusals_with_their_text() {
     use super::ask_then_voice_with;
-    // A refused Say surfaces with its text: the voice path dials the
-    // daemon with the reply text and reports its answer — local
-    // synthesis is never consulted, and words are never lost to a
-    // playback problem.
     let turn = ask_then_voice_with(
         "hi there",
         None,
@@ -431,12 +511,9 @@ fn voice_turn_summarizes_long_replies_and_skips_empty_ones() {
     assert_eq!(turn.reply, long, "transcript keeps every word");
     assert!(matches!(turn.voice, Ok(Some(_))), "audio rides along");
     // Empty replies never reach synthesis.
-    let turn = ask_then_voice_with(
-        "silence",
-        None,
-        &|_, _| Ok("   ".to_string()),
-        &|_| panic!("empty replies must never dial Say"),
-    )
+    let turn = ask_then_voice_with("silence", None, &|_, _| Ok("   ".to_string()), &|_| {
+        panic!("empty replies must never dial Say")
+    })
     .expect("empty turn runs");
     assert!(matches!(turn.voice, Ok(None)), "nothing to voice");
 }
@@ -459,7 +536,9 @@ fn barged_worker_turns_never_dial() {
         .recv_timeout(std::time::Duration::from_secs(5))
         .expect("worker answers promptly");
     assert!(
-        result.expect_err("barged turn reports abort").contains("aborted"),
+        result
+            .expect_err("barged turn reports abort")
+            .contains("aborted"),
         "stale results never deliver as text"
     );
 }
@@ -476,18 +555,29 @@ fn saturated_send_keeps_the_typed_message_for_retry() {
         app.key(key(KeyCode::Char(ch)));
     }
     app.key(key(KeyCode::Enter));
-    assert_eq!(app.state.input, "hello", "saturated send restores the input");
+    assert_eq!(
+        app.state.input, "hello",
+        "saturated send restores the input"
+    );
     assert!(
-        app.state.lines.iter().any(|line| matches!(line, TuiLine::Status(note) if note.contains("retry"))),
+        app.state
+            .lines
+            .iter()
+            .any(|line| matches!(line, TuiLine::Status(note) if note.contains("retry"))),
         "the remedy names retry: {:?}",
         app.state.lines
     );
     // Retry delivers once the daemon drains: the restored input sends.
-    app.control.answers.push_back(Ok(serde_json::json!({"reply": "hi"})));
+    app.control
+        .answers
+        .push_back(Ok(serde_json::json!({"reply": "hi"})));
     app.key(key(KeyCode::Enter));
     assert_eq!(app.state.input, "", "delivered input clears");
     assert!(
-        app.state.lines.iter().any(|line| matches!(line, TuiLine::Heard(reply) if reply == "hi")),
+        app.state
+            .lines
+            .iter()
+            .any(|line| matches!(line, TuiLine::Heard(reply) if reply == "hi")),
         "retry answer lands: {:?}",
         app.state.lines
     );
@@ -505,9 +595,15 @@ fn other_send_failures_still_drop_with_the_line() {
         app.key(key(KeyCode::Char(ch)));
     }
     app.key(key(KeyCode::Enter));
-    assert_eq!(app.state.input, "", "non-saturated failures drop like before");
+    assert_eq!(
+        app.state.input, "",
+        "non-saturated failures drop like before"
+    );
     assert!(
-        app.state.lines.iter().any(|line| matches!(line, TuiLine::Said(text) if text == "hi")),
+        app.state
+            .lines
+            .iter()
+            .any(|line| matches!(line, TuiLine::Said(text) if text == "hi")),
         "the attempt stays on record: {:?}",
         app.state.lines
     );
@@ -529,20 +625,21 @@ fn voice_worker_delivers_turns_and_drops_cuts() {
         Transport::Socket,
         StreamAbort::new(),
     );
-    let turn = job.receiver.recv_timeout(std::time::Duration::from_secs(10)).expect("turn arrives").expect("turn ok");
+    let turn = job
+        .receiver
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .expect("turn arrives")
+        .expect("turn ok");
     assert_eq!(turn.reply, "echo:hi");
     assert!(matches!(turn.voice, Ok(Some(_))), "audio rides along");
     // A cut before delivery never arrives: the worker skips the send
     // and the loop has already dropped the job.
     let abort = StreamAbort::new();
     abort.cancel();
-    let cut: VoiceJob = worker.turn(
-        "late".to_string(),
-        None,
-        Transport::Socket,
-        abort,
-    );
-    let outcome = cut.receiver.recv_timeout(std::time::Duration::from_secs(10));
+    let cut: VoiceJob = worker.turn("late".to_string(), None, Transport::Socket, abort);
+    let outcome = cut
+        .receiver
+        .recv_timeout(std::time::Duration::from_secs(10));
     assert!(
         matches!(outcome, Err(_) | Ok(Err(_))),
         "cut turns never deliver speech: {outcome:?}"
@@ -568,9 +665,12 @@ fn mic_modes_cycle_with_keys_and_slashes() {
         }
         app.key(key(KeyCode::Enter));
     }
-    assert_eq!(app.state.mic_mode, MicMode::Auto, "slash round-trip ends home");
+    assert_eq!(
+        app.state.mic_mode,
+        MicMode::Auto,
+        "slash round-trip ends home"
+    );
 }
-
 
 fn hot_span(app: &mut TuiApp<StubControl>, frames: usize) {
     // The detector needs an attack run before a span opens.
@@ -585,7 +685,10 @@ fn ptt_buffers_only_while_talking_and_commits_on_toggle_off() {
     let mut app = TuiApp::new(StubControl::default());
     app.key(ctrl(KeyCode::Char('g')));
     app.mic(&hot_frame());
-    assert!(app.pending_utterance.is_empty(), "cold PTT mic buffers nothing");
+    assert!(
+        app.pending_utterance.is_empty(),
+        "cold PTT mic buffers nothing"
+    );
     app.key(ctrl(KeyCode::Char('t')));
     assert!(app.state.talking, "talk latches hot");
     hot_span(&mut app, 3);
@@ -601,7 +704,10 @@ fn talk_key_names_the_remedy_outside_ptt() {
     app.key(ctrl(KeyCode::Char('t')));
     assert!(!app.state.talking, "auto mode has no talk state");
     assert!(
-        app.state.lines.iter().any(|line| matches!(line, TuiLine::Status(note) if note.contains("Ctrl+G"))),
+        app.state
+            .lines
+            .iter()
+            .any(|line| matches!(line, TuiLine::Status(note) if note.contains("Ctrl+G"))),
         "the hint names the mode key: {:?}",
         app.state.lines
     );
@@ -612,12 +718,18 @@ fn voicing_suppression_moves_meter_without_buffering() {
     let mut app = TuiApp::new(StubControl::default());
     app.suppress_utterance = true;
     hot_span(&mut app, 3);
-    assert!(app.state.mic_level > 0.0, "meter stays live under suppression");
+    assert!(
+        app.state.mic_level > 0.0,
+        "meter stays live under suppression"
+    );
     assert!(app.pending_utterance.is_empty(), "echo never buffers");
     app.suppress_utterance = false;
     app.gate.reset();
     hot_span(&mut app, 3);
-    assert!(!app.pending_utterance.is_empty(), "release resumes buffering");
+    assert!(
+        !app.pending_utterance.is_empty(),
+        "release resumes buffering"
+    );
 }
 
 #[test]

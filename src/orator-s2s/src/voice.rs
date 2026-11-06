@@ -19,8 +19,8 @@ use std::time::Duration;
 
 use orator_llm::{HealthProbe, SupervisorConfig};
 
-use orator_core::AudioBundle;
 use crate::session::S2sError;
+use orator_core::AudioBundle;
 /// Server binary name resolved from `$PATH` and the managed dir.
 pub const AUDIO_SERVER_BIN: &str = "llama-liquid-audio-server";
 
@@ -36,52 +36,43 @@ pub const VOICE_BOOT_TIMEOUT: Duration = Duration::from_secs(240);
 /// `None` when no home base resolves.
 #[must_use]
 pub fn audio_server_home() -> Option<PathBuf> {
-    orator_core::paths::home_dir()
-        .map(|home| home.join(".local/share/orator/servers/liquid-audio"))
+    orator_core::paths::home_dir().map(|home| home.join(".local/share/orator/servers/liquid-audio"))
+}
+
+/// Voice-server search order (unvalidated): the legacy audio
+/// binary's `$PATH` hits, the managed-home binary when present, then
+/// the stock `llama-server` candidates. Per-caller order table —
+/// stays local; the gate filter is shared.
+fn audio_server_search_table() -> Vec<PathBuf> {
+    let mut table = Vec::new();
+    table.extend(orator_core::paths::find_all_on_path(AUDIO_SERVER_BIN));
+    if let Some(home) = audio_server_home().map(|home| home.join(AUDIO_SERVER_BIN)) {
+        if home.is_file() {
+            table.push(home);
+        }
+    }
+    table.extend(orator_llm::resolve_binary_candidates());
+    table
 }
 
 /// Every voice-server candidate binary in try order: the
-/// `LLAMA_AUDIO_SERVER` override alone when set, else the legacy
-/// audio server (validated) plus every validated stock
-/// `llama-server` `$PATH` hit, deduplicated. Boot tries each until
-/// one answers readiness: a pre-LFM3 install fails fast on the
-/// bundle and the next serves, instead of one shadowed binary
-/// vetoing voice.
+/// `LLAMA_AUDIO_SERVER` override alone when set, else the validated
+/// search table. Boot tries each until one answers readiness: a
+/// pre-LFM3 install fails fast on the bundle and the next serves,
+/// instead of one shadowed binary vetoing voice.
+/// Shared filter home: `orator_core::paths::filter_validated_binaries`;
+/// the override classification is `orator_core::paths::ExplicitBinary`.
 #[must_use]
 pub fn resolve_audio_server_candidates() -> Vec<PathBuf> {
-    if let Some(explicit) = std::env::var_os(AUDIO_SERVER_ENV) {
-        let path = PathBuf::from(explicit);
-        if path.is_absolute() {
-            return vec![path];
-        }
-        return Vec::new();
+    let explicit = orator_core::paths::ExplicitBinary::from_env(AUDIO_SERVER_ENV);
+    match explicit.path {
+        Some(path) if path.is_absolute() => vec![path],
+        Some(_) => Vec::new(),
+        None => orator_core::paths::filter_validated_binaries(
+            audio_server_search_table(),
+            orator_core::paths::current_uid(),
+        ),
     }
-    let uid = orator_core::paths::current_uid();
-    let mut out = Vec::new();
-    let mut seen: Vec<PathBuf> = Vec::new();
-    let mut push_validated = |candidate: PathBuf| {
-        let canonical =
-            std::fs::canonicalize(&candidate).unwrap_or_else(|_| candidate.clone());
-        if seen.contains(&canonical) {
-            return;
-        }
-        if orator_core::paths::validate_server_binary(&candidate, uid, false).is_ok() {
-            seen.push(canonical);
-            out.push(candidate);
-        }
-    };
-    for legacy in orator_core::paths::find_all_on_path(AUDIO_SERVER_BIN) {
-        push_validated(legacy);
-    }
-    if let Some(home) = audio_server_home().map(|home| home.join(AUDIO_SERVER_BIN)) {
-        if home.is_file() {
-            push_validated(home);
-        }
-    }
-    for stock in orator_llm::resolve_binary_candidates() {
-        push_validated(stock);
-    }
-    out
 }
 
 /// Resolve the voice-server binary: the first of

@@ -152,15 +152,16 @@ impl EventLog {
 
     /// Highest durable cursor, if any event exists.
     pub fn latest(&self) -> Result<Option<i64>, DbError> {
-        self.store.with_conn(|conn| {
-            fluent_db::query::query_row(
-                conn,
-                "SELECT MAX(seq) FROM events",
-                rusqlite::params![],
-                |row| row.get::<_, Option<i64>>(0),
-            )
-        })
-        .map(Option::flatten)
+        self.store
+            .with_conn(|conn| {
+                fluent_db::query::query_row(
+                    conn,
+                    "SELECT MAX(seq) FROM events",
+                    rusqlite::params![],
+                    |row| row.get::<_, Option<i64>>(0),
+                )
+            })
+            .map(Option::flatten)
     }
 
     /// Replay one kind after `since`, oldest first, at most `limit`
@@ -194,18 +195,49 @@ impl EventLog {
         })
     }
 
+    /// Replay one session's durable events after `since`, oldest
+    /// first, at most `limit` rows. Thin per-meeting view over the
+    /// same table (the export gather path) — no second store, just
+    /// filtered replay like `replay_kind`.
+    pub fn replay_session(
+        &self,
+        session: &str,
+        since: i64,
+        limit: usize,
+    ) -> Result<Vec<StoredEvent>, DbError> {
+        let limit = limit.min(REPLAY_PAGE) as i64;
+        self.store.with_conn(|conn| {
+            fluent_db::query::query_rows(
+                conn,
+                "SELECT seq, session, epoch, kind, payload, wall_ms FROM events WHERE seq > ?1 AND session = ?2 ORDER BY seq ASC LIMIT ?3",
+                rusqlite::params![since, session, limit],
+                |row| {
+                    Ok(StoredEvent {
+                        seq: row.get(0)?,
+                        session: row.get(1)?,
+                        epoch: row.get::<_, i64>(2)? as u64,
+                        kind: row.get(3)?,
+                        payload: row.get(4)?,
+                        wall_ms: row.get::<_, i64>(5)? as u64,
+                    })
+                },
+            )
+        })
+    }
+
     /// Count durable rows of one kind after `since`. Usage-counter
     /// view: totals without replaying payloads.
     pub fn count_kind(&self, kind: &str, since: i64) -> Result<u64, DbError> {
-        self.store.with_conn(|conn| {
-            fluent_db::query::query_row(
-                conn,
-                "SELECT COUNT(*) FROM events WHERE seq > ?1 AND kind = ?2",
-                rusqlite::params![since, kind],
-                |row| row.get::<_, i64>(0),
-            )
-        })
-        .map(|count| count.unwrap_or(0).max(0) as u64)
+        self.store
+            .with_conn(|conn| {
+                fluent_db::query::query_row(
+                    conn,
+                    "SELECT COUNT(*) FROM events WHERE seq > ?1 AND kind = ?2",
+                    rusqlite::params![since, kind],
+                    |row| row.get::<_, i64>(0),
+                )
+            })
+            .map(|count| count.unwrap_or(0).max(0) as u64)
     }
 
     /// Subscribe to live fan-out (durable appends plus ephemerals).

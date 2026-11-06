@@ -3,6 +3,7 @@
 use blake3::Hasher;
 use sha2::{Digest, Sha256, Sha512};
 use std::io::Read;
+use std::num::NonZeroU64;
 use std::path::Path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -222,6 +223,60 @@ pub fn hash_file(path: &Path, algorithm: HashAlgorithm) -> std::io::Result<Strin
         hasher.update(&buf[..n]);
     }
     Ok(hasher.digest_hex())
+}
+
+/// Outcome of a size-then-SHA-256 file verification.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FileVerification {
+    /// Both the pinned size (when supplied) and the digest agree.
+    Match,
+    /// The file exists but its length differs; it was not hashed.
+    SizeMismatch {
+        /// Observed file length in bytes.
+        actual: u64,
+        /// Pinned length in bytes.
+        expected: u64,
+    },
+    /// The length agreed (or was not pinned) but the digest differs.
+    HashMismatch {
+        /// Observed lowercase hex digest.
+        actual: String,
+        /// Pinned lowercase hex digest.
+        expected: String,
+    },
+}
+
+/// Verify a file by its pinned length, then by its SHA-256 digest.
+///
+/// `metadata` runs first: when `expected_size` is `Some` and differs, the
+/// result is [`FileVerification::SizeMismatch`] and the file is never opened
+/// for hashing. `None` skips the size check (callers map a zero-byte pin to
+/// `None`). A readable file whose bytes differ yields
+/// [`FileVerification::HashMismatch`], never an error; I/O failures are
+/// returned unchanged so each caller can map them to its own error shape.
+pub fn verify_sha256_file(
+    path: &Path,
+    expected_size: Option<NonZeroU64>,
+    expected_hex: &str,
+) -> std::io::Result<FileVerification> {
+    let actual_size = std::fs::metadata(path)?.len();
+    if let Some(expected) = expected_size {
+        if actual_size != expected.get() {
+            return Ok(FileVerification::SizeMismatch {
+                actual: actual_size,
+                expected: expected.get(),
+            });
+        }
+    }
+    let actual = hash_file(path, HashAlgorithm::Sha256)?;
+    if actual == expected_hex {
+        Ok(FileVerification::Match)
+    } else {
+        Ok(FileVerification::HashMismatch {
+            actual,
+            expected: expected_hex.to_string(),
+        })
+    }
 }
 
 pub fn hash_batch(paths: &[std::path::PathBuf], algorithm: HashAlgorithm) -> Vec<BatchHashResult> {

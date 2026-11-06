@@ -80,7 +80,10 @@ pub fn parse_xml(text: &str) -> Result<Option<(Vec<ToolCall>, String)>, ParseErr
     if blocks.is_empty() {
         return Ok(None);
     }
-    let first = text.find("<tool_call>").or_else(|| text.find("<tool_call ")).unwrap_or(0);
+    let first = text
+        .find("<tool_call>")
+        .or_else(|| text.find("<tool_call "))
+        .unwrap_or(0);
     let preamble = text[..first].trim().to_string();
     if preamble.chars().count() > MAX_PREAMBLE_CHARS {
         return Err(ParseError::BadJson(format!(
@@ -92,16 +95,12 @@ pub fn parse_xml(text: &str) -> Result<Option<(Vec<ToolCall>, String)>, ParseErr
     for block in blocks {
         for invoke in xml_tag(&block, "invoke", "name") {
             if invoke.attr.contains(['\'', '<', '&']) {
-                return Err(ParseError::BadJson(
-                    "invoke name rejects '/</&".to_string(),
-                ));
+                return Err(ParseError::BadJson("invoke name rejects '/</&".to_string()));
             }
             let mut args = serde_json::Map::new();
             for param in xml_tag(&invoke.inner, "parameter", "name") {
                 if param.attr.contains(['\'', '<', '&']) || param.inner.contains(['<', '&']) {
-                    return Err(ParseError::BadJson(
-                        "parameter rejects '/</&".to_string(),
-                    ));
+                    return Err(ParseError::BadJson("parameter rejects '/</&".to_string()));
                 }
                 let key = param.attr;
                 let raw = param.inner;
@@ -111,10 +110,8 @@ pub fn parse_xml(text: &str) -> Result<Option<(Vec<ToolCall>, String)>, ParseErr
                         "args exceed {MAX_ARGS_BYTES} bytes"
                     )));
                 }
-                let value: serde_json::Value =
-                    serde_json::from_str(raw.trim()).unwrap_or_else(|_| {
-                        serde_json::Value::String(raw.trim().to_string())
-                    });
+                let value: serde_json::Value = serde_json::from_str(raw.trim())
+                    .unwrap_or_else(|_| serde_json::Value::String(raw.trim().to_string()));
                 args.insert(key, value);
             }
             out.push(ToolCall {
@@ -146,7 +143,9 @@ fn xml_tag(block: &str, tag: &str, attr: &str) -> Vec<Tagged> {
         let Some(tag_end) = head.find('>') else { break };
         let head_text = &head[..tag_end];
         let needle = format!("{attr}=\"");
-        let Some(attr_at) = head_text.find(needle.as_str()) else { break };
+        let Some(attr_at) = head_text.find(needle.as_str()) else {
+            break;
+        };
         let value_start = attr_at + needle.len();
         let Some(value_end) = head_text[value_start..].find('"') else {
             break;
@@ -234,10 +233,14 @@ pub fn gbnf_for_tools(names: &[&str]) -> String {
     grammar.push_str(
         "\nvalue ::= object | array | string | number | (\"true\" | \"false\" | \"null\") ws\n",
     );
-    grammar.push_str("object ::= \"{\" ws (string \":\" ws value (\",\" ws string \":\" ws value)*)? \"}\" ws\n");
+    grammar.push_str(
+        "object ::= \"{\" ws (string \":\" ws value (\",\" ws string \":\" ws value)*)? \"}\" ws\n",
+    );
     grammar.push_str("array ::= \"[\" ws (value (\",\" ws value)*)? \"]\" ws\n");
     grammar.push_str("string ::= \"\\\"\" ([^\"\\\\\\x7F\\x00-\\x1F] | \"\\\\\" ([\"\\\\/bfnrt] | \"u\" [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F]))* \"\\\"\" ws\n");
-    grammar.push_str("number ::= (\"-\"? ([0-9] | [1-9] [0-9]*)) (\".\" [0-9]+)? ([eE] [-+]? [0-9]+)? ws\n");
+    grammar.push_str(
+        "number ::= (\"-\"? ([0-9] | [1-9] [0-9]*)) (\".\" [0-9]+)? ([eE] [-+]? [0-9]+)? ws\n",
+    );
     grammar.push_str("ws ::= ([ \\t\\n] ws)?\n");
     grammar
 }

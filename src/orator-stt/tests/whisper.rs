@@ -52,7 +52,9 @@ fn segments_split_into_uniform_words() {
     assert_eq!(words[3].end_ms, 800);
     // Uniform span: each word owns a quarter of 800 ms.
     assert_eq!(words[1].start_ms, 200);
-    assert!(words.iter().all(|word| (word.no_speech - 0.1).abs() < f32::EPSILON));
+    assert!(words
+        .iter()
+        .all(|word| (word.no_speech - 0.1).abs() < f32::EPSILON));
 }
 
 #[test]
@@ -75,6 +77,39 @@ fn fields_reconfigure_and_drop_context() {
         .set_field("nope", "1")
         .expect_err("unknown field fails");
     assert!(backend.field_names().contains(&"language"));
+}
+
+/// M15-S1: the whisper field surface. `describe()` is the schema
+/// golden (gpu deliberately outside `required`); the table pins
+/// accept and reject.
+#[test]
+fn whisper_field_surface_pins_schema_and_table() {
+    use fluent_wvr::{Describable, FieldAccess};
+    let mut backend = WhisperBackend::new(PathBuf::from("/nonexistent/x.bin"), "en");
+    assert_eq!(
+        backend.describe(),
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "language": { "type": "string", "description": "Recognition language" },
+                "model_path": { "type": "string", "description": "Whisper model file" },
+                "gpu": { "type": "boolean", "description": "GPU offload (explicit opt-in)" }
+            },
+            "required": ["language", "model_path"]
+        })
+    );
+    assert_eq!(backend.field_names(), &["language", "model_path", "gpu"]);
+    backend
+        .set_field("model_path", "/m.gguf")
+        .expect("path sets");
+    assert_eq!(
+        backend.get_field("model_path").expect("path reads"),
+        "/m.gguf"
+    );
+    backend
+        .set_field("gpu", "maybe")
+        .expect_err("garbage bool rejects");
+    backend.get_field("nope").expect_err("unknown reads reject");
 }
 
 #[test]
@@ -105,7 +140,10 @@ fn gpu_without_a_device_fails_actionably() {
         matches!(error, orator_core::SttError::Unavailable(_)),
         "refusal is unavailable, never silent CPU: {error:?}"
     );
-    assert!(error.to_string().contains("GPU"), "names the remedy: {error}");
+    assert!(
+        error.to_string().contains("GPU"),
+        "names the remedy: {error}"
+    );
 }
 
 #[test]

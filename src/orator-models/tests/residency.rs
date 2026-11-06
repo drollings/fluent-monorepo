@@ -39,7 +39,10 @@ fn touch_refreshes_and_remove_drops() {
     let mut manager = ResidencyManager::new(u64::MAX);
     manager.insert("m", 500, 10);
     manager.touch("m", 999);
-    assert_eq!(manager.eviction_order(1_000).last().map(String::as_str), Some("m"));
+    assert_eq!(
+        manager.eviction_order(1_000).last().map(String::as_str),
+        Some("m")
+    );
     manager.remove("m");
     assert_eq!(manager.used_bytes(), 0);
     assert!(manager.eviction_order(1_000).is_empty());

@@ -5,7 +5,7 @@ use std::collections::HashSet;
 
 use orator_core::protocol::METHOD_NAMES;
 
-use crate::{contract_matches, dispatch, DISPATCH_METHODS, DispatchError};
+use crate::{contract_matches, dispatch, DispatchError, DISPATCH_METHODS};
 
 #[test]
 fn only_implemented_methods_dispatch() {
@@ -22,6 +22,7 @@ fn only_implemented_methods_dispatch() {
         "ListSessions",
         "GetState",
         "Approve",
+        "ExportMeeting",
     ] {
         dispatch(method).unwrap_or_else(|_| panic!("{method} must dispatch"));
     }
@@ -69,17 +70,11 @@ fn bearer_compare_is_constant_time_correct() {
 #[test]
 fn ignored_params_are_rejected_not_absorbed() {
     let voice = crate::voice::VoiceOwner::disabled();
-    let (ok, body) = crate::socket::route_for_tests(
-        &voice,
-        "ListSessions",
-        &serde_json::json!({ "sys": true }),
-    );
+    let (ok, body) =
+        crate::socket::route_for_tests(&voice, "ListSessions", &serde_json::json!({ "sys": true }));
     assert!(!ok, "ignored sys param must fail: {body}");
-    let (ok, body) = crate::socket::route_for_tests(
-        &voice,
-        "GetState",
-        &serde_json::json!({ "extra": 1 }),
-    );
+    let (ok, body) =
+        crate::socket::route_for_tests(&voice, "GetState", &serde_json::json!({ "extra": 1 }));
     assert!(!ok, "ignored extra param must fail: {body}");
     let (ok, body) = crate::socket::route_for_tests(
         &voice,
@@ -96,18 +91,15 @@ fn served_set_equals_wire_contract() {
     let served: HashSet<&str> = DISPATCH_METHODS.into_iter().collect();
     let wired: HashSet<&str> = METHOD_NAMES.into_iter().collect();
     assert_eq!(served, wired);
-    assert_eq!(DISPATCH_METHODS.len(), 13);
-    assert_eq!(METHOD_NAMES.len(), 13);
+    assert_eq!(DISPATCH_METHODS.len(), 14);
+    assert_eq!(METHOD_NAMES.len(), 14);
 }
 
 #[test]
 fn ask_failures_carry_a_structured_kind() {
     let voice = crate::voice::VoiceOwner::disabled();
-    let (ok, body) = crate::socket::route_for_tests(
-        &voice,
-        "Ask",
-        &serde_json::json!({ "question": "" }),
-    );
+    let (ok, body) =
+        crate::socket::route_for_tests(&voice, "Ask", &serde_json::json!({ "question": "" }));
     assert!(!ok, "disabled owner must refuse Ask: {body}");
     assert!(
         body.get("kind").and_then(|kind| kind.as_str()).is_some(),
@@ -119,11 +111,8 @@ fn ask_failures_carry_a_structured_kind() {
 #[test]
 fn say_failures_carry_a_structured_kind() {
     let voice = crate::voice::VoiceOwner::disabled();
-    let (ok, body) = crate::socket::route_for_tests(
-        &voice,
-        "Say",
-        &serde_json::json!({ "text": "" }),
-    );
+    let (ok, body) =
+        crate::socket::route_for_tests(&voice, "Say", &serde_json::json!({ "text": "" }));
     assert!(!ok, "disabled owner must refuse Say: {body}");
     assert!(
         body.get("kind").and_then(|kind| kind.as_str()).is_some(),
@@ -167,11 +156,7 @@ fn approval_spoof_refuses_while_socket_and_notification_answer() {
 fn transcribe_route_validates_input_before_inference() {
     let voice = crate::voice::VoiceOwner::disabled();
     // Missing audio refuses without dialing.
-    let (ok, body) = crate::socket::route_for_tests(
-        &voice,
-        "Transcribe",
-        &serde_json::json!({}),
-    );
+    let (ok, body) = crate::socket::route_for_tests(&voice, "Transcribe", &serde_json::json!({}));
     assert!(!ok, "missing audio must refuse");
     assert!(body.get("error").is_some(), "{body}");
     // Wrong rate refuses with the remedy.
@@ -182,7 +167,8 @@ fn transcribe_route_validates_input_before_inference() {
     );
     assert!(!ok, "wrong rate must refuse");
     assert!(
-        body.get("error").is_some_and(|error| error.as_str().is_some_and(|text| text.contains("16 kHz"))),
+        body.get("error")
+            .is_some_and(|error| error.as_str().is_some_and(|text| text.contains("16 kHz"))),
         "rate refusal names the remedy: {body}"
     );
     // Foreign params refuse closed.
@@ -192,4 +178,29 @@ fn transcribe_route_validates_input_before_inference() {
         &serde_json::json!({"audio": "AA==", "bogus": 1}),
     );
     assert!(!ok, "unknown params must refuse");
+}
+
+#[test]
+fn export_meeting_route_rejects_garbage_params_and_unknown_sessions() {
+    let voice = crate::voice::VoiceOwner::disabled();
+    // Foreign params refuse closed (no file is written on this path).
+    let (ok, body) = crate::socket::route_for_tests(
+        &voice,
+        "ExportMeeting",
+        &serde_json::json!({"session": "s1", "bogus": 1}),
+    );
+    assert!(!ok, "unknown params must refuse: {body}");
+    // Unknown sessions refuse with the kind, never a silent drop.
+    let (ok, body) = crate::socket::route_for_tests(
+        &voice,
+        "ExportMeeting",
+        &serde_json::json!({"session": "s999"}),
+    );
+    assert!(!ok, "unknown session must refuse: {body}");
+    assert_eq!(
+        body.get("kind").and_then(|kind| kind.as_str()),
+        Some("UnknownSession"),
+        "{body}"
+    );
+    voice.shutdown();
 }

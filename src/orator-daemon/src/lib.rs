@@ -37,7 +37,7 @@ pub mod voice;
 
 /// Methods this daemon serves. Mirrors the wire contract in `orator-core`;
 /// the dispatch test enforces set equality so the two can never drift.
-pub const DISPATCH_METHODS: [&str; 13] = METHOD_NAMES;
+pub const DISPATCH_METHODS: [&str; 14] = METHOD_NAMES;
 
 /// Daemon shutdown signal: set by the `StopDaemon` call, observed by the
 /// accept loop. Test seam resets through `clear_shutdown_for_tests`.
@@ -81,7 +81,8 @@ pub enum DispatchError {
 pub fn dispatch(method: &str) -> Result<(), DispatchError> {
     match method {
         "VoiceEndpoint" | "StopDaemon" | "StartSession" | "StopSession" | "Interrupt" | "Say"
-        | "Ask" | "Transcribe" | "ToggleDictation" | "ListSessions" | "GetState" | "Approve" => Ok(()),
+        | "Ask" | "Transcribe" | "ToggleDictation" | "ListSessions" | "GetState" | "Approve"
+        | "ExportMeeting" => Ok(()),
         "Reload" => Err(DispatchError::NotImplemented("Reload")),
         _ => Err(DispatchError::Unknown(method.to_string())),
     }
@@ -162,10 +163,7 @@ pub enum LoopbackError {
 pub async fn run_loopback(dir: &Path, seconds: u64) -> Result<Manifest, LoopbackError> {
     let mut root = RootScope::build();
     let writer = Arc::new(Mutex::new(ArchiveWriter::open(dir)?));
-    let worker = spawn_archive_feed(
-        fluent_concurrency::tokio_runtime(),
-        Arc::clone(&writer),
-    );
+    let worker = spawn_archive_feed(fluent_concurrency::tokio_runtime(), Arc::clone(&writer));
     let feed = worker.sender();
     let driver = worker.start();
     // The source task owns the feed sender; its completion signal tells us
@@ -191,17 +189,13 @@ pub async fn run_loopback(dir: &Path, seconds: u64) -> Result<Manifest, Loopback
 
 /// Synthetic sine source: 20 ms frames at the archive rate, in real time.
 /// Stands in for the cpal drain task where no hardware exists.
-async fn synthetic_source(
-    feed: tokio::sync::mpsc::Sender<ArchiveItem>,
-    seconds: u64,
-) {
+async fn synthetic_source(feed: tokio::sync::mpsc::Sender<ArchiveItem>, seconds: u64) {
     let frames = seconds.saturating_mul(50);
     for index in 0..frames {
         let samples: Vec<f32> = (0..orator_audio::archive::FRAME_SAMPLES)
             .map(|sample| {
-                let angle = (index as usize * orator_audio::archive::FRAME_SAMPLES + sample)
-                    as f32
-                    * 0.05;
+                let angle =
+                    (index as usize * orator_audio::archive::FRAME_SAMPLES + sample) as f32 * 0.05;
                 angle.sin() * 0.3
             })
             .collect();

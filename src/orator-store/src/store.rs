@@ -37,8 +37,15 @@ pub struct WriteReq {
     pub ack: tokio::sync::oneshot::Sender<Result<i64, String>>,
 }
 
-/// Feed sizing for the single writer: a small queue with credit in
-/// tens of events (not the router defaults), serial handler.
+/// Feed sizing for the single writer.
+///
+/// M9 audit (why these numbers differ from the archive's): items here
+/// are small `WriteReq` JSON events, so the queue holds counts not
+/// bytes (256, credit 64, top-up 8). The handler is serial
+/// (`max_concurrent: 1` — SQLite takes one writer; inserts and acks
+/// stay ordered) with batch 8 at the 100 ms event-log cadence.
+/// Seriality is pinned by `writer_config_stays_small_and_serial`,
+/// credit-gated order by `credit_gated_writes_land_in_order`.
 #[must_use]
 pub fn writer_feed_config() -> FeedConfig {
     FeedConfig {
@@ -64,7 +71,13 @@ pub fn spawn_writer(
             let log = Arc::clone(&log);
             async move {
                 let result = log
-                    .append(&req.session, req.epoch, &req.kind, &req.payload, req.wall_ms)
+                    .append(
+                        &req.session,
+                        req.epoch,
+                        &req.kind,
+                        &req.payload,
+                        req.wall_ms,
+                    )
                     .map(|event| event.seq)
                     .map_err(|error| error.to_string());
                 let _ = req.ack.send(result);
@@ -126,18 +139,14 @@ impl InstanceLock {
                 runtime_dir.display()
             )));
         }
-        std::fs::create_dir_all(runtime_dir)
-            .map_err(|error| OpenError::Store(format!("mkdir {}: {error}", runtime_dir.display())))?;
+        std::fs::create_dir_all(runtime_dir).map_err(|error| {
+            OpenError::Store(format!("mkdir {}: {error}", runtime_dir.display()))
+        })?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt as _;
             std::fs::set_permissions(runtime_dir, std::fs::Permissions::from_mode(0o700)).map_err(
-                |error| {
-                    OpenError::Store(format!(
-                        "chmod 700 {}: {error}",
-                        runtime_dir.display()
-                    ))
-                },
+                |error| OpenError::Store(format!("chmod 700 {}: {error}", runtime_dir.display())),
             )?;
         }
         let path = runtime_dir.join(socket_name);
@@ -147,46 +156,45 @@ impl InstanceLock {
                 path.display()
             )));
         }
-        let mut attempts = 0;
-        loop {
-            match std::os::unix::net::UnixListener::bind(&path) {
-                Ok(socket) => {
-                    return Ok(Self {
-                        _socket: socket,
-                        path,
-                    })
-                }
-                Err(error) if error.kind() == std::io::ErrorKind::AddrInUse && attempts < 3 => {
-                    // Stale file or live holder? A connect that succeeds
-                    // proves live; a refusal proves stale.
-                    let live = std::os::unix::net::UnixStream::connect(&path).is_ok();
-                    if live {
-                        return Err(OpenError::AlreadyRunning(path.display().to_string()));
-                    }
-                    std::fs::remove_file(&path).map_err(|remove| {
-                        OpenError::Store(format!(
-                            "stale socket {}: remove failed: {remove}",
-                            path.display()
-                        ))
-                    })?;
-                    // Re-lstat after unlink: a swapped-in link refuses
-                    // instead of riding the retry.
-                    if orator_core::paths::has_symlink_parent(&path)
-                        || std::fs::symlink_metadata(&path).is_ok()
-                    {
-                        return Err(OpenError::Store(format!(
-                            "socket path {} reappeared as a link after unlink; refusing",
-                            path.display()
-                        )));
-                    }
-                    attempts += 1;
-                }
-                Err(error) => {
-                    return Err(OpenError::Store(format!(
-                        "bind {}: {error}",
+        // Bounded probe → unlink → bind retry (a racing starter may win
+        // the unlink window). The walk itself is
+        // `common_core::io::bind_unix_listener_with_stale_reclaim`; the
+        // runtime-dir `0700` enforcement, symlink checks, and
+        // `OpenError` mapping stay here.
+        match common_core::io::bind_unix_listener_with_stale_reclaim(&path, 3, || {
+            // Re-lstat after unlink: a swapped-in link refuses instead
+            // of riding the retry.
+            if orator_core::paths::has_symlink_parent(&path)
+                || std::fs::symlink_metadata(&path).is_ok()
+            {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    format!(
+                        "socket path {} reappeared as a link after unlink; refusing",
                         path.display()
-                    )))
-                }
+                    ),
+                ));
+            }
+            Ok(())
+        }) {
+            Ok(socket) => Ok(Self {
+                _socket: socket,
+                path,
+            }),
+            Err(common_core::io::ReclaimBindError::LiveHolder(_)) => {
+                Err(OpenError::AlreadyRunning(path.display().to_string()))
+            }
+            Err(common_core::io::ReclaimBindError::Remove(remove)) => {
+                Err(OpenError::Store(format!(
+                    "stale socket {}: remove failed: {remove}",
+                    path.display()
+                )))
+            }
+            Err(common_core::io::ReclaimBindError::Validate(error)) => {
+                Err(OpenError::Store(error.to_string()))
+            }
+            Err(common_core::io::ReclaimBindError::Bind(error)) => {
+                Err(OpenError::Store(format!("bind {}: {error}", path.display())))
             }
         }
     }

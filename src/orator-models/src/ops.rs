@@ -63,10 +63,13 @@ pub fn path_for(entry: &crate::model::ModelEntry) -> Option<PathBuf> {
 pub fn resolve_entry_path(entry: &crate::model::ModelEntry) -> Option<PathBuf> {
     match entry.kind {
         crate::model::ModelKind::Llm => {
-            let mut roots = vec![PathBuf::from("/ai/models/gguf")];
+            let mut roots = vec![PathBuf::from(orator_core::DEFAULT_GGUF_DIR)];
             roots.extend(orator_core::llama_weights_dirs());
             roots.extend(orator_core::models_dir());
-            roots.into_iter().map(|root| root.join(&entry.file)).find(|path| path.exists())
+            roots
+                .into_iter()
+                .map(|root| root.join(&entry.file))
+                .find(|path| path.exists())
         }
         crate::model::ModelKind::Audio => bundle_dir(),
         _ => path_for(entry).filter(|path| path.exists()),
@@ -106,7 +109,11 @@ pub fn verify_bundle_files(
     if files.len() != pins.len() {
         return Err(ModelOpError::Mismatch(
             "bundle".to_string(),
-            format!("file/pin count mismatch ({} files, {} pins)", files.len(), pins.len()),
+            format!(
+                "file/pin count mismatch ({} files, {} pins)",
+                files.len(),
+                pins.len()
+            ),
         ));
     }
     let mut digests = String::new();
@@ -120,9 +127,8 @@ pub fn verify_bundle_files(
         if bytes != *size {
             return Ok(false);
         }
-        let digest =
-            common_core::hash::hash_file(file, common_core::hash::HashAlgorithm::Sha256)
-                .map_err(|error| ModelOpError::Io(error.to_string()))?;
+        let digest = common_core::hash::hash_file(file, common_core::hash::HashAlgorithm::Sha256)
+            .map_err(|error| ModelOpError::Io(error.to_string()))?;
         if digest != *hash {
             return Ok(false);
         }
@@ -194,9 +200,18 @@ fn size_matches(entry: &crate::model::ModelEntry) -> Option<bool> {
 }
 
 /// Verify the local file for `entry` against size + hash.
+///
+/// The size-then-digest mechanics compose
+/// `common_core::hash::verify_sha256_file`; this wrapper keeps the catalog
+/// policy local (missing-file and unpinned variants, audio bundles resolve
+/// separately). `orator_lfm::verify_weights` remains a presence/non-empty
+/// check, a different contract.
 pub fn verify_entry(entry: &crate::model::ModelEntry) -> Result<bool, ModelOpError> {
     if !entry.pinned() {
-        return Err(ModelOpError::Unpinned(entry.name.clone(), "verify".to_string()));
+        return Err(ModelOpError::Unpinned(
+            entry.name.clone(),
+            "verify".to_string(),
+        ));
     }
     if entry.kind == crate::model::ModelKind::Audio {
         return verify_bundle(entry);
@@ -204,16 +219,18 @@ pub fn verify_entry(entry: &crate::model::ModelEntry) -> Result<bool, ModelOpErr
     let Some(path) = resolve_entry_path(entry) else {
         return Err(ModelOpError::Missing(entry.file.clone()));
     };
-    let bytes = std::fs::metadata(&path)
-        .map_err(|error| ModelOpError::Io(error.to_string()))?
-        .len();
     let want = entry.size.unwrap_or(0);
-    if want > 0 && bytes != want {
-        return Ok(false);
+    match common_core::hash::verify_sha256_file(
+        &path,
+        std::num::NonZeroU64::new(want),
+        entry.sha256.as_deref().unwrap_or_default(),
+    )
+    .map_err(|error| ModelOpError::Io(error.to_string()))?
+    {
+        common_core::hash::FileVerification::Match => Ok(true),
+        common_core::hash::FileVerification::SizeMismatch { .. }
+        | common_core::hash::FileVerification::HashMismatch { .. } => Ok(false),
     }
-    let digest = common_core::hash::hash_file(&path, common_core::hash::HashAlgorithm::Sha256)
-        .map_err(|error| ModelOpError::Io(error.to_string()))?;
-    Ok(Some(entry.sha256.clone().unwrap_or_default()) == Some(digest))
 }
 
 /// Remove the local file for `entry`. Missing files are a no-op
@@ -229,7 +246,10 @@ pub fn remove_entry(entry: &crate::model::ModelEntry) -> Result<bool, ModelOpErr
     let resolved = resolve_entry_path(entry);
     if resolved.is_some_and(|resolved| Some(&resolved) != managed.as_ref()) {
         return Err(ModelOpError::Installation(
-            resolve_entry_path(entry).expect("resolved").display().to_string(),
+            resolve_entry_path(entry)
+                .expect("resolved")
+                .display()
+                .to_string(),
         ));
     }
     Ok(false)
@@ -265,14 +285,14 @@ pub fn pull_plan(
     entry: &crate::model::ModelEntry,
 ) -> Result<(String, String, PathBuf), ModelOpError> {
     if !entry.pinned() {
-        return Err(ModelOpError::Unpinned(entry.name.clone(), "pull".to_string()));
+        return Err(ModelOpError::Unpinned(
+            entry.name.clone(),
+            "pull".to_string(),
+        ));
     }
     let dest = match entry.kind {
-        crate::model::ModelKind::Llm | crate::model::ModelKind::Audio => {
-            resolve_entry_path(entry).unwrap_or_else(|| {
-                PathBuf::from("/ai/models/gguf").join(&entry.file)
-            })
-        }
+        crate::model::ModelKind::Llm | crate::model::ModelKind::Audio => resolve_entry_path(entry)
+            .unwrap_or_else(|| PathBuf::from(orator_core::DEFAULT_GGUF_DIR).join(&entry.file)),
         _ => path_for(entry).ok_or_else(|| {
             ModelOpError::Io(
                 "no managed model directory (HOME and XDG_DATA_HOME are unset)".to_string(),

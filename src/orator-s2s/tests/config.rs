@@ -29,6 +29,8 @@ fn fields_stay_hot_editable() {
     assert_eq!(config.mode, "interleaved");
     config.set_field("mode", "asr").expect("mode sets");
     assert_eq!(config.get_field("mode").expect("read back"), "asr");
-    config.set_field("nope", "1").expect_err("unknown field fails");
+    config
+        .set_field("nope", "1")
+        .expect_err("unknown field fails");
     assert!(config.field_names().contains(&"voice_prompt"));
 }

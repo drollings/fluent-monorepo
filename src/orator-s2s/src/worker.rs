@@ -48,45 +48,35 @@ pub enum TtsWorkerError {
 /// the current uid (owner/mode/non-`/tmp`/executable); explicit
 /// overrides require absolute paths and log their fingerprint (the
 /// user accepts responsibility). `None` when absent or untrusted.
+/// Shared homes: `orator_core::paths::ExplicitBinary` for the
+/// override arms, `orator_core::paths::resolve_validated_binary` over
+/// the first `$PATH` hit for the search (same first-hit the
+/// hand-rolled loop found, now via the shared `find_on_path`).
 #[must_use]
 pub fn resolve_tts_binary() -> Option<PathBuf> {
-    if let Some(explicit) = std::env::var_os(LLAMA_TTS_ENV) {
-        let path = PathBuf::from(explicit);
-        if !path.is_absolute() {
-            return None;
-        }
-        let fingerprint = orator_core::paths::binary_fingerprint(&path);
-        if let Err(error) = orator_core::paths::validate_server_binary(
-            &path,
-            orator_core::paths::current_uid(),
-            false,
-        ) {
-            eprintln!(
-                "orator: explicit tts binary {} ({fingerprint}) bypasses the gate with a warning: {error}",
-                path.display()
-            );
-        }
-        return Some(path);
-    }
-    let searched = {
-        let path = std::env::var_os("PATH")?;
-        let mut found = None;
-        for dir in std::env::split_paths(&path) {
-            let candidate = dir.join(LLAMA_TTS_BIN);
-            if candidate.is_file() {
-                found = Some(candidate);
-                break;
+    let explicit = orator_core::paths::ExplicitBinary::from_env(LLAMA_TTS_ENV);
+    match explicit.path.clone() {
+        Some(path) if path.is_absolute() => {
+            let fingerprint = orator_core::paths::binary_fingerprint(&path);
+            if let Err(error) = orator_core::paths::validate_server_binary(
+                &path,
+                orator_core::paths::current_uid(),
+                false,
+            ) {
+                eprintln!(
+                    "orator: explicit tts binary {} ({fingerprint}) bypasses the gate with a warning: {error}",
+                    path.display()
+                );
             }
+            Some(path)
         }
-        found?
-    };
-    orator_core::paths::validate_server_binary(
-        &searched,
-        orator_core::paths::current_uid(),
-        false,
-    )
-    .ok()?;
-    Some(searched)
+        Some(_) => None,
+        None => orator_core::paths::resolve_validated_binary(
+            &explicit,
+            orator_core::paths::find_on_path(LLAMA_TTS_BIN),
+            orator_core::paths::current_uid(),
+        ),
+    }
 }
 
 /// Synthesize `text` through `binary` over `bundle`: run
@@ -118,6 +108,12 @@ pub fn synth_blocking(
         Path::to_path_buf,
     );
     let (status, stderr) = common_core::runtime::block_on_shared(async {
+        // M6-S6 audit: mirrors the supervisor's sandbox prefix
+        // (env_clear + pinned PATH/LANG + null stdin/stdout +
+        // kill_on_drop + process group) without sharing a builder —
+        // stderr stays piped here (drained for error tails) while the
+        // supervisor discards it, and the cwd/timeout wrapper differs.
+        // See the keep-decision note at `Supervisor::spawn_child`.
         let mut cmd = tokio::process::Command::new(binary);
         cmd.arg("-m")
             .arg(&bundle.backbone)
@@ -216,7 +212,9 @@ fn validate_tts_inputs(binary: &Path, bundle: &AudioBundle) -> Result<(), TtsWor
         }
     }
     if !bundle.present() {
-        return Err(TtsWorkerError::Failed("audio bundle not present".to_string()));
+        return Err(TtsWorkerError::Failed(
+            "audio bundle not present".to_string(),
+        ));
     }
     Ok(())
 }
@@ -308,7 +306,9 @@ fn read_scratch(
     stderr: &[u8],
 ) -> Result<(Vec<f32>, u32), TtsWorkerError> {
     if !status.success() {
-        let exit = status.code().map_or("signal".to_string(), |code| code.to_string());
+        let exit = status
+            .code()
+            .map_or("signal".to_string(), |code| code.to_string());
         let tail = stderr_tail(stderr);
         let detail = if tail.is_empty() {
             format!("exit {exit}")
@@ -326,10 +326,7 @@ fn read_scratch(
 /// a failing run reports its own reason without flooding.
 fn stderr_tail(stderr: &[u8]) -> String {
     let text = String::from_utf8_lossy(stderr);
-    let last = text
-        .lines()
-        .map(str::trim)
-        .rfind(|line| !line.is_empty());
+    let last = text.lines().map(str::trim).rfind(|line| !line.is_empty());
     match last {
         Some(line) => {
             let flat: String = line.split_whitespace().collect::<Vec<_>>().join(" ");

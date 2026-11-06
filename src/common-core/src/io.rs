@@ -237,3 +237,128 @@ pub fn ensure_dir(path: impl AsRef<Path>) -> Result<(), IoError> {
 pub fn ensure_dir_or_panic(path: impl AsRef<Path>) {
     std::fs::create_dir_all(path.as_ref()).expect("ensure_dir");
 }
+
+/// Bounded stale-Unix-socket reclaim: probe → unlink → bind retry.
+///
+/// A `UnixListener::bind` that fails with `AddrInUse` either means a
+/// live holder (a `connect` succeeds — stop with the original error)
+/// or a stale socket file (no listener — unlink and retry, bounded by
+/// `max_reclaims`). The only loop in the tree; both callers compose it
+/// instead of hand-rolling their own.
+///
+/// ```no_run
+/// use std::path::Path;
+/// use common_core::io::bind_unix_listener_with_stale_reclaim;
+///
+/// let listener = bind_unix_listener_with_stale_reclaim(
+///     Path::new("/run/orator/orator.sock"),
+///     3,
+///     || Ok(()),
+/// )?;
+/// # Ok::<(), common_core::io::ReclaimBindError>(())
+/// ```
+///
+/// OS calls run through a small private operations seam
+/// (`ReclaimOps`/`reclaim_with_ops`) so the walk is unit-testable
+/// without a race; the public function uses the real std operations.
+/// Post-unlink validation stays with the caller (it owns the path
+/// policy and error wording): return `Err` from
+/// `validate_after_unlink` to refuse a reappeared path instead of
+/// retrying. Unix-only (`#[cfg(unix)]`); no unsafe code.
+#[cfg(unix)]
+#[derive(thiserror::Error, Debug)]
+pub enum ReclaimBindError {
+    /// A live holder answers: the original bind error, unwrapped.
+    #[error("{0}")]
+    LiveHolder(#[source] std::io::Error),
+    /// Bind failed for any other reason — or `AddrInUse` with no
+    /// reclaims left. The original error, unwrapped.
+    #[error("{0}")]
+    Bind(#[source] std::io::Error),
+    /// The stale probe passed but the unlink failed.
+    #[error("{0}")]
+    Remove(#[source] std::io::Error),
+    /// The caller's post-unlink validation refused the retry. Carries
+    /// the exact error the caller's closure built.
+    #[error("{0}")]
+    Validate(#[source] std::io::Error),
+}
+
+/// Unix-socket bind operations behind the reclaim walk. The public
+/// function uses the real std operations (`LiveOps`); focused tests
+/// script a mock instead, so live/stale sequences, validation
+/// failure, remove failure, and cap exhaustion are deterministic with
+/// no filesystem race.
+#[cfg(unix)]
+trait ReclaimOps {
+    /// Held across a successful bind (the real listener, or `()` for a
+    /// scripted mock).
+    type Listener;
+    /// Bind the socket path.
+    fn bind(&self, path: &Path) -> std::io::Result<Self::Listener>;
+    /// Whether a live holder answers at `path`.
+    fn probe_live(&self, path: &Path) -> bool;
+    /// Remove a stale file at `path`.
+    fn remove(&self, path: &Path) -> std::io::Result<()>;
+}
+
+/// The reclaim walk over `ops`: first success wins; `AddrInUse` with
+/// reclaims left probes live (stop) vs stale (remove, validate, count
+/// one reclaim, retry); anything else — including `AddrInUse` with no
+/// reclaims left — returns the original error. Validation failure
+/// returns immediately without consuming a reclaim.
+#[cfg(unix)]
+fn reclaim_with_ops<O: ReclaimOps>(
+    ops: &O,
+    path: &Path,
+    max_reclaims: u32,
+    mut validate_after_unlink: impl FnMut() -> std::io::Result<()>,
+) -> Result<O::Listener, ReclaimBindError> {
+    let mut attempts = 0u32;
+    loop {
+        match ops.bind(path) {
+            Ok(listener) => return Ok(listener),
+            Err(error)
+                if error.kind() == std::io::ErrorKind::AddrInUse && attempts < max_reclaims =>
+            {
+                if ops.probe_live(path) {
+                    return Err(ReclaimBindError::LiveHolder(error));
+                }
+                ops.remove(path).map_err(ReclaimBindError::Remove)?;
+                validate_after_unlink().map_err(ReclaimBindError::Validate)?;
+                attempts += 1;
+            }
+            Err(error) => return Err(ReclaimBindError::Bind(error)),
+        }
+    }
+}
+
+/// Bind a Unix socket with bounded stale-file reclaim (Unix-only).
+///
+/// `max_reclaims` bounds the probe → unlink → retry loop (both
+/// callers pass `3` — a racing starter may win the unlink window, so
+/// retry instead of failing the first boot). `validate_after_unlink`
+/// runs after every unlink and before the reclaim is counted: return
+/// `Err` to refuse a reappeared path instead of retrying. Successful
+/// binds return the standard listener unchanged.
+#[cfg(unix)]
+pub fn bind_unix_listener_with_stale_reclaim(
+    path: &Path,
+    max_reclaims: u32,
+    validate_after_unlink: impl FnMut() -> std::io::Result<()>,
+) -> Result<std::os::unix::net::UnixListener, ReclaimBindError> {
+    struct LiveOps;
+    impl ReclaimOps for LiveOps {
+        type Listener = std::os::unix::net::UnixListener;
+        fn bind(&self, path: &Path) -> std::io::Result<Self::Listener> {
+            std::os::unix::net::UnixListener::bind(path)
+        }
+        fn probe_live(&self, path: &Path) -> bool {
+            std::os::unix::net::UnixStream::connect(path).is_ok()
+        }
+        fn remove(&self, path: &Path) -> std::io::Result<()> {
+            std::fs::remove_file(path)
+        }
+    }
+    reclaim_with_ops(&LiveOps, path, max_reclaims, validate_after_unlink)
+}

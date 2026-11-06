@@ -118,7 +118,9 @@ pub fn no_ws_token_text() -> String {
 /// Daemon unreachable over the WebSocket listener.
 #[must_use]
 pub fn unavailable_ws_text(ws_listen: &str) -> String {
-    format!("orator: daemon unavailable at ws://{ws_listen}/ws (run oratord with daemon.ws_listen set)")
+    format!(
+        "orator: daemon unavailable at ws://{ws_listen}/ws (run oratord with daemon.ws_listen set)"
+    )
 }
 
 /// Daemon answered `ok: false`: names the method and the body.
@@ -165,7 +167,9 @@ pub fn permission_denied_text(path: &std::path::Path) -> String {
 /// budget.
 #[must_use]
 pub fn ws_timeout_text(method: &str) -> String {
-    format!("orator: daemon timed out on {method} (past its budget; retry or raise the voice budget)")
+    format!(
+        "orator: daemon timed out on {method} (past its budget; retry or raise the voice budget)"
+    )
 }
 
 /// Socket-file preflight: warn when the file is not uid-owned or not
@@ -198,8 +202,8 @@ pub fn socket_preflight_warning(path: &std::path::Path) -> Option<String> {
 /// only) always serializes; the error propagates instead of an empty
 /// body desyncing the frame.
 pub fn encode_request(request: &WireRequest) -> Result<Vec<u8>, String> {
-    let body =
-        serde_json::to_vec(request).map_err(|error| format!("orator: request encode failed: {error}"))?;
+    let body = serde_json::to_vec(request)
+        .map_err(|error| format!("orator: request encode failed: {error}"))?;
     Ok(SocketFrame {
         kind: MessageType::Request,
         body,
@@ -308,7 +312,7 @@ pub fn call_ws_at(
     params: serde_json::Value,
 ) -> Result<serde_json::Value, CallFailure> {
     use futures_util::{SinkExt, StreamExt};
-    use tokio_tungstenite::tungstenite::{Message, client::IntoClientRequest};
+    use tokio_tungstenite::tungstenite::{client::IntoClientRequest, Message};
     let valid = OutboundRequest::new(method).map_err(|_| CallFailure::silent(ExitCode::Usage))?;
     let mut request = url
         .into_client_request()
@@ -326,22 +330,24 @@ pub fn call_ws_at(
         method: valid.method,
         params,
     };
-    let bytes = encode_request(&envelope)
-        .map_err(|error| CallFailure::lined(ExitCode::Error, error))?;
+    let bytes =
+        encode_request(&envelope).map_err(|error| CallFailure::lined(ExitCode::Error, error))?;
     common_core::runtime::block_on_shared(async {
-        let (mut ws, _) = tokio_tungstenite::connect_async(request).await.map_err(|error| {
-            // A 401/403 means the daemon is there and refused (bad
-            // token): `Error`, not absence.
-            use tokio_tungstenite::tungstenite::Error as WsError;
-            match &error {
-                WsError::Http(response)
-                    if response.status() == 401 || response.status() == 403 =>
-                {
-                    CallFailure::lined(ExitCode::Error, handshake_refused_text())
+        let (mut ws, _) = tokio_tungstenite::connect_async(request)
+            .await
+            .map_err(|error| {
+                // A 401/403 means the daemon is there and refused (bad
+                // token): `Error`, not absence.
+                use tokio_tungstenite::tungstenite::Error as WsError;
+                match &error {
+                    WsError::Http(response)
+                        if response.status() == 401 || response.status() == 403 =>
+                    {
+                        CallFailure::lined(ExitCode::Error, handshake_refused_text())
+                    }
+                    _ => CallFailure::silent(ExitCode::DaemonUnavailable),
                 }
-                _ => CallFailure::silent(ExitCode::DaemonUnavailable),
-            }
-        })?;
+            })?;
         ws.send(Message::Binary(bytes.into()))
             .await
             .map_err(|error| {
@@ -352,7 +358,9 @@ pub fn call_ws_at(
                 .await
                 .map_err(|_| CallFailure::lined(ExitCode::Error, ws_timeout_text(method)))?
                 .ok_or(CallFailure::lined(ExitCode::Error, ws_timeout_text(method)))?
-                .map_err(|error| CallFailure::lined(ExitCode::Error, read_failed_text(&error.to_string())))?;
+                .map_err(|error| {
+                    CallFailure::lined(ExitCode::Error, read_failed_text(&error.to_string()))
+                })?;
             match reply {
                 Message::Binary(reply_bytes) => {
                     let decoded = decode_reply(&reply_bytes).map_err(|error| {
@@ -416,25 +424,24 @@ pub fn call_socket_at(
     }
     let timeout = socket_timeout_for(valid.method.as_str());
     let mut stream = UnixStream::connect(path).map_err(|error| map_connect_error(path, &error))?;
-    stream
-        .set_read_timeout(Some(timeout))
-        .map_err(|error| CallFailure::lined(ExitCode::Error, read_failed_text(&error.to_string())))?;
-    stream
-        .set_write_timeout(Some(timeout))
-        .map_err(|error| CallFailure::lined(ExitCode::Error, write_failed_text(&error.to_string())))?;
+    stream.set_read_timeout(Some(timeout)).map_err(|error| {
+        CallFailure::lined(ExitCode::Error, read_failed_text(&error.to_string()))
+    })?;
+    stream.set_write_timeout(Some(timeout)).map_err(|error| {
+        CallFailure::lined(ExitCode::Error, write_failed_text(&error.to_string()))
+    })?;
     let request = WireRequest {
         id: 1,
         method: valid.method,
         params,
     };
-    let bytes = encode_request(&request)
-        .map_err(|error| CallFailure::lined(ExitCode::Error, error))?;
+    let bytes =
+        encode_request(&request).map_err(|error| CallFailure::lined(ExitCode::Error, error))?;
     stream.write_all(&bytes).map_err(|error| {
         CallFailure::lined(ExitCode::Error, write_failed_text(&error.to_string()))
     })?;
-    let reply = read_reply(&mut stream).map_err(|error| {
-        CallFailure::lined(ExitCode::Error, read_failed_text(&error))
-    })?;
+    let reply = read_reply(&mut stream)
+        .map_err(|error| CallFailure::lined(ExitCode::Error, read_failed_text(&error)))?;
     if reply.ok {
         Ok(reply.body)
     } else {

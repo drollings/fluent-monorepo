@@ -16,8 +16,7 @@ use fluent_llm::protocol::{
 };
 use fluent_llm::tokens::{estimate_tokens, TokenBudget};
 use fluent_wvr::{
-    Describable, FieldAccess, FieldError, WorkContext, WorkError, WorkOutput, WorkUnit,
-    impl_component,
+    impl_component, Describable, FieldAccess, WorkContext, WorkError, WorkOutput, WorkUnit,
 };
 use internment::ArcIntern;
 use orator_core::{LlmError, LlmSession, Sampler, StepOut, Token};
@@ -30,18 +29,29 @@ const QUEUE_CANCELED: &str = "queue response canceled";
 const ASK_TIMEOUT_MS: u64 = 120_000;
 
 /// What to serve and how to address it.
-#[derive(Debug, Clone)]
+///
+/// The `FieldAccess + Describable` surface (M15-S2): the four tunable
+/// leaves derive from here; `endpoint_base` is construction-only
+/// (skipped — dials route through `resolve_llm_base`, never a
+/// by-name set). `HttpSession` keeps thin delegating impls over this
+/// (flat names over the session handle, like the config wrappers).
+#[derive(Debug, Clone, FieldAccess, Describable)]
 pub struct SessionConfig {
-    /// Endpoint base URL (`http://127.0.0.1:<port>`, `/v1` optional).
-    pub endpoint_base: String,
     /// Served model tag.
+    #[field(desc = "Served model tag")]
     pub model: String,
+    /// Stable turn prefix; the server reuses its cache across turns.
+    #[field(desc = "Stable turn prefix")]
+    pub system_prompt: String,
     /// Context window in tokens.
+    #[field(desc = "Context window")]
     pub ctx_tokens: usize,
     /// Prefill chunk size in tokens (cancel-latency bound).
+    #[field(desc = "Prefill chunk size")]
     pub n_batch: usize,
-    /// Stable turn prefix; the server reuses its cache across turns.
-    pub system_prompt: String,
+    /// Endpoint base URL (`http://127.0.0.1:<port>`, `/v1` optional).
+    #[field(skip)]
+    pub endpoint_base: String,
 }
 
 impl Default for SessionConfig {
@@ -135,7 +145,9 @@ impl HttpSession {
         if self.text_prefix.chars().count() > MAX_PREFIX_CHARS {
             let total = self.text_prefix.chars().count();
             let marker = format!("\n[truncated {total} total chars; newest kept]\n");
-            let keep = MAX_PREFIX_CHARS.saturating_sub(marker.chars().count()).max(512);
+            let keep = MAX_PREFIX_CHARS
+                .saturating_sub(marker.chars().count())
+                .max(512);
             let tail: String = self
                 .text_prefix
                 .chars()
@@ -178,12 +190,8 @@ impl HttpSession {
         let planned = self.plan_task(sampler);
         let abort = self.abort.clone();
         let queue = Arc::clone(&self.queue);
-        let reply = common_core::retry::retry_async(
-            3,
-            200,
-            25,
-            FluentError::is_retryable,
-            move || {
+        let reply =
+            common_core::retry::retry_async(3, 200, 25, FluentError::is_retryable, move || {
                 let queue = Arc::clone(&queue);
                 let task = LlmTask {
                     messages: planned.0.clone(),
@@ -191,10 +199,9 @@ impl HttpSession {
                 };
                 let abort = abort.clone();
                 async move { queue.submit_with_abort(task, abort).await }
-            },
-        )
-        .await
-        .map_err(map_fluent_error)?;
+            })
+            .await
+            .map_err(map_fluent_error)?;
         self.answered = true;
         Ok(StepOut {
             delta: reply,
@@ -308,60 +315,7 @@ impl WorkUnit for HttpSession {
     }
 }
 
-impl FieldAccess for HttpSession {
-    fn set_field(&mut self, name: &str, value: &str) -> Result<(), FieldError> {
-        match name {
-            "model" => {
-                self.config.model = value.to_string();
-                Ok(())
-            }
-            "system_prompt" => {
-                self.config.system_prompt = value.to_string();
-                Ok(())
-            }
-            "ctx_tokens" => {
-                self.config.ctx_tokens = value.parse().map_err(|_| {
-                    FieldError::Parse("ctx_tokens must be a number".to_string())
-                })?;
-                Ok(())
-            }
-            "n_batch" => {
-                self.config.n_batch = value.parse().map_err(|_| {
-                    FieldError::Parse("n_batch must be a number".to_string())
-                })?;
-                Ok(())
-            }
-            _ => Err(FieldError::NotFound(name.into())),
-        }
-    }
-    fn get_field(&self, name: &str) -> Result<String, FieldError> {
-        match name {
-            "model" => Ok(self.config.model.clone()),
-            "system_prompt" => Ok(self.config.system_prompt.clone()),
-            "ctx_tokens" => Ok(self.config.ctx_tokens.to_string()),
-            "n_batch" => Ok(self.config.n_batch.to_string()),
-            _ => Err(FieldError::NotFound(name.into())),
-        }
-    }
-    fn field_names(&self) -> &'static [&'static str] {
-        &["model", "system_prompt", "ctx_tokens", "n_batch"]
-    }
-}
-
-impl Describable for HttpSession {
-    fn describe(&self) -> serde_json::Value {
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                "model": { "type": "string", "description": "Served model tag" },
-                "system_prompt": { "type": "string", "description": "Stable turn prefix" },
-                "ctx_tokens": { "type": "integer", "description": "Context window" },
-                "n_batch": { "type": "integer", "description": "Prefill chunk size" }
-            },
-            "required": ["model", "system_prompt", "ctx_tokens", "n_batch"]
-        })
-    }
-}
+fluent_wvr::delegate_component_fields!(HttpSession, config);
 
 impl_component!(HttpSession);
 

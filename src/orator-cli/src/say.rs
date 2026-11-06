@@ -50,7 +50,12 @@ pub(crate) fn say_via_daemon(text: &str, transport: Transport) -> ExitCode {
 /// Speak TEXT or stdin: through the daemon by default, or the audio
 /// endpoint with local playout under `--backend audio-server` (text
 /// falls back to the daemon when the server sends none).
-pub(crate) fn say(text: &[String], backend: &str, config: &OratorConfig, transport: Transport) -> ExitCode {
+pub(crate) fn say(
+    text: &[String],
+    backend: &str,
+    config: &OratorConfig,
+    transport: Transport,
+) -> ExitCode {
     let spoken = if text.is_empty() {
         let mut stdin = String::new();
         if std::io::Read::read_to_string(&mut std::io::stdin(), &mut stdin).is_err() {
@@ -70,7 +75,12 @@ pub(crate) fn say(text: &[String], backend: &str, config: &OratorConfig, transpo
         return say_audio_server(&spoken, config, transport);
     }
     if selected == "kokoro" {
-        return say_kokoro(&spoken, &config.tts.voice, config.tts.gpu).0;
+        // The composed voice for the serving head wins; the leaf
+        // fills in when the tables say nothing (defaults: the leaf).
+        let tag = orator_core::resolve_role_model(&config.roles, "tts")
+            .unwrap_or_else(|| config.tts.voice.clone());
+        let voice = orator_cli::fallback::resolve_tts_voice(config, &tag);
+        return say_kokoro(&spoken, &voice, config.tts.gpu).0;
     }
     if selected != "daemon" {
         eprintln!("orator: unknown TTS backend: {selected}");
@@ -83,9 +93,7 @@ pub(crate) fn say(text: &[String], backend: &str, config: &OratorConfig, transpo
 /// cpal output at the vocoder rate). Text-only servers fall back to
 /// the daemon so the reply still speaks.
 fn say_audio_server(text: &str, config: &OratorConfig, transport: Transport) -> ExitCode {
-    match run_audio_turn(&config.s2s, transport, |session| {
-        session.speak_blocking(text)
-    }) {
+    match run_audio_turn(config, transport, |session| session.speak_blocking(text)) {
         Ok(samples) => match orator_audio::play_blocking(&samples, orator_s2s::AUDIO_OUT_RATE) {
             Ok(()) => ExitCode::Success,
             Err(error) => {
@@ -110,10 +118,11 @@ fn say_audio_server(text: &str, config: &OratorConfig, transport: Transport) -> 
 /// server (verified live: the gateway route has no mmproj, a
 /// self-booted one accepts audio). Releases every handle taken.
 pub(crate) fn run_audio_turn<T>(
-    s2s: &orator_core::S2sConfig,
+    config: &orator_core::OratorConfig,
     transport: Transport,
     mut run: impl FnMut(&mut orator_s2s::AudioSession) -> Result<T, orator_s2s::S2sError>,
 ) -> Result<T, orator_s2s::S2sError> {
+    let s2s = &config.s2s;
     use orator_s2s::S2sError;
     // One overall budget for the whole chain so a worker timeout plus
     // a stream timeout plus a boot timeout never stack without bound.
@@ -125,21 +134,23 @@ pub(crate) fn run_audio_turn<T>(
     let chain_start = std::time::Instant::now();
     let base = s2s_base_url(s2s);
     let model = s2s.model.clone();
-    let bundle = orator_core::bundle_from_s2s(s2s);
+    let bundle = orator_core::bundle_from_s2s(s2s, &config.models, &config.gguf_dir);
     let endpoint = std::sync::Arc::new(
         common_core::runtime::block_on(orator_s2s::ensure_audio_server(
-            &base, &model, &bundle, s2s.auto_boot,
+            &base,
+            &model,
+            &bundle,
+            s2s.auto_boot,
         ))
-            .map_err(|error| {
-                eprintln!("orator: {error}");
-                error
-            })?,
+        .map_err(|error| {
+            eprintln!("orator: {error}");
+            error
+        })?,
     );
     // Current releaser: the watcher runs whatever it holds when the
     // signal lands, so supervised retries booted below stay covered.
     // Every handle here releases idempotently.
-    let slot: ReleaserSlot =
-        std::sync::Arc::new(std::sync::Mutex::new(None));
+    let slot: ReleaserSlot = std::sync::Arc::new(std::sync::Mutex::new(None));
     let releasing = std::sync::Arc::clone(&slot);
     let watch = orator_cli::SignalWatch::arm(move || {
         if let Some(release) = common_core::sync::lock(&releasing).as_ref() {
@@ -195,7 +206,9 @@ pub(crate) fn run_audio_turn<T>(
                     Err(S2sError::NoAudio)
                 }
                 orator_cli::say_chain::DaemonVoiceHint::BootContention(reason) => {
-                    eprintln!("orator: {reason}; waiting for the daemon boot (progress, not a failure)");
+                    eprintln!(
+                        "orator: {reason}; waiting for the daemon boot (progress, not a failure)"
+                    );
                     match wait_for_daemon_boot(transport) {
                         orator_cli::say_chain::DaemonVoiceHint::Available(url) => {
                             eprintln!("orator: using the daemon-owned voice server");
@@ -239,8 +252,11 @@ pub(crate) fn run_audio_turn<T>(
                         return Err(S2sError::NoAudio);
                     }
                     eprintln!("orator: booting a supervised voice server");
-                    match common_core::runtime::block_on(orator_s2s::boot_audio_server(&bundle, &model, s2s.auto_boot))
-                    {
+                    match common_core::runtime::block_on(orator_s2s::boot_audio_server(
+                        &bundle,
+                        &model,
+                        s2s.auto_boot,
+                    )) {
                         Ok(owned) => {
                             let owned = std::sync::Arc::new(owned);
                             hold(std::sync::Arc::new({
@@ -293,7 +309,9 @@ pub(crate) fn run_audio_turn<T>(
                     Err(S2sError::NoAudio)
                 }
                 orator_cli::say_chain::DaemonVoiceHint::BootContention(reason) => {
-                    eprintln!("orator: {reason}; waiting for the daemon boot (progress, not a failure)");
+                    eprintln!(
+                        "orator: {reason}; waiting for the daemon boot (progress, not a failure)"
+                    );
                     match wait_for_daemon_boot(transport) {
                         orator_cli::say_chain::DaemonVoiceHint::Available(url) => {
                             eprintln!("orator: using the daemon-owned voice server");
@@ -317,7 +335,11 @@ pub(crate) fn run_audio_turn<T>(
                         return Err(S2sError::NoAudio);
                     }
                     eprintln!("orator: booting a supervised voice server");
-                    match common_core::runtime::block_on(orator_s2s::boot_audio_server(&bundle, &model, s2s.auto_boot)) {
+                    match common_core::runtime::block_on(orator_s2s::boot_audio_server(
+                        &bundle,
+                        &model,
+                        s2s.auto_boot,
+                    )) {
                         Ok(owned) => {
                             let owned = std::sync::Arc::new(owned);
                             hold(std::sync::Arc::new({
@@ -367,25 +389,20 @@ fn wait_for_daemon_boot(transport: Transport) -> orator_cli::say_chain::DaemonVo
 /// from ejection and saturation (caller must not boot; fall through
 /// to the voice chain instead). The quiet transport core preserves
 /// the body text so those two cases stay distinguishable.
-fn daemon_voice_endpoint(
-    transport: Transport,
-) -> orator_cli::say_chain::DaemonVoiceHint {
+fn daemon_voice_endpoint(transport: Transport) -> orator_cli::say_chain::DaemonVoiceHint {
     use orator_cli::socket::call_transport;
     match call_transport(transport, "VoiceEndpoint", serde_json::json!({})) {
         Ok(body) => body
             .get("url")
             .and_then(|url| url.as_str())
-            .map_or(
-                orator_cli::say_chain::DaemonVoiceHint::Unavailable,
-                |url| orator_cli::say_chain::DaemonVoiceHint::Available(url.to_string()),
-            ),
+            .map_or(orator_cli::say_chain::DaemonVoiceHint::Unavailable, |url| {
+                orator_cli::say_chain::DaemonVoiceHint::Available(url.to_string())
+            }),
         Err(failure) => {
             if let Some(text) = failure.text.as_deref() {
                 eprintln!("{text}");
             }
-            orator_cli::say_chain::classify_daemon_call_failure(
-                failure.text.as_deref(),
-            )
+            orator_cli::say_chain::classify_daemon_call_failure(failure.text.as_deref())
         }
     }
 }
@@ -404,7 +421,7 @@ fn daemon_voice_endpoint(
 fn say_fallback(text: &str, config: &OratorConfig, transport: Transport) -> ExitCode {
     if let Some(binary) = orator_s2s::resolve_tts_binary() {
         eprintln!("orator: server sent no audio; synthesizing on the GPU worker");
-        let bundle = orator_core::bundle_from_s2s(&config.s2s);
+        let bundle = orator_core::bundle_from_s2s(&config.s2s, &config.models, &config.gguf_dir);
         match orator_s2s::synth_blocking(&binary, &bundle, text, orator_s2s::TTS_TIMEOUT) {
             Ok((samples, rate)) => {
                 return match orator_audio::play_blocking(&samples, rate) {
@@ -418,7 +435,9 @@ fn say_fallback(text: &str, config: &OratorConfig, transport: Transport) -> Exit
             Err(error) => eprintln!("orator: GPU worker failed: {error}"),
         }
     } else {
-        eprintln!("orator: server sent no audio; no llama-tts binary (set LLAMA_TTS or add it to $PATH)");
+        eprintln!(
+            "orator: server sent no audio; no llama-tts binary (set LLAMA_TTS or add it to $PATH)"
+        );
     }
     let resolved = orator_tts::default_paths();
     let kokoro_ready = resolved
@@ -430,8 +449,7 @@ fn say_fallback(text: &str, config: &OratorConfig, transport: Transport) -> Exit
         match code {
             ExitCode::Success => return ExitCode::Success,
             ExitCode::Error if played > 0 && played < chunks.len() => {
-                let remaining: Vec<&str> =
-                    chunks.iter().skip(played).map(String::as_str).collect();
+                let remaining: Vec<&str> = chunks.iter().skip(played).map(String::as_str).collect();
                 let suffix = remaining.join(" ");
                 if suffix.trim().is_empty() {
                     eprintln!(
@@ -461,9 +479,7 @@ fn say_fallback(text: &str, config: &OratorConfig, transport: Transport) -> Exit
             || "the managed model directory".to_string(),
             |(model, _)| model.display().to_string(),
         );
-        eprintln!(
-            "orator: no local voice at {hint} (fetch kokoro-v1.0.onnx plus a voice pack)"
-        );
+        eprintln!("orator: no local voice at {hint} (fetch kokoro-v1.0.onnx plus a voice pack)");
     }
     say_via_daemon(text, transport)
 }
@@ -503,7 +519,11 @@ fn say_kokoro(text: &str, voice: &str, gpu: bool) -> (ExitCode, Vec<String>, usi
         chunks.clone(),
         {
             let backend = std::sync::Arc::clone(&backend);
-            move |chunk: &str| backend.synth_blocking(chunk).map_err(|error| error.to_string())
+            move |chunk: &str| {
+                backend
+                    .synth_blocking(chunk)
+                    .map_err(|error| error.to_string())
+            }
         },
         |samples: &[f32]| {
             player.push(samples);
@@ -525,4 +545,3 @@ fn say_kokoro(text: &str, voice: &str, gpu: bool) -> (ExitCode, Vec<String>, usi
         }
     }
 }
-

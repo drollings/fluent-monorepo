@@ -104,7 +104,10 @@ fn false_ok_and_false_fail_rates_are_zero() {
     // (entry, must_verify_ok): the four calibration groups.
     let cases = [
         (entry("pinned-ok", "cal-ok.bin", Some(b"exact bytes")), true),
-        (entry("pinned-bad", "cal-bad.bin", Some(b"exact bytes")), false),
+        (
+            entry("pinned-bad", "cal-bad.bin", Some(b"exact bytes")),
+            false,
+        ),
         (entry("unpinned-here", "cal-unpinned.bin", None), false),
         (entry("unpinned-gone", "cal-missing.bin", None), false),
     ];

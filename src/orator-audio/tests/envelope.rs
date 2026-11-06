@@ -42,3 +42,34 @@ fn cut_fade_spans_twenty_ms_at_voice_rates() {
     assert_eq!(CUT_FADE_MS, 20);
     assert_eq!(CUT_FADE_MS as usize * 24_000 / 1000, 480);
 }
+
+/// M3-S1 characterization: exact scalar contract of the playout
+/// envelope. The shared `common_core::envelope` primitive must
+/// reproduce these vectors; the driver constants must equal these
+/// values (pinned separately in `orator-turn` driver tests).
+#[test]
+fn orator_audio_envelope_vectors() {
+    // dB scale anchors.
+    assert!((db_to_linear(0.0) - 1.0).abs() < f32::EPSILON);
+    assert!((db_to_linear(-12.0) - 0.251_188_65).abs() < 1e-6);
+    assert!((db_to_linear(6.0206) - 2.0).abs() < 1e-3);
+    // The ramp is linear: the midpoint mirrors the implementation shape.
+    let floor = db_to_linear(-12.0);
+    assert!((duck_gain_at(50) - (1.0 + 0.5 * (floor - 1.0))).abs() < 1e-6);
+    // Just past the ramp the floor holds.
+    assert!((duck_gain_at(101) - floor).abs() < f32::EPSILON);
+    assert!((duck_gain_at(u64::MAX) - floor).abs() < f32::EPSILON);
+    // A zero fade is a no-op, even on an empty buffer.
+    let mut samples = vec![0.5; 8];
+    apply_fade_out(&mut samples, 0);
+    assert!(samples
+        .iter()
+        .all(|sample| (*sample - 0.5).abs() < f32::EPSILON));
+    let mut empty: Vec<f32> = Vec::new();
+    apply_fade_out(&mut empty, 480);
+    assert!(empty.is_empty());
+    // A single-sample fade zeroes exactly the last sample.
+    let mut one = vec![0.5];
+    apply_fade_out(&mut one, 1);
+    assert!(one[0].abs() < f32::EPSILON);
+}

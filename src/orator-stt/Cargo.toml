@@ -12,6 +12,7 @@ internment = { workspace = true }
 orator-core = { path = "../orator-core" }
 serde = { workspace = true }
 serde_json = { workspace = true }
+transcribe-cpp = "=0.4.1"
 whisper-rs = "0.16"
 
 [dev-dependencies]

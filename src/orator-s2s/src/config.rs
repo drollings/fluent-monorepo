@@ -5,7 +5,8 @@
 //! so session code keeps its paths.
 
 pub use orator_core::{
-    bundle_from_s2s, AudioBundle, S2sConfig, AUDIO_BUNDLE_DIR, AUDIO_IN_RATE, AUDIO_OUT_RATE,
+    audio_bundle_dir, bundle_from_s2s, default_bundle, default_bundle_in, resolve_bundle_path,
+    AudioBundle, S2sConfig, AUDIO_IN_RATE, AUDIO_OUT_RATE,
 };
 
 #[cfg(test)]

@@ -18,3 +18,25 @@ fn rolling_summary_protects_the_newest_turn() {
     assert!(rolled.ends_with(newest));
     assert!(rolled.len() < "old context ".repeat(500).len() + newest.len());
 }
+
+/// M10-S1 characterization: newest-kept-whole edges. An over-budget
+/// newest returns verbatim (no summary, no marker); an empty summary
+/// returns the newest; an empty newest keeps the (possibly truncated)
+/// summary behind the `…` marker.
+#[test]
+fn roll_summary_pins_newest_whole_and_empty_edges() {
+    use crate::facts::{roll_summary, SUMMARY_BUDGET};
+    use fluent_llm::tokens::estimate_tokens;
+    // Over-budget newest: verbatim, nothing else.
+    let newest = "y".repeat(5000);
+    assert!((estimate_tokens(&newest) as usize) >= SUMMARY_BUDGET);
+    assert_eq!(roll_summary("old context", &newest), newest);
+    // Empty summary: newest alone.
+    assert_eq!(roll_summary("", "hi"), "hi");
+    // Empty newest: summary (fits, verbatim) behind the marker.
+    assert_eq!(roll_summary("old", ""), "old\n…\n");
+    // Exactly-at-budget newest: verbatim (>= fires, not just >).
+    let at_budget = "z".repeat(4000);
+    assert!((estimate_tokens(&at_budget) as usize) >= SUMMARY_BUDGET);
+    assert_eq!(roll_summary("old context", &at_budget), at_budget);
+}

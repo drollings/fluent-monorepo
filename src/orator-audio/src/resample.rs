@@ -40,14 +40,9 @@ impl RubatoResampler {
     /// Build for mono `from_hz` → `to_hz` with `chunk_len`-sample input
     /// chunks.
     pub fn new(from_hz: u32, to_hz: u32, chunk_len: usize) -> Result<Self, String> {
-        let inner = rubato::FftFixedIn::<f32>::new(
-            from_hz as usize,
-            to_hz as usize,
-            chunk_len,
-            2,
-            1,
-        )
-        .map_err(|error| format!("rubato setup failed: {error:?}"))?;
+        let inner =
+            rubato::FftFixedIn::<f32>::new(from_hz as usize, to_hz as usize, chunk_len, 2, 1)
+                .map_err(|error| format!("rubato setup failed: {error:?}"))?;
         Ok(Self { inner, chunk_len })
     }
 

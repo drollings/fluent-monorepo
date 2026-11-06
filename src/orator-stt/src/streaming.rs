@@ -14,13 +14,11 @@ use std::sync::Arc;
 
 use fluent_concurrency::stream::StreamAbort;
 use fluent_wvr::{
-    Describable, FieldAccess, FieldError, WorkContext, WorkError, WorkOutput, WorkUnit,
-    impl_component,
+    impl_component, Describable, FieldAccess, FieldError, WorkContext, WorkError, WorkOutput,
+    WorkUnit,
 };
 use internment::ArcIntern;
-use orator_core::{
-    Channel, Frame, MediaTime, SttError, SttStream, Word, WordUpdate,
-};
+use orator_core::{Channel, Frame, MediaTime, SttError, SttStream, Word, WordUpdate};
 
 /// One word from a block decode, timed in milliseconds since utterance start.
 #[derive(Debug, Clone, PartialEq)]
@@ -380,6 +378,13 @@ impl WorkUnit for StreamingStt {
 
 impl FieldAccess for StreamingStt {
     fn set_field(&mut self, name: &str, value: &str) -> Result<(), FieldError> {
+        // M15-S4 keep-decision: the `no_speech_max` [0.0, 1.0] band is
+        // enforced here but deliberately absent from the schema below.
+        // A derive needs `min`/`max` attrs to enforce it (which would
+        // change `describe()`) or drops the enforcement (fail-open).
+        // Neither is foldable into a refactor, so the hand impl stays —
+        // the band and schema are pinned by
+        // `streaming_field_surface_pins_schema_and_table`.
         match name {
             "provisional_ms" => {
                 self.provisional_ms = value.parse().map_err(|_| {
@@ -388,9 +393,9 @@ impl FieldAccess for StreamingStt {
                 Ok(())
             }
             "agree_ms" => {
-                self.agree_ms = value.parse().map_err(|_| {
-                    FieldError::Parse("agree_ms must be a number".to_string())
-                })?;
+                self.agree_ms = value
+                    .parse()
+                    .map_err(|_| FieldError::Parse("agree_ms must be a number".to_string()))?;
                 Ok(())
             }
             "no_speech_max" => {

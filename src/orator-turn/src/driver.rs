@@ -18,12 +18,16 @@ pub const BARGE_IN_MS: u16 = 150;
 pub const CONFIRM_MS: u16 = 250;
 /// Utterances below this with only lexicon words are backchannels.
 pub const BACKCHANNEL_MS: u64 = 600;
-/// Playout duck depth on detect.
-pub const DUCK_DB: f32 = -12.0;
-/// Duck ramp length.
-pub const DUCK_RAMP_MS: u64 = 100;
 /// Playout fade on cut.
-pub const CUT_FADE_MS: u64 = 20;
+/// Canonical home: `common_core::envelope` (same calibrated value, shared).
+pub use common_core::envelope::CUT_FADE_MS;
+/// Playout duck depth on detect.
+/// Canonical home: `common_core::envelope::DUCK_DEPTH_DB` — aliased
+/// because the driver historically names it `DUCK_DB`.
+pub use common_core::envelope::DUCK_DEPTH_DB as DUCK_DB;
+/// Duck ramp length.
+/// Canonical home: `common_core::envelope` (same calibrated value, shared).
+pub use common_core::envelope::DUCK_RAMP_MS;
 
 /// Pipeline hops that check the epoch. Every hop drops items from a
 /// fired or superseded epoch; drops count per hop for metrics.
@@ -166,8 +170,8 @@ pub fn lexicon(lang: &str) -> &'static [&'static str] {
             "stimmt",
         ],
         _ => &[
-            "yeah", "yep", "yup", "mhm", "mmhm", "mm-hm", "uh-huh", "uhhuh", "right", "okay",
-            "ok", "sure", "wow", "oh", "ah", "hmm", "hm",
+            "yeah", "yep", "yup", "mhm", "mmhm", "mm-hm", "uh-huh", "uhhuh", "right", "okay", "ok",
+            "sure", "wow", "oh", "ah", "hmm", "hm",
         ],
     }
 }

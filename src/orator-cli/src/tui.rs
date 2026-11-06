@@ -8,19 +8,19 @@
 //! by tests.
 
 use std::io;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use fluent_concurrency::stream::StreamAbort;
 use orator_vad::EnergyVad;
-use ratatui::Terminal;
 use ratatui::backend::Backend;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph};
+use ratatui::Terminal;
 
 use crate::socket::{
-    Transport, call_transport, refused_text, unavailable_socket_text, unavailable_ws_text,
+    call_transport, refused_text, unavailable_socket_text, unavailable_ws_text, Transport,
 };
 use crate::ExitCode;
 
@@ -257,7 +257,7 @@ impl MicGate {
     /// Score one frame: level always updates; `true` means the frame
     /// belongs to a hot span and goes upward.
     pub fn push(&mut self, samples: &[f32]) -> bool {
-        self.level = rms(samples).clamp(0.0, 1.0);
+        self.level = common_core::pcm::root_mean_square_f32(samples).clamp(0.0, 1.0);
         self.vad.push(samples);
         self.vad.speaking()
     }
@@ -273,14 +273,6 @@ impl Default for MicGate {
     fn default() -> Self {
         Self::new()
     }
-}
-
-fn rms(samples: &[f32]) -> f32 {
-    if samples.is_empty() {
-        return 0.0;
-    }
-    let energy: f32 = samples.iter().map(|sample| sample * sample).sum();
-    (energy / samples.len() as f32).sqrt()
 }
 
 /// Meter bar of `width` cells, clamped — never overflows, never
@@ -472,8 +464,9 @@ impl<C: SessionControl> TuiApp<C> {
         }
         self.state.talking = !self.state.talking;
         if self.state.talking {
-            self.state
-                .push_line(TuiLine::Status("talk: mic hot — toggle off to send".to_string()));
+            self.state.push_line(TuiLine::Status(
+                "talk: mic hot — toggle off to send".to_string(),
+            ));
         } else {
             self.ptt_commit = true;
             self.state
@@ -668,43 +661,44 @@ where
 {
     terminal
         .draw(|frame| {
-        let area = frame.area();
-        let rows = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(3),
-                Constraint::Length(3),
-                Constraint::Min(1),
-                Constraint::Length(3),
-            ])
-            .split(area);
-        let session = state.session.as_deref().unwrap_or("none");
-        let voice = if state.voicing { "VOICING" } else { "idle" };
-        let mic = match (state.mic_mode, state.talking) {
-            (MicMode::Auto, _) => "mic:auto".to_string(),
-            (MicMode::PushToTalk, true) => "mic:ptt TALK".to_string(),
-            (MicMode::PushToTalk, false) => "mic:ptt".to_string(),
-        };
-        let header = Paragraph::new(format!("orator tui | session: {session} | {voice} | {mic}"))
-            .block(Block::default().borders(Borders::ALL).title("status"));
-        frame.render_widget(header, rows[0]);
-        let meter = Paragraph::new(format!("mic [{}]", level_bar(state.mic_level, 20)))
-            .block(Block::default().borders(Borders::ALL).title("input"));
-        frame.render_widget(meter, rows[1]);
-        let items: Vec<ListItem> = state
-            .lines
-            .iter()
-            .map(|line| ListItem::new(line_text(line)))
-            .collect();
-        let transcript =
-            List::new(items).block(Block::default().borders(Borders::ALL).title("transcript"));
-        frame.render_widget(transcript, rows[2]);
-        let prompt = Paragraph::new(format!("> {}", state.input)).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title("say (Ctrl+B barge · Ctrl+Q quit · Ctrl+G mode · Ctrl+T talk)"),
-        );
-        frame.render_widget(prompt, rows[3]);
+            let area = frame.area();
+            let rows = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(3),
+                    Constraint::Length(3),
+                    Constraint::Min(1),
+                    Constraint::Length(3),
+                ])
+                .split(area);
+            let session = state.session.as_deref().unwrap_or("none");
+            let voice = if state.voicing { "VOICING" } else { "idle" };
+            let mic = match (state.mic_mode, state.talking) {
+                (MicMode::Auto, _) => "mic:auto".to_string(),
+                (MicMode::PushToTalk, true) => "mic:ptt TALK".to_string(),
+                (MicMode::PushToTalk, false) => "mic:ptt".to_string(),
+            };
+            let header =
+                Paragraph::new(format!("orator tui | session: {session} | {voice} | {mic}"))
+                    .block(Block::default().borders(Borders::ALL).title("status"));
+            frame.render_widget(header, rows[0]);
+            let meter = Paragraph::new(format!("mic [{}]", level_bar(state.mic_level, 20)))
+                .block(Block::default().borders(Borders::ALL).title("input"));
+            frame.render_widget(meter, rows[1]);
+            let items: Vec<ListItem> = state
+                .lines
+                .iter()
+                .map(|line| ListItem::new(line_text(line)))
+                .collect();
+            let transcript =
+                List::new(items).block(Block::default().borders(Borders::ALL).title("transcript"));
+            frame.render_widget(transcript, rows[2]);
+            let prompt = Paragraph::new(format!("> {}", state.input)).block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("say (Ctrl+B barge · Ctrl+Q quit · Ctrl+G mode · Ctrl+T talk)"),
+            );
+            frame.render_widget(prompt, rows[3]);
         })
         .map_err(|error| io::Error::other(format!("{error:?}")))?;
     Ok(())
@@ -713,10 +707,7 @@ where
 /// Run the live duplex client: capture, gate, transcribe, ask, voice.
 /// Raw mode and the alternate screen require a terminal; anything
 /// else refuses with a named usage error before touching the display.
-pub fn run_live(
-    transport: Transport,
-    _config: &orator_core::OratorConfig,
-) -> crate::ExitCode {
+pub fn run_live(transport: Transport, config: &orator_core::OratorConfig) -> crate::ExitCode {
     use ratatui::crossterm::tty::IsTty as _;
 
     if !std::io::stdin().is_tty() {
@@ -735,22 +726,17 @@ pub fn run_live(
         return crate::ExitCode::Usage;
     }
     let mut stdout = std::io::stdout();
-    if ratatui::crossterm::execute!(
-        stdout,
-        ratatui::crossterm::terminal::EnterAlternateScreen
-    )
-    .is_err()
+    if ratatui::crossterm::execute!(stdout, ratatui::crossterm::terminal::EnterAlternateScreen)
+        .is_err()
     {
         let _ = ratatui::crossterm::terminal::disable_raw_mode();
         eprintln!("orator: tui needs a terminal (alternate screen refused)");
         return crate::ExitCode::Usage;
     }
-    let outcome = run_loop(transport, backend);
+    let outcome = run_loop(transport, backend, config);
     let _ = ratatui::crossterm::terminal::disable_raw_mode();
-    let _ = ratatui::crossterm::execute!(
-        stdout,
-        ratatui::crossterm::terminal::LeaveAlternateScreen
-    );
+    let _ =
+        ratatui::crossterm::execute!(stdout, ratatui::crossterm::terminal::LeaveAlternateScreen);
     outcome
 }
 
@@ -778,18 +764,19 @@ struct SttWorker {
 
 impl SttWorker {
     /// Spawn the worker; it parks until the first utterance.
-    /// Transcription runs on the daemon through `transcribe_samples`.
-    fn spawn() -> Self {
-        Self::spawn_with(transcribe_samples)
+    /// Transcription runs daemon-first, falling back to local
+    /// specialized ASR when the daemon has no voice serving.
+    fn spawn(config: &orator_core::OratorConfig) -> Self {
+        let config = config.clone();
+        Self::spawn_with(move |samples, transport, abort| {
+            crate::fallback::transcribe_dial(samples, transport, abort, &config)
+        })
     }
 
     /// Spawn the worker with a scripted dial (tests answer without a
     /// daemon; production passes [`transcribe_samples`]).
     fn spawn_with(
-        dial: impl Fn(&[f32], Transport, &StreamAbort) -> Result<String, String>
-            + Send
-            + Sync
-            + 'static,
+        dial: impl Fn(&[f32], Transport, &StreamAbort) -> Result<String, String> + Send + Sync + 'static,
     ) -> Self {
         let (tx, rx) = std::sync::mpsc::channel::<SttRequest>();
         std::thread::spawn(move || {
@@ -872,10 +859,14 @@ struct VoiceWorker {
 }
 
 impl VoiceWorker {
-    /// Spawn the worker; it parks until the first turn.
-    /// Voice runs on the daemon through `ask_then_voice`.
-    fn spawn() -> Self {
-        Self::spawn_with(ask_then_voice)
+    /// Spawn the worker; it parks until the first turn. Voice runs
+    /// daemon-first through `ask_then_voice`, falling back to local
+    /// specialized inference when the daemon has no voice serving.
+    fn spawn(config: &orator_core::OratorConfig) -> Self {
+        let config = config.clone();
+        Self::spawn_with(move |text, session, transport, abort| {
+            ask_then_voice(text, session, transport, abort, &config)
+        })
     }
 
     /// Spawn the worker with a scripted dial (tests answer without a
@@ -936,10 +927,11 @@ impl VoiceWorker {
     }
 }
 
-/// One voice turn against the daemon: `Ask` for the reply text, then
-/// `Say` for its audio. The transcript shows the full reply; the
-/// voice carries the concise form (short replies pass through, long
-/// ones voice a summary — the single [`crate::ask::concise_for_speech`]
+/// One voice turn: daemon Ask then daemon Say, falling back to local
+/// inference (direct endpoint ask, kokoro synth) when the daemon has
+/// no voice serving. The transcript shows the full reply; the voice
+/// carries the concise form (short replies pass through, long ones
+/// voice a summary — the single [`crate::ask::concise_for_speech`]
 /// home shared with `ask --speak`). A failed `Say` still returns its
 /// text with the voicing failure attached, so words are never lost to
 /// a playback problem.
@@ -948,6 +940,7 @@ fn ask_then_voice(
     session: Option<&str>,
     transport: Transport,
     abort: &StreamAbort,
+    config: &orator_core::OratorConfig,
 ) -> Result<VoiceTurn, String> {
     if abort.is_cancelled() {
         return Err("orator: voice turn aborted".to_string());
@@ -955,21 +948,21 @@ fn ask_then_voice(
     ask_then_voice_with(
         text,
         session,
-        &|text, session| live_ask(text, session, transport, abort),
+        &|text, session| crate::fallback::ask_dial(text, session, transport, abort, config),
         &|text| {
             // Cut between the answer and its voicing skips a
             // pointless synthesis; the worker drops the turn anyway.
             if abort.is_cancelled() {
                 return Err("orator: voice turn aborted".to_string());
             }
-            live_say(text, transport, abort)
+            crate::fallback::say_dial(text, transport, abort, config)
         },
     )
 }
 
 /// Ask one question through the daemon transport. Pure dial seam for
 /// [`ask_then_voice_with`]: production passes this, tests script it.
-fn live_ask(
+pub(crate) fn live_ask(
     text: &str,
     session: Option<&str>,
     transport: Transport,
@@ -994,12 +987,18 @@ fn live_ask(
 
 /// Voice one reply through the daemon transport. Pure dial seam for
 /// [`ask_then_voice_with`]: production passes this, tests script it.
-fn live_say(text: &str, transport: Transport, abort: &StreamAbort) -> Result<(Vec<f32>, u32), String> {
+pub(crate) fn live_say(
+    text: &str,
+    transport: Transport,
+    abort: &StreamAbort,
+) -> Result<(Vec<f32>, u32), String> {
     // Thin client: the daemon owns TTS. This side plays the daemon's
     // audio bytes locally — playout of provided audio, never inference.
     let mut control = LiveControl::new(transport, abort.clone());
     match control.call("Say", serde_json::json!({"text": text})) {
-        Ok(body) => crate::say_chain::decode_say_audio(&body).map_err(|error| format!("orator: {error}")),
+        Ok(body) => {
+            crate::say_chain::decode_say_audio(&body).map_err(|error| format!("orator: {error}"))
+        }
         Err(error) => Err(error.text),
     }
 }
@@ -1048,6 +1047,7 @@ fn ask_then_voice_with(
 fn run_loop(
     transport: Transport,
     backend: orator_audio::CpalBackend,
+    config: &orator_core::OratorConfig,
 ) -> crate::ExitCode {
     use ratatui::backend::CrosstermBackend;
     use ratatui::crossterm::event::{self, Event};
@@ -1076,13 +1076,13 @@ fn run_loop(
     let mut remainder_16k: Vec<f32> = Vec::new();
     // One thin worker forwards utterances to the daemon; the TUI
     // owns no inference backends.
-    let stt_worker = SttWorker::spawn();
+    let stt_worker = SttWorker::spawn(config);
     let mut transcribing: Option<TranscribeJob> = None;
     // Voice turns ride their own worker for the same reason: `Ask`
     // plus `Say` block on the network, and keys (barge, quit,
     // typing) must stay live through slow turns. A cut drops the job
     // before delivery — never stale speech after a barge.
-    let voice_worker = VoiceWorker::spawn();
+    let voice_worker = VoiceWorker::spawn(config);
     let mut voicing_turn: Option<VoiceJob> = None;
     let mut player: Option<orator_audio::StreamPlayer> = None;
     // Saturated-daemon cooldown: a refused transcribe sheds mic input
@@ -1104,13 +1104,21 @@ fn run_loop(
         // The 16 kHz remainder keeps its own domain across polls (see
         // `drain_capture`): resampling never re-tags it as device-rate.
         app.suppress_utterance = app.state.voicing;
+        // PTT-cold mics move the meter but buffer nothing (the TUI
+        // rule, now an explicit argument instead of a method check).
+        let ptt_cold = app.state.mic_mode == MicMode::PushToTalk && !app.state.talking;
         drain_capture(
             &mut || consumer.pop().ok(),
             &mut carry,
             &mut remainder_16k,
             device_rate,
-            &mut app,
+            &mut app.gate,
+            &mut app.pending_utterance,
+            &mut app.pending_dropped,
+            !app.suppress_utterance && !ptt_cold,
+            None,
         );
+        app.state.mic_level = app.gate.level();
         // Utterance complete: the gate closed over buffered hot spans,
         // or PTT toggled off (which endpoints even a hot VAD span).
         // Past a saturated refusal the loop sheds instead of
@@ -1121,9 +1129,8 @@ fn run_loop(
         if cooling && !app.pending_utterance.is_empty() && !app.gate_speaking() {
             let shed = app.take_utterance().len();
             app.pending_dropped += shed as u64;
-            let due = last_shed_line.is_none_or(|at| {
-                at.elapsed() > std::time::Duration::from_secs(10)
-            });
+            let due =
+                last_shed_line.is_none_or(|at| at.elapsed() > std::time::Duration::from_secs(10));
             if due {
                 last_shed_line = Some(std::time::Instant::now());
                 app.state.push_line(TuiLine::Status(format!(
@@ -1154,12 +1161,8 @@ fn run_loop(
                         // slow answer never freezes the transcript.
                         app.event(TurnEvent::Text(text.clone()), true);
                         let session = app.state.session.clone();
-                        voicing_turn = Some(voice_worker.turn(
-                            text,
-                            session,
-                            transport,
-                            turn_abort.clone(),
-                        ));
+                        voicing_turn =
+                            Some(voice_worker.turn(text, session, transport, turn_abort.clone()));
                     }
                     Ok(_) => {}
                     Err(error) => {
@@ -1274,12 +1277,22 @@ pub(crate) fn tui_loop_should_quit<C: SessionControl>(
     app.quit || shutdown.load(Ordering::SeqCst)
 }
 
-fn drain_capture<C: SessionControl>(
+/// Drain device-rate capture into 16 kHz frames; hot spans buffer
+/// into `utterance` unless `accept` is false (voicing echo or a cold
+/// PTT mic: the meter still moves, nothing buffers). Over-cap input
+/// drops the oldest first with a counter. Single home for the TUI
+/// and `chat` capture loops (same resampling, same remainder domain,
+/// same cap).
+pub fn drain_capture(
     pop: &mut impl FnMut() -> Option<f32>,
     carry: &mut Vec<f32>,
     remainder_16k: &mut Vec<f32>,
     device_rate: u32,
-    app: &mut TuiApp<C>,
+    gate: &mut MicGate,
+    utterance: &mut Vec<f32>,
+    dropped: &mut u64,
+    accept: bool,
+    mut aec: Option<&mut orator_audio::AecFilter>,
 ) {
     let mut drained: Vec<f32> = Vec::new();
     for _ in 0..4096 {
@@ -1300,16 +1313,28 @@ fn drain_capture<C: SessionControl>(
     // exactly and single-rate capture behaves byte-identically.
     let mut window = std::mem::take(remainder_16k);
     window.extend_from_slice(&resampled);
-    let mut frames = window.chunks_exact(FRAME_SAMPLES);
+    let mut frames = window.chunks_exact_mut(FRAME_SAMPLES);
     for frame in &mut frames {
-        app.mic(frame);
+        // Echo cancels before the gate: the assistant's own playout
+        // never scores as hot speech. `None` (TUI today) skips
+        // straight to the gate — previous behavior, byte-identical.
+        if let Some(filter) = aec.as_deref_mut() {
+            filter.process(frame);
+        }
+        if !gate.push(frame) || !accept {
+            continue;
+        }
+        utterance.extend_from_slice(frame);
+        let excess = utterance.len().saturating_sub(MAX_PENDING_UTTERANCE);
+        if excess > 0 {
+            utterance.drain(..excess);
+            *dropped += excess as u64;
+        }
     }
-    remainder_16k.extend_from_slice(frames.remainder());
+    remainder_16k.extend_from_slice(frames.into_remainder());
 }
 
-
-
-fn transcribe_samples(
+pub(crate) fn transcribe_samples(
     samples: &[f32],
     transport: Transport,
     abort: &StreamAbort,

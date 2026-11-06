@@ -52,19 +52,16 @@ impl Codec for PcmCodec {
     fn encode_step(&mut self, pcm: &[f32]) -> Vec<u8> {
         // One i16 per sample, little-endian: the standard PCM wire
         // framing. Rounding costs at most half an LSB per conversion.
-        let mut out = Vec::with_capacity(pcm.len() * 2);
-        for sample in pcm {
-            let quantized = (sample.clamp(-1.0, 1.0) * 32767.0).round() as i16;
-            out.extend_from_slice(&quantized.to_le_bytes());
-        }
-        out
+        // Shared scalar home: `common_core::pcm` (Nearest = `round`).
+        common_core::pcm::encode_i16_le(
+            pcm,
+            common_core::pcm::Scale16::Symmetric32767,
+            common_core::pcm::Rounding::Nearest,
+        )
     }
 
     fn decode_step(&mut self, codes: &[u8]) -> Vec<f32> {
-        codes
-            .chunks_exact(2)
-            .map(|pair| f32::from(i16::from_le_bytes([pair[0], pair[1]])) / 32767.0)
-            .collect()
+        common_core::pcm::decode_i16_le(codes, common_core::pcm::Scale16::Symmetric32767)
     }
 
     fn reset(&mut self) {}

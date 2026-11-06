@@ -112,9 +112,9 @@ fn slow_peer_body() -> serde_json::Value {
 const MAX_SAY_SAMPLES: usize = 1_200_000;
 
 /// Base64 (standard) encode for the `Say` audio payload.
+/// Shared codec home: `common_core::pcm`.
 fn b64(bytes: &[u8]) -> String {
-    use base64::prelude::*;
-    BASE64_STANDARD.encode(bytes)
+    common_core::pcm::encode_base64(bytes)
 }
 
 /// Decode a `Transcribe` audio payload: base64 i16 LE mono at 16 kHz
@@ -134,9 +134,7 @@ fn decode_transcribe_audio(params: &serde_json::Value) -> Result<Vec<f32>, Strin
             "Transcribe needs 16 kHz mono audio (got {rate} Hz); resample before sending"
         ));
     }
-    use base64::prelude::*;
-    let raw = BASE64_STANDARD
-        .decode(encoded.trim())
+    let raw = common_core::pcm::decode_base64_trimmed(encoded)
         .map_err(|error| format!("Transcribe audio is not base64: {error}"))?;
     if raw.len() % 2 != 0 {
         return Err("Transcribe audio length is not a whole i16 count".to_string());
@@ -148,10 +146,12 @@ fn decode_transcribe_audio(params: &serde_json::Value) -> Result<Vec<f32>, Strin
             crate::voice::MAX_TRANSCRIBE_SAMPLES,
         ));
     }
-    Ok(raw
-        .chunks_exact(2)
-        .map(|pair| f32::from(i16::from_le_bytes([pair[0], pair[1]])) / 32768.0)
-        .collect())
+    // Legacy decoder scale (÷ 32768, NOT the encoder-side ÷ 32767):
+    // pinned by `orator_daemon_transcribe_decode`, preserved exactly.
+    Ok(common_core::pcm::decode_i16_le(
+        &raw,
+        common_core::pcm::Scale16::Symmetric32768,
+    ))
 }
 
 pub async fn serve(path: &Path, voice: Arc<VoiceOwner>) -> std::io::Result<()> {
@@ -223,15 +223,17 @@ async fn handle_tokio_connection(
     own_uid: u32,
     voice: Arc<VoiceOwner>,
 ) -> Result<(), String> {
-    let peer_uid = stream
-        .peer_cred()
-        .map_or(u32::MAX, |cred| cred.uid());
+    let peer_uid = stream.peer_cred().map_or(u32::MAX, |cred| cred.uid());
     if !check_peer_uid(own_uid, peer_uid) {
         return Err("peer uid mismatch".to_string());
     }
     use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
     let mut header = [0u8; 5];
-    let read = tokio::time::timeout(std::time::Duration::from_secs(5), stream.read_exact(&mut header)).await;
+    let read = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        stream.read_exact(&mut header),
+    )
+    .await;
     let read_ok = matches!(read, Ok(Ok(_)));
     if !read_ok {
         let body = slow_peer_body();
@@ -244,7 +246,11 @@ async fn handle_tokio_connection(
         return Err("bad frame length".to_string());
     }
     let mut rest = vec![0u8; len - 1];
-    let read_body = tokio::time::timeout(std::time::Duration::from_secs(5), stream.read_exact(&mut rest)).await;
+    let read_body = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        stream.read_exact(&mut rest),
+    )
+    .await;
     if !matches!(read_body, Ok(Ok(_))) {
         let body = slow_peer_body();
         let frame = encode_reply_frame(0, false, &body)?.encode();
@@ -259,7 +265,8 @@ async fn handle_tokio_connection(
         .await
         .map_err(|error| format!("serving task failed: {error}"))?;
     let reply = encode_reply_frame(id, ok, &body)?.encode();
-    let write = tokio::time::timeout(std::time::Duration::from_secs(5), stream.write_all(&reply)).await;
+    let write =
+        tokio::time::timeout(std::time::Duration::from_secs(5), stream.write_all(&reply)).await;
     if let Ok(Ok(())) = write {
         Ok(())
     } else {
@@ -306,40 +313,39 @@ fn bind(path: &Path) -> std::io::Result<tokio::net::UnixListener> {
     }
     // Bounded probe → unlink → bind retry: a racing starter may win
     // the unlink window, so retry instead of failing the first boot.
-    let mut attempts = 0;
-    loop {
-        match std::os::unix::net::UnixListener::bind(path) {
-            Ok(bound) => {
-                restrict(path)?;
-                bound.set_nonblocking(true)?;
-                return tokio::net::UnixListener::from_std(bound);
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::AddrInUse && attempts < 3 => {
-                if std::os::unix::net::UnixStream::connect(path).is_ok() {
-                    return Err(error);
-                }
-                std::fs::remove_file(path).map_err(|remove| {
-                    std::io::Error::new(
-                        remove.kind(),
-                        format!("stale socket {}: remove failed: {remove}", path.display()),
-                    )
-                })?;
-                // Re-lstat after unlink: a swapped-in link refuses
-                // instead of riding the retry.
-                if orator_core::paths::has_symlink_parent(path)
-                    || std::fs::symlink_metadata(path).is_ok()
-                {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::PermissionDenied,
-                        format!(
-                            "socket path {} reappeared as a link after unlink; refusing",
-                            path.display()
-                        ),
-                    ));
-                }
-                attempts += 1;
-            }
-            Err(error) => return Err(error),
+    // The walk itself is `common_core::io::bind_unix_listener_with_stale_reclaim`;
+    // preflight, permissions, and the Tokio conversion stay here.
+    match common_core::io::bind_unix_listener_with_stale_reclaim(path, 3, || {
+        // Re-lstat after unlink: a swapped-in link refuses instead of
+        // riding the retry.
+        if orator_core::paths::has_symlink_parent(path)
+            || std::fs::symlink_metadata(path).is_ok()
+        {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                format!(
+                    "socket path {} reappeared as a link after unlink; refusing",
+                    path.display()
+                ),
+            ));
+        }
+        Ok(())
+    }) {
+        Ok(bound) => {
+            restrict(path)?;
+            bound.set_nonblocking(true)?;
+            tokio::net::UnixListener::from_std(bound)
+        }
+        Err(
+            common_core::io::ReclaimBindError::LiveHolder(error)
+            | common_core::io::ReclaimBindError::Bind(error)
+            | common_core::io::ReclaimBindError::Validate(error),
+        ) => Err(error),
+        Err(common_core::io::ReclaimBindError::Remove(remove)) => {
+            Err(std::io::Error::new(
+                remove.kind(),
+                format!("stale socket {}: remove failed: {remove}", path.display()),
+            ))
         }
     }
 }
@@ -458,7 +464,11 @@ pub(crate) fn serve_call(
 /// Route one validated call against the live registry. Unknown methods
 /// fail closed; `Reload` reports its honest refusal; every other
 /// contract method does the work.
-fn route(voice: &VoiceOwner, method: &str, params: &serde_json::Value) -> (bool, serde_json::Value) {
+fn route(
+    voice: &VoiceOwner,
+    method: &str,
+    params: &serde_json::Value,
+) -> (bool, serde_json::Value) {
     if let Err(error) = crate::dispatch(method) {
         return (false, serde_json::json!({ "error": error.to_string() }));
     }
@@ -472,7 +482,10 @@ fn route(voice: &VoiceOwner, method: &str, params: &serde_json::Value) -> (bool,
     // embedding): never silent, never a second dispatch table.
     match method {
         "StartSession" => {
-            let kind = params.get("kind").and_then(|value| value.as_str()).unwrap_or("assistant");
+            let kind = params
+                .get("kind")
+                .and_then(|value| value.as_str())
+                .unwrap_or("assistant");
             match voice.start_session(kind) {
                 Ok(id) => (true, serde_json::json!({ "session": id })),
                 Err(error) => (false, serde_json::json!({ "error": error })),
@@ -501,7 +514,10 @@ fn route(voice: &VoiceOwner, method: &str, params: &serde_json::Value) -> (bool,
             }
         }
         "Say" => {
-            let text = params.get("text").and_then(|value| value.as_str()).unwrap_or("");
+            let text = params
+                .get("text")
+                .and_then(|value| value.as_str())
+                .unwrap_or("");
             let session = params.get("session").and_then(|value| value.as_str());
             match voice.say_blocking(text, session) {
                 Ok((samples, rate)) => {
@@ -518,11 +534,13 @@ fn route(voice: &VoiceOwner, method: &str, params: &serde_json::Value) -> (bool,
                             }),
                         )
                     } else {
-                        let mut raw = Vec::with_capacity(samples.len() * 4);
-                        for sample in &samples {
-                            raw.extend_from_slice(&sample.to_le_bytes());
-                        }
-                        (true, serde_json::json!({ "audio": b64(&raw), "rate": rate, "samples": samples.len() }))
+                        // Little-endian f32 payload shared with the Say
+                        // decoder (`decode_f32_le`); the JSON envelope stays.
+                        let raw = common_core::pcm::encode_f32_le(&samples);
+                        (
+                            true,
+                            serde_json::json!({ "audio": b64(&raw), "rate": rate, "samples": samples.len() }),
+                        )
                     }
                 }
                 Err(error) => (
@@ -563,7 +581,10 @@ fn route(voice: &VoiceOwner, method: &str, params: &serde_json::Value) -> (bool,
             let enabled = params.get("enabled").and_then(serde_json::Value::as_bool);
             let (active, session) = voice.toggle_dictation(enabled);
             match session {
-                Some(id) => (true, serde_json::json!({ "enabled": active, "session": id })),
+                Some(id) => (
+                    true,
+                    serde_json::json!({ "enabled": active, "session": id }),
+                ),
                 None => (true, serde_json::json!({ "enabled": active })),
             }
         }
@@ -574,21 +595,56 @@ fn route(voice: &VoiceOwner, method: &str, params: &serde_json::Value) -> (bool,
         "GetState" => {
             let count = voice.session_count();
             let server = voice.has_server();
-            (true, serde_json::json!({ "sessions": count, "voice_server": server }))
+            (
+                true,
+                serde_json::json!({ "sessions": count, "voice_server": server }),
+            )
         }
         "Approve" => {
-            let id = params.get("id").and_then(|value| value.as_str()).unwrap_or("");
-            let approve = params.get("approve").and_then(serde_json::Value::as_bool).unwrap_or(false);
+            let id = params
+                .get("id")
+                .and_then(|value| value.as_str())
+                .unwrap_or("");
+            let approve = params
+                .get("approve")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false);
             if id.is_empty() {
-                return (false, serde_json::json!({ "error": "Approve takes an `id` param" }));
+                return (
+                    false,
+                    serde_json::json!({ "error": "Approve takes an `id` param" }),
+                );
             }
             if voice.answer_approval(id, approve) {
                 (true, serde_json::json!({ "approved": approve }))
             } else {
-                (false, serde_json::json!({ "error": format!("unknown approval: {id}") }))
+                (
+                    false,
+                    serde_json::json!({ "error": format!("unknown approval: {id}") }),
+                )
             }
         }
-        _ => (false, serde_json::json!({ "error": format!("unknown method: {method}") })),
+        "ExportMeeting" => {
+            let id = params
+                .get("session")
+                .or_else(|| params.get("id"))
+                .and_then(|value| value.as_str())
+                .unwrap_or("");
+            match voice.export_meeting(id) {
+                Ok(path) => (
+                    true,
+                    serde_json::json!({ "path": path.display().to_string() }),
+                ),
+                Err(error) => (
+                    false,
+                    serde_json::json!({ "error": error.to_string(), "kind": error.kind() }),
+                ),
+            }
+        }
+        _ => (
+            false,
+            serde_json::json!({ "error": format!("unknown method: {method}") }),
+        ),
     }
 }
 
@@ -597,7 +653,7 @@ fn route(voice: &VoiceOwner, method: &str, params: &serde_json::Value) -> (bool,
 fn reject_unknown_params(method: &str, params: &serde_json::Value) -> Result<(), String> {
     let allowed: &[&str] = match method {
         "StartSession" => &["kind"],
-        "StopSession" | "Interrupt" => &["session", "id"],
+        "StopSession" | "Interrupt" | "ExportMeeting" => &["session", "id"],
         "Say" => &["text", "session"],
         "Ask" => &["question", "text", "session"],
         "Transcribe" => &["audio", "rate", "session"],
@@ -646,13 +702,19 @@ pub(crate) fn parse_request_frame(
     }
     let request: serde_json::Value =
         serde_json::from_slice(&frame.body).map_err(|error| error.to_string())?;
-    let id = request.get("id").and_then(serde_json::Value::as_u64).unwrap_or(0);
+    let id = request
+        .get("id")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0);
     let method = request
         .get("method")
         .and_then(|method| method.as_str())
         .unwrap_or("")
         .to_string();
-    let params = request.get("params").cloned().unwrap_or(serde_json::Value::Null);
+    let params = request
+        .get("params")
+        .cloned()
+        .unwrap_or(serde_json::Value::Null);
     Ok((id, method, params))
 }
 

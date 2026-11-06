@@ -10,6 +10,7 @@ fluent-concurrency = { path = "../fluent-concurrency" }
 fluent-dag = { path = "../dag" }
 fluent-db = { path = "../db" }
 fluent-wvr = { path = "../fluent-wvr" }
+futures-util = { workspace = true }
 orator-core = { path = "../orator-core" }
 orator-store = { path = "../orator-store" }
 rusqlite = { workspace = true }

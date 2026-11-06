@@ -34,6 +34,7 @@
 //! return `Result<Option<_>, _>` — so a sync caller gets the same
 //! compiler-checked walk instead of hand-rolling the loop.
 
+use std::convert::Infallible;
 use std::future::Future;
 use std::ops::ControlFlow;
 
@@ -112,3 +113,28 @@ where
     }
     finish_walk(last_err)
 }
+
+/// Infallible ordered-`Option` walk: the first `Some(result)` wins.
+///
+/// This is the declaration-only shape for ladders whose rungs cannot fail —
+/// desktop probes, transcript refinement, and catalog lookup. It is a thin
+/// wrapper over [`first_accept_in_order_sync`] (there is no second walker):
+/// a rung returning `None` declines and the walk continues, the first `Some`
+/// short-circuits, and clean exhaustion returns `None`. Rungs after the
+/// accepting rung are never executed.
+pub fn first_some_in_order_sync<T, R>(
+    rungs: impl IntoIterator<Item = T>,
+    mut run: impl FnMut(T) -> Option<R>,
+) -> Option<R> {
+    first_accept_in_order_sync(
+        rungs,
+        |rung| Ok::<_, Infallible>(run(rung)),
+        |_: &Infallible| false,
+    )
+    .ok()
+    .flatten()
+}
+
+#[cfg(test)]
+#[path = "../tests/ladder.rs"]
+mod tests;

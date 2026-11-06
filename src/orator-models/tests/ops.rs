@@ -42,7 +42,9 @@ fn audio_bundle_lists_with_component_presence() {
     let entry = find_entry(ModelKind::Audio, "liquidai/lfm3-audio-2b").expect("audio listed");
     assert!(entry.pinned(), "bundle manifest is measured and pinned");
     let rows = list_models();
-    assert!(rows.iter().any(|row| row.name == "liquidai/lfm3-audio-2b" && row.kind == "audio"));
+    assert!(rows
+        .iter()
+        .any(|row| row.name == "liquidai/lfm3-audio-2b" && row.kind == "audio"));
     // Legacy bundle stays listed as the unpinned fallback.
     let legacy = find_entry(ModelKind::Audio, "liquidai/lfm2.5-audio-1.5b").expect("legacy listed");
     assert!(!legacy.pinned(), "legacy bundle is intent, not a download");
@@ -130,4 +132,35 @@ fn verify_and_remove_round_trip() {
     assert!(remove_entry(&entry).expect("removes"));
     assert!(!path.exists());
     assert!(!remove_entry(&entry).expect("second remove is noop"));
+}
+
+#[test]
+fn verify_entry_checks_size_then_hash_and_maps_missing() {
+    let _guard = common_core::sync::lock(&crate::ops::ENV_LOCK);
+    let entry = ModelEntry {
+        name: "test-weights-size-then-hash".to_string(),
+        kind: ModelKind::Whisper,
+        repo: "local/test".to_string(),
+        file: "orator-test-size-then-hash.bin".to_string(),
+        size: Some(5),
+        sha256: Some(common_core::hash::sha256_hex(b"hello")),
+    };
+    let path = path_for(&entry).expect("managed dir resolves");
+    let _ = std::fs::remove_file(&path);
+    std::fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
+
+    std::fs::write(&path, b"hi").expect("short fixture");
+    assert!(!verify_entry(&entry).expect("size mismatch reports false"));
+
+    std::fs::write(&path, b"world").expect("same-length tamper");
+    assert!(!verify_entry(&entry).expect("hash mismatch reports false"));
+
+    std::fs::write(&path, b"hello").expect("matching fixture");
+    assert!(verify_entry(&entry).expect("matching file verifies"));
+
+    std::fs::remove_file(&path).expect("remove fixture");
+    assert!(matches!(
+        verify_entry(&entry),
+        Err(ModelOpError::Missing(name)) if name == "orator-test-size-then-hash.bin"
+    ));
 }

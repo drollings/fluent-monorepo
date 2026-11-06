@@ -22,7 +22,8 @@ fn calc_evaluates_with_precedence() {
         .expect_err("division by zero fails");
     calc.execute(serde_json::json!({"expr": "rm -rf /"}))
         .expect_err("prose is not math");
-    calc.execute(serde_json::json!({})).expect_err("missing arg fails");
+    calc.execute(serde_json::json!({}))
+        .expect_err("missing arg fails");
 }
 
 #[test]
@@ -78,7 +79,10 @@ fn file_read_caps_large_files() {
     let back = read
         .execute(serde_json::json!({"path": "big.txt"}))
         .expect("read runs");
-    assert!(back.contains("truncated"), "large reads truncate with marker");
+    assert!(
+        back.contains("truncated"),
+        "large reads truncate with marker"
+    );
 }
 
 #[test]
@@ -96,12 +100,9 @@ fn file_write_swap_race_creates_nothing_outside() {
     // Symlinked parent pointing outside: the write must refuse and
     // must not mkdir anything outside the jail.
     let outside = tempfile::tempdir().expect("outside");
-    std::os::unix::fs::symlink(outside.path(), dir.path().join("link"))
-        .expect("link outside");
+    std::os::unix::fs::symlink(outside.path(), dir.path().join("link")).expect("link outside");
     write
-        .execute(
-            serde_json::json!({"path": "link/evil.txt", "content": "x"}),
-        )
+        .execute(serde_json::json!({"path": "link/evil.txt", "content": "x"}))
         .expect_err("escape through a linked parent must refuse");
     assert!(
         !outside.path().join("evil.txt").exists(),

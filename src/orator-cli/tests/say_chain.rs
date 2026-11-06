@@ -4,8 +4,8 @@
 //! is never spoken twice.
 
 use crate::say_chain::{
-    classify_daemon_call_failure, classify_daemon_voice_error, normalized_chunks,
-    should_advance, unsynthesized_suffix, DaemonVoiceHint,
+    classify_daemon_call_failure, classify_daemon_voice_error, normalized_chunks, should_advance,
+    unsynthesized_suffix, DaemonVoiceHint,
 };
 use orator_s2s::S2sError;
 
@@ -34,11 +34,15 @@ fn unsupported_audio_input_advances_through_the_same_gate() {
 
 #[test]
 fn daemon_ejection_and_saturation_skip_boot() {
-    match classify_daemon_voice_error("orator: daemon refused VoiceEndpoint: {\"error\":\"voice endpoint ejected: streak 2\"}") {
+    match classify_daemon_voice_error(
+        "orator: daemon refused VoiceEndpoint: {\"error\":\"voice endpoint ejected: streak 2\"}",
+    ) {
         DaemonVoiceHint::Ejected(_) => {}
         other => panic!("ejected must route to Ejected, got {other:?}"),
     }
-    match classify_daemon_voice_error("orator: daemon refused VoiceEndpoint: {\"error\":\"admission saturated: bound 2\"}") {
+    match classify_daemon_voice_error(
+        "orator: daemon refused VoiceEndpoint: {\"error\":\"admission saturated: bound 2\"}",
+    ) {
         DaemonVoiceHint::Saturated(_) => {}
         other => panic!("saturated must route to Saturated, got {other:?}"),
     }
@@ -47,10 +51,15 @@ fn daemon_ejection_and_saturation_skip_boot() {
         other => panic!("contention must route to BootContention, got {other:?}"),
     }
     assert_eq!(
-        classify_daemon_voice_error("orator: daemon unavailable at /run/user/1000/orator.sock (run oratord)"),
+        classify_daemon_voice_error(
+            "orator: daemon unavailable at /run/user/1000/orator.sock (run oratord)"
+        ),
         DaemonVoiceHint::Unavailable
     );
-    assert_eq!(classify_daemon_call_failure(None), DaemonVoiceHint::Unavailable);
+    assert_eq!(
+        classify_daemon_call_failure(None),
+        DaemonVoiceHint::Unavailable
+    );
     assert_eq!(
         classify_daemon_call_failure(Some("plain refusal without markers")),
         DaemonVoiceHint::Unavailable
@@ -96,16 +105,24 @@ fn structured_kind_wins_over_wording() {
             "orator: daemon refused Say: {\"error\":\"slow peer\",\"kind\":\"SlowPeer\"}"
         )),
         DaemonVoiceHint::SlowPeer(
-            "orator: daemon refused Say: {\"error\":\"slow peer\",\"kind\":\"SlowPeer\"}".to_string()
+            "orator: daemon refused Say: {\"error\":\"slow peer\",\"kind\":\"SlowPeer\"}"
+                .to_string()
         )
     );
 }
 
 #[test]
-fn fences_and_urls_never_reach_the_voice() {    let chunks = normalized_chunks("See https://example.com/x for ```cargo test``` details.");
+fn fences_and_urls_never_reach_the_voice() {
+    let chunks = normalized_chunks("See https://example.com/x for ```cargo test``` details.");
     let joined = chunks.join(" ");
-    assert!(!joined.contains("```"), "fences must not be spoken: {joined}");
-    assert!(!joined.contains("https://"), "URLs must not be spoken: {joined}");
+    assert!(
+        !joined.contains("```"),
+        "fences must not be spoken: {joined}"
+    );
+    assert!(
+        !joined.contains("https://"),
+        "URLs must not be spoken: {joined}"
+    );
     assert!(joined.contains("See"), "prose stays: {joined}");
     assert!(joined.contains("details"), "prose stays: {joined}");
 }
@@ -165,7 +182,10 @@ fn daemon_audio_body_decodes_to_playable_samples() {
     assert_eq!(rate, 24_000);
     assert_eq!(decoded.len(), 3);
     for (got, want) in decoded.iter().zip(samples.iter()) {
-        assert!((got - want).abs() < f32::EPSILON, "samples survive the round trip");
+        assert!(
+            (got - want).abs() < f32::EPSILON,
+            "samples survive the round trip"
+        );
     }
 }
 
@@ -175,4 +195,38 @@ fn counts_without_audio_never_voice() {
     assert!(decode_say_audio(&serde_json::json!({ "samples": 42, "rate": 24000 })).is_err());
     assert!(decode_say_audio(&serde_json::json!({ "audio": "", "rate": 24000 })).is_err());
     assert!(decode_say_audio(&serde_json::json!({ "audio": "AAAAAA==", "rate": 0 })).is_err());
+}
+
+/// M1-S1 characterization: the daemon Say audio body is base64
+/// little-endian f32 (4 bytes per sample — NOT the i16 Transcribe
+/// shape). Refusal strings are verbatim contracts.
+#[test]
+fn orator_say_decode() {
+    use crate::say_chain::decode_say_audio;
+    use base64::prelude::*;
+    // A length that is not a whole f32 count refuses.
+    let body = serde_json::json!({ "audio": BASE64_STANDARD.encode([0u8, 1, 2, 3, 4, 5]), "rate": 24_000 });
+    assert_eq!(
+        decode_say_audio(&body).expect_err("odd f32 length refuses"),
+        "daemon Say audio length is not a whole f32 count"
+    );
+    // A missing rate refuses (distinct from a zero rate).
+    let body = serde_json::json!({ "audio": BASE64_STANDARD.encode([0u8; 4]) });
+    assert_eq!(
+        decode_say_audio(&body).expect_err("missing rate refuses"),
+        "daemon Say reply carries no rate"
+    );
+    // An overflowing rate refuses before any cast.
+    let body = serde_json::json!({ "audio": BASE64_STANDARD.encode([0u8; 4]), "rate": u64::MAX });
+    assert_eq!(
+        decode_say_audio(&body).expect_err("overflowing rate refuses"),
+        "daemon Say rate overflows u32"
+    );
+    // Bad base64 is loud.
+    let body = serde_json::json!({ "audio": "!!!not-base64!!!", "rate": 24_000 });
+    let err = decode_say_audio(&body).expect_err("bad base64 is loud");
+    assert!(
+        err.starts_with("daemon Say audio is not base64: "),
+        "names it: {err}"
+    );
 }

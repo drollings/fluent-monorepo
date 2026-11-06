@@ -106,8 +106,47 @@ fn fields_reconfigure_and_drop_session() {
     );
     backend.set_field("voice", "am_adam").expect("voice sets");
     assert_eq!(backend.get_field("voice").expect("read back"), "am_adam");
-    backend.set_field("nope", "1").expect_err("unknown field fails");
+    backend
+        .set_field("nope", "1")
+        .expect_err("unknown field fails");
     assert!(backend.field_names().contains(&"voice"));
+}
+
+/// M15-S1: the kokoro field surface. `describe()` is the schema
+/// golden (gpu deliberately outside `required`); the table pins
+/// accept and reject.
+#[test]
+fn kokoro_field_surface_pins_schema_and_table() {
+    use fluent_wvr::{Describable, FieldAccess};
+    let mut backend = KokoroBackend::new(
+        PathBuf::from("/nonexistent/x.onnx"),
+        PathBuf::from("/nonexistent/v"),
+        "af_heart",
+    );
+    assert_eq!(
+        backend.describe(),
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "voice": { "type": "string", "description": "Voice tag" },
+                "model_path": { "type": "string", "description": "Kokoro ONNX model" },
+                "voices_dir": { "type": "string", "description": "Voice pack directory" },
+                "gpu": { "type": "boolean", "description": "GPU offload (explicit opt-in)" }
+            },
+            "required": ["voice", "model_path", "voices_dir"]
+        })
+    );
+    assert_eq!(
+        backend.field_names(),
+        &["voice", "model_path", "voices_dir", "gpu"]
+    );
+    backend.set_field("voices_dir", "/v2").expect("dir sets");
+    assert_eq!(backend.get_field("voices_dir").expect("reads"), "/v2");
+    backend
+        .set_field("gpu", "maybe")
+        .expect_err("garbage bool rejects");
+    backend.set_field("nope", "1").expect_err("unknown rejects");
+    backend.get_field("nope").expect_err("unknown reads reject");
 }
 
 #[test]
@@ -182,7 +221,8 @@ fn chunked_multi_sentence_is_deterministic_and_structured() {
         eprintln!("SKIP chunked-structure: no kokoro weights on this machine");
         return;
     };
-    let text = "Hello world, this is a test of the voice. How are you today? Quite well, thank you.";
+    let text =
+        "Hello world, this is a test of the voice. How are you today? Quite well, thank you.";
     let backend = KokoroBackend::new(model, voices, "af_heart");
     let first = backend.synth_chunks_blocking(text).expect("chunked runs");
     let second = backend.synth_chunks_blocking(text).expect("chunked reruns");
@@ -236,7 +276,10 @@ fn gpu_without_a_device_fails_actionably() {
         matches!(error, orator_core::TtsError::Unavailable(_)),
         "refusal is unavailable, never silent CPU: {error:?}"
     );
-    assert!(error.to_string().contains("GPU"), "names the remedy: {error}");
+    assert!(
+        error.to_string().contains("GPU"),
+        "names the remedy: {error}"
+    );
 }
 
 #[test]
@@ -262,8 +305,8 @@ fn cap_one_serializes_voice_turns() {
     // peak concurrency stays 1 even under contention.
     use fluent_concurrency::pool::Limiter;
     use std::sync::{
-        Arc,
         atomic::{AtomicUsize, Ordering},
+        Arc,
     };
     let limiter = Arc::new(Limiter::new(1));
     let live = Arc::new(AtomicUsize::new(0));

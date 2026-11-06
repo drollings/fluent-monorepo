@@ -30,7 +30,11 @@ pub fn save_note(store: &SqliteStore, id: &str, body: &str) -> Result<i64, DbErr
     store.execute(
         "INSERT INTO notes (id, rev, body) VALUES (?1, ?2, ?3) \
          ON CONFLICT(id) DO UPDATE SET rev=excluded.rev, body=excluded.body",
-        &[&id as &dyn rusqlite::ToSql, &next as &dyn rusqlite::ToSql, &body as &dyn rusqlite::ToSql],
+        &[
+            &id as &dyn rusqlite::ToSql,
+            &next as &dyn rusqlite::ToSql,
+            &body as &dyn rusqlite::ToSql,
+        ],
     )?;
     Ok(next)
 }
@@ -45,11 +49,10 @@ pub fn search_notes(
     if wanted.is_empty() {
         return Ok(Vec::new());
     }
-    let rows: Vec<(String, i64, String)> = store.query_rows(
-        "SELECT id, rev, body FROM notes",
-        &[],
-        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-    )?;
+    let rows: Vec<(String, i64, String)> =
+        store.query_rows("SELECT id, rev, body FROM notes", &[], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        })?;
     let mut hits: Vec<NoteHit> = rows
         .into_iter()
         .filter_map(|(id, rev, body)| {

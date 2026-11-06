@@ -69,7 +69,9 @@ pub fn run_turn(
         }
         let mut results = String::new();
         for call in &calls {
-            results.push_str(&execute_call(registry, policy, ctx, tainted, call, approver));
+            results.push_str(&execute_call(
+                registry, policy, ctx, tainted, call, approver,
+            ));
             results.push('\n');
         }
         tainted = true;
@@ -98,9 +100,13 @@ pub fn run_turn(
 /// Keep `prompt` under [`MAX_PROMPT_TOKENS`] with middle-truncation and
 /// newest-turn protection. Small prompts pass through verbatim; large
 /// ones keep a head prefix plus the newest tail with a loud marker.
+/// The split (head prefix, marker, newest tail) assembles through the
+/// shared `fluent_llm::tokens::truncate_middle`; the keep/head/tail
+/// budgets and the marker text stay here (call-site policy, pinned by
+/// `bound_prompt_pins_head_tail_split_and_marker`).
 #[must_use]
 pub fn bound_prompt(prompt: &str) -> String {
-    use fluent_llm::tokens::{estimate_chars_for_tokens, estimate_tokens};
+    use fluent_llm::tokens::{estimate_chars_for_tokens, estimate_tokens, truncate_middle};
     if estimate_tokens(prompt) as usize <= MAX_PROMPT_TOKENS {
         return prompt.to_string();
     }
@@ -110,16 +116,7 @@ pub fn bound_prompt(prompt: &str) -> String {
     let keep = budget_chars.saturating_sub(marker.chars().count()).max(512);
     let head_chars = 2048.min(keep / 4);
     let tail_chars = keep.saturating_sub(head_chars);
-    let head: String = prompt.chars().take(head_chars).collect();
-    let tail: String = prompt
-        .chars()
-        .rev()
-        .take(tail_chars)
-        .collect::<String>()
-        .chars()
-        .rev()
-        .collect();
-    format!("{head}{marker}{tail}")
+    truncate_middle(prompt, head_chars, tail_chars, &marker)
 }
 
 std::thread_local! {

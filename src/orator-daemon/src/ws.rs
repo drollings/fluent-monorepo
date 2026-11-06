@@ -9,8 +9,8 @@
 
 use std::net::SocketAddr;
 use std::sync::{
-    Arc, Mutex,
     atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
 };
 use std::time::{Duration, Instant};
 
@@ -21,8 +21,8 @@ use tokio::time::timeout;
 use tokio_tungstenite::{
     accept_hdr_async,
     tungstenite::{
-        Message,
         handshake::server::{ErrorResponse, Request, Response},
+        Message,
     },
 };
 
@@ -97,9 +97,8 @@ pub async fn serve_ws(
     voice: Arc<VoiceOwner>,
     tuning: WsTuning,
 ) -> std::io::Result<()> {
-    validate_ws_token(&token).map_err(|message| {
-        std::io::Error::new(std::io::ErrorKind::InvalidInput, message)
-    })?;
+    validate_ws_token(&token)
+        .map_err(|message| std::io::Error::new(std::io::ErrorKind::InvalidInput, message))?;
     let listener = bind_ws(addr).await?;
     let never = AtomicBool::new(false);
     serve_ws_on_tuned(listener, &token, voice, tuning, &never).await;
@@ -203,8 +202,7 @@ pub async fn serve_ws_on_tuned(
     // Per-IP handshake-failure backoff: wrong-token peers wait longer
     // each time (100ms * 2^failures, capped at 5s) inside their own
     // handler, never blocking the accept loop or honest peers.
-    let backoff: Arc<Mutex<HashMap<IpAddr, u32>>> =
-        Arc::new(Mutex::new(HashMap::new()));
+    let backoff: Arc<Mutex<HashMap<IpAddr, u32>>> = Arc::new(Mutex::new(HashMap::new()));
     let mut handlers = tokio::task::JoinSet::new();
     loop {
         if crate::shutdown_requested() || stop.load(Ordering::SeqCst) {
@@ -218,9 +216,15 @@ pub async fn serve_ws_on_tuned(
         };
         let peer_ip = peer.ip();
         {
-            let failures = common_core::sync::lock(&backoff).get(&peer_ip).copied().unwrap_or(0);
+            let failures = common_core::sync::lock(&backoff)
+                .get(&peer_ip)
+                .copied()
+                .unwrap_or(0);
             if failures > 0 {
-                let wait_ms = (100u64.saturating_mul(1u64 << failures.min(6))).min(5000);
+                // Shared schedule home: `common_core::retry` — the 5 s cap
+                // stays here (per-IP tuning, pinned by
+                // `capped_exp_matches_the_ws_per_ip_backoff_table`).
+                let wait_ms = common_core::retry::capped_exp_backoff_ms(100, failures, 6).min(5000);
                 tokio::time::sleep(Duration::from_millis(wait_ms)).await;
             }
         }
@@ -267,11 +271,7 @@ impl tokio_tungstenite::tungstenite::handshake::server::Callback for Gate {
     // shape, so the large-error lint is silenced here — the 136-byte
     // refusal cannot box without breaking the handshake contract.
     #[allow(clippy::result_large_err)]
-    fn on_request(
-        self,
-        request: &Request,
-        response: Response,
-    ) -> Result<Response, ErrorResponse> {
+    fn on_request(self, request: &Request, response: Response) -> Result<Response, ErrorResponse> {
         if request.uri().path() != WS_PATH {
             return Err(status_response(404));
         }
@@ -293,7 +293,12 @@ impl tokio_tungstenite::tungstenite::handshake::server::Callback for Gate {
 /// One connection: handshake-gate, then calls until silence, cap, or
 /// shutdown. Every incoming message resets the silence clock. Returns
 /// whether the handshake succeeded (for per-IP backoff).
-async fn handle_ws(stream: TcpStream, token: &str, voice: Arc<VoiceOwner>, tuning: WsTuning) -> bool {
+async fn handle_ws(
+    stream: TcpStream,
+    token: &str,
+    voice: Arc<VoiceOwner>,
+    tuning: WsTuning,
+) -> bool {
     let gate = Gate {
         expected: format!("Bearer {token}"),
     };
@@ -380,10 +385,8 @@ async fn serve_one(voice: &Arc<VoiceOwner>, bytes: &[u8]) -> Vec<u8> {
                 }
             },
         };
-        crate::socket::encode_reply_frame(id, ok, &body).map_or_else(
-            |error| error_bytes(0, &error),
-            |frame| frame.encode(),
-        )
+        crate::socket::encode_reply_frame(id, ok, &body)
+            .map_or_else(|error| error_bytes(0, &error), |frame| frame.encode())
     })
     .await
     .unwrap_or_else(|_| error_bytes(0, "handler panicked"))
@@ -417,9 +420,7 @@ fn status_response(status: u16) -> ErrorResponse {
     tokio_tungstenite::tungstenite::http::Response::builder()
         .status(status)
         .body(None)
-        .unwrap_or_else(|_| {
-            tokio_tungstenite::tungstenite::http::Response::new(None)
-        })
+        .unwrap_or_else(|_| tokio_tungstenite::tungstenite::http::Response::new(None))
 }
 
 #[cfg(test)]

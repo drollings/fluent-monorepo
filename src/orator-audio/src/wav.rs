@@ -16,8 +16,8 @@ pub struct WavPcm {
 
 /// Read a WAV file into mono f32. Stereo mixes down; other widths fail.
 pub fn read_wav_mono(path: &std::path::Path) -> Result<WavPcm, SttError> {
-    let bytes = std::fs::read(path)
-        .map_err(|error| SttError::Backend(format!("wav read: {error}")))?;
+    let bytes =
+        std::fs::read(path).map_err(|error| SttError::Backend(format!("wav read: {error}")))?;
     parse_wav(&bytes)
 }
 
@@ -25,6 +25,24 @@ pub fn read_wav_mono(path: &std::path::Path) -> Result<WavPcm, SttError> {
 /// body). Same parser as [`read_wav_mono`], no temp file.
 pub fn decode_wav_bytes(bytes: &[u8]) -> Result<WavPcm, SttError> {
     parse_wav(bytes)
+}
+
+/// Encode mono f32 samples as 16-bit PCM WAV bytes at `sample_rate`.
+///
+/// The writer mirrors the parser: the payload quantizes with the
+/// (32767, TowardZero) convention shared with the s2s frame encoder
+/// (`common_core::pcm`), so `decode_wav_bytes(encode_wav_mono(x))`
+/// stays within one LSB of `x`. The header comes from
+/// `common_core::pcm::wav_frame_header`.
+#[must_use]
+pub fn encode_wav_mono(samples: &[f32], sample_rate: u32) -> Vec<u8> {
+    use common_core::pcm::{Rounding, Scale16};
+    common_core::pcm::encode_wav_mono_pcm16(
+        samples,
+        sample_rate,
+        Scale16::Symmetric32767,
+        Rounding::TowardZero,
+    )
 }
 
 fn parse_wav(bytes: &[u8]) -> Result<WavPcm, SttError> {
@@ -37,8 +55,8 @@ fn parse_wav(bytes: &[u8]) -> Result<WavPcm, SttError> {
     let mut data: Option<&[u8]> = None;
     while offset + 8 <= bytes.len() {
         let tag = &bytes[offset..offset + 4];
-        let size = u32::from_le_bytes(bytes[offset + 4..offset + 8].try_into().expect("slice"))
-            as usize;
+        let size =
+            u32::from_le_bytes(bytes[offset + 4..offset + 8].try_into().expect("slice")) as usize;
         let body = offset + 8;
         let end = body.saturating_add(size).min(bytes.len());
         if tag == b"fmt " && size >= 16 {
@@ -73,15 +91,15 @@ fn decode_pcm16(data: &[u8], channels: u16) -> Result<Vec<f32>, SttError> {
     }
     let frames = data.len() / 2 / channels as usize;
     let mut mono = Vec::with_capacity(frames);
-    for frame in 0..frames {
-        let mut sum = 0.0f32;
-        for channel in 0..channels as usize {
-            let at = (frame * channels as usize + channel) * 2;
-            let sample = i16::from_le_bytes([data[at], data[at + 1]]);
-            sum += f32::from(sample) / f32::from(i16::MAX);
-        }
-        mono.push(sum / f32::from(channels));
-    }
+    common_core::pcm::extend_mono_from_interleaved(
+        data.chunks_exact(2)
+            .map(|pair| i16::from_le_bytes([pair[0], pair[1]])),
+        channels as usize,
+        |sample| {
+            common_core::pcm::i16_to_f32_sample(sample, common_core::pcm::Scale16::Symmetric32767)
+        },
+        &mut mono,
+    );
     Ok(mono)
 }
 
@@ -91,14 +109,13 @@ fn decode_ieee_float(data: &[u8], channels: u16) -> Result<Vec<f32>, SttError> {
     }
     let frames = data.len() / 4 / channels as usize;
     let mut mono = Vec::with_capacity(frames);
-    for frame in 0..frames {
-        let mut sum = 0.0f32;
-        for channel in 0..channels as usize {
-            let at = (frame * channels as usize + channel) * 4;
-            sum += f32::from_le_bytes(data[at..at + 4].try_into().expect("slice"));
-        }
-        mono.push(sum / f32::from(channels));
-    }
+    common_core::pcm::extend_mono_from_interleaved(
+        data.chunks_exact(4)
+            .map(|quad| f32::from_le_bytes([quad[0], quad[1], quad[2], quad[3]])),
+        channels as usize,
+        |sample| sample,
+        &mut mono,
+    );
     Ok(mono)
 }
 

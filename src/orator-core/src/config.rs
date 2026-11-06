@@ -2,8 +2,12 @@
 //!
 //! Leaf sections derive `FieldAccess + Describable`, so `orator config
 //! get/set`, config-file validation, and future editors share one schema.
-//! The root assembles the leaves; profile overrides land here later.
+//! The root assembles the leaves through `#[field(nested)]` delegation,
+//! so the whole tree reads through one control-plane handle; the
+//! models/roles tables stay whole-table JSON (skipped, like the
+//! router's table fields). Profile overrides land here later.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use bon::Builder;
@@ -21,6 +25,45 @@ use serde::{Deserialize, Serialize};
 #[must_use]
 pub fn models_dir() -> Option<PathBuf> {
     crate::paths::home_dir().map(|home| home.join(".local/share/orator/models"))
+}
+
+/// Default home for GGUF weights (mirrors `coral-router.json`
+/// `gguf_dir`). Absolute; configurable via the top-level `gguf_dir`
+/// key (`orator config set gguf_dir ...`) or the `llm.gguf_dir`
+/// per-endpoint override. The installation layout
+/// ([`llama_weights_dirs`]) stays consultable regardless.
+pub const DEFAULT_GGUF_DIR: &str = "/app/ai/models/gguf";
+
+/// Default speech-to-text model tag: the specialized streaming ASR
+/// model. Served by a future moonshine backend; until it lands, the
+/// audio-server path keeps serving the integrated model and the
+/// whisper path uses its own tag verbatim (a moonshine tag there
+/// fails loudly naming the missing file).
+pub const DEFAULT_ASR_MODEL: &str = "handy-computer/moonshine-streaming-medium";
+
+/// Default text-to-speech model tag: the specialized local synthesis
+/// model, served by the kokoro backend.
+pub const DEFAULT_TTS_MODEL: &str = "agentory/kokoro-82m";
+
+/// Default model tag: the near-complete solution, served through
+/// llama.cpp over the OpenAI-compatible endpoint. Task and role
+/// defaults (moonshine ASR, kokoro TTS) win where they are set; this
+/// is the fallback when a role list is empty or resolves to nothing
+/// servable.
+pub const DEFAULT_MODEL: &str = "liquidai/lfm3-audio-2b";
+
+/// Default chat model tag: the supervised text endpoint's model.
+/// The `roles.chat` head defaults to this tag and the `llm.model`
+/// leaf defaults to it too, so default configs resolve identically
+/// through either layer.
+pub const DEFAULT_LLM_MODEL: &str = "bartowski/lfm3-1.7b";
+
+/// Home of meeting export artifacts (`<session>.md`, atomically
+/// written). Single source for the daemon writer and every reader.
+/// `None` when no home base resolves.
+#[must_use]
+pub fn meetings_dir() -> Option<PathBuf> {
+    crate::paths::home_dir().map(|home| home.join(".local/share/orator/meetings"))
 }
 
 /// Orator configuration directory (`~/.config/orator`). `None` when
@@ -44,8 +87,8 @@ pub fn config_path() -> Option<PathBuf> {
 pub fn llama_weights_dirs() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
     for candidate in [
-        "/ai/models/gguf",
         "/app/ai/models/gguf",
+        "/ai/models/gguf",
         "/opt/ai/models/gguf",
     ] {
         let path = PathBuf::from(candidate);
@@ -59,22 +102,23 @@ pub fn llama_weights_dirs() -> Vec<PathBuf> {
     dirs
 }
 
-/// Installation directory holding the reference audio bundle.
-/// Pinned to LFM3-Audio-2B: the backbone plus its mmproj carry the
-/// full voice pipeline (encoder + codec in the projector), served by
-/// stock `llama-server`. Whisper/Kokoro stay selectable via
-/// `--backend whisper|kokoro`.
-pub const AUDIO_BUNDLE_DIR: &str = "/ai/models/gguf/liquidai/lfm3-audio-2b-gguf";
+/// Installation directory holding the reference audio bundle,
+/// derived from the top-level `gguf_dir` (never repeated): the LFM3
+/// bundle lives at `<gguf_dir>/liquidai/lfm3-audio-2b-gguf`.
+#[must_use]
+pub fn audio_bundle_dir(gguf_dir: &str) -> PathBuf {
+    PathBuf::from(gguf_dir).join("liquidai/lfm3-audio-2b-gguf")
+}
 
 /// The three audio components plus the language backbone.
 ///
 /// A speech model is a bundle, not a file: the audio encoder
 /// projector (mmproj) rides alongside the language backbone. The
 /// vocoder (audio decoder) and audio tokenizer are legacy LFM2.5
-/// companions: stock `llama-server` voices LFM3-Audio from
-/// backbone + mmproj alone (the codec lives in the projector), so
-/// those two paths are optional. Paths resolve router-style —
-/// absolute, or relative to the shared installation layout.
+/// companions: a capable server voices LFM3-Audio from backbone +
+/// mmproj alone (the codec lives in the projector), so those two
+/// paths are optional. Paths resolve router-style — absolute, or
+/// relative to the top-level `gguf_dir` (never repeated per key).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AudioBundle {
     /// Language backbone weights (`-m`).
@@ -117,12 +161,38 @@ impl AudioBundle {
     }
 }
 
-/// Reference bundle: the native audio backbone plus its three
-/// audio components, all in the installation layout. Override any
-/// field for other pairings.
+/// Bundle path resolution, router-style: absolute declarations
+/// pass through verbatim; relative ones join under `gguf_dir`
+/// (never repeated per key); empty stays empty (absent companion).
+#[must_use]
+pub fn resolve_bundle_path(declared: &str, gguf_dir: &str) -> PathBuf {
+    if declared.is_empty() {
+        return PathBuf::new();
+    }
+    let raw = Path::new(declared);
+    if raw.is_absolute() {
+        return raw.to_path_buf();
+    }
+    if gguf_dir.is_empty() {
+        return raw.to_path_buf();
+    }
+    PathBuf::from(gguf_dir).join(raw)
+}
+
+/// Reference bundle: the native audio backbone plus its three audio
+/// components, all in the installation layout. Override any field
+/// for other pairings. Paths resolve router-style (below).
 #[must_use]
 pub fn default_bundle() -> AudioBundle {
-    let dir = PathBuf::from(AUDIO_BUNDLE_DIR);
+    default_bundle_in(DEFAULT_GGUF_DIR)
+}
+
+/// Reference bundle rooted at `gguf_dir`: same layout, no repeated
+/// root. Single home for every default/assurance path so a relocated
+/// store moves the whole bundle at once.
+#[must_use]
+pub fn default_bundle_in(gguf_dir: &str) -> AudioBundle {
+    let dir = audio_bundle_dir(gguf_dir);
     AudioBundle {
         backbone: dir.join("latest.gguf"),
         mmproj: dir.join("mmproj.gguf"),
@@ -171,19 +241,22 @@ pub struct S2sConfig {
     #[builder(default = "liquidai/lfm3-audio-2b".to_string())]
     #[serde(default = "default_s2s_model")]
     pub model: String,
-    /// Audio encoder projector path (`--mmproj`).
+    /// Audio encoder projector path (`--mmproj`): absolute, or
+    /// relative to the top-level `gguf_dir` (never repeated here).
     #[field(desc = "Audio projector path", max_len = 256)]
-    #[builder(default = format!("{AUDIO_BUNDLE_DIR}/mmproj.gguf"))]
+    #[builder(default = "liquidai/lfm3-audio-2b-gguf/mmproj.gguf".to_string())]
     #[serde(default = "default_s2s_mmproj")]
     pub mmproj: String,
     /// Audio decoder (vocoder) path (legacy; absent on LFM3).
+    /// Absolute, or relative to `gguf_dir`.
     #[field(desc = "Vocoder path", max_len = 256)]
-    #[builder(default = format!("{AUDIO_BUNDLE_DIR}/vocoder.gguf"))]
+    #[builder(default = "liquidai/lfm3-audio-2b-gguf/vocoder.gguf".to_string())]
     #[serde(default = "default_s2s_vocoder")]
     pub vocoder: String,
     /// Audio tokenizer path (legacy; absent on LFM3).
+    /// Absolute, or relative to `gguf_dir`.
     #[field(desc = "Audio tokenizer path", max_len = 256)]
-    #[builder(default = format!("{AUDIO_BUNDLE_DIR}/tokenizer.gguf"))]
+    #[builder(default = "liquidai/lfm3-audio-2b-gguf/tokenizer.gguf".to_string())]
     #[serde(default = "default_s2s_tokenizer")]
     pub tokenizer: String,
     /// System prompt used for TTS turns.
@@ -203,7 +276,11 @@ pub struct S2sConfig {
     pub max_tokens: u16,
     /// Streamed-audio bound per turn in samples (24 kHz): the turn
     /// errors instead of growing past it.
-    #[field(desc = "Max streamed audio samples per turn", min = 24_000, max = 96_000_000)]
+    #[field(
+        desc = "Max streamed audio samples per turn",
+        min = 24_000,
+        max = 96_000_000
+    )]
     #[builder(default = 7_200_000)]
     #[serde(default = "default_s2s_max_audio_samples")]
     pub max_audio_samples: u32,
@@ -238,15 +315,15 @@ fn default_s2s_model() -> String {
 }
 
 fn default_s2s_mmproj() -> String {
-    format!("{AUDIO_BUNDLE_DIR}/mmproj.gguf")
+    "liquidai/lfm3-audio-2b-gguf/mmproj.gguf".to_string()
 }
 
 fn default_s2s_vocoder() -> String {
-    format!("{AUDIO_BUNDLE_DIR}/vocoder.gguf")
+    "liquidai/lfm3-audio-2b-gguf/vocoder.gguf".to_string()
 }
 
 fn default_s2s_tokenizer() -> String {
-    format!("{AUDIO_BUNDLE_DIR}/tokenizer.gguf")
+    "liquidai/lfm3-audio-2b-gguf/tokenizer.gguf".to_string()
 }
 
 fn default_s2s_voice_prompt() -> String {
@@ -289,13 +366,17 @@ impl S2sConfig {
 /// loaded `s2s` section: the backbone stays the pinned installation
 /// file while projector/vocoder/tokenizer honor operator overrides.
 #[must_use]
-pub fn bundle_from_s2s(s2s: &S2sConfig) -> AudioBundle {
-    let reference = default_bundle();
+pub fn bundle_from_s2s(s2s: &S2sConfig, models: &ModelsConfig, gguf_dir: &str) -> AudioBundle {
+    // Backbone follows the served model tag through the models table
+    // (single home with the weights declarations); unresolvable tags
+    // keep the reference bundle instead of failing the path.
+    let backbone = resolve_model_weights(models, gguf_dir, &s2s.model)
+        .unwrap_or_else(|| audio_bundle_dir(gguf_dir).join("latest.gguf"));
     AudioBundle {
-        backbone: reference.backbone,
-        mmproj: PathBuf::from(&s2s.mmproj),
-        vocoder: PathBuf::from(&s2s.vocoder),
-        tokenizer: PathBuf::from(&s2s.tokenizer),
+        backbone,
+        mmproj: resolve_bundle_path(&s2s.mmproj, gguf_dir),
+        vocoder: resolve_bundle_path(&s2s.vocoder, gguf_dir),
+        tokenizer: resolve_bundle_path(&s2s.tokenizer, gguf_dir),
     }
 }
 
@@ -343,7 +424,11 @@ pub struct DaemonConfig {
     pub ws_inactivity_secs: u64,
     /// WS connection lifetime cap in seconds. Zero disables; otherwise
     /// connections older than the cap close after the in-flight call.
-    #[field(desc = "WS connection lifetime cap in seconds (0 disables)", min = 0, max = 86400)]
+    #[field(
+        desc = "WS connection lifetime cap in seconds (0 disables)",
+        min = 0,
+        max = 86400
+    )]
     #[builder(default = 360)]
     #[serde(default = "default_ws_cap_secs")]
     pub ws_cap_secs: u64,
@@ -393,6 +478,15 @@ pub struct AudioConfig {
     #[field(desc = "Microphone selector", max_len = 128)]
     #[builder(default = "default".to_string())]
     pub mic: String,
+    /// Acoustic echo cancellation for open-speakerphone capture
+    /// (explicit opt-in, default off). When set, the assistant's own
+    /// playout is subtracted from mic input before the VAD gate; when
+    /// unset, capture suppresses while a turn runs instead. Old files
+    /// without the leaf load off (previous behavior, byte-identical).
+    #[field(desc = "Acoustic echo cancellation (explicit opt-in)")]
+    #[builder(default = false)]
+    #[serde(default)]
+    pub aec: bool,
 }
 
 impl Default for AudioConfig {
@@ -401,19 +495,390 @@ impl Default for AudioConfig {
     }
 }
 
+/// One servable model entry: the coral-router.json `models` table
+/// shape trimmed to orator's needs (weights declaration, serving
+/// backends, base params, per-role overrides — no fleet/thinking
+/// machinery, whose orator equivalents live in the role tables and
+/// the daemon admission gate).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ModelSpec {
+    /// Router-style weights declaration: an absolute path, or a path
+    /// relative to the top-level `gguf_dir`. `None` when the backend
+    /// owns its files (whisper ggml, kokoro onnx).
+    #[serde(default)]
+    pub weights: Option<String>,
+    /// Serving backends selecting the runtimes this model runs
+    /// through (`whisper`, `kokoro`, `audio-server`, `moonshine`),
+    /// first entry wins for dispatch. Listed under the model so each
+    /// entry advertises every backend it can serve through.
+    pub backends: Vec<String>,
+    /// Base params for every role serving this model (sampling and
+    /// backend tunables as JSON). Composed under the role run block.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub params: Option<serde_json::Value>,
+    /// Sparse per-role override, keyed by role name (serde name
+    /// `roles`, exactly like the router). Params-only: per-role
+    /// tuning composed last in the chain, never membership — a model
+    /// is served through the roles that bind it in their `models`
+    /// list. `models` inside an override is rejected loudly: it
+    /// belongs on the role side and would otherwise be silently
+    /// ignored.
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "roles")]
+    pub role_params: Option<std::collections::HashMap<String, ModelRoleOverride>>,
+}
+
+impl ModelSpec {
+    /// Dispatch backend: the first listed backend, or `None` when the
+    /// entry lists none (callers skip it naming the reason, never a
+    /// silent pick).
+    #[must_use]
+    pub fn primary_backend(&self) -> Option<&str> {
+        self.backends.first().map(String::as_str)
+    }
+}
+
+/// One model-side per-role override: the value type of
+/// `ModelSpec.role_params` (serde name `roles`), keyed by role name.
+/// Params-only by construction, mirroring the router's
+/// `ModelRoleOverride` — unknown fields are rejected so a misplaced
+/// `models` list fails loudly with a pointer at the role side.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ModelRoleOverride {
+    /// Sparse params update for the named role, composed last in the
+    /// params chain (absent contributes nothing).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub params: Option<serde_json::Value>,
+}
+
+/// The `models` table: tag → spec. Unknown tags resolve to nothing
+/// (callers fail loudly naming the tag), never a default model.
+/// Transparent over the map so the file shape matches the router's
+/// (`"models": {tag: spec}`) — no wrapper object in between.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct ModelsConfig {
+    /// Model specs by tag.
+    pub models: std::collections::HashMap<String, ModelSpec>,
+}
+
+fn model_spec(
+    weights: Option<&str>,
+    backends: &[&str],
+    params: Option<serde_json::Value>,
+) -> ModelSpec {
+    ModelSpec {
+        weights: weights.map(str::to_string),
+        backends: backends.iter().map(ToString::to_string).collect(),
+        params,
+        role_params: None,
+    }
+}
+
+/// The shipped models table: the integrated generative model plus the
+/// specialized ASR/TTS models. LFM3-Audio-2B voices every role through
+/// the audio server; moonshine (streaming ASR) and kokoro (local TTS)
+/// lead their roles once their backends serve them. Membership lives
+/// on the role side (`RolesConfig`); per-role tuning lives in each
+/// entry's `roles` overrides.
+#[must_use]
+pub fn default_models() -> HashMap<String, ModelSpec> {
+    HashMap::from([
+        (
+            DEFAULT_ASR_MODEL.to_string(),
+            model_spec(
+                Some("handy-computer/moonshine-streaming-medium-gguf/latest.gguf"),
+                &["moonshine"],
+                None,
+            ),
+        ),
+        (
+            "large-v3-turbo-q5_0".to_string(),
+            model_spec(None, &["whisper"], None),
+        ),
+        (
+            DEFAULT_TTS_MODEL.to_string(),
+            model_spec(None, &["kokoro"], None),
+        ),
+        (
+            "liquidai/lfm3-audio-2b".to_string(),
+            model_spec(
+                Some("liquidai/lfm3-audio-2b-gguf/latest.gguf"),
+                &["audio-server"],
+                None,
+            ),
+        ),
+        (
+            DEFAULT_LLM_MODEL.to_string(),
+            model_spec(
+                Some(&format!("{DEFAULT_LLM_MODEL}/latest.gguf")),
+                &["llm"],
+                None,
+            ),
+        ),
+    ])
+}
+
+impl Default for ModelsConfig {
+    fn default() -> Self {
+        Self {
+            models: default_models(),
+        }
+    }
+}
+
+/// One capability role: the coral-router.json `roles` entry shape
+/// trimmed to orator's needs (ordered model preference plus the role
+/// run-block params every dispatch through the role composes over).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RoleSpec {
+    /// Ordered preference: the first entry is the role default.
+    /// Unknown tags are skipped by resolution, never served.
+    /// Membership lives here — models never name roles back.
+    pub models: Vec<String>,
+    /// Role run-block params (sampling and backend tunables as JSON).
+    /// Composed over the model base params; the model-side
+    /// per-role override composes last.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub params: Option<serde_json::Value>,
+}
+
+/// The `roles` table: capability → ordered model preference plus run
+/// params. The integrated model backs the voice roles; specialized
+/// models lead the roles they serve (moonshine for ASR, kokoro for
+/// TTS); the chat role follows the supervised text endpoint's model.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RolesConfig {
+    /// Speech-recognition preference.
+    pub asr: RoleSpec,
+    /// Speech-synthesis preference.
+    pub tts: RoleSpec,
+    /// Chat preference: the supervised text model. Old files without
+    /// this section load today's chat behavior (the head defaults to
+    /// the `llm.model` default tag).
+    #[serde(default = "default_chat_role")]
+    pub chat: RoleSpec,
+}
+
+/// Default chat role: head on the supervised text model's tag, no
+/// run-block params — seeded equal to the `llm.model` leaf default
+/// so authority and fallback agree out of the box.
+fn default_chat_role() -> RoleSpec {
+    RoleSpec {
+        models: vec![DEFAULT_LLM_MODEL.to_string()],
+        params: None,
+    }
+}
+
+impl Default for RolesConfig {
+    fn default() -> Self {
+        Self {
+            asr: RoleSpec {
+                models: vec![
+                    DEFAULT_ASR_MODEL.to_string(),
+                    "large-v3-turbo-q5_0".to_string(),
+                    "liquidai/lfm3-audio-2b".to_string(),
+                ],
+                params: None,
+            },
+            tts: RoleSpec {
+                models: vec![
+                    DEFAULT_TTS_MODEL.to_string(),
+                    "liquidai/lfm3-audio-2b".to_string(),
+                ],
+                params: None,
+            },
+            chat: default_chat_role(),
+        }
+    }
+}
+
+/// Shallow params overlay with the router's `overlay_params`
+/// semantics: each key wins wholesale, never a deep merge; a
+/// non-object side contributes nothing (the object side survives
+/// whole). `None` on both sides yields an empty object.
+#[must_use]
+pub fn overlay_params(
+    base: Option<&serde_json::Value>,
+    over: Option<&serde_json::Value>,
+) -> serde_json::Value {
+    use serde_json::Value;
+    match (base, over) {
+        (Some(b), Some(o)) => match (b.as_object(), o.as_object()) {
+            (Some(base_map), Some(over_map)) => {
+                let mut merged = base_map.clone();
+                for (key, over_value) in over_map {
+                    merged.insert(key.clone(), over_value.clone());
+                }
+                Value::Object(merged)
+            }
+            (Some(base_map), None) => Value::Object(base_map.clone()),
+            (None, Some(over_map)) => Value::Object(over_map.clone()),
+            (None, None) => Value::Object(serde_json::Map::new()),
+        },
+        (Some(b), None) => b.as_object().map_or_else(
+            || Value::Object(serde_json::Map::new()),
+            |m| Value::Object(m.clone()),
+        ),
+        (None, Some(o)) => o.as_object().map_or_else(
+            || Value::Object(serde_json::Map::new()),
+            |m| Value::Object(m.clone()),
+        ),
+        (None, None) => Value::Object(serde_json::Map::new()),
+    }
+}
+
+/// Composed params for `tag` serving `role`: the router's chain —
+/// model base params, then the role run block, then the model-side
+/// per-role override (each layer wins wholesale per key). Unknown
+/// roles and unknown tags compose to an empty object (callers fail
+/// closed on the missing model/backend, never on params — and an
+/// unknown role must not inherit another role's tuning).
+#[must_use]
+pub fn compose_role_params(
+    models: &ModelsConfig,
+    roles: &RolesConfig,
+    role: &str,
+    tag: &str,
+) -> serde_json::Value {
+    let role_known = matches!(role, "asr" | "tts" | "chat");
+    let Some(entry) = models.models.get(tag).filter(|_| role_known) else {
+        return serde_json::Value::Object(serde_json::Map::new());
+    };
+    let role_params = match role {
+        "asr" => roles.asr.params.as_ref(),
+        "tts" => roles.tts.params.as_ref(),
+        "chat" => roles.chat.params.as_ref(),
+        _ => None,
+    };
+    let mut composed = overlay_params(entry.params.as_ref(), role_params);
+    if let Some(over) = entry
+        .role_params
+        .as_ref()
+        .and_then(|overrides| overrides.get(role))
+        .and_then(|role_override| role_override.params.as_ref())
+    {
+        composed = overlay_params(Some(&composed), Some(over));
+    }
+    composed
+}
+
+/// First model listed for `role` (`asr`, `tts`), or `None` when the
+/// role is unknown or lists nothing. Unknown roles fail closed at
+/// the caller, never a default model.
+#[must_use]
+pub fn resolve_role_model(roles: &RolesConfig, role: &str) -> Option<String> {
+    let list = match role {
+        "asr" => &roles.asr.models,
+        "tts" => &roles.tts.models,
+        "chat" => &roles.chat.models,
+        _ => return None,
+    };
+    list.first().cloned()
+}
+
+/// Native session model: the agreed role model when both the ASR
+/// and TTS heads are listed and equal, else the `s2s.model` leaf.
+/// The chat native branch assures and voices this tag; servability
+/// is decided at assurance time (loud remedy on failure), never
+/// guessed here. Pure tag logic so the derivation pins without
+/// hardware.
+#[must_use]
+pub fn agreed_s2s_model(config: &OratorConfig) -> String {
+    match (
+        resolve_role_model(&config.roles, "asr"),
+        resolve_role_model(&config.roles, "tts"),
+    ) {
+        (Some(asr), Some(tts)) if asr == tts => asr,
+        _ => config.s2s.model.clone(),
+    }
+}
+
+/// Whether turns should prefer the native speech-to-speech path:/// the same model heads both the ASR and TTS roles through the
+/// audio-server backend (the LFM3-Audio-2B shape: one integrated
+/// model voicing every role). Assured at use time — a missing or
+/// unloadable server falls back to the cascade with the reason
+/// named, never a silent downgrade.
+#[must_use]
+pub fn should_prefer_s2s(config: &OratorConfig) -> bool {
+    let (Some(asr), Some(tts)) = (
+        resolve_role_model(&config.roles, "asr"),
+        resolve_role_model(&config.roles, "tts"),
+    ) else {
+        return false;
+    };
+    if asr != tts {
+        return false;
+    }
+    matches!(
+        config
+            .models
+            .models
+            .get(&asr)
+            .and_then(ModelSpec::primary_backend),
+        Some("audio-server")
+    )
+}
+
+/// Role head with the configured default as fallback: the task/role
+/// default (moonshine ASR, kokoro TTS) wins where listed; the
+/// top-level `default` model (the near-complete solution) serves when
+/// the role list is empty. Unknown roles still resolve to nothing.
+#[must_use]
+pub fn resolve_role_model_or_default(
+    roles: &RolesConfig,
+    role: &str,
+    default: &str,
+) -> Option<String> {
+    if matches!(role, "asr" | "tts" | "chat") {
+        if let Some(head) = resolve_role_model(roles, role) {
+            return Some(head);
+        }
+        if !default.is_empty() {
+            return Some(default.to_string());
+        }
+    }
+    None
+}
+
+/// Router-style weights resolution for a models-table entry: the
+/// declared absolute path wins, relative declarations join under
+/// `gguf_dir`. `None` when the tag is unknown or the entry declares
+/// no weights (backend-owned files).
+#[must_use]
+pub fn resolve_model_weights(models: &ModelsConfig, gguf_dir: &str, tag: &str) -> Option<PathBuf> {
+    let declared = models.models.get(tag)?.weights.as_deref()?;
+    if declared.is_empty() {
+        return None;
+    }
+    let raw = Path::new(declared);
+    if raw.is_absolute() {
+        return Some(raw.to_path_buf());
+    }
+    if gguf_dir.is_empty() {
+        return Some(raw.to_path_buf());
+    }
+    Some(PathBuf::from(gguf_dir).join(raw))
+}
+
 /// Speech-to-text selection.
 #[derive(
     Debug, Clone, PartialEq, Eq, Serialize, Deserialize, FieldAccess, Describable, Builder,
 )]
 #[builder(start_fn = new)]
 pub struct SttConfig {
-    /// STT backend (`audio-server`, `whisper`).
+    /// STT backend (`audio-server`, `whisper`, `moonshine`).
     #[field(desc = "STT backend", max_len = 32)]
     #[builder(default = "audio-server".to_string())]
     pub backend: String,
-    /// Model tag, re-pinned against the model manifest when downloading.
+    /// Model tag: the roles-table ASR default. The audio-server path
+    /// serves its own model and ignores this tag; the whisper path
+    /// resolves `ggml-<tag>.bin` from the managed directory and fails
+    /// loudly naming the file when absent.
     #[field(desc = "STT model tag", max_len = 64)]
-    #[builder(default = "large-v3-turbo-q5_0".to_string())]
+    #[builder(default = DEFAULT_ASR_MODEL.to_string())]
+    #[serde(default = "default_stt_model")]
     pub model: String,
     /// Recognition language (`en`, …; auto-detect off by default).
     #[field(desc = "Recognition language", max_len = 16)]
@@ -427,6 +892,10 @@ pub struct SttConfig {
     #[builder(default = false)]
     #[serde(default)]
     pub gpu: bool,
+}
+
+fn default_stt_model() -> String {
+    DEFAULT_ASR_MODEL.to_string()
 }
 
 impl Default for SttConfig {
@@ -447,7 +916,7 @@ pub struct LlmEndpointConfig {
     pub endpoint: String,
     /// Served model tag.
     #[field(desc = "LLM model tag", max_len = 64)]
-    #[builder(default = "bartowski/lfm3-1.7b".to_string())]
+    #[builder(default = DEFAULT_LLM_MODEL.to_string())]
     pub model: String,
     /// Context window in tokens.
     #[field(desc = "Context window", min = 1024, max = 65535)]
@@ -461,12 +930,12 @@ pub struct LlmEndpointConfig {
     /// relative to `gguf_dir`. Empty means search the installation
     /// layout for `<model>.gguf` before the managed directory.
     #[field(desc = "LLM weights declaration", max_len = 256)]
-    #[builder(default = "bartowski/lfm3-1.7b/latest.gguf".to_string())]
+    #[builder(default = format!("{DEFAULT_LLM_MODEL}/latest.gguf"))]
     pub weights: String,
     /// GGUF root prefixing a relative `weights` declaration. Empty
     /// means the shared llama.cpp installation layout.
     #[field(desc = "GGUF directory", max_len = 256)]
-    #[builder(default = "/ai/models/gguf".to_string())]
+    #[builder(default = DEFAULT_GGUF_DIR.to_string())]
     pub gguf_dir: String,
     /// GPU offload (explicit opt-in, default off). When set, the
     /// server boots with full layer offload and fails actionably
@@ -490,6 +959,81 @@ pub struct LlmEndpointConfig {
 /// agrees with `LlmEndpointConfig::default()` on old files.
 fn default_llm_auto_boot() -> bool {
     false
+}
+
+/// One parsed `host:port` endpoint: scheme plus host plus port, the
+/// single grammar every endpoint leaf and every runtime dialer shares.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EndpointParts {
+    /// URL scheme (`http` default, `https` when declared).
+    pub scheme: String,
+    /// Host as written (IPv6 keeps its brackets).
+    pub host: String,
+    /// Explicit port (zero is the supervisor auto-reserve shape).
+    pub port: u16,
+}
+
+impl EndpointParts {
+    /// Base URL for dialing (`scheme://host:port`).
+    #[must_use]
+    pub fn base_url(&self) -> String {
+        format!("{}://{}:{}", self.scheme, self.host, self.port)
+    }
+}
+
+/// Parse one endpoint leaf (`llm.endpoint`, `s2s.endpoint`): bare
+/// `host:port` or `scheme://host:port`, IPv6 in brackets. Refuses
+/// garbage with the shape named — set-time (`config set`) and
+/// use-time (dialers) call this exact function, so the two never
+/// disagree about what an endpoint looks like.
+pub fn parse_endpoint(raw: &str) -> Result<EndpointParts, String> {
+    const SHAPE: &str = "host:port or scheme://host:port (IPv6 in brackets, e.g. [::1]:8080)";
+    let invalid = |raw: &str| format!("invalid endpoint {raw:?}: expected {SHAPE}");
+    let trimmed = raw.trim();
+    if trimmed.is_empty() || trimmed.contains(char::is_whitespace) {
+        return Err(invalid(raw));
+    }
+    let (scheme, rest) = match trimmed.split_once("://") {
+        Some((scheme, rest)) => {
+            if scheme != "http" && scheme != "https" {
+                return Err(invalid(raw));
+            }
+            (scheme.to_string(), rest)
+        }
+        None => ("http".to_string(), trimmed),
+    };
+    if rest.is_empty() {
+        return Err(invalid(raw));
+    }
+    let Some((host, port_raw)) = rest.rsplit_once(':') else {
+        return Err(invalid(raw));
+    };
+    if host.is_empty() || port_raw.is_empty() {
+        return Err(invalid(raw));
+    }
+    let Ok(port) = port_raw.parse::<u16>() else {
+        return Err(invalid(raw));
+    };
+    if !host
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | '[' | ']' | ':'))
+    {
+        return Err(invalid(raw));
+    }
+    // Colonic hosts must bracket (bare `::1` would otherwise parse as
+    // host `::` port `1`); brackets must come in pairs.
+    if host.contains(':') && !(host.starts_with('[') && host.ends_with(']')) {
+        return Err(invalid(raw));
+    }
+    if (host.contains('[') || host.contains(']')) && !(host.starts_with('[') && host.ends_with(']'))
+    {
+        return Err(invalid(raw));
+    }
+    Ok(EndpointParts {
+        scheme,
+        host: host.to_string(),
+        port,
+    })
 }
 
 /// Resolve language-model weights, router-consistent: the explicit
@@ -551,9 +1095,9 @@ impl Default for LlmEndpointConfig {
 )]
 #[builder(start_fn = new)]
 pub struct TtsConfig {
-    /// TTS backend (`audio-server`, `kokoro`).
+    /// TTS backend (`kokoro`, `audio-server`, `daemon`).
     #[field(desc = "TTS backend", max_len = 32)]
-    #[builder(default = "audio-server".to_string())]
+    #[builder(default = "kokoro".to_string())]
     pub backend: String,
     /// Voice tag: Kokoro voice id (`bf_emma`, …) on the local
     /// fallback path; the audio-server path voices from its own
@@ -606,30 +1150,101 @@ impl Default for TurnConfig {
 
 /// The whole daemon configuration. Leaves stay individually editable at
 /// runtime; the root loads from disk.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+///
+/// Selection precedence (single-home authority): the role tables
+/// decide; root selection leaves (`stt.model`, `llm.model`,
+/// `s2s.model`, `tts.voice`) are typed fallback; code defaults come
+/// last. Concretely: role params compose base ← role run block ←
+/// model-side per-role override, and the root leaf fills composed
+/// values that are absent. The whisper walk tries role heads, then
+/// the top-level `default` tag, then the `stt.model` leaf; the ask
+/// model is the `roles.chat` head else the `llm.model` leaf; the
+/// native session model is the agreed heads else the `s2s.model`
+/// leaf. `doctor` names the ignored leaf whenever it differs from
+/// the effective value.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, FieldAccess, Describable)]
 pub struct OratorConfig {
     /// Audio section.
+    #[field(nested)]
     #[serde(default)]
     pub audio: AudioConfig,
     /// Speech-to-text section.
+    #[field(nested)]
     #[serde(default)]
     pub stt: SttConfig,
     /// Language-model section.
+    #[field(nested)]
     #[serde(default)]
     pub llm: LlmEndpointConfig,
     /// Speech-synthesis section.
+    #[field(nested)]
     #[serde(default)]
     pub tts: TtsConfig,
     /// Speech endpoint section (llama.cpp audio server: STT, TTS,
     /// speech-to-speech; default port 8080).
+    #[field(nested)]
     #[serde(default)]
     pub s2s: S2sConfig,
     /// Turn-taking section.
+    #[field(nested)]
     #[serde(default)]
     pub turn: TurnConfig,
     /// Daemon listener section.
+    #[field(nested)]
     #[serde(default)]
     pub daemon: DaemonConfig,
+    /// Home for GGUF weights (mirrors `coral-router.json` `gguf_dir`).
+    /// The models table resolves relative weights declarations under
+    /// it; `llm.gguf_dir` overrides it per endpoint when set.
+    #[field(desc = "GGUF weights home", max_len = 256)]
+    #[serde(default = "default_top_gguf_dir")]
+    pub gguf_dir: String,
+    /// Servable models table: tag → weights, backends, base params,
+    /// per-role overrides. Membership lives on the role side.
+    /// Skipped from field access (whole-table JSON through
+    /// `config_get`/`config_set`, like the router's skipped tables).
+    #[field(skip)]
+    #[serde(default)]
+    pub models: ModelsConfig,
+    /// Capability roles (ordered model preference plus run params).
+    /// Skipped from field access (whole-table JSON through
+    /// `config_get`/`config_set`).
+    #[field(skip)]
+    #[serde(default)]
+    pub roles: RolesConfig,
+    /// Default model tag: the near-complete solution, served through
+    /// llama.cpp over the OpenAI-compatible endpoint. Task and role
+    /// defaults win where set (moonshine ASR, kokoro TTS); this is
+    /// the fallback when a role list is empty or resolves to nothing
+    /// servable.
+    #[serde(default = "default_top_model")]
+    pub default: String,
+}
+
+fn default_top_model() -> String {
+    DEFAULT_MODEL.to_string()
+}
+
+fn default_top_gguf_dir() -> String {
+    DEFAULT_GGUF_DIR.to_string()
+}
+
+impl Default for OratorConfig {
+    fn default() -> Self {
+        Self {
+            audio: AudioConfig::default(),
+            stt: SttConfig::default(),
+            llm: LlmEndpointConfig::default(),
+            tts: TtsConfig::default(),
+            s2s: S2sConfig::default(),
+            turn: TurnConfig::default(),
+            daemon: DaemonConfig::default(),
+            gguf_dir: DEFAULT_GGUF_DIR.to_string(),
+            models: ModelsConfig::default(),
+            roles: RolesConfig::default(),
+            default: DEFAULT_MODEL.to_string(),
+        }
+    }
 }
 
 impl OratorConfig {

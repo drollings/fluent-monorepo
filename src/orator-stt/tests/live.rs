@@ -6,6 +6,44 @@ use std::path::PathBuf;
 use fluent_concurrency::stream::StreamAbort;
 use orator_models::{whisper_entries, ModelKind, ModelManifest};
 
+/// Moonshine medium decodes real weights end to end: the default ASR
+/// tag resolves through the models table, the backend loads the
+/// GGUF, and a one-second tone completes inside the local-op
+/// budget. No content assertion on non-speech (tones are not words);
+/// the transcript prints for the operator. Skips cleanly without
+/// the weights file — never fails a hermetic gate.
+#[ignore = "needs real moonshine weights; run via the live-ai target"]
+#[test]
+fn live_moonshine_medium_decodes_tone_to_completion() {
+    let config = orator_core::OratorConfig::default();
+    let path = orator_core::resolve_model_weights(
+        &config.models,
+        &config.gguf_dir,
+        orator_core::DEFAULT_ASR_MODEL,
+    );
+    let Some(path) = path.filter(|path| path.exists()) else {
+        eprintln!("live: moonshine weights missing, skipping");
+        return;
+    };
+    let backend = orator_stt::MoonshineBackend::new(&path);
+    let abort = StreamAbort::new();
+    let tone: Vec<f32> = (0..16_000)
+        .map(|i| (2.0 * std::f32::consts::PI * 440.0 * i as f32 / 16_000.0).sin() * 0.3)
+        .collect();
+    let started = std::time::Instant::now();
+    let segments = backend.decode_blocking(&tone, &abort).expect("live decode");
+    let elapsed = started.elapsed();
+    let text: String = segments
+        .iter()
+        .map(|segment| segment.text.clone())
+        .collect();
+    eprintln!("live: moonshine decoded 1 s tone in {elapsed:?}: {text:?}");
+    assert!(
+        elapsed.as_secs() < 10,
+        "local decode stays inside the 10 s op budget: {elapsed:?}"
+    );
+}
+
 /// Decode one second of silence with the pinned tiny model. Silence must
 /// produce no committed words (hallucination precision), and the call must
 /// complete. Requires the model at the manifest path; otherwise skips.
@@ -32,8 +70,13 @@ fn live_tiny_decodes_silence_to_nothing() {
     let backend = orator_stt::WhisperBackend::new(path, "en");
     let abort = StreamAbort::new();
     let silence = vec![0.0f32; 16_000];
-    let segments = backend.decode_blocking(&silence, &abort).expect("live decode");
-    let words: usize = segments.iter().map(|segment| segment.text.split_whitespace().count()).sum();
+    let segments = backend
+        .decode_blocking(&silence, &abort)
+        .expect("live decode");
+    let words: usize = segments
+        .iter()
+        .map(|segment| segment.text.split_whitespace().count())
+        .sum();
     assert_eq!(words, 0, "silence must decode to no words");
 }
 
@@ -64,8 +107,7 @@ fn live_wer_per_tier() {
         eprintln!("live: no whisper models on disk, skipping");
         return;
     }
-    let corpus_dir =
-        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/corpus");
+    let corpus_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/corpus");
     let mut pairs: Vec<(std::path::PathBuf, String)> = Vec::new();
     if let Ok(dir) = std::fs::read_dir(&corpus_dir) {
         for item in dir.filter_map(Result::ok) {
@@ -85,8 +127,7 @@ fn live_wer_per_tier() {
     }
     let mut table: BTreeMap<String, Vec<(String, f64)>> = BTreeMap::new();
     for tier in &tiers {
-        let backend =
-            orator_stt::WhisperBackend::new(managed.join(&tier.file), "en");
+        let backend = orator_stt::WhisperBackend::new(managed.join(&tier.file), "en");
         let abort = StreamAbort::new();
         for (wav, reference) in &pairs {
             let pcm = orator_audio::read_wav_mono(wav).expect("corpus wav reads");

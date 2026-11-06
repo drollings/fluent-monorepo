@@ -127,6 +127,26 @@ fn holds_come_from_config_bounds_only() {
     assert_eq!(effective_hold_ms(&config, false), 700);
 }
 
+/// M15-S1: the machine delegates its field surface to its config.
+/// The schema golden equals the config schema; the table pins
+/// delegation (accept, garbage, unknown).
+#[test]
+fn machine_field_surface_delegates_to_config() {
+    use fluent_wvr::{Describable, FieldAccess};
+    let mut machine = TurnMachine::new(config());
+    assert_eq!(machine.describe(), config().describe());
+    assert_eq!(machine.field_names(), config().field_names());
+    machine
+        .set_field("barge_in_ms", "200")
+        .expect("tunable sets");
+    assert_eq!(machine.get_field("barge_in_ms").expect("reads"), "200");
+    machine
+        .set_field("barge_in_ms", "lots")
+        .expect_err("garbage rejects");
+    machine.set_field("nope", "1").expect_err("unknown rejects");
+    machine.get_field("nope").expect_err("unknown reads reject");
+}
+
 #[test]
 fn machine_steps_and_stays_configurable() {
     let mut machine = TurnMachine::new(config());
@@ -174,7 +194,10 @@ fn barge_in_cuts_and_hands_over() {
         machine.step(&event);
     }
     assert_eq!(machine.state(), TurnState::Speaking);
-    assert_eq!(machine.step(&TurnEvent::BargeInDetected), TurnState::Yielding);
+    assert_eq!(
+        machine.step(&TurnEvent::BargeInDetected),
+        TurnState::Yielding
+    );
     assert_eq!(
         machine.step(&TurnEvent::AbortComplete),
         TurnState::UserSpeaking
@@ -197,9 +220,8 @@ fn arbitrary_event() -> impl Strategy<Value = TurnEvent> {
     prop_oneof![
         Just(TurnEvent::VadStart),
         Just(TurnEvent::VadEnd),
-        (0u16..2000u16, any::<bool>()).prop_map(|(ms, looks_complete)| {
-            TurnEvent::SilenceElapsed { ms, looks_complete }
-        }),
+        (0u16..2000u16, any::<bool>())
+            .prop_map(|(ms, looks_complete)| { TurnEvent::SilenceElapsed { ms, looks_complete } }),
         Just(TurnEvent::TurnCommitted),
         Just(TurnEvent::LlmFirstChunk),
         Just(TurnEvent::ToolCallStarted),
@@ -270,13 +292,22 @@ fn full_policy_quiet_to_barge_to_speaking() {
     assert_eq!(machine.drops(), 0);
     assert_eq!(machine.step(&TurnEvent::VadStart), TurnState::UserSpeaking);
     assert_eq!(
-        machine.step(&TurnEvent::SilenceElapsed { ms: 400, looks_complete: true }),
+        machine.step(&TurnEvent::SilenceElapsed {
+            ms: 400,
+            looks_complete: true
+        }),
         TurnState::Endpointing
     );
     assert_eq!(machine.step(&TurnEvent::TurnCommitted), TurnState::Thinking);
     assert_eq!(machine.step(&TurnEvent::LlmFirstChunk), TurnState::Speaking);
-    assert_eq!(machine.step(&TurnEvent::BargeInDetected), TurnState::Yielding);
-    assert_eq!(machine.step(&TurnEvent::AbortComplete), TurnState::UserSpeaking);
+    assert_eq!(
+        machine.step(&TurnEvent::BargeInDetected),
+        TurnState::Yielding
+    );
+    assert_eq!(
+        machine.step(&TurnEvent::AbortComplete),
+        TurnState::UserSpeaking
+    );
     assert_eq!(machine.drops(), 0);
 }
 
@@ -288,12 +319,18 @@ fn illegal_transitions_drop_with_counters_never_errors() {
     assert_eq!(machine.step(&TurnEvent::BargeInDetected), TurnState::Idle);
     assert_eq!(machine.drops(), 2);
     assert_eq!(machine.step(&TurnEvent::VadStart), TurnState::UserSpeaking);
-    assert_eq!(machine.step(&TurnEvent::PlayoutDone), TurnState::UserSpeaking);
+    assert_eq!(
+        machine.step(&TurnEvent::PlayoutDone),
+        TurnState::UserSpeaking
+    );
     assert_eq!(machine.drops(), 3);
     // Endpointing hold reports that stay speaking are legal, not drops.
     let drops = machine.drops();
     assert_eq!(
-        machine.step(&TurnEvent::SilenceElapsed { ms: 100, looks_complete: true }),
+        machine.step(&TurnEvent::SilenceElapsed {
+            ms: 100,
+            looks_complete: true
+        }),
         TurnState::UserSpeaking
     );
     assert_eq!(machine.drops(), drops);

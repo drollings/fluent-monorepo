@@ -36,6 +36,7 @@ pub use cache::{evict_until_fit, eviction_order, eviction_score, ArcLoadCache, B
 pub mod config;
 pub mod constants;
 pub mod drift;
+pub mod envelope;
 pub mod error;
 pub mod error_context;
 pub mod format;
@@ -50,6 +51,7 @@ pub mod jsonrpc;
 pub mod label_match;
 pub mod metrics;
 pub mod path;
+pub mod pcm;
 pub mod prelude;
 pub mod registry;
 pub mod retry;
@@ -77,8 +79,8 @@ pub use format::{
 };
 pub use hash::{
     blake3_hash, blake3_hex, content_hash_with_model, fnv1a64, hash_batch, hash_file, hex_encode,
-    sha256_digest, sha256_file, sha256_hex, sha256_str, uuid_v4, BatchHashResult, HashAlgorithm,
-    HashState,
+    sha256_digest, sha256_file, sha256_hex, sha256_str, uuid_v4, verify_sha256_file, BatchHashResult,
+    FileVerification, HashAlgorithm, HashState,
 };
 pub use interner::CapabilityRegistry;
 pub use io::{
@@ -91,7 +93,8 @@ pub use jsonrpc::{
 };
 pub use metrics::LatencyHistogram;
 pub use path::{
-    collapse_separators, file_name_lexical, is_absolute_lexical, normalize_lexical, parent_lexical,
+    collapse_separators, file_name_lexical, is_absolute_lexical, normalize_lexical,
+    normalize_std_path, parent_lexical,
 };
 pub use registry::{ConcurrentRegistry, KeyedRegistry};
 pub use retry::{

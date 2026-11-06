@@ -6,8 +6,12 @@
 use std::os::unix::fs::PermissionsExt as _;
 use std::time::Duration;
 
+use crate::worker::{
+    resolve_tts_binary, synth_blocking, TtsWorkerError, LLAMA_TTS_BIN, LLAMA_TTS_ENV,
+};
 use orator_core::AudioBundle;
-use crate::worker::{resolve_tts_binary, synth_blocking, TtsWorkerError};
+
+use crate::ENV_LOCK;
 
 /// Stub `llama-tts`: copies the fixture WAV to its `-o` target (the
 /// last argument). Writes nothing else, exits zero. The fixture path
@@ -75,8 +79,7 @@ fn crashing_binary_reports_its_exit() {
     let dir = tempfile::tempdir().expect("tempdir");
     let script = dir.path().join("llama-tts");
     std::fs::write(&script, "#!/bin/sh\nexit 3\n").expect("stub writes");
-    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755))
-        .expect("executable");
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).expect("executable");
     let error =
         synth_blocking(&script, &bundle(), "hi", Duration::from_secs(10)).expect_err("must fail");
     assert_eq!(error, TtsWorkerError::Failed("exit 3".to_string()));
@@ -91,8 +94,7 @@ fn failing_binary_reports_its_stderr_tail() {
         "#!/bin/sh\necho 'mmproj does not support audio generation' >&2\nexit 1\n",
     )
     .expect("stub writes");
-    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755))
-        .expect("executable");
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).expect("executable");
     let error =
         synth_blocking(&script, &bundle(), "hi", Duration::from_secs(10)).expect_err("must fail");
     let message = error.to_string();
@@ -105,13 +107,77 @@ fn failing_binary_reports_its_stderr_tail() {
 
 #[test]
 fn binary_resolution_prefers_the_override() {
-    std::env::set_var("LLAMA_TTS", "/opt/llama/bin/llama-tts");
+    let _guard = common_core::sync::lock(&ENV_LOCK);
+    let prior = std::env::var_os(LLAMA_TTS_ENV);
+    std::env::set_var(LLAMA_TTS_ENV, "/opt/llama/bin/llama-tts");
     assert_eq!(
         resolve_tts_binary(),
         Some(std::path::PathBuf::from("/opt/llama/bin/llama-tts"))
     );
-    std::env::remove_var("LLAMA_TTS");
+    match prior {
+        Some(value) => std::env::set_var(LLAMA_TTS_ENV, value),
+        None => std::env::remove_var(LLAMA_TTS_ENV),
+    }
     let _ = resolve_tts_binary();
+}
+
+/// M6-S1 characterization: a relative `LLAMA_TTS` override resolves to
+/// nothing — pin before the shared-helper migration.
+#[test]
+fn relative_tts_override_resolves_to_nothing() {
+    let _guard = common_core::sync::lock(&ENV_LOCK);
+    let prior = std::env::var_os(LLAMA_TTS_ENV);
+    std::env::set_var(LLAMA_TTS_ENV, "relative/llama-tts");
+    assert_eq!(resolve_tts_binary(), None, "relative explicit never serves");
+    match prior {
+        Some(value) => std::env::set_var(LLAMA_TTS_ENV, value),
+        None => std::env::remove_var(LLAMA_TTS_ENV),
+    }
+}
+
+/// Writable fixture base outside `/tmp`: the ownership gate refuses
+/// anything under `/tmp`, so resolution fixtures live under the test
+/// binary's own directory instead.
+#[cfg(unix)]
+fn fixture_dir() -> tempfile::TempDir {
+    let base = std::env::current_exe()
+        .expect("exe path")
+        .parent()
+        .expect("exe parent")
+        .to_path_buf();
+    tempfile::tempdir_in(base).expect("fixture dir")
+}
+
+/// M6-S1 characterization: a world-writable `llama-tts` `$PATH` hit is
+/// refused (resolves to nothing) — pin before the shared-helper
+/// migration.
+#[test]
+#[cfg(unix)]
+fn world_writable_path_hit_is_refused() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let _guard = common_core::sync::lock(&ENV_LOCK);
+    let prior_tts = std::env::var_os(LLAMA_TTS_ENV);
+    let prior_path = std::env::var_os("PATH");
+    std::env::remove_var(LLAMA_TTS_ENV);
+    let dir = fixture_dir();
+    let candidate = dir.path().join(LLAMA_TTS_BIN);
+    std::fs::write(&candidate, "#!/bin/sh\nexit 0\n").expect("stub writes");
+    std::fs::set_permissions(&candidate, std::fs::Permissions::from_mode(0o777))
+        .expect("stub chmod");
+    std::env::set_var("PATH", dir.path().as_os_str());
+    assert_eq!(
+        resolve_tts_binary(),
+        None,
+        "group/other-writable searched hits are refused"
+    );
+    match prior_tts {
+        Some(value) => std::env::set_var(LLAMA_TTS_ENV, value),
+        None => std::env::remove_var(LLAMA_TTS_ENV),
+    }
+    match prior_path {
+        Some(value) => std::env::set_var("PATH", value),
+        None => std::env::remove_var("PATH"),
+    }
 }
 
 #[test]
@@ -196,8 +262,7 @@ fn synth_scrubs_the_environment_and_pins_path() {
         ),
     )
     .expect("stub writes");
-    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755))
-        .expect("executable");
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).expect("executable");
     std::env::set_var("ORATOR_REDTEAM_SECRET", "hunter2");
     let result = synth_blocking(&script, &bundle(), "hello", Duration::from_secs(10));
     std::env::remove_var("ORATOR_REDTEAM_SECRET");
@@ -221,8 +286,7 @@ fn synth_timeout_kills_the_whole_group() {
         ),
     )
     .expect("stub writes");
-    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755))
-        .expect("executable");
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).expect("executable");
     let error = synth_blocking(&script, &bundle(), "hi", Duration::from_millis(400))
         .expect_err("budget must fire");
     assert!(
@@ -230,8 +294,5 @@ fn synth_timeout_kills_the_whole_group() {
         "timeout names itself: {error}"
     );
     std::thread::sleep(std::time::Duration::from_millis(1500));
-    assert!(
-        !marker.exists(),
-        "group kill leaves no orphan output"
-    );
+    assert!(!marker.exists(), "group kill leaves no orphan output");
 }

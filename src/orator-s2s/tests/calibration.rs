@@ -130,7 +130,10 @@ fn audio_ready_case() -> (Case, Vec<f32>) {
 fn dead_servers_are_never_ready() {
     for case in [refused_case(), failing_case()] {
         assert!(!case.probe_ready, "a dead server must not read ready");
-        assert!(!case.audio_flowed, "no turn can voice through a dead server");
+        assert!(
+            !case.audio_flowed,
+            "no turn can voice through a dead server"
+        );
     }
 }
 

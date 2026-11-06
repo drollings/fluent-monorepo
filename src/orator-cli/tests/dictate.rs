@@ -132,5 +132,46 @@ fn cap_counts_drops_and_breaks_early() {
         (MAX_DICTATE_SAMPLES, 5, true)
     );
     // Already full: everything drops.
-    assert_eq!(apply_cap(MAX_DICTATE_SAMPLES, 3), (MAX_DICTATE_SAMPLES, 3, true));
+    assert_eq!(
+        apply_cap(MAX_DICTATE_SAMPLES, 3),
+        (MAX_DICTATE_SAMPLES, 3, true)
+    );
+}
+
+/// An expired clipboard bound still delivers the words: the ladder
+/// skips the dead rung to the output-only sink instead of hanging,
+/// and the transcript is recorded either way.
+#[test]
+fn expired_clipboard_bound_still_delivers_words() {
+    use orator_desktop::{Clipboard, InjectOutcome, LadderMemory, NoChord};
+    struct ExpiredBound;
+    impl Clipboard for ExpiredBound {
+        fn read(&self) -> Option<String> {
+            None
+        }
+        fn write(&self, _text: &str) -> Result<(), orator_desktop::InjectError> {
+            Err(orator_desktop::InjectError::Failed(
+                "wl-copy exceeded its bound (compositor busy or absent)".to_string(),
+            ))
+        }
+        fn fingerprint(&self) -> u64 {
+            0
+        }
+    }
+    let clip = ExpiredBound;
+    let mut memory = LadderMemory::default();
+    let mut history = Vec::new();
+    let started = std::time::Instant::now();
+    let outcome = finish_turn("hello there", &mut memory, &mut history, &clip, &NoChord)
+        .expect("words survive an expired bound");
+    assert_eq!(
+        outcome,
+        InjectOutcome::OutputOnly("hello there".to_string())
+    );
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(10),
+        "bounded composition, never the old hang: {:?}",
+        started.elapsed()
+    );
+    assert_eq!(history, vec!["hello there".to_string()]);
 }

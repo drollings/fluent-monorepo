@@ -18,40 +18,49 @@ use crate::say::say_via_daemon;
 /// One-shot CLI use keeps one-question ownership only when it booted the
 /// server itself; the per-process model-load cost is retained by design
 /// (no cross-command server lease in v1).
-pub(crate) fn ask(question: &str, speak: bool, config: &OratorConfig, transport: Transport) -> ExitCode {
-    let llm = config.llm.clone();
+pub(crate) fn ask(
+    question: &str,
+    speak: bool,
+    config: &OratorConfig,
+    transport: Transport,
+) -> ExitCode {
+    let llm = match orator_cli::ask::effective_llm_config(config) {
+        Ok(llm) => llm,
+        Err(error) => {
+            eprintln!("{error}");
+            return ExitCode::Usage;
+        }
+    };
     let explicit = std::env::var("LLM_BASE_URL").unwrap_or_default();
     let (base, model) = resolve_llm_base(&llm);
     common_core::runtime::block_on_shared(async {
         // A live endpoint is used as-is; otherwise this command owns a
         // supervised server for exactly one question.
-        let supervised: Option<std::sync::Arc<Supervisor>> = if probe_models(
-            &base,
-            common_core::http::shared_http_client(),
-        )
-        .await
-        .is_err()
-            && explicit.is_empty()
-        {
-            match boot_supervised(&llm).await {
-                Ok(server) => Some(std::sync::Arc::new(server)),
-                Err(orator_cli::ask::AskFail::Usage(message)) => {
-                    eprintln!("{message}");
-                    return ExitCode::Usage;
+        let supervised: Option<std::sync::Arc<Supervisor>> =
+            if probe_models(&base, common_core::http::shared_http_client())
+                .await
+                .is_err()
+                && explicit.is_empty()
+            {
+                match boot_supervised(&llm).await {
+                    Ok(server) => Some(std::sync::Arc::new(server)),
+                    Err(orator_cli::ask::AskFail::Usage(message)) => {
+                        eprintln!("{message}");
+                        return ExitCode::Usage;
+                    }
+                    Err(orator_cli::ask::AskFail::Error(message)) => {
+                        eprintln!("{message}");
+                        return ExitCode::Error;
+                    }
                 }
-                Err(orator_cli::ask::AskFail::Error(message)) => {
-                    eprintln!("{message}");
-                    return ExitCode::Error;
-                }
-            }
-        } else {
-            None
-        };
+            } else {
+                None
+            };
         // A shutdown mid-question stops the owned server; the step
         // below then fails fast instead of hanging on a dead child.
-        let watch = supervised.clone().map(|server| {
-            orator_cli::SignalWatch::arm(move || server.stop())
-        });
+        let watch = supervised
+            .clone()
+            .map(|server| orator_cli::SignalWatch::arm(move || server.stop()));
         let live_base = supervised
             .as_ref()
             .map(|server| server.base_url().to_string())
@@ -63,7 +72,10 @@ pub(crate) fn ask(question: &str, speak: bool, config: &OratorConfig, transport:
             usize::from(llm.n_batch),
         );
         session.push_text(question);
-        if watch.as_ref().is_some_and(orator_cli::SignalWatch::signalled) {
+        if watch
+            .as_ref()
+            .is_some_and(orator_cli::SignalWatch::signalled)
+        {
             return ExitCode::Interrupted;
         }
         let code = match session.step(&mut orator_core::Sampler::default()) {
@@ -90,7 +102,10 @@ pub(crate) fn ask(question: &str, speak: bool, config: &OratorConfig, transport:
                 ExitCode::Error
             }
         };
-        if watch.as_ref().is_some_and(orator_cli::SignalWatch::signalled) {
+        if watch
+            .as_ref()
+            .is_some_and(orator_cli::SignalWatch::signalled)
+        {
             return ExitCode::Interrupted;
         }
         if let Some(server) = supervised {
@@ -106,7 +121,10 @@ pub(crate) fn ask(question: &str, speak: bool, config: &OratorConfig, transport:
 /// GPU opt-in without a visible device refuses before boot; with one
 /// it requests full layer offload. Garbage ports are usage errors and
 /// never silently auto-reserve elsewhere.
-async fn boot_supervised(endpoint: &LlmEndpointConfig) -> Result<Supervisor, orator_cli::ask::AskFail> {    use orator_cli::ask::AskFail;
+async fn boot_supervised(
+    endpoint: &LlmEndpointConfig,
+) -> Result<Supervisor, orator_cli::ask::AskFail> {
+    use orator_cli::ask::AskFail;
     if !endpoint.auto_boot {
         return Err(AskFail::Error(format!(
             "orator: no LLM server answers at {} (start a llama-server there, or set llm.auto_boot to boot one automatically)",
@@ -116,8 +134,7 @@ async fn boot_supervised(endpoint: &LlmEndpointConfig) -> Result<Supervisor, ora
     if endpoint.gpu {
         orator_core::gpu::require_gpu("llama-server").map_err(AskFail::Error)?;
     }
-    let weights =
-        orator_cli::ask::check_ask_weights(endpoint).map_err(AskFail::Error)?;
+    let weights = orator_cli::ask::check_ask_weights(endpoint).map_err(AskFail::Error)?;
     let port = orator_cli::ask::parse_ask_port(&endpoint.endpoint).map_err(AskFail::Usage)?;
     let mut config = SupervisorConfig {
         model: endpoint.model.clone(),
@@ -133,4 +150,3 @@ async fn boot_supervised(endpoint: &LlmEndpointConfig) -> Result<Supervisor, ora
         .await
         .map_err(|error| AskFail::Error(error.to_string()))
 }
-

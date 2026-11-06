@@ -62,7 +62,21 @@ pub fn paste_with_restore(
             "focus lost before paste (clipboard moved during snapshot)".to_string(),
         ));
     }
-    clip.write(text)?;
+    if let Err(error) = clip.write(text) {
+        // Best-effort restore: our attempt may have cleared the seat
+        // before dying (a killed `wl-copy` drops what it held), so put
+        // the snapshot back instead of leaving the loss behind. The
+        // restore itself is best-effort — the original error reports.
+        match saved {
+            Some(previous) => {
+                let _ = clip.write(&previous);
+            }
+            None => {
+                let _ = clip.write("");
+            }
+        }
+        return Err(error);
+    }
     let after_write = clip.fingerprint();
     if after_write == attest_before && !text.is_empty() {
         return Err(InjectError::Failed(
@@ -105,6 +119,61 @@ pub fn capture_selection(
         None => clip.write("")?,
     }
     Ok(captured)
+}
+
+/// Poll quantum in ms shared by every clipboard child wait: matches
+/// the fingerprint poll below so one rhythm owns all clipboard timing.
+pub const CLIPBOARD_POLL_MS: u64 = 10;
+
+/// Bound in ms for one clipboard child serve (`wl-copy --foreground`
+/// holding the selection, `wl-paste` dumping it). A live compositor
+/// answers in tens of ms; the bound sits two orders above that, so
+/// only a wedged or seatless server trips it. Firing kills the child,
+/// reaps it, restores the snapshot, and reports — never a hang, never
+/// a zombie, never lost content. See the calibration register.
+pub const CLIPBOARD_CHILD_DEADLINE_MS: u64 = 2000;
+
+/// Why a bounded clipboard-child wait ended without a status.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ChildWaitError {
+    /// The deadline passed: the child was killed and reaped.
+    Timeout,
+    /// The wait itself failed (e.g. `try_wait` refused).
+    Failed(String),
+}
+
+/// Wait for `child` up to `deadline_ms`, polling every
+/// [`CLIPBOARD_POLL_MS`]. An exited child reports its status (late or
+/// not — status is status); a still-running child at the deadline is
+/// killed and reaped, then reported as [`ChildWaitError::Timeout`].
+/// Never blocks past the deadline; never leaves a zombie.
+pub(crate) fn wait_child_bounded(
+    child: &mut std::process::Child,
+    deadline_ms: u64,
+) -> Result<std::process::ExitStatus, ChildWaitError> {
+    let deadline = Instant::now() + Duration::from_millis(deadline_ms);
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return Ok(status),
+            Ok(None) => {
+                if Instant::now() >= deadline {
+                    let _ = child.kill();
+                    match child.wait() {
+                        Ok(_) => return Err(ChildWaitError::Timeout),
+                        Err(error) => {
+                            return Err(ChildWaitError::Failed(format!(
+                                "reap after kill failed: {error}"
+                            )));
+                        }
+                    }
+                }
+                std::thread::sleep(Duration::from_millis(CLIPBOARD_POLL_MS));
+            }
+            Err(error) => {
+                return Err(ChildWaitError::Failed(format!("wait failed: {error}")));
+            }
+        }
+    }
 }
 
 /// Poll the fingerprint every 10 ms until it moves or the deadline passes.
@@ -187,20 +256,41 @@ fn which_paste() -> Option<std::path::PathBuf> {
 impl Clipboard for ExternalClipboard {
     fn read(&self) -> Option<String> {
         let paste = which_paste()?;
-        let program = paste.to_string_lossy().into_owned();
-        let output =
-            common_core::shell::run_capture(&[program.as_str(), "--no-newline"]).ok()?;
-        if !output.success || output.stdout.is_empty() {
+        let mut child = std::process::Command::new(paste)
+            .arg("--no-newline")
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .ok()?;
+        // Drain on a side thread so a large dump never wedges the
+        // pipe while the bounded wait below runs: the kill on expiry
+        // closes the write end, so the drain always terminates.
+        let stdout = child.stdout.take();
+        let drain = std::thread::spawn(move || {
+            let mut buf = Vec::new();
+            if let Some(mut out) = stdout {
+                use std::io::Read as _;
+                let _ = out.read_to_end(&mut buf);
+            }
+            buf
+        });
+        let status = wait_child_bounded(&mut child, CLIPBOARD_CHILD_DEADLINE_MS).ok()?;
+        if !status.success() {
             return None;
         }
-        Some(output.stdout)
+        let raw = drain.join().ok()?;
+        let text = String::from_utf8_lossy(&raw).into_owned();
+        if text.is_empty() { None } else { Some(text) }
     }
     fn write(&self, text: &str) -> Result<(), InjectError> {
         let copy = which_copy().ok_or_else(|| {
             InjectError::Unavailable("wl-copy not found on PATH".to_string())
         })?;
-        // `wl-copy` reads stdin; shell out through `sh` with a here-string
-        // would interpolate, so write through a piped child instead.
+        // `wl-copy` reads stdin; shell out through a piped child instead
+        // of a here-string (no interpolation). `--foreground` keeps the
+        // selection held by our child — ordered and observable — while
+        // the bounded wait below keeps a seatless server from hanging
+        // the caller: expiry kills, reaps, and reports with the remedy.
         let mut child = std::process::Command::new(copy)
             .arg("--foreground")
             .arg("--type")
@@ -216,13 +306,15 @@ impl Clipboard for ExternalClipboard {
         )
         .map_err(|error| InjectError::Failed(format!("wl-copy write: {error}")))?;
         drop(child.stdin.take());
-        let status = child
-            .wait()
-            .map_err(|error| InjectError::Failed(format!("wl-copy wait: {error}")))?;
-        if status.success() {
-            Ok(())
-        } else {
-            Err(InjectError::Failed("wl-copy reported failure".to_string()))
+        match wait_child_bounded(&mut child, CLIPBOARD_CHILD_DEADLINE_MS) {
+            Ok(status) if status.success() => Ok(()),
+            Ok(_) => Err(InjectError::Failed("wl-copy reported failure".to_string())),
+            Err(ChildWaitError::Timeout) => Err(InjectError::Failed(format!(
+                "wl-copy --foreground exceeded {CLIPBOARD_CHILD_DEADLINE_MS} ms without serving the selection (compositor busy or absent)"
+            ))),
+            Err(ChildWaitError::Failed(detail)) => {
+                Err(InjectError::Failed(format!("wl-copy wait: {detail}")))
+            }
         }
     }
     fn fingerprint(&self) -> u64 {

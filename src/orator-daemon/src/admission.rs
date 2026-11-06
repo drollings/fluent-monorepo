@@ -7,6 +7,19 @@
 //! until a cheap probe says they are healthy again. The numbers (the
 //! bound, the ejection streak) ship only inside their calibrated bands
 //! — see the calibration register and the admission harness.
+//!
+//! M8-S2 spike (keep-decision): this gate does NOT wrap
+//! `fluent_concurrency::pool::Limiter`. The limiter queues (`acquire`
+//! awaits) while admission refuses fast; the only matching shape,
+//! `try_acquire`, is not exposed and would need a single-consumer
+//! extension, and the semaphore's `available_permits` read is
+//! observationally racy where the gate's check-and-increment is atomic
+//! under one mutex (depth exactness feeds the breach predictor). The
+//! ws listener cap stays on its own `Semaphore` for the same reason —
+//! its refusal line (`listener at cap (32 handlers)`) and refusal
+//! counter are a different contract from this gate's turn-count line.
+//! Revisit if a second fail-fast consumer needs the same depth +
+//! verbatim-string shape.
 
 /// Consecutive `Backend` turn failures that eject the endpoint.
 /// Calibrated: a single transient failure must never eject (the
@@ -98,6 +111,12 @@ impl Drop for AdmissionGuard<'_> {
 /// turn failures eject; any responsive turn re-enters. Responsive
 /// includes voiceless (`NoAudio`) — the server answered, it just had
 /// nothing to voice — so only true transport failures count.
+///
+/// Single consumer (`VoiceOwner`); stays in the daemon per
+/// no-speculative-promotion. Promote to a shared home when a second
+/// consumer appears — the candidate trigger is the s2s
+/// `ensure_audio_server` fail-invalidate path adopting the same
+/// consecutive-failure ejection.
 #[derive(Debug)]
 pub struct EjectionTracker {
     threshold: usize,

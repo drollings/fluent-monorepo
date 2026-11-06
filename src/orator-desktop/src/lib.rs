@@ -3,6 +3,7 @@
 //! orator-desktop: Linux desktop surface: tray, global hotkeys, notifications, D-Bus service, and text injection.
 
 pub mod clipboard;
+pub mod bind;
 pub mod continuation;
 pub mod dbus;
 pub mod hotkey;
@@ -15,6 +16,10 @@ pub mod tray;
 
 pub use clipboard::{
     paste_with_restore, ChordSender, Clipboard, ExternalClipboard, InMemoryClipboard, NoChord,
+};
+pub use bind::{
+    probe_dbus, probe_hotkeys, probe_krunner, probe_notify, probe_tray, read_desktop_env,
+    DbusRoute, DesktopEnv, HotkeyRoute, KrunnerRoute, NotifyRoute, TrayRoute,
 };
 pub use continuation::continuation_prefix;
 pub use dbus::{serves as dbus_serves, Caller, SignalPolicy, SERVICE_NAME};

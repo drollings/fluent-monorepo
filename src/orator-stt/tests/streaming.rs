@@ -119,8 +119,14 @@ fn guards_reject_hallucinations() {
     let mut stt = stream(vec![lattice]);
     stt.push(&frame()).expect("decode");
     let finals = stt.finalize().expect("finalize");
-    let texts: Vec<&str> = finals.iter().map(|update| update.word.text.as_str()).collect();
-    assert!(!texts.iter().any(|text| text.contains("BLANK")), "{texts:?}");
+    let texts: Vec<&str> = finals
+        .iter()
+        .map(|update| update.word.text.as_str())
+        .collect();
+    assert!(
+        !texts.iter().any(|text| text.contains("BLANK")),
+        "{texts:?}"
+    );
     assert!(!texts.contains(&"real"), "{texts:?}");
     assert!(
         texts.iter().filter(|text| **text == "ok").count() <= 3,
@@ -223,14 +229,17 @@ fn revised_every_pass_never_commits() {
             Ok(vec![word(text, 0, 400)])
         }
     }
-    let mut stt = StreamingStt::new(Arc::new(FlipFlop { calls: std::sync::Mutex::new(0) }), Channel::Mic, base());
+    let mut stt = StreamingStt::new(
+        Arc::new(FlipFlop {
+            calls: std::sync::Mutex::new(0),
+        }),
+        Channel::Mic,
+        base(),
+    );
     stt.decode_every_frames = 1;
     for _ in 0..100 {
         for update in stt.push(&frame()).expect("decode") {
-            assert!(
-                update.provisional,
-                "an ever-revised word must never commit"
-            );
+            assert!(update.provisional, "an ever-revised word must never commit");
         }
     }
     assert_eq!(stt.committed(), 0);
@@ -263,7 +272,13 @@ fn silence_and_noise_commit_nothing() {
             }
         }
     }
-    let mut stt = StreamingStt::new(Arc::new(Noisy { calls: std::sync::Mutex::new(0) }), Channel::Mic, base());
+    let mut stt = StreamingStt::new(
+        Arc::new(Noisy {
+            calls: std::sync::Mutex::new(0),
+        }),
+        Channel::Mic,
+        base(),
+    );
     stt.decode_every_frames = 1;
     for _ in 0..100 {
         for update in stt.push(&frame()).expect("decode") {
@@ -300,5 +315,42 @@ fn fired_abort_mid_window_aborts_without_partial_commit() {
             }
         }
     }
-    assert!(!seen.contains(&"hello".to_string()), "no recommit: {seen:?}");
+    assert!(
+        !seen.contains(&"hello".to_string()),
+        "no recommit: {seen:?}"
+    );
+}
+
+/// M15-S1: the streaming field surface. `describe()` is the schema
+/// golden; the table pins accept (numbers, bounded float) and reject
+/// (unknown, garbage, out-of-band).
+#[test]
+fn streaming_field_surface_pins_schema_and_table() {
+    use fluent_wvr::{Describable, FieldAccess};
+    let mut stt = stream(vec![]);
+    assert_eq!(
+        stt.describe(),
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "provisional_ms": { "type": "integer", "description": "Tail newer than this stays provisional" },
+                "agree_ms": { "type": "integer", "description": "Cross-pass start-time tolerance" },
+                "no_speech_max": { "type": "number", "description": "No-speech ceiling for commits" }
+            },
+            "required": ["provisional_ms", "agree_ms", "no_speech_max"]
+        })
+    );
+    assert_eq!(
+        stt.field_names(),
+        &["provisional_ms", "agree_ms", "no_speech_max"]
+    );
+    stt.set_field("provisional_ms", "80").expect("numbers set");
+    assert_eq!(stt.get_field("provisional_ms").expect("reads"), "80");
+    stt.set_field("no_speech_max", "0.5").expect("in-band sets");
+    stt.set_field("no_speech_max", "2.0")
+        .expect_err("out-of-band rejects");
+    stt.set_field("provisional_ms", "lots")
+        .expect_err("garbage rejects");
+    stt.set_field("nope", "1").expect_err("unknown rejects");
+    stt.get_field("nope").expect_err("unknown reads reject");
 }

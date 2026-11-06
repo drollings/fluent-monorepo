@@ -19,7 +19,10 @@ fn cues() -> Vec<Cue> {
 
 #[test]
 fn txt_joins_lines() {
-    assert_eq!(render(&cues(), TranscriptFormat::Txt).expect("txt renders"), "hello\nworld");
+    assert_eq!(
+        render(&cues(), TranscriptFormat::Txt).expect("txt renders"),
+        "hello\nworld"
+    );
 }
 
 #[test]
@@ -135,8 +138,14 @@ fn cue_bounds_extremes_to_media_range() {
     assert!(max.start_s <= MAX_CUE_SECONDS, "MAX clamps: {max:?}");
     assert!(max.end_s <= MAX_CUE_SECONDS, "MAX clamps: {max:?}");
     let min = cue_from_centiseconds(i64::MIN, i64::MIN, "m".to_string());
-    assert!((min.start_s - 0.0).abs() < 1e-9, "MIN clamps to zero: {min:?}");
-    assert!((min.end_s - 0.0).abs() < 1e-9, "MIN clamps to zero: {min:?}");
+    assert!(
+        (min.start_s - 0.0).abs() < 1e-9,
+        "MIN clamps to zero: {min:?}"
+    );
+    assert!(
+        (min.end_s - 0.0).abs() < 1e-9,
+        "MIN clamps to zero: {min:?}"
+    );
     // Negative overflow clamps, never wraps.
     let neg = cue_from_centiseconds(-9_223_372_036_854, -1, "n".to_string());
     assert!((neg.start_s - 0.0).abs() < 1e-9);
@@ -150,13 +159,103 @@ fn cue_bounds_extremes_to_media_range() {
 fn transcribe_codec_round_trips_i16_base64() {
     use crate::transcribe::{decode_transcribe_text, encode_transcribe_audio};
     let params = encode_transcribe_audio(&[0.0, 0.5, -0.5, 1.0]);
-    assert_eq!(params.get("rate").and_then(serde_json::Value::as_u64), Some(16_000));
-    let encoded = params.get("audio").and_then(|audio| audio.as_str()).expect("audio present");
+    assert_eq!(
+        params.get("rate").and_then(serde_json::Value::as_u64),
+        Some(16_000)
+    );
+    let encoded = params
+        .get("audio")
+        .and_then(|audio| audio.as_str())
+        .expect("audio present");
     use base64::prelude::*;
     let raw = BASE64_STANDARD.decode(encoded).expect("valid base64");
     assert_eq!(raw.len(), 8, "i16 LE: 2 bytes per sample");
-    assert_eq!(i16::from_le_bytes([raw[2], raw[3]]), 16383, "0.5 scales to half range");
+    assert_eq!(
+        i16::from_le_bytes([raw[2], raw[3]]),
+        16383,
+        "0.5 scales to half range"
+    );
     let body = serde_json::json!({"text": "hello there"});
-    assert_eq!(decode_transcribe_text(&body).expect("text decodes"), "hello there");
+    assert_eq!(
+        decode_transcribe_text(&body).expect("text decodes"),
+        "hello there"
+    );
     decode_transcribe_text(&serde_json::json!({})).expect_err("missing text is loud");
+}
+
+/// M1-S1 characterization: the Transcribe i16 LE payload shares the
+/// s2s truncating quantizer (NOT the codec's rounding one). The shared
+/// `common_core::pcm` primitive must reproduce these vectors exactly.
+#[test]
+fn orator_transcribe_pair() {
+    use crate::transcribe::encode_transcribe_audio;
+    use base64::prelude::*;
+    // Rails and truncation direction match s2s, not the codec.
+    let params = encode_transcribe_audio(&[1.0, -1.0, 0.5]);
+    let raw = BASE64_STANDARD
+        .decode(
+            params
+                .get("audio")
+                .and_then(|audio| audio.as_str())
+                .expect("audio"),
+        )
+        .expect("valid base64");
+    assert_eq!(i16::from_le_bytes([raw[0], raw[1]]), 32767);
+    assert_eq!(i16::from_le_bytes([raw[2], raw[3]]), -32767);
+    assert_eq!(
+        i16::from_le_bytes([raw[4], raw[5]]),
+        16383,
+        "truncates like s2s"
+    );
+    // Empty samples encode to an empty (but present) payload.
+    let params = encode_transcribe_audio(&[]);
+    assert_eq!(
+        params.get("audio").and_then(|audio| audio.as_str()),
+        Some(""),
+        "empty samples keep the envelope with an empty payload"
+    );
+}
+
+/// The file gate the binary consults before inference: non-speech
+/// fixtures hold (silence and the verified 440 Hz tone shape), voiced
+/// proxies fire (transparency — speech takes the ungated path).
+#[test]
+fn file_gate_holds_non_speech_and_fires_on_speech() {
+    fn tone(freq: f32, amplitude: f32) -> Vec<f32> {
+        (0..16_000)
+            .map(|index| {
+                amplitude * (2.0 * std::f32::consts::PI * freq * index as f32 / 16_000.0).sin()
+            })
+            .collect()
+    }
+    assert!(
+        !orator_vad::speech_present_16k(&vec![0.0; 16_000]),
+        "silence holds the gate"
+    );
+    assert!(
+        !orator_vad::speech_present_16k(&tone(440.0, 0.3)),
+        "the verified tone shape holds the gate"
+    );
+    let voiced: Vec<f32> = (0..16_000)
+        .map(|index| {
+            let time = index as f32 / 16_000.0;
+            0.35 * (2.0 * std::f32::consts::PI * 150.0 * time).sin()
+                + 0.35 * (2.0 * std::f32::consts::PI * 300.0 * time).sin()
+        })
+        .collect();
+    assert!(
+        orator_vad::speech_present_16k(&voiced),
+        "voiced input fires the gate (byte-identical path)"
+    );
+}
+
+/// The held-gate note carries the envelope prefix and names the outcome.
+#[test]
+fn held_gate_note_is_prefixed_and_empty() {
+    use crate::transcribe::{TranscriptFormat, NO_SPEECH_NOTE};
+    assert!(NO_SPEECH_NOTE.starts_with("orator: "), "{NO_SPEECH_NOTE}");
+    assert!(NO_SPEECH_NOTE.contains("no speech"), "{NO_SPEECH_NOTE}");
+    let empty: Vec<crate::transcribe::Cue> = Vec::new();
+    assert_eq!(render(&empty, TranscriptFormat::Txt).expect("txt"), "");
+    assert_eq!(render(&empty, TranscriptFormat::Json).expect("json"), "[]");
 }

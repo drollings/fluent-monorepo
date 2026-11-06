@@ -1,6 +1,8 @@
 use common_core::path::{
-    collapse_separators, file_name_lexical, is_absolute_lexical, normalize_lexical, parent_lexical,
+    collapse_separators, file_name_lexical, is_absolute_lexical, normalize_lexical,
+    normalize_std_path, parent_lexical,
 };
+use std::path::{Path, PathBuf};
 
 #[test]
 fn collapse_separators_backslash_and_runs() {
@@ -69,4 +71,35 @@ fn is_absolute_lexical_matrix() {
     assert!(!is_absolute_lexical("relative/path.ts"));
     assert!(!is_absolute_lexical(""));
     assert!(!is_absolute_lexical("C:x"));
+}
+
+#[test]
+fn symlink_hop_cap_is_shared_at_forty() {
+    // M12-S2: the single hop cap composed by `orator_core::paths`
+    // (fast check) and `orator_tools::sandbox` (authoritative jail).
+    assert_eq!(common_core::path::MAX_SYMLINK_HOPS, 40);
+}
+
+#[test]
+fn normalize_std_path_matrix() {
+    let norm = |path: &str| normalize_std_path(Path::new(path));
+    assert_eq!(norm(""), Some(PathBuf::new()));
+    assert_eq!(norm("a/.."), Some(PathBuf::new()));
+    assert_eq!(norm("."), Some(PathBuf::new()));
+    assert_eq!(norm("./a/./b"), Some(PathBuf::from("a/b")));
+    assert_eq!(norm("a//b"), Some(PathBuf::from("a/b")));
+    assert_eq!(norm("a/b/"), Some(PathBuf::from("a/b")));
+    assert_eq!(norm("a/../b"), Some(PathBuf::from("b")));
+    assert_eq!(norm("/"), Some(PathBuf::from("/")));
+    assert_eq!(norm("/a/../b"), Some(PathBuf::from("/b")));
+}
+
+#[test]
+fn normalize_std_path_fails_closed_where_the_string_helper_does_not() {
+    assert_eq!(normalize_std_path(Path::new("../a")), None);
+    assert_eq!(normalize_std_path(Path::new("/..")), None);
+    assert_eq!(normalize_std_path(Path::new("a/../../x")), None);
+    // The existing fail-open string helper is unchanged.
+    assert_eq!(normalize_lexical("../a"), "a");
+    assert_eq!(normalize_lexical("/../a"), "/a");
 }

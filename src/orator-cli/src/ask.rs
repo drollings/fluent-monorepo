@@ -14,15 +14,82 @@ pub enum AskFail {
     Error(String),
 }
 
+/// Effective ask model: the `roles.chat` head wins; an empty list
+/// falls back to the `llm.model` leaf (never the top-level
+/// `default` — that tag names the audio-bundle model, not the chat
+/// model). Defaults seed head and leaf equal, so default configs
+/// resolve byte-identically through either layer. Pure (no weights,
+/// no I/O) so resolution pins without hardware.
+#[must_use]
+pub fn resolve_ask_model(config: &orator_core::OratorConfig) -> String {
+    orator_core::resolve_role_model(&config.roles, "chat")
+        .unwrap_or_else(|| config.llm.model.clone())
+}
+
+/// Effective LLM section for ask and boot: the leaf with the resolved
+/// head as its model, composed `ctx`/`n_batch` applied only when the
+/// tables specify them, and a table weights declaration applied when
+/// the head's entry declares one. Every composed value must satisfy
+/// the same bounds `config set` enforces on the leaves, so tables
+/// cannot smuggle a boot the leaves would refuse. Pure: the caller
+/// (supervised boot, direct session) does the I/O.
+pub fn effective_llm_config(
+    config: &orator_core::OratorConfig,
+) -> Result<orator_core::LlmEndpointConfig, String> {
+    let mut llm = config.llm.clone();
+    llm.model = resolve_ask_model(config);
+    let composed =
+        orator_core::compose_role_params(&config.models, &config.roles, "chat", &llm.model);
+    if let Some(value) = composed.get("ctx") {
+        llm.ctx = composed_u16("ctx", value, 1024)?;
+    }
+    if let Some(value) = composed.get("n_batch") {
+        llm.n_batch = composed_u16("n_batch", value, 64)?;
+    }
+    if let Some(entry) = config.models.models.get(&llm.model) {
+        if let Some(declared) = entry
+            .weights
+            .as_deref()
+            .filter(|weights| !weights.is_empty())
+        {
+            let resolved =
+                orator_core::resolve_model_weights(&config.models, &config.gguf_dir, &llm.model)
+                    .unwrap_or_else(|| std::path::PathBuf::from(declared));
+            llm.weights = resolved.to_string_lossy().into_owned();
+        }
+    }
+    Ok(llm)
+}
+
+/// One composed tuning value: an integer in `min..=u16::MAX` (the
+/// leaf field minima: 1024 for `ctx`, 64 for `n_batch`). Anything
+/// else refuses loudly naming the key.
+fn composed_u16(key: &str, value: &serde_json::Value, min: u16) -> Result<u16, String> {
+    let number = value
+        .as_u64()
+        .filter(|_| value.is_number())
+        .ok_or_else(|| {
+            format!("orator: bad chat {key} {value} (expected an integer {min}..=65535)")
+        })?;
+    u16::try_from(number)
+        .ok()
+        .filter(|parsed| *parsed >= min)
+        .ok_or_else(|| {
+            format!("orator: bad chat {key} {value} (expected an integer {min}..=65535)")
+        })
+}
+
 /// Strict supervised-port parse over `llm.endpoint` (`host:port`).
 /// Garbage or missing ports refuse instead of defaulting to an
 /// auto-reserve that would boot elsewhere. Explicit `0` still means
-/// auto-reserve (the supervisor's documented shape).
+/// auto-reserve (the supervisor's documented shape). Shares the one
+/// endpoint grammar with `config set`, so set-time and use-time agree.
 pub fn parse_ask_port(endpoint: &str) -> Result<u16, String> {
-    let raw = endpoint.rsplit(':').next().unwrap_or("");
-    raw.parse::<u16>().map_err(|_| {
-        format!("orator: invalid port in llm.endpoint {endpoint:?} (expected host:port)")
-    })
+    orator_core::parse_endpoint(endpoint)
+        .map(|parts| parts.port)
+        .map_err(|_| {
+            format!("orator: invalid port in llm.endpoint {endpoint:?} (expected host:port)")
+        })
 }
 
 /// Fail-fast weights check: declared-and-present wins; declared-but
@@ -31,9 +98,7 @@ pub fn parse_ask_port(endpoint: &str) -> Result<u16, String> {
 /// entries additionally verify the file being used (size stat, then
 /// SHA-256 over those bytes): a tampered `.gguf` refuses even though
 /// the file exists.
-pub fn check_ask_weights(
-    endpoint: &orator_core::LlmEndpointConfig,
-) -> Result<PathBuf, String> {
+pub fn check_ask_weights(endpoint: &orator_core::LlmEndpointConfig) -> Result<PathBuf, String> {
     let path = match orator_core::resolve_llm_weights(endpoint) {
         Some(path) if path.exists() => path,
         Some(path) => return Err(format!(
@@ -58,54 +123,43 @@ pub fn check_ask_weights(
     // loudly before any boot burns the health timeout. Size stats
     // first (instant refuse on truncation/tamper); the hash runs only
     // when the size agrees.
-    if let Some(entry) = orator_models::find_entry(
-        orator_models::ModelKind::Llm,
-        &endpoint.model,
-    ) {
+    if let Some(entry) = orator_models::find_entry(orator_models::ModelKind::Llm, &endpoint.model) {
         if entry.pinned() {
-            if let Some(want) = entry.size {
-                if want > 0 {
-                    match std::fs::metadata(&path) {
-                        Ok(meta) if meta.len() != want => {
-                            return Err(format!(
-                                "orator: weights for model {} failed verification (size mismatch: got {} bytes, want {want}; re-pull the model)",
-                                endpoint.model,
-                                meta.len(),
-                            ));
-                        }
-                        Err(error) => {
-                            return Err(format!(
-                                "orator: weights for model {} refused: {error}",
-                                endpoint.model
-                            ));
-                        }
-                        _ => {}
-                    }
-                }
-            }
-            if let Some(want_digest) = entry.sha256.clone() {
-                match common_core::hash::hash_file(
-                    &path,
-                    common_core::hash::HashAlgorithm::Sha256,
-                ) {
-                    Ok(digest) if digest == want_digest => {}
-                    Ok(_) => {
-                        return Err(format!(
-                            "orator: weights for model {} failed verification (hash mismatch; re-pull the model)",
-                            endpoint.model
-                        ));
-                    }
-                    Err(error) => {
-                        return Err(format!(
-                            "orator: weights for model {} refused: {error}",
-                            endpoint.model
-                        ));
-                    }
-                }
-            }
+            verify_pinned_ask_weights(&entry, &path, &endpoint.model)?;
         }
     }
     Ok(path)
+}
+
+/// Verify the file an ask turn will use against a pinned catalog entry.
+///
+/// Size is checked before hashing; each verifier outcome maps back to the
+/// preflight refusal text, with I/O failures named as a refusal rather than a
+/// silent pass. Only pinned entries reach here.
+pub(crate) fn verify_pinned_ask_weights(
+    entry: &orator_models::ModelEntry,
+    path: &std::path::Path,
+    model: &str,
+) -> Result<(), String> {
+    use common_core::hash::FileVerification;
+
+    let expected_size = std::num::NonZeroU64::new(entry.size.unwrap_or(0));
+    match common_core::hash::verify_sha256_file(
+        path,
+        expected_size,
+        entry.sha256.as_deref().unwrap_or_default(),
+    ) {
+        Ok(FileVerification::Match) => Ok(()),
+        Ok(FileVerification::SizeMismatch { actual, expected }) => Err(format!(
+            "orator: weights for model {model} failed verification (size mismatch: got {actual} bytes, want {expected}; re-pull the model)"
+        )),
+        Ok(FileVerification::HashMismatch { .. }) => Err(format!(
+            "orator: weights for model {model} failed verification (hash mismatch; re-pull the model)"
+        )),
+        Err(error) => Err(format!(
+            "orator: weights for model {model} refused: {error}"
+        )),
+    }
 }
 
 /// Speak-failure note: the answer already printed, so the voice

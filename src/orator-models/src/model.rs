@@ -76,8 +76,7 @@ pub fn whisper_entries() -> Vec<ModelEntry> {
             file: "ggml-tiny.bin".to_string(),
             size: Some(77_691_713),
             sha256: Some(
-                "be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21"
-                    .to_string(),
+                "be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21".to_string(),
             ),
         },
         ModelEntry {
@@ -113,10 +112,10 @@ pub fn whisper_entries() -> Vec<ModelEntry> {
 pub fn llm_entries() -> Vec<ModelEntry> {
     vec![
         ModelEntry {
-            name: "bartowski/lfm3-1.7b".to_string(),
+            name: "liquidai/lfm3-audio-2b".to_string(),
             kind: ModelKind::Llm,
-            repo: "bartowski/lfm3-1.7b".to_string(),
-            file: "bartowski/lfm3-1.7b/latest.gguf".to_string(),
+            repo: "liquidai/lfm3-audio-2b".to_string(),
+            file: "liquidai/lfm3-audio-2b/latest.gguf".to_string(),
             size: Some(1_846_236_704),
             sha256: Some(
                 "d4e36902ba8f0ee7b333596030a59d650f88ac76660b4d9ba5ff77c3c2258fc0".to_string(),

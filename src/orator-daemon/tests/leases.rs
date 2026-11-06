@@ -29,11 +29,13 @@ fn slow_audio_server(delay_ms: u64) -> httpmock::MockServer {
     let server = httpmock::MockServer::start();
     server.mock(|when, then| {
         when.method("POST").path("/v1/chat/completions");
-        then.status(200).body(format!(
-            "data: {{\"choices\":[{{\"delta\":{{\"audio_chunk\":{{\"data\":\"{}\"}}}}}}]}}\n\
+        then.status(200)
+            .body(format!(
+                "data: {{\"choices\":[{{\"delta\":{{\"audio_chunk\":{{\"data\":\"{}\"}}}}}}]}}\n\
              data: [DONE]\n",
-            one_f32()
-        )).delay(Duration::from_millis(delay_ms));
+                one_f32()
+            ))
+            .delay(Duration::from_millis(delay_ms));
     });
     server
 }
@@ -94,10 +96,7 @@ fn held_lease_holds_past_idle_released_reaps() {
             Duration::from_secs(1),
             std::time::Instant::now(),
         );
-        assert!(
-            state.server.is_none(),
-            "released leases reap when idle"
-        );
+        assert!(state.server.is_none(), "released leases reap when idle");
     }
     owner.shutdown();
 }
@@ -164,7 +163,10 @@ fn slow_session_never_blocks_fast_session() {
                 .expect("fast turn serves");
             (out, started.elapsed())
         });
-        let (_, (out, elapsed)) = (slow_turn.join().expect("slow done"), fast_turn.join().expect("fast done"));
+        let (_, (out, elapsed)) = (
+            slow_turn.join().expect("slow done"),
+            fast_turn.join().expect("fast done"),
+        );
         let _ = out;
         (true, elapsed)
     });
@@ -269,7 +271,10 @@ fn mid_turn_shutdown_reaps_everything_owned() {
     }
     owner.shutdown();
     let outcome = worker.join().expect("in-flight turn completes boundedly");
-    assert!(outcome.is_ok(), "shutdown never strands a turn: {outcome:?}");
+    assert!(
+        outcome.is_ok(),
+        "shutdown never strands a turn: {outcome:?}"
+    );
     assert!(
         owner.list_sessions().is_empty(),
         "shutdown stops every session"
@@ -280,8 +285,8 @@ fn mid_turn_shutdown_reaps_everything_owned() {
         "drained entries release"
     );
     assert!(!owner.has_server(), "the child is reaped, never leaked");
-    let error = common_core::runtime::block_on(owner.ensure())
-        .expect_err("post-shutdown ensures fail");
+    let error =
+        common_core::runtime::block_on(owner.ensure()).expect_err("post-shutdown ensures fail");
     assert!(
         matches!(error, VoiceError::ShuttingDown),
         "shutdown latches: {error:?}"

@@ -23,7 +23,10 @@ fn fresh_database_lands_on_current_version() {
             Ok(())
         })
         .expect("re-migrate");
-    assert_eq!(store.with_conn(schema_version).expect("version"), CURRENT_VERSION);
+    assert_eq!(
+        store.with_conn(schema_version).expect("version"),
+        CURRENT_VERSION
+    );
 }
 
 #[test]

@@ -282,3 +282,28 @@ fn control_whitespace_and_control_stay_fractional_or_zero() {
     assert_eq!(estimate_tokens_with("abcdefgh", 0), 8);
     assert_eq!(estimate_chars_for_tokens(100, 0), 100);
 }
+
+// ── M10-S2: truncate_middle ──────────────────────────────────────────
+
+#[test]
+fn truncate_middle_splits_head_marker_tail() {
+    assert_eq!(truncate_middle("hello world", 5, 5, "|"), "hello|world");
+    assert_eq!(truncate_middle("hi", 10, 10, "|"), "hi|hi");
+    assert_eq!(truncate_middle("abc", 0, 0, "M"), "M");
+    assert_eq!(truncate_middle("", 4, 4, "M"), "M");
+    assert_eq!(truncate_middle("abcdef", 2, 0, "-"), "ab-");
+    assert_eq!(truncate_middle("abcdef", 0, 2, "-"), "-ef");
+}
+
+#[test]
+fn truncate_middle_splits_chars_not_bytes() {
+    // Emoji are one char each: head/tail counts never split code.
+    assert_eq!(truncate_middle("a🙂b🙂c", 2, 2, "|"), "a🙂|🙂c");
+}
+
+#[test]
+fn truncate_middle_overlap_duplicates() {
+    // Overlapping halves duplicate the middle — the helper never
+    // hides this; callers guarantee disjoint halves on bound paths.
+    assert_eq!(truncate_middle("abcde", 4, 4, "|"), "abcd|bcde");
+}

@@ -40,15 +40,15 @@ pub fn verify_report(
         failed: false,
         unknown: false,
     };
-    for row in rows.iter().filter(|row| name.is_empty() || row.name == name) {
+    for row in rows
+        .iter()
+        .filter(|row| name.is_empty() || row.name == name)
+    {
         let named = !name.is_empty();
         let (line, failed) = if !row.present {
             (format!("{}: missing", row.name), named)
         } else if !row.pinned {
-            (
-                format!("{}: unverified (unpinned)", row.name),
-                named,
-            )
+            (format!("{}: unverified (unpinned)", row.name), named)
         } else {
             match check(&row.name) {
                 Ok(true) => (format!("{}: ok", row.name), false),
@@ -60,6 +60,19 @@ pub fn verify_report(
         report.lines.push(line);
     }
     report
+}
+
+/// stderr progress text for one hashed entry: mirrors the report
+/// wording so the progress channel and the report agree entry by
+/// entry. Single home for the text; the binary prints it per entry
+/// as hashing completes (stdout keeps the full report unchanged).
+#[must_use]
+pub fn verify_progress_line(name: &str, outcome: &Result<bool, String>) -> String {
+    match outcome {
+        Ok(true) => format!("verify {name}: ok"),
+        Ok(false) => format!("verify {name}: MISMATCH"),
+        Err(detail) => format!("verify {name}: {detail}"),
+    }
 }
 
 /// Fetch one pinned single-file entry through the shared artifact

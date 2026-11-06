@@ -62,7 +62,10 @@ fn equal_clocks_do_not_reorder() {
             word("sys-two", Channel::Sys, 60),
         ],
     );
-    let texts: Vec<String> = drain(&queue, 4).into_iter().map(|record| record.text).collect();
+    let texts: Vec<String> = drain(&queue, 4)
+        .into_iter()
+        .map(|record| record.text)
+        .collect();
     assert_eq!(texts, vec!["mic-one", "sys-one", "mic-two", "sys-two"]);
 }
 
@@ -80,7 +83,10 @@ fn skewed_lanes_interleave_by_media_time() {
             word("sys-mid", Channel::Sys, 320),
         ],
     );
-    let texts: Vec<String> = drain(&queue, 4).into_iter().map(|record| record.text).collect();
+    let texts: Vec<String> = drain(&queue, 4)
+        .into_iter()
+        .map(|record| record.text)
+        .collect();
     assert_eq!(texts, vec!["sys-early", "mic-mid", "sys-mid", "mic-late"]);
 }
 

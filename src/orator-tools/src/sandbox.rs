@@ -7,7 +7,7 @@
 //! router's `AuditRecord`. File paths additionally pass the
 //! check-then-open guard.
 
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -17,7 +17,9 @@ use crate::tool::ToolError;
 
 /// Symlink resolutions before containment refuses (matches the 40-hop
 /// shape of the reference guard).
-pub const MAX_SYMLINK_HOPS: u32 = 40;
+/// Canonical home: `common_core::path::MAX_SYMLINK_HOPS` (re-exported
+/// for API compat).
+pub use common_core::path::MAX_SYMLINK_HOPS;
 
 /// In-memory audit cap: oldest rows drop past this bound.
 pub const MAX_AUDIT_ROWS: usize = 256;
@@ -123,10 +125,7 @@ impl Guarded {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt as _;
-            let _ = std::fs::set_permissions(
-                &config.root,
-                std::fs::Permissions::from_mode(0o700),
-            );
+            let _ = std::fs::set_permissions(&config.root, std::fs::Permissions::from_mode(0o700));
         }
         Ok(Self {
             config,
@@ -147,13 +146,19 @@ impl Guarded {
     /// ancestor walk and the tail re-attachment are hop-capped with a
     /// containment check per hop and `..` normalized per join, so
     /// `a/../../x` and chained `b->c->outside` both refuse.
+    ///
+    /// Layering (intentional, not duplication): this is the
+    /// authoritative jail — authorization always goes through `within`
+    /// plus `open_within` (fd re-validation). `orator_core::paths`
+    /// `within_root` is the fast check for paths that are never
+    /// opened. Both share `common_core::path::MAX_SYMLINK_HOPS`.
     pub fn within(&self, path: &Path) -> Result<PathBuf, WithinError> {
         let joined = if path.is_absolute() {
             path.to_path_buf()
         } else {
             self.config.root.join(path)
         };
-        let normal = normalize_lexical(&joined)
+        let normal = common_core::path::normalize_std_path(&joined)
             .ok_or_else(|| WithinError::Escape(path.display().to_string()))?;
         if !normal.starts_with(&self.config.root) {
             return Err(WithinError::Escape(path.display().to_string()));
@@ -275,13 +280,21 @@ impl Guarded {
                 Err(_) => {
                     // Lost a race with another creator: re-validate the
                     // full candidate before proceeding.
-                    let _ = self.within(candidate.strip_prefix(&self.config.root).unwrap_or(candidate))?;
+                    let _ = self.within(
+                        candidate
+                            .strip_prefix(&self.config.root)
+                            .unwrap_or(candidate),
+                    )?;
                 }
             }
         }
         // Final re-validation: the whole candidate must still resolve
         // inside after the mkdirs.
-        let _ = self.within(candidate.strip_prefix(&self.config.root).unwrap_or(candidate))?;
+        let _ = self.within(
+            candidate
+                .strip_prefix(&self.config.root)
+                .unwrap_or(candidate),
+        )?;
         Ok(())
     }
 
@@ -361,7 +374,10 @@ impl Guarded {
             }
             Ok(Err(error)) => {
                 self.audit(tool, "wait-failed", started, Some(ms));
-                Err(ToolError::Failed(tool.to_string(), format!("wait: {error}")))
+                Err(ToolError::Failed(
+                    tool.to_string(),
+                    format!("wait: {error}"),
+                ))
             }
             Err(_) => {
                 // Budget fired: kill the whole group, then reap. The
@@ -412,10 +428,7 @@ fn real_path_of(file: &std::fs::File) -> Result<PathBuf, std::io::Error> {
     let fd = file.as_raw_fd();
     let link = std::fs::read_link(format!("/proc/self/fd/{fd}"))?;
     let text = link.to_string_lossy();
-    let trimmed = text
-        .strip_suffix(" (deleted)")
-        .unwrap_or(&text)
-        .to_string();
+    let trimmed = text.strip_suffix(" (deleted)").unwrap_or(&text).to_string();
     Ok(PathBuf::from(trimmed))
 }
 
@@ -436,24 +449,6 @@ pub fn check_fd_containment(
     }
 }
 
-/// Lexically normalize `path` (`..` pops, `.` drops, `//` collapses).
-/// Returns `None` when `..` would escape the filesystem root.
-fn normalize_lexical(path: &Path) -> Option<PathBuf> {
-    let mut normal = PathBuf::new();
-    for component in path.components() {
-        match component {
-            Component::ParentDir => {
-                if !normal.pop() {
-                    return None;
-                }
-            }
-            Component::CurDir => {}
-            other => normal.push(other.as_os_str()),
-        }
-    }
-    Some(normal)
-}
-
 /// Whether `path` is itself a symlink (never follows).
 fn is_symlink(path: &Path) -> bool {
     std::fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_symlink())
@@ -471,7 +466,7 @@ fn resolve_symlink_chain(
 ) -> Result<PathBuf, WithinError> {
     // Normalize the join itself so `..` in a link target cannot skip
     // out before the containment check runs.
-    let mut current = normalize_lexical(start)
+    let mut current = common_core::path::normalize_std_path(start)
         .ok_or_else(|| WithinError::Escape(original.display().to_string()))?;
     if !current.starts_with(root) {
         return Err(WithinError::Escape(original.display().to_string()));
@@ -490,7 +485,7 @@ fn resolve_symlink_chain(
                 None => target,
             }
         };
-        current = normalize_lexical(&joined)
+        current = common_core::path::normalize_std_path(&joined)
             .ok_or_else(|| WithinError::Escape(original.display().to_string()))?;
         if !current.starts_with(root) {
             return Err(WithinError::Escape(original.display().to_string()));

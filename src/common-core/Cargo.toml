@@ -11,6 +11,7 @@ sqlite = ["dep:rusqlite"]
 
 [dependencies]
 http = { workspace = true }
+base64 = { workspace = true }
 bitvec = { workspace = true }
 blake3 = { workspace = true }
 dirs = { workspace = true }

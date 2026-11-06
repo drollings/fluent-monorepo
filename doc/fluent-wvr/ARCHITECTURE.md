@@ -12,7 +12,7 @@
 | `work` | `WorkContext` (four channels: `outputs` typed, `structured` JSON, `data` boundary-only, `metadata` dynamic), `WorkError`, `WorkOutput` | `src/fluent-wvr/src/work.rs` |
 | `wrapper` | `Instrumented`, `ComponentAdapter`, `ComponentCascade`, `MiddlewareChain`, `Pipeline`, `retry_call` | `src/fluent-wvr/src/wrapper.rs` |
 | `capability` | `Capability`, `CapabilitySet`, `CURRENT_CAPS`, `check_capability`, `FsCapability` | `src/fluent-wvr/src/capability.rs` |
-| `ladder` | `first_accept_in_order` / `first_accept_in_order_sync` (no second walker anywhere) | `src/fluent-wvr/src/ladder.rs` |
+| `ladder` | `first_accept_in_order` / `first_accept_in_order_sync` plus the infallible-`Option` specialization `first_some_in_order_sync` (no second walker anywhere) | `src/fluent-wvr/src/ladder.rs` |
 | `runtime` | `Runtime`, `NoopRuntime` | `src/fluent-wvr/src/runtime.rs` |
 | `store` | `OutputStore` typed handoff accumulator | `src/fluent-wvr/src/store.rs` |
 | `boundary` | `repair_boundary`, `decode_boundary` tolerant LLM-output codec | `src/fluent-wvr/src/boundary.rs` |

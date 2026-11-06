@@ -35,7 +35,10 @@ impl crate::pipeline::SynthSeam for Script {
 
 fn pipeline() -> (TtsPipeline, Arc<Script>) {
     let seam = Arc::new(Script::new());
-    let pipe = TtsPipeline::new(Arc::clone(&seam) as Arc<dyn crate::pipeline::SynthSeam>, Epoch(1));
+    let pipe = TtsPipeline::new(
+        Arc::clone(&seam) as Arc<dyn crate::pipeline::SynthSeam>,
+        Epoch(1),
+    );
     (pipe, seam)
 }
 
@@ -69,7 +72,9 @@ fn stale_epoch_never_plays() {
     let second = pipe.step().expect("step").expect("audio");
     let spoken: Vec<&str> = second.marks.iter().map(|mark| mark.text.as_str()).collect();
     assert!(
-        !spoken.iter().any(|word| ["Old", "news", "yesterday"].contains(word)),
+        !spoken
+            .iter()
+            .any(|word| ["Old", "news", "yesterday"].contains(word)),
         "stale words must never play: {spoken:?}"
     );
     assert!(spoken.contains(&"Brand"));
@@ -101,4 +106,31 @@ fn drained_pipeline_reports_none() {
     pipe.push_text("Short one here.", Epoch(1));
     while pipe.step().expect("drain").is_some() {}
     assert!(pipe.step().expect("drained").is_none());
+}
+
+/// M15-S1: the pipeline field surface. Tunables live on the backend,
+/// so `set_field` always refuses with the pointer; `get_field`
+/// exposes the read-only epoch/queued pair. `describe()` is the
+/// schema golden.
+#[test]
+fn pipeline_field_surface_pins_read_only_schema() {
+    use fluent_wvr::{Describable, FieldAccess};
+    let (mut pipe, _) = pipeline();
+    assert_eq!(
+        pipe.describe(),
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "epoch": { "type": "integer", "description": "Reply-generation epoch" },
+                "queued": { "type": "integer", "description": "Chunks waiting" }
+            },
+            "required": ["epoch", "queued"]
+        })
+    );
+    assert_eq!(pipe.field_names(), &["epoch", "queued"]);
+    assert_eq!(pipe.get_field("epoch").expect("epoch reads"), "1");
+    assert_eq!(pipe.get_field("queued").expect("queued reads"), "0");
+    let error = pipe.set_field("epoch", "2").expect_err("read-only refuses");
+    assert!(error.to_string().contains("backend"), "{error}");
+    pipe.get_field("nope").expect_err("unknown reads reject");
 }

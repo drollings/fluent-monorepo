@@ -25,50 +25,40 @@ pub enum StreamEvent {
 }
 
 /// Encode mono f32 samples as 16-bit PCM WAV bytes.
+/// Header layout shared with `orator_audio::wav::encode_wav_mono`
+/// (`common_core::pcm::wav_frame_header`); payload quantizer shared
+/// with the Transcribe encoder (`TowardZero`). Byte-identical to the
+/// previous inline construction (pinned by `orator_s2s_wav_header_golden`).
 #[must_use]
 pub fn encode_wav_pcm16(samples: &[f32], sample_rate: u32) -> Vec<u8> {
-    let data_len = samples.len() * 2;
-    let mut out = Vec::with_capacity(44 + data_len);
-    out.extend_from_slice(b"RIFF");
-    out.extend_from_slice(&(36 + data_len as u32).to_le_bytes());
-    out.extend_from_slice(b"WAVEfmt ");
-    out.extend_from_slice(&16u32.to_le_bytes());
-    out.extend_from_slice(&1u16.to_le_bytes());
-    out.extend_from_slice(&1u16.to_le_bytes());
-    out.extend_from_slice(&sample_rate.to_le_bytes());
-    out.extend_from_slice(&(sample_rate * 2).to_le_bytes());
-    out.extend_from_slice(&2u16.to_le_bytes());
-    out.extend_from_slice(&16u16.to_le_bytes());
-    out.extend_from_slice(b"data");
-    out.extend_from_slice(&(data_len as u32).to_le_bytes());
-    for sample in samples {
-        let clamped = sample.clamp(-1.0, 1.0);
-        out.extend_from_slice(&((clamped * 32767.0) as i16).to_le_bytes());
-    }
-    out
+    use common_core::pcm::{Rounding, Scale16};
+    common_core::pcm::encode_wav_mono_pcm16(
+        samples,
+        sample_rate,
+        Scale16::Symmetric32767,
+        Rounding::TowardZero,
+    )
 }
 
 /// Base64 (standard) encode bytes for a message part.
+/// Shared codec home: `common_core::pcm`.
 #[must_use]
 pub fn b64(bytes: &[u8]) -> String {
-    use base64::prelude::*;
-    BASE64_STANDARD.encode(bytes)
+    common_core::pcm::encode_base64(bytes)
 }
 
 /// Base64 decode, naming the failure.
+/// Shared codec home: `common_core::pcm`; the `bad base64: ` prefix stays.
 pub fn unb64(text: &str) -> Result<Vec<u8>, String> {
-    use base64::prelude::*;
-    BASE64_STANDARD.decode(text.trim()).map_err(|error| format!("bad base64: {error}"))
+    common_core::pcm::decode_base64_trimmed(text).map_err(|error| format!("bad base64: {error}"))
 }
 
 /// Little-endian f32 PCM bytes to samples (the `audio_chunk` shape).
 /// A trailing partial sample is dropped, never fabricated.
+/// Shared framing home: `common_core::pcm`.
 #[must_use]
 pub fn pcm_bytes_to_f32(bytes: &[u8]) -> Vec<f32> {
-    bytes
-        .chunks_exact(4)
-        .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-        .collect()
+    common_core::pcm::decode_f32_le(bytes)
 }
 
 /// System message part.
@@ -138,7 +128,11 @@ pub fn parse_sse_line(line: &str) -> Option<Vec<StreamEvent>> {
     }
     let value: serde_json::Value = serde_json::from_str(data).ok()?;
     let choice = value.get("choices")?.as_array()?.first()?;
-    if choice.get("finish_reason").and_then(|reason| reason.as_str()) == Some("stop") {
+    if choice
+        .get("finish_reason")
+        .and_then(|reason| reason.as_str())
+        == Some("stop")
+    {
         return Some(vec![StreamEvent::Done]);
     }
     let delta = choice.get("delta")?;

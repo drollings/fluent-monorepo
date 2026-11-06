@@ -472,16 +472,6 @@ test-$(1): ## Run the $(2) Tier-0/1/2 suite (hermetic; no live-AI)
 endef
 $(foreach pair,$(TEST_CRATES),$(eval $(call test-crate-rule,$(firstword $(subst :, ,$(pair))),$(lastword $(subst :, ,$(pair))))))
 
-# Historical `test-<shorthand>` / `router-*` spellings: thin aliases onto the
-# canonical `<component>-test` (and the rich `test-router`) so every name in
-# the docs and older scripts keeps resolving to one implementation.
-.PHONY: test-wvr test-concurrency test-dag test-coral test-guidance
-test-wvr: fluent-wvr-test
-test-concurrency: fluent-concurrency-test
-test-dag: dag-test
-test-coral: coral-test
-test-guidance: guidance-test
-
 .PHONY: router-test router-test-all
 router-test: test-router
 router-test-all: test-router-all
@@ -542,7 +532,7 @@ guidance_PKGS           := guidance-core guidance guidance-ontology
 coral_PKGS              := coral-context coral
 protopyne_PKGS          := protopyne-types protopyne-kernels protopyne-store protopyne-strategy protopyne-venue protopyne-server
 protopyne-egui_PKGS     := protopyne-egui
-orator_PKGS            := orator-core orator-audio orator-vad orator-stt orator-llm orator-tts orator-turn orator-tools orator-store orator-models orator-diar orator-notes orator-s2s orator-desktop orator-testkit orator-bench orator-daemon orator-cli
+orator_PKGS            := orator-core orator-audio orator-vad orator-stt orator-llm orator-tts orator-turn orator-tools orator-store orator-models orator-diar orator-notes orator-s2s orator-desktop orator-testkit orator-bench orator-daemon orator-cli orator-lfm
 # The trading terminal's golden/contract tests compile only under these
 # features, so its gates carry them (its `demo_shell` golden suite is skipped
 # without them).
@@ -599,7 +589,9 @@ LIVE_CRATES := \
 	orator_llm:orator-llm \
 	orator_stt:orator-stt \
 	orator_tts:orator-tts \
-	orator_s2s:orator-s2s
+	orator_s2s:orator-s2s \
+	orator_cli:orator-cli \
+	orator_lfm:orator-lfm
 
 # Live-AI feature sets per crate shorthand (the `ort` live tests drive real
 # `ort` sessions, so they need `onnx` on top of `live-ai`; every other crate's
@@ -614,6 +606,8 @@ LIVE_FEATURES_orator_llm := live-ai
 LIVE_FEATURES_orator_stt := live-ai
 LIVE_FEATURES_orator_tts := live-ai
 LIVE_FEATURES_orator_s2s := live-ai
+LIVE_FEATURES_orator_cli := live-ai
+LIVE_FEATURES_orator_lfm := live-ai
 
 define live-crate-rule
 .PHONY: $(1)-test-live
@@ -623,7 +617,7 @@ endef
 $(foreach pair,$(LIVE_CRATES),$(eval $(call live-crate-rule,$(firstword $(subst :, ,$(pair))),$(lastword $(subst :, ,$(pair))))))
 
 .PHONY: orator-test-live
-orator-test-live: orator_llm-test-live orator_stt-test-live orator_tts-test-live orator_s2s-test-live ## Run the orator live-AI suites (LLM + STT + TTS + S2S); skip-not-fail without env
+orator-test-live: orator_llm-test-live orator_stt-test-live orator_tts-test-live orator_s2s-test-live orator_cli-test-live orator_lfm-test-live ## Run the orator live-AI suites (LLM + STT + TTS + S2S + TUI barge + LFM3 reference); skip-not-fail without env
 
 .PHONY: test-live
 test-live: ## Run ALL live-AI tests (the ONLY real-inference pathway); skips cleanly without env

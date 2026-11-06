@@ -170,7 +170,10 @@ fn single_sentence_is_one_identical_synth_call() {
         chunks,
         synth,
         move |samples: &[f32]| -> Result<(), String> {
-            played_out.lock().expect("play log").extend_from_slice(samples);
+            played_out
+                .lock()
+                .expect("play log")
+                .extend_from_slice(samples);
             Ok(())
         },
     )

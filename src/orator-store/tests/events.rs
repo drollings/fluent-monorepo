@@ -5,8 +5,12 @@ use crate::events::{EventLog, REPLAY_PAGE};
 #[test]
 fn append_assigns_monotonic_cursors() {
     let log = EventLog::in_memory().expect("in-memory log");
-    let first = log.append("s1", 1, "SessionStarted", "{}", 1000).expect("append");
-    let second = log.append("s1", 1, "ReplyFinal", "{\"text\":\"hi\"}", 1001).expect("append");
+    let first = log
+        .append("s1", 1, "SessionStarted", "{}", 1000)
+        .expect("append");
+    let second = log
+        .append("s1", 1, "ReplyFinal", "{\"text\":\"hi\"}", 1001)
+        .expect("append");
     assert!(second.seq > first.seq);
     assert!(first.seq >= 1);
     assert_eq!(log.latest().expect("latest"), Some(second.seq));
@@ -17,8 +21,14 @@ fn replay_pages_without_gaps_or_dupes() {
     let log = EventLog::in_memory().expect("in-memory log");
     let count = 120usize;
     for index in 0..count {
-        log.append("s1", 1, "ReplyFinal", &format!("{{\"n\":{index}}}"), 1000 + index as u64)
-            .expect("append");
+        log.append(
+            "s1",
+            1,
+            "ReplyFinal",
+            &format!("{{\"n\":{index}}}"),
+            1000 + index as u64,
+        )
+        .expect("append");
     }
     // Reconnect from mid-stream: page through and demand contiguity.
     let since = 40i64;
@@ -54,7 +64,8 @@ fn replay_respects_the_page_cap() {
     assert_eq!(REPLAY_PAGE, 5_000);
     let log = EventLog::in_memory().expect("in-memory log");
     for index in 0..10 {
-        log.append("s1", 1, "ReplyFinal", &format!("{index}"), index).expect("append");
+        log.append("s1", 1, "ReplyFinal", &format!("{index}"), index)
+            .expect("append");
     }
     let page = log.replay(0, usize::MAX).expect("replay");
     assert!(page.len() <= REPLAY_PAGE);
@@ -63,7 +74,9 @@ fn replay_respects_the_page_cap() {
 #[test]
 fn ephemerals_never_persist_nor_move_the_cursor() {
     let log = EventLog::in_memory().expect("in-memory log");
-    let durable = log.append("s1", 1, "ReplyFinal", "hi", 1000).expect("append");
+    let durable = log
+        .append("s1", 1, "ReplyFinal", "hi", 1000)
+        .expect("append");
     let live = log.publish_ephemeral("s1", 1, "SttPartial", "typing", 1001);
     assert!(live.seq < 0);
     assert!(!live.durable());
@@ -83,13 +96,20 @@ fn ephemerals_never_persist_nor_move_the_cursor() {
 #[test]
 fn dictation_history_is_a_filtered_view_not_a_second_store() {
     let log = EventLog::in_memory().expect("in-memory log");
-    log.append("s1", 0, "note", "session started", 1000).expect("append");
-    log.append("s1", 0, "dictation", "One.", 1001).expect("append");
-    log.append("s1", 0, "reply", "answer", 1002).expect("append");
-    log.append("s1", 0, "dictation", "Two.", 1003).expect("append");
+    log.append("s1", 0, "note", "session started", 1000)
+        .expect("append");
+    log.append("s1", 0, "dictation", "One.", 1001)
+        .expect("append");
+    log.append("s1", 0, "reply", "answer", 1002)
+        .expect("append");
+    log.append("s1", 0, "dictation", "Two.", 1003)
+        .expect("append");
     let history = log.replay_kind("dictation", 0, 100).expect("replay kind");
     assert_eq!(
-        history.iter().map(|event| event.payload.as_str()).collect::<Vec<_>>(),
+        history
+            .iter()
+            .map(|event| event.payload.as_str())
+            .collect::<Vec<_>>(),
         vec!["One.", "Two."],
         "history view holds clean dictated text in order"
     );
@@ -114,6 +134,34 @@ fn usage_counters_read_without_replaying_payloads() {
     }
     assert_eq!(log.count_kind("usage", 0).expect("count"), 3);
     assert_eq!(log.count_kind("dictation", 0).expect("count"), 0);
+}
+
+#[test]
+fn session_replay_is_a_filtered_view_not_a_second_store() {
+    let log = EventLog::in_memory().expect("in-memory log");
+    log.append("s1", 0, "note", "session s1 started (meeting)", 1000)
+        .expect("append");
+    log.append("s2", 0, "note", "session s2 started (meeting)", 1001)
+        .expect("append");
+    log.append("s1", 0, "transcript", "hello", 1002)
+        .expect("append");
+    log.append("s2", 0, "transcript", "other room", 1003)
+        .expect("append");
+    log.append("s1", 0, "reply", "hi", 1004).expect("append");
+    let s1 = log.replay_session("s1", 0, 100).expect("replay session");
+    assert_eq!(
+        s1.iter()
+            .map(|event| event.payload.as_str())
+            .collect::<Vec<_>>(),
+        vec!["session s1 started (meeting)", "hello", "hi"],
+        "session view holds that session's events in order"
+    );
+    assert!(s1.iter().all(|event| event.session == "s1"));
+    // Unknown sessions replay empty (the export refusal path), never an error.
+    assert!(log
+        .replay_session("nope", 0, 100)
+        .expect("replay")
+        .is_empty());
 }
 
 #[test]
@@ -162,8 +210,14 @@ fn kill_mid_stream_reconnects_without_gaps_or_dupes() {
             .expect("migrate");
         let log = EventLog::over(store);
         for index in 0..60 {
-            log.append("s1", 1, "ReplyFinal", &format!("{{\"n\":{index}}}"), 1000 + index as u64)
-                .expect("append");
+            log.append(
+                "s1",
+                1,
+                "ReplyFinal",
+                &format!("{{\"n\":{index}}}"),
+                1000 + index as u64,
+            )
+            .expect("append");
         }
         // Drop without close: the kill under test.
     }

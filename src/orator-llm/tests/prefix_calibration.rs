@@ -7,7 +7,9 @@
 use std::sync::Arc;
 
 use fluent_concurrency::stream::StreamAbort;
-use fluent_llm::protocol::{ChatMessage, LlmError as FluentError, LlmQueueConfig, LlmRequestQueue, LlmTask};
+use fluent_llm::protocol::{
+    ChatMessage, LlmError as FluentError, LlmQueueConfig, LlmRequestQueue, LlmTask,
+};
 use orator_core::{LlmSession, Sampler, Token};
 
 use crate::session::{HttpSession, SessionConfig};

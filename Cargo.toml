@@ -57,6 +57,7 @@ members = [
     "src/orator-bench",
     "src/orator-daemon",
     "src/orator-cli",
+    "src/orator-lfm",
 ]
 
 [workspace.package]

@@ -1,8 +1,8 @@
 //! Assurance tests: shared when served, actionable otherwise —
 //! all against stub servers, no binary, no model.
 
-use orator_core::AudioBundle;
 use crate::ensure::{ensure_audio_server, served_models_hint, serves_model};
+use orator_core::AudioBundle;
 
 fn bundle() -> AudioBundle {
     AudioBundle {
@@ -227,7 +227,12 @@ fn boot_release_reaps_the_owned_child() {
     let _guard = common_core::sync::lock(&crate::ENV_LOCK);
     let prior = std::env::var_os(crate::voice::AUDIO_SERVER_ENV);
     let dir = tempfile::tempdir().expect("tempdir");
-    for name in ["backbone.gguf", "mmproj.gguf", "vocoder.gguf", "tokenizer.gguf"] {
+    for name in [
+        "backbone.gguf",
+        "mmproj.gguf",
+        "vocoder.gguf",
+        "tokenizer.gguf",
+    ] {
         std::fs::write(dir.path().join(name), b"stub").expect("stub weight");
     }
     let bundle = AudioBundle {
@@ -244,10 +249,9 @@ fn boot_release_reaps_the_owned_child() {
     std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755))
         .expect("stub server runs");
     std::env::set_var(crate::voice::AUDIO_SERVER_ENV, &script);
-    let endpoint = common_core::runtime::block_on_shared(crate::ensure::boot_audio_server(
-        &bundle, "m", true,
-    ))
-    .expect("stub server boots");
+    let endpoint =
+        common_core::runtime::block_on_shared(crate::ensure::boot_audio_server(&bundle, "m", true))
+            .expect("stub server boots");
     let port: u16 = endpoint
         .base_url()
         .rsplit(':')
@@ -279,6 +283,40 @@ fn boot_release_reaps_the_owned_child() {
 }
 
 #[test]
+fn listed_hint_unions_both_paths_in_first_seen_order_without_invalid_entries() {
+    common_core::runtime::block_on_shared(async {
+        let server = httpmock::MockServer::start();
+        crate::ensure::invalidate_hint_cache(&server.base_url());
+        server.mock(|when, then| {
+            when.method("GET").path("/models");
+            then.status(200).json_body(serde_json::json!({
+                "data": [
+                    {"id": "a"},
+                    {"object": "model"},
+                    {"id": "b"},
+                    {"id": 7},
+                ],
+            }));
+        });
+        server.mock(|when, then| {
+            when.method("GET").path("/v1/models");
+            then.status(200).json_body(serde_json::json!({
+                "data": [
+                    {"id": "b"},
+                    {"id": "c"},
+                    {"id": null},
+                    {"id": "a"},
+                ],
+            }));
+        });
+        assert_eq!(
+            served_models_hint(&server.base_url()).await,
+            "; endpoint serves: [a, b, c]"
+        );
+    });
+}
+
+#[test]
 fn audio_build_without_models_list_serves_on_options_readiness() {
     common_core::runtime::block_on_shared(async {
         let server = httpmock::MockServer::start();
@@ -293,14 +331,9 @@ fn audio_build_without_models_list_serves_on_options_readiness() {
             serves_model(&server.base_url(), "any-audio-model").await,
             "OPTIONS-ready appliance serves without a listing"
         );
-        let endpoint = ensure_audio_server(
-            &server.base_url(),
-            "any-audio-model",
-            &bundle(),
-            true,
-        )
-        .await
-        .expect("OPTIONS-ready audio build is shared, never booted");
+        let endpoint = ensure_audio_server(&server.base_url(), "any-audio-model", &bundle(), true)
+            .await
+            .expect("OPTIONS-ready audio build is shared, never booted");
         assert_eq!(endpoint.base_url(), server.base_url());
         endpoint.release();
     });
@@ -320,4 +353,240 @@ fn auto_boot_off_refuses_before_spawning() {
             Ok(_) => panic!("direct boot refusal"),
         }
     });
+}
+
+/// Writable fixture base outside `/tmp`: the ownership gate refuses
+/// anything under `/tmp`, so candidate binaries live under the test
+/// binary's own directory instead of `tempfile::tempdir()`.
+#[cfg(unix)]
+fn fixture_base() -> tempfile::TempDir {
+    let base = std::env::current_exe()
+        .expect("exe path")
+        .parent()
+        .expect("exe parent")
+        .to_path_buf();
+    tempfile::tempdir_in(base).expect("fixture base")
+}
+
+/// Healthy audio stub with an absolute interpreter path: answers
+/// `OPTIONS` 200 on the `--port` argv token, so an isolated `PATH`
+/// (no `/usr/bin` for `env`) still boots. Same contract as
+/// `FAKE_AUDIO_SERVER`, without the `env` lookup.
+#[cfg(unix)]
+const FAKE_AUDIO_SERVER_ABS: &str = r#"#!/usr/bin/python3
+import http.server
+import sys
+
+port = 8080
+args = sys.argv[1:]
+for index, arg in enumerate(args):
+    if arg == "--port" and index + 1 < len(args):
+        port = int(args[index + 1])
+
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    def do_OPTIONS(self):
+        self.send_response(200)
+        self.end_headers()
+
+    def log_message(self, *args):
+        pass
+
+
+http.server.HTTPServer(("127.0.0.1", port), Handler).serve_forever()
+"#;
+
+/// M12-S1: ordered audio candidates — first fails, second serves,
+/// third never runs. Markers prove attempt order (first ran, third
+/// absent); success proves the second served. The per-candidate
+/// `eprintln!` log fires once per failure in the same order as the
+/// attempts (one log for the first failure; none for the winner or
+/// the unattempted third).
+#[test]
+#[cfg(unix)]
+fn boot_audio_server_tries_candidates_in_order_and_stops_after_success() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let _guard = common_core::sync::lock(&crate::ENV_LOCK);
+    let prior_audio = std::env::var_os(crate::voice::AUDIO_SERVER_ENV);
+    let prior_llama = std::env::var_os(orator_llm::LLAMA_SERVER_ENV);
+    let prior_path = std::env::var_os("PATH");
+    let prior_home = std::env::var_os("HOME");
+    let prior_xdg = std::env::var_os("XDG_DATA_HOME");
+    std::env::remove_var(crate::voice::AUDIO_SERVER_ENV);
+    std::env::remove_var(orator_llm::LLAMA_SERVER_ENV);
+
+    let base = fixture_base();
+    std::env::set_var("HOME", base.path());
+    std::env::remove_var("XDG_DATA_HOME");
+    for name in ["backbone.gguf", "mmproj.gguf"] {
+        std::fs::write(base.path().join(name), b"stub").expect("stub weight");
+    }
+    let bundle = AudioBundle {
+        backbone: base.path().join("backbone.gguf"),
+        mmproj: base.path().join("mmproj.gguf"),
+        vocoder: std::path::PathBuf::new(),
+        tokenizer: std::path::PathBuf::new(),
+    };
+    let dir1 = base.path().join("a1");
+    let dir2 = base.path().join("a2");
+    let dir3 = base.path().join("a3");
+    for dir in [&dir1, &dir2, &dir3] {
+        std::fs::create_dir(dir).expect("candidate dir");
+    }
+    let marker1 = base.path().join("ran-first");
+    let marker3 = base.path().join("ran-third");
+    std::fs::write(
+        dir1.join(crate::voice::AUDIO_SERVER_BIN),
+        format!("#!/bin/sh\ntouch \"{}\"\nexit 1\n", marker1.display()),
+    )
+    .expect("failing stub writes");
+    std::fs::write(
+        dir2.join(crate::voice::AUDIO_SERVER_BIN),
+        FAKE_AUDIO_SERVER_ABS,
+    )
+    .expect("healthy stub writes");
+    std::fs::write(
+        dir3.join(crate::voice::AUDIO_SERVER_BIN),
+        format!("#!/bin/sh\ntouch \"{}\"\nsleep 30\n", marker3.display()),
+    )
+    .expect("unused stub writes");
+    for dir in [&dir1, &dir2, &dir3] {
+        std::fs::set_permissions(
+            dir.join(crate::voice::AUDIO_SERVER_BIN),
+            std::fs::Permissions::from_mode(0o755),
+        )
+        .expect("stub runs");
+    }
+    // Isolated PATH: only our three legacy candidates exist, in order.
+    // Absolute shebangs keep both shell and python stubs working.
+    std::env::set_var(
+        "PATH",
+        std::env::join_paths([dir1.clone(), dir2.clone(), dir3.clone()]).expect("join"),
+    );
+
+    let endpoint =
+        common_core::runtime::block_on_shared(crate::ensure::boot_audio_server(&bundle, "m", true));
+    let Ok(endpoint) = endpoint else {
+        panic!("second candidate serves");
+    };
+    assert!(
+        endpoint.base_url().starts_with("http://127.0.0.1:"),
+        "owned loopback endpoint: {}",
+        endpoint.base_url()
+    );
+    assert!(marker1.exists(), "first candidate ran");
+    assert!(!marker3.exists(), "third candidate never runs after success");
+    endpoint.release();
+
+    match prior_audio {
+        Some(value) => std::env::set_var(crate::voice::AUDIO_SERVER_ENV, value),
+        None => std::env::remove_var(crate::voice::AUDIO_SERVER_ENV),
+    }
+    match prior_llama {
+        Some(value) => std::env::set_var(orator_llm::LLAMA_SERVER_ENV, value),
+        None => std::env::remove_var(orator_llm::LLAMA_SERVER_ENV),
+    }
+    match prior_path {
+        Some(value) => std::env::set_var("PATH", value),
+        None => std::env::remove_var("PATH"),
+    }
+    match prior_home {
+        Some(value) => std::env::set_var("HOME", value),
+        None => std::env::remove_var("HOME"),
+    }
+    match prior_xdg {
+        Some(value) => std::env::set_var("XDG_DATA_HOME", value),
+        None => std::env::remove_var("XDG_DATA_HOME"),
+    }
+}
+
+/// M12-S1: all audio candidates fail — the exact final text carries
+/// the last error. Exec-format (spawn) vs immediate exit (exited
+/// before healthy) keeps last-error identity observable.
+#[test]
+#[cfg(unix)]
+fn boot_audio_server_returns_last_error_when_all_candidates_fail() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let _guard = common_core::sync::lock(&crate::ENV_LOCK);
+    let prior_audio = std::env::var_os(crate::voice::AUDIO_SERVER_ENV);
+    let prior_llama = std::env::var_os(orator_llm::LLAMA_SERVER_ENV);
+    let prior_path = std::env::var_os("PATH");
+    let prior_home = std::env::var_os("HOME");
+    let prior_xdg = std::env::var_os("XDG_DATA_HOME");
+    std::env::remove_var(crate::voice::AUDIO_SERVER_ENV);
+    std::env::remove_var(orator_llm::LLAMA_SERVER_ENV);
+
+    let base = fixture_base();
+    std::env::set_var("HOME", base.path());
+    std::env::remove_var("XDG_DATA_HOME");
+    for name in ["backbone.gguf", "mmproj.gguf"] {
+        std::fs::write(base.path().join(name), b"stub").expect("stub weight");
+    }
+    let bundle = AudioBundle {
+        backbone: base.path().join("backbone.gguf"),
+        mmproj: base.path().join("mmproj.gguf"),
+        vocoder: std::path::PathBuf::new(),
+        tokenizer: std::path::PathBuf::new(),
+    };
+    let dir1 = base.path().join("b1");
+    let dir2 = base.path().join("b2");
+    for dir in [&dir1, &dir2] {
+        std::fs::create_dir(dir).expect("candidate dir");
+    }
+    std::fs::write(dir1.join(crate::voice::AUDIO_SERVER_BIN), "not an executable\n")
+        .expect("exec-format stub writes");
+    std::fs::write(dir2.join(crate::voice::AUDIO_SERVER_BIN), "#!/bin/sh\nexit 1\n")
+        .expect("immediate-exit stub writes");
+    for dir in [&dir1, &dir2] {
+        std::fs::set_permissions(
+            dir.join(crate::voice::AUDIO_SERVER_BIN),
+            std::fs::Permissions::from_mode(0o755),
+        )
+        .expect("stub mode");
+    }
+    std::env::set_var(
+        "PATH",
+        std::env::join_paths([dir1.clone(), dir2.clone()]).expect("join"),
+    );
+
+    let error = common_core::runtime::block_on_shared(crate::ensure::boot_audio_server(
+        &bundle, "m", true,
+    ));
+    let Err(error) = error else {
+        panic!("all candidates fail");
+    };
+    let text = error.to_string();
+    assert!(
+        text.contains("every voice server candidate failed (last: "),
+        "exact final text: {text}"
+    );
+    assert!(
+        text.contains("exited before healthy"),
+        "last error is the immediate-exit shape: {text}"
+    );
+    assert!(
+        !text.contains("Exec format error"),
+        "first error is not returned: {text}"
+    );
+
+    match prior_audio {
+        Some(value) => std::env::set_var(crate::voice::AUDIO_SERVER_ENV, value),
+        None => std::env::remove_var(crate::voice::AUDIO_SERVER_ENV),
+    }
+    match prior_llama {
+        Some(value) => std::env::set_var(orator_llm::LLAMA_SERVER_ENV, value),
+        None => std::env::remove_var(orator_llm::LLAMA_SERVER_ENV),
+    }
+    match prior_path {
+        Some(value) => std::env::set_var("PATH", value),
+        None => std::env::remove_var("PATH"),
+    }
+    match prior_home {
+        Some(value) => std::env::set_var("HOME", value),
+        None => std::env::remove_var("HOME"),
+    }
+    match prior_xdg {
+        Some(value) => std::env::set_var("XDG_DATA_HOME", value),
+        None => std::env::remove_var("XDG_DATA_HOME"),
+    }
 }

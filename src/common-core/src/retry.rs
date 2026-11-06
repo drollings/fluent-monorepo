@@ -238,3 +238,59 @@ impl PollWithBackoff {
         }
     }
 }
+
+/// Marker for a [`run_with_budget`] timeout: which op and how long the
+/// caller waited. Data only — the caller formats its own refusal line
+/// (domain prefixes like `orator: ` stay at the call site, never here).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BudgetExceeded {
+    label: String,
+    budget_secs: u64,
+}
+
+impl BudgetExceeded {
+    /// Caller-supplied op label.
+    #[must_use]
+    pub fn label(&self) -> &str {
+        &self.label
+    }
+
+    /// Whole seconds the caller waited (mirrors `Duration::as_secs`).
+    #[must_use]
+    pub fn budget_secs(&self) -> u64 {
+        self.budget_secs
+    }
+}
+
+/// Run `op` to completion on a worker thread, waiting at most `budget`.
+///
+/// The caller never blocks past the deadline: a slow operation reports
+/// [`BudgetExceeded`] while its worker runs to completion detached (no
+/// thread accumulates — at most one stray per timed-out call, reaped by
+/// process exit at the latest). A completed `op` passes through
+/// untouched (`Ok(Ok(_))` or `Ok(Err(_))` — the caller's own errors are
+/// never rewritten as timeouts). A panicking `op` disconnects the
+/// handoff channel and surfaces as [`BudgetExceeded`], never as a
+/// propagated panic — there is no panic propagation across the worker
+/// boundary by design (see `orator_budgeted_contract`).
+pub fn run_with_budget<T, E>(
+    label: &str,
+    budget: Duration,
+    op: impl FnOnce() -> Result<T, E> + Send + 'static,
+) -> Result<Result<T, E>, BudgetExceeded>
+where
+    T: Send + 'static,
+    E: Send + 'static,
+{
+    let (tx, rx) = std::sync::mpsc::sync_channel::<Result<T, E>>(1);
+    std::thread::spawn(move || {
+        let _ = tx.send(op());
+    });
+    match rx.recv_timeout(budget) {
+        Ok(outcome) => Ok(outcome),
+        Err(_) => Err(BudgetExceeded {
+            label: label.to_string(),
+            budget_secs: budget.as_secs(),
+        }),
+    }
+}

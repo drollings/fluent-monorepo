@@ -101,10 +101,7 @@ fn split_all_covers_and_flags() {
         ("Hello there good friend,", false)
     );
     assert_eq!(
-        (
-            chunks[1].text.as_str(),
-            chunks[1].hard
-        ),
+        (chunks[1].text.as_str(), chunks[1].hard),
         ("listen. This is the second sentence here!", true)
     );
 }

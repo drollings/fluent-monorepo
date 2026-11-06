@@ -82,9 +82,8 @@ impl Frame {
         samples: Vec<f32>,
         sample_rate: u32,
     ) -> Result<Self, crate::socket::FrameError> {
-        let rate = NonZeroU32::new(sample_rate).ok_or(
-            crate::socket::FrameError::InvalidSampleRate(sample_rate),
-        )?;
+        let rate = NonZeroU32::new(sample_rate)
+            .ok_or(crate::socket::FrameError::InvalidSampleRate(sample_rate))?;
         Ok(Self {
             samples: Arc::new(samples),
             channel,

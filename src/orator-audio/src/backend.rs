@@ -72,18 +72,18 @@ impl CpalBackend {
     /// Fails ordinarily (not fatally) when no device exists.
     pub fn open_default() -> Result<Self, AudioError> {
         let host = cpal::default_host();
-        let device = host.default_input_device().ok_or_else(|| {
-            AudioError::NoDevice("no default input device".to_string())
-        })?;
+        let device = host
+            .default_input_device()
+            .ok_or_else(|| AudioError::NoDevice("no default input device".to_string()))?;
         Self::open_device(&device)
     }
 
     /// Open `device` by name. Fails when the name matches nothing.
     pub fn open_named(name: &str) -> Result<Self, AudioError> {
         let host = cpal::default_host();
-        let devices = host.input_devices().map_err(|error| {
-            AudioError::NoDevice(format!("cannot enumerate devices: {error}"))
-        })?;
+        let devices = host
+            .input_devices()
+            .map_err(|error| AudioError::NoDevice(format!("cannot enumerate devices: {error}")))?;
         for device in devices {
             if device.name().as_deref() == Ok(name) {
                 return Self::open_device(&device);
@@ -93,9 +93,9 @@ impl CpalBackend {
     }
 
     fn open_device(device: &cpal::Device) -> Result<Self, AudioError> {
-        let config = device.default_input_config().map_err(|error| {
-            AudioError::Stream(format!("no supported input config: {error}"))
-        })?;
+        let config = device
+            .default_input_config()
+            .map_err(|error| AudioError::Stream(format!("no supported input config: {error}")))?;
         let sample_rate = config.sample_rate().0;
         let (producer, consumer) = RingBuffer::new(Self::RING_SAMPLES);
         let dropped = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
@@ -113,7 +113,12 @@ impl CpalBackend {
                 &config.into(),
                 producer,
                 dropped_counter(),
-                |sample: i16| f32::from(sample) / f32::from(i16::MAX),
+                |sample: i16| {
+                    common_core::pcm::i16_to_f32_sample(
+                        sample,
+                        common_core::pcm::Scale16::Symmetric32767,
+                    )
+                },
             ),
             cpal::SampleFormat::U16 => Self::build_stream(
                 device,
@@ -128,9 +133,9 @@ impl CpalBackend {
                 )));
             }
         }?;
-        stream.play().map_err(|error| {
-            AudioError::Stream(format!("cannot start stream: {error}"))
-        })?;
+        stream
+            .play()
+            .map_err(|error| AudioError::Stream(format!("cannot start stream: {error}")))?;
         Ok(Self {
             _stream: stream,
             consumer,
@@ -160,14 +165,22 @@ impl CpalBackend {
     where
         T: cpal::SizedSample + Send + 'static,
     {
+        let channels = config.channels as usize;
+        let mut mono = Vec::with_capacity(1024);
         device
             .build_input_stream(
                 config,
                 move |samples: &[T], _| {
-                    for sample in samples {
-                        if producer.push(convert(*sample)).is_err() {
-                            dropped.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    mono.clear();
+                    let remainder = Self::collapse_to_mono(samples, convert, channels, &mut mono);
+                    let mut lost = remainder as u64;
+                    for sample in mono.drain(..) {
+                        if producer.push(sample).is_err() {
+                            lost += 1;
                         }
+                    }
+                    if lost > 0 {
+                        dropped.fetch_add(lost, std::sync::atomic::Ordering::SeqCst);
                     }
                 },
                 |error| {
@@ -176,6 +189,24 @@ impl CpalBackend {
                 None,
             )
             .map_err(|error| AudioError::Stream(format!("build failed: {error}")))
+    }
+
+    /// Collapse one interleaved device callback to mono, appending
+    /// frames into `out`. Multi-channel frames average (a stereo mic
+    /// reads as mono, never double-speed); single-channel input
+    /// passes through untouched. Returns the trailing partial-frame
+    /// sample count, which the caller counts as dropped — a partial
+    /// frame is not audio, just a torn read. The averaging composes
+    /// `common_core::pcm::extend_mono_from_interleaved`, so the
+    /// real-time callback keeps its reused `mono` vector and never
+    /// locks or awaits.
+    fn collapse_to_mono<T: Copy>(
+        samples: &[T],
+        convert: fn(T) -> f32,
+        channels: usize,
+        out: &mut Vec<f32>,
+    ) -> usize {
+        common_core::pcm::extend_mono_from_interleaved(samples.iter().copied(), channels, convert, out)
     }
 }
 

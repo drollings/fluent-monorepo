@@ -5,7 +5,8 @@ use crate::parse::{gbnf_for_tools, parse_gbnf, parse_model_output, parse_xml, Pa
 
 const GBNF_TURN: &str = r#"{"preamble": "Let me check the time.", "tool_calls": [{"name": "time_now", "arguments": {}}]}"#;
 
-const XML_TURN: &str = "Let me check the time.<tool_call><invoke name=\"time_now\"></invoke></tool_call>";
+const XML_TURN: &str =
+    "Let me check the time.<tool_call><invoke name=\"time_now\"></invoke></tool_call>";
 
 #[test]
 fn gbnf_parses_calls_with_preamble() {
@@ -31,9 +32,7 @@ fn gbnf_rejects_prose_and_non_calls() {
 #[test]
 fn xml_parses_dexter_shape_with_json_or_string_values() {
     let text = "Looking it up.<tool_call><invoke name=\"calc\"><parameter name=\"expr\">{\"op\": \"add\"}</parameter><parameter name=\"note\">rough sum</parameter></invoke></tool_call>";
-    let (calls, preamble) = parse_xml(text)
-        .expect("xml parses")
-        .expect("block found");
+    let (calls, preamble) = parse_xml(text).expect("xml parses").expect("block found");
     assert_eq!(preamble, "Looking it up.");
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].name, "calc");
@@ -84,7 +83,8 @@ fn grammar_names_every_tool_and_stays_open_on_args() {
 #[test]
 fn xml_caps_reject_attrs_and_oversize() {
     // Quote/bracket/amper in names refuse.
-    let evil = "<tool_call><invoke name=\"a'b\"><parameter name=\"x\">1</parameter></invoke></tool_call>";
+    let evil =
+        "<tool_call><invoke name=\"a'b\"><parameter name=\"x\">1</parameter></invoke></tool_call>";
     assert!(parse_xml(evil).is_err(), "quote in name refuses");
     let evil = "<tool_call><invoke name=\"shell\"><parameter name=\"a<b\">1</parameter></invoke></tool_call>";
     assert!(parse_xml(evil).is_err(), "bracket in param refuses");

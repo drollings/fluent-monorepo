@@ -4,15 +4,12 @@
 
 use std::net::SocketAddr;
 use std::sync::{
-    Arc,
     atomic::{AtomicBool, Ordering},
+    Arc,
 };
 
 use futures_util::{SinkExt, StreamExt};
-use tokio_tungstenite::{
-    MaybeTlsStream, WebSocketStream, connect_async,
-    tungstenite::Message,
-};
+use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream};
 
 use crate::socket::serve_serial;
 use crate::voice::VoiceOwner;
@@ -45,10 +42,7 @@ async fn connect(addr: SocketAddr, token: Option<&str>) -> WsStream {
 async fn try_connect(
     addr: SocketAddr,
     token: Option<&str>,
-) -> Result<
-    WsStream,
-    tokio_tungstenite::tungstenite::Error,
-> {
+) -> Result<WsStream, tokio_tungstenite::tungstenite::Error> {
     use tokio_tungstenite::tungstenite::client::IntoClientRequest;
     // Build from the URL so the handshake key is generated, then add
     // auth: a hand-built request would miss the WS headers.
@@ -71,8 +65,9 @@ async fn ws_call(
     method: &str,
     params: serde_json::Value,
 ) -> serde_json::Value {
-    let body = serde_json::to_vec(&serde_json::json!({ "id": id, "method": method, "params": params }))
-        .expect("request encodes");
+    let body =
+        serde_json::to_vec(&serde_json::json!({ "id": id, "method": method, "params": params }))
+            .expect("request encodes");
     let frame = orator_core::SocketFrame {
         kind: orator_core::MessageType::Request,
         body,
@@ -86,8 +81,7 @@ async fn ws_call(
             .expect("reply arrives")
         {
             Some(Ok(Message::Binary(bytes))) => {
-                let frame =
-                    orator_core::SocketFrame::decode(&bytes).expect("reply frame decodes");
+                let frame = orator_core::SocketFrame::decode(&bytes).expect("reply frame decodes");
                 assert_eq!(frame.kind, orator_core::MessageType::Response);
                 return serde_json::from_slice(&frame.body).expect("reply parses");
             }
@@ -108,8 +102,9 @@ fn socket_call(
     stream
         .set_read_timeout(Some(std::time::Duration::from_secs(5)))
         .expect("timeout");
-    let body = serde_json::to_vec(&serde_json::json!({ "id": 7, "method": method, "params": params }))
-        .expect("request encodes");
+    let body =
+        serde_json::to_vec(&serde_json::json!({ "id": 7, "method": method, "params": params }))
+            .expect("request encodes");
     let frame = orator_core::SocketFrame {
         kind: orator_core::MessageType::Request,
         body,
@@ -136,8 +131,7 @@ fn transport_parity_over_every_method() {
     common_core::runtime::block_on_shared(async {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("orator.sock");
-        let listener =
-            std::os::unix::net::UnixListener::bind(&path).expect("socket binds");
+        let listener = std::os::unix::net::UnixListener::bind(&path).expect("socket binds");
         let socket_voice = Arc::new(VoiceOwner::disabled());
         let (addr, stop, server) = serve_bg(Arc::new(VoiceOwner::disabled()), INACTIVITY).await;
         let mut ws = connect(addr, Some(TOKEN)).await;
@@ -153,10 +147,8 @@ fn transport_parity_over_every_method() {
             let path = path.clone();
             let socket_method = method.to_string();
             let ws_method = method.to_string();
-            let client =
-                std::thread::spawn(move || socket_call(&path, &socket_method, &params));
-            crate::socket::serve_once(&listener, 1000, 1000, &socket_voice)
-                .expect("socket serves");
+            let client = std::thread::spawn(move || socket_call(&path, &socket_method, &params));
+            crate::socket::serve_once(&listener, 1000, 1000, &socket_voice).expect("socket serves");
             let socket_reply: serde_json::Value = client.join().expect("client done");
             let ws_reply = ws_call(&mut ws, index as u64, &ws_method, ws_params).await;
             assert_eq!(
@@ -177,8 +169,7 @@ fn transport_parity_over_every_method() {
 fn handshake_refuses_without_and_with_wrong_token() {
     let _guard = serve_serial();
     common_core::runtime::block_on_shared(async {
-        let (addr, stop, server) =
-            serve_bg(Arc::new(VoiceOwner::disabled()), INACTIVITY).await;
+        let (addr, stop, server) = serve_bg(Arc::new(VoiceOwner::disabled()), INACTIVITY).await;
         let error = try_connect(addr, None)
             .await
             .expect_err("tokenless must fail")
@@ -202,8 +193,7 @@ fn handshake_refuses_without_and_with_wrong_token() {
 fn silent_connection_reaped_while_active_survives() {
     let _guard = serve_serial();
     common_core::runtime::block_on_shared(async {
-        let (addr, stop, server) =
-            serve_bg(Arc::new(VoiceOwner::disabled()), INACTIVITY).await;
+        let (addr, stop, server) = serve_bg(Arc::new(VoiceOwner::disabled()), INACTIVITY).await;
         // Silent: connect, never read or write; the server must close
         // past the inactivity bound. Queued pings may arrive first.
         let mut silent = connect(addr, Some(TOKEN)).await;
@@ -214,8 +204,7 @@ fn silent_connection_reaped_while_active_survives() {
                 std::time::Instant::now() < deadline,
                 "silent connection must be reaped"
             );
-            match tokio::time::timeout(std::time::Duration::from_secs(1), silent.next()).await
-            {
+            match tokio::time::timeout(std::time::Duration::from_secs(1), silent.next()).await {
                 Ok(Some(Ok(Message::Close(_)) | Err(_)) | None) | Err(_) => break,
                 Ok(Some(Ok(Message::Ping(_) | Message::Pong(_)))) => {}
                 other => panic!("silent connection must be reaped, got {other:?}"),
@@ -228,10 +217,7 @@ fn silent_connection_reaped_while_active_survives() {
         while std::time::Instant::now() < deadline {
             match tokio::time::timeout(INACTIVITY, active.next()).await {
                 Ok(Some(Ok(Message::Ping(data)))) => {
-                    active
-                        .send(Message::Pong(data))
-                        .await
-                        .expect("pong sends");
+                    active.send(Message::Pong(data)).await.expect("pong sends");
                     answered += 1;
                 }
                 Ok(Some(Ok(Message::Pong(_)))) => {}
@@ -250,10 +236,15 @@ fn silent_connection_reaped_while_active_survives() {
 fn sessions_resume_by_id_at_most_once() {
     let _guard = serve_serial();
     common_core::runtime::block_on_shared(async {
-        let (addr, stop, server) =
-            serve_bg(Arc::new(VoiceOwner::disabled()), INACTIVITY).await;
+        let (addr, stop, server) = serve_bg(Arc::new(VoiceOwner::disabled()), INACTIVITY).await;
         let mut first = connect(addr, Some(TOKEN)).await;
-        let started = ws_call(&mut first, 1, "StartSession", serde_json::json!({ "kind": "assistant" })).await;
+        let started = ws_call(
+            &mut first,
+            1,
+            "StartSession",
+            serde_json::json!({ "kind": "assistant" }),
+        )
+        .await;
         assert_eq!(started["ok"], serde_json::json!(true));
         assert_eq!(started["body"]["session"], serde_json::json!("s1"));
         drop(first);
@@ -261,7 +252,13 @@ fn sessions_resume_by_id_at_most_once() {
         let mut second = connect(addr, Some(TOKEN)).await;
         let listed = ws_call(&mut second, 2, "ListSessions", serde_json::json!({})).await;
         assert_eq!(listed["body"]["sessions"], serde_json::json!(["s1"]));
-        let again = ws_call(&mut second, 3, "StartSession", serde_json::json!({ "kind": "assistant" })).await;
+        let again = ws_call(
+            &mut second,
+            3,
+            "StartSession",
+            serde_json::json!({ "kind": "assistant" }),
+        )
+        .await;
         assert_eq!(again["body"]["session"], serde_json::json!("s2"));
         stop.store(true, Ordering::SeqCst);
         server.await.expect("server drains");
@@ -272,8 +269,7 @@ fn sessions_resume_by_id_at_most_once() {
 fn shutdown_drain_completes_in_flight() {
     let _guard = serve_serial();
     common_core::runtime::block_on_shared(async {
-        let (addr, stop, server) =
-            serve_bg(Arc::new(VoiceOwner::disabled()), INACTIVITY).await;
+        let (addr, stop, server) = serve_bg(Arc::new(VoiceOwner::disabled()), INACTIVITY).await;
         let mut ws = connect(addr, Some(TOKEN)).await;
         let reply = ws_call(&mut ws, 1, "GetState", serde_json::json!({})).await;
         assert_eq!(reply["ok"], serde_json::json!(true));
@@ -290,12 +286,22 @@ fn startup_refuses_without_token_off_loopback_or_bad_addr() {
     use crate::ws::WsTuning;
     common_core::runtime::block_on_shared(async {
         let voice = Arc::new(VoiceOwner::disabled());
-        crate::ws::serve_ws("127.0.0.1:0", String::new(), Arc::clone(&voice), WsTuning::default())
-            .await
-            .expect_err("tokenless start must fail");
-        crate::ws::serve_ws("0.0.0.0:0", TOKEN.to_string(), Arc::clone(&voice), WsTuning::default())
-            .await
-            .expect_err("non-loopback must fail");
+        crate::ws::serve_ws(
+            "127.0.0.1:0",
+            String::new(),
+            Arc::clone(&voice),
+            WsTuning::default(),
+        )
+        .await
+        .expect_err("tokenless start must fail");
+        crate::ws::serve_ws(
+            "0.0.0.0:0",
+            TOKEN.to_string(),
+            Arc::clone(&voice),
+            WsTuning::default(),
+        )
+        .await
+        .expect_err("non-loopback must fail");
         crate::ws::serve_ws("not-an-addr", TOKEN.to_string(), voice, WsTuning::default())
             .await
             .expect_err("bad addr must fail");
@@ -304,7 +310,9 @@ fn startup_refuses_without_token_off_loopback_or_bad_addr() {
 
 #[test]
 fn tuning_defaults_pin_the_moshi_numbers() {
-    use crate::ws::{WsTuning, WS_CONNECTION_CAP, WS_INACTIVITY_TIMEOUT, WS_PING_EVERY, WS_WATCHDOG_POLL};
+    use crate::ws::{
+        WsTuning, WS_CONNECTION_CAP, WS_INACTIVITY_TIMEOUT, WS_PING_EVERY, WS_WATCHDOG_POLL,
+    };
     assert_eq!(WS_PING_EVERY, std::time::Duration::from_secs(5));
     assert_eq!(WS_INACTIVITY_TIMEOUT, std::time::Duration::from_secs(10));
     assert_eq!(WS_CONNECTION_CAP, std::time::Duration::from_secs(360));
@@ -353,7 +361,11 @@ fn lifetime_cap_closes_old_connections() {
         });
         let mut ws = connect(addr, Some(TOKEN)).await;
         let reply = ws_call(&mut ws, 1, "ListSessions", serde_json::json!({})).await;
-        assert_eq!(reply["ok"], serde_json::json!(true), "call works before the cap");
+        assert_eq!(
+            reply["ok"],
+            serde_json::json!(true),
+            "call works before the cap"
+        );
         tokio::time::sleep(std::time::Duration::from_millis(600)).await;
         let mut closed = false;
         for _ in 0..10 {

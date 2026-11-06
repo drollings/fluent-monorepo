@@ -71,7 +71,7 @@ impl EnergyVad {
 
     /// Score one frame of mono f32 audio.
     pub fn push(&mut self, samples: &[f32]) -> VadOutput {
-        let rms = root_mean_square(samples);
+        let rms = common_core::pcm::root_mean_square_f32(samples);
         let crossings = zero_crossing_rate(samples);
         let high = self.floor + self.hysteresis;
         let low = (self.floor - self.hysteresis).max(0.0);
@@ -109,15 +109,6 @@ impl EnergyVad {
         self.cold_streak = 0;
         self.speaking = false;
     }
-}
-
-/// Root mean square amplitude of one frame.
-fn root_mean_square(samples: &[f32]) -> f32 {
-    if samples.is_empty() {
-        return 0.0;
-    }
-    let energy: f32 = samples.iter().map(|sample| sample * sample).sum();
-    (energy / samples.len() as f32).sqrt()
 }
 
 /// Fraction of adjacent sample pairs with opposite signs.

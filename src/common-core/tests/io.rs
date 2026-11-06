@@ -336,3 +336,191 @@ fn now_ns_tracks_system_time_ns() {
         "sampled {sampled} outside {before}..={after}"
     );
 }
+
+/// M14-S2: a fresh path binds first try with no validation call.
+#[test]
+#[cfg(unix)]
+fn reclaim_fresh_path_binds_without_validating() {
+    use common_core::io::bind_unix_listener_with_stale_reclaim;
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("fresh.sock");
+    let mut validated = 0;
+    let listener = bind_unix_listener_with_stale_reclaim(&path, 3, || {
+        validated += 1;
+        Ok(())
+    })
+    .expect("fresh path binds");
+    assert_eq!(validated, 0, "no unlink, no validation");
+    // The returned listener is live: a connect succeeds.
+    assert!(
+        std::os::unix::net::UnixStream::connect(&path).is_ok(),
+        "bound socket answers"
+    );
+    drop(listener);
+}
+
+/// M14-S2: a stale file heals — one reclaim, validation runs once,
+/// the rebound socket answers.
+#[test]
+#[cfg(unix)]
+fn reclaim_stale_file_heals_and_validates_once() {
+    use common_core::io::bind_unix_listener_with_stale_reclaim;
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("stale.sock");
+    fs::write(&path, b"stale").unwrap();
+    let mut validated = 0;
+    let listener = bind_unix_listener_with_stale_reclaim(&path, 3, || {
+        validated += 1;
+        Ok(())
+    })
+    .expect("stale file heals");
+    assert_eq!(validated, 1, "one unlink, one validation");
+    assert!(
+        std::os::unix::net::UnixStream::connect(&path).is_ok(),
+        "rebound socket answers"
+    );
+    drop(listener);
+}
+
+/// M14-S2: a live holder stops the walk with the original `AddrInUse`
+/// error — no unlink, no validation, the holder still answers.
+#[test]
+#[cfg(unix)]
+fn reclaim_live_holder_stops_with_the_original_error() {
+    use common_core::io::{bind_unix_listener_with_stale_reclaim, ReclaimBindError};
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("live.sock");
+    let live = std::os::unix::net::UnixListener::bind(&path).expect("holder binds");
+    let mut validated = 0;
+    let error = bind_unix_listener_with_stale_reclaim(&path, 3, || {
+        validated += 1;
+        Ok(())
+    })
+    .expect_err("live holder refuses");
+    assert!(
+        matches!(error, ReclaimBindError::LiveHolder(_)),
+        "live maps to LiveHolder: {error:?}"
+    );
+    assert_eq!(validated, 0, "no unlink, no validation past a live holder");
+    assert!(
+        std::os::unix::net::UnixStream::connect(&path).is_ok(),
+        "holder still answers"
+    );
+    drop(live);
+}
+
+/// M14-S2: caller validation failure returns immediately with the
+/// closure's exact error and without consuming a reclaim.
+#[test]
+#[cfg(unix)]
+fn reclaim_validation_failure_returns_the_closure_error() {
+    use common_core::io::{bind_unix_listener_with_stale_reclaim, ReclaimBindError};
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("reappear.sock");
+    fs::write(&path, b"stale").unwrap();
+    let error = bind_unix_listener_with_stale_reclaim(&path, 3, || {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "socket path reappeared as a link after unlink; refusing",
+        ))
+    })
+    .expect_err("validation refuses");
+    match error {
+        ReclaimBindError::Validate(inner) => {
+            assert_eq!(inner.kind(), std::io::ErrorKind::PermissionDenied);
+            assert_eq!(
+                inner.to_string(),
+                "socket path reappeared as a link after unlink; refusing"
+            );
+        }
+        other => panic!("validation maps to Validate: {other:?}"),
+    }
+}
+
+/// M14-S2: an unlinkable path (a directory) maps to `Remove` carrying
+/// the remove error.
+#[test]
+#[cfg(unix)]
+fn reclaim_unlinkable_path_maps_remove_failure() {
+    use common_core::io::{bind_unix_listener_with_stale_reclaim, ReclaimBindError};
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("dir.sock");
+    fs::create_dir(&path).unwrap();
+    let error = bind_unix_listener_with_stale_reclaim(&path, 3, || Ok(()))
+        .expect_err("directory never binds");
+    assert!(
+        matches!(error, ReclaimBindError::Remove(_)),
+        "remove failure maps to Remove: {error:?}"
+    );
+}
+
+/// M14-S2: the bound is honored — with zero reclaims a stale file is
+/// never unlinked and the original `AddrInUse` returns as `Bind`.
+#[test]
+#[cfg(unix)]
+fn reclaim_zero_budget_never_unlinks() {
+    use common_core::io::{bind_unix_listener_with_stale_reclaim, ReclaimBindError};
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("capped.sock");
+    fs::write(&path, b"stale").unwrap();
+    let error = bind_unix_listener_with_stale_reclaim(&path, 0, || Ok(()))
+        .expect_err("zero budget never reclaims");
+    assert!(
+        matches!(error, ReclaimBindError::Bind(_)),
+        "exhausted budget maps to Bind: {error:?}"
+    );
+    assert!(path.is_file(), "nothing unlinked without budget");
+}
+
+/// M14-S2: cap exhaustion after a real reclaim — the validation
+/// closure recreates the stale file, so the retry also hits
+/// `AddrInUse` with no budget left and returns `Bind`.
+#[test]
+#[cfg(unix)]
+fn reclaim_exhaustion_returns_bind_after_one_retry() {
+    use common_core::io::{bind_unix_listener_with_stale_reclaim, ReclaimBindError};
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("race.sock");
+    fs::write(&path, b"stale").unwrap();
+    let mut validations = 0;
+    let error = bind_unix_listener_with_stale_reclaim(&path, 1, || {
+        validations += 1;
+        fs::write(&path, b"stale again").expect("recreate the stale file");
+        Ok(())
+    })
+    .expect_err("second AddrInUse exhausts the budget");
+    assert!(
+        matches!(error, ReclaimBindError::Bind(_)),
+        "exhaustion maps to Bind: {error:?}"
+    );
+    assert_eq!(validations, 1, "exactly one reclaim ran");
+}
+
+/// M14-S2: a non-`AddrInUse` failure returns as `Bind` without any
+/// probe, unlink, or validation.
+#[test]
+#[cfg(unix)]
+fn reclaim_non_addrinuse_failure_returns_bind_unchanged() {
+    use common_core::io::{bind_unix_listener_with_stale_reclaim, ReclaimBindError};
+    let dir = TempDir::new().unwrap();
+    let parent = dir.path().join("parent");
+    fs::write(&parent, b"not a dir").unwrap();
+    let path = parent.join("nested.sock");
+    let mut validated = 0;
+    let error = bind_unix_listener_with_stale_reclaim(&path, 3, || {
+        validated += 1;
+        Ok(())
+    })
+    .expect_err("file parent never binds");
+    match error {
+        ReclaimBindError::Bind(inner) => {
+            assert_ne!(
+                inner.kind(),
+                std::io::ErrorKind::AddrInUse,
+                "not an address-in-use failure"
+            );
+        }
+        other => panic!("unrelated failure maps to Bind: {other:?}"),
+    }
+    assert_eq!(validated, 0, "no validation off the reclaim path");
+}

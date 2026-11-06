@@ -49,9 +49,9 @@ pub enum DriverError {
 #[must_use]
 pub fn probe_device(source: &SourceKind) -> Option<String> {
     match source {
-        SourceKind::Mic | SourceKind::SystemMonitor => {
-            crate::backend::list_input_devices().first().map(|info| info.name.clone())
-        }
+        SourceKind::Mic | SourceKind::SystemMonitor => crate::backend::list_input_devices()
+            .first()
+            .map(|info| info.name.clone()),
         SourceKind::AppNode(_) => pipewire_source(),
         SourceKind::Synthetic => Some("synthetic".to_string()),
     }

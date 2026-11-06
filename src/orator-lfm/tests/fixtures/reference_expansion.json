@@ -1,0 +1,61 @@
+{
+ "reference_dir": "/ai/models/lfm3/LiquidAI/LFM3-Audio-2B",
+ "fixtures": [
+  {
+   "name": "edge-160-samples",
+   "samples": 160,
+   "mel_frames": 1,
+   "encoder_tokens": 1
+  },
+  {
+   "name": "one-second-16k",
+   "samples": 16000,
+   "mel_frames": 99,
+   "encoder_tokens": 13
+  },
+  {
+   "name": "three-seconds-16k",
+   "samples": 48000,
+   "mel_frames": 299,
+   "encoder_tokens": 38
+  }
+ ],
+ "mel_contract": {
+  "feature_size": 128,
+  "sampling_rate": 16000,
+  "n_fft": 400,
+  "hop_length": 160,
+  "win_length": 400,
+  "log_floor": -12.0,
+  "normalization_offset": 4.0,
+  "normalization_divisor": 4.0,
+  "encoder_stride": 8
+ },
+ "token_ids": {
+  "audio": 125031,
+  "audio_out": 125032,
+  "bos": 124894,
+  "eos": 124900,
+  "pad": 124893
+ },
+ "framed_text_turn": "<|im_start|>user\nhello<|im_end|>\n",
+ "audio_expansion": {
+  "text": "transcribe <|audio|> please",
+  "expanded_text": "transcribe <|audio|><|audio|><|audio|><|audio|><|audio|><|audio|><|audio|><|audio|><|audio|><|audio|><|audio|><|audio|><|audio|> please",
+  "framed_turn": "<|im_start|>user\ntranscribe <|audio|><|audio|><|audio|><|audio|><|audio|><|audio|><|audio|><|audio|><|audio|><|audio|><|audio|><|audio|><|audio|> please<|im_end|>\n",
+  "mel_frames": 99,
+  "encoder_tokens": 13,
+  "audio_token_id": 125031,
+  "placeholder_runs": 1
+ },
+ "audio_out": {
+  "samples": 24000,
+  "codec_frames": 13,
+  "placeholders": 14,
+  "eos_code": 2016,
+  "audio_out_token_id": 125032,
+  "text": "answer <|audio_out|> now",
+  "expanded_text": "answer <|audio_out|><|audio_out|><|audio_out|><|audio_out|><|audio_out|><|audio_out|><|audio_out|><|audio_out|><|audio_out|><|audio_out|><|audio_out|><|audio_out|><|audio_out|><|audio_out|> now",
+  "framed_turn": "<|im_start|>assistant\nanswer <|audio_out|><|audio_out|><|audio_out|><|audio_out|><|audio_out|><|audio_out|><|audio_out|><|audio_out|><|audio_out|><|audio_out|><|audio_out|><|audio_out|><|audio_out|><|audio_out|> now<|im_end|>\n"
+ }
+}

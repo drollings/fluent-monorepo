@@ -15,11 +15,7 @@ pub fn dictation_preset(with_aec: bool) -> Result<DependencyGraph<&'static str>,
     if with_aec {
         graph.register(&"aec", &["pcm.mic"], &["pcm.mic.clean"])?;
         graph.register(&"vad.mic", &["pcm.mic.clean"], &["vad.mic"])?;
-        graph.register(
-            &"stt.mic",
-            &["pcm.mic.clean", "vad.mic"],
-            &["text.user"],
-        )?;
+        graph.register(&"stt.mic", &["pcm.mic.clean", "vad.mic"], &["text.user"])?;
     } else {
         graph.register(&"vad.mic", &["pcm.mic"], &["vad.mic"])?;
         graph.register(&"stt.mic", &["pcm.mic", "vad.mic"], &["text.user"])?;
@@ -36,11 +32,7 @@ pub fn assistant_preset() -> Result<DependencyGraph<&'static str>, GraphError> {
     graph.register(&"capture.mic", &[], &["pcm.mic"])?;
     graph.register(&"aec", &["pcm.mic"], &["pcm.mic.clean"])?;
     graph.register(&"vad.mic", &["pcm.mic.clean"], &["vad.mic"])?;
-    graph.register(
-        &"stt.mic",
-        &["pcm.mic.clean", "vad.mic"],
-        &["text.user"],
-    )?;
+    graph.register(&"stt.mic", &["pcm.mic.clean", "vad.mic"], &["text.user"])?;
     graph.register(&"turn", &["vad.mic", "text.user"], &["turn.commit"])?;
     graph.register(&"llm", &["turn.commit"], &["text.reply"])?;
     graph.register(&"tools", &["text.reply"], &["tool.result"])?;

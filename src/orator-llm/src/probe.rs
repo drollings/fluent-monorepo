@@ -34,21 +34,35 @@ pub enum ProbeError {
 /// Probe `base` for its model list: `GET {base}/models`, then
 /// `GET {base}/v1/models` when the first misses.
 pub async fn probe_models(base: &str, client: &reqwest::Client) -> Result<ProbeInfo, ProbeError> {
-    match probe_once(base, "/models", client).await {
-        Ok(models) => Ok(ProbeInfo {
-            models,
-            via_v1_fallback: false,
-        }),
-        Err(ProbeError::Unreachable(_, _)) => {
-            Err(ProbeError::Unreachable(base.to_string(), "connection failed".to_string()))
-        }
-        Err(ProbeError::BadStatus(_, _)) => match probe_once(base, "/v1/models", client).await {
-            Ok(models) => Ok(ProbeInfo {
-                models,
-                via_v1_fallback: true,
-            }),
-            Err(error) => Err(error),
+    match fluent_wvr::ladder::first_accept_in_order(
+        ["/models", "/v1/models"],
+        |path| async move {
+            match probe_once(base, path, client).await {
+                Ok(models) => Ok(Some(ProbeInfo {
+                    models,
+                    via_v1_fallback: path == "/v1/models",
+                })),
+                Err(ProbeError::Unreachable(_, _)) if path == "/models" => {
+                    Err(ProbeError::Unreachable(
+                        base.to_string(),
+                        "connection failed".to_string(),
+                    ))
+                }
+                Err(error) => Err(error),
+            }
         },
+        |error: &ProbeError| matches!(error, ProbeError::Unreachable(_, _)),
+    )
+    .await
+    {
+        Ok(Some(info)) => Ok(info),
+        // `probe_once` never declines, so clean exhaustion is unreachable;
+        // report it as unreachable rather than inventing a model list.
+        Ok(None) => Err(ProbeError::Unreachable(
+            base.to_string(),
+            "connection failed".to_string(),
+        )),
+        Err(error) => Err(error),
     }
 }
 
@@ -60,9 +74,7 @@ async fn probe_once(
     let url = format!("{base}{path}");
     let response = tokio::time::timeout(PROBE_TIMEOUT, client.get(&url).send())
         .await
-        .map_err(|_| {
-            ProbeError::Unreachable(base.to_string(), "probe timed out".to_string())
-        })?
+        .map_err(|_| ProbeError::Unreachable(base.to_string(), "probe timed out".to_string()))?
         .map_err(|error| ProbeError::Unreachable(base.to_string(), error.to_string()))?;
     if !response.status().is_success() {
         return Err(ProbeError::BadStatus(
@@ -73,19 +85,5 @@ async fn probe_once(
     let body: serde_json::Value = response.json().await.map_err(|error| {
         ProbeError::BadStatus(base.to_string(), format!("unparseable model list: {error}"))
     })?;
-    Ok(model_ids(&body))
-}
-
-/// Model ids from an OpenAI-style `{data: [{id}]}` list. Entries without
-/// an id are skipped, never fatal.
-fn model_ids(body: &serde_json::Value) -> Vec<String> {
-    body.get("data")
-        .and_then(|data| data.as_array())
-        .map(|entries| {
-            entries
-                .iter()
-                .filter_map(|entry| entry.get("id")?.as_str().map(str::to_string))
-                .collect()
-        })
-        .unwrap_or_default()
+    Ok(fluent_llm::openai::model_ids(&body))
 }

@@ -2,10 +2,12 @@
 //!
 //! The conversational model stays warm while a session is open; larger
 //! or assisting models load on demand and unload past the budget or
-//! their idle timeout. Eviction order reuses the shared
-//! `eviction_score` math (big cold footprints go first); voice holds
-//! follow the leased shape (75 s leases, 30 s sweep, unload when the
-//! lease set empties).
+//! their idle timeout. Eviction ordering composes the shared
+//! `common_core::cache::eviction_order` engine (big cold footprints go
+//! first); the budget plan loop stays local (pure name plan, no async
+//! evict closure — unlike `evict_until_fit`). Voice holds follow the
+//! leased shape (75 s leases, 30 s sweep, unload when the lease set
+//! empties).
 
 use std::collections::HashMap;
 
@@ -83,15 +85,24 @@ impl ResidencyManager {
     }
 
     /// Resident names, best-eviction-first at `now`.
+    /// Shared order home: `common_core::cache::eviction_order` — the
+    /// same score-descending, last-used-descending keys as the
+    /// hand-rolled sort it replaces (pinned by
+    /// `big_cold_models_evict_before_small_hot_ones`). The budget loop
+    /// in `plan_evictions` stays local (pure name plan, no async
+    /// evict closure).
     #[must_use]
     pub fn eviction_order(&self, now: i64) -> Vec<String> {
-        let mut residents: Vec<&Resident> = self.residents.values().collect();
-        residents.sort_by(|a, b| {
-            b.score(now)
-                .cmp(&a.score(now))
-                .then_with(|| b.last_used.cmp(&a.last_used))
-        });
-        residents.into_iter().map(|resident| resident.name.clone()).collect()
+        let residents: Vec<&Resident> = self.residents.values().collect();
+        common_core::cache::eviction_order(
+            residents,
+            now,
+            |resident| resident.bytes,
+            |resident| resident.last_used,
+        )
+        .into_iter()
+        .map(|resident| resident.name.clone())
+        .collect()
     }
 
     /// Names to evict (best-first) until `used <= budget`, at most all.

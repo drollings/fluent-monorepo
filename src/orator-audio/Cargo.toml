@@ -9,6 +9,7 @@ common-core = { path = "../common-core" }
 fluent-concurrency = { path = "../fluent-concurrency" }
 fluent-wvr = { path = "../fluent-wvr" }
 orator-core = { path = "../orator-core" }
+aec-rs = "1.0.0"
 cpal = { workspace = true }
 rtrb = { workspace = true }
 rubato = { workspace = true }

@@ -26,6 +26,15 @@ pub fn append_fact(facts: &str, fact: &str) -> String {
 /// Roll `summary` plus `newest_turn` under the budget: the newest turn
 /// is always kept whole; the older summary truncates from the middle
 /// (head and tail survive, the middle compresses to a marker).
+///
+/// M10-S4 audit (keep-decision): the summary head already composes the
+/// shared `TokenBudget::truncate_to_budget`; the remaining join is a
+/// two-text shape (truncated summary + whole newest) with no
+/// single-text `truncate_middle` equivalent — expressing it through
+/// the splitter would change bytes (ratio-based head vs char-count
+/// head, `"..."` + `"\n…\n"` double marker), so it stays. Treat any
+/// future middle-vs-head change here as behavior work, never a
+/// refactor fold-in.
 #[must_use]
 pub fn roll_summary(summary: &str, newest_turn: &str) -> String {
     let newest_tokens = estimate_tokens(newest_turn) as usize;

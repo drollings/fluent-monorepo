@@ -6,8 +6,8 @@
 //! calls deny even before tiers are consulted.
 
 use fluent_wvr::{
-    Describable, FieldAccess, FieldError, WorkContext, WorkError, WorkOutput, WorkUnit,
-    impl_component,
+    impl_component, Describable, FieldAccess, FieldError, WorkContext, WorkError, WorkOutput,
+    WorkUnit,
 };
 use internment::ArcIntern;
 use orator_core::SessionKind;
@@ -130,6 +130,12 @@ impl WorkUnit for Policy {
 
 impl FieldAccess for Policy {
     fn set_field(&mut self, name: &str, value: &str) -> Result<(), FieldError> {
+        // M15-S10 keep-decision: `disabled_tools` is a comma-split list
+        // and `t2_always_ask` is locked on with a custom constraint
+        // message — neither shape exists in the derive (its lists are
+        // dotted/indexed, its bools plain). Unifying would change the
+        // refusal strings or the list grammar. Schema pinned by
+        // `policy_field_surface_pins_schema_and_table`.
         match name {
             "t1_require_verified" => {
                 self.t1_require_verified = parse_bool(value)?;
@@ -188,7 +194,9 @@ fn parse_bool(value: &str) -> Result<bool, FieldError> {
     match value {
         "true" => Ok(true),
         "false" => Ok(false),
-        _ => Err(FieldError::Parse(format!("expected true/false, got {value:?}"))),
+        _ => Err(FieldError::Parse(format!(
+            "expected true/false, got {value:?}"
+        ))),
     }
 }
 

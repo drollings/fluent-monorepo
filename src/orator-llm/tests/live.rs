@@ -1,8 +1,8 @@
 //! Live ask: real endpoint, real inference. Skips cleanly without the
 //! endpoint contract or an explicit opt-in — never fails a hermetic gate.
 
-use orator_llm::HttpSession;
 use orator_core::LlmSession;
+use orator_llm::HttpSession;
 
 /// One question through the supervised endpoint. Requires `LLM_BASE_URL`
 /// (e.g. `http://127.0.0.1:8080`) and `LLM_MODEL`; otherwise skips.

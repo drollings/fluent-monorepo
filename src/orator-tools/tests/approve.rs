@@ -53,11 +53,7 @@ fn timeout_drains_pending_count() {
     assert_eq!(hub.pending_count(), 1);
     let answer = common_core::runtime::block_on(hub.wait(&id, recv, 20));
     assert_eq!(answer, None);
-    assert_eq!(
-        hub.pending_count(),
-        0,
-        "timed-out rounds must not leak"
-    );
+    assert_eq!(hub.pending_count(), 0, "timed-out rounds must not leak");
     assert!(hub.summary(&id).is_none());
 }
 

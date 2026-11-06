@@ -130,6 +130,13 @@ pub fn reserve_for(seconds: u64, rate: u32) -> usize {
     want.min(MAX_DICTATE_SAMPLES)
 }
 
+/// Emit one stderr progress marker on the `orator:` voice. Stdout stays
+/// machine-clean: progress never pollutes piped transcripts or report
+/// lines. Single home for every long-op narration in the CLI.
+pub fn note_progress(detail: &str) {
+    eprintln!("orator: {detail}");
+}
+
 #[cfg(test)]
 #[path = "../tests/dictate.rs"]
 mod tests;

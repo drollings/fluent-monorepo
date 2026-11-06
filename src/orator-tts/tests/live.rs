@@ -26,5 +26,8 @@ fn live_kokoro_synthesizes_a_sentence() {
         samples.iter().any(|sample| sample.abs() > 0.02),
         "live synth must voice, not just pad"
     );
-    eprintln!("live: first audio in {first_audio:?} for {} samples", samples.len());
+    eprintln!(
+        "live: first audio in {first_audio:?} for {} samples",
+        samples.len()
+    );
 }

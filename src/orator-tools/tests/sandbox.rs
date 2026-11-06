@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use crate::sandbox::{Guarded, GuardedConfig, WithinError, kill_program, shell_escape};
+use crate::sandbox::{kill_program, shell_escape, Guarded, GuardedConfig, WithinError};
 
 fn guarded(timeout_ms: u64) -> (Guarded, tempfile::TempDir) {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -41,8 +41,7 @@ fn timeout_kills_the_group_leaving_no_writer() {
     let marker = dir.path().join("orphan.txt");
     // Grandchild sleeps, then writes: a group kill means no marker.
     let script = format!("sleep 5; echo x > {}", marker.display());
-    let result =
-        common_core::runtime::block_on(guard.run("sleep", &argv(&["sh", "-c", &script])));
+    let result = common_core::runtime::block_on(guard.run("sleep", &argv(&["sh", "-c", &script])));
     let error = result.expect_err("budget must fire");
     assert_eq!(
         error,
@@ -53,24 +52,25 @@ fn timeout_kills_the_group_leaving_no_writer() {
         !marker.exists(),
         "grandchild must die with the group, leaving no marker"
     );
-    assert_eq!(guard.audit_rows()[0].detail["verdict"], serde_json::json!("timeout"));
+    assert_eq!(
+        guard.audit_rows()[0].detail["verdict"],
+        serde_json::json!("timeout")
+    );
 }
 
 #[test]
 fn env_scrubs_and_path_pins() {
     let (guard, _dir) = guarded(5000);
     std::env::set_var("ORATOR_REDTEAM_SECRET", "hunter2");
-    let result = common_core::runtime::block_on(guard.run("env", &argv(&["env"])))
-        .expect("env runs");
+    let result =
+        common_core::runtime::block_on(guard.run("env", &argv(&["env"]))).expect("env runs");
     assert!(
         !result.output.contains("hunter2"),
         "parent secrets must not leak"
     );
-    let path = common_core::runtime::block_on(guard.run(
-        "path",
-        &argv(&["sh", "-c", "echo $PATH"]),
-    ))
-    .expect("path check runs");
+    let path =
+        common_core::runtime::block_on(guard.run("path", &argv(&["sh", "-c", "echo $PATH"])))
+            .expect("path check runs");
     assert_eq!(path.output.trim(), "/usr/bin:/bin");
 }
 
@@ -87,7 +87,9 @@ fn within_refuses_escapes_and_loops() {
         WithinError::Escape("../outside.txt".to_string())
     );
     assert_eq!(
-        guard.within(std::path::Path::new("/etc/passwd")).unwrap_err(),
+        guard
+            .within(std::path::Path::new("/etc/passwd"))
+            .unwrap_err(),
         WithinError::Escape("/etc/passwd".to_string())
     );
     // Symlink loop: a ↔ b never resolves.
@@ -116,19 +118,18 @@ fn shell_quoting_round_trips_through_sh() {
     let tricky = "it's 'quoted' $HOME `id`".to_string();
     let argv = vec!["echo".to_string(), tricky.clone()];
     let inner = shell_escape(&argv);
-    let wrapped = vec![
-        "sh".to_string(),
-        "-c".to_string(),
-        format!("exec {inner}"),
-    ];
-    let result = common_core::runtime::block_on(guard.run("echo", &wrapped))
-        .expect("quoted echo runs");
+    let wrapped = vec!["sh".to_string(), "-c".to_string(), format!("exec {inner}")];
+    let result =
+        common_core::runtime::block_on(guard.run("echo", &wrapped)).expect("quoted echo runs");
     assert!(
         result.output.contains(&tricky),
         "quoted arg survives shell: {}",
         result.output
     );
-    assert!(!result.output.contains("uid="), "no command substitution ran");
+    assert!(
+        !result.output.contains("uid="),
+        "no command substitution ran"
+    );
 }
 
 #[test]
@@ -137,10 +138,7 @@ fn kill_program_prefers_absolute_path() {
     if program == "kill" {
         return;
     }
-    assert!(
-        program.starts_with('/'),
-        "kill path is absolute: {program}"
-    );
+    assert!(program.starts_with('/'), "kill path is absolute: {program}");
     assert!(
         std::path::Path::new(&program).is_file(),
         "kill binary exists: {program}"
@@ -160,10 +158,7 @@ fn open_within_refuses_symlink_swap() {
     assert!(guard.within(std::path::Path::new("link")).is_ok());
     std::fs::remove_file(dir.path().join("link")).expect("unlink");
     std::os::unix::fs::symlink(&outside, dir.path().join("link")).expect("link outside");
-    let opened = guard.open_within(
-        std::path::Path::new("link"),
-        OpenOptions::new().read(true),
-    );
+    let opened = guard.open_within(std::path::Path::new("link"), OpenOptions::new().read(true));
     assert!(
         matches!(opened, Err(WithinError::Escape(_))),
         "swapped link must not open: {opened:?}"
@@ -177,7 +172,10 @@ fn open_within_reads_validated_handle() {
     let (guard, dir) = guarded(5000);
     std::fs::write(dir.path().join("note.txt"), "hello").expect("fixture");
     let mut file = guard
-        .open_within(std::path::Path::new("note.txt"), OpenOptions::new().read(true))
+        .open_within(
+            std::path::Path::new("note.txt"),
+            OpenOptions::new().read(true),
+        )
         .expect("valid open");
     let mut text = String::new();
     file.read_to_string(&mut text).expect("read");
@@ -220,7 +218,11 @@ fn audit_vector_rotates_under_cap() {
 #[test]
 fn default_root_is_private_and_never_tmp() {
     let root = crate::sandbox::GuardedConfig::default().root;
-    assert!(root.is_absolute(), "jail root is absolute: {}", root.display());
+    assert!(
+        root.is_absolute(),
+        "jail root is absolute: {}",
+        root.display()
+    );
     assert!(
         !root.starts_with("/tmp"),
         "jail root never lives in /tmp: {}",
@@ -267,7 +269,12 @@ fn within_rejects_dotdot_and_chained_escapes() {
         );
     }
     // Absolute path with `..` that lexically lands outside.
-    let outside_abs = dir.path().join("a").join("..").join("..").join("outside.txt");
+    let outside_abs = dir
+        .path()
+        .join("a")
+        .join("..")
+        .join("..")
+        .join("outside.txt");
     assert!(
         matches!(
             guard.within(&outside_abs),
@@ -305,8 +312,7 @@ fn within_rejects_dotdot_and_chained_escapes() {
     assert!(
         matches!(
             guard.within(std::path::Path::new("loop-a")),
-            Err(crate::sandbox::WithinError::HopCap(_)
-                | crate::sandbox::WithinError::Escape(_))
+            Err(crate::sandbox::WithinError::HopCap(_) | crate::sandbox::WithinError::Escape(_))
         ),
         "symlink loop must not resolve"
     );
@@ -321,26 +327,17 @@ fn open_within_is_fail_closed_without_fd_revalidation() {
     let candidate = std::path::PathBuf::from("/jail/candidate.txt");
     let root = std::path::PathBuf::from("/jail");
     let refused: Result<std::path::PathBuf, crate::sandbox::WithinError> =
-        crate::sandbox::check_fd_containment(
-            Err("masked".to_string()),
-            &candidate,
-            &root,
-        );
+        crate::sandbox::check_fd_containment(Err("masked".to_string()), &candidate, &root);
     assert!(
         matches!(
             refused,
-            Err(crate::sandbox::WithinError::Escape(_)
-                | crate::sandbox::WithinError::Missing(_))
+            Err(crate::sandbox::WithinError::Escape(_) | crate::sandbox::WithinError::Missing(_))
         ),
         "unresolvable fd must refuse, never open the candidate: {refused:?}"
     );
     let inside = std::path::PathBuf::from("/jail/note.txt");
-    let ok = crate::sandbox::check_fd_containment(
-        Ok(inside.clone()),
-        &candidate,
-        &root,
-    )
-    .expect("inside fd opens");
+    let ok = crate::sandbox::check_fd_containment(Ok(inside.clone()), &candidate, &root)
+        .expect("inside fd opens");
     assert_eq!(ok, inside);
     let outside = std::path::PathBuf::from("/etc/passwd");
     assert!(

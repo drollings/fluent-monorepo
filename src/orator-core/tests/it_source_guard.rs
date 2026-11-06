@@ -33,7 +33,11 @@ fn is_word_char(byte: u8) -> bool {
 
 /// Whole-word, case-insensitive matches of the forbidden plan words.
 fn forbidden_words(source: &str) -> Vec<String> {
-    const WORDS: [&str; 3] = [concat!("road", "map"), concat!("mile", "stone"), concat!("pha", "se")];
+    const WORDS: [&str; 3] = [
+        concat!("road", "map"),
+        concat!("mile", "stone"),
+        concat!("pha", "se"),
+    ];
     let mut hits = Vec::new();
     for word in source
         .split(|c: char| !c.is_alphanumeric() && c != '_')
@@ -150,7 +154,11 @@ fn no_private_http_client_builders() {
         let source = std::fs::read_to_string(path).expect("source readable");
         for (index, line) in source.lines().enumerate() {
             if line.contains("Client::builder") {
-                violations.push(format!("{}:{}: private client builder", path.display(), index + 1));
+                violations.push(format!(
+                    "{}:{}: private client builder",
+                    path.display(),
+                    index + 1
+                ));
             }
         }
     }
@@ -174,10 +182,7 @@ fn tui_stays_a_thin_client() {
         "AudioSession",
         "ensure_audio_server",
     ];
-    let path = crates_src()
-        .join("orator-cli")
-        .join("src")
-        .join("tui.rs");
+    let path = crates_src().join("orator-cli").join("src").join("tui.rs");
     let source = std::fs::read_to_string(&path).expect("tui readable");
     let mut violations = Vec::new();
     for (index, line) in source.lines().enumerate() {
@@ -216,7 +221,10 @@ fn every_crate_root_forbids_unsafe() {
         let source = std::fs::read_to_string(path).expect("root readable");
         let first = source.lines().find(|line| !line.trim().is_empty());
         if first != Some("#![forbid(unsafe_code)]") {
-            violations.push(format!("{}: missing `#![forbid(unsafe_code)]`", path.display()));
+            violations.push(format!(
+                "{}: missing `#![forbid(unsafe_code)]`",
+                path.display()
+            ));
         }
     }
     assert!(violations.is_empty(), "{}", violations.join("\n"));
@@ -232,10 +240,7 @@ fn parity_scanner_catches_ids_and_ignores_ordinary_names() {
         parity_ids("Pcm PcmCodec open").is_empty(),
         "ordinary names carry no digits"
     );
-    assert!(
-        parity_ids("r2 p3").is_empty(),
-        "lowercase never matches"
-    );
+    assert!(parity_ids("r2 p3").is_empty(), "lowercase never matches");
     assert_eq!(
         parity_ids("XP10y"),
         Vec::<String>::new(),
@@ -261,9 +266,7 @@ fn parity_scanner_catches_ids_and_ignores_ordinary_names() {
 fn has_dep(manifest: &str, name: &str) -> bool {
     manifest.lines().any(|line| {
         let trimmed = line.trim_start();
-        trimmed.starts_with(name)
-            && trimmed[name.len()..]
-                .starts_with([' ', '=', '{', '\t'])
+        trimmed.starts_with(name) && trimmed[name.len()..].starts_with([' ', '=', '{', '\t'])
     })
 }
 
@@ -288,9 +291,8 @@ fn dependency_edges_stay_split() {
     );
     // One WS crate for both sides: the daemon speaks tokio-tungstenite
     // (same line as the workspace axum) and nothing else.
-    let daemon =
-        std::fs::read_to_string(root.join("orator-daemon/Cargo.toml"))
-            .expect("daemon manifest readable");
+    let daemon = std::fs::read_to_string(root.join("orator-daemon/Cargo.toml"))
+        .expect("daemon manifest readable");
     assert!(
         has_dep(&daemon, "tokio-tungstenite"),
         "orator-daemon serves WS over the single shared crate"
@@ -305,8 +307,8 @@ fn dependency_edges_stay_split() {
     );
     // One TUI stack, composed through the ratatui re-export: the CLI
     // declares ratatui itself and never crossterm directly.
-    let cli = std::fs::read_to_string(root.join("orator-cli/Cargo.toml"))
-        .expect("cli manifest readable");
+    let cli =
+        std::fs::read_to_string(root.join("orator-cli/Cargo.toml")).expect("cli manifest readable");
     assert!(
         has_dep(&cli, "ratatui"),
         "orator-cli composes the workspace TUI stack"
@@ -322,9 +324,8 @@ fn dependency_edges_stay_split() {
         !has_dep(&cli, "orator-bench"),
         "orator-cli must not depend on orator-bench (render lives in core)"
     );
-    let desktop =
-        std::fs::read_to_string(root.join("orator-desktop/Cargo.toml"))
-            .expect("desktop manifest readable");
+    let desktop = std::fs::read_to_string(root.join("orator-desktop/Cargo.toml"))
+        .expect("desktop manifest readable");
     assert!(
         !has_dep(&desktop, "orator-tools"),
         "orator-desktop must not depend on orator-tools (wrap lives in core)"

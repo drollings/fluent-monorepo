@@ -15,6 +15,13 @@
 //! - Relative inputs stay relative; drive prefixes (`C:/`, `C:\`) pass
 //!   through as ordinary first segments.
 //!
+//! [`normalize_std_path`] is the `std::path::Path` counterpart with
+//! deliberately different failure semantics: it returns `None` when `..`
+//! would pop the filesystem root (fail closed), so it is for trusted-path
+//! resolution and containment jails — not for display or matching.
+//! [`normalize_lexical`] stays fail-open (a relative leading `..` is dropped)
+//! for its existing string callers.
+//!
 //! # Examples
 //!
 //! ```
@@ -28,6 +35,16 @@
 //! assert_eq!(parent_lexical("/a/b"), Some("/a".to_string()));
 //! assert_eq!(file_name_lexical("/a/b/"), Some("b"));
 //! ```
+
+use std::path::{Component, Path, PathBuf};
+
+/// Hop cap for symlink-chasing resolution: resolvers that chase
+/// symlinks before a containment check refuse past this many hops
+/// (loops and deep chains fail closed instead of hanging). Composed by
+/// `orator_core::paths::within_root` (fast check) and
+/// `orator_tools::sandbox` (authoritative jail) alike — one number,
+/// two layers (see their cross-linked rustdocs for why both exist).
+pub const MAX_SYMLINK_HOPS: u32 = 40;
 
 /// Replace `\` with `/` and collapse runs of `/` to one.
 ///
@@ -74,6 +91,35 @@ pub fn normalize_lexical(path: &str) -> String {
     } else {
         joined
     }
+}
+
+/// Lexically normalize a `std::path::Path` through its platform components.
+///
+/// `..` pops exactly one component, `.` is ignored, every other component is
+/// appended verbatim (including a root/prefix), and duplicate or trailing
+/// separators collapse because `components()` already yields them once.
+/// Failure to pop — a relative `..` at the start, or `..` above the
+/// filesystem root — returns `None`: this helper **fails closed**, unlike
+/// [`normalize_lexical`], whose string algorithm drops a leading relative
+/// `..` (so `normalize_std_path("../a")` is `None` while
+/// `normalize_lexical("../a")` is `"a"`).
+///
+/// No filesystem access: symlinks are not examined here.
+#[must_use]
+pub fn normalize_std_path(path: &Path) -> Option<PathBuf> {
+    let mut normal = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::ParentDir => {
+                if !normal.pop() {
+                    return None;
+                }
+            }
+            Component::CurDir => {}
+            other => normal.push(other.as_os_str()),
+        }
+    }
+    Some(normal)
 }
 
 /// Parent directory of a lexically-cleaned path (`None` when the path has no

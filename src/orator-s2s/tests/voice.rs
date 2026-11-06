@@ -4,11 +4,12 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use orator_core::AudioBundle;
 use crate::voice::{
     audio_server_home, audio_supervisor_config, managed_binary, resolve_audio_server,
-    voice_server_args, wait_ready, AUDIO_SERVER_BIN, AUDIO_SERVER_ENV,
+    resolve_audio_server_candidates, voice_server_args, wait_ready, AUDIO_SERVER_BIN,
+    AUDIO_SERVER_ENV, VOICE_BOOT_TIMEOUT,
 };
+use orator_core::AudioBundle;
 
 fn bundle() -> AudioBundle {
     AudioBundle {
@@ -44,7 +45,12 @@ fn args_carry_the_reference_file_mapping() {
 #[test]
 fn args_carry_legacy_companions_when_present() {
     let dir = fixture_dir();
-    for name in ["backbone.gguf", "mmproj.gguf", "vocoder.gguf", "tokenizer.gguf"] {
+    for name in [
+        "backbone.gguf",
+        "mmproj.gguf",
+        "vocoder.gguf",
+        "tokenizer.gguf",
+    ] {
         std::fs::write(dir.path().join(name), b"stub").expect("stub writes");
     }
     let full = AudioBundle {
@@ -61,9 +67,18 @@ fn args_carry_legacy_companions_when_present() {
     };
     assert_eq!(
         flag("-m").as_deref(),
-        Some(dir.path().join("backbone.gguf").to_string_lossy().into_owned().as_str())
+        Some(
+            dir.path()
+                .join("backbone.gguf")
+                .to_string_lossy()
+                .into_owned()
+                .as_str()
+        )
     );
-    assert!(flag("-mv").is_some(), "legacy vocoder rides along when present");
+    assert!(
+        flag("-mv").is_some(),
+        "legacy vocoder rides along when present"
+    );
     assert!(
         flag("--tts-speaker-file").is_some(),
         "legacy tokenizer rides along when present"
@@ -202,8 +217,7 @@ fn resolve_rejects_world_writable_parent() {
     let dir = fixture_dir();
     let sub = dir.path().join("wwdir");
     std::fs::create_dir(&sub).expect("subdir");
-    std::fs::set_permissions(&sub, std::fs::Permissions::from_mode(0o777))
-        .expect("subdir chmod");
+    std::fs::set_permissions(&sub, std::fs::Permissions::from_mode(0o777)).expect("subdir chmod");
     write_candidate(&sub, 0o755);
     let home = fixture_dir();
     std::env::set_var("HOME", home.path());
@@ -321,12 +335,58 @@ fn managed_home_follows_the_home_base() {
 #[test]
 fn env_override_wins_resolution() {
     let _guard = common_core::sync::lock(&ENV_LOCK);
+    let prior = std::env::var_os(AUDIO_SERVER_ENV);
     std::env::set_var("LLAMA_AUDIO_SERVER", "/opt/audio/bin/server");
     assert_eq!(
         resolve_audio_server(),
         Some(std::path::PathBuf::from("/opt/audio/bin/server"))
     );
-    std::env::remove_var("LLAMA_AUDIO_SERVER");
+    match prior {
+        Some(value) => std::env::set_var(AUDIO_SERVER_ENV, value),
+        None => std::env::remove_var(AUDIO_SERVER_ENV),
+    }
+}
+
+/// M6-S1 characterization: a relative `LLAMA_AUDIO_SERVER` override
+/// resolves to nothing (no search, no serve) — pin before the
+/// shared-helper migration.
+#[test]
+fn relative_audio_override_resolves_to_nothing() {
+    let _guard = common_core::sync::lock(&ENV_LOCK);
+    let prior = std::env::var_os(AUDIO_SERVER_ENV);
+    std::env::set_var(AUDIO_SERVER_ENV, "relative/audio-server");
+    assert!(
+        resolve_audio_server_candidates().is_empty(),
+        "relative explicit skips the search"
+    );
+    assert_eq!(
+        resolve_audio_server(),
+        None,
+        "relative explicit never serves"
+    );
+    match prior {
+        Some(value) => std::env::set_var(AUDIO_SERVER_ENV, value),
+        None => std::env::remove_var(AUDIO_SERVER_ENV),
+    }
+}
+
+/// M6-S1 characterization: the supervised-config mapping — the audio
+/// build probes `OPTIONS /v1/chat/completions` with the voice boot
+/// budget, the served-model tag stays empty for the caller to fill,
+/// and the bundle files ride along verbatim.
+#[test]
+fn audio_supervisor_config_pins_probe_timeout_and_model() {
+    let config = audio_supervisor_config(&bundle(), 18083);
+    assert_eq!(
+        config.health_probe,
+        orator_llm::HealthProbe::OptionsCompletions,
+        "audio build has no /health; completions readiness decides"
+    );
+    assert_eq!(config.health_timeout, VOICE_BOOT_TIMEOUT);
+    assert!(config.model.is_empty(), "callers set the served-model tag");
+    assert_eq!(config.port, 18083);
+    assert_eq!(config.weights, Some(bundle().backbone));
+    assert_eq!(config.mmproj, Some(bundle().mmproj));
 }
 
 #[test]
@@ -341,11 +401,9 @@ fn path_search_finds_the_binary_name() {
     std::fs::write(&candidate, "#!/bin/sh\n").expect("stub writes");
     std::fs::set_permissions(&candidate, std::fs::Permissions::from_mode(0o755))
         .expect("stub chmod");
-    let path = std::env::join_paths(
-        std::iter::once(dir.path().to_path_buf()).chain(
-            std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()),
-        ),
-    )
+    let path = std::env::join_paths(std::iter::once(dir.path().to_path_buf()).chain(
+        std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()),
+    ))
     .expect("join");
     std::env::set_var("ORATOR_TEST_PATH", &path);
     let old = std::env::var_os("PATH");
@@ -422,7 +480,12 @@ http.server.HTTPServer(("127.0.0.1", port), Handler).serve_forever()
 fn stop_kills_and_reaps_the_supervised_child() {
     use std::os::unix::fs::PermissionsExt as _;
     let dir = tempfile::tempdir().expect("tempdir");
-    for name in ["backbone.gguf", "mmproj.gguf", "vocoder.gguf", "tokenizer.gguf"] {
+    for name in [
+        "backbone.gguf",
+        "mmproj.gguf",
+        "vocoder.gguf",
+        "tokenizer.gguf",
+    ] {
         std::fs::write(dir.path().join(name), b"stub").expect("stub weight");
     }
     let bundle = AudioBundle {
@@ -436,12 +499,16 @@ fn stop_kills_and_reaps_the_supervised_child() {
     std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755))
         .expect("stub server runs");
     let config = audio_supervisor_config(&bundle, 0);
-    let server = common_core::runtime::block_on_shared(orator_llm::boot_with_binary(
-        config, &script,
-    ))
-    .expect("stub server boots");
+    let server =
+        common_core::runtime::block_on_shared(orator_llm::boot_with_binary(config, &script))
+            .expect("stub server boots");
     let url = server.base_url().to_string();
-    let port: u16 = url.rsplit(':').next().expect("port").parse().expect("port parses");
+    let port: u16 = url
+        .rsplit(':')
+        .next()
+        .expect("port")
+        .parse()
+        .expect("port parses");
     assert!(
         std::net::TcpStream::connect_timeout(
             &std::net::SocketAddr::from(([127, 0, 0, 1], port)),

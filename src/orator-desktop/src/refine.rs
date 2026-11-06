@@ -4,15 +4,13 @@
 //! tries an LLM polish pass (transcript treated as data, never
 //! instructions), then falls back to the raw transcript, and the final
 //! text is always handed to history — dictation is never lost. The
-//! walk uses `first_accept_in_order_sync` (terminal errors abort,
-//! clean exhaustion yields the raw-text fallback), never a hand-rolled
-//! loop. Per the calibration law the LLM rung activates only with a
-//! measured harness behind it; one-shot callers pass a rung that
-//! declines so dictation stays bounded and offline-capable.
+//! walk uses `first_some_in_order_sync` (clean exhaustion yields the
+//! raw-text fallback), never a hand-rolled loop. Per the calibration law the
+//! LLM rung activates only with a measured harness behind it; one-shot
+//! callers pass a rung that declines so dictation stays bounded and
+//! offline-capable.
 
-use std::convert::Infallible;
-
-use fluent_wvr::ladder::first_accept_in_order_sync;
+use fluent_wvr::ladder::first_some_in_order_sync;
 
 /// Refine prompt: polish dictation, transcript is data. Composes the
 /// tool loop's transcript-as-data rule so prompts never disagree
@@ -54,31 +52,25 @@ pub fn refine_transcript(
     refine_llm: &dyn Fn(&str) -> Option<String>,
     save_history: &mut dyn FnMut(&str),
 ) -> RefinedTranscript {
-    let found = first_accept_in_order_sync(
-        [RefineRung::Llm, RefineRung::Raw],
-        |rung| match rung {
-            RefineRung::Llm => Ok::<_, Infallible>(refine_llm(raw).map(|text| RefinedTranscript {
-                text,
-                source: RefineSource::Llm,
-            })),
-            RefineRung::Raw => Ok(Some(RefinedTranscript {
-                text: raw.to_string(),
-                source: RefineSource::Raw,
-            })),
-        },
-        |_: &Infallible| false,
-    );
-    let refined = match found {
-        Ok(Some(refined)) => refined,
-        // Defensive totality: the Raw rung always answers `Some`, and
-        // the error type is uninhabited, so this arm is unreachable in
-        // practice — but the chain never loses dictation even if a
-        // future rung shape changes that.
-        Ok(None) | Err(_) => RefinedTranscript {
+    let refined = first_some_in_order_sync([RefineRung::Llm, RefineRung::Raw], |rung| match rung {
+        RefineRung::Llm => refine_llm(raw).map(|text| RefinedTranscript {
+            text,
+            source: RefineSource::Llm,
+        }),
+        RefineRung::Raw => Some(RefinedTranscript {
             text: raw.to_string(),
             source: RefineSource::Raw,
-        },
-    };
+        }),
+    })
+    .unwrap_or_else(|| {
+        // Defensive totality: the Raw rung always answers `Some`, but the
+        // chain never loses dictation even if a future rung shape changes
+        // that.
+        RefinedTranscript {
+            text: raw.to_string(),
+            source: RefineSource::Raw,
+        }
+    });
     save_history(&refined.text);
     refined
 }

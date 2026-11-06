@@ -20,9 +20,7 @@ fn rotation_cuts_playable_verifiable_segments() {
     let frames_per_segment = (SEGMENT_SAMPLES / FRAME_SAMPLES as u64) as usize;
     let block = sine_block(FRAME_SAMPLES);
     for _ in 0..frames_per_segment + 2 {
-        writer
-            .push(Channel::Mic, &block)
-            .expect("segmented write");
+        writer.push(Channel::Mic, &block).expect("segmented write");
     }
     let manifest = writer.close().expect("close");
     // One full segment plus the 2-frame tail flushed at close.
@@ -58,12 +56,7 @@ fn crash_loses_at_most_the_open_segment() {
     }
     // No manifest, no segments: the open segment died with the process.
     assert!(!dir.path().join("manifest.json").exists());
-    assert_eq!(
-        std::fs::read_dir(dir.path())
-            .expect("read dir")
-            .count(),
-        0
-    );
+    assert_eq!(std::fs::read_dir(dir.path()).expect("read dir").count(), 0);
 }
 
 #[test]
@@ -74,12 +67,10 @@ fn opus_packets_decode_back_to_audio() {
         opus::Application::Voip,
     )
     .expect("encoder");
-    let mut decoder = opus::Decoder::new(ARCHIVE_SAMPLE_RATE, opus::Channels::Mono)
-        .expect("decoder");
+    let mut decoder =
+        opus::Decoder::new(ARCHIVE_SAMPLE_RATE, opus::Channels::Mono).expect("decoder");
     let input = sine_block(FRAME_SAMPLES);
-    let packet = encoder
-        .encode_vec_float(&input, 4000)
-        .expect("encode");
+    let packet = encoder.encode_vec_float(&input, 4000).expect("encode");
     assert!(!packet.is_empty());
     let mut output = vec![0.0f32; FRAME_SAMPLES * 3];
     let decoded = decoder
@@ -102,4 +93,23 @@ fn feed_items_cover_both_directions_of_time() {
             assert_eq!(samples.len(), 64);
         }
     }
+}
+
+/// M14-S1 characterization: spill over-cap drops the oldest frames
+/// first and counts them — the disk-stall last resort, never silent.
+/// (Empty and exact-cap pushes drop nothing.)
+#[test]
+fn spill_over_cap_drops_oldest_and_counts() {
+    use crate::archive::SpillQueue;
+    let mut spill = SpillQueue::new(2);
+    spill.push(Channel::Mic, vec![1.0]);
+    spill.push(Channel::Mic, vec![2.0]);
+    assert_eq!(spill.dropped_frames, 0, "exact cap drops nothing");
+    spill.push(Channel::Mic, vec![3.0]);
+    assert_eq!(spill.dropped_frames, 1, "over-cap drops with a counter");
+    let (first, _) = spill.pop().expect("oldest survivor pops");
+    assert_eq!(first, Channel::Mic);
+    let (_, samples) = spill.pop().expect("newest pops");
+    assert_eq!(samples, vec![3.0], "oldest frame shed, order kept");
+    assert!(spill.pop().is_none(), "empty pops nothing");
 }

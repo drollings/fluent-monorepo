@@ -110,14 +110,7 @@ impl SegmentWriter {
             ogg::PacketWriteEndInfo::NormalPacket,
             0,
         )
-        .and_then(|()| {
-            ogg.write_packet(
-                opus_tags(),
-                serial,
-                ogg::PacketWriteEndInfo::EndPage,
-                0,
-            )
-        })
+        .and_then(|()| ogg.write_packet(opus_tags(), serial, ogg::PacketWriteEndInfo::EndPage, 0))
         .map_err(|error| AudioError::Archive(format!("ogg headers: {error}")))?;
         Ok(Self {
             encoder,
@@ -235,9 +228,20 @@ impl ArchiveWriter {
         })
     }
 
-    /// Feed sizes for the archive worker. Small queue, credit in segments:
-    /// a stall pauses producers through backpressure instead of growing
-    /// memory.
+    /// Feed sizes for the archive worker.
+    ///
+    /// M9 audit (why these numbers differ from the writer's): items
+    /// here are PCM sample vectors (kilobytes per segment per
+    /// channel), so the queue stays small (64) with credit in segments
+    /// (32, top-up 4) — a disk stall pauses producers through
+    /// backpressure instead of growing memory. Two concurrent handlers
+    /// (one per channel direction) with batch 4 keep both segment
+    /// writers fed; the 25 ms poll matches the audio-path drain
+    /// cadence (the event-log writer below polls at 100 ms). Handler
+    /// seriality per channel comes from the single segment writer per
+    /// channel, not from this bound. Backpressure and handler-bound
+    /// semantics are pinned in `fluent-concurrency`'s `feed_worker`
+    /// tests; this table only sizes them.
     #[must_use]
     pub fn feed_config() -> FeedConfig {
         FeedConfig {
@@ -299,8 +303,11 @@ impl ArchiveWriter {
         };
         let offsets_json = serde_json::to_string_pretty(&offsets)
             .map_err(|error| AudioError::Archive(format!("offsets: {error}")))?;
-        common_core::io::write_atomic(&self.dir.join("clock-offsets.json"), offsets_json.as_bytes())
-            .map_err(|error| AudioError::Archive(format!("offsets write: {error}")))?;
+        common_core::io::write_atomic(
+            &self.dir.join("clock-offsets.json"),
+            offsets_json.as_bytes(),
+        )
+        .map_err(|error| AudioError::Archive(format!("offsets write: {error}")))?;
         Ok(self.manifest)
     }
 
@@ -332,11 +339,11 @@ impl ArchiveWriter {
             self.writers
                 .insert(channel, SegmentWriter::open(serial, start)?);
         }
-        self.writers
-            .get_mut(&channel)
-            .ok_or_else(|| {
-                AudioError::Archive(format!("archive writer for {channel:?} vanished after insert"))
-            })
+        self.writers.get_mut(&channel).ok_or_else(|| {
+            AudioError::Archive(format!(
+                "archive writer for {channel:?} vanished after insert"
+            ))
+        })
     }
 
     fn serial_for(&self, channel: Channel) -> u32 {

@@ -60,7 +60,10 @@ impl MergeQueue {
     }
 
     /// Push one word, waiting when full. Never drops.
-    pub async fn push_wait(&self, word: WordRecord) -> Result<(), fluent_concurrency::pool::PoolError> {
+    pub async fn push_wait(
+        &self,
+        word: WordRecord,
+    ) -> Result<(), fluent_concurrency::pool::PoolError> {
         let priority = priority_of(&word);
         self.queue.push_wait(word, priority).await
     }

@@ -1721,6 +1721,15 @@ becomes `WorkError::Execution`. Calibration (trusted):
 100%/100%, abort precision/recall 100%/100%, confident-but-wrong 100%
 advanced-past / 0% won, 12/12 controls hold.
 
+**Infallible rungs.** A ladder whose rungs cannot fail uses
+`first_some_in_order_sync(rungs, |rung| -> Option<R>)`: the first `Some`
+short-circuits, `None` declines and continues, and clean exhaustion returns
+`None`. It is a thin wrapper over `first_accept_in_order_sync` (mapping each
+rung to `Ok::<_, Infallible>`), never a second walker, and is re-exported from
+`fluent_concurrency::ladder` alongside the fallible combinators. Reach for it
+when the walk is purely "first applicable value wins" (desktop probes,
+transcript refinement, catalog lookup).
+
 ```rust
 let cascade = ComponentCascade::with_units(vec![
     Arc::new(l1_unit),

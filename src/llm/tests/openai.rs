@@ -290,3 +290,46 @@ fn messages_to_json_passthrough() {
     assert_eq!(out[0]["role"], "assistant");
     assert_eq!(out[0]["tool_calls"][0]["function"]["name"], "lookup");
 }
+
+#[test]
+fn model_ids_rejects_missing_and_non_array_data() {
+    assert!(model_ids(&json!({})).is_empty());
+    assert!(model_ids(&json!({"data": null})).is_empty());
+    assert!(model_ids(&json!({"data": "not-a-list"})).is_empty());
+    assert!(model_ids(&json!("not-an-object")).is_empty());
+    assert!(model_ids(&json!({"data": []})).is_empty());
+}
+
+#[test]
+fn model_ids_skips_malformed_entries_and_non_string_ids() {
+    let body = json!({
+        "data": [
+            {"object": "model"},
+            {"id": 7},
+            {"id": null},
+            {"id": "kept"},
+        ],
+    });
+    assert_eq!(model_ids(&body), vec!["kept".to_string()]);
+}
+
+#[test]
+fn model_ids_retains_server_order_and_duplicates() {
+    let body = json!({
+        "data": [
+            {"id": "b"},
+            {"id": "a"},
+            {"id": "b"},
+            {"id": "c"},
+        ],
+    });
+    assert_eq!(
+        model_ids(&body),
+        vec![
+            "b".to_string(),
+            "a".to_string(),
+            "b".to_string(),
+            "c".to_string()
+        ]
+    );
+}

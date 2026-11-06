@@ -80,15 +80,18 @@ pub fn classify_daemon_voice_error(body: &str) -> DaemonVoiceHint {
             _ => {}
         }
     }
-    let lower = body.to_lowercase();
-    if lower.contains("ejected") {
+    let lower = common_core::string::LoweredHaystack::new(body);
+    // Wording legs for old daemons that omitted the kind: table scans
+    // over one lowered haystack (shared scan home
+    // `common_core::string`; legs stay separate tables with this
+    // precedence — merging them with the fallback markers would
+    // change behavior, see
+    // `shared_corpus_pins_classifier_disagreements`).
+    if lower.contains_any(&["ejected"]) {
         DaemonVoiceHint::Ejected(body.to_string())
-    } else if lower.contains("saturated") || lower.contains("admission") {
+    } else if lower.contains_any(&["saturated", "admission"]) {
         DaemonVoiceHint::Saturated(body.to_string())
-    } else if lower.contains("concurrent boot")
-        || lower.contains("boot in progress")
-        || lower.contains("bootcontention")
-    {
+    } else if lower.contains_any(&["concurrent boot", "boot in progress", "bootcontention"]) {
         DaemonVoiceHint::BootContention(body.to_string())
     } else {
         DaemonVoiceHint::Unavailable
@@ -186,9 +189,7 @@ pub fn decode_say_audio(body: &serde_json::Value) -> Result<(Vec<f32>, u32), Str
     if rate == 0 {
         return Err("daemon Say rate is zero".to_string());
     }
-    use base64::prelude::*;
-    let raw = BASE64_STANDARD
-        .decode(encoded.trim())
+    let raw = common_core::pcm::decode_base64_trimmed(encoded)
         .map_err(|error| format!("daemon Say audio is not base64: {error}"))?;
     if raw.len() % 4 != 0 {
         return Err("daemon Say audio length is not a whole f32 count".to_string());
@@ -196,10 +197,9 @@ pub fn decode_say_audio(body: &serde_json::Value) -> Result<(Vec<f32>, u32), Str
     if raw.is_empty() {
         return Err("daemon Say returned no samples".to_string());
     }
-    let samples: Vec<f32> = raw
-        .chunks_exact(4)
-        .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-        .collect();
+    // Little-endian f32 PCM (NOT the i16 Transcribe shape): shared
+    // framing home `common_core::pcm`; the refusal strings stay here.
+    let samples: Vec<f32> = common_core::pcm::decode_f32_le(&raw);
     Ok((samples, rate))
 }
 

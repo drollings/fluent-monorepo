@@ -47,7 +47,10 @@ fn strip_markdown(text: &str) -> String {
         match ch {
             '#' | '>' if line_start(&out) => {
                 // Heading/quote marker: skip to content.
-                while chars.peek().is_some_and(|c| *c == '#' || *c == '>' || *c == ' ') {
+                while chars
+                    .peek()
+                    .is_some_and(|c| *c == '#' || *c == '>' || *c == ' ')
+                {
                     chars.next();
                 }
             }
@@ -132,7 +135,9 @@ fn split_identifiers(text: &str) -> String {
         if (ch == '_' || ch == '-')
             && index > 0
             && chars[index - 1].is_alphanumeric()
-            && chars.get(index + 1).is_some_and(|next| next.is_alphanumeric())
+            && chars
+                .get(index + 1)
+                .is_some_and(|next| next.is_alphanumeric())
         {
             out.push(' ');
             continue;

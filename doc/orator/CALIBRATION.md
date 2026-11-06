@@ -324,6 +324,75 @@ scoring harness is `common_core::calibration`.
   heuristic (size-only, ETag, mtime) ships only with a new control
   group here that must not fire.
 
+## Clipboard child bound (bounded `wl-copy`/`wl-paste` serve)
+
+- **Trigger:** a clipboard child (`wl-copy --foreground` holding the
+  selection, `wl-paste` dumping it) still running past
+  `CLIPBOARD_CHILD_DEADLINE_MS` (2000 ms, 10 ms poll quantum).
+- **Axis:** poll latency is producer confidence (compositor speed, can
+  be slow); deadline expiry plus kill/reap/restore is the task-value
+  gate (words kept, prior clipboard intact).
+- **Control groups that must not fire:** an instantly-exiting child
+  reports its status (`bounded_wait_returns_instant_child_status`);
+  an exited-but-failed child reports failure, never timeout
+  (`bounded_wait_reports_failure_status_not_timeout`); a
+  slow-but-under-deadline child succeeds — no false timeout
+  (`bounded_wait_tolerates_slow_under_deadline_child`); the
+  compositional control (`expired_clipboard_bound_still_delivers_words`)
+  proves an expired bound still delivers the words through the
+  output-only sink with the transcript recorded.
+- **Fixture measurement** (`orator-desktop/tests/clipboard.rs`,
+  hermetic `true`/`false`/`sleep` children, no compositor): parked
+  child (`sleep 30`, 200 ms test deadline) times out, is killed and
+  reaped (post-call `try_wait` is `Some` — no zombie), well under any
+  interactive hang.
+- **Decision:** keep 2000 ms. A live compositor answers in tens of ms
+  (the file's 10 ms poll discipline), so the bound sits two orders
+  above a healthy handshake — only a wedged or seatless server trips
+  it. Headless with the binary absent refuses fast via `Unavailable`
+  (never the deadline path). Revisit rule: measure the serve
+  handshake on a live compositor (30 dictations); if p99 × 3 lands
+  elsewhere, move the bound and re-pin
+  `clipboard_child_bound_stays_pinned` here first.
+
+## Commit gate: non-speech file input (tonal + energy)
+
+- **Trigger:** `orator_vad::speech_present_16k` holding file input
+  back from inference (empty output + `no speech detected` note).
+- **Axis:** the tonal verdict measures producer confidence (interval
+  regularity); the committed transcript stays the task-value outcome.
+  Never treat a fast gate as a correct transcript.
+- **Control groups that must not fire:** digital silence and empty
+  input; 440 Hz / 1 kHz / 100 Hz pure tones at quiet, mid, and loud
+  levels (the loud 440 Hz shape is the fixed finding — energy alone
+  fires on it, documented as vowel-like in the duplex rows, so the
+  tonal verdict carries the rejection); 4 kHz loud tone; white noise
+  at three levels. Must-fire: harmonic voiced proxies at full scale,
+  -20 dB, and 3 s (no silent drops).
+- **Fixture measurement** (`orator-vad/tests/gate.rs`, hermetic
+  synth, no model): tonal isolation (4 loud/quiet tones tonal;
+  voiced, quiet voiced, noise, silence never tonal) plus the composed
+  corpus through the shared `calibrate_threshold` gate:
+
+  | outcome | count |
+  | --- | --- |
+  | true positives (speech commits) | 3 |
+  | false positives (non-speech commits) | 0 |
+  | true negatives (non-speech held) | 13 |
+  | false negatives (speech dropped) | 0 |
+
+  Precision 1.0, recall 1.0, FPR 0.0 — passes the shared gate
+  (precision ≥ 0.90, FPR ≤ 0.05).
+- **Decision:** ship the composed gate as the single home
+  (`orator-vad::gate`): file transcribe consults it before either
+  backend; the daemon adapter composes the same function (its private
+  copy deleted). Finals pinned in `tonal_verdict_isolates…` and
+  `composed_gate_passes_the_scored_corpus`. Known residuals: two-tone
+  signals (dial tone measures CV 0.27 — kept, needs spectral work)
+  and sustained near-sinusoidal singing (documented, not gated).
+  Live verification: 440 Hz file transcribes empty with the note on
+  both backends (was `Oh.`).
+
 ## R8 calibration harnesses (2026-11-02)
 
 Each row below ships with its control group (must not fire) and its

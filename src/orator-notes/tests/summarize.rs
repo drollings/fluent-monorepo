@@ -2,7 +2,9 @@
 
 use std::sync::Arc;
 
-use crate::summarize::{citations_valid, extract_seg_citations, summarize, CitedSegment, ChunkSummarize};
+use crate::summarize::{
+    citations_valid, extract_seg_citations, summarize, ChunkSummarize, CitedSegment,
+};
 
 struct Echo;
 
@@ -30,8 +32,14 @@ impl ChunkSummarize for Dangling {
 
 fn known() -> Vec<CitedSegment> {
     vec![
-        CitedSegment { id: "seg-1".to_string(), text: "hello".to_string() },
-        CitedSegment { id: "seg-2".to_string(), text: "world".to_string() },
+        CitedSegment {
+            id: "seg-1".to_string(),
+            text: "hello".to_string(),
+        },
+        CitedSegment {
+            id: "seg-2".to_string(),
+            text: "world".to_string(),
+        },
     ]
 }
 
@@ -63,4 +71,36 @@ fn ordered_map_merges_and_validates() {
 fn dangling_citations_reject_the_note() {
     let error = summarize(Arc::new(Dangling), "hello", &known()).expect_err("must reject");
     assert_eq!(error, "note cites unknown segments");
+}
+
+/// M10-S5: citation grammar edges. Malformed shapes extract nothing
+/// (never a partial id); an empty note cites nothing and stays valid;
+/// any citation against an empty registry dangles.
+#[test]
+fn citation_edges_pin_malformed_and_empty() {
+    assert!(extract_seg_citations("").is_empty());
+    assert!(
+        extract_seg_citations("[seg-1").is_empty(),
+        "unclosed extracts nothing"
+    );
+    assert!(
+        extract_seg_citations("[seg-x]").is_empty(),
+        "non-numeric extracts nothing"
+    );
+    assert!(
+        extract_seg_citations("[seg-1x]").is_empty(),
+        "trailing junk extracts nothing"
+    );
+    assert!(
+        extract_seg_citations("[[seg-1]]").len() == 1,
+        "double-bracket still finds the id"
+    );
+    assert!(
+        citations_valid("", &known()),
+        "empty note cites nothing: valid"
+    );
+    assert!(
+        !citations_valid("[seg-1]", &[]),
+        "any citation dangles against nothing known"
+    );
 }

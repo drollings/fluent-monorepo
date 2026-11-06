@@ -1,7 +1,9 @@
 //! Socket framing tests: round-trip, truncation, cap, type gate, peer rule.
 
 use crate::protocol::MessageType;
-use crate::socket::{check_peer_uid, socket_path, SocketFrame, FrameError, MAX_BODY, SOCKET_MODE, SOCKET_NAME};
+use crate::socket::{
+    check_peer_uid, socket_path, FrameError, SocketFrame, MAX_BODY, SOCKET_MODE, SOCKET_NAME,
+};
 
 #[test]
 fn round_trip_preserves_type_and_body() {
@@ -34,10 +36,16 @@ fn short_and_trailing_and_unknown_fail() {
     };
     let mut bytes = frame.encode();
     bytes.push(0);
-    assert_eq!(SocketFrame::decode(&bytes).unwrap_err(), FrameError::Trailing(1));
+    assert_eq!(
+        SocketFrame::decode(&bytes).unwrap_err(),
+        FrameError::Trailing(1)
+    );
     let mut bad = frame.encode();
     bad[4] = 200;
-    assert_eq!(SocketFrame::decode(&bad).unwrap_err(), FrameError::UnknownType(200));
+    assert_eq!(
+        SocketFrame::decode(&bad).unwrap_err(),
+        FrameError::UnknownType(200)
+    );
 }
 
 #[test]
@@ -124,8 +132,7 @@ fn stream_helpers_cover_empty_and_cap_bodies() {
     };
     let mut buf = Vec::new();
     big.write_to(&mut buf).expect("write cap");
-    let back =
-        SocketFrame::read_from(&mut std::io::Cursor::new(buf)).expect("read cap");
+    let back = SocketFrame::read_from(&mut std::io::Cursor::new(buf)).expect("read cap");
     assert_eq!(back, big);
 }
 
@@ -148,7 +155,10 @@ fn socket_path_prefers_runtime_dir_then_home() {
     let path = socket_path().expect("home fallback resolves");
     assert_eq!(
         path,
-        home.path().join(".local/share").join("orator").join(SOCKET_NAME),
+        home.path()
+            .join(".local/share")
+            .join("orator")
+            .join(SOCKET_NAME),
         "home fallback keeps the format"
     );
     std::env::remove_var("HOME");

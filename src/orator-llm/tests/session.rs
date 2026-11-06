@@ -4,7 +4,9 @@
 use std::sync::Arc;
 
 use fluent_concurrency::stream::StreamAbort;
-use fluent_llm::protocol::{ChatMessage, LlmError as FluentError, LlmQueueConfig, LlmRequestQueue, LlmTask};
+use fluent_llm::protocol::{
+    ChatMessage, LlmError as FluentError, LlmQueueConfig, LlmRequestQueue, LlmTask,
+};
 use fluent_wvr::{FieldAccess, WorkUnit};
 use orator_core::{LlmError, LlmSession, Sampler, StepOut, Token};
 
@@ -121,7 +123,9 @@ fn cancelled_queue_response_maps_to_aborted() {
             tokio::time::sleep(std::time::Duration::from_millis(5)).await;
             abort.cancel();
         });
-        let error = session.step(&mut Sampler::default()).expect_err("cut turn must abort");
+        let error = session
+            .step(&mut Sampler::default())
+            .expect_err("cut turn must abort");
         assert_eq!(error, LlmError::Aborted);
         let _ = canceller.await;
     });
@@ -187,7 +191,8 @@ fn step_packs_the_turn_under_budget() {
         let recorded = Arc::new(std::sync::Mutex::new(Vec::new()));
         let mut narrow = config();
         narrow.ctx_tokens = 32;
-        let mut session = HttpSession::with_queue(scripted_queue(Arc::clone(&recorded), "ok"), narrow);
+        let mut session =
+            HttpSession::with_queue(scripted_queue(Arc::clone(&recorded), "ok"), narrow);
         session.push_text(&"word ".repeat(500));
         session.step(&mut Sampler::default()).expect("packed step");
         let requests = common_core::sync::lock(&recorded);
@@ -262,15 +267,79 @@ fn transient_failures_retry_then_succeed() {
     });
 }
 
+/// M15-S1: the session field surface. `describe()` is the schema
+/// golden; the table pins accept (verbatim, numbers) and reject
+/// (unknown, garbage numbers).
+#[test]
+fn session_field_surface_pins_schema_and_table() {
+    use fluent_wvr::{Describable, FieldAccess};
+    common_core::runtime::block_on_shared(async {
+        let recorded = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let mut session = session_with(&recorded);
+        assert_eq!(
+            session.describe(),
+            serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "model": { "type": "string", "description": "Served model tag" },
+                    "system_prompt": { "type": "string", "description": "Stable turn prefix" },
+                    "ctx_tokens": { "type": "integer", "description": "Context window" },
+                    "n_batch": { "type": "integer", "description": "Prefill chunk size" }
+                },
+                "required": ["model", "system_prompt", "ctx_tokens", "n_batch"]
+            })
+        );
+        assert_eq!(
+            session.field_names(),
+            &["model", "system_prompt", "ctx_tokens", "n_batch"]
+        );
+        session.set_field("model", "m").expect("model sets");
+        assert_eq!(session.get_field("model").expect("model reads"), "m");
+        session.set_field("ctx_tokens", "64").expect("numbers set");
+        assert_eq!(session.get_field("ctx_tokens").expect("reads"), "64");
+        session
+            .set_field("ctx_tokens", "lots")
+            .expect_err("garbage numbers reject");
+        session.set_field("nope", "1").expect_err("unknown rejects");
+        session.get_field("nope").expect_err("unknown reads reject");
+    });
+}
+
 #[test]
 fn session_stays_configurable() {
     common_core::runtime::block_on_shared(async {
         let recorded = Arc::new(std::sync::Mutex::new(Vec::new()));
         let mut session = session_with(&recorded);
-        session.set_field("n_batch", "128").expect("tunable by name");
+        session
+            .set_field("n_batch", "128")
+            .expect("tunable by name");
         assert_eq!(session.get_field("n_batch").expect("read back"), "128");
         assert!(session.field_names().contains(&"model"));
         let output = session.execute(&fluent_wvr::WorkContext::default());
         assert!(output.expect("health executes").is_accept());
     });
+}
+
+/// M10-S1 characterization: `pack_user_text` under/over/system-floor.
+/// Under budget the user text passes verbatim; over budget the
+/// remainder head-truncates through the shared `TokenBudget`; a system
+/// text eating the whole budget floors to empty.
+#[test]
+fn pack_user_text_pins_under_over_and_system_floor() {
+    use crate::session::pack_user_text;
+    use fluent_llm::tokens::{estimate_tokens, TokenBudget};
+    // Under: verbatim.
+    assert_eq!(pack_user_text("sys", "hello there", 8192), "hello there");
+    // Over: the remainder truncates head-only with a loud marker.
+    let system = "system words ".repeat(100);
+    let user = "user words ".repeat(5000);
+    let ctx: usize = 1024;
+    let remaining = ctx.saturating_sub(estimate_tokens(&system) as usize);
+    let expected = TokenBudget(remaining).truncate_to_budget(&user);
+    assert!(expected.ends_with("..."), "truncation marks itself");
+    assert!(expected.len() < user.len());
+    assert_eq!(pack_user_text(&system, &user, ctx), expected);
+    // System floor: nothing remains, empty (never the marker alone).
+    let huge_system = "s".repeat(100_000);
+    assert_eq!(pack_user_text(&huge_system, "hi", 32), "");
 }

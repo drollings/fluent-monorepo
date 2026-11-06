@@ -1,15 +1,17 @@
 //! Socket client tests: envelope round-trip, absent daemon, bad method.
 
 use crate::socket::{
-    Transport, call_socket_at, call_ws_at, daemon_call, daemon_call_ws, decode_reply,
-    encode_request, no_socket_path_text, no_ws_listen_text, no_ws_token_text, parse_transport,
-    refused_text, unavailable_socket_text, unavailable_ws_text, CallFailure, WireReply,
-    WireRequest,
+    call_socket_at, call_ws_at, daemon_call, daemon_call_ws, decode_reply, encode_request,
+    no_socket_path_text, no_ws_listen_text, no_ws_token_text, parse_transport, refused_text,
+    unavailable_socket_text, unavailable_ws_text, CallFailure, Transport, WireReply, WireRequest,
 };
 
 #[test]
 fn transports_parse_and_reject_garbage() {
-    assert_eq!(parse_transport("socket").expect("socket"), Transport::Socket);
+    assert_eq!(
+        parse_transport("socket").expect("socket"),
+        Transport::Socket
+    );
     assert_eq!(parse_transport("ws").expect("ws"), Transport::Ws);
     parse_transport("carrier-pigeon").expect_err("garbage must fail");
 }
@@ -122,8 +124,8 @@ fn quiet_socket_core_returns_text_instead_of_printing() {
         };
         stream.write_all(&frame.encode()).expect("send");
     });
-    let failure: CallFailure = call_socket_at(&path, "Say", serde_json::json!({"text": "hi"}))
-        .expect_err("refusal fails");
+    let failure: CallFailure =
+        call_socket_at(&path, "Say", serde_json::json!({"text": "hi"})).expect_err("refusal fails");
     assert_eq!(failure.code, crate::ExitCode::Error);
     assert_eq!(
         failure.text.as_deref(),
@@ -163,9 +165,13 @@ fn quiet_socket_core_maps_absence_to_shared_wording() {
 
 #[test]
 fn bogus_method_over_ws_is_usage_not_dial() {
-    let error =
-        daemon_call_ws("ws://127.0.0.1:9/ws", "token", "Bogus", serde_json::json!({}))
-            .expect_err("bogus fails before dial");
+    let error = daemon_call_ws(
+        "ws://127.0.0.1:9/ws",
+        "token",
+        "Bogus",
+        serde_json::json!({}),
+    )
+    .expect_err("bogus fails before dial");
     assert_eq!(error, crate::ExitCode::Usage);
 }
 
@@ -203,7 +209,10 @@ fn ws_call_round_trips_against_the_real_listener() {
         serde_json::json!({}),
     )
     .expect("round trip");
-    assert_eq!(body, serde_json::json!({"sessions": 0, "voice_server": false}));
+    assert_eq!(
+        body,
+        serde_json::json!({"sessions": 0, "voice_server": false})
+    );
     let error = daemon_call_ws(
         &format!("ws://{addr}/ws"),
         "wrong-token",
@@ -321,9 +330,7 @@ fn ws_listen_binds_the_configured_port() {
     drop(probe);
     std::fs::write(
         &path,
-        format!(
-            r#"{{"daemon": {{"ws_listen": "127.0.0.1:{port}", "ws_token": "bind-token"}}}}"#
-        ),
+        format!(r#"{{"daemon": {{"ws_listen": "127.0.0.1:{port}", "ws_token": "bind-token"}}}}"#),
     )
     .expect("config writes");
     let config: orator_core::OratorConfig =
@@ -358,7 +365,10 @@ fn ws_listen_binds_the_configured_port() {
         serde_json::json!({}),
     )
     .expect("round trip over the configured port");
-    assert_eq!(body, serde_json::json!({"sessions": 0, "voice_server": false}));
+    assert_eq!(
+        body,
+        serde_json::json!({"sessions": 0, "voice_server": false})
+    );
     stop.store(true, std::sync::atomic::Ordering::SeqCst);
     server.join().expect("server drains");
 }
@@ -366,8 +376,14 @@ fn ws_listen_binds_the_configured_port() {
 #[test]
 fn control_calls_keep_the_short_budget_voice_calls_get_more() {
     use crate::socket::socket_timeout_for;
-    assert_eq!(socket_timeout_for("GetState"), std::time::Duration::from_secs(10));
-    assert_eq!(socket_timeout_for("ListSessions"), std::time::Duration::from_secs(10));
+    assert_eq!(
+        socket_timeout_for("GetState"),
+        std::time::Duration::from_secs(10)
+    );
+    assert_eq!(
+        socket_timeout_for("ListSessions"),
+        std::time::Duration::from_secs(10)
+    );
     for method in ["VoiceEndpoint", "Say", "Ask"] {
         assert_eq!(
             socket_timeout_for(method),
@@ -440,7 +456,10 @@ fn connect_error_kinds_map_to_named_codes() {
     assert!(failure.text.is_none(), "absence stays silent");
     let failure = map_connect_error(path, &Error::new(ErrorKind::PermissionDenied, "denied"));
     assert_eq!(failure.code, crate::ExitCode::Error);
-    assert_eq!(failure.text.as_deref(), Some(permission_denied_text(path).as_str()));
+    assert_eq!(
+        failure.text.as_deref(),
+        Some(permission_denied_text(path).as_str())
+    );
     let failure = map_connect_error(path, &Error::new(ErrorKind::ConnectionRefused, "refused"));
     assert_eq!(failure.code, crate::ExitCode::Error);
     assert!(failure.text.is_some(), "other failures line with remedy");

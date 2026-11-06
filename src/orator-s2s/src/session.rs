@@ -12,8 +12,8 @@ use std::sync::Arc;
 
 use fluent_concurrency::stream::StreamAbort;
 use fluent_wvr::{
-    Describable, FieldAccess, FieldError, WorkContext, WorkError, WorkOutput, WorkUnit,
-    impl_component,
+    impl_component, Describable, FieldAccess, FieldError, WorkContext, WorkError, WorkOutput,
+    WorkUnit,
 };
 use internment::ArcIntern;
 use orator_core::{AudioChunk, DuplexEngine, DuplexError, DuplexOut, Epoch, Frame};
@@ -21,8 +21,8 @@ use thiserror::Error;
 
 use crate::config::{S2sConfig, AUDIO_IN_RATE, AUDIO_OUT_RATE};
 use crate::protocol::{
-    audio_msg, chat_body, encode_wav_pcm16, parse_sse_line, system_msg, text_msg,
-    StreamEvent, SYSTEM_ASR, SYSTEM_INTERLEAVED,
+    audio_msg, chat_body, encode_wav_pcm16, parse_sse_line, system_msg, text_msg, StreamEvent,
+    SYSTEM_ASR, SYSTEM_INTERLEAVED,
 };
 
 /// Interleaved history cap in entries (50 turns). Over-cap pushes drop
@@ -75,6 +75,11 @@ fn is_loading_body(status: reqwest::StatusCode, body: &str) -> bool {
 
 /// Sleep `duration` unless `abort` fires first. Returns whether the
 /// turn was cancelled during the wait.
+///
+/// Stays separate from `common_core::retry::run_with_budget` (bounded
+/// sync execution with no abort signal): the 100 ms chunking here
+/// races the abort signal for prompt cancellation, which the shared
+/// helper deliberately does not do.
 fn sleep_abort_aware(abort: &StreamAbort, duration: std::time::Duration) -> bool {
     let waited = std::time::Duration::from_millis(0);
     let mut waited = waited;
@@ -95,6 +100,13 @@ fn sleep_abort_aware(abort: &StreamAbort, duration: std::time::Duration) -> bool
 /// failures report through `on_transport_error` (which owns any
 /// cache invalidation); a burnt budget replays the last loading
 /// reply so the caller names what it saw instead of a bare timeout.
+///
+/// M5-S3 audit: stays separate from `common_core::retry::PollWithBackoff`.
+/// The poller is sync (trait methods are sync; each send bridges), sleeps
+/// abort-aware in 100 ms chunks, enforces a wall-clock deadline, and
+/// re-issues the POST exactly once after body inspection — none of which
+/// the async unraced tick loop expresses. Pinned by
+/// `post_until_loaded_returns_terminal_503_without_waiting`.
 fn post_until_loaded(
     client: &reqwest::Client,
     url: &str,
@@ -130,11 +142,7 @@ fn post_until_loaded(
         // other 503 shape falls through as a terminal reply below.
         let (status, bytes) = common_core::runtime::block_on(async {
             let status = response.status();
-            let bytes = response
-                .bytes()
-                .await
-                .unwrap_or_default()
-                .to_vec();
+            let bytes = response.bytes().await.unwrap_or_default().to_vec();
             (status, bytes)
         });
         let text = String::from_utf8_lossy(&bytes);
@@ -185,54 +193,6 @@ fn rebuild_reply(
     .map_err(on_transport_error)
 }
 
-/// Whether 16 kHz samples carry likely speech: overall RMS above the
-/// digital-silence floor plus a minimum fraction of VAD speech frames.
-/// Energy alone cannot separate quiet speech from hiss (measured:
-/// RMS-0.003 speech transcribes while RMS-0.01 noise hallucinates),
-/// but the detector's zero-crossing ceiling rejects broadband hiss
-/// while voiced frames pass — so the fraction separates them with
-/// margin (white noise scores 0.0, short words score ≥0.4).
-fn speech_present(samples: &[f32]) -> bool {
-    /// Below this RMS the input is effectively digital silence.
-    const SILENCE_RMS: f32 = 0.002;
-    /// Minimum speech-frame fraction over 20 ms frames.
-    const MIN_SPEECH_FRACTION: f32 = 0.15;
-    if samples.is_empty() {
-        return false;
-    }
-    let energy: f32 = samples.iter().map(|sample| sample * sample).sum();
-    if (energy / samples.len() as f32).sqrt() < SILENCE_RMS {
-        return false;
-    }
-    // Gate floor below the detector default: far-mic speech around
-    // RMS 0.01 must still open spans, while the zero-crossing ceiling
-    // keeps rejecting broadband hiss at the same energy (measured
-    // grid: hiss ≤0.03 scores 0.00, quiet speech scores ≥0.57).
-    // The verdict re-arms every 50 frames (1 s): a latched span must
-    // re-prove, so stationary hiss that wins one attack lottery
-    // cannot ride it for the whole utterance, while voiced spans
-    // re-latch at once (3 attack frames per window).
-    let mut vad = orator_vad::EnergyVad::with_floor(0.01);
-    let mut speech_frames = 0usize;
-    let mut total_frames = 0usize;
-    for frame in samples.chunks(320) {
-        if frame.len() < 320 {
-            break;
-        }
-        if total_frames % 50 == 0 {
-            vad.reset();
-        }
-        total_frames += 1;
-        if vad.push(frame).speech {
-            speech_frames += 1;
-        }
-    }
-    if total_frames == 0 {
-        return false;
-    }
-    speech_frames as f32 / total_frames as f32 >= MIN_SPEECH_FRACTION
-}
-
 /// Whether the endpoint reports it cannot encode audio input.
 ///
 /// Pinned by transcript goldens: the reference text-only gateway
@@ -260,7 +220,8 @@ pub const fn should_advance_chain(error: &S2sError) -> bool {
 
 /// One completed turn: spoken audio plus its text.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ChatTurn {    /// Reply text deltas joined.
+pub struct ChatTurn {
+    /// Reply text deltas joined.
     pub text: String,
     /// Spoken samples at 24 kHz (empty when the server sent none).
     pub audio: Vec<f32>,
@@ -393,9 +354,12 @@ impl AudioSession {
     /// no speech presence answers empty without inference: the model
     /// voices politeness priors ("Okay.", "Thank you.") for hiss and
     /// room tone, and no prompt steers that away (measured live), so
-    /// the gate is signal-level, never a denylist.
+    /// the gate is signal-level, never a denylist. The verdict is the
+    /// shared commit gate (energy fraction plus stationary-tone
+    /// rejection): a loud pure tone is vowel-like to energy alone, so
+    /// energy without the tonal verdict would commit it.
     pub fn transcribe_blocking(&mut self, samples: &[f32]) -> Result<String, S2sError> {
-        if !speech_present(samples) {
+        if !orator_vad::speech_present_16k(samples) {
             return Ok(String::new());
         }
         let wav = encode_wav_pcm16(samples, AUDIO_IN_RATE);
@@ -563,16 +527,11 @@ impl AudioSession {
         // readiness probe opens routes before weights finish
         // streaming in, so the first turn after a cold boot would
         // otherwise fail a server that is seconds from serving.
-        let mut response = post_until_loaded(
-            &self.client,
-            &url,
-            &body,
-            abort,
-            |error: reqwest::Error| {
+        let mut response =
+            post_until_loaded(&self.client, &url, &body, abort, |error: reqwest::Error| {
                 crate::ensure::invalidate_hint_cache(&self.config.endpoint);
                 S2sError::Backend(error.to_string())
-            },
-        )?;
+            })?;
         if !response.status().is_success() {
             crate::ensure::invalidate_hint_cache(&self.config.endpoint);
             let status = response.status();
@@ -583,7 +542,11 @@ impl AudioSession {
             return Err(S2sError::Backend(format!(
                 "HTTP {status} from {url} for model '{}'{}{}",
                 self.config.model,
-                if detail.is_empty() { String::new() } else { format!(": {detail}") },
+                if detail.is_empty() {
+                    String::new()
+                } else {
+                    format!(": {detail}")
+                },
                 hint,
             )));
         }
@@ -659,7 +622,11 @@ impl AudioSession {
         if !voiced {
             self.no_audio_turns += 1;
         }
-        Ok(ChatTurn { text, audio, voiced })
+        Ok(ChatTurn {
+            text,
+            audio,
+            voiced,
+        })
     }
 }
 
@@ -709,8 +676,7 @@ impl DuplexEngine for AudioSession {
             self.mic_buffer.extend_from_slice(&mic.samples);
             self.in_turn = true;
             self.cold_frames = 0;
-            let max =
-                self.config.turn_window_ms as usize * AUDIO_IN_RATE as usize / 1000;
+            let max = self.config.turn_window_ms as usize * AUDIO_IN_RATE as usize / 1000;
             if self.mic_buffer.len() < max.max(1) {
                 return Ok(empty());
             }
@@ -772,6 +738,14 @@ impl WorkUnit for AudioSession {
 
 impl FieldAccess for AudioSession {
     fn set_field(&mut self, name: &str, value: &str) -> Result<(), FieldError> {
+        // M15-S3 keep-decision: flat names over the SHARED `S2sConfig`
+        // with intentionally session-local validation (plain number
+        // parse, no leaf min/max). Delegating to the derived leaf impl
+        // would add range enforcement (turn_window_ms 500..10000) and
+        // change the contract; a shadow config struct would duplicate
+        // the shared section. So the hand impl stays — the schema it
+        // mirrors is pinned by
+        // `session_field_surface_pins_schema_and_table`.
         match name {
             "mode" => {
                 self.config.mode = value.to_string();

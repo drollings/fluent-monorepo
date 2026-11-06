@@ -6,9 +6,7 @@
 use orator_core::AudioBundle;
 
 use crate::session::S2sError;
-use crate::voice::{
-    audio_supervisor_config, AUDIO_SERVER_BIN, AUDIO_SERVER_ENV,
-};
+use crate::voice::{AUDIO_SERVER_BIN, AUDIO_SERVER_ENV};
 
 /// An assured audio endpoint: shared (use as-is) or owned (stop on
 /// release by the caller).
@@ -106,30 +104,42 @@ pub async fn boot_audio_server(
             "no voice server (set {AUDIO_SERVER_ENV} or install {AUDIO_SERVER_BIN}; search hits that fail the ownership check are refused)"
         )));
     }
-    let mut last_error = String::new();
-    for binary in &candidates {
-        let mut config = audio_supervisor_config(bundle, 0);
-        config.model = model.to_string();
-        match orator_llm::boot_with_binary(config, binary).await {
-            Ok(supervisor) => {
-                let base_url = supervisor.base_url().to_string();
-                return Ok(AudioEndpoint::Owned {
-                    base_url,
-                    supervisor: Box::new(supervisor),
-                });
+    match fluent_wvr::ladder::first_accept_in_order(
+        candidates,
+        |binary: std::path::PathBuf| {
+            let mut config = crate::voice::audio_supervisor_config(bundle, 0);
+            config.model = model.to_string();
+            async move {
+                match orator_llm::boot_with_binary(config, &binary).await {
+                    Ok(supervisor) => {
+                        let base_url = supervisor.base_url().to_string();
+                        Ok(Some(AudioEndpoint::Owned {
+                            base_url,
+                            supervisor: Box::new(supervisor),
+                        }))
+                    }
+                    Err(error) => {
+                        eprintln!(
+                            "orator: voice candidate {} failed ({error}); trying the next",
+                            binary.display()
+                        );
+                        Err(error.to_string())
+                    }
+                }
             }
-            Err(error) => {
-                eprintln!(
-                    "orator: voice candidate {} failed ({error}); trying the next",
-                    binary.display()
-                );
-                last_error = error.to_string();
-            }
-        }
+        },
+        |_: &String| false,
+    )
+    .await
+    {
+        Ok(Some(endpoint)) => Ok(endpoint),
+        Ok(None) => Err(S2sError::Backend(
+            "every voice server candidate failed (last: )".to_string(),
+        )),
+        Err(last_error) => Err(S2sError::Backend(format!(
+            "every voice server candidate failed (last: {last_error})"
+        ))),
     }
-    Err(S2sError::Backend(format!(
-        "every voice server candidate failed (last: {last_error})"
-    )))
 }
 
 /// Model ids listed at `{base}/models`, then `{base}/v1/models`
@@ -139,6 +149,14 @@ pub async fn boot_audio_server(
 /// is bounded by TTL *or* one failed turn, whichever comes first —
 /// every turn still verifies by task-value, so a stale hint costs at
 /// most one owned boot, never a wrong success.
+///
+/// M12-S4 audit (keep-decision): this stays a hand-rolled TTL map
+/// instead of `common_core::cache::LoadCache`. `LoadCache` has no TTL
+/// expiry — its staleness bound is LRU capacity, not time — so a
+/// migration would trade "stale ≤ TTL" for "stale until evicted" and
+/// change the serving-hint contract; its `load` is also sync while
+/// the fetch is two async HTTP calls. Revisit if `LoadCache` gains
+/// TTL expiry.
 pub(crate) async fn listed_model_ids(base: &str) -> Vec<String> {
     if let Some(cached) = hint_cache_get(base) {
         return cached;
@@ -165,10 +183,7 @@ pub async fn serves_model(base: &str, model: &str) -> bool {
 /// Single attempt, short timeout; never cached (readiness is cheap
 /// and changes with the server).
 async fn audio_build_ready(base: &str) -> bool {
-    let url = format!(
-        "{}/v1/chat/completions",
-        base.trim_end_matches('/')
-    );
+    let url = format!("{}/v1/chat/completions", base.trim_end_matches('/'));
     common_core::http::shared_http_client()
         .request(reqwest::Method::OPTIONS, &url)
         .timeout(std::time::Duration::from_secs(5))
@@ -238,16 +253,7 @@ async fn fetch_listed_model_ids(base: &str) -> Vec<String> {
         let Ok(body) = response.json::<serde_json::Value>().await else {
             continue;
         };
-        let listed: Vec<String> = body
-            .get("data")
-            .and_then(|data| data.as_array())
-            .map(|entries| {
-                entries
-                    .iter()
-                    .filter_map(|entry| entry.get("id")?.as_str().map(str::to_string))
-                    .collect()
-            })
-            .unwrap_or_default();
+        let listed = fluent_llm::openai::model_ids(&body);
         for id in listed {
             if !ids.contains(&id) {
                 ids.push(id);

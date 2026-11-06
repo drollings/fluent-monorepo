@@ -60,8 +60,7 @@ fn tone(freq: f32, amplitude: f32, frames: usize) -> Vec<Vec<f32>> {
             (0..FRAME_SAMPLES)
                 .map(|index| {
                     amplitude
-                        * (2.0 * std::f32::consts::PI * freq * index as f32
-                            / SAMPLE_RATE as f32)
+                        * (2.0 * std::f32::consts::PI * freq * index as f32 / SAMPLE_RATE as f32)
                             .sin()
                 })
                 .collect()
@@ -121,13 +120,41 @@ fn span_fires(frames: &[Vec<f32>]) -> bool {
 #[test]
 fn vad_spans_fire_only_on_speech() {
     let cases = vec![
-        SpanCase { name: "silence-10", frames: silence(10), speech: false },
-        SpanCase { name: "silence-50", frames: silence(50), speech: false },
-        SpanCase { name: "quiet-440hz", frames: tone(440.0, 0.005, 30), speech: false },
-        SpanCase { name: "tone-4k", frames: tone(4000.0, 0.4, 20), speech: false },
-        SpanCase { name: "tone-5k", frames: tone(5000.0, 0.4, 20), speech: false },
-        SpanCase { name: "tone-6k", frames: tone(6000.0, 0.4, 20), speech: false },
-        SpanCase { name: "tone-7k", frames: tone(7000.0, 0.4, 20), speech: false },
+        SpanCase {
+            name: "silence-10",
+            frames: silence(10),
+            speech: false,
+        },
+        SpanCase {
+            name: "silence-50",
+            frames: silence(50),
+            speech: false,
+        },
+        SpanCase {
+            name: "quiet-440hz",
+            frames: tone(440.0, 0.005, 30),
+            speech: false,
+        },
+        SpanCase {
+            name: "tone-4k",
+            frames: tone(4000.0, 0.4, 20),
+            speech: false,
+        },
+        SpanCase {
+            name: "tone-5k",
+            frames: tone(5000.0, 0.4, 20),
+            speech: false,
+        },
+        SpanCase {
+            name: "tone-6k",
+            frames: tone(6000.0, 0.4, 20),
+            speech: false,
+        },
+        SpanCase {
+            name: "tone-7k",
+            frames: tone(7000.0, 0.4, 20),
+            speech: false,
+        },
         SpanCase {
             name: "alternating-noise",
             frames: alternating_noise(0.52, 20),
@@ -138,9 +165,21 @@ fn vad_spans_fire_only_on_speech() {
             frames: seeded_noise(0x243F_6A88_85A3_08D3, 0.52, 20),
             speech: false,
         },
-        SpanCase { name: "harmonic-5", frames: harmonic(5), speech: true },
-        SpanCase { name: "harmonic-10", frames: harmonic(10), speech: true },
-        SpanCase { name: "harmonic-20", frames: harmonic(20), speech: true },
+        SpanCase {
+            name: "harmonic-5",
+            frames: harmonic(5),
+            speech: true,
+        },
+        SpanCase {
+            name: "harmonic-10",
+            frames: harmonic(10),
+            speech: true,
+        },
+        SpanCase {
+            name: "harmonic-20",
+            frames: harmonic(20),
+            speech: true,
+        },
     ];
     for case in &cases {
         assert_eq!(
@@ -157,7 +196,10 @@ fn vad_spans_fire_only_on_speech() {
         0.5,
     );
     assert_eq!((report.tp, report.fp, report.tn, report.r#fn), (3, 0, 9, 0));
-    assert!(report.passes_gate(), "VAD spans must pass the shared gate: {report:?}");
+    assert!(
+        report.passes_gate(),
+        "VAD spans must pass the shared gate: {report:?}"
+    );
 }
 
 #[test]
@@ -203,7 +245,11 @@ fn voiced_span_opens_and_closes_inside_its_bands() {
     // run (3 hot frames); close exactly after the hangover run
     // (15 cold frames) past the last hot frame (index 29).
     assert_eq!(onset, Some(12), "onset must sit one attack past span start");
-    assert_eq!(last_open, Some(43), "close must sit one hangover past span end");
+    assert_eq!(
+        last_open,
+        Some(43),
+        "close must sit one hangover past span end"
+    );
 }
 
 struct GapCase {
@@ -234,16 +280,36 @@ fn gap_closes(gap_frames: usize, tail_frames: usize) -> bool {
 #[test]
 fn endpointing_holds_through_pauses_and_cuts_past_the_band() {
     let cases = vec![
-        GapCase { name: "mid-word pause 100ms", gap_frames: 5, tail_frames: 10, must_close: false },
-        GapCase { name: "slow-speaker gap 200ms", gap_frames: 10, tail_frames: 10, must_close: false },
+        GapCase {
+            name: "mid-word pause 100ms",
+            gap_frames: 5,
+            tail_frames: 10,
+            must_close: false,
+        },
+        GapCase {
+            name: "slow-speaker gap 200ms",
+            gap_frames: 10,
+            tail_frames: 10,
+            must_close: false,
+        },
         GapCase {
             name: "hangover boundary minus one",
             gap_frames: 14,
             tail_frames: 10,
             must_close: false,
         },
-        GapCase { name: "hangover boundary", gap_frames: 15, tail_frames: 0, must_close: true },
-        GapCase { name: "end of utterance 800ms", gap_frames: 40, tail_frames: 0, must_close: true },
+        GapCase {
+            name: "hangover boundary",
+            gap_frames: 15,
+            tail_frames: 0,
+            must_close: true,
+        },
+        GapCase {
+            name: "end of utterance 800ms",
+            gap_frames: 40,
+            tail_frames: 0,
+            must_close: true,
+        },
     ];
     for case in &cases {
         assert_eq!(
@@ -347,11 +413,31 @@ fn barge_in_opens_on_speech_never_on_echo_or_bursts() {
     let mut speech_after_echo = echo_only.clone();
     speech_after_echo.extend((0..10).map(|_| hot_mic()));
     let cases = vec![
-        Case { name: "echo-only", stimulus: echo_only, must_open: false },
-        Case { name: "noise-burst", stimulus: noise_burst, must_open: false },
-        Case { name: "short-blip", stimulus: blip, must_open: false },
-        Case { name: "sustained-speech", stimulus: speech, must_open: true },
-        Case { name: "speech-after-echo", stimulus: speech_after_echo, must_open: true },
+        Case {
+            name: "echo-only",
+            stimulus: echo_only,
+            must_open: false,
+        },
+        Case {
+            name: "noise-burst",
+            stimulus: noise_burst,
+            must_open: false,
+        },
+        Case {
+            name: "short-blip",
+            stimulus: blip,
+            must_open: false,
+        },
+        Case {
+            name: "sustained-speech",
+            stimulus: speech,
+            must_open: true,
+        },
+        Case {
+            name: "speech-after-echo",
+            stimulus: speech_after_echo,
+            must_open: true,
+        },
     ];
     let outcomes: Vec<bool> = cases
         .iter()
@@ -367,7 +453,10 @@ fn barge_in_opens_on_speech_never_on_echo_or_bursts() {
     let report = calibrate_threshold(
         &cases,
         |case: &Case| {
-            let index = cases.iter().position(|other| other.name == case.name).expect("case");
+            let index = cases
+                .iter()
+                .position(|other| other.name == case.name)
+                .expect("case");
             f64::from(outcomes[index])
         },
         |case: &Case| case.must_open,
@@ -392,11 +481,20 @@ fn echo_only_frames_open_zero_candidates() {
 #[test]
 fn calibrated_constants_stay_pinned() {
     let vad = orator_vad::EnergyVad::default();
-    assert!((vad.floor - 0.02).abs() < f32::EPSILON, "floor moves only with numbers recorded");
-    assert!((vad.hysteresis - 0.01).abs() < f32::EPSILON, "hysteresis bands stay put");
+    assert!(
+        (vad.floor - 0.02).abs() < f32::EPSILON,
+        "floor moves only with numbers recorded"
+    );
+    assert!(
+        (vad.hysteresis - 0.01).abs() < f32::EPSILON,
+        "hysteresis bands stay put"
+    );
     assert_eq!(vad.attack_frames, 3, "attack run stays three frames");
     assert_eq!(vad.hangover_frames, 15, "hangover run stays fifteen frames");
-    assert!((vad.max_zero_crossing - 0.45).abs() < f32::EPSILON, "ceiling stays put");
+    assert!(
+        (vad.max_zero_crossing - 0.45).abs() < f32::EPSILON,
+        "ceiling stays put"
+    );
     let turn = orator_core::TurnConfig::default();
     assert_eq!(turn.hold_min_ms, 300, "hold floor stays 300 ms");
     assert_eq!(turn.hold_max_ms, 700, "hold ceiling stays 700 ms");
@@ -406,5 +504,9 @@ fn calibrated_constants_stay_pinned() {
         2000,
         "window cap stays 2 s"
     );
-    assert_eq!(FRAME_MS * 15, 300, "hangover run matches the hold floor in ms");
+    assert_eq!(
+        FRAME_MS * 15,
+        300,
+        "hangover run matches the hold floor in ms"
+    );
 }

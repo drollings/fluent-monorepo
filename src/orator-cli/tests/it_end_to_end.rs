@@ -59,7 +59,6 @@ fn speech_frame() -> Vec<f32> {
         .collect()
 }
 
-
 fn speech_span(frames: usize) -> Vec<f32> {
     // Multi-frame voiced utterance: the speech-presence gate scores
     // whole turns (attack run plus voiced span), so scripted turns
@@ -79,7 +78,10 @@ fn cascade_turn_flows_from_speech_to_store() {
         for _ in 0..5 {
             vad.push(&speech_frame());
         }
-        assert!(vad.push(&speech_frame()).speech, "voiced frames open speech");
+        assert!(
+            vad.push(&speech_frame()).speech,
+            "voiced frames open speech"
+        );
         for _ in 0..20 {
             vad.push(&vec![0.0; 320]);
         }
@@ -170,7 +172,8 @@ fn cascade_turn_flows_from_speech_to_store() {
             .expect("append transcript");
         log.append("s1", 0, "reply", &out.delta, 2)
             .expect("append reply");
-        log.append("s1", 0, "note", &summary, 3).expect("append note");
+        log.append("s1", 0, "note", &summary, 3)
+            .expect("append note");
         let events = log.replay(0, 10).expect("replay");
         let kinds: Vec<&str> = events.iter().map(|event| event.kind.as_str()).collect();
         assert_eq!(kinds, vec!["transcript", "reply", "note"]);
@@ -180,10 +183,7 @@ fn cascade_turn_flows_from_speech_to_store() {
 
 fn cli_binary() -> PathBuf {
     std::env::var("CARGO_BIN_EXE_orator_cli").map_or_else(
-        |_| {
-            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("../../target/debug/orator-cli")
-        },
+        |_| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/debug/orator-cli"),
         PathBuf::from,
     )
 }
@@ -366,7 +366,12 @@ fn new_leaves_are_honored_end_to_end() {
     assert_eq!(get(home.path(), cwd.path(), "tts.gpu"), "true");
     // The WS listener is socket-only by default.
     assert_eq!(get(home.path(), cwd.path(), "daemon.ws_listen"), "");
-    set(home.path(), cwd.path(), "daemon.ws_listen", "127.0.0.1:18081");
+    set(
+        home.path(),
+        cwd.path(),
+        "daemon.ws_listen",
+        "127.0.0.1:18081",
+    );
     assert_eq!(
         get(home.path(), cwd.path(), "daemon.ws_listen"),
         "127.0.0.1:18081"
@@ -402,7 +407,9 @@ fn over_bound_inputs_stay_bounded_everywhere() {
             },
         );
         llm.push_text(&"w ".repeat(50_000));
-        let out = llm.step(&mut Sampler::default()).expect("scripted step succeeds");
+        let out = llm
+            .step(&mut Sampler::default())
+            .expect("scripted step succeeds");
         assert_eq!(out.delta, "ok");
         let requests = common_core::sync::lock(&recorded);
         assert_eq!(requests.len(), 1);
@@ -621,13 +628,11 @@ fn live_conversation_with_barge_in_completes_in_order() {
             .expect("append barge");
         log.append("s1", 0, "reply", "first reply", 4)
             .expect("append resumed reply");
-        log.append("s1", 0, "note", &summary, 5).expect("append note");
+        log.append("s1", 0, "note", &summary, 5)
+            .expect("append note");
         let events = log.replay(0, 10).expect("replay");
         let kinds: Vec<&str> = events.iter().map(|event| event.kind.as_str()).collect();
-        assert_eq!(
-            kinds,
-            vec!["transcript", "reply", "barge", "reply", "note"]
-        );
+        assert_eq!(kinds, vec!["transcript", "reply", "barge", "reply", "note"]);
         assert!(events[0].payload.contains("book a table for two"));
     });
 }

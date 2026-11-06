@@ -261,6 +261,32 @@ impl TokenBudget {
     }
 }
 
+/// Middle-truncation splitter: the first `head_chars` chars, then
+/// `marker`, then the last `tail_chars` chars.
+///
+/// Pure char splitting — the caller owns every budget decision
+/// (whether to truncate, how big the halves are, what the marker
+/// says), so `bound_prompt`'s keep/head/tail math keeps its exact
+/// shape. There is deliberately no small-input shortcut: a hidden
+/// passthrough here would change outputs whose halves overlap their
+/// input (callers that pass small inputs through do so before
+/// calling). Zero halves are empty; overlapping halves duplicate the
+/// middle (the caller's budgets guarantee this never fires on a bound
+/// path — pinned by `truncate_middle_overlap_duplicates`).
+#[must_use]
+pub fn truncate_middle(text: &str, head_chars: usize, tail_chars: usize, marker: &str) -> String {
+    let head: String = text.chars().take(head_chars).collect();
+    let tail: String = text
+        .chars()
+        .rev()
+        .take(tail_chars)
+        .collect::<String>()
+        .chars()
+        .rev()
+        .collect();
+    format!("{head}{marker}{tail}")
+}
+
 // ── Sentence-boundary-aware document chunking ────────────────────────
 
 /// Configuration for sentence-boundary-aware document chunking.

@@ -21,7 +21,9 @@ fn manifest_finds_by_family_and_tag() {
     let manifest = ModelManifest {
         entries: whisper_entries(),
     };
-    let tiny = manifest.find(ModelKind::Whisper, "tiny").expect("tiny listed");
+    let tiny = manifest
+        .find(ModelKind::Whisper, "tiny")
+        .expect("tiny listed");
     assert_eq!(tiny.file, "ggml-tiny.bin");
     assert!(manifest.find(ModelKind::Llm, "tiny").is_none());
 }
@@ -43,7 +45,9 @@ fn pins_are_explicit_never_stale() {
     let manifest = ModelManifest {
         entries: whisper_entries(),
     };
-    let tiny = manifest.find(ModelKind::Whisper, "tiny").expect("tiny listed");
+    let tiny = manifest
+        .find(ModelKind::Whisper, "tiny")
+        .expect("tiny listed");
     assert!(tiny.pinned(), "tiny must be fully pinned");
 }
 
@@ -63,7 +67,7 @@ fn language_model_default_resolves_as_documented_intent() {
         entries: llm_entries(),
     };
     let default = manifest
-        .find(ModelKind::Llm, "bartowski/lfm3-1.7b")
+        .find(ModelKind::Llm, "liquidai/lfm3-audio-2b")
         .expect("default tag listed");
     assert_eq!(default.kind, ModelKind::Llm);
     assert!(default.file.ends_with(".gguf"));

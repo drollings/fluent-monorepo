@@ -33,12 +33,24 @@ fn unknown_session_is_named() {
     let owner = VoiceOwner::disabled();
     let error = owner.stop_session("s999").expect_err("unknown must fail");
     assert!(error.to_string().contains("s999"), "names the id: {error}");
-    let error = owner.interrupt_session("s999").expect_err("unknown must fail");
+    let error = owner
+        .interrupt_session("s999")
+        .expect_err("unknown must fail");
     assert!(error.to_string().contains("s999"), "names the id: {error}");
-    let error = owner.say_blocking("", None).expect_err("empty text must fail");
-    assert!(error.to_string().contains("nothing to speak"), "names the reason: {error}");
-    let error = owner.ask_blocking("", None).expect_err("empty question must fail");
-    assert!(error.to_string().contains("nothing to ask"), "names the reason: {error}");
+    let error = owner
+        .say_blocking("", None)
+        .expect_err("empty text must fail");
+    assert!(
+        error.to_string().contains("nothing to speak"),
+        "names the reason: {error}"
+    );
+    let error = owner
+        .ask_blocking("", None)
+        .expect_err("empty question must fail");
+    assert!(
+        error.to_string().contains("nothing to ask"),
+        "names the reason: {error}"
+    );
     owner.shutdown();
 }
 
@@ -56,13 +68,17 @@ fn interrupt_rearms_for_the_next_turn() {
 #[test]
 fn stop_without_id_needs_exactly_one_session() {
     let owner = VoiceOwner::disabled();
-    owner.stop_session("").expect_err("empty with none live must fail");
+    owner
+        .stop_session("")
+        .expect_err("empty with none live must fail");
     let first = owner.start_session("assistant").expect("start");
     owner.stop_session("").expect("single live session stops");
     assert!(owner.list_sessions().is_empty());
     let _ = owner.start_session("assistant").expect("start");
     let _ = owner.start_session("assistant").expect("start");
-    owner.stop_session("").expect_err("ambiguous without id must fail");
+    owner
+        .stop_session("")
+        .expect_err("ambiguous without id must fail");
     let _ = first;
     owner.shutdown();
 }
@@ -101,14 +117,17 @@ fn say_reports_text_only_as_backend() {
     let error = owner
         .say_via(&server.base_url(), "hello", None)
         .expect_err("text-only must not voice");
-    assert!(error.to_string().contains("no audio"), "task-value drives fallback: {error}");
+    assert!(
+        error.to_string().contains("no audio"),
+        "task-value drives fallback: {error}"
+    );
     owner.shutdown();
 }
 
 #[test]
 fn ask_against_scripted_llm_queue_fixture() {
-    use std::sync::Arc;
     use fluent_llm::protocol::{LlmError as FluentError, LlmQueueConfig, LlmRequestQueue, LlmTask};
+    use std::sync::Arc;
     common_core::runtime::block_on_shared(async {
         let recorded = Arc::new(std::sync::Mutex::new(Vec::new()));
         let queue = Arc::new(LlmRequestQueue::new(
@@ -173,9 +192,18 @@ fn toggle_dictation_stops_only_dictation_kinds() {
     let (active, _) = owner.toggle_dictation(Some(false));
     assert!(!active);
     let remaining = owner.list_sessions();
-    assert!(remaining.contains(&assistant), "assistant survives: {remaining:?}");
-    assert!(remaining.contains(&meeting), "meeting survives: {remaining:?}");
-    assert!(!remaining.contains(&dictation), "dictation stops: {remaining:?}");
+    assert!(
+        remaining.contains(&assistant),
+        "assistant survives: {remaining:?}"
+    );
+    assert!(
+        remaining.contains(&meeting),
+        "meeting survives: {remaining:?}"
+    );
+    assert!(
+        !remaining.contains(&dictation),
+        "dictation stops: {remaining:?}"
+    );
     owner.shutdown();
 }
 
@@ -223,7 +251,10 @@ fn transcribe_over_bound_refuses_before_inference() {
     let error = owner
         .transcribe_blocking(&vec![0.5; crate::voice::MAX_TRANSCRIBE_SAMPLES + 1], None)
         .expect_err("over-bound refuses");
-    assert!(error.to_string().contains("exceeds the single-frame bound"), "{error}");
+    assert!(
+        error.to_string().contains("exceeds the single-frame bound"),
+        "{error}"
+    );
     owner.shutdown();
 }
 
@@ -246,7 +277,14 @@ fn ask_with_session_builds_context_across_turns() {
     let owner = VoiceOwner::disabled();
     let id = owner.start_session("assistant").expect("start");
     let reply = owner
-        .ask_via(&server.base_url(), "m", 8192, 512, "question-one", Some(&id))
+        .ask_via(
+            &server.base_url(),
+            "m",
+            8192,
+            512,
+            "question-one",
+            Some(&id),
+        )
         .expect("first turn runs");
     assert_eq!(reply, "reply-one");
     assert_eq!(first.hits(), 1);
@@ -260,7 +298,14 @@ fn ask_with_session_builds_context_across_turns() {
         then.status(200).body(chat_reply("reply-two"));
     });
     let reply = owner
-        .ask_via(&server.base_url(), "m", 8192, 512, "question-two", Some(&id))
+        .ask_via(
+            &server.base_url(),
+            "m",
+            8192,
+            512,
+            "question-two",
+            Some(&id),
+        )
         .expect("second turn carries history");
     assert_eq!(reply, "reply-two");
     assert_eq!(second.hits(), 1);
@@ -277,7 +322,14 @@ fn ask_with_session_builds_context_across_turns() {
         then.status(200).body(chat_reply("stale"));
     });
     let error = owner
-        .ask_via(&server.base_url(), "m", 8192, 512, "question-three", Some(&id))
+        .ask_via(
+            &server.base_url(),
+            "m",
+            8192,
+            512,
+            "question-three",
+            Some(&id),
+        )
         .expect_err("dropped history matches nothing");
     assert!(
         matches!(error, crate::voice::VoiceError::Backend(_)),

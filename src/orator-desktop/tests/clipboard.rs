@@ -156,3 +156,72 @@ impl ChordSender for QuietPaste {
         Ok(())
     }
 }
+
+/// The clipboard child bound from the parent module: tests pin the
+/// shipped values so the calibration row stays honest.
+#[test]
+fn clipboard_child_bound_stays_pinned() {
+    use crate::clipboard::{CLIPBOARD_CHILD_DEADLINE_MS, CLIPBOARD_POLL_MS};
+    assert_eq!(CLIPBOARD_POLL_MS, 10);
+    assert_eq!(CLIPBOARD_CHILD_DEADLINE_MS, 2000);
+}
+
+/// An instantly-exiting child reports its status, never a timeout.
+#[test]
+fn bounded_wait_returns_instant_child_status() {
+    use crate::clipboard::wait_child_bounded;
+    let mut child = std::process::Command::new("true")
+        .spawn()
+        .expect("spawn true");
+    let status = wait_child_bounded(&mut child, 2000).expect("instant child reports");
+    assert!(status.success());
+}
+
+/// An exited-but-failed child reports failure, never a timeout: exit
+/// status and deadline are different signals.
+#[test]
+fn bounded_wait_reports_failure_status_not_timeout() {
+    use crate::clipboard::wait_child_bounded;
+    let mut child = std::process::Command::new("false")
+        .spawn()
+        .expect("spawn false");
+    let status = wait_child_bounded(&mut child, 2000).expect("failed child still reports");
+    assert!(!status.success());
+}
+
+/// A parked child is killed, reaped, and named — well under any
+/// interactive hang. The post-call `try_wait` proves no zombie.
+#[test]
+fn bounded_wait_kills_and_reaps_parked_child() {
+    use std::time::{Duration, Instant};
+    use crate::clipboard::{wait_child_bounded, ChildWaitError};
+    let mut child = std::process::Command::new("sleep")
+        .arg("30")
+        .spawn()
+        .expect("spawn sleep");
+    let started = Instant::now();
+    let error = wait_child_bounded(&mut child, 200).expect_err("parked child must time out");
+    assert_eq!(error, ChildWaitError::Timeout);
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "deadline fires, never the old hang: {:?}",
+        started.elapsed()
+    );
+    assert!(
+        child.try_wait().expect("waitable").is_some(),
+        "killed child is reaped, never a zombie"
+    );
+}
+
+/// A slow-but-under-deadline child succeeds: the bound never fires
+/// early on a merely slow compositor handshake.
+#[test]
+fn bounded_wait_tolerates_slow_under_deadline_child() {
+    use crate::clipboard::wait_child_bounded;
+    let mut child = std::process::Command::new("sleep")
+        .arg("0.2")
+        .spawn()
+        .expect("spawn sleep");
+    let status = wait_child_bounded(&mut child, 5000).expect("slow child succeeds");
+    assert!(status.success());
+}

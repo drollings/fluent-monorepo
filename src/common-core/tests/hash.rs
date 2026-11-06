@@ -233,3 +233,100 @@ fn canonical_json_reports_serialization_failure_loudly() {
     }
     assert_eq!(canonical_json(&Fail), r#"{"serialization_error":"boom"}"#);
 }
+
+// ── verify_sha256_file: size first, then digest ─────────────────────
+
+fn size(n: u64) -> Option<std::num::NonZeroU64> {
+    std::num::NonZeroU64::new(n)
+}
+
+#[test]
+fn verify_empty_file_with_no_size_check() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("empty.bin");
+    std::fs::write(&path, b"").expect("empty fixture");
+    assert_eq!(
+        verify_sha256_file(&path, None, &sha256_hex(b"")).expect("verifies"),
+        FileVerification::Match
+    );
+    assert_eq!(
+        verify_sha256_file(&path, size(1), &sha256_hex(b"")).expect("size reported"),
+        FileVerification::SizeMismatch {
+            actual: 0,
+            expected: 1
+        }
+    );
+}
+
+#[test]
+fn verify_matching_file_reports_match() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("w.bin");
+    std::fs::write(&path, b"hello").expect("fixture");
+    assert_eq!(
+        verify_sha256_file(&path, size(5), &sha256_hex(b"hello")).expect("verifies"),
+        FileVerification::Match
+    );
+}
+
+#[test]
+fn verify_wrong_size_does_not_hash() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("short.bin");
+    std::fs::write(&path, b"hi").expect("fixture");
+    assert_eq!(
+        verify_sha256_file(&path, size(5), &sha256_hex(b"hello")).expect("size reported"),
+        FileVerification::SizeMismatch {
+            actual: 2,
+            expected: 5
+        }
+    );
+}
+
+#[test]
+fn verify_same_length_wrong_hash_reports_both_digests() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("tampered.bin");
+    std::fs::write(&path, b"world").expect("fixture");
+    let expected = sha256_hex(b"hello");
+    assert_eq!(
+        verify_sha256_file(&path, size(5), &expected).expect("hash reported"),
+        FileVerification::HashMismatch {
+            actual: sha256_hex(b"world"),
+            expected,
+        }
+    );
+}
+
+#[test]
+fn verify_size_check_precedes_any_read() {
+    // A directory has readable metadata but fails a read; with a mismatched
+    // expected size the verifier must return SizeMismatch without reading.
+    let dir = tempfile::tempdir().expect("tempdir");
+    assert_eq!(
+        verify_sha256_file(dir.path(), size(1), &sha256_hex(b"")).expect("size reported"),
+        FileVerification::SizeMismatch {
+            actual: std::fs::metadata(dir.path()).expect("metadata").len(),
+            expected: 1,
+        }
+    );
+}
+
+#[test]
+fn verify_missing_file_is_an_io_error() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let missing = dir.path().join("missing.bin");
+    let error = verify_sha256_file(&missing, size(5), &sha256_hex(b"hello"))
+        .expect_err("missing file must be an I/O error");
+    assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
+}
+
+#[test]
+fn verify_read_error_is_an_io_error() {
+    // A directory opens but cannot be read as a file; no size pin means the
+    // verifier reaches the read and surfaces the error unchanged.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let error = verify_sha256_file(dir.path(), None, &sha256_hex(b""))
+        .expect_err("directory read must be an I/O error");
+    assert_ne!(error.kind(), std::io::ErrorKind::NotFound);
+}

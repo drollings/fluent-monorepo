@@ -26,8 +26,7 @@ pub const SOFT_GAP_MS: u32 = 60;
 
 /// Periods that never end a sentence: titles and Latin abbreviations.
 const TITLES: &[&str] = &[
-    "mr", "mrs", "ms", "dr", "st", "jr", "sr", "prof", "rev", "hon", "esq", "eg", "ie", "etc",
-    "vs",
+    "mr", "mrs", "ms", "dr", "st", "jr", "sr", "prof", "rev", "hon", "esq", "eg", "ie", "etc", "vs",
 ];
 
 /// One speakable chunk.
@@ -109,10 +108,10 @@ fn token_offset(doc: &spacy_rs::Doc, index: usize) -> usize {
 #[must_use]
 pub fn find_cut(buffer: &str, first: bool, tools: Option<&SentenceTools>) -> Option<Cut> {
     let (chunks, _) = scan(buffer, first, tools, false);
-    chunks
-        .into_iter()
-        .next()
-        .map(|(chunk, end)| Cut { len: end, hard: chunk.hard })
+    chunks.into_iter().next().map(|(chunk, end)| Cut {
+        len: end,
+        hard: chunk.hard,
+    })
 }
 
 /// Split complete text into chunks. The tail always emits whole; chunks
@@ -187,7 +186,13 @@ fn scan(
             } else {
                 let piece = cur.trim().to_string();
                 if !piece.is_empty() {
-                    chunks.push((Chunk { text: piece, hard: true }, end_byte));
+                    chunks.push((
+                        Chunk {
+                            text: piece,
+                            hard: true,
+                        },
+                        end_byte,
+                    ));
                 }
                 opened += 1;
                 committed_upto = end_byte;
@@ -205,7 +210,13 @@ fn scan(
         {
             let piece = cur.trim().to_string();
             if !piece.is_empty() {
-                chunks.push((Chunk { text: piece, hard: false }, end_byte));
+                chunks.push((
+                    Chunk {
+                        text: piece,
+                        hard: false,
+                    },
+                    end_byte,
+                ));
             }
             opened += 1;
             committed_upto = end_byte;
@@ -224,10 +235,13 @@ fn scan(
                 let carry = cur.split_off(at);
                 let piece = cur.trim().to_string();
                 if !piece.is_empty() {
-                    chunks.push((Chunk {
-                        text: piece,
-                        hard: false,
-                    }, cur_base + at));
+                    chunks.push((
+                        Chunk {
+                            text: piece,
+                            hard: false,
+                        },
+                        cur_base + at,
+                    ));
                 }
                 opened += 1;
                 committed_upto = cur_base + at;
@@ -240,7 +254,13 @@ fn scan(
                 let end_byte = byte + ch.len_utf8();
                 let piece = cur.trim().to_string();
                 if !piece.is_empty() {
-                    chunks.push((Chunk { text: piece, hard: false }, end_byte));
+                    chunks.push((
+                        Chunk {
+                            text: piece,
+                            hard: false,
+                        },
+                        end_byte,
+                    ));
                 }
                 opened += 1;
                 committed_upto = end_byte;

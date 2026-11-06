@@ -10,15 +10,13 @@ use std::sync::Mutex;
 
 use fluent_concurrency::stream::StreamAbort;
 use fluent_wvr::{
-    Describable, FieldAccess, FieldError, WorkContext, WorkError, WorkOutput, WorkUnit,
-    impl_component,
+    impl_component, Describable, FieldAccess, FieldError, WorkContext, WorkError, WorkOutput,
+    WorkUnit,
 };
 use internment::ArcIntern;
 use orator_core::SttError;
 use std::sync::Arc;
-use whisper_rs::{
-    FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters,
-};
+use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
 /// One decoded segment before word splitting.
 #[derive(Debug, Clone, PartialEq)]
@@ -203,8 +201,8 @@ pub fn split_segment_words(segment: &RawSegment) -> Vec<crate::streaming::Decode
     if tokens.is_empty() {
         return Vec::new();
     }
-    let span_ms = (segment.end_cs.saturating_sub(segment.start_cs).max(0) as u64)
-        .saturating_mul(10);
+    let span_ms =
+        (segment.end_cs.saturating_sub(segment.start_cs).max(0) as u64).saturating_mul(10);
     let base_ms = (segment.start_cs.max(0) as u64).saturating_mul(10);
     let count = tokens.len() as u64;
     tokens
@@ -270,6 +268,13 @@ impl WorkUnit for WhisperBackend {
 
 impl FieldAccess for WhisperBackend {
     fn set_field(&mut self, name: &str, value: &str) -> Result<(), FieldError> {
+        // M15-S5 keep-decision: every successful set drops the loaded
+        // context (a retune must reload, never serve stale weights) and
+        // `model_path` stays a lossless `PathBuf`. The derive has no
+        // post-set hook and no `PathBuf` support (its getter needs
+        // `Display`), so migration would silently drop invalidation or
+        // lossy-convert non-UTF8 model paths. The schema this mirrors
+        // is pinned by `whisper_field_surface_pins_schema_and_table`.
         match name {
             "language" => {
                 self.language = value.to_string();
@@ -282,9 +287,9 @@ impl FieldAccess for WhisperBackend {
                 Ok(())
             }
             "gpu" => {
-                self.gpu = value.parse().map_err(|_| {
-                    FieldError::Parse(format!("invalid bool for 'gpu': {value}"))
-                })?;
+                self.gpu = value
+                    .parse()
+                    .map_err(|_| FieldError::Parse(format!("invalid bool for 'gpu': {value}")))?;
                 self.drop_context();
                 Ok(())
             }

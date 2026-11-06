@@ -51,11 +51,8 @@ fn partial_leaf_falls_back_to_default() {
 fn partial_file_keeps_written_values() {
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("config.json");
-    std::fs::write(
-        &path,
-        r#"{"tts": {"backend": "kokoro", "voice": "brass"}}"#,
-    )
-    .expect("write fixture");
+    std::fs::write(&path, r#"{"tts": {"backend": "kokoro", "voice": "brass"}}"#)
+        .expect("write fixture");
     let loaded: OratorConfig = common_core::config::load_json(&path).unwrap_or_default();
     assert_eq!(loaded.tts.voice, "brass");
     assert_eq!(loaded.audio.backend, "cpal");

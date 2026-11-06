@@ -92,16 +92,28 @@ fn all_models_reports_skips_and_fails_on_mismatch() {
 
 #[test]
 fn all_models_succeeds_when_only_optionals_are_missing() {
-    let rows = vec![
-        row("unpinned", true, false),
-        row("absent", false, true),
-    ];
+    let rows = vec![row("unpinned", true, false), row("absent", false, true)];
     let report = verify_report(&rows, "", check);
     assert_eq!(
         report.lines,
         vec!["unpinned: unverified (unpinned)", "absent: missing",]
     );
     assert!(!report.failed);
+}
+
+/// Progress text mirrors the report wording per outcome.
+#[test]
+fn verify_progress_line_names_entry_and_outcome() {
+    use crate::models::verify_progress_line;
+    assert_eq!(verify_progress_line("tiny", &Ok(true)), "verify tiny: ok");
+    assert_eq!(
+        verify_progress_line("tiny", &Ok(false)),
+        "verify tiny: MISMATCH"
+    );
+    assert_eq!(
+        verify_progress_line("tiny", &Err("gone".to_string())),
+        "verify tiny: gone"
+    );
 }
 
 // --- `models pull` plane tests: pinned fetches and verifies, unpinned
@@ -182,15 +194,15 @@ fn pull_pinned_fetches_through_the_plane_and_verifies() {
         bytes: bytes.to_vec(),
         calls: Mutex::new(Vec::new()),
     };
-    let landed = common_core::runtime::block_on_shared(crate::models::pull_single(
-        &entry,
-        &dest,
-        &fetcher,
-    ))
-    .expect("pinned pull fetches");
+    let landed =
+        common_core::runtime::block_on_shared(crate::models::pull_single(&entry, &dest, &fetcher))
+            .expect("pinned pull fetches");
     assert_eq!(landed, dest);
     assert_eq!(std::fs::read(&dest).expect("reads back"), bytes);
-    assert!(!fetcher.calls.lock().expect("calls").is_empty(), "plane dialed the mirror");
+    assert!(
+        !fetcher.calls.lock().expect("calls").is_empty(),
+        "plane dialed the mirror"
+    );
 }
 
 #[test]
@@ -225,12 +237,9 @@ fn pull_tampered_bytes_fail_integrity() {
         bytes: b"wrong bytes".to_vec(),
         calls: Mutex::new(Vec::new()),
     };
-    let error = common_core::runtime::block_on_shared(crate::models::pull_single(
-        &entry,
-        &dest,
-        &fetcher,
-    ))
-    .expect_err("tampered must fail integrity");
+    let error =
+        common_core::runtime::block_on_shared(crate::models::pull_single(&entry, &dest, &fetcher))
+            .expect_err("tampered must fail integrity");
     assert!(
         error.to_lowercase().contains("integrity")
             || error.to_lowercase().contains("hash")

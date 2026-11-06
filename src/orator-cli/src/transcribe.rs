@@ -13,6 +13,11 @@ pub struct Cue {
     pub text: String,
 }
 
+/// Note printed when the file gate holds: stderr only, stdout keeps
+/// the empty-output contract per format (txt/srt empty, vtt
+/// header-only, json `[]`).
+pub const NO_SPEECH_NOTE: &str = "orator: no speech detected; empty transcript";
+
 /// Output formats for `orator transcribe --format`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TranscriptFormat {
@@ -86,13 +91,14 @@ pub fn cue_from_centiseconds(start_cs: i64, end_cs: i64, text: String) -> Cue {
 /// daemon enforces the single-frame bound before any inference.
 #[must_use]
 pub fn encode_transcribe_audio(samples: &[f32]) -> serde_json::Value {
-    use base64::prelude::*;
-    let mut raw = Vec::with_capacity(samples.len() * 2);
-    for sample in samples {
-        let clamped = sample.clamp(-1.0, 1.0);
-        raw.extend_from_slice(&((clamped * 32767.0) as i16).to_le_bytes());
-    }
-    serde_json::json!({ "audio": BASE64_STANDARD.encode(&raw), "rate": 16_000 })
+    // Truncating quantizer shared with the s2s WAV frame
+    // (`common_core::pcm`, TowardZero); the base64 envelope stays here.
+    let raw = common_core::pcm::encode_i16_le(
+        samples,
+        common_core::pcm::Scale16::Symmetric32767,
+        common_core::pcm::Rounding::TowardZero,
+    );
+    serde_json::json!({ "audio": common_core::pcm::encode_base64(&raw), "rate": 16_000 })
 }
 
 /// Decode a `Transcribe` reply body to text. A missing text field is

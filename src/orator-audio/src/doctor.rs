@@ -63,7 +63,9 @@ fn opus_self_test() -> Result<(), AudioError> {
         .encode_vec_float(&frame, 4000)
         .map_err(|error| AudioError::Archive(format!("opus self-test: {error}")))?;
     if packet.is_empty() {
-        return Err(AudioError::Archive("opus self-test: empty packet".to_string()));
+        return Err(AudioError::Archive(
+            "opus self-test: empty packet".to_string(),
+        ));
     }
     Ok(())
 }

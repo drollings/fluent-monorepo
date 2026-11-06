@@ -6,10 +6,7 @@
 //! simulated clock and exhaustively testable: every (state, event) pair
 //! either advances per the transition table or is absorbed.
 
-use fluent_wvr::{
-    Describable, FieldAccess, FieldError, WorkContext, WorkError, WorkOutput, WorkUnit,
-    impl_component,
-};
+use fluent_wvr::{impl_component, WorkContext, WorkError, WorkOutput, WorkUnit};
 use internment::ArcIntern;
 use orator_core::TurnConfig;
 
@@ -67,26 +64,16 @@ pub enum TurnEvent {
 /// The pure transition function. Total: every pair yields a state, either
 /// by advancing or by absorbing the event.
 #[must_use]
-pub const fn transition(
-    state: TurnState,
-    event: &TurnEvent,
-    config: &TurnConfig,
-) -> TurnState {
+pub const fn transition(state: TurnState, event: &TurnEvent, config: &TurnConfig) -> TurnState {
     match (state, event) {
         // Voice activity opens the floor from any listening state, and a
         // finished cutover hands the new utterance the floor.
         (
-            TurnState::Idle
-            | TurnState::Endpointing
-            | TurnState::Thinking
-            | TurnState::ToolWait,
+            TurnState::Idle | TurnState::Endpointing | TurnState::Thinking | TurnState::ToolWait,
             TurnEvent::VadStart,
         )
         | (TurnState::Yielding, TurnEvent::AbortComplete) => TurnState::UserSpeaking,
-        (
-            TurnState::UserSpeaking,
-            TurnEvent::SilenceElapsed { ms, looks_complete },
-        ) => {
+        (TurnState::UserSpeaking, TurnEvent::SilenceElapsed { ms, looks_complete }) => {
             if *ms >= effective_hold_ms(config, *looks_complete) {
                 TurnState::Endpointing
             } else {
@@ -94,14 +81,8 @@ pub const fn transition(
             }
         }
         // A committed turn resumes thinking, wherever it waited.
-        (
-            TurnState::Endpointing,
-            TurnEvent::TurnCommitted,
-        )
-        | (
-            TurnState::ToolWait,
-            TurnEvent::ToolResultReady,
-        ) => TurnState::Thinking,
+        (TurnState::Endpointing, TurnEvent::TurnCommitted)
+        | (TurnState::ToolWait, TurnEvent::ToolResultReady) => TurnState::Thinking,
         (TurnState::Thinking, TurnEvent::LlmFirstChunk) => TurnState::Speaking,
         (TurnState::Thinking, TurnEvent::ToolCallStarted) => TurnState::ToolWait,
         (TurnState::Speaking, TurnEvent::PlayoutDone) => TurnState::Idle,
@@ -181,10 +162,7 @@ impl TurnMachine {
     #[must_use]
     pub const fn is_absorbed(state: TurnState, event: &TurnEvent) -> bool {
         matches!(event, TurnEvent::VadEnd)
-            || matches!(
-                (state, event),
-                (TurnState::Speaking, TurnEvent::VadStart)
-            )
+            || matches!((state, event), (TurnState::Speaking, TurnEvent::VadStart))
     }
 
     /// Whether `(state, event)` is a legal policy step. Silence hold
@@ -196,13 +174,13 @@ impl TurnMachine {
         matches!(
             (state, event),
             (
-                TurnState::Idle | TurnState::Endpointing | TurnState::Thinking | TurnState::ToolWait,
+                TurnState::Idle
+                    | TurnState::Endpointing
+                    | TurnState::Thinking
+                    | TurnState::ToolWait,
                 TurnEvent::VadStart,
             ) | (TurnState::Yielding, TurnEvent::AbortComplete)
-                | (
-                    TurnState::UserSpeaking,
-                    TurnEvent::SilenceElapsed { .. },
-                )
+                | (TurnState::UserSpeaking, TurnEvent::SilenceElapsed { .. },)
                 | (TurnState::Endpointing, TurnEvent::TurnCommitted)
                 | (TurnState::ToolWait, TurnEvent::ToolResultReady)
                 | (
@@ -245,23 +223,7 @@ impl WorkUnit for TurnMachine {
     }
 }
 
-impl FieldAccess for TurnMachine {
-    fn set_field(&mut self, name: &str, value: &str) -> Result<(), FieldError> {
-        self.config.set_field(name, value)
-    }
-    fn get_field(&self, name: &str) -> Result<String, FieldError> {
-        self.config.get_field(name)
-    }
-    fn field_names(&self) -> &'static [&'static str] {
-        self.config.field_names()
-    }
-}
-
-impl Describable for TurnMachine {
-    fn describe(&self) -> serde_json::Value {
-        self.config.describe()
-    }
-}
+fluent_wvr::delegate_component_fields!(TurnMachine, config);
 
 impl_component!(TurnMachine);
 

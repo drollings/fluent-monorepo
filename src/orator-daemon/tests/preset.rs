@@ -4,17 +4,17 @@
 use crate::preset::{assistant_preset, dictation_preset, duplex_preset, meeting_preset};
 
 fn position(order: &[&str], node: &str) -> usize {
-    order.iter().position(|name| *name == node).expect("node present")
+    order
+        .iter()
+        .position(|name| *name == node)
+        .expect("node present")
 }
 
 #[test]
 fn dictation_resolves_and_sorts() {
     for with_aec in [false, true] {
         let graph = dictation_preset(with_aec).expect("preset builds");
-        assert!(
-            graph.unresolved_deps().is_empty(),
-            "no dangling assets"
-        );
+        assert!(graph.unresolved_deps().is_empty(), "no dangling assets");
         let order = graph.topo_sort().expect("preset is acyclic");
         assert_eq!(order.len(), if with_aec { 5 } else { 4 });
         assert!(position(&order, "capture.mic") < position(&order, "stt.mic"));
@@ -79,8 +79,14 @@ fn meeting_has_two_lanes_archive_and_no_voice() {
     assert!(position(&order, "stt.sys") < position(&order, "transcript"));
     assert!(position(&order, "transcript") < position(&order, "notes.live"));
     assert!(!order.contains(&"tts"), "meeting never speaks");
-    assert!(!order.contains(&"tools"), "meeting holds no effectful capability");
-    assert!(order.contains(&"archive"), "record-first: archive always present");
+    assert!(
+        !order.contains(&"tools"),
+        "meeting holds no effectful capability"
+    );
+    assert!(
+        order.contains(&"archive"),
+        "record-first: archive always present"
+    );
 }
 
 #[test]
@@ -94,5 +100,8 @@ fn duplex_collapses_the_cascade_behind_one_node() {
     for node in ["stt.mic", "llm", "tools", "tts", "turn"] {
         assert!(!order.contains(&node), "{node} collapses into duplex");
     }
-    assert!(order.contains(&"archive"), "record-first holds in duplex too");
+    assert!(
+        order.contains(&"archive"),
+        "record-first holds in duplex too"
+    );
 }

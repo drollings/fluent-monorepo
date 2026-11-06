@@ -38,10 +38,7 @@ fn round_trip_stays_within_one_lsb() {
         .zip(back.iter())
         .map(|(a, b)| (a - b).abs())
         .fold(0.0f32, f32::max);
-    assert!(
-        worst <= 1.0 / 32768.0,
-        "round-trip within one LSB: {worst}"
-    );
+    assert!(worst <= 1.0 / 32768.0, "round-trip within one LSB: {worst}");
     let energy = |samples: &[f32]| samples.iter().map(|s| s * s).sum::<f32>();
     let drift = (energy(&pcm) - energy(&back)).abs() / energy(&pcm);
     assert!(drift < 1e-4, "energy preserved: {drift}");
@@ -109,4 +106,58 @@ fn empty_steps_are_silent_no_ops() {
     let mut codec = PcmCodec::new();
     assert!(codec.encode_step(&[]).is_empty());
     assert!(codec.decode_step(&[]).is_empty());
+}
+
+/// M1-S1 characterization: exact scalar contract of the i16 LE wire
+/// mapping (round-half-away, symmetric-32767 scale, clamp, NaN, odd
+/// tails). The shared `common_core::pcm` primitive must reproduce
+/// these vectors byte-for-byte.
+#[test]
+fn orator_audio_codec_vectors() {
+    let mut codec = PcmCodec::new();
+    // Full-scale extremes land exactly on the rails.
+    assert_eq!(
+        codec.encode_step(&[1.0]),
+        vec![0xFF, 0x7F],
+        "+1.0 is i16::MAX"
+    );
+    assert_eq!(
+        codec.encode_step(&[-1.0]),
+        vec![0x01, 0x80],
+        "-1.0 is i16::MIN+1"
+    );
+    assert_eq!(codec.encode_step(&[0.0]), vec![0x00, 0x00]);
+    // Over-range clamps before scaling, never wraps.
+    assert_eq!(
+        codec.encode_step(&[1.5]),
+        vec![0xFF, 0x7F],
+        "hot clamps to rail"
+    );
+    assert_eq!(
+        codec.encode_step(&[-2.0]),
+        vec![0x01, 0x80],
+        "cold clamps to rail"
+    );
+    // Half-LSB rounds half away from zero (encode), unlike the
+    // truncating call sites (s2s/transcribe): 0.5 * 32767 = 16383.5.
+    assert_eq!(
+        codec.encode_step(&[0.5]),
+        16384i16.to_le_bytes(),
+        "codec rounds 16383.5 up to 16384"
+    );
+    // NaN clamps to itself, scales to NaN, saturates to zero on cast.
+    assert_eq!(
+        codec.encode_step(&[f32::NAN]),
+        vec![0x00, 0x00],
+        "NaN maps to silence"
+    );
+    // Decode divides by 32767: the rail round-trips exactly.
+    assert_eq!(codec.decode_step(&[0xFF, 0x7F]), vec![1.0]);
+    assert_eq!(
+        codec.decode_step(&[0x00, 0x40]),
+        vec![f32::from(16384i16) / 32767.0]
+    );
+    // A trailing partial sample is dropped, never fabricated.
+    assert!(codec.decode_step(&[0x01]).is_empty(), "odd tail drops");
+    assert_eq!(codec.decode_step(&[0xFF, 0x7F, 0x01]).len(), 1);
 }

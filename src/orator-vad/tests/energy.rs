@@ -66,3 +66,17 @@ fn reset_drops_held_state() {
     assert!(!vad.speaking());
     assert!(!vad.push(&silence_frame()).speech);
 }
+
+#[test]
+fn probability_pins_current_rms_mapping() {
+    let mut vad = EnergyVad::default();
+    // Silence: RMS 0.0 reads as probability 0.0.
+    let silent = vad.push(&silence_frame());
+    assert_eq!(silent.probability.to_bits(), 0);
+    // Constant near-band frame: accumulation order pins these bits.
+    let edge = vad.push(&vec![0.029; 320]);
+    assert_eq!(edge.probability.to_bits(), 1064514386);
+    // Hot harmonic frame: far above the band, probability clamps to 1.0.
+    let hot = vad.push(&speech_frame());
+    assert_eq!(hot.probability.to_bits(), 1065353216);
+}

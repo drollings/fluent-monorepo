@@ -5,9 +5,9 @@
 //! the model slots in without touching callers. Tests serve scripted
 //! vectors through the same seam.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use fluent_concurrency::pool::WorkerPool;
+use fluent_concurrency::pool::{ResultPool, ResultPoolError};
 
 /// Embedding dimensionality for scripted vectors in tests.
 pub const TEST_DIMS: usize = 8;
@@ -28,39 +28,42 @@ pub fn batch_embed(
     segments: &[Vec<f32>],
     parallel: usize,
 ) -> Result<Vec<Vec<f32>>, String> {
-    let out: Arc<Mutex<Vec<Option<Vec<f32>>>>> = Arc::new(Mutex::new(
-        (0..segments.len()).map(|_| None).collect(),
-    ));
     common_core::runtime::block_on(async {
-        let worker_out = Arc::clone(&out);
-        let pool = WorkerPool::new(
+        let pool = ResultPool::new(
             fluent_concurrency::tokio_runtime(),
             parallel.max(1),
             segments.len().max(1),
             move |(index, samples): (usize, Vec<f32>)| {
                 let seam = Arc::clone(&seam);
-                let out = Arc::clone(&worker_out);
                 async move {
                     let vector = seam.embed(index, &samples);
-                    common_core::sync::lock(&out)[index] = Some(vector);
+                    Ok::<(usize, Vec<f32>), std::convert::Infallible>((index, vector))
                 }
             },
         );
-        for (index, samples) in segments.iter().cloned().enumerate() {
-            pool.submit((index, samples)).await.map_err(|error| {
-                format!("orator: embed pool refused segment {index}: {error}")
-            })?;
-        }
+        let mut indexed = futures_util::future::try_join_all(
+            segments.iter().cloned().enumerate().map(|(index, samples)| {
+                let pool = &pool;
+                async move {
+                    pool.submit((index, samples)).await.map_err(|error| match error {
+                        ResultPoolError::Pool(error) => {
+                            format!("orator: embed pool refused segment {index}: {error}")
+                        }
+                        ResultPoolError::Canceled => {
+                            "orator: embed worker left a segment empty".to_string()
+                        }
+                        ResultPoolError::Inner(never) => match never {},
+                    })
+                }
+            }),
+        )
+        .await?;
         pool.shutdown().await;
-        Ok::<(), String>(())
-    })?;
-    let mut guard = common_core::sync::lock(&out);
-    guard
-        .drain(..)
-        .map(|slot| {
-            slot.ok_or_else(|| "orator: embed worker left a segment empty".to_string())
-        })
-        .collect()
+        indexed.sort_by_key(|(index, _)| *index);
+        Ok::<Vec<Vec<f32>>, String>(
+            indexed.into_iter().map(|(_, vector)| vector).collect(),
+        )
+    })
 }
 
 /// Scripted seam for tests: returns one canned vector per index,
@@ -79,3 +82,7 @@ impl EmbedSeam for ScriptSeam {
 #[cfg(test)]
 #[path = "../tests/embed.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/result_pool_shape.rs"]
+mod shape_tests;

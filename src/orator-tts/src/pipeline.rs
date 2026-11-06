@@ -11,8 +11,8 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 
 use fluent_wvr::{
-    Describable, FieldAccess, FieldError, WorkContext, WorkError, WorkOutput, WorkUnit,
-    impl_component,
+    impl_component, Describable, FieldAccess, FieldError, WorkContext, WorkError, WorkOutput,
+    WorkUnit,
 };
 use internment::ArcIntern;
 use orator_core::{AudioChunk, Epoch, TtsError, TtsStream};
@@ -139,15 +139,16 @@ impl TtsStream for TtsPipeline {
         // Drop anything a newer epoch orphaned (defensive: `push_text`
         // already clears on bump, but a bump-then-partial-state must never
         // leak old audio).
-        while self.queue.front().is_some_and(|head| head.generation != self.generation) {
+        while self
+            .queue
+            .front()
+            .is_some_and(|head| head.generation != self.generation)
+        {
             self.queue.pop_front();
         }
         // Synth ahead until the prebuffer lead holds or the queue drains.
         loop {
-            let next = self
-                .queue
-                .iter()
-                .position(|staged| staged.audio.is_none());
+            let next = self.queue.iter().position(|staged| staged.audio.is_none());
             let Some(index) = next else { break };
             if self.lead_secs() >= PREBUFFER_SECS {
                 break;
@@ -166,7 +167,13 @@ impl TtsStream for TtsPipeline {
         // after soft breaks — but never after the last known chunk, which
         // may yet grow more text.
         if !self.queue.is_empty() {
-            let gap = tail_gap_ms(&Chunk { text: head.text.clone(), hard: head.hard }, false);
+            let gap = tail_gap_ms(
+                &Chunk {
+                    text: head.text.clone(),
+                    hard: head.hard,
+                },
+                false,
+            );
             samples.resize(
                 samples.len() + gap as usize * KOKORO_SAMPLE_RATE as usize / 1000,
                 0.0,
@@ -202,7 +209,14 @@ impl WorkUnit for TtsPipeline {
 
 impl FieldAccess for TtsPipeline {
     fn set_field(&mut self, _name: &str, _value: &str) -> Result<(), FieldError> {
-        Err(FieldError::NotFound("pipeline tunables live on the backend".into()))
+        // M15-S8 keep-decision: tunables live on the backend, so set
+        // always refuses with the pointer — but `get_field` exposes the
+        // read-only epoch/queued pair, which `impl_fieldless!` would
+        // remove. A derive has no computed fields either. Schema pinned
+        // by `pipeline_field_surface_pins_read_only_schema`.
+        Err(FieldError::NotFound(
+            "pipeline tunables live on the backend".into(),
+        ))
     }
     fn get_field(&self, name: &str) -> Result<String, FieldError> {
         match name {

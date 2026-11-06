@@ -59,13 +59,28 @@ bind \cxv _orator_fill
 pub fn write_completions(shell: &str, out: &mut dyn Write) -> Result<(), String> {
     match shell {
         "bash" => {
-            clap_complete::generate(clap_complete::shells::Bash, &mut Cli::command(), "orator", out);
+            clap_complete::generate(
+                clap_complete::shells::Bash,
+                &mut Cli::command(),
+                "orator",
+                out,
+            );
         }
         "zsh" => {
-            clap_complete::generate(clap_complete::shells::Zsh, &mut Cli::command(), "orator", out);
+            clap_complete::generate(
+                clap_complete::shells::Zsh,
+                &mut Cli::command(),
+                "orator",
+                out,
+            );
         }
         "fish" => {
-            clap_complete::generate(clap_complete::shells::Fish, &mut Cli::command(), "orator", out);
+            clap_complete::generate(
+                clap_complete::shells::Fish,
+                &mut Cli::command(),
+                "orator",
+                out,
+            );
         }
         _ => return Err(format!("unsupported shell: {shell}")),
     }

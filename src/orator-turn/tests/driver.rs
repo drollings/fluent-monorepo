@@ -126,11 +126,7 @@ fn verification_mismatch_never_cuts() {
 #[test]
 fn history_commits_spoken_words_plus_marker() {
     let mut history = History::new();
-    history.push_reply(
-        Epoch(1),
-        vec![word("hello"), word("there")],
-        false,
-    );
+    history.push_reply(Epoch(1), vec![word("hello"), word("there")], false);
     history.push_reply(Epoch(2), vec![word("actually")], true);
     assert_eq!(
         history.reply_final(),
@@ -200,4 +196,20 @@ fn speculation_resume_is_exact_at_every_position() {
     let mut driver = TurnDriver::new(Epoch(5));
     driver.speculate(String::new());
     assert_eq!(driver.on_resume().as_deref(), Some(""));
+}
+
+/// M3-S1 characterization: the driver's playout constants duplicate
+/// the `orator-audio` envelope home (`DUCK_DEPTH_DB`, `DUCK_RAMP_MS`,
+/// `CUT_FADE_MS`). The values are calibrated playout targets — the
+/// migration replaces these declarations with the shared home, and
+/// this test must pass unchanged.
+#[test]
+fn orator_turn_duck_constants_match_the_envelope_home() {
+    use crate::driver::{CUT_FADE_MS, DUCK_DB, DUCK_RAMP_MS};
+    assert!(
+        (DUCK_DB - -12.0).abs() < f32::EPSILON,
+        "duck depth matches the envelope home"
+    );
+    assert_eq!(DUCK_RAMP_MS, 100, "duck ramp matches the envelope home");
+    assert_eq!(CUT_FADE_MS, 20, "cut fade matches the envelope home");
 }

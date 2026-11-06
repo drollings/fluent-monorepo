@@ -12,7 +12,7 @@
 
 use orator_core::TurnConfig;
 
-use crate::machine::{TurnMachine, TurnState, TurnEvent};
+use crate::machine::{TurnEvent, TurnMachine, TurnState};
 
 struct Case {
     name: &'static str,

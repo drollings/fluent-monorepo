@@ -323,10 +323,7 @@ impl VoiceOwner {
         if self.disabled {
             return Err(VoiceError::Disabled);
         }
-        if self
-            .shutting_down
-            .load(std::sync::atomic::Ordering::SeqCst)
-        {
+        if self.shutting_down.load(std::sync::atomic::Ordering::SeqCst) {
             return Err(VoiceError::ShuttingDown);
         }
         // Shared first: the configured endpoint serves, use it. No
@@ -426,10 +423,7 @@ impl VoiceOwner {
                     state.booting = false;
                     match booted {
                         Ok(server) => {
-                            if self
-                                .shutting_down
-                                .load(std::sync::atomic::Ordering::SeqCst)
-                            {
+                            if self.shutting_down.load(std::sync::atomic::Ordering::SeqCst) {
                                 server.stop();
                                 return Err(VoiceError::ShuttingDown);
                             }
@@ -477,8 +471,13 @@ impl VoiceOwner {
                 self.config.s2s.model,
             )));
         }
-        let bundle = orator_core::bundle_from_s2s(&self.config.s2s);
-        if !bundle.present() {            return Err(VoiceError::Boot(format!(
+        let bundle = orator_core::bundle_from_s2s(
+            &self.config.s2s,
+            &self.config.models,
+            &self.config.gguf_dir,
+        );
+        if !bundle.present() {
+            return Err(VoiceError::Boot(format!(
                 "audio bundle incomplete: {}",
                 bundle
                     .missing()
@@ -503,19 +502,29 @@ impl VoiceOwner {
                 orator_s2s::AUDIO_SERVER_BIN
             )));
         }
-        let mut last_error = String::new();
-        for binary in &candidates {
-            let config = orator_s2s::audio_supervisor_config(&bundle, 0);
-            match orator_llm::boot_with_binary(config, binary).await {
-                Ok(server) => return Ok(server),
-                Err(error) => {
-                    last_error = error.to_string();
+        match fluent_wvr::ladder::first_accept_in_order(
+            candidates,
+            |binary: std::path::PathBuf| {
+                let config = orator_s2s::audio_supervisor_config(&bundle, 0);
+                async move {
+                    match orator_llm::boot_with_binary(config, &binary).await {
+                        Ok(server) => Ok(Some(server)),
+                        Err(error) => Err(error.to_string()),
+                    }
                 }
-            }
+            },
+            |_: &String| false,
+        )
+        .await
+        {
+            Ok(Some(server)) => Ok(server),
+            Ok(None) => Err(VoiceError::Boot(
+                "every voice server candidate failed (last: )".to_string(),
+            )),
+            Err(last_error) => Err(VoiceError::Boot(format!(
+                "every voice server candidate failed (last: {last_error})"
+            ))),
         }
-        Err(VoiceError::Boot(format!(
-            "every voice server candidate failed (last: {last_error})"
-        )))
     }
 
     fn clear(&self) {
@@ -558,7 +567,13 @@ impl VoiceOwner {
         if kind == "meeting" {
             build_meeting_pipeline(&id)?;
         }
-        let _ = self.log.append(&id, 0, "note", &format!("session {id} started ({kind})"), wall_ms());
+        let _ = self.log.append(
+            &id,
+            0,
+            "note",
+            &format!("session {id} started ({kind})"),
+            wall_ms(),
+        );
         Ok(id)
     }
 
@@ -592,7 +607,13 @@ impl VoiceOwner {
         // Dropping the entry releases its lease.
         let mut state = common_core::sync::lock(&self.state);
         state.leases = state.leases.saturating_sub(1);
-        let _ = self.log.append(&target, 0, "note", &format!("session {target} stopped"), wall_ms());
+        let _ = self.log.append(
+            &target,
+            0,
+            "note",
+            &format!("session {target} stopped"),
+            wall_ms(),
+        );
         Ok(())
     }
 
@@ -617,6 +638,77 @@ impl VoiceOwner {
     #[must_use]
     pub fn session_count(&self) -> usize {
         common_core::sync::lock(&self.sessions).len()
+    }
+
+    /// Export the meeting record for `id` to the managed meetings
+    /// dir: the session-scoped events (lifecycle notes plus turns)
+    /// rendered to deterministic markdown and written atomically.
+    /// Returns the artifact path. Unknown ids refuse with
+    /// `UnknownSession` — every start appends a lifecycle note, so a
+    /// session with no events never existed. Empty sessions still
+    /// render their record, never an empty file. Re-running
+    /// reproduces identical bytes (the renderer is pure), so a crash
+    /// mid-render resumes by re-running; the atomic write never
+    /// leaves a torn file behind.
+    pub fn export_meeting(&self, id: &str) -> Result<std::path::PathBuf, VoiceError> {
+        let id = id.trim();
+        if id.is_empty() {
+            return Err(VoiceError::UnknownSession(
+                "no session id (pass one id)".to_string(),
+            ));
+        }
+        // Registry ids are `sN`, but the param arrives over the wire:
+        // anything outside the safe filename charset refuses instead
+        // of escaping the meetings dir.
+        if !id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        {
+            return Err(VoiceError::UnknownSession(id.to_string()));
+        }
+        let mut events = Vec::new();
+        let mut since = 0i64;
+        loop {
+            let page = self
+                .log
+                .replay_session(id, since, orator_store::REPLAY_PAGE)
+                .map_err(|error| VoiceError::Backend(error.to_string()))?;
+            let full = page.len() >= orator_store::REPLAY_PAGE;
+            if let Some(last) = page.last() {
+                since = last.seq;
+            }
+            events.extend(page);
+            if !full {
+                break;
+            }
+        }
+        if events.is_empty() {
+            return Err(VoiceError::UnknownSession(id.to_string()));
+        }
+        let text = orator_notes::render_meeting_export(id, &events);
+        let dir = orator_core::meetings_dir().ok_or_else(|| {
+            VoiceError::Backend("no meetings dir (HOME and XDG_DATA_HOME are unset)".to_string())
+        })?;
+        std::fs::create_dir_all(&dir).map_err(|error| {
+            VoiceError::Backend(format!("cannot create {}: {error}", dir.display()))
+        })?;
+        let dest = dir.join(format!("{id}.md"));
+        common_core::io::write_atomic(&dest, text.as_bytes()).map_err(|error| {
+            VoiceError::Backend(format!("cannot write {}: {error}", dest.display()))
+        })?;
+        Ok(dest)
+    }
+
+    /// Record one scripted turn for `session` through the production
+    /// record path (history plus event log). Test seam: hermetic
+    /// scripted turns without inference.
+    #[cfg(test)]
+    pub(crate) fn record_turn_for_tests(&self, session: &str, question: &str, reply: &str) {
+        self.record_history(session, question, reply);
+        let _ = self
+            .log
+            .append(session, 0, "transcript", question, wall_ms());
+        let _ = self.log.append(session, 0, "reply", reply, wall_ms());
     }
 
     /// Whether a voice child is currently owned.
@@ -654,7 +746,11 @@ impl VoiceOwner {
     /// Speak `text` through the daemon-owned voice server. Returns the
     /// voiced samples and their rate; the caller plays them locally.
     /// Audio bytes travel in the socket envelope for the CLI to voice.
-    pub fn say_blocking(&self, text: &str, session: Option<&str>) -> Result<(Vec<f32>, u32), VoiceError> {
+    pub fn say_blocking(
+        &self,
+        text: &str,
+        session: Option<&str>,
+    ) -> Result<(Vec<f32>, u32), VoiceError> {
         if text.trim().is_empty() {
             return Err(VoiceError::Backend("nothing to speak".to_string()));
         }
@@ -692,7 +788,12 @@ impl VoiceOwner {
     /// outcome for ejection: transport failures and over-bound turns
     /// count, responsive turns (including voiceless and cancelled ones)
     /// break the streak.
-    pub fn say_via(&self, endpoint: &str, text: &str, session: Option<&str>) -> Result<(Vec<f32>, u32), VoiceError> {
+    pub fn say_via(
+        &self,
+        endpoint: &str,
+        text: &str,
+        session: Option<&str>,
+    ) -> Result<(Vec<f32>, u32), VoiceError> {
         // The bound lives at the turn entries so stub-driven turns and
         // production turns share one enforcement point.
         let _permit = self
@@ -737,7 +838,11 @@ impl VoiceOwner {
 
     /// Ask `question` through the configured LLM endpoint. Returns the
     /// reply text; both sides land in the event log.
-    pub fn ask_blocking(&self, question: &str, session: Option<&str>) -> Result<String, VoiceError> {
+    pub fn ask_blocking(
+        &self,
+        question: &str,
+        session: Option<&str>,
+    ) -> Result<String, VoiceError> {
         if question.trim().is_empty() {
             return Err(VoiceError::Backend("nothing to ask".to_string()));
         }
@@ -899,7 +1004,15 @@ impl VoiceOwner {
     /// first, bounded), so voice and text chat build context turn by
     /// turn; without one the turn is stateless. Only completed turns
     /// extend history — errors and aborts never do.
-    pub fn ask_via(&self, endpoint: &str, model: &str, ctx: usize, n_batch: usize, question: &str, session: Option<&str>) -> Result<String, VoiceError> {
+    pub fn ask_via(
+        &self,
+        endpoint: &str,
+        model: &str,
+        ctx: usize,
+        n_batch: usize,
+        question: &str,
+        session: Option<&str>,
+    ) -> Result<String, VoiceError> {
         // Text shares the bound: one policy for every serving path.
         let _permit = self
             .gate
@@ -915,7 +1028,9 @@ impl VoiceOwner {
             Ok(out) => {
                 let reply = out.delta.trim_end().to_string();
                 let label = session.unwrap_or("daemon").to_string();
-                let _ = self.log.append(&label, 0, "transcript", question, wall_ms());
+                let _ = self
+                    .log
+                    .append(&label, 0, "transcript", question, wall_ms());
                 let _ = self.log.append(&label, 0, "reply", &reply, wall_ms());
                 if let Some(id) = session {
                     common_core::sync::lock(&self.sessions).touch(id);
@@ -1008,8 +1123,7 @@ fn wait_voice_loaded(url: &str) {
                 .send(),
         )
         .is_ok_and(|response| {
-            response.status().is_success()
-                || response.status() == reqwest::StatusCode::NOT_FOUND
+            response.status().is_success() || response.status() == reqwest::StatusCode::NOT_FOUND
         });
         if ready || Instant::now() >= deadline {
             return;
@@ -1027,14 +1141,16 @@ fn memory_log() -> std::sync::Arc<orator_store::EventLog> {
 }
 
 fn build_meeting_pipeline(meeting: &str) -> Result<(), String> {
-    let store = fluent_db::store::SqliteStore::open_in_memory().map_err(|error| error.to_string())?;
+    let store =
+        fluent_db::store::SqliteStore::open_in_memory().map_err(|error| error.to_string())?;
     store
         .with_conn(|conn| {
             fluent_db::migrate::migrate(conn, &orator_store::migrations())?;
             Ok(())
         })
         .map_err(|error| error.to_string())?;
-    let pipeline = orator_diar::MeetingPipeline::new(store, meeting).map_err(|error| error.to_string())?;
+    let pipeline =
+        orator_diar::MeetingPipeline::new(store, meeting).map_err(|error| error.to_string())?;
     if !pipeline.ready().contains(&"finalize_audio".to_string()) {
         return Err("meeting pipeline did not open at finalize_audio".to_string());
     }
@@ -1065,3 +1181,7 @@ mod tests;
 #[cfg(test)]
 #[path = "../tests/leases.rs"]
 mod leases_tests;
+
+#[cfg(test)]
+#[path = "../tests/export.rs"]
+mod export_tests;

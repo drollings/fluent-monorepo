@@ -315,3 +315,20 @@ pub fn error_response(message: &str, error_type: &str) -> serde_json::Value {
         }
     })
 }
+
+/// Model ids from an OpenAI-style `{ "data": [{ "id": "..." }] }` list.
+///
+/// A missing or non-array `data` member yields an empty list; entries without
+/// a string `id` are skipped; valid ids retain server order and duplicates.
+/// The parser is protocol-only — callers keep their own HTTP retry policy.
+pub fn model_ids(body: &Value) -> Vec<String> {
+    body.get("data")
+        .and_then(Value::as_array)
+        .map(|entries| {
+            entries
+                .iter()
+                .filter_map(|entry| entry.get("id")?.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
+}
