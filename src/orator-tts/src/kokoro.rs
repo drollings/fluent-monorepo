@@ -97,8 +97,9 @@ impl KokoroBackend {
     /// instead of running silently on CPU; on AMD-only hardware the
     /// opt-in fails too (kokoro-en has no ROCm/MIGraphX provider, so a
     /// CUDA request there could never succeed). Without the opt-in the
-    /// CPU session loads directly — on NVIDIA hardware the dependency's
-    /// own `auto` probing still applies.
+    /// cached availability verdict decides: CUDA-capable hardware keeps
+    /// the dependency's `auto` probing, otherwise the CPU provider is
+    /// pinned so no load pays for a doomed CUDA dlopen.
     async fn load(&self) -> Result<Arc<kokoro_en::KokoroTts>, TtsError> {
         {
             let guard = common_core::sync::lock(&self.tts);
@@ -121,6 +122,17 @@ impl KokoroBackend {
             std::env::var_os("KOKORO_ORT_PROVIDER").is_some(),
         ) {
             std::env::set_var("KOKORO_ORT_PROVIDER", provider);
+        } else if cpu_pin_applies(
+            self.gpu,
+            std::env::var_os("KOKORO_ORT_PROVIDER").is_some(),
+            cuda_usable_cached(),
+        ) {
+            // No CUDA hardware on this OS (cached verdict): pin CPU
+            // explicitly instead of letting `auto` dlopen a provider
+            // stack that can never load. A user-set
+            // KOKORO_ORT_PROVIDER always wins (checked above);
+            // explicit gpu opt-ins pin cuda through the override.
+            std::env::set_var("KOKORO_ORT_PROVIDER", "cpu");
         }
         if !self.model_path.exists() {
             return Err(TtsError::Unavailable(format!(
@@ -136,7 +148,15 @@ impl KokoroBackend {
         }
         let session = kokoro_en::KokoroTts::new(&self.model_path, &self.voices_dir)
             .await
-            .map_err(|error| TtsError::Backend(format!("kokoro load: {error}")))?;
+            .map_err(|error| {
+                // ORT-side failure: the cached availability verdict may
+                // be stale (driver reload, device attach), so drop it —
+                // the next load re-probes instead of trusting yesterday.
+                // Missing files and explicit opt-in refusals
+                // (`Unavailable`) are deterministic, never recalculated.
+                invalidate_cuda_cache();
+                TtsError::Backend(format!("kokoro load: {error}"))
+            })?;
         let loaded = Arc::new(session);
         *common_core::sync::lock(&self.tts) = Some(Arc::clone(&loaded));
         Ok(loaded)
@@ -177,7 +197,12 @@ impl KokoroBackend {
                     .synth(text.as_str(), voice.as_str())
                     .await
                     .map(|(samples, _)| trim_silence(&samples).to_vec())
-                    .map_err(|error| TtsError::Backend(format!("kokoro synth: {error}")))
+                    .map_err(|error| {
+                        // Same recalculation rule as load: an ORT-side
+                        // failure drops the cached verdict.
+                        invalidate_cuda_cache();
+                        TtsError::Backend(format!("kokoro synth: {error}"))
+                    })
             })
             .await
     }
@@ -193,8 +218,9 @@ impl KokoroBackend {
 /// opt-in pins `cuda`, but only where NVIDIA hardware can serve it
 /// (the caller errors first on AMD-only hardware, so `gpu && !nvidia`
 /// never reaches a pin). Without the opt-in the dependency default
-/// (`auto`) is always left alone — the CPU path never touches provider
-/// selection. A user-set `KOKORO_ORT_PROVIDER` always wins.
+/// (`auto`) is left alone here — the cached-availability pin in
+/// `load` handles the CUDA-less case separately. A user-set
+/// `KOKORO_ORT_PROVIDER` always wins.
 fn ort_provider_override(
     gpu: bool,
     nvidia_present: bool,
@@ -204,6 +230,61 @@ fn ort_provider_override(
         return None;
     }
     nvidia_present.then_some("cuda")
+}
+
+/// Cached CUDA availability: probed once per process on first use,
+/// recomputed only when a backend reports itself broken (the
+/// `Backend` mappings above drop the verdict; `Unavailable` never
+/// does — missing files and explicit refusals are deterministic).
+/// The probe itself is cheap device-node reads, never an ORT load:
+/// presence is the documented necessary condition, and nodes don't
+/// flap mid-process. Linux checks the NVIDIA nodes (a missing node
+/// means a doomed CUDA dlopen); other platforms always report usable
+/// so `auto` keeps owning CoreML/DirectML there — this crate never
+/// pins CPU outside Linux.
+static CUDA_AVAILABLE: std::sync::LazyLock<std::sync::Mutex<Option<bool>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(None));
+
+/// Whether the local box can serve the CUDA execution provider,
+/// from the process-wide availability cache (probed once, on first
+/// use). The value only changes through [`invalidate_cuda_cache`].
+fn cuda_usable_cached() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        *common_core::sync::lock(&CUDA_AVAILABLE)
+            .get_or_insert_with(orator_core::gpu::nvidia_present)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        true
+    }
+}
+
+/// Drop the cached CUDA-availability verdict so the next load
+/// re-probes. Called only from ORT-side (`Backend`) failures.
+fn invalidate_cuda_cache() {
+    #[cfg(target_os = "linux")]
+    {
+        *common_core::sync::lock(&CUDA_AVAILABLE) = None;
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = &CUDA_AVAILABLE;
+    }
+}
+
+/// Whether to pin the CPU provider for this load: no explicit GPU
+/// opt-in, no user override, and the cached verdict says CUDA can
+/// never serve here. Pure so the matrix pins without hardware: the
+/// opt-in and the user override always win; only the quiet default
+/// on CUDA-less Linux collapses to an explicit `cpu`.
+fn cpu_pin_applies(gpu_opt_in: bool, user_override_set: bool, cuda_usable: bool) -> bool {
+    !gpu_opt_in && !user_override_set && !cuda_usable
+}
+
+#[cfg(test)]
+pub(crate) fn set_cuda_usable_for_tests(usable: bool) {
+    *common_core::sync::lock(&CUDA_AVAILABLE) = Some(usable);
 }
 
 /// Trim the near-silent padding around the voiced middle, keeping a small

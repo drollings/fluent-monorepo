@@ -139,8 +139,7 @@ impl Chord {
 #[must_use]
 pub fn fallback_bindings() -> Vec<(&'static str, &'static str)> {
     vec![
-        ("orator ptt start", "begin push-to-talk"),
-        ("orator ptt stop", "end push-to-talk"),
+        ("orator chat --ptt", "push-to-talk chat"),
         ("orator toggle", "toggle dictation"),
     ]
 }

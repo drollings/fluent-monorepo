@@ -403,7 +403,9 @@ impl AudioSession {
     }
 
     /// Voice `text` through `POST {endpoint}/tts` (stock server
-    /// shape): `{"input": text}` in, WAV bytes out. Resamples to the
+    /// shape): `{"model", "input": text}` in, WAV bytes out. The
+    /// router-mode gateway requires `model` to pick the voice;
+    /// single-model appliances ignore the extra field. Resamples to the
     /// 24 kHz speaker rate when the server answers otherwise. A 404
     /// (no `/tts` route: text-only gateway) reports `NoAudio`, never
     /// `Backend` — voiceless stays voiceless and never ejects.
@@ -412,7 +414,7 @@ impl AudioSession {
             return Err(S2sError::Aborted);
         }
         let url = format!("{}/tts", self.config.endpoint.trim_end_matches('/'));
-        let body = serde_json::json!({ "input": text });
+        let body = serde_json::json!({ "model": self.config.model, "input": text });
         // Still-loading 503s wait like chat turns (cold-boot race);
         // anything else returns as-is for the status handling below.
         let response = post_until_loaded(&self.client, &url, &body, abort, |error| {

@@ -1113,3 +1113,328 @@ fn shared_corpus_pins_classifier_disagreements() {
         );
     }
 }
+
+/// Shared-head TTS: a TTS head loaded on the shared endpoint voices
+/// directly (router `/tts` selects the model) with no daemon hop.
+#[test]
+fn say_dial_serves_a_loaded_tts_head_through_the_shared_server() {
+    use crate::fallback::say_dial;
+    use crate::socket::Transport;
+    let _guard = common_core::sync::lock(&ENV_LOCK);
+    let prior_runtime = std::env::var_os("XDG_RUNTIME_DIR");
+    let runtime = tempfile::tempdir().expect("tempdir");
+    std::env::set_var("XDG_RUNTIME_DIR", runtime.path());
+    let server = httpmock::MockServer::start();
+    server.mock(|when, then| {
+        when.method("GET").path("/v1/models");
+        then.status(200).json_body(serde_json::json!({
+            "data": [{"id": "tts-head", "status": {"value": "loaded"}}],
+        }));
+    });
+    let wav = orator_audio::encode_wav_mono(&[0.0, 1.0, -1.0], orator_s2s::AUDIO_OUT_RATE);
+    let tts = server.mock(|when, then| {
+        when.method("POST").path("/tts").body_contains("tts-head");
+        then.status(200)
+            .header("content-type", "audio/wav")
+            .body(wav);
+    });
+    let base = orator_core::OratorConfig::default();
+    let config = orator_core::OratorConfig {
+        roles: orator_core::RolesConfig {
+            tts: orator_core::RoleSpec {
+                models: vec!["tts-head".to_string()],
+                params: None,
+            },
+            ..base.roles.clone()
+        },
+        s2s: orator_core::S2sConfig {
+            endpoint: server.base_url(),
+            model: "other-voice".to_string(),
+            ..base.s2s.clone()
+        },
+        ..base
+    };
+    let (samples, rate) = say_dial("hi", Transport::Socket, &StreamAbort::new(), &config)
+        .expect("shared head voices");
+    assert_eq!(samples, vec![0.0, 1.0, -1.0]);
+    assert_eq!(rate, orator_s2s::AUDIO_OUT_RATE);
+    assert_eq!(tts.hits(), 1, "one direct turn, no daemon hop");
+    match prior_runtime {
+        Some(value) => std::env::set_var("XDG_RUNTIME_DIR", value),
+        None => std::env::remove_var("XDG_RUNTIME_DIR"),
+    }
+}
+
+/// Same-model heads never probe the shared leg: the daemon chain
+/// already serves that model (a direct leg here would bypass daemon
+/// admission for the common case).
+#[test]
+fn say_dial_skips_the_shared_leg_when_the_head_is_the_voice_model() {
+    use crate::fallback::say_dial;
+    use crate::socket::Transport;
+    let _guard = common_core::sync::lock(&ENV_LOCK);
+    let prior_home = std::env::var_os("HOME");
+    let prior_runtime = std::env::var_os("XDG_RUNTIME_DIR");
+    let home = tempfile::tempdir().expect("tempdir");
+    let runtime = tempfile::tempdir().expect("tempdir");
+    std::env::set_var("HOME", home.path());
+    std::env::set_var("XDG_RUNTIME_DIR", runtime.path());
+    let server = httpmock::MockServer::start();
+    let models = server.mock(|when, then| {
+        when.method("GET").path("/v1/models");
+        then.status(200).json_body(serde_json::json!({
+            "data": [{"id": "same-voice", "status": {"value": "loaded"}}],
+        }));
+    });
+    let tts = server.mock(|when, then| {
+        when.method("POST").path("/tts");
+        then.status(200).body(vec![0u8; 44]);
+    });
+    let base = orator_core::OratorConfig::default();
+    let config = orator_core::OratorConfig {
+        roles: orator_core::RolesConfig {
+            tts: orator_core::RoleSpec {
+                models: vec!["same-voice".to_string()],
+                params: None,
+            },
+            ..base.roles.clone()
+        },
+        s2s: orator_core::S2sConfig {
+            endpoint: server.base_url(),
+            model: "same-voice".to_string(),
+            ..base.s2s.clone()
+        },
+        ..base
+    };
+    say_dial("hi", Transport::Socket, &StreamAbort::new(), &config)
+        .expect_err("daemon down, no local weights");
+    assert_eq!(models.hits(), 0, "no status probe for the daemon's model");
+    assert_eq!(tts.hits(), 0, "no direct turn for the daemon's model");
+    match prior_home {
+        Some(value) => std::env::set_var("HOME", value),
+        None => std::env::remove_var("HOME"),
+    }
+    match prior_runtime {
+        Some(value) => std::env::set_var("XDG_RUNTIME_DIR", value),
+        None => std::env::remove_var("XDG_RUNTIME_DIR"),
+    }
+}
+
+/// Listed-but-unloaded heads stay off the shared leg: the preset
+/// lists architectures this build cannot load, and capturing turns
+/// for those would fail every turn instead of serving through the
+/// configured backends.
+#[test]
+fn say_dial_skips_a_listed_but_unloaded_tts_head() {
+    use crate::fallback::say_dial;
+    use crate::socket::Transport;
+    let _guard = common_core::sync::lock(&ENV_LOCK);
+    let prior_home = std::env::var_os("HOME");
+    let prior_runtime = std::env::var_os("XDG_RUNTIME_DIR");
+    let home = tempfile::tempdir().expect("tempdir");
+    let runtime = tempfile::tempdir().expect("tempdir");
+    std::env::set_var("HOME", home.path());
+    std::env::set_var("XDG_RUNTIME_DIR", runtime.path());
+    let server = httpmock::MockServer::start();
+    server.mock(|when, then| {
+        when.method("GET").path("/v1/models");
+        then.status(200).json_body(serde_json::json!({
+            "data": [{"id": "unloadable", "status": {"value": "unloaded"}}],
+        }));
+    });
+    let tts = server.mock(|when, then| {
+        when.method("POST").path("/tts");
+        then.status(200).body(vec![0u8; 44]);
+    });
+    let base = orator_core::OratorConfig::default();
+    let config = orator_core::OratorConfig {
+        roles: orator_core::RolesConfig {
+            tts: orator_core::RoleSpec {
+                models: vec!["unloadable".to_string()],
+                params: None,
+            },
+            ..base.roles.clone()
+        },
+        s2s: orator_core::S2sConfig {
+            endpoint: server.base_url(),
+            model: "other-voice".to_string(),
+            ..base.s2s.clone()
+        },
+        ..base
+    };
+    say_dial("hi", Transport::Socket, &StreamAbort::new(), &config)
+        .expect_err("daemon down, no local weights");
+    assert_eq!(tts.hits(), 0, "listed is not loaded");
+    match prior_home {
+        Some(value) => std::env::set_var("HOME", value),
+        None => std::env::remove_var("HOME"),
+    }
+    match prior_runtime {
+        Some(value) => std::env::set_var("XDG_RUNTIME_DIR", value),
+        None => std::env::remove_var("XDG_RUNTIME_DIR"),
+    }
+}
+
+/// Shared-head ASR: an ASR head loaded on the shared endpoint
+/// decodes directly (Shared leg), with no daemon hop.
+#[test]
+fn transcribe_dial_leg_serves_a_loaded_asr_head_through_the_shared_server() {
+    use crate::fallback::{transcribe_dial_leg, DialLeg};
+    use crate::socket::Transport;
+    let _guard = common_core::sync::lock(&ENV_LOCK);
+    let prior_runtime = std::env::var_os("XDG_RUNTIME_DIR");
+    let runtime = tempfile::tempdir().expect("tempdir");
+    std::env::set_var("XDG_RUNTIME_DIR", runtime.path());
+    let server = httpmock::MockServer::start();
+    server.mock(|when, then| {
+        when.method("GET").path("/v1/models");
+        then.status(200).json_body(serde_json::json!({
+            "data": [{"id": "asr-head", "status": {"value": "loaded"}}],
+        }));
+    });
+    let turns = server.mock(|when, then| {
+        when.method("POST")
+            .path("/v1/chat/completions")
+            .body_contains("asr-head");
+        then.status(200)
+            .body("data: {\"choices\":[{\"delta\":{\"content\":\"hello\"}}]}\ndata: [DONE]\n");
+    });
+    let base = orator_core::OratorConfig::default();
+    let config = orator_core::OratorConfig {
+        roles: orator_core::RolesConfig {
+            asr: orator_core::RoleSpec {
+                models: vec!["asr-head".to_string()],
+                params: None,
+            },
+            ..base.roles.clone()
+        },
+        s2s: orator_core::S2sConfig {
+            endpoint: server.base_url(),
+            model: "other-voice".to_string(),
+            ..base.s2s.clone()
+        },
+        ..base
+    };
+    // Loud harmonic speech: passes the session's speech gate.
+    let samples: Vec<f32> = (0..16_000)
+        .map(|index| {
+            let time = index as f32 / 16_000.0;
+            0.35 * (2.0 * std::f32::consts::PI * 150.0 * time).sin()
+                + 0.35 * (2.0 * std::f32::consts::PI * 300.0 * time).sin()
+        })
+        .collect();
+    let (outcome, leg) =
+        transcribe_dial_leg(&samples, Transport::Socket, &StreamAbort::new(), &config);
+    assert_eq!(leg, DialLeg::Shared, "direct role routing ran");
+    assert_eq!(outcome.expect("shared head decodes"), "hello");
+    assert_eq!(turns.hits(), 1, "one direct turn, no daemon hop");
+    match prior_runtime {
+        Some(value) => std::env::set_var("XDG_RUNTIME_DIR", value),
+        None => std::env::remove_var("XDG_RUNTIME_DIR"),
+    }
+}
+
+/// Head-gate purity: the TTS local leg fires only for a head that
+/// differs from the voice model and serves through kokoro; the ASR
+/// local leg only for a head with present whisper/moonshine weights.
+/// Same-model, unknown, and otherwise-backed heads all keep the
+/// daemon-first chain.
+#[test]
+fn role_head_gates_fire_only_for_servable_non_voice_heads() {
+    use crate::fallback::{asr_local_head, tts_local_head};
+    use crate::socket::Transport;
+    let base = orator_core::OratorConfig::default();
+    // Defaults head elsewhere with serving backends: kokoro fires
+    // without touching disk.
+    assert_eq!(
+        tts_local_head(&base).as_deref(),
+        Some("agentory/kokoro-82m")
+    );
+    // Same-model heads never divert (the daemon already serves them).
+    let same_tts = orator_core::OratorConfig {
+        s2s: orator_core::S2sConfig {
+            model: "agentory/kokoro-82m".to_string(),
+            ..base.s2s.clone()
+        },
+        ..base.clone()
+    };
+    assert_eq!(tts_local_head(&same_tts), None);
+    let same_asr = orator_core::OratorConfig {
+        s2s: orator_core::S2sConfig {
+            model: "handy-computer/moonshine-streaming-medium".to_string(),
+            ..base.s2s.clone()
+        },
+        ..base.clone()
+    };
+    assert_eq!(asr_local_head(&same_asr), None);
+    // Unknown heads and otherwise-backed heads keep the chain.
+    let mut unknown = base.clone();
+    unknown.roles.tts.models = vec!["no-such-voice".to_string()];
+    unknown.roles.asr.models = vec!["no-such-asr".to_string()];
+    assert_eq!(tts_local_head(&unknown), None);
+    assert_eq!(asr_local_head(&unknown), None);
+    let mut audio_backed = base.clone();
+    audio_backed.roles.tts.models = vec!["liquidai/lfm3-audio-2b".to_string()];
+    audio_backed.roles.asr.models = vec!["liquidai/lfm3-audio-2b".to_string()];
+    audio_backed.s2s.model = "other-voice".to_string();
+    assert_eq!(tts_local_head(&audio_backed), None);
+    assert_eq!(asr_local_head(&audio_backed), None);
+    // A moonshine head with present weights serves locally; missing
+    // weights keep the daemon-first chain.
+    let _guard = common_core::sync::lock(&ENV_LOCK);
+    let gguf = tempfile::tempdir().expect("tempdir");
+    let missing = orator_core::OratorConfig {
+        gguf_dir: gguf.path().to_string_lossy().into_owned(),
+        ..base.clone()
+    };
+    assert_eq!(asr_local_head(&missing), None);
+    let dir = gguf
+        .path()
+        .join("handy-computer/moonshine-streaming-medium-gguf");
+    std::fs::create_dir_all(&dir).expect("mkdir");
+    std::fs::write(dir.join("latest.gguf"), b"fake").expect("seed writes");
+    let present = orator_core::OratorConfig {
+        gguf_dir: gguf.path().to_string_lossy().into_owned(),
+        ..base.clone()
+    };
+    let found = asr_local_head(&present).expect("present weights serve");
+    assert_eq!(found.tag, "handy-computer/moonshine-streaming-medium");
+    // The dial still prefers the daemon when the head cannot serve:
+    // an audio-server-backed head never captures the local TTS leg.
+    let prior_runtime = std::env::var_os("XDG_RUNTIME_DIR");
+    let prior_home = std::env::var_os("HOME");
+    let home = tempfile::tempdir().expect("tempdir");
+    let runtime = tempfile::tempdir().expect("tempdir");
+    std::env::set_var("HOME", home.path());
+    std::env::set_var("XDG_RUNTIME_DIR", runtime.path());
+    let server = httpmock::MockServer::start();
+    let tts = server.mock(|when, then| {
+        when.method("POST").path("/tts");
+        then.status(200).body(vec![0u8; 44]);
+    });
+    // The stub answers nothing, so the shared leg stays off without
+    // depending on ambient gateway state.
+    let stubbed = orator_core::OratorConfig {
+        s2s: orator_core::S2sConfig {
+            endpoint: server.base_url(),
+            model: "other-voice".to_string(),
+            ..base.s2s.clone()
+        },
+        ..audio_backed
+    };
+    let error = crate::fallback::say_dial("hi", Transport::Socket, &StreamAbort::new(), &stubbed)
+        .expect_err("daemon down, no local weights");
+    assert!(tts.hits() == 0, "audio-server heads keep the chain");
+    assert!(
+        error.contains("kokoro") || error.contains("managed"),
+        "local fallback answered: {error}"
+    );
+    match prior_home {
+        Some(value) => std::env::set_var("HOME", value),
+        None => std::env::remove_var("HOME"),
+    }
+    match prior_runtime {
+        Some(value) => std::env::set_var("XDG_RUNTIME_DIR", value),
+        None => std::env::remove_var("XDG_RUNTIME_DIR"),
+    }
+}

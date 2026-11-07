@@ -18,33 +18,23 @@ use crate::energy::EnergyVad;
 
 /// 16 kHz frame quantum the gate scores (20 ms).
 const FRAME_SAMPLES: usize = 320;
-/// Below this overall RMS the input is digital silence: no detector runs.
-const SILENCE_RMS: f32 = 0.002;
-/// Gate detector floor: far-mic speech around RMS 0.01 must still open
-/// spans while the zero-crossing ceiling rejects broadband hiss.
-const GATE_FLOOR: f32 = 0.01;
-/// Minimum speech-frame fraction over full frames.
-const MIN_SPEECH_FRACTION: f32 = 0.15;
-/// Verdict re-arm cadence in frames: a latched span re-proves every
-/// second, so stationary hiss that wins one attack lottery cannot ride
-/// it for the whole utterance while voiced spans re-latch at once.
-const REARM_FRAMES: usize = 50;
-/// Minimum zero-crossing intervals for a tonal verdict: shorter spans
-/// defer to the energy gate (which already rejects sub-attack blips).
-const MIN_TONE_INTERVALS: usize = 8;
-/// Interval coefficient of variation at or below this reads as a
-/// stationary pure tone. Pure sines measure 0.008–0.046 at any
-/// frequency or amplitude; voiced proxies measure ≥0.33; noise ≥0.69.
-const TONE_MAX_CV: f32 = 0.1;
 
 /// Whether 16 kHz mono `samples` carry committable speech: the energy
 /// fraction holds and no stationary pure tone owns the span.
 #[must_use]
 pub fn speech_present_16k(samples: &[f32]) -> bool {
-    if !energy_gate(samples) {
+    speech_present_16k_with_config(samples, &orator_core::VadConfig::default())
+}
+
+/// Whether 16 kHz mono `samples` carry committable speech under the
+/// configured VAD tunables. All gating paths compose this so live
+/// and offline gating never disagree under operator tuning.
+#[must_use]
+pub fn speech_present_16k_with_config(samples: &[f32], config: &orator_core::VadConfig) -> bool {
+    if !energy_gate_with_config(samples, config) {
         return false;
     }
-    !stationary_tone_present(samples)
+    !stationary_tone_present_with_config(samples, config)
 }
 
 /// Whether `samples` are a stationary pure tone: enough zero-crossing
@@ -53,6 +43,15 @@ pub fn speech_present_16k(samples: &[f32]) -> bool {
 /// times); silence and sparse clicks defer (too few intervals).
 #[must_use]
 pub fn stationary_tone_present(samples: &[f32]) -> bool {
+    stationary_tone_present_with_config(samples, &orator_core::VadConfig::default())
+}
+
+/// Tonal verdict under the configured intervals and ceiling.
+#[must_use]
+pub fn stationary_tone_present_with_config(
+    samples: &[f32],
+    config: &orator_core::VadConfig,
+) -> bool {
     if samples.len() < 2 {
         return false;
     }
@@ -78,30 +77,34 @@ pub fn stationary_tone_present(samples: &[f32]) -> bool {
         }
         prev_neg = neg;
     }
-    if count < MIN_TONE_INTERVALS as u64 {
+    if count < u64::from(config.min_tone_intervals) {
         return false;
     }
     let variance = m2 / count as f64;
-    (variance.sqrt() / mean) as f32 <= TONE_MAX_CV
+    (variance.sqrt() / mean) as f32 <= config.tone_max_cv
 }
 
 /// Calibrated energy fraction: overall RMS above digital silence plus
 /// a minimum share of detector speech frames over full 20 ms frames.
-fn energy_gate(samples: &[f32]) -> bool {
+fn energy_gate_with_config(samples: &[f32], config: &orator_core::VadConfig) -> bool {
     if samples.is_empty() {
         return false;
     }
-    if common_core::pcm::root_mean_square_f32(samples) < SILENCE_RMS {
+    if common_core::pcm::root_mean_square_f32(samples) < config.silence_rms {
         return false;
     }
-    let mut vad = EnergyVad::with_floor(GATE_FLOOR);
+    let mut vad = EnergyVad::with_config(&orator_core::VadConfig {
+        floor: config.gate_floor,
+        ..config.clone()
+    });
     let mut speech_frames = 0usize;
     let mut total_frames = 0usize;
+    let rearm = config.rearm_frames.max(1) as usize;
     for frame in samples.chunks(FRAME_SAMPLES) {
         if frame.len() < FRAME_SAMPLES {
             break;
         }
-        if total_frames % REARM_FRAMES == 0 {
+        if total_frames % rearm == 0 {
             vad.reset();
         }
         total_frames += 1;
@@ -112,7 +115,7 @@ fn energy_gate(samples: &[f32]) -> bool {
     if total_frames == 0 {
         return false;
     }
-    speech_frames as f32 / total_frames as f32 >= MIN_SPEECH_FRACTION
+    speech_frames as f32 / total_frames as f32 >= config.min_speech_fraction
 }
 
 #[cfg(test)]

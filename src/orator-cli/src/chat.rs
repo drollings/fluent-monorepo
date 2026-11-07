@@ -67,14 +67,25 @@ pub enum ChatSlash {
     Mic(MicMode),
     /// Toggle the PTT mic (`/talk`).
     Talk,
-    /// Switch voice output (`/voice off|short|full`).
+    /// Switch push-to-talk (`/ptt on|off`, bare `/ptt` toggles talk).
+    Ptt(crate::ptt::PttMode),
+    /// Switch voice output (`/voice off|short|full`, legacy).
     Voice(ChatVoiceMode),
-    /// Switch text output (`/text short|full`).
+    /// Switch text output (`/text short|full`, legacy).
     Text(ChatTextMode),
     /// Switch voice barge-in (`/barge on|off`, default on): talking
     /// over a reply cuts the live turn once the VAD span sustains
     /// past the configured bound.
     Barge(bool),
+    /// Switch narration (`/narration none|intro|summary|full`).
+    Narration(crate::narration::NarrationLevel),
+    /// Set a chat key (`/set narration <level>`, also voice/text/mic/barge).
+    Set {
+        /// Key to set (`narration`, `voice`, `text`, `mic`, `barge`).
+        key: String,
+        /// New value spelling.
+        value: String,
+    },
 }
 
 /// One parsed chat line: a slash command or spoken text.
@@ -101,6 +112,15 @@ pub fn parse_chat_line(line: &str) -> Option<ChatLine> {
     }
     if input == "/talk" {
         return Some(ChatLine::Slash(ChatSlash::Talk));
+    }
+    if input == "/ptt" {
+        return Some(ChatLine::Slash(ChatSlash::Talk));
+    }
+    if let Some(mode) = input.strip_prefix("/ptt ") {
+        return match crate::ptt::parse_ptt_mode(mode.trim()) {
+            Ok(ptt) => Some(ChatLine::Slash(ChatSlash::Ptt(ptt))),
+            Err(_) => Some(ChatLine::Say(input.to_string())),
+        };
     }
     if let Some(path) = input.strip_prefix("/wav ") {
         return Some(ChatLine::Slash(ChatSlash::Wav(path.trim().to_string())));
@@ -140,7 +160,63 @@ pub fn parse_chat_line(line: &str) -> Option<ChatLine> {
             _ => Some(ChatLine::Say(input.to_string())),
         };
     }
+    if let Some(mode) = input.strip_prefix("/narration ") {
+        return match crate::narration::parse_narration_level(mode.trim()) {
+            Ok(level) => Some(ChatLine::Slash(ChatSlash::Narration(level))),
+            Err(_) => Some(ChatLine::Say(input.to_string())),
+        };
+    }
+    if let Some(rest) = input.strip_prefix("/set ") {
+        return Some(parse_set_command(rest.trim(), input));
+    }
+    if let Some(rest) = input.strip_prefix("/set=") {
+        return Some(parse_set_command(rest.trim(), input));
+    }
     Some(ChatLine::Say(input.to_string()))
+}
+
+/// Parse `/set <key> <value>` (or `<key>=<value>`): known keys become
+/// `Set`, anything else stays spoken so typos never dispatch.
+fn parse_set_command(rest: &str, input: &str) -> ChatLine {
+    let (key, value) = match rest.split_once('=') {
+        Some((key, value)) => (key.trim().to_string(), value.trim().to_string()),
+        None => match rest.split_once(char::is_whitespace) {
+            Some((key, value)) => (key.trim().to_string(), value.trim().to_string()),
+            None => (rest.trim().to_string(), String::new()),
+        },
+    };
+    if key.is_empty() || value.is_empty() {
+        return ChatLine::Say(input.to_string());
+    }
+    match key.as_str() {
+        "narration" => match crate::narration::parse_narration_level(&value) {
+            Ok(level) => ChatLine::Slash(ChatSlash::Narration(level)),
+            Err(_) => ChatLine::Say(input.to_string()),
+        },
+        "voice" => match parse_voice_mode(&value) {
+            Ok(voice) => ChatLine::Slash(ChatSlash::Voice(voice)),
+            Err(_) => ChatLine::Say(input.to_string()),
+        },
+        "text" => match parse_text_mode(&value) {
+            Ok(text) => ChatLine::Slash(ChatSlash::Text(text)),
+            Err(_) => ChatLine::Say(input.to_string()),
+        },
+        "mic" => match value.as_str() {
+            "auto" => ChatLine::Slash(ChatSlash::Mic(MicMode::Auto)),
+            "ptt" => ChatLine::Slash(ChatSlash::Mic(MicMode::PushToTalk)),
+            _ => ChatLine::Say(input.to_string()),
+        },
+        "barge" => match value.as_str() {
+            "on" => ChatLine::Slash(ChatSlash::Barge(true)),
+            "off" => ChatLine::Slash(ChatSlash::Barge(false)),
+            _ => ChatLine::Say(input.to_string()),
+        },
+        "ptt" => match crate::ptt::parse_ptt_mode(&value) {
+            Ok(ptt) => ChatLine::Slash(ChatSlash::Ptt(ptt)),
+            Err(_) => ChatLine::Say(input.to_string()),
+        },
+        _ => ChatLine::Say(input.to_string()),
+    }
 }
 
 /// Spoken form of `reply` under `mode`: `None` for off, the shared
@@ -203,6 +279,41 @@ pub fn initial_mic_mode(config: &orator_core::OratorConfig) -> MicMode {
 #[must_use]
 pub fn initial_barge_on(config: &orator_core::OratorConfig) -> bool {
     config.chat.barge
+}
+
+/// See [`initial_voice_mode`]: push-to-talk starts, same fallback rule.
+/// Single source lives in `ptt`; this re-exports it for the loop.
+#[must_use]
+pub fn initial_ptt_mode(config: &orator_core::OratorConfig) -> crate::ptt::PttMode {
+    crate::ptt::initial_ptt_mode(config)
+}
+
+/// PTT mode onto the legacy mic vocabulary: off listens always, on
+/// waits for the latch. One mapping, used everywhere both meet.
+#[must_use]
+pub fn mic_for_ptt(mode: crate::ptt::PttMode) -> MicMode {
+    match mode {
+        crate::ptt::PttMode::Off => MicMode::Auto,
+        crate::ptt::PttMode::On => MicMode::PushToTalk,
+    }
+}
+
+/// Legacy mic mode onto PTT states: the `/mic` alias tracks `ptt`.
+#[must_use]
+pub fn ptt_for_mic(mode: MicMode) -> crate::ptt::PttMode {
+    match mode {
+        MicMode::Auto => crate::ptt::PttMode::Off,
+        MicMode::PushToTalk => crate::ptt::PttMode::On,
+    }
+}
+
+/// See [`initial_voice_mode`]: narration starts, same fallback rule.
+/// Single source lives in `narration`; this re-exports it for the loop.
+#[must_use]
+pub fn initial_narration_mode(
+    config: &orator_core::OratorConfig,
+) -> crate::narration::NarrationLevel {
+    crate::narration::initial_narration_mode(config)
 }
 
 /// Model+backend label logged for one LLM turn: the chat role head
@@ -284,15 +395,14 @@ pub fn decode_signal_stats(samples: &[f32]) -> (f32, f32) {
     (peak, rms)
 }
 
-/// Session state the prompt-playout decision reads: anything live
-/// holds the reply for overlap, a fully idle session voices at once.
-#[allow(clippy::struct_excessive_bools)] // five independent idle gates; an enum would hide which leg blocks
+/// Session state the prompt-playout decision reads: a single FIFO
+/// voice queue feeds the one player, so turns may run while earlier
+/// replies still drain — order holds structurally, never by holding
+/// audio back. Only a live player, a hot mic, or buffered speech
+/// holds the next item.
+#[allow(clippy::struct_excessive_bools)] // three independent gates; an enum would hide which leg blocks
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VoiceNow {
-    /// A turn is currently running.
-    pub turn_running: bool,
-    /// Input waits (stashed lines).
-    pub queued: bool,
     /// The VAD gate is hot.
     pub mic_speaking: bool,
     /// Buffered speech awaits endpointing.
@@ -305,7 +415,8 @@ pub struct VoiceNow {
 /// playout ends, so the room tail decays instead of endpointing as
 /// a phantom turn. Covers reverb plus VAD hangover plus drain
 /// granularity; the AEC opt-in bypasses suppression, so only
-/// AEC-off turns pay this hold.
+/// AEC-off turns pay this hold. The `turn.tail_hold_ms` leaf is the
+/// tunable; this stays the default it carries.
 pub const ECHO_TAIL_HOLD_MS: u64 = 1000;
 
 /// Whether capture stays suppressed for the playout tail: a hold
@@ -316,18 +427,15 @@ pub fn tail_hold_active(quiet_until: Option<std::time::Instant>, now: std::time:
     quiet_until.is_some_and(|until| now < until)
 }
 
-/// Whether a completed short reply voices at once instead of
-/// holding for overlap: the session is idle (nothing in `state` is
-/// live). A held reply voices during the next turn; an idle session
-/// voices immediately, so a single exchange talks back instead of
-/// waiting for a next turn that may never come.
+/// Whether a queued reply voices now: the player is idle and the
+/// room is quiet (no hot mic, nothing buffered). Turns may run and
+/// input may wait — the FIFO keeps every reply ordered behind the
+/// live one, so holding for them would only stall the queue, never
+/// prevent overlap (overlap is structurally impossible: one queue,
+/// one player).
 #[must_use]
 pub fn should_voice_now(state: VoiceNow) -> bool {
-    !state.turn_running
-        && !state.queued
-        && !state.mic_speaking
-        && !state.utterance_buffered
-        && !state.playout_live
+    !state.mic_speaking && !state.utterance_buffered && !state.playout_live
 }
 
 /// One voice-barge decision, already resolved to plain terms: the
@@ -398,11 +506,7 @@ impl BargeSustain {
     #[must_use]
     pub fn new(config: &orator_core::OratorConfig) -> Self {
         Self {
-            driver: orator_turn::TurnDriver::with_config(
-                orator_core::Epoch(1),
-                "en",
-                &config.turn,
-            ),
+            driver: orator_turn::TurnDriver::with_config(orator_core::Epoch(1), "en", &config.turn),
             prev_len: 0,
             latched: false,
         }
@@ -423,9 +527,7 @@ impl BargeSustain {
         }
         let grew = utterance_len > self.prev_len;
         self.prev_len = utterance_len;
-        let outcome = self
-            .driver
-            .push_frame(speaking && grew, ptt_cold, frame_ms);
+        let outcome = self.driver.push_frame(speaking && grew, ptt_cold, frame_ms);
         if outcome != orator_turn::BargeInOutcome::Ignored {
             self.latched = true;
         }
@@ -499,6 +601,7 @@ pub fn check_file_gate(
     mic_mode: crate::tui::MicMode,
     talking: bool,
     samples: &[f32],
+    vad: &orator_core::VadConfig,
 ) -> Result<(), FileGate> {
     use crate::tui::MicMode;
     if mic_mode == MicMode::PushToTalk && !talking {
@@ -506,7 +609,7 @@ pub fn check_file_gate(
             samples: samples.len(),
         });
     }
-    if !orator_vad::gate::speech_present_16k(samples) {
+    if !orator_vad::gate::speech_present_16k_with_config(samples, vad) {
         return Err(FileGate::NoSpeech);
     }
     Ok(())

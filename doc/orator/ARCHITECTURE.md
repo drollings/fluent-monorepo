@@ -298,7 +298,7 @@ terminal. Local ASR/TTS runs under `LOCAL_OP_BUDGET` (10 s) via
 
 ### `orator-cli` — every user command
 
-- `src/lib.rs`: `COMMANDS` (19 verbs), `Cli::{surface, methods}`,
+- `src/lib.rs`: `COMMANDS` (18 verbs), `Cli::{surface, methods}`,
   `OutboundRequest`, `ExitCode::{Success, Error, Usage,
   DaemonUnavailable, Interrupted}`.
 - `src/fallback.rs`: `LOCAL_OP_BUDGET` (10 s),
@@ -338,7 +338,7 @@ terminal. Local ASR/TTS runs under `LOCAL_OP_BUDGET` (10 s) via
   `chat` (order-preserving overlap, `pending_audio ≤ 1`),
   `dictate_once`, `transcribe`/`dictate_whisper`/`stt_backend`,
   `config`, `models`, `doctor`, `status`/`stats`, `listen`,
-  `ptt`, `meeting`, `approve`, `daemon`, `tui`,
+  `meeting`, `approve`, `daemon`, `tui`,
   shell-init/completions.
 - `src/ask_cmd.rs`: I/O only (`effective_llm_config` does the
   pure composition); `src/transcribe.rs`:
@@ -583,7 +583,7 @@ composed over these definitions.
 
 - **Wire** (`orator-core::protocol`, `orator-core::socket`,
   `orator-daemon::socket`, `orator-cli::socket`): 11 methods;
-  `COMMANDS` (19 CLI verbs) ↔ `METHOD_NAMES` ↔
+  `COMMANDS` (18 CLI verbs) ↔ `METHOD_NAMES` ↔
   `DISPATCH_METHODS` pinned equal by `it_parity.rs`;
   `OutboundRequest::new` refuses unknown/ignored params.
 - **Errors**: `ExitCode` (CLI), `S2sError` (adapter),

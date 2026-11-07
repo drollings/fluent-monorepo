@@ -579,6 +579,33 @@ fn speak_text_via_tts_decodes_wav_and_reports_missing_route() {
     });
 }
 
+/// Router-mode `/tts` requires the model name: the request body must
+/// carry `{"model", "input"}` or the gateway 400s with "model name is
+/// missing". The mock only voices when the model rides along, so a
+/// regression to model-less bodies surfaces as `NoAudio` here (and as
+/// the daemon's 400 refusal in production).
+#[test]
+fn speak_via_tts_sends_model_for_router_mode() {
+    common_core::runtime::block_on_shared(async {
+        let server = httpmock::MockServer::start();
+        let wav = orator_audio::encode_wav_mono(&[0.0, 1.0, -1.0], crate::config::AUDIO_OUT_RATE);
+        let voiced = server.mock(|when, then| {
+            when.method("POST")
+                .path("/tts")
+                .body_contains(S2sConfig::default().model.as_str());
+            then.status(200)
+                .header("content-type", "audio/wav")
+                .body(wav);
+        });
+        let session = session_with(&server);
+        let samples = session
+            .speak_text_via_tts("hi", &StreamAbort::new())
+            .expect("router-mode tts voices with model");
+        assert_eq!(samples, vec![0.0, 1.0, -1.0]);
+        assert_eq!(voiced.hits(), 1);
+    });
+}
+
 #[test]
 fn text_only_turns_count_no_audio_without_histograms() {
     common_core::runtime::block_on_shared(async {

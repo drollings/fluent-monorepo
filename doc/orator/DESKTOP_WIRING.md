@@ -6,7 +6,7 @@ each surface today:
 
 | Surface | Pure model (headless-pinned) | Live wiring | Note |
 | --- | --- | --- | --- |
-| Global shortcuts | `hotkey::parse_chord`/`pretty` codec + `fallback_bindings` (`orator ptt start/stop`, `orator toggle`) | Portal GlobalShortcuts unbound; compositor custom-shortcut path is the reliable route | Fallback always available, never a handshake |
+| Global shortcuts | `hotkey::parse_chord`/`pretty` codec + `fallback_bindings` (`orator chat --ptt`, `orator toggle`) | Portal GlobalShortcuts unbound; compositor custom-shortcut path is the reliable route | Fallback always available, never a handshake |
 | Tray | `TrayState`/`TrayStatus` state model | No `ksni` tray host wired | `Recording` never hides; states render without a host |
 | Notifications | `Notification::approval`/`recording` shapes | No daemon emit path wired | Approve/deny/stop actions ride the existing approval hub when bound |
 | KRunner | `parse_query` (`orator` prefix, `Ask`/`StartMeeting`/`Dictate` offers) | No runner registration | Parser rejects non-`orator` input (`oratorian`) |

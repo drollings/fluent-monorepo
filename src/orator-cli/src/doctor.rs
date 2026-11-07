@@ -167,7 +167,9 @@ fn speech_lines(config: &orator_core::OratorConfig) -> Vec<String> {
     // Chat session starts: the output types and barge-in the loop
     // uses before any slash command overrides them per session.
     lines.push(format!(
-        "chat: voice={} text={} mic={} barge={} (override per session with /voice /text /mic /barge)",
+        "chat: narration={} ptt={} voice={} text={} mic={} barge={} (override per session with /narration, /ptt, /set)",
+        config.chat.narration,
+        config.chat.ptt,
         config.chat.voice,
         config.chat.text,
         config.chat.mic,
@@ -378,7 +380,7 @@ pub fn desktop_lines(env: &orator_desktop::DesktopEnv) -> Vec<String> {
         )),
         HotkeyRoute::Compositor(instructions) => lines.push(format!("hotkeys: {instructions}")),
         HotkeyRoute::Fallback => lines.push(
-            "hotkeys: fallback ready (bind `orator ptt start/stop` in any compositor)".to_string(),
+            "hotkeys: fallback ready (bind `orator chat --ptt` in any compositor)".to_string(),
         ),
     }
     match probe_tray(env) {

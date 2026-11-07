@@ -5,7 +5,15 @@ use std::path::PathBuf;
 
 use fluent_wvr::FieldAccess;
 
-use crate::kokoro::{ort_provider_override, trim_silence, uniform_marks, KokoroBackend, KOKORO_SAMPLE_RATE};
+use crate::kokoro::{
+    cpu_pin_applies, invalidate_cuda_cache, ort_provider_override, set_cuda_usable_for_tests,
+    trim_silence, uniform_marks, KokoroBackend, KOKORO_SAMPLE_RATE,
+};
+
+/// Serializes the provider-verdict tests below: the availability
+/// cache and `KOKORO_ORT_PROVIDER` are process-global, so a probe
+/// must never interleave with another test's decision.
+static PROVIDER_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[test]
 fn default_paths_honor_env_then_managed_files() {
@@ -19,6 +27,7 @@ fn default_paths_honor_env_then_managed_files() {
 
 #[test]
 fn missing_files_are_unavailable_not_a_crash() {
+    let prior = std::env::var_os("KOKORO_ORT_PROVIDER");
     let backend = KokoroBackend::new(
         PathBuf::from("/nonexistent-orator/kokoro.onnx"),
         PathBuf::from("/nonexistent-orator/voices"),
@@ -28,6 +37,10 @@ fn missing_files_are_unavailable_not_a_crash() {
     let error = backend
         .synth_blocking("hello")
         .expect_err("missing model must fail");
+    match prior {
+        Some(value) => std::env::set_var("KOKORO_ORT_PROVIDER", value),
+        None => std::env::remove_var("KOKORO_ORT_PROVIDER"),
+    }
     assert_eq!(
         error,
         orator_core::TtsError::Unavailable(
@@ -299,18 +312,47 @@ fn gpu_without_a_device_fails_actionably() {
 }
 
 #[test]
-fn cpu_path_never_touches_the_provider_env() {
+fn cpu_path_pins_cpu_only_where_cuda_can_never_serve() {
+    let _guard = common_core::sync::lock(&PROVIDER_LOCK);
+    // Pure matrix first: only the quiet default on CUDA-less
+    // hardware collapses to an explicit `cpu`. The opt-in and the
+    // user override always win; usable CUDA keeps `auto`.
+    for (gpu, user, usable, pinned) in [
+        (false, false, false, true),
+        (false, false, true, false),
+        (false, true, false, false),
+        (false, true, true, false),
+        (true, false, false, false),
+        (true, false, true, false),
+        (true, true, false, false),
+        (true, true, true, false),
+    ] {
+        assert_eq!(
+            cpu_pin_applies(gpu, user, usable),
+            pinned,
+            "gpu={gpu} user={user} usable={usable}"
+        );
+    }
+    // End to end: without an override, a CPU load pins `cpu` exactly
+    // where CUDA can never serve, and stays hands-off elsewhere.
     let prior = std::env::var_os("KOKORO_ORT_PROVIDER");
+    std::env::remove_var("KOKORO_ORT_PROVIDER");
     let backend = KokoroBackend::new(
         PathBuf::from("/nonexistent-orator/kokoro.onnx"),
         PathBuf::from("/nonexistent-orator/voices"),
         "af_heart",
     );
     let _ = backend.synth_blocking("hello");
+    let pinned = std::env::var_os("KOKORO_ORT_PROVIDER");
+    match prior {
+        Some(value) => std::env::set_var("KOKORO_ORT_PROVIDER", value),
+        None => std::env::remove_var("KOKORO_ORT_PROVIDER"),
+    }
+    let expect_pin = cfg!(target_os = "linux") && !orator_core::gpu::nvidia_present();
     assert_eq!(
-        std::env::var_os("KOKORO_ORT_PROVIDER"),
-        prior,
-        "CPU synth leaves provider selection alone"
+        pinned.as_deref().map(|value| value.to_str()),
+        if expect_pin { Some(Some("cpu")) } else { None },
+        "pin only where CUDA can never serve"
     );
 }
 
@@ -376,5 +418,55 @@ fn cap_one_serializes_voice_turns() {
         peak.load(Ordering::SeqCst),
         1,
         "cap-1 chunks queue, never interleave"
+    );
+}
+
+/// Availability cache: the verdict is computed once and reused,
+/// and an ORT-side failure drops it so the next load re-probes
+/// from the device nodes instead of trusting yesterday.
+#[test]
+fn cuda_cache_recalculates_only_after_a_backend_failure() {
+    let _guard = common_core::sync::lock(&PROVIDER_LOCK);
+    let prior = std::env::var_os("KOKORO_ORT_PROVIDER");
+    std::env::remove_var("KOKORO_ORT_PROVIDER");
+    // Present-but-garbage weights fail inside ORT (a `Backend`
+    // error), which is exactly the recalculation trigger.
+    let broken = tempfile::tempdir().expect("tempdir");
+    let voices = broken.path().join("voices");
+    std::fs::create_dir(&voices).expect("mkdir");
+    let weights = broken.path().join("kokoro.onnx");
+    std::fs::write(&weights, b"not a model").expect("seed writes");
+    let backend = KokoroBackend::new(weights, voices, "af_heart");
+    // Poison the verdict to usable: the load auto-probes (and fails
+    // on the garbage weights), which must drop the poison so the
+    // next load re-resolves from the nodes.
+    set_cuda_usable_for_tests(true);
+    let failed_backend = matches!(
+        common_core::runtime::block_on_shared(backend.load()),
+        Err(orator_core::TtsError::Backend(_))
+    );
+    assert!(failed_backend, "garbage weights fail inside ORT");
+    // A follow-up load re-resolves instead of trusting the poison:
+    // CUDA-less Linux pins `cpu`, usable hardware leaves `auto` be.
+    std::env::remove_var("KOKORO_ORT_PROVIDER");
+    let fresh = KokoroBackend::new(
+        PathBuf::from("/nonexistent-orator/kokoro.onnx"),
+        PathBuf::from("/nonexistent-orator/voices"),
+        "af_heart",
+    );
+    let _ = fresh.synth_blocking("hello");
+    let repinned = std::env::var_os("KOKORO_ORT_PROVIDER");
+    match prior {
+        Some(value) => std::env::set_var("KOKORO_ORT_PROVIDER", value),
+        None => std::env::remove_var("KOKORO_ORT_PROVIDER"),
+    }
+    // Clean the process verdict for the rest of the suite: the next
+    // load recomputes it from the nodes either way.
+    invalidate_cuda_cache();
+    let expect_pin = cfg!(target_os = "linux") && !orator_core::gpu::nvidia_present();
+    assert_eq!(
+        repinned.as_deref().map(|value| value.to_str()),
+        if expect_pin { Some(Some("cpu")) } else { None },
+        "recalculation follows the nodes, not the poison"
     );
 }

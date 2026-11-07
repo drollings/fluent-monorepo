@@ -92,6 +92,27 @@ fn with_config_wires_barge_in_threshold() {
     assert_eq!(driver.detect(200), BargeInOutcome::Ducking);
 }
 
+/// The backchannel ceiling follows `turn.backchannel_ms`: a tuned
+/// 200 ms lets a 300 ms "yeah" through to the turn, where the
+/// default 600 ms sheds it as a backchannel.
+#[test]
+fn with_config_wires_backchannel_ceiling() {
+    let tight = orator_core::TurnConfig {
+        backchannel_ms: 200,
+        ..orator_core::TurnConfig::default()
+    };
+    let mut driver = TurnDriver::with_config(Epoch(1), "en", &tight);
+    assert_eq!(
+        driver.confirm(&evidence(200, 300, &["yeah"])),
+        BargeInOutcome::Cut
+    );
+    let mut loose = TurnDriver::with_config(Epoch(2), "en", &orator_core::TurnConfig::default());
+    assert_eq!(
+        loose.confirm(&evidence(200, 300, &["yeah"])),
+        BargeInOutcome::Ignored
+    );
+}
+
 #[test]
 fn confirm_cuts_speech_restores_backchannels_and_empties() {
     let mut driver = TurnDriver::new(Epoch(1));

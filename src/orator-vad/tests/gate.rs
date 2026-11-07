@@ -6,7 +6,7 @@
 
 use common_core::calibration::calibrate_threshold;
 
-use crate::gate::{speech_present_16k, stationary_tone_present};
+use crate::gate::{speech_present_16k, speech_present_16k_with_config, stationary_tone_present};
 
 const RATE: usize = 16_000;
 
@@ -14,8 +14,7 @@ const RATE: usize = 16_000;
 fn tone(freq: f32, amplitude: f32, secs: usize) -> Vec<f32> {
     (0..RATE * secs)
         .map(|index| {
-            amplitude
-                * (2.0 * std::f32::consts::PI * freq * index as f32 / RATE as f32).sin()
+            amplitude * (2.0 * std::f32::consts::PI * freq * index as f32 / RATE as f32).sin()
         })
         .collect()
 }
@@ -87,24 +86,88 @@ struct GateCase {
 
 fn corpus() -> Vec<GateCase> {
     vec![
-        GateCase { name: "silence", samples: vec![0.0; RATE], speech: false },
-        GateCase { name: "empty", samples: Vec::new(), speech: false },
+        GateCase {
+            name: "silence",
+            samples: vec![0.0; RATE],
+            speech: false,
+        },
+        GateCase {
+            name: "empty",
+            samples: Vec::new(),
+            speech: false,
+        },
         // The verified finding, exact shape: 440 Hz sine, peak ~0.3, 1 s.
-        GateCase { name: "tone-440-loud", samples: tone(440.0, 0.3, 1), speech: false },
-        GateCase { name: "tone-440-quiet", samples: tone(440.0, 0.005, 1), speech: false },
-        GateCase { name: "tone-440-mid", samples: tone(440.0, 0.05, 1), speech: false },
-        GateCase { name: "tone-1k-loud", samples: tone(1000.0, 0.3, 1), speech: false },
-        GateCase { name: "tone-1k-quiet", samples: tone(1000.0, 0.005, 1), speech: false },
-        GateCase { name: "tone-1k-mid", samples: tone(1000.0, 0.05, 1), speech: false },
-        GateCase { name: "tone-100-loud", samples: tone(100.0, 0.3, 1), speech: false },
-        GateCase { name: "tone-4k-loud", samples: tone(4000.0, 0.4, 1), speech: false },
-        GateCase { name: "noise-quiet", samples: noise(11, 0.01, 1), speech: false },
-        GateCase { name: "noise-mid", samples: noise(12, 0.03, 1), speech: false },
-        GateCase { name: "noise-loud", samples: noise(13, 0.1, 1), speech: false },
+        GateCase {
+            name: "tone-440-loud",
+            samples: tone(440.0, 0.3, 1),
+            speech: false,
+        },
+        GateCase {
+            name: "tone-440-quiet",
+            samples: tone(440.0, 0.005, 1),
+            speech: false,
+        },
+        GateCase {
+            name: "tone-440-mid",
+            samples: tone(440.0, 0.05, 1),
+            speech: false,
+        },
+        GateCase {
+            name: "tone-1k-loud",
+            samples: tone(1000.0, 0.3, 1),
+            speech: false,
+        },
+        GateCase {
+            name: "tone-1k-quiet",
+            samples: tone(1000.0, 0.005, 1),
+            speech: false,
+        },
+        GateCase {
+            name: "tone-1k-mid",
+            samples: tone(1000.0, 0.05, 1),
+            speech: false,
+        },
+        GateCase {
+            name: "tone-100-loud",
+            samples: tone(100.0, 0.3, 1),
+            speech: false,
+        },
+        GateCase {
+            name: "tone-4k-loud",
+            samples: tone(4000.0, 0.4, 1),
+            speech: false,
+        },
+        GateCase {
+            name: "noise-quiet",
+            samples: noise(11, 0.01, 1),
+            speech: false,
+        },
+        GateCase {
+            name: "noise-mid",
+            samples: noise(12, 0.03, 1),
+            speech: false,
+        },
+        GateCase {
+            name: "noise-loud",
+            samples: noise(13, 0.1, 1),
+            speech: false,
+        },
         // Must-fire: voiced proxies at full scale and -20 dB.
-        GateCase { name: "voiced", samples: voiced(1, 1.0), speech: true },
-        GateCase { name: "voiced-quiet", samples: voiced(1, 0.1), speech: true },
-        GateCase { name: "voiced-long", samples: voiced(3, 1.0), speech: true },
+        GateCase {
+            name: "voiced",
+            samples: voiced(1, 1.0),
+            speech: true,
+        },
+        GateCase {
+            name: "voiced-quiet",
+            samples: voiced(1, 0.1),
+            speech: true,
+        },
+        GateCase {
+            name: "voiced-long",
+            samples: voiced(3, 1.0),
+            speech: true,
+        },
     ]
 }
 
@@ -133,5 +196,26 @@ fn composed_gate_passes_the_scored_corpus() {
         (3, 0, 13, 0),
         "exact corpus accounting"
     );
-    assert!(report.passes_gate(), "commit gate must pass the shared gate: {report:?}");
+    assert!(
+        report.passes_gate(),
+        "commit gate must pass the shared gate: {report:?}"
+    );
+}
+
+/// Tuned gates follow the file: a hair-trigger floor commits the
+/// quiet-noise case the default sheds, so operators see the tradeoff.
+#[test]
+fn with_config_tuning_moves_the_gate() {
+    let itchy = orator_core::VadConfig {
+        gate_floor: 0.001,
+        silence_rms: 0.0,
+        min_speech_fraction: 0.0,
+        ..orator_core::VadConfig::default()
+    };
+    let quiet = noise(11, 0.01, 1);
+    assert!(!speech_present_16k(&quiet), "default sheds quiet noise");
+    assert!(
+        speech_present_16k_with_config(&quiet, &itchy),
+        "hair-trigger floor commits it"
+    );
 }

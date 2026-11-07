@@ -4,7 +4,7 @@ use fluent_wvr::FieldAccess;
 
 use crate::config::{
     AudioConfig, ChatConfig, DaemonConfig, LlmEndpointConfig, OratorConfig, S2sConfig, SttConfig,
-    TtsConfig, TurnConfig,
+    TtsConfig, TurnConfig, VadConfig,
 };
 
 #[test]
@@ -295,10 +295,32 @@ fn defaults_match_the_documented_values() {
     assert!(!tts.gpu);
     assert!(!s2s.gpu);
 
+    // Child processes are opt-in everywhere: defaults dial the
+    // existing llama.cpp at 8080 and fail loudly when absent.
+    assert!(!llm.auto_boot);
+    assert!(!s2s.auto_boot);
+    assert_eq!(llm.endpoint, "127.0.0.1:8080");
+    assert_eq!(s2s.endpoint, "http://127.0.0.1:8080");
+
     let turn = TurnConfig::default();
     assert_eq!(turn.hold_min_ms, 300);
     assert_eq!(turn.hold_max_ms, 700);
     assert_eq!(turn.barge_in_ms, 150);
+    assert_eq!(turn.backchannel_ms, 600);
+    assert_eq!(turn.tail_hold_ms, 1000);
+    assert_eq!(turn.poll_ms, 20);
+    assert_eq!(turn.saturated_cooldown_secs, 2);
+    assert_eq!(turn.shed_notice_secs, 10);
+    assert_eq!(turn.duck_ramp_ms, 100);
+    assert_eq!(turn.cut_fade_ms, 20);
+    assert!((turn.duck_depth_db - -12.0).abs() < f32::EPSILON);
+
+    // VAD ships extended: a brief pause no longer commits the turn.
+    let vad = VadConfig::default();
+    assert_eq!(vad.attack_frames, 3);
+    assert_eq!(vad.hangover_frames, 25);
+    assert_eq!(vad.rearm_frames, 50);
+    assert_eq!(vad.min_tone_intervals, 8);
 
     // The socket is the only listener unless configured.
     let daemon = DaemonConfig::default();
@@ -308,12 +330,15 @@ fn defaults_match_the_documented_values() {
     assert_eq!(daemon.admission_max, 2);
 
     // Chat output defaults: concise voice, full text, auto mic,
-    // barge-in on — the previous hardcoded session starts.
+    // barge-in on, narration none — the previous hardcoded session
+    // starts plus the text-only narration default.
     let chat = ChatConfig::default();
     assert_eq!(chat.voice, "short");
     assert_eq!(chat.text, "full");
     assert_eq!(chat.mic, "auto");
     assert!(chat.barge);
+    assert_eq!(chat.narration, "none");
+    assert_eq!(chat.ptt, "off");
 }
 
 /// Chat leaves round-trip by name and old files without the section
@@ -330,7 +355,14 @@ fn chat_leaves_round_trip_and_old_files_stay_session_identical() {
     chat.set_field("barge", "false").expect("valid set");
     assert_eq!(chat.get_field("barge").expect("readable"), "false");
     chat.set_field("voice", "off").expect("off parses");
+    chat.set_field("narration", "summary")
+        .expect("narration parses");
+    assert_eq!(chat.get_field("narration").expect("readable"), "summary");
     assert!(chat.field_names().contains(&"barge"));
+    assert!(chat.field_names().contains(&"narration"));
+    assert!(chat.field_names().contains(&"ptt"));
+    chat.set_field("ptt", "on").expect("ptt parses");
+    assert_eq!(chat.get_field("ptt").expect("readable"), "on");
     // A file written before the section existed loads today's starts.
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("config.json");
@@ -345,6 +377,10 @@ fn root_default_composes_the_leaves() {
     let root = OratorConfig::default();
     assert_eq!(root.audio.backend, AudioConfig::default().backend);
     assert_eq!(root.turn.barge_in_ms, TurnConfig::default().barge_in_ms);
+    assert_eq!(
+        root.vad.hangover_frames,
+        VadConfig::default().hangover_frames
+    );
     assert!(root.daemon.ws_listen.is_empty());
 }
 
@@ -421,6 +457,34 @@ fn fields_round_trip_by_name() {
     turn.set_field("barge_in_ms", "200").expect("valid set");
     assert_eq!(turn.get_field("barge_in_ms").expect("valid get"), "200");
     assert!(turn.field_names().contains(&"barge_in_ms"));
+    turn.set_field("tail_hold_ms", "1500").expect("valid set");
+    assert_eq!(turn.get_field("tail_hold_ms").expect("valid get"), "1500");
+    turn.set_field("poll_ms", "10").expect("valid set");
+    turn.set_field("backchannel_ms", "800").expect("valid set");
+    turn.set_field("saturated_cooldown_secs", "5")
+        .expect("valid set");
+    turn.set_field("duck_depth_db", "-6").expect("valid set");
+    assert_eq!(turn.get_field("duck_depth_db").expect("valid get"), "-6");
+}
+
+/// VAD leaves round-trip by name and old files without the section
+/// load today's extended detector.
+#[test]
+fn vad_leaves_round_trip_and_old_files_stay_extended() {
+    let mut vad = VadConfig::default();
+    vad.set_field("hangover_frames", "30").expect("valid set");
+    assert_eq!(vad.get_field("hangover_frames").expect("valid get"), "30");
+    vad.set_field("attack_frames", "5").expect("valid set");
+    assert!(vad.field_names().contains(&"hangover_frames"));
+    vad.set_field("hangover_frames", "0")
+        .expect_err("below-minimum refuses");
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("config.json");
+    std::fs::write(&path, r#"{"tts": {"backend": "kokoro", "voice": "brass"}}"#)
+        .expect("write fixture");
+    let loaded: OratorConfig = common_core::config::load_json(&path).expect("old schema loads");
+    assert_eq!(loaded.vad, VadConfig::default());
+    assert_eq!(loaded.vad.hangover_frames, 25);
 }
 
 #[test]
@@ -462,6 +526,8 @@ fn config_survives_json_round_trip() {
     let back: OratorConfig = serde_json::from_str(&json).expect("deserializable");
     assert_eq!(back.audio.backend, root.audio.backend);
     assert_eq!(back.turn.hold_max_ms, root.turn.hold_max_ms);
+    assert_eq!(back.turn.tail_hold_ms, root.turn.tail_hold_ms);
+    assert_eq!(back.vad.hangover_frames, root.vad.hangover_frames);
     assert_eq!(back.stt.gpu, root.stt.gpu);
     assert_eq!(back.llm.gpu, root.llm.gpu);
     assert_eq!(back.tts.gpu, root.tts.gpu);
@@ -1633,9 +1699,42 @@ fn describe_pins_the_whole_tree_schema() {
         ),
         (
             "turn",
-            ["hold_min_ms", "hold_max_ms", "barge_in_ms"].as_slice(),
+            [
+                "hold_min_ms",
+                "hold_max_ms",
+                "barge_in_ms",
+                "backchannel_ms",
+                "tail_hold_ms",
+                "poll_ms",
+                "saturated_cooldown_secs",
+                "shed_notice_secs",
+                "duck_ramp_ms",
+                "cut_fade_ms",
+                "duck_depth_db",
+            ]
+            .as_slice(),
         ),
-        ("chat", ["voice", "text", "mic", "barge"].as_slice()),
+        (
+            "vad",
+            [
+                "floor",
+                "hysteresis",
+                "attack_frames",
+                "hangover_frames",
+                "max_zero_crossing",
+                "silence_rms",
+                "gate_floor",
+                "min_speech_fraction",
+                "rearm_frames",
+                "min_tone_intervals",
+                "tone_max_cv",
+            ]
+            .as_slice(),
+        ),
+        (
+            "chat",
+            ["voice", "text", "mic", "barge", "ptt", "narration"].as_slice(),
+        ),
         (
             "daemon",
             [
@@ -1662,7 +1761,9 @@ fn describe_pins_the_whole_tree_schema() {
     let mut keys: Vec<&str> = properties.keys().map(String::as_str).collect();
     keys.sort_unstable();
     let mut want: Vec<&str> = expected.iter().map(String::as_str).collect();
-    want.extend(["audio", "stt", "llm", "tts", "s2s", "turn", "chat", "daemon"]);
+    want.extend([
+        "audio", "stt", "llm", "tts", "s2s", "turn", "vad", "chat", "daemon",
+    ]);
     want.sort_unstable();
     assert_eq!(keys, want);
     assert!(
@@ -1674,7 +1775,9 @@ fn describe_pins_the_whole_tree_schema() {
         "roles stay out of the schema"
     );
     // Sections nest with the flatten marker; constraints pin exactly.
-    for section in ["audio", "stt", "llm", "tts", "s2s", "turn", "chat", "daemon"] {
+    for section in [
+        "audio", "stt", "llm", "tts", "s2s", "turn", "vad", "chat", "daemon",
+    ] {
         assert_eq!(
             properties[section].get("x-flatten"),
             Some(&serde_json::Value::Bool(true)),

@@ -243,11 +243,11 @@ fn voiced_span_opens_and_closes_inside_its_bands() {
     }
     // No fire across leading silence; onset exactly after the attack
     // run (3 hot frames); close exactly after the hangover run
-    // (15 cold frames) past the last hot frame (index 29).
+    // (25 cold frames) past the last hot frame (index 29).
     assert_eq!(onset, Some(12), "onset must sit one attack past span start");
     assert_eq!(
         last_open,
-        Some(43),
+        Some(53),
         "close must sit one hangover past span end"
     );
 }
@@ -294,13 +294,13 @@ fn endpointing_holds_through_pauses_and_cuts_past_the_band() {
         },
         GapCase {
             name: "hangover boundary minus one",
-            gap_frames: 14,
+            gap_frames: 24,
             tail_frames: 10,
             must_close: false,
         },
         GapCase {
             name: "hangover boundary",
-            gap_frames: 15,
+            gap_frames: 25,
             tail_frames: 0,
             must_close: true,
         },
@@ -490,7 +490,7 @@ fn calibrated_constants_stay_pinned() {
         "hysteresis bands stay put"
     );
     assert_eq!(vad.attack_frames, 3, "attack run stays three frames");
-    assert_eq!(vad.hangover_frames, 15, "hangover run stays fifteen frames");
+    assert_eq!(vad.hangover_frames, 25, "hangover run stays extended");
     assert!(
         (vad.max_zero_crossing - 0.45).abs() < f32::EPSILON,
         "ceiling stays put"
@@ -505,8 +505,8 @@ fn calibrated_constants_stay_pinned() {
         "window cap stays 2 s"
     );
     assert_eq!(
-        FRAME_MS * 15,
-        300,
-        "hangover run matches the hold floor in ms"
+        FRAME_MS * 25,
+        500,
+        "hangover run spans the extended endpoint"
     );
 }

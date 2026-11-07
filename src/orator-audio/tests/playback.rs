@@ -35,8 +35,7 @@ fn abortable_pre_cancelled_returns_cut_without_touching_a_device() {
     let cut = AtomicBool::new(true);
     let started = std::time::Instant::now();
     assert!(
-        !play_blocking_abortable(&vec![0.0; 2400], 24_000, &cut)
-            .expect("cut is not an error"),
+        !play_blocking_abortable(&vec![0.0; 2400], 24_000, &cut).expect("cut is not an error"),
         "pre-cancelled playout cuts before the device opens"
     );
     assert!(

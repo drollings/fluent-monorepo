@@ -102,25 +102,15 @@ fn decode_signal_stats_name_silence() {
 /// Tail hold: capture stays suppressed briefly after a playout so
 /// the room tail decays instead of endpointing as a phantom turn.
 #[test]
-fn voice_now_needs_a_fully_idle_session() {
+fn voice_now_needs_a_quiet_room_and_an_idle_player() {
     use crate::chat::{should_voice_now, VoiceNow};
     let idle = VoiceNow {
-        turn_running: false,
-        queued: false,
         mic_speaking: false,
         utterance_buffered: false,
         playout_live: false,
     };
     assert!(should_voice_now(idle));
     for blocked in [
-        VoiceNow {
-            turn_running: true,
-            ..idle
-        },
-        VoiceNow {
-            queued: true,
-            ..idle
-        },
         VoiceNow {
             mic_speaking: true,
             ..idle
@@ -136,7 +126,7 @@ fn voice_now_needs_a_fully_idle_session() {
     ] {
         assert!(
             !should_voice_now(blocked),
-            "any live leg holds the reply: {blocked:?}"
+            "a live leg holds the reply: {blocked:?}"
         );
     }
 }
@@ -309,25 +299,26 @@ fn control_lines_reuse_the_tui_chord_table() {
 fn file_gate_sheds_ptt_off_then_silence() {
     use crate::chat::{check_file_gate, FileGate};
     use crate::tui::MicMode;
+    let vad = orator_core::VadConfig::default();
     let hot = vec![0.5; 16_000];
     let silent = vec![0.0; 16_000];
     assert_eq!(
-        check_file_gate(MicMode::PushToTalk, false, &hot),
+        check_file_gate(MicMode::PushToTalk, false, &hot, &vad),
         Err(FileGate::PttOff { samples: 16_000 }),
         "latched-off PTT sheds before any decode"
     );
     assert_eq!(
-        check_file_gate(MicMode::PushToTalk, true, &silent),
+        check_file_gate(MicMode::PushToTalk, true, &silent, &vad),
         Err(FileGate::NoSpeech),
         "silence sheds even with talk on"
     );
     assert_eq!(
-        check_file_gate(MicMode::Auto, false, &silent),
+        check_file_gate(MicMode::Auto, false, &silent, &vad),
         Err(FileGate::NoSpeech),
         "auto VAD-gates file turns"
     );
     assert!(
-        check_file_gate(MicMode::PushToTalk, true, &hot).is_ok(),
+        check_file_gate(MicMode::PushToTalk, true, &hot, &vad).is_ok(),
         "hot span with talk on commits"
     );
 }
@@ -512,10 +503,7 @@ fn sustain_latches_continuous_speech_and_clears_on_empty() {
         );
     }
     // 8th hot growing poll (160 ms): latched.
-    assert!(
-        tracker.poll(true, 8 * 320, false, 20),
-        "at bound latches"
-    );
+    assert!(tracker.poll(true, 8 * 320, false, 20), "at bound latches");
     // Endpoint polls (cold): the latch survives the pause...
     assert!(
         tracker.poll(false, 8 * 320, false, 20),
@@ -583,9 +571,8 @@ fn shed_conditions_shed_unconditionally() {
     // Reap/cut/quit shed: shed when the gate reads quiet.
     let quiet_shed = |gate_quiet: bool| gate_quiet;
     // Cooldown shed: cooling, non-empty, gate quiet.
-    let cooldown_sheds = |cooling: bool, empty: bool, speaking: bool| {
-        cooling && !empty && !speaking
-    };
+    let cooldown_sheds =
+        |cooling: bool, empty: bool, speaking: bool| cooling && !empty && !speaking;
     assert!(turn_end_sheds(true), "voiced turn-end sheds");
     assert!(quiet_shed(true), "quiet reap sheds");
     assert!(
@@ -607,17 +594,23 @@ fn shed_conditions_shed_unconditionally() {
 fn preserved_and_fresh_transcripts_merge_verbatim() {
     use crate::chat::merge_preserved_question;
     assert_eq!(
-        merge_preserved_question(Some("book a flight to berlin"), "uh never mind make it a train"),
+        merge_preserved_question(
+            Some("book a flight to berlin"),
+            "uh never mind make it a train"
+        ),
         "book a flight to berlin uh never mind make it a train",
     );
     // No preserved text: the fresh transcript stands alone.
-    assert_eq!(
-        merge_preserved_question(None, "hello there"),
-        "hello there",
-    );
+    assert_eq!(merge_preserved_question(None, "hello there"), "hello there",);
     // Empty preserved text: same as none (never a leading space).
-    assert_eq!(merge_preserved_question(Some(""), "hello there"), "hello there");
-    assert_eq!(merge_preserved_question(Some("   "), "hello there"), "hello there");
+    assert_eq!(
+        merge_preserved_question(Some(""), "hello there"),
+        "hello there"
+    );
+    assert_eq!(
+        merge_preserved_question(Some("   "), "hello there"),
+        "hello there"
+    );
 }
 
 /// Daemon-leg ASR identity: the shared voice server path serves the
@@ -631,9 +624,6 @@ fn daemon_leg_serving_names_the_configured_voice_model() {
     config.s2s.model = "custom-voice-model".to_string();
     assert_eq!(
         daemon_asr_serving(&config),
-        (
-            "custom-voice-model".to_string(),
-            "audio-server".to_string()
-        ),
+        ("custom-voice-model".to_string(), "audio-server".to_string()),
     );
 }

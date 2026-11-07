@@ -680,3 +680,33 @@ fn boot_audio_server_passes_gpu_layers_when_opted_in() {
         None => std::env::remove_var("XDG_DATA_HOME"),
     }
 }
+
+/// Loaded-status routing: role heads serve through the shared
+/// endpoint only from loaded instances. Listing alone never counts
+/// (the preset lists unloadable architectures), and unknown shapes,
+/// missing ids, and dead endpoints all answer false.
+#[test]
+fn model_loaded_needs_a_loaded_status() {
+    common_core::runtime::block_on_shared(async {
+        let server = httpmock::MockServer::start();
+        server.mock(|when, then| {
+            when.method("GET").path("/v1/models");
+            then.status(200).json_body(serde_json::json!({
+                "data": [
+                    {"id": "voice-head", "status": {"value": "loaded"}},
+                    {"id": "legacy", "status": "loaded"},
+                    {"id": "sleeping", "status": {"value": "unloaded"}},
+                    {"id": "warming", "status": {"value": "loading"}},
+                    {"id": "no-status"},
+                ],
+            }));
+        });
+        assert!(crate::ensure::model_loaded(&server.base_url(), "voice-head").await);
+        assert!(crate::ensure::model_loaded(&server.base_url(), "legacy").await);
+        assert!(!crate::ensure::model_loaded(&server.base_url(), "sleeping").await);
+        assert!(!crate::ensure::model_loaded(&server.base_url(), "warming").await);
+        assert!(!crate::ensure::model_loaded(&server.base_url(), "no-status").await);
+        assert!(!crate::ensure::model_loaded(&server.base_url(), "absent").await);
+        assert!(!crate::ensure::model_loaded("http://127.0.0.1:1", "voice-head").await);
+    });
+}

@@ -8,7 +8,7 @@ use crate::{render_doctor, OutboundRequest, COMMANDS};
 fn commands_are_unique_and_complete() {
     let set: HashSet<&str> = COMMANDS.into_iter().collect();
     assert_eq!(set.len(), COMMANDS.len(), "no duplicate command names");
-    assert_eq!(COMMANDS.len(), 19);
+    assert_eq!(COMMANDS.len(), 18);
     assert!(set.contains("dictate"));
     assert!(set.contains("doctor"));
     assert!(set.contains("tui"));

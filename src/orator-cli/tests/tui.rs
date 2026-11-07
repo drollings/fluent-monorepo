@@ -779,10 +779,7 @@ fn drain_never_shrinks_the_utterance() {
             &mut dropped,
             true,
         );
-        assert!(
-            utterance.len() > before,
-            "hot polls only extend the buffer"
-        );
+        assert!(utterance.len() > before, "hot polls only extend the buffer");
     }
 }
 
@@ -811,10 +808,10 @@ fn endpoint_leaves_the_buffered_utterance_in_place() {
     assert!(gate.speaking(), "hot span holds the gate open");
     assert!(!utterance.is_empty(), "hot span buffers");
     let buffered = utterance.len();
-    // Cold polls: the 15-frame hangover keeps appending silence
+    // Cold polls: the 25-frame hangover keeps appending silence
     // while the gate winds down, then the closed gate appends
-    // nothing — but the buffer is never shed. Two polls deliver 24
-    // silent frames, past the hangover.
+    // nothing — but the buffer is never shed. Two polls deliver 25
+    // silent frames, reaching the hangover.
     for _ in 0..2 {
         let mut cold = vec![0.0f32; 4096].into_iter();
         drain_capture(
@@ -876,14 +873,8 @@ fn refused_capture_tracks_the_meter_but_buffers_nothing() {
         &mut dropped,
         false,
     );
-    assert!(
-        utterance.is_empty(),
-        "refused capture buffers nothing"
-    );
-    assert!(
-        gate.level() > 0.0,
-        "the meter still sees the hot frames"
-    );
+    assert!(utterance.is_empty(), "refused capture buffers nothing");
+    assert!(gate.level() > 0.0, "the meter still sees the hot frames");
 }
 
 /// Coupling pin: gate heat and utterance buffering read the same
@@ -922,7 +913,7 @@ fn gate_heat_and_buffering_read_the_same_frames() {
         true,
     );
     // One poll drains 4096 samples (12 frames): not yet past the
-    // 15-frame hangover, so the gate still holds — and the hangover
+    // 25-frame hangover, so the gate still holds — and the hangover
     // frames append, because the open gate buffers everything hot or
     // cold. Coupling holds in both directions: heat and buffering
     // move together.
@@ -997,4 +988,3 @@ fn accept_toggle_keeps_old_buffer_drops_new_frames() {
         "refused frames drop; the kept buffer is untouched by the drain"
     );
 }
-

@@ -54,19 +54,24 @@ pub mod chatlog;
 /// `chat` turn helpers (slash parsing, voice/text modes, labels).
 pub mod chat;
 
+/// Narration levels for `chat` (single source of truth).
+pub mod narration;
+
+/// Push-to-talk for `chat` (single source of truth).
+pub mod ptt;
+
 /// Ask preflight (strict ports, fail-fast weights, speak notes).
 pub mod ask;
 
 /// Canonical CLI command names. The clap surface must equal exactly this
 /// set (pinned by test); every entry is implemented in `run` below.
-pub const COMMANDS: [&str; 19] = [
+pub const COMMANDS: [&str; 18] = [
     "say",
     "listen",
     "transcribe",
     "ask",
     "chat",
     "dictate",
-    "ptt",
     "meeting",
     "models",
     "cmd",
@@ -197,15 +202,18 @@ pub enum Command {
         /// answers) endpoints VAD-gated turns in auto mode or on /talk
         /// toggle-off in ptt. /quit exits, /reset clears, /wav + /input
         /// voice a file, /mic auto|ptt gates file and mic turns, /talk
-        /// toggles, /voice off|short|full, /text short|full, /barge
-        /// on|off (voice barge default on; key barge always works).
-        /// Session starts come from the chat.* config leaves
-        /// (chat.voice/text/mic/barge); slash commands override them
-        /// per session. Chords match the TUI (Ctrl+B barge, Ctrl+Q
-        /// quit, Ctrl+G mic mode, Ctrl+T talk) typed as the control
-        /// character plus Enter; Ctrl+C aborts, Ctrl+D ends input.
-        /// Barge cuts the live turn and stops playout at once; the
-        /// interrupting utterance becomes the next turn. Key barge
+        /// and bare /ptt toggle the latch, /ptt on|off and /set ptt
+        /// switch push-to-talk, /narration none|intro|summary|full,
+        /// /set narration <level> (also voice/text/mic/barge), /voice
+        /// and /text stay as legacy aliases, /barge on|off (voice barge
+        /// default on; key barge always works). Session starts come
+        /// from the chat.* config leaves
+        /// (chat.narration/ptt/voice/text/mic/barge); slash commands
+        /// override them per session. Chords match the TUI (Ctrl+B
+        /// barge, Ctrl+Q quit, Ctrl+G mic mode, Ctrl+T talk) typed as
+        /// the control character plus Enter; Ctrl+C aborts, Ctrl+D ends
+        /// input. Barge cuts the live turn and stops playout at once;
+        /// the interrupting utterance becomes the next turn. Key barge
         /// (Ctrl+B) always cuts; voice barge cuts speech the VAD
         /// sustains past turn.barge_in_ms. With barge off the mic
         /// sheds while a turn runs.
@@ -214,6 +222,12 @@ pub enum Command {
         /// Verbosity: 0 hides agent tool-call detail, 1+ reveals it.
         #[arg(long, default_value_t = 0)]
         verbosity: u8,
+        /// Narration level: none|intro|summary|full. Empty follows config.
+        #[arg(long, default_value = "")]
+        narration: String,
+        /// Push-to-talk: off|on. Bare `--ptt` latches on; empty follows config.
+        #[arg(long, num_args = 0..=1, default_missing_value = "on", default_value = "")]
+        ptt: String,
     },
     /// Dictation into the focused window.
     Dictate {
@@ -229,12 +243,6 @@ pub enum Command {
         /// STT backend: whisper, moonshine, audio-server. Empty follows config.
         #[arg(long, default_value = "")]
         backend: String,
-    },
-    /// Push-to-talk session control.
-    Ptt {
-        /// Action: start, stop.
-        #[arg(default_value = "")]
-        action: String,
     },
     /// Meeting lifecycle and re-runs.
     Meeting {

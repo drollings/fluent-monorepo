@@ -1,6 +1,26 @@
 //! Envelope tests: duck ramps to the floor and holds; fades zero tails.
 
-use crate::envelope::{apply_fade_out, db_to_linear, duck_gain_at, CUT_FADE_MS, DUCK_DEPTH_DB};
+use crate::envelope::{
+    apply_fade_out, db_to_linear, duck_gain_at, duck_gain_at_with, CUT_FADE_MS, DUCK_DEPTH_DB,
+};
+
+/// The configured duck matches the default duck: file defaults equal
+/// the calibrated constants, so default configs voice identically.
+#[test]
+fn configured_duck_matches_the_default_duck() {
+    let turn = orator_core::TurnConfig::default();
+    for elapsed in [0, 25, 50, 99, 100, 101, 5000] {
+        assert!((duck_gain_at_with(elapsed, &turn) - duck_gain_at(elapsed)).abs() < f32::EPSILON);
+    }
+    let shallow = orator_core::TurnConfig {
+        duck_depth_db: -6.0,
+        duck_ramp_ms: 50,
+        ..orator_core::TurnConfig::default()
+    };
+    assert!((duck_gain_at_with(0, &shallow) - 1.0).abs() < f32::EPSILON);
+    assert!(duck_gain_at_with(5000, &shallow) > duck_gain_at(5000));
+    assert!((duck_gain_at_with(5000, &shallow) - db_to_linear(-6.0)).abs() < f32::EPSILON);
+}
 
 #[test]
 fn duck_starts_open_and_holds_the_floor() {

@@ -44,7 +44,7 @@ impl Default for EnergyVad {
             floor: 0.02,
             hysteresis: 0.01,
             attack_frames: 3,
-            hangover_frames: 15,
+            hangover_frames: 25,
             max_zero_crossing: 0.45,
             hot_streak: 0,
             cold_streak: 0,
@@ -60,6 +60,22 @@ impl EnergyVad {
         Self {
             floor,
             ..Self::default()
+        }
+    }
+
+    /// Detector with every tunable taken from `VadConfig`: the single
+    /// tunable surface for the file, live, and supervised paths.
+    #[must_use]
+    pub fn with_config(config: &orator_core::VadConfig) -> Self {
+        Self {
+            floor: config.floor,
+            hysteresis: config.hysteresis,
+            attack_frames: config.attack_frames,
+            hangover_frames: config.hangover_frames,
+            max_zero_crossing: config.max_zero_crossing,
+            hot_streak: 0,
+            cold_streak: 0,
+            speaking: false,
         }
     }
 

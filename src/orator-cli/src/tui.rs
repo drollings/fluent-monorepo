@@ -236,8 +236,15 @@ impl MicGate {
     /// Gate with the default detector constants.
     #[must_use]
     pub fn new() -> Self {
+        Self::with_config(&orator_core::VadConfig::default())
+    }
+
+    /// Gate with every tunable taken from `VadConfig`: the single
+    /// tunable surface for live capture, file turns, and the TUI.
+    #[must_use]
+    pub fn with_config(config: &orator_core::VadConfig) -> Self {
         Self {
-            vad: EnergyVad::default(),
+            vad: EnergyVad::with_config(config),
             level: 0.0,
         }
     }
@@ -383,6 +390,12 @@ impl<C: SessionControl> TuiApp<C> {
     /// App over `control`.
     #[must_use]
     pub fn new(control: C) -> Self {
+        Self::with_config(control, &orator_core::VadConfig::default())
+    }
+
+    /// App over `control` with the gate tuned from `VadConfig`.
+    #[must_use]
+    pub fn with_config(control: C, vad: &orator_core::VadConfig) -> Self {
         Self {
             state: TuiState::new(),
             control,
@@ -391,7 +404,7 @@ impl<C: SessionControl> TuiApp<C> {
             quit: false,
             ptt_commit: false,
             suppress_utterance: false,
-            gate: MicGate::new(),
+            gate: MicGate::with_config(vad),
         }
     }
 
@@ -1068,7 +1081,7 @@ fn run_loop(
         crate::SignalWatch::arm(move || shutdown.store(true, Ordering::SeqCst))
     };
     let turn_abort = StreamAbort::new();
-    let mut app = TuiApp::new(LiveControl::new(transport, turn_abort.clone()));
+    let mut app = TuiApp::with_config(LiveControl::new(transport, turn_abort.clone()), &config.vad);
     let mut turn_abort = turn_abort;
     let device_rate = backend.sample_rate;
     let mut consumer = backend.consumer;
@@ -1128,8 +1141,9 @@ fn run_loop(
         if cooling && !app.pending_utterance.is_empty() && !app.gate_speaking() {
             let shed = app.take_utterance().len();
             app.pending_dropped += shed as u64;
-            let due =
-                last_shed_line.is_none_or(|at| at.elapsed() > std::time::Duration::from_secs(10));
+            let due = last_shed_line.is_none_or(|at| {
+                at.elapsed() > std::time::Duration::from_secs(config.turn.shed_notice_secs)
+            });
             if due {
                 last_shed_line = Some(std::time::Instant::now());
                 app.state.push_line(TuiLine::Status(format!(
@@ -1166,8 +1180,12 @@ fn run_loop(
                     Ok(_) => {}
                     Err(error) => {
                         if error.to_ascii_lowercase().contains("saturated") {
-                            cooldown_until =
-                                Some(std::time::Instant::now() + std::time::Duration::from_secs(2));
+                            cooldown_until = Some(
+                                std::time::Instant::now()
+                                    + std::time::Duration::from_secs(
+                                        config.turn.saturated_cooldown_secs,
+                                    ),
+                            );
                         }
                         app.state.push_line(TuiLine::Failure(error));
                     }
@@ -1232,7 +1250,11 @@ fn run_loop(
                 app.state.voicing = false;
             }
         }
-        if event::poll(std::time::Duration::from_millis(20)).unwrap_or(false) {
+        if event::poll(std::time::Duration::from_millis(u64::from(
+            config.turn.poll_ms,
+        )))
+        .unwrap_or(false)
+        {
             if let Ok(Event::Key(key)) = event::read() {
                 let barged = map_key(key) == TuiAction::Barge;
                 if barged {

@@ -20,7 +20,8 @@ pub use backend::{list_input_devices, CpalBackend, DeviceInfo};
 pub use codec::{Codec, PcmCodec};
 pub use doctor::{doctor_report, DoctorReport};
 pub use envelope::{
-    apply_fade_out, db_to_linear, duck_gain_at, CUT_FADE_MS, DUCK_DEPTH_DB, DUCK_RAMP_MS,
+    apply_fade_out, db_to_linear, duck_gain_at, duck_gain_at_with, CUT_FADE_MS, DUCK_DEPTH_DB,
+    DUCK_RAMP_MS,
 };
 pub use error::AudioError;
 pub use jitter::JitterBuffer;

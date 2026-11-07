@@ -82,7 +82,7 @@ fn cascade_turn_flows_from_speech_to_store() {
             vad.push(&speech_frame()).speech,
             "voiced frames open speech"
         );
-        for _ in 0..20 {
+        for _ in 0..25 {
             vad.push(&vec![0.0; 320]);
         }
         assert!(!vad.push(&vec![0.0; 320]).speech, "silence closes speech");
@@ -239,8 +239,6 @@ fn daemon_down_is_never_success() {
         vec!["stats"],
         vec!["daemon", "stop"],
         vec!["listen"],
-        vec!["ptt", "start"],
-        vec!["ptt", "stop"],
         vec!["meeting", "start"],
         vec!["meeting", "list"],
         vec!["meeting", "stop", "dead-id"],
@@ -263,6 +261,107 @@ fn daemon_down_is_never_success() {
             "{args:?} exits Error, Usage, or DaemonUnavailable, got {code}"
         );
     }
+}
+
+/// Default `ask` never spawns a child: a dead configured endpoint
+/// with `llm.auto_boot` off refuses naming the remedy (start a
+/// llama-server there, or opt into a supervised boot).
+#[test]
+fn ask_without_server_and_without_autoboot_refuses_without_spawning() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let cwd = tempfile::tempdir().expect("tempdir");
+    std::fs::write(
+        cwd.path().join("orator.json"),
+        r#"{"llm": {"endpoint": "127.0.0.1:1", "model": "probe-text", "ctx": 8192, "n_batch": 512, "weights": "probe.gguf", "gguf_dir": ".", "gpu": false, "auto_boot": false}}"#,
+    )
+    .expect("config writes");
+    let mut cmd = std::process::Command::new(cli_binary());
+    cmd.args(["ask", "hi"]);
+    cmd.env("HOME", home.path());
+    cmd.env("XDG_RUNTIME_DIR", home.path());
+    cmd.current_dir(cwd.path());
+    cmd.stdin(std::process::Stdio::null());
+    cmd.stdout(std::process::Stdio::piped());
+    cmd.stderr(std::process::Stdio::piped());
+    cmd.env_remove("LLM_BASE_URL");
+    cmd.env_remove("LLM_MODEL");
+    let output = cmd.output().expect("cli runs");
+    assert!(
+        !output.status.success(),
+        "ask with no server must fail, never boot"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("llm.auto_boot"),
+        "refusal names the opt-in: {stderr}"
+    );
+}
+
+/// Shared-server default: a shared endpoint that answers without
+/// audio input, with `s2s.auto_boot` off, never announces or attempts
+/// a supervised boot — the refusal names the opt-in instead.
+#[test]
+fn shared_server_without_audio_never_boots_when_autoboot_off() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let cwd = tempfile::tempdir().expect("tempdir");
+    let weights = cwd.path().join("weights.gguf");
+    let mmproj = cwd.path().join("mmproj.gguf");
+    std::fs::write(&weights, b"weights").expect("weights fixture");
+    std::fs::write(&mmproj, b"mmproj").expect("mmproj fixture");
+    // Stub audio server: ready and serving, but rejects audio input
+    // like a text-only gateway without the projector.
+    let server = httpmock::MockServer::start();
+    server.mock(|when, then| {
+        when.method("OPTIONS").path("/v1/chat/completions");
+        then.status(200);
+    });
+    server.mock(|when, then| {
+        when.method("POST").path("/v1/chat/completions");
+        then.status(500).body(
+            "{\"error\":{\"message\":\"audio input is not supported - hint: provide the mmproj\"}}",
+        );
+    });
+    std::fs::write(
+        cwd.path().join("orator.json"),
+        format!(
+            "{{\"s2s\": {{\"endpoint\": \"{}\", \"model\": \"probe-voice\", \"mmproj\": \"{}\", \"gpu\": false, \"auto_boot\": false}}, \"models\": {{\"probe-voice\": {{\"weights\": \"{}\", \"backends\": [\"audio-server\"]}}}}, \"gguf_dir\": \"{}\"}}",
+            server.base_url(),
+            mmproj.display(),
+            weights.display(),
+            cwd.path().display(),
+        ),
+    )
+    .expect("config writes");
+    let empty_path = tempfile::tempdir().expect("empty PATH fixture");
+    let mut cmd = std::process::Command::new(cli_binary());
+    cmd.args(["say", "--backend", "audio-server", "hello"]);
+    cmd.env("HOME", home.path());
+    cmd.env("XDG_RUNTIME_DIR", home.path());
+    cmd.env("PATH", empty_path.path());
+    cmd.current_dir(cwd.path());
+    cmd.stdin(std::process::Stdio::null());
+    cmd.stdout(std::process::Stdio::piped());
+    cmd.stderr(std::process::Stdio::piped());
+    cmd.env_remove("LLAMA_TTS");
+    cmd.env_remove("LLAMA_AUDIO_SERVER");
+    let output = cmd.output().expect("cli runs");
+    assert!(
+        !output.status.success(),
+        "voiceless shared turn must fail, never boot"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("s2s.auto_boot"),
+        "refusal names the opt-in: {stderr}"
+    );
+    assert!(
+        stderr.contains("using the shared server only"),
+        "shared-server decision is explicit: {stderr}"
+    );
+    assert!(
+        !stderr.contains("booting a supervised voice server"),
+        "no supervised boot announced: {stderr}"
+    );
 }
 
 #[test]
@@ -382,6 +481,16 @@ fn new_leaves_are_honored_end_to_end() {
     assert_eq!(get(home.path(), cwd.path(), "daemon.admission_max"), "2");
     set(home.path(), cwd.path(), "daemon.admission_max", "4");
     assert_eq!(get(home.path(), cwd.path(), "daemon.admission_max"), "4");
+    // Turn timings and the VAD gate ship calibrated and round-trip.
+    assert_eq!(get(home.path(), cwd.path(), "turn.tail_hold_ms"), "1000");
+    set(home.path(), cwd.path(), "turn.tail_hold_ms", "1500");
+    assert_eq!(get(home.path(), cwd.path(), "turn.tail_hold_ms"), "1500");
+    assert_eq!(get(home.path(), cwd.path(), "vad.hangover_frames"), "25");
+    set(home.path(), cwd.path(), "vad.hangover_frames", "30");
+    assert_eq!(get(home.path(), cwd.path(), "vad.hangover_frames"), "30");
+    assert_eq!(get(home.path(), cwd.path(), "chat.ptt"), "off");
+    set(home.path(), cwd.path(), "chat.ptt", "on");
+    assert_eq!(get(home.path(), cwd.path(), "chat.ptt"), "on");
 }
 
 /// Bound golden: over-bound inputs across playback/prompt/history

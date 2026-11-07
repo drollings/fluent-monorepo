@@ -428,6 +428,9 @@ impl VoiceOwner {
                                 return Err(VoiceError::ShuttingDown);
                             }
                             let url = server.base_url().to_string();
+                            // A supervised child is rare and significant:
+                            // name where turns now serve from.
+                            eprintln!("oratord: voice supervised child serving at {url}");
                             state.server = Some(server);
                             state.last_used = Instant::now();
                             state.last_url = Some(url.clone());
@@ -752,6 +755,26 @@ impl VoiceOwner {
         }
     }
 
+    /// Role-head model override for `role` (`tts` or `asr`) when
+    /// `endpoint` has the head loaded and it differs from the
+    /// voice-model leaf. The shared server is the default backend, so
+    /// a loaded head serves instead of the leaf; `None` keeps the leaf
+    /// (same model, not loaded, unreachable). Loaded — not merely
+    /// listed — because the preset lists architectures this build
+    /// cannot load; capturing turns for those would fail every turn
+    /// instead of serving through the configured backends.
+    fn shared_head_model(&self, endpoint: &str, role: &str) -> Option<String> {
+        let head = orator_core::resolve_role_model(&self.config.roles, role)?;
+        if head == self.config.s2s.model {
+            return None;
+        }
+        if crate::socket::bridge_concurrent(orator_s2s::model_loaded(endpoint, &head)) {
+            Some(head)
+        } else {
+            None
+        }
+    }
+
     /// Speak `text` through the daemon-owned voice server. Returns the
     /// voiced samples and their rate; the caller plays them locally.
     /// Audio bytes travel in the socket envelope for the CLI to voice.
@@ -809,8 +832,17 @@ impl VoiceOwner {
             .gate
             .admit()
             .map_err(|refusal| VoiceError::Saturated(refusal.reason))?;
+        // Role-head voice: the TTS head loaded on this endpoint voices
+        // instead of the voice-model leaf (the shared server is the
+        // default backend; the leaf stays the fallback). Unloaded or
+        // matching heads keep the leaf, so scripted servers without a
+        // models listing serve exactly as before.
+        let model = self
+            .shared_head_model(endpoint, "tts")
+            .unwrap_or_else(|| self.config.s2s.model.clone());
         let mut audio = orator_s2s::AudioSession::new(orator_s2s::S2sConfig {
             endpoint: endpoint.to_string(),
+            model,
             ..self.config.s2s.clone()
         });
         // Every attempt names the probe target, success or failure —
@@ -862,7 +894,13 @@ impl VoiceOwner {
             }
         }
         let llm = self.config.llm.clone();
-        let (base, model) = orator_cli_config_base(&llm);
+        let (base, leaf) = orator_cli_config_base(&llm);
+        // Chat authority: the `roles.chat` head wins (the
+        // `ask::resolve_ask_model` twin — keep the two in sync); the
+        // leaf only fills in when no role binds one. Without this the
+        // daemon would keep loading the leaf while every label names
+        // the head.
+        let model = orator_core::resolve_role_model(&self.config.roles, "chat").unwrap_or(leaf);
         // Local-first text: the configured endpoint wins when it
         // answers; otherwise the ensured voice server takes the turn
         // (LFM3-Audio answers text as well as speech). A refused
@@ -904,11 +942,13 @@ impl VoiceOwner {
         // streaming in: hold the turn until `/health` answers (or the
         // budget burns and the turn reports honestly). Legacy builds
         // serve no `/health` (404 counts as ready — their OPTIONS
-        // probe already gated load).
+        // probe already gated load). The voice fallback serves the
+        // voice model, never the chat head: the ensured server carries
+        // `s2s.model`, so asking it for the chat tag would 400.
         wait_voice_loaded(&url);
         self.ask_via(
             &url,
-            &model,
+            &self.config.s2s.model,
             usize::from(llm.ctx),
             usize::from(llm.n_batch),
             question,
@@ -974,8 +1014,15 @@ impl VoiceOwner {
             .gate
             .admit()
             .map_err(|refusal| VoiceError::Saturated(refusal.reason))?;
+        // Role-head transcription, same shape as the Say leg: the ASR
+        // head loaded on this endpoint decodes instead of the
+        // voice-model leaf. Unloaded or matching heads keep the leaf.
+        let model = self
+            .shared_head_model(endpoint, "asr")
+            .unwrap_or_else(|| self.config.s2s.model.clone());
         let mut audio = orator_s2s::AudioSession::new(orator_s2s::S2sConfig {
             endpoint: endpoint.to_string(),
+            model,
             ..self.config.s2s.clone()
         });
         common_core::sync::lock(&self.state).last_url = Some(endpoint.to_string());

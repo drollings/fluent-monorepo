@@ -3,7 +3,9 @@
 use crate::energy::EnergyVad;
 
 fn speech_frame() -> Vec<f32> {
-    (0..320).map(|index| (index as f32 * 0.3).sin() * 0.2).collect()
+    (0..320)
+        .map(|index| (index as f32 * 0.3).sin() * 0.2)
+        .collect()
 }
 
 fn silence_frame() -> Vec<f32> {
@@ -39,7 +41,7 @@ fn speech_closes_after_hangover() {
         vad.push(&speech);
     }
     assert!(vad.speaking());
-    for _ in 0..14 {
+    for _ in 0..24 {
         assert!(vad.push(&silence_frame()).speech);
     }
     assert!(!vad.push(&silence_frame()).speech);
@@ -79,4 +81,24 @@ fn probability_pins_current_rms_mapping() {
     // Hot harmonic frame: far above the band, probability clamps to 1.0.
     let hot = vad.push(&speech_frame());
     assert_eq!(hot.probability.to_bits(), 1065353216);
+}
+
+/// Configured hangover shortens the close: the file default (25)
+/// extends the cease-to-commit delay, an explicit 5 restores a snappy
+/// endpoint for the operator who tunes it.
+#[test]
+fn with_config_honors_hangover_frames() {
+    let quick = orator_core::VadConfig {
+        hangover_frames: 5,
+        ..orator_core::VadConfig::default()
+    };
+    let mut vad = EnergyVad::with_config(&quick);
+    for _ in 0..3 {
+        vad.push(&speech_frame());
+    }
+    assert!(vad.speaking());
+    for _ in 0..4 {
+        assert!(vad.push(&silence_frame()).speech);
+    }
+    assert!(!vad.push(&silence_frame()).speech);
 }

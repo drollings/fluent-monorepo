@@ -92,7 +92,7 @@ scoring harness is `common_core::calibration`.
 ## Duplex thresholds (VAD, endpointing, barge-in)
 
 - **Trigger:** `EnergyVad` defaults (floor 0.02, hysteresis 0.01,
-  attack 3, hangover 15, ceiling 0.45), `TurnConfig` holds
+  attack 3, hangover 25, ceiling 0.45), `TurnConfig` holds
   (300/700 ms), `turn_window_ms` cap (2000 ms), barge-in sustain
   (150 ms) gating per-frame duplex turns.
 - **Axis:** producer confidence (frame verdicts, sustain timing) scored
@@ -110,13 +110,13 @@ scoring harness is `common_core::calibration`.
   | family | cases | TP | FP | TN | FN | precision | FPR | gate |
   | --- | --- | --- | --- | --- | --- | --- | --- | --- |
   | VAD spans (harmonic must fire; silence/tones/noise must not) | 12 | 3 | 0 | 9 | 0 | 1.0 | 0.0 | pass |
-  | endpointing gaps (100/200/280 ms hold; 300/800 ms cut) | 5 | 2 | 0 | 3 | 0 | 1.0 | 0.0 | pass |
+  | endpointing gaps (100/200/480 ms hold; 500/800 ms cut) | 5 | 2 | 0 | 3 | 0 | 1.0 | 0.0 | pass |
   | barge-in stimuli (speech opens; echo/burst/blip do not) | 5 | 2 | 0 | 3 | 0 | 1.0 | 0.0 | pass |
 
   False-cut (mid-word endpoint) 0/3, false-hold (missed end cut)
   0/2, false-barge 0/3, missed-barge 0/2. Onset sits exactly one
   attack run (3 frames / 60 ms) past span start; close sits exactly
-  one hangover run (15 frames / 300 ms) past the last hot frame —
+  one hangover run (25 frames / 500 ms) past the last hot frame —
   both pinned. The noise/tone controls are load-bearing: white noise
   at RMS 0.30 and 4–7 kHz tones at peak 0.4 both clear the floor and
   are rejected by the ceiling alone; the quiet 440 Hz tone is
@@ -124,7 +124,7 @@ scoring harness is `common_core::calibration`.
 - **Decision:** keep every constant. All three families pass with
   zero false fires and zero misses, so no number moves. The finals
   are pinned in `calibrated_constants_stay_pinned` (VAD
-  0.02/0.01/3/15/0.45, holds 300/700 ms, barge-in 150 ms, window
+  0.02/0.01/3/25/0.45, holds 300/700 ms, barge-in 150 ms, window
   2000 ms); any future change re-runs these groups first.
 
 ## Streaming TTS first-audio (chunked synth + play-as-ready)

@@ -97,6 +97,8 @@ fn chat_keys_round_trip_through_the_schema() {
         ("chat.text", "short"),
         ("chat.mic", "ptt"),
         ("chat.barge", "false"),
+        ("chat.narration", "full"),
+        ("chat.ptt", "on"),
     ] {
         config_set(&mut config, key, value).expect("valid set");
         assert_eq!(config_get(&config, key).expect("readable"), value);
@@ -107,6 +109,13 @@ fn chat_keys_round_trip_through_the_schema() {
     }
     config_set(&mut config, "chat.voice", "off").expect("off parses");
     assert_eq!(config_get(&config, "chat.voice").expect("readable"), "off");
+    config_set(&mut config, "chat.narration", "none").expect("none parses");
+    assert_eq!(
+        config_get(&config, "chat.narration").expect("readable"),
+        "none"
+    );
+    config_set(&mut config, "chat.ptt", "off").expect("off parses");
+    assert_eq!(config_get(&config, "chat.ptt").expect("readable"), "off");
 }
 
 #[test]
@@ -252,7 +261,9 @@ fn every_advertised_key_round_trips_its_own_value() {
     let mut config = OratorConfig::default();
     let keys = config_keys();
     assert!(keys.len() > 20, "surface covers every section: {keys:?}");
-    for section in ["audio.", "stt.", "llm.", "tts.", "s2s.", "turn.", "daemon."] {
+    for section in [
+        "audio.", "stt.", "llm.", "tts.", "s2s.", "turn.", "vad.", "chat.", "daemon.",
+    ] {
         assert!(
             keys.iter().any(|key| key.starts_with(section)),
             "section {section} has keys: {keys:?}"
@@ -431,9 +442,42 @@ fn config_keys_pins_the_advertised_surface() {
         ),
         (
             "turn",
-            ["hold_min_ms", "hold_max_ms", "barge_in_ms"].as_slice(),
+            [
+                "hold_min_ms",
+                "hold_max_ms",
+                "barge_in_ms",
+                "backchannel_ms",
+                "tail_hold_ms",
+                "poll_ms",
+                "saturated_cooldown_secs",
+                "shed_notice_secs",
+                "duck_ramp_ms",
+                "cut_fade_ms",
+                "duck_depth_db",
+            ]
+            .as_slice(),
         ),
-        ("chat", ["voice", "text", "mic", "barge"].as_slice()),
+        (
+            "vad",
+            [
+                "floor",
+                "hysteresis",
+                "attack_frames",
+                "hangover_frames",
+                "max_zero_crossing",
+                "silence_rms",
+                "gate_floor",
+                "min_speech_fraction",
+                "rearm_frames",
+                "min_tone_intervals",
+                "tone_max_cv",
+            ]
+            .as_slice(),
+        ),
+        (
+            "chat",
+            ["voice", "text", "mic", "barge", "ptt", "narration"].as_slice(),
+        ),
         (
             "daemon",
             [

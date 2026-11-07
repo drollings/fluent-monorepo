@@ -1130,9 +1130,7 @@ impl Default for TtsConfig {
 
 /// Turn-taking tunables. These are task-value numbers: they ship only
 /// inside their calibrated bands (see the calibration register).
-#[derive(
-    Debug, Clone, PartialEq, Eq, Serialize, Deserialize, FieldAccess, Describable, Builder,
-)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, FieldAccess, Describable, Builder)]
 #[builder(start_fn = new)]
 pub struct TurnConfig {
     /// Acoustic hold floor in ms.
@@ -1147,6 +1145,83 @@ pub struct TurnConfig {
     #[field(desc = "Barge-in detect ms", min = 50, max = 2000)]
     #[builder(default = 150)]
     pub barge_in_ms: u16,
+    /// Backchannel ceiling in ms: lexicon-only utterances below this
+    /// never interrupt and never reach the LLM.
+    #[field(desc = "Backchannel ceiling ms", min = 100, max = 10000)]
+    #[builder(default = 600)]
+    #[serde(default = "default_turn_backchannel_ms")]
+    pub backchannel_ms: u64,
+    /// Room-tail hold in ms: capture stays suppressed after playout
+    /// so the tail decays instead of endpointing as a phantom turn.
+    #[field(desc = "Room-tail hold ms", min = 0, max = 10000)]
+    #[builder(default = 1000)]
+    #[serde(default = "default_turn_tail_hold_ms")]
+    pub tail_hold_ms: u16,
+    /// Loop poll cadence in ms: line intake, capture drain, and the
+    /// barge-in continuity quantum share one tick.
+    #[field(desc = "Loop poll cadence ms", min = 5, max = 500)]
+    #[builder(default = 20)]
+    #[serde(default = "default_turn_poll_ms")]
+    pub poll_ms: u16,
+    /// Saturated-daemon cooldown in seconds: refused mic turns shed
+    /// until this elapses instead of hot-looping the bound.
+    #[field(desc = "Saturated-daemon cooldown secs", min = 0, max = 3600)]
+    #[builder(default = 2)]
+    #[serde(default = "default_turn_saturated_cooldown_secs")]
+    pub saturated_cooldown_secs: u64,
+    /// Shed-line throttle in seconds: over-cap and saturation sheds
+    /// log at most one line per interval, never spam.
+    #[field(desc = "Shed-line throttle secs", min = 1, max = 3600)]
+    #[builder(default = 10)]
+    #[serde(default = "default_turn_shed_notice_secs")]
+    pub shed_notice_secs: u64,
+    /// Playout duck ramp in ms on barge-in detect.
+    #[field(desc = "Barge-in duck ramp ms", min = 0, max = 1000)]
+    #[builder(default = 100)]
+    #[serde(default = "default_turn_duck_ramp_ms")]
+    pub duck_ramp_ms: u64,
+    /// Playout cut fade in ms on barge-in cut.
+    #[field(desc = "Barge-in cut fade ms", min = 0, max = 1000)]
+    #[builder(default = 20)]
+    #[serde(default = "default_turn_cut_fade_ms")]
+    pub cut_fade_ms: u64,
+    /// Playout duck depth in dB on barge-in detect.
+    #[field(desc = "Barge-in duck depth dB", min = -48.0, max = 0.0)]
+    #[builder(default = -12.0)]
+    #[serde(default = "default_turn_duck_depth_db")]
+    pub duck_depth_db: f32,
+}
+
+fn default_turn_backchannel_ms() -> u64 {
+    600
+}
+
+fn default_turn_tail_hold_ms() -> u16 {
+    1000
+}
+
+fn default_turn_poll_ms() -> u16 {
+    20
+}
+
+fn default_turn_saturated_cooldown_secs() -> u64 {
+    2
+}
+
+fn default_turn_shed_notice_secs() -> u64 {
+    10
+}
+
+fn default_turn_duck_ramp_ms() -> u64 {
+    100
+}
+
+fn default_turn_cut_fade_ms() -> u64 {
+    20
+}
+
+fn default_turn_duck_depth_db() -> f32 {
+    -12.0
 }
 
 impl Default for TurnConfig {
@@ -1155,14 +1230,130 @@ impl Default for TurnConfig {
     }
 }
 
+/// Voice activity detection tunables. Thresholds stay silent on
+/// digital silence and hiss; timing frames run at the 20 ms gate
+/// quantum. The hangover ships extended past the legacy detector
+/// default so a brief pause no longer commits the turn early.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, FieldAccess, Describable, Builder)]
+#[builder(start_fn = new)]
+pub struct VadConfig {
+    /// RMS floor for speech, linear amplitude.
+    #[field(desc = "VAD RMS floor", min = 0.001, max = 0.5)]
+    #[builder(default = 0.02)]
+    #[serde(default = "default_vad_floor")]
+    pub floor: f32,
+    /// Hysteresis band half-width around the floor.
+    #[field(desc = "VAD hysteresis half-width", min = 0.0, max = 0.2)]
+    #[builder(default = 0.01)]
+    #[serde(default = "default_vad_hysteresis")]
+    pub hysteresis: f32,
+    /// Consecutive hot frames to open speech.
+    #[field(desc = "VAD attack frames", min = 1, max = 20)]
+    #[builder(default = 3)]
+    #[serde(default = "default_vad_attack_frames")]
+    pub attack_frames: u32,
+    /// Consecutive cold frames to close speech.
+    #[field(desc = "VAD hangover frames", min = 1, max = 200)]
+    #[builder(default = 25)]
+    #[serde(default = "default_vad_hangover_frames")]
+    pub hangover_frames: u32,
+    /// Zero-crossing rate above which a hot frame reads as noise.
+    #[field(desc = "VAD zero-crossing ceiling", min = 0.0, max = 1.0)]
+    #[builder(default = 0.45)]
+    #[serde(default = "default_vad_max_zero_crossing")]
+    pub max_zero_crossing: f32,
+    /// Below this overall RMS the input is digital silence.
+    #[field(desc = "VAD digital-silence RMS", min = 0.0, max = 0.1)]
+    #[builder(default = 0.002)]
+    #[serde(default = "default_vad_silence_rms")]
+    pub silence_rms: f32,
+    /// Gate detector floor: far-mic speech must still open spans.
+    #[field(desc = "VAD gate floor", min = 0.001, max = 0.5)]
+    #[builder(default = 0.01)]
+    #[serde(default = "default_vad_gate_floor")]
+    pub gate_floor: f32,
+    /// Minimum speech-frame fraction over full frames to commit.
+    #[field(desc = "VAD speech fraction", min = 0.0, max = 1.0)]
+    #[builder(default = 0.15)]
+    #[serde(default = "default_vad_min_speech_fraction")]
+    pub min_speech_fraction: f32,
+    /// Verdict re-arm cadence in frames: a latched span re-proves on
+    /// this cadence so stationary hiss cannot ride one attack win.
+    #[field(desc = "VAD re-arm frames", min = 1, max = 1000)]
+    #[builder(default = 50)]
+    #[serde(default = "default_vad_rearm_frames")]
+    pub rearm_frames: u32,
+    /// Minimum zero-crossing intervals for a tonal verdict.
+    #[field(desc = "VAD tonal intervals", min = 2, max = 64)]
+    #[builder(default = 8)]
+    #[serde(default = "default_vad_min_tone_intervals")]
+    pub min_tone_intervals: u32,
+    /// Interval variation at or below this reads as stationary tone.
+    #[field(desc = "VAD tonal variation ceiling", min = 0.0, max = 1.0)]
+    #[builder(default = 0.1)]
+    #[serde(default = "default_vad_tone_max_cv")]
+    pub tone_max_cv: f32,
+}
+
+fn default_vad_floor() -> f32 {
+    0.02
+}
+
+fn default_vad_hysteresis() -> f32 {
+    0.01
+}
+
+fn default_vad_attack_frames() -> u32 {
+    3
+}
+
+fn default_vad_hangover_frames() -> u32 {
+    25
+}
+
+fn default_vad_max_zero_crossing() -> f32 {
+    0.45
+}
+
+fn default_vad_silence_rms() -> f32 {
+    0.002
+}
+
+fn default_vad_gate_floor() -> f32 {
+    0.01
+}
+
+fn default_vad_min_speech_fraction() -> f32 {
+    0.15
+}
+
+fn default_vad_rearm_frames() -> u32 {
+    50
+}
+
+fn default_vad_min_tone_intervals() -> u32 {
+    8
+}
+
+fn default_vad_tone_max_cv() -> f32 {
+    0.1
+}
+
+impl Default for VadConfig {
+    fn default() -> Self {
+        Self::new().build()
+    }
+}
+
 /// Chat session starts: the output types and barge-in the `chat`
 /// loop uses before any slash command overrides them per session.
 /// String leaves name their mode (`voice`: `off`|`short`|`full`;
-/// `text`: `short`|`full`; `mic`: `auto`|`ptt`); unknown spellings
-/// fall back to the defaults below with the loop naming the bad
-/// value instead of refusing the session. Old files without the
-/// section load today's starts (short voice, full text, auto mic,
-/// barge on).
+/// `text`: `short`|`full`; `mic`: `auto`|`ptt`; `narration`:
+/// `none`|`intro`|`summary`|`full`); unknown spellings fall back
+/// to the defaults below with the loop naming the bad value instead
+/// of refusing the session. Old files without the section load
+/// today's starts (short voice, full text, auto mic, barge on,
+/// narration none).
 #[derive(
     Debug, Clone, PartialEq, Eq, Serialize, Deserialize, FieldAccess, Describable, Builder,
 )]
@@ -1190,6 +1381,19 @@ pub struct ChatConfig {
     #[builder(default = true)]
     #[serde(default = "default_chat_barge")]
     pub barge: bool,
+    /// Push-to-talk latch for live turns: `on` holds the mic cold
+    /// until `/talk` (or `/ptt`) latches it hot. Legacy `mic` stays
+    /// as an alias; the two track each other per session.
+    #[field(desc = "Chat push-to-talk (off|on)", max_len = 16)]
+    #[builder(default = "off".to_string())]
+    #[serde(default = "default_chat_ptt")]
+    pub ptt: String,
+    /// Narration level for assistant replies: how much of the reply
+    /// voices while the full text always displays.
+    #[field(desc = "Chat narration level (none|intro|summary|full)", max_len = 16)]
+    #[builder(default = "none".to_string())]
+    #[serde(default = "default_chat_narration")]
+    pub narration: String,
 }
 
 fn default_chat_voice() -> String {
@@ -1204,8 +1408,16 @@ fn default_chat_mic() -> String {
     "auto".to_string()
 }
 
+fn default_chat_ptt() -> String {
+    "off".to_string()
+}
+
 fn default_chat_barge() -> bool {
     true
+}
+
+fn default_chat_narration() -> String {
+    "none".to_string()
 }
 
 impl Default for ChatConfig {
@@ -1255,6 +1467,10 @@ pub struct OratorConfig {
     #[field(nested)]
     #[serde(default)]
     pub turn: TurnConfig,
+    /// Voice activity detection section.
+    #[field(nested)]
+    #[serde(default)]
+    pub vad: VadConfig,
     /// Chat session starts (output modes, mic mode, barge-in).
     #[field(nested)]
     #[serde(default)]
@@ -1308,6 +1524,7 @@ impl Default for OratorConfig {
             tts: TtsConfig::default(),
             s2s: S2sConfig::default(),
             turn: TurnConfig::default(),
+            vad: VadConfig::default(),
             chat: ChatConfig::default(),
             daemon: DaemonConfig::default(),
             gguf_dir: DEFAULT_GGUF_DIR.to_string(),

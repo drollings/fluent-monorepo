@@ -369,15 +369,17 @@ fn speech_section_reports_chat_session_starts() {
     use crate::doctor::full_report;
     let plain = render_full_text(&full_report(&orator_core::OratorConfig::default()));
     assert!(
-        plain.contains("chat: voice=short text=full mic=auto barge=on"),
+        plain.contains("chat: narration=none ptt=off voice=short text=full mic=auto barge=on"),
         "defaults render:\n{plain}"
     );
     let mut config = orator_core::OratorConfig::default();
     config.chat.voice = "off".to_string();
     config.chat.barge = false;
+    config.chat.narration = "summary".to_string();
+    config.chat.ptt = "on".to_string();
     let tuned = render_full_text(&full_report(&config));
     assert!(
-        tuned.contains("chat: voice=off text=full mic=auto barge=off"),
+        tuned.contains("chat: narration=summary ptt=on voice=off text=full mic=auto barge=off"),
         "custom leaves render:\n{tuned}"
     );
 }
@@ -431,7 +433,8 @@ fn speech_section_names_the_configured_bundle_model() {
         "readiness checks the configured home:\n{lfm:?}"
     );
     assert!(
-        !lfm.iter().any(|line| line.contains("liquidai/lfm3-audio-2b-gguf")),
+        !lfm.iter()
+            .any(|line| line.contains("liquidai/lfm3-audio-2b-gguf")),
         "no compiled-in home:\n{lfm:?}"
     );
 }

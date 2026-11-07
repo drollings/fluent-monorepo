@@ -57,8 +57,7 @@ fn fallback_bindings_quote_the_cli_verbs() {
     // the command surface).
     let bindings = crate::hotkey::fallback_bindings();
     let commands: Vec<&str> = bindings.iter().map(|binding| binding.0).collect();
-    assert!(commands.contains(&"orator ptt start"));
-    assert!(commands.contains(&"orator ptt stop"));
+    assert!(commands.contains(&"orator chat --ptt"));
     assert!(commands.contains(&"orator toggle"));
     for command in &commands {
         assert!(

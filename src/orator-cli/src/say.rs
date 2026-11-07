@@ -113,10 +113,10 @@ fn say_audio_server(text: &str, config: &OratorConfig, transport: Transport) -> 
 }
 
 /// Run one audio turn against an assured endpoint: shared when the
-/// model is served, supervised when it is not. A shared endpoint
-/// that rejects audio input retries once on a fresh supervised
-/// server (verified live: the gateway route has no mmproj, a
-/// self-booted one accepts audio). Releases every handle taken.
+/// model is served, supervised when it is not — but only when the
+/// `s2s.auto_boot` leaf opts in. With auto-boot off the shared
+/// server is authoritative: a voiceless reply falls through to the
+/// voice chain, never to a spawned child.
 pub(crate) fn run_audio_turn<T>(
     config: &orator_core::OratorConfig,
     transport: Transport,
@@ -246,6 +246,10 @@ pub(crate) fn run_audio_turn<T>(
                         eprintln!("orator: chain budget spent; skipping supervised boot");
                         return Err(S2sError::NoAudio);
                     }
+                    if !s2s.auto_boot {
+                        eprintln!("orator: shared server sent no audio and supervised boot is off (set s2s.auto_boot to boot a voice server); using the shared server only");
+                        return Err(S2sError::NoAudio);
+                    }
                     if orator_s2s::resolve_audio_server().is_none() {
                         eprintln!(
                             "orator: no voice server binary (set LLAMA_AUDIO_SERVER or install llama-liquid-audio-server); falling through to the voice chain"
@@ -334,6 +338,10 @@ pub(crate) fn run_audio_turn<T>(
                 | orator_cli::say_chain::DaemonVoiceHint::SlowPeer(_) => {
                     if chain_start.elapsed() > CHAIN_BUDGET {
                         eprintln!("orator: chain budget spent; skipping supervised boot");
+                        return Err(S2sError::NoAudio);
+                    }
+                    if !s2s.auto_boot {
+                        eprintln!("orator: endpoint rejects audio input and supervised boot is off (set s2s.auto_boot to boot a voice server with the bundle); using the shared server only");
                         return Err(S2sError::NoAudio);
                     }
                     eprintln!("orator: booting a supervised voice server");
@@ -501,18 +509,12 @@ fn say_kokoro(text: &str, voice: &str, gpu: bool) -> (ExitCode, Vec<String>, usi
         eprintln!("orator: no managed model directory (HOME and XDG_DATA_HOME are unset)");
         return (ExitCode::Error, Vec::new(), 0);
     };
-    let backend = std::sync::Arc::new(if gpu {
-        orator_tts::KokoroBackend::new(model, voices, voice.to_string()).with_gpu()
-    } else {
-        orator_tts::KokoroBackend::new(model, voices, voice.to_string())
-    });
+    let backend = orator_cli::fallback::cached_kokoro(model, voices, voice.to_string(), gpu);
     let chunks: Vec<String> = orator_cli::say_chain::normalized_chunks(text);
     if chunks.iter().all(|chunk| chunk.trim().is_empty()) {
         return (ExitCode::Success, chunks, 0);
     }
-    let player = match orator_audio::StreamPlayer::open(
-        orator_tts::KOKORO_SAMPLE_RATE,
-    ) {
+    let player = match orator_audio::StreamPlayer::open(orator_tts::KOKORO_SAMPLE_RATE) {
         Ok(player) => player,
         Err(error) => {
             eprintln!("orator: {error}");

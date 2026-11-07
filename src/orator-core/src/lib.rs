@@ -35,8 +35,9 @@ pub use config::{
     resolve_bundle_path, resolve_llm_weights, resolve_model_weights, resolve_role_model,
     resolve_role_model_or_default, should_prefer_s2s, AudioBundle, AudioConfig, EndpointParts,
     LlmEndpointConfig, ModelRoleOverride, ModelSpec, ModelsConfig, OratorConfig, RoleSpec,
-    RolesConfig, S2sConfig, SttConfig, TtsConfig, TurnConfig, AUDIO_IN_RATE, AUDIO_OUT_RATE,
-    DEFAULT_ASR_MODEL, DEFAULT_GGUF_DIR, DEFAULT_LLM_MODEL, DEFAULT_MODEL, DEFAULT_TTS_MODEL,
+    RolesConfig, S2sConfig, SttConfig, TtsConfig, TurnConfig, VadConfig, AUDIO_IN_RATE,
+    AUDIO_OUT_RATE, DEFAULT_ASR_MODEL, DEFAULT_GGUF_DIR, DEFAULT_LLM_MODEL, DEFAULT_MODEL,
+    DEFAULT_TTS_MODEL,
 };
 pub use error::{DuplexError, LlmError, ProtocolError, SttError, TtsError};
 pub use paths::{

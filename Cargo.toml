@@ -49,7 +49,7 @@ members = [
     "src/orator-tools",
     "src/orator-store",
     "src/orator-models",
-    "src/orator-diar",
+    "src/orator-diary",
     "src/orator-notes",
     "src/orator-s2s",
     "src/orator-desktop",

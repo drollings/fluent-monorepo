@@ -102,7 +102,9 @@ fn run(cli: Cli) -> ExitCode {
         Command::Chat {
             log_format,
             verbosity,
-        } => chat(&cfg, transport, &log_format, verbosity),
+            narration,
+            ptt,
+        } => chat(&cfg, transport, &log_format, verbosity, &narration, &ptt),
         Command::Status { selector } => {
             if !selector.trim().is_empty() {
                 eprintln!("orator: status takes no selector (got {selector:?})");
@@ -110,7 +112,6 @@ fn run(cli: Cli) -> ExitCode {
             }
             daemon_passthrough("GetState", serde_json::json!({}), transport)
         }
-        Command::Ptt { action } => ptt(&action, transport),
         Command::Meeting { action, id } => meeting(&action, &id, transport),
         Command::Cmd { request } => propose(&request, &cfg, transport),
         Command::Approve { id, deny } => approve(&id, deny, transport),
@@ -133,7 +134,7 @@ fn run(cli: Cli) -> ExitCode {
             if once {
                 dictate_once(seconds, stdout, &backend, &cfg, transport)
             } else {
-                eprintln!("orator: hold-to-talk lands with the live hotkey");
+                eprintln!("orator: hold-to-talk lives in `orator chat --ptt`");
                 ExitCode::Error
             }
         }
@@ -309,9 +310,12 @@ fn listen(sys: bool, mic: bool, json: bool, transport: Transport) -> ExitCode {
 /// lines on stdout) so stdout stays machine-clean; the transcript
 /// still shows every reply before any voice error attaches (the
 /// `VoiceTurn` rule: words are never lost to a playback problem).
-/// Pipelined turns keep `pending_audio <= 1` ordering: the previous
-/// reply plays on a worker while the next turn runs, and the turn
-/// outcome joins before anything prints so order holds. Abort mirrors
+/// Pipelined turns keep FIFO voice order: every turn appends its
+/// voiced audio to one per-user queue, and the loop drains a single
+/// player while later turns run — order holds structurally, so one
+/// user never hears two narrations at once. A barge clears whatever
+/// never played instead of talking over it. The turn outcome joins
+/// before anything prints so text order holds too. Abort mirrors
 /// the TUI: each turn carries a fresh abort (rearmed per spawn) that
 /// barge and the shutdown watch cancel; a cancelled turn stays
 /// silent and never delivers stale speech. Keys reuse the TUI chords
@@ -325,6 +329,8 @@ fn chat(
     transport: Transport,
     log_format_raw: &str,
     verbosity: u8,
+    narration_raw: &str,
+    ptt_raw: &str,
 ) -> ExitCode {
     use orator_cli::chat::{asr_serving, parse_chat_line, tts_serving, ChatLine, ChatSlash};
     use orator_cli::chatlog::{emit, parse_log_format, ChatEvent};
@@ -361,14 +367,21 @@ fn chat(
             config.s2s.gpu,
         )) {
             Ok(endpoint) => {
+                let url = endpoint.base_url().to_string();
+                let origin = match &endpoint {
+                    orator_s2s::AudioEndpoint::Shared(_) => "shared existing server",
+                    orator_s2s::AudioEndpoint::Owned { .. } => {
+                        "supervised child (s2s.auto_boot=on)"
+                    }
+                };
                 let session = orator_s2s::AudioSession::new(orator_s2s::S2sConfig {
-                    endpoint: endpoint.base_url().to_string(),
+                    endpoint: url.clone(),
                     ..s2s_effective
                 });
                 log(ChatEvent::System {
                     at: std::time::SystemTime::now(),
                     message: format!(
-                        "Mode: Line+S2S | Pipeline: {session_model} (native interleaved)"
+                        "Mode: Line+S2S | Pipeline: {session_model} (native interleaved) | endpoint: {url} ({origin})"
                     ),
                 });
                 Some(S2sShared {
@@ -449,7 +462,48 @@ fn chat(
             ),
         });
     }
-    let mut mic_mode = orator_cli::chat::initial_mic_mode(config);
+    let mut narration_mode = if narration_raw.trim().is_empty() {
+        let mode = orator_cli::narration::initial_narration_mode(config);
+        if orator_cli::narration::parse_narration_level(config.chat.narration.trim()).is_err() {
+            log(ChatEvent::System {
+                at: std::time::SystemTime::now(),
+                message: format!(
+                    "chat.narration={:?} unknown (expected none|intro|summary|full); using none",
+                    config.chat.narration
+                ),
+            });
+        }
+        mode
+    } else {
+        match orator_cli::narration::parse_narration_level(narration_raw.trim()) {
+            Ok(mode) => mode,
+            Err(error) => {
+                eprintln!("{error}");
+                return ExitCode::Usage;
+            }
+        }
+    };
+    let mut ptt_mode = if ptt_raw.trim().is_empty() {
+        let mode = orator_cli::ptt::initial_ptt_mode(config);
+        if orator_cli::ptt::parse_ptt_mode(config.chat.ptt.trim()).is_err() {
+            log(ChatEvent::System {
+                at: std::time::SystemTime::now(),
+                message: format!(
+                    "chat.ptt={:?} unknown (expected off|on); using off",
+                    config.chat.ptt
+                ),
+            });
+        }
+        mode
+    } else {
+        match orator_cli::ptt::parse_ptt_mode(ptt_raw.trim()) {
+            Ok(mode) => mode,
+            Err(error) => {
+                eprintln!("{error}");
+                return ExitCode::Usage;
+            }
+        }
+    };
     if !matches!(config.chat.mic.trim(), "auto" | "ptt") {
         log(ChatEvent::System {
             at: std::time::SystemTime::now(),
@@ -459,10 +513,30 @@ fn chat(
             ),
         });
     }
+    // Legacy alias carry: a file that sets `chat.mic=ptt` without the
+    // newer `chat.ptt` still starts latched-off, exactly as before.
+    if ptt_mode == orator_cli::ptt::PttMode::Off && config.chat.mic.trim() == "ptt" {
+        ptt_mode = orator_cli::ptt::PttMode::On;
+        log(ChatEvent::System {
+            at: std::time::SystemTime::now(),
+            message: "chat.mic=ptt honored (legacy alias of chat.ptt=on)".to_string(),
+        });
+    }
+    let mut mic_mode = orator_cli::chat::mic_for_ptt(ptt_mode);
     let mut talking = false;
     // Ordered overlap: at most one voiced reply waits while the next
     // turn runs (moved samples plus rate, never copied twice).
-    let mut pending_audio: Option<(Vec<f32>, u32)> = None;
+    // Voice queue: every turn appends its voiced audio here instead
+    // of playing it, and the loop drains one item at a time through
+    // the single playout below. Turns may run while earlier replies
+    // still drain — order holds structurally (FIFO per user), so a
+    // single user never hears two narrations at once, and a barge
+    // clears what never played instead of talking over it. Shared
+    // with the turn workers so Full narration streams chunk by chunk
+    // while the loop drains (first audio lands after the first
+    // chunk, not after the whole reply).
+    let voice_queue: VoiceQueue =
+        std::sync::Arc::new(std::sync::Mutex::new(std::collections::VecDeque::new()));
     // Prompt playout: a completed short reply voices at once when
     // the session is idle instead of waiting for a next turn that
     // may never come (a single exchange still talks back). Quiet
@@ -495,14 +569,16 @@ fn chat(
     // refuses once and stays line-only; it never fails the session.
     let mut mic = match orator_audio::CpalBackend::open_default() {
         Ok(backend) => {
+            let rate = backend.sample_rate;
             log(ChatEvent::System {
                 at: std::time::SystemTime::now(),
-                message: format!(
-                    "mic: live on default input ({} Hz, auto VAD) — speak or type",
-                    backend.sample_rate,
-                ),
+                message: if ptt_mode == orator_cli::ptt::PttMode::On {
+                    format!("mic: live on default input ({rate} Hz, push-to-talk) — /talk to latch")
+                } else {
+                    format!("mic: live on default input ({rate} Hz, auto VAD) — speak or type")
+                },
             });
-            Some(MicCapture::new(backend))
+            Some(MicCapture::with_config(backend, &config.vad))
         }
         Err(error) => {
             log(ChatEvent::Error {
@@ -534,6 +610,9 @@ fn chat(
     // shared turn driver (bound from the `turn.barge_in_ms` leaf);
     // the loop keeps no cumulative counter of its own.
     let mut barge_sustain = orator_cli::chat::BargeSustain::new(config);
+    // Loop cadence shared by line intake, capture drain, and the
+    // barge-in continuity quantum: one tick, never three clocks.
+    let poll_ms = u64::from(config.turn.poll_ms);
     loop {
         if watch.signalled() {
             return ExitCode::Interrupted;
@@ -547,55 +626,46 @@ fn chat(
         if reap_direct_play(&mut direct_play, &log, mic.as_mut()) {
             quiet_until = Some(
                 std::time::Instant::now()
-                    + std::time::Duration::from_millis(orator_cli::chat::ECHO_TAIL_HOLD_MS),
+                    + std::time::Duration::from_millis(u64::from(config.turn.tail_hold_ms)),
             );
         }
         if let Some(job) = turn_job.as_ref() {
             if let Ok(end) = job.try_recv() {
                 turn_job = None;
                 turn_partial = None;
-                pending_audio = end.pending;
-                if end.voiced {
-                    // The reply just played: shed the tail so the
-                    // speakers' last syllables never commit as a phantom
-                    // turn (the TUI Done-path rule), then hold capture
-                    // past the room tail all the same.
-                    if let Some(mic) = mic.as_mut() {
-                        mic.shed();
-                    }
-                    quiet_until = Some(
-                        std::time::Instant::now()
-                            + std::time::Duration::from_millis(orator_cli::chat::ECHO_TAIL_HOLD_MS),
-                    );
-                }
                 if let Some(until) = end.cool_until {
                     cooldown_until = Some(until);
                 }
             }
         }
-        // A held reply voices at once while the session is idle; a
-        // live turn, queued input, or a hot mic holds it for overlap
-        // instead. Evaluated every poll (not just at completion), so
-        // a reply held during a hot-mic moment voices as soon as the
-        // room goes quiet instead of muting the mic with no turn to
-        // consume it.
+        // Drain the voice queue FIFO through the single player: one
+        // narration at a time per user, in turn order. The drain runs
+        // while turns compute (pipelined), but never over a hot mic
+        // or a live playout — a barge clears the queue instead of
+        // talking over it. Evaluated every poll so a reply held
+        // during a hot-mic moment voices as soon as the room goes
+        // quiet instead of muting the mic with no turn to consume it.
+        // Spawning sheds the tail like a finished playout: the
+        // speakers' first syllables never commit as a phantom turn.
         {
             let (speaking, buffered) = mic.as_ref().map_or((false, false), |mic| {
                 (mic.gate.speaking(), !mic.utterance.is_empty())
             });
-            if pending_audio.is_some()
-                && orator_cli::chat::should_voice_now(orator_cli::chat::VoiceNow {
-                    turn_running: turn_job.is_some(),
-                    queued: !stash.is_empty(),
-                    mic_speaking: speaking,
-                    utterance_buffered: buffered,
-                    playout_live: direct_play.is_some(),
-                })
-            {
-                let (samples, rate) = pending_audio.take().expect("held reply");
-                // Reference feeds from the playout itself as the
-                // device drains it — never the whole buffer upfront.
-                direct_play = Some(DirectPlay::spawn(samples, rate));
+            if orator_cli::chat::should_voice_now(orator_cli::chat::VoiceNow {
+                mic_speaking: speaking,
+                utterance_buffered: buffered,
+                playout_live: direct_play.is_some(),
+            }) {
+                if let Some(item) = common_core::sync::lock(&voice_queue).pop_front() {
+                    if let Some(mic) = mic.as_mut() {
+                        if !mic.gate.speaking() {
+                            mic.shed();
+                        }
+                    }
+                    // Reference feeds from the playout itself as the
+                    // device drains it — never the whole buffer upfront.
+                    direct_play = Some(DirectPlay::spawn(item.samples, item.rate));
+                }
             }
         }
         // Capture drain on every poll: hot spans buffer unless the
@@ -604,9 +674,9 @@ fn chat(
         // live and an endpoint during voicing cuts the turn instead.
         // The tail hold below sheds the room tail after every playout.
         if let Some(mic) = mic.as_mut() {
-            let voicing_lock = voice_mode != orator_cli::chat::ChatVoiceMode::Off
+            let voicing_lock = narration_mode != orator_cli::narration::NarrationLevel::None
                 && (turn_job.is_some()
-                    || pending_audio.is_some()
+                    || !common_core::sync::lock(&voice_queue).is_empty()
                     || direct_play.is_some()
                     || orator_cli::chat::tail_hold_active(quiet_until, std::time::Instant::now()));
             let ptt_cold = mic_mode == orator_cli::tui::MicMode::PushToTalk && !talking;
@@ -627,12 +697,8 @@ fn chat(
             // the words. Sustained means continuous speech: the
             // tracker advances only on hot polls that grew the
             // buffer, so pauses never accumulate.
-            let sustained_past_bound = barge_sustain.poll(
-                mic.gate.speaking(),
-                mic.utterance.len(),
-                ptt_cold,
-                20,
-            );
+            let sustained_past_bound =
+                barge_sustain.poll(mic.gate.speaking(), mic.utterance.len(), ptt_cold, poll_ms);
             if orator_cli::chat::should_cut_for_barge(&orator_cli::chat::BargeCutInput {
                 turn_live: turn_job.is_some(),
                 barge_on,
@@ -644,7 +710,7 @@ fn chat(
                     &mut turn_job,
                     &mut turn_partial,
                     &mut pending_partial,
-                    &mut pending_audio,
+                    &voice_queue,
                     &mut direct_play,
                     &log,
                 );
@@ -656,8 +722,9 @@ fn chat(
             let cooling = cooldown_until.is_some_and(|until| std::time::Instant::now() < until);
             if cooling && !mic.utterance.is_empty() && !mic.gate.speaking() {
                 let shed = mic.take().len();
-                let due = last_shed_line
-                    .is_none_or(|at| at.elapsed() > std::time::Duration::from_secs(10));
+                let due = last_shed_line.is_none_or(|at| {
+                    at.elapsed() > std::time::Duration::from_secs(config.turn.shed_notice_secs)
+                });
                 if due {
                     last_shed_line = Some(std::time::Instant::now());
                     log(ChatEvent::System {
@@ -680,14 +747,14 @@ fn chat(
                     // phantom.
                     quiet_until = Some(
                         std::time::Instant::now()
-                            + std::time::Duration::from_millis(orator_cli::chat::ECHO_TAIL_HOLD_MS),
+                            + std::time::Duration::from_millis(u64::from(config.turn.tail_hold_ms)),
                     );
                 }
                 let slot = std::sync::Arc::new(std::sync::Mutex::new(None));
                 turn_partial = Some(std::sync::Arc::clone(&slot));
                 turn_job = Some(spawn_turn(TurnSpec {
                     input: TurnInput::File(samples),
-                    prev_pending: pending_audio.take(),
+                    voice_queue: std::sync::Arc::clone(&voice_queue),
                     transport,
                     abort: fresh_abort(&current),
                     config: config.clone(),
@@ -695,8 +762,7 @@ fn chat(
                     verbosity,
                     asr: (asr_model.clone(), asr_backend.clone()),
                     tts: (tts_model.clone(), tts_backend.clone()),
-                    voice_mode,
-                    text_mode,
+                    narration: narration_mode,
                     mic: (mic_mode, talking),
                     s2s: s2s_shared.clone(),
                     partial_slot: slot,
@@ -710,7 +776,7 @@ fn chat(
         // stash until the turn frees.
         let line = if turn_job.is_none() {
             stash.pop_front().map_or_else(
-                || match line_rx.recv_timeout(std::time::Duration::from_millis(20)) {
+                || match line_rx.recv_timeout(std::time::Duration::from_millis(poll_ms)) {
                     Ok(line) => Some(line),
                     Err(std::sync::mpsc::RecvTimeoutError::Timeout) => None,
                     Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
@@ -721,7 +787,7 @@ fn chat(
                 Some,
             )
         } else {
-            match line_rx.recv_timeout(std::time::Duration::from_millis(20)) {
+            match line_rx.recv_timeout(std::time::Duration::from_millis(poll_ms)) {
                 Ok(line) => Some(line),
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => None,
                 Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
@@ -744,14 +810,14 @@ fn chat(
                         &mut turn_job,
                         &mut turn_partial,
                         &mut pending_partial,
-                        &mut pending_audio,
+                        &voice_queue,
                         &mut direct_play,
                         &log,
                     );
                 }
                 orator_cli::tui::TuiAction::Quit => break,
                 orator_cli::tui::TuiAction::Mode => {
-                    cycle_chat_mic(&mut mic_mode, &mut talking, &log);
+                    cycle_chat_mic(&mut mic_mode, &mut ptt_mode, &mut talking, &log);
                 }
                 orator_cli::tui::TuiAction::Talk => {
                     toggle_chat_talk(mic_mode, &mut talking, &mut ptt_end, &log);
@@ -783,12 +849,19 @@ fn chat(
                     | ChatSlash::Text(_)
                     | ChatSlash::Mic(_)
                     | ChatSlash::Talk
+                    | ChatSlash::Ptt(_)
                     | ChatSlash::Barge(_)
+                    | ChatSlash::Narration(_)
+                    | ChatSlash::Set { .. }
                     | ChatSlash::Reset,
                 ) => {}
                 ChatLine::Slash(ChatSlash::Quit) => {
                     common_core::sync::lock(&current).cancel();
                     turn_job = None;
+                    // A quit with a live turn cuts its queued voice
+                    // too: the goodbye below must not narrate a turn
+                    // that never completed.
+                    common_core::sync::lock(&voice_queue).clear();
                     break;
                 }
                 ChatLine::Slash(ChatSlash::Wav(_) | ChatSlash::Input(_)) | ChatLine::Say(_) => {
@@ -810,7 +883,7 @@ fn chat(
         match parsed {
             ChatLine::Slash(ChatSlash::Quit) => break,
             ChatLine::Slash(ChatSlash::Reset) => {
-                pending_audio = None;
+                common_core::sync::lock(&voice_queue).clear();
                 if let Some(shared) = s2s_shared.as_ref() {
                     common_core::sync::lock(&shared.session).reset();
                 }
@@ -821,28 +894,72 @@ fn chat(
             }
             ChatLine::Slash(ChatSlash::Voice(mode)) => {
                 voice_mode = mode;
+                narration_mode = voice_to_narration(mode);
                 log(ChatEvent::System {
                     at: std::time::SystemTime::now(),
-                    message: format!("voice: {}", voice_label(voice_mode)),
+                    message: format!(
+                        "voice: {} (legacy, narration: {})",
+                        voice_label(voice_mode),
+                        narration_label(narration_mode)
+                    ),
                 });
             }
             ChatLine::Slash(ChatSlash::Text(mode)) => {
                 text_mode = mode;
                 log(ChatEvent::System {
                     at: std::time::SystemTime::now(),
-                    message: format!("text: {}", text_label(text_mode)),
+                    message: format!(
+                        "text: {} (legacy, replies always show full)",
+                        text_label(text_mode)
+                    ),
                 });
+            }
+            ChatLine::Slash(ChatSlash::Narration(mode)) => {
+                narration_mode = mode;
+                voice_mode = narration_to_voice(mode);
+                log(ChatEvent::System {
+                    at: std::time::SystemTime::now(),
+                    message: format!("narration: {}", narration_label(narration_mode)),
+                });
+            }
+            ChatLine::Slash(ChatSlash::Set { key, value }) => {
+                apply_set_command(
+                    &key,
+                    &value,
+                    &mut narration_mode,
+                    &mut voice_mode,
+                    &mut text_mode,
+                    &mut mic_mode,
+                    &mut ptt_mode,
+                    &mut talking,
+                    &mut barge_on,
+                    &log,
+                );
             }
             ChatLine::Slash(ChatSlash::Mic(mode)) => {
                 mic_mode = mode;
+                ptt_mode = orator_cli::chat::ptt_for_mic(mode);
                 talking = false;
                 log(ChatEvent::System {
                     at: std::time::SystemTime::now(),
-                    message: format!("mic: {}", mic_label(mic_mode)),
+                    message: format!(
+                        "mic: {} (legacy alias of ptt: {})",
+                        mic_label(mic_mode),
+                        ptt_label(ptt_mode)
+                    ),
                 });
             }
             ChatLine::Slash(ChatSlash::Talk) => {
                 toggle_chat_talk(mic_mode, &mut talking, &mut ptt_end, &log);
+            }
+            ChatLine::Slash(ChatSlash::Ptt(mode)) => {
+                ptt_mode = mode;
+                mic_mode = orator_cli::chat::mic_for_ptt(mode);
+                talking = false;
+                log(ChatEvent::System {
+                    at: std::time::SystemTime::now(),
+                    message: format!("ptt: {}", ptt_label(ptt_mode)),
+                });
             }
             ChatLine::Slash(ChatSlash::Barge(on)) => {
                 barge_on = on;
@@ -874,16 +991,16 @@ fn chat(
                             // endpoints as a phantom.
                             quiet_until = Some(
                                 std::time::Instant::now()
-                                    + std::time::Duration::from_millis(
-                                        orator_cli::chat::ECHO_TAIL_HOLD_MS,
-                                    ),
+                                    + std::time::Duration::from_millis(u64::from(
+                                        config.turn.tail_hold_ms,
+                                    )),
                             );
                         }
                         let slot = std::sync::Arc::new(std::sync::Mutex::new(None));
                         turn_partial = Some(std::sync::Arc::clone(&slot));
                         turn_job = Some(spawn_turn(TurnSpec {
                             input: TurnInput::File(samples),
-                            prev_pending: pending_audio.take(),
+                            voice_queue: std::sync::Arc::clone(&voice_queue),
                             transport,
                             abort: fresh_abort(&current),
                             config: config.clone(),
@@ -891,8 +1008,7 @@ fn chat(
                             verbosity,
                             asr: (asr_model.clone(), asr_backend.clone()),
                             tts: (tts_model.clone(), tts_backend.clone()),
-                            voice_mode,
-                            text_mode,
+                            narration: narration_mode,
                             mic: (mic_mode, talking),
                             s2s: s2s_shared.clone(),
                             partial_slot: slot,
@@ -917,14 +1033,14 @@ fn chat(
                     // phantom.
                     quiet_until = Some(
                         std::time::Instant::now()
-                            + std::time::Duration::from_millis(orator_cli::chat::ECHO_TAIL_HOLD_MS),
+                            + std::time::Duration::from_millis(u64::from(config.turn.tail_hold_ms)),
                     );
                 }
                 let slot = std::sync::Arc::new(std::sync::Mutex::new(None));
                 turn_partial = Some(std::sync::Arc::clone(&slot));
                 turn_job = Some(spawn_turn(TurnSpec {
                     input: TurnInput::Text(text),
-                    prev_pending: pending_audio.take(),
+                    voice_queue: std::sync::Arc::clone(&voice_queue),
                     transport,
                     abort: fresh_abort(&current),
                     config: config.clone(),
@@ -932,8 +1048,7 @@ fn chat(
                     verbosity,
                     asr: (asr_model.clone(), asr_backend.clone()),
                     tts: (tts_model.clone(), tts_backend.clone()),
-                    voice_mode,
-                    text_mode,
+                    narration: narration_mode,
                     mic: (mic_mode, talking),
                     s2s: s2s_shared.clone(),
                     partial_slot: slot,
@@ -950,12 +1065,14 @@ fn chat(
     if let Some(shared) = s2s_shared.as_ref() {
         shared.endpoint.release();
     }
-    // Finish an in-flight prompt playout first, then the held
-    // overlap reply: goodbye order matches live order, and nothing
-    // delivers stale speech after it.
+    // Finish an in-flight prompt playout first, then drain the
+    // queued remainder in order: goodbye order matches live order,
+    // and nothing delivers stale speech after it.
     join_direct_play(&mut direct_play, &log, mic.as_mut());
-    if let Some((samples, rate)) = pending_audio {
-        if let Err(error) = orator_audio::play_blocking(&samples, rate) {
+    loop {
+        let item = common_core::sync::lock(&voice_queue).pop_front();
+        let Some(item) = item else { break };
+        if let Err(error) = orator_audio::play_blocking(&item.samples, item.rate) {
             eprintln!("orator: {error}");
         }
     }
@@ -966,15 +1083,12 @@ fn chat(
     ExitCode::Success
 }
 
-/// One finished turn: the next pending reply plus loop signals. All
-/// logging happens on the worker before sending, so the loop only
-/// stores. A barged job goes unread — never stale speech.
+/// One finished turn: loop signals only — voice output rides the
+/// shared queue, never the outcome. All logging happens on the
+/// worker before sending, so the loop only stores. A barged job
+/// goes unread, and its queued audio was already cleared — never
+/// stale speech.
 struct TurnEnd {
-    /// Next overlapping reply (played while the following turn runs).
-    pending: Option<(Vec<f32>, u32)>,
-    /// Audio reached the device this turn (overlap or stream): the
-    /// loop sheds the tail on delivery.
-    voiced: bool,
     /// Saturated daemon refused a mic turn: shed instead of
     /// hot-looping the bound until this instant passes.
     cool_until: Option<std::time::Instant>,
@@ -993,8 +1107,11 @@ enum TurnInput {
 struct TurnSpec {
     /// Typed text or file samples.
     input: TurnInput,
-    /// Previous reply, played on a worker while this turn runs.
-    prev_pending: Option<(Vec<f32>, u32)>,
+    /// Per-user FIFO voice queue: narration appends here (Full
+    /// streams chunk by chunk) and the loop drains one item at a
+    /// time through the single player, so turns overlap compute
+    /// with playout but never double-talk.
+    voice_queue: VoiceQueue,
     /// Daemon transport for the fallback dials.
     transport: Transport,
     /// Turn abort (barge/watch cancel; rearmed per spawn).
@@ -1009,10 +1126,8 @@ struct TurnSpec {
     asr: (String, String),
     /// TTS server label (model, backend).
     tts: (String, String),
-    /// Voice output mode.
-    voice_mode: orator_cli::chat::ChatVoiceMode,
-    /// Text output mode.
-    text_mode: orator_cli::chat::ChatTextMode,
+    /// Narration level (authoritative for the spoken portion).
+    narration: orator_cli::narration::NarrationLevel,
     /// Mic gate for file turns (mode, talk latched on).
     mic: (orator_cli::tui::MicMode, bool),
     /// Best-effort slot for this turn's question words: the worker
@@ -1080,16 +1195,16 @@ impl DirectPlay {
 /// Cut the live turn and stop playout at once: cancel, harvest the
 /// turn's published question words (never drops them unread), drop
 /// the job (a detached worker runs silent to completion — at most
-/// one stray per barge), shed audio that never played, and cut the
-/// prompt playout so the device stops within one poll. Harvested
-/// words wait in `pending_partial` for the next turn's
+/// one stray per barge), clear queued voice that never played, and
+/// cut the prompt playout so the device stops within one poll.
+/// Harvested words wait in `pending_partial` for the next turn's
 /// transcription, which prepends them verbatim.
 fn barge_turn(
     current: &std::sync::Arc<std::sync::Mutex<StreamAbort>>,
     turn_job: &mut Option<std::sync::mpsc::Receiver<TurnEnd>>,
     turn_partial: &mut Option<std::sync::Arc<std::sync::Mutex<Option<String>>>>,
     pending_partial: &mut Option<String>,
-    pending_audio: &mut Option<(Vec<f32>, u32)>,
+    voice_queue: &VoiceQueue,
     direct_play: &mut Option<DirectPlay>,
     log: &impl Fn(orator_cli::chatlog::ChatEvent),
 ) {
@@ -1108,7 +1223,7 @@ fn barge_turn(
         }
     }
     *turn_job = None;
-    *pending_audio = None;
+    common_core::sync::lock(voice_queue).clear();
     cut_direct_play(direct_play, &|_| {}, None);
     *common_core::sync::lock(current) = StreamAbort::new();
     log(ChatEvent::System {
@@ -1118,9 +1233,10 @@ fn barge_turn(
 }
 
 /// Cycle the file-turn mic gate (same order as the TUI). Leaving PTT
-/// unlatches talk; the readout names what each mode gates.
+/// unlatches talk; PTT state tracks the mic both ways.
 fn cycle_chat_mic(
     mic_mode: &mut orator_cli::tui::MicMode,
+    ptt_mode: &mut orator_cli::ptt::PttMode,
     talking: &mut bool,
     log: &impl Fn(orator_cli::chatlog::ChatEvent),
 ) {
@@ -1130,10 +1246,15 @@ fn cycle_chat_mic(
         MicMode::Auto => MicMode::PushToTalk,
         MicMode::PushToTalk => MicMode::Auto,
     };
+    *ptt_mode = orator_cli::chat::ptt_for_mic(*mic_mode);
     *talking = false;
     log(ChatEvent::System {
         at: std::time::SystemTime::now(),
-        message: format!("mic: {}", mic_label(*mic_mode)),
+        message: format!(
+            "mic: {} (ptt: {})",
+            mic_label(*mic_mode),
+            ptt_label(*ptt_mode)
+        ),
     });
 }
 
@@ -1150,7 +1271,7 @@ fn toggle_chat_talk(
     if mic_mode != MicMode::PushToTalk {
         log(ChatEvent::System {
             at: std::time::SystemTime::now(),
-            message: "talk is for push-to-talk mode (/mic ptt to switch)".to_string(),
+            message: "talk is for push-to-talk mode (/ptt on to switch)".to_string(),
         });
         return;
     }
@@ -1187,11 +1308,12 @@ struct MicCapture {
 }
 
 impl MicCapture {
-    /// Capture state over an open `backend`.
-    fn new(backend: orator_audio::CpalBackend) -> Self {
+    /// Capture state over an open `backend` with the gate tuned from
+    /// `VadConfig`: the single tunable surface for live capture.
+    fn with_config(backend: orator_audio::CpalBackend, vad: &orator_core::VadConfig) -> Self {
         Self {
             backend,
-            gate: orator_cli::tui::MicGate::new(),
+            gate: orator_cli::tui::MicGate::with_config(vad),
             carry: Vec::new(),
             remainder_16k: Vec::new(),
             utterance: Vec::new(),
@@ -1228,15 +1350,26 @@ fn spawn_turn(spec: TurnSpec) -> std::sync::mpsc::Receiver<TurnEnd> {
 /// cancelled turn stays silent (no stale delivery after a barge).
 /// The outcome names whether audio reached the device (tail shed)
 /// and whether a saturated refusal starts a cooldown.
-/// A cancelled or empty turn: nothing pending, nothing voiced, no
-/// cooldown. Stays silent by construction (the caller already
-/// checked the abort before logging anything stale).
+/// One queued voice reply: PCM samples at their rate. Turns append;
+/// the loop drains FIFO through the single [`DirectPlay`] below, so
+/// at most one narration ever reaches the device at a time.
+struct VoiceItem {
+    /// Voiced samples (24 kHz for kokoro, native rate otherwise).
+    samples: Vec<f32>,
+    /// Sample rate of `samples`.
+    rate: u32,
+}
+
+/// Per-user FIFO voice queue, shared by the loop and the live turn
+/// worker: Full narration appends chunk by chunk while the loop
+/// drains ahead of it. A barge clears what never played.
+type VoiceQueue = std::sync::Arc<std::sync::Mutex<std::collections::VecDeque<VoiceItem>>>;
+
+/// A cancelled or empty turn: nothing queued, no cooldown. Stays
+/// silent by construction (the caller already checked the abort
+/// before logging anything stale).
 fn silent_end() -> TurnEnd {
-    TurnEnd {
-        pending: None,
-        voiced: false,
-        cool_until: None,
-    }
+    TurnEnd { cool_until: None }
 }
 
 fn run_turn_job(spec: &TurnSpec) -> TurnEnd {
@@ -1250,25 +1383,14 @@ fn run_turn_job(spec: &TurnSpec) -> TurnEnd {
     if let TurnInput::Text(text) = &spec.input {
         *common_core::sync::lock(&spec.partial_slot) = Some(text.clone());
     }
-    // Overlap: the previous reply plays on its own worker while this
-    // turn runs; joined before anything prints so order holds. The
-    // worker polls the cut flag, so a barge stops the device instead
-    // of draining the buffer behind the cut.
-    let mut voiced = false;
-    let overlap_cut = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let playback = spec.prev_pending.as_ref().map(|(samples, rate)| {
-        let samples = samples.clone();
-        let rate = *rate;
-        let cut = std::sync::Arc::clone(&overlap_cut);
-        std::thread::spawn(move || {
-            orator_audio::play_blocking_abortable(&samples, rate, &cut).map(|_| ())
-        })
-    });
     // Resolve the turn input: typed lines are committed text; file
     // turns gate on the mic (PTT latch, then speech presence). Native
     // turns feed audio straight to the interleaved session (the model
     // hears it — no separate transcription); cascade turns transcribe
-    // first, then serve through the ask dial.
+    // first, then serve through the ask dial. Voice from earlier turns
+    // drains from the shared queue on the loop (single player, FIFO),
+    // so this worker never plays audio itself and overlapping turns
+    // can never double-talk.
     let (text, audio): (Option<String>, Option<Vec<f32>>) = match &spec.input {
         TurnInput::Text(text) => (
             Some(orator_cli::chat::merge_preserved_question(
@@ -1278,7 +1400,9 @@ fn run_turn_job(spec: &TurnSpec) -> TurnEnd {
             None,
         ),
         TurnInput::File(samples) => {
-            if let Err(gate) = orator_cli::chat::check_file_gate(spec.mic.0, spec.mic.1, samples) {
+            if let Err(gate) =
+                orator_cli::chat::check_file_gate(spec.mic.0, spec.mic.1, samples, &spec.config.vad)
+            {
                 match gate {
                     orator_cli::chat::FileGate::PttOff { samples } => {
                         log(ChatEvent::System {
@@ -1295,82 +1419,49 @@ fn run_turn_job(spec: &TurnSpec) -> TurnEnd {
                         });
                     }
                 }
-                voiced |= join_playback(playback, &log);
-                return TurnEnd {
-                    pending: None,
-                    voiced,
-                    cool_until: None,
-                };
+                return TurnEnd { cool_until: None };
             }
             if spec.abort.is_cancelled() {
-                overlap_cut.store(true, std::sync::atomic::Ordering::SeqCst);
                 return silent_end();
             }
             (None, Some(samples.clone()))
         }
     };
     if text.as_deref().is_some_and(|text| text.trim().is_empty()) {
-        voiced |= join_playback(playback, &log);
-        return TurnEnd {
-            pending: None,
-            voiced,
-            cool_until: None,
-        };
+        return TurnEnd { cool_until: None };
     }
     if spec.abort.is_cancelled() {
-        overlap_cut.store(true, std::sync::atomic::Ordering::SeqCst);
         return silent_end();
     }
     // Native interleaved: the assured session hears audio directly.
     if let Some(shared) = spec.s2s.as_ref() {
-        return native_turn(
-            spec,
-            shared,
-            text.as_deref(),
-            audio.as_deref(),
-            playback,
-            &log,
-        );
+        return native_turn(spec, shared, text.as_deref(), audio.as_deref(), &log);
     }
     // Cascade: audio decodes to text first, then the ask dial serves.
-    let (question, playback) = match (text, audio) {
-        (Some(text), _) => (text, playback),
-        (None, Some(samples)) => match transcribe_leg(spec, &samples, playback, &log) {
-            Ok((text, _, playback)) => (text, playback),
+    let question = match (text, audio) {
+        (Some(text), _) => text,
+        (None, Some(samples)) => match transcribe_leg(spec, &samples, &log) {
+            Ok((text, _)) => text,
             Err(end) => return end,
         },
         (None, None) => {
-            voiced |= join_playback(playback, &log);
-            return TurnEnd {
-                pending: None,
-                voiced,
-                cool_until: None,
-            };
+            return TurnEnd { cool_until: None };
         }
     };
-    cascade_turn(spec, &question, playback, false, &log)
+    cascade_turn(spec, &question, &log)
 }
 
 /// Decode one file leg through the fallback dial (cascade audio and
 /// native-fallback turns share it): ASR event on success, Error
 /// event plus an optional saturated cooldown on refusal. `Err`
-/// carries the finished outcome (joined playback included) when the
-/// loop should move to the next line; `Ok` hands the text, its
-/// latency, and the still-unjoined playback back.
-#[allow(clippy::type_complexity)]
+/// carries the finished outcome when the loop should move to the
+/// next line; `Ok` hands the text and its latency back. Voice from
+/// earlier turns drains from the shared queue — never through here.
 fn transcribe_leg(
     spec: &TurnSpec,
     samples: &[f32],
-    playback: Option<std::thread::JoinHandle<Result<(), orator_audio::AudioError>>>,
     log: &impl Fn(orator_cli::chatlog::ChatEvent),
-) -> Result<
-    (
-        String,
-        u64,
-        Option<std::thread::JoinHandle<Result<(), orator_audio::AudioError>>>,
-    ),
-    TurnEnd,
-> {
+) -> Result<(String, u64), TurnEnd> {
     use orator_cli::chatlog::ChatEvent;
     match timed_transcribe(samples, spec.transport, &spec.abort, &spec.config) {
         Ok((text, latency_ms, leg)) => {
@@ -1381,10 +1472,8 @@ fn transcribe_leg(
             // words preserved from a barged turn: the cut turn's
             // question survives verbatim ahead of the fresh text.
             *common_core::sync::lock(&spec.partial_slot) = Some(text.clone());
-            let merged = orator_cli::chat::merge_preserved_question(
-                spec.prepend_question.as_deref(),
-                &text,
-            );
+            let merged =
+                orator_cli::chat::merge_preserved_question(spec.prepend_question.as_deref(), &text);
             // Name what actually decoded: the daemon leg serves the
             // configured voice model; the local leg keeps the
             // precomputed role-walk label.
@@ -1393,6 +1482,11 @@ fn transcribe_leg(
                     orator_cli::chat::daemon_asr_serving(&spec.config)
                 }
                 orator_cli::fallback::DialLeg::Local => spec.asr.clone(),
+                orator_cli::fallback::DialLeg::Shared => {
+                    let model = orator_core::resolve_role_model(&spec.config.roles, "asr")
+                        .unwrap_or_else(|| spec.config.s2s.model.clone());
+                    (model, "audio-server".to_string())
+                }
             };
             log(ChatEvent::Asr {
                 at: std::time::SystemTime::now(),
@@ -1401,7 +1495,7 @@ fn transcribe_leg(
                 model,
                 backend,
             });
-            Ok((merged, latency_ms, playback))
+            Ok((merged, latency_ms))
         }
         Err(error) => {
             if spec.abort.is_cancelled() {
@@ -1412,12 +1506,11 @@ fn transcribe_leg(
                 at: std::time::SystemTime::now(),
                 message: error,
             });
-            let voiced = join_playback(playback, &log);
             Err(TurnEnd {
-                pending: None,
-                voiced,
-                cool_until: saturated
-                    .then(|| std::time::Instant::now() + std::time::Duration::from_secs(2)),
+                cool_until: saturated.then(|| {
+                    std::time::Instant::now()
+                        + std::time::Duration::from_secs(spec.config.turn.saturated_cooldown_secs)
+                }),
             })
         }
     }
@@ -1426,19 +1519,18 @@ fn transcribe_leg(
 /// One cascade turn: ask dial for the reply, then voice it. Used by
 /// cascade lines and by native turns whose server advanced down the
 /// chain (voiceless or failed voice turns fall through honestly).
+/// Voice appends to the shared queue — the loop drains it, so this
+/// worker never plays audio itself.
 fn cascade_turn(
     spec: &TurnSpec,
     question: &str,
-    playback: Option<std::thread::JoinHandle<Result<(), orator_audio::AudioError>>>,
-    voiced: bool,
     log: &impl Fn(orator_cli::chatlog::ChatEvent),
 ) -> TurnEnd {
-    use orator_cli::chat::{display_for_text, llm_serving, spoken_for_voice};
+    use orator_cli::chat::llm_serving;
     use orator_cli::chatlog::ChatEvent;
     let turn_started = std::time::Instant::now();
     let reply =
         orator_cli::fallback::ask_dial(question, None, spec.transport, &spec.abort, &spec.config);
-    let voiced = voiced || join_playback(playback, &log);
     if spec.abort.is_cancelled() {
         return silent_end();
     }
@@ -1449,95 +1541,138 @@ fn cascade_turn(
                 at: std::time::SystemTime::now(),
                 message: error,
             });
-            return TurnEnd {
-                pending: None,
-                voiced,
-                cool_until: None,
-            };
+            return TurnEnd { cool_until: None };
         }
     };
     let (llm_model, _) = llm_serving(&spec.config);
-    // The transcript is the log: the reply prints through the Agent
-    // event (stderr text / stdout JSON), so stdout stays
-    // machine-clean in JSON mode and voice failures below attach
-    // without ever losing the words (VoiceTurn rule).
-    let shown = display_for_text(&reply, spec.text_mode).join("\n");
+    // Narration displays the full reply verbatim; the spoken portion
+    // below selects how much of it voices.
     log(ChatEvent::Agent {
         at: std::time::SystemTime::now(),
-        message: shown,
+        message: reply.clone(),
         latency_ms: turn_started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64,
         model: llm_model,
         detail: false,
     });
-    let Some(spoken) = spoken_for_voice(&reply, spec.voice_mode) else {
-        return TurnEnd {
-            pending: None,
-            voiced,
-            cool_until: None,
-        };
+    let Some(spoken) = spoken_for_narration_turn(&reply, spec, &log) else {
+        return TurnEnd { cool_until: None };
     };
     if spoken.trim().is_empty() || spec.abort.is_cancelled() {
-        return TurnEnd {
-            pending: None,
-            voiced,
-            cool_until: None,
-        };
+        return TurnEnd { cool_until: None };
     }
-    voice_reply(&spoken, spec, voiced, &log)
+    voice_reply(&spoken, spec, &log)
+}
+
+/// Spoken text for one cascade reply under the turn's narration
+/// level: none voices nothing, intro voices the first sentence, full
+/// voices everything, summary voices first plus an LLM-compressed
+/// middle plus last. Summary failures fall back to first-plus-last
+/// so the turn still voices instead of failing the reply.
+fn spoken_for_narration_turn(
+    reply: &str,
+    spec: &TurnSpec,
+    log: &impl Fn(orator_cli::chatlog::ChatEvent),
+) -> Option<String> {
+    use orator_cli::narration::{
+        compose_summary_spoken, first_sentence_of, last_sentence_of, middle_text_of,
+        spoken_for_narration, NarrationLevel,
+    };
+    match spec.narration {
+        NarrationLevel::None => None,
+        NarrationLevel::Intro | NarrationLevel::Full => spoken_for_narration(reply, spec.narration),
+        NarrationLevel::Summary => {
+            if reply.trim().is_empty() || spec.abort.is_cancelled() {
+                return None;
+            }
+            let first = first_sentence_of(reply);
+            let last = last_sentence_of(reply);
+            let middle = middle_text_of(reply);
+            if middle.trim().is_empty() {
+                let composed = compose_summary_spoken(&first, "", &last);
+                return if composed.trim().is_empty() {
+                    None
+                } else {
+                    Some(composed)
+                };
+            }
+            let prompt = orator_cli::narration::build_summary_prompt(&middle);
+            match orator_cli::fallback::ask_dial(
+                &prompt,
+                None,
+                spec.transport,
+                &spec.abort,
+                &spec.config,
+            ) {
+                Ok(summary) => {
+                    if spec.abort.is_cancelled() {
+                        return None;
+                    }
+                    let composed = compose_summary_spoken(&first, &summary, &last);
+                    if composed.trim().is_empty() {
+                        None
+                    } else {
+                        Some(composed)
+                    }
+                }
+                Err(error) => {
+                    log(orator_cli::chatlog::ChatEvent::Error {
+                        at: std::time::SystemTime::now(),
+                        message: format!("orator: summary voice fell back to ends ({error})"),
+                    });
+                    let composed = compose_summary_spoken(&first, "", &last);
+                    if composed.trim().is_empty() {
+                        None
+                    } else {
+                        Some(composed)
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// One native interleaved turn against the assured session: text
 /// and/or audio in, reply text plus 24 kHz audio out, history
-/// accruing on the session. A voiceless or failed voice turn advances
-/// down the cascade honestly (the shared fallback classifier); anything
-/// else reports with the transcript intact.
+/// accruing on the session. Voice appends to the shared queue — the
+/// loop drains it, so native turns never play audio themselves. A
+/// voiceless or failed voice turn advances down the cascade honestly
+/// (the shared fallback classifier); anything else reports with the
+/// transcript intact.
 #[allow(clippy::too_many_lines)]
 fn native_turn(
     spec: &TurnSpec,
     shared: &S2sShared,
     text: Option<&str>,
     audio: Option<&[f32]>,
-    playback: Option<std::thread::JoinHandle<Result<(), orator_audio::AudioError>>>,
     log: &impl Fn(orator_cli::chatlog::ChatEvent),
 ) -> TurnEnd {
-    use orator_cli::chat::{display_for_text, ChatVoiceMode};
     use orator_cli::chatlog::ChatEvent;
     if text.is_none() && audio.is_none_or(<[f32]>::is_empty) {
-        let voiced = join_playback(playback, &log);
-        return TurnEnd {
-            pending: None,
-            voiced,
-            cool_until: None,
-        };
+        return TurnEnd { cool_until: None };
     }
     let turn_started = std::time::Instant::now();
     let outcome = {
         let mut session = common_core::sync::lock(&shared.session);
         session.chat_turn(text, audio, &spec.abort)
     };
-    let mut voiced = join_playback(playback, &log);
     if spec.abort.is_cancelled() {
         return silent_end();
     }
     match outcome {
         Ok(turn) => {
-            let shown = display_for_text(&turn.text, spec.text_mode).join("\n");
             log(ChatEvent::Agent {
                 at: std::time::SystemTime::now(),
-                message: shown,
+                message: turn.text.clone(),
                 latency_ms: turn_started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64,
                 model: orator_core::agreed_s2s_model(&spec.config),
                 detail: false,
             });
-            if matches!(spec.voice_mode, ChatVoiceMode::Off) {
-                return TurnEnd {
-                    pending: None,
-                    voiced,
-                    cool_until: None,
-                };
+            if matches!(spec.narration, orator_cli::narration::NarrationLevel::None) {
+                return TurnEnd { cool_until: None };
             }
-            if !turn.audio.is_empty() {
-                voiced = true;
+            if matches!(spec.narration, orator_cli::narration::NarrationLevel::Full)
+                && !turn.audio.is_empty()
+            {
                 log(ChatEvent::Tts {
                     at: std::time::SystemTime::now(),
                     message: format!("Voicing {} samples... [Native]", turn.audio.len()),
@@ -1545,11 +1680,40 @@ fn native_turn(
                     model: orator_core::agreed_s2s_model(&spec.config),
                     backend: "audio-server".to_string(),
                 });
-                return TurnEnd {
-                    pending: Some((turn.audio, orator_s2s::AUDIO_OUT_RATE)),
-                    voiced,
-                    cool_until: None,
+                common_core::sync::lock(&spec.voice_queue).push_back(VoiceItem {
+                    samples: turn.audio,
+                    rate: orator_s2s::AUDIO_OUT_RATE,
+                });
+                return TurnEnd { cool_until: None };
+            }
+            if matches!(
+                spec.narration,
+                orator_cli::narration::NarrationLevel::Intro
+                    | orator_cli::narration::NarrationLevel::Summary
+            ) {
+                // Intro/summary voice only a slice: ignore native audio
+                // and synthesize the narrated portion instead.
+                let Some(spoken) = spoken_for_narration_turn(&turn.text, spec, &log) else {
+                    return TurnEnd { cool_until: None };
                 };
+                if spoken.trim().is_empty() || spec.abort.is_cancelled() {
+                    return TurnEnd { cool_until: None };
+                }
+                return voice_reply(&spoken, spec, &log);
+            }
+            if !turn.audio.is_empty() {
+                log(ChatEvent::Tts {
+                    at: std::time::SystemTime::now(),
+                    message: format!("Voicing {} samples... [Native]", turn.audio.len()),
+                    latency_ms: turn_started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64,
+                    model: orator_core::agreed_s2s_model(&spec.config),
+                    backend: "audio-server".to_string(),
+                });
+                common_core::sync::lock(&spec.voice_queue).push_back(VoiceItem {
+                    samples: turn.audio,
+                    rate: orator_s2s::AUDIO_OUT_RATE,
+                });
+                return TurnEnd { cool_until: None };
             }
             // The chat stream carried no audio deltas (stock server):
             // voice the reply text through POST /tts — the same
@@ -1562,7 +1726,6 @@ fn native_turn(
             };
             match tts_audio {
                 Ok(clips) if !clips.is_empty() => {
-                    voiced = true;
                     log(ChatEvent::Tts {
                         at: std::time::SystemTime::now(),
                         message: format!("Voicing {} samples... [Native]", clips.len()),
@@ -1571,11 +1734,11 @@ fn native_turn(
                         model: orator_core::agreed_s2s_model(&spec.config),
                         backend: "audio-server".to_string(),
                     });
-                    return TurnEnd {
-                        pending: Some((clips, orator_s2s::AUDIO_OUT_RATE)),
-                        voiced,
-                        cool_until: None,
-                    };
+                    common_core::sync::lock(&spec.voice_queue).push_back(VoiceItem {
+                        samples: clips,
+                        rate: orator_s2s::AUDIO_OUT_RATE,
+                    });
+                    return TurnEnd { cool_until: None };
                 }
                 Err(error) if !orator_s2s::should_advance_chain(&error) => {
                     if spec.abort.is_cancelled() {
@@ -1585,11 +1748,7 @@ fn native_turn(
                         at: std::time::SystemTime::now(),
                         message: format!("orator: {error}"),
                     });
-                    return TurnEnd {
-                        pending: None,
-                        voiced,
-                        cool_until: None,
-                    };
+                    return TurnEnd { cool_until: None };
                 }
                 Ok(_) | Err(_) => {}
             }
@@ -1599,21 +1758,17 @@ fn native_turn(
             // Advance: twin of the Err-branch fall-through below
             // (audio legs decode first, exactly like cascade audio
             // turns).
-            let (question, playback) = match (text, audio) {
-                (Some(text), _) => (text.to_string(), None),
-                (None, Some(samples)) => match transcribe_leg(spec, samples, None, &log) {
-                    Ok((text, _, _)) => (text, None),
+            let question = match (text, audio) {
+                (Some(text), _) => text.to_string(),
+                (None, Some(samples)) => match transcribe_leg(spec, samples, &log) {
+                    Ok((text, _)) => text,
                     Err(end) => return end,
                 },
                 (None, None) => {
-                    return TurnEnd {
-                        pending: None,
-                        voiced,
-                        cool_until: None,
-                    };
+                    return TurnEnd { cool_until: None };
                 }
             };
-            cascade_turn(spec, &question, playback, voiced, &log)
+            cascade_turn(spec, &question, &log)
         }
         Err(error) => {
             if spec.abort.is_cancelled() {
@@ -1624,29 +1779,21 @@ fn native_turn(
                     at: std::time::SystemTime::now(),
                     message: format!("orator: {error}"),
                 });
-                return TurnEnd {
-                    pending: None,
-                    voiced,
-                    cool_until: None,
-                };
+                return TurnEnd { cool_until: None };
             }
             // Advance: this turn falls through to the cascade (audio
             // legs decode first, exactly like cascade audio turns).
-            let (question, playback) = match (text, audio) {
-                (Some(text), _) => (text.to_string(), None),
-                (None, Some(samples)) => match transcribe_leg(spec, samples, None, &log) {
-                    Ok((text, _, _)) => (text, None),
+            let question = match (text, audio) {
+                (Some(text), _) => text.to_string(),
+                (None, Some(samples)) => match transcribe_leg(spec, samples, &log) {
+                    Ok((text, _)) => text,
                     Err(end) => return end,
                 },
                 (None, None) => {
-                    return TurnEnd {
-                        pending: None,
-                        voiced,
-                        cool_until: None,
-                    };
+                    return TurnEnd { cool_until: None };
                 }
             };
-            cascade_turn(spec, &question, playback, voiced, &log)
+            cascade_turn(spec, &question, &log)
         }
     }
 }
@@ -1762,28 +1909,24 @@ fn join_playback(
     }
 }
 
-/// Voice one reply under the mode: off voices nothing; short
-/// synthesizes whole and holds for overlap; full voices the complete
-/// reply chunk-streamed (each chunk synthesizes then plays while the
-/// next synthesizes, so first audio lands early and barge cuts
-/// between chunks). Failures attach to the transcript, never erase
-/// it. Returns the turn outcome (pending overlap audio, if any, plus
-/// whether audio reached the device).
+/// Voice one reply under narration: none voices nothing; intro
+/// and summary synthesize whole and queue for the loop player; full
+/// voices the complete reply chunk-streamed into the queue (each
+/// chunk synthesizes then queues while the loop drains ahead of it,
+/// so first audio lands early and barge clears the remainder).
+/// Failures attach to the transcript, never erase it. Queued — not
+/// played — here: the loop owns the single player, so turns never
+/// double-talk no matter how fast they complete.
 fn voice_reply(
     spoken: &str,
     spec: &TurnSpec,
-    voiced: bool,
     log: &impl Fn(orator_cli::chatlog::ChatEvent),
 ) -> TurnEnd {
-    use orator_cli::chat::ChatVoiceMode;
     use orator_cli::chatlog::ChatEvent;
-    match spec.voice_mode {
-        ChatVoiceMode::Off => TurnEnd {
-            pending: None,
-            voiced,
-            cool_until: None,
-        },
-        ChatVoiceMode::Short => {
+    use orator_cli::narration::NarrationLevel;
+    match spec.narration {
+        NarrationLevel::None => TurnEnd { cool_until: None },
+        NarrationLevel::Intro | NarrationLevel::Summary => {
             let tts_started = std::time::Instant::now();
             match orator_cli::fallback::say_dial(spoken, spec.transport, &spec.abort, &spec.config)
             {
@@ -1800,26 +1943,20 @@ fn voice_reply(
                         model: spec.tts.0.clone(),
                         backend: spec.tts.1.clone(),
                     });
-                    TurnEnd {
-                        pending: Some((samples, rate)),
-                        voiced,
-                        cool_until: None,
-                    }
+                    common_core::sync::lock(&spec.voice_queue)
+                        .push_back(VoiceItem { samples, rate });
+                    TurnEnd { cool_until: None }
                 }
                 Err(error) => {
                     log(ChatEvent::Error {
                         at: std::time::SystemTime::now(),
                         message: error,
                     });
-                    TurnEnd {
-                        pending: None,
-                        voiced,
-                        cool_until: None,
-                    }
+                    TurnEnd { cool_until: None }
                 }
             }
         }
-        ChatVoiceMode::Full => {
+        NarrationLevel::Full => {
             let words = spoken.split_whitespace().count();
             log(ChatEvent::Tts {
                 at: std::time::SystemTime::now(),
@@ -1828,94 +1965,53 @@ fn voice_reply(
                 model: spec.tts.0.clone(),
                 backend: spec.tts.1.clone(),
             });
-            let streamed = stream_full_voice(spoken, spec, log);
-            TurnEnd {
-                pending: None,
-                voiced: voiced || streamed,
-                cool_until: None,
-            }
+            stream_full_voice(spoken, spec, log);
+            TurnEnd { cool_until: None }
         }
     }
 }
 
-/// Chunk-stream one full reply: per-chunk synth through the fallback
-/// dial, pushed to the device as ready. A failed chunk drains what
-/// played and attaches the error; a barge between chunks drops the
-/// remainder. Single-chunk input collapses to one identical synth.
-fn stream_full_voice(
-    spoken: &str,
-    spec: &TurnSpec,
-    log: &impl Fn(orator_cli::chatlog::ChatEvent),
-) -> bool {
+/// Chunk-stream one full reply into the shared voice queue:
+/// per-chunk synth through the fallback dial, queued as ready. A
+/// failed chunk keeps what queued and attaches the error; a barge
+/// between chunks clears the queue (the loop cleared it on cancel)
+/// so the remainder never plays. Single-chunk input collapses to
+/// one identical synth.
+fn stream_full_voice(spoken: &str, spec: &TurnSpec, log: &impl Fn(orator_cli::chatlog::ChatEvent)) {
     use orator_cli::chatlog::ChatEvent;
     let chunks = orator_cli::say_chain::normalized_chunks(spoken);
     if chunks.iter().all(|chunk| chunk.trim().is_empty()) {
-        return false;
+        return;
     }
-    let player = match orator_audio::StreamPlayer::open(
-        orator_tts::KOKORO_SAMPLE_RATE,
-    ) {
-        Ok(player) => player,
-        Err(error) => {
-            log(ChatEvent::Error {
-                at: std::time::SystemTime::now(),
-                message: format!("orator: {error}"),
-            });
-            return false;
-        }
-    };
     let rate = orator_tts::KOKORO_SAMPLE_RATE;
-    let mut played_chunks = 0usize;
+    let mut queued_chunks = 0usize;
     for chunk in &chunks {
         if spec.abort.is_cancelled() {
             break;
         }
-        let started = std::time::Instant::now();
         match orator_cli::fallback::say_dial(chunk, spec.transport, &spec.abort, &spec.config) {
             Ok((mut samples, chunk_rate)) => {
                 if chunk_rate != rate && !samples.is_empty() {
                     samples = orator_audio::resample_linear(&samples, chunk_rate, rate);
                 }
-                // Reference feeds from the device callback as it
-                // drains each push — never at push time — so chunk
-                // queueing cannot lead wall-clock.
-                player.push(&samples);
-                played_chunks += 1;
-                let _ = started;
+                // Order holds structurally: chunks append in order
+                // while the loop drains ahead, so playback overlaps
+                // synthesis without a second player.
+                common_core::sync::lock(&spec.voice_queue).push_back(VoiceItem { samples, rate });
+                queued_chunks += 1;
             }
             Err(error) => {
-                if let Err(finish_error) = player.finish() {
-                    log(ChatEvent::Error {
-                        at: std::time::SystemTime::now(),
-                        message: format!("orator: {finish_error}"),
-                    });
-                }
                 log(ChatEvent::Error {
                     at: std::time::SystemTime::now(),
                     message: format!(
-                        "orator: local voice failed after {played_chunks}/{} chunks: {error}",
+                        "orator: local voice failed after {queued_chunks}/{} chunks: {error}",
                         chunks.len()
                     ),
                 });
-                return played_chunks > 0;
+                return;
             }
         }
     }
-    if spec.abort.is_cancelled() {
-        // Cut: dropping the player stops the device at once instead
-        // of draining queued chunks behind the barge.
-        return played_chunks > 0;
-    }
-    if let Err(error) = player.finish() {
-        log(ChatEvent::Error {
-            at: std::time::SystemTime::now(),
-            message: format!("orator: {error}"),
-        });
-        return played_chunks > 0;
-    }
-    // Cut before any audio drained: the barge line already told the
-    // story, so a cancelled turn stays silent.
-    played_chunks > 0
 }
 
 /// Short label for a voice mode in the System log.
@@ -1925,6 +2021,157 @@ fn voice_label(mode: orator_cli::chat::ChatVoiceMode) -> &'static str {
         orator_cli::chat::ChatVoiceMode::Short => "short",
         orator_cli::chat::ChatVoiceMode::Full => "full",
     }
+}
+
+/// Short label for a narration level in the System log.
+fn narration_label(mode: orator_cli::narration::NarrationLevel) -> &'static str {
+    mode.as_str()
+}
+
+/// Legacy voice mode mapped onto narration (single source stays in
+/// `narration`; this only keeps `/voice` working after the move).
+fn voice_to_narration(
+    mode: orator_cli::chat::ChatVoiceMode,
+) -> orator_cli::narration::NarrationLevel {
+    use orator_cli::narration::NarrationLevel;
+    match mode {
+        orator_cli::chat::ChatVoiceMode::Off => NarrationLevel::None,
+        orator_cli::chat::ChatVoiceMode::Short => NarrationLevel::Intro,
+        orator_cli::chat::ChatVoiceMode::Full => NarrationLevel::Full,
+    }
+}
+
+/// Narration mapped back onto the closest legacy voice mode, so the
+/// voicing lock and legacy labels stay consistent after `/narration`.
+fn narration_to_voice(
+    mode: orator_cli::narration::NarrationLevel,
+) -> orator_cli::chat::ChatVoiceMode {
+    use orator_cli::narration::NarrationLevel;
+    match mode {
+        NarrationLevel::None => orator_cli::chat::ChatVoiceMode::Off,
+        NarrationLevel::Intro | NarrationLevel::Summary => orator_cli::chat::ChatVoiceMode::Short,
+        NarrationLevel::Full => orator_cli::chat::ChatVoiceMode::Full,
+    }
+}
+
+/// Apply one `/set <key> <value>` line to the live session modes.
+/// Unknown keys and bad spellings stay spoken (never dispatched),
+/// so the caller logs nothing here — the parse already decided.
+#[allow(clippy::too_many_arguments)]
+fn apply_set_command(
+    key: &str,
+    value: &str,
+    narration_mode: &mut orator_cli::narration::NarrationLevel,
+    voice_mode: &mut orator_cli::chat::ChatVoiceMode,
+    text_mode: &mut orator_cli::chat::ChatTextMode,
+    mic_mode: &mut orator_cli::tui::MicMode,
+    ptt_mode: &mut orator_cli::ptt::PttMode,
+    talking: &mut bool,
+    barge_on: &mut bool,
+    log: &impl Fn(orator_cli::chatlog::ChatEvent),
+) {
+    use orator_cli::chatlog::ChatEvent;
+    match key {
+        "narration" => {
+            if let Ok(mode) = orator_cli::narration::parse_narration_level(value) {
+                *narration_mode = mode;
+                *voice_mode = narration_to_voice(mode);
+                log(ChatEvent::System {
+                    at: std::time::SystemTime::now(),
+                    message: format!("narration: {}", narration_label(*narration_mode)),
+                });
+            }
+        }
+        "voice" => {
+            if let Ok(mode) = orator_cli::chat::parse_voice_mode(value) {
+                *voice_mode = mode;
+                *narration_mode = voice_to_narration(mode);
+                log(ChatEvent::System {
+                    at: std::time::SystemTime::now(),
+                    message: format!(
+                        "voice: {} (legacy, narration: {})",
+                        voice_label(*voice_mode),
+                        narration_label(*narration_mode)
+                    ),
+                });
+            }
+        }
+        "text" => {
+            if let Ok(mode) = orator_cli::chat::parse_text_mode(value) {
+                *text_mode = mode;
+                log(ChatEvent::System {
+                    at: std::time::SystemTime::now(),
+                    message: format!(
+                        "text: {} (legacy, replies always show full)",
+                        text_label(*text_mode)
+                    ),
+                });
+            }
+        }
+        "mic" => match value {
+            "auto" => {
+                *mic_mode = orator_cli::tui::MicMode::Auto;
+                *ptt_mode = orator_cli::chat::ptt_for_mic(*mic_mode);
+                *talking = false;
+                log(ChatEvent::System {
+                    at: std::time::SystemTime::now(),
+                    message: format!(
+                        "mic: {} (legacy alias of ptt: {})",
+                        mic_label(*mic_mode),
+                        ptt_label(*ptt_mode)
+                    ),
+                });
+            }
+            "ptt" => {
+                *mic_mode = orator_cli::tui::MicMode::PushToTalk;
+                *ptt_mode = orator_cli::chat::ptt_for_mic(*mic_mode);
+                *talking = false;
+                log(ChatEvent::System {
+                    at: std::time::SystemTime::now(),
+                    message: format!(
+                        "mic: {} (legacy alias of ptt: {})",
+                        mic_label(*mic_mode),
+                        ptt_label(*ptt_mode)
+                    ),
+                });
+            }
+            _ => {}
+        },
+        "ptt" => {
+            if let Ok(mode) = orator_cli::ptt::parse_ptt_mode(value) {
+                *ptt_mode = mode;
+                *mic_mode = orator_cli::chat::mic_for_ptt(mode);
+                *talking = false;
+                log(ChatEvent::System {
+                    at: std::time::SystemTime::now(),
+                    message: format!("ptt: {}", ptt_label(*ptt_mode)),
+                });
+            }
+        }
+        "barge" => match value {
+            "on" => {
+                *barge_on = true;
+                log(ChatEvent::System {
+                    at: std::time::SystemTime::now(),
+                    message: "voice barge: on (talk over a reply to cut it)".to_string(),
+                });
+            }
+            "off" => {
+                *barge_on = false;
+                log(ChatEvent::System {
+                    at: std::time::SystemTime::now(),
+                    message: "voice barge: off (mic sheds while a turn runs)".to_string(),
+                });
+            }
+            _ => {}
+        },
+        _ => {}
+    }
+}
+
+/// Short label for a push-to-talk state in the System log.
+fn ptt_label(mode: orator_cli::ptt::PttMode) -> &'static str {
+    mode.as_str()
 }
 
 /// Short label for a mic gate in the System log.
@@ -1987,22 +2234,6 @@ fn timed_transcribe(
             ))
         }
         (Err(error), _) => Err(error),
-    }
-}
-
-/// Push-to-talk: start/stop dispatch to session control.
-fn ptt(action: &str, transport: Transport) -> ExitCode {
-    match action {
-        "start" => daemon_passthrough(
-            "StartSession",
-            serde_json::json!({ "kind": "dictation" }),
-            transport,
-        ),
-        "stop" => daemon_passthrough("StopSession", serde_json::json!({}), transport),
-        _ => {
-            eprintln!("orator: ptt expects `start` or `stop`");
-            ExitCode::Usage
-        }
     }
 }
 
@@ -2110,8 +2341,10 @@ fn propose(request: &[String], config: &OratorConfig, transport: Transport) -> E
 }
 
 /// One supervised LLM question for `cmd` (the `ask` precedent):
-/// probe the configured address, boot when nothing answers, ask,
-/// stop. Returns the reply text or the exit to fall back with.
+/// probe the configured address, dial it when live, refuse naming
+/// the remedy otherwise. Never boots: `cmd` has no per-command
+/// server ownership (unlike `ask` with `llm.auto_boot` set).
+/// Returns the reply text or the exit to fall back with.
 fn propose_via_supervised(want: &str, config: &OratorConfig) -> Result<String, ExitCode> {
     use orator_cli::config::resolve_llm_base;
     use orator_core::LlmSession as _;
@@ -2337,7 +2570,7 @@ fn transcribe(
     // pure tones) emits the empty output with a stderr note, never a
     // hallucination. The gate is transparent when it fires — speech
     // takes the exact path below, byte-identical to the ungated flow.
-    if !orator_vad::speech_present_16k(&samples) {
+    if !orator_vad::speech_present_16k_with_config(&samples, &config.vad) {
         eprintln!("{}", orator_cli::transcribe::NO_SPEECH_NOTE);
         let empty: Vec<Cue> = Vec::new();
         return match render(&empty, format) {

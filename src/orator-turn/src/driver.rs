@@ -130,15 +130,23 @@ pub enum BargeInOutcome {
 pub struct BackchannelFilter {
     lang: String,
     extra: Vec<String>,
+    max_ms: u64,
 }
 
 impl BackchannelFilter {
     /// Filter for `lang` (`en`, `de`) with no custom entries.
     #[must_use]
     pub fn new(lang: &str) -> Self {
+        Self::with_max_ms(lang, BACKCHANNEL_MS)
+    }
+
+    /// Filter for `lang` with a custom backchannel ceiling in ms.
+    #[must_use]
+    pub fn with_max_ms(lang: &str, max_ms: u64) -> Self {
         Self {
             lang: lang.to_string(),
             extra: Vec::new(),
+            max_ms,
         }
     }
 
@@ -146,7 +154,7 @@ impl BackchannelFilter {
     /// every word in the lexicon.
     #[must_use]
     pub fn is_backchannel(&self, words: &[String], audio_ms: u64) -> bool {
-        if audio_ms >= BACKCHANNEL_MS || words.is_empty() {
+        if audio_ms >= self.max_ms || words.is_empty() {
             return false;
         }
         words.iter().all(|word| self.in_lexicon(word))
@@ -365,7 +373,7 @@ impl TurnDriver {
             gate: HopGate::new(epoch),
             history: History::new(),
             spec: SpecState::Idle,
-            backchannel: BackchannelFilter::new(lang),
+            backchannel: BackchannelFilter::with_max_ms(lang, config.backchannel_ms),
             barge_in_ms: config.barge_in_ms,
             sustained_run_ms: 0,
         }

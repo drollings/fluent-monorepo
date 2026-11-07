@@ -27,8 +27,16 @@ pub fn db_to_linear(db: f32) -> f32 {
 /// Shared math home: `common_core::envelope::linear_ramp_gain`.
 #[must_use]
 pub fn duck_gain_at(elapsed_ms: u64) -> f32 {
-    let floor = db_to_linear(DUCK_DEPTH_DB);
-    common_core::envelope::linear_ramp_gain(elapsed_ms, DUCK_RAMP_MS, floor)
+    duck_gain_at_with(elapsed_ms, &orator_core::TurnConfig::default())
+}
+
+/// Playout gain under the configured duck ramp and depth: the tunable
+/// surface for the barge-in envelope. Defaults equal the calibrated
+/// constants, so default configs voice byte-identically.
+#[must_use]
+pub fn duck_gain_at_with(elapsed_ms: u64, turn: &orator_core::TurnConfig) -> f32 {
+    let floor = db_to_linear(turn.duck_depth_db);
+    common_core::envelope::linear_ramp_gain(elapsed_ms, turn.duck_ramp_ms, floor)
 }
 
 /// Fade the last `fade_samples` of `samples` linearly to zero (the cut

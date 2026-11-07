@@ -131,7 +131,10 @@ fn within_root_normalizes_lexical_components() {
 
     assert!(within_root(&root, &root.join("a/../b")));
     assert!(within_root(&root, &root.join("./b")));
-    assert!(within_root(&root, &PathBuf::from(format!("{}//b", root.display()))));
+    assert!(within_root(
+        &root,
+        &PathBuf::from(format!("{}//b", root.display()))
+    ));
     assert!(within_root(&root, &root), "root contains itself");
 }
 

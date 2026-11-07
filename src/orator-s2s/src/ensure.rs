@@ -67,6 +67,9 @@ pub async fn ensure_audio_server(
             "endpoint at {base} does not serve '{model}' and the bundle is incomplete"
         )));
     }
+    // Opt-in supervised boot: the operator asked for a child in the
+    // file, so the candidate walk below is requested, never ambient.
+    eprintln!("orator: supervised voice boot requested (s2s.auto_boot=on); trying candidates");
     boot_audio_server(bundle, model, auto_boot, gpu).await
 }
 
@@ -201,6 +204,49 @@ async fn audio_build_ready(base: &str) -> bool {
         .send()
         .await
         .is_ok_and(|response| response.status().is_success())
+}
+
+/// Whether `base` currently serves turns for `model` from a loaded
+/// instance: the `/v1/models` entry exists with a loaded status.
+/// Listing presence alone is NOT enough — the preset lists every
+/// discovered GGUF, including architectures this build cannot load
+/// (kokoro, moonshine); routing role heads at merely-listed models
+/// would capture turns for instances that can never serve.
+/// Unreachable endpoints and unknown shapes answer false (fall
+/// through to the configured backend, never a boot).
+pub async fn model_loaded(base: &str, model: &str) -> bool {
+    let url = format!("{}/v1/models", base.trim_end_matches('/'));
+    let Ok(response) = common_core::http::shared_http_client()
+        .get(&url)
+        .timeout(std::time::Duration::from_secs(6))
+        .send()
+        .await
+    else {
+        return false;
+    };
+    let Ok(body) = response.json::<serde_json::Value>().await else {
+        return false;
+    };
+    let Some(entries) = body.get("data").and_then(|data| data.as_array()) else {
+        return false;
+    };
+    entries.iter().any(|entry| {
+        entry.get("id").and_then(|id| id.as_str()) == Some(model)
+            && model_status_loaded(entry.get("status"))
+    })
+}
+
+/// Whether a `/v1/models` status shape reads as loaded: the router
+/// object shape (`{"value": "loaded", ...}`) or a bare `"loaded"`
+/// string. Anything else (unloaded, loading, absent) is not serving.
+fn model_status_loaded(status: Option<&serde_json::Value>) -> bool {
+    match status {
+        Some(serde_json::Value::String(state)) => state == "loaded",
+        Some(serde_json::Value::Object(map)) => {
+            map.get("value").and_then(|value| value.as_str()) == Some("loaded")
+        }
+        _ => false,
+    }
 }
 
 /// Best-effort serving hint for error messages: which model ids the

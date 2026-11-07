@@ -361,3 +361,154 @@ fn ask_without_session_stays_stateless() {
     }
     owner.shutdown();
 }
+
+/// Role-head voice: a TTS head loaded on the endpoint voices
+/// instead of the voice-model leaf (router `/tts` selects it).
+#[test]
+fn say_via_prefers_a_loaded_tts_head_over_the_leaf() {
+    let server = httpmock::MockServer::start();
+    server.mock(|when, then| {
+        when.method("GET").path("/v1/models");
+        then.status(200).json_body(serde_json::json!({
+            "data": [{"id": "role-voice", "status": {"value": "loaded"}}],
+        }));
+    });
+    server.mock(|when, then| {
+        when.method("POST").path("/v1/chat/completions");
+        then.status(200).body(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\
+             data: [DONE]\n",
+        );
+    });
+    let wav = orator_audio::encode_wav_mono(&[0.0, 1.0, -1.0], orator_s2s::AUDIO_OUT_RATE);
+    let tts = server.mock(|when, then| {
+        when.method("POST").path("/tts").body_contains("role-voice");
+        then.status(200)
+            .header("content-type", "audio/wav")
+            .body(wav);
+    });
+    let mut config = orator_core::OratorConfig::default();
+    config.roles.tts.models = vec!["role-voice".to_string()];
+    let owner = VoiceOwner::new(&config);
+    let (samples, rate) = owner
+        .say_via(&server.base_url(), "hello", None)
+        .expect("head voices");
+    assert_eq!(samples, vec![0.0, 1.0, -1.0]);
+    assert_eq!(rate, orator_s2s::AUDIO_OUT_RATE);
+    assert_eq!(tts.hits(), 1, "the head voiced, not the leaf");
+    owner.shutdown();
+}
+
+/// Role-head transcription: an ASR head loaded on the endpoint
+/// decodes instead of the voice-model leaf.
+#[test]
+fn transcribe_via_prefers_a_loaded_asr_head_over_the_leaf() {
+    let server = httpmock::MockServer::start();
+    server.mock(|when, then| {
+        when.method("GET").path("/v1/models");
+        then.status(200).json_body(serde_json::json!({
+            "data": [{"id": "role-asr", "status": {"value": "loaded"}}],
+        }));
+    });
+    let turns = server.mock(|when, then| {
+        when.method("POST")
+            .path("/v1/chat/completions")
+            .body_contains("role-asr");
+        then.status(200).body(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"hello\"}}]}\n\
+             data: [DONE]\n",
+        );
+    });
+    let mut config = orator_core::OratorConfig::default();
+    config.roles.asr.models = vec!["role-asr".to_string()];
+    let owner = VoiceOwner::new(&config);
+    let samples: Vec<f32> = (0..16_000)
+        .map(|index| {
+            let time = index as f32 / 16_000.0;
+            0.35 * (2.0 * std::f32::consts::PI * 150.0 * time).sin()
+                + 0.35 * (2.0 * std::f32::consts::PI * 300.0 * time).sin()
+        })
+        .collect();
+    let text = owner
+        .transcribe_via(&server.base_url(), &samples, None)
+        .expect("head decodes");
+    assert_eq!(text, "hello");
+    assert_eq!(turns.hits(), 1, "the head decoded, not the leaf");
+    owner.shutdown();
+}
+
+/// Chat authority: the daemon asks with the `roles.chat` head, not
+/// the `llm.model` leaf — otherwise every ask turn loads a model no
+/// label names and no role configured.
+#[test]
+fn ask_blocking_serves_the_chat_head_not_the_leaf() {
+    fn chat_reply(text: &str) -> String {
+        serde_json::json!({ "choices": [{ "message": { "content": text } }] }).to_string()
+    }
+    common_core::runtime::block_on_shared(async {
+        let _seed = orator_llm::HttpSession::open("http://127.0.0.1:1", "m", 8192, 512);
+    });
+    let server = httpmock::MockServer::start();
+    server.mock(|when, then| {
+        when.method("GET").path("/models");
+        then.status(200).json_body(serde_json::json!({
+            "data": [{"id": "chat-head"}],
+        }));
+    });
+    let turns = server.mock(|when, then| {
+        when.method("POST")
+            .path("/chat/completions")
+            .body_contains("chat-head");
+        then.status(200).body(chat_reply("head-reply"));
+    });
+    let mut config = orator_core::OratorConfig::default();
+    config.llm.endpoint = server.base_url().trim_start_matches("http://").to_string();
+    config.llm.model = "leaf-model".to_string();
+    config.roles.chat.models = vec!["chat-head".to_string()];
+    let owner = VoiceOwner::new(&config);
+    let reply = owner.ask_blocking("hi", None).expect("head answers");
+    assert_eq!(reply, "head-reply");
+    assert_eq!(turns.hits(), 1, "the head answered, not the leaf");
+    owner.shutdown();
+}
+
+/// Voice fallback serves the voice model: with the LLM endpoint
+/// down, the ensured voice server answers for `s2s.model` — asking
+/// it for the chat tag would 400, so the head stays on the LLM leg.
+#[test]
+fn ask_blocking_falls_back_to_the_voice_model_when_the_llm_endpoint_is_down() {
+    fn chat_reply(text: &str) -> String {
+        serde_json::json!({ "choices": [{ "message": { "content": text } }] }).to_string()
+    }
+    common_core::runtime::block_on_shared(async {
+        let _seed = orator_llm::HttpSession::open("http://127.0.0.1:1", "m", 8192, 512);
+    });
+    let voice = httpmock::MockServer::start();
+    voice.mock(|when, then| {
+        when.method("GET").path("/models");
+        then.status(200).json_body(serde_json::json!({
+            "data": [{"id": "voice-model"}],
+        }));
+    });
+    let turns = voice.mock(|when, then| {
+        when.method("POST")
+            .path("/chat/completions")
+            .body_contains("voice-model");
+        then.status(200).body(chat_reply("voice-reply"));
+    });
+    let mut config = orator_core::OratorConfig::default();
+    config.llm.endpoint = "127.0.0.1:1".to_string();
+    config.llm.model = "leaf-model".to_string();
+    config.roles.chat.models = vec!["chat-head".to_string()];
+    config.s2s.endpoint = voice.base_url();
+    config.s2s.model = "voice-model".to_string();
+    let owner = VoiceOwner::new(&config);
+    // The voice fallback holds the turn on `/health` (a reactor-only
+    // wait), so the call runs inside the shared runtime; everything
+    // else in the branch is runtime-agnostic like production.
+    let reply = common_core::runtime::block_on_shared(async { owner.ask_blocking("hi", None) })
+        .expect("voice fallback answers");
+    assert_eq!(reply, "voice-reply");
+    assert_eq!(turns.hits(), 1, "the voice model answered");
+    owner.shutdown();
+}
