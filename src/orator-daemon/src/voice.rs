@@ -491,6 +491,9 @@ impl VoiceOwner {
         // an explicit `with_binary` pins exactly one, otherwise a
         // pre-LFM3 install fails fast on the bundle and the next
         // serves instead of vetoing voice.
+        if self.config.s2s.gpu {
+            orator_core::gpu::require_gpu("llama-server").map_err(VoiceError::Boot)?;
+        }
         let candidates: Vec<std::path::PathBuf> = match self.binary.as_ref() {
             Some(pinned) => vec![pinned.clone()],
             None => orator_s2s::resolve_audio_server_candidates(),
@@ -505,7 +508,13 @@ impl VoiceOwner {
         match fluent_wvr::ladder::first_accept_in_order(
             candidates,
             |binary: std::path::PathBuf| {
-                let config = orator_s2s::audio_supervisor_config(&bundle, 0);
+                let mut config = orator_s2s::audio_supervisor_config(&bundle, 0);
+                if self.config.s2s.gpu {
+                    config.extra_args.extend([
+                        "--n-gpu-layers".to_string(),
+                        orator_llm::GPU_OFFLOAD_LAYERS.to_string(),
+                    ]);
+                }
                 async move {
                     match orator_llm::boot_with_binary(config, &binary).await {
                         Ok(server) => Ok(Some(server)),

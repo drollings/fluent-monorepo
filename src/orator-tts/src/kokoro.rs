@@ -72,9 +72,13 @@ impl KokoroBackend {
         }
     }
 
-    /// Request a GPU (CUDA) session (explicit opt-in). Without a visible
-    /// device the next load fails actionably naming the remedy; the flag
-    /// never flips silently back to CPU.
+    /// Request a GPU session (explicit opt-in, NVIDIA CUDA only).
+    /// Without a visible device the next load fails actionably naming
+    /// the remedy; the flag never flips silently back to CPU. AMD/ROCm
+    /// hardware has no kokoro execution provider (kokoro-en speaks
+    /// CUDA/DirectML/CoreML only), so opting in there fails naming
+    /// CPU as the remedy instead of probing a CUDA stack that cannot
+    /// exist.
     #[must_use]
     pub fn with_gpu(mut self) -> Self {
         self.gpu = true;
@@ -90,10 +94,11 @@ impl KokoroBackend {
     /// Load (once) and return the shared session. Missing files fail as
     /// unavailable with the path named, never as a backend panic. A GPU
     /// opt-in without a visible device fails here naming the remedy
-    /// instead of running silently on CPU; with a device the loader
-    /// requests the explicit CUDA provider (the dependency's own
-    /// fallback still applies when CUDA registration itself fails on a
-    /// present device, and it logs that fallback itself).
+    /// instead of running silently on CPU; on AMD-only hardware the
+    /// opt-in fails too (kokoro-en has no ROCm/MIGraphX provider, so a
+    /// CUDA request there could never succeed). Without the opt-in the
+    /// CPU session loads directly — on NVIDIA hardware the dependency's
+    /// own `auto` probing still applies.
     async fn load(&self) -> Result<Arc<kokoro_en::KokoroTts>, TtsError> {
         {
             let guard = common_core::sync::lock(&self.tts);
@@ -103,9 +108,19 @@ impl KokoroBackend {
         }
         if self.gpu {
             orator_core::gpu::require_gpu("kokoro").map_err(TtsError::Unavailable)?;
-            if std::env::var_os("KOKORO_ORT_PROVIDER").is_none() {
-                std::env::set_var("KOKORO_ORT_PROVIDER", "cuda");
+            if !orator_core::gpu::nvidia_present() {
+                return Err(TtsError::Unavailable(
+                    "kokoro has no AMD/ROCm execution provider (kokoro-en 0.1.5 speaks CUDA/DirectML/CoreML only); set the tts `gpu` leaf to false for CPU"
+                        .to_string(),
+                ));
             }
+        }
+        if let Some(provider) = ort_provider_override(
+            self.gpu,
+            orator_core::gpu::nvidia_present(),
+            std::env::var_os("KOKORO_ORT_PROVIDER").is_some(),
+        ) {
+            std::env::set_var("KOKORO_ORT_PROVIDER", provider);
         }
         if !self.model_path.exists() {
             return Err(TtsError::Unavailable(format!(
@@ -170,6 +185,25 @@ impl KokoroBackend {
     fn drop_session(&self) {
         *common_core::sync::lock(&self.tts) = None;
     }
+}
+
+/// ORT provider override for one kokoro load, if the backend pins one.
+///
+/// Pure so the mapping is unit-pinned without weights. An explicit GPU
+/// opt-in pins `cuda`, but only where NVIDIA hardware can serve it
+/// (the caller errors first on AMD-only hardware, so `gpu && !nvidia`
+/// never reaches a pin). Without the opt-in the dependency default
+/// (`auto`) is always left alone — the CPU path never touches provider
+/// selection. A user-set `KOKORO_ORT_PROVIDER` always wins.
+fn ort_provider_override(
+    gpu: bool,
+    nvidia_present: bool,
+    env_already_set: bool,
+) -> Option<&'static str> {
+    if env_already_set || !gpu {
+        return None;
+    }
+    nvidia_present.then_some("cuda")
 }
 
 /// Trim the near-silent padding around the voiced middle, keeping a small

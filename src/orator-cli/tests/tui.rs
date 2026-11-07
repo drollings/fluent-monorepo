@@ -388,7 +388,6 @@ fn mixed_rate_capture_frames_like_same_rate() {
         &mut same.pending_utterance,
         &mut same.pending_dropped,
         true,
-        None,
     );
     let mut mixed = TuiApp::new(StubControl::default());
     let mut carry = Vec::new();
@@ -404,7 +403,6 @@ fn mixed_rate_capture_frames_like_same_rate() {
             &mut mixed.pending_utterance,
             &mut mixed.pending_dropped,
             true,
-            None,
         );
     }
     assert_eq!(
@@ -757,3 +755,246 @@ fn barge_clears_the_buffer_and_unlatches_talk() {
     assert!(!app.ptt_commit, "no endpoint after a cut");
     assert_eq!(app.control.aborted, 1, "barge still fires abort");
 }
+
+/// Append-only pin: `drain_capture` never shrinks `utterance` —
+/// buffered audio stays until something else takes or sheds it.
+#[test]
+fn drain_never_shrinks_the_utterance() {
+    use super::{drain_capture, MicGate};
+    let mut gate = MicGate::new();
+    let mut utterance = Vec::new();
+    let mut dropped = 0u64;
+    let mut carry = Vec::new();
+    let mut remainder = Vec::new();
+    for _ in 0..2 {
+        let mut input = vec![0.5f32; 1600].into_iter();
+        let before = utterance.len();
+        drain_capture(
+            &mut || input.next(),
+            &mut carry,
+            &mut remainder,
+            16_000,
+            &mut gate,
+            &mut utterance,
+            &mut dropped,
+            true,
+        );
+        assert!(
+            utterance.len() > before,
+            "hot polls only extend the buffer"
+        );
+    }
+}
+
+/// Endpoint-retains pin: after a hot span closes (hangover frames
+/// of silence), the gate reads quiet while the buffered audio stays
+/// put — exactly the commit shape the loop turns into a turn.
+#[test]
+fn endpoint_leaves_the_buffered_utterance_in_place() {
+    use super::{drain_capture, MicGate};
+    let mut gate = MicGate::new();
+    let mut utterance = Vec::new();
+    let mut dropped = 0u64;
+    let mut carry = Vec::new();
+    let mut remainder = Vec::new();
+    let mut hot = vec![0.5f32; 1600].into_iter();
+    drain_capture(
+        &mut || hot.next(),
+        &mut carry,
+        &mut remainder,
+        16_000,
+        &mut gate,
+        &mut utterance,
+        &mut dropped,
+        true,
+    );
+    assert!(gate.speaking(), "hot span holds the gate open");
+    assert!(!utterance.is_empty(), "hot span buffers");
+    let buffered = utterance.len();
+    // Cold polls: the 15-frame hangover keeps appending silence
+    // while the gate winds down, then the closed gate appends
+    // nothing — but the buffer is never shed. Two polls deliver 24
+    // silent frames, past the hangover.
+    for _ in 0..2 {
+        let mut cold = vec![0.0f32; 4096].into_iter();
+        drain_capture(
+            &mut || cold.next(),
+            &mut carry,
+            &mut remainder,
+            16_000,
+            &mut gate,
+            &mut utterance,
+            &mut dropped,
+            true,
+        );
+    }
+    assert!(!gate.speaking(), "hangover closes the gate after silence");
+    assert!(
+        utterance.len() >= buffered,
+        "hangover silence appends, never sheds: {} -> {}",
+        buffered,
+        utterance.len()
+    );
+    let settled = utterance.len();
+    let mut colder = vec![0.0f32; 4096].into_iter();
+    drain_capture(
+        &mut || colder.next(),
+        &mut carry,
+        &mut remainder,
+        16_000,
+        &mut gate,
+        &mut utterance,
+        &mut dropped,
+        true,
+    );
+    assert_eq!(
+        utterance.len(),
+        settled,
+        "the endpointed buffer stays for the commit — drain never sheds"
+    );
+}
+
+/// Suppression pin (barge-off path): with `accept` false the meter
+/// still tracks hot frames but nothing buffers — the shed-while-live
+/// behavior every later change must keep byte-identical.
+#[test]
+fn refused_capture_tracks_the_meter_but_buffers_nothing() {
+    use super::{drain_capture, MicGate};
+    let mut gate = MicGate::new();
+    let mut utterance = Vec::new();
+    let mut dropped = 0u64;
+    let mut carry = Vec::new();
+    let mut remainder = Vec::new();
+    let mut input = vec![0.5f32; 1600].into_iter();
+    drain_capture(
+        &mut || input.next(),
+        &mut carry,
+        &mut remainder,
+        16_000,
+        &mut gate,
+        &mut utterance,
+        &mut dropped,
+        false,
+    );
+    assert!(
+        utterance.is_empty(),
+        "refused capture buffers nothing"
+    );
+    assert!(
+        gate.level() > 0.0,
+        "the meter still sees the hot frames"
+    );
+}
+
+/// Coupling pin: gate heat and utterance buffering read the same
+/// frames — one signal, two votes. Hot frames heat the gate AND
+/// grow the buffer together; cold frames do neither.
+#[test]
+fn gate_heat_and_buffering_read_the_same_frames() {
+    use super::{drain_capture, MicGate};
+    let mut gate = MicGate::new();
+    let mut utterance = Vec::new();
+    let mut dropped = 0u64;
+    let mut carry = Vec::new();
+    let mut remainder = Vec::new();
+    let mut hot = vec![0.5f32; 1600].into_iter();
+    drain_capture(
+        &mut || hot.next(),
+        &mut carry,
+        &mut remainder,
+        16_000,
+        &mut gate,
+        &mut utterance,
+        &mut dropped,
+        true,
+    );
+    assert!(gate.speaking() && !utterance.is_empty());
+    let mut cold = vec![0.0f32; 16_000].into_iter();
+    let before = utterance.len();
+    drain_capture(
+        &mut || cold.next(),
+        &mut carry,
+        &mut remainder,
+        16_000,
+        &mut gate,
+        &mut utterance,
+        &mut dropped,
+        true,
+    );
+    // One poll drains 4096 samples (12 frames): not yet past the
+    // 15-frame hangover, so the gate still holds — and the hangover
+    // frames append, because the open gate buffers everything hot or
+    // cold. Coupling holds in both directions: heat and buffering
+    // move together.
+    assert!(gate.speaking());
+    assert!(utterance.len() >= before);
+    let mut colder = vec![0.0f32; 4096].into_iter();
+    drain_capture(
+        &mut || colder.next(),
+        &mut carry,
+        &mut remainder,
+        16_000,
+        &mut gate,
+        &mut utterance,
+        &mut dropped,
+        true,
+    );
+    let settled = utterance.len();
+    let mut coldest = vec![0.0f32; 4096].into_iter();
+    drain_capture(
+        &mut || coldest.next(),
+        &mut carry,
+        &mut remainder,
+        16_000,
+        &mut gate,
+        &mut utterance,
+        &mut dropped,
+        true,
+    );
+    assert!(!gate.speaking() && utterance.len() == settled);
+}
+
+/// Accept-toggle pin: the live shed decision lives outside the
+/// drain. Buffering hot audio with capture accepted, then refusing
+/// capture, keeps the old buffer and drops only the new frames —
+/// so every whole-buffer shed (turn-end, reap, cooldown) fires in
+/// the binary loop, past this point.
+#[test]
+fn accept_toggle_keeps_old_buffer_drops_new_frames() {
+    use super::{drain_capture, MicGate};
+    let mut gate = MicGate::new();
+    let mut utterance = Vec::new();
+    let mut dropped = 0u64;
+    let mut carry = Vec::new();
+    let mut remainder = Vec::new();
+    let mut hot = vec![0.5f32; 1600].into_iter();
+    drain_capture(
+        &mut || hot.next(),
+        &mut carry,
+        &mut remainder,
+        16_000,
+        &mut gate,
+        &mut utterance,
+        &mut dropped,
+        true,
+    );
+    let kept = utterance.len();
+    assert!(kept > 0, "accepted audio buffers");
+    let mut more = vec![0.5f32; 1600].into_iter();
+    drain_capture(
+        &mut || more.next(),
+        &mut carry,
+        &mut remainder,
+        16_000,
+        &mut gate,
+        &mut utterance,
+        &mut dropped,
+        false,
+    );
+    assert_eq!(
+        utterance.len(),
+        kept,
+        "refused frames drop; the kept buffer is untouched by the drain"
+    );
+}
+

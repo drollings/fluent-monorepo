@@ -49,8 +49,31 @@ fn open_default_output(
 /// return once drained. Empty input is a no-op that touches no
 /// device. Reports a missing device or a failed stream actionably.
 pub fn play_blocking(samples: &[f32], rate: u32) -> Result<(), AudioError> {
+    let live = std::sync::atomic::AtomicBool::new(false);
+    play_blocking_abortable(samples, rate, &live).map(|_| ())
+}
+
+/// Play `samples` like [`play_blocking`] but abandon the stream as
+/// soon as `abort` fires: the device stops within one poll (~10 ms)
+/// and `Ok(false)` reports the cut (not an error). A full drain
+/// reports `Ok(true)`. Empty input never touches the device and
+/// reports drained; a pre-fired abort with non-empty input cuts
+/// before the device opens, so headless tests pin the seam without
+/// hardware.
+///
+/// Playout owns no capture state: echo control lives in the OS audio
+/// path, so nothing here feeds reference audio anywhere.
+pub fn play_blocking_abortable(
+    samples: &[f32],
+    rate: u32,
+    abort: &std::sync::atomic::AtomicBool,
+) -> Result<bool, AudioError> {
+    use std::sync::atomic::Ordering;
     if samples.is_empty() {
-        return Ok(());
+        return Ok(true);
+    }
+    if abort.load(Ordering::Relaxed) {
+        return Ok(false);
     }
     let shared: Arc<Vec<f32>> = Arc::new(samples.to_vec());
     let cursor = Arc::new(AtomicUsize::new(0));
@@ -73,6 +96,11 @@ pub fn play_blocking(samples: &[f32], rate: u32) -> Result<(), AudioError> {
         std::time::Duration::from_secs_f64(samples.len() as f64 / f64::from(rate.max(1)) + 1.0);
     let deadline = std::time::Instant::now() + ceiling;
     while cursor.load(Ordering::Relaxed) < samples.len() {
+        if abort.load(Ordering::Relaxed) {
+            // Cut: dropping the stream stops the device at once —
+            // the caller reports the interruption, never an error.
+            return Ok(false);
+        }
         if std::time::Instant::now() >= deadline {
             return Err(AudioError::Stream(format!(
                 "playout stalled with {} sample(s) undrained",
@@ -81,7 +109,7 @@ pub fn play_blocking(samples: &[f32], rate: u32) -> Result<(), AudioError> {
         }
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
-    Ok(())
+    Ok(true)
 }
 
 /// Streaming playout: chunks are pushed as they synthesize while the

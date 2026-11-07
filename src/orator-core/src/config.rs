@@ -292,9 +292,22 @@ pub struct S2sConfig {
     #[builder(default = false)]
     #[serde(default = "default_s2s_auto_boot")]
     pub auto_boot: bool,
+    /// GPU offload for the supervised voice server (explicit opt-in,
+    /// default off). When set, the boot requests full layer offload
+    /// (`--n-gpu-layers 999`) and fails actionably without a device —
+    /// never silently CPU. Applies to supervised boots only; an
+    /// independently started server offloads (or not) by its own argv.
+    #[field(desc = "GPU offload for the supervised voice server")]
+    #[builder(default = false)]
+    #[serde(default = "default_s2s_gpu")]
+    pub gpu: bool,
 }
 
 fn default_s2s_auto_boot() -> bool {
+    false
+}
+
+fn default_s2s_gpu() -> bool {
     false
 }
 
@@ -478,15 +491,6 @@ pub struct AudioConfig {
     #[field(desc = "Microphone selector", max_len = 128)]
     #[builder(default = "default".to_string())]
     pub mic: String,
-    /// Acoustic echo cancellation for open-speakerphone capture
-    /// (explicit opt-in, default off). When set, the assistant's own
-    /// playout is subtracted from mic input before the VAD gate; when
-    /// unset, capture suppresses while a turn runs instead. Old files
-    /// without the leaf load off (previous behavior, byte-identical).
-    #[field(desc = "Acoustic echo cancellation (explicit opt-in)")]
-    #[builder(default = false)]
-    #[serde(default)]
-    pub aec: bool,
 }
 
 impl Default for AudioConfig {
@@ -1105,10 +1109,13 @@ pub struct TtsConfig {
     #[field(desc = "Voice tag", max_len = 64)]
     #[builder(default = "bf_emma".to_string())]
     pub voice: String,
-    /// GPU offload (explicit opt-in, default off). When set, the
-    /// backend attempts a CUDA session and fails actionably without
-    /// a device — never silently CPU. Outputs may differ in trailing
-    /// float bits across devices; equality holds per device.
+    /// GPU offload (explicit opt-in, default off; NVIDIA CUDA only).
+    /// When set, the backend attempts a CUDA session and fails
+    /// actionably without one — never silently CPU. AMD/ROCm hardware
+    /// is not served by the kokoro dependency (CUDA/DirectML/CoreML
+    /// only), so opting in there fails naming CPU as the remedy.
+    /// Outputs may differ in trailing float bits across devices;
+    /// equality holds per device.
     #[field(desc = "GPU offload (explicit opt-in)")]
     #[builder(default = false)]
     #[serde(default)]
@@ -1143,6 +1150,65 @@ pub struct TurnConfig {
 }
 
 impl Default for TurnConfig {
+    fn default() -> Self {
+        Self::new().build()
+    }
+}
+
+/// Chat session starts: the output types and barge-in the `chat`
+/// loop uses before any slash command overrides them per session.
+/// String leaves name their mode (`voice`: `off`|`short`|`full`;
+/// `text`: `short`|`full`; `mic`: `auto`|`ptt`); unknown spellings
+/// fall back to the defaults below with the loop naming the bad
+/// value instead of refusing the session. Old files without the
+/// section load today's starts (short voice, full text, auto mic,
+/// barge on).
+#[derive(
+    Debug, Clone, PartialEq, Eq, Serialize, Deserialize, FieldAccess, Describable, Builder,
+)]
+#[builder(start_fn = new)]
+pub struct ChatConfig {
+    /// Voice output mode for assistant replies.
+    #[field(desc = "Chat voice mode (off|short|full)", max_len = 16)]
+    #[builder(default = "short".to_string())]
+    #[serde(default = "default_chat_voice")]
+    pub voice: String,
+    /// Text output mode for assistant replies.
+    #[field(desc = "Chat text mode (short|full)", max_len = 16)]
+    #[builder(default = "full".to_string())]
+    #[serde(default = "default_chat_text")]
+    pub text: String,
+    /// Mic capture mode for file and live-mic turns.
+    #[field(desc = "Chat mic mode (auto|ptt)", max_len = 16)]
+    #[builder(default = "auto".to_string())]
+    #[serde(default = "default_chat_mic")]
+    pub mic: String,
+    /// Voice barge-in: talking over a reply cuts the live turn (the
+    /// utterance becomes the next turn). Off sheds mic input while a
+    /// turn runs instead. Key barge always works either way.
+    #[field(desc = "Chat voice barge-in")]
+    #[builder(default = true)]
+    #[serde(default = "default_chat_barge")]
+    pub barge: bool,
+}
+
+fn default_chat_voice() -> String {
+    "short".to_string()
+}
+
+fn default_chat_text() -> String {
+    "full".to_string()
+}
+
+fn default_chat_mic() -> String {
+    "auto".to_string()
+}
+
+fn default_chat_barge() -> bool {
+    true
+}
+
+impl Default for ChatConfig {
     fn default() -> Self {
         Self::new().build()
     }
@@ -1189,6 +1255,10 @@ pub struct OratorConfig {
     #[field(nested)]
     #[serde(default)]
     pub turn: TurnConfig,
+    /// Chat session starts (output modes, mic mode, barge-in).
+    #[field(nested)]
+    #[serde(default)]
+    pub chat: ChatConfig,
     /// Daemon listener section.
     #[field(nested)]
     #[serde(default)]
@@ -1238,6 +1308,7 @@ impl Default for OratorConfig {
             tts: TtsConfig::default(),
             s2s: S2sConfig::default(),
             turn: TurnConfig::default(),
+            chat: ChatConfig::default(),
             daemon: DaemonConfig::default(),
             gguf_dir: DEFAULT_GGUF_DIR.to_string(),
             models: ModelsConfig::default(),

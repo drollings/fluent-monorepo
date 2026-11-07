@@ -357,25 +357,29 @@ fn session_model_line_names_agreement_or_leaf() {
     );
 }
 
-#[test]
-fn speech_section_reports_the_echo_guard_state() {
-    use crate::doctor::full_report;
-    let off = render_full_text(&full_report(&orator_core::OratorConfig::default()));
-    assert!(
-        off.contains("echo guard: off"),
-        "default reports the guard off:\n{off}"
-    );
-    let mut config = orator_core::OratorConfig::default();
-    config.audio.aec = true;
-    let on = render_full_text(&full_report(&config));
-    assert!(
-        on.contains("echo guard: on"),
-        "opt-in reports the guard on:\n{on}"
-    );
-}
-
 fn render_full_text(report: &crate::doctor::FullReport) -> String {
     crate::doctor::render_full(report)
+}
+
+/// Chat starts surface in the speech section: defaults render, and a
+/// customized file renders its own modes so the operator sees what
+/// the next session will use.
+#[test]
+fn speech_section_reports_chat_session_starts() {
+    use crate::doctor::full_report;
+    let plain = render_full_text(&full_report(&orator_core::OratorConfig::default()));
+    assert!(
+        plain.contains("chat: voice=short text=full mic=auto barge=on"),
+        "defaults render:\n{plain}"
+    );
+    let mut config = orator_core::OratorConfig::default();
+    config.chat.voice = "off".to_string();
+    config.chat.barge = false;
+    let tuned = render_full_text(&full_report(&config));
+    assert!(
+        tuned.contains("chat: voice=off text=full mic=auto barge=off"),
+        "custom leaves render:\n{tuned}"
+    );
 }
 
 #[test]
@@ -395,6 +399,40 @@ fn speech_section_reports_lfm_readiness_honestly() {
     assert!(
         text.contains("lfm:"),
         "readiness surfaces in doctor:\n{text}"
+    );
+}
+
+/// Bundle + LFM-home lines name the configured model, never a
+/// compiled-in tag: a custom `s2s.model` with its own weights home
+/// renders its own names (the default config renders exactly as
+/// before).
+#[test]
+fn speech_section_names_the_configured_bundle_model() {
+    use crate::doctor::{lfm_readiness_lines, speech_lines};
+    let mut config = orator_core::OratorConfig::default();
+    config.s2s.model = "custom-voice-model".to_string();
+    config.s2s.mmproj = "custom-weights/mmproj.gguf".to_string();
+    let lines = speech_lines(&config);
+    let bundle = lines
+        .iter()
+        .find(|line| line.starts_with("bundle "))
+        .expect("bundle line");
+    assert!(
+        bundle.contains("custom-voice-model"),
+        "bundle names the configured model: {bundle}"
+    );
+    assert!(
+        !bundle.contains("liquidai/lfm3-audio-2b"),
+        "no compiled-in tag: {bundle}"
+    );
+    let lfm = lfm_readiness_lines(&config);
+    assert!(
+        lfm.iter().any(|line| line.contains("custom-weights")),
+        "readiness checks the configured home:\n{lfm:?}"
+    );
+    assert!(
+        !lfm.iter().any(|line| line.contains("liquidai/lfm3-audio-2b-gguf")),
+        "no compiled-in home:\n{lfm:?}"
     );
 }
 

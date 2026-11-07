@@ -141,6 +141,7 @@ pub(crate) fn run_audio_turn<T>(
             &model,
             &bundle,
             s2s.auto_boot,
+            s2s.gpu,
         ))
         .map_err(|error| {
             eprintln!("orator: {error}");
@@ -256,6 +257,7 @@ pub(crate) fn run_audio_turn<T>(
                         &bundle,
                         &model,
                         s2s.auto_boot,
+                        s2s.gpu,
                     )) {
                         Ok(owned) => {
                             let owned = std::sync::Arc::new(owned);
@@ -339,6 +341,7 @@ pub(crate) fn run_audio_turn<T>(
                         &bundle,
                         &model,
                         s2s.auto_boot,
+                        s2s.gpu,
                     )) {
                         Ok(owned) => {
                             let owned = std::sync::Arc::new(owned);
@@ -507,7 +510,9 @@ fn say_kokoro(text: &str, voice: &str, gpu: bool) -> (ExitCode, Vec<String>, usi
     if chunks.iter().all(|chunk| chunk.trim().is_empty()) {
         return (ExitCode::Success, chunks, 0);
     }
-    let player = match orator_audio::StreamPlayer::open(orator_tts::KOKORO_SAMPLE_RATE) {
+    let player = match orator_audio::StreamPlayer::open(
+        orator_tts::KOKORO_SAMPLE_RATE,
+    ) {
         Ok(player) => player,
         Err(error) => {
             eprintln!("orator: {error}");

@@ -543,6 +543,42 @@ fn voiced_turns_feed_the_first_audio_histogram() {
     });
 }
 
+/// Stock-server voice seam: `POST /tts` WAV bytes decode to 24 kHz
+/// samples; a 404 reports `NoAudio` for the chain to advance. This is
+/// the fallback native turns use when the chat stream carries no
+/// audio deltas.
+#[test]
+fn speak_text_via_tts_decodes_wav_and_reports_missing_route() {
+    common_core::runtime::block_on_shared(async {
+        let server = httpmock::MockServer::start();
+        let wav = orator_audio::encode_wav_mono(&[0.0, 1.0, -1.0], crate::config::AUDIO_OUT_RATE);
+        server.mock(|when, then| {
+            when.method("POST").path("/tts");
+            then.status(200)
+                .header("content-type", "audio/wav")
+                .body(wav);
+        });
+        let session = session_with(&server);
+        let samples = session
+            .speak_text_via_tts("hi", &StreamAbort::new())
+            .expect("tts route voices");
+        assert_eq!(samples, vec![0.0, 1.0, -1.0]);
+
+        let bare = httpmock::MockServer::start();
+        bare.mock(|when, then| {
+            when.method("POST").path("/tts");
+            then.status(404);
+        });
+        let session = session_with(&bare);
+        assert_eq!(
+            session
+                .speak_text_via_tts("hi", &StreamAbort::new())
+                .expect_err("missing route reports"),
+            S2sError::NoAudio
+        );
+    });
+}
+
 #[test]
 fn text_only_turns_count_no_audio_without_histograms() {
     common_core::runtime::block_on_shared(async {

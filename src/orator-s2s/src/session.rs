@@ -389,6 +389,19 @@ impl AudioSession {
         self.speak_via_tts(text, &abort)
     }
 
+    /// Voice already-decided reply `text` through `POST {endpoint}/tts`
+    /// (stock-server shape): the one-shot `say` fallback as a reusable
+    /// seam for native turns whose chat stream carried no audio deltas.
+    /// `NoAudio` when the route is absent or the payload is empty —
+    /// the caller advances the voice chain, never synthesizes silence.
+    pub fn speak_text_via_tts(
+        &self,
+        text: &str,
+        abort: &StreamAbort,
+    ) -> Result<Vec<f32>, S2sError> {
+        self.speak_via_tts(text, abort)
+    }
+
     /// Voice `text` through `POST {endpoint}/tts` (stock server
     /// shape): `{"input": text}` in, WAV bytes out. Resamples to the
     /// 24 kHz speaker rate when the server answers otherwise. A 404

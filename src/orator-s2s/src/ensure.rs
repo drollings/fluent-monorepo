@@ -52,6 +52,7 @@ pub async fn ensure_audio_server(
     model: &str,
     bundle: &AudioBundle,
     auto_boot: bool,
+    gpu: bool,
 ) -> Result<AudioEndpoint, S2sError> {
     if serves_model(base, model).await {
         return Ok(AudioEndpoint::Shared(base.to_string()));
@@ -66,7 +67,7 @@ pub async fn ensure_audio_server(
             "endpoint at {base} does not serve '{model}' and the bundle is incomplete"
         )));
     }
-    boot_audio_server(bundle, model, auto_boot).await
+    boot_audio_server(bundle, model, auto_boot, gpu).await
 }
 
 /// Boot a supervised audio server unconditionally: the bundle over
@@ -81,11 +82,15 @@ pub async fn boot_audio_server(
     bundle: &AudioBundle,
     model: &str,
     auto_boot: bool,
+    gpu: bool,
 ) -> Result<AudioEndpoint, S2sError> {
     if !auto_boot {
         return Err(S2sError::Backend(
             "voice auto-boot is off (set s2s.auto_boot to boot a supervised server)".to_string(),
         ));
+    }
+    if gpu {
+        orator_core::gpu::require_gpu("llama-server").map_err(S2sError::Backend)?;
     }
     if !bundle.present() {
         return Err(S2sError::Backend(format!(
@@ -109,6 +114,12 @@ pub async fn boot_audio_server(
         |binary: std::path::PathBuf| {
             let mut config = crate::voice::audio_supervisor_config(bundle, 0);
             config.model = model.to_string();
+            if gpu {
+                config.extra_args.extend([
+                    "--n-gpu-layers".to_string(),
+                    orator_llm::GPU_OFFLOAD_LAYERS.to_string(),
+                ]);
+            }
             async move {
                 match orator_llm::boot_with_binary(config, &binary).await {
                     Ok(supervisor) => {

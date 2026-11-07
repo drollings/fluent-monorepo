@@ -105,6 +105,11 @@ fn speech_lines(config: &orator_core::OratorConfig) -> Vec<String> {
     } else {
         "auto-boot: off (the endpoint above is expected to be independently started)".to_string()
     });
+    lines.push(if s2s.gpu {
+        "gpu: on (supervised boots request full layer offload)".to_string()
+    } else {
+        "gpu: off (supervised boots run CPU)".to_string()
+    });
     // Native session identity: the agreed heads model, or the leaf
     // when the heads cannot agree. A disagreeing leaf is named, so
     // the assured model never surprises.
@@ -121,13 +126,19 @@ fn speech_lines(config: &orator_core::OratorConfig) -> Vec<String> {
     for missing in bundle.missing() {
         lines.push(format!("missing: {}", missing.display()));
     }
+    // The bundle follows the configured `s2s` model through the
+    // models table, so the status line names that tag — never a
+    // compiled-in model.
     if bundle.present() {
-        lines.push(
-            "bundle liquidai/lfm3-audio-2b: complete (backbone + mmproj; codec in projector)"
-                .to_string(),
-        );
+        lines.push(format!(
+            "bundle {}: complete (backbone + mmproj; codec in projector)",
+            s2s.model
+        ));
     } else {
-        lines.push("bundle liquidai/lfm3-audio-2b: incomplete — text-only serving".to_string());
+        lines.push(format!(
+            "bundle {}: incomplete — text-only serving",
+            s2s.model
+        ));
     }
     let kokoro_paths = orator_tts::default_paths();
     let voice_pack = kokoro_paths
@@ -153,11 +164,15 @@ fn speech_lines(config: &orator_core::OratorConfig) -> Vec<String> {
     let kokoro_model = kokoro_paths.as_ref().map(|(model, _)| model);
     let model_exists = kokoro_model.is_some_and(|model| model.exists());
     let pack_exists = voice_pack.as_ref().is_some_and(|pack| pack.exists());
-    lines.push(if config.audio.aec {
-        "echo guard: on (assistant playout subtracts before the VAD gate)".to_string()
-    } else {
-        "echo guard: off (set audio.aec to subtract playout on speakerphone)".to_string()
-    });
+    // Chat session starts: the output types and barge-in the loop
+    // uses before any slash command overrides them per session.
+    lines.push(format!(
+        "chat: voice={} text={} mic={} barge={} (override per session with /voice /text /mic /barge)",
+        config.chat.voice,
+        config.chat.text,
+        config.chat.mic,
+        if config.chat.barge { "on" } else { "off" },
+    ));
     if model_exists && pack_exists {
         lines.push(format!(
             "voice: kokoro {voice} ready (fallback when the server sends no audio)"
@@ -185,12 +200,22 @@ fn speech_lines(config: &orator_core::OratorConfig) -> Vec<String> {
 
 /// LFM3-Audio readiness: which weight homes are servable-shaped and
 /// what is still missing. Reports layout only — no runtime exists
-/// in-tree yet, so nothing here claims serving.
+/// in-tree yet, so nothing here claims serving. The home derives
+/// from the configured voice projector's directory (same home the
+/// serving bundle resolves under), never a compiled-in model path.
 #[must_use]
 pub fn lfm_readiness_lines(config: &orator_core::OratorConfig) -> Vec<String> {
     use std::fmt::Write as _;
+    use std::path::{Path, PathBuf};
     let layout = orator_lfm::manifest::expected_layout();
-    let gguf_home = std::path::Path::new(&config.gguf_dir).join("liquidai/lfm3-audio-2b-gguf");
+    let mmproj = Path::new(&config.s2s.mmproj);
+    let gguf_home: PathBuf = if mmproj.is_absolute() {
+        mmproj
+            .parent()
+            .map_or_else(|| PathBuf::from(&config.gguf_dir), Path::to_path_buf)
+    } else {
+        Path::new(&config.gguf_dir).join(mmproj.parent().unwrap_or_else(|| Path::new("")))
+    };
     let mut lines = Vec::new();
     match orator_lfm::manifest::verify_weights(
         &gguf_home,

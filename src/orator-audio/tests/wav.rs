@@ -124,9 +124,7 @@ fn stereo_pcm16_averages_every_frame_in_order() {
     let pcm = decode_wav_bytes(&bytes).expect("parses");
     assert_eq!(pcm.samples.len(), 2);
     assert!((pcm.samples[0] - 1.0).abs() < f32::EPSILON);
-    assert!(
-        (pcm.samples[1] - f32::from(-32768i16) / f32::from(i16::MAX)).abs() < f32::EPSILON
-    );
+    assert!((pcm.samples[1] - f32::from(-32768i16) / f32::from(i16::MAX)).abs() < f32::EPSILON);
 }
 /// M2-S2 characterization: the new writer mirrors the parser and the
 /// s2s frame encoder — same 44-byte header, same truncating payload —

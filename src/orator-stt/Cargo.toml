@@ -25,6 +25,11 @@ tempfile = { workspace = true }
 
 [features]
 live-ai = []
+# AMD ROCm/HIP ggml backend for moonshine (`transcribe_cpp::Backend::Rocm`).
+# Strictly opt-in: enabling it requires the ROCm toolchain (hipcc) at build
+# time and fails the build where ROCm is absent, so default (CI) builds stay
+# CPU-only. Build with `--features orator-stt/rocm`, then set `stt.gpu = true`.
+rocm = ["transcribe-cpp/rocm"]
 
 [[test]]
 name = "live"

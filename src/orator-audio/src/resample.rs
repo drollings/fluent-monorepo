@@ -28,8 +28,6 @@ pub fn resample_linear(input: &[f32], from_hz: u32, to_hz: u32) -> Vec<f32> {
     out
 }
 
-/// Streaming FFT resampler for non-integer ratios. Processes fixed input
-/// chunks; the caller keeps any remainder.
 pub struct RubatoResampler {
     inner: rubato::FftFixedIn<f32>,
     /// Input chunk length in samples per channel.

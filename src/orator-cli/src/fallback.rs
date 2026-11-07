@@ -208,10 +208,44 @@ pub fn transcribe_dial(
     abort: &StreamAbort,
     config: &orator_core::OratorConfig,
 ) -> Result<String, String> {
-    fallback_if_unavailable(
-        crate::tui::transcribe_samples(samples, transport, abort),
-        || local_transcribe(samples, config, abort),
-    )
+    transcribe_dial_leg(samples, transport, abort, config).0
+}
+
+/// Which leg served a daemon-first transcribe dial: the shared voice
+/// server or local inference. Lets log lines name what actually
+/// decoded instead of the precomputed label.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DialLeg {
+    /// The daemon's voice server decoded (the configured `s2s`
+    /// model over the audio-server protocol).
+    Daemon,
+    /// Local inference decoded (the role-walk pick, already logged
+    /// by [`local_transcribe`] itself).
+    Local,
+}
+
+/// Transcribe with daemon-first routing, reporting which leg served.
+/// Same routing as [`transcribe_dial`]; the leg lets callers label
+/// the served model honestly.
+pub fn transcribe_dial_leg(
+    samples: &[f32],
+    transport: Transport,
+    abort: &StreamAbort,
+    config: &orator_core::OratorConfig,
+) -> (Result<String, String>, DialLeg) {
+    match crate::tui::transcribe_samples(samples, transport, abort) {
+        ok @ Ok(_) => (ok, DialLeg::Daemon),
+        Err(error) => {
+            if voice_unavailable(&error) {
+                (
+                    local_transcribe(samples, config, abort),
+                    DialLeg::Local,
+                )
+            } else {
+                (Err(error), DialLeg::Daemon)
+            }
+        }
+    }
 }
 
 /// Local ASR backend selected by the role walk.
@@ -266,6 +300,32 @@ pub fn resolve_moonshine_model(
     config: &orator_core::OratorConfig,
 ) -> Result<(std::path::PathBuf, String), String> {
     resolve_local_asr_with(config, &[LocalBackend::Moonshine]).map(|found| (found.path, found.tag))
+}
+
+/// Notice when local ASR serves past an unservable role side: the
+/// heads were consulted and skipped, so the legacy leaf closes the
+/// turn on words the roles did not pick. Same swap message as the
+/// historical head-over-leaf notice when the tags differ; `None`
+/// when nothing was bypassed (no role guidance, or the head serves
+/// as listed). Pure so the decision pins without stderr capture.
+#[must_use]
+pub fn local_asr_serve_note(
+    found_tag: &str,
+    leaf: &str,
+    heads_skipped: &[String],
+) -> Option<String> {
+    if found_tag != leaf {
+        Some(format!(
+            "orator: {found_tag} serves ASR locally instead of {leaf}"
+        ))
+    } else if heads_skipped.is_empty() {
+        None
+    } else {
+        Some(format!(
+            "orator: {found_tag} serves ASR locally (role side unservable: {})",
+            heads_skipped.join(", ")
+        ))
+    }
 }
 
 /// Resolve the local ASR model to decode with: the role side first
@@ -348,18 +408,17 @@ fn resolve_local_asr_with(
             .get(tag)
             .and_then(|spec| spec.primary_backend());
         if let Some(found) = evaluate(tag, backend, &mut tried) {
-            if found.tag != config.stt.model {
-                eprintln!(
-                    "orator: {} serves ASR locally instead of {}",
-                    found.tag, config.stt.model
-                );
+            if let Some(note) = local_asr_serve_note(&found.tag, &config.stt.model, &[]) {
+                eprintln!("{note}");
             }
             return Ok(found);
         }
     }
     // Legacy fallback: the explicitly configured tag serves when the
     // whole role side serves nothing (skipped when already listed —
-    // every candidate is tried exactly once).
+    // every candidate is tried exactly once). A consulted-but-empty
+    // role side names itself so the operator sees the leaf closing
+    // past bypassed heads instead of a silent swap.
     if !leaf_listed {
         let backend = config.models.models.get(&config.stt.model).map_or(
             config.stt.backend.as_str(),
@@ -369,6 +428,9 @@ fn resolve_local_asr_with(
             },
         );
         if let Some(found) = evaluate(&config.stt.model.clone(), Some(backend), &mut tried) {
+            if let Some(note) = local_asr_serve_note(&found.tag, &config.stt.model, &tried) {
+                eprintln!("{note}");
+            }
             return Ok(found);
         }
     }

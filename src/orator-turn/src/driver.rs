@@ -330,6 +330,10 @@ pub struct TurnDriver {
     spec: SpecState,
     backchannel: BackchannelFilter,
     barge_in_ms: u16,
+    /// Consecutive hot ms in the current span. Any cold or PTT-cold
+    /// frame resets it — pause-split speech never counts as
+    /// continuous. Saturates instead of wrapping.
+    sustained_run_ms: u64,
 }
 
 impl TurnDriver {
@@ -348,6 +352,7 @@ impl TurnDriver {
             spec: SpecState::Idle,
             backchannel: BackchannelFilter::new(lang),
             barge_in_ms: BARGE_IN_MS,
+            sustained_run_ms: 0,
         }
     }
 
@@ -362,6 +367,7 @@ impl TurnDriver {
             spec: SpecState::Idle,
             backchannel: BackchannelFilter::new(lang),
             barge_in_ms: config.barge_in_ms,
+            sustained_run_ms: 0,
         }
     }
 
@@ -390,6 +396,21 @@ impl TurnDriver {
         } else {
             BargeInOutcome::Ignored
         }
+    }
+
+    /// Feed one analysis-frame vote toward a sustained interruption.
+    /// Only an unbroken hot run counts: any cold or PTT-cold frame
+    /// resets it, so pause-split speech never accumulates into a cut.
+    /// The run saturates instead of wrapping; the threshold stays the
+    /// configured `barge_in_ms` leaf. Returns the detect outcome for
+    /// the run so far.
+    pub fn push_frame(&mut self, hot: bool, ptt_cold: bool, frame_ms: u64) -> BargeInOutcome {
+        if !hot || ptt_cold {
+            self.sustained_run_ms = 0;
+            return BargeInOutcome::Ignored;
+        }
+        self.sustained_run_ms = self.sustained_run_ms.saturating_add(frame_ms);
+        self.detect(u16::try_from(self.sustained_run_ms).unwrap_or(u16::MAX))
     }
 
     /// Confirm with STT evidence: backchannels, empty transcripts, and

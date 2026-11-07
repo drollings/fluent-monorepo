@@ -1116,7 +1116,6 @@ fn run_loop(
             &mut app.pending_utterance,
             &mut app.pending_dropped,
             !app.suppress_utterance && !ptt_cold,
-            None,
         );
         app.state.mic_level = app.gate.level();
         // Utterance complete: the gate closed over buffered hot spans,
@@ -1186,6 +1185,9 @@ fn run_loop(
                         match turn.voice {
                             Ok(Some((samples, rate))) => {
                                 match orator_audio::StreamPlayer::open(rate) {
+                                    // No tap: the TUI capture path runs
+                                    // without a filter, so reference
+                                    // would have no reader.
                                     Ok(opened) => {
                                         player = Some(opened);
                                         app.state.voicing = true;
@@ -1280,9 +1282,10 @@ pub(crate) fn tui_loop_should_quit<C: SessionControl>(
 /// Drain device-rate capture into 16 kHz frames; hot spans buffer
 /// into `utterance` unless `accept` is false (voicing echo or a cold
 /// PTT mic: the meter still moves, nothing buffers). Over-cap input
-/// drops the oldest first with a counter. Single home for the TUI
-/// and `chat` capture loops (same resampling, same remainder domain,
-/// same cap).
+/// drops the oldest first with a counter. Echo control lives in the
+/// OS audio path, so capture here is gate-then-buffer only. Single
+/// home for the TUI and `chat` capture loops (same resampling, same
+/// remainder domain, same cap).
 pub fn drain_capture(
     pop: &mut impl FnMut() -> Option<f32>,
     carry: &mut Vec<f32>,
@@ -1292,7 +1295,6 @@ pub fn drain_capture(
     utterance: &mut Vec<f32>,
     dropped: &mut u64,
     accept: bool,
-    mut aec: Option<&mut orator_audio::AecFilter>,
 ) {
     let mut drained: Vec<f32> = Vec::new();
     for _ in 0..4096 {
@@ -1315,12 +1317,8 @@ pub fn drain_capture(
     window.extend_from_slice(&resampled);
     let mut frames = window.chunks_exact_mut(FRAME_SAMPLES);
     for frame in &mut frames {
-        // Echo cancels before the gate: the assistant's own playout
-        // never scores as hot speech. `None` (TUI today) skips
-        // straight to the gate — previous behavior, byte-identical.
-        if let Some(filter) = aec.as_deref_mut() {
-            filter.process(frame);
-        }
+        // The gate scores every frame (meter alive, barge timing
+        // unchanged); hot, accepted frames buffer verbatim.
         if !gate.push(frame) || !accept {
             continue;
         }

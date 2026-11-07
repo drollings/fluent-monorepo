@@ -22,6 +22,7 @@ orator-lfm = { path = "../orator-lfm" }
 orator-s2s = { path = "../orator-s2s" }
 orator-stt = { path = "../orator-stt" }
 orator-tts = { path = "../orator-tts" }
+orator-turn = { path = "../orator-turn" }
 orator-vad = { path = "../orator-vad" }
 ratatui = "0.30"
 serde = { workspace = true }

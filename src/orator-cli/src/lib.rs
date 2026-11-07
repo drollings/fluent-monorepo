@@ -198,14 +198,17 @@ pub enum Command {
         /// toggle-off in ptt. /quit exits, /reset clears, /wav + /input
         /// voice a file, /mic auto|ptt gates file and mic turns, /talk
         /// toggles, /voice off|short|full, /text short|full, /barge
-        /// on|off (voice barge default on, needs the audio.aec echo
-        /// guard; key barge always works). Chords
-        /// match the TUI (Ctrl+B barge, Ctrl+Q quit, Ctrl+G mic mode,
-        /// Ctrl+T talk) typed as the control character plus Enter;
-        /// Ctrl+C aborts, Ctrl+D ends input. Barge cuts queued turns
-        /// and pending audio; device-draining audio finishes. Mic
-        /// pauses while a turn runs; voice barge-in (talking over
-        /// audio) is not served — cut with Ctrl+B and speak.
+        /// on|off (voice barge default on; key barge always works).
+        /// Session starts come from the chat.* config leaves
+        /// (chat.voice/text/mic/barge); slash commands override them
+        /// per session. Chords match the TUI (Ctrl+B barge, Ctrl+Q
+        /// quit, Ctrl+G mic mode, Ctrl+T talk) typed as the control
+        /// character plus Enter; Ctrl+C aborts, Ctrl+D ends input.
+        /// Barge cuts the live turn and stops playout at once; the
+        /// interrupting utterance becomes the next turn. Key barge
+        /// (Ctrl+B) always cuts; voice barge cuts speech the VAD
+        /// sustains past turn.barge_in_ms. With barge off the mic
+        /// sheds while a turn runs.
         #[arg(long, default_value = "text")]
         log_format: String,
         /// Verbosity: 0 hides agent tool-call detail, 1+ reveals it.

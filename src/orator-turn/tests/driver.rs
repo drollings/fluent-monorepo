@@ -213,3 +213,81 @@ fn orator_turn_duck_constants_match_the_envelope_home() {
     assert_eq!(DUCK_RAMP_MS, 100, "duck ramp matches the envelope home");
     assert_eq!(CUT_FADE_MS, 20, "cut fade matches the envelope home");
 }
+
+/// Per-frame continuity (M5): the run counts only unbroken hot
+/// frames and trips at the configured bound; any cold or PTT-cold
+/// frame resets it. Long hot runs saturate instead of wrapping.
+#[test]
+fn push_frame_counts_only_unbroken_hot_runs() {
+    use crate::driver::{BargeInOutcome, TurnDriver};
+    use orator_core::TurnConfig;
+    let mut driver = TurnDriver::with_config(Epoch(1), "en", &TurnConfig::default());
+    // Below the 150 ms bound: 7 hot frames (140 ms) stay ignored.
+    for _ in 0..7 {
+        assert_eq!(
+            driver.push_frame(true, false, 20),
+            BargeInOutcome::Ignored,
+            "below-bound run holds"
+        );
+    }
+    // At the bound: the 8th hot frame ducks, and heat keeps ducking.
+    assert_eq!(
+        driver.push_frame(true, false, 20),
+        BargeInOutcome::Ducking,
+        "at-bound frame trips"
+    );
+    assert_eq!(
+        driver.push_frame(true, false, 20),
+        BargeInOutcome::Ducking,
+        "continued heat stays tripped"
+    );
+    // Any cold frame resets: 7 more hot frames hold again.
+    assert_eq!(
+        driver.push_frame(false, false, 20),
+        BargeInOutcome::Ignored,
+        "cold frame resets the run"
+    );
+    for _ in 0..7 {
+        assert_eq!(
+            driver.push_frame(true, false, 20),
+            BargeInOutcome::Ignored,
+            "post-pause run restarts from zero"
+        );
+    }
+    // PTT-cold frames reset even when hot.
+    let mut ptt = TurnDriver::with_config(Epoch(2), "en", &TurnConfig::default());
+    for _ in 0..10 {
+        assert_eq!(
+            ptt.push_frame(true, true, 20),
+            BargeInOutcome::Ignored,
+            "latched-off mic never advances the run"
+        );
+    }
+    // Saturation: a very long hot run stays tripped, never wraps.
+    let mut long = TurnDriver::with_config(Epoch(3), "en", &TurnConfig::default());
+    for _ in 0..100_000 {
+        long.push_frame(true, false, 20);
+    }
+    assert_eq!(
+        long.push_frame(true, false, 20),
+        BargeInOutcome::Ducking,
+        "saturated run stays tripped"
+    );
+    // A raised leaf moves the trip point with it.
+    let mut raised = TurnDriver::with_config(
+        Epoch(4),
+        "en",
+        &orator_core::TurnConfig {
+            barge_in_ms: 300,
+            ..TurnConfig::default()
+        },
+    );
+    for _ in 0..14 {
+        raised.push_frame(true, false, 20);
+    }
+    assert_eq!(
+        raised.push_frame(true, false, 20),
+        BargeInOutcome::Ducking,
+        "raised bound trips at 300 ms"
+    );
+}

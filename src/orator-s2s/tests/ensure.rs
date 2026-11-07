@@ -29,6 +29,7 @@ fn served_model_uses_the_endpoint_as_is() {
             "liquidai/lfm2.5-audio-1.5b",
             &bundle(),
             true,
+            false,
         )
         .await
         .expect("served model needs no boot");
@@ -50,7 +51,7 @@ fn missing_model_without_bundle_fails_actionably() {
             when.method("GET").path("/v1/models");
             then.status(200).json_body(serde_json::json!({"data": []}));
         });
-        let Err(error) = ensure_audio_server(&server.base_url(), "nope", &bundle(), true).await
+        let Err(error) = ensure_audio_server(&server.base_url(), "nope", &bundle(), true, false).await
         else {
             panic!("nothing served, bundle incomplete on disk");
         };
@@ -69,7 +70,7 @@ fn shared_release_is_a_noop() {
                 "data": [{"id": "m"}],
             }));
         });
-        let endpoint = ensure_audio_server(&server.base_url(), "m", &bundle(), true)
+        let endpoint = ensure_audio_server(&server.base_url(), "m", &bundle(), true, false)
             .await
             .expect("served");
         endpoint.release();
@@ -249,8 +250,9 @@ fn boot_release_reaps_the_owned_child() {
     std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755))
         .expect("stub server runs");
     std::env::set_var(crate::voice::AUDIO_SERVER_ENV, &script);
-    let endpoint =
-        common_core::runtime::block_on_shared(crate::ensure::boot_audio_server(&bundle, "m", true))
+    let endpoint = common_core::runtime::block_on_shared(
+        crate::ensure::boot_audio_server(&bundle, "m", true, false),
+    )
             .expect("stub server boots");
     let port: u16 = endpoint
         .base_url()
@@ -331,7 +333,7 @@ fn audio_build_without_models_list_serves_on_options_readiness() {
             serves_model(&server.base_url(), "any-audio-model").await,
             "OPTIONS-ready appliance serves without a listing"
         );
-        let endpoint = ensure_audio_server(&server.base_url(), "any-audio-model", &bundle(), true)
+        let endpoint = ensure_audio_server(&server.base_url(), "any-audio-model", &bundle(), true, false)
             .await
             .expect("OPTIONS-ready audio build is shared, never booted");
         assert_eq!(endpoint.base_url(), server.base_url());
@@ -344,11 +346,11 @@ fn auto_boot_off_refuses_before_spawning() {
     common_core::runtime::block_on_shared(async {
         // Nothing serves here and nothing may boot: the refusal names
         // the remedy instead of burning a health timeout on a child.
-        match ensure_audio_server("http://127.0.0.1:1", "m", &bundle(), false).await {
+        match ensure_audio_server("http://127.0.0.1:1", "m", &bundle(), false, false).await {
             Err(error) => assert!(error.to_string().contains("s2s.auto_boot"), "{error}"),
             Ok(_) => panic!("auto-boot off must refuse"),
         }
-        match crate::ensure::boot_audio_server(&bundle(), "m", false).await {
+        match crate::ensure::boot_audio_server(&bundle(), "m", false, false).await {
             Err(error) => assert!(error.to_string().contains("s2s.auto_boot"), "{error}"),
             Ok(_) => panic!("direct boot refusal"),
         }
@@ -464,8 +466,9 @@ fn boot_audio_server_tries_candidates_in_order_and_stops_after_success() {
         std::env::join_paths([dir1.clone(), dir2.clone(), dir3.clone()]).expect("join"),
     );
 
-    let endpoint =
-        common_core::runtime::block_on_shared(crate::ensure::boot_audio_server(&bundle, "m", true));
+    let endpoint = common_core::runtime::block_on_shared(
+        crate::ensure::boot_audio_server(&bundle, "m", true, false),
+    );
     let Ok(endpoint) = endpoint else {
         panic!("second candidate serves");
     };
@@ -550,7 +553,7 @@ fn boot_audio_server_returns_last_error_when_all_candidates_fail() {
     );
 
     let error = common_core::runtime::block_on_shared(crate::ensure::boot_audio_server(
-        &bundle, "m", true,
+        &bundle, "m", true, false,
     ));
     let Err(error) = error else {
         panic!("all candidates fail");
@@ -567,6 +570,93 @@ fn boot_audio_server_returns_last_error_when_all_candidates_fail() {
     assert!(
         !text.contains("Exec format error"),
         "first error is not returned: {text}"
+    );
+
+    match prior_audio {
+        Some(value) => std::env::set_var(crate::voice::AUDIO_SERVER_ENV, value),
+        None => std::env::remove_var(crate::voice::AUDIO_SERVER_ENV),
+    }
+    match prior_llama {
+        Some(value) => std::env::set_var(orator_llm::LLAMA_SERVER_ENV, value),
+        None => std::env::remove_var(orator_llm::LLAMA_SERVER_ENV),
+    }
+    match prior_path {
+        Some(value) => std::env::set_var("PATH", value),
+        None => std::env::remove_var("PATH"),
+    }
+    match prior_home {
+        Some(value) => std::env::set_var("HOME", value),
+        None => std::env::remove_var("HOME"),
+    }
+    match prior_xdg {
+        Some(value) => std::env::set_var("XDG_DATA_HOME", value),
+        None => std::env::remove_var("XDG_DATA_HOME"),
+    }
+}
+
+/// GPU opt-in reaches the supervised spawn argv: a stub server records
+/// its argv, and the boot with `gpu = true` must carry the full
+/// offload pair. Skips where no GPU device is visible (the opt-in
+/// fails actionably there before any spawn).
+#[test]
+#[cfg(unix)]
+fn boot_audio_server_passes_gpu_layers_when_opted_in() {
+    use std::os::unix::fs::PermissionsExt as _;
+    if !orator_core::gpu::device_present() {
+        eprintln!("SKIP gpu-argv: no GPU device on this machine");
+        return;
+    }
+    let _guard = common_core::sync::lock(&crate::ENV_LOCK);
+    let prior_audio = std::env::var_os(crate::voice::AUDIO_SERVER_ENV);
+    let prior_llama = std::env::var_os(orator_llm::LLAMA_SERVER_ENV);
+    let prior_path = std::env::var_os("PATH");
+    let prior_home = std::env::var_os("HOME");
+    let prior_xdg = std::env::var_os("XDG_DATA_HOME");
+    std::env::remove_var(crate::voice::AUDIO_SERVER_ENV);
+    std::env::remove_var(orator_llm::LLAMA_SERVER_ENV);
+
+    let base = fixture_base();
+    std::env::set_var("HOME", base.path());
+    std::env::remove_var("XDG_DATA_HOME");
+    for name in ["backbone.gguf", "mmproj.gguf"] {
+        std::fs::write(base.path().join(name), b"stub").expect("stub weight");
+    }
+    let bundle = AudioBundle {
+        backbone: base.path().join("backbone.gguf"),
+        mmproj: base.path().join("mmproj.gguf"),
+        vocoder: std::path::PathBuf::new(),
+        tokenizer: std::path::PathBuf::new(),
+    };
+    let dir = base.path().join("g1");
+    std::fs::create_dir(&dir).expect("candidate dir");
+    let argv_log = base.path().join("argv.txt");
+    std::fs::write(
+        dir.join(crate::voice::AUDIO_SERVER_BIN),
+        format!(
+            "#!/usr/bin/python3\nimport http.server, sys\nopen({:?}, \"w\").write(\" \".join(sys.argv[1:]))\nport = 8080\nargs = sys.argv[1:]\nfor index, arg in enumerate(args):\n    if arg == \"--port\" and index + 1 < len(args):\n        port = int(args[index + 1])\nclass Handler(http.server.BaseHTTPRequestHandler):\n    def do_OPTIONS(self):\n        self.send_response(200)\n        self.end_headers()\n    def log_message(self, *args):\n        pass\nhttp.server.HTTPServer((\"127.0.0.1\", port), Handler).serve_forever()\n",
+            argv_log.display().to_string()
+        ),
+    )
+    .expect("argv-recording stub writes");
+    std::fs::set_permissions(
+        dir.join(crate::voice::AUDIO_SERVER_BIN),
+        std::fs::Permissions::from_mode(0o755),
+    )
+    .expect("stub runs");
+    std::env::set_var("PATH", std::env::join_paths([dir.clone()]).expect("join"));
+
+    let endpoint = common_core::runtime::block_on_shared(crate::ensure::boot_audio_server(
+        &bundle, "m", true, true,
+    ));
+    let endpoint = match endpoint {
+        Ok(endpoint) => endpoint,
+        Err(error) => panic!("gpu boot serves: {error}"),
+    };
+    endpoint.release();
+    let argv = std::fs::read_to_string(&argv_log).expect("stub recorded argv");
+    assert!(
+        argv.contains("--n-gpu-layers 999"),
+        "full offload pair reaches the spawn argv: {argv}"
     );
 
     match prior_audio {

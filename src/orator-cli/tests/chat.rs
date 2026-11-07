@@ -1,8 +1,32 @@
 //! `chat` helper goldens: slash parsing, voice/text selection,
 //! serving labels — all hermetic (no I/O, no models, no daemon).
+//!
+//! Barge-input inventory (loop terms the cut table mirrors).
+//!
+//! Turn liveness means exactly one worker holds the job receiver.
+//! The `chat.barge` leaf sets the session start (`/barge on|off`
+//! overrides per session). The buffered utterance is VAD-hot spans
+//! drained through `drain_capture` while the voicing lock releases
+//! (`accept` is true unless a turn voices without barge and the PTT
+//! mic is cold). Gate quiet means the VAD closed over buffered spans
+//! (endpointed). Sustained speech is the shared turn driver's
+//! consecutive-hot run: pauses reset it. Voice barge keeps the
+//! buffered words as the next turn; key barge sheds the queue.
+//!
+//! Shed-site inventory (binary loop; documented here, pinned where
+//! the pieces are unit-testable):
+//!
+//! - Turn-end `voiced` sheds the whole buffer.
+//! - `reap_direct_play` / `cut_direct_play` / quit-join shed when
+//!   the gate reads quiet.
+//! - Saturated cooldown sheds the take.
+//! - `barge_turn` harvests the in-flight turn's published question
+//!   words and drops the job receiver unread, keeping the buffered
+//!   utterance.
 
 use crate::chat::{
-    asr_serving, display_for_text, llm_serving, parse_chat_line, parse_text_mode, parse_voice_mode,
+    asr_serving, display_for_text, initial_barge_on, initial_mic_mode, initial_text_mode,
+    initial_voice_mode, llm_serving, parse_chat_line, parse_text_mode, parse_voice_mode,
     spoken_for_voice, tts_serving, ChatLine, ChatSlash, ChatTextMode, ChatVoiceMode,
 };
 use crate::tui::MicMode;
@@ -375,5 +399,241 @@ fn serving_selectors_pin_fixture_outputs() {
     assert_eq!(
         tts_serving(&config),
         ("tts-fixture".to_string(), "kokoro".to_string())
+    );
+}
+
+/// Chat session starts follow the `chat.*` leaves: valid values map
+/// to their modes, garbage falls back to the previous hardcoded
+/// starts (short voice, full text, auto mic, barge on) so the loop
+/// can name the bad value instead of refusing the session.
+#[test]
+fn chat_initial_modes_follow_config_with_loud_fallbacks() {
+    use orator_core::OratorConfig;
+    let config = OratorConfig::default();
+    assert_eq!(initial_voice_mode(&config), ChatVoiceMode::Short);
+    assert_eq!(initial_text_mode(&config), ChatTextMode::Full);
+    assert_eq!(initial_mic_mode(&config), crate::tui::MicMode::Auto);
+    assert!(initial_barge_on(&config));
+    let mut voiced = OratorConfig::default();
+    voiced.chat.voice = "off".to_string();
+    voiced.chat.text = "short".to_string();
+    voiced.chat.mic = "ptt".to_string();
+    voiced.chat.barge = false;
+    assert_eq!(initial_voice_mode(&voiced), ChatVoiceMode::Off);
+    assert_eq!(initial_text_mode(&voiced), ChatTextMode::Short);
+    assert_eq!(initial_mic_mode(&voiced), crate::tui::MicMode::PushToTalk);
+    assert!(!initial_barge_on(&voiced));
+    let mut garbage = OratorConfig::default();
+    garbage.chat.voice = "loud".to_string();
+    garbage.chat.text = "long".to_string();
+    garbage.chat.mic = "side".to_string();
+    assert_eq!(initial_voice_mode(&garbage), ChatVoiceMode::Short);
+    assert_eq!(initial_text_mode(&garbage), ChatTextMode::Full);
+    assert_eq!(initial_mic_mode(&garbage), crate::tui::MicMode::Auto);
+}
+
+/// Voice-barge cut rule, pinned exactly as the chat loop applies it:
+/// a live turn, barge enabled, gate quiet (endpointed), and utterance
+/// sustained past the `turn.barge_in_ms` bound cuts; anything else
+/// holds. The four inputs are the loop's own terms; the table below
+/// must match the loop term-for-term.
+#[test]
+fn voice_barge_needs_hot_sustained_speech() {
+    use crate::chat::{should_cut_for_barge, BargeCutInput};
+    // Mirror of the loop's cut predicate over its four terms, one row
+    // per bit pattern: bit3 live turn, bit2 barge enabled, bit1 gate
+    // quiet, bit0 sustained past the bound.
+    let mut fired = 0;
+    for row in 0..16u8 {
+        let input = BargeCutInput {
+            turn_live: row & 0b1000 != 0,
+            barge_on: row & 0b0100 != 0,
+            gate_quiet: row & 0b0010 != 0,
+            sustained_past_bound: row & 0b0001 != 0,
+        };
+        let got = should_cut_for_barge(&input);
+        let want = row == 0b1111;
+        assert_eq!(got, want, "terms agree on all 16 rows");
+        fired += usize::from(got);
+    }
+    assert_eq!(
+        fired, 1,
+        "exactly one row cuts: live, enabled, quiet, sustained"
+    );
+}
+
+/// Composition grid: each arm flips independently against realistic
+/// scripted states. Brief blips under the bound hold; an open gate
+/// (mid-word) holds; all-set cuts; barge off or no turn always
+/// holds. The bound is the shipped `turn.barge_in_ms` leaf, never a
+/// copy.
+#[test]
+fn barge_composition_grid_cuts_only_the_user_interruption() {
+    use crate::chat::{should_cut_for_barge, BargeCutInput};
+    let bound = u64::from(orator_core::TurnConfig::default().barge_in_ms);
+    let cut = |sustained_ms: u64, gate_quiet: bool, barge_on: bool, turn_live: bool| {
+        should_cut_for_barge(&BargeCutInput {
+            turn_live,
+            barge_on,
+            gate_quiet,
+            sustained_past_bound: sustained_ms >= bound,
+        })
+    };
+    // Clean user speech, brief blip under the bound: hold.
+    assert!(!cut(60, true, true, true));
+    // Long utterance, gate still open (mid-word): hold.
+    assert!(!cut(900, false, true, true));
+    // Sustained speech, endpointed: cut.
+    assert!(cut(240, true, true, true));
+    // Barge off always sheds instead of cutting.
+    assert!(!cut(900, true, false, true));
+    // No live turn: an endpoint starts a turn, never cuts one.
+    assert!(!cut(900, true, true, false));
+    // Boundary: exactly at the bound cuts, one ms under holds.
+    assert!(cut(bound, true, true, true));
+    assert!(!cut(bound - 1, true, true, true));
+}
+
+/// Sustained tracker (M5): per-poll continuity composed from the
+/// shared turn driver — the loop's only temporal home. Continuous
+/// hot-buffered polls latch at the bound and stay latched through
+/// the endpoint; any cold, PTT-cold, or non-growing poll resets the
+/// run; emptying the buffer clears the latch (take/shed ends the
+/// span). Frame quantum is the 20 ms analysis frame.
+#[test]
+fn sustain_latches_continuous_speech_and_clears_on_empty() {
+    use crate::chat::BargeSustain;
+    let mut tracker = BargeSustain::new(&orator_core::OratorConfig::default());
+    // 7 hot growing polls (140 ms): not yet.
+    for index in 0..7 {
+        assert!(
+            !tracker.poll(true, (index + 1) * 320, false, 20),
+            "below bound holds"
+        );
+    }
+    // 8th hot growing poll (160 ms): latched.
+    assert!(
+        tracker.poll(true, 8 * 320, false, 20),
+        "at bound latches"
+    );
+    // Endpoint polls (cold): the latch survives the pause...
+    assert!(
+        tracker.poll(false, 8 * 320, false, 20),
+        "latch survives the endpoint"
+    );
+    // ...until the buffer empties (commit/shed ends the span).
+    assert!(
+        !tracker.poll(false, 0, false, 20),
+        "empty buffer clears the latch"
+    );
+}
+
+/// Pause-split speech never latches: heat on both sides of a pause
+/// restarts the run instead of accumulating across it.
+#[test]
+fn sustain_ignores_pause_split_speech() {
+    use crate::chat::BargeSustain;
+    let mut tracker = BargeSustain::new(&orator_core::OratorConfig::default());
+    for index in 0..5 {
+        assert!(
+            !tracker.poll(true, (index + 1) * 320, false, 20),
+            "first span stays below bound"
+        );
+    }
+    assert!(!tracker.poll(false, 1600, false, 20), "pause resets");
+    for index in 0..5 {
+        assert!(
+            !tracker.poll(true, 1600 + (index + 1) * 320, false, 20),
+            "second span restarts from zero"
+        );
+    }
+}
+
+/// Buffered growth is the speech vote: a hot gate with no growth
+/// (refused capture) never advances the run, and PTT-cold polls
+/// reset it.
+#[test]
+fn sustain_advances_only_on_buffered_user_speech() {
+    use crate::chat::BargeSustain;
+    let mut tracker = BargeSustain::new(&orator_core::OratorConfig::default());
+    for _ in 0..10 {
+        assert!(
+            !tracker.poll(true, 320, false, 20),
+            "hot-but-flat never advances"
+        );
+    }
+    let mut ptt = BargeSustain::new(&orator_core::OratorConfig::default());
+    for index in 0..10 {
+        assert!(
+            !ptt.poll(true, (index + 1) * 320, true, 20),
+            "PTT-cold never advances"
+        );
+    }
+}
+
+/// Shed-condition mirrors (binary loop `chat`). Each condition
+/// consults only liveness/cooling, buffer non-emptiness, and gate
+/// quiet — every buffered span sheds the same. Signatures mirror
+/// the loop exactly; if a condition gains an arm, this test's shape
+/// must change with it.
+#[test]
+fn shed_conditions_shed_unconditionally() {
+    // Turn-end voiced shed: `if end.voiced { mic.shed(); }`.
+    let turn_end_sheds = |voiced: bool| voiced;
+    // Reap/cut/quit shed: shed when the gate reads quiet.
+    let quiet_shed = |gate_quiet: bool| gate_quiet;
+    // Cooldown shed: cooling, non-empty, gate quiet.
+    let cooldown_sheds = |cooling: bool, empty: bool, speaking: bool| {
+        cooling && !empty && !speaking
+    };
+    assert!(turn_end_sheds(true), "voiced turn-end sheds");
+    assert!(quiet_shed(true), "quiet reap sheds");
+    assert!(
+        cooldown_sheds(true, false, false),
+        "cooldown sheds a buffered turn"
+    );
+    assert!(!turn_end_sheds(false));
+    assert!(!quiet_shed(false));
+    assert!(!cooldown_sheds(false, false, false));
+    assert!(!cooldown_sheds(true, true, false));
+    assert!(!cooldown_sheds(true, false, true));
+}
+
+/// Cut-preservation golden: the cut turn's transcribed words plus
+/// the interrupting utterance's transcription merge into exactly
+/// the concatenation — verbatim on both sides, one space between.
+/// No rewording, no drop, no duplication.
+#[test]
+fn preserved_and_fresh_transcripts_merge_verbatim() {
+    use crate::chat::merge_preserved_question;
+    assert_eq!(
+        merge_preserved_question(Some("book a flight to berlin"), "uh never mind make it a train"),
+        "book a flight to berlin uh never mind make it a train",
+    );
+    // No preserved text: the fresh transcript stands alone.
+    assert_eq!(
+        merge_preserved_question(None, "hello there"),
+        "hello there",
+    );
+    // Empty preserved text: same as none (never a leading space).
+    assert_eq!(merge_preserved_question(Some(""), "hello there"), "hello there");
+    assert_eq!(merge_preserved_question(Some("   "), "hello there"), "hello there");
+}
+
+/// Daemon-leg ASR identity: the shared voice server path serves the
+/// configured `s2s` model over the audio-server protocol — never a
+/// compiled-in tag. The loop logs this for daemon-served turns; the
+/// local leg keeps the role-walk label from `asr_serving`.
+#[test]
+fn daemon_leg_serving_names_the_configured_voice_model() {
+    use crate::chat::daemon_asr_serving;
+    let mut config = orator_core::OratorConfig::default();
+    config.s2s.model = "custom-voice-model".to_string();
+    assert_eq!(
+        daemon_asr_serving(&config),
+        (
+            "custom-voice-model".to_string(),
+            "audio-server".to_string()
+        ),
     );
 }

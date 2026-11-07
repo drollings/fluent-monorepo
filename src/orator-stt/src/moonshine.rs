@@ -22,7 +22,10 @@ use std::sync::Arc;
 
 /// Lazy moonshine backend. First call pays the weight load; later
 /// calls reuse the shared model. Model changes drop the handle so
-/// the next call reloads.
+/// the next call reloads. GPU means the ggml ROCm backend — the crate
+/// must be built with the `rocm` feature or the load errors naming
+/// the rebuild (the default build is CPU-only and `Backend::Rocm` has
+/// no HIP code to dispatch to).
 pub struct MoonshineBackend {
     model_path: PathBuf,
     gpu: bool,
@@ -70,6 +73,12 @@ impl MoonshineBackend {
         };
         if gpu {
             orator_core::gpu::require_gpu("moonshine").map_err(SttError::Unavailable)?;
+            if !transcribe_cpp::backend_available(transcribe_cpp::Backend::Rocm) {
+                return Err(SttError::Unavailable(
+                    "moonshine ROCm backend is not in this build (rebuild orator-stt with --features orator-stt/rocm on a ROCm machine); CPU stays available with stt.gpu = false"
+                        .to_string(),
+                ));
+            }
         }
         if !model_path.exists() {
             return Err(SttError::Unavailable(format!(

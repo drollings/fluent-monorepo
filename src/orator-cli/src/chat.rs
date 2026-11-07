@@ -72,8 +72,8 @@ pub enum ChatSlash {
     /// Switch text output (`/text short|full`).
     Text(ChatTextMode),
     /// Switch voice barge-in (`/barge on|off`, default on): talking
-    /// over a reply cuts the live turn once echo cancellation serves
-    /// the capture path.
+    /// over a reply cuts the live turn once the VAD span sustains
+    /// past the configured bound.
     Barge(bool),
 }
 
@@ -173,6 +173,38 @@ pub fn display_for_text(reply: &str, mode: ChatTextMode) -> Vec<String> {
     }
 }
 
+/// Chat session starts from the `chat.*` leaves: valid spellings map
+/// to their modes, anything else falls back to the previous hardcoded
+/// starts (short voice, full text, auto mic, barge on). The loop names
+/// the bad value when it falls back, so config garbage is loud at the
+/// session start instead of refusing the session or voicing silently.
+#[must_use]
+pub fn initial_voice_mode(config: &orator_core::OratorConfig) -> ChatVoiceMode {
+    parse_voice_mode(config.chat.voice.trim()).unwrap_or_default()
+}
+
+/// See [`initial_voice_mode`]: text starts, same fallback rule.
+#[must_use]
+pub fn initial_text_mode(config: &orator_core::OratorConfig) -> ChatTextMode {
+    parse_text_mode(config.chat.text.trim()).unwrap_or_default()
+}
+
+/// See [`initial_voice_mode`]: mic starts, same fallback rule.
+#[must_use]
+pub fn initial_mic_mode(config: &orator_core::OratorConfig) -> MicMode {
+    match config.chat.mic.trim() {
+        "auto" => MicMode::Auto,
+        "ptt" => MicMode::PushToTalk,
+        _ => MicMode::default(),
+    }
+}
+
+/// See [`initial_voice_mode`]: barge-in starts straight off the leaf.
+#[must_use]
+pub fn initial_barge_on(config: &orator_core::OratorConfig) -> bool {
+    config.chat.barge
+}
+
 /// Model+backend label logged for one LLM turn: the chat role head
 /// over the daemon-first endpoint (head wins, `llm.model` leaf as
 /// fallback — defaults seed them equal).
@@ -187,7 +219,8 @@ pub fn llm_serving(config: &orator_core::OratorConfig) -> (String, String) {
 /// Model+backend label logged for one ASR turn: the locally served
 /// weights when present (whisper or moonshine through the unified
 /// role walk), else the first listed asr role entry with its
-/// declared backend.
+/// declared backend. This names the LOCAL leg only — daemon-served
+/// turns log [`daemon_asr_serving`] instead (see `transcribe_leg`).
 #[must_use]
 pub fn asr_serving(config: &orator_core::OratorConfig) -> (String, String) {
     if let Ok(found) = crate::fallback::resolve_local_asr(config) {
@@ -202,6 +235,15 @@ pub fn asr_serving(config: &orator_core::OratorConfig) -> (String, String) {
         .and_then(|spec| spec.primary_backend())
         .map_or_else(|| config.stt.backend.clone(), str::to_string);
     (model, backend)
+}
+
+/// Model+backend label logged for a daemon-served ASR turn: the
+/// configured voice model over the audio-server protocol. The daemon
+/// assures this tag before serving it, so the loop names the served
+/// model — never the local leg's fallback pick.
+#[must_use]
+pub fn daemon_asr_serving(config: &orator_core::OratorConfig) -> (String, String) {
+    (config.s2s.model.clone(), "audio-server".to_string())
 }
 
 /// Model+backend label logged for one TTS turn: the first listed tts
@@ -286,6 +328,109 @@ pub fn should_voice_now(state: VoiceNow) -> bool {
         && !state.mic_speaking
         && !state.utterance_buffered
         && !state.playout_live
+}
+
+/// One voice-barge decision, already resolved to plain terms: the
+/// loop computes each arm per poll (liveness, leaf, gate, utterance
+/// length vs the `turn.barge_in_ms` leaf) and the gate below stays a
+/// pure conjunction — no timers, no I/O, hermetic.
+#[allow(clippy::struct_excessive_bools)] // four independent gates; an enum would hide which leg blocks
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BargeCutInput {
+    /// A turn is currently running (only a live turn can be cut).
+    pub turn_live: bool,
+    /// The `chat.barge` leaf (off sheds mic input instead of cutting).
+    pub barge_on: bool,
+    /// The VAD gate closed over buffered speech (endpointed).
+    pub gate_quiet: bool,
+    /// Buffered speech sustained past the `turn.barge_in_ms` leaf.
+    pub sustained_past_bound: bool,
+}
+
+/// Voice-barge cut: speech present (confidence, VAD endpoint) AND
+/// sustained past the temporal bound (task-value, the same
+/// `turn.barge_in_ms` leaf the turn driver reads — the loop's
+/// endpoint model has no hops, so only the bound is shared, not the
+/// machine). Echo control lives in the OS audio path, so the gate
+/// trusts the VAD span: a brief blip is present but not sustained
+/// and holds; only continuous speech cuts.
+#[must_use]
+pub fn should_cut_for_barge(input: &BargeCutInput) -> bool {
+    input.turn_live && input.barge_on && input.gate_quiet && input.sustained_past_bound
+}
+
+/// Merge the cut turn's preserved words with the interrupting
+/// utterance's fresh transcription: verbatim prepend, one space
+/// between. Either side empty leaves the other standing alone
+/// (never a leading or doubled space); nothing is reworded, so
+/// the cut turn's words survive exactly as transcribed.
+#[must_use]
+pub fn merge_preserved_question(preserved: Option<&str>, transcribed: &str) -> String {
+    let Some(kept) = preserved.map(str::trim).filter(|kept| !kept.is_empty()) else {
+        return transcribed.to_string();
+    };
+    if transcribed.trim().is_empty() {
+        return kept.to_string();
+    }
+    format!("{kept} {}", transcribed.trim())
+}
+
+/// Per-poll sustained tracker: continuity composed from the shared
+/// turn driver — the loop's only temporal home (no chat-local
+/// cumulative counter). Each poll votes hot only when the gate is
+/// hot AND the buffer grew (buffered speech advances the run;
+/// refused capture and pauses never do). The latch holds
+/// a reached bound through the endpoint so the cut can fire on it,
+/// and clears when the buffer empties (take/shed ends the span).
+/// The driver owns the run and the `turn.barge_in_ms` bound; the
+/// loop owns only the latch, which carries no audio.
+pub struct BargeSustain {
+    driver: orator_turn::TurnDriver,
+    prev_len: usize,
+    latched: bool,
+}
+
+impl BargeSustain {
+    /// Tracker over the session config: the bound comes from the
+    /// `turn.barge_in_ms` leaf via the driver. Epoch and lexicon
+    /// are unused by the continuity path — the loop has no hops and
+    /// no STT words at this stage, so only the bound is shared.
+    #[must_use]
+    pub fn new(config: &orator_core::OratorConfig) -> Self {
+        Self {
+            driver: orator_turn::TurnDriver::with_config(
+                orator_core::Epoch(1),
+                "en",
+                &config.turn,
+            ),
+            prev_len: 0,
+            latched: false,
+        }
+    }
+
+    /// Feed one poll; returns whether sustained speech reached the
+    /// bound. `frame_ms` is the nominal analysis quantum (the loop
+    /// polls on roughly the 20 ms cadence).
+    pub fn poll(
+        &mut self,
+        speaking: bool,
+        utterance_len: usize,
+        ptt_cold: bool,
+        frame_ms: u64,
+    ) -> bool {
+        if utterance_len == 0 {
+            self.latched = false;
+        }
+        let grew = utterance_len > self.prev_len;
+        self.prev_len = utterance_len;
+        let outcome = self
+            .driver
+            .push_frame(speaking && grew, ptt_cold, frame_ms);
+        if outcome != orator_turn::BargeInOutcome::Ignored {
+            self.latched = true;
+        }
+        self.latched
+    }
 }
 
 /// One turn's inference path: the native interleaved session when it

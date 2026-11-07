@@ -47,6 +47,29 @@ fn has_render_node() -> bool {
     })
 }
 
+/// Whether an NVIDIA device node is visible to this process.
+///
+/// `device_present` also fires on AMD render nodes (ROCm); several
+/// backends only speak CUDA, so they need the narrower gate: requesting
+/// the CUDA execution provider without NVIDIA hardware can never
+/// succeed, and failing actionably beats a doomed probe.
+#[must_use]
+pub fn nvidia_present() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        false
+    }
+    #[cfg(target_os = "windows")]
+    {
+        false
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        std::path::Path::new("/dev/nvidia0").exists()
+            || std::path::Path::new("/dev/nvidiactl").exists()
+    }
+}
+
 /// Require a visible GPU device for `kind` (`whisper`, `kokoro`,
 /// `llama-server`): `Ok` when present, a named `Err` otherwise. The
 /// caller maps this into its own error taxonomy.

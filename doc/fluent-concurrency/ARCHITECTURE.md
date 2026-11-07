@@ -18,7 +18,20 @@
 | `queue` | `PriorityQueue`, `BoundedPriorityQueue` | `src/fluent-concurrency/src/queue.rs` |
 | `stream` | `StreamAbort` sticky cancellation | `src/fluent-concurrency/src/stream.rs` |
 
-## Load-bearing invariants
+## Runtime-lifetime and HTTP-client ownership
+
+**A pooled resource must never outlive the runtime that created it.** This is
+the workspace's most expensive recurring async hazard: a connection handed
+back to a client's pool by work spawned on a runtime that is then dropped
+leaves the connection stranded with a waker whose runtime no longer exists.
+The next caller that checks it out parks forever — no error, no CPU, no
+recovery, bounded only by that client's timeout.
+
+Rules:
+
+- Never bridge on a runtime built for a single call.
+
+- Tests must not share a pooled `reqwest::Client` across `#[tokio::test]` runtimes.
 
 - `#![forbid(unsafe_code)]`; `autotests = false` with `#[path]`-wired
   suites plus explicit `[[test]]` targets (`audit_h5`, `pool_paths`).

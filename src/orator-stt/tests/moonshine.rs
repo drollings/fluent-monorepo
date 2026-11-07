@@ -34,6 +34,25 @@ fn gpu_without_a_device_refuses_actionably() {
 }
 
 #[test]
+fn gpu_without_rocm_build_names_the_rebuild() {
+    use fluent_concurrency::stream::StreamAbort;
+    if !orator_core::gpu::device_present() {
+        eprintln!("SKIP rocm-build-check: no GPU device on this machine");
+        return;
+    }
+    let backend = MoonshineBackend::new("/nonexistent/moonshine.gguf").with_gpu();
+    let error = backend
+        .decode_blocking(&[0.0; 1600], &StreamAbort::new())
+        .expect_err("gpu opt-in must resolve before any weights load");
+    // Default (CPU-only) builds name the rocm rebuild; a rocm build on
+    // a ROCm box sails past this check to the missing-file refusal.
+    #[cfg(feature = "rocm")]
+    assert!(error.to_string().contains("missing"), "{error:?}");
+    #[cfg(not(feature = "rocm"))]
+    assert!(error.to_string().contains("rocm"), "{error:?}");
+}
+
+#[test]
 fn backend_reports_its_load_state() {
     let backend = MoonshineBackend::new("/nonexistent/moonshine.gguf");
     assert!(!backend.is_loaded(), "lazy until first decode");

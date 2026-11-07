@@ -3,8 +3,8 @@
 use fluent_wvr::FieldAccess;
 
 use crate::config::{
-    AudioConfig, DaemonConfig, LlmEndpointConfig, OratorConfig, S2sConfig, SttConfig, TtsConfig,
-    TurnConfig,
+    AudioConfig, ChatConfig, DaemonConfig, LlmEndpointConfig, OratorConfig, S2sConfig, SttConfig,
+    TtsConfig, TurnConfig,
 };
 
 #[test]
@@ -293,6 +293,7 @@ fn defaults_match_the_documented_values() {
     assert!(!stt.gpu);
     assert!(!llm.gpu);
     assert!(!tts.gpu);
+    assert!(!s2s.gpu);
 
     let turn = TurnConfig::default();
     assert_eq!(turn.hold_min_ms, 300);
@@ -305,6 +306,38 @@ fn defaults_match_the_documented_values() {
     assert!(daemon.ws_token.is_empty());
     // The admission bound ships calibrated, not open-ended.
     assert_eq!(daemon.admission_max, 2);
+
+    // Chat output defaults: concise voice, full text, auto mic,
+    // barge-in on — the previous hardcoded session starts.
+    let chat = ChatConfig::default();
+    assert_eq!(chat.voice, "short");
+    assert_eq!(chat.text, "full");
+    assert_eq!(chat.mic, "auto");
+    assert!(chat.barge);
+}
+
+/// Chat leaves round-trip by name and old files without the section
+/// load today's session starts.
+#[test]
+fn chat_leaves_round_trip_and_old_files_stay_session_identical() {
+    let mut chat = ChatConfig::default();
+    chat.set_field("voice", "full").expect("valid set");
+    assert_eq!(chat.get_field("voice").expect("readable"), "full");
+    chat.set_field("text", "short").expect("valid set");
+    assert_eq!(chat.get_field("text").expect("readable"), "short");
+    chat.set_field("mic", "ptt").expect("valid set");
+    assert_eq!(chat.get_field("mic").expect("readable"), "ptt");
+    chat.set_field("barge", "false").expect("valid set");
+    assert_eq!(chat.get_field("barge").expect("readable"), "false");
+    chat.set_field("voice", "off").expect("off parses");
+    assert!(chat.field_names().contains(&"barge"));
+    // A file written before the section existed loads today's starts.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("config.json");
+    std::fs::write(&path, r#"{"tts": {"backend": "kokoro", "voice": "brass"}}"#)
+        .expect("write fixture");
+    let loaded: OratorConfig = common_core::config::load_json(&path).expect("old schema loads");
+    assert_eq!(loaded.chat, ChatConfig::default());
 }
 
 #[test]
@@ -1562,7 +1595,7 @@ fn describe_pins_the_whole_tree_schema() {
     // Exact flattened surface (static leaves first, then sections).
     let mut expected = vec!["gguf_dir".to_string(), "default".to_string()];
     for (section, leaves) in [
-        ("audio", ["backend", "mic", "aec"].as_slice()),
+        ("audio", ["backend", "mic"].as_slice()),
         ("stt", ["backend", "model", "language", "gpu"].as_slice()),
         (
             "llm",
@@ -1594,6 +1627,7 @@ fn describe_pins_the_whole_tree_schema() {
                 "max_tokens",
                 "max_audio_samples",
                 "auto_boot",
+                "gpu",
             ]
             .as_slice(),
         ),
@@ -1601,6 +1635,7 @@ fn describe_pins_the_whole_tree_schema() {
             "turn",
             ["hold_min_ms", "hold_max_ms", "barge_in_ms"].as_slice(),
         ),
+        ("chat", ["voice", "text", "mic", "barge"].as_slice()),
         (
             "daemon",
             [
@@ -1627,7 +1662,7 @@ fn describe_pins_the_whole_tree_schema() {
     let mut keys: Vec<&str> = properties.keys().map(String::as_str).collect();
     keys.sort_unstable();
     let mut want: Vec<&str> = expected.iter().map(String::as_str).collect();
-    want.extend(["audio", "stt", "llm", "tts", "s2s", "turn", "daemon"]);
+    want.extend(["audio", "stt", "llm", "tts", "s2s", "turn", "chat", "daemon"]);
     want.sort_unstable();
     assert_eq!(keys, want);
     assert!(
@@ -1639,7 +1674,7 @@ fn describe_pins_the_whole_tree_schema() {
         "roles stay out of the schema"
     );
     // Sections nest with the flatten marker; constraints pin exactly.
-    for section in ["audio", "stt", "llm", "tts", "s2s", "turn", "daemon"] {
+    for section in ["audio", "stt", "llm", "tts", "s2s", "turn", "chat", "daemon"] {
         assert_eq!(
             properties[section].get("x-flatten"),
             Some(&serde_json::Value::Bool(true)),

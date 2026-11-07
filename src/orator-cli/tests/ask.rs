@@ -87,7 +87,10 @@ fn ask_verification_maps_size_and_hash_outcomes_to_exact_refusals() {
 
     std::fs::remove_file(&path).expect("remove fixture");
     let error = verify_pinned_ask_weights(&entry, &path, "m").expect_err("missing refuses");
-    assert!(error.starts_with("orator: weights for model m refused: "), "{error}");
+    assert!(
+        error.starts_with("orator: weights for model m refused: "),
+        "{error}"
+    );
 }
 
 #[test]

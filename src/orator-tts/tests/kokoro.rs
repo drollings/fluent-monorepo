@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use fluent_wvr::FieldAccess;
 
-use crate::kokoro::{trim_silence, uniform_marks, KokoroBackend, KOKORO_SAMPLE_RATE};
+use crate::kokoro::{ort_provider_override, trim_silence, uniform_marks, KokoroBackend, KOKORO_SAMPLE_RATE};
 
 #[test]
 fn default_paths_honor_env_then_managed_files() {
@@ -45,6 +45,22 @@ fn trim_keeps_a_guard_and_never_clips_voice() {
     assert!(trimmed.len() < samples.len());
     assert!(trimmed.len() >= 500);
     assert!(trimmed.contains(&0.5));
+}
+
+#[test]
+fn ort_provider_override_pins_cuda_only_where_nvidia_serves() {
+    // Explicit opt-in on NVIDIA hardware pins CUDA.
+    assert_eq!(ort_provider_override(true, true, false), Some("cuda"));
+    // A user-set KOKORO_ORT_PROVIDER always wins, even for the opt-in.
+    assert_eq!(ort_provider_override(true, true, true), None);
+    assert_eq!(ort_provider_override(false, false, true), None);
+    // Without the opt-in the dependency default is left alone — the
+    // CPU path never touches provider selection.
+    assert_eq!(ort_provider_override(false, true, false), None);
+    assert_eq!(ort_provider_override(false, false, false), None);
+    // Explicit opt-in without NVIDIA hardware pins nothing here — the
+    // caller errors actionably before any provider is set.
+    assert_eq!(ort_provider_override(true, false, false), None);
 }
 
 #[test]
@@ -296,6 +312,30 @@ fn cpu_path_never_touches_the_provider_env() {
         prior,
         "CPU synth leaves provider selection alone"
     );
+}
+
+#[test]
+fn gpu_opt_in_without_nvidia_fails_actionably() {
+    if !orator_core::gpu::device_present() || orator_core::gpu::nvidia_present() {
+        eprintln!("SKIP amd-gpu-refusal: needs a visible non-NVIDIA GPU");
+        return;
+    }
+    let backend = KokoroBackend::new(
+        PathBuf::from("/nonexistent-orator/kokoro.onnx"),
+        PathBuf::from("/nonexistent-orator/voices"),
+        "af_heart",
+    )
+    .with_gpu();
+    let error = backend
+        .synth_blocking("hello")
+        .expect_err("AMD-only GPU opt-in must fail, never silently CPU");
+    assert!(
+        matches!(error, orator_core::TtsError::Unavailable(_)),
+        "refusal is unavailable: {error:?}"
+    );
+    let text = error.to_string();
+    assert!(text.contains("AMD"), "names the hardware gap: {text}");
+    assert!(text.contains("gpu"), "names the remedy leaf: {text}");
 }
 
 #[test]

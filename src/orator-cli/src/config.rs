@@ -93,6 +93,7 @@ pub fn config_keys() -> Vec<String> {
         ("tts", OratorConfig::default().tts.field_names()),
         ("s2s", OratorConfig::default().s2s.field_names()),
         ("turn", OratorConfig::default().turn.field_names()),
+        ("chat", OratorConfig::default().chat.field_names()),
         ("daemon", OratorConfig::default().daemon.field_names()),
     ] {
         for name in names {
@@ -161,8 +162,10 @@ pub fn config_get(config: &OratorConfig, key: &str) -> Result<String, String> {
         // M7-S4: s2s reads through the root nested handle (same leaf
         // error, same wrap — the round-trip suite pins it).
         "s2s" => config.get_field(key).map_err(|error| error.to_string()),
-        // M7-S6: audio/turn rode along for consistency (see get).
+        // M7-S6: turn + chat read through the root nested handle (same
+        // leaf error, same wrap — the round-trip suites pin them).
         "turn" => config.get_field(key).map_err(|error| error.to_string()),
+        "chat" => config.get_field(key).map_err(|error| error.to_string()),
         // M7-S3: daemon reads through the root nested handle (same
         // leaf error, same wrap — the round-trip suite pins it).
         "daemon" => config.get_field(key).map_err(|error| error.to_string()),
@@ -246,8 +249,11 @@ pub fn config_set(config: &mut OratorConfig, key: &str, value: &str) -> Result<(
         "s2s" => config
             .set_field(key, value)
             .map_err(|error| error.to_string()),
-        // M7-S6: audio/turn rode along for consistency (see get).
+        // M7-S6: turn + chat write through the root nested handle.
         "turn" => config
+            .set_field(key, value)
+            .map_err(|error| error.to_string()),
+        "chat" => config
             .set_field(key, value)
             .map_err(|error| error.to_string()),
         // M7-S3: daemon writes through the root nested handle (same

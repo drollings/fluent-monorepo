@@ -206,7 +206,12 @@ impl CpalBackend {
         channels: usize,
         out: &mut Vec<f32>,
     ) -> usize {
-        common_core::pcm::extend_mono_from_interleaved(samples.iter().copied(), channels, convert, out)
+        common_core::pcm::extend_mono_from_interleaved(
+            samples.iter().copied(),
+            channels,
+            convert,
+            out,
+        )
     }
 }
 

@@ -87,6 +87,28 @@ fn dotted_keys_round_trip_through_the_schema() {
     assert!(config_keys().contains(&"s2s.model".to_string()));
 }
 
+/// Chat leaves round-trip through the schema: the session starts are
+/// file-settable like every other leaf.
+#[test]
+fn chat_keys_round_trip_through_the_schema() {
+    let mut config = OratorConfig::default();
+    for (key, value) in [
+        ("chat.voice", "full"),
+        ("chat.text", "short"),
+        ("chat.mic", "ptt"),
+        ("chat.barge", "false"),
+    ] {
+        config_set(&mut config, key, value).expect("valid set");
+        assert_eq!(config_get(&config, key).expect("readable"), value);
+        assert!(
+            config_keys().contains(&key.to_string()),
+            "{key} is advertised"
+        );
+    }
+    config_set(&mut config, "chat.voice", "off").expect("off parses");
+    assert_eq!(config_get(&config, "chat.voice").expect("readable"), "off");
+}
+
 #[test]
 fn unknown_keys_and_out_of_band_values_fail_actionably() {
     let mut config = OratorConfig::default();
@@ -371,7 +393,7 @@ fn config_keys_pins_the_advertised_surface() {
         "roles".to_string(),
     ];
     for (section, leaves) in [
-        ("audio", ["backend", "mic", "aec"].as_slice()),
+        ("audio", ["backend", "mic"].as_slice()),
         ("stt", ["backend", "model", "language", "gpu"].as_slice()),
         (
             "llm",
@@ -403,6 +425,7 @@ fn config_keys_pins_the_advertised_surface() {
                 "max_tokens",
                 "max_audio_samples",
                 "auto_boot",
+                "gpu",
             ]
             .as_slice(),
         ),
@@ -410,6 +433,7 @@ fn config_keys_pins_the_advertised_surface() {
             "turn",
             ["hold_min_ms", "hold_max_ms", "barge_in_ms"].as_slice(),
         ),
+        ("chat", ["voice", "text", "mic", "barge"].as_slice()),
         (
             "daemon",
             [

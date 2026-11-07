@@ -715,6 +715,66 @@ fn transcribe_dial_falls_back_to_roles_walk() {
     }
 }
 
+/// Dead daemon, leg-aware: the dial reports which leg served, so log
+/// lines name what actually decoded. Same hermetic rig as above —
+/// no socket, nothing servable — lands on the local leg with the
+/// roles-walk error.
+#[test]
+fn transcribe_dial_leg_reports_the_local_leg_on_fallback() {
+    use crate::fallback::{transcribe_dial_leg, DialLeg};
+    use crate::socket::Transport;
+    let _guard = common_core::sync::lock(&ENV_LOCK);
+    let prior_runtime = std::env::var_os("XDG_RUNTIME_DIR");
+    let runtime = tempfile::tempdir().expect("tempdir");
+    std::env::set_var("XDG_RUNTIME_DIR", runtime.path());
+    let base = orator_core::OratorConfig::default();
+    let config = orator_core::OratorConfig {
+        gguf_dir: runtime.path().to_string_lossy().into_owned(),
+        ..base
+    };
+    let (outcome, leg) = transcribe_dial_leg(
+        &[0.0; 3200],
+        Transport::Socket,
+        &StreamAbort::new(),
+        &config,
+    );
+    let error = outcome.expect_err("nothing servable");
+    assert_eq!(leg, DialLeg::Local, "fallback ran");
+    assert!(
+        error.contains("no local ASR weights serve ASR"),
+        "roles walk answered, not the daemon: {error}"
+    );
+    match prior_runtime {
+        Some(value) => std::env::set_var("XDG_RUNTIME_DIR", value),
+        None => std::env::remove_var("XDG_RUNTIME_DIR"),
+    }
+}
+
+/// Role-bypass notice: the pure decision behind the local-ASR log
+/// line. A head serving over a different leaf names the swap; the
+/// legacy leaf closing past skipped heads names the unservable role
+/// side; pure legacy with no role guidance stays silent.
+#[test]
+fn local_asr_serve_note_names_swaps_and_silent_legacy() {
+    use crate::fallback::local_asr_serve_note;
+    assert_eq!(
+        local_asr_serve_note("head-tag", "leaf-tag", &[]),
+        Some("orator: head-tag serves ASR locally instead of leaf-tag".to_string()),
+    );
+    assert_eq!(
+        local_asr_serve_note(
+            "leaf-tag",
+            "leaf-tag",
+            &["head-tag (no local audio-server backend)".to_string()]
+        ),
+        Some(
+            "orator: leaf-tag serves ASR locally (role side unservable: head-tag (no local audio-server backend))"
+                .to_string()
+        ),
+    );
+    assert_eq!(local_asr_serve_note("leaf-tag", "leaf-tag", &[]), None);
+}
+
 /// Dead daemon + empty model home: the say dial falls back to local
 /// kokoro and reports the missing weights.
 #[test]
