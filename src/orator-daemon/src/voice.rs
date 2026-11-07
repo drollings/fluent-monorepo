@@ -1159,7 +1159,7 @@ fn build_meeting_pipeline(meeting: &str) -> Result<(), String> {
         })
         .map_err(|error| error.to_string())?;
     let pipeline =
-        orator_diar::MeetingPipeline::new(store, meeting).map_err(|error| error.to_string())?;
+        orator_diary::MeetingPipeline::new(store, meeting).map_err(|error| error.to_string())?;
     if !pipeline.ready().contains(&"finalize_audio".to_string()) {
         return Err("meeting pipeline did not open at finalize_audio".to_string());
     }

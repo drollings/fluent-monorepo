@@ -16,7 +16,7 @@ orator-llm = { path = "../orator-llm" }
 orator-turn = { path = "../orator-turn" }
 orator-store = { path = "../orator-store" }
 orator-notes = { path = "../orator-notes" }
-orator-diar = { path = "../orator-diar" }
+orator-diary = { path = "../orator-diary" }
 orator-tools = { path = "../orator-tools" }
 fluent-db = { path = "../db" }
 base64 = { workspace = true }

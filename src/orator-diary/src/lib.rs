@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-//! orator-diar: Meeting diarization: segmentation, speaker embeddings, clustering, alignment, and naming.
+//! orator-diary: Meeting diarization: segmentation, speaker embeddings, clustering, alignment, and naming.
 
 pub mod align;
 pub mod cluster;

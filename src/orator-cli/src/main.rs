@@ -2030,7 +2030,7 @@ fn meeting(action: &str, id: &str, transport: Transport) -> ExitCode {
         }
         // Status/show read the live registry: same sessions the
         // daemon serves, no second store. Export needs the diarized
-        // transcript store (orator-diar over the event log) — not
+        // transcript store (orator-diary over the event log) — not
         // yet served over the socket, so it names the gap instead of
         // printing an empty file.
         "status" | "show" => {

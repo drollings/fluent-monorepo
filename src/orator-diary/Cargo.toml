@@ -1,5 +1,5 @@
 [package]
-name = "orator-diar"
+name = "orator-diary"
 version.workspace = true
 edition.workspace = true
 autotests = false

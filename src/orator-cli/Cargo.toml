@@ -33,7 +33,7 @@ tokio-tungstenite = { workspace = true }
 [dev-dependencies]
 libc = { workspace = true }
 orator-daemon = { path = "../orator-daemon" }
-orator-diar = { path = "../orator-diar" }
+orator-diary = { path = "../orator-diary" }
 orator-notes = { path = "../orator-notes" }
 orator-store = { path = "../orator-store" }
 async-trait = { workspace = true }

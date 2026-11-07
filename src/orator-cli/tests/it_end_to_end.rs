@@ -154,17 +154,17 @@ fn cascade_turn_flows_from_speech_to_store() {
         assert!(summary.contains("book a table for two"), "{summary}");
         let facts = orator_notes::append_fact("", "reservation at seven");
         assert!(facts.contains("reservation at seven"), "{facts}");
-        let segments = orator_diar::segment(Channel::Mic, 3200);
+        let segments = orator_diary::segment(Channel::Mic, 3200);
         assert!(!segments.is_empty(), "speech spans segments");
         let labels = vec![0usize; segments.len()];
         let mids: Vec<u64> = segments
             .iter()
             .map(|segment| u64::midpoint(segment.start_sample, segment.end_sample))
             .collect();
-        let attributed = orator_diar::align_words(&mids, &segments, &labels);
+        let attributed = orator_diary::align_words(&mids, &segments, &labels);
         assert_eq!(attributed.len(), segments.len());
         assert!(attributed.iter().all(|label| *label == 0));
-        assert_eq!(orator_diar::speaker_name(0), "Speaker 1");
+        assert_eq!(orator_diary::speaker_name(0), "Speaker 1");
 
         // Event store keeps the turn sequence.
         let log = orator_store::EventLog::in_memory().expect("memory log");
@@ -617,7 +617,7 @@ fn live_conversation_with_barge_in_completes_in_order() {
         // transcript, reply, barge, resumed reply, note, in order.
         let summary = orator_notes::roll_summary("", &transcript);
         assert!(summary.contains("book a table for two"), "{summary}");
-        let segments = orator_diar::segment(Channel::Mic, 3200);
+        let segments = orator_diary::segment(Channel::Mic, 3200);
         assert!(!segments.is_empty(), "speech spans segments");
         let log = orator_store::EventLog::in_memory().expect("memory log");
         log.append("s1", 0, "transcript", &transcript, 1)
