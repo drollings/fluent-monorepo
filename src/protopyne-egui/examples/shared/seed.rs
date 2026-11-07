@@ -42,8 +42,8 @@ pub fn frames_of(bars: &[Bar]) -> Result<Vec<(TimeframeKey, Vec<ChartRow>)>, Str
         (intraday, FoldEdges::CompleteOnly),
         (daily, FoldEdges::KeepPartial),
     ] {
-        let frames = fold_frames(bars, base, &group, edges)
-            .map_err(|e| format!("tally 1M series: {e}"))?;
+        let frames =
+            fold_frames(bars, base, &group, edges).map_err(|e| format!("tally 1M series: {e}"))?;
         for (timeframe, frame) in frames {
             let key =
                 key_of(timeframe).ok_or_else(|| format!("no toolbar slot for {timeframe:?}"))?;

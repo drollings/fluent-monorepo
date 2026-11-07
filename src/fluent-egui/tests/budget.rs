@@ -129,30 +129,75 @@ fn bloat_ledger_pins_source_files() {
     // Folding detection into `hittest.rs` would make a gesture-routing
     // question look like a readout question; folding the popup into `slot.rs`
     // would tie a chart-wide menu to the legend stack.
+    // `dialog.rs` earns its line by owning the staged dialog lifecycle
+    // (seeded drafts, per-field commit, cancel) apart from both the slot
+    // stack that stages settings and the chrome that frames them. Folding it
+    // into `slot.rs` would tie every future dialog to the legend stack, and
+    // folding the draft maps into `fields.rs` would make the schema reader
+    // own dialog lifetime.
+    // `icons.rs` earns its line by isolating the fingerprinted raster cache
+    // (injected renderer, bounded DashMap, insertion-ordered eviction) from
+    // both the theme whose fingerprint keys it and the painters that blit
+    // its bytes. Folding raster bytes into `paint.rs` would put a global
+    // cache behind headless geometry, and name-keyed statics are exactly
+    // the staleness hazard this replaces.
+    // `images.rs` earns its line by isolating URL-keyed image ingress
+    // (bounded pool, validated-bytes cache, in-flight coalescing,
+    // capability-gated transport) from both the feed waves that request
+    // images and the shells that hold the textures. Folding fetch into
+    // `feed.rs` would make the recompute perimeter own HTTP policy, and
+    // folding validation into `paint.rs` would put network bytes beside
+    // pixel math.
     // `fonts.rs` earns its line by isolating the fallback-chain policy
     // (bundled-primary inserts plus the optional system-provider composer)
     // from every pane that renders text. Folding it into `config.rs` would
     // make theme truth own font bytes, and inlining it per example would
     // fork the chain order the terminal depends on.
+    // `notice.rs` earns its line by isolating the bounded notice queue
+    // (deduped intake, per-notice aborts, owner-ticked expiry, stacked
+    // offsets) from both the feed waves that raise notices and the chrome
+    // that paints them. Folding it into `feed.rs` would make the recompute
+    // perimeter own display dwell policy, and folding the `Notice`
+    // component into `config.rs` would mix transient queue items with chart
+    // theme truth.
+    // `tokens.rs` earns its line by isolating the token-table vocabulary
+    // (mode, contrast, the closed role set) and its one-shot resolution from
+    // both the chart theme it overlaps and every painter that consumes the
+    // scheme. Folding the table into `config.rs` would merge the full M3
+    // role set into the chart enumerator the resolver and settings pane
+    // distinguish, and folding resolution into `paint.rs` would put table
+    // validation beside pixel math.
+    // `table.rs` earns its line by isolating the virtualized row window
+    // (column registry, sort tuple, sparse selection, culled rows) from
+    // both the candle viewport it mirrors and the domain tables that fill
+    // it. Folding the window into `viewport.rs` would drag price-scale
+    // geometry into row math, and folding selection into `slot.rs` would
+    // make card concerns own table state.
     assert_eq!(
         src_file_names(),
         vec![
             "annotations.rs",
             "config.rs",
             "context_menu.rs",
+            "dialog.rs",
             "error.rs",
             "feed.rs",
             "fields.rs",
             "fonts.rs",
             "hittest.rs",
+            "icons.rs",
+            "images.rs",
             "interaction.rs",
             "lib.rs",
             "modal.rs",
+            "notice.rs",
             "paint.rs",
             "plan.rs",
             "replay.rs",
             "slot.rs",
             "style.rs",
+            "table.rs",
+            "tokens.rs",
             "view.rs",
             "viewport.rs",
             "wheel.rs",
@@ -232,6 +277,7 @@ fn bloat_ledger_pins_default_feature_deps() {
         vec![
             "bon",
             "common-core",
+            "dashmap",
             "eframe",
             "egui",
             "fluent-concurrency",

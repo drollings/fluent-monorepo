@@ -1013,6 +1013,10 @@ pub struct ChartWorkspace {
     bookmark_anchor: Option<egui::Rect>,
     /// See [`symbol_anchor`](Self::symbol_anchor).
     jump_anchor: Option<egui::Rect>,
+    /// Frame rect the open settings pane painted last frame, for wheel
+    /// routing: a wheel over it scrolls the pane, never the canvas below.
+    /// `None` while no settings pane is open.
+    settings_rect: Option<egui::Rect>,
     /// Whether the Jump To Time popup (menu-bar magnifier) is open.
     jump_open: bool,
     /// Month the Jump calendar is showing; picking a day sets the jump
@@ -1339,6 +1343,7 @@ impl ChartWorkspace {
             indicator_anchor: None,
             bookmark_anchor: None,
             jump_anchor: None,
+            settings_rect: None,
             jump_open: false,
             jump_calendar: CalendarState::default(),
             jump_error: None,
@@ -4101,7 +4106,8 @@ impl ChartWorkspace {
         // the symbol/period fields are redundant with the chart settings,
         // so the slot UI hides them instead of offering a second copy.
         if slot_id.starts_with("pine:") {
-            config_fields.retain(|field| field.name != "chart_symbol" && field.name != "chart_period");
+            config_fields
+                .retain(|field| field.name != "chart_symbol" && field.name != "chart_period");
         }
         if let Some(source) = config_fields
             .iter_mut()
@@ -4504,7 +4510,9 @@ impl ChartWorkspace {
         {
             let mut stamped = pine_config.clone();
             self.active_symbol().clone_into(&mut stamped.chart_symbol);
-            self.timeframe.pine_period().clone_into(&mut stamped.chart_period);
+            self.timeframe
+                .pine_period()
+                .clone_into(&mut stamped.chart_period);
             // The chart window always evaluates: raise a stored cap below
             // the loaded rows up to the window (a larger stored cap stands).
             // The engine refuses past `max_bars` instead of truncating, so
@@ -4513,9 +4521,7 @@ impl ChartWorkspace {
             // itself stays bounded by the trailing keep, so this never
             // opens unbounded runs — it only stops the cap from fighting
             // the window the operator is looking at.
-            stamped.max_bars = stamped
-                .max_bars
-                .max(self.rows.len() as u64);
+            stamped.max_bars = stamped.max_bars.max(self.rows.len() as u64);
             return Ok(EvalConfig::Resolved(Box::new(stamped)));
         }
         Ok(EvalConfig::Stored(config))
@@ -5830,8 +5836,9 @@ impl ChartWorkspace {
     /// The wheel acts on the region under the pointer, decided once by
     /// [`WheelZones`] so no call site re-guesses it: the candle and oscillator
     /// plots zoom the shared time axis, each pane's right-hand price strip
-    /// zooms that pane's own price axis, and the floating indicator legend
-    /// scrolls instead of moving the chart. Holding <kbd>Ctrl</kbd> overrides
+    /// zooms that pane's own price axis, the floating indicator legend
+    /// scrolls instead of moving the chart, and an open settings pane
+    /// consumes the gesture for its own scrolled content. Holding <kbd>Ctrl</kbd> overrides
     /// the plot's time zoom with the price zoom, the one gesture a chart pane
     /// has always answered.
     ///
@@ -5864,7 +5871,7 @@ impl ChartWorkspace {
                 ui.input(|input| (input.smooth_scroll_delta, input.modifiers));
             if scroll.y != 0.0 {
                 if let Some(hover) = response.hover_pos() {
-                    let zones = WheelZones::new(
+                    let mut zones = WheelZones::new(
                         layouts
                             .iter()
                             .map(|layout| PaneZones {
@@ -5876,7 +5883,14 @@ impl ChartWorkspace {
                             .list_rect(layouts[PRICE_PANE_ZONE].plot.height())
                             .map(Into::into),
                     );
+                    if let Some(overlay) = self.settings_rect {
+                        zones = zones.with_overlay(overlay.into());
+                    }
                     match zones.route(hover.into()) {
+                        // An open settings pane scrolls under the pointer and
+                        // empty space answers nothing: both leave the chart
+                        // and the machine untouched.
+                        Some(WheelTarget::Overlay) | None => {}
                         // The legend scrolls under the pointer; the chart and
                         // the machine stay untouched.
                         Some(WheelTarget::List) => {
@@ -5919,7 +5933,6 @@ impl ChartWorkspace {
                                 anchor_y: hover.y - layouts[pane].plot.top(),
                             });
                         }
-                        None => {}
                     }
                 }
             }
@@ -6026,6 +6039,9 @@ impl ChartWorkspace {
                 &config_fields,
                 &style_fields,
             )?;
+            // The frame rect routes next frame's wheel: a wheel over the
+            // pane scrolls it instead of zooming the canvas below.
+            self.settings_rect = Some(outcome.rect);
             match outcome.commit {
                 SettingsCommit::Apply => {
                     self.commit_slot_settings(&id)?;
@@ -6040,6 +6056,8 @@ impl ChartWorkspace {
                 }
                 SettingsCommit::None => {}
             }
+        } else {
+            self.settings_rect = None;
         }
         Ok(())
     }

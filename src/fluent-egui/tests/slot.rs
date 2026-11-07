@@ -397,9 +397,19 @@ fn paint_stack_and_settings_modal_render_headlessly() {
             )
             .expect("the modal paints");
             assert_eq!(
-                outcome,
-                SettingsOutcome::default(),
-                "an untouched modal writes nothing and commits nothing"
+                outcome.edits,
+                FieldEdits::default(),
+                "an untouched modal writes nothing"
+            );
+            assert_eq!(
+                outcome.commit,
+                SettingsCommit::None,
+                "an untouched modal commits nothing"
+            );
+            assert!(
+                outcome.rect.is_positive(),
+                "the outcome carries the painted frame rect: {:?}",
+                outcome.rect
             );
         });
     }
@@ -1081,5 +1091,128 @@ fn the_eye_paints_the_post_toggle_state_in_the_handling_frame() {
     assert_eq!(
         clicked_solids, reference_solids,
         "the handling frame paints the new eye state, not the old one"
+    );
+}
+
+#[test]
+fn density_sets_card_height_and_floors_zones_at_the_touch_minimum() {
+    assert!(
+        (StackDensity::Comfortable.card_height() - STACK_CARD_HEIGHT).abs() < f32::EPSILON,
+        "the default density keeps today's card height"
+    );
+    assert!(
+        (StackDensity::Compact.card_height() - STACK_CARD_HEIGHT).abs() > 0.5,
+        "the compact density shortens the card"
+    );
+    for density in [StackDensity::Comfortable, StackDensity::Compact] {
+        assert!(
+            density.control_zone_size() + f32::EPSILON >= STACK_TOUCH_MIN_PX,
+            "{density:?} zones never shrink below the touch minimum"
+        );
+    }
+    assert!(
+        (StackDensity::Compact.control_zone_size() - STACK_TOUCH_MIN_PX).abs() < f32::EPSILON,
+        "the floor binds the compact density instead of shrinking its zones"
+    );
+}
+
+#[test]
+fn zones_hold_the_touch_minimum_and_priority_survives_both_densities() {
+    for density in [StackDensity::Comfortable, StackDensity::Compact] {
+        let (mut stack, _) = stacked();
+        stack.set_density(density);
+        assert_eq!(stack.density(), density, "the knob sticks");
+        for rect in stack.control_rects() {
+            for (name, zone) in [
+                ("eye", rect.eye),
+                ("bolt", rect.bolt),
+                ("close", rect.close),
+            ] {
+                assert!(
+                    zone.width() + f32::EPSILON >= STACK_TOUCH_MIN_PX
+                        && zone.height() + f32::EPSILON >= STACK_TOUCH_MIN_PX,
+                    "{density:?} {name} zone holds the minimum: {zone:?}"
+                );
+            }
+            let eye = (rect.eye.center().x, rect.eye.center().y);
+            assert_eq!(
+                stack.hit_test_controls(eye),
+                Some(SlotControlHit::Eye(rect.slot_id.clone())),
+                "{density:?} eye still wins"
+            );
+            let bolt = (rect.bolt.center().x, rect.bolt.center().y);
+            assert_eq!(
+                stack.hit_test_controls(bolt),
+                Some(SlotControlHit::Bolt(rect.slot_id.clone())),
+                "{density:?} bolt still wins"
+            );
+            let close = (rect.close.center().x, rect.close.center().y);
+            assert_eq!(
+                stack.hit_test_controls(close),
+                Some(SlotControlHit::Close(rect.slot_id.clone())),
+                "{density:?} close still wins"
+            );
+            let card = (rect.card.min.x + 1.0, rect.card.center().y);
+            assert_eq!(
+                stack.hit_test_controls(card),
+                Some(SlotControlHit::Card(rect.slot_id.clone())),
+                "{density:?} the card body still answers"
+            );
+        }
+    }
+}
+
+#[test]
+fn badge_dot_marks_staged_edits_and_never_renders_at_zero_depth() {
+    let (stack, _) = stacked();
+    let card = stack.control_rects()[0].card;
+    assert!(badge_dot(card, 0, 2).is_none(), "no staged edits, no badge");
+    let (center, radius) = badge_dot(card, 2, 2).expect("staged edits badge");
+    assert_eq!(
+        (center.x, center.y),
+        (card.min.x + 5.0, card.min.y + 5.0),
+        "the badge overlays the card corner: {center:?}"
+    );
+    assert!(
+        (radius - 3.5).abs() < f32::EPSILON,
+        "two plan nodes widen the dot: {radius}"
+    );
+    let (_, capped) = badge_dot(card, 1, 99).expect("many nodes badge");
+    assert!(
+        (capped - 5.0).abs() < f32::EPSILON,
+        "the dot caps instead of outgrowing the card: {capped}"
+    );
+}
+
+#[test]
+fn staged_edits_add_exactly_the_badge_shape() {
+    let theme = ThemeConfig::default();
+    let (mut stack, _) = stacked();
+    let ctx = egui::Context::default();
+    let (_, clean) = paint_frame(&ctx, egui::RawInput::default(), &mut stack, &theme);
+    stack.open_settings("integration_lite").expect("bolt opens");
+    stack
+        .set_staged_field("integration_lite", "length", "21")
+        .expect("a draft stages");
+    let (_, staged) = paint_frame(&ctx, egui::RawInput::default(), &mut stack, &theme);
+    assert_eq!(
+        staged,
+        clean + 1,
+        "the badge is one overlay shape, nothing else moves"
+    );
+}
+
+#[test]
+fn hovered_zone_paints_its_state_fill_behind_the_glyphs() {
+    let theme = ThemeConfig::default();
+    let (mut stack, _) = stacked();
+    let ctx = egui::Context::default();
+    let (_, clean) = paint_frame(&ctx, egui::RawInput::default(), &mut stack, &theme);
+    let eye = stack.control_rects()[0].eye.center();
+    let (_, hovered) = paint_frame(&ctx, hover_at(eye), &mut stack, &theme);
+    assert_eq!(
+        hovered,
+        clean + 1,
+        "hover adds exactly the zone fill behind the glyphs"
     );
 }

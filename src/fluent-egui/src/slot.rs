@@ -30,6 +30,7 @@ use crate::feed::PaneHandle;
 use crate::fields::{paint_tabbed_schema_fields_compact, FieldEdits, SchemaField, SettingsTab};
 use crate::paint::{
     eye_icon_geom, hex_bolt_icon_geom, paint_eye_icon, paint_hex_bolt_icon, resolve_color,
+    state_layer, ACTION_PILL_PX, HOVER_FRAC, MODAL_CORNER_PX, PRESS_FRAC,
 };
 use crate::plan::PanePlan;
 use crate::style::IndicatorStyle;
@@ -218,10 +219,50 @@ const STACK_CARD_HEIGHT: f32 = 32.0;
 const STACK_CARD_GAP: f32 = 3.0;
 /// Eye/bolt control square size.
 const STACK_CONTROL_SIZE: f32 = 16.0;
+/// Minimum control zone edge in pixels: density scaling never shrinks a hit
+/// zone below this, so the smallest density keeps full-size targets.
+const STACK_TOUCH_MIN_PX: f32 = 16.0;
 /// Inset of the controls from the card edges.
 const STACK_CONTROL_PAD: f32 = 3.0;
 /// Default stack origin (below the top bar, clear of the canvas edge).
 const STACK_ORIGIN: (f32, f32) = (8.0, 36.0);
+/// Tallest the settings editor region grows before it scrolls: the action
+/// row stays pinned below instead of riding the content out of view.
+const SETTINGS_SCROLL_MAX_PX: f32 = 280.0;
+
+/// How tightly the slot cards pack: the card height knob. Control zones stay
+/// floored at the touch minimum in both modes, so density shortens cards,
+/// never targets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum StackDensity {
+    /// Today's layout, byte for byte.
+    #[default]
+    Comfortable,
+    /// Shorter cards for dense stacks; zones keep full size.
+    Compact,
+}
+
+impl StackDensity {
+    /// Card height in pixels under this density.
+    #[must_use]
+    pub fn card_height(self) -> f32 {
+        match self {
+            Self::Comfortable => STACK_CARD_HEIGHT,
+            Self::Compact => 24.0,
+        }
+    }
+
+    /// Control zone edge in pixels: the density's raw size floored at the
+    /// touch minimum, so the compact density binds the floor.
+    #[must_use]
+    pub fn control_zone_size(self) -> f32 {
+        let raw = match self {
+            Self::Comfortable => STACK_CONTROL_SIZE,
+            Self::Compact => 12.0,
+        };
+        raw.max(STACK_TOUCH_MIN_PX)
+    }
+}
 
 /// The overlay stack: insertion-ordered slots with one shared origin.
 ///
@@ -237,6 +278,7 @@ pub struct HotSlotStack {
     slots: HashMap<String, HotSlot>,
     origin: (f32, f32),
     scroll_px: f32,
+    density: StackDensity,
 }
 
 impl HotSlotStack {
@@ -248,7 +290,19 @@ impl HotSlotStack {
             slots: HashMap::new(),
             origin: STACK_ORIGIN,
             scroll_px: 0.0,
+            density: StackDensity::default(),
         }
+    }
+
+    /// Card packing density.
+    #[must_use]
+    pub fn density(&self) -> StackDensity {
+        self.density
+    }
+
+    /// Set the card packing density; hit-test rects follow on the next query.
+    pub fn set_density(&mut self, density: StackDensity) {
+        self.density = density;
     }
 
     /// Stack origin (top-left of the first card).
@@ -277,7 +331,8 @@ impl HotSlotStack {
         }
         // Slot counts are single digits, so the `usize`-to-`f32` cast is
         // exact for every realistic stack.
-        (self.order.len() as f32 - 1.0) * (STACK_CARD_HEIGHT + STACK_CARD_GAP) + STACK_CARD_HEIGHT
+        (self.order.len() as f32 - 1.0) * (self.density.card_height() + STACK_CARD_GAP)
+            + self.density.card_height()
     }
 
     /// Scroll the card column by a wheel gesture, clamped so the list stops
@@ -718,36 +773,34 @@ impl HotSlotStack {
     /// Pointer zones for every slot, in stack order. This is the layout the
     /// painter draws and the hit-test reads — one computation, never two.
     /// Layout right-to-left: close (X) at the far right, bolt left of it,
-    /// eye left of the bolt; the title ends at the eye's left edge.
+    /// eye left of the bolt; the title ends at the eye's left edge. Card
+    /// height follows the density knob; control zones stay floored at the
+    /// touch minimum in both modes.
     #[must_use]
     pub fn control_rects(&self) -> Vec<SlotControlRect> {
+        let card_height = self.density.card_height();
+        let zone = self.density.control_zone_size();
         self.order
             .iter()
             .filter_map(|id| {
                 let card = egui::Rect::from_min_size(
                     egui::Pos2::new(self.origin.0, self.origin.1 + self.card_top(id)?),
-                    egui::Vec2::new(STACK_CARD_WIDTH, STACK_CARD_HEIGHT),
+                    egui::Vec2::new(STACK_CARD_WIDTH, card_height),
                 );
                 let close = egui::Rect::from_min_size(
                     egui::Pos2::new(
-                        card.max.x - STACK_CONTROL_PAD - STACK_CONTROL_SIZE,
-                        card.min.y + (STACK_CARD_HEIGHT - STACK_CONTROL_SIZE) / 2.0,
+                        card.max.x - STACK_CONTROL_PAD - zone,
+                        card.min.y + (card_height - zone) / 2.0,
                     ),
-                    egui::Vec2::splat(STACK_CONTROL_SIZE),
+                    egui::Vec2::splat(zone),
                 );
                 let bolt = egui::Rect::from_min_size(
-                    egui::Pos2::new(
-                        close.min.x - STACK_CONTROL_PAD - STACK_CONTROL_SIZE,
-                        close.min.y,
-                    ),
-                    egui::Vec2::splat(STACK_CONTROL_SIZE),
+                    egui::Pos2::new(close.min.x - STACK_CONTROL_PAD - zone, close.min.y),
+                    egui::Vec2::splat(zone),
                 );
                 let eye = egui::Rect::from_min_size(
-                    egui::Pos2::new(
-                        bolt.min.x - STACK_CONTROL_PAD - STACK_CONTROL_SIZE,
-                        bolt.min.y,
-                    ),
-                    egui::Vec2::splat(STACK_CONTROL_SIZE),
+                    egui::Pos2::new(bolt.min.x - STACK_CONTROL_PAD - zone, bolt.min.y),
+                    egui::Vec2::splat(zone),
                 );
                 Some(SlotControlRect {
                     slot_id: id.clone(),
@@ -791,7 +844,7 @@ impl HotSlotStack {
             .map(|index| {
                 // Slot counts are single digits, so the `usize`-to-`f32` cast is
                 // exact for every realistic stack.
-                index as f32 * (STACK_CARD_HEIGHT + STACK_CARD_GAP) - self.scroll_px
+                index as f32 * (self.density.card_height() + STACK_CARD_GAP) - self.scroll_px
             })
     }
 }
@@ -808,6 +861,34 @@ fn unknown_slot(id: &str) -> EguiError {
         what: id.to_owned(),
         reason: "unknown slot id".to_owned(),
     }
+}
+
+/// Hover/press fill for one control zone, painted behind the glyphs: a held
+/// press wins over a hover, untouched zones paint nothing.
+fn zone_fill(response: &egui::Response, ink: egui::Color32) -> Option<egui::Color32> {
+    if response.is_pointer_button_down_on() {
+        Some(state_layer(egui::Color32::TRANSPARENT, ink, PRESS_FRAC))
+    } else if response.hovered() {
+        Some(state_layer(egui::Color32::TRANSPARENT, ink, HOVER_FRAC))
+    } else {
+        None
+    }
+}
+
+/// Staged-edit badge geometry for one card: `None` when nothing is staged.
+/// The dot marks a draft that Apply would push through the slot's plan
+/// nodes, so its radius grows with the node count (capped to stay a corner
+/// overlay) while its presence alone marks the staged depth.
+fn badge_dot(
+    card: egui::Rect,
+    staged_depth: usize,
+    plan_nodes: usize,
+) -> Option<(egui::Pos2, f32)> {
+    if staged_depth == 0 {
+        return None;
+    }
+    let radius = 2.5 + (plan_nodes.min(5) as f32) * 0.5;
+    Some((egui::pos2(card.min.x + 5.0, card.min.y + 5.0), radius))
 }
 
 /// Seed a staged settings buffer from a live config: one string per declared
@@ -905,14 +986,26 @@ pub enum SettingsCommit {
     Ok,
 }
 
-/// One settings-pane frame: the edits the pass staged plus the action button
-/// the operator pressed, if any.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// One settings-pane frame: the edits the pass staged, the action button
+/// the operator pressed, if any, and the frame rect the pane painted.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SettingsOutcome {
     /// Field writes the editor accepted into the staged buffer.
     pub edits: FieldEdits,
     /// Action button pressed this frame, if any.
     pub commit: SettingsCommit,
+    /// Frame rect the pane painted this frame, for overlay hit-testing.
+    pub rect: egui::Rect,
+}
+
+impl Default for SettingsOutcome {
+    fn default() -> Self {
+        Self {
+            edits: FieldEdits::default(),
+            commit: SettingsCommit::None,
+            rect: egui::Rect::NOTHING,
+        }
+    }
 }
 
 /// Paint the overlay stack: one borderless compact card per slot (title plus
@@ -930,11 +1023,13 @@ pub fn paint_hot_slot_stack(
     theme: &ThemeConfig,
 ) -> Result<Vec<HotSlotAction>, EguiError> {
     let mut actions = Vec::new();
+    let chrome_ink = resolve_color(theme, "on_surface")?;
+    let accent = resolve_color(theme, "fast")?;
     for rect in stack.control_rects() {
         let slot_id = rect.slot_id.clone();
         // Snapshot title/readouts/visibility without holding the borrow across
         // the bolt-open loop below (which mutates every slot).
-        let (card_text, visible) = {
+        let (card_text, visible, staged_depth, plan_nodes) = {
             let Some(slot) = stack.slots.get(&slot_id) else {
                 continue;
             };
@@ -952,7 +1047,14 @@ pub fn paint_hot_slot_stack(
                 card_text.push('\n');
                 card_text.push_str(&live.join("  "));
             }
-            (card_text, slot.visible)
+            (
+                card_text,
+                slot.visible,
+                slot.pending
+                    .as_ref()
+                    .map_or(0, |pending| pending.config.len() + pending.style.len()),
+                slot.plan_nodes.len(),
+            )
         };
         let text_rect = egui::Rect::from_min_max(
             egui::Pos2::new(rect.card.min.x + STACK_CONTROL_PAD, rect.card.min.y + 2.0),
@@ -966,6 +1068,9 @@ pub fn paint_hot_slot_stack(
             egui::Label::new(card_text).wrap_mode(egui::TextWrapMode::Truncate),
         );
         let eye_response = ui.allocate_rect(rect.eye, egui::Sense::click());
+        if let Some(fill) = zone_fill(&eye_response, chrome_ink) {
+            ui.painter().rect_filled(rect.eye, 2.0, fill);
+        }
         if eye_response.clicked() {
             if let Some(slot) = stack.slots.get_mut(&slot_id) {
                 slot.visible = !slot.visible;
@@ -979,6 +1084,9 @@ pub fn paint_hot_slot_stack(
             paint_eye_icon(ui.painter(), &eye, "fast", theme)?;
         }
         let bolt_response = ui.allocate_rect(rect.bolt, egui::Sense::click());
+        if let Some(fill) = zone_fill(&bolt_response, chrome_ink) {
+            ui.painter().rect_filled(rect.bolt, 2.0, fill);
+        }
         if bolt_response.clicked() {
             for other in stack.slots.values_mut() {
                 let open = other.id == slot_id;
@@ -998,6 +1106,9 @@ pub fn paint_hot_slot_stack(
         // Painted as two crossing strokes in the theme grid ink so it reads as
         // chrome, never data; hovered state brightens via the response.
         let close_response = ui.allocate_rect(rect.close, egui::Sense::click());
+        if let Some(fill) = zone_fill(&close_response, chrome_ink) {
+            ui.painter().rect_filled(rect.close, 2.0, fill);
+        }
         if close_response.clicked() {
             actions.push(HotSlotAction::Removed(slot_id.clone()));
         }
@@ -1010,6 +1121,9 @@ pub fn paint_hot_slot_stack(
         let stroke = egui::Stroke::new(1.5, ink);
         ui.painter().line_segment([p0, p1], stroke);
         ui.painter().line_segment([p2, p3], stroke);
+        if let Some((center, radius)) = badge_dot(rect.card, staged_depth, plan_nodes) {
+            ui.painter().circle_filled(center, radius, accent);
+        }
     }
     Ok(actions)
 }
@@ -1084,31 +1198,51 @@ pub fn paint_slot_settings_modal(
         style_names: style.field_names(),
     };
     let mut commit = SettingsCommit::None;
-    let outcome = ui.vertical(|pane| {
-        pane.colored_label(accent, format!("{title} settings"));
-        let edits = paint_tabbed_schema_fields_compact(
-            pane,
-            settings_tab,
-            config_fields,
-            style_fields,
-            &mut target,
-        );
-        pane.horizontal(|row| {
-            if row.button("Cancel").clicked() {
-                commit = SettingsCommit::Cancel;
-            }
-            if row.button("Apply").clicked() {
-                commit = SettingsCommit::Apply;
-            }
-            if row.button("OK").clicked() {
-                commit = SettingsCommit::Ok;
-            }
+    let mut staged = FieldEdits::default();
+    let pill = egui::CornerRadius::from(ACTION_PILL_PX);
+    let frame = egui::Frame::popup(ui.style())
+        .corner_radius(MODAL_CORNER_PX)
+        .show(ui, |pane| {
+            pane.vertical(|pane| {
+                pane.colored_label(accent, format!("{title} settings"));
+                let editor = egui::ScrollArea::vertical()
+                    .max_height(SETTINGS_SCROLL_MAX_PX)
+                    .show(pane, |editor| {
+                        paint_tabbed_schema_fields_compact(
+                            editor,
+                            settings_tab,
+                            config_fields,
+                            style_fields,
+                            &mut target,
+                        )
+                    });
+                staged = editor.inner;
+                pane.horizontal(|row| {
+                    if row
+                        .add(egui::Button::new("Cancel").corner_radius(pill))
+                        .clicked()
+                    {
+                        commit = SettingsCommit::Cancel;
+                    }
+                    if row
+                        .add(egui::Button::new("Apply").corner_radius(pill))
+                        .clicked()
+                    {
+                        commit = SettingsCommit::Apply;
+                    }
+                    if row
+                        .add(egui::Button::new("OK").corner_radius(pill))
+                        .clicked()
+                    {
+                        commit = SettingsCommit::Ok;
+                    }
+                });
+            });
         });
-        edits
-    });
     Ok(SettingsOutcome {
-        edits: outcome.inner,
+        edits: staged,
         commit,
+        rect: frame.response.rect,
     })
 }
 

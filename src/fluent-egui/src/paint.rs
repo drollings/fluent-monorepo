@@ -1437,6 +1437,68 @@ pub fn opacity_from_transparency(transparency: f64) -> u8 {
     opacity.round().clamp(0.0, 255.0) as u8
 }
 
+/// Share of the overlay color a hovered zone carries.
+pub const HOVER_FRAC: f32 = 0.08;
+/// Share of the overlay color a pressed zone carries.
+pub const PRESS_FRAC: f32 = 0.12;
+/// Corner radius of dialog containers.
+pub const MODAL_CORNER_PX: f32 = 4.0;
+/// Corner radius of dialog action buttons (a pill at standard action height).
+pub const ACTION_PILL_PX: f32 = 3.0;
+
+/// Blend one state overlay over a zone fill: hover and press tints share one
+/// spelling instead of per-widget branches. A `frac` outside `[0, 1]` (or a
+/// non-finite one) is not a blend, so the base stands untouched.
+#[must_use]
+pub fn state_layer(base: egui::Color32, overlay: egui::Color32, frac: f32) -> egui::Color32 {
+    if !frac.is_finite() || frac < 0.0 || frac > 1.0 {
+        return base;
+    }
+    let blend = |high: u8, low: u8| {
+        (f32::from(high) + (f32::from(low) - f32::from(high)) * frac)
+            .round()
+            .clamp(0.0, 255.0) as u8
+    };
+    egui::Color32::from_rgba_premultiplied(
+        blend(base.r(), overlay.r()),
+        blend(base.g(), overlay.g()),
+        blend(base.b(), overlay.b()),
+        blend(base.a(), overlay.a()),
+    )
+}
+
+/// Fade ink toward its surface for the disabled state, keeping the ink's own
+/// alpha: a translucent mark stays translucent-honest while reading dimmed.
+#[must_use]
+pub fn disabled_content(color: egui::Color32, surface: egui::Color32) -> egui::Color32 {
+    const FADE: f32 = 0.38;
+    fade_toward(color, surface, FADE)
+}
+
+/// Fade ink toward its surface for disabled outlines, keeping the ink's own
+/// alpha (see [`disabled_content`]).
+#[must_use]
+pub fn disabled_outline(color: egui::Color32, surface: egui::Color32) -> egui::Color32 {
+    const FADE: f32 = 0.12;
+    fade_toward(color, surface, FADE)
+}
+
+/// One RGB-only fade behind both disabled inks: channels lerp toward the
+/// surface, alpha carries over untouched.
+fn fade_toward(color: egui::Color32, surface: egui::Color32, frac: f32) -> egui::Color32 {
+    let blend = |high: u8, low: u8| {
+        (f32::from(high) + (f32::from(low) - f32::from(high)) * frac)
+            .round()
+            .clamp(0.0, 255.0) as u8
+    };
+    egui::Color32::from_rgba_premultiplied(
+        blend(color.r(), surface.r()),
+        blend(color.g(), surface.g()),
+        blend(color.b(), surface.b()),
+        color.a(),
+    )
+}
+
 /// Paint a zero-centered oscillator polyline under one style key, lifting
 /// the pen across holes.
 ///

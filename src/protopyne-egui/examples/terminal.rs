@@ -174,9 +174,7 @@ async fn boot(path: PathBuf, base: Option<String>) -> Result<ServerHandle, Strin
 /// span, not a hardcoded count, so thin and dense tapes alike keep their
 /// most recent two calendar months). Ascending input stays ascending; a
 /// history shorter than the span keeps every bar.
-fn trailing_two_months(
-    bars: Vec<protopyne_types::Bar>,
-) -> Vec<protopyne_types::Bar> {
+fn trailing_two_months(bars: Vec<protopyne_types::Bar>) -> Vec<protopyne_types::Bar> {
     let Some(last) = bars.last().map(|bar| bar.ts.timestamp()) else {
         return bars;
     };
@@ -316,12 +314,7 @@ impl TerminalApp {
         let (Ok(workspace), Some(cache)) = (&mut self.workspace, self.cache.as_mut()) else {
             return;
         };
-        seed::sync_symbol(
-            workspace,
-            cache,
-            &mut self.loaded_symbol,
-            &mut self.notice,
-        );
+        seed::sync_symbol(workspace, cache, &mut self.loaded_symbol, &mut self.notice);
     }
 }
 
@@ -399,12 +392,7 @@ fn load_pine_catalog(workspace: &mut ChartWorkspace, history: &std::path::Path) 
             // boot), and this line is where that staleness shows up.
             let mut stems: Vec<&str> = indicators
                 .iter()
-                .map(|file| {
-                    file.relpath
-                        .rsplit('/')
-                        .next()
-                        .unwrap_or(&file.relpath)
-                })
+                .map(|file| file.relpath.rsplit('/').next().unwrap_or(&file.relpath))
                 .collect();
             stems.sort_unstable();
             eprintln!(

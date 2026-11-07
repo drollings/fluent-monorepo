@@ -348,9 +348,13 @@ fn terminal_fixed_corpus_runs_through_the_compiled_path() {
     ];
     let tape = rows(&[100.0, 101.0, 102.0]);
     for case in &cases {
-        let plugin =
-            PineIndicatorPlugin::link(case.id, case.id, case.script, &std::collections::HashMap::new())
-                .expect("fixed corpus links");
+        let plugin = PineIndicatorPlugin::link(
+            case.id,
+            case.id,
+            case.script,
+            &std::collections::HashMap::new(),
+        )
+        .expect("fixed corpus links");
         assert_eq!(
             plugin.attachment(),
             case.attachment,

@@ -88,6 +88,18 @@ fn default_grid() -> String {
     "#2A2A2A".to_owned()
 }
 
+fn default_surface() -> String {
+    "#121212".to_owned()
+}
+
+fn default_on_surface() -> String {
+    "#E0E0E0".to_owned()
+}
+
+fn default_outline_variant() -> String {
+    "#2A2A2A".to_owned()
+}
+
 /// One pane's layout entry: visibility plus its share of chart height.
 #[derive(
     Debug, Clone, bon::Builder, serde::Serialize, serde::Deserialize, FieldAccess, Describable,
@@ -255,6 +267,21 @@ pub struct ThemeConfig {
     #[builder(default = default_grid())]
     #[serde(default = "default_grid")]
     pub grid: String,
+    /// Chrome surface color (dialogs, menus, cards).
+    #[field(desc = "Chrome surface color (#RRGGBB)")]
+    #[builder(default = default_surface())]
+    #[serde(default = "default_surface")]
+    pub surface: String,
+    /// Ink drawn on the chrome surface.
+    #[field(desc = "On-surface ink color (#RRGGBB)")]
+    #[builder(default = default_on_surface())]
+    #[serde(default = "default_on_surface")]
+    pub on_surface: String,
+    /// Low-emphasis chrome outline (dividers, unfocused borders).
+    #[field(desc = "Outline-variant color (#RRGGBB)")]
+    #[builder(default = default_outline_variant())]
+    #[serde(default = "default_outline_variant")]
+    pub outline_variant: String,
 }
 
 impl Default for ThemeConfig {
@@ -313,6 +340,9 @@ impl ThemeConfig {
             ("aroon", &self.aroon),
             ("adx", &self.adx),
             ("grid", &self.grid),
+            ("surface", &self.surface),
+            ("on_surface", &self.on_surface),
+            ("outline_variant", &self.outline_variant),
         ] {
             // One hex reader: the same parse the painter uses, so a color
             // that validates is a color that paints.
@@ -345,6 +375,9 @@ impl ThemeConfig {
             "aroon" => Some(&self.aroon),
             "adx" => Some(&self.adx),
             "grid" => Some(&self.grid),
+            "surface" => Some(&self.surface),
+            "on_surface" => Some(&self.on_surface),
+            "outline_variant" => Some(&self.outline_variant),
             _ => None,
         }
     }
@@ -377,6 +410,33 @@ impl WorkUnit for ThemeConfig {
 }
 
 impl_component!(ThemeConfig);
+
+/// Deserialize a theme file body, then validate: a theme that parses but
+/// fails its own slots refuses instead of painting half a palette.
+pub fn theme_from_json(json: &str) -> Result<ThemeConfig, EguiError> {
+    let theme: ThemeConfig =
+        serde_json::from_str(json).map_err(|error| EguiError::InvalidParam {
+            what: "theme".to_owned(),
+            reason: error.to_string(),
+        })?;
+    theme.validate()?;
+    Ok(theme)
+}
+
+/// Load a theme from a shell-owned file path, then validate like
+/// [`theme_from_json`]. A startup helper, never frame path: await it once
+/// while the shell boots; no frame ever touches the filesystem.
+pub async fn load_theme_file(path: impl AsRef<std::path::Path>) -> Result<ThemeConfig, EguiError> {
+    let owned = path.as_ref().to_path_buf();
+    let display = owned.display().to_string();
+    let body = tokio::fs::read_to_string(owned)
+        .await
+        .map_err(|error| EguiError::InvalidParam {
+            what: display,
+            reason: error.to_string(),
+        })?;
+    theme_from_json(&body)
+}
 
 #[cfg(test)]
 #[path = "../tests/config.rs"]

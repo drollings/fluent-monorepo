@@ -19,14 +19,15 @@
 //!
 //! [`ResultPool`]: fluent_concurrency::pool::ResultPool
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use common_core::retry::retry_async;
+use common_core::sync::lock;
 use fluent_concurrency::batch::{SupervisedBatch, SupervisedBatchError, SupervisedBatchSummary};
 use fluent_concurrency::capability::default_capability_set;
 use fluent_concurrency::flow::{self, CreditReceiver, CreditSender, CreditSpec};
 use fluent_concurrency::ladder::first_accept_in_order;
-use fluent_concurrency::pool::Limiter;
+use fluent_concurrency::pool::{Limiter, ResultPool, ResultPoolError};
 use fluent_concurrency::scope::Scope;
 use fluent_concurrency::stream::StreamAbort;
 use fluent_concurrency::tokio_runtime;
@@ -420,6 +421,141 @@ impl TransportRetry {
         )
         .await
     }
+}
+
+/// One owned async binding: a single in-flight pool submission whose latest
+/// outcome the frame polls.
+///
+/// `Idle` is the rest state, `Pending` the in-flight state, `Finished` the
+/// delivered result, `Failed` the delivered taxonomy. Failures carry the
+/// `WorkError` taxonomy, never strings: a timed-out or refused job routes to
+/// its own arm, and a pool-level fault arrives as an execution failure naming
+/// its cause.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BindState<T, E> {
+    /// No job has run yet, or the last attempt never left the queue.
+    Idle,
+    /// A job is running; resubmits coalesce until it settles.
+    Pending,
+    /// The job delivered its value.
+    Finished(T),
+    /// The job delivered its failure.
+    Failed(E),
+}
+
+/// An async value bound to a pane's lifetime: jobs run as pool submissions
+/// under the pane's abort handle, the frame polls the latest outcome through
+/// a lock-free read, and the settler wakes the frame exactly once per
+/// delivery.
+///
+/// The bind never spawns: the caller drives `submit` from its own task (a
+/// feed task, a test task), and the pool owns the worker. Closing the pane
+/// fires the abort, so a late completion observes the dead handle and is
+/// never delivered — and never wakes the frame.
+pub struct AsyncBind<J, T>
+where
+    J: Send + 'static,
+    T: Send + 'static,
+{
+    pool: Arc<ResultPool<J, T, WorkError>>,
+    gate: Mutex<()>,
+    abort: Mutex<StreamAbort>,
+    state_tx: tokio::sync::watch::Sender<BindState<T, WorkError>>,
+    state_rx: tokio::sync::watch::Receiver<BindState<T, WorkError>>,
+    notify: Arc<dyn Fn() + Send + Sync>,
+}
+
+impl<J, T> AsyncBind<J, T>
+where
+    J: Send + 'static,
+    T: Send + 'static,
+{
+    /// Bind a pool to a pane's abort line. `notify` wakes the frame once per
+    /// delivery — the shell passes its repaint, headless callers a counter.
+    pub fn new(
+        pool: Arc<ResultPool<J, T, WorkError>>,
+        abort: StreamAbort,
+        notify: impl Fn() + Send + Sync + 'static,
+    ) -> Self {
+        let (state_tx, state_rx) = tokio::sync::watch::channel(BindState::Idle);
+        Self {
+            pool,
+            gate: Mutex::new(()),
+            abort: Mutex::new(abort),
+            state_tx,
+            state_rx,
+            notify: Arc::new(notify),
+        }
+    }
+
+    /// The latest outcome. A lock-free read for the frame path: polling
+    /// never blocks, never wakes, and never disturbs the in-flight job.
+    #[must_use]
+    pub fn poll(&self) -> tokio::sync::watch::Ref<'_, BindState<T, WorkError>> {
+        self.state_rx.borrow()
+    }
+
+    /// Run `job` on the pool unless one is already in flight (coalesced).
+    /// Delivers exactly once: a completion past a fired abort is swallowed,
+    /// a pool-level fault arrives as an execution failure, and only a
+    /// delivery wakes the frame.
+    pub async fn submit(&self, job: J)
+    where
+        J: Send + Sync + 'static,
+        T: Send + 'static,
+    {
+        {
+            let _gate = lock(&self.gate);
+            if matches!(*self.state_rx.borrow(), BindState::Pending) {
+                return;
+            }
+            let _ = self.state_tx.send(BindState::Pending);
+        }
+        let abort = lock(&self.abort).clone();
+        let outcome = self.pool.submit_with_abort(job, Some(abort.clone())).await;
+        if abort.is_cancelled() {
+            return;
+        }
+        let state = match outcome {
+            Ok(value) => BindState::Finished(value),
+            Err(ResultPoolError::Inner(error)) => BindState::Failed(error),
+            Err(other) => BindState::Failed(WorkError::execution_display(other)),
+        };
+        let _ = self.state_tx.send(state);
+        (self.notify)();
+    }
+
+    /// Restart after the previous attempt settled or its abort fired: install
+    /// the pane's current abort line, drop the stale outcome, and submit.
+    /// Only restart on a dead or settled bind — a live attempt the old abort
+    /// still covers would deliver underneath the new one.
+    pub async fn restart(&self, abort: StreamAbort, job: J)
+    where
+        J: Send + Sync + 'static,
+        T: Send + 'static,
+    {
+        *lock(&self.abort) = abort;
+        let _ = self.state_tx.send(BindState::Idle);
+        self.submit(job).await;
+    }
+}
+
+/// Submit one heavy rebuild to `pool` under the pane's abort line: a close
+/// mid-flight cancels the rebuild and frees the worker slot immediately,
+/// instead of completing into a closed handle. Nothing else changes — the
+/// pool, the job, and the result path are the caller's.
+pub async fn submit_rebuild<J, T, E>(
+    pool: &ResultPool<J, T, E>,
+    handle: &PaneHandle,
+    job: J,
+) -> Result<T, ResultPoolError<E>>
+where
+    J: Send + Sync + 'static,
+    T: Send + 'static,
+    E: Send + 'static,
+{
+    pool.submit_with_abort(job, Some(handle.abort().clone()))
+        .await
 }
 
 #[cfg(test)]

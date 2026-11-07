@@ -29,6 +29,8 @@
 //! disappearing, and its write still goes through the field's own
 //! `set_field` contract.
 
+use std::collections::HashMap;
+
 use fluent_wvr::FieldAccess;
 
 /// What a control-plane field's schema says it holds.
@@ -131,6 +133,11 @@ pub struct SchemaField {
     /// arm, `"slots.count>0"` for a list item). An invisible field paints no
     /// widget, so an inactive arm can never be written by the renderer.
     pub visible_when: Option<String>,
+    /// Whether this field's dropdown offers a filter line (`x-filter` hint).
+    pub filterable: bool,
+    /// Whether the operator must fill this field (`x-required` hint). Display
+    /// only: editors advertise it, the field's own contract still decides.
+    pub required: bool,
     /// The list whose `count` this field edits (`x-count`), when it is the
     /// synthetic count of an open list.
     pub count_of: Option<String>,
@@ -209,6 +216,8 @@ pub fn schema_fields(schema: &serde_json::Value) -> Vec<SchemaField> {
                     options: enum_hint(hint.get("enum")),
                     explicit_tab: tab_hint(hint.get("x-tab")),
                     group: text_hint(hint.get("x-group")),
+                    filterable: bool_hint(hint.get("x-filter")),
+                    required: bool_hint(hint.get("x-required")),
                     inline_group: text_hint(hint.get("x-inline")),
                     tooltip: text_hint(hint.get("x-tooltip")),
                     step: number_hint(hint.get("x-step")),
@@ -240,6 +249,16 @@ fn number_hint(hint: Option<&serde_json::Value>) -> Option<f64> {
         serde_json::Value::Number(number) => number.as_f64(),
         serde_json::Value::String(text) => text.parse().ok(),
         _ => None,
+    }
+}
+
+/// A declared opt-in flag, spelled as a JSON boolean or its text. Anything
+/// else reads as off, so a malformed hint disables rather than enabling.
+fn bool_hint(hint: Option<&serde_json::Value>) -> bool {
+    match hint {
+        Some(serde_json::Value::Bool(flag)) => *flag,
+        Some(serde_json::Value::String(text)) => text.trim().eq_ignore_ascii_case("true"),
+        _ => false,
     }
 }
 
@@ -604,15 +623,21 @@ fn paint_schema_fields_sized(
     edits
 }
 
-/// One field's label with the schema hover help.
+/// One field's label with the schema hover help, carrying a `*` suffix when
+/// the schema marks the field required.
 fn paint_label(row: &mut egui::Ui, field: &SchemaField, label_width: Option<f32>) {
+    let name = if field.required {
+        format!("{}*", field.name)
+    } else {
+        field.name.clone()
+    };
     match label_width {
         Some(width) => {
-            row.add_sized([width, COMPACT_ROW_HEIGHT], egui::Label::new(&field.name))
+            row.add_sized([width, COMPACT_ROW_HEIGHT], egui::Label::new(name))
                 .on_hover_text(bounds_hint(field));
         }
         None => {
-            row.label(&field.name).on_hover_text(bounds_hint(field));
+            row.label(name).on_hover_text(bounds_hint(field));
         }
     }
 }
@@ -648,6 +673,9 @@ fn bounds_hint(field: &SchemaField) -> String {
     }
     if let Some(max_len) = field.max_len {
         bounds.push(format!("max length {max_len}"));
+    }
+    if field.required {
+        bounds.push("required".to_owned());
     }
     if let Some(format) = field.format.as_deref() {
         bounds.push(format!("format {format}"));
@@ -768,6 +796,44 @@ fn drag_speed(field: &SchemaField, fallback: f64) -> f64 {
         .step
         .filter(|step| step.is_finite() && *step > 0.0)
         .unwrap_or(fallback)
+}
+
+/// Seed a staged draft from a live target: one string per declared field,
+/// read through the field's own contract. A field whose value cannot be
+/// read is skipped rather than staged as a substitute.
+#[must_use]
+pub fn seed_staged<T: FieldAccess + ?Sized>(target: &T) -> HashMap<String, String> {
+    target
+        .field_names()
+        .iter()
+        .filter_map(|name| {
+            target
+                .get_field(name)
+                .ok()
+                .map(|value| ((*name).to_owned(), value))
+        })
+        .collect()
+}
+
+/// Commit a staged draft through the live target's own contract: every
+/// accepted field applies, every refused field reports with its name, and
+/// one refusal never stops the rest of the pass.
+#[must_use]
+pub fn commit_staged<T: FieldAccess + ?Sized, S: std::hash::BuildHasher>(
+    target: &mut T,
+    staged: &HashMap<String, String, S>,
+) -> Vec<String> {
+    let mut refusals = Vec::new();
+    let mut names: Vec<&String> = staged.keys().collect();
+    names.sort();
+    for name in names {
+        if let Some(value) = staged.get(name) {
+            if let Err(error) = target.set_field(name, value) {
+                refusals.push(format!("{name}: {error}"));
+            }
+        }
+    }
+    refusals
 }
 
 /// A whole-number editor: a bounded slider when the schema declares a
@@ -899,9 +965,14 @@ fn paint_switch(row: &mut egui::Ui, value: &mut bool) -> egui::Response {
     } else {
         visuals.widgets.inactive.bg_fill
     };
+    let outline = if *value {
+        egui::Stroke::NONE
+    } else {
+        egui::Stroke::new(1.0, visuals.widgets.inactive.bg_stroke.color)
+    };
     let radius = rect.height() / 2.0;
     row.painter()
-        .rect(rect, radius, track, Stroke::NONE, egui::StrokeKind::Inside);
+        .rect(rect, radius, track, outline, egui::StrokeKind::Inside);
     let knob_r = radius - 2.0;
     let knob_x = if *value {
         rect.right() - radius
@@ -917,17 +988,67 @@ fn paint_switch(row: &mut egui::Ui, value: &mut bool) -> egui::Response {
     response
 }
 
+/// A select's options lowered once for filter matching, one entry per option.
+#[must_use]
+fn lowered_option_corpus(options: &[String]) -> Vec<String> {
+    options.iter().map(|option| option.to_lowercase()).collect()
+}
+
+/// Indices of the options a filter query keeps: every row the lowered query
+/// appears in. An empty query keeps the whole list, and a query matching
+/// nothing keeps the whole list too — the filter never strands the operator
+/// on an empty menu.
+#[must_use]
+fn matching_option_indices(corpus: &[String], query: &str) -> Vec<usize> {
+    let all: Vec<usize> = (0..corpus.len()).collect();
+    let query = query.trim().to_lowercase();
+    if query.is_empty() {
+        return all;
+    }
+    let hits: Vec<usize> = corpus
+        .iter()
+        .enumerate()
+        .filter(|(_, option)| option.contains(&query))
+        .map(|(index, _)| index)
+        .collect();
+    if hits.is_empty() {
+        all
+    } else {
+        hits
+    }
+}
+
 /// A dropdown over the schema's option set. A current value outside the set
 /// (an old config the catalog no longer lists) still renders as the
 /// selected row, so stale data is visible instead of hidden; picking an
 /// option writes through the field's own contract, and its refusal is
 /// reported like any other write.
 fn edit_select(row: &mut egui::Ui, field: &SchemaField, current: &str) -> Option<String> {
+    let filter_id = field
+        .filterable
+        .then(|| egui::Id::new(format!("select-filter:{}", field.name)));
+    let mut query =
+        filter_id.map(|id| row.data_mut(|data| data.get_temp_mut_or(id, String::new()).clone()));
     let mut value = current.to_owned();
     let mut changed = false;
     egui::ComboBox::from_id_salt(format!("select:{}", field.name))
         .selected_text(current)
         .show_ui(row, |ui| {
+            let mut shown: Vec<usize> = (0..field.options.len()).collect();
+            if let Some(id) = filter_id {
+                let mut live = query.clone().unwrap_or_default();
+                if ui
+                    .add(egui::TextEdit::singleline(&mut live).hint_text("filter"))
+                    .changed()
+                {
+                    query = Some(live.clone());
+                    ui.data_mut(|data| *data.get_temp_mut_or(id, String::new()) = live);
+                }
+                shown = matching_option_indices(
+                    &lowered_option_corpus(&field.options),
+                    query.as_deref().unwrap_or_default(),
+                );
+            }
             if !field.options.iter().any(|option| option == current) {
                 ui.selectable_value(
                     &mut value,
@@ -935,7 +1056,8 @@ fn edit_select(row: &mut egui::Ui, field: &SchemaField, current: &str) -> Option
                     format!("{current} (unlisted)"),
                 );
             }
-            for option in &field.options {
+            for index in shown {
+                let option = &field.options[index];
                 if ui
                     .selectable_value(&mut value, option.clone(), option)
                     .changed()
@@ -984,32 +1106,16 @@ fn edit_color(
         }
     };
     let outline = row.visuals().widgets.noninteractive.bg_stroke.color;
-    // Material picker: a swatch button that opens the color popup. Hollow
-    // when unset (inherit); unreadable text paints no picker at all, so the
-    // frame holds no seeded color for a value the field does not hold — the
-    // hex text below stays the recovery path. egui 0.36 edits sRGB bytes,
-    // so the wire hex is derived from those bytes.
-    if readable {
-        let mut picker_srgb: [u8; 3] = match parsed {
-            Some(color) => [color.r(), color.g(), color.b()],
-            None => [32, 200, 240],
-        };
-        let picker_response = row.color_edit_button_srgb(&mut picker_srgb);
-        if picker_response.changed() {
-            // Picker edits resolve to opaque #RRGGBB on the wire (alpha rides the
-            // theme/transparency path, never the hex text).
-            let hex = format!(
-                "#{:02X}{:02X}{:02X}",
-                picker_srgb[0], picker_srgb[1], picker_srgb[2]
-            );
-            if hex != current {
-                return Some(hex);
-            }
-        }
-    }
-    let (rect, _) = row.allocate_exact_size(
+    // The one color affordance: a small swatch, hollow when unset
+    // (inherit). Clicking it opens the picker popup seeded from the parsed
+    // color (neutral when unset); unreadable text paints no picker at all,
+    // so the frame holds no seeded color for a value the field does not
+    // hold — the hex text below stays the recovery path. Picker edits
+    // resolve to opaque #RRGGBB on the wire (alpha rides the
+    // theme/transparency path, never the hex text).
+    let (rect, response) = row.allocate_exact_size(
         egui::vec2(COLOR_SWATCH_PX, COLOR_SWATCH_PX),
-        egui::Sense::hover(),
+        egui::Sense::click(),
     );
     let swatch_rect = egui::Rect::from_center_size(
         rect.center(),
@@ -1030,9 +1136,35 @@ fn edit_color(
             }
         }
     }
+    if readable {
+        let mut picker = parsed.unwrap_or(egui::Color32::from_rgb(32, 200, 240));
+        let mut picked: Option<String> = None;
+        egui::Popup::menu(&response)
+            .id(row.auto_id_with("color-picker"))
+            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+            .show(|ui| {
+                if egui::color_picker::color_picker_color32(
+                    ui,
+                    &mut picker,
+                    egui::color_picker::Alpha::Opaque,
+                ) {
+                    picked = Some(format!(
+                        "#{:02X}{:02X}{:02X}",
+                        picker.r(),
+                        picker.g(),
+                        picker.b()
+                    ));
+                }
+            });
+        if let Some(hex) = picked {
+            if hex != current {
+                return Some(hex);
+            }
+        }
+    }
     let mut value = current.to_owned();
-    let response = row.add(egui::TextEdit::singleline(&mut value));
-    (response.changed() && value != current).then_some(value)
+    let edit_response = row.add(egui::TextEdit::singleline(&mut value));
+    (edit_response.changed() && value != current).then_some(value)
 }
 
 #[cfg(test)]

@@ -1,4 +1,8 @@
 use super::*;
+use crate::{
+    readout_anchor,
+    wheel::{Pos2, Rect},
+};
 use protopyne_chart_model::ChartRow;
 use protopyne_chart_scale::PriceScaleMode;
 
@@ -363,4 +367,42 @@ fn crosshair_reads_any_in_pane_pointer() {
         close_enough(pixel.1, pointer.1),
         "crosshair y keeps the pointer"
     );
+}
+
+#[test]
+fn readout_floats_above_with_room_and_drops_below_without_it() {
+    let outer = Rect::new(Pos2::new(0.0, 0.0), Pos2::new(800.0, 600.0));
+    let roomy = readout_anchor(outer, (200.0, 100.0), Pos2::new(400.0, 300.0));
+    assert_eq!(
+        (roomy.min_x, roomy.min_y, roomy.max_x, roomy.max_y),
+        (400.0, 200.0, 600.0, 300.0),
+        "a readout with headroom floats above the point: {roomy:?}"
+    );
+    let cramped = readout_anchor(outer, (200.0, 100.0), Pos2::new(400.0, 10.0));
+    assert_eq!(
+        (cramped.min_x, cramped.min_y, cramped.max_x, cramped.max_y),
+        (400.0, 10.0, 600.0, 110.0),
+        "a readout with no headroom drops below instead: {cramped:?}"
+    );
+}
+
+#[test]
+fn readout_never_leaves_the_screen() {
+    let outer = Rect::new(Pos2::new(0.0, 0.0), Pos2::new(800.0, 600.0));
+    for point in [
+        Pos2::new(0.0, 0.0),
+        Pos2::new(800.0, 600.0),
+        Pos2::new(799.0, 1.0),
+        Pos2::new(1.0, 599.0),
+        Pos2::new(400.0, 300.0),
+    ] {
+        let card = readout_anchor(outer, (200.0, 100.0), point);
+        assert!(
+            outer.min_x <= card.min_x
+                && outer.min_y <= card.min_y
+                && card.max_x <= outer.max_x
+                && card.max_y <= outer.max_y,
+            "readout at {point:?} stays inside: {card:?}"
+        );
+    }
 }

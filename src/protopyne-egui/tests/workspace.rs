@@ -2262,10 +2262,14 @@ fn pine_slot_inherits_chart_scope_and_hides_redundant_settings() {
         .settings_fields("pine:_Scope")
         .expect("pine slot lifts settings");
     assert!(
-        config_fields.iter().all(|field| field.name != "chart_symbol"
-            && field.name != "chart_period"),
+        config_fields
+            .iter()
+            .all(|field| field.name != "chart_symbol" && field.name != "chart_period"),
         "redundant chart fields stay out of the slot UI: {:?}",
-        config_fields.iter().map(|field| &field.name).collect::<Vec<_>>()
+        config_fields
+            .iter()
+            .map(|field| &field.name)
+            .collect::<Vec<_>>()
     );
 }
 
@@ -2285,7 +2289,10 @@ fn adding_a_subpane_slot_routes_a_new_subpane() {
         .evaluations
         .get("rsi")
         .expect("rsi evaluated after add");
-    assert!(!evaluation.series.is_empty(), "the added slot paints series");
+    assert!(
+        !evaluation.series.is_empty(),
+        "the added slot paints series"
+    );
     let sub = workspace.evaluation_for_pane("rsi", evaluation, "sub");
     assert!(
         !sub.series.is_empty(),
@@ -2392,7 +2399,9 @@ fn widening_the_window_repaints_indicator_panes() {
         .expect("a smaller preset truncates");
     let shrunk = workspace.rows().len();
     assert!(shrunk < 9_000, "the window actually shrank: {shrunk}");
-    workspace.load_previous_month(None).expect("the window widens");
+    workspace
+        .load_previous_month(None)
+        .expect("the window widens");
     assert!(
         workspace.rows().len() > shrunk,
         "held bars widen the window"

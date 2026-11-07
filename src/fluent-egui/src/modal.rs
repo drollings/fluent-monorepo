@@ -15,6 +15,8 @@
 //! classes or indicator families. Category is an entry field and a filter
 //! value; the caller supplies the tab labels it wants rendered.
 
+use std::collections::HashMap;
+
 use common_core::registry::KeyedRegistry;
 use common_core::string::LoweredHaystack;
 
@@ -26,12 +28,15 @@ use crate::paint::resolve_color;
 /// the operator has starred it.
 ///
 /// The searchable text (id and title, lowered once) is private bookkeeping;
-/// every public field is display data the caller may render directly.
+/// every public field is display data the caller may render directly. The
+/// subtitle is a second display line, never searched.
 pub struct CatalogEntry<C> {
     /// Stable key; also a search token.
     pub id: String,
     /// Display title shown on the row.
     pub title: String,
+    /// Second display line, rendered small and weak; empty shows no line.
+    pub subtitle: String,
     /// Category this entry belongs to.
     pub category: C,
     /// Whether the operator has starred this entry.
@@ -109,9 +114,11 @@ pub struct CatalogModal<C> {
     category: Option<C>,
     favorites_only: bool,
     tag_filter: Option<TagFilter>,
+    selected: Option<String>,
+    expanded: HashMap<C, bool>,
 }
 
-impl<C: Ord + Clone> CatalogModal<C> {
+impl<C: Ord + Clone + std::hash::Hash> CatalogModal<C> {
     /// Create an empty catalog with a display `title`.
     #[must_use]
     pub fn new(title: &str) -> Self {
@@ -122,6 +129,8 @@ impl<C: Ord + Clone> CatalogModal<C> {
             category: None,
             favorites_only: false,
             tag_filter: None,
+            selected: None,
+            expanded: HashMap::new(),
         }
     }
 
@@ -155,6 +164,7 @@ impl<C: Ord + Clone> CatalogModal<C> {
             CatalogEntry {
                 id: id.to_owned(),
                 title: title.to_owned(),
+                subtitle: String::new(),
                 category,
                 favorite: false,
                 search,
@@ -256,13 +266,41 @@ impl<C: Ord + Clone> CatalogModal<C> {
         Ok(entry.favorite)
     }
 
-    /// Entries passing the category tab, favorites filter, and query, in
-    /// sorted key order.
-    ///
-    /// The query is lowered once for the whole scan; each entry compares
-    /// against its already-lowered haystack.
+    /// Set one entry's subtitle line (empty clears it). Unknown ids refuse.
+    pub fn set_subtitle(&mut self, id: &str, subtitle: &str) -> Result<(), EguiError> {
+        let entry = self.entries.get_mut(id).ok_or_else(|| unknown_entry(id))?;
+        subtitle.clone_into(&mut entry.subtitle);
+        Ok(())
+    }
+
+    /// The selected entry id, if the operator picked a row.
     #[must_use]
-    pub fn filtered(&self) -> Vec<&CatalogEntry<C>> {
+    pub fn selected(&self) -> Option<&String> {
+        self.selected.as_ref()
+    }
+
+    /// Mark one entry selected, or clear the selection with `None`. Display
+    /// state only: it never alters which entries filter.
+    pub fn set_selected(&mut self, selected: Option<String>) {
+        self.selected = selected;
+    }
+
+    /// Whether `category` is expanded. Categories start expanded — the
+    /// flat listing is the default, and collapsing is always opt-in.
+    #[must_use]
+    pub fn is_expanded(&self, category: &C) -> bool {
+        self.expanded.get(category).copied().unwrap_or(true)
+    }
+
+    /// Collapse or expand one category. Collapsed members hide from
+    /// [`filtered`](Self::filtered) without leaving the registry.
+    pub fn set_expanded(&mut self, category: C, expanded: bool) {
+        self.expanded.insert(category, expanded);
+    }
+
+    /// Entries passing every filter but the category tab, in sorted key
+    /// order: the one materialized scan the tab badges count from.
+    fn matching(&self, category: Option<&C>) -> Vec<&CatalogEntry<C>> {
         let lowered_query = self.query.to_lowercase();
         let tag = self
             .tag_filter
@@ -271,11 +309,39 @@ impl<C: Ord + Clone> CatalogModal<C> {
             .map(|filter| filter.id_prefix);
         self.entries
             .values()
-            .filter(|entry| self.category.as_ref().is_none_or(|c| entry.category == *c))
+            .filter(|entry| category.is_none_or(|c| entry.category == *c))
+            .filter(|entry| self.is_expanded(&entry.category))
             .filter(|entry| !self.favorites_only || entry.favorite)
             .filter(|entry| tag.is_none_or(|prefix| entry.id.starts_with(prefix)))
             .filter(|entry| entry.search.lowered().contains(&lowered_query))
             .collect()
+    }
+
+    /// Per-category counts of the entries passing every filter but the
+    /// category tab, in first-seen order: the tab badges.
+    #[must_use]
+    pub fn tab_counts(&self) -> Vec<(C, usize)> {
+        let mut counts: Vec<(C, usize)> = Vec::new();
+        for entry in self.matching(None) {
+            match counts
+                .iter_mut()
+                .find(|(category, _)| *category == entry.category)
+            {
+                Some((_, count)) => *count += 1,
+                None => counts.push((entry.category.clone(), 1)),
+            }
+        }
+        counts
+    }
+
+    /// Entries passing the category tab, favorites filter, and query, in
+    /// sorted key order.
+    ///
+    /// The query is lowered once for the whole scan; each entry compares
+    /// against its already-lowered haystack.
+    #[must_use]
+    pub fn filtered(&self) -> Vec<&CatalogEntry<C>> {
+        self.matching(self.category.as_ref())
     }
 }
 
@@ -296,7 +362,7 @@ fn unknown_entry(id: &str) -> EguiError {
 /// clicking a row's marker raises [`CatalogAction::ToggledFavorite`];
 /// an untouched frame raises nothing. A theme that cannot resolve the
 /// accent key refuses with the key named.
-pub fn paint_catalog_modal<C: Ord + Clone>(
+pub fn paint_catalog_modal<C: Ord + Clone + std::hash::Hash>(
     ui: &mut egui::Ui,
     modal: &mut CatalogModal<C>,
     categories: &[(C, &'static str)],
@@ -324,23 +390,53 @@ pub fn paint_catalog_modal<C: Ord + Clone>(
             bar.checkbox(&mut filter.only, filter.label);
         }
     });
+    // Tab badges count the entries passing every filter but the category
+    // tab; the counts are owned before the tabs mutate the active tab, and
+    // the rows below re-scan the same predicate, so badges and listing agree.
+    let counts = modal.tab_counts();
+    let total: usize = counts.iter().map(|(_, count)| count).sum();
     if !categories.is_empty() {
         ui.horizontal(|tabs| {
-            tabs.selectable_value(&mut modal.category, None, "All");
+            tabs.selectable_value(&mut modal.category, None, format!("All ({total})"));
             for (category, label) in categories {
-                tabs.selectable_value(&mut modal.category, Some(category.clone()), *label);
+                let count = counts
+                    .iter()
+                    .find_map(|(candidate, count)| (*candidate == *category).then_some(*count))
+                    .unwrap_or(0);
+                tabs.selectable_value(
+                    &mut modal.category,
+                    Some(category.clone()),
+                    format!("{label} ({count})"),
+                );
             }
         });
     }
     ui.separator();
     // Collect the rows first: rendering mutates `actions`, never the modal.
-    let rows: Vec<(String, String, bool)> = modal
-        .filtered()
+    // Selection is display state, so it rides along without touching the
+    // filter the rows were materialized with.
+    let active = modal.category.clone();
+    let selected = modal.selected.clone();
+    let wash = egui::Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 40);
+    let rows: Vec<(String, String, String, bool, bool)> = modal
+        .matching(None)
         .into_iter()
-        .map(|entry| (entry.id.clone(), entry.title.clone(), entry.favorite))
+        .filter(|entry| active.as_ref().is_none_or(|c| entry.category == *c))
+        .map(|entry| {
+            (
+                entry.id.clone(),
+                entry.title.clone(),
+                entry.subtitle.clone(),
+                entry.favorite,
+                selected.as_deref() == Some(entry.id.as_str()),
+            )
+        })
         .collect();
-    for (id, title, favorite) in rows {
+    for (id, title, subtitle, favorite, is_selected) in rows {
         ui.horizontal(|row| {
+            if is_selected {
+                row.visuals_mut().selection.bg_fill = wash;
+            }
             // A hollow star marks the unselected default; a filled, accented
             // star marks a favorite. The star is the affordance the Favorites
             // filter keys on, so an unstarred row reads as "not yet
@@ -353,8 +449,17 @@ pub fn paint_catalog_modal<C: Ord + Clone>(
             if row.button(marker).clicked() {
                 actions.push(CatalogAction::ToggledFavorite(id.clone()));
             }
-            if row.selectable_label(false, title).clicked() {
-                actions.push(CatalogAction::Picked(id));
+            if subtitle.is_empty() {
+                if row.selectable_label(is_selected, title).clicked() {
+                    actions.push(CatalogAction::Picked(id));
+                }
+            } else {
+                row.vertical(|column| {
+                    if column.selectable_label(is_selected, title).clicked() {
+                        actions.push(CatalogAction::Picked(id));
+                    }
+                    column.label(egui::RichText::new(subtitle).small().weak());
+                });
             }
         });
     }

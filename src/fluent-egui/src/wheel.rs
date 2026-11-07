@@ -1,14 +1,16 @@
 //! Region-aware wheel routing: where a wheel gesture acts.
 //!
 //! A chart is not one surface: the candle plot scrolls on the time (x) axis,
-//! each pane's price labels drive that pane's own y zoom, and a floating list
-//! (the hot-slot legend) scrolls under the pointer instead of the chart. This
+//! each pane's price labels drive that pane's own y zoom, a floating list
+//! (the hot-slot legend) scrolls under the pointer instead of the chart, and
+//! a floating overlay (the slot settings pane while it is open) consumes the
+//! gesture for its own scrolled content. This
 //! module is the single decision that maps a hover point to *what a wheel acts
 //! on*, kept headless (plain `f32` rectangles, no `egui` types) so the routing
 //! is unit-testable without a UI context and the terminal never re-decides it.
 //!
 //! Routing is disjoint by construction: zones are tested in a fixed priority
-//! (list, then each pane's axis strip, then its plot) and the first zone whose
+//! (overlay, then list, then each pane's axis strip, then its plot) and the first zone whose
 //! rectangle contains the point wins, so a point on a boundary belongs to
 //! exactly one target. Each target carries a *pane-local* anchor — the pixel
 //! the gesture keeps fixed — so the caller forwards it straight into the
@@ -34,14 +36,17 @@ pub enum WheelTarget {
     Price { pane: usize, anchor_y: f32 },
     /// Scroll a floating list under the pointer; the chart does not move.
     List,
+    /// A floating overlay (a settings pane, a dialog) scrolled by its own
+    /// widgets; the chart must not move. The caller drops the gesture.
+    Overlay,
 }
 
 impl WheelTarget {
     /// Whether this target zooms a time or price axis (i.e. the caller should
-    /// forward a zoom) as opposed to scrolling a list.
+    /// forward a zoom) as opposed to scrolling or consuming a list.
     #[must_use]
     pub fn is_zoom(&self) -> bool {
-        !matches!(self, Self::List)
+        !matches!(self, Self::List | Self::Overlay)
     }
 }
 
@@ -57,11 +62,13 @@ pub struct PaneZones {
 }
 
 /// The wheel zones of one chart frame: the price pane, the oscillator pane,
-/// and the floating list, resolved into disjoint hit regions.
+/// the floating list, and the floating overlay (when a settings pane is
+/// open), resolved into disjoint hit regions.
 ///
 /// Built once per frame from the pane layout; handed to
 /// [`route`](Self::route) with the pointer to decide the target. Priority is
-/// list, then each pane in order, so an overlay on top of a pane wins.
+/// overlay, then list, then each pane in order, so a floating surface on
+/// top of a pane wins.
 #[derive(Debug, Clone, Default)]
 pub struct WheelZones {
     /// Panes in priority order (index 0 is the price pane, index 1 the
@@ -71,13 +78,20 @@ pub struct WheelZones {
     /// Optional floating list rect (the hot-slot legend); a wheel inside it
     /// scrolls instead of zooming.
     list: Option<Rect>,
+    /// Optional floating overlay rect (an open settings pane); a wheel
+    /// inside it is consumed there instead of zooming.
+    overlay: Option<Rect>,
 }
 
 impl WheelZones {
     /// Build zones from panes (in priority order) and an optional list rect.
     #[must_use]
     pub fn new(panes: Vec<PaneZones>, list: Option<Rect>) -> Self {
-        Self { panes, list }
+        Self {
+            panes,
+            list,
+            overlay: None,
+        }
     }
 
     /// Add a pane's zones in priority order (append). Returns `self` so the
@@ -95,9 +109,19 @@ impl WheelZones {
         self
     }
 
+    /// Set the floating overlay rect (an open settings pane, a dialog): a
+    /// wheel inside it is consumed there, so the chart stays untouched.
+    /// Returns `self`.
+    #[must_use]
+    pub fn with_overlay(mut self, overlay: Rect) -> Self {
+        self.overlay = Some(overlay);
+        self
+    }
+
     /// Decide what a wheel at `point` acts on, testing zones in a fixed
-    /// priority: the list first (so an overlay wins), then each pane's axis
-    /// strip, then its plot. Returns `None` when the point is outside every
+    /// priority: the overlay first (so a scrolled pane wins over everything
+    /// below it), then the list, then each pane's axis strip, then its plot.
+    /// Returns `None` when the point is outside every
     /// zone (the caller leaves the chart alone). Each returned target carries
     /// the matched pane's index and a pane-local anchor derived from that
     /// pane's plot origin, so a caller can forward the anchor straight into
@@ -105,6 +129,9 @@ impl WheelZones {
     /// pane-local anchor on any pane without re-deriving geometry.
     #[must_use]
     pub fn route(&self, point: Pos2) -> Option<WheelTarget> {
+        if self.overlay.is_some_and(|rect| rect.contains(point)) {
+            return Some(WheelTarget::Overlay);
+        }
         if self.list.is_some_and(|rect| rect.contains(point)) {
             return Some(WheelTarget::List);
         }
@@ -124,6 +151,70 @@ impl WheelZones {
         }
         None
     }
+}
+
+/// Place a floating card of `size` near `anchor` inside `screen`: try the
+/// preferred side first (`below` picks under over above, `after` picks right
+/// over left), flip along an axis whose preferred side would overflow, then
+/// clamp. A card that fits the screen always lands fully inside it; a card
+/// that cannot fit pins its origin to the screen origin. Degenerate sizes
+/// (non-finite or negative) read as zero; a non-finite anchor reads as the
+/// screen origin.
+#[must_use]
+pub fn flip_within(screen: Rect, size: (f32, f32), anchor: Pos2, below: bool, after: bool) -> Rect {
+    let mut width = size.0;
+    if !width.is_finite() || width < 0.0 {
+        width = 0.0;
+    }
+    let mut height = size.1;
+    if !height.is_finite() || height < 0.0 {
+        height = 0.0;
+    }
+    let x = if anchor.x.is_finite() {
+        anchor.x
+    } else {
+        screen.min_x
+    };
+    let y = if anchor.y.is_finite() {
+        anchor.y
+    } else {
+        screen.min_y
+    };
+    let mut left = if after { x } else { x - width };
+    if after && left + width > screen.max_x {
+        left = x - width;
+    } else if !after && left < screen.min_x {
+        left = x;
+    }
+    left = left.clamp(screen.min_x, (screen.max_x - width).max(screen.min_x));
+    let mut top = if below { y } else { y - height };
+    if below && top + height > screen.max_y {
+        top = y - height;
+    } else if !below && top < screen.min_y {
+        top = y;
+    }
+    top = top.clamp(screen.min_y, (screen.max_y - height).max(screen.min_y));
+    Rect {
+        min_x: left,
+        min_y: top,
+        max_x: left + width,
+        max_y: top + height,
+    }
+}
+
+/// Place a context menu for a trigger: below the cursor extending right,
+/// flipping above or left near the screen edges (see [`flip_within`]).
+#[must_use]
+pub fn menu_anchor(screen: Rect, size: (f32, f32), trigger: Pos2) -> Rect {
+    flip_within(screen, size, trigger, true, true)
+}
+
+/// Place a crosshair readout for a data point: above the point extending
+/// right, dropping below or flipping left near the screen edges (see
+/// [`flip_within`]).
+#[must_use]
+pub fn readout_anchor(screen: Rect, size: (f32, f32), point: Pos2) -> Rect {
+    flip_within(screen, size, point, false, true)
 }
 
 /// A minimal 2D rectangle in screen pixels. Headless by design so routing is

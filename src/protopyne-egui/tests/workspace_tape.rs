@@ -204,13 +204,20 @@ async fn root_backed_switch_redraws_chart_panes_and_replay() {
     workspace
         .switch_symbol("GLD", &gateway)
         .expect("a root-backed switch pulls GLD");
-    assert_eq!(workspace.active_symbol(), "GLD", "the ticker button follows");
+    assert_eq!(
+        workspace.active_symbol(),
+        "GLD",
+        "the ticker button follows"
+    );
     assert!(
         !workspace.rows().is_empty(),
         "GLD months load rows of their own"
     );
     assert!(
-        workspace.rows().iter().all(|row| (row.close - 100.0).abs() > 1e-6),
+        workspace
+            .rows()
+            .iter()
+            .all(|row| (row.close - 100.0).abs() > 1e-6),
         "no SPY boot bar survives under the GLD label"
     );
     for id in ["rsi", "pine:_Scope"] {
@@ -218,7 +225,10 @@ async fn root_backed_switch_redraws_chart_panes_and_replay() {
             .evaluations
             .get(id)
             .unwrap_or_else(|| panic!("{id} evaluated after the switch"));
-        assert!(!evaluation.series.is_empty(), "{id} paints after the switch");
+        assert!(
+            !evaluation.series.is_empty(),
+            "{id} paints after the switch"
+        );
         assert_eq!(
             evaluation.series[0].values.len(),
             workspace.rows().len(),

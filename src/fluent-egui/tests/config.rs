@@ -133,3 +133,122 @@ fn pane_and_theme_execute_when_valid() {
         "invalid pane refuses at execute"
     );
 }
+
+#[test]
+fn unknown_theme_key_refuses() {
+    let theme = ThemeConfig::default();
+    assert!(
+        theme.style("no_such_key").is_none(),
+        "unknown keys resolve to nothing"
+    );
+    let error =
+        crate::paint::resolve_color(&theme, "no_such_key").expect_err("unknown style keys refuse");
+    assert!(
+        error.to_string().contains("no_such_key"),
+        "the refusal names the offender: {error}"
+    );
+    assert!(
+        theme.validate().is_ok(),
+        "a valid theme stays valid after a refused lookup"
+    );
+}
+
+#[test]
+fn old_theme_json_loads_with_defaulted_chrome_slots() {
+    let old = serde_json::json!({
+        "name": "legacy",
+        "bull": "#20B46C",
+        "bear": "#B42020",
+        "fast": "#20C8F0",
+        "slow": "#B4F028",
+        "background": "#000000",
+        "ribbon_bull": "#00BCD4",
+        "ribbon_bear": "#7B1FA2",
+        "bull_down": "#FF9800",
+        "bear_up": "#2196F3",
+        "rsi": "#20C8F0",
+        "cci": "#B4F028",
+        "cmo": "#8CF050",
+        "mfi": "#F020F0",
+        "stoch": "#B4F0C8",
+        "aroon": "#FAF028",
+        "adx": "#20C8F0",
+        "grid": "#2A2A2A"
+    });
+    let theme = crate::config::theme_from_json(&old.to_string())
+        .expect("old JSON without chrome slots loads");
+    assert_eq!(theme.name, "legacy");
+    assert_eq!(theme.bull, "#20B46C");
+    assert!(theme.validate().is_ok(), "defaulted slots validate");
+    let fresh = ThemeConfig::default();
+    assert_eq!(theme.surface, fresh.surface, "surface defaults");
+    assert_eq!(theme.on_surface, fresh.on_surface, "on-surface defaults");
+    assert_eq!(
+        theme.outline_variant, fresh.outline_variant,
+        "outline-variant defaults"
+    );
+}
+
+#[test]
+fn chrome_slots_refuse_malformed_hex_naming_the_slot() {
+    for slot in ["surface", "on_surface", "outline_variant"] {
+        for bad in ["red", "#FFF", "#GGGGGG", "", "#12345G", "20B46C"] {
+            let mut theme = ThemeConfig::default();
+            theme
+                .set_field(slot, bad)
+                .expect("any text writes through the text contract");
+            let error = theme.validate().expect_err("malformed chrome slots refuse");
+            assert!(
+                error.to_string().contains(slot),
+                "the refusal names {slot}: {error}"
+            );
+        }
+        let mut theme = ThemeConfig::default();
+        theme
+            .set_field(slot, "#1A2B3C")
+            .expect("well-formed hex writes");
+        assert!(theme.validate().is_ok(), "a well-formed {slot} validates");
+    }
+}
+
+#[test]
+fn style_keys_lists_every_chrome_slot_exactly_once() {
+    let keys = ThemeConfig::style_keys();
+    for slot in ["surface", "on_surface", "outline_variant"] {
+        assert_eq!(
+            keys.iter().copied().filter(|key| *key == slot).count(),
+            1,
+            "{slot} appears exactly once: {keys:?}"
+        );
+        assert!(
+            ThemeConfig::default().style(slot).is_some(),
+            "{slot} resolves"
+        );
+    }
+}
+
+#[tokio::test]
+async fn theme_file_round_trips_through_the_filesystem() {
+    let dir = std::env::temp_dir().join("fluent_egui_theme_probe");
+    std::fs::create_dir_all(&dir).expect("scratch dir");
+    let path = dir.join("theme.json");
+    std::fs::write(&path, r##"{"name": "file", "bull": "#123456"}"##).expect("theme writes");
+    let theme = crate::config::load_theme_file(&path)
+        .await
+        .expect("theme file loads");
+    assert_eq!(theme.name, "file", "the file body deserializes");
+    assert_eq!(
+        theme.bull, "#123456",
+        "explicit slots survive the round trip"
+    );
+    assert!(theme.validate().is_ok(), "the loaded theme validates");
+    std::fs::remove_file(&path).ok();
+    let missing = dir.join("absent.json");
+    let error = crate::config::load_theme_file(&missing)
+        .await
+        .expect_err("a missing file refuses");
+    assert!(
+        error.to_string().contains("absent.json"),
+        "the refusal names the path: {error}"
+    );
+}

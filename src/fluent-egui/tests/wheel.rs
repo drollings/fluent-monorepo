@@ -291,3 +291,55 @@ fn range_zoom_refuses_degenerate_input() {
 fn close_factor(actual: f64, expected: f64) -> bool {
     (actual - expected).abs() <= 1e-9 * expected.abs().max(1.0)
 }
+
+fn chart_with_overlay() -> WheelZones {
+    chart_with_list().with_overlay(Rect::new(Pos2::new(190.0, 15.0), Pos2::new(280.0, 120.0)))
+}
+
+#[test]
+fn overlay_scrolls_instead_of_zooming() {
+    let zones = chart_with_overlay();
+    assert_eq!(
+        zones.route(Pos2::new(200.0, 20.0)),
+        Some(WheelTarget::Overlay),
+        "a wheel over the overlay is consumed there"
+    );
+    assert_eq!(
+        zones.route(Pos2::new(250.0, 100.0)),
+        Some(WheelTarget::Overlay),
+        "anywhere inside the overlay routes there"
+    );
+}
+
+#[test]
+fn overlay_wins_over_list_and_plot() {
+    // The overlay floats above both the legend and the candles: it covers
+    // the list rect (180,10)-(290,60), so their shared interior routes to
+    // the overlay while the list keeps what the overlay does not cover.
+    let zones = chart_with_overlay();
+    assert_eq!(
+        zones.route(Pos2::new(200.0, 20.0)),
+        Some(WheelTarget::Overlay)
+    );
+    assert_eq!(
+        zones.route(Pos2::new(185.0, 12.0)),
+        Some(WheelTarget::List),
+        "list area outside the overlay still scrolls the list"
+    );
+    assert_eq!(
+        zones.route(Pos2::new(40.0, 20.0)),
+        Some(WheelTarget::Time {
+            pane: 0,
+            anchor_x: 40.0
+        }),
+        "plot outside every overlay still zooms"
+    );
+}
+
+#[test]
+fn overlay_is_not_a_zoom() {
+    assert!(
+        !WheelTarget::Overlay.is_zoom(),
+        "consuming a scroll is not a chart zoom"
+    );
+}

@@ -337,6 +337,8 @@ fn tab_field(name: &str, kind: FieldKind) -> SchemaField {
         maximum: None,
         max_len: None,
         options: Vec::new(),
+        filterable: false,
+        required: false,
         explicit_tab: None,
         group: None,
         inline_group: None,
@@ -629,6 +631,8 @@ fn an_infinite_bound_falls_back_to_the_unbounded_editor() {
         maximum: Some(f64::INFINITY),
         max_len: None,
         options: Vec::new(),
+        filterable: false,
+        required: false,
         explicit_tab: None,
         group: None,
         inline_group: None,
@@ -690,6 +694,8 @@ fn tint_field() -> SchemaField {
         maximum: None,
         max_len: None,
         options: Vec::new(),
+        filterable: false,
+        required: false,
         explicit_tab: None,
         group: None,
         inline_group: None,
@@ -733,27 +739,117 @@ fn paint_tint(tint: &str) -> (FieldEdits, Vec<egui::Color32>) {
 }
 
 #[test]
-fn an_unreadable_tint_paints_no_stand_in_color() {
-    // The neutral cyan seeds the picker only for the empty ("inherit")
-    // case. Unreadable text paints no swatch and no seeded picker — the hex
-    // text remains the recovery path — so the frame holds no stand-in for
-    // a value the field does not hold.
+fn color_fields_paint_one_swatch_and_no_stand_in_color() {
+    // One swatch per field: filled with the parsed color when the text
+    // holds one, hollow otherwise. Neither an unreadable value nor the
+    // empty inherit case seeds a stand-in fill — the picker (neutral when
+    // unset) lives behind a click, so the frame holds no color the field
+    // does not hold.
     let neutral = egui::Color32::from_rgb(32, 200, 240);
-    let (edits, fills) = paint_tint("#zzz");
+    for tint in ["#zzz", ""] {
+        let (edits, fills) = paint_tint(tint);
+        assert!(
+            !fills.contains(&neutral),
+            "{tint:?} seeds no neutral: {fills:?}"
+        );
+        assert!(
+            edits.written.is_empty(),
+            "an untouched frame writes nothing: {:?}",
+            edits.written
+        );
+    }
+    let (_, red_fills) = paint_tint("#FF0000");
     assert!(
-        !fills.contains(&neutral),
-        "unreadable input seeds no neutral: {fills:?}"
+        red_fills.contains(&egui::Color32::from_rgb(255, 0, 0)),
+        "the swatch paints the parsed color: {red_fills:?}"
+    );
+}
+
+fn tint_frame(
+    ctx: &egui::Context,
+    input: egui::RawInput,
+    target: &mut TintTarget,
+    fields: &[SchemaField],
+) -> (FieldEdits, egui::FullOutput) {
+    let edits = std::cell::RefCell::new(FieldEdits::default());
+    let mut output = ctx.run_ui(input, |ui| {
+        egui::CentralPanel::default().show(ui, |ui| {
+            *edits.borrow_mut() = paint_schema_fields(ui, fields, target);
+        });
+    });
+    output.textures_delta.clear();
+    (edits.into_inner(), output)
+}
+
+fn frame_screen() -> egui::RawInput {
+    egui::RawInput {
+        screen_rect: Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(800.0, 600.0),
+        )),
+        ..Default::default()
+    }
+}
+
+fn swatch_center(output: &egui::FullOutput) -> egui::Pos2 {
+    output
+        .shapes
+        .iter()
+        .find_map(|clipped| match &clipped.shape {
+            egui::Shape::Rect(rect)
+                if rect.fill.a() == 0
+                    && (rect.rect.width() - 14.0).abs() < 0.01
+                    && (rect.rect.height() - 14.0).abs() < 0.01 =>
+            {
+                Some(rect.rect.center())
+            }
+            _ => None,
+        })
+        .expect("the hollow swatch paints")
+}
+
+#[test]
+fn clicking_the_swatch_opens_the_picker() {
+    // The swatch is the only picker affordance: untouched frames paint no
+    // picker shapes, and a click on the swatch opens the popup (the frame
+    // gains its shapes) without writing anything by itself.
+    let ctx = egui::Context::default();
+    ctx.set_fonts(egui::FontDefinitions::empty());
+    let mut target = TintTarget {
+        tint: String::new(),
+    };
+    let fields = vec![tint_field()];
+    let (_, quiet) = tint_frame(&ctx, frame_screen(), &mut target, &fields);
+    let center = swatch_center(&quiet);
+    let (_, opened) = tint_frame(
+        &ctx,
+        egui::RawInput {
+            screen_rect: frame_screen().screen_rect,
+            events: vec![
+                egui::Event::PointerMoved(center),
+                egui::Event::PointerButton {
+                    pos: center,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: egui::Modifiers::default(),
+                },
+                egui::Event::PointerButton {
+                    pos: center,
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: egui::Modifiers::default(),
+                },
+            ],
+            ..Default::default()
+        },
+        &mut target,
+        &fields,
     );
     assert!(
-        edits.written.is_empty(),
-        "an untouched frame writes nothing: {:?}",
-        edits.written
+        opened.shapes.len() > quiet.shapes.len(),
+        "clicking the swatch opens the picker"
     );
-    let (_, inherit_fills) = paint_tint("");
-    assert!(
-        inherit_fills.contains(&neutral),
-        "the empty inherit case keeps its neutral start: {inherit_fills:?}"
-    );
+    assert_eq!(target.tint, "", "opening the picker writes nothing");
 }
 
 #[test]
@@ -1007,4 +1103,218 @@ fn a_zero_count_list_still_offers_an_add_button() {
         !texts.iter().any(|text| text == "slots.0.amount"),
         "no item row paints while the count is zero: {texts:?}"
     );
+}
+
+#[test]
+fn a_malformed_theme_write_leaves_the_target_untouched() {
+    let mut pane = crate::PaneConfig::new().name("price".to_owned()).build();
+    let before = pane.height_share;
+    let error = pane
+        .set_field("height_share", "not-a-number")
+        .expect_err("an unparseable write refuses");
+    assert!(
+        error.to_string().contains("height_share"),
+        "the refusal names the offender: {error}"
+    );
+    assert!(
+        (pane.height_share - before).abs() < f64::EPSILON,
+        "a refused write leaves the slot exactly as it was"
+    );
+    assert!(
+        pane.validate().is_ok(),
+        "the config still validates after a refused write"
+    );
+}
+
+#[derive(Debug, Clone, PartialEq, FieldAccess, Describable)]
+struct SelectProbe {
+    #[field(desc = "Data source")]
+    source: String,
+}
+
+fn select_schema(filterable: bool, required: bool) -> serde_json::Value {
+    serde_json::json!({"properties": {
+        "source": {"type": "string", "description": "Data source",
+                   "enum": ["close", "open", "hl2", "hlc3"],
+                   "x-filter": filterable, "x-required": required}
+    }})
+}
+
+#[test]
+fn select_filter_narrows_and_fails_open_to_the_full_list() {
+    let options: Vec<String> = (0..200).map(|index| format!("option-{index:03}")).collect();
+    let corpus = lowered_option_corpus(&options);
+    assert_eq!(corpus.len(), 200, "one lowered entry per option");
+    assert_eq!(
+        matching_option_indices(&corpus, "option-001"),
+        vec![1],
+        "a specific query narrows to its row"
+    );
+    assert_eq!(
+        matching_option_indices(&corpus, "OPTION-001"),
+        vec![1],
+        "matching ignores case"
+    );
+    assert_eq!(
+        matching_option_indices(&corpus, "").len(),
+        200,
+        "an empty query restores the full list"
+    );
+    assert_eq!(
+        matching_option_indices(&corpus, "   ").len(),
+        200,
+        "a blank query restores the full list"
+    );
+    assert_eq!(
+        matching_option_indices(&corpus, "no such option anywhere").len(),
+        200,
+        "a query matching nothing shows the full list, never an empty one"
+    );
+}
+
+#[test]
+fn filter_and_required_hints_lift_from_the_schema() {
+    let lifted = schema_fields(&select_schema(true, true));
+    assert!(lifted[0].filterable, "x-filter true arms the filter line");
+    assert!(lifted[0].required, "x-required true marks the field");
+    let plain = schema_fields(&select_schema(false, false));
+    assert!(
+        !plain[0].filterable && !plain[0].required,
+        "absent hints read as off"
+    );
+    let text = schema_fields(&serde_json::json!({"properties": {
+        "source": {"type": "string", "x-filter": "true", "x-required": "TRUE"}
+    }}));
+    assert!(
+        text[0].filterable && text[0].required,
+        "text hints read case-insensitively"
+    );
+    let malformed = schema_fields(&serde_json::json!({"properties": {
+        "source": {"type": "string", "x-filter": 7, "x-required": "yes"}
+    }}));
+    assert!(
+        !malformed[0].filterable && !malformed[0].required,
+        "a malformed hint disables rather than enabling"
+    );
+}
+
+#[test]
+fn plain_and_filterable_selects_rest_quietly_when_untouched() {
+    for filterable in [false, true] {
+        let fields = schema_fields(&select_schema(filterable, false));
+        let mut control = SelectProbe {
+            source: "close".to_owned(),
+        };
+        egui::__run_test_ui(|ui| {
+            let edits = paint_schema_fields(ui, &fields, &mut control);
+            assert_eq!(
+                edits,
+                FieldEdits::default(),
+                "an untouched select changes nothing (filterable={filterable}): {edits:?}"
+            );
+        });
+        assert_eq!(control.source, "close", "rendering moves no value");
+    }
+}
+
+#[test]
+fn required_marks_the_label_and_never_blocks_a_write() {
+    let fields = schema_fields(&select_schema(false, true));
+    assert!(
+        bounds_hint(&fields[0]).contains("required"),
+        "the hover text advertises the requirement"
+    );
+    let mut control = SelectProbe {
+        source: "close".to_owned(),
+    };
+    let ctx = egui::Context::default();
+    let mut output = ctx.run_ui(egui::RawInput::default(), |root| {
+        egui::CentralPanel::default().show(root, |ui| {
+            let edits = paint_schema_fields(ui, &fields, &mut control);
+            assert_eq!(
+                edits,
+                FieldEdits::default(),
+                "a requirement is advertised, never enforced by the editor: {edits:?}"
+            );
+        });
+    });
+    output.textures_delta.clear();
+    assert!(
+        painted_texts(&output).iter().any(|text| text == "source*"),
+        "the label carries the mark: {:?}",
+        painted_texts(&output)
+    );
+    control
+        .set_field("source", "open")
+        .expect("a required field still writes through its own contract");
+    assert_eq!(control.source, "open");
+}
+
+fn screen_rect() -> egui::Rect {
+    egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0))
+}
+
+fn hover_input(pos: egui::Pos2) -> egui::RawInput {
+    egui::RawInput {
+        screen_rect: Some(screen_rect()),
+        events: vec![egui::Event::PointerMoved(pos)],
+        ..Default::default()
+    }
+}
+
+fn press_input(pos: egui::Pos2, pressed: bool) -> egui::RawInput {
+    egui::RawInput {
+        screen_rect: Some(screen_rect()),
+        events: vec![
+            egui::Event::PointerMoved(pos),
+            egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::default(),
+            },
+        ],
+        ..Default::default()
+    }
+}
+
+fn switch_frame(
+    ctx: &egui::Context,
+    input: egui::RawInput,
+    value: &mut bool,
+) -> (bool, egui::Rect) {
+    let changed = std::cell::Cell::new(false);
+    let rect = std::cell::Cell::new(egui::Rect::NOTHING);
+    let mut output = ctx.run_ui(input, |root| {
+        egui::CentralPanel::default().show(root, |ui| {
+            ui.horizontal(|row| {
+                let response = paint_switch(row, &mut *value);
+                changed.set(response.changed());
+                rect.set(response.rect);
+            });
+        });
+    });
+    output.textures_delta.clear();
+    (changed.get(), rect.get())
+}
+
+#[test]
+fn switch_flips_on_click_and_ignores_other_gestures() {
+    let ctx = egui::Context::default();
+    let mut value = false;
+    let (_, rect) = switch_frame(&ctx, egui::RawInput::default(), &mut value);
+    assert!(!value, "painting alone flips nothing");
+    let center = rect.center();
+    let (hovered, _) = switch_frame(&ctx, hover_input(center), &mut value);
+    assert!(!hovered && !value, "hover alone flips nothing");
+    let (pressed, _) = switch_frame(&ctx, press_input(center, true), &mut value);
+    assert!(!pressed && !value, "press alone flips nothing");
+    let (released, _) = switch_frame(&ctx, press_input(center, false), &mut value);
+    assert!(released && value, "release on the switch flips it");
+    let (away, _) = switch_frame(
+        &ctx,
+        press_input(egui::pos2(700.0, 500.0), false),
+        &mut value,
+    );
+    assert!(!away && value, "a release elsewhere flips nothing");
 }

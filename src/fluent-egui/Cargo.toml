@@ -18,6 +18,7 @@ protopyne-chart-model = { path = "../protopyne-chart-model" }
 protopyne-chart-scale = { path = "../protopyne-chart-scale" }
 protopyne-types = { path = "../protopyne-types" }
 bon = { workspace = true }
+dashmap = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }

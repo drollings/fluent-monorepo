@@ -2583,3 +2583,111 @@ fn styled_delta_bars_split_bull_and_bear_legs() {
         "no default color leaks in: {colors:?}"
     );
 }
+
+#[test]
+fn state_layer_applies_spec_overlays_on_light_and_dark_bases() {
+    let white = egui::Color32::from_rgb(255, 255, 255);
+    let black = egui::Color32::from_rgb(0, 0, 0);
+    assert!(
+        (HOVER_FRAC - 0.08).abs() < f32::EPSILON,
+        "hover reads the 8% spec overlay"
+    );
+    assert!(
+        (PRESS_FRAC - 0.12).abs() < f32::EPSILON,
+        "press reads the 12% spec overlay"
+    );
+    let hovered = state_layer(white, black, HOVER_FRAC);
+    assert_eq!(
+        (hovered.r(), hovered.g(), hovered.b(), hovered.a()),
+        (235, 235, 235, 255),
+        "8% black over white: {hovered:?}"
+    );
+    let pressed = state_layer(white, black, PRESS_FRAC);
+    assert_eq!(
+        (pressed.r(), pressed.g(), pressed.b(), pressed.a()),
+        (224, 224, 224, 255),
+        "12% black over white: {pressed:?}"
+    );
+    let hovered_dark = state_layer(black, white, HOVER_FRAC);
+    assert_eq!(
+        (hovered_dark.r(), hovered_dark.g(), hovered_dark.b()),
+        (20, 20, 20),
+        "8% white over black: {hovered_dark:?}"
+    );
+    let pressed_dark = state_layer(black, white, PRESS_FRAC);
+    assert_eq!(
+        (pressed_dark.r(), pressed_dark.g(), pressed_dark.b()),
+        (31, 31, 31),
+        "12% white over black: {pressed_dark:?}"
+    );
+}
+
+#[test]
+fn state_layer_leaves_the_base_untouched_outside_zero_to_one() {
+    let base = egui::Color32::from_rgba_unmultiplied(10, 20, 30, 40);
+    let overlay = egui::Color32::from_rgba_unmultiplied(200, 210, 220, 230);
+    for frac in [
+        f32::NAN,
+        f32::INFINITY,
+        f32::NEG_INFINITY,
+        -0.5,
+        -1.0,
+        1.5,
+        2.0,
+    ] {
+        assert_eq!(
+            state_layer(base, overlay, frac),
+            base,
+            "frac {frac} is not a blend, so the base stands"
+        );
+    }
+    assert_eq!(state_layer(base, overlay, 0.0), base, "zero blends nothing");
+    assert_eq!(
+        state_layer(base, overlay, 1.0),
+        overlay,
+        "one blends the full overlay"
+    );
+}
+
+#[test]
+fn disabled_inks_keep_the_alpha_channel_honest() {
+    let surface = egui::Color32::from_rgb(0, 0, 0);
+    let ink = egui::Color32::from_rgba_unmultiplied(255, 255, 255, 128);
+    for alpha in [0u8, 1, 40, 128, 200, 255] {
+        let tinted = egui::Color32::from_rgba_unmultiplied(90, 140, 200, alpha);
+        assert_eq!(
+            disabled_content(tinted, surface).a(),
+            alpha,
+            "disabled content never touches alpha"
+        );
+        assert_eq!(
+            disabled_outline(tinted, surface).a(),
+            alpha,
+            "disabled outline never touches alpha"
+        );
+    }
+    let content = disabled_content(ink, surface);
+    assert_eq!(
+        (content.r(), content.g(), content.b(), content.a()),
+        (79, 79, 79, 128),
+        "content fades 38% toward the surface, alpha intact: {content:?}"
+    );
+    let outline = disabled_outline(ink, surface);
+    assert_eq!(
+        (outline.r(), outline.g(), outline.b(), outline.a()),
+        (113, 113, 113, 128),
+        "outline fades 12% toward the surface, alpha intact: {outline:?}"
+    );
+}
+
+#[test]
+fn chrome_frame_rounding_stays_subtle() {
+    assert!(
+        (MODAL_CORNER_PX - 4.0).abs() < f32::EPSILON,
+        "dialog container corner"
+    );
+    assert!(
+        (ACTION_PILL_PX - 3.0).abs() < f32::EPSILON,
+        "action pill radius"
+    );
+}

@@ -701,7 +701,7 @@ pub fn paint_range_dialog(
 
 /// Slim preset chip width: the six short labels (`1M`–`All`) share one
 /// Material row height with every other top-bar control.
-pub const RANGE_PRESET_BUTTON_WIDTH: f32 = 48.0;
+pub const RANGE_PRESET_BUTTON_WIDTH: f32 = 40.0;
 
 /// What the range dialog's action row raised.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
