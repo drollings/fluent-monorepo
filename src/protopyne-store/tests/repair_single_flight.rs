@@ -145,3 +145,94 @@ async fn two_concurrent_passes_yield_one_repair_and_one_complete() {
         "concurrent and solo passes commit identically"
     );
 }
+
+/// Contention go/no-go: two identical two-symbol torn setups must report
+/// identically with no locking-error detail. One shared SQLite file serves
+/// both symbols, so a concurrent fan-out that contends would surface here
+/// as a `Busy`/`Deferred` detail or divergent attempts — and the migration
+/// it gates must not land.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn concurrent_symbols_report_identically_with_no_locking_errors() {
+    use crate::repair::SymbolRepair;
+    async fn setup_and_run(dir: &tempfile::TempDir) -> Vec<SymbolRepair> {
+        let file_bars = th::ascending_bars(0, 12);
+        let csv = th::write_tape_csv(dir, "spy.csv", &file_bars);
+        let (handle, permit, caps) = th::open_file_handle(dir, "store");
+        let mut held: Vec<protopyne_types::Bar> = file_bars[..5].to_vec();
+        held.extend_from_slice(&file_bars[8..]);
+        let (spy_key, qqq_key, first_ms, end_ms) = fluent_wvr::CURRENT_CAPS
+            .scope(caps.clone(), async {
+                let spy_key = th::register_m1(&handle, &permit, "SPY");
+                let qqq_key = th::register_m1(&handle, &permit, "QQQ");
+                th::seed_append(&handle, &permit, spy_key, &held);
+                th::seed_append(&handle, &permit, qqq_key, &held);
+                let first = file_bars.first().expect("nonempty").ts.timestamp_millis();
+                let end = file_bars
+                    .last()
+                    .expect("nonempty")
+                    .ts
+                    .timestamp_millis()
+                    .saturating_add(60_000);
+                (spy_key, qqq_key, first, end)
+            })
+            .await;
+        let spy_provider: std::sync::Arc<dyn crate::history::HistoryProvider> = std::sync::Arc::new(
+            crate::history::FileHistory::new(csv.clone(), spy_key, th::server_parse)
+                .expect("provider reads"),
+        );
+        let qqq_provider: std::sync::Arc<dyn crate::history::HistoryProvider> = std::sync::Arc::new(
+            crate::history::FileHistory::new(csv, qqq_key, th::server_parse)
+                .expect("provider reads"),
+        );
+        let coordinator = RecoveryCoordinator::new(
+            std::sync::Arc::new(handle),
+            vec![
+                (spy_key.symbol_id, spy_provider),
+                (qqq_key.symbol_id, qqq_provider),
+            ],
+            th::test_config(),
+        )
+        .expect("valid config");
+        let want = TimeRange::bounded(first_ms, end_ms).expect("bounded");
+        let now = th::now_after(&file_bars);
+        fluent_wvr::CURRENT_CAPS
+            .scope(caps.clone(), async {
+                let plan = coordinator
+                    .plan(
+                        &permit,
+                        &[(spy_key, want), (qqq_key, want)],
+                        now,
+                        FreshnessPolicy::new().build(),
+                    )
+                    .expect("plan builds");
+                assert_eq!(plan.len(), 2, "both torn symbols plan a repair");
+                coordinator.run_once(&permit, &plan).await
+            })
+            .await
+    }
+    let dir_a = tempfile::tempdir().expect("tempdir");
+    let dir_b = tempfile::tempdir().expect("tempdir");
+    let (reports_a, reports_b) = tokio::join!(setup_and_run(&dir_a), setup_and_run(&dir_b));
+    for reports in [&reports_a, &reports_b] {
+        assert_eq!(reports.len(), 2);
+        for report in reports {
+            assert_eq!(
+                report.status,
+                RepairStatus::Repaired,
+                "both symbols repair: {report:?}"
+            );
+            assert_eq!(report.inserted, 3, "the three torn bars fill: {report:?}");
+            for needle in ["locked", "busy", "BUSY", "submit failed"] {
+                assert!(
+                    !report.detail.contains(needle),
+                    "no contention detail in: {}",
+                    report.detail
+                );
+            }
+        }
+    }
+    assert_eq!(
+        reports_a, reports_b,
+        "identical setups report identically across runs"
+    );
+}

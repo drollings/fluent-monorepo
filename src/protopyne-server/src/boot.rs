@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 use chrono::Utc;
 use fluent_concurrency::batch::SupervisedBatch;
 use fluent_concurrency::pool::Limiter;
-use fluent_concurrency::scope::Scope;
+use fluent_concurrency::scope::{scoped, Scope};
 use fluent_wvr::prelude::*;
 use tokio::sync::broadcast;
 
@@ -860,24 +860,23 @@ async fn boot_ingest(
         return Ok(());
     };
     let service = Arc::new(
-        fluent_wvr::CURRENT_CAPS
-            .scope(tape.caps.clone(), async {
-                let service = IngestService::new(
-                    ingest_config,
-                    Arc::clone(&tape.store),
-                    tape.permit.clone(),
-                    boot.feed,
-                    boot.providers,
-                    // Production default: regular US equity hours, weekends
-                    // closed, no dated exceptions. Dated holiday and half-day
-                    // lists ride a future config surface; until then a holiday
-                    // reads as an unfillable gap rather than a silent skip.
-                    SessionCalendar::us_equities(),
-                )?;
-                service.bootstrap(Utc::now().timestamp_millis()).await?;
-                Ok::<_, ServerError>(service)
-            })
-            .await?,
+        scoped(tape.caps.clone(), async {
+            let service = IngestService::new(
+                ingest_config,
+                Arc::clone(&tape.store),
+                tape.permit.clone(),
+                boot.feed,
+                boot.providers,
+                // Production default: regular US equity hours, weekends
+                // closed, no dated exceptions. Dated holiday and half-day
+                // lists ride a future config surface; until then a holiday
+                // reads as an unfillable gap rather than a silent skip.
+                SessionCalendar::us_equities(),
+            )?;
+            service.bootstrap(Utc::now().timestamp_millis()).await?;
+            Ok::<_, ServerError>(service)
+        })
+        .await?,
     );
     let session = service
         .subscribe()
@@ -886,24 +885,22 @@ async fn boot_ingest(
     let run_service = Arc::clone(&service);
     let publish_service = Arc::clone(&service);
     let publish_state = Arc::clone(state);
-    fluent_wvr::CURRENT_CAPS
-        .scope(tape.caps.clone(), async {
-            scope.spawn(async move {
-                // The loop only exits on abort or channel close; either way
-                // the publisher keeps mirroring the last reading, whose
-                // growing watermark age names the stall.
-                let _ = run_service.run(session).await;
-            });
-            scope.spawn(async move {
-                let mut interval = tokio::time::interval(std::time::Duration::from_millis(
-                    INGEST_HEALTH_PUBLISH_MS,
-                ));
-                loop {
-                    publish_state.publish_ingest(publish_service.health());
-                    interval.tick().await;
-                }
-            });
-        })
-        .await;
+    scoped(tape.caps.clone(), async {
+        scope.spawn(async move {
+            // The loop only exits on abort or channel close; either way
+            // the publisher keeps mirroring the last reading, whose
+            // growing watermark age names the stall.
+            let _ = run_service.run(session).await;
+        });
+        scope.spawn(async move {
+            let mut interval =
+                tokio::time::interval(std::time::Duration::from_millis(INGEST_HEALTH_PUBLISH_MS));
+            loop {
+                publish_state.publish_ingest(publish_service.health());
+                interval.tick().await;
+            }
+        });
+    })
+    .await;
     Ok(())
 }

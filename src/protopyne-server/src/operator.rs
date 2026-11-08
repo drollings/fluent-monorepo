@@ -10,6 +10,7 @@
 use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
+use fluent_concurrency::scope::scoped;
 
 use protopyne_strategy::{
     Direction, FillOutcome, FillStatus, GrantLedger, OrderShape, Proposal, ProposalSide,
@@ -51,22 +52,21 @@ pub(crate) async fn execute_operator_commands(
     done_through: i64,
 ) -> Result<i64, protopyne_venue::VenueError> {
     let caps = fluent_wvr::CapabilitySet::new().with(permit.clone());
-    fluent_wvr::CURRENT_CAPS
-        .scope(
-            caps,
-            execute_scoped(
-                session,
-                journal,
-                permit,
-                ledger,
-                risk,
-                risk_state,
-                quote,
-                now,
-                done_through,
-            ),
-        )
-        .await
+    scoped(
+        caps,
+        execute_scoped(
+            session,
+            journal,
+            permit,
+            ledger,
+            risk,
+            risk_state,
+            quote,
+            now,
+            done_through,
+        ),
+    )
+    .await
 }
 
 async fn execute_scoped(

@@ -46,5 +46,17 @@ path = "tests/pool_paths.rs"
 name = "doc_stubs"
 path = "tests/doc_stubs.rs"
 
+[[test]]
+name = "scope_caps"
+path = "tests/scope_caps.rs"
+
+[[test]]
+name = "scoped"
+path = "tests/scoped.rs"
+
+[[test]]
+name = "pool_submit_all"
+path = "tests/pool_submit_all.rs"
+
 [lints]
 workspace = true

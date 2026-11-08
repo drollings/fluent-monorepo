@@ -33,6 +33,18 @@ use tokio::task::{AbortHandle, JoinSet};
 // the existing `crate::scope::CURRENT_CAPS` path keep working, and so both
 // `fluent-concurrency` and `fluent-db` read the same variable.
 pub use fluent_wvr::capability::CURRENT_CAPS;
+use fluent_wvr::CapabilitySet;
+
+/// Install `caps` around one future and return its output.
+///
+/// Bare-spawned workers see an empty task-local, so gated call sites must
+/// ferry their set explicitly. This is the one helper for that ferry.
+pub async fn scoped<Fut>(caps: CapabilitySet, fut: Fut) -> Fut::Output
+where
+    Fut: Future,
+{
+    CURRENT_CAPS.scope(caps, fut).await
+}
 
 #[must_use = "Scopes must be explicitly closed with .close().await"]
 /// Structured concurrency scope — all spawned tasks are joined or aborted on drop.

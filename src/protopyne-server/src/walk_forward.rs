@@ -415,13 +415,12 @@ pub async fn run_walk_forward(
             ))
         },
     );
-    let mut indexed = Vec::with_capacity(folds.len());
-    for job in jobs {
-        let (index, run) = pool
-            .submit(job)
-            .await
-            .map_err(|e| ServerError::Backtest(format!("walk-forward submit failed: {e:?}")))?;
-        indexed.push((index, run));
+    let mut indexed = Vec::with_capacity(jobs.len());
+    for outcome in pool.submit_all(jobs, None).await {
+        indexed
+            .push(outcome.map_err(|e| {
+                ServerError::Backtest(format!("walk-forward submit failed: {e:?}"))
+            })?);
     }
     pool.shutdown().await;
     indexed.sort_by_key(|(index, _)| *index);

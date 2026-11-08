@@ -67,5 +67,9 @@ harness = false
 name = "history_load"
 harness = false
 
+[[test]]
+name = "fanout_serial"
+path = "tests/fanout_serial.rs"
+
 [lints]
 workspace = true

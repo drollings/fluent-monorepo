@@ -37,6 +37,9 @@ workspace = true
 [dev-dependencies]
 # The shared grant fixture (one baseline + the deny order) for arming tests.
 protopyne-strategy = { path = "../protopyne-strategy", features = ["test-support"] }
+# Test-only double for the decline-lock contrast: the macro's accept-all
+# surface is demonstrated, never adopted.
+fluent-wvr-testutil = { path = "../fluent-wvr-testutil" }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 

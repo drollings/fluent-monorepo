@@ -158,6 +158,19 @@ fn import_cycle_refuses_with_reason() {
     let err = resolve_imports(modules).expect_err("cycle refuses");
     let reason = err.to_string();
     assert!(reason.contains("cycle"), "reason names the cycle: {reason}");
+    match &err {
+        crate::KernelError::Graph { message, source } => {
+            assert!(matches!(
+                source,
+                fluent_dag::dep_graph::GraphError::CircularDependency(_)
+            ));
+            assert!(
+                message.contains("cycle"),
+                "carry names the cycle: {message}"
+            );
+        }
+        other => panic!("expected structured graph carry, got {other:?}"),
+    }
 }
 
 #[test]

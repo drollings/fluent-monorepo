@@ -667,8 +667,10 @@ impl MtfStore {
         let (graph, resolved) = build_graph(registry, &pairs)?;
         // The shared `From<GraphError>` reads pine-flavored; the store names
         // its own mapping so a cycle here never reports as an import failure.
-        let order = order_for(&graph, &keys)
-            .map_err(|err| KernelError::InvalidInput(format!("mtf store graph failed: {err}")))?;
+        let order = order_for(&graph, &keys).map_err(|source| KernelError::Graph {
+            message: format!("mtf store graph failed: {source}"),
+            source,
+        })?;
 
         if self.closed_rev != self.base_rev {
             self.closed = self.base.iter().map(ClosedBar::from_proto_bar).collect();

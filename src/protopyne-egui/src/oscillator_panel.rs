@@ -366,7 +366,7 @@ impl OscillatorPanelState {
                     what: format!("{kind}.{what}"),
                     reason,
                 },
-                error @ EguiError::Dependency { .. } => error,
+                error @ (EguiError::Dependency { .. } | EguiError::GraphDependency { .. }) => error,
             })?;
         }
         Ok(())

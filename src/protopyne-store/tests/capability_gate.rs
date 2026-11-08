@@ -248,3 +248,35 @@ async fn scoped_read_with_the_bound_permit_serves() {
         .await;
     assert_eq!(bars, 1, "the bound permit reads what it seeded");
 }
+
+#[tokio::test]
+async fn scoped_ferry_grants_the_same_operations() {
+    use crate::store::WritePolicy;
+    use fluent_concurrency::scope::scoped;
+    let caps = fluent_wvr::CapabilitySet::new()
+        .with(crate::capability::StoreStorage::new(":memory:".into()));
+    scoped(caps, async {
+        let tape = memory_tape();
+        let id = tape
+            .register(
+                "SPY",
+                VENUE,
+                crate::catalog::AssetClass::Stock,
+                crate::catalog::PriceScale::of(2).expect("valid scale"),
+                "UTC",
+                protopyne_types::Timeframe::M1,
+            )
+            .expect("register");
+        let key = key_of(id);
+        let outcome = tape
+            .append(
+                key,
+                &[at_ms(1_767_225_900_000)],
+                WritePolicy::InsertIfAbsent,
+            )
+            .expect("ferried append");
+        assert_eq!(outcome.inserted, 1);
+        assert!(tape.coverage(key).expect("ferried coverage").is_some());
+    })
+    .await;
+}

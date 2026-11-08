@@ -20,6 +20,17 @@ pub enum EguiError {
         /// Why the dependency refused.
         reason: String,
     },
+    /// A dependency-graph refusal with its structured cause attached. The
+    /// wording matches the plain dependency refusal; match on the source
+    /// instead of parsing it.
+    #[error("dependency refused: {reason}")]
+    GraphDependency {
+        /// Why the dependency refused, in words.
+        reason: String,
+        /// The structured graph failure behind the reason.
+        #[source]
+        source: fluent_dag::dep_graph::GraphError,
+    },
 }
 
 #[cfg(test)]

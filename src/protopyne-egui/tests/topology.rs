@@ -236,3 +236,28 @@ fn kernel_ids_sorted_len_tracks() {
     assert_eq!(ids, sorted, "picker lists sorted");
     assert_eq!(ids.len(), sorted.len());
 }
+
+#[test]
+fn unknown_kernel_carries_its_graph_cause_with_unchanged_wording() {
+    use fluent_egui::EguiError;
+    let registry = builtin_registry().expect("builtin kernels register");
+    let err = kernel_order(&registry, &["no-such-kernel".to_owned()])
+        .expect_err("unknown kernel refuses");
+    assert_eq!(
+        err.to_string(),
+        "dependency refused: node not found: no-such-kernel"
+    );
+    match &err {
+        EguiError::GraphDependency { reason, source } => {
+            assert!(matches!(
+                source,
+                fluent_dag::dep_graph::GraphError::NodeNotFound(_)
+            ));
+            assert!(
+                reason.contains("no-such-kernel"),
+                "reason names the offender: {reason}"
+            );
+        }
+        other => panic!("expected structured graph carry, got {other:?}"),
+    }
+}

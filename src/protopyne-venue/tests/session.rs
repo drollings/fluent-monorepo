@@ -946,3 +946,72 @@ async fn a_failing_gate_cancels_its_dependents_through_the_batch() {
         "the held dependent must be cancelled via the graph: {summary:?}"
     );
 }
+
+#[test]
+fn stub_refuses_unknown_fields_and_keeps_describe_shape() {
+    use fluent_wvr::{Describable, FieldAccess};
+    let mut unit = Stub {
+        name: "stub".to_owned(),
+        depends: Vec::new(),
+        provides: Vec::new(),
+        fail: false,
+    };
+    let err = unit
+        .set_field("no_such_field", "1")
+        .expect_err("unknown fields refuse");
+    assert!(matches!(err, fluent_wvr::FieldError::NotFound(_)));
+    assert!(err.to_string().contains("no_such_field"));
+    let err = unit
+        .get_field("no_such_field")
+        .expect_err("unknown reads refuse");
+    assert!(matches!(err, fluent_wvr::FieldError::NotFound(_)));
+    assert!(unit.field_names().is_empty());
+    assert_eq!(unit.describe(), serde_json::json!({"type": "object"}));
+}
+
+/// The decline-lock contrast: a macro-built double accepts every field
+/// name and describes nothing, while the hand-rolled `Stub` refuses
+/// unknown fields and keeps its shape. Swapping the latter for the former
+/// would silently widen the config surface, so the stubs stay.
+#[test]
+fn macro_surface_accepts_what_the_stub_refuses() {
+    use fluent_wvr::{Describable, FieldAccess, WorkContext, WorkError, WorkOutput};
+
+    struct Loose {
+        name: String,
+    }
+    impl WorkUnit for Loose {
+        fn name(&self) -> &str {
+            &self.name
+        }
+        fn depends(&self) -> &[ArcIntern<str>] {
+            &[]
+        }
+        fn provides(&self) -> &[ArcIntern<str>] {
+            &[]
+        }
+        fn execute(&self, _ctx: &WorkContext) -> Result<WorkOutput, WorkError> {
+            Ok(WorkOutput::ok("loose"))
+        }
+    }
+    fluent_wvr_testutil::impl_component_for_test!(Loose);
+
+    let mut loose = Loose {
+        name: "loose".to_owned(),
+    };
+    assert!(
+        loose.set_field("no_such_field", "1").is_ok(),
+        "the macro accepts any field name"
+    );
+    assert_eq!(loose.describe(), serde_json::json!({}));
+    assert!(loose.field_names().is_empty());
+
+    let mut stub = Stub {
+        name: "stub".to_owned(),
+        depends: Vec::new(),
+        provides: Vec::new(),
+        fail: false,
+    };
+    assert!(stub.set_field("no_such_field", "1").is_err());
+    assert_eq!(stub.describe(), serde_json::json!({"type": "object"}));
+}

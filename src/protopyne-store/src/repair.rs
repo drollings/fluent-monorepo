@@ -31,6 +31,7 @@ use std::time::Duration;
 
 use common_core::retry::capped_exp_backoff_ms;
 use fluent_concurrency::pool::ResultPool;
+use fluent_concurrency::scope::scoped;
 use fluent_concurrency::stream::StreamAbort;
 use fluent_wvr::prelude::*;
 use fluent_wvr::CURRENT_CAPS;
@@ -849,23 +850,24 @@ impl RecoveryCoordinator {
                     let permit = permit.clone();
                     let caps = caps.clone();
                     async move {
-                        CURRENT_CAPS
-                            .scope(
-                                caps,
-                                async move { this.repair_with_retry(&permit, job).await },
-                            )
-                            .await
+                        scoped(
+                            caps,
+                            async move { this.repair_with_retry(&permit, job).await },
+                        )
+                        .await
                     }
                 }
             },
         );
-        let mut reports = Vec::with_capacity(plan.repairs.len());
-        for (index, repair) in plan.repairs.iter().enumerate() {
-            let abort = self.abort.clone();
-            match pool
-                .submit_with_abort((index, repair.clone()), Some(abort))
-                .await
-            {
+        let jobs: Vec<(usize, SymbolRepair)> = plan.repairs.iter().cloned().enumerate().collect();
+        let mut reports = Vec::with_capacity(jobs.len());
+        for (position, outcome) in pool
+            .submit_all(jobs, Some(self.abort.clone()))
+            .await
+            .into_iter()
+            .enumerate()
+        {
+            match outcome {
                 Ok((_, report)) => reports.push(report),
                 Err(err) => reports.push(SymbolRepair {
                     status: RepairStatus::Deferred,
@@ -873,7 +875,7 @@ impl RecoveryCoordinator {
                     inserted: 0,
                     conflicts: 0,
                     detail: format!("repair submit failed: {err}"),
-                    ..repair.clone()
+                    ..plan.repairs[position].clone()
                 }),
             }
         }

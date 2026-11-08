@@ -230,11 +230,12 @@ pub fn resolve_imports(modules: Vec<ModuleInput>) -> Result<ModuleGraph, KernelE
         }
         graph.register(key, &deps, std::slice::from_ref(key))?;
     }
-    let order = graph.topo_sort().map_err(|err| match err {
-        GraphError::CircularDependency(_) => {
-            KernelError::InvalidInput(format!("pine import cycle: {err}"))
-        }
-        other => KernelError::InvalidInput(format!("pine import graph failed: {other}")),
+    let order = graph.topo_sort().map_err(|source| {
+        let message = match &source {
+            GraphError::CircularDependency(_) => format!("pine import cycle: {source}"),
+            _ => format!("pine import graph failed: {source}"),
+        };
+        KernelError::Graph { message, source }
     })?;
 
     let mut warnings: Vec<VersionWarn> = Vec::new();

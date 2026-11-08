@@ -67,14 +67,27 @@ pub enum KernelError {
         /// Iterations attempted (the documented cap).
         tried: u32,
     },
+    /// A dependency-graph refusal with its structured cause attached. The
+    /// message keeps the historical wording; match on the source instead
+    /// of parsing it.
+    #[error("invalid input: {message}")]
+    Graph {
+        /// The historical human-readable refusal, prefix included.
+        message: String,
+        /// The structured graph failure behind the message.
+        #[source]
+        source: GraphError,
+    },
 }
 
 impl From<GraphError> for KernelError {
     /// Dependency-graph registration failures (duplicate nodes on paths
     /// guarded by membership checks — defensive, never the reachable
     /// refusal). Message stays caller-neutral: both the module import graph
-    /// and the kernel dep graph convert here.
-    fn from(err: GraphError) -> Self {
-        KernelError::InvalidInput(format!("dependency graph failed: {err}"))
+    /// and the kernel dep graph convert here. The structured cause rides
+    /// along as the source; the wording is unchanged.
+    fn from(source: GraphError) -> Self {
+        let message = format!("dependency graph failed: {source}");
+        KernelError::Graph { message, source }
     }
 }

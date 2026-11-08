@@ -152,3 +152,44 @@ fn a_cycle_is_refused_by_name_in_both_registries() {
         }
     }
 }
+
+#[test]
+fn graph_and_kernel_displays_stay_byte_identical() {
+    let circular = GraphError::CircularDependency("cyc_a, cyc_b".to_owned());
+    assert_eq!(
+        circular.to_string(),
+        "dependency cycle detected involving: cyc_a, cyc_b"
+    );
+    let unknown = GraphError::NodeNotFound("not_a_kernel".to_owned());
+    assert_eq!(unknown.to_string(), "node not found: not_a_kernel");
+    let mapped = KernelError::from(GraphError::CircularDependency("cyc_a".to_owned()));
+    assert_eq!(
+        mapped.to_string(),
+        "invalid input: dependency graph failed: dependency cycle detected involving: cyc_a"
+    );
+    match &mapped {
+        KernelError::Graph { message, source } => {
+            assert!(matches!(source, GraphError::CircularDependency(_)));
+            assert!(
+                message.contains("cyc_a"),
+                "the offender is named: {message}"
+            );
+        }
+        other => panic!("expected structured graph carry, got {other:?}"),
+    }
+    let mapped = KernelError::from(GraphError::NodeNotFound("not_a_kernel".to_owned()));
+    assert_eq!(
+        mapped.to_string(),
+        "invalid input: dependency graph failed: node not found: not_a_kernel"
+    );
+    match &mapped {
+        KernelError::Graph { message, source } => {
+            assert!(matches!(source, GraphError::NodeNotFound(_)));
+            assert!(
+                message.contains("not_a_kernel"),
+                "the offender is named: {message}"
+            );
+        }
+        other => panic!("expected structured graph carry, got {other:?}"),
+    }
+}

@@ -33,10 +33,11 @@ pub const HEALTH_RIBBON_NODE: &str = "health:ribbon";
 /// MA-health oscillator off the price pane.
 pub const HEALTH_MA_NODE: &str = "health:ma";
 
-/// Carry a graph refusal across the crate boundary without a second error type.
-fn describe_graph(error: &fluent_dag::dep_graph::GraphError) -> EguiError {
-    EguiError::Dependency {
-        reason: error.to_string(),
+/// Carry a graph refusal across the crate boundary with its cause attached.
+fn describe_graph(source: fluent_dag::dep_graph::GraphError) -> EguiError {
+    EguiError::GraphDependency {
+        reason: source.to_string(),
+        source,
     }
 }
 
@@ -69,7 +70,7 @@ pub fn kernel_order(
     registry: &IndicatorRegistry,
     requested: &[IndicatorId],
 ) -> Result<Vec<IndicatorId>, EguiError> {
-    execution_order(registry, requested).map_err(|e| describe_graph(&e))
+    execution_order(registry, requested).map_err(describe_graph)
 }
 
 /// Cache key directly from a pane's parameter set.

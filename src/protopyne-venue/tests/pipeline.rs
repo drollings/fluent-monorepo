@@ -837,3 +837,21 @@ fn an_attestation_inside_cadence_plus_grace_allows_entries() {
     assert!(entry.authorized);
     assert!(entry.reserved);
 }
+
+#[test]
+fn early_correctness_refusal_still_evaluates_grant_merit() {
+    let case = Case {
+        quantity: "1.5",
+        min_conviction: 0.95,
+        ..Case::default()
+    };
+    let split = evaluate_split(&case);
+    assert!(!split.allowed);
+    assert_eq!(split.axis, Some(GateAxis::Correctness));
+    assert!(
+        matches!(&split.merit, Some(decision) if !decision.is_allow()),
+        "merit runs even after a correctness refusal: {:?}",
+        split.merit
+    );
+    assert!(!split.merit_reasons.is_empty());
+}

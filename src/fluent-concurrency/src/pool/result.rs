@@ -113,6 +113,21 @@ where
             .map_err(ResultPoolError::Inner)
     }
 
+    /// Submits every job concurrently and returns per-job outcomes in
+    /// submission order. Joins the existing `submit_with_abort` futures with
+    /// no spawning and no new pool. `None` behaves exactly like `submit`.
+    pub async fn submit_all(
+        &self,
+        jobs: Vec<T>,
+        abort: Option<crate::stream::StreamAbort>,
+    ) -> Vec<Result<R, ResultPoolError<E>>> {
+        let futures: Vec<_> = jobs
+            .into_iter()
+            .map(|job| self.submit_with_abort(job, abort.clone()))
+            .collect();
+        futures_util::future::join_all(futures).await
+    }
+
     /// Shuts down the pool: closes the queue, notifies workers, and awaits their completion.
     pub async fn shutdown(self) {
         self.queue.close();

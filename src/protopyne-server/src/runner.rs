@@ -1888,12 +1888,11 @@ pub async fn run_multi_backtest(
             Ok::<(usize, BacktestRun), String>((job.index, run))
         },
     );
-    let mut indexed = Vec::with_capacity(legs.len());
-    for job in legs {
-        let (index, run) = pool
-            .submit(job)
-            .await
-            .map_err(|e| ServerError::Backtest(format!("multi submit failed: {e:?}")))?;
+    let outcomes = pool.submit_all(legs, None).await;
+    let mut indexed = Vec::with_capacity(outcomes.len());
+    for outcome in outcomes {
+        let (index, run) =
+            outcome.map_err(|e| ServerError::Backtest(format!("multi submit failed: {e:?}")))?;
         indexed.push((index, run));
     }
     pool.shutdown().await;
@@ -2059,13 +2058,16 @@ pub async fn run_sweep(
             }
         },
     );
-    let mut outcomes = Vec::with_capacity(grants.len());
-    for (index, grant) in grants.into_iter().enumerate() {
-        let outcome = pool
-            .submit(SweepJob { index, grant })
-            .await
-            .map_err(|e| ServerError::Backtest(format!("sweep submit failed: {e:?}")))?;
-        outcomes.push(outcome);
+    let jobs: Vec<SweepJob> = grants
+        .into_iter()
+        .enumerate()
+        .map(|(index, grant)| SweepJob { index, grant })
+        .collect();
+    let mut outcomes = Vec::with_capacity(jobs.len());
+    for outcome in pool.submit_all(jobs, None).await {
+        outcomes.push(
+            outcome.map_err(|e| ServerError::Backtest(format!("sweep submit failed: {e:?}")))?,
+        );
     }
     pool.shutdown().await;
     outcomes.sort_by_key(|outcome| outcome.index);
