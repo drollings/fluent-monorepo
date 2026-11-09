@@ -64,6 +64,41 @@ pub struct CallEdge {
     pub callee: String,
     /// Files defining the callee (empty when unresolved).
     pub callee_files: Vec<String>,
+    /// How the callee name resolved to definition sites.
+    pub resolution: ResolutionMethod,
+}
+
+/// How a bare name resolved to definition sites. Producer-confidence
+/// only (how sure the indexer is about identity) — never a correctness
+/// verdict, and never alone a reason to delete or rewrite. Delete-adjacent
+/// consumers expand on `Homonym`/`Unresolved`, never narrow.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ResolutionMethod {
+    /// Exactly one definition site in the workspace.
+    Unique,
+    /// `count` sites share the name; every candidate stays reachable.
+    Homonym { count: usize },
+    /// No definition site found; the edge contributes no file.
+    Unresolved,
+}
+
+impl ResolutionMethod {
+    /// Certain enough to act on directly. Anything else expands.
+    #[must_use]
+    pub fn is_unique(&self) -> bool {
+        matches!(self, Self::Unique)
+    }
+
+    /// Suffix for rendered context lines; `None` when certain, so
+    /// certain lines render byte-identically to before.
+    #[must_use]
+    pub fn render_note(&self) -> Option<String> {
+        match self {
+            Self::Unique => None,
+            Self::Homonym { count } => Some(format!("ambiguous: {count} candidates")),
+            Self::Unresolved => Some("unresolved".to_string()),
+        }
+    }
 }
 
 /// An importer → specifier edge.
@@ -116,6 +151,9 @@ pub struct ContextEdge {
     pub family: ContextFamily,
     /// Raw edge detail (specifier text or callee name).
     pub via: String,
+    /// How the edge target resolved (imports that reach this struct
+    /// are resolved by construction, so always `Unique`).
+    pub resolution: ResolutionMethod,
 }
 
 /// Query-side graph signals: routing-signal lemmas (predicate + roles),
@@ -323,8 +361,8 @@ impl GraphIndex {
         for (path, harvested) in per_file {
             for symbol in &harvested.symbols {
                 for callee in &symbol.calls {
-                    let callee_files: Vec<String> = symbol_defs
-                        .get(callee)
+                    let defs = symbol_defs.get(callee);
+                    let callee_files: Vec<String> = defs
                         .map(|defs| {
                             defs.iter()
                                 .map(|def| def.file.clone())
@@ -332,6 +370,13 @@ impl GraphIndex {
                                 .collect()
                         })
                         .unwrap_or_default();
+                    // Count sites, not surviving files: a self-only name
+                    // is certain (one site) even with no file edge.
+                    let resolution = match defs.map_or(0, Vec::len) {
+                        0 => ResolutionMethod::Unresolved,
+                        1 => ResolutionMethod::Unique,
+                        count => ResolutionMethod::Homonym { count },
+                    };
                     for target in &callee_files {
                         file_deps
                             .entry(path.clone())
@@ -343,6 +388,7 @@ impl GraphIndex {
                         caller_symbol: symbol.name.clone(),
                         callee: callee.clone(),
                         callee_files,
+                        resolution,
                     });
                 }
             }
@@ -409,6 +455,7 @@ impl GraphIndex {
                         direction: ContextDirection::Dependent,
                         family: ContextFamily::Import,
                         via: edge.specifier.clone(),
+                        resolution: ResolutionMethod::Unique,
                     });
                 }
                 for edge in self.call_edges.iter().filter(|edge| {
@@ -421,6 +468,7 @@ impl GraphIndex {
                         direction: ContextDirection::Dependent,
                         family: ContextFamily::Call,
                         via: edge.callee.clone(),
+                        resolution: edge.resolution,
                     });
                 }
             }
@@ -433,6 +481,7 @@ impl GraphIndex {
                     direction: ContextDirection::Dependency,
                     family: ContextFamily::Import,
                     via: edge.specifier.clone(),
+                    resolution: ResolutionMethod::Unique,
                 });
             }
             for edge in self
@@ -447,6 +496,7 @@ impl GraphIndex {
                         direction: ContextDirection::Dependency,
                         family: ContextFamily::Call,
                         via: edge.callee.clone(),
+                        resolution: edge.resolution,
                     });
                 }
             }
@@ -770,3 +820,11 @@ pub(crate) fn normalize_separators(path: &str) -> String {
 #[cfg(test)]
 #[path = "../tests/graph_index.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/graph_resolution_labels.rs"]
+mod resolution_labels_tests;
+
+#[cfg(test)]
+#[path = "../tests/graph_accuracy.rs"]
+mod graph_accuracy_tests;

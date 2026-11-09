@@ -413,7 +413,7 @@ async fn vector_mode_declines_without_embedder() {
     );
 }
 
-use guidance_core::graph_index::{ContextDirection, ContextEdge, ContextFamily};
+use guidance_core::graph_index::{ContextDirection, ContextEdge, ContextFamily, ResolutionMethod};
 use guidance_core::search_types::{
     Entity, EntityMetadata, FileInfo, FragmentContent, FragmentSpan, SearchHit, SearchHitEvidence,
     SearchMatchedBy,
@@ -499,6 +499,7 @@ fn context_edge(file: &str, anchor: &str) -> ContextEdge {
         direction: ContextDirection::Dependent,
         family: ContextFamily::Import,
         via: "mod:base".to_string(),
+        resolution: ResolutionMethod::Unique,
     }
 }
 
@@ -592,6 +593,7 @@ fn context_lines_merge_families_per_file() {
             direction: ContextDirection::Dependency,
             family: ContextFamily::Call,
             via: "b".to_string(),
+            resolution: ResolutionMethod::Unique,
         },
         ContextEdge {
             file: "/repo/b.rs".to_string(),
@@ -599,6 +601,7 @@ fn context_lines_merge_families_per_file() {
             direction: ContextDirection::Dependency,
             family: ContextFamily::Import,
             via: "mod:b".to_string(),
+            resolution: ResolutionMethod::Unique,
         },
     ];
     let lines = build_context_lines(&edges, 10, "/repo");
@@ -606,4 +609,40 @@ fn context_lines_merge_families_per_file() {
     assert!(lines[0].contains("b.rs"), "{lines:?}");
     assert!(lines[0].contains("import \"mod:b\""), "{lines:?}");
     assert!(lines[0].contains("call \"b\""), "{lines:?}");
+}
+
+#[test]
+fn context_lines_name_ambiguity_and_silence_certainty() {
+    use guidance_core::graph_index::ResolutionMethod as RM;
+    let edges = vec![
+        ContextEdge {
+            file: "/repo/caller.rs".to_string(),
+            anchor: "/repo/a.rs".to_string(),
+            direction: ContextDirection::Dependent,
+            family: ContextFamily::Call,
+            via: "dup".to_string(),
+            resolution: RM::Homonym { count: 3 },
+        },
+        ContextEdge {
+            file: "/repo/lost.rs".to_string(),
+            anchor: "/repo/a.rs".to_string(),
+            direction: ContextDirection::Dependent,
+            family: ContextFamily::Call,
+            via: "ghost".to_string(),
+            resolution: RM::Unresolved,
+        },
+    ];
+    let lines = build_context_lines(&edges, 10, "/repo");
+    assert_eq!(lines.len(), 2, "{lines:?}");
+    assert!(
+        lines[0].contains("call \"dup\" (ambiguous: 3 candidates)"),
+        "{lines:?}"
+    );
+    assert!(
+        lines[1].contains("call \"ghost\" (unresolved)"),
+        "{lines:?}"
+    );
+    // Certain lines render exactly as before (byte-identical).
+    let certain = build_context_lines(&[context_edge("/repo/b.rs", "/repo/a.rs")], 10, "/repo");
+    assert!(!certain[0].contains('('), "{certain:?}");
 }

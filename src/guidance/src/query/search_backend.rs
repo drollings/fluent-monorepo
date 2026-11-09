@@ -81,14 +81,18 @@ impl SearchBackend for IdentifierBackend {
             .map(ToString::to_string)
             .collect();
 
-        if !matched_names.is_empty() {
-            return Ok(Synthesizer::synthesize(query, doc, &matched_names));
+        let grounded = crate::grounding::grounded_names(doc, &matched_names);
+        if !grounded.is_empty() {
+            return Ok(Synthesizer::synthesize(query, doc, &grounded));
         }
 
         let sig_matches = identifier::find_members_by_signature(doc, query);
         if !sig_matches.is_empty() {
             let sig_names: Vec<String> = sig_matches.into_iter().map(ToString::to_string).collect();
-            return Ok(Synthesizer::synthesize(query, doc, &sig_names));
+            let grounded = crate::grounding::grounded_names(doc, &sig_names);
+            if !grounded.is_empty() {
+                return Ok(Synthesizer::synthesize(query, doc, &grounded));
+            }
         }
 
         Err(QueryEngineError::NoResults)
@@ -133,7 +137,11 @@ impl SearchBackend for KeywordBackend {
             return Err(QueryEngineError::NoResults);
         }
 
-        Ok(Synthesizer::synthesize(query, doc, &matched_names))
+        let grounded = crate::grounding::grounded_names(doc, &matched_names);
+        if grounded.is_empty() {
+            return Err(QueryEngineError::NoResults);
+        }
+        Ok(Synthesizer::synthesize(query, doc, &grounded))
     }
 }
 
@@ -175,7 +183,11 @@ impl SearchBackend for ConceptBackend {
             None => matched_names,
         };
 
-        Ok(Synthesizer::synthesize(query, doc, &matched_names))
+        let grounded = crate::grounding::grounded_names(doc, &matched_names);
+        if grounded.is_empty() {
+            return Err(QueryEngineError::NoResults);
+        }
+        Ok(Synthesizer::synthesize(query, doc, &grounded))
     }
 }
 
@@ -203,11 +215,11 @@ impl SearchBackend for FilePathBackend {
             .map(|m| m.name.as_str().to_string())
             .collect();
 
-        if matched_names.is_empty() {
+        let grounded = crate::grounding::grounded_names(doc, &matched_names);
+        if grounded.is_empty() {
             return Err(QueryEngineError::NoResults);
         }
-
-        Ok(Synthesizer::synthesize(query, doc, &matched_names))
+        Ok(Synthesizer::synthesize(query, doc, &grounded))
     }
 }
 
@@ -240,8 +252,9 @@ impl SearchBackend for GeneralBackend {
             .map(|m| m.name.as_str().to_string())
             .collect();
 
-        if !matched_names.is_empty() {
-            return Ok(Synthesizer::synthesize(query, doc, &matched_names));
+        let grounded = crate::grounding::grounded_names(doc, &matched_names);
+        if !grounded.is_empty() {
+            return Ok(Synthesizer::synthesize(query, doc, &grounded));
         }
 
         Err(QueryEngineError::NoResults)

@@ -12,6 +12,7 @@ pub mod catalog;
 pub mod client;
 pub mod constants;
 pub mod context_packer;
+pub mod decision;
 pub mod decomposer;
 pub mod embeddings;
 pub mod error;

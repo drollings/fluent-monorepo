@@ -2,12 +2,18 @@
 # Context: Rust-native AST-guided SQLite FTS5 database generator for NullClaw
 # Maintainer: AI & Human Co-Pilot
 #
-# RALPH LOOP:
-#   build → guidance check (validate) → guidance sync (generate)
+# RALPH LOOP (guidance only; coral-router is built by `build`/`router*`):
+#   build → guidance sync (generate)
 #     └─► test → lint → fmt (from config) → staleness check → structure → db check
 #           └─► .guidance/src/**/*.json  (JSON mtime = universal marker)
 #                 └─► .explain.db
 #                       └─► STRUCTURE.md
+#
+# `guidance check` (validate: config test/lint/fmt commands, repo-wide per
+# extension key — not per-component narrow gates) runs separately, never as
+# part of this recipe. Known quirk (documented, not fixed): `.zig`/`.py`
+# lint/fmt config entries may contain a literal `{file}` token that is
+# passed through unsubstituted.
 #
 # Key invariant: $(TARGET_BIN) depends ONLY on source files — never on
 # STRUCTURE.md or markers that themselves depend on the binary.
@@ -693,6 +699,17 @@ lint-unwired: ## Advisory: list public protopyne symbols with no non-test refere
 health: ## Run cargo tarpaulin and verify 85% coverage
 	$(Q)cargo tarpaulin --workspace --fail-under 85
 
+##@ Scorecard (guidance improvement instrument; not part of smoke/test)
+.PHONY: guidance-scorecard
+guidance-scorecard: ## Fast hermetic scorecard (<60s): ≤40 lines + JSON in the log; exit 2 on a ratchet violation
+	$(Q)bin/gate-run.sh guidance-scorecard generic -- cargo run -q -p guidance -- scorecard
+.PHONY: guidance-scorecard-deep
+guidance-scorecard-deep: ## Deep tier: fast tier + per-query breakdown
+	$(Q)bin/gate-run.sh guidance-scorecard-deep generic -- cargo run -q -p guidance -- scorecard --deep
+.PHONY: guidance-scorecard-live
+guidance-scorecard-live: ## Live tier: print the exact model-gated commands (never runs them)
+	$(Q)bin/gate-run.sh guidance-scorecard-live generic -- cargo run -q -p guidance -- scorecard --live
+
 .PHONY: format
 format: ## rustfmt the whole workspace (write)
 	$(Q)bin/gate-run.sh format fmt -- cargo fmt --all
@@ -715,13 +732,15 @@ STRUCTURE.md: $(GUIDANCE_DB) | $(CARGO_BIN)
 
 ##@ Gate Targets
 
-# Full RALPH loop: build → check (validate) → sync (generate)
-# guidance check runs config commands (test/lint/fmt) and validates staleness.
-# guidance sync regenerates JSON + DB for stale files.
+# Guidance-only loop: build → sync (generate). `check` (validate) is a
+# separate command: `guidance check` runs config test/lint/fmt commands
+# repo-wide per extension key and validates staleness; `guidance sync`
+# regenerates JSON + DB for stale files. The coral-router build stays
+# available via `build` / `router*` targets — nothing below needs it.
 .PHONY: pre-commit build
 build: $(CARGO_BIN) $(CORAL_ROUTER_BIN) ## Build guidance and coral-router binaries
 
-pre-commit: STRUCTURE.md $(CARGO_BIN) $(CORAL_ROUTER_BIN) ## Run full RALPH loop
+pre-commit: STRUCTURE.md $(CARGO_BIN) ## Regenerate the guidance mirror
 	$(Q)$(TARGET_BIN) sync --workspace .
 	$(Q)echo "✓ All checks passed. Ready to commit."
 

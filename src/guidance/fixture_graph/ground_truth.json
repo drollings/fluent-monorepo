@@ -1,0 +1,49 @@
+{
+  "provenance": {
+    "origin": "human",
+    "labeller": "guidance-team",
+    "date": "2026-11-08",
+    "note": "Hand-authored against the fixture sources; never model output."
+  },
+  "thresholds": {
+    "precision": 1.0,
+    "recall": 1.0,
+    "false_no_caller_rate": 0.0
+  },
+  "call_edges": [
+    {
+      "caller": "u_caller.rs",
+      "caller_symbol": "u_call",
+      "callee": "u_target",
+      "callee_files": ["u_callee.rs"],
+      "resolution": "unique"
+    },
+    {
+      "caller": "h_caller.rs",
+      "caller_symbol": "h_call",
+      "callee": "dup",
+      "callee_files": ["h_a.rs", "h_b.rs", "h_c.rs"],
+      "resolution": "homonym:3",
+      "control": true
+    },
+    {
+      "caller": "g_caller.rs",
+      "caller_symbol": "g_call",
+      "callee": "ghost",
+      "callee_files": [],
+      "resolution": "unresolved",
+      "control": true
+    }
+  ],
+  "import_edges": [
+    {"importer": "i_user.rs", "specifier": "mod:i_base", "resolved": "i_base.rs"}
+  ],
+  "dependents": {
+    "seeds": ["u_callee.rs"],
+    "closure": ["u_callee.rs", "u_caller.rs"]
+  },
+  "symbols_with_callers": {
+    "u_target": ["u_caller.rs"],
+    "dup": ["h_caller.rs"]
+  }
+}

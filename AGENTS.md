@@ -89,6 +89,25 @@ grep -nE "FAILED|panicked|error\[" /tmp/opencode/monorepo-gates/dag-test.log
 tail -40 /tmp/opencode/monorepo-gates/dag-test.log
 ```
 
+## Improvement Loop (guidance scorecard)
+
+The `guidance-scorecard` Makefile target is the measuring instrument for
+iterative work on `guidance`: hermetic fast tier (<60s, ≤40 lines + JSON,
+exit 2 on a ratchet violation), never tuned against. The loop:
+
+1. Run `make guidance-scorecard`; take the worst **tune-set** metric.
+2. Form a hypothesis; make one small change with a failing test first.
+3. Run the narrowest gate; rescore; keep iff improved with no ratchet
+   violation, revert otherwise. Report one line per iteration.
+4. Held-out splits and benchmark files are read-only to the improving
+   agent: `src/guidance/corpora/*`, `src/guidance/fixture_graph/*`,
+   `src/guidance/scorecard_baseline.json`. Held-out is reported, never
+   iterated on.
+5. Baselines update only via `guidance scorecard --update-baseline
+   --reason "..."` (records reason + diff, refuses silent regressions;
+   `--allow-regression` needs explicit human approval). Never hand-edit
+   a baseline to make a number pass.
+
 ## Import boundaries
 
 Shared library crates may NOT import from `guidance`, `router`, `coral`,

@@ -19,6 +19,7 @@ regex = { workspace = true }
 
 reqwest = { workspace = true }
 bon = { workspace = true }
+futures-util = { workspace = true }
 async-trait = { workspace = true }
 lru = { workspace = true }
 rusqlite = { workspace = true }
@@ -107,6 +108,70 @@ path = "tests/calibration.rs"
 [[test]]
 name = "backend"
 path = "tests/backend.rs"
+
+[[test]]
+name = "decision_bridge"
+path = "tests/decision_bridge.rs"
+
+[[test]]
+name = "decision_doc_stubs"
+path = "tests/decision_doc_stubs.rs"
+
+[[test]]
+name = "decision_canary"
+path = "tests/decision_canary.rs"
+
+[[test]]
+name = "decision_registry"
+path = "tests/decision_registry.rs"
+
+[[test]]
+name = "decision_backend"
+path = "tests/decision_backend.rs"
+
+[[test]]
+name = "decision_parity"
+path = "tests/decision_parity.rs"
+
+[[test]]
+name = "decision_boundary"
+path = "tests/decision_boundary.rs"
+
+[[test]]
+name = "decision_shadow"
+path = "tests/decision_shadow.rs"
+
+[[test]]
+name = "decision_eval"
+path = "tests/decision_eval.rs"
+
+[[test]]
+name = "decision_bulk"
+path = "tests/decision_bulk.rs"
+
+[[test]]
+name = "decision_ladder"
+path = "tests/decision_ladder.rs"
+
+[[test]]
+name = "decision_cache"
+path = "tests/decision_cache.rs"
+
+[[test]]
+name = "decision_transport"
+path = "tests/decision_transport.rs"
+
+[[test]]
+name = "decision_question"
+path = "tests/decision_question.rs"
+
+[[test]]
+name = "decision_decode"
+path = "tests/decision_decode.rs"
+
+[[test]]
+name = "decision_types"
+path = "tests/decision_types.rs"
 
 [[test]]
 name = "live"

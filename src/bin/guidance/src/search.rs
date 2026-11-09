@@ -7,7 +7,7 @@
 
 use std::path::PathBuf;
 
-use guidance_core::graph_index::{ContextDirection, ContextEdge, ContextFamily};
+use guidance_core::graph_index::{ContextDirection, ContextEdge, ContextFamily, ResolutionMethod};
 use guidance_core::query::db_storage::GuidanceDbStorage;
 use guidance_core::query::hybrid::{plan_from_query, stages_from_hits};
 use guidance_core::query::ingest::LazyNlp;
@@ -524,7 +524,7 @@ pub fn build_explain_rows(hits: &[SearchHit]) -> Vec<ExplainRow> {
 /// families merged. Keeps the builder below within type-complexity bounds.
 type ContextGroup<'a> = (
     (&'a str, &'a str, ContextDirection),
-    Vec<(ContextFamily, &'a str)>,
+    Vec<(ContextFamily, &'a str, ResolutionMethod)>,
 );
 
 /// Build ranked context lines from depth-1 expansion edges: one line
@@ -538,8 +538,8 @@ pub fn build_context_lines(edges: &[ContextEdge], cap: usize, workspace: &str) -
     for edge in edges {
         let key = (edge.file.as_str(), edge.anchor.as_str(), edge.direction);
         match groups.iter_mut().find(|(group, _)| *group == key) {
-            Some((_, members)) => members.push((edge.family, edge.via.as_str())),
-            None => groups.push((key, vec![(edge.family, edge.via.as_str())])),
+            Some((_, members)) => members.push((edge.family, edge.via.as_str(), edge.resolution)),
+            None => groups.push((key, vec![(edge.family, edge.via.as_str(), edge.resolution)])),
         }
     }
     groups
@@ -553,12 +553,15 @@ pub fn build_context_lines(edges: &[ContextEdge], cap: usize, workspace: &str) -
             };
             let vias: Vec<String> = members
                 .iter()
-                .map(|(family, via)| {
+                .map(|(family, via, resolution)| {
                     let family = match family {
                         ContextFamily::Import => "import",
                         ContextFamily::Call => "call",
                     };
-                    format!("{family} \"{via}\"")
+                    match resolution.render_note() {
+                        Some(note) => format!("{family} \"{via}\" ({note})"),
+                        None => format!("{family} \"{via}\""),
+                    }
                 })
                 .collect();
             format!(

@@ -1,0 +1,20 @@
+{
+  "point": "intent",
+  "model_fingerprint": "unprobed",
+  "question_version": 1,
+  "provenance": {
+    "source": "guidance intent goldens (FsmEngine + dispatch tests)",
+    "labeller": "guidance-team",
+    "date": "2026-11-08"
+  },
+  "cases": [
+    {"score": 0.95, "expected": true, "control": false, "provenance": {"origin": "human", "labeller": "guidance-team", "date": "2026-11-08"}},
+    {"score": 0.92, "expected": true, "control": false, "provenance": {"origin": "human", "labeller": "guidance-team", "date": "2026-11-08"}},
+    {"score": 0.97, "expected": true, "control": false, "provenance": {"origin": "human", "labeller": "guidance-team", "date": "2026-11-08"}},
+    {"score": 0.91, "expected": true, "control": false, "provenance": {"origin": "human", "labeller": "guidance-team", "date": "2026-11-08"}},
+    {"score": 0.40, "expected": false, "control": true, "provenance": {"origin": "human", "labeller": "guidance-team", "date": "2026-11-08"}},
+    {"score": 0.30, "expected": false, "control": true, "provenance": {"origin": "human", "labeller": "guidance-team", "date": "2026-11-08"}},
+    {"score": 0.10, "expected": false, "control": true, "provenance": {"origin": "human", "labeller": "guidance-team", "date": "2026-11-08"}},
+    {"score": 0.45, "expected": false, "control": true, "provenance": {"origin": "human", "labeller": "guidance-team", "date": "2026-11-08"}}
+  ]
+}

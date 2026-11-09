@@ -1,0 +1,139 @@
+{
+  "bounds": {
+    "speed.explain_p50_us": 12600.0,
+    "speed.explain_p99_us": 12700.0
+  },
+  "date": "2026-11-09",
+  "history": [
+    {
+      "bounds": {},
+      "changes": {
+        "decision.rung_ok": [
+          null,
+          1.0
+        ],
+        "decision.shadow_ok": [
+          null,
+          1.0
+        ],
+        "fixpoint.clean_skip": [
+          null,
+          1.0
+        ],
+        "fixpoint.comment_write_skips": [
+          null,
+          1.0
+        ],
+        "graph.call_precision": [
+          null,
+          1.0
+        ],
+        "graph.call_recall": [
+          null,
+          1.0
+        ],
+        "graph.import_precision": [
+          null,
+          1.0
+        ],
+        "graph.import_recall": [
+          null,
+          1.0
+        ],
+        "graph.no_caller_ok": [
+          null,
+          1.0
+        ],
+        "lane.defer_ok": [
+          null,
+          1.0
+        ],
+        "mutation.clock_correct": [
+          null,
+          1.0
+        ],
+        "nav.citation_valid": [
+          null,
+          1.0
+        ],
+        "nav.gap_correct.heldout": [
+          null,
+          1.0
+        ],
+        "nav.gap_correct.tune": [
+          null,
+          1.0
+        ],
+        "nav.mrr.heldout": [
+          null,
+          1.0
+        ],
+        "nav.mrr.tune": [
+          null,
+          0.875
+        ],
+        "nav.recall_at_3.heldout": [
+          null,
+          1.0
+        ],
+        "nav.recall_at_3.tune": [
+          null,
+          1.0
+        ]
+      },
+      "date": "2026-11-09",
+      "reason": "initial capture (pre-history baseline)",
+      "tolerances": {}
+    },
+    {
+      "bounds": {
+        "speed.explain_p50_us": 12600.0,
+        "speed.explain_p99_us": 12700.0
+      },
+      "changes": {
+        "speed.explain_p50_us": [
+          null,
+          6294.9529999999995
+        ],
+        "speed.explain_p99_us": [
+          null,
+          6560.359
+        ]
+      },
+      "date": "2026-11-09",
+      "reason": "initial reasoned capture (M11): stable values ratchet strict, timing 10pct tolerance with 2x ceilings, bootstrap pending long-run calibration",
+      "tolerances": {
+        "speed.explain_p50_us": 650.0,
+        "speed.explain_p99_us": 650.0
+      }
+    }
+  ],
+  "metrics": {
+    "decision.rung_ok": 1.0,
+    "decision.shadow_ok": 1.0,
+    "fixpoint.clean_skip": 1.0,
+    "fixpoint.comment_write_skips": 1.0,
+    "graph.call_precision": 1.0,
+    "graph.call_recall": 1.0,
+    "graph.import_precision": 1.0,
+    "graph.import_recall": 1.0,
+    "graph.no_caller_ok": 1.0,
+    "lane.defer_ok": 1.0,
+    "mutation.clock_correct": 1.0,
+    "nav.citation_valid": 1.0,
+    "nav.gap_correct.heldout": 1.0,
+    "nav.gap_correct.tune": 1.0,
+    "nav.mrr.heldout": 1.0,
+    "nav.mrr.tune": 0.875,
+    "nav.recall_at_3.heldout": 1.0,
+    "nav.recall_at_3.tune": 1.0,
+    "speed.explain_p50_us": 6294.9529999999995,
+    "speed.explain_p99_us": 6560.359
+  },
+  "reason": "initial reasoned capture (M11): stable values ratchet strict, timing 10pct tolerance with 2x ceilings, bootstrap pending long-run calibration",
+  "tolerance_source": "repeat-run variance (3 fast-tier runs, max spread <1%); deterministic metrics tol 0, timing 10% of value, ceilings 2x value; bootstrap pending long-run calibration",
+  "tolerances": {
+    "speed.explain_p50_us": 650.0,
+    "speed.explain_p99_us": 650.0
+  }
+}

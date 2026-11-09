@@ -143,7 +143,7 @@ impl QueryEngine {
     /// Dispatch a query through the tiered search pipeline.
     ///
     /// G1: Uses `FsmEngine` for richer classification (intent + domain + confidence)
-    /// instead of the simpler `classify_query()`.
+    /// instead of ad-hoc word-count arms.
     /// G2: Implements tiered escalation — tries the primary backend first, then
     /// falls through to other tiers in priority order until one returns results.
     fn dispatch_search(
@@ -349,7 +349,11 @@ impl QueryEngine {
         }
 
         let combined: Vec<String> = fused.iter().map(|r| r.name.clone()).collect();
-        Ok(Synthesizer::synthesize(query, doc, &combined))
+        let grounded = crate::grounding::grounded_names(doc, &combined);
+        if grounded.is_empty() {
+            return Err(QueryEngineError::NoResults);
+        }
+        Ok(Synthesizer::synthesize(query, doc, &grounded))
     }
 }
 
@@ -395,6 +399,10 @@ fn resolve_stage_lines(stages: &mut [Stage], parser: &mut ast_parser::AstParser)
         }
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/synthesis_gate_wiring.rs"]
+mod synthesis_gate_wiring_tests;
 
 #[cfg(test)]
 mod tests {

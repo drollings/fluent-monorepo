@@ -33,6 +33,8 @@ pub struct LlmClient {
     pub model: String,
     pub config: LlmConfig,
     pub queue: Option<Arc<LlmRequestQueue>>,
+    pub decision_transport: crate::decision::DecisionTransport,
+    pub decide_backend: Option<Arc<dyn crate::decision::DecideBackend>>,
 }
 
 impl Clone for LlmClient {
@@ -42,6 +44,8 @@ impl Clone for LlmClient {
             model: self.model.clone(),
             config: self.config.clone(),
             queue: self.queue.clone(),
+            decision_transport: self.decision_transport.clone(),
+            decide_backend: self.decide_backend.clone(),
         }
     }
 }
@@ -57,6 +61,8 @@ impl LlmClient {
             model: model.to_string(),
             config,
             queue: None,
+            decision_transport: crate::decision::DecisionTransport::local_only(),
+            decide_backend: None,
         }
     }
 
@@ -70,6 +76,8 @@ impl LlmClient {
             model: model.to_string(),
             config,
             queue: Some(queue),
+            decision_transport: crate::decision::DecisionTransport::local_only(),
+            decide_backend: None,
         }
     }
 
@@ -86,6 +94,8 @@ impl LlmClient {
             model,
             config,
             queue: Some(queue),
+            decision_transport: crate::decision::DecisionTransport::local_only(),
+            decide_backend: None,
         }
     }
 
@@ -97,6 +107,8 @@ impl LlmClient {
             model,
             config,
             queue: None,
+            decision_transport: crate::decision::DecisionTransport::local_only(),
+            decide_backend: None,
         }
     }
 
@@ -202,6 +214,281 @@ impl ChatBackend for LlmClient {
         extras: &serde_json::Value,
     ) -> Result<String, LlmError> {
         self.chat_complete_with_extras(messages, extras)
+    }
+}
+
+/// Single-token decision extras: one greedy token with its distribution.
+fn decision_extras() -> serde_json::Value {
+    serde_json::json!({
+        "max_tokens": 1,
+        "temperature": 0,
+        "logprobs": true,
+        "top_logprobs": 10,
+    })
+}
+
+impl LlmClient {
+    /// Native-async bounded judgment over a rendered `Question`.
+    ///
+    /// Routes through the configured `DecideBackend` when one is set,
+    /// else the logprobs-over-chat adapter. Bypasses an attached
+    /// `LlmRequestQueue`: queue handlers return content only and drop the
+    /// `logprobs` the decoder needs. Pure render/decode/policy steps stay
+    /// in `decision::wvr`; no I/O ever lives in `WorkUnit::execute`.
+    ///
+    /// ```rust,no_run
+    /// use fluent_llm::client::{block_on, LlmClient};
+    /// use fluent_llm::decision::{Question, QuestionSpec};
+    ///
+    /// # let client = LlmClient::new("http://127.0.0.1:8080", "model");
+    /// # let spec = QuestionSpec::new()
+    /// #     .id("q".to_string()).version(1).kind("choice".to_string())
+    /// #     .prompt_template("Pick.".to_string()).options_csv("A,B".to_string())
+    /// #     .act_threshold(0.9).review_threshold(0.7)
+    /// #     .timeout_ms(2000).cacheable(false).build();
+    /// let question = Question { spec: &spec, state: "st", question: "qq?" };
+    /// let decision = block_on(client.decide_async(&question));
+    /// ```
+    pub async fn decide_async(
+        &self,
+        question: &crate::decision::Question<'_>,
+    ) -> Result<crate::decision::Decision, crate::decision::DecisionError> {
+        use crate::decision::{DecideRequest, DecisionError, DecisionOption};
+        let spec = question.spec;
+        spec.validate().map_err(DecisionError::Rejected)?;
+        self.decide_request(DecideRequest {
+            prompt: question.render(),
+            state: question.state.to_string(),
+            question: question.question.to_string(),
+            options: spec
+                .options()
+                .into_iter()
+                .map(|label| DecisionOption {
+                    label,
+                    description: String::new(),
+                })
+                .collect(),
+            kind: spec.kind_enum().map_err(DecisionError::Rejected)?,
+            version: spec.version,
+            timeout_ms: spec.timeout_ms,
+            model: self.model.clone(),
+        })
+        .await
+    }
+
+    /// Owned-parts decide seam: prompt in, decision out. Routes through
+    /// `decide_request` with empty state/question (logprobs path unchanged).
+    ///
+    /// ```rust,no_run
+    /// use fluent_llm::client::{block_on, LlmClient};
+    /// use fluent_llm::decision::DecisionKind;
+    ///
+    /// # let client = LlmClient::new("http://127.0.0.1:8080", "model");
+    /// let decision = block_on(client.decide_prompt(
+    ///     "sky blue? A or B?".to_string(),
+    ///     vec!["A".to_string(), "B".to_string()],
+    ///     DecisionKind::Choice,
+    ///     1,
+    ///     2000,
+    /// ));
+    /// ```
+    pub async fn decide_prompt(
+        &self,
+        prompt: String,
+        candidates: Vec<String>,
+        kind: crate::decision::DecisionKind,
+        version: u64,
+        timeout_ms: u64,
+    ) -> Result<crate::decision::Decision, crate::decision::DecisionError> {
+        use crate::decision::{DecideRequest, DecisionOption};
+        self.decide_request(DecideRequest {
+            prompt,
+            state: String::new(),
+            question: String::new(),
+            options: candidates
+                .into_iter()
+                .map(|label| DecisionOption {
+                    label,
+                    description: String::new(),
+                })
+                .collect(),
+            kind,
+            version,
+            timeout_ms,
+            model: self.model.clone(),
+        })
+        .await
+    }
+
+    /// One judgment over an owned request: redaction boundary first, then
+    /// the configured backend or the logprobs adapter. The single path
+    /// behind `decide_async`, `decide_prompt`, and bulk fan-out.
+    ///
+    /// ```rust,no_run
+    /// use fluent_llm::client::{block_on, LlmClient};
+    /// use fluent_llm::decision::{DecideRequest, DecisionKind};
+    ///
+    /// # let client = LlmClient::new("http://127.0.0.1:8080", "model");
+    /// let decision = block_on(client.decide_request(DecideRequest {
+    ///     prompt: "hi".to_string(),
+    ///     state: "st".to_string(),
+    ///     question: "hi".to_string(),
+    ///     options: Vec::new(),
+    ///     kind: DecisionKind::Choice,
+    ///     version: 1,
+    ///     timeout_ms: 2000,
+    ///     model: "model".to_string(),
+    /// }));
+    /// ```
+    pub async fn decide_request(
+        &self,
+        request: crate::decision::DecideRequest,
+    ) -> Result<crate::decision::Decision, crate::decision::DecisionError> {
+        use crate::decision::{DecisionError, DecisionKind};
+        let mut request = request;
+        let prepared = self.decision_transport.prepare(
+            &self.api_base,
+            &self.model,
+            std::mem::take(&mut request.prompt),
+        )?;
+        if let Some(backend) = &self.decide_backend {
+            request.prompt = prepared.text;
+            request.state = self.decision_transport.redact_text(&request.state);
+            return backend.decide(request).await;
+        }
+        let messages = vec![ChatMessage {
+            role: "user".into(),
+            content: prepared.text,
+        }];
+        let messages_json =
+            serde_json::to_value(&messages).map_err(|e| DecisionError::Rejected(e.to_string()))?;
+        let merged = merge_extra_params(
+            self.config.extra_body_params.as_ref(),
+            Some(&decision_extras()),
+        );
+        let body = crate::openai::build_openai_chat_body(
+            &self.model,
+            &messages_json,
+            merged.as_ref(),
+            false,
+            self.config.think,
+        );
+        let url = crate::url::chat_completions_url(&self.api_base);
+        let timeout_ms = request.timeout_ms;
+        let version = request.version;
+        let kind = request.kind;
+        let candidates: Vec<String> = request.options.into_iter().map(|o| o.label).collect();
+        let start = std::time::Instant::now();
+        let value = common_core::retry::retry_async(3, 100, 50, LlmError::is_retryable, || {
+            let url = &url;
+            let body = &body;
+            let model = &self.model;
+            async move { post_chat_json_async(url, body, timeout_ms, model).await }
+        })
+        .await
+        .map_err(DecisionError::from)?;
+        let latency_ms = start.elapsed().as_millis() as u64;
+        let option_refs: Vec<&str> = candidates.iter().map(String::as_str).collect();
+        let mut decision = match kind {
+            DecisionKind::Choice => {
+                crate::decision::decode_choice(&value, &option_refs, &self.model, version)?
+            }
+            DecisionKind::Score => {
+                crate::decision::decode_score(&value, &option_refs, &self.model, version)?
+            }
+            DecisionKind::Noul => crate::decision::decode_noul(&value, &self.model, version)?,
+        };
+        decision.latency_ms = latency_ms;
+        Ok(decision)
+    }
+
+    /// Batch judgments: the configured backend's multi-question path, else
+    /// sequential single calls. Outputs align with inputs. A fired abort
+    /// short-circuits to per-item `Unavailable` without calling.
+    ///
+    /// ```rust,no_run
+    /// use fluent_llm::client::{block_on, LlmClient};
+    ///
+    /// # let client = LlmClient::new("http://127.0.0.1:8080", "model");
+    /// let outcomes = block_on(client.decide_batch_requests(Vec::new(), None));
+    /// assert!(outcomes.is_empty());
+    /// ```
+    pub async fn decide_batch_requests(
+        &self,
+        requests: Vec<crate::decision::DecideRequest>,
+        abort: Option<fluent_concurrency::stream::StreamAbort>,
+    ) -> Vec<Result<crate::decision::Decision, crate::decision::DecisionError>> {
+        use crate::decision::DecisionError;
+        if abort
+            .as_ref()
+            .is_some_and(fluent_concurrency::stream::StreamAbort::is_cancelled)
+        {
+            return requests
+                .iter()
+                .map(|_| {
+                    Err(DecisionError::Unavailable(
+                        "bulk submit canceled".to_string(),
+                    ))
+                })
+                .collect();
+        }
+        let Some(backend) = &self.decide_backend else {
+            let mut outcomes = Vec::with_capacity(requests.len());
+            for request in requests {
+                outcomes.push(self.decide_request(request).await);
+            }
+            return outcomes;
+        };
+        match abort {
+            None => backend.decide_batch(requests).await,
+            Some(signal) => {
+                tokio::select! {
+                    outcomes = backend.decide_batch(requests) => outcomes,
+                    () = signal.cancelled() => {
+                        vec![Err(DecisionError::Unavailable("bulk submit canceled".to_string()))]
+                    }
+                }
+            }
+        }
+    }
+
+    /// Capability probe: one 1-token call reporting whether this endpoint
+    /// returns logprobs and honors the no-think setting. Single attempt, no
+    /// retry — a probe diagnoses, it does not burn backoff budget. Transport
+    /// failure surfaces as `Unavailable`; the caller decides what follows.
+    ///
+    /// ```rust,no_run
+    /// use fluent_llm::client::{block_on, LlmClient};
+    ///
+    /// # let client = LlmClient::new("http://127.0.0.1:8080", "model");
+    /// let probe = block_on(client.probe_decision_support());
+    /// ```
+    pub async fn probe_decision_support(
+        &self,
+    ) -> Result<crate::decision::DecisionProbe, crate::decision::DecisionError> {
+        use crate::decision::DecisionError;
+        let messages = vec![ChatMessage {
+            role: "user".into(),
+            content: "Reply with only the letter A.".to_string(),
+        }];
+        let messages_json =
+            serde_json::to_value(&messages).map_err(|e| DecisionError::Rejected(e.to_string()))?;
+        let merged = merge_extra_params(
+            self.config.extra_body_params.as_ref(),
+            Some(&decision_extras()),
+        );
+        let body = crate::openai::build_openai_chat_body(
+            &self.model,
+            &messages_json,
+            merged.as_ref(),
+            false,
+            self.config.think,
+        );
+        let url = crate::url::chat_completions_url(&self.api_base);
+        let value = post_chat_json_async(&url, &body, self.config.timeout_ms, &self.model)
+            .await
+            .map_err(DecisionError::from)?;
+        Ok(crate::decision::DecisionProbe::read(&value))
     }
 }
 
@@ -339,8 +626,44 @@ async fn chat_complete_http_inner_async(
         eprintln!("[llm] model={model} url={url} messages={}", messages.len());
     }
 
+    let parsed = post_chat_json_async(url, &body, timeout_ms, model).await?;
+
+    // Extract content from choices[0].message.content.
+    // reasoning_content is NEVER the answer — it is the model's internal
+    // think block and must never leak to callers.
+    let content = parsed
+        .get("choices")
+        .and_then(|c| c.as_array())
+        .and_then(|choices| choices.first())
+        .and_then(|c| c.get("message"))
+        .and_then(|m| m.get("content"))
+        .and_then(|c| c.as_str())
+        .unwrap_or("");
+
+    if show_prompts {
+        eprintln!("=== LLM RESPONSE ===");
+        eprintln!("{content}");
+        eprintln!("=== END RESPONSE ===");
+    }
+
+    Ok(content.to_string())
+}
+
+/// The single send-and-parse path: POST `body` to the chat-completions `url`,
+/// map status via `HttpClass`, bound by `timeout_ms` (0 disables), and return
+/// the full parsed response `Value`.
+///
+/// Both the content-only path above and the decision seam compose this — one
+/// HTTP path, one status mapping, one timeout rule. Callers extract what they
+/// need from the returned `Value` without resending.
+async fn post_chat_json_async(
+    url: &str,
+    body: &serde_json::Value,
+    timeout_ms: u64,
+    model: &str,
+) -> Result<serde_json::Value, LlmError> {
     let client = shared_http_client();
-    let body_str = serde_json::to_string(&body).map_err(|e| LlmError::Api(e.to_string()))?;
+    let body_str = serde_json::to_string(body).map_err(|e| LlmError::Api(e.to_string()))?;
 
     let send_fut = async {
         let response = client
@@ -422,26 +745,7 @@ async fn chat_complete_http_inner_async(
 
     let parsed: serde_json::Value =
         serde_json::from_str(&body_str).map_err(|e| LlmError::Api(e.to_string()))?;
-
-    // Extract content from choices[0].message.content.
-    // reasoning_content is NEVER the answer — it is the model's internal
-    // think block and must never leak to callers.
-    let content = parsed
-        .get("choices")
-        .and_then(|c| c.as_array())
-        .and_then(|choices| choices.first())
-        .and_then(|c| c.get("message"))
-        .and_then(|m| m.get("content"))
-        .and_then(|c| c.as_str())
-        .unwrap_or("");
-
-    if show_prompts {
-        eprintln!("=== LLM RESPONSE ===");
-        eprintln!("{content}");
-        eprintln!("=== END RESPONSE ===");
-    }
-
-    Ok(content.to_string())
+    Ok(parsed)
 }
 
 /// Strips provider: prefix from model reference strings.

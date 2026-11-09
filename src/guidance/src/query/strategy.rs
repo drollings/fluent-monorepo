@@ -1,5 +1,3 @@
-use fluent_types::GuidanceDoc;
-
 use super::identifier;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -25,13 +23,6 @@ impl QueryIntent {
             Self::GeneralSearch => 6,
         }
     }
-}
-
-#[derive(Debug, Clone)]
-pub struct QueryMatch {
-    pub intent: QueryIntent,
-    pub priority: u8,
-    pub matched: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -106,33 +97,11 @@ impl FsmEngine {
 
     /// CLASSIFY state: determine intent + domain + confidence
     pub fn classify(&self, qc: &QueryClass) -> QueryClass {
-        let trimmed: String = qc.tokens.join(" ");
-        let trimmed = trimmed.trim();
+        if let Some(decided) = intent_precheck(qc) {
+            return decided;
+        }
 
         let mut result = qc.clone();
-
-        if trimmed.is_empty() {
-            result.intent = QueryIntent::GeneralSearch;
-            result.domain = "empty".into();
-            result.confidence = 1.0;
-            return result;
-        }
-
-        // File path detection
-        if !qc.detected_file_paths.is_empty() {
-            result.intent = QueryIntent::FilePath;
-            result.domain = "file_path".into();
-            result.confidence = 0.95;
-            return result;
-        }
-
-        // Single identifier
-        if qc.tokens.len() == 1 && !qc.detected_identifiers.is_empty() {
-            result.intent = QueryIntent::SingleIdentifier;
-            result.domain = "identifier".into();
-            result.confidence = 0.9;
-            return result;
-        }
 
         // How-to questions
         let how_to_words = [
@@ -178,6 +147,27 @@ impl FsmEngine {
         result
     }
 
+    /// Intent-Choice shadow: the deterministic rule verdict wins; the
+    /// precomputed decision (from out-of-band async evaluation) is only
+    /// logged via `super::shadow::intent_shadow`. Never alters the response.
+    #[must_use]
+    pub fn classify_with_shadow(
+        &self,
+        qc: &QueryClass,
+        decision: Option<&fluent_llm::decision::Decision>,
+    ) -> (QueryClass, Option<super::shadow::ShadowRecord>) {
+        let verdict = self.classify(qc);
+        let record = super::shadow::intent_shadow(
+            &format!("{:?}", verdict.intent),
+            decision,
+            &fluent_llm::decision::ThresholdSet {
+                act: 0.9,
+                review: 0.7,
+            },
+        );
+        (verdict, record)
+    }
+
     /// Route classifier — determines which search primitive to use
     pub fn route(&self, qc: &QueryClass) -> &'static str {
         match qc.intent {
@@ -192,7 +182,6 @@ impl FsmEngine {
 
     /// VALIDATE state: check result quality
     pub fn validate(&self, qc: &QueryClass) -> bool {
-        // Basic validation: confidence threshold
         qc.confidence >= 0.5
     }
 
@@ -208,109 +197,112 @@ impl FsmEngine {
     }
 }
 
-pub fn classify_query(query: &str) -> QueryIntent {
-    let trimmed = query.trim();
-
-    if trimmed.is_empty() {
-        return QueryIntent::GeneralSearch;
+/// Deterministic pre-check: exact evidence decides without judgment.
+/// Returns the verdict for the empty, file-path, and single-identifier
+/// arms (identical to `classify`); `None` means ambiguous — the only
+/// queries a decision model may ever see.
+#[must_use]
+pub fn intent_precheck(qc: &QueryClass) -> Option<QueryClass> {
+    let mut result = qc.clone();
+    let trimmed: String = qc.tokens.join(" ");
+    if trimmed.trim().is_empty() {
+        result.intent = QueryIntent::GeneralSearch;
+        result.domain = "empty".into();
+        result.confidence = 1.0;
+        return Some(result);
     }
-
-    if identifier::detect_identifier_pattern(trimmed).is_some() {
-        return QueryIntent::IdentifierLookup;
+    if !qc.detected_file_paths.is_empty() {
+        result.intent = QueryIntent::FilePath;
+        result.domain = "file_path".into();
+        result.confidence = 0.95;
+        return Some(result);
     }
-
-    let word_count = trimmed.split_whitespace().count();
-
-    if (2..=4).contains(&word_count) {
-        QueryIntent::CapabilityQuery
-    } else if word_count >= 5 {
-        QueryIntent::Conceptual
-    } else {
-        QueryIntent::GeneralSearch
+    if qc.tokens.len() == 1 && !qc.detected_identifiers.is_empty() {
+        result.intent = QueryIntent::SingleIdentifier;
+        result.domain = "identifier".into();
+        result.confidence = 0.9;
+        return Some(result);
     }
+    None
 }
 
-pub fn matches(query: &str, _db: &GuidanceDoc) -> QueryMatch {
-    let intent = classify_query(query);
-
-    QueryMatch {
-        intent,
-        priority: intent.priority(),
-        matched: !matches!(intent, QueryIntent::GeneralSearch),
-    }
-}
-
-pub fn query_strategy_priority(intent: QueryIntent) -> u8 {
-    intent.priority()
-}
+#[cfg(test)]
+#[path = "../../tests/intent_decision.rs"]
+mod intent_decision_tests;
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    // ── Original classify tests ─────────────────────────────────────────────────
+    // ── Migrated classify tests (legacy `classify_query` removed in
+    // favor of `FsmEngine`; same queries, expectations mapped to the
+    // authoritative engine: single identifiers resolve to
+    // `SingleIdentifier`, how-word questions to `HowTo`) ────────────
 
     #[test]
     fn test_classify_identifier() {
-        assert_eq!(classify_query("helloWorld"), QueryIntent::IdentifierLookup);
+        let mut engine = FsmEngine::new();
         assert_eq!(
-            classify_query("snake_case_fn"),
-            QueryIntent::IdentifierLookup
+            engine.run("helloWorld").intent,
+            QueryIntent::SingleIdentifier
         );
         assert_eq!(
-            classify_query("PascalCaseType"),
-            QueryIntent::IdentifierLookup
+            engine.run("snake_case_fn").intent,
+            QueryIntent::SingleIdentifier
+        );
+        assert_eq!(
+            engine.run("PascalCaseType").intent,
+            QueryIntent::SingleIdentifier
         );
     }
 
     #[test]
     fn test_classify_capability() {
+        let mut engine = FsmEngine::new();
         assert_eq!(
-            classify_query("target registry"),
+            engine.run("target registry").intent,
             QueryIntent::CapabilityQuery
         );
         assert_eq!(
-            classify_query("ast parsing zig"),
+            engine.run("ast parsing zig").intent,
             QueryIntent::CapabilityQuery
         );
     }
 
     #[test]
     fn test_classify_concept() {
+        // The legacy word-count ladder read these as `Conceptual`; the
+        // authoritative engine reads how-word questions as `HowTo`.
+        let mut engine = FsmEngine::new();
         assert_eq!(
-            classify_query("how do I parse a zig file"),
-            QueryIntent::Conceptual
+            engine.run("how do I parse a zig file").intent,
+            QueryIntent::HowTo
         );
         assert_eq!(
-            classify_query("what is the target registry used for"),
-            QueryIntent::Conceptual
+            engine.run("what is the target registry used for").intent,
+            QueryIntent::HowTo
         );
     }
 
     #[test]
     fn test_classify_empty() {
-        assert_eq!(classify_query(""), QueryIntent::GeneralSearch);
-        assert_eq!(classify_query("   "), QueryIntent::GeneralSearch);
+        let mut engine = FsmEngine::new();
+        assert_eq!(engine.run("").intent, QueryIntent::GeneralSearch);
+        assert_eq!(engine.run("   ").intent, QueryIntent::GeneralSearch);
     }
 
     #[test]
     fn test_matches() {
-        let doc = GuidanceDoc::default();
-        let m = matches("helloWorld", &doc);
-        assert!(m.matched);
-        assert_eq!(m.intent, QueryIntent::IdentifierLookup);
+        // Replaced by the pre-check: exact identifiers decide locally.
+        let mut engine = FsmEngine::new();
+        let decided = intent_precheck(&engine.intake("helloWorld")).expect("decides");
+        assert_eq!(decided.intent, QueryIntent::SingleIdentifier);
     }
 
     #[test]
     fn test_priority_order() {
-        assert!(
-            query_strategy_priority(QueryIntent::IdentifierLookup)
-                < query_strategy_priority(QueryIntent::CapabilityQuery)
-        );
-        assert!(
-            query_strategy_priority(QueryIntent::CapabilityQuery)
-                < query_strategy_priority(QueryIntent::Conceptual)
-        );
+        assert!(QueryIntent::IdentifierLookup.priority() < QueryIntent::CapabilityQuery.priority());
+        assert!(QueryIntent::CapabilityQuery.priority() < QueryIntent::Conceptual.priority());
     }
 
     // ── FSM Engine tests ─────────────────────────────────────────────────────────

@@ -1,0 +1,28 @@
+{
+  "point": "excerpt",
+  "model_fingerprint": "unprobed",
+  "question_version": 1,
+  "provenance": {
+    "source": "guidance excerpt goldens (ConceptBackend 0.5 sweep + noop goldens)",
+    "labeller": "guidance-team",
+    "date": "2026-11-08"
+  },
+  "cases": [
+    {"score": 0.90, "expected": true, "control": false, "provenance": {"origin": "human", "labeller": "guidance-team", "date": "2026-11-08"}},
+    {"score": 0.85, "expected": true, "control": false, "provenance": {"origin": "human", "labeller": "guidance-team", "date": "2026-11-08"}},
+    {"score": 0.75, "expected": true, "control": false, "provenance": {"origin": "human", "labeller": "guidance-team", "date": "2026-11-08"}},
+    {"score": 0.60, "expected": true, "control": false, "provenance": {"origin": "human", "labeller": "guidance-team", "date": "2026-11-08"}},
+    {"score": 0.95, "expected": true, "control": false, "provenance": {"origin": "human", "labeller": "guidance-team", "date": "2026-11-08"}},
+    {"score": 0.80, "expected": true, "control": false, "provenance": {"origin": "human", "labeller": "guidance-team", "date": "2026-11-08"}},
+    {"score": 0.70, "expected": true, "control": false, "provenance": {"origin": "human", "labeller": "guidance-team", "date": "2026-11-08"}},
+    {"score": 0.55, "expected": true, "control": false, "provenance": {"origin": "human", "labeller": "guidance-team", "date": "2026-11-08"}},
+    {"score": 0.40, "expected": false, "control": true, "provenance": {"origin": "human", "labeller": "guidance-team", "date": "2026-11-08"}},
+    {"score": 0.30, "expected": false, "control": true, "provenance": {"origin": "human", "labeller": "guidance-team", "date": "2026-11-08"}},
+    {"score": 0.20, "expected": false, "control": true, "provenance": {"origin": "human", "labeller": "guidance-team", "date": "2026-11-08"}},
+    {"score": 0.10, "expected": false, "control": true, "provenance": {"origin": "human", "labeller": "guidance-team", "date": "2026-11-08"}},
+    {"score": 0.05, "expected": false, "control": true, "provenance": {"origin": "human", "labeller": "guidance-team", "date": "2026-11-08"}},
+    {"score": 0.45, "expected": false, "control": true, "provenance": {"origin": "human", "labeller": "guidance-team", "date": "2026-11-08"}},
+    {"score": 0.35, "expected": false, "control": true, "provenance": {"origin": "human", "labeller": "guidance-team", "date": "2026-11-08"}},
+    {"score": 0.15, "expected": false, "control": true, "provenance": {"origin": "human", "labeller": "guidance-team", "date": "2026-11-08"}}
+  ]
+}

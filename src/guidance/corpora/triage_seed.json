@@ -1,0 +1,42 @@
+{
+  "provenance": {
+    "origin": "human",
+    "labeller": "guidance-team",
+    "date": "2026-11-08",
+    "note": "Hand-authored control findings; never model output."
+  },
+  "findings": [
+    {
+      "id": "non-applicable-lint",
+      "tool": "clippy",
+      "message": "warning: this lint is not machine-applicable; human judgment required",
+      "decision_label": "clippy-fix",
+      "confidence": 0.55,
+      "control": true
+    },
+    {
+      "id": "behavior-changing-patch",
+      "tool": "clippy",
+      "message": "warning: manual fix changes observable behavior; do not auto-apply",
+      "decision_label": "rewrite-logic",
+      "confidence": 0.99,
+      "control": true
+    },
+    {
+      "id": "unknown-cause-failure",
+      "tool": "test",
+      "message": "test failed with an unknown cause; no mechanical class applies",
+      "decision_label": "clippy-fix",
+      "confidence": 0.97,
+      "control": true
+    },
+    {
+      "id": "whitespace-drift",
+      "tool": "rustfmt",
+      "message": "diff is whitespace-only; formatting applies",
+      "decision_label": "rustfmt",
+      "confidence": 0.97,
+      "control": false
+    }
+  ]
+}

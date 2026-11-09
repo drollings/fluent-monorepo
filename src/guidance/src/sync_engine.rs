@@ -54,6 +54,7 @@ struct SyncContext {
     config: GenConfig,
     source_dir: PathBuf,
     guidance_dir: PathBuf,
+    comments_wrote_source: bool,
 }
 
 impl SyncEngine {
@@ -107,6 +108,25 @@ impl SyncEngine {
         self.source_hashes
             .get(absolute.to_string_lossy().as_ref())
             .map(String::as_str)
+    }
+
+    /// Follow a comment-step mutation: rehash this file only, when the
+    /// gate tracks it. Absent entries keep mtime behavior; a hash-read
+    /// failure fails open toward regeneration, matching the gate.
+    fn refresh_stored_hash(&mut self, source_path: &Path) {
+        let absolute = absolute_or(source_path.to_path_buf());
+        let key = absolute.to_string_lossy().into_owned();
+        if let std::collections::hash_map::Entry::Occupied(mut slot) = self.source_hashes.entry(key)
+        {
+            if let Some(current) = crate::diff::hash_file(&absolute) {
+                slot.insert(current.clone());
+                // In-memory re-check: the entry now agrees with the bytes read.
+                debug_assert!(crate::freshness::hash_decides_fresh(
+                    &current,
+                    Some(slot.get().as_str())
+                ));
+            }
+        }
     }
 
     #[must_use]
@@ -167,11 +187,20 @@ impl SyncEngine {
             config: config.clone(),
             source_dir: self.source_dir.clone(),
             guidance_dir: self.guidance_dir.clone(),
+            comments_wrote_source: false,
         };
 
         let mut pipeline =
             Self::build_pipeline(self.enhancer.as_ref(), &mut self.ast_parser, config.db_sync);
         pipeline.run(&mut ctx)?;
+        // The pipeline borrows the parser; release it before touching self.
+        drop(pipeline);
+        // The comment step runs after the sidecar save and mutates
+        // source; the stored entry follows the post-comment bytes or
+        // the next stored-hash pass restales on processed bytes.
+        if ctx.comments_wrote_source {
+            self.refresh_stored_hash(&ctx.source_path);
+        }
 
         Ok(ctx.doc)
     }
@@ -197,8 +226,11 @@ impl SyncEngine {
                 Ok(())
             })
             .step(move |ctx: &mut SyncContext| {
-                if let Err(e) = comments::sync_comments(&ctx.source_path, &ctx.doc, ast_parser) {
-                    tracing::warn!("comment sync failed for {:?}: {e}", ctx.source_path);
+                match comments::sync_comments(&ctx.source_path, &ctx.doc, ast_parser) {
+                    Ok(wrote) => ctx.comments_wrote_source = wrote,
+                    Err(e) => {
+                        tracing::warn!("comment sync failed for {:?}: {e}", ctx.source_path);
+                    }
                 }
                 Ok(())
             });
@@ -388,6 +420,14 @@ impl SyncStatus {
         self.stale_files == 0
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/offload_stale_only.rs"]
+mod offload_stale_only_tests;
+
+#[cfg(test)]
+#[path = "../tests/sync_fixpoint.rs"]
+mod sync_fixpoint_tests;
 
 #[cfg(test)]
 mod tests {

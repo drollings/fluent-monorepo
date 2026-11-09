@@ -32,6 +32,7 @@
 //! - `enhancer` — generic LLM comment generation trait
 pub mod ast_parser;
 pub mod change_set;
+pub mod component_map;
 pub mod config;
 pub mod coordinator;
 pub mod diff;
@@ -42,11 +43,14 @@ pub mod graph_index;
 pub mod grounding;
 pub mod index_pipeline;
 pub mod memory;
+pub mod model_lanes;
+pub mod offload;
 pub mod plugin;
 pub mod query_engine;
 pub mod runtime;
 pub mod scanner;
 pub mod scheduler;
+pub mod scorecard;
 pub mod selection;
 pub mod sync_engine;
 pub mod watcher;

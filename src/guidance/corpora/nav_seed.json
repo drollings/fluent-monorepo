@@ -1,0 +1,18 @@
+{
+  "provenance": {
+    "origin": "human",
+    "labeller": "guidance-team",
+    "date": "2026-11-08",
+    "note": "Hand-authored against fixture_graph sources; never model output. Tune split guides iteration; heldout is reported but never iterated on."
+  },
+  "queries": [
+    {"id": "def-u-target", "query": "u_target", "expected_files": ["u_callee.rs"], "expected_symbols": ["u_target"], "split": "tune"},
+    {"id": "def-dup", "query": "dup", "expected_files": ["h_a.rs", "h_b.rs", "h_c.rs"], "expected_symbols": ["dup"], "split": "tune"},
+    {"id": "def-foundation", "query": "foundation", "expected_files": ["i_base.rs"], "expected_symbols": ["foundation"], "split": "tune"},
+    {"id": "def-u-call", "query": "u_call", "expected_files": ["u_caller.rs"], "expected_symbols": ["u_call"], "split": "tune"},
+    {"id": "gap-ghost", "query": "ghost", "expect_gap": true, "split": "tune"},
+    {"id": "gap-unknown", "query": "zzzzNotHere", "expect_gap": true, "split": "tune"},
+    {"id": "def-use-it", "query": "use_it", "expected_files": ["i_user.rs"], "expected_symbols": ["use_it"], "split": "heldout"},
+    {"id": "gap-void", "query": "qqqNoSuchSymbol", "expect_gap": true, "split": "heldout"}
+  ]
+}

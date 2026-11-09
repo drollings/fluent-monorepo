@@ -1,0 +1,32 @@
+{
+  "point": "intent",
+  "model_fingerprint": "seed",
+  "question_version": 1,
+  "provenance": {
+    "source": "hand-labelled seed corpus for registry harness tests",
+    "labeller": "workspace",
+    "date": "2026-11-08"
+  },
+  "cases": [
+    {"score": 0.99, "expected": true, "control": false,
+     "provenance": {"origin": "human", "labeller": "workspace", "date": "2026-11-08"}},
+    {"score": 0.95, "expected": true, "control": false,
+     "provenance": {"origin": "human", "labeller": "workspace", "date": "2026-11-08"}},
+    {"score": 0.93, "expected": true, "control": false,
+     "provenance": {"origin": "human_reviewed", "labeller": "workspace", "date": "2026-11-08"}},
+    {"score": 0.91, "expected": true, "control": false,
+     "provenance": {"origin": "human", "labeller": "workspace", "date": "2026-11-08"}},
+    {"score": 0.85, "expected": true, "control": false,
+     "provenance": {"origin": "synthetic", "labeller": "workspace", "date": "2026-11-08"}},
+    {"score": 0.30, "expected": false, "control": false,
+     "provenance": {"origin": "human", "labeller": "workspace", "date": "2026-11-08"}},
+    {"score": 0.20, "expected": false, "control": false,
+     "provenance": {"origin": "human", "labeller": "workspace", "date": "2026-11-08"}},
+    {"score": 0.10, "expected": false, "control": false,
+     "provenance": {"origin": "human", "labeller": "workspace", "date": "2026-11-08"}},
+    {"score": 0.40, "expected": false, "control": true,
+     "provenance": {"origin": "human", "labeller": "workspace", "date": "2026-11-08"}},
+    {"score": 0.15, "expected": false, "control": true,
+     "provenance": {"origin": "human_reviewed", "labeller": "workspace", "date": "2026-11-08"}}
+  ]
+}

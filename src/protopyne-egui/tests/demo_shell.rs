@@ -47,6 +47,16 @@ fn golden(name: &str) -> String {
         .unwrap_or_else(|error| panic!("read golden {name}: {error}"))
 }
 
+/// Drop the volatile bar count from a directory-mode check line: the
+/// monthlies under the git-ignored history root grow over time, so no
+/// quantity is pinned — only that tracked code handles the use case
+/// (loads the directory, renders the contract lines).
+fn without_bars(line: &str) -> String {
+    let (head, tail) = line.split_once("bars=").expect("bars field");
+    let end = tail.find(' ').expect("bars field end");
+    format!("{head}bars={{}}{}", &tail[end..])
+}
+
 /// `--check` contracts pinned as golden text: the chart shell's directory
 /// and legacy-CSV outputs plus the mock terminal's trading-view output.
 /// Repointing `make protopyne-demo-check` must reproduce these byte-for-byte.
@@ -60,7 +70,20 @@ fn check_contracts_are_pinned() {
         eprintln!("skip: terminal example not built (needs server-gateway,demo)");
         return;
     };
-    assert_eq!(run_check(&demo, &["--check"]), golden("demo_check.txt"));
+    // Directory mode loads the local monthlies, so the bar quantity is
+    // never pinned — only that tracked code handles the use case: the
+    // command succeeds and renders the contract lines byte-for-byte
+    // apart from the count.
+    let output = run_check(&demo, &["--check"]);
+    let golden_text = golden("demo_check.txt");
+    let mut lines = output.lines();
+    let mut golden_lines = golden_text.lines();
+    let first = lines.next().expect("check prints a summary line");
+    let golden_first = golden_lines.next().expect("golden summary line");
+    assert_eq!(without_bars(first), without_bars(golden_first));
+    let rest: Vec<&str> = lines.collect();
+    let golden_rest: Vec<&str> = golden_lines.collect();
+    assert_eq!(rest, golden_rest, "tickers and notice lines");
     let csv = manifest_dir()
         .join("../../data/protopyne-rs/historical/SPY_15M.csv")
         .to_string_lossy()

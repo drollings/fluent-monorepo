@@ -31,6 +31,71 @@ pub struct EmbedConfig {
     pub cache_limit: Option<usize>,
 }
 
+/// One independently-addressable model role: its own endpoint, model,
+/// timeout, and kill switch. A disabled role resolves to no endpoint,
+/// which is the fail-closed signal: callers fall through to the
+/// deterministic path, never to a silent answer.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelRole {
+    #[serde(default = "default_role_base_url")]
+    pub base_url: String,
+    #[serde(default)]
+    pub model: String,
+    #[serde(default = "default_role_timeout_ms")]
+    pub timeout_ms: u64,
+    #[serde(default = "default_role_enabled")]
+    pub enabled: bool,
+}
+
+fn default_role_base_url() -> String {
+    "http://localhost:8080".to_string()
+}
+
+pub(crate) fn default_role_timeout_ms() -> u64 {
+    30_000
+}
+
+/// Default lane budgets for model calls (single home: `model_lanes`).
+pub use crate::model_lanes::default_lane_config;
+
+fn default_role_enabled() -> bool {
+    true
+}
+
+/// Decision-role defaults: small local judgment model, own address.
+#[must_use]
+pub fn default_decision_role() -> ModelRole {
+    ModelRole {
+        base_url: default_role_base_url(),
+        model: "liquidai/d1-2b".to_string(),
+        timeout_ms: default_role_timeout_ms(),
+        enabled: true,
+    }
+}
+
+/// Generative-role defaults: synthesis model, own address.
+#[must_use]
+pub fn default_generative_role() -> ModelRole {
+    ModelRole {
+        base_url: default_role_base_url(),
+        model: "code".to_string(),
+        timeout_ms: default_role_timeout_ms(),
+        enabled: true,
+    }
+}
+
+impl ModelRole {
+    /// Resolve to an (endpoint, model) pair, or `None` when disabled.
+    #[must_use]
+    pub fn endpoint(&self) -> Option<(&str, &str)> {
+        if self.enabled {
+            Some((self.base_url.as_str(), self.model.as_str()))
+        } else {
+            None
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
 pub struct ProjectConfig {
     #[serde(default = "default_guidance_dir")]
@@ -104,6 +169,35 @@ pub struct ProjectConfig {
     #[serde(default)]
     #[builder(default)]
     pub models: HashMap<String, String>,
+
+    /// Decision-model role: semantic judgment only, independently
+    /// addressable from the generative role.
+    #[serde(default = "default_decision_role")]
+    #[builder(default = default_decision_role())]
+    pub decision: ModelRole,
+
+    /// Generative-model role: synthesis over verbatim excerpts only.
+    #[serde(default = "default_generative_role")]
+    #[builder(default = default_generative_role())]
+    pub generative: ModelRole,
+
+    /// Per-decision-point thresholds keyed by point name ("intent",
+    /// "sufficiency", "excerpt", "staleness"). Absent entries fail
+    /// closed to shadow-only.
+    #[serde(default)]
+    #[builder(default)]
+    pub decision_thresholds: HashMap<String, fluent_llm::decision::ThresholdSet>,
+
+    /// Calibration registry location. `None` (or a missing file) means
+    /// the seed-empty registry: every point authorizes shadow-only.
+    #[serde(default)]
+    pub calibration_registry: Option<PathBuf>,
+
+    /// Model-call priority lanes: interactive queries first, background
+    /// maintenance defers. Defaults preserve direct-call behavior.
+    #[serde(default = "crate::model_lanes::default_lane_config")]
+    #[builder(default = crate::model_lanes::default_lane_config())]
+    pub lanes: crate::model_lanes::LaneConfig,
 }
 
 fn default_guidance_dir() -> PathBuf {
@@ -133,6 +227,11 @@ impl Default for ProjectConfig {
             embedding_cache_limit: None,
             embed: None,
             models: HashMap::new(),
+            decision: default_decision_role(),
+            generative: default_generative_role(),
+            decision_thresholds: HashMap::new(),
+            calibration_registry: None,
+            lanes: crate::model_lanes::LaneConfig::default(),
         }
     }
 }
@@ -227,6 +326,10 @@ pub fn load_config(workspace: &Path) -> Result<ProjectConfig, ConfigError> {
 pub fn parse_model_ref(model_ref: &str) -> Option<(&str, &str)> {
     fluent_types::model_ref::parse_model_ref(model_ref)
 }
+
+#[cfg(test)]
+#[path = "../tests/model_roles.rs"]
+mod model_roles_tests;
 
 #[cfg(test)]
 mod tests {

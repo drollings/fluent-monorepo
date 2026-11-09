@@ -1,5 +1,6 @@
 pub mod concept_ground;
 pub mod db_storage;
+pub mod decision_points;
 pub mod diagnose;
 pub mod formatter;
 pub mod fts_backend;
@@ -16,6 +17,7 @@ pub mod recall;
 pub mod rerank;
 pub mod rg_backend;
 pub mod search_backend;
+pub mod shadow;
 pub mod snapshot;
 pub mod strategy;
 pub mod structure_enrich;

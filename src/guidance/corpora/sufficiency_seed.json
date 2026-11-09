@@ -1,0 +1,18 @@
+{
+  "point": "sufficiency",
+  "model_fingerprint": "unprobed",
+  "question_version": 1,
+  "provenance": {
+    "source": "guidance sufficiency goldens (grounded-or-silent tests)",
+    "labeller": "guidance-team",
+    "date": "2026-11-08"
+  },
+  "cases": [
+    {"score": 0.95, "expected": true, "control": false, "provenance": {"origin": "human", "labeller": "guidance-team", "date": "2026-11-08"}},
+    {"score": 0.93, "expected": true, "control": false, "provenance": {"origin": "human", "labeller": "guidance-team", "date": "2026-11-08"}},
+    {"score": 0.90, "expected": true, "control": false, "provenance": {"origin": "human", "labeller": "guidance-team", "date": "2026-11-08"}},
+    {"score": 0.50, "expected": false, "control": true, "provenance": {"origin": "human", "labeller": "guidance-team", "date": "2026-11-08"}},
+    {"score": 0.20, "expected": false, "control": true, "provenance": {"origin": "human", "labeller": "guidance-team", "date": "2026-11-08"}},
+    {"score": 0.05, "expected": false, "control": true, "provenance": {"origin": "human", "labeller": "guidance-team", "date": "2026-11-08"}}
+  ]
+}

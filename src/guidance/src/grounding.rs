@@ -7,6 +7,8 @@
 
 use std::collections::HashSet;
 
+use fluent_types::GuidanceDoc;
+
 use crate::query::synthesize::Stage;
 
 /// Result of grounding verification on LLM synthesis output.
@@ -84,6 +86,42 @@ pub fn verify_citations(output: &str, stages: &[Stage]) -> GroundingResult {
         unverified_citations: unverified,
     }
 }
+
+/// Resolve requested names against current members, mirroring
+/// `Synthesizer::synthesize`'s own lookup predicate exactly (same match,
+/// no second implementation). Empty means stale index names or rogue
+/// filter output: the caller takes the pinned gap instead of
+/// synthesizing from no excerpts.
+#[must_use]
+pub fn grounded_names(doc: &GuidanceDoc, names: &[String]) -> Vec<String> {
+    names
+        .iter()
+        .filter(|name| {
+            doc.members
+                .iter()
+                .any(|member| member.name.as_str() == name.as_str())
+        })
+        .cloned()
+        .collect()
+}
+
+/// Content hash over grounded stages (source + line + content) for
+/// synthesis cache keys. Changed source changes the key, so a stored
+/// summary can never override fresh bytes.
+#[must_use]
+pub fn stage_content_hash(stages: &[Stage]) -> String {
+    let mut bytes = Vec::new();
+    for stage in stages {
+        bytes.extend_from_slice(stage.source.as_bytes());
+        bytes.extend_from_slice(&stage.line.unwrap_or(0).to_le_bytes());
+        bytes.extend_from_slice(stage.content.as_bytes());
+    }
+    common_core::hash::blake3_hex(&bytes)
+}
+
+#[cfg(test)]
+#[path = "../tests/synthesis_gate.rs"]
+mod synthesis_gate_tests;
 
 #[cfg(test)]
 mod tests {

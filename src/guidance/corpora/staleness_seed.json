@@ -1,0 +1,18 @@
+{
+  "point": "staleness",
+  "model_fingerprint": "unprobed",
+  "question_version": 1,
+  "provenance": {
+    "source": "guidance staleness goldens (clock gate + rename controls)",
+    "labeller": "guidance-team",
+    "date": "2026-11-08"
+  },
+  "cases": [
+    {"score": 0.96, "expected": true, "control": false, "provenance": {"origin": "human", "labeller": "guidance-team", "date": "2026-11-08"}},
+    {"score": 0.91, "expected": true, "control": false, "provenance": {"origin": "human", "labeller": "guidance-team", "date": "2026-11-08"}},
+    {"score": 0.94, "expected": true, "control": false, "provenance": {"origin": "human", "labeller": "guidance-team", "date": "2026-11-08"}},
+    {"score": 0.30, "expected": false, "control": true, "provenance": {"origin": "human", "labeller": "guidance-team", "date": "2026-11-08"}},
+    {"score": 0.20, "expected": false, "control": true, "provenance": {"origin": "human", "labeller": "guidance-team", "date": "2026-11-08"}},
+    {"score": 0.10, "expected": false, "control": true, "provenance": {"origin": "human", "labeller": "guidance-team", "date": "2026-11-08"}}
+  ]
+}

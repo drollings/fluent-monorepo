@@ -92,3 +92,7 @@ mod tests;
 #[cfg(test)]
 #[path = "../../tests/query_plausibility.rs"]
 mod plausibility_tests;
+
+#[cfg(test)]
+#[path = "../../tests/capability_decision.rs"]
+mod capability_decision_tests;

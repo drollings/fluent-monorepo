@@ -1,157 +1,144 @@
-# Architecture Overview
+# guidance — Architecture
 
-## Crate Dependency Diagram
+> Briefing on the design of `guidance` as it stands. Goals without
+> mechanism live in `VISION.md`; this document describes the mechanism
+> as built. Every type named below exists in the tree — the stale-name
+> guard fails on invented names.
 
-```
-  ┌─────────────────────────────────────────────────────────────┐
-  │                    Binary Layer                              │
-  │                                                              │
-  │  ┌─────────────────────┐    ┌─────────────────────┐          │
-  │  │  guidance (bin)     │    │  coral (bin)        │          │
-  │  │  CLI entry point    │    │  MCP server          │          │
-  │  └──────────┬──────────┘    └──────────┬──────────┘          │
-  │             │                          │                     │
-  ├─────────────┼──────────────────────────┼─────────────────────┤
-  │             │          Consumer Layer   │                     │
-  │             │                          │                     │
-  │  ┌──────────▼──────────┐    ┌──────────▼──────────┐          │
-  │  │  guidance-core      │    │  coral-context      │          │
-  │  │  (src/guidance)     │    │  (src/coral)        │          │
-  │  │  app logic, CLI     │    │  context graph      │          │
-  │  └──────────┬──────────┘    └──────────┬──────────┘          │
-  │             │                          │                     │
-  ├─────────────┼──────────────────────────┼─────────────────────┤
-  │             │      Capability Layer     │                     │
-  │             │                          │                     │
-  │  ┌──────────▼──────────┐    ┌──────────▼──────────┐          │
-  │  │  fluent-llm         │    │  fluent-dag         │          │
-  │  │  (src/llm)          │    │  (src/dag)          │          │
-  │  │  LLM HTTP client    │    │  DAG executor       │          │
-  │  └─────────────────────┘    └─────────────────────┘          │
-  │                                                              │
-  │  ┌─────────────────────┐    ┌─────────────────────┐          │
-  │  │  guidance-ontology  │    │  guidance-rdf       │          │
-  │  │  (src/ontology)     │    │  (src/rdf)          │          │
-  │  │  entity/inference   │    │  Turtle/N-Quads     │          │
-  │  └─────────────────────┘    └─────────────────────┘          │
-  │                                                              │
-  │  ┌─────────────────────┐    ┌─────────────────────┐          │
-  │  │  search-vector      │    │  fluent-knowledge   │          │
-  │  │  (src/search-vector)│    │  (src/knowledge)    │          │
-  │  │  hybrid search      │    │  word/trigram index │          │
-  │  └─────────────────────┘    └─────────────────────┘          │
-  │                                                              │
-  │                                                              │
-  │  ┌─────────────────────┐    ┌─────────────────────┐          │
-  │  │  content LOD        │    │  fluent-wasm-ipc    │          │
-  │  │  (src/knowledge/    │    │  (src/wasm_ipc)     │          │
-  │  │   lod.rs)           │    │  Extism binary IPC  │          │
-  │  │  LOD slicing        │    └─────────────────────┘          │
-  │  └─────────────────────┘                                     │
-  │                                                              │
-  ├──────────────────────────────────────────────────────────────┤
-  │                   Framework Layer                             │
-  │                                                              │
-  │             ┌─────────────────────────────┐                   │
-  │             │  fluent-wvr (src/fluent-wvr)│                   │
-  │             │  Component/WorkUnit traits  │                   │
-  │             └─────────────┬───────────────┘                   │
-  │                           │                                   │
-  ├───────────────────────────┼───────────────────────────────────┤
-  │                           │   Types Layer                     │
-  │             ┌─────────────▼───────────────┐                   │
-  │             │  fluent-types (src/types)    │                   │
-  │             │  shared data types           │                   │
-  │             └─────────────────────────────┘                   │
-  │                                                              │
-  ├──────────────────────────────────────────────────────────────┤
-  │                    Common Layer                                │
-  │                                                              │
-  │  ┌─────────────────────┐    ┌─────────────────────┐          │
-  │  │  common-core        │    │  fluent-            │          │
-  │  │  (src/common-core)  │    │  concurrency        │          │
-  │  │  zero-domain utils  │    │  (src/fluent-       │          │
-  │  └─────────────────────┘    │   concurrency)      │          │
-  │                             │  shared pools       │          │
-  │                             └─────────────────────┘          │
-  └──────────────────────────────────────────────────────────────┘
-```
+## What it is
 
-## Tier Descriptions
+`guidance` is a deterministic-first code navigation subagent. The
+`guidance-core` crate (`src/guidance/`) owns the mirror and the
+query pipeline; the `guidance` binary (`src/bin/guidance/`) owns
+the CLI surface. It answers from a structured, incrementally
+updated mirror of the codebase and escalates to models only through
+calibrated decision points (judgment) and grounded synthesis —
+never for anything deterministic code already answers exactly.
 
-### Common Layer (no domain logic)
-Crates in this layer contain zero domain-specific logic. They depend only on the
-standard library and well-known third-party crates (serde_json, sha2, blake3).
-A crate in this layer must never import any `guidance-*` or `coral-*` crate.
+## Crate layout (`guidance-core`)
 
-| Crate | Path | Responsibility |
-|-------|------|----------------|
-| `common-core` | `src/common-core/` | Generic utilities: hashing, formatting, I/O, shell, metrics, error context |
-| `fluent-concurrency` | `src/fluent-concurrency/` | `Scope`, pools, credit flow, `StreamAbort` (shared with the router/assistant stacks) |
+| Module | Responsibility |
+|--------|---------------|
+| `ast_parser` | Tree-sitter parsing across supported grammars; span resolution, snippet extraction |
+| `config` | `ProjectConfig`: mirror dirs, providers, model-role blocks, per-point thresholds, registry location; project → user → default precedence |
+| `query_engine` | Tiered-escalation dispatch over registered backends; fused recall; stage formatting |
+| `query/strategy` | `FsmEngine` (intake → classify → route → validate) plus the exact pre-check single home |
+| `query/decision_points` | Pinned decision specs, shadow-only authorization, pure route/filter/eligibility helpers, decision metrics |
+| `query/shadow` | Non-acting observation records (intent, sufficiency, excerpt rank deltas) |
+| `query/search_backend` + `fts/vector/lemma/rg_backend` | Intent-dispatched search rungs; index-backed rungs decline without storage |
+| `query/recall`, `query/fusion`, `query/hybrid` | Fragment-index recall, RRF fusion, two-route hybrid assembly |
+| `query/llm_filter` (+ `NoopLlmFilter` fail-open default) | Relevance scoring seam for the concept rung |
+| `query/concept_ground` | Taxonomy groundedness as rerank-only evidence, never a filter |
+| `query/synthesize`, `query/formatter` | Deterministic stage assembly; markdown/JSON/compact/debug rendering |
+| `query/ingest`, `query/db_storage`, `query/diagnose` | Fragment ingestion, storage adapters, why-is-this-here diagnosis |
+| `grounding` | Grounded-or-silent gate: excerpt sufficiency, citation verification, source-bound synthesis keys |
+| `freshness` + `sync/staleness` | Single freshness home (revision matrix, mtime-skew table, hash tiebreak); I/O shells over it |
+| `sync_engine` + `sync/json_store/json_writer/comments` | Member-JSON pipeline: parse → enhance → save → comment sync → optional DB sync |
+| `index_pipeline` | Fragment index pass: scan → diff → prepare → embed → commit, per-file isolation, bounded waves |
+| `selection`, `search_types`, `search_constants` | File selection and kind/size caps; tested index/search contracts and budgets |
+| `diff` | Content hashing and change computation |
+| `coordinator`, `scheduler`, `watcher`, `runtime` | Watch batches → ordered revisions → coalesced reconcile; AST/DB pools |
+| `graph_index` | Import/call graph for closure expansion and dependent-aware invalidation |
+| `enhancer` | Comment generation over verbatim excerpts (generative role) |
+| `scanner`, `extractor`, `memory`, `plugin` | Pattern detection; code/markdown/text fragment extraction; memory bridge; subprocess plugins |
 
-### Types Layer (shared data types)
-Contains the canonical data types used across all higher layers. No business
-logic — only type definitions, serialization, and validation.
+## CLI surface (`guidance` binary)
 
-| Crate | Path | Responsibility |
-|-------|------|----------------|
-| `fluent-types` | `src/types/` | `GuidanceDoc`, `Member`, `Param`, `FileType`, `NodeId`, etc. |
+`explain`, `search` (with `fts`/`vector`/`rg`/`fuse` modes), `sync`
+(`--watch` supported), `index`, `status`, `check` (fast
+`--check-ready` probe plus the full gate), `benchmark`, `health`,
+`structure`, `commit`, `clean`, `telemetry`, `cache-stats`, `init`,
+`todo`, `diary`, `mcp`, plus a bare `guidance <query>` search.
+`init` writes the default config including both model roles.
 
-### Framework Layer (trait definitions)
-Defines the core trait boundary between the DAG executor and its components.
-This is the Rust equivalent of a header-only interface crate — traits and
-blanket impls only, no implementation code.
+## Query pipeline
 
-| Crate | Path | Responsibility |
-|-------|------|----------------|
-| `fluent-wvr` | `src/fluent-wvr/` | `Component`, `WorkUnit`, `FieldAccess`, `Describable` traits |
+Intake tokenizes and runs exact detectors (identifier and file-path
+patterns). Classification is the `FsmEngine`: deterministic
+pre-checks (empty, file path, single identifier) decide immediately
+and short-circuit; only ambiguous queries are model-eligible, and
+the route table (word/anchor index, FTS, hybrid, vector, keyword) is
+fixed. Dispatch walks registered backends in priority order through
+the shared first-accept ladder: first hit wins, `NoResults` falls
+through, hard errors short-circuit. Recall over the fragment index
+fuses FTS, vector, and lemma routes; assembly is deterministic and
+formatters render without re-ranking.
 
-### Capability Layer (reusable domain capabilities)
-Each crate in this layer encapsulates a single domain concern. They depend
-on the Common, Types, and Framework layers but NOT on each other (no
-`fluent-dag` importing `coral-context`, etc.). Cross-capability integration
-happens only in the Consumer layer.
+## Decision layer
 
-| Crate | Path | Responsibility |
-|-------|------|----------------|
-| `fluent-llm` | `src/llm/` | LLM HTTP client, embeddings, chat completions, prompt utilities |
-| `fluent-dag` | `src/dag/` | DAG executor, resolver, middleware, work unit abstractions |
-| LOD slicing | `src/knowledge/lod.rs` | Level-of-detail text slicing over the word index |
-| `search-vector` | `src/search-vector/` | SQLite hybrid search (KNN + keyword + RRF) |
-| `fluent-knowledge` | `src/knowledge/` | Word/trigram index, CSR graph, frequency tables |
-| `guidance-ontology` | `src/ontology/` | Entity extraction, capability inference, YAGO taxonomy |
-| `guidance-rdf` | `src/rdf/` | RDF/Turtle/N-Quads parser, normalizer |
-| `fluent-wasm-ipc` | `src/wasm_ipc/` | `#[repr(C)]` binary IPC schemas for Extism boundary |
+Four pinned points, one spec each (all version 1): intent Choice,
+sufficiency three-way Choice (answer / synthesize / unanswerable),
+excerpt Score, commentary-staleness Noul. Every evaluation composes
+rule → fingerprint-scoped cache → model → static fallback through
+the shared `fluent_llm::decision` ladder; `Unavailable` falls
+through, `Rejected` is terminal, degraded verdicts never populate
+the cache. Authorization is fail-closed on (point, model
+fingerprint, question version): without a passing calibration entry
+every point runs shadow-only and the deterministic result stays
+authoritative. Pure helpers (`route_sufficiency`,
+`relevance_gate`, `staleness_eligible`) encode the guardrails —
+grounded-or-silent, stable-order filtering, cosmetics never
+nominated, human prose never nominated. Seed corpora live in
+`src/guidance/corpora/`; the live canary probe and the promotion
+procedure are documented alongside them.
 
-### Consumer Layer (application logic)
-Composes capabilities into application-level workflows and services.
+## Sync pipeline and freshness
 
-| Crate | Path | Responsibility |
-|-------|------|----------------|
-| `guidance-core` | `src/guidance/` | CLI dispatch, sync engine, query pipeline, config, plugins, AST parsing |
-| `coral-context` | `src/coral/` | Context graph cache tiers (L1–L5), MCP router, wasm runtime, ingest |
+`sync` walks configured roots and regenerates only stale sidecars:
+the mtime gate rules outside the one-second ambiguity window, the
+content hash decides inside it, and only hash-changed members reach
+a staleness verdict. Generated commentary is written back through
+comment sync, which skips existing human prose and generated
+comments alike when the source already documents itself. The watcher
+feeds the coordinator, which orders revisions through the
+coalescing scheduler; the fragment index commits per file with
+retry-once isolation, and the DB sync serializes writes. `check`
+runs the project test/lint/format commands then the
+gen/structure/database gates. Per-file maintenance loops stay
+stale-only, and model offload follows strict role separation
+(deterministic tools certify; models triage and propose).
 
-### Binary Layer (thin entry points)
-Zero library exports — pure CLI entry points that parse arguments and delegate
-to the consumer layer.
+## Configuration
 
-| Binary | Path | Responsibility |
-|--------|------|----------------|
-| `guidance` | `src/bin/guidance/` | CLI binary: `guidance explain`, `guidance gen`, etc. |
-| `coral` | `src/bin/coral/` | MCP server binary: `coral mcp` |
+Two independently addressable model roles — decision (judgment) and
+generative (synthesis) — each with its own endpoint, model, timeout,
+and kill switch; per-decision-point thresholds; a calibration
+registry location. A disabled or unreachable role degrades to the
+deterministic path with a typed `Unavailable`, never a silent wrong
+answer. Precedence is project config, then user config, then built-in
+defaults; unknown keys are tolerated.
 
-## Design Contracts
+## Telemetry
 
-### Layer violation rules
-1. **Common** → nothing domain-specific. Never import `guidance-*`
-2. **Types** → never import a capability crate
-3. **Framework** → never import a capability crate
-4. **Capability** → may import Common + Types + Framework; never import other capability crates
-5. **Consumer** → may import any lower-tier crate
-6. **Binary** → must be a pure consumer: no `[lib]`, no `pub` items
+Per-command latency histograms, benchmark accuracy/latency reports,
+health output (comment coverage plus an additive decision-metrics
+key: rule wins, fallbacks, drops, p50/p95, cache hits, shadow
+disagreement), all over the shared histogram and counter
+primitives — no second metrics system. Hermetic tests use the
+scripted decision backend; live tests stay ignored and gated, with
+skip-not-fail without endpoint env.
 
-### Integration convention (wvr.rs)
-Consumer and capability crates that need Fluent WVR framework integration
-expose a `wvr.rs` module that re-exports the relevant traits. This follows
-a discoverable convention: any crate with a `wvr.rs` is known to provide
-Fluent WVR trait implementations.
+## Design contracts
+
+- Deterministic-first ladder: exact → keyword → fusion → vector →
+  model last. The model never jumps the queue.
+- Grounded or silent; cached answers never override freshness;
+  human prose preserved; indexed source is untrusted and no
+  decision is the sole guard of a side effect.
+- `WorkUnit::execute` stays synchronous and I/O-free; the sync
+  bridge serves sync callers outside `execute`.
+- Layer rules: consumer crates may import capability crates, never
+  the reverse; shared crates never import `guidance`/`router`
+  consumers; the binary layer stays thin.
+- Tests follow the `tests/<module>.rs` plus `#[path]` forwarder
+  convention; quarantines name their replacement and land with the
+  replacement test.
+
+## Doc map
+
+`VISION.md` (goals), `OVERVIEW.md` (feature tour),
+`MODEL_ROLES.md` (serving topology + config example),
+`CALIBRATION.md` (live commands + promotion),
+`MODEL_OFFLOAD.md` (automation guardrails),
+`QUARANTINE_LEDGER.md` (quarantine record), plus the overhaul
+roadmap and its tracking checklist at the repo root.

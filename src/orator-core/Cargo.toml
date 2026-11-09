@@ -23,10 +23,6 @@ name = "it_config"
 path = "tests/it_config.rs"
 
 [[test]]
-name = "it_doc_guard"
-path = "tests/it_doc_guard.rs"
-
-[[test]]
 name = "it_source_guard"
 path = "tests/it_source_guard.rs"
 

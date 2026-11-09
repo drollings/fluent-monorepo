@@ -15,3 +15,6 @@ mod p4b_live;
 
 #[path = "live/embed_live.rs"]
 mod embed_live;
+
+#[path = "live/decision_spike.rs"]
+mod decision_spike;

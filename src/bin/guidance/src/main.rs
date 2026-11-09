@@ -298,6 +298,47 @@ enum Commands {
         #[arg(long)]
         force: bool,
     },
+    ComponentGate {
+        #[arg(default_value = ".")]
+        path: String,
+    },
+    Scorecard {
+        /// Output format: human or json.
+        #[arg(long, default_value = "human")]
+        format: String,
+
+        /// Deep tier: per-query breakdown plus repeated timing.
+        #[arg(long)]
+        deep: bool,
+
+        /// Live tier: print the exact model-gated commands (never runs them).
+        #[arg(long)]
+        live: bool,
+
+        /// Checked-in baseline for ratchet comparison.
+        #[arg(long, default_value = "src/guidance/scorecard_baseline.json")]
+        baseline: String,
+
+        /// Rewrite the baseline from a fresh tier run (explicit command only).
+        #[arg(long)]
+        update_baseline: bool,
+
+        /// Human reason recorded with the baseline update (required).
+        #[arg(long, default_value = "")]
+        reason: String,
+
+        /// Allow the update to record an adverse move (still recorded).
+        #[arg(long)]
+        allow_regression: bool,
+
+        /// Tolerance override `name=value` (repeatable).
+        #[arg(long)]
+        tolerance: Vec<String>,
+
+        /// Absolute bound override `name=value` (repeatable).
+        #[arg(long)]
+        bound: Vec<String>,
+    },
 }
 
 #[tokio::main]
@@ -494,6 +535,31 @@ async fn main() {
             // `index` owns member-doc generation for the path scope.
             index_cmd::cmd_index(workspace, json_dir, Some(path), *force);
         }
+        Some(Commands::ComponentGate { path }) => cmd_component_gate(path),
+        Some(Commands::Scorecard {
+            format,
+            deep,
+            live,
+            baseline,
+            update_baseline,
+            reason,
+            allow_regression,
+            tolerance,
+            bound,
+        }) => {
+            cmd_scorecard(
+                format,
+                *deep,
+                *live,
+                baseline,
+                *update_baseline,
+                reason,
+                *allow_regression,
+                tolerance,
+                bound,
+            )
+            .await;
+        }
         None => {
             // First word still searches: `guidance <query>` is `search`.
             if let Some(query) = &cli.query {
@@ -667,7 +733,11 @@ fn cmd_init(dir: &str) {
                 "batch": "ollama:code:latest",
                 "embed": "ollama:embed:latest"
             },
-            "embed": { "dims": 768, "cache_limit": 400 }
+            "embed": { "dims": 768, "cache_limit": 400 },
+            "decision": { "base_url": "http://localhost:8080", "model": "liquidai/d1-2b", "timeout_ms": 30000, "enabled": true },
+            "generative": { "base_url": "http://localhost:8080", "model": "code", "timeout_ms": 30000, "enabled": true },
+            "decision_thresholds": {},
+            "calibration_registry": ".guidance/calibration.json"
         });
         common_core::io::write_atomic(
             &config_path,
@@ -1753,6 +1823,115 @@ fn cmd_todo() {
     }
 }
 
+fn cmd_component_gate(path: &str) {
+    // Read-only lookup: prints the owning package, matrix component (if
+    // any), and narrowest gate, then exits. No side effects.
+    let resolved = guidance_core::component_map::component_gate_for_path(path);
+    println!("path: {path}");
+    if resolved.package.is_empty() {
+        println!("package: (unknown)");
+    } else {
+        println!("package: {}", resolved.package);
+    }
+    match resolved.component {
+        Some(component) => println!("component: {component}"),
+        None => println!("component: (none)"),
+    }
+    println!("gate: {}", resolved.gate);
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn cmd_scorecard(
+    format: &str,
+    deep: bool,
+    live: bool,
+    baseline: &str,
+    update_baseline: bool,
+    reason: &str,
+    allow_regression: bool,
+    tolerance: &[String],
+    bound: &[String],
+) {
+    use guidance_core::scorecard::{
+        apply_baseline_update, baseline_replays, baseline_to_value, load_baseline, render_human,
+        render_json, run_deep_extra, run_fast_tier, score_metrics, today_utc,
+    };
+    // Live tier prints the exact model-gated commands and runs nothing:
+    // hermetic runs never touch a model endpoint.
+    if live {
+        println!("live scorecard tier — run these exact commands with a model endpoint:");
+        println!(
+            "  LLM_BASE_URL=http://127.0.0.1:8080 LLM_MODEL=liquidai/d1-2b make guidance-test-live"
+        );
+        println!("  # per-point calibration and promotion: doc/guidance/CALIBRATION.md");
+        return;
+    }
+    let mut measured = run_fast_tier().await;
+    if deep {
+        measured.extend(run_deep_extra());
+    }
+    let baseline_path = std::path::Path::new(baseline);
+    // The one explicit baseline command: fresh values in, reason and diff
+    // recorded, regressions refused unless explicitly allowed. The file is
+    // never hand-edited — history replay proves every value went through
+    // this path.
+    if update_baseline {
+        let current = load_baseline(baseline_path);
+        match apply_baseline_update(
+            current.as_ref(),
+            &measured,
+            tolerance,
+            bound,
+            reason,
+            allow_regression,
+            &today_utc(),
+        ) {
+            Ok(next) => {
+                debug_assert!(baseline_replays(&next));
+                let value = baseline_to_value(&next, reason, &today_utc());
+                let text = serde_json::to_string_pretty(&value).expect("serializes");
+                if let Some(parent) = baseline_path.parent() {
+                    common_core::io::ensure_dir(parent).expect("baseline dir");
+                }
+                std::fs::write(baseline_path, format!("{text}\n")).expect("baseline writes");
+                let entry = next.history.last().expect("history appended");
+                println!(
+                    "baseline updated: {} ({})",
+                    baseline_path.display(),
+                    entry.date
+                );
+                println!("reason: {}", entry.reason);
+                let mut changes: Vec<(&String, &(Option<f64>, f64))> =
+                    entry.changes.iter().collect();
+                changes.sort_by(|left, right| left.0.cmp(right.0));
+                for (name, (old, new)) in changes {
+                    match old {
+                        Some(old) => println!("  {name}: {old} -> {new}"),
+                        None => println!("  {name}: (new) -> {new}"),
+                    }
+                }
+            }
+            Err(error) => {
+                eprintln!("baseline update refused: {error}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+    let base = load_baseline(baseline_path);
+    if base.is_none() {
+        eprintln!("warning: no baseline at {baseline}; every metric reports no-baseline");
+    }
+    let card = score_metrics(&measured, &base);
+    match format {
+        "json" => println!("{}", render_json(&card)),
+        _ => print!("{}", render_human(&card)),
+    }
+    if card.exit_code != 0 {
+        std::process::exit(card.exit_code);
+    }
+}
+
 fn cmd_diary(text_or_path: &str) {
     let diary_dir = Path::new(".guidance/doc");
     ensure_dir_or_panic(diary_dir);
@@ -1835,6 +2014,8 @@ fn cmd_health(workspace: &str, _min_age: u32, format: &str, _db: &str) {
 
     match format {
         "json" => {
+            // Additive `decision` key (zero until live traffic flows):
+            // existing keys are untouched, so parsers keep working.
             let report = serde_json::json!({
                 "files_analyzed": files.len(),
                 "total_members": total_members,
@@ -1842,6 +2023,7 @@ fn cmd_health(workspace: &str, _min_age: u32, format: &str, _db: &str) {
                 "comment_coverage_pct": if total_members > 0 {
                     100.0 - (without_comments as f64 / total_members as f64) * 100.0
                 } else { 100.0 },
+                "decision": guidance_core::query::decision_points::DecisionMetrics::new().snapshot(),
             });
             println!(
                 "{}",

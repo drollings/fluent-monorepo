@@ -15,22 +15,24 @@ pub enum SyncError {
 
 common_core::impl_from_io_error!(SyncError);
 
+/// Backfill curated comments into source. Returns whether bytes changed.
 pub fn sync_comments(
     source_path: &Path,
     doc: &GuidanceDoc,
     parser: &mut AstParser,
-) -> Result<(), SyncError> {
+) -> Result<bool, SyncError> {
     let source = common_core::io::read_to_string_err(source_path)?;
     let fresh_doc = parser.parse_file(source_path, &source).ok();
     let insertions = collect_comment_insertions(&source, doc, fresh_doc.as_ref());
     if insertions.is_empty() {
-        return Ok(());
+        return Ok(false);
     }
     let modified = apply_insertions(&source, insertions);
     if modified != source {
         common_core::io::write_atomic(source_path, modified.as_bytes())?;
+        return Ok(true);
     }
-    Ok(())
+    Ok(false)
 }
 
 fn collect_comment_insertions(
